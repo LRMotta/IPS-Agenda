@@ -123,17 +123,23 @@ function getConfigAppValuesByKeys_(grupos, chaves, fallback) {
   var chaveMap = {};
   (grupos || []).forEach(function(g) { grupoMap[normText_(g)] = true; });
   (chaves || []).forEach(function(c) { chaveMap[normText_(c)] = true; });
-  var out = [];
+  var rows = [];
+  var matched = false;
   try {
     readConfigAppRows_().forEach(function(r) {
-      var ativo = normText_(r.ativo || 'Sim');
-      if (ativo === 'nao' || ativo === 'false' || ativo === '0' || ativo === 'inativo') return;
       if (Object.keys(grupoMap).length && !grupoMap[normText_(r.grupo)]) return;
       if (Object.keys(chaveMap).length && !chaveMap[normText_(r.chave)]) return;
-      if (r.valor) out.push(r.valor);
+      matched = true;
+      var ativo = normText_(r.ativo || 'Sim');
+      if (ativo === 'nao' || ativo === 'false' || ativo === '0' || ativo === 'inativo') return;
+      if (r.valor) rows.push(r);
     });
-    out.sort();
-    return out.length ? out : (fallback || []);
+    rows.sort(function(a, b) {
+      var ao = a.ordem !== '' && a.ordem !== null && a.ordem !== undefined ? Number(a.ordem) : 999999;
+      var bo = b.ordem !== '' && b.ordem !== null && b.ordem !== undefined ? Number(b.ordem) : 999999;
+      return ao - bo || String(a.valor).localeCompare(String(b.valor));
+    });
+    return rows.length || matched ? rows.map(function(r) { return r.valor; }) : (fallback || []);
   } catch(e) {
     return fallback || [];
   }
@@ -4566,6 +4572,77 @@ function excluirConfigAppItem(rowIndex, startCol) {
   var col = parseInt(startCol, 10);
   if (col !== 1 && col !== 8) throw new Error('Bloco de configuração inválido.');
   if (!row || row < 2 || row > sh.getLastRow()) throw new Error('Configuração não encontrada.');
+
+  var values = sh.getRange(row, col, 1, 6).getValues()[0];
+  if (isConfigAppDefaultSeed_(values)) {
+    sh.getRange(row, col + 3).setValue('Não');
+    var obsCell = sh.getRange(row, col + 5);
+    var obs = String(obsCell.getValue() || '').trim();
+    obsCell.setValue(obs ? obs + ' | Excluído pelo usuário' : 'Excluído pelo usuário');
+    return 'Configuração desativada com sucesso.';
+  }
+
   sh.getRange(row, col, 1, 6).clearContent();
   return 'Configuração excluída com sucesso.';
+}
+
+function isConfigAppDefaultSeed_(row) {
+  row = row || [];
+  var grupo = normText_(row[0]);
+  var chave = normText_(row[1]);
+  var valor = normText_(row[2]);
+  if (!grupo || !chave || !valor) return false;
+
+  var defaults = getConfigAppDefaultSeeds_();
+  return defaults.some(function(d) {
+    return normText_(d[0]) === grupo && normText_(d[1]) === chave && normText_(d[2]) === valor;
+  });
+}
+
+function getConfigAppDefaultSeeds_() {
+  return [
+    ['Projetos', 'Status', 'Recrutamento aberto'],
+    ['Projetos', 'Status', 'Em andamento'],
+    ['Projetos', 'Status', 'Etapa regulatoria'],
+    ['Projetos', 'Status', 'Concluido'],
+    ['Agenda', 'Courier', 'Marken'],
+    ['Agenda', 'Courier', 'OCASA'],
+    ['Agenda', 'Courier', 'DHL'],
+    ['Agenda', 'Temperatura', 'Ambiente'],
+    ['Agenda', 'Temperatura', 'Refrigerado'],
+    ['Agenda', 'Temperatura', 'Congelado'],
+    ['Agenda', 'Status courier', 'N\u00E3o Agendado'],
+    ['Agenda', 'Status courier', 'Pendente'],
+    ['Agenda', 'Status courier', 'Agendado'],
+    ['Agenda', 'Status courier', 'Coletado'],
+    ['Agenda', 'Status courier', 'Enviado'],
+    ['Agenda', 'Status courier', 'Entregue'],
+    ['Agenda', 'Status courier', 'Cancelado'],
+    ['Agenda', 'Procedimento chip', 'Consulta'],
+    ['Agenda', 'Procedimento chip', 'Sinais Vitais'],
+    ['Agenda', 'Procedimento chip', 'Coleta'],
+    ['Agenda', 'Procedimento chip', 'Questionário'],
+    ['Agenda', 'Procedimento chip', 'Medicação/IP'],
+    ['Agenda', 'Procedimento chip', 'ECG'],
+    ['Agenda', 'Procedimento chip', 'TC'],
+    ['Agenda', 'Procedimento chip', 'PK'],
+    ['Agenda', 'Procedimento chip', 'ADA'],
+    ['Agenda', 'Procedimento chip', 'ctDNA'],
+    ['Agenda', 'Procedimento chip', 'Lab Central'],
+    ['Agenda', 'Procedimento chip', 'Contato telefônico'],
+    ['Agenda', 'Laboratório destino', 'IQVIA (VALENCIA)'],
+    ['Agenda', 'Laboratório destino', 'IQVIA (MARIETTA)'],
+    ['Agenda', 'Laboratório destino', 'LABCORP (INDIANAPOLIS)'],
+    ['Agenda', 'Laboratório destino', 'LABCORP (TORRANCE)'],
+    ['Agenda', 'Laboratório destino', 'DASA (BARUERI)'],
+    ['Agenda', 'Laboratório destino', 'HEMATOGENIX (TINLEY PARK)'],
+    ['Agenda', 'Laboratório destino', 'PPD GLOBAL (HIGHLAND HEIGHTS)'],
+    ['Agenda', 'Laboratório destino', 'ICON (FARMINGDALE)'],
+    ['Agenda', 'Laboratório destino', 'CELLCARTA (NAPERVILLE)'],
+    ['Agenda', 'Laboratório destino', 'CENTOGENE (ROSTOCK)'],
+    ['Agenda', 'Laboratório destino', 'FOUNDATION MEDICINE (BOSTON)'],
+    ['Agenda', 'Laboratório destino', 'EUROFINS (LANCASTER)'],
+    ['Agenda', 'Laboratório destino', 'EUROFINS (LEOLA)'],
+    ['Agenda', 'Laboratório destino', 'GBA CENTRAL LAB (SCHWENTINENTAL)']
+  ];
 }

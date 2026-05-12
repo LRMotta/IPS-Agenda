@@ -2975,6 +2975,7 @@ function salvarConfigApp() {
       fecharOverlay('modalConfig');
       snack(r || 'Configuração salva.');
       _estoqueConfigLoaded = false;
+      invalidarAgendaConfigCache();
       carregarConfigApp();
     })
     .withFailureHandler(function(e) {
@@ -2995,13 +2996,14 @@ function salvarConfigApp() {
 }
 
 function confirmarExcluirConfig(rowIndex, startCol, valor) {
-  document.getElementById('confirmDelMsg').textContent = 'Deseja excluir "' + valor + '"? A linha será limpa no bloco correspondente da Config_App.';
+  document.getElementById('confirmDelMsg').textContent = 'Deseja excluir "' + valor + '"? Configurações padrão serão desativadas para não voltarem automaticamente.';
   document.getElementById('btnConfirmDel').onclick = function() {
     fecharOverlay('confirmDel');
     google.script.run
       .withSuccessHandler(function(r) {
         snack(r || 'Configuração excluída.');
         _estoqueConfigLoaded = false;
+        invalidarAgendaConfigCache();
         carregarConfigApp();
       })
       .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
@@ -7015,6 +7017,13 @@ function confirmarExcluirPrestador(id, nome) {
   var _agendaEditId = '';
   var _agendaInitStarted = false;
 
+  function invalidarAgendaConfigCache() {
+    _agendaDados = null;
+    _agendaInitStarted = false;
+    var page = document.getElementById('page-agenda');
+    if (page && page.classList.contains('active')) initAgendaV1();
+  }
+
   function initAgendaV1() {
     var dataEl = document.getElementById('agData');
     if (!dataEl || _agendaDados || _agendaInitStarted) return;
@@ -7023,9 +7032,9 @@ function confirmarExcluirPrestador(id, nome) {
     google.script.run
       .withSuccessHandler(function(d) {
         _agendaDados = d || {};
-        AGENDA_PROCEDIMENTO_CHIPS = (_agendaDados.procedimentoChips && _agendaDados.procedimentoChips.length)
-          ? _agendaDados.procedimentoChips
-          : AGENDA_PROCEDIMENTO_CHIPS;
+        if (Array.isArray(_agendaDados.procedimentoChips)) {
+          AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
+        }
         renderAgendaProcedimentoChips();
         preencherAgendaSelect('agTipo', _agendaDados.tiposEvento || [], '');
         preencherAgendaSelect('agStatus', _agendaDados.status || [], null);
@@ -7297,6 +7306,7 @@ function confirmarExcluirPrestador(id, nome) {
         segmentos: parsed.segmentos
       });
     });
+    items = agendaMatBioGroupItems(items);
     var summary = items.map(function(it) {
       if (!it.segmentos || !it.segmentos.length) return it.tipo + (it.ensaio ? ' (' + it.ensaio + ')' : '');
       return it.tipo + (it.ensaio ? ' (' + it.ensaio + ')' : '') + ': ' + agendaFmtNumber(it.tubos, 0) + ' tubo(s), ' + agendaFmtNumber(it.total, 2) + ' ' + it.unit;
@@ -7317,7 +7327,8 @@ function confirmarExcluirPrestador(id, nome) {
     agendaMatBioClear(prefix);
     var data = agendaMatBioParseJson(c && c.matBioJson);
     if (!data.items.length && c && c.material) return;
-    agendaMatBioSetItems(prefix, data.items.map(function(it) {
+    var grouped = agendaMatBioGroupItems(data.items);
+    agendaMatBioSetItems(prefix, grouped.map(function(it) {
       return {
         key: it.key || it.tipo,
         tipo: it.tipo,
@@ -7342,6 +7353,74 @@ function confirmarExcluirPrestador(id, nome) {
     }).join(', ');
   }
 
+  function agendaMatBioPushUnique(list, value) {
+    value = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!value) return;
+    var n = normAgenda(value);
+    var exists = list.some(function(item) { return normAgenda(item) === n; });
+    if (!exists) list.push(value);
+  }
+
+  function agendaMatBioNormalizeItem(item) {
+    item = item || {};
+    var cfg = agendaMatBioTypeConfig(item.key || item.tipo);
+    var key = cfg ? cfg.key : (item.key || 'outro');
+    var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
+    var unit = item.unit || (cfg && cfg.unit) || 'mL';
+    var formula = item.formula || agendaMatBioFormulaFromSegments(item.segmentos);
+    var parsed = agendaMatBioParseFormula(formula);
+    var segmentos = parsed.segmentos.length ? parsed.segmentos : (Array.isArray(item.segmentos) ? item.segmentos : []);
+    return {
+      key: key,
+      tipo: tipo,
+      ensaio: String(item.ensaio || '').trim(),
+      formula: agendaMatBioFormulaFromSegments(segmentos),
+      tubos: segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0),
+      total: segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0),
+      unit: unit,
+      segmentos: segmentos
+    };
+  }
+
+  function agendaMatBioGroupItems(items) {
+    var order = [];
+    var groups = {};
+    (items || []).forEach(function(raw) {
+      var it = agendaMatBioNormalizeItem(raw);
+      if (!it.tipo && !it.segmentos.length) return;
+      var groupKey = it.key === 'outro' ? it.key + '|' + normAgenda(it.tipo) : it.key;
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          key: it.key,
+          tipo: it.tipo,
+          unit: it.unit,
+          segmentos: [],
+          ensaios: []
+        };
+        order.push(groupKey);
+      }
+      Array.prototype.push.apply(groups[groupKey].segmentos, it.segmentos);
+      String(it.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
+        agendaMatBioPushUnique(groups[groupKey].ensaios, ensaio);
+      });
+    });
+    return order.map(function(k) {
+      var g = groups[k];
+      var tubos = g.segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0);
+      var total = g.segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0);
+      return {
+        key: g.key,
+        tipo: g.tipo,
+        ensaio: g.ensaios.join('; '),
+        formula: agendaMatBioFormulaFromSegments(g.segmentos),
+        tubos: tubos,
+        total: total,
+        unit: g.unit,
+        segmentos: g.segmentos
+      };
+    });
+  }
+
   function agendaMatBioUpdateAllCopyOptions() {
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
   }
@@ -7350,40 +7429,58 @@ function confirmarExcluirPrestador(id, nome) {
     var sel = document.getElementById(prefix + 'MatCopy');
     if (!sel) return;
     var participante = normAgenda((document.getElementById('agParticipante') || {}).value || '');
+    var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
     var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
     var eventos = (_agendaEventos || []).filter(function(r) {
       if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
-      if (participante && normAgenda(r.participante) !== participante) return false;
+      if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
+      if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
       if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
       return agendaMatBioEventOptions(r).length;
     }).slice(-80).reverse();
     var opts = ['<option value="">Copiar material de visita anterior...</option>'];
     eventos.forEach(function(r) {
-      agendaMatBioEventOptions(r).forEach(function(opt) {
+      agendaMatBioEventOptions(r, prefix).forEach(function(opt) {
         var label = [r.data || '', r.visita || r.tipo || '', opt.label, opt.summary].filter(Boolean).join(' ? ');
-        opts.push('<option value="' + esc(r.id + '|' + opt.prefix) + '">' + esc(label) + '</option>');
+        opts.push('<option value="' + esc(r.id + '|' + opt.prefix + '|' + opt.mode) + '">' + esc(label) + '</option>');
       });
     });
     sel.innerHTML = opts.join('');
   }
 
-  function agendaMatBioEventOptions(r) {
+  function agendaMatBioEventOptions(r, onlyPrefix) {
     var map = [
       { prefix: 'agC1', label: 'Transporte I', data: r && r.courier1 },
       { prefix: 'agC2', label: 'Transporte II', data: r && r.courier2 },
       { prefix: 'agC3', label: 'Transporte III', data: r && r.courier3 },
       { prefix: 'agBackup', label: 'Backup', data: r && r.backup }
-    ];
-    return map.map(function(x) {
+    ].filter(function(x) { return !onlyPrefix || x.prefix === onlyPrefix; });
+    var structured = map.map(function(x) {
       var parsed = agendaMatBioParseJson(x.data && x.data.matBioJson);
       if (!parsed.items.length) return null;
       return {
         prefix: x.prefix,
         label: x.label,
+        mode: 'structured',
         items: parsed.items,
-        summary: (x.data && x.data.material) || parsed.items.map(function(it) { return it.tipo; }).join(', ')
+        summary: parsed.items.map(function(it) { return it.tipo; }).join(', ') || (x.data && x.data.material) || ''
       };
     }).filter(Boolean);
+
+    var legacy = map.map(function(x) {
+      var hasStructured = agendaMeaningfulValue(x.data && x.data.matBioJson);
+      var txt = x.data && x.data.material ? String(x.data.material).trim() : '';
+      if (hasStructured || !agendaMeaningfulValue(txt)) return null;
+      return {
+        prefix: x.prefix,
+        label: x.label + ' texto',
+        mode: 'legacy',
+        pasteText: txt,
+        summary: txt
+      };
+    }).filter(Boolean);
+
+    return structured.concat(legacy);
   }
 
   function agendaMatBioCopyPrevious(prefix) {
@@ -7394,9 +7491,19 @@ function confirmarExcluirPrestador(id, nome) {
     }
     var parts = sel.value.split('|');
     var ev = (_agendaEventos || []).find(function(r) { return String(r.id || '') === parts[0]; });
-    var opt = agendaMatBioEventOptions(ev).find(function(o) { return o.prefix === parts[1]; });
+    var mode = parts[2] || 'structured';
+    var opt = agendaMatBioEventOptions(ev, prefix).find(function(o) { return o.prefix === parts[1] && o.mode === mode; });
     if (!opt) {
-      snackErro('N?o encontrei material estruturado nessa visita.');
+      snackErro('Não encontrei material nessa visita.');
+      return;
+    }
+    if (opt.mode === 'legacy') {
+      var paste = document.getElementById(prefix + 'MatPaste');
+      if (paste) {
+        paste.value = opt.pasteText || '';
+        paste.focus();
+      }
+      snack('Texto anterior copiado para a caixa de interpretação.');
       return;
     }
     agendaMatBioSetItems(prefix, opt.items.map(function(it) {
@@ -7418,7 +7525,7 @@ function confirmarExcluirPrestador(id, nome) {
   function agendaMatBioInterpretPaste(prefix) {
     var el = document.getElementById(prefix + 'MatPaste');
     var text = el ? el.value : '';
-    var items = agendaMatBioParseFreeText(text);
+    var items = agendaMatBioGroupItems(agendaMatBioParseFreeText(text));
     if (!items.length) {
       snackErro('Não consegui interpretar esse texto. Tente separar os materiais com ponto e vírgula.');
       return;
@@ -8412,6 +8519,7 @@ function confirmarExcluirPrestador(id, nome) {
   function agendaMatBioSummaryHtml(c) {
     c = c || {};
     var data = agendaMatBioParseJson(c.matBioJson);
+    data.items = agendaMatBioGroupItems(data.items);
     if (!data.items.length) {
       return c.material ? esc(c.material) : '<span class="ag-mat-empty">Nenhum material informado.</span>';
     }
