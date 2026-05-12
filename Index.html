@@ -1181,7 +1181,7 @@
 
     <!-- ═══ PROJETOS ═══ -->
     <div class="page" id="page-projetos">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
         <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
           <div class="stat-value" id="projTotal">—</div>
           <div class="stat-label">Total de projetos</div>
@@ -1192,10 +1192,15 @@
           <div class="stat-label">Fases distintas</div>
           <div class="stat-icon"><span class="material-symbols-outlined">timeline</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a; border-radius: 0 var(--r-lg) 0 0;">
+        <div class="stat-card" style="--accent:#6a1b9a;">
           <div class="stat-value" id="projEsps">—</div>
           <div class="stat-label">Especialidades</div>
           <div class="stat-icon"><span class="material-symbols-outlined">stethoscope</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333; border-radius: 0 var(--r-lg) 0 0;">
+          <div class="stat-value" id="projConcluidos">—</div>
+          <div class="stat-label">Projetos concluídos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">task_alt</span></div>
         </div>
       </div>
       <div class="toolbar-card">
@@ -4091,14 +4096,16 @@ function preencherSelectProjeto(id, valores, selected, placeholder) {
 
 function renderProjetos(lista) {
   _projetos = lista || [];
-  var fases = {}; var esps = {};
+  var fases = {}; var esps = {}; var concluidos = 0;
   _projetos.forEach(function(p){
     if (p.fase) fases[p.fase]=1;
     if (p.especialidade) esps[p.especialidade]=1;
+    if (isProjetoStatusConcluido(p.status)) concluidos++;
   });
   document.getElementById('projTotal').textContent = _projetos.length;
   document.getElementById('projFases').textContent = Object.keys(fases).length;
   document.getElementById('projEsps').textContent  = Object.keys(esps).length;
+  document.getElementById('projConcluidos').textContent = concluidos;
   filtrarProjetos();
 }
 
@@ -4121,11 +4128,41 @@ function filtrarProjetos() {
 }
 
 var FASE_COLORS = {'I':'#e8f0fe:#1266f1','II':'#e6f4ea:#137333','III':'#fff3e0:#e65100','IV':'#fce8e6:#b3261e'};
+var FASE_AUTO_COLORS = [
+  '#e0f2fe:#075985',
+  '#dcfce7:#166534',
+  '#fef3c7:#92400e',
+  '#fae8ff:#86198f',
+  '#ffe4e6:#be123c',
+  '#ccfbf1:#0f766e',
+  '#ede9fe:#5b21b6',
+  '#fef9c3:#854d0e',
+  '#e0e7ff:#3730a3',
+  '#ffedd5:#c2410c'
+];
+
+function faseAutoColor(fase) {
+  var n = norm(fase || '');
+  var hash = 0;
+  for (var i = 0; i < n.length; i++) hash = ((hash * 31) + n.charCodeAt(i)) >>> 0;
+  return FASE_AUTO_COLORS[hash % FASE_AUTO_COLORS.length];
+}
+
 function chipFase(fase) {
-  var c = (FASE_COLORS[fase]||'#f0f4f8:#5f6b7c').split(':');
+  var c = (FASE_COLORS[fase] || faseAutoColor(fase)).split(':');
   var faseNorm = norm(fase);
   var label = faseNorm === 'observacional' || String(fase || '').toLowerCase().indexOf('fase') >= 0 ? fase : 'Fase ' + fase;
   return '<span class="chip" style="background:'+c[0]+';color:'+c[1]+'">' + esc(label) + '</span>';
+}
+
+function isProjetoStatusConcluido(status) {
+  var n = norm(status || '');
+  return n.indexOf('concluido') >= 0 || n.indexOf('concluida') >= 0;
+}
+
+function projetoStatusAutoColor(status) {
+  var c = faseAutoColor('status:' + (status || '')).split(':');
+  return c[1] + ':' + c[0];
 }
 
 function projetoStatusChip(status) {
@@ -4136,7 +4173,7 @@ function projetoStatusChip(status) {
     n.indexOf('recrutamento') >= 0 ? '#0b8043:#d7f5cf' :
     n.indexOf('regulatoria') >= 0 ? '#9a4b16:#ffd8bd' :
     n.indexOf('close-out') >= 0 || n.indexOf('closeout') >= 0 ? '#3c4043:#eeeeee' :
-    n.indexOf('cancelado') >= 0 ? '#c5221f:#fce8e6' : '#5f6b7c:#eeeeee';
+    n.indexOf('cancelado') >= 0 ? '#c5221f:#fce8e6' : projetoStatusAutoColor(s);
   var p = color.split(':');
   return '<span class="chip" style="background:' + p[1] + ';color:' + p[0] + '">' + esc(s) + '</span>';
 }
