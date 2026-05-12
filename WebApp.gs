@@ -404,7 +404,7 @@ function salvarProjeto(dados) {
     id, dados.nomeAbreviado || '', dados.codigo || '', dados.especialidade || '',
     dados.fase || '', dados.investigador || '', dados.subInvestigador1 || '',
     dados.subInvestigador2 || '', dados.centro || '', dados.patrocinador || '',
-    dados.cro || '', dados.coordenador || '', dados.status || ''
+    dados.cro || '', dados.coordenador || '', dados.metaRecrutamento || '', dados.status || ''
   ]);
   return 'Projeto cadastrado com ID: ' + id;
 }
@@ -1099,13 +1099,23 @@ function getProjetos() {
   var aba = ss.getSheetByName('Projetos');
   if (!aba) return [];
   var dados = aba.getDataRange().getValues();
+  var statsPorProjeto = getParticipantesStatsPorProjeto_();
   var lista = [];
   for (var i = 1; i < dados.length; i++) {
     var r = dados[i];
     if (!r[0]) continue;
+    var nomeProjeto = String(r[1] || '');
+    var nomeNorm = normText_(nomeProjeto);
+    var codigoNorm = normText_(r[2]);
+    var statsNome = statsPorProjeto[nomeNorm] || {};
+    var statsCodigo = codigoNorm && codigoNorm !== nomeNorm ? (statsPorProjeto[codigoNorm] || {}) : {};
+    var ativos = (statsNome.ativos || 0) + (statsCodigo.ativos || 0);
+    var falhasTriagem = (statsNome.falhasTriagem || 0) + (statsCodigo.falhasTriagem || 0);
+    var totalParticipantes = (statsNome.total || 0) + (statsCodigo.total || 0);
+    var meta = Number(r[12] || 0);
     lista.push({
       id:            String(r[0]),
-      nomeAbreviado: r[1] || '',
+      nomeAbreviado: nomeProjeto,
       codigo:        r[2] || '',
       especialidade: r[3] || '',
       fase:          r[4] || '',
@@ -1116,10 +1126,35 @@ function getProjetos() {
       patrocinador:  r[9] || '',
       cro:           r[10] || '',
       coordenador:   r[11] || '',
-      status:        r[12] || ''
+      metaRecrutamento: r[12] || '',
+      participantesAtivos: ativos,
+      falhasTriagem: falhasTriagem,
+      totalParticipantes: totalParticipantes,
+      percentualRecrutamento: meta > 0 ? Math.round((ativos * 1000) / meta) / 10 : '',
+      status:        r[13] || ''
     });
   }
   return lista;
+}
+
+function getParticipantesStatsPorProjeto_() {
+  var out = {};
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Participantes');
+  if (!sh || sh.getLastRow() < 2) return out;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(9, sh.getLastColumn())).getValues();
+  rows.forEach(function(r) {
+    var projeto = String(r[5] || '').trim();
+    if (!projeto) return;
+    var st = normText_(r[8]);
+    var key = normText_(projeto);
+    if (!out[key]) out[key] = { total: 0, ativos: 0, falhasTriagem: 0 };
+    out[key].total++;
+    if (st === 'ativo' || st === 'em seguimento') out[key].ativos++;
+    if ((st.indexOf('falha') >= 0 && st.indexOf('triagem') >= 0) || st.indexOf('screen fail') >= 0) {
+      out[key].falhasTriagem++;
+    }
+  });
+  return out;
 }
 
 function isProjetoAtivoEstoque_(status) {
@@ -1130,11 +1165,11 @@ function isProjetoAtivoEstoque_(status) {
 function getProjetosAtivosEstoque_() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projetos');
   if (!sh || sh.getLastRow() < 2) return [];
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(13, sh.getLastColumn())).getValues();
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(14, sh.getLastColumn())).getValues();
   var seen = {}, out = [];
   rows.forEach(function(r) {
     var nome = String(r[1] || r[2] || '').trim();
-    if (!nome || !isProjetoAtivoEstoque_(r[12])) return;
+    if (!nome || !isProjetoAtivoEstoque_(r[13])) return;
     if (!seen[nome]) {
       seen[nome] = 1;
       out.push(nome);
@@ -1152,7 +1187,7 @@ function salvarDadosProjeto(dados) {
     var rows = aba.getDataRange().getValues();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(dados.id)) {
-        aba.getRange(i + 1, 2, 1, 12).setValues([[
+        aba.getRange(i + 1, 2, 1, 13).setValues([[
           dados.nomeAbreviado || '',
           dados.codigo        || '',
           dados.especialidade || '',
@@ -1164,6 +1199,7 @@ function salvarDadosProjeto(dados) {
           dados.patrocinador  || '',
           dados.cro           || '',
           dados.coordenador   || '',
+          dados.metaRecrutamento || '',
           dados.status        || ''
         ]]);
         return 'Projeto atualizado com sucesso!';
@@ -1185,6 +1221,7 @@ function salvarDadosProjeto(dados) {
       dados.patrocinador  || '',
       dados.cro           || '',
       dados.coordenador   || '',
+      dados.metaRecrutamento || '',
       dados.status        || ''
     ]);
     return 'Projeto cadastrado com sucesso!';
@@ -1401,6 +1438,11 @@ function getDashboardData() {
         patrocinador:  str(p.patrocinador),
         cro:           str(p.cro),
         coordenador:   str(p.coordenador),
+        metaRecrutamento: str(p.metaRecrutamento),
+        participantesAtivos: p.participantesAtivos || 0,
+        falhasTriagem: p.falhasTriagem || 0,
+        totalParticipantes: p.totalParticipantes || 0,
+        percentualRecrutamento: p.percentualRecrutamento || '',
         status:        str(p.status)
       };
     });
