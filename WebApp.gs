@@ -468,7 +468,7 @@ function buscarParticipantesRequisicao() {
       .map(function(row) {
         const projeto    = row[5] ? row[5].toString().trim() : '';
         const nascimento = row[2] instanceof Date
-          ? Utilities.formatDate(row[2], 'GMT-3', 'dd/MM/yyyy')
+          ? formatarDataMesCurtoPt_(row[2])
           : (row[2] ? row[2].toString() : '');
         return {
           nome:      row[1].toString().trim(),
@@ -637,14 +637,15 @@ function _exportarPDFWebApp(sheet, ss) {
     throw new Error('Data de agendamento inválida. Verifique o campo de data e tente novamente.');
   }
 
-  var dataFormatada   = Utilities.formatDate(dataAgendamento, 'GMT-3', 'dd-MM-yyyy');
+  var dataFormatada   = formatarDataMesCurtoPt_(dataAgendamento);
+  var dataArquivo     = formatarDataMesCurtoPt_(dataAgendamento, '-');
   var paciente        = sheet.getRange('E8').getValue();
   var pacienteLimpo   = limparNome(paciente);
   var dataNascRaw     = sheet.getRange('E9').getValue();
   var dataNasc        = (dataNascRaw instanceof Date)
-    ? Utilities.formatDate(dataNascRaw, 'GMT-3', 'dd/MM/yyyy') : dataNascRaw;
+    ? formatarDataMesCurtoPt_(dataNascRaw) : dataNascRaw;
   var medico          = sheet.getRange('H9').getValue();
-  var nomeArquivo     = 'IPS-UCS - ' + pacienteLimpo + ' - ' + dataFormatada + '.pdf';
+  var nomeArquivo     = 'IPS-UCS - ' + pacienteLimpo + ' - ' + dataArquivo + '.pdf';
   var pesquisaClinica = sheet.getRange('H8').getDisplayValue();
   var urgente         = sheet.getRange('I5').getValue();
   var urgenteTag      = urgente
@@ -758,14 +759,15 @@ function exportarPDF() {
     return;
   }
 
-  var dataFormatada   = Utilities.formatDate(dataAgendamento, 'GMT-3', 'dd-MM-yyyy');
+  var dataFormatada   = formatarDataMesCurtoPt_(dataAgendamento);
+  var dataArquivo     = formatarDataMesCurtoPt_(dataAgendamento, '-');
   var paciente        = sheet.getRange('E8').getValue();
   var pacienteLimpo   = limparNome(paciente);
   var dataNascRaw     = sheet.getRange('E9').getValue();
   var dataNasc        = (dataNascRaw instanceof Date)
-    ? Utilities.formatDate(dataNascRaw, 'GMT-3', 'dd/MM/yyyy') : dataNascRaw;
+    ? formatarDataMesCurtoPt_(dataNascRaw) : dataNascRaw;
   var medico          = sheet.getRange('H9').getValue();
-  var nomeArquivo     = 'IPS-UCS - ' + pacienteLimpo + ' - ' + dataFormatada + '.pdf';
+  var nomeArquivo     = 'IPS-UCS - ' + pacienteLimpo + ' - ' + dataArquivo + '.pdf';
   var pesquisaClinica = sheet.getRange('H8').getDisplayValue();
   var urgente         = sheet.getRange('I5').getValue();
   var urgenteTag      = urgente
@@ -835,7 +837,7 @@ function gerarReqExamesEmailHtml_(dados) {
     '<p>Importante: Informamos que o pagamento deste exame será realizado por meio de nosso processo de faturamento de rotina.</p>' +
     '<p>Agradecemos a atenção e aguardamos a confirmação do agendamento.</p>' +
     '<p>Atenciosamente,</p>' +
-    (dados.signature || '') +
+    (dados.signature ? '<div style="margin-top:12px;">' + dados.signature + '</div>' : '') +
     '</div>';
 }
 
@@ -849,14 +851,10 @@ function gerarTabelaEmailGenerica_(rows) {
 
 function getGmailSignature() {
   try {
-    var sendAs = Gmail.Users.Settings.SendAs.list('me').sendAs;
+    var sendAs = Gmail.Users.Settings.SendAs.list('me').sendAs || [];
     for (var i = 0; i < sendAs.length; i++) {
       if (sendAs[i].isDefault) {
-        var sig      = sendAs[i].signature;
-        var imageUrl = 'https://www.ucs.br/ips/wp-content/uploads/2024/08/email_signature_ips2024.png';
-        sig = sig.replace(/<img[^>]+src="[^"]+"[^>]*>/gi, '');
-        sig += '<img src="' + imageUrl + '" alt="Assinatura">';
-        return sig;
+        return sendAs[i].signature || '';
       }
     }
   } catch(e) { return ''; }
@@ -1252,6 +1250,7 @@ function getParticipantes() {
   var sh  = ss.getSheetByName('Participantes');
   var rows = sh.getDataRange().getValues();
   var tz  = Session.getScriptTimeZone();
+  var ultimaVisitaMap = getUltimasVisitasPorPacienteId_();
 
   return rows.slice(1)
     .filter(function(r){ return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
@@ -1272,7 +1271,7 @@ function getParticipantes() {
         idParticipante: String(r[4] || ''),
         projeto:        String(r[5] || ''),
         braco:          String(r[6] || ''),
-        ultimaVisita:   fmtDate(r[7]),
+        ultimaVisita:   getUltimaVisitaFromMap_(r[1], ultimaVisitaMap),
         status:         String(r[8] || ''),
         telefone:       String(r[9] || ''),
         cpf:            String(r[10] || ''),
@@ -3867,6 +3866,46 @@ function getInfoParticipante(nome) {
   return null;
 }
 
+function getUltimaVisita(pacienteID) {
+  return getUltimaVisitaFromMap_(pacienteID, getUltimasVisitasPorPacienteId_());
+}
+
+function getUltimaVisitaFromMap_(pacienteID, mapa) {
+  var key = normText_(pacienteID);
+  if (!key) return '---';
+  return String((mapa || {})[key] || '---');
+}
+
+function getUltimasVisitasPorPacienteId_() {
+  var out = {};
+  try {
+    var agenda = getAgendaSheet_();
+    var lastRow = agenda.getLastRow();
+    if (lastRow < 2) return out;
+    var vals = agenda.getRange(2, 1, lastRow - 1, Math.max(AGENDA_CFG.lastCol, 11)).getValues();
+    vals.forEach(function(r) {
+      var categoria = normText_(r[3]);       // Col D: Categoria / Tipo de evento
+      var status = normText_(r[4]);          // Col E: Status
+      var paciente = normText_(r[5]);        // Col F: Paciente / Participante
+      if (!paciente || categoria !== 'visita') return;
+      if (status !== 'realizado' && status !== 'concluido') return;
+      var data = agendaDateFromValue_(r[1]); // Col B: Data
+      if (!data) return;
+      var visita = String(r[10] == null ? '' : r[10]).trim(); // Col K: Nome da visita
+      if (!visita) visita = '---';
+      if (!out[paciente] || data.getTime() > out[paciente].data.getTime()) {
+        out[paciente] = { data: data, visita: visita };
+      }
+    });
+  } catch(e) {
+    return {};
+  }
+  Object.keys(out).forEach(function(k) {
+    out[k] = String(out[k].visita || '---');
+  });
+  return out;
+}
+
 function calcularIdadeAgenda_(valor) {
   var nasc = agendaDateFromValue_(valor);
   if (!nasc) return '';
@@ -3911,14 +3950,16 @@ function getUltimasVisitasParticipantesAgendaMap_() {
     vals.forEach(function(r) {
       var participante = normText_(r[idx.participante]);
       if (!participante) return;
-      if (!isAgendaTipoVisita_(r[idx.tipo])) return;
+      if (normText_(r[idx.tipo]) !== 'visita') return;
+      var status = normText_(r[idx.status]);
+      if (status !== 'realizado' && status !== 'concluido') return;
       var dt = agendaDateFromValue_(r[idx.data]);
       if (!dt || dt.getTime() > hoje.getTime()) return;
       if (!out[participante] || dt.getTime() > out[participante].dataObj.getTime()) {
         out[participante] = {
           dataObj: dt,
           data: formatarDataSafe(r[idx.data]),
-          visita: String(r[idx.visita] || '')
+          visita: String(r[idx.visita] || '---')
         };
       }
     });
@@ -4043,7 +4084,7 @@ function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
   }
   var valor = '';
   if (enviado) {
-    valor = 'Enviado ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+    valor = 'Enviado ' + formatarDataHoraMesCurtoPt_(new Date());
   }
   agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue(valor);
   SpreadsheetApp.flush();
@@ -4279,6 +4320,7 @@ function agendaRowToObject_(r, rowIndex) {
     status: String(r[i.status] || ''),
     participante: String(r[i.participante] || ''),
     nascimento: formatarDataSafe(r[i.nasc]),
+    idade: calcularIdadeAgenda_(r[i.nasc]),
     idParticipante: String(r[i.idParticipante] || ''),
     projeto: String(r[i.projeto] || ''),
     braco: String(r[i.braco] || ''),
@@ -4507,9 +4549,43 @@ function rastrearEMoverFoco(sheet, id, col) {
 function formatarDataSafe(valor) {
   if (!valor) return '';
   if (valor instanceof Date && !isNaN(valor.getTime())) {
-    return Utilities.formatDate(valor, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+    return formatarDataMesCurtoPt_(valor);
   }
   return String(valor);
+}
+
+function formatarDataMesCurtoPt_(valor, separador) {
+  if (!valor) return '';
+  var sep = separador || '/';
+  if (!(valor instanceof Date)) {
+    var texto = String(valor || '').trim().toLowerCase();
+    var partes = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (partes) {
+      return ('0' + Number(partes[1])).slice(-2) + sep + ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'][Number(partes[2]) - 1] + sep + partes[3];
+    }
+    partes = texto.match(/^(\d{1,2})\/([a-z.]{3,5})\/(\d{4})$/i);
+    if (partes) {
+      var mapa = { 'jan':1,'jan.':1,'fev':2,'fev.':2,'mar':3,'mar.':3,'abr':4,'abr.':4,'mai':5,'mai.':5,'jun':6,'jun.':6,'jul':7,'jul.':7,'ago':8,'ago.':8,'set':9,'set.':9,'out':10,'out.':10,'nov':11,'nov.':11,'dez':12,'dez.':12 };
+      var mesNum = mapa[partes[2]];
+      if (mesNum) return ('0' + Number(partes[1])).slice(-2) + sep + ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'][mesNum - 1] + sep + partes[3];
+    }
+  }
+  var d = valor instanceof Date ? valor : new Date(valor);
+  if (!(d instanceof Date) || isNaN(d.getTime())) return String(valor);
+
+  var meses = ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'];
+  var tz = Session.getScriptTimeZone();
+  var dia = Utilities.formatDate(d, tz, 'dd');
+  var mes = meses[Number(Utilities.formatDate(d, tz, 'M')) - 1] || '';
+  var ano = Utilities.formatDate(d, tz, 'yyyy');
+  return dia + sep + mes + sep + ano;
+}
+
+function formatarDataHoraMesCurtoPt_(valor) {
+  if (!valor) return '';
+  var d = valor instanceof Date ? valor : new Date(valor);
+  if (!(d instanceof Date) || isNaN(d.getTime())) return String(valor);
+  return formatarDataMesCurtoPt_(d) + ' ' + Utilities.formatDate(d, Session.getScriptTimeZone(), 'HH:mm');
 }
 
 function formatarHoraSafe_(valor) {

@@ -641,6 +641,10 @@
     .solicitante-card .sol-detail { font-size: 12px; color: var(--text-muted); }
     .ac-loading { padding: 10px 12px; font-size: 12px; color: var(--text-faint); display: flex; align-items: center; gap: 8px; }
     .ac-spin { width: 14px; height: 14px; border: 2px solid #e8edf8; border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+    .req-actions{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+    .req-actions .btn-save,.req-actions .ag-tb-btn{display:inline-flex;align-items:center;justify-content:center;line-height:1;height:48px;margin-top:0}
+    .req-actions .btn-save{flex:1 1 260px;max-width:360px;width:auto}
+    .req-actions .ag-tb-btn{flex:0 0 auto}
     /* DASHBOARD */
     .dash-grid{display:grid;gap:16px}.dash-grid-2{grid-template-columns:1fr 1fr}.dash-grid-4{grid-template-columns:repeat(4,1fr)}
     .chart-card{background:var(--surface);border:1px solid #e8edf8;border-radius:var(--r-lg);padding:20px 22px}
@@ -718,6 +722,14 @@
     .ag-l3{font-size:11.5px;color:var(--text-faint)}.ag-l3 .sep{color:#dde2ea}
     .ag-meta-text{font-size:12px;color:#475569;display:flex;align-items:center;gap:5px}
     .ag-meta-text .material-symbols-outlined{font-size:14px;color:#94a3b8}
+    .ag-birth-age{display:inline-flex;align-items:flex-start;gap:5px;color:#475569;line-height:1.15}
+    .ag-birth-age .material-symbols-outlined{font-size:14px;color:#94a3b8;margin-top:1px}
+    .ag-birth-age-text{display:flex;flex-direction:column;gap:2px}
+    .ag-birth-age-date{font-size:12px;color:#475569}
+    .ag-birth-age-years{font-size:10.5px;color:#9aa3b0}
+    .ag-part-info-birth{display:inline-flex;vertical-align:middle;align-items:flex-start;gap:5px;margin-right:12px}
+    .ag-part-info-birth .ag-birth-age-date{font-size:12.5px;font-weight:700;color:#334155}
+    .ag-part-info-birth .ag-birth-age-years{font-size:11px;color:#8a96a8}
     .ag-appt-name{font-size:14px;font-weight:700;color:var(--text)}.ag-appt.st-cancelado .ag-appt-name{text-decoration:line-through;color:var(--text-faint)}
     .ag-proj-chip,.ag-visit-chip,.ag-mon-chip,.ag-cro-chip,.ag-braco-tag,.ag-lab-ind,.ag-type-chip{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700}
     .ag-proj-chip{background:var(--primary-light);color:var(--primary);border:1px solid rgba(18,102,241,.28)}
@@ -1526,6 +1538,7 @@
             <tr>
               <th style="width:36px;"></th>
               <th>Participante</th>
+              <th>Data de Nascimento</th>
               <th>Projeto</th>
               <th>Status</th>
               <th>Última Visita Realizada</th>
@@ -1533,7 +1546,7 @@
             </tr>
           </thead>
           <tbody id="bodyParticipantes">
-            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="7"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>
@@ -1813,11 +1826,11 @@
             <textarea id="rqObs" class="f-textarea" placeholder="Informações adicionais, jejum, preparo especial…"></textarea>
           </div>
           <!-- Botão salvar -->
-          <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap">
-          <button class="btn-save" id="btnSalvarReq" onclick="salvarRequisicao()" style="flex:1 1 260px;max-width:360px;align-self:center">
+          <div class="req-actions">
+          <button class="btn-save" id="btnSalvarReq" onclick="salvarRequisicao()">
             <span class="material-symbols-outlined">print</span> GERAR REQUISIÇÃO
           </button>
-          <button class="ag-tb-btn" type="button" onclick="limparRequisicaoForm()" title="Limpar formulario" style="height:48px;align-self:center"><span class="material-symbols-outlined">cleaning_services</span> Limpar</button>
+          <button class="ag-tb-btn" type="button" onclick="limparRequisicaoForm()" title="Limpar formulario"><span class="material-symbols-outlined">cleaning_services</span> Limpar</button>
           </div>
           <div class="status-msg" id="statusReq"></div>
         </div>
@@ -3316,6 +3329,40 @@ function dateFromISO(iso) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function formatDateBr(dateString) {
+  if (!dateString) return '';
+  var meses = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+  var raw = String(dateString).trim();
+  var m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return ('0' + Number(m[3])).slice(-2) + '/' + meses[Number(m[2]) - 1] + '/' + m[1];
+  m = raw.toLowerCase().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return ('0' + Number(m[1])).slice(-2) + '/' + meses[Number(m[2]) - 1] + '/' + m[3];
+  m = raw.toLowerCase().match(/^(\d{1,2})\/([a-z.]{3,5})\/(\d{4})$/);
+  if (m) {
+    var mapa = { 'jan':1,'jan.':1,'fev':2,'fev.':2,'mar':3,'mar.':3,'abr':4,'abr.':4,'mai':5,'mai.':5,'jun':6,'jun.':6,'jul':7,'jul.':7,'ago':8,'ago.':8,'set':9,'set.':9,'out':10,'out.':10,'nov':11,'nov.':11,'dez':12,'dez.':12 };
+    var mes = mapa[m[2]];
+    return mes ? ('0' + Number(m[1])).slice(-2) + '/' + meses[mes - 1] + '/' + m[3] : raw;
+  }
+  var d = new Date(raw);
+  return isNaN(d.getTime()) ? raw : ('0' + d.getDate()).slice(-2) + '/' + meses[d.getMonth()] + '/' + d.getFullYear();
+}
+
+function dateToInputValue(dateString) {
+  if (!dateString) return '';
+  var raw = String(dateString).trim();
+  var m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + ('0' + Number(m[2])).slice(-2) + '-' + ('0' + Number(m[3])).slice(-2);
+  m = raw.toLowerCase().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return m[3] + '-' + ('0' + Number(m[2])).slice(-2) + '-' + ('0' + Number(m[1])).slice(-2);
+  m = raw.toLowerCase().match(/^(\d{1,2})\/([a-z.]{3,5})\/(\d{4})$/);
+  if (m) {
+    var mapa = { 'jan':1,'jan.':1,'fev':2,'fev.':2,'mar':3,'mar.':3,'abr':4,'abr.':4,'mai':5,'mai.':5,'jun':6,'jun.':6,'jul':7,'jul.':7,'ago':8,'ago.':8,'set':9,'set.':9,'out':10,'out.':10,'nov':11,'nov.':11,'dez':12,'dez.':12 };
+    var mes = mapa[m[2]];
+    return mes ? m[3] + '-' + ('0' + mes).slice(-2) + '-' + ('0' + Number(m[1])).slice(-2) : '';
+  }
+  return '';
+}
+
 function validadeMedicamentoChip(m) {
   if (!m.validade) return '<span style="color:#9aa3b0">—</span>';
   var d = dateFromISO(m.validadeISO);
@@ -3471,22 +3518,28 @@ function chipStatus(s) {
 function renderTabelaPart(lista) {
   var tb = document.getElementById('bodyParticipantes');
   if (!lista.length) {
-    tb.innerHTML='<tr class="empty-row"><td colspan="6">Nenhum participante encontrado.</td></tr>';
+    tb.innerHTML='<tr class="empty-row"><td colspan="7">Nenhum participante encontrado.</td></tr>';
     return;
   }
   tb.innerHTML = lista.map(function(p,idx){
     var ini  = (p.nome||'?')[0].toUpperCase();
     var sStr = JSON.stringify(p).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     var pid  = 'par-row-'+idx;
+    var nascFmt = formatDateBr(p.dataNascimento);
+    var ultimaVisitaFmt = String(p.ultimaVisita || '');
+    var nascIdadeHtml = (nascFmt || p.idade)
+      ? esc(nascFmt || '—') + (p.idade ? '<br><span style="font-size:0.85em;color:#666;">' + esc(p.idade) + ' anos</span>' : '')
+      : '<span style="color:#9aa3b0;">—</span>';
     var r1 = '<tr class="par-main" data-pair="'+pid+'">'
       +'<td style="width:36px;"><div class="row-avatar" style="border-radius:8px;">'+ini+'</div></td>'
       +'<td><div class="row-name">'+esc(p.nome||'—')+'</div>'
       +(p.idParticipante?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">ID: '+esc(p.idParticipante)+'</div>':'')
       +'</td>'
+      +'<td style="color:#5f6b7c;line-height:1.25;">'+nascIdadeHtml+'</td>'
       +'<td><div class="row-name" style="font-size:13px;">'+esc(p.projeto||'—')+'</div>'
       +(p.braco?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">'+esc(p.braco)+'</div>':'')+'</td>'
       +'<td>'+chipStatus(p.status||'—')+'</td>'
-      +'<td style="color:#5f6b7c;">'+esc(p.ultimaVisita||'—')+'</td>'
+      +'<td style="color:#5f6b7c;">'+esc(ultimaVisitaFmt || '---')+'</td>'
       +'<td style="text-align:right;"><div class="action-btns">'
       +'<button class="icon-btn" title="Editar" onclick=\'abrirFormPart('+sStr+')\'>'
       +'<span class="material-symbols-outlined">edit</span></button>'
@@ -3495,12 +3548,11 @@ function renderTabelaPart(lista) {
       +'</div></td></tr>';
     function msIcon(name){ return '<span class="material-symbols-outlined">'+name+'</span>'; }
     var items=[];
-    if(p.dataNascimento) items.push('<span class="det-item">'+msIcon('cake')+'<span>'+esc(p.dataNascimento)+(p.idade?' · '+esc(p.idade)+' anos':'')+'</span></span>');
     if(p.cpf)            items.push('<span class="det-item">'+msIcon('badge')+'<span>'+esc(p.cpf)+'</span></span>');
     if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(p.telefone)+'</span></span>');
     if(p.observacoes)    items.push('<span class="det-item">'+msIcon('notes')+'<span class="det-obs" title="'+esc(p.observacoes)+'">'+esc(p.observacoes)+'</span></span>');
     var r2='<tr class="par-detail" data-pair="'+pid+'">'
-      +'<td colspan="6" style="padding:3px 20px 12px;background:#fafbff;">'
+      +'<td colspan="7" style="padding:3px 20px 12px;background:#fafbff;">'
       +(items.length
         ?'<div class="par-detail-items">'+items.join('')+'</div>'
         :'<div style="padding-left:65px;font-size:12px;color:#c0c8d8;font-style:italic;">Sem informações adicionais</div>')
@@ -3542,7 +3594,7 @@ function abrirFormPart(p) {
     document.getElementById('editPartId').value       = p.id||'';
     document.getElementById('ptNome').value           = p.nome||'';
     document.getElementById('ptId').value             = p.idParticipante||'';
-    document.getElementById('ptNasc').value           = p.dataNascimento||'';
+    document.getElementById('ptNasc').value           = dateToInputValue(p.dataNascimento)||'';
     document.getElementById('ptCpf').value            = p.cpf||'';
     document.getElementById('ptProjeto').value        = p.projeto||'';
     document.getElementById('ptBraco').value          = p.braco||'';
@@ -8007,9 +8059,8 @@ function confirmarExcluirPrestador(id, nome) {
         atualizarAgendaProjetoLock();
         agendaMatBioUpdateAllCopyOptions();
         info.innerHTML =
-          '<b>Nascimento:</b> ' + esc(p.nascimento || '-') +
-          ' &nbsp; <b>Idade:</b> ' + esc(p.idade ? p.idade + ' anos' : '-') +
-          ' &nbsp; <b>ID:</b> ' + esc(p.numId || '-') +
+          agendaBirthAgeHtml(p.nascimento, p.idade, 'ag-part-info-birth') +
+          '<b>ID:</b> ' + esc(p.numId || '-') +
           ' &nbsp; <b>Braço:</b> ' + esc(p.braco || '-') +
           ' &nbsp; <b>Data da Última Visita Realizada:</b> ' + esc(p.ultimaVisitaData || '-') +
           ' &nbsp; <b>Visita:</b> ' + esc(p.ultimaVisitaId || '-');
@@ -8739,7 +8790,7 @@ function confirmarExcluirPrestador(id, nome) {
           '<div class="ag-l1"><span class="ag-appt-name">' + esc(titulo) + '</span>' + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
           '<div class="ag-l2">' + tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.servTerc ? agendaReqChip(r) : '') + '</div>' +
           (r.visita || r.braco ? '<div class="ag-l2">' + agendaMetaText('flag', r.visita ? 'Visita ' + r.visita : '') + agendaMetaText('call_split', r.braco ? 'Braço ' + r.braco : '') + '</div>' : '') +
-          '<div class="ag-l3">' + (isMon ? agendaLineItem('visibility', r.monitorName) : agendaLineItem('cake', r.nascimento) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '')) + '</div>' +
+          '<div class="ag-l3">' + (isMon ? agendaLineItem('visibility', r.monitorName) : agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '')) + '</div>' +
           (r.procedimentos ? '<div class="ag-proc-preview">' + esc(r.procedimentos) + '</div>' : '') +
         '</div>' +
         (sideHtml ? '<div class="ag-appt-side">' + sideHtml + '</div>' : '') +
@@ -9009,6 +9060,18 @@ function confirmarExcluirPrestador(id, nome) {
     return v ? '<span><span class="material-symbols-outlined" style="font-size:13px;vertical-align:-2px">' + icon + '</span> ' + esc(v) + '</span>' : '';
   }
 
+  function agendaBirthAgeHtml(nascimento, idade, extraClass) {
+    if (!nascimento && !idade) return '';
+    var idadeTxt = idade ? esc(idade) + ' anos' : '';
+    return '<span class="ag-birth-age ' + esc(extraClass || '') + '">' +
+      '<span class="material-symbols-outlined">cake</span>' +
+      '<span class="ag-birth-age-text">' +
+        '<span class="ag-birth-age-date">' + esc(nascimento || '-') + '</span>' +
+        (idadeTxt ? '<span class="ag-birth-age-years">' + idadeTxt + '</span>' : '') +
+      '</span>' +
+    '</span>';
+  }
+
   function agendaMetaText(icon, v) {
     return v ? '<span class="ag-meta-text"><span class="material-symbols-outlined">' + icon + '</span>' + esc(v) + '</span>' : '';
   }
@@ -9024,8 +9087,14 @@ function confirmarExcluirPrestador(id, nome) {
   }
 
   function agendaIsoFromBr(s) {
-    var m = String(s || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    return m ? m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2) : '';
+    var txt = String(s || '').trim().toLowerCase();
+    var m = txt.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+    m = txt.match(/^(\d{1,2})\/([a-zç.]{3,5})\/(\d{4})$/i);
+    if (!m) return '';
+    var meses = { 'jan':1,'jan.':1,'fev':2,'fev.':2,'mar':3,'mar.':3,'abr':4,'abr.':4,'mai':5,'mai.':5,'jun':6,'jun.':6,'jul':7,'jul.':7,'ago':8,'ago.':8,'set':9,'set.':9,'out':10,'out.':10,'nov':11,'nov.':11,'dez':12,'dez.':12 };
+    var mes = meses[m[2]];
+    return mes ? m[3] + '-' + ('0' + mes).slice(-2) + '-' + ('0' + m[1]).slice(-2) : '';
   }
 
   function agendaDateFromIso(iso) {
@@ -9039,8 +9108,8 @@ function confirmarExcluirPrestador(id, nome) {
   }
 
   function agendaFmtShort(d) {
-    var meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    return ('0' + d.getDate()).slice(-2) + ' ' + meses[d.getMonth()];
+    var meses = ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'];
+    return ('0' + d.getDate()).slice(-2) + '/' + meses[d.getMonth()] + '/' + d.getFullYear();
   }
 
   function agendaWeekday(d) {
@@ -9053,7 +9122,7 @@ function confirmarExcluirPrestador(id, nome) {
   }
 
   function agendaDayShortLabel(d) {
-    var meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    var meses = ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'];
     return d.getDate() + ' ' + meses[d.getMonth()];
   }
 
