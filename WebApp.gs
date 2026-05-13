@@ -3598,12 +3598,12 @@ function salvarMedicamentoRecebido(payload) {
 // ============================================================================
 var AGENDA_CFG = {
   abaNomes: ['\uD83D\uDCC5 Agenda', 'Agenda'],
-  lastCol: 44,
+  lastCol: 46,
   col: {
     id: 1, data: 2, hora: 3, tipo: 4, status: 5, participante: 6,
     nasc: 7, idParticipante: 8, projeto: 9, braco: 10, visita: 11,
     medico: 12, procedimentos: 13, servTerc: 14, obs: 15,
-    labCentral: 16, controle: 17, kit: 18
+    labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46
   },
   idx: {
     id: 0, data: 1, hora: 2, tipo: 3, status: 4, participante: 5,
@@ -3613,13 +3613,14 @@ var AGENDA_CFG = {
     c1: { nome: 18, temp: 19, status: 20, awb: 21, material: 22, destino: 36, matBio: 40 },
     c2: { nome: 23, temp: 24, status: 25, awb: 26, material: 27, destino: 37, matBio: 41 },
     c3: { nome: 28, temp: 29, status: 30, awb: 31, material: 32, destino: 38, matBio: 42 },
-    cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43 }
+    cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43 },
+    reqStatus: 44, monitorName: 45
   }
 };
 
 var CFG = typeof CFG !== 'undefined' ? CFG : {
   abaNome: '\uD83D\uDCC5 Agenda',
-  lastCol: 44,
+  lastCol: 46,
   colTerc: 14,
   colGatilho: 16,
   colControle: 17,
@@ -3641,6 +3642,7 @@ function getAgendaSheet_() {
   var sh = getSheetByPossibleNames_(ss, AGENDA_CFG.abaNomes);
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
   ensureAgendaDestinoLabColumns_(sh);
+  alinharStatusRequisicaoLegadoAgenda_(sh);
   return sh;
 }
 
@@ -3656,7 +3658,9 @@ function ensureAgendaDestinoLabColumns_(sh) {
     { col: AGENDA_CFG.idx.c1.matBio + 1, label: 'Material biológico estruturado I' },
     { col: AGENDA_CFG.idx.c2.matBio + 1, label: 'Material biológico estruturado II' },
     { col: AGENDA_CFG.idx.c3.matBio + 1, label: 'Material biológico estruturado III' },
-    { col: AGENDA_CFG.idx.cb.matBio + 1, label: 'Material biológico estruturado Backup' }
+    { col: AGENDA_CFG.idx.cb.matBio + 1, label: 'Material biológico estruturado Backup' },
+    { col: AGENDA_CFG.col.reqStatus, label: 'Status_Requisicao' },
+    { col: AGENDA_CFG.col.monitorName, label: 'Monitor_Name' }
   ];
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
@@ -3965,6 +3969,19 @@ function atualizarAgendaEventoCompleto(dados) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
+  var isMonitoria = normText_(tipo) === 'monitoria';
+  if (isMonitoria) {
+    dados.participante = '';
+    dados.visita = '';
+    dados.medico = '';
+    dados.procedimentos = '';
+    dados.servTerc = '';
+    dados.statusRequisicao = '';
+    labCentral = 'Não aplicável';
+  } else {
+    dados.monitorName = '';
+  }
+  if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
   var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem'];
   if (tiposNaoLab.indexOf(normText_(tipo)) > -1) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (normText_(labCentral) === 'sim' && !String(dados.visita || '').trim()) {
@@ -3985,6 +4002,8 @@ function atualizarAgendaEventoCompleto(dados) {
   agenda.getRange(linha, AGENDA_CFG.col.obs).setValue(dados.obs || '');
   agenda.getRange(linha, AGENDA_CFG.col.labCentral).setValue(labCentral);
   agenda.getRange(linha, AGENDA_CFG.col.kit).setValue(dados.kit || '');
+  agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue(dados.statusRequisicao || '');
+  agenda.getRange(linha, AGENDA_CFG.col.monitorName).setValue(dados.monitorName || '');
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
@@ -4010,6 +4029,25 @@ function cancelarAgendaEvento(id) {
   verificarNotificacoes({ source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() }, id, null);
   SpreadsheetApp.flush();
   return { ok: true, id: id, status: 'Cancelado' };
+}
+
+function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
+  var agenda = getAgendaSheet_();
+  var linha = encontrarLinhaPorId(agenda, agendaId);
+  if (!linha) throw new Error('Agendamento nao encontrado para atualizar requisicao.');
+  var prestador = String(agenda.getRange(linha, AGENDA_CFG.col.servTerc).getValue() || '').trim();
+  if (!prestador) {
+    agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue('');
+    SpreadsheetApp.flush();
+    return { ok: true, id: agendaId, statusRequisicao: '', semPrestador: true };
+  }
+  var valor = '';
+  if (enviado) {
+    valor = 'Enviado ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  }
+  agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue(valor);
+  SpreadsheetApp.flush();
+  return { ok: true, id: agendaId, statusRequisicao: valor };
 }
 
 function marcarAgendaPassadaComoRealizada() {
@@ -4052,6 +4090,19 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
+  var isMonitoria = normText_(tipo) === 'monitoria';
+  if (isMonitoria) {
+    dados.participante = '';
+    dados.visita = '';
+    dados.medico = '';
+    dados.procedimentos = '';
+    dados.servTerc = '';
+    dados.statusRequisicao = '';
+    labCentral = 'Não aplicável';
+  } else {
+    dados.monitorName = '';
+  }
+  if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
   var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem'];
   if (tiposNaoLab.indexOf(normText_(tipo)) > -1) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (normText_(labCentral) === 'sim' && !String(dados.visita || '').trim()) {
@@ -4074,6 +4125,8 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agenda.getRange(linhaNova, AGENDA_CFG.col.obs).setValue(dados.obs || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral).setValue(labCentral);
   agenda.getRange(linhaNova, AGENDA_CFG.col.kit).setValue(dados.kit || '');
+  agenda.getRange(linhaNova, AGENDA_CFG.col.reqStatus).setValue(dados.statusRequisicao || '');
+  agenda.getRange(linhaNova, AGENDA_CFG.col.monitorName).setValue(dados.monitorName || '');
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c3, dados.courier3);
@@ -4237,6 +4290,8 @@ function agendaRowToObject_(r, rowIndex) {
     labCentral: String(r[i.labCentral] || ''),
     controle: String(r[i.controle] || ''),
     kit: String(r[i.kit] || ''),
+    statusRequisicao: String(r[i.reqStatus] || ''),
+    monitorName: String(r[i.monitorName] || ''),
     courier1: agendaCourierToObject_(r, i.c1),
     courier2: agendaCourierToObject_(r, i.c2),
     courier3: agendaCourierToObject_(r, i.c3),
@@ -4639,6 +4694,26 @@ function isConfigAppDefaultSeed_(row) {
   return defaults.some(function(d) {
     return normText_(d[0]) === grupo && normText_(d[1]) === chave && normText_(d[2]) === valor;
   });
+}
+
+function alinharStatusRequisicaoLegadoAgenda_(sh) {
+  if (!sh || sh.getLastRow() < 2) return;
+  var props = PropertiesService.getDocumentProperties();
+  if (props.getProperty('agendaReqStatusLegacyAligned') === '1') return;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+  var updates = [];
+  rows.forEach(function(r, idx) {
+    var obs = normText_(r[AGENDA_CFG.idx.obs]);
+    var prestador = String(r[AGENDA_CFG.idx.servTerc] || '').trim();
+    var atual = String(r[AGENDA_CFG.idx.reqStatus] || '').trim();
+    if (prestador && obs.indexOf('requi') > -1 && obs.indexOf('ok') > -1 && !atual) {
+      updates.push({ row: idx + 2, value: 'Requisição Enviada' });
+    }
+  });
+  updates.forEach(function(u) {
+    sh.getRange(u.row, AGENDA_CFG.col.reqStatus).setValue(u.value);
+  });
+  props.setProperty('agendaReqStatusLegacyAligned', '1');
 }
 
 function getConfigAppDefaultSeeds_() {
