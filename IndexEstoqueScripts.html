@@ -1,0 +1,2233 @@
+<script>
+
+  // ===================== VISUALIZAÇÃO DO ESTOQUE =====================
+  var evItens = [];
+
+  function carregarEstoqueView() {
+    document.getElementById('evBody').innerHTML =
+      '<tr class="loading-row"><td colspan="11"><div class="spinner"></div>Carregando...</td></tr>';
+    google.script.run
+      .withSuccessHandler(function(res) { evRender((res && res.data) || res); })
+      .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+      .getEstoqueBootstrapData('estoque-view');
+  }
+
+  function evRender(lista) {
+    evItens = lista || [];
+    var projs = {}, tipos = {}, status = {};
+    evItens.forEach(function(i) {
+      if (i.projeto) projs[i.projeto] = 1;
+      if (i.tipo) tipos[i.tipo] = 1;
+      if (i.status) status[i.status] = 1;
+    });
+    var sel = document.getElementById('evFilterProjeto');
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">Todos os projetos</option>' +
+      Object.keys(projs).sort().map(function(p) {
+        return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+      }).join('');
+    sel.value = cur;
+    var selTipo = document.getElementById('evFilterTipo');
+    var curTipo = selTipo.value;
+    selTipo.innerHTML = '<option value="">Todos os tipos</option>' +
+      Object.keys(tipos).sort().map(function(t) {
+        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+      }).join('');
+    selTipo.value = curTipo;
+    var selStatus = document.getElementById('evFilterStatus');
+    var curStatus = selStatus.value;
+    selStatus.innerHTML = '<option value="">Todos os status</option>' +
+      Object.keys(status).sort().map(function(s) {
+        return '<option value="' + esc(s) + '">' + esc(s) + '</option>';
+      }).join('');
+    selStatus.value = curStatus;
+    evStats(evItens);
+    evFiltrar();
+  }
+
+  function evStats(lista) {
+    var ok = 0, baixo = 0, critico = 0, pend = 0;
+    lista.forEach(function(it) {
+      var n = evNivel(it);
+      if (n === 'ok') ok++;
+      else if (n === 'baixo') baixo++;
+      else if (n === 'critico') critico++;
+      if (it.qtdePedidaPendente && Number(it.qtdePedidaPendente) > 0) pend++;
+    });
+    document.getElementById('evStatTotal').textContent    = lista.length;
+    document.getElementById('evStatOk').textContent       = ok;
+    document.getElementById('evStatBaixo').textContent    = baixo;
+    document.getElementById('evStatCritico').textContent  = critico;
+    document.getElementById('evStatPendente').textContent = pend;
+  }
+
+  function evNivel(it) {
+    var q   = Number(it.qtde);
+    var min = Number(it.estoqueMinimo);
+    if (isNaN(q)) return 'desconhecido';
+    if (q <= 0)   return 'critico';
+    if (!isNaN(min) && min > 0) {
+      if (q <= min)       return 'critico';
+      if (q <= min * 1.5) return 'baixo';
+    }
+    return 'ok';
+  }
+
+  function evFiltrar() {
+    var q      = document.getElementById('evSearch').value.toLowerCase().trim();
+    var proj   = document.getElementById('evFilterProjeto').value.toLowerCase();
+    var tipo   = document.getElementById('evFilterTipo').value.toLowerCase();
+    var status = document.getElementById('evFilterStatus').value.toLowerCase();
+    var f = evItens.filter(function(it) {
+      if (q && !([it.descricao, it.projeto, it.localizacao, it.idItem, it.numeroPedido, it.responsavel]
+        .join(' ').toLowerCase().includes(q))) return false;
+      if (proj   && (it.projeto  || '').toLowerCase() !== proj)   return false;
+      if (tipo   && (it.tipoItem || '').toLowerCase() !== tipo)   return false;
+      if (status && (it.status   || '').toLowerCase() !== status) return false;
+      return true;
+    });
+    evRenderTabela(f);
+  }
+
+  function evRenderTabela(lista) {
+    var tb = document.getElementById('evBody');
+    if (!lista.length) {
+      tb.innerHTML = '<tr class="empty-row"><td colspan="11">Nenhum item encontrado.</td></tr>';
+      return;
+    }
+    tb.innerHTML = lista.map(function(it, idx) {
+      var uid   = 'ev-' + idx;
+      var nivel = evNivel(it);
+      var qCls  = nivel === 'critico' ? 'color:#b3261e;font-weight:700' :
+                  nivel === 'baixo'   ? 'color:#e65100;font-weight:700' : 'color:#137333;font-weight:700';
+      var vCls  = evValCls(it.validade);
+      var pedPend = (it.qtdePedidaPendente !== '' && Number(it.qtdePedidaPendente) > 0)
+        ? '<span class="chip chip-blue">' + esc(String(it.qtdePedidaPendente)) + '</span>'
+        : '—';
+
+      var r1 = '<tr class="par-main" data-pair="' + uid + '">' +
+        '<td><button style="width:28px;height:28px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-faint);border-radius:var(--r-sm);" onclick="evToggle(\'' + uid + '\')">' +
+          '<span class="material-symbols-outlined" style="font-size:18px;transition:transform .25s;" id="evarw-' + uid + '">chevron_right</span>' +
+        '</button></td>' +
+        '<td><span class="chip chip-blue">' + esc(it.projeto || '—') + '</span></td>' +
+        '<td style="font-weight:500;max-width:220px;">' + esc(it.descricao) + '</td>' +
+        '<td>' + itemTipoChip(it.tipoItem) + '</td>' +
+        '<td style="' + vCls + '">' + esc(it.validade || '—') + '</td>' +
+        '<td style="color:var(--text-muted);">' + esc(it.localizacao || '—') + '</td>' +
+        '<td style="text-align:center;' + qCls + '">' + (it.qtde !== undefined && it.qtde !== "" ? it.qtde : "—") + '</td>' +
+        '<td style="text-align:center;color:var(--text-muted);">' + (it.estoqueMinimo !== undefined && it.estoqueMinimo !== "" ? it.estoqueMinimo : "—") + '</td>' +
+        '<td>' + evChipStatus(it.status) + '</td>' +
+        '<td style="text-align:center;">' + pedPend + '</td>' +
+        '<td style="font-size:11.5px;color:var(--text-muted);">' + evPedidoLink(it.numeroPedido) + '</td>' +
+      '</tr>';
+
+      var r2 = '<tr class="par-detail" id="evdet-' + uid + '" data-pair="' + uid + '" style="display:none;">' +
+        '<td colspan="11" style="padding:4px 0 12px 0;background:#fafbff;">' +
+          '<div style="padding:8px 12px 6px 52px;display:flex;flex-wrap:wrap;gap:6px 28px;">' +
+            '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
+              '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">tag</span>' +
+              '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">ID:</b>&nbsp;' + esc(it.idItem || '—') +
+            '</span>' +
+            '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
+              '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">history</span>' +
+              '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">Última Alteração:</b>&nbsp;' + esc(it.ultimaAlteracao || '—') +
+            '</span>' +
+            '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
+              '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">person</span>' +
+              '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">Responsável:</b>&nbsp;' + esc(it.responsavel || '—') +
+            '</span>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+
+      return r1 + r2;
+    }).join('');
+
+    document.querySelectorAll('#page-estoque-view .par-main, #page-estoque-view .par-detail').forEach(function(tr) {
+      var pair = tr.dataset.pair;
+      tr.addEventListener('mouseenter', function() {
+        document.querySelectorAll('[data-pair="' + pair + '"]').forEach(function(el) { el.classList.add('par-hover'); });
+      });
+      tr.addEventListener('mouseleave', function() {
+        document.querySelectorAll('[data-pair="' + pair + '"]').forEach(function(el) { el.classList.remove('par-hover'); });
+      });
+    });
+  }
+
+  function evToggle(uid) {
+    var det = document.getElementById('evdet-' + uid);
+    var arw = document.getElementById('evarw-' + uid);
+    if (!det) return;
+    var open = det.style.display === 'table-row';
+    document.querySelectorAll('#evBody .par-detail').forEach(function(row) {
+      if (row.id !== 'evdet-' + uid) row.style.display = 'none';
+    });
+    document.querySelectorAll('#evBody [id^="evarw-"]').forEach(function(icon) {
+      if (icon.id !== 'evarw-' + uid) icon.style.transform = '';
+    });
+    det.style.display = open ? 'none' : 'table-row';
+    if (arw) arw.style.transform = open ? '' : 'rotate(90deg)';
+  }
+
+  function evValCls(val) {
+    if (!val || val === '—') return '';
+    try {
+      var p = val.split('/');
+      if (p.length !== 3) return '';
+      var d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+      var hoje = new Date(); hoje.setHours(0,0,0,0);
+      var diff = (d - hoje) / 86400000;
+      if (diff < 0)  return 'color:#b3261e;font-weight:600;';
+      if (diff < 90) return 'color:#e65100;font-weight:500;';
+      return 'color:#137333;';
+    } catch(e) { return ''; }
+  }
+
+  function evChipStatus(s) {
+    if (!s) return '<span style="color:#9aa3b0">—</span>';
+    var n = s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var map = { 'ativo':'chip-green', 'inativo':'chip', 'vencido':'chip-red' };
+    return '<span class="chip ' + (map[n]||'chip') + '">' + esc(s) + '</span>';
+  }
+  // ===================== FIM VISUALIZAÇÃO DO ESTOQUE =====================
+
+  function ensureEstoqueFramePage() {
+    var content = document.querySelector('.content');
+    var page = document.getElementById('page-estoque-app');
+    if (!content) return page;
+    if (!page) {
+      page = document.createElement('div');
+      page.className = 'page';
+      page.id = 'page-estoque-app';
+      page.style.height = '100%';
+      page.innerHTML =
+        '<div id="estoqueInlineShell" style="height:100%;overflow:auto;padding:18px">' +
+          '<div class="stats-row" id="eiStatsRow" style="grid-template-columns:repeat(5,1fr);border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8;margin-bottom:0">' +
+            '<div class="stat-card" id="eiCard1" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0"><div class="stat-value" id="eiStat1">0</div><div class="stat-label" id="eiLabel1">Total</div><div class="stat-icon"><span class="material-symbols-outlined" id="eiIcon1">inventory_2</span></div></div>' +
+            '<div class="stat-card" id="eiCard2" style="--accent:#137333"><div class="stat-value" id="eiStat2">0</div><div class="stat-label" id="eiLabel2">Ativos</div><div class="stat-icon"><span class="material-symbols-outlined" id="eiIcon2">check_circle</span></div></div>' +
+            '<div class="stat-card" id="eiCard3" style="--accent:#e65100"><div class="stat-value" id="eiStat3">0</div><div class="stat-label" id="eiLabel3">Atenção</div><div class="stat-icon"><span class="material-symbols-outlined" id="eiIcon3">warning</span></div></div>' +
+            '<div class="stat-card" id="eiCard4" style="--accent:#b3261e"><div class="stat-value" id="eiStat4">0</div><div class="stat-label" id="eiLabel4">Crítico</div><div class="stat-icon"><span class="material-symbols-outlined" id="eiIcon4">error</span></div></div>' +
+            '<div class="stat-card" id="eiCard5" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0"><div class="stat-value" id="eiStat5">0</div><div class="stat-label" id="eiLabel5">Projetos</div><div class="stat-icon"><span class="material-symbols-outlined" id="eiIcon5">folder_open</span></div></div>' +
+          '</div>' +
+          '<div class="toolbar-card">' +
+            '<div class="search-wrap"><span class="material-symbols-outlined">search</span><input type="text" id="eiSearch" placeholder="Buscar..." oninput="renderEstoqueInline()"></div>' +
+            '<select class="f-input f-select" id="eiRelTipo" onchange="window._relatorioEstoqueTipo=this.value;renderRelatoriosInline()" style="display:none;max-width:230px;height:40px"><option value="estoque">Estoque por projeto</option><option value="validade">Próximos da validade</option><option value="vencidos">Itens vencidos</option></select>' +
+            '<select class="f-input f-select" id="eiPedidoStatus" onchange="renderPedidosInline()" style="display:none;max-width:190px;height:40px"><option value="">Todos os status</option></select>' +
+            '<select class="f-input f-select" id="eiMovTipoFiltro" onchange="renderMovimentacoesInline()" style="display:none;max-width:230px;height:40px"><option value="">Todos os movimentos</option></select>' +
+            '<button class="btn-new" id="eiBtnNovoItem" onclick="abrirFormItemInline()" style="display:none"><span class="material-symbols-outlined">add</span> Novo Item</button>' +
+            '<button class="btn-new" id="eiBtnPlanejarPedido" onclick="abrirPlanejamentoPedidoInline()" style="display:none"><span class="material-symbols-outlined">shopping_cart</span> Planejar Pedido</button>' +
+            '<button class="btn-new" id="eiBtnPlanejarDescarte" onclick="abrirPlanejamentoDescarteInline()" style="display:none;background:#b3261e"><span class="material-symbols-outlined">delete_sweep</span> Preparar Descarte</button>' +
+            '<button class="btn-new" id="eiBtnNovoPedido" onclick="abrirFormPedidoInline()" style="display:none"><span class="material-symbols-outlined">add</span> Novo Pedido</button>' +
+            '<button class="btn-new" id="eiBtnNovaMov" onclick="abrirFormMovInline()" style="display:none"><span class="material-symbols-outlined">add</span> Nova Movimentação</button>' +
+            '<button class="btn-new" id="eiBtnImprimirRel" onclick="imprimirRelatorioEstoque()" style="display:none"><span class="material-symbols-outlined">print</span> Imprimir</button>' +
+            '<button class="btn-new" onclick="carregarEstoqueInline()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)"><span class="material-symbols-outlined">refresh</span> Atualizar</button>' +
+          '</div>' +
+          '<div class="table-card"><table class="data-table" id="eiTable" style="min-width:820px"><thead id="eiHead"></thead><tbody id="eiBody"><tr class="loading-row"><td><div class="spinner"></div>Carregando...</td></tr></tbody></table></div>' +
+        '</div>' +
+        '<div class="modal-overlay" id="modalItemInline" onclick="fecharModalSeClicouFora(event,&quot;modalItemInline&quot;)">' +
+          '<div class="modal-box" style="max-width:700px">' +
+            '<div class="modal-header">' +
+              '<div class="modal-header-icon"><span class="material-symbols-outlined">inventory</span></div>' +
+              '<div><div class="modal-header-title">NOVO ITEM DE ESTOQUE</div><div class="modal-header-sub">Cadastro de item para pedidos e controle de estoque</div></div>' +
+              '<button class="modal-close" onclick="fecharOverlay(&quot;modalItemInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">label</span>Identificação do Item</div>' +
+                '<div class="field-row cols-2" style="margin-bottom:12px">' +
+                  '<div><label class="field-label" for="iiProjeto">Projeto <span class="required-star">*</span></label><select id="iiProjeto" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiProjeto">Selecione um projeto.</div></div>' +
+                  '<div><label class="field-label" for="iiTipo">Tipo <span class="required-star">*</span></label><select id="iiTipo" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiTipo">Selecione um tipo.</div></div>' +
+                '</div>' +
+                '<div style="margin-bottom:12px"><label class="field-label" for="iiDescricao">Descrição do Item <span class="required-star">*</span></label><input type="text" id="iiDescricao" class="f-input large" placeholder="Ex: Standard Bulk Supply Box"><div class="field-error" id="errIiDescricao">Campo obrigatório.</div></div>' +
+                '<div class="field-row cols-2">' +
+                  '<div><label class="field-label" for="iiLaboratorio">Laboratório <span class="required-star">*</span></label><select id="iiLaboratorio" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiLaboratorio">Selecione um laboratório.</div></div>' +
+                  '<div><label class="field-label" for="iiStatus">Status</label><select id="iiStatus" class="f-input f-select"><option>Ativo</option><option>Inativo</option></select></div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">warehouse</span>Controle e Armazenamento</div>' +
+                '<div class="field-row cols-2" style="margin-bottom:12px">' +
+                  '<div><label class="field-label" for="iiLocalizacao">Localização padrão</label><select id="iiLocalizacao" class="f-input f-select"><option value="">— Selecione —</option></select></div>' +
+                  '<div><label class="field-label" for="iiEstoqueMin">Estoque mínimo</label><input type="number" id="iiEstoqueMin" class="f-input" min="0" placeholder="0"></div>' +
+                '</div>' +
+                '<label class="field-label" for="iiObs">Observações</label><textarea id="iiObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Detalhes adicionais do item, condições de armazenamento, uso preferencial..."></textarea>' +
+              '</div>' +
+              '<button class="btn-save" id="btnSalvarItemInline" onclick="salvarItemInline()"><span class="material-symbols-outlined">save</span> Salvar Item</button>' +
+              '<div class="status-msg" id="statusItemInline"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="modal-overlay" id="modalPedidoInline" onclick="fecharModalSeClicouFora(event,&quot;modalPedidoInline&quot;)">' +
+          '<div class="modal-box" style="max-width:760px">' +
+            '<div class="modal-header">' +
+              '<div class="modal-header-icon"><span class="material-symbols-outlined">inventory_2</span></div>' +
+              '<div><div class="modal-header-title">NOVO PEDIDO</div><div class="modal-header-sub">Registro de pedido de estoque</div></div>' +
+              '<button class="modal-close" onclick="fecharOverlay(&quot;modalPedidoInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">assignment</span>Dados do Pedido</div>' +
+                '<div class="field-row cols-2" style="margin-bottom:12px">' +
+                  '<div><label class="field-label" for="piNumero">N° do Pedido <span class="required-star">*</span></label><input type="text" id="piNumero" class="f-input" placeholder="Ex: PED-2026-001"><div class="field-error" id="errPiNumero">Campo obrigatório.</div></div>' +
+                  '<div><label class="field-label" for="piData">Data do Pedido</label><input type="date" id="piData" class="f-input"></div>' +
+                '</div>' +
+                '<div class="field-row cols-2" style="margin-bottom:12px">' +
+                  '<div><label class="field-label" for="piProjeto">Projeto <span class="required-star">*</span></label><select id="piProjeto" class="f-input f-select" onchange="onPedidoProjetoChange()"><option value="">— Selecione —</option></select><div class="field-error" id="errPiProjeto">Selecione um projeto.</div></div>' +
+                  '<div><label class="field-label" for="piLab">Laboratório <span class="required-star">*</span></label><select id="piLab" class="f-input f-select" onchange="onPedidoLabChange()"><option value="">— Selecione o projeto primeiro —</option></select><div class="field-error" id="errPiLab">Selecione um laboratório.</div></div>' +
+                '</div>' +
+                '<label class="field-label" for="piObs">Observação</label><input type="text" id="piObs" class="f-input" placeholder="Observações adicionais">' +
+              '</div>' +
+              '<div class="form-section" id="piSecaoItens" style="display:none">' +
+                '<div class="section-label"><span class="material-symbols-outlined">category</span>Itens do Pedido</div>' +
+                '<div class="pedido-item-form-grid">' +
+                  '<div><label class="field-label" for="piTipo">Tipo</label><select id="piTipo" class="f-input f-select" onchange="onPedidoTipoChange()"><option value="">— Tipo —</option></select></div>' +
+                  '<div><label class="field-label" for="piItem">Item</label><select id="piItem" class="f-input f-select"><option value="">— Selecione o tipo —</option></select></div>' +
+                  '<div><label class="field-label" for="piQtd">Qtd</label><input type="number" id="piQtd" class="f-input" min="1" value="1"></div>' +
+                  '<div style="padding-top:18px"><button class="btn-new" style="height:40px;padding:0 12px" onclick="adicionarItemPedidoInline()"><span class="material-symbols-outlined">add</span></button></div>' +
+                '</div>' +
+                '<div id="piItensWrap" style="display:none;background:#fff;border:1.5px solid #e0e6f0;border-radius:var(--r-md);overflow:hidden">' +
+                  '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f0f4ff"><th style="padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--primary);border-bottom:1px solid #e0e6f0;text-align:left">Tipo</th><th style="padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--primary);border-bottom:1px solid #e0e6f0;text-align:left">Descrição</th><th style="padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--primary);border-bottom:1px solid #e0e6f0;text-align:left">Qtd</th><th style="padding:7px 10px;border-bottom:1px solid #e0e6f0"></th></tr></thead><tbody id="piItensBody"></tbody></table>' +
+                '</div>' +
+              '</div>' +
+              '<button class="btn-save" id="btnSalvarPedidoInline" onclick="salvarPedidoInline()"><span class="material-symbols-outlined">save</span> Salvar Pedido</button>' +
+              '<div class="status-msg" id="statusPedidoInline"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="modal-overlay" id="modalReceberPedidoInline" onclick="fecharModalSeClicouFora(event,&quot;modalReceberPedidoInline&quot;)">' +
+          '<div class="modal-box" style="max-width:820px">' +
+            '<div class="modal-header">' +
+              '<div class="modal-header-icon"><span class="material-symbols-outlined">inventory</span></div>' +
+              '<div><div class="modal-header-title">RECEBER PEDIDO</div><div class="modal-header-sub" id="receberPedidoSub">Entrada de itens no estoque</div></div>' +
+              '<button class="modal-close" onclick="fecharOverlay(&quot;modalReceberPedidoInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">event_available</span>Dados do Recebimento</div>' +
+                '<div class="field-row cols-2">' +
+                  '<div><label class="field-label" for="rpData">Data do Recebimento</label><input type="date" id="rpData" class="f-input"></div>' +
+                  '<div><label class="field-label" for="rpObs">Observação</label><input type="text" id="rpObs" class="f-input" placeholder="Ex: recebimento parcial, nota fiscal..."></div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">category</span>Itens recebidos</div>' +
+                '<div id="rpItensWrap"></div>' +
+              '</div>' +
+              '<button class="btn-save" id="btnSalvarRecebimentoInline" onclick="salvarRecebimentoPedidoInline()"><span class="material-symbols-outlined">save</span> Registrar Recebimento</button>' +
+              '<div class="status-msg" id="statusRecebimentoInline"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="modal-overlay" id="modalMovInline" onclick="fecharModalSeClicouFora(event,&quot;modalMovInline&quot;)">' +
+          '<div class="modal-box" style="max-width:760px">' +
+            '<div class="modal-header">' +
+              '<div class="modal-header-icon"><span class="material-symbols-outlined">swap_vert</span></div>' +
+              '<div><div class="modal-header-title">NOVA MOVIMENTAÇÃO</div><div class="modal-header-sub">Entrada, saída, ajuste ou descarte de estoque</div></div>' +
+              '<button class="modal-close" onclick="fecharOverlay(&quot;modalMovInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">assignment</span>Dados da Movimentação</div>' +
+                '<div class="mov-form-grid">' +
+                  '<div><label class="field-label" for="miTipoMov">Tipo de movimento <span class="required-star">*</span></label><select id="miTipoMov" class="f-input f-select" onchange="onMovTipoMovChange()"><option>Entrada</option><option>Saída - Visita</option><option>Saída - Ajuste/Descarte</option><option>Entrada - Transferência</option></select></div>' +
+                  '<div><label class="field-label" for="miData">Data</label><input type="date" id="miData" class="f-input"></div>' +
+                  '<div><label class="field-label" for="miProjeto">Projeto <span class="required-star">*</span></label><select id="miProjeto" class="f-input f-select" onchange="onMovProjetoChange()"><option value="">— Selecione —</option></select><div class="field-error" id="errMiProjeto">Selecione um projeto.</div></div>' +
+                  '<div><label class="field-label" for="miTipoItem">Tipo de item <span class="required-star">*</span></label><select id="miTipoItem" class="f-input f-select" onchange="onMovTipoItemChange()"><option value="">— Selecione o projeto primeiro —</option></select><div class="field-error" id="errMiTipoItem">Selecione um tipo.</div></div>' +
+                  '<div class="full"><label class="field-label" for="miItem">Item / lote em estoque <span class="required-star">*</span></label><select id="miItem" class="f-input f-select" onchange="onMovItemChange()"><option value="">— Selecione o tipo —</option></select><div class="field-error" id="errMiItem">Selecione um item em estoque.</div></div>' +
+                  '<div><label class="field-label" for="miQtd">Quantidade <span class="required-star">*</span></label><input type="number" id="miQtd" class="f-input" min="1" value="1"><div class="field-error" id="errMiQtd">Informe uma quantidade válida.</div></div>' +
+                  '<div id="miParticipanteWrap"><label class="field-label" for="miParticipante">Participante</label><select id="miParticipante" class="f-input f-select"><option value="">— Selecione o projeto primeiro —</option></select></div>' +
+                  '<div id="miVisitaWrap"><label class="field-label" for="miVisita">ID da visita</label><input type="text" id="miVisita" class="f-input" placeholder="Será integrado à Agenda"></div>' +
+                  '<div><label class="field-label" for="miOrigem">Origem</label><input type="text" id="miOrigem" class="f-input" placeholder="Ex: formulário manual"></div>' +
+                  '<div class="full"><label class="field-label" for="miObs">Observação</label><textarea id="miObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Consumo em visita, descarte por validade, ajuste de inventário..."></textarea></div>' +
+                '</div>' +
+              '</div>' +
+              '<button class="btn-save" id="btnSalvarMovInline" onclick="salvarMovInline()"><span class="material-symbols-outlined">save</span> Registrar Movimentação</button>' +
+              '<div class="status-msg" id="statusMovInline"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+    if (page.parentElement !== content) content.appendChild(page);
+    var shell = document.getElementById('estoqueInlineShell');
+    if (shell && !shell.dataset.scrollTopBound) {
+      shell.dataset.scrollTopBound = '1';
+      shell.addEventListener('scroll', updateScrollTopButton, { passive: true });
+    }
+    return page;
+  }
+
+  var _estoqueInlinePagina = 'itens';
+  var _estoqueInlineDados = null;
+  var _pedidoInlineItens = [];
+  var _pedidoInlineEdit = null;
+  var _itemInlineEditId = '';
+  var _pedidoFiltroInicial = '';
+  var _recebimentoPedidoInline = null;
+  var _planejamentoPedidoData = null;
+  var _planejamentoProjeto = null;
+  var _planejamentoCarrinho = {};
+  var _descarteData = null;
+  var _descarteCarrinho = {};
+  var _movEstoqueItens = [];
+  var _relatorioEstoqueTipo = 'estoque';
+  function irParaEstoqueApp(pagina) {
+    CURRENT_PAGE = 'estoque-app';
+    document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
+    document.querySelectorAll('.nav-group-toggle').forEach(function(el) { el.classList.remove('open'); });
+    document.querySelectorAll('.nav-group-body').forEach(function(el) { el.classList.remove('open'); });
+
+    document.getElementById('navEstoqueToggle').classList.add('open');
+    document.getElementById('navEstoqueBody').classList.add('open');
+
+    var ids = {
+      itens: 'navEstItens',
+      pedidos: 'navEstPedidos',
+      descartes: 'navEstDescartes',
+      movimentacoes: 'navEstMovimentacoes',
+      relatorios: 'navEstRelatorios'
+    };
+    var navEl = document.getElementById(ids[pagina]);
+    if (navEl) navEl.classList.add('active');
+
+    var titulos = {
+      itens: { label: 'Cadastro de Itens de Estoque', icon: 'inventory' },
+      pedidos: { label: 'Pedidos', icon: 'inventory_2' },
+      descartes: { label: 'Descartes', icon: 'delete_sweep' },
+      movimentacoes: { label: 'Movimentações de Estoque', icon: 'swap_vert' },
+      relatorios: { label: 'Relatórios de Estoque', icon: 'assessment' }
+    };
+    var t = titulos[pagina] || { label: 'Estoque', icon: 'inventory_2' };
+    document.getElementById('topTitle').textContent = t.label;
+    document.getElementById('topIcon').textContent = t.icon;
+
+    document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
+    var page = ensureEstoqueFramePage();
+    if (page) page.classList.add('active');
+    resetAppScrollPosition();
+
+    _estoqueInlinePagina = pagina || 'itens';
+    _estoqueInlineDados = null;
+    updateFloatingAddButton();
+    carregarEstoqueInlineBootstrap();
+  }
+
+  function applyEstoqueBootstrapConfig(cfg) {
+    cfg = cfg || {};
+    ESTOQUE_CONFIG.laboratorios = cfg.laboratorios && cfg.laboratorios.length ? cfg.laboratorios : ESTOQUE_CONFIG.laboratorios;
+    ESTOQUE_CONFIG.localizacoes = cfg.localizacoes && cfg.localizacoes.length ? cfg.localizacoes : ESTOQUE_CONFIG.localizacoes;
+    ESTOQUE_CONFIG.tiposItem = cfg.tiposItem && cfg.tiposItem.length ? cfg.tiposItem : ESTOQUE_CONFIG.tiposItem;
+    _estoqueConfigLoaded = true;
+  }
+
+  function carregarEstoqueInlineBootstrap() {
+    var body = document.getElementById('eiBody');
+    if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        res = res || {};
+        applyEstoqueBootstrapConfig(res.config || {});
+        _estoqueInlineDados = res.data || {};
+        if (_estoqueInlinePagina === 'relatorios') _estoqueInlineDados = { estoque: res.data || [] };
+        if (_pedidoFiltroInicial) {
+          var s = document.getElementById('eiSearch');
+          if (s) s.value = _pedidoFiltroInicial;
+          _pedidoFiltroInicial = '';
+        }
+        renderEstoqueInline();
+      })
+      .withFailureHandler(function(e) {
+        estoqueInlineErro(e);
+      })
+      .getEstoqueBootstrapData(_estoqueInlinePagina);
+  }
+
+  function carregarEstoqueConfig(done) {
+    if (_estoqueConfigLoaded) {
+      if (done) done();
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(cfg) {
+        applyEstoqueBootstrapConfig(cfg || {});
+        if (done) done();
+      })
+      .withFailureHandler(function() {
+        _estoqueConfigLoaded = true;
+        if (done) done();
+      })
+      .getEstoqueConfig();
+  }
+
+  function carregarEstoqueInline() {
+    var body = document.getElementById('eiBody');
+    if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
+    if (_estoqueInlinePagina === 'pedidos') {
+      google.script.run
+        .withSuccessHandler(function(d) {
+          _estoqueInlineDados = d || {};
+          if (_pedidoFiltroInicial) {
+            var s = document.getElementById('eiSearch');
+            if (s) s.value = _pedidoFiltroInicial;
+            _pedidoFiltroInicial = '';
+          }
+          renderEstoqueInline();
+        })
+        .withFailureHandler(function(e) { estoqueInlineErro(e); })
+        .getPedidosEstoque();
+      return;
+    }
+    if (_estoqueInlinePagina === 'itens') {
+      google.script.run
+        .withSuccessHandler(function(d) { _estoqueInlineDados = d || {}; renderEstoqueInline(); })
+        .withFailureHandler(function(e) { estoqueInlineErro(e); })
+        .getItensEstoque();
+      return;
+    }
+    if (_estoqueInlinePagina === 'descartes') {
+      google.script.run
+        .withSuccessHandler(function(d) { _estoqueInlineDados = d || {}; renderEstoqueInline(); })
+        .withFailureHandler(function(e) { estoqueInlineErro(e); })
+        .getDescartesEstoque();
+      return;
+    }
+    if (_estoqueInlinePagina === 'movimentacoes') {
+      google.script.run
+        .withSuccessHandler(function(d) { _estoqueInlineDados = d || {}; renderEstoqueInline(); })
+        .withFailureHandler(function(e) { estoqueInlineErro(e); })
+        .getMovimentacoesEstoque();
+      return;
+    }
+    if (_estoqueInlinePagina === 'relatorios') {
+      google.script.run
+        .withSuccessHandler(function(d) { _estoqueInlineDados = { estoque: d || [] }; renderEstoqueInline(); })
+        .withFailureHandler(function(e) { estoqueInlineErro(e); })
+        .getEstoque();
+      return;
+    }
+    renderEstoqueInline();
+  }
+
+  function estoqueInlineErro(e) {
+    var body = document.getElementById('eiBody');
+    if (body) body.innerHTML = '<tr><td colspan="9" style="padding:18px;color:#b3261e;background:#fce8e6;border-radius:8px">Erro: ' + esc(e.message || e) + '</td></tr>';
+  }
+
+  function renderEstoqueInline() {
+    updateFloatingAddButton();
+    if (_estoqueInlinePagina === 'pedidos') return renderPedidosInline();
+    if (_estoqueInlinePagina === 'descartes') return renderDescartesInline();
+    if (_estoqueInlinePagina === 'itens') return renderItensInline();
+    if (_estoqueInlinePagina === 'movimentacoes') return renderMovimentacoesInline();
+    if (_estoqueInlinePagina === 'relatorios') return renderRelatoriosInline();
+    document.getElementById('eiHead').innerHTML = '<tr><th>Módulo</th><th>Status</th></tr>';
+    document.getElementById('eiBody').innerHTML =
+      '<tr><td>' + esc(_estoqueInlinePagina) + '</td><td>Este módulo ainda será implementado.</td></tr>';
+    setEstoqueMetric(1, '—', 'Módulo', 'inventory_2', '#1266f1');
+    setEstoqueMetric(2, '—', 'Em breve', 'schedule', '#137333');
+    setEstoqueMetric(3, '—', 'Atenção', 'warning', '#e65100');
+    setEstoqueMetric(4, '—', 'Crítico', 'error', '#b3261e');
+    setEstoqueMetric(5, '—', 'Relatórios', 'assessment', '#6a1b9a');
+  }
+
+  function evPedidoLink(numero) {
+    if (!numero) return '—';
+    return '<button class="chip chip-blue" style="border:none;cursor:pointer" onclick="abrirPedidoPorNumero(&quot;' + esc(numero) + '&quot;)">' + esc(numero) + '</button>';
+  }
+
+  function abrirPedidoPorNumero(numero) {
+    _pedidoFiltroInicial = numero || '';
+    irParaEstoqueApp('pedidos');
+  }
+
+  function setEstoqueMetric(idx, value, label, icon, accent) {
+    var stat = document.getElementById('eiStat' + idx);
+    var lab = document.getElementById('eiLabel' + idx);
+    var ico = document.getElementById('eiIcon' + idx);
+    var card = document.getElementById('eiCard' + idx);
+    if (stat) stat.textContent = value;
+    if (lab) lab.textContent = label;
+    if (ico) ico.textContent = icon;
+    if (card) card.style.setProperty('--accent', accent);
+  }
+
+  function setEstoqueControlVisible(id, visible) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = visible ? 'block' : 'none';
+  }
+
+  function setSelectOptionsKeepValue(id, options, placeholder) {
+    var sel = document.getElementById(id);
+    if (!sel) return '';
+    var cur = sel.value || '';
+    sel.innerHTML = '<option value="">' + esc(placeholder || 'Todos') + '</option>' +
+      (options || []).map(function(opt) {
+        return '<option value="' + esc(opt) + '">' + esc(opt) + '</option>';
+      }).join('');
+    sel.value = options.indexOf(cur) >= 0 ? cur : '';
+    return sel.value || '';
+  }
+
+  function renderItensInline() {
+    var btnNovoItem = document.getElementById('eiBtnNovoItem');
+    if (btnNovoItem) btnNovoItem.style.display = 'flex';
+    var btnNovo = document.getElementById('eiBtnNovoPedido');
+    if (btnNovo) btnNovo.style.display = 'none';
+    var btnPlanejarPedido = document.getElementById('eiBtnPlanejarPedido');
+    if (btnPlanejarPedido) btnPlanejarPedido.style.display = 'none';
+    var btnPlanejarDescarte = document.getElementById('eiBtnPlanejarDescarte');
+    if (btnPlanejarDescarte) btnPlanejarDescarte.style.display = 'none';
+    var btnNovaMov = document.getElementById('eiBtnNovaMov');
+    if (btnNovaMov) btnNovaMov.style.display = 'none';
+    var btnPrint = document.getElementById('eiBtnImprimirRel');
+    if (btnPrint) btnPrint.style.display = 'none';
+    var relTipo = document.getElementById('eiRelTipo');
+    if (relTipo) relTipo.style.display = 'none';
+    setEstoqueControlVisible('eiPedidoStatus', false);
+    setEstoqueControlVisible('eiMovTipoFiltro', false);
+    var dados = _estoqueInlineDados || {};
+    var itens = dados.itens || [];
+    var q = (document.getElementById('eiSearch').value || '').toLowerCase();
+    var filtrados = itens.filter(function(i) {
+      return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+    var labs = {};
+    itens.forEach(function(i){ if (i.laboratorio) labs[i.laboratorio] = 1; });
+    var ativos = itens.filter(function(i){ return String(i.status).toLowerCase() === 'ativo'; }).length;
+    var inativos = itens.filter(function(i){ return String(i.status).toLowerCase() === 'inativo'; }).length;
+    var tiposCfg = (ESTOQUE_CONFIG.tiposItem || []).slice(0, 2);
+    var tipo1 = tiposCfg[0] || 'Tipo 1';
+    var tipo2 = tiposCfg[1] || 'Tipo 2';
+    var tipo1Count = itens.filter(function(i){ return normSelectValue(i.tipo) === normSelectValue(tipo1); }).length;
+    var tipo2Count = itens.filter(function(i){ return normSelectValue(i.tipo) === normSelectValue(tipo2); }).length;
+    setEstoqueMetric(1, itens.length, 'Total de Itens', 'inventory_2', '#1266f1');
+    setEstoqueMetric(2, ativos, 'Itens Ativos', 'check_circle', '#137333');
+    setEstoqueMetric(3, inativos, 'Itens Inativos', 'pause_circle', '#e65100');
+    setEstoqueMetric(4, tipo1Count, tipo1, 'inventory', '#6a1b9a');
+    setEstoqueMetric(5, tipo2Count, tipo2, 'category', '#4a148c');
+    document.getElementById('eiHead').innerHTML =
+      '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Localização</th><th>Est. mín.</th><th>Laboratório</th><th>Status</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
+    document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(i) {
+      return '<tr><td>' + projetoChip(i.projeto) + '</td><td>' + esc(i.descricao) +
+        '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
+        '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +
+        '<button class="icon-btn" title="Editar" onclick="abrirFormItemInline(&quot;' + encodeURIComponent(JSON.stringify(i)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
+        '<button class="icon-btn del" title="Excluir" onclick="excluirItemInline(&quot;' + esc(i.id) + '&quot;,&quot;' + esc(i.descricao) + '&quot;)"><span class="material-symbols-outlined">delete</span></button>' +
+        '</div></td></tr>';
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado.</td></tr>';
+  }
+
+  function itemTipoChip(tipo) {
+    var t = tipo || '—';
+    var cls = String(t).toLowerCase() === 'kit' ? 'chip-blue' : 'chip-purple';
+    return '<span class="chip ' + cls + '">' + esc(t) + '</span>';
+  }
+
+  function itemStatusChip(status) {
+    var s = status || '—';
+    var cls = String(s).toLowerCase() === 'ativo' ? 'chip-green' : 'chip-grey';
+    return '<span class="chip ' + cls + '">' + esc(s) + '</span>';
+  }
+
+  function movTipoChip(tipo) {
+    var t = tipo || '—';
+    var n = String(t).toLowerCase();
+    var cls = n.indexOf('entrada') === 0 ? 'chip-green' :
+      n.indexOf('saída') === 0 || n.indexOf('saida') === 0 ? 'chip-yellow' : 'chip-grey';
+    return '<span class="chip ' + cls + '">' + esc(t) + '</span>';
+  }
+
+  function renderMovimentacoesInline() {
+    var btnNovoItem = document.getElementById('eiBtnNovoItem');
+    var btnNovoPedido = document.getElementById('eiBtnNovoPedido');
+    var btnNovaMov = document.getElementById('eiBtnNovaMov');
+    if (btnNovoItem) btnNovoItem.style.display = 'none';
+    if (btnNovoPedido) btnNovoPedido.style.display = 'none';
+    var btnPlanejarPedido = document.getElementById('eiBtnPlanejarPedido');
+    if (btnPlanejarPedido) btnPlanejarPedido.style.display = 'none';
+    var btnPlanejarDescarte = document.getElementById('eiBtnPlanejarDescarte');
+    if (btnPlanejarDescarte) btnPlanejarDescarte.style.display = 'none';
+    if (btnNovaMov) btnNovaMov.style.display = 'flex';
+    var btnPrint = document.getElementById('eiBtnImprimirRel');
+    if (btnPrint) btnPrint.style.display = 'none';
+    var relTipo = document.getElementById('eiRelTipo');
+    if (relTipo) relTipo.style.display = 'none';
+    setEstoqueControlVisible('eiPedidoStatus', false);
+    setEstoqueControlVisible('eiMovTipoFiltro', true);
+
+    var dados = _estoqueInlineDados || {};
+    var movs = dados.movimentacoes || [];
+    _movEstoqueItens = dados.estoque || [];
+    var q = (document.getElementById('eiSearch').value || '').toLowerCase();
+    var tiposMov = {};
+    movs.forEach(function(m){ if (m.tipoMovimento) tiposMov[m.tipoMovimento] = 1; });
+    var filtroTipoMov = setSelectOptionsKeepValue('eiMovTipoFiltro', Object.keys(tiposMov).sort(), 'Todos os movimentos');
+    var filtrados = movs.filter(function(m) {
+      var okTipo = !filtroTipoMov || String(m.tipoMovimento || '') === filtroTipoMov;
+      var okBusca = !q || [m.idMov, m.tipoMovimento, m.idItem, m.descricao, m.tipoItem, m.projeto, m.localizacao, m.lote, m.participante, m.responsavel, m.origem, m.observacao].join(' ').toLowerCase().indexOf(q) >= 0;
+      return okTipo && okBusca;
+    }).sort(function(a, b) {
+      return movTimestamp(b.dataHora) - movTimestamp(a.dataHora);
+    });
+    var entradas = movs.filter(function(m){ return String(m.tipoMovimento).toLowerCase().indexOf('entrada') === 0; }).length;
+    var saidas = movs.filter(function(m){ var n = String(m.tipoMovimento).toLowerCase(); return n.indexOf('saída') === 0 || n.indexOf('saida') === 0; }).length;
+    var totalQtd = movs.reduce(function(total, m){ return total + Math.abs(Number(m.qtde || 0)); }, 0);
+    var projetos = {};
+    movs.forEach(function(m){ if (m.projeto) projetos[m.projeto] = 1; });
+    setEstoqueMetric(1, movs.length, 'Movimentações', 'swap_vert', '#1266f1');
+    setEstoqueMetric(2, entradas, 'Entradas', 'login', '#137333');
+    setEstoqueMetric(3, saidas, 'Saídas', 'logout', '#e65100');
+    setEstoqueMetric(4, totalQtd, 'Itens Movidos', 'inventory', '#b3261e');
+    setEstoqueMetric(5, Object.keys(projetos).length, 'Projetos', 'folder_open', '#6a1b9a');
+    document.getElementById('eiHead').innerHTML =
+      '<tr><th>Data/hora</th><th>Movimento</th><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th style="text-align:center">Qtde.</th><th>Validade</th><th>Localização</th><th>Responsável</th></tr>';
+    document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(m) {
+      return '<tr><td>' + esc(m.dataHora || '—') + '</td><td>' + movTipoChip(m.tipoMovimento) +
+        '</td><td>' + projetoChip(m.projeto) + '</td><td><div class="row-name">' + esc(m.descricao || '—') +
+        '</div></td><td>' +
+        itemTipoChip(m.tipoItem) + '</td><td style="text-align:center;font-weight:600">' + esc(m.qtde) +
+        '</td><td>' + esc(m.validade || '—') + '</td><td>' + esc(m.localizacao || '—') +
+        '</td><td>' + esc(m.responsavel || '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="9" style="text-align:center;color:#9aa3b0;padding:20px">' + movEmptyMessage(dados.diag) + '</td></tr>';
+  }
+
+  function movEmptyMessage(diag) {
+    if (!diag) return 'Nenhuma movimentação encontrada.';
+    return 'Nenhuma movimentação encontrada. Diagnóstico: aba "' + esc(diag.sheet || 'não encontrada') + '", linhas ' + esc(diag.lastRow || 0) + ', colunas ' + esc(diag.lastColumn || 0) + ', cabeçalho na linha ' + esc(diag.headerRow || 0) + '.';
+  }
+
+  function movTimestamp(valor) {
+    var s = String(valor || '').trim();
+    var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0)).getTime();
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+
+  function renderRelatoriosInline() {
+    var btnNovoItem = document.getElementById('eiBtnNovoItem');
+    var btnNovoPedido = document.getElementById('eiBtnNovoPedido');
+    var btnNovaMov = document.getElementById('eiBtnNovaMov');
+    var btnPrint = document.getElementById('eiBtnImprimirRel');
+    if (btnNovoItem) btnNovoItem.style.display = 'none';
+    if (btnNovoPedido) btnNovoPedido.style.display = 'none';
+    var btnPlanejarPedido = document.getElementById('eiBtnPlanejarPedido');
+    if (btnPlanejarPedido) btnPlanejarPedido.style.display = 'none';
+    if (btnNovaMov) btnNovaMov.style.display = 'none';
+    if (btnPrint) btnPrint.style.display = 'flex';
+    var relTipo = document.getElementById('eiRelTipo');
+    if (relTipo) {
+      relTipo.style.display = 'block';
+      if (_relatorioEstoqueTipo && relTipo.value !== _relatorioEstoqueTipo && document.activeElement !== relTipo) {
+        relTipo.value = _relatorioEstoqueTipo;
+      }
+    }
+    setEstoqueControlVisible('eiPedidoStatus', false);
+    setEstoqueControlVisible('eiMovTipoFiltro', false);
+
+    var estoque = (_estoqueInlineDados || {}).estoque || [];
+    var tipoRel = getRelatorioEstoqueTipo();
+    var q = (document.getElementById('eiSearch').value || '').toLowerCase();
+    var projetos = {};
+    estoque.forEach(function(it) { if (it.projeto) projetos[it.projeto] = 1; });
+    var proximos = estoque.filter(function(it) { return diasAteValidade(it.validade) >= 0 && diasAteValidade(it.validade) <= 90; });
+    var vencidos = estoque.filter(function(it) { return diasAteValidade(it.validade) < 0; });
+    var totalQtd = estoque.reduce(function(total, it) { return total + (Number(it.qtde || 0) || 0); }, 0);
+    setEstoqueMetric(1, estoque.length, 'Itens em Estoque', 'inventory_2', '#1266f1');
+    setEstoqueMetric(2, Object.keys(projetos).length, 'Projetos', 'folder_open', '#137333');
+    setEstoqueMetric(3, proximos.length, 'Próx. Validade', 'event_busy', '#e65100');
+    setEstoqueMetric(4, vencidos.length, 'Vencidos', 'error', '#b3261e');
+    setEstoqueMetric(5, totalQtd, 'Qtde. Total', 'summarize', '#6a1b9a');
+
+    var base = filtrarItensRelatorioPorTipo(estoque, tipoRel);
+    var filtrados = getItensRelatorioFiltrados();
+    setEstoqueMetric(1, filtrados.length, 'Itens no relatório', 'inventory_2', '#1266f1');
+
+    document.getElementById('eiHead').innerHTML =
+      '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Validade</th><th style="text-align:center">Qtde.</th><th>Localização</th><th>Status</th><th>N° Pedido</th></tr>';
+    document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(it) {
+      return '<tr><td>' + projetoChip(it.projeto) + '</td><td>' + esc(it.descricao || '—') +
+        '</td><td>' + itemTipoChip(it.tipoItem) + '</td><td style="' + evValCls(it.validade || '') + '">' + esc(it.validade || '—') +
+        '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde) + '</td><td>' + esc(it.localizacao || '—') +
+        '</td><td>' + evChipStatus(it.status) + '</td><td>' + evPedidoLink(it.numeroPedido) + '</td></tr>';
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado para este tipo de relatório.</td></tr>';
+  }
+
+  function setRelatorioEstoqueTipo(tipo) {
+    _relatorioEstoqueTipo = tipo || 'estoque';
+    renderRelatoriosInline();
+  }
+
+  function getRelatorioEstoqueTipo() {
+    var sel = document.getElementById('eiRelTipo');
+    var tipo = (sel && sel.value) || _relatorioEstoqueTipo || 'estoque';
+    _relatorioEstoqueTipo = tipo;
+    return tipo;
+  }
+
+  function filtrarItensRelatorioPorTipo(lista, tipoRel) {
+    return (lista || []).filter(function(it) {
+      var dias = diasAteValidade(it.validade);
+      var st = String(it.status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (tipoRel === 'validade') return (dias >= 0 && dias <= 90) || st.indexOf('vence em breve') >= 0 || st.indexOf('proximo') >= 0;
+      if (tipoRel === 'vencidos') return dias < 0 || st.indexOf('vencido') >= 0;
+      return true;
+    });
+  }
+
+  function getItensRelatorioFiltrados() {
+    var estoque = ((_estoqueInlineDados || {}).estoque || []);
+    var tipoRel = getRelatorioEstoqueTipo();
+    var q = ((document.getElementById('eiSearch') || {}).value || '').toLowerCase().trim();
+    return filtrarItensRelatorioPorTipo(estoque, tipoRel).filter(function(it) {
+      if (!q) return true;
+      return [it.projeto, it.descricao, it.tipoItem, it.validade, it.localizacao, it.status, it.numeroPedido].join(' ').toLowerCase().indexOf(q) >= 0;
+    }).sort(function(a, b) {
+      return String(a.projeto || '').localeCompare(String(b.projeto || '')) || sortValidade(a.validade, b.validade);
+    });
+  }
+
+  function diasAteValidade(val) {
+    if (!val || val === '—') return 999999;
+    var s = String(val).trim();
+    var p = s.split('/');
+    if (p.length === 3) {
+      var d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+      var hoje = new Date(); hoje.setHours(0,0,0,0);
+      return Math.floor((d - hoje) / 86400000);
+    }
+    p = s.split('-');
+    if (p.length !== 3) return 999999;
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    var hoje = new Date(); hoje.setHours(0,0,0,0);
+    return Math.floor((d - hoje) / 86400000);
+  }
+
+  function sortValidade(a, b) {
+    return diasAteValidade(a) - diasAteValidade(b);
+  }
+
+  function imprimirRelatorioEstoque() {
+    var tipoRel = getRelatorioEstoqueTipo();
+    var titulos = {
+      estoque: 'Relatório de Estoque por Projeto e Validade',
+      validade: 'Relatório de Itens Próximos da Validade',
+      vencidos: 'Relatório de Itens Vencidos'
+    };
+    var estoque = getItensRelatorioFiltrados();
+    var hoje = new Date().toLocaleDateString('pt-BR');
+    var busca = ((document.getElementById('eiSearch') || {}).value || '').trim();
+    var rows = estoque.map(function(it) {
+      return '<tr><td>' + esc(it.projeto || '') + '</td><td>' + esc(it.descricao || '') + '</td><td>' +
+        esc(it.tipoItem || '') + '</td><td>' + esc(it.validade || '') + '</td><td>' + esc(it.qtde || '') +
+        '</td><td>' + esc(it.localizacao || '') + '</td><td>' + esc(it.status || '') + '</td></tr>';
+    }).join('');
+    var logo = ((document.querySelector('.nav-brand img') || {}).src || '');
+    var logoHtml = logo ? '<img src="' + logo + '" style="height:42px;width:auto;object-fit:contain">' : '';
+    var html = '<!doctype html><html><head><title>Relatório de Estoque</title><style>' +
+      'body{font-family:Arial,sans-serif;color:#1f2937;margin:28px}.print-head{display:flex;align-items:center;gap:18px;margin-bottom:18px;border-bottom:2px solid #e8edf8;padding-bottom:12px}h1{font-size:18px;margin:0 0 4px}p{font-size:12px;color:#64748b;margin:0}' +
+      'table{width:100%;border-collapse:collapse;font-size:11px}th{background:#eef2ff;color:#1266f1;text-align:left;text-transform:uppercase;font-size:9px;letter-spacing:.5px}th,td{border:1px solid #dbe3f0;padding:6px 8px}td:nth-child(5){text-align:center;font-weight:700}' +
+      '@media print{body{margin:14mm}.no-print{display:none}}' +
+      '</style></head><body><button class="no-print" onclick="window.print()" style="float:right;padding:8px 12px">Imprimir</button>' +
+      '<div class="print-head">' + logoHtml + '<div><h1>' + esc(titulos[tipoRel] || titulos.estoque) + '</h1><p>Emitido em ' + esc(hoje) + ' · IPS | UCS' + (busca ? ' · Filtro: ' + esc(busca) : '') + '</p></div></div>' +
+      '<table><thead><tr><th>Projeto</th><th>Descrição</th><th>Tipo</th><th>Validade</th><th>Qtde.</th><th>Localização</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<script>setTimeout(function(){window.print()},300)<\/script></body></html>';
+    var w = window.open('', '_blank');
+    if (!w) { snack('O navegador bloqueou a janela de impressão.'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  function ensurePlanejamentoPedidoModal() {
+    var existing = document.getElementById('modalPlanejarPedidoInline');
+    if (existing) return existing;
+    var page = document.getElementById('page-estoque-app') || document.body;
+    var wrap = document.createElement('div');
+    wrap.className = 'modal-overlay';
+    wrap.id = 'modalPlanejarPedidoInline';
+    wrap.onclick = function(event) { fecharModalSeClicouFora(event, 'modalPlanejarPedidoInline'); };
+    wrap.innerHTML =
+      '<div class="modal-box" style="max-width:1120px">' +
+        '<div class="modal-header">' +
+          '<div class="modal-header-icon"><span class="material-symbols-outlined">shopping_cart</span></div>' +
+          '<div><div class="modal-header-title">PLANEJAR PEDIDO</div><div class="modal-header-sub">Monte uma solicitação a partir do catálogo e do estoque atual</div></div>' +
+          '<button class="modal-close" onclick="fecharOverlay(&quot;modalPlanejarPedidoInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+        '</div>' +
+        '<div class="modal-body">' +
+          '<div class="form-section">' +
+            '<div class="section-label"><span class="material-symbols-outlined">assignment</span>Projeto e execução</div>' +
+            '<div class="field-row cols-2" style="margin-bottom:12px">' +
+              '<div><label class="field-label" for="planProjeto">Projeto <span class="required-star">*</span></label><select id="planProjeto" class="f-input f-select" onchange="onPlanejamentoProjetoChange()"><option value="">— Selecione —</option></select><div class="field-error" id="errPlanProjeto">Selecione um projeto.</div></div>' +
+              '<div><label class="field-label" for="planData">Data do pedido</label><input type="date" id="planData" class="f-input"></div>' +
+            '</div>' +
+            '<div class="field-row cols-2" style="margin-bottom:12px">' +
+              '<div><label class="field-label" for="planSolicitante">Enviar resumo para</label><select id="planSolicitante" class="f-input f-select" onchange="onPlanejamentoSolicitanteChange()"><option value="">— Selecione —</option></select></div>' +
+              '<div><label class="field-label" for="planEmail">E-mail</label><input type="email" id="planEmail" class="f-input" placeholder="Opcional, se não constar no cadastro"></div>' +
+            '</div>' +
+            '<label class="field-label" for="planObs">Observação</label><input type="text" id="planObs" class="f-input" placeholder="Instruções para quem vai executar o pedido">' +
+          '</div>' +
+          '<div class="form-section">' +
+            '<div class="section-label"><span class="material-symbols-outlined">fact_check</span>Itens para solicitar</div>' +
+            '<div id="planProjetoResumo" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;color:#5f6b7c;font-size:12px"></div>' +
+            '<div id="planParticipantesResumo" style="display:none;margin-bottom:12px;background:#f8faff;border:1px solid #e0e6f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#374151"></div>' +
+            '<div class="search-wrap" style="margin-bottom:12px"><span class="material-symbols-outlined">search</span><input type="text" id="planSearch" placeholder="Buscar item, tipo ou laboratório..." oninput="renderPlanejamentoItens()"></div>' +
+            '<div class="table-card" style="border-radius:8px;max-height:430px;overflow:auto;border-top:1px solid #e8edf8">' +
+              '<table class="data-table" style="min-width:960px"><thead><tr><th>Laboratório</th><th>Item</th><th style="width:130px">Tipo</th><th>Estoque / validade</th><th style="text-align:center">Pendente</th><th style="width:120px;text-align:center">Solicitar</th></tr></thead><tbody id="planItensBody"><tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto.</td></tr></tbody></table>' +
+            '</div>' +
+            '<div id="planResumoPedidos" style="margin-top:12px;color:#5f6b7c;font-size:12px"></div>' +
+          '</div>' +
+          '<button class="btn-save" id="btnSalvarPlanejamento" onclick="salvarPlanejamentoPedidoInline()"><span class="material-symbols-outlined">shopping_cart_checkout</span> Criar Pedido(s)</button>' +
+          '<div class="status-msg" id="statusPlanejamentoPedido"></div>' +
+        '</div>' +
+      '</div>';
+    page.appendChild(wrap);
+    return wrap;
+  }
+
+  function abrirPlanejamentoPedidoInline() {
+    ensurePlanejamentoPedidoModal();
+    _planejamentoPedidoData = null;
+    _planejamentoProjeto = null;
+    _planejamentoCarrinho = {};
+    document.getElementById('planData').value = new Date().toISOString().split('T')[0];
+    document.getElementById('planEmail').value = '';
+    var sol = document.getElementById('planSolicitante');
+    if (sol) sol.innerHTML = '<option value="">Carregando...</option>';
+    document.getElementById('planObs').value = '';
+    document.getElementById('planSearch').value = '';
+    document.getElementById('planProjetoResumo').innerHTML = '';
+    var pr = document.getElementById('planParticipantesResumo');
+    if (pr) { pr.style.display = 'none'; pr.innerHTML = ''; }
+    document.getElementById('planResumoPedidos').innerHTML = '';
+    document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#5f6b7c">Carregando catálogo e estoque…</span>';
+    document.getElementById('btnSalvarPlanejamento').disabled = true;
+    document.getElementById('planProjeto').innerHTML = '<option value="">Carregando...</option>';
+    document.getElementById('planItensBody').innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando...</td></tr>';
+    abrirOverlay('modalPlanejarPedidoInline');
+    google.script.run
+      .withSuccessHandler(function(dados) {
+        _planejamentoPedidoData = dados || { projetos: [], itens: [] };
+        document.getElementById('statusPlanejamentoPedido').innerHTML = '';
+        document.getElementById('btnSalvarPlanejamento').disabled = false;
+        renderPlanejamentoProjetos();
+        renderPlanejamentoSolicitantes();
+        renderPlanejamentoItens();
+      })
+      .withFailureHandler(function(e) {
+        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('planItensBody').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#b3261e">Erro ao carregar planejamento.</td></tr>';
+      })
+      .getPlanejamentoPedidoEstoque();
+  }
+
+  function abrirPlanejamentoDescarteInline() {
+    ensurePlanejamentoDescarteModal();
+    _descarteData = null;
+    _descarteCarrinho = {};
+    var hoje = new Date().toISOString().split('T')[0];
+    document.getElementById('desData').value = hoje;
+    document.getElementById('desEmail').value = '';
+    document.getElementById('desObs').value = '';
+    document.getElementById('desSearch').value = '';
+    document.getElementById('desProjeto').innerHTML = '<option value="">Carregando...</option>';
+    document.getElementById('desSolicitante').innerHTML = '<option value="">Carregando...</option>';
+    document.getElementById('desItensBody').innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando...</td></tr>';
+    document.getElementById('desResumo').textContent = '';
+    document.getElementById('statusDescarte').innerHTML = '<span style="color:#5f6b7c">Carregando estoque e solicitantes...</span>';
+    document.getElementById('btnSalvarDescarte').disabled = true;
+    abrirOverlay('modalPlanejarDescarteInline');
+    google.script.run
+      .withSuccessHandler(function(dados) {
+        _descarteData = dados || { estoque: [], solicitantes: [] };
+        document.getElementById('statusDescarte').innerHTML = '';
+        document.getElementById('btnSalvarDescarte').disabled = false;
+        renderDescarteProjetos();
+        renderDescarteSolicitantes();
+        renderDescarteItens();
+      })
+      .withFailureHandler(function(e) {
+        document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">Erro ao carregar dados: ' + esc(e.message || e) + '</span>';
+        document.getElementById('desProjeto').innerHTML = '<option value="">Falha ao carregar</option>';
+        document.getElementById('desSolicitante').innerHTML = '<option value="">Falha ao carregar</option>';
+        document.getElementById('desItensBody').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#b3261e">Não foi possível carregar os itens.</td></tr>';
+      })
+      .getDescartesEstoque();
+  }
+
+  function ensurePlanejamentoDescarteModal() {
+    var page = ensureEstoqueFramePage();
+    var wrap = document.getElementById('modalPlanejarDescarteInline');
+    if (wrap) return wrap;
+    wrap = document.createElement('div');
+    wrap.className = 'modal-overlay';
+    wrap.id = 'modalPlanejarDescarteInline';
+    wrap.onclick = function(event) { fecharModalSeClicouFora(event, 'modalPlanejarDescarteInline'); };
+    wrap.innerHTML =
+      '<div class="modal-box" style="max-width:1120px">' +
+        '<div class="modal-header">' +
+          '<div class="modal-header-icon" style="background:#fce8e6;color:#b3261e"><span class="material-symbols-outlined">delete_sweep</span></div>' +
+          '<div><div class="modal-header-title">PREPARAR LISTA DE DESCARTE</div><div class="modal-header-sub">Selecione lotes e quantidades para descarte controlado</div></div>' +
+          '<button class="modal-close" onclick="fecharOverlay(&quot;modalPlanejarDescarteInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+        '</div>' +
+        '<div class="modal-body">' +
+          '<div class="form-section"><div class="section-label"><span class="material-symbols-outlined">assignment</span>Dados da lista</div>' +
+            '<div class="field-row cols-2" style="margin-bottom:12px">' +
+              '<div><label class="field-label" for="desProjeto">Projeto <span class="required-star">*</span></label><select id="desProjeto" class="f-input f-select" onchange="renderDescarteItens()"></select></div>' +
+              '<div><label class="field-label" for="desData">Data</label><input type="date" id="desData" class="f-input"></div>' +
+            '</div>' +
+            '<div class="field-row cols-2" style="margin-bottom:12px">' +
+              '<div><label class="field-label" for="desSolicitante">Solicitante</label><select id="desSolicitante" class="f-input f-select" onchange="onDescarteSolicitanteChange()"></select></div>' +
+              '<div><label class="field-label" for="desEmail">Outro e-mail</label><input type="email" id="desEmail" class="f-input" placeholder="Opcional"></div>' +
+            '</div>' +
+            '<label class="field-label" for="desObs">Observação</label><input type="text" id="desObs" class="f-input" placeholder="Motivo ou instruções para descarte">' +
+          '</div>' +
+          '<div class="form-section"><div class="section-label"><span class="material-symbols-outlined">inventory</span>Itens disponíveis</div>' +
+            '<div class="search-wrap" style="margin-bottom:12px"><span class="material-symbols-outlined">search</span><input type="text" id="desSearch" placeholder="Buscar item, tipo, validade ou localização..." oninput="renderDescarteItens()"></div>' +
+            '<div class="table-card" style="border-radius:8px;max-height:360px;overflow:auto;border-top:1px solid #e8edf8"><table class="data-table" style="min-width:960px"><thead><tr><th>Item</th><th>Tipo</th><th>Validade</th><th>Local</th><th style="text-align:center">Saldo</th><th style="width:120px;text-align:center">Descartar</th></tr></thead><tbody id="desItensBody"></tbody></table></div>' +
+            '<div id="desResumo" style="margin-top:12px;color:#5f6b7c;font-size:12px"></div>' +
+          '</div>' +
+          '<button class="btn-save" id="btnSalvarDescarte" onclick="salvarPlanejamentoDescarteInline()"><span class="material-symbols-outlined">delete_sweep</span> Gerar Lista de Descarte</button>' +
+          '<div class="status-msg" id="statusDescarte"></div>' +
+        '</div>' +
+      '</div>';
+    page.appendChild(wrap);
+    return wrap;
+  }
+
+  function renderDescarteProjetos() {
+    var sel = document.getElementById('desProjeto');
+    var projetos = {};
+    ((_descarteData || {}).estoque || []).forEach(function(it) { if (it.projeto && Number(it.qtde || 0) > 0) projetos[it.projeto] = 1; });
+    sel.innerHTML = '<option value="">— Selecione —</option>' + Object.keys(projetos).sort().map(function(p) { return '<option value="' + esc(p) + '">' + esc(p) + '</option>'; }).join('');
+  }
+
+  function renderDescarteSolicitantes() {
+    var sel = document.getElementById('desSolicitante');
+    var lista = ((_descarteData || {}).solicitantes || []);
+    sel.innerHTML = '<option value="">' + (lista.length ? '— Selecione —' : 'Nenhum solicitante cadastrado') + '</option>' + lista.map(function(s) {
+      var label = [s.nome, s.formacao, s.registro].filter(Boolean).join(' · ');
+      return '<option value="' + esc(s.nome || '') + '" data-email="' + esc(s.email || '') + '">' + esc(label || s.nome || '-') + '</option>';
+    }).join('');
+  }
+
+  function onDescarteSolicitanteChange() {
+    var sel = document.getElementById('desSolicitante');
+    var email = sel && sel.selectedIndex >= 0 ? (sel.options[sel.selectedIndex].getAttribute('data-email') || '') : '';
+    if (email) document.getElementById('desEmail').value = email;
+  }
+
+  function descarteItemKey(it) {
+    return [it.idItem, it.validade || '', it.localizacao || ''].join('||');
+  }
+
+  function getDescarteItensFiltrados() {
+    var projeto = document.getElementById('desProjeto').value;
+    var q = (document.getElementById('desSearch').value || '').toLowerCase().trim();
+    return ((_descarteData || {}).estoque || []).filter(function(it) {
+      if (!projeto || normSelectValue(it.projeto) !== normSelectValue(projeto)) return false;
+      if (Number(it.qtde || 0) <= 0) return false;
+      if (!q) return true;
+      return [it.descricao, it.tipoItem, it.validade, it.localizacao].join(' ').toLowerCase().indexOf(q) >= 0;
+    }).sort(function(a,b) { return sortValidade(a.validade, b.validade) || String(a.descricao || '').localeCompare(String(b.descricao || '')); });
+  }
+
+  function renderDescarteItens() {
+    var body = document.getElementById('desItensBody');
+    if (!body) return;
+    var projeto = document.getElementById('desProjeto').value;
+    if (!projeto) {
+      body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto.</td></tr>';
+      document.getElementById('desResumo').innerHTML = '';
+      return;
+    }
+    var itens = getDescarteItensFiltrados();
+    body.innerHTML = itens.length ? itens.map(function(it) {
+      var key = descarteItemKey(it);
+      return '<tr><td><div class="row-name">' + esc(it.descricao || '-') + '</div></td><td>' + itemTipoChip(it.tipoItem) + '</td><td><span style="' + evValCls(it.validade || '') + '">' + esc(it.validade || '-') + '</span></td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde || 0) + '</td><td><input type="number" min="0" max="' + esc(it.qtde || 0) + '" step="1" class="f-input" style="height:34px;text-align:center" value="' + esc(_descarteCarrinho[key] || 0) + '" oninput="atualizarDescarteQtd(&quot;' + esc(key) + '&quot;,this.value)"></td></tr>';
+    }).join('') : '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Nenhum lote disponível para este projeto.</td></tr>';
+    renderDescarteResumo();
+  }
+
+  function atualizarDescarteQtd(key, value) {
+    var qtd = Number(value || 0);
+    if (qtd > 0) _descarteCarrinho[key] = qtd;
+    else delete _descarteCarrinho[key];
+    renderDescarteResumo();
+  }
+
+  function getDescarteItensSelecionados() {
+    var out = [];
+    var lookup = {};
+    ((_descarteData || {}).estoque || []).forEach(function(it) { lookup[descarteItemKey(it)] = it; });
+    Object.keys(_descarteCarrinho).forEach(function(key) {
+      var it = lookup[key];
+      var qtd = Number(_descarteCarrinho[key] || 0);
+      if (!it || qtd <= 0) return;
+      out.push({ idItem: it.idItem, descricao: it.descricao, tipo: it.tipoItem, validade: it.validade, localizacao: it.localizacao, qtdDescartar: qtd, motivo: document.getElementById('desObs').value.trim() });
+    });
+    return out;
+  }
+
+  function renderDescarteResumo() {
+    var itens = getDescarteItensSelecionados();
+    var total = itens.reduce(function(t,it){ return t + Number(it.qtdDescartar || 0); }, 0);
+    document.getElementById('desResumo').innerHTML = itens.length ? '<b>' + itens.length + ' lote(s)</b> selecionado(s), total de <b>' + total + '</b> unidade(s).' : 'Informe quantidades para montar a lista de descarte.';
+  }
+
+  function salvarPlanejamentoDescarteInline() {
+    var projeto = document.getElementById('desProjeto').value;
+    var itens = getDescarteItensSelecionados();
+    if (!projeto) { snack('Selecione um projeto.'); return; }
+    if (!itens.length) { snack('Informe pelo menos um item para descarte.'); return; }
+    var btn = document.getElementById('btnSalvarDescarte');
+    btn.disabled = true;
+    document.getElementById('statusDescarte').innerHTML = '<span style="color:#5f6b7c">Gerando lista...</span>';
+    google.script.run
+      .withSuccessHandler(function(msg) { btn.disabled = false; fecharOverlay('modalPlanejarDescarteInline'); snack(msg || 'Lista criada.'); carregarEstoqueInline(); })
+      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>'; })
+      .salvarPlanejamentoDescarteEstoque({ projeto: projeto, data: document.getElementById('desData').value, solicitante: document.getElementById('desSolicitante').value, email: document.getElementById('desEmail').value.trim(), observacoes: document.getElementById('desObs').value.trim(), itens: itens });
+  }
+
+  function renderPlanejamentoProjetos() {
+    var sel = document.getElementById('planProjeto');
+    var projetos = ((_planejamentoPedidoData || {}).projetos || []);
+    sel.innerHTML = '<option value="">— Selecione —</option>' + projetos.map(function(p) {
+      return '<option value="' + esc(p.nome) + '">' + esc(p.nome) + '</option>';
+    }).join('');
+  }
+
+  function renderPlanejamentoSolicitantes() {
+    var sel = document.getElementById('planSolicitante');
+    if (!sel) return;
+    var lista = ((_planejamentoPedidoData || {}).solicitantes || []);
+    sel.innerHTML = '<option value="">— Selecione —</option>' + lista.map(function(s) {
+      var label = [s.nome, s.formacao, s.registro].filter(Boolean).join(' · ');
+      return '<option value="' + esc(s.nome || '') + '" data-email="' + esc(s.email || '') + '">' + esc(label || s.nome || '-') + '</option>';
+    }).join('');
+  }
+
+  function onPlanejamentoSolicitanteChange() {
+    var sel = document.getElementById('planSolicitante');
+    var email = '';
+    if (sel && sel.selectedIndex >= 0) email = sel.options[sel.selectedIndex].getAttribute('data-email') || '';
+    var input = document.getElementById('planEmail');
+    if (input && email) input.value = email;
+  }
+
+  function onPlanejamentoProjetoChange() {
+    _planejamentoProjeto = document.getElementById('planProjeto').value;
+    var err = document.getElementById('errPlanProjeto');
+    document.getElementById('planProjeto').classList.toggle('invalid', !_planejamentoProjeto);
+    if (err) err.classList.toggle('visible', !_planejamentoProjeto);
+    renderPlanejamentoItens();
+  }
+
+  function getPlanejamentoProjetoInfo(projeto) {
+    return ((_planejamentoPedidoData || {}).projetos || []).find(function(p) {
+      return normSelectValue(p.nome) === normSelectValue(projeto);
+    }) || { nome: projeto, participantesAtivos: 0 };
+  }
+
+  function getPlanejamentoItensFiltrados() {
+    var projeto = document.getElementById('planProjeto').value;
+    var q = (document.getElementById('planSearch').value || '').toLowerCase().trim();
+    return ((_planejamentoPedidoData || {}).itens || []).filter(function(it) {
+      if (!projeto || normSelectValue(it.projeto) !== normSelectValue(projeto)) return false;
+      if (!q) return true;
+      return [it.laboratorio, it.descricao, it.tipo].join(' ').toLowerCase().indexOf(q) >= 0;
+    }).sort(function(a, b) {
+      return String(a.laboratorio || '').localeCompare(String(b.laboratorio || '')) ||
+        String(a.descricao || '').localeCompare(String(b.descricao || ''));
+    });
+  }
+
+  function renderPlanejamentoItens() {
+    var body = document.getElementById('planItensBody');
+    if (!body) return;
+    var projeto = document.getElementById('planProjeto').value;
+    if (!projeto) {
+      document.getElementById('planProjetoResumo').innerHTML = '';
+      var pr0 = document.getElementById('planParticipantesResumo');
+      if (pr0) { pr0.style.display = 'none'; pr0.innerHTML = ''; }
+      document.getElementById('planResumoPedidos').innerHTML = '';
+      body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto para montar o pedido.</td></tr>';
+      return;
+    }
+    var info = getPlanejamentoProjetoInfo(projeto);
+    var itens = getPlanejamentoItensFiltrados();
+    var labs = {};
+    itens.forEach(function(it) { if (it.laboratorio) labs[it.laboratorio] = 1; });
+    document.getElementById('planProjetoResumo').innerHTML =
+      projetoChip(projeto) +
+      (info.status ? '<span class="chip chip-blue">' + esc(info.status) + '</span>' : '') +
+      '<span class="chip chip-green">' + esc(info.participantesAtivos || 0) + ' participante(s) ativo(s)</span>' +
+      '<span class="chip chip-purple">' + Object.keys(labs).length + ' laboratório(s)</span>';
+    var pr = document.getElementById('planParticipantesResumo');
+    var participantes = info.participantes || [];
+    if (pr) {
+      pr.style.display = participantes.length ? 'block' : 'none';
+      pr.innerHTML = participantes.length
+        ? '<b>Participantes ativos:</b> ' + participantes.map(function(p) {
+            return esc(p.nome || '-') + ' <span style="color:#7b8794">(' + esc(p.ultimaVisitaData || 'sem visita') + (p.ultimaVisitaId ? ' · ' + esc(p.ultimaVisitaId) : '') + ')</span>';
+          }).join(' · ')
+        : '';
+    }
+    if (!itens.length) {
+      body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Nenhum item cadastrado para este projeto.</td></tr>';
+      return;
+    }
+    body.innerHTML = itens.map(function(it, idx) {
+      var lotes = (it.lotes || []).slice().sort(function(a, b) { return sortValidade(a.validade, b.validade); });
+      var lotesHtml = lotes.length ? lotes.map(function(l) {
+        return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0">' +
+          '<span style="' + evValCls(l.validade || '') + '">' + esc(l.validade || '—') + '</span>' +
+          '<span class="chip chip-blue" style="font-size:10px;padding:1px 6px">' + esc(l.qtde || 0) + '</span>' +
+        '</div>';
+      }).join('') : '<span style="color:#9aa3b0">Sem estoque</span>';
+      return '<tr>' +
+        '<td>' + esc(it.laboratorio || '—') + '</td>' +
+        '<td><div class="row-name">' + esc(it.descricao || '—') + '</div></td>' +
+        '<td>' + itemTipoChip(it.tipo) + '</td>' +
+        '<td><div style="font-size:12px;color:#5f6b7c">Total: <b>' + esc(it.estoqueAtual || 0) + '</b></div>' + lotesHtml + '</td>' +
+        '<td style="text-align:center">' + (Number(it.pendentePedido || 0) > 0 ? '<span class="chip chip-yellow">' + esc(it.pendentePedido) + '</span>' : '—') + '</td>' +
+        '<td style="text-align:center"><input type="number" min="0" step="1" value="' + esc(_planejamentoCarrinho[it.idItem] || 0) + '" data-id-item="' + esc(it.idItem) + '" class="f-input plan-qtd" style="height:34px;text-align:center" oninput="atualizarPlanejamentoQtd(this)"></td>' +
+      '</tr>';
+    }).join('');
+    renderPlanejamentoResumo();
+  }
+
+  function atualizarPlanejamentoQtd(input) {
+    var id = input.getAttribute('data-id-item');
+    var qtd = Number(input.value || 0);
+    if (!id) return;
+    if (qtd > 0) _planejamentoCarrinho[id] = qtd;
+    else delete _planejamentoCarrinho[id];
+    renderPlanejamentoResumo();
+  }
+
+  function getPlanejamentoItensSelecionados() {
+    var projeto = document.getElementById('planProjeto').value;
+    var out = [];
+    ((_planejamentoPedidoData || {}).itens || []).forEach(function(it) {
+      if (!projeto || normSelectValue(it.projeto) !== normSelectValue(projeto)) return;
+      var qtd = Number(_planejamentoCarrinho[it.idItem] || 0);
+      if (!qtd || qtd <= 0) return;
+      out.push({
+        idItem: it.idItem,
+        descricao: it.descricao,
+        tipo: it.tipo,
+        laboratorio: it.laboratorio,
+        qtdSolicitada: qtd
+      });
+    });
+    return out;
+  }
+
+  function renderPlanejamentoResumo() {
+    var itens = getPlanejamentoItensSelecionados();
+    var labs = {};
+    itens.forEach(function(it) { labs[it.laboratorio] = (labs[it.laboratorio] || 0) + 1; });
+    var labsList = Object.keys(labs).sort();
+    var resumo = document.getElementById('planResumoPedidos');
+    if (!resumo) return;
+    if (!itens.length) {
+      resumo.innerHTML = 'Informe uma quantidade para montar o pedido.';
+      return;
+    }
+    resumo.innerHTML = '<b>' + itens.length + ' item(ns)</b> selecionado(s). ' +
+      'Serão criados <b>' + labsList.length + ' planejamento(s)</b>, um para cada laboratório: ' +
+      labsList.map(function(lab) { return '<span class="chip chip-blue" style="margin-left:4px">' + esc(lab) + '</span>'; }).join('');
+  }
+
+  function salvarPlanejamentoPedidoInline() {
+    var projeto = document.getElementById('planProjeto').value;
+    var itens = getPlanejamentoItensSelecionados();
+    var info = getPlanejamentoProjetoInfo(projeto);
+    var ok = !!projeto;
+    document.getElementById('planProjeto').classList.toggle('invalid', !ok);
+    document.getElementById('errPlanProjeto').classList.toggle('visible', !ok);
+    if (!ok) return;
+    if (!itens.length) {
+      document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">Informe a quantidade de pelo menos um item.</span>';
+      return;
+    }
+    var btn = document.getElementById('btnSalvarPlanejamento');
+    btn.disabled = true;
+    document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#5f6b7c">Criando pedidos por laboratório…</span>';
+    google.script.run
+      .withSuccessHandler(function(r) {
+        btn.disabled = false;
+        fecharOverlay('modalPlanejarPedidoInline');
+        var msg = (r && r.mensagem ? r.mensagem : 'Pedido(s) criado(s).') + (r && r.emailEnviado ? ' Resumo enviado por e-mail.' : '');
+        if (r && r.emailErro) msg += ' O e-mail não foi enviado: ' + r.emailErro;
+        snack(msg);
+        carregarEstoqueInline();
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+      })
+      .salvarPlanejamentoPedidoEstoque({
+        projeto: projeto,
+        data: document.getElementById('planData').value,
+        emailDestino: document.getElementById('planEmail').value.trim(),
+        solicitante: document.getElementById('planSolicitante').value,
+        observacoes: document.getElementById('planObs').value.trim(),
+        participantesAtivos: info.participantesAtivos || 0,
+        participantesResumo: info.participantes || [],
+        itens: itens
+      });
+  }
+
+  function renderPedidosInline() {
+    var btnNovoItem = document.getElementById('eiBtnNovoItem');
+    if (btnNovoItem) btnNovoItem.style.display = 'none';
+    var btnNovo = document.getElementById('eiBtnNovoPedido');
+    if (btnNovo) btnNovo.style.display = 'flex';
+    var btnPlanejarPedido = document.getElementById('eiBtnPlanejarPedido');
+    if (btnPlanejarPedido) btnPlanejarPedido.style.display = 'flex';
+    var btnPlanejarDescarte = document.getElementById('eiBtnPlanejarDescarte');
+    if (btnPlanejarDescarte) btnPlanejarDescarte.style.display = 'none';
+    var btnNovaMov = document.getElementById('eiBtnNovaMov');
+    if (btnNovaMov) btnNovaMov.style.display = 'none';
+    var btnPrint = document.getElementById('eiBtnImprimirRel');
+    if (btnPrint) btnPrint.style.display = 'none';
+    var relTipo = document.getElementById('eiRelTipo');
+    if (relTipo) relTipo.style.display = 'none';
+    setEstoqueControlVisible('eiPedidoStatus', true);
+    setEstoqueControlVisible('eiMovTipoFiltro', false);
+    var dados = _estoqueInlineDados || {};
+    var pedidos = dados.pedidos || [];
+    var mapa = dados.pedidoItensMap || {};
+    var q = (document.getElementById('eiSearch').value || '').toLowerCase();
+    var statusMap = { 'Em planejamento': 1 };
+    pedidos.forEach(function(p){ if (p.status) statusMap[p.status] = 1; });
+    var filtroStatus = setSelectOptionsKeepValue('eiPedidoStatus', Object.keys(statusMap).sort(), 'Todos os status');
+    var filtrados = pedidos.filter(function(p) {
+      var okStatus = !filtroStatus || String(p.status || '') === filtroStatus;
+      var okBusca = !q || [p.numeroPedido, p.projeto, p.laboratorio, p.responsavel, p.status, p.observacoes].join(' ').toLowerCase().indexOf(q) >= 0;
+      return okStatus && okBusca;
+    }).sort(function(a, b) {
+      return pedidoStatusRank(a.status) - pedidoStatusRank(b.status) ||
+        String(b.dataISO || b.data || '').localeCompare(String(a.dataISO || a.data || ''));
+    });
+    var pendentes = pedidos.filter(function(p){ return String(p.status).toLowerCase().indexOf('pendente') >= 0; }).length;
+    var parciais = pedidos.filter(function(p){ return String(p.status).toLowerCase().indexOf('parcial') >= 0; }).length;
+    var recebidos = pedidos.filter(function(p){ return String(p.status).toLowerCase().indexOf('recebido') >= 0; }).length;
+    var totalItens = Object.keys(mapa).reduce(function(total, id) { return total + (mapa[id] || []).length; }, 0);
+    setEstoqueMetric(1, pedidos.length, 'Total de Pedidos', 'inventory_2', '#1266f1');
+    setEstoqueMetric(2, recebidos, 'Recebidos', 'check_circle', '#137333');
+    setEstoqueMetric(3, parciais, 'Recebimento Parcial', 'hourglass_top', '#e65100');
+    setEstoqueMetric(4, pendentes, 'Pendentes', 'error', '#b3261e');
+    setEstoqueMetric(5, totalItens, 'Itens Solicitados', 'local_shipping', '#6a1b9a');
+    document.getElementById('eiHead').innerHTML =
+      '<tr><th style="width:44px"></th><th>Pedido</th><th>Projeto / Laboratório</th><th>Responsável</th><th>Status</th><th style="text-align:center">Itens</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
+    document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(p) {
+      var uid = String(p.idPedido || p.rowIndex || p.numeroPedido || '').replace(/[^A-Za-z0-9_-]/g, '_');
+      p._uid = uid;
+      var itens = mapa[p.idPedido] || [];
+      var badge = itens.length
+        ? '<span class="chip chip-blue" style="font-size:10px;padding:1px 7px">' + itens.length + ' item' + (itens.length === 1 ? '' : 's') + '</span>'
+        : '<span style="color:#9aa3b0">Sem itens</span>';
+      var detailItens = itens.length ? (
+        '<table class="ped-subtable">' +
+          '<colgroup><col style="width:140px"><col><col style="width:90px"><col style="width:90px"><col style="width:130px"></colgroup>' +
+          '<thead><tr><th>Tipo</th><th>Descrição</th><th style="text-align:center">Qtd Sol.</th><th style="text-align:center">Qtd Rec.</th><th>Status</th></tr></thead>' +
+          '<tbody>' + itens.map(function(it) {
+            return '<tr>' +
+              '<td>' + itemTipoChip(it.tipo) + '</td>' +
+              '<td>' + esc(it.descricao || '—') + '</td>' +
+              '<td style="text-align:center;font-weight:600">' + esc(it.qtdSolicitada || 0) + '</td>' +
+              '<td style="text-align:center;font-weight:600">' + esc(it.qtdRecebida || 0) + '</td>' +
+              '<td>' + pedidoItemChip(it.status) + '</td>' +
+            '</tr>';
+          }).join('') + '</tbody>' +
+        '</table>'
+      ) : '<div class="sub-empty">Nenhum item registrado neste pedido.</div>';
+      var emPlanejamento = String(p.status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').indexOf('planejamento') >= 0;
+      var obs = p.observacoes
+        ? esc(p.observacoes)
+        : '<span style="color:#9aa3b0;font-style:italic">Nenhuma observação registrada.</span>';
+      return '<tr class="ped-main" data-uid="' + uid + '">' +
+          '<td style="padding-left:12px"><button class="expand-btn" id="pedbtn-' + uid + '" onclick="togglePedidoInline(&quot;' + uid + '&quot;)"><span class="material-symbols-outlined">chevron_right</span></button></td>' +
+          '<td><div class="row-name">' + esc(p.numeroPedido || 'Aguardando número') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(p.data || '—') + '</div></td>' +
+          '<td><div class="row-name">' + projetoChip(p.projeto) + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:5px">' + esc(p.laboratorio || '—') + '</div></td>' +
+          '<td style="color:#5f6b7c">' + esc(p.responsavel || '—') + '</td>' +
+          '<td>' + pedidoStatusChip(p.status) + '</td>' +
+          '<td style="text-align:center">' + badge + '</td>' +
+          '<td><div class="action-btns">' +
+            '<button class="icon-btn" title="Editar" onclick="abrirFormPedidoInline(&quot;' + encodeURIComponent(JSON.stringify(p)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
+            (emPlanejamento ? '' : '<button class="icon-btn" title="Receber pedido" onclick="abrirRecebimentoPedidoInline(&quot;' + uid + '&quot;)"><span class="material-symbols-outlined">inventory</span></button>') +
+            '<button class="icon-btn del" title="Excluir" onclick="excluirPedidoInline(&quot;' + esc(p.rowIndex) + '&quot;,&quot;' + esc(p.idPedido) + '&quot;,&quot;' + esc(p.numeroPedido) + '&quot;)"><span class="material-symbols-outlined">delete</span></button>' +
+          '</div></td>' +
+        '</tr>' +
+        '<tr class="ped-detail" id="peddetail-' + uid + '" data-uid="' + uid + '">' +
+          '<td colspan="7"><div class="ped-detail-inner"><div class="ped-detail-grid">' +
+            '<div>' + detailItens + '</div>' +
+            '<div class="ped-detail-note"><div class="ped-detail-note-title"><span class="material-symbols-outlined">notes</span>Observações</div><div class="ped-detail-note-body">' + obs + '</div></div>' +
+          '</div></div></td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="7" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum pedido encontrado.</td></tr>';
+    bindPedidoInlineHover();
+  }
+
+  function renderDescartesInline() {
+    ['eiBtnNovoItem','eiBtnNovoPedido','eiBtnPlanejarPedido','eiBtnPlanejarDescarte','eiBtnNovaMov','eiBtnImprimirRel'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.style.display = 'none';
+    });
+    var btn = document.getElementById('eiBtnPlanejarDescarte');
+    if (btn) btn.style.display = 'flex';
+    setEstoqueControlVisible('eiPedidoStatus', false);
+    setEstoqueControlVisible('eiMovTipoFiltro', false);
+    var dados = _estoqueInlineDados || {};
+    var descartes = dados.descartes || [];
+    var mapa = dados.itensMap || {};
+    var q = (document.getElementById('eiSearch').value || '').toLowerCase();
+    var filtrados = descartes.filter(function(d) {
+      return !q || [d.idDescarte, d.projeto, d.solicitante, d.email, d.status, d.responsavel, d.observacoes].join(' ').toLowerCase().indexOf(q) >= 0;
+    }).sort(function(a,b) {
+      return descarteRank(a.status) - descarteRank(b.status) || String(b.data || '').localeCompare(String(a.data || ''));
+    });
+    var planejados = descartes.filter(function(d){ return normSelectValue(d.status).indexOf('planejamento') >= 0; }).length;
+    var efetivados = descartes.filter(function(d){ return normSelectValue(d.status).indexOf('efetivado') >= 0; }).length;
+    var totalItens = Object.keys(mapa).reduce(function(t, id){ return t + (mapa[id] || []).length; }, 0);
+    setEstoqueMetric(1, descartes.length, 'Listas de Descarte', 'delete_sweep', '#1266f1');
+    setEstoqueMetric(2, planejados, 'Em Planejamento', 'pending_actions', '#e65100');
+    setEstoqueMetric(3, efetivados, 'Efetivadas', 'task_alt', '#137333');
+    setEstoqueMetric(4, totalItens, 'Itens Listados', 'inventory', '#b3261e');
+    setEstoqueMetric(5, '—', 'Descarte', 'delete', '#6a1b9a');
+    document.getElementById('eiHead').innerHTML =
+      '<tr><th style="width:44px"></th><th>Lista</th><th>Projeto</th><th>Solicitante</th><th>Status</th><th style="text-align:center">Itens</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
+    document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(d) {
+      var uid = String(d.idDescarte || d.rowIndex || '').replace(/[^A-Za-z0-9_-]/g, '_');
+      var itens = mapa[d.idDescarte] || [];
+      var emPlanejamento = normSelectValue(d.status).indexOf('planejamento') >= 0;
+      var detail = itens.length ? '<table class="ped-subtable"><thead><tr><th>Tipo</th><th>Descrição</th><th>Validade</th><th>Local</th><th>Qtd</th><th>Status</th></tr></thead><tbody>' +
+        itens.map(function(it) { return '<tr><td>' + itemTipoChip(it.tipo) + '</td><td>' + esc(it.descricao || '-') + '</td><td>' + esc(it.validade || '-') + '</td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtdDescartar || 0) + '</td><td>' + pedidoItemChip(it.status) + '</td></tr>'; }).join('') +
+        '</tbody></table>' : '<div class="sub-empty">Nenhum item listado.</div>';
+      return '<tr class="ped-main" data-uid="' + uid + '">' +
+        '<td style="padding-left:12px"><button class="expand-btn" id="desbtn-' + uid + '" onclick="toggleDescarteInline(&quot;' + uid + '&quot;)"><span class="material-symbols-outlined">chevron_right</span></button></td>' +
+        '<td><div class="row-name">' + esc(d.idDescarte || '-') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(d.data || '-') + '</div></td>' +
+        '<td>' + projetoChip(d.projeto) + '</td><td>' + esc(d.solicitante || d.email || '-') + '</td><td>' + pedidoStatusChip(d.status) + '</td>' +
+        '<td style="text-align:center"><span class="chip chip-blue">' + itens.length + '</span></td>' +
+        '<td><div class="action-btns"><button class="icon-btn" title="Relatório PDF" onclick="imprimirRelatorioDescarte(&quot;' + esc(d.idDescarte) + '&quot;)"><span class="material-symbols-outlined">picture_as_pdf</span></button>' + (emPlanejamento ? '<button class="icon-btn" title="Efetivar descarte" onclick="efetivarDescarteInline(&quot;' + esc(d.idDescarte) + '&quot;)"><span class="material-symbols-outlined">delete_forever</span></button>' : '') + '</div></td>' +
+        '</tr><tr class="ped-detail" id="desdetail-' + uid + '"><td colspan="7"><div class="ped-detail-inner">' + detail + (d.observacoes ? '<div class="ped-detail-note" style="margin-top:10px"><div class="ped-detail-note-title"><span class="material-symbols-outlined">notes</span>Observações</div><div class="ped-detail-note-body">' + esc(d.observacoes) + '</div></div>' : '') + '</div></td></tr>';
+    }).join('') : '<tr><td colspan="7" style="text-align:center;color:#9aa3b0;padding:20px">Nenhuma lista de descarte encontrada.</td></tr>';
+  }
+
+  function descarteRank(status) {
+    var n = normSelectValue(status);
+    if (n.indexOf('planejamento') >= 0) return 0;
+    if (n.indexOf('efetivado') >= 0) return 1;
+    if (n.indexOf('cancel') >= 0) return 2;
+    return 3;
+  }
+
+  function toggleDescarteInline(uid) {
+    var detail = document.getElementById('desdetail-' + uid);
+    var btn = document.getElementById('desbtn-' + uid);
+    if (!detail) return;
+    detail.classList.toggle('open');
+    if (btn) btn.classList.toggle('open');
+  }
+
+  function efetivarDescarteInline(id) {
+    if (!id) return;
+    var btn = document.getElementById('btnConfirmDescarte');
+    btn.onclick = function() {
+      fecharOverlay('confirmDescarte');
+      google.script.run
+        .withSuccessHandler(function(msg) { snack(msg || 'Descarte efetivado.'); carregarEstoqueInline(); })
+        .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+        .efetivarDescarteEstoque(id);
+    };
+    abrirOverlay('confirmDescarte');
+  }
+
+  function imprimirRelatorioDescarte(id) {
+    var dados = _estoqueInlineDados || {};
+    var descarte = (dados.descartes || []).find(function(d) { return String(d.idDescarte || '') === String(id || ''); });
+    if (!descarte) return;
+    var itens = (dados.itensMap || {})[id] || [];
+    var logo = ((document.querySelector('.nav-brand img') || {}).src || '');
+    var rows = itens.map(function(it) {
+      return '<tr><td>' + esc(it.descricao || '-') + '</td><td>' + esc(it.tipo || '-') + '</td><td>' + esc(it.validade || '-') + '</td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center">' + esc(it.qtdDescartada || it.qtdDescartar || 0) + '</td><td>' + esc(it.motivo || '') + '</td></tr>';
+    }).join('');
+    var dataDesc = descarte.dataEfetivacao || descarte.data || '';
+    var html = '<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Descarte</title><style>' +
+      'body{font-family:Arial,sans-serif;color:#1f2937;margin:32px} .head{display:flex;gap:18px;align-items:center;border-bottom:2px solid #1266f1;padding-bottom:14px;margin-bottom:20px} .head img{height:46px} h1{font-size:20px;margin:0;color:#0b3f8a} p{margin:4px 0;color:#5f6b7c;font-size:12px} table{width:100%;border-collapse:collapse;margin-top:18px} th{background:#eef4ff;color:#1266f1;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.7px;padding:8px;border:1px solid #dbe7fb} td{font-size:12px;padding:8px;border:1px solid #e5e7eb}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;font-size:12px}.sign{margin-top:70px;width:360px;border-top:1px solid #111;text-align:center;padding-top:8px;font-size:12px}@media print{button{display:none}}' +
+      '</style></head><body><div class="head">' + (logo ? '<img src="' + logo + '">' : '') + '<div><h1>Relatório de Descarte de Estoque</h1><p>Instituto de Pesquisas em Saúde - UCS</p></div></div>' +
+      '<div class="meta"><div><b>ID:</b> ' + esc(descarte.idDescarte || '-') + '</div><div><b>Data de descarte:</b> ' + esc(dataDesc || '-') + '</div><div><b>Projeto:</b> ' + esc(descarte.projeto || '-') + '</div><div><b>Solicitante:</b> ' + esc(descarte.solicitante || '-') + '</div><div><b>Status:</b> ' + esc(descarte.status || '-') + '</div><div><b>Responsável:</b> ' + esc(descarte.responsavel || '-') + '</div></div>' +
+      (descarte.observacoes ? '<p style="margin-top:14px"><b>Observações:</b> ' + esc(descarte.observacoes) + '</p>' : '') +
+      '<table><thead><tr><th>Item</th><th>Tipo</th><th>Validade</th><th>Localização</th><th>Qtd</th><th>Motivo</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div class="sign">Assinatura do solicitante</div><script>window.onload=function(){window.print()};<\/script></body></html>';
+    var win = window.open('', '_blank');
+    if (!win) { snack('Permita pop-ups para gerar o PDF.'); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function pedidoStatusChip(status) {
+    var s = status || '—';
+    var n = String(s).toLowerCase();
+    var cls = n.indexOf('pendente') >= 0 ? 'chip-yellow' :
+      n.indexOf('planejamento') >= 0 ? 'chip-blue' :
+      n.indexOf('recebido') >= 0 ? 'chip-green' :
+      n.indexOf('parcial') >= 0 ? 'chip-purple' :
+      n.indexOf('cancelado') >= 0 ? 'chip-grey' : 'chip-grey';
+    return '<span class="chip ' + cls + '">' + esc(s) + '</span>';
+  }
+
+  function pedidoStatusRank(status) {
+    var n = String(status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (n.indexOf('planejamento') >= 0) return 0;
+    if (n.indexOf('pendente') >= 0) return 1;
+    if (n.indexOf('parcial') >= 0) return 2;
+    if (n.indexOf('recebido') >= 0) return 3;
+    if (n.indexOf('cancel') >= 0) return 4;
+    return 5;
+  }
+
+  function pedidoItemChip(status) {
+    var s = status || '—';
+    var n = String(s).toLowerCase();
+    var cls = n.indexOf('pendente') >= 0 ? 'chip-yellow' :
+      n.indexOf('planejamento') >= 0 ? 'chip-blue' :
+      n.indexOf('recebido') >= 0 ? 'chip-green' :
+      n.indexOf('parcial') >= 0 ? 'chip-purple' : 'chip-grey';
+    return '<span class="chip ' + cls + '" style="font-size:10.5px;padding:2px 8px">' + esc(s) + '</span>';
+  }
+
+  function togglePedidoInline(uid) {
+    var detail = document.getElementById('peddetail-' + uid);
+    var btn = document.getElementById('pedbtn-' + uid);
+    if (!detail) return;
+    var isOpen = detail.classList.contains('open');
+    document.querySelectorAll('#eiBody .ped-detail.open').forEach(function(row) {
+      if (row.id !== 'peddetail-' + uid) row.classList.remove('open');
+    });
+    document.querySelectorAll('#eiBody .expand-btn.open').forEach(function(openBtn) {
+      if (openBtn.id !== 'pedbtn-' + uid) openBtn.classList.remove('open');
+    });
+    detail.classList.toggle('open', !isOpen);
+    if (btn) btn.classList.toggle('open', !isOpen);
+  }
+
+  function bindPedidoInlineHover() {
+    document.querySelectorAll('#eiBody .ped-main, #eiBody .ped-detail').forEach(function(tr) {
+      var uid = tr.dataset.uid;
+      tr.addEventListener('mouseenter', function() {
+        document.querySelectorAll('#eiBody [data-uid="' + uid + '"]').forEach(function(el) { el.classList.add('ped-hover'); });
+      });
+      tr.addEventListener('mouseleave', function() {
+        document.querySelectorAll('#eiBody [data-uid="' + uid + '"]').forEach(function(el) { el.classList.remove('ped-hover'); });
+      });
+    });
+  }
+
+  function abrirRecebimentoPedidoInline(uid) {
+    var dados = _estoqueInlineDados || {};
+    var pedidos = dados.pedidos || [];
+    var mapa = dados.pedidoItensMap || {};
+    var pedido = pedidos.find(function(p) { return p._uid === uid; });
+    if (!pedido) {
+      snack('Pedido não encontrado para recebimento.');
+      return;
+    }
+    var itens = (mapa[pedido.idPedido] || []).map(function(it, idx) {
+      var solicitada = Number(it.qtdSolicitada || 0);
+      var recebida = Number(it.qtdRecebida || 0);
+      return {
+        idx: idx,
+        idItem: it.idItem,
+        descricao: it.descricao,
+        tipo: it.tipo,
+        qtdSolicitada: solicitada,
+        qtdRecebida: recebida,
+        pendente: Math.max(0, solicitada - recebida),
+        status: it.status
+      };
+    }).filter(function(it) { return it.pendente > 0; });
+    if (!itens.length) {
+      snack('Este pedido não possui itens pendentes para receber.');
+      return;
+    }
+    _recebimentoPedidoInline = { pedido: pedido, itens: itens };
+    document.getElementById('receberPedidoSub').textContent = (pedido.numeroPedido || 'Pedido') + ' · ' + (pedido.projeto || '') + ' · ' + (pedido.laboratorio || '');
+    document.getElementById('rpData').value = new Date().toISOString().split('T')[0];
+    document.getElementById('rpObs').value = '';
+    document.getElementById('statusRecebimentoInline').innerHTML = '';
+    document.getElementById('btnSalvarRecebimentoInline').disabled = false;
+    renderRecebimentoPedidoInline();
+    abrirOverlay('modalReceberPedidoInline');
+  }
+
+  function renderRecebimentoPedidoInline() {
+    var wrap = document.getElementById('rpItensWrap');
+    var rec = _recebimentoPedidoInline || { itens: [] };
+    wrap.innerHTML = rec.itens.length ? (
+      '<table style="width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid #dde5f8;border-radius:var(--r-md);overflow:hidden">' +
+        '<thead><tr style="background:#eef2ff">' +
+          '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--primary)">Item</th>' +
+          '<th style="padding:8px 10px;text-align:center;font-size:10px;text-transform:uppercase;color:var(--primary);width:84px">Pendente</th>' +
+          '<th style="padding:8px 10px;text-align:center;font-size:10px;text-transform:uppercase;color:var(--primary);width:120px">Receber</th>' +
+          '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--primary);width:170px">Validade</th>' +
+        '</tr></thead><tbody>' +
+        rec.itens.map(function(it, idx) {
+          return '<tr>' +
+            '<td style="padding:10px;border-top:1px solid #f0f4f8"><div class="row-name">' + esc(it.descricao) + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + itemTipoChip(it.tipo) + '</div></td>' +
+            '<td style="padding:10px;text-align:center;border-top:1px solid #f0f4f8;font-weight:600">' + esc(it.pendente) + '</td>' +
+            '<td style="padding:10px;border-top:1px solid #f0f4f8"><input type="number" class="f-input" id="rpQtd-' + idx + '" min="0" max="' + esc(it.pendente) + '" value="' + esc(it.pendente) + '"></td>' +
+            '<td style="padding:10px;border-top:1px solid #f0f4f8"><input type="date" class="f-input" id="rpVal-' + idx + '"></td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody></table>'
+    ) : '<div class="sub-empty">Nenhum item pendente.</div>';
+  }
+
+  function salvarRecebimentoPedidoInline() {
+    var rec = _recebimentoPedidoInline;
+    if (!rec) return;
+    var itens = [];
+    var ok = true;
+    rec.itens.forEach(function(it, idx) {
+      var qtdEl = document.getElementById('rpQtd-' + idx);
+      var valEl = document.getElementById('rpVal-' + idx);
+      var qtd = Number(qtdEl.value || 0);
+      qtdEl.classList.remove('invalid');
+      valEl.classList.remove('invalid');
+      if (qtd < 0 || qtd > it.pendente) {
+        qtdEl.classList.add('invalid');
+        ok = false;
+      }
+      if (qtd > 0 && !valEl.value) {
+        valEl.classList.add('invalid');
+        ok = false;
+      }
+      if (qtd > 0) {
+        itens.push({
+          idItem: it.idItem,
+          descricao: it.descricao,
+          qtdRecebida: qtd,
+          validade: valEl.value
+        });
+      }
+    });
+    if (!ok) {
+      document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">Confira quantidade e validade dos itens recebidos.</span>';
+      return;
+    }
+    if (!itens.length) {
+      document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">Informe pelo menos um item recebido.</span>';
+      return;
+    }
+    var btn = document.getElementById('btnSalvarRecebimentoInline');
+    btn.disabled = true;
+    document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#5f6b7c">Registrando recebimento…</span>';
+    google.script.run
+      .withSuccessHandler(function(msg) {
+        btn.disabled = false;
+        fecharOverlay('modalReceberPedidoInline');
+        snack(msg || 'Recebimento registrado.');
+        carregarEstoqueInline();
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+      })
+      .receberPedidoEstoque({
+        rowIndex: rec.pedido.rowIndex,
+        idPedido: rec.pedido.idPedido,
+        dataReceb: document.getElementById('rpData').value,
+        observacoes: document.getElementById('rpObs').value.trim(),
+        itens: itens
+      });
+  }
+
+  function abrirFormItemInline(itemData) {
+    var item = itemData ? JSON.parse(decodeURIComponent(itemData)) : null;
+    var dados = _estoqueInlineDados || {};
+    var projetos = (dados.projetosAtivos && dados.projetosAtivos.length) ? dados.projetosAtivos : (dados.projetos || []);
+    _itemInlineEditId = item ? (item.id || '') : '';
+    ['iiDescricao','iiLocalizacao','iiEstoqueMin','iiObs'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    document.getElementById('iiTipo').value = '';
+    document.getElementById('iiLaboratorio').value = '';
+    document.getElementById('iiStatus').value = 'Ativo';
+    ['iiProjeto','iiTipo','iiDescricao','iiLaboratorio'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('invalid');
+    });
+    ['errIiProjeto','errIiTipo','errIiDescricao','errIiLaboratorio'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('visible');
+    });
+    document.getElementById('statusItemInline').innerHTML = '';
+    document.getElementById('btnSalvarItemInline').disabled = false;
+    var projSel = document.getElementById('iiProjeto');
+    projSel.innerHTML = '<option value="">— Selecione —</option>';
+    projetos.forEach(function(proj) {
+      projSel.insertAdjacentHTML('beforeend', '<option value="' + esc(proj) + '">' + esc(proj) + '</option>');
+    });
+    var labSel = document.getElementById('iiLaboratorio');
+    labSel.innerHTML = '<option value="">— Selecione —</option>';
+    ESTOQUE_CONFIG.laboratorios.forEach(function(lab) {
+      labSel.insertAdjacentHTML('beforeend', '<option value="' + esc(lab) + '">' + esc(lab) + '</option>');
+    });
+    var locSel = document.getElementById('iiLocalizacao');
+    locSel.innerHTML = '<option value="">— Selecione —</option>';
+    ESTOQUE_CONFIG.localizacoes.forEach(function(loc) {
+      locSel.insertAdjacentHTML('beforeend', '<option value="' + esc(loc) + '">' + esc(loc) + '</option>');
+    });
+    var tipoSel = document.getElementById('iiTipo');
+    tipoSel.innerHTML = '<option value="">— Selecione —</option>';
+    ESTOQUE_CONFIG.tiposItem.forEach(function(tipo) {
+      tipoSel.insertAdjacentHTML('beforeend', '<option value="' + esc(tipo) + '">' + esc(tipo) + '</option>');
+    });
+    if (item) {
+      document.getElementById('iiProjeto').value = item.projeto || '';
+      document.getElementById('iiTipo').value = item.tipo || '';
+      document.getElementById('iiDescricao').value = item.descricao || '';
+      document.getElementById('iiLaboratorio').value = item.laboratorio || '';
+      document.getElementById('iiStatus').value = item.status || 'Ativo';
+      document.getElementById('iiLocalizacao').value = item.localizacao || '';
+      document.getElementById('iiEstoqueMin').value = item.estoqueMin || '';
+      document.getElementById('iiObs').value = item.observacoes || '';
+    }
+    abrirOverlay('modalItemInline');
+  }
+
+  function validarCampoItemInline(id, errId, valido) {
+    var el = document.getElementById(id);
+    var err = document.getElementById(errId);
+    if (el) el.classList.toggle('invalid', !valido);
+    if (err) err.classList.toggle('visible', !valido);
+    return valido;
+  }
+
+  function salvarItemInline() {
+    var projeto = document.getElementById('iiProjeto').value;
+    var tipo = document.getElementById('iiTipo').value;
+    var descricao = document.getElementById('iiDescricao').value.trim();
+    var laboratorio = document.getElementById('iiLaboratorio').value;
+    var ok = true;
+    ok = validarCampoItemInline('iiProjeto', 'errIiProjeto', !!projeto) && ok;
+    ok = validarCampoItemInline('iiTipo', 'errIiTipo', !!tipo) && ok;
+    ok = validarCampoItemInline('iiDescricao', 'errIiDescricao', !!descricao) && ok;
+    ok = validarCampoItemInline('iiLaboratorio', 'errIiLaboratorio', !!laboratorio) && ok;
+    if (!ok) return;
+
+    var btn = document.getElementById('btnSalvarItemInline');
+    btn.disabled = true;
+    document.getElementById('statusItemInline').innerHTML = '<span style="color:#5f6b7c">Salvando…</span>';
+    google.script.run
+      .withSuccessHandler(function(msg) {
+        btn.disabled = false;
+        document.getElementById('statusItemInline').innerHTML = '';
+        fecharOverlay('modalItemInline');
+        snack(msg || 'Item cadastrado.');
+        carregarEstoqueInline();
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        document.getElementById('statusItemInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+      })
+      .salvarItemEstoque({
+        id: _itemInlineEditId,
+        projeto: projeto,
+        tipo: tipo,
+        descricao: descricao,
+        laboratorio: laboratorio,
+        localizacao: document.getElementById('iiLocalizacao').value.trim(),
+        estoqueMin: document.getElementById('iiEstoqueMin').value,
+        status: document.getElementById('iiStatus').value,
+        observacoes: document.getElementById('iiObs').value.trim()
+      });
+  }
+
+  function excluirItemInline(id, descricao) {
+    abrirConfirmacaoDestrutiva({
+      mensagem: 'Deseja excluir o item "' + descricao + '"? Esta ação não pode ser desfeita.',
+      onConfirm: function() {
+        google.script.run
+          .withSuccessHandler(function(msg) {
+            snack(msg || 'Item excluído.');
+            carregarEstoqueInline();
+          })
+          .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+          .excluirItemEstoque(id);
+      }
+    });
+  }
+
+  function abrirFormPedidoInline(pedidoData) {
+    var pedido = pedidoData ? JSON.parse(decodeURIComponent(pedidoData)) : null;
+    var dados = _estoqueInlineDados || {};
+    var projLabs = dados.projLabsMap || {};
+    var mapa = dados.pedidoItensMap || {};
+    _pedidoInlineEdit = pedido;
+    _pedidoInlineItens = [];
+    ['piNumero','piObs'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    document.getElementById('piData').value = pedido ? (pedido.dataISO || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0];
+    ['piNumero','piProjeto','piLab'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('invalid');
+    });
+    ['errPiNumero','errPiProjeto','errPiLab'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('visible');
+    });
+    document.getElementById('statusPedidoInline').innerHTML = '';
+    document.getElementById('btnSalvarPedidoInline').disabled = false;
+
+    var projSel = document.getElementById('piProjeto');
+    projSel.innerHTML = '<option value="">— Selecione —</option>';
+    var projetosPedido = (dados.projetos && dados.projetos.length) ? dados.projetos.slice() : Object.keys(projLabs);
+    projetosPedido.sort().forEach(function(proj) {
+      projSel.insertAdjacentHTML('beforeend', '<option value="' + esc(proj) + '">' + esc(proj) + '</option>');
+    });
+    document.getElementById('piLab').innerHTML = '<option value="">— Selecione o projeto primeiro —</option>';
+    document.getElementById('piTipo').innerHTML = '<option value="">— Tipo —</option>';
+    document.getElementById('piItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
+    document.getElementById('piSecaoItens').style.display = 'none';
+    if (pedido) {
+      document.getElementById('piNumero').value = pedido.numeroPedido || '';
+      document.getElementById('piProjeto').value = pedido.projeto || '';
+      document.getElementById('piObs').value = pedido.observacoes || '';
+      onPedidoProjetoChange();
+      document.getElementById('piLab').value = pedido.laboratorio || '';
+      onPedidoLabChange();
+      _pedidoInlineItens = (mapa[pedido.idPedido] || []).map(function(it) {
+        return {
+          idItem: it.idItem,
+          descricao: it.descricao,
+          tipo: it.tipo,
+          qtdSolicitada: it.qtdSolicitada
+        };
+      });
+    }
+    renderPedidoInlineItensForm();
+    abrirOverlay('modalPedidoInline');
+  }
+
+  function onPedidoProjetoChange() {
+    var dados = _estoqueInlineDados || {};
+    var projLabs = dados.projLabsMap || {};
+    var proj = document.getElementById('piProjeto').value;
+    var labSel = document.getElementById('piLab');
+    labSel.innerHTML = '<option value="">— Selecione —</option>';
+    document.getElementById('piTipo').innerHTML = '<option value="">— Tipo —</option>';
+    document.getElementById('piItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
+    document.getElementById('piSecaoItens').style.display = 'none';
+    _pedidoInlineItens = [];
+    renderPedidoInlineItensForm();
+    if (!proj) return;
+    var labsProjeto = projLabs[proj] || [];
+    if (!labsProjeto.length) labsProjeto = ESTOQUE_CONFIG.laboratorios || [];
+    labsProjeto.forEach(function(lab) {
+      labSel.insertAdjacentHTML('beforeend', '<option value="' + esc(lab) + '">' + esc(lab) + '</option>');
+    });
+    if (labsProjeto.length === 1) {
+      labSel.value = labsProjeto[0];
+      onPedidoLabChange();
+    }
+  }
+
+  function onPedidoLabChange() {
+    var dados = _estoqueInlineDados || {};
+    var itensMap = dados.projLabItensMap || {};
+    var catalogo = dados.itensCatalogo || [];
+    var proj = document.getElementById('piProjeto').value;
+    var lab = document.getElementById('piLab').value;
+    var sec = document.getElementById('piSecaoItens');
+    var tipoSel = document.getElementById('piTipo');
+    tipoSel.innerHTML = '<option value="">— Tipo —</option>';
+    document.getElementById('piItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
+    if (!proj || !lab) {
+      sec.style.display = 'none';
+      return;
+    }
+    sec.style.display = 'block';
+    var tipos = {};
+    var lista = itensMap[proj + '||' + lab] || [];
+    if (!lista.length) {
+      lista = catalogo.filter(function(it) { return it.projeto === proj; });
+    }
+    lista.forEach(function(it) {
+      if (it.tipo) tipos[it.tipo] = 1;
+    });
+    Object.keys(tipos).sort().forEach(function(tipo) {
+      tipoSel.insertAdjacentHTML('beforeend', '<option value="' + esc(tipo) + '">' + esc(tipo) + '</option>');
+    });
+  }
+
+  function onPedidoTipoChange() {
+    var dados = _estoqueInlineDados || {};
+    var itensMap = dados.projLabItensMap || {};
+    var catalogo = dados.itensCatalogo || [];
+    var proj = document.getElementById('piProjeto').value;
+    var lab = document.getElementById('piLab').value;
+    var tipo = document.getElementById('piTipo').value;
+    var itemSel = document.getElementById('piItem');
+    itemSel.innerHTML = '<option value="">— Selecione —</option>';
+    if (!proj || !lab || !tipo) return;
+    var lista = itensMap[proj + '||' + lab] || [];
+    if (!lista.length) {
+      lista = catalogo.filter(function(it) { return it.projeto === proj; });
+    }
+    lista
+      .filter(function(it) { return it.tipo === tipo; })
+      .forEach(function(it) {
+        itemSel.insertAdjacentHTML('beforeend', '<option value="' + esc(it.id) + '">' + esc(it.descricao) + '</option>');
+      });
+  }
+
+  function adicionarItemPedidoInline() {
+    var tipo = document.getElementById('piTipo').value;
+    var itemSel = document.getElementById('piItem');
+    var idItem = itemSel.value;
+    var qtd = parseInt(document.getElementById('piQtd').value, 10) || 1;
+    if (!tipo || !idItem) {
+      snack('Selecione tipo e item.');
+      return;
+    }
+    var descricao = itemSel.options[itemSel.selectedIndex].text;
+    _pedidoInlineItens.push({
+      idItem: idItem,
+      descricao: descricao,
+      tipo: tipo,
+      qtdSolicitada: qtd
+    });
+    document.getElementById('piQtd').value = 1;
+    renderPedidoInlineItensForm();
+  }
+
+  function renderPedidoInlineItensForm() {
+    var wrap = document.getElementById('piItensWrap');
+    var body = document.getElementById('piItensBody');
+    if (!wrap || !body) return;
+    organizarLayoutItensPedidoInline();
+    if (!_pedidoInlineItens.length) {
+      wrap.style.display = 'none';
+      var vazio = document.getElementById('piItensEmpty');
+      if (vazio) vazio.style.display = 'block';
+      body.innerHTML = '';
+      return;
+    }
+    wrap.style.display = 'block';
+    var vazio = document.getElementById('piItensEmpty');
+    if (vazio) vazio.style.display = 'none';
+    body.innerHTML = _pedidoInlineItens.map(function(it, idx) {
+      return '<tr>' +
+        '<td style="padding:8px 10px">' + itemTipoChip(it.tipo) + '</td>' +
+        '<td style="padding:8px 10px;font-size:12px">' + esc(it.descricao) + '</td>' +
+        '<td style="padding:8px 10px;font-size:12px">' + esc(it.qtdSolicitada) + '</td>' +
+        '<td style="padding:8px 10px"><button class="btn-remove-item" onclick="removerItemPedidoInline(' + idx + ')"><span class="material-symbols-outlined">close</span></button></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function organizarLayoutItensPedidoInline() {
+    var sec = document.getElementById('piSecaoItens');
+    var grid = sec ? sec.querySelector('.pedido-item-form-grid') : null;
+    var wrap = document.getElementById('piItensWrap');
+    if (!sec || !grid || !wrap || sec.dataset.organizado === '1') return;
+    var intro = document.createElement('div');
+    intro.style.cssText = 'font-size:12px;color:#5f6b7c;margin:-2px 0 10px';
+    intro.textContent = 'Confira primeiro os itens que serao efetivamente pedidos. Use a area inferior apenas para incluir um item adicional.';
+    sec.insertBefore(intro, grid);
+    sec.insertBefore(wrap, grid);
+
+    var vazio = document.createElement('div');
+    vazio.id = 'piItensEmpty';
+    vazio.style.cssText = 'display:none;background:#fff;border:1.5px dashed #d8e2f0;border-radius:8px;padding:12px 14px;margin-bottom:14px;color:#7b8794;font-size:12px';
+    vazio.textContent = 'Nenhum item incluido ainda.';
+    sec.insertBefore(vazio, grid);
+
+    var addLabel = document.createElement('div');
+    addLabel.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#7b8794;margin-bottom:8px';
+    addLabel.textContent = 'Adicionar item adicional';
+    sec.insertBefore(addLabel, grid);
+    wrap.style.marginBottom = '14px';
+    sec.dataset.organizado = '1';
+  }
+
+  function removerItemPedidoInline(idx) {
+    _pedidoInlineItens.splice(idx, 1);
+    renderPedidoInlineItensForm();
+  }
+
+  function validarCampoPedidoInline(id, errId, valido) {
+    var el = document.getElementById(id);
+    var err = document.getElementById(errId);
+    if (el) el.classList.toggle('invalid', !valido);
+    if (err) err.classList.toggle('visible', !valido);
+    return valido;
+  }
+
+  function salvarPedidoInline() {
+    var numero = document.getElementById('piNumero').value.trim();
+    var projeto = document.getElementById('piProjeto').value;
+    var lab = document.getElementById('piLab').value;
+    var ok = true;
+    ok = validarCampoPedidoInline('piNumero', 'errPiNumero', !!numero) && ok;
+    ok = validarCampoPedidoInline('piProjeto', 'errPiProjeto', !!projeto) && ok;
+    ok = validarCampoPedidoInline('piLab', 'errPiLab', !!lab) && ok;
+    if (!ok) return;
+
+    var btn = document.getElementById('btnSalvarPedidoInline');
+    btn.disabled = true;
+    document.getElementById('statusPedidoInline').innerHTML = '<span style="color:#5f6b7c">Salvando…</span>';
+    google.script.run
+      .withSuccessHandler(function(msg) {
+        btn.disabled = false;
+        document.getElementById('statusPedidoInline').innerHTML = '';
+        fecharOverlay('modalPedidoInline');
+        snack(msg || 'Pedido cadastrado.');
+        carregarEstoqueInline();
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        document.getElementById('statusPedidoInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+      })
+      .salvarPedidoEstoque({
+        rowIndex: _pedidoInlineEdit ? _pedidoInlineEdit.rowIndex : '',
+        idPedido: _pedidoInlineEdit ? _pedidoInlineEdit.idPedido : '',
+        numeroPedido: numero,
+        data: document.getElementById('piData').value,
+        projeto: projeto,
+        laboratorio: lab,
+        status: 'Pendente',
+        observacoes: document.getElementById('piObs').value.trim(),
+        itens: _pedidoInlineItens
+      });
+  }
+
+  function excluirPedidoInline(rowIndex, idPedido, numero) {
+    abrirConfirmacaoDestrutiva({
+      mensagem: 'Deseja excluir o pedido "' + numero + '"? Esta ação não pode ser desfeita.',
+      onConfirm: function() {
+        google.script.run
+          .withSuccessHandler(function(msg) {
+            snack(msg || 'Pedido excluído.');
+            carregarEstoqueInline();
+          })
+          .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+          .excluirPedidoEstoque(rowIndex, idPedido);
+      }
+    });
+  }
+
+  function abrirFormMovInline() {
+    var dados = _estoqueInlineDados || {};
+    _movEstoqueItens = dados.estoque || [];
+    var catalogo = dados.itensCatalogo || [];
+    var movs = dados.movimentacoes || [];
+    document.getElementById('miTipoMov').value = 'Saída - Visita';
+    document.getElementById('miData').value = new Date().toISOString().split('T')[0];
+    ['miParticipante','miVisita','miOrigem','miObs'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    document.getElementById('miQtd').value = 1;
+    ['miProjeto','miTipoItem','miItem','miQtd'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('invalid');
+    });
+    ['errMiProjeto','errMiTipoItem','errMiItem','errMiQtd'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('visible');
+    });
+    var projetos = {};
+    _movEstoqueItens.forEach(function(it) {
+      if (it.projeto) projetos[it.projeto] = 1;
+    });
+    movs.forEach(function(m) {
+      if (m.projeto) projetos[m.projeto] = 1;
+    });
+    (dados.projetos || []).forEach(function(proj) {
+      if (proj) projetos[proj] = 1;
+    });
+    catalogo.forEach(function(it) {
+      if (it.projeto) projetos[it.projeto] = 1;
+    });
+    var projSel = document.getElementById('miProjeto');
+    projSel.innerHTML = '<option value="">— Selecione —</option>';
+    Object.keys(projetos).sort().forEach(function(proj) {
+      projSel.insertAdjacentHTML('beforeend', '<option value="' + esc(proj) + '">' + esc(proj) + '</option>');
+    });
+    document.getElementById('miTipoItem').innerHTML = '<option value="">— Selecione o projeto primeiro —</option>';
+    document.getElementById('miItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
+    preencherParticipantesMov('');
+    onMovTipoMovChange();
+    document.getElementById('statusMovInline').innerHTML = '';
+    document.getElementById('btnSalvarMovInline').disabled = false;
+    abrirOverlay('modalMovInline');
+  }
+
+  function onMovTipoMovChange() {
+    var isVisita = document.getElementById('miTipoMov').value === 'Saída - Visita';
+    ['miParticipanteWrap','miVisitaWrap'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = isVisita ? '' : 'none';
+    });
+    if (!isVisita) {
+      var part = document.getElementById('miParticipante');
+      var visita = document.getElementById('miVisita');
+      if (part) part.value = '';
+      if (visita) visita.value = '';
+    }
+  }
+
+  function onMovProjetoChange() {
+    var dados = _estoqueInlineDados || {};
+    var catalogo = dados.itensCatalogo || [];
+    var proj = document.getElementById('miProjeto').value;
+    var tipoSel = document.getElementById('miTipoItem');
+    tipoSel.innerHTML = '<option value="">— Selecione —</option>';
+    document.getElementById('miItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
+    preencherParticipantesMov(proj);
+    if (!proj) return;
+    var tipos = {};
+    _movEstoqueItens.forEach(function(it) {
+      if (it.projeto === proj && it.tipoItem) tipos[it.tipoItem] = 1;
+    });
+    catalogo.forEach(function(it) {
+      if (it.projeto === proj && it.tipo) tipos[it.tipo] = 1;
+    });
+    Object.keys(tipos).sort().forEach(function(tipo) {
+      tipoSel.insertAdjacentHTML('beforeend', '<option value="' + esc(tipo) + '">' + esc(tipo) + '</option>');
+    });
+  }
+
+  function participanteAtivoMov(p) {
+    var st = String(p.status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    return st === 'ativo';
+  }
+
+  function preencherParticipantesMov(proj) {
+    var sel = document.getElementById('miParticipante');
+    if (!sel) return;
+    var participantes = ((_estoqueInlineDados || {}).participantes || [])
+      .filter(function(p) {
+        return participanteAtivoMov(p) && (!proj || normSelectValue(p.projeto) === normSelectValue(proj));
+      })
+      .sort(function(a, b) { return String(a.nome || '').localeCompare(String(b.nome || '')); });
+    sel.innerHTML = '<option value="">— Selecione —</option>' + participantes.map(function(p) {
+      var label = (p.nome || '') + (p.idParticipante ? ' · ' + p.idParticipante : '');
+      return '<option value="' + esc(p.nome || '') + '">' + esc(label) + '</option>';
+    }).join('');
+    if (!participantes.length && proj) {
+      sel.innerHTML = '<option value="">Nenhum participante ativo neste projeto</option>';
+    }
+  }
+
+  function onMovTipoItemChange() {
+    var dados = _estoqueInlineDados || {};
+    var catalogo = dados.itensCatalogo || [];
+    var proj = document.getElementById('miProjeto').value;
+    var tipo = document.getElementById('miTipoItem').value;
+    var itemSel = document.getElementById('miItem');
+    itemSel.innerHTML = '<option value="">— Selecione —</option>';
+    if (!proj || !tipo) return;
+    _movEstoqueItens
+      .filter(function(it) { return it.projeto === proj && it.tipoItem === tipo && Number(it.qtde || 0) > 0; })
+      .forEach(function(it) {
+        var key = encodeURIComponent(JSON.stringify({
+          idItem: it.idItem,
+          descricao: it.descricao,
+          tipoItem: it.tipoItem,
+          projeto: it.projeto,
+          qtde: it.qtde,
+          validade: it.validade,
+          localizacao: it.localizacao,
+          lote: it.lote || '',
+          numeroPedido: it.numeroPedido || ''
+        }));
+        var label = it.descricao + ' · qtd ' + it.qtde + (it.validade ? ' · val. ' + it.validade : '') + (it.localizacao ? ' · ' + it.localizacao : '');
+        itemSel.insertAdjacentHTML('beforeend', '<option value="' + key + '">' + esc(label) + '</option>');
+      });
+    if (itemSel.options.length === 1) {
+      catalogo
+        .filter(function(it) { return it.projeto === proj && it.tipo === tipo; })
+        .forEach(function(it) {
+          var key = encodeURIComponent(JSON.stringify({
+            idItem: it.idItem,
+            descricao: it.descricao,
+            tipoItem: it.tipo,
+            projeto: it.projeto,
+            qtde: 0,
+            validade: '',
+            localizacao: it.localizacao || '',
+            lote: '',
+            numeroPedido: ''
+          }));
+          itemSel.insertAdjacentHTML('beforeend', '<option value="' + key + '">' + esc(it.descricao + ' · sem saldo em estoque') + '</option>');
+        });
+    }
+  }
+
+  function onMovItemChange() {
+    var item = getMovItemSelecionado();
+    if (!item) return;
+    var qtd = document.getElementById('miQtd');
+    qtd.max = item.qtde || '';
+    if (Number(qtd.value || 0) > Number(item.qtde || 0)) qtd.value = item.qtde || 1;
+  }
+
+  function getMovItemSelecionado() {
+    var val = document.getElementById('miItem').value;
+    if (!val) return null;
+    try { return JSON.parse(decodeURIComponent(val)); } catch(e) { return null; }
+  }
+
+  function salvarMovInline() {
+    var item = getMovItemSelecionado();
+    var projeto = document.getElementById('miProjeto').value;
+    var tipoItem = document.getElementById('miTipoItem').value;
+    var qtd = Number(document.getElementById('miQtd').value || 0);
+    var ok = true;
+    ok = validarCampoPedidoInline('miProjeto', 'errMiProjeto', !!projeto) && ok;
+    ok = validarCampoPedidoInline('miTipoItem', 'errMiTipoItem', !!tipoItem) && ok;
+    ok = validarCampoPedidoInline('miItem', 'errMiItem', !!item) && ok;
+    ok = validarCampoPedidoInline('miQtd', 'errMiQtd', qtd > 0 && (!item || qtd <= Number(item.qtde || 0))) && ok;
+    if (!ok) return;
+
+    var btn = document.getElementById('btnSalvarMovInline');
+    btn.disabled = true;
+    document.getElementById('statusMovInline').innerHTML = '<span style="color:#5f6b7c">Registrando…</span>';
+    google.script.run
+      .withSuccessHandler(function(msg) {
+        btn.disabled = false;
+        fecharOverlay('modalMovInline');
+        snack(msg || 'Movimentação registrada.');
+        carregarEstoqueInline();
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        document.getElementById('statusMovInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+      })
+      .registrarMovimentacaoEstoque({
+        tipoMovimento: document.getElementById('miTipoMov').value,
+        data: document.getElementById('miData').value,
+        idItem: item.idItem,
+        descricao: item.descricao,
+        tipoItem: item.tipoItem,
+        projeto: item.projeto,
+        qtde: qtd,
+        validade: item.validade,
+        localizacao: item.localizacao,
+        lote: item.lote || '',
+        participante: document.getElementById('miParticipante').value.trim(),
+        idVisita: document.getElementById('miVisita').value.trim(),
+        origem: document.getElementById('miOrigem').value.trim() || 'Movimentação manual',
+        observacao: document.getElementById('miObs').value.trim()
+      });
+  }
+</script>

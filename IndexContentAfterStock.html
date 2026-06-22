@@ -1,0 +1,895 @@
+
+  </div><!-- fim .content -->
+</div><!-- fim .main -->
+
+<div class="snackbar" id="snackbar"></div>
+
+<!-- ══ MODAL PROJETO ══ -->
+<div class="modal-overlay" id="modalProjeto" onclick="fecharModalSeClicouFora(event,'modalProjeto')">
+  <div class="modal-box" style="max-width:720px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">folder_open</span></div>
+      <div>
+        <div class="modal-header-title" id="modalProjTitle">CADASTRO DE PROJETO</div>
+        <div class="modal-header-sub">Protocolo de Pesquisa Clínica</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalProjeto')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editProjId">
+
+      <!-- SEÇÃO 1: Identificação -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">label</span> Identificação do Protocolo
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="pNome">Nome Abreviado <span class="required-star">*</span></label>
+          <input type="text" id="pNome" class="f-input large" placeholder="Ex: TRIAL-ONCO-2024"
+                 oninput="limparErro('pNome','errPNome')">
+          <div class="field-error" id="errPNome">Campo obrigatório.</div>
+        </div>
+        <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1.4fr; gap:12px; margin-bottom:14px;">
+          <div>
+            <label class="field-label" for="pCodigo">Código do Projeto</label>
+            <input type="text" id="pCodigo" class="f-input" placeholder="Ex: NCT00000000">
+          </div>
+          <div>
+            <label class="field-label" for="pFase">Fase <span class="required-star">*</span></label>
+            <select id="pFase" class="f-input f-select" onchange="limparErro('pFase','errPFase')">
+              <option value="">--</option>
+              <option value="I">Fase I</option>
+              <option value="II">Fase II</option>
+              <option value="III">Fase III</option>
+              <option value="IV">Fase IV</option>
+            </select>
+            <div class="field-error" id="errPFase">Selecione.</div>
+          </div>
+          <div>
+            <label class="field-label" for="pMeta">Meta recr.</label>
+            <input type="number" id="pMeta" class="f-input" min="0" step="1" placeholder="Ex: 24">
+          </div>
+          <div>
+            <label class="field-label" for="pStatus">Status <span class="required-star">*</span></label>
+            <select id="pStatus" class="f-input f-select" onchange="limparErro('pStatus','errPStatus')">
+              <option value="">— Selecione —</option>
+            </select>
+            <div class="field-error" id="errPStatus">Selecione.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="pEsp">Especialidade Médica <span class="required-star">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="pEsp" class="f-input" placeholder="Digite para filtrar…" autocomplete="off"
+                   onfocus="renderAcProj('pEsp','pEspList',ESPS_PROJ,'_selPEsp')"
+                   oninput="_selPEsp=''; renderAcProj('pEsp','pEspList',ESPS_PROJ,'_selPEsp')"
+                   onblur="setTimeout(function(){fecharAcProj('pEspList');fixAcProj('pEsp','pEspList',ESPS_PROJ,'_selPEsp')},160)"
+                   onkeydown="navAcProj(event,'pEsp','pEspList',ESPS_PROJ,'_selPEsp')">
+            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+            <div class="ac-list" id="pEspList"></div>
+          </div>
+          <div class="field-error" id="errPEsp">Selecione uma especialidade.</div>
+        </div>
+      </div>
+
+      <!-- SEÇÃO 2: Equipe -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">group</span> Equipe Responsável
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="pIP">Investigador Principal <span class="required-star">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="pIP" class="f-input" placeholder="Digite o nome do investigador…" autocomplete="off"
+                   onfocus="renderAcProj('pIP','pIPList',_medicosProj,'_selPIP')"
+                   oninput="_selPIP=''; renderAcProj('pIP','pIPList',_medicosProj,'_selPIP')"
+                   onblur="setTimeout(function(){fecharAcProj('pIPList');fixAcProj('pIP','pIPList',_medicosProj,'_selPIP')},160)"
+                   onkeydown="navAcProj(event,'pIP','pIPList',_medicosProj,'_selPIP')">
+            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+            <div class="ac-list" id="pIPList"></div>
+          </div>
+          <div class="field-error" id="errPIP">Selecione o Investigador Principal.</div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+          <div>
+            <label class="field-label" for="pSub1">Sub Investigador 1</label>
+            <div class="ac-wrap">
+              <input type="text" id="pSub1" class="f-input" placeholder="Digite o nome do sub investigador..." autocomplete="off"
+                     onfocus="renderAcProj('pSub1','pSub1List',_medicosProj,'_selPSub1')"
+                     oninput="_selPSub1=''; renderAcProj('pSub1','pSub1List',_medicosProj,'_selPSub1')"
+                     onblur="setTimeout(function(){fecharAcProj('pSub1List');fixAcProj('pSub1','pSub1List',_medicosProj,'_selPSub1')},160)"
+                     onkeydown="navAcProj(event,'pSub1','pSub1List',_medicosProj,'_selPSub1')">
+              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+              <div class="ac-list" id="pSub1List"></div>
+            </div>
+          </div>
+          <div>
+            <label class="field-label" for="pSub2">Sub Investigador 2</label>
+            <div class="ac-wrap">
+              <input type="text" id="pSub2" class="f-input" placeholder="Digite o nome do sub investigador..." autocomplete="off"
+                     onfocus="renderAcProj('pSub2','pSub2List',_medicosProj,'_selPSub2')"
+                     oninput="_selPSub2=''; renderAcProj('pSub2','pSub2List',_medicosProj,'_selPSub2')"
+                     onblur="setTimeout(function(){fecharAcProj('pSub2List');fixAcProj('pSub2','pSub2List',_medicosProj,'_selPSub2')},160)"
+                     onkeydown="navAcProj(event,'pSub2','pSub2List',_medicosProj,'_selPSub2')">
+              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+              <div class="ac-list" id="pSub2List"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="pCoord">Coordenador de Estudos</label>
+          <div class="ac-wrap">
+            <input type="text" id="pCoord" class="f-input" placeholder="Digite o nome do coordenador…" autocomplete="off"
+                   onfocus="renderAcProj('pCoord','pCoordList',_solicitantesProj,'_selPCoord')"
+                   oninput="_selPCoord=''; renderAcProj('pCoord','pCoordList',_solicitantesProj,'_selPCoord')"
+                   onblur="setTimeout(function(){fecharAcProj('pCoordList');fixAcProj('pCoord','pCoordList',_solicitantesProj,'_selPCoord')},160)"
+                   onkeydown="navAcProj(event,'pCoord','pCoordList',_solicitantesProj,'_selPCoord')">
+            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+            <div class="ac-list" id="pCoordList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEÇÃO 3: Patrocinador e Centro -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">business</span> Patrocinador e Centro
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="pPat">Patrocinador</label>
+          <div class="ac-wrap">
+            <input type="text" id="pPat" class="f-input" placeholder="Digite o nome do patrocinador…" autocomplete="off"
+                   onfocus="renderAcProj('pPat','pPatList',PATS_PROJ,'_selPPat')"
+                   oninput="_selPPat=''; renderAcProj('pPat','pPatList',PATS_PROJ,'_selPPat')"
+                   onblur="setTimeout(function(){fecharAcProj('pPatList');fixAcProj('pPat','pPatList',PATS_PROJ,'_selPPat')},160)"
+                   onkeydown="navAcProj(event,'pPat','pPatList',PATS_PROJ,'_selPPat')">
+            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+            <div class="ac-list" id="pPatList"></div>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div>
+            <label class="field-label" for="pCRO">CRO</label>
+            <div class="ac-wrap">
+              <input type="text" id="pCRO" class="f-input" placeholder="Digite a CRO…" autocomplete="off"
+                     onfocus="renderAcProj('pCRO','pCROList',CROS_PROJ,'_selPCRO')"
+                     oninput="_selPCRO=''; renderAcProj('pCRO','pCROList',CROS_PROJ,'_selPCRO')"
+                     onblur="setTimeout(function(){fecharAcProj('pCROList');fixAcProj('pCRO','pCROList',CROS_PROJ,'_selPCRO')},160)"
+                     onkeydown="navAcProj(event,'pCRO','pCROList',CROS_PROJ,'_selPCRO')">
+              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+              <div class="ac-list" id="pCROList"></div>
+            </div>
+          </div>
+          <div>
+            <label class="field-label" for="pCentro">Número do Centro</label>
+            <input type="text" id="pCentro" class="f-input" placeholder="Ex: BR-001">
+          </div>
+        </div>
+      </div>
+
+      <!-- SEÇÃO 4: Dados regulatórios -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">verified</span> Dados Regulatórios
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+          <div>
+            <label class="field-label" for="pNumeroCE">N° CE</label>
+            <input type="text" id="pNumeroCE" class="f-input" placeholder="Ex: 20250618-1925A">
+          </div>
+          <div>
+            <label class="field-label" for="pExpedienteCE">N° do Expediente do CE</label>
+            <input type="text" id="pExpedienteCE" class="f-input" placeholder="Ex: 25351...">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="pTituloCompleto">Título completo</label>
+          <textarea id="pTituloCompleto" class="f-input" placeholder="Título/referência completa do estudo"></textarea>
+        </div>
+      </div>
+
+      <button class="btn-save" id="btnSalvarProj" onclick="salvarProjetoApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+      </button>
+      <div class="status-msg" id="statusProj"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL PARTICIPANTE ══ -->
+<div class="modal-overlay" id="modalParticipante" onclick="fecharModalSeClicouFora(event,'modalParticipante')">
+  <div class="modal-box" style="max-width:640px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">person</span></div>
+      <div>
+        <div class="modal-header-title" id="modalPartTitle">CADASTRO DE PARTICIPANTE</div>
+        <div class="modal-header-sub">Dados do participante no protocolo de pesquisa</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalParticipante')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editPartId">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+        <div class="field-row cols-2" style="margin-bottom:14px;">
+          <div>
+            <label class="field-label" for="ptNome">Nome Completo <span class="required-star">*</span></label>
+            <input type="text" id="ptNome" class="f-input large" placeholder="Nome completo do participante"
+                   oninput="limparErro('ptNome','errPtNome')">
+            <div class="field-error" id="errPtNome">Campo obrigatório.</div>
+          </div>
+          <div>
+            <label class="field-label" for="ptId">Nº de Identificação <span class="required-star">*</span></label>
+            <input type="text" id="ptId" class="f-input" placeholder="Ex: P-001"
+                   oninput="limparErro('ptId','errPtId')">
+            <div class="field-error" id="errPtId">Campo obrigatório.</div>
+          </div>
+        </div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="ptNasc">Data de Nascimento</label>
+            <input type="date" id="ptNasc" class="f-input">
+          </div>
+          <div>
+            <label class="field-label" for="ptCpf">CPF</label>
+            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">science</span> Protocolo</div>
+        <div class="field-row cols-2" style="margin-bottom:14px;">
+          <div>
+            <label class="field-label" for="ptProjeto">Projeto</label>
+            <div class="ac-wrap">
+              <input type="text" id="ptProjeto" class="f-input" placeholder="Nome do projeto…"
+                     autocomplete="off"
+                     onfocus="renderAcProj('ptProjeto','ptProjetoList',_projListPart,'_selPtProjeto')"
+                     oninput="_selPtProjeto=''; renderAcProj('ptProjeto','ptProjetoList',_projListPart,'_selPtProjeto')"
+                     onblur="setTimeout(function(){fecharAcProj('ptProjetoList')},160)"
+                     onkeydown="navAcProj(event,'ptProjeto','ptProjetoList',_projListPart,'_selPtProjeto')">
+              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+              <div class="ac-list" id="ptProjetoList"></div>
+            </div>
+          </div>
+          <div>
+            <label class="field-label" for="ptBraco">Braço</label>
+            <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
+          </div>
+        </div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="ptStatus">Status <span class="required-star">*</span></label>
+            <select id="ptStatus" class="f-input f-select" onchange="limparErro('ptStatus','errPtStatus')">
+              <option value="">-- Selecione --</option>
+            </select>
+            <div class="field-error" id="errPtStatus">Selecione um status.</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">contact_phone</span> Contato e Notas</div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="ptTelefone">Telefone de Contato</label>
+          <input type="text" id="ptTelefone" class="f-input" placeholder="(00) 00000-0000">
+        </div>
+        <div class="field">
+          <label class="field-label" for="ptObs">Observações</label>
+          <textarea id="ptObs" class="f-input" placeholder="Informações adicionais relevantes…"></textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()" style="flex:1 1 220px;">
+          <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+        </button>
+        <button class="ag-tb-btn" type="button" onclick="abrirReqExamesDoParticipante()" title="Criar requisição com os dados deste participante">
+          <span class="material-symbols-outlined">assignment</span> Criar requisição
+        </button>
+      </div>
+      <div class="status-msg" id="statusPart"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL MÉDICO ══ -->
+<div class="modal-overlay" id="modalMedico" onclick="fecharModalSeClicouFora(event,'modalMedico')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">medical_services</span></div>
+      <div>
+        <div class="modal-header-title" id="modalMedicoTitle">CADASTRO DE MÉDICO</div>
+        <div class="modal-header-sub">Investigadores Principais e Corpo Clínico</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalMedico')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editMedicoId">
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">badge</span> Dados Profissionais
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="mNome">Nome Completo <span class="required-star">*</span></label>
+          <input type="text" id="mNome" class="f-input large" placeholder="Dr(a). Nome Completo"
+                 oninput="limparErro('mNome','errMNome')">
+          <div class="field-error" id="errMNome">Campo obrigatório.</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="mEsp">Especialidade Médica <span class="required-star">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="mEsp" class="f-input" placeholder="Digite para filtrar…" autocomplete="off"
+                   onfocus="renderAcList(this.value)"
+                   oninput="_selEsp='';renderAcList(this.value)"
+                   onblur="setTimeout(function(){fecharAcList();if(!ESPS.includes(document.getElementById('mEsp').value)){document.getElementById('mEsp').value=_selEsp||''}},160)"
+                   onkeydown="navAcList(event)">
+            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+            <div class="ac-list" id="acEspList"></div>
+          </div>
+          <div class="field-error" id="errMEsp">Selecione uma especialidade válida.</div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">assignment_ind</span> Identificação
+        </div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="mCpf">CPF</label>
+            <input type="text" id="mCpf" class="f-input" placeholder="000.000.000-00">
+          </div>
+          <div>
+            <label class="field-label" for="mCremers">CREMERS</label>
+            <input type="text" id="mCremers" class="f-input" placeholder="Ex: 12345">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">mail</span> Contato
+        </div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="mTel">Telefone / Celular</label>
+            <input type="text" id="mTel" class="f-input" placeholder="(00) 00000-0000">
+          </div>
+          <div>
+            <label class="field-label" for="mEmail">E-mail Profissional</label>
+            <input type="email" id="mEmail" class="f-input" placeholder="medico@exemplo.com">
+          </div>
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarMedico" onclick="salvarMedicoApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+      </button>
+      <div class="status-msg" id="statusMedico"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL SOLICITANTE ══ -->
+<div class="modal-overlay" id="modalSolicitante" onclick="fecharModalSeClicouFora(event,'modalSolicitante')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">support_agent</span></div>
+      <div>
+        <div class="modal-header-title" id="modalSolTitle">CADASTRO DE SOLICITANTE</div>
+        <div class="modal-header-sub">Profissionais que solicitam exames e procedimentos</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalSolicitante')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editSolId">
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">badge</span> Dados Profissionais
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="sNome">Nome Completo <span class="required-star">*</span></label>
+          <input type="text" id="sNome" class="f-input large" placeholder="Nome completo do solicitante"
+                 oninput="limparErro('sNome','errSNome')">
+          <div class="field-error" id="errSNome">Campo obrigatório.</div>
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="sFormacao">Formação <span class="required-star">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="sFormacao" class="f-input" placeholder="Digite para filtrar…" autocomplete="off"
+                   onfocus="renderAcListSol(this.value)"
+                   oninput="_selFormacao='';renderAcListSol(this.value)"
+                   onblur="setTimeout(function(){fecharAcListSol();if(!FORMACOES.includes(document.getElementById('sFormacao').value)){document.getElementById('sFormacao').value=_selFormacao||''}},160)"
+                   onkeydown="navAcListSol(event)">
+            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+            <div class="ac-list" id="acFormacaoList"></div>
+          </div>
+          <div class="field-error" id="errSFormacao">Selecione uma formação válida.</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="sRegistro">Registro no Conselho Profissional</label>
+          <input type="text" id="sRegistro" class="f-input" placeholder="Ex: CRM 12345 RS, COREN 67890 RS…">
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label class="field-label" for="sEmail">E-mail</label>
+          <input type="email" id="sEmail" class="f-input" placeholder="nome@dominio.com">
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarSol" onclick="salvarSolicitanteApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+      </button>
+      <div class="status-msg" id="statusSol"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL EQUIPAMENTO ══ -->
+<div class="modal-overlay" id="modalEquipamento" onclick="fecharModalSeClicouFora(event,'modalEquipamento')">
+  <div class="modal-box" style="max-width:760px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">devices</span></div>
+      <div>
+        <div class="modal-header-title" id="modalEqTitle">NOVO EQUIPAMENTO</div>
+        <div class="modal-header-sub">Entrada de equipamentos recebidos pelos projetos</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalEquipamento')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="eqRowIndex">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">assignment</span> Dados do Equipamento</div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div>
+            <label class="field-label" for="eqDataReceb">Data de recebimento</label>
+            <input type="date" id="eqDataReceb" class="f-input">
+          </div>
+          <div>
+            <label class="field-label" for="eqProjeto">Projeto <span class="required-star">*</span></label>
+            <select id="eqProjeto" class="f-input f-select" onchange="limparErro('eqProjeto','errEqProjeto')">
+              <option value="">— Selecione —</option>
+            </select>
+            <div class="field-error" id="errEqProjeto">Selecione um projeto.</div>
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label class="field-label" for="eqDescricao">Descrição do item <span class="required-star">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="eqDescricao" class="f-input large" placeholder="Digite para buscar um equipamento já cadastrado" autocomplete="off"
+                   oninput="limparErro('eqDescricao','errEqDescricao');mostrarSugestoesItem('equipamento')"
+                   onfocus="mostrarSugestoesItem('equipamento')"
+                   onkeydown="navegarSugestoesItem(event,'equipamento')"
+                   onblur="fecharSugestoesItemDepois('equipamento')">
+            <div class="ac-list" id="eqDescricaoList"></div>
+          </div>
+          <div class="field-error" id="errEqDescricao">Campo obrigatório.</div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div>
+            <label class="field-label" for="eqCadastroUcs">Cadastro na UCS</label>
+            <select id="eqCadastroUcs" class="f-input f-select"><option>Sim</option><option>Não</option></select>
+          </div>
+          <div>
+            <label class="field-label" for="eqRegistroRm">Registro no RM</label>
+            <select id="eqRegistroRm" class="f-input f-select"><option>Sim</option><option>Não</option></select>
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div>
+            <label class="field-label" for="eqQuantidade">Quantidade</label>
+            <input type="number" id="eqQuantidade" class="f-input" min="1" value="1">
+          </div>
+          <div>
+            <label class="field-label" for="eqSerie">N° de série</label>
+            <input type="text" id="eqSerie" class="f-input" placeholder="Opcional">
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div>
+            <label class="field-label" for="eqResponsavelReceb">Responsável pelo recebimento</label>
+            <select id="eqResponsavelReceb" class="f-input f-select"><option value="">— Selecione —</option></select>
+          </div>
+          <div>
+            <label class="field-label" for="eqLocalizacao">Localização</label>
+            <select id="eqLocalizacao" class="f-input f-select"><option value="">— Selecione —</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">receipt_long</span> Dados administrativos</div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="eqNotaFiscal">N° da Nota Fiscal</label><input type="text" id="eqNotaFiscal" class="f-input"></div>
+          <div><label class="field-label" for="eqRemetente">Remetente</label><input type="text" id="eqRemetente" class="f-input"></div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="eqMovimentoRm">N° do Movimento RM</label><input type="text" id="eqMovimentoRm" class="f-input"></div>
+          <div><label class="field-label" for="eqCodigoTotvs">Código TOTVS</label><input type="text" id="eqCodigoTotvs" class="f-input"></div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="eqDataDev">Data de devolução</label><input type="date" id="eqDataDev" class="f-input"></div>
+          <div></div>
+        </div>
+        <label class="field-label" for="eqObs">Observações</label>
+        <textarea id="eqObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Informações adicionais..."></textarea>
+      </div>
+      <button class="btn-save" id="btnSalvarEq" onclick="salvarEquipamentoApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR EQUIPAMENTO
+      </button>
+      <div class="status-msg" id="statusEq"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL MEDICAMENTO ══ -->
+<div class="modal-overlay" id="modalMedicamento" onclick="fecharModalSeClicouFora(event,'modalMedicamento')">
+  <div class="modal-box" style="max-width:760px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">medication</span></div>
+      <div>
+        <div class="modal-header-title" id="modalMedRecTitle">NOVO MEDICAMENTO</div>
+        <div class="modal-header-sub">Entrada de medicamentos recebidos</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalMedicamento')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="medRowIndex">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">assignment</span> Dados do Medicamento</div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="medDataReceb">Data de recebimento</label><input type="date" id="medDataReceb" class="f-input"></div>
+          <div>
+            <label class="field-label" for="medProjeto">Projeto <span class="required-star">*</span></label>
+            <select id="medProjeto" class="f-input f-select" onchange="limparErro('medProjeto','errMedProjeto')"><option value="">— Selecione —</option></select>
+            <div class="field-error" id="errMedProjeto">Selecione um projeto.</div>
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label class="field-label" for="medDescricao">Descrição do item <span class="required-star">*</span></label>
+          <div class="ac-wrap">
+            <input type="text" id="medDescricao" class="f-input large" placeholder="Digite para buscar um medicamento já cadastrado" autocomplete="off"
+                   oninput="limparErro('medDescricao','errMedDescricao');mostrarSugestoesItem('medicamento')"
+                   onfocus="mostrarSugestoesItem('medicamento')"
+                   onkeydown="navegarSugestoesItem(event,'medicamento')"
+                   onblur="fecharSugestoesItemDepois('medicamento')">
+            <div class="ac-list" id="medDescricaoList"></div>
+          </div>
+          <div class="field-error" id="errMedDescricao">Campo obrigatório.</div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="medRegistroRm">Registro no RM</label><select id="medRegistroRm" class="f-input f-select"><option>Sim</option><option>Não</option></select></div>
+          <div><label class="field-label" for="medQuantidade">Quantidade</label><input type="number" id="medQuantidade" class="f-input" min="1" value="1"></div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="medLote">Lote</label><input type="text" id="medLote" class="f-input" placeholder="Lote do medicamento"></div>
+          <div><label class="field-label" for="medValidade">Validade</label><input type="date" id="medValidade" class="f-input"></div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="medResponsavelReceb">Responsável pelo recebimento</label><select id="medResponsavelReceb" class="f-input f-select"><option value="">— Selecione —</option></select></div>
+          <div><label class="field-label" for="medLocalizacao">Localização</label><select id="medLocalizacao" class="f-input f-select"><option value="">— Selecione —</option></select></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">receipt_long</span> Dados administrativos</div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="medNotaFiscal">N° da Nota Fiscal</label><input type="text" id="medNotaFiscal" class="f-input"></div>
+          <div><label class="field-label" for="medRemetente">Remetente</label><input type="text" id="medRemetente" class="f-input"></div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="medMovimentoRm">N° do Movimento RM</label><input type="text" id="medMovimentoRm" class="f-input"></div>
+          <div></div>
+        </div>
+        <label class="field-label" for="medObs">Observações</label>
+        <textarea id="medObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Informações adicionais..."></textarea>
+      </div>
+      <button class="btn-save" id="btnSalvarMedRec" onclick="salvarMedicamentoApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR MEDICAMENTO
+      </button>
+      <div class="status-msg" id="statusMedRec"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL CONFIGURAÇÃO ══ -->
+<div class="modal-overlay" id="modalConfig" onclick="fecharModalSeClicouFora(event,'modalConfig')">
+  <div class="modal-box" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">settings</span></div>
+      <div>
+        <div class="modal-header-title" id="modalCfgTitle">NOVA CONFIGURAÇÃO</div>
+        <div class="modal-header-sub">Valores usados por menus, filtros e listas do sistema</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalConfig')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cfgRowIndex">
+      <input type="hidden" id="cfgStartCol">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">tune</span> Dados da Configuração</div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div>
+            <label class="field-label" for="cfgBloco">Bloco</label>
+            <select id="cfgBloco" class="f-input f-select" onchange="onConfigBlocoChange()">
+              <option value="Principal">Principal</option>
+              <option value="Apoio">Apoio</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="cfgAtivo">Ativo</label>
+            <select id="cfgAtivo" class="f-input f-select"><option>Sim</option><option>Não</option></select>
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div>
+            <label class="field-label" for="cfgGrupo">Grupo <span class="required-star">*</span></label>
+            <select id="cfgGrupo" class="f-input f-select" onchange="onConfigGrupoChange();limparErro('cfgGrupo','errCfgGrupo')">
+              <option value="">— Selecione —</option>
+            </select>
+            <div class="field-error" id="errCfgGrupo">Campo obrigatório.</div>
+          </div>
+          <div>
+            <label class="field-label" for="cfgChave">Chave <span class="required-star">*</span></label>
+            <select id="cfgChave" class="f-input f-select" onchange="limparErro('cfgChave','errCfgChave')">
+              <option value="">— Selecione o grupo primeiro —</option>
+            </select>
+            <div class="field-error" id="errCfgChave">Campo obrigatório.</div>
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label class="field-label" for="cfgValor">Valor <span class="required-star">*</span></label>
+          <input type="text" id="cfgValor" class="f-input large" placeholder="Valor exibido no app" oninput="limparErro('cfgValor','errCfgValor')">
+          <div class="field-error" id="errCfgValor">Campo obrigatório.</div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:12px">
+          <div><label class="field-label" for="cfgOrdem">Ordem</label><input type="number" id="cfgOrdem" class="f-input" min="0" placeholder="0"></div>
+          <div></div>
+        </div>
+        <label class="field-label" for="cfgObs">Observação</label>
+        <textarea id="cfgObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Detalhes, alias ou uso interno..."></textarea>
+      </div>
+      <button class="btn-save" id="btnSalvarCfg" onclick="salvarConfigApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CONFIGURAÇÃO
+      </button>
+      <div class="status-msg" id="statusCfg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL AJUDA CONFIGURAÇÕES ══ -->
+<div class="modal-overlay" id="modalConfigAjuda" onclick="fecharModalSeClicouFora(event,'modalConfigAjuda')">
+  <div class="modal-box" style="max-width:720px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">help</span></div>
+      <div>
+        <div class="modal-header-title">AJUDA: CONFIGURAÇÕES</div>
+        <div class="modal-header-sub">Como manter listas e menus do aplicativo sem alterar código</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalConfigAjuda')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">rule</span> Estrutura</div>
+        <div style="font-size:13px;line-height:1.7;color:var(--text-muted)">
+          <p>Esta página alimenta menus, chips e destinatários do WebApp. Cada linha representa uma opção ou uma regra simples.</p>
+          <p><strong>Grupo</strong> é o módulo, como Agenda, Estoque ou Requisição de Exames. <strong>Chave</strong> é a lista dentro do módulo, como Courier, Temperatura ou E-mails em cópia. <strong>Valor</strong> é a opção usada pelo sistema.</p>
+          <p>Use <strong>Ativo = Não</strong> para retirar uma opção dos menus sem apagar histórico. A coluna <strong>Ordem</strong> define a sequência de exibição quando preenchida.</p>
+          <p>Quando uma opção já foi usada em registros reais, prefira inativar e criar uma nova linha. Renomear valores antigos pode dificultar filtros, dashboards e rastreabilidade.</p>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">tips_and_updates</span> Exemplos práticos</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;color:var(--text-muted)">
+          <div><span class="chip chip-blue">Agenda</span> Couriers, status do transporte, temperaturas e chips de procedimento.</div>
+          <div><span class="chip chip-blue">Req. Exames</span> E-mails em cópia dos rascunhos enviados a serviços terceirizados.</div>
+          <div><span class="chip chip-blue">Estoque</span> Tipos de item, locais, status e listas usadas em pedidos ou descartes.</div>
+          <div><span class="chip chip-blue">Projetos</span> Fase, especialidade, patrocinador, CRO/ORCP e status do projeto.</div>
+        </div>
+        <p style="font-size:12px;line-height:1.6;color:var(--text-muted);margin-top:14px">Para adicionar pessoas em cópia nas requisições, cadastre uma linha por e-mail com Grupo <strong>Requisição de Exames</strong>, Chave <strong>E-mails em cópia</strong> e o e-mail no campo Valor.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL CONFIRMAR EXCLUSÃO ══ -->
+<div class="modal-overlay" id="confirmDel">
+  <div class="confirm-box">
+    <h3 id="confirmDelTitle">Confirmar exclusão</h3>
+    <p id="confirmDelMsg">Esta ação não pode ser desfeita.</p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmDel')">Cancelar</button>
+      <button class="btn-danger" id="btnConfirmDel">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmAgendaKits">
+  <div class="confirm-box">
+    <h3 id="confirmAgendaKitsTitle">Confirmar movimentacao</h3>
+    <p id="confirmAgendaKitsMsg">Confirme a acao.</p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmAgendaKits')">Cancelar</button>
+      <button class="btn-save" id="btnConfirmAgendaKits" style="width:auto;padding:9px 18px">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmDescarte">
+  <div class="confirm-box">
+    <h3>Efetivar descarte</h3>
+    <p>Efetivar esta lista de descarte e dar saída no estoque?</p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmDescarte')">Cancelar</button>
+      <button class="btn-danger" id="btnConfirmDescarte">Efetivar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalUsuarioAdmin" onclick="fecharModalSeClicouFora(event,'modalUsuarioAdmin')">
+  <div class="modal-box" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">admin_panel_settings</span></div>
+      <div>
+        <div class="modal-header-title" id="modalUsuarioAdminTitle">NOVO USUÁRIO</div>
+        <div class="modal-header-sub">Controle de acesso ao WebApp</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalUsuarioAdmin')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="userAdminRowIndex">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">alternate_email</span> Identificação</div>
+        <div class="form-grid single">
+          <div>
+            <label class="field-label" for="userAdminNome">Nome</label>
+            <input type="text" id="userAdminNome" class="f-input large" placeholder="Nome do usuário">
+          </div>
+          <div>
+            <label class="field-label" for="userAdminEmail">E-mail <span class="required-star">*</span></label>
+            <input type="email" id="userAdminEmail" class="f-input large" placeholder="usuario@dominio.com">
+            <div class="field-error" id="errUserAdminEmail">Informe um e-mail válido.</div>
+          </div>
+        </div>
+      </div>
+      <div class="field-row cols-2">
+        <div>
+          <label class="field-label" for="userAdminRole">Perfil</label>
+          <select id="userAdminRole" class="f-input f-select">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+            <option value="readonly">readonly</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="userAdminAtivo">Ativo</label>
+          <select id="userAdminAtivo" class="f-input f-select">
+            <option value="Sim">Sim</option>
+            <option value="Não">Não</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
+        <span class="material-symbols-outlined">save</span> Salvar usuário
+      </button>
+      <div class="status-msg" id="statusUsuarioAdmin"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalMonitor" onclick="fecharModalSeClicouFora(event,'modalMonitor')">
+  <div class="modal-box" style="max-width:760px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">visibility</span></div>
+      <div>
+        <div class="modal-header-title" id="modalMonitorTitle">CADASTRO DE MONITOR</div>
+        <div class="modal-header-sub">Contato e projetos acompanhados</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalMonitor')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editMonitorId">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">badge</span> Dados do monitor</div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="monNome">Nome completo <span class="required-star">*</span></label>
+            <input type="text" id="monNome" class="f-input large" placeholder="Nome completo">
+            <div class="field-error" id="errMonNome">Informe o nome do monitor.</div>
+          </div>
+          <div>
+            <label class="field-label" for="monEmail">E-mail</label>
+            <input type="email" id="monEmail" class="f-input large" placeholder="email@dominio.com">
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-top:14px">
+          <div>
+            <label class="field-label" for="monTelefone">Telefone</label>
+            <input type="text" id="monTelefone" class="f-input" placeholder="Telefone">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">folder_open</span> Projetos monitorados</div>
+        <div class="field-row cols-2" style="margin-bottom:14px">
+          <div>
+            <label class="field-label" for="monProjeto1">Projeto 1 <span class="required-star">*</span></label>
+            <select id="monProjeto1" class="f-input f-select"></select>
+            <div class="field-error" id="errMonProjeto1">Selecione ao menos um projeto.</div>
+          </div>
+          <div>
+            <label class="field-label" for="monUnblinded1">Projeto 1 Unblinded?</label>
+            <select id="monUnblinded1" class="f-input f-select">
+              <option value="Não">Não</option>
+              <option value="Sim">Sim</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:14px">
+          <div>
+            <label class="field-label" for="monProjeto2">Projeto 2</label>
+            <select id="monProjeto2" class="f-input f-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="monUnblinded2">Projeto 2 Unblinded?</label>
+            <select id="monUnblinded2" class="f-input f-select">
+              <option value="Não">Não</option>
+              <option value="Sim">Sim</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:14px">
+          <div>
+            <label class="field-label" for="monProjeto3">Projeto 3</label>
+            <select id="monProjeto3" class="f-input f-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="monUnblinded3">Projeto 3 Unblinded?</label>
+            <select id="monUnblinded3" class="f-input f-select">
+              <option value="Não">Não</option>
+              <option value="Sim">Sim</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="monProjeto4">Projeto 4</label>
+            <select id="monProjeto4" class="f-input f-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="monUnblinded4">Projeto 4 Unblinded?</label>
+            <select id="monUnblinded4" class="f-input f-select">
+              <option value="Não">Não</option>
+              <option value="Sim">Sim</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarMonitor" onclick="salvarMonitorApp()">
+        <span class="material-symbols-outlined">save</span> Salvar monitor
+      </button>
+      <div class="status-msg" id="statusMonitor"></div>
+    </div>
+  </div>
+</div>
+
+<div class="snackbar" id="snackbar"></div>
+<button class="scroll-top-btn" id="btnScrollTop" type="button" title="Voltar ao topo" aria-label="Voltar ao topo" onclick="scrollAppToTop()">
+  <span class="material-symbols-outlined">keyboard_arrow_up</span>
+</button>
+<button class="floating-add-btn" id="btnFloatingAdd" type="button" title="Novo registro" aria-label="Novo registro" onclick="handleFloatingAdd()">
+  <span class="material-symbols-outlined">add</span>
+</button>
+

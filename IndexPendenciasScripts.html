@@ -1,0 +1,254 @@
+<script>
+  var _pendenciasCache = null;
+  var _pendenciasLoadedAt = null;
+  var PENDENCIAS_VISIBLE_LIMIT = 10;
+
+  function jsArg(v) {
+    return String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\r\n]+/g, ' ');
+  }
+
+  function pendenciaAgendaAction(it) {
+    return "abrirPendenciaAgenda('" + jsArg(it && it.agendaId) + "')";
+  }
+
+  function pendenciaEstoqueAction(it) {
+    var q = (it && (it.idItem || it.descricao || it.projeto)) || '';
+    return "abrirPendenciaEstoque('" + jsArg(q) + "')";
+  }
+
+  function pendenciaUrgente24h(it) {
+    var h = it && it.prazoHoras !== null && it.prazoHoras !== undefined ? Number(it.prazoHoras) : null;
+    return h !== null && isFinite(h) && h <= 24;
+  }
+
+  function pendenciaPrazoLabel(it) {
+    var h = it && it.prazoHoras !== null && it.prazoHoras !== undefined ? Number(it.prazoHoras) : null;
+    if (h === null || !isFinite(h) || h > 24) return '';
+    if (h < 0) return 'atrasada';
+    if (h < 1) return 'agora';
+    if (h < 2) return 'em 1h';
+    return 'em ' + Math.round(h) + 'h';
+  }
+
+  function togglePendenciasCard(btn) {
+    var card = btn && btn.closest ? btn.closest('.dash-pend-card') : null;
+    if (!card) return;
+    var expanded = card.classList.toggle('expanded');
+    var label = btn.querySelector('.dash-pend-more-label');
+    var icon = btn.querySelector('.material-symbols-outlined');
+    var remaining = Number(btn.getAttribute('data-remaining') || 0);
+    btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (label) label.textContent = expanded ? 'Mostrar menos' : 'Mostrar mais (' + remaining + ')';
+    if (icon) icon.textContent = expanded ? 'expand_less' : 'expand_more';
+  }
+
+  function renderDashboardPendencias(p, gridId) {
+    p = p || {};
+    var counts = p.counts || {};
+    var grid = document.getElementById(gridId || 'pendenciasGrid');
+    if (!grid) return;
+    var cards = [
+      {
+        key: 'courierNaoAgendada',
+        title: 'Courier não agendada',
+        icon: 'local_shipping',
+        tone: '#856404',
+        bg: '#fff3cd',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.courierNaoAgendada || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: [it.slot, it.courier, it.projeto, it.visita].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'courierNaoConfirmada',
+        title: 'Courier não confirmada',
+        icon: 'mark_email_unread',
+        tone: '#0059a8',
+        bg: '#d8ebff',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.courierNaoConfirmada || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: [it.courier, it.awb ? 'AWB ' + it.awb : '', it.projeto].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'awbEnviadaNaoEntregue',
+        title: 'AWB enviada não entregue',
+        icon: 'outbox',
+        tone: '#0f766e',
+        bg: '#d9f5ef',
+        action: pendenciaAgendaAction,
+        items: p.awbEnviadaNaoEntregue || [],
+        render: function(it) {
+          return {
+            main: [it.awb ? 'AWB ' + it.awb : 'AWB enviada', it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: [it.courier, it.data, it.hora, it.projeto].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'requisicaoExamesPendente',
+        title: 'Requisição de exames pendente',
+        icon: 'assignment_late',
+        tone: '#b3261e',
+        bg: '#fce8e6',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.requisicaoExamesPendente || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: [it.prestador, it.projeto, it.visita].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'posVisitaPoloTrialPendente',
+        title: 'Polo Trial pendente',
+        icon: 'fact_check',
+        tone: '#9a4b16',
+        bg: '#fff7e6',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.posVisitaPoloTrialPendente || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: ['Cadastrar no Polo Trial', it.projeto, it.visita, it.status].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'posVisitaEcrfPendente',
+        title: 'eCRF pendente',
+        icon: 'dynamic_form',
+        tone: '#5b21b6',
+        bg: '#f5f3ff',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.posVisitaEcrfPendente || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: ['Preencher eCRF', it.projeto, it.visita, it.status].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'kitsVencendo',
+        title: 'Kits vencendo',
+        icon: 'event_busy',
+        tone: '#6a1b9a',
+        bg: '#f3e8ff',
+        action: pendenciaEstoqueAction,
+        items: p.kitsVencendo || [],
+        render: function(it) {
+          var dias = Number(it.dias || 0);
+          return {
+            main: [it.descricao || it.idItem || 'Kit', it.validade ? 'vence ' + it.validade : ''].filter(Boolean).join(' · '),
+            meta: [it.projeto, dias === 0 ? 'vence hoje' : 'vence em ' + dias + ' dia(s)', it.qtde !== '' && it.qtde !== undefined ? 'qtd ' + it.qtde : ''].filter(Boolean).join(' · ')
+          };
+        }
+      }
+    ];
+    grid.innerHTML = cards.map(function(card) {
+      var total = counts[card.key] || (card.items || []).length || 0;
+      var urgentTotal = card.priority ? (card.items || []).filter(pendenciaUrgente24h).length : 0;
+      var cardItems = card.items || [];
+      var remaining = Math.max(0, cardItems.length - PENDENCIAS_VISIBLE_LIMIT);
+      var rows = cardItems.map(function(it, itemIndex) {
+        var r = card.render(it);
+        var action = typeof card.action === 'function' ? card.action(it) : card.action;
+        var urgent = card.priority && pendenciaUrgente24h(it);
+        var prazo = urgent ? pendenciaPrazoLabel(it) : '';
+        return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '" onclick="' + action + '" title="' + esc((r.main || '') + ' ' + (r.meta || '')) + '">' +
+          (urgent ? '<div class="dash-pend-alert"><span class="material-symbols-outlined">priority_high</span>' + esc(prazo || 'até 24h') + '</div>' : '') +
+          '<div class="dash-pend-main">' + esc(r.main || '-') + '</div>' +
+          '<div class="dash-pend-meta">' + esc(r.meta || '-') + '</div>' +
+        '</div>';
+      }).join('');
+      if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>Sem pendências</div>';
+      var expandButton = remaining ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="false" onclick="togglePendenciasCard(this)">' +
+        '<span class="dash-pend-more-label">Mostrar mais (' + remaining + ')</span>' +
+        '<span class="material-symbols-outlined">expand_more</span>' +
+      '</button>' : '';
+      return '<div class="dash-pend-card' + (card.priority ? ' priority' : '') + '" style="--tone:' + card.tone + ';--tone-bg:' + card.bg + '">' +
+        '<div class="dash-pend-head">' +
+          '<div class="dash-pend-icon"><span class="material-symbols-outlined">' + card.icon + '</span></div>' +
+          '<div class="dash-pend-title">' + esc(card.title) + '</div>' +
+          (urgentTotal ? '<div class="dash-pend-urgent-count">' + esc(urgentTotal) + ' urgentes</div>' : '') +
+          '<div class="dash-pend-count">' + esc(total) + '</div>' +
+        '</div>' +
+        '<div class="dash-pend-list">' + rows + '</div>' + expandButton +
+      '</div>';
+    }).join('');
+  }
+
+  function atualizarPendenciasTs(fromCache) {
+    var ts = document.getElementById('pendenciasTs');
+    if (!ts) return;
+    if (!_pendenciasLoadedAt) {
+      ts.textContent = '';
+      return;
+    }
+    var prefix = fromCache ? 'Em memória: ' : 'Atualizado: ';
+    ts.textContent = prefix + _pendenciasLoadedAt.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+  }
+
+  function carregarPendencias(forcar) {
+    var grid = document.getElementById('pendenciasGrid');
+    var btn = document.getElementById('btnPendenciasRefresh');
+    if (!forcar && _pendenciasCache) {
+      renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
+      atualizarPendenciasTs(true);
+      return;
+    }
+    if (grid) {
+      grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>';
+    }
+    if (btn) btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(d) {
+        if (btn) btn.disabled = false;
+        _pendenciasCache = (d && d.pendencias) || {};
+        _pendenciasLoadedAt = new Date();
+        renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
+        atualizarPendenciasTs(false);
+      })
+      .withFailureHandler(function(e) {
+        if (btn) btn.disabled = false;
+        if (grid) {
+          grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">error</span>Erro ao carregar pendências: ' + esc(e && e.message ? e.message : e) + '</div>';
+        }
+      })
+      .getPendenciasOperacionais();
+  }
+
+  function abrirPendenciaAgenda(agendaId) {
+    if (!agendaId) {
+      irPara('agenda');
+      return;
+    }
+    if ((_agendaEventos || []).some(function(r) { return String(r.id || '') === String(agendaId); })) {
+      irPara('agenda');
+      setTimeout(function() { abrirAgendaEdicao(agendaId); }, 0);
+    } else {
+      _agendaAbrirAposCarga = agendaId;
+      irPara('agenda');
+      if (_agendaInitStarted) carregarAgendaEventos(true, agendaAbrirPendenteAposCarga);
+    }
+  }
+
+  function abrirPendenciaEstoque(q) {
+    abrirModuloEstoque('visualizacao', q || '');
+  }
+</script>

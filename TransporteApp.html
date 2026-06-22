@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" rel="stylesheet">
+  <style>
+    :root {
+      --primary:#1266f1; --primary-dark:#0d47a1; --primary-light:#e8f0fe; --border:#e0e6f0;
+      --bg:#eef1f7; --surface:#fff; --text:#1a1a2e; --muted:#5f6b7c;
+      --danger:#b3261e; --ok:#137333; --warn:#e65100; --soft:#f6f8ff;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); font-size:13px; }
+    .shell { min-height:100vh; padding:0 18px 18px; }
+    .topbar {
+      margin:0 -18px 14px; min-height:52px; padding:8px 22px;
+      display:flex; align-items:center; justify-content:space-between; gap:14px;
+      background:linear-gradient(135deg,#1a74f5,var(--primary-dark));
+      box-shadow:0 2px 8px rgba(18,102,241,.25);
+    }
+    .brand { display:flex; align-items:center; gap:10px; min-width:0; }
+    .brand-icon {
+      width:34px; height:34px; border-radius:50%; display:grid; place-items:center;
+      color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.18);
+      flex-shrink:0;
+    }
+    h1 { margin:0; font-size:15px; line-height:1.2; font-weight:600; color:#fff; }
+    .subtitle { color:rgba(255,255,255,.72); font-size:11px; margin-top:2px; }
+    .actions-top { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+    .action-status {
+      min-height:22px; color:rgba(255,255,255,.78); font-size:12px; text-align:right;
+      display:flex; justify-content:flex-end; align-items:center; gap:6px; padding-right:4px;
+    }
+    .action-status.ok { color:#d7fbe3; }
+    .action-status.warn { color:#ffe4b5; }
+    .action-status.danger { color:#ffd8d4; }
+    .btn {
+      border:0; background:var(--primary); color:white; height:36px; padding:0 14px; border-radius:6px;
+      font:600 12px Roboto,Arial,sans-serif; display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+      white-space:nowrap;
+    }
+    .topbar .btn { background:#fff; color:var(--primary); box-shadow:0 2px 8px rgba(0,0,0,.12); }
+    .topbar .btn:hover { background:#f3f7ff; }
+    .topbar .btn.danger { color:#b3261e; background:#fff; border:1px solid rgba(255,255,255,.55); }
+    .btn.secondary { color:var(--primary); background:var(--primary-light); border:1px solid #c5d5fb; }
+    .btn.danger { color:var(--danger); background:#fce8e6; border:1px solid #f4b5b2; }
+    .btn:disabled { opacity:.55; cursor:wait; }
+    .btn.disabled, .btn[aria-disabled="true"] { color:#6b7280; background:#eef0f3; border:1px solid #d1d5db; cursor:not-allowed; pointer-events:none; opacity:.78; }
+    .material-symbols-outlined { font-size:18px; line-height:1; }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:10px; margin-bottom:12px; }
+    .stat, .panel, .doc, .issue { background:var(--surface); border:1px solid var(--border); border-radius:8px; }
+    .stat { padding:14px; position:relative; overflow:hidden; }
+    .stat::after {
+      content:attr(data-icon); position:absolute; right:12px; top:6px;
+      font-family:'Material Symbols Outlined'; font-size:42px; color:var(--primary); opacity:.08; line-height:1;
+    }
+    .stat strong { display:block; color:var(--primary); font-size:24px; margin-bottom:3px; }
+    .stat span { color:var(--muted); }
+    .layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(330px,.8fr); gap:12px; align-items:start; }
+    .main-stack { display:grid; gap:12px; min-width:0; }
+    .panel { overflow:hidden; }
+    .panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:13px 14px; border-bottom:1px solid var(--border); background:var(--soft); }
+    .panel-title { display:flex; align-items:center; gap:8px; font-weight:700; color:#283142; }
+    .panel-body { padding:14px; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .field { display:flex; flex-direction:column; gap:5px; min-width:0; }
+    .field.full { grid-column:1/-1; }
+    label { color:#8a94a6; font-size:11px; font-weight:700; text-transform:uppercase; }
+    input, select, textarea {
+      width:100%; border:1px solid var(--border); border-radius:6px; min-height:36px; padding:8px 10px;
+      font:13px Roboto,Arial,sans-serif; color:var(--text); background:#fff;
+    }
+    input.auto-fill[readonly] {
+      background:#f0f7ff;
+      border-color:#b3d4f8;
+      color:#1a5276;
+      cursor:not-allowed;
+    }
+    textarea { min-height:72px; resize:vertical; }
+    .segmented { display:flex; gap:6px; flex-wrap:wrap; }
+    .segmented button {
+      height:32px; padding:0 10px; border-radius:6px; border:1px solid var(--border); background:#fff; color:var(--muted);
+      font:600 12px Roboto,Arial,sans-serif; cursor:pointer;
+    }
+    .segmented button.active { background:var(--primary-light); color:var(--primary); border-color:#c5d5fb; }
+    .materials { display:grid; gap:8px; }
+    .material-row {
+      display:grid; grid-template-columns:34px minmax(90px,1fr) 88px minmax(130px,1.4fr) 72px;
+      gap:8px; align-items:center; padding:9px; border:1px solid #eef0f8; border-radius:8px; background:#fff;
+    }
+    .material-row:hover { background:#f8fbff; }
+    .material-row input[type="checkbox"] { width:18px; min-height:18px; justify-self:center; accent-color:var(--primary); }
+    .material-name { font-weight:600; }
+    .mini-label { display:none; color:#8a94a6; font-size:10px; font-weight:700; text-transform:uppercase; margin-bottom:3px; }
+    .ag-mat-editor{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+    .ag-mat-head,.ag-mat-line{display:grid;grid-template-columns:160px 180px 64px 82px minmax(90px,.7fr) 34px;gap:8px;align-items:center}
+    .ag-mat-head{padding:8px 10px;background:var(--soft);border-bottom:1px solid var(--border);font-size:10px;font-weight:800;text-transform:uppercase;color:#8a94a6}
+    .ag-mat-line{padding:8px 10px;border-bottom:1px solid #f0f4f8}
+    .ag-mat-line:last-child{border-bottom:0}
+    .ag-mat-line select,.ag-mat-line input{height:34px;border:1px solid var(--border);border-radius:6px;padding:0 9px;font-size:12px;background:#fff;min-width:0;width:100%}
+    .ag-mat-type-cell{display:grid;gap:6px;min-width:0}
+    .ag-mat-other{display:none}
+    .ag-mat-line.other-on .ag-mat-other{display:block}
+    .ag-mat-line.other-on{grid-template-columns:minmax(360px,1fr) 34px}
+    .ag-mat-line.other-on .ag-mat-type-cell{grid-template-columns:160px minmax(180px,1fr);gap:8px}
+    .ag-mat-line.other-on .ag-mat-ensaio,.ag-mat-line.other-on .ag-mat-formula,.ag-mat-line.other-on .ag-mat-tubos,.ag-mat-line.other-on .ag-mat-total-line{display:none}
+    .ag-mat-calc{font-size:12px;font-weight:800;color:var(--text);text-align:right;white-space:nowrap}
+    .ag-mat-remove{width:32px;height:32px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .ag-mat-remove:hover{background:#fce8e6;border-color:#ffc4be}
+    .ag-mat-add{margin:8px 10px 10px;height:32px;border:1px dashed #b8c7e3;border-radius:6px;background:#f8faff;color:var(--primary);font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;cursor:pointer}
+    .ag-mat-help{padding:8px 10px;background:#f8faff;color:var(--muted);font-size:11px;border-top:1px solid #f0f4f8}
+    .docs { display:grid; gap:8px; }
+    .doc { padding:11px 12px; display:flex; gap:9px; align-items:center; }
+    .doc .material-symbols-outlined { color:var(--primary); }
+    .issues { display:grid; gap:8px; margin-top:12px; }
+    .issue { padding:10px 12px; display:flex; gap:8px; align-items:flex-start; color:var(--muted); }
+    .issue.warn { background:#fff8ef; border-color:#ffd7a8; color:var(--warn); }
+    .issue.danger { background:#fff8f7; border-color:#f4b5b2; color:var(--danger); }
+    .issue.ok { background:#f2fbf5; border-color:#cce8d4; color:var(--ok); }
+    .auth-notice { display:none; margin-bottom:12px; border:1px solid #ffd7a8; border-radius:8px; padding:11px 12px; background:#fff8ef; color:#92400e; line-height:1.45; }
+    .auth-notice.show { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+    .auth-notice a { color:#0d47a1; font-weight:800; text-decoration:underline; white-space:nowrap; }
+    .meta-list { display:grid; gap:9px; }
+    .meta-item { display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid #eef0f8; padding-bottom:8px; }
+    .meta-item:last-child { border-bottom:0; padding-bottom:0; }
+    .meta-label { color:var(--muted); }
+    .meta-value { font-weight:600; text-align:right; }
+    .toast {
+      position:fixed; right:18px; bottom:18px; max-width:min(420px,calc(100vw - 36px)); z-index:20;
+      background:#1f2937; color:#fff; border-radius:8px; padding:12px 14px; box-shadow:0 14px 30px rgba(0,0,0,.18);
+      display:none;
+    }
+    .toast.ok { background:#14532d; }
+    .toast.warn { background:#92400e; }
+    .toast.danger { background:#7f1d1d; }
+    .modal-backdrop {
+      position:fixed; inset:0; z-index:30; display:none; align-items:center; justify-content:center;
+      padding:18px; background:rgba(15,23,42,.42);
+    }
+    .modal-backdrop.open { display:flex; }
+    .modal {
+      width:min(660px,100%); background:#fff; border:1px solid var(--border); border-radius:8px;
+      box-shadow:0 24px 70px rgba(15,23,42,.28); overflow:hidden;
+    }
+    .modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--soft); }
+    .modal-title { display:flex; align-items:center; gap:8px; font-weight:800; color:#283142; }
+    .modal-close { width:32px; height:32px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--muted); cursor:pointer; display:grid; place-items:center; }
+    .modal-body { padding:16px; display:grid; gap:12px; }
+    .modal-file { border:1px solid var(--border); border-radius:8px; padding:12px; background:#fbfcff; word-break:break-word; font-weight:700; }
+    .modal-warning { display:none; border:1px solid #ffd7a8; border-radius:8px; padding:11px 12px; background:#fff8ef; color:#92400e; line-height:1.45; }
+    .modal-warning.show { display:block; }
+    .modal-warning a { color:#0d47a1; font-weight:800; }
+    .modal-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .modal-actions a { text-decoration:none; }
+    .loading { opacity:.55; pointer-events:none; }
+    .hidden { display:none !important; }
+    @media (max-width:980px) {
+      .layout, .grid { grid-template-columns:1fr; }
+      .topbar { align-items:flex-start; flex-direction:column; padding:12px 16px; }
+      .actions-top { justify-content:flex-start; }
+      .action-status { width:100%; justify-content:flex-start; text-align:left; }
+    }
+    @media (max-width:680px) {
+      .shell { padding:0 12px 12px; }
+      .topbar { margin:0 -12px 12px; }
+      .form-grid { grid-template-columns:1fr; }
+      .material-row { grid-template-columns:30px 1fr; }
+      .ag-mat-head{display:none}
+      .ag-mat-line{grid-template-columns:1fr 1fr}
+      .ag-mat-line.other-on{grid-template-columns:1fr auto}
+      .ag-mat-line.other-on .ag-mat-type-cell{grid-template-columns:1fr}
+      .ag-mat-calc{text-align:left}
+      .ag-mat-remove{justify-self:end}
+      .material-row > div:not(.material-name) { grid-column:2; }
+      .mini-label { display:block; }
+      .btn { flex:1; justify-content:center; }
+      .actions-top { width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" id="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+        <div>
+          <h1>Transporte de Amostras</h1>
+        </div>
+      </div>
+      <div class="actions-top">
+        <div class="action-status" id="actionStatus">Pronto.</div>
+        <button class="btn" onclick="saveData()" title="Gravar dados na planilha de transporte"><span class="material-symbols-outlined">save</span>Salvar</button>
+        <button class="btn" onclick="runPdf()"><span class="material-symbols-outlined">picture_as_pdf</span>Gerar PDF</button>
+        <button class="btn danger" onclick="clearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="stat" data-icon="science"><strong id="stMateriais">0</strong><span>Materiais marcados</span></div>
+      <div class="stat" data-icon="biotech"><strong id="stTubos">0</strong><span>Total de tubos</span></div>
+      <div class="stat" data-icon="water_drop"><strong id="stVolume">0</strong><span>Volume total</span></div>
+      <div class="stat" data-icon="description"><strong id="stDocs">0</strong><span>Documentos previstos</span></div>
+    </div>
+
+    <div class="layout">
+      <div class="main-stack">
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title"><span class="material-symbols-outlined">assignment</span>Dados do Envio</div>
+        </div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="field"><label>Paciente(s) *</label><select id="paciente" required></select></div>
+            <div class="field"><label>Protocolo *</label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+            <div class="field"><label>Investigador *</label><input id="investigador" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+            <div class="field"><label>Laboratório de destino *</label><select id="destino" required></select></div>
+            <div class="field"><label>Data da coleta</label><input id="dataColeta" type="date"></div>
+            <div class="field"><label>Data do envio *</label><input id="dataEnvio" type="date" required></div>
+            <div class="field"><label>Janela de envio *</label><select id="horaEnvio" required></select></div>
+            <div class="field"><label>Agendado por *</label><select id="agendadoPor" required></select></div>
+            <div class="field hidden" id="responsavelEntregaField"><label>Responsável pela Entrega das Amostras *</label><select id="responsavelEntrega"></select></div>
+            <div class="field full">
+              <label>Temperatura *</label>
+              <div class="segmented" id="temperaturas"></div>
+            </div>
+            <div class="field full">
+              <label>Courier *</label>
+              <div class="segmented" id="couriers"></div>
+            </div>
+            <div class="field"><label>AWB / código</label><input id="awb"></div>
+            <div class="field" id="solicitarCaixaField"><label>Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
+            <div class="field hidden" id="pinexColetaField"><label>PINEX COL. N°</label><input id="pinexColeta" placeholder="000000" disabled></div>
+            <div class="field full"><label>Observações</label><textarea id="observacoes"></textarea></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title"><span class="material-symbols-outlined">science</span>Material Biol&oacute;gico</div>
+        </div>
+        <div class="panel-body">
+          <div id="materials" class="ag-mat-editor"></div>
+        </div>
+      </section>
+      </div>
+
+      <aside>
+        <div class="auth-notice" id="authNotice"></div>
+        <section class="panel">
+          <div class="panel-head"><div class="panel-title"><span class="material-symbols-outlined">fact_check</span>Checklist</div></div>
+          <div class="panel-body">
+            <div class="docs" id="docs"></div>
+            <div class="issues" id="issues"></div>
+          </div>
+        </section>
+
+        <section class="panel" style="margin-top:12px">
+          <div class="panel-head"><div class="panel-title"><span class="material-symbols-outlined">biotech</span>Resumo</div></div>
+          <div class="panel-body">
+            <div class="meta-list" id="metaList"></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+  </div>
+
+  <div class="modal-backdrop" id="confirmClearModal" role="dialog" aria-modal="true" aria-labelledby="confirmClearTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="confirmClearTitle"><span class="material-symbols-outlined">delete_sweep</span>Limpar conteúdo</div>
+        <button class="modal-close" type="button" onclick="closeClearModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div>Limpar os campos transitórios da documentação?</div>
+        <div class="modal-actions">
+          <button class="btn danger" type="button" onclick="confirmClearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
+          <button class="btn secondary" type="button" onclick="closeClearModal()"><span class="material-symbols-outlined">close</span>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="pdfModal" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="pdfModalTitle"><span class="material-symbols-outlined">picture_as_pdf</span>PDF pronto</div>
+        <button class="modal-close" type="button" onclick="closePdfModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div>O arquivo foi gerado com a quantidade correta de c&oacute;pias e est&aacute; pronto para download ou impress&atilde;o.</div>
+        <div class="modal-file" id="pdfModalFile"></div>
+        <div class="modal-warning" id="pdfDraftWarning"></div>
+        <div class="modal-actions">
+          <button class="btn" id="pdfDownloadLink" type="button" onclick="downloadGeneratedPdf()"><span class="material-symbols-outlined">download</span>Baixar PDF</button>
+          <a class="btn secondary" id="pdfPrintLink" href="#" target="_blank" rel="noopener"><span class="material-symbols-outlined">print</span>Imprimir</a>
+          <a class="btn secondary disabled" id="cePrintLink" href="#" target="_blank" rel="noopener" aria-disabled="true" title="CE não localizada"><span class="material-symbols-outlined">print</span>Imprimir CE</a>
+          <a class="btn secondary" id="pdfDriveLink" href="#" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span>Abrir no Drive</a>
+          <button class="btn secondary" type="button" onclick="closePdfModal()"><span class="material-symbols-outlined">check</span>Concluir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var state = { registro: {}, options: {}, resumo: {}, issues: [] };
+    var selectedTemp = '';
+    var selectedCourier = '';
+    var MATBIO_TIPOS = [
+      { key:'sangue', label:'Sangue', unit:'mL' },
+      { key:'soro', label:'Soro', unit:'mL' },
+      { key:'urina', label:'Urina', unit:'mL' },
+      { key:'plasma', label:'Plasma', unit:'mL' },
+      { key:'tecido', label:'Tecido', unit:'mL' },
+      { key:'saliva', label:'Saliva', unit:'mL' },
+      { key:'fezes', label:'Fezes', unit:'g' },
+      { key:'vacina', label:'Vacina', unit:'g' },
+      { key:'outro', label:'Outro tipo, especifique', unit:'mL', outro:true }
+    ];
+
+    function esc(v) {
+      return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      }, 'Sincronizando dependencias...');
+    }
+
+    function norm(v) {
+      return String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    }
+
+    function setActionStatus(msg, type) {
+      var el = document.getElementById('actionStatus');
+      if (!el) return;
+      el.textContent = msg || 'Pronto.';
+      el.className = 'action-status ' + (type || '');
+    }
+
+    function setBusy(on, msg) {
+      document.getElementById('app').classList.toggle('loading', !!on);
+      Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn) { btn.disabled = !!on; });
+      if (on) setActionStatus(msg || 'Processando...', '');
+    }
+
+    function toast(msg, type) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast ' + (type || '');
+      el.style.display = 'block';
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(function() { el.style.display = 'none'; }, 4200);
+    }
+
+    function showPdfModal(data) {
+      if (!data || (!data.fileId && !data.downloadUrl)) return;
+      window._lastGeneratedPdf = data;
+      document.getElementById('pdfModalFile').textContent = data.fileName || 'documentacao-transporte.pdf';
+      var draftWarning = document.getElementById('pdfDraftWarning');
+      if (draftWarning) {
+        if (data.draftOk === false) {
+          var authLink = data.draftAuthUrl
+            ? ' <a href="' + esc(data.draftAuthUrl) + '" target="_blank" rel="noopener">Autorizar Gmail</a>'
+            : '';
+          draftWarning.innerHTML = '<strong>Atenção:</strong> o PDF foi gerado, mas o rascunho de e-mail não foi criado. ' + esc(data.draftError || data.draftMessage || '') + authLink;
+          draftWarning.classList.add('show');
+        } else {
+          draftWarning.textContent = '';
+          draftWarning.classList.remove('show');
+        }
+      }
+      document.getElementById('pdfDownloadLink').disabled = false;
+      document.getElementById('pdfPrintLink').href = data.printUrl || data.fileUrl || data.downloadUrl;
+      document.getElementById('pdfDriveLink').href = data.fileUrl || data.downloadUrl;
+      var ceLink = document.getElementById('cePrintLink');
+      var ceUrl = data.cePrintUrl || (data.ce && data.ce.printUrl) || (data.ce && data.ce.url) || '';
+      if (ceUrl) {
+        ceLink.href = ceUrl;
+        ceLink.classList.remove('disabled');
+        ceLink.setAttribute('aria-disabled', 'false');
+        ceLink.title = 'Abrir CE para impressão';
+      } else {
+        ceLink.href = '#';
+        ceLink.classList.add('disabled');
+        ceLink.setAttribute('aria-disabled', 'true');
+        ceLink.title = 'CE não localizada';
+      }
+      document.getElementById('pdfModal').classList.add('open');
+    }
+
+    function downloadGeneratedPdf() {
+      var data = window._lastGeneratedPdf || {};
+      if (!data.fileId) {
+        if (data.downloadUrl) window.open(data.downloadUrl, '_blank', 'noopener');
+        return;
+      }
+      var btn = document.getElementById('pdfDownloadLink');
+      if (btn) btn.disabled = true;
+      setActionStatus('Preparando download do PDF...', '');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) btn.disabled = false;
+          if (!res || !res.base64) {
+            toast('Nao foi possivel preparar o PDF para download.', 'danger');
+            setActionStatus('Falha ao preparar download.', 'danger');
+            return;
+          }
+          var a = document.createElement('a');
+          a.href = 'data:' + (res.mimeType || 'application/pdf') + ';base64,' + res.base64;
+          a.download = res.fileName || data.fileName || 'documentacao-transporte.pdf';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setActionStatus('Download preparado.', 'ok');
+        })
+        .withFailureHandler(function(e) {
+          if (btn) btn.disabled = false;
+          var msg = e && e.message ? e.message : String(e);
+          toast(msg, 'danger');
+          setActionStatus(msg, 'danger');
+        })
+        .baixarPdfTransporte(data.fileId);
+    }
+
+    function closePdfModal() {
+      document.getElementById('pdfModal').classList.remove('open');
+    }
+
+    function serverCall(name, args, okMsg, after, busyMsg) {
+      setBusy(true, busyMsg);
+      var runner = google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          var msg = typeof res === 'string' ? res : okMsg;
+          if (msg) {
+            setActionStatus(msg, 'ok');
+            toast(msg, 'ok');
+          } else {
+            setActionStatus('Concluido.', 'ok');
+          }
+          if (after) after(res);
+        })
+        .withFailureHandler(function(e) {
+          setBusy(false);
+          var msg = e && e.message ? e.message : String(e);
+          setActionStatus(msg, 'danger');
+          toast(msg, 'danger');
+        });
+      runner[name].apply(runner, args || []);
+    }
+
+    function fillList(id, rows, valueKey) {
+      document.getElementById(id).innerHTML = (rows || []).map(function(r) {
+        var value = valueKey ? r[valueKey] : r;
+        return '<option value="' + esc(value) + '"></option>';
+      }).join('');
+    }
+
+    function fillSelect(id, values, selected, placeholder) {
+      var seen = {};
+      var list = (values || []).filter(function(v) {
+        var key = norm(v);
+        if (!key || seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+      if (selected && !seen[norm(selected)]) list.unshift(selected);
+      document.getElementById(id).innerHTML =
+        '<option value="">' + esc(placeholder || 'Selecione') + '</option>' +
+        list.map(function(v) {
+          return '<option value="' + esc(v) + '"' + (String(v) === String(selected || '') ? ' selected' : '') + '>' + esc(v) + '</option>';
+        }).join('');
+    }
+
+    function fillSelectRows(id, rows, valueKey, selected, placeholder) {
+      var current = document.getElementById(id);
+      if (current && current.tagName !== 'SELECT') {
+        var select = document.createElement('select');
+        select.id = current.id;
+        select.required = current.required;
+        select.className = current.className;
+        current.parentNode.replaceChild(select, current);
+      }
+      var seen = {};
+      var list = (rows || []).map(function(r) {
+        return valueKey ? r[valueKey] : r;
+      }).filter(function(v) {
+        var key = norm(v);
+        if (!key || seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+      if (selected && !seen[norm(selected)]) list.unshift(selected);
+      document.getElementById(id).innerHTML =
+        '<option value="">' + esc(placeholder || 'Selecione') + '</option>' +
+        list.map(function(v) {
+          return '<option value="' + esc(v) + '"' + (String(v) === String(selected || '') ? ' selected' : '') + '>' + esc(v) + '</option>';
+        }).join('');
+    }
+
+    function segmented(id, values, selected, cb) {
+      document.getElementById(id).innerHTML = (values || []).map(function(v) {
+        return '<button type="button" class="' + (v === selected ? 'active' : '') + '" onclick="' + cb + '(' + JSON.stringify(v).replace(/"/g, '&quot;') + ')">' + esc(v) + '</button>';
+      }).join('');
+    }
+
+    function selectTemp(v) {
+      selectedTemp = v;
+      segmented('temperaturas', state.options.temperaturas, selectedTemp, 'selectTemp');
+      applySolicitarCaixaDefault(false);
+      renderDerived();
+    }
+
+    function canonicalCourier(v) {
+      var value = String(v || '').trim();
+      return value.toLowerCase().indexOf('dhl') >= 0 ? 'DHL' : value;
+    }
+
+    function selectCourier(v) {
+      var prevUnit = matBioCourierUnit();
+      selectedCourier = canonicalCourier(v);
+      segmented('couriers', state.options.couriers, selectedCourier, 'selectCourier');
+      convertMatBioUnit(prevUnit, matBioCourierUnit());
+      applySolicitarCaixaDefault(true);
+      updateResponsavelEntregaField();
+      renderDerived();
+    }
+
+    function updatePinexField() {
+      var field = document.getElementById('pinexColetaField');
+      var input = document.getElementById('pinexColeta');
+      var enabled = selectedCourier === 'PINEX';
+      if (field) field.classList.toggle('hidden', !enabled);
+      input.disabled = !enabled;
+      input.placeholder = '000000';
+      if (!enabled) input.value = '';
+    }
+
+    function courierUsesTransportBox(courier) {
+      return courier === 'MARKEN' || courier === 'PINEX (Agendamento)' || courier === 'DHL';
+    }
+
+    function defaultSolicitarCaixa(courier) {
+      return courier === 'MARKEN' ? 'Não' : 'Sim';
+    }
+
+    function applySolicitarCaixaDefault(force) {
+      var field = document.getElementById('solicitarCaixaField');
+      var input = document.getElementById('solicitarCaixa');
+      if (!field || !input) return;
+      var show = courierUsesTransportBox(selectedCourier);
+      field.classList.toggle('hidden', !show);
+      if (!show) {
+        input.value = '';
+        return;
+      }
+      if (force || !input.value) input.value = defaultSolicitarCaixa(selectedCourier);
+    }
+
+    function updateResponsavelEntregaField() {
+      var field = document.getElementById('responsavelEntregaField');
+      var input = document.getElementById('responsavelEntrega');
+      if (!field || !input) return;
+      var show = selectedCourier === 'PINEX (Agendamento)';
+      field.classList.toggle('hidden', !show);
+      if (!show) input.value = '';
+    }
+
+    function loadData(force) {
+      serverCall('getTransporteBootstrap', [], force ? 'Dados atualizados.' : '', function(data) {
+        state = data || state;
+        renderAll();
+        loadParticipantsOptions();
+      }, force ? 'Atualizando dados...' : 'Carregando dados...');
+    }
+
+    function loadParticipantsOptions() {
+      if (state.options && state.options.participantesLoaded) return;
+      if (state.options && state.options.participantesLoading) return;
+      state.options = state.options || {};
+      state.options.participantesLoading = true;
+      google.script.run
+        .withSuccessHandler(function(rows) {
+          state.options = state.options || {};
+          state.options.participantes = rows || [];
+          state.options.participantesLoaded = true;
+          state.options.participantesLoading = false;
+          window._transporteParticipantes = state.options.participantes;
+          fillSelectRows('paciente', state.options.participantes, 'nome', document.getElementById('paciente').value, 'Selecione o paciente');
+          applyParticipantSelection({ loadCe: false });
+        })
+        .withFailureHandler(function(e) {
+          state.options.participantesLoading = false;
+          var msg = e && e.message ? e.message : String(e);
+          setActionStatus('Participantes não carregados: ' + msg, 'warn');
+        })
+        .getTransporteParticipantesOptions();
+    }
+
+    function loadCeStatus(force) {
+      var protocolo = document.getElementById('protocolo').value;
+      if (!protocolo) {
+        state.ceStatus = null;
+        renderIssues();
+        return;
+      }
+      if (!force && state.ceStatus && state.ceStatus.protocolo === protocolo) {
+        renderIssues();
+        return;
+      }
+      state.ceStatus = { protocolo: protocolo, checked: false, found: false, message: 'Verificando CE do estudo...' };
+      renderIssues();
+      google.script.run
+        .withSuccessHandler(function(status) {
+          state.ceStatus = status || {};
+          state.ceStatus.protocolo = protocolo;
+          renderIssues();
+        })
+        .withFailureHandler(function(e) {
+          state.ceStatus = {
+            protocolo: protocolo,
+            checked: true,
+            found: false,
+            message: 'Não foi possível verificar a CE: ' + ((e && e.message) ? e.message : String(e))
+          };
+          renderIssues();
+        })
+        .getTransporteCeStatus(protocolo);
+    }
+
+    function renderAll(opts) {
+      opts = opts || {};
+      var r = state.registro || {};
+      var o = state.options || {};
+      if ((!o.participantes || !o.participantes.length) && window._transporteParticipantes) {
+        o.participantes = window._transporteParticipantes;
+        o.participantesLoaded = true;
+      }
+      selectedTemp = r.temperatura || (o.temperaturas || [])[0] || '';
+      selectedCourier = canonicalCourier(r.courier || (o.couriers || [])[0] || '');
+      fillSelectRows('paciente', o.participantes || [], 'nome', r.paciente || '', 'Selecione o paciente');
+      fillSelectRows('destino', o.destinos || [], 'nome', r.destino || '', 'Selecione o laboratório');
+      ['protocolo','investigador','dataColeta','dataEnvio','awb','pinexColeta','observacoes'].forEach(function(id) {
+        document.getElementById(id).value = r[id] || '';
+      });
+      document.getElementById('solicitarCaixa').value = r.solicitarCaixa || defaultSolicitarCaixa(selectedCourier);
+      applySolicitarCaixaDefault(false);
+      fillSelect('horaEnvio', o.janelasEnvio || [], r.horaEnvio || '', 'Selecione a janela');
+      fillSelect('agendadoPor', o.agendadores || [], r.agendadoPor || '', 'Selecione o responsavel');
+      fillSelect('responsavelEntrega', o.responsaveisEntrega || [], r.responsavelEntrega || '', 'Selecione o responsavel');
+      updateResponsavelEntregaField();
+      segmented('temperaturas', o.temperaturas || [], selectedTemp, 'selectTemp');
+      segmented('couriers', o.couriers || [], selectedCourier, 'selectCourier');
+      applyParticipantSelection({ loadCe: false });
+      renderMaterials(r.materiais || []);
+      renderDerived();
+      renderAuthNotice();
+      if (!opts.skipCe) loadCeStatus(false);
+    }
+
+    function renderAuthNotice() {
+      var el = document.getElementById('authNotice');
+      if (!el) return;
+      var auth = state && state.auth;
+      var requester = state && state.access ? String(state.access.email || '').toLowerCase() : '';
+      var runtime = state && state.runtime;
+      var effective = runtime ? String(runtime.effectiveUserEmail || '').toLowerCase() : '';
+      if (requester && effective && requester !== effective) {
+        el.innerHTML = '<span>O WebApp esta executando como ' + esc(effective) + ', mas o usuario solicitante e ' + esc(requester) + '. O rascunho do Gmail so pode ser criado no usuario solicitante se a implantacao estiver como USER_ACCESSING.</span>';
+        el.classList.add('show');
+        return;
+      }
+      if (auth && auth.required && auth.url) {
+        el.innerHTML = '<span>Autorize Agenda, Drive e Gmail antes de gerar documentos com rascunho.</span><a href="' + esc(auth.url) + '" target="_blank" rel="noopener">Autorizar</a>';
+        el.classList.add('show');
+      } else if (auth && auth.ok === false) {
+        el.innerHTML = '<span>Nao foi possivel verificar as autorizacoes de Agenda, Drive e Gmail. ' + esc(auth.error || '') + '</span>';
+        el.classList.add('show');
+      } else {
+        el.textContent = '';
+        el.classList.remove('show');
+      }
+    }
+
+    function selectedParticipantInfo() {
+      var nome = norm(document.getElementById('paciente').value);
+      return (state.options.participantes || []).filter(function(p) {
+        return norm(p.nome) === nome;
+      })[0] || {};
+    }
+
+    function applyParticipantSelection(opts) {
+      opts = opts || {};
+      var info = selectedParticipantInfo();
+      if (!info.nome && !(state.options && state.options.participantesLoaded)) return;
+      if (!document.getElementById('paciente').value) {
+        document.getElementById('protocolo').value = '';
+        document.getElementById('investigador').value = '';
+        renderDerived();
+        return;
+      }
+      if (!info.nome) return;
+      document.getElementById('protocolo').value = projectDisplay(info.projeto || '');
+      document.getElementById('investigador').value = info.investigador || '';
+      if (opts.loadCe !== false) loadCeStatus(true);
+      renderDerived();
+    }
+
+    function projectDisplay(value) {
+      var raw = String(value || '').trim();
+      if (!raw) return '';
+      var projects = (state.options && state.options.projetos) || [];
+      var key = norm(raw);
+      for (var i = 0; i < projects.length; i++) {
+        var p = projects[i] || {};
+        var nome = String(p.nomeAbreviado || p.nome || '').trim();
+        var codigo = String(p.codigo || '').trim();
+        var display = nome ? (codigo ? nome + ' (' + codigo + ')' : nome) : codigo;
+        var reverse = nome && codigo ? codigo + ' (' + nome + ')' : '';
+        if ([nome, codigo, display, reverse].map(norm).indexOf(key) >= 0) return display || raw;
+      }
+      var m = raw.match(/^(.*?)\s*\((.*?)\)\s*$/);
+      if (m && /[0-9]/.test(m[1]) && /[-/]/.test(m[1])) return m[2].trim() + ' (' + m[1].trim() + ')';
+      return raw;
+    }
+
+    function projectInfo(value) {
+      var raw = String(value || '').trim();
+      if (!raw) return null;
+      var projects = (state.options && state.options.projetos) || [];
+      var key = norm(raw);
+      for (var i = 0; i < projects.length; i++) {
+        var p = projects[i] || {};
+        var nome = String(p.nomeAbreviado || p.nome || '').trim();
+        var codigo = String(p.codigo || '').trim();
+        var display = nome ? (codigo ? nome + ' (' + codigo + ')' : nome) : codigo;
+        var reverse = nome && codigo ? codigo + ' (' + nome + ')' : '';
+        if ([nome, codigo, display, reverse].map(norm).indexOf(key) >= 0) return p;
+      }
+      return null;
+    }
+
+    function renderMaterials(rows) {
+      var items = [];
+      (rows || []).forEach(function(m) {
+        if (!m.ativo && !m.formula && !m.tubos) return;
+        var cfg = matBioTypeConfig(m.material);
+        items.push({
+          key: cfg ? cfg.key : 'outro',
+          tipo: cfg ? cfg.label : m.material,
+          formula: m.formula || '',
+          ensaio: m.ensaio || ''
+        });
+      });
+      renderMatBioEditor(items);
+    }
+
+    function matBioCourierUnit() {
+      return String(selectedCourier || '').toLowerCase().indexOf('dhl') >= 0 ? 'L' : 'mL';
+    }
+
+    function matBioDisplayUnit(baseUnit) {
+      return String(baseUnit || 'mL').toLowerCase() === 'ml' ? matBioCourierUnit() : (baseUnit || 'mL');
+    }
+
+    function matBioTypeConfig(value) {
+      var n = norm(value);
+      return MATBIO_TIPOS.filter(function(t) { return n === norm(t.key) || n === norm(t.label); })[0] || null;
+    }
+
+    function matBioOptionsHtml(value) {
+      return '<option value=""></option>' + MATBIO_TIPOS.map(function(t) {
+        return '<option value="' + esc(t.key) + '"' + (value === t.key ? ' selected' : '') + '>' + esc(t.label) + '</option>';
+      }).join('');
+    }
+
+    function matBioPlaceholder() {
+      return matBioCourierUnit() === 'L' ? 'Ex: 2 x 0,0005' : 'Ex: 2 x 0,5';
+    }
+
+    function renderMatBioEditor(items) {
+      var box = document.getElementById('materials');
+      box.innerHTML =
+        '<div class="ag-mat-head"><span>Tipo</span><span id="matBioVolumeHead">Tubos x volume (' + esc(matBioCourierUnit()) + ')</span><span>Tubos</span><span>Total</span><span>Ensaio</span><span></span></div>' +
+        '<div class="ag-mat-lines" id="matBioLines"></div>' +
+        '<button type="button" class="ag-mat-add" onclick="matBioAddRow()"><span class="material-symbols-outlined">add</span>Adicionar material</button>' +
+        '<div class="ag-mat-help">Use <b>2 x 0,5</b> ou <b>2 x 0,5, 1 x 1,5</b>. Para DHL, volumes de base mL são informados em litros.</div>';
+      (items && items.length ? items : [{}]).forEach(function(item) { matBioAddRow(item); });
+      matBioEnsureTrailingRow();
+      matBioRecalc();
+    }
+
+    function matBioAddRow(item) {
+      var wrap = document.getElementById('matBioLines');
+      if (!wrap) return;
+      var idx = Number(wrap.dataset.next || 0);
+      wrap.dataset.next = String(idx + 1);
+      item = item || {};
+      var cfg = matBioTypeConfig(item.key || item.tipo);
+      var key = cfg ? cfg.key : '';
+      var outro = cfg && cfg.outro ? (item.tipo || '') : '';
+      wrap.insertAdjacentHTML('beforeend',
+        '<div class="ag-mat-line" data-idx="' + idx + '">' +
+          '<div class="ag-mat-type-cell"><select class="ag-mat-type-select" onchange="matBioRecalc()">' + matBioOptionsHtml(key) + '</select>' +
+          '<input class="ag-mat-other" type="text" value="' + esc(outro) + '" placeholder="Ex: Lâminas" oninput="matBioRecalc()"></div>' +
+          '<input class="ag-mat-formula" type="text" value="' + esc(item.formula || '') + '" inputmode="decimal" placeholder="' + esc(matBioPlaceholder()) + '" oninput="matBioRecalc()">' +
+          '<div class="ag-mat-calc ag-mat-tubos">-</div>' +
+          '<div class="ag-mat-calc ag-mat-total-line">-</div>' +
+          '<input class="ag-mat-ensaio" type="text" value="' + esc(item.ensaio || '') + '" placeholder="Nome do exame" oninput="matBioRecalc()">' +
+          '<button type="button" class="ag-mat-remove" title="Remover" onclick="matBioRemoveRow(this)"><span class="material-symbols-outlined">close</span></button>' +
+        '</div>');
+    }
+
+    function matBioRemoveRow(btn) {
+      var row = btn && btn.closest ? btn.closest('.ag-mat-line') : null;
+      if (row) row.remove();
+      if (!document.querySelectorAll('.ag-mat-line').length) matBioAddRow();
+      matBioRecalc();
+    }
+
+    function matBioParseFormula(text) {
+      var segmentos = [];
+      var tubos = 0;
+      var total = 0;
+      var re = /(\d+(?:[.,]\d+)?)\s*(?:x|X|\u00d7|\*)\s*(\d+(?:[.,]\d+)?)/g;
+      var m;
+      while ((m = re.exec(String(text || ''))) !== null) {
+        var q = Number(String(m[1]).replace(',', '.'));
+        var v = Number(String(m[2]).replace(',', '.'));
+        if (!isFinite(q) || !isFinite(v)) continue;
+        tubos += q;
+        total += q * v;
+        segmentos.push({ qtd:q, vol:v });
+      }
+      return { tubos:tubos, total:total, segmentos:segmentos };
+    }
+
+    function fmtNumber(v, dec) {
+      return Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    }
+
+    function matBioRecalc() {
+      var unitHead = document.getElementById('matBioVolumeHead');
+      if (unitHead) unitHead.textContent = 'Tubos x volume (' + matBioCourierUnit() + ')';
+      Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
+        var tipo = row.querySelector('.ag-mat-type-select');
+        var formula = row.querySelector('.ag-mat-formula');
+        var tubos = row.querySelector('.ag-mat-tubos');
+        var total = row.querySelector('.ag-mat-total-line');
+        var cfg = matBioTypeConfig(tipo && tipo.value);
+        var parsed = matBioParseFormula(formula ? formula.value : '');
+        var unit = matBioDisplayUnit((cfg && cfg.unit) || 'mL');
+        row.classList.toggle('other-on', !!(cfg && cfg.outro));
+        row.dataset.volumeUnit = unit;
+        if (formula) formula.placeholder = matBioPlaceholder();
+        if (tubos) tubos.textContent = parsed.tubos ? fmtNumber(parsed.tubos, 0) : '-';
+        if (total) total.textContent = (parsed.total ? fmtNumber(parsed.total, unit === 'L' ? 5 : 2) : '-') + ' ' + unit;
+      });
+      matBioEnsureTrailingRow();
+      renderDerived();
+    }
+
+    function matBioEnsureTrailingRow() {
+      var wrap = document.getElementById('matBioLines');
+      if (!wrap || wrap.dataset.loading === '1') return;
+      var rows = Array.prototype.slice.call(document.querySelectorAll('.ag-mat-line'));
+      if (!rows.length) return;
+      var outroIdx = -1;
+      rows.forEach(function(row, idx) {
+        var cfg = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
+        if (outroIdx < 0 && cfg && cfg.outro) outroIdx = idx;
+      });
+      if (outroIdx > -1) {
+        rows.slice(outroIdx + 1).forEach(function(row) { row.remove(); });
+        return;
+      }
+      var last = rows[rows.length - 1];
+      var hasValue = Array.prototype.some.call(last.querySelectorAll('select,input'), function(el) {
+        return String(el.value || '').trim();
+      });
+      if (hasValue) matBioAddRow();
+    }
+
+    function matBioFormulaText(qtd, vol, dec) {
+      return fmtNumber(qtd, 0) + ' x ' + fmtNumber(vol, dec);
+    }
+
+    function convertFormulaUnit(text, fromUnit, toUnit) {
+      if (fromUnit === toUnit) return String(text || '');
+      var parsed = matBioParseFormula(text);
+      if (!parsed.segmentos.length) return String(text || '');
+      var factor = fromUnit === 'mL' && toUnit === 'L' ? 1 / 1000 : (fromUnit === 'L' && toUnit === 'mL' ? 1000 : 1);
+      return parsed.segmentos.map(function(s) {
+        return matBioFormulaText(s.qtd, Number(s.vol || 0) * factor, toUnit === 'L' ? 5 : 2);
+      }).join(', ');
+    }
+
+    function convertMatBioUnit(fromUnit, toUnit) {
+      if (fromUnit === toUnit) return;
+      Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
+        var tipo = row.querySelector('.ag-mat-type-select');
+        var cfg = matBioTypeConfig(tipo && tipo.value);
+        if (!cfg || String(cfg.unit).toLowerCase() !== 'ml') return;
+        var formula = row.querySelector('.ag-mat-formula');
+        if (formula) formula.value = convertFormulaUnit(formula.value, fromUnit, toUnit);
+      });
+    }
+
+    function collectMaterials() {
+      var byKey = {};
+      Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
+        var tipoEl = row.querySelector('.ag-mat-type-select');
+        var formulaEl = row.querySelector('.ag-mat-formula');
+        var ensaioEl = row.querySelector('.ag-mat-ensaio');
+        var cfg = matBioTypeConfig(tipoEl && tipoEl.value);
+        if (!cfg) return;
+        var parsed = matBioParseFormula(formulaEl ? formulaEl.value : '');
+        var label = cfg.outro ? ((row.querySelector('.ag-mat-other') || {}).value || '').trim() : cfg.label;
+        if (!label || (!parsed.segmentos.length && !cfg.outro)) return;
+        var key = cfg.key;
+        if (!byKey[key]) {
+          byKey[key] = { ativo:true, material:label, tubos:0, formulas:[], total:0, ensaios:[], unit:matBioDisplayUnit(cfg.unit) };
+        }
+        byKey[key].tubos += parsed.tubos;
+        byKey[key].total += parsed.total;
+        if (formulaEl && formulaEl.value.trim()) byKey[key].formulas.push(formulaEl.value.trim());
+        if (ensaioEl && ensaioEl.value.trim()) byKey[key].ensaios.push(ensaioEl.value.trim());
+      });
+      var rows = ['sangue','soro','urina','plasma','tecido','saliva','fezes','vacina'].map(function(key) {
+        var cfg = matBioTypeConfig(key);
+        var item = byKey[key];
+        return item ? {
+          ativo:true,
+          material:cfg.label,
+          tubos:item.tubos,
+          formula:item.formulas.join(', '),
+          total:item.total,
+          ensaio:item.ensaios.join('; '),
+          unit:item.unit
+        } : { ativo:false, material:cfg.label, tubos:'', formula:'', total:'', ensaio:'', unit:matBioDisplayUnit(cfg.unit) };
+      });
+      if (byKey.outro) rows.push({
+        ativo:true,
+        material:byKey.outro.material,
+        tubos:byKey.outro.tubos,
+        formula:byKey.outro.formulas.join(', '),
+        total:byKey.outro.total,
+        ensaio:byKey.outro.ensaios.join('; '),
+        unit:byKey.outro.unit
+      });
+      return rows;
+    }
+
+    function collectPayload() {
+      var registroAtual = (state && state.registro) || {};
+      return {
+        paciente: document.getElementById('paciente').value,
+        protocolo: document.getElementById('protocolo').value,
+        investigador: document.getElementById('investigador').value,
+        temperatura: selectedTemp,
+        dataColeta: document.getElementById('dataColeta').value,
+        dataEnvio: document.getElementById('dataEnvio').value,
+        identificacaoParticipante: selectedParticipantInfo().idParticipante || '',
+        horaEnvio: document.getElementById('horaEnvio').value,
+        courier: selectedCourier,
+        destino: document.getElementById('destino').value,
+        awb: document.getElementById('awb').value,
+        pinexColeta: selectedCourier === 'PINEX' ? document.getElementById('pinexColeta').value : '',
+        solicitarCaixa: document.getElementById('solicitarCaixa').value,
+        agendadoPor: document.getElementById('agendadoPor').value,
+        responsavelEntrega: selectedCourier === 'PINEX (Agendamento)' ? document.getElementById('responsavelEntrega').value : '',
+        observacoes: document.getElementById('observacoes').value,
+        idAgenda: registroAtual.idAgenda || '',
+        agendaSlot: registroAtual.agendaSlot || '',
+        refInterna: registroAtual.refInterna || '',
+        materiais: collectMaterials()
+      };
+    }
+
+    function renderDerived() {
+      updatePinexField();
+      updateResponsavelEntregaField();
+      var materiais = collectMaterials();
+      var ativos = materiais.filter(function(m) { return m.ativo; });
+      var docs = docsFor(selectedCourier, selectedTemp, document.getElementById('destino').value);
+      var tubos = ativos.reduce(function(sum, m) { return sum + (Number(String(m.tubos).replace(',', '.')) || 0); }, 0);
+      var total = ativos.reduce(function(sum, m) { return sum + (Number(String(m.total).replace(',', '.')) || 0); }, 0);
+      var volumeUnit = selectedCourier === 'DHL' ? 'L' : 'mL';
+      document.getElementById('stMateriais').textContent = ativos.length;
+      document.getElementById('stTubos').textContent = tubos || '0';
+      document.getElementById('stVolume').textContent = (total ? fmtNumber(total, volumeUnit === 'L' ? 5 : 2) : '0') + ' ' + volumeUnit;
+      document.getElementById('stDocs').textContent = docs.length;
+      document.getElementById('docs').innerHTML = docs.map(function(d) {
+        return '<div class="doc"><span class="material-symbols-outlined">description</span><div>' + esc(d) + '</div></div>';
+      }).join('');
+      renderIssues();
+      renderMeta(ativos, docs);
+    }
+
+    function docsFor(courier, temp, destino) {
+      var t = String(temp || '').toLowerCase();
+      var isDasaBarueri = norm(destino) === norm('DASA (BARUERI)');
+      if (courier === 'OCASA' && !isDasaBarueri) return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Proforma OCASA', 'Ficha de Emergência OCASA', 'Telefones Úteis OCASA'];
+      if (courier === 'OCASA') return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Ficha de Emergência OCASA', 'Telefones Úteis OCASA'];
+      if (courier === 'PINEX (Agendamento)') return ['Formulário PINEX'];
+      if (courier === 'PINEX') return ['Folha DHL/PINEX', 'Commercial Invoice PINEX', 'Petição PINEX', 'USDA Statement', 'Ficha de Emergência PINEX', 'Declaração de Transporte'];
+      if (courier === 'DHL') return ['Folha DHL/PINEX', 'Declaração DHL', 'Invoice DHL', 'Declaração de Transporte DHL'];
+      if (courier === 'OCASA') return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Ficha de Emergência OCASA', 'Telefones Úteis OCASA'].concat(t.indexOf('congelado') < 0 ? ['Proforma OCASA'] : []);
+      if (courier === 'MARKEN') return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Invoice MARKEN', 'Ficha de Emergência MARKEN'];
+      return ['Folha de Agendamento', 'Declaração de Transporte'];
+    }
+
+    function renderIssues() {
+      var p = collectPayload();
+      var issues = [];
+      if (p.protocolo && state.ceStatus) {
+        if (state.ceStatus.checked === false) {
+          issues.push({ type:'warn', text: state.ceStatus.message || 'Verificando CE do estudo...' });
+        } else if (state.ceStatus.found) {
+          issues.push({ type:'ok', text: state.ceStatus.message || 'CE localizada para o estudo.' });
+        } else {
+          issues.push({ type:'warn', text: state.ceStatus.message || 'CE nao localizada para o estudo.' });
+        }
+      }
+      if (p.protocolo) {
+        var projInfo = projectInfo(p.protocolo);
+        if (!projInfo) {
+          issues.push({ type:'warn', text:'Projeto não localizado no cadastro de Protocolos para validar dados regulatórios.' });
+        } else {
+          if (!String(projInfo.numeroCE || '').trim()) issues.push({ type:'warn', text:'N° CE não preenchido no cadastro do projeto.' });
+          if (!String(projInfo.expedienteCE || '').trim()) issues.push({ type:'warn', text:'N° do Expediente do CE não preenchido no cadastro do projeto.' });
+          if (!String(projInfo.nomeAbreviado || '').trim()) issues.push({ type:'warn', text:'Nome abreviado não preenchido no cadastro do projeto.' });
+          if (!String(projInfo.tituloCompleto || '').trim()) issues.push({ type:'warn', text:'Título completo não preenchido no cadastro do projeto.' });
+        }
+      }
+      if (!p.paciente) issues.push({ type:'danger', text:'Paciente não informado.' });
+      if (!p.protocolo) issues.push({ type:'danger', text:'Protocolo não informado.' });
+      if (!p.investigador) issues.push({ type:'danger', text:'Investigador não informado.' });
+      if (!p.destino) issues.push({ type:'danger', text:'Laboratório de destino não informado.' });
+      if (!p.dataEnvio) issues.push({ type:'danger', text:'Data de envio não informada.' });
+      if (!p.temperatura) issues.push({ type:'danger', text:'Temperatura não selecionada.' });
+      if (!p.courier) issues.push({ type:'danger', text:'Courier não selecionada.' });
+      if (!p.horaEnvio) issues.push({ type:'danger', text:'Janela de envio não informada.' });
+      if (!p.agendadoPor) issues.push({ type:'danger', text:'Responsável pelo agendamento não informado.' });
+      if (p.courier === 'PINEX (Agendamento)' && !p.responsavelEntrega) issues.push({ type:'danger', text:'Responsável pela entrega das amostras não informado.' });
+      var awbCheck = p.courier === 'MARKEN'
+        ? String(p.awb || '').replace(/[^A-Za-z0-9]/g, '')
+        : String(p.awb || '').replace(/\D/g, '');
+      var rule = { MARKEN:12, OCASA:8, DHL:10 }[p.courier];
+      if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) {
+        issues.push({ type:'danger', text:'AWB / código obrigatório para ' + p.courier + '.' });
+      }
+      if (rule && awbCheck.length !== rule) issues.push({ type:'warn', text:'AWB ' + p.courier + ' deve ter ' + rule + (p.courier === 'MARKEN' ? ' caracteres.' : ' dígitos.') });
+      if (p.courier === 'PINEX' && !String(p.pinexColeta || '').match(/^\d{6}$/)) issues.push({ type:'warn', text:'PINEX COL. N° deve conter 6 dígitos.' });
+      if (!p.materiais.some(function(m) { return m.ativo; })) issues.push({ type:'warn', text:'Nenhum material biológico marcado na declaração.' });
+      if (!issues.length) issues.push({ type:'ok', text:'Dados principais prontos para sincronização.' });
+      document.getElementById('issues').innerHTML = issues.map(function(i) {
+        var icon = i.type === 'ok' ? 'check_circle' : (i.type === 'danger' ? 'error' : 'warning');
+        return '<div class="issue ' + i.type + '"><span class="material-symbols-outlined">' + icon + '</span><div>' + esc(i.text) + '</div></div>';
+      }).join('');
+    }
+
+    function renderMeta(ativos, docs) {
+      var p = collectPayload();
+      var destino = (state.options.destinos || []).filter(function(item) { return item.nome === p.destino; })[0] || {};
+      var rows = [
+        ['Courier', p.courier || '-'],
+        ['Temperatura', p.temperatura || '-'],
+        ['Protocolo', p.protocolo || '-'],
+        ['CDC Permit', destino.cdcPermit || '-'],
+        ['Materiais', ativos.map(function(m) { return m.material; }).join(', ') || '-'],
+        ['Documentos', docs.length + ' previstos']
+      ];
+      document.getElementById('metaList').innerHTML = rows.map(function(r) {
+        return '<div class="meta-item"><div class="meta-label">' + esc(r[0]) + '</div><div class="meta-value">' + esc(r[1]) + '</div></div>';
+      }).join('');
+    }
+
+    function blockingIssues() {
+      var p = collectPayload();
+      var out = [];
+      if (!String(p.paciente || '').trim()) out.push('Paciente');
+      if (!String(p.protocolo || '').trim()) out.push('Protocolo');
+      if (!String(p.investigador || '').trim()) out.push('Investigador');
+      if (!String(p.destino || '').trim()) out.push('Laboratório de destino');
+      if (!String(p.dataEnvio || '').trim()) out.push('Data de envio');
+      if (!String(p.temperatura || '').trim()) out.push('Temperatura');
+      if (!String(p.courier || '').trim()) out.push('Courier');
+      if (!String(p.horaEnvio || '').trim()) out.push('Janela de envio');
+      if (!String(p.agendadoPor || '').trim()) out.push('Agendado por');
+      if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) out.push('AWB / código');
+      if (p.courier === 'PINEX (Agendamento)' && !String(p.responsavelEntrega || '').trim()) out.push('Responsável pela Entrega das Amostras');
+      return out;
+    }
+
+    function ensureRequiredTransportFields() {
+      renderIssues();
+      var missing = blockingIssues();
+      if (!missing.length) return true;
+      var msg = 'Preencha os campos obrigatórios: ' + missing.join(', ') + '.';
+      setActionStatus(msg, 'danger');
+      toast(msg, 'danger');
+      var focusMap = {
+        'Paciente': 'paciente',
+        'Protocolo': 'protocolo',
+        'Investigador': 'investigador',
+        'Laboratório de destino': 'destino',
+        'Data de envio': 'dataEnvio',
+        'Janela de envio': 'horaEnvio',
+        'Agendado por': 'agendadoPor',
+        'Responsável pela Entrega das Amostras': 'responsavelEntrega',
+        'AWB / código': 'awb'
+      };
+      var focusId = focusMap[missing[0]];
+      var el = document.getElementById(focusId);
+      if (el) el.focus();
+      return false;
+    }
+
+    function saveData() {
+      if (!ensureRequiredTransportFields()) return;
+      var payload = collectPayload();
+      serverCall('salvarTransporte', [payload, { returnBootstrap: false, preencherDocumentos: false }], 'Dados salvos na planilha de transporte.', function(data) {
+        if (state) state.registro = Object.assign({}, state.registro || {}, payload);
+        renderAll();
+      }, 'Salvando...');
+    }
+
+    function saveAndRun(actionName, okMsg) {
+      if (!ensureRequiredTransportFields()) return;
+      var payload = collectPayload();
+      var requestedByEmail = state && state.access ? state.access.email : '';
+      var actionLabel = 'Gerando PDF e rascunho...';
+      setBusy(true, 'Salvando antes de executar. ' + actionLabel);
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (data && data.registro && data.options) {
+            state = data;
+            renderAll({ skipCe: true });
+          }
+          setActionStatus(actionLabel, '');
+          google.script.run
+            .withSuccessHandler(function(res) {
+              setBusy(false);
+              var msg = res && typeof res === 'object' ? (res.message || okMsg) : (res || okMsg);
+              var hasDriveWarning = res && typeof res === 'object' && res.driveAccess && (res.driveAccess.fileShareError || res.driveAccess.folderShareError);
+              var msgType = res && typeof res === 'object' && (res.draftOk === false || hasDriveWarning) ? 'warn' : 'ok';
+              setActionStatus(msg, msgType);
+              toast(msg, msgType);
+              if (res && typeof res === 'object' && res.type === 'pdf') showPdfModal(res);
+            })
+            .withFailureHandler(function(e) {
+              setBusy(false);
+              var msg = e && e.message ? e.message : String(e);
+              setActionStatus(msg, 'danger');
+              toast(msg, 'danger');
+            })[actionName]({
+              payload: payload,
+              requestedByEmail: requestedByEmail
+            });
+        })
+        .withFailureHandler(function(e) {
+          setBusy(false);
+          var msg = e && e.message ? e.message : String(e);
+          setActionStatus(msg, 'danger');
+          toast(msg, 'danger');
+        })
+        .salvarTransporte(payload, { returnBootstrap: false, preencherDocumentos: false });
+    }
+
+    function syncData() {
+      serverCall('sincronizarTransporte', [], 'Dependências sincronizadas.', function(data) {
+        state = data || state;
+        renderAll();
+      }, 'Sincronizando dependencias...');
+    }
+
+    function runPdf() {
+      var auth = state && state.auth;
+      if (auth && auth.required && auth.url) {
+        renderAuthNotice();
+        var msg = 'Autorize Agenda, Drive e Gmail antes de gerar PDF e rascunho.';
+        setActionStatus(msg, 'warn');
+        toast(msg, 'warn');
+        return;
+      }
+      if (auth && auth.ok === false) {
+        renderAuthNotice();
+        var authMsg = 'Nao foi possivel verificar as autorizacoes. Recarregue a pagina e tente novamente.';
+        setActionStatus(authMsg, 'warn');
+        toast(authMsg, 'warn');
+        return;
+      }
+      var requester = state && state.access ? String(state.access.email || '').toLowerCase() : '';
+      var runtime = state && state.runtime;
+      var effective = runtime ? String(runtime.effectiveUserEmail || '').toLowerCase() : '';
+      if (requester && effective && requester !== effective) {
+        renderAuthNotice();
+        var runtimeMsg = 'O WebApp esta executando como outra conta. Nao vou criar rascunho no Gmail do deployer.';
+        setActionStatus(runtimeMsg, 'warn');
+        toast(runtimeMsg, 'warn');
+        return;
+      }
+      saveAndRun('gerarPdfTransporte', 'PDF e rascunho gerados.');
+    }
+
+    function clearData() {
+      document.getElementById('confirmClearModal').classList.add('open');
+    }
+
+    function closeClearModal() {
+      document.getElementById('confirmClearModal').classList.remove('open');
+    }
+
+    function confirmClearData() {
+      closeClearModal();
+      serverCall('limparTransporte', [], 'Conteúdo limpo.', function(res) {
+        state = res && res.data ? res.data : state;
+        renderAll();
+      }, 'Limpando conteudo...');
+    }
+
+    document.addEventListener('input', function(e) {
+      if (e.target.closest('.material-row') || ['paciente','awb','pinexColeta','destino','dataEnvio','horaEnvio','agendadoPor','responsavelEntrega','solicitarCaixa'].indexOf(e.target.id) >= 0) {
+        if (e.target.id === 'paciente') loadParticipantsOptions();
+        if (e.target.id === 'paciente') applyParticipantSelection();
+        renderDerived();
+      }
+    });
+
+    document.addEventListener('change', function(e) {
+      if (e.target.closest('.material-row') || ['paciente','awb','pinexColeta','destino','dataEnvio','horaEnvio','agendadoPor','responsavelEntrega','solicitarCaixa'].indexOf(e.target.id) >= 0) {
+        if (e.target.id === 'paciente') loadParticipantsOptions();
+        if (e.target.id === 'paciente') applyParticipantSelection();
+        renderDerived();
+      }
+    });
+
+    loadData(false);
+  </script>
+</body>
+</html>

@@ -1,49 +1,906 @@
-// ======================================================
+﻿// ======================================================
 // WEBAPP — PONTO DE ENTRADA
 // ======================================================
+var CODEX_ACL_SHEET_NAME_ = 'Users';
+var CODEX_ACL_CACHE_KEY_ = 'UsersAclEmails:v2';
+var CODEX_ACL_CACHE_SECONDS_ = 120;
+var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
+var CODEX_API_TOKEN_REQUEST_ = false;
+var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
+
 function doGet(e) {
+  var access = codexAuthorizeWebAppRequestSafe_(e);
+  if (!access.ok) return codexAccessDeniedOutput_(access);
+
   var page = e && e.parameter ? e.parameter.page : 'index';
 
-  if (page === 'estoque') {
-    var tplEstoque = HtmlService.createTemplateFromFile('EstoqueApp');
-    tplEstoque.paginaInicial = e && e.parameter ? (e.parameter.pagina || 'itens') : 'itens';
+  if (page === 'dashboard') {
+    var tplDashboard = HtmlService.createTemplateFromFile('Index');
+    tplDashboard.includeEstoque = false;
+    tplDashboard.includeDashboard = true;
+    tplDashboard.paginaInicial = 'dashboard';
+    tplDashboard.buscaInicial = '';
+    return tplDashboard
+      .evaluate()
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setTitle('IPS | UCS')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  if (page === 'estoque' || page === 'pedidos' || page === 'estoque-view') {
+    var tplEstoque = HtmlService.createTemplateFromFile('Index');
+    tplEstoque.includeEstoque = true;
+    tplEstoque.includeDashboard = false;
+    tplEstoque.paginaInicial = page === 'pedidos'
+      ? 'pedidos'
+      : (page === 'estoque-view' ? 'visualizacao' : (e && e.parameter ? (e.parameter.pagina || 'itens') : 'itens'));
+    tplEstoque.buscaInicial = e && e.parameter ? (e.parameter.busca || '') : '';
     return tplEstoque
       .evaluate()
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setTitle('IPS | UCS')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  if (page === 'pedidos') {
-    var tplPedidos = HtmlService.createTemplateFromFile('EstoqueApp');
-    tplPedidos.paginaInicial = 'pedidos';
-    return tplPedidos
+  if (page === 'transporte') {
+    return HtmlService
+      .createTemplateFromFile('TransporteApp')
       .evaluate()
-      .setTitle('IPS | UCS')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setTitle('IPS | Transporte de Mat. Biologico')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
-
-  if (page === 'estoque-view')
-    return HtmlService.createTemplateFromFile('Index')
-      .evaluate()
-      .setTitle('IPS | UCS')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
   // default — página principal
-  return HtmlService.createTemplateFromFile('Index')
+  var tplIndex = HtmlService.createTemplateFromFile('Index');
+  tplIndex.includeEstoque = false;
+  tplIndex.includeDashboard = false;
+  tplIndex.paginaInicial = e && e.parameter ? (e.parameter.pagina || 'agenda') : 'agenda';
+  tplIndex.buscaInicial = '';
+  return tplIndex
     .evaluate()
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setTitle('IPS | UCS')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 
 // Retorna a URL base do webapp (usada para navegação entre páginas)
+function doPost(e) {
+  var access = codexAuthorizeWebAppRequestSafe_(e);
+  if (!access.ok) {
+    return codexJsonResponse_({
+      ok: false,
+      error: access.message || 'Acesso negado.',
+      userEmail: access.userEmail || ''
+    }, 403);
+  }
+
+  var action = e && e.parameter ? String(e.parameter.action || '') : '';
+  var payload = {};
+  try {
+    if (e && e.postData && e.postData.contents) {
+      payload = JSON.parse(e.postData.contents);
+    }
+  } catch (err) {
+    return codexJsonResponse_({ ok: false, error: 'JSON invalido: ' + err.message }, 400);
+  }
+
+  try {
+    if (action === 'importarCodex') {
+      if (typeof importarTransporteCodex !== 'function') {
+        throw new Error('Funcao importarTransporteCodex nao encontrada.');
+      }
+      CODEX_API_TOKEN_REQUEST_ = access.userEmail === 'api-token';
+      try {
+        return codexJsonResponse_({ ok: true, data: importarTransporteCodex(payload) });
+      } finally {
+        CODEX_API_TOKEN_REQUEST_ = false;
+      }
+    }
+
+    if (action === 'ping') {
+      return codexJsonResponse_({ ok: true, data: 'pong' });
+    }
+
+    return codexJsonResponse_({ ok: false, error: 'Acao POST nao suportada: ' + action }, 404);
+  } catch (err2) {
+    return codexJsonResponse_({ ok: false, error: err2.message || String(err2) }, 500);
+  }
+}
+
+function codexAuthorizeWebAppRequestSafe_(e) {
+  try {
+    return codexAuthorizeWebAppRequest_(e);
+  } catch (err) {
+    return {
+      ok: false,
+      userEmail: codexNormalizeEmail_(codexGetActiveUserEmail_()),
+      role: '',
+      message: 'Nao foi possivel validar seu acesso. Se o WebApp estiver publicado como "usuario acessando", confirme que sua conta tem acesso a planilha principal do sistema e tente novamente. Detalhe: ' + (err.message || String(err))
+    };
+  }
+}
+
+function codexJsonResponse_(body, statusCode) {
+  body = body || {};
+  if (statusCode) body.statusCode = statusCode;
+  return ContentService
+    .createTextOutput(JSON.stringify(body))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function getWebAppUrl() {
   return ScriptApp.getService().getUrl();
 }
 
+function getAppBootstrapData() {
+  var out = {
+    access: codexGetCurrentUserAccess(),
+    auth: codexGetUserOAuthStatus_(),
+    webAppUrl: '',
+    agendaFormData: null,
+    errors: {}
+  };
+  try {
+    out.webAppUrl = ScriptApp.getService().getUrl();
+  } catch (e1) {
+    out.errors.webAppUrl = e1.message || String(e1);
+  }
+  try {
+    out.agendaFormData = getDadosFormularioAgenda();
+  } catch (e2) {
+    out.errors.agendaFormData = e2.message || String(e2);
+  }
+  return out;
+}
+
+function codexGetUserOAuthStatus_() {
+  var scopes = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/drive.file',
+    'https://mail.google.com/',
+    'https://www.googleapis.com/auth/gmail.settings.basic',
+    'https://www.googleapis.com/auth/script.send_mail'
+  ];
+  try {
+    var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL, scopes);
+    var status = info.getAuthorizationStatus();
+    var required = status === ScriptApp.AuthorizationStatus.REQUIRED;
+    return {
+      ok: true,
+      required: required,
+      status: String(status || ''),
+      url: required ? info.getAuthorizationUrl() : '',
+      scopes: scopes
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      required: false,
+      status: 'UNKNOWN',
+      url: '',
+      error: e.message || String(e),
+      scopes: scopes
+    };
+  }
+}
+
+function getConfigBootstrapData() {
+  return {
+    access: codexGetCurrentUserAccess(),
+    config: getConfigApp()
+  };
+}
+
+function getCadastrosBootstrapData(page) {
+  page = String(page || '').trim().toLowerCase();
+  var out = {
+    access: codexGetCurrentUserAccess(),
+    page: page,
+    data: null,
+    config: null
+  };
+  if (page === 'participantes') {
+    out.config = getParticipanteFormConfig();
+    out.data = getParticipantes();
+  } else if (page === 'projetos') {
+    out.config = getProjetoFormConfig();
+    out.data = getProjetos();
+    out.medicos = getMedicos();
+    out.solicitantes = getSolicitantes();
+  } else if (page === 'monitores') {
+    out.data = getMonitores();
+    out.projetos = getProjetosMonitoria_();
+  } else if (page === 'equipamentos') {
+    out.data = getEquipamentosFornecidos();
+  } else if (page === 'medicamentos') {
+    out.data = getMedicamentosRecebidos();
+  } else if (page === 'medicos') {
+    out.data = getMedicos();
+  } else if (page === 'solicitantes') {
+    out.data = getSolicitantes();
+  } else if (page === 'prestadores') {
+    out.data = getPrestadores();
+  } else if (page === 'labcentral') {
+    out.data = getLabCentral();
+  } else if (page === 'couriers') {
+    out.data = getCouriersCadastro();
+  } else {
+    throw new Error('Bootstrap de cadastro nao suportado: ' + page);
+  }
+  return out;
+}
+
+function getEstoqueBootstrapData(page) {
+  page = String(page || 'itens').trim().toLowerCase();
+  var out = {
+    access: codexGetCurrentUserAccess(),
+    page: page,
+    config: getEstoqueConfig(),
+    data: null
+  };
+  if (page === 'pedidos') out.data = getPedidosEstoque();
+  else if (page === 'itens') out.data = getItensEstoque();
+  else if (page === 'descartes') out.data = getDescartesEstoque();
+  else if (page === 'movimentacoes') out.data = getMovimentacoesEstoque();
+  else if (page === 'relatorios' || page === 'estoque-view') out.data = getEstoque();
+  else throw new Error('Bootstrap de estoque nao suportado: ' + page);
+  return out;
+}
 
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function codexAuthorizeWebAppRequest_(e) {
+  if (e && e.parameter && codexIsValidWebAppApiToken_(e.parameter.token)) {
+    return { ok: true, userEmail: 'api-token', name: 'API', firstName: 'API', role: 'admin', message: '' };
+  }
+
+  var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_());
+  if (!userEmail) {
+    return {
+      ok: false,
+      userEmail: '',
+      message: 'Nao foi possivel identificar seu e-mail. Acesse com uma conta institucional autorizada.',
+      debugAuth: codexShouldShowAuthDebug_(e) ? codexGetIdentityDiagnostics_() : null,
+      authUrl: codexGetIdentityAuthorizationUrl_()
+    };
+  }
+
+  var users = codexGetAllowedUsers_();
+  if (!Object.keys(users).length) {
+    return {
+      ok: false,
+      userEmail: userEmail,
+      message: 'Lista de usuarios autorizados nao configurada.'
+    };
+  }
+
+  var user = users[userEmail];
+  if (!user) {
+    return {
+      ok: false,
+      userEmail: userEmail,
+      role: '',
+      message: 'Seu e-mail nao esta autorizado neste sistema.'
+    };
+  }
+
+  if (!user.active) {
+    return {
+      ok: false,
+      userEmail: userEmail,
+      name: user.name || '',
+      firstName: codexFirstName_(user.name, userEmail),
+      role: user.role,
+      message: 'Seu usuario esta inativo neste sistema.'
+    };
+  }
+
+  return {
+    ok: true,
+    userEmail: userEmail,
+    name: user.name || '',
+    firstName: codexFirstName_(user.name, userEmail),
+    role: user.role,
+    message: ''
+  };
+}
+
+function codexGetActiveUserEmail_() {
+  try {
+    var active = Session.getActiveUser().getEmail();
+    if (active) return active;
+  } catch (e) {}
+  try {
+    var effective = Session.getEffectiveUser().getEmail();
+    if (effective) return effective;
+  } catch (e2) {}
+  try {
+    var response = UrlFetchApp.fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
+      var info = JSON.parse(response.getContentText() || '{}');
+      if (info && info.email) return info.email;
+    }
+  } catch (e3) {}
+  return '';
+}
+
+function codexShouldShowAuthDebug_(e) {
+  return !!(e && e.parameter && String(e.parameter.debugAuth || '') === '1');
+}
+
+function codexGetIdentityDiagnostics_() {
+  var out = {
+    activeUserEmail: '',
+    activeUserError: '',
+    effectiveUserEmail: '',
+    effectiveUserError: '',
+    userinfoEmail: '',
+    userinfoStatus: '',
+    userinfoError: '',
+    deploymentHint: 'USER_ACCESSING esperado'
+  };
+  try {
+    out.activeUserEmail = String(Session.getActiveUser().getEmail() || '');
+  } catch (e1) {
+    out.activeUserError = e1.message || String(e1);
+  }
+  try {
+    out.effectiveUserEmail = String(Session.getEffectiveUser().getEmail() || '');
+  } catch (e2) {
+    out.effectiveUserError = e2.message || String(e2);
+  }
+  try {
+    var response = UrlFetchApp.fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    out.userinfoStatus = String(response.getResponseCode());
+    if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
+      var info = JSON.parse(response.getContentText() || '{}');
+      out.userinfoEmail = String((info && info.email) || '');
+    } else {
+      out.userinfoError = String(response.getContentText() || '').slice(0, 300);
+    }
+  } catch (e3) {
+    out.userinfoError = e3.message || String(e3);
+  }
+  return out;
+}
+
+function codexGetIdentityAuthorizationUrl_() {
+  try {
+    var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL, [
+      'https://www.googleapis.com/auth/userinfo.email'
+    ]);
+    if (info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
+      return info.getAuthorizationUrl();
+    }
+  } catch (e) {}
+  return '';
+}
+
+function codexNormalizeEmail_(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function codexNormalizeRole_(role) {
+  role = String(role || '').trim().toLowerCase();
+  return CODEX_USER_ROLES_[role] ? role : 'user';
+}
+
+function codexNormalizeUserName_(name) {
+  return String(name || '').replace(/\s+/g, ' ').trim();
+}
+
+function codexNormalizeTextForSort_(value) {
+  return String(value || '').trim().toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function codexFirstName_(name, email) {
+  name = codexNormalizeUserName_(name);
+  if (name) return name.split(' ')[0];
+  email = codexNormalizeEmail_(email);
+  return email ? email.split('@')[0].split(/[._-]/)[0] : '';
+}
+
+function codexNormalizeActive_(value) {
+  var raw = String(value === null || value === undefined ? '' : value).trim();
+  if (!raw) return true;
+  var normalized = raw.toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return ['nao', 'não', 'no', 'false', '0', 'inativo', 'inactive'].indexOf(normalized) === -1;
+}
+
+function codexGetCurrentUserAccess() {
+  var access = codexAuthorizeWebAppRequestSafe_();
+  return {
+    ok: !!access.ok,
+    email: access.userEmail || '',
+    name: access.name || '',
+    firstName: access.firstName || codexFirstName_(access.name, access.userEmail),
+    role: access.role || '',
+    canWrite: !!access.ok && access.role !== 'readonly',
+    message: access.message || ''
+  };
+}
+
+function codexAssertCanWrite_(actionName, moduleName, recordId) {
+  if (CODEX_API_TOKEN_REQUEST_) {
+    return { ok: true, userEmail: 'api-token', name: 'API', firstName: 'API', role: 'admin' };
+  }
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  if (access.role === 'readonly') {
+    codexWriteAuditLog_('ACESSO_NEGADO_READONLY', moduleName || codexInferAuditModule_(actionName || 'readonly'), recordId || '');
+    throw new Error('Seu perfil e somente leitura. Esta acao nao esta autorizada.');
+  }
+  actionName = actionName || codexGetCallerFunctionName_();
+  codexWriteAuditLog_(actionName, moduleName || codexInferAuditModule_(actionName), recordId || '');
+  return access;
+}
+
+function codexAssertAdmin_() {
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  if (access.role !== 'admin') throw new Error('Acesso permitido apenas para administradores.');
+  return access;
+}
+
+function codexGetCallerFunctionName_() {
+  try {
+    var stack = String((new Error()).stack || '');
+    var lines = stack.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = String(lines[i] || '');
+      if (line.indexOf('codexAssertCanWrite_') !== -1 && lines[i + 1]) {
+        var next = String(lines[i + 1]).trim();
+        var match = next.match(/^at\s+([^\s(]+)/);
+        return match ? match[1] : next;
+      }
+    }
+  } catch (e) {}
+  return 'ACAO_PROTEGIDA';
+}
+
+function codexWithDocumentLock_(label, fn) {
+  // Cross-request concurrency is handled by LockService. This depth is only a
+  // same-execution reentrancy guard for nested writes that already hold the lock.
+  if (CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0) return fn();
+  var lock = LockService.getDocumentLock() || LockService.getScriptLock();
+  var acquired = false;
+  try {
+    acquired = lock.tryLock(30000);
+    if (!acquired) {
+      throw new Error('Outra operação está gravando no sistema. Aguarde alguns segundos e tente novamente.');
+    }
+    CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_++;
+    return fn();
+  } finally {
+    if (acquired) CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = Math.max(0, CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ - 1);
+    if (acquired) lock.releaseLock();
+  }
+}
+
+function codexInferAuditModule_(action) {
+  var a = String(action || codexGetCallerFunctionName_() || '').toLowerCase();
+  if (a.indexOf('agenda') !== -1 || a.indexOf('evento') !== -1 || a.indexOf('requisicao') !== -1) return 'Agenda';
+  if (a.indexOf('estoque') !== -1 || a.indexOf('pedido') !== -1 || a.indexOf('movimentacao') !== -1 || a.indexOf('descarte') !== -1) return 'Estoque';
+  if (a.indexOf('transporte') !== -1 || a.indexOf('pdftransporte') !== -1) return 'Transporte';
+  if (a.indexOf('config') !== -1 || a.indexOf('labcentral') !== -1 || a.indexOf('courier') !== -1) return 'Sistema';
+  if (a.indexOf('medico') !== -1 || a.indexOf('solicitante') !== -1 || a.indexOf('participante') !== -1 || a.indexOf('projeto') !== -1 || a.indexOf('prestador') !== -1 || a.indexOf('equipamento') !== -1 || a.indexOf('medicamento') !== -1) return 'Cadastros';
+  return 'Sistema';
+}
+
+function codexWriteAuditLog_(action, moduleName, recordId) {
+  try {
+    var ss = getCodexSpreadsheet_();
+    var sh = ss.getSheetByName('Audit_Log');
+    if (!sh) return;
+    var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_()) || 'api-token';
+    sh.appendRow([
+      codexGenerateAuditId_(),
+      userEmail,
+      String(action || 'ACAO_PROTEGIDA'),
+      new Date(),
+      String(moduleName || 'Sistema'),
+      String(recordId || '')
+    ]);
+  } catch (e) {}
+}
+
+function codexGetAuditChangesSheet_() {
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName('Audit_Changes');
+  var headers = ['Audit ID', 'Timestamp', 'User Email', 'Módulo', 'Ação', 'Record ID', 'Campo', 'Valor anterior', 'Valor novo', 'Motivo/observação'];
+  if (!sh) {
+    sh = ss.insertSheet('Audit_Changes');
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+  } else if (sh.getLastRow() < 1) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function codexAuditValue_(value) {
+  if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+function codexWriteAuditChanges_(moduleName, action, recordId, changes, note) {
+  try {
+    changes = (changes || []).filter(function(c) {
+      return c && codexAuditValue_(c.oldValue) !== codexAuditValue_(c.newValue);
+    });
+    if (!changes.length) return;
+    var sh = codexGetAuditChangesSheet_();
+    var now = new Date();
+    var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_()) || 'api-token';
+    var rows = changes.map(function(c) {
+      return [
+        codexGenerateAuditId_(),
+        now,
+        userEmail,
+        String(moduleName || 'Sistema'),
+        String(action || 'ACAO_PROTEGIDA'),
+        String(recordId || ''),
+        String(c.field || ''),
+        codexAuditValue_(c.oldValue),
+        codexAuditValue_(c.newValue),
+        String(note || c.note || '')
+      ];
+    });
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  } catch (e) {}
+}
+
+function codexGenerateAuditId_() {
+  return 'AUD-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Math.floor(Math.random() * 9000 + 1000);
+}
+
+function getAuditLog(limit) {
+  codexAssertAdmin_();
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName('Audit_Log');
+  if (!sh || sh.getLastRow() < 2) return [];
+  limit = Math.max(1, Math.min(Number(limit || 200), 1000));
+  var lastRow = sh.getLastRow();
+  var startRow = Math.max(2, lastRow - limit + 1);
+  var rows = sh.getRange(startRow, 1, lastRow - startRow + 1, 6).getValues();
+  rows.reverse();
+  return rows.map(function(r) {
+    return {
+      id: String(r[0] || ''),
+      email: String(r[1] || ''),
+      action: String(r[2] || ''),
+      timestamp: r[3] instanceof Date ? Utilities.formatDate(r[3], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') : String(r[3] || ''),
+      module: String(r[4] || ''),
+      recordId: String(r[5] || '')
+    };
+  });
+}
+
+function getAuditChanges(limit) {
+  codexAssertAdmin_();
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName('Audit_Changes');
+  if (!sh || sh.getLastRow() < 2) return [];
+  limit = Math.max(1, Math.min(Number(limit || 200), 1000));
+  var lastRow = sh.getLastRow();
+  var startRow = Math.max(2, lastRow - limit + 1);
+  var rows = sh.getRange(startRow, 1, lastRow - startRow + 1, 10).getValues();
+  rows.reverse();
+  return rows.map(function(r) {
+    return {
+      id: String(r[0] || ''),
+      timestamp: r[1] instanceof Date ? Utilities.formatDate(r[1], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') : String(r[1] || ''),
+      email: String(r[2] || ''),
+      module: String(r[3] || ''),
+      action: String(r[4] || ''),
+      recordId: String(r[5] || ''),
+      field: String(r[6] || ''),
+      oldValue: String(r[7] || ''),
+      newValue: String(r[8] || ''),
+      note: String(r[9] || '')
+    };
+  });
+}
+
+function getAuditData(limit) {
+  codexAssertAdmin_();
+  return {
+    log: getAuditLog(limit),
+    changes: getAuditChanges(limit)
+  };
+}
+
+function getUsersAdminList() {
+  codexAssertAdmin_();
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, sh.getLastColumn())).getValues();
+  return rows.map(function(r, idx) {
+    var email = codexNormalizeEmail_(r[0]);
+    var name = codexNormalizeUserName_(r[1]);
+    if (!email) return null;
+    return {
+      rowIndex: idx + 2,
+      email: email,
+      name: name,
+      firstName: codexFirstName_(name, email),
+      role: codexNormalizeRole_(r[2]),
+      ativo: codexNormalizeActive_(r[3]) ? 'Sim' : 'Não'
+    };
+  }).filter(Boolean).sort(function(a, b) {
+    var an = codexNormalizeTextForSort_(a.name || a.firstName || a.email);
+    var bn = codexNormalizeTextForSort_(b.name || b.firstName || b.email);
+    if (an < bn) return -1;
+    if (an > bn) return 1;
+    return a.email < b.email ? -1 : (a.email > b.email ? 1 : 0);
+  });
+}
+
+function salvarUsuarioAdmin(payload) {
+  var access = codexAssertAdmin_();
+  payload = payload || {};
+  var email = codexNormalizeEmail_(payload.email);
+  var name = codexNormalizeUserName_(payload.name);
+  var role = codexNormalizeRole_(payload.role);
+  var ativo = codexNormalizeActive_(payload.ativo) ? 'Sim' : 'Não';
+  if (!email) throw new Error('Informe o e-mail do usuário.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('E-mail inválido.');
+  if (email === codexNormalizeEmail_(access.userEmail) && (role !== 'admin' || ativo !== 'Sim')) {
+    throw new Error('Você não pode remover seu próprio acesso administrativo.');
+  }
+
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh) throw new Error('Aba Users não encontrada.');
+  var rowIndex = Number(payload.rowIndex || 0);
+  var lastRow = sh.getLastRow();
+  var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(4, sh.getLastColumn())).getValues() : [];
+  for (var i = 0; i < rows.length; i++) {
+    var existingEmail = codexNormalizeEmail_(rows[i][0]);
+    var existingRow = i + 2;
+    if (existingEmail === email && existingRow !== rowIndex) {
+      throw new Error('Este e-mail já está cadastrado na aba Users.');
+    }
+  }
+  if (!rowIndex || rowIndex < 2) rowIndex = Math.max(2, lastRow + 1);
+  var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 4).getValues()[0] : ['', '', '', ''];
+  sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
+  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
+  codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
+  codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
+    { field: 'Usuário - E-mail', oldValue: rowAnterior[0], newValue: email },
+    { field: 'Usuário - Nome', oldValue: rowAnterior[1], newValue: name },
+    { field: 'Usuário - Perfil', oldValue: rowAnterior[2], newValue: role },
+    { field: 'Usuário - Ativo', oldValue: rowAnterior[3], newValue: ativo }
+  ], rowAnterior[0] ? 'Alteração de usuário/permissão' : 'Cadastro de usuário/permissão');
+  return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo };
+}
+
+function inativarUsuarioAdmin(rowIndex) {
+  var access = codexAssertAdmin_();
+  rowIndex = Number(rowIndex || 0);
+  if (rowIndex < 2) throw new Error('Usuário inválido.');
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh || rowIndex > sh.getLastRow()) throw new Error('Usuário não encontrado.');
+  var email = codexNormalizeEmail_(sh.getRange(rowIndex, 1).getValue());
+  if (email === codexNormalizeEmail_(access.userEmail)) {
+    throw new Error('Você não pode inativar seu próprio usuário administrador.');
+  }
+  var ativoAnterior = sh.getRange(rowIndex, 4).getValue();
+  sh.getRange(rowIndex, 4).setValue('Não');
+  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
+  codexWriteAuditLog_('inativarUsuarioAdmin', 'Sistema', email);
+  codexWriteAuditChanges_('Sistema', 'inativarUsuarioAdmin', email, [{
+    field: 'Usuário - Ativo',
+    oldValue: ativoAnterior,
+    newValue: 'Não'
+  }], 'Inativação de usuário/permissão');
+  return { ok: true, rowIndex: rowIndex, email: email, ativo: 'Não' };
+}
+
+function codexIsValidWebAppApiToken_(token) {
+  token = String(token || '').trim();
+  if (!token) return false;
+  var expected = '';
+  try {
+    expected = String(PropertiesService.getScriptProperties().getProperty('CODEX_WEBAPP_API_TOKEN') || '').trim();
+  } catch (e) {
+    expected = '';
+  }
+  return !!expected && token === expected;
+}
+
+function codexGetWebAppApiTokenQuery_() {
+  try {
+    var token = String(PropertiesService.getScriptProperties().getProperty('CODEX_WEBAPP_API_TOKEN') || '').trim();
+    return token ? '&token=' + encodeURIComponent(token) : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function codexGetAllowedUsers_() {
+  var cached = codexCacheGet_(CODEX_ACL_CACHE_KEY_);
+  if (cached && typeof cached === 'object' && !Array.isArray(cached)) return cached;
+
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh || sh.getLastRow() < 2) return {};
+
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, sh.getLastColumn())).getValues();
+  var users = {};
+  values.forEach(function(row) {
+    var email = codexNormalizeEmail_(row[0]);
+    if (!email || users[email]) return;
+    var name = codexNormalizeUserName_(row[1]);
+    users[email] = {
+      name: name,
+      firstName: codexFirstName_(name, email),
+      role: codexNormalizeRole_(row[2]),
+      active: codexNormalizeActive_(row[3])
+    };
+  });
+  codexCachePut_(CODEX_ACL_CACHE_KEY_, users, CODEX_ACL_CACHE_SECONDS_);
+  return users;
+}
+
+function codexAccessDeniedOutput_(access) {
+  var user = access && access.userEmail ? access.userEmail : 'nao identificado';
+  var message = access && access.message ? access.message : 'Acesso negado.';
+  var debugHtml = codexAuthDebugHtml_(access && access.debugAuth);
+  var authHtml = codexAuthUrlHtml_(access && access.authUrl);
+  return HtmlService
+    .createHtmlOutput(
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<style>body{font-family:Arial,sans-serif;margin:48px;color:#1f2937}' +
+      '.box{max-width:760px;border:1px solid #e5e7eb;padding:24px;border-radius:8px}' +
+      'h1{font-size:22px;margin:0 0 12px;color:#991b1b}p{line-height:1.5}' +
+      'pre{white-space:pre-wrap;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:12px;font-size:12px}</style>' +
+      '</head><body><main class="box">' +
+      '<h1>Acesso negado</h1>' +
+      '<p>' + codexEscapeHtml_(message) + '</p>' +
+      '<p><strong>E-mail:</strong> ' + codexEscapeHtml_(user) + '</p>' +
+      authHtml +
+      debugHtml +
+      '</main></body></html>'
+    )
+    .setTitle('Acesso negado');
+}
+
+function codexAuthDebugHtml_(debug) {
+  if (!debug) return '';
+  return '<h2 style="font-size:16px;margin:24px 0 8px;">Diagnostico de identidade</h2>' +
+    '<pre>' + codexEscapeHtml_(JSON.stringify(debug, null, 2)) + '</pre>';
+}
+
+function codexAuthUrlHtml_(url) {
+  if (!url) return '';
+  return '<p><a href="' + codexEscapeHtml_(url) + '" target="_blank" rel="noopener">' +
+    'Autorizar acesso do WebApp</a></p>';
+}
+
+function codexEscapeHtml_(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+var CODEX_ACTIVE_SPREADSHEET_CACHE_ = null;
+var CODEX_CONFIG_APP_ROWS_CACHE_ = null;
+// Cache apenas da execucao atual do Apps Script. Nao persiste entre requisicoes;
+// CacheService e limpo separadamente em clearCodexRuntimeCaches_().
+var CODEX_SHEET_DATA_CACHE_ = {};
+var CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
+var CODEX_LAB_CENTRAL_CACHE_ = null;
+var CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+var CODEX_CACHE_TTL_SECONDS_ = 300;
+
+function getCodexSpreadsheet_() {
+  if (!CODEX_ACTIVE_SPREADSHEET_CACHE_) {
+    CODEX_ACTIVE_SPREADSHEET_CACHE_ = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  return CODEX_ACTIVE_SPREADSHEET_CACHE_;
+}
+
+function clearCodexRuntimeCaches_() {
+  CODEX_CONFIG_APP_ROWS_CACHE_ = null;
+  CODEX_SHEET_DATA_CACHE_ = {};
+  CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
+  CODEX_LAB_CENTRAL_CACHE_ = null;
+  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
+  codexCacheRemove_('ConfigAppRows:v2');
+  codexCacheRemove_('AgendaFormData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v4:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v5:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+}
+
+function codexCacheGet_(key) {
+  try {
+    var raw = CacheService.getScriptCache().get(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function codexCachePut_(key, value, seconds) {
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(value), seconds || CODEX_CACHE_TTL_SECONDS_);
+  } catch (e) {}
+}
+
+function codexCacheRemove_(key) {
+  try {
+    CacheService.getScriptCache().remove(key);
+  } catch (e) {}
+}
+
+function getCodexSheetDataByName_(sheetName) {
+  var sh = getCodexSpreadsheet_().getSheetByName(sheetName);
+  return getCodexSheetDataFromSheet_(sh);
+}
+
+function getCodexSheetDataFromSheet_(sh) {
+  if (!sh) return [];
+  var lastRow = sh.getLastRow();
+  var lastCol = sh.getLastColumn();
+  if (!lastRow || !lastCol) return [];
+  var key = sh.getSheetId() + ':' + lastRow + ':' + lastCol;
+  if (!CODEX_SHEET_DATA_CACHE_[key]) {
+    CODEX_SHEET_DATA_CACHE_[key] = sh.getDataRange().getValues();
+  }
+  return CODEX_SHEET_DATA_CACHE_[key];
+}
+
+function getTransporteWebAppUrlCodex_() {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('TRANSPORTE_WEBAPP_URL_CODEX') || '';
+  if (!url) {
+    try {
+      url = PropertiesService.getDocumentProperties().getProperty('TRANSPORTE_WEBAPP_URL_CODEX') || '';
+    } catch (e) {
+      url = '';
+    }
+  }
+  if (!url) {
+    var vals = getConfigAppValuesByKeys_(
+      ['Transporte', 'TRANSP', 'Apps'],
+      ['WebApp URL', 'URL WebApp', 'TRANSPORTE_WEBAPP_URL_CODEX'],
+      []
+    );
+    url = vals[0] || '';
+  }
+  if (!url && typeof TRANSPORTE_WEBAPP_URL_CODEX !== 'undefined') {
+    url = TRANSPORTE_WEBAPP_URL_CODEX;
+  }
+  return String(url || '').trim().replace(/\?.*$/, '').replace(/\/$/, '');
 }
 
 function getSheetByPossibleNames_(ss, names) {
@@ -55,13 +912,23 @@ function getSheetByPossibleNames_(ss, names) {
 }
 
 function readConfigAppRows_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (CODEX_CONFIG_APP_ROWS_CACHE_) return CODEX_CONFIG_APP_ROWS_CACHE_;
+  var cached = codexCacheGet_('ConfigAppRows:v2');
+  if (cached) {
+    CODEX_CONFIG_APP_ROWS_CACHE_ = cached;
+    return CODEX_CONFIG_APP_ROWS_CACHE_;
+  }
+
+  var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName('Config_App');
-  if (!sh || sh.getLastRow() < 2) return [];
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (!sh || lastRow < 2) {
+    CODEX_CONFIG_APP_ROWS_CACHE_ = [];
+    return CODEX_CONFIG_APP_ROWS_CACHE_;
+  }
 
   function readBlock(startCol, bloco) {
     var out = [];
-    var lastRow = sh.getLastRow();
     var values = sh.getRange(2, startCol, Math.max(0, lastRow - 1), 6).getValues();
     values.forEach(function(r, idx) {
       if (!String(r[0] || r[1] || r[2] || '').trim()) return;
@@ -80,12 +947,14 @@ function readConfigAppRows_() {
     return out;
   }
 
-  return readBlock(1, 'Principal').concat(readBlock(8, 'Apoio')).sort(function(a, b) {
+  CODEX_CONFIG_APP_ROWS_CACHE_ = readBlock(1, 'Principal').concat(readBlock(8, 'Apoio')).sort(function(a, b) {
     return String(a.grupo).localeCompare(String(b.grupo)) ||
       String(a.chave).localeCompare(String(b.chave)) ||
       (Number(a.ordem || 0) - Number(b.ordem || 0)) ||
       String(a.valor).localeCompare(String(b.valor));
   });
+  codexCachePut_('ConfigAppRows:v2', CODEX_CONFIG_APP_ROWS_CACHE_);
+  return CODEX_CONFIG_APP_ROWS_CACHE_;
 }
 
 function getEstoqueConfig() {
@@ -150,6 +1019,17 @@ function normText_(v) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
+function agendaTipoExigeLabCentralServer_(tipo) {
+  var n = normText_(tipo);
+  if (agendaTipoContatoTelefonicoServer_(tipo)) return false;
+  return n.indexOf('visita') > -1 || n.indexOf('amostra') > -1;
+}
+
+function agendaTipoContatoTelefonicoServer_(tipo) {
+  var n = normText_(tipo);
+  return n.indexOf('contato telefonico') > -1 || n.indexOf('telefon') > -1;
+}
+
 
 
 // ══════════════════════════════════════════════════════
@@ -162,56 +1042,15 @@ function normText_(v) {
 // ══════════════════════════════════════════════════════
 //  PARTICIPANTE
 // ══════════════════════════════════════════════════════
-function abrirFormularioParticipante() {
-  const html = HtmlService.createTemplateFromFile('Form_Participante')
-    .evaluate().setWidth(720).setHeight(650);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
-function salvarParticipante(dados) {
-  const ss  = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName('Participantes');
-  if (!aba) throw new Error("Aba 'Participantes' não encontrada.");
-  const id = 'P-' + new Date().getTime();
-  aba.appendRow([
-    id, dados.nome, dados.nascimento, dados.idade, dados.identificacao,
-    dados.projeto, dados.braco, '', dados.status, dados.telefone, dados.cpf
-  ]);
-  return 'Sucesso! Participante cadastrado com ID: ' + id;
-}
-
-function buscarProjetos() {
-  try {
-    const ss   = SpreadsheetApp.getActiveSpreadsheet();
-    const abas = ss.getSheets();
-    let abaProjetos = null;
-    for (let i = 0; i < abas.length; i++) {
-      if (abas[i].getName().includes('Projetos')) { abaProjetos = abas[i]; break; }
-    }
-    if (!abaProjetos) return ['ERRO: Aba Projetos não encontrada'];
-    const ultimaLinha = abaProjetos.getLastRow();
-    if (ultimaLinha < 2) return ['Nenhum projeto na lista'];
-    return abaProjetos.getRange(2, 2, ultimaLinha - 1, 1).getValues()
-      .map(r => r[0] ? r[0].toString().trim() : '').filter(r => r !== '');
-  } catch(e) { return ['Erro de sistema: ' + e.message]; }
-}
-
-
-
 // ══════════════════════════════════════════════════════
 //  MÉDICO
 // ══════════════════════════════════════════════════════
-function abrirFormularioMedico() {
-  const html = HtmlService.createHtmlOutputFromFile('Form_Medico')
-    .setWidth(720).setHeight(580);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
 /**
  * Cria ou atualiza um médico na aba '🩺 Médicos'.
- * A=id | B=nome | C=especialidade | D=telefone | E=email
+ * A=id | B=nome | C=especialidade | D=CPF | E=CREMERS | F=telefone | G=email
  */
 function salvarDadosMedico(dados) {
+  codexAssertCanWrite_('salvarDadosMedico', 'Cadastros', dados && dados.id);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('🩺 Médicos');
   if (!sh) throw new Error("Aba '🩺 Médicos' não encontrada.");
@@ -223,8 +1062,10 @@ function salvarDadosMedico(dados) {
         var linha = i + 2;
         sh.getRange(linha, 2).setValue(dados.nome          || '');
         sh.getRange(linha, 3).setValue(dados.especialidade || '');
-        sh.getRange(linha, 4).setValue(dados.telefone      || '');
-        sh.getRange(linha, 5).setValue(dados.email         || '');
+        sh.getRange(linha, 4).setValue(dados.cpf           || '');
+        sh.getRange(linha, 5).setValue(dados.cremers       || '');
+        sh.getRange(linha, 6).setValue(dados.telefone      || '');
+        sh.getRange(linha, 7).setValue(dados.email         || '');
         return 'Médico atualizado com sucesso.';
       }
     }
@@ -233,6 +1074,7 @@ function salvarDadosMedico(dados) {
 
   var novoId = 'MED-' + new Date().getTime();
   sh.appendRow([novoId, dados.nome || '', dados.especialidade || '',
+                dados.cpf || '', dados.cremers || '',
                 dados.telefone || '', dados.email || '']);
   return 'Médico cadastrado com sucesso.';
 }
@@ -240,26 +1082,23 @@ function salvarDadosMedico(dados) {
 function getMedicos() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🩺 Médicos');
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues()
     .filter(function(r) { return r[1] !== ''; })
     .map(function(r) {
-      return { id: r[0], nome: r[1], especialidade: r[2], telefone: r[3], email: r[4] };
+      return {
+        id: r[0],
+        nome: r[1],
+        especialidade: r[2],
+        cpf: r[3],
+        cremers: r[4],
+        telefone: r[5],
+        email: r[6]
+      };
     });
 }
 
-function buscarMedicos() {
-  try {
-    const ss  = SpreadsheetApp.getActiveSpreadsheet();
-    const aba = ss.getSheetByName('🩺 Médicos');
-    if (!aba) return [];
-    const ultima = aba.getLastRow();
-    if (ultima < 2) return [];
-    return aba.getRange(2, 2, ultima - 1, 1).getValues()
-      .map(r => r[0] ? r[0].toString().trim() : '').filter(r => r !== '');
-  } catch(e) { return []; }
-}
-
 function excluirMedico(id) {
+  codexAssertCanWrite_('excluirMedico', 'Cadastros', id);
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🩺 Médicos');
   var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
@@ -273,29 +1112,7 @@ function excluirMedico(id) {
 // ══════════════════════════════════════════════════════
 //  SOLICITANTE
 // ══════════════════════════════════════════════════════
-function abrirFormularioSolicitante() {
-  const html = HtmlService.createHtmlOutputFromFile('Form_Solicitante')
-    .setWidth(720).setHeight(520);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
 // Mantida para compatibilidade com formulários legados
-function salvarSolicitante(dados) {
-  return salvarDadosSolicitante(dados);
-}
-
-function buscarSolicitantes() {
-  try {
-    const ss  = SpreadsheetApp.getActiveSpreadsheet();
-    const aba = ss.getSheetByName('🙋 Solicitantes');
-    if (!aba) return [];
-    const ultima = aba.getLastRow();
-    if (ultima < 2) return [];
-    return aba.getRange(2, 2, ultima - 1, 1).getValues()
-      .map(r => r[0] ? r[0].toString().trim() : '').filter(r => r !== '');
-  } catch(e) { return []; }
-}
-
 /**
  * Retorna nome + formação + registro de todos os solicitantes.
  * Usada pelo formulário de Requisição de Exames (WebApp).
@@ -344,6 +1161,7 @@ function getSolicitantes() {
  * Cria ou atualiza um solicitante na aba '🙋 Solicitantes'.
  */
 function salvarDadosSolicitante(dados) {
+  codexAssertCanWrite_('salvarDadosSolicitante', 'Cadastros', dados && dados.id);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('🙋 Solicitantes');
   if (!sh) throw new Error("Aba '🙋 Solicitantes' não encontrada.");
@@ -372,6 +1190,7 @@ function salvarDadosSolicitante(dados) {
  * Exclui o solicitante com o id informado.
  */
 function excluirSolicitante(id) {
+  codexAssertCanWrite_('excluirSolicitante', 'Cadastros', id);
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🙋 Solicitantes');
   if (!sh || sh.getLastRow() < 2) throw new Error('Nenhum registro encontrado.');
   var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
@@ -389,57 +1208,12 @@ function excluirSolicitante(id) {
 // ══════════════════════════════════════════════════════
 //  PROJETO
 // ══════════════════════════════════════════════════════
-function abrirFormularioProjeto() {
-  const html = HtmlService.createHtmlOutputFromFile('Form_Projeto')
-    .setWidth(720).setHeight(680);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
-function salvarProjeto(dados) {
-  const ss  = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName('Projetos');
-  if (!aba) throw new Error("Aba 'Projetos' não encontrada.");
-  const id = 'PROJ-' + new Date().getTime();
-  aba.appendRow([
-    id, dados.nomeAbreviado || '', dados.codigo || '', dados.especialidade || '',
-    dados.fase || '', dados.investigador || '', dados.subInvestigador1 || '',
-    dados.subInvestigador2 || '', dados.centro || '', dados.patrocinador || '',
-    dados.cro || '', dados.coordenador || '', dados.metaRecrutamento || '', dados.status || ''
-  ]);
-  return 'Projeto cadastrado com ID: ' + id;
-}
-
-
-
 // ══════════════════════════════════════════════════════
 //  PRESTADOR
 // ══════════════════════════════════════════════════════
-function abrirFormularioPrestador() {
-  const html = HtmlService.createHtmlOutputFromFile('Form_Prestador')
-    .setWidth(720).setHeight(560);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
-function salvarPrestador(dados) {
-  const ss  = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName('🏢 Prestadores');
-  if (!aba) throw new Error("Aba '🏢 Prestadores' não encontrada.");
-  const id = 'PREST-' + new Date().getTime();
-  aba.appendRow([id, dados.empresa || '', dados.endereco || '', dados.email || '']);
-  return 'Prestador cadastrado com ID: ' + id;
-}
-
-
-
 // ══════════════════════════════════════════════════════
 //  REQUISIÇÃO DE EXAMES
 // ══════════════════════════════════════════════════════
-function abrirFormularioRequisicao() {
-  const html = HtmlService.createHtmlOutputFromFile('Form_Requisicao')
-    .setWidth(720).setHeight(720);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
 /**
  * Retorna participantes com nascimento, protocolo e médico IP.
  * Chamada pelo WebApp via google.script.run.
@@ -519,6 +1293,86 @@ function getReqExamesPreloadProjeto(projeto) {
   return [];
 }
 
+function getReqExamesPreloadProjetoEditor(projeto) {
+  return {
+    projeto: String(projeto || '').trim(),
+    exames: getReqExamesPreloadProjeto(projeto)
+  };
+}
+
+function salvarReqExamesPreloadProjeto(projeto, exames) {
+  codexAssertCanWrite_('salvarReqExamesPreloadProjeto', 'Requisição de Exames', projeto);
+  projeto = String(projeto || '').trim();
+  if (!projeto) throw new Error('Informe o projeto para salvar o preload.');
+  exames = (exames || []).map(function(v) {
+    return String(v || '').trim();
+  }).filter(Boolean).slice(0, 40);
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
+  if (!sh) sh = ss.insertSheet('ReqExames_Preloads');
+  ensureReqExamesPreloadSheet_(sh);
+
+  var lastRow = sh.getLastRow();
+  var alvo = normText_(projeto);
+  var row = [projeto].concat(exames);
+  while (row.length < 41) row.push('');
+  row.push('Sim');
+
+  if (lastRow >= 2) {
+    var projetos = sh.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < projetos.length; i++) {
+      if (normText_(projetos[i][0]) === alvo) {
+        sh.getRange(i + 2, 1, 1, 42).setValues([row]);
+        return { ok: true, projeto: projeto, exames: exames, message: 'Exames padrão atualizados.' };
+      }
+    }
+  }
+  sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
+  return { ok: true, projeto: projeto, exames: exames, message: 'Exames padrão cadastrados.' };
+}
+
+function salvarReqExamesPreloadInicial_(projeto, exames) {
+  projeto = String(projeto || '').trim();
+  exames = (exames || []).map(function(v) {
+    return String(v || '').trim();
+  }).filter(Boolean).slice(0, 40);
+  if (!projeto || !exames.length) return { created: false, reason: 'dados_incompletos' };
+
+  return codexWithDocumentLock_('salvarReqExamesPreloadInicial_', function() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
+    if (!sh) sh = ss.insertSheet('ReqExames_Preloads');
+    ensureReqExamesPreloadSheet_(sh);
+    var lastRow = sh.getLastRow();
+    var alvo = normText_(projeto);
+    if (lastRow >= 2) {
+      var projetos = sh.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (var i = 0; i < projetos.length; i++) {
+        if (normText_(projetos[i][0]) === alvo) {
+          return { created: false, projeto: projeto, reason: 'existente' };
+        }
+      }
+    }
+    var row = [projeto].concat(exames);
+    while (row.length < 41) row.push('');
+    row.push('Sim');
+    sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
+    return { created: true, projeto: projeto, exames: exames };
+  });
+}
+
+function ensureReqExamesPreloadSheet_(sh) {
+  if (sh.getMaxColumns() < 42) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), 42 - sh.getMaxColumns());
+  }
+  var headers = ['Projeto'];
+  for (var i = 1; i <= 40; i++) headers.push('Exame ' + i);
+  headers.push('Ativo');
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sh.setFrozenRows(1);
+}
+
 function ensureReqExamesConfig_() {
   var sh = getConfigAppSheet_();
   var lastRow = Math.max(sh.getLastRow(), 1);
@@ -528,7 +1382,7 @@ function ensureReqExamesConfig_() {
       normText_(row[1]) === normText_('E-mails em cópia');
   });
   if (hasCcConfig) return;
-  [
+  var rows = [
     'cbluz@ucs.br',
     'cegarske@ucs.br',
     'dwendt@ucs.br',
@@ -538,16 +1392,17 @@ function ensureReqExamesConfig_() {
     'mlreis@ucs.br',
     'rcviana@ucs.br',
     'rdsperha@ucs.br'
-  ].forEach(function(email, idx) {
-    ensureConfigAppRow_(sh, [
+  ].map(function(email, idx) {
+    return [
       'Requisição de Exames',
       'E-mails em cópia',
       email,
       'Sim',
       idx + 1,
       'CC dos rascunhos enviados ao serviço terceirizado'
-    ]);
+    ];
   });
+  ensureConfigAppRows_(sh, rows);
 }
 
 function getReqExamesCcEmails_() {
@@ -571,7 +1426,12 @@ function getReqExamesCcEmails_() {
  * do frontend.
  */
 function gerarRequisicaoPDF(dados) {
-  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var access = codexAssertCanWrite_('gerarRequisicaoPDF', 'Agenda', dados && (dados.paciente || dados.protocolo));
+  dados = dados || {};
+  var solicitanteEmail = reqExamesSolicitanteEmail_(dados.solicitante);
+  if (!dados.requestedByEmail && access && access.userEmail) dados.requestedByEmail = access.userEmail;
+  if (solicitanteEmail) dados.requestedByEmail = solicitanteEmail;
+  const ss    = reqExamesOpenSpreadsheetForWrite_();
   const sheet = ss.getSheetByName('Requisição de Exames');
   if (!sheet) throw new Error("Aba 'Requisição de Exames' não encontrada.");
 
@@ -595,11 +1455,21 @@ function gerarRequisicaoPDF(dados) {
   }
   sheet.getRange('J10').setValue(dados.horario || '');
 
-  const exames = dados.exames || [];
+  var exames = (Array.isArray(dados.exames) ? dados.exames : [])
+    .map(function(exame) { return String(exame || '').trim(); })
+    .filter(Boolean)
+    .slice(0, 40);
+  var slotsExames = [];
   for (var i = 0; i < 20; i++) {
-    sheet.getRange(14 + i, 3).setValue(exames[i]      || '');
-    sheet.getRange(14 + i, 8).setValue(exames[20 + i] || '');
+    slotsExames.push(reqExamesCelulaGravavel_(sheet, 14 + i, 3));
   }
+  for (var j = 0; j < 20; j++) {
+    slotsExames.push(reqExamesCelulaGravavel_(sheet, 14 + j, 8));
+  }
+  slotsExames.forEach(function(slot, index) {
+    slot.clearContent();
+    slot.setValue(exames[index] || '');
+  });
 
   sheet.getRange('B36').setValue(dados.observacoes || '');
   sheet.getRange('I5').setValue(dados.urgente ? 'URGENTE' : '');
@@ -608,10 +1478,56 @@ function gerarRequisicaoPDF(dados) {
   sheet.getRange('H43').setValue(dados.solRegistro || '');
   SpreadsheetApp.flush();
 
-  // ── 3. Gerar PDF e criar rascunho (versão sem getUi) ─────────────────────
-  _exportarPDFWebApp(sheet, ss);
+  var examesGravados = slotsExames
+    .map(function(slot) { return String(slot.getDisplayValue() || '').trim(); })
+    .filter(Boolean);
+  if (examesGravados.length !== exames.length) {
+    throw new Error(
+      'Não foi possível preencher todos os exames na requisição. ' +
+      'Esperados: ' + exames.length + '; gravados: ' + examesGravados.length + '.'
+    );
+  }
 
-  return 'Rascunho de e-mail criado com sucesso! Verifique sua caixa de rascunhos no Gmail.';
+  // ── 3. Gerar PDF e criar rascunho (versão sem getUi) ─────────────────────
+  _exportarPDFWebApp(sheet, ss, { requestedByEmail: dados.requestedByEmail || '' });
+
+  var preloadResult = null;
+  var preloadWarning = '';
+  try {
+    preloadResult = salvarReqExamesPreloadInicial_(dados.protocolo, dados.exames || []);
+  } catch (preloadError) {
+    preloadWarning = 'O rascunho foi criado, mas não foi possível salvar os exames padrão do protocolo: ' + preloadError.message;
+  }
+
+  var statusResult = null;
+  var statusWarning = '';
+  if (String(dados.agendaId || '').trim()) {
+    try {
+      statusResult = atualizarStatusRequisicaoAgenda(String(dados.agendaId).trim(), true);
+      if (statusResult && statusResult.semPrestador) {
+        statusWarning = 'Rascunho criado, mas o status não foi atualizado porque o agendamento está sem prestador.';
+      }
+    } catch (statusError) {
+      statusWarning = 'Rascunho criado, mas não foi possível atualizar o status da Agenda: ' + statusError.message;
+    }
+  }
+
+  return {
+    ok: true,
+    message: 'Rascunho de e-mail criado com sucesso! Verifique sua caixa de rascunhos no Gmail.' +
+      (preloadResult && preloadResult.created ? ' Os exames foram salvos como padrão deste protocolo.' : ''),
+    preloadCreated: !!(preloadResult && preloadResult.created),
+    preloadWarning: preloadWarning,
+    statusRequisicao: statusResult && statusResult.statusRequisicao ? statusResult.statusRequisicao : '',
+    statusWarning: statusWarning
+  };
+}
+
+function reqExamesCelulaGravavel_(sheet, row, column) {
+  var cell = sheet.getRange(row, column);
+  var mergedRanges = cell.getMergedRanges();
+  if (!mergedRanges.length) return cell;
+  return mergedRanges[0].getCell(1, 1);
 }
 
 /**
@@ -621,7 +1537,9 @@ function gerarRequisicaoPDF(dados) {
  * @param {Sheet} sheet - Aba "Requisição de Exames" já preenchida.
  * @param {Spreadsheet} ss - Spreadsheet pai.
  */
-function _exportarPDFWebApp(sheet, ss) {
+function _exportarPDFWebApp(sheet, ss, options) {
+  options = options || {};
+  reqExamesAssertGmailDraftAllowed_(options.requestedByEmail || '');
   var nomeLocal         = sheet.getRange('E10').getValue();
   var emailDestinatario = buscarEmailDoLocal(nomeLocal);
 
@@ -658,6 +1576,7 @@ function _exportarPDFWebApp(sheet, ss) {
     'exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true' +
     '&sheetnames=false&printtitle=false&pagenumbers=false' +
     '&gridlines=false&fzr=false&gid=' + sheet.getSheetId() +
+    '&r1=0&c1=0&r2=43&c2=10' +
     '&top_margin=0.15&bottom_margin=0.15&left_margin=0.15&right_margin=0.15&scale=4';
   var token    = ScriptApp.getOAuthToken();
   var response = UrlFetchApp.fetch(url + exportOptions, {
@@ -684,6 +1603,130 @@ function _exportarPDFWebApp(sheet, ss) {
   var draftOptions = { htmlBody: corpoEmail, attachments: [pdfBlob] };
   if (ccEmails) draftOptions.cc = ccEmails;
   GmailApp.createDraft(emailDestinatario, tituloEmail, '', draftOptions);
+}
+
+function reqExamesAssertGmailDraftAllowed_(requestedByEmail) {
+  var requested = codexNormalizeEmail_(requestedByEmail || '');
+  if (!requested) {
+    try {
+      var access = codexAuthorizeWebAppRequestSafe_();
+      requested = codexNormalizeEmail_(access && access.userEmail);
+    } catch (e1) {
+      requested = '';
+    }
+  }
+  var active = codexNormalizeEmail_(codexGetActiveUserEmail_());
+  var effective = codexNormalizeEmail_(reqExamesEffectiveUserEmail_());
+  if (!requested) requested = active;
+  if (requested && effective && requested !== effective) {
+    throw new Error('Rascunho nao criado: o WebApp esta executando como ' + effective + ', mas o usuario solicitante e ' + requested + '. Publique a implantacao como USER_ACCESSING para criar o rascunho no Gmail do usuario.');
+  }
+  if (active && effective && active !== effective) {
+    throw new Error('Rascunho nao criado: o WebApp esta executando como ' + effective + ', mas o usuario ativo e ' + active + '. Publique a implantacao como USER_ACCESSING para criar o rascunho no Gmail do usuario.');
+  }
+  var auth = reqExamesGmailOAuthStatus_();
+  if (auth.required) {
+    throw new Error('Rascunho nao criado: autorizacao do Gmail pendente. Abra o link de autorizacao e tente novamente: ' + (auth.url || ''));
+  }
+  if (auth.ok === false) {
+    throw new Error('Rascunho nao criado: nao foi possivel verificar a autorizacao do Gmail. ' + (auth.error || ''));
+  }
+}
+
+function reqExamesOpenSpreadsheetForWrite_() {
+  var ss = null;
+  try {
+    ss = getCodexSpreadsheet_();
+  } catch (e) {
+    throw reqExamesSpreadsheetPermissionError_(e, 'abrir a planilha principal');
+  }
+  reqExamesAssertSpreadsheetEditAccess_(ss);
+  return ss;
+}
+
+function reqExamesAssertSpreadsheetEditAccess_(ss) {
+  var email = '';
+  try {
+    email = Session.getEffectiveUser().getEmail();
+  } catch (e0) {
+    email = '';
+  }
+  try {
+    var file = DriveApp.getFileById(ss.getId());
+    var access = email ? file.getAccess(email) : '';
+    var accessText = String(access || '').toUpperCase();
+    if (accessText === 'EDIT' || accessText === 'OWNER') return true;
+    throw new Error('Acesso atual: ' + String(access || 'desconhecido'));
+  } catch (e) {
+    throw reqExamesSpreadsheetPermissionError_(e, 'editar a planilha principal');
+  }
+}
+
+function reqExamesSpreadsheetPermissionError_(err, action) {
+  var email = '';
+  try {
+    email = Session.getEffectiveUser().getEmail();
+  } catch (e0) {
+    email = '';
+  }
+  return new Error(
+    'Nao foi possivel gerar a Requisicao de Exames porque o WebApp agora executa como o usuario acessando, ' +
+    'mas a conta ' + (email || 'atual') + ' nao tem permissao para ' + (action || 'usar') + ' a planilha principal. ' +
+    'Compartilhe a planilha principal do CODEX com esse usuario como Editor e tente novamente. Detalhe: ' +
+    ((err && err.message) || String(err))
+  );
+}
+
+function reqExamesSolicitanteEmail_(nome) {
+  nome = normText_(nome || '');
+  if (!nome) return '';
+  try {
+    var solicitantes = buscarSolicitantesCompleto() || [];
+    for (var i = 0; i < solicitantes.length; i++) {
+      var item = solicitantes[i] || {};
+      if (normText_(item.nome || '') === nome) {
+        return codexNormalizeEmail_(item.email || '');
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
+function reqExamesEffectiveUserEmail_() {
+  try {
+    return String(Session.getEffectiveUser().getEmail() || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+function reqExamesGmailOAuthStatus_() {
+  var scopes = [
+    'https://mail.google.com/',
+    'https://www.googleapis.com/auth/script.send_mail',
+    'https://www.googleapis.com/auth/gmail.settings.basic'
+  ];
+  try {
+    var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL, scopes);
+    var status = info.getAuthorizationStatus();
+    var required = status === ScriptApp.AuthorizationStatus.REQUIRED;
+    return {
+      ok: true,
+      required: required,
+      status: String(status || ''),
+      url: required ? info.getAuthorizationUrl() : '',
+      scopes: scopes
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      required: false,
+      status: 'UNKNOWN',
+      url: '',
+      error: e.message || String(e),
+      scopes: scopes
+    };
+  }
 }
 
 
@@ -779,6 +1822,7 @@ function exportarPDF() {
     'exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true' +
     '&sheetnames=false&printtitle=false&pagenumbers=false' +
     '&gridlines=false&fzr=false&gid=' + sheet.getSheetId() +
+    '&r1=0&c1=0&r2=43&c2=10' +
     '&top_margin=0.15&bottom_margin=0.15&left_margin=0.15&right_margin=0.15&scale=4';
   var token    = ScriptApp.getOAuthToken();
   var response = UrlFetchApp.fetch(url + exportOptions, {
@@ -826,7 +1870,7 @@ function gerarReqExamesEmailHtml_(dados) {
     ['Data do Agendamento', dataFormatada],
     ['Pesquisa clínica', dados.pesquisaClinica || '']
   ];
-  return gerarHtmlCabecalhoEmail_('Agendamento de Exames', '#2c3e50') +
+  var html = gerarHtmlCabecalhoEmail_('Agendamento de Exames', '#2c3e50') +
     '<p>Prezado(a),</p>' +
     '<p>' + (dados.urgenteTag || '') + 'Solicitamos o agendamento dos exames para o(a) paciente ' +
       escHtmlServer_(paciente) + ' para o dia ' + escHtmlServer_(dataFormatada) +
@@ -839,6 +1883,29 @@ function gerarReqExamesEmailHtml_(dados) {
     '<p>Atenciosamente,</p>' +
     (dados.signature ? '<div style="margin-top:12px;">' + dados.signature + '</div>' : '') +
     '</div>';
+  return aplicarEspacamentoEmailRequisicao_(html);
+}
+
+function aplicarEspacamentoEmailRequisicao_(html) {
+  return String(html || '')
+    .replace(/<p(\s[^>]*)?>/gi, function(tag, attrs) {
+      attrs = attrs || '';
+      if (/style\s*=/i.test(attrs)) {
+        return '<p' + attrs.replace(/style=(["'])(.*?)\1/i, function(_, quote, style) {
+          return 'style=' + quote + 'margin:0 0 18px 0;line-height:1.65;' + style.replace(/margin\s*:[^;]+;?/gi, '').replace(/line-height\s*:[^;]+;?/gi, '') + quote;
+        }) + '>';
+      }
+      return '<p' + attrs + ' style="margin:0 0 18px 0;line-height:1.65;">';
+    })
+    .replace(/<table(\s[^>]*)?>/gi, function(tag, attrs) {
+      attrs = attrs || '';
+      if (/style\s*=/i.test(attrs)) {
+        return '<table' + attrs.replace(/style=(["'])(.*?)\1/i, function(_, quote, style) {
+          return 'style=' + quote + 'margin:20px 0 22px 0;' + style.replace(/margin\s*:[^;]+;?/gi, '') + quote;
+        }) + '>';
+      }
+      return '<table' + attrs + ' style="margin:20px 0 22px 0;">';
+    });
 }
 
 function gerarTabelaEmailGenerica_(rows) {
@@ -874,145 +1941,6 @@ function resetarCampos() {
 // ══════════════════════════════════════════════════════
 //  AGENDA
 // ══════════════════════════════════════════════════════
-function abrirNovoEventoComCalendario() {
-  var html = HtmlService
-    .createHtmlOutputFromFile('NovoEventoAgenda')
-    .setWidth(720).setHeight(650);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
-function getDadosFormularioAgenda() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  function listaColB(nomeAba) {
-    var sh = ss.getSheetByName(nomeAba);
-    if (!sh || sh.getLastRow() < 2) return [];
-    return sh.getRange(2, 2, sh.getLastRow() - 1, 1)
-             .getValues().map(function(r){ return r[0]; }).filter(Boolean).sort();
-  }
-  var hoje = new Date();
-  var hojeIso = hoje.getFullYear() + '-' +
-                ('0'+(hoje.getMonth()+1)).slice(-2) + '-' +
-                ('0'+hoje.getDate()).slice(-2);
-  return {
-    participantes: listaColB('Participantes'),
-    medicos:       listaColB('🩺 Médicos'),
-    prestadores:   listaColB('🏢 Prestadores'),
-    projetos:      listaColB('Projetos'),
-    hojeIso:       hojeIso
-  };
-}
-
-function getInfoParticipante(nome) {
-  if (!nome) return null;
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('Participantes');
-  if (!sh || sh.getLastRow() < 2) return null;
-  var dados = sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues();
-  for (var i = 0; i < dados.length; i++) {
-    if (dados[i][1] != nome) continue;
-    var nascRaw = dados[i][2];
-    var nascStr = '';
-    if (nascRaw instanceof Date) {
-      nascStr = ('0' + nascRaw.getDate()).slice(-2) + '/' +
-                ('0' + (nascRaw.getMonth() + 1)).slice(-2) + '/' +
-                nascRaw.getFullYear();
-    } else if (nascRaw) { nascStr = String(nascRaw); }
-    return {
-      nascimento: nascStr,
-      numId:   String(dados[i][4] || ''),
-      projeto: String(dados[i][5] || ''),
-      braco:   String(dados[i][6] || '')
-    };
-  }
-  return null;
-}
-
-function salvarNovoEventoCompleto(dados) {
-  var ss     = SpreadsheetApp.getActiveSpreadsheet();
-  var agenda = ss.getSheetByName(CFG.abaNome);
-  if (!agenda) throw new Error('Aba Agenda não encontrada.');
-  var d    = _parseDateHora(dados.data, dados.hora);
-  var dCmp = new Date(d); dCmp.setHours(0,0,0,0);
-  var lastRow = agenda.getLastRow();
-  if (lastRow > 1) {
-    var vals = agenda.getRange(2, 1, lastRow - 1, CFG.lastCol).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      var ld = vals[i][COL_DATA - 1];
-      var lt = (vals[i][COL_TIPO - 1] || '').toString().toLowerCase();
-      if (ld instanceof Date) {
-        var dl = new Date(ld); dl.setHours(0,0,0,0);
-        if (dl.getTime() === dCmp.getTime() && lt === 'feriado') {
-          return { feriado: true, dataFmt: formatarDataSafe(d) };
-        }
-      }
-    }
-  }
-  return _gravarLinhaEvento(agenda, d, dados, ss);
-}
-
-function salvarNovoEventoComFeriado(dados) {
-  var ss     = SpreadsheetApp.getActiveSpreadsheet();
-  var agenda = ss.getSheetByName(CFG.abaNome);
-  if (!agenda) throw new Error('Aba Agenda não encontrada.');
-  var d = _parseDateHora(dados.data, dados.hora);
-  return _gravarLinhaEvento(agenda, d, dados, ss);
-}
-
-function _gravarLinhaEvento(agenda, d, dados, ss) {
-  var tipo       = dados.tipo          || '';
-  var status     = dados.status        || 'Agendado';
-  var part       = dados.participante  || '';
-  var projeto    = dados.projeto       || '';
-  var visita     = dados.visita        || '';
-  var medico     = dados.medico        || '';
-  var proced     = dados.procedimentos || '';
-  var terc       = dados.servTerc      || '';
-  var obs        = dados.obs           || '';
-  var labCentral = dados.labCentral    || '';
-  var tiposNaoLab = ['monitoria','siv','close-out','reunião','feriado',
-                     'auditoria','exame de imagem'];
-  if (tiposNaoLab.indexOf(tipo.toLowerCase()) > -1) labCentral = 'Não aplicável';
-  if (labCentral.toLowerCase() === 'sim' && !visita) {
-    return { erro: 'Para "Laboratório Central = Sim", informe a Visita.' };
-  }
-  var linhaNova = agenda.getLastRow() + 1;
-  var id = Utilities.getUuid().slice(0, 8);
-  agenda.getRange(linhaNova, COL_ID         ).setValue(id);
-  setAgendaDateValue_(agenda.getRange(linhaNova, COL_DATA), d);
-  setAgendaValueAndFormat_(agenda.getRange(linhaNova, COL_HORA), d, 'HH:mm');
-  agenda.getRange(linhaNova, COL_TIPO       ).setValue(tipo);
-  agenda.getRange(linhaNova, COL_STATUS     ).setValue(status);
-  agenda.getRange(linhaNova, COL_PARTICIPANTE).setValue(part);
-  agenda.getRange(linhaNova, COL_PROJETO    ).setValue(projeto);
-  agenda.getRange(linhaNova, COL_VISITA     ).setValue(visita);
-  agenda.getRange(linhaNova, 12             ).setValue(medico);
-  agenda.getRange(linhaNova, 13             ).setValue(proced);
-  agenda.getRange(linhaNova, CFG.colTerc    ).setValue(terc);
-  agenda.getRange(linhaNova, COL_OBS        ).setValue(obs);
-  agenda.getRange(linhaNova, CFG.colGatilho ).setValue(labCentral);
-  agenda.getRange(linhaNova, 1, 1, CFG.lastCol)
-    .setFontFamily('Roboto').setFontSize(10)
-    .setFontColor('#434343').setFontWeight('normal');
-  agenda.getRange(linhaNova, COL_DATA   ).setFontWeight('bold');
-  agenda.getRange(linhaNova, COL_PROJETO).setFontWeight('bold');
-  if (status.toLowerCase() === 'cancelado') {
-    aplicarLogicaCancelamento(agenda, linhaNova, status);
-  }
-  var celGatilho = agenda.getRange(linhaNova, CFG.colGatilho);
-  verificarNotificacoes({
-    source: ss, range: celGatilho, user: Session.getActiveUser()
-  }, id, null);
-  agenda.getRange(2, 1, agenda.getLastRow() - 1, CFG.lastCol)
-    .sort([{ column: COL_DATA, ascending: true }, { column: COL_HORA, ascending: true }]);
-  SpreadsheetApp.flush();
-  var linhaReal = encontrarLinhaPorId(agenda, id);
-  if (linhaReal) {
-    agenda.getRange(linhaReal, COL_PARTICIPANTE).activate();
-    rastrearEMoverFoco(agenda, id, COL_PARTICIPANTE);
-  }
-  return { ok: true, id: id };
-}
-
 function _parseDateHora(dataIso, horaStr) {
   var base = parseAgendaDateAny_(dataIso);
   if (base) {
@@ -1093,10 +2021,8 @@ function getMedicoFormConfig() {
 }
 
 function getProjetos() {
-  var ss  = SpreadsheetApp.getActiveSpreadsheet();
-  var aba = ss.getSheetByName('Projetos');
-  if (!aba) return [];
-  var dados = aba.getDataRange().getValues();
+  var dados = getCodexSheetDataByName_('Projetos');
+  if (!dados.length) return [];
   var statsPorProjeto = getParticipantesStatsPorProjeto_();
   var lista = [];
   for (var i = 1; i < dados.length; i++) {
@@ -1129,7 +2055,10 @@ function getProjetos() {
       falhasTriagem: falhasTriagem,
       totalParticipantes: totalParticipantes,
       percentualRecrutamento: meta > 0 ? Math.round((ativos * 1000) / meta) / 10 : '',
-      status:        r[13] || ''
+      status:        r[13] || '',
+      numeroCE:      r[14] || '',
+      expedienteCE:  r[15] || '',
+      tituloCompleto:r[16] || ''
     });
   }
   return lista;
@@ -1137,9 +2066,8 @@ function getProjetos() {
 
 function getParticipantesStatsPorProjeto_() {
   var out = {};
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Participantes');
-  if (!sh || sh.getLastRow() < 2) return out;
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(9, sh.getLastColumn())).getValues();
+  var rows = getCodexSheetDataByName_('Participantes').slice(1);
+  if (!rows.length) return out;
   rows.forEach(function(r) {
     var projeto = String(r[5] || '').trim();
     if (!projeto) return;
@@ -1161,9 +2089,8 @@ function isProjetoAtivoEstoque_(status) {
 }
 
 function getProjetosAtivosEstoque_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projetos');
-  if (!sh || sh.getLastRow() < 2) return [];
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(14, sh.getLastColumn())).getValues();
+  var rows = getCodexSheetDataByName_('Projetos').slice(1);
+  if (!rows.length) return [];
   var seen = {}, out = [];
   rows.forEach(function(r) {
     var nome = String(r[1] || r[2] || '').trim();
@@ -1177,6 +2104,7 @@ function getProjetosAtivosEstoque_() {
 }
 
 function salvarDadosProjeto(dados) {
+  codexAssertCanWrite_('salvarDadosProjeto', 'Cadastros', dados && dados.id);
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
   var aba = ss.getSheetByName('Projetos');
   if (!aba) throw new Error('Aba "Projetos" não encontrada.');
@@ -1185,7 +2113,7 @@ function salvarDadosProjeto(dados) {
     var rows = aba.getDataRange().getValues();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(dados.id)) {
-        aba.getRange(i + 1, 2, 1, 13).setValues([[
+        aba.getRange(i + 1, 2, 1, 16).setValues([[
           dados.nomeAbreviado || '',
           dados.codigo        || '',
           dados.especialidade || '',
@@ -1198,8 +2126,12 @@ function salvarDadosProjeto(dados) {
           dados.cro           || '',
           dados.coordenador   || '',
           dados.metaRecrutamento || '',
-          dados.status        || ''
+          dados.status        || '',
+          dados.numeroCE      || '',
+          dados.expedienteCE  || '',
+          dados.tituloCompleto || ''
         ]]);
+        clearTransporteOptionsCache_();
         return 'Projeto atualizado com sucesso!';
       }
     }
@@ -1220,13 +2152,18 @@ function salvarDadosProjeto(dados) {
       dados.cro           || '',
       dados.coordenador   || '',
       dados.metaRecrutamento || '',
-      dados.status        || ''
+      dados.status        || '',
+      dados.numeroCE      || '',
+      dados.expedienteCE  || '',
+      dados.tituloCompleto || ''
     ]);
+    clearTransporteOptionsCache_();
     return 'Projeto cadastrado com sucesso!';
   }
 }
 
 function excluirProjeto(id) {
+  codexAssertCanWrite_('excluirProjeto', 'Cadastros', id);
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
   var aba = ss.getSheetByName('Projetos');
   if (!aba) throw new Error('Aba "Projetos" não encontrada.');
@@ -1234,6 +2171,7 @@ function excluirProjeto(id) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
       aba.deleteRow(i + 1);
+      clearTransporteOptionsCache_();
       return 'Excluído com sucesso.';
     }
   }
@@ -1246,9 +2184,8 @@ function excluirProjeto(id) {
 //  PARTICIPANTES — webapp
 // ════════════════════════════════
 function getParticipantes() {
-  var ss  = SpreadsheetApp.getActiveSpreadsheet();
-  var sh  = ss.getSheetByName('Participantes');
-  var rows = sh.getDataRange().getValues();
+  var rows = getCodexSheetDataByName_('Participantes');
+  if (!rows.length) return [];
   var tz  = Session.getScriptTimeZone();
   var ultimaVisitaMap = getUltimasVisitasPorPacienteId_();
 
@@ -1287,6 +2224,7 @@ function getParticipanteFormConfig() {
 }
 
 function salvarDadosParticipante(d) {
+  codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
   var rows = sh.getDataRange().getValues();
@@ -1304,22 +2242,12 @@ function salvarDadosParticipante(d) {
     return s;
   }
 
-  function calcIdade(nascStr) {
-    if (!nascStr) return '';
-    var nasc = parseDate(nascStr);
-    if (!(nasc instanceof Date) || isNaN(nasc.getTime())) return '';
-    var hoje = new Date();
-    var idade = hoje.getFullYear() - nasc.getFullYear();
-    var m = hoje.getMonth() - nasc.getMonth();
-    if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) idade--;
-    return idade;
-  }
-
-  var rowData = [
+  var rowStart = [
     d.id || '',
     d.nome,
-    parseDate(d.dataNascimento),
-    calcIdade(d.dataNascimento),
+    parseDate(d.dataNascimento)
+  ];
+  var rowAfterIdade = [
     d.idParticipante,
     d.projeto || '',
     d.braco || '',
@@ -1333,7 +2261,9 @@ function salvarDadosParticipante(d) {
   if (d.id) {
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(d.id)) {
-        sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+        sh.getRange(i + 1, 1, 1, rowStart.length).setValues([rowStart]);
+        sh.getRange(i + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
+        if (i + 1 > 2) sh.getRange(i + 1, 4).clearContent();
         return 'Participante atualizado com sucesso';
       }
     }
@@ -1344,13 +2274,29 @@ function salvarDadosParticipante(d) {
       var n = parseInt(r[0]);
       if (!isNaN(n) && n > maxId) maxId = n;
     });
-    rowData[0] = maxId + 1;
-    sh.appendRow(rowData);
+    rowStart[0] = maxId + 1;
+    var targetRow = sh.getLastRow() + 1;
+    sh.getRange(targetRow, 1, 1, rowStart.length).setValues([rowStart]);
+    sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
     return 'Participante cadastrado com sucesso';
   }
 }
 
+function corrigirMatrizIdadeParticipantes() {
+  codexAssertCanWrite_('corrigirMatrizIdadeParticipantes', 'Cadastros', 'Participantes');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Participantes');
+  if (!sh) throw new Error('Aba Participantes nao encontrada.');
+  var lastRow = sh.getLastRow();
+  if (lastRow >= 3) sh.getRange(3, 4, lastRow - 2, 1).clearContent();
+  var formula = '=ARRAYFORMULA(IF(ISNUMBER(C2:C);DATEDIF(C2:C;TODAY();"Y");""))';
+  var d2 = sh.getRange(2, 4);
+  if (!String(d2.getFormula() || '').trim()) d2.setFormula(formula);
+  return 'Matriz de idade dos participantes corrigida.';
+}
+
 function excluirParticipante(id) {
+  codexAssertCanWrite_('excluirParticipante', 'Cadastros', id);
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
   var rows = sh.getDataRange().getValues();
@@ -1361,6 +2307,110 @@ function excluirParticipante(id) {
     }
   }
   throw new Error('Participante não encontrado (id=' + id + ')');
+}
+
+// ════════════════════════════════
+//  MONITORES — webapp
+// ════════════════════════════════
+function getProjetosMonitoria_() {
+  var seen = {};
+  return getProjetos().map(function(p) {
+    return String(p.nomeAbreviado || p.codigo || '').trim();
+  }).filter(function(nome) {
+    if (!nome || seen[nome]) return false;
+    seen[nome] = 1;
+    return true;
+  }).sort();
+}
+
+function getMonitores() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Monitores');
+  if (!sh) throw new Error('Aba "Monitores" não encontrada.');
+  var rows = getCodexSheetDataFromSheet_(sh);
+  if (!rows.length) return [];
+  return rows.slice(1)
+    .filter(function(r) { return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
+    .map(function(r) {
+      var projetosDetalhes = [
+        { projeto: String(r[4] || '').trim(), unblinded: String(r[5] || '').trim() },
+        { projeto: String(r[6] || '').trim(), unblinded: String(r[7] || '').trim() },
+        { projeto: String(r[8] || '').trim(), unblinded: String(r[9] || '').trim() },
+        { projeto: String(r[10] || '').trim(), unblinded: String(r[11] || '').trim() }
+      ].filter(function(p) { return p.projeto; });
+      return {
+        id: String(r[0] || ''),
+        nome: String(r[1] || ''),
+        email: String(r[2] || ''),
+        telefone: String(r[3] || ''),
+        projeto1: String(r[4] || ''),
+        unblinded1: String(r[5] || ''),
+        projeto2: String(r[6] || ''),
+        unblinded2: String(r[7] || ''),
+        projeto3: String(r[8] || ''),
+        unblinded3: String(r[9] || ''),
+        projeto4: String(r[10] || ''),
+        unblinded4: String(r[11] || ''),
+        projetos: projetosDetalhes.map(function(p) { return p.projeto; }),
+        projetosDetalhes: projetosDetalhes
+      };
+    });
+}
+
+function normalizarMonitorUnblinded_(projeto, valor) {
+  if (!String(projeto || '').trim()) return '';
+  var v = String(valor || '').trim().toLowerCase();
+  return v === 'sim' || v === 'yes' || v === 'true' || v === '1' ? 'Sim' : 'Não';
+}
+
+function salvarDadosMonitor(d) {
+  codexAssertCanWrite_('salvarDadosMonitor', 'Cadastros', d && d.id);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Monitores');
+  if (!sh) throw new Error('Aba "Monitores" não encontrada.');
+
+  var rowData = [
+    d.id || '',
+    d.nome || '',
+    d.email || '',
+    d.telefone || '',
+    d.projeto1 || '',
+    normalizarMonitorUnblinded_(d.projeto1, d.unblinded1),
+    d.projeto2 || '',
+    normalizarMonitorUnblinded_(d.projeto2, d.unblinded2),
+    d.projeto3 || '',
+    normalizarMonitorUnblinded_(d.projeto3, d.unblinded3),
+    d.projeto4 || '',
+    normalizarMonitorUnblinded_(d.projeto4, d.unblinded4)
+  ];
+
+  if (d.id) {
+    var rows = sh.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === String(d.id)) {
+        sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+        return 'Monitor atualizado com sucesso.';
+      }
+    }
+    throw new Error('Monitor não encontrado para edição.');
+  }
+
+  rowData[0] = 'MON-' + Date.now();
+  sh.appendRow(rowData);
+  return 'Monitor cadastrado com sucesso.';
+}
+
+function excluirMonitor(id) {
+  codexAssertCanWrite_('excluirMonitor', 'Cadastros', id);
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Monitores');
+  if (!sh || sh.getLastRow() < 2) throw new Error('Nenhum monitor encontrado.');
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(id)) {
+      sh.deleteRow(i + 1);
+      return 'Monitor excluído.';
+    }
+  }
+  throw new Error('Monitor não encontrado.');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1377,6 +2427,7 @@ function getPrestadores() {
 }
 
 function salvarDadosPrestador(dados) {
+  codexAssertCanWrite_('salvarDadosPrestador', 'Cadastros', dados && dados.id);
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🏢 Prestadores');
   if (!sh) throw new Error("Aba 'Prestadores' não encontrada.");
   if (dados.id && dados.id !== '') {
@@ -1402,6 +2453,7 @@ function salvarDadosPrestador(dados) {
 }
 
 function excluirPrestador(id) {
+  codexAssertCanWrite_('excluirPrestador', 'Cadastros', id);
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🏢 Prestadores');
   if (!sh || sh.getLastRow() < 2) throw new Error('Nenhum registro encontrado.');
   var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
@@ -1451,7 +2503,7 @@ function getDashboardData() {
   }
 
   try {
-    var partAll = getParticipantes() || [];
+    var partAll = getParticipantesDashboardResumo_() || [];
     Logger.log('[getDashboardData] Participantes: ' + partAll.length);
     diag.participantes = partAll.map(function(p) {
       return {
@@ -1465,8 +2517,9 @@ function getDashboardData() {
     diag.erros.push('getParticipantes: ' + e.message);
   }
 
+  var estoque = [];
   try {
-    var estoque = getEstoque() || [];
+    estoque = getEstoque() || [];
     var hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     function diasAte(val) {
@@ -1517,12 +2570,298 @@ function getDashboardData() {
       visitasPorDiaSemana: [],
       cancelReagPorProtocolo: [],
       courierUsoAno: [],
+      eventosPeriodo: [],
       antecedenciaMediaPorTipo: []
     };
+  }
+  try {
+    diag.pendencias = getDashboardPendencias_(estoque);
+  } catch(e) {
+    Logger.log('[getDashboardData] ERRO pendencias: ' + e.message);
+    diag.pendencias = getDashboardPendenciasVazio_();
   }
 
   Logger.log('[getDashboardData] Retornando. Erros: ' + JSON.stringify(diag.erros));
   return diag;
+}
+
+function getPendenciasOperacionais() {
+  var access = codexGetCurrentUserAccess();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  var estoque = [];
+  try {
+    estoque = getEstoqueResumoParaPendencias_() || [];
+  } catch(e) {
+    Logger.log('[getPendenciasOperacionais] ERRO estoque: ' + e.message);
+  }
+  return {
+    access: access,
+    pendencias: getDashboardPendencias_(estoque)
+  };
+}
+
+function getParticipantesDashboardResumo_() {
+  var rows = getCodexSheetDataByName_('Participantes');
+  if (!rows.length) return [];
+  return rows.slice(1)
+    .filter(function(r) { return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
+    .map(function(r) {
+      return {
+        nome: String(r[1] || ''),
+        projeto: String(r[5] || ''),
+        status: String(r[8] || '')
+      };
+    });
+}
+
+function getEstoqueResumoParaPendencias_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('Estoque');
+  if (!sh || sh.getLastRow() < 2) return [];
+  var tz = Session.getScriptTimeZone();
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  function fmtDate(v) {
+    if (!v) return '';
+    try {
+      var d = v instanceof Date ? v : new Date(v);
+      if (isNaN(d.getTime())) return String(v);
+      return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
+    } catch(e) {
+      return String(v);
+    }
+  }
+  return data
+    .filter(function(r) { return r[0] || r[2]; })
+    .map(function(r) {
+      return {
+        idItem: String(r[0] || ''),
+        projeto: String(r[1] || ''),
+        descricao: String(r[2] || ''),
+        tipoItem: String(r[3] || ''),
+        validade: fmtDate(r[4]),
+        localizacao: String(r[5] || ''),
+        qtde: r[6] !== '' && r[6] !== null ? Number(r[6]) : '',
+        status: String(r[8] || '')
+      };
+    });
+}
+
+function getDashboardPendenciasVazio_() {
+  return {
+    courierNaoAgendada: [],
+    courierNaoConfirmada: [],
+    awbEnviadaNaoEntregue: [],
+    requisicaoExamesPendente: [],
+    posVisitaPoloTrialPendente: [],
+    posVisitaEcrfPendente: [],
+    kitsVencendo: [],
+    counts: {
+      courierNaoAgendada: 0,
+      courierNaoConfirmada: 0,
+      awbEnviadaNaoEntregue: 0,
+      requisicaoExamesPendente: 0,
+      posVisitaPoloTrialPendente: 0,
+      posVisitaEcrfPendente: 0,
+      kitsVencendo: 0
+    }
+  };
+}
+
+function getDashboardPendencias_(estoque) {
+  var out = getDashboardPendenciasVazio_();
+  var agenda = getAgendaSheet_();
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  var i = AGENDA_CFG.idx;
+  if (agenda.getLastRow() >= 2) {
+    var vals = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getDisplayValues();
+    var feriados = getAgendaFeriadosPendenciasMap_(vals, i);
+    vals.forEach(function(r) {
+      var statusEvento = normText_(r[i.status]);
+      var tipoEvento = normText_(r[i.tipo]);
+      var concluidoPorStatus = statusEvento.indexOf('concl') > -1;
+      if (concluidoPorStatus) return;
+      var isPosVisita = statusEvento.indexOf('realiz') > -1;
+      var exigePosVisita = tipoEvento.indexOf('visita') > -1 || agendaTipoContatoTelefonicoServer_(r[i.tipo]);
+      if (isPosVisita && exigePosVisita && (!r[i.poloTrial] || !r[i.ecrf])) {
+        var posVisitaItem = {
+          agendaId: String(r[i.id] || ''),
+          data: String(r[i.data] || ''),
+          hora: String(r[i.hora] || ''),
+          participante: String(r[i.participante] || ''),
+          projeto: String(r[i.projeto] || ''),
+          visita: String(r[i.visita] || ''),
+          status: String(r[i.status] || '')
+        };
+        if (!r[i.poloTrial]) {
+          out.counts.posVisitaPoloTrialPendente++;
+          out.posVisitaPoloTrialPendente.push(posVisitaItem);
+        }
+        if (!r[i.ecrf]) {
+          out.counts.posVisitaEcrfPendente++;
+          out.posVisitaEcrfPendente.push(posVisitaItem);
+        }
+      }
+      if (statusEvento.indexOf('cancel') > -1 || isPosVisita) return;
+      var dataObj = parseAgendaDateAny_(r[i.data]);
+      if (dataObj) {
+        dataObj.setHours(0, 0, 0, 0);
+        if (dataObj.getTime() < hoje.getTime()) return;
+      }
+      var base = {
+        agendaId: String(r[i.id] || ''),
+        data: String(r[i.data] || ''),
+        hora: String(r[i.hora] || ''),
+        prazoHoras: prazoHorasPendenciaAgenda_(r[i.data], r[i.hora], feriados),
+        participante: String(r[i.participante] || ''),
+        projeto: String(r[i.projeto] || ''),
+        visita: String(r[i.visita] || ''),
+        tipo: String(r[i.tipo] || '')
+      };
+      if (String(r[i.servTerc] || '').trim() && !agendaRequisicaoEnviada_(r[i.reqStatus], r[i.obs])) {
+        out.counts.requisicaoExamesPendente++;
+        out.requisicaoExamesPendente.push(Object.assign({}, base, {
+          prestador: String(r[i.servTerc] || '')
+        }));
+      }
+      [
+        { label: 'Transporte I', cfg: i.c1 },
+        { label: 'Transporte II', cfg: i.c2 },
+        { label: 'Transporte III', cfg: i.c3 }
+      ].forEach(function(slot) {
+        var nome = String(r[slot.cfg.nome] || '').trim();
+        if (!isCourierNomeValidoAgenda_(nome)) return;
+        var st = normText_(r[slot.cfg.status]);
+        if (agendaCourierStatusNaoAplicavel_(st)) return;
+        var awb = String(r[slot.cfg.awb] || '').trim();
+        var item = Object.assign({}, base, {
+          slot: slot.label,
+          courier: nome,
+          statusCourier: String(r[slot.cfg.status] || ''),
+          awb: awb
+        });
+        if (st === 'nao agendado' || st === 'pendente' || (!st && !awb)) {
+          out.counts.courierNaoAgendada++;
+          out.courierNaoAgendada.push(item);
+        } else if (st === 'agendado') {
+          out.counts.courierNaoConfirmada++;
+          out.courierNaoConfirmada.push(item);
+        } else if (st.indexOf('enviado') > -1 && st.indexOf('entreg') === -1) {
+          out.counts.awbEnviadaNaoEntregue++;
+          out.awbEnviadaNaoEntregue.push(item);
+        }
+      });
+    });
+  }
+  (estoque || []).forEach(function(it) {
+    var tipo = normText_(it.tipoItem || it.tipo || '');
+    var desc = normText_(it.descricao || '');
+    var pareceKit = tipo.indexOf('kit') > -1 || tipo.indexOf('coleta') > -1 ||
+      (desc.indexOf('kit') > -1 && desc.indexOf('coleta') > -1);
+    if (!pareceKit) return;
+    var dias = diasAteValidadeDashboard_(it.validade);
+    if (dias === null || dias < 0 || dias > 90) return;
+    out.counts.kitsVencendo++;
+    out.kitsVencendo.push({
+      idItem: String(it.idItem || ''),
+      projeto: String(it.projeto || ''),
+      descricao: String(it.descricao || ''),
+      validade: String(it.validade || ''),
+      dias: dias,
+      qtde: it.qtde,
+      localizacao: String(it.localizacao || '')
+    });
+  });
+  ordenarPendenciasAgendaPorUrgencia_(out.courierNaoAgendada);
+  ordenarPendenciasAgendaPorUrgencia_(out.courierNaoConfirmada);
+  ordenarPendenciasAgendaPorUrgencia_(out.requisicaoExamesPendente);
+  out.posVisitaPoloTrialPendente.sort(function(a, b) {
+    return String(a.data || '').localeCompare(String(b.data || '')) || String(a.hora || '').localeCompare(String(b.hora || ''));
+  });
+  out.posVisitaEcrfPendente.sort(function(a, b) {
+    return String(a.data || '').localeCompare(String(b.data || '')) || String(a.hora || '').localeCompare(String(b.hora || ''));
+  });
+  out.kitsVencendo.sort(function(a, b) { return Number(a.dias || 0) - Number(b.dias || 0); });
+  return out;
+}
+
+function agendaCourierStatusNaoAplicavel_(status) {
+  var st = normText_(status);
+  return st === 'nao aplicavel' || st === 'nao se aplica' || st === 'n/a' || st === 'na';
+}
+
+function prazoHorasPendenciaAgenda_(data, hora, feriados) {
+  var d = parseAgendaDateAny_(data);
+  if (!d) return null;
+  var h = String(hora || '').match(/(\d{1,2})[:h](\d{2})/i);
+  d.setHours(h ? Number(h[1]) : 23, h ? Number(h[2]) : 59, 0, 0);
+  var diff = horasOperacionaisAtePendencia_(new Date(), d, feriados || {});
+  if (diff === null || diff === undefined || isNaN(diff)) return null;
+  return Math.round(diff * 10) / 10;
+}
+
+function getAgendaFeriadosPendenciasMap_(rows, idx) {
+  var out = {};
+  (rows || []).forEach(function(r) {
+    if (normText_(r[idx.tipo]) !== 'feriado') return;
+    var d = parseAgendaDateAny_(r[idx.data]);
+    if (d) out[agendaPendenciaDateKey_(d)] = true;
+  });
+  return out;
+}
+
+function agendaPendenciaDateKey_(d) {
+  return [
+    d.getFullYear(),
+    ('0' + (d.getMonth() + 1)).slice(-2),
+    ('0' + d.getDate()).slice(-2)
+  ].join('-');
+}
+
+function isDiaOperacionalPendencia_(d, feriados) {
+  var day = d.getDay();
+  if (day === 0 || day === 6) return false;
+  return !feriados[agendaPendenciaDateKey_(d)];
+}
+
+function horasOperacionaisAtePendencia_(inicio, fim, feriados) {
+  if (!inicio || !fim || isNaN(inicio.getTime()) || isNaN(fim.getTime())) return null;
+  if (fim.getTime() < inicio.getTime()) return -horasOperacionaisAtePendencia_(fim, inicio, feriados);
+  var cursor = new Date(inicio);
+  var total = 0;
+  while (cursor.getTime() < fim.getTime()) {
+    var fimDia = new Date(cursor);
+    fimDia.setHours(23, 59, 59, 999);
+    var fimTrecho = fim.getTime() < fimDia.getTime() ? fim : fimDia;
+    if (isDiaOperacionalPendencia_(cursor, feriados || {})) {
+      total += Math.max(0, fimTrecho.getTime() - cursor.getTime()) / 3600000;
+    }
+    cursor = new Date(fimDia.getTime() + 1);
+    cursor.setHours(0, 0, 0, 0);
+  }
+  return total;
+}
+
+function ordenarPendenciasAgendaPorUrgencia_(lista) {
+  (lista || []).sort(function(a, b) {
+    var ap = a && a.prazoHoras !== null && a.prazoHoras !== undefined ? Number(a.prazoHoras) : null;
+    var bp = b && b.prazoHoras !== null && b.prazoHoras !== undefined ? Number(b.prazoHoras) : null;
+    var au = ap !== null && !isNaN(ap) && ap <= 24;
+    var bu = bp !== null && !isNaN(bp) && bp <= 24;
+    if (au !== bu) return au ? -1 : 1;
+    var ah = ap !== null && !isNaN(ap) ? ap : 999999;
+    var bh = bp !== null && !isNaN(bp) ? bp : 999999;
+    return ah - bh;
+  });
+}
+
+function diasAteValidadeDashboard_(validade) {
+  var d = parseAgendaDateAny_(validade);
+  if (!d) return null;
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.floor((d.getTime() - hoje.getTime()) / 86400000);
 }
 
 function getAgendaDashboardResumo_() {
@@ -1544,6 +2883,7 @@ function getAgendaDashboardResumo_() {
     visitasPorDiaSemana: dias.map(function(d) { return { label: d, value: 0 }; }),
     cancelReagPorProtocolo: [],
     courierUsoAno: [],
+    eventosPeriodo: [],
     antecedenciaMediaPorTipo: []
   };
   if (lastRow < 2) return resumo;
@@ -1558,59 +2898,18 @@ function getAgendaDashboardResumo_() {
   var hoje = new Date();
   hoje.setHours(23, 59, 59, 999);
   vals.forEach(function(r) {
-    var data = r[i.data] instanceof Date ? r[i.data] : new Date(r[i.data]);
-    if (!data || isNaN(data.getTime()) || data.getFullYear() !== anoAtual) return;
-    var tipo = normText_(r[i.tipo]);
-    var status = normText_(r[i.status]);
-    var projeto = String(r[i.projeto] || 'Sem protocolo').trim() || 'Sem protocolo';
-    var medico = String(r[i.medico] || 'Sem medico').trim() || 'Sem medico';
-    var lab = normText_(r[i.labCentral]) === 'sim';
-    var isCancelado = status.indexOf('cancel') > -1;
-    var isReagendado = status.indexOf('reag') > -1;
-    var isMonitoria = tipo.indexOf('monitoria') > -1;
-    var isVisita = tipo.indexOf('visita') > -1;
-    var isEventoComTransporte = isVisita || tipo.indexOf('envio de amostra') > -1 || tipo.indexOf('amostra') > -1;
-    var isRealizada = status.indexOf('realiz') > -1 || status.indexOf('concl') > -1;
-    resumo.totalAno++;
-    if ((isCancelado || isReagendado) && projeto) {
-      cancelReagProt[projeto] = (cancelReagProt[projeto] || 0) + 1;
-    }
-    if (lab && !isCancelado) {
-      resumo.labCentralAno++;
-      resumo.labCentralMes[data.getMonth()].value++;
-    }
-    if (isMonitoria && !isCancelado) {
-      var keyMon = projeto + '|' + formatarDataIsoAgenda_(data);
-      porMonProtDia[keyMon] = { projeto: projeto };
-    }
-    if (isVisita && isRealizada && !isCancelado && data.getTime() <= hoje.getTime()) {
-      resumo.visitasRealizadasAno++;
-      resumo.visitasMes[data.getMonth()].value++;
-      resumo.visitasPorDiaSemana[data.getDay()].value++;
-      porProt[projeto] = (porProt[projeto] || 0) + 1;
-      porMed[medico] = (porMed[medico] || 0) + 1;
-      var base = agendaDataRegistroFromControle_(r[i.controle]);
-      if (base) {
-        base.setHours(0, 0, 0, 0);
-        var visita = new Date(data);
-        visita.setHours(0, 0, 0, 0);
-        var diasAnt = Math.round((visita - base) / 86400000);
-        if (diasAnt >= 0 && diasAnt < 730) {
-          var tipoLabel = String(r[i.tipo] || 'Visita').trim() || 'Visita';
-          if (!antecedenciaPorTipo[tipoLabel]) antecedenciaPorTipo[tipoLabel] = { soma: 0, n: 0 };
-          antecedenciaPorTipo[tipoLabel].soma += diasAnt;
-          antecedenciaPorTipo[tipoLabel].n++;
-        }
-      }
-    }
-    if (isEventoComTransporte && isRealizada && !isCancelado && data.getTime() <= hoje.getTime() && lab) {
-      [i.c1, i.c2, i.c3].forEach(function(c) {
-        if (!c || c.nome === undefined) return;
-        var nomeCourier = String(r[c.nome] || '').trim();
-        if (!isCourierNomeValidoAgenda_(nomeCourier)) return;
-        courierUso[nomeCourier] = (courierUso[nomeCourier] || 0) + 1;
-      });
-    }
+    agendaDashboardProcessRow_(r, {
+      idx: i,
+      anoAtual: anoAtual,
+      hoje: hoje,
+      resumo: resumo,
+      porProt: porProt,
+      porMonProtDia: porMonProtDia,
+      porMed: porMed,
+      cancelReagProt: cancelReagProt,
+      courierUso: courierUso,
+      antecedenciaPorTipo: antecedenciaPorTipo
+    });
   });
   var monMap = {};
   Object.keys(porMonProtDia).forEach(function(k) {
@@ -1627,10 +2926,129 @@ function getAgendaDashboardResumo_() {
   return resumo;
 }
 
+function agendaDashboardProcessRow_(r, ctx) {
+  var i = ctx.idx;
+  var data = parseAgendaDateAny_(r[i.data]) || (r[i.data] instanceof Date ? r[i.data] : new Date(r[i.data]));
+  if (!data || isNaN(data.getTime())) return;
+  var rowInfo = agendaDashboardRowInfo_(r, i, data);
+  ctx.resumo.eventosPeriodo.push(rowInfo.evento);
+  if (data.getFullYear() !== ctx.anoAtual) return;
+  ctx.resumo.totalAno++;
+  agendaDashboardCountStatus_(rowInfo, ctx);
+  agendaDashboardCountLabCentral_(rowInfo, ctx.resumo);
+  agendaDashboardCountMonitoria_(rowInfo, ctx.porMonProtDia);
+  agendaDashboardCountVisita_(r, rowInfo, ctx);
+  agendaDashboardCountCourier_(r, rowInfo, ctx);
+}
+
+function agendaDashboardRowInfo_(r, i, data) {
+  var tipo = normText_(r[i.tipo]);
+  var status = normText_(r[i.status]);
+  var projeto = String(r[i.projeto] || 'Sem protocolo').trim() || 'Sem protocolo';
+  var medico = String(r[i.medico] || 'Sem medico').trim() || 'Sem medico';
+  var lab = normText_(r[i.labCentral]) === 'sim';
+  var isVisita = tipo.indexOf('visita') > -1;
+  var couriersEvento = agendaDashboardCouriersEvento_(r, i);
+  var info = {
+    data: data,
+    tipo: tipo,
+    status: status,
+    projeto: projeto,
+    medico: medico,
+    lab: lab,
+    isCancelado: status.indexOf('cancel') > -1,
+    isReagendado: status.indexOf('reag') > -1,
+    isMonitoria: tipo.indexOf('monitoria') > -1,
+    isVisita: isVisita,
+    isEventoComTransporte: isVisita || tipo.indexOf('envio de amostra') > -1 || tipo.indexOf('amostra') > -1,
+    isRealizada: status.indexOf('realiz') > -1 || status.indexOf('concl') > -1
+  };
+  info.evento = {
+    dataIso: formatarDataIsoAgenda_(data),
+    ano: data.getFullYear(),
+    mes: data.getMonth() + 1,
+    tipo: String(r[i.tipo] || ''),
+    status: String(r[i.status] || ''),
+    projeto: projeto,
+    medico: medico,
+    labCentral: lab,
+    isCancelado: info.isCancelado,
+    isReagendado: info.isReagendado,
+    isMonitoria: info.isMonitoria,
+    isVisita: info.isVisita,
+    isRealizada: info.isRealizada,
+    isEventoComTransporte: info.isEventoComTransporte,
+    couriers: couriersEvento
+  };
+  return info;
+}
+
+function agendaDashboardCouriersEvento_(r, i) {
+  var couriersEvento = [];
+  [i.c1, i.c2, i.c3].forEach(function(c) {
+    if (!c || c.nome === undefined) return;
+    var nomeCourier = String(r[c.nome] || '').trim();
+    if (isCourierNomeValidoAgenda_(nomeCourier)) couriersEvento.push(nomeCourier);
+  });
+  return couriersEvento;
+}
+
+function agendaDashboardCountStatus_(info, ctx) {
+  if ((info.isCancelado || info.isReagendado) && info.projeto) {
+    ctx.cancelReagProt[info.projeto] = (ctx.cancelReagProt[info.projeto] || 0) + 1;
+  }
+}
+
+function agendaDashboardCountLabCentral_(info, resumo) {
+  if (!info.lab || info.isCancelado) return;
+  resumo.labCentralAno++;
+  resumo.labCentralMes[info.data.getMonth()].value++;
+}
+
+function agendaDashboardCountMonitoria_(info, porMonProtDia) {
+  if (!info.isMonitoria || info.isCancelado) return;
+  var keyMon = info.projeto + '|' + formatarDataIsoAgenda_(info.data);
+  porMonProtDia[keyMon] = { projeto: info.projeto };
+}
+
+function agendaDashboardCountVisita_(r, info, ctx) {
+  if (!info.isVisita || !info.isRealizada || info.isCancelado || info.data.getTime() > ctx.hoje.getTime()) return;
+  ctx.resumo.visitasRealizadasAno++;
+  ctx.resumo.visitasMes[info.data.getMonth()].value++;
+  ctx.resumo.visitasPorDiaSemana[info.data.getDay()].value++;
+  ctx.porProt[info.projeto] = (ctx.porProt[info.projeto] || 0) + 1;
+  ctx.porMed[info.medico] = (ctx.porMed[info.medico] || 0) + 1;
+  agendaDashboardCountAntecedencia_(r, info, ctx);
+}
+
+function agendaDashboardCountAntecedencia_(r, info, ctx) {
+  var base = agendaDataRegistroFromControle_(r[ctx.idx.controle]);
+  if (!base) return;
+  base.setHours(0, 0, 0, 0);
+  var visita = new Date(info.data);
+  visita.setHours(0, 0, 0, 0);
+  var diasAnt = Math.round((visita - base) / 86400000);
+  if (diasAnt < 0 || diasAnt >= 730) return;
+  var tipoLabel = String(r[ctx.idx.tipo] || 'Visita').trim() || 'Visita';
+  if (!ctx.antecedenciaPorTipo[tipoLabel]) ctx.antecedenciaPorTipo[tipoLabel] = { soma: 0, n: 0 };
+  ctx.antecedenciaPorTipo[tipoLabel].soma += diasAnt;
+  ctx.antecedenciaPorTipo[tipoLabel].n++;
+}
+
+function agendaDashboardCountCourier_(r, info, ctx) {
+  if (!info.isEventoComTransporte || !info.isRealizada || info.isCancelado || info.data.getTime() > ctx.hoje.getTime() || !info.lab) return;
+  [ctx.idx.c1, ctx.idx.c2, ctx.idx.c3].forEach(function(c) {
+    if (!c || c.nome === undefined) return;
+    var nomeCourier = String(r[c.nome] || '').trim();
+    if (!isCourierNomeValidoAgenda_(nomeCourier)) return;
+    ctx.courierUso[nomeCourier] = (ctx.courierUso[nomeCourier] || 0) + 1;
+  });
+}
+
 function isCourierNomeValidoAgenda_(nome) {
   var n = normText_(nome);
   if (!n) return false;
-  return ['nao aplicavel', 'na', 'n/a', '-', '--', '---', 'nao se aplica'].indexOf(n) === -1;
+  return ['nao aplicavel', 'n/a', '-', '--', '---', 'nao se aplica'].indexOf(n) === -1;
 }
 
 function agendaDataRegistroFromControle_(controle) {
@@ -1710,6 +3128,8 @@ function getItensEstoque() {
 // ───────────────────────────────────────────────────────
 
 function salvarItemEstoque(payload) {
+  codexAssertCanWrite_('salvarItemEstoque', 'Estoque', payload && (payload.idItem || payload.id));
+  return codexWithDocumentLock_('salvarItemEstoque', function() {
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
 
@@ -1736,29 +3156,80 @@ function salvarItemEstoque(payload) {
       payload.localizacao, estoqueMin,
       payload.observacoes, payload.laboratorio, payload.status
     ]]);
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
     return 'Item atualizado com sucesso!';
   } else {
     // Novo — mantém padrão numérico "0001" igual aos existentes
-    var seq    = sheet.getLastRow();
-    var novoId = ('0000' + seq).slice(-4);
+    var novoId = gerarProximoIdItemEstoque_(sheet);
     sheet.appendRow([
       novoId, payload.projeto, payload.descricao, payload.tipo,
       payload.localizacao, estoqueMin,
       payload.observacoes, payload.laboratorio, payload.status
     ]);
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
     return 'Item cadastrado! ID: ' + novoId;
   }
+  });
+}
+
+function gerarProximoIdItemEstoque_(sheet) {
+  var existing = {};
+  var maxSeq = 0;
+  if (sheet && sheet.getLastRow() > 1) {
+    var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+    ids.forEach(function(r) {
+      var id = String(r[0] || '').trim();
+      if (!id) return;
+      existing[id] = true;
+      if (/^\d+$/.test(id)) maxSeq = Math.max(maxSeq, Number(id));
+    });
+  }
+  var seq = maxSeq + 1;
+  var novoId = padIdItemEstoque_(seq);
+  while (existing[novoId]) {
+    seq++;
+    novoId = padIdItemEstoque_(seq);
+  }
+  return novoId;
+}
+
+function padIdItemEstoque_(seq) {
+  var out = String(Number(seq || 0));
+  while (out.length < 4) out = '0' + out;
+  return out;
 }
 
 // ───────────────────────────────────────────────────────
 
 function excluirItemEstoque(id) {
-  var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
-  if (!sheet) throw new Error('Aba "Itens" não encontrada.');
-  var row = parseInt(id);
-  if (isNaN(row) || row < 2) throw new Error('Linha inválida: ' + id);
-  sheet.deleteRow(row);
-  return 'Item excluído com sucesso.';
+  codexAssertCanWrite_('excluirItemEstoque', 'Estoque', id);
+  return codexWithDocumentLock_('excluirItemEstoque', function() {
+    var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
+    if (!sheet) throw new Error('Aba "Itens" não encontrada.');
+    var idItem = typeof id === 'object' && id ? String(id.idItem || id.id || '').trim() : String(id || '').trim();
+    var rowIndex = typeof id === 'object' && id ? Number(id.rowIndex || 0) : 0;
+    var row = 0;
+    if (idItem) {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var ids = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+        for (var i = 0; i < ids.length; i++) {
+          if (String(ids[i][0] || '').trim() === idItem) {
+            row = i + 2;
+            break;
+          }
+        }
+      }
+      if (!row) throw new Error('Item não encontrado: ' + idItem);
+    } else if (rowIndex >= 2) {
+      row = rowIndex;
+    } else {
+      throw new Error('ID do item não informado.');
+    }
+    sheet.deleteRow(row);
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return 'Item excluído com sucesso.';
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1974,6 +3445,8 @@ function getPlanejamentoPedidoEstoque() {
 }
 
 function salvarPlanejamentoPedidoEstoque(payload) {
+  codexAssertCanWrite_('salvarPlanejamentoPedidoEstoque', 'Estoque', payload && payload.idPlanejamento);
+  return codexWithDocumentLock_('salvarPlanejamentoPedidoEstoque', function() {
   payload = payload || {};
   var projeto = String(payload.projeto || '').trim();
   var itens = (payload.itens || []).filter(function(it) { return Number(it.qtdSolicitada || 0) > 0; });
@@ -2074,9 +3547,12 @@ function salvarPlanejamentoPedidoEstoque(payload) {
     emailEnviado: !!email && !emailErro,
     emailErro: emailErro
   };
+  });
 }
 
 function salvarPedidoEstoque(payload) {
+  codexAssertCanWrite_('salvarPedidoEstoque', 'Estoque', payload && (payload.idPedido || payload.numeroPedido));
+  return codexWithDocumentLock_('salvarPedidoEstoque', function() {
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var shPed   = getSheetByPossibleNames_(ss, ['Pedidos', 'Cadastro de Pedidos']);
   var shPedIt = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
@@ -2136,11 +3612,13 @@ function salvarPedidoEstoque(payload) {
   }
 
   return (payload.rowIndex ? 'Pedido atualizado' : 'Pedido cadastrado') + ' com sucesso!';
+  });
 }
 
 // ───────────────────────────────────────────────────────
 
 function excluirPedidoEstoque(rowIndex, idPedido) {
+  codexAssertCanWrite_('excluirPedidoEstoque', 'Estoque', idPedido || rowIndex);
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var shPed   = getSheetByPossibleNames_(ss, ['Pedidos', 'Cadastro de Pedidos']);
   var shPedIt = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
@@ -2317,10 +3795,13 @@ function receberPedidoEstoqueLegacy_(dados) {
   }
 
   SpreadsheetApp.flush();
+  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
   return 'Recebimento registrado com sucesso!';
 }
 
 function receberPedidoEstoque(dados) {
+  codexAssertCanWrite_('receberPedidoEstoque', 'Estoque', dados && (dados.idPedido || dados.rowIndex));
+  return codexWithDocumentLock_('receberPedidoEstoque', function() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var shCatalogo = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
   var shPedidos = getSheetByPossibleNames_(ss, ['Pedidos', 'Cadastro de Pedidos']);
@@ -2463,87 +3944,35 @@ function receberPedidoEstoque(dados) {
   }
 
   SpreadsheetApp.flush();
+  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
   return 'Recebimento registrado com sucesso!';
+  });
 }
 
 // ===================== ESTOQUE - Movimentações =====================
 
-function getMovimentacoesSheet_(ss) {
-  var sh = getSheetByPossibleNames_(ss, ['Movimentações', 'Movimentacoes', 'Entrada/Saída de Itens', 'Entrada/Saida de Itens']);
-  if (!sh) {
-    sh = ss.insertSheet('Movimentações');
-    sh.appendRow([
-      'ID_Mov', 'Data/hora', 'Tipo de movimento', 'ID_Item', 'Descrição',
-      'Tipo de item', 'Projeto', 'Qtde.', 'Validade', 'Localização', 'Lote',
-      'ID_Participante', 'Participante', 'ID_Visita', 'Responsável',
-      'Origem', 'Observação'
-    ]);
-    sh.setFrozenRows(1);
+function estoqueValidadeKey_(valor, tz) {
+  if (!valor) return '';
+  tz = tz || Session.getScriptTimeZone();
+  if (valor instanceof Date && !isNaN(valor.getTime())) {
+    return Utilities.formatDate(valor, tz, 'dd/MM/yyyy');
   }
-  return sh;
+  var texto = String(valor || '').trim();
+  var br = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (br) return ('0' + Number(br[1])).slice(-2) + '/' + ('0' + Number(br[2])).slice(-2) + '/' + br[3];
+  var iso = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) return ('0' + Number(iso[3])).slice(-2) + '/' + ('0' + Number(iso[2])).slice(-2) + '/' + iso[1];
+  var data = new Date(texto);
+  return isNaN(data.getTime()) ? texto : Utilities.formatDate(data, tz, 'dd/MM/yyyy');
 }
 
-function getMovimentacoesEstoque() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var shMov = getMovimentacoesSheet_(ss);
-  var tz = Session.getScriptTimeZone();
-  var movs = [];
-
-  function fmtDateTime(v) {
-    if (!v) return '';
-    try {
-      var d = v instanceof Date ? v : new Date(v);
-      if (isNaN(d.getTime())) return String(v);
-      return Utilities.formatDate(d, tz, 'dd/MM/yyyy HH:mm');
-    } catch(e) { return String(v); }
-  }
-
-  function fmtDate(v) {
-    if (!v) return '';
-    try {
-      var d = v instanceof Date ? v : new Date(v);
-      if (isNaN(d.getTime())) return String(v);
-      return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
-    } catch(e) { return String(v); }
-  }
-
-  if (shMov && shMov.getLastRow() > 1) {
-    var data = shMov.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      var r = data[i];
-      if (!String(r[0] || r[2] || r[4] || '').trim()) continue;
-      var schemaAtual = r.length >= 17 && (
-        String(data[0][5] || '').toLowerCase().indexOf('tipo') >= 0 ||
-        String(r[5] || '').toLowerCase().indexOf('kit') >= 0 ||
-        String(r[5] || '').toLowerCase().indexOf('bulk') >= 0
-      );
-      movs.push({
-        idMov: String(r[0] || ''),
-        dataHora: fmtDateTime(r[1]),
-        tipoMovimento: String(r[2] || ''),
-        idItem: String(r[3] || ''),
-        descricao: String(r[4] || ''),
-        tipoItem: schemaAtual ? String(r[5] || '') : '',
-        projeto: schemaAtual ? String(r[6] || '') : '',
-        qtde: schemaAtual ? (r[7] !== '' && r[7] !== null ? Number(r[7]) : '') : (r[5] !== '' && r[5] !== null ? Number(r[5]) : ''),
-        validade: schemaAtual ? fmtDate(r[8]) : '',
-        localizacao: schemaAtual ? String(r[9] || '') : '',
-        lote: schemaAtual ? String(r[10] || '') : '',
-        idParticipante: schemaAtual ? String(r[11] || '') : '',
-        participante: schemaAtual ? String(r[12] || '') : '',
-        idVisita: schemaAtual ? String(r[13] || '') : '',
-        responsavel: schemaAtual ? String(r[14] || '') : String(r[8] || ''),
-        origem: schemaAtual ? String(r[15] || '') : String(r[6] || ''),
-        observacao: schemaAtual ? String(r[16] || '') : String(r[7] || '')
-      });
-    }
-  }
-
-  movs.reverse();
-  return { movimentacoes: movs, estoque: getEstoque() };
+function estoqueLocalKey_(valor) {
+  return normText_(String(valor || '').replace(/\s+/g, ' ').trim());
 }
 
 function registrarMovimentacaoEstoque(payload) {
+  codexAssertCanWrite_('registrarMovimentacaoEstoque', 'Estoque', payload && (payload.idItem || payload.itemId));
+  return codexWithDocumentLock_('registrarMovimentacaoEstoque', function() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var shEstoque = getSheetByPossibleNames_(ss, ['Estoque']);
   if (!shEstoque) throw new Error('Aba "Estoque" não encontrada.');
@@ -2561,21 +3990,25 @@ function registrarMovimentacaoEstoque(payload) {
   var tipoMov = String(payload.tipoMovimento || 'Saída - Ajuste/Descarte');
   var isEntrada = tipoMov.toLowerCase().indexOf('entrada') === 0;
   var dataBase = payload.data ? new Date(payload.data + 'T12:00:00') : agora;
-  var validadeKey = String(payload.validade || '').trim();
-  var locKey = String(payload.localizacao || '').trim();
+  var validadeKey = estoqueValidadeKey_(payload.validade, tz);
+  var locKey = estoqueLocalKey_(payload.localizacao);
   var rows = shEstoque.getDataRange().getValues();
   var rowEstoque = -1;
 
-  function estoqueValKey(v) {
-    if (!v) return '';
-    try { return Utilities.formatDate(new Date(v), tz, 'dd/MM/yyyy'); } catch(e) { return String(v); }
+  var requestedRow = Number(payload.estoqueRow || 0);
+  if (requestedRow >= 2 && requestedRow <= rows.length) {
+    var requestedData = rows[requestedRow - 1] || [];
+    var requestedMatches = String(requestedData[0] || '').trim() === idItem &&
+      (!validadeKey || estoqueValidadeKey_(requestedData[4], tz) === validadeKey) &&
+      (!locKey || estoqueLocalKey_(requestedData[5]) === locKey);
+    if (requestedMatches) rowEstoque = requestedRow;
   }
 
-  for (var i = 1; i < rows.length; i++) {
+  for (var i = 1; rowEstoque < 0 && i < rows.length; i++) {
     var r = rows[i];
     if (String(r[0] || '').trim() !== idItem) continue;
-    var sameValidade = !validadeKey || estoqueValKey(r[4]) === validadeKey;
-    var sameLocal = !locKey || String(r[5] || '').trim() === locKey;
+    var sameValidade = !validadeKey || estoqueValidadeKey_(r[4], tz) === validadeKey;
+    var sameLocal = !locKey || estoqueLocalKey_(r[5]) === locKey;
     if (sameValidade && sameLocal) {
       rowEstoque = i + 1;
       break;
@@ -2603,10 +4036,14 @@ function registrarMovimentacaoEstoque(payload) {
   shMov.getRange(lr, 2).setNumberFormat('dd/MM/yyyy HH:mm');
   if (er[4]) shMov.getRange(lr, 9).setNumberFormat('dd/MM/yyyy');
   SpreadsheetApp.flush();
+  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
   return 'Movimentação registrada com sucesso.';
+  });
 }
 
 function baixarKitsAgendaEvento(payload) {
+  codexAssertCanWrite_('baixarKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
+  return codexWithDocumentLock_('baixarKitsAgendaEvento', function() {
   payload = payload || {};
   var agendaId = String(payload.agendaId || '').trim();
   var kits = payload.kits || [];
@@ -2654,6 +4091,7 @@ function baixarKitsAgendaEvento(payload) {
     pulados: pulados,
     msg: baixados + ' kit(s) baixado(s)' + (pulados ? ' e ' + pulados + ' ja registrado(s).' : '.')
   };
+  });
 }
 
 function getKitsAgendaBaixaStatus(agendaId) {
@@ -2679,6 +4117,8 @@ function getKitsAgendaBaixaStatus(agendaId) {
 }
 
 function devolverKitsAgendaEvento(payload) {
+  codexAssertCanWrite_('devolverKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
+  return codexWithDocumentLock_('devolverKitsAgendaEvento', function() {
   payload = payload || {};
   var agendaId = String(payload.agendaId || '').trim();
   if (!agendaId) throw new Error('Agendamento nao informado.');
@@ -2701,6 +4141,7 @@ function devolverKitsAgendaEvento(payload) {
     devolvidos++;
   });
   return { ok: true, devolvidos: devolvidos, msg: devolvidos + ' kit(s) devolvido(s) ao estoque.' };
+  });
 }
 
 function getDescartesEstoque() {
@@ -2748,6 +4189,8 @@ function getDescartesEstoque() {
 }
 
 function salvarPlanejamentoDescarteEstoque(payload) {
+  codexAssertCanWrite_('salvarPlanejamentoDescarteEstoque', 'Estoque', payload && payload.idDescarte);
+  return codexWithDocumentLock_('salvarPlanejamentoDescarteEstoque', function() {
   payload = payload || {};
   var projeto = String(payload.projeto || '').trim();
   var itens = (payload.itens || []).filter(function(it) { return Number(it.qtdDescartar || 0) > 0; });
@@ -2771,9 +4214,12 @@ function salvarPlanejamentoDescarteEstoque(payload) {
   shItens.getRange(start, 1, rows.length, 10).setValues(rows);
   rows.forEach(function(r, i) { if (r[4]) shItens.getRange(start + i, 5).setNumberFormat('dd/MM/yyyy'); });
   return 'Lista de descarte criada: ' + id;
+  });
 }
 
 function efetivarDescarteEstoque(idDescarte) {
+  codexAssertCanWrite_('efetivarDescarteEstoque', 'Estoque', idDescarte);
+  return codexWithDocumentLock_('efetivarDescarteEstoque', function() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var shDesc = getSheetByPossibleNames_(ss, ['Descartes_Estoque']);
   var shItens = getSheetByPossibleNames_(ss, ['Descartes_Itens']);
@@ -2790,26 +4236,112 @@ function efetivarDescarteEstoque(idDescarte) {
   var projeto = String(shDesc.getRange(rowDesc, 3).getValue() || '');
   var obs = String(shDesc.getRange(rowDesc, 8).getValue() || '');
   var itemRows = shItens.getRange(2, 1, Math.max(shItens.getLastRow() - 1, 0), Math.max(10, shItens.getLastColumn())).getValues();
-  var atualizados = 0;
+  var itensParaEfetivar = [];
+  var itensInvalidos = [];
+  var itensJaEfetivados = 0;
   itemRows.forEach(function(r, idx) {
     if (String(r[0] || '') !== id) return;
     var row = idx + 2;
-    var qtd = Number(r[6] || 0);
-    if (qtd <= 0) return;
-    registrarMovimentacaoEstoque({
-      tipoMovimento: 'Sa\u00edda - Ajuste/Descarte',
-      idItem: String(r[1] || ''), descricao: String(r[2] || ''),
-      tipoItem: String(r[3] || ''), projeto: projeto, qtde: qtd,
-      validade: formatarDataSafe(r[4]), localizacao: String(r[5] || ''),
-      origem: 'Lista de descarte ' + id, observacao: obs || 'Descarte efetivado'
+    var qtdPlanejada = Number(r[6] || 0);
+    var qtdJaDescartada = Math.max(0, Number(r[7] || 0));
+    var jaEfetivado = normText_(r[8]).indexOf('efetivado') >= 0 || (qtdPlanejada > 0 && qtdJaDescartada >= qtdPlanejada);
+    if (jaEfetivado) {
+      itensJaEfetivados++;
+      return;
+    }
+    if (!isFinite(qtdPlanejada) || qtdPlanejada <= 0) {
+      itensInvalidos.push(row);
+      return;
+    }
+    var qtdPendente = qtdPlanejada - qtdJaDescartada;
+    if (qtdPendente <= 0) {
+      itensJaEfetivados++;
+      return;
+    }
+    itensParaEfetivar.push({ row: row, dados: r, qtd: qtdPendente, qtdPlanejada: qtdPlanejada, qtdJaDescartada: qtdJaDescartada });
+  });
+  if (!itensParaEfetivar.length) {
+    if (itensJaEfetivados > 0 && !itensInvalidos.length) {
+      shDesc.getRange(rowDesc, 6).setValue('Efetivado');
+      shDesc.getRange(rowDesc, 9).setValue(new Date()).setNumberFormat('dd/MM/yyyy');
+      return 'Descarte ja estava efetivado: ' + itensJaEfetivados + ' item(ns).';
+    }
+    throw new Error('Nenhum item com quantidade valida para efetivar neste descarte. Revise as quantidades antes de concluir.');
+  }
+  if (itensInvalidos.length) {
+    throw new Error('Existem itens com quantidade zero ou invalida no descarte (linha(s) ' + itensInvalidos.join(', ') + '). Corrija antes de efetivar.');
+  }
+  var shEstoque = getSheetByPossibleNames_(ss, ['Estoque']);
+  if (!shEstoque) throw new Error('Aba "Estoque" nao encontrada.');
+  var tz = Session.getScriptTimeZone();
+  var estoqueRows = shEstoque.getDataRange().getValues();
+  var reservadoPorLinha = {};
+  var planos = [];
+
+  itensParaEfetivar.forEach(function(item) {
+    var r = item.dados;
+    var ids = String(r[1] || '').split(/\s*,\s*/).map(function(v) { return v.trim(); }).filter(Boolean);
+    var validadeKey = estoqueValidadeKey_(r[4], tz);
+    var localKey = estoqueLocalKey_(r[5]);
+    var restante = item.qtd;
+    var baixas = [];
+
+    for (var e = 1; e < estoqueRows.length && restante > 0; e++) {
+      var er = estoqueRows[e] || [];
+      var idEstoque = String(er[0] || '').trim();
+      if (ids.indexOf(idEstoque) < 0) continue;
+      if (validadeKey && estoqueValidadeKey_(er[4], tz) !== validadeKey) continue;
+      if (localKey && estoqueLocalKey_(er[5]) !== localKey) continue;
+      var rowEstoque = e + 1;
+      var disponivel = Math.max(0, Number(er[6] || 0) - Number(reservadoPorLinha[rowEstoque] || 0));
+      if (!disponivel) continue;
+      var retirar = Math.min(restante, disponivel);
+      baixas.push({
+        rowEstoque: rowEstoque,
+        idItem: idEstoque,
+        descricao: String(er[2] || r[2] || ''),
+        tipoItem: String(er[3] || r[3] || ''),
+        validade: estoqueValidadeKey_(er[4], tz),
+        localizacao: String(er[5] || r[5] || ''),
+        qtde: retirar
+      });
+      reservadoPorLinha[rowEstoque] = Number(reservadoPorLinha[rowEstoque] || 0) + retirar;
+      restante -= retirar;
+    }
+
+    if (restante > 0) {
+      var identificacao = String(r[2] || r[1] || 'Item');
+      var encontrado = item.qtd - restante;
+      throw new Error('Saldo do item/lote insuficiente para efetivar o descarte: ' + identificacao + '. Solicitado: ' + item.qtd + '; localizado: ' + encontrado + '.');
+    }
+    planos.push({ item: item, baixas: baixas });
+  });
+
+  var atualizados = 0;
+  planos.forEach(function(plano) {
+    plano.baixas.forEach(function(baixa) {
+      registrarMovimentacaoEstoque({
+        tipoMovimento: 'Sa\u00edda - Ajuste/Descarte',
+        estoqueRow: baixa.rowEstoque,
+        idItem: baixa.idItem,
+        descricao: baixa.descricao,
+        tipoItem: baixa.tipoItem,
+        projeto: projeto,
+        qtde: baixa.qtde,
+        validade: baixa.validade,
+        localizacao: baixa.localizacao,
+        origem: 'Lista de descarte ' + id,
+        observacao: obs || 'Descarte efetivado'
+      });
     });
-    shItens.getRange(row, 8).setValue(qtd);
-    shItens.getRange(row, 9).setValue('Efetivado');
+    shItens.getRange(plano.item.row, 8).setValue(plano.item.qtdPlanejada);
+    shItens.getRange(plano.item.row, 9).setValue('Efetivado');
     atualizados++;
   });
   shDesc.getRange(rowDesc, 6).setValue('Efetivado');
   shDesc.getRange(rowDesc, 9).setValue(new Date()).setNumberFormat('dd/MM/yyyy');
   return 'Descarte efetivado: ' + atualizados + ' item(ns).';
+  });
 }
 
 function parseDateBrOrBlank_(valor) {
@@ -2820,84 +4352,6 @@ function parseDateBrOrBlank_(valor) {
   if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
   var d = new Date(s);
   return isNaN(d.getTime()) ? '' : d;
-}
-
-// Overrides com strings Unicode estáveis para evitar falhas por encoding ao localizar a aba.
-function getMovimentacoesSheet_(ss) {
-  var sh = getSheetByPossibleNames_(ss, ['Movimenta\u00e7\u00f5es', 'Movimentacoes', 'Entrada/Sa\u00edda de Itens', 'Entrada/Saida de Itens']);
-  if (!sh) {
-    sh = ss.insertSheet('Movimenta\u00e7\u00f5es');
-    sh.appendRow([
-      'ID_Mov', 'Data/hora', 'Tipo de movimento', 'ID_Item', 'Descri\u00e7\u00e3o',
-      'Tipo de item', 'Projeto', 'Qtde.', 'Validade', 'Localiza\u00e7\u00e3o', 'Lote',
-      'ID_Participante', 'Participante', 'ID_Visita', 'Respons\u00e1vel',
-      'Origem', 'Observa\u00e7\u00e3o'
-    ]);
-    sh.setFrozenRows(1);
-  }
-  return sh;
-}
-
-function getMovimentacoesEstoque() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var shMov = getMovimentacoesSheet_(ss);
-  var tz = Session.getScriptTimeZone();
-  var movs = [];
-
-  function fmtDateTime(v) {
-    if (!v) return '';
-    try {
-      var d = v instanceof Date ? v : new Date(v);
-      if (isNaN(d.getTime())) return String(v);
-      return Utilities.formatDate(d, tz, 'dd/MM/yyyy HH:mm');
-    } catch(e) { return String(v); }
-  }
-
-  function fmtDate(v) {
-    if (!v) return '';
-    try {
-      var d = v instanceof Date ? v : new Date(v);
-      if (isNaN(d.getTime())) return String(v);
-      return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
-    } catch(e) { return String(v); }
-  }
-
-  if (shMov && shMov.getLastRow() > 1) {
-    var data = shMov.getDataRange().getValues();
-    var schemaAtual = shMov.getLastColumn() >= 17;
-    for (var i = 1; i < data.length; i++) {
-      var r = data[i];
-      if (!String(r[0] || r[2] || r[4] || '').trim()) continue;
-      movs.push({
-        idMov: String(r[0] || ''),
-        dataHora: fmtDateTime(r[1]),
-        tipoMovimento: String(r[2] || ''),
-        idItem: String(r[3] || ''),
-        descricao: String(r[4] || ''),
-        tipoItem: schemaAtual ? String(r[5] || '') : '',
-        projeto: schemaAtual ? String(r[6] || '') : '',
-        qtde: schemaAtual ? (r[7] !== '' && r[7] !== null ? Number(r[7]) : '') : (r[5] !== '' && r[5] !== null ? Number(r[5]) : ''),
-        validade: schemaAtual ? fmtDate(r[8]) : '',
-        localizacao: schemaAtual ? String(r[9] || '') : '',
-        lote: schemaAtual ? String(r[10] || '') : '',
-        idParticipante: schemaAtual ? String(r[11] || '') : '',
-        participante: schemaAtual ? String(r[12] || '') : '',
-        idVisita: schemaAtual ? String(r[13] || '') : '',
-        responsavel: schemaAtual ? String(r[14] || '') : String(r[8] || ''),
-        origem: schemaAtual ? String(r[15] || '') : String(r[6] || ''),
-        observacao: schemaAtual ? String(r[16] || '') : String(r[7] || '')
-      });
-    }
-  }
-
-  movs.reverse();
-  var itensData = getItensEstoque();
-  return {
-    movimentacoes: movs,
-    estoque: getEstoque(),
-    projetos: itensData.projetos || [],
-    itensCatalogo: itensData.itens || []
-  };
 }
 
 function normalizeHeaderV2_(value) {
@@ -3004,66 +4458,7 @@ function getMovimentacoesEstoqueV2() {
 }
 
 function getMovimentacoesEstoqueV3() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var shMov = ss.getSheetByName('Movimenta\u00e7\u00f5es') || ss.getSheetByName('Movimentacoes');
-  var tz = Session.getScriptTimeZone();
-  var movs = [];
-  var diag = { sheet: shMov ? shMov.getName() : '', lastRow: shMov ? shMov.getLastRow() : 0, lastColumn: shMov ? shMov.getLastColumn() : 0, headerRow: 3 };
-
-  function fmtDateTime(v) {
-    if (!v) return '';
-    try {
-      var d = v instanceof Date ? v : new Date(v);
-      if (isNaN(d.getTime())) return String(v);
-      return Utilities.formatDate(d, tz, 'dd/MM/yyyy HH:mm');
-    } catch(e) { return String(v); }
-  }
-
-  function fmtDate(v) {
-    if (!v) return '';
-    try {
-      var d = v instanceof Date ? v : new Date(v);
-      if (isNaN(d.getTime())) return String(v);
-      return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
-    } catch(e) { return String(v); }
-  }
-
-  if (shMov && shMov.getLastRow() >= 4) {
-    var rows = shMov.getRange(4, 1, shMov.getLastRow() - 3, 17).getValues();
-    rows.forEach(function(r) {
-      if (!String(r[0] || r[2] || r[4] || '').trim()) return;
-      movs.push({
-        idMov: String(r[0] || ''),
-        dataHora: fmtDateTime(r[1]),
-        tipoMovimento: String(r[2] || ''),
-        idItem: String(r[3] || ''),
-        descricao: String(r[4] || ''),
-        tipoItem: String(r[5] || ''),
-        projeto: String(r[6] || ''),
-        qtde: r[7] !== '' && r[7] !== null ? Number(r[7]) : '',
-        validade: fmtDate(r[8]),
-        localizacao: String(r[9] || ''),
-        lote: String(r[10] || ''),
-        idParticipante: String(r[11] || ''),
-        participante: String(r[12] || ''),
-        idVisita: String(r[13] || ''),
-        responsavel: String(r[14] || ''),
-        origem: String(r[15] || ''),
-        observacao: String(r[16] || '')
-      });
-    });
-  }
-
-  movs.reverse();
-  var itensData = getItensEstoque();
-  return {
-    movimentacoes: movs,
-    estoque: getEstoque(),
-    projetos: itensData.projetos || [],
-    itensCatalogo: itensData.itens || [],
-    participantes: getParticipantes(),
-    diag: diag
-  };
+  return getMovimentacoesEstoque();
 }
 
 // ===================== ESTOQUE - Visualização =====================
@@ -3196,6 +4591,7 @@ function getMovimentacoesEstoque() {
   var shMov = getMovimentacoesSheet_(ss);
   var tz = Session.getScriptTimeZone();
   var movs = [];
+  var diag = { sheet: shMov ? shMov.getName() : '', lastRow: shMov ? shMov.getLastRow() : 0, lastColumn: shMov ? shMov.getLastColumn() : 0, headerRow: 0 };
 
   function fmtDateTime(v) {
     if (!v) return '';
@@ -3277,6 +4673,7 @@ function getMovimentacoesEstoque() {
         observacao: String(firstNonEmpty_(r, [col.observacao, 16]) || '')
       });
     }
+    diag.headerRow = headerIndex + 1;
   }
 
   movs.reverse();
@@ -3285,7 +4682,9 @@ function getMovimentacoesEstoque() {
     movimentacoes: movs,
     estoque: getEstoque(),
     projetos: itensData.projetos || [],
-    itensCatalogo: itensData.itens || []
+    itensCatalogo: itensData.itens || [],
+    participantes: getParticipantes(),
+    diag: diag
   };
 }
 
@@ -3355,8 +4754,8 @@ function parseEquipDate_(v) {
 
 function getProjetosEquipamentos_() {
   var seen = {};
-  return (getProjetos() || []).map(function(p) {
-    return String(p.nomeAbreviado || p.codigo || p.id || '').trim();
+  return getCodexSheetDataByName_('Projetos').slice(1).map(function(r) {
+    return String(r[1] || r[2] || r[0] || '').trim();
   }).filter(function(nome) {
     if (!nome || seen[nome]) return false;
     seen[nome] = 1;
@@ -3365,9 +4764,10 @@ function getProjetosEquipamentos_() {
 }
 
 function getSolicitantesEquipamentos_() {
+  var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), ['🙋 Solicitantes', 'Solicitantes']);
   var seen = {};
-  return (getSolicitantes() || []).map(function(s) {
-    return String(s.nome || '').trim();
+  return getCodexSheetDataFromSheet_(sh).slice(1).map(function(r) {
+    return String(r[1] || '').trim();
   }).filter(function(nome) {
     if (!nome || seen[nome]) return false;
     seen[nome] = 1;
@@ -3376,7 +4776,7 @@ function getSolicitantesEquipamentos_() {
 }
 
 function getEquipamentosFornecidos() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getCodexSpreadsheet_();
   var sh = getEquipamentosSheet_(ss);
   var equipamentos = [];
 
@@ -3419,6 +4819,7 @@ function getEquipamentosFornecidos() {
 }
 
 function salvarEquipamentoFornecido(payload) {
+  codexAssertCanWrite_('salvarEquipamentoFornecido', 'Cadastros', payload && (payload.id || payload.rowIndex));
   payload = payload || {};
   if (!String(payload.projeto || '').trim()) throw new Error('Selecione um projeto.');
   if (!String(payload.descricao || '').trim()) throw new Error('Informe a descrição do equipamento.');
@@ -3469,6 +4870,7 @@ function salvarEquipamentoFornecido(payload) {
 }
 
 function excluirEquipamentoFornecido(rowIndex) {
+  codexAssertCanWrite_('excluirEquipamentoFornecido', 'Cadastros', rowIndex);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = getEquipamentosSheet_(ss);
   var row = parseInt(rowIndex, 10);
@@ -3503,7 +4905,7 @@ function getMedicamentosSheet_(ss) {
 }
 
 function getMedicamentosRecebidos() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getCodexSpreadsheet_();
   var sh = getMedicamentosSheet_(ss);
   var medicamentos = [];
 
@@ -3544,6 +4946,7 @@ function getMedicamentosRecebidos() {
 }
 
 function salvarMedicamentoRecebido(payload) {
+  codexAssertCanWrite_('salvarMedicamentoRecebido', 'Cadastros', payload && (payload.id || payload.rowIndex));
   payload = payload || {};
   if (!String(payload.projeto || '').trim()) throw new Error('Selecione um projeto.');
   if (!String(payload.descricao || '').trim()) throw new Error('Informe a descrição do medicamento.');
@@ -3597,12 +5000,13 @@ function salvarMedicamentoRecebido(payload) {
 // ============================================================================
 var AGENDA_CFG = {
   abaNomes: ['\uD83D\uDCC5 Agenda', 'Agenda'],
-  lastCol: 46,
+  lastCol: 50,
   col: {
     id: 1, data: 2, hora: 3, tipo: 4, status: 5, participante: 6,
     nasc: 7, idParticipante: 8, projeto: 9, braco: 10, visita: 11,
     medico: 12, procedimentos: 13, servTerc: 14, obs: 15,
-    labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46
+    labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46,
+    poloTrial: 47, ecrf: 48, salaMonitoria: 49, carroRequerido: 50
   },
   idx: {
     id: 0, data: 1, hora: 2, tipo: 3, status: 4, participante: 5,
@@ -3613,13 +5017,13 @@ var AGENDA_CFG = {
     c2: { nome: 23, temp: 24, status: 25, awb: 26, material: 27, destino: 37, matBio: 41 },
     c3: { nome: 28, temp: 29, status: 30, awb: 31, material: 32, destino: 38, matBio: 42 },
     cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43 },
-    reqStatus: 44, monitorName: 45
+    reqStatus: 44, monitorName: 45, poloTrial: 46, ecrf: 47, salaMonitoria: 48, carroRequerido: 49
   }
 };
 
 var CFG = typeof CFG !== 'undefined' ? CFG : {
   abaNome: '\uD83D\uDCC5 Agenda',
-  lastCol: 46,
+  lastCol: 50,
   colTerc: 14,
   colGatilho: 16,
   colControle: 17,
@@ -3637,7 +5041,7 @@ var COL_VISITA = typeof COL_VISITA !== 'undefined' ? COL_VISITA : AGENDA_CFG.col
 var COL_OBS = typeof COL_OBS !== 'undefined' ? COL_OBS : AGENDA_CFG.col.obs;
 
 function getAgendaSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getCodexSpreadsheet_();
   var sh = getSheetByPossibleNames_(ss, AGENDA_CFG.abaNomes);
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
   ensureAgendaDestinoLabColumns_(sh);
@@ -3645,7 +5049,16 @@ function getAgendaSheet_() {
   return sh;
 }
 
+function getAgendaSheetForRead_() {
+  var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), AGENDA_CFG.abaNomes);
+  if (!sh) throw new Error('Aba Agenda nao encontrada.');
+  ensureAgendaDestinoLabColumns_(sh);
+  return sh;
+}
+
 function ensureAgendaDestinoLabColumns_(sh) {
+  var schemaCacheKey = 'AgendaSchemaEnsured:v3';
+  if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
     sh.insertColumnsAfter(sh.getMaxColumns(), AGENDA_CFG.lastCol - sh.getMaxColumns());
   }
@@ -3659,7 +5072,11 @@ function ensureAgendaDestinoLabColumns_(sh) {
     { col: AGENDA_CFG.idx.c3.matBio + 1, label: 'Material biológico estruturado III' },
     { col: AGENDA_CFG.idx.cb.matBio + 1, label: 'Material biológico estruturado Backup' },
     { col: AGENDA_CFG.col.reqStatus, label: 'Status_Requisicao' },
-    { col: AGENDA_CFG.col.monitorName, label: 'Monitor_Name' }
+    { col: AGENDA_CFG.col.monitorName, label: 'Monitor_Name' },
+    { col: AGENDA_CFG.col.poloTrial, label: 'Polo_Trial_Concluido' },
+    { col: AGENDA_CFG.col.ecrf, label: 'eCRF_Concluida' },
+    { col: AGENDA_CFG.col.salaMonitoria, label: 'Sala_Monitoria' },
+    { col: AGENDA_CFG.col.carroRequerido, label: 'Carro_Requerido' }
   ];
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
@@ -3670,6 +5087,7 @@ function ensureAgendaDestinoLabColumns_(sh) {
       // A coluna ja existe; nesse caso seguimos sem interromper o salvamento da Agenda.
     }
   });
+  codexCachePut_(schemaCacheKey, true, 21600);
 }
 
 function getAgendaEventTypes_() {
@@ -3677,7 +5095,15 @@ function getAgendaEventTypes_() {
     ['Agenda'],
     ['Tipo de evento', 'Tipos de evento'],
     ['Visita', 'Monitoria', 'Envio de amostras', 'Exame de imagem',
-     'Exames laboratoriais', 'Feriado', 'SIV', 'Close-out', 'Reuniao', 'Auditoria']
+     'Exames laboratoriais', 'Contato telefônico', 'Feriado', 'SIV', 'Close-out', 'Reuniao', 'Auditoria']
+  );
+}
+
+function getAgendaMonitoriaSalas_() {
+  return getConfigAppValuesByKeys_(
+    ['Agenda'],
+    ['Sala de monitoria', 'Salas de monitoria', 'Local da monitoria'],
+    []
   );
 }
 
@@ -3697,12 +5123,117 @@ function getAgendaLaboratorios_() {
   );
 }
 
+function getAgendaCourierRows_() {
+  if (CODEX_AGENDA_COURIER_ROWS_CACHE_) return CODEX_AGENDA_COURIER_ROWS_CACHE_;
+  var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), ['Courier', 'Couriers']);
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (!sh || lastRow < 2) {
+    CODEX_AGENDA_COURIER_ROWS_CACHE_ = [];
+    return CODEX_AGENDA_COURIER_ROWS_CACHE_;
+  }
+  var lastCol = Math.max(sh.getLastColumn(), COURIER_HEADERS_.length || 11);
+  var headers = sh.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function(h) {
+    return normText_(h);
+  });
+  function headerValue(row, aliases) {
+    aliases = aliases || [];
+    for (var i = 0; i < aliases.length; i++) {
+      var idx = headers.indexOf(normText_(aliases[i]));
+      if (idx >= 0) return String(row[idx] || '').trim();
+    }
+    return '';
+  }
+  var values = sh.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+  var out = [];
+  values.forEach(function(r) {
+    var courier = String(r[1] || '').trim();
+    if (!courier) return;
+    out.push({
+      id: String(r[0] || '').trim(),
+      nome: courier,
+      courier: courier,
+      empresa1: String(r[2] || '').trim(),
+      cnpj1: String(r[3] || '').trim(),
+      telefone1: String(r[4] || '').trim(),
+      fax1: String(r[5] || '').trim(),
+      empresa2: String(r[6] || '').trim(),
+      cnpj2: String(r[7] || '').trim(),
+      telefone2: String(r[8] || '').trim(),
+      fax2: String(r[9] || '').trim(),
+      conteudoDeclaracao: String(r[10] || '').trim(),
+      email: headerValue(r, ['E-mail', 'Email', 'Destinatarios', 'Destinatários', 'E-mails', 'Emails']),
+      emailAmbiente: headerValue(r, ['E-mail ambiente', 'Email ambiente', 'Destinatarios ambiente', 'Destinatários ambiente']),
+      emailCongelado: headerValue(r, ['E-mail congelado', 'Email congelado', 'Destinatarios congelado', 'Destinatários congelado']),
+      monitorConfirmacao: headerValue(r, ['Monitorar confirmação', 'Monitorar confirmacao', 'Monitor confirmacao', 'Monitorar e-mail confirmação']),
+      emailConfirmacao: headerValue(r, ['E-mail confirmação', 'Email confirmação', 'E-mail confirmacao', 'Email confirmacao', 'Remetente confirmação', 'Remetente confirmacao']),
+      textoConfirmacao: headerValue(r, ['Texto confirmação', 'Texto confirmacao', 'Chave confirmação', 'Chave confirmacao']),
+      statusConfirmacao: headerValue(r, ['Status confirmação', 'Status confirmacao', 'Status ao confirmar'])
+    });
+  });
+  CODEX_AGENDA_COURIER_ROWS_CACHE_ = out;
+  return CODEX_AGENDA_COURIER_ROWS_CACHE_;
+}
+
+function agendaCourierDefaultConfig_(nome) {
+  var n = normText_(nome);
+  return {
+    nome: nome,
+    unidade: n.indexOf('dhl') >= 0 ? 'L' : 'mL',
+    conversionRequired: n.indexOf('dhl') >= 0
+  };
+}
+
 function getAgendaCouriers_() {
+  var courierRows = getAgendaCourierRows_();
+  if (courierRows.length) {
+    return courierRows.map(function(r) { return r.nome; });
+  }
   return getConfigAppValuesByKeys_(
     ['Agenda', 'Logistica', 'Log\u00EDstica'],
     ['Courier', 'Couriers', 'Courier agenda', 'Nome do courier'],
     ['Marken', 'OCASA', 'DHL']
   );
+}
+
+function getAgendaCourierConfigs_() {
+  var out = {};
+  var courierRows = getAgendaCourierRows_();
+  if (courierRows.length) {
+    courierRows.forEach(function(row) {
+      var key = normText_(row.nome);
+      out[key] = agendaCourierDefaultConfig_(row.nome);
+      Object.keys(row).forEach(function(k) {
+        out[key][k] = row[k];
+      });
+    });
+  } else {
+    getAgendaCouriers_().forEach(function(nome) {
+      out[normText_(nome)] = agendaCourierDefaultConfig_(nome);
+    });
+  }
+
+  Object.keys(out).forEach(function(key) {
+    if (key.indexOf('dhl') >= 0) {
+      out[key].unidade = 'L';
+      out[key].conversionRequired = true;
+    }
+  });
+  try {
+    readConfigAppRows_().forEach(function(r) {
+      var grupoOk = ['agenda', 'logistica'].indexOf(normText_(r.grupo)) > -1;
+      var chaveOk = ['courier', 'couriers', 'courier agenda', 'nome do courier'].indexOf(normText_(r.chave)) > -1;
+      if (!grupoOk || !chaveOk || !r.valor) return;
+      var ativo = normText_(r.ativo || 'Sim');
+      if (ativo === 'nao' || ativo === 'false' || ativo === '0' || ativo === 'inativo') return;
+      var key = normText_(r.valor);
+      if (!out[key]) out[key] = agendaCourierDefaultConfig_(r.valor);
+      var obs = String(r.observacao || '');
+      var m = obs.match(/(?:unidade|unit)\s*[:=]\s*(L|mL)\b/i);
+      if (m) out[key].unidade = String(m[1]).toUpperCase() === 'L' ? 'L' : 'mL';
+      out[key].conversionRequired = out[key].unidade === 'L';
+    });
+  } catch(e) {}
+  return out;
 }
 
 function getAgendaTemperaturas_() {
@@ -3717,7 +5248,7 @@ function getAgendaCourierStatuses_() {
   return getConfigAppValuesByKeys_(
     ['Agenda', 'Logistica', 'Log\u00EDstica'],
     ['Status courier', 'Status do courier', 'Courier status'],
-    ['N\u00E3o Agendado', 'Pendente', 'Agendado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado']
+    ['N\u00E3o Agendado', 'Pendente', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado']
   );
 }
 
@@ -3742,33 +5273,30 @@ function getAgendaProcedimentoChips_() {
 }
 
 function getAgendaLabDestinos_() {
-  return getConfigAppValuesByKeys_(
-    ['Agenda', 'Logistica', 'Log\u00EDstica'],
-    ['Laboratório destino', 'Laboratorio destino', 'Laboratório de destino', 'Laboratorio de destino', 'Lab destino', 'Laboratório central destino', 'Laboratorio central destino'],
-    [
-      'IQVIA (VALENCIA)',
-      'IQVIA (MARIETTA)',
-      'LABCORP (INDIANAPOLIS)',
-      'LABCORP (TORRANCE)',
-      'DASA (BARUERI)',
-      'HEMATOGENIX (TINLEY PARK)',
-      'PPD GLOBAL (HIGHLAND HEIGHTS)',
-      'ICON (FARMINGDALE)',
-      'CELLCARTA (NAPERVILLE)',
-      'CENTOGENE (ROSTOCK)',
-      'FOUNDATION MEDICINE (BOSTON)',
-      'EUROFINS (LANCASTER)',
-      'EUROFINS (LEOLA)',
-      'GBA CENTRAL LAB (SCHWENTINENTAL)'
-    ]
-  );
+  var seen = {};
+  try {
+    return getLabCentral().map(function(lab) {
+      return String(lab.nomeAbreviado || '').trim();
+    }).filter(function(nome) {
+      var key = normText_(nome);
+      if (!nome || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    }).sort(function(a, b) {
+      return a.localeCompare(b);
+    });
+  } catch (e) {
+    Logger.log('getAgendaLabDestinos_: nao foi possivel carregar LabCentral: ' + e.message);
+    return [];
+  }
 }
 
 function getAgendaKitsEstoque_() {
   try {
+    if (CODEX_AGENDA_KITS_ESTOQUE_CACHE_) return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
     var itens = getEstoque() || [];
     var seen = {};
-    return itens.filter(function(it) {
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = itens.filter(function(it) {
       var tipo = normText_(it.tipoItem || it.tipo || '');
       var desc = normText_(it.descricao || '');
       var saldo = Number(it.qtde);
@@ -3797,25 +5325,23 @@ function getAgendaKitsEstoque_() {
       seen[key] = 1;
       return true;
     }).sort(function(a, b) { return a.label.localeCompare(b.label); });
+    return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
   } catch(e) {
     return [];
   }
 }
 
-function abrirNovoEventoComCalendario() {
-  var html = HtmlService.createHtmlOutputFromFile('NovoEventoAgenda')
-    .setWidth(720)
-    .setHeight(650);
-  SpreadsheetApp.getUi().showModalDialog(html, ' ');
-}
-
 function getDadosFormularioAgenda() {
+  var cacheKey = 'AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  var cached = codexCacheGet_(cacheKey);
+  if (cached) return cached;
   ensureProjetoStatusConfig_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   function listaColB(nomesAba) {
     var sh = getSheetByPossibleNames_(ss, nomesAba);
-    if (!sh || sh.getLastRow() < 2) return [];
-    return sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues()
+    var lastRow = sh ? sh.getLastRow() : 0;
+    if (!sh || lastRow < 2) return [];
+    return sh.getRange(2, 2, lastRow - 1, 1).getValues()
       .map(function(r) { return String(r[0] || '').trim(); })
       .filter(Boolean)
       .sort();
@@ -3824,23 +5350,28 @@ function getDadosFormularioAgenda() {
   var hojeIso = hoje.getFullYear() + '-' +
     ('0' + (hoje.getMonth() + 1)).slice(-2) + '-' +
     ('0' + hoje.getDate()).slice(-2);
-  return {
+  var result = {
     participantes: listaColB(['Participantes']),
     medicos: listaColB(['\uD83E\uDE7A M\u00E9dicos', 'Medicos', 'M\u00E9dicos']),
     prestadores: listaColB(['\uD83C\uDFE2 Prestadores', 'Prestadores']),
     projetos: listaColB(['Projetos']),
     laboratorios: getAgendaLaboratorios_(),
     couriers: getAgendaCouriers_(),
+    courierConfig: getAgendaCourierConfigs_(),
     temperaturas: getAgendaTemperaturas_(),
     statusCourier: getAgendaCourierStatuses_(),
     laboratoriosDestino: getAgendaLabDestinos_(),
     kitsColeta: getAgendaKitsEstoque_(),
     tiposEvento: getAgendaEventTypes_(),
+    salasMonitoria: getAgendaMonitoriaSalas_(),
     status: getAgendaStatuses_(),
     procedimentoChips: getAgendaProcedimentoChips_(),
+    monitores: getMonitores(),
     emailLabAtivo: agendaEmailEnabled_(),
     hojeIso: hojeIso
   };
+  codexCachePut_(cacheKey, result);
+  return result;
 }
 
 function getInfoParticipante(nome) {
@@ -3879,7 +5410,7 @@ function getUltimaVisitaFromMap_(pacienteID, mapa) {
 function getUltimasVisitasPorPacienteId_() {
   var out = {};
   try {
-    var agenda = getAgendaSheet_();
+    var agenda = getAgendaSheetForRead_();
     var lastRow = agenda.getLastRow();
     if (lastRow < 2) return out;
     var vals = agenda.getRange(2, 1, lastRow - 1, Math.max(AGENDA_CFG.lastCol, 11)).getValues();
@@ -3973,45 +5504,235 @@ function getUltimasVisitasParticipantesAgendaMap_() {
 }
 
 function salvarNovoEventoCompleto(dados) {
+  codexAssertCanWrite_('salvarNovoEventoCompleto', 'Agenda', dados && dados.id);
+  return codexWithDocumentLock_('salvarNovoEventoCompleto', function() {
+  dados = dados || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
   var d = _parseDateHora(dados.data, dados.hora);
-  var dCmp = new Date(d);
-  dCmp.setHours(0, 0, 0, 0);
+  var isMonitoria = normText_(dados.tipo) === 'monitoria';
+  if (isMonitoria && !String(dados.salaMonitoria || '').trim()) {
+    return { erro: 'Informe o local (sala) da monitoria.' };
+  }
+  var datasMonitoria = isMonitoria ? agendaDatasPeriodoMonitoria_(dados.data, dados.dataFim) : [d];
   var lastRow = agenda.getLastRow();
   if (lastRow > 1) {
     var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
     for (var i = 0; i < vals.length; i++) {
       var ld = vals[i][AGENDA_CFG.idx.data];
       var lt = normText_(vals[i][AGENDA_CFG.idx.tipo]);
-      if (ld instanceof Date) {
-        var dl = new Date(ld);
+      if (lt !== 'feriado') continue;
+      var dl = parseAgendaDateAny_(ld);
+      if (dl) {
         dl.setHours(0, 0, 0, 0);
-        if (dl.getTime() === dCmp.getTime() && lt === 'feriado') {
-          return { feriado: true, dataFmt: formatarDataSafe(d) };
+        for (var j = 0; j < datasMonitoria.length; j++) {
+          var dCmp = new Date(datasMonitoria[j]);
+          dCmp.setHours(0, 0, 0, 0);
+          if (dl.getTime() === dCmp.getTime()) {
+            return { feriado: true, dataFmt: formatarDataSafe(datasMonitoria[j]) };
+          }
         }
       }
     }
   }
+  if (isMonitoria) {
+    var ids = [];
+    for (var k = 0; k < datasMonitoria.length; k++) {
+      var dadosDia = agendaCloneDados_(dados);
+      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasMonitoria[k], dados.hora), dadosDia, ss);
+      if (resDia && resDia.id) ids.push(resDia.id);
+    }
+    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, emailLabAtivo: agendaEmailEnabled_() };
+  }
   return _gravarLinhaEvento(agenda, d, dados, ss);
+  });
 }
 
 function salvarNovoEventoComFeriado(dados) {
-  return _gravarLinhaEvento(getAgendaSheet_(), _parseDateHora(dados.data, dados.hora), dados, SpreadsheetApp.getActiveSpreadsheet());
+  codexAssertCanWrite_('salvarNovoEventoComFeriado', 'Agenda', dados && dados.id);
+  return codexWithDocumentLock_('salvarNovoEventoComFeriado', function() {
+  dados = dados || {};
+  var agenda = getAgendaSheet_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (normText_(dados.tipo) === 'monitoria') {
+    if (!String(dados.salaMonitoria || '').trim()) {
+      return { erro: 'Informe o local (sala) da monitoria.' };
+    }
+    var datas = agendaDatasPeriodoMonitoria_(dados.data, dados.dataFim);
+    var ids = [];
+    datas.forEach(function(dataDia) {
+      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(dataDia, dados.hora), agendaCloneDados_(dados), ss);
+      if (resDia && resDia.id) ids.push(resDia.id);
+    });
+    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, emailLabAtivo: agendaEmailEnabled_() };
+  }
+  return _gravarLinhaEvento(agenda, _parseDateHora(dados.data, dados.hora), dados, ss);
+  });
+}
+
+function agendaDatasPeriodoMonitoria_(dataInicio, dataFim) {
+  var ini = parseAgendaDateAny_(dataInicio);
+  var fim = parseAgendaDateAny_(dataFim || dataInicio);
+  if (!ini || isNaN(ini.getTime())) throw new Error('Informe a Data de Inicio da monitoria.');
+  if (!fim || isNaN(fim.getTime())) throw new Error('Informe a Data Final da monitoria.');
+  ini.setHours(0, 0, 0, 0);
+  fim.setHours(0, 0, 0, 0);
+  if (fim.getTime() < ini.getTime()) throw new Error('Data Final deve ser igual ou posterior a Data de Inicio.');
+  var out = [];
+  var d = new Date(ini);
+  while (d.getTime() <= fim.getTime()) {
+    out.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+    if (out.length > 370) throw new Error('Periodo de monitoria muito longo. Revise as datas.');
+  }
+  return out;
+}
+
+function agendaDateWithHora_(data, horaStr) {
+  var d = new Date(data);
+  var h = String(horaStr || '00:00').split(':');
+  d.setHours(Number(h[0] || 0), Number(h[1] || 0), 0, 0);
+  return d;
+}
+
+function agendaCloneDados_(dados) {
+  var clone = {};
+  Object.keys(dados || {}).forEach(function(k) {
+    var v = dados[k];
+    clone[k] = v && typeof v === 'object' && !(v instanceof Date) ? JSON.parse(JSON.stringify(v)) : v;
+  });
+  return clone;
+}
+
+function agendaAuditFields_() {
+  var i = AGENDA_CFG.idx;
+  return [
+    { field: 'Data', idx: i.data },
+    { field: 'Horário', idx: i.hora },
+    { field: 'Tipo de evento', idx: i.tipo },
+    { field: 'Status', idx: i.status },
+    { field: 'Participante', idx: i.participante },
+    { field: 'Data de nascimento', idx: i.nasc },
+    { field: 'Número de identificação', idx: i.idParticipante },
+    { field: 'Protocolo', idx: i.projeto },
+    { field: 'Visita', idx: i.visita },
+    { field: 'Médico', idx: i.medico },
+    { field: 'Serviço terceirizado', idx: i.servTerc },
+    { field: 'Laboratório Central', idx: i.labCentral },
+    { field: 'Controle Lab Central', idx: i.controle },
+    { field: 'Kit', idx: i.kit },
+    { field: 'Transporte I - Courier', idx: i.c1.nome },
+    { field: 'Transporte I - Temperatura', idx: i.c1.temp },
+    { field: 'Transporte I - Status', idx: i.c1.status },
+    { field: 'Transporte I - AWB', idx: i.c1.awb },
+    { field: 'Transporte I - Material', idx: i.c1.material },
+    { field: 'Transporte I - Destino', idx: i.c1.destino },
+    { field: 'Transporte II - Courier', idx: i.c2.nome },
+    { field: 'Transporte II - Temperatura', idx: i.c2.temp },
+    { field: 'Transporte II - Status', idx: i.c2.status },
+    { field: 'Transporte II - AWB', idx: i.c2.awb },
+    { field: 'Transporte II - Material', idx: i.c2.material },
+    { field: 'Transporte II - Destino', idx: i.c2.destino },
+    { field: 'Transporte III - Courier', idx: i.c3.nome },
+    { field: 'Transporte III - Temperatura', idx: i.c3.temp },
+    { field: 'Transporte III - Status', idx: i.c3.status },
+    { field: 'Transporte III - AWB', idx: i.c3.awb },
+    { field: 'Transporte III - Material', idx: i.c3.material },
+    { field: 'Transporte III - Destino', idx: i.c3.destino },
+    { field: 'Backup - Courier', idx: i.cb.nome },
+    { field: 'Backup - Status', idx: i.cb.status },
+    { field: 'Backup - Material', idx: i.cb.material },
+    { field: 'Backup - Destino', idx: i.cb.destino },
+    { field: 'Status Requisição', idx: i.reqStatus },
+    { field: 'Monitor', idx: i.monitorName },
+    { field: 'Sala da monitoria', idx: i.salaMonitoria },
+    { field: 'Carro requerido', idx: i.carroRequerido },
+    { field: 'Polo Trial concluído', idx: i.poloTrial },
+    { field: 'eCRF concluída', idx: i.ecrf }
+  ];
+}
+
+function agendaPostVisitValue_(value, previous) {
+  if (value === true || String(value || '').trim() === 'Sim') return previous || new Date();
+  if (String(value || '').trim()) return value;
+  return '';
+}
+
+function agendaBooleanValue_(value) {
+  if (value === true || value === 1) return true;
+  var normalized = normText_(value);
+  return normalized === 'sim' || normalized === 'true' || normalized === '1' ||
+    normalized === 'yes' || normalized === 'on';
+}
+
+function agendaNascimentoFromDados_(dados, rowAnterior) {
+  dados = dados || {};
+  var nascimento = String(dados.nascimento || '').trim();
+  if (nascimento) return nascimento;
+
+  var i = AGENDA_CFG.idx;
+  var participante = String(dados.participante || '').trim();
+  if (rowAnterior && participante && participante === String(rowAnterior[i.participante] || '').trim()) {
+    nascimento = String(rowAnterior[i.nasc] || '').trim();
+    if (nascimento) return nascimento;
+  }
+
+  if (!participante) return '';
+  var info = getInfoParticipante(participante);
+  return info && info.nascimento ? info.nascimento : '';
+}
+
+function agendaIdParticipanteFromDados_(dados, rowAnterior) {
+  dados = dados || {};
+  var participante = String(dados.participante || '').trim();
+  if (!participante) return '';
+  var idInformado = String(dados.idParticipante || '').trim();
+  if (idInformado) return idInformado;
+  var i = AGENDA_CFG.idx;
+  if (rowAnterior && participante === String(rowAnterior[i.participante] || '').trim()) {
+    var idAnterior = String(rowAnterior[i.idParticipante] || '').trim();
+    if (idAnterior) return idAnterior;
+  }
+  var info = getInfoParticipante(participante);
+  return info ? String(info.numId || '').trim() : '';
+}
+
+function agendaAuditChangesFromRows_(oldRow, newRow) {
+  oldRow = oldRow || [];
+  newRow = newRow || [];
+  return agendaAuditFields_().map(function(def) {
+    return {
+      field: def.field,
+      oldValue: oldRow[def.idx],
+      newValue: newRow[def.idx]
+    };
+  }).filter(function(c) {
+    return codexAuditValue_(c.oldValue) !== codexAuditValue_(c.newValue);
+  });
 }
 
 function atualizarAgendaEventoCompleto(dados) {
+  codexAssertCanWrite_('atualizarAgendaEventoCompleto', 'Agenda', dados && dados.id);
+  return codexWithDocumentLock_('atualizarAgendaEventoCompleto', function() {
   dados = dados || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
   var linha = encontrarLinhaPorId(agenda, dados.id);
   if (!linha) throw new Error('Agendamento nao encontrado para edicao.');
+  var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var d = _parseDateHora(dados.data, dados.hora);
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
   var isMonitoria = normText_(tipo) === 'monitoria';
+  dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
   if (isMonitoria) {
+    if (!String(dados.projeto || '').trim()) {
+      return { erro: 'Informe o projeto/protocolo da monitoria.' };
+    }
+    if (!String(dados.salaMonitoria || '').trim()) {
+      return { erro: 'Informe o local (sala) da monitoria.' };
+    }
     dados.participante = '';
     dados.visita = '';
     dados.medico = '';
@@ -4021,77 +5742,144 @@ function atualizarAgendaEventoCompleto(dados) {
     labCentral = 'Não aplicável';
   } else {
     dados.monitorName = '';
+    dados.salaMonitoria = '';
   }
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
-  var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem'];
+  var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem', 'contato telefonico'];
   if (tiposNaoLab.indexOf(normText_(tipo)) > -1) labCentral = 'N\u00E3o aplic\u00E1vel';
+  if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
+    return { erro: 'Informe se haverá Laboratório Central.' };
+  }
   if (normText_(labCentral) === 'sim' && !String(dados.visita || '').trim()) {
     return { erro: 'Para "Laboratorio Central = Sim", informe a Visita.' };
   }
   var dataAnterior = agenda.getRange(linha, AGENDA_CFG.col.data).getValue();
+  var horaNova = formatAgendaHora_(d);
+  var deveOrdenarAgenda =
+    datasAgendaDiferentes_(dataAnterior, d) ||
+    normText_(formatarHoraSafe_(rowAnterior[AGENDA_CFG.idx.hora])) !== normText_(horaNova);
+  var deveVerificarNotificacoes =
+    datasAgendaDiferentes_(dataAnterior, d) ||
+    normText_(rowAnterior[AGENDA_CFG.idx.labCentral]) !== normText_(labCentral) ||
+    normText_(rowAnterior[AGENDA_CFG.idx.status]) !== normText_(status);
 
-  setAgendaDateValue_(agenda.getRange(linha, AGENDA_CFG.col.data), d);
-  agenda.getRange(linha, AGENDA_CFG.col.hora).setValue(formatAgendaHora_(d));
-  agenda.getRange(linha, AGENDA_CFG.col.tipo).setValue(tipo);
-  agenda.getRange(linha, AGENDA_CFG.col.status).setValue(status);
-  agenda.getRange(linha, AGENDA_CFG.col.participante).setValue(dados.participante || '');
-  agenda.getRange(linha, AGENDA_CFG.col.projeto).setValue(dados.projeto || '');
-  agenda.getRange(linha, AGENDA_CFG.col.visita).setValue(dados.visita || '');
-  agenda.getRange(linha, AGENDA_CFG.col.medico).setValue(dados.medico || '');
-  agenda.getRange(linha, AGENDA_CFG.col.procedimentos).setValue(dados.procedimentos || '');
-  agenda.getRange(linha, AGENDA_CFG.col.servTerc).setValue(dados.servTerc || '');
-  agenda.getRange(linha, AGENDA_CFG.col.obs).setValue(dados.obs || '');
-  agenda.getRange(linha, AGENDA_CFG.col.labCentral).setValue(labCentral);
-  agenda.getRange(linha, AGENDA_CFG.col.kit).setValue(dados.kit || '');
-  agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue(dados.statusRequisicao || '');
-  agenda.getRange(linha, AGENDA_CFG.col.monitorName).setValue(dados.monitorName || '');
+  agenda.getRange(linha, AGENDA_CFG.col.data, 1, AGENDA_CFG.col.kit - AGENDA_CFG.col.data + 1).setValues([[
+    formatAgendaDatePt_(d),
+    horaNova,
+    tipo,
+    status,
+    dados.participante || '',
+    agendaNascimentoFromDados_(dados, rowAnterior),
+    agendaIdParticipanteFromDados_(dados, rowAnterior),
+    dados.projeto || '',
+    rowAnterior[AGENDA_CFG.idx.braco] || '',
+    dados.visita || '',
+    dados.medico || '',
+    dados.procedimentos || '',
+    dados.servTerc || '',
+    dados.obs || '',
+    labCentral,
+    rowAnterior[AGENDA_CFG.idx.controle] || '',
+    dados.kit || ''
+  ]]);
+  agenda.getRange(linha, AGENDA_CFG.col.reqStatus, 1, 6).setValues([[
+    dados.statusRequisicao || '',
+    dados.monitorName || '',
+    agendaPostVisitValue_(dados.poloTrialConcluido, rowAnterior[AGENDA_CFG.idx.poloTrial]),
+    agendaPostVisitValue_(dados.ecrfConcluida, rowAnterior[AGENDA_CFG.idx.ecrf]),
+    dados.salaMonitoria || '',
+    dados.carroRequerido
+  ]]);
+  SpreadsheetApp.flush();
+  var carroSalvo = agendaBooleanValue_(agenda.getRange(linha, AGENDA_CFG.col.carroRequerido).getValue());
+  if (carroSalvo !== dados.carroRequerido) {
+    throw new Error('Não foi possível salvar a indicação de carro na Agenda.');
+  }
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
   agendaSetBackupLinha_(agenda, linha, dados.backup);
   agendaSetTransporteExtraLinha_(agenda, linha, dados);
   if (normText_(status) === 'cancelado') aplicarLogicaCancelamento(agenda, linha, status);
-  verificarNotificacoes({ source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() }, dados.id, dataAnterior);
-  if (agenda.getLastRow() > 2) {
+  if (deveVerificarNotificacoes) {
+    verificarNotificacoes(
+      { source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
+      dados.id,
+      dataAnterior,
+      agenda,
+      linha
+    );
+  }
+  var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', dados.id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Alteração de agendamento');
+  if (deveOrdenarAgenda && agenda.getLastRow() > 2) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   SpreadsheetApp.flush();
-  return { ok: true, id: dados.id, atualizado: true };
+  return { ok: true, id: dados.id, atualizado: true, carroRequerido: carroSalvo };
+  });
 }
 
 function cancelarAgendaEvento(id) {
+  codexAssertCanWrite_('cancelarAgendaEvento', 'Agenda', id);
+  return codexWithDocumentLock_('cancelarAgendaEvento', function() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
   var linha = encontrarLinhaPorId(agenda, id);
   if (!linha) throw new Error('Agendamento nao encontrado para cancelamento.');
+  var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   agenda.getRange(linha, AGENDA_CFG.col.status).setValue('Cancelado');
   aplicarLogicaCancelamento(agenda, linha, 'Cancelado');
-  verificarNotificacoes({ source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() }, id, null);
+  verificarNotificacoes(
+    { source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
+    id,
+    null,
+    agenda,
+    linha
+  );
+  var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  codexWriteAuditChanges_('Agenda', 'cancelarAgendaEvento', id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Cancelamento de agendamento');
   SpreadsheetApp.flush();
   return { ok: true, id: id, status: 'Cancelado' };
+  });
 }
 
 function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
+  codexAssertCanWrite_('atualizarStatusRequisicaoAgenda', 'Agenda', agendaId);
+  return codexWithDocumentLock_('atualizarStatusRequisicaoAgenda', function() {
   var agenda = getAgendaSheet_();
   var linha = encontrarLinhaPorId(agenda, agendaId);
   if (!linha) throw new Error('Agendamento nao encontrado para atualizar requisicao.');
   var prestador = String(agenda.getRange(linha, AGENDA_CFG.col.servTerc).getValue() || '').trim();
+  var statusAnterior = agenda.getRange(linha, AGENDA_CFG.col.reqStatus).getValue();
   if (!prestador) {
     agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue('');
+    codexWriteAuditChanges_('Agenda', 'atualizarStatusRequisicaoAgenda', agendaId, [{
+      field: 'Status Requisição',
+      oldValue: statusAnterior,
+      newValue: ''
+    }], 'Prestador terceirizado removido');
     SpreadsheetApp.flush();
     return { ok: true, id: agendaId, statusRequisicao: '', semPrestador: true };
   }
   var valor = '';
   if (enviado) {
-    valor = 'Enviado ' + formatarDataHoraMesCurtoPt_(new Date());
+    valor = 'Requisição Enviada - ' + formatarDataHoraMesCurtoPt_(new Date());
   }
   agenda.getRange(linha, AGENDA_CFG.col.reqStatus).setValue(valor);
+  codexWriteAuditChanges_('Agenda', 'atualizarStatusRequisicaoAgenda', agendaId, [{
+    field: 'Status Requisição',
+    oldValue: statusAnterior,
+    newValue: valor
+  }], 'Atualização de status da requisição');
   SpreadsheetApp.flush();
   return { ok: true, id: agendaId, statusRequisicao: valor };
+  });
 }
 
 function marcarAgendaPassadaComoRealizada() {
+  return codexWithDocumentLock_('marcarAgendaPassadaComoRealizada', function() {
   var agenda = getAgendaSheet_();
   var lastRow = agenda.getLastRow();
   if (lastRow < 2) return { atualizados: 0 };
@@ -4111,6 +5899,7 @@ function marcarAgendaPassadaComoRealizada() {
     }
   });
   return { atualizados: atualizados };
+  });
 }
 
 function instalarGatilhoAgendaRealizadoFimDoDia() {
@@ -4132,7 +5921,14 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
   var isMonitoria = normText_(tipo) === 'monitoria';
+  dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
   if (isMonitoria) {
+    if (!String(dados.projeto || '').trim()) {
+      return { erro: 'Informe o projeto/protocolo da monitoria.' };
+    }
+    if (!String(dados.salaMonitoria || '').trim()) {
+      return { erro: 'Informe o local (sala) da monitoria.' };
+    }
     dados.participante = '';
     dados.visita = '';
     dados.medico = '';
@@ -4142,10 +5938,14 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     labCentral = 'Não aplicável';
   } else {
     dados.monitorName = '';
+    dados.salaMonitoria = '';
   }
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
-  var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem'];
+  var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem', 'contato telefonico'];
   if (tiposNaoLab.indexOf(normText_(tipo)) > -1) labCentral = 'N\u00E3o aplic\u00E1vel';
+  if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
+    return { erro: 'Informe se haverá Laboratório Central.' };
+  }
   if (normText_(labCentral) === 'sim' && !String(dados.visita || '').trim()) {
     return { erro: 'Para "Laboratorio Central = Sim", informe a Visita.' };
   }
@@ -4158,6 +5958,8 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agenda.getRange(linhaNova, AGENDA_CFG.col.tipo).setValue(tipo);
   agenda.getRange(linhaNova, AGENDA_CFG.col.status).setValue(status);
   agenda.getRange(linhaNova, AGENDA_CFG.col.participante).setValue(dados.participante || '');
+  agenda.getRange(linhaNova, AGENDA_CFG.col.nasc).setValue(agendaNascimentoFromDados_(dados));
+  agenda.getRange(linhaNova, AGENDA_CFG.col.idParticipante).setValue(agendaIdParticipanteFromDados_(dados));
   agenda.getRange(linhaNova, AGENDA_CFG.col.projeto).setValue(dados.projeto || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.visita).setValue(dados.visita || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.medico).setValue(dados.medico || '');
@@ -4168,6 +5970,13 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agenda.getRange(linhaNova, AGENDA_CFG.col.kit).setValue(dados.kit || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.reqStatus).setValue(dados.statusRequisicao || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.monitorName).setValue(dados.monitorName || '');
+  agenda.getRange(linhaNova, AGENDA_CFG.col.salaMonitoria).setValue(dados.salaMonitoria || '');
+  agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).setValue(dados.carroRequerido);
+  SpreadsheetApp.flush();
+  var carroSalvo = agendaBooleanValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).getValue());
+  if (carroSalvo !== dados.carroRequerido) {
+    throw new Error('Não foi possível salvar a indicação de carro na Agenda.');
+  }
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c3, dados.courier3);
@@ -4182,40 +5991,62 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agenda.getRange(linhaNova, AGENDA_CFG.col.projeto).setFontWeight('bold');
   if (normText_(status) === 'cancelado') aplicarLogicaCancelamento(agenda, linhaNova, status);
 
-  verificarNotificacoes({ source: ss, range: agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() }, id, null);
+  verificarNotificacoes(
+    { source: ss, range: agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
+    id,
+    null,
+    agenda,
+    linhaNova
+  );
 
   if (agenda.getLastRow() > 2) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   SpreadsheetApp.flush();
-  return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_() };
+  return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };
 }
 
 function agendaSetCourierLinha_(agenda, linha, idx, courier) {
   courier = courier || {};
-  agenda.getRange(linha, idx.nome + 1).setValue(courier.nome || '');
-  agenda.getRange(linha, idx.temp + 1).setValue(courier.temperatura || courier.temp || '');
-  agenda.getRange(linha, idx.status + 1).setValue(courier.status || '');
-  agendaSetAwbValue_(agenda.getRange(linha, idx.awb + 1), courier.awb || '');
-  agenda.getRange(linha, idx.material + 1).setValue(courier.material || '');
-  if (idx.destino !== undefined) agenda.getRange(linha, idx.destino + 1).setValue(courier.destino || courier.laboratorioDestino || '');
-  if (idx.matBio !== undefined) agenda.getRange(linha, idx.matBio + 1).setValue(courier.matBioJson || courier.materialJson || '');
+  var courierNome = courier.nome || courier.courier || '';
+  agenda.getRange(linha, idx.nome + 1, 1, 5).setValues([[
+    courierNome,
+    courier.temperatura || courier.temp || '',
+    courier.status || '',
+    '',
+    courier.material || ''
+  ]]);
+  agendaSetAwbValue_(agenda.getRange(linha, idx.awb + 1), courier.awb || '', courierNome);
 }
 
-function agendaSetAwbValue_(range, awb) {
+function agendaSetAwbValue_(range, awb, courier) {
   awb = String(awb || '').trim();
   if (!awb) {
     range.clearContent();
     return;
   }
-  var url = agendaTrackingUrl_(awb);
-  if (url) range.setFormula('=HYPERLINK("' + url + '"; "' + awb + '")');
-  else range.setValue(awb);
+  var url = agendaTrackingUrl_(awb, courier);
+  if (url) {
+    range.setRichTextValue(
+      SpreadsheetApp.newRichTextValue()
+        .setText(awb)
+        .setLinkUrl(url)
+        .build()
+    );
+  } else {
+    range.setValue(awb);
+  }
+  if (String(range.getDisplayValue() || '').trim() !== awb) {
+    throw new Error('Não foi possível salvar a AWB "' + awb + '" na Agenda.');
+  }
 }
 
-function agendaTrackingUrl_(awb) {
+function agendaTrackingUrl_(awb, courier) {
   awb = String(awb || '').trim();
+  if (agendaIsPinexCourier_(courier)) {
+    return 'https://pinextracking.com.br/#tracking-code';
+  }
   if (/^620X[0-9]{8}$/i.test(awb)) {
     return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(awb);
   }
@@ -4228,14 +6059,444 @@ function agendaTrackingUrl_(awb) {
   return '';
 }
 
+function agendaIsPinexCourier_(courier) {
+  return normText_(courier) === 'pinex';
+}
+
+function monitorarConfirmacoesCourierAgendadas() {
+  var regras = getCourierConfirmationRules_();
+  var ruleKeys = Object.keys(regras);
+  if (!ruleKeys.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhuma regra ativa.' };
+  return codexWithDocumentLock_('monitorarConfirmacoesCourierAgendadas', function() {
+
+  var agenda = getAgendaSheet_();
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return { ok: true, verificados: 0, confirmados: 0 };
+
+  var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
+  var values = range.getValues();
+  var display = range.getDisplayValues();
+  var pendentes = getAgendaCourierAwbsPendentesConfirmacao_(values, display, regras);
+  var pendentesRef = getAgendaCourierRefsPendentesConfirmacao_(values, display, regras);
+  var awbs = Object.keys(pendentes);
+  var refs = Object.keys(pendentesRef);
+  if (!awbs.length && !refs.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhum courier pendente de confirmação.' };
+
+  var confirmados = [];
+  ruleKeys.forEach(function(ruleKey) {
+    var regra = regras[ruleKey];
+    var encontrados = buscarConfirmacoesCourierNoGmail_(regra, pendentes);
+    encontrados.forEach(function(match) {
+      var itens = pendentes[match.awbKey] || [];
+      itens.forEach(function(item) {
+        if (item.ruleKey !== ruleKey || item.confirmado) return;
+        var statusAnterior = agenda.getRange(item.row, item.statusCol).getValue();
+        if (normText_(statusAnterior) !== 'agendado') return;
+        var novoStatus = regra.statusConfirmacao || 'Confirmado';
+        agenda.getRange(item.row, item.statusCol).setValue(novoStatus);
+        item.confirmado = true;
+        confirmados.push({
+          agendaId: item.agendaId,
+          row: item.row,
+          slot: item.slot,
+          awb: item.awb,
+          courier: item.courier,
+          messageId: match.messageId
+        });
+        codexWriteAuditChanges_('Agenda', 'monitorarConfirmacoesCourierAgendadas', item.agendaId || item.awb, [{
+          field: item.slot + ' - Status',
+          oldValue: statusAnterior,
+          newValue: novoStatus
+        }], 'Confirmação automática por e-mail ' + item.courier + ' | AWB ' + item.awb + ' | Gmail message ' + match.messageId);
+      });
+    });
+    var encontradosRef = buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef);
+    encontradosRef.forEach(function(match) {
+      var itensRef = pendentesRef[match.refKey] || [];
+      itensRef.forEach(function(item) {
+        if (item.ruleKey !== ruleKey || item.confirmado) return;
+        var statusAnteriorRef = agenda.getRange(item.row, item.statusCol).getValue();
+        var statusNorm = normText_(statusAnteriorRef);
+        if (['agendado', 'pendente', 'nao agendado', ''].indexOf(statusNorm) === -1) return;
+        var awbExtraida = escolherAwbConfirmacaoCourier_(regra, item, match.awbs);
+        if (!awbExtraida) return;
+        var awbAnterior = agenda.getRange(item.row, item.awbCol).getDisplayValue() || agenda.getRange(item.row, item.awbCol).getValue();
+        var novoStatusRef = regra.statusConfirmacao || 'Confirmado';
+        agendaSetAwbValue_(agenda.getRange(item.row, item.awbCol), awbExtraida, item.courier);
+        agenda.getRange(item.row, item.statusCol).setValue(novoStatusRef);
+        item.confirmado = true;
+        confirmados.push({
+          agendaId: item.agendaId,
+          row: item.row,
+          slot: item.slot,
+          awb: awbExtraida,
+          courier: item.courier,
+          messageId: match.messageId,
+          refInterna: item.refInterna
+        });
+        codexWriteAuditChanges_('Agenda', 'monitorarConfirmacoesCourierAgendadas', item.agendaId || awbExtraida, [{
+          field: item.slot + ' - AWB',
+          oldValue: awbAnterior,
+          newValue: awbExtraida
+        }, {
+          field: item.slot + ' - Status',
+          oldValue: statusAnteriorRef,
+          newValue: novoStatusRef
+        }], 'Confirmação automática por e-mail ' + item.courier + ' | Ref. ' + item.refInterna + ' | AWB ' + awbExtraida + ' | Gmail message ' + match.messageId);
+      });
+    });
+  });
+
+  SpreadsheetApp.flush();
+  return { ok: true, verificados: awbs.length + refs.length, confirmados: confirmados.length, itens: confirmados };
+  });
+}
+
+function diagnosticarMonitorConfirmacoesCourier() {
+  var regras = getCourierConfirmationRules_();
+  var agenda = getAgendaSheet_();
+  var lastRow = agenda.getLastRow();
+  var result = {
+    regras: Object.keys(regras).map(function(k) {
+      return {
+        courier: regras[k].courier,
+        emailConfirmacao: regras[k].emailConfirmacao,
+        textoConfirmacao: regras[k].textoConfirmacao,
+        queries: montarGmailQueriesConfirmacaoCourier_(regras[k])
+      };
+    }),
+    pendentes: [],
+    buscas: []
+  };
+  if (lastRow < 2) {
+    Logger.log(JSON.stringify(result));
+    return result;
+  }
+  var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
+  var pendentes = getAgendaCourierAwbsPendentesConfirmacao_(range.getValues(), range.getDisplayValues(), regras);
+  Object.keys(pendentes).forEach(function(awbKey) {
+    pendentes[awbKey].forEach(function(item) {
+      result.pendentes.push({
+        awb: item.awb,
+        courier: item.courier,
+        agendaId: item.agendaId,
+        row: item.row,
+        slot: item.slot
+      });
+    });
+  });
+  Object.keys(regras).forEach(function(ruleKey) {
+    montarGmailQueriesConfirmacaoCourier_(regras[ruleKey]).forEach(function(query) {
+      var threads = GmailApp.search(query, 0, 20);
+      result.buscas.push({
+        courier: regras[ruleKey].courier,
+        query: query,
+        threads: threads.length
+      });
+    });
+  });
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function getAgendaCourierAwbsPendentesConfirmacao_(values, display, regras) {
+  var out = {};
+  var idx = AGENDA_CFG.idx;
+  var slots = [
+    { key: 'c1', label: 'Transporte I', cfg: idx.c1 },
+    { key: 'c2', label: 'Transporte II', cfg: idx.c2 },
+    { key: 'c3', label: 'Transporte III', cfg: idx.c3 }
+  ];
+  values.forEach(function(row, i) {
+    slots.forEach(function(slot) {
+      var courier = String(row[slot.cfg.nome] || '').trim();
+      var ruleKey = getCourierConfirmationRuleKey_(regras, courier);
+      if (!ruleKey) return;
+      var status = normText_(row[slot.cfg.status]);
+      if (status !== 'agendado') return;
+      var awb = String(display[i][slot.cfg.awb] || row[slot.cfg.awb] || '').trim();
+      var awbKey = normalizarAwbCourier_(awb);
+      if (!awbKey) return;
+      if (!out[awbKey]) out[awbKey] = [];
+      out[awbKey].push({
+        ruleKey: ruleKey,
+        agendaId: String(row[idx.id] || '').trim(),
+        row: i + 2,
+        slot: slot.label,
+        statusCol: slot.cfg.status + 1,
+        courier: courier,
+        awb: awb
+      });
+    });
+  });
+  return out;
+}
+
+function getAgendaCourierRefsPendentesConfirmacao_(values, display, regras) {
+  var out = {};
+  var idx = AGENDA_CFG.idx;
+  var slots = [
+    { key: 'c1', label: 'Transporte I', cfg: idx.c1 },
+    { key: 'c2', label: 'Transporte II', cfg: idx.c2 },
+    { key: 'c3', label: 'Transporte III', cfg: idx.c3 }
+  ];
+  values.forEach(function(row, i) {
+    var agendaId = String(row[idx.id] || '').trim();
+    if (!agendaId) return;
+    var referencias = [];
+    var refInterna = agendaCourierRefInterna_(agendaId);
+    var refInternaKey = normalizarAwbCourier_(refInterna);
+    if (refInternaKey) referencias.push({ key: refInternaKey, valor: refInterna });
+    slots.forEach(function(anchorSlot) {
+      var anchorCourier = String(row[anchorSlot.cfg.nome] || '').trim();
+      var anchorRuleKey = getCourierConfirmationRuleKey_(regras, anchorCourier);
+      var anchorRegra = anchorRuleKey ? regras[anchorRuleKey] : null;
+      if (!anchorRegra || !anchorRegra.extrairAwbPorReferencia) return;
+      var anchorAwb = String(display[i][anchorSlot.cfg.awb] || row[anchorSlot.cfg.awb] || '').trim();
+      var anchorKey = normalizarAwbCourier_(anchorAwb);
+      if (!anchorKey || referencias.some(function(ref) { return ref.key === anchorKey; })) return;
+      referencias.push({ key: anchorKey, valor: anchorAwb });
+    });
+    slots.forEach(function(slot) {
+      var courier = String(row[slot.cfg.nome] || '').trim();
+      var ruleKey = getCourierConfirmationRuleKey_(regras, courier);
+      var regra = ruleKey ? regras[ruleKey] : null;
+      if (!regra || !regra.extrairAwbPorReferencia) return;
+      var status = normText_(row[slot.cfg.status]);
+      if (['agendado', 'pendente', 'nao agendado', ''].indexOf(status) === -1) return;
+      var awb = String(display[i][slot.cfg.awb] || row[slot.cfg.awb] || '').trim();
+      if (normalizarAwbCourier_(awb)) return;
+      var item = {
+        ruleKey: ruleKey,
+        agendaId: agendaId,
+        refInterna: refInterna,
+        row: i + 2,
+        slot: slot.label,
+        statusCol: slot.cfg.status + 1,
+        awbCol: slot.cfg.awb + 1,
+        courier: courier,
+        temperatura: String(row[slot.cfg.temp] || '').trim()
+      };
+      referencias.forEach(function(ref) {
+        if (!out[ref.key]) out[ref.key] = [];
+        out[ref.key].push(item);
+      });
+    });
+  });
+  return out;
+}
+
+function agendaCourierRefInterna_(agendaId) {
+  agendaId = String(agendaId || '').trim();
+  return agendaId ? 'AGD-' + agendaId : '';
+}
+
+function getCourierConfirmationRuleKey_(regras, courier) {
+  var key = normText_(courier);
+  if (!key) return '';
+  if (regras[key]) return key;
+  var keys = Object.keys(regras || {});
+  for (var i = 0; i < keys.length; i++) {
+    if (key.indexOf(keys[i]) >= 0 || keys[i].indexOf(key) >= 0) return keys[i];
+  }
+  return '';
+}
+
+function getCourierConfirmationRules_() {
+  var out = {};
+  getAgendaCourierRows_().forEach(function(c) {
+    var key = normText_(c.nome);
+    if (!key) return;
+    var isMarken = key.indexOf('marken') >= 0;
+    var isOcasa = key.indexOf('ocasa') >= 0;
+    var isDhl = key.indexOf('dhl') >= 0;
+    var ativoRaw = normText_(c.monitorConfirmacao);
+    var ativo = ativoRaw ? ['sim', 's', 'yes', 'true', '1', 'ativo'].indexOf(ativoRaw) >= 0 : (isMarken || isOcasa || isDhl);
+    if (!ativo) return;
+    var email = String(c.emailConfirmacao || '').trim();
+    var texto = String(c.textoConfirmacao || '').trim();
+    if (isMarken) {
+      if (!email) email = 'expobrasil@marken.com';
+      if (!texto) texto = 'Confirmamos o agendamento da retirada conforme informações abaixo.';
+    }
+    if (isOcasa) {
+      if (!email) email = 'ocasa.com';
+      if (!texto) texto = 'Informamos que sua coleta foi devidamente agendada. Solicitamos, por gentileza, que verifique atentamente as informações abaixo:';
+    }
+    if (isDhl) {
+      if (!email) email = 'wmxbrasil@dhl.com';
+      if (!texto) texto = 'Agendamento realizado para';
+    }
+    if (!email || !texto) return;
+    out[key] = {
+      courier: c.nome,
+      emailConfirmacao: email,
+      textoConfirmacao: texto,
+      textosConfirmacao: isDhl
+        ? [texto, 'Agendamento realizado para', 'Coleta programada para']
+        : [texto],
+      statusConfirmacao: String(c.statusConfirmacao || '').trim() || 'Confirmado',
+      extrairAwbPorReferencia: isDhl,
+      diasBusca: 7
+    };
+  });
+  return out;
+}
+
+function textosConfirmacaoCourier_(regra) {
+  regra = regra || {};
+  var textos = Array.isArray(regra.textosConfirmacao)
+    ? regra.textosConfirmacao.slice()
+    : [regra.textoConfirmacao];
+  var out = [];
+  textos.forEach(function(texto) {
+    String(texto || '').split(/\r?\n|\|\|/).forEach(function(parte) {
+      var normalizado = normalizarTextoMonitorCourier_(parte);
+      if (normalizado && out.indexOf(normalizado) === -1) out.push(normalizado);
+    });
+  });
+  return out;
+}
+
+function contemTextoConfirmacaoCourier_(alvo, textos) {
+  if (!textos || !textos.length) return true;
+  return textos.some(function(texto) { return alvo.indexOf(texto) !== -1; });
+}
+
+function buscarConfirmacoesCourierNoGmail_(regra, pendentes) {
+  var out = [];
+  var textosRegra = textosConfirmacaoCourier_(regra);
+  montarGmailQueriesConfirmacaoCourier_(regra).forEach(function(query) {
+    var threads = GmailApp.search(query, 0, 100);
+    threads.forEach(function(thread) {
+      thread.getMessages().forEach(function(msg) {
+        var alvo = normalizarTextoMonitorCourier_([
+          msg.getSubject(),
+          msg.getPlainBody(),
+          msg.getAttachments().map(function(a) { return a.getName(); }).join(' ')
+        ].join(' '));
+        if (!contemTextoConfirmacaoCourier_(alvo, textosRegra)) return;
+        Object.keys(pendentes).forEach(function(awbKey) {
+          if (alvo.indexOf(awbKey.toLowerCase()) === -1) return;
+          out.push({ awbKey: awbKey, messageId: msg.getId(), query: query });
+        });
+      });
+    });
+  });
+  return out;
+}
+
+function buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef) {
+  var out = [];
+  if (!regra.extrairAwbPorReferencia) return out;
+  var textosRegra = textosConfirmacaoCourier_(regra);
+  montarGmailQueriesConfirmacaoCourier_(regra).forEach(function(query) {
+    var threads = GmailApp.search(query, 0, 100);
+    threads.forEach(function(thread) {
+      var partes = [];
+      var lastMessageId = '';
+      thread.getMessages().forEach(function(msg) {
+        lastMessageId = msg.getId();
+        partes.push([
+          msg.getSubject(),
+          msg.getPlainBody(),
+          msg.getAttachments().map(function(a) { return a.getName(); }).join(' ')
+        ].join(' '));
+      });
+      var corpoThread = partes.join(' ');
+      var alvo = normalizarTextoMonitorCourier_(corpoThread);
+      if (!contemTextoConfirmacaoCourier_(alvo, textosRegra)) return;
+      var awbs = extrairAwbsDhlConfirmacao_(corpoThread);
+      Object.keys(pendentesRef).forEach(function(refKey) {
+        if (alvo.indexOf(refKey.toLowerCase()) === -1) return;
+        out.push({ refKey: refKey, messageId: lastMessageId || thread.getId(), query: query, awbs: awbs });
+      });
+    });
+  });
+  return out;
+}
+
+function extrairAwbsDhlConfirmacao_(texto) {
+  var out = { ambiente: '', congelado: '', todos: [] };
+  texto = String(texto || '');
+  var reRotulo = /(ambiente|congelado)\s*(?:w\s*b|awb|wb)?\s*[:#-]?\s*([0-9]{10})/gi;
+  var m;
+  while ((m = reRotulo.exec(texto)) !== null) {
+    var tipo = normText_(m[1]);
+    var awb = String(m[2] || '').trim();
+    if (!awb) continue;
+    if (tipo.indexOf('congel') >= 0 && !out.congelado) out.congelado = awb;
+    else if (tipo.indexOf('ambient') >= 0 && !out.ambiente) out.ambiente = awb;
+    if (out.todos.indexOf(awb) === -1) out.todos.push(awb);
+  }
+  var reNumeros = /\b([0-9]{10})\b/g;
+  while ((m = reNumeros.exec(texto)) !== null) {
+    if (out.todos.indexOf(m[1]) === -1) out.todos.push(m[1]);
+  }
+  return out;
+}
+
+function escolherAwbConfirmacaoCourier_(regra, item, awbs) {
+  awbs = awbs || {};
+  var temp = normText_(item && item.temperatura);
+  if (temp.indexOf('congel') >= 0 && awbs.congelado) return awbs.congelado;
+  if (temp.indexOf('ambient') >= 0 && awbs.ambiente) return awbs.ambiente;
+  if (awbs.todos && awbs.todos.length === 1) return awbs.todos[0];
+  if (temp.indexOf('congel') >= 0) return awbs.congelado || '';
+  if (temp.indexOf('ambient') >= 0) return awbs.ambiente || '';
+  return '';
+}
+
+function montarGmailQueriesConfirmacaoCourier_(regra) {
+  var remetentes = String(regra.emailConfirmacao || '').split(/[;,]/).map(function(v) {
+    return String(v || '').trim();
+  }).filter(Boolean);
+  if (!remetentes.length) remetentes = [String(regra.emailConfirmacao || '').trim()].filter(Boolean);
+  return remetentes.map(function(v) {
+    return 'from:' + v.replace(/\s+/g, '') + ' newer_than:' + (regra.diasBusca || 7) + 'd';
+  });
+}
+
+function normalizarAwbCourier_(awb) {
+  return String(awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function normalizarTextoMonitorCourier_(texto) {
+  return normalizarAwbCourier_(texto).toLowerCase();
+}
+
+function instalarGatilhoMonitorConfirmacaoCouriers() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarConfirmacoesCourierAgendadas') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('monitorarConfirmacoesCourierAgendadas')
+    .timeBased()
+    .everyMinutes(15)
+    .create();
+  return { ok: true, intervaloMinutos: 15 };
+}
+
+function removerGatilhoMonitorConfirmacaoCouriers() {
+  var removidos = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarConfirmacoesCourierAgendadas') {
+      ScriptApp.deleteTrigger(t);
+      removidos++;
+    }
+  });
+  return { ok: true, removidos: removidos };
+}
+
 function agendaSetBackupLinha_(agenda, linha, backup) {
   backup = backup || {};
   var idx = AGENDA_CFG.idx.cb;
-  agenda.getRange(linha, idx.nome + 1).setValue(backup.nome || '');
-  agenda.getRange(linha, idx.status + 1).setValue(backup.status || '');
-  agenda.getRange(linha, idx.material + 1).setValue(backup.material || '');
-  if (idx.destino !== undefined) agenda.getRange(linha, idx.destino + 1).setValue(backup.destino || backup.laboratorioDestino || '');
-  if (idx.matBio !== undefined) agenda.getRange(linha, idx.matBio + 1).setValue(backup.matBioJson || backup.materialJson || '');
+  agenda.getRange(linha, idx.nome + 1, 1, 3).setValues([[
+    backup.nome || '',
+    backup.status || '',
+    backup.material || ''
+  ]]);
 }
 
 function agendaSetTransporteExtraLinha_(agenda, linha, dados) {
@@ -4255,9 +6516,9 @@ function agendaSetTransporteExtraLinha_(agenda, linha, dados) {
     cb.matBioJson || cb.materialJson || ''
   ];
   var startCol = AGENDA_CFG.idx.c1.destino + 1;
-  row.forEach(function(value, offset) {
-    agenda.getRange(linha, startCol + offset).setValue(String(value || ''));
-  });
+  agenda.getRange(linha, startCol, 1, row.length).setValues([row.map(function(value) {
+    return String(value || '');
+  })]);
 }
 
 function columnToLetter_(col) {
@@ -4289,6 +6550,17 @@ function formatAgendaHora_(value) {
   return String(value || '');
 }
 
+function formatAgendaDateTimeSafe_(value) {
+  if (!value) return '';
+  try {
+    var d = value instanceof Date ? value : new Date(value);
+    if (d && !isNaN(d.getTime())) {
+      return Utilities.formatDate(d, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+    }
+  } catch (e) {}
+  return String(value || '');
+}
+
 function setAgendaValueAndFormat_(range, value, format) {
   range.setValue(value);
   try {
@@ -4305,7 +6577,18 @@ function getAgendaEventos(limite) {
   var max = Math.min(Number(limite || 80), lastRow - 1);
   var start = Math.max(2, lastRow - max + 1);
   var vals = sh.getRange(start, 1, lastRow - start + 1, AGENDA_CFG.lastCol).getValues();
-  return vals.map(function(r, i) { return agendaRowToObject_(r, start + i); }).reverse();
+  var idsPorParticipante = {};
+  getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
+    var nome = normText_(r[1]);
+    if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
+  });
+  return vals.map(function(r, i) {
+    var evento = agendaRowToObject_(r, start + i);
+    if (!evento.idParticipante && evento.participante) {
+      evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
+    }
+    return evento;
+  }).reverse();
 }
 
 function agendaRowToObject_(r, rowIndex) {
@@ -4332,8 +6615,14 @@ function agendaRowToObject_(r, rowIndex) {
     labCentral: String(r[i.labCentral] || ''),
     controle: String(r[i.controle] || ''),
     kit: String(r[i.kit] || ''),
-    statusRequisicao: String(r[i.reqStatus] || ''),
+    statusRequisicao: agendaStatusRequisicaoDisplay_(r[i.reqStatus], r[i.obs]),
     monitorName: String(r[i.monitorName] || ''),
+    salaMonitoria: String(r[i.salaMonitoria] || ''),
+    poloTrialConcluido: !!r[i.poloTrial],
+    poloTrialData: formatAgendaDateTimeSafe_(r[i.poloTrial]),
+    ecrfConcluida: !!r[i.ecrf],
+    ecrfData: formatAgendaDateTimeSafe_(r[i.ecrf]),
+    carroRequerido: agendaBooleanValue_(r[i.carroRequerido]),
     courier1: agendaCourierToObject_(r, i.c1),
     courier2: agendaCourierToObject_(r, i.c2),
     courier3: agendaCourierToObject_(r, i.c3),
@@ -4371,9 +6660,13 @@ function agendaEmailEnabled_() {
   return vals.length > 0 && normText_(vals[0]) === 'sim';
 }
 
-function verificarNotificacoes(e, idAtivo, dataAnterior) {
-  var sheet = getAgendaSheet_();
-  var linha = idAtivo ? encontrarLinhaPorId(sheet, idAtivo) : e.range.getRow();
+function verificarNotificacoes(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva) {
+  // Nas rotinas da WebApp, a aba e a linha ja foram localizadas e gravadas.
+  // Reutiliza-las evita reabrir a Agenda, executar migracoes e varrer todos os IDs
+  // novamente dentro da mesma operacao, o que pode provocar falhas transitorias do
+  // servico Planilhas quando o WebApp executa como USER_ACCESSING.
+  var sheet = sheetAtiva || getAgendaSheet_();
+  var linha = Number(linhaAtiva || 0) || (idAtivo ? encontrarLinhaPorId(sheet, idAtivo) : e.range.getRow());
   if (!linha) return;
   var gatilho = normText_(sheet.getRange(linha, AGENDA_CFG.col.labCentral).getValue());
   var status = normText_(sheet.getRange(linha, AGENDA_CFG.col.status).getValue());
@@ -4418,12 +6711,13 @@ function aplicarLogicaCancelamento(sheet, linha, status) {
 function enviarEmailAgendamento(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
+  var webAppUrl = ScriptApp.getService().getUrl();
   var assunto = '[AGENDAMENTO] ' + (dados[i.projeto] || '') + ' - Visita com Envio ao Lab Central';
   var body = gerarHtmlCabecalhoEmail_('Agendamento - Envio de Amostras ao Lab Central', '#2c3e50') +
     '<p>Foi realizado um novo agendamento de visita clínica que requer envio ao laboratório:</p>' +
     gerarTabelaAgendaEmail_(dados, true) +
     '<p>As informações de courier e transporte serão atualizadas na Agenda assim que estiverem disponíveis.</p>' +
-    '<p><a href="' + SpreadsheetApp.getActiveSpreadsheet().getUrl() + '">Clique aqui para abrir a Agenda</a></p>' +
+    '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Responsável', usuario) + '</div>';
   MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
@@ -4431,11 +6725,12 @@ function enviarEmailAgendamento(sheet, linha, usuario) {
 function enviarEmailCancelamento(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
+  var webAppUrl = ScriptApp.getService().getUrl();
   var assunto = '[CANCELAMENTO] ' + (dados[i.projeto] || '') + ' - Visita com Envio ao Lab Central';
   var body = gerarHtmlCabecalhoEmail_('CANCELAMENTO DE VISITA / ENVIO', '#c0392b') +
     '<p>A seguinte visita foi <b>REMOVIDA</b> do fluxo de envio ao Lab Central:</p>' +
     gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers(dados) +
-    '<p><a href="' + SpreadsheetApp.getActiveSpreadsheet().getUrl() + '">Abrir Agenda</a></p>' +
+    '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Cancelado por', usuario) + '</div>';
   MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
@@ -4443,6 +6738,7 @@ function enviarEmailCancelamento(sheet, linha, usuario) {
 function enviarEmailReagendamento(sheet, linha, usuario, dataAnteriorRaw) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
+  var webAppUrl = ScriptApp.getService().getUrl();
   var dataV = formatarDataSafe(dados[i.data]);
   var textoDataAnterior = dataAnteriorRaw
     ? '<p style="margin:0 0 8px 0;"><b>Data anterior:</b> ' + escHtmlServer_(formatarDataSafe(dataAnteriorRaw)) + '</p>'
@@ -4455,7 +6751,7 @@ function enviarEmailReagendamento(sheet, linha, usuario, dataAnteriorRaw) {
     '</div>' +
     '<p>Verifique a necessidade de ajustar o agendamento dos transportes de amostras já existentes:</p>' +
     gerarTabelaAgendaEmail_(dados, true) + gerarHtmlCouriers(dados) +
-    '<p><a href="' + SpreadsheetApp.getActiveSpreadsheet().getUrl() + '">Abrir Agenda</a></p>' +
+    '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Alterado por', usuario) + '</div>';
   MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
@@ -4465,20 +6761,24 @@ function ipsEmailLogoUrl_() {
 }
 
 function gerarHtmlCabecalhoEmail_(titulo, cor) {
-  return '<div style="font-family:Arial;color:#333;">' +
+  return '<div style="font-family:Arial;color:#333;line-height:1.45;">' +
+    '<style>p{margin:0 0 12px 0;} table{margin:12px 0 16px 0;}</style>' +
     '<img src="' + ipsEmailLogoUrl_() + '" style="max-height:60px;margin-bottom:20px;">' +
     '<h2 style="color:' + (cor || '#2c3e50') + ';">' + escHtmlServer_(titulo) + '</h2>';
 }
 
 function gerarTabelaAgendaEmail_(dados, incluirDataNascimento, rotuloData) {
   var i = AGENDA_CFG.idx;
+  var nascimento = incluirDataNascimento ? (formatarDataSafe(dados[i.nasc]) || agendaNascimentoFromDados_({
+    participante: dados[i.participante]
+  })) : '';
   var rows = [
     [rotuloData || 'Data', formatarDataSafe(dados[i.data])],
     ['Tipo de Evento', dados[i.tipo] || ''],
     ['Protocolo', dados[i.projeto] || ''],
     ['Participante', (dados[i.participante] || '') + ' (' + extrairIniciais_(dados[i.participante]) + ')']
   ];
-  if (incluirDataNascimento) rows.push(['Data de Nascimento', formatarDataSafe(dados[i.nasc])]);
+  if (incluirDataNascimento) rows.push(['Data de Nascimento', nascimento]);
   rows.push(
     ['Número de Identificação', dados[i.idParticipante] || ''],
     ['Braço/Grupo', dados[i.braco] || 'N/A'],
@@ -4605,6 +6905,7 @@ function escHtmlServer_(v) {
 }
 
 function excluirMedicamentoRecebido(rowIndex) {
+  codexAssertCanWrite_('excluirMedicamentoRecebido', 'Cadastros', rowIndex);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = getMedicamentosSheet_(ss);
   var row = parseInt(rowIndex, 10);
@@ -4618,9 +6919,70 @@ function excluirMedicamentoRecebido(rowIndex) {
 // ============================================================================
 
 function getConfigApp() {
+  ensureConfigAppDefaultsCached_();
+  return {
+    itens: readConfigAppRows_().filter(function(r) {
+      return !isAgendaLabDestinoConfig_(r);
+    })
+  };
+}
+
+function isAgendaLabDestinoConfig_(row) {
+  return normText_(row && row.grupo) === 'agenda' &&
+    ['laboratorio destino', 'laboratorio de destino', 'lab destino', 'laboratorio central destino'].indexOf(normText_(row && row.chave)) >= 0;
+}
+
+function ensureConfigAppDefaultsCached_() {
+  var cache = null;
+  var key = 'CONFIG_APP_DEFAULTS_ENSURED_V5';
+  try {
+    cache = CacheService.getScriptCache();
+    if (cache.get(key)) return;
+  } catch (e) {
+    cache = null;
+  }
+
   ensureProjetoStatusConfig_();
   ensureReqExamesConfig_();
-  return { itens: readConfigAppRows_() };
+  clearCodexRuntimeCaches_();
+  clearTransporteOptionsCache_();
+
+  if (cache) {
+    try {
+      cache.put(key, '1', 21600);
+    } catch (e2) {}
+  }
+}
+
+function clearConfigAppDefaultsCache_() {
+  codexAssertCanWrite_('clearConfigAppDefaultsCache', 'Sistema', '');
+  clearCodexRuntimeCaches_();
+  clearTransporteOptionsCache_();
+}
+
+function clearTransporteOptionsCache_() {
+  try {
+    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V1');
+    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V2');
+    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V3');
+    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V4');
+    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V5');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V2');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V3');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V4');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V5');
+    CacheService.getScriptCache().remove('TRANSPORTE_PARTICIPANTES_OPTIONS_V1');
+  } catch (e) {}
+  try {
+    var docCache = CacheService.getDocumentCache();
+    if (docCache) {
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V3');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V4');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V5');
+      docCache.remove('TRANSPORTE_PARTICIPANTES_OPTIONS_V1');
+    }
+  } catch (e2) {}
 }
 
 function ensureProjetoStatusConfig_() {
@@ -4630,9 +6992,20 @@ function ensureProjetoStatusConfig_() {
     ['Projetos', 'Status', 'Em andamento', 'Sim', 20, 'Status padrao para projetos ativos'],
     ['Projetos', 'Status', 'Etapa regulatoria', 'Sim', 30, 'Projeto ainda sem inclusao ativa'],
     ['Projetos', 'Status', 'Concluido', 'Sim', 90, 'Projeto encerrado'],
-    ['Agenda', 'Courier', 'Marken', 'Sim', 10, 'Courier disponivel para logistica da Agenda'],
-    ['Agenda', 'Courier', 'OCASA', 'Sim', 20, 'Courier disponivel para logistica da Agenda'],
-    ['Agenda', 'Courier', 'DHL', 'Sim', 30, 'Courier disponivel para logistica da Agenda'],
+    ['Agenda', 'Tipo de evento', 'Visita', 'Sim', 10, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Monitoria', 'Sim', 20, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Envio de amostras', 'Sim', 30, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Exame de imagem', 'Sim', 40, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Exames laboratoriais', 'Sim', 50, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Contato telefônico', 'Sim', 55, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Feriado', 'Sim', 60, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'SIV', 'Sim', 70, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Close-out', 'Sim', 80, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Reuniao', 'Sim', 90, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Tipo de evento', 'Auditoria', 'Sim', 100, 'Tipo selecionavel no formulario de agendamento'],
+    ['Agenda', 'Courier', 'Marken', 'Sim', 10, 'Courier disponivel para logistica da Agenda | Unidade=mL'],
+    ['Agenda', 'Courier', 'OCASA', 'Sim', 20, 'Courier disponivel para logistica da Agenda | Unidade=mL'],
+    ['Agenda', 'Courier', 'DHL', 'Sim', 30, 'Courier disponivel para logistica da Agenda | Unidade=L'],
     ['Agenda', 'Temperatura', 'Ambiente', 'Sim', 10, 'Temperatura para transporte de amostras'],
     ['Agenda', 'Temperatura', 'Refrigerado', 'Sim', 20, 'Temperatura para transporte de amostras'],
     ['Agenda', 'Temperatura', 'Congelado', 'Sim', 30, 'Temperatura para transporte de amostras'],
@@ -4655,24 +7028,9 @@ function ensureProjetoStatusConfig_() {
     ['Agenda', 'Procedimento chip', 'ctDNA', 'Sim', 100, 'Chip rapido do campo Procedimentos'],
     ['Agenda', 'Procedimento chip', 'Lab Central', 'Sim', 110, 'Chip rapido do campo Procedimentos'],
     ['Agenda', 'Procedimento chip', 'Contato telefônico', 'Sim', 120, 'Chip rapido do campo Procedimentos'],
-    ['Agenda', 'Laboratório destino', 'IQVIA (VALENCIA)', 'Sim', 10, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'IQVIA (MARIETTA)', 'Sim', 20, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'LABCORP (INDIANAPOLIS)', 'Sim', 30, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'LABCORP (TORRANCE)', 'Sim', 40, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'DASA (BARUERI)', 'Sim', 50, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'HEMATOGENIX (TINLEY PARK)', 'Sim', 60, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'PPD GLOBAL (HIGHLAND HEIGHTS)', 'Sim', 70, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'ICON (FARMINGDALE)', 'Sim', 80, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'CELLCARTA (NAPERVILLE)', 'Sim', 90, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'CENTOGENE (ROSTOCK)', 'Sim', 100, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'FOUNDATION MEDICINE (BOSTON)', 'Sim', 110, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'EUROFINS (LANCASTER)', 'Sim', 120, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'EUROFINS (LEOLA)', 'Sim', 130, 'Laboratório de destino para transporte de amostras'],
-    ['Agenda', 'Laboratório destino', 'GBA CENTRAL LAB (SCHWENTINENTAL)', 'Sim', 140, 'Laboratório de destino para transporte de amostras']
   ];
-  defaults.forEach(function(row) {
-    ensureConfigAppRow_(sh, row);
-  });
+  defaults.push(['Transporte', 'Janela de envio', '13:00 - 15:00', 'Sim', 10, 'Janela disponivel no menu Janela de envio do Transporte']);
+  ensureConfigAppRows_(sh, defaults);
 }
 
 function ensureConfigAppRow_(sh, row) {
@@ -4692,8 +7050,37 @@ function ensureConfigAppRow_(sh, row) {
   sh.getRange(target, 1, 1, 6).setValues([row]);
 }
 
+function ensureConfigAppRows_(sh, rows) {
+  rows = rows || [];
+  if (!rows.length) return;
+
+  var lastRow = Math.max(sh.getLastRow(), 1);
+  var existingValues = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, 3).getValues() : [];
+  var existing = {};
+  existingValues.forEach(function(r) {
+    var key = normText_(r[0]) + '\u0001' + normText_(r[1]) + '\u0001' + normText_(r[2]);
+    if (key !== '\u0001\u0001') existing[key] = true;
+  });
+
+  var missing = [];
+  rows.forEach(function(row) {
+    var key = normText_(row[0]) + '\u0001' + normText_(row[1]) + '\u0001' + normText_(row[2]);
+    if (existing[key]) return;
+    existing[key] = true;
+    missing.push(row);
+  });
+  if (!missing.length) return;
+
+  var target = 2;
+  var colA = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, 1).getValues() : [];
+  colA.forEach(function(r, idx) {
+    if (String(r[0] || '').trim()) target = idx + 3;
+  });
+  sh.getRange(target, 1, missing.length, 6).setValues(missing);
+}
+
 function getConfigAppSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName('Config_App');
   if (!sh) {
     sh = ss.insertSheet('Config_App');
@@ -4706,6 +7093,7 @@ function getConfigAppSheet_() {
 }
 
 function salvarConfigAppItem(payload) {
+  codexAssertCanWrite_('salvarConfigAppItem', 'Sistema', payload && payload.rowIndex);
   payload = payload || {};
   if (!String(payload.grupo || '').trim()) throw new Error('Informe o grupo.');
   if (!String(payload.chave || '').trim()) throw new Error('Informe a chave.');
@@ -4725,7 +7113,17 @@ function salvarConfigAppItem(payload) {
   ];
 
   if (rowIndex && rowIndex >= 2) {
+    var rowAnterior = sh.getRange(rowIndex, startCol, 1, 6).getValues()[0];
     sh.getRange(rowIndex, startCol, 1, 6).setValues([row]);
+    codexWriteAuditChanges_('Sistema', 'salvarConfigAppItem', row[0] + '/' + row[1], [
+      { field: 'Config_App - Grupo', oldValue: rowAnterior[0], newValue: row[0] },
+      { field: 'Config_App - Chave', oldValue: rowAnterior[1], newValue: row[1] },
+      { field: 'Config_App - Valor', oldValue: rowAnterior[2], newValue: row[2] },
+      { field: 'Config_App - Ativo', oldValue: rowAnterior[3], newValue: row[3] },
+      { field: 'Config_App - Ordem', oldValue: rowAnterior[4], newValue: row[4] },
+      { field: 'Config_App - Observação', oldValue: rowAnterior[5], newValue: row[5] }
+    ], 'Alteração de configuração');
+    clearConfigAppDefaultsCache_();
     return 'Configuração atualizada com sucesso.';
   }
 
@@ -4736,10 +7134,20 @@ function salvarConfigAppItem(payload) {
     if (String(r[0] || '').trim()) target = idx + 3;
   });
   sh.getRange(target, startCol, 1, 6).setValues([row]);
+  codexWriteAuditChanges_('Sistema', 'salvarConfigAppItem', row[0] + '/' + row[1], [
+    { field: 'Config_App - Grupo', oldValue: '', newValue: row[0] },
+    { field: 'Config_App - Chave', oldValue: '', newValue: row[1] },
+    { field: 'Config_App - Valor', oldValue: '', newValue: row[2] },
+    { field: 'Config_App - Ativo', oldValue: '', newValue: row[3] },
+    { field: 'Config_App - Ordem', oldValue: '', newValue: row[4] },
+    { field: 'Config_App - Observação', oldValue: '', newValue: row[5] }
+  ], 'Cadastro de configuração');
+  clearConfigAppDefaultsCache_();
   return 'Configuração cadastrada com sucesso.';
 }
 
 function excluirConfigAppItem(rowIndex, startCol) {
+  codexAssertCanWrite_('excluirConfigAppItem', 'Sistema', rowIndex);
   var sh = getConfigAppSheet_();
   var row = parseInt(rowIndex, 10);
   var col = parseInt(startCol, 10);
@@ -4751,11 +7159,26 @@ function excluirConfigAppItem(rowIndex, startCol) {
     sh.getRange(row, col + 3).setValue('Não');
     var obsCell = sh.getRange(row, col + 5);
     var obs = String(obsCell.getValue() || '').trim();
-    obsCell.setValue(obs ? obs + ' | Excluído pelo usuário' : 'Excluído pelo usuário');
+    var obsNovo = obs ? obs + ' | Excluído pelo usuário' : 'Excluído pelo usuário';
+    obsCell.setValue(obsNovo);
+    codexWriteAuditChanges_('Sistema', 'excluirConfigAppItem', values[0] + '/' + values[1], [
+      { field: 'Config_App - Ativo', oldValue: values[3], newValue: 'Não' },
+      { field: 'Config_App - Observação', oldValue: values[5], newValue: obsNovo }
+    ], 'Desativação de configuração padrão');
+    clearConfigAppDefaultsCache_();
     return 'Configuração desativada com sucesso.';
   }
 
   sh.getRange(row, col, 1, 6).clearContent();
+  codexWriteAuditChanges_('Sistema', 'excluirConfigAppItem', values[0] + '/' + values[1], [
+    { field: 'Config_App - Grupo', oldValue: values[0], newValue: '' },
+    { field: 'Config_App - Chave', oldValue: values[1], newValue: '' },
+    { field: 'Config_App - Valor', oldValue: values[2], newValue: '' },
+    { field: 'Config_App - Ativo', oldValue: values[3], newValue: '' },
+    { field: 'Config_App - Ordem', oldValue: values[4], newValue: '' },
+    { field: 'Config_App - Observação', oldValue: values[5], newValue: '' }
+  ], 'Exclusão de configuração');
+  clearConfigAppDefaultsCache_();
   return 'Configuração excluída com sucesso.';
 }
 
@@ -4773,27 +7196,326 @@ function isConfigAppDefaultSeed_(row) {
 }
 
 function alinharStatusRequisicaoLegadoAgenda_(sh) {
-  if (!sh || sh.getLastRow() < 2) return;
-  var props = PropertiesService.getDocumentProperties();
-  if (props.getProperty('agendaReqStatusLegacyAligned') === '1') return;
+  var cacheKey = 'AgendaLegacyReqAligned:v2';
+  if (codexCacheGet_(cacheKey)) return;
+  if (!sh || sh.getLastRow() < 2) {
+    codexCachePut_(cacheKey, true, 21600);
+    return;
+  }
   var rows = sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
   var updates = [];
   rows.forEach(function(r, idx) {
-    var obs = normText_(r[AGENDA_CFG.idx.obs]);
     var prestador = String(r[AGENDA_CFG.idx.servTerc] || '').trim();
     var atual = String(r[AGENDA_CFG.idx.reqStatus] || '').trim();
-    if (prestador && obs.indexOf('requi') > -1 && obs.indexOf('ok') > -1 && !atual) {
+    if (prestador && agendaObsIndicaRequisicaoOk_(r[AGENDA_CFG.idx.obs]) && !atual) {
       updates.push({ row: idx + 2, value: 'Requisição Enviada' });
     }
   });
   updates.forEach(function(u) {
     sh.getRange(u.row, AGENDA_CFG.col.reqStatus).setValue(u.value);
   });
-  props.setProperty('agendaReqStatusLegacyAligned', '1');
+  codexCachePut_(cacheKey, true, 21600);
+}
+
+function agendaObsIndicaRequisicaoOk_(obs) {
+  obs = normText_(obs);
+  return (obs.indexOf('requi') > -1 || /\breq\b/.test(obs)) &&
+    (obs.indexOf('ok') > -1 || obs.indexOf('enviad') > -1);
+}
+
+function agendaRequisicaoEnviada_(status, obs) {
+  return normText_(status).indexOf('enviado') > -1 || agendaObsIndicaRequisicaoOk_(obs);
+}
+
+function agendaStatusRequisicaoDisplay_(status, obs) {
+  status = String(status || '').trim();
+  if (status) return status;
+  return agendaObsIndicaRequisicaoOk_(obs) ? 'Requisição Enviada' : '';
+}
+
+// ============================================================================
+//  LABORATÓRIOS CENTRAIS
+// ============================================================================
+function getLabCentralSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('LabCentral');
+  var headers = ['ID_Lab', 'Nome abreviado', 'Nome completo', 'Endereço', 'Cidade', 'CEP', 'Telefone', 'Contato', 'País', 'CDC Permit'];
+  if (!sh) {
+    sh = ss.insertSheet('LabCentral');
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+    return sh;
+  }
+  if (sh.getLastColumn() < headers.length) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return sh;
+}
+
+function getLabCentral() {
+  if (CODEX_LAB_CENTRAL_CACHE_) return CODEX_LAB_CENTRAL_CACHE_;
+  var sh = getLabCentralSheet_();
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (!sh || lastRow < 2) {
+    CODEX_LAB_CENTRAL_CACHE_ = [];
+    return CODEX_LAB_CENTRAL_CACHE_;
+  }
+  CODEX_LAB_CENTRAL_CACHE_ = sh.getRange(2, 1, lastRow - 1, 10).getValues()
+    .filter(function(r) { return r[0] || r[1] || r[2]; })
+    .map(function(r) {
+      return {
+        id: String(r[0] || ''),
+        nomeAbreviado: String(r[1] || ''),
+        nomeCompleto: String(r[2] || ''),
+        endereco: String(r[3] || ''),
+        cidade: String(r[4] || ''),
+        cep: String(r[5] || ''),
+        telefone: String(r[6] || ''),
+        contato: String(r[7] || ''),
+        pais: String(r[8] || ''),
+        cdcPermit: String(r[9] || '')
+      };
+    });
+  return CODEX_LAB_CENTRAL_CACHE_;
+}
+
+function gerarNovoIdLabCentral_(sh) {
+  var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function(r) { return String(r[0] || ''); }) : [];
+  var id;
+  do {
+    id = 'LAB-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Math.floor(Math.random() * 900 + 100);
+  } while (ids.indexOf(id) !== -1);
+  return id;
+}
+
+function salvarLabCentral(dados) {
+  codexAssertCanWrite_('salvarLabCentral', 'Sistema', dados && dados.id);
+  dados = dados || {};
+  if (!String(dados.nomeAbreviado || '').trim()) throw new Error('Informe o nome abreviado.');
+  if (!String(dados.nomeCompleto || '').trim()) throw new Error('Informe o nome completo.');
+  var sh = getLabCentralSheet_();
+  var row = [
+    String(dados.id || '').trim(),
+    String(dados.nomeAbreviado || '').trim(),
+    String(dados.nomeCompleto || '').trim(),
+    String(dados.endereco || '').trim(),
+    String(dados.cidade || '').trim(),
+    String(dados.cep || '').trim(),
+    String(dados.telefone || '').trim(),
+    String(dados.contato || '').trim(),
+    String(dados.pais || '').trim(),
+    String(dados.cdcPermit || '').trim()
+  ];
+  if (row[0]) {
+    var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === row[0]) {
+        sh.getRange(i + 2, 1, 1, 10).setValues([row]);
+        limparCacheLabCentral_();
+        return 'Laboratório central atualizado com sucesso.';
+      }
+    }
+    throw new Error('Laboratório central não encontrado para edição.');
+  }
+  row[0] = gerarNovoIdLabCentral_(sh);
+  sh.appendRow(row);
+  limparCacheLabCentral_();
+  return 'Laboratório central cadastrado com sucesso.';
+}
+
+function excluirLabCentral(id) {
+  codexAssertCanWrite_('excluirLabCentral', 'Sistema', id);
+  var sh = getLabCentralSheet_();
+  if (!id || sh.getLastRow() < 2) throw new Error('Laboratório central não encontrado.');
+  var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(id)) {
+      sh.deleteRow(i + 2);
+      limparCacheLabCentral_();
+      return 'ok';
+    }
+  }
+  throw new Error('Laboratório central não encontrado.');
+}
+
+function limparCacheLabCentral_() {
+  CODEX_LAB_CENTRAL_CACHE_ = null;
+  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+  try {
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V2');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V3');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V4');
+    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V5');
+    codexCacheRemove_('AgendaFormData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v4:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v5:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    var docCache = CacheService.getDocumentCache();
+    if (docCache) {
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V3');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V4');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V5');
+    }
+  } catch (e) {}
+}
+
+// ============================================================================
+//  COURIERS
+// ============================================================================
+var COURIER_HEADERS_ = [
+  'ID_Courier',
+  'Courier',
+  'Empresa de Remessa Express/Courier (1)',
+  'CNPJ (1)',
+  'Telefone (1)',
+  'Fax(1)',
+  'Empresa de Remessa Express/Courier (2)',
+  'CNPJ (2)',
+  'Telefone (2)',
+  'Fax (2)',
+  'Conteúdo da Declaração de Transporte',
+  'E-mail',
+  'E-mail ambiente',
+  'E-mail congelado',
+  'Monitorar confirmação',
+  'E-mail confirmação',
+  'Texto confirmação',
+  'Status confirmação'
+];
+
+function getCourierSheet_() {
+  var ss = getCodexSpreadsheet_();
+  var sh = getSheetByPossibleNames_(ss, ['Courier', 'Couriers']);
+  if (!sh) sh = ss.insertSheet('Courier');
+  if (sh.getLastColumn() < COURIER_HEADERS_.length) {
+    sh.getRange(1, 1, 1, COURIER_HEADERS_.length).setValues([COURIER_HEADERS_]);
+  }
+  if (sh.getLastRow() === 0) sh.getRange(1, 1, 1, COURIER_HEADERS_.length).setValues([COURIER_HEADERS_]);
+  try { sh.hideColumns(1); } catch (e) {}
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+function getCouriersCadastro() {
+  garantirIdsCouriers_();
+  return getAgendaCourierRows_();
+}
+
+function garantirIdsCouriers_() {
+  var sh = getCourierSheet_();
+  if (!sh || sh.getLastRow() < 2) return;
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+  var changed = false;
+  var used = {};
+  values.forEach(function(r) {
+    var id = String(r[0] || '').trim();
+    if (id) used[id] = true;
+  });
+  values.forEach(function(r, idx) {
+    if (String(r[0] || '').trim() || !String(r[1] || '').trim()) return;
+    var id;
+    do {
+      id = 'COU-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Math.floor(Math.random() * 900 + 100);
+    } while (used[id]);
+    used[id] = true;
+    values[idx][0] = id;
+    changed = true;
+  });
+  if (changed) {
+    sh.getRange(2, 1, values.length, 2).setValues(values);
+    limparCacheCourier_();
+  }
+}
+
+function gerarNovoIdCourier_(sh) {
+  var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function(r) { return String(r[0] || ''); }) : [];
+  var id;
+  do {
+    id = 'COU-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Math.floor(Math.random() * 900 + 100);
+  } while (ids.indexOf(id) !== -1);
+  return id;
+}
+
+function salvarCourier(dados) {
+  codexAssertCanWrite_('salvarCourier', 'Sistema', dados && dados.id);
+  dados = dados || {};
+  var nome = String(dados.nome || dados.courier || '').trim();
+  if (!nome) throw new Error('Informe o nome da courier.');
+  var monitorConfirmacao = String(dados.monitorConfirmacao || '').trim();
+  if (!monitorConfirmacao && normText_(nome).indexOf('marken') >= 0) monitorConfirmacao = 'Sim';
+  var sh = getCourierSheet_();
+  var row = [
+    String(dados.id || '').trim(),
+    nome,
+    String(dados.empresa1 || '').trim(),
+    String(dados.cnpj1 || '').trim(),
+    String(dados.telefone1 || '').trim(),
+    String(dados.fax1 || '').trim(),
+    String(dados.empresa2 || '').trim(),
+    String(dados.cnpj2 || '').trim(),
+    String(dados.telefone2 || '').trim(),
+    String(dados.fax2 || '').trim(),
+    String(dados.conteudoDeclaracao || '').trim(),
+    String(dados.email || '').trim(),
+    String(dados.emailAmbiente || '').trim(),
+    String(dados.emailCongelado || '').trim(),
+    monitorConfirmacao,
+    String(dados.emailConfirmacao || '').trim(),
+    String(dados.textoConfirmacao || '').trim(),
+    String(dados.statusConfirmacao || '').trim()
+  ];
+  if (row[0]) {
+    var ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === row[0]) {
+        sh.getRange(i + 2, 1, 1, COURIER_HEADERS_.length).setValues([row]);
+        limparCacheCourier_();
+        return 'Courier atualizada com sucesso.';
+      }
+    }
+    throw new Error('Courier não encontrada para edição.');
+  }
+  row[0] = gerarNovoIdCourier_(sh);
+  sh.appendRow(row);
+  limparCacheCourier_();
+  return 'Courier cadastrada com sucesso.';
+}
+
+function excluirCourier(id) {
+  codexAssertCanWrite_('excluirCourier', 'Sistema', id);
+  var sh = getCourierSheet_();
+  if (!id || sh.getLastRow() < 2) throw new Error('Courier não encontrada.');
+  var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(id)) {
+      sh.deleteRow(i + 2);
+      limparCacheCourier_();
+      return 'ok';
+    }
+  }
+  throw new Error('Courier não encontrada.');
+}
+
+function limparCacheCourier_() {
+  clearCodexRuntimeCaches_();
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.remove('TRANSPORTE_OPTIONS_BASE_V3');
+    cache.remove('TRANSPORTE_OPTIONS_BASE_V4');
+    cache.remove('TRANSPORTE_OPTIONS_BASE_V5');
+    var docCache = CacheService.getDocumentCache();
+    if (docCache) {
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V3');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V4');
+      docCache.remove('TRANSPORTE_OPTIONS_BASE_V5');
+    }
+  } catch (e) {}
 }
 
 function getConfigAppDefaultSeeds_() {
-  return [
+  var seeds = [
     ['Projetos', 'Status', 'Recrutamento aberto'],
     ['Projetos', 'Status', 'Em andamento'],
     ['Projetos', 'Status', 'Etapa regulatoria'],
@@ -4807,6 +7529,7 @@ function getConfigAppDefaultSeeds_() {
     ['Agenda', 'Status courier', 'N\u00E3o Agendado'],
     ['Agenda', 'Status courier', 'Pendente'],
     ['Agenda', 'Status courier', 'Agendado'],
+    ['Agenda', 'Status courier', 'Confirmado'],
     ['Agenda', 'Status courier', 'Coletado'],
     ['Agenda', 'Status courier', 'Enviado'],
     ['Agenda', 'Status courier', 'Entregue'],
@@ -4823,19 +7546,7 @@ function getConfigAppDefaultSeeds_() {
     ['Agenda', 'Procedimento chip', 'ctDNA'],
     ['Agenda', 'Procedimento chip', 'Lab Central'],
     ['Agenda', 'Procedimento chip', 'Contato telefônico'],
-    ['Agenda', 'Laboratório destino', 'IQVIA (VALENCIA)'],
-    ['Agenda', 'Laboratório destino', 'IQVIA (MARIETTA)'],
-    ['Agenda', 'Laboratório destino', 'LABCORP (INDIANAPOLIS)'],
-    ['Agenda', 'Laboratório destino', 'LABCORP (TORRANCE)'],
-    ['Agenda', 'Laboratório destino', 'DASA (BARUERI)'],
-    ['Agenda', 'Laboratório destino', 'HEMATOGENIX (TINLEY PARK)'],
-    ['Agenda', 'Laboratório destino', 'PPD GLOBAL (HIGHLAND HEIGHTS)'],
-    ['Agenda', 'Laboratório destino', 'ICON (FARMINGDALE)'],
-    ['Agenda', 'Laboratório destino', 'CELLCARTA (NAPERVILLE)'],
-    ['Agenda', 'Laboratório destino', 'CENTOGENE (ROSTOCK)'],
-    ['Agenda', 'Laboratório destino', 'FOUNDATION MEDICINE (BOSTON)'],
-    ['Agenda', 'Laboratório destino', 'EUROFINS (LANCASTER)'],
-    ['Agenda', 'Laboratório destino', 'EUROFINS (LEOLA)'],
-    ['Agenda', 'Laboratório destino', 'GBA CENTRAL LAB (SCHWENTINENTAL)']
   ];
+  seeds.push(['Transporte', 'Janela de envio', '13:00 - 15:00']);
+  return seeds;
 }
