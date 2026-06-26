@@ -23,135 +23,10 @@ var TITULOS = {
 
 var CURRENT_ACCESS = { ok:false, email:'', name:'', firstName:'', role:'', canWrite:false };
 var CURRENT_PAGE = '';
-var APP_USER_NAVIGATED = false;
-var STATE = window.STATE = window.STATE || {};
-STATE.app = STATE.app || { currentPage: '' };
-STATE.agenda = STATE.agenda || {};
-STATE.estoque = STATE.estoque || {};
-STATE.transporte = STATE.transporte || {};
-var APP_ROUTE = window.APP_ROUTE = window.APP_ROUTE || {};
-APP_ROUTE.pages = TITULOS;
-APP_ROUTE.estoquePages = ['visualizacao', 'itens', 'pedidos', 'descartes', 'movimentacoes', 'relatorios'];
-APP_ROUTE.embeddedModules = {
-  dashboard: function() { return !!window.INDEX_DASHBOARD_ENABLED; },
-  estoque: function() { return !!window.INDEX_ESTOQUE_ENABLED; }
-};
 var AUDIT_LOG_ROWS = [];
 var AUDIT_CHANGES_ROWS = [];
 var AUDIT_VIEW = 'log';
-var AUDIT_PAGE_SIZE = 100;
-var AUDIT_PAGE_OFFSET = { log: 0, changes: 0 };
-var AUDIT_PAGE_META = {
-  log: { total: 0, limit: 100, offset: 0, hasMore: false },
-  changes: { total: 0, limit: 100, offset: 0, hasMore: false }
-};
-var AUDIT_PAGE_CACHE = { log: {}, changes: {} };
-var AUDIT_PREFETCHING = {};
 var USERS_ADMIN_ROWS = [];
-var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
-var _estoqueConfigLoaded = false;
-var APP_UNSAVED_SCOPES = {};
-var APP_UNSAVED_MESSAGE = 'Ha alteracoes nao salvas. Deseja sair mesmo assim?';
-var APP_UNSAVED_ON_CANCEL = null;
-
-function appHasUnsavedChanges() {
-  return Object.keys(APP_UNSAVED_SCOPES).some(function(k) { return !!APP_UNSAVED_SCOPES[k]; });
-}
-
-function appMarkUnsavedChanges(scopeId) {
-  scopeId = scopeId || 'app';
-  APP_UNSAVED_SCOPES[scopeId] = true;
-}
-
-function appClearUnsavedChanges(scopeId) {
-  if (scopeId) delete APP_UNSAVED_SCOPES[scopeId];
-  else APP_UNSAVED_SCOPES = {};
-}
-
-function appOpenUnsavedConfirm(onConfirm, onCancel) {
-  var modal = document.getElementById('confirmUnsaved');
-  var btn = document.getElementById('btnConfirmUnsaved');
-  if (!modal || !btn) {
-    if (window.confirm(APP_UNSAVED_MESSAGE) && typeof onConfirm === 'function') onConfirm();
-    else if (typeof onCancel === 'function') onCancel();
-    return;
-  }
-  APP_UNSAVED_ON_CANCEL = typeof onCancel === 'function' ? onCancel : null;
-  btn.onclick = function() {
-    APP_UNSAVED_ON_CANCEL = null;
-    modal.classList.remove('open');
-    if (typeof onConfirm === 'function') onConfirm();
-  };
-  modal.classList.add('open');
-}
-
-function fecharConfirmUnsaved() {
-  var modal = document.getElementById('confirmUnsaved');
-  if (modal) modal.classList.remove('open');
-  var onCancel = APP_UNSAVED_ON_CANCEL;
-  APP_UNSAVED_ON_CANCEL = null;
-  if (typeof onCancel === 'function') onCancel();
-}
-
-function appConfirmNavigationIfDirty(scopeId, onConfirm, onCancel) {
-  var dirty = scopeId ? !!APP_UNSAVED_SCOPES[scopeId] : appHasUnsavedChanges();
-  if (!dirty) return true;
-  appOpenUnsavedConfirm(onConfirm, onCancel);
-  return false;
-}
-
-function appEditableDirtyScope(target) {
-  if (!target || !target.closest) return '';
-  if (!target.matches('input, textarea, select, [contenteditable="true"]')) return '';
-  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload');
-  return scope ? scope.id : '';
-}
-
-document.addEventListener('input', function(event) {
-  var scopeId = appEditableDirtyScope(event.target);
-  if (scopeId) appMarkUnsavedChanges(scopeId);
-}, true);
-
-document.addEventListener('change', function(event) {
-  var scopeId = appEditableDirtyScope(event.target);
-  if (scopeId) appMarkUnsavedChanges(scopeId);
-}, true);
-
-document.addEventListener('paste', function(event) {
-  var scopeId = appEditableDirtyScope(event.target);
-  if (!scopeId) return;
-  appMarkUnsavedChanges(scopeId);
-  event.stopPropagation();
-}, true);
-
-window.addEventListener('beforeunload', function(event) {
-  if (!appHasUnsavedChanges()) return;
-  event.preventDefault();
-  event.returnValue = '';
-});
-
-function isEmbeddedModuleEnabled(moduleName) {
-  var resolver = APP_ROUTE.embeddedModules && APP_ROUTE.embeddedModules[moduleName];
-  return typeof resolver === 'function' ? !!resolver() : false;
-}
-
-function setCurrentPage(pagina) {
-  CURRENT_PAGE = pagina || 'agenda';
-  STATE.app.currentPage = CURRENT_PAGE;
-  return CURRENT_PAGE;
-}
-
-function getCurrentPage() {
-  return STATE.app.currentPage || CURRENT_PAGE || '';
-}
-
-function getEstoqueRoutePage(fallback) {
-  return (STATE.estoque && STATE.estoque.inlinePagina) || fallback || 'itens';
-}
-
-function getRoutePageConfig(pagina) {
-  return (APP_ROUTE.pages && APP_ROUTE.pages[pagina]) || { label:'Agenda', icon:'calendar_today' };
-}
 
 var ESPS = [
   'Anestesiologia','Cardiologia','Cirurgia Geral','Cirurgia Oncológica',
@@ -217,83 +92,16 @@ function startCodexAppOnce() {
   google.script.run
     .withSuccessHandler(function(data) {
       applyAppBootstrapData(data);
-      abrirPaginaInicialApp();
+      irPara('agenda');
     })
     .withFailureHandler(function(error) {
       handleAppBootstrapFailure(error);
-      abrirPaginaInicialApp();
+      irPara('agenda');
     })
     .getAppBootstrapData();
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);
-
-function abrirPaginaInicialApp() {
-  if (APP_USER_NAVIGATED && getCurrentPage()) return;
-  var pagina = String(window.INDEX_INITIAL_PAGE || 'agenda');
-  if (isEmbeddedModuleEnabled('dashboard')) {
-    irPara('dashboard', { initial: true });
-    return;
-  }
-  if (isEmbeddedModuleEnabled('estoque') && typeof irParaEstoqueApp === 'function') {
-    if (APP_ROUTE.estoquePages.indexOf(pagina) === -1) pagina = 'itens';
-    if (pagina === 'visualizacao' && typeof carregarEstoqueView === 'function') {
-      irPara('estoque-view', { initial: true });
-      var buscaInicial = document.getElementById('evSearch');
-      if (buscaInicial) buscaInicial.value = String(window.INDEX_INITIAL_SEARCH || '');
-    } else irParaEstoqueApp(pagina || 'itens');
-    return;
-  }
-  if (pagina === 'dashboard') {
-    abrirModuloDashboard();
-    return;
-  }
-  irPara(pagina || 'agenda', { initial: true });
-}
-
-function navegarParaRotaWebApp(query) {
-  function navegar(baseUrl) {
-    var destino = String(baseUrl || '') + String(query || '');
-    if (destino) window.top.location.href = destino;
-  }
-  var bootstrapUrl = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.webAppUrl;
-  if (bootstrapUrl) {
-    navegar(bootstrapUrl);
-    return;
-  }
-  google.script.run
-    .withSuccessHandler(navegar)
-    .withFailureHandler(function(e) { snack('Erro ao abrir o módulo: ' + (e && e.message ? e.message : e)); })
-    .getWebAppUrl();
-}
-
-function abrirModuloEstoque(pagina, busca) {
-  pagina = pagina || 'itens';
-  if (isEmbeddedModuleEnabled('estoque')) {
-    if (pagina === 'visualizacao') irPara('estoque-view');
-    else if (typeof irParaEstoqueApp === 'function') irParaEstoqueApp(pagina);
-    return;
-  }
-  var query = '?page=estoque&pagina=' + encodeURIComponent(pagina);
-  if (busca) query += '&busca=' + encodeURIComponent(busca);
-  navegarParaRotaWebApp(query);
-}
-
-function abrirModuloDashboard() {
-  if (isEmbeddedModuleEnabled('dashboard')) {
-    irPara('dashboard');
-    return;
-  }
-  navegarParaRotaWebApp('?page=dashboard');
-}
-
-function abrirModuloPrincipal(pagina) {
-  pagina = pagina || 'agenda';
-  var queryExtra = arguments.length > 1 ? String(arguments[1] || '') : '';
-  var query = pagina === 'agenda' ? '' : '?pagina=' + encodeURIComponent(pagina);
-  if (queryExtra) query += (query ? '&' : '?') + queryExtra.replace(/^\?+|^&+/, '');
-  navegarParaRotaWebApp(query);
-}
 
 function getActiveScrollContainer() {
   var estoqueShell = document.getElementById('estoqueInlineShell');
@@ -309,64 +117,9 @@ function updateScrollTopButton() {
   btn.classList.toggle('show', Number(scroller.scrollTop || 0) > 320);
 }
 
-var DASHBOARD_PENDING_FILTER = String(window.INDEX_DASHBOARD_FILTER || '');
-var DASHBOARD_PENDING_KEYS = String(window.INDEX_DASHBOARD_FILTER_KEYS || '');
-
-function dashboardFilterKeysMap_() {
-  var map = {};
-  String(DASHBOARD_PENDING_KEYS || '').split('|').forEach(function(key) {
-    key = normSelectValue(key || '');
-    if (key) map[key] = true;
-  });
-  return map;
-}
-
-function dashboardProjetoAtivo_(p) {
-  var st = normSelectValue(p && p.status);
-  return st.indexOf('concluido') === -1 && st.indexOf('cancelado') === -1;
-}
-
-function applyDashboardPendingFilter_(pagina) {
-  var filtro = String(DASHBOARD_PENDING_FILTER || '');
-  if (!filtro) return;
-  if (pagina === 'participantes') {
-    if (filtro !== 'participantes' && filtro !== 'participantesAtivos') return;
-    DASHBOARD_PENDING_FILTER = '';
-    DASHBOARD_PENDING_KEYS = '';
-    var searchPart = document.getElementById('searchParticipantes');
-    var statusPart = document.getElementById('filterStatusPar');
-    if (searchPart) searchPart.value = '';
-    if (statusPart) statusPart.value = '';
-    if (filtro === 'participantes') {
-      filtrarParticipantes();
-      return;
-    }
-    renderTabelaPart((_participantes || []).filter(function(p) {
-      var st = normSelectValue(p && p.status);
-      return st === 'ativo' || st === 'em seguimento';
-    }));
-    return;
-  }
-  if (pagina === 'projetos') {
-    if (filtro !== 'projetosAtivos' && filtro !== 'recrutZero') return;
-    DASHBOARD_PENDING_FILTER = '';
-    var keys = dashboardFilterKeysMap_();
-    DASHBOARD_PENDING_KEYS = '';
-    var searchProj = document.getElementById('searchProjetos');
-    if (searchProj) searchProj.value = '';
-    if (filtro === 'projetosAtivos') {
-      renderTabelaProj((_projetos || []).filter(dashboardProjetoAtivo_));
-      return;
-    }
-    renderTabelaProj((_projetos || []).filter(function(p) {
-      return !!(keys[normSelectValue(p && p.nomeAbreviado)] || keys[normSelectValue(p && p.codigo)]);
-    }));
-  }
-}
-
 function getFloatingAddConfig() {
-  var page = getCurrentPage();
-  var estoquePage = page === 'estoque-app' ? getEstoqueRoutePage('itens') : '';
+  var page = CURRENT_PAGE || '';
+  var estoquePage = page === 'estoque-app' ? (_estoqueInlinePagina || 'itens') : '';
   var configs = {
     agenda: { label: 'Novo agendamento', action: function() { toggleAgendaCreate(); } },
     participantes: { label: 'Novo participante', action: function() { abrirFormParticipante(null); } },
@@ -397,7 +150,7 @@ function updateFloatingAddButton() {
   var cfg = getFloatingAddConfig();
   var canWrite = CURRENT_ACCESS && CURRENT_ACCESS.ok && CURRENT_ACCESS.canWrite;
   var isAdmin = CURRENT_ACCESS && CURRENT_ACCESS.role === 'admin';
-  var estoqueReady = getCurrentPage() !== 'estoque-app' || !!(STATE.estoque && STATE.estoque.inlineDados);
+  var estoqueReady = CURRENT_PAGE !== 'estoque-app' || !!_estoqueInlineDados;
   var show = !!cfg && canWrite && (!cfg.adminOnly || isAdmin) && estoqueReady;
   btn.classList.toggle('show', show);
   if (cfg) {
@@ -508,31 +261,9 @@ window.addEventListener('resize', function() {
 
 document.addEventListener('DOMContentLoaded', function() { setMobileNav(false); });
 
-function irPara(pagina, options) {
-  options = options || {};
-  if (!options.initial) APP_USER_NAVIGATED = true;
-  if (!appConfirmNavigationIfDirty(null, function() {
-    appClearUnsavedChanges();
-    irPara(pagina);
-  })) return;
-  if (!isEmbeddedModuleEnabled('dashboard') && pagina === 'dashboard') {
-    abrirModuloDashboard();
-    return;
-  }
-  if (!isEmbeddedModuleEnabled('estoque') && pagina === 'estoque-view') {
-    abrirModuloEstoque('visualizacao');
-    return;
-  }
-  if (isEmbeddedModuleEnabled('dashboard') && pagina !== 'dashboard') {
-    abrirModuloPrincipal(pagina);
-    return;
-  }
-  if (isEmbeddedModuleEnabled('estoque') && pagina !== 'estoque-view') {
-    abrirModuloPrincipal(pagina);
-    return;
-  }
+function irPara(pagina) {
   closeMobileNav();
-  pagina = setCurrentPage(pagina);
+  CURRENT_PAGE = pagina || 'agenda';
   document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('.nav-group-toggle').forEach(function(el) { el.classList.remove('open'); });
   document.querySelectorAll('.nav-group-body').forEach(function(el) { el.classList.remove('open'); });
@@ -548,18 +279,12 @@ function irPara(pagina, options) {
   if (pagina === 'estoque-view') {
     document.getElementById('navEstoqueToggle').classList.add('open');
     document.getElementById('navEstoqueBody').classList.add('open');
-    var navEstVisualizacao = document.getElementById('navEstVisualizacao');
-    if (navEstVisualizacao) navEstVisualizacao.classList.add('active');
-  }
-  if (pagina === 'dashboard') {
-    var navDashboard = document.getElementById('navDashboard');
-    if (navDashboard) navDashboard.classList.add('active');
   }
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
   var pg = document.getElementById('page-' + pagina);
   if (pg) pg.classList.add('active');
   resetAppScrollPosition();
-  var t = getRoutePageConfig(pagina);
+  var t = TITULOS[pagina] || { label:'Agenda', icon:'calendar_today' };
   document.getElementById('topTitle').textContent = t.label;
   document.getElementById('topIcon').textContent  = t.icon;
   if (pagina === 'participantes') carregarParticipantes();
@@ -576,15 +301,7 @@ function irPara(pagina, options) {
   if (pagina === 'pendencias') carregarPendencias(false);
   if (pagina === 'usuarios') carregarUsersAdmin();
   if (pagina === 'audit-log') carregarAuditLog();
-  if (pagina === 'dashboard') {
-    if (typeof carregarDashboard === 'function') {
-      carregarDashboard(false);
-    } else {
-      setTimeout(function() {
-        if (typeof carregarDashboard === 'function') carregarDashboard(false);
-      }, 0);
-    }
-  }
+  if (pagina === 'dashboard') carregarDashboard(false);
   if (pagina === 'requisicao') {
     _rqAgendaOrigemId = '';
     _rqOrigemContext = null;
@@ -638,34 +355,17 @@ function atualizarJanelaTransporteErro(w, message) {
   } catch (e) {}
 }
 
-function transporteModuloQuery(args) {
-  args = args || {};
-  var query = '?page=transporte';
-  if (args.agendaId) query += '&agendaId=' + encodeURIComponent(args.agendaId);
-  if (args.slot) query += '&slot=' + encodeURIComponent(args.slot);
-  return query;
-}
-
-function abrirTransporteModulo(targetWindow, args) {
-  if (!appConfirmNavigationIfDirty(null, function() {
-    appClearUnsavedChanges();
-    abrirTransporteModulo(targetWindow, args);
-  }, function() {
-    atualizarJanelaTransporteErro(targetWindow, 'Abertura do modulo de Transporte cancelada.');
-  })) {
-    return;
-  }
-  var query = transporteModuloQuery(args);
+function abrirTransporteModulo(targetWindow) {
   var bootstrapUrl = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.webAppUrl;
   if (bootstrapUrl) {
-    var url = String(bootstrapUrl) + query;
+    var url = String(bootstrapUrl) + '?page=transporte';
     if (targetWindow && !targetWindow.closed) targetWindow.location.href = url;
     else window.open(url, '_blank');
     return;
   }
   google.script.run
     .withSuccessHandler(function(url) {
-      var targetUrl = String(url || '') + query;
+      var targetUrl = String(url || '') + '?page=transporte';
       if (targetWindow && !targetWindow.closed) targetWindow.location.href = targetUrl;
       else window.open(targetUrl, '_blank');
     })
@@ -800,7 +500,6 @@ var _medicos = [];
 // AUDIT LOG
 // ═══════════════════════════════════════════════════════════════
 function carregarAuditLog() {
-  return carregarAuditLogPaginado();
   var tb = document.getElementById('bodyAuditLog');
   if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
   var limitEl = document.getElementById('auditLimit');
@@ -818,128 +517,14 @@ function carregarAuditLog() {
     .getAuditData(limit);
 }
 
-function carregarAuditLogPaginado() {
-  var limitEl = document.getElementById('auditLimit');
-  if (limitEl && limitEl.dataset.auditPagedInit !== '1') {
-    limitEl.innerHTML =
-      '<option value="100" selected>100 por pagina</option>' +
-      '<option value="200">200 por pagina</option>' +
-      '<option value="500">500 por pagina</option>';
-    limitEl.value = '100';
-    limitEl.dataset.auditPagedInit = '1';
-  }
-  AUDIT_PAGE_SIZE = limitEl ? Number(limitEl.value || 100) : 100;
-  AUDIT_PAGE_OFFSET[AUDIT_VIEW] = 0;
-  AUDIT_PAGE_CACHE[AUDIT_VIEW] = {};
-  carregarAuditPage(AUDIT_VIEW, 0, false);
-}
-
-function auditCacheKey(limit, offset) {
-  return String(limit || AUDIT_PAGE_SIZE) + ':' + String(offset || 0);
-}
-
-function setAuditRows(type, rows) {
-  if (type === 'changes') AUDIT_CHANGES_ROWS = rows || [];
-  else AUDIT_LOG_ROWS = rows || [];
-}
-
-function auditRowsForView(type) {
-  return type === 'changes' ? (AUDIT_CHANGES_ROWS || []) : (AUDIT_LOG_ROWS || []);
-}
-
-function carregarAuditPage(type, offset, fromCacheOnly) {
-  type = type === 'changes' ? 'changes' : 'log';
-  offset = Math.max(0, Number(offset || 0));
-  var limit = AUDIT_PAGE_SIZE || 100;
-  var key = auditCacheKey(limit, offset);
-  var cached = AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key];
-  if (cached) {
-    AUDIT_PAGE_OFFSET[type] = offset;
-    AUDIT_PAGE_META[type] = cached.meta;
-    setAuditRows(type, cached.rows);
-    renderAuditLog();
-    prefetchAuditNextPage(type);
-    return;
-  }
-  if (fromCacheOnly) return;
-  var tb = document.getElementById('bodyAuditLog');
-  var colSpan = type === 'changes' ? 9 : 6;
-  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="' + colSpan + '"><div class="spinner"></div>Carregando...</td></tr>';
-  google.script.run
-    .withSuccessHandler(function(data) {
-      data = data || {};
-      var rows = data.rows || [];
-      var meta = {
-        total: Number(data.total || 0),
-        limit: Number(data.limit || limit),
-        offset: Number(data.offset || offset),
-        hasMore: !!data.hasMore
-      };
-      AUDIT_PAGE_CACHE[type][key] = { rows: rows, meta: meta };
-      AUDIT_PAGE_OFFSET[type] = meta.offset;
-      AUDIT_PAGE_META[type] = meta;
-      setAuditRows(type, rows);
-      renderAuditLog();
-      prefetchAuditNextPage(type);
-    })
-    .withFailureHandler(function(e) {
-      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">Erro: ' + esc(e.message || e) + '</td></tr>';
-    })
-    .getAuditPage(type, limit, offset);
-}
-
-function prefetchAuditNextPage(type) {
-  type = type === 'changes' ? 'changes' : 'log';
-  var meta = AUDIT_PAGE_META[type] || {};
-  if (!meta.hasMore) return;
-  var limit = meta.limit || AUDIT_PAGE_SIZE || 100;
-  var rows = auditRowsForView(type);
-  var nextOffset = (meta.offset || 0) + rows.length;
-  var key = auditCacheKey(limit, nextOffset);
-  var prefetchKey = type + ':' + key;
-  if ((AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key]) || AUDIT_PREFETCHING[prefetchKey]) return;
-  AUDIT_PREFETCHING[prefetchKey] = true;
-  google.script.run
-    .withSuccessHandler(function(data) {
-      data = data || {};
-      AUDIT_PAGE_CACHE[type][key] = {
-        rows: data.rows || [],
-        meta: {
-          total: Number(data.total || 0),
-          limit: Number(data.limit || limit),
-          offset: Number(data.offset || nextOffset),
-          hasMore: !!data.hasMore
-        }
-      };
-      delete AUDIT_PREFETCHING[prefetchKey];
-      renderAuditPager();
-    })
-    .withFailureHandler(function() {
-      delete AUDIT_PREFETCHING[prefetchKey];
-    })
-    .getAuditPage(type, limit, nextOffset);
-}
-
 function setAuditView(view) {
   AUDIT_VIEW = view === 'changes' ? 'changes' : 'log';
-  carregarAuditPage(AUDIT_VIEW, AUDIT_PAGE_OFFSET[AUDIT_VIEW] || 0, false);
-}
-
-function auditNextPage() {
-  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || {};
-  if (!meta.hasMore) return;
-  carregarAuditPage(AUDIT_VIEW, (meta.offset || 0) + auditRowsForView(AUDIT_VIEW).length, false);
-}
-
-function auditPrevPage() {
-  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || {};
-  var limit = meta.limit || AUDIT_PAGE_SIZE || 100;
-  carregarAuditPage(AUDIT_VIEW, Math.max(0, (meta.offset || 0) - limit), false);
+  renderAuditLog();
 }
 
 function renderAuditLog() {
   var isChanges = AUDIT_VIEW === 'changes';
-  var rows = auditRowsForView(AUDIT_VIEW);
+  var rows = isChanges ? (AUDIT_CHANGES_ROWS || []) : (AUDIT_LOG_ROWS || []);
   var qEl = document.getElementById('searchAudit');
   var q = norm(qEl ? qEl.value : '');
   var filtered = rows.filter(function(r) {
@@ -961,11 +546,7 @@ function renderAuditLog() {
   if (tabChanges) tabChanges.classList.toggle('active', isChanges);
   document.getElementById('auditTotal').textContent = rows.length;
   document.getElementById('auditTotalLabel').textContent = isChanges ? 'Alterações carregadas' : 'Registros carregados';
-  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || { total: rows.length, offset: 0, limit: AUDIT_PAGE_SIZE };
-  document.getElementById('auditTotal').textContent = meta.total || rows.length;
-  document.getElementById('auditTotalLabel').textContent = isChanges ? 'Total de alteracoes' : 'Total de registros';
   document.getElementById('auditUsers').textContent = Object.keys(users).length;
-  renderAuditPager();
   document.getElementById('auditModules').textContent = Object.keys(modules).length;
   var head = document.getElementById('headAuditLog');
   var tb = document.getElementById('bodyAuditLog');
@@ -977,7 +558,6 @@ function renderAuditLog() {
   }
   if (!filtered.length) {
     tb.innerHTML = '<tr class="empty-row"><td colspan="' + (isChanges ? 9 : 6) + '">Nenhum registro encontrado.</td></tr>';
-    renderAuditPager();
     return;
   }
   tb.innerHTML = isChanges ? filtered.map(function(r) {
@@ -1007,25 +587,6 @@ function renderAuditLog() {
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURAÇÕES
 // ═══════════════════════════════════════════════════════════════
-function renderAuditPager() {
-  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || {};
-  var rows = auditRowsForView(AUDIT_VIEW);
-  var total = Number(meta.total || rows.length || 0);
-  var offset = Number(meta.offset || 0);
-  var start = total && rows.length ? offset + 1 : 0;
-  var end = total && rows.length ? Math.min(offset + rows.length, total) : 0;
-  var el = document.getElementById('auditPager');
-  if (!el) return;
-  var nextOffset = offset + rows.length;
-  var nextKey = auditCacheKey(meta.limit || AUDIT_PAGE_SIZE || 100, nextOffset);
-  var nextCached = !!(meta.hasMore && AUDIT_PAGE_CACHE[AUDIT_VIEW] && AUDIT_PAGE_CACHE[AUDIT_VIEW][nextKey]);
-  el.innerHTML =
-    '<button type="button" class="audit-page-btn" onclick="auditPrevPage()" ' + (offset <= 0 ? 'disabled' : '') + '><span class="material-symbols-outlined">chevron_left</span></button>' +
-    '<span class="audit-page-info">' + esc(start + '-' + end + ' de ' + total) + '</span>' +
-    '<button type="button" class="audit-page-btn" onclick="auditNextPage()" ' + (!meta.hasMore ? 'disabled' : '') + '><span class="material-symbols-outlined">chevron_right</span></button>' +
-    (meta.hasMore ? '<span class="audit-prefetch">' + (nextCached ? 'Proxima pronta' : 'Preparando proxima') + '</span>' : '');
-}
-
 var _configApp = [];
 
 function carregarConfigApp() {
@@ -1284,10 +845,6 @@ function simNaoChip(v) {
   var txt = v || 'Não';
   var cls = normSimNao(txt) === 'sim' ? 'chip-green' : 'chip-grey';
   return '<span class="chip ' + cls + '">' + esc(txt) + '</span>';
-}
-
-function projetoChip(projeto) {
-  return projeto ? '<span class="chip chip-blue">' + esc(projeto) + '</span>' : '<span style="color:#9aa3b0">—</span>';
 }
 
 function normSelectValue(v) {
@@ -1761,38 +1318,6 @@ function confirmarExcluirMedicamento(rowIndex, descricao) {
 // PARTICIPANTES
 // ═══════════════════════════════════════════════════════════════
 var _participantes = [], _projListPart = [], _selPtProjeto = '', STATUS_PART = [];
-var _participanteConfigLoading = false;
-var _participanteConfigCallbacks = [];
-
-function aplicarParticipanteConfig(cfg) {
-  cfg = cfg || {};
-  STATUS_PART = cfg.status || [];
-  fillSelectOptions('filterStatusPar', STATUS_PART, '', 'Todos os status');
-  fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
-}
-
-function garantirParticipanteConfig(callback) {
-  if (STATUS_PART && STATUS_PART.length) {
-    if (typeof callback === 'function') callback();
-    return;
-  }
-  if (typeof callback === 'function') _participanteConfigCallbacks.push(callback);
-  if (_participanteConfigLoading) return;
-  _participanteConfigLoading = true;
-  google.script.run
-    .withSuccessHandler(function(cfg) {
-      _participanteConfigLoading = false;
-      aplicarParticipanteConfig(cfg || {});
-      var callbacks = _participanteConfigCallbacks.splice(0);
-      callbacks.forEach(function(fn) { if (typeof fn === 'function') fn(); });
-    })
-    .withFailureHandler(function(e) {
-      _participanteConfigLoading = false;
-      _participanteConfigCallbacks = [];
-      snackErro((e && e.message) || 'Nao foi possivel carregar as opcoes do participante.');
-    })
-    .getParticipanteFormConfig();
-}
 
 function carregarParticipantes() {
   document.getElementById('bodyParticipantes').innerHTML =
@@ -1800,7 +1325,9 @@ function carregarParticipantes() {
   google.script.run
     .withSuccessHandler(function(res) {
       var cfg = (res && res.config) || {};
-      aplicarParticipanteConfig(cfg);
+      STATUS_PART = cfg.status || [];
+      fillSelectOptions('filterStatusPar', STATUS_PART, '', 'Todos os status');
+      fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
       renderParticipantes((res && res.data) || []);
     })
     .withFailureHandler(function(e){ snackErro(e.message); })
@@ -1824,7 +1351,6 @@ function renderParticipantes(lista) {
   document.getElementById('parProjetos').textContent = Object.keys(projs).length || '0';
   _projListPart = Object.keys(projs);
   filtrarParticipantes();
-  applyDashboardPendingFilter_('participantes');
 }
 
 function filtrarParticipantes() {
@@ -1920,11 +1446,7 @@ function abrirFormPart(p) {
   }
   ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs']
     .forEach(function(id){ document.getElementById(id).value=''; });
-  if (!STATUS_PART || !STATUS_PART.length) {
-    fillSelectOptions('ptStatus', [], '', 'Carregando opcoes...');
-  } else {
-    fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
-  }
+  fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
   ['errPtNome','errPtId','errPtStatus'].forEach(function(id){
     document.getElementById(id).classList.remove('visible');
   });
@@ -1950,7 +1472,6 @@ function abrirFormPart(p) {
   } else {
     document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
   }
-  atualizarParticipanteIdObrigatorio();
   abrirOverlay('modalParticipante');
 }
 
@@ -1991,33 +1512,14 @@ function abrirReqExamesDoParticipante() {
   aplicarParticipanteNaRequisicao(participante);
 }
 
-function participanteIdOpcionalPorStatus(status) {
-  var st = normSelectValue(status || '');
-  return st === 'pre-triagem' || st === 'falha de pre-triagem';
-}
-
-function atualizarParticipanteIdObrigatorio() {
-  var status = document.getElementById('ptStatus');
-  var input = document.getElementById('ptId');
-  var star = document.getElementById('ptIdRequiredStar');
-  var required = !participanteIdOpcionalPorStatus(status ? status.value : '');
-  if (input) input.required = required;
-  if (star) star.style.display = required ? 'inline' : 'none';
-  if (!required) {
-    limparErro('ptId', 'errPtId');
-  }
-  return required;
-}
-
 function salvarPartApp() {
   var nome=document.getElementById('ptNome').value.trim();
   var idPart=document.getElementById('ptId').value.trim();
   var status=document.getElementById('ptStatus').value;
-  var idObrigatorio=atualizarParticipanteIdObrigatorio();
   var ok=true;
   if(!nome)  { document.getElementById('ptNome').classList.add('invalid');   document.getElementById('errPtNome').classList.add('visible');   ok=false; }
   else       { document.getElementById('ptNome').classList.remove('invalid'); document.getElementById('errPtNome').classList.remove('visible'); }
-  if(idObrigatorio && !idPart){ document.getElementById('ptId').classList.add('invalid');     document.getElementById('errPtId').classList.add('visible');     ok=false; }
+  if(!idPart){ document.getElementById('ptId').classList.add('invalid');     document.getElementById('errPtId').classList.add('visible');     ok=false; }
   else       { document.getElementById('ptId').classList.remove('invalid');  document.getElementById('errPtId').classList.remove('visible');  }
   if(!status){ document.getElementById('ptStatus').classList.add('invalid'); document.getElementById('errPtStatus').classList.add('visible'); ok=false; }
   else       { document.getElementById('ptStatus').classList.remove('invalid'); document.getElementById('errPtStatus').classList.remove('visible'); }
@@ -2053,14 +1555,12 @@ function salvarPartApp() {
 }
 
 function abrirNovoParticipanteAgenda() {
-  garantirParticipanteConfig(function() {
-    abrirFormParticipante(null);
-    var modal = document.getElementById('modalParticipante');
-    if (modal) {
-      modal.dataset.agendaOrigem = '1';
-      modal.style.zIndex = '260';
-    }
-  });
+  abrirFormParticipante(null);
+  var modal = document.getElementById('modalParticipante');
+  if (modal) {
+    modal.dataset.agendaOrigem = '1';
+    modal.style.zIndex = '260';
+  }
 }
 
 function atualizarParticipanteAgendaAposCadastro(nome) {
@@ -2068,24 +1568,9 @@ function atualizarParticipanteAgendaAposCadastro(nome) {
   var veioDaAgenda = modal && modal.dataset.agendaOrigem === '1';
   if (modal) delete modal.dataset.agendaOrigem;
   if (!veioDaAgenda || !_agendaDados || !document.getElementById('agParticipante')) return;
-  var select = document.getElementById('agParticipante');
-  if (select && nome && !Array.prototype.some.call(select.options, function(opt) { return opt.value === nome || opt.text === nome; })) {
-    select.insertAdjacentHTML('beforeend', '<option>' + esc(nome) + '</option>');
-  }
-  if (_agendaDados) {
-    _agendaDados.participantes = (_agendaDados.participantes || []).concat([nome])
-      .filter(function(v, idx, arr) { return v && arr.indexOf(v) === idx; })
-      .sort(function(a, b) { return String(a).localeCompare(String(b)); });
-    if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(_agendaDados);
-  }
-  if (select && nome) {
-    select.value = nome;
-    onAgendaParticipanteChange();
-  }
   google.script.run
     .withSuccessHandler(function(d) {
-      if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(d || _agendaDados || {});
-      else _agendaDados = d || _agendaDados || {};
+      _agendaDados = d || _agendaDados || {};
       preencherAgendaSelect('agParticipante', _agendaDados.participantes || [], '');
       setAgendaSelectValue('agParticipante', nome);
       onAgendaParticipanteChange();
@@ -2095,7 +1580,6 @@ function atualizarParticipanteAgendaAposCadastro(nome) {
       if (el && nome) {
         el.insertAdjacentHTML('beforeend', '<option>' + esc(nome) + '</option>');
         el.value = nome;
-        onAgendaParticipanteChange();
       }
     })
     .getDadosFormularioAgenda();
@@ -2287,15 +1771,7 @@ function confirmarExcluir(id, nome) {
   });
 }
 function abrirOverlay(id)  { document.getElementById(id).classList.add('open'); }
-function fecharOverlay(id) {
-  if (!appConfirmNavigationIfDirty(id, function() {
-    appClearUnsavedChanges(id);
-    fecharOverlay(id);
-  })) return false;
-  document.getElementById(id).classList.remove('open');
-  appClearUnsavedChanges(id);
-  return true;
-}
+function fecharOverlay(id) { document.getElementById(id).classList.remove('open'); }
 function fecharModalSeClicouFora(e,id) { if(e.target.id===id) fecharOverlay(id); }
 function abrirConfirmacaoDestrutiva(opts) {
   opts = opts || {};
@@ -2679,7 +2155,6 @@ function renderProjetos(lista) {
   document.getElementById('projRecrutamentoPct').textContent = 'Meta ' + (metaTotal || '—') + ' | Total ' + participantesTotal + (falhasTotal ? ' | Falhas ' + falhasTotal : '');
   document.getElementById('projConcluidos').textContent = concluidos;
   filtrarProjetos();
-  applyDashboardPendingFilter_('projetos');
 }
 
 function filtrarProjetos() {
@@ -2695,10 +2170,6 @@ function filtrarProjetos() {
         || (p.patrocinador||'').toLowerCase().includes(q)
         || (p.cro||'').toLowerCase().includes(q)
         || (p.centro||'').toLowerCase().includes(q)
-        || (p.tituloCompleto||'').toLowerCase().includes(q)
-        || (p.numeroCE||'').toLowerCase().includes(q)
-        || (p.expedienteCE||'').toLowerCase().includes(q)
-        || (p.dataSiv||'').toLowerCase().includes(q)
         || (p.status||'').toLowerCase().includes(q);
   }) : _projetos;
   renderTabelaProj(f);
@@ -2784,46 +2255,15 @@ function recrutamentoProjetoHtml(p) {
     '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' + metricas + '</div>' +
   '</div>';
 }
-
-function projetoDetailValue(value) {
-  value = String(value || '').trim();
-  return value ? esc(value) : '<span style="color:#9aa3b0">-</span>';
-}
-
-function projetoDetalheHtml(p) {
-  return '<div class="proj-detail-panel">' +
-    '<div class="proj-detail-title">' + projetoDetailValue(p.tituloCompleto) + '</div>' +
-    '<div class="proj-detail-items">' +
-      '<span class="det-item"><span class="material-symbols-outlined">approval</span><span>N&deg; CE: ' + projetoDetailValue(p.numeroCE) + '</span></span>' +
-      '<span class="det-item"><span class="material-symbols-outlined">tag</span><span>N&deg; expediente CE: ' + projetoDetailValue(p.expedienteCE) + '</span></span>' +
-      '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoDetailValue(p.dataSiv) + '</span></span>' +
-    '</div>' +
-  '</div>';
-}
-
-function toggleProjetoDetalhe(ev, id) {
-  if (ev && ev.stopPropagation) ev.stopPropagation();
-  var row = document.getElementById(id);
-  if (!row) return;
-  var open = row.classList.toggle('open');
-  var btn = document.querySelector('[data-proj-detail-target="' + id + '"]');
-  if (btn) {
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    var icon = btn.querySelector('.material-symbols-outlined');
-    if (icon) icon.textContent = open ? 'expand_less' : 'expand_more';
-  }
-}
-
 function renderTabelaProj(lista) {
   var tb = document.getElementById('bodyProjetos');
   if (!lista.length) {
     tb.innerHTML='<tr class="empty-row"><td colspan="9">Nenhum projeto encontrado.</td></tr>';
     return;
   }
-  tb.innerHTML = lista.map(function(p, idx) {
+  tb.innerHTML = lista.map(function(p) {
     var ini  = (p.nomeAbreviado||'?')[0].toUpperCase();
     var sStr = JSON.stringify(p).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    var detailId = 'proj-detail-' + idx;
     var codigoHtml = p.codigo
       ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">'+esc(p.codigo)+'</div>'
       : '';
@@ -2837,8 +2277,8 @@ function renderTabelaProj(lista) {
     var croHtml = p.cro
       ? '<div style="font-size:11px;color:#9aa3b0;margin-top:4px;">'+esc(p.cro)+'</div>'
       : '<div style="font-size:11px;color:#9aa3b0;margin-top:4px;">—</div>';
-    return '<tr class="proj-main">'
-      + '<td><div class="name-cell"><button class="icon-btn proj-toggle" type="button" title="Detalhes do projeto" aria-expanded="false" data-proj-detail-target="' + detailId + '" onclick="toggleProjetoDetalhe(event,\'' + detailId + '\')"><span class="material-symbols-outlined">expand_more</span></button><div class="row-avatar" style="border-radius:8px;">' + ini + '</div>'
+    return '<tr>'
+      + '<td><div class="name-cell"><div class="row-avatar" style="border-radius:8px;">' + ini + '</div>'
       + '<div><div class="row-name">' + esc(p.nomeAbreviado||'—') + '</div>'
       + codigoHtml + '</div></div></td>'
       + '<td>' + (p.fase ? chipFase(p.fase) : '—') + '</td>'
@@ -2854,8 +2294,7 @@ function renderTabelaProj(lista) {
       + '<span class="material-symbols-outlined">edit</span></button>'
       + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirProj("' + esc(p.id) + '","' + esc(p.nomeAbreviado||'') + '")\'>'
       + '<span class="material-symbols-outlined">delete</span></button>'
-      + '</div></td></tr>'
-      + '<tr class="proj-detail" id="' + detailId + '"><td colspan="9">' + projetoDetalheHtml(p) + '</td></tr>';
+      + '</div></td></tr>';
   }).join('');
 }
 
@@ -3203,15 +2642,11 @@ function salvarMonitorApp() {
 }
 
 function atualizarAgendaMonitoresAposCadastro(nomePreferido) {
-  if (!_agendaDados) {
-    if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState({});
-    else _agendaDados = {};
-  }
+  if (!_agendaDados) _agendaDados = {};
   google.script.run
     .withSuccessHandler(function(res) {
       _agendaDados.monitores = (res && res.data) || [];
       if (res && res.projetos) _agendaDados.projetos = res.projetos;
-      if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(_agendaDados);
       preencherAgendaMonitoresSelects(true);
       if (nomePreferido) {
         var m1 = document.getElementById('agMonitor1');
@@ -3403,37 +2838,12 @@ function carregarReqPreloadProjeto(projeto) {
       if (!exames.length) return;
       var atuais = Array.from(document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input'))
         .map(function(i){ return i.value.trim(); }).filter(Boolean);
-      if (atuais.length) {
-        abrirConfirmReqPreload(projeto, atuais.length, exames.length, function() {
-          preencherReqExames(exames);
-          snack('Exames padrao do projeto carregados.');
-        });
-        return;
-      }
+      if (atuais.length && !confirm('Substituir os exames atuais pelo preload do projeto ' + projeto + '?')) return;
       preencherReqExames(exames);
       snack('Exames padrao do projeto carregados.');
     })
     .withFailureHandler(function(e) { snackErro(e.message || e); })
     .getReqExamesPreloadProjeto(projeto);
-}
-
-function abrirConfirmReqPreload(projeto, atuais, novos, onConfirm) {
-  var modal = document.getElementById('confirmReqPreload');
-  var msg = document.getElementById('confirmReqPreloadMsg');
-  var btn = document.getElementById('btnConfirmReqPreload');
-  if (!modal || !msg || !btn) {
-    if (typeof onConfirm === 'function') onConfirm();
-    return;
-  }
-  msg.innerHTML =
-    'Este participante/projeto possui uma lista padr&atilde;o de exames cadastrada para <strong>' + esc(projeto || '') + '</strong>.' +
-    '<br><br>Se continuar, os ' + esc(atuais || 0) + ' exame(s) j&aacute; digitados nesta requisi&ccedil;&atilde;o ser&atilde;o removidos e substitu&iacute;dos pelos ' + esc(novos || 0) + ' exame(s) padr&atilde;o do projeto.' +
-    '<br><br>Use esta op&ccedil;&atilde;o apenas quando quiser iniciar a requisi&ccedil;&atilde;o a partir do padr&atilde;o do projeto.';
-  btn.onclick = function() {
-    fecharOverlay('confirmReqPreload');
-    if (typeof onConfirm === 'function') onConfirm();
-  };
-  abrirOverlay('confirmReqPreload');
 }
 
 function preencherReqExames(exames) {
@@ -3462,8 +2872,6 @@ function examesAtuaisRequisicao() {
     .slice(0, 40);
 }
 
-var _reqPreloadEditorHash = '';
-
 function abrirReqPreloadModal() {
   var projeto = getProjetoRequisicaoAtual();
   if (!projeto) {
@@ -3478,12 +2886,10 @@ function abrirReqPreloadModal() {
   google.script.run
     .withSuccessHandler(function(data) {
       var exames = data && data.exames ? data.exames : [];
-      _reqPreloadEditorHash = data && data.hash ? data.hash : '';
       document.getElementById('reqPreloadExames').value = exames.join('\n');
       if (status) status.innerHTML = '';
     })
     .withFailureHandler(function(e) {
-      _reqPreloadEditorHash = '';
       if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(e.message || e) + '</span>';
     })
     .getReqExamesPreloadProjetoEditor(projeto);
@@ -3519,7 +2925,6 @@ function salvarReqPreloadProjeto() {
       btn.disabled = false;
       if (status) status.innerHTML = '';
       preencherReqExames((res && res.exames) || exames);
-      appClearUnsavedChanges('modalReqPreload');
       fecharOverlay('modalReqPreload');
       snack((res && res.message) || 'Exames padrão salvos.');
     })
@@ -3527,7 +2932,7 @@ function salvarReqPreloadProjeto() {
       btn.disabled = false;
       if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(e.message || e) + '</span>';
     })
-    .salvarReqExamesPreloadProjeto(projeto, exames, _reqPreloadEditorHash);
+    .salvarReqExamesPreloadProjeto(projeto, exames);
 }
 
 function limparRequisicaoForm() {
@@ -3665,22 +3070,6 @@ function getExames() {
 }
 
 // ── Geração do PDF ────────────────────────────────────────────────────────
-function requisicaoDateOnlyFromIso(value) {
-  var parts = String(value || '').split('-');
-  if (parts.length !== 3) return null;
-  var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function requisicaoIsPastDate(value) {
-  var d = requisicaoDateOnlyFromIso(value);
-  if (!d) return false;
-  var hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime() < hoje.getTime();
-}
-
 function gerarRequisicao() {
   var paciente = document.getElementById('rqPaciente').value.trim();
   var localEl  = document.getElementById('rqLocalExame') || document.getElementById('rqPrestador');
@@ -3695,10 +3084,6 @@ function gerarRequisicao() {
   if (!sol)      erros.push('Solicitante');
   if (erros.length) {
     snackErro('Campos obrigatórios: ' + erros.join(', '));
-    return;
-  }
-  if (requisicaoIsPastDate(data)) {
-    snackErro('Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.');
     return;
   }
   var solObj = _rqSolicitantes.find(function(s){ return s.nome === sol; }) || {};
@@ -3732,8 +3117,7 @@ function gerarRequisicao() {
       var warnings = res && typeof res === 'object' ? [res.preloadWarning, res.statusWarning].filter(Boolean) : [];
       if (warnings.length) snackErro(warnings.join(' '));
       else snack('✓ Rascunho criado com sucesso!');
-      appClearUnsavedChanges('page-requisicao');
-      finalizarRequisicaoAposSucesso(res && res.statusRequisicao, res);
+      finalizarRequisicaoAposSucesso(res && res.statusRequisicao);
       limparRequisicaoForm();
     })
     .withFailureHandler(function(e) {
@@ -3744,10 +3128,10 @@ function gerarRequisicao() {
     .gerarRequisicaoPDF(dados);
 }
 
-function finalizarRequisicaoAposSucesso(statusRequisicao, resultado) {
+function finalizarRequisicaoAposSucesso(statusRequisicao) {
   var origem = _rqOrigemContext || {};
   if (origem.tipo === 'agenda' && origem.agendaId) {
-    if (statusRequisicao) aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
+    if (statusRequisicao) aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true);
     else marcarAgendaRequisicaoEnviadaLocal(origem.agendaId, true);
     return;
   }
@@ -4031,17 +3415,12 @@ function confirmarExcluirLabCentral(id) {
 //  COURIERS
 // ═══════════════════════════════════════════════════════════════
 var _couriers = [];
-var _courierStatusOptions = ['Não Agendado', 'Pendente', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado'];
 
 function carregarCouriers() {
   document.getElementById('bodyCouriers').innerHTML =
     '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
   google.script.run
-    .withSuccessHandler(function(res) {
-      _courierStatusOptions = ((res && res.config && res.config.statusCourier) || _courierStatusOptions || []).slice();
-      renderCourierStatusConfirmacaoOptions();
-      renderCouriers((res && res.data) || []);
-    })
+    .withSuccessHandler(function(res) { renderCouriers((res && res.data) || []); })
     .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
     .getCadastrosBootstrapData('couriers');
 }
@@ -4061,86 +3440,6 @@ function stripHtmlSimple(html) {
   return (tmp.textContent || tmp.innerText || '').trim();
 }
 
-function renderCourierStatusConfirmacaoOptions(currentValue) {
-  var sel = ensureCourierStatusConfirmacaoSelect();
-  if (!sel) return;
-  var current = String(currentValue || sel.value || '').trim();
-  var opts = [''].concat(_courierStatusOptions || []);
-  if (current && opts.indexOf(current) === -1) opts.push(current);
-  sel.innerHTML = opts.map(function(v) {
-    return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>' + esc(v || '') + '</option>';
-  }).join('');
-}
-
-function ensureCourierStatusConfirmacaoSelect() {
-  var el = document.getElementById('courierStatusConfirmacao');
-  if (!el) return null;
-  if (String(el.tagName || '').toLowerCase() === 'select') return el;
-  var value = String(el.value || '').trim();
-  var sel = document.createElement('select');
-  sel.id = el.id;
-  sel.className = el.className || 'f-input';
-  sel.value = value;
-  el.parentNode.replaceChild(sel, el);
-  return sel;
-}
-
-function courierNormNome(v) {
-  return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-}
-
-function courierConfirmationDefaultFront(nome) {
-  var n = courierNormNome(nome);
-  if (n.indexOf('marken') >= 0) {
-    return {
-      monitorConfirmacao: 'Sim',
-      emailConfirmacao: 'expobrasil@marken.com',
-      textoConfirmacao: 'Confirmamos o agendamento da retirada conforme informações abaixo.',
-      statusConfirmacao: 'Confirmado'
-    };
-  }
-  if (n.indexOf('ocasa') >= 0) {
-    return {
-      monitorConfirmacao: 'Sim',
-      emailConfirmacao: 'ocasa.com',
-      textoConfirmacao: 'Informamos que sua coleta foi devidamente agendada. Solicitamos, por gentileza, que verifique atentamente as informações abaixo:',
-      statusConfirmacao: 'Confirmado'
-    };
-  }
-  if (n.indexOf('dhl') >= 0) {
-    return {
-      monitorConfirmacao: 'Sim',
-      emailConfirmacao: 'wmxbrasil@dhl.com',
-      textoConfirmacao: 'Agendamento realizado para',
-      statusConfirmacao: 'Confirmado'
-    };
-  }
-  return {};
-}
-
-function courierConfirmationEffective(c) {
-  c = c || {};
-  var d = courierConfirmationDefaultFront(c.nome || c.courier || '');
-  return {
-    monitorConfirmacao: c.monitorConfirmacao || d.monitorConfirmacao || '',
-    emailConfirmacao: c.emailConfirmacao || d.emailConfirmacao || '',
-    textoConfirmacao: c.textoConfirmacao || d.textoConfirmacao || '',
-    statusConfirmacao: c.statusConfirmacao || d.statusConfirmacao || '',
-    fromDefault: !!d.monitorConfirmacao && (!c.monitorConfirmacao || !c.emailConfirmacao || !c.textoConfirmacao || !c.statusConfirmacao)
-  };
-}
-
-function courierConfirmationHtml(c) {
-  var eff = courierConfirmationEffective(c);
-  if (!eff.monitorConfirmacao && !eff.emailConfirmacao && !eff.textoConfirmacao && !eff.statusConfirmacao) return '';
-  return [
-    eff.monitorConfirmacao ? 'Confirmação: ' + eff.monitorConfirmacao + (eff.fromDefault ? ' (padrão)' : '') : '',
-    eff.emailConfirmacao ? 'Remetente: ' + eff.emailConfirmacao : '',
-    eff.statusConfirmacao ? 'Status: ' + eff.statusConfirmacao : '',
-    eff.textoConfirmacao ? 'Texto: ' + eff.textoConfirmacao : ''
-  ].filter(Boolean).map(esc).join('<br>');
-}
-
 function _renderTabelaCouriers(lista) {
   var tb = document.getElementById('bodyCouriers');
   if (!lista.length) {
@@ -4155,10 +3454,8 @@ function _renderTabelaCouriers(lista) {
       c.email ? 'Padrão: ' + c.email : '',
       c.emailAmbiente ? 'Ambiente: ' + c.emailAmbiente : '',
       c.emailCongelado ? 'Congelado: ' + c.emailCongelado : '',
-      courierConfirmationHtml(c)
-    ].filter(Boolean).map(function(item) {
-      return item.indexOf('<br>') >= 0 ? item : esc(item);
-    }).join('<br>') || '—';
+      c.monitorConfirmacao ? 'Confirmação: ' + c.monitorConfirmacao + (c.emailConfirmacao ? ' | ' + c.emailConfirmacao : '') : ''
+    ].filter(Boolean).map(esc).join('<br>') || '—';
     return '<tr>' +
       '<td><div class="name-cell"><div class="row-avatar">' + esc(ini) + '</div>' +
         '<span class="row-name">' + esc(c.nome || '—') + '</span></div></td>' +
@@ -4187,8 +3484,6 @@ function filtrarCouriers() {
 }
 
 function abrirFormCourier(id) {
-  var statusConfirmacaoAtual = '';
-  ensureCourierStatusConfirmacaoSelect();
   [
     'editCourierId','courierNome','courierEmpresa1','courierCnpj1','courierTelefone1','courierFax1',
     'courierEmpresa2','courierCnpj2','courierTelefone2','courierFax2','courierConteudo',
@@ -4219,38 +3514,11 @@ function abrirFormCourier(id) {
       document.getElementById('courierMonitorConfirmacao').value = c.monitorConfirmacao || '';
       document.getElementById('courierEmailConfirmacao').value = c.emailConfirmacao || '';
       document.getElementById('courierTextoConfirmacao').value = c.textoConfirmacao || '';
-      statusConfirmacaoAtual = c.statusConfirmacao || '';
+      document.getElementById('courierStatusConfirmacao').value = c.statusConfirmacao || '';
     }
   }
-  renderCourierStatusConfirmacaoOptions(statusConfirmacaoAtual);
-  aplicarDefaultsCourierConfirmacao(false);
-  renderCourierStatusConfirmacaoOptions(document.getElementById('courierStatusConfirmacao').value);
   document.getElementById('modalCourier').classList.add('open');
   setTimeout(function() { document.getElementById('courierNome').focus(); }, 180);
-}
-
-function aplicarDefaultsCourierConfirmacao(force) {
-  var nomeEl = document.getElementById('courierNome');
-  var infoEl = document.getElementById('courierConfirmacaoDefaultInfo');
-  if (!nomeEl) return;
-  var d = courierConfirmationDefaultFront(nomeEl.value);
-  if (!d.monitorConfirmacao) {
-    if (infoEl) infoEl.style.display = 'none';
-    return;
-  }
-  [
-    ['courierMonitorConfirmacao', 'monitorConfirmacao'],
-    ['courierEmailConfirmacao', 'emailConfirmacao'],
-    ['courierTextoConfirmacao', 'textoConfirmacao'],
-    ['courierStatusConfirmacao', 'statusConfirmacao']
-  ].forEach(function(pair) {
-    var el = pair[0] === 'courierStatusConfirmacao' ? ensureCourierStatusConfirmacaoSelect() : document.getElementById(pair[0]);
-    if (el && (force || !String(el.value || '').trim())) el.value = d[pair[1]] || '';
-  });
-  if (infoEl) {
-    infoEl.textContent = 'Regra padrão aplicada para esta courier. Os campos podem ser ajustados no próprio cadastro.';
-    infoEl.style.display = '';
-  }
 }
 
 function courierEditorSetHtml(html) {
@@ -4317,7 +3585,7 @@ function salvarCourierApp() {
       monitorConfirmacao: document.getElementById('courierMonitorConfirmacao').value.trim(),
       emailConfirmacao: document.getElementById('courierEmailConfirmacao').value.trim(),
       textoConfirmacao: document.getElementById('courierTextoConfirmacao').value.trim(),
-      statusConfirmacao: (ensureCourierStatusConfirmacaoSelect() || document.getElementById('courierStatusConfirmacao')).value.trim()
+      statusConfirmacao: document.getElementById('courierStatusConfirmacao').value.trim()
     });
 }
 

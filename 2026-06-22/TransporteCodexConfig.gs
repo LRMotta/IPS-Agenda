@@ -173,7 +173,7 @@ function montarPayloadTransporteParaTransp_(idAgenda, slot) {
     projeto: evento.projeto || '',
     medico: evento.medico || '',
     horaEnvio: transporteJanelaEnvioPadrao_(),
-    agendadoPor: transporteAgendadorPadrao_(),
+    agendadoPor: '',
     pinexAgendadoPor: '',
     responsavelEntrega: '',
     solicitarCaixa: transporteDefaultSolicitarCaixa_(courierNome),
@@ -226,6 +226,7 @@ function transporteAgendaRefInterna_(idAgenda) {
 function transporteAgendaLinkFromRef_(refInterna, note) {
   var out = { idAgenda: '', agendaSlot: '' };
   refInterna = String(refInterna || '').trim();
+  if (!refInterna) return out;
   try {
     var meta = note ? JSON.parse(note) : null;
     if (meta) {
@@ -234,7 +235,6 @@ function transporteAgendaLinkFromRef_(refInterna, note) {
       out.agendaSlot = slotMeta ? normalizarSlotTransporteCodex_(slotMeta) : '';
     }
   } catch (e) {}
-  if (!refInterna) return out;
   var match = refInterna.match(/^AGD-(.+)$/i);
   if (!out.idAgenda) {
     if (match) out.idAgenda = String(match[1] || '').trim();
@@ -252,7 +252,7 @@ function transporteSetAgendaLink_(range, payload) {
   var refInterna = String(payload.refInterna || '').trim();
   if (!idAgenda) idAgenda = transporteAgendaLinkFromRef_(refInterna, '').idAgenda;
   if (!refInterna && idAgenda) refInterna = transporteAgendaRefInterna_(idAgenda);
-  transporteSetValueIfAllowed_(range, '');
+  transporteSetValueIfAllowed_(range, refInterna);
   if (idAgenda) {
     var slot = String(payload.agendaSlot || payload.slot || '').trim();
     range.setNote(JSON.stringify({
@@ -262,18 +262,6 @@ function transporteSetAgendaLink_(range, payload) {
   } else {
     range.clearNote();
   }
-}
-
-function transportePreservarVinculoAgendaPayload_(payload, range) {
-  payload = payload || {};
-  if (String(payload.idAgenda || '').trim() && String(payload.agendaSlot || payload.slot || '').trim()) return payload;
-  if (!range) return payload;
-  var refAtual = String(payload.refInterna || range.getDisplayValue() || range.getValue() || '').trim();
-  var link = transporteAgendaLinkFromRef_(refAtual, range.getNote());
-  if (!payload.idAgenda && link.idAgenda) payload.idAgenda = link.idAgenda;
-  if (!payload.agendaSlot && !payload.slot && link.agendaSlot) payload.agendaSlot = link.agendaSlot;
-  if (!payload.refInterna && payload.idAgenda) payload.refInterna = transporteAgendaRefInterna_(payload.idAgenda);
-  return payload;
 }
 
 function buscarAgendaEventoPorIdTransp_(idAgenda) {
@@ -525,13 +513,6 @@ function transporteParseMatBioJson_(json) {
   }
 }
 
-function transporteMatBioUnitKey_(unit) {
-  var n = transporteNorm_(unit || 'mL');
-  if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
-  if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
-  return 'mL';
-}
-
 function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
   var parsedItems = transporteParseMatBioJson_(matBioJson);
   var byKey = {};
@@ -539,7 +520,7 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
     item = item || {};
     var key = transporteMaterialKey_(item.key || item.tipo);
     var label = key === 'outro' ? String(item.tipo || 'Outro tipo').trim() : TRANSPORTE_MATERIAL_ALIASES[key];
-    var unit = item.unit ? transporteMatBioUnitKey_(item.unit) : ((key === 'fezes' || key === 'vacina') ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'));
+    var unit = item.unit || ((key === 'fezes' || key === 'vacina') ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'));
     var formula = Array.isArray(item.segmentos) && item.segmentos.length
       ? transporteFormulaFromSegments_(item.segmentos, unit)
       : (item.formula || '');
@@ -1206,42 +1187,6 @@ function transporteDerivarDadosParticipante_(payload) {
   return payload;
 }
 
-function transporteAgendadoresConfig_() {
-  if (typeof getConfigAppValuesByKeys_ !== 'function') return [];
-  return getConfigAppValuesByKeys_(
-    ['Transporte', 'Agenda'],
-    ['Agendado por', 'Responsavel pelo agendamento', 'Respons\u00e1vel pelo agendamento'],
-    []
-  );
-}
-
-function transporteAgendadorPadrao_() {
-  var agendadores = transporteAgendadoresConfig_();
-  if (!agendadores.length) return '';
-  var email = transporteNormalizeEmail_(transporteActiveUserEmail_());
-  var nomes = [];
-  if (email) nomes.push(email);
-  try {
-    if (email && typeof codexGetAllowedUsers_ === 'function') {
-      var user = (codexGetAllowedUsers_() || {})[email] || {};
-      if (user.name) nomes.push(user.name);
-      if (user.firstName) nomes.push(user.firstName);
-    }
-  } catch (e) {}
-  var keys = nomes.map(transporteNorm_).filter(Boolean);
-  for (var i = 0; i < agendadores.length; i++) {
-    var option = String(agendadores[i] || '').trim();
-    var optKey = transporteNorm_(option);
-    var optEmail = transporteNormalizeEmail_(option);
-    for (var j = 0; j < keys.length; j++) {
-      if (optKey === keys[j] || optEmail === keys[j] || (keys[j].length >= 3 && optKey.indexOf(keys[j]) >= 0)) {
-        return option;
-      }
-    }
-  }
-  return '';
-}
-
 function transporteOptionsCache_() {
   try {
     return CacheService.getDocumentCache() || CacheService.getScriptCache();
@@ -1323,7 +1268,7 @@ function transporteReadProjetosOptions_() {
 function transporteReadOptions_(opts) {
   opts = opts || {};
   var includeParticipants = opts.includeParticipants === true;
-  var cached = transporteReadCachedJson_('TRANSPORTE_OPTIONS_BASE_V6');
+  var cached = transporteReadCachedJson_('TRANSPORTE_OPTIONS_BASE_V5');
   if (cached) {
     cached.couriers = transporteSortCouriers_(cached.couriers || []);
     cached.participantes = includeParticipants ? transporteReadParticipantesOptions_() : [];
@@ -1360,7 +1305,12 @@ function transporteReadOptions_(opts) {
     }
   }
   if (typeof getConfigAppValuesByKeys_ === 'function') {
-    out.agendadores = transporteAgendadoresConfig_();
+    out.agendadores = getConfigAppValuesByKeys_(
+      ['Transporte', 'Agenda'],
+      ['Agendado por', 'Responsavel pelo agendamento', 'Respons\u00e1vel pelo agendamento'],
+      []
+    );
+    out.agendadores = transporteMergeUniqueOptions_(out.agendadores, transporteAllowedUserNames_());
     out.janelasEnvio = getConfigAppValuesByKeys_(
       ['Transporte', 'Agenda'],
       ['Janela de envio', 'Horario de coleta', 'Hor\u00e1rio de coleta'],
@@ -1399,7 +1349,7 @@ function transporteReadOptions_(opts) {
   }
 
     out.couriers = transporteSortCouriers_(out.couriers);
-  transporteWriteCachedJson_('TRANSPORTE_OPTIONS_BASE_V6', out, 300);
+  transporteWriteCachedJson_('TRANSPORTE_OPTIONS_BASE_V5', out, 300);
   out.participantes = includeParticipants ? transporteReadParticipantesOptions_() : [];
   return out;
 }
@@ -1488,6 +1438,7 @@ function transporteValidate_(registro) {
   var awb = String(registro.awb || '').trim();
   var rules = {
     MARKEN: { len: 12, label: 'MARKEN' },
+    OCASA: { len: 8, label: 'OCASA' },
     DHL: { len: 10, label: 'DHL' }
   };
 
@@ -1495,10 +1446,8 @@ function transporteValidate_(registro) {
   if (!registro.protocolo) issues.push({ type: 'danger', text: 'Protocolo nÃƒÂ£o informado.' });
   if (!registro.destino) issues.push({ type: 'warn', text: 'Destino/laboratÃƒÂ³rio ainda nÃƒÂ£o selecionado.' });
   if (!registro.horaEnvio) issues.push({ type: 'danger', text: 'Janela de envio nao informada.' });
-  var awbCheck = courier === 'MARKEN' ? awb.replace(/[^A-Za-z0-9]/g, '') : (courier === 'OCASA' ? transporteNormalizeOcasaAwb_(awb) : awb.replace(/\D/g, ''));
-  if (courier === 'OCASA' && awbCheck && !transporteIsValidOcasaAwb_(awbCheck)) {
-    issues.push({ type: 'warn', text: 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.' });
-  } else if (rules[courier] && awbCheck.length !== rules[courier].len) {
+  var awbCheck = courier === 'MARKEN' ? awb.replace(/[^A-Za-z0-9]/g, '') : awb.replace(/\D/g, '');
+  if (rules[courier] && awbCheck.length !== rules[courier].len) {
     issues.push({ type: 'warn', text: 'AWB ' + rules[courier].label + ' deve ter ' + rules[courier].len + (courier === 'MARKEN' ? ' caracteres.' : ' digitos.') });
   }
   if (courier === 'PINEX' && !String(registro.pinexColeta || '').match(/^\d{6}$/)) {
@@ -1508,15 +1457,6 @@ function transporteValidate_(registro) {
     issues.push({ type: 'warn', text: 'Nenhum material biolÃƒÂ³gico marcado na declaraÃƒÂ§ÃƒÂ£o.' });
   }
   return issues;
-}
-
-function transporteNormalizeOcasaAwb_(awb) {
-  return String(awb || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-}
-
-function transporteIsValidOcasaAwb_(awb) {
-  awb = transporteNormalizeOcasaAwb_(awb);
-  return /^[A-Z][0-9]{7}$/.test(awb) || /^PK2[A-Z0-9]{9}$/.test(awb);
 }
 
 function getTransporteBootstrap() {
@@ -1542,30 +1482,17 @@ function getTransporteBootstrap() {
   };
 }
 
-function getTransporteBootstrapFromAgenda(idAgenda, slot) {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda);
-  idAgenda = String(idAgenda || '').trim();
-  if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
-  var payload = montarPayloadTransporteParaTransp_(idAgenda, slot);
-  var importResult = importarTransporteCodex(payload);
-  var data = getTransporteBootstrap();
-  data.registro = Object.assign({}, data.registro || {}, {
-    idAgenda: payload.idAgenda || idAgenda,
-    agendaSlot: normalizarSlotTransporteCodex_(payload.slot || slot || ''),
-    refInterna: payload.refInterna || transporteAgendaRefInterna_(idAgenda)
-  });
-  data.importResult = importResult;
-  return data;
-}
-
 function transporteDocumentosPorCourier_(courier, temperatura, destino) {
   var c = String(courier || '');
+  var t = transporteNorm_(temperatura);
   if (c === 'OCASA' && transporteOcasaNeedsProforma_(destino)) return ['Folha de Agendamento', 'DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o ANVISA', 'Proforma OCASA', 'Ficha de EmergÃªncia OCASA', 'Telefones Ãšteis OCASA'];
   if (c === 'OCASA') return ['Folha de Agendamento', 'DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o ANVISA', 'Ficha de EmergÃªncia OCASA', 'Telefones Ãšteis OCASA'];
   if (c === 'MARKEN') return ['Folha de Agendamento', 'DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o ANVISA', 'Invoice MARKEN', 'Ficha de EmergÃªncia MARKEN'];
   if (c === 'PINEX (Agendamento)') return ['FormulÃƒÂ¡rio PINEX'];
   if (c === 'PINEX') return ['Folha DHL/PINEX', 'Commercial Invoice PINEX', 'PetiÃƒÂ§ÃƒÂ£o PINEX', 'USDA Statement', 'Ficha de EmergÃƒÂªncia PINEX', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte'];
   if (transporteIsDhl_(c)) return ['Folha DHL/PINEX', 'DeclaraÃƒÂ§ÃƒÂ£o DHL', 'Invoice DHL', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte DHL'];
+  if (c === 'OCASA') return ['Folha de Agendamento', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte', 'PetiÃƒÂ§ÃƒÂ£o ANVISA', 'Ficha de EmergÃƒÂªncia OCASA', 'Telefones ÃƒÅ¡teis OCASA'].concat(t.indexOf('congelado') === -1 ? ['Proforma OCASA'] : []);
+  if (c === 'MARKEN') return ['Folha de Agendamento', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte', 'PetiÃƒÂ§ÃƒÂ£o ANVISA', 'Ficha de EmergÃƒÂªncia MARKEN'].concat(t.indexOf('congelado') === -1 ? ['Invoice MARKEN'] : []);
   return ['Folha de Agendamento', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte'];
 }
 
@@ -1579,7 +1506,6 @@ function salvarTransporte(payload, options) {
   payload = transporteDerivarDadosParticipante_(payload || {});
   options = options || {};
   if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
-  transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
 
   var campos = [
     { cell: 'C3', value: payload.paciente || '' },
@@ -1679,7 +1605,7 @@ function transporteSetEnsaiosPeticao_(peticao, materiais) {
 
 function transporteDefaultSolicitarCaixa_(courier) {
   courier = transporteNormalizeCourierFromCodex_(courier);
-  if (courier === 'MARKEN') return 'N\u00e3o';
+  if (courier === 'MARKEN') return 'NÃ£o';
   if (courier === 'PINEX (Agendamento)' || transporteIsDhl_(courier)) return 'Sim';
   return '';
 }
@@ -1688,11 +1614,11 @@ function transporteNormalizeSimNao_(value, fallback) {
   var raw = String(value || '').trim();
   if (!raw) raw = fallback || '';
   var n = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return n === 'sim' || n === 's' || n === 'yes' ? 'Sim' : (n === 'nao' || n === 'n' || n === 'no' ? 'N\u00e3o' : transporteCodexFixMojibakeText_(raw));
+  return n === 'sim' || n === 's' || n === 'yes' ? 'Sim' : (n === 'nao' || n === 'n' || n === 'no' ? 'NÃ£o' : raw);
 }
 
 function transporteInvertSimNao_(value) {
-  return transporteNormalizeSimNao_(value, 'N\u00e3o') === 'Sim' ? 'N\u00e3o' : 'Sim';
+  return transporteNormalizeSimNao_(value, 'NÃ£o') === 'Sim' ? 'NÃ£o' : 'Sim';
 }
 
 function transporteReadSolicitarCaixa_(ss, courier, temperatura) {
@@ -2126,10 +2052,10 @@ function montarPayloadTransporteCodex(codexPayload) {
     destino: courier.destino || courier.laboratorioDestino || '',
     awb: courier.awb || '',
     solicitarCaixa: codexPayload.solicitarCaixa || transporteDefaultSolicitarCaixa_(courierNome),
-    agendadoPor: codexPayload.agendadoPor || codexPayload.responsavel || transporteAgendadorPadrao_(),
-    pinexAgendadoPor: codexPayload.pinexAgendadoPor || codexPayload.agendadoPor || codexPayload.responsavel || transporteAgendadorPadrao_(),
+    agendadoPor: codexPayload.agendadoPor || codexPayload.responsavel || '',
+    pinexAgendadoPor: codexPayload.pinexAgendadoPor || codexPayload.agendadoPor || codexPayload.responsavel || '',
     responsavelEntrega: codexPayload.responsavelEntrega || '',
-    observacoes: '',
+    observacoes: [agenda.visita ? 'Visita: ' + agenda.visita : '', agenda.obs || ''].filter(Boolean).join(' | '),
     idAgenda: codexPayload.idAgenda || agenda.id || '',
     agendaSlot: normalizarSlotTransporteCodex_(slot),
     refInterna: codexPayload.refInterna || transporteAgendaRefInterna_(codexPayload.idAgenda || agenda.id || ''),
@@ -2145,7 +2071,7 @@ function transporteMateriaisParaAgenda_(materiais) {
     var tipo = key === 'outro'
       ? String(item.material || 'Outro tipo').trim()
       : String(TRANSPORTE_MATERIAL_ALIASES[key] || item.material || '').trim();
-    var unit = transporteMatBioUnitKey_(item.unit || ((key === 'fezes' || key === 'vacina') ? 'g' : 'mL'));
+    var unit = String(item.unit || ((key === 'fezes' || key === 'vacina') ? 'g' : 'mL')).trim();
     var formula = String(item.formula || '').trim();
     var calc = transporteParseFormula_(formula);
     var tubos = transporteTubosMaterial_(item);
@@ -2339,7 +2265,7 @@ function transporteSandboxPayload_(marker, courier) {
   var destinoPadrao = transporteLabCentralDestinoPadrao_();
   var awbMap = {
     MARKEN: '123456789012',
-    OCASA: 'T1234567',
+    OCASA: '12345678',
     DHL: '1234567890',
     PINEX: '12345678',
     'PINEX (Agendamento)': ''
@@ -2695,7 +2621,7 @@ function transporteCodexFormatData_(value) {
 }
 
 function transporteCodexEmailText_(value) {
-  var text = transporteCodexFixMojibakeText_(transporteCodexFormatData_(value));
+  var text = transporteCodexFormatData_(value);
   var fixes = {
     'necessarios': 'necess\u00e1rios',
     'Laboratorio': 'Laborat\u00f3rio',
@@ -2716,56 +2642,6 @@ function transporteCodexEmailText_(value) {
   return text;
 }
 
-function transporteCodexFixMojibakeText_(value) {
-  var text = value == null ? '' : String(value);
-  var pairs = [
-    ['\u00c3\u0192\u00c2\u00a1', '\u00e1'],
-    ['\u00c3\u0192\u00c2\u00a0', '\u00e0'],
-    ['\u00c3\u0192\u00c2\u00a2', '\u00e2'],
-    ['\u00c3\u0192\u00c2\u00a3', '\u00e3'],
-    ['\u00c3\u0192\u00c2\u00a9', '\u00e9'],
-    ['\u00c3\u0192\u00c2\u00aa', '\u00ea'],
-    ['\u00c3\u0192\u00c2\u00ad', '\u00ed'],
-    ['\u00c3\u0192\u00c2\u00b3', '\u00f3'],
-    ['\u00c3\u0192\u00c2\u00b4', '\u00f4'],
-    ['\u00c3\u0192\u00c2\u00b5', '\u00f5'],
-    ['\u00c3\u0192\u00c2\u00ba', '\u00fa'],
-    ['\u00c3\u0192\u00c2\u00a7', '\u00e7'],
-    ['\u00c3\u0192\u00c2\u0081', '\u00c1'],
-    ['\u00c3\u0192\u00c2\u0083', '\u00c3'],
-    ['\u00c3\u0192\u00c2\u0089', '\u00c9'],
-    ['\u00c3\u0192\u00c2\u009a', '\u00da'],
-    ['\u00c3\u00a1', '\u00e1'],
-    ['\u00c3\u00a0', '\u00e0'],
-    ['\u00c3\u00a2', '\u00e2'],
-    ['\u00c3\u00a3', '\u00e3'],
-    ['\u00c3\u00a9', '\u00e9'],
-    ['\u00c3\u00aa', '\u00ea'],
-    ['\u00c3\u00ad', '\u00ed'],
-    ['\u00c3\u00b3', '\u00f3'],
-    ['\u00c3\u00b4', '\u00f4'],
-    ['\u00c3\u00b5', '\u00f5'],
-    ['\u00c3\u00ba', '\u00fa'],
-    ['\u00c3\u00bc', '\u00fc'],
-    ['\u00c3\u00a7', '\u00e7'],
-    ['\u00c3\u0081', '\u00c1'],
-    ['\u00c3\u0083', '\u00c3'],
-    ['\u00c3\u0089', '\u00c9'],
-    ['\u00c3\u009a', '\u00da'],
-    ['\u00c2\u00ba', '\u00ba'],
-    ['\u00c2\u00aa', '\u00aa'],
-    ['\u00e2\u0080\u0093', '\u2013'],
-    ['\u00e2\u0080\u0094', '\u2014'],
-    ['N\u00c3\u0192\u00c6\u2019O', 'N\u00e3o']
-  ];
-  for (var pass = 0; pass < 2; pass++) {
-    pairs.forEach(function(pair) {
-      text = text.replace(new RegExp(pair[0], 'g'), pair[1]);
-    });
-  }
-  return text;
-}
-
 function transporteCodexEmailEsc_(value) {
   return String(transporteCodexEmailText_(value))
     .replace(/&/g, '&amp;')
@@ -2779,7 +2655,7 @@ function transporteCodexEmailCellHtml_(value, tipo) {
   var text = transporteCodexEmailText_(value);
   var html = transporteCodexEmailEsc_(text);
   if (tipo !== 'OCASA') return html;
-  html = html.replace(/(Funda(?:\u00e7|\u00c3\u00a7|&ccedil;|c)(?:\u00e3|\u00c3\u00a3|a)o Universidade de Caxias do Sul)\s+(Instituto de Pesquisas em Sa(?:\u00fa|\u00c3\u00ba|&uacute;|u)de)/i, '$1<br>$2');
+  html = html.replace(/(Funda(?:Ã§|&ccedil;|c)Ã£o Universidade de Caxias do Sul)\s+(Instituto de Pesquisas em Sa(?:Ãº|&uacute;|u)de)/i, '$1<br>$2');
   html = html.replace(/(Labcorp Central Lab Services LP Specimen Processing)\s+(8211 Scicor Drive\.?\s*Indianapolis,\s*IN,\s*USA)/i, '$1<br>$2');
   return html;
 }
@@ -2869,7 +2745,7 @@ function atualizarEmailMarkenB8(ss) {
     if (!folha || !email) return;
     var temperatura = String(getCellValueSafe(folha, 'C6') || '').trim();
     var exigeGelo = temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO';
-    email.getRange('B8').setValue(exigeGelo ? 'SIM' : 'N\u00c3O');
+    email.getRange('B8').setValue(exigeGelo ? 'SIM' : 'NÃƒÆ’O');
   } catch (error) {
     Logger.log('ERRO em atualizarEmailMarkenB8: ' + error.toString());
   }
@@ -3390,9 +3266,8 @@ function criarRascunhoEmail(options) {
         Logger.log('PDF PINEX nao anexado ao rascunho: ' + pdfAttachError.toString());
       }
     }
-    var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature());
     var draft = GmailApp.createDraft(destinatarios.join(', '), assunto, '', {
-      htmlBody: htmlBody,
+      htmlBody: transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature(),
       cc: cc.join(', '),
       attachments: attachments
     });
@@ -3606,7 +3481,7 @@ function transporteCeStatus_(projeto) {
   if (!projeto) return { checked: false, found: false, message: 'Protocolo nao selecionado.' };
   var cacheKey = 'TRANSPORTE_CE_STATUS_' + transporteParticipantKey_(transporteProjetoDisplay_(projeto)).slice(0, 80);
   var cached = transporteReadCachedJson_(cacheKey);
-  if (cached && cached.found) return cached;
+  if (cached) return cached;
   var status = { checked: true, found: false, message: 'CE nao localizada para o estudo.' };
   try {
     var file = transporteCodexFindComunicadoEspecial_(getTransporteSpreadsheetCodex_(), projeto);
@@ -3619,7 +3494,7 @@ function transporteCeStatus_(projeto) {
   } catch (error) {
     status.message = 'Nao foi possivel verificar a CE: ' + error.message;
   }
-  if (status.found) transporteWriteCachedJson_(cacheKey, status, 600);
+  transporteWriteCachedJson_(cacheKey, status, 600);
   return status;
 }
 
@@ -3698,43 +3573,13 @@ function transporteCodexFindComunicadoEspecial_(ss, projeto) {
     var wanted = aliases.map(function(alias) {
       return transporteParticipantKey_(alias + '_CE.pdf');
     });
-    var found = transporteFindComunicadoEspecialInFolder_(folder, wanted, aliasKeys, 2);
-    if (found) return found;
+    var allFiles = folder.getFiles();
+    while (allFiles.hasNext()) {
+      var file = allFiles.next();
+      if (wanted.indexOf(transporteParticipantKey_(file.getName())) >= 0) return file;
+    }
   }
   return null;
-}
-
-function transporteFindComunicadoEspecialInFolder_(folder, wanted, aliasKeys, depth) {
-  var allFiles = folder.getFiles();
-  while (allFiles.hasNext()) {
-    var file = allFiles.next();
-    var fileKey = transporteParticipantKey_(file.getName());
-    if (wanted.indexOf(fileKey) >= 0) return file;
-    if (transporteComunicadoEspecialFileMatches_(fileKey, aliasKeys)) return file;
-  }
-  if (depth <= 0) return null;
-  var folders = folder.getFolders();
-  while (folders.hasNext()) {
-    var child = folders.next();
-    var found = transporteFindComunicadoEspecialInFolder_(child, wanted, aliasKeys, depth - 1);
-    if (found) return found;
-  }
-  return null;
-}
-
-function transporteComunicadoEspecialFileMatches_(fileKey, aliasKeys) {
-  fileKey = String(fileKey || '');
-  if (!fileKey) return false;
-  var hasCeMarker = fileKey.indexOf('ce') >= 0 ||
-    fileKey.indexOf('comunicadoespecial') >= 0 ||
-    fileKey.indexOf('comunicado') >= 0;
-  if (!hasCeMarker) return false;
-  for (var i = 0; i < (aliasKeys || []).length; i++) {
-    var aliasKey = String(aliasKeys[i] || '');
-    if (aliasKey.length < 3) continue;
-    if (fileKey.indexOf(aliasKey) >= 0) return true;
-  }
-  return false;
 }
 
 function transporteCodexDriveIdFromUrl_(url) {
@@ -3815,17 +3660,6 @@ function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvi
     html += '<tr><td style="border:1px solid #000;padding:3px;font-weight:bold;line-height:1.45;">' + transporteCodexEmailEsc_(row[0]) + '</td><td style="border:1px solid #000;padding:3px;line-height:1.45;">' + transporteCodexEmailEsc_(row[1]) + '</td></tr>';
   });
   return html + '</table>';
-}
-
-function transportePdfOcultarMetadadosInternos_(ss) {
-  if (!ss) return;
-  var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
-  if (!folha) return;
-  try {
-    folha.getRange('C15').clearContent().clearNote();
-  } catch (e) {
-    Logger.log('Metadados internos do transporte nao ocultados no PDF: ' + e.message);
-  }
 }
 
 function transporteCodexEmailFallbackHtml_(projeto, dataEnvio, laboratorio, awb, courier, saudacao) {
@@ -3924,7 +3758,6 @@ function imprimirTodasAbas(options) {
     workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy(nomeArquivo + ' - TEMP_PDF', pastaDestino);
     var workingSS = transportePdfOpenWorkingCopy_(workingCopyFile.getId());
     transportePdfAnonimizarParticipante_(workingSS, payloadFallback, ss);
-    transportePdfOcultarMetadadosInternos_(workingSS);
     transportePdfPruneDuplicateAndOrder_(workingSS, spec);
     SpreadsheetApp.flush();
     Utilities.sleep(700);

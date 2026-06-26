@@ -1471,13 +1471,15 @@ function getReqExamesPreloadProjeto(projeto) {
 }
 
 function getReqExamesPreloadProjetoEditor(projeto) {
+  var exames = getReqExamesPreloadProjeto(projeto);
   return {
     projeto: String(projeto || '').trim(),
-    exames: getReqExamesPreloadProjeto(projeto)
+    exames: exames,
+    hash: reqExamesPreloadHash_(exames)
   };
 }
 
-function salvarReqExamesPreloadProjeto(projeto, exames) {
+function salvarReqExamesPreloadProjeto(projeto, exames, expectedHash) {
   codexAssertCanWrite_('salvarReqExamesPreloadProjeto', 'Requisição de Exames', projeto);
   projeto = String(projeto || '').trim();
   if (!projeto) throw new Error('Informe o projeto para salvar o preload.');
@@ -1500,43 +1502,32 @@ function salvarReqExamesPreloadProjeto(projeto, exames) {
     var projetos = sh.getRange(2, 1, lastRow - 1, 1).getValues();
     for (var i = 0; i < projetos.length; i++) {
       if (normText_(projetos[i][0]) === alvo) {
+        var atuais = sh.getRange(i + 2, 2, 1, 40).getValues()[0]
+          .map(function(v) { return String(v || '').trim(); })
+          .filter(Boolean);
+        var hashAtual = reqExamesPreloadHash_(atuais);
+        if (!expectedHash || expectedHash !== hashAtual) {
+          throw new Error('Os exames padrão deste projeto foram alterados por outro usuário. Reabra "Gerenciar exames padrão" para revisar a versão atual antes de salvar.');
+        }
         sh.getRange(i + 2, 1, 1, 42).setValues([row]);
-        return { ok: true, projeto: projeto, exames: exames, message: 'Exames padrão atualizados.' };
+        return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão atualizados.' };
       }
     }
   }
   sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
-  return { ok: true, projeto: projeto, exames: exames, message: 'Exames padrão cadastrados.' };
+  return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão cadastrados.' };
 }
 
-function salvarReqExamesPreloadInicial_(projeto, exames) {
-  projeto = String(projeto || '').trim();
+function reqExamesPreloadHash_(exames) {
   exames = (exames || []).map(function(v) {
     return String(v || '').trim();
   }).filter(Boolean).slice(0, 40);
-  if (!projeto || !exames.length) return { created: false, reason: 'dados_incompletos' };
-
-  return codexWithDocumentLock_('salvarReqExamesPreloadInicial_', function() {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
-    if (!sh) sh = ss.insertSheet('ReqExames_Preloads');
-    ensureReqExamesPreloadSheet_(sh);
-    var lastRow = sh.getLastRow();
-    var alvo = normText_(projeto);
-    if (lastRow >= 2) {
-      var projetos = sh.getRange(2, 1, lastRow - 1, 1).getValues();
-      for (var i = 0; i < projetos.length; i++) {
-        if (normText_(projetos[i][0]) === alvo) {
-          return { created: false, projeto: projeto, reason: 'existente' };
-        }
-      }
-    }
-    var row = [projeto].concat(exames);
-    while (row.length < 41) row.push('');
-    row.push('Sim');
-    sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
-    return { created: true, projeto: projeto, exames: exames };
-  });
+  var text = exames.join('\n');
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  return digest.map(function(b) {
+    var v = b < 0 ? b + 256 : b;
+    return ('0' + v.toString(16)).slice(-2);
+  }).join('');
 }
 
 function ensureReqExamesPreloadSheet_(sh) {
@@ -1638,14 +1629,6 @@ function gerarRequisicaoPDF(dados) {
   // ── 3. Gerar PDF e criar rascunho (versão sem getUi) ─────────────────────
   _exportarPDFWebApp(sheet, ss, { requestedByEmail: dados.requestedByEmail || '' });
 
-  var preloadResult = null;
-  var preloadWarning = '';
-  try {
-    preloadResult = salvarReqExamesPreloadInicial_(dados.protocolo, dados.exames || []);
-  } catch (preloadError) {
-    preloadWarning = 'O rascunho foi criado, mas não foi possível salvar os exames padrão do protocolo: ' + preloadError.message;
-  }
-
   var statusResult = null;
   var statusWarning = '';
   if (String(dados.agendaId || '').trim()) {
@@ -1661,10 +1644,9 @@ function gerarRequisicaoPDF(dados) {
 
   return {
     ok: true,
-    message: 'Rascunho de e-mail criado com sucesso! Verifique sua caixa de rascunhos no Gmail.' +
-      (preloadResult && preloadResult.created ? ' Os exames foram salvos como padrão deste protocolo.' : ''),
-    preloadCreated: !!(preloadResult && preloadResult.created),
-    preloadWarning: preloadWarning,
+    message: 'Rascunho de e-mail criado com sucesso! Verifique sua caixa de rascunhos no Gmail.',
+    preloadCreated: false,
+    preloadWarning: '',
     statusRequisicao: statusResult && statusResult.statusRequisicao ? statusResult.statusRequisicao : '',
     recordVersion: statusResult && statusResult.recordVersion ? statusResult.recordVersion : '',
     statusWarning: statusWarning
@@ -1720,17 +1702,8 @@ function _exportarPDFWebApp(sheet, ss, options) {
 
   // ── Geração do PDF via Export URL ────────────────────────────────────────
   var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?';
-  var exportOptions =
-    'exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true' +
-    '&sheetnames=false&printtitle=false&pagenumbers=false' +
-    '&gridlines=false&fzr=false&gid=' + sheet.getSheetId() +
-    '&r1=0&c1=0&r2=43&c2=10' +
-    '&top_margin=0.15&bottom_margin=0.15&left_margin=0.15&right_margin=0.15&scale=4';
-  var token    = ScriptApp.getOAuthToken();
-  var response = UrlFetchApp.fetch(url + exportOptions, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-  var pdfBlob = response.getBlob().setName(nomeArquivo);
+  var exportOptions = reqExamesPdfExportOptions_(sheet.getSheetId());
+  var pdfBlob = reqExamesExportPdfBlob_(url + exportOptions, nomeArquivo, { sheet: sheet });
 
   // ── Corpo do e-mail ──────────────────────────────────────────────────────
   var tituloEmail =
@@ -1751,6 +1724,176 @@ function _exportarPDFWebApp(sheet, ss, options) {
   var draftOptions = { htmlBody: corpoEmail, attachments: [pdfBlob] };
   if (ccEmails) draftOptions.cc = ccEmails;
   GmailApp.createDraft(emailDestinatario, tituloEmail, '', draftOptions);
+}
+
+function reqExamesPdfExportOptions_(sheetId) {
+  return 'exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true' +
+    '&sheetnames=false&printtitle=false&pagenumbers=false' +
+    '&gridlines=false&fzr=false&gid=' + sheetId +
+    '&r1=0&c1=0&r2=43&c2=10' +
+    '&top_margin=0.15&bottom_margin=0.15&left_margin=0.15&right_margin=0.15&scale=4';
+}
+
+function reqExamesExportPdfBlob_(url, nomeArquivo, options) {
+  options = options || {};
+  try {
+    return reqExamesFetchPdfBlob_(url, nomeArquivo);
+  } catch (primaryError) {
+    if (!options.sheet) throw primaryError;
+    try {
+      return reqExamesExportPdfBlobViaWorkingCopy_(options.sheet, nomeArquivo);
+    } catch (fallbackError) {
+      try {
+        return reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo);
+      } catch (htmlError) {
+        throw new Error(
+          primaryError.message +
+          ' Fallback por planilha temporaria isolada tambem falhou: ' + fallbackError.message +
+          ' Fallback HTML tambem falhou: ' + htmlError.message
+        );
+      }
+    }
+  }
+}
+
+function reqExamesFetchPdfBlob_(url, nomeArquivo) {
+  var token = ScriptApp.getOAuthToken();
+  var lastStatus = 0;
+  var lastMessage = '';
+  var transientCodes = { 429: true, 500: true, 502: true, 503: true, 504: true };
+
+  for (var attempt = 1; attempt <= 5; attempt++) {
+    if (attempt === 1) Utilities.sleep(900);
+    var response = UrlFetchApp.fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+    lastStatus = response.getResponseCode();
+    var blob = response.getBlob();
+    var bytes = blob.getBytes();
+    var contentType = String(response.getHeaders()['Content-Type'] || response.getHeaders()['content-type'] || blob.getContentType() || '').toLowerCase();
+
+    if (lastStatus >= 200 && lastStatus < 300 && bytes && bytes.length >= 1000 && contentType.indexOf('pdf') !== -1) {
+      return blob.setName(nomeArquivo);
+    }
+
+    lastMessage = reqExamesExportErrorSnippet_(response);
+    if (!transientCodes[lastStatus] || attempt === 5) break;
+    Utilities.sleep(900 * attempt);
+  }
+
+  throw new Error(
+    'Nao foi possivel gerar o PDF da requisicao pelo Google Sheets agora' +
+    (lastStatus ? ' (HTTP ' + lastStatus + ')' : '') +
+    '. Tente novamente em alguns instantes. Se persistir, verifique permissoes/autorizacao do WebApp e a disponibilidade do Google Docs.' +
+    (lastMessage ? ' Detalhe tecnico: ' + lastMessage : '')
+  );
+}
+
+function reqExamesExportPdfBlobViaWorkingCopy_(sheet, nomeArquivo) {
+  var workingCopyFile = null;
+  try {
+    SpreadsheetApp.flush();
+    Utilities.sleep(900);
+    var workingSS = SpreadsheetApp.create(nomeArquivo + ' - TEMP_REQ_PDF');
+    workingCopyFile = DriveApp.getFileById(workingSS.getId());
+    var workingSheet = sheet.copyTo(workingSS).setName(sheet.getName());
+    workingSS.setActiveSheet(workingSheet);
+    workingSS.moveActiveSheet(1);
+    workingSS.getSheets().forEach(function(tempSheet) {
+      if (tempSheet.getSheetId() !== workingSheet.getSheetId()) workingSS.deleteSheet(tempSheet);
+    });
+    SpreadsheetApp.flush();
+    Utilities.sleep(1200);
+    var url = 'https://docs.google.com/spreadsheets/d/' + workingSS.getId() + '/export?' +
+      reqExamesPdfExportOptions_(workingSheet.getSheetId());
+    return reqExamesFetchPdfBlob_(url, nomeArquivo);
+  } finally {
+    if (workingCopyFile) {
+      try {
+        workingCopyFile.setTrashed(true);
+      } catch (trashError) {
+        Logger.log('Copia temporaria da requisicao nao movida para lixeira: ' + trashError.toString());
+      }
+    }
+  }
+}
+
+function reqExamesExportPdfBlobViaHtml_(sheet, nomeArquivo) {
+  var dataAgendamento = sheet.getRange('H10').getValue();
+  var exames = sheet.getRange('C14:C33').getDisplayValues()
+    .concat(sheet.getRange('H14:H33').getDisplayValues())
+    .map(function(row) { return String(row[0] || '').trim(); })
+    .filter(Boolean);
+  var html = reqExamesPdfHtml_({
+    urgente: sheet.getRange('I5').getDisplayValue(),
+    paciente: sheet.getRange('E8').getDisplayValue(),
+    nascimento: sheet.getRange('E9').getDisplayValue(),
+    protocolo: sheet.getRange('H8').getDisplayValue(),
+    medico: sheet.getRange('H9').getDisplayValue(),
+    localExame: sheet.getRange('E10').getDisplayValue(),
+    endereco: sheet.getRange('E11').getDisplayValue(),
+    dataAgendamento: dataAgendamento instanceof Date ? formatarDataMesCurtoPt_(dataAgendamento) : sheet.getRange('H10').getDisplayValue(),
+    horario: sheet.getRange('J10').getDisplayValue(),
+    observacoes: sheet.getRange('B36').getDisplayValue(),
+    solicitante: sheet.getRange('H41').getDisplayValue(),
+    solFormacao: sheet.getRange('H42').getDisplayValue(),
+    solRegistro: sheet.getRange('H43').getDisplayValue(),
+    exames: exames
+  });
+  return HtmlService.createHtmlOutput(html)
+    .getBlob()
+    .getAs(MimeType.PDF)
+    .setName(nomeArquivo);
+}
+
+function reqExamesPdfHtml_(dados) {
+  dados = dados || {};
+  function h(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  var exames = dados.exames || [];
+  var examesHtml = exames.length
+    ? exames.map(function(exame) { return '<li>' + h(exame) + '</li>'; }).join('')
+    : '<li>Nenhum exame informado.</li>';
+  return '<!doctype html><html><head><meta charset="utf-8">' +
+    '<style>' +
+    '@page{size:A4;margin:16mm 14mm}body{font-family:Arial,sans-serif;color:#111827;font-size:12px}' +
+    'h1{font-size:18px;margin:0 0 4px;text-align:center}h2{font-size:13px;margin:18px 0 8px;border-bottom:1px solid #d1d5db;padding-bottom:4px}' +
+    '.sub{text-align:center;color:#4b5563;margin-bottom:16px}.urgent{color:#b91c1c;font-weight:bold;text-align:center;margin:8px 0}' +
+    'table{width:100%;border-collapse:collapse;margin:8px 0}td{border:1px solid #d1d5db;padding:6px;vertical-align:top}.label{width:26%;background:#f3f4f6;font-weight:bold}' +
+    'ul{columns:2;margin:8px 0 0 18px;padding:0}li{break-inside:avoid;margin:0 0 5px}.obs{min-height:46px}.foot{margin-top:28px;font-size:11px;color:#4b5563}' +
+    '</style></head><body>' +
+    '<h1>Requisicao de Exames</h1><div class="sub">IPS/UCS - PDF de contingencia gerado pelo WebApp</div>' +
+    (dados.urgente ? '<div class="urgent">URGENTE</div>' : '') +
+    '<h2>Dados do participante e agendamento</h2><table>' +
+    '<tr><td class="label">Paciente</td><td>' + h(dados.paciente) + '</td><td class="label">Nascimento</td><td>' + h(dados.nascimento) + '</td></tr>' +
+    '<tr><td class="label">Protocolo</td><td>' + h(dados.protocolo) + '</td><td class="label">Medico</td><td>' + h(dados.medico) + '</td></tr>' +
+    '<tr><td class="label">Local do exame</td><td>' + h(dados.localExame) + '</td><td class="label">Data/Horario</td><td>' + h(dados.dataAgendamento) + ' ' + h(dados.horario) + '</td></tr>' +
+    '<tr><td class="label">Endereco</td><td colspan="3">' + h(dados.endereco) + '</td></tr>' +
+    '</table><h2>Exames solicitados</h2><ul>' + examesHtml + '</ul>' +
+    '<h2>Observacoes</h2><table><tr><td class="obs">' + h(dados.observacoes) + '</td></tr></table>' +
+    '<h2>Solicitante</h2><table>' +
+    '<tr><td class="label">Nome</td><td>' + h(dados.solicitante) + '</td><td class="label">Formacao/Registro</td><td>' + h(dados.solFormacao) + ' ' + h(dados.solRegistro) + '</td></tr>' +
+    '</table><div class="foot">Este PDF foi gerado por contingencia porque o exportador PDF do Google Sheets retornou erro interno HTTP 500.</div>' +
+    '</body></html>';
+}
+
+function reqExamesExportErrorSnippet_(response) {
+  try {
+    var text = String(response.getContentText() || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return '';
+    return text.slice(0, 220);
+  } catch (e) {
+    return '';
+  }
 }
 
 function reqExamesAssertGmailDraftAllowed_(requestedByEmail) {
@@ -2447,6 +2590,8 @@ function salvarDadosParticipante(d) {
         sh.getRange(i + 1, 1, 1, rowStart.length).setValues([rowStart]);
         sh.getRange(i + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
         if (i + 1 > 2) sh.getRange(i + 1, 4).clearContent();
+        clearCodexRuntimeCaches_();
+        if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
         return 'Participante atualizado com sucesso';
       }
     }
@@ -2461,6 +2606,8 @@ function salvarDadosParticipante(d) {
     var targetRow = sh.getLastRow() + 1;
     sh.getRange(targetRow, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
+    clearCodexRuntimeCaches_();
+    if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return 'Participante cadastrado com sucesso';
   }
 }
@@ -2486,6 +2633,8 @@ function excluirParticipante(id) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
       sh.deleteRow(i + 1);
+      clearCodexRuntimeCaches_();
+      if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
       return 'Participante excluído';
     }
   }
@@ -6454,6 +6603,225 @@ function agendaIsPinexCourier_(courier) {
   return normText_(courier) === 'pinex';
 }
 
+var DHL_TRACKING_API_URL_ = 'https://api-eu.dhl.com/track/shipments';
+var DHL_TRACKING_API_KEY_PROPERTY_ = 'DHL_TRACKING_API_KEY';
+var DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_ = 45;
+
+function configurarDhlTrackingApiKey(apiKey) {
+  apiKey = String(apiKey || '').trim();
+  if (!apiKey) throw new Error('Informe a API Key da DHL.');
+  PropertiesService.getScriptProperties().setProperty(DHL_TRACKING_API_KEY_PROPERTY_, apiKey);
+  return { ok: true, property: DHL_TRACKING_API_KEY_PROPERTY_ };
+}
+
+function getDhlTrackingApiKey_() {
+  return String(PropertiesService.getScriptProperties().getProperty(DHL_TRACKING_API_KEY_PROPERTY_) || '').trim();
+}
+
+function monitorarEntregasDhlAgendadas(options) {
+  options = options || {};
+  var apiKey = getDhlTrackingApiKey_();
+  if (!apiKey) {
+    return {
+      ok: false,
+      verificados: 0,
+      entregues: 0,
+      mensagem: 'Configure a Script Property ' + DHL_TRACKING_API_KEY_PROPERTY_ + ' antes de ativar o monitor DHL.'
+    };
+  }
+
+  return codexWithDocumentLock_('monitorarEntregasDhlAgendadas', function() {
+    var agenda = getAgendaSheet_();
+    var lastRow = agenda.getLastRow();
+    if (lastRow < 2) return { ok: true, verificados: 0, entregues: 0 };
+
+    var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
+    var values = range.getValues();
+    var display = range.getDisplayValues();
+    var pendentes = getAgendaDhlAwbsPendentesEntrega_(values, display);
+    var awbs = Object.keys(pendentes);
+    if (!awbs.length) {
+      return { ok: true, verificados: 0, entregues: 0, mensagem: 'Nenhuma AWB DHL pendente de entrega.' };
+    }
+
+    var limiteSolicitado = Number(options.maxConsultas || DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_);
+    if (!isFinite(limiteSolicitado) || limiteSolicitado < 1) limiteSolicitado = DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_;
+    var maxConsultas = Math.max(1, Math.min(limiteSolicitado, awbs.length));
+    var entregues = [];
+    var erros = [];
+    for (var i = 0; i < maxConsultas; i++) {
+      var awb = awbs[i];
+      var resposta;
+      try {
+        resposta = consultarEntregaDhl_(awb, apiKey);
+      } catch (e) {
+        erros.push({ awb: awb, erro: e.message });
+        if (i < maxConsultas - 1) Utilities.sleep(5200);
+        continue;
+      }
+      if (i < maxConsultas - 1) Utilities.sleep(5200);
+      if (!resposta.entregue) {
+        continue;
+      }
+      (pendentes[awb] || []).forEach(function(item) {
+        var statusRange = agenda.getRange(item.row, item.statusCol);
+        var statusAnterior = statusRange.getValue();
+        if (normText_(statusAnterior) === 'entregue') return;
+        statusRange.setValue('Entregue');
+        entregues.push({
+          agendaId: item.agendaId,
+          row: item.row,
+          slot: item.slot,
+          awb: item.awb,
+          courier: item.courier,
+          statusDhl: resposta.status || '',
+          timestampEntrega: resposta.timestampEntrega || ''
+        });
+        codexWriteAuditChanges_('Agenda', 'monitorarEntregasDhlAgendadas', item.agendaId || item.awb, [{
+          field: item.slot + ' - Status',
+          oldValue: statusAnterior,
+          newValue: 'Entregue'
+        }], 'Entrega automática DHL | AWB ' + item.awb +
+          (resposta.status ? ' | Status DHL ' + resposta.status : '') +
+          (resposta.timestampEntrega ? ' | Entrega ' + resposta.timestampEntrega : ''));
+      });
+    }
+
+    SpreadsheetApp.flush();
+    return {
+      ok: true,
+      verificados: maxConsultas,
+      pendentes: awbs.length,
+      entregues: entregues.length,
+      itens: entregues,
+      erros: erros
+    };
+  });
+}
+
+function diagnosticarMonitorEntregasDhl() {
+  var agenda = getAgendaSheet_();
+  var lastRow = agenda.getLastRow();
+  var result = {
+    apiKeyConfigurada: !!getDhlTrackingApiKey_(),
+    pendentes: [],
+    mensagem: ''
+  };
+  if (lastRow < 2) {
+    Logger.log(JSON.stringify(result));
+    return result;
+  }
+  var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
+  var pendentes = getAgendaDhlAwbsPendentesEntrega_(range.getValues(), range.getDisplayValues());
+  Object.keys(pendentes).forEach(function(awb) {
+    pendentes[awb].forEach(function(item) {
+      result.pendentes.push({
+        awb: item.awb,
+        courier: item.courier,
+        statusAtual: item.statusAtual,
+        agendaId: item.agendaId,
+        row: item.row,
+        slot: item.slot
+      });
+    });
+  });
+  result.mensagem = result.pendentes.length
+    ? 'AWBs DHL candidatas a consulta: ' + result.pendentes.length
+    : 'Nenhuma AWB DHL pendente de entrega.';
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function getAgendaDhlAwbsPendentesEntrega_(values, display) {
+  var out = {};
+  var idx = AGENDA_CFG.idx;
+  var slots = [
+    { key: 'c1', label: 'Transporte I', cfg: idx.c1 },
+    { key: 'c2', label: 'Transporte II', cfg: idx.c2 },
+    { key: 'c3', label: 'Transporte III', cfg: idx.c3 }
+  ];
+  values.forEach(function(row, i) {
+    slots.forEach(function(slot) {
+      var courier = String(row[slot.cfg.nome] || '').trim();
+      if (normText_(courier).indexOf('dhl') === -1) return;
+      var status = normText_(row[slot.cfg.status]);
+      if (['entregue', 'cancelado', 'nao agendado'].indexOf(status) >= 0) return;
+      var awb = String(display[i][slot.cfg.awb] || row[slot.cfg.awb] || '').trim();
+      var awbKey = normalizarAwbCourier_(awb);
+      if (!/^[0-9]{10}$/.test(awbKey)) return;
+      if (!out[awbKey]) out[awbKey] = [];
+      out[awbKey].push({
+        agendaId: String(row[idx.id] || '').trim(),
+        row: i + 2,
+        slot: slot.label,
+        statusCol: slot.cfg.status + 1,
+        courier: courier,
+        awb: awb,
+        statusAtual: String(row[slot.cfg.status] || '').trim()
+      });
+    });
+  });
+  return out;
+}
+
+function consultarEntregaDhl_(awb, apiKey) {
+  var url = DHL_TRACKING_API_URL_ + '?trackingNumber=' + encodeURIComponent(awb);
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    muteHttpExceptions: true,
+    headers: {
+      'DHL-API-Key': apiKey,
+      'Accept': 'application/json'
+    }
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText() || '';
+  if (code < 200 || code >= 300) {
+    throw new Error('DHL API retornou HTTP ' + code + ' para AWB ' + awb + '.');
+  }
+  var payload = body ? JSON.parse(body) : {};
+  return interpretarRespostaEntregaDhl_(payload);
+}
+
+function interpretarRespostaEntregaDhl_(payload) {
+  var shipment = payload && payload.shipments && payload.shipments.length ? payload.shipments[0] : {};
+  var status = shipment.status || {};
+  var statusText = [
+    status.statusCode,
+    status.status,
+    status.description
+  ].filter(Boolean).join(' | ');
+  var entregue = dhlStatusIndicaEntrega_(statusText);
+  var timestampEntrega = status.timestamp || '';
+  var events = shipment.events || [];
+  events.forEach(function(ev) {
+    var eventText = [
+      ev.statusCode,
+      ev.status,
+      ev.description,
+      ev.type
+    ].filter(Boolean).join(' | ');
+    if (dhlStatusIndicaEntrega_(eventText)) {
+      entregue = true;
+      if (!timestampEntrega) timestampEntrega = ev.timestamp || ev.date || '';
+      if (!statusText) statusText = eventText;
+    }
+  });
+  return {
+    entregue: entregue,
+    status: statusText,
+    timestampEntrega: timestampEntrega
+  };
+}
+
+function dhlStatusIndicaEntrega_(texto) {
+  var n = normText_(texto);
+  return n.indexOf('delivered') >= 0 ||
+    n.indexOf('entregue') >= 0 ||
+    n.indexOf('delivery confirmed') >= 0 ||
+    n.indexOf('shipment delivered') >= 0;
+}
+
 function monitorarConfirmacoesCourierAgendadas() {
   var regras = getCourierConfirmationRules_();
   var ruleKeys = Object.keys(regras);
@@ -6860,6 +7228,30 @@ function removerGatilhoMonitorConfirmacaoCouriers() {
   var removidos = 0;
   ScriptApp.getProjectTriggers().forEach(function(t) {
     if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarConfirmacoesCourierAgendadas') {
+      ScriptApp.deleteTrigger(t);
+      removidos++;
+    }
+  });
+  return { ok: true, removidos: removidos };
+}
+
+function instalarGatilhoMonitorEntregasDhl() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarEntregasDhlAgendadas') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('monitorarEntregasDhlAgendadas')
+    .timeBased()
+    .everyHours(6)
+    .create();
+  return { ok: true, intervaloHoras: 6 };
+}
+
+function removerGatilhoMonitorEntregasDhl() {
+  var removidos = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarEntregasDhlAgendadas') {
       ScriptApp.deleteTrigger(t);
       removidos++;
     }
