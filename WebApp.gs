@@ -2754,6 +2754,12 @@ function getMonitores() {
         projetos: projetosDetalhes.map(function(p) { return p.projeto; }),
         projetosDetalhes: projetosDetalhes
       };
+    })
+    .sort(function(a, b) {
+      var nomeA = String((a && a.nome) || '').trim();
+      var nomeB = String((b && b.nome) || '').trim();
+      return nomeA.localeCompare(nomeB, 'pt-BR', { sensitivity: 'base' }) ||
+        String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
     });
 }
 
