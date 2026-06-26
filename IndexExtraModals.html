@@ -1,0 +1,257 @@
+<!-- MODAL PRESTADOR -->
+<div class="modal-overlay" id="modalPrestador" onclick="fecharModalSeClicouFora(event,'modalPrestador')">
+  <div class="modal-box" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">business</span></div>
+      <div>
+        <div class="modal-header-title" id="modalPrestTitle">CADASTRO DE PRESTADOR</div>
+        <div class="modal-header-sub">Laboratório, clínica ou serviço de exames</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalPrestador')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editPrestId">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">apartment</span> Identificação</div>
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="prestEmpresa">Empresa <span class="required-star">*</span></label>
+          <input type="text" id="prestEmpresa" class="f-input large" placeholder="Ex: Laboratório ABC"
+            oninput="limparErro('prestEmpresa','errPrestEmpresa')">
+          <div class="field-error" id="errPrestEmpresa">Campo obrigatório.</div>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="prestEndereco">Endereço</label>
+          <input type="text" id="prestEndereco" class="f-input" placeholder="Rua, número, bairro, cidade">
+        </div>
+        <div class="field">
+          <label class="field-label" for="prestEmail">E-mail <span class="required-star">*</span></label>
+          <input type="email" id="prestEmail" class="f-input" placeholder="contato@laboratorio.com.br"
+            oninput="limparErro('prestEmail','errPrestEmail')">
+          <div class="field-error" id="errPrestEmail">Campo obrigatório.</div>
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarPrest" onclick="salvarPrestadorApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+      </button>
+      <div class="status-msg" id="statusPrest"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LAB CENTRAL -->
+<div class="modal-overlay" id="modalLabCentral" onclick="fecharModalSeClicouFora(event,'modalLabCentral')">
+  <div class="modal-box" style="max-width:760px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">biotech</span></div>
+      <div>
+        <div class="modal-header-title" id="modalLabCentralTitle">CADASTRO DE LAB CENTRAL</div>
+        <div class="modal-header-sub">Laboratórios centrais para transporte de amostras</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalLabCentral')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editLabCentralId">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="labCentralNomeAbrev">Nome abreviado <span class="required-star">*</span></label>
+            <input type="text" id="labCentralNomeAbrev" class="f-input" placeholder="Ex: LABCORP (INDIANAPOLIS)" oninput="limparErro('labCentralNomeAbrev','errLabCentralNomeAbrev')">
+            <div class="field-error" id="errLabCentralNomeAbrev">Campo obrigatório.</div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="labCentralNomeCompleto">Nome completo <span class="required-star">*</span></label>
+            <input type="text" id="labCentralNomeCompleto" class="f-input" placeholder="Nome completo do laboratório" oninput="limparErro('labCentralNomeCompleto','errLabCentralNomeCompleto')">
+            <div class="field-error" id="errLabCentralNomeCompleto">Campo obrigatório.</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">location_on</span> Endereço</div>
+        <div class="form-grid">
+          <div class="field" style="grid-column:1/-1">
+            <label class="field-label" for="labCentralEndereco">Endereço</label>
+            <input type="text" id="labCentralEndereco" class="f-input" placeholder="Rua, número, complemento">
+          </div>
+          <div class="field">
+            <label class="field-label" for="labCentralCidade">Cidade</label>
+            <input type="text" id="labCentralCidade" class="f-input" placeholder="Cidade / UF">
+          </div>
+          <div class="field">
+            <label class="field-label" for="labCentralCep">CEP</label>
+            <input type="text" id="labCentralCep" class="f-input" placeholder="CEP / ZIP">
+          </div>
+          <div class="field">
+            <label class="field-label" for="labCentralPais">País</label>
+            <input type="text" id="labCentralPais" class="f-input" placeholder="País">
+          </div>
+          <div class="field">
+            <label class="field-label" for="labCentralCdcPermit">CDC Permit</label>
+            <input type="text" id="labCentralCdcPermit" class="f-input" placeholder="Número do CDC Permit">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">contact_phone</span> Contato</div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="labCentralTelefone">Telefone</label>
+            <input type="text" id="labCentralTelefone" class="f-input" placeholder="+1 ...">
+          </div>
+          <div class="field">
+            <label class="field-label" for="labCentralContato">Contato</label>
+            <input type="text" id="labCentralContato" class="f-input" placeholder="Pessoa ou setor de contato">
+          </div>
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarLabCentral" onclick="salvarLabCentralApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+      </button>
+      <div class="status-msg" id="statusLabCentral"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL COURIER -->
+<div class="modal-overlay" id="modalCourier" onclick="fecharModalSeClicouFora(event,'modalCourier')">
+  <div class="modal-box" style="max-width:860px">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+      <div>
+        <div class="modal-header-title" id="modalCourierTitle">CADASTRO DE COURIER</div>
+        <div class="modal-header-sub">Dados usados nos documentos e rascunhos de transporte</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalCourier')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editCourierId">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+        <div class="field">
+          <label class="field-label" for="courierNome">Courier <span class="required-star">*</span></label>
+          <input type="text" id="courierNome" class="f-input large" placeholder="Ex: MARKEN" oninput="limparErro('courierNome','errCourierNome'); aplicarDefaultsCourierConfirmacao(false)">
+          <div class="field-error" id="errCourierNome">Campo obrigatório.</div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">apartment</span> Remessa Express / Courier 1</div>
+        <div class="form-grid">
+          <div class="field" style="grid-column:1/-1">
+            <label class="field-label" for="courierEmpresa1">Empresa de Remessa Express/Courier (1)</label>
+            <input type="text" id="courierEmpresa1" class="f-input">
+          </div>
+          <div class="field"><label class="field-label" for="courierCnpj1">CNPJ (1)</label><input type="text" id="courierCnpj1" class="f-input"></div>
+          <div class="field"><label class="field-label" for="courierTelefone1">Telefone (1)</label><input type="text" id="courierTelefone1" class="f-input"></div>
+          <div class="field"><label class="field-label" for="courierFax1">Fax(1)</label><input type="text" id="courierFax1" class="f-input"></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">apartment</span> Remessa Express / Courier 2</div>
+        <div class="form-grid">
+          <div class="field" style="grid-column:1/-1">
+            <label class="field-label" for="courierEmpresa2">Empresa de Remessa Express/Courier (2)</label>
+            <input type="text" id="courierEmpresa2" class="f-input">
+          </div>
+          <div class="field"><label class="field-label" for="courierCnpj2">CNPJ (2)</label><input type="text" id="courierCnpj2" class="f-input"></div>
+          <div class="field"><label class="field-label" for="courierTelefone2">Telefone (2)</label><input type="text" id="courierTelefone2" class="f-input"></div>
+          <div class="field"><label class="field-label" for="courierFax2">Fax (2)</label><input type="text" id="courierFax2" class="f-input"></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">alternate_email</span> E-mails de rascunho</div>
+        <div class="form-grid">
+          <div class="field"><label class="field-label" for="courierEmail">E-mail padrão</label><input type="text" id="courierEmail" class="f-input" placeholder="email@dominio.com; outro@dominio.com"></div>
+          <div class="field"><label class="field-label" for="courierEmailAmbiente">E-mail ambiente</label><input type="text" id="courierEmailAmbiente" class="f-input"></div>
+          <div class="field"><label class="field-label" for="courierEmailCongelado">E-mail congelado</label><input type="text" id="courierEmailCongelado" class="f-input"></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">mark_email_read</span> Confirmação automática</div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="courierMonitorConfirmacao">Monitorar confirmação</label>
+            <select id="courierMonitorConfirmacao" class="f-input">
+              <option value=""></option>
+              <option value="Sim">Sim</option>
+              <option value="Não">Não</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="courierEmailConfirmacao">Remetente da confirmação</label>
+            <input type="text" id="courierEmailConfirmacao" class="f-input" placeholder="expobrasil@marken.com; ocasa.com">
+          </div>
+          <div class="field">
+            <label class="field-label" for="courierStatusConfirmacao">Status ao confirmar</label>
+            <select id="courierStatusConfirmacao" class="f-input"></select>
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label class="field-label" for="courierTextoConfirmacao">Texto de confirmação</label>
+            <textarea id="courierTextoConfirmacao" class="f-input" rows="3" placeholder="Confirmamos o agendamento da retirada conforme informações abaixo."></textarea>
+          </div>
+          <div id="courierConfirmacaoDefaultInfo" class="field-hint" style="grid-column:1/-1;display:none;color:var(--primary);font-weight:600"></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">description</span> Declaração de Transporte</div>
+        <div class="field">
+          <label class="field-label" for="courierConteudo">Conteúdo da Declaração de Transporte</label>
+          <div class="rich-toolbar" aria-label="Formatação do texto">
+            <button type="button" class="rich-btn" title="Negrito" onclick="courierEditorCommand('bold')">B</button>
+            <button type="button" class="rich-btn" title="Itálico" onclick="courierEditorCommand('italic')"><i>I</i></button>
+            <button type="button" class="rich-btn" title="Sublinhado" onclick="courierEditorCommand('underline')"><u>U</u></button>
+          </div>
+          <div id="courierConteudoEditor" class="f-input rich-editor" contenteditable="true" data-placeholder="Digite o texto da declaração" oninput="document.getElementById('courierConteudo').value = courierEditorHtml()" onpaste="courierEditorPastePlain(event)"></div>
+          <input type="hidden" id="courierConteudo">
+        </div>
+      </div>
+      <button class="btn-save" id="btnSalvarCourier" onclick="salvarCourierApp()">
+        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+      </button>
+      <div class="status-msg" id="statusCourier"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM EXCLUIR COURIER -->
+<div class="modal-overlay" id="confirmCourier">
+  <div class="confirm-box">
+    <h3>Excluir Courier?</h3>
+    <p id="confirmCourierNome"></p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmCourier')">Cancelar</button>
+      <button class="btn-danger" id="btnConfirmExcluirCourier">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM EXCLUIR LAB CENTRAL -->
+<div class="modal-overlay" id="confirmLabCentral">
+  <div class="confirm-box">
+    <h3>Excluir Lab Central?</h3>
+    <p id="confirmLabCentralNome"></p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmLabCentral')">Cancelar</button>
+      <button class="btn-danger" id="btnConfirmExcluirLabCentral">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM EXCLUIR PRESTADOR -->
+<div class="modal-overlay" id="confirmPrestador">
+  <div class="confirm-box">
+    <h3>Excluir Prestador?</h3>
+    <p id="confirmPrestNome"></p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmPrestador')">Cancelar</button>
+      <button class="btn-danger" id="btnConfirmExcluirPrest">Excluir</button>
+    </div>
+  </div>
+</div>
+
+

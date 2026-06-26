@@ -1,0 +1,844 @@
+  <script>
+  // ═══════════════════════════════════════════════════════════════
+  //  DASHBOARD
+  // ═══════════════════════════════════════════════════════════════
+  var _dashInited = false;
+  var _dashCharts = {};
+  var _dashAgendaRaw = [];
+  var _dashAgendaResumoAtual = {};
+  var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
+  var _dashKpiRecrutZeroKeys = {};
+  var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v1';
+  var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
+
+  function carregarDashboard(forcar) {
+    if (_dashInited && !forcar) return;
+    if (!forcar && dashboardRenderFromSessionCache()) {
+      _dashInited = true;
+      return;
+    }
+    _dashInited = true;
+    var kpiEl = document.getElementById('dashKpis');
+    var btn   = document.getElementById('btnDashRefresh');
+    if (kpiEl) {
+      kpiEl.style.opacity = '.45';
+      kpiEl.style.pointerEvents = 'none';
+    }
+    if (btn) btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(d) {
+        try {
+          if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+          if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
+          dashboardStoreSessionCache(d || {});
+          renderDashboard(d || {});
+        } catch(err) {
+          _dashInited = false;
+          if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+          mostrarErroDashboard(err && err.message ? err.message : String(err));
+        }
+      })
+      .withFailureHandler(function(e) {
+        _dashInited = false;
+        if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
+        mostrarErroDashboard(e && e.message ? e.message : String(e));
+      })
+      .getDashboardData();
+  }
+
+  function dashboardRenderFromSessionCache() {
+    try {
+      if (!window.sessionStorage) return false;
+      var raw = sessionStorage.getItem(DASHBOARD_SESSION_CACHE_KEY);
+      if (!raw) return false;
+      var cached = JSON.parse(raw);
+      if (!cached || !cached.data) return false;
+      cached.data._dashboardCachedAt = cached.cachedAt || Date.now();
+      renderDashboard(cached.data);
+      return true;
+    } catch (e) {
+      try { sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY); } catch (ignore) {}
+      return false;
+    }
+  }
+
+  function dashboardStoreSessionCache(data) {
+    try {
+      if (!window.sessionStorage) return;
+      data = data || {};
+      if (data.erros && data.erros.length) return;
+      data._dashboardCachedAt = Date.now();
+      sessionStorage.setItem(DASHBOARD_SESSION_CACHE_KEY, JSON.stringify({
+        cachedAt: data._dashboardCachedAt,
+        data: data
+      }));
+    } catch (e) {}
+  }
+
+  function mostrarErroDashboard(msg) {
+    var old = document.getElementById('dashErrorBox');
+    if (old) old.remove();
+    var page = document.getElementById('page-dashboard');
+    if (!page) return;
+    page.insertAdjacentHTML('afterbegin',
+      '<div id="dashErrorBox" style="background:#fce8e6;border:1.5px solid #f4b5b2;border-radius:10px;padding:16px;color:#b3261e;font-size:13px;margin-bottom:12px">' +
+      '<strong>Erro ao carregar dashboard:</strong> ' + esc(msg) + '</div>');
+  }
+
+  function _agg(lista, campo) {
+    var m = {};
+    lista.forEach(function(item) {
+      var v = (item[campo] || 'N/A').trim() || 'N/A';
+      m[v] = (m[v] || 0) + 1;
+    });
+    return m;
+  }
+
+  function _sortDesc(obj) {
+    return Object.keys(obj).sort(function(a,b){ return obj[b]-obj[a]; });
+  }
+
+  function _shortDashLabel(v) {
+    v = String(v || 'N/A');
+    return v.length > 30 ? v.slice(0, 27) + '...' : v;
+  }
+
+  function _topDashPairs(keys, map, limit) {
+    var pairs = keys.map(function(k) { return { label: k, value: map[k] || 0 }; });
+    if (pairs.length <= limit) return pairs;
+    var head = pairs.slice(0, limit - 1);
+    var rest = pairs.slice(limit - 1).reduce(function(sum, p) { return sum + p.value; }, 0);
+    head.push({ label: 'Outros', value: rest });
+    return head;
+  }
+
+  function _setChartHeight(canvasId, labelCount, perRow, minHeight, maxHeight) {
+    var canvas = document.getElementById(canvasId);
+    var wrap = canvas ? canvas.closest('.chart-wrap') : null;
+    if (!wrap) return;
+    var h = Math.max(minHeight || 220, Math.min(maxHeight || 520, (labelCount || 1) * (perRow || 26) + 72));
+    wrap.style.height = h + 'px';
+  }
+
+  function _normDash(v) {
+    return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  }
+
+  function _isProjetoAtivoDash(p) {
+    var st = _normDash(p.status);
+    return st.indexOf('concluido') === -1 && st.indexOf('cancelado') === -1;
+  }
+
+  function _isProjetoContaParticipantesDash(p) {
+    var st = _normDash(p.status);
+    return _isProjetoAtivoDash(p) && st.indexOf('etapa regulatoria') === -1;
+  }
+
+  function _sameProjetoDash(partProjeto, proj) {
+    var a = _normDash(partProjeto);
+    return a && (a === _normDash(proj.nomeAbreviado) || a === _normDash(proj.codigo));
+  }
+
+  function _isParticipanteAtivoDash(p) {
+    return _normDash(p && p.status) === 'ativo';
+  }
+
+  function _dashStoreProjetoKeys(map, proj) {
+    var nome = _normDash(proj && proj.nomeAbreviado);
+    var codigo = _normDash(proj && proj.codigo);
+    if (nome) map[nome] = true;
+    if (codigo) map[codigo] = true;
+  }
+
+  function _dashBindKpi(valueId, target, label) {
+    var valueEl = document.getElementById(valueId);
+    var card = valueEl ? valueEl.closest('.dash-kpi') : null;
+    if (!card || card.dataset.dashTarget === target) return;
+    card.dataset.dashTarget = target;
+    card.classList.add('dash-kpi-clickable');
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('title', 'Abrir registros: ' + label);
+    card.onclick = function() { dashOpenKpi(target); };
+    card.onkeydown = function(ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        dashOpenKpi(target);
+      }
+    };
+  }
+
+  function bindDashboardKpiClicks() {
+    _dashBindKpi('kpiProjetos', 'projetosAtivos', 'Projetos Ativos');
+    _dashBindKpi('kpiPart', 'participantes', 'Participantes');
+    _dashBindKpi('kpiAtivos', 'participantesAtivos', 'Participantes Ativos / Seguimento');
+    _dashBindKpi('kpiZeroRecrut', 'recrutZero', 'Recrutamento aberto sem participantes ativos');
+  }
+
+  function dashWaitAndApply(page, applyFn) {
+    if (typeof irPara === 'function') irPara(page);
+    var attempts = 0;
+    function retry() {
+      attempts++;
+      if (applyFn()) return;
+      if (attempts < 30) setTimeout(retry, 120);
+    }
+    setTimeout(retry, 120);
+  }
+
+  function dashClearProjetoInputs() {
+    var search = document.getElementById('searchProjetos');
+    if (search) search.value = '';
+  }
+
+  function dashClearParticipanteInputs() {
+    var search = document.getElementById('searchParticipantes');
+    var status = document.getElementById('filterStatusPar');
+    if (search) search.value = '';
+    if (status) status.value = '';
+  }
+
+  function dashListIsLoading(bodyId) {
+    var body = document.getElementById(bodyId);
+    return !!(body && body.querySelector('.loading-row'));
+  }
+
+  function dashOpenMainWithFilter(page, filtro, keys) {
+    if (typeof isEmbeddedModuleEnabled === 'function' && isEmbeddedModuleEnabled('dashboard') && typeof abrirModuloPrincipal === 'function') {
+      var query = 'dashFiltro=' + encodeURIComponent(filtro || '');
+      if (keys) query += '&dashKeys=' + encodeURIComponent(keys);
+      abrirModuloPrincipal(page, query);
+      return true;
+    }
+    return false;
+  }
+
+  function dashRecrutZeroKeysParam() {
+    return Object.keys(_dashKpiRecrutZeroKeys || {}).join('|');
+  }
+
+  function dashOpenKpi(target) {
+    if (target === 'projetosAtivos') {
+      if (dashOpenMainWithFilter('projetos', target)) return;
+      dashWaitAndApply('projetos', function() {
+        if (dashListIsLoading('bodyProjetos')) return false;
+        if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
+        dashClearProjetoInputs();
+        renderTabelaProj(_projetos.filter(_isProjetoAtivoDash));
+        return true;
+      });
+      return;
+    }
+    if (target === 'participantes') {
+      if (dashOpenMainWithFilter('participantes', target)) return;
+      dashWaitAndApply('participantes', function() {
+        if (dashListIsLoading('bodyParticipantes')) return false;
+        if (typeof filtrarParticipantes !== 'function' || typeof _participantes === 'undefined' || !Array.isArray(_participantes)) return false;
+        dashClearParticipanteInputs();
+        filtrarParticipantes();
+        return true;
+      });
+      return;
+    }
+    if (target === 'participantesAtivos') {
+      if (dashOpenMainWithFilter('participantes', target)) return;
+      dashWaitAndApply('participantes', function() {
+        if (dashListIsLoading('bodyParticipantes')) return false;
+        if (typeof renderTabelaPart !== 'function' || typeof _participantes === 'undefined' || !Array.isArray(_participantes)) return false;
+        dashClearParticipanteInputs();
+        renderTabelaPart(_participantes.filter(function(p) {
+          var st = _normDash(p.status);
+          return st === 'ativo' || st === 'em seguimento';
+        }));
+        return true;
+      });
+      return;
+    }
+    if (target === 'recrutZero') {
+      if (dashOpenMainWithFilter('projetos', target, dashRecrutZeroKeysParam())) return;
+      dashWaitAndApply('projetos', function() {
+        if (dashListIsLoading('bodyProjetos')) return false;
+        if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
+        var keys = _dashKpiRecrutZeroKeys || {};
+        dashClearProjetoInputs();
+        renderTabelaProj(_projetos.filter(function(p) {
+          return !!(keys[_normDash(p.nomeAbreviado)] || keys[_normDash(p.codigo)]);
+        }));
+        return true;
+      });
+    }
+  }
+
+  function _destroyChart(id) {
+    if (_dashCharts[id]) { _dashCharts[id].destroy(); delete _dashCharts[id]; }
+  }
+
+  function _doughnut(canvasId, labels, data) {
+    _destroyChart(canvasId);
+    var ctx = document.getElementById(canvasId).getContext('2d');
+    var total = data.reduce(function(sum, v) { return sum + Number(v || 0); }, 0);
+    var displayLabels = labels.map(function(label, idx) {
+      var pct = total ? (Number(data[idx] || 0) * 100 / total).toFixed(1).replace('.', ',') : '0,0';
+      return label + ': ' + data[idx] + ' (' + pct + '%)';
+    });
+    _dashCharts[canvasId] = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: displayLabels,
+        datasets: [{ data: data, backgroundColor: DASH_CORES.slice(0, data.length),
+          borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'right', labels: { font: { size: 11, family: 'Roboto' }, padding: 12, boxWidth: 12 } },
+          tooltip: { callbacks: { label: function(c){ return ' ' + c.label; } } }
+        },
+        cutout: '62%'
+      }
+    });
+  }
+
+  function _barH(canvasId, labels, datasets) {
+    _destroyChart(canvasId);
+    var ctx = document.getElementById(canvasId).getContext('2d');
+    var fullLabels = labels.slice();
+    var displayLabels = labels.map(_shortDashLabel);
+    _dashCharts[canvasId] = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: displayLabels, datasets: datasets },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: datasets.length > 1,
+            labels: { font: { size: 11, family: 'Roboto' }, padding: 10, boxWidth: 12 } },
+          tooltip: {
+            callbacks: {
+              title: function(items) {
+                var idx = items && items.length ? items[0].dataIndex : 0;
+                return fullLabels[idx] || '';
+              }
+            }
+          }
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#f0f4f8' } },
+          y: { ticks: { autoSkip: false, font: { size: 11, family: 'Roboto' } }, grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function renderDashboard(d) {
+    if (d.erros && d.erros.length) {
+      document.getElementById('dashKpis').innerHTML =
+        '<div style="grid-column:1/-1;background:#fce8e6;border:1.5px solid #f4b5b2;border-radius:10px;padding:16px;color:#b3261e;font-size:13px">' +
+        '<strong>Erro ao carregar dados:</strong><br>' + d.erros.join('<br>') + '</div>';
+      return;
+    }
+    if (typeof Chart === 'undefined') {
+      document.getElementById('dashKpis').innerHTML =
+        '<div style="grid-column:1/-1;background:#fff3e0;border:1.5px solid #ffcc02;border-radius:10px;padding:16px;color:#e65100;font-size:13px">' +
+        '<strong>Chart.js não carregou.</strong> Verifique a conexão com a internet e recarregue a página.</div>';
+      return;
+    }
+    var proj = d.projetos || [];
+    var part = d.participantes || [];
+    var est = d.estoqueResumo || {};
+    var projetosAtivos = proj.filter(_isProjetoAtivoDash);
+    var projetosPart = proj.filter(_isProjetoContaParticipantesDash);
+    var ativos = part.filter(function(p) { return p.status === 'Ativo' || p.status === 'Em Seguimento'; });
+    var recrutAberto = projetosAtivos.filter(function(p) { return _normDash(p.status).indexOf('recrutamento aberto') >= 0; });
+    var recrutZero = recrutAberto.filter(function(pr) {
+      return !part.some(function(pt) { return _sameProjetoDash(pt.projeto, pr) && _isParticipanteAtivoDash(pt); });
+    });
+    _dashKpiRecrutZeroKeys = {};
+    recrutZero.forEach(function(pr) { _dashStoreProjetoKeys(_dashKpiRecrutZeroKeys, pr); });
+    var esps = Object.keys(_agg(projetosAtivos, 'especialidade'));
+    document.getElementById('kpiProjetos').textContent = projetosAtivos.length || '0';
+    document.getElementById('kpiPart').textContent     = part.length || '0';
+    document.getElementById('kpiAtivos').textContent   = ativos.length || '0';
+    document.getElementById('kpiZeroRecrut').textContent = recrutZero.length || '0';
+    bindDashboardKpiClicks();
+    var now = new Date(d._dashboardCachedAt || Date.now());
+    document.getElementById('dashTs').textContent =
+      'Atualizado: ' + now.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+    if (!proj.length) {
+      document.getElementById('dashKpis').insertAdjacentHTML('afterend',
+        '<div style="background:#e8f0fe;border:1.5px solid #c5d5fb;border-radius:10px;padding:14px;color:#1266f1;font-size:13px;margin-bottom:16px">' +
+        'Nenhum projeto encontrado. Verifique se há dados na aba Projetos.</div>');
+    }
+    var faseMap  = _agg(projetosAtivos, 'fase');
+    var faseKeys = _sortDesc(faseMap);
+    if (faseKeys.length) _doughnut('chartFase', faseKeys, faseKeys.map(function(k){ return faseMap[k]; }));
+    var espMap  = _agg(projetosAtivos, 'especialidade');
+    var espKeys = _sortDesc(espMap);
+    if (espKeys.length) _doughnut('chartEsp', espKeys, espKeys.map(function(k){ return espMap[k]; }));
+    var statusMap = _agg(projetosAtivos, 'status');
+    var statusKeys = _sortDesc(statusMap);
+    if (statusKeys.length) _doughnut('chartProjStatus', statusKeys, statusKeys.map(function(k){ return statusMap[k]; }));
+    var croMap = _agg(projetosAtivos, 'cro');
+    var croKeys = _sortDesc(croMap);
+    var croNaoKeys = croKeys.filter(function(k) {
+      var n = _normDash(k);
+      return n === 'nao aplicavel' || n === 'nao se aplica' || n === 'n/a' || n === 'na';
+    });
+    var croNormKeys = croKeys.filter(function(k) { return croNaoKeys.indexOf(k) === -1; });
+    var croPairs = _topDashPairs(croNormKeys, croMap, croNaoKeys.length ? 9 : 10);
+    if (croNaoKeys.length) {
+      croPairs.push({
+        label: 'Não aplicável',
+        value: croNaoKeys.reduce(function(sum, k) { return sum + (croMap[k] || 0); }, 0)
+      });
+    }
+    if (croPairs.length) {
+      _setChartHeight('chartCRO', croPairs.length, 28, 220, 380);
+      _barH('chartCRO', croPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: croPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, croPairs.length), borderRadius: 4 }]);
+    }
+    var projPairs = projetosPart.map(function(pr) {
+      return {
+        label: pr.nomeAbreviado || pr.codigo || 'S/N',
+        total: part.filter(function(p){ return _sameProjetoDash(p.projeto, pr); }).length,
+        ativos: ativos.filter(function(p){ return _sameProjetoDash(p.projeto, pr); }).length
+      };
+    }).sort(function(a, b) { return b.total - a.total || b.ativos - a.ativos; });
+    if (projPairs.length > 18) {
+      var headProj = projPairs.slice(0, 17);
+      var restProj = projPairs.slice(17).reduce(function(acc, p) {
+        acc.total += p.total; acc.ativos += p.ativos; return acc;
+      }, { label: 'Outros', total: 0, ativos: 0 });
+      projPairs = headProj.concat(restProj);
+    }
+    if (projPairs.length) {
+      _setChartHeight('chartPartProj', projPairs.length, 24, 300, 560);
+      _barH('chartPartProj', projPairs.map(function(p){ return p.label; }), [
+        { label: 'Total', data: projPairs.map(function(p){ return p.total; }), backgroundColor: 'rgba(18,102,241,.7)', borderRadius: 4 },
+        { label: 'Ativos / Em Seguimento', data: projPairs.map(function(p){ return p.ativos; }), backgroundColor: 'rgba(0,121,107,.7)', borderRadius: 4 }
+      ]);
+    }
+    var patMap  = _agg(projetosAtivos, 'patrocinador');
+    var patKeys = _sortDesc(patMap);
+    var patPairs = _topDashPairs(patKeys, patMap, 10);
+    if (patPairs.length) {
+      _setChartHeight('chartPat', patPairs.length, 28, 220, 380);
+      _barH('chartPat', patPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: patPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, patPairs.length), borderRadius: 4 }]);
+    }
+    var ipMap  = _agg(projetosAtivos, 'investigador');
+    var ipKeys = _sortDesc(ipMap);
+    var ipPairs = _topDashPairs(ipKeys, ipMap, 10);
+    if (ipPairs.length) {
+      _setChartHeight('chartIP', ipPairs.length, 28, 220, 380);
+      _barH('chartIP', ipPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: ipPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, ipPairs.length), borderRadius: 4 }]);
+    }
+    var coordMap  = _agg(projetosAtivos, 'coordenador');
+    var coordKeys = _sortDesc(coordMap);
+    var coordPairs = _topDashPairs(coordKeys, coordMap, 12);
+    if (coordPairs.length) {
+      _setChartHeight('chartCoord', coordPairs.length, 28, 240, 440);
+      _barH('chartCoord', coordPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: coordPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, coordPairs.length), borderRadius: 4 }]);
+    }
+    moverBlocoAgendaDashboard();
+    renderDashboardAgenda(d.agendaResumo || {});
+    renderDashboardEstoque(est);
+  }
+
+  function moverBlocoAgendaDashboard() {
+    var agenda = document.getElementById('dashAgendaBlock');
+    var estoque = document.getElementById('dashEstoqueBlock');
+    if (agenda && estoque && agenda.nextElementSibling !== estoque) {
+      estoque.parentNode.insertBefore(agenda, estoque);
+    }
+    if (agenda) agenda.style.display = '';
+  }
+
+  function dashAgendaMonthNames() {
+    return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  }
+
+  function dashAgendaPairs(map, limit) {
+    var pairs = Object.keys(map).map(function(k) {
+      return { label: k, value: map[k] || 0 };
+    }).sort(function(a, b) {
+      return b.value - a.value || a.label.localeCompare(b.label);
+    });
+    return pairs.slice(0, limit || 15);
+  }
+
+  function dashAgendaYears(rows) {
+    var seen = {};
+    (rows || []).forEach(function(r) {
+      var y = Number(r.ano || 0);
+      if (y) seen[y] = 1;
+    });
+    var years = Object.keys(seen).map(Number).sort(function(a, b) { return b - a; });
+    return years.length ? years : [new Date().getFullYear()];
+  }
+
+  function setupDashAgendaPeriodControls() {
+    var tipoEl = document.getElementById('dashAgendaPeriodTipo');
+    var anoEl = document.getElementById('dashAgendaPeriodAno');
+    var mesEl = document.getElementById('dashAgendaPeriodMes');
+    if (!tipoEl || !anoEl || !mesEl) return;
+    var years = dashAgendaYears(_dashAgendaRaw);
+    if (years.indexOf(Number(_dashAgendaPeriod.ano)) < 0) _dashAgendaPeriod.ano = years[0];
+    tipoEl.value = _dashAgendaPeriod.tipo || 'ano';
+    anoEl.innerHTML = years.map(function(y) {
+      return '<option value="' + y + '">' + y + '</option>';
+    }).join('');
+    anoEl.value = String(_dashAgendaPeriod.ano);
+    mesEl.innerHTML = dashAgendaMonthNames().map(function(m, idx) {
+      var n = idx + 1;
+      return '<option value="' + n + '">' + m + '</option>';
+    }).join('');
+    mesEl.value = String(_dashAgendaPeriod.mes || (new Date().getMonth() + 1));
+    anoEl.style.display = tipoEl.value === 'global' ? 'none' : '';
+    mesEl.style.display = tipoEl.value === 'mes' ? '' : 'none';
+  }
+
+  function onDashAgendaPeriodChange() {
+    var tipoEl = document.getElementById('dashAgendaPeriodTipo');
+    var anoEl = document.getElementById('dashAgendaPeriodAno');
+    var mesEl = document.getElementById('dashAgendaPeriodMes');
+    _dashAgendaPeriod.tipo = tipoEl ? tipoEl.value : 'ano';
+    _dashAgendaPeriod.ano = anoEl ? Number(anoEl.value || new Date().getFullYear()) : new Date().getFullYear();
+    _dashAgendaPeriod.mes = mesEl ? Number(mesEl.value || (new Date().getMonth() + 1)) : new Date().getMonth() + 1;
+    setupDashAgendaPeriodControls();
+    renderDashboardAgendaPeriodoResumo();
+  }
+
+  function dashAgendaRowsPeriodo() {
+    return (_dashAgendaRaw || []).filter(function(r) {
+      if (_dashAgendaPeriod.tipo === 'global') return true;
+      if (Number(r.ano || 0) !== Number(_dashAgendaPeriod.ano)) return false;
+      if (_dashAgendaPeriod.tipo === 'mes') return Number(r.mes || 0) === Number(_dashAgendaPeriod.mes);
+      return true;
+    });
+  }
+
+  function renderDashAgendaPairChart(canvasId, pairs, label, color, maxH) {
+    _destroyChart(canvasId);
+    pairs = pairs || [];
+    if (!pairs.length) {
+      var canvas = document.getElementById(canvasId);
+      var wrap = canvas ? canvas.closest('.chart-wrap') : null;
+      if (wrap) wrap.style.height = '240px';
+      if (canvas) {
+        var ctx = canvas.getContext('2d');
+        var w = canvas.width || canvas.clientWidth || 320;
+        var h = canvas.height || canvas.clientHeight || 220;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#9aa3b0';
+        ctx.font = '600 13px Roboto, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Sem dados para o período selecionado', w / 2, h / 2);
+      }
+      return;
+    }
+    _setChartHeight(canvasId, pairs.length, 26, 240, maxH || 430);
+    _barH(canvasId, pairs.map(function(p) { return p.label; }), [{
+      label: label,
+      data: pairs.map(function(p) { return p.value || 0; }),
+      backgroundColor: color,
+      borderRadius: 4
+    }]);
+  }
+
+  function renderDashboardAgendaPeriodCharts() {
+    var ag = _dashAgendaResumoAtual || {};
+    if (!_dashAgendaRaw.length) {
+      renderDashAgendaPairChart('chartAgendaProt', ag.visitasPorProtocolo || [], 'Visitas', 'rgba(18,102,241,.72)');
+      renderDashAgendaPairChart('chartAgendaMonProt', ag.monitoriaPorProtocolo || [], 'Dias', 'rgba(91,33,182,.72)');
+      renderDashAgendaPairChart('chartAgendaMedico', ag.visitasPorMedico || [], 'Visitas', 'rgba(46,125,50,.72)');
+      renderDashAgendaPairChart('chartAgendaCancelProt', ag.cancelReagPorProtocolo || [], 'Cancel./Reag.', 'rgba(198,40,40,.72)');
+      renderDashAgendaPairChart('chartAgendaCourierAno', ag.courierUsoAno || [], 'Transportes', 'rgba(18,102,241,.72)');
+      return;
+    }
+    var rows = dashAgendaRowsPeriodo();
+    var porProt = {};
+    var porMonDia = {};
+    var porMed = {};
+    var cancelReag = {};
+    var courierUso = {};
+    var hoje = new Date();
+    hoje.setHours(23, 59, 59, 999);
+    rows.forEach(function(r) {
+      var dt = r.dataIso ? new Date(String(r.dataIso) + 'T12:00:00') : null;
+      var noFuturo = dt && !isNaN(dt.getTime()) && dt.getTime() > hoje.getTime();
+      var projeto = r.projeto || 'Sem protocolo';
+      var medico = r.medico || 'Sem medico';
+      if ((r.isCancelado || r.isReagendado) && projeto) cancelReag[projeto] = (cancelReag[projeto] || 0) + 1;
+      if (r.isMonitoria && !r.isCancelado) porMonDia[projeto + '|' + (r.dataIso || '')] = projeto;
+      if (r.isVisita && r.isRealizada && !r.isCancelado && !noFuturo) {
+        porProt[projeto] = (porProt[projeto] || 0) + 1;
+        porMed[medico] = (porMed[medico] || 0) + 1;
+      }
+      if (r.isEventoComTransporte && r.isRealizada && !r.isCancelado && !noFuturo && r.labCentral) {
+        (r.couriers || []).forEach(function(nome) {
+          if (!nome) return;
+          courierUso[nome] = (courierUso[nome] || 0) + 1;
+        });
+      }
+    });
+    var monMap = {};
+    Object.keys(porMonDia).forEach(function(k) {
+      var p = porMonDia[k];
+      monMap[p] = (monMap[p] || 0) + 1;
+    });
+    renderDashAgendaPairChart('chartAgendaProt', dashAgendaPairs(porProt, 15), 'Visitas', 'rgba(18,102,241,.72)');
+    renderDashAgendaPairChart('chartAgendaMonProt', dashAgendaPairs(monMap, 15), 'Dias', 'rgba(91,33,182,.72)');
+    renderDashAgendaPairChart('chartAgendaMedico', dashAgendaPairs(porMed, 12), 'Visitas', 'rgba(46,125,50,.72)');
+    renderDashAgendaPairChart('chartAgendaCancelProt', dashAgendaPairs(cancelReag, 15), 'Cancel./Reag.', 'rgba(198,40,40,.72)');
+    renderDashAgendaPairChart('chartAgendaCourierAno', dashAgendaPairs(courierUso, 12), 'Transportes', 'rgba(18,102,241,.72)');
+  }
+
+  function dashAgendaPeriodoLabel() {
+    if (_dashAgendaPeriod.tipo === 'global') return 'Global';
+    if (_dashAgendaPeriod.tipo === 'mes') {
+      return dashAgendaMonthNames()[Number(_dashAgendaPeriod.mes || 1) - 1] + '/' + _dashAgendaPeriod.ano;
+    }
+    return String(_dashAgendaPeriod.ano || new Date().getFullYear());
+  }
+
+  function dashAgendaPeriodoBuckets(rows, predicate) {
+    var map = {};
+    (rows || []).forEach(function(r) {
+      if (predicate && !predicate(r)) return;
+      var label = _dashAgendaPeriod.tipo === 'global'
+        ? String(r.ano || '-')
+        : dashAgendaMonthNames()[Number(r.mes || 1) - 1];
+      map[label] = (map[label] || 0) + 1;
+    });
+    return Object.keys(map).sort(function(a, b) {
+      if (_dashAgendaPeriod.tipo === 'global') return Number(a) - Number(b);
+      return dashAgendaMonthNames().indexOf(a) - dashAgendaMonthNames().indexOf(b);
+    }).map(function(label) { return { label: label, value: map[label] || 0 }; });
+  }
+
+  function renderDashboardAgendaPeriodoResumo() {
+    var ag = _dashAgendaResumoAtual || {};
+    var rows = _dashAgendaRaw.length ? dashAgendaRowsPeriodo() : [];
+    var hoje = new Date();
+    hoje.setHours(23, 59, 59, 999);
+    function noFuturo(r) {
+      var dt = r.dataIso ? new Date(String(r.dataIso) + 'T12:00:00') : null;
+      return dt && !isNaN(dt.getTime()) && dt.getTime() > hoje.getTime();
+    }
+    function realizada(r) { return r.isVisita && r.isRealizada && !r.isCancelado && !noFuturo(r); }
+    function labCentral(r) { return r.labCentral && !r.isCancelado; }
+
+    var monDias = {};
+    rows.forEach(function(r) {
+      if (r.isMonitoria && !r.isCancelado) monDias[(r.projeto || 'Sem protocolo') + '|' + (r.dataIso || '')] = 1;
+    });
+    var ids = _dashAgendaRaw.length ? {
+      dashAgendaVisitasAno: rows.filter(realizada).length,
+      dashAgendaLabAno: rows.filter(labCentral).length,
+      dashAgendaMonAno: Object.keys(monDias).length,
+      dashAgendaTotalAno: rows.length
+    } : {
+      dashAgendaVisitasAno: ag.visitasRealizadasAno || 0,
+      dashAgendaLabAno: ag.labCentralAno || 0,
+      dashAgendaMonAno: ag.monitoriaDiasAno || 0,
+      dashAgendaTotalAno: ag.totalAno || 0
+    };
+    Object.keys(ids).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = ids[id];
+    });
+
+    var labelEl = document.getElementById('dashAgendaPeriodoAtual');
+    if (labelEl) labelEl.textContent = dashAgendaPeriodoLabel();
+    var visitasPeriodo = _dashAgendaRaw.length ? dashAgendaPeriodoBuckets(rows, realizada) : (ag.visitasMes || []);
+    var labPeriodo = _dashAgendaRaw.length ? dashAgendaPeriodoBuckets(rows, labCentral) : (ag.labCentralMes || []);
+    var mesCards = document.getElementById('dashAgendaMesCards');
+    if (mesCards) {
+      mesCards.innerHTML = visitasPeriodo.map(function(m) {
+        return '<div class="dash-kpi" style="padding:10px 8px;text-align:center">' +
+          '<div class="dash-kpi-val" style="font-size:20px;margin-bottom:3px">' + (m.value || 0) + '</div>' +
+          '<div class="dash-kpi-lbl">' + esc(m.label || '-') + '</div>' +
+        '</div>';
+      }).join('');
+    }
+    function labels(arr) { return (arr || []).map(function(p) { return p.label; }); }
+    function values(arr) { return (arr || []).map(function(p) { return p.value || 0; }); }
+    _destroyChart('chartAgendaVisitasMes');
+    _destroyChart('chartAgendaLabMes');
+    if (visitasPeriodo.length) {
+      _setChartHeight('chartAgendaVisitasMes', visitasPeriodo.length, 20, 220, 320);
+      _barH('chartAgendaVisitasMes', labels(visitasPeriodo), [{ label: 'Visitas', data: values(visitasPeriodo), backgroundColor: 'rgba(18,102,241,.72)', borderRadius: 4 }]);
+    }
+    if (labPeriodo.length) {
+      _setChartHeight('chartAgendaLabMes', labPeriodo.length, 20, 220, 320);
+      _barH('chartAgendaLabMes', labels(labPeriodo), [{ label: 'Lab Central', data: values(labPeriodo), backgroundColor: 'rgba(0,121,107,.72)', borderRadius: 4 }]);
+    }
+
+    var dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(d) { return { label: d, value: 0 }; });
+    if (_dashAgendaRaw.length) {
+      rows.forEach(function(r) {
+        if (!realizada(r) || !r.dataIso) return;
+        var dt = new Date(String(r.dataIso) + 'T12:00:00');
+        if (!isNaN(dt.getTime())) dias[dt.getDay()].value++;
+      });
+    } else {
+      dias = ag.visitasPorDiaSemana || dias;
+    }
+    _destroyChart('chartAgendaDiaSemana');
+    if (dias.length) {
+      _setChartHeight('chartAgendaDiaSemana', dias.length, 28, 220, 320);
+      _barH('chartAgendaDiaSemana', labels(dias), [{ label: 'Visitas', data: values(dias), backgroundColor: DASH_CORES.slice(0, 7), borderRadius: 4 }]);
+    }
+
+    renderDashboardAgendaPeriodCharts();
+  }
+
+  function renderDashboardAgenda(ag) {
+    ag = ag || {};
+    _dashAgendaResumoAtual = ag;
+    _dashAgendaRaw = ag.eventosPeriodo || [];
+    setupDashAgendaPeriodControls();
+    function labels(arr) { return (arr || []).map(function(p) { return p.label; }); }
+    function values(arr) { return (arr || []).map(function(p) { return p.value || 0; }); }
+    renderDashboardAgendaPeriodoResumo();
+    if ((ag.antecedenciaMediaPorTipo || []).length) {
+      _setChartHeight('chartAgendaAntecedenciaTipo', ag.antecedenciaMediaPorTipo.length, 26, 240, 430);
+      _barH('chartAgendaAntecedenciaTipo', labels(ag.antecedenciaMediaPorTipo), [{ label: 'Dias', data: values(ag.antecedenciaMediaPorTipo), backgroundColor: 'rgba(230,81,0,.72)', borderRadius: 4 }]);
+    }
+  }
+
+  function renderDashboardEstoque(est) {
+    est = est || {};
+    var ids = {
+      dashEstLotes: est.lotes || 0,
+      dashEstOk: est.ok || 0,
+      dashEstBaixo: est.baixo || 0,
+      dashEstVencidos: est.vencidos || 0,
+      dashEstProximos: est.proximosValidade || 0
+    };
+    Object.keys(ids).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = ids[id];
+    });
+  }
+
+
+  (function() {
+    function _attachDashEvents() {
+      var btn = document.getElementById('btnDashRefresh');
+      if (btn) { btn.addEventListener('click', function() { _dashInited = false; carregarDashboard(true); }); }
+      var printBtn = document.getElementById('btnDashPrint');
+      if (printBtn) { printBtn.addEventListener('click', imprimirDashboard); }
+      var pg = document.getElementById('page-dashboard');
+      if (pg) {
+        new MutationObserver(function(muts) {
+          muts.forEach(function(m) {
+            if (m.attributeName === 'class' && pg.classList.contains('active')) carregarDashboard(false);
+          });
+        }).observe(pg, { attributes: true, attributeFilter: ['class'] });
+      }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _attachDashEvents);
+    else _attachDashEvents();
+  })();
+
+  function imprimirDashboard() {
+    var page = document.getElementById('page-dashboard');
+    if (!page) return;
+    var html = dashboardPrintHtml();
+    var w = window.open('', '_blank');
+    if (!w) {
+      snack('O navegador bloqueou a janela de impressão.');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  function dashboardPrintHtml() {
+    var emitted = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Dashboard Gerencial</title>' +
+      '<style>' +
+      '@page{size:A4 landscape;margin:8mm}' +
+      '*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1f2937;margin:0;background:#fff}.no-print{position:fixed;right:12px;top:12px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer;z-index:2}' +
+      '.head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1266f1;padding:0 0 8px;margin-bottom:10px}.head img{height:34px;width:auto;object-fit:contain}.brand-text{font-weight:800;color:#1266f1;font-size:18px}.head h1{font-size:18px;margin:0;color:#0b3f8a}.head p{font-size:10px;color:#64748b;margin:2px 0 0}' +
+      '.section{margin:0 0 10px;break-inside:avoid}.section-title{font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:#475569;font-weight:800;margin:0 0 5px}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.kpi{border:1px solid #d8e2f0;border-radius:6px;padding:7px 8px;background:#f8fbff;min-height:42px}.kpi-value{font-size:18px;line-height:1;font-weight:800;color:#0b3f8a;margin-bottom:3px}.kpi-label{font-size:7.8px;text-transform:uppercase;letter-spacing:.45px;color:#64748b;font-weight:800}' +
+      '.charts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.chart{border:1px solid #d8e2f0;border-radius:6px;padding:7px;break-inside:avoid;background:#fff}.chart h2{font-size:8.5px;text-transform:uppercase;letter-spacing:.55px;color:#475569;margin:0 0 5px}.chart img{display:block;width:100%;height:42mm;object-fit:contain}.empty{border:1px dashed #cbd5e1;border-radius:6px;color:#94a3b8;font-size:11px;padding:18px;text-align:center}' +
+      '@media print{body{margin:0}.no-print{display:none}.chart,.section{break-inside:avoid}}' +
+      '</style></head><body><button class="no-print" onclick="window.print()">Imprimir</button>' +
+      dashboardPrintHeader(emitted) +
+      dashboardPrintKpiSection('Resumo geral', '#dashKpis > .dash-kpi') +
+      dashboardPrintAgendaKpis() +
+      dashboardPrintKpiSection('Indicadores de Estoque', '#dashEstoqueBlock .dash-kpi') +
+      dashboardPrintCharts() +
+      '<script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script></body></html>';
+  }
+
+  function dashboardPrintHeader(emitted) {
+    var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
+    var logoHtml = logo ? '<img src="' + esc(logo) + '" alt="IPS | UCS">' : '<div class="brand-text">IPS | UCS</div>';
+    return '<div class="head">' + logoHtml + '<div><h1>Dashboard Gerencial</h1><p>Emitido em ' + esc(emitted || '') + ' · IPS | UCS</p></div></div>';
+  }
+
+  function dashboardPrintKpiSection(title, selector) {
+    var cards = Array.prototype.slice.call(document.querySelectorAll(selector || '')).filter(function(el) {
+      return dashboardPrintVisible(el) && !el.closest('#dashAgendaMesCards');
+    }).map(dashboardPrintKpiCard).join('');
+    if (!cards) return '';
+    return '<div class="section"><div class="section-title">' + esc(title || '') + '</div><div class="kpi-grid">' + cards + '</div></div>';
+  }
+
+  function dashboardPrintAgendaKpis() {
+    var block = document.getElementById('dashAgendaBlock');
+    if (!dashboardPrintVisible(block)) return '';
+    var cards = Array.prototype.slice.call(block.querySelectorAll('.dash-kpi')).filter(function(el) {
+      return dashboardPrintVisible(el) && !el.closest('#dashAgendaMesCards');
+    }).map(dashboardPrintKpiCard).join('');
+    if (!cards) return '';
+    return '<div class="section"><div class="section-title">Indicadores da Agenda</div><div class="kpi-grid">' + cards + '</div></div>';
+  }
+
+  function dashboardPrintKpiCard(el) {
+    var valueEl = el.querySelector('.dash-kpi-val');
+    var labelEl = el.querySelector('.dash-kpi-lbl');
+    return '<div class="kpi"><div class="kpi-value">' + esc(dashboardPrintText(valueEl)) + '</div><div class="kpi-label">' + esc(dashboardPrintText(labelEl)) + '</div></div>';
+  }
+
+  function dashboardPrintCharts() {
+    var charts = Array.prototype.slice.call(document.querySelectorAll('#page-dashboard canvas')).filter(function(canvas) {
+      return dashboardPrintVisible(canvas) && canvas.width && canvas.height;
+    }).map(function(canvas) {
+      var title = dashboardPrintCanvasTitle(canvas);
+      var img = '';
+      try { img = canvas.toDataURL('image/png'); } catch(e) { img = ''; }
+      if (!img) return '';
+      return '<div class="chart"><h2>' + esc(title || 'Indicador') + '</h2><img src="' + img + '" alt="' + esc(title || 'Indicador') + '"></div>';
+    }).filter(Boolean).join('');
+    if (!charts) return '<div class="empty">Nenhum gráfico disponível para impressão.</div>';
+    return '<div class="section"><div class="section-title">Gráficos</div><div class="charts">' + charts + '</div></div>';
+  }
+
+  function dashboardPrintCanvasTitle(canvas) {
+    var node = canvas;
+    for (var i = 0; i < 6 && node; i++, node = node.parentElement) {
+      var title = node.querySelector ? node.querySelector('.chart-card-title') : null;
+      if (title && title !== canvas && dashboardPrintText(title)) return dashboardPrintText(title).replace(/^[^\wÀ-ÿ]+/, '');
+      var prev = node.previousElementSibling;
+      while (prev) {
+        if (prev.classList && prev.classList.contains('chart-card-title') && dashboardPrintText(prev)) return dashboardPrintText(prev).replace(/^[^\wÀ-ÿ]+/, '');
+        prev = prev.previousElementSibling;
+      }
+    }
+    return 'Indicador';
+  }
+
+  function dashboardPrintText(el) {
+    return String((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function dashboardPrintVisible(el) {
+    if (!el) return false;
+    var style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && el.offsetWidth > 0 && el.offsetHeight > 0;
+  }
+  </script>

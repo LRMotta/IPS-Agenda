@@ -1,0 +1,200 @@
+
+<!-- ══ NAV DRAWER ══ -->
+<div class="nav-drawer" id="appNavDrawer" role="navigation" aria-label="Navegacao principal">
+  <div class="nav-brand">
+    <img src="data:image/png;base64,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" alt="Instituto de Pesquisas em Saúde · UCS">
+  </div>
+
+  <div class="nav-section">Principal</div>
+  <div class="nav-item" onclick="irPara('agenda')">
+    <span class="nav-icon"><span class="material-symbols-outlined">calendar_today</span></span>
+    Agenda
+    <span class="nav-badge" id="badgeAgenda" style="display:none;"></span>
+  </div>
+  <div class="nav-item" onclick="irPara('pendencias')">
+    <span class="nav-icon"><span class="material-symbols-outlined">pending_actions</span></span> Pendências
+  </div>
+  <div class="nav-item" onclick="irPara('requisicao')">
+    <span class="nav-icon"><span class="material-symbols-outlined">assignment</span></span> Req. de Exames
+  </div>
+  <div class="nav-item" onclick="abrirTransporteModulo()">
+    <span class="nav-icon"><span class="material-symbols-outlined">local_shipping</span></span> Transp. Amostras
+  </div>
+
+  <div class="nav-divider"></div>
+
+  <!-- Cadastros accordion -->
+  <div class="nav-group-toggle" id="navCadastrosToggle" onclick="toggleNavCadastros()">
+    <span class="toggle-left">
+      <span class="nav-icon"><span class="material-symbols-outlined">folder_shared</span></span>
+      Cadastros
+    </span>
+    <span class="material-symbols-outlined toggle-arrow">chevron_right</span>
+  </div>
+  <div class="nav-group-body" id="navCadastrosBody">
+    <div class="nav-item" onclick="irPara('participantes')">
+      <span class="nav-icon"><span class="material-symbols-outlined">person</span></span> Participantes
+    </div>
+    <div class="nav-item" onclick="irPara('medicos')">
+      <span class="nav-icon"><span class="material-symbols-outlined">medical_services</span></span> Médicos
+    </div>
+    <div class="nav-item" onclick="irPara('projetos')">
+      <span class="nav-icon"><span class="material-symbols-outlined">folder_open</span></span> Projetos
+    </div>
+    <div class="nav-item" onclick="irPara('monitores')">
+      <span class="nav-icon"><span class="material-symbols-outlined">visibility</span></span> Monitores
+    </div>
+    <div class="nav-item" onclick="irPara('prestadores')">
+      <span class="nav-icon"><span class="material-symbols-outlined">business</span></span> Prestadores
+    </div>
+    <div class="nav-item" onclick="irPara('labcentral')">
+      <span class="nav-icon"><span class="material-symbols-outlined">biotech</span></span> Lab Central
+    </div>
+    <div class="nav-item" onclick="irPara('couriers')">
+      <span class="nav-icon"><span class="material-symbols-outlined">local_shipping</span></span> Couriers
+    </div>
+    <div class="nav-item" onclick="irPara('solicitantes')">
+      <span class="nav-icon"><span class="material-symbols-outlined">support_agent</span></span> Solicitantes
+    </div>
+    <div class="nav-item" onclick="irPara('equipamentos')">
+      <span class="nav-icon"><span class="material-symbols-outlined">devices</span></span> Equipamentos Recebidos
+    </div>
+    <div class="nav-item" onclick="irPara('medicamentos')">
+      <span class="nav-icon"><span class="material-symbols-outlined">medication</span></span> Medicamentos Recebidos
+    </div>
+  </div>
+
+  <div class="nav-divider"></div>
+  <div class="nav-section">Estoque</div>
+  <!-- Estoque accordion -->
+  <div class="nav-group-toggle" id="navEstoqueToggle" onclick="toggleNavEstoque()">
+    <span class="toggle-left">
+      <span class="nav-icon"><span class="material-symbols-outlined">inventory_2</span></span>
+      Estoque
+    </span>
+    <span class="material-symbols-outlined toggle-arrow">chevron_right</span>
+  </div>
+  <div class="nav-group-body" id="navEstoqueBody">
+    <div class="nav-item" id="navEstVisualizacao" onclick="abrirModuloEstoque('visualizacao')">
+      <span class="nav-icon"><span class="material-symbols-outlined">table_view</span></span>
+      Visualizar Estoque
+    </div>
+    <div class="nav-item" id="navEstItens" onclick="abrirModuloEstoque('itens')">
+      <span class="nav-icon"><span class="material-symbols-outlined">inventory</span></span>
+      Cadastro de Itens
+    </div>
+    <div class="nav-item" id="navEstPedidos" onclick="abrirModuloEstoque('pedidos')">
+      <span class="nav-icon"><span class="material-symbols-outlined">inventory_2</span></span>
+      Pedidos
+    </div>
+    <div class="nav-item" id="navEstDescartes" onclick="abrirModuloEstoque('descartes')">
+      <span class="nav-icon"><span class="material-symbols-outlined">delete_sweep</span></span>
+      Descartes
+    </div>
+    <div class="nav-item" id="navEstMovimentacoes" onclick="abrirModuloEstoque('movimentacoes')">
+      <span class="nav-icon"><span class="material-symbols-outlined">swap_vert</span></span>
+      Movimentações
+    </div>
+    <div class="nav-item" id="navEstRelatorios" onclick="abrirModuloEstoque('relatorios')">
+      <span class="nav-icon"><span class="material-symbols-outlined">assessment</span></span>
+      Relatórios
+    </div>
+  </div>
+
+  <div class="nav-divider"></div>
+  <div class="nav-section">Indicadores</div>
+  <div class="nav-item" id="navDashboard" onclick="abrirModuloDashboard()">
+    <span class="nav-icon"><span class="material-symbols-outlined">bar_chart</span></span> Dashboard
+  </div>
+
+  <div class="nav-divider"></div>
+  <div class="nav-section">Sistema</div>
+  <div class="nav-item admin-only" id="navUsersAdmin" onclick="irPara('usuarios')" style="display:none">
+    <span class="nav-icon"><span class="material-symbols-outlined">admin_panel_settings</span></span> Usuários
+  </div>
+  <div class="nav-item admin-only" id="navAuditLog" onclick="irPara('audit-log')" style="display:none">
+    <span class="nav-icon"><span class="material-symbols-outlined">manage_search</span></span> Trilha de Auditoria
+  </div>
+  <div class="nav-item" onclick="irPara('configuracoes')">
+    <span class="nav-icon"><span class="material-symbols-outlined">settings</span></span> Configurações
+  </div>
+
+</div>
+<div class="mobile-nav-backdrop" id="mobileNavBackdrop" onclick="closeMobileNav()" aria-hidden="true"></div>
+
+<!-- ══ MAIN ══ -->
+<div class="main">
+  <div class="top-bar">
+    <button class="mobile-menu-btn" id="mobileMenuBtn" type="button" title="Abrir menu" aria-label="Abrir menu" aria-controls="appNavDrawer" aria-expanded="false" onclick="toggleMobileNav()">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+    <div class="page-title">
+      <div class="page-title-icon">
+        <span class="material-symbols-outlined" id="topIcon">medical_services</span>
+      </div>
+      <span id="topTitle">Agenda</span>
+    </div>
+    <div id="topDate"></div>
+    <div class="user-chip">
+      <div class="user-avatar" id="userInitial">?</div>
+      <span id="userEmail">carregando…</span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ═══ MÉDICOS ═══ -->
+    <div class="page" id="page-medicos">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
+        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+          <div class="stat-value" id="medTotal">—</div>
+          <div class="stat-label">Total cadastrados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a; border-radius: 0 var(--r-lg) 0 0;">
+          <div class="stat-value" id="medEspec">—</div>
+          <div class="stat-label">Especialidades</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">stethoscope</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchMedicos" placeholder="Buscar por nome, especialidade, CPF, CREMERS ou e-mail…" oninput="filtrarMedicos()">
+        </div>
+        <button class="btn-new" onclick="abrirFormMedico(null)">
+          <span class="material-symbols-outlined">add</span> Novo Médico
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Médico</th>
+              <th>Especialidade</th>
+              <th>Documentos</th>
+              <th>Telefone</th>
+              <th>E-mail</th>
+              <th style="text-align:right; padding-right:20px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="bodyMedicos">
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ PENDÊNCIAS ═══ -->
+    <div class="page" id="page-pendencias">
+      <button class="btn-refresh" id="btnPendenciasRefresh" onclick="carregarPendencias(true)" style="margin-bottom:12px">
+        <span class="material-symbols-outlined">refresh</span>Atualizar pendências
+        <span class="dash-ts" id="pendenciasTs"></span>
+      </button>
+      <div class="chart-card">
+        <div class="dash-pend-grid" id="pendenciasGrid">
+          <div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>
+        </div>
+      </div>
+    </div>
+

@@ -1,0 +1,186 @@
+    <!-- ═══ DASHBOARD ═══ -->
+    <div class="page" id="page-dashboard">
+      <div class="dash-page-actions">
+        <button class="btn-refresh" id="btnDashRefresh">
+          <span class="material-symbols-outlined">refresh</span>Atualizar dados
+          <span class="dash-ts" id="dashTs"></span>
+        </button>
+        <button class="btn-refresh dash-print-btn" id="btnDashPrint" title="Imprimir Dashboard">
+          <span class="material-symbols-outlined">print</span>Imprimir
+        </button>
+      </div>
+      <div class="dash-grid dash-grid-4" id="dashKpis" style="margin-bottom:16px;">
+        <div class="dash-kpi">
+          <div class="dash-kpi-icon"><span class="material-symbols-outlined">folder_open</span></div>
+          <div class="dash-kpi-val" id="kpiProjetos">—</div>
+          <div class="dash-kpi-lbl">Projetos Ativos</div>
+        </div>
+        <div class="dash-kpi">
+          <div class="dash-kpi-icon"><span class="material-symbols-outlined">person</span></div>
+          <div class="dash-kpi-val" id="kpiPart">—</div>
+          <div class="dash-kpi-lbl">Participantes</div>
+        </div>
+        <div class="dash-kpi">
+          <div class="dash-kpi-icon"><span class="material-symbols-outlined">favorite</span></div>
+          <div class="dash-kpi-val" id="kpiAtivos">—</div>
+          <div class="dash-kpi-lbl">Participantes Ativos / Seguimento</div>
+        </div>
+        <div class="dash-kpi">
+          <div class="dash-kpi-icon"><span class="material-symbols-outlined">person_off</span></div>
+          <div class="dash-kpi-val" id="kpiZeroRecrut">—</div>
+          <div class="dash-kpi-lbl">Recrut. aberto sem participantes ativos</div>
+        </div>
+      </div>
+      <div class="chart-card" id="dashAgendaBlock" style="display:none;margin-bottom:16px;">
+        <div class="dash-section-head">
+          <div class="chart-card-title"><span class="material-symbols-outlined">event_note</span> Indicadores da Agenda</div>
+          <div class="dash-period-controls">
+            <span class="dash-period-chip"><span class="material-symbols-outlined">filter_alt</span>Recorte</span>
+            <span class="dash-period-chip" id="dashAgendaPeriodoAtual">—</span>
+            <select class="dash-period-select" id="dashAgendaPeriodTipo" onchange="onDashAgendaPeriodChange()">
+              <option value="global">Global</option>
+              <option value="ano" selected>Ano</option>
+              <option value="mes">Mês</option>
+            </select>
+            <select class="dash-period-select" id="dashAgendaPeriodAno" onchange="onDashAgendaPeriodChange()"></select>
+            <select class="dash-period-select" id="dashAgendaPeriodMes" onchange="onDashAgendaPeriodChange()" style="display:none"></select>
+          </div>
+        </div>
+        <div class="dash-grid dash-grid-4" style="margin-bottom:16px;">
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">task_alt</span></div>
+            <div class="dash-kpi-val" id="dashAgendaVisitasAno">—</div>
+            <div class="dash-kpi-lbl">Visitas realizadas</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">science</span></div>
+            <div class="dash-kpi-val" id="dashAgendaLabAno">—</div>
+            <div class="dash-kpi-lbl">Lab Central</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">visibility</span></div>
+            <div class="dash-kpi-val" id="dashAgendaMonAno">—</div>
+            <div class="dash-kpi-lbl">Dias de monitoria</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">calendar_month</span></div>
+            <div class="dash-kpi-val" id="dashAgendaTotalAno">—</div>
+            <div class="dash-kpi-lbl">Agendamentos</div>
+          </div>
+        </div>
+        <div class="dash-grid" id="dashAgendaMesCards" style="grid-template-columns:repeat(12,minmax(64px,1fr));gap:8px;margin-bottom:16px;"></div>
+        <div class="dash-grid dash-grid-2" style="margin-bottom:16px;">
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">stacked_bar_chart</span> Visitas realizadas por mês</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaVisitasMes"></canvas></div>
+          </div>
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">science</span> Lab Central por mês</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaLabMes"></canvas></div>
+          </div>
+        </div>
+        <div class="dash-grid dash-grid-2" style="margin-bottom:16px;">
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">folder_open</span> Visitas por protocolo</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaProt"></canvas></div>
+          </div>
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">visibility</span> Dias de monitoria por protocolo</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaMonProt"></canvas></div>
+          </div>
+        </div>
+        <div class="dash-grid dash-grid-2">
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">stethoscope</span> Visitas por médico</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaMedico"></canvas></div>
+          </div>
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">date_range</span> Visitas por dia da semana</div>
+            <div class="chart-wrap" style="height:260px;"><canvas id="chartAgendaDiaSemana"></canvas></div>
+          </div>
+        </div>
+        <div class="dash-grid dash-grid-2" style="margin-top:16px;">
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">event_busy</span> Cancelamentos / reagendamentos por protocolo</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaCancelProt"></canvas></div>
+          </div>
+          <div>
+            <div class="chart-card-title"><span class="material-symbols-outlined">local_shipping</span> Uso das couriers</div>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaCourierAno"></canvas></div>
+          </div>
+        </div>
+      </div>
+      <div class="dash-grid dash-grid-2" style="margin-bottom:16px;">
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">pie_chart</span> Fase Clínica dos Projetos Ativos</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartFase"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">category</span> Especialidade Médica</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartEsp"></canvas></div>
+        </div>
+      </div>
+      <div class="dash-grid dash-grid-2" style="margin-bottom:16px;">
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">flag</span> Status dos Projetos Ativos</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartProjStatus"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">science</span> ORPCs dos Projetos Ativos</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartCRO"></canvas></div>
+        </div>
+      </div>
+      <div class="dash-grid" style="margin-bottom:16px;">
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">group</span> Participantes por Projeto Ativo</div>
+          <div class="chart-wrap" style="height:260px;"><canvas id="chartPartProj"></canvas></div>
+        </div>
+      </div>
+      <div class="dash-grid dash-grid-2" style="margin-bottom:16px;">
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">business</span> Patrocinador dos Projetos Ativos</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartPat"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">medical_services</span> Investigador Principal dos Projetos Ativos</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartIP"></canvas></div>
+        </div>
+      </div>
+      <div class="dash-grid" style="margin-bottom:16px;">
+        <div class="chart-card">
+          <div class="chart-card-title"><span class="material-symbols-outlined">manage_accounts</span> Coordenador de Estudos dos Projetos Ativos</div>
+          <div class="chart-wrap" style="height:200px;"><canvas id="chartCoord"></canvas></div>
+        </div>
+      </div>
+      <div class="chart-card" id="dashEstoqueBlock" style="margin-bottom:16px;">
+        <div class="chart-card-title"><span class="material-symbols-outlined">inventory_2</span> Indicadores de Estoque</div>
+        <div class="dash-grid dash-grid-4" style="grid-template-columns:repeat(5,1fr);">
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">inventory_2</span></div>
+            <div class="dash-kpi-val" id="dashEstLotes">—</div>
+            <div class="dash-kpi-lbl">Itens em estoque</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">check_circle</span></div>
+            <div class="dash-kpi-val" id="dashEstOk">—</div>
+            <div class="dash-kpi-lbl">Estoque OK</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">warning</span></div>
+            <div class="dash-kpi-val" id="dashEstBaixo">—</div>
+            <div class="dash-kpi-lbl">Estoque baixo</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">event_busy</span></div>
+            <div class="dash-kpi-val" id="dashEstProximos">—</div>
+            <div class="dash-kpi-lbl">Próx. validade</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-icon"><span class="material-symbols-outlined">error</span></div>
+            <div class="dash-kpi-val" id="dashEstVencidos">—</div>
+            <div class="dash-kpi-lbl">Vencidos</div>
+          </div>
+        </div>
+      </div>
+    </div>
+

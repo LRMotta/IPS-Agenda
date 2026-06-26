@@ -1,0 +1,4286 @@
+<script>
+var TITULOS = {
+  agenda:        { label:'Agenda',               icon:'calendar_today' },
+  medicos:       { label:'Médicos Cadastrados',  icon:'medical_services' },
+  participantes: { label:'Participantes',        icon:'person' },
+  projetos:      { label:'Projetos',             icon:'folder_open' },
+  monitores:     { label:'Monitores',            icon:'visibility' },
+  prestadores:   { label:'Prestadores',          icon:'business' },
+  labcentral:    { label:'Lab Central',          icon:'biotech' },
+  couriers:       { label:'Couriers',             icon:'local_shipping' },
+  solicitantes:  { label:'Solicitantes',         icon:'support_agent' },
+  equipamentos:  { label:'Equipamentos Recebidos', icon:'devices' },
+  medicamentos:  { label:'Medicamentos Recebidos', icon:'medication' },
+  configuracoes: { label:'Configurações', icon:'settings' },
+  pendencias:    { label:'Pendências', icon:'pending_actions' },
+  dashboard:     { label:'Dashboard Gerencial',  icon:'bar_chart' },
+  requisicao:    { label:'Requisição de Exames', icon:'assignment' },
+  estoque:       { label:'Estoque',              icon:'inventory_2' },
+  usuarios:      { label:'Usuários',             icon:'admin_panel_settings' },
+  'audit-log':   { label:'Trilha de Auditoria',  icon:'manage_search' },
+  'estoque-view': { label:'Visualização do Estoque', icon:'inventory' }
+};
+
+var CURRENT_ACCESS = { ok:false, email:'', name:'', firstName:'', role:'', canWrite:false };
+var CURRENT_PAGE = '';
+var APP_USER_NAVIGATED = false;
+var STATE = window.STATE = window.STATE || {};
+STATE.app = STATE.app || { currentPage: '' };
+STATE.agenda = STATE.agenda || {};
+STATE.estoque = STATE.estoque || {};
+STATE.transporte = STATE.transporte || {};
+var APP_ROUTE = window.APP_ROUTE = window.APP_ROUTE || {};
+APP_ROUTE.pages = TITULOS;
+APP_ROUTE.estoquePages = ['visualizacao', 'itens', 'pedidos', 'descartes', 'movimentacoes', 'relatorios'];
+APP_ROUTE.embeddedModules = {
+  dashboard: function() { return !!window.INDEX_DASHBOARD_ENABLED; },
+  estoque: function() { return !!window.INDEX_ESTOQUE_ENABLED; }
+};
+var AUDIT_LOG_ROWS = [];
+var AUDIT_CHANGES_ROWS = [];
+var AUDIT_VIEW = 'log';
+var AUDIT_PAGE_SIZE = 100;
+var AUDIT_PAGE_OFFSET = { log: 0, changes: 0 };
+var AUDIT_PAGE_META = {
+  log: { total: 0, limit: 100, offset: 0, hasMore: false },
+  changes: { total: 0, limit: 100, offset: 0, hasMore: false }
+};
+var AUDIT_PAGE_CACHE = { log: {}, changes: {} };
+var AUDIT_PREFETCHING = {};
+var USERS_ADMIN_ROWS = [];
+var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
+var _estoqueConfigLoaded = false;
+var APP_UNSAVED_SCOPES = {};
+var APP_UNSAVED_MESSAGE = 'Ha alteracoes nao salvas. Deseja sair mesmo assim?';
+var APP_UNSAVED_ON_CANCEL = null;
+
+function appHasUnsavedChanges() {
+  return Object.keys(APP_UNSAVED_SCOPES).some(function(k) { return !!APP_UNSAVED_SCOPES[k]; });
+}
+
+function appMarkUnsavedChanges(scopeId) {
+  scopeId = scopeId || 'app';
+  APP_UNSAVED_SCOPES[scopeId] = true;
+}
+
+function appClearUnsavedChanges(scopeId) {
+  if (scopeId) delete APP_UNSAVED_SCOPES[scopeId];
+  else APP_UNSAVED_SCOPES = {};
+}
+
+function appOpenUnsavedConfirm(onConfirm, onCancel) {
+  var modal = document.getElementById('confirmUnsaved');
+  var btn = document.getElementById('btnConfirmUnsaved');
+  if (!modal || !btn) {
+    if (window.confirm(APP_UNSAVED_MESSAGE) && typeof onConfirm === 'function') onConfirm();
+    else if (typeof onCancel === 'function') onCancel();
+    return;
+  }
+  APP_UNSAVED_ON_CANCEL = typeof onCancel === 'function' ? onCancel : null;
+  btn.onclick = function() {
+    APP_UNSAVED_ON_CANCEL = null;
+    modal.classList.remove('open');
+    if (typeof onConfirm === 'function') onConfirm();
+  };
+  modal.classList.add('open');
+}
+
+function fecharConfirmUnsaved() {
+  var modal = document.getElementById('confirmUnsaved');
+  if (modal) modal.classList.remove('open');
+  var onCancel = APP_UNSAVED_ON_CANCEL;
+  APP_UNSAVED_ON_CANCEL = null;
+  if (typeof onCancel === 'function') onCancel();
+}
+
+function appConfirmNavigationIfDirty(scopeId, onConfirm, onCancel) {
+  var dirty = scopeId ? !!APP_UNSAVED_SCOPES[scopeId] : appHasUnsavedChanges();
+  if (!dirty) return true;
+  appOpenUnsavedConfirm(onConfirm, onCancel);
+  return false;
+}
+
+function appEditableDirtyScope(target) {
+  if (!target || !target.closest) return '';
+  if (!target.matches('input, textarea, select, [contenteditable="true"]')) return '';
+  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload');
+  return scope ? scope.id : '';
+}
+
+document.addEventListener('input', function(event) {
+  var scopeId = appEditableDirtyScope(event.target);
+  if (scopeId) appMarkUnsavedChanges(scopeId);
+}, true);
+
+document.addEventListener('change', function(event) {
+  var scopeId = appEditableDirtyScope(event.target);
+  if (scopeId) appMarkUnsavedChanges(scopeId);
+}, true);
+
+document.addEventListener('paste', function(event) {
+  var scopeId = appEditableDirtyScope(event.target);
+  if (!scopeId) return;
+  appMarkUnsavedChanges(scopeId);
+  event.stopPropagation();
+}, true);
+
+window.addEventListener('beforeunload', function(event) {
+  if (!appHasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
+function isEmbeddedModuleEnabled(moduleName) {
+  var resolver = APP_ROUTE.embeddedModules && APP_ROUTE.embeddedModules[moduleName];
+  return typeof resolver === 'function' ? !!resolver() : false;
+}
+
+function setCurrentPage(pagina) {
+  CURRENT_PAGE = pagina || 'agenda';
+  STATE.app.currentPage = CURRENT_PAGE;
+  return CURRENT_PAGE;
+}
+
+function getCurrentPage() {
+  return STATE.app.currentPage || CURRENT_PAGE || '';
+}
+
+function getEstoqueRoutePage(fallback) {
+  return (STATE.estoque && STATE.estoque.inlinePagina) || fallback || 'itens';
+}
+
+function getRoutePageConfig(pagina) {
+  return (APP_ROUTE.pages && APP_ROUTE.pages[pagina]) || { label:'Agenda', icon:'calendar_today' };
+}
+
+var ESPS = [
+  'Anestesiologia','Cardiologia','Cirurgia Geral','Cirurgia Oncológica',
+  'Cirurgia Plástica','Clínica Médica','Dermatologia',
+  'Endocrinologia e Metabologia','Gastroenterologia','Geriatria',
+  'Ginecologia e Obstetrícia','Hematologia e Hemostasia','Infectologia',
+  'Mastologia','Medicina de Família e Comunidade','Medicina Intensiva',
+  'Nefrologia','Neurologia','Neurocirurgia','Oncologia Clínica',
+  'Ortopedia e Traumatologia','Pediatria','Pneumologia','Psiquiatria',
+  'Radiologia e Diagnóstico por Imagem','Reumatologia','Urologia'
+];
+
+function applyAppBootstrapData(data) {
+  window.APP_BOOTSTRAP_DATA = data || {};
+  CURRENT_ACCESS = window.APP_BOOTSTRAP_DATA.access || CURRENT_ACCESS || {};
+  var email = CURRENT_ACCESS.email || 'usuário';
+  var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.name || email;
+  document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
+  document.getElementById('userInitial').textContent = String(displayName || email || '?')[0].toUpperCase();
+  document.querySelectorAll('.admin-only').forEach(function(el) {
+    el.style.display = CURRENT_ACCESS.role === 'admin' ? '' : 'none';
+  });
+  updateFloatingAddButton();
+  if (!CURRENT_ACCESS.ok && CURRENT_ACCESS.message) {
+    document.getElementById('userEmail').textContent = 'acesso não validado';
+    document.getElementById('userInitial').textContent = '!';
+    snack(CURRENT_ACCESS.message);
+  }
+  handleUserOAuthStatus(window.APP_BOOTSTRAP_DATA.auth);
+}
+
+function handleUserOAuthStatus(auth) {
+  if (!auth || !auth.required || !auth.url) return;
+  var userEl = document.getElementById('userEmail');
+  if (userEl) {
+    userEl.innerHTML = '<a href="' + esc(auth.url) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;font-weight:800">Autorizar Agenda/Drive</a>';
+  }
+  snack('Autorize Agenda e Drive para usar os recursos vinculados à sua conta.');
+}
+
+function handleAppBootstrapFailure(error) {
+  var msg = (error && (error.message || error.toString && error.toString())) || 'Falha ao iniciar o app.';
+  var userEl = document.getElementById('userEmail');
+  var initialEl = document.getElementById('userInitial');
+  var urlMatch = String(msg || '').match(/https:\/\/[^\s"']+/);
+  if (userEl && urlMatch) {
+    userEl.innerHTML = '<a href="' + esc(urlMatch[0]) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;font-weight:800">Autorizar acesso</a>';
+  } else if (userEl) {
+    userEl.textContent = 'falha no login';
+  }
+  if (initialEl) initialEl.textContent = '!';
+  snack(msg);
+}
+
+function startCodexAppOnce() {
+  if (window.APP_BOOTSTRAP_STARTED) return;
+  window.APP_BOOTSTRAP_STARTED = true;
+  var d = new Date();
+  var dias  = ['dom','seg','ter','qua','qui','sex','sáb'];
+  var meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  document.getElementById('topDate').textContent =
+    dias[d.getDay()] + ', ' + d.getDate() + ' ' + meses[d.getMonth()] + ' ' + d.getFullYear();
+  google.script.run
+    .withSuccessHandler(function(data) {
+      applyAppBootstrapData(data);
+      abrirPaginaInicialApp();
+    })
+    .withFailureHandler(function(error) {
+      handleAppBootstrapFailure(error);
+      abrirPaginaInicialApp();
+    })
+    .getAppBootstrapData();
+}
+
+document.addEventListener('DOMContentLoaded', startCodexAppOnce);
+
+function abrirPaginaInicialApp() {
+  if (APP_USER_NAVIGATED && getCurrentPage()) return;
+  var pagina = String(window.INDEX_INITIAL_PAGE || 'agenda');
+  if (isEmbeddedModuleEnabled('dashboard')) {
+    irPara('dashboard', { initial: true });
+    return;
+  }
+  if (isEmbeddedModuleEnabled('estoque') && typeof irParaEstoqueApp === 'function') {
+    if (APP_ROUTE.estoquePages.indexOf(pagina) === -1) pagina = 'itens';
+    if (pagina === 'visualizacao' && typeof carregarEstoqueView === 'function') {
+      irPara('estoque-view', { initial: true });
+      var buscaInicial = document.getElementById('evSearch');
+      if (buscaInicial) buscaInicial.value = String(window.INDEX_INITIAL_SEARCH || '');
+    } else irParaEstoqueApp(pagina || 'itens');
+    return;
+  }
+  if (pagina === 'dashboard') {
+    abrirModuloDashboard();
+    return;
+  }
+  irPara(pagina || 'agenda', { initial: true });
+}
+
+function navegarParaRotaWebApp(query) {
+  function navegar(baseUrl) {
+    var destino = String(baseUrl || '') + String(query || '');
+    if (destino) window.top.location.href = destino;
+  }
+  var bootstrapUrl = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.webAppUrl;
+  if (bootstrapUrl) {
+    navegar(bootstrapUrl);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(navegar)
+    .withFailureHandler(function(e) { snack('Erro ao abrir o módulo: ' + (e && e.message ? e.message : e)); })
+    .getWebAppUrl();
+}
+
+function abrirModuloEstoque(pagina, busca) {
+  pagina = pagina || 'itens';
+  if (isEmbeddedModuleEnabled('estoque')) {
+    if (pagina === 'visualizacao') irPara('estoque-view');
+    else if (typeof irParaEstoqueApp === 'function') irParaEstoqueApp(pagina);
+    return;
+  }
+  var query = '?page=estoque&pagina=' + encodeURIComponent(pagina);
+  if (busca) query += '&busca=' + encodeURIComponent(busca);
+  navegarParaRotaWebApp(query);
+}
+
+function abrirModuloDashboard() {
+  if (isEmbeddedModuleEnabled('dashboard')) {
+    irPara('dashboard');
+    return;
+  }
+  navegarParaRotaWebApp('?page=dashboard');
+}
+
+function abrirModuloPrincipal(pagina) {
+  pagina = pagina || 'agenda';
+  var queryExtra = arguments.length > 1 ? String(arguments[1] || '') : '';
+  var query = pagina === 'agenda' ? '' : '?pagina=' + encodeURIComponent(pagina);
+  if (queryExtra) query += (query ? '&' : '?') + queryExtra.replace(/^\?+|^&+/, '');
+  navegarParaRotaWebApp(query);
+}
+
+function getActiveScrollContainer() {
+  var estoqueShell = document.getElementById('estoqueInlineShell');
+  var estoquePage = document.getElementById('page-estoque-app');
+  if (estoqueShell && estoquePage && estoquePage.classList.contains('active')) return estoqueShell;
+  return document.querySelector('.content');
+}
+
+function updateScrollTopButton() {
+  var btn = document.getElementById('btnScrollTop');
+  var scroller = getActiveScrollContainer();
+  if (!btn || !scroller) return;
+  btn.classList.toggle('show', Number(scroller.scrollTop || 0) > 320);
+}
+
+var DASHBOARD_PENDING_FILTER = String(window.INDEX_DASHBOARD_FILTER || '');
+var DASHBOARD_PENDING_KEYS = String(window.INDEX_DASHBOARD_FILTER_KEYS || '');
+
+function dashboardFilterKeysMap_() {
+  var map = {};
+  String(DASHBOARD_PENDING_KEYS || '').split('|').forEach(function(key) {
+    key = normSelectValue(key || '');
+    if (key) map[key] = true;
+  });
+  return map;
+}
+
+function dashboardProjetoAtivo_(p) {
+  var st = normSelectValue(p && p.status);
+  return st.indexOf('concluido') === -1 && st.indexOf('cancelado') === -1;
+}
+
+function applyDashboardPendingFilter_(pagina) {
+  var filtro = String(DASHBOARD_PENDING_FILTER || '');
+  if (!filtro) return;
+  if (pagina === 'participantes') {
+    if (filtro !== 'participantes' && filtro !== 'participantesAtivos') return;
+    DASHBOARD_PENDING_FILTER = '';
+    DASHBOARD_PENDING_KEYS = '';
+    var searchPart = document.getElementById('searchParticipantes');
+    var statusPart = document.getElementById('filterStatusPar');
+    if (searchPart) searchPart.value = '';
+    if (statusPart) statusPart.value = '';
+    if (filtro === 'participantes') {
+      filtrarParticipantes();
+      return;
+    }
+    renderTabelaPart((_participantes || []).filter(function(p) {
+      var st = normSelectValue(p && p.status);
+      return st === 'ativo' || st === 'em seguimento';
+    }));
+    return;
+  }
+  if (pagina === 'projetos') {
+    if (filtro !== 'projetosAtivos' && filtro !== 'recrutZero') return;
+    DASHBOARD_PENDING_FILTER = '';
+    var keys = dashboardFilterKeysMap_();
+    DASHBOARD_PENDING_KEYS = '';
+    var searchProj = document.getElementById('searchProjetos');
+    if (searchProj) searchProj.value = '';
+    if (filtro === 'projetosAtivos') {
+      renderTabelaProj((_projetos || []).filter(dashboardProjetoAtivo_));
+      return;
+    }
+    renderTabelaProj((_projetos || []).filter(function(p) {
+      return !!(keys[normSelectValue(p && p.nomeAbreviado)] || keys[normSelectValue(p && p.codigo)]);
+    }));
+  }
+}
+
+function getFloatingAddConfig() {
+  var page = getCurrentPage();
+  var estoquePage = page === 'estoque-app' ? getEstoqueRoutePage('itens') : '';
+  var configs = {
+    agenda: { label: 'Novo agendamento', action: function() { toggleAgendaCreate(); } },
+    participantes: { label: 'Novo participante', action: function() { abrirFormParticipante(null); } },
+    medicos: { label: 'Novo médico', action: function() { abrirFormMedico(null); } },
+    projetos: { label: 'Novo projeto', action: function() { abrirFormProjeto(null); } },
+    monitores: { label: 'Novo monitor', action: function() { abrirFormMonitor(null); } },
+    prestadores: { label: 'Novo prestador', action: function() { abrirFormPrestador(null); } },
+    labcentral: { label: 'Novo Lab Central', action: function() { abrirFormLabCentral(null); } },
+    couriers: { label: 'Novo courier', action: function() { abrirFormCourier(null); } },
+    solicitantes: { label: 'Novo solicitante', action: function() { abrirFormSolicitante(null); } },
+    equipamentos: { label: 'Novo equipamento', action: function() { abrirFormEquipamento(null); } },
+    medicamentos: { label: 'Novo medicamento', action: function() { abrirFormMedicamento(null); } },
+    configuracoes: { label: 'Nova configuração', action: function() { abrirFormConfig(null); } },
+    usuarios: { label: 'Novo usuário', adminOnly: true, action: function() { abrirFormUsuarioAdmin(); } }
+  };
+  if (page === 'estoque-app') {
+    if (estoquePage === 'itens') return { label: 'Novo item de estoque', action: function() { abrirFormItemInline(); } };
+    if (estoquePage === 'pedidos') return { label: 'Novo pedido', action: function() { abrirFormPedidoInline(); } };
+    if (estoquePage === 'movimentacoes') return { label: 'Nova movimentação', action: function() { abrirFormMovInline(); } };
+    if (estoquePage === 'descartes') return { label: 'Preparar descarte', action: function() { abrirPlanejamentoDescarteInline(); } };
+  }
+  return configs[page] || null;
+}
+
+function updateFloatingAddButton() {
+  var btn = document.getElementById('btnFloatingAdd');
+  if (!btn) return;
+  var cfg = getFloatingAddConfig();
+  var canWrite = CURRENT_ACCESS && CURRENT_ACCESS.ok && CURRENT_ACCESS.canWrite;
+  var isAdmin = CURRENT_ACCESS && CURRENT_ACCESS.role === 'admin';
+  var estoqueReady = getCurrentPage() !== 'estoque-app' || !!(STATE.estoque && STATE.estoque.inlineDados);
+  var show = !!cfg && canWrite && (!cfg.adminOnly || isAdmin) && estoqueReady;
+  btn.classList.toggle('show', show);
+  if (cfg) {
+    btn.title = cfg.label;
+    btn.setAttribute('aria-label', cfg.label);
+  }
+}
+
+function handleFloatingAdd() {
+  var cfg = getFloatingAddConfig();
+  if (!cfg) return;
+  if (!(CURRENT_ACCESS && CURRENT_ACCESS.canWrite)) {
+    snack('Seu perfil não permite criar registros.');
+    updateFloatingAddButton();
+    return;
+  }
+  if (cfg.adminOnly && CURRENT_ACCESS.role !== 'admin') {
+    snack('Ação disponível apenas para administradores.');
+    updateFloatingAddButton();
+    return;
+  }
+  cfg.action();
+}
+
+function scrollAppToTop() {
+  var scroller = getActiveScrollContainer();
+  if (scroller && typeof scroller.scrollTo === 'function') {
+    scroller.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  setTimeout(updateScrollTopButton, 220);
+}
+
+function resetAppScrollPosition() {
+  var content = document.querySelector('.content');
+  if (content) content.scrollTop = 0;
+  var estoqueShell = document.getElementById('estoqueInlineShell');
+  if (estoqueShell) estoqueShell.scrollTop = 0;
+  updateScrollTopButton();
+}
+
+function initScrollTopButton() {
+  var content = document.querySelector('.content');
+  if (content && !content.dataset.scrollTopBound) {
+    content.dataset.scrollTopBound = '1';
+    content.addEventListener('scroll', updateScrollTopButton, { passive: true });
+  }
+  updateScrollTopButton();
+}
+
+document.addEventListener('DOMContentLoaded', initScrollTopButton);
+
+// ── Accordions e navegação Estoque ──────────────────────────────────────────
+function toggleNavCadastros() {
+  var toggle = document.getElementById('navCadastrosToggle');
+  var body = document.getElementById('navCadastrosBody');
+  var willOpen = !body.classList.contains('open');
+  document.getElementById('navEstoqueToggle').classList.remove('open');
+  document.getElementById('navEstoqueBody').classList.remove('open');
+  toggle.classList.toggle('open', willOpen);
+  body.classList.toggle('open', willOpen);
+}
+
+function toggleNavEstoque() {
+  var toggle = document.getElementById('navEstoqueToggle');
+  var body = document.getElementById('navEstoqueBody');
+  var willOpen = !body.classList.contains('open');
+  document.getElementById('navCadastrosToggle').classList.remove('open');
+  document.getElementById('navCadastrosBody').classList.remove('open');
+  toggle.classList.toggle('open', willOpen);
+  body.classList.toggle('open', willOpen);
+}
+
+function setMobileNav(open) {
+  var shouldOpen = !!open && window.matchMedia('(max-width: 900px)').matches;
+  document.body.classList.toggle('mobile-nav-open', shouldOpen);
+  var btn = document.getElementById('mobileMenuBtn');
+  var backdrop = document.getElementById('mobileNavBackdrop');
+  var drawer = document.getElementById('appNavDrawer');
+  if (backdrop) backdrop.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+  if (drawer) drawer.setAttribute('aria-hidden', shouldOpen ? 'false' : (window.matchMedia('(max-width: 900px)').matches ? 'true' : 'false'));
+  if (btn) {
+    btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    btn.setAttribute('aria-label', shouldOpen ? 'Fechar menu' : 'Abrir menu');
+    btn.title = shouldOpen ? 'Fechar menu' : 'Abrir menu';
+    var icon = btn.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = shouldOpen ? 'close' : 'menu';
+  }
+}
+
+function toggleMobileNav() {
+  setMobileNav(!document.body.classList.contains('mobile-nav-open'));
+}
+
+function closeMobileNav() {
+  setMobileNav(false);
+}
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape' && document.body.classList.contains('mobile-nav-open')) closeMobileNav();
+});
+
+window.addEventListener('resize', function() {
+  if (!window.matchMedia('(max-width: 900px)').matches) closeMobileNav();
+  else if (!document.body.classList.contains('mobile-nav-open')) setMobileNav(false);
+});
+
+document.addEventListener('DOMContentLoaded', function() { setMobileNav(false); });
+
+function irPara(pagina, options) {
+  options = options || {};
+  if (!options.initial) APP_USER_NAVIGATED = true;
+  if (!appConfirmNavigationIfDirty(null, function() {
+    appClearUnsavedChanges();
+    irPara(pagina);
+  })) return;
+  if (!isEmbeddedModuleEnabled('dashboard') && pagina === 'dashboard') {
+    abrirModuloDashboard();
+    return;
+  }
+  if (!isEmbeddedModuleEnabled('estoque') && pagina === 'estoque-view') {
+    abrirModuloEstoque('visualizacao');
+    return;
+  }
+  if (isEmbeddedModuleEnabled('dashboard') && pagina !== 'dashboard') {
+    abrirModuloPrincipal(pagina);
+    return;
+  }
+  if (isEmbeddedModuleEnabled('estoque') && pagina !== 'estoque-view') {
+    abrirModuloPrincipal(pagina);
+    return;
+  }
+  closeMobileNav();
+  pagina = setCurrentPage(pagina);
+  document.querySelectorAll('.nav-item').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.nav-group-toggle').forEach(function(el) { el.classList.remove('open'); });
+  document.querySelectorAll('.nav-group-body').forEach(function(el) { el.classList.remove('open'); });
+  document.querySelectorAll('.nav-item').forEach(function(el) {
+    var oc = el.getAttribute('onclick') || '';
+    if (oc.indexOf("'" + pagina + "'") !== -1) el.classList.add('active');
+  });
+  var cadastros = ['participantes', 'medicos', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'solicitantes', 'equipamentos', 'medicamentos'];
+  if (cadastros.indexOf(pagina) !== -1) {
+    document.getElementById('navCadastrosToggle').classList.add('open');
+    document.getElementById('navCadastrosBody').classList.add('open');
+  }
+  if (pagina === 'estoque-view') {
+    document.getElementById('navEstoqueToggle').classList.add('open');
+    document.getElementById('navEstoqueBody').classList.add('open');
+    var navEstVisualizacao = document.getElementById('navEstVisualizacao');
+    if (navEstVisualizacao) navEstVisualizacao.classList.add('active');
+  }
+  if (pagina === 'dashboard') {
+    var navDashboard = document.getElementById('navDashboard');
+    if (navDashboard) navDashboard.classList.add('active');
+  }
+  document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
+  var pg = document.getElementById('page-' + pagina);
+  if (pg) pg.classList.add('active');
+  resetAppScrollPosition();
+  var t = getRoutePageConfig(pagina);
+  document.getElementById('topTitle').textContent = t.label;
+  document.getElementById('topIcon').textContent  = t.icon;
+  if (pagina === 'participantes') carregarParticipantes();
+  if (pagina === 'medicos') carregarMedicos();
+  if (pagina === 'solicitantes') carregarSolicitantes();
+  if (pagina === 'projetos') carregarProjetos();
+  if (pagina === 'monitores') carregarMonitores();
+  if (pagina === 'prestadores') carregarPrestadores();
+  if (pagina === 'labcentral') carregarLabCentral();
+  if (pagina === 'couriers') carregarCouriers();
+  if (pagina === 'equipamentos') carregarEquipamentos();
+  if (pagina === 'medicamentos') carregarMedicamentos();
+  if (pagina === 'configuracoes') carregarConfigApp();
+  if (pagina === 'pendencias') carregarPendencias(false);
+  if (pagina === 'usuarios') carregarUsersAdmin();
+  if (pagina === 'audit-log') carregarAuditLog();
+  if (pagina === 'dashboard') {
+    if (typeof carregarDashboard === 'function') {
+      carregarDashboard(false);
+    } else {
+      setTimeout(function() {
+        if (typeof carregarDashboard === 'function') carregarDashboard(false);
+      }, 0);
+    }
+  }
+  if (pagina === 'requisicao') {
+    _rqAgendaOrigemId = '';
+    _rqOrigemContext = null;
+    initRequisicao();
+  }
+  if (pagina === 'estoque-view') carregarEstoqueView();
+  if (pagina === 'agenda') initAgendaV1();
+  updateFloatingAddButton();
+}
+
+function transporteLoadingHtml() {
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Preparando transporte</title>' +
+    '<style>body{font-family:Arial,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fb;color:#1f2937}' +
+    '.box{background:#fff;border:1px solid #d8e2f0;border-radius:8px;padding:26px 30px;box-shadow:0 8px 24px rgba(15,23,42,.08);max-width:420px;text-align:center}' +
+    '.spin{width:28px;height:28px;border:3px solid #d8e2f0;border-top-color:#1266f1;border-radius:50%;animation:s 1s linear infinite;margin:0 auto 14px}@keyframes s{to{transform:rotate(360deg)}}' +
+    'h1{font-size:18px;margin:0 0 8px}p{font-size:13px;color:#64748b;margin:0;line-height:1.45}</style></head><body>' +
+    '<div class="box"><div class="spin"></div><h1>Preparando documentação</h1><p>Os dados da Agenda estão sendo enviados para o módulo de Transporte.</p></div>' +
+    '</body></html>';
+}
+
+function transporteErrorHtml(message) {
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Falha no transporte</title>' +
+    '<style>body{font-family:Arial,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#fff8f8;color:#1f2937}' +
+    '.box{background:#fff;border:1px solid #f3b9b3;border-radius:8px;padding:26px 30px;max-width:520px;text-align:center}' +
+    'h1{font-size:18px;margin:0 0 8px;color:#b3261e}p{font-size:13px;color:#5f6b7c;margin:0;line-height:1.45;white-space:pre-wrap}</style></head><body>' +
+    '<div class="box"><h1>Não foi possível preparar o transporte</h1><p>' + esc(message || 'Erro desconhecido.') + '</p></div>' +
+    '</body></html>';
+}
+
+function prepararJanelaTransporte() {
+  var w = null;
+  try {
+    w = window.open('', '_blank');
+    if (w) {
+      w.document.open();
+      w.document.write(transporteLoadingHtml());
+      w.document.close();
+    }
+  } catch (e) {
+    w = null;
+  }
+  return w;
+}
+
+function atualizarJanelaTransporteErro(w, message) {
+  if (!w || w.closed) return;
+  try {
+    w.document.open();
+    w.document.write(transporteErrorHtml(message));
+    w.document.close();
+  } catch (e) {}
+}
+
+function transporteModuloQuery(args) {
+  args = args || {};
+  var query = '?page=transporte';
+  if (args.agendaId) query += '&agendaId=' + encodeURIComponent(args.agendaId);
+  if (args.slot) query += '&slot=' + encodeURIComponent(args.slot);
+  return query;
+}
+
+function abrirTransporteModulo(targetWindow, args) {
+  if (!appConfirmNavigationIfDirty(null, function() {
+    appClearUnsavedChanges();
+    abrirTransporteModulo(targetWindow, args);
+  }, function() {
+    atualizarJanelaTransporteErro(targetWindow, 'Abertura do modulo de Transporte cancelada.');
+  })) {
+    return;
+  }
+  var query = transporteModuloQuery(args);
+  var bootstrapUrl = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.webAppUrl;
+  if (bootstrapUrl) {
+    var url = String(bootstrapUrl) + query;
+    if (targetWindow && !targetWindow.closed) targetWindow.location.href = url;
+    else window.open(url, '_blank');
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(url) {
+      var targetUrl = String(url || '') + query;
+      if (targetWindow && !targetWindow.closed) targetWindow.location.href = targetUrl;
+      else window.open(targetUrl, '_blank');
+    })
+    .withFailureHandler(function(e) {
+      var msg = e && e.message ? e.message : String(e);
+      atualizarJanelaTransporteErro(targetWindow, msg);
+      snackErro(msg);
+    })
+    .getWebAppUrl();
+}
+
+function carregarUsersAdmin() {
+  var tb = document.getElementById('bodyUsersAdmin');
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(rows) {
+      USERS_ADMIN_ROWS = rows || [];
+      renderUsersAdmin();
+    })
+    .withFailureHandler(function(e) {
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="5">Erro: ' + esc(e.message || e) + '</td></tr>';
+    })
+    .getUsersAdminList();
+}
+
+function renderUsersAdmin() {
+  var rows = USERS_ADMIN_ROWS || [];
+  var qEl = document.getElementById('searchUsersAdmin');
+  var q = norm(qEl ? qEl.value : '');
+  var filtered = rows.filter(function(u) {
+    return !q || norm([u.name, u.firstName, u.email, u.role, u.ativo].join(' ')).indexOf(q) >= 0;
+  });
+  var total = rows.length;
+  var ativos = rows.filter(function(u) { return u.ativo === 'Sim'; }).length;
+  var admins = rows.filter(function(u) { return u.role === 'admin' && u.ativo === 'Sim'; }).length;
+  var totalEl = document.getElementById('usersTotal');
+  var ativosEl = document.getElementById('usersAtivos');
+  var adminsEl = document.getElementById('usersAdmins');
+  if (totalEl) totalEl.textContent = total;
+  if (ativosEl) ativosEl.textContent = ativos;
+  if (adminsEl) adminsEl.textContent = admins;
+  var tb = document.getElementById('bodyUsersAdmin');
+  if (!tb) return;
+  if (!filtered.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5">Nenhum usuário encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = filtered.map(function(u) {
+    var ativo = u.ativo === 'Sim';
+    var roleCls = u.role === 'admin' ? 'chip-blue' : (u.role === 'readonly' ? 'chip-yellow' : 'chip-green');
+    var name = u.name || u.firstName || '—';
+    var initial = (u.firstName || u.name || u.email || '?')[0].toUpperCase();
+    return '<tr>' +
+      '<td><div class="name-cell"><div class="row-avatar">' + esc(initial) + '</div><span class="row-name">' + esc(name) + '</span></div></td>' +
+      '<td style="color:#5f6b7c;">' + esc(u.email) + '</td>' +
+      '<td><span class="chip ' + roleCls + '">' + esc(u.role) + '</span></td>' +
+      '<td><span class="chip ' + (ativo ? 'chip-green' : 'chip-red') + '">' + (ativo ? 'Ativo' : 'Inativo') + '</span></td>' +
+      '<td><div class="action-btns">' +
+        '<button class="icon-btn" title="Editar" onclick="abrirFormUsuarioAdmin(' + Number(u.rowIndex || 0) + ')"><span class="material-symbols-outlined">edit</span></button>' +
+        (ativo ? '<button class="icon-btn del" title="Inativar" onclick="confirmarInativarUsuarioAdmin(' + Number(u.rowIndex || 0) + ',\'' + esc(u.email).replace(/'/g, '&#39;') + '\')"><span class="material-symbols-outlined">person_off</span></button>' : '') +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function abrirFormUsuarioAdmin(rowIndex) {
+  var u = rowIndex ? (USERS_ADMIN_ROWS || []).find(function(x) { return Number(x.rowIndex) === Number(rowIndex); }) : null;
+  document.getElementById('modalUsuarioAdminTitle').textContent = u ? 'EDITAR USUÁRIO' : 'NOVO USUÁRIO';
+  document.getElementById('userAdminRowIndex').value = u ? u.rowIndex : '';
+  document.getElementById('userAdminNome').value = u ? (u.name || '') : '';
+  document.getElementById('userAdminEmail').value = u ? u.email : '';
+  document.getElementById('userAdminRole').value = u ? u.role : 'user';
+  document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';
+  document.getElementById('statusUsuarioAdmin').textContent = '';
+  document.getElementById('errUserAdminEmail').classList.remove('show');
+  abrirOverlay('modalUsuarioAdmin');
+}
+
+function salvarUsuarioAdminApp() {
+  var emailEl = document.getElementById('userAdminEmail');
+  var email = (emailEl.value || '').trim().toLowerCase();
+  var valido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  var err = document.getElementById('errUserAdminEmail');
+  if (err) err.classList.toggle('show', !valido);
+  if (!valido) return;
+  var btn = document.getElementById('btnSalvarUsuarioAdmin');
+  var old = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
+  google.script.run
+    .withSuccessHandler(function() {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      fecharOverlay('modalUsuarioAdmin');
+      snack('Usuário salvo com sucesso.');
+      carregarUsersAdmin();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      document.getElementById('statusUsuarioAdmin').innerHTML = '<span style="color:#b3261e">' + esc(e.message || e) + '</span>';
+    })
+    .salvarUsuarioAdmin({
+      rowIndex: document.getElementById('userAdminRowIndex').value,
+      name: document.getElementById('userAdminNome').value.trim(),
+      email: email,
+      role: document.getElementById('userAdminRole').value,
+      ativo: document.getElementById('userAdminAtivo').value
+    });
+}
+
+function confirmarInativarUsuarioAdmin(rowIndex, email) {
+  abrirConfirmacaoDestrutiva({
+    titulo: 'Confirmar inativação',
+    mensagem: 'Deseja inativar o acesso de "' + email + '"?',
+    acao: 'Inativar',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function() {
+          snack('Usuário inativado.');
+          carregarUsersAdmin();
+        })
+        .withFailureHandler(function(e) { snackErro(e.message || e); })
+        .inativarUsuarioAdmin(rowIndex);
+    }
+  });
+}
+
+var _medicos = [];
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIT LOG
+// ═══════════════════════════════════════════════════════════════
+function carregarAuditLog() {
+  return carregarAuditLogPaginado();
+  var tb = document.getElementById('bodyAuditLog');
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+  var limitEl = document.getElementById('auditLimit');
+  var limit = limitEl ? Number(limitEl.value || 200) : 200;
+  google.script.run
+    .withSuccessHandler(function(data) {
+      data = data || {};
+      AUDIT_LOG_ROWS = data.log || [];
+      AUDIT_CHANGES_ROWS = data.changes || [];
+      renderAuditLog();
+    })
+    .withFailureHandler(function(e) {
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="6">Erro: ' + esc(e.message || e) + '</td></tr>';
+    })
+    .getAuditData(limit);
+}
+
+function carregarAuditLogPaginado() {
+  var limitEl = document.getElementById('auditLimit');
+  if (limitEl && limitEl.dataset.auditPagedInit !== '1') {
+    limitEl.innerHTML =
+      '<option value="100" selected>100 por pagina</option>' +
+      '<option value="200">200 por pagina</option>' +
+      '<option value="500">500 por pagina</option>';
+    limitEl.value = '100';
+    limitEl.dataset.auditPagedInit = '1';
+  }
+  AUDIT_PAGE_SIZE = limitEl ? Number(limitEl.value || 100) : 100;
+  AUDIT_PAGE_OFFSET[AUDIT_VIEW] = 0;
+  AUDIT_PAGE_CACHE[AUDIT_VIEW] = {};
+  carregarAuditPage(AUDIT_VIEW, 0, false);
+}
+
+function auditCacheKey(limit, offset) {
+  return String(limit || AUDIT_PAGE_SIZE) + ':' + String(offset || 0);
+}
+
+function setAuditRows(type, rows) {
+  if (type === 'changes') AUDIT_CHANGES_ROWS = rows || [];
+  else AUDIT_LOG_ROWS = rows || [];
+}
+
+function auditRowsForView(type) {
+  return type === 'changes' ? (AUDIT_CHANGES_ROWS || []) : (AUDIT_LOG_ROWS || []);
+}
+
+function carregarAuditPage(type, offset, fromCacheOnly) {
+  type = type === 'changes' ? 'changes' : 'log';
+  offset = Math.max(0, Number(offset || 0));
+  var limit = AUDIT_PAGE_SIZE || 100;
+  var key = auditCacheKey(limit, offset);
+  var cached = AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key];
+  if (cached) {
+    AUDIT_PAGE_OFFSET[type] = offset;
+    AUDIT_PAGE_META[type] = cached.meta;
+    setAuditRows(type, cached.rows);
+    renderAuditLog();
+    prefetchAuditNextPage(type);
+    return;
+  }
+  if (fromCacheOnly) return;
+  var tb = document.getElementById('bodyAuditLog');
+  var colSpan = type === 'changes' ? 9 : 6;
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="' + colSpan + '"><div class="spinner"></div>Carregando...</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      data = data || {};
+      var rows = data.rows || [];
+      var meta = {
+        total: Number(data.total || 0),
+        limit: Number(data.limit || limit),
+        offset: Number(data.offset || offset),
+        hasMore: !!data.hasMore
+      };
+      AUDIT_PAGE_CACHE[type][key] = { rows: rows, meta: meta };
+      AUDIT_PAGE_OFFSET[type] = meta.offset;
+      AUDIT_PAGE_META[type] = meta;
+      setAuditRows(type, rows);
+      renderAuditLog();
+      prefetchAuditNextPage(type);
+    })
+    .withFailureHandler(function(e) {
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">Erro: ' + esc(e.message || e) + '</td></tr>';
+    })
+    .getAuditPage(type, limit, offset);
+}
+
+function prefetchAuditNextPage(type) {
+  type = type === 'changes' ? 'changes' : 'log';
+  var meta = AUDIT_PAGE_META[type] || {};
+  if (!meta.hasMore) return;
+  var limit = meta.limit || AUDIT_PAGE_SIZE || 100;
+  var rows = auditRowsForView(type);
+  var nextOffset = (meta.offset || 0) + rows.length;
+  var key = auditCacheKey(limit, nextOffset);
+  var prefetchKey = type + ':' + key;
+  if ((AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key]) || AUDIT_PREFETCHING[prefetchKey]) return;
+  AUDIT_PREFETCHING[prefetchKey] = true;
+  google.script.run
+    .withSuccessHandler(function(data) {
+      data = data || {};
+      AUDIT_PAGE_CACHE[type][key] = {
+        rows: data.rows || [],
+        meta: {
+          total: Number(data.total || 0),
+          limit: Number(data.limit || limit),
+          offset: Number(data.offset || nextOffset),
+          hasMore: !!data.hasMore
+        }
+      };
+      delete AUDIT_PREFETCHING[prefetchKey];
+      renderAuditPager();
+    })
+    .withFailureHandler(function() {
+      delete AUDIT_PREFETCHING[prefetchKey];
+    })
+    .getAuditPage(type, limit, nextOffset);
+}
+
+function setAuditView(view) {
+  AUDIT_VIEW = view === 'changes' ? 'changes' : 'log';
+  carregarAuditPage(AUDIT_VIEW, AUDIT_PAGE_OFFSET[AUDIT_VIEW] || 0, false);
+}
+
+function auditNextPage() {
+  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || {};
+  if (!meta.hasMore) return;
+  carregarAuditPage(AUDIT_VIEW, (meta.offset || 0) + auditRowsForView(AUDIT_VIEW).length, false);
+}
+
+function auditPrevPage() {
+  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || {};
+  var limit = meta.limit || AUDIT_PAGE_SIZE || 100;
+  carregarAuditPage(AUDIT_VIEW, Math.max(0, (meta.offset || 0) - limit), false);
+}
+
+function renderAuditLog() {
+  var isChanges = AUDIT_VIEW === 'changes';
+  var rows = auditRowsForView(AUDIT_VIEW);
+  var qEl = document.getElementById('searchAudit');
+  var q = norm(qEl ? qEl.value : '');
+  var filtered = rows.filter(function(r) {
+    if (!q) return true;
+    return norm([
+      r.id, r.email, r.action, r.timestamp, r.module, r.recordId,
+      r.field, r.oldValue, r.newValue, r.note
+    ].join(' ')).indexOf(q) !== -1;
+  });
+  var users = {};
+  var modules = {};
+  rows.forEach(function(r) {
+    if (r.email) users[r.email] = true;
+    if (r.module) modules[r.module] = true;
+  });
+  var tabLog = document.getElementById('auditTabLog');
+  var tabChanges = document.getElementById('auditTabChanges');
+  if (tabLog) tabLog.classList.toggle('active', !isChanges);
+  if (tabChanges) tabChanges.classList.toggle('active', isChanges);
+  document.getElementById('auditTotal').textContent = rows.length;
+  document.getElementById('auditTotalLabel').textContent = isChanges ? 'Alterações carregadas' : 'Registros carregados';
+  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || { total: rows.length, offset: 0, limit: AUDIT_PAGE_SIZE };
+  document.getElementById('auditTotal').textContent = meta.total || rows.length;
+  document.getElementById('auditTotalLabel').textContent = isChanges ? 'Total de alteracoes' : 'Total de registros';
+  document.getElementById('auditUsers').textContent = Object.keys(users).length;
+  renderAuditPager();
+  document.getElementById('auditModules').textContent = Object.keys(modules).length;
+  var head = document.getElementById('headAuditLog');
+  var tb = document.getElementById('bodyAuditLog');
+  if (!tb) return;
+  if (head) {
+    head.innerHTML = isChanges
+      ? '<tr><th>Data/Hora</th><th>Usuário</th><th>Módulo</th><th>Ação</th><th>ID registro</th><th>Campo</th><th>Antes</th><th>Depois</th><th>Observação</th></tr>'
+      : '<tr><th>ID Audit</th><th>E-mail do usuário</th><th>Ação executada</th><th>Data/Hora</th><th>Módulo</th><th>ID do registro</th></tr>';
+  }
+  if (!filtered.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="' + (isChanges ? 9 : 6) + '">Nenhum registro encontrado.</td></tr>';
+    renderAuditPager();
+    return;
+  }
+  tb.innerHTML = isChanges ? filtered.map(function(r) {
+    return '<tr>' +
+      '<td>' + esc(r.timestamp) + '</td>' +
+      '<td>' + esc(r.email) + '</td>' +
+      '<td><span class="audit-pill">' + esc(r.module || 'Sistema') + '</span></td>' +
+      '<td>' + esc(r.action) + '</td>' +
+      '<td><span class="audit-muted">' + esc(r.recordId || '') + '</span></td>' +
+      '<td>' + esc(r.field || '') + '</td>' +
+      '<td>' + esc(r.oldValue || '') + '</td>' +
+      '<td>' + esc(r.newValue || '') + '</td>' +
+      '<td>' + esc(r.note || '') + '</td>' +
+      '</tr>';
+  }).join('') : filtered.map(function(r) {
+    return '<tr>' +
+      '<td><span class="audit-muted">' + esc(r.id) + '</span></td>' +
+      '<td>' + esc(r.email) + '</td>' +
+      '<td>' + esc(r.action) + '</td>' +
+      '<td>' + esc(r.timestamp) + '</td>' +
+      '<td><span class="audit-pill">' + esc(r.module || 'Sistema') + '</span></td>' +
+      '<td>' + esc(r.recordId || '') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURAÇÕES
+// ═══════════════════════════════════════════════════════════════
+function renderAuditPager() {
+  var meta = AUDIT_PAGE_META[AUDIT_VIEW] || {};
+  var rows = auditRowsForView(AUDIT_VIEW);
+  var total = Number(meta.total || rows.length || 0);
+  var offset = Number(meta.offset || 0);
+  var start = total && rows.length ? offset + 1 : 0;
+  var end = total && rows.length ? Math.min(offset + rows.length, total) : 0;
+  var el = document.getElementById('auditPager');
+  if (!el) return;
+  var nextOffset = offset + rows.length;
+  var nextKey = auditCacheKey(meta.limit || AUDIT_PAGE_SIZE || 100, nextOffset);
+  var nextCached = !!(meta.hasMore && AUDIT_PAGE_CACHE[AUDIT_VIEW] && AUDIT_PAGE_CACHE[AUDIT_VIEW][nextKey]);
+  el.innerHTML =
+    '<button type="button" class="audit-page-btn" onclick="auditPrevPage()" ' + (offset <= 0 ? 'disabled' : '') + '><span class="material-symbols-outlined">chevron_left</span></button>' +
+    '<span class="audit-page-info">' + esc(start + '-' + end + ' de ' + total) + '</span>' +
+    '<button type="button" class="audit-page-btn" onclick="auditNextPage()" ' + (!meta.hasMore ? 'disabled' : '') + '><span class="material-symbols-outlined">chevron_right</span></button>' +
+    (meta.hasMore ? '<span class="audit-prefetch">' + (nextCached ? 'Proxima pronta' : 'Preparando proxima') + '</span>' : '');
+}
+
+var _configApp = [];
+
+function carregarConfigApp() {
+  var tb = document.getElementById('bodyConfig');
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="8"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderConfigApp((res && res.config) || res); })
+    .withFailureHandler(function(e) {
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="8">Erro: ' + esc(e.message) + '</td></tr>';
+    })
+    .getConfigBootstrapData();
+}
+
+function renderConfigApp(dados) {
+  dados = dados || {};
+  _configApp = dados.itens || [];
+  var grupos = {};
+  _configApp.forEach(function(i) { if (i.grupo) grupos[i.grupo] = 1; });
+  document.getElementById('cfgTotal').textContent = _configApp.length;
+  document.getElementById('cfgAtivas').textContent = _configApp.filter(function(i){ return normSimNao(i.ativo) === 'sim'; }).length;
+  document.getElementById('cfgGrupos').textContent = Object.keys(grupos).length;
+  document.getElementById('cfgApoio').textContent = _configApp.filter(function(i){ return i.bloco === 'Apoio'; }).length;
+  filtrarConfig();
+}
+
+function filtrarConfig() {
+  var q = ((document.getElementById('searchConfig') || {}).value || '').toLowerCase().trim();
+  var bloco = ((document.getElementById('filterConfigBloco') || {}).value || '');
+  var lista = _configApp.filter(function(i) {
+    var okBloco = !bloco || i.bloco === bloco;
+    var okBusca = !q || [i.bloco, i.grupo, i.chave, i.valor, i.ativo, i.observacao].join(' ').toLowerCase().indexOf(q) >= 0;
+    return okBloco && okBusca;
+  });
+  renderTabelaConfig(lista);
+}
+
+function renderTabelaConfig(lista) {
+  var tb = document.getElementById('bodyConfig');
+  if (!tb) return;
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="8">Nenhuma configuração encontrada.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(i) {
+    var iStr = JSON.stringify(i).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<tr>'
+      + '<td><span class="chip chip-blue">' + esc(i.bloco || '—') + '</span></td>'
+      + '<td>' + esc(i.grupo || '—') + '</td>'
+      + '<td>' + esc(i.chave || '—') + '</td>'
+      + '<td><div class="row-name">' + esc(i.valor || '—') + '</div></td>'
+      + '<td>' + simNaoChip(i.ativo) + '</td>'
+      + '<td>' + esc(i.ordem || '—') + '</td>'
+      + '<td style="color:#5f6b7c">' + esc(i.observacao || '—') + '</td>'
+      + '<td><div class="action-btns">'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormConfig(' + iStr + ')\'><span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirConfig("' + esc(i.rowIndex) + '","' + esc(i.startCol) + '","' + esc(i.valor || 'configuração') + '")\'><span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function configValoresUnicos(bloco, grupo) {
+  var seen = {};
+  return _configApp.filter(function(i) {
+    return (!bloco || i.bloco === bloco) && (!grupo || i.grupo === grupo);
+  }).map(function(i) {
+    return grupo ? i.chave : i.grupo;
+  }).filter(function(v) {
+    v = String(v || '').trim();
+    if (!v || seen[v]) return false;
+    seen[v] = 1;
+    return true;
+  }).sort(function(a, b) { return a.localeCompare(b); });
+}
+
+function preencherSelectConfig(id, valores, selected, placeholder) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<option value="">' + (placeholder || '— Selecione —') + '</option>' +
+    (valores || []).map(function(v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    }).join('');
+  el.value = selected || '';
+  if (selected && el.value !== selected) {
+    var opt = document.createElement('option');
+    opt.value = selected;
+    opt.textContent = selected;
+    el.appendChild(opt);
+    el.value = selected;
+  }
+}
+
+function onConfigBlocoChange(selectedGrupo, selectedChave) {
+  var bloco = document.getElementById('cfgBloco').value || 'Principal';
+  preencherSelectConfig('cfgGrupo', configValoresUnicos(bloco), selectedGrupo || '', '— Selecione —');
+  onConfigGrupoChange(selectedChave);
+}
+
+function onConfigGrupoChange(selectedChave) {
+  var bloco = document.getElementById('cfgBloco').value || 'Principal';
+  var grupo = document.getElementById('cfgGrupo').value || '';
+  preencherSelectConfig('cfgChave', grupo ? configValoresUnicos(bloco, grupo) : [], selectedChave || '', grupo ? '— Selecione —' : '— Selecione o grupo primeiro —');
+}
+
+function abrirFormConfig(item) {
+  if (typeof item === 'string') item = JSON.parse(item);
+  item = item || {};
+  document.getElementById('modalCfgTitle').textContent = item.rowIndex ? 'EDITAR CONFIGURAÇÃO' : 'NOVA CONFIGURAÇÃO';
+  document.getElementById('cfgRowIndex').value = item.rowIndex || '';
+  document.getElementById('cfgStartCol').value = item.startCol || '';
+  document.getElementById('cfgBloco').value = item.bloco || 'Principal';
+  document.getElementById('cfgBloco').disabled = !!item.rowIndex;
+  document.getElementById('cfgAtivo').value = item.ativo || 'Sim';
+  onConfigBlocoChange(item.grupo || '', item.chave || '');
+  document.getElementById('cfgValor').value = item.valor || '';
+  document.getElementById('cfgOrdem').value = item.ordem || '';
+  document.getElementById('cfgObs').value = item.observacao || '';
+  ['cfgGrupo','cfgChave','cfgValor'].forEach(function(id) { document.getElementById(id).classList.remove('invalid'); });
+  ['errCfgGrupo','errCfgChave','errCfgValor'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
+  document.getElementById('statusCfg').innerHTML = '';
+  document.getElementById('btnSalvarCfg').disabled = false;
+  abrirOverlay('modalConfig');
+}
+
+function salvarConfigApp() {
+  var grupo = document.getElementById('cfgGrupo').value.trim();
+  var chave = document.getElementById('cfgChave').value.trim();
+  var valor = document.getElementById('cfgValor').value.trim();
+  var ok = true;
+  if (!grupo) { document.getElementById('cfgGrupo').classList.add('invalid'); document.getElementById('errCfgGrupo').classList.add('visible'); ok = false; }
+  if (!chave) { document.getElementById('cfgChave').classList.add('invalid'); document.getElementById('errCfgChave').classList.add('visible'); ok = false; }
+  if (!valor) { document.getElementById('cfgValor').classList.add('invalid'); document.getElementById('errCfgValor').classList.add('visible'); ok = false; }
+  if (!ok) return;
+  var btn = document.getElementById('btnSalvarCfg');
+  btn.disabled = true;
+  document.getElementById('statusCfg').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      document.getElementById('statusCfg').innerHTML = '';
+      fecharOverlay('modalConfig');
+      snack(r || 'Configuração salva.');
+      _estoqueConfigLoaded = false;
+      invalidarAgendaConfigCache();
+      carregarConfigApp();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusCfg').innerHTML = '<span style="color:#e53935;">' + esc(e.message) + '</span>';
+    })
+    .salvarConfigAppItem({
+      rowIndex: document.getElementById('cfgRowIndex').value,
+      startCol: document.getElementById('cfgStartCol').value,
+      bloco: document.getElementById('cfgBloco').value,
+      grupo: grupo,
+      chave: chave,
+      valor: valor,
+      ativo: document.getElementById('cfgAtivo').value,
+      ordem: document.getElementById('cfgOrdem').value,
+      observacao: document.getElementById('cfgObs').value.trim()
+    });
+}
+
+function confirmarExcluirConfig(rowIndex, startCol, valor) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "' + valor + '"? Configurações padrão serão desativadas para não voltarem automaticamente.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function(r) {
+          snack(r || 'Configuração excluída.');
+          _estoqueConfigLoaded = false;
+          invalidarAgendaConfigCache();
+          carregarConfigApp();
+        })
+        .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+        .excluirConfigAppItem(rowIndex, startCol);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EQUIPAMENTOS FORNECIDOS
+// ═══════════════════════════════════════════════════════════════
+var _equipamentos = [], _equipProjetos = [], _equipSolicitantes = [];
+
+function carregarEquipamentos() {
+  var tb = document.getElementById('bodyEquipamentos');
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderEquipamentos((res && res.data) || res); })
+    .withFailureHandler(function(e) {
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="9">Erro: ' + esc(e.message) + '</td></tr>';
+    })
+    .getCadastrosBootstrapData('equipamentos');
+}
+
+function renderEquipamentos(dados) {
+  dados = dados || {};
+  _equipamentos = dados.equipamentos || [];
+  _equipProjetos = dados.projetos || [];
+  _equipSolicitantes = dados.solicitantes || [];
+  if (dados.config && dados.config.localizacoes) {
+    ESTOQUE_CONFIG.localizacoes = dados.config.localizacoes;
+  }
+  var ucsSim = _equipamentos.filter(function(e){ return normSimNao(e.cadastroUcs) === 'sim'; }).length;
+  var rmSim = _equipamentos.filter(function(e){ return normSimNao(e.registroRm) === 'sim'; }).length;
+  var devolvidos = _equipamentos.filter(function(e){ return !!e.dataDevolucao; }).length;
+  document.getElementById('eqTotal').textContent = _equipamentos.length;
+  document.getElementById('eqUcsSim').textContent = ucsSim;
+  document.getElementById('eqRmSim').textContent = rmSim;
+  document.getElementById('eqDevolvidos').textContent = devolvidos;
+  filtrarEquipamentos();
+}
+
+function filtrarEquipamentos() {
+  var q = ((document.getElementById('searchEquipamentos') || {}).value || '').toLowerCase().trim();
+  var lista = q ? _equipamentos.filter(function(e) {
+    return [e.projeto, e.descricao, e.numeroSerie, e.notaFiscal, e.remetente, e.movimentoRm, e.codigoTotvs, e.responsavelRecebimento, e.localizacao]
+      .join(' ').toLowerCase().indexOf(q) >= 0;
+  }) : _equipamentos;
+  renderTabelaEquipamentos(lista);
+}
+
+function renderTabelaEquipamentos(lista) {
+  var tb = document.getElementById('bodyEquipamentos');
+  if (!tb) return;
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum equipamento encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(e) {
+    var eStr = JSON.stringify(e).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<tr>'
+      + '<td>' + projetoChip(e.projeto) + '</td>'
+      + '<td><div class="row-name">' + esc(e.descricao || '—') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(e.codigoTotvs || e.notaFiscal || '') + '</div></td>'
+      + '<td>' + esc(e.numeroSerie || '—') + '</td>'
+      + '<td style="font-weight:600">' + esc(e.quantidade || '—') + '</td>'
+      + '<td>' + simNaoChip(e.cadastroUcs) + '</td>'
+      + '<td>' + simNaoChip(e.registroRm) + '</td>'
+      + '<td>' + esc(e.localizacao || '—') + '</td>'
+      + '<td>' + esc(e.dataRecebimento || '—') + '</td>'
+      + '<td><div class="action-btns">'
+      + '<button class="icon-btn" title="Duplicar como nova entrada" onclick=\'abrirDuplicacaoEquipamento(' + eStr + ')\'><span class="material-symbols-outlined">content_copy</span></button>'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormEquipamento(' + eStr + ')\'><span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirEquipamento("' + esc(e.rowIndex) + '","' + esc(e.descricao || 'equipamento') + '")\'><span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function normSimNao(v) {
+  return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function simNaoChip(v) {
+  var txt = v || 'Não';
+  var cls = normSimNao(txt) === 'sim' ? 'chip-green' : 'chip-grey';
+  return '<span class="chip ' + cls + '">' + esc(txt) + '</span>';
+}
+
+function projetoChip(projeto) {
+  return projeto ? '<span class="chip chip-blue">' + esc(projeto) + '</span>' : '<span style="color:#9aa3b0">—</span>';
+}
+
+function normSelectValue(v) {
+  return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function fillSelectOptions(id, lista, selected, placeholder) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<option value="">' + (placeholder || '— Selecione —') + '</option>';
+    var selectedTxt = String(selected || '').trim();
+    var selectedValue = selectedTxt;
+    var hasSelected = !selectedTxt;
+    (lista || []).forEach(function(v) {
+      var val = typeof v === 'string' ? v : (v.nomeAbreviado || v.codigo || v.nome || '');
+      val = String(val || '').trim();
+      if (!val) return;
+      if (selectedTxt && normSelectValue(val) === normSelectValue(selectedTxt)) {
+        hasSelected = true;
+        selectedValue = val;
+      }
+      var opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val;
+      el.appendChild(opt);
+    });
+    if (selectedTxt && !hasSelected) {
+      var optSel = document.createElement('option');
+      optSel.value = selectedTxt;
+      optSel.textContent = selectedTxt;
+      el.appendChild(optSel);
+    }
+  el.value = selectedValue;
+  }
+
+var _itemAutocompleteActive = { equipamento: -1, medicamento: -1 };
+
+function itemAutocompleteConfig(tipo) {
+  return tipo === 'equipamento'
+    ? { inputId: 'eqDescricao', listId: 'eqDescricaoList', projectId: 'eqProjeto', items: _equipamentos }
+    : { inputId: 'medDescricao', listId: 'medDescricaoList', projectId: 'medProjeto', items: _medicamentos };
+}
+
+function sugestoesItem(tipo) {
+  var cfg = itemAutocompleteConfig(tipo);
+  var input = document.getElementById(cfg.inputId);
+  var project = document.getElementById(cfg.projectId);
+  var query = normSelectValue(input ? input.value : '');
+  var projetoSelecionado = normSelectValue(project ? project.value : '');
+  var vistos = {};
+  return (cfg.items || []).filter(function(item) {
+    var descricao = String(item.descricao || '').trim();
+    if (!descricao) return false;
+    if (projetoSelecionado && normSelectValue(item.projeto) !== projetoSelecionado) return false;
+    if (query && normSelectValue(descricao).indexOf(query) < 0) return false;
+    var chave = normSelectValue(descricao) + '|' + normSelectValue(item.projeto);
+    if (vistos[chave]) return false;
+    vistos[chave] = true;
+    return true;
+  }).slice(0, 10);
+}
+
+function mostrarSugestoesItem(tipo) {
+  var cfg = itemAutocompleteConfig(tipo);
+  var list = document.getElementById(cfg.listId);
+  if (!list) return;
+  var sugestoes = sugestoesItem(tipo);
+  list.innerHTML = '';
+  _itemAutocompleteActive[tipo] = -1;
+  if (!sugestoes.length) {
+    list.classList.remove('open');
+    return;
+  }
+  sugestoes.forEach(function(item) {
+    var option = document.createElement('div');
+    option.className = 'ac-item';
+    option._cadastroItem = item;
+    var main = document.createElement('div');
+    main.className = 'ac-item-main';
+    main.textContent = item.descricao || '';
+    var meta = document.createElement('div');
+    meta.className = 'ac-item-meta';
+    meta.textContent = item.projeto || 'Projeto não informado';
+    option.appendChild(main);
+    option.appendChild(meta);
+    option.onmousedown = function(event) {
+      event.preventDefault();
+      aplicarSugestaoItem(tipo, item);
+    };
+    list.appendChild(option);
+  });
+  list.classList.add('open');
+}
+
+function navegarSugestoesItem(event, tipo) {
+  var cfg = itemAutocompleteConfig(tipo);
+  var list = document.getElementById(cfg.listId);
+  if (!list || !list.classList.contains('open')) {
+    if (event.key === 'ArrowDown') mostrarSugestoesItem(tipo);
+    return;
+  }
+  var options = list.querySelectorAll('.ac-item');
+  if (!options.length) return;
+  var active = _itemAutocompleteActive[tipo];
+  if (event.key === 'ArrowDown') active = Math.min(active + 1, options.length - 1);
+  else if (event.key === 'ArrowUp') active = Math.max(active - 1, 0);
+  else if (event.key === 'Enter' && active >= 0) {
+    event.preventDefault();
+    aplicarSugestaoItem(tipo, options[active]._cadastroItem);
+    return;
+  } else if (event.key === 'Escape') {
+    list.classList.remove('open');
+    return;
+  } else return;
+  event.preventDefault();
+  _itemAutocompleteActive[tipo] = active;
+  Array.prototype.forEach.call(options, function(option, index) {
+    option.classList.toggle('active', index === active);
+  });
+  options[active].scrollIntoView({ block: 'nearest' });
+}
+
+function fecharSugestoesItemDepois(tipo) {
+  setTimeout(function() {
+    var list = document.getElementById(itemAutocompleteConfig(tipo).listId);
+    if (list) list.classList.remove('open');
+  }, 120);
+}
+
+function aplicarSugestaoItem(tipo, item) {
+  item = item || {};
+  var cfg = itemAutocompleteConfig(tipo);
+  document.getElementById(cfg.inputId).value = item.descricao || '';
+  if (tipo === 'equipamento') {
+    fillSelectOptions('eqProjeto', _equipProjetos, item.projeto, '— Selecione —');
+    fillSelectOptions('eqResponsavelReceb', _equipSolicitantes, item.responsavelRecebimento, '— Selecione —');
+    fillSelectOptions('eqLocalizacao', ESTOQUE_CONFIG.localizacoes || [], item.localizacao, '— Selecione —');
+    document.getElementById('eqCadastroUcs').value = item.cadastroUcs || 'Sim';
+    document.getElementById('eqRegistroRm').value = item.registroRm || 'Não';
+    document.getElementById('eqRemetente').value = item.remetente || '';
+    document.getElementById('eqCodigoTotvs').value = item.codigoTotvs || '';
+  } else {
+    fillSelectOptions('medProjeto', _medProjetos, item.projeto, '— Selecione —');
+    fillSelectOptions('medResponsavelReceb', _medSolicitantes, item.responsavelRecebimento, '— Selecione —');
+    fillSelectOptions('medLocalizacao', ESTOQUE_CONFIG.localizacoes || [], item.localizacao, '— Selecione —');
+    document.getElementById('medRegistroRm').value = item.registroRm || 'Não';
+    document.getElementById('medRemetente').value = item.remetente || '';
+  }
+  limparErro(cfg.inputId, tipo === 'equipamento' ? 'errEqDescricao' : 'errMedDescricao');
+  var list = document.getElementById(cfg.listId);
+  if (list) list.classList.remove('open');
+}
+
+function abrirFormEquipamento(e) {
+  if (typeof e === 'string') e = JSON.parse(e);
+  e = e || {};
+  document.getElementById('modalEqTitle').textContent = e._duplicando ? 'DUPLICAR EQUIPAMENTO' : (e.rowIndex ? 'EDITAR EQUIPAMENTO' : 'NOVO EQUIPAMENTO');
+  document.getElementById('eqRowIndex').value = e.rowIndex || '';
+  fillSelectOptions('eqProjeto', _equipProjetos, e.projeto, '— Selecione —');
+  fillSelectOptions('eqResponsavelReceb', _equipSolicitantes, e.responsavelRecebimento, '— Selecione —');
+  fillSelectOptions('eqLocalizacao', ESTOQUE_CONFIG.localizacoes || [], e.localizacao, '— Selecione —');
+  document.getElementById('eqDataReceb').value = e.dataRecebimentoISO || new Date().toISOString().split('T')[0];
+  document.getElementById('eqCadastroUcs').value = e.cadastroUcs || 'Sim';
+  document.getElementById('eqRegistroRm').value = e.registroRm || 'Não';
+  document.getElementById('eqDescricao').value = e.descricao || '';
+  document.getElementById('eqQuantidade').value = e.quantidade || 1;
+  document.getElementById('eqSerie').value = e.numeroSerie || '';
+  document.getElementById('eqNotaFiscal').value = e.notaFiscal || '';
+  document.getElementById('eqRemetente').value = e.remetente || '';
+  document.getElementById('eqMovimentoRm').value = e.movimentoRm || '';
+  document.getElementById('eqCodigoTotvs').value = e.codigoTotvs || '';
+  document.getElementById('eqDataDev').value = e.dataDevolucaoISO || '';
+  document.getElementById('eqObs').value = e.observacoes || '';
+  ['eqProjeto','eqDescricao'].forEach(function(id) { document.getElementById(id).classList.remove('invalid'); });
+  ['errEqProjeto','errEqDescricao'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
+  document.getElementById('statusEq').innerHTML = '';
+  document.getElementById('btnSalvarEq').disabled = false;
+  abrirOverlay('modalEquipamento');
+}
+
+function abrirDuplicacaoEquipamento(e) {
+  if (typeof e === 'string') e = JSON.parse(e);
+  e = Object.assign({}, e || {}, {
+    _duplicando: true,
+    rowIndex: '',
+    dataRecebimentoISO: new Date().toISOString().split('T')[0],
+    quantidade: 1,
+    numeroSerie: '',
+    notaFiscal: '',
+    movimentoRm: '',
+    dataDevolucaoISO: '',
+    observacoes: ''
+  });
+  abrirFormEquipamento(e);
+}
+
+function salvarEquipamentoApp() {
+  var projeto = document.getElementById('eqProjeto').value;
+  var descricao = document.getElementById('eqDescricao').value.trim();
+  var ok = true;
+  if (!projeto) { document.getElementById('eqProjeto').classList.add('invalid'); document.getElementById('errEqProjeto').classList.add('visible'); ok = false; }
+  if (!descricao) { document.getElementById('eqDescricao').classList.add('invalid'); document.getElementById('errEqDescricao').classList.add('visible'); ok = false; }
+  if (!ok) return;
+  var btn = document.getElementById('btnSalvarEq');
+  btn.disabled = true;
+  document.getElementById('statusEq').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      document.getElementById('statusEq').innerHTML = '';
+      fecharOverlay('modalEquipamento');
+      snack(r || 'Equipamento salvo.');
+      carregarEquipamentos();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusEq').innerHTML = '<span style="color:#e53935;">' + esc(e.message) + '</span>';
+    })
+    .salvarEquipamentoFornecido({
+      rowIndex: document.getElementById('eqRowIndex').value,
+      dataRecebimento: document.getElementById('eqDataReceb').value,
+      projeto: projeto,
+      cadastroUcs: document.getElementById('eqCadastroUcs').value,
+      registroRm: document.getElementById('eqRegistroRm').value,
+      notaFiscal: document.getElementById('eqNotaFiscal').value.trim(),
+      remetente: document.getElementById('eqRemetente').value.trim(),
+      movimentoRm: document.getElementById('eqMovimentoRm').value.trim(),
+      codigoTotvs: document.getElementById('eqCodigoTotvs').value.trim(),
+      descricao: descricao,
+      quantidade: document.getElementById('eqQuantidade').value,
+      numeroSerie: document.getElementById('eqSerie').value.trim(),
+      responsavelRecebimento: document.getElementById('eqResponsavelReceb').value,
+      localizacao: document.getElementById('eqLocalizacao').value,
+      observacoes: document.getElementById('eqObs').value.trim(),
+      dataDevolucao: document.getElementById('eqDataDev').value
+    });
+}
+
+function confirmarExcluirEquipamento(rowIndex, descricao) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "' + descricao + '"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function(r) { snack(r || 'Equipamento excluído.'); carregarEquipamentos(); })
+        .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+        .excluirEquipamentoFornecido(rowIndex);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEDICAMENTOS RECEBIDOS
+// ═══════════════════════════════════════════════════════════════
+var _medicamentos = [], _medProjetos = [], _medSolicitantes = [];
+
+function carregarMedicamentos() {
+  var tb = document.getElementById('bodyMedicamentos');
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderMedicamentos((res && res.data) || res); })
+    .withFailureHandler(function(e) {
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="9">Erro: ' + esc(e.message) + '</td></tr>';
+    })
+    .getCadastrosBootstrapData('medicamentos');
+}
+
+function renderMedicamentos(dados) {
+  dados = dados || {};
+  _medicamentos = dados.medicamentos || [];
+  _medProjetos = dados.projetos || [];
+  _medSolicitantes = dados.solicitantes || [];
+  if (dados.config && dados.config.localizacoes) {
+    ESTOQUE_CONFIG.localizacoes = dados.config.localizacoes;
+  }
+  var rmSim = _medicamentos.filter(function(m){ return normSimNao(m.registroRm) === 'sim'; }).length;
+  var projetos = {};
+  var quantidade = 0;
+  _medicamentos.forEach(function(m) {
+    if (m.projeto) projetos[m.projeto] = true;
+    quantidade += Number(m.quantidade || 0);
+  });
+  document.getElementById('medicamentosTotal').textContent = _medicamentos.length;
+  document.getElementById('medRmSim').textContent = rmSim;
+  document.getElementById('medProjetos').textContent = Object.keys(projetos).length;
+  document.getElementById('medQuantidadeRecebida').textContent = quantidade.toLocaleString('pt-BR');
+  filtrarMedicamentos();
+}
+
+function filtrarMedicamentos() {
+  var q = ((document.getElementById('searchMedicamentos') || {}).value || '').toLowerCase().trim();
+  var lista = q ? _medicamentos.filter(function(m) {
+    return [m.projeto, m.descricao, m.lote, m.notaFiscal, m.remetente, m.movimentoRm, m.responsavelRecebimento, m.localizacao, m.observacoes]
+      .join(' ').toLowerCase().indexOf(q) >= 0;
+  }) : _medicamentos;
+  renderTabelaMedicamentos(lista);
+}
+
+function renderTabelaMedicamentos(lista) {
+  var tb = document.getElementById('bodyMedicamentos');
+  if (!tb) return;
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum medicamento encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(m) {
+    var mStr = JSON.stringify(m).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<tr>'
+      + '<td>' + projetoChip(m.projeto) + '</td>'
+      + '<td><div class="row-name">' + esc(m.descricao || '—') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(m.notaFiscal || '') + '</div></td>'
+      + '<td>' + esc(m.lote || '—') + '</td>'
+      + '<td>' + validadeMedicamentoChip(m) + '</td>'
+      + '<td style="font-weight:600">' + esc(m.quantidade || '—') + '</td>'
+      + '<td>' + simNaoChip(m.registroRm) + '</td>'
+      + '<td>' + esc(m.localizacao || '—') + '</td>'
+      + '<td>' + esc(m.dataRecebimento || '—') + '</td>'
+      + '<td><div class="action-btns">'
+      + '<button class="icon-btn" title="Duplicar como nova entrada" onclick=\'abrirDuplicacaoMedicamento(' + mStr + ')\'><span class="material-symbols-outlined">content_copy</span></button>'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormMedicamento(' + mStr + ')\'><span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirMedicamento("' + esc(m.rowIndex) + '","' + esc(m.descricao || 'medicamento') + '")\'><span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function dateFromISO(iso) {
+  if (!iso) return null;
+  var p = String(iso).split('-');
+  if (p.length !== 3) return null;
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatDateBr(dateString) {
+  if (!dateString) return '';
+  var meses = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+  var raw = String(dateString).trim();
+  var m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return ('0' + Number(m[3])).slice(-2) + '/' + meses[Number(m[2]) - 1] + '/' + m[1];
+  m = raw.toLowerCase().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return ('0' + Number(m[1])).slice(-2) + '/' + meses[Number(m[2]) - 1] + '/' + m[3];
+  m = raw.toLowerCase().match(/^(\d{1,2})\/([a-z.]{3,5})\/(\d{4})$/);
+  if (m) {
+    var mapa = { 'jan':1,'jan.':1,'fev':2,'fev.':2,'mar':3,'mar.':3,'abr':4,'abr.':4,'mai':5,'mai.':5,'jun':6,'jun.':6,'jul':7,'jul.':7,'ago':8,'ago.':8,'set':9,'set.':9,'out':10,'out.':10,'nov':11,'nov.':11,'dez':12,'dez.':12 };
+    var mes = mapa[m[2]];
+    return mes ? ('0' + Number(m[1])).slice(-2) + '/' + meses[mes - 1] + '/' + m[3] : raw;
+  }
+  var d = new Date(raw);
+  return isNaN(d.getTime()) ? raw : ('0' + d.getDate()).slice(-2) + '/' + meses[d.getMonth()] + '/' + d.getFullYear();
+}
+
+function dateToInputValue(dateString) {
+  if (!dateString) return '';
+  var raw = String(dateString).trim();
+  var m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + ('0' + Number(m[2])).slice(-2) + '-' + ('0' + Number(m[3])).slice(-2);
+  m = raw.toLowerCase().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return m[3] + '-' + ('0' + Number(m[2])).slice(-2) + '-' + ('0' + Number(m[1])).slice(-2);
+  m = raw.toLowerCase().match(/^(\d{1,2})\/([a-z.]{3,5})\/(\d{4})$/);
+  if (m) {
+    var mapa = { 'jan':1,'jan.':1,'fev':2,'fev.':2,'mar':3,'mar.':3,'abr':4,'abr.':4,'mai':5,'mai.':5,'jun':6,'jun.':6,'jul':7,'jul.':7,'ago':8,'ago.':8,'set':9,'set.':9,'out':10,'out.':10,'nov':11,'nov.':11,'dez':12,'dez.':12 };
+    var mes = mapa[m[2]];
+    return mes ? m[3] + '-' + ('0' + mes).slice(-2) + '-' + ('0' + Number(m[1])).slice(-2) : '';
+  }
+  return '';
+}
+
+function validadeMedicamentoChip(m) {
+  if (!m.validade) return '<span style="color:#9aa3b0">—</span>';
+  var d = dateFromISO(m.validadeISO);
+  if (!d) return esc(m.validade);
+  var hoje = new Date(); hoje.setHours(0,0,0,0);
+  var dias = Math.ceil((d.getTime() - hoje.getTime()) / 86400000);
+  var cls = dias < 0 ? 'chip-red' : dias <= 90 ? 'chip-yellow' : 'chip-green';
+  return '<span class="chip ' + cls + '">' + esc(m.validade) + '</span>';
+}
+
+function abrirFormMedicamento(m) {
+  if (typeof m === 'string') m = JSON.parse(m);
+  m = m || {};
+  document.getElementById('modalMedRecTitle').textContent = m._duplicando ? 'DUPLICAR MEDICAMENTO' : (m.rowIndex ? 'EDITAR MEDICAMENTO' : 'NOVO MEDICAMENTO');
+  document.getElementById('medRowIndex').value = m.rowIndex || '';
+  fillSelectOptions('medProjeto', _medProjetos, m.projeto, '— Selecione —');
+  fillSelectOptions('medResponsavelReceb', _medSolicitantes, m.responsavelRecebimento, '— Selecione —');
+  fillSelectOptions('medLocalizacao', ESTOQUE_CONFIG.localizacoes || [], m.localizacao, '— Selecione —');
+  document.getElementById('medDataReceb').value = m.dataRecebimentoISO || new Date().toISOString().split('T')[0];
+  document.getElementById('medRegistroRm').value = m.registroRm || 'Não';
+  document.getElementById('medDescricao').value = m.descricao || '';
+  document.getElementById('medQuantidade').value = m.quantidade || 1;
+  document.getElementById('medLote').value = m.lote || '';
+  document.getElementById('medValidade').value = m.validadeISO || '';
+  document.getElementById('medNotaFiscal').value = m.notaFiscal || '';
+  document.getElementById('medRemetente').value = m.remetente || '';
+  document.getElementById('medMovimentoRm').value = m.movimentoRm || '';
+  document.getElementById('medObs').value = m.observacoes || '';
+  ['medProjeto','medDescricao'].forEach(function(id) { document.getElementById(id).classList.remove('invalid'); });
+  ['errMedProjeto','errMedDescricao'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
+  document.getElementById('statusMedRec').innerHTML = '';
+  document.getElementById('btnSalvarMedRec').disabled = false;
+  abrirOverlay('modalMedicamento');
+}
+
+function abrirDuplicacaoMedicamento(m) {
+  if (typeof m === 'string') m = JSON.parse(m);
+  m = Object.assign({}, m || {}, {
+    _duplicando: true,
+    rowIndex: '',
+    dataRecebimentoISO: new Date().toISOString().split('T')[0],
+    quantidade: 1,
+    lote: '',
+    validadeISO: '',
+    notaFiscal: '',
+    movimentoRm: '',
+    observacoes: ''
+  });
+  abrirFormMedicamento(m);
+}
+
+function salvarMedicamentoApp() {
+  var projeto = document.getElementById('medProjeto').value;
+  var descricao = document.getElementById('medDescricao').value.trim();
+  var ok = true;
+  if (!projeto) { document.getElementById('medProjeto').classList.add('invalid'); document.getElementById('errMedProjeto').classList.add('visible'); ok = false; }
+  if (!descricao) { document.getElementById('medDescricao').classList.add('invalid'); document.getElementById('errMedDescricao').classList.add('visible'); ok = false; }
+  if (!ok) return;
+  var btn = document.getElementById('btnSalvarMedRec');
+  btn.disabled = true;
+  document.getElementById('statusMedRec').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      document.getElementById('statusMedRec').innerHTML = '';
+      fecharOverlay('modalMedicamento');
+      snack(r || 'Medicamento salvo.');
+      carregarMedicamentos();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusMedRec').innerHTML = '<span style="color:#e53935;">' + esc(e.message) + '</span>';
+    })
+    .salvarMedicamentoRecebido({
+      rowIndex: document.getElementById('medRowIndex').value,
+      dataRecebimento: document.getElementById('medDataReceb').value,
+      projeto: projeto,
+      registroRm: document.getElementById('medRegistroRm').value,
+      notaFiscal: document.getElementById('medNotaFiscal').value.trim(),
+      remetente: document.getElementById('medRemetente').value.trim(),
+      movimentoRm: document.getElementById('medMovimentoRm').value.trim(),
+      descricao: descricao,
+      quantidade: document.getElementById('medQuantidade').value,
+      lote: document.getElementById('medLote').value.trim(),
+      validade: document.getElementById('medValidade').value,
+      responsavelRecebimento: document.getElementById('medResponsavelReceb').value,
+      localizacao: document.getElementById('medLocalizacao').value,
+      observacoes: document.getElementById('medObs').value.trim()
+    });
+}
+
+function confirmarExcluirMedicamento(rowIndex, descricao) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "' + descricao + '"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function(r) { snack(r || 'Medicamento excluído.'); carregarMedicamentos(); })
+        .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+        .excluirMedicamentoRecebido(rowIndex);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PARTICIPANTES
+// ═══════════════════════════════════════════════════════════════
+var _participantes = [], _projListPart = [], _selPtProjeto = '', STATUS_PART = [];
+
+function carregarParticipantes() {
+  document.getElementById('bodyParticipantes').innerHTML =
+    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var cfg = (res && res.config) || {};
+      STATUS_PART = cfg.status || [];
+      fillSelectOptions('filterStatusPar', STATUS_PART, '', 'Todos os status');
+      fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
+      renderParticipantes((res && res.data) || []);
+    })
+    .withFailureHandler(function(e){ snackErro(e.message); })
+    .getCadastrosBootstrapData('participantes');
+}
+
+function renderParticipantes(lista) {
+  _participantes = lista;
+  var ativos = lista.filter(function(p){
+    var st = normSelectValue(p.status);
+    return st === 'ativo' || st === 'em seguimento';
+  }).length;
+  var triagem = lista.filter(function(p){
+    return normSelectValue(p.status) === 'em triagem';
+  }).length;
+  var projs  = {};
+  lista.forEach(function(p){ if(p.projeto) projs[p.projeto]=1; });
+  document.getElementById('parTotal').textContent    = lista.length || '0';
+  document.getElementById('parAtivos').textContent   = ativos       || '0';
+  document.getElementById('parTriagem').textContent  = triagem      || '0';
+  document.getElementById('parProjetos').textContent = Object.keys(projs).length || '0';
+  _projListPart = Object.keys(projs);
+  filtrarParticipantes();
+  applyDashboardPendingFilter_('participantes');
+}
+
+function filtrarParticipantes() {
+  var q  = document.getElementById('searchParticipantes').value.toLowerCase().trim();
+  var st = document.getElementById('filterStatusPar') ? document.getElementById('filterStatusPar').value : '';
+  var f  = _participantes.filter(function(p){
+    var matchQ = !q
+      || (p.nome||'').toLowerCase().includes(q)
+      || (p.idParticipante||'').toLowerCase().includes(q)
+      || (p.projeto||'').toLowerCase().includes(q)
+      || (p.status||'').toLowerCase().includes(q)
+      || (p.cpf||'').toLowerCase().includes(q);
+    var matchSt = !st || (p.status||'') === st;
+    return matchQ && matchSt;
+  });
+  renderTabelaPart(f);
+}
+
+function chipStatus(s) {
+  if (!s || s === '—') return '<span style="color:#9aa3b0;">—</span>';
+  var norm = s.trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  var m = {
+    'pre-triagem':'chip-pretriagem','em triagem':'chip-emtriagem',
+    'falha de triagem':'chip-falhatriagem','ativo':'chip-ativo',
+    'em seguimento':'chip-emseguimento','concluido':'chip-concluido',
+    'retirou consentimento':'chip-retirou','descontinuado':'chip-descontinuado',
+    'perda de seguimento':'chip-perdaseguimento','obito':'chip-obito'
+  };
+  return '<span class="chip '+(m[norm]||'')+'">'+esc(s)+'</span>';
+}
+
+function renderTabelaPart(lista) {
+  var tb = document.getElementById('bodyParticipantes');
+  if (!lista.length) {
+    tb.innerHTML='<tr class="empty-row"><td colspan="7">Nenhum participante encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(p,idx){
+    var ini  = (p.nome||'?')[0].toUpperCase();
+    var sStr = JSON.stringify(p).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var pid  = 'par-row-'+idx;
+    var nascFmt = formatDateBr(p.dataNascimento);
+    var ultimaVisitaFmt = String(p.ultimaVisita || '');
+    var nascIdadeHtml = (nascFmt || p.idade)
+      ? esc(nascFmt || '—') + (p.idade ? '<br><span style="font-size:0.85em;color:#666;">' + esc(p.idade) + ' anos</span>' : '')
+      : '<span style="color:#9aa3b0;">—</span>';
+    var r1 = '<tr class="par-main" data-pair="'+pid+'">'
+      +'<td style="width:36px;"><div class="row-avatar" style="border-radius:8px;">'+ini+'</div></td>'
+      +'<td><div class="row-name">'+esc(p.nome||'—')+'</div>'
+      +(p.idParticipante?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">ID: '+esc(p.idParticipante)+'</div>':'')
+      +'</td>'
+      +'<td style="color:#5f6b7c;line-height:1.25;">'+nascIdadeHtml+'</td>'
+      +'<td><div class="row-name" style="font-size:13px;">'+esc(p.projeto||'—')+'</div>'
+      +(p.braco?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">'+esc(p.braco)+'</div>':'')+'</td>'
+      +'<td>'+chipStatus(p.status||'—')+'</td>'
+      +'<td style="color:#5f6b7c;">'+esc(ultimaVisitaFmt || '---')+'</td>'
+      +'<td style="text-align:right;"><div class="action-btns">'
+      +'<button class="icon-btn" title="Editar" onclick=\'abrirFormPart('+sStr+')\'>'
+      +'<span class="material-symbols-outlined">edit</span></button>'
+      +'<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirPart("'+esc(p.id)+'","'+esc(p.nome||'')+'")\'>'
+      +'<span class="material-symbols-outlined">delete</span></button>'
+      +'</div></td></tr>';
+    function msIcon(name){ return '<span class="material-symbols-outlined">'+name+'</span>'; }
+    var items=[];
+    if(p.cpf)            items.push('<span class="det-item">'+msIcon('badge')+'<span>'+esc(p.cpf)+'</span></span>');
+    if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(p.telefone)+'</span></span>');
+    if(p.observacoes)    items.push('<span class="det-item">'+msIcon('notes')+'<span class="det-obs" title="'+esc(p.observacoes)+'">'+esc(p.observacoes)+'</span></span>');
+    var r2='<tr class="par-detail" data-pair="'+pid+'">'
+      +'<td colspan="7" style="padding:3px 20px 12px;background:#fafbff;">'
+      +(items.length
+        ?'<div class="par-detail-items">'+items.join('')+'</div>'
+        :'<div style="padding-left:65px;font-size:12px;color:#c0c8d8;font-style:italic;">Sem informações adicionais</div>')
+      +'</td></tr>';
+    return r1+r2;
+  }).join('');
+  document.querySelectorAll('.par-main,.par-detail').forEach(function(tr){
+    var pair=tr.dataset.pair;
+    tr.addEventListener('mouseenter',function(){
+      document.querySelectorAll('[data-pair="'+pair+'"]').forEach(function(el){el.classList.add('par-hover');});
+    });
+    tr.addEventListener('mouseleave',function(){
+      document.querySelectorAll('[data-pair="'+pair+'"]').forEach(function(el){el.classList.remove('par-hover');});
+    });
+  });
+}
+
+function abrirFormPart(p) {
+  var modalPart = document.getElementById('modalParticipante');
+  if (modalPart) {
+    modalPart.style.zIndex = '';
+    delete modalPart.dataset.agendaOrigem;
+  }
+  ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs']
+    .forEach(function(id){ document.getElementById(id).value=''; });
+  fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
+  ['errPtNome','errPtId','errPtStatus'].forEach(function(id){
+    document.getElementById(id).classList.remove('visible');
+  });
+  ['ptNome','ptId','ptStatus'].forEach(function(id){
+    document.getElementById(id).classList.remove('invalid');
+  });
+  document.getElementById('statusPart').innerHTML='';
+  document.getElementById('btnSalvarPart').disabled=false;
+  document.getElementById('editPartId').value='';
+  if (p) {
+    if (typeof p==='string') p=JSON.parse(p);
+    document.getElementById('modalPartTitle').textContent='EDITAR PARTICIPANTE';
+    document.getElementById('editPartId').value       = p.id||'';
+    document.getElementById('ptNome').value           = p.nome||'';
+    document.getElementById('ptId').value             = p.idParticipante||'';
+    document.getElementById('ptNasc').value           = dateToInputValue(p.dataNascimento)||'';
+    document.getElementById('ptCpf').value            = p.cpf||'';
+    document.getElementById('ptProjeto').value        = p.projeto||'';
+    document.getElementById('ptBraco').value          = p.braco||'';
+    fillSelectOptions('ptStatus', STATUS_PART, p.status || '', '-- Selecione --');
+    document.getElementById('ptTelefone').value       = p.telefone||'';
+    document.getElementById('ptObs').value            = p.observacoes||'';
+  } else {
+    document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
+  }
+  atualizarParticipanteIdObrigatorio();
+  abrirOverlay('modalParticipante');
+}
+
+function abrirFormParticipante(p) {
+  abrirFormPart(p);
+}
+
+function participanteAtualDoModal() {
+  return {
+    id: document.getElementById('editPartId').value || '',
+    nome: document.getElementById('ptNome').value.trim(),
+    idParticipante: document.getElementById('ptId').value.trim(),
+    dataNascimento: document.getElementById('ptNasc').value || '',
+    cpf: document.getElementById('ptCpf').value.trim(),
+    projeto: document.getElementById('ptProjeto').value.trim(),
+    braco: document.getElementById('ptBraco').value.trim(),
+    status: document.getElementById('ptStatus').value,
+    telefone: document.getElementById('ptTelefone').value.trim(),
+    observacoes: document.getElementById('ptObs').value.trim()
+  };
+}
+
+function abrirReqExamesDoParticipante() {
+  var participante = participanteAtualDoModal();
+  if (!participante.nome) {
+    snackErro('Informe o nome do participante antes de abrir a requisição.');
+    return;
+  }
+  _rqAgendaOrigemId = '';
+  _rqOrigemContext = { tipo: 'participante', participante: participante };
+  fecharOverlay('modalParticipante');
+  irPara('requisicao');
+  setTimeout(function() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    var page = document.getElementById('page-requisicao');
+    if (page) page.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, 80);
+  aplicarParticipanteNaRequisicao(participante);
+}
+
+function participanteIdOpcionalPorStatus(status) {
+  var st = normSelectValue(status || '');
+  return st === 'pre-triagem' || st === 'falha de pre-triagem';
+}
+
+function atualizarParticipanteIdObrigatorio() {
+  var status = document.getElementById('ptStatus');
+  var input = document.getElementById('ptId');
+  var star = document.getElementById('ptIdRequiredStar');
+  var required = !participanteIdOpcionalPorStatus(status ? status.value : '');
+  if (input) input.required = required;
+  if (star) star.style.display = required ? 'inline' : 'none';
+  if (!required) {
+    limparErro('ptId', 'errPtId');
+  }
+  return required;
+}
+
+function salvarPartApp() {
+  var nome=document.getElementById('ptNome').value.trim();
+  var idPart=document.getElementById('ptId').value.trim();
+  var status=document.getElementById('ptStatus').value;
+  var idObrigatorio=atualizarParticipanteIdObrigatorio();
+  var ok=true;
+  if(!nome)  { document.getElementById('ptNome').classList.add('invalid');   document.getElementById('errPtNome').classList.add('visible');   ok=false; }
+  else       { document.getElementById('ptNome').classList.remove('invalid'); document.getElementById('errPtNome').classList.remove('visible'); }
+  if(idObrigatorio && !idPart){ document.getElementById('ptId').classList.add('invalid');     document.getElementById('errPtId').classList.add('visible');     ok=false; }
+  else       { document.getElementById('ptId').classList.remove('invalid');  document.getElementById('errPtId').classList.remove('visible');  }
+  if(!status){ document.getElementById('ptStatus').classList.add('invalid'); document.getElementById('errPtStatus').classList.add('visible'); ok=false; }
+  else       { document.getElementById('ptStatus').classList.remove('invalid'); document.getElementById('errPtStatus').classList.remove('visible'); }
+  if(!ok) return;
+  var btn=document.getElementById('btnSalvarPart');
+  btn.disabled=true;
+  document.getElementById('statusPart').innerHTML='<span style="color:#5f6b7c;">Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r){
+      btn.disabled=false;
+      document.getElementById('statusPart').innerHTML='';
+      fecharOverlay('modalParticipante');
+      snack(r);
+      carregarParticipantes();
+      atualizarParticipanteAgendaAposCadastro(nome);
+    })
+    .withFailureHandler(function(e){
+      btn.disabled=false;
+      document.getElementById('statusPart').innerHTML='<span style="color:#e53935;">'+e.message+'</span>';
+    })
+    .salvarDadosParticipante({
+      id:             document.getElementById('editPartId').value,
+      nome:           nome,
+      idParticipante: idPart,
+      dataNascimento: document.getElementById('ptNasc').value,
+      cpf:            document.getElementById('ptCpf').value.trim(),
+      projeto:        document.getElementById('ptProjeto').value.trim(),
+      braco:          document.getElementById('ptBraco').value.trim(),
+      status:         status,
+      telefone:       document.getElementById('ptTelefone').value.trim(),
+      observacoes:    document.getElementById('ptObs').value.trim()
+    });
+}
+
+function abrirNovoParticipanteAgenda() {
+  abrirFormParticipante(null);
+  var modal = document.getElementById('modalParticipante');
+  if (modal) {
+    modal.dataset.agendaOrigem = '1';
+    modal.style.zIndex = '260';
+  }
+}
+
+function atualizarParticipanteAgendaAposCadastro(nome) {
+  var modal = document.getElementById('modalParticipante');
+  var veioDaAgenda = modal && modal.dataset.agendaOrigem === '1';
+  if (modal) delete modal.dataset.agendaOrigem;
+  if (!veioDaAgenda || !_agendaDados || !document.getElementById('agParticipante')) return;
+  google.script.run
+    .withSuccessHandler(function(d) {
+      if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(d || _agendaDados || {});
+      else _agendaDados = d || _agendaDados || {};
+      preencherAgendaSelect('agParticipante', _agendaDados.participantes || [], '');
+      setAgendaSelectValue('agParticipante', nome);
+      onAgendaParticipanteChange();
+    })
+    .withFailureHandler(function() {
+      var el = document.getElementById('agParticipante');
+      if (el && nome) {
+        el.insertAdjacentHTML('beforeend', '<option>' + esc(nome) + '</option>');
+        el.value = nome;
+      }
+    })
+    .getDadosFormularioAgenda();
+}
+
+function confirmarExcluirPart(id, nome) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "'+nome+'"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function(){ snack('Participante excluído'); carregarParticipantes(); })
+        .withFailureHandler(function(e){ snackErro(e.message); })
+        .excluirParticipante(id);
+    }
+  });
+}
+
+function carregarMedicos() {
+  document.getElementById('bodyMedicos').innerHTML =
+    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderMedicos((res && res.data) || []); })
+    .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+    .getCadastrosBootstrapData('medicos');
+}
+
+function renderMedicos(lista) {
+  _medicos = lista || [];
+  var esps = {};
+  _medicos.forEach(function(m) { if (m.especialidade) esps[m.especialidade] = 1; });
+  document.getElementById('medTotal').textContent = _medicos.length;
+  document.getElementById('medEspec').textContent = Object.keys(esps).length;
+  filtrarMedicos();
+}
+
+function filtrarMedicos() {
+  var q = (document.getElementById('searchMedicos').value || '').toLowerCase().trim();
+  var f = q ? _medicos.filter(function(m) {
+    return (m.nome         || '').toLowerCase().includes(q)
+        || (m.especialidade || '').toLowerCase().includes(q)
+        || (m.cpf          || '').toLowerCase().includes(q)
+        || (m.cremers      || '').toLowerCase().includes(q)
+        || (m.email        || '').toLowerCase().includes(q);
+  }) : _medicos;
+  renderTabela(f);
+}
+
+function renderTabela(lista) {
+  var tb = document.getElementById('bodyMedicos');
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum médico encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(m) {
+    var ini  = (m.nome || '?')[0].toUpperCase();
+    var mStr = JSON.stringify(m).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return '<tr>'
+      + '<td><div class="name-cell"><div class="row-avatar">' + ini + '</div>'
+      + '<div class="row-name">' + esc(m.nome) + '</div></div></td>'
+      + '<td><span class="chip chip-blue">' + esc(m.especialidade || '—') + '</span></td>'
+      + '<td><div class="row-name">' + esc(m.cpf || '—') + '</div>'
+      + '<div style="font-size:11px;color:#9aa3b0;margin-top:2px">CREMERS ' + esc(m.cremers || '—') + '</div></td>'
+      + '<td style="color:#5f6b7c;">' + esc(m.telefone || '—') + '</td>'
+      + '<td style="color:#5f6b7c;">' + esc(m.email || '—') + '</td>'
+      + '<td><div class="action-btns">'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormMedico(' + mStr + ')\'>'
+      + '<span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluir("' + m.id + '","' + esc(m.nome) + '")\'>'
+      + '<span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td></tr>';
+  }).join('');
+}
+
+function abrirFormMedico(m) {
+  _selEsp = '';
+  document.getElementById('editMedicoId').value = '';
+  ['mNome','mEsp','mCpf','mCremers','mTel','mEmail'].forEach(function(id) {
+    document.getElementById(id).value = '';
+    document.getElementById(id).classList.remove('invalid');
+  });
+  document.getElementById('statusMedico').innerHTML = '';
+  ['errMNome','errMEsp'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
+  document.getElementById('btnSalvarMedico').disabled = false;
+  if (m) {
+    if (typeof m === 'string') m = JSON.parse(m);
+    document.getElementById('modalMedicoTitle').textContent = 'EDITAR MÉDICO';
+    document.getElementById('editMedicoId').value  = m.id            || '';
+    document.getElementById('mNome').value         = m.nome          || '';
+    document.getElementById('mEsp').value          = m.especialidade || '';
+    document.getElementById('mCpf').value          = m.cpf           || '';
+    document.getElementById('mCremers').value      = m.cremers       || '';
+    document.getElementById('mTel').value          = m.telefone      || '';
+    document.getElementById('mEmail').value        = m.email         || '';
+    _selEsp = m.especialidade || '';
+  } else {
+    document.getElementById('modalMedicoTitle').textContent = 'CADASTRO DE MÉDICO';
+  }
+  abrirOverlay('modalMedico');
+}
+
+function salvarMedicoApp() {
+  var nome = document.getElementById('mNome').value.trim();
+  var esp  = _selEsp || document.getElementById('mEsp').value.trim();
+  var ok   = true;
+  if (!nome) {
+    document.getElementById('mNome').classList.add('invalid');
+    document.getElementById('errMNome').classList.add('visible');
+    ok = false;
+  } else {
+    document.getElementById('mNome').classList.remove('invalid');
+    document.getElementById('errMNome').classList.remove('visible');
+  }
+  if (!esp || !ESPS.includes(esp)) {
+    document.getElementById('mEsp').classList.add('invalid');
+    document.getElementById('errMEsp').classList.add('visible');
+    ok = false;
+  } else {
+    document.getElementById('mEsp').classList.remove('invalid');
+    document.getElementById('errMEsp').classList.remove('visible');
+  }
+  if (!ok) return;
+  var btn = document.getElementById('btnSalvarMedico');
+  btn.disabled = true;
+  document.getElementById('statusMedico').innerHTML = '<span style="color:#5f6b7c;">⏳ Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      document.getElementById('statusMedico').innerHTML = '';
+      fecharOverlay('modalMedico');
+      snack('✅ ' + r);
+      carregarMedicos();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusMedico').innerHTML = '<span style="color:#e53935;">⚠ ' + e.message + '</span>';
+    })
+    .salvarDadosMedico({
+      id: document.getElementById('editMedicoId').value,
+      nome: nome, especialidade: esp,
+      cpf: document.getElementById('mCpf').value.trim(),
+      cremers: document.getElementById('mCremers').value.trim(),
+      telefone: document.getElementById('mTel').value.trim(),
+      email: document.getElementById('mEmail').value.trim()
+    });
+}
+
+var _selEsp = '', _acIdx = -1;
+function norm(s) { return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function renderAcList(q) {
+  var el = document.getElementById('acEspList');
+  var matches = q ? ESPS.filter(function(e) { return norm(e).includes(norm(q)); }) : ESPS;
+  _acIdx = -1;
+  el.innerHTML = !matches.length
+    ? '<div class="ac-empty">Nenhuma especialidade encontrada.</div>'
+    : matches.map(function(e) {
+        return '<div class="ac-item" data-val="' + esc(e) + '"'
+          + ' onmousedown="event.preventDefault();selectEsp(\'' + e.replace(/'/g,"\\'") + '\')">'
+          + esc(e) + '</div>';
+      }).join('');
+  el.classList.add('open');
+}
+function selectEsp(val) {
+  _selEsp = val;
+  document.getElementById('mEsp').value = val;
+  document.getElementById('acEspList').classList.remove('open');
+  document.getElementById('mEsp').classList.remove('invalid');
+  document.getElementById('errMEsp').classList.remove('visible');
+}
+function fecharAcList() { document.getElementById('acEspList').classList.remove('open'); }
+function navAcList(e) {
+  var items = document.querySelectorAll('#acEspList .ac-item');
+  if (!items.length) return;
+  if (e.key==='ArrowDown')  { e.preventDefault(); _acIdx=Math.min(_acIdx+1,items.length-1); }
+  else if (e.key==='ArrowUp')   { e.preventDefault(); _acIdx=Math.max(_acIdx-1,0); }
+  else if (e.key==='Enter' && _acIdx>=0) { e.preventDefault(); selectEsp(items[_acIdx].dataset.val); return; }
+  else if (e.key==='Escape') { fecharAcList(); return; }
+  items.forEach(function(el,i) { el.classList.toggle('active',i===_acIdx); });
+  if (_acIdx>=0) items[_acIdx].scrollIntoView({block:'nearest'});
+}
+function confirmarExcluir(id, nome) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "' + nome + '"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function() { snack('Médico excluído'); carregarMedicos(); })
+        .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+        .excluirMedico(id);
+    }
+  });
+}
+function abrirOverlay(id)  { document.getElementById(id).classList.add('open'); }
+function fecharOverlay(id) {
+  if (!appConfirmNavigationIfDirty(id, function() {
+    appClearUnsavedChanges(id);
+    fecharOverlay(id);
+  })) return false;
+  document.getElementById(id).classList.remove('open');
+  appClearUnsavedChanges(id);
+  return true;
+}
+function fecharModalSeClicouFora(e,id) { if(e.target.id===id) fecharOverlay(id); }
+function abrirConfirmacaoDestrutiva(opts) {
+  opts = opts || {};
+  document.getElementById('confirmDelTitle').textContent = opts.titulo || 'Confirmar exclusão';
+  document.getElementById('confirmDelMsg').textContent = opts.mensagem || 'Esta ação não pode ser desfeita.';
+  var btn = document.getElementById('btnConfirmDel');
+  btn.textContent = opts.acao || 'Excluir';
+  btn.onclick = function() {
+    fecharOverlay('confirmDel');
+    if (typeof opts.onConfirm === 'function') opts.onConfirm();
+  };
+  abrirOverlay('confirmDel');
+}
+function limparErro(inputId,errId) {
+  var input = document.getElementById(inputId);
+  var err = document.getElementById(errId);
+  if (input) input.classList.remove('invalid');
+  if (err) err.classList.remove('visible');
+}
+function snack(msg) {
+  var s = document.getElementById('snackbar');
+  s.textContent = msg; s.classList.add('show');
+  setTimeout(function() { s.classList.remove('show'); }, 3000);
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+var SEARCH_CLEAR_HANDLERS = {
+  searchMedicos: 'filtrarMedicos',
+  searchProjetos: 'filtrarProjetos',
+  searchConfig: 'filtrarConfig',
+  searchPrestadores: 'filtrarPrestadores',
+  searchLabCentral: 'filtrarLabCentral',
+  searchCouriers: 'filtrarCouriers',
+  searchMonitores: 'filtrarMonitores',
+  searchEquipamentos: 'filtrarEquipamentos',
+  searchMedicamentos: 'filtrarMedicamentos',
+  searchSolicitantes: 'filtrarSolicitantes',
+  searchParticipantes: 'filtrarParticipantes',
+  agendaBusca: 'renderAgendaOperacional',
+  searchUsersAdmin: 'renderUsersAdmin',
+  searchAudit: 'renderAuditLog',
+  evSearch: 'evFiltrar'
+};
+
+function setupSearchClearButtons() {
+  Object.keys(SEARCH_CLEAR_HANDLERS).forEach(function(inputId) {
+    var input = document.getElementById(inputId);
+    if (!input || input.dataset.clearReady === '1') return;
+    var wrap = input.closest ? input.closest('.search-wrap, .ag-search') : input.parentNode;
+    if (!wrap) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'search-clear-btn';
+    btn.title = 'Limpar busca';
+    btn.setAttribute('aria-label', 'Limpar busca');
+    btn.innerHTML = '<span class="material-symbols-outlined">close</span>';
+    function updateClearState() {
+      btn.classList.toggle('visible', !!String(input.value || '').trim());
+    }
+    function runHandler() {
+      var handlerName = SEARCH_CLEAR_HANDLERS[inputId];
+      if (handlerName && typeof window[handlerName] === 'function') window[handlerName]();
+    }
+    btn.addEventListener('click', function() {
+      input.value = '';
+      updateClearState();
+      runHandler();
+      input.focus();
+    });
+    input.addEventListener('input', updateClearState);
+    wrap.appendChild(btn);
+    input.dataset.clearReady = '1';
+    updateClearState();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', setupSearchClearButtons);
+
+// ════════════════════════════════
+//  SOLICITANTES
+// ════════════════════════════════
+var FORMACOES = [
+  'Assistente Social',
+  'Biomédico(a)',
+  'Cirurgião(ã)-Dentista',
+  'Enfermeiro(a)',
+  'Farmacêutico(a)',
+  'Fisioterapeuta',
+  'Fonoaudiólogo(a)',
+  'Médico(a)',
+  'Médico(a) Veterinário(a)',
+  'Nutricionista',
+  'Psicólogo(a)',
+  'Técnico(a) de Enfermagem',
+  'Técnico(a) de Farmácia',
+  'Técnico(a) de Laboratório',
+  'Terapeuta Ocupacional'
+];
+
+var _solicitantes = [];
+var _selFormacao  = '';
+var _acIdxSol     = -1;
+
+function carregarSolicitantes() {
+  document.getElementById('bodySolicitantes').innerHTML =
+    '<tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderSolicitantes((res && res.data) || []); })
+    .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+    .getCadastrosBootstrapData('solicitantes');
+}
+
+function renderSolicitantes(lista) {
+  _solicitantes = lista || [];
+  var forms = {};
+  _solicitantes.forEach(function(s) { if (s.formacao) forms[s.formacao] = 1; });
+  document.getElementById('solTotal').textContent    = _solicitantes.length;
+  document.getElementById('solFormacoes').textContent = Object.keys(forms).length;
+  filtrarSolicitantes();
+}
+
+function filtrarSolicitantes() {
+  var q = (document.getElementById('searchSolicitantes').value || '').toLowerCase().trim();
+  var f = q ? _solicitantes.filter(function(s) {
+    return (s.nome     || '').toLowerCase().includes(q)
+        || (s.formacao  || '').toLowerCase().includes(q)
+        || (s.registro  || '').toLowerCase().includes(q)
+        || (s.email     || '').toLowerCase().includes(q);
+  }) : _solicitantes;
+  renderTabelaSol(f);
+}
+
+function renderTabelaSol(lista) {
+  var tb = document.getElementById('bodySolicitantes');
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5">Nenhum solicitante encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(s) {
+    var ini  = (s.nome || '?')[0].toUpperCase();
+    var sStr = JSON.stringify(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return '<tr>'
+      + '<td><div class="name-cell"><div class="row-avatar">' + ini + '</div>'
+      + '<div class="row-name">' + esc(s.nome) + '</div></div></td>'
+      + '<td><span class="chip chip-blue">' + esc(s.formacao || '—') + '</span></td>'
+      + '<td style="color:#5f6b7c;">' + esc(s.registro || '—') + '</td>'
+      + '<td style="color:#5f6b7c;">' + esc(s.email || '—') + '</td>'
+      + '<td><div class="action-btns">'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormSolicitante(' + sStr + ')\'>'
+      + '<span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirSol("' + s.id + '","' + esc(s.nome) + '")\'>'
+      + '<span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td></tr>';
+  }).join('');
+}
+
+function abrirFormSolicitante(s) {
+  _selFormacao = '';
+  document.getElementById('editSolId').value = '';
+  ['sNome','sFormacao','sRegistro','sEmail'].forEach(function(id) {
+    document.getElementById(id).value = '';
+    document.getElementById(id).classList.remove('invalid');
+  });
+  document.getElementById('statusSol').innerHTML = '';
+  ['errSNome','errSFormacao'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
+  document.getElementById('btnSalvarSol').disabled = false;
+  if (s) {
+    if (typeof s === 'string') s = JSON.parse(s);
+    document.getElementById('modalSolTitle').textContent = 'EDITAR SOLICITANTE';
+    document.getElementById('editSolId').value   = s.id       || '';
+    document.getElementById('sNome').value       = s.nome     || '';
+    document.getElementById('sFormacao').value   = s.formacao || '';
+    document.getElementById('sRegistro').value   = s.registro || '';
+    document.getElementById('sEmail').value      = s.email    || '';
+    _selFormacao = s.formacao || '';
+  } else {
+    document.getElementById('modalSolTitle').textContent = 'CADASTRO DE SOLICITANTE';
+  }
+  abrirOverlay('modalSolicitante');
+}
+
+function salvarSolicitanteApp() {
+  var nome    = document.getElementById('sNome').value.trim();
+  var formacao = _selFormacao || document.getElementById('sFormacao').value.trim();
+  var ok = true;
+  if (!nome) {
+    document.getElementById('sNome').classList.add('invalid');
+    document.getElementById('errSNome').classList.add('visible');
+    ok = false;
+  } else {
+    document.getElementById('sNome').classList.remove('invalid');
+    document.getElementById('errSNome').classList.remove('visible');
+  }
+  if (!formacao || !FORMACOES.includes(formacao)) {
+    document.getElementById('sFormacao').classList.add('invalid');
+    document.getElementById('errSFormacao').classList.add('visible');
+    ok = false;
+  } else {
+    document.getElementById('sFormacao').classList.remove('invalid');
+    document.getElementById('errSFormacao').classList.remove('visible');
+  }
+  if (!ok) return;
+  var btn = document.getElementById('btnSalvarSol');
+  btn.disabled = true;
+  document.getElementById('statusSol').innerHTML = '<span style="color:#5f6b7c;">⏳ Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      document.getElementById('statusSol').innerHTML = '';
+      fecharOverlay('modalSolicitante');
+      snack('✅ ' + r);
+      carregarSolicitantes();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusSol').innerHTML = '<span style="color:#e53935;">⚠ ' + e.message + '</span>';
+    })
+    .salvarDadosSolicitante({
+      id: document.getElementById('editSolId').value,
+      nome: nome, formacao: formacao,
+      registro: document.getElementById('sRegistro').value.trim(),
+      email: document.getElementById('sEmail').value.trim()
+    });
+}
+
+function renderAcListSol(q) {
+  var el = document.getElementById('acFormacaoList');
+  var matches = q ? FORMACOES.filter(function(f) { return norm(f).includes(norm(q)); }) : FORMACOES;
+  _acIdxSol = -1;
+  el.innerHTML = !matches.length
+    ? '<div class="ac-empty">Nenhuma formação encontrada.</div>'
+    : matches.map(function(f) {
+        return '<div class="ac-item" data-val="' + esc(f) + '"'
+          + ' onmousedown="event.preventDefault();selectFormacao(\'' + f.replace(/'/g,"\\'") + '\')">'
+          + esc(f) + '</div>';
+      }).join('');
+  el.classList.add('open');
+}
+function selectFormacao(val) {
+  _selFormacao = val;
+  document.getElementById('sFormacao').value = val;
+  document.getElementById('acFormacaoList').classList.remove('open');
+  document.getElementById('sFormacao').classList.remove('invalid');
+  document.getElementById('errSFormacao').classList.remove('visible');
+}
+function fecharAcListSol() { document.getElementById('acFormacaoList').classList.remove('open'); }
+function navAcListSol(e) {
+  var items = document.querySelectorAll('#acFormacaoList .ac-item');
+  if (!items.length) return;
+  if (e.key==='ArrowDown')  { e.preventDefault(); _acIdxSol=Math.min(_acIdxSol+1,items.length-1); }
+  else if (e.key==='ArrowUp')   { e.preventDefault(); _acIdxSol=Math.max(_acIdxSol-1,0); }
+  else if (e.key==='Enter' && _acIdxSol>=0) { e.preventDefault(); selectFormacao(items[_acIdxSol].dataset.val); return; }
+  else if (e.key==='Escape') { fecharAcListSol(); return; }
+  items.forEach(function(el,i) { el.classList.toggle('active',i===_acIdxSol); });
+  if (_acIdxSol>=0) items[_acIdxSol].scrollIntoView({block:'nearest'});
+}
+function confirmarExcluirSol(id, nome) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "' + nome + '"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function() { snack('Solicitante excluído'); carregarSolicitantes(); })
+        .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
+        .excluirSolicitante(id);
+    }
+  });
+}
+
+// ════════════════════════════════
+//  PROJETOS
+// ════════════════════════════════
+var ESPS_PROJ = [];
+var PATS_PROJ = [];
+var CROS_PROJ = [];
+var STATUS_PROJ = [];
+
+var _projetos         = [];
+var _medicosProj      = [];
+var _solicitantesProj = [];
+var _selPEsp   = ''; var _selPIP    = ''; var _selPSub1 = ''; var _selPSub2 = ''; var _selPCoord = '';
+var _selPPat   = ''; var _selPCRO   = '';
+var _acIdxProj = {};  // {listId: activeIdx}
+
+// ── Autocomplete genérico para projetos ──────────────────────
+function renderAcProj(inputId, listId, opts, selVar) {
+  var q   = norm(document.getElementById(inputId).value || '');
+  var el  = document.getElementById(listId);
+  var matches = q ? opts.filter(function(o){ return norm(o).includes(q); }) : opts;
+  _acIdxProj[listId] = -1;
+  el.innerHTML = !matches.length
+    ? '<div class="ac-empty">Nenhum resultado encontrado.</div>'
+    : matches.map(function(o) {
+        return '<div class="ac-item" data-val="' + esc(o) + '" onmousedown="event.preventDefault();pickAcProj(\'' + inputId + '\',\'' + listId + '\',\'' + o.replace(/'/g,"\\'") + '\',\'' + selVar + '\')">'
+          + esc(o) + '</div>';
+      }).join('');
+  el.classList.add('open');
+}
+function pickAcProj(inputId, listId, val, selVar) {
+  window[selVar] = val;
+  document.getElementById(inputId).value = val;
+  document.getElementById(listId).classList.remove('open');
+  var errMap = { 'pEsp':'errPEsp', 'pIP':'errPIP' };
+  if (errMap[inputId]) {
+    document.getElementById(inputId).classList.remove('invalid');
+    document.getElementById(errMap[inputId]).classList.remove('visible');
+  }
+}
+function fecharAcProj(listId) { document.getElementById(listId).classList.remove('open'); }
+function fixAcProj(inputId, listId, opts, selVar) {
+  if (!opts.includes(document.getElementById(inputId).value)) {
+    window[selVar] = ''; document.getElementById(inputId).value = '';
+  }
+}
+function navAcProj(e, inputId, listId, opts, selVar) {
+  var items = document.querySelectorAll('#' + listId + ' .ac-item');
+  if (!items.length) return;
+  var idx = _acIdxProj[listId] !== undefined ? _acIdxProj[listId] : -1;
+  if (e.key==='ArrowDown')  { e.preventDefault(); idx = Math.min(idx+1, items.length-1); }
+  else if (e.key==='ArrowUp')   { e.preventDefault(); idx = Math.max(idx-1, 0); }
+  else if (e.key==='Enter' && idx>=0) { e.preventDefault(); pickAcProj(inputId, listId, items[idx].dataset.val, selVar); return; }
+  else if (e.key==='Escape') { fecharAcProj(listId); return; }
+  _acIdxProj[listId] = idx;
+  items.forEach(function(el,i){ el.classList.toggle('active',i===idx); });
+  if (idx>=0) items[idx].scrollIntoView({block:'nearest'});
+}
+
+// ── CRUD ─────────────────────────────────────────────────────
+function carregarProjetos() {
+  document.getElementById('bodyProjetos').innerHTML =
+    '<tr class="loading-row"><td colspan="8"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var cfg = (res && res.config) || {};
+      ESPS_PROJ = cfg.especialidades || [];
+      PATS_PROJ = cfg.patrocinadores || [];
+      CROS_PROJ = cfg.cros || [];
+      STATUS_PROJ = cfg.status || [];
+      preencherSelectProjeto('pFase', cfg.fases || [], '', '--');
+      preencherSelectProjeto('pStatus', STATUS_PROJ, '', '— Selecione —');
+      _medicosProj = ((res && res.medicos) || []).map(function(m){ return m.nome || m; });
+      _solicitantesProj = ((res && res.solicitantes) || []).map(function(s){ return s.nome || s; });
+      renderProjetos((res && res.data) || []);
+    })
+    .withFailureHandler(function(e){ snack('Erro: '+e.message); })
+    .getCadastrosBootstrapData('projetos');
+}
+
+function preencherSelectProjeto(id, valores, selected, placeholder) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<option value="">' + esc(placeholder || '— Selecione —') + '</option>' +
+    (valores || []).map(function(v) {
+      var faseNorm = norm(v);
+      var label = id === 'pFase' && !faseNorm.includes('fase') && faseNorm !== 'observacional' ? 'Fase ' + v : v;
+      return '<option value="' + esc(v) + '">' + esc(label) + '</option>';
+    }).join('');
+  el.value = selected || '';
+}
+
+function renderProjetos(lista) {
+  _projetos = lista || [];
+  var esps = {}; var concluidos = 0; var projetosAtivos = 0; var ativosTotal = 0; var metaTotal = 0; var participantesTotal = 0; var falhasTotal = 0;
+  _projetos.forEach(function(p){
+    if (p.especialidade) esps[p.especialidade]=1;
+    if (isProjetoStatusConcluido(p.status)) {
+      concluidos++;
+      return;
+    }
+    projetosAtivos++;
+    ativosTotal += Number(p.participantesAtivos || 0) || 0;
+    metaTotal += Number(p.metaRecrutamento || 0) || 0;
+    participantesTotal += Number(p.totalParticipantes || 0) || 0;
+    falhasTotal += Number(p.falhasTriagem || 0) || 0;
+  });
+  document.getElementById('projTotal').textContent = _projetos.length;
+  document.getElementById('projFases').textContent = projetosAtivos;
+  document.getElementById('projEsps').textContent  = Object.keys(esps).length;
+  document.getElementById('projRecrutamento').textContent = ativosTotal + ' pacientes ativo(s)';
+  document.getElementById('projRecrutamentoPct').textContent = 'Meta ' + (metaTotal || '—') + ' | Total ' + participantesTotal + (falhasTotal ? ' | Falhas ' + falhasTotal : '');
+  document.getElementById('projConcluidos').textContent = concluidos;
+  filtrarProjetos();
+  applyDashboardPendingFilter_('projetos');
+}
+
+function filtrarProjetos() {
+  var q = (document.getElementById('searchProjetos').value||'').toLowerCase().trim();
+  var f = q ? _projetos.filter(function(p){
+    return (p.nomeAbreviado||'').toLowerCase().includes(q)
+        || (p.codigo||'').toLowerCase().includes(q)
+        || (p.fase||'').toLowerCase().includes(q)
+        || (p.especialidade||'').toLowerCase().includes(q)
+        || (p.investigador||'').toLowerCase().includes(q)
+        || (p.subInvestigador1||'').toLowerCase().includes(q)
+        || (p.subInvestigador2||'').toLowerCase().includes(q)
+        || (p.patrocinador||'').toLowerCase().includes(q)
+        || (p.cro||'').toLowerCase().includes(q)
+        || (p.centro||'').toLowerCase().includes(q)
+        || (p.tituloCompleto||'').toLowerCase().includes(q)
+        || (p.numeroCE||'').toLowerCase().includes(q)
+        || (p.expedienteCE||'').toLowerCase().includes(q)
+        || (p.dataSiv||'').toLowerCase().includes(q)
+        || (p.status||'').toLowerCase().includes(q);
+  }) : _projetos;
+  renderTabelaProj(f);
+}
+
+var FASE_COLORS = {'I':'#e8f0fe:#1266f1','II':'#e6f4ea:#137333','III':'#fff3e0:#e65100','IV':'#fce8e6:#b3261e'};
+var FASE_AUTO_COLORS = [
+  '#e0f2fe:#075985',
+  '#dcfce7:#166534',
+  '#fef3c7:#92400e',
+  '#fae8ff:#86198f',
+  '#ffe4e6:#be123c',
+  '#ccfbf1:#0f766e',
+  '#ede9fe:#5b21b6',
+  '#fef9c3:#854d0e',
+  '#e0e7ff:#3730a3',
+  '#ffedd5:#c2410c'
+];
+
+function faseAutoColor(fase) {
+  var n = norm(fase || '');
+  var hash = 0;
+  for (var i = 0; i < n.length; i++) hash = ((hash * 31) + n.charCodeAt(i)) >>> 0;
+  return FASE_AUTO_COLORS[hash % FASE_AUTO_COLORS.length];
+}
+
+function chipFase(fase) {
+  var c = (FASE_COLORS[fase] || faseAutoColor(fase)).split(':');
+  var faseNorm = norm(fase);
+  var label = faseNorm === 'observacional' || String(fase || '').toLowerCase().indexOf('fase') >= 0 ? fase : 'Fase ' + fase;
+  return '<span class="chip" style="background:'+c[0]+';color:'+c[1]+'">' + esc(label) + '</span>';
+}
+
+function isProjetoStatusConcluido(status) {
+  var n = norm(status || '');
+  return n.indexOf('concluido') >= 0 || n.indexOf('concluida') >= 0;
+}
+
+function projetoStatusAutoColor(status) {
+  var c = faseAutoColor('status:' + (status || '')).split(':');
+  return c[1] + ':' + c[0];
+}
+
+function projetoStatusChip(status) {
+  var s = status || '—';
+  var n = String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  var color = n.indexOf('concluido') >= 0 ? '#137333:#e6f4ea' :
+    n.indexOf('acompanhamento') >= 0 ? '#276a7b:#d7eef5' :
+    n.indexOf('recrutamento') >= 0 ? '#0b8043:#d7f5cf' :
+    n.indexOf('regulatoria') >= 0 ? '#9a4b16:#ffd8bd' :
+    n.indexOf('close-out') >= 0 || n.indexOf('closeout') >= 0 ? '#3c4043:#eeeeee' :
+    n.indexOf('cancelado') >= 0 ? '#c5221f:#fce8e6' : projetoStatusAutoColor(s);
+  var p = color.split(':');
+  return '<span class="chip" style="background:' + p[1] + ';color:' + p[0] + '">' + esc(s) + '</span>';
+}
+
+function recrutamentoProjetoHtml(p) {
+  var concluido = isProjetoStatusConcluido(p.status);
+  var ativos = Number(p.participantesAtivos || 0);
+  var falhas = Number(p.falhasTriagem || 0);
+  var total = Number(p.totalParticipantes || 0);
+  var meta = Number(p.metaRecrutamento || 0);
+  var pct = meta > 0 ? Math.min(100, Math.round((ativos * 1000) / meta) / 10) : 0;
+  var pctLabel = meta > 0 ? pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+  var barColor = pct >= 100 ? '#137333' : pct >= 70 ? '#1266f1' : pct >= 35 ? '#e65100' : '#9aa3b0';
+  var metricas = '<span class="chip" style="padding:2px 6px;font-size:10px;background:#eef1f5;color:#5f6b7c">Total: ' + esc(total) + '</span>' +
+    (falhas > 0 ? '<span class="chip" style="padding:2px 6px;font-size:10px;background:#f3f4f6;color:#5f6b7c">Falha triagem: ' + esc(falhas) + '</span>' : '') +
+    (!concluido ? '<span class="chip" style="padding:2px 6px;font-size:10px;background:#fff7e6;color:#9a4b16">Meta: ' + (meta > 0 ? esc(meta) : '—') + '</span>' : '');
+  if (concluido) {
+    return '<div style="min-width:148px;max-width:190px">' +
+      '<div style="font-size:11px;font-weight:700;color:#137333;margin-bottom:5px">Projeto concluído</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:4px">' + metricas + '</div>' +
+    '</div>';
+  }
+  return '<div style="min-width:148px;max-width:190px">' +
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:5px">' +
+      '<span class="chip chip-green" style="padding:2px 7px;font-size:10.5px">' + esc(ativos) + ' pacientes ativo(s)</span>' +
+      '<span style="font-size:11px;font-weight:700;color:#5f6b7c">' + esc(pctLabel) + '</span>' +
+    '</div>' +
+    '<div style="height:7px;background:#eef1f5;border-radius:999px;overflow:hidden;border:1px solid #e0e6f0">' +
+      '<div style="height:100%;width:' + esc(pct) + '%;background:' + barColor + ';border-radius:999px"></div>' +
+    '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' + metricas + '</div>' +
+  '</div>';
+}
+
+function projetoDetailValue(value) {
+  value = String(value || '').trim();
+  return value ? esc(value) : '<span style="color:#9aa3b0">-</span>';
+}
+
+function projetoDetalheHtml(p) {
+  return '<div class="proj-detail-panel">' +
+    '<div class="proj-detail-title">' + projetoDetailValue(p.tituloCompleto) + '</div>' +
+    '<div class="proj-detail-items">' +
+      '<span class="det-item"><span class="material-symbols-outlined">approval</span><span>N&deg; CE: ' + projetoDetailValue(p.numeroCE) + '</span></span>' +
+      '<span class="det-item"><span class="material-symbols-outlined">tag</span><span>N&deg; expediente CE: ' + projetoDetailValue(p.expedienteCE) + '</span></span>' +
+      '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoDetailValue(p.dataSiv) + '</span></span>' +
+    '</div>' +
+  '</div>';
+}
+
+function toggleProjetoDetalhe(ev, id) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  var row = document.getElementById(id);
+  if (!row) return;
+  var open = row.classList.toggle('open');
+  var btn = document.querySelector('[data-proj-detail-target="' + id + '"]');
+  if (btn) {
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    var icon = btn.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = open ? 'expand_less' : 'expand_more';
+  }
+}
+
+function renderTabelaProj(lista) {
+  var tb = document.getElementById('bodyProjetos');
+  if (!lista.length) {
+    tb.innerHTML='<tr class="empty-row"><td colspan="9">Nenhum projeto encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(p, idx) {
+    var ini  = (p.nomeAbreviado||'?')[0].toUpperCase();
+    var sStr = JSON.stringify(p).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var detailId = 'proj-detail-' + idx;
+    var codigoHtml = p.codigo
+      ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">'+esc(p.codigo)+'</div>'
+      : '';
+    var coordHtml = p.coordenador
+      ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">Coord.: '+esc(p.coordenador)+'</div>'
+      : '';
+    var subs = [p.subInvestigador1, p.subInvestigador2].filter(Boolean);
+    var subsHtml = subs.length
+      ? '<div style="font-size:11px;color:#5f6b7c;margin-top:3px;">Sub: '+esc(subs.join(' / '))+'</div>'
+      : '';
+    var croHtml = p.cro
+      ? '<div style="font-size:11px;color:#9aa3b0;margin-top:4px;">'+esc(p.cro)+'</div>'
+      : '<div style="font-size:11px;color:#9aa3b0;margin-top:4px;">—</div>';
+    return '<tr class="proj-main">'
+      + '<td><div class="name-cell"><button class="icon-btn proj-toggle" type="button" title="Detalhes do projeto" aria-expanded="false" data-proj-detail-target="' + detailId + '" onclick="toggleProjetoDetalhe(event,\'' + detailId + '\')"><span class="material-symbols-outlined">expand_more</span></button><div class="row-avatar" style="border-radius:8px;">' + ini + '</div>'
+      + '<div><div class="row-name">' + esc(p.nomeAbreviado||'—') + '</div>'
+      + codigoHtml + '</div></div></td>'
+      + '<td>' + (p.fase ? chipFase(p.fase) : '—') + '</td>'
+      + '<td><span class="chip chip-blue">' + esc(p.especialidade||'—') + '</span></td>'
+      + '<td><div class="row-name" style="font-size:13px;">' + esc(p.investigador||'—') + '</div>'
+      + subsHtml + coordHtml + '</td>'
+      + '<td><div class="row-name" style="font-size:13px;">' + esc(p.patrocinador||'—') + '</div>' + croHtml + '</td>'
+      + '<td>' + recrutamentoProjetoHtml(p) + '</td>'
+      + '<td class="wide-only" style="color:#5f6b7c;">' + esc(p.centro || '—') + '</td>'
+      + '<td>' + projetoStatusChip(p.status) + '</td>'
+      + '<td><div class="action-btns">'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormProjeto(' + sStr + ')\'>'
+      + '<span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirProj("' + esc(p.id) + '","' + esc(p.nomeAbreviado||'') + '")\'>'
+      + '<span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td></tr>'
+      + '<tr class="proj-detail" id="' + detailId + '"><td colspan="9">' + projetoDetalheHtml(p) + '</td></tr>';
+  }).join('');
+}
+
+function abrirFormProjeto(p) {
+  var campos = ['pNome','pCodigo','pFase','pMeta','pStatus','pEsp','pIP','pSub1','pSub2','pCoord','pPat','pCRO','pCentro','pNumeroCE','pExpedienteCE','pTituloCompleto'];
+  campos.forEach(function(id){ document.getElementById(id).value=''; });
+  ['_selPEsp','_selPIP','_selPSub1','_selPSub2','_selPCoord','_selPPat','_selPCRO'].forEach(function(v){ window[v]=''; });
+  preencherSelectProjeto('pStatus', STATUS_PROJ, '', '— Selecione —');
+  ['errPNome','errPFase','errPStatus','errPEsp','errPIP'].forEach(function(id){
+    document.getElementById(id).classList.remove('visible');
+  });
+  ['pNome','pFase','pStatus','pEsp','pIP'].forEach(function(id){
+    document.getElementById(id).classList.remove('invalid');
+  });
+  document.getElementById('statusProj').innerHTML='';
+  document.getElementById('btnSalvarProj').disabled=false;
+  document.getElementById('editProjId').value='';
+  if (p) {
+    if (typeof p==='string') p=JSON.parse(p);
+    document.getElementById('modalProjTitle').textContent='EDITAR PROJETO';
+    document.getElementById('editProjId').value  = p.id            || '';
+    document.getElementById('pNome').value       = p.nomeAbreviado || '';
+    document.getElementById('pCodigo').value     = p.codigo        || '';
+    document.getElementById('pFase').value       = p.fase          || '';
+    document.getElementById('pMeta').value       = p.metaRecrutamento || '';
+    preencherSelectProjeto('pStatus', STATUS_PROJ, p.status || '', '— Selecione —');
+    document.getElementById('pEsp').value        = p.especialidade || ''; _selPEsp   = p.especialidade || '';
+    document.getElementById('pIP').value         = p.investigador  || ''; _selPIP    = p.investigador  || '';
+    document.getElementById('pSub1').value       = p.subInvestigador1 || ''; _selPSub1 = p.subInvestigador1 || '';
+    document.getElementById('pSub2').value       = p.subInvestigador2 || ''; _selPSub2 = p.subInvestigador2 || '';
+    document.getElementById('pCoord').value      = p.coordenador   || ''; _selPCoord = p.coordenador   || '';
+    document.getElementById('pPat').value        = p.patrocinador  || ''; _selPPat   = p.patrocinador  || '';
+    document.getElementById('pCRO').value        = p.cro           || ''; _selPCRO   = p.cro           || '';
+    document.getElementById('pCentro').value     = p.centro        || '';
+    document.getElementById('pNumeroCE').value   = p.numeroCE      || '';
+    document.getElementById('pExpedienteCE').value = p.expedienteCE || '';
+    document.getElementById('pTituloCompleto').value = p.tituloCompleto || '';
+  } else {
+    document.getElementById('modalProjTitle').textContent='CADASTRO DE PROJETO';
+  }
+  abrirOverlay('modalProjeto');
+}
+
+function salvarProjetoApp() {
+  var btn = document.getElementById('btnSalvarProj');
+  var ok  = true;
+  var nome = document.getElementById('pNome').value.trim();
+  if (!nome) {
+    document.getElementById('pNome').classList.add('invalid');
+    document.getElementById('errPNome').classList.add('visible'); ok=false;
+  } else {
+    document.getElementById('pNome').classList.remove('invalid');
+    document.getElementById('errPNome').classList.remove('visible');
+  }
+  if (!document.getElementById('pFase').value) {
+    document.getElementById('pFase').classList.add('invalid');
+    document.getElementById('errPFase').classList.add('visible'); ok=false;
+  } else {
+    document.getElementById('pFase').classList.remove('invalid');
+    document.getElementById('errPFase').classList.remove('visible');
+  }
+  if (!document.getElementById('pStatus').value) {
+    document.getElementById('pStatus').classList.add('invalid');
+    document.getElementById('errPStatus').classList.add('visible'); ok=false;
+  } else {
+    document.getElementById('pStatus').classList.remove('invalid');
+    document.getElementById('errPStatus').classList.remove('visible');
+  }
+  if (!_selPEsp) {
+    document.getElementById('pEsp').classList.add('invalid');
+    document.getElementById('errPEsp').classList.add('visible'); ok=false;
+  } else {
+    document.getElementById('pEsp').classList.remove('invalid');
+    document.getElementById('errPEsp').classList.remove('visible');
+  }
+  if (!_selPIP) {
+    document.getElementById('pIP').classList.add('invalid');
+    document.getElementById('errPIP').classList.add('visible'); ok=false;
+  } else {
+    document.getElementById('pIP').classList.remove('invalid');
+    document.getElementById('errPIP').classList.remove('visible');
+  }
+  if (!ok) return;
+  btn.disabled=true;
+  document.getElementById('statusProj').innerHTML='<span style="color:#5f6b7c;">⏳ Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r){
+      btn.disabled=false;
+      document.getElementById('statusProj').innerHTML='';
+      fecharOverlay('modalProjeto');
+      snack('✅ '+r);
+      carregarProjetos();
+    })
+    .withFailureHandler(function(e){
+      btn.disabled=false;
+      document.getElementById('statusProj').innerHTML='<span style="color:#e53935;">⚠ '+e.message+'</span>';
+    })
+    .salvarDadosProjeto({
+      id:            document.getElementById('editProjId').value,
+      nomeAbreviado: nome,
+      codigo:        document.getElementById('pCodigo').value.trim(),
+      fase:          document.getElementById('pFase').value,
+      metaRecrutamento: document.getElementById('pMeta').value,
+      status:        document.getElementById('pStatus').value,
+      especialidade: _selPEsp,
+      investigador:  _selPIP,
+      subInvestigador1: _selPSub1,
+      subInvestigador2: _selPSub2,
+      coordenador:   _selPCoord,
+      patrocinador:  _selPPat,
+      cro:           _selPCRO,
+      centro:        document.getElementById('pCentro').value.trim(),
+      numeroCE:      document.getElementById('pNumeroCE').value.trim(),
+      expedienteCE:  document.getElementById('pExpedienteCE').value.trim(),
+      tituloCompleto:document.getElementById('pTituloCompleto').value.trim()
+    });
+}
+
+function confirmarExcluirProj(id, nome) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "'+nome+'"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function(){ snack('Projeto excluído'); carregarProjetos(); })
+        .withFailureHandler(function(e){ snack('Erro: '+e.message); })
+        .excluirProjeto(id);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MONITORES
+// ═══════════════════════════════════════════════════════════════
+var _monitores = [];
+var _monProjetos = [];
+
+function carregarMonitores() {
+  document.getElementById('bodyMonitores').innerHTML =
+    '<tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _monProjetos = (res && res.projetos) || [];
+      renderMonitores((res && res.data) || []);
+    })
+    .withFailureHandler(function(e) { snackErro(e.message); })
+    .getCadastrosBootstrapData('monitores');
+}
+
+function preencherSelectMonitorProjeto(id, selected) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var valores = (_monProjetos || []).slice();
+  if (selected && valores.indexOf(selected) === -1) valores.unshift(selected);
+  el.innerHTML = '<option value="">— Selecione —</option>' +
+    valores.map(function(p) {
+      return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    }).join('');
+  el.value = selected || '';
+}
+
+function monitorUnblindedValor(v) {
+  return normAgenda(v) === 'sim' ? 'Sim' : 'Não';
+}
+
+function monitorProjetosDetalhes(m) {
+  if (!m) return [];
+  if (m.projetosDetalhes && m.projetosDetalhes.length) {
+    return m.projetosDetalhes.map(function(p) {
+      return {
+        projeto: String((p && p.projeto) || '').trim(),
+        unblinded: monitorUnblindedValor((p && p.unblinded) || '')
+      };
+    }).filter(function(p) { return p.projeto; });
+  }
+  if (m.projetos && m.projetos.length) {
+    return m.projetos.map(function(p, idx) {
+      return {
+        projeto: String(p || '').trim(),
+        unblinded: monitorUnblindedValor(m['unblinded' + (idx + 1)] || '')
+      };
+    }).filter(function(p) { return p.projeto; });
+  }
+  return [1, 2, 3, 4].map(function(i) {
+    return {
+      projeto: String(m['projeto' + i] || '').trim(),
+      unblinded: monitorUnblindedValor(m['unblinded' + i] || '')
+    };
+  }).filter(function(p) { return p.projeto; });
+}
+
+function monitorProjetos(m) {
+  return monitorProjetosDetalhes(m).map(function(p) { return p.projeto; });
+}
+
+function renderMonitores(lista) {
+  _monitores = lista || [];
+  var projetos = {};
+  var multi = 0;
+  _monitores.forEach(function(m) {
+    var ps = monitorProjetos(m);
+    if (ps.length > 1) multi++;
+    ps.forEach(function(p) { projetos[p] = 1; });
+  });
+  document.getElementById('monTotal').textContent = _monitores.length || '0';
+  document.getElementById('monProjetos').textContent = Object.keys(projetos).length || '0';
+  document.getElementById('monMulti').textContent = multi || '0';
+  filtrarMonitores();
+}
+
+function filtrarMonitores() {
+  var q = (document.getElementById('searchMonitores').value || '').toLowerCase().trim();
+  var f = q ? _monitores.filter(function(m) {
+    return (m.nome || '').toLowerCase().includes(q)
+        || (m.email || '').toLowerCase().includes(q)
+        || (m.telefone || '').toLowerCase().includes(q)
+        || monitorProjetosDetalhes(m).map(function(p) { return p.projeto + ' ' + p.unblinded; }).join(' ').toLowerCase().includes(q);
+  }) : _monitores;
+  renderTabelaMonitores(f);
+}
+
+function renderTabelaMonitores(lista) {
+  var tb = document.getElementById('bodyMonitores');
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5">Nenhum monitor encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(m) {
+    var ini = (m.nome || '?')[0].toUpperCase();
+    var sStr = JSON.stringify(m).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var idAttr = esc(m.id).replace(/'/g, '&#39;');
+    var nomeAttr = esc(m.nome || '').replace(/'/g, '&#39;');
+    var projetos = monitorProjetosDetalhes(m);
+    var projetosHtml = projetos.length
+      ? projetos.map(function(p) {
+          var extra = normAgenda(p.unblinded) === 'sim' ? ' · Unblinded' : '';
+          return '<span class="chip chip-blue" style="margin:2px 4px 2px 0">' + esc(p.projeto + extra) + '</span>';
+        }).join('')
+      : '<span style="color:#9aa3b0;">—</span>';
+    return '<tr>'
+      + '<td><div class="name-cell"><div class="row-avatar" style="border-radius:8px;">' + esc(ini) + '</div>'
+      + '<div><div class="row-name">' + esc(m.nome || '—') + '</div></div></div></td>'
+      + '<td style="color:#5f6b7c;">' + esc(m.email || '—') + '</td>'
+      + '<td style="color:#5f6b7c;">' + esc(m.telefone || '—') + '</td>'
+      + '<td>' + projetosHtml + '</td>'
+      + '<td style="text-align:right;"><div class="action-btns">'
+      + '<button class="icon-btn" title="Editar" onclick=\'abrirFormMonitor(' + sStr + ')\'><span class="material-symbols-outlined">edit</span></button>'
+      + '<button class="icon-btn del" title="Excluir" onclick=\'confirmarExcluirMonitor("' + idAttr + '","' + nomeAttr + '")\'><span class="material-symbols-outlined">delete</span></button>'
+      + '</div></td></tr>';
+  }).join('');
+}
+
+function abrirFormMonitor(m) {
+  var modalMonitor = document.getElementById('modalMonitor');
+  if (modalMonitor) {
+    delete modalMonitor.dataset.agendaOrigem;
+    modalMonitor.style.zIndex = '';
+  }
+  ['monNome','monEmail','monTelefone'].forEach(function(id) { document.getElementById(id).value = ''; });
+  ['monProjeto1','monProjeto2','monProjeto3','monProjeto4'].forEach(function(id) { preencherSelectMonitorProjeto(id, ''); });
+  ['monUnblinded1','monUnblinded2','monUnblinded3','monUnblinded4'].forEach(function(id) { document.getElementById(id).value = 'Não'; });
+  ['errMonNome','errMonProjeto1'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
+  ['monNome','monProjeto1'].forEach(function(id) { document.getElementById(id).classList.remove('invalid'); });
+  document.getElementById('statusMonitor').innerHTML = '';
+  document.getElementById('btnSalvarMonitor').disabled = false;
+  document.getElementById('editMonitorId').value = '';
+  if (m) {
+    if (typeof m === 'string') m = JSON.parse(m);
+    document.getElementById('modalMonitorTitle').textContent = 'EDITAR MONITOR';
+    document.getElementById('editMonitorId').value = m.id || '';
+    document.getElementById('monNome').value = m.nome || '';
+    document.getElementById('monEmail').value = m.email || '';
+    document.getElementById('monTelefone').value = m.telefone || '';
+    preencherSelectMonitorProjeto('monProjeto1', m.projeto1 || '');
+    preencherSelectMonitorProjeto('monProjeto2', m.projeto2 || '');
+    preencherSelectMonitorProjeto('monProjeto3', m.projeto3 || '');
+    preencherSelectMonitorProjeto('monProjeto4', m.projeto4 || '');
+    document.getElementById('monUnblinded1').value = monitorUnblindedValor(m.unblinded1 || '');
+    document.getElementById('monUnblinded2').value = monitorUnblindedValor(m.unblinded2 || '');
+    document.getElementById('monUnblinded3').value = monitorUnblindedValor(m.unblinded3 || '');
+    document.getElementById('monUnblinded4').value = monitorUnblindedValor(m.unblinded4 || '');
+  } else {
+    document.getElementById('modalMonitorTitle').textContent = 'CADASTRO DE MONITOR';
+  }
+  abrirOverlay('modalMonitor');
+}
+
+function salvarMonitorApp() {
+  var nome = document.getElementById('monNome').value.trim();
+  var projeto1 = document.getElementById('monProjeto1').value;
+  var modalMonitor = document.getElementById('modalMonitor');
+  var veioDaAgenda = modalMonitor && modalMonitor.dataset.agendaOrigem === '1';
+  var ok = true;
+  if (!nome) {
+    document.getElementById('monNome').classList.add('invalid');
+    document.getElementById('errMonNome').classList.add('visible');
+    ok = false;
+  } else {
+    document.getElementById('monNome').classList.remove('invalid');
+    document.getElementById('errMonNome').classList.remove('visible');
+  }
+  if (!projeto1) {
+    document.getElementById('monProjeto1').classList.add('invalid');
+    document.getElementById('errMonProjeto1').classList.add('visible');
+    ok = false;
+  } else {
+    document.getElementById('monProjeto1').classList.remove('invalid');
+    document.getElementById('errMonProjeto1').classList.remove('visible');
+  }
+  if (!ok) return;
+
+  var btn = document.getElementById('btnSalvarMonitor');
+  btn.disabled = true;
+  document.getElementById('statusMonitor').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      btn.disabled = false;
+      document.getElementById('statusMonitor').innerHTML = '';
+      fecharOverlay('modalMonitor');
+      if (modalMonitor) {
+        delete modalMonitor.dataset.agendaOrigem;
+        modalMonitor.style.zIndex = '';
+      }
+      snack(r);
+      carregarMonitores();
+      if (veioDaAgenda) atualizarAgendaMonitoresAposCadastro(nome);
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusMonitor').innerHTML = '<span style="color:#e53935;">' + e.message + '</span>';
+    })
+    .salvarDadosMonitor({
+      id: document.getElementById('editMonitorId').value,
+      nome: nome,
+      email: document.getElementById('monEmail').value.trim(),
+      telefone: document.getElementById('monTelefone').value.trim(),
+      projeto1: projeto1,
+      unblinded1: document.getElementById('monUnblinded1').value,
+      projeto2: document.getElementById('monProjeto2').value,
+      unblinded2: document.getElementById('monUnblinded2').value,
+      projeto3: document.getElementById('monProjeto3').value,
+      unblinded3: document.getElementById('monUnblinded3').value,
+      projeto4: document.getElementById('monProjeto4').value,
+      unblinded4: document.getElementById('monUnblinded4').value
+    });
+}
+
+function atualizarAgendaMonitoresAposCadastro(nomePreferido) {
+  if (!_agendaDados) {
+    if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState({});
+    else _agendaDados = {};
+  }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _agendaDados.monitores = (res && res.data) || [];
+      if (res && res.projetos) _agendaDados.projetos = res.projetos;
+      if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(_agendaDados);
+      preencherAgendaMonitoresSelects(true);
+      if (nomePreferido) {
+        var m1 = document.getElementById('agMonitor1');
+        var m2 = document.getElementById('agMonitor2');
+        if (m1 && !m1.value) setAgendaSelectValue('agMonitor1', nomePreferido);
+        else if (m2 && !m2.value) setAgendaSelectValue('agMonitor2', nomePreferido);
+        atualizarAgendaMonitorNome();
+      }
+    })
+    .withFailureHandler(function() {})
+    .getCadastrosBootstrapData('monitores');
+}
+
+function confirmarExcluirMonitor(id, nome) {
+  abrirConfirmacaoDestrutiva({
+    mensagem: 'Deseja excluir "' + nome + '"? Esta ação não pode ser desfeita.',
+    onConfirm: function() {
+      google.script.run
+        .withSuccessHandler(function() { snack('Monitor excluído'); carregarMonitores(); })
+        .withFailureHandler(function(e) { snackErro(e.message); })
+        .excluirMonitor(id);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  REQUISIÇÃO DE EXAMES — JavaScript
+// ══════════════════════════════════════════════════════════════════════════
+var _reqInited = false;
+var _rqParticipantes      = [];
+var _rqParticipantesNomes = [];
+var _rqPrestadores        = [];
+var _rqPrestadoresNomes   = [];
+var _rqSolicitantes       = [];
+var _rqSolicitantesNomes  = [];
+var _rqSelPaciente    = null;
+var _rqSelLocal       = null;
+var _rqSelSolicitante = null;
+var _rqUrgente        = false;
+var _rqAcIdx          = {};
+var _rqParticipantesLoaded = false;
+var _rqPrestadoresLoaded = false;
+var _rqSolicitantesLoaded = false;
+var _rqLoadCallbacks = [];
+var _rqAgendaOrigemId = '';
+var _rqOrigemContext = null;
+
+function initRequisicao() {
+  if (_reqInited) return;
+  _reqInited = true;
+  document.getElementById('rqPacienteList').innerHTML =
+    '<div class="ac-loading"><div class="ac-spin"></div>Carregando...</div>';
+  google.script.run
+    .withSuccessHandler(function(lista) {
+      _rqParticipantes      = lista || [];
+      _rqParticipantesNomes = _rqParticipantes.map(function(p) { return p.nome; });
+      _rqParticipantesLoaded = true;
+      flushRequisicaoLoadCallbacks();
+    })
+    .withFailureHandler(function(e) { _rqParticipantesLoaded = true; flushRequisicaoLoadCallbacks(); snackErro(e.message); })
+    .buscarParticipantesRequisicao();
+  google.script.run
+    .withSuccessHandler(function(lista) {
+      _rqPrestadores      = lista || [];
+      _rqPrestadoresNomes = _rqPrestadores.map(function(p){ return p.empresa; });
+      _rqPrestadoresLoaded = true;
+      flushRequisicaoLoadCallbacks();
+    })
+    .withFailureHandler(function(e) { _rqPrestadoresLoaded = true; flushRequisicaoLoadCallbacks(); snackErro(e.message); })
+    .buscarPrestadoresParaRequisicao();
+  google.script.run
+    .withSuccessHandler(function(lista) {
+      _rqSolicitantes      = lista || [];
+      _rqSolicitantesNomes = _rqSolicitantes.map(function(s){ return s.nome; });
+      _rqSolicitantesLoaded = true;
+      preencherSolicitanteUsuarioAtual();
+      flushRequisicaoLoadCallbacks();
+    })
+    .withFailureHandler(function(e) { _rqSolicitantesLoaded = true; flushRequisicaoLoadCallbacks(); snackErro(e.message); })
+    .buscarSolicitantesCompleto();
+  var listaExames = document.getElementById('rqExamesLista') || document.getElementById('examList');
+  if (listaExames && !listaExames.children.length) adicionarExame();
+}
+
+function requisicaoDadosCarregados() {
+  return _rqParticipantesLoaded && _rqPrestadoresLoaded && _rqSolicitantesLoaded;
+}
+
+function flushRequisicaoLoadCallbacks() {
+  if (!requisicaoDadosCarregados()) return;
+  var callbacks = _rqLoadCallbacks.splice(0);
+  callbacks.forEach(function(cb) {
+    try { cb(); } catch(e) { snackErro(e.message || e); }
+  });
+}
+
+function ensureRequisicaoDataLoaded(callback) {
+  initRequisicao();
+  if (requisicaoDadosCarregados()) {
+    callback();
+    return;
+  }
+  _rqLoadCallbacks.push(callback);
+}
+
+// ── Autocomplete genérico para o form de requisição ──────────────────────
+function _rqNorm(s) {
+  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+function renderReqAC(inputId, listId, opts, selVarName) {
+  var q = _rqNorm(document.getElementById(inputId).value);
+  var el = document.getElementById(listId);
+  var matches = q
+    ? opts.filter(function(o) { return _rqNorm(o).includes(q); })
+    : opts.slice(0, 40);
+  _rqAcIdx[listId] = -1;
+  el.innerHTML = '';
+  if (!matches.length) {
+    el.innerHTML = '<div class="ac-empty">Nenhum resultado encontrado.</div>';
+  } else {
+    matches.forEach(function(o) {
+      var div = document.createElement('div');
+      div.className = 'ac-item';
+      div.dataset.val = o;
+      div.textContent = o;
+      div.addEventListener('mousedown', function(evt) {
+        evt.preventDefault();
+        pickReqAC(inputId, listId, o, selVarName);
+      });
+      el.appendChild(div);
+    });
+  }
+  el.classList.add('open');
+}
+
+function pickReqAC(inputId, listId, val, selVarName) {
+  window[selVarName] = val;
+  document.getElementById(inputId).value = val;
+  document.getElementById(listId).classList.remove('open');
+  if (inputId === 'rqPrestador') preencherEnderecoReq();
+  if (inputId === 'rqPaciente') preencherDadosPaciente();
+  if (inputId === 'rqSolicitante') preencherDadosSolicitante();
+}
+
+function fecharReqAC(listId) {
+  var el = document.getElementById(listId);
+  if (el) el.classList.remove('open');
+}
+
+function navReqAC(e, inputId, listId, opts, selVarName) {
+  var items = document.querySelectorAll('#' + listId + ' .ac-item');
+  if (!items.length) return;
+  var idx = _rqAcIdx[listId] !== undefined ? _rqAcIdx[listId] : -1;
+  if (e.key === 'ArrowDown')  { e.preventDefault(); idx = Math.min(idx+1, items.length-1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx-1, 0); }
+  else if (e.key === 'Enter' && idx >= 0) {
+    e.preventDefault();
+    pickReqAC(inputId, listId, items[idx].dataset.val, selVarName);
+    return;
+  } else if (e.key === 'Escape') { fecharReqAC(listId); return; }
+  _rqAcIdx[listId] = idx;
+  items.forEach(function(el,i){ el.classList.toggle('active', i===idx); });
+  if (idx >= 0) items[idx].scrollIntoView({block:'nearest'});
+}
+
+// ── Auto-preenchimento ────────────────────────────────────────────────────
+function preencherDadosPaciente() {
+  var nome = document.getElementById('rqPaciente').value.trim();
+  var p = _rqParticipantes.find(function(x){ return x.nome === nome; });
+  if (p) {
+    document.getElementById('rqNascimento').value  = p.nascimento || '';
+    document.getElementById('rqProtocolo').value   = p.protocolo  || '';
+    document.getElementById('rqMedico').value      = p.medico     || '';
+    carregarReqPreloadProjeto(p.protocolo || '');
+  } else {
+    ['rqNascimento','rqProtocolo','rqMedico'].forEach(function(id){
+      document.getElementById(id).value = '';
+    });
+  }
+}
+
+function carregarReqPreloadProjeto(projeto) {
+  projeto = String(projeto || '').trim();
+  if (!projeto || typeof google === 'undefined' || !google.script || !google.script.run) return;
+  google.script.run
+    .withSuccessHandler(function(exames) {
+      exames = exames || [];
+      if (!exames.length) return;
+      var atuais = Array.from(document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input'))
+        .map(function(i){ return i.value.trim(); }).filter(Boolean);
+      if (atuais.length) {
+        abrirConfirmReqPreload(projeto, atuais.length, exames.length, function() {
+          preencherReqExames(exames);
+          snack('Exames padrao do projeto carregados.');
+        });
+        return;
+      }
+      preencherReqExames(exames);
+      snack('Exames padrao do projeto carregados.');
+    })
+    .withFailureHandler(function(e) { snackErro(e.message || e); })
+    .getReqExamesPreloadProjeto(projeto);
+}
+
+function abrirConfirmReqPreload(projeto, atuais, novos, onConfirm) {
+  var modal = document.getElementById('confirmReqPreload');
+  var msg = document.getElementById('confirmReqPreloadMsg');
+  var btn = document.getElementById('btnConfirmReqPreload');
+  if (!modal || !msg || !btn) {
+    if (typeof onConfirm === 'function') onConfirm();
+    return;
+  }
+  msg.innerHTML =
+    'Este participante/projeto possui uma lista padr&atilde;o de exames cadastrada para <strong>' + esc(projeto || '') + '</strong>.' +
+    '<br><br>Se continuar, os ' + esc(atuais || 0) + ' exame(s) j&aacute; digitados nesta requisi&ccedil;&atilde;o ser&atilde;o removidos e substitu&iacute;dos pelos ' + esc(novos || 0) + ' exame(s) padr&atilde;o do projeto.' +
+    '<br><br>Use esta op&ccedil;&atilde;o apenas quando quiser iniciar a requisi&ccedil;&atilde;o a partir do padr&atilde;o do projeto.';
+  btn.onclick = function() {
+    fecharOverlay('confirmReqPreload');
+    if (typeof onConfirm === 'function') onConfirm();
+  };
+  abrirOverlay('confirmReqPreload');
+}
+
+function preencherReqExames(exames) {
+  exames = (exames || []).slice(0, 40);
+  var lista = document.getElementById('rqExamesLista') || document.getElementById('examList');
+  if (!lista) return;
+  lista.innerHTML = '';
+  var qtd = Math.max(1, exames.length);
+  for (var i = 0; i < qtd; i++) {
+    adicionarExame();
+    var inputs = document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input');
+    if (inputs[i]) inputs[i].value = exames[i] || '';
+  }
+  updateExamCount();
+}
+
+function getProjetoRequisicaoAtual() {
+  var el = document.getElementById('rqProtocolo');
+  return el ? el.value.trim() : '';
+}
+
+function examesAtuaisRequisicao() {
+  return Array.from(document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input'))
+    .map(function(i){ return i.value.trim(); })
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+function abrirReqPreloadModal() {
+  var projeto = getProjetoRequisicaoAtual();
+  if (!projeto) {
+    snackErro('Selecione um paciente/projeto antes de gerenciar os exames padrão.');
+    return;
+  }
+  var status = document.getElementById('statusReqPreload');
+  if (status) status.innerHTML = '<span style="color:#5f6b7c;">Carregando...</span>';
+  document.getElementById('reqPreloadProjeto').value = projeto;
+  document.getElementById('reqPreloadExames').value = '';
+  abrirOverlay('modalReqPreload');
+  google.script.run
+    .withSuccessHandler(function(data) {
+      var exames = data && data.exames ? data.exames : [];
+      document.getElementById('reqPreloadExames').value = exames.join('\n');
+      if (status) status.innerHTML = '';
+    })
+    .withFailureHandler(function(e) {
+      if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(e.message || e) + '</span>';
+    })
+    .getReqExamesPreloadProjetoEditor(projeto);
+}
+
+function reqPreloadUsarListaAtual() {
+  var exames = examesAtuaisRequisicao();
+  document.getElementById('reqPreloadExames').value = exames.join('\n');
+  updateExamCount();
+}
+
+function reqPreloadExamesDoModal() {
+  return String(document.getElementById('reqPreloadExames').value || '')
+    .split(/\r?\n/)
+    .map(function(v){ return v.trim(); })
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+function salvarReqPreloadProjeto() {
+  var projeto = document.getElementById('reqPreloadProjeto').value.trim();
+  var exames = reqPreloadExamesDoModal();
+  var btn = document.getElementById('btnSalvarReqPreload');
+  var status = document.getElementById('statusReqPreload');
+  if (!projeto) {
+    if (status) status.innerHTML = '<span style="color:#e53935;">Projeto não identificado.</span>';
+    return;
+  }
+  btn.disabled = true;
+  if (status) status.innerHTML = '<span style="color:#5f6b7c;">Salvando...</span>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btn.disabled = false;
+      if (status) status.innerHTML = '';
+      preencherReqExames((res && res.exames) || exames);
+      appClearUnsavedChanges('modalReqPreload');
+      fecharOverlay('modalReqPreload');
+      snack((res && res.message) || 'Exames padrão salvos.');
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(e.message || e) + '</span>';
+    })
+    .salvarReqExamesPreloadProjeto(projeto, exames);
+}
+
+function limparRequisicaoForm() {
+  ['rqPaciente','rqNascimento','rqProtocolo','rqMedico','rqSolicitante','rqPrestador','rqLocalExame','rqEndereco','rqData','rqHorario','rqObs'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var lista = document.getElementById('rqExamesLista') || document.getElementById('examList');
+  if (lista) lista.innerHTML = '';
+  adicionarExame();
+  var card = document.getElementById('rqSolCard') || document.getElementById('solicitanteCard');
+  if (card) card.classList.remove('visible');
+  var statusEl = document.getElementById('rqStatus') || document.getElementById('statusReq');
+  if (statusEl) statusEl.innerHTML = '';
+  _rqSelPaciente = null;
+  _rqSelLocal = null;
+  _rqSelSolicitante = null;
+  _rqAgendaOrigemId = '';
+  _rqOrigemContext = null;
+}
+
+function preencherEnderecoReq() {
+  var input = document.getElementById('rqLocalExame') || document.getElementById('rqPrestador');
+  var nome = input ? input.value.trim() : '';
+  var p = _rqPrestadores.find(function(x){ return x.empresa === nome; });
+  var endereco = document.getElementById('rqEndereco');
+  if (endereco) endereco.value = p ? (p.endereco || '') : '';
+}
+
+function preencherDadosSolicitante() {
+  var nome = document.getElementById('rqSolicitante').value.trim();
+  var s = _rqSolicitantes.find(function(x){ return x.nome === nome; });
+  var card = document.getElementById('rqSolCard') || document.getElementById('solicitanteCard');
+  if (s) {
+    var nomeEl = document.getElementById('rqSolCardNome') || document.getElementById('solCardNome');
+    var detalheEl = document.getElementById('rqSolCardDetalhe') || document.getElementById('solCardDetalhe');
+    if (nomeEl) nomeEl.textContent = s.nome;
+    if (detalheEl) detalheEl.textContent =
+      [s.formacao, s.registro].filter(Boolean).join(' · ');
+    if (card) card.classList.add('visible');
+  } else {
+    if (card) card.classList.remove('visible');
+  }
+}
+
+function preencherSolicitanteUsuarioAtual() {
+  var input = document.getElementById('rqSolicitante');
+  if (!input || input.value.trim() || !_rqSolicitantes.length) return;
+  google.script.run
+    .withSuccessHandler(function(email) {
+      email = String(email || '').toLowerCase().trim();
+      if (!email || input.value.trim()) return;
+      var solicitante = _rqSolicitantes.find(function(s) {
+        return String(s.email || '').toLowerCase().trim() === email;
+      });
+      if (!solicitante) return;
+      input.value = solicitante.nome || '';
+      _rqSelSolicitante = solicitante.nome || null;
+      preencherDadosSolicitante();
+    })
+    .withFailureHandler(function() {})
+    .getUsuarioEmail();
+}
+
+// ── Botão URGENTE no top-bar ──────────────────────────────────────────────
+function toggleUrgente() {
+  _rqUrgente = !_rqUrgente;
+  var btn  = document.getElementById('urgenteBtnForm');
+  var row  = document.getElementById('urgenteRow');
+  var icon = document.getElementById('urgenteIcon');
+  var lbl  = document.getElementById('urgenteLabel');
+  if (_rqUrgente) {
+    btn.classList.add('ativo');
+    row.classList.add('ativo');
+    icon.textContent = 'warning';
+    icon.classList.add('ms-filled');
+    lbl.textContent  = 'URGENTE';
+  } else {
+    btn.classList.remove('ativo');
+    row.classList.remove('ativo');
+    icon.textContent = 'radio_button_unchecked';
+    icon.classList.remove('ms-filled');
+    lbl.textContent  = 'NÃO URGENTE';
+  }
+}
+
+// ── Gerenciamento de exames ───────────────────────────────────────────────
+function adicionarExame() {
+  var lista = document.getElementById('rqExamesLista') || document.getElementById('examList');
+  if (!lista) return;
+  var total = lista.children.length;
+  if (total >= 40) { snack('Limite de 40 exames atingido.'); return; }
+  var num = total + 1;
+  var row = document.createElement('div');
+  row.className = 'exam-row';
+  row.innerHTML =
+    '<div class="exam-num">' + num + '</div>' +
+    '<input type="text" class="exam-input" placeholder="Descrição do exame ' + num + '">' +
+    '<button class="exam-remove" onclick="removerExame(this)" title="Remover">' +
+      '<span class="material-symbols-outlined">close</span>' +
+    '</button>';
+  lista.appendChild(row);
+  updateExamCount();
+  var btnAdd = document.getElementById('rqBtnAddExam');
+  if (btnAdd) btnAdd.style.display = lista.children.length >= 40 ? 'none' : '';
+}
+
+function addExam() { adicionarExame(); }
+
+function removerExame(btn) {
+  var row = btn.closest('.exam-row');
+  row.parentNode.removeChild(row);
+  var rows = document.querySelectorAll('#rqExamesLista .exam-row, #examList .exam-row');
+  rows.forEach(function(r, i) {
+    r.querySelector('.exam-num').textContent = i + 1;
+    r.querySelector('.exam-input').placeholder = 'Descrição do exame ' + (i + 1);
+  });
+  updateExamCount();
+  var btnAdd = document.getElementById('rqBtnAddExam');
+  if (btnAdd) btnAdd.style.display = '';
+}
+
+function updateExamCount() {
+  var n = document.querySelectorAll('#rqExamesLista .exam-row, #examList .exam-row').length;
+  var count = document.getElementById('rqExamCount') || document.getElementById('examCount');
+  if (count) count.textContent = n + (count.id === 'examCount' ? ' exame(s)' : ' / 40 exames');
+}
+
+function getExames() {
+  var inputs = document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input');
+  return Array.from(inputs)
+    .map(function(i){ return i.value.trim(); })
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+// ── Geração do PDF ────────────────────────────────────────────────────────
+function requisicaoDateOnlyFromIso(value) {
+  var parts = String(value || '').split('-');
+  if (parts.length !== 3) return null;
+  var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function requisicaoIsPastDate(value) {
+  var d = requisicaoDateOnlyFromIso(value);
+  if (!d) return false;
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() < hoje.getTime();
+}
+
+function gerarRequisicao() {
+  var paciente = document.getElementById('rqPaciente').value.trim();
+  var localEl  = document.getElementById('rqLocalExame') || document.getElementById('rqPrestador');
+  var local    = localEl ? localEl.value.trim() : '';
+  var dataEl   = document.getElementById('rqData');
+  var data     = dataEl ? dataEl.value : '';
+  var sol      = document.getElementById('rqSolicitante').value.trim();
+  var erros = [];
+  if (!paciente) erros.push('Paciente');
+  if (!local)    erros.push('Local do Exame');
+  if (!data)     erros.push('Data do Exame');
+  if (!sol)      erros.push('Solicitante');
+  if (erros.length) {
+    snackErro('Campos obrigatórios: ' + erros.join(', '));
+    return;
+  }
+  if (requisicaoIsPastDate(data)) {
+    snackErro('Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.');
+    return;
+  }
+  var solObj = _rqSolicitantes.find(function(s){ return s.nome === sol; }) || {};
+  var btn = document.getElementById('rqBtnGerar') || document.getElementById('btnSalvarReq');
+  var statusEl = document.getElementById('rqStatus') || document.getElementById('statusReq');
+  if (btn) btn.disabled = true;
+  statusEl.innerHTML = '<span style="color:#5f6b7c">⏳ Gerando PDF e rascunho de e-mail...</span>';
+  var dados = {
+    paciente:        paciente,
+    nascimento:      document.getElementById('rqNascimento').value,
+    protocolo:       document.getElementById('rqProtocolo').value,
+    medico:          document.getElementById('rqMedico').value,
+    localExame:      local,
+    endereco:        document.getElementById('rqEndereco').value,
+    dataAgendamento: data,
+    horario:         document.getElementById('rqHorario').value,
+    exames:          getExames(),
+    observacoes:     document.getElementById('rqObs').value.trim(),
+    urgente:         _rqUrgente,
+    solicitante:     sol,
+    solFormacao:     solObj.formacao || '',
+    solRegistro:     solObj.registro || '',
+    agendaId:        _rqOrigemContext && _rqOrigemContext.tipo === 'agenda' ? (_rqOrigemContext.agendaId || '') : '',
+    requestedByEmail: solObj.email || (window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.access ? window.APP_BOOTSTRAP_DATA.access.email : '')
+  };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var msg = res && typeof res === 'object' ? (res.message || 'Rascunho de e-mail criado com sucesso!') : res;
+      btn.disabled = false;
+      statusEl.innerHTML = '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
+      var warnings = res && typeof res === 'object' ? [res.preloadWarning, res.statusWarning].filter(Boolean) : [];
+      if (warnings.length) snackErro(warnings.join(' '));
+      else snack('✓ Rascunho criado com sucesso!');
+      appClearUnsavedChanges('page-requisicao');
+      finalizarRequisicaoAposSucesso(res && res.statusRequisicao, res);
+      limparRequisicaoForm();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      statusEl.innerHTML = '<span style="color:#e53935">✗ ' + esc(e.message) + '</span>';
+      snackErro(e.message);
+    })
+    .gerarRequisicaoPDF(dados);
+}
+
+function finalizarRequisicaoAposSucesso(statusRequisicao, resultado) {
+  var origem = _rqOrigemContext || {};
+  if (origem.tipo === 'agenda' && origem.agendaId) {
+    if (statusRequisicao) aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
+    else marcarAgendaRequisicaoEnviadaLocal(origem.agendaId, true);
+    return;
+  }
+  if (origem.tipo === 'participante') {
+    var participante = origem.participante || null;
+    irPara('participantes');
+    setTimeout(function() {
+      if (participante) abrirFormPart(participante);
+    }, 120);
+  }
+}
+
+function snackErro(msg) { snack('⚠ ' + msg); }
+
+// ═══════════════════════════════════════════════════════════════
+//  PRESTADORES
+// ═══════════════════════════════════════════════════════════════
+function salvarRequisicao() { gerarRequisicao(); }
+
+var _prestadores = [];
+
+function carregarPrestadores() {
+  document.getElementById('bodyPrestadores').innerHTML =
+    '<tr class="loading-row"><td colspan="4"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderPrestadores((res && res.data) || []); })
+    .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
+    .getCadastrosBootstrapData('prestadores');
+}
+
+function renderPrestadores(lista) {
+  _prestadores = lista || [];
+  document.getElementById('prestTotal').textContent =
+    _prestadores.length || '0';
+  document.getElementById('prestComEmail').textContent =
+    _prestadores.filter(function(p) { return p.email; }).length || '0';
+  _renderTabelaPrestadores(_prestadores);
+}
+
+function _renderTabelaPrestadores(lista) {
+  var tb = document.getElementById('bodyPrestadores');
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="4">Nenhum prestador cadastrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(p) {
+    var ini = p.empresa ? p.empresa[0].toUpperCase() : '?';
+    var emailCell = p.email
+      ? '<a href="mailto:' + esc(p.email) + '" style="color:var(--primary)">' + esc(p.email) + '</a>'
+      : '<span style="color:var(--text-faint)">—</span>';
+    return '<tr>' +
+      '<td><div class="name-cell"><div class="row-avatar">' + ini + '</div>' +
+        '<span class="row-name">' + esc(p.empresa) + '</span></div></td>' +
+      '<td>' + esc(p.endereco || '—') + '</td>' +
+      '<td>' + emailCell + '</td>' +
+      '<td><div class="action-btns">' +
+        '<button class="icon-btn" title="Editar" onclick="abrirFormPrestador(\'' + esc(p.id) + '\')"><span class="material-symbols-outlined">edit</span></button>' +
+        '<button class="icon-btn del" title="Excluir" onclick="confirmarExcluirPrestador(\'' + esc(p.id) + '\',\'' + esc(p.empresa) + '\')"><span class="material-symbols-outlined">delete</span></button>' +
+      '</div></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function filtrarPrestadores() {
+  var q = document.getElementById('searchPrestadores').value.toLowerCase();
+  _renderTabelaPrestadores(!q ? _prestadores : _prestadores.filter(function(p) {
+    return (p.empresa + ' ' + p.endereco + ' ' + p.email).toLowerCase().includes(q);
+  }));
+}
+
+function abrirFormPrestador(id) {
+  ['editPrestId','prestEmpresa','prestEndereco','prestEmail'].forEach(function(fId) {
+    document.getElementById(fId).value = '';
+  });
+  document.getElementById('statusPrest').textContent = '';
+  document.getElementById('modalPrestTitle').textContent = id ? 'EDITAR PRESTADOR' : 'CADASTRO DE PRESTADOR';
+  ['errPrestEmpresa','errPrestEmail'].forEach(function(eId) {
+    document.getElementById(eId).classList.remove('visible');
+  });
+  if (id) {
+    var p = _prestadores.find(function(x) { return x.id === id; });
+    if (p) {
+      document.getElementById('editPrestId').value   = p.id;
+      document.getElementById('prestEmpresa').value  = p.empresa;
+      document.getElementById('prestEndereco').value = p.endereco || '';
+      document.getElementById('prestEmail').value    = p.email    || '';
+    }
+  }
+  document.getElementById('modalPrestador').classList.add('open');
+  setTimeout(function() { document.getElementById('prestEmpresa').focus(); }, 180);
+}
+
+function salvarPrestadorApp() {
+  var empresa = document.getElementById('prestEmpresa').value.trim();
+  var email   = document.getElementById('prestEmail').value.trim();
+  var ok = true;
+  if (!empresa) { document.getElementById('errPrestEmpresa').classList.add('visible'); ok = false; }
+  else { document.getElementById('errPrestEmpresa').classList.remove('visible'); }
+  if (!email)   { document.getElementById('errPrestEmail').classList.add('visible');   ok = false; }
+  else { document.getElementById('errPrestEmail').classList.remove('visible'); }
+  if (!ok) return;
+  var btn = document.getElementById('btnSalvarPrest');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(msg) {
+      btn.disabled = false;
+      document.getElementById('statusPrest').innerHTML =
+        '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
+      carregarPrestadores();
+      setTimeout(function() { fecharOverlay('modalPrestador'); }, 900);
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusPrest').innerHTML =
+        '<span style="color:#e53935">✗ ' + esc(e.message) + '</span>';
+    })
+    .salvarDadosPrestador({
+      id:       document.getElementById('editPrestId').value,
+      empresa:  empresa,
+      endereco: document.getElementById('prestEndereco').value.trim(),
+      email:    email
+    });
+}
+
+function confirmarExcluirPrestador(id, nome) {
+  document.getElementById('confirmPrestNome').textContent =
+    'Excluir "' + nome + '"? Esta ação não pode ser desfeita.';
+  document.getElementById('btnConfirmExcluirPrest').onclick = function() {
+    google.script.run
+      .withSuccessHandler(function() {
+        fecharOverlay('confirmPrestador');
+        carregarPrestadores();
+        snack('Prestador excluído.');
+      })
+      .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
+      .excluirPrestador(id);
+  };
+  document.getElementById('confirmPrestador').classList.add('open');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LAB CENTRAL
+// ═══════════════════════════════════════════════════════════════
+var _labCentral = [];
+
+function carregarLabCentral() {
+  document.getElementById('bodyLabCentral').innerHTML =
+    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) { renderLabCentral((res && res.data) || []); })
+    .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
+    .getCadastrosBootstrapData('labcentral');
+}
+
+function renderLabCentral(lista) {
+  _labCentral = lista || [];
+  document.getElementById('labCentralTotal').textContent = _labCentral.length || '0';
+  document.getElementById('labCentralCdc').textContent = _labCentral.filter(function(l) { return l.cdcPermit; }).length || '0';
+  _renderTabelaLabCentral(_labCentral);
+}
+
+function _renderTabelaLabCentral(lista) {
+  var tb = document.getElementById('bodyLabCentral');
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum laboratório central cadastrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(l) {
+    var ini = l.nomeAbreviado ? l.nomeAbreviado[0].toUpperCase() : 'L';
+    var local = [l.cidade, l.pais].filter(Boolean).join(' / ') || '—';
+    var contato = [l.contato, l.telefone].filter(Boolean).join(' · ') || '—';
+    return '<tr>' +
+      '<td><div class="name-cell"><div class="row-avatar">' + esc(ini) + '</div>' +
+        '<span class="row-name">' + esc(l.nomeAbreviado || '—') + '</span></div></td>' +
+      '<td>' + esc(l.nomeCompleto || '—') + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">' + esc(l.endereco || '') + '</div></td>' +
+      '<td>' + esc(local) + '</td>' +
+      '<td>' + esc(contato) + '</td>' +
+      '<td>' + esc(l.cdcPermit || '—') + '</td>' +
+      '<td><div class="action-btns">' +
+        '<button class="icon-btn" title="Editar" onclick="abrirFormLabCentral(\'' + esc(l.id) + '\')"><span class="material-symbols-outlined">edit</span></button>' +
+        '<button class="icon-btn del" title="Excluir" onclick="confirmarExcluirLabCentral(\'' + esc(l.id) + '\')"><span class="material-symbols-outlined">delete</span></button>' +
+      '</div></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function filtrarLabCentral() {
+  var q = (document.getElementById('searchLabCentral').value || '').toLowerCase();
+  _renderTabelaLabCentral(!q ? _labCentral : _labCentral.filter(function(l) {
+    return [
+      l.id, l.nomeAbreviado, l.nomeCompleto, l.endereco, l.cidade, l.cep,
+      l.telefone, l.contato, l.pais, l.cdcPermit
+    ].join(' ').toLowerCase().indexOf(q) !== -1;
+  }));
+}
+
+function abrirFormLabCentral(id) {
+  ['editLabCentralId','labCentralNomeAbrev','labCentralNomeCompleto','labCentralEndereco','labCentralCidade','labCentralCep','labCentralTelefone','labCentralContato','labCentralPais','labCentralCdcPermit'].forEach(function(fId) {
+    document.getElementById(fId).value = '';
+  });
+  document.getElementById('statusLabCentral').textContent = '';
+  ['errLabCentralNomeAbrev','errLabCentralNomeCompleto'].forEach(function(eId) {
+    document.getElementById(eId).classList.remove('visible');
+  });
+  document.getElementById('modalLabCentralTitle').textContent = id ? 'EDITAR LAB CENTRAL' : 'CADASTRO DE LAB CENTRAL';
+  if (id) {
+    var lab = _labCentral.find(function(x) { return x.id === id; });
+    if (lab) {
+      document.getElementById('editLabCentralId').value = lab.id || '';
+      document.getElementById('labCentralNomeAbrev').value = lab.nomeAbreviado || '';
+      document.getElementById('labCentralNomeCompleto').value = lab.nomeCompleto || '';
+      document.getElementById('labCentralEndereco').value = lab.endereco || '';
+      document.getElementById('labCentralCidade').value = lab.cidade || '';
+      document.getElementById('labCentralCep').value = lab.cep || '';
+      document.getElementById('labCentralTelefone').value = lab.telefone || '';
+      document.getElementById('labCentralContato').value = lab.contato || '';
+      document.getElementById('labCentralPais').value = lab.pais || '';
+      document.getElementById('labCentralCdcPermit').value = lab.cdcPermit || '';
+    }
+  }
+  document.getElementById('modalLabCentral').classList.add('open');
+  setTimeout(function() { document.getElementById('labCentralNomeAbrev').focus(); }, 180);
+}
+
+function salvarLabCentralApp() {
+  var nomeAbrev = document.getElementById('labCentralNomeAbrev').value.trim();
+  var nomeCompleto = document.getElementById('labCentralNomeCompleto').value.trim();
+  var ok = true;
+  if (!nomeAbrev) { document.getElementById('errLabCentralNomeAbrev').classList.add('visible'); ok = false; }
+  else { document.getElementById('errLabCentralNomeAbrev').classList.remove('visible'); }
+  if (!nomeCompleto) { document.getElementById('errLabCentralNomeCompleto').classList.add('visible'); ok = false; }
+  else { document.getElementById('errLabCentralNomeCompleto').classList.remove('visible'); }
+  if (!ok) return;
+
+  var btn = document.getElementById('btnSalvarLabCentral');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(msg) {
+      btn.disabled = false;
+      document.getElementById('statusLabCentral').innerHTML = '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
+      carregarLabCentral();
+      setTimeout(function() { fecharOverlay('modalLabCentral'); }, 900);
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusLabCentral').innerHTML = '<span style="color:#e53935">✗ ' + esc(e.message) + '</span>';
+    })
+    .salvarLabCentral({
+      id: document.getElementById('editLabCentralId').value,
+      nomeAbreviado: nomeAbrev,
+      nomeCompleto: nomeCompleto,
+      endereco: document.getElementById('labCentralEndereco').value.trim(),
+      cidade: document.getElementById('labCentralCidade').value.trim(),
+      cep: document.getElementById('labCentralCep').value.trim(),
+      telefone: document.getElementById('labCentralTelefone').value.trim(),
+      contato: document.getElementById('labCentralContato').value.trim(),
+      pais: document.getElementById('labCentralPais').value.trim(),
+      cdcPermit: document.getElementById('labCentralCdcPermit').value.trim()
+    });
+}
+
+function confirmarExcluirLabCentral(id) {
+  var lab = _labCentral.find(function(x) { return x.id === id; }) || {};
+  var nome = lab.nomeAbreviado || lab.nomeCompleto || id;
+  document.getElementById('confirmLabCentralNome').textContent =
+    'Excluir "' + nome + '"? Esta ação não pode ser desfeita.';
+  document.getElementById('btnConfirmExcluirLabCentral').onclick = function() {
+    google.script.run
+      .withSuccessHandler(function() {
+        fecharOverlay('confirmLabCentral');
+        carregarLabCentral();
+        snack('Laboratório central excluído.');
+      })
+      .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
+      .excluirLabCentral(id);
+  };
+  document.getElementById('confirmLabCentral').classList.add('open');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COURIERS
+// ═══════════════════════════════════════════════════════════════
+var _couriers = [];
+var _courierStatusOptions = ['Não Agendado', 'Pendente', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado'];
+
+function carregarCouriers() {
+  document.getElementById('bodyCouriers').innerHTML =
+    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _courierStatusOptions = ((res && res.config && res.config.statusCourier) || _courierStatusOptions || []).slice();
+      renderCourierStatusConfirmacaoOptions();
+      renderCouriers((res && res.data) || []);
+    })
+    .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
+    .getCadastrosBootstrapData('couriers');
+}
+
+function renderCouriers(lista) {
+  _couriers = lista || [];
+  document.getElementById('courierTotal').textContent = _couriers.length || '0';
+  document.getElementById('courierEmailTotal').textContent = _couriers.filter(function(c) {
+    return c.email || c.emailAmbiente || c.emailCongelado;
+  }).length || '0';
+  _renderTabelaCouriers(_couriers);
+}
+
+function stripHtmlSimple(html) {
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  return (tmp.textContent || tmp.innerText || '').trim();
+}
+
+function renderCourierStatusConfirmacaoOptions(currentValue) {
+  var sel = ensureCourierStatusConfirmacaoSelect();
+  if (!sel) return;
+  var current = String(currentValue || sel.value || '').trim();
+  var opts = [''].concat(_courierStatusOptions || []);
+  if (current && opts.indexOf(current) === -1) opts.push(current);
+  sel.innerHTML = opts.map(function(v) {
+    return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>' + esc(v || '') + '</option>';
+  }).join('');
+}
+
+function ensureCourierStatusConfirmacaoSelect() {
+  var el = document.getElementById('courierStatusConfirmacao');
+  if (!el) return null;
+  if (String(el.tagName || '').toLowerCase() === 'select') return el;
+  var value = String(el.value || '').trim();
+  var sel = document.createElement('select');
+  sel.id = el.id;
+  sel.className = el.className || 'f-input';
+  sel.value = value;
+  el.parentNode.replaceChild(sel, el);
+  return sel;
+}
+
+function courierNormNome(v) {
+  return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function courierConfirmationDefaultFront(nome) {
+  var n = courierNormNome(nome);
+  if (n.indexOf('marken') >= 0) {
+    return {
+      monitorConfirmacao: 'Sim',
+      emailConfirmacao: 'expobrasil@marken.com',
+      textoConfirmacao: 'Confirmamos o agendamento da retirada conforme informações abaixo.',
+      statusConfirmacao: 'Confirmado'
+    };
+  }
+  if (n.indexOf('ocasa') >= 0) {
+    return {
+      monitorConfirmacao: 'Sim',
+      emailConfirmacao: 'ocasa.com',
+      textoConfirmacao: 'Informamos que sua coleta foi devidamente agendada. Solicitamos, por gentileza, que verifique atentamente as informações abaixo:',
+      statusConfirmacao: 'Confirmado'
+    };
+  }
+  if (n.indexOf('dhl') >= 0) {
+    return {
+      monitorConfirmacao: 'Sim',
+      emailConfirmacao: 'wmxbrasil@dhl.com',
+      textoConfirmacao: 'Agendamento realizado para',
+      statusConfirmacao: 'Confirmado'
+    };
+  }
+  return {};
+}
+
+function courierConfirmationEffective(c) {
+  c = c || {};
+  var d = courierConfirmationDefaultFront(c.nome || c.courier || '');
+  return {
+    monitorConfirmacao: c.monitorConfirmacao || d.monitorConfirmacao || '',
+    emailConfirmacao: c.emailConfirmacao || d.emailConfirmacao || '',
+    textoConfirmacao: c.textoConfirmacao || d.textoConfirmacao || '',
+    statusConfirmacao: c.statusConfirmacao || d.statusConfirmacao || '',
+    fromDefault: !!d.monitorConfirmacao && (!c.monitorConfirmacao || !c.emailConfirmacao || !c.textoConfirmacao || !c.statusConfirmacao)
+  };
+}
+
+function courierConfirmationHtml(c) {
+  var eff = courierConfirmationEffective(c);
+  if (!eff.monitorConfirmacao && !eff.emailConfirmacao && !eff.textoConfirmacao && !eff.statusConfirmacao) return '';
+  return [
+    eff.monitorConfirmacao ? 'Confirmação: ' + eff.monitorConfirmacao + (eff.fromDefault ? ' (padrão)' : '') : '',
+    eff.emailConfirmacao ? 'Remetente: ' + eff.emailConfirmacao : '',
+    eff.statusConfirmacao ? 'Status: ' + eff.statusConfirmacao : '',
+    eff.textoConfirmacao ? 'Texto: ' + eff.textoConfirmacao : ''
+  ].filter(Boolean).map(esc).join('<br>');
+}
+
+function _renderTabelaCouriers(lista) {
+  var tb = document.getElementById('bodyCouriers');
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhuma courier cadastrada.</td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(function(c) {
+    var ini = c.nome ? c.nome[0].toUpperCase() : 'C';
+    var remessa1 = [c.empresa1, c.cnpj1, c.telefone1].filter(Boolean).join(' · ') || '—';
+    var remessa2 = [c.empresa2, c.cnpj2, c.telefone2].filter(Boolean).join(' · ') || '—';
+    var emails = [
+      c.email ? 'Padrão: ' + c.email : '',
+      c.emailAmbiente ? 'Ambiente: ' + c.emailAmbiente : '',
+      c.emailCongelado ? 'Congelado: ' + c.emailCongelado : '',
+      courierConfirmationHtml(c)
+    ].filter(Boolean).map(function(item) {
+      return item.indexOf('<br>') >= 0 ? item : esc(item);
+    }).join('<br>') || '—';
+    return '<tr>' +
+      '<td><div class="name-cell"><div class="row-avatar">' + esc(ini) + '</div>' +
+        '<span class="row-name">' + esc(c.nome || '—') + '</span></div></td>' +
+      '<td>' + esc(remessa1) + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">Fax: ' + esc(c.fax1 || '—') + '</div></td>' +
+      '<td>' + esc(remessa2) + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">Fax: ' + esc(c.fax2 || '—') + '</div></td>' +
+      '<td style="font-size:12px;line-height:1.45">' + emails + '</td>' +
+      '<td>' + esc(stripHtmlSimple(c.conteudoDeclaracao) || '—') + '</td>' +
+      '<td><div class="action-btns">' +
+        '<button class="icon-btn" title="Editar" onclick="abrirFormCourier(\'' + esc(c.id) + '\')"><span class="material-symbols-outlined">edit</span></button>' +
+        '<button class="icon-btn del" title="Excluir" onclick="confirmarExcluirCourier(\'' + esc(c.id) + '\')"><span class="material-symbols-outlined">delete</span></button>' +
+      '</div></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function filtrarCouriers() {
+  var q = (document.getElementById('searchCouriers').value || '').toLowerCase();
+  _renderTabelaCouriers(!q ? _couriers : _couriers.filter(function(c) {
+    return [
+      c.id, c.nome, c.empresa1, c.cnpj1, c.telefone1, c.fax1,
+      c.empresa2, c.cnpj2, c.telefone2, c.fax2, c.conteudoDeclaracao,
+      c.email, c.emailAmbiente, c.emailCongelado, c.monitorConfirmacao,
+      c.emailConfirmacao, c.textoConfirmacao, c.statusConfirmacao
+    ].join(' ').toLowerCase().indexOf(q) !== -1;
+  }));
+}
+
+function abrirFormCourier(id) {
+  var statusConfirmacaoAtual = '';
+  ensureCourierStatusConfirmacaoSelect();
+  [
+    'editCourierId','courierNome','courierEmpresa1','courierCnpj1','courierTelefone1','courierFax1',
+    'courierEmpresa2','courierCnpj2','courierTelefone2','courierFax2','courierConteudo',
+    'courierEmail','courierEmailAmbiente','courierEmailCongelado','courierMonitorConfirmacao',
+    'courierEmailConfirmacao','courierTextoConfirmacao','courierStatusConfirmacao'
+  ].forEach(function(fId) { document.getElementById(fId).value = ''; });
+  courierEditorSetHtml('');
+  document.getElementById('statusCourier').textContent = '';
+  document.getElementById('errCourierNome').classList.remove('visible');
+  document.getElementById('modalCourierTitle').textContent = id ? 'EDITAR COURIER' : 'CADASTRO DE COURIER';
+  if (id) {
+    var c = _couriers.find(function(x) { return x.id === id; });
+    if (c) {
+      document.getElementById('editCourierId').value = c.id || '';
+      document.getElementById('courierNome').value = c.nome || '';
+      document.getElementById('courierEmpresa1').value = c.empresa1 || '';
+      document.getElementById('courierCnpj1').value = c.cnpj1 || '';
+      document.getElementById('courierTelefone1').value = c.telefone1 || '';
+      document.getElementById('courierFax1').value = c.fax1 || '';
+      document.getElementById('courierEmpresa2').value = c.empresa2 || '';
+      document.getElementById('courierCnpj2').value = c.cnpj2 || '';
+      document.getElementById('courierTelefone2').value = c.telefone2 || '';
+      document.getElementById('courierFax2').value = c.fax2 || '';
+      courierEditorSetHtml(c.conteudoDeclaracao || '');
+      document.getElementById('courierEmail').value = c.email || '';
+      document.getElementById('courierEmailAmbiente').value = c.emailAmbiente || '';
+      document.getElementById('courierEmailCongelado').value = c.emailCongelado || '';
+      document.getElementById('courierMonitorConfirmacao').value = c.monitorConfirmacao || '';
+      document.getElementById('courierEmailConfirmacao').value = c.emailConfirmacao || '';
+      document.getElementById('courierTextoConfirmacao').value = c.textoConfirmacao || '';
+      statusConfirmacaoAtual = c.statusConfirmacao || '';
+    }
+  }
+  renderCourierStatusConfirmacaoOptions(statusConfirmacaoAtual);
+  aplicarDefaultsCourierConfirmacao(false);
+  renderCourierStatusConfirmacaoOptions(document.getElementById('courierStatusConfirmacao').value);
+  document.getElementById('modalCourier').classList.add('open');
+  setTimeout(function() { document.getElementById('courierNome').focus(); }, 180);
+}
+
+function aplicarDefaultsCourierConfirmacao(force) {
+  var nomeEl = document.getElementById('courierNome');
+  var infoEl = document.getElementById('courierConfirmacaoDefaultInfo');
+  if (!nomeEl) return;
+  var d = courierConfirmationDefaultFront(nomeEl.value);
+  if (!d.monitorConfirmacao) {
+    if (infoEl) infoEl.style.display = 'none';
+    return;
+  }
+  [
+    ['courierMonitorConfirmacao', 'monitorConfirmacao'],
+    ['courierEmailConfirmacao', 'emailConfirmacao'],
+    ['courierTextoConfirmacao', 'textoConfirmacao'],
+    ['courierStatusConfirmacao', 'statusConfirmacao']
+  ].forEach(function(pair) {
+    var el = pair[0] === 'courierStatusConfirmacao' ? ensureCourierStatusConfirmacaoSelect() : document.getElementById(pair[0]);
+    if (el && (force || !String(el.value || '').trim())) el.value = d[pair[1]] || '';
+  });
+  if (infoEl) {
+    infoEl.textContent = 'Regra padrão aplicada para esta courier. Os campos podem ser ajustados no próprio cadastro.';
+    infoEl.style.display = '';
+  }
+}
+
+function courierEditorSetHtml(html) {
+  var editor = document.getElementById('courierConteudoEditor');
+  var hidden = document.getElementById('courierConteudo');
+  if (editor) editor.innerHTML = html || '';
+  if (hidden) hidden.value = html || '';
+}
+
+function courierEditorHtml() {
+  var editor = document.getElementById('courierConteudoEditor');
+  return editor ? editor.innerHTML.trim() : '';
+}
+
+function courierEditorCommand(cmd) {
+  var editor = document.getElementById('courierConteudoEditor');
+  if (!editor) return;
+  editor.focus();
+  document.execCommand(cmd, false, null);
+  document.getElementById('courierConteudo').value = courierEditorHtml();
+}
+
+function courierEditorPastePlain(event) {
+  event.preventDefault();
+  var text = (event.clipboardData || window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, text);
+}
+
+function salvarCourierApp() {
+  var nome = document.getElementById('courierNome').value.trim();
+  if (!nome) {
+    document.getElementById('errCourierNome').classList.add('visible');
+    return;
+  }
+  document.getElementById('errCourierNome').classList.remove('visible');
+  var btn = document.getElementById('btnSalvarCourier');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(msg) {
+      btn.disabled = false;
+      document.getElementById('statusCourier').innerHTML = '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
+      carregarCouriers();
+      setTimeout(function() { fecharOverlay('modalCourier'); }, 900);
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      document.getElementById('statusCourier').innerHTML = '<span style="color:#e53935">✗ ' + esc(e.message) + '</span>';
+    })
+    .salvarCourier({
+      id: document.getElementById('editCourierId').value,
+      nome: nome,
+      empresa1: document.getElementById('courierEmpresa1').value.trim(),
+      cnpj1: document.getElementById('courierCnpj1').value.trim(),
+      telefone1: document.getElementById('courierTelefone1').value.trim(),
+      fax1: document.getElementById('courierFax1').value.trim(),
+      empresa2: document.getElementById('courierEmpresa2').value.trim(),
+      cnpj2: document.getElementById('courierCnpj2').value.trim(),
+      telefone2: document.getElementById('courierTelefone2').value.trim(),
+      fax2: document.getElementById('courierFax2').value.trim(),
+      conteudoDeclaracao: courierEditorHtml(),
+      email: document.getElementById('courierEmail').value.trim(),
+      emailAmbiente: document.getElementById('courierEmailAmbiente').value.trim(),
+      emailCongelado: document.getElementById('courierEmailCongelado').value.trim(),
+      monitorConfirmacao: document.getElementById('courierMonitorConfirmacao').value.trim(),
+      emailConfirmacao: document.getElementById('courierEmailConfirmacao').value.trim(),
+      textoConfirmacao: document.getElementById('courierTextoConfirmacao').value.trim(),
+      statusConfirmacao: (ensureCourierStatusConfirmacaoSelect() || document.getElementById('courierStatusConfirmacao')).value.trim()
+    });
+}
+
+function confirmarExcluirCourier(id) {
+  var c = _couriers.find(function(x) { return x.id === id; }) || {};
+  document.getElementById('confirmCourierNome').textContent =
+    'Excluir "' + (c.nome || id) + '"? Esta ação não pode ser desfeita.';
+  document.getElementById('btnConfirmExcluirCourier').onclick = function() {
+    google.script.run
+      .withSuccessHandler(function() {
+        fecharOverlay('confirmCourier');
+        carregarCouriers();
+        snack('Courier excluída.');
+      })
+      .withFailureHandler(function(e) { snack('⚠ ' + e.message); })
+      .excluirCourier(id);
+  };
+  document.getElementById('confirmCourier').classList.add('open');
+}
+
+</script>

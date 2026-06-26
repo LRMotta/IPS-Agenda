@@ -1,0 +1,995 @@
+    <!-- ═══ PROJETOS ═══ -->
+    <div class="page" id="page-projetos">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
+        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+          <div class="stat-value" id="projTotal">—</div>
+          <div class="stat-label">Total de projetos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#00796b;">
+          <div class="stat-value" id="projFases">—</div>
+          <div class="stat-label">Projetos ativos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">play_circle</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;">
+          <div class="stat-value" id="projEsps">—</div>
+          <div class="stat-label">Especialidades</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">stethoscope</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#e65100;">
+          <div class="stat-value" id="projRecrutamento">—</div>
+          <div class="stat-label" id="projRecrutamentoPct">Recrutamento</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">groups</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333; border-radius: 0 var(--r-lg) 0 0;">
+          <div class="stat-value" id="projConcluidos">—</div>
+          <div class="stat-label">Projetos concluídos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">task_alt</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchProjetos" placeholder="Buscar por código, título, fase ou patrocinador…" oninput="filtrarProjetos()">
+        </div>
+        <button class="btn-new" onclick="abrirFormProjeto(null)">
+          <span class="material-symbols-outlined">add</span> Novo Projeto
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Projeto</th>
+              <th>Fase</th>
+              <th>Especialidade</th>
+              <th>Equipe</th>
+              <th>Patrocinador / CRO</th>
+              <th>Recrutamento</th>
+              <th class="wide-only">Centro</th>
+              <th>Status</th>
+              <th style="text-align:right; padding-right:20px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="bodyProjetos">
+            <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <button class="scroll-top-btn" id="btnScrollTop" type="button" title="Voltar ao topo" aria-label="Voltar ao topo" onclick="scrollAppToTop()">
+      <span class="material-symbols-outlined">keyboard_arrow_up</span>
+    </button>
+    <button class="floating-add-btn" id="btnFloatingAdd" type="button" title="Novo registro" aria-label="Novo registro" onclick="handleFloatingAdd()">
+      <span class="material-symbols-outlined">add</span>
+    </button>
+
+    <!-- ═══ MONITORES ═══ -->
+    <div class="page" id="page-monitores">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
+        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+          <div class="stat-value" id="monTotal">—</div>
+          <div class="stat-label">Monitores cadastrados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">visibility</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;">
+          <div class="stat-value" id="monProjetos">—</div>
+          <div class="stat-label">Projetos monitorados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333; border-radius: 0 var(--r-lg) 0 0;">
+          <div class="stat-value" id="monMulti">—</div>
+          <div class="stat-label">Em mais de 1 projeto</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">account_tree</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchMonitores" placeholder="Buscar por nome, e-mail, telefone ou projeto…" oninput="filtrarMonitores()">
+        </div>
+        <button class="btn-new" onclick="abrirFormMonitor(null)">
+          <span class="material-symbols-outlined">add</span> Novo Monitor
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Monitor</th>
+              <th>E-mail</th>
+              <th>Telefone</th>
+              <th>Projetos</th>
+              <th style="text-align:right; padding-right:20px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="bodyMonitores">
+            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ CONFIGURAÇÕES ═══ -->
+    <div class="page" id="page-configuracoes">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="cfgTotal">0</div>
+          <div class="stat-label">Configurações</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">settings</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333">
+          <div class="stat-value" id="cfgAtivas">0</div>
+          <div class="stat-label">Ativas</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">check_circle</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#e65100">
+          <div class="stat-value" id="cfgGrupos">0</div>
+          <div class="stat-label">Grupos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">category</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="cfgApoio">0</div>
+          <div class="stat-label">Itens de apoio</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">tune</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchConfig" placeholder="Buscar por grupo, chave, valor ou observação..." oninput="filtrarConfig()">
+        </div>
+        <select class="f-input f-select" id="filterConfigBloco" onchange="filtrarConfig()" style="max-width:160px;height:40px">
+          <option value="">Todos os blocos</option>
+          <option value="Principal">Principal</option>
+          <option value="Apoio">Apoio</option>
+        </select>
+        <button class="btn-refresh" onclick="abrirOverlay('modalConfigAjuda')" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
+          <span class="material-symbols-outlined">help</span> Ajuda
+        </button>
+        <button class="btn-new" onclick="abrirFormConfig(null)">
+          <span class="material-symbols-outlined">add</span> Nova Configuração
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Bloco</th>
+            <th>Grupo</th>
+            <th>Chave</th>
+            <th>Valor</th>
+            <th>Ativo</th>
+            <th>Ordem</th>
+            <th>Observação</th>
+            <th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyConfig">
+            <tr class="loading-row"><td colspan="8"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ PRESTADORES ═══ -->
+    <div class="page" id="page-prestadores">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="prestTotal">0</div>
+          <div class="stat-label">Total cadastrados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">business</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#00796b;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="prestComEmail">0</div>
+          <div class="stat-label">Com e-mail cadastrado</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">mail</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchPrestadores" placeholder="Buscar por empresa, endereço ou e-mail" oninput="filtrarPrestadores()">
+        </div>
+        <button class="btn-new" onclick="abrirFormPrestador(null)">
+          <span class="material-symbols-outlined">add</span> Novo Prestador
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Empresa</th>
+            <th>Endereço</th>
+            <th>E-mail</th>
+            <th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyPrestadores">
+            <tr class="loading-row"><td colspan="4"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ LAB CENTRAL ═══ -->
+    <div class="page" id="page-labcentral">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="labCentralTotal">0</div>
+          <div class="stat-label">Laboratórios centrais</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">biotech</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#00796b;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="labCentralCdc">0</div>
+          <div class="stat-label">Com CDC Permit</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">verified</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchLabCentral" placeholder="Buscar por laboratório, cidade, país, contato ou CDC Permit" oninput="filtrarLabCentral()">
+        </div>
+        <button class="btn-new" onclick="abrirFormLabCentral(null)">
+          <span class="material-symbols-outlined">add</span> Novo Lab Central
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Nome abreviado</th>
+            <th>Nome completo</th>
+            <th>Cidade / País</th>
+            <th>Contato</th>
+            <th>CDC Permit</th>
+            <th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyLabCentral">
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ COURIERS ═══ -->
+    <div class="page" id="page-couriers">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="courierTotal">0</div>
+          <div class="stat-label">Couriers cadastradas</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#00796b;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="courierEmailTotal">0</div>
+          <div class="stat-label">Com e-mail configurado</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">alternate_email</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchCouriers" placeholder="Buscar por courier, CNPJ, empresa ou e-mail" oninput="filtrarCouriers()">
+        </div>
+        <button class="btn-new" onclick="abrirFormCourier(null)">
+          <span class="material-symbols-outlined">add</span> Nova Courier
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Courier</th>
+            <th>Remessa 1</th>
+            <th>Remessa 2</th>
+            <th>E-mails</th>
+            <th>Declaração</th>
+            <th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyCouriers">
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ EQUIPAMENTOS RECEBIDOS ═══ -->
+    <div class="page" id="page-equipamentos">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="eqTotal">0</div>
+          <div class="stat-label">Equipamentos recebidos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">devices</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333">
+          <div class="stat-value" id="eqUcsSim">0</div>
+          <div class="stat-label">Cadastro UCS</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">verified</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a">
+          <div class="stat-value" id="eqRmSim">0</div>
+          <div class="stat-label">Registro RM</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">fact_check</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#e65100;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="eqDevolvidos">0</div>
+          <div class="stat-label">Devolvidos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">assignment_return</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchEquipamentos" placeholder="Buscar por projeto, descrição, série, nota fiscal ou responsável..." oninput="filtrarEquipamentos()">
+        </div>
+        <button class="btn-new" onclick="abrirFormEquipamento(null)">
+          <span class="material-symbols-outlined">add</span> Novo Equipamento Recebido
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Projeto</th>
+            <th>Descrição</th>
+            <th>Série</th>
+            <th>Qtde.</th>
+            <th>Cadastro UCS</th>
+            <th>Registro RM</th>
+            <th>Localização</th>
+            <th>Recebimento</th>
+            <th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyEquipamentos">
+            <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ MEDICAMENTOS ═══ -->
+    <div class="page" id="page-medicamentos">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="medicamentosTotal">0</div>
+          <div class="stat-label">Registros de recebimento</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">medication</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333">
+          <div class="stat-value" id="medRmSim">0</div>
+          <div class="stat-label">Registro RM</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">fact_check</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#e65100">
+          <div class="stat-value" id="medProjetos">0</div>
+          <div class="stat-label">Projetos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#b3261e;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="medQuantidadeRecebida">0</div>
+          <div class="stat-label">Quantidade recebida</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">inventory_2</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchMedicamentos" placeholder="Buscar por projeto, descrição, lote, nota fiscal ou responsável..." oninput="filtrarMedicamentos()">
+        </div>
+        <button class="btn-new" onclick="abrirFormMedicamento(null)">
+          <span class="material-symbols-outlined">add</span> Novo Medicamento
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Projeto</th>
+            <th>Descrição</th>
+            <th>Lote</th>
+            <th>Validade</th>
+            <th>Qtde.</th>
+            <th>Registro RM</th>
+            <th>Localização</th>
+            <th>Recebimento</th>
+            <th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyMedicamentos">
+            <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ SOLICITANTES ═══ -->
+    <div class="page" id="page-solicitantes">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
+        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+          <div class="stat-value" id="solTotal">—</div>
+          <div class="stat-label">Total cadastrados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#00796b; border-radius: 0 var(--r-lg) 0 0;">
+          <div class="stat-value" id="solFormacoes">—</div>
+          <div class="stat-label">Formações distintas</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">school</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchSolicitantes" placeholder="Buscar por nome, formação, registro ou e-mail…" oninput="filtrarSolicitantes()">
+        </div>
+        <button class="btn-new" onclick="abrirFormSolicitante(null)">
+          <span class="material-symbols-outlined">add</span> Novo Solicitante
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Solicitante</th>
+              <th>Formação</th>
+              <th>Registro no Conselho Profissional</th>
+              <th>E-mail</th>
+              <th style="text-align:right; padding-right:20px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="bodySolicitantes">
+            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ PARTICIPANTES ═══ -->
+    <div class="page" id="page-participantes">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
+        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+          <div class="stat-value" id="parTotal">—</div>
+          <div class="stat-label">Total cadastrados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333;">
+          <div class="stat-value" id="parAtivos">—</div>
+          <div class="stat-label">Ativos / Em Seguimento</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">favorite</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#e65100;">
+          <div class="stat-value" id="parTriagem">—</div>
+          <div class="stat-label">Em triagem</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">pending</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a; border-radius: 0 var(--r-lg) 0 0;">
+          <div class="stat-value" id="parProjetos">—</div>
+          <div class="stat-label">Projetos ativos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchParticipantes" placeholder="Buscar por nome, projeto ou status…" oninput="filtrarParticipantes()">
+        </div>
+        <select class="f-select" id="filterStatusPar" onchange="filtrarParticipantes()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;">
+          <option value="">Todos os status</option>
+        </select>
+        <button class="btn-new" onclick="abrirFormParticipante(null)">
+          <span class="material-symbols-outlined">add</span> Novo Participante
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:36px;"></th>
+              <th>Participante</th>
+              <th>Data de Nascimento</th>
+              <th>Projeto</th>
+              <th>Status</th>
+              <th>Última Visita Realizada</th>
+              <th style="text-align:right; padding-right:20px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="bodyParticipantes">
+            <tr class="loading-row"><td colspan="7"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ AGENDA ═══ -->
+    <div class="page" id="page-agenda">
+      <div class="ag-wrap">
+        <div class="ag-toolbar">
+          <button class="ag-tb-btn icon" title="Semana anterior" onclick="agendaNavWeek(-1)"><span class="material-symbols-outlined">chevron_left</span></button>
+          <button class="ag-tb-btn primary" onclick="agendaGoToday()"><span class="material-symbols-outlined">today</span> Hoje</button>
+          <label class="ag-date-jump" id="agendaDateJump" title="Ir para data">
+            <span class="ag-tb-btn icon" aria-hidden="true"><span class="material-symbols-outlined">calendar_month</span></span>
+            <input type="date" id="agendaGoDateInput" aria-label="Ir para uma data" onclick="this.value=''" onchange="agendaGoToDate(this.value)">
+          </label>
+          <button class="ag-tb-btn icon" title="Proxima semana" onclick="agendaNavWeek(1)"><span class="material-symbols-outlined">chevron_right</span></button>
+          <span class="ag-period" id="agendaPeriodo">Semana atual</span>
+          <span class="ag-sep"></span>
+          <button class="ag-tb-btn active" id="agendaBtnLista" onclick="agendaSetView('lista')"><span class="material-symbols-outlined">view_agenda</span> Lista</button>
+          <button class="ag-tb-btn" id="agendaBtnSemana" onclick="agendaSetView('semana')"><span class="material-symbols-outlined">calendar_view_week</span> Semana</button>
+          <button class="ag-tb-btn" id="agendaBtnPrintWeek" title="Imprimir semana" onclick="imprimirAgendaSemana()" style="display:none"><span class="material-symbols-outlined">print</span> Imprimir semana</button>
+          <div class="ag-search"><span class="material-symbols-outlined">search</span><input type="text" id="agendaBusca" placeholder="Buscar no historico: participante, projeto, visita, courier..." oninput="renderAgendaOperacional()"></div>
+          <button class="ag-tb-btn" title="Atualizar" onclick="carregarAgendaEventos(true)"><span class="material-symbols-outlined">refresh</span></button>
+          <button class="ag-tb-btn primary" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined">add</span> Novo Agendamento</button>
+        </div>
+        <div class="ag-create-panel" id="agendaCreatePanel" onclick="fecharAgendaModalSeFora(event)">
+          <div class="ag-create-box" onclick="event.stopPropagation()">
+            <div class="ag-create-head">
+              <span class="material-symbols-outlined">event</span>
+              <div style="flex:1">
+                <div class="modal-header-title">NOVO AGENDAMENTO</div>
+                <div class="modal-header-sub">Evento da Agenda e dados logisticos vinculados</div>
+              </div>
+              <button class="modal-close" onclick="fecharAgendaModal()"><span class="material-symbols-outlined">close</span></button>
+            </div>
+            <div class="ag-create-body">
+          <div class="section-label"><span class="material-symbols-outlined">event</span> Novo evento</div>
+          <div id="agendaEmailAviso" style="display:none;margin-bottom:12px;background:#fff8e1;border-left:3px solid #ffc107;border-radius:6px;padding:10px 12px;color:#7a5c00;font-size:12px">
+            E-mails de lab central estao em modo teste. Para envio real, configure Agenda / Enviar emails lab central = Sim no Config_App.
+          </div>
+          <div class="field-row cols-2" style="margin-bottom:14px">
+            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false)"><div class="field-error" id="errAgData">Informe a data.</div></div>
+            <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false)"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao inicio.</div></div>
+            <div id="agHoraWrap"><label class="field-label" for="agHora">Horario <span class="required-star">*</span></label><input type="time" id="agHora" class="f-input large" oninput="limparErro('agHora','errAgHora')"><div class="field-error" id="errAgHora">Informe o horario.</div></div>
+          </div>
+          <div class="field-row cols-2" style="margin-bottom:14px">
+            <div><label class="field-label" for="agTipo">Tipo de evento <span class="required-star">*</span></label><select id="agTipo" class="f-input f-select" onchange="onAgendaTipoChange();limparErro('agTipo','errAgTipo')"></select><div class="field-error" id="errAgTipo">Selecione o tipo.</div></div>
+            <div><label class="field-label" for="agStatus">Status</label><select id="agStatus" class="f-input f-select" onchange="atualizarAgendaPostVisitVisibility()"></select></div>
+          </div>
+          <div class="field-row cols-2" style="margin-bottom:14px">
+            <div id="agParticipanteWrap">
+              <label class="field-label" for="agParticipante">Participante</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="agParticipante" class="f-input f-select" onchange="onAgendaParticipanteChange()" style="flex:1"></select>
+                <button type="button" class="ag-tb-btn" title="Cadastrar novo participante" onclick="abrirNovoParticipanteAgenda()">
+                  <span class="material-symbols-outlined">person_add</span>
+                </button>
+              </div>
+            </div>
+            <div id="agProjetoWrap"><label class="field-label" for="agProjeto">Projeto <span class="required-star" id="agProjetoRequired" style="display:none">*</span></label><select id="agProjeto" class="f-input f-select" onchange="onAgendaProjetoChange();limparErro('agProjeto','errAgProjeto')"></select><div class="field-error" id="errAgProjeto">Selecione o projeto/protocolo.</div></div>
+          </div>
+          <div id="agMonitorWrap" style="display:none;margin-bottom:14px">
+            <div class="field-row cols-2">
+              <div>
+                <label class="field-label" for="agMonitor1">Monitor 1 <span class="required-star">*</span></label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select id="agMonitor1" class="f-input f-select" onchange="atualizarAgendaMonitorNome();limparErro('agMonitor1','errAgMonitor1')" style="flex:1"></select>
+                  <button type="button" class="ag-tb-btn" title="Cadastrar novo monitor" onclick="abrirNovoMonitorAgenda()">
+                    <span class="material-symbols-outlined">person_add</span>
+                  </button>
+                </div>
+                <div class="field-error" id="errAgMonitor1">Selecione ao menos um monitor vinculado ao projeto.</div>
+              </div>
+              <div>
+                <label class="field-label" for="agMonitor2">Monitor 2</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select id="agMonitor2" class="f-input f-select" onchange="atualizarAgendaMonitorNome()" style="flex:1"></select>
+                  <button type="button" class="ag-tb-btn" title="Cadastrar novo monitor" onclick="abrirNovoMonitorAgenda()">
+                    <span class="material-symbols-outlined">person_add</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:14px">
+              <label class="field-label" for="agSalaMonitoria">Local (sala) <span class="required-star">*</span></label>
+              <select id="agSalaMonitoria" class="f-input f-select" onchange="limparErro('agSalaMonitoria','errAgSalaMonitoria')"></select>
+              <div class="field-error" id="errAgSalaMonitoria">Selecione a sala onde a monitoria ocorrerá.</div>
+            </div>
+            <input type="hidden" id="agMonitorNome">
+          </div>
+          <div id="agPartInfo" style="display:none;margin-bottom:14px;background:#f0f7ff;border:1px solid #c5d5fb;border-radius:8px;padding:10px 12px;font-size:12px;color:#1a5276"></div>
+          <div class="field-row cols-2" style="margin-bottom:14px">
+            <div id="agVisitaWrap"><label class="field-label" for="agVisita">Visita</label><input type="text" id="agVisita" class="f-input" placeholder="Ex: V1, Triagem, C1D1"></div>
+            <div id="agMedicoWrap"><label class="field-label" for="agMedico">Medico</label><select id="agMedico" class="f-input f-select"></select></div>
+          </div>
+          <div class="field-row cols-2" style="margin-bottom:14px">
+            <div id="agPrestadorWrap">
+              <label class="field-label" for="agPrestador">Servicos terceirizados</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="agPrestador" class="f-input f-select" style="flex:1" onchange="atualizarAgendaReqStatusVisibility();validarAgendaAlertasDataPassada()"></select>
+                <button type="button" class="ag-tb-btn" title="Criar requisicao de exames com os dados deste agendamento" onclick="abrirReqExamesDaAgenda()">
+                  <span class="material-symbols-outlined">assignment_add</span> Req.
+                </button>
+              </div>
+            </div>
+            <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratorio central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')"><option value=""></option><option>Sim</option><option>Nao</option></select><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
+          </div>
+          <div id="agProcedimentosWrap">
+            <label class="field-label" for="agProcedimentos">Procedimentos</label>
+            <div class="ag-proc-chips" id="agProcedimentosChips"></div>
+            <textarea id="agProcedimentos" class="f-input" style="margin-bottom:14px" placeholder="Procedimentos previstos..."></textarea>
+          </div>
+          <div id="agCarroRequeridoWrap" style="display:none;margin:4px 0 22px">
+            <label for="agCarroRequerido" style="display:flex;align-items:center;gap:8px;color:#5f6b7c;font-size:12px;font-weight:600;cursor:pointer">
+              <input type="checkbox" id="agCarroRequerido" style="width:18px;height:18px;accent-color:#b26a00;margin:0">
+              <span class="material-symbols-outlined" style="font-size:19px;color:#b26a00">electric_car</span>
+              <span>Requer carro para deslocamento da equipe</span>
+            </label>
+          </div>
+          <label class="field-label" for="agObs">Observacoes</label><textarea id="agObs" class="f-input" placeholder="Observacoes adicionais..."></textarea>
+          <label id="agReqEnviadaWrap" style="display:none;align-items:center;gap:8px;margin:10px 0 14px;color:#5f6b7c;font-size:12px;font-weight:600">
+            <input type="checkbox" id="agReqEnviada" onchange="onAgendaReqEnviadaChange()" style="width:18px;height:18px;accent-color:#137333">
+            Requisição Enviada
+          </label>
+          <div class="ag-post-checks" id="agPostVisitWrap">
+            <span class="ag-post-checks-title"><span class="material-symbols-outlined">fact_check</span> Pós-visita</span>
+            <label class="ag-post-check" for="agPoloTrialOk">
+              <input type="checkbox" id="agPoloTrialOk">
+              <span class="ag-polo-icon" aria-hidden="true"></span>
+              <span>Polo Trial</span>
+            </label>
+            <label class="ag-post-check" for="agEcrfOk">
+              <input type="checkbox" id="agEcrfOk">
+              <span class="material-symbols-outlined">dynamic_form</span>
+              <span>eCRF</span>
+            </label>
+          </div>
+          <div class="ag-log-card" id="agKitCard" style="display:none">
+            <div class="ag-log-title"><span class="material-symbols-outlined">inventory_2</span> Kits de coleta</div>
+            <div class="ag-form-grid-3">
+              <div><label class="field-label" for="agKit1">Kit principal</label><select id="agKit1" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
+              <div id="agKit2Wrap" style="display:none"><label class="field-label" for="agKit2">Kit adicional</label><select id="agKit2" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
+              <div id="agKit3Wrap" style="display:none"><label class="field-label" for="agKit3">Kit adicional</label><select id="agKit3" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
+              <div id="agKit4Wrap" style="display:none"><label class="field-label" for="agKit4">Kit adicional</label><select id="agKit4" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
+              <div id="agKit5Wrap" style="display:none"><label class="field-label" for="agKit5">Kit adicional</label><select id="agKit5" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
+              <div id="agKit6Wrap" style="display:none"><label class="field-label" for="agKit6">Kit adicional</label><select id="agKit6" class="f-input f-select"></select></div>
+            </div>
+            <button class="ag-tb-btn" id="btnBaixarKitsAgenda" type="button" onclick="baixarKitsAgendaEvento()" style="display:none;margin-top:12px;width:100%;justify-content:center">
+              <span class="material-symbols-outlined">inventory</span> Dar baixa nos kits selecionados
+            </button>
+          </div>
+          <div class="ag-log-card" id="agTransporteCard" style="display:none">
+            <div class="ag-log-title"><span class="material-symbols-outlined">local_shipping</span> Transporte de Amostras</div>
+            <div class="ag-form-grid-3">
+              <div id="agC1Wrap">
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">counter_1</span> Transporte de Amostras I <button class="ag-c-doc-btn" id="btnGerarTransp1" type="button" onclick="gerarTransporteAgenda('1','btnGerarTransp1')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+                <div class="ag-transport-fields">
+                  <div><label class="field-label" for="agC1Nome">Courier</label><select id="agC1Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC1')"></select></div>
+                  <div><label class="field-label" for="agC1Destino">Laboratório destino</label><select id="agC1Destino" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC1Temp">Temperatura</label><select id="agC1Temp" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC1Status">Status</label><select id="agC1Status" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC1Awb">AWB</label><input type="text" id="agC1Awb" class="f-input" placeholder="AWB"></div>
+                </div>
+                <label class="field-label" for="agC1Material">Material biológico</label>
+                <div id="agC1Material" class="ag-mat-editor"></div>
+              </div>
+              <div id="agC2Wrap">
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">counter_2</span> Transporte de Amostras II <button class="ag-c-doc-btn" id="btnGerarTransp2" type="button" onclick="gerarTransporteAgenda('2','btnGerarTransp2')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+                <div class="ag-transport-fields">
+                  <div><label class="field-label" for="agC2Nome">Courier</label><select id="agC2Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC2')"></select></div>
+                  <div><label class="field-label" for="agC2Destino">Laboratório destino</label><select id="agC2Destino" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC2Temp">Temperatura</label><select id="agC2Temp" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC2Status">Status</label><select id="agC2Status" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC2Awb">AWB</label><input type="text" id="agC2Awb" class="f-input" placeholder="AWB"></div>
+                </div>
+                <label class="field-label" for="agC2Material">Material biológico</label>
+                <div id="agC2Material" class="ag-mat-editor"></div>
+              </div>
+              <div id="agC3Wrap">
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">counter_3</span> Transporte de Amostras III <button class="ag-c-doc-btn" id="btnGerarTransp3" type="button" onclick="gerarTransporteAgenda('3','btnGerarTransp3')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+                <div class="ag-transport-fields">
+                  <div><label class="field-label" for="agC3Nome">Courier</label><select id="agC3Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC3')"></select></div>
+                  <div><label class="field-label" for="agC3Destino">Laboratório destino</label><select id="agC3Destino" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC3Temp">Temperatura</label><select id="agC3Temp" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC3Status">Status</label><select id="agC3Status" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC3Awb">AWB</label><input type="text" id="agC3Awb" class="f-input" placeholder="AWB"></div>
+                </div>
+                <label class="field-label" for="agC3Material">Material biológico</label>
+                <div id="agC3Material" class="ag-mat-editor"></div>
+              </div>
+            </div>
+            <div class="ag-transport-actions">
+              <button class="ag-tb-btn" id="btnMostrarAgC3" type="button" onclick="mostrarAgendaTransporteOpcional('agC3')">
+                <span class="material-symbols-outlined">add</span> Adicionar Transporte III
+              </button>
+              <button class="ag-tb-btn" id="btnMostrarAgBackup" type="button" onclick="mostrarAgendaTransporteOpcional('agBackup')">
+                <span class="material-symbols-outlined">add</span> Adicionar backup
+              </button>
+            </div>
+            <div class="ag-transport-box" id="agBackupWrap">
+              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnGerarTranspB" type="button" onclick="gerarTransporteAgenda('backup','btnGerarTranspB')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+              <div class="ag-transport-fields backup">
+                <div><label class="field-label" for="agBackupNome">Courier</label><select id="agBackupNome" class="f-input f-select" onchange="onAgendaCourierChange('agBackup')"></select></div>
+                <div><label class="field-label" for="agBackupDestino">Laboratório destino</label><select id="agBackupDestino" class="f-input f-select"></select></div>
+                <div><label class="field-label" for="agBackupStatus">Status</label><select id="agBackupStatus" class="f-input f-select"></select></div>
+              </div>
+              <label class="field-label" for="agBackupMaterial">Material biológico</label>
+              <div id="agBackupMaterial" class="ag-mat-editor"></div>
+            </div>
+          </div>
+          <button class="ag-tb-btn" type="button" onclick="abrirDisplayAgendaFromForm()" style="margin-top:12px;width:100%;height:40px;justify-content:center">
+            <span class="material-symbols-outlined">picture_in_picture</span> Gerar Display
+          </button>
+          <button class="btn-save" id="btnSalvarAgenda" onclick="salvarAgendaEvento()"><span class="material-symbols-outlined">event_available</span> Salvar evento</button>
+          <div id="agendaStatusMsg" class="status-msg"></div>
+            </div>
+          </div>
+        </div>
+        <div class="ag-view-wrap">
+          <div id="agendaViewLista"><div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div></div>
+          <div id="agendaViewSemana" style="display:none"><div class="ag-week-wrap"><div class="ag-week-grid" id="agendaWeekGrid"></div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ REQUISIÇÃO DE EXAMES ═══ -->
+    <div class="page" id="page-requisicao">
+      <div class="req-card">
+        <div class="req-body">
+          <!-- Toggle URGENTE -->
+          <div class="urgente-row" id="urgenteRow">
+            <button class="urgente-toggle-btn" id="urgenteBtnForm" onclick="toggleUrgente()">
+              <span class="material-symbols-outlined" id="urgenteIcon">radio_button_unchecked</span>
+              <span id="urgenteLabel">NÃO URGENTE</span>
+            </button>
+          </div>
+          <!-- 1. Dados do Paciente -->
+          <div class="form-section">
+            <div class="section-label">
+              <span class="material-symbols-outlined">badge</span> Dados do Paciente
+            </div>
+            <div class="field" style="margin-bottom:14px">
+              <label class="field-label" for="rqPaciente">Nome do Paciente <span class="required-star">*</span></label>
+              <div class="ac-wrap">
+                <input type="text" id="rqPaciente" class="f-input large" placeholder="Digite o nome do paciente" autocomplete="off"
+                  onfocus="renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
+                  oninput="_rqSelPaciente=null;renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
+                  onblur="setTimeout(function(){fecharReqAC('rqPacienteList');preencherDadosPaciente()},160)"
+                  onkeydown="navReqAC(event,'rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')">
+                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+                <div class="ac-list" id="rqPacienteList"></div>
+              </div>
+            </div>
+            <div class="field-row cols-2">
+              <div>
+                <label class="field-label" for="rqNascimento">Data de Nascimento</label>
+                <input type="text" id="rqNascimento" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
+              </div>
+              <div>
+                <label class="field-label" for="rqProtocolo">Protocolo / Projeto</label>
+                <input type="text" id="rqProtocolo" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
+              </div>
+            </div>
+            <div class="field" style="margin-top:14px">
+              <label class="field-label" for="rqMedico">Médico Solicitante</label>
+              <input type="text" id="rqMedico" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
+            </div>
+          </div>
+          <!-- 2. Solicitante -->
+          <div class="form-section">
+            <div class="section-label">
+              <span class="material-symbols-outlined">support_agent</span> Solicitante
+            </div>
+            <div class="field">
+              <label class="field-label" for="rqSolicitante">Nome do Solicitante <span class="required-star">*</span></label>
+              <div class="ac-wrap">
+                <input type="text" id="rqSolicitante" class="f-input" placeholder="Digite o nome do solicitante" autocomplete="off"
+                  onfocus="renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
+                  oninput="_rqSelSolicitante=null;renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
+                  onblur="setTimeout(function(){fecharReqAC('rqSolicitanteList');preencherDadosSolicitante()},160)"
+                  onkeydown="navReqAC(event,'rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')">
+                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+                <div class="ac-list" id="rqSolicitanteList"></div>
+              </div>
+              <div class="solicitante-card" id="solicitanteCard">
+                <div class="sol-name" id="solCardNome">—</div>
+                <div class="sol-detail" id="solCardDetalhe">—</div>
+              </div>
+            </div>
+          </div>
+          <!-- 3. Prestador -->
+          <div class="form-section">
+            <div class="section-label">
+              <span class="material-symbols-outlined">business</span> Prestador / Laboratório
+            </div>
+            <div class="field">
+              <label class="field-label" for="rqPrestador">Prestador <span class="required-star">*</span></label>
+              <div class="ac-wrap">
+                <input type="text" id="rqPrestador" class="f-input" placeholder="Digite o nome do prestador" autocomplete="off"
+                  onfocus="renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
+                  oninput="_rqSelPrestador=null;renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
+                  onblur="setTimeout(function(){fecharReqAC('rqPrestadorList')},160)"
+                  onkeydown="navReqAC(event,'rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')">
+                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+                <div class="ac-list" id="rqPrestadorList"></div>
+              </div>
+            </div>
+            <div class="field-row cols-2" style="margin-top:14px">
+              <div>
+                <label class="field-label" for="rqData">Data do Exame <span class="required-star">*</span></label>
+                <input type="date" id="rqData" class="f-input">
+              </div>
+              <div>
+                <label class="field-label" for="rqHorario">Horario</label>
+                <input type="time" id="rqHorario" class="f-input">
+              </div>
+            </div>
+            <div class="field" style="margin-top:14px">
+              <label class="field-label" for="rqEndereco">Endereco</label>
+              <input type="text" id="rqEndereco" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
+            </div>
+          </div>
+          <!-- 4. Exames -->
+          <div class="form-section">
+            <div class="section-label">
+              <span class="material-symbols-outlined">biotech</span> Exames Solicitados
+              <span class="exam-count" id="examCount">0 exame(s)</span>
+              <button class="ag-tb-btn" type="button" onclick="abrirReqPreloadModal()" title="Gerenciar exames padrão do projeto" style="margin-left:auto">
+                <span class="material-symbols-outlined">tune</span> Gerenciar exames padrão
+              </button>
+            </div>
+            <div id="examList"></div>
+            <button class="btn-add-exam" onclick="addExam()">
+              <span class="material-symbols-outlined">add</span> Adicionar exame
+            </button>
+          </div>
+          <!-- 5. Observações -->
+          <div class="form-section">
+            <div class="section-label">
+              <span class="material-symbols-outlined">notes</span> Observações
+            </div>
+            <textarea id="rqObs" class="f-textarea" placeholder="Informações adicionais, jejum, preparo especial…"></textarea>
+          </div>
+          <!-- Botão salvar -->
+          <div class="req-actions">
+          <button class="btn-save" id="btnSalvarReq" onclick="salvarRequisicao()">
+            <span class="material-symbols-outlined">print</span> GERAR REQUISIÇÃO
+          </button>
+          <button class="ag-tb-btn" type="button" onclick="limparRequisicaoForm()" title="Limpar formulario"><span class="material-symbols-outlined">cleaning_services</span> Limpar</button>
+          </div>
+          <div class="status-msg" id="statusReq"></div>
+        </div>
+      </div>
+    </div>
+
+<div class="modal-overlay" id="modalReqPreload" onclick="fecharModalSeClicouFora(event,'modalReqPreload')">
+  <div class="modal-box" style="max-width:760px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">biotech</span></div>
+      <div>
+        <div class="modal-header-title">EXAMES PADRÃO DO PROJETO</div>
+        <div class="modal-header-sub" id="reqPreloadSub">Preload da Requisição de Exames</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalReqPreload')">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label" for="reqPreloadProjeto">Projeto</label>
+        <input type="text" id="reqPreloadProjeto" class="f-input auto-fill" readonly>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label class="field-label" for="reqPreloadExames">Exames</label>
+        <textarea id="reqPreloadExames" class="f-textarea" style="height:280px;font-family:Roboto Mono,Consolas,monospace" placeholder="Um exame por linha"></textarea>
+      </div>
+      <div class="req-actions" style="justify-content:space-between;margin-top:18px">
+        <button class="ag-tb-btn" type="button" onclick="reqPreloadUsarListaAtual()">
+          <span class="material-symbols-outlined">content_paste</span> Usar lista atual
+        </button>
+        <div style="display:flex;gap:8px">
+          <button class="ag-tb-btn" type="button" onclick="fecharOverlay('modalReqPreload')">Cancelar</button>
+          <button class="btn-save" id="btnSalvarReqPreload" type="button" onclick="salvarReqPreloadProjeto()">
+            <span class="material-symbols-outlined">save</span> Salvar padrão
+          </button>
+        </div>
+      </div>
+      <div class="status-msg" id="statusReqPreload"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmReqPreload">
+  <div class="confirm-box" style="max-width:440px;">
+    <h3>Substituir exames pela lista padr&atilde;o?</h3>
+    <p id="confirmReqPreloadMsg">Confirme para carregar os exames padr&atilde;o do projeto.</p>
+    <div class="confirm-actions">
+      <button class="btn-txt" type="button" onclick="fecharOverlay('confirmReqPreload')">Manter exames atuais</button>
+      <button class="btn-new" type="button" id="btnConfirmReqPreload">
+        <span class="material-symbols-outlined">sync_alt</span> Substituir
+      </button>
+    </div>
+  </div>
+</div>
+
+    <div class="page" id="page-usuarios">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="usersTotal">—</div>
+          <div class="stat-label">Usuários cadastrados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333">
+          <div class="stat-value" id="usersAtivos">—</div>
+          <div class="stat-label">Ativos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">verified_user</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="usersAdmins">—</div>
+          <div class="stat-label">Admins</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">admin_panel_settings</span></div>
+        </div>
+      </div>
+      <div class="audit-toolbar">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchUsersAdmin" placeholder="Buscar por nome, e-mail, perfil ou status..." oninput="renderUsersAdmin()">
+        </div>
+        <button class="btn-new" onclick="abrirFormUsuarioAdmin()">
+          <span class="material-symbols-outlined">person_add</span> Novo usuário
+        </button>
+        <button class="btn-new" onclick="carregarUsersAdmin()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)">
+          <span class="material-symbols-outlined">refresh</span> Atualizar
+        </button>
+      </div>
+      <div class="table-card">
+        <table class="data-table" style="min-width:860px">
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>E-mail</th>
+              <th>Perfil</th>
+              <th>Status</th>
+              <th style="text-align:right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="bodyUsersAdmin">
+            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ VISUALIZAÇÃO DO ESTOQUE ═══ -->
+    <div class="page" id="page-audit-log">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="auditTotal">—</div>
+          <div class="stat-label" id="auditTotalLabel">Registros carregados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">receipt_long</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333">
+          <div class="stat-value" id="auditUsers">—</div>
+          <div class="stat-label">Usuários</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="auditModules">—</div>
+          <div class="stat-label">Módulos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">widgets</span></div>
+        </div>
+      </div>
+      <div class="audit-toolbar">
+        <div class="audit-tabs" role="tablist" aria-label="Tipo de auditoria">
+          <button type="button" class="audit-tab active" id="auditTabLog" onclick="setAuditView('log')">
+            <span class="material-symbols-outlined">receipt_long</span>Ações
+          </button>
+          <button type="button" class="audit-tab" id="auditTabChanges" onclick="setAuditView('changes')">
+            <span class="material-symbols-outlined">difference</span>Alterações
+          </button>
+        </div>
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchAudit" placeholder="Buscar por e-mail, ação, módulo, campo ou ID..." oninput="renderAuditLog()">
+        </div>
+        <select class="f-input f-select" id="auditLimit" onchange="carregarAuditLog()" style="max-width:150px;height:40px">
+          <option value="100">Últimos 100</option>
+          <option value="200" selected>Últimos 200</option>
+          <option value="500">Últimos 500</option>
+          <option value="1000">Últimos 1000</option>
+        </select>
+        <button class="btn-new" onclick="carregarAuditLog()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)">
+          <span class="material-symbols-outlined">refresh</span> Atualizar
+        </button>
+        <div class="audit-pager" id="auditPager"></div>
+      </div>
+      <div class="table-card">
+        <table class="data-table" style="min-width:900px">
+          <thead id="headAuditLog"></thead>
+          <tbody id="bodyAuditLog">
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
