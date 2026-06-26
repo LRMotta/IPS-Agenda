@@ -172,6 +172,54 @@
     </div>
 
     <!-- ═══ PRESTADORES ═══ -->
+    <div class="page" id="page-diagnostico">
+      <div class="stats-row diag-stats">
+        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="diagVersion">--</div>
+          <div class="stat-label">Versao publicada</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">new_releases</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#137333">
+          <div class="stat-value" id="diagAccess">--</div>
+          <div class="stat-label">Usuario atual</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">verified_user</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#e65100">
+          <div class="stat-value" id="diagAuth">--</div>
+          <div class="stat-label">OAuth</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">key</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="diagSheet">--</div>
+          <div class="stat-label">Planilha</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">table_chart</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card diag-toolbar">
+        <button class="btn-new" type="button" onclick="carregarDiagnosticoImplantacao(true)">
+          <span class="material-symbols-outlined">refresh</span> Atualizar diagnostico
+        </button>
+        <button class="btn-refresh" type="button" onclick="copiarDiagnosticoImplantacao()" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
+          <span class="material-symbols-outlined">content_copy</span> Copiar resumo
+        </button>
+        <span class="dash-ts" id="diagCheckedAt"></span>
+      </div>
+      <div class="diag-grid">
+        <section class="diag-panel">
+          <h3>Ambiente</h3>
+          <dl id="diagEnvironment"></dl>
+        </section>
+        <section class="diag-panel">
+          <h3>Identidade e autorizacao</h3>
+          <dl id="diagIdentity"></dl>
+        </section>
+        <section class="diag-panel diag-panel-wide">
+          <h3>Checklist de smoke test pos-deploy</h3>
+          <div class="diag-checklist" id="diagSmokeChecklist"></div>
+        </section>
+      </div>
+    </div>
+
     <div class="page" id="page-prestadores">
       <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
         <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">

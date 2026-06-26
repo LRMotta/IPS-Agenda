@@ -18,6 +18,7 @@ var TITULOS = {
   estoque:       { label:'Estoque',              icon:'inventory_2' },
   usuarios:      { label:'Usuários',             icon:'admin_panel_settings' },
   'audit-log':   { label:'Trilha de Auditoria',  icon:'manage_search' },
+  diagnostico:   { label:'Diagnostico de Implantacao', icon:'monitor_heart' },
   'estoque-view': { label:'Visualização do Estoque', icon:'inventory' }
 };
 
@@ -48,6 +49,7 @@ var AUDIT_PAGE_META = {
 var AUDIT_PAGE_CACHE = { log: {}, changes: {} };
 var AUDIT_PREFETCHING = {};
 var USERS_ADMIN_ROWS = [];
+var APP_DEPLOYMENT_DIAGNOSTICS = null;
 var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
 var _estoqueConfigLoaded = false;
 var APP_UNSAVED_SCOPES = {};
@@ -168,6 +170,7 @@ function applyAppBootstrapData(data) {
   window.APP_BOOTSTRAP_DATA = data || {};
   CURRENT_ACCESS = window.APP_BOOTSTRAP_DATA.access || CURRENT_ACCESS || {};
   var email = CURRENT_ACCESS.email || 'usuário';
+  renderAppVersion(window.APP_BOOTSTRAP_DATA.appVersion);
   var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.name || email;
   document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
   document.getElementById('userInitial').textContent = String(displayName || email || '?')[0].toUpperCase();
@@ -181,6 +184,20 @@ function applyAppBootstrapData(data) {
     snack(CURRENT_ACCESS.message);
   }
   handleUserOAuthStatus(window.APP_BOOTSTRAP_DATA.auth);
+}
+
+function renderAppVersion(appVersion) {
+  var el = document.getElementById('appVersionChip');
+  if (!el) return;
+  appVersion = appVersion || {};
+  var version = appVersion.version || 'sem versao';
+  el.textContent = 'v ' + version;
+  el.title = [
+    'Versao: ' + version,
+    'Build: ' + (appVersion.label || ''),
+    'Data: ' + (appVersion.buildDate || ''),
+    'Execute as esperado: ' + (appVersion.expectedExecuteAs || '')
+  ].filter(Boolean).join('\n');
 }
 
 function handleUserOAuthStatus(auth) {
@@ -576,6 +593,7 @@ function irPara(pagina, options) {
   if (pagina === 'pendencias') carregarPendencias(false);
   if (pagina === 'usuarios') carregarUsersAdmin();
   if (pagina === 'audit-log') carregarAuditLog();
+  if (pagina === 'diagnostico') carregarDiagnosticoImplantacao(false);
   if (pagina === 'dashboard') {
     if (typeof carregarDashboard === 'function') {
       carregarDashboard(false);
@@ -675,6 +693,135 @@ function abrirTransporteModulo(targetWindow, args) {
       snackErro(msg);
     })
     .getWebAppUrl();
+}
+
+function carregarDiagnosticoImplantacao(force) {
+  if (!force && APP_DEPLOYMENT_DIAGNOSTICS) {
+    renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
+    return;
+  }
+  var env = document.getElementById('diagEnvironment');
+  var ident = document.getElementById('diagIdentity');
+  if (env) env.innerHTML = '<dt>Status</dt><dd>Carregando diagnostico...</dd>';
+  if (ident) ident.innerHTML = '';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      APP_DEPLOYMENT_DIAGNOSTICS = data || {};
+      renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
+      if (force) snack('Diagnostico atualizado.');
+    })
+    .withFailureHandler(function(e) {
+      var msg = e && e.message ? e.message : String(e || 'Falha ao carregar diagnostico.');
+      if (env) env.innerHTML = '<dt>Erro</dt><dd>' + esc(msg) + '</dd>';
+      if (ident) ident.innerHTML = '';
+      snackErro(msg);
+    })
+    .getCodexDeploymentDiagnostics();
+}
+
+function diagSetText(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = value == null || value === '' ? '--' : value;
+}
+
+function diagDl(rows) {
+  return (rows || []).map(function(row) {
+    return '<dt>' + esc(row[0]) + '</dt><dd>' + esc(row[1] == null || row[1] === '' ? '--' : row[1]) + '</dd>';
+  }).join('');
+}
+
+function renderDiagnosticoImplantacao(data) {
+  data = data || {};
+  var version = data.appVersion || {};
+  var access = data.access || {};
+  var auth = data.auth || {};
+  var identity = data.identity || {};
+  var sheet = data.spreadsheet || {};
+  diagSetText('diagVersion', version.version || '--');
+  diagSetText('diagAccess', access.role || '--');
+  diagSetText('diagAuth', auth.required ? 'Requer' : (auth.ok ? 'OK' : 'Falha'));
+  diagSetText('diagSheet', sheet.ok ? 'OK' : 'Falha');
+  diagSetText('diagCheckedAt', data.checkedAt ? 'Atualizado em ' + data.checkedAt : '');
+  var env = document.getElementById('diagEnvironment');
+  if (env) {
+    env.innerHTML = diagDl([
+      ['Versao', version.version || ''],
+      ['Build', version.label || ''],
+      ['Data do build', version.buildDate || ''],
+      ['Execute as esperado', version.expectedExecuteAs || ''],
+      ['URL do WebApp', data.webAppUrl || data.webAppUrlError || ''],
+      ['Planilha', sheet.name || sheet.error || ''],
+      ['ID da planilha', sheet.idSuffix ? '...' + sheet.idSuffix : ''],
+      ['Fuso da planilha', sheet.timeZone || ''],
+      ['Fuso do script', data.script && data.script.timeZone || ''],
+      ['Abas encontradas', (sheet.sheets || []).join(', ')]
+    ]);
+  }
+  var ident = document.getElementById('diagIdentity');
+  if (ident) {
+    ident.innerHTML = diagDl([
+      ['Usuario autorizado', access.email || ''],
+      ['Perfil', access.role || ''],
+      ['OAuth status', auth.status || (auth.required ? 'REQUIRED' : '')],
+      ['OAuth URL', auth.url || ''],
+      ['Active user', identity.activeUserEmail || identity.activeUserError || ''],
+      ['Effective user', identity.effectiveUserEmail || identity.effectiveUserError || ''],
+      ['Userinfo status', identity.userinfoStatus || ''],
+      ['Userinfo email', identity.userinfoEmail || identity.userinfoError || ''],
+      ['Dica de deploy', identity.deploymentHint || '']
+    ]);
+  }
+  renderSmokeChecklist();
+}
+
+function renderSmokeChecklist() {
+  var el = document.getElementById('diagSmokeChecklist');
+  if (!el) return;
+  var items = [
+    'Abrir /exec usado pela equipe e confirmar esta versao no topo',
+    'Abrir Agenda e carregar os eventos do dia',
+    'Criar ou editar um evento de teste e validar auditoria',
+    'Gerar requisicao de exames em um caso controlado',
+    'Abrir Transporte a partir da Agenda e conferir vinculo/AWB',
+    'Atualizar Dashboard e validar totais principais',
+    'Entrar como usuario nao admin e validar menus restritos',
+    'Alterar uma Config_App de teste e confirmar cache atualizado'
+  ];
+  el.innerHTML = items.map(function(item) {
+    return '<div class="diag-check-item"><span class="material-symbols-outlined">check_circle</span><span>' + esc(item) + '</span></div>';
+  }).join('');
+}
+
+function copiarDiagnosticoImplantacao() {
+  var data = APP_DEPLOYMENT_DIAGNOSTICS;
+  if (!data) {
+    snack('Atualize o diagnostico antes de copiar.');
+    return;
+  }
+  var version = data.appVersion || {};
+  var access = data.access || {};
+  var auth = data.auth || {};
+  var sheet = data.spreadsheet || {};
+  var resumo = [
+    'CODEX diagnostico de implantacao',
+    'Versao: ' + (version.version || ''),
+    'Build: ' + (version.label || ''),
+    'Data build: ' + (version.buildDate || ''),
+    'Checked at: ' + (data.checkedAt || ''),
+    'Usuario: ' + (access.email || '') + ' / ' + (access.role || ''),
+    'OAuth: ' + (auth.status || (auth.required ? 'REQUIRED' : '')),
+    'WebApp URL: ' + (data.webAppUrl || data.webAppUrlError || ''),
+    'Planilha: ' + (sheet.name || sheet.error || '') + (sheet.idSuffix ? ' (...' + sheet.idSuffix + ')' : '')
+  ].join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(resumo).then(function() {
+      snack('Resumo copiado.');
+    }, function() {
+      window.prompt('Copie o resumo do diagnostico:', resumo);
+    });
+  } else {
+    window.prompt('Copie o resumo do diagnostico:', resumo);
+  }
 }
 
 function carregarUsersAdmin() {

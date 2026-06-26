@@ -52,6 +52,7 @@
     #topDate { font-size: 11px; color: rgba(255,255,255,.7); }
     .user-chip { background: rgba(255,255,255,.15); border-radius: 20px; padding: 5px 12px 5px 7px; display: flex; align-items: center; gap: 7px; font-size: 12px; color: rgba(255,255,255,.9); border: 1px solid rgba(255,255,255,.2); }
     .user-avatar { width: 24px; height: 24px; background: rgba(255,255,255,.3); border-radius: 50%; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+    .app-version-chip { color: rgba(255,255,255,.88); background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 4px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 
     /* CONTEUDO */
     .content { flex: 1; overflow-y: auto; padding: 20px 22px; }
@@ -344,4 +345,16 @@
     .req-actions .ag-tb-btn{flex:0 0 auto}
     .btn-refresh{display:inline-flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary);border:1.5px solid #c5d5fb;border-radius:20px;padding:6px 16px;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s;margin-bottom:16px}
     .btn-refresh:hover{background:#d3e3fd}.btn-refresh .material-symbols-outlined{font-size:16px}
+    .diag-stats { grid-template-columns: repeat(4, 1fr); border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8; }
+    .diag-toolbar { border-top: none; flex-wrap: wrap; }
+    .diag-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+    .diag-panel { background: var(--surface); border: 1px solid #e8edf8; border-radius: var(--r-md); padding: 16px; }
+    .diag-panel-wide { grid-column: 1 / -1; }
+    .diag-panel h3 { margin: 0 0 12px; font-size: 14px; color: var(--text); font-weight: 700; }
+    .diag-panel dl { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 14px; margin: 0; }
+    .diag-panel dt { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+    .diag-panel dd { margin: 0; color: var(--text); font-size: 12.5px; overflow-wrap: anywhere; }
+    .diag-checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .diag-check-item { display: flex; align-items: center; gap: 8px; color: var(--text); background: #f7f9fd; border: 1px solid #e8edf8; border-radius: var(--r-sm); padding: 9px 10px; font-size: 12.5px; }
+    .diag-check-item .material-symbols-outlined { color: #137333; font-size: 17px; }
   </style>

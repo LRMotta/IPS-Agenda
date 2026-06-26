@@ -1777,6 +1777,19 @@
     return Math.round((db.getTime() - da.getTime()) / 86400000);
   }
 
+  function agendaMonitoriaPeriodoFromRow(r) {
+    if (!r || !agendaIsMonitoria(r)) {
+      var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
+      return { inicio: dataIso || '', fim: dataIso || '' };
+    }
+    return agendaMonitoriaPeriodo(
+      r.projeto || '',
+      r.monitorName || '',
+      r.salaMonitoria || '',
+      r.dataIso || agendaIsoFromBr(r.data || '')
+    );
+  }
+
   function abrirDisplayPaciente(payload) {
     if (typeof payload === 'string') {
       try { payload = JSON.parse(decodeURIComponent(payload)); }
@@ -1856,7 +1869,6 @@
       '.main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10mm 4mm;gap:7mm}' +
       '.label-main{font-size:20pt;line-height:1;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#6b7280}' +
       '.protocol{max-width:92%;font-size:48pt;line-height:1.05;font-weight:900;color:#000;word-break:break-word}' +
-      '.monitor{max-width:88%;font-size:36pt;line-height:1.1;font-weight:600;color:#1f2937;word-break:break-word}' +
       '.room{max-width:88%;font-size:28pt;line-height:1.1;font-weight:700;color:#1266f1;word-break:break-word}' +
       '.footer{border-top:1px solid #d8e2f0;min-height:30mm;display:flex;align-items:center;justify-content:center;text-align:center;font-size:26pt;line-height:1.15;font-weight:700;color:#111827}' +
       '.no-print{position:fixed;right:16px;top:16px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:10px 14px;font:700 13px Roboto,Arial;cursor:pointer}' +
@@ -1868,7 +1880,6 @@
         '<section class="main">' +
           '<div class="label-main">Monitoria</div>' +
           '<div class="protocol">' + esc(payload.projeto || '---') + '</div>' +
-          '<div class="monitor">' + esc(payload.monitorName || '---') + '</div>' +
           '<div class="room">' + esc(payload.salaMonitoria || '---') + '</div>' +
         '</section>' +
         '<footer class="footer">' + esc(periodo) + '</footer>' +
@@ -2423,8 +2434,9 @@
     limparAgendaForm();
     _agendaEditId = r.id || '';
     _agendaEditRecordVersion = r.recordVersion || '';
-    setAgendaFieldValue('agData', r.dataIso || agendaIsoFromBr(r.data));
-    setAgendaFieldValue('agDataFim', r.dataIso || agendaIsoFromBr(r.data));
+    var periodoMonitoria = agendaMonitoriaPeriodoFromRow(r);
+    setAgendaFieldValue('agData', periodoMonitoria.inicio || r.dataIso || agendaIsoFromBr(r.data));
+    setAgendaFieldValue('agDataFim', periodoMonitoria.fim || r.dataIso || agendaIsoFromBr(r.data));
     setAgendaFieldValue('agHora', r.hora || '');
     setAgendaSelectValue('agTipo', r.tipo);
     setAgendaSelectValue('agStatus', r.status || 'Agendado');

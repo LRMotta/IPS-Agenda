@@ -258,6 +258,7 @@
       .page-title-icon{display:none}
       #topTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       #topDate{display:none}
+      .app-version-chip{display:none}
       .user-chip{padding:4px;border:0;background:transparent}
       .user-chip #userEmail{display:none}
       .user-avatar{width:30px;height:30px}
@@ -266,6 +267,10 @@
     @media(max-width:700px){
       #page-pendencias{height:auto}
       #page-pendencias>.btn-refresh{width:100%;justify-content:center;margin-bottom:10px!important}
+      .diag-stats{grid-template-columns:1fr 1fr!important}
+      .diag-grid{grid-template-columns:1fr}
+      .diag-panel dl{grid-template-columns:1fr}
+      .diag-checklist{grid-template-columns:1fr}
       #page-pendencias .chart-card{padding:14px 0 0;border-radius:var(--r-md);overflow:hidden}
       #page-pendencias .chart-card-title{padding:0 14px;margin-bottom:10px}
       .dash-pend-grid{gap:10px;padding:0 10px 10px}

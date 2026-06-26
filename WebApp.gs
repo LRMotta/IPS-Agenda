@@ -7,6 +7,10 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
+var CODEX_APP_VERSION_ = '2026.06.26-fase1';
+var CODEX_APP_BUILD_LABEL_ = 'Fase 1 - diagnostico';
+var CODEX_APP_BUILD_DATE_ = '2026-06-26';
+var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
   var access = codexAuthorizeWebAppRequestSafe_(e);
@@ -148,6 +152,7 @@ function getAppBootstrapData() {
   var out = {
     access: codexGetCurrentUserAccess(),
     auth: codexGetUserOAuthStatus_(),
+    appVersion: codexGetAppVersion_(),
     webAppUrl: '',
     agendaFormData: null,
     errors: {}
@@ -161,6 +166,70 @@ function getAppBootstrapData() {
     out.agendaFormData = getDadosFormularioAgenda();
   } catch (e2) {
     out.errors.agendaFormData = e2.message || String(e2);
+  }
+  return out;
+}
+
+function codexGetAppVersion_() {
+  return {
+    version: CODEX_APP_VERSION_,
+    label: CODEX_APP_BUILD_LABEL_,
+    buildDate: CODEX_APP_BUILD_DATE_,
+    expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
+  };
+}
+
+function getCodexDeploymentDiagnostics() {
+  var access = codexAssertAdmin_();
+  var out = {
+    ok: true,
+    appVersion: codexGetAppVersion_(),
+    checkedAt: '',
+    access: {
+      email: access.userEmail || '',
+      name: access.name || '',
+      role: access.role || ''
+    },
+    webAppUrl: '',
+    auth: codexGetUserOAuthStatus_(),
+    identity: codexGetIdentityDiagnostics_(),
+    spreadsheet: {
+      ok: false,
+      name: '',
+      idSuffix: '',
+      url: '',
+      timeZone: '',
+      sheets: [],
+      error: ''
+    },
+    script: {
+      timeZone: '',
+      expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
+    }
+  };
+  try {
+    var tz = Session.getScriptTimeZone() || 'America/Sao_Paulo';
+    out.script.timeZone = tz;
+    out.checkedAt = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+  } catch (e0) {
+    out.checkedAt = new Date().toISOString();
+  }
+  try {
+    out.webAppUrl = ScriptApp.getService().getUrl();
+  } catch (e1) {
+    out.webAppUrlError = e1.message || String(e1);
+  }
+  try {
+    var ss = getCodexSpreadsheet_();
+    var id = String(ss.getId() || '');
+    out.spreadsheet.ok = true;
+    out.spreadsheet.name = ss.getName();
+    out.spreadsheet.idSuffix = id ? id.slice(-8) : '';
+    out.spreadsheet.url = ss.getUrl();
+    out.spreadsheet.timeZone = ss.getSpreadsheetTimeZone();
+    out.spreadsheet.sheets = ss.getSheets().map(function(sh) { return sh.getName(); }).slice(0, 40);
+  } catch (e2) {
+    out.spreadsheet.error = e2.message || String(e2);
   }
   return out;
 }
@@ -5989,6 +6058,126 @@ function agendaCloneDados_(dados) {
   return clone;
 }
 
+function agendaMonitoriaRowsDoPeriodo_(agenda, linha, rowRef) {
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return [];
+  var idx = AGENDA_CFG.idx;
+  var ref = rowRef || agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var candidatos = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues()
+    .map(function(row, i) {
+      var data = parseAgendaDateAny_(row[idx.data]);
+      if (!data) return null;
+      data.setHours(0, 0, 0, 0);
+      if (normText_(row[idx.tipo]) !== 'monitoria') return null;
+      if (normText_(row[idx.projeto]) !== normText_(ref[idx.projeto])) return null;
+      if (normText_(row[idx.monitorName]) !== normText_(ref[idx.monitorName])) return null;
+      if (normText_(row[idx.salaMonitoria]) !== normText_(ref[idx.salaMonitoria])) return null;
+      return { rowIndex: i + 2, row: row, data: data };
+    })
+    .filter(Boolean)
+    .sort(function(a, b) {
+      var diff = a.data.getTime() - b.data.getTime();
+      return diff || (a.rowIndex - b.rowIndex);
+    });
+  var pos = -1;
+  for (var i = 0; i < candidatos.length; i++) {
+    if (candidatos[i].rowIndex === linha) {
+      pos = i;
+      break;
+    }
+  }
+  if (pos < 0) return [{ rowIndex: linha, row: ref, data: parseAgendaDateAny_(ref[idx.data]) }];
+  var start = pos;
+  var end = pos;
+  while (start > 0 && agendaDatasConsecutivas_(candidatos[start - 1].data, candidatos[start].data)) start--;
+  while (end < candidatos.length - 1 && agendaDatasConsecutivas_(candidatos[end].data, candidatos[end + 1].data)) end++;
+  return candidatos.slice(start, end + 1);
+}
+
+function agendaDatasConsecutivas_(a, b) {
+  if (!a || !b) return false;
+  var da = new Date(a);
+  var db = new Date(b);
+  da.setHours(0, 0, 0, 0);
+  db.setHours(0, 0, 0, 0);
+  return Math.round((db.getTime() - da.getTime()) / 86400000) === 1;
+}
+
+function agendaWriteMonitoriaRow_(agenda, linha, dataDia, dados, rowAnterior) {
+  var d = agendaDateWithHora_(dataDia, dados.hora);
+  var status = String(dados.status || 'Agendado').trim();
+  agenda.getRange(linha, AGENDA_CFG.col.data, 1, AGENDA_CFG.col.kit - AGENDA_CFG.col.data + 1).setValues([[
+    formatAgendaDatePt_(d),
+    formatAgendaHora_(d),
+    String(dados.tipo || 'Monitoria').trim(),
+    status,
+    '',
+    '',
+    '',
+    dados.projeto || '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    dados.obs || '',
+    'Não aplicável',
+    rowAnterior[AGENDA_CFG.idx.controle] || '',
+    ''
+  ]]);
+  agenda.getRange(linha, AGENDA_CFG.col.reqStatus, 1, 6).setValues([[
+    '',
+    dados.monitorName || '',
+    rowAnterior[AGENDA_CFG.idx.poloTrial] || '',
+    rowAnterior[AGENDA_CFG.idx.ecrf] || '',
+    dados.salaMonitoria || '',
+    false
+  ]]);
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, {});
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, {});
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, {});
+  agendaSetBackupLinha_(agenda, linha, {});
+  agendaSetTransporteExtraLinha_(agenda, linha, {});
+  if (normText_(status) === 'cancelado') aplicarLogicaCancelamento(agenda, linha, status);
+}
+
+function agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados) {
+  var datas = agendaDatasPeriodoMonitoria_(dados.data, dados.dataFim);
+  var atuais = agendaMonitoriaRowsDoPeriodo_(agenda, linha, rowAnterior);
+  var ids = [];
+  var atualizar = Math.min(atuais.length, datas.length);
+  for (var i = 0; i < atualizar; i++) {
+    var item = atuais[i];
+    var antes = item.row;
+    agendaWriteMonitoriaRow_(agenda, item.rowIndex, datas[i], dados, antes);
+    var depois = agenda.getRange(item.rowIndex, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    var idAtual = String(depois[AGENDA_CFG.idx.id] || antes[AGENDA_CFG.idx.id] || '').trim();
+    if (idAtual) ids.push(idAtual);
+    codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idAtual || dados.id, agendaAuditChangesFromRows_(antes, depois), 'Alteração de período de monitoria');
+  }
+  var remover = atuais.slice(datas.length).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
+  remover.forEach(function(item) {
+    var idRemovido = String(item.row[AGENDA_CFG.idx.id] || '').trim();
+    agenda.deleteRow(item.rowIndex);
+    codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idRemovido || dados.id, [{
+      field: 'Monitoria',
+      oldValue: formatarDataSafe(item.row[AGENDA_CFG.idx.data]),
+      newValue: ''
+    }], 'Data removida do período de monitoria');
+  });
+  for (var j = atuais.length; j < datas.length; j++) {
+    var clone = agendaCloneDados_(dados);
+    var res = _gravarLinhaEvento(agenda, agendaDateWithHora_(datas[j], dados.hora), clone, ss);
+    if (res && res.id) ids.push(res.id);
+  }
+  if (agenda.getLastRow() > 2) {
+    agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
+      .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
+  }
+  SpreadsheetApp.flush();
+  return { ok: true, id: ids[0] || dados.id, ids: ids, count: datas.length, atualizado: true, emailLabAtivo: agendaEmailEnabled_() };
+}
+
 function agendaAuditFields_() {
   var i = AGENDA_CFG.idx;
   return [
@@ -6153,6 +6342,7 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.servTerc = '';
     dados.statusRequisicao = '';
     labCentral = 'Não aplicável';
+    return agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados);
   } else {
     dados.monitorName = '';
     dados.salaMonitoria = '';
