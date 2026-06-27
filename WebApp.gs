@@ -7,9 +7,9 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.06.26-fase1';
-var CODEX_APP_BUILD_LABEL_ = 'Fase 1 - diagnostico';
-var CODEX_APP_BUILD_DATE_ = '2026-06-26';
+var CODEX_APP_VERSION_ = '2026.06.27-fase2-ui';
+var CODEX_APP_BUILD_LABEL_ = 'Fase 2 - preloads, AWB, cache, requisicao e UI';
+var CODEX_APP_BUILD_DATE_ = '2026-06-27';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -202,6 +202,7 @@ function getCodexDeploymentDiagnostics() {
       sheets: [],
       error: ''
     },
+    cache: codexGetCacheDiagnostics_(),
     script: {
       timeZone: '',
       expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
@@ -232,6 +233,42 @@ function getCodexDeploymentDiagnostics() {
     out.spreadsheet.error = e2.message || String(e2);
   }
   return out;
+}
+
+function codexGetCacheDiagnostics_() {
+  var out = {
+    configRowsCachePresent: false,
+    agendaBootstrapCachePresent: false,
+    lastConfigInvalidationAt: '',
+    lastConfigInvalidationBy: '',
+    lastConfigInvalidationSource: '',
+    configRowsApprox: '',
+    error: ''
+  };
+  try {
+    out.configRowsCachePresent = !!codexCacheGet_('ConfigAppRows:v2');
+    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+    out.agendaBootstrapCachePresent = !!codexCacheGet_('AgendaFormData:v6:' + today);
+    var props = PropertiesService.getScriptProperties();
+    out.lastConfigInvalidationAt = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_AT') || '');
+    out.lastConfigInvalidationBy = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_BY') || '');
+    out.lastConfigInvalidationSource = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_SOURCE') || '');
+    var sh = getCodexSpreadsheet_().getSheetByName('Config_App');
+    if (sh) out.configRowsApprox = Math.max(0, sh.getLastRow() - 1);
+  } catch (e) {
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function limparCodexCachesDiagnostico() {
+  var access = codexAssertAdmin_();
+  clearConfigAppDefaultsCache_('Diagnostico');
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('CODEX_CONFIG_CACHE_INVALIDATED_BY', access.userEmail || '');
+  } catch (e) {}
+  return getCodexDeploymentDiagnostics();
 }
 
 function codexGetUserOAuthStatus_() {
@@ -1522,29 +1559,19 @@ function buscarPrestadoresParaRequisicao() {
 }
 
 function getReqExamesPreloadProjeto(projeto) {
-  projeto = String(projeto || '').trim();
-  if (!projeto) return [];
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
-  if (!sh || sh.getLastRow() < 2) return [];
-  var data = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(42, sh.getLastColumn())).getValues();
-  var alvo = normText_(projeto);
-  for (var i = 0; i < data.length; i++) {
-    var row = data[i];
-    if (normText_(row[0]) !== alvo) continue;
-    var ativo = String(row[41] || '').trim();
-    if (ativo && ['nao', 'não', 'n', 'false', 'inativo'].indexOf(normText_(ativo)) > -1) return [];
-    return row.slice(1, 41).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
-  }
-  return [];
+  var preload = reqExamesPreloadReadProjeto_(projeto);
+  return preload && preload.active ? preload.exames : [];
 }
 
 function getReqExamesPreloadProjetoEditor(projeto) {
-  var exames = getReqExamesPreloadProjeto(projeto);
+  var preload = reqExamesPreloadReadProjeto_(projeto);
+  var exames = preload && preload.active ? preload.exames : [];
   return {
     projeto: String(projeto || '').trim(),
     exames: exames,
-    hash: reqExamesPreloadHash_(exames)
+    hash: reqExamesPreloadHash_(exames),
+    exists: !!(preload && preload.rowIndex),
+    active: !(preload && !preload.active)
   };
 }
 
@@ -1556,35 +1583,63 @@ function salvarReqExamesPreloadProjeto(projeto, exames, expectedHash) {
     return String(v || '').trim();
   }).filter(Boolean).slice(0, 40);
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
-  if (!sh) sh = ss.insertSheet('ReqExames_Preloads');
-  ensureReqExamesPreloadSheet_(sh);
+  return codexWithDocumentLock_('salvarReqExamesPreloadProjeto', function() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
+    if (!sh) sh = ss.insertSheet('ReqExames_Preloads');
+    ensureReqExamesPreloadSheet_(sh);
 
-  var lastRow = sh.getLastRow();
-  var alvo = normText_(projeto);
-  var row = [projeto].concat(exames);
-  while (row.length < 41) row.push('');
-  row.push('Sim');
-
-  if (lastRow >= 2) {
-    var projetos = sh.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (var i = 0; i < projetos.length; i++) {
-      if (normText_(projetos[i][0]) === alvo) {
-        var atuais = sh.getRange(i + 2, 2, 1, 40).getValues()[0]
-          .map(function(v) { return String(v || '').trim(); })
-          .filter(Boolean);
-        var hashAtual = reqExamesPreloadHash_(atuais);
-        if (!expectedHash || expectedHash !== hashAtual) {
-          throw new Error('Os exames padrão deste projeto foram alterados por outro usuário. Reabra "Gerenciar exames padrão" para revisar a versão atual antes de salvar.');
-        }
-        sh.getRange(i + 2, 1, 1, 42).setValues([row]);
-        return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão atualizados.' };
-      }
+    var lastRow = sh.getLastRow();
+    var preloadAtual = reqExamesPreloadReadProjeto_(projeto, sh);
+    var atuais = preloadAtual && preloadAtual.active ? preloadAtual.exames : [];
+    var hashAtual = reqExamesPreloadHash_(atuais);
+    if (preloadAtual && preloadAtual.rowIndex && (!expectedHash || expectedHash !== hashAtual)) {
+      return {
+        ok: false,
+        conflict: true,
+        projeto: projeto,
+        exames: atuais,
+        hash: hashAtual,
+        message: 'Os exames padrão deste projeto foram alterados por outro usuário. Carregue a versão atual antes de salvar.'
+      };
     }
+
+    var row = [projeto].concat(exames);
+    while (row.length < 41) row.push('');
+    row.push('Sim');
+
+    if (preloadAtual && preloadAtual.rowIndex) {
+      sh.getRange(preloadAtual.rowIndex, 1, 1, 42).setValues([row]);
+      return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão atualizados.' };
+    }
+    sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
+    return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão cadastrados.' };
+  });
+}
+
+function reqExamesPreloadReadProjeto_(projeto, sh) {
+  projeto = String(projeto || '').trim();
+  if (!projeto) return null;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  sh = sh || getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(42, sh.getLastColumn())).getValues();
+  var alvo = normText_(projeto);
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    if (normText_(row[0]) !== alvo) continue;
+    var ativo = String(row[41] || '').trim();
+    var inactive = ativo && ['nao', 'não', 'n', 'false', 'inativo'].indexOf(normText_(ativo)) > -1;
+    var exames = row.slice(1, 41).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
+    return {
+      rowIndex: i + 2,
+      projeto: String(row[0] || '').trim(),
+      exames: exames,
+      active: !inactive,
+      hash: reqExamesPreloadHash_(inactive ? [] : exames)
+    };
   }
-  sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
-  return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão cadastrados.' };
+  return null;
 }
 
 function reqExamesPreloadHash_(exames) {
@@ -1699,15 +1754,26 @@ function gerarRequisicaoPDF(dados) {
   _exportarPDFWebApp(sheet, ss, { requestedByEmail: dados.requestedByEmail || '' });
 
   var statusResult = null;
-  var statusWarning = '';
+  var statusSync = {
+    attempted: false,
+    ok: false,
+    semPrestador: false,
+    message: '',
+    warning: ''
+  };
   if (String(dados.agendaId || '').trim()) {
+    statusSync.attempted = true;
     try {
       statusResult = atualizarStatusRequisicaoAgenda(String(dados.agendaId).trim(), true);
       if (statusResult && statusResult.semPrestador) {
-        statusWarning = 'Rascunho criado, mas o status não foi atualizado porque o agendamento está sem prestador.';
+        statusSync.semPrestador = true;
+        statusSync.warning = 'Rascunho criado, mas o status não foi atualizado porque o agendamento está sem prestador.';
+      } else {
+        statusSync.ok = !!(statusResult && statusResult.statusRequisicao);
+        statusSync.message = statusSync.ok ? 'Status da Agenda atualizado.' : '';
       }
     } catch (statusError) {
-      statusWarning = 'Rascunho criado, mas não foi possível atualizar o status da Agenda: ' + statusError.message;
+      statusSync.warning = 'Rascunho criado, mas não foi possível atualizar o status da Agenda: ' + statusError.message;
     }
   }
 
@@ -1718,7 +1784,8 @@ function gerarRequisicaoPDF(dados) {
     preloadWarning: '',
     statusRequisicao: statusResult && statusResult.statusRequisicao ? statusResult.statusRequisicao : '',
     recordVersion: statusResult && statusResult.recordVersion ? statusResult.recordVersion : '',
-    statusWarning: statusWarning
+    statusWarning: statusSync.warning,
+    statusSync: statusSync
   };
 }
 
@@ -7938,10 +8005,21 @@ function isAgendaLabDestinoConfig_(row) {
     ['laboratorio destino', 'laboratorio de destino', 'lab destino', 'laboratorio central destino'].indexOf(normText_(row && row.chave)) >= 0;
 }
 
-function clearConfigAppDefaultsCache_() {
+function clearConfigAppDefaultsCache_(source) {
   codexAssertCanWrite_('clearConfigAppDefaultsCache', 'Sistema', '');
   clearCodexRuntimeCaches_();
   clearTransporteOptionsCache_();
+  codexMarkConfigCacheInvalidated_(source || 'Config_App');
+}
+
+function codexMarkConfigCacheInvalidated_(source) {
+  try {
+    var access = codexGetCurrentUserAccess();
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('CODEX_CONFIG_CACHE_INVALIDATED_AT', Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'));
+    props.setProperty('CODEX_CONFIG_CACHE_INVALIDATED_BY', access && access.email ? access.email : '');
+    props.setProperty('CODEX_CONFIG_CACHE_INVALIDATED_SOURCE', String(source || ''));
+  } catch (e) {}
 }
 
 function clearTransporteOptionsCache_() {
@@ -8015,7 +8093,7 @@ function salvarConfigAppItem(payload) {
       { field: 'Config_App - Ordem', oldValue: rowAnterior[4], newValue: row[4] },
       { field: 'Config_App - Observação', oldValue: rowAnterior[5], newValue: row[5] }
     ], 'Alteração de configuração');
-    clearConfigAppDefaultsCache_();
+    clearConfigAppDefaultsCache_('salvarConfigAppItem');
     return 'Configuração atualizada com sucesso.';
   }
 
@@ -8034,7 +8112,7 @@ function salvarConfigAppItem(payload) {
     { field: 'Config_App - Ordem', oldValue: '', newValue: row[4] },
     { field: 'Config_App - Observação', oldValue: '', newValue: row[5] }
   ], 'Cadastro de configuração');
-  clearConfigAppDefaultsCache_();
+  clearConfigAppDefaultsCache_('salvarConfigAppItem');
   return 'Configuração cadastrada com sucesso.';
 }
 
@@ -8056,7 +8134,7 @@ function excluirConfigAppItem(rowIndex, startCol) {
     { field: 'Config_App - Ordem', oldValue: values[4], newValue: '' },
     { field: 'Config_App - Observação', oldValue: values[5], newValue: '' }
   ], 'Exclusão de configuração');
-  clearConfigAppDefaultsCache_();
+  clearConfigAppDefaultsCache_('excluirConfigAppItem');
   return 'Configuração excluída com sucesso.';
 }
 

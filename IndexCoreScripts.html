@@ -737,6 +737,7 @@ function renderDiagnosticoImplantacao(data) {
   var auth = data.auth || {};
   var identity = data.identity || {};
   var sheet = data.spreadsheet || {};
+  var cache = data.cache || {};
   diagSetText('diagVersion', version.version || '--');
   diagSetText('diagAccess', access.role || '--');
   diagSetText('diagAuth', auth.required ? 'Requer' : (auth.ok ? 'OK' : 'Falha'));
@@ -771,6 +772,18 @@ function renderDiagnosticoImplantacao(data) {
       ['Dica de deploy', identity.deploymentHint || '']
     ]);
   }
+  var cacheEl = document.getElementById('diagCache');
+  if (cacheEl) {
+    cacheEl.innerHTML = diagDl([
+      ['Config_App em cache', cache.configRowsCachePresent ? 'Sim' : 'Nao'],
+      ['Agenda bootstrap em cache hoje', cache.agendaBootstrapCachePresent ? 'Sim' : 'Nao'],
+      ['Linhas Config_App', cache.configRowsApprox || '0'],
+      ['Ultima invalidacao', cache.lastConfigInvalidationAt || ''],
+      ['Invalidado por', cache.lastConfigInvalidationBy || ''],
+      ['Origem da invalidacao', cache.lastConfigInvalidationSource || ''],
+      ['Erro de cache', cache.error || '']
+    ]);
+  }
   renderSmokeChecklist();
 }
 
@@ -781,7 +794,7 @@ function renderSmokeChecklist() {
     'Abrir /exec usado pela equipe e confirmar esta versao no topo',
     'Abrir Agenda e carregar os eventos do dia',
     'Criar ou editar um evento de teste e validar auditoria',
-    'Gerar requisicao de exames em um caso controlado',
+    'Gerar requisicao de exames em um caso controlado e confirmar Req enviada na Agenda',
     'Abrir Transporte a partir da Agenda e conferir vinculo/AWB',
     'Atualizar Dashboard e validar totais principais',
     'Entrar como usuario nao admin e validar menus restritos',
@@ -802,6 +815,7 @@ function copiarDiagnosticoImplantacao() {
   var access = data.access || {};
   var auth = data.auth || {};
   var sheet = data.spreadsheet || {};
+  var cache = data.cache || {};
   var resumo = [
     'CODEX diagnostico de implantacao',
     'Versao: ' + (version.version || ''),
@@ -811,7 +825,10 @@ function copiarDiagnosticoImplantacao() {
     'Usuario: ' + (access.email || '') + ' / ' + (access.role || ''),
     'OAuth: ' + (auth.status || (auth.required ? 'REQUIRED' : '')),
     'WebApp URL: ' + (data.webAppUrl || data.webAppUrlError || ''),
-    'Planilha: ' + (sheet.name || sheet.error || '') + (sheet.idSuffix ? ' (...' + sheet.idSuffix + ')' : '')
+    'Planilha: ' + (sheet.name || sheet.error || '') + (sheet.idSuffix ? ' (...' + sheet.idSuffix + ')' : ''),
+    'Config_App cache presente: ' + (cache.configRowsCachePresent ? 'Sim' : 'Nao'),
+    'Agenda bootstrap cache hoje: ' + (cache.agendaBootstrapCachePresent ? 'Sim' : 'Nao'),
+    'Ultima invalidacao cache: ' + (cache.lastConfigInvalidationAt || '')
   ].join('\n');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(resumo).then(function() {
@@ -822,6 +839,27 @@ function copiarDiagnosticoImplantacao() {
   } else {
     window.prompt('Copie o resumo do diagnostico:', resumo);
   }
+}
+
+function limparCachesDiagnostico() {
+  var btns = document.querySelectorAll('#page-diagnostico button');
+  Array.prototype.forEach.call(btns, function(btn) { btn.disabled = true; });
+  var cacheEl = document.getElementById('diagCache');
+  if (cacheEl) cacheEl.innerHTML = '<dt>Status</dt><dd>Limpando caches...</dd>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      Array.prototype.forEach.call(btns, function(btn) { btn.disabled = false; });
+      APP_DEPLOYMENT_DIAGNOSTICS = data || {};
+      renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
+      snack('Caches limpos e diagnostico atualizado.');
+    })
+    .withFailureHandler(function(e) {
+      Array.prototype.forEach.call(btns, function(btn) { btn.disabled = false; });
+      var msg = e && e.message ? e.message : String(e || 'Falha ao limpar caches.');
+      if (cacheEl) cacheEl.innerHTML = '<dt>Erro</dt><dd>' + esc(msg) + '</dd>';
+      snackErro(msg);
+    })
+    .limparCodexCachesDiagnostico();
 }
 
 function carregarUsersAdmin() {
@@ -3610,6 +3648,7 @@ function examesAtuaisRequisicao() {
 }
 
 var _reqPreloadEditorHash = '';
+var _reqPreloadConflictData = null;
 
 function abrirReqPreloadModal() {
   var projeto = getProjetoRequisicaoAtual();
@@ -3619,6 +3658,7 @@ function abrirReqPreloadModal() {
   }
   var status = document.getElementById('statusReqPreload');
   if (status) status.innerHTML = '<span style="color:#5f6b7c;">Carregando...</span>';
+  _reqPreloadConflictData = null;
   document.getElementById('reqPreloadProjeto').value = projeto;
   document.getElementById('reqPreloadExames').value = '';
   abrirOverlay('modalReqPreload');
@@ -3626,6 +3666,7 @@ function abrirReqPreloadModal() {
     .withSuccessHandler(function(data) {
       var exames = data && data.exames ? data.exames : [];
       _reqPreloadEditorHash = data && data.hash ? data.hash : '';
+      _reqPreloadConflictData = null;
       document.getElementById('reqPreloadExames').value = exames.join('\n');
       if (status) status.innerHTML = '';
     })
@@ -3638,7 +3679,9 @@ function abrirReqPreloadModal() {
 
 function reqPreloadUsarListaAtual() {
   var exames = examesAtuaisRequisicao();
+  _reqPreloadConflictData = null;
   document.getElementById('reqPreloadExames').value = exames.join('\n');
+  appMarkUnsavedChanges('modalReqPreload');
   updateExamCount();
 }
 
@@ -3664,8 +3707,22 @@ function salvarReqPreloadProjeto() {
   google.script.run
     .withSuccessHandler(function(res) {
       btn.disabled = false;
+      if (res && res.conflict) {
+        _reqPreloadConflictData = res;
+        if (status) {
+          status.innerHTML =
+            '<span style="color:#b3261e;">' + esc(res.message || 'Este preload foi alterado por outro usuario.') + '</span>' +
+            '<div style="margin-top:8px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
+              '<button class="ag-tb-btn" type="button" onclick="reqPreloadCarregarVersaoAtual()">Carregar versao atual</button>' +
+            '</div>';
+        }
+        snackErro('Preload alterado por outro usuario. Revise a versao atual antes de salvar.');
+        return;
+      }
       if (status) status.innerHTML = '';
       preencherReqExames((res && res.exames) || exames);
+      _reqPreloadEditorHash = res && res.hash ? res.hash : '';
+      _reqPreloadConflictData = null;
       appClearUnsavedChanges('modalReqPreload');
       fecharOverlay('modalReqPreload');
       snack((res && res.message) || 'Exames padrão salvos.');
@@ -3675,6 +3732,34 @@ function salvarReqPreloadProjeto() {
       if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(e.message || e) + '</span>';
     })
     .salvarReqExamesPreloadProjeto(projeto, exames, _reqPreloadEditorHash);
+}
+
+function reqPreloadCarregarVersaoAtual() {
+  var data = _reqPreloadConflictData;
+  if (!data) return;
+  var exames = data.exames || [];
+  document.getElementById('reqPreloadExames').value = exames.join('\n');
+  _reqPreloadEditorHash = data.hash || '';
+  _reqPreloadConflictData = null;
+  var status = document.getElementById('statusReqPreload');
+  if (status) {
+    status.innerHTML = '<span style="color:#137333;">Versao atual carregada. Revise a lista antes de salvar.</span>';
+  }
+  appMarkUnsavedChanges('modalReqPreload');
+}
+
+function fecharReqPreloadModal() {
+  function close() {
+    appClearUnsavedChanges('modalReqPreload');
+    _reqPreloadConflictData = null;
+    fecharOverlay('modalReqPreload');
+  }
+  if (!appConfirmNavigationIfDirty('modalReqPreload', close)) return;
+  close();
+}
+
+function fecharReqPreloadModalSeFora(event) {
+  if (event && event.target && event.target.id === 'modalReqPreload') fecharReqPreloadModal();
 }
 
 function limparRequisicaoForm() {
@@ -3877,7 +3962,10 @@ function gerarRequisicao() {
       btn.disabled = false;
       statusEl.innerHTML = '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
       var warnings = res && typeof res === 'object' ? [res.preloadWarning, res.statusWarning].filter(Boolean) : [];
-      if (warnings.length) snackErro(warnings.join(' '));
+      if (warnings.length) {
+        statusEl.innerHTML += '<div style="color:#b3261e;margin-top:6px">' + esc(warnings.join(' ')) + '</div>';
+        snackErro(warnings.join(' '));
+      }
       else snack('✓ Rascunho criado com sucesso!');
       appClearUnsavedChanges('page-requisicao');
       finalizarRequisicaoAposSucesso(res && res.statusRequisicao, res);
@@ -3894,8 +3982,12 @@ function gerarRequisicao() {
 function finalizarRequisicaoAposSucesso(statusRequisicao, resultado) {
   var origem = _rqOrigemContext || {};
   if (origem.tipo === 'agenda' && origem.agendaId) {
-    if (statusRequisicao) aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
-    else marcarAgendaRequisicaoEnviadaLocal(origem.agendaId, true);
+    var sync = resultado && resultado.statusSync;
+    if (sync && sync.ok && statusRequisicao) {
+      aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
+    } else if (!sync && statusRequisicao) {
+      aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
+    }
     return;
   }
   if (origem.tipo === 'participante') {

@@ -408,6 +408,25 @@
       window._toastTimer = setTimeout(function() { el.style.display = 'none'; }, 4200);
     }
 
+    function agendaSyncMessage(data, fallback) {
+      var sync = data && data.agendaSync;
+      if (!sync) return fallback || '';
+      if (sync.warnings && sync.warnings.length) return sync.warnings.join(' ');
+      if (sync.atualizado) {
+        var campos = sync.campos && sync.campos.length ? ': ' + sync.campos.join(', ') : '';
+        return 'Dados salvos. Agenda sincronizada' + campos + '.';
+      }
+      if (sync.motivo) return 'Dados salvos. Agenda nao sincronizada: ' + sync.motivo + '.';
+      return fallback || 'Dados salvos.';
+    }
+
+    function agendaSyncMessageType(data) {
+      var sync = data && data.agendaSync;
+      if (!sync) return 'ok';
+      if (sync.warnings && sync.warnings.length) return 'warn';
+      return sync.atualizado || !sync.motivo ? 'ok' : 'warn';
+    }
+
     function showPdfModal(data) {
       if (!data || (!data.fileId && !data.downloadUrl)) return;
       window._lastGeneratedPdf = data;
@@ -489,10 +508,11 @@
       var runner = google.script.run
         .withSuccessHandler(function(res) {
           setBusy(false);
-          var msg = typeof res === 'string' ? res : okMsg;
+          var msg = typeof res === 'string' ? res : (typeof okMsg === 'function' ? okMsg(res) : okMsg);
+          var msgType = agendaSyncMessageType(res);
           if (msg) {
-            setActionStatus(msg, 'ok');
-            toast(msg, 'ok');
+            setActionStatus(msg, msgType);
+            toast(msg, msgType);
           } else {
             setActionStatus('Concluido.', 'ok');
           }
@@ -1319,7 +1339,9 @@
     function saveData() {
       if (!ensureRequiredTransportFields()) return;
       var payload = collectPayload();
-      serverCall('salvarTransporte', [payload, { returnBootstrap: false, preencherDocumentos: false }], 'Dados salvos na planilha de transporte.', function(data) {
+      serverCall('salvarTransporte', [payload, { returnBootstrap: false, preencherDocumentos: false }], function(data) {
+        return agendaSyncMessage(data, 'Dados salvos na planilha de transporte.');
+      }, function(data) {
         if (state) state.registro = Object.assign({}, state.registro || {}, payload);
         transportClearUnsaved();
         renderAll();
@@ -1334,6 +1356,8 @@
       setBusy(true, 'Salvando antes de executar. ' + actionLabel);
       google.script.run
         .withSuccessHandler(function(data) {
+          var syncMsg = agendaSyncMessage(data, '');
+          if (syncMsg && agendaSyncMessageType(data) === 'warn') toast(syncMsg, 'warn');
           if (data && data.registro && data.options) {
             state = data;
             renderAll({ skipCe: true });

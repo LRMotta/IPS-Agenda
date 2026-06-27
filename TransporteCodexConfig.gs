@@ -2203,6 +2203,7 @@ function transporteSincronizarAgenda_(payload) {
   var linha = encontrarLinhaPorId(agenda, idAgenda);
   if (!linha) throw new Error('Os dados foram salvos no Transporte, mas o agendamento ' + idAgenda + ' não foi encontrado.');
   var changes = [];
+  var warnings = [];
   var courier = String(agenda.getRange(linha, idx.nome + 1).getDisplayValue() || '').trim();
   function preencherSeVazio(field, column, value) {
     value = String(value || '').trim();
@@ -2229,15 +2230,21 @@ function transporteSincronizarAgenda_(payload) {
   if (awb && idx.awb !== undefined) {
     var range = agenda.getRange(linha, idx.awb + 1);
     var awbAnterior = String(range.getDisplayValue() || range.getValue() || '').trim();
-    if (typeof agendaSetAwbValue_ === 'function') agendaSetAwbValue_(range, awb, courier);
-    else range.setValue(awb);
-    if (awbAnterior !== awb) changes.push({ field: 'Transporte ' + slot + ' - AWB', oldValue: awbAnterior, newValue: awb });
+    var awbAnteriorNorm = normalizarAwbCourier_(awbAnterior);
+    var awbNovaNorm = normalizarAwbCourier_(awb);
+    if (!awbAnterior) {
+      if (typeof agendaSetAwbValue_ === 'function') agendaSetAwbValue_(range, awb, courier);
+      else range.setValue(awb);
+      changes.push({ field: 'Transporte ' + slot + ' - AWB', oldValue: '', newValue: awb });
+    } else if (awbAnteriorNorm !== awbNovaNorm) {
+      warnings.push('Agenda ja possui AWB diferente para o transporte ' + slot + ' (' + awbAnterior + '). A AWB do Transporte (' + awb + ') nao foi sobrescrita automaticamente.');
+    }
   }
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {
     codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
   }
   SpreadsheetApp.flush();
-  return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: slot, awb: awb, campos: changes.map(function(c) { return c.field; }) };
+  return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: slot, awb: awb, campos: changes.map(function(c) { return c.field; }), warnings: warnings };
 }
 
 function importarTransporteCodex(codexPayload) {

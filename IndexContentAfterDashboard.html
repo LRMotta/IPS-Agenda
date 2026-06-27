@@ -202,6 +202,9 @@
         <button class="btn-refresh" type="button" onclick="copiarDiagnosticoImplantacao()" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
           <span class="material-symbols-outlined">content_copy</span> Copiar resumo
         </button>
+        <button class="btn-refresh" type="button" onclick="limparCachesDiagnostico()" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
+          <span class="material-symbols-outlined">cached</span> Limpar caches
+        </button>
         <span class="dash-ts" id="diagCheckedAt"></span>
       </div>
       <div class="diag-grid">
@@ -212,6 +215,10 @@
         <section class="diag-panel">
           <h3>Identidade e autorizacao</h3>
           <dl id="diagIdentity"></dl>
+        </section>
+        <section class="diag-panel diag-panel-wide">
+          <h3>Cache e Config_App</h3>
+          <dl id="diagCache"></dl>
         </section>
         <section class="diag-panel diag-panel-wide">
           <h3>Checklist de smoke test pos-deploy</h3>
@@ -890,7 +897,7 @@
       </div>
     </div>
 
-<div class="modal-overlay" id="modalReqPreload" onclick="fecharModalSeClicouFora(event,'modalReqPreload')">
+<div class="modal-overlay" id="modalReqPreload" onclick="fecharReqPreloadModalSeFora(event)">
   <div class="modal-box" style="max-width:760px;">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">biotech</span></div>
@@ -898,7 +905,7 @@
         <div class="modal-header-title">EXAMES PADRÃO DO PROJETO</div>
         <div class="modal-header-sub" id="reqPreloadSub">Preload da Requisição de Exames</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalReqPreload')">
+      <button class="modal-close" onclick="fecharReqPreloadModal()">
         <span class="material-symbols-outlined">close</span>
       </button>
     </div>
@@ -910,14 +917,18 @@
       <div class="field" style="margin-top:14px">
         <label class="field-label" for="reqPreloadExames">Exames</label>
         <textarea id="reqPreloadExames" class="f-textarea" style="height:280px;font-family:Roboto Mono,Consolas,monospace" placeholder="Um exame por linha"></textarea>
+        <div class="preload-shared-note">
+          <span class="material-symbols-outlined">group</span>
+          Este padrao e compartilhado com todos os usuarios. Se outra pessoa salvar primeiro, voce precisara carregar a versao atual antes de gravar.
+        </div>
       </div>
-      <div class="req-actions" style="justify-content:space-between;margin-top:18px">
+      <div class="req-actions req-preload-actions" style="justify-content:space-between;margin-top:18px">
         <button class="ag-tb-btn" type="button" onclick="reqPreloadUsarListaAtual()">
           <span class="material-symbols-outlined">content_paste</span> Usar lista atual
         </button>
-        <div style="display:flex;gap:8px">
-          <button class="ag-tb-btn" type="button" onclick="fecharOverlay('modalReqPreload')">Cancelar</button>
-          <button class="btn-save" id="btnSalvarReqPreload" type="button" onclick="salvarReqPreloadProjeto()">
+        <div class="req-preload-right">
+          <button class="ag-tb-btn" type="button" onclick="fecharReqPreloadModal()">Cancelar</button>
+          <button class="btn-save req-preload-save" id="btnSalvarReqPreload" type="button" onclick="salvarReqPreloadProjeto()">
             <span class="material-symbols-outlined">save</span> Salvar padrão
           </button>
         </div>
