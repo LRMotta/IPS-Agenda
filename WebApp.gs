@@ -7,9 +7,9 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.06.27-fase2-prest-tipo';
-var CODEX_APP_BUILD_LABEL_ = 'Fase 2 - melhorias acumuladas e preloads por tipo de prestador';
-var CODEX_APP_BUILD_DATE_ = '2026-06-27';
+var CODEX_APP_VERSION_ = '2026.06.28-fase4-ux-operacional';
+var CODEX_APP_BUILD_LABEL_ = 'Fase 4 - UX operacional em Agenda e Transporte';
+var CODEX_APP_BUILD_DATE_ = '2026-06-28';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {

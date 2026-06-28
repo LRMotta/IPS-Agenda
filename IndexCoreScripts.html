@@ -4042,7 +4042,7 @@ function montarPayloadRequisicao(dadosValidados) {
   };
 }
 
-function gerarRequisicao() {
+function validarRequisicaoAntesDeGerar() {
   var paciente = document.getElementById('rqPaciente').value.trim();
   var localEl  = document.getElementById('rqLocalExame') || document.getElementById('rqPrestador');
   var local    = localEl ? localEl.value.trim() : '';
@@ -4063,37 +4063,24 @@ function gerarRequisicao() {
     snackErro('Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.');
     return;
   }
-  var solObj = _rqSolicitantes.find(function(s){ return s.nome === sol; }) || {};
+  return { paciente: paciente, local: local, data: data, solicitante: sol };
+}
+
+function gerarRequisicao() {
+  var dadosValidados = validarRequisicaoAntesDeGerar();
+  if (!dadosValidados) return;
   var preloadOffer = montarReqPreloadOfferAposGerar();
   var btn = document.getElementById('rqBtnGerar') || document.getElementById('btnSalvarReq');
   var statusEl = document.getElementById('rqStatus') || document.getElementById('statusReq');
-  if (btn) btn.disabled = true;
+  appSetButtonBusy(btn, true);
   statusEl.innerHTML = '<span style="color:#5f6b7c">⏳ Gerando PDF e rascunho de e-mail...</span>';
-  var dados = {
-    paciente:        paciente,
-    nascimento:      document.getElementById('rqNascimento').value,
-    protocolo:       document.getElementById('rqProtocolo').value,
-    medico:          document.getElementById('rqMedico').value,
-    localExame:      local,
-    endereco:        document.getElementById('rqEndereco').value,
-    dataAgendamento: data,
-    horario:         document.getElementById('rqHorario').value,
-    exames:          getExames(),
-    observacoes:     document.getElementById('rqObs').value.trim(),
-    urgente:         _rqUrgente,
-    solicitante:     sol,
-    solFormacao:     solObj.formacao || '',
-    solRegistro:     solObj.registro || '',
-    agendaId:        _rqOrigemContext && _rqOrigemContext.tipo === 'agenda' ? (_rqOrigemContext.agendaId || '') : '',
-    requestedByEmail: solObj.email || (window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.access ? window.APP_BOOTSTRAP_DATA.access.email : '')
-  };
-  dados = montarPayloadRequisicao({ paciente: paciente, local: local, data: data, solicitante: sol });
+  var dados = montarPayloadRequisicao(dadosValidados);
   appServerRun({
     method: 'gerarRequisicaoPDF',
     args: [dados],
     onSuccess: function(res) {
       var msg = res && typeof res === 'object' ? (res.message || 'Rascunho de e-mail criado com sucesso!') : res;
-      btn.disabled = false;
+      appSetButtonBusy(btn, false);
       statusEl.innerHTML = '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
       var warnings = res && typeof res === 'object' ? [res.preloadWarning, res.statusWarning].filter(Boolean) : [];
       if (warnings.length) {
@@ -4107,7 +4094,7 @@ function gerarRequisicao() {
       oferecerSalvarReqPreloadAposGerar(preloadOffer);
     },
     onFailure: function(e) {
-      btn.disabled = false;
+      appSetButtonBusy(btn, false);
       statusEl.innerHTML = '<span style="color:#e53935">✗ ' + esc(appErrorMessage(e)) + '</span>';
       snackErro(appErrorMessage(e));
     }
@@ -4210,16 +4197,18 @@ function montarReqPreloadOfferAposGerar() {
 }
 
 function oferecerSalvarReqPreloadAposGerar(snapshot) {
-  if (!snapshot || typeof google === 'undefined' || !google.script || !google.script.run) return;
-  google.script.run
-    .withSuccessHandler(function(data) {
+  if (!snapshot) return;
+  appServerRun({
+    method: 'getReqExamesPreloadProjetoEditor',
+    args: [snapshot.projeto, snapshot.tipoServico],
+    onSuccess: function(data) {
       if (data && data.exists && data.active !== false) return;
       abrirReqPreloadSaveOffer(snapshot, data && data.hash ? data.hash : '');
-    })
-    .withFailureHandler(function(e) {
-      snackErro((e && e.message) || e);
-    })
-    .getReqExamesPreloadProjetoEditor(snapshot.projeto, snapshot.tipoServico);
+    },
+    onFailure: function(e) {
+      snackErro(appErrorMessage(e));
+    }
+  });
 }
 
 function abrirReqPreloadSaveOffer(snapshot, hash) {
@@ -4252,13 +4241,13 @@ function salvarReqPreloadAposGerar() {
   if (!data) return;
   var btn = document.getElementById('btnConfirmReqPreloadSave');
   var status = document.getElementById('statusReqPreloadSave');
-  if (btn) btn.disabled = true;
+  appSetButtonBusy(btn, true);
   if (status) status.innerHTML = '<span style="color:#5f6b7c;">Salvando...</span>';
   appServerRun({
     method: 'salvarReqExamesPreloadProjeto',
     args: [data.projeto, data.exames, data.hash, data.tipoServico],
     onSuccess: function(res) {
-      if (btn) btn.disabled = false;
+      appSetButtonBusy(btn, false);
       if (res && res.conflict) {
         if (status) status.innerHTML = '<span style="color:#b3261e;">' + esc(res.message || 'Este padrao foi alterado por outro usuario.') + '</span>';
         return;
@@ -4269,7 +4258,7 @@ function salvarReqPreloadAposGerar() {
       snack((res && res.message) || 'Exames padrao salvos.');
     },
     onFailure: function(e) {
-      if (btn) btn.disabled = false;
+      appSetButtonBusy(btn, false);
       if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(appErrorMessage(e)) + '</span>';
     }
   });
@@ -4343,14 +4332,14 @@ function salvarPrestadorApp() {
   btn.disabled = true;
   google.script.run
     .withSuccessHandler(function(msg) {
-      btn.disabled = false;
+      appSetButtonBusy(btn, false);
       document.getElementById('statusPrest').innerHTML =
         '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
       carregarPrestadores();
       setTimeout(function() { fecharOverlay('modalPrestador'); }, 900);
     })
     .withFailureHandler(function(e) {
-      btn.disabled = false;
+      appSetButtonBusy(btn, false);
       document.getElementById('statusPrest').innerHTML =
         '<span style="color:#e53935">✗ ' + esc(e.message) + '</span>';
     })

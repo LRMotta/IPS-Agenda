@@ -1430,19 +1430,38 @@
     ok = validateAgendaAwbs(true) && ok;
     if (!ok) return;
     var btn = document.getElementById('btnSalvarAgenda');
-    btn.disabled = true;
-    document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#5f6b7c">Salvando...</span>';
-    var runner = google.script.run
-      .withSuccessHandler(function(res) {
-        btn.disabled = false;
+    if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, true);
+    else btn.disabled = true;
+    document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#5f6b7c">Salvando agendamento...</span>';
+    var payload = coletarAgendaEvento();
+    if (_agendaEditId) {
+      var eventoEditado = (_agendaEventos || []).find(function(x) {
+        return String(x.id || '') === String(_agendaEditId);
+      });
+      payload.id = _agendaEditId;
+      payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
+    }
+    var method = _agendaEditId ? 'atualizarAgendaEventoCompleto' : 'salvarNovoEventoCompleto';
+    appServerRun({
+      method: method,
+      args: [payload],
+      onSuccess: function(res) {
+        if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, false);
+        else btn.disabled = false;
         if (res && res.feriado) {
           document.getElementById('agendaStatusMsg').innerHTML =
             '<span style="color:#7a5c00">Ha feriado em ' + esc(res.dataFmt) + '. Confirme salvando pela rotina com feriado.</span>';
           return;
         }
         if (res && res.conflito) {
-          document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(res.erro || 'Este agendamento mudou em outra sessao. Atualize antes de salvar.') + '</span>';
-          snackErro(res.erro || 'Este agendamento mudou em outra sessao. Atualize antes de salvar.');
+          var conflitoMsg = res.erro || 'Este agendamento foi alterado por outra pessoa ou aba desde que voce abriu.';
+          document.getElementById('agendaStatusMsg').innerHTML =
+            '<div class="status-conflict">' +
+              '<span class="material-symbols-outlined">sync_problem</span>' +
+              '<div><strong>Conflito de edicao</strong><br>' + esc(conflitoMsg) + ' Feche esta edicao e abra o registro atualizado antes de salvar novamente.</div>' +
+              '<button type="button" class="status-conflict-btn" onclick="fecharAgendaModal(function(){ carregarAgendaEventos(true); })">Atualizar agenda</button>' +
+            '</div>';
+          snackErro('Conflito de edicao. Atualize a Agenda antes de salvar novamente.');
           carregarAgendaEventos(true);
           return;
         }
@@ -1461,22 +1480,15 @@
         limparAgendaForm();
         fecharAgendaModal();
         carregarAgendaEventos(true);
-      })
-      .withFailureHandler(function(e) {
-        btn.disabled = false;
-        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
-      });
-    var payload = coletarAgendaEvento();
-    if (_agendaEditId) {
-      var eventoEditado = (_agendaEventos || []).find(function(x) {
-        return String(x.id || '') === String(_agendaEditId);
-      });
-      payload.id = _agendaEditId;
-      payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
-      runner.atualizarAgendaEventoCompleto(payload);
-    } else {
-      runner.salvarNovoEventoCompleto(payload);
-    }
+      },
+      onFailure: function(e) {
+        if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, false);
+        else btn.disabled = false;
+        var msg = typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message || e);
+        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(msg) + '</span>';
+        snackErro(msg);
+      }
+    });
   }
 
   function coletarAgendaEvento() {

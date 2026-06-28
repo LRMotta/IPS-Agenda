@@ -22,6 +22,9 @@
     .ag-create-head{background:linear-gradient(135deg,#1a74f5,#0d47a1);padding:16px 22px;display:flex;align-items:center;gap:12px;border-radius:16px 16px 0 0;color:#fff}
     .ag-create-head .material-symbols-outlined{font-size:20px}
     .ag-create-body{padding:20px 22px}
+    .ag-modal-actions{margin-top:12px}
+    .ag-display-btn{width:100%;height:40px;justify-content:center;margin-bottom:12px}
+    .ag-modal-actions .btn-save{margin-top:0}
     .ag-form-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
     .ag-log-card{background:#f8faff;border:1px solid #dfe8f8;border-radius:var(--r-md);padding:14px;margin-top:14px}
     .ag-log-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--primary);margin-bottom:12px;display:flex;align-items:center;gap:6px}
@@ -311,9 +314,13 @@
       .ag-wk-col{scroll-snap-align:start;min-height:calc(100dvh - 245px)}
 
       .ag-create-panel{padding:0;align-items:stretch}
-      .ag-create-box{width:100%;max-height:100dvh;height:100dvh;border-radius:0;overscroll-behavior:contain}
+      .ag-create-box{width:100%;max-height:100dvh;height:100dvh;border-radius:0;display:flex;flex-direction:column;overscroll-behavior:contain}
       .ag-create-head{position:sticky;top:0;z-index:5;padding:13px 14px;border-radius:0}
-      .ag-create-body{padding:14px 12px 28px}
+      .ag-create-body{padding:14px 12px 118px;overflow-y:auto}
+      .ag-modal-actions{position:sticky;bottom:0;z-index:5;margin:16px -12px -118px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid #e0e6f0;box-shadow:0 -8px 24px rgba(15,23,42,.12)}
+      .ag-modal-actions .status-msg{margin-top:8px;text-align:left;min-height:16px}
+      .ag-modal-actions .btn-save{height:46px}
+      .ag-display-btn{margin-bottom:8px}
       .ag-transport-fields,.ag-transport-fields.backup{grid-template-columns:1fr}
       .ag-mat-line,.ag-mat-line.other-on{grid-template-columns:minmax(0,1fr) 34px}
       .ag-mat-line.other-on .ag-mat-type-cell{grid-template-columns:1fr}

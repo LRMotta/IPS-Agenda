@@ -213,6 +213,11 @@
     .btn-save:active { transform: translateY(1px); }
     .btn-save:disabled { background: #b0bec5; box-shadow: none; cursor: not-allowed; transform: none; }
     .status-msg { text-align: center; font-size: 13px; font-weight: 500; margin-top: 10px; min-height: 18px; }
+    .status-conflict { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; gap: 10px; align-items: center; text-align: left; border: 1px solid #f4b5b2; background: #fff8f7; color: #8c1a14; border-radius: var(--r-sm); padding: 10px 12px; line-height: 1.35; }
+    .status-conflict .material-symbols-outlined { color: #b3261e; font-size: 22px; }
+    .status-conflict strong { color: #8c1a14; }
+    .status-conflict-btn { border: 1px solid #f4b5b2; background: #fff; color: #b3261e; border-radius: var(--r-sm); height: 34px; padding: 0 12px; font-family: 'Roboto', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .status-conflict-btn:hover { background: #fce8e6; }
     .confirm-box { background: var(--surface); border-radius: 16px; padding: 24px; width: 88%; max-width: 340px; transform: scale(.93); transition: transform .2s; }
     .modal-overlay.open .confirm-box { transform: scale(1); }
     .confirm-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
@@ -232,7 +237,7 @@
     .floating-add-btn.show { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
     .floating-add-btn:hover { background: #0f5f2a; box-shadow: 0 12px 30px rgba(19,115,51,.32); }
     .floating-add-btn .material-symbols-outlined { font-size: 24px; }
-    @media(max-width:760px){ .scroll-top-btn { right: 16px; bottom: 18px; width: 42px; height: 42px; } .floating-add-btn { right: 16px; bottom: 70px; width: 42px; height: 42px; } }
+    @media(max-width:760px){ .scroll-top-btn { right: 16px; bottom: 18px; width: 42px; height: 42px; } .floating-add-btn { right: 16px; bottom: 70px; width: 42px; height: 42px; } .status-conflict { grid-template-columns: 22px minmax(0,1fr); } .status-conflict-btn { grid-column: 1 / -1; width: 100%; } }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { width: 28px; height: 28px; border: 3px solid #e8edf8; border-top-color: var(--primary); border-radius: 50%; animation: spin .75s linear infinite; margin: 0 auto 10px; }
     .placeholder-page { background: var(--surface); border: 1px solid #e8edf8; border-radius: var(--r-lg); padding: 60px 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-faint); text-align: center; }

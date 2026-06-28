@@ -47,7 +47,8 @@
     .topbar .btn.danger { color:#b3261e; background:#fff; border:1px solid rgba(255,255,255,.55); }
     .btn.secondary { color:var(--primary); background:var(--primary-light); border:1px solid #c5d5fb; }
     .btn.danger { color:var(--danger); background:#fce8e6; border:1px solid #f4b5b2; }
-    .btn:disabled { opacity:.55; cursor:wait; }
+    .btn:disabled { opacity:.55; cursor:not-allowed; }
+    .loading .btn:disabled { cursor:wait; }
     .btn.disabled, .btn[aria-disabled="true"] { color:#6b7280; background:#eef0f3; border:1px solid #d1d5db; cursor:not-allowed; pointer-events:none; opacity:.78; }
     .material-symbols-outlined { font-size:18px; line-height:1; }
     .grid { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:10px; margin-bottom:12px; }
@@ -176,7 +177,7 @@
       .action-status { width:100%; justify-content:flex-start; text-align:left; }
     }
     @media (max-width:680px) {
-      .shell { padding:0 12px 12px; }
+      .shell { padding:0 12px 86px; }
       .topbar { margin:0 -12px 12px; }
       .form-grid { grid-template-columns:1fr; }
       .material-row { grid-template-columns:30px 1fr; }
@@ -189,7 +190,20 @@
       .material-row > div:not(.material-name) { grid-column:2; }
       .mini-label { display:block; }
       .btn { flex:1; justify-content:center; }
-      .actions-top { width:100%; }
+      .actions-top {
+        position:fixed; left:0; right:0; bottom:0; z-index:18;
+        width:100%; padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+        background:rgba(255,255,255,.96); border-top:1px solid var(--border);
+        box-shadow:0 -8px 24px rgba(15,23,42,.12);
+      }
+      .action-status { order:-1; flex:1 0 100%; color:var(--muted); min-height:18px; padding:0 2px; }
+      .action-status.ok { color:var(--ok); }
+      .action-status.warn { color:#92400e; }
+      .action-status.danger { color:var(--danger); }
+      .topbar .btn { box-shadow:none; border:1px solid #d8e2f2; }
+      .topbar .btn.danger { flex:0 0 44px; padding:0; }
+      .topbar .btn.danger .material-symbols-outlined { margin:0; }
+      .topbar .btn.danger { font-size:0; }
     }
   </style>
 </head>
@@ -203,9 +217,9 @@
         </div>
       </div>
       <div class="actions-top">
-        <div class="action-status" id="actionStatus">Pronto.</div>
-        <button class="btn" onclick="saveData()" title="Gravar dados na planilha de transporte"><span class="material-symbols-outlined">save</span>Salvar</button>
-        <button class="btn" onclick="runPdf()"><span class="material-symbols-outlined">picture_as_pdf</span>Gerar PDF</button>
+        <div class="action-status" id="actionStatus" role="status" aria-live="polite">Pronto.</div>
+        <button class="btn" id="btnSaveTransport" onclick="saveData()" title="Gravar dados na planilha de transporte"><span class="material-symbols-outlined">save</span><span class="btn-label">Salvar</span></button>
+        <button class="btn" id="btnPdfTransport" onclick="runPdf()"><span class="material-symbols-outlined">picture_as_pdf</span><span class="btn-label">Gerar PDF</span></button>
         <button class="btn danger" onclick="clearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
       </div>
     </div>
@@ -317,7 +331,7 @@
       </div>
     </div>
   </div>
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
     var state = { registro: {}, options: {}, resumo: {}, issues: [] };
@@ -397,6 +411,31 @@
       document.getElementById('app').classList.toggle('loading', !!on);
       Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn) { btn.disabled = !!on; });
       if (on) setActionStatus(msg || 'Processando...', '');
+      else updateTransportActionState();
+    }
+
+    function setButtonState(id, disabled, title) {
+      var btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = !!disabled;
+      if (title) btn.title = title;
+      btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    }
+
+    function setButtonLabel(id, text) {
+      var btn = document.getElementById(id);
+      var label = btn ? btn.querySelector('.btn-label') : null;
+      if (label) label.textContent = text;
+    }
+
+    function updateTransportActionState() {
+      var missing = blockingIssues();
+      var blocked = missing.length > 0;
+      var title = blocked
+        ? 'Preencha para continuar: ' + missing.join(', ')
+        : 'Pronto para salvar.';
+      setButtonState('btnSaveTransport', blocked, title);
+      setButtonState('btnPdfTransport', blocked, blocked ? title : 'Salvar e gerar PDF.');
     }
 
     function toast(msg, type) {
@@ -527,6 +566,7 @@
           var msg = transportErrorMessage(e);
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
+          setButtonLabel('btnSaveTransport', 'Salvar');
         });
       runner[name].apply(runner, args || []);
     }
@@ -1147,6 +1187,7 @@
       }).join('');
       renderIssues();
       renderMeta(ativos, docs);
+      updateTransportActionState();
     }
 
     function docsFor(courier, temp, destino) {
@@ -1343,12 +1384,15 @@
     function saveData() {
       if (!ensureRequiredTransportFields()) return;
       var payload = collectPayload();
+      setButtonLabel('btnSaveTransport', 'Salvando...');
       serverCall('salvarTransporte', [payload, { returnBootstrap: false, preencherDocumentos: false }], function(data) {
         return agendaSyncMessage(data, 'Dados salvos na planilha de transporte.');
       }, function(data) {
         if (state) state.registro = Object.assign({}, state.registro || {}, payload);
         transportClearUnsaved();
         renderAll();
+        setButtonLabel('btnSaveTransport', 'Salvo');
+        setTimeout(function() { setButtonLabel('btnSaveTransport', 'Salvar'); }, 1400);
       }, 'Salvando...');
     }
 
@@ -1357,6 +1401,7 @@
       var payload = collectPayload();
       var requestedByEmail = state && state.access ? state.access.email : '';
       var actionLabel = 'Gerando PDF e rascunho...';
+      setButtonLabel('btnPdfTransport', 'Gerando...');
       setBusy(true, 'Salvando antes de executar. ' + actionLabel);
       google.script.run
         .withSuccessHandler(function(data) {
@@ -1377,12 +1422,14 @@
               setActionStatus(msg, msgType);
               toast(msg, msgType);
               if (res && typeof res === 'object' && res.type === 'pdf') showPdfModal(res);
+              setButtonLabel('btnPdfTransport', 'Gerar PDF');
             })
             .withFailureHandler(function(e) {
               setBusy(false);
               var msg = transportErrorMessage(e);
               setActionStatus(msg, 'danger');
               toast(msg, 'danger');
+              setButtonLabel('btnPdfTransport', 'Gerar PDF');
             })[actionName]({
               payload: payload,
               requestedByEmail: requestedByEmail
@@ -1393,6 +1440,7 @@
           var msg = transportErrorMessage(e);
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
+          setButtonLabel('btnPdfTransport', 'Gerar PDF');
         })
         .salvarTransporte(payload, { returnBootstrap: false, preencherDocumentos: false });
     }
