@@ -408,6 +408,10 @@
       window._toastTimer = setTimeout(function() { el.style.display = 'none'; }, 4200);
     }
 
+    function transportErrorMessage(error, fallback) {
+      return (error && (error.message || error.toString && error.toString())) || fallback || 'Erro inesperado.';
+    }
+
     function agendaSyncMessage(data, fallback) {
       var sync = data && data.agendaSync;
       if (!sync) return fallback || '';
@@ -492,7 +496,7 @@
         })
         .withFailureHandler(function(e) {
           if (btn) btn.disabled = false;
-          var msg = e && e.message ? e.message : String(e);
+          var msg = transportErrorMessage(e);
           toast(msg, 'danger');
           setActionStatus(msg, 'danger');
         })
@@ -520,7 +524,7 @@
         })
         .withFailureHandler(function(e) {
           setBusy(false);
-          var msg = e && e.message ? e.message : String(e);
+          var msg = transportErrorMessage(e);
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
         });
@@ -1376,7 +1380,7 @@
             })
             .withFailureHandler(function(e) {
               setBusy(false);
-              var msg = e && e.message ? e.message : String(e);
+              var msg = transportErrorMessage(e);
               setActionStatus(msg, 'danger');
               toast(msg, 'danger');
             })[actionName]({
@@ -1386,7 +1390,7 @@
         })
         .withFailureHandler(function(e) {
           setBusy(false);
-          var msg = e && e.message ? e.message : String(e);
+          var msg = transportErrorMessage(e);
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
         })

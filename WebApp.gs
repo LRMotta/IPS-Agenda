@@ -7,8 +7,8 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.06.27-fase2-ui';
-var CODEX_APP_BUILD_LABEL_ = 'Fase 2 - preloads, AWB, cache, requisicao e UI';
+var CODEX_APP_VERSION_ = '2026.06.27-fase2-prest-tipo';
+var CODEX_APP_BUILD_LABEL_ = 'Fase 2 - melhorias acumuladas e preloads por tipo de prestador';
 var CODEX_APP_BUILD_DATE_ = '2026-06-27';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
@@ -338,6 +338,9 @@ function getCadastrosBootstrapData(page) {
   } else if (page === 'solicitantes') {
     out.data = getSolicitantes();
   } else if (page === 'prestadores') {
+    out.config = {
+      tiposServico: getPrestadorTipoServicoOptions_()
+    };
     out.data = getPrestadores();
   } else if (page === 'labcentral') {
     out.data = getLabCentral();
@@ -613,6 +616,10 @@ function codexWithDocumentLock_(label, fn) {
   }
 }
 
+function codexIsDocumentLockBusyError_(error) {
+  return String(error && error.message || error || '').indexOf('Outra operação está gravando no sistema') !== -1;
+}
+
 function codexNormalizeRecordValueForVersion_(value) {
   if (value instanceof Date) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
@@ -685,7 +692,8 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
   recordId = String(recordId || '').trim();
   sessionId = String(sessionId || '').trim();
   if (!moduleName || !recordId || !sessionId) return { editors: [], version: '' };
-  return codexWithDocumentLock_('codexOpenEditPresence', function() {
+  try {
+    return codexWithDocumentLock_('codexOpenEditPresence', function() {
     var sh = codexGetEditPresenceSheet_();
     var now = new Date();
     var ttlSeconds = 6 * 60;
@@ -721,7 +729,13 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
     if (targetRow) sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
     else sh.appendRow(row);
     return { ok: true, module: moduleName, recordId: recordId, sessionId: sessionId, version: version, editors: editors, ttlSeconds: ttlSeconds };
-  });
+    });
+  } catch (e) {
+    if (codexIsDocumentLockBusyError_(e)) {
+      return { ok: false, lockBusy: true, editors: [], version: '', message: e.message || String(e) };
+    }
+    throw e;
+  }
 }
 
 function codexReleaseEditPresence(moduleName, recordId, sessionId) {
@@ -1540,34 +1554,53 @@ function buscarParticipantesRequisicao() {
 /**
  * Retorna empresa e endereço de todos os prestadores.
  * Chamada pelo WebApp via google.script.run.
- * A=id | B=empresa | C=endereco | D=email
+ * A=id | B=empresa | C=endereco | D=email | E=tipo de serviço
  */
 function buscarPrestadoresParaRequisicao() {
   try {
     const ss  = SpreadsheetApp.getActiveSpreadsheet();
     const aba = ss.getSheetByName('🏢 Prestadores');
     if (!aba || aba.getLastRow() < 2) return [];
-    return aba.getRange(2, 2, aba.getLastRow() - 1, 2).getValues()
-      .filter(function(row) { return row[0]; })
+    var tipoCol = ensurePrestadoresTipoServicoColumn_(aba);
+    return aba.getRange(2, 1, aba.getLastRow() - 1, Math.max(4, tipoCol)).getValues()
+      .filter(function(row) { return row[1]; })
       .map(function(row) {
         return {
-          empresa:  row[0].toString().trim(),
-          endereco: row[1] ? row[1].toString().trim() : ''
+          empresa:  row[1].toString().trim(),
+          endereco: row[2] ? row[2].toString().trim() : '',
+          tipoServico: row[tipoCol - 1] ? row[tipoCol - 1].toString().trim() : ''
         };
       });
   } catch(e) { return []; }
 }
 
-function getReqExamesPreloadProjeto(projeto) {
-  var preload = reqExamesPreloadReadProjeto_(projeto);
+function getReqExamesPreloadProjeto(projeto, tipoServico) {
+  var preload = reqExamesPreloadReadProjeto_(projeto, null, tipoServico);
   return preload && preload.active ? preload.exames : [];
 }
 
-function getReqExamesPreloadProjetoEditor(projeto) {
-  var preload = reqExamesPreloadReadProjeto_(projeto);
+function getReqExamesPreloadProjetoContext(projeto, tipoServico) {
+  var exact = reqExamesPreloadReadProjeto_(projeto, null, tipoServico, true);
+  var preload = exact || reqExamesPreloadReadProjeto_(projeto, null, tipoServico);
+  return {
+    projeto: String(projeto || '').trim(),
+    tipoServico: String(tipoServico || '').trim(),
+    chave: preload ? preload.chave : reqExamesPreloadKey_(projeto, tipoServico),
+    exames: preload && preload.active ? preload.exames : [],
+    hash: preload ? preload.hash : reqExamesPreloadHash_([]),
+    exists: !!(preload && preload.rowIndex),
+    exactExists: !!(exact && exact.rowIndex && exact.active),
+    fallbackUsed: !!(preload && preload.rowIndex && (!exact || exact.rowIndex !== preload.rowIndex))
+  };
+}
+
+function getReqExamesPreloadProjetoEditor(projeto, tipoServico) {
+  var preload = reqExamesPreloadReadProjeto_(projeto, null, tipoServico, true);
   var exames = preload && preload.active ? preload.exames : [];
   return {
     projeto: String(projeto || '').trim(),
+    tipoServico: String(tipoServico || '').trim(),
+    chave: reqExamesPreloadKey_(projeto, tipoServico),
     exames: exames,
     hash: reqExamesPreloadHash_(exames),
     exists: !!(preload && preload.rowIndex),
@@ -1575,9 +1608,10 @@ function getReqExamesPreloadProjetoEditor(projeto) {
   };
 }
 
-function salvarReqExamesPreloadProjeto(projeto, exames, expectedHash) {
+function salvarReqExamesPreloadProjeto(projeto, exames, expectedHash, tipoServico) {
   codexAssertCanWrite_('salvarReqExamesPreloadProjeto', 'Requisição de Exames', projeto);
   projeto = String(projeto || '').trim();
+  tipoServico = String(tipoServico || '').trim();
   if (!projeto) throw new Error('Informe o projeto para salvar o preload.');
   exames = (exames || []).map(function(v) {
     return String(v || '').trim();
@@ -1590,7 +1624,8 @@ function salvarReqExamesPreloadProjeto(projeto, exames, expectedHash) {
     ensureReqExamesPreloadSheet_(sh);
 
     var lastRow = sh.getLastRow();
-    var preloadAtual = reqExamesPreloadReadProjeto_(projeto, sh);
+    var chave = reqExamesPreloadKey_(projeto, tipoServico);
+    var preloadAtual = reqExamesPreloadReadProjeto_(projeto, sh, tipoServico, true);
     var atuais = preloadAtual && preloadAtual.active ? preloadAtual.exames : [];
     var hashAtual = reqExamesPreloadHash_(atuais);
     if (preloadAtual && preloadAtual.rowIndex && (!expectedHash || expectedHash !== hashAtual)) {
@@ -1598,42 +1633,56 @@ function salvarReqExamesPreloadProjeto(projeto, exames, expectedHash) {
         ok: false,
         conflict: true,
         projeto: projeto,
+        tipoServico: tipoServico,
+        chave: chave,
         exames: atuais,
         hash: hashAtual,
         message: 'Os exames padrão deste projeto foram alterados por outro usuário. Carregue a versão atual antes de salvar.'
       };
     }
 
-    var row = [projeto].concat(exames);
+    var row = [chave].concat(exames);
     while (row.length < 41) row.push('');
     row.push('Sim');
 
     if (preloadAtual && preloadAtual.rowIndex) {
       sh.getRange(preloadAtual.rowIndex, 1, 1, 42).setValues([row]);
-      return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão atualizados.' };
+      return { ok: true, projeto: projeto, tipoServico: tipoServico, chave: chave, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão atualizados.' };
     }
     sh.getRange(lastRow + 1, 1, 1, 42).setValues([row]);
-    return { ok: true, projeto: projeto, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão cadastrados.' };
+    return { ok: true, projeto: projeto, tipoServico: tipoServico, chave: chave, exames: exames, hash: reqExamesPreloadHash_(exames), message: 'Exames padrão cadastrados.' };
   });
 }
 
-function reqExamesPreloadReadProjeto_(projeto, sh) {
+function reqExamesPreloadKey_(projeto, tipoServico) {
   projeto = String(projeto || '').trim();
+  tipoServico = String(tipoServico || '').trim();
+  return tipoServico ? (projeto + ' | ' + tipoServico) : projeto;
+}
+
+function reqExamesPreloadReadProjeto_(projeto, sh, tipoServico, exactOnly) {
+  projeto = String(projeto || '').trim();
+  tipoServico = String(tipoServico || '').trim();
   if (!projeto) return null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   sh = sh || getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
   if (!sh || sh.getLastRow() < 2) return null;
   var data = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(42, sh.getLastColumn())).getValues();
-  var alvo = normText_(projeto);
+  var chaves = [reqExamesPreloadKey_(projeto, tipoServico)];
+  if (tipoServico && !exactOnly) chaves.push(projeto);
+  var alvoMap = {};
+  chaves.forEach(function(chave) { alvoMap[normText_(chave)] = true; });
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
-    if (normText_(row[0]) !== alvo) continue;
+    if (!alvoMap[normText_(row[0])]) continue;
     var ativo = String(row[41] || '').trim();
     var inactive = ativo && ['nao', 'não', 'n', 'false', 'inativo'].indexOf(normText_(ativo)) > -1;
     var exames = row.slice(1, 41).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
     return {
       rowIndex: i + 2,
-      projeto: String(row[0] || '').trim(),
+      projeto: projeto,
+      tipoServico: normText_(row[0]) === normText_(reqExamesPreloadKey_(projeto, tipoServico)) ? tipoServico : '',
+      chave: String(row[0] || '').trim(),
       exames: exames,
       active: !inactive,
       hash: reqExamesPreloadHash_(inactive ? [] : exames)
@@ -2890,20 +2939,95 @@ function excluirMonitor(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 //  PRESTADORES
 // ══════════════════════════════════════════════════════════════════════════════
+function getPrestadorTipoServicoOptions_() {
+  garantirPrestadorTipoServicoDefaults_();
+  return getConfigAppValuesByKeys_(
+    ['Prestadores', 'Requisição de Exames', 'Requisicao de Exames'],
+    ['Tipo de Serviço', 'Tipos de Serviço', 'Tipo de servico', 'Tipos de servico'],
+    ['Análises clínicas', 'Serviço de imagem', 'Outros']
+  );
+}
+
+function garantirPrestadorTipoServicoDefaults_() {
+  var sh = getConfigAppSheet_();
+  var defaults = ['Análises clínicas', 'Serviço de imagem', 'Outros'];
+  var existing = {};
+  var lastRow = Math.max(sh.getLastRow(), 1);
+  if (lastRow >= 2) {
+    [[1, 'Principal'], [8, 'Apoio']].forEach(function(block) {
+      var values = sh.getRange(2, block[0], lastRow - 1, 6).getValues();
+      values.forEach(function(r) {
+        if (normText_(r[0]) === 'prestadores' && normText_(r[1]) === 'tipo de servico') {
+          existing[normText_(r[2])] = true;
+        }
+      });
+    });
+  }
+  var target = 2;
+  if (lastRow >= 2) {
+    sh.getRange(2, 8, lastRow - 1, 1).getValues().forEach(function(r, idx) {
+      if (String(r[0] || '').trim()) target = idx + 3;
+    });
+  }
+  var inserted = false;
+  defaults.forEach(function(value, idx) {
+    if (existing[normText_(value)]) return;
+    sh.getRange(target, 8, 1, 6).setValues([[
+      'Prestadores',
+      'Tipo de Serviço',
+      value,
+      'Sim',
+      idx + 1,
+      'Tipos usados para classificar prestadores e selecionar preloads de requisição.'
+    ]]);
+    target++;
+    inserted = true;
+  });
+  if (inserted) {
+    CODEX_CONFIG_APP_ROWS_CACHE_ = null;
+    try { codexCacheRemove_('ConfigAppRows:v2'); } catch (e) {}
+  }
+}
+
+function ensurePrestadoresTipoServicoColumn_(sh) {
+  if (!sh) return 5;
+  var lastCol = Math.max(sh.getLastColumn(), 4);
+  if (sh.getMaxColumns() < 5) sh.insertColumnsAfter(sh.getMaxColumns(), 5 - sh.getMaxColumns());
+  var headers = sh.getRange(1, 1, 1, Math.max(lastCol, 5)).getValues()[0];
+  for (var i = 0; i < headers.length; i++) {
+    if (normText_(headers[i]) === 'tipo de servico') return i + 1;
+  }
+  if (!String(headers[4] || '').trim()) {
+    sh.getRange(1, 5).setValue('Tipo de Serviço');
+    return 5;
+  }
+  var target = headers.length + 1;
+  if (sh.getMaxColumns() < target) sh.insertColumnsAfter(sh.getMaxColumns(), target - sh.getMaxColumns());
+  sh.getRange(1, target).setValue('Tipo de Serviço');
+  return target;
+}
+
 function getPrestadores() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🏢 Prestadores');
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+  if (!sh) return [];
+  var tipoCol = ensurePrestadoresTipoServicoColumn_(sh);
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, tipoCol)).getValues()
     .filter(function(r) { return r[1]; })
     .map(function(r) {
-      return { id: r[0] || '', empresa: r[1] || '', endereco: r[2] || '', email: r[3] || '' };
+      return { id: r[0] || '', empresa: r[1] || '', endereco: r[2] || '', email: r[3] || '', tipoServico: r[tipoCol - 1] || '' };
     });
 }
 
 function salvarDadosPrestador(dados) {
   codexAssertCanWrite_('salvarDadosPrestador', 'Cadastros', dados && dados.id);
+  dados = dados || {};
+  if (!String(dados.empresa || '').trim()) throw new Error('Informe a empresa do prestador.');
+  if (!String(dados.email || '').trim()) throw new Error('Informe o e-mail do prestador.');
+  if (!String(dados.tipoServico || '').trim()) throw new Error('Informe o tipo de serviço do prestador.');
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🏢 Prestadores');
   if (!sh) throw new Error("Aba 'Prestadores' não encontrada.");
+  var tipoCol = ensurePrestadoresTipoServicoColumn_(sh);
   if (dados.id && dados.id !== '') {
     var ids = sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), 1).getValues();
     for (var i = 0; i < ids.length; i++) {
@@ -2912,17 +3036,16 @@ function salvarDadosPrestador(dados) {
         sh.getRange(ln, 2).setValue(dados.empresa  || '');
         sh.getRange(ln, 3).setValue(dados.endereco || '');
         sh.getRange(ln, 4).setValue(dados.email    || '');
+        sh.getRange(ln, tipoCol).setValue(dados.tipoServico || '');
         return 'Prestador atualizado com sucesso.';
       }
     }
     throw new Error('Prestador não encontrado para edição.');
   }
-  sh.appendRow([
-    'PREST-' + Date.now(),
-    dados.empresa  || '',
-    dados.endereco || '',
-    dados.email    || ''
-  ]);
+  var row = ['PREST-' + Date.now(), dados.empresa || '', dados.endereco || '', dados.email || ''];
+  while (row.length < tipoCol) row.push('');
+  row[tipoCol - 1] = dados.tipoServico || '';
+  sh.appendRow(row);
   return 'Prestador cadastrado com sucesso.';
 }
 
@@ -7506,9 +7629,9 @@ function instalarGatilhoMonitorEntregasDhl() {
   });
   ScriptApp.newTrigger('monitorarEntregasDhlAgendadas')
     .timeBased()
-    .everyHours(6)
+    .everyHours(4)
     .create();
-  return { ok: true, intervaloHoras: 6 };
+  return { ok: true, intervaloHoras: 4 };
 }
 
 function removerGatilhoMonitorEntregasDhl() {

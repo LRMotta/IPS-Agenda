@@ -250,15 +250,16 @@
         </button>
       </div>
       <div class="table-card">
-        <table class="data-table">
+        <table class="data-table prestadores-table">
           <thead><tr>
             <th>Empresa</th>
             <th>Endereço</th>
+            <th>Tipo de Serviço</th>
             <th>E-mail</th>
             <th style="text-align:right;padding-right:20px">Ações</th>
           </tr></thead>
           <tbody id="bodyPrestadores">
-            <tr class="loading-row"><td colspan="4"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>
@@ -863,6 +864,10 @@
               <label class="field-label" for="rqEndereco">Endereco</label>
               <input type="text" id="rqEndereco" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
             </div>
+            <div class="field" style="margin-top:14px">
+              <label class="field-label" for="rqPrestadorTipo">Tipo de serviço</label>
+              <input type="text" id="rqPrestadorTipo" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
+            </div>
           </div>
           <!-- 4. Exames -->
           <div class="form-section">
@@ -915,6 +920,10 @@
         <input type="text" id="reqPreloadProjeto" class="f-input auto-fill" readonly>
       </div>
       <div class="field" style="margin-top:14px">
+        <label class="field-label" for="reqPreloadTipoServico">Tipo de serviço</label>
+        <input type="text" id="reqPreloadTipoServico" class="f-input auto-fill" readonly>
+      </div>
+      <div class="field" style="margin-top:14px">
         <label class="field-label" for="reqPreloadExames">Exames</label>
         <textarea id="reqPreloadExames" class="f-textarea" style="height:280px;font-family:Roboto Mono,Consolas,monospace" placeholder="Um exame por linha"></textarea>
         <div class="preload-shared-note">
@@ -940,12 +949,26 @@
 
 <div class="modal-overlay" id="confirmReqPreload">
   <div class="confirm-box" style="max-width:440px;">
-    <h3>Substituir exames pela lista padr&atilde;o?</h3>
+    <h3>Carregar exames padrao?</h3>
     <p id="confirmReqPreloadMsg">Confirme para carregar os exames padr&atilde;o do projeto.</p>
     <div class="confirm-actions">
-      <button class="btn-txt" type="button" onclick="fecharOverlay('confirmReqPreload')">Manter exames atuais</button>
+      <button class="btn-txt" type="button" onclick="recusarReqPreloadEncontrado()">Nao usar agora</button>
       <button class="btn-new" type="button" id="btnConfirmReqPreload">
-        <span class="material-symbols-outlined">sync_alt</span> Substituir
+        <span class="material-symbols-outlined">playlist_add_check</span> Usar padrao
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmReqPreloadSave">
+  <div class="confirm-box" style="max-width:460px;">
+    <h3>Salvar exames como padrao?</h3>
+    <p id="confirmReqPreloadSaveMsg">Esta combinacao ainda nao possui um padrao salvo.</p>
+    <div class="status-msg" id="statusReqPreloadSave" style="text-align:left;margin-top:0;margin-bottom:12px"></div>
+    <div class="confirm-actions">
+      <button class="btn-txt" type="button" onclick="fecharReqPreloadSaveOffer()">Agora nao</button>
+      <button class="btn-new" type="button" id="btnConfirmReqPreloadSave" onclick="salvarReqPreloadAposGerar()">
+        <span class="material-symbols-outlined">save</span> Salvar padrao
       </button>
     </div>
   </div>

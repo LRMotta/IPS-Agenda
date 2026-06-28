@@ -25,10 +25,15 @@
           <label class="field-label" for="prestEndereco">Endereço</label>
           <input type="text" id="prestEndereco" class="f-input" placeholder="Rua, número, bairro, cidade">
         </div>
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="prestTipoServico">Tipo de Serviço</label>
+          <select id="prestTipoServico" class="f-input f-select" onchange="limparErro('prestTipoServico','errPrestTipoServico')"></select>
+          <div class="field-error" id="errPrestTipoServico">Campo obrigatÃ³rio.</div>
+        </div>
         <div class="field">
           <label class="field-label" for="prestEmail">E-mail <span class="required-star">*</span></label>
-          <input type="email" id="prestEmail" class="f-input" placeholder="contato@laboratorio.com.br"
-            oninput="limparErro('prestEmail','errPrestEmail')">
+          <textarea id="prestEmail" class="f-textarea prest-email-textarea" placeholder="contato@laboratorio.com.br; outro@laboratorio.com.br"
+            oninput="limparErro('prestEmail','errPrestEmail')"></textarea>
           <div class="field-error" id="errPrestEmail">Campo obrigatório.</div>
         </div>
       </div>

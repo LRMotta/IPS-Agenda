@@ -99,6 +99,16 @@
     .data-table td:first-child { padding-left: 20px; }
     .data-table tr:last-child td { border-bottom: none; }
     .data-table tr:hover td { background: #f6f9ff; }
+    .prestadores-table { table-layout: fixed; }
+    .prestadores-table th:nth-child(1) { width: 24%; }
+    .prestadores-table th:nth-child(2) { width: 27%; }
+    .prestadores-table th:nth-child(3) { width: 15%; }
+    .prestadores-table th:nth-child(4) { width: 25%; }
+    .prestadores-table th:nth-child(5) { width: 96px; }
+    .prestadores-table td:last-child { text-align: right; padding-right: 20px; }
+    .prestadores-table .action-btns { justify-content: flex-end; }
+    .prest-email-cell { max-width: 100%; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .prest-email-cell a { color: var(--primary); text-decoration: none; }
     .empty-row td, .loading-row td { text-align: center; color: var(--text-faint); padding: 48px; }
     .name-cell { display: flex; align-items: center; gap: 11px; }
     .row-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 2px solid rgba(18,102,241,.15); }
@@ -165,6 +175,7 @@
     .form-section { background: #f6f8ff; border: 1px solid var(--primary-border); border-radius: var(--r-md); padding: 18px; margin-bottom: 16px; }
     .form-section:last-of-type { margin-bottom: 0; }
     .field-label { display: block; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 5px; }
+    .field-label[for="prestTipoServico"]::after { content: " *"; color: #e53935; }
     .f-input { display: block; width: 100%; height: 40px; padding: 0 12px; background: #fff; border: 1.5px solid var(--border); border-radius: var(--r-sm); font-family: 'Roboto', sans-serif; font-size: 13px; color: var(--text); outline: none; transition: border-color .18s, box-shadow .18s; }
     .f-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(18,102,241,.14); }
     .f-input.large { height: 44px; font-size: 14px; }
@@ -322,6 +333,7 @@
     .f-input.auto-fill { background: #f0f7ff; border-color: #b3d4f8; color: #1a5276; }
     .f-textarea { display: block; width: 100%; min-height: 84px; padding: 8px 12px; background: #fff; border: 1.5px solid var(--border); border-radius: var(--r-sm); font-family: Roboto,sans-serif; font-size: 13px; color: var(--text); outline: none; resize: vertical; line-height: 1.5; transition: border-color .18s,box-shadow .18s; box-sizing: border-box; }
     .f-textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(18,102,241,.14); }
+    .prest-email-textarea { min-height: 112px; }
     .exam-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
     .exam-num { width: 26px; height: 26px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .exam-input { flex: 1; height: 36px; padding: 0 10px; border: 1.5px solid var(--border); border-radius: var(--r-sm); font-family: Roboto,sans-serif; font-size: 13px; color: var(--text); background: #fff; outline: none; transition: border-color .18s; }
