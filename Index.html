@@ -11,6 +11,7 @@
     window.INDEX_ESTOQUE_ENABLED = <?!= includeEstoque ? 'true' : 'false' ?>;
     window.INDEX_DASHBOARD_ENABLED = <?!= includeDashboard ? 'true' : 'false' ?>;
     window.INDEX_INITIAL_PAGE = <?!= JSON.stringify(paginaInicial || 'agenda') ?>;
+    window.INDEX_INITIAL_AGENDA_ID = <?!= JSON.stringify(agendaAbrirInicial || '') ?>;
     window.INDEX_INITIAL_SEARCH = <?!= JSON.stringify(buscaInicial || '') ?>;
     window.INDEX_DASHBOARD_FILTER = <?!= JSON.stringify(dashboardFiltroInicial || '') ?>;
     window.INDEX_DASHBOARD_FILTER_KEYS = <?!= JSON.stringify(dashboardFiltroKeys || '') ?>;

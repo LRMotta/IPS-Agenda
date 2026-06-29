@@ -7,9 +7,9 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.06.28-fase4-ux-operacional';
-var CODEX_APP_BUILD_LABEL_ = 'Fase 4 - UX operacional em Agenda e Transporte';
-var CODEX_APP_BUILD_DATE_ = '2026-06-28';
+var CODEX_APP_VERSION_ = '2026.06.29-fase4-botoes-criticos';
+var CODEX_APP_BUILD_LABEL_ = 'Fase 4 - revisao fina de botoes criticos';
+var CODEX_APP_BUILD_DATE_ = '2026-06-29';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -23,6 +23,7 @@ function doGet(e) {
     tplDashboard.includeEstoque = false;
     tplDashboard.includeDashboard = true;
     tplDashboard.paginaInicial = 'dashboard';
+    tplDashboard.agendaAbrirInicial = '';
     tplDashboard.buscaInicial = '';
     tplDashboard.dashboardFiltroInicial = '';
     tplDashboard.dashboardFiltroKeys = '';
@@ -40,6 +41,7 @@ function doGet(e) {
     tplEstoque.paginaInicial = page === 'pedidos'
       ? 'pedidos'
       : (page === 'estoque-view' ? 'visualizacao' : (e && e.parameter ? (e.parameter.pagina || 'itens') : 'itens'));
+    tplEstoque.agendaAbrirInicial = '';
     tplEstoque.buscaInicial = e && e.parameter ? (e.parameter.busca || '') : '';
     tplEstoque.dashboardFiltroInicial = '';
     tplEstoque.dashboardFiltroKeys = '';
@@ -68,6 +70,7 @@ function doGet(e) {
   tplIndex.includeEstoque = false;
   tplIndex.includeDashboard = false;
   tplIndex.paginaInicial = e && e.parameter ? (e.parameter.pagina || 'agenda') : 'agenda';
+  tplIndex.agendaAbrirInicial = e && e.parameter ? String(e.parameter.agendaId || '') : '';
   tplIndex.buscaInicial = '';
   tplIndex.dashboardFiltroInicial = e && e.parameter ? (e.parameter.dashFiltro || '') : '';
   tplIndex.dashboardFiltroKeys = e && e.parameter ? (e.parameter.dashKeys || '') : '';
@@ -1595,16 +1598,19 @@ function getReqExamesPreloadProjetoContext(projeto, tipoServico) {
 }
 
 function getReqExamesPreloadProjetoEditor(projeto, tipoServico) {
-  var preload = reqExamesPreloadReadProjeto_(projeto, null, tipoServico, true);
+  var exact = reqExamesPreloadReadProjeto_(projeto, null, tipoServico, true);
+  var preload = exact || reqExamesPreloadReadProjeto_(projeto, null, tipoServico);
   var exames = preload && preload.active ? preload.exames : [];
   return {
     projeto: String(projeto || '').trim(),
     tipoServico: String(tipoServico || '').trim(),
-    chave: reqExamesPreloadKey_(projeto, tipoServico),
+    chave: preload ? preload.chave : reqExamesPreloadKey_(projeto, tipoServico),
     exames: exames,
     hash: reqExamesPreloadHash_(exames),
     exists: !!(preload && preload.rowIndex),
-    active: !(preload && !preload.active)
+    active: !(preload && !preload.active),
+    exactExists: !!(exact && exact.rowIndex && exact.active),
+    fallbackUsed: !!(preload && preload.rowIndex && (!exact || exact.rowIndex !== preload.rowIndex))
   };
 }
 

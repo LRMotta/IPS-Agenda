@@ -1,10 +1,56 @@
 <script>
   var _pendenciasCache = null;
   var _pendenciasLoadedAt = null;
+  var _pendenciasRefreshing = false;
   var PENDENCIAS_VISIBLE_LIMIT = 10;
+  var PENDENCIAS_TTL_MS = 3 * 60 * 1000;
+  window.STATE = window.STATE || {};
+  var STATE = window.STATE;
+  STATE.pendencias = STATE.pendencias || {};
 
   function jsArg(v) {
     return String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\r\n]+/g, ' ');
+  }
+
+  function pendenciasLoadedAtTime() {
+    if (_pendenciasLoadedAt instanceof Date) return _pendenciasLoadedAt.getTime();
+    return Number(_pendenciasLoadedAt || STATE.pendencias.loadedAt || 0);
+  }
+
+  function setPendenciasLoadedAtState(value) {
+    _pendenciasLoadedAt = value instanceof Date ? value : new Date(Number(value || Date.now()));
+    STATE.pendencias.loadedAt = _pendenciasLoadedAt.getTime();
+    return _pendenciasLoadedAt;
+  }
+
+  function pendenciasEstaoDesatualizadas() {
+    var loadedAt = pendenciasLoadedAtTime();
+    return !loadedAt || (Date.now() - loadedAt) > PENDENCIAS_TTL_MS;
+  }
+
+  function pendenciasEstaAtiva() {
+    if (typeof getCurrentPage === 'function') return getCurrentPage() === 'pendencias';
+    var page = document.getElementById('page-pendencias');
+    return !!(page && page.classList.contains('active'));
+  }
+
+  function setupPendenciasAutoRefreshListeners() {
+    if (STATE.pendencias.autoRefreshListenersStarted) return;
+    STATE.pendencias.autoRefreshListenersStarted = true;
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && pendenciasEstaAtiva()) pendenciasRevalidarEmBackground(false);
+    });
+    window.addEventListener('focus', function() {
+      if (pendenciasEstaAtiva()) pendenciasRevalidarEmBackground(false);
+    });
+  }
+
+  function pendenciasRevalidarEmBackground(force) {
+    if (_pendenciasRefreshing) return;
+    if (!force && !pendenciasEstaoDesatualizadas()) return;
+    carregarPendencias(!!force, { silent: true, onComplete: function() {
+      _pendenciasRefreshing = false;
+    } });
   }
 
   function pendenciaAgendaAction(it) {
@@ -225,31 +271,83 @@
     ts.textContent = prefix + _pendenciasLoadedAt.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
   }
 
-  function carregarPendencias(forcar) {
-    var grid = document.getElementById('pendenciasGrid');
+  function pendenciasTotal(p) {
+    var counts = (p && p.counts) || {};
+    return Object.keys(counts).reduce(function(total, key) {
+      var n = Number(counts[key] || 0);
+      return total + (isFinite(n) ? n : 0);
+    }, 0);
+  }
+
+  function setPendenciasStatus(msg, type) {
+    var el = document.getElementById('pendenciasStatus');
+    if (!el) return;
+    var color = type === 'ok' ? '#137333' : (type === 'danger' ? '#e53935' : (type === 'warn' ? '#7a5c00' : '#5f6b7c'));
+    el.innerHTML = msg ? '<span style="color:' + color + '">' + esc(msg) + '</span>' : '';
+  }
+
+  function setPendenciasButtonBusy(busy, label) {
     var btn = document.getElementById('btnPendenciasRefresh');
-    if (!forcar && _pendenciasCache) {
+    if (!btn) return;
+    if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, busy);
+    else btn.disabled = !!busy;
+    var text = btn.querySelector('.btn-label');
+    if (!text) return;
+    if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = text.textContent;
+    text.textContent = label || btn.dataset.defaultLabel;
+  }
+
+  function carregarPendencias(forcar, options) {
+    options = options || {};
+    setupPendenciasAutoRefreshListeners();
+    var grid = document.getElementById('pendenciasGrid');
+    if (!forcar && _pendenciasCache && !pendenciasEstaoDesatualizadas()) {
       renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
       atualizarPendenciasTs(true);
+      setPendenciasStatus('Exibindo ultima lista carregada.', '');
+      if (typeof options.onComplete === 'function') options.onComplete();
       return;
     }
-    if (grid) {
+    if (_pendenciasRefreshing) {
+      if (!options.silent) setPendenciasStatus('Atualizacao ja em andamento...', '');
+      if (typeof options.onComplete === 'function') options.onComplete();
+      return;
+    }
+    _pendenciasRefreshing = true;
+    if (grid && (!options.silent || !_pendenciasCache)) {
       grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>';
     }
-    if (btn) btn.disabled = true;
+    if (!options.silent) {
+      setPendenciasStatus('Atualizando...', '');
+      setPendenciasButtonBusy(true, 'Atualizando...');
+    }
     google.script.run
       .withSuccessHandler(function(d) {
-        if (btn) btn.disabled = false;
+        if (!options.silent) setPendenciasButtonBusy(false);
         _pendenciasCache = (d && d.pendencias) || {};
-        _pendenciasLoadedAt = new Date();
+        setPendenciasLoadedAtState(new Date());
         renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
         atualizarPendenciasTs(false);
+        var total = pendenciasTotal(_pendenciasCache);
+        if (!options.silent) setPendenciasStatus(total ? 'Atualizado. ' + total + ' pendencia(s) operacional(is) encontrada(s).' : 'Atualizado. Sem pendencias operacionais no momento.', total ? '' : 'ok');
+        _pendenciasRefreshing = false;
+        if (typeof options.onComplete === 'function') options.onComplete();
       })
       .withFailureHandler(function(e) {
-        if (btn) btn.disabled = false;
-        if (grid) {
-          grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">error</span>Erro ao carregar pendências: ' + esc(e && e.message ? e.message : e) + '</div>';
+        if (!options.silent) setPendenciasButtonBusy(false);
+        var msg = typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message ? e.message : e);
+        var manterCache = !!_pendenciasCache;
+        if (!options.silent) {
+          setPendenciasStatus(
+            (manterCache ? 'Atencao: nao foi possivel atualizar agora; mantendo a ultima lista carregada. ' : 'Erro: nao foi possivel carregar pendencias. ') + msg,
+            manterCache ? 'warn' : 'danger'
+          );
         }
+        if (grid && (!options.silent || !_pendenciasCache)) {
+          grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">error</span>Erro ao carregar pendências: ' + esc(msg) + '</div>';
+        }
+        _pendenciasRefreshing = false;
+        if (typeof options.onComplete === 'function') options.onComplete();
       })
       .getPendenciasOperacionais();
   }

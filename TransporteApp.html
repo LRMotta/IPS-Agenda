@@ -66,10 +66,33 @@
     .panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:13px 14px; border-bottom:1px solid var(--border); background:var(--soft); }
     .panel-title { display:flex; align-items:center; gap:8px; font-weight:700; color:#283142; }
     .panel-body { padding:14px; }
+    .field-action-row { display:flex; align-items:center; gap:8px; min-width:0; }
+    .field-action-row input { min-width:0; flex:1; }
+    .agenda-origin-actions { display:none; align-items:center; gap:6px; flex:0 0 auto; }
+    .agenda-origin-actions.show { display:inline-flex; }
+    .origin-chip {
+      border:1px solid #c5d5fb; border-radius:6px; background:#f8fbff; color:var(--primary); height:36px;
+      padding:0 9px; font:800 10px Roboto,Arial,sans-serif; letter-spacing:.06em; text-transform:uppercase;
+      display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+    }
+    .context-link {
+      border:1px solid #c5d5fb; border-radius:6px; background:#fff; color:var(--primary); height:36px;
+      padding:0 10px; font:700 12px Roboto,Arial,sans-serif; display:inline-flex; align-items:center; gap:6px;
+      cursor:pointer; white-space:nowrap;
+    }
+    .transport-section { display:grid; gap:10px; }
+    .transport-section + .transport-section { margin-top:18px; padding-top:16px; border-top:1px solid #d8e2f0; }
+    .transport-section-title {
+      display:flex; align-items:center; gap:8px; color:var(--primary); font-size:11px; font-weight:800;
+      letter-spacing:.08em; text-transform:uppercase;
+    }
+    .transport-section-title::after { content:''; height:1px; background:#d8e2f0; flex:1; }
+    .transport-section-title .material-symbols-outlined { font-size:16px; }
     .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
     .field { display:flex; flex-direction:column; gap:5px; min-width:0; }
     .field.full { grid-column:1/-1; }
     label { color:#8a94a6; font-size:11px; font-weight:700; text-transform:uppercase; }
+    .required-star { color:var(--danger); font-size:12px; font-weight:800; margin-left:2px; }
     input, select, textarea {
       width:100%; border:1px solid var(--border); border-radius:6px; min-height:36px; padding:8px 10px;
       font:13px Roboto,Arial,sans-serif; color:var(--text); background:#fff;
@@ -130,6 +153,10 @@
     .doc .material-symbols-outlined { color:var(--primary); }
     .issues { display:grid; gap:8px; margin-top:12px; }
     .issue { padding:10px 12px; display:flex; gap:8px; align-items:flex-start; color:var(--muted); }
+    button.issue { width:100%; text-align:left; font:inherit; cursor:pointer; }
+    button.issue:hover { box-shadow:0 0 0 3px rgba(18,102,241,.08); }
+    button.issue:focus-visible { outline:3px solid rgba(18,102,241,.28); outline-offset:2px; }
+    .issue .issue-action-hint { margin-top:3px; color:#64748b; font-size:11px; font-weight:700; }
     .issue.warn { background:#fff8ef; border-color:#ffd7a8; color:var(--warn); }
     .issue.danger { background:#fff8f7; border-color:#f4b5b2; color:var(--danger); }
     .issue.ok { background:#f2fbf5; border-color:#cce8d4; color:var(--ok); }
@@ -180,6 +207,9 @@
       .shell { padding:0 12px 86px; }
       .topbar { margin:0 -12px 12px; }
       .form-grid { grid-template-columns:1fr; }
+      .field-action-row { align-items:stretch; flex-direction:column; }
+      .agenda-origin-actions.show { display:flex; }
+      .origin-chip, .context-link { justify-content:center; }
       .material-row { grid-template-columns:30px 1fr; }
       .ag-mat-head{display:none}
       .ag-mat-line{grid-template-columns:1fr 1fr}
@@ -238,28 +268,50 @@
           <div class="panel-title"><span class="material-symbols-outlined">assignment</span>Dados do Envio</div>
         </div>
         <div class="panel-body">
-          <div class="form-grid">
-            <div class="field"><label>Paciente(s) *</label><select id="paciente" required></select></div>
-            <div class="field"><label>Protocolo *</label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
-            <div class="field"><label>Investigador *</label><input id="investigador" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
-            <div class="field"><label>Laboratório de destino *</label><select id="destino" required></select></div>
-            <div class="field"><label>Data da coleta</label><input id="dataColeta" type="date"></div>
-            <div class="field"><label>Data do envio *</label><input id="dataEnvio" type="date" required></div>
-            <div class="field"><label>Janela de envio *</label><select id="horaEnvio" required></select></div>
-            <div class="field"><label>Agendado por *</label><select id="agendadoPor" required></select></div>
-            <div class="field hidden" id="responsavelEntregaField"><label>Responsável pela Entrega das Amostras *</label><select id="responsavelEntrega"></select></div>
-            <div class="field full">
-              <label>Temperatura *</label>
-              <div class="segmented" id="temperaturas"></div>
+          <div class="transport-section">
+            <div class="transport-section-title"><span class="material-symbols-outlined">assignment_ind</span>Dados de estudo</div>
+            <div class="form-grid">
+              <div class="field"><label>Paciente(s) <span class="required-star">*</span></label><select id="paciente" required></select></div>
+              <div class="field"><label>Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+              <div class="field full">
+                <label>Investigador <span class="required-star">*</span></label>
+                <div class="field-action-row">
+                  <input id="investigador" class="auto-fill" placeholder="Preenchido pelo participante" readonly required>
+                  <div class="agenda-origin-actions" id="agendaContext">
+                    <span class="origin-chip"><span class="material-symbols-outlined">event_available</span>Origem Agenda</span>
+                    <button class="context-link" type="button" onclick="openAgendaFromTransport()"><span class="material-symbols-outlined">open_in_new</span>Ver agendamento</button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="field full">
-              <label>Courier *</label>
-              <div class="segmented" id="couriers"></div>
+          </div>
+          <div class="transport-section">
+            <div class="transport-section-title"><span class="material-symbols-outlined">schedule</span>Temporiza&ccedil;&atilde;o da remessa</div>
+            <div class="form-grid">
+              <div class="field"><label>Data da coleta</label><input id="dataColeta" type="date"></div>
+              <div class="field"><label>Data do envio <span class="required-star">*</span></label><input id="dataEnvio" type="date" required></div>
+              <div class="field"><label>Janela de envio <span class="required-star">*</span></label><select id="horaEnvio" required></select></div>
             </div>
-            <div class="field"><label>AWB / código</label><input id="awb"></div>
-            <div class="field" id="solicitarCaixaField"><label>Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
-            <div class="field hidden" id="pinexColetaField"><label>PINEX COL. N°</label><input id="pinexColeta" placeholder="000000" disabled></div>
-            <div class="field full"><label>Observações</label><textarea id="observacoes"></textarea></div>
+          </div>
+          <div class="transport-section">
+            <div class="transport-section-title"><span class="material-symbols-outlined">local_shipping</span>Log&iacute;stica / Courier</div>
+            <div class="form-grid">
+              <div class="field"><label>Laborat&oacute;rio de destino <span class="required-star">*</span></label><select id="destino" required></select></div>
+              <div class="field"><label>Agendado por <span class="required-star">*</span></label><select id="agendadoPor" required></select></div>
+              <div class="field full">
+                <label>Temperatura <span class="required-star">*</span></label>
+                <div class="segmented" id="temperaturas"></div>
+              </div>
+              <div class="field full">
+                <label>Courier <span class="required-star">*</span></label>
+                <div class="segmented" id="couriers"></div>
+              </div>
+              <div class="field"><label>AWB / c&oacute;digo</label><input id="awb"></div>
+              <div class="field" id="solicitarCaixaField"><label>Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
+              <div class="field hidden" id="responsavelEntregaField"><label>Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
+              <div class="field hidden" id="pinexColetaField"><label>PINEX COL. N&deg;</label><input id="pinexColeta" placeholder="000000" disabled></div>
+              <div class="field full"><label>Observa&ccedil;&otilde;es</label><textarea id="observacoes"></textarea></div>
+            </div>
           </div>
         </div>
       </section>
@@ -369,10 +421,20 @@
 
     function transportMarkUnsaved() {
       transportHasUnsavedChanges = true;
+      setButtonLabel('btnSaveTransport', 'Salvar alteracoes');
+      updateTransportActionState();
+      var el = document.getElementById('actionStatus');
+      var currentType = el ? String(el.dataset.statusType || '') : '';
+      if (!currentType || currentType === 'ok' || el.dataset.dirtyStatus === '1') {
+        setActionStatus('Alteracoes nao salvas.', 'warn', { dirty: true });
+      }
     }
 
     function transportClearUnsaved() {
       transportHasUnsavedChanges = false;
+      setButtonLabel('btnSaveTransport', 'Salvar');
+      var el = document.getElementById('actionStatus');
+      if (el && el.dataset.dirtyStatus === '1') setActionStatus('Pronto.', '');
     }
 
     function transportConfirmLeaveDirty() {
@@ -400,11 +462,13 @@
       e.returnValue = '';
     });
 
-    function setActionStatus(msg, type) {
+    function setActionStatus(msg, type, opts) {
       var el = document.getElementById('actionStatus');
       if (!el) return;
       el.textContent = msg || 'Pronto.';
       el.className = 'action-status ' + (type || '');
+      el.dataset.statusType = type || '';
+      el.dataset.dirtyStatus = opts && opts.dirty ? '1' : '';
     }
 
     function setBusy(on, msg) {
@@ -433,7 +497,7 @@
       var blocked = missing.length > 0;
       var title = blocked
         ? 'Preencha para continuar: ' + missing.join(', ')
-        : 'Pronto para salvar.';
+        : (transportHasUnsavedChanges ? 'Ha alteracoes nao salvas.' : 'Pronto para salvar.');
       setButtonState('btnSaveTransport', blocked, title);
       setButtonState('btnPdfTransport', blocked, blocked ? title : 'Salvar e gerar PDF.');
     }
@@ -448,7 +512,23 @@
     }
 
     function transportErrorMessage(error, fallback) {
-      return (error && (error.message || error.toString && error.toString())) || fallback || 'Erro inesperado.';
+      var raw = (error && (error.message || error.toString && error.toString())) || fallback || 'Erro inesperado.';
+      var text = String(raw || '');
+      var normText = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      var friendly = '';
+      if (error && (error.conflito || error.conflict)) {
+        friendly = 'Este transporte foi alterado depois que voce abriu a tela. Atualize os dados antes de tentar salvar novamente.';
+      } else if (normText.indexOf('alterado por outro usuario') >= 0 || normText.indexOf('desatualiz') >= 0 || normText.indexOf('stale') >= 0 || normText.indexOf('recordversion') >= 0 || normText.indexOf('conflito') >= 0) {
+        friendly = 'Os dados deste transporte podem estar desatualizados. Atualize a tela e revise a versao mais recente antes de salvar.';
+      } else if (normText.indexOf('acesso negado') >= 0 || normText.indexOf('permiss') >= 0 || normText.indexOf('permission') >= 0 || normText.indexOf('autoriz') >= 0) {
+        friendly = 'Sua conta nao tem permissao ou autorizacao suficiente para esta acao de Transporte. Verifique o acesso ao WebApp e tente novamente.';
+      } else if (normText.indexOf('lock') >= 0 || normText.indexOf('bloque') >= 0 || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+        friendly = 'Outra operacao de Transporte parece estar em andamento. Aguarde alguns instantes, atualize os dados e tente novamente.';
+      } else if (normText.indexOf('nao encontrado') >= 0 || normText.indexOf('não encontrado') >= 0 || normText.indexOf('not found') >= 0) {
+        friendly = 'Nao encontrei o registro ou arquivo esperado para este transporte. Atualize os dados e confirme se ele ainda existe.';
+      }
+      if (!friendly) return text;
+      return friendly + (text && friendly !== text ? ' Detalhe: ' + text : '');
     }
 
     function agendaSyncMessage(data, fallback) {
@@ -457,9 +537,9 @@
       if (sync.warnings && sync.warnings.length) return sync.warnings.join(' ');
       if (sync.atualizado) {
         var campos = sync.campos && sync.campos.length ? ': ' + sync.campos.join(', ') : '';
-        return 'Dados salvos. Agenda sincronizada' + campos + '.';
+        return 'Salvo. Agenda sincronizada' + campos + '.';
       }
-      if (sync.motivo) return 'Dados salvos. Agenda nao sincronizada: ' + sync.motivo + '.';
+      if (sync.motivo) return 'Atencao: dados salvos, mas a Agenda nao foi sincronizada: ' + sync.motivo + '.';
       return fallback || 'Dados salvos.';
     }
 
@@ -468,6 +548,70 @@
       if (!sync) return 'ok';
       if (sync.warnings && sync.warnings.length) return 'warn';
       return sync.atualizado || !sync.motivo ? 'ok' : 'warn';
+    }
+
+    function transportAgendaContext() {
+      var r = state && state.registro ? state.registro : {};
+      var agendaId = String(r.idAgenda || r.agendaId || '');
+      return {
+        id: agendaId,
+        paciente: String(r.paciente || ''),
+        protocolo: String(r.protocolo || ''),
+        visita: String(r.visita || r.nomeVisita || '')
+      };
+    }
+
+    function renderAgendaContext() {
+      var box = document.getElementById('agendaContext');
+      if (!box) return;
+      var ctx = transportAgendaContext();
+      if (!ctx.id) {
+        box.classList.remove('show');
+        box.removeAttribute('title');
+        return;
+      }
+      box.title = [ctx.paciente, ctx.protocolo, ctx.visita].filter(Boolean).join(' - ') || ('Agendamento ' + ctx.id);
+      box.classList.add('show');
+    }
+
+    function focusAgendaInOpener(agendaId) {
+      try {
+        var openerWin = window.opener;
+        if (!openerWin || openerWin.closed) return false;
+        if (typeof openerWin.abrirAgendaRegistroPorId === 'function') {
+          openerWin.abrirAgendaRegistroPorId(agendaId);
+          openerWin.focus();
+          return true;
+        }
+      } catch (e) {
+        return false;
+      }
+      return false;
+    }
+
+    function openAgendaFromTransport() {
+      var ctx = transportAgendaContext();
+      if (!ctx.id) {
+        toast('Este transporte nao esta vinculado a um agendamento.', 'warn');
+        return;
+      }
+      if (focusAgendaInOpener(ctx.id)) return;
+      function openUrl(baseUrl) {
+        var url = String(baseUrl || '');
+        if (!url) {
+          toast('Nao foi possivel obter o link da Agenda.', 'danger');
+          return;
+        }
+        window.open(url + '?pagina=agenda&agendaId=' + encodeURIComponent(ctx.id), 'codexAgenda');
+      }
+      if (state && state.webAppUrl) {
+        openUrl(state.webAppUrl);
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(openUrl)
+        .withFailureHandler(function(e) { toast(transportErrorMessage(e, 'Nao foi possivel abrir a Agenda.'), 'danger'); })
+        .getWebAppUrl();
     }
 
     function showPdfModal(data) {
@@ -823,6 +967,7 @@
       updateResponsavelEntregaField();
       segmented('temperaturas', o.temperaturas || [], selectedTemp, 'selectTemp');
       segmented('couriers', o.couriers || [], selectedCourier, 'selectCourier');
+      renderAgendaContext();
       applyAwbRule(true);
       applyParticipantSelection({ loadCe: false });
       renderMaterials(r.materiais || []);
@@ -1265,10 +1410,58 @@
           issues.push({ type:'ok', text:'Arquivo disponivel no Drive.' });
         }
       }
-      document.getElementById('issues').innerHTML = issues.map(function(i) {
+      document.getElementById('issues').innerHTML = issues.map(function(i, idx) {
         var icon = i.type === 'ok' ? 'check_circle' : (i.type === 'danger' ? 'error' : 'warning');
-        return '<div class="issue ' + i.type + '"><span class="material-symbols-outlined">' + icon + '</span><div>' + esc(i.text) + '</div></div>';
+        var target = transportChecklistTarget(i);
+        var body = '<span class="material-symbols-outlined">' + icon + '</span><div>' + esc(i.text) + (target ? '<div class="issue-action-hint">Ir para o ponto de aten&ccedil;&atilde;o</div>' : '') + '</div>';
+        if (target) return '<button type="button" class="issue ' + i.type + '" onclick="focusTransportChecklistIssue(' + idx + ')">' + body + '</button>';
+        return '<div class="issue ' + i.type + '">' + body + '</div>';
       }).join('');
+      window._transportChecklistIssues = issues;
+    }
+
+    function transportChecklistTarget(issue) {
+      if (!issue || issue.type === 'ok') return '';
+      var text = norm(issue.text || '');
+      if (!text) return '';
+      if (text.indexOf('paciente') >= 0) return 'paciente';
+      if (text.indexOf('protocolo') >= 0 || text.indexOf('projeto') >= 0 || text.indexOf(' ce') >= 0 || text.indexOf('expediente') >= 0 || text.indexOf('abreviado') >= 0 || text.indexOf('titulo completo') >= 0) return 'protocolo';
+      if (text.indexOf('investigador') >= 0) return 'investigador';
+      if (text.indexOf('laborat') >= 0 || text.indexOf('destino') >= 0) return 'destino';
+      if (text.indexOf('data de envio') >= 0) return 'dataEnvio';
+      if (text.indexOf('temperatura') >= 0) return 'temperaturas';
+      if (text.indexOf('courier') >= 0) return 'couriers';
+      if (text.indexOf('janela') >= 0) return 'horaEnvio';
+      if (text.indexOf('respons') >= 0 && text.indexOf('entrega') >= 0) return 'responsavelEntrega';
+      if (text.indexOf('respons') >= 0 && text.indexOf('agendamento') >= 0) return 'agendadoPor';
+      if (text.indexOf('awb') >= 0) return 'awb';
+      if (text.indexOf('pinex col') >= 0) return 'pinexColeta';
+      if (text.indexOf('material') >= 0 || text.indexOf('declaracao') >= 0) return 'materials';
+      if (text.indexOf('drive') >= 0 || text.indexOf('compartilhamento') >= 0 || text.indexOf('arquivo') >= 0) return 'pdfDriveLink';
+      if (text.indexOf('gmail') >= 0 || text.indexOf('rascunho') >= 0 || text.indexOf('pdf') >= 0) return 'btnPdfTransport';
+      return '';
+    }
+
+    function focusTransportChecklistIssue(index) {
+      var list = window._transportChecklistIssues || [];
+      var issue = list[index] || {};
+      var target = transportChecklistTarget(issue);
+      if (!target) return;
+      focusTransportChecklistTarget(target);
+      setActionStatus(issue.text || 'Revise o ponto indicado no Checklist.', issue.type === 'danger' ? 'danger' : 'warn');
+    }
+
+    function focusTransportChecklistTarget(target) {
+      var el = document.getElementById(target);
+      if (target === 'pdfDriveLink' && (!el || el.offsetParent === null)) el = document.getElementById('btnPdfTransport');
+      if (!el) return;
+      if (el.scrollIntoView) el.scrollIntoView({ block:'center', behavior:'smooth' });
+      var focusTarget = el;
+      if (target === 'materials') focusTarget = el.querySelector('input[type="checkbox"], select, input, button') || el;
+      else if (el.matches && el.matches('.segmented')) focusTarget = el.querySelector('button') || el;
+      if (focusTarget && focusTarget.focus) {
+        setTimeout(function() { focusTarget.focus(); }, 120);
+      }
     }
 
     function renderMeta(ativos, docs) {
@@ -1358,6 +1551,7 @@
       if (!missing.length) return true;
       missing.forEach(function(label) { setTransportFieldInvalid(label, true); });
       var msg = 'Preencha os campos obrigatórios: ' + missing.join(', ') + '.';
+      msg = 'Atencao: preencha os campos obrigatorios: ' + missing.join(', ') + '.';
       setActionStatus(msg, 'danger');
       toast(msg, 'danger');
       var focusMap = {
@@ -1386,7 +1580,7 @@
       var payload = collectPayload();
       setButtonLabel('btnSaveTransport', 'Salvando...');
       serverCall('salvarTransporte', [payload, { returnBootstrap: false, preencherDocumentos: false }], function(data) {
-        return agendaSyncMessage(data, 'Dados salvos na planilha de transporte.');
+        return agendaSyncMessage(data, 'Salvo. Dados salvos na planilha de transporte.');
       }, function(data) {
         if (state) state.registro = Object.assign({}, state.registro || {}, payload);
         transportClearUnsaved();
@@ -1402,7 +1596,7 @@
       var requestedByEmail = state && state.access ? state.access.email : '';
       var actionLabel = 'Gerando PDF e rascunho...';
       setButtonLabel('btnPdfTransport', 'Gerando...');
-      setBusy(true, 'Salvando antes de executar. ' + actionLabel);
+      setBusy(true, 'Salvando... ' + actionLabel);
       google.script.run
         .withSuccessHandler(function(data) {
           var syncMsg = agendaSyncMessage(data, '');

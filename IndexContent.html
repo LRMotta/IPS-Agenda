@@ -192,9 +192,10 @@
     <!-- ═══ PENDÊNCIAS ═══ -->
     <div class="page" id="page-pendencias">
       <button class="btn-refresh" id="btnPendenciasRefresh" onclick="carregarPendencias(true)" style="margin-bottom:12px">
-        <span class="material-symbols-outlined">refresh</span>Atualizar pendências
+        <span class="material-symbols-outlined">refresh</span><span class="btn-label">Atualizar pendências</span>
         <span class="dash-ts" id="pendenciasTs"></span>
       </button>
+      <div class="status-msg pendencias-status" id="pendenciasStatus" role="status" aria-live="polite"></div>
       <div class="chart-card">
         <div class="dash-pend-grid" id="pendenciasGrid">
           <div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>

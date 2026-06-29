@@ -613,13 +613,20 @@ function irPara(pagina, options) {
   updateFloatingAddButton();
 }
 
-function transporteLoadingHtml() {
+function transporteLoadingHtml(args) {
+  args = args || {};
+  var chips = [
+    args.paciente ? '<span><strong>Paciente</strong>' + esc(args.paciente) + '</span>' : '',
+    args.protocolo ? '<span><strong>Protocolo</strong>' + esc(args.protocolo) + '</span>' : '',
+    args.visita ? '<span><strong>Visita</strong>' + esc(args.visita) + '</span>' : ''
+  ].filter(Boolean).join('');
+  var context = chips ? '<div class="ctx">' + chips + '</div>' : '';
   return '<!doctype html><html><head><meta charset="utf-8"><title>Preparando transporte</title>' +
     '<style>body{font-family:Arial,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fb;color:#1f2937}' +
     '.box{background:#fff;border:1px solid #d8e2f0;border-radius:8px;padding:26px 30px;box-shadow:0 8px 24px rgba(15,23,42,.08);max-width:420px;text-align:center}' +
     '.spin{width:28px;height:28px;border:3px solid #d8e2f0;border-top-color:#1266f1;border-radius:50%;animation:s 1s linear infinite;margin:0 auto 14px}@keyframes s{to{transform:rotate(360deg)}}' +
-    'h1{font-size:18px;margin:0 0 8px}p{font-size:13px;color:#64748b;margin:0;line-height:1.45}</style></head><body>' +
-    '<div class="box"><div class="spin"></div><h1>Preparando documentação</h1><p>Os dados da Agenda estão sendo enviados para o módulo de Transporte.</p></div>' +
+    'h1{font-size:18px;margin:0 0 8px}p{font-size:13px;color:#64748b;margin:0;line-height:1.45}.ctx{display:grid;gap:6px;margin:14px 0 0;text-align:left}.ctx span{display:block;border:1px solid #d8e2f0;border-radius:8px;background:#f8fbff;padding:8px 10px;font-size:13px}.ctx strong{display:block;color:#1266f1;font-size:10px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}</style></head><body>' +
+    '<div class="box"><div class="spin"></div><h1>Preparando documentação</h1><p>Os dados da Agenda estão sendo enviados para o módulo de Transporte.</p>' + context + '</div>' +
     '</body></html>';
 }
 
@@ -632,13 +639,13 @@ function transporteErrorHtml(message) {
     '</body></html>';
 }
 
-function prepararJanelaTransporte() {
+function prepararJanelaTransporte(args) {
   var w = null;
   try {
     w = window.open('', '_blank');
     if (w) {
       w.document.open();
-      w.document.write(transporteLoadingHtml());
+      w.document.write(transporteLoadingHtml(args));
       w.document.close();
     }
   } catch (e) {
@@ -2506,7 +2513,23 @@ function snack(msg) {
   setTimeout(function() { s.classList.remove('show'); }, 3000);
 }
 function appErrorMessage(error, fallback) {
-  return (error && (error.message || error.toString && error.toString())) || fallback || 'Erro inesperado.';
+  var raw = (error && (error.message || error.toString && error.toString())) || fallback || 'Erro inesperado.';
+  var text = String(raw || '');
+  var normText = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  var friendly = '';
+  if (error && (error.conflito || error.conflict)) {
+    friendly = 'Este registro foi alterado depois que voce abriu a tela. Atualize os dados antes de tentar salvar novamente.';
+  } else if (normText.indexOf('alterado por outro usuario') >= 0 || normText.indexOf('desatualiz') >= 0 || normText.indexOf('stale') >= 0 || normText.indexOf('recordversion') >= 0 || normText.indexOf('conflito') >= 0) {
+    friendly = 'Os dados exibidos podem estar desatualizados. Atualize a tela e revise a versao mais recente antes de salvar.';
+  } else if (normText.indexOf('acesso negado') >= 0 || normText.indexOf('permiss') >= 0 || normText.indexOf('permission') >= 0 || normText.indexOf('autoriz') >= 0) {
+    friendly = 'Sua conta nao tem permissao ou autorizacao suficiente para esta acao. Verifique o acesso ao WebApp e tente novamente.';
+  } else if (normText.indexOf('lock') >= 0 || normText.indexOf('bloque') >= 0 || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+    friendly = 'Outra operacao parece estar em andamento. Aguarde alguns instantes, atualize os dados e tente novamente.';
+  } else if (normText.indexOf('nao encontrado') >= 0 || normText.indexOf('não encontrado') >= 0 || normText.indexOf('not found') >= 0) {
+    friendly = 'Nao encontrei o registro ou recurso esperado. Atualize a lista e confirme se ele ainda existe.';
+  }
+  if (!friendly) return text;
+  return friendly + (text && friendly !== text ? ' Detalhe: ' + text : '');
 }
 function appNotify(msg, type) {
   if (!msg) return;
@@ -3499,6 +3522,7 @@ var _rqPostGeneratePreloadOffer = null;
 function initRequisicao() {
   if (_reqInited) return;
   _reqInited = true;
+  updateRequisicaoGenerateAvailability(false);
   document.getElementById('rqPacienteList').innerHTML =
     '<div class="ac-loading"><div class="ac-spin"></div>Carregando...</div>';
   appServerRun({
@@ -3534,6 +3558,7 @@ function initRequisicao() {
   });
   var listaExames = document.getElementById('rqExamesLista') || document.getElementById('examList');
   if (listaExames && !listaExames.children.length) adicionarExame();
+  updateRequisicaoGenerateAvailability(false);
 }
 
 function requisicaoDadosCarregados() {
@@ -3598,6 +3623,7 @@ function pickReqAC(inputId, listId, val, selVarName) {
   }
   if (inputId === 'rqPaciente') preencherDadosPaciente();
   if (inputId === 'rqSolicitante') preencherDadosSolicitante();
+  updateRequisicaoGenerateAvailability(false);
 }
 
 function fecharReqAC(listId) {
@@ -3765,7 +3791,11 @@ function abrirReqPreloadModal() {
       _reqPreloadConflictData = null;
       if (tipoEl) tipoEl.value = (data && data.tipoServico) || tipoServico || 'Geral do projeto';
       document.getElementById('reqPreloadExames').value = exames.join('\n');
-      if (status) status.innerHTML = '';
+      if (status) {
+        status.innerHTML = data && data.fallbackUsed
+          ? '<span style="color:#5f6b7c;">Carregado o padrão geral do projeto. Ao salvar, será criado/atualizado o padrão específico para este tipo de serviço.</span>'
+          : '';
+      }
     },
     onFailure: function(e) {
       _reqPreloadEditorHash = '';
@@ -3884,6 +3914,7 @@ function limparRequisicaoForm() {
   _rqPreloadPromptKey = '';
   _rqPendingPreloadData = null;
   _rqPostGeneratePreloadOffer = null;
+  updateRequisicaoGenerateAvailability(false);
 }
 
 function preencherEnderecoReq() {
@@ -3926,6 +3957,7 @@ function preencherSolicitanteUsuarioAtual() {
       input.value = solicitante.nome || '';
       _rqSelSolicitante = solicitante.nome || null;
       preencherDadosSolicitante();
+      updateRequisicaoGenerateAvailability(false);
     })
     .withFailureHandler(function() {})
     .getUsuarioEmail();
@@ -4049,6 +4081,7 @@ function validarRequisicaoAntesDeGerar() {
   var dataEl   = document.getElementById('rqData');
   var data     = dataEl ? dataEl.value : '';
   var sol      = document.getElementById('rqSolicitante').value.trim();
+  clearRequisicaoValidation();
   var erros = appRequiredMissing([
     { label: 'Paciente', value: paciente },
     { label: 'Local do Exame', value: local },
@@ -4056,50 +4089,135 @@ function validarRequisicaoAntesDeGerar() {
     { label: 'Solicitante', value: sol }
   ]);
   if (erros.length) {
+    if (!paciente) setRequisicaoFieldInvalid('rqPaciente', true);
+    if (!local) setRequisicaoFieldInvalid(localEl ? localEl.id : 'rqPrestador', true);
+    if (!data) setRequisicaoFieldInvalid('rqData', true);
+    if (!sol) setRequisicaoFieldInvalid('rqSolicitante', true);
+    setRequisicaoStatus('Atencao: preencha os campos obrigatorios: ' + erros.join(', ') + '.', 'danger');
     snackErro('Campos obrigatórios: ' + erros.join(', '));
     return;
   }
   if (requisicaoIsPastDate(data)) {
+    setRequisicaoFieldInvalid('rqData', true);
+    setRequisicaoStatus('Atencao: a data do exame nao pode ser anterior a hoje.', 'danger');
     snackErro('Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.');
     return;
   }
   return { paciente: paciente, local: local, data: data, solicitante: sol };
 }
 
+function setRequisicaoFieldInvalid(id, invalid) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('invalid', !!invalid);
+  el.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+  var field = el.closest ? el.closest('.field') : null;
+  if (field) field.classList.toggle('invalid', !!invalid);
+}
+
+function clearRequisicaoValidation() {
+  ['rqPaciente','rqPrestador','rqLocalExame','rqData','rqSolicitante'].forEach(function(id) {
+    setRequisicaoFieldInvalid(id, false);
+  });
+}
+
+function requisicaoRequiredValues() {
+  var localEl = document.getElementById('rqLocalExame') || document.getElementById('rqPrestador');
+  return [
+    { id: 'rqPaciente', label: 'Paciente', value: (document.getElementById('rqPaciente') || {}).value },
+    { id: localEl ? localEl.id : 'rqPrestador', label: 'Local do Exame', value: localEl ? localEl.value : '' },
+    { id: 'rqData', label: 'Data do Exame', value: (document.getElementById('rqData') || {}).value },
+    { id: 'rqSolicitante', label: 'Solicitante', value: (document.getElementById('rqSolicitante') || {}).value }
+  ];
+}
+
+function requisicaoMissingRequiredLabels() {
+  return requisicaoRequiredValues().filter(function(item) {
+    return !String(item.value || '').trim();
+  }).map(function(item) { return item.label; });
+}
+
+function updateRequisicaoGenerateAvailability(showStatus) {
+  var btn = document.getElementById('rqBtnGerar') || document.getElementById('btnSalvarReq');
+  if (!btn || btn.dataset.busy === '1') return true;
+  var missing = requisicaoMissingRequiredLabels();
+  btn.disabled = missing.length > 0;
+  btn.setAttribute('aria-disabled', missing.length ? 'true' : 'false');
+  btn.title = missing.length ? 'Preencha: ' + missing.join(', ') : 'Gerar requisicao.';
+  if (showStatus && missing.length) {
+    setRequisicaoStatus('Atencao: preencha os campos obrigatorios: ' + missing.join(', ') + '.', 'danger');
+  }
+  return missing.length === 0;
+}
+
+function setRequisicaoStatus(msg, type) {
+  var statusEl = document.getElementById('rqStatus') || document.getElementById('statusReq');
+  if (!statusEl) return;
+  var color = type === 'ok' ? '#137333' : (type === 'danger' ? '#e53935' : '#5f6b7c');
+  statusEl.innerHTML = msg ? '<span style="color:' + color + '">' + esc(msg) + '</span>' : '';
+}
+
+function setRequisicaoButtonState(btn, busy, label) {
+  if (!btn) return;
+  btn.dataset.busy = busy ? '1' : '';
+  appSetButtonBusy(btn, busy);
+  var text = btn ? btn.querySelector('.btn-label') : null;
+  if (!text) return;
+  if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = text.textContent;
+  text.textContent = label || btn.dataset.defaultLabel;
+  if (!busy) updateRequisicaoGenerateAvailability(false);
+}
 function gerarRequisicao() {
+  if (!updateRequisicaoGenerateAvailability(true)) return;
   var dadosValidados = validarRequisicaoAntesDeGerar();
   if (!dadosValidados) return;
   var preloadOffer = montarReqPreloadOfferAposGerar();
   var btn = document.getElementById('rqBtnGerar') || document.getElementById('btnSalvarReq');
   var statusEl = document.getElementById('rqStatus') || document.getElementById('statusReq');
-  appSetButtonBusy(btn, true);
-  statusEl.innerHTML = '<span style="color:#5f6b7c">⏳ Gerando PDF e rascunho de e-mail...</span>';
+  setRequisicaoButtonState(btn, true, 'Gerando...');
+  setRequisicaoStatus('Gerando PDF e rascunho de e-mail...', '');
   var dados = montarPayloadRequisicao(dadosValidados);
   appServerRun({
     method: 'gerarRequisicaoPDF',
     args: [dados],
     onSuccess: function(res) {
       var msg = res && typeof res === 'object' ? (res.message || 'Rascunho de e-mail criado com sucesso!') : res;
-      appSetButtonBusy(btn, false);
-      statusEl.innerHTML = '<span style="color:#137333">✓ ' + esc(msg) + '</span>';
+      setRequisicaoButtonState(btn, false);
+      setRequisicaoStatus('Salvo. ' + msg, 'ok');
       var warnings = res && typeof res === 'object' ? [res.preloadWarning, res.statusWarning].filter(Boolean) : [];
       if (warnings.length) {
-        statusEl.innerHTML += '<div style="color:#b3261e;margin-top:6px">' + esc(warnings.join(' ')) + '</div>';
+        statusEl.innerHTML += '<div style="color:#b3261e;margin-top:6px">Atencao: ' + esc(warnings.join(' ')) + '</div>';
         snackErro(warnings.join(' '));
       }
-      else snack('✓ Rascunho criado com sucesso!');
+      else snack('Salvo. Rascunho criado com sucesso!');
       appClearUnsavedChanges('page-requisicao');
       finalizarRequisicaoAposSucesso(res && res.statusRequisicao, res);
       limparRequisicaoForm();
       oferecerSalvarReqPreloadAposGerar(preloadOffer);
     },
     onFailure: function(e) {
-      appSetButtonBusy(btn, false);
-      statusEl.innerHTML = '<span style="color:#e53935">✗ ' + esc(appErrorMessage(e)) + '</span>';
-      snackErro(appErrorMessage(e));
+      setRequisicaoButtonState(btn, false);
+      var msgErro = appErrorMessage(e);
+      setRequisicaoStatus('Erro: ' + msgErro, 'danger');
+      snackErro(msgErro);
     }
   });
 }
+
+function onRequisicaoRequiredInput(event) {
+  if (!event || !event.target || !event.target.closest || !event.target.closest('#page-requisicao')) return;
+  if (['rqPaciente','rqPrestador','rqLocalExame','rqData','rqSolicitante'].indexOf(String(event.target.id || '')) === -1) return;
+  if (event.target.classList) {
+    event.target.classList.remove('invalid');
+    event.target.setAttribute('aria-invalid', 'false');
+    var field = event.target.closest('.field');
+    if (field) field.classList.remove('invalid');
+  }
+  updateRequisicaoGenerateAvailability(false);
+}
+
+document.addEventListener('input', onRequisicaoRequiredInput);
+document.addEventListener('change', onRequisicaoRequiredInput);
 
 function finalizarRequisicaoAposSucesso(statusRequisicao, resultado) {
   var origem = _rqOrigemContext || {};

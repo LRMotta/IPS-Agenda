@@ -77,6 +77,10 @@
   function initAgendaV1() {
     var dataEl = document.getElementById('agData');
     if (!dataEl) return;
+    if (window.INDEX_INITIAL_AGENDA_ID && !_agendaAbrirAposCarga) {
+      _agendaAbrirAposCarga = String(window.INDEX_INITIAL_AGENDA_ID || '');
+      window.INDEX_INITIAL_AGENDA_ID = '';
+    }
     setupAgendaPastDateAlertListeners();
     setupAgendaAutoRefreshListeners();
     if (_agendaDados || _agendaInitStarted) {
@@ -1365,6 +1369,79 @@
     return true;
   }
 
+  function setAgendaStatus(msg, type) {
+    var el = document.getElementById('agendaStatusMsg');
+    if (!el) return;
+    var color = type === 'ok' ? '#137333' : (type === 'danger' || type === 'validation' ? '#e53935' : '#5f6b7c');
+    el.dataset.validationMessage = type === 'validation' ? '1' : '';
+    el.innerHTML = msg ? '<span style="color:' + color + '">' + esc(msg) + '</span>' : '';
+  }
+
+  function setAgendaButtonState(btn, busy, label) {
+    if (!btn) return;
+    btn.dataset.busy = busy ? '1' : '';
+    if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, busy);
+    else btn.disabled = !!busy;
+    var text = btn.querySelector('.btn-label');
+    if (text) {
+      if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = text.textContent;
+      text.textContent = label || btn.dataset.defaultLabel;
+    }
+    if (!busy) updateAgendaSaveAvailability(false);
+  }
+
+  function agendaRequiredChecks() {
+    var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
+    var tipoValor = (document.getElementById('agTipo') || {}).value || '';
+    var labEl = document.getElementById('agLabCentral');
+    var labRequired = agendaTipoExigeLabCentral(tipoValor);
+    var checks = [
+      { id: 'agData', err: 'errAgData', label: isMonitoria ? 'data de inicio' : 'data', required: true },
+      { id: 'agHora', err: 'errAgHora', label: 'horario', required: !isMonitoria },
+      { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
+      { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isMonitoria },
+      { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: isMonitoria },
+      { id: 'agMonitor1', err: 'errAgMonitor1', label: 'monitor 1', required: isMonitoria },
+      { id: 'agSalaMonitoria', err: 'errAgSalaMonitoria', label: 'local da monitoria', required: isMonitoria },
+      { id: 'agLabCentral', err: 'errAgLabCentral', label: 'laboratorio central', required: labRequired && labEl && !labEl.disabled }
+    ];
+    return checks.filter(function(check) {
+      return check.required && document.getElementById(check.id);
+    });
+  }
+
+  function agendaMissingRequiredChecks() {
+    return agendaRequiredChecks().filter(function(check) {
+      var el = document.getElementById(check.id);
+      return !el || !String(el.value || '').trim();
+    });
+  }
+
+  function updateAgendaSaveAvailability(showValidation) {
+    var btn = document.getElementById('btnSalvarAgenda');
+    if (!btn) return true;
+    if (btn.dataset.busy === '1') {
+      btn.disabled = true;
+      return false;
+    }
+    var missing = agendaMissingRequiredChecks();
+    btn.disabled = missing.length > 0;
+    btn.title = missing.length ? 'Preencha: ' + missing.map(function(x) { return x.label; }).join(', ') : '';
+    if (showValidation) {
+      agendaRequiredChecks().forEach(function(check) {
+        var isMissing = missing.some(function(item) { return item.id === check.id; });
+        validarAgendaCampo(check.id, check.err, !isMissing);
+      });
+      if (missing.length) {
+        setAgendaStatus('Atencao: preencha os campos obrigatorios: ' + missing.map(function(x) { return x.label; }).join(', ') + '.', 'validation');
+      }
+    } else {
+      var status = document.getElementById('agendaStatusMsg');
+      if (!missing.length && status && status.dataset.validationMessage === '1') setAgendaStatus('', '');
+    }
+    return missing.length === 0;
+  }
+
   function setupAgendaPastDateAlertListeners() {
     var lab = document.getElementById('agLabCentral');
     if (lab && lab.dataset.pastDateAlertBound !== '1') {
@@ -1406,6 +1483,7 @@
   }
 
   function salvarAgendaEvento() {
+    if (!updateAgendaSaveAvailability(true)) return;
     var ok = true;
     var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
@@ -1428,11 +1506,14 @@
     ok = validarAgendaCampo('agLabCentral', 'errAgLabCentral', labOk) && ok;
     ok = validarAgendaAlertasDataPassada() && ok;
     ok = validateAgendaAwbs(true) && ok;
-    if (!ok) return;
+    if (!ok) {
+      setAgendaStatus('Atencao: revise os campos destacados antes de salvar.', 'danger');
+      updateAgendaSaveAvailability(true);
+      return;
+    }
     var btn = document.getElementById('btnSalvarAgenda');
-    if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, true);
-    else btn.disabled = true;
-    document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#5f6b7c">Salvando agendamento...</span>';
+    setAgendaButtonState(btn, true, 'Salvando...');
+    setAgendaStatus('Salvando...', '');
     var payload = coletarAgendaEvento();
     if (_agendaEditId) {
       var eventoEditado = (_agendaEventos || []).find(function(x) {
@@ -1446,11 +1527,10 @@
       method: method,
       args: [payload],
       onSuccess: function(res) {
-        if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, false);
-        else btn.disabled = false;
+        setAgendaButtonState(btn, false);
         if (res && res.feriado) {
           document.getElementById('agendaStatusMsg').innerHTML =
-            '<span style="color:#7a5c00">Ha feriado em ' + esc(res.dataFmt) + '. Confirme salvando pela rotina com feriado.</span>';
+            '<span style="color:#7a5c00">Atencao: ha feriado em ' + esc(res.dataFmt) + '. Confirme salvando pela rotina com feriado.</span>';
           return;
         }
         if (res && res.conflito) {
@@ -1466,14 +1546,13 @@
           return;
         }
         if (res && res.erro) {
-          document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(res.erro) + '</span>';
+          setAgendaStatus('Erro: ' + res.erro, 'danger');
           return;
         }
         var msgOk = res && res.count > 1
-          ? 'Monitoria salva em ' + res.count + ' dias. Primeiro ID: ' + (res.id || '')
-          : 'Evento salvo. ID: ' + (res && res.id ? res.id : '');
-        document.getElementById('agendaStatusMsg').innerHTML =
-          '<span style="color:#137333">' + esc(msgOk) + '</span>';
+          ? 'Salvo. Monitoria salva em ' + res.count + ' dias. Primeiro ID: ' + (res.id || '')
+          : 'Salvo. Evento salvo. ID: ' + (res && res.id ? res.id : '');
+        setAgendaStatus(msgOk, 'ok');
         if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
         if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
         if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
@@ -1482,10 +1561,9 @@
         carregarAgendaEventos(true);
       },
       onFailure: function(e) {
-        if (typeof appSetButtonBusy === 'function') appSetButtonBusy(btn, false);
-        else btn.disabled = false;
+        setAgendaButtonState(btn, false);
         var msg = typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message || e);
-        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(msg) + '</span>';
+        setAgendaStatus('Erro: ' + msg, 'danger');
         snackErro(msg);
       }
     });
@@ -1602,7 +1680,8 @@
     }
     var prefix = { '1': 'agC1', '2': 'agC2', '3': 'agC3' }[slot];
     if (prefix && !validateAgendaAwb(prefix, true)) return;
-    var transporteWindow = prepararJanelaTransporte();
+    var transporteContext = transporteAgendaContextFromDados(dados, slot, _agendaEditId);
+    var transporteWindow = prepararJanelaTransporte(transporteContext);
 
     var btn = document.getElementById(btnId);
     var originalHtml = btn ? btn.innerHTML : '';
@@ -1622,7 +1701,7 @@
         snack('Abrindo Transporte e sincronizando dados da Agenda...');
         if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
         carregarAgendaEventos(true);
-        abrirTransporteModulo(transporteWindow, { agendaId: _agendaEditId, slot: slot });
+        abrirTransporteModulo(transporteWindow, transporteContext);
       })
       .withFailureHandler(function(e) {
         resetBtn();
@@ -1665,7 +1744,9 @@
       snackErro('Agendamento nao informado para gerar o transporte.');
       return;
     }
-    var transporteWindow = prepararJanelaTransporte();
+    var evento = (_agendaEventos || []).find(function(r) { return String(r.id || '') === String(agendaId || ''); }) || {};
+    var transporteContext = transporteAgendaContextFromDados(evento, slot, agendaId);
+    var transporteWindow = prepararJanelaTransporte(transporteContext);
     var btn = document.getElementById(btnId);
     var originalHtml = btn ? btn.innerHTML : '';
     if (btn) {
@@ -1677,7 +1758,7 @@
       btn.disabled = false;
       btn.innerHTML = originalHtml || '<span class="material-symbols-outlined">description</span> Gerar docs';
     }
-    abrirTransporteModulo(transporteWindow, { agendaId: agendaId, slot: slot });
+    abrirTransporteModulo(transporteWindow, transporteContext);
     resetBtn();
     return;
     google.script.run
@@ -1693,6 +1774,17 @@
         snackErro(msg);
       })
       .gerarDocumentacaoTransporteCodex(agendaId, slot);
+  }
+
+  function transporteAgendaContextFromDados(dados, slot, agendaId) {
+    dados = dados || {};
+    return {
+      agendaId: agendaId || dados.id || '',
+      slot: slot || '',
+      paciente: dados.participante || dados.paciente || '',
+      protocolo: dados.projeto || dados.protocolo || '',
+      visita: dados.visita || dados.nomeVisita || dados.tipo || ''
+    };
   }
 
   function agendaDisplayPayload(r) {
@@ -2031,6 +2123,7 @@
       if (document.getElementById('rqHorario')) document.getElementById('rqHorario').value = dados.hora || '';
       preencherDadosPaciente();
       preencherEnderecoReq();
+      if (typeof updateRequisicaoGenerateAvailability === 'function') updateRequisicaoGenerateAvailability(false);
       var exams = document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input');
       if (!exams.length) {
         adicionarExame();
@@ -2052,6 +2145,7 @@
       preencherDadosPaciente();
       if (document.getElementById('rqNascimento') && !document.getElementById('rqNascimento').value) document.getElementById('rqNascimento').value = formatDateBr(participante.dataNascimento) || participante.dataNascimento || '';
       if (document.getElementById('rqProtocolo') && !document.getElementById('rqProtocolo').value) document.getElementById('rqProtocolo').value = participante.projeto || '';
+      if (typeof updateRequisicaoGenerateAvailability === 'function') updateRequisicaoGenerateAvailability(false);
       var lista = document.getElementById('rqExamesLista') || document.getElementById('examList');
       if (lista && !lista.children.length) adicionarExame();
       snack('Requisição iniciada com dados do participante.');
@@ -2098,14 +2192,18 @@
     if (poloBox) poloBox.checked = false;
     if (ecrfBox) ecrfBox.checked = false;
     if (carroBox) carroBox.checked = false;
-    ['errAgData','errAgHora','errAgProjeto','errAgMonitor1','errAgSalaMonitoria'].forEach(function(id) {
+    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.classList.remove('visible');
     });
-    ['agData','agHora','agProjeto','agMonitor1','agSalaMonitoria'].forEach(function(id) {
+    ['agData','agDataFim','agHora','agTipo','agProjeto','agMonitor1','agSalaMonitoria','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
-      if (el) el.classList.remove('invalid');
+      if (el) {
+        el.classList.remove('invalid');
+        el.setAttribute('aria-invalid', 'false');
+      }
     });
+    setAgendaStatus('', '');
     atualizarAgendaReqStatusVisibility();
     atualizarAgendaPostVisitVisibility();
     atualizarAgendaProjetoLock();
@@ -2118,6 +2216,7 @@
     atualizarAgendaTransportesOpcionais();
     applyAgendaAwbRulesAll();
     _agendaEditRecordVersion = '';
+    updateAgendaSaveAvailability(false);
   }
 
   function agendaStatusChip(s) {
@@ -2129,7 +2228,10 @@
   function validarAgendaCampo(inputId, errId, cond) {
     var input = document.getElementById(inputId);
     var err = document.getElementById(errId);
-    if (input) input.classList.toggle('invalid', !cond);
+    if (input) {
+      input.classList.toggle('invalid', !cond);
+      input.setAttribute('aria-invalid', cond ? 'false' : 'true');
+    }
     if (err) err.classList.toggle('visible', !cond);
     return !!cond;
   }
@@ -2231,6 +2333,20 @@
       snackErro('Registro da agenda não encontrado na carga atual.');
     }
   }
+
+  function abrirAgendaRegistroPorId(agendaId) {
+    agendaId = String(agendaId || '').trim();
+    if (!agendaId) return false;
+    _agendaAbrirAposCarga = agendaId;
+    if (typeof irPara === 'function') irPara('agenda');
+    if ((_agendaEventos || []).some(function(r) { return String(r.id || '') === agendaId; })) {
+      agendaAbrirPendenteAposCarga();
+    } else {
+      carregarAgendaEventos(true, agendaAbrirPendenteAposCarga, { silent: true });
+    }
+    return true;
+  }
+  window.abrirAgendaRegistroPorId = abrirAgendaRegistroPorId;
 
   function carregarAgendaEventos(forcar, callback, options) {
     options = options || {};
@@ -2437,6 +2553,7 @@
     if (p) p.classList.add('open');
     agendaMatBioUpdateAllCopyOptions();
     atualizarAgendaTransportesOpcionais();
+    updateAgendaSaveAvailability(true);
   }
 
   function abrirAgendaEdicao(id) {
@@ -2506,6 +2623,7 @@
     var p = document.getElementById('agendaCreatePanel');
     if (p) p.classList.add('open');
     agendaOpenEditPresence(r.id, r.recordVersion || '');
+    updateAgendaSaveAvailability(false);
   }
 
   function setAgendaFieldValue(id, value) {
@@ -3551,10 +3669,20 @@
     atualizarAgendaTransportesOpcionais();
   }
 
+  function onAgendaRequiredInput(event) {
+    var panel = document.getElementById('agendaCreatePanel');
+    if (!panel || !panel.classList.contains('open')) return;
+    if (!event || !event.target || !event.target.closest || !event.target.closest('#agendaCreatePanel')) return;
+    if (!/^ag(Data|DataFim|Hora|Tipo|Projeto|Monitor1|SalaMonitoria|LabCentral)$/.test(String(event.target.id || ''))) return;
+    updateAgendaSaveAvailability(false);
+  }
+
   document.addEventListener('input', onAgendaAwbInput);
   document.addEventListener('change', onAgendaAwbInput);
   document.addEventListener('input', onAgendaTransporteOpcionalInput);
   document.addEventListener('change', onAgendaTransporteOpcionalInput);
+  document.addEventListener('input', onAgendaRequiredInput);
+  document.addEventListener('change', onAgendaRequiredInput);
 
   document.addEventListener('DOMContentLoaded', function() {
     setTimeout(function() {

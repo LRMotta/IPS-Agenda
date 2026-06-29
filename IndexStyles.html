@@ -181,6 +181,7 @@
     .f-input.large { height: 44px; font-size: 14px; }
     .f-input::placeholder { color: var(--text-faint); font-size: 12.5px; }
     .f-input.invalid { border-color: #e53935; box-shadow: 0 0 0 3px rgba(229,57,53,.12); }
+    .field.invalid .field-label { color: #e53935; }
     .field-error { font-size: 11px; color: #e53935; margin-top: 3px; font-weight: 500; display: none; }
     .field-error.visible { display: block; }
     .required-star { color: #e53935; font-size: 13px; font-weight: 700; margin-left: 2px; }
@@ -258,6 +259,7 @@
     .audit-prefetch { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
     #page-pendencias { height: 100%; }
     #page-pendencias .chart-card { min-height: calc(100vh - 150px); display: flex; flex-direction: column; }
+    .pendencias-status { text-align: left; margin: -4px 0 10px; }
     .dash-pend-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
     .dash-pend-card { min-width: 0; border: 1px solid #e8edf8; border-radius: var(--r-sm); background: #fff; overflow: hidden; min-height: 0; display: flex; flex-direction: column; }
     .dash-pend-card.priority { border-color: #ffd166; box-shadow: 0 6px 18px rgba(133,100,4,.08); }
@@ -360,12 +362,17 @@
     .req-actions .btn-save,.req-actions .ag-tb-btn{display:inline-flex;align-items:center;justify-content:center;line-height:1;height:48px;margin-top:0}
     .req-actions .btn-save{flex:1 1 260px;max-width:360px;width:auto}
     .req-actions .ag-tb-btn{flex:0 0 auto}
+    #statusReq{text-align:left}
     .req-preload-actions{align-items:center!important;gap:12px!important;justify-content:space-between!important}
     .req-preload-right{display:flex;align-items:center;gap:10px;flex:0 0 auto}
     .req-preload-actions .ag-tb-btn,.req-preload-actions .req-preload-save{height:46px!important;min-height:46px;padding:0 16px;border-radius:var(--r-sm);font-size:13px;font-weight:600;line-height:1;white-space:nowrap}
     .req-preload-actions .req-preload-save{flex:0 0 auto!important;width:auto!important;max-width:none!important;min-width:174px;letter-spacing:.2px;box-shadow:none;margin-top:0}
     .req-preload-actions .material-symbols-outlined{font-size:17px}
     @media (max-width: 640px){
+      #page-requisicao .req-body{padding-bottom:98px}
+      #page-requisicao .req-actions{position:sticky;bottom:0;z-index:8;margin:0 -22px -98px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid #e0e6f0;box-shadow:0 -8px 24px rgba(15,23,42,.12)}
+      #page-requisicao .req-actions .btn-save{max-width:none;flex:1 1 190px}
+      #page-requisicao .req-actions .ag-tb-btn{flex:0 0 auto}
       .req-preload-actions{align-items:stretch!important}
       .req-preload-actions>button,.req-preload-right{width:100%}
       .req-preload-right{justify-content:flex-end;flex-wrap:wrap}
