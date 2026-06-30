@@ -7,9 +7,9 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.06.29-fase4-botoes-criticos';
-var CODEX_APP_BUILD_LABEL_ = 'Fase 4 - revisao fina de botoes criticos';
-var CODEX_APP_BUILD_DATE_ = '2026-06-29';
+var CODEX_APP_VERSION_ = '2026.06.30-notificacoes-reagendamento';
+var CODEX_APP_BUILD_LABEL_ = 'Motivos, modais e notificacoes de reagendamento';
+var CODEX_APP_BUILD_DATE_ = '2026-06-30';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -6627,6 +6627,9 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.obs = agendaAppendCancelamentoMotivo_(dados.obs, dados.cancelamento);
   }
   var dataAnterior = agenda.getRange(linha, AGENDA_CFG.col.data).getValue();
+  if (datasAgendaDiferentes_(dataAnterior, d) && dados.reagendamentoConfirmado !== true) {
+    return { erro: 'Confirme a troca de data antes de salvar o reagendamento.' };
+  }
   var horaNova = formatAgendaHora_(d);
   var deveOrdenarAgenda =
     datasAgendaDiferentes_(dataAnterior, d) ||
@@ -7898,19 +7901,21 @@ function verificarNotificacoes(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva)
   var gatilho = normText_(sheet.getRange(linha, AGENDA_CFG.col.labCentral).getValue());
   var status = normText_(sheet.getRange(linha, AGENDA_CFG.col.status).getValue());
   var controle = String(sheet.getRange(linha, AGENDA_CFG.col.controle).getValue() || '');
+  var controleNorm = normText_(controle);
+  var jaAvisadoLab = controleNorm.indexOf('notificado') > -1 || controleNorm.indexOf('reagendado') > -1;
   var dataAtual = sheet.getRange(linha, AGENDA_CFG.col.data).getValue();
   var mudouData = datasAgendaDiferentes_(dataAnterior, dataAtual);
-  if (gatilho === 'sim' && status !== 'cancelado' && controle.indexOf('Notificado') === -1) {
+  if (gatilho === 'sim' && status !== 'cancelado' && !jaAvisadoLab) {
     if (agendaEmailEnabled_()) {
       enviarEmailAgendamento(sheet, linha, e.user);
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Notificado ' + formatarDataSafe(sheet.getRange(linha, AGENDA_CFG.col.data).getValue()));
     } else {
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Pendente notificacao - modo teste');
     }
-  } else if (gatilho === 'sim' && status !== 'cancelado' && mudouData && controle.indexOf('Notificado') > -1) {
+  } else if (gatilho === 'sim' && status !== 'cancelado' && mudouData && jaAvisadoLab) {
     if (agendaEmailEnabled_()) enviarEmailReagendamento(sheet, linha, e.user, dataAnterior);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Reagendado ' + formatarDataSafe(dataAtual));
-  } else if (status === 'cancelado' && (controle.indexOf('Notificado') > -1 || controle.indexOf('Reagendado') > -1)) {
+  } else if (status === 'cancelado' && jaAvisadoLab) {
     if (agendaEmailEnabled_()) enviarEmailCancelamento(sheet, linha, e.user);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Cancelado');
   }
@@ -7943,7 +7948,9 @@ function enviarEmailAgendamento(sheet, linha, usuario) {
   var body = gerarHtmlCabecalhoEmail_('Agendamento - Envio de Amostras ao Lab Central', '#2c3e50') +
     '<p>Foi realizado um novo agendamento de visita clínica que requer envio ao laboratório:</p>' +
     gerarTabelaAgendaEmail_(dados, true) +
-    '<p>As informações de courier e transporte serão atualizadas na Agenda assim que estiverem disponíveis.</p>' +
+    (agendaTemLogisticaEmail_(dados)
+      ? gerarHtmlCouriers(dados)
+      : '<p>As informações de courier e transporte serão atualizadas na Agenda assim que estiverem disponíveis.</p>') +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Responsável', usuario) + '</div>';
   MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
@@ -8017,6 +8024,15 @@ function gerarTabelaAgendaEmail_(dados, incluirDataNascimento, rotuloData) {
       return '<tr><td style="padding:4px 8px;border:1px solid #ddd"><b>' + escHtmlServer_(r[0]) + '</b></td>' +
         '<td style="padding:4px 8px;border:1px solid #ddd">' + escHtmlServer_(r[1]) + '</td></tr>';
     }).join('') + '</table>';
+}
+
+function agendaTemLogisticaEmail_(dados) {
+  var i = AGENDA_CFG.idx;
+  function nomeValido(c) {
+    var nome = String(dados[c.nome] || '').trim();
+    return !!nome && ['---', 'Nao aplicavel', 'Não aplicável'].indexOf(nome) === -1;
+  }
+  return nomeValido(i.c1) || nomeValido(i.c2) || nomeValido(i.c3) || nomeValido(i.cb);
 }
 
 function gerarHtmlCouriers(dados) {

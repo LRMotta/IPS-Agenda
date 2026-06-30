@@ -770,6 +770,23 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="modalAgendaConfirmarReagendamento" onclick="fecharAgendaConfirmarReagendamento(event)">
+      <div class="confirm-box" style="max-width:440px" onclick="event.stopPropagation()">
+        <h3>Confirmar troca de data?</h3>
+        <p id="agendaConfirmarReagendamentoMsg">A data deste agendamento foi alterada.</p>
+        <div class="agenda-cancel-guard" style="margin-bottom:16px">
+          <span class="material-symbols-outlined">info</span>
+          O e-mail de reagendamento, quando aplicável, só será enviado após esta confirmação.
+        </div>
+        <div class="confirm-actions">
+          <button class="btn-txt" type="button" onclick="fecharAgendaConfirmarReagendamento()">Voltar sem salvar</button>
+          <button class="btn-save" type="button" id="btnAgendaConfirmarReagendamento" onclick="confirmarAgendaReagendamento()" style="width:auto;padding:9px 18px;margin-top:0">
+            Confirmar e salvar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="modalAgendaCancelamentoMotivo" onclick="fecharAgendaCancelamentoMotivo(event)">
       <div class="modal-box" style="max-width:760px" onclick="event.stopPropagation()">
         <div class="modal-header">

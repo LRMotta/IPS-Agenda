@@ -3044,15 +3044,62 @@ function projetoDetailValue(value) {
   return value ? esc(value) : '<span style="color:#9aa3b0">-</span>';
 }
 
+var _projetoCeStatusCache = {};
+
 function projetoDetalheHtml(p) {
+  var projetoCe = String(p.nomeAbreviado || p.codigo || '').trim();
+  var ceStatusId = 'proj-ce-status-' + String(p.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
   return '<div class="proj-detail-panel">' +
     '<div class="proj-detail-title">' + projetoDetailValue(p.tituloCompleto) + '</div>' +
     '<div class="proj-detail-items">' +
       '<span class="det-item"><span class="material-symbols-outlined">approval</span><span>N&deg; CE: ' + projetoDetailValue(p.numeroCE) + '</span></span>' +
       '<span class="det-item"><span class="material-symbols-outlined">tag</span><span>N&deg; expediente CE: ' + projetoDetailValue(p.expedienteCE) + '</span></span>' +
+      '<span class="det-item proj-ce-drive-status" data-projeto-ce="' + esc(projetoCe) + '" data-ce-status-id="' + esc(ceStatusId) + '"><span class="material-symbols-outlined">folder_open</span><span>CE localizada no Drive: <strong id="' + esc(ceStatusId) + '">Verificando...</strong></span></span>' +
       '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoDetailValue(p.dataSiv) + '</span></span>' +
     '</div>' +
   '</div>';
+}
+
+function carregarProjetoCeStatus(row) {
+  var statusItem = row ? row.querySelector('.proj-ce-drive-status') : null;
+  if (!statusItem || statusItem.getAttribute('data-ce-loaded') === '1') return;
+  var projeto = String(statusItem.getAttribute('data-projeto-ce') || '').trim();
+  var statusId = statusItem.getAttribute('data-ce-status-id') || '';
+  var target = statusId ? document.getElementById(statusId) : null;
+  if (!target) return;
+  if (!projeto) {
+    target.textContent = 'Não';
+    target.className = 'ce-status no';
+    statusItem.setAttribute('data-ce-loaded', '1');
+    return;
+  }
+  var cacheKey = norm(projeto);
+  var cached = _projetoCeStatusCache[cacheKey];
+  if (cached) {
+    target.textContent = cached.found ? 'Sim' : 'Não';
+    target.className = 'ce-status ' + (cached.found ? 'yes' : 'no');
+    if (cached.message) target.title = cached.message;
+    statusItem.setAttribute('data-ce-loaded', '1');
+    return;
+  }
+  target.textContent = 'Verificando...';
+  target.className = 'ce-status checking';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      res = res || { found: false, message: '' };
+      _projetoCeStatusCache[cacheKey] = res;
+      target.textContent = res.found ? 'Sim' : 'Não';
+      target.className = 'ce-status ' + (res.found ? 'yes' : 'no');
+      if (res.message) target.title = res.message;
+      statusItem.setAttribute('data-ce-loaded', '1');
+    })
+    .withFailureHandler(function(e) {
+      target.textContent = 'Não';
+      target.className = 'ce-status no';
+      target.title = appErrorMessage(e, 'Não foi possível verificar a CE.');
+      statusItem.setAttribute('data-ce-loaded', '1');
+    })
+    .getTransporteCeStatus(projeto);
 }
 
 function toggleProjetoDetalhe(ev, id) {
@@ -3066,6 +3113,7 @@ function toggleProjetoDetalhe(ev, id) {
     var icon = btn.querySelector('.material-symbols-outlined');
     if (icon) icon.textContent = open ? 'expand_less' : 'expand_more';
   }
+  if (open) carregarProjetoCeStatus(row);
 }
 
 function renderTabelaProj(lista) {

@@ -7,6 +7,7 @@
   var _agendaEventosLoadedAt = 0;
   var _agendaEventosRefreshing = false;
   var _agendaCancelamentoContext = null;
+  var _agendaReagendamentoContext = null;
   var AGENDA_EVENTOS_TTL_MS = 3 * 60 * 1000;
   window.STATE = window.STATE || {};
   var STATE = window.STATE;
@@ -1506,6 +1507,18 @@
         ]
       },
       {
+        categoria: 'Médico do estudo',
+        icon: 'stethoscope',
+        motivos: [
+          'Médico indisponível por emergência clínica ou plantão imprevisto.',
+          'Médico indisponível por motivo pessoal.',
+          'Médico atrasado além da janela segura de atendimento.',
+          'Cancelado por avaliação clínica prévia do médico responsável.',
+          'Médico responsável não atua mais no estudo.',
+          'Médico transferiu o atendimento para outro profissional do serviço.'
+        ]
+      },
+      {
         categoria: 'Operacional do centro',
         icon: 'clinical_notes',
         motivos: [
@@ -1654,7 +1667,57 @@
     return !atual || normAgenda(atual.status) !== 'cancelado';
   }
 
-  function salvarAgendaEvento(cancelamentoMotivo) {
+  function agendaDataAlteradaInfo_(payload) {
+    if (!_agendaEditId || !payload) return null;
+    var atual = agendaEventoAtualEditado_();
+    if (!atual) return null;
+    var anteriorIso = atual.dataIso || agendaIsoFromBr(atual.data || '');
+    var novaIso = String(payload.data || '').trim();
+    if (!anteriorIso || !novaIso || anteriorIso === novaIso) return null;
+    return {
+      anteriorIso: anteriorIso,
+      novaIso: novaIso,
+      anteriorFmt: formatDateBr(anteriorIso) || atual.data || anteriorIso,
+      novaFmt: formatDateBr(novaIso) || novaIso
+    };
+  }
+
+  function abrirAgendaConfirmarReagendamento(info, contexto) {
+    _agendaReagendamentoContext = contexto || {};
+    var msg = document.getElementById('agendaConfirmarReagendamentoMsg');
+    if (msg) {
+      msg.textContent = 'A data deste agendamento será alterada de ' +
+        (info && info.anteriorFmt ? info.anteriorFmt : 'data anterior') +
+        ' para ' +
+        (info && info.novaFmt ? info.novaFmt : 'nova data') +
+        '. Deseja confirmar esta troca?';
+    }
+    var modal = document.getElementById('modalAgendaConfirmarReagendamento');
+    if (modal) {
+      if (modal.parentElement !== document.body) document.body.appendChild(modal);
+      modal.style.zIndex = '330';
+    }
+    abrirOverlay('modalAgendaConfirmarReagendamento');
+  }
+
+  function fecharAgendaConfirmarReagendamento(event) {
+    if (event && event.target && event.target.id !== 'modalAgendaConfirmarReagendamento') return;
+    _agendaReagendamentoContext = null;
+    var modal = document.getElementById('modalAgendaConfirmarReagendamento');
+    if (modal) modal.classList.remove('open');
+    snack('Troca de data não salva. O agendamento permanece como estava.');
+  }
+
+  function confirmarAgendaReagendamento() {
+    var ctx = _agendaReagendamentoContext || {};
+    _agendaReagendamentoContext = null;
+    var modal = document.getElementById('modalAgendaConfirmarReagendamento');
+    if (modal) modal.classList.remove('open');
+    salvarAgendaEvento(ctx.cancelamentoMotivo || null, { reagendamentoConfirmado: true });
+  }
+
+  function salvarAgendaEvento(cancelamentoMotivo, opts) {
+    opts = opts || {};
     if (!updateAgendaSaveAvailability(true)) return;
     var ok = true;
     var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
@@ -1703,6 +1766,14 @@
       return;
     }
     if (cancelamentoMotivo) payload.cancelamento = cancelamentoMotivo;
+    var reagendamentoInfo = agendaDataAlteradaInfo_(payload);
+    if (reagendamentoInfo && !opts.reagendamentoConfirmado) {
+      abrirAgendaConfirmarReagendamento(reagendamentoInfo, {
+        cancelamentoMotivo: cancelamentoMotivo || null
+      });
+      return;
+    }
+    if (reagendamentoInfo && opts.reagendamentoConfirmado) payload.reagendamentoConfirmado = true;
     setAgendaButtonState(btn, true, 'Salvando...');
     setAgendaStatus('Salvando...', '');
     var method = _agendaEditId ? 'atualizarAgendaEventoCompleto' : 'salvarNovoEventoCompleto';
@@ -2856,8 +2927,8 @@
     if (!id) return;
     abrirConfirmacaoDestrutiva({
       titulo: 'Cancelar visita?',
-      mensagem: 'Deseja cancelar este agendamento? Esta ação não pode ser desfeita.',
-      acao: 'Cancelar visita',
+      mensagem: 'Deseja iniciar o cancelamento deste agendamento? A visita só será cancelada após registrar o motivo na próxima etapa.',
+      acao: 'Continuar',
       onConfirm: function() {
         abrirAgendaCancelamentoMotivo({
           onConfirm: function(motivo) {
