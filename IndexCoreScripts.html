@@ -74,8 +74,8 @@ function appOpenUnsavedConfirm(onConfirm, onCancel) {
   var modal = document.getElementById('confirmUnsaved');
   var btn = document.getElementById('btnConfirmUnsaved');
   if (!modal || !btn) {
-    if (window.confirm(APP_UNSAVED_MESSAGE) && typeof onConfirm === 'function') onConfirm();
-    else if (typeof onCancel === 'function') onCancel();
+    snackErro('Existem alteracoes nao salvas. Salve ou descarte as alteracoes antes de sair.');
+    if (typeof onCancel === 'function') onCancel();
     return;
   }
   APP_UNSAVED_ON_CANCEL = typeof onCancel === 'function' ? onCancel : null;

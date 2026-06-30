@@ -279,7 +279,7 @@
                   <input id="investigador" class="auto-fill" placeholder="Preenchido pelo participante" readonly required>
                   <div class="agenda-origin-actions" id="agendaContext">
                     <span class="origin-chip"><span class="material-symbols-outlined">event_available</span>Origem Agenda</span>
-                    <button class="context-link" type="button" onclick="openAgendaFromTransport()"><span class="material-symbols-outlined">open_in_new</span>Ver agendamento</button>
+                    <button class="context-link" type="button" onclick="openAgendaFromTransport()" title="Abre o agendamento correspondente na Agenda em outra janela"><span class="material-symbols-outlined">open_in_new</span>Ver agendamento</button>
                   </div>
                 </div>
               </div>
@@ -363,6 +363,22 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="confirmTransportUnsavedModal" role="dialog" aria-modal="true" aria-labelledby="confirmTransportUnsavedTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="confirmTransportUnsavedTitle"><span class="material-symbols-outlined">edit_note</span>Alterações não salvas</div>
+        <button class="modal-close" type="button" onclick="closeTransportUnsavedModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div>Existem alterações não salvas no transporte. Ao sair agora, essas alterações serão descartadas.</div>
+        <div class="modal-actions">
+          <button class="btn secondary" type="button" onclick="closeTransportUnsavedModal()"><span class="material-symbols-outlined">edit</span>Continuar editando</button>
+          <button class="btn danger" type="button" onclick="confirmTransportLeaveUnsaved()"><span class="material-symbols-outlined">logout</span>Sair sem salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="pdfModal" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
     <div class="modal">
       <div class="modal-head">
@@ -413,6 +429,7 @@
     }
 
     var transportHasUnsavedChanges = false;
+    var transportAllowLeaveOnce = false;
     var transportUnsavedMessage = 'Ha alteracoes nao salvas. Deseja sair mesmo assim?';
 
     function transportIsEditable(target) {
@@ -438,8 +455,31 @@
     }
 
     function transportConfirmLeaveDirty() {
+      if (transportAllowLeaveOnce) {
+        transportAllowLeaveOnce = false;
+        return true;
+      }
       if (!transportHasUnsavedChanges) return true;
-      return window.confirm(transportUnsavedMessage);
+      openTransportUnsavedModal();
+      return false;
+    }
+
+    function openTransportUnsavedModal() {
+      var modal = document.getElementById('confirmTransportUnsavedModal');
+      if (modal) modal.classList.add('open');
+      setActionStatus(transportUnsavedMessage, 'warn', { dirty: true });
+    }
+
+    function closeTransportUnsavedModal() {
+      var modal = document.getElementById('confirmTransportUnsavedModal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function confirmTransportLeaveUnsaved() {
+      closeTransportUnsavedModal();
+      transportAllowLeaveOnce = true;
+      transportClearUnsaved();
+      toast('Alteracoes descartadas. Voce ja pode sair desta tela.', 'warn');
     }
 
     document.addEventListener('input', function(e) {

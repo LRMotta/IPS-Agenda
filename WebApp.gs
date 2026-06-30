@@ -6428,6 +6428,59 @@ function agendaAuditFields_() {
   ];
 }
 
+function agendaNormalizeCancelamentoMotivo_(dados) {
+  dados = dados || {};
+  var categoria = String(dados.categoria || '').trim();
+  var motivo = String(dados.motivo || '').trim();
+  var motivoBase = String(dados.motivoBase || '').trim();
+  if (motivo.length > 255) motivo = motivo.slice(0, 255);
+  if (motivoBase.length > 255) motivoBase = motivoBase.slice(0, 255);
+  return {
+    categoria: categoria,
+    motivo: motivo,
+    motivoBase: motivoBase
+  };
+}
+
+function agendaCancelamentoMotivoTexto_(dados) {
+  var info = agendaNormalizeCancelamentoMotivo_(dados);
+  if (!info.categoria || !info.motivo) return '';
+  var partes = ['Cancelamento'];
+  partes.push('Categoria: ' + info.categoria);
+  if (info.motivoBase && info.motivoBase !== info.motivo) partes.push('Opção: ' + info.motivoBase);
+  partes.push('Motivo: ' + info.motivo);
+  return partes.join(' | ');
+}
+
+function agendaAppendCancelamentoMotivo_(obs, dados) {
+  var texto = agendaCancelamentoMotivoTexto_(dados);
+  if (!texto) throw new Error('Informe o motivo do cancelamento antes de cancelar a visita.');
+  obs = String(obs || '').trim();
+  var semMotivoAnterior = obs
+    .split(/\r?\n/)
+    .filter(function(linha) { return normText_(linha).indexOf('cancelamento | categoria:') !== 0; })
+    .join('\n')
+    .trim();
+  return semMotivoAnterior ? (semMotivoAnterior + '\n' + texto) : texto;
+}
+
+function agendaExtractCancelamentoMotivo_(obs) {
+  var linhas = String(obs || '').split(/\r?\n/);
+  for (var i = linhas.length - 1; i >= 0; i--) {
+    var linha = String(linhas[i] || '').trim();
+    if (normText_(linha).indexOf('cancelamento | categoria:') === 0) return linha;
+  }
+  return '';
+}
+
+function agendaCancelamentoMotivoHtml_(obs) {
+  var texto = agendaExtractCancelamentoMotivo_(obs);
+  if (!texto) return '';
+  return '<div style="background:#fff3cd;padding:10px;border-left:5px solid #c0392b;margin:12px 0;">' +
+    '<p style="margin:0;"><b>Motivo do cancelamento:</b> ' + escHtmlServer_(texto.replace(/^Cancelamento\s*\|\s*/i, '')) + '</p>' +
+    '</div>';
+}
+
 function agendaPostVisitValue_(value, previous) {
   if (value === true || String(value || '').trim() === 'Sim') return previous || new Date();
   if (String(value || '').trim()) return value;
@@ -6570,6 +6623,9 @@ function atualizarAgendaEventoCompleto(dados) {
   if (marcandoReqPassada) {
     return { erro: 'Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.' };
   }
+  if (normText_(status) === 'cancelado' && normText_(rowAnterior[AGENDA_CFG.idx.status]) !== 'cancelado') {
+    dados.obs = agendaAppendCancelamentoMotivo_(dados.obs, dados.cancelamento);
+  }
   var dataAnterior = agenda.getRange(linha, AGENDA_CFG.col.data).getValue();
   var horaNova = formatAgendaHora_(d);
   var deveOrdenarAgenda =
@@ -6640,7 +6696,7 @@ function atualizarAgendaEventoCompleto(dados) {
   });
 }
 
-function cancelarAgendaEvento(id) {
+function cancelarAgendaEvento(id, cancelamento) {
   codexAssertCanWrite_('cancelarAgendaEvento', 'Agenda', id);
   return codexWithDocumentLock_('cancelarAgendaEvento', function() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -6648,7 +6704,10 @@ function cancelarAgendaEvento(id) {
   var linha = encontrarLinhaPorId(agenda, id);
   if (!linha) throw new Error('Agendamento nao encontrado para cancelamento.');
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var obsAtual = String(rowAnterior[AGENDA_CFG.idx.obs] || '');
+  var obsComCancelamento = agendaAppendCancelamentoMotivo_(obsAtual, cancelamento);
   agenda.getRange(linha, AGENDA_CFG.col.status).setValue('Cancelado');
+  agenda.getRange(linha, AGENDA_CFG.col.obs).setValue(obsComCancelamento);
   aplicarLogicaCancelamento(agenda, linha, 'Cancelado');
   verificarNotificacoes(
     { source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
@@ -7897,6 +7956,7 @@ function enviarEmailCancelamento(sheet, linha, usuario) {
   var assunto = '[CANCELAMENTO] ' + (dados[i.projeto] || '') + ' - Visita com Envio ao Lab Central';
   var body = gerarHtmlCabecalhoEmail_('CANCELAMENTO DE VISITA / ENVIO', '#c0392b') +
     '<p>A seguinte visita foi <b>REMOVIDA</b> do fluxo de envio ao Lab Central:</p>' +
+    agendaCancelamentoMotivoHtml_(dados[i.obs]) +
     gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers(dados) +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Cancelado por', usuario) + '</div>';

@@ -770,6 +770,45 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="modalAgendaCancelamentoMotivo" onclick="fecharAgendaCancelamentoMotivo(event)">
+      <div class="modal-box" style="max-width:760px" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div class="modal-header-icon"><span class="material-symbols-outlined">event_busy</span></div>
+          <div>
+            <div class="modal-header-title">MOTIVO DO CANCELAMENTO</div>
+            <div class="modal-header-sub">Registro obrigatório antes de cancelar a visita ou consulta</div>
+          </div>
+          <button class="modal-close" type="button" onclick="fecharAgendaCancelamentoMotivo()">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-section">
+            <div class="section-label"><span class="material-symbols-outlined">assignment_late</span> Selecione o motivo</div>
+            <div id="agendaCancelMotivos" class="agenda-cancel-reasons"></div>
+            <div class="field-error" id="errAgendaCancelMotivo">Selecione um motivo de cancelamento.</div>
+          </div>
+          <div class="form-section" id="agendaCancelOutroWrap" style="display:none">
+            <label class="field-label" for="agendaCancelOutro">Outro motivo <span class="required-star">*</span></label>
+            <textarea id="agendaCancelOutro" class="f-input" maxlength="255" rows="3" placeholder="Descreva brevemente o motivo do cancelamento" oninput="agendaCancelOutroCounter();limparErro('agendaCancelOutro','errAgendaCancelOutro')"></textarea>
+            <div style="display:flex;justify-content:space-between;gap:10px;margin-top:4px">
+              <div class="field-error" id="errAgendaCancelOutro">Descreva o motivo em até 255 caracteres.</div>
+              <span class="agenda-cancel-count" id="agendaCancelOutroCount">0/255</span>
+            </div>
+          </div>
+          <div class="agenda-cancel-guard">
+            <span class="material-symbols-outlined">info</span>
+            Fechar esta janela ou voltar agora não cancela a visita. O cancelamento só será aplicado após registrar o motivo.
+          </div>
+          <div class="confirm-actions" style="margin-top:18px">
+            <button class="btn-txt" type="button" onclick="fecharAgendaCancelamentoMotivo()">Voltar sem cancelar</button>
+            <button class="btn-danger" type="button" id="btnAgendaConfirmarCancelamentoMotivo" onclick="confirmarAgendaCancelamentoMotivo()">Registrar motivo e cancelar</button>
+          </div>
+          <div class="status-msg" id="agendaCancelMotivoStatus"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ REQUISIÇÃO DE EXAMES ═══ -->
     <div class="page" id="page-requisicao">
       <div class="req-card">

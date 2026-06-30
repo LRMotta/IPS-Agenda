@@ -6,6 +6,7 @@
   var _agendaInitStarted = false;
   var _agendaEventosLoadedAt = 0;
   var _agendaEventosRefreshing = false;
+  var _agendaCancelamentoContext = null;
   var AGENDA_EVENTOS_TTL_MS = 3 * 60 * 1000;
   window.STATE = window.STATE || {};
   var STATE = window.STATE;
@@ -1482,7 +1483,178 @@
       .getInfoParticipante(nome);
   }
 
-  function salvarAgendaEvento() {
+  function agendaCancelamentoMotivos() {
+    return [
+      {
+        categoria: 'Participante',
+        icon: 'person',
+        motivos: [
+          'Participante indisponível por motivo pessoal.',
+          'Participante indisponível por motivo de saúde.',
+          'Participante não compareceu e não foi possível contato.',
+          'Participante solicitou cancelamento da visita.',
+          'Participante retirou consentimento para continuar no estudo.'
+        ]
+      },
+      {
+        categoria: 'Clínico / segurança',
+        icon: 'health_and_safety',
+        motivos: [
+          'Cancelado por decisão médica para segurança do participante.',
+          'Cancelado por critérios de protocolo.',
+          'Cancelado devido a evento adverso que exige avaliação antes da visita.'
+        ]
+      },
+      {
+        categoria: 'Operacional do centro',
+        icon: 'clinical_notes',
+        motivos: [
+          'Cancelado por indisponibilidade de equipe do centro de pesquisa.',
+          'Cancelado por indisponibilidade de sala, equipamento ou exames necessários.',
+          'Cancelado por sobrecarga da agenda.',
+          'Cancelado devido a feriado ou fechamento do serviço de saúde.'
+        ]
+      },
+      {
+        categoria: 'Estudo / protocolo',
+        icon: 'assignment',
+        motivos: [
+          'Cancelado por alteração no protocolo ou cronograma do estudo.',
+          'Cancelado porque o estudo foi suspenso ou encerrado.'
+        ]
+      },
+      {
+        categoria: 'Outro',
+        icon: 'edit_note',
+        motivos: ['Outro motivo (descrever)']
+      }
+    ];
+  }
+
+  function renderAgendaCancelamentoMotivos() {
+    var wrap = document.getElementById('agendaCancelMotivos');
+    if (!wrap) return;
+    wrap.innerHTML = agendaCancelamentoMotivos().map(function(grupo) {
+      return '<div class="agenda-cancel-group">' +
+        '<div class="agenda-cancel-group-title"><span class="material-symbols-outlined">' + esc(grupo.icon) + '</span>' + esc(grupo.categoria) + '</div>' +
+        grupo.motivos.map(function(motivo) {
+          var isOutro = normAgenda(motivo).indexOf('outro motivo') === 0;
+          return '<label class="agenda-cancel-option">' +
+            '<input type="radio" name="agendaCancelMotivo" value="' + esc(motivo) + '" data-categoria="' + esc(grupo.categoria) + '" data-outro="' + (isOutro ? '1' : '') + '" onchange="onAgendaCancelMotivoChange()">' +
+            '<span>' + esc(motivo) + '</span>' +
+          '</label>';
+        }).join('') +
+      '</div>';
+    }).join('');
+  }
+
+  function onAgendaCancelMotivoChange() {
+    limparErro('agendaCancelOutro', 'errAgendaCancelOutro');
+    var err = document.getElementById('errAgendaCancelMotivo');
+    if (err) err.classList.remove('visible');
+    var opt = agendaCancelMotivoSelecionado_();
+    var outroWrap = document.getElementById('agendaCancelOutroWrap');
+    if (outroWrap) outroWrap.style.display = opt && opt.outro ? '' : 'none';
+    agendaCancelOutroCounter();
+  }
+
+  function agendaCancelOutroCounter() {
+    var el = document.getElementById('agendaCancelOutro');
+    var count = document.getElementById('agendaCancelOutroCount');
+    if (count) count.textContent = String((el && el.value ? el.value.length : 0)) + '/255';
+  }
+
+  function agendaCancelMotivoSelecionado_() {
+    var checked = document.querySelector('input[name="agendaCancelMotivo"]:checked');
+    if (!checked) return null;
+    return {
+      categoria: checked.getAttribute('data-categoria') || '',
+      motivo: checked.value || '',
+      outro: checked.getAttribute('data-outro') === '1'
+    };
+  }
+
+  function abrirAgendaCancelamentoMotivo(contexto) {
+    _agendaCancelamentoContext = contexto || {};
+    renderAgendaCancelamentoMotivos();
+    document.querySelectorAll('input[name="agendaCancelMotivo"]').forEach(function(input) { input.checked = false; });
+    var outro = document.getElementById('agendaCancelOutro');
+    if (outro) {
+      outro.value = '';
+      outro.classList.remove('invalid');
+    }
+    var outroWrap = document.getElementById('agendaCancelOutroWrap');
+    if (outroWrap) outroWrap.style.display = 'none';
+    ['errAgendaCancelMotivo', 'errAgendaCancelOutro'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('visible');
+    });
+    var status = document.getElementById('agendaCancelMotivoStatus');
+    if (status) status.textContent = '';
+    agendaCancelOutroCounter();
+    abrirOverlay('modalAgendaCancelamentoMotivo');
+  }
+
+  function fecharAgendaCancelamentoMotivo(event) {
+    if (event && event.target && event.target.id !== 'modalAgendaCancelamentoMotivo') return;
+    var ctx = _agendaCancelamentoContext;
+    _agendaCancelamentoContext = null;
+    var modal = document.getElementById('modalAgendaCancelamentoMotivo');
+    if (modal) modal.classList.remove('open');
+    if (ctx && ctx.restoreStatus) {
+      var statusEl = document.getElementById('agStatus');
+      if (statusEl) {
+        statusEl.value = ctx.restoreStatus;
+        atualizarAgendaPostVisitVisibility();
+      }
+    }
+    if (ctx) snack('Cancelamento não realizado. A visita permanece como estava.');
+  }
+
+  function confirmarAgendaCancelamentoMotivo() {
+    var opt = agendaCancelMotivoSelecionado_();
+    var errMotivo = document.getElementById('errAgendaCancelMotivo');
+    if (!opt) {
+      if (errMotivo) errMotivo.classList.add('visible');
+      return;
+    }
+    var detalhe = '';
+    if (opt.outro) {
+      var outro = document.getElementById('agendaCancelOutro');
+      detalhe = String(outro && outro.value || '').trim();
+      if (!detalhe || detalhe.length > 255) {
+        if (outro) outro.classList.add('invalid');
+        var errOutro = document.getElementById('errAgendaCancelOutro');
+        if (errOutro) errOutro.classList.add('visible');
+        return;
+      }
+    }
+    var motivo = {
+      categoria: opt.categoria,
+      motivo: opt.outro ? detalhe : opt.motivo,
+      motivoBase: opt.motivo
+    };
+    var ctx = _agendaCancelamentoContext || {};
+    _agendaCancelamentoContext = null;
+    var modal = document.getElementById('modalAgendaCancelamentoMotivo');
+    if (modal) modal.classList.remove('open');
+    if (typeof ctx.onConfirm === 'function') ctx.onConfirm(motivo);
+  }
+
+  function agendaEventoAtualEditado_() {
+    if (!_agendaEditId) return null;
+    return (_agendaEventos || []).find(function(x) {
+      return String(x.id || '') === String(_agendaEditId);
+    }) || null;
+  }
+
+  function agendaExigeMotivoCancelamento_(payload) {
+    if (!_agendaEditId || normAgenda(payload && payload.status) !== 'cancelado') return false;
+    var atual = agendaEventoAtualEditado_();
+    return !atual || normAgenda(atual.status) !== 'cancelado';
+  }
+
+  function salvarAgendaEvento(cancelamentoMotivo) {
     if (!updateAgendaSaveAvailability(true)) return;
     var ok = true;
     var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
@@ -1512,8 +1684,6 @@
       return;
     }
     var btn = document.getElementById('btnSalvarAgenda');
-    setAgendaButtonState(btn, true, 'Salvando...');
-    setAgendaStatus('Salvando...', '');
     var payload = coletarAgendaEvento();
     if (_agendaEditId) {
       var eventoEditado = (_agendaEventos || []).find(function(x) {
@@ -1522,6 +1692,19 @@
       payload.id = _agendaEditId;
       payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
     }
+    if (agendaExigeMotivoCancelamento_(payload) && !cancelamentoMotivo) {
+      var statusAnteriorCancel = (agendaEventoAtualEditado_() || {}).status || 'Agendado';
+      abrirAgendaCancelamentoMotivo({
+        restoreStatus: statusAnteriorCancel,
+        onConfirm: function(motivo) {
+          salvarAgendaEvento(motivo);
+        }
+      });
+      return;
+    }
+    if (cancelamentoMotivo) payload.cancelamento = cancelamentoMotivo;
+    setAgendaButtonState(btn, true, 'Salvando...');
+    setAgendaStatus('Salvando...', '');
     var method = _agendaEditId ? 'atualizarAgendaEventoCompleto' : 'salvarNovoEventoCompleto';
     appServerRun({
       method: method,
@@ -2676,10 +2859,14 @@
       mensagem: 'Deseja cancelar este agendamento? Esta ação não pode ser desfeita.',
       acao: 'Cancelar visita',
       onConfirm: function() {
-        google.script.run
-          .withSuccessHandler(function() { carregarAgendaEventos(true); })
-          .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
-          .cancelarAgendaEvento(id);
+        abrirAgendaCancelamentoMotivo({
+          onConfirm: function(motivo) {
+            google.script.run
+              .withSuccessHandler(function() { carregarAgendaEventos(true); })
+              .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+              .cancelarAgendaEvento(id, motivo);
+          }
+        });
       }
     });
   }
