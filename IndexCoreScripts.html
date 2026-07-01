@@ -48,6 +48,12 @@ var AUDIT_PAGE_META = {
 };
 var AUDIT_PAGE_CACHE = { log: {}, changes: {} };
 var AUDIT_PREFETCHING = {};
+var AUDIT_FILTER_SIGNATURE = '';
+var APP_LOADED_VERSION = '';
+var APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+var APP_VERSION_CHECK_TIMER = null;
+var APP_VERSION_NOTICE_VISIBLE = false;
+var APP_VERSION_CHECK_IN_FLIGHT = false;
 var USERS_ADMIN_ROWS = [];
 var APP_DEPLOYMENT_DIAGNOSTICS = null;
 var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
@@ -171,6 +177,10 @@ function applyAppBootstrapData(data) {
   CURRENT_ACCESS = window.APP_BOOTSTRAP_DATA.access || CURRENT_ACCESS || {};
   var email = CURRENT_ACCESS.email || 'usuário';
   renderAppVersion(window.APP_BOOTSTRAP_DATA.appVersion);
+  APP_LOADED_VERSION = window.APP_BOOTSTRAP_DATA.appVersion && window.APP_BOOTSTRAP_DATA.appVersion.version
+    ? String(window.APP_BOOTSTRAP_DATA.appVersion.version)
+    : '';
+  startAppVersionWatcher();
   var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.name || email;
   document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
   document.getElementById('userInitial').textContent = String(displayName || email || '?')[0].toUpperCase();
@@ -199,6 +209,52 @@ function renderAppVersion(appVersion) {
     'Execute as esperado: ' + (appVersion.expectedExecuteAs || '')
   ].filter(Boolean).join('\n');
 }
+
+function startAppVersionWatcher() {
+  if (!APP_LOADED_VERSION || APP_VERSION_CHECK_TIMER) return;
+  APP_VERSION_CHECK_TIMER = setInterval(checkAppRuntimeVersion, APP_VERSION_CHECK_INTERVAL_MS);
+  setTimeout(checkAppRuntimeVersion, APP_VERSION_CHECK_INTERVAL_MS);
+}
+
+function checkAppRuntimeVersion() {
+  if (!APP_LOADED_VERSION || APP_VERSION_NOTICE_VISIBLE || APP_VERSION_CHECK_IN_FLIGHT) return;
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  APP_VERSION_CHECK_IN_FLIGHT = true;
+  google.script.run
+    .withSuccessHandler(function(info) {
+      APP_VERSION_CHECK_IN_FLIGHT = false;
+      var current = info && info.appVersion && info.appVersion.version ? String(info.appVersion.version) : '';
+      if (current && current !== APP_LOADED_VERSION) showAppVersionNotice(info.appVersion);
+    })
+    .withFailureHandler(function() {
+      APP_VERSION_CHECK_IN_FLIGHT = false;
+    })
+    .getAppRuntimeInfo();
+}
+
+function showAppVersionNotice(appVersion) {
+  if (APP_VERSION_NOTICE_VISIBLE) return;
+  APP_VERSION_NOTICE_VISIBLE = true;
+  var notice = document.getElementById('appVersionUpdateNotice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'appVersionUpdateNotice';
+    notice.className = 'app-version-update-notice';
+    notice.innerHTML =
+      '<span class="material-symbols-outlined" aria-hidden="true">system_update_alt</span>' +
+      '<span>Nova versão disponível. Atualize a página para continuar.</span>' +
+      '<button type="button" onclick="location.reload()">Atualizar</button>';
+    document.body.appendChild(notice);
+  }
+  if (appVersion && appVersion.version) {
+    notice.title = 'Versao atual: ' + APP_LOADED_VERSION + '\nNova versao: ' + appVersion.version;
+  }
+  notice.classList.add('show');
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) checkAppRuntimeVersion();
+});
 
 function handleUserOAuthStatus(auth) {
   if (!auth || !auth.required || !auth.url) return;
@@ -933,6 +989,7 @@ function abrirFormUsuarioAdmin(rowIndex) {
   document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';
   document.getElementById('statusUsuarioAdmin').textContent = '';
   document.getElementById('errUserAdminEmail').classList.remove('show');
+  document.getElementById('userAdminEmail').classList.remove('invalid');
   abrirOverlay('modalUsuarioAdmin');
 }
 
@@ -942,7 +999,12 @@ function salvarUsuarioAdminApp() {
   var valido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   var err = document.getElementById('errUserAdminEmail');
   if (err) err.classList.toggle('show', !valido);
-  if (!valido) return;
+  if (!valido) {
+    appRequiredFeedback([
+      { input: 'userAdminEmail', error: err, label: 'E-mail', value: '' }
+    ], { status: 'statusUsuarioAdmin' });
+    return;
+  }
   var btn = document.getElementById('btnSalvarUsuarioAdmin');
   var old = btn.innerHTML;
   btn.disabled = true;
@@ -1021,13 +1083,47 @@ function carregarAuditLogPaginado() {
     limitEl.dataset.auditPagedInit = '1';
   }
   AUDIT_PAGE_SIZE = limitEl ? Number(limitEl.value || 100) : 100;
+  AUDIT_FILTER_SIGNATURE = auditFilterSignature();
   AUDIT_PAGE_OFFSET[AUDIT_VIEW] = 0;
   AUDIT_PAGE_CACHE[AUDIT_VIEW] = {};
   carregarAuditPage(AUDIT_VIEW, 0, false);
 }
 
+function auditFilterKeydown(ev) {
+  if (ev && ev.key === 'Enter') {
+    ev.preventDefault();
+    carregarAuditLog();
+  }
+}
+
+function auditFilters() {
+  function val(id) {
+    var el = document.getElementById(id);
+    return el ? String(el.value || '').trim() : '';
+  }
+  return {
+    user: val('auditFilterUser'),
+    startDate: val('auditFilterStart'),
+    endDate: val('auditFilterEnd'),
+    action: val('auditFilterAction')
+  };
+}
+
+function auditFilterSignature() {
+  var f = auditFilters();
+  return [f.user, f.startDate, f.endDate, f.action].join('|');
+}
+
+function limparFiltrosAudit() {
+  ['auditFilterUser', 'auditFilterStart', 'auditFilterEnd', 'auditFilterAction'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  carregarAuditLog();
+}
+
 function auditCacheKey(limit, offset) {
-  return String(limit || AUDIT_PAGE_SIZE) + ':' + String(offset || 0);
+  return auditFilterSignature() + ':' + String(limit || AUDIT_PAGE_SIZE) + ':' + String(offset || 0);
 }
 
 function setAuditRows(type, rows) {
@@ -1042,6 +1138,14 @@ function auditRowsForView(type) {
 function carregarAuditPage(type, offset, fromCacheOnly) {
   type = type === 'changes' ? 'changes' : 'log';
   offset = Math.max(0, Number(offset || 0));
+  var filters = auditFilters();
+  var signature = auditFilterSignature();
+  if (signature !== AUDIT_FILTER_SIGNATURE) {
+    AUDIT_FILTER_SIGNATURE = signature;
+    AUDIT_PAGE_OFFSET[type] = 0;
+    AUDIT_PAGE_CACHE[type] = {};
+    offset = 0;
+  }
   var limit = AUDIT_PAGE_SIZE || 100;
   var key = auditCacheKey(limit, offset);
   var cached = AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key];
@@ -1065,7 +1169,9 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
         total: Number(data.total || 0),
         limit: Number(data.limit || limit),
         offset: Number(data.offset || offset),
-        hasMore: !!data.hasMore
+        hasMore: !!data.hasMore,
+        userCount: Number(data.userCount || 0),
+        moduleCount: Number(data.moduleCount || 0)
       };
       AUDIT_PAGE_CACHE[type][key] = { rows: rows, meta: meta };
       AUDIT_PAGE_OFFSET[type] = meta.offset;
@@ -1077,13 +1183,14 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
     .withFailureHandler(function(e) {
       if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">Erro: ' + esc(e.message || e) + '</td></tr>';
     })
-    .getAuditPage(type, limit, offset);
+    .getAuditPage(type, limit, offset, filters);
 }
 
 function prefetchAuditNextPage(type) {
   type = type === 'changes' ? 'changes' : 'log';
   var meta = AUDIT_PAGE_META[type] || {};
   if (!meta.hasMore) return;
+  var filters = auditFilters();
   var limit = meta.limit || AUDIT_PAGE_SIZE || 100;
   var rows = auditRowsForView(type);
   var nextOffset = (meta.offset || 0) + rows.length;
@@ -1100,7 +1207,9 @@ function prefetchAuditNextPage(type) {
           total: Number(data.total || 0),
           limit: Number(data.limit || limit),
           offset: Number(data.offset || nextOffset),
-          hasMore: !!data.hasMore
+          hasMore: !!data.hasMore,
+          userCount: Number(data.userCount || 0),
+          moduleCount: Number(data.moduleCount || 0)
         }
       };
       delete AUDIT_PREFETCHING[prefetchKey];
@@ -1109,7 +1218,7 @@ function prefetchAuditNextPage(type) {
     .withFailureHandler(function() {
       delete AUDIT_PREFETCHING[prefetchKey];
     })
-    .getAuditPage(type, limit, nextOffset);
+    .getAuditPage(type, limit, nextOffset, filters);
 }
 
 function setAuditView(view) {
@@ -1156,9 +1265,9 @@ function renderAuditLog() {
   var meta = AUDIT_PAGE_META[AUDIT_VIEW] || { total: rows.length, offset: 0, limit: AUDIT_PAGE_SIZE };
   document.getElementById('auditTotal').textContent = meta.total || rows.length;
   document.getElementById('auditTotalLabel').textContent = isChanges ? 'Total de alteracoes' : 'Total de registros';
-  document.getElementById('auditUsers').textContent = Object.keys(users).length;
+  document.getElementById('auditUsers').textContent = meta.userCount || Object.keys(users).length;
   renderAuditPager();
-  document.getElementById('auditModules').textContent = Object.keys(modules).length;
+  document.getElementById('auditModules').textContent = meta.moduleCount || Object.keys(modules).length;
   var head = document.getElementById('headAuditLog');
   var tb = document.getElementById('bodyAuditLog');
   if (!tb) return;
@@ -1346,11 +1455,11 @@ function salvarConfigApp() {
   var grupo = document.getElementById('cfgGrupo').value.trim();
   var chave = document.getElementById('cfgChave').value.trim();
   var valor = document.getElementById('cfgValor').value.trim();
-  var ok = true;
-  if (!grupo) { document.getElementById('cfgGrupo').classList.add('invalid'); document.getElementById('errCfgGrupo').classList.add('visible'); ok = false; }
-  if (!chave) { document.getElementById('cfgChave').classList.add('invalid'); document.getElementById('errCfgChave').classList.add('visible'); ok = false; }
-  if (!valor) { document.getElementById('cfgValor').classList.add('invalid'); document.getElementById('errCfgValor').classList.add('visible'); ok = false; }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'cfgGrupo', error: 'errCfgGrupo', label: 'Grupo', value: grupo },
+    { input: 'cfgChave', error: 'errCfgChave', label: 'Chave', value: chave },
+    { input: 'cfgValor', error: 'errCfgValor', label: 'Valor', value: valor }
+  ], { status: 'statusCfg' })) return;
   var btn = document.getElementById('btnSalvarCfg');
   btn.disabled = true;
   document.getElementById('statusCfg').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
@@ -1679,10 +1788,10 @@ function abrirDuplicacaoEquipamento(e) {
 function salvarEquipamentoApp() {
   var projeto = document.getElementById('eqProjeto').value;
   var descricao = document.getElementById('eqDescricao').value.trim();
-  var ok = true;
-  if (!projeto) { document.getElementById('eqProjeto').classList.add('invalid'); document.getElementById('errEqProjeto').classList.add('visible'); ok = false; }
-  if (!descricao) { document.getElementById('eqDescricao').classList.add('invalid'); document.getElementById('errEqDescricao').classList.add('visible'); ok = false; }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'eqProjeto', error: 'errEqProjeto', label: 'Projeto', value: projeto },
+    { input: 'eqDescricao', error: 'errEqDescricao', label: 'Descricao', value: descricao }
+  ], { status: 'statusEq' })) return;
   var btn = document.getElementById('btnSalvarEq');
   btn.disabled = true;
   document.getElementById('statusEq').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
@@ -1900,10 +2009,10 @@ function abrirDuplicacaoMedicamento(m) {
 function salvarMedicamentoApp() {
   var projeto = document.getElementById('medProjeto').value;
   var descricao = document.getElementById('medDescricao').value.trim();
-  var ok = true;
-  if (!projeto) { document.getElementById('medProjeto').classList.add('invalid'); document.getElementById('errMedProjeto').classList.add('visible'); ok = false; }
-  if (!descricao) { document.getElementById('medDescricao').classList.add('invalid'); document.getElementById('errMedDescricao').classList.add('visible'); ok = false; }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'medProjeto', error: 'errMedProjeto', label: 'Projeto', value: projeto },
+    { input: 'medDescricao', error: 'errMedDescricao', label: 'Descricao', value: descricao }
+  ], { status: 'statusMedRec' })) return;
   var btn = document.getElementById('btnSalvarMedRec');
   btn.disabled = true;
   document.getElementById('statusMedRec').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
@@ -1993,6 +2102,7 @@ function carregarParticipantes() {
     .withSuccessHandler(function(res) {
       var cfg = (res && res.config) || {};
       aplicarParticipanteConfig(cfg);
+      _projListPart = (res && res.projetos) || [];
       renderParticipantes((res && res.data) || []);
     })
     .withFailureHandler(function(e){ snackErro(e.message); })
@@ -2014,7 +2124,6 @@ function renderParticipantes(lista) {
   document.getElementById('parAtivos').textContent   = ativos       || '0';
   document.getElementById('parTriagem').textContent  = triagem      || '0';
   document.getElementById('parProjetos').textContent = Object.keys(projs).length || '0';
-  _projListPart = Object.keys(projs);
   filtrarParticipantes();
   applyDashboardPendingFilter_('participantes');
 }
@@ -2117,6 +2226,7 @@ function abrirFormPart(p) {
   } else {
     fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
   }
+  fillSelectOptions('ptProjeto', _projListPart || [], '', '-- Selecione --');
   ['errPtNome','errPtId','errPtStatus'].forEach(function(id){
     document.getElementById(id).classList.remove('visible');
   });
@@ -2134,7 +2244,7 @@ function abrirFormPart(p) {
     document.getElementById('ptId').value             = p.idParticipante||'';
     document.getElementById('ptNasc').value           = dateToInputValue(p.dataNascimento)||'';
     document.getElementById('ptCpf').value            = p.cpf||'';
-    document.getElementById('ptProjeto').value        = p.projeto||'';
+    fillSelectOptions('ptProjeto', _projListPart || [], p.projeto || '', '-- Selecione --');
     document.getElementById('ptBraco').value          = p.braco||'';
     fillSelectOptions('ptStatus', STATUS_PART, p.status || '', '-- Selecione --');
     document.getElementById('ptTelefone').value       = p.telefone||'';
@@ -2206,14 +2316,11 @@ function salvarPartApp() {
   var idPart=document.getElementById('ptId').value.trim();
   var status=document.getElementById('ptStatus').value;
   var idObrigatorio=atualizarParticipanteIdObrigatorio();
-  var ok=true;
-  if(!nome)  { document.getElementById('ptNome').classList.add('invalid');   document.getElementById('errPtNome').classList.add('visible');   ok=false; }
-  else       { document.getElementById('ptNome').classList.remove('invalid'); document.getElementById('errPtNome').classList.remove('visible'); }
-  if(idObrigatorio && !idPart){ document.getElementById('ptId').classList.add('invalid');     document.getElementById('errPtId').classList.add('visible');     ok=false; }
-  else       { document.getElementById('ptId').classList.remove('invalid');  document.getElementById('errPtId').classList.remove('visible');  }
-  if(!status){ document.getElementById('ptStatus').classList.add('invalid'); document.getElementById('errPtStatus').classList.add('visible'); ok=false; }
-  else       { document.getElementById('ptStatus').classList.remove('invalid'); document.getElementById('errPtStatus').classList.remove('visible'); }
-  if(!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'ptNome', error: 'errPtNome', label: 'Nome', value: nome },
+    { input: 'ptId', error: 'errPtId', label: 'ID do participante', value: idObrigatorio ? idPart : 'ok' },
+    { input: 'ptStatus', error: 'errPtStatus', label: 'Status', value: status }
+  ], { status: 'statusPart' })) return;
   var btn=document.getElementById('btnSalvarPart');
   btn.disabled=true;
   document.getElementById('statusPart').innerHTML='<span style="color:#5f6b7c;">Processando…</span>';
@@ -2324,13 +2431,16 @@ function renderMedicos(lista) {
 }
 
 function filtrarMedicos() {
-  var q = (document.getElementById('searchMedicos').value || '').toLowerCase().trim();
+  var q = norm(document.getElementById('searchMedicos').value || '').trim();
   var f = q ? _medicos.filter(function(m) {
-    return (m.nome         || '').toLowerCase().includes(q)
-        || (m.especialidade || '').toLowerCase().includes(q)
-        || (m.cpf          || '').toLowerCase().includes(q)
-        || (m.cremers      || '').toLowerCase().includes(q)
-        || (m.email        || '').toLowerCase().includes(q);
+    return norm([
+      m.nome,
+      m.especialidade,
+      m.cpf,
+      m.cremers,
+      m.telefone,
+      m.email
+    ].join(' ')).indexOf(q) !== -1;
   }) : _medicos;
   renderTabela(f);
 }
@@ -2391,24 +2501,10 @@ function abrirFormMedico(m) {
 function salvarMedicoApp() {
   var nome = document.getElementById('mNome').value.trim();
   var esp  = _selEsp || document.getElementById('mEsp').value.trim();
-  var ok   = true;
-  if (!nome) {
-    document.getElementById('mNome').classList.add('invalid');
-    document.getElementById('errMNome').classList.add('visible');
-    ok = false;
-  } else {
-    document.getElementById('mNome').classList.remove('invalid');
-    document.getElementById('errMNome').classList.remove('visible');
-  }
-  if (!esp || !ESPS.includes(esp)) {
-    document.getElementById('mEsp').classList.add('invalid');
-    document.getElementById('errMEsp').classList.add('visible');
-    ok = false;
-  } else {
-    document.getElementById('mEsp').classList.remove('invalid');
-    document.getElementById('errMEsp').classList.remove('visible');
-  }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'mNome', error: 'errMNome', label: 'Nome', value: nome },
+    { input: 'mEsp', error: 'errMEsp', label: 'Especialidade', value: esp && ESPS.includes(esp) ? esp : '' }
+  ], { status: 'statusMedico' })) return;
   var btn = document.getElementById('btnSalvarMedico');
   btn.disabled = true;
   document.getElementById('statusMedico').innerHTML = '<span style="color:#5f6b7c;">⏳ Processando…</span>';
@@ -2574,6 +2670,41 @@ function appRequiredMissing(fields) {
     return !String(value == null ? '' : value).trim();
   }).map(function(field) { return field.label; });
 }
+function appRequiredFeedback(fields, opts) {
+  opts = opts || {};
+  var missing = [];
+  var firstInput = null;
+  (fields || []).forEach(function(field) {
+    var input = typeof field.input === 'string' ? document.getElementById(field.input) : field.input;
+    var error = typeof field.error === 'string' ? document.getElementById(field.error) : field.error;
+    var value = typeof field.value === 'function' ? field.value() : field.value;
+    var valid = !!String(value == null ? '' : value).trim();
+    if (!valid) {
+      if (input) input.classList.add('invalid');
+      if (error) {
+        error.classList.add('visible');
+        error.classList.add('show');
+      }
+      if (!firstInput && input) firstInput = input;
+      missing.push(field.label || 'Campo obrigatorio');
+    } else {
+      if (input) input.classList.remove('invalid');
+      if (error) {
+        error.classList.remove('visible');
+        error.classList.remove('show');
+      }
+    }
+  });
+  if (!missing.length) return true;
+  var msg = 'Atencao: preencha os campos obrigatorios: ' + missing.join(', ') + '.';
+  if (opts.status) appSetStatus(opts.status, msg, opts.color || '#b3261e');
+  if (opts.notify !== false) snackErro(msg);
+  if (firstInput && firstInput.scrollIntoView) {
+    firstInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(function() { try { firstInput.focus(); } catch(e) {} }, 250);
+  }
+  return false;
+}
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -2736,24 +2867,10 @@ function abrirFormSolicitante(s) {
 function salvarSolicitanteApp() {
   var nome    = document.getElementById('sNome').value.trim();
   var formacao = _selFormacao || document.getElementById('sFormacao').value.trim();
-  var ok = true;
-  if (!nome) {
-    document.getElementById('sNome').classList.add('invalid');
-    document.getElementById('errSNome').classList.add('visible');
-    ok = false;
-  } else {
-    document.getElementById('sNome').classList.remove('invalid');
-    document.getElementById('errSNome').classList.remove('visible');
-  }
-  if (!formacao || !FORMACOES.includes(formacao)) {
-    document.getElementById('sFormacao').classList.add('invalid');
-    document.getElementById('errSFormacao').classList.add('visible');
-    ok = false;
-  } else {
-    document.getElementById('sFormacao').classList.remove('invalid');
-    document.getElementById('errSFormacao').classList.remove('visible');
-  }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'sNome', error: 'errSNome', label: 'Nome', value: nome },
+    { input: 'sFormacao', error: 'errSFormacao', label: 'Formacao', value: formacao && FORMACOES.includes(formacao) ? formacao : '' }
+  ], { status: 'statusSol' })) return;
   var btn = document.getElementById('btnSalvarSol');
   btn.disabled = true;
   document.getElementById('statusSol').innerHTML = '<span style="color:#5f6b7c;">⏳ Processando…</span>';
@@ -3203,44 +3320,14 @@ function abrirFormProjeto(p) {
 
 function salvarProjetoApp() {
   var btn = document.getElementById('btnSalvarProj');
-  var ok  = true;
   var nome = document.getElementById('pNome').value.trim();
-  if (!nome) {
-    document.getElementById('pNome').classList.add('invalid');
-    document.getElementById('errPNome').classList.add('visible'); ok=false;
-  } else {
-    document.getElementById('pNome').classList.remove('invalid');
-    document.getElementById('errPNome').classList.remove('visible');
-  }
-  if (!document.getElementById('pFase').value) {
-    document.getElementById('pFase').classList.add('invalid');
-    document.getElementById('errPFase').classList.add('visible'); ok=false;
-  } else {
-    document.getElementById('pFase').classList.remove('invalid');
-    document.getElementById('errPFase').classList.remove('visible');
-  }
-  if (!document.getElementById('pStatus').value) {
-    document.getElementById('pStatus').classList.add('invalid');
-    document.getElementById('errPStatus').classList.add('visible'); ok=false;
-  } else {
-    document.getElementById('pStatus').classList.remove('invalid');
-    document.getElementById('errPStatus').classList.remove('visible');
-  }
-  if (!_selPEsp) {
-    document.getElementById('pEsp').classList.add('invalid');
-    document.getElementById('errPEsp').classList.add('visible'); ok=false;
-  } else {
-    document.getElementById('pEsp').classList.remove('invalid');
-    document.getElementById('errPEsp').classList.remove('visible');
-  }
-  if (!_selPIP) {
-    document.getElementById('pIP').classList.add('invalid');
-    document.getElementById('errPIP').classList.add('visible'); ok=false;
-  } else {
-    document.getElementById('pIP').classList.remove('invalid');
-    document.getElementById('errPIP').classList.remove('visible');
-  }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'pNome', error: 'errPNome', label: 'Nome do projeto', value: nome },
+    { input: 'pFase', error: 'errPFase', label: 'Fase', value: document.getElementById('pFase').value },
+    { input: 'pStatus', error: 'errPStatus', label: 'Status', value: document.getElementById('pStatus').value },
+    { input: 'pEsp', error: 'errPEsp', label: 'Especialidade', value: _selPEsp },
+    { input: 'pIP', error: 'errPIP', label: 'Investigador principal', value: _selPIP }
+  ], { status: 'statusProj' })) return;
   btn.disabled=true;
   document.getElementById('statusProj').innerHTML='<span style="color:#5f6b7c;">⏳ Processando…</span>';
   google.script.run
@@ -3449,24 +3536,10 @@ function salvarMonitorApp() {
   var projeto1 = document.getElementById('monProjeto1').value;
   var modalMonitor = document.getElementById('modalMonitor');
   var veioDaAgenda = modalMonitor && modalMonitor.dataset.agendaOrigem === '1';
-  var ok = true;
-  if (!nome) {
-    document.getElementById('monNome').classList.add('invalid');
-    document.getElementById('errMonNome').classList.add('visible');
-    ok = false;
-  } else {
-    document.getElementById('monNome').classList.remove('invalid');
-    document.getElementById('errMonNome').classList.remove('visible');
-  }
-  if (!projeto1) {
-    document.getElementById('monProjeto1').classList.add('invalid');
-    document.getElementById('errMonProjeto1').classList.add('visible');
-    ok = false;
-  } else {
-    document.getElementById('monProjeto1').classList.remove('invalid');
-    document.getElementById('errMonProjeto1').classList.remove('visible');
-  }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'monNome', error: 'errMonNome', label: 'Nome', value: nome },
+    { input: 'monProjeto1', error: 'errMonProjeto1', label: 'Projeto 1', value: projeto1 }
+  ], { status: 'statusMonitor' })) return;
 
   var btn = document.getElementById('btnSalvarMonitor');
   btn.disabled = true;
@@ -3566,6 +3639,15 @@ var _rqPreloadLastKey = '';
 var _rqPreloadPromptKey = '';
 var _rqPendingPreloadData = null;
 var _rqPostGeneratePreloadOffer = null;
+
+function requisicaoAgendaOrigemIdAtual() {
+  if (_rqOrigemContext && _rqOrigemContext.tipo === 'agenda' && _rqOrigemContext.agendaId) {
+    return _rqOrigemContext.agendaId;
+  }
+  if (_rqAgendaOrigemId) return _rqAgendaOrigemId;
+  var page = document.getElementById('page-requisicao');
+  return page && page.dataset ? (page.dataset.agendaId || '') : '';
+}
 
 function initRequisicao() {
   if (_reqInited) return;
@@ -3958,6 +4040,8 @@ function limparRequisicaoForm() {
   _rqSelSolicitante = null;
   _rqAgendaOrigemId = '';
   _rqOrigemContext = null;
+  var page = document.getElementById('page-requisicao');
+  if (page && page.dataset) page.dataset.agendaId = '';
   _rqPreloadLastKey = '';
   _rqPreloadPromptKey = '';
   _rqPendingPreloadData = null;
@@ -4102,6 +4186,7 @@ function requisicaoIsPastDate(value) {
 
 function montarPayloadRequisicao(dadosValidados) {
   var solObj = _rqSolicitantes.find(function(s){ return s.nome === dadosValidados.solicitante; }) || {};
+  var agendaIdOrigem = requisicaoAgendaOrigemIdAtual();
   return {
     paciente:        dadosValidados.paciente,
     nascimento:      document.getElementById('rqNascimento').value,
@@ -4117,7 +4202,7 @@ function montarPayloadRequisicao(dadosValidados) {
     solicitante:     dadosValidados.solicitante,
     solFormacao:     solObj.formacao || '',
     solRegistro:     solObj.registro || '',
-    agendaId:        _rqOrigemContext && _rqOrigemContext.tipo === 'agenda' ? (_rqOrigemContext.agendaId || '') : '',
+    agendaId:        agendaIdOrigem || '',
     requestedByEmail: solObj.email || (window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.access ? window.APP_BOOTSTRAP_DATA.access.email : '')
   };
 }
@@ -4269,12 +4354,29 @@ document.addEventListener('change', onRequisicaoRequiredInput);
 
 function finalizarRequisicaoAposSucesso(statusRequisicao, resultado) {
   var origem = _rqOrigemContext || {};
-  if (origem.tipo === 'agenda' && origem.agendaId) {
+  var agendaIdOrigem = requisicaoAgendaOrigemIdAtual();
+  if (agendaIdOrigem) {
     var sync = resultado && resultado.statusSync;
     if (sync && sync.ok && statusRequisicao) {
-      aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
+      aplicarStatusRequisicaoAgendaLocal(agendaIdOrigem, statusRequisicao, true, resultado && resultado.recordVersion, resultado && resultado.editRecordVersion);
     } else if (!sync && statusRequisicao) {
-      aplicarStatusRequisicaoAgendaLocal(origem.agendaId, statusRequisicao, true, resultado && resultado.recordVersion);
+      aplicarStatusRequisicaoAgendaLocal(agendaIdOrigem, statusRequisicao, true, resultado && resultado.recordVersion, resultado && resultado.editRecordVersion);
+    } else if (!sync || !sync.ok) {
+      appServerRun({
+        method: 'atualizarStatusRequisicaoAgenda',
+        args: [agendaIdOrigem, true],
+        onSuccess: function(res) {
+          if (res && res.statusRequisicao) {
+            aplicarStatusRequisicaoAgendaLocal(agendaIdOrigem, res.statusRequisicao, true, res.recordVersion, res.editRecordVersion);
+            snack('Status da requisição atualizado na Agenda.');
+          } else if (res && res.semPrestador) {
+            snackErro('Rascunho criado, mas o agendamento está sem prestador para marcar a requisição.');
+          }
+        },
+        onFailure: function(e) {
+          snackErro('Rascunho criado, mas não foi possível atualizar o status da Agenda: ' + appErrorMessage(e));
+        }
+      });
     }
     return;
   }
@@ -4468,6 +4570,9 @@ function abrirFormPrestador(id) {
   ['errPrestEmpresa','errPrestTipoServico','errPrestEmail'].forEach(function(eId) {
     document.getElementById(eId).classList.remove('visible');
   });
+  ['prestEmpresa','prestTipoServico','prestEmail'].forEach(function(fId) {
+    document.getElementById(fId).classList.remove('invalid');
+  });
   if (id) {
     var p = _prestadores.find(function(x) { return x.id === id; });
     if (p) {
@@ -4486,14 +4591,11 @@ function salvarPrestadorApp() {
   var empresa = document.getElementById('prestEmpresa').value.trim();
   var email   = document.getElementById('prestEmail').value.trim();
   var tipoServico = document.getElementById('prestTipoServico').value.trim();
-  var ok = true;
-  if (!empresa) { document.getElementById('errPrestEmpresa').classList.add('visible'); ok = false; }
-  else { document.getElementById('errPrestEmpresa').classList.remove('visible'); }
-  if (!tipoServico) { document.getElementById('errPrestTipoServico').classList.add('visible'); ok = false; }
-  else { document.getElementById('errPrestTipoServico').classList.remove('visible'); }
-  if (!email)   { document.getElementById('errPrestEmail').classList.add('visible');   ok = false; }
-  else { document.getElementById('errPrestEmail').classList.remove('visible'); }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'prestEmpresa', error: 'errPrestEmpresa', label: 'Empresa', value: empresa },
+    { input: 'prestTipoServico', error: 'errPrestTipoServico', label: 'Tipo de servico', value: tipoServico },
+    { input: 'prestEmail', error: 'errPrestEmail', label: 'E-mail', value: email }
+  ], { status: 'statusPrest' })) return;
   var btn = document.getElementById('btnSalvarPrest');
   btn.disabled = true;
   google.script.run
@@ -4598,6 +4700,9 @@ function abrirFormLabCentral(id) {
   ['errLabCentralNomeAbrev','errLabCentralNomeCompleto'].forEach(function(eId) {
     document.getElementById(eId).classList.remove('visible');
   });
+  ['labCentralNomeAbrev','labCentralNomeCompleto'].forEach(function(fId) {
+    document.getElementById(fId).classList.remove('invalid');
+  });
   document.getElementById('modalLabCentralTitle').textContent = id ? 'EDITAR LAB CENTRAL' : 'CADASTRO DE LAB CENTRAL';
   if (id) {
     var lab = _labCentral.find(function(x) { return x.id === id; });
@@ -4621,12 +4726,10 @@ function abrirFormLabCentral(id) {
 function salvarLabCentralApp() {
   var nomeAbrev = document.getElementById('labCentralNomeAbrev').value.trim();
   var nomeCompleto = document.getElementById('labCentralNomeCompleto').value.trim();
-  var ok = true;
-  if (!nomeAbrev) { document.getElementById('errLabCentralNomeAbrev').classList.add('visible'); ok = false; }
-  else { document.getElementById('errLabCentralNomeAbrev').classList.remove('visible'); }
-  if (!nomeCompleto) { document.getElementById('errLabCentralNomeCompleto').classList.add('visible'); ok = false; }
-  else { document.getElementById('errLabCentralNomeCompleto').classList.remove('visible'); }
-  if (!ok) return;
+  if (!appRequiredFeedback([
+    { input: 'labCentralNomeAbrev', error: 'errLabCentralNomeAbrev', label: 'Nome abreviado', value: nomeAbrev },
+    { input: 'labCentralNomeCompleto', error: 'errLabCentralNomeCompleto', label: 'Nome completo', value: nomeCompleto }
+  ], { status: 'statusLabCentral' })) return;
 
   var btn = document.getElementById('btnSalvarLabCentral');
   btn.disabled = true;
@@ -4846,6 +4949,7 @@ function abrirFormCourier(id) {
   courierEditorSetHtml('');
   document.getElementById('statusCourier').textContent = '';
   document.getElementById('errCourierNome').classList.remove('visible');
+  document.getElementById('courierNome').classList.remove('invalid');
   document.getElementById('modalCourierTitle').textContent = id ? 'EDITAR COURIER' : 'CADASTRO DE COURIER';
   if (id) {
     var c = _couriers.find(function(x) { return x.id === id; });
@@ -4929,11 +5033,9 @@ function courierEditorPastePlain(event) {
 
 function salvarCourierApp() {
   var nome = document.getElementById('courierNome').value.trim();
-  if (!nome) {
-    document.getElementById('errCourierNome').classList.add('visible');
-    return;
-  }
-  document.getElementById('errCourierNome').classList.remove('visible');
+  if (!appRequiredFeedback([
+    { input: 'courierNome', error: 'errCourierNome', label: 'Nome', value: nome }
+  ], { status: 'statusCourier' })) return;
   var btn = document.getElementById('btnSalvarCourier');
   btn.disabled = true;
   google.script.run

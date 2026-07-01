@@ -1112,6 +1112,22 @@
           <span class="material-symbols-outlined">search</span>
           <input type="text" id="searchAudit" placeholder="Buscar por e-mail, ação, módulo, campo ou ID..." oninput="renderAuditLog()">
         </div>
+        <div class="audit-filter-wrap">
+          <span class="material-symbols-outlined">person_search</span>
+          <input class="audit-filter-input" type="text" id="auditFilterUser" placeholder="Usuário" onchange="carregarAuditLog()" onkeydown="auditFilterKeydown(event)">
+        </div>
+        <div class="audit-filter-wrap audit-date-filter">
+          <span class="material-symbols-outlined">calendar_today</span>
+          <input class="audit-filter-input" type="date" id="auditFilterStart" title="Data inicial" onchange="carregarAuditLog()">
+          <input class="audit-filter-input" type="date" id="auditFilterEnd" title="Data final" onchange="carregarAuditLog()">
+        </div>
+        <div class="audit-filter-wrap">
+          <span class="material-symbols-outlined">rule</span>
+          <input class="audit-filter-input" type="text" id="auditFilterAction" placeholder="Tipo de ação" onchange="carregarAuditLog()" onkeydown="auditFilterKeydown(event)">
+        </div>
+        <button class="audit-filter-clear" type="button" onclick="limparFiltrosAudit()" title="Limpar filtros" aria-label="Limpar filtros">
+          <span class="material-symbols-outlined">filter_alt_off</span>
+        </button>
         <select class="f-input f-select" id="auditLimit" onchange="carregarAuditLog()" style="max-width:150px;height:40px">
           <option value="100">Últimos 100</option>
           <option value="200" selected>Últimos 200</option>

@@ -1754,6 +1754,7 @@
       });
       payload.id = _agendaEditId;
       payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
+      payload._editRecordVersion = _agendaEditEditableVersion || (eventoEditado && eventoEditado.editRecordVersion) || '';
     }
     if (agendaExigeMotivoCancelamento_(payload) && !cancelamentoMotivo) {
       var statusAnteriorCancel = (agendaEventoAtualEditado_() || {}).status || 'Agendado';
@@ -1788,7 +1789,7 @@
           return;
         }
         if (res && res.conflito) {
-          var conflitoMsg = res.erro || 'Este agendamento foi alterado por outra pessoa ou aba desde que voce abriu.';
+          var conflitoMsg = res.erro || 'Este agendamento foi alterado desde que voce abriu.';
           document.getElementById('agendaStatusMsg').innerHTML =
             '<div class="status-conflict">' +
               '<span class="material-symbols-outlined">sync_problem</span>' +
@@ -1809,6 +1810,7 @@
         setAgendaStatus(msgOk, 'ok');
         if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
         if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
+        if (res && res.editRecordVersion) _agendaEditEditableVersion = res.editRecordVersion;
         if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
         limparAgendaForm();
         fecharAgendaModal();
@@ -2367,6 +2369,8 @@
     ensureRequisicaoDataLoaded(function() {
       _rqAgendaOrigemId = dados.id || _agendaEditId || '';
       _rqOrigemContext = { tipo: 'agenda', agendaId: _rqAgendaOrigemId };
+      var reqPage = document.getElementById('page-requisicao');
+      if (reqPage && reqPage.dataset) reqPage.dataset.agendaId = _rqAgendaOrigemId;
       preencherSolicitanteUsuarioAtual();
       var pacienteInput = document.getElementById('rqPaciente');
       var prestadorInput = document.getElementById('rqPrestador') || document.getElementById('rqLocalExame');
@@ -2392,6 +2396,8 @@
       participante = participante || {};
       _rqAgendaOrigemId = '';
       _rqOrigemContext = { tipo: 'participante', participante: participante };
+      var reqPage = document.getElementById('page-requisicao');
+      if (reqPage && reqPage.dataset) reqPage.dataset.agendaId = '';
       preencherSolicitanteUsuarioAtual();
       var pacienteInput = document.getElementById('rqPaciente');
       if (!pacienteInput) return;
@@ -2470,6 +2476,7 @@
     atualizarAgendaTransportesOpcionais();
     applyAgendaAwbRulesAll();
     _agendaEditRecordVersion = '';
+    _agendaEditEditableVersion = '';
     updateAgendaSaveAvailability(false);
   }
 
@@ -2519,6 +2526,7 @@
   var _agendaEditSessionId = '';
   var _agendaEditPresenceTimer = null;
   var _agendaEditRecordVersion = '';
+  var _agendaEditEditableVersion = '';
 
   function agendaEditPresenceSessionId() {
     if (_agendaEditSessionId) return _agendaEditSessionId;
@@ -2548,15 +2556,17 @@
     if (typeof snackErro === 'function') snackErro(msg);
   }
 
-  function agendaOpenEditPresence(recordId, initialVersion) {
+  function agendaOpenEditPresence(recordId, initialVersion, initialEditVersion) {
     agendaStopEditPresenceTimer();
     _agendaEditRecordVersion = initialVersion || '';
+    _agendaEditEditableVersion = initialEditVersion || '';
     if (!recordId) return;
     var sessionId = agendaEditPresenceSessionId();
     function ping(showWarning) {
       google.script.run
         .withSuccessHandler(function(res) {
           if (!_agendaEditRecordVersion && res && res.version) _agendaEditRecordVersion = res.version;
+          if (!_agendaEditEditableVersion && res && res.editVersion) _agendaEditEditableVersion = res.editVersion;
           if (showWarning) agendaShowPresenceWarning(res);
         })
         .withFailureHandler(function() {})
@@ -2575,6 +2585,7 @@
       .withFailureHandler(function() {})
       .codexReleaseEditPresence('Agenda', recordId, _agendaEditSessionId);
     _agendaEditRecordVersion = '';
+    _agendaEditEditableVersion = '';
   }
 
   function agendaAbrirPendenteAposCarga() {
@@ -2715,21 +2726,23 @@
           snackErro('Informe o serviço terceirizado/prestador antes de marcar a requisição.');
           enviado = false;
         }
-        aplicarStatusRequisicaoAgendaLocal(agendaId, (res && res.statusRequisicao) || (enviado ? 'Enviado' : ''), enviado, res && res.recordVersion);
+        aplicarStatusRequisicaoAgendaLocal(agendaId, (res && res.statusRequisicao) || (enviado ? 'Enviado' : ''), enviado, res && res.recordVersion, res && res.editRecordVersion);
       })
       .withFailureHandler(function(e) { snackErro(e.message || e); })
       .atualizarStatusRequisicaoAgenda(agendaId, !!enviado);
   }
 
-  function aplicarStatusRequisicaoAgendaLocal(agendaId, status, enviado, recordVersion) {
+  function aplicarStatusRequisicaoAgendaLocal(agendaId, status, enviado, recordVersion, editRecordVersion) {
     (_agendaEventos || []).forEach(function(r) {
       if (String(r.id || '') === String(agendaId)) {
         r.statusRequisicao = status || '';
         if (recordVersion) r.recordVersion = recordVersion;
+        if (editRecordVersion) r.editRecordVersion = editRecordVersion;
       }
     });
     if (_agendaEditId && String(_agendaEditId) === String(agendaId)) {
       if (recordVersion) _agendaEditRecordVersion = recordVersion;
+      if (editRecordVersion) _agendaEditEditableVersion = editRecordVersion;
       var box = document.getElementById('agReqEnviada');
       if (box) {
         box.checked = !!enviado;
@@ -2817,6 +2830,7 @@
     limparAgendaForm();
     _agendaEditId = r.id || '';
     _agendaEditRecordVersion = r.recordVersion || '';
+    _agendaEditEditableVersion = r.editRecordVersion || '';
     var periodoMonitoria = agendaMonitoriaPeriodoFromRow(r);
     setAgendaFieldValue('agData', periodoMonitoria.inicio || r.dataIso || agendaIsoFromBr(r.data));
     setAgendaFieldValue('agDataFim', periodoMonitoria.fim || r.dataIso || agendaIsoFromBr(r.data));
@@ -2876,7 +2890,7 @@
     atualizarEstadoBaixaKitsAgenda(r.id);
     var p = document.getElementById('agendaCreatePanel');
     if (p) p.classList.add('open');
-    agendaOpenEditPresence(r.id, r.recordVersion || '');
+    agendaOpenEditPresence(r.id, r.recordVersion || '', r.editRecordVersion || '');
     updateAgendaSaveAvailability(false);
   }
 

@@ -48,9 +48,7 @@
   function pendenciasRevalidarEmBackground(force) {
     if (_pendenciasRefreshing) return;
     if (!force && !pendenciasEstaoDesatualizadas()) return;
-    carregarPendencias(!!force, { silent: true, onComplete: function() {
-      _pendenciasRefreshing = false;
-    } });
+    carregarPendencias(!!force, { silent: true });
   }
 
   function pendenciaAgendaAction(it) {
@@ -301,6 +299,7 @@
     options = options || {};
     setupPendenciasAutoRefreshListeners();
     var grid = document.getElementById('pendenciasGrid');
+    var loadingHtml = '<div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>';
     if (!forcar && _pendenciasCache && !pendenciasEstaoDesatualizadas()) {
       renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
       atualizarPendenciasTs(true);
@@ -309,20 +308,50 @@
       return;
     }
     if (_pendenciasRefreshing) {
-      if (!options.silent) setPendenciasStatus('Atualizacao ja em andamento...', '');
+      if (grid && !_pendenciasCache && !grid.innerHTML.trim()) grid.innerHTML = loadingHtml;
+      if (!options.silent) setPendenciasStatus(_pendenciasCache ? 'Atualizacao ja em andamento...' : '', '');
       if (typeof options.onComplete === 'function') options.onComplete();
       return;
     }
     _pendenciasRefreshing = true;
     if (grid && (!options.silent || !_pendenciasCache)) {
-      grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>';
+      grid.innerHTML = loadingHtml;
     }
     if (!options.silent) {
-      setPendenciasStatus('Atualizando...', '');
+      setPendenciasStatus('', '');
       setPendenciasButtonBusy(true, 'Atualizando...');
+    }
+    var finished = false;
+    var watchdog = setTimeout(function() {
+      failPendenciasRefresh({ message: 'Tempo limite ao carregar pendencias.' });
+    }, 60000);
+    function finishPendenciasRefresh() {
+      if (watchdog) clearTimeout(watchdog);
+      _pendenciasRefreshing = false;
+      if (typeof options.onComplete === 'function') options.onComplete();
+    }
+    function failPendenciasRefresh(e) {
+      if (finished) return;
+      finished = true;
+      if (!options.silent) setPendenciasButtonBusy(false);
+      var msg = (typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message ? e.message : e)) || 'Erro inesperado ao carregar pendencias.';
+      var manterCache = !!_pendenciasCache;
+      if (!options.silent) {
+        setPendenciasStatus(
+          (manterCache ? 'Atencao: nao foi possivel atualizar agora; mantendo a ultima lista carregada. ' : 'Erro: nao foi possivel carregar pendencias. ') + msg,
+          manterCache ? 'warn' : 'danger'
+        );
+      }
+      if (grid && (!options.silent || !_pendenciasCache)) {
+        if (manterCache) renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
+        else grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">error</span>Erro ao carregar pendências: ' + esc(msg) + '</div>';
+      }
+      finishPendenciasRefresh();
     }
     google.script.run
       .withSuccessHandler(function(d) {
+        if (finished) return;
+        finished = true;
         if (!options.silent) setPendenciasButtonBusy(false);
         _pendenciasCache = (d && d.pendencias) || {};
         setPendenciasLoadedAtState(new Date());
@@ -330,24 +359,10 @@
         atualizarPendenciasTs(false);
         var total = pendenciasTotal(_pendenciasCache);
         if (!options.silent) setPendenciasStatus(total ? 'Atualizado. ' + total + ' pendencia(s) operacional(is) encontrada(s).' : 'Atualizado. Sem pendencias operacionais no momento.', total ? '' : 'ok');
-        _pendenciasRefreshing = false;
-        if (typeof options.onComplete === 'function') options.onComplete();
+        finishPendenciasRefresh();
       })
       .withFailureHandler(function(e) {
-        if (!options.silent) setPendenciasButtonBusy(false);
-        var msg = typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message ? e.message : e);
-        var manterCache = !!_pendenciasCache;
-        if (!options.silent) {
-          setPendenciasStatus(
-            (manterCache ? 'Atencao: nao foi possivel atualizar agora; mantendo a ultima lista carregada. ' : 'Erro: nao foi possivel carregar pendencias. ') + msg,
-            manterCache ? 'warn' : 'danger'
-          );
-        }
-        if (grid && (!options.silent || !_pendenciasCache)) {
-          grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">error</span>Erro ao carregar pendências: ' + esc(msg) + '</div>';
-        }
-        _pendenciasRefreshing = false;
-        if (typeof options.onComplete === 'function') options.onComplete();
+        failPendenciasRefresh(e);
       })
       .getPendenciasOperacionais();
   }

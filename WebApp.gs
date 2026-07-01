@@ -7,9 +7,9 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.06.30-notificacoes-reagendamento';
-var CODEX_APP_BUILD_LABEL_ = 'Motivos, modais e notificacoes de reagendamento';
-var CODEX_APP_BUILD_DATE_ = '2026-06-30';
+var CODEX_APP_VERSION_ = '2026.07.01-pendencias-refresh-feedback';
+var CODEX_APP_BUILD_LABEL_ = 'Pendencias com refresh resiliente';
+var CODEX_APP_BUILD_DATE_ = '2026-07-01';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -182,6 +182,13 @@ function codexGetAppVersion_() {
   };
 }
 
+function getAppRuntimeInfo() {
+  return {
+    appVersion: codexGetAppVersion_(),
+    checkedAt: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss')
+  };
+}
+
 function getCodexDeploymentDiagnostics() {
   var access = codexAssertAdmin_();
   var out = {
@@ -324,6 +331,7 @@ function getCadastrosBootstrapData(page) {
   if (page === 'participantes') {
     out.config = getParticipanteFormConfig();
     out.data = getParticipantes();
+    out.projetos = getProjetosParticipantesOptions_();
   } else if (page === 'projetos') {
     out.config = getProjetoFormConfig();
     out.data = getProjetos();
@@ -646,6 +654,17 @@ function agendaRecordVersionFromRow_(row) {
   return codexRecordVersionFromValues_(row || []);
 }
 
+function agendaEditableRecordVersionFromRow_(row) {
+  row = (row || []).slice();
+  [
+    AGENDA_CFG.idx.controle,
+    AGENDA_CFG.idx.reqStatus
+  ].forEach(function(idx) {
+    if (idx >= 0 && idx < row.length) row[idx] = '';
+  });
+  return codexRecordVersionFromValues_(row);
+}
+
 function codexGetEditPresenceSheet_() {
   var ss = getCodexSpreadsheet_();
   var name = 'Edit_Presence';
@@ -703,6 +722,14 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
     var expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
     codexCleanupEditPresence_(sh, now);
     var version = codexGetRecordVersion_(moduleName, recordId);
+    var editVersion = '';
+    if (normText_(moduleName) === 'agenda') {
+      var agenda = getAgendaSheet_();
+      var linhaAgenda = encontrarLinhaPorId(agenda, recordId);
+      if (linhaAgenda) {
+        editVersion = agendaEditableRecordVersionFromRow_(agenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0]);
+      }
+    }
     var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
     var name = access.name || access.firstName || email;
     var lastRow = sh.getLastRow();
@@ -731,7 +758,7 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
     var row = [moduleName, recordId, email, name, sessionId, now, expiresAt, version];
     if (targetRow) sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
     else sh.appendRow(row);
-    return { ok: true, module: moduleName, recordId: recordId, sessionId: sessionId, version: version, editors: editors, ttlSeconds: ttlSeconds };
+    return { ok: true, module: moduleName, recordId: recordId, sessionId: sessionId, version: version, editVersion: editVersion, editors: editors, ttlSeconds: ttlSeconds };
     });
   } catch (e) {
     if (codexIsDocumentLockBusyError_(e)) {
@@ -847,7 +874,60 @@ function codexGenerateAuditId_() {
   return 'AUD-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Math.floor(Math.random() * 9000 + 1000);
 }
 
-function getAuditRowsPage_(sheetName, colCount, limit, offset, mapper) {
+function codexNormalizeAuditFilterText_(value) {
+  return codexNormalizeTextForSort_(value);
+}
+
+function codexParseAuditFilterDate_(value, endOfDay) {
+  value = String(value || '').trim();
+  if (!value) return null;
+  var m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (endOfDay) d.setHours(23, 59, 59, 999);
+    else d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  var parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function codexHasAuditFilters_(filters) {
+  filters = filters || {};
+  return !!(
+    String(filters.user || '').trim() ||
+    String(filters.startDate || '').trim() ||
+    String(filters.endDate || '').trim() ||
+    String(filters.action || '').trim()
+  );
+}
+
+function codexAuditRowDate_(value) {
+  if (value instanceof Date) return value;
+  if (!value) return null;
+  var parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function codexAuditRowMatchesFilters_(row, filters, indexes) {
+  filters = filters || {};
+  indexes = indexes || {};
+  var user = codexNormalizeAuditFilterText_(filters.user);
+  var action = codexNormalizeAuditFilterText_(filters.action);
+  if (user && codexNormalizeAuditFilterText_(row[indexes.userCol] || '').indexOf(user) === -1) return false;
+  if (action && codexNormalizeAuditFilterText_(row[indexes.actionCol] || '').indexOf(action) === -1) return false;
+  var startDate = codexParseAuditFilterDate_(filters.startDate, false);
+  var endDate = codexParseAuditFilterDate_(filters.endDate, true);
+  if (startDate || endDate) {
+    var rowDate = codexAuditRowDate_(row[indexes.dateCol]);
+    if (!rowDate) return false;
+    if (startDate && rowDate.getTime() < startDate.getTime()) return false;
+    if (endDate && rowDate.getTime() > endDate.getTime()) return false;
+  }
+  return true;
+}
+
+function getAuditRowsPage_(sheetName, colCount, limit, offset, mapper, filters, indexes) {
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(sheetName);
   if (!sh || sh.getLastRow() < 2) {
@@ -857,6 +937,32 @@ function getAuditRowsPage_(sheetName, colCount, limit, offset, mapper) {
   offset = Math.max(0, Number(offset || 0));
   var lastRow = sh.getLastRow();
   var total = lastRow - 1;
+  if (codexHasAuditFilters_(filters)) {
+    var allRows = sh.getRange(2, 1, total, colCount).getValues();
+    allRows.reverse();
+    allRows = allRows.filter(function(row) {
+      return codexAuditRowMatchesFilters_(row, filters, indexes);
+    });
+    var users = {};
+    var modules = {};
+    allRows.forEach(function(row) {
+      var user = String(row[indexes.userCol] || '');
+      var moduleName = String(row[indexes.moduleCol] || '');
+      if (user) users[user] = true;
+      if (moduleName) modules[moduleName] = true;
+    });
+    total = allRows.length;
+    var pageRows = allRows.slice(offset, offset + limit).map(mapper);
+    return {
+      rows: pageRows,
+      total: total,
+      limit: limit,
+      offset: offset,
+      hasMore: offset + pageRows.length < total,
+      userCount: Object.keys(users).length,
+      moduleCount: Object.keys(modules).length
+    };
+  }
   var endRow = lastRow - offset;
   if (endRow < 2) {
     return { rows: [], total: total, limit: limit, offset: offset, hasMore: false };
@@ -878,7 +984,7 @@ function getAuditLog(limit) {
   return getAuditLogPage(limit, 0).rows;
 }
 
-function getAuditLogPage(limit, offset) {
+function getAuditLogPage(limit, offset, filters) {
   codexAssertAdmin_();
   return getAuditRowsPage_('Audit_Log', 6, limit, offset, function(r) {
     return {
@@ -889,14 +995,14 @@ function getAuditLogPage(limit, offset) {
       module: String(r[4] || ''),
       recordId: String(r[5] || '')
     };
-  });
+  }, filters, { userCol: 1, actionCol: 2, dateCol: 3, moduleCol: 4 });
 }
 
 function getAuditChanges(limit) {
   return getAuditChangesPage(limit, 0).rows;
 }
 
-function getAuditChangesPage(limit, offset) {
+function getAuditChangesPage(limit, offset, filters) {
   codexAssertAdmin_();
   return getAuditRowsPage_('Audit_Changes', 10, limit, offset, function(r) {
     return {
@@ -911,12 +1017,12 @@ function getAuditChangesPage(limit, offset) {
       newValue: String(r[8] || ''),
       note: String(r[9] || '')
     };
-  });
+  }, filters, { userCol: 2, actionCol: 4, dateCol: 1, moduleCol: 3 });
 }
 
-function getAuditPage(type, limit, offset) {
+function getAuditPage(type, limit, offset, filters) {
   type = String(type || 'log') === 'changes' ? 'changes' : 'log';
-  var page = type === 'changes' ? getAuditChangesPage(limit, offset) : getAuditLogPage(limit, offset);
+  var page = type === 'changes' ? getAuditChangesPage(limit, offset, filters) : getAuditLogPage(limit, offset, filters);
   page.type = type;
   return page;
 }
@@ -1839,6 +1945,7 @@ function gerarRequisicaoPDF(dados) {
     preloadWarning: '',
     statusRequisicao: statusResult && statusResult.statusRequisicao ? statusResult.statusRequisicao : '',
     recordVersion: statusResult && statusResult.recordVersion ? statusResult.recordVersion : '',
+    editRecordVersion: statusResult && statusResult.editRecordVersion ? statusResult.editRecordVersion : '',
     statusWarning: statusSync.warning,
     statusSync: statusSync
   };
@@ -2618,6 +2725,18 @@ function getProjetosAtivosEstoque_() {
     }
   });
   return out.sort();
+}
+
+function getProjetosParticipantesOptions_() {
+  var rows = getCodexSheetDataByName_('Projetos').slice(1);
+  var seen = {}, out = [];
+  rows.forEach(function(r) {
+    var nome = String(r[1] || r[2] || '').trim();
+    if (!nome || seen[nome]) return;
+    seen[nome] = true;
+    out.push(nome);
+  });
+  return out.sort(function(a, b) { return String(a).localeCompare(String(b)); });
 }
 
 function salvarDadosProjeto(dados) {
@@ -6566,12 +6685,17 @@ function atualizarAgendaEventoCompleto(dados) {
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var versaoAtual = agendaRecordVersionFromRow_(rowAnterior);
   var versaoEsperada = String(dados._recordVersion || '').trim();
-  if (versaoEsperada && versaoEsperada !== versaoAtual) {
+  var versaoEditavelAtual = agendaEditableRecordVersionFromRow_(rowAnterior);
+  var versaoEditavelEsperada = String(dados._editRecordVersion || '').trim();
+  var conflitoApenasAuxiliar = versaoEsperada && versaoEsperada !== versaoAtual &&
+    versaoEditavelEsperada && versaoEditavelEsperada === versaoEditavelAtual;
+  if (versaoEsperada && versaoEsperada !== versaoAtual && !conflitoApenasAuxiliar) {
     return {
       conflito: true,
-      erro: 'Este agendamento foi alterado por outro usuario desde que voce abriu. Atualize a Agenda antes de salvar para evitar sobrescrever informacoes.',
+      erro: 'Este agendamento foi alterado desde que voce abriu. Atualize a Agenda antes de salvar para evitar sobrescrever informacoes.',
       id: dados.id,
-      currentVersion: versaoAtual
+      currentVersion: versaoAtual,
+      currentEditVersion: versaoEditavelAtual
     };
   }
   var tipo = String(dados.tipo || '').trim();
@@ -6659,7 +6783,7 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.kit || ''
   ]]);
   agenda.getRange(linha, AGENDA_CFG.col.reqStatus, 1, 6).setValues([[
-    dados.statusRequisicao || '',
+    conflitoApenasAuxiliar ? (rowAnterior[AGENDA_CFG.idx.reqStatus] || '') : (dados.statusRequisicao || ''),
     dados.monitorName || '',
     agendaPostVisitValue_(dados.poloTrialConcluido, rowAnterior[AGENDA_CFG.idx.poloTrial]),
     agendaPostVisitValue_(dados.ecrfConcluida, rowAnterior[AGENDA_CFG.idx.ecrf]),
@@ -6695,7 +6819,14 @@ function atualizarAgendaEventoCompleto(dados) {
   SpreadsheetApp.flush();
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
-  return { ok: true, id: dados.id, atualizado: true, carroRequerido: carroSalvo, recordVersion: agendaRecordVersionFromRow_(rowAtual) };
+  return {
+    ok: true,
+    id: dados.id,
+    atualizado: true,
+    carroRequerido: carroSalvo,
+    recordVersion: agendaRecordVersionFromRow_(rowAtual),
+    editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual)
+  };
   });
 }
 
@@ -6743,7 +6874,7 @@ function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
     }], 'Prestador terceirizado removido');
     SpreadsheetApp.flush();
     var rowSemPrestador = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
-    return { ok: true, id: agendaId, statusRequisicao: '', semPrestador: true, recordVersion: agendaRecordVersionFromRow_(rowSemPrestador) };
+    return { ok: true, id: agendaId, statusRequisicao: '', semPrestador: true, recordVersion: agendaRecordVersionFromRow_(rowSemPrestador), editRecordVersion: agendaEditableRecordVersionFromRow_(rowSemPrestador) };
   }
   var valor = '';
   if (enviado) {
@@ -6757,7 +6888,7 @@ function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
   }], 'Atualização de status da requisição');
   SpreadsheetApp.flush();
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
-  return { ok: true, id: agendaId, statusRequisicao: valor, recordVersion: agendaRecordVersionFromRow_(rowAtual) };
+  return { ok: true, id: agendaId, statusRequisicao: valor, recordVersion: agendaRecordVersionFromRow_(rowAtual), editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual) };
   });
 }
 
@@ -7826,6 +7957,7 @@ function agendaRowToObject_(r, rowIndex) {
     rowIndex: rowIndex,
     id: String(r[i.id] || ''),
     recordVersion: agendaRecordVersionFromRow_(r),
+    editRecordVersion: agendaEditableRecordVersionFromRow_(r),
     data: formatarDataSafe(r[i.data]),
     dataIso: formatarDataIsoAgenda_(r[i.data]),
     hora: formatarHoraSafe_(r[i.hora]),
