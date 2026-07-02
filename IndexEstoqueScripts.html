@@ -281,6 +281,11 @@
                   '<div><label class="field-label" for="piProjeto">Projeto <span class="required-star">*</span></label><select id="piProjeto" class="f-input f-select" onchange="onPedidoProjetoChange()"><option value="">— Selecione —</option></select><div class="field-error" id="errPiProjeto">Selecione um projeto.</div></div>' +
                   '<div><label class="field-label" for="piLab">Laboratório <span class="required-star">*</span></label><select id="piLab" class="f-input f-select" onchange="onPedidoLabChange()"><option value="">— Selecione o projeto primeiro —</option></select><div class="field-error" id="errPiLab">Selecione um laboratório.</div></div>' +
                 '</div>' +
+                '<div class="field-row cols-3" style="margin-bottom:12px">' +
+                  '<div><label class="field-label" for="piCourier">Courier</label><select id="piCourier" class="f-input f-select"><option value="">— Selecione —</option></select></div>' +
+                  '<div><label class="field-label" for="piRastreio">Número de rastreio</label><input type="text" id="piRastreio" class="f-input" placeholder="AWB / tracking"></div>' +
+                  '<div><label class="field-label" for="piNumeroLab">Número do laboratório</label><input type="text" id="piNumeroLab" class="f-input" placeholder="Referência do laboratório"></div>' +
+                '</div>' +
                 '<label class="field-label" for="piObs">Observação</label><input type="text" id="piObs" class="f-input" placeholder="Observações adicionais">' +
               '</div>' +
               '<div class="form-section" id="piSecaoItens" style="display:none">' +
@@ -896,9 +901,9 @@
             '<div class="section-label"><span class="material-symbols-outlined">fact_check</span>Itens para solicitar</div>' +
             '<div id="planProjetoResumo" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;color:#5f6b7c;font-size:12px"></div>' +
             '<div id="planParticipantesResumo" style="display:none;margin-bottom:12px;background:#f8faff;border:1px solid #e0e6f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#374151"></div>' +
-            '<div class="search-wrap" style="margin-bottom:12px"><span class="material-symbols-outlined">search</span><input type="text" id="planSearch" placeholder="Buscar item, tipo ou laboratório..." oninput="renderPlanejamentoItens()"></div>' +
-            '<div class="table-card" style="border-radius:8px;max-height:430px;overflow:auto;border-top:1px solid #e8edf8">' +
-              '<table class="data-table" style="min-width:960px"><thead><tr><th>Laboratório</th><th>Item</th><th style="width:130px">Tipo</th><th>Estoque / validade</th><th style="text-align:center">Pendente</th><th style="width:120px;text-align:center">Solicitar</th></tr></thead><tbody id="planItensBody"><tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto.</td></tr></tbody></table>' +
+            '<div class="search-wrap" style="margin-bottom:12px"><span class="material-symbols-outlined">search</span><input type="text" id="planSearch" placeholder="Buscar item, tipo, laboratório ou observação..." oninput="renderPlanejamentoItens()"></div>' +
+            '<div class="table-card plan-table-wrap" style="border-radius:8px;max-height:430px;overflow-y:auto;overflow-x:hidden;border-top:1px solid #e8edf8">' +
+              '<table class="data-table plan-table"><colgroup><col style="width:25%"><col style="width:11%"><col style="width:13%"><col style="width:16%"><col style="width:16%"><col style="width:9%"><col style="width:10%"></colgroup><thead><tr><th>Item</th><th>Tipo</th><th>Laboratório</th><th>Observações</th><th>Estoque / validade</th><th class="plan-num-col">Pendente</th><th class="plan-num-col">Solicitar</th></tr></thead><tbody id="planItensBody"><tr><td colspan="7" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto.</td></tr></tbody></table>' +
             '</div>' +
             '<div id="planResumoPedidos" style="margin-top:12px;color:#5f6b7c;font-size:12px"></div>' +
           '</div>' +
@@ -928,7 +933,7 @@
     document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#5f6b7c">Carregando catálogo e estoque…</span>';
     document.getElementById('btnSalvarPlanejamento').disabled = true;
     document.getElementById('planProjeto').innerHTML = '<option value="">Carregando...</option>';
-    document.getElementById('planItensBody').innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando...</td></tr>';
+    document.getElementById('planItensBody').innerHTML = '<tr class="loading-row"><td colspan="7"><div class="spinner"></div>Carregando...</td></tr>';
     abrirOverlay('modalPlanejarPedidoInline');
     google.script.run
       .withSuccessHandler(function(dados) {
@@ -941,7 +946,7 @@
       })
       .withFailureHandler(function(e) {
         document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
-        document.getElementById('planItensBody').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#b3261e">Erro ao carregar planejamento.</td></tr>';
+        document.getElementById('planItensBody').innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#b3261e">Erro ao carregar planejamento.</td></tr>';
       })
       .getPlanejamentoPedidoEstoque();
   }
@@ -1160,7 +1165,7 @@
     return ((_planejamentoPedidoData || {}).itens || []).filter(function(it) {
       if (!projeto || normSelectValue(it.projeto) !== normSelectValue(projeto)) return false;
       if (!q) return true;
-      return [it.laboratorio, it.descricao, it.tipo].join(' ').toLowerCase().indexOf(q) >= 0;
+      return [it.laboratorio, it.descricao, it.tipo, it.observacoes].join(' ').toLowerCase().indexOf(q) >= 0;
     }).sort(function(a, b) {
       return String(a.laboratorio || '').localeCompare(String(b.laboratorio || '')) ||
         String(a.descricao || '').localeCompare(String(b.descricao || ''));
@@ -1176,7 +1181,7 @@
       var pr0 = document.getElementById('planParticipantesResumo');
       if (pr0) { pr0.style.display = 'none'; pr0.innerHTML = ''; }
       document.getElementById('planResumoPedidos').innerHTML = '';
-      body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto para montar o pedido.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#9aa3b0">Selecione um projeto para montar o pedido.</td></tr>';
       return;
     }
     var info = getPlanejamentoProjetoInfo(projeto);
@@ -1199,7 +1204,7 @@
         : '';
     }
     if (!itens.length) {
-      body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Nenhum item cadastrado para este projeto.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#9aa3b0">Nenhum item cadastrado para este projeto.</td></tr>';
       return;
     }
     body.innerHTML = itens.map(function(it, idx) {
@@ -1210,13 +1215,15 @@
           '<span class="chip chip-blue" style="font-size:10px;padding:1px 6px">' + esc(l.qtde || 0) + '</span>' +
         '</div>';
       }).join('') : '<span style="color:#9aa3b0">Sem estoque</span>';
+      var semLab = !String(it.laboratorio || '').trim();
       return '<tr>' +
-        '<td>' + esc(it.laboratorio || '—') + '</td>' +
         '<td><div class="row-name">' + esc(it.descricao || '—') + '</div></td>' +
         '<td>' + itemTipoChip(it.tipo) + '</td>' +
+        '<td>' + (semLab ? '<span style="color:#b3261e;font-weight:600">Sem laboratório</span>' : esc(it.laboratorio)) + '</td>' +
+        '<td style="font-size:12px;color:#5f6b7c;max-width:260px;white-space:normal;line-height:1.35">' + (it.observacoes ? esc(it.observacoes) : '<span style="color:#9aa3b0">—</span>') + '</td>' +
         '<td><div style="font-size:12px;color:#5f6b7c">Total: <b>' + esc(it.estoqueAtual || 0) + '</b></div>' + lotesHtml + '</td>' +
         '<td style="text-align:center">' + (Number(it.pendentePedido || 0) > 0 ? '<span class="chip chip-yellow">' + esc(it.pendentePedido) + '</span>' : '—') + '</td>' +
-        '<td style="text-align:center"><input type="number" min="0" step="1" value="' + esc(_planejamentoCarrinho[it.idItem] || 0) + '" data-id-item="' + esc(it.idItem) + '" class="f-input plan-qtd" style="height:34px;text-align:center" oninput="atualizarPlanejamentoQtd(this)"></td>' +
+        '<td style="text-align:center"><input type="number" min="0" step="1" value="' + esc(_planejamentoCarrinho[it.idItem] || 0) + '" data-id-item="' + esc(it.idItem) + '" class="f-input plan-qtd" style="height:34px;width:72px;max-width:100%;padding-left:6px;padding-right:6px;text-align:center" oninput="atualizarPlanejamentoQtd(this)" ' + (semLab ? 'disabled title="Informe o laboratório no cadastro do item para solicitar."' : '') + '></td>' +
       '</tr>';
     }).join('');
     renderPlanejamentoResumo();
@@ -1238,6 +1245,7 @@
       if (!projeto || normSelectValue(it.projeto) !== normSelectValue(projeto)) return;
       var qtd = Number(_planejamentoCarrinho[it.idItem] || 0);
       if (!qtd || qtd <= 0) return;
+      if (!String(it.laboratorio || '').trim()) return;
       out.push({
         idItem: it.idItem,
         descricao: it.descricao,
@@ -1252,7 +1260,7 @@
   function renderPlanejamentoResumo() {
     var itens = getPlanejamentoItensSelecionados();
     var labs = {};
-    itens.forEach(function(it) { labs[it.laboratorio] = (labs[it.laboratorio] || 0) + 1; });
+    itens.forEach(function(it) { if (it.laboratorio) labs[it.laboratorio] = (labs[it.laboratorio] || 0) + 1; });
     var labsList = Object.keys(labs).sort();
     var resumo = document.getElementById('planResumoPedidos');
     if (!resumo) return;
@@ -1331,7 +1339,7 @@
     var filtroStatus = setSelectOptionsKeepValue('eiPedidoStatus', Object.keys(statusMap).sort(), 'Todos os status');
     var filtrados = pedidos.filter(function(p) {
       var okStatus = !filtroStatus || String(p.status || '') === filtroStatus;
-      var okBusca = !q || [p.numeroPedido, p.projeto, p.laboratorio, p.responsavel, p.status, p.observacoes].join(' ').toLowerCase().indexOf(q) >= 0;
+      var okBusca = !q || [p.numeroPedido, p.projeto, p.laboratorio, p.responsavel, p.status, p.observacoes, p.courier, p.rastreio, p.numeroLab].join(' ').toLowerCase().indexOf(q) >= 0;
       return okStatus && okBusca;
     }).sort(function(a, b) {
       return pedidoStatusRank(a.status) - pedidoStatusRank(b.status) ||
@@ -1374,9 +1382,11 @@
       var obs = p.observacoes
         ? esc(p.observacoes)
         : '<span style="color:#9aa3b0;font-style:italic">Nenhuma observação registrada.</span>';
+      var rastreio = pedidoRastreioHtml(p.rastreio, p.courier);
+      var numeroLab = p.numeroLab ? esc(p.numeroLab) : '<span style="color:#9aa3b0">—</span>';
       return '<tr class="ped-main" data-uid="' + uid + '">' +
           '<td style="padding-left:12px"><button class="expand-btn" id="pedbtn-' + uid + '" onclick="togglePedidoInline(&quot;' + uid + '&quot;)"><span class="material-symbols-outlined">chevron_right</span></button></td>' +
-          '<td><div class="row-name">' + esc(p.numeroPedido || 'Aguardando número') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(p.data || '—') + '</div></td>' +
+          '<td><div class="row-name">' + esc(p.numeroPedido || 'Aguardando número') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(p.data || '—') + '</div>' + (p.rastreio ? '<div style="font-size:11px;margin-top:4px">' + rastreio + '</div>' : '') + '</td>' +
           '<td><div class="row-name">' + projetoChip(p.projeto) + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:5px">' + esc(p.laboratorio || '—') + '</div></td>' +
           '<td style="color:#5f6b7c">' + esc(p.responsavel || '—') + '</td>' +
           '<td>' + pedidoStatusChip(p.status) + '</td>' +
@@ -1390,6 +1400,11 @@
         '<tr class="ped-detail" id="peddetail-' + uid + '" data-uid="' + uid + '">' +
           '<td colspan="7"><div class="ped-detail-inner"><div class="ped-detail-grid">' +
             '<div>' + detailItens + '</div>' +
+            '<div class="ped-detail-note"><div class="ped-detail-note-title"><span class="material-symbols-outlined">local_shipping</span>Rastreio</div><div class="ped-detail-note-body">' +
+              '<div><b>Courier:</b> ' + esc(p.courier || '—') + '</div>' +
+              '<div style="margin-top:6px"><b>Rastreio:</b> ' + rastreio + '</div>' +
+              '<div style="margin-top:6px"><b>Número do laboratório:</b> ' + numeroLab + '</div>' +
+            '</div></div>' +
             '<div class="ped-detail-note"><div class="ped-detail-note-title"><span class="material-symbols-outlined">notes</span>Observações</div><div class="ped-detail-note-body">' + obs + '</div></div>' +
           '</div></div></td>' +
         '</tr>';
@@ -1523,6 +1538,31 @@
       n.indexOf('recebido') >= 0 ? 'chip-green' :
       n.indexOf('parcial') >= 0 ? 'chip-purple' : 'chip-grey';
     return '<span class="chip ' + cls + '" style="font-size:10.5px;padding:2px 8px">' + esc(s) + '</span>';
+  }
+
+  function pedidoRastreioHtml(rastreio, courier) {
+    rastreio = String(rastreio || '').trim();
+    if (!rastreio) return '<span style="color:#9aa3b0">—</span>';
+    var url = pedidoTrackingUrl(rastreio, courier);
+    var txt = esc(rastreio);
+    if (!url) return '<span class="chip chip-blue" style="font-size:10px;padding:1px 7px">' + txt + '</span>';
+    return '<a class="chip chip-blue" style="font-size:10px;padding:1px 7px;text-decoration:none" href="' + esc(url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' +
+      '<span class="material-symbols-outlined" style="font-size:13px;vertical-align:-2px;margin-right:3px">local_shipping</span>' + txt +
+      '</a>';
+  }
+
+  function pedidoTrackingUrl(rastreio, courier) {
+    rastreio = String(rastreio || '').trim();
+    if (!rastreio) return '';
+    if (pedidoIsPinexCourier(courier)) return 'https://pinextracking.com.br/#tracking-code';
+    if (/^620X[0-9]{8}$/i.test(rastreio)) return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(rastreio);
+    if (/^[A-Z][0-9]{7}$/i.test(rastreio) || /^PK2[A-Z0-9]{9}$/i.test(rastreio)) return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(rastreio) + '&i=18&url=ocasa';
+    if (/^[0-9]{10}$/.test(rastreio)) return 'https://www.dhl.com/br-en/home/tracking.html?tracking-id=' + encodeURIComponent(rastreio) + '&submit=1';
+    return '';
+  }
+
+  function pedidoIsPinexCourier(courier) {
+    return normSelectValue(courier) === 'pinex';
   }
 
   function togglePedidoInline(uid) {
@@ -1796,7 +1836,7 @@
     var mapa = dados.pedidoItensMap || {};
     _pedidoInlineEdit = pedido;
     _pedidoInlineItens = [];
-    ['piNumero','piObs'].forEach(function(id) {
+    ['piNumero','piRastreio','piNumeroLab','piObs'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -1818,6 +1858,15 @@
     projetosPedido.sort().forEach(function(proj) {
       projSel.insertAdjacentHTML('beforeend', '<option value="' + esc(proj) + '">' + esc(proj) + '</option>');
     });
+    var courierSel = document.getElementById('piCourier');
+    if (courierSel) {
+      courierSel.innerHTML = '<option value="">— Selecione —</option>';
+      var couriersPedido = (dados.couriers || []).slice();
+      if (pedido && pedido.courier && couriersPedido.indexOf(pedido.courier) < 0) couriersPedido.push(pedido.courier);
+      couriersPedido.forEach(function(courier) {
+        courierSel.insertAdjacentHTML('beforeend', '<option value="' + esc(courier) + '">' + esc(courier) + '</option>');
+      });
+    }
     document.getElementById('piLab').innerHTML = '<option value="">— Selecione o projeto primeiro —</option>';
     document.getElementById('piTipo').innerHTML = '<option value="">— Tipo —</option>';
     document.getElementById('piItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
@@ -1825,6 +1874,9 @@
     if (pedido) {
       document.getElementById('piNumero').value = pedido.numeroPedido || '';
       document.getElementById('piProjeto').value = pedido.projeto || '';
+      if (courierSel) courierSel.value = pedido.courier || '';
+      document.getElementById('piRastreio').value = pedido.rastreio || '';
+      document.getElementById('piNumeroLab').value = pedido.numeroLab || '';
       document.getElementById('piObs').value = pedido.observacoes || '';
       onPedidoProjetoChange();
       document.getElementById('piLab').value = pedido.laboratorio || '';
@@ -2029,6 +2081,9 @@
         data: document.getElementById('piData').value,
         projeto: projeto,
         laboratorio: lab,
+        courier: document.getElementById('piCourier').value,
+        rastreio: document.getElementById('piRastreio').value.trim(),
+        numeroLab: document.getElementById('piNumeroLab').value.trim(),
         status: 'Pendente',
         observacoes: document.getElementById('piObs').value.trim(),
         itens: _pedidoInlineItens

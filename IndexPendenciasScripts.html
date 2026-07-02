@@ -2,6 +2,7 @@
   var _pendenciasCache = null;
   var _pendenciasLoadedAt = null;
   var _pendenciasRefreshing = false;
+  var _pendenciasRefreshWaiters = [];
   var PENDENCIAS_VISIBLE_LIMIT = 10;
   var PENDENCIAS_TTL_MS = 3 * 60 * 1000;
   window.STATE = window.STATE || {};
@@ -269,14 +270,6 @@
     ts.textContent = prefix + _pendenciasLoadedAt.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
   }
 
-  function pendenciasTotal(p) {
-    var counts = (p && p.counts) || {};
-    return Object.keys(counts).reduce(function(total, key) {
-      var n = Number(counts[key] || 0);
-      return total + (isFinite(n) ? n : 0);
-    }, 0);
-  }
-
   function setPendenciasStatus(msg, type) {
     var el = document.getElementById('pendenciasStatus');
     if (!el) return;
@@ -303,13 +296,21 @@
     if (!forcar && _pendenciasCache && !pendenciasEstaoDesatualizadas()) {
       renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
       atualizarPendenciasTs(true);
-      setPendenciasStatus('Exibindo ultima lista carregada.', '');
+      setPendenciasStatus('', '');
       if (typeof options.onComplete === 'function') options.onComplete();
       return;
     }
     if (_pendenciasRefreshing) {
       if (grid && !_pendenciasCache && !grid.innerHTML.trim()) grid.innerHTML = loadingHtml;
-      if (!options.silent) setPendenciasStatus(_pendenciasCache ? 'Atualizacao ja em andamento...' : '', '');
+      if (!options.silent) {
+        setPendenciasStatus('', '');
+        setPendenciasButtonBusy(true, 'Atualizando...');
+        _pendenciasRefreshWaiters.push(function(result) {
+          setPendenciasButtonBusy(false);
+          if (result && result.ok === false) setPendenciasStatus(result.message, result.type || 'danger');
+          else setPendenciasStatus('', '');
+        });
+      }
       if (typeof options.onComplete === 'function') options.onComplete();
       return;
     }
@@ -325,9 +326,13 @@
     var watchdog = setTimeout(function() {
       failPendenciasRefresh({ message: 'Tempo limite ao carregar pendencias.' });
     }, 60000);
-    function finishPendenciasRefresh() {
+    function finishPendenciasRefresh(result) {
       if (watchdog) clearTimeout(watchdog);
       _pendenciasRefreshing = false;
+      var waiters = _pendenciasRefreshWaiters.splice(0);
+      waiters.forEach(function(fn) {
+        try { fn(result); } catch (ignore) {}
+      });
       if (typeof options.onComplete === 'function') options.onComplete();
     }
     function failPendenciasRefresh(e) {
@@ -336,17 +341,14 @@
       if (!options.silent) setPendenciasButtonBusy(false);
       var msg = (typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message ? e.message : e)) || 'Erro inesperado ao carregar pendencias.';
       var manterCache = !!_pendenciasCache;
-      if (!options.silent) {
-        setPendenciasStatus(
-          (manterCache ? 'Atencao: nao foi possivel atualizar agora; mantendo a ultima lista carregada. ' : 'Erro: nao foi possivel carregar pendencias. ') + msg,
-          manterCache ? 'warn' : 'danger'
-        );
-      }
+      var statusMsg = (manterCache ? 'Atencao: nao foi possivel atualizar agora; mantendo a ultima lista carregada. ' : 'Erro: nao foi possivel carregar pendencias. ') + msg;
+      var statusType = manterCache ? 'warn' : 'danger';
+      if (!options.silent) setPendenciasStatus(statusMsg, statusType);
       if (grid && (!options.silent || !_pendenciasCache)) {
         if (manterCache) renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
         else grid.innerHTML = '<div class="dash-pend-empty"><span class="material-symbols-outlined">error</span>Erro ao carregar pendências: ' + esc(msg) + '</div>';
       }
-      finishPendenciasRefresh();
+      finishPendenciasRefresh({ ok: false, message: statusMsg, type: statusType });
     }
     google.script.run
       .withSuccessHandler(function(d) {
@@ -357,9 +359,8 @@
         setPendenciasLoadedAtState(new Date());
         renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
         atualizarPendenciasTs(false);
-        var total = pendenciasTotal(_pendenciasCache);
-        if (!options.silent) setPendenciasStatus(total ? 'Atualizado. ' + total + ' pendencia(s) operacional(is) encontrada(s).' : 'Atualizado. Sem pendencias operacionais no momento.', total ? '' : 'ok');
-        finishPendenciasRefresh();
+        if (!options.silent) setPendenciasStatus('', '');
+        finishPendenciasRefresh({ ok: true });
       })
       .withFailureHandler(function(e) {
         failPendenciasRefresh(e);

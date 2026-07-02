@@ -607,7 +607,7 @@
           <div id="agMonitorWrap" style="display:none;margin-bottom:14px">
             <div class="field-row cols-2">
               <div>
-                <label class="field-label" for="agMonitor1">Monitor 1 <span class="required-star">*</span></label>
+                <label class="field-label" for="agMonitor1">Monitor 1 <span class="required-star" id="agMonitorRequired">*</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
                   <select id="agMonitor1" class="f-input f-select" onchange="atualizarAgendaMonitorNome();limparErro('agMonitor1','errAgMonitor1')" style="flex:1"></select>
                   <button type="button" class="ag-tb-btn" title="Cadastrar novo monitor" onclick="abrirNovoMonitorAgenda()">
@@ -627,9 +627,9 @@
               </div>
             </div>
             <div style="margin-top:14px">
-              <label class="field-label" for="agSalaMonitoria">Local (sala) <span class="required-star">*</span></label>
+              <label class="field-label" for="agSalaMonitoria">Local (sala) <span class="required-star" id="agSalaRequired">*</span></label>
               <select id="agSalaMonitoria" class="f-input f-select" onchange="limparErro('agSalaMonitoria','errAgSalaMonitoria')"></select>
-              <div class="field-error" id="errAgSalaMonitoria">Selecione a sala onde a monitoria ocorrerá.</div>
+              <div class="field-error" id="errAgSalaMonitoria">Selecione o local (sala) do evento.</div>
             </div>
             <input type="hidden" id="agMonitorNome">
           </div>

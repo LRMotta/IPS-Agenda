@@ -1249,9 +1249,15 @@
   function atualizarAgendaTipoVisibilidade() {
     var tipo = normAgenda((document.getElementById('agTipo') || {}).value || '');
     var isMonitoria = tipo === 'monitoria';
+    var isSiv = tipo === 'siv';
+    var isPeriodo = isMonitoria || isSiv;
     var isVisita = tipo.indexOf('visita') > -1;
     var projetoRequired = document.getElementById('agProjetoRequired');
-    if (projetoRequired) projetoRequired.style.display = isMonitoria ? '' : 'none';
+    if (projetoRequired) projetoRequired.style.display = isPeriodo ? '' : 'none';
+    var monitorRequired = document.getElementById('agMonitorRequired');
+    if (monitorRequired) monitorRequired.style.display = isMonitoria ? '' : 'none';
+    var salaRequired = document.getElementById('agSalaRequired');
+    if (salaRequired) salaRequired.style.display = isMonitoria ? '' : 'none';
     var ocultarEventoGeral = ['feriado','auditoria','reuniao'].indexOf(tipo) > -1;
     var ocultarOperacional = ['siv','close-out'].indexOf(tipo) > -1;
     var ocultarDetalhes = ocultarEventoGeral || ocultarOperacional || isMonitoria;
@@ -1264,12 +1270,12 @@
     agendaSetWrapVisible('agLabCentralWrap', !ocultarDetalhes);
     agendaSetWrapVisible('agProcedimentosWrap', !ocultarDetalhes);
     agendaSetWrapVisible('agCarroRequeridoWrap', isVisita);
-    agendaSetWrapVisible('agMonitorWrap', isMonitoria);
-    agendaSetWrapVisible('agDataFimWrap', isMonitoria);
-    agendaSetWrapVisible('agHoraWrap', !isMonitoria);
+    agendaSetWrapVisible('agMonitorWrap', isPeriodo);
+    agendaSetWrapVisible('agDataFimWrap', isPeriodo);
+    agendaSetWrapVisible('agHoraWrap', !isPeriodo);
     var dataLabel = document.getElementById('agDataLabel');
-    if (dataLabel) dataLabel.innerHTML = isMonitoria ? 'Data de Inicio <span class="required-star">*</span>' : 'Data <span class="required-star">*</span>';
-    if (isMonitoria) {
+    if (dataLabel) dataLabel.innerHTML = isPeriodo ? 'Data de Inicio <span class="required-star">*</span>' : 'Data <span class="required-star">*</span>';
+    if (isPeriodo) {
       var dataIni = document.getElementById('agData');
       var dataFim = document.getElementById('agDataFim');
       if (dataIni && dataFim && !dataFim.value) dataFim.value = dataIni.value || '';
@@ -1283,7 +1289,7 @@
       if (info) info.style.display = 'none';
       _agendaParticipanteInfo = null;
     }
-    if (!isMonitoria) {
+    if (!isPeriodo) {
       ['agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].forEach(agendaClearHiddenField);
       limparErro('agMonitor1','errAgMonitor1');
       limparErro('agSalaMonitoria','errAgSalaMonitoria');
@@ -1393,18 +1399,20 @@
   }
 
   function agendaRequiredChecks() {
-    var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
+    var tipoNorm = normAgenda((document.getElementById('agTipo') || {}).value || '');
+    var isMonitoria = tipoNorm === 'monitoria';
+    var isPeriodo = isMonitoria || tipoNorm === 'siv';
     var tipoValor = (document.getElementById('agTipo') || {}).value || '';
     var labEl = document.getElementById('agLabCentral');
     var labRequired = agendaTipoExigeLabCentral(tipoValor);
     var checks = [
-      { id: 'agData', err: 'errAgData', label: isMonitoria ? 'data de inicio' : 'data', required: true },
-      { id: 'agHora', err: 'errAgHora', label: 'horario', required: !isMonitoria },
+      { id: 'agData', err: 'errAgData', label: isPeriodo ? 'data de inicio' : 'data', required: true },
+      { id: 'agHora', err: 'errAgHora', label: 'horario', required: !isPeriodo },
       { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
-      { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isMonitoria },
-      { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: isMonitoria },
+      { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isPeriodo },
+      { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: isPeriodo },
       { id: 'agMonitor1', err: 'errAgMonitor1', label: 'monitor 1', required: isMonitoria },
-      { id: 'agSalaMonitoria', err: 'errAgSalaMonitoria', label: 'local da monitoria', required: isMonitoria },
+      { id: 'agSalaMonitoria', err: 'errAgSalaMonitoria', label: 'local', required: isMonitoria },
       { id: 'agLabCentral', err: 'errAgLabCentral', label: 'laboratorio central', required: labRequired && labEl && !labEl.disabled }
     ];
     return checks.filter(function(check) {
@@ -1720,13 +1728,17 @@
     opts = opts || {};
     if (!updateAgendaSaveAvailability(true)) return;
     var ok = true;
-    var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
+    var tipoNorm = normAgenda((document.getElementById('agTipo') || {}).value || '');
+    var isMonitoria = tipoNorm === 'monitoria';
+    var isPeriodo = isMonitoria || tipoNorm === 'siv';
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
-    if (!isMonitoria) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
-    if (isMonitoria) ok = validarAgendaPeriodoMonitoria(true) && ok;
+    if (!isPeriodo) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
+    if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
     ok = validarAgendaCampo('agTipo', 'errAgTipo', !!document.getElementById('agTipo').value) && ok;
-    if (isMonitoria) {
+    if (isPeriodo) {
       ok = validarAgendaCampo('agProjeto', 'errAgProjeto', !!document.getElementById('agProjeto').value) && ok;
+    }
+    if (isMonitoria) {
       ok = validarAgendaCampo('agMonitor1', 'errAgMonitor1', !!document.getElementById('agMonitor1').value) && ok;
       ok = validarAgendaCampo('agSalaMonitoria', 'errAgSalaMonitoria', !!document.getElementById('agSalaMonitoria').value) && ok;
     }
@@ -1804,8 +1816,9 @@
           setAgendaStatus('Erro: ' + res.erro, 'danger');
           return;
         }
+        var periodoLabel = res && res.tipo ? res.tipo : 'Evento';
         var msgOk = res && res.count > 1
-          ? 'Salvo. Monitoria salva em ' + res.count + ' dias. Primeiro ID: ' + (res.id || '')
+          ? 'Salvo. ' + periodoLabel + ' salvo em ' + res.count + ' dias. Primeiro ID: ' + (res.id || '')
           : 'Salvo. Evento salvo. ID: ' + (res && res.id ? res.id : '');
         setAgendaStatus(msgOk, 'ok');
         if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
@@ -2055,7 +2068,8 @@
   }
 
   function abrirDisplayAgendaFromForm() {
-    if (normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria') {
+    var tipo = normAgenda((document.getElementById('agTipo') || {}).value || '');
+    if (tipo === 'monitoria' || tipo === 'siv') {
       abrirDisplayMonitoriaFromAgendaForm();
       return;
     }
@@ -2086,8 +2100,12 @@
     var projeto = String(r.projeto || '');
     var monitorName = String(r.monitorName || '');
     var salaMonitoria = String(r.salaMonitoria || '');
-    var periodo = agendaMonitoriaPeriodo(projeto, monitorName, salaMonitoria, dataIso);
+    var tipo = normAgenda(r.tipo) === 'siv' ? 'SIV' : 'Monitoria';
+    var periodo = tipo === 'SIV'
+      ? agendaSivPeriodo(projeto, monitorName, salaMonitoria, dataIso)
+      : agendaMonitoriaPeriodo(projeto, monitorName, salaMonitoria, dataIso);
     return {
+      tipo: tipo,
       projeto: projeto,
       monitorName: monitorName,
       salaMonitoria: salaMonitoria,
@@ -2102,6 +2120,7 @@
       projeto: (document.getElementById('agProjeto') || {}).value || (r && r.projeto) || '',
       monitorName: (document.getElementById('agMonitorNome') || {}).value || (r && r.monitorName) || '',
       salaMonitoria: (document.getElementById('agSalaMonitoria') || {}).value || (r && r.salaMonitoria) || '',
+      tipo: (document.getElementById('agTipo') || {}).value || (r && r.tipo) || '',
       dataIso: (document.getElementById('agData') || {}).value || (r && (r.dataIso || agendaIsoFromBr(r.data))) || '',
       dataInicio: (document.getElementById('agData') || {}).value || '',
       dataFim: (document.getElementById('agDataFim') || {}).value || (document.getElementById('agData') || {}).value || ''
@@ -2130,6 +2149,26 @@
     return { inicio: rows[start], fim: rows[end] };
   }
 
+  function agendaSivPeriodo(projeto, monitorName, salaMonitoria, dataIso) {
+    var rows = (_agendaEventos || []).filter(function(x) {
+      return normAgenda(x.tipo) === 'siv' &&
+        normAgenda(x.status).indexOf('cancel') < 0 &&
+        normAgenda(x.projeto) === normAgenda(projeto) &&
+        normAgenda(x.monitorName) === normAgenda(monitorName) &&
+        normAgenda(x.salaMonitoria) === normAgenda(salaMonitoria);
+    }).map(function(x) {
+      return x.dataIso || agendaIsoFromBr(x.data || '');
+    }).filter(Boolean).sort();
+    if (!rows.length) return { inicio: dataIso || '', fim: dataIso || '' };
+    var idx = rows.indexOf(dataIso);
+    if (idx < 0) return { inicio: dataIso || rows[0], fim: dataIso || rows[0] };
+    var start = idx;
+    var end = idx;
+    while (start > 0 && agendaDaysBetweenIso(rows[start - 1], rows[start]) === 1) start--;
+    while (end < rows.length - 1 && agendaDaysBetweenIso(rows[end], rows[end + 1]) === 1) end++;
+    return { inicio: rows[start], fim: rows[end] };
+  }
+
   function agendaDaysBetweenIso(a, b) {
     var da = agendaDateFromIso(a);
     var db = agendaDateFromIso(b);
@@ -2148,6 +2187,13 @@
       r.salaMonitoria || '',
       r.dataIso || agendaIsoFromBr(r.data || '')
     );
+  }
+
+  function agendaPeriodoFromRow(r) {
+    var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
+    if (r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
+    if (r && normAgenda(r.tipo) === 'siv') return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    return { inicio: dataIso || '', fim: dataIso || '' };
   }
 
   function abrirDisplayPaciente(payload) {
@@ -2210,15 +2256,16 @@
     }
     payload = agendaMonitoriaDisplayPayload(payload || {});
     if (!agendaMeaningfulValue(payload.projeto)) {
-      snackErro('Informe o projeto/protocolo para gerar o display de Monitoria.');
+      snackErro('Informe o projeto/protocolo para gerar o display de ' + (payload.tipo || 'Monitoria') + '.');
       return;
     }
+    var tipoLabel = payload.tipo || 'Monitoria';
     var logo = getPatientDisplayLogoSrc();
     var logoHtml = logo ? '<img src="' + logo + '" alt="IPS | UCS">' : '<div class="brand-text">IPS | UCS</div>';
     var inicio = formatDateBr(payload.dataInicio || '');
     var fim = formatDateBr(payload.dataFim || payload.dataInicio || '');
     var periodo = inicio && fim && inicio !== fim ? inicio + ' a ' + fim : (inicio || fim || '---');
-    var html = '<!doctype html><html><head><meta charset="utf-8"><title>Display de Monitoria</title>' +
+    var html = '<!doctype html><html><head><meta charset="utf-8"><title>Display de ' + esc(tipoLabel) + '</title>' +
       '<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;900&display=swap" rel="stylesheet">' +
       '<style>' +
       '@page{size:A4 landscape;margin:10mm}' +
@@ -2238,7 +2285,7 @@
       '<main class="sheet">' +
         '<header class="header">' + logoHtml + '</header>' +
         '<section class="main">' +
-          '<div class="label-main">Monitoria</div>' +
+          '<div class="label-main">' + esc(tipoLabel) + '</div>' +
           '<div class="protocol">' + esc(payload.projeto || '---') + '</div>' +
           '<div class="room">' + esc(payload.salaMonitoria || '---') + '</div>' +
         '</section>' +
@@ -2506,8 +2553,9 @@
   function validarAgendaPeriodoMonitoria(showError) {
     var ini = document.getElementById('agData');
     var fim = document.getElementById('agDataFim');
-    var isMonitoria = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'monitoria';
-    if (!isMonitoria) return true;
+    var tipo = normAgenda((document.getElementById('agTipo') || {}).value || '');
+    var isPeriodo = tipo === 'monitoria' || tipo === 'siv';
+    if (!isPeriodo) return true;
     var fimOk = !!(fim && fim.value);
     var ordemOk = fimOk && !isNaN(agendaDateInputTime(ini && ini.value)) && agendaDateInputTime(fim.value) >= agendaDateInputTime(ini.value);
     if (showError || (fim && fim.value)) validarAgendaCampo('agDataFim', 'errAgDataFim', ordemOk);
@@ -2790,7 +2838,15 @@
 
   function atualizarAgendaPostVisitVisibility() {
     var wrap = document.getElementById('agPostVisitWrap');
-    if (wrap) wrap.style.display = agendaPostVisitAplica() ? 'flex' : 'none';
+    var aplica = agendaPostVisitAplica();
+    if (wrap) wrap.style.display = aplica ? 'flex' : 'none';
+    var statusConcluido = normAgenda((document.getElementById('agStatus') || {}).value || '').indexOf('concl') > -1;
+    if (aplica && statusConcluido) {
+      var poloBox = document.getElementById('agPoloTrialOk');
+      var ecrfBox = document.getElementById('agEcrfOk');
+      if (poloBox) poloBox.checked = true;
+      if (ecrfBox) ecrfBox.checked = true;
+    }
   }
 
   function agendaPostVisitStatus(r) {
@@ -2831,9 +2887,9 @@
     _agendaEditId = r.id || '';
     _agendaEditRecordVersion = r.recordVersion || '';
     _agendaEditEditableVersion = r.editRecordVersion || '';
-    var periodoMonitoria = agendaMonitoriaPeriodoFromRow(r);
-    setAgendaFieldValue('agData', periodoMonitoria.inicio || r.dataIso || agendaIsoFromBr(r.data));
-    setAgendaFieldValue('agDataFim', periodoMonitoria.fim || r.dataIso || agendaIsoFromBr(r.data));
+    var periodoAgenda = agendaPeriodoFromRow(r);
+    setAgendaFieldValue('agData', periodoAgenda.inicio || r.dataIso || agendaIsoFromBr(r.data));
+    setAgendaFieldValue('agDataFim', periodoAgenda.fim || r.dataIso || agendaIsoFromBr(r.data));
     setAgendaFieldValue('agHora', r.hora || '');
     setAgendaSelectValue('agTipo', r.tipo);
     setAgendaSelectValue('agStatus', r.status || 'Agendado');
@@ -3340,7 +3396,8 @@
   function agendaPrintSemanaItemHtml(r) {
     var lab = normAgenda(r.labCentral) === 'sim';
     var isMon = agendaIsMonitoria(r);
-    var meta = isMon
+    var isSiv = normAgenda(r.tipo) === 'siv';
+    var meta = isMon || isSiv
       ? [r.projeto, r.salaMonitoria, r.status]
       : [r.projeto, r.visita || r.tipo, r.status];
     return '<div class="week-item"><div class="week-time">' + esc(r.hora || '--:--') + '</div><div class="week-name">' + esc(agendaPrintNome(r)) + '</div>' +
@@ -3351,6 +3408,7 @@
 
   function agendaPrintNome(r) {
     if (agendaIsMonitoria(r)) return 'Monitoria';
+    if (normAgenda(r.tipo) === 'siv') return 'SIV';
     return r.participante || r.tipo || 'Evento';
   }
 
@@ -3407,7 +3465,7 @@
       if (value) linhas.push(label + ': ' + value);
     }
     add('Tipo de evento', r.tipo);
-    if (agendaIsMonitoria(r)) {
+    if (agendaIsMonitoria(r) || normAgenda(r.tipo) === 'siv') {
       add('Projeto', r.projeto);
       add('Monitor(es)', r.monitorName);
       add('Sala', r.salaMonitoria);
@@ -3441,10 +3499,12 @@
       dates = inicio.replace(/-/g, '') + '/' + fimExclusivo.replace(/-/g, '');
       local = 'Instituto de Pesquisas em Saúde';
     } else if (isSiv) {
-      var fimSivExclusivo = agendaGoogleCalendarAddDays(dataIso, 1);
+      var periodoSiv = agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+      var inicioSiv = periodoSiv.inicio || dataIso;
+      var fimSivExclusivo = agendaGoogleCalendarAddDays(periodoSiv.fim || dataIso, 1);
       if (!fimSivExclusivo) return null;
       titulo = ['SIV', r.projeto].filter(Boolean).join(' - ');
-      dates = dataIso.replace(/-/g, '') + '/' + fimSivExclusivo.replace(/-/g, '');
+      dates = inicioSiv.replace(/-/g, '') + '/' + fimSivExclusivo.replace(/-/g, '');
       local = 'Instituto de Pesquisas em Saúde';
     } else {
       var partesTitulo = [r.tipo || 'Evento', r.participante, r.projeto];
@@ -3501,12 +3561,14 @@
     var cardId = agendaCardDomId(r);
     var st = agendaStatusClass(r);
     var isMon = agendaIsMonitoria(r);
-    var titulo = isMon ? 'Monitoria' : (r.participante || r.tipo || 'Evento sem participante');
+    var isSiv = normAgenda(r.tipo) === 'siv';
+    var isPeriodoOperacional = isMon || isSiv;
+    var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento sem participante'));
     var labSim = normAgenda(r.labCentral) === 'sim';
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
-    var tipoChip = isMon ? '' : agendaTipoChip(r.tipo);
+    var tipoChip = isPeriodoOperacional ? '' : agendaTipoChip(r.tipo);
     var postVisitIcons = agendaPostVisitIcons(r);
-    var contextoPrincipal = isMon
+    var contextoPrincipal = isPeriodoOperacional
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
       : tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons;
     var sideHtml = agendaSidePanelHtml(r, labSim);
@@ -3520,7 +3582,7 @@
           '<div class="ag-l1"><span class="ag-appt-name">' + esc(titulo) + '</span>' + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
           '<div class="ag-l2">' + contextoPrincipal + '</div>' +
           (r.visita || r.braco ? '<div class="ag-l2">' + agendaMetaText('flag', r.visita ? 'Visita ' + r.visita : '') + agendaMetaText('call_split', r.braco ? 'Braço ' + r.braco : '') + '</div>' : '') +
-          (isMon
+          (isPeriodoOperacional
             ? (r.monitorName ? '<div class="ag-l3">' + agendaLineItem('visibility', r.monitorName) + '</div>' : '')
             : '<div class="ag-l3">' + agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '') + '</div>') +
           (r.procedimentos ? '<div class="ag-proc-preview">' + esc(r.procedimentos) + '</div>' : '') +
@@ -3539,13 +3601,14 @@
 
   function agendaDetailHtml(r) {
     var couriers = agendaCourierCards(r);
-    var displayPayload = agendaIsMonitoria(r) ? agendaMonitoriaDisplayPayload(r) : agendaDisplayPayload(r);
-    var displayFn = agendaIsMonitoria(r) ? 'abrirDisplayMonitoria' : 'abrirDisplayPaciente';
-    var showDisplay = agendaIsMonitoria(r) ? r.projeto : r.participante;
+    var isPeriodoOperacional = agendaIsMonitoria(r) || normAgenda(r.tipo) === 'siv';
+    var displayPayload = isPeriodoOperacional ? agendaMonitoriaDisplayPayload(r) : agendaDisplayPayload(r);
+    var displayFn = isPeriodoOperacional ? 'abrirDisplayMonitoria' : 'abrirDisplayPaciente';
+    var showDisplay = isPeriodoOperacional ? r.projeto : r.participante;
     var displayBtn = showDisplay ? '<div class="ag-det-actions"><button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayFn + '(\'' + encodeURIComponent(JSON.stringify(displayPayload)).replace(/'/g, '%27') + '\')"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button></div>' : '';
     return displayBtn +
-      (agendaIsMonitoria(r) && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
-      (agendaIsMonitoria(r) && r.salaMonitoria ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">meeting_room</span>Local</div><div class="ag-obs-block"><span class="material-symbols-outlined">room</span><span>' + esc(r.salaMonitoria) + '</span></div></div>' : '') +
+      (isPeriodoOperacional && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
+      (isPeriodoOperacional && r.salaMonitoria ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">meeting_room</span>Local</div><div class="ag-obs-block"><span class="material-symbols-outlined">room</span><span>' + esc(r.salaMonitoria) + '</span></div></div>' : '') +
       agendaPostVisitDetailHtml(r) +
       (r.obs ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">sticky_note_2</span>Observacoes</div><div class="ag-obs-block"><span class="material-symbols-outlined">info</span><span>' + esc(r.obs) + '</span></div></div>' : '') +
       '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">local_shipping</span>Transporte de Amostras</div>' +
@@ -3684,12 +3747,14 @@
   function agendaWeekCardHtml(r) {
     var labSim = normAgenda(r.labCentral) === 'sim';
     var isMon = agendaIsMonitoria(r);
+    var isSiv = normAgenda(r.tipo) === 'siv';
+    var isPeriodoOperacional = isMon || isSiv;
     return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
-      '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (r.participante || r.tipo || 'Evento')) + '</div>' +
-      (isMon ? '' : '<div style="margin:4px 0">' + agendaTipoChip(r.tipo) + '</div>') +
+      '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento'))) + '</div>' +
+      (isPeriodoOperacional ? '' : '<div style="margin:4px 0">' + agendaTipoChip(r.tipo) + '</div>') +
       '<div class="ag-wk-proj"><span class="material-symbols-outlined">folder_open</span>' + esc(r.projeto || '-') + '</div>' +
       (r.carroRequerido ? '<div style="margin-top:4px">' + agendaCarroChip() + '</div>' : '') +
-      '<div class="ag-wk-visit">' + esc(isMon ? (r.salaMonitoria || '-') : (r.visita || r.tipo || '-')) + '</div>' +
+      '<div class="ag-wk-visit">' + esc(isPeriodoOperacional ? (r.salaMonitoria || '-') : (r.visita || r.tipo || '-')) + '</div>' +
       (labSim ? '<div class="ag-wk-lab">Lab central</div>' : '') +
       '</div>';
   }

@@ -7,9 +7,9 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.07.01-pendencias-refresh-feedback';
-var CODEX_APP_BUILD_LABEL_ = 'Pendencias com refresh resiliente';
-var CODEX_APP_BUILD_DATE_ = '2026-07-01';
+var CODEX_APP_VERSION_ = '2026.07.02-agenda-status-concluido';
+var CODEX_APP_BUILD_LABEL_ = 'Agenda status Concluído';
+var CODEX_APP_BUILD_DATE_ = '2026-07-02';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -2652,13 +2652,16 @@ function getProjetos() {
       numeroCE:      r[14] || '',
       expedienteCE:  r[15] || '',
       tituloCompleto:r[16] || '',
-      dataSiv:       siv.data || ''
+      dataSiv:       siv.data || '',
+      dataSivInicio: siv.inicio || siv.data || '',
+      dataSivFim:    siv.fim || siv.data || ''
     });
   }
   return lista;
 }
 
 function getProjetosSivPorProjeto_() {
+  var grupos = {};
   var out = {};
   var sh;
   try {
@@ -2680,10 +2683,31 @@ function getProjetosSivPorProjeto_() {
     if (status.indexOf('realiz') === -1 && status.indexOf('concl') === -1) return;
     var dataObj = parseAgendaDateAny_(r[i.data]);
     if (!dataObj) return;
+    dataObj.setHours(0, 0, 0, 0);
     var key = normText_(projeto);
-    if (!out[key] || dataObj > out[key].dataObj) {
-      out[key] = { data: String(r[i.data] || ''), dataObj: dataObj };
-    }
+    if (!grupos[key]) grupos[key] = [];
+    grupos[key].push({ data: String(r[i.data] || ''), dataObj: dataObj });
+  });
+  Object.keys(grupos).forEach(function(key) {
+    var rows = grupos[key].sort(function(a, b) {
+      return a.dataObj.getTime() - b.dataObj.getTime();
+    });
+    var inicio = null;
+    var fim = null;
+    var melhor = null;
+    rows.forEach(function(item) {
+      if (!inicio || !agendaDatasConsecutivas_(fim.dataObj, item.dataObj)) {
+        inicio = item;
+      }
+      fim = item;
+      melhor = {
+        data: fim.data,
+        inicio: inicio.data,
+        fim: fim.data,
+        dataObj: fim.dataObj
+      };
+    });
+    if (melhor) out[key] = melhor;
   });
   return out;
 }
@@ -3857,23 +3881,41 @@ function getItensEstoque() {
   }
 
   var data  = shItens.getDataRange().getValues();
-  // Colunas: A=ID_Item B=Projeto C=Descrição D=Tipo E=Localização F=EstoqueMin G=Observações H=Laboratório I=Status
+  var headers = (data[0] || []).map(function(h) { return normText_(h); });
+  function col(aliases, fallbackIdx) {
+    for (var a = 0; a < aliases.length; a++) {
+      var idx = headers.indexOf(normText_(aliases[a]));
+      if (idx >= 0) return idx;
+    }
+    return fallbackIdx;
+  }
+  var c = {
+    idItem: col(['ID_Item', 'ID Item', 'ID'], 0),
+    projeto: col(['Projeto'], 1),
+    descricao: col(['Descrição', 'Descricao', 'Descrição do item', 'Descricao do item', 'Item'], 2),
+    tipo: col(['Tipo', 'Tipo de item', 'Tipo item'], 3),
+    localizacao: col(['Localização padrão', 'Localizacao padrao', 'Localização', 'Localizacao', 'Local'], 4),
+    estoqueMin: col(['Estoque mínimo', 'Estoque minimo', 'EstoqueMin', 'Mínimo', 'Minimo'], 5),
+    observacoes: col(['Observações', 'Observacoes', 'Observação', 'Observacao', 'Obs'], 6),
+    laboratorio: col(['Laboratório', 'Laboratorio', 'Lab'], 7),
+    status: col(['Status', 'Ativo'], 8)
+  };
 
   var itens = [];
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
-    if (!String(r[2] || '').trim()) continue;
+    if (!String(r[c.descricao] || '').trim()) continue;
     itens.push({
       id:          String(i + 1),
-      idItem:      String(r[0] || ''),
-      projeto:     String(r[1] || ''),
-      descricao:   String(r[2] || ''),
-      tipo:        String(r[3] || ''),
-      localizacao: String(r[4] || ''),
-      estoqueMin:  (r[5] !== '' && r[5] !== null) ? r[5] : '',
-      observacoes: String(r[6] || ''),
-      laboratorio: String(r[7] || ''),
-      status:      String(r[8] || '')
+      idItem:      String(r[c.idItem] || ''),
+      projeto:     String(r[c.projeto] || ''),
+      descricao:   String(r[c.descricao] || ''),
+      tipo:        String(r[c.tipo] || ''),
+      localizacao: String(r[c.localizacao] || ''),
+      estoqueMin:  (r[c.estoqueMin] !== '' && r[c.estoqueMin] !== null) ? r[c.estoqueMin] : '',
+      observacoes: String(r[c.observacoes] || ''),
+      laboratorio: String(r[c.laboratorio] || ''),
+      status:      String(r[c.status] || '')
     });
   }
 
@@ -4001,8 +4043,8 @@ function getPedidosEstoque() {
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var shPed   = getSheetByPossibleNames_(ss, ['Pedidos', 'Cadastro de Pedidos']);
   var shPedIt = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
-  var shItens = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
   var tz      = Session.getScriptTimeZone();
+  var extraCols = shPed ? ensureEstoquePedidoExtraColumns_(shPed) : {};
 
   // ── 1. Pedidos (A=ID_Pedido B=Número C=Data D=Projeto E=Lab F=Responsável G=Status H=Obs) ──
   var pedidos = [];
@@ -4028,7 +4070,10 @@ function getPedidosEstoque() {
         laboratorio:  String(r[4]||''),
         responsavel:  String(r[5]||''),
         status:       String(r[6]||'Pendente'),
-        observacoes:  String(r[7]||'')
+        observacoes:  String(r[7]||''),
+        courier:      String(r[(extraCols.courier || 0) - 1]||''),
+        rastreio:     String(r[(extraCols.rastreio || 0) - 1]||''),
+        numeroLab:    String(r[(extraCols.numeroLab || 0) - 1]||'')
       });
     }
   }
@@ -4055,23 +4100,21 @@ function getPedidosEstoque() {
   }
 
   // ── 3. Catálogo de itens para cascata do formulário (Projeto → Lab → Tipo → Item) ──
-  // Itens: A=ID_Item B=Projeto C=Descrição D=Tipo … H=Lab I=Status
   var projLabsMap     = {}; // { "ProjetoX": ["Lab1","Lab2"] }
   var projLabItensMap = {}; // { "ProjetoX||Lab1": [{id,descricao,tipo}] }
   var itensCatalogo   = [];
   var projetosSet = {}, projetos = [];
-  if (shItens && shItens.getLastRow() > 1) {
-    var itRows = shItens.getRange(2, 1, shItens.getLastRow()-1, 9).getValues();
-    itRows.forEach(function(r) {
-      var id   = String(r[0]||'').trim();
-      var proj = String(r[1]||'').trim(); // B Projeto
-      var desc = String(r[2]||'').trim(); // C Descrição
-      var tipo = String(r[3]||'').trim(); // D Tipo
-      var lab  = String(r[7]||'').trim(); // H Lab
-      var itemStatus = String(r[8]||'').trim();
+  var itensData = getItensEstoque();
+  (itensData.itens || []).forEach(function(it) {
+      var id   = String(it.idItem || it.id || '').trim();
+      var proj = String(it.projeto || '').trim();
+      var desc = String(it.descricao || '').trim();
+      var tipo = String(it.tipo || '').trim();
+      var lab  = String(it.laboratorio || '').trim();
+      var itemStatus = String(it.status || '').trim();
       var itemInativo = String(itemStatus).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === 'inativo';
       if (!proj || !desc || itemInativo) return;
-      itensCatalogo.push({id:id, projeto:proj, laboratorio:lab, descricao:desc, tipo:tipo});
+      itensCatalogo.push({id:id, projeto:proj, laboratorio:lab, descricao:desc, tipo:tipo, observacoes:String(it.observacoes || '')});
       if (!projetosSet[proj]) { projetosSet[proj]=1; projetos.push(proj); }
       if (!projLabsMap[proj]) projLabsMap[proj] = {};
       if (lab) {
@@ -4081,12 +4124,11 @@ function getPedidosEstoque() {
         if (!projLabItensMap[key].some(function(x){ return x.id===id; }))
           projLabItensMap[key].push({id:id, descricao:desc, tipo:tipo});
       }
-    });
-    projetos.sort();
-    Object.keys(projLabsMap).forEach(function(p){
-      projLabsMap[p] = Object.keys(projLabsMap[p]).sort();
-    });
-  }
+  });
+  projetos.sort();
+  Object.keys(projLabsMap).forEach(function(p){
+    projLabsMap[p] = Object.keys(projLabsMap[p]).sort();
+  });
 
   pedidos.forEach(function(p) {
     var itensPedido = pedidoItensMap[p.idPedido] || [];
@@ -4109,11 +4151,65 @@ function getPedidosEstoque() {
     projetos:        projetos,
     projLabsMap:     projLabsMap,
     projLabItensMap: projLabItensMap,
-    itensCatalogo:   itensCatalogo
+    itensCatalogo:   itensCatalogo,
+    couriers:        getAgendaCouriers_()
   };
 }
 
 // ───────────────────────────────────────────────────────
+
+function ensureEstoquePedidoExtraColumns_(sh) {
+  if (!sh) return { courier: 9, rastreio: 10, numeroLab: 11 };
+  var lastCol = Math.max(sh.getLastColumn(), 8);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  function findCol(aliases) {
+    for (var i = 0; i < headers.length; i++) {
+      var n = normText_(headers[i]);
+      for (var a = 0; a < aliases.length; a++) {
+        if (n === normText_(aliases[a])) return i + 1;
+      }
+    }
+    return 0;
+  }
+  function ensureCol(key, label, aliases) {
+    var col = findCol(aliases);
+    if (col) {
+      map[key] = col;
+      return;
+    }
+    var target = sh.getLastColumn() + 1;
+    if (sh.getMaxColumns() < target) sh.insertColumnsAfter(sh.getMaxColumns(), target - sh.getMaxColumns());
+    sh.getRange(1, target).setValue(label);
+    headers.push(label);
+    map[key] = target;
+  }
+  ensureCol('courier', 'Courier', ['Courier', 'Transportadora', 'Courier pedido']);
+  ensureCol('rastreio', 'Rastreio', ['Rastreio', 'AWB', 'Tracking', 'Número de rastreio', 'Numero de rastreio', 'Codigo de rastreio']);
+  ensureCol('numeroLab', 'Número do laboratório', ['Número do laboratório', 'Numero do laboratorio', 'Nº laboratório', 'N laboratorio', 'ID laboratório', 'ID laboratorio', 'Pedido laboratório', 'Pedido laboratorio']);
+  return map;
+}
+
+function setEstoquePedidoTrackingRichText_(sh, row, col, rastreio, courier) {
+  rastreio = String(rastreio || '').trim();
+  if (!sh || !row || !col) return;
+  var range = sh.getRange(row, col);
+  if (!rastreio) {
+    range.setValue('');
+    return;
+  }
+  var url = agendaTrackingUrl_(rastreio, courier);
+  if (url) {
+    range.setRichTextValue(
+      SpreadsheetApp.newRichTextValue()
+        .setText(rastreio)
+        .setLinkUrl(url)
+        .build()
+    );
+  } else {
+    range.setValue(rastreio);
+  }
+}
 
 function isParticipanteAtivoPlanejamento_(status) {
   var s = String(status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
@@ -4123,7 +4219,7 @@ function isParticipanteAtivoPlanejamento_(status) {
 function getPlanejamentoPedidoEstoque() {
   var pedidosData = getPedidosEstoque();
   var itens = (pedidosData.itensCatalogo || []).filter(function(it) {
-    return String(it.projeto || '').trim() && String(it.descricao || '').trim() && String(it.laboratorio || '').trim();
+    return String(it.projeto || '').trim() && String(it.descricao || '').trim();
   });
   var estoque = getEstoque() || [];
   var participantes = getParticipantes() || [];
@@ -4192,6 +4288,7 @@ function getPlanejamentoPedidoEstoque() {
       laboratorio: it.laboratorio,
       descricao: it.descricao,
       tipo: it.tipo,
+      observacoes: it.observacoes || '',
       estoqueAtual: totalEstoque,
       pendentePedido: pendentesPorItem[it.id] || 0,
       lotes: lotes
@@ -4219,6 +4316,7 @@ function salvarPlanejamentoPedidoEstoque(payload) {
   var shPedIt = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
   if (!shPed) throw new Error('Aba "Pedidos" não encontrada.');
   if (!shPedIt) throw new Error('Aba "Pedidos_Itens" não encontrada.');
+  var extraCols = ensureEstoquePedidoExtraColumns_(shPed);
 
   var user = Session.getActiveUser().getEmail();
   var dataVal = payload.data ? new Date(payload.data + 'T12:00:00') : new Date();
@@ -4245,6 +4343,10 @@ function salvarPlanejamentoPedidoEstoque(payload) {
       idPedido, numero, dataVal, projeto,
       lab, user, 'Em planejamento', obs
     ]);
+    var rowPedido = shPed.getLastRow();
+    shPed.getRange(rowPedido, extraCols.courier).setValue('');
+    shPed.getRange(rowPedido, extraCols.rastreio).setValue('');
+    shPed.getRange(rowPedido, extraCols.numeroLab).setValue('');
 
     var novas = porLab[lab].map(function(it) {
       return [
@@ -4319,14 +4421,17 @@ function salvarPedidoEstoque(payload) {
   var shPedIt = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
   if (!shPed)   throw new Error('Aba "Pedidos" não encontrada.');
   if (!shPedIt) throw new Error('Aba "Pedidos_Itens" não encontrada.');
+  var extraCols = ensureEstoquePedidoExtraColumns_(shPed);
 
   var dataVal = payload.data ? new Date(payload.data + 'T12:00:00') : new Date();
   var user    = Session.getActiveUser().getEmail();
   var idPedido;
+  var rowPedido;
 
   if (payload.rowIndex) {
     // ── Edição ──────────────────────────────────────────────────────────
     var row  = parseInt(payload.rowIndex);
+    rowPedido = row;
     idPedido = String(shPed.getRange(row, 1).getValue()).trim();
     shPed.getRange(row, 2, 1, 7).setValues([[
       payload.numeroPedido, dataVal, payload.projeto,
@@ -4350,7 +4455,12 @@ function salvarPedidoEstoque(payload) {
       idPedido, payload.numeroPedido, dataVal, payload.projeto,
       payload.laboratorio, user, 'Pendente', payload.observacoes
     ]);
+    rowPedido = shPed.getLastRow();
   }
+
+  shPed.getRange(rowPedido, extraCols.courier).setValue(String(payload.courier || '').trim());
+  setEstoquePedidoTrackingRichText_(shPed, rowPedido, extraCols.rastreio, payload.rastreio, payload.courier);
+  shPed.getRange(rowPedido, extraCols.numeroLab).setValue(String(payload.numeroLab || '').trim());
 
   // Grava itens em Pedido_Itens
   var itens = payload.itens || [];
@@ -5869,11 +5979,14 @@ function getAgendaMonitoriaSalas_() {
 }
 
 function getAgendaStatuses_() {
-  return getConfigAppValuesByKeys_(
+  var valores = getConfigAppValuesByKeys_(
     ['Agenda'],
     ['Status'],
-    ['Agendado', 'Realizado', 'Cancelado', 'Reagendado', 'Pendente']
+    ['Agendado', 'Realizado', 'Concluído', 'Cancelado', 'Reagendado', 'Pendente']
   );
+  var temConcluido = valores.some(function(v) { return normText_(v) === 'concluido'; });
+  if (!temConcluido) valores.push('Concluído');
+  return valores;
 }
 
 function getAgendaLaboratorios_() {
@@ -6278,15 +6391,23 @@ function salvarNovoEventoCompleto(dados) {
   dados = dados || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
-  var isMonitoria = normText_(dados.tipo) === 'monitoria';
-  if (!isMonitoria && !String(dados.hora || '').trim()) {
+  var tipoNorm = normText_(dados.tipo);
+  var isMonitoria = tipoNorm === 'monitoria';
+  var isPeriodo = agendaTipoPeriodo_(dados.tipo);
+  if (!isPeriodo && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
   if (isMonitoria && !String(dados.salaMonitoria || '').trim()) {
     return { erro: 'Informe o local (sala) da monitoria.' };
   }
-  var datasMonitoria = isMonitoria ? agendaDatasPeriodoMonitoria_(dados.data, dados.dataFim) : [d];
+  if (tipoNorm === 'siv' && !String(dados.projeto || '').trim()) {
+    return { erro: 'Informe o projeto/protocolo do SIV.' };
+  }
+  if (isMonitoria && !String(dados.monitorName || '').trim()) {
+    return { erro: 'Informe ao menos um monitor.' };
+  }
+  var datasPeriodo = isPeriodo ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo)) : [d];
   var lastRow = agenda.getLastRow();
   if (lastRow > 1) {
     var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
@@ -6297,24 +6418,24 @@ function salvarNovoEventoCompleto(dados) {
       var dl = parseAgendaDateAny_(ld);
       if (dl) {
         dl.setHours(0, 0, 0, 0);
-        for (var j = 0; j < datasMonitoria.length; j++) {
-          var dCmp = new Date(datasMonitoria[j]);
+        for (var j = 0; j < datasPeriodo.length; j++) {
+          var dCmp = new Date(datasPeriodo[j]);
           dCmp.setHours(0, 0, 0, 0);
           if (dl.getTime() === dCmp.getTime()) {
-            return { feriado: true, dataFmt: formatarDataSafe(datasMonitoria[j]) };
+            return { feriado: true, dataFmt: formatarDataSafe(datasPeriodo[j]) };
           }
         }
       }
     }
   }
-  if (isMonitoria) {
+  if (isPeriodo) {
     var ids = [];
-    for (var k = 0; k < datasMonitoria.length; k++) {
+    for (var k = 0; k < datasPeriodo.length; k++) {
       var dadosDia = agendaCloneDados_(dados);
-      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasMonitoria[k], dados.hora), dadosDia, ss);
+      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasPeriodo[k], dados.hora), dadosDia, ss);
       if (resDia && resDia.id) ids.push(resDia.id);
     }
-    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, emailLabAtivo: agendaEmailEnabled_() };
+    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
   }
   return _gravarLinhaEvento(agenda, d, dados, ss);
   });
@@ -6326,30 +6447,52 @@ function salvarNovoEventoComFeriado(dados) {
   dados = dados || {};
   var agenda = getAgendaSheet_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (normText_(dados.tipo) !== 'monitoria' && !String(dados.hora || '').trim()) {
+  var tipoNorm = normText_(dados.tipo);
+  if (!agendaTipoPeriodo_(dados.tipo) && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
-  if (normText_(dados.tipo) === 'monitoria') {
-    if (!String(dados.salaMonitoria || '').trim()) {
-      return { erro: 'Informe o local (sala) da monitoria.' };
+  if (agendaTipoPeriodo_(dados.tipo)) {
+    if (tipoNorm === 'siv' && !String(dados.projeto || '').trim()) {
+      return { erro: 'Informe o projeto/protocolo do SIV.' };
     }
-    var datas = agendaDatasPeriodoMonitoria_(dados.data, dados.dataFim);
+    if (tipoNorm === 'monitoria' && !String(dados.monitorName || '').trim()) {
+      return { erro: 'Informe ao menos um monitor.' };
+    }
+    if (tipoNorm === 'monitoria' && !String(dados.salaMonitoria || '').trim()) {
+      return { erro: 'Informe o local (sala).' };
+    }
+    var datas = agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo));
     var ids = [];
     datas.forEach(function(dataDia) {
       var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(dataDia, dados.hora), agendaCloneDados_(dados), ss);
       if (resDia && resDia.id) ids.push(resDia.id);
     });
-    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, emailLabAtivo: agendaEmailEnabled_() };
+    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
   }
   return _gravarLinhaEvento(agenda, _parseDateHora(dados.data, dados.hora), dados, ss);
   });
 }
 
 function agendaDatasPeriodoMonitoria_(dataInicio, dataFim) {
+  return agendaDatasPeriodo_(dataInicio, dataFim, 'monitoria');
+}
+
+function agendaTipoPeriodo_(tipo) {
+  var n = normText_(tipo);
+  return n === 'monitoria' || n === 'siv';
+}
+
+function agendaTipoPeriodoLabel_(tipo) {
+  var n = normText_(tipo);
+  return n === 'siv' ? 'SIV' : 'Monitoria';
+}
+
+function agendaDatasPeriodo_(dataInicio, dataFim, label) {
+  label = label || 'evento';
   var ini = parseAgendaDateAny_(dataInicio);
   var fim = parseAgendaDateAny_(dataFim || dataInicio);
-  if (!ini || isNaN(ini.getTime())) throw new Error('Informe a Data de Inicio da monitoria.');
-  if (!fim || isNaN(fim.getTime())) throw new Error('Informe a Data Final da monitoria.');
+  if (!ini || isNaN(ini.getTime())) throw new Error('Informe a Data de Inicio da ' + label + '.');
+  if (!fim || isNaN(fim.getTime())) throw new Error('Informe a Data Final da ' + label + '.');
   ini.setHours(0, 0, 0, 0);
   fim.setHours(0, 0, 0, 0);
   if (fim.getTime() < ini.getTime()) throw new Error('Data Final deve ser igual ou posterior a Data de Inicio.');
@@ -6358,7 +6501,7 @@ function agendaDatasPeriodoMonitoria_(dataInicio, dataFim) {
   while (d.getTime() <= fim.getTime()) {
     out.push(new Date(d));
     d.setDate(d.getDate() + 1);
-    if (out.length > 370) throw new Error('Periodo de monitoria muito longo. Revise as datas.');
+    if (out.length > 370) throw new Error('Periodo de ' + label + ' muito longo. Revise as datas.');
   }
   return out;
 }
@@ -6379,20 +6522,23 @@ function agendaCloneDados_(dados) {
   return clone;
 }
 
-function agendaMonitoriaRowsDoPeriodo_(agenda, linha, rowRef) {
+function agendaPeriodoRowsDoPeriodo_(agenda, linha, rowRef, tipoPeriodo) {
   var lastRow = agenda.getLastRow();
   if (lastRow < 2) return [];
   var idx = AGENDA_CFG.idx;
   var ref = rowRef || agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var tipoNorm = normText_(tipoPeriodo || ref[idx.tipo]);
   var candidatos = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues()
     .map(function(row, i) {
       var data = parseAgendaDateAny_(row[idx.data]);
       if (!data) return null;
       data.setHours(0, 0, 0, 0);
-      if (normText_(row[idx.tipo]) !== 'monitoria') return null;
+      if (normText_(row[idx.tipo]) !== tipoNorm) return null;
       if (normText_(row[idx.projeto]) !== normText_(ref[idx.projeto])) return null;
-      if (normText_(row[idx.monitorName]) !== normText_(ref[idx.monitorName])) return null;
-      if (normText_(row[idx.salaMonitoria]) !== normText_(ref[idx.salaMonitoria])) return null;
+      if (tipoNorm === 'monitoria' || tipoNorm === 'siv') {
+        if (normText_(row[idx.monitorName]) !== normText_(ref[idx.monitorName])) return null;
+        if (normText_(row[idx.salaMonitoria]) !== normText_(ref[idx.salaMonitoria])) return null;
+      }
       return { rowIndex: i + 2, row: row, data: data };
     })
     .filter(Boolean)
@@ -6415,6 +6561,10 @@ function agendaMonitoriaRowsDoPeriodo_(agenda, linha, rowRef) {
   return candidatos.slice(start, end + 1);
 }
 
+function agendaMonitoriaRowsDoPeriodo_(agenda, linha, rowRef) {
+  return agendaPeriodoRowsDoPeriodo_(agenda, linha, rowRef, 'monitoria');
+}
+
 function agendaDatasConsecutivas_(a, b) {
   if (!a || !b) return false;
   var da = new Date(a);
@@ -6425,12 +6575,20 @@ function agendaDatasConsecutivas_(a, b) {
 }
 
 function agendaWriteMonitoriaRow_(agenda, linha, dataDia, dados, rowAnterior) {
+  agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, 'monitoria');
+}
+
+function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipoPeriodo) {
   var d = agendaDateWithHora_(dataDia, dados.hora);
   var status = String(dados.status || 'Agendado').trim();
+  var tipoNorm = normText_(tipoPeriodo || dados.tipo);
+  var isPeriodoComMonitor = tipoNorm === 'monitoria' || tipoNorm === 'siv';
+  var isMonitoria = tipoNorm === 'monitoria';
+  var tipoLabel = String(dados.tipo || (isMonitoria ? 'Monitoria' : 'SIV')).trim();
   agenda.getRange(linha, AGENDA_CFG.col.data, 1, AGENDA_CFG.col.kit - AGENDA_CFG.col.data + 1).setValues([[
     formatAgendaDatePt_(d),
     formatAgendaHora_(d),
-    String(dados.tipo || 'Monitoria').trim(),
+    tipoLabel,
     status,
     '',
     '',
@@ -6448,10 +6606,10 @@ function agendaWriteMonitoriaRow_(agenda, linha, dataDia, dados, rowAnterior) {
   ]]);
   agenda.getRange(linha, AGENDA_CFG.col.reqStatus, 1, 6).setValues([[
     '',
-    dados.monitorName || '',
+    isPeriodoComMonitor ? (dados.monitorName || '') : '',
     rowAnterior[AGENDA_CFG.idx.poloTrial] || '',
     rowAnterior[AGENDA_CFG.idx.ecrf] || '',
-    dados.salaMonitoria || '',
+    isPeriodoComMonitor ? (dados.salaMonitoria || '') : '',
     false
   ]]);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, {});
@@ -6463,28 +6621,33 @@ function agendaWriteMonitoriaRow_(agenda, linha, dataDia, dados, rowAnterior) {
 }
 
 function agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados) {
-  var datas = agendaDatasPeriodoMonitoria_(dados.data, dados.dataFim);
-  var atuais = agendaMonitoriaRowsDoPeriodo_(agenda, linha, rowAnterior);
+  return agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, 'monitoria');
+}
+
+function agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, tipoPeriodo) {
+  var label = agendaTipoPeriodoLabel_(tipoPeriodo || dados.tipo);
+  var datas = agendaDatasPeriodo_(dados.data, dados.dataFim, label);
+  var atuais = agendaPeriodoRowsDoPeriodo_(agenda, linha, rowAnterior, tipoPeriodo || dados.tipo);
   var ids = [];
   var atualizar = Math.min(atuais.length, datas.length);
   for (var i = 0; i < atualizar; i++) {
     var item = atuais[i];
     var antes = item.row;
-    agendaWriteMonitoriaRow_(agenda, item.rowIndex, datas[i], dados, antes);
+    agendaWritePeriodoRow_(agenda, item.rowIndex, datas[i], dados, antes, tipoPeriodo || dados.tipo);
     var depois = agenda.getRange(item.rowIndex, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
     var idAtual = String(depois[AGENDA_CFG.idx.id] || antes[AGENDA_CFG.idx.id] || '').trim();
     if (idAtual) ids.push(idAtual);
-    codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idAtual || dados.id, agendaAuditChangesFromRows_(antes, depois), 'Alteração de período de monitoria');
+    codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idAtual || dados.id, agendaAuditChangesFromRows_(antes, depois), 'Alteração de período de ' + label);
   }
   var remover = atuais.slice(datas.length).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
   remover.forEach(function(item) {
     var idRemovido = String(item.row[AGENDA_CFG.idx.id] || '').trim();
     agenda.deleteRow(item.rowIndex);
     codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idRemovido || dados.id, [{
-      field: 'Monitoria',
+      field: label,
       oldValue: formatarDataSafe(item.row[AGENDA_CFG.idx.data]),
       newValue: ''
-    }], 'Data removida do período de monitoria');
+    }], 'Data removida do período de ' + label);
   });
   for (var j = atuais.length; j < datas.length; j++) {
     var clone = agendaCloneDados_(dados);
@@ -6496,7 +6659,7 @@ function agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   SpreadsheetApp.flush();
-  return { ok: true, id: ids[0] || dados.id, ids: ids, count: datas.length, atualizado: true, emailLabAtivo: agendaEmailEnabled_() };
+  return { ok: true, id: ids[0] || dados.id, ids: ids, count: datas.length, tipo: label, atualizado: true, emailLabAtivo: agendaEmailEnabled_() };
 }
 
 function agendaAuditFields_() {
@@ -6540,7 +6703,7 @@ function agendaAuditFields_() {
     { field: 'Backup - Destino', idx: i.cb.destino },
     { field: 'Status Requisição', idx: i.reqStatus },
     { field: 'Monitor', idx: i.monitorName },
-    { field: 'Sala da monitoria', idx: i.salaMonitoria },
+    { field: 'Sala/local', idx: i.salaMonitoria },
     { field: 'Carro requerido', idx: i.carroRequerido },
     { field: 'Polo Trial concluído', idx: i.poloTrial },
     { field: 'eCRF concluída', idx: i.ecrf }
@@ -6604,6 +6767,16 @@ function agendaPostVisitValue_(value, previous) {
   if (value === true || String(value || '').trim() === 'Sim') return previous || new Date();
   if (String(value || '').trim()) return value;
   return '';
+}
+
+function agendaStatusConcluido_(status) {
+  return normText_(status).indexOf('concl') > -1;
+}
+
+function agendaPostVisitConcluidoPorStatus_(status, tipo) {
+  var tipoNorm = normText_(tipo);
+  return agendaStatusConcluido_(status) &&
+    (tipoNorm.indexOf('visita') > -1 || agendaTipoContatoTelefonicoServer_(tipo));
 }
 
 function agendaBooleanValue_(value) {
@@ -6701,8 +6874,11 @@ function atualizarAgendaEventoCompleto(dados) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
-  var isMonitoria = normText_(tipo) === 'monitoria';
-  if (!isMonitoria && !String(dados.hora || '').trim()) {
+  var tipoNorm = normText_(tipo);
+  var isMonitoria = tipoNorm === 'monitoria';
+  var isSiv = tipoNorm === 'siv';
+  var isPeriodo = isMonitoria || isSiv;
+  if (!isPeriodo && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
@@ -6714,6 +6890,9 @@ function atualizarAgendaEventoCompleto(dados) {
     if (!String(dados.salaMonitoria || '').trim()) {
       return { erro: 'Informe o local (sala) da monitoria.' };
     }
+    if (!String(dados.monitorName || '').trim()) {
+      return { erro: 'Informe ao menos um monitor.' };
+    }
     dados.participante = '';
     dados.visita = '';
     dados.medico = '';
@@ -6722,6 +6901,18 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.statusRequisicao = '';
     labCentral = 'Não aplicável';
     return agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados);
+  } else if (isSiv) {
+    if (!String(dados.projeto || '').trim()) {
+      return { erro: 'Informe o projeto/protocolo do SIV.' };
+    }
+    dados.participante = '';
+    dados.visita = '';
+    dados.medico = '';
+    dados.procedimentos = '';
+    dados.servTerc = '';
+    dados.statusRequisicao = '';
+    labCentral = 'Não aplicável';
+    return agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, 'siv');
   } else {
     dados.monitorName = '';
     dados.salaMonitoria = '';
@@ -6762,6 +6953,14 @@ function atualizarAgendaEventoCompleto(dados) {
     datasAgendaDiferentes_(dataAnterior, d) ||
     normText_(rowAnterior[AGENDA_CFG.idx.labCentral]) !== normText_(labCentral) ||
     normText_(rowAnterior[AGENDA_CFG.idx.status]) !== normText_(status);
+  var postVisitConcluidoPorStatus = agendaPostVisitConcluidoPorStatus_(status, tipo);
+  var dataConclusaoPostVisit = new Date();
+  var poloTrialValor = postVisitConcluidoPorStatus
+    ? (rowAnterior[AGENDA_CFG.idx.poloTrial] || dataConclusaoPostVisit)
+    : agendaPostVisitValue_(dados.poloTrialConcluido, rowAnterior[AGENDA_CFG.idx.poloTrial]);
+  var ecrfValor = postVisitConcluidoPorStatus
+    ? (rowAnterior[AGENDA_CFG.idx.ecrf] || dataConclusaoPostVisit)
+    : agendaPostVisitValue_(dados.ecrfConcluida, rowAnterior[AGENDA_CFG.idx.ecrf]);
 
   agenda.getRange(linha, AGENDA_CFG.col.data, 1, AGENDA_CFG.col.kit - AGENDA_CFG.col.data + 1).setValues([[
     formatAgendaDatePt_(d),
@@ -6785,8 +6984,8 @@ function atualizarAgendaEventoCompleto(dados) {
   agenda.getRange(linha, AGENDA_CFG.col.reqStatus, 1, 6).setValues([[
     conflitoApenasAuxiliar ? (rowAnterior[AGENDA_CFG.idx.reqStatus] || '') : (dados.statusRequisicao || ''),
     dados.monitorName || '',
-    agendaPostVisitValue_(dados.poloTrialConcluido, rowAnterior[AGENDA_CFG.idx.poloTrial]),
-    agendaPostVisitValue_(dados.ecrfConcluida, rowAnterior[AGENDA_CFG.idx.ecrf]),
+    poloTrialValor,
+    ecrfValor,
     dados.salaMonitoria || '',
     dados.carroRequerido
   ]]);
@@ -7035,8 +7234,11 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
-  var isMonitoria = normText_(tipo) === 'monitoria';
-  if (!isMonitoria && !String(dados.hora || '').trim()) {
+  var tipoNorm = normText_(tipo);
+  var isMonitoria = tipoNorm === 'monitoria';
+  var isSiv = tipoNorm === 'siv';
+  var isPeriodo = isMonitoria || isSiv;
+  if (!isPeriodo && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
@@ -7046,6 +7248,20 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     }
     if (!String(dados.salaMonitoria || '').trim()) {
       return { erro: 'Informe o local (sala) da monitoria.' };
+    }
+    if (!String(dados.monitorName || '').trim()) {
+      return { erro: 'Informe ao menos um monitor.' };
+    }
+    dados.participante = '';
+    dados.visita = '';
+    dados.medico = '';
+    dados.procedimentos = '';
+    dados.servTerc = '';
+    dados.statusRequisicao = '';
+    labCentral = 'Não aplicável';
+  } else if (isSiv) {
+    if (!String(dados.projeto || '').trim()) {
+      return { erro: 'Informe o projeto/protocolo do SIV.' };
     }
     dados.participante = '';
     dados.visita = '';
@@ -7095,6 +7311,14 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agenda.getRange(linhaNova, AGENDA_CFG.col.kit).setValue(dados.kit || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.reqStatus).setValue(dados.statusRequisicao || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.monitorName).setValue(dados.monitorName || '');
+  var postVisitConcluidoNovo = agendaPostVisitConcluidoPorStatus_(status, tipo);
+  var dataConclusaoPostVisitNova = new Date();
+  agenda.getRange(linhaNova, AGENDA_CFG.col.poloTrial).setValue(postVisitConcluidoNovo
+    ? dataConclusaoPostVisitNova
+    : agendaPostVisitValue_(dados.poloTrialConcluido, ''));
+  agenda.getRange(linhaNova, AGENDA_CFG.col.ecrf).setValue(postVisitConcluidoNovo
+    ? dataConclusaoPostVisitNova
+    : agendaPostVisitValue_(dados.ecrfConcluida, ''));
   agenda.getRange(linhaNova, AGENDA_CFG.col.salaMonitoria).setValue(dados.salaMonitoria || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).setValue(dados.carroRequerido);
   SpreadsheetApp.flush();

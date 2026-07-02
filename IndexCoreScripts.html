@@ -54,6 +54,7 @@ var APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 var APP_VERSION_CHECK_TIMER = null;
 var APP_VERSION_NOTICE_VISIBLE = false;
 var APP_VERSION_CHECK_IN_FLIGHT = false;
+var APP_VERSION_RUNTIME_IS_EXEC = false;
 var USERS_ADMIN_ROWS = [];
 var APP_DEPLOYMENT_DIAGNOSTICS = null;
 var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
@@ -211,13 +212,24 @@ function renderAppVersion(appVersion) {
 }
 
 function startAppVersionWatcher() {
-  if (!APP_LOADED_VERSION || APP_VERSION_CHECK_TIMER) return;
+  APP_VERSION_RUNTIME_IS_EXEC = appIsPublishedExecRuntime();
+  if (!APP_LOADED_VERSION || APP_VERSION_CHECK_TIMER || !APP_VERSION_RUNTIME_IS_EXEC) return;
   APP_VERSION_CHECK_TIMER = setInterval(checkAppRuntimeVersion, APP_VERSION_CHECK_INTERVAL_MS);
   setTimeout(checkAppRuntimeVersion, APP_VERSION_CHECK_INTERVAL_MS);
 }
 
+function appIsPublishedExecRuntime() {
+  var urls = [];
+  try { urls.push(String(window.top && window.top.location && window.top.location.href || '')); } catch (eTop) {}
+  try { urls.push(String(window.location && window.location.href || '')); } catch (eWin) {}
+  try { urls.push(String(document.referrer || '')); } catch (eRef) {}
+  return urls.some(function(url) {
+    return /\/exec(?:[?#]|$)/i.test(url);
+  });
+}
+
 function checkAppRuntimeVersion() {
-  if (!APP_LOADED_VERSION || APP_VERSION_NOTICE_VISIBLE || APP_VERSION_CHECK_IN_FLIGHT) return;
+  if (!APP_LOADED_VERSION || !APP_VERSION_RUNTIME_IS_EXEC || APP_VERSION_NOTICE_VISIBLE || APP_VERSION_CHECK_IN_FLIGHT) return;
   if (typeof google === 'undefined' || !google.script || !google.script.run) return;
   APP_VERSION_CHECK_IN_FLIGHT = true;
   google.script.run
@@ -243,13 +255,62 @@ function showAppVersionNotice(appVersion) {
     notice.innerHTML =
       '<span class="material-symbols-outlined" aria-hidden="true">system_update_alt</span>' +
       '<span>Nova versão disponível. Atualize a página para continuar.</span>' +
-      '<button type="button" onclick="location.reload()">Atualizar</button>';
+      '<button type="button" onclick="appReloadWebAppAfterVersionNotice()">Atualizar</button>';
     document.body.appendChild(notice);
   }
   if (appVersion && appVersion.version) {
     notice.title = 'Versao atual: ' + APP_LOADED_VERSION + '\nNova versao: ' + appVersion.version;
   }
   notice.classList.add('show');
+}
+
+function appReloadWebAppAfterVersionNotice() {
+  var target = '';
+  try {
+    var topHref = String(window.top && window.top.location && window.top.location.href || '');
+    if (/\/exec(?:[?#]|$)/i.test(topHref)) target = topHref;
+  } catch (eTopHref) {}
+  if (!target) {
+    var baseUrl = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.webAppUrl;
+    if (baseUrl) target = String(baseUrl) + appCurrentWebAppReloadQuery();
+  }
+  if (target) {
+    target = appAddReloadParam(target);
+    try {
+      window.top.location.href = target;
+      return;
+    } catch (eTopSet) {
+      window.open(target, '_top');
+      return;
+    }
+  }
+  try { window.top.location.reload(); }
+  catch (eReload) { window.location.reload(); }
+}
+
+function appCurrentWebAppReloadQuery() {
+  var pagina = getCurrentPage() || String(window.INDEX_INITIAL_PAGE || 'agenda');
+  if (isEmbeddedModuleEnabled('dashboard') || pagina === 'dashboard') return '?page=dashboard';
+  if (isEmbeddedModuleEnabled('estoque')) {
+    var estoquePagina = getEstoqueRoutePage(pagina === 'estoque-view' ? 'visualizacao' : 'itens');
+    if (estoquePagina === 'visualizacao') return '?page=estoque-view';
+    return '?page=estoque&pagina=' + encodeURIComponent(estoquePagina || 'itens');
+  }
+  if (pagina === 'agenda' || !pagina) return '';
+  return '?pagina=' + encodeURIComponent(pagina);
+}
+
+function appAddReloadParam(url) {
+  url = String(url || '');
+  if (!url) return url;
+  var hash = '';
+  var hashIdx = url.indexOf('#');
+  if (hashIdx >= 0) {
+    hash = url.slice(hashIdx);
+    url = url.slice(0, hashIdx);
+  }
+  var sep = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + sep + '_reload=' + Date.now() + hash;
 }
 
 document.addEventListener('visibilitychange', function() {
@@ -3070,6 +3131,8 @@ function filtrarProjetos() {
         || (p.numeroCE||'').toLowerCase().includes(q)
         || (p.expedienteCE||'').toLowerCase().includes(q)
         || (p.dataSiv||'').toLowerCase().includes(q)
+        || (p.dataSivInicio||'').toLowerCase().includes(q)
+        || (p.dataSivFim||'').toLowerCase().includes(q)
         || (p.status||'').toLowerCase().includes(q);
   }) : _projetos;
   renderTabelaProj(f);
@@ -3161,6 +3224,14 @@ function projetoDetailValue(value) {
   return value ? esc(value) : '<span style="color:#9aa3b0">-</span>';
 }
 
+function projetoSivDetailValue(p) {
+  var inicio = String((p && (p.dataSivInicio || p.dataSiv)) || '').trim();
+  var fim = String((p && (p.dataSivFim || p.dataSiv)) || '').trim();
+  if (!inicio) return projetoDetailValue('');
+  if (!fim || fim === inicio) return projetoDetailValue(inicio);
+  return projetoDetailValue(inicio + ' a ' + fim);
+}
+
 var _projetoCeStatusCache = {};
 
 function projetoDetalheHtml(p) {
@@ -3172,7 +3243,7 @@ function projetoDetalheHtml(p) {
       '<span class="det-item"><span class="material-symbols-outlined">approval</span><span>N&deg; CE: ' + projetoDetailValue(p.numeroCE) + '</span></span>' +
       '<span class="det-item"><span class="material-symbols-outlined">tag</span><span>N&deg; expediente CE: ' + projetoDetailValue(p.expedienteCE) + '</span></span>' +
       '<span class="det-item proj-ce-drive-status" data-projeto-ce="' + esc(projetoCe) + '" data-ce-status-id="' + esc(ceStatusId) + '"><span class="material-symbols-outlined">folder_open</span><span>CE localizada no Drive: <strong id="' + esc(ceStatusId) + '">Verificando...</strong></span></span>' +
-      '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoDetailValue(p.dataSiv) + '</span></span>' +
+      '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoSivDetailValue(p) + '</span></span>' +
     '</div>' +
   '</div>';
 }
