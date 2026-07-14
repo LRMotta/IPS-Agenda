@@ -31,9 +31,18 @@
           <div class="field-error" id="errPrestTipoServico">Campo obrigatÃ³rio.</div>
         </div>
         <div class="field">
-          <label class="field-label" for="prestEmail">E-mail <span class="required-star">*</span></label>
-          <textarea id="prestEmail" class="f-textarea prest-email-textarea" placeholder="contato@laboratorio.com.br; outro@laboratorio.com.br"
-            oninput="limparErro('prestEmail','errPrestEmail')"></textarea>
+          <label class="field-label" for="prestEmailEntry">E-mails para requisições <span class="required-star">*</span></label>
+          <p class="prest-email-help">Adicione um destinatário por vez. Você poderá removê-lo depois, se necessário.</p>
+          <div class="prest-email-editor" id="prestEmailEditor">
+            <div class="prest-email-chips" id="prestEmailRecipients" aria-live="polite"></div>
+            <div class="prest-email-add-row">
+              <input type="email" id="prestEmailEntry" class="f-input" placeholder="contato@laboratorio.com.br" autocomplete="email">
+              <button type="button" class="prest-email-add" id="prestEmailAdd">
+                <span class="material-symbols-outlined">add</span> Adicionar
+              </button>
+            </div>
+          </div>
+          <textarea id="prestEmail" class="prest-email-value" aria-hidden="true" tabindex="-1"></textarea>
           <div class="field-error" id="errPrestEmail">Campo obrigatório.</div>
         </div>
       </div>

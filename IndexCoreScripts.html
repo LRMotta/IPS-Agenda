@@ -5341,6 +5341,91 @@ function prestadorEmailCell(email) {
   return '<div class="prest-email-cell"><a href="mailto:' + esc(email) + '">' + esc(email) + '</a></div>';
 }
 
+function prestadorEmailsNormalizados(raw) {
+  var vistos = {};
+  return String(raw || '').split(/[;,\n]+/).map(function(email) {
+    return email.trim();
+  }).filter(function(email) {
+    var chave = email.toLowerCase();
+    if (!email || vistos[chave]) return false;
+    vistos[chave] = true;
+    return true;
+  });
+}
+
+function renderPrestadorEmails(raw) {
+  var valor = document.getElementById('prestEmail');
+  var lista = document.getElementById('prestEmailRecipients');
+  var editor = document.getElementById('prestEmailEditor');
+  if (!valor || !lista) return;
+  var emails = Array.isArray(raw) ? prestadorEmailsNormalizados(raw.join(';')) : prestadorEmailsNormalizados(raw);
+  valor.value = emails.join('; ');
+  lista.replaceChildren();
+  emails.forEach(function(email) {
+    var chip = document.createElement('span');
+    chip.className = 'prest-email-chip';
+    var texto = document.createElement('span');
+    texto.textContent = email;
+    var remover = document.createElement('button');
+    remover.type = 'button';
+    remover.className = 'prest-email-remove';
+    remover.setAttribute('aria-label', 'Remover ' + email);
+    remover.innerHTML = '<span class="material-symbols-outlined">close</span>';
+    remover.addEventListener('click', function() {
+      renderPrestadorEmails(prestadorEmailsNormalizados(valor.value).filter(function(item) {
+        return item.toLowerCase() !== email.toLowerCase();
+      }));
+    });
+    chip.appendChild(texto);
+    chip.appendChild(remover);
+    lista.appendChild(chip);
+  });
+  if (editor) editor.classList.toggle('invalid', !emails.length);
+  if (emails.length) limparErro('prestEmail', 'errPrestEmail');
+}
+
+function adicionarEmailPrestador() {
+  var entrada = document.getElementById('prestEmailEntry');
+  if (!entrada) return false;
+  var novos = prestadorEmailsNormalizados(entrada.value);
+  if (!novos.length) return false;
+  var invalidos = novos.filter(function(email) {
+    return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  });
+  if (invalidos.length) {
+    entrada.classList.add('invalid');
+    var erro = document.getElementById('errPrestEmail');
+    if (erro) {
+      erro.textContent = 'Informe um e-mail válido.';
+      erro.classList.add('visible');
+    }
+    entrada.focus();
+    return false;
+  }
+  entrada.classList.remove('invalid');
+  renderPrestadorEmails(prestadorEmailsNormalizados((document.getElementById('prestEmail').value || '') + ';' + novos.join(';')));
+  entrada.value = '';
+  entrada.focus();
+  return true;
+}
+
+function prepararEditorEmailsPrestador() {
+  var entrada = document.getElementById('prestEmailEntry');
+  var botao = document.getElementById('prestEmailAdd');
+  if (!entrada || !botao || entrada.dataset.bound === '1') return;
+  entrada.dataset.bound = '1';
+  botao.addEventListener('click', adicionarEmailPrestador);
+  entrada.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      adicionarEmailPrestador();
+    }
+  });
+  entrada.addEventListener('input', function() {
+    entrada.classList.remove('invalid');
+  });
+}
+
 function renderPrestadorTipoServicoOptions(currentValue) {
   var sel = document.getElementById('prestTipoServico');
   if (!sel) return;
@@ -5359,6 +5444,10 @@ function abrirFormPrestador(id) {
   ['editPrestId','prestEmpresa','prestEndereco','prestEmail','prestTipoServico'].forEach(function(fId) {
     document.getElementById(fId).value = '';
   });
+  prepararEditorEmailsPrestador();
+  document.getElementById('prestEmailEntry').value = '';
+  renderPrestadorEmails('');
+  document.getElementById('errPrestEmail').textContent = 'Informe ao menos um e-mail.';
   renderPrestadorTipoServicoOptions('');
   document.getElementById('statusPrest').textContent = '';
   document.getElementById('modalPrestTitle').textContent = id ? 'EDITAR PRESTADOR' : 'CADASTRO DE PRESTADOR';
@@ -5374,7 +5463,7 @@ function abrirFormPrestador(id) {
       document.getElementById('editPrestId').value   = p.id;
       document.getElementById('prestEmpresa').value  = p.empresa;
       document.getElementById('prestEndereco').value = p.endereco || '';
-      document.getElementById('prestEmail').value    = p.email    || '';
+      renderPrestadorEmails(p.email || '');
       renderPrestadorTipoServicoOptions(p.tipoServico || '');
     }
   }
@@ -5383,6 +5472,8 @@ function abrirFormPrestador(id) {
 }
 
 function salvarPrestadorApp() {
+  var entradaEmail = document.getElementById('prestEmailEntry');
+  if (entradaEmail && entradaEmail.value.trim() && !adicionarEmailPrestador()) return;
   var empresa = document.getElementById('prestEmpresa').value.trim();
   var email   = document.getElementById('prestEmail').value.trim();
   var tipoServico = document.getElementById('prestTipoServico').value.trim();
@@ -5390,7 +5481,10 @@ function salvarPrestadorApp() {
     { input: 'prestEmpresa', error: 'errPrestEmpresa', label: 'Empresa', value: empresa },
     { input: 'prestTipoServico', error: 'errPrestTipoServico', label: 'Tipo de servico', value: tipoServico },
     { input: 'prestEmail', error: 'errPrestEmail', label: 'E-mail', value: email }
-  ], { status: 'statusPrest' })) return;
+  ], { status: 'statusPrest' })) {
+    document.getElementById('prestEmailEditor').classList.toggle('invalid', !email);
+    return;
+  }
   var btn = document.getElementById('btnSalvarPrest');
   var payload = {
     id: document.getElementById('editPrestId').value,

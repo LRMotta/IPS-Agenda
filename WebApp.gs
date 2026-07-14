@@ -8,8 +8,8 @@ var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
 // Atualize versão, rótulo e data a cada entrega do WebApp.
-var CODEX_APP_VERSION_ = '2026.07.14-agenda-field-alignment-all';
-var CODEX_APP_BUILD_LABEL_ = 'Alinhamento padrao dos campos da Agenda';
+var CODEX_APP_VERSION_ = '2026.07.14-prestador-email-friendly';
+var CODEX_APP_BUILD_LABEL_ = 'Edicao amigavel de e-mails de prestadores';
 var CODEX_APP_BUILD_DATE_ = '2026-07-14';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
