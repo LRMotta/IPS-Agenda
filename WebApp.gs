@@ -7,9 +7,10 @@ var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
-var CODEX_APP_VERSION_ = '2026.07.02-agenda-status-concluido';
-var CODEX_APP_BUILD_LABEL_ = 'Agenda status Concluído';
-var CODEX_APP_BUILD_DATE_ = '2026-07-02';
+// Atualize versão, rótulo e data a cada entrega do WebApp.
+var CODEX_APP_VERSION_ = '2026.07.14-agenda-field-alignment-all';
+var CODEX_APP_BUILD_LABEL_ = 'Alinhamento padrao dos campos da Agenda';
+var CODEX_APP_BUILD_DATE_ = '2026-07-14';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -30,8 +31,7 @@ function doGet(e) {
     return tplDashboard
       .evaluate()
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('IPS | UCS')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setTitle('IPS | UCS');
   }
 
   if (page === 'estoque' || page === 'pedidos' || page === 'estoque-view') {
@@ -48,8 +48,7 @@ function doGet(e) {
     return tplEstoque
       .evaluate()
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('IPS | UCS')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setTitle('IPS | UCS');
   }
 
   if (page === 'transporte') {
@@ -61,8 +60,7 @@ function doGet(e) {
     return tplTransporte
       .evaluate()
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('IPS | Transporte de Mat. Biologico')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setTitle('IPS | Transporte de Mat. Biologico');
   }
 
   // default — página principal
@@ -77,8 +75,7 @@ function doGet(e) {
   return tplIndex
     .evaluate()
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setTitle('IPS | UCS')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setTitle('IPS | UCS');
 }
 
 
@@ -213,6 +210,13 @@ function getCodexDeploymentDiagnostics() {
       error: ''
     },
     cache: codexGetCacheDiagnostics_(),
+    transport: codexGetTransportDiagnostics_(),
+    dataCounts: codexGetDataCountsDiagnostics_(),
+    triggers: codexGetTriggersDiagnostics_(),
+    mail: codexGetMailDiagnostics_(),
+    auditRecent: codexGetRecentAuditIssuesDiagnostics_(),
+    permissions: codexGetCriticalPermissionsDiagnostics_(),
+    smoke: codexGetSmokeDiagnostics_(),
     script: {
       timeZone: '',
       expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
@@ -249,6 +253,8 @@ function codexGetCacheDiagnostics_() {
   var out = {
     configRowsCachePresent: false,
     agendaBootstrapCachePresent: false,
+    transporteOptionsCachePresent: false,
+    items: [],
     lastConfigInvalidationAt: '',
     lastConfigInvalidationBy: '',
     lastConfigInvalidationSource: '',
@@ -256,9 +262,20 @@ function codexGetCacheDiagnostics_() {
     error: ''
   };
   try {
-    out.configRowsCachePresent = !!codexCacheGet_('ConfigAppRows:v2');
     var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
-    out.agendaBootstrapCachePresent = !!codexCacheGet_('AgendaFormData:v6:' + today);
+    var keys = [
+      { key: 'ConfigAppRows:v2', label: 'Config_App' },
+      { key: 'AgendaFormData:v6:' + today, label: 'Agenda bootstrap hoje' },
+      { key: 'TRANSPORTE_OPTIONS_BASE_V6', label: 'Transporte options', reader: 'transporte' },
+      { key: 'TRANSPORTE_PARTICIPANTES_OPTIONS_V1', label: 'Transporte participantes', reader: 'transporte' }
+    ];
+    out.items = keys.map(function(item) {
+      return codexCacheItemDiagnostics_(item.key, item.label, item.reader);
+    });
+    out.configRowsCachePresent = !!out.items[0].present;
+    out.agendaBootstrapCachePresent = !!out.items[1].present;
+    out.transporteOptionsCachePresent = !!out.items[2].present;
+    out.transporteOptionsCacheStatus = out.items[2].statusLabel || (out.items[2].present ? 'Disponivel' : 'Nao carregado');
     var props = PropertiesService.getScriptProperties();
     out.lastConfigInvalidationAt = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_AT') || '');
     out.lastConfigInvalidationBy = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_BY') || '');
@@ -267,6 +284,248 @@ function codexGetCacheDiagnostics_() {
     if (sh) out.configRowsApprox = Math.max(0, sh.getLastRow() - 1);
   } catch (e) {
     out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexCacheMetaKey_(key) {
+  return 'CODEX_CACHE_META_' + Utilities.base64EncodeWebSafe(String(key || '')).replace(/=+$/g, '');
+}
+
+function codexCacheItemDiagnostics_(key, label, reader) {
+  var meta = {};
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(codexCacheMetaKey_(key));
+    meta = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    meta = { error: e.message || String(e) };
+  }
+  var present = codexCacheItemPresent_(key, reader);
+  var now = new Date().getTime();
+  var expiresAtMs = Number(meta.expiresAtMs || 0);
+  var expiredMeta = !!(expiresAtMs && expiresAtMs < now);
+  var optional = reader === 'transporte';
+  var statusLabel = present
+    ? (expiredMeta ? 'Disponivel; metadados antigos' : 'Disponivel')
+    : (optional ? 'Nao carregado nesta sessao' : 'Ausente');
+  return {
+    key: key,
+    label: label || key,
+    present: present,
+    optional: optional,
+    statusLabel: statusLabel,
+    createdAt: String(meta.createdAt || ''),
+    expiresAt: String(meta.expiresAt || ''),
+    ageMinutes: meta.createdAtMs ? Math.max(0, Math.round((now - Number(meta.createdAtMs)) / 60000)) : '',
+    expiresInMinutes: expiresAtMs && !expiredMeta ? Math.round((expiresAtMs - now) / 60000) : '',
+    metaStatus: statusLabel,
+    error: String(meta.error || '')
+  };
+}
+
+function codexCacheItemPresent_(key, reader) {
+  if (reader === 'transporte' && typeof transporteReadCachedJson_ === 'function') {
+    return !!transporteReadCachedJson_(key);
+  }
+  return !!codexCacheGet_(key);
+}
+
+function codexGetTransportDiagnostics_() {
+  var out = { status: '', url: '', responseCode: '', mode: '', message: '', error: '' };
+  try {
+    var acoplado = typeof salvarTransporte === 'function' &&
+      typeof gerarPdfTransporte === 'function' &&
+      typeof getTransporteBootstrapFromAgenda === 'function';
+    if (acoplado) {
+      out.status = 'OK (acoplado)';
+      out.mode = 'acoplado';
+      out.message = 'Transporte roda dentro do CODEX; URL externa nao e necessaria.';
+      return out;
+    }
+    if (typeof getTransporteWebAppUrlCodex_ !== 'function') {
+      out.status = 'Indisponivel';
+      out.error = 'Leitor getTransporteWebAppUrlCodex_ nao encontrado.';
+      return out;
+    }
+    out.url = String(getTransporteWebAppUrlCodex_() || '').trim();
+    if (!out.url) {
+      out.status = 'URL ausente';
+      out.message = 'Necessaria apenas quando o Transporte roda como WebApp externo.';
+      return out;
+    }
+    if (!/^https:\/\/script\.google\.com\/.+\/exec$/i.test(out.url)) {
+      out.status = 'URL invalida';
+      return out;
+    }
+    out.status = 'URL valida';
+    if (typeof testarUrlWebAppTransporteCodex === 'function') {
+      var res = testarUrlWebAppTransporteCodex();
+      out.mode = 'fetch';
+      out.responseCode = res && res.getCode;
+      out.status = res && res.ok ? 'OK' : 'Fetch com alerta';
+      out.message = res && res.ok
+        ? 'GET/POST responderam.'
+        : 'URL preenchida, mas a chamada leve nao confirmou acesso total.';
+      out.getPreview = res && res.getPreview || '';
+      out.postCode = res && res.postCode || '';
+      out.postPreview = res && res.postPreview || '';
+    }
+  } catch (e) {
+    out.status = out.url ? 'Fetch falhou' : 'URL ausente';
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexGetDataCountsDiagnostics_() {
+  try {
+    var ss = getCodexSpreadsheet_();
+    var items = [
+      codexSheetCountDiagnostic_(ss, 'Agenda', function() { return typeof getAgendaSheet_ === 'function' ? getAgendaSheet_() : ss.getSheetByName('Agenda'); }),
+      codexSheetCountDiagnostic_(ss, 'Courier/Couriers', function() { return typeof getCourierSheet_ === 'function' ? getCourierSheet_() : (ss.getSheetByName('Courier') || ss.getSheetByName('Couriers')); }),
+      codexSheetCountDiagnostic_(ss, 'LabCentral', function() { return ss.getSheetByName('LabCentral'); }),
+      codexSheetCountDiagnostic_(ss, 'Users', function() { return ss.getSheetByName(CODEX_ACL_SHEET_NAME_ || 'Users'); }),
+      codexSheetCountDiagnostic_(ss, 'Config_App', function() { return ss.getSheetByName('Config_App'); })
+    ];
+    return { items: items, error: '' };
+  } catch (e) {
+    return { items: [], error: e.message || String(e) };
+  }
+}
+
+function codexSheetCountDiagnostic_(ss, label, resolver) {
+  try {
+    var sh = resolver ? resolver() : ss.getSheetByName(label);
+    if (!sh) return { label: label, ok: false, rows: 0, lastRow: 0, lastColumn: 0, status: 'Aba ausente' };
+    var lastRow = sh.getLastRow();
+    return {
+      label: label,
+      sheetName: sh.getName(),
+      ok: true,
+      rows: Math.max(0, lastRow - 1),
+      lastRow: lastRow,
+      lastColumn: sh.getLastColumn(),
+      status: lastRow > 1 ? 'OK' : 'Sem dados'
+    };
+  } catch (e) {
+    return { label: label, ok: false, rows: 0, status: 'Erro', error: e.message || String(e) };
+  }
+}
+
+function codexGetTriggersDiagnostics_() {
+  var out = { ok: false, triggers: [], monitorConfirmacaoCouriersAtivo: false, monitorEntregasDhlAtivo: false, error: '' };
+  try {
+    out.triggers = ScriptApp.getProjectTriggers().map(function(t) {
+      var source = '';
+      var eventType = '';
+      try { source = t.getTriggerSource ? String(t.getTriggerSource()) : ''; } catch (eSource) {}
+      try { eventType = t.getEventType ? String(t.getEventType()) : ''; } catch (eEvent) {}
+      var fn = t.getHandlerFunction ? String(t.getHandlerFunction() || '') : '';
+      if (fn === 'monitorarConfirmacoesCourierAgendadas') out.monitorConfirmacaoCouriersAtivo = true;
+      if (fn === 'monitorarEntregasDhlAgendadas') out.monitorEntregasDhlAtivo = true;
+      return { handler: fn, source: source, eventType: eventType, uid: t.getUniqueId ? String(t.getUniqueId() || '') : '' };
+    });
+    out.ok = true;
+  } catch (e) {
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexGetMailDiagnostics_() {
+  var out = { ok: false, remainingDailyQuota: '', status: '', error: '' };
+  try {
+    out.remainingDailyQuota = MailApp.getRemainingDailyQuota();
+    out.status = 'OK';
+    out.ok = true;
+  } catch (e) {
+    out.status = 'Falha';
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexGetRecentAuditIssuesDiagnostics_() {
+  var out = { items: [], error: '' };
+  try {
+    var page = getAuditRowsPage_('Audit_Log', 6, 60, 0, function(r) {
+      return {
+        id: String(r[0] || ''),
+        email: String(r[1] || ''),
+        action: String(r[2] || ''),
+        timestamp: r[3] instanceof Date ? Utilities.formatDate(r[3], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') : String(r[3] || ''),
+        module: String(r[4] || ''),
+        recordId: String(r[5] || '')
+      };
+    });
+    out.items = (page.rows || []).filter(function(r) {
+      var a = normText_(r.action);
+      return a.indexOf('acesso') > -1 || a.indexOf('negado') > -1 || a.indexOf('erro') > -1 || a.indexOf('falha') > -1;
+    }).slice(0, 8);
+  } catch (e) {
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexGetCriticalPermissionsDiagnostics_() {
+  var out = { drive: { ok: false, status: '', error: '' }, calendar: { ok: false, status: '', error: '' } };
+  try {
+    DriveApp.getRootFolder().getName();
+    out.drive.ok = true;
+    out.drive.status = 'OK';
+  } catch (eDrive) {
+    out.drive.status = 'Falha';
+    out.drive.error = eDrive.message || String(eDrive);
+  }
+  try {
+    CalendarApp.getDefaultCalendar().getName();
+    out.calendar.ok = true;
+    out.calendar.status = 'OK';
+  } catch (eCal) {
+    out.calendar.status = 'Falha';
+    out.calendar.error = eCal.message || String(eCal);
+  }
+  return out;
+}
+
+function codexGetSmokeDiagnostics_() {
+  var out = { checks: [] };
+  function add(label, ok, detail, status) {
+    out.checks.push({ label: label, ok: !!ok, status: status || (ok ? 'OK' : 'Atencao'), detail: detail || '' });
+  }
+  try {
+    var agenda = typeof getAgendaSheet_ === 'function' ? getAgendaSheet_() : getCodexSpreadsheet_().getSheetByName('Agenda');
+    var agendaRows = agenda ? Math.max(0, agenda.getLastRow() - 1) : 0;
+    add('Agenda tem registros', agendaRows > 0, agendaRows + ' linha(s)');
+  } catch (eAgenda) {
+    add('Agenda tem registros', false, eAgenda.message || String(eAgenda), 'Erro');
+  }
+  try {
+    var users = codexGetAllowedUsers_();
+    var admins = Object.keys(users || {}).filter(function(email) { return String(users[email].role || '').toLowerCase() === 'admin'; }).length;
+    add('Existe ao menos 1 admin ativo', admins > 0, admins + ' admin(s)');
+  } catch (eUsers) {
+    add('Existe ao menos 1 admin ativo', false, eUsers.message || String(eUsers), 'Erro');
+  }
+  try {
+    var cfg = getCodexSpreadsheet_().getSheetByName('Config_App');
+    var cfgRows = cfg ? Math.max(0, cfg.getLastRow() - 1) : 0;
+    add('Config_App tem linhas', cfgRows > 0, cfgRows + ' linha(s)');
+  } catch (eCfg) {
+    add('Config_App tem linhas', false, eCfg.message || String(eCfg), 'Erro');
+  }
+  try {
+    var labs = typeof getLabCentral === 'function' ? getLabCentral() : [];
+    add('LabCentral tem laboratorios', labs && labs.length > 0, (labs ? labs.length : 0) + ' laboratorio(s)');
+  } catch (eLab) {
+    add('LabCentral tem laboratorios', false, eLab.message || String(eLab), 'Erro');
+  }
+  try {
+    var couriers = typeof getCouriersCadastro === 'function' ? getCouriersCadastro() : [];
+    add('Couriers cadastradas', couriers && couriers.length > 0, (couriers ? couriers.length : 0) + ' courier(s)');
+  } catch (eCour) {
+    add('Couriers cadastradas', false, eCour.message || String(eCour), 'Erro');
   }
   return out;
 }
@@ -384,7 +643,25 @@ function getEstoqueBootstrapData(page) {
 }
 
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  try {
+    return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  } catch (err) {
+    throw new Error('Falha ao incluir arquivo HTML "' + filename + '": ' + (err.message || String(err)));
+  }
+}
+
+function codexLoggerSummary_(label, payload) {
+  payload = payload || {};
+  var parts = [String(label || 'Log')];
+  ['ok', 'mensagem', 'apiKeyConfigurada'].forEach(function(key) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') {
+      parts.push(key + '=' + payload[key]);
+    }
+  });
+  ['pendentes', 'entregues', 'erros', 'regras', 'buscas'].forEach(function(key) {
+    if (Array.isArray(payload[key])) parts.push(key + '=' + payload[key].length);
+  });
+  Logger.log(parts.join(' | '));
 }
 
 function codexAuthorizeWebAppRequest_(e) {
@@ -1258,13 +1535,25 @@ function codexCacheGet_(key) {
 
 function codexCachePut_(key, value, seconds) {
   try {
-    CacheService.getScriptCache().put(key, JSON.stringify(value), seconds || CODEX_CACHE_TTL_SECONDS_);
+    var ttl = seconds || CODEX_CACHE_TTL_SECONDS_;
+    CacheService.getScriptCache().put(key, JSON.stringify(value), ttl);
+    var now = new Date();
+    var expires = new Date(now.getTime() + ttl * 1000);
+    PropertiesService.getScriptProperties().setProperty(codexCacheMetaKey_(key), JSON.stringify({
+      key: key,
+      createdAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+      createdAtMs: now.getTime(),
+      expiresAt: Utilities.formatDate(expires, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+      expiresAtMs: expires.getTime(),
+      ttlSeconds: ttl
+    }));
   } catch (e) {}
 }
 
 function codexCacheRemove_(key) {
   try {
     CacheService.getScriptCache().remove(key);
+    PropertiesService.getScriptProperties().deleteProperty(codexCacheMetaKey_(key));
   } catch (e) {}
 }
 
@@ -1423,6 +1712,11 @@ function getConfigAppValuesByKeys_(grupos, chaves, fallback) {
 function normText_(v) {
   return String(v == null ? '' : v).toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function agendaStatusRealizado_(status) {
+  var n = normText_(status);
+  return n === 'realizado' || n === 'realizada';
 }
 
 function agendaTipoExigeLabCentralServer_(tipo) {
@@ -1861,8 +2155,6 @@ function gerarRequisicaoPDF(dados) {
   // ── 1. Limpar campos anteriores ──────────────────────────────────────────
   ['I5','E8','E9','E10','E11','H8','H9','H10','J10','B36','H41','H42','H43']
     .forEach(function(cell) { sheet.getRange(cell).clearContent(); });
-  sheet.getRange('C14:C33').clearContent();
-  sheet.getRange('H14:H33').clearContent();
 
   // ── 2. Preencher campos ──────────────────────────────────────────────────
   sheet.getRange('E8').setValue(dados.paciente   || '');
@@ -1882,17 +2174,8 @@ function gerarRequisicaoPDF(dados) {
     .map(function(exame) { return String(exame || '').trim(); })
     .filter(Boolean)
     .slice(0, 40);
-  var slotsExames = [];
-  for (var i = 0; i < 20; i++) {
-    slotsExames.push(reqExamesCelulaGravavel_(sheet, 14 + i, 3));
-  }
-  for (var j = 0; j < 20; j++) {
-    slotsExames.push(reqExamesCelulaGravavel_(sheet, 14 + j, 8));
-  }
-  slotsExames.forEach(function(slot, index) {
-    slot.clearContent();
-    slot.setValue(exames[index] || '');
-  });
+  var usarPdfCompatibilidade = reqExamesPdfCompatibilidadePorTextoLongo_(exames);
+  var slotsExames = reqExamesPreencherGradeExames_(sheet, exames);
 
   sheet.getRange('B36').setValue(dados.observacoes || '');
   sheet.getRange('I5').setValue(dados.urgente ? 'URGENTE' : '');
@@ -1912,7 +2195,11 @@ function gerarRequisicaoPDF(dados) {
   }
 
   // ── 3. Gerar PDF e criar rascunho (versão sem getUi) ─────────────────────
-  _exportarPDFWebApp(sheet, ss, { requestedByEmail: dados.requestedByEmail || '' });
+  var pdfResult = _exportarPDFWebApp(sheet, ss, {
+    requestedByEmail: dados.requestedByEmail || '',
+    preferHtml: true,
+    htmlModoCompatibilidade: usarPdfCompatibilidade
+  });
 
   var statusResult = null;
   var statusSync = {
@@ -1947,6 +2234,9 @@ function gerarRequisicaoPDF(dados) {
     recordVersion: statusResult && statusResult.recordVersion ? statusResult.recordVersion : '',
     editRecordVersion: statusResult && statusResult.editRecordVersion ? statusResult.editRecordVersion : '',
     statusWarning: statusSync.warning,
+    pdfContingencia: !!(pdfResult && pdfResult.contingencia),
+    pdfMode: pdfResult && pdfResult.modo ? pdfResult.modo : '',
+    pdfWarning: pdfResult && pdfResult.aviso ? pdfResult.aviso : '',
     statusSync: statusSync
   };
 }
@@ -1956,6 +2246,87 @@ function reqExamesCelulaGravavel_(sheet, row, column) {
   var mergedRanges = cell.getMergedRanges();
   if (!mergedRanges.length) return cell;
   return mergedRanges[0].getCell(1, 1);
+}
+
+function reqExamesRangeGravavel_(sheet, row, column) {
+  var cell = sheet.getRange(row, column);
+  var mergedRanges = cell.getMergedRanges();
+  return mergedRanges.length ? mergedRanges[0] : cell;
+}
+
+function reqExamesPreencherGradeExames_(sheet, exames) {
+  var baseRow = 14;
+  var linhas = 20;
+  var baseHeight = 38;
+  var leftSlots = [];
+  var rightSlots = [];
+  reqExamesAssertGradeModelo_(sheet);
+  sheet.setRowHeights(baseRow, linhas, baseHeight);
+
+  for (var i = 0; i < linhas; i++) {
+    var row = baseRow + i;
+    var leftText = exames[i] || '';
+    var rightText = exames[linhas + i] || '';
+    var leftRange = reqExamesRangeGravavel_(sheet, row, 3);
+    var rightRange = reqExamesRangeGravavel_(sheet, row, 7);
+    var leftCell = leftRange.getCell(1, 1);
+    var rightCell = rightRange.getCell(1, 1);
+    leftCell.clearContent();
+    rightCell.clearContent();
+    leftRange.setWrap(true).setVerticalAlignment('middle').setFontSize(reqExamesFontSizeExame_(leftText));
+    rightRange.setWrap(true).setVerticalAlignment('middle').setFontSize(reqExamesFontSizeExame_(rightText));
+    leftCell.setValue(leftText);
+    rightCell.setValue(rightText);
+    leftSlots.push(leftCell);
+    rightSlots.push(rightCell);
+  }
+
+  return leftSlots.concat(rightSlots).slice(0, exames.length);
+}
+
+function reqExamesPdfCompatibilidadePorTextoLongo_(exames) {
+  return (exames || []).some(function(exame) {
+    return String(exame || '').length > 64;
+  });
+}
+
+function reqExamesAssertGradeModelo_(sheet) {
+  for (var i = 0; i < 20; i++) {
+    var row = 14 + i;
+    reqExamesAssertSlotMesclado_(sheet, row, 3, 3, 'C' + row + ':E' + row);
+    reqExamesAssertSlotMesclado_(sheet, row, 7, 4, 'G' + row + ':J' + row);
+  }
+}
+
+function reqExamesAssertSlotMesclado_(sheet, row, column, expectedColumns, label) {
+  var cell = sheet.getRange(row, column);
+  var mergedRanges = cell.getMergedRanges();
+  if (!mergedRanges.length) {
+    throw new Error('O modelo da Requisicao de Exames perdeu a mesclagem esperada em ' + label + '. Repare o modelo da planilha e tente novamente.');
+  }
+  var merged = mergedRanges[0];
+  var ok = merged.getRow() === row &&
+    merged.getColumn() === column &&
+    merged.getNumRows() === 1 &&
+    merged.getNumColumns() >= expectedColumns;
+  if (!ok) {
+    throw new Error('O modelo da Requisicao de Exames esta com mesclagem inesperada em ' + label + '. Repare o modelo da planilha e tente novamente.');
+  }
+}
+
+function reqExamesFontSizeExame_(text) {
+  var len = String(text || '').length;
+  if (len > 110) return 7;
+  if (len > 64) return 8;
+  return 10;
+}
+
+function reqExamesLinhasEstimadas_(text) {
+  text = String(text || '').trim();
+  if (!text) return 1;
+  return text.split(/\r?\n/).reduce(function(total, parte) {
+    return total + Math.max(1, Math.ceil(String(parte || '').length / 48));
+  }, 0);
 }
 
 /**
@@ -2001,7 +2372,12 @@ function _exportarPDFWebApp(sheet, ss, options) {
   // ── Geração do PDF via Export URL ────────────────────────────────────────
   var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?';
   var exportOptions = reqExamesPdfExportOptions_(sheet.getSheetId());
-  var pdfBlob = reqExamesExportPdfBlob_(url + exportOptions, nomeArquivo, { sheet: sheet });
+  var pdfResult = reqExamesExportPdfBlob_(url + exportOptions, nomeArquivo, {
+    sheet: sheet,
+    preferHtml: !!options.preferHtml,
+    htmlModoCompatibilidade: !!options.htmlModoCompatibilidade
+  });
+  var pdfBlob = pdfResult && pdfResult.blob ? pdfResult.blob : pdfResult;
 
   // ── Corpo do e-mail ──────────────────────────────────────────────────────
   var tituloEmail =
@@ -2022,6 +2398,7 @@ function _exportarPDFWebApp(sheet, ss, options) {
   var draftOptions = { htmlBody: corpoEmail, attachments: [pdfBlob] };
   if (ccEmails) draftOptions.cc = ccEmails;
   GmailApp.createDraft(emailDestinatario, tituloEmail, '', draftOptions);
+  return pdfResult;
 }
 
 function reqExamesPdfExportOptions_(sheetId) {
@@ -2034,15 +2411,40 @@ function reqExamesPdfExportOptions_(sheetId) {
 
 function reqExamesExportPdfBlob_(url, nomeArquivo, options) {
   options = options || {};
+  if (options.preferHtml && options.sheet) {
+    return {
+      blob: reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo, { institucional: true, compatibilidade: !!options.htmlModoCompatibilidade }),
+      modo: 'html-institucional',
+      contingencia: false,
+      aviso: ''
+    };
+  }
   try {
-    return reqExamesFetchPdfBlob_(url, nomeArquivo);
+    return {
+      blob: reqExamesFetchPdfBlob_(url, nomeArquivo),
+      modo: 'google-sheets',
+      contingencia: false,
+      aviso: ''
+    };
   } catch (primaryError) {
+    Logger.log('ReqExames PDF: exportador Google Sheets falhou: ' + (primaryError && primaryError.message ? primaryError.message : String(primaryError)));
     if (!options.sheet) throw primaryError;
     try {
-      return reqExamesExportPdfBlobViaWorkingCopy_(options.sheet, nomeArquivo);
+      return {
+        blob: reqExamesExportPdfBlobViaWorkingCopy_(options.sheet, nomeArquivo),
+        modo: 'planilha-temporaria',
+        contingencia: false,
+        aviso: ''
+      };
     } catch (fallbackError) {
+      Logger.log('ReqExames PDF: planilha temporaria falhou: ' + (fallbackError && fallbackError.message ? fallbackError.message : String(fallbackError)));
       try {
-        return reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo);
+        return {
+          blob: reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo, { contingencia: true }),
+          modo: 'html-contingencia',
+          contingencia: true,
+          aviso: 'O rascunho foi criado com PDF em modo de contingencia porque o exportador do Google Sheets falhou. Confira o anexo antes de enviar.'
+        };
       } catch (htmlError) {
         throw new Error(
           primaryError.message +
@@ -2117,10 +2519,11 @@ function reqExamesExportPdfBlobViaWorkingCopy_(sheet, nomeArquivo) {
   }
 }
 
-function reqExamesExportPdfBlobViaHtml_(sheet, nomeArquivo) {
+function reqExamesExportPdfBlobViaHtml_(sheet, nomeArquivo, options) {
+  options = options || {};
   var dataAgendamento = sheet.getRange('H10').getValue();
   var exames = sheet.getRange('C14:C33').getDisplayValues()
-    .concat(sheet.getRange('H14:H33').getDisplayValues())
+    .concat(sheet.getRange('G14:G33').getDisplayValues())
     .map(function(row) { return String(row[0] || '').trim(); })
     .filter(Boolean);
   var html = reqExamesPdfHtml_({
@@ -2137,12 +2540,40 @@ function reqExamesExportPdfBlobViaHtml_(sheet, nomeArquivo) {
     solicitante: sheet.getRange('H41').getDisplayValue(),
     solFormacao: sheet.getRange('H42').getDisplayValue(),
     solRegistro: sheet.getRange('H43').getDisplayValue(),
-    exames: exames
+    exames: exames,
+    contingencia: !!options.contingencia,
+    compatibilidade: !!options.compatibilidade
   });
   return HtmlService.createHtmlOutput(html)
     .getBlob()
     .getAs(MimeType.PDF)
     .setName(nomeArquivo);
+}
+
+function reqExamesLogoUrl_() {
+  return 'https://i0.wp.com/www.ucs.br/ips/wp-content/uploads/2024/08/logo_ips_2024_2.png?ssl=1';
+}
+
+function reqExamesLogoSrc_() {
+  try {
+    var response = UrlFetchApp.fetch(reqExamesLogoUrl_(), { muteHttpExceptions: true });
+    var code = response.getResponseCode();
+    if (code >= 200 && code < 300) {
+      var blob = response.getBlob();
+      return 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    }
+  } catch (e) {
+    Logger.log('ReqExames PDF: logo externo nao incorporado: ' + (e && e.message ? e.message : String(e)));
+  }
+  return reqExamesLogoUrl_();
+}
+
+function reqExamesRodapeInstitucionalHtml_() {
+  return '<strong>CAMPUS SEDE</strong><br>' +
+    'Rua Francisco Getulio Vargas, 1130 - Bairro Petropolis - Bloco S - Sala 315 - CEP 95070-560 - Caxias do Sul - RS - Brasil<br>' +
+    'Ou: Caixa Postal 1352 - CEP 95020-972 - Caxias do Sul - RS - Brasil<br>' +
+    'Telefone / Telefax (54) 3218.2737 - www.ucs.br/ips<br>' +
+    'Entidade Mantenedora: Fundacao Universidade de Caxias do Sul - CNPJ 88 648 761/0001-03 - CGCTE 029/0089530';
 }
 
 function reqExamesPdfHtml_(dados) {
@@ -2153,29 +2584,63 @@ function reqExamesPdfHtml_(dados) {
     });
   }
   var exames = dados.exames || [];
-  var examesHtml = exames.length
-    ? exames.map(function(exame) { return '<li>' + h(exame) + '</li>'; }).join('')
-    : '<li>Nenhum exame informado.</li>';
+  var rows = [];
+  var solFormacao = String(dados.solFormacao || '').trim();
+  var solRegistro = String(dados.solRegistro || '').trim();
+  for (var i = 0; i < 20; i++) {
+    var leftIndex = i;
+    var rightIndex = i + 20;
+    rows.push(
+      '<tr>' +
+        '<td class="exam-num">' + (leftIndex + 1) + '</td>' +
+        '<td class="exam-text">' + h(exames[leftIndex] || '') + '</td>' +
+        '<td class="exam-num">' + (rightIndex + 1) + '</td>' +
+        '<td class="exam-text">' + h(exames[rightIndex] || '') + '</td>' +
+      '</tr>'
+    );
+  }
+  var obs = h(dados.observacoes || '');
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<style>' +
-    '@page{size:A4;margin:16mm 14mm}body{font-family:Arial,sans-serif;color:#111827;font-size:12px}' +
-    'h1{font-size:18px;margin:0 0 4px;text-align:center}h2{font-size:13px;margin:18px 0 8px;border-bottom:1px solid #d1d5db;padding-bottom:4px}' +
-    '.sub{text-align:center;color:#4b5563;margin-bottom:16px}.urgent{color:#b91c1c;font-weight:bold;text-align:center;margin:8px 0}' +
-    'table{width:100%;border-collapse:collapse;margin:8px 0}td{border:1px solid #d1d5db;padding:6px;vertical-align:top}.label{width:26%;background:#f3f4f6;font-weight:bold}' +
-    'ul{columns:2;margin:8px 0 0 18px;padding:0}li{break-inside:avoid;margin:0 0 5px}.obs{min-height:46px}.foot{margin-top:28px;font-size:11px;color:#4b5563}' +
+    '@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");' +
+    '@page{size:A4;margin:8mm 9mm 11mm 9mm}' +
+    '*{box-sizing:border-box}' +
+    'body{font-family:Roboto,Arial,Helvetica,sans-serif;color:#000;font-size:10.5px;line-height:1.2;margin:0;padding:0 0 12mm 0}' +
+    '.brand{text-align:center;margin:0 0 14px 0}.brand img{height:62px;max-width:360px;object-fit:contain}' +
+    'h1{text-align:center;font-size:14px;margin:4px 0 20px 0;text-transform:uppercase;font-weight:700}' +
+    '.urgent{color:#b91c1c;font-weight:bold;text-align:center;margin:-8px 0 10px 0}' +
+    '.meta-table{width:100%;border-collapse:collapse;margin:0 0 14px 0;table-layout:fixed}' +
+    '.meta-table td{border:0;padding:0 7px 7px 0;vertical-align:top}' +
+    '.meta-label{font-weight:700;white-space:nowrap}.meta-value{overflow-wrap:anywhere;word-break:break-word}' +
+    '.meta-lbl-left{width:134px}.meta-val-left{width:250px}.meta-lbl-right{width:92px}.meta-date{width:54px}.meta-time{width:58px}' +
+    '.label{font-weight:bold}.value{overflow-wrap:anywhere;word-break:break-word}' +
+    '.exam-table{width:100%;border-collapse:collapse;table-layout:fixed;margin:6px 0 12px 0;border:1px solid #000}' +
+    '.exam-table th{border:1px solid #000;padding:5px 4px;text-align:center;font-size:12px;text-transform:uppercase}' +
+    '.exam-table td{border:1px solid #000;padding:4px 5px;vertical-align:middle;height:23px}' +
+    '.exam-num{text-align:center;font-weight:bold;padding-left:2px!important;padding-right:2px!important}.exam-text{overflow-wrap:anywhere;word-break:break-word}' +
+    '.obs-box{border:1px solid #000;min-height:64px;margin-top:12px;overflow-wrap:anywhere;word-break:break-word}' +
+    '.obs-head{border-bottom:1px solid #000;font-weight:700;text-transform:uppercase;padding:3px 5px}.obs-body{padding:5px;min-height:44px}' +
+    '.sol-card{width:210px;margin:18px 70px 0 auto;text-align:center;font-size:10.5px;line-height:1.35}.sol-name{font-weight:700}.sol-detail{margin-top:2px}' +
+    '.footer{position:fixed;left:0;right:0;bottom:0;text-align:center;font-size:7.3px;line-height:1.02;color:#000;background:#fff;padding-top:2px}' +
     '</style></head><body>' +
-    '<h1>Requisicao de Exames</h1><div class="sub">IPS/UCS - PDF de contingencia gerado pelo WebApp</div>' +
+    '<div class="brand"><img src="' + h(reqExamesLogoSrc_()) + '"></div>' +
+    '<h1>Requisição Eletrônica de Exames</h1>' +
     (dados.urgente ? '<div class="urgent">URGENTE</div>' : '') +
-    '<h2>Dados do participante e agendamento</h2><table>' +
-    '<tr><td class="label">Paciente</td><td>' + h(dados.paciente) + '</td><td class="label">Nascimento</td><td>' + h(dados.nascimento) + '</td></tr>' +
-    '<tr><td class="label">Protocolo</td><td>' + h(dados.protocolo) + '</td><td class="label">Medico</td><td>' + h(dados.medico) + '</td></tr>' +
-    '<tr><td class="label">Local do exame</td><td>' + h(dados.localExame) + '</td><td class="label">Data/Horario</td><td>' + h(dados.dataAgendamento) + ' ' + h(dados.horario) + '</td></tr>' +
-    '<tr><td class="label">Endereco</td><td colspan="3">' + h(dados.endereco) + '</td></tr>' +
-    '</table><h2>Exames solicitados</h2><ul>' + examesHtml + '</ul>' +
-    '<h2>Observacoes</h2><table><tr><td class="obs">' + h(dados.observacoes) + '</td></tr></table>' +
-    '<h2>Solicitante</h2><table>' +
-    '<tr><td class="label">Nome</td><td>' + h(dados.solicitante) + '</td><td class="label">Formacao/Registro</td><td>' + h(dados.solFormacao) + ' ' + h(dados.solRegistro) + '</td></tr>' +
-    '</table><div class="foot">Este PDF foi gerado por contingencia porque o exportador PDF do Google Sheets retornou erro interno HTTP 500.</div>' +
+    '<table class="meta-table">' +
+      '<tr><td class="meta-label meta-lbl-left">Paciente:</td><td class="meta-value meta-val-left">' + h(dados.paciente) + '</td><td class="meta-label meta-lbl-right">Protocolo:</td><td class="meta-value" colspan="3">' + h(dados.protocolo) + '</td></tr>' +
+      '<tr><td class="meta-label meta-lbl-left">Data de Nascimento:</td><td class="meta-value meta-val-left">' + h(dados.nascimento) + '</td><td class="meta-label meta-lbl-right">Médico:</td><td class="meta-value" colspan="3">' + h(dados.medico) + '</td></tr>' +
+      '<tr><td class="meta-label meta-lbl-left">Convênio:</td><td class="meta-value" colspan="5">Instituto de Pesquisas em Saúde - Universidade de Caxias do Sul</td></tr>' +
+      '<tr><td class="meta-label meta-lbl-left">Local do exame:</td><td class="meta-value meta-val-left">' + h(dados.localExame) + '</td><td class="meta-label meta-date">Data:</td><td class="meta-value">' + h(dados.dataAgendamento) + '</td><td class="meta-label meta-time">Horário:</td><td class="meta-value">' + h(dados.horario) + '</td></tr>' +
+      '<tr><td class="meta-label meta-lbl-left">Endereço:</td><td class="meta-value" colspan="5">' + h(dados.endereco) + '</td></tr>' +
+    '</table>' +
+    '<table class="exam-table"><colgroup><col style="width:28px"><col><col style="width:28px"><col></colgroup><thead><tr><th colspan="4">Relação de Exames e/ou Procedimentos</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>' +
+    '<div class="obs-box"><div class="obs-head">Observações</div><div class="obs-body">' + (obs || '&nbsp;') + '</div></div>' +
+    '<div class="sol-card">' +
+      '<div class="sol-name">' + h(dados.solicitante) + '</div>' +
+      (solFormacao ? '<div class="sol-detail">' + h(solFormacao) + '</div>' : '') +
+      (solRegistro ? '<div class="sol-detail">' + h(solRegistro) + '</div>' : '') +
+    '</div>' +
+    '<div class="footer">' + reqExamesRodapeInstitucionalHtml_() + '</div>' +
     '</body></html>';
 }
 
@@ -2520,7 +2985,7 @@ function getGmailSignature() {
 function resetarCampos() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Requisição de Exames');
   ['I5','E8','E9','E10','E11','H8','H9','H10','J10',
-   'C14:C33','H14:H33','B36','H41','H42','H43']
+   'C14:C33','G14:G33','B36','H41','H42','H43']
     .forEach(function(r) { sheet.getRange(r).clearContent(); });
   SpreadsheetApp.getUi().alert('Campos resetados com sucesso.');
 }
@@ -2752,15 +3217,19 @@ function getProjetosAtivosEstoque_() {
 }
 
 function getProjetosParticipantesOptions_() {
+  return getProjetoOptions_();
+}
+
+function getProjetoOptions_() {
   var rows = getCodexSheetDataByName_('Projetos').slice(1);
   var seen = {}, out = [];
   rows.forEach(function(r) {
     var nome = String(r[1] || r[2] || '').trim();
     if (!nome || seen[nome]) return;
     seen[nome] = true;
-    out.push(nome);
+    out.push({ nome: nome, codigo: String(r[2] || '').trim() });
   });
-  return out.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+  return out.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
 }
 
 function salvarDadosProjeto(dados) {
@@ -2885,6 +3354,13 @@ function getParticipanteFormConfig() {
 
 function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
+  d = d || {};
+  var projeto = String(d.projeto || '').trim();
+  if (projeto && !getProjetosParticipantesOptions_().some(function(item) {
+    return normText_(item.nome) === normText_(projeto);
+  })) {
+    throw new Error('Selecione um projeto cadastrado para o participante.');
+  }
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
   var rows = sh.getDataRange().getValues();
@@ -2909,7 +3385,7 @@ function salvarDadosParticipante(d) {
   ];
   var rowAfterIdade = [
     d.idParticipante,
-    d.projeto || '',
+    projeto,
     d.braco || '',
     parseDate(d.ultimaVisita),
     d.status,
@@ -2979,14 +3455,7 @@ function excluirParticipante(id) {
 //  MONITORES — webapp
 // ════════════════════════════════
 function getProjetosMonitoria_() {
-  var seen = {};
-  return getProjetos().map(function(p) {
-    return String(p.nomeAbreviado || p.codigo || '').trim();
-  }).filter(function(nome) {
-    if (!nome || seen[nome]) return false;
-    seen[nome] = 1;
-    return true;
-  }).sort();
+  return getProjetoOptions_();
 }
 
 function getMonitores() {
@@ -3060,6 +3529,7 @@ function salvarDadosMonitor(d) {
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(d.id)) {
         sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+        clearCodexRuntimeCaches_();
         return 'Monitor atualizado com sucesso.';
       }
     }
@@ -3068,6 +3538,7 @@ function salvarDadosMonitor(d) {
 
   rowData[0] = 'MON-' + Date.now();
   sh.appendRow(rowData);
+  clearCodexRuntimeCaches_();
   return 'Monitor cadastrado com sucesso.';
 }
 
@@ -3079,6 +3550,7 @@ function excluirMonitor(id) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
       sh.deleteRow(i + 1);
+      clearCodexRuntimeCaches_();
       return 'Monitor excluído.';
     }
   }
@@ -3429,7 +3901,7 @@ function getDashboardPendencias_(estoque) {
       var tipoEvento = normText_(r[i.tipo]);
       if (statusEvento.indexOf('cancel') > -1) return;
       var concluidoPorStatus = statusEvento.indexOf('concl') > -1;
-      var isPosVisita = statusEvento.indexOf('realiz') > -1;
+      var isPosVisita = agendaStatusRealizado_(r[i.status]);
       var dataObj = parseAgendaDateAny_(r[i.data]);
       var isPastDate = false;
       if (dataObj) {
@@ -4514,162 +4986,6 @@ function excluirPedidoEstoque(rowIndex, idPedido) {
   return 'Pedido excluído com sucesso.';
 }
 
-// ══════════════════════════════════════════════════════
-//  RECEBIMENTO DE PEDIDO — atualiza Itens + Pedidos
-// ══════════════════════════════════════════════════════
-function receberPedidoEstoqueLegacy_(dados) {
-  var ss         = SpreadsheetApp.getActiveSpreadsheet();
-  var shItens    = ss.getSheetByName('Itens');
-  var shPedidos  = ss.getSheetByName('Cadastro de Pedidos');
-  var shPedItens = ss.getSheetByName('Recebimento de Pedidos'); // aba de itens do pedido
-  var shMovim    = ss.getSheetByName('Entrada/Saída de Itens');
-  var tz         = Session.getScriptTimeZone();
-  var agora      = new Date();
-  var userEmail  = '';
-  try { userEmail = Session.getActiveUser().getEmail(); } catch(e){}
-
-  if (!shItens)    throw new Error('Aba "Itens" não encontrada.');
-  if (!shPedidos)  throw new Error('Aba "Cadastro de Pedidos" não encontrada.');
-
-  var dataReceb  = dados.dataReceb || Utilities.formatDate(agora, tz, 'yyyy-MM-dd');
-  var itensRec   = dados.itens || [];   // [{idItem, descricao, qtdRecebida, validade}]
-
-  if (!itensRec.length) throw new Error('Nenhum item para receber.');
-
-  // ── 1. Atualizar Qtde e Validade na aba Itens ────────────────────────────
-  // Colunas Itens (linha 1 = cabeçalho):
-  // A=ID_Item B=Projeto C=Descricao D=Tipo E=Validade F=Localizacao
-  // G=Qtde H=EstoqueMin I=Status J=UltimaAlteracao K=Responsavel
-  // L=Qtde_pedida_pendente M=N_Pedido
-
-  var dadosItens = shItens.getDataRange().getValues();
-  var colIdItem  = 0; // coluna A (índice 0)
-  var colVal     = 4; // E
-  var colQtde    = 6; // G
-  var colUltAlt  = 9; // J
-  var colResp    = 10; // K
-  var colQtdPend = 11; // L
-  var colNPedido = 12; // M
-
-  itensRec.forEach(function(ir) {
-    for (var i = 1; i < dadosItens.length; i++) {
-      if (String(dadosItens[i][colIdItem]).trim() === String(ir.idItem).trim()) {
-        var linha = i + 1; // linha real na planilha
-
-        // +qtdRecebida
-        var qtdAtual = Number(dadosItens[i][colQtde]) || 0;
-        shItens.getRange(linha, colQtde + 1).setValue(qtdAtual + Number(ir.qtdRecebida));
-
-        // Validade (se informada)
-        if (ir.validade) {
-          var pV = ir.validade.split('-');
-          if (pV.length === 3) {
-            shItens.getRange(linha, colVal + 1).setValue(
-              new Date(+pV[0], +pV[1]-1, +pV[2])
-            ).setNumberFormat('dd/MM/yyyy');
-          }
-        }
-
-        // Última alteração
-        shItens.getRange(linha, colUltAlt + 1).setValue(agora).setNumberFormat('dd/MM/yyyy HH:mm');
-        shItens.getRange(linha, colResp  + 1).setValue(userEmail);
-
-        // Zerar qtd pendente e N° pedido se tudo recebido (opcional — simplificado)
-        var qtdPendAtual = Number(dadosItens[i][colQtdPend]) || 0;
-        var novaQtdPend  = Math.max(0, qtdPendAtual - Number(ir.qtdRecebida));
-        shItens.getRange(linha, colQtdPend + 1).setValue(novaQtdPend);
-        if (novaQtdPend === 0) shItens.getRange(linha, colNPedido + 1).setValue('');
-
-        break;
-      }
-    }
-  });
-
-  // ── 2. Registrar movimentação na aba Entrada/Saída (se existir) ──────────
-  if (shMovim) {
-    itensRec.forEach(function(ir) {
-      var pDR = dataReceb.split('-');
-      var dtR = pDR.length===3 ? new Date(+pDR[0],+pDR[1]-1,+pDR[2]) : agora;
-      shMovim.appendRow([
-        Utilities.getUuid().slice(0,8),     // ID mov
-        dtR,                                // Data
-        'Entrada',                          // Tipo
-        ir.idItem,                          // ID_Item
-        ir.descricao,                       // Descrição
-        Number(ir.qtdRecebida),             // Qtde
-        dados.idPedido || '',               // ID Pedido
-        dados.observacoes || '',            // Obs
-        userEmail                           // Responsável
-      ]);
-    });
-  }
-
-  // ── 3. Atualizar status do pedido na aba Cadastro de Pedidos ─────────────
-  // Colunas Pedidos: A=ID_Pedido B=NumeroPedido C=Data D=Projeto E=Lab
-  //                  F=Status G=Obs H=Responsavel ...
-  // Precisamos determinar se ficou Recebido ou Parcial.
-  // Estratégia: todos os itens do pedido → se todos com qtdRecebida >= qtdSolicitada → Recebido, senão Parcial.
-  // Como não temos o mapa completo aqui, calculamos pelo rowIndex.
-
-  var rowIdx = parseInt(dados.rowIndex);
-  if (!isNaN(rowIdx) && rowIdx >= 1) {
-    // Coluna F = status (índice 5, coluna 6)
-    // Coluna G = observação (índice 6, coluna 7)
-    var colStatusPed = 6; // coluna F (1-based)
-
-    // Checamos os itens do pedido na aba de itens de pedido
-    var novoStatus = 'Parcial';
-    if (shPedItens) {
-      var dadosPedItens = shPedItens.getDataRange().getValues();
-      // Colunas esperadas: A=ID_PedidoItem B=ID_Pedido C=ID_Item D=Descricao
-      //                    E=Tipo F=QtdSolicitada G=QtdRecebida H=Status
-      var colIdPedPI  = 1; // B
-      var colQtdSolPI = 5; // F
-      var colQtdRecPI = 6; // G
-      var colStPI     = 7; // H
-
-      var itensDoPedido = dadosPedItens.filter(function(r, i) {
-        return i > 0 && String(r[colIdPedPI]).trim() === String(dados.idPedido).trim();
-      });
-
-      // Atualizar qtdRecebida nos itens do pedido
-      itensRec.forEach(function(ir) {
-        for (var i = 1; i < dadosPedItens.length; i++) {
-          if (String(dadosPedItens[i][colIdPedPI]).trim() === String(dados.idPedido).trim()
-            && String(dadosPedItens[i][2]).trim() === String(ir.idItem).trim()) {
-            var linhaPedIt = i + 1;
-            var qtdRecAntes = Number(dadosPedItens[i][colQtdRecPI]) || 0;
-            var novaQtdRec  = qtdRecAntes + Number(ir.qtdRecebida);
-            shPedItens.getRange(linhaPedIt, colQtdRecPI + 1).setValue(novaQtdRec);
-            var qtdSol = Number(dadosPedItens[i][colQtdSolPI]) || 0;
-            var stItem = novaQtdRec >= qtdSol ? 'Recebido' : 'Parcial';
-            shPedItens.getRange(linhaPedIt, colStPI + 1).setValue(stItem);
-            dadosPedItens[i][colQtdRecPI] = novaQtdRec; // atualiza cache
-            dadosPedItens[i][colStPI]     = stItem;
-            break;
-          }
-        }
-      });
-
-      // Reler itensDoPedido após atualização
-      itensDoPedido = dadosPedItens.filter(function(r, i) {
-        return i > 0 && String(r[colIdPedPI]).trim() === String(dados.idPedido).trim();
-      });
-
-      var todosRec = itensDoPedido.length > 0 && itensDoPedido.every(function(r) {
-        return String(r[colStPI]).trim() === 'Recebido';
-      });
-      novoStatus = todosRec ? 'Recebido' : 'Parcial';
-    }
-
-    shPedidos.getRange(rowIdx, colStatusPed).setValue(novoStatus);
-  }
-
-  SpreadsheetApp.flush();
-  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-  return 'Recebimento registrado com sucesso!';
-}
-
 function receberPedidoEstoque(dados) {
   codexAssertCanWrite_('receberPedidoEstoque', 'Estoque', dados && (dados.idPedido || dados.rowIndex));
   return codexWithDocumentLock_('receberPedidoEstoque', function() {
@@ -4895,14 +5211,18 @@ function registrarMovimentacaoEstoque(payload) {
   shEstoque.getRange(rowEstoque, 11).setValue(userEmail);
 
   var er = shEstoque.getRange(rowEstoque, 1, 1, Math.max(shEstoque.getLastColumn(), 13)).getValues()[0];
-  shMov.appendRow([
+  var movMetaCols = ensureMovimentacoesAgendaMetadataColumns_(shMov);
+  var movRow = [
     Utilities.getUuid().slice(0, 8), dataBase, tipoMov, idItem,
     payload.descricao || er[2] || '', payload.tipoItem || er[3] || '',
     payload.projeto || er[1] || '', qtd, er[4] || '',
     payload.localizacao || er[5] || '', payload.lote || '', '',
     payload.participante || '', payload.idVisita || '', userEmail,
     payload.origem || 'Movimentação manual', payload.observacao || ''
-  ]);
+  ];
+  if (payload.agendaId) movRow[movMetaCols.agendaid] = String(payload.agendaId || '').trim();
+  if (payload.agendaKitAcao) movRow[movMetaCols.agendakitacao] = String(payload.agendaKitAcao || '').trim();
+  shMov.appendRow(movRow);
   var lr = shMov.getLastRow();
   shMov.getRange(lr, 2).setNumberFormat('dd/MM/yyyy HH:mm');
   if (er[4]) shMov.getRange(lr, 9).setNumberFormat('dd/MM/yyyy');
@@ -4946,6 +5266,8 @@ function baixarKitsAgendaEvento(payload) {
           idVisita: payload.visita || agendaId,
           data: payload.data || '',
           origem: origemBase,
+          agendaId: agendaId,
+          agendaKitAcao: 'baixa',
           observacao: 'Baixa de kit selecionado na Agenda: ' + String(kit.label || id)
         });
         jaBaixados[id] = true;
@@ -4973,12 +5295,20 @@ function getKitsAgendaBaixaStatus(agendaId) {
   var saldo = {};
   var origemBase = 'Agenda kit ' + agendaId;
   var origemDev = 'Agenda kit devolucao ' + agendaId;
+  var movMetaCols = movimentacoesHeaderInfo_(shMov).map || {};
   if (shMov.getLastRow() > 1) {
     var vals = shMov.getRange(2, 1, shMov.getLastRow() - 1, Math.max(17, shMov.getLastColumn())).getValues();
     vals.forEach(function(r) {
       var idItem = String(r[3] || '').trim();
       var origem = String(r[15] || '').trim();
+      var rowAgendaId = movMetaCols.agendaid !== undefined ? String(r[movMetaCols.agendaid] || '').trim() : '';
+      var rowAgendaKitAcao = movMetaCols.agendakitacao !== undefined ? normalizeHeader_(r[movMetaCols.agendakitacao]) : '';
       if (!idItem) return;
+      if (rowAgendaId) {
+        if (rowAgendaId === agendaId && rowAgendaKitAcao === 'baixa') saldo[idItem] = (saldo[idItem] || 0) + Number(r[7] || 0);
+        if (rowAgendaId === agendaId && rowAgendaKitAcao === 'devolucao') saldo[idItem] = (saldo[idItem] || 0) - Number(r[7] || 0);
+        return;
+      }
       if (origem.indexOf(origemBase) === 0) saldo[idItem] = (saldo[idItem] || 0) + Number(r[7] || 0);
       if (origem.indexOf(origemDev) === 0) saldo[idItem] = (saldo[idItem] || 0) - Number(r[7] || 0);
     });
@@ -5007,6 +5337,8 @@ function devolverKitsAgendaEvento(payload) {
       idVisita: payload.visita || agendaId,
       data: payload.data || '',
       origem: origemDev,
+      agendaId: agendaId,
+      agendaKitAcao: 'devolucao',
       observacao: 'Devolucao de kit baixado pela Agenda'
     });
     devolvidos++;
@@ -5442,10 +5774,44 @@ function getMovimentacoesSheet_(ss) {
     'ID_Mov', 'Data/hora', 'Tipo de movimento', 'ID_Item', 'Descri\u00e7\u00e3o',
     'Tipo de item', 'Projeto', 'Qtde.', 'Validade', 'Localiza\u00e7\u00e3o', 'Lote',
     'ID_Participante', 'Participante', 'ID_Visita', 'Respons\u00e1vel',
-    'Origem', 'Observa\u00e7\u00e3o'
+    'Origem', 'Observa\u00e7\u00e3o', 'Agenda_ID', 'Agenda_Kit_Acao'
   ]);
   sh.setFrozenRows(1);
   return sh;
+}
+
+function movimentacoesHeaderInfo_(sh) {
+  var values = sh.getDataRange().getDisplayValues();
+  for (var r = 0; r < values.length; r++) {
+    var map = {};
+    for (var c = 0; c < values[r].length; c++) {
+      var key = normalizeHeader_(values[r][c]);
+      if (key) map[key] = c;
+    }
+    if (map.idmov !== undefined && (map.tipodemovimento !== undefined || map.descricao !== undefined)) {
+      return { row: r + 1, map: map };
+    }
+  }
+  return { row: 1, map: {} };
+}
+
+function ensureMovimentacoesAgendaMetadataColumns_(sh) {
+  var info = movimentacoesHeaderInfo_(sh);
+  var map = info.map || {};
+  var headerRow = info.row || 1;
+  var lastCol = Math.max(sh.getLastColumn(), 17);
+
+  function ensureHeader(key, label) {
+    if (map[key] !== undefined) return map[key];
+    lastCol++;
+    sh.getRange(headerRow, lastCol).setValue(label);
+    map[key] = lastCol - 1;
+    return map[key];
+  }
+
+  ensureHeader('agendaid', 'Agenda_ID');
+  ensureHeader('agendakitacao', 'Agenda_Kit_Acao');
+  return map;
 }
 
 function normalizeHeader_(value) {
@@ -5624,14 +5990,7 @@ function parseEquipDate_(v) {
 }
 
 function getProjetosEquipamentos_() {
-  var seen = {};
-  return getCodexSheetDataByName_('Projetos').slice(1).map(function(r) {
-    return String(r[1] || r[2] || r[0] || '').trim();
-  }).filter(function(nome) {
-    if (!nome || seen[nome]) return false;
-    seen[nome] = 1;
-    return true;
-  }).sort();
+  return getProjetoOptions_();
 }
 
 function getSolicitantesEquipamentos_() {
@@ -6122,7 +6481,7 @@ function getAgendaCourierStatuses_() {
   return getConfigAppValuesByKeys_(
     ['Agenda', 'Logistica', 'Log\u00EDstica'],
     ['Status courier', 'Status do courier', 'Courier status'],
-    ['N\u00E3o Agendado', 'Pendente', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado']
+    ['N\u00E3o Agendado', 'Pendente', 'Agendado', 'Adicionado \u00E0 Agenda', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado']
   );
 }
 
@@ -6227,7 +6586,7 @@ function getDadosFormularioAgenda() {
     participantes: listaColB(['Participantes']),
     medicos: listaColB(['\uD83E\uDE7A M\u00E9dicos', 'Medicos', 'M\u00E9dicos']),
     prestadores: listaColB(['\uD83C\uDFE2 Prestadores', 'Prestadores']),
-    projetos: listaColB(['Projetos']),
+    projetos: getProjetoOptions_(),
     laboratorios: getAgendaLaboratorios_(),
     couriers: getAgendaCouriers_(),
     courierConfig: getAgendaCourierConfigs_(),
@@ -6334,6 +6693,26 @@ function agendaDateIsBeforeToday_(valor) {
   return d.getTime() < hoje.getTime();
 }
 
+function agendaDateIsAfterToday_(valor) {
+  var d = parseAgendaDateAny_(valor);
+  if (!d || isNaN(d.getTime())) return false;
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() > hoje.getTime();
+}
+
+function agendaRealizadoFuturoErro_(status, datas) {
+  if (!agendaStatusRealizado_(status)) return '';
+  datas = Array.isArray(datas) ? datas : [datas];
+  for (var i = 0; i < datas.length; i++) {
+    if (agendaDateIsAfterToday_(datas[i])) {
+      return 'Visitas futuras nao podem ser marcadas como Realizado.';
+    }
+  }
+  return '';
+}
+
 function isAgendaTipoVisita_(tipo) {
   var t = normText_(tipo);
   if (!t) return true;
@@ -6394,7 +6773,7 @@ function salvarNovoEventoCompleto(dados) {
   var tipoNorm = normText_(dados.tipo);
   var isMonitoria = tipoNorm === 'monitoria';
   var isPeriodo = agendaTipoPeriodo_(dados.tipo);
-  if (!isPeriodo && !String(dados.hora || '').trim()) {
+  if ((!isPeriodo || isMonitoria) && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
@@ -6408,6 +6787,8 @@ function salvarNovoEventoCompleto(dados) {
     return { erro: 'Informe ao menos um monitor.' };
   }
   var datasPeriodo = isPeriodo ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo)) : [d];
+  var erroRealizadoFuturo = agendaRealizadoFuturoErro_(dados.status, datasPeriodo);
+  if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
   var lastRow = agenda.getLastRow();
   if (lastRow > 1) {
     var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
@@ -6433,6 +6814,7 @@ function salvarNovoEventoCompleto(dados) {
     for (var k = 0; k < datasPeriodo.length; k++) {
       var dadosDia = agendaCloneDados_(dados);
       var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasPeriodo[k], dados.hora), dadosDia, ss);
+      if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
     }
     return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
@@ -6448,7 +6830,7 @@ function salvarNovoEventoComFeriado(dados) {
   var agenda = getAgendaSheet_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tipoNorm = normText_(dados.tipo);
-  if (!agendaTipoPeriodo_(dados.tipo) && !String(dados.hora || '').trim()) {
+  if ((!agendaTipoPeriodo_(dados.tipo) || tipoNorm === 'monitoria') && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   if (agendaTipoPeriodo_(dados.tipo)) {
@@ -6462,14 +6844,20 @@ function salvarNovoEventoComFeriado(dados) {
       return { erro: 'Informe o local (sala).' };
     }
     var datas = agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo));
+    var erroRealizadoFuturo = agendaRealizadoFuturoErro_(dados.status, datas);
+    if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
     var ids = [];
-    datas.forEach(function(dataDia) {
-      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(dataDia, dados.hora), agendaCloneDados_(dados), ss);
+    for (var i = 0; i < datas.length; i++) {
+      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datas[i], dados.hora), agendaCloneDados_(dados), ss);
+      if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
-    });
+    }
     return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
   }
-  return _gravarLinhaEvento(agenda, _parseDateHora(dados.data, dados.hora), dados, ss);
+  var d = _parseDateHora(dados.data, dados.hora);
+  var erroRealizadoFuturoUnico = agendaRealizadoFuturoErro_(dados.status, d);
+  if (erroRealizadoFuturoUnico) return { erro: erroRealizadoFuturoUnico };
+  return _gravarLinhaEvento(agenda, d, dados, ss);
   });
 }
 
@@ -6581,6 +6969,8 @@ function agendaWriteMonitoriaRow_(agenda, linha, dataDia, dados, rowAnterior) {
 function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipoPeriodo) {
   var d = agendaDateWithHora_(dataDia, dados.hora);
   var status = String(dados.status || 'Agendado').trim();
+  var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, d);
+  if (erroRealizadoFuturo) throw new Error(erroRealizadoFuturo);
   var tipoNorm = normText_(tipoPeriodo || dados.tipo);
   var isPeriodoComMonitor = tipoNorm === 'monitoria' || tipoNorm === 'siv';
   var isMonitoria = tipoNorm === 'monitoria';
@@ -6878,10 +7268,15 @@ function atualizarAgendaEventoCompleto(dados) {
   var isMonitoria = tipoNorm === 'monitoria';
   var isSiv = tipoNorm === 'siv';
   var isPeriodo = isMonitoria || isSiv;
-  if (!isPeriodo && !String(dados.hora || '').trim()) {
+  if ((!isPeriodo || isMonitoria) && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var datasValidacaoStatus = isPeriodo
+    ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
+    : [d];
+  var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, datasValidacaoStatus);
+  if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
   dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
   if (isMonitoria) {
     if (!String(dados.projeto || '').trim()) {
@@ -7091,6 +7486,49 @@ function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
   });
 }
 
+function atualizarStatusBackupAgenda(agendaId, status, recordVersion) {
+  codexAssertCanWrite_('atualizarStatusBackupAgenda', 'Agenda', agendaId);
+  return codexWithDocumentLock_('atualizarStatusBackupAgenda', function() {
+  agendaId = String(agendaId || '').trim();
+  status = String(status || '').trim();
+  if (!agendaId) return { erro: 'Agendamento nao informado.' };
+  if (!status) return { erro: 'Status do backup nao informado.' };
+  var agenda = getAgendaSheet_();
+  var linha = encontrarLinhaPorId(agenda, agendaId);
+  if (!linha) return { erro: 'Agendamento nao encontrado.' };
+  var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var versaoEsperada = String(recordVersion || '').trim();
+  var versaoAtual = agendaRecordVersionFromRow_(rowAnterior);
+  if (versaoEsperada && versaoEsperada !== versaoAtual) {
+    return {
+      conflito: true,
+      erro: 'Este agendamento foi alterado desde que voce abriu. Atualize a Agenda antes de criar o envio do backup.',
+      id: agendaId,
+      currentVersion: versaoAtual,
+      currentEditVersion: agendaEditableRecordVersionFromRow_(rowAnterior)
+    };
+  }
+  var statusAnterior = String(rowAnterior[AGENDA_CFG.idx.cb.status] || '');
+  if (statusAnterior !== status) {
+    agenda.getRange(linha, AGENDA_CFG.idx.cb.status + 1).setValue(status);
+    codexWriteAuditChanges_('Agenda', 'atualizarStatusBackupAgenda', agendaId, [{
+      field: 'Backup - Status',
+      oldValue: statusAnterior,
+      newValue: status
+    }], 'Backup marcado como convertido em novo agendamento');
+  }
+  SpreadsheetApp.flush();
+  var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  return {
+    ok: true,
+    id: agendaId,
+    status: String(rowAtual[AGENDA_CFG.idx.cb.status] || ''),
+    recordVersion: agendaRecordVersionFromRow_(rowAtual),
+    editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual)
+  };
+  });
+}
+
 function marcarAgendaPassadaComoRealizada() {
   return codexWithDocumentLock_('marcarAgendaPassadaComoRealizada', function() {
   var agenda = getAgendaSheet_();
@@ -7238,9 +7676,11 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var isMonitoria = tipoNorm === 'monitoria';
   var isSiv = tipoNorm === 'siv';
   var isPeriodo = isMonitoria || isSiv;
-  if (!isPeriodo && !String(dados.hora || '').trim()) {
+  if ((!isPeriodo || isMonitoria) && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
+  var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, d);
+  if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
   dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
   if (isMonitoria) {
     if (!String(dados.projeto || '').trim()) {
@@ -7359,14 +7799,25 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
 function agendaSetCourierLinha_(agenda, linha, idx, courier) {
   courier = courier || {};
   var courierNome = courier.nome || courier.courier || '';
+  var materialSummary = agendaMaterialSummaryFromJson_(courier.matBioJson || courier.materialJson, courier.material);
   agenda.getRange(linha, idx.nome + 1, 1, 5).setValues([[
     courierNome,
     courier.temperatura || courier.temp || '',
     courier.status || '',
     '',
-    courier.material || ''
+    materialSummary
   ]]);
   agendaSetAwbValue_(agenda.getRange(linha, idx.awb + 1), courier.awb || '', courierNome);
+}
+
+function agendaMaterialSummaryFromJson_(matBioJson, fallback) {
+  var fallbackText = String(fallback || '').trim();
+  if (!matBioJson) return fallbackText;
+  if (typeof codexMatBioParseJson_ !== 'function' || typeof codexMatBioSerializeItems_ !== 'function') return fallbackText;
+  var items = codexMatBioParseJson_(matBioJson);
+  if (!items.length) return fallbackText;
+  var serialized = codexMatBioSerializeItems_(items);
+  return serialized.summary || fallbackText;
 }
 
 function agendaSetAwbValue_(range, awb, courier) {
@@ -7391,25 +7842,87 @@ function agendaSetAwbValue_(range, awb, courier) {
   }
 }
 
-function agendaTrackingUrl_(awb, courier) {
-  awb = String(awb || '').trim();
-  if (agendaIsPinexCourier_(courier)) {
+function codexCourierNorm_(value) {
+  return String(value == null ? '' : value)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function codexCourierAwbRule_(courier) {
+  var n = codexCourierNorm_(courier);
+  if (n.indexOf('marken') >= 0) return { key: 'marken', len: 12, mode: 'alnum', label: 'MARKEN' };
+  if (n.indexOf('dhl') >= 0) return { key: 'dhl', len: 10, mode: 'digits', label: 'DHL' };
+  if (n.indexOf('ocasa') >= 0) return { key: 'ocasa', len: 12, mode: 'ocasa', label: 'OCASA' };
+  if (n.indexOf('pinex') >= 0) return { key: n === 'pinex' ? 'pinex' : 'pinex-agendamento', mode: 'free', label: 'PINEX' };
+  return { key: '', mode: 'free', label: String(courier || '') };
+}
+
+function codexCourierNormalizeAwb_(awb, courier) {
+  var rule = codexCourierAwbRule_(courier);
+  var value = String(awb || '').trim();
+  if (rule.mode === 'alnum' || rule.mode === 'ocasa') value = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  else if (rule.mode === 'digits') value = value.replace(/\D/g, '');
+  if (rule.len) value = value.slice(0, rule.len);
+  return value;
+}
+
+function codexCourierIsValidOcasaAwb_(awb) {
+  awb = String(awb || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  return /^[A-Z][0-9]{7}$/.test(awb) || /^PK2[A-Z0-9]{9}$/.test(awb);
+}
+
+function codexCourierIsValidAwb_(awb, courier) {
+  var rule = codexCourierAwbRule_(courier);
+  var value = codexCourierNormalizeAwb_(awb, courier);
+  if (!value) return true;
+  if (rule.mode === 'ocasa') return codexCourierIsValidOcasaAwb_(value);
+  return !rule.len || value.length === rule.len;
+}
+
+function codexCourierAwbValidationMessage_(courier) {
+  var rule = codexCourierAwbRule_(courier);
+  if (rule.mode === 'ocasa') return 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
+  if (!rule.len) return '';
+  return 'AWB ' + rule.label + ' deve ter ' + rule.len + (rule.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
+}
+
+function codexCourierTrackingUrl_(awb, courier) {
+  var rule = codexCourierAwbRule_(courier);
+  var value = codexCourierNormalizeAwb_(awb, courier);
+  if (!value) return '';
+  if (rule.key === 'pinex') {
     return 'https://pinextracking.com.br/#tracking-code';
   }
-  if (/^620X[0-9]{8}$/i.test(awb)) {
-    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(awb);
+  if (rule.key === 'marken' && codexCourierIsValidAwb_(value, courier)) {
+    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(value);
   }
-  if (/^[A-Z][0-9]{7}$/i.test(awb) || /^PK2[A-Z0-9]{9}$/i.test(awb)) {
-    return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(awb) + '&i=18&url=ocasa';
+  if (rule.key === 'ocasa' && codexCourierIsValidOcasaAwb_(value)) {
+    return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(value) + '&i=18&url=ocasa';
   }
-  if (/^[0-9]{10}$/.test(awb)) {
-    return 'https://www.dhl.com/br-en/home/tracking.html?tracking-id=' + encodeURIComponent(awb) + '&submit=1';
+  if (rule.key === 'dhl' && codexCourierIsValidAwb_(value, courier)) {
+    return 'https://www.dhl.com/br-en/home/tracking.html?tracking-id=' + encodeURIComponent(value) + '&submit=1';
+  }
+  if (rule.key) return '';
+  var fallback = String(awb || '').trim();
+  if (/^620X[0-9]{8}$/i.test(fallback)) {
+    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(fallback);
+  }
+  if (/^[A-Z][0-9]{7}$/i.test(fallback) || /^PK2[A-Z0-9]{9}$/i.test(fallback)) {
+    return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(fallback.toUpperCase()) + '&i=18&url=ocasa';
+  }
+  if (/^[0-9]{10}$/.test(fallback)) {
+    return 'https://www.dhl.com/br-en/home/tracking.html?tracking-id=' + encodeURIComponent(fallback) + '&submit=1';
   }
   return '';
 }
 
+function agendaTrackingUrl_(awb, courier) {
+  return codexCourierTrackingUrl_(awb, courier);
+}
+
 function agendaIsPinexCourier_(courier) {
-  return normText_(courier) === 'pinex';
+  return codexCourierNorm_(courier) === 'pinex';
 }
 
 var DHL_TRACKING_API_URL_ = 'https://api-eu.dhl.com/track/shipments';
@@ -7517,7 +8030,7 @@ function diagnosticarMonitorEntregasDhl() {
     mensagem: ''
   };
   if (lastRow < 2) {
-    Logger.log(JSON.stringify(result));
+    codexLoggerSummary_('diagnosticarMonitorEntregasDhl', result);
     return result;
   }
   var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
@@ -7537,7 +8050,7 @@ function diagnosticarMonitorEntregasDhl() {
   result.mensagem = result.pendentes.length
     ? 'AWBs DHL candidatas a consulta: ' + result.pendentes.length
     : 'Nenhuma AWB DHL pendente de entrega.';
-  Logger.log(JSON.stringify(result));
+  codexLoggerSummary_('diagnosticarMonitorEntregasDhl', result);
   return result;
 }
 
@@ -7737,7 +8250,7 @@ function diagnosticarMonitorConfirmacoesCourier() {
     buscas: []
   };
   if (lastRow < 2) {
-    Logger.log(JSON.stringify(result));
+    codexLoggerSummary_('diagnosticarMonitorConfirmacoesCourier', result);
     return result;
   }
   var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
@@ -7763,7 +8276,7 @@ function diagnosticarMonitorConfirmacoesCourier() {
       });
     });
   });
-  Logger.log(JSON.stringify(result));
+  codexLoggerSummary_('diagnosticarMonitorConfirmacoesCourier', result);
   return result;
 }
 
@@ -7887,15 +8400,25 @@ function getCourierConfirmationRules_() {
       courier: c.nome,
       emailConfirmacao: email,
       textoConfirmacao: texto,
-      textosConfirmacao: isDhl
-        ? [texto, 'Agendamento realizado para', 'Coleta programada para']
-        : [texto],
+      textosConfirmacao: codexCourierConfirmationTexts_(texto, defaults, isDhl),
       statusConfirmacao: String(c.statusConfirmacao || defaults.statusConfirmacao || '').trim() || 'Confirmado',
       extrairAwbPorReferencia: isDhl,
       diasBusca: 7
     };
   });
   return out;
+}
+
+function codexCourierConfirmationTexts_(texto, defaults, isDhl) {
+  var textos = [texto];
+  defaults = defaults || {};
+  if (Array.isArray(defaults.textosConfirmacao)) {
+    textos = textos.concat(defaults.textosConfirmacao);
+  } else if (defaults.textoConfirmacao) {
+    textos.push(defaults.textoConfirmacao);
+  }
+  if (isDhl) textos = textos.concat(['Agendamento realizado para', 'Coleta programada para']);
+  return textos;
 }
 
 function textosConfirmacaoCourier_(regra) {
@@ -7905,7 +8428,7 @@ function textosConfirmacaoCourier_(regra) {
     : [regra.textoConfirmacao];
   var out = [];
   textos.forEach(function(texto) {
-    String(texto || '').split(/\r?\n|\|\|/).forEach(function(parte) {
+    String(texto || '').split(/\r?\n|\|\||\s;\s/).forEach(function(parte) {
       var normalizado = normalizarTextoMonitorCourier_(parte);
       if (normalizado && out.indexOf(normalizado) === -1) out.push(normalizado);
     });
@@ -8071,10 +8594,11 @@ function removerGatilhoMonitorEntregasDhl() {
 function agendaSetBackupLinha_(agenda, linha, backup) {
   backup = backup || {};
   var idx = AGENDA_CFG.idx.cb;
+  var materialSummary = agendaMaterialSummaryFromJson_(backup.matBioJson || backup.materialJson, backup.material);
   agenda.getRange(linha, idx.nome + 1, 1, 3).setValues([[
     backup.nome || '',
     backup.status || '',
-    backup.material || ''
+    materialSummary
   ]]);
 }
 
@@ -8215,7 +8739,7 @@ function agendaRowToObject_(r, rowIndex) {
     backup: {
       nome: String(r[i.cb.nome] || ''),
       status: String(r[i.cb.status] || ''),
-      material: String(r[i.cb.material] || ''),
+      material: agendaMaterialSummaryFromJson_(r[i.cb.matBio], r[i.cb.material]),
       destino: String(r[i.cb.destino] || ''),
       matBioJson: String(r[i.cb.matBio] || '')
     }
@@ -8228,7 +8752,7 @@ function agendaCourierToObject_(r, c) {
     temperatura: String(r[c.temp] || ''),
     status: String(r[c.status] || ''),
     awb: String(r[c.awb] || ''),
-    material: String(r[c.material] || ''),
+    material: agendaMaterialSummaryFromJson_(r[c.matBio], r[c.material]),
     destino: String(r[c.destino] || ''),
     matBioJson: String(r[c.matBio] || '')
   };
@@ -8397,19 +8921,21 @@ function gerarHtmlCouriers(dados) {
     '<h3 style="margin-top:0;color:#333">Informações de Logística / Transportes de Amostras</h3>';
   function addC(n, c) {
     if (!dados[c.nome] || ['---', 'Nao aplicavel', 'N\u00E3o aplic\u00E1vel'].indexOf(String(dados[c.nome])) > -1) return '';
+    var material = agendaMaterialSummaryFromJson_(dados[c.matBio], dados[c.material]);
     return '<p style="margin:5px 0"><b>Transporte de Amostras ' + n + ':</b> ' + escHtmlServer_(dados[c.nome]) +
       ' | <b>Destino:</b> ' + escHtmlServer_(dados[c.destino] || '') +
       ' | <b>Temp:</b> ' + escHtmlServer_(dados[c.temp]) +
       ' | <b>Status:</b> ' + escHtmlServer_(dados[c.status]) +
       ' | <b>AWB:</b> ' + escHtmlServer_(dados[c.awb] || 'Pendente') +
-      ' | <b>Material:</b> ' + escHtmlServer_(dados[c.material] || '') + '</p>';
+      ' | <b>Material:</b> ' + escHtmlServer_(material) + '</p>';
   }
   html += addC(1, i.c1) + addC(2, i.c2) + addC(3, i.c3);
   if (dados[i.cb.nome] && String(dados[i.cb.nome]) !== 'N\u00E3o aplic\u00E1vel') {
+    var backupMaterial = agendaMaterialSummaryFromJson_(dados[i.cb.matBio], dados[i.cb.material]);
     html += '<p style="margin:5px 0;border-top:1px solid #ccc;padding-top:5px"><b>Amostra Backup:</b> ' +
       escHtmlServer_(dados[i.cb.nome]) + ' | <b>Status:</b> ' + escHtmlServer_(dados[i.cb.status]) +
       ' | <b>Destino:</b> ' + escHtmlServer_(dados[i.cb.destino] || '') +
-      ' | <b>Material:</b> ' + escHtmlServer_(dados[i.cb.material] || '') + '</p>';
+      ' | <b>Material:</b> ' + escHtmlServer_(backupMaterial) + '</p>';
   }
   return html + '</div>';
 }
@@ -8897,7 +9423,11 @@ function courierConfirmationDefaults_(nome) {
     return {
       monitorConfirmacao: 'Sim',
       emailConfirmacao: 'expobrasil@marken.com',
-      textoConfirmacao: 'Confirmamos o agendamento da retirada conforme informações abaixo.',
+      textoConfirmacao: 'Confirmamos o agendamento da retirada conforme informações abaixo. || Agendamento da retirada confirmado conforme solicitado.',
+      textosConfirmacao: [
+        'Confirmamos o agendamento da retirada conforme informações abaixo.',
+        'Agendamento da retirada confirmado conforme solicitado.'
+      ],
       statusConfirmacao: 'Confirmado',
       extrairAwbPorReferencia: false
     };

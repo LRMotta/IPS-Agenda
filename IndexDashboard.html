@@ -8,11 +8,18 @@
   var _dashAgendaResumoAtual = {};
   var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
   var _dashKpiRecrutZeroKeys = {};
-  var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v1';
+  var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v2';
+  var DASHBOARD_SESSION_CACHE_VERSION = '2026.07.02-dashboard-cache-v2';
+  var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
   function carregarDashboard(forcar) {
     if (_dashInited && !forcar) return;
+    if (forcar) {
+      try {
+        if (window.sessionStorage) sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY);
+      } catch (ignore) {}
+    }
     if (!forcar && dashboardRenderFromSessionCache()) {
       _dashInited = true;
       return;
@@ -35,14 +42,14 @@
         } catch(err) {
           _dashInited = false;
           if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
-          mostrarErroDashboard(err && err.message ? err.message : String(err));
+          mostrarErroDashboard(err);
         }
       })
       .withFailureHandler(function(e) {
         _dashInited = false;
         if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
         if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
-        mostrarErroDashboard(e && e.message ? e.message : String(e));
+        mostrarErroDashboard(e);
       })
       .getDashboardData();
   }
@@ -54,6 +61,13 @@
       if (!raw) return false;
       var cached = JSON.parse(raw);
       if (!cached || !cached.data) return false;
+      var now = Date.now();
+      var cachedAt = Number(cached.cachedAt || 0);
+      var isExpired = !cachedAt || (now - cachedAt) > DASHBOARD_SESSION_CACHE_TTL_MS;
+      if (cached.version !== DASHBOARD_SESSION_CACHE_VERSION || isExpired) {
+        sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY);
+        return false;
+      }
       cached.data._dashboardCachedAt = cached.cachedAt || Date.now();
       renderDashboard(cached.data);
       return true;
@@ -70,7 +84,9 @@
       if (data.erros && data.erros.length) return;
       data._dashboardCachedAt = Date.now();
       sessionStorage.setItem(DASHBOARD_SESSION_CACHE_KEY, JSON.stringify({
+        version: DASHBOARD_SESSION_CACHE_VERSION,
         cachedAt: data._dashboardCachedAt,
+        expiresAt: data._dashboardCachedAt + DASHBOARD_SESSION_CACHE_TTL_MS,
         data: data
       }));
     } catch (e) {}
@@ -83,7 +99,7 @@
     if (!page) return;
     page.insertAdjacentHTML('afterbegin',
       '<div id="dashErrorBox" style="background:#fce8e6;border:1.5px solid #f4b5b2;border-radius:10px;padding:16px;color:#b3261e;font-size:13px;margin-bottom:12px">' +
-      '<strong>Erro ao carregar dashboard:</strong> ' + esc(msg) + '</div>');
+      '<strong>Erro ao carregar dashboard:</strong> ' + esc(typeof appErrorMessage === 'function' ? appErrorMessage(msg) : msg) + '</div>');
   }
 
   function _agg(lista, campo) {
@@ -122,7 +138,7 @@
   }
 
   function _normDash(v) {
-    return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    return codexNormText(v);
   }
 
   function _isProjetoAtivoDash(p) {
@@ -142,6 +158,35 @@
 
   function _isParticipanteAtivoDash(p) {
     return _normDash(p && p.status) === 'ativo';
+  }
+
+  function _isParticipanteAtivoOuSeguimentoDash(p) {
+    var st = _normDash(p && p.status);
+    return st === 'ativo' || st === 'em seguimento';
+  }
+
+  function dashboardParticipantProjectStats(participantes) {
+    var stats = {};
+    (participantes || []).forEach(function(p) {
+      var key = _normDash(p && p.projeto);
+      if (!key) return;
+      if (!stats[key]) stats[key] = { total: 0, ativos: 0, ativosStrict: 0 };
+      stats[key].total++;
+      if (_isParticipanteAtivoOuSeguimentoDash(p)) stats[key].ativos++;
+      if (_isParticipanteAtivoDash(p)) stats[key].ativosStrict++;
+    });
+    return stats;
+  }
+
+  function dashboardProjectStat(stats, proj, field) {
+    var keys = {};
+    var nome = _normDash(proj && proj.nomeAbreviado);
+    var codigo = _normDash(proj && proj.codigo);
+    if (nome) keys[nome] = true;
+    if (codigo) keys[codigo] = true;
+    return Object.keys(keys).reduce(function(sum, key) {
+      return sum + ((stats[key] && stats[key][field]) || 0);
+    }, 0);
   }
 
   function _dashStoreProjetoKeys(map, proj) {
@@ -348,17 +393,20 @@
     var est = d.estoqueResumo || {};
     var projetosAtivos = proj.filter(_isProjetoAtivoDash);
     var projetosPart = proj.filter(_isProjetoContaParticipantesDash);
-    var ativos = part.filter(function(p) { return p.status === 'Ativo' || p.status === 'Em Seguimento'; });
+    var partProjetoStats = dashboardParticipantProjectStats(part);
+    var ativosCount = part.reduce(function(total, p) {
+      return total + (_isParticipanteAtivoOuSeguimentoDash(p) ? 1 : 0);
+    }, 0);
     var recrutAberto = projetosAtivos.filter(function(p) { return _normDash(p.status).indexOf('recrutamento aberto') >= 0; });
     var recrutZero = recrutAberto.filter(function(pr) {
-      return !part.some(function(pt) { return _sameProjetoDash(pt.projeto, pr) && _isParticipanteAtivoDash(pt); });
+      return dashboardProjectStat(partProjetoStats, pr, 'ativosStrict') === 0;
     });
     _dashKpiRecrutZeroKeys = {};
     recrutZero.forEach(function(pr) { _dashStoreProjetoKeys(_dashKpiRecrutZeroKeys, pr); });
     var esps = Object.keys(_agg(projetosAtivos, 'especialidade'));
     document.getElementById('kpiProjetos').textContent = projetosAtivos.length || '0';
     document.getElementById('kpiPart').textContent     = part.length || '0';
-    document.getElementById('kpiAtivos').textContent   = ativos.length || '0';
+    document.getElementById('kpiAtivos').textContent   = ativosCount || '0';
     document.getElementById('kpiZeroRecrut').textContent = recrutZero.length || '0';
     bindDashboardKpiClicks();
     var now = new Date(d._dashboardCachedAt || Date.now());
@@ -399,8 +447,8 @@
     var projPairs = projetosPart.map(function(pr) {
       return {
         label: pr.nomeAbreviado || pr.codigo || 'S/N',
-        total: part.filter(function(p){ return _sameProjetoDash(p.projeto, pr); }).length,
-        ativos: ativos.filter(function(p){ return _sameProjetoDash(p.projeto, pr); }).length
+        total: dashboardProjectStat(partProjetoStats, pr, 'total'),
+        ativos: dashboardProjectStat(partProjetoStats, pr, 'ativos')
       };
     }).sort(function(a, b) { return b.total - a.total || b.ativos - a.ativos; });
     if (projPairs.length > 18) {

@@ -220,8 +220,28 @@
           <h3>Cache e Config_App</h3>
           <dl id="diagCache"></dl>
         </section>
+        <section class="diag-panel">
+          <h3>Transporte</h3>
+          <dl id="diagTransport"></dl>
+        </section>
+        <section class="diag-panel">
+          <h3>Dados por modulo</h3>
+          <dl id="diagDataCounts"></dl>
+        </section>
+        <section class="diag-panel">
+          <h3>Gatilhos e e-mail</h3>
+          <dl id="diagTriggersMail"></dl>
+        </section>
+        <section class="diag-panel">
+          <h3>Permissoes criticas</h3>
+          <dl id="diagPermissions"></dl>
+        </section>
         <section class="diag-panel diag-panel-wide">
-          <h3>Checklist de smoke test pos-deploy</h3>
+          <h3>Auditoria recente</h3>
+          <div class="diag-checklist" id="diagAuditRecent"></div>
+        </section>
+        <section class="diag-panel diag-panel-wide">
+          <h3>Smoke checks automaticos</h3>
           <div class="diag-checklist" id="diagSmokeChecklist"></div>
         </section>
       </div>
@@ -584,13 +604,13 @@
             E-mails de lab central estao em modo teste. Para envio real, configure Agenda / Enviar emails lab central = Sim no Config_App.
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
-            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false)"><div class="field-error" id="errAgData">Informe a data.</div></div>
-            <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false)"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao inicio.</div></div>
+            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()"><div class="field-error" id="errAgData">Informe a data.</div></div>
+            <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao inicio.</div></div>
             <div id="agHoraWrap"><label class="field-label" for="agHora">Horario <span class="required-star">*</span></label><input type="time" id="agHora" class="f-input large" oninput="limparErro('agHora','errAgHora')"><div class="field-error" id="errAgHora">Informe o horario.</div></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div><label class="field-label" for="agTipo">Tipo de evento <span class="required-star">*</span></label><select id="agTipo" class="f-input f-select" onchange="onAgendaTipoChange();limparErro('agTipo','errAgTipo')"></select><div class="field-error" id="errAgTipo">Selecione o tipo.</div></div>
-            <div><label class="field-label" for="agStatus">Status</label><select id="agStatus" class="f-input f-select" onchange="atualizarAgendaPostVisitVisibility()"></select></div>
+            <div><label class="field-label" for="agStatus">Status</label><select id="agStatus" class="f-input f-select" onchange="atualizarAgendaPostVisitVisibility();validarAgendaRealizadoFuturo()"></select></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agParticipanteWrap">
@@ -743,7 +763,7 @@
               </button>
             </div>
             <div class="ag-transport-box" id="agBackupWrap">
-              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnGerarTranspB" type="button" onclick="gerarTransporteAgenda('backup','btnGerarTranspB')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnCriarEnvioBackup" type="button" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined">add</span> Novo agendamento</button></div>
               <div class="ag-transport-fields backup">
                 <div><label class="field-label" for="agBackupNome">Courier</label><select id="agBackupNome" class="f-input f-select" onchange="onAgendaCourierChange('agBackup')"></select></div>
                 <div><label class="field-label" for="agBackupDestino">Laboratório destino</label><select id="agBackupDestino" class="f-input f-select"></select></div>
@@ -782,6 +802,23 @@
           <button class="btn-txt" type="button" onclick="fecharAgendaConfirmarReagendamento()">Voltar sem salvar</button>
           <button class="btn-save" type="button" id="btnAgendaConfirmarReagendamento" onclick="confirmarAgendaReagendamento()" style="width:auto;padding:9px 18px;margin-top:0">
             Confirmar e salvar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modalAgendaConfirmarCancelamento" onclick="fecharAgendaConfirmarCancelamento(event)">
+      <div class="confirm-box" style="max-width:460px" onclick="event.stopPropagation()">
+        <h3>Confirmar cancelamento?</h3>
+        <p>Esta visita ainda nao sera cancelada. Na proxima etapa voce devera registrar o motivo obrigatorio do cancelamento.</p>
+        <div class="agenda-cancel-guard" style="margin-bottom:16px">
+          <span class="material-symbols-outlined">info</span>
+          Se voce voltar agora, o status sera restaurado e nada sera salvo.
+        </div>
+        <div class="confirm-actions">
+          <button class="btn-txt" type="button" onclick="fecharAgendaConfirmarCancelamento()">Voltar sem cancelar</button>
+          <button class="btn-danger" type="button" id="btnAgendaConfirmarCancelamento" onclick="confirmarAgendaCancelamento()" style="width:auto;padding:9px 18px;margin-top:0">
+            Prosseguir
           </button>
         </div>
       </div>
@@ -853,6 +890,7 @@
                 <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
                 <div class="ac-list" id="rqPacienteList"></div>
               </div>
+              <div class="field-error" id="errRqPaciente">Informe o paciente.</div>
             </div>
             <div class="field-row cols-2">
               <div>
@@ -885,6 +923,7 @@
                 <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
                 <div class="ac-list" id="rqSolicitanteList"></div>
               </div>
+              <div class="field-error" id="errRqSolicitante">Informe o solicitante.</div>
               <div class="solicitante-card" id="solicitanteCard">
                 <div class="sol-name" id="solCardNome">—</div>
                 <div class="sol-detail" id="solCardDetalhe">—</div>
@@ -907,11 +946,13 @@
                 <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
                 <div class="ac-list" id="rqPrestadorList"></div>
               </div>
+              <div class="field-error" id="errRqPrestador">Informe o local do exame.</div>
             </div>
             <div class="field-row cols-2" style="margin-top:14px">
-              <div>
+              <div class="field">
                 <label class="field-label" for="rqData">Data do Exame <span class="required-star">*</span></label>
                 <input type="date" id="rqData" class="f-input">
+                <div class="field-error" id="errRqData">Informe a data do exame.</div>
               </div>
               <div>
                 <label class="field-label" for="rqHorario">Horario</label>
@@ -950,7 +991,7 @@
           </div>
           <!-- Botão salvar -->
           <div class="req-actions">
-          <button class="btn-save" id="btnSalvarReq" type="button" onclick="salvarRequisicao()" disabled title="Preencha: Paciente, Local do Exame, Data do Exame, Solicitante">
+          <button class="btn-save" id="btnSalvarReq" type="button" onclick="salvarRequisicao()" aria-disabled="true" title="Preencha: Paciente, Local do Exame, Data do Exame, Solicitante">
             <span class="material-symbols-outlined">print</span> <span class="btn-label">GERAR REQUISIÇÃO</span>
           </button>
           <button class="ag-tb-btn" type="button" onclick="limparRequisicaoForm()" title="Limpar formulario"><span class="material-symbols-outlined">cleaning_services</span> Limpar</button>
@@ -959,6 +1000,20 @@
         </div>
       </div>
     </div>
+
+<div class="modal-overlay" id="modalReqSuccess" onclick="fecharRequisicaoSucessoModal(event)">
+  <div class="confirm-box req-success-box" style="max-width:460px;" onclick="event.stopPropagation()">
+    <div class="req-success-icon"><span class="material-symbols-outlined">mark_email_read</span></div>
+    <h3 id="reqSuccessTitle">Requisicao gerada</h3>
+    <p id="reqSuccessMsg">O PDF foi gerado e o rascunho de e-mail foi criado com sucesso.</p>
+    <div class="status-msg" id="reqSuccessWarnings" style="text-align:left;margin-top:0;margin-bottom:12px"></div>
+    <div class="confirm-actions">
+      <button class="btn-new" type="button" onclick="fecharRequisicaoSucessoModal()">
+        <span class="material-symbols-outlined">check</span> Entendi
+      </button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="modalReqPreload" onclick="fecharReqPreloadModalSeFora(event)">
   <div class="modal-box" style="max-width:760px;">
@@ -1143,7 +1198,15 @@
         <table class="data-table" style="min-width:900px">
           <thead id="headAuditLog"></thead>
           <tbody id="bodyAuditLog">
-            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row table-skeleton-row"><td colspan="6">
+              <div class="table-skeleton" role="status" aria-label="Carregando registros da auditoria..." style="--skeleton-cols:1fr 1.8fr 1.55fr 1.15fr 1fr .9fr">
+                <span class="sr-only">Carregando registros da auditoria...</span>
+                <div class="table-skeleton-line"><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span></div>
+                <div class="table-skeleton-line"><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span></div>
+                <div class="table-skeleton-line"><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span></div>
+                <div class="table-skeleton-line"><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span><span class="table-skeleton-bar"></span></div>
+              </div>
+            </td></tr>
           </tbody>
         </table>
       </div>

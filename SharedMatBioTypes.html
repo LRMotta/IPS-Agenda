@@ -1,0 +1,88 @@
+<script>
+(function(global) {
+  var TYPES = [
+    { key: 'sangue', label: 'Sangue', unit: 'mL', icon: 'bloodtype', aliases: ['sangue', 'sangue total', 'blood', 'whole blood'] },
+    { key: 'soro', label: 'Soro', unit: 'mL', icon: 'opacity', aliases: ['soro', 'serum'] },
+    { key: 'urina', label: 'Urina', unit: 'mL', icon: 'water_drop', aliases: ['urina', 'urine', 'urine micro panel', 'urinalysis'] },
+    { key: 'plasma', label: 'Plasma', unit: 'mL', icon: 'water_drop', aliases: ['plasma', 'plasma edta', 'edta plasma', 'k2 edta plasma', 'k3 edta plasma', 'blood plasma'] },
+    { key: 'tecido', label: 'Tecido', unit: 'mL', icon: 'biotech', aliases: ['tecido', 'tissue', 'biopsia', 'biopsy'] },
+    { key: 'saliva', label: 'Saliva', unit: 'mL', icon: 'science', aliases: ['saliva'] },
+    { key: 'fezes', label: 'Fezes', unit: 'g', icon: 'science', aliases: ['fezes', 'stool'] },
+    { key: 'vacina', label: 'Vacina', unit: 'g', icon: 'vaccines', aliases: ['vacina', 'vaccine'] },
+    { key: 'outro', label: 'Outro tipo, especifique', unit: 'mL', icon: 'add_circle', outro: true, aliases: ['outro', 'outro tipo'] }
+  ];
+
+  function norm(value) {
+    return String(value == null ? '' : value)
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function clone(type) {
+    var out = {};
+    Object.keys(type || {}).forEach(function(key) {
+      out[key] = Array.isArray(type[key]) ? type[key].slice() : type[key];
+    });
+    return out;
+  }
+
+  function list() {
+    return TYPES.map(clone);
+  }
+
+  function typeConfig(value) {
+    var n = norm(value);
+    if (!n) return null;
+    for (var i = 0; i < TYPES.length; i++) {
+      var type = TYPES[i];
+      if (n === norm(type.key) || n === norm(type.label)) return clone(type);
+      var aliases = type.aliases || [];
+      for (var j = 0; j < aliases.length; j++) {
+        if (n === norm(aliases[j])) return clone(type);
+      }
+    }
+    return null;
+  }
+
+  function key(value) {
+    var cfg = typeConfig(value);
+    if (cfg) return cfg.key;
+    var n = norm(value);
+    for (var i = 0; i < TYPES.length; i++) {
+      var aliases = TYPES[i].aliases || [];
+      for (var j = 0; j < aliases.length; j++) {
+        if (n.indexOf(norm(aliases[j])) >= 0) return TYPES[i].key;
+      }
+    }
+    return 'outro';
+  }
+
+  function aliases(value) {
+    var cfg = typeConfig(value);
+    return cfg && cfg.aliases ? cfg.aliases.slice() : [];
+  }
+
+  function knownFromText(text) {
+    var n = ' ' + norm(text).replace(/[^a-z0-9]+/g, ' ') + ' ';
+    for (var i = 0; i < TYPES.length; i++) {
+      if (TYPES[i].outro) continue;
+      var aliases = TYPES[i].aliases || [];
+      for (var j = 0; j < aliases.length; j++) {
+        var term = ' ' + norm(aliases[j]).replace(/[^a-z0-9]+/g, ' ') + ' ';
+        if (term.trim() && n.indexOf(term) > -1) return clone(TYPES[i]);
+      }
+    }
+    return null;
+  }
+
+  global.CodexMatBioTypes = {
+    norm: norm,
+    list: list,
+    typeConfig: typeConfig,
+    key: key,
+    aliases: aliases,
+    knownFromText: knownFromText
+  };
+})(window);
+</script>

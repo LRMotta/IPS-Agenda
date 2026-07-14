@@ -317,18 +317,78 @@ var TRANSPORTE_SHEET_NAMES = {
   formularioPinex: ['FormulÃƒÂ¡rio (PINEX)', 'FormulÃƒÆ’Ã‚Â¡rio (PINEX)']
 };
 
-var TRANSPORTE_MATERIAIS = ['Sangue', 'Soro', 'Urina', 'Plasma', 'Tecido', 'Saliva', 'Fezes', 'Vacina'];
-var TRANSPORTE_MATERIAL_KEYS = ['sangue', 'soro', 'urina', 'plasma', 'tecido', 'saliva', 'fezes', 'vacina'];
-var TRANSPORTE_MATERIAL_ALIASES = {
-  sangue: 'Sangue',
-  soro: 'Soro',
-  urina: 'Urina',
-  plasma: 'Plasma',
-  tecido: 'Tecido',
-  saliva: 'Saliva',
-  fezes: 'Fezes',
-  vacina: 'Vacina'
-};
+function codexMatBioTypes_() {
+  return [
+    { key: 'sangue', label: 'Sangue', unit: 'mL', aliases: ['sangue', 'sangue total', 'blood', 'whole blood'] },
+    { key: 'soro', label: 'Soro', unit: 'mL', aliases: ['soro', 'serum'] },
+    { key: 'urina', label: 'Urina', unit: 'mL', aliases: ['urina', 'urine', 'urine micro panel', 'urinalysis'] },
+    { key: 'plasma', label: 'Plasma', unit: 'mL', aliases: ['plasma', 'plasma edta', 'edta plasma', 'k2 edta plasma', 'k3 edta plasma', 'blood plasma'] },
+    { key: 'tecido', label: 'Tecido', unit: 'mL', aliases: ['tecido', 'tissue', 'biopsia', 'biopsy'] },
+    { key: 'saliva', label: 'Saliva', unit: 'mL', aliases: ['saliva'] },
+    { key: 'fezes', label: 'Fezes', unit: 'g', aliases: ['fezes', 'stool'] },
+    { key: 'vacina', label: 'Vacina', unit: 'g', aliases: ['vacina', 'vaccine'] }
+  ];
+}
+
+function codexMatBioNorm_(value) {
+  return String(value == null ? '' : value)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function codexMatBioKeys_() {
+  return codexMatBioTypes_().map(function(t) { return t.key; });
+}
+
+function codexMatBioLabels_() {
+  return codexMatBioTypes_().map(function(t) { return t.label; });
+}
+
+function codexMatBioLabelMap_() {
+  var out = {};
+  codexMatBioTypes_().forEach(function(t) { out[t.key] = t.label; });
+  return out;
+}
+
+function codexMatBioTypeConfig_(value) {
+  var n = codexMatBioNorm_(value);
+  if (!n) return null;
+  var types = codexMatBioTypes_();
+  for (var i = 0; i < types.length; i++) {
+    var t = types[i];
+    if (n === codexMatBioNorm_(t.key) || n === codexMatBioNorm_(t.label)) return t;
+    var aliases = t.aliases || [];
+    for (var j = 0; j < aliases.length; j++) {
+      if (n === codexMatBioNorm_(aliases[j])) return t;
+    }
+  }
+  return null;
+}
+
+function codexMatBioKey_(value) {
+  var cfg = codexMatBioTypeConfig_(value);
+  if (cfg) return cfg.key;
+  var n = codexMatBioNorm_(value);
+  var types = codexMatBioTypes_();
+  for (var i = 0; i < types.length; i++) {
+    var aliases = types[i].aliases || [];
+    for (var j = 0; j < aliases.length; j++) {
+      if (n.indexOf(codexMatBioNorm_(aliases[j])) >= 0) return types[i].key;
+    }
+  }
+  return 'outro';
+}
+
+function codexMatBioUnit_(keyOrLabel, fallback) {
+  var cfg = codexMatBioTypeConfig_(keyOrLabel);
+  return cfg ? cfg.unit : (fallback || 'mL');
+}
+
+var TRANSPORTE_MATERIAL_TYPES = codexMatBioTypes_();
+var TRANSPORTE_MATERIAIS = codexMatBioLabels_();
+var TRANSPORTE_MATERIAL_KEYS = codexMatBioKeys_();
+var TRANSPORTE_MATERIAL_ALIASES = codexMatBioLabelMap_();
 
 TRANSPORTE_SHEET_NAMES.declaracaoTransp = ['DeclaraÃ§Ã£o de Transporte', 'Declaracao de Transporte']
   .concat(TRANSPORTE_SHEET_NAMES.declaracaoTransp || []);
@@ -440,19 +500,17 @@ function transporteExtrairIniciais(nome) {
 }
 
 function transporteMaterialKey_(value) {
-  var n = transporteNorm_(value);
-  if (n.indexOf('sangue') >= 0) return 'sangue';
-  if (n.indexOf('soro') >= 0 || n.indexOf('serum') >= 0) return 'soro';
-  if (n.indexOf('urina') >= 0 || n.indexOf('urine') >= 0) return 'urina';
-  if (n.indexOf('plasma') >= 0) return 'plasma';
-  if (n.indexOf('tecido') >= 0) return 'tecido';
-  if (n.indexOf('saliva') >= 0) return 'saliva';
-  if (n.indexOf('fezes') >= 0) return 'fezes';
-  if (n.indexOf('vacina') >= 0) return 'vacina';
-  return 'outro';
+  return codexMatBioKey_(value);
 }
 
-function transporteFormatNumberPt_(value, decimals) {
+function codexMatBioUnitKey_(unit) {
+  var n = codexMatBioNorm_(unit || 'mL');
+  if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
+  if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
+  return 'mL';
+}
+
+function codexMatBioFormatNumber_(value, decimals) {
   var num = Number(value || 0);
   if (!isFinite(num)) num = 0;
   return num.toLocaleString('pt-BR', {
@@ -461,14 +519,7 @@ function transporteFormatNumberPt_(value, decimals) {
   });
 }
 
-function transporteFormulaFromSegments_(segments, unit) {
-  var decimals = unit === 'L' ? 5 : 2;
-  return (segments || []).map(function(seg) {
-    return transporteFormatNumberPt_(seg.qtd, 0) + ' x ' + transporteFormatNumberPt_(seg.vol, decimals);
-  }).join(', ');
-}
-
-function transporteParseFormula_(text) {
+function codexMatBioParseFormula_(text) {
   var segmentos = [];
   var tubos = 0;
   var total = 0;
@@ -483,6 +534,121 @@ function transporteParseFormula_(text) {
     segmentos.push({ qtd: qtd, vol: vol });
   }
   return { tubos: tubos, total: total, segmentos: segmentos };
+}
+
+function codexMatBioFormulaFromSegments_(segments, unit) {
+  var decimals = codexMatBioUnitKey_(unit) === 'L' ? 5 : 2;
+  return (segments || []).map(function(seg) {
+    return codexMatBioFormatNumber_(seg.qtd, 0) + ' x ' + codexMatBioFormatNumber_(seg.vol, decimals);
+  }).join(', ');
+}
+
+function codexMatBioParseJson_(json) {
+  try {
+    var obj = JSON.parse(String(json || ''));
+    return Array.isArray(obj.items) ? obj.items : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function codexMatBioPushUnique_(list, value) {
+  value = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!value) return;
+  var n = codexMatBioNorm_(value);
+  var exists = list.some(function(item) { return codexMatBioNorm_(item) === n; });
+  if (!exists) list.push(value);
+}
+
+function codexMatBioNormalizeItem_(item) {
+  item = item || {};
+  var cfg = codexMatBioTypeConfig_(item.key || item.tipo);
+  var key = cfg ? cfg.key : (item.key || 'outro');
+  var tipo = cfg ? cfg.label : String(item.tipo || '').trim();
+  var unit = codexMatBioUnitKey_(item.unit || (cfg && cfg.unit) || 'mL');
+  var sourceSegments = Array.isArray(item.segmentos) ? item.segmentos : [];
+  var formula = sourceSegments.length ? codexMatBioFormulaFromSegments_(sourceSegments, unit) : (item.formula || '');
+  var parsed = codexMatBioParseFormula_(formula);
+  var segmentos = sourceSegments.length ? sourceSegments : parsed.segmentos;
+  return {
+    key: key,
+    tipo: tipo,
+    ensaio: String(item.ensaio || '').trim(),
+    formula: codexMatBioFormulaFromSegments_(segmentos, unit),
+    tubos: segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0),
+    total: segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0),
+    unit: codexMatBioUnitKey_(unit),
+    segmentos: segmentos
+  };
+}
+
+function codexMatBioGroupItems_(items) {
+  var order = [];
+  var groups = {};
+  (items || []).forEach(function(raw) {
+    var item = codexMatBioNormalizeItem_(raw);
+    if (!item.tipo && !item.segmentos.length) return;
+    var groupKey = item.key === 'outro' ? item.key + '|' + codexMatBioNorm_(item.tipo) : item.key;
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        key: item.key,
+        tipo: item.tipo,
+        unit: item.unit,
+        segmentos: [],
+        ensaios: []
+      };
+      order.push(groupKey);
+    }
+    Array.prototype.push.apply(groups[groupKey].segmentos, item.segmentos);
+    String(item.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
+      codexMatBioPushUnique_(groups[groupKey].ensaios, ensaio);
+    });
+  });
+  return order.map(function(key) {
+    var group = groups[key];
+    var tubos = group.segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0);
+    var total = group.segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0);
+    return {
+      key: group.key,
+      tipo: group.tipo,
+      ensaio: group.ensaios.join('; '),
+      formula: codexMatBioFormulaFromSegments_(group.segmentos, group.unit),
+      tubos: tubos,
+      total: total,
+      unit: codexMatBioUnitKey_(group.unit),
+      segmentos: group.segmentos
+    };
+  });
+}
+
+function codexMatBioSummaryFromItems_(items) {
+  return (items || []).map(function(item) {
+    var label = item.tipo + (item.ensaio ? ' (' + item.ensaio + ')' : '');
+    if (!item.segmentos || !item.segmentos.length) return label;
+    var unit = codexMatBioUnitKey_(item.unit);
+    return label + ': ' + codexMatBioFormatNumber_(item.tubos, 0) + ' tubo(s), ' + codexMatBioFormatNumber_(item.total, unit === 'L' ? 5 : 2) + ' ' + unit;
+  }).join('; ');
+}
+
+function codexMatBioSerializeItems_(items) {
+  var grouped = codexMatBioGroupItems_(items);
+  return {
+    items: grouped,
+    json: grouped.length ? JSON.stringify({ v: 1, items: grouped }) : '',
+    summary: codexMatBioSummaryFromItems_(grouped)
+  };
+}
+
+function transporteFormatNumberPt_(value, decimals) {
+  return codexMatBioFormatNumber_(value, decimals);
+}
+
+function transporteFormulaFromSegments_(segments, unit) {
+  return codexMatBioFormulaFromSegments_(segments, unit);
+}
+
+function transporteParseFormula_(text) {
+  return codexMatBioParseFormula_(text);
 }
 
 function transporteNumber_(value) {
@@ -517,19 +683,11 @@ function transporteTotalEmLitros_(item) {
 }
 
 function transporteParseMatBioJson_(json) {
-  try {
-    var obj = JSON.parse(String(json || ''));
-    return Array.isArray(obj.items) ? obj.items : [];
-  } catch (e) {
-    return [];
-  }
+  return codexMatBioParseJson_(json);
 }
 
 function transporteMatBioUnitKey_(unit) {
-  var n = transporteNorm_(unit || 'mL');
-  if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
-  if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
-  return 'mL';
+  return codexMatBioUnitKey_(unit);
 }
 
 function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
@@ -539,7 +697,8 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
     item = item || {};
     var key = transporteMaterialKey_(item.key || item.tipo);
     var label = key === 'outro' ? String(item.tipo || 'Outro tipo').trim() : TRANSPORTE_MATERIAL_ALIASES[key];
-    var unit = item.unit ? transporteMatBioUnitKey_(item.unit) : ((key === 'fezes' || key === 'vacina') ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'));
+    var baseUnit = codexMatBioUnit_(key, 'mL');
+    var unit = item.unit ? transporteMatBioUnitKey_(item.unit) : (baseUnit === 'g' ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'));
     var formula = Array.isArray(item.segmentos) && item.segmentos.length
       ? transporteFormulaFromSegments_(item.segmentos, unit)
       : (item.formula || '');
@@ -584,7 +743,7 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
       formula: '',
       total: '',
       ensaio: '',
-      unit: (key === 'fezes' || key === 'vacina') ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL')
+      unit: codexMatBioUnit_(key, 'mL') === 'g' ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL')
     };
   });
   if (byKey.outro) {
@@ -1265,7 +1424,22 @@ function transporteWriteCachedJson_(key, value, seconds) {
     var cache = transporteOptionsCache_();
     if (!cache) return;
     var raw = JSON.stringify(value);
-    if (raw.length < 95000) cache.put(key, raw, seconds || 300);
+    var ttl = seconds || 300;
+    if (raw.length < 95000) {
+      cache.put(key, raw, ttl);
+      if (typeof codexCacheMetaKey_ === 'function') {
+        var now = new Date();
+        var expires = new Date(now.getTime() + ttl * 1000);
+        PropertiesService.getScriptProperties().setProperty(codexCacheMetaKey_(key), JSON.stringify({
+          key: key,
+          createdAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+          createdAtMs: now.getTime(),
+          expiresAt: Utilities.formatDate(expires, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+          expiresAtMs: expires.getTime(),
+          ttlSeconds: ttl
+        }));
+      }
+    }
   } catch (e) {
     Logger.log('Cache do Transporte ignorado para ' + key + ': ' + e.message);
   }
@@ -1273,7 +1447,7 @@ function transporteWriteCachedJson_(key, value, seconds) {
 
 function transporteReadParticipantesOptions_() {
   var cached = transporteReadCachedJson_('TRANSPORTE_PARTICIPANTES_OPTIONS_V1');
-  if (cached) return cached;
+  if (Array.isArray(cached) && cached.length) return cached;
   var participantes = [];
   var investigadoresPorProjeto = transporteProjetoInvestigadorMap_();
   if (typeof getParticipantes === 'function') {
@@ -1290,9 +1464,10 @@ function transporteReadParticipantesOptions_() {
       }).filter(function(p) { return p.nome; });
     } catch (ePart) {
       Logger.log('Participantes nao carregados no Transporte: ' + ePart.message);
+      return [];
     }
   }
-  transporteWriteCachedJson_('TRANSPORTE_PARTICIPANTES_OPTIONS_V1', participantes, 300);
+  if (participantes.length) transporteWriteCachedJson_('TRANSPORTE_PARTICIPANTES_OPTIONS_V1', participantes, 300);
   return participantes;
 }
 
@@ -1486,20 +1661,14 @@ function transporteValidate_(registro) {
   var issues = [];
   var courier = transporteNormalizeCourierFromCodex_(registro.courier);
   var awb = String(registro.awb || '').trim();
-  var rules = {
-    MARKEN: { len: 12, label: 'MARKEN' },
-    DHL: { len: 10, label: 'DHL' }
-  };
 
   if (!registro.agendadoPor) issues.push({ type: 'danger', text: 'ResponsÃƒÂ¡vel pelo agendamento nÃƒÂ£o informado.' });
   if (!registro.protocolo) issues.push({ type: 'danger', text: 'Protocolo nÃƒÂ£o informado.' });
   if (!registro.destino) issues.push({ type: 'warn', text: 'Destino/laboratÃƒÂ³rio ainda nÃƒÂ£o selecionado.' });
   if (!registro.horaEnvio) issues.push({ type: 'danger', text: 'Janela de envio nao informada.' });
-  var awbCheck = courier === 'MARKEN' ? awb.replace(/[^A-Za-z0-9]/g, '') : (courier === 'OCASA' ? transporteNormalizeOcasaAwb_(awb) : awb.replace(/\D/g, ''));
-  if (courier === 'OCASA' && awbCheck && !transporteIsValidOcasaAwb_(awbCheck)) {
-    issues.push({ type: 'warn', text: 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.' });
-  } else if (rules[courier] && awbCheck.length !== rules[courier].len) {
-    issues.push({ type: 'warn', text: 'AWB ' + rules[courier].label + ' deve ter ' + rules[courier].len + (courier === 'MARKEN' ? ' caracteres.' : ' digitos.') });
+  var awbCheck = codexCourierNormalizeAwb_(awb, courier);
+  if (awbCheck && !codexCourierIsValidAwb_(awbCheck, courier)) {
+    issues.push({ type: 'warn', text: codexCourierAwbValidationMessage_(courier) });
   }
   if (courier === 'PINEX' && !String(registro.pinexColeta || '').match(/^\d{6}$/)) {
     issues.push({ type: 'warn', text: 'PINEX COL. NÂ° deve conter 6 digitos para envio PINEX.' });
@@ -1511,12 +1680,11 @@ function transporteValidate_(registro) {
 }
 
 function transporteNormalizeOcasaAwb_(awb) {
-  return String(awb || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  return codexCourierNormalizeAwb_(awb, 'OCASA');
 }
 
 function transporteIsValidOcasaAwb_(awb) {
-  awb = transporteNormalizeOcasaAwb_(awb);
-  return /^[A-Z][0-9]{7}$/.test(awb) || /^PK2[A-Z0-9]{9}$/.test(awb);
+  return codexCourierIsValidOcasaAwb_(awb);
 }
 
 function getTransporteBootstrap() {
@@ -1903,7 +2071,7 @@ function preencherPeticaoAnuenciaWebApp_(ss, payload) {
       return;
     }
     if (rows.length >= 6) return;
-    var unit = item.unit || ((transporteMaterialKey_(item.material) === 'fezes' || transporteMaterialKey_(item.material) === 'vacina') ? 'g' : 'mL');
+    var unit = item.unit || codexMatBioUnit_(transporteMaterialKey_(item.material), 'mL');
     var decimals = unit === 'L' ? 5 : (unit === 'g' ? 2 : 2);
     var total = item.total !== '' && item.total !== null && item.total !== undefined
       ? item.total
@@ -2145,7 +2313,7 @@ function transporteMateriaisParaAgenda_(materiais) {
     var tipo = key === 'outro'
       ? String(item.material || 'Outro tipo').trim()
       : String(TRANSPORTE_MATERIAL_ALIASES[key] || item.material || '').trim();
-    var unit = transporteMatBioUnitKey_(item.unit || ((key === 'fezes' || key === 'vacina') ? 'g' : 'mL'));
+    var unit = transporteMatBioUnitKey_(item.unit || codexMatBioUnit_(key, 'mL'));
     var formula = String(item.formula || '').trim();
     var calc = transporteParseFormula_(formula);
     var tubos = transporteTubosMaterial_(item);
@@ -2167,15 +2335,10 @@ function transporteMateriaisParaAgenda_(materiais) {
       segmentos: segmentos
     });
   });
-  var summary = items.map(function(item) {
-    if (!item.segmentos.length) return item.tipo + (item.ensaio ? ' (' + item.ensaio + ')' : '');
-    return item.tipo + (item.ensaio ? ' (' + item.ensaio + ')' : '') + ': ' +
-      transporteFormatNumberPt_(item.tubos, 0) + ' tubo(s), ' +
-      transporteFormatNumberPt_(item.total, item.unit === 'L' ? 5 : 2) + ' ' + item.unit;
-  }).join('; ');
+  var serialized = codexMatBioSerializeItems_(items);
   return {
-    summary: summary,
-    json: items.length ? JSON.stringify({ v: 1, items: items }) : ''
+    summary: serialized.summary,
+    json: serialized.json
   };
 }
 
@@ -2216,15 +2379,27 @@ function transporteSincronizarAgenda_(payload) {
   }
   preencherSeVazio('Transporte ' + slot + ' - Destino', idx.destino + 1, payload.destino);
   if (idx.temp !== undefined) preencherSeVazio('Transporte ' + slot + ' - Temperatura', idx.temp + 1, payload.temperatura);
-  preencherSeVazio('Transporte ' + slot + ' - Status', idx.status + 1, payload.statusCourier || payload.status || 'Agendado');
+  var statusNovo = String(payload.statusCourier || payload.status || 'Agendado').trim();
+  if (statusNovo) {
+    var statusCell = agenda.getRange(linha, idx.status + 1);
+    var statusAnterior = String(statusCell.getDisplayValue() || statusCell.getValue() || '').trim();
+    var statusAnteriorNorm = normText_(statusAnterior);
+    if (!statusAnterior || statusAnteriorNorm === 'nao agendado') {
+      statusCell.setValue(statusNovo);
+      changes.push({ field: 'Transporte ' + slot + ' - Status', oldValue: statusAnterior, newValue: statusNovo });
+    }
+  }
 
   var materialAgenda = transporteMateriaisParaAgenda_(payload.materiais || []);
   var materialAtual = String(agenda.getRange(linha, idx.material + 1).getDisplayValue() || '').trim();
   var materialJsonAtual = String(agenda.getRange(linha, idx.matBio + 1).getDisplayValue() || '').trim();
-  if (!materialAtual && !materialJsonAtual && (materialAgenda.summary || materialAgenda.json)) {
+  if (!materialAtual && materialAgenda.summary) {
     agenda.getRange(linha, idx.material + 1).setValue(materialAgenda.summary);
-    agenda.getRange(linha, idx.matBio + 1).setValue(materialAgenda.json);
     changes.push({ field: 'Transporte ' + slot + ' - Materiais', oldValue: '', newValue: materialAgenda.summary });
+  }
+  if (!materialJsonAtual && materialAgenda.json) {
+    agenda.getRange(linha, idx.matBio + 1).setValue(materialAgenda.json);
+    changes.push({ field: 'Transporte ' + slot + ' - Materiais estruturados', oldValue: '', newValue: materialAgenda.summary || materialAgenda.json });
   }
 
   if (awb && idx.awb !== undefined) {
@@ -3354,18 +3529,16 @@ function criarRascunhoEmail(options) {
     var destinatarios = [];
     var html = '';
     if (courier === 'PINEX (Agendamento)') {
-      destinatarios = transporteCourierEmailRecipients_(courier, temperatura, ['bio@pinex.com.br']);
+      destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = '<p>Prezados,</p><p>' + saudacao + ',</p><p>Seguem anexos os dados para agendamento de coleta (CNPJ : 88.648.761/0001-03).</p>';
     } else if (courier === 'OCASA') {
-      destinatarios = transporteCourierEmailRecipients_(courier, temperatura, ['csbio@ocasa.com', 'anne.dias@ocasa.com']);
+      destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = transporteCodexEmailHtml_(ss, 'emailOcasa', 'OCASA', saudacao);
     } else if (courier === 'MARKEN') {
-      destinatarios = transporteCourierEmailRecipients_(courier, temperatura, String(temperatura) === 'CONGELADO' || String(temperatura) === 'AMBIENTE + CONGELADO'
-        ? ['operacoes.cs@marken.com']
-        : ['expobrasil@marken.com']);
+      destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = transporteCodexEmailHtml_(ss, 'emailMarken', 'MARKEN', saudacao) || transporteCodexEmailFallbackHtml_(projeto, dataEnvio, laboratorio, awb, courier, saudacao);
     } else if (transporteIsDhl_(courier)) {
-      destinatarios = transporteCourierEmailRecipients_(courier, temperatura, ['wmxbrasil@dhl.com']);
+      destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, transporteReadSolicitarCaixa_(ss, courier, temperatura), saudacao);
     } else if (courier === 'PINEX') {
       return {
@@ -3387,8 +3560,7 @@ function criarRascunhoEmail(options) {
       };
     }
     var remetente = transporteActiveUserEmail_();
-    var cc = ['agregor1@ucs.br', 'lrmotta@ucs.br', 'mlreis@ucs.br', 'pdgoncalves@ucs.br', 'vtamiosso@ucs.br']
-      .filter(function(email) { return email !== remetente; });
+    var cc = transporteDraftCcRecipients_(remetente);
     var attachments = (transporteIsDhl_(courier) || courier === 'PINEX (Agendamento)') ? [] : transporteCodexEmailAttachments_(ss, projeto);
     if (courier === 'PINEX (Agendamento)' && options.pdfFileId) {
       try {
@@ -3398,11 +3570,12 @@ function criarRascunhoEmail(options) {
       }
     }
     var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature());
-    var draft = GmailApp.createDraft(destinatarios.join(', '), assunto, '', {
+    var draftOptions = {
       htmlBody: htmlBody,
-      cc: cc.join(', '),
       attachments: attachments
-    });
+    };
+    if (cc.length) draftOptions.cc = cc.join(', ');
+    var draft = GmailApp.createDraft(destinatarios.join(', '), assunto, '', draftOptions);
     var draftId = '';
     try {
       draftId = draft && draft.getId ? String(draft.getId() || '') : '';
@@ -3434,6 +3607,38 @@ function criarRascunhoEmail(options) {
 function transporteGmailAuthorizationUrl_() {
   var status = transporteGmailOAuthStatus_();
   return status.required ? status.url : '';
+}
+
+function transporteDraftCcRecipients_(remetente) {
+  var configured = [];
+  if (typeof getConfigAppValuesByKeys_ === 'function') {
+    configured = getConfigAppValuesByKeys_(
+      ['Transporte', 'Agenda'],
+      [
+        'CC rascunho courier',
+        'CC rascunho e-mail courier',
+        'Destinatarios CC courier',
+        'Destinatários CC courier',
+        'E-mails em copia courier',
+        'E-mails em cópia courier'
+      ],
+      []
+    );
+  }
+  var source = configured || [];
+  var remetenteNorm = transporteNormalizeEmail_(remetente);
+  var seen = {};
+  var out = [];
+  source.forEach(function(value) {
+    String(value || '').split(/[;,]/).forEach(function(email) {
+      email = String(email || '').trim();
+      var key = transporteNormalizeEmail_(email);
+      if (!key || key === remetenteNorm || seen[key]) return;
+      seen[key] = true;
+      out.push(email);
+    });
+  });
+  return out;
 }
 
 function transporteAssertGmailDraftAllowed_(options) {
@@ -3634,12 +3839,11 @@ function getTransporteCeStatus(projeto) {
   return transporteCeStatus_(projeto);
 }
 
-function transporteCourierEmailRecipients_(courier, temperatura, fallback) {
-  fallback = fallback || [];
+function transporteCourierEmailRecipients_(courier, temperatura) {
   var cfg = transporteCourierConfig_(courier);
   var tempCourierConfig = String(temperatura || '').trim();
   var rawCourierConfig = '';
-  if (courier === 'MARKEN') {
+  if (transporteNormalizeCourierFromCodex_(courier) === 'MARKEN') {
     rawCourierConfig = (tempCourierConfig === 'CONGELADO' || tempCourierConfig === 'AMBIENTE + CONGELADO')
       ? (cfg.emailCongelado || cfg.email || '')
       : (cfg.emailAmbiente || cfg.email || '');
@@ -3652,32 +3856,7 @@ function transporteCourierEmailRecipients_(courier, temperatura, fallback) {
     if (email) recipientsCourierConfig.push(email);
   });
   if (recipientsCourierConfig.length) return recipientsCourierConfig;
-  return fallback;
-  var keys = [];
-  var temp = String(temperatura || '').trim();
-  keys.push(
-    'E-mail ' + courier,
-    'Email ' + courier,
-    'Destinatarios ' + courier,
-    'DestinatÃ¡rios ' + courier,
-    'E-mails ' + courier,
-    'Emails ' + courier
-  );
-  if (typeof getConfigAppValuesByKeys_ !== 'function') return fallback;
-  try {
-    var configured = getConfigAppValuesByKeys_(['Transporte', 'Agenda'], keys, []);
-    var recipients = [];
-    configured.forEach(function(value) {
-      String(value || '').split(/[;,]/).forEach(function(email) {
-        email = email.trim();
-        if (email) recipients.push(email);
-      });
-    });
-    return recipients.length ? recipients : fallback;
-  } catch (error) {
-    Logger.log('Destinatarios configuraveis nao carregados para ' + courier + ': ' + error.toString());
-    return fallback;
-  }
+  throw new Error('Cadastre o e-mail da courier "' + String(courier || '-') + '" antes de criar o rascunho.');
 }
 
 function transporteCodexFindComunicadoEspecial_(ss, projeto) {

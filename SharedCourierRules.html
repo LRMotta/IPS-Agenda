@@ -1,0 +1,81 @@
+<script>
+(function(global) {
+  function norm(value) {
+    return String(value == null ? '' : value)
+      .toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function rule(courier) {
+    var n = norm(courier);
+    if (n.indexOf('MARKEN') >= 0) return { len: 12, mode: 'alnum', placeholder: '12 caracteres alfanumericos', label: 'MARKEN' };
+    if (n.indexOf('DHL') >= 0) return { len: 10, mode: 'digits', placeholder: '10 digitos', label: 'DHL' };
+    if (n.indexOf('OCASA') >= 0) return { len: 12, mode: 'ocasa', placeholder: 'A1234567 ou PK2WIZ177555', label: 'OCASA' };
+    if (n.indexOf('PINEX') >= 0) return { mode: 'free', placeholder: 'Codigo PINEX / AWB', label: 'PINEX' };
+    return { mode: 'free', placeholder: 'AWB', label: String(courier || '') };
+  }
+
+  function normalizeAwb(value, courier) {
+    var r = rule(courier);
+    var out = String(value || '');
+    if (r.mode === 'alnum' || r.mode === 'ocasa') out = out.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    else if (r.mode === 'digits') out = out.replace(/\D/g, '');
+    if (r.len) out = out.slice(0, r.len);
+    return out;
+  }
+
+  function isValidOcasaAwb(value) {
+    return /^[A-Z][0-9]{7}$/.test(value) || /^PK2[A-Z0-9]{9}$/.test(value);
+  }
+
+  function isValidAwb(value, courier) {
+    var r = rule(courier);
+    var normalized = normalizeAwb(value, courier);
+    if (!normalized) return true;
+    if (r.mode === 'ocasa') return isValidOcasaAwb(normalized);
+    return !r.len || normalized.length === r.len;
+  }
+
+  function titleForRule(r) {
+    if (r.mode === 'ocasa') return 'OCASA: informe 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
+    if (r.mode === 'free') return r.label === 'PINEX' ? 'Informe o codigo PINEX ou AWB.' : '';
+    if (!r.len) return '';
+    return r.label + ': informe ' + r.len + (r.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
+  }
+
+  function validationMessage(courier) {
+    var r = rule(courier);
+    if (r.mode === 'ocasa') return 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
+    if (!r.len) return '';
+    return 'AWB ' + r.label + ' deve ter ' + r.len + (r.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
+  }
+
+  function applyToInput(input, courier, sanitizeValue) {
+    if (!input) return rule(courier);
+    var r = rule(courier);
+    input.placeholder = r.placeholder || 'AWB';
+    input.title = titleForRule(r);
+    input.inputMode = r.mode === 'digits' ? 'numeric' : 'text';
+    if (r.mode === 'digits' && r.len) input.pattern = '\\d{' + r.len + '}';
+    else if (r.mode === 'ocasa') input.pattern = '([A-Za-z][0-9]{7}|[Pp][Kk]2[A-Za-z0-9]{9})';
+    else if (r.mode === 'alnum' && r.len) input.pattern = '[A-Za-z0-9]{' + r.len + '}';
+    else input.removeAttribute('pattern');
+    if (r.len) input.maxLength = r.len;
+    else input.removeAttribute('maxlength');
+    if (sanitizeValue) input.value = normalizeAwb(input.value, courier);
+    return r;
+  }
+
+  global.CodexCourierRules = {
+    norm: norm,
+    awbRule: rule,
+    normalizeAwb: normalizeAwb,
+    isValidAwb: isValidAwb,
+    isValidOcasaAwb: isValidOcasaAwb,
+    titleForRule: titleForRule,
+    validationMessage: validationMessage,
+    applyToInput: applyToInput
+  };
+})(window);
+</script>

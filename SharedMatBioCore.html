@@ -1,0 +1,246 @@
+<script>
+(function(global) {
+  function typesApi() {
+    return global.CodexMatBioTypes || {};
+  }
+
+  function norm(value) {
+    var api = typesApi();
+    if (api.norm) return api.norm(value);
+    return String(value == null ? '' : value)
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function typeConfig(value) {
+    var api = typesApi();
+    return api.typeConfig ? api.typeConfig(value) : null;
+  }
+
+  function unitKey(unit) {
+    var n = norm(unit || 'mL');
+    if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
+    if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
+    return 'mL';
+  }
+
+  function parseFormula(text) {
+    var segmentos = [];
+    var tubos = 0;
+    var total = 0;
+    var re = /(\d+(?:[.,]\d+)?)\s*(?:x|X|\u00d7|\*)\s*(\d+(?:[.,]\d+)?)/g;
+    var m;
+    while ((m = re.exec(String(text || ''))) !== null) {
+      var qtd = Number(String(m[1]).replace(',', '.'));
+      var vol = Number(String(m[2]).replace(',', '.'));
+      if (!isFinite(qtd) || !isFinite(vol)) continue;
+      tubos += qtd;
+      total += qtd * vol;
+      segmentos.push({ qtd: qtd, vol: vol });
+    }
+    return { tubos: tubos, total: total, segmentos: segmentos };
+  }
+
+  function formatNumber(value, decimals) {
+    var num = Number(value || 0);
+    if (!isFinite(num)) num = 0;
+    return num.toLocaleString('pt-BR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  function formulaText(qtd, vol, decimals) {
+    return formatNumber(qtd, 0) + ' x ' + formatNumber(vol, decimals);
+  }
+
+  function formulaFromSegments(segmentos, unit) {
+    var decimals = unitKey(unit) === 'L' ? 5 : 2;
+    return (segmentos || []).map(function(segmento) {
+      return formulaText(segmento.qtd, segmento.vol, decimals);
+    }).join(', ');
+  }
+
+  function calculationDisplay(formula, unit) {
+    var parsed = parseFormula(formula);
+    var key = unitKey(unit);
+    return {
+      parsed: parsed,
+      unit: key,
+      tubosText: parsed.tubos ? formatNumber(parsed.tubos, 0) : '-',
+      totalText: (parsed.total ? formatNumber(parsed.total, key === 'L' ? 5 : 2) : '-') + ' ' + key
+    };
+  }
+
+  function convertFormulaUnit(text, fromUnit, toUnit) {
+    fromUnit = unitKey(fromUnit);
+    toUnit = unitKey(toUnit);
+    if (fromUnit === toUnit) return String(text || '');
+    var parsed = parseFormula(text);
+    if (!parsed.segmentos.length) return String(text || '');
+    var factor = fromUnit === 'mL' && toUnit === 'L' ? 1 / 1000 : (fromUnit === 'L' && toUnit === 'mL' ? 1000 : 1);
+    return parsed.segmentos.map(function(segmento) {
+      return formulaText(segmento.qtd, Number(segmento.vol || 0) * factor, toUnit === 'L' ? 5 : 2);
+    }).join(', ');
+  }
+
+  function parseJson(json) {
+    try {
+      var obj = JSON.parse(String(json || ''));
+      return { items: Array.isArray(obj.items) ? obj.items : [] };
+    } catch (e) {
+      return { items: [] };
+    }
+  }
+
+  function pushUnique(list, value) {
+    value = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!value) return;
+    var n = norm(value);
+    var exists = list.some(function(item) { return norm(item) === n; });
+    if (!exists) list.push(value);
+  }
+
+  function normalizeItem(item) {
+    item = item || {};
+    var cfg = typeConfig(item.key || item.tipo);
+    var key = cfg ? cfg.key : (item.key || 'outro');
+    var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
+    var unit = unitKey(item.unit || (cfg && cfg.unit) || 'mL');
+    var sourceSegments = Array.isArray(item.segmentos) ? item.segmentos : [];
+    var formula = sourceSegments.length ? formulaFromSegments(sourceSegments, unit) : (item.formula || '');
+    var parsed = parseFormula(formula);
+    var segmentos = sourceSegments.length ? sourceSegments : parsed.segmentos;
+    return {
+      key: key,
+      tipo: tipo,
+      ensaio: String(item.ensaio || '').trim(),
+      formula: formulaFromSegments(segmentos, unit),
+      tubos: segmentos.reduce(function(sum, segmento) { return sum + Number(segmento.qtd || 0); }, 0),
+      total: segmentos.reduce(function(sum, segmento) { return sum + (Number(segmento.qtd || 0) * Number(segmento.vol || 0)); }, 0),
+      unit: unitKey(unit),
+      segmentos: segmentos
+    };
+  }
+
+  function groupItems(items) {
+    var order = [];
+    var groups = {};
+    (items || []).forEach(function(raw) {
+      var item = normalizeItem(raw);
+      if (!item.tipo && !item.segmentos.length) return;
+      var groupKey = item.key === 'outro' ? item.key + '|' + norm(item.tipo) : item.key;
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          key: item.key,
+          tipo: item.tipo,
+          unit: item.unit,
+          segmentos: [],
+          ensaios: []
+        };
+        order.push(groupKey);
+      }
+      Array.prototype.push.apply(groups[groupKey].segmentos, item.segmentos);
+      String(item.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
+        pushUnique(groups[groupKey].ensaios, ensaio);
+      });
+    });
+    return order.map(function(key) {
+      var group = groups[key];
+      var tubos = group.segmentos.reduce(function(sum, segmento) { return sum + Number(segmento.qtd || 0); }, 0);
+      var total = group.segmentos.reduce(function(sum, segmento) { return sum + (Number(segmento.qtd || 0) * Number(segmento.vol || 0)); }, 0);
+      return {
+        key: group.key,
+        tipo: group.tipo,
+        ensaio: group.ensaios.join('; '),
+        formula: formulaFromSegments(group.segmentos, group.unit),
+        tubos: tubos,
+        total: total,
+        unit: unitKey(group.unit),
+        segmentos: group.segmentos
+      };
+    });
+  }
+
+  function summaryFromItems(items) {
+    return (items || []).map(function(item) {
+      var label = item.tipo + (item.ensaio ? ' (' + item.ensaio + ')' : '');
+      if (!item.segmentos || !item.segmentos.length) return label;
+      var unit = unitKey(item.unit);
+      return label + ': ' + formatNumber(item.tubos, 0) + ' tubo(s), ' + formatNumber(item.total, unit === 'L' ? 5 : 2) + ' ' + unit;
+    }).join('; ');
+  }
+
+  function serializeItems(items) {
+    var grouped = groupItems(items);
+    return {
+      items: grouped,
+      json: grouped.length ? JSON.stringify({ v: 1, items: grouped }) : '',
+      summary: summaryFromItems(grouped)
+    };
+  }
+
+  function transportRowsFromItems(items, options) {
+    options = options || {};
+    var order = options.order || ['sangue', 'soro', 'urina', 'plasma', 'tecido', 'saliva', 'fezes', 'vacina'];
+    var displayUnit = typeof options.displayUnit === 'function' ? options.displayUnit : function(unit) { return unitKey(unit); };
+    var byKey = {};
+    var grouped = groupItems(items);
+    grouped.forEach(function(item) {
+      if (order.indexOf(item.key) > -1) byKey[item.key] = item;
+    });
+    var rows = order.map(function(key) {
+      var cfg = typeConfig(key) || { key: key, label: key, unit: 'mL' };
+      var item = byKey[key];
+      return item ? {
+        ativo: true,
+        material: cfg.label,
+        tubos: item.tubos,
+        formula: item.formula,
+        total: item.total,
+        ensaio: item.ensaio,
+        unit: item.unit
+      } : {
+        ativo: false,
+        material: cfg.label,
+        tubos: '',
+        formula: '',
+        total: '',
+        ensaio: '',
+        unit: displayUnit(cfg.unit)
+      };
+    });
+    grouped.forEach(function(item) {
+      if (order.indexOf(item.key) > -1) return;
+      rows.push({
+        ativo: true,
+        material: item.tipo,
+        tubos: item.tubos,
+        formula: item.formula,
+        total: item.total,
+        ensaio: item.ensaio,
+        unit: item.unit
+      });
+    });
+    return rows;
+  }
+
+  global.CodexMatBioCore = {
+    unitKey: unitKey,
+    parseFormula: parseFormula,
+    formatNumber: formatNumber,
+    formulaText: formulaText,
+    formulaFromSegments: formulaFromSegments,
+    calculationDisplay: calculationDisplay,
+    convertFormulaUnit: convertFormulaUnit,
+    parseJson: parseJson,
+    pushUnique: pushUnique,
+    normalizeItem: normalizeItem,
+    groupItems: groupItems,
+    summaryFromItems: summaryFromItems,
+    serializeItems: serializeItems,
+    transportRowsFromItems: transportRowsFromItems
+  };
+})(window);
+</script>

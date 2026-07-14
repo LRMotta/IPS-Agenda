@@ -246,15 +246,16 @@
           <div>
             <label class="field-label" for="ptProjeto">Projeto</label>
             <div class="ac-wrap">
-              <input type="text" id="ptProjeto" class="f-input" placeholder="Nome do projeto…"
+              <input type="text" id="ptProjeto" class="f-input" placeholder="Pesquise por nome ou código…"
                      autocomplete="off"
-                     onfocus="renderAcProj('ptProjeto','ptProjetoList',_projListPart,'_selPtProjeto')"
-                     oninput="_selPtProjeto=''; renderAcProj('ptProjeto','ptProjetoList',_projListPart,'_selPtProjeto')"
-                     onblur="setTimeout(function(){fecharAcProj('ptProjetoList')},160)"
-                     onkeydown="navAcProj(event,'ptProjeto','ptProjetoList',_projListPart,'_selPtProjeto')">
+                     onfocus="renderAcProjetoParticipante()"
+                     oninput="_selPtProjeto=''; renderAcProjetoParticipante()"
+                     onblur="setTimeout(fixarProjetoParticipante,160)"
+                     onkeydown="navegarAcProjetoParticipante(event)">
               <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
               <div class="ac-list" id="ptProjetoList"></div>
             </div>
+            <div class="field-error" id="errPtProjeto">Selecione um projeto cadastrado.</div>
           </div>
           <div>
             <label class="field-label" for="ptBraco">Braço</label>

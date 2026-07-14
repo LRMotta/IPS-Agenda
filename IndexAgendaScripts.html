@@ -6,20 +6,29 @@
   var _agendaInitStarted = false;
   var _agendaEventosLoadedAt = 0;
   var _agendaEventosRefreshing = false;
+  var _agendaFormDataLoadedAt = 0;
+  var _agendaFormDataRefreshing = false;
+  var _agendaFormDataRefreshPending = false;
   var _agendaCancelamentoContext = null;
+  var _agendaConfirmarCancelamentoContext = null;
   var _agendaReagendamentoContext = null;
   var AGENDA_EVENTOS_TTL_MS = 3 * 60 * 1000;
+  var AGENDA_FORMDATA_TTL_MS = 10 * 60 * 1000;
   window.STATE = window.STATE || {};
   var STATE = window.STATE;
   STATE.agenda = STATE.agenda || {};
   STATE.agenda.formData = _agendaDados;
   STATE.agenda.initStarted = _agendaInitStarted;
   STATE.agenda.eventsLoadedAt = STATE.agenda.eventsLoadedAt || 0;
+  STATE.agenda.formDataLoadedAt = STATE.agenda.formDataLoadedAt || 0;
   _agendaEventosLoadedAt = STATE.agenda.eventsLoadedAt;
+  _agendaFormDataLoadedAt = STATE.agenda.formDataLoadedAt;
 
   function setAgendaFormDataState(data) {
     _agendaDados = data || null;
     STATE.agenda.formData = _agendaDados;
+    _agendaFormDataLoadedAt = _agendaDados ? Date.now() : 0;
+    STATE.agenda.formDataLoadedAt = _agendaFormDataLoadedAt;
     return _agendaDados;
   }
 
@@ -40,6 +49,15 @@
     return !loadedAt || (Date.now() - loadedAt) > AGENDA_EVENTOS_TTL_MS;
   }
 
+  function agendaFormDataEstaDesatualizado() {
+    var loadedAt = _agendaFormDataLoadedAt || STATE.agenda.formDataLoadedAt || 0;
+    return !loadedAt || (Date.now() - loadedAt) > AGENDA_FORMDATA_TTL_MS;
+  }
+
+  function agendaFormDataRefreshBloqueadoPorEdicao() {
+    return !!(window.APP_UNSAVED_SCOPES && window.APP_UNSAVED_SCOPES.agendaCreatePanel);
+  }
+
   function agendaEstaAtiva() {
     if (typeof getCurrentPage === 'function') return getCurrentPage() === 'agenda';
     var page = document.getElementById('page-agenda');
@@ -50,10 +68,16 @@
     if (STATE.agenda.autoRefreshListenersStarted) return;
     STATE.agenda.autoRefreshListenersStarted = true;
     document.addEventListener('visibilitychange', function() {
-      if (!document.hidden && agendaEstaAtiva()) agendaRevalidarEventosEmBackground(false);
+      if (!document.hidden && agendaEstaAtiva()) {
+        agendaRevalidarEventosEmBackground(false);
+        agendaRevalidarFormDataEmBackground(false);
+      }
     });
     window.addEventListener('focus', function() {
-      if (agendaEstaAtiva()) agendaRevalidarEventosEmBackground(false);
+      if (agendaEstaAtiva()) {
+        agendaRevalidarEventosEmBackground(false);
+        agendaRevalidarFormDataEmBackground(false);
+      }
     });
   }
 
@@ -64,6 +88,40 @@
     carregarAgendaEventos(true, null, { silent: true, onComplete: function() {
       _agendaEventosRefreshing = false;
     } });
+  }
+
+  function agendaRevalidarFormDataEmBackground(force, options) {
+    options = options || {};
+    if (_agendaFormDataRefreshing) return;
+    if (!force && !agendaFormDataEstaDesatualizado()) return;
+    if (agendaFormDataRefreshBloqueadoPorEdicao()) {
+      _agendaFormDataRefreshPending = true;
+      return;
+    }
+    _agendaFormDataRefreshing = true;
+    google.script.run
+      .withSuccessHandler(function(d) {
+        if (!force && agendaFormDataRefreshBloqueadoPorEdicao()) {
+          _agendaFormDataRefreshPending = true;
+          _agendaFormDataRefreshing = false;
+          if (typeof options.onComplete === 'function') options.onComplete(false);
+          return;
+        }
+        atualizarAgendaFormDataOpcoes(d || {});
+        _agendaFormDataRefreshing = false;
+        if (typeof options.onComplete === 'function') options.onComplete(true);
+      })
+      .withFailureHandler(function() {
+        _agendaFormDataRefreshing = false;
+        if (typeof options.onComplete === 'function') options.onComplete(false);
+      })
+      .getDadosFormularioAgenda();
+  }
+
+  function agendaExecutarRefreshFormDataPendente() {
+    if (!_agendaFormDataRefreshPending || agendaFormDataRefreshBloqueadoPorEdicao()) return;
+    _agendaFormDataRefreshPending = false;
+    agendaRevalidarFormDataEmBackground(true);
   }
   var AGENDA_POLO_TRIAL_LOGO = 'data:image/png;base64,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';
 
@@ -99,7 +157,7 @@
       .withSuccessHandler(applyAgendaFormData)
       .withFailureHandler(function(e) {
         setAgendaInitStartedState(false);
-        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
       .getDadosFormularioAgenda();
   }
@@ -139,6 +197,66 @@
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
   }
 
+  function agendaCurrentValues(ids) {
+    var out = {};
+    (ids || []).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) out[id] = el.value || '';
+    });
+    return out;
+  }
+
+  function agendaRestoreValues(values) {
+    Object.keys(values || {}).forEach(function(id) {
+      if (values[id]) setAgendaSelectValue(id, values[id]);
+    });
+  }
+
+  function atualizarAgendaFormDataOpcoes(d) {
+    if (!d) return;
+    var selectIds = [
+      'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
+      'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
+      'agC1Temp','agC2Temp','agC3Temp',
+      'agC1Status','agC2Status','agC3Status','agBackupStatus',
+      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
+      'agMonitor1','agMonitor2'
+    ].concat(agendaKitIds());
+    var atuais = agendaCurrentValues(selectIds);
+    setAgendaFormDataState(d || {});
+    if (Array.isArray(_agendaDados.procedimentoChips)) {
+      AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
+      renderAgendaProcedimentoChips();
+    }
+    preencherAgendaSelect('agTipo', _agendaDados.tiposEvento || [], '');
+    preencherAgendaSelect('agStatus', _agendaDados.status || [], null);
+    preencherAgendaSelect('agParticipante', _agendaDados.participantes || [], '');
+    preencherAgendaSelect('agProjeto', _agendaDados.projetos || [], '');
+    preencherAgendaSelect('agSalaMonitoria', _agendaDados.salasMonitoria || [], '');
+    preencherAgendaSelect('agMedico', _agendaDados.medicos || [], '');
+    preencherAgendaSelect('agPrestador', _agendaDados.prestadores || [], '');
+    ['agC1Nome','agC2Nome','agC3Nome','agBackupNome'].forEach(function(id) {
+      preencherAgendaSelect(id, _agendaDados.couriers || [], '');
+    });
+    ['agC1Temp','agC2Temp','agC3Temp'].forEach(function(id) {
+      preencherAgendaSelect(id, _agendaDados.temperaturas || [], '');
+    });
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+      preencherAgendaSelect(id, _agendaDados.statusCourier || [], '');
+    });
+    ['agC1Destino','agC2Destino','agC3Destino','agBackupDestino'].forEach(function(id) {
+      preencherAgendaSelect(id, _agendaDados.laboratoriosDestino || [], '');
+    });
+    agendaRestoreValues(atuais);
+    preencherAgendaMonitoresSelects(true);
+    preencherAgendaKitsSelects(_agendaDados.kitsColeta || []);
+    agendaRestoreValues(atuais);
+    atualizarAgendaKitAdicionais();
+    agendaMatBioPrefixes().forEach(agendaMatBioUpdateUnitUi);
+    var aviso = document.getElementById('agendaEmailAviso');
+    if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
+  }
+
   function preencherAgendaSelect(id, lista, placeholder) {
     var el = document.getElementById(id);
     if (!el) return;
@@ -148,8 +266,11 @@
       el.insertAdjacentHTML('beforeend', '<option value="">' + esc(label) + '</option>');
     }
     (lista || []).forEach(function(v) {
-      el.insertAdjacentHTML('beforeend', '<option>' + esc(v) + '</option>');
+      var value = typeof v === 'object' ? (v.nome || v.nomeAbreviado || v.codigo || '') : v;
+      var label = typeof v === 'object' && v.codigo && v.codigo !== value ? value + ' — ' + v.codigo : value;
+      el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '">' + esc(label) + '</option>');
     });
+    if (id === 'agProjeto' && typeof ativarAutocompleteProjeto === 'function') ativarAutocompleteProjeto(id);
     if (id === 'agStatus' && !el.value && el.options.length) el.value = 'Agendado';
   }
 
@@ -190,17 +311,7 @@
     el.focus();
   }
 
-  var AGENDA_MATBIO_TIPOS = [
-    { key: 'sangue', label: 'Sangue', unit: 'mL', icon: 'bloodtype' },
-    { key: 'soro', label: 'Soro', unit: 'mL', icon: 'opacity' },
-    { key: 'urina', label: 'Urina', unit: 'mL', icon: 'water_drop' },
-    { key: 'plasma', label: 'Plasma', unit: 'mL', icon: 'water_drop' },
-    { key: 'tecido', label: 'Tecido', unit: 'mL', icon: 'biotech' },
-    { key: 'saliva', label: 'Saliva', unit: 'mL', icon: 'science' },
-    { key: 'fezes', label: 'Fezes', unit: 'g', icon: 'science' },
-    { key: 'vacina', label: 'Vacina', unit: 'g', icon: 'vaccines' },
-    { key: 'outro', label: 'Outro tipo, especifique', unit: 'mL', icon: 'add_circle', outro: true }
-  ];
+  var AGENDA_MATBIO_TIPOS = CodexMatBioTypes.list();
 
   function agendaMatBioPrefixes() {
     return ['agC1','agC2','agC3','agBackup'];
@@ -220,45 +331,22 @@
   }
 
   function agendaAwbRule(courier) {
-    var n = normAgenda(courier);
-    if (n.indexOf('marken') >= 0) return { len: 12, mode: 'alnum', placeholder: '12 caracteres alfanumericos', label: 'MARKEN' };
-    if (n.indexOf('dhl') >= 0) return { len: 10, mode: 'digits', placeholder: '10 digitos', label: 'DHL' };
-    if (n.indexOf('ocasa') >= 0) return { len: 12, mode: 'ocasa', placeholder: 'A1234567 ou PK2WIZ177555', label: 'OCASA' };
-    if (n === 'pinex') return { mode: 'free', placeholder: 'Codigo PINEX / AWB', label: 'PINEX' };
-    return { mode: 'free', placeholder: 'AWB', label: courier || '' };
+    return CodexCourierRules.awbRule(courier);
   }
 
   function agendaIsValidOcasaAwb(value) {
-    return /^[A-Z][0-9]{7}$/.test(value) || /^PK2[A-Z0-9]{9}$/.test(value);
+    return CodexCourierRules.isValidOcasaAwb(value);
   }
 
   function normalizeAgendaAwbForCourier(value, courier) {
-    var rule = agendaAwbRule(courier);
-    value = String(value || '');
-    if (rule.mode === 'alnum') value = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    else if (rule.mode === 'ocasa') {
-      value = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    }
-    else if (rule.mode === 'digits') value = value.replace(/\D/g, '');
-    if (rule.len) value = value.slice(0, rule.len);
-    return value;
+    return CodexCourierRules.normalizeAwb(value, courier);
   }
 
   function applyAgendaAwbRule(prefix, sanitizeValue) {
     var awb = document.getElementById(prefix + 'Awb');
     if (!awb) return true;
     var courierEl = document.getElementById(prefix + 'Nome');
-    var rule = agendaAwbRule(courierEl ? courierEl.value : '');
-    awb.placeholder = rule.placeholder || 'AWB';
-    awb.title = rule.mode === 'ocasa' ? 'OCASA: informe 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.' : (rule.len ? (rule.label + ': informe ' + rule.len + (rule.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.')) : '');
-    awb.inputMode = rule.mode === 'digits' ? 'numeric' : 'text';
-    if (rule.mode === 'digits' && rule.len) awb.pattern = '\\d{' + rule.len + '}';
-    else if (rule.mode === 'ocasa') awb.pattern = '([A-Za-z][0-9]{7}|[Pp][Kk]2[A-Za-z0-9]{9})';
-    else if (rule.mode === 'alnum' && rule.len) awb.pattern = '[A-Za-z0-9]{' + rule.len + '}';
-    else awb.removeAttribute('pattern');
-    if (rule.len) awb.maxLength = rule.len;
-    else awb.removeAttribute('maxlength');
-    if (sanitizeValue) awb.value = normalizeAgendaAwbForCourier(awb.value, courierEl ? courierEl.value : '');
+    CodexCourierRules.applyToInput(awb, courierEl ? courierEl.value : '', sanitizeValue);
     return validateAgendaAwb(prefix, false);
   }
 
@@ -267,13 +355,12 @@
     if (!awb) return true;
     var courierEl = document.getElementById(prefix + 'Nome');
     var courier = courierEl ? courierEl.value : '';
-    var rule = agendaAwbRule(courier);
     var value = normalizeAgendaAwbForCourier(awb.value, courier);
     if (awb.value !== value) awb.value = value;
-    var ok = !value || (rule.mode === 'ocasa' ? agendaIsValidOcasaAwb(value) : (!rule.len || value.length === rule.len));
+    var ok = CodexCourierRules.isValidAwb(value, courier);
     awb.classList.toggle('invalid', !ok);
     awb.setAttribute('aria-invalid', ok ? 'false' : 'true');
-    if (!ok && showMessage) snackErro(rule.mode === 'ocasa' ? 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.' : ('AWB ' + rule.label + ' deve ter ' + rule.len + (rule.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.')));
+    if (!ok && showMessage) snackErro(CodexCourierRules.validationMessage(courier));
     return ok;
   }
 
@@ -297,10 +384,7 @@
   }
 
   function agendaMatBioUnitKey(unit) {
-    var n = normAgenda(unit || 'mL');
-    if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
-    if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
-    return 'mL';
+    return CodexMatBioCore.unitKey(unit);
   }
 
   function agendaMatBioFormulaPlaceholder(prefix) {
@@ -324,15 +408,7 @@
   }
 
   function agendaMatBioConvertFormulaUnit(text, fromUnit, toUnit) {
-    fromUnit = agendaMatBioUnitKey(fromUnit);
-    toUnit = agendaMatBioUnitKey(toUnit);
-    if (fromUnit === toUnit) return String(text || '');
-    var parsed = agendaMatBioParseFormula(text);
-    if (!parsed.segmentos.length) return String(text || '');
-    var factor = fromUnit === 'mL' && toUnit === 'L' ? 1 / 1000 : (fromUnit === 'L' && toUnit === 'mL' ? 1000 : 1);
-    return parsed.segmentos.map(function(s) {
-      return agendaMatBioFormulaText(s.qtd, Number(s.vol || 0) * factor, toUnit === 'L' ? 5 : 2);
-    }).join(', ');
+    return CodexMatBioCore.convertFormulaUnit(text, fromUnit, toUnit);
   }
 
   function agendaMatBioConvertItemForPrefix(prefix, item) {
@@ -448,12 +524,12 @@
       var tubos = row.querySelector('.ag-mat-tubos');
       var total = row.querySelector('.ag-mat-total-line');
       var cfg = agendaMatBioTypeConfig(tipo && tipo.value);
-      var parsed = agendaMatBioParseFormula(formula ? formula.value : '');
       var unit = agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, (cfg && cfg.unit) || 'mL'));
+      var calc = CodexMatBioCore.calculationDisplay(formula ? formula.value : '', unit);
       row.classList.toggle('other-on', !!(cfg && cfg.outro));
       row.dataset.volumeUnit = unit;
-      if (tubos) tubos.textContent = parsed.tubos ? agendaFmtNumber(parsed.tubos, 0) : '-';
-      if (total) total.textContent = (parsed.total ? agendaFmtNumber(parsed.total, unit === 'L' ? 5 : 2) : '-') + ' ' + unit;
+      if (tubos) tubos.textContent = calc.tubosText;
+      if (total) total.textContent = calc.totalText;
     });
     agendaMatBioUpdateUnitUi(prefix);
     agendaMatBioEnsureTrailingRow(prefix);
@@ -553,27 +629,11 @@
   }
 
   function agendaMatBioTypeConfig(value) {
-    var n = normAgenda(value);
-    if (n === 'serum') n = 'soro';
-    if (n === 'urine') n = 'urina';
-    return AGENDA_MATBIO_TIPOS.find(function(t) { return n === normAgenda(t.key) || n === normAgenda(t.label); }) || null;
+    return CodexMatBioTypes.typeConfig(value);
   }
 
   function agendaMatBioParseFormula(text) {
-    var segmentos = [];
-    var tubos = 0;
-    var total = 0;
-    var re = /(\d+(?:[.,]\d+)?)\s*(?:x|X|\u00d7|\*)\s*(\d+(?:[.,]\d+)?)/g;
-    var m;
-    while ((m = re.exec(String(text || ''))) !== null) {
-      var q = Number(String(m[1]).replace(',', '.'));
-      var v = Number(String(m[2]).replace(',', '.'));
-      if (!isFinite(q) || !isFinite(v)) continue;
-      tubos += q;
-      total += q * v;
-      segmentos.push({ qtd: q, vol: v });
-    }
-    return { tubos: tubos, total: total, segmentos: segmentos };
+    return CodexMatBioCore.parseFormula(text);
   }
 
   function agendaMatBioSerialize(prefix) {
@@ -602,12 +662,7 @@
         segmentos: parsed.segmentos
       });
     });
-    items = agendaMatBioGroupItems(items);
-    var summary = items.map(function(it) {
-      if (!it.segmentos || !it.segmentos.length) return it.tipo + (it.ensaio ? ' (' + it.ensaio + ')' : '');
-      return it.tipo + (it.ensaio ? ' (' + it.ensaio + ')' : '') + ': ' + agendaFmtNumber(it.tubos, 0) + ' tubo(s), ' + agendaFmtNumber(it.total, agendaMatBioUnitKey(it.unit) === 'L' ? 5 : 2) + ' ' + agendaMatBioUnitKey(it.unit);
-    }).join('; ');
-    return { items: items, json: items.length ? JSON.stringify({ v: 1, items: items }) : '', summary: summary };
+    return CodexMatBioCore.serializeItems(items);
   }
 
   function agendaMatBioClear(prefix) {
@@ -636,88 +691,23 @@
   }
 
   function agendaMatBioParseJson(json) {
-    try {
-      var obj = JSON.parse(String(json || ''));
-      return { items: Array.isArray(obj.items) ? obj.items : [] };
-    } catch (e) {
-      return { items: [] };
-    }
+    return CodexMatBioCore.parseJson(json);
   }
 
   function agendaMatBioFormulaFromSegments(segmentos, unit) {
-    var decimals = agendaMatBioUnitKey(unit) === 'L' ? 5 : 2;
-    return (segmentos || []).map(function(s) {
-      return agendaFmtNumber(s.qtd, 0) + ' x ' + agendaFmtNumber(s.vol, decimals);
-    }).join(', ');
+    return CodexMatBioCore.formulaFromSegments(segmentos, unit);
   }
 
   function agendaMatBioPushUnique(list, value) {
-    value = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!value) return;
-    var n = normAgenda(value);
-    var exists = list.some(function(item) { return normAgenda(item) === n; });
-    if (!exists) list.push(value);
+    CodexMatBioCore.pushUnique(list, value);
   }
 
   function agendaMatBioNormalizeItem(item) {
-    item = item || {};
-    var cfg = agendaMatBioTypeConfig(item.key || item.tipo);
-    var key = cfg ? cfg.key : (item.key || 'outro');
-    var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
-    var unit = agendaMatBioUnitKey(item.unit || (cfg && cfg.unit) || 'mL');
-    var sourceSegments = Array.isArray(item.segmentos) ? item.segmentos : [];
-    var formula = sourceSegments.length ? agendaMatBioFormulaFromSegments(sourceSegments, unit) : (item.formula || '');
-    var parsed = agendaMatBioParseFormula(formula);
-    var segmentos = sourceSegments.length ? sourceSegments : parsed.segmentos;
-    return {
-      key: key,
-      tipo: tipo,
-      ensaio: String(item.ensaio || '').trim(),
-      formula: agendaMatBioFormulaFromSegments(segmentos, unit),
-      tubos: segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0),
-      total: segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0),
-      unit: agendaMatBioUnitKey(unit),
-      segmentos: segmentos
-    };
+    return CodexMatBioCore.normalizeItem(item);
   }
 
   function agendaMatBioGroupItems(items) {
-    var order = [];
-    var groups = {};
-    (items || []).forEach(function(raw) {
-      var it = agendaMatBioNormalizeItem(raw);
-      if (!it.tipo && !it.segmentos.length) return;
-      var groupKey = it.key === 'outro' ? it.key + '|' + normAgenda(it.tipo) : it.key;
-      if (!groups[groupKey]) {
-        groups[groupKey] = {
-          key: it.key,
-          tipo: it.tipo,
-          unit: it.unit,
-          segmentos: [],
-          ensaios: []
-        };
-        order.push(groupKey);
-      }
-      Array.prototype.push.apply(groups[groupKey].segmentos, it.segmentos);
-      String(it.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
-        agendaMatBioPushUnique(groups[groupKey].ensaios, ensaio);
-      });
-    });
-    return order.map(function(k) {
-      var g = groups[k];
-      var tubos = g.segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0);
-      var total = g.segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0);
-      return {
-        key: g.key,
-        tipo: g.tipo,
-        ensaio: g.ensaios.join('; '),
-        formula: agendaMatBioFormulaFromSegments(g.segmentos, g.unit),
-        tubos: tubos,
-        total: total,
-        unit: agendaMatBioUnitKey(g.unit),
-        segmentos: g.segmentos
-      };
-    });
+    return CodexMatBioCore.groupItems(items);
   }
 
   function agendaMatBioUpdateAllCopyOptions() {
@@ -835,24 +825,7 @@
   }
 
   function agendaMatBioKnownFromText(raw) {
-    var n = ' ' + normAgenda(raw).replace(/[^a-z0-9]+/g, ' ') + ' ';
-    var aliases = [
-      { key: 'plasma', terms: ['plasma edta', 'edta plasma', 'k2 edta plasma', 'k3 edta plasma', 'blood plasma', 'plasma'] },
-      { key: 'sangue', terms: ['sangue total', 'sangue', 'blood', 'whole blood'] },
-      { key: 'soro', terms: ['soro', 'serum'] },
-      { key: 'urina', terms: ['urina', 'urine', 'urine micro panel', 'urinalysis'] },
-      { key: 'tecido', terms: ['tecido', 'tissue', 'biopsia', 'biopsy'] },
-      { key: 'saliva', terms: ['saliva'] },
-      { key: 'fezes', terms: ['fezes', 'stool'] },
-      { key: 'vacina', terms: ['vacina', 'vaccine'] }
-    ];
-    for (var i = 0; i < aliases.length; i++) {
-      for (var j = 0; j < aliases[i].terms.length; j++) {
-        var term = ' ' + normAgenda(aliases[i].terms[j]).replace(/[^a-z0-9]+/g, ' ') + ' ';
-        if (n.indexOf(term) > -1) return agendaMatBioTypeConfig(aliases[i].key);
-      }
-    }
-    return null;
+    return CodexMatBioTypes.knownFromText(raw);
   }
 
   function agendaMatBioUsefulChunk(raw) {
@@ -877,7 +850,7 @@
   }
 
   function agendaMatBioFormulaText(qtd, vol, dec) {
-    return agendaFmtNumber(qtd, 0) + ' x ' + agendaFmtNumber(vol, dec === undefined ? 2 : dec);
+    return CodexMatBioCore.formulaText(qtd, vol, dec === undefined ? 2 : dec);
   }
 
   function agendaMatBioEnsaioFromText(raw, startIdx) {
@@ -919,17 +892,9 @@
       .trim();
     if (!rotulo) return '';
     var n = normAgenda(rotulo).replace(/[^a-z0-9]+/g, ' ').trim();
-    var genericos = {
-      sangue: ['sangue', 'sangue total', 'blood', 'whole blood'],
-      soro: ['soro', 'serum'],
-      urina: ['urina', 'urine'],
-      plasma: ['plasma', 'blood plasma'],
-      tecido: ['tecido', 'tissue'],
-      saliva: ['saliva'],
-      fezes: ['fezes', 'stool'],
-      vacina: ['vacina', 'vaccine']
-    };
-    if ((genericos[known.key] || []).some(function(v) { return n === normAgenda(v); })) return '';
+    if (CodexMatBioTypes.aliases(known.key).some(function(v) {
+      return n === normAgenda(v).replace(/[^a-z0-9]+/g, ' ').trim();
+    })) return '';
     return rotulo;
   }
 
@@ -970,6 +935,14 @@
         /\d+(?:[.,]\d+)?\s*(?:L|l)(?:\s|$|[);,.])/.test(raw);
       var foundFormula = false;
       var matches = [];
+      var occupiedMatchPositions = {};
+      function addFormulaMatch(match) {
+        matches.push(match);
+        for (var pos = match.idx, end = match.idx + match.len; pos < end; pos++) occupiedMatchPositions[pos] = true;
+      }
+      function formulaMatchStartsInsideAccepted(idx) {
+        return !!occupiedMatchPositions[idx];
+      }
       var tubeWord = '(?:tubos?|tubo\\(s\\)|tubes?|tube\\(s\\)|vials?|aliquots?|aliquotas?|al[ií]quotas?)';
       var reTubosAntes = new RegExp('(\\d+(?:[.,]\\d+)?)\\s*' + tubeWord + '\\s+[a-z\\u00C0-\\u017F\\s-]*?\\s*(?:x|X|\\u00d7|\\*)\\s*(\\d+(?:[.,]\\d+)?)\\s*(mL|ml|ML|L|l|g)(?![a-zA-Z\\u00C0-\\u017F])', 'g');
       var reTubosVolume = new RegExp('(\\d+(?:[.,]\\d+)?)\\s*' + tubeWord + '.*?(\\d+(?:[.,]\\d+)?)\\s*(mL|ml|ML|L|l|g)(?![a-zA-Z\\u00C0-\\u017F])', 'g');
@@ -978,19 +951,17 @@
       var m;
 
       if (hasVolumeUnit) {
-        while ((m = reTubosAntes.exec(raw)) !== null) matches.push({ qtd: agendaMatBioNumber(m[1]), vol: agendaMatBioVolumeToDisplay(m[2], m[3]), idx: m.index, len: m[0].length });
+        while ((m = reTubosAntes.exec(raw)) !== null) addFormulaMatch({ qtd: agendaMatBioNumber(m[1]), vol: agendaMatBioVolumeToDisplay(m[2], m[3]), idx: m.index, len: m[0].length });
         while ((m = reTubosVolume.exec(raw)) !== null) {
-          var overlapsTubos = matches.some(function(x) { return m.index >= x.idx && m.index < x.idx + x.len; });
-          if (!overlapsTubos) matches.push({ qtd: agendaMatBioNumber(m[1]), vol: agendaMatBioVolumeToDisplay(m[2], m[3]), idx: m.index, len: m[0].length });
+          if (!formulaMatchStartsInsideAccepted(m.index)) addFormulaMatch({ qtd: agendaMatBioNumber(m[1]), vol: agendaMatBioVolumeToDisplay(m[2], m[3]), idx: m.index, len: m[0].length });
         }
         while ((m = reClassico.exec(raw)) !== null) {
-          var overlaps = matches.some(function(x) { return m.index >= x.idx && m.index < x.idx + x.len; });
-          if (!overlaps) matches.push({ qtd: agendaMatBioNumber(m[1]), vol: agendaMatBioVolumeToDisplay(m[2], m[3]), idx: m.index, len: m[0].length });
+          if (!formulaMatchStartsInsideAccepted(m.index)) addFormulaMatch({ qtd: agendaMatBioNumber(m[1]), vol: agendaMatBioVolumeToDisplay(m[2], m[3]), idx: m.index, len: m[0].length });
         }
         if (!matches.length && known) {
           while ((m = reVolumeSemQtd.exec(raw)) !== null) {
             if (raw.slice(Math.max(0, m.index - 3), m.index).match(/(?:x|X|\u00d7|\*)\s*$/)) continue;
-            matches.push({ qtd: 1, vol: agendaMatBioVolumeToDisplay(m[1], m[2]), idx: m.index, len: m[0].length });
+            addFormulaMatch({ qtd: 1, vol: agendaMatBioVolumeToDisplay(m[1], m[2]), idx: m.index, len: m[0].length });
             break;
           }
         }
@@ -1022,9 +993,7 @@
   }
 
   function agendaFmtNumber(n, dec) {
-    n = Number(n || 0);
-    if (!isFinite(n)) n = 0;
-    return n.toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    return CodexMatBioCore.formatNumber(n, dec);
   }
 
   function agendaTipoVisitaSelecionado() {
@@ -1119,11 +1088,21 @@
   function agendaMonitoresFiltradosPorProjeto() {
     var projeto = (document.getElementById('agProjeto') || {}).value || '';
     var projetoNorm = normAgenda(projeto);
-    return ((_agendaDados && _agendaDados.monitores) || []).filter(function(m) {
+    var tipoNorm = normAgenda((document.getElementById('agTipo') || {}).value || '');
+    var todos = ((_agendaDados && _agendaDados.monitores) || []);
+    if (!projetoNorm) return [];
+    if (tipoNorm === 'siv') {
+      return todos.slice().sort(function(a, b) {
+        var aVinculado = agendaMonitorProjetos(a).some(function(p) { return normAgenda(p) === projetoNorm; }) ? 0 : 1;
+        var bVinculado = agendaMonitorProjetos(b).some(function(p) { return normAgenda(p) === projetoNorm; }) ? 0 : 1;
+        return aVinculado - bVinculado || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' });
+      });
+    }
+    return todos.filter(function(m) {
       if (!projetoNorm) return false;
       return agendaMonitorProjetos(m).some(function(p) { return normAgenda(p) === projetoNorm; });
     }).sort(function(a, b) {
-      return String(a.nome || '').localeCompare(String(b.nome || ''));
+      return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' });
     });
   }
 
@@ -1136,7 +1115,8 @@
       var el = document.getElementById(id);
       if (!el) return;
       var anterior = id === 'agMonitor1' ? atual1 : atual2;
-      var placeholder = projeto ? (lista.length ? '-- selecione --' : '-- sem monitor vinculado --') : '-- selecione o projeto --';
+      var isSiv = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'siv';
+      var placeholder = projeto ? (lista.length ? '-- selecione --' : (isSiv ? '-- sem monitor cadastrado --' : '-- sem monitor vinculado --')) : '-- selecione o projeto --';
       el.innerHTML = '<option value="">' + esc(placeholder) + '</option>';
       lista.forEach(function(m) {
         if (!m || !m.nome) return;
@@ -1206,12 +1186,17 @@
     return n.indexOf('envio') > -1 && n.indexOf('amostra') > -1;
   }
 
+  function agendaCamposTecnicosAplicaveis(tipo) {
+    var tipoValor = tipo || (document.getElementById('agTipo') || {}).value || '';
+    var ocultarTipo = ['monitoria','siv','close-out','reuniao','feriado','auditoria','exame de imagem'].indexOf(normAgenda(tipoValor)) > -1;
+    return (agendaModoEdicao() || agendaTipoEnvioAmostras(tipoValor)) && !ocultarTipo;
+  }
+
   function atualizarAgendaCamposTecnicos() {
     var lab = document.getElementById('agLabCentral');
     var trans = document.getElementById('agTransporteCard');
     var tipo = (document.getElementById('agTipo') || {}).value || '';
-    var ocultarTipo = ['monitoria','siv','close-out','reuniao','feriado','auditoria','exame de imagem'].indexOf(normAgenda(tipo)) > -1;
-    var mostrar = (agendaModoEdicao() || agendaTipoEnvioAmostras(tipo)) && !ocultarTipo;
+    var mostrar = agendaCamposTecnicosAplicaveis(tipo);
     function aplicarEstadoTecnico() {
       if (!trans) return;
       trans.style.display = mostrar ? 'block' : 'none';
@@ -1237,6 +1222,14 @@
   function agendaSetWrapVisible(id, visible) {
     var el = document.getElementById(id);
     if (el) el.style.display = visible ? '' : 'none';
+    var row = el && el.parentElement && el.parentElement.classList.contains('field-row') ? el.parentElement : null;
+    if (!row) return;
+    var visibleFields = Array.prototype.filter.call(row.children, function(child) {
+      return child.style.display !== 'none';
+    });
+    Array.prototype.forEach.call(row.children, function(child) {
+      child.style.gridColumn = visibleFields.length === 1 && child.style.display !== 'none' ? '1 / -1' : '';
+    });
   }
 
   function agendaClearHiddenField(id) {
@@ -1272,7 +1265,7 @@
     agendaSetWrapVisible('agCarroRequeridoWrap', isVisita);
     agendaSetWrapVisible('agMonitorWrap', isPeriodo);
     agendaSetWrapVisible('agDataFimWrap', isPeriodo);
-    agendaSetWrapVisible('agHoraWrap', !isPeriodo);
+    agendaSetWrapVisible('agHoraWrap', !isPeriodo || isMonitoria);
     var dataLabel = document.getElementById('agDataLabel');
     if (dataLabel) dataLabel.innerHTML = isPeriodo ? 'Data de Inicio <span class="required-star">*</span>' : 'Data <span class="required-star">*</span>';
     if (isPeriodo) {
@@ -1354,6 +1347,36 @@
     return d.getTime() < hoje.getTime();
   }
 
+  function agendaIsFutureDate(value) {
+    var d = agendaDateOnlyFromIso(value);
+    if (!d) return false;
+    var hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime() > hoje.getTime();
+  }
+
+  function validarAgendaRealizadoFuturo() {
+    var statusEl = document.getElementById('agStatus');
+    var status = normAgenda(statusEl && statusEl.value);
+    var data = (document.getElementById('agData') || {}).value || '';
+    var dataFim = (document.getElementById('agDataFim') || {}).value || '';
+    var futuro = agendaIsFutureDate(data) || agendaIsFutureDate(dataFim);
+    var ok = status !== 'realizado' || !futuro;
+    if (statusEl) {
+      statusEl.classList.toggle('invalid', !ok);
+      statusEl.setAttribute('aria-invalid', ok ? 'false' : 'true');
+    }
+    if (!ok) {
+      if (statusEl) statusEl.dataset.futureRealizadoInvalid = '1';
+      setAgendaStatus('Atencao: visitas futuras nao podem ser marcadas como Realizado.', 'danger');
+    } else if (statusEl && statusEl.dataset.futureRealizadoInvalid === '1') {
+      statusEl.dataset.futureRealizadoInvalid = '';
+      setAgendaStatus('', '');
+    }
+    return ok;
+  }
+
   function validarAgendaAlertasDataPassada() {
     var dataValor = (document.getElementById('agData') || {}).value || '';
     if (!agendaIsPastDate(dataValor)) return true;
@@ -1407,7 +1430,7 @@
     var labRequired = agendaTipoExigeLabCentral(tipoValor);
     var checks = [
       { id: 'agData', err: 'errAgData', label: isPeriodo ? 'data de inicio' : 'data', required: true },
-      { id: 'agHora', err: 'errAgHora', label: 'horario', required: !isPeriodo },
+      { id: 'agHora', err: 'errAgHora', label: 'horario de inicio', required: !isPeriodo || isMonitoria },
       { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
       { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isPeriodo },
       { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: isPeriodo },
@@ -1613,6 +1636,11 @@
     var status = document.getElementById('agendaCancelMotivoStatus');
     if (status) status.textContent = '';
     agendaCancelOutroCounter();
+    var modal = document.getElementById('modalAgendaCancelamentoMotivo');
+    if (modal) {
+      if (modal.parentElement !== document.body) document.body.appendChild(modal);
+      modal.style.zIndex = '340';
+    }
     abrirOverlay('modalAgendaCancelamentoMotivo');
   }
 
@@ -1622,13 +1650,7 @@
     _agendaCancelamentoContext = null;
     var modal = document.getElementById('modalAgendaCancelamentoMotivo');
     if (modal) modal.classList.remove('open');
-    if (ctx && ctx.restoreStatus) {
-      var statusEl = document.getElementById('agStatus');
-      if (statusEl) {
-        statusEl.value = ctx.restoreStatus;
-        atualizarAgendaPostVisitVisibility();
-      }
-    }
+    if (ctx && ctx.restoreStatus) agendaRestaurarStatusCancelamento_(ctx.restoreStatus);
     if (ctx) snack('Cancelamento não realizado. A visita permanece como estava.');
   }
 
@@ -1660,6 +1682,45 @@
     var modal = document.getElementById('modalAgendaCancelamentoMotivo');
     if (modal) modal.classList.remove('open');
     if (typeof ctx.onConfirm === 'function') ctx.onConfirm(motivo);
+  }
+
+  function agendaRestaurarStatusCancelamento_(status) {
+    if (!status) return;
+    var statusEl = document.getElementById('agStatus');
+    if (statusEl) {
+      statusEl.value = status;
+      atualizarAgendaPostVisitVisibility();
+      validarAgendaRealizadoFuturo();
+      updateAgendaSaveAvailability(false);
+    }
+  }
+
+  function abrirAgendaConfirmarCancelamento(contexto) {
+    _agendaConfirmarCancelamentoContext = contexto || {};
+    var modal = document.getElementById('modalAgendaConfirmarCancelamento');
+    if (modal) {
+      if (modal.parentElement !== document.body) document.body.appendChild(modal);
+      modal.style.zIndex = '330';
+    }
+    abrirOverlay('modalAgendaConfirmarCancelamento');
+  }
+
+  function fecharAgendaConfirmarCancelamento(event) {
+    if (event && event.target && event.target.id !== 'modalAgendaConfirmarCancelamento') return;
+    var ctx = _agendaConfirmarCancelamentoContext;
+    _agendaConfirmarCancelamentoContext = null;
+    var modal = document.getElementById('modalAgendaConfirmarCancelamento');
+    if (modal) modal.classList.remove('open');
+    if (ctx && ctx.restoreStatus) agendaRestaurarStatusCancelamento_(ctx.restoreStatus);
+    if (ctx) snack('Cancelamento nao realizado. A visita permanece como estava.');
+  }
+
+  function confirmarAgendaCancelamento() {
+    var ctx = _agendaConfirmarCancelamentoContext || {};
+    _agendaConfirmarCancelamentoContext = null;
+    var modal = document.getElementById('modalAgendaConfirmarCancelamento');
+    if (modal) modal.classList.remove('open');
+    abrirAgendaCancelamentoMotivo(ctx);
   }
 
   function agendaEventoAtualEditado_() {
@@ -1732,7 +1793,7 @@
     var isMonitoria = tipoNorm === 'monitoria';
     var isPeriodo = isMonitoria || tipoNorm === 'siv';
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
-    if (!isPeriodo) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
+    if (!isPeriodo || isMonitoria) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
     if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
     ok = validarAgendaCampo('agTipo', 'errAgTipo', !!document.getElementById('agTipo').value) && ok;
     if (isPeriodo) {
@@ -1752,6 +1813,7 @@
     if (labErr) labErr.textContent = labRequired && !labValor ? 'Informe se haverá Laboratório Central.' : 'Informe a visita quando Lab Central = Sim.';
     ok = validarAgendaCampo('agLabCentral', 'errAgLabCentral', labOk) && ok;
     ok = validarAgendaAlertasDataPassada() && ok;
+    ok = validarAgendaRealizadoFuturo() && ok;
     ok = validateAgendaAwbs(true) && ok;
     if (!ok) {
       setAgendaStatus('Atencao: revise os campos destacados antes de salvar.', 'danger');
@@ -1770,7 +1832,7 @@
     }
     if (agendaExigeMotivoCancelamento_(payload) && !cancelamentoMotivo) {
       var statusAnteriorCancel = (agendaEventoAtualEditado_() || {}).status || 'Agendado';
-      abrirAgendaCancelamentoMotivo({
+      abrirAgendaConfirmarCancelamento({
         restoreStatus: statusAnteriorCancel,
         onConfirm: function(motivo) {
           salvarAgendaEvento(motivo);
@@ -1842,7 +1904,7 @@
     atualizarAgendaMonitorNome();
     var proj = document.getElementById('agProjeto').value || (_agendaParticipanteInfo && _agendaParticipanteInfo.projeto) || '';
     var labSim = normAgenda(document.getElementById('agLabCentral').value) === 'sim';
-    var salvarDadosTecnicos = agendaModoEdicao();
+    var salvarDadosTecnicos = agendaCamposTecnicosAplicaveis();
     var mat1 = agendaMatBioSerialize('agC1');
     var mat2 = agendaMatBioSerialize('agC2');
     var mat3 = agendaMatBioSerialize('agC3');
@@ -1974,7 +2036,7 @@
       })
       .withFailureHandler(function(e) {
         resetBtn();
-        var msg = e && e.message ? e.message : String(e);
+        var msg = appErrorMessage(e);
         atualizarJanelaTransporteErro(transporteWindow, msg);
         snackErro(msg);
       })
@@ -1993,7 +2055,7 @@
           })
           .withFailureHandler(function(e) {
             resetBtn();
-            var msg = e && e.message ? e.message : String(e);
+            var msg = appErrorMessage(e);
             atualizarJanelaTransporteErro(transporteWindow, msg);
             snackErro(msg);
           })
@@ -2001,11 +2063,193 @@
       })
       .withFailureHandler(function(e) {
         resetBtn();
-        var msg = e && e.message ? e.message : String(e);
+        var msg = appErrorMessage(e);
         atualizarJanelaTransporteErro(transporteWindow, msg);
         snackErro(msg);
       })
       .atualizarAgendaEventoCompleto(dados);
+  }
+
+  function agendaSetTipoEnvioAmostras() {
+    var el = document.getElementById('agTipo');
+    if (!el) return;
+    var match = '';
+    Array.prototype.some.call(el.options, function(opt) {
+      if (agendaTipoEnvioAmostras(opt.value || opt.text)) {
+        match = opt.value;
+        return true;
+      }
+      return false;
+    });
+    if (!match) {
+      el.insertAdjacentHTML('beforeend', '<option>Envio de Amostras</option>');
+      match = 'Envio de Amostras';
+    }
+    el.value = match;
+  }
+
+  function agendaParticipanteInfoFromPayload(dados) {
+    var info = Object.assign({}, _agendaParticipanteInfo || {});
+    var eventoAtual = _agendaEditId ? (_agendaEventos || []).find(function(x) {
+      return String(x.id || '') === String(_agendaEditId);
+    }) : null;
+    if (!info.nascimento && eventoAtual && String(eventoAtual.participante || '') === String(dados.participante || '')) {
+      info.nascimento = eventoAtual.nascimento || '';
+      info.numId = eventoAtual.idParticipante || info.numId || '';
+    }
+    if (!info.projeto) info.projeto = dados.projeto || '';
+    return info;
+  }
+
+  function agendaMostrarParticipanteInfo(info) {
+    var box = document.getElementById('agPartInfo');
+    if (!box || !info) return;
+    var partes = [];
+    if (info.nascimento) partes.push(agendaBirthAgeHtml(info.nascimento, info.idade, 'ag-part-info-birth'));
+    if (info.numId) partes.push('<b>ID:</b> ' + esc(info.numId));
+    if (info.braco) partes.push('<b>Braco:</b> ' + esc(info.braco));
+    if (info.ultimaVisitaData) partes.push('<b>Data da Ultima Visita Realizada:</b> ' + esc(info.ultimaVisitaData));
+    if (info.ultimaVisitaId) partes.push('<b>Visita:</b> ' + esc(info.ultimaVisitaId));
+    box.innerHTML = partes.join(' &nbsp; ');
+    box.style.display = partes.length ? 'block' : 'none';
+  }
+
+  function agendaLoadMaterialBackupNoTransporteI(backup) {
+    backup = backup || {};
+    agendaMatBioLoad('agC1', backup);
+    if (!backup.matBioJson && backup.material) {
+      var paste = document.getElementById('agC1MatPaste');
+      if (paste) {
+        paste.value = backup.material || '';
+        agendaMatBioInterpretPaste('agC1');
+      }
+    }
+  }
+
+  function agendaBackupTemperaturaOrigem(origem, backup) {
+    backup = backup || {};
+    if (agendaMeaningfulValue(backup.temperatura || backup.temp)) return backup.temperatura || backup.temp;
+    origem = origem || {};
+    var transportes = [origem.courier1, origem.courier2, origem.courier3];
+    for (var i = 0; i < transportes.length; i++) {
+      var temp = transportes[i] && (transportes[i].temperatura || transportes[i].temp);
+      if (agendaMeaningfulValue(temp)) return temp;
+    }
+    return '';
+  }
+
+  function criarEnvioAmostrasDoBackupAgenda() {
+    var origem = coletarAgendaEvento();
+    var backup = origem.backup || {};
+    if (!agendaMeaningfulValue(origem.participante)) {
+      snackErro('Selecione o participante antes de criar o envio do backup.');
+      return;
+    }
+    if (!agendaMeaningfulValue(origem.projeto)) {
+      snackErro('Informe o projeto antes de criar o envio do backup.');
+      return;
+    }
+    if (!agendaMeaningfulValue(origem.visita)) {
+      snackErro('Informe a visita antes de criar o envio do backup.');
+      return;
+    }
+    if (!agendaCourierMeaningful(backup)) {
+      snackErro('Preencha os dados do Transporte de Amostras Backup antes de criar o novo envio.');
+      return;
+    }
+
+    function iniciarNovoEnvio() {
+      var participanteInfo = agendaParticipanteInfoFromPayload(origem);
+      var origemId = _agendaEditId || origem.id || '';
+      if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
+      limparAgendaForm();
+
+      agendaSetTipoEnvioAmostras();
+      onAgendaTipoChange();
+      setAgendaSelectValue('agStatus', 'Agendado');
+      setAgendaSelectValue('agParticipante', origem.participante);
+      _agendaParticipanteInfo = participanteInfo;
+      setAgendaSelectValue('agProjeto', origem.projeto);
+      onAgendaProjetoChange();
+      setAgendaFieldValue('agVisita', origem.visita);
+      setAgendaSelectValue('agLabCentral', 'Sim');
+      onAgendaLabCentralChange();
+
+      setAgendaSelectValue('agC1Nome', backup.nome);
+      setAgendaSelectValue('agC1Destino', backup.destino);
+      setAgendaSelectValue('agC1Temp', agendaBackupTemperaturaOrigem(origem, backup));
+      setAgendaSelectValue('agC1Status', 'N\u00E3o Agendado');
+      agendaLoadMaterialBackupNoTransporteI(backup);
+      onAgendaCourierChange('agC1');
+      agendaMostrarParticipanteInfo(participanteInfo);
+      agendaMatBioUpdateAllCopyOptions();
+      atualizarAgendaTransportesOpcionais();
+
+      var titulo = document.querySelector('#agendaCreatePanel .modal-header-title');
+      if (titulo) titulo.textContent = 'NOVO ENVIO DE AMOSTRAS';
+      var sec = document.querySelector('#agendaCreatePanel .section-label');
+      if (sec) sec.innerHTML = '<span class="material-symbols-outlined">event_upcoming</span> Envio de amostras do backup';
+      var obs = origemId ? 'Envio criado a partir do backup do agendamento ' + origemId + '.' : 'Envio criado a partir do backup de outro agendamento.';
+      setAgendaFieldValue('agObs', obs);
+      if (typeof appMarkUnsavedChanges === 'function') appMarkUnsavedChanges('agendaCreatePanel');
+      updateAgendaSaveAvailability(false);
+      snack('Novo Envio de Amostras iniciado com os dados do backup. Informe data e horario para salvar.');
+    }
+
+    function marcarBackupOrigemEIniciar() {
+      var origemId = _agendaEditId || origem.id || '';
+      if (!origemId || typeof appServerRun !== 'function') {
+        iniciarNovoEnvio();
+        return;
+      }
+      var btn = document.getElementById('btnCriarEnvioBackup');
+      var originalHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Preparando...';
+      }
+      appServerRun({
+        method: 'atualizarStatusBackupAgenda',
+        args: [origemId, 'Adicionado \u00E0 Agenda', _agendaEditRecordVersion || ''],
+        onSuccess: function(res) {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+          }
+          if (res && res.conflito) {
+            snackErro(res.erro || 'Este agendamento foi alterado. Atualize a Agenda antes de criar o envio do backup.');
+            carregarAgendaEventos(true);
+            return;
+          }
+          if (res && res.erro) {
+            snackErro(res.erro);
+            return;
+          }
+          if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
+          if (res && res.editRecordVersion) _agendaEditEditableVersion = res.editRecordVersion;
+          var evento = (_agendaEventos || []).find(function(x) { return String(x.id || '') === String(origemId); });
+          if (evento) {
+            evento.backup = Object.assign({}, evento.backup || {}, { status: 'Adicionado \u00E0 Agenda' });
+            evento.recordVersion = (res && res.recordVersion) || evento.recordVersion;
+            evento.editRecordVersion = (res && res.editRecordVersion) || evento.editRecordVersion;
+          }
+          iniciarNovoEnvio();
+        },
+        onFailure: function(e) {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+          }
+          snackErro(typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message || e));
+        }
+      });
+    }
+
+    if (typeof appConfirmNavigationIfDirty === 'function' &&
+        !appConfirmNavigationIfDirty('agendaCreatePanel', marcarBackupOrigemEIniciar)) {
+      return;
+    }
+    marcarBackupOrigemEIniciar();
   }
 
   function gerarTransporteAgendaCard(agendaId, slot, btnId) {
@@ -2038,7 +2282,7 @@
       })
       .withFailureHandler(function(e) {
         resetBtn();
-        var msg = e && e.message ? e.message : String(e);
+        var msg = appErrorMessage(e);
         atualizarJanelaTransporteErro(transporteWindow, msg);
         snackErro(msg);
       })
@@ -2371,7 +2615,7 @@
         })
         .withFailureHandler(function(e) {
           if (btnDev) btnDev.disabled = false;
-          snackErro(e.message || e);
+          snackErro(e);
         })
         .devolverKitsAgendaEvento({
           agendaId: _agendaEditId,
@@ -2399,7 +2643,7 @@
       })
       .withFailureHandler(function(e) {
         if (btn) btn.disabled = false;
-        snackErro(e.message || e);
+        snackErro(e);
       })
       .baixarKitsAgendaEvento({
         agendaId: _agendaEditId,
@@ -2420,7 +2664,7 @@
       if (reqPage && reqPage.dataset) reqPage.dataset.agendaId = _rqAgendaOrigemId;
       preencherSolicitanteUsuarioAtual();
       var pacienteInput = document.getElementById('rqPaciente');
-      var prestadorInput = document.getElementById('rqPrestador') || document.getElementById('rqLocalExame');
+      var prestadorInput = typeof requisicaoEl === 'function' ? requisicaoEl('prestador') : document.getElementById('rqPrestador');
       if (!pacienteInput || !prestadorInput) return;
       pacienteInput.value = dados.participante || '';
       prestadorInput.value = dados.servTerc || '';
@@ -2453,7 +2697,7 @@
       if (document.getElementById('rqNascimento') && !document.getElementById('rqNascimento').value) document.getElementById('rqNascimento').value = formatDateBr(participante.dataNascimento) || participante.dataNascimento || '';
       if (document.getElementById('rqProtocolo') && !document.getElementById('rqProtocolo').value) document.getElementById('rqProtocolo').value = participante.projeto || '';
       if (typeof updateRequisicaoGenerateAvailability === 'function') updateRequisicaoGenerateAvailability(false);
-      var lista = document.getElementById('rqExamesLista') || document.getElementById('examList');
+      var lista = typeof requisicaoEl === 'function' ? requisicaoEl('examesLista') : document.getElementById('examList');
       if (lista && !lista.children.length) adicionarExame();
       snack('Requisição iniciada com dados do participante.');
     });
@@ -2563,7 +2807,7 @@
   }
 
   function normAgenda(s) {
-    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    return codexNormText(s);
   }
 
   var _agendaEventos = [];
@@ -2684,7 +2928,7 @@
         finalizarSucesso();
       })
       .withFailureHandler(function(e) {
-        if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty" style="color:#e53935"><span class="material-symbols-outlined">error</span>' + esc(e.message || e) + '</div>';
+        if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty" style="color:#e53935"><span class="material-symbols-outlined">error</span>' + esc(appErrorMessage(e)) + '</div>';
         finalizarTentativa();
       })
       .getAgendaEventos(5000);
@@ -2776,7 +3020,7 @@
         }
         aplicarStatusRequisicaoAgendaLocal(agendaId, (res && res.statusRequisicao) || (enviado ? 'Enviado' : ''), enviado, res && res.recordVersion, res && res.editRecordVersion);
       })
-      .withFailureHandler(function(e) { snackErro(e.message || e); })
+      .withFailureHandler(function(e) { snackErro(e); })
       .atualizarStatusRequisicaoAgenda(agendaId, !!enviado);
   }
 
@@ -2869,7 +3113,7 @@
     };
   }
 
-  function toggleAgendaCreate() {
+  function abrirAgendaCreatePanelNovo() {
     if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
     var p = document.getElementById('agendaCreatePanel');
@@ -2877,6 +3121,25 @@
     agendaMatBioUpdateAllCopyOptions();
     atualizarAgendaTransportesOpcionais();
     updateAgendaSaveAvailability(true);
+  }
+
+  function toggleAgendaCreate() {
+    if (_agendaFormDataRefreshing) {
+      abrirAgendaCreatePanelNovo();
+      return;
+    }
+    var abriu = false;
+    agendaRevalidarFormDataEmBackground(true, {
+      onComplete: function() {
+        if (abriu) return;
+        abriu = true;
+        abrirAgendaCreatePanelNovo();
+      }
+    });
+    if (!_agendaFormDataRefreshing && !abriu) {
+      abriu = true;
+      abrirAgendaCreatePanelNovo();
+    }
   }
 
   function abrirAgendaEdicao(id) {
@@ -3004,7 +3267,7 @@
           onConfirm: function(motivo) {
             google.script.run
               .withSuccessHandler(function() { carregarAgendaEventos(true); })
-              .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+              .withFailureHandler(function(e) { snackErro(e); })
               .cancelarAgendaEvento(id, motivo);
           }
         });
@@ -3021,6 +3284,7 @@
     var p = document.getElementById('agendaCreatePanel');
     if (p) p.classList.remove('open');
     if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
+    agendaExecutarRefreshFormDataPendente();
     if (typeof onClosed === 'function') onClosed();
     return true;
   }
@@ -3574,7 +3838,7 @@
     var sideHtml = agendaSidePanelHtml(r, labSim);
     var calendarBtn = normAgenda(r.status) === 'cancelado' ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
-    return '<div class="ag-appt st-' + st + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
+    return '<div class="ag-appt st-' + st + agendaTipoVisualClass(r) + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         (labSim ? '<div class="ag-lab-watermark" title="Laboratorio central"><span class="material-symbols-outlined">science</span></div>' : '') +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
@@ -3668,7 +3932,7 @@
     var naoAplicavel = agendaCourierStatusNaoAplicavel(c.status);
     var ok = ['coletado','enviado','entregue','confirmado'].indexOf(agendaCourierStatusClass(c.status)) > -1;
     var btnId = 'btnCardTransp' + String(agendaId || '').replace(/\W/g, '') + String(slot || '').replace(/\W/g, '');
-    var docBtn = agendaId ? '<button class="ag-c-doc-btn" id="' + esc(btnId) + '" type="button" onclick="event.stopPropagation();gerarTransporteAgendaCard(\'' + esc(agendaId) + '\',\'' + esc(slot) + '\',\'' + esc(btnId) + '\')"><span class="material-symbols-outlined">description</span> Gerar docs</button>' : '';
+    var docBtn = agendaId && !backup ? '<button class="ag-c-doc-btn" id="' + esc(btnId) + '" type="button" onclick="event.stopPropagation();gerarTransporteAgendaCard(\'' + esc(agendaId) + '\',\'' + esc(slot) + '\',\'' + esc(btnId) + '\')"><span class="material-symbols-outlined">description</span> Gerar docs</button>' : '';
     return '<div class="ag-c-card ' + (backup ? 'backup' : '') + '">' +
       '<div class="ag-c-head"><span class="ag-c-num">' + esc(n) + '</span><span class="ag-c-brand">' + esc(c.nome || (backup ? 'Backup' : 'Transporte')) + '</span>' + docBtn + '<span class="ag-c-status ag-ch-' + agendaCourierStatusClass(c.status) + '"><span class="material-symbols-outlined">' + (naoAplicavel ? 'block' : ok ? 'check_circle' : 'pending') + '</span>' + esc(c.status || 'Pendente') + '</span></div>' +
       '<div class="ag-c-body">' +
@@ -3749,7 +4013,7 @@
     var isMon = agendaIsMonitoria(r);
     var isSiv = normAgenda(r.tipo) === 'siv';
     var isPeriodoOperacional = isMon || isSiv;
-    return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
+    return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + agendaTipoVisualClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
       '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento'))) + '</div>' +
       (isPeriodoOperacional ? '' : '<div style="margin:4px 0">' + agendaTipoChip(r.tipo) + '</div>') +
       '<div class="ag-wk-proj"><span class="material-symbols-outlined">folder_open</span>' + esc(r.projeto || '-') + '</div>' +
@@ -3772,7 +4036,9 @@
 
   function agendaStatusClass(r) {
     var n = normAgenda((r && r.status) || '');
+    var tipo = normAgenda((r && r.tipo) || '');
     if (agendaIsMonitoria(r)) return 'monitoria';
+    if (tipo === 'siv' || tipo.indexOf('site initiation') > -1) return 'siv';
     if (n.indexOf('nao agend') > -1) return 'naoagendado';
     if (n.indexOf('cancel') > -1) return 'cancelado';
     if (n.indexOf('confirm') > -1) return 'confirmado';
@@ -3783,6 +4049,12 @@
     if (n.indexOf('reag') > -1) return 'reagendado';
     if (n.indexOf('pend') > -1) return 'pendente';
     return 'agendado';
+  }
+
+  function agendaTipoVisualClass(r) {
+    var tipo = normAgenda((r && r.tipo) || '');
+    if (tipo === 'siv' || tipo.indexOf('site initiation') > -1) return ' type-siv';
+    return '';
   }
 
   function agendaIsMonitoria(r) {

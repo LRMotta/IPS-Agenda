@@ -2,14 +2,71 @@
 
   // ===================== VISUALIZAÇÃO DO ESTOQUE =====================
   var evItens = [];
+  var ESTOQUE_CLIENT_CACHE_TTL_MS = 5 * 60 * 1000;
+  var ESTOQUE_CONFIG_TTL_MS = 5 * 60 * 1000;
+  var ESTOQUE_CLIENT_CACHE = {};
+  var ESTOQUE_CLIENT_IN_FLIGHT = {};
 
-  function carregarEstoqueView() {
+  function estoqueClientCacheValid(entry) {
+    return !!(entry && (Date.now() - Number(entry.loadedAt || 0)) < ESTOQUE_CLIENT_CACHE_TTL_MS);
+  }
+
+  function invalidateEstoqueClientCache(key) {
+    if (key) {
+      delete ESTOQUE_CLIENT_CACHE[key];
+      delete ESTOQUE_CLIENT_IN_FLIGHT[key];
+      return;
+    }
+    ESTOQUE_CLIENT_CACHE = {};
+    ESTOQUE_CLIENT_IN_FLIGHT = {};
+    resetEstoqueConfigCacheState();
+  }
+
+  function resetEstoqueConfigCacheState() {
+    _estoqueConfigLoaded = false;
+    _estoqueConfigLoadedAt = 0;
+    if (window.STATE && window.STATE.estoque) window.STATE.estoque.configLoadedAt = 0;
+  }
+
+  function estoqueConfigCacheValid() {
+    return !!(_estoqueConfigLoaded && _estoqueConfigLoadedAt && (Date.now() - Number(_estoqueConfigLoadedAt || 0)) < ESTOQUE_CONFIG_TTL_MS);
+  }
+
+  function estoqueCachedRun(key, method, args, onSuccess, onFailure, force) {
+    var cached = ESTOQUE_CLIENT_CACHE[key];
+    if (!force && estoqueClientCacheValid(cached)) {
+      onSuccess(cached.data, cached.loadedAt);
+      return;
+    }
+    if (!force && ESTOQUE_CLIENT_IN_FLIGHT[key]) {
+      ESTOQUE_CLIENT_IN_FLIGHT[key].push({ ok: onSuccess, fail: onFailure });
+      return;
+    }
+    ESTOQUE_CLIENT_IN_FLIGHT[key] = [{ ok: onSuccess, fail: onFailure }];
+    var runner = google.script.run
+      .withSuccessHandler(function(res) {
+        var loadedAt = Date.now();
+        ESTOQUE_CLIENT_CACHE[key] = { data: res, loadedAt: loadedAt };
+        var waiters = ESTOQUE_CLIENT_IN_FLIGHT[key] || [];
+        delete ESTOQUE_CLIENT_IN_FLIGHT[key];
+        waiters.forEach(function(w) { if (w.ok) w.ok(res, loadedAt); });
+      })
+      .withFailureHandler(function(e) {
+        var waiters = ESTOQUE_CLIENT_IN_FLIGHT[key] || [];
+        delete ESTOQUE_CLIENT_IN_FLIGHT[key];
+        waiters.forEach(function(w) { if (w.fail) w.fail(e); });
+      });
+    runner[method].apply(runner, args || []);
+  }
+
+  function carregarEstoqueView(force) {
+    if (force) invalidateEstoqueClientCache();
     document.getElementById('evBody').innerHTML =
       '<tr class="loading-row"><td colspan="11"><div class="spinner"></div>Carregando...</td></tr>';
-    google.script.run
-      .withSuccessHandler(function(res) { evRender((res && res.data) || res); })
-      .withFailureHandler(function(e) { snack('Erro: ' + e.message); })
-      .getEstoqueBootstrapData('estoque-view');
+    estoqueCachedRun('bootstrap:estoque-view', 'getEstoqueBootstrapData', ['estoque-view'],
+      function(res) { evRender((res && res.data) || res); },
+      function(e) { snackErro(e); },
+      !!force);
   }
 
   function evRender(lista) {
@@ -226,7 +283,7 @@
             '<button class="btn-new" id="eiBtnNovoPedido" onclick="abrirFormPedidoInline()" style="display:none"><span class="material-symbols-outlined">add</span> Novo Pedido</button>' +
             '<button class="btn-new" id="eiBtnNovaMov" onclick="abrirFormMovInline()" style="display:none"><span class="material-symbols-outlined">add</span> Nova Movimentação</button>' +
             '<button class="btn-new" id="eiBtnImprimirRel" onclick="imprimirRelatorioEstoque()" style="display:none"><span class="material-symbols-outlined">print</span> Imprimir</button>' +
-            '<button class="btn-new" onclick="carregarEstoqueInline()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)"><span class="material-symbols-outlined">refresh</span> Atualizar</button>' +
+            '<button class="btn-new" onclick="carregarEstoqueInline(true)" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)"><span class="material-symbols-outlined">refresh</span> Atualizar</button>' +
           '</div>' +
           '<div class="table-card"><table class="data-table" id="eiTable" style="min-width:820px"><thead id="eiHead"></thead><tbody id="eiBody"><tr class="loading-row"><td><div class="spinner"></div>Carregando...</td></tr></tbody></table></div>' +
         '</div>' +
@@ -386,6 +443,8 @@
   STATE.estoque = STATE.estoque || {};
   STATE.estoque.inlinePagina = _estoqueInlinePagina;
   STATE.estoque.inlineDados = _estoqueInlineDados;
+  STATE.estoque.configLoadedAt = STATE.estoque.configLoadedAt || 0;
+  _estoqueConfigLoadedAt = _estoqueConfigLoadedAt || STATE.estoque.configLoadedAt;
 
   function setEstoqueInlinePaginaState(pagina) {
     _estoqueInlinePagina = pagina || 'itens';
@@ -397,6 +456,21 @@
     _estoqueInlineDados = dados || null;
     STATE.estoque.inlineDados = _estoqueInlineDados;
     return _estoqueInlineDados;
+  }
+
+  function setupEstoqueConfigAutoRefreshListeners() {
+    if (STATE.estoque.configAutoRefreshListenersStarted) return;
+    STATE.estoque.configAutoRefreshListenersStarted = true;
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && typeof getCurrentPage === 'function' && getCurrentPage() === 'estoque-app') {
+        carregarEstoqueConfig(false);
+      }
+    });
+    window.addEventListener('focus', function() {
+      if (typeof getCurrentPage === 'function' && getCurrentPage() === 'estoque-app') {
+        carregarEstoqueConfig(false);
+      }
+    });
   }
 
   function irParaEstoqueApp(pagina) {
@@ -437,24 +511,28 @@
     setEstoqueInlinePaginaState(pagina || 'itens');
     setEstoqueInlineDadosState(null);
     updateFloatingAddButton();
+    setupEstoqueConfigAutoRefreshListeners();
     carregarEstoqueInlineBootstrap();
   }
 
-  function applyEstoqueBootstrapConfig(cfg) {
+  function applyEstoqueBootstrapConfig(cfg, loadedAt) {
     cfg = cfg || {};
     ESTOQUE_CONFIG.laboratorios = cfg.laboratorios && cfg.laboratorios.length ? cfg.laboratorios : ESTOQUE_CONFIG.laboratorios;
     ESTOQUE_CONFIG.localizacoes = cfg.localizacoes && cfg.localizacoes.length ? cfg.localizacoes : ESTOQUE_CONFIG.localizacoes;
     ESTOQUE_CONFIG.tiposItem = cfg.tiposItem && cfg.tiposItem.length ? cfg.tiposItem : ESTOQUE_CONFIG.tiposItem;
     _estoqueConfigLoaded = true;
+    _estoqueConfigLoadedAt = Number(loadedAt || Date.now());
+    if (window.STATE && window.STATE.estoque) window.STATE.estoque.configLoadedAt = _estoqueConfigLoadedAt;
   }
 
-  function carregarEstoqueInlineBootstrap() {
+  function carregarEstoqueInlineBootstrap(force) {
+    if (force) invalidateEstoqueClientCache();
     var body = document.getElementById('eiBody');
     if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
-    google.script.run
-      .withSuccessHandler(function(res) {
+    estoqueCachedRun('bootstrap:' + _estoqueInlinePagina, 'getEstoqueBootstrapData', [_estoqueInlinePagina],
+      function(res, loadedAt) {
         res = res || {};
-        applyEstoqueBootstrapConfig(res.config || {});
+        applyEstoqueBootstrapConfig(res.config || {}, loadedAt);
         setEstoqueInlineDadosState(res.data || {});
         if (_estoqueInlinePagina === 'relatorios') setEstoqueInlineDadosState({ estoque: res.data || [] });
         if (_pedidoFiltroInicial) {
@@ -463,15 +541,19 @@
           _pedidoFiltroInicial = '';
         }
         renderEstoqueInline();
-      })
-      .withFailureHandler(function(e) {
+      },
+      function(e) {
         estoqueInlineErro(e);
-      })
-      .getEstoqueBootstrapData(_estoqueInlinePagina);
+      },
+      !!force);
   }
 
-  function carregarEstoqueConfig(done) {
-    if (_estoqueConfigLoaded) {
+  function carregarEstoqueConfig(force, done) {
+    if (typeof force === 'function') {
+      done = force;
+      force = false;
+    }
+    if (!force && estoqueConfigCacheValid()) {
       if (done) done();
       return;
     }
@@ -482,17 +564,20 @@
       })
       .withFailureHandler(function() {
         _estoqueConfigLoaded = true;
+        _estoqueConfigLoadedAt = Date.now();
+        if (window.STATE && window.STATE.estoque) window.STATE.estoque.configLoadedAt = _estoqueConfigLoadedAt;
         if (done) done();
       })
       .getEstoqueConfig();
   }
 
-  function carregarEstoqueInline() {
+  function carregarEstoqueInline(force) {
+    if (force) invalidateEstoqueClientCache();
     var body = document.getElementById('eiBody');
     if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
     if (_estoqueInlinePagina === 'pedidos') {
-      google.script.run
-        .withSuccessHandler(function(d) {
+      estoqueCachedRun('data:pedidos', 'getPedidosEstoque', [],
+        function(d) {
           setEstoqueInlineDadosState(d || {});
           if (_pedidoFiltroInicial) {
             var s = document.getElementById('eiSearch');
@@ -500,37 +585,37 @@
             _pedidoFiltroInicial = '';
           }
           renderEstoqueInline();
-        })
-        .withFailureHandler(function(e) { estoqueInlineErro(e); })
-        .getPedidosEstoque();
+        },
+        function(e) { estoqueInlineErro(e); },
+        !!force);
       return;
     }
     if (_estoqueInlinePagina === 'itens') {
-      google.script.run
-        .withSuccessHandler(function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); })
-        .withFailureHandler(function(e) { estoqueInlineErro(e); })
-        .getItensEstoque();
+      estoqueCachedRun('data:itens', 'getItensEstoque', [],
+        function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); },
+        function(e) { estoqueInlineErro(e); },
+        !!force);
       return;
     }
     if (_estoqueInlinePagina === 'descartes') {
-      google.script.run
-        .withSuccessHandler(function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); })
-        .withFailureHandler(function(e) { estoqueInlineErro(e); })
-        .getDescartesEstoque();
+      estoqueCachedRun('data:descartes', 'getDescartesEstoque', [],
+        function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); },
+        function(e) { estoqueInlineErro(e); },
+        !!force);
       return;
     }
     if (_estoqueInlinePagina === 'movimentacoes') {
-      google.script.run
-        .withSuccessHandler(function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); })
-        .withFailureHandler(function(e) { estoqueInlineErro(e); })
-        .getMovimentacoesEstoque();
+      estoqueCachedRun('data:movimentacoes', 'getMovimentacoesEstoque', [],
+        function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); },
+        function(e) { estoqueInlineErro(e); },
+        !!force);
       return;
     }
     if (_estoqueInlinePagina === 'relatorios') {
-      google.script.run
-        .withSuccessHandler(function(d) { setEstoqueInlineDadosState({ estoque: d || [] }); renderEstoqueInline(); })
-        .withFailureHandler(function(e) { estoqueInlineErro(e); })
-        .getEstoque();
+      estoqueCachedRun('data:relatorios', 'getEstoque', [],
+        function(d) { setEstoqueInlineDadosState({ estoque: d || [] }); renderEstoqueInline(); },
+        function(e) { estoqueInlineErro(e); },
+        !!force);
       return;
     }
     renderEstoqueInline();
@@ -538,7 +623,7 @@
 
   function estoqueInlineErro(e) {
     var body = document.getElementById('eiBody');
-    if (body) body.innerHTML = '<tr><td colspan="9" style="padding:18px;color:#b3261e;background:#fce8e6;border-radius:8px">Erro: ' + esc(e.message || e) + '</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="9" style="padding:18px;color:#b3261e;background:#fce8e6;border-radius:8px">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
   }
 
   function renderEstoqueInline() {
@@ -945,7 +1030,7 @@
         renderPlanejamentoItens();
       })
       .withFailureHandler(function(e) {
-        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
         document.getElementById('planItensBody').innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#b3261e">Erro ao carregar planejamento.</td></tr>';
       })
       .getPlanejamentoPedidoEstoque();
@@ -977,7 +1062,7 @@
         renderDescarteItens();
       })
       .withFailureHandler(function(e) {
-        document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">Erro ao carregar dados: ' + esc(e.message || e) + '</span>';
+        document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">Erro ao carregar dados: ' + esc(appErrorMessage(e)) + '</span>';
         document.getElementById('desProjeto').innerHTML = '<option value="">Falha ao carregar</option>';
         document.getElementById('desSolicitante').innerHTML = '<option value="">Falha ao carregar</option>';
         document.getElementById('desItensBody').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#b3261e">Não foi possível carregar os itens.</td></tr>';
@@ -1114,8 +1199,8 @@
     btn.disabled = true;
     document.getElementById('statusDescarte').innerHTML = '<span style="color:#5f6b7c">Gerando lista...</span>';
     google.script.run
-      .withSuccessHandler(function(msg) { btn.disabled = false; fecharOverlay('modalPlanejarDescarteInline'); snack(msg || 'Lista criada.'); carregarEstoqueInline(); })
-      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>'; })
+      .withSuccessHandler(function(msg) { btn.disabled = false; fecharOverlay('modalPlanejarDescarteInline'); snack(msg || 'Lista criada.'); carregarEstoqueInline(true); })
+      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>'; })
       .salvarPlanejamentoDescarteEstoque({ projeto: projeto, data: document.getElementById('desData').value, solicitante: document.getElementById('desSolicitante').value, email: document.getElementById('desEmail').value.trim(), observacoes: document.getElementById('desObs').value.trim(), itens: itens });
   }
 
@@ -1295,11 +1380,11 @@
         var msg = (r && r.mensagem ? r.mensagem : 'Pedido(s) criado(s).') + (r && r.emailEnviado ? ' Resumo enviado por e-mail.' : '');
         if (r && r.emailErro) msg += ' O e-mail não foi enviado: ' + r.emailErro;
         snack(msg);
-        carregarEstoqueInline();
+        carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
       .salvarPlanejamentoPedidoEstoque({
         projeto: projeto,
@@ -1478,8 +1563,8 @@
     btn.onclick = function() {
       fecharOverlay('confirmDescarte');
       google.script.run
-        .withSuccessHandler(function(msg) { snack(msg || 'Descarte efetivado.'); carregarEstoqueInline(); })
-        .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+        .withSuccessHandler(function(msg) { snack(msg || 'Descarte efetivado.'); carregarEstoqueInline(true); })
+        .withFailureHandler(function(e) { snackErro(e); })
         .efetivarDescarteEstoque(id);
     };
     abrirOverlay('confirmDescarte');
@@ -1696,11 +1781,11 @@
         btn.disabled = false;
         fecharOverlay('modalReceberPedidoInline');
         snack(msg || 'Recebimento registrado.');
-        carregarEstoqueInline();
+        carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
       .receberPedidoEstoque({
         rowIndex: rec.pedido.rowIndex,
@@ -1715,6 +1800,12 @@
     var item = itemData ? JSON.parse(decodeURIComponent(itemData)) : null;
     var dados = _estoqueInlineDados || {};
     var projetos = (dados.projetosAtivos && dados.projetosAtivos.length) ? dados.projetosAtivos : (dados.projetos || []);
+    carregarEstoqueConfig(!item, function() {
+      montarFormItemInline(item, dados, projetos);
+    });
+  }
+
+  function montarFormItemInline(item, dados, projetos) {
     _itemInlineEditId = item ? (item.id || '') : '';
     ['iiDescricao','iiLocalizacao','iiEstoqueMin','iiObs'].forEach(function(id) {
       var el = document.getElementById(id);
@@ -1795,11 +1886,11 @@
         document.getElementById('statusItemInline').innerHTML = '';
         fecharOverlay('modalItemInline');
         snack(msg || 'Item cadastrado.');
-        carregarEstoqueInline();
+        carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusItemInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('statusItemInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
       .salvarItemEstoque({
         id: _itemInlineEditId,
@@ -1821,9 +1912,9 @@
         google.script.run
           .withSuccessHandler(function(msg) {
             snack(msg || 'Item excluído.');
-            carregarEstoqueInline();
+            carregarEstoqueInline(true);
           })
-          .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+          .withFailureHandler(function(e) { snackErro(e); })
           .excluirItemEstoque(id);
       }
     });
@@ -2068,11 +2159,11 @@
         document.getElementById('statusPedidoInline').innerHTML = '';
         fecharOverlay('modalPedidoInline');
         snack(msg || 'Pedido cadastrado.');
-        carregarEstoqueInline();
+        carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusPedidoInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('statusPedidoInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
       .salvarPedidoEstoque({
         rowIndex: _pedidoInlineEdit ? _pedidoInlineEdit.rowIndex : '',
@@ -2097,9 +2188,9 @@
         google.script.run
           .withSuccessHandler(function(msg) {
             snack(msg || 'Pedido excluído.');
-            carregarEstoqueInline();
+            carregarEstoqueInline(true);
           })
-          .withFailureHandler(function(e) { snack('Erro: ' + (e.message || e)); })
+          .withFailureHandler(function(e) { snackErro(e); })
           .excluirPedidoEstoque(rowIndex, idPedido);
       }
     });
@@ -2288,11 +2379,11 @@
         btn.disabled = false;
         fecharOverlay('modalMovInline');
         snack(msg || 'Movimentação registrada.');
-        carregarEstoqueInline();
+        carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusMovInline').innerHTML = '<span style="color:#e53935">' + esc(e.message || e) + '</span>';
+        document.getElementById('statusMovInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
       .registrarMovimentacaoEstoque({
         tipoMovimento: document.getElementById('miTipoMov').value,

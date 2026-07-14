@@ -401,22 +401,15 @@
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <?!= include('SharedCourierRules'); ?>
+  <?!= include('SharedMatBioTypes'); ?>
+  <?!= include('SharedMatBioCore'); ?>
   <script>
     var state = { registro: {}, options: {}, resumo: {}, issues: [] };
     var selectedTemp = '';
     var selectedCourier = '';
     var INITIAL_TRANS_ARGS = <?!= JSON.stringify(initialTransporteArgs || {}) ?>;
-    var MATBIO_TIPOS = [
-      { key:'sangue', label:'Sangue', unit:'mL' },
-      { key:'soro', label:'Soro', unit:'mL' },
-      { key:'urina', label:'Urina', unit:'mL' },
-      { key:'plasma', label:'Plasma', unit:'mL' },
-      { key:'tecido', label:'Tecido', unit:'mL' },
-      { key:'saliva', label:'Saliva', unit:'mL' },
-      { key:'fezes', label:'Fezes', unit:'g' },
-      { key:'vacina', label:'Vacina', unit:'g' },
-      { key:'outro', label:'Outro tipo, especifique', unit:'mL', outro:true }
-    ];
+    var MATBIO_TIPOS = CodexMatBioTypes.list();
 
     function esc(v) {
       return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
@@ -567,8 +560,9 @@
       } else if (normText.indexOf('nao encontrado') >= 0 || normText.indexOf('não encontrado') >= 0 || normText.indexOf('not found') >= 0) {
         friendly = 'Nao encontrei o registro ou arquivo esperado para este transporte. Atualize os dados e confirme se ele ainda existe.';
       }
+      if (!friendly && typeof appErrorMessage === 'function') return appErrorMessage(error, fallback);
       if (!friendly) return text;
-      return friendly + (text && friendly !== text ? ' Detalhe: ' + text : '');
+      return friendly;
     }
 
     function agendaSyncMessage(data, fallback) {
@@ -848,43 +842,23 @@
     }
 
     function awbRule(courier) {
-      if (courier === 'MARKEN') return { len: 12, mode: 'alnum', placeholder: '12 caracteres alfanumericos', title: 'MARKEN: informe 12 caracteres alfanumericos.' };
-      if (courier === 'DHL') return { len: 10, mode: 'digits', placeholder: '10 digitos', title: 'DHL: informe 10 digitos.' };
-      if (courier === 'OCASA') return { len: 12, mode: 'ocasa', placeholder: 'A1234567 ou PK2WIZ177555', title: 'OCASA: informe 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.' };
-      if (courier === 'PINEX') return { mode: 'free', placeholder: 'Codigo PINEX / AWB', title: 'Informe o codigo PINEX ou AWB.' };
-      return { mode: 'free', placeholder: '', title: '' };
+      var rule = CodexCourierRules.awbRule(courier);
+      rule.title = CodexCourierRules.titleForRule(rule);
+      return rule;
     }
 
     function isValidOcasaAwb(value) {
-      return /^[A-Z][0-9]{7}$/.test(value) || /^PK2[A-Z0-9]{9}$/.test(value);
+      return CodexCourierRules.isValidOcasaAwb(value);
     }
 
     function normalizeAwbForCourier(value, courier) {
-      var rule = awbRule(courier);
-      value = String(value || '');
-      if (rule.mode === 'alnum') value = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      else if (rule.mode === 'ocasa') {
-        value = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      }
-      else if (rule.mode === 'digits') value = value.replace(/\D/g, '');
-      if (rule.len) value = value.slice(0, rule.len);
-      return value;
+      return CodexCourierRules.normalizeAwb(value, courier);
     }
 
     function applyAwbRule(sanitizeValue) {
       var input = document.getElementById('awb');
       if (!input) return;
-      var rule = awbRule(selectedCourier);
-      input.placeholder = rule.placeholder || '';
-      input.title = rule.title || '';
-      input.inputMode = rule.mode === 'digits' ? 'numeric' : 'text';
-      if (rule.mode === 'digits' && rule.len) input.pattern = '\\d{' + rule.len + '}';
-      else if (rule.mode === 'ocasa') input.pattern = '([A-Za-z][0-9]{7}|[Pp][Kk]2[A-Za-z0-9]{9})';
-      else if (rule.mode === 'alnum' && rule.len) input.pattern = '[A-Za-z0-9]{' + rule.len + '}';
-      else input.removeAttribute('pattern');
-      if (rule.len) input.maxLength = rule.len;
-      else input.removeAttribute('maxlength');
-      if (sanitizeValue) input.value = normalizeAwbForCourier(input.value, selectedCourier);
+      CodexCourierRules.applyToInput(input, selectedCourier, sanitizeValue);
     }
 
     function courierUsesTransportBox(courier) {
@@ -938,10 +912,11 @@
       google.script.run
         .withSuccessHandler(function(rows) {
           state.options = state.options || {};
-          state.options.participantes = rows || [];
-          state.options.participantesLoaded = true;
+          rows = rows || [];
+          state.options.participantes = rows;
+          state.options.participantesLoaded = rows.length > 0;
           state.options.participantesLoading = false;
-          window._transporteParticipantes = state.options.participantes;
+          if (rows.length) window._transporteParticipantes = rows;
           fillSelectRows('paciente', state.options.participantes, 'nome', document.getElementById('paciente').value, 'Selecione o paciente');
           applyParticipantSelection({ loadCe: false });
         })
@@ -988,7 +963,7 @@
       opts = opts || {};
       var r = state.registro || {};
       var o = state.options || {};
-      if ((!o.participantes || !o.participantes.length) && window._transporteParticipantes) {
+      if ((!o.participantes || !o.participantes.length) && window._transporteParticipantes && window._transporteParticipantes.length) {
         o.participantes = window._transporteParticipantes;
         o.participantesLoaded = true;
       }
@@ -1117,10 +1092,7 @@
     }
 
     function matBioUnitKey(unit) {
-      var n = norm(unit || 'mL');
-      if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
-      if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
-      return 'mL';
+      return CodexMatBioCore.unitKey(unit);
     }
 
     function matBioDisplayUnit(baseUnit) {
@@ -1129,8 +1101,7 @@
     }
 
     function matBioTypeConfig(value) {
-      var n = norm(value);
-      return MATBIO_TIPOS.filter(function(t) { return n === norm(t.key) || n === norm(t.label); })[0] || null;
+      return CodexMatBioTypes.typeConfig(value);
     }
 
     function matBioOptionsHtml(value) {
@@ -1191,24 +1162,11 @@
     }
 
     function matBioParseFormula(text) {
-      var segmentos = [];
-      var tubos = 0;
-      var total = 0;
-      var re = /(\d+(?:[.,]\d+)?)\s*(?:x|X|\u00d7|\*)\s*(\d+(?:[.,]\d+)?)/g;
-      var m;
-      while ((m = re.exec(String(text || ''))) !== null) {
-        var q = Number(String(m[1]).replace(',', '.'));
-        var v = Number(String(m[2]).replace(',', '.'));
-        if (!isFinite(q) || !isFinite(v)) continue;
-        tubos += q;
-        total += q * v;
-        segmentos.push({ qtd:q, vol:v });
-      }
-      return { tubos:tubos, total:total, segmentos:segmentos };
+      return CodexMatBioCore.parseFormula(text);
     }
 
     function fmtNumber(v, dec) {
-      return Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      return CodexMatBioCore.formatNumber(v, dec);
     }
 
     function matBioRecalc() {
@@ -1220,13 +1178,13 @@
         var tubos = row.querySelector('.ag-mat-tubos');
         var total = row.querySelector('.ag-mat-total-line');
         var cfg = matBioTypeConfig(tipo && tipo.value);
-        var parsed = matBioParseFormula(formula ? formula.value : '');
         var unit = matBioDisplayUnit((cfg && cfg.unit) || 'mL');
+        var calc = CodexMatBioCore.calculationDisplay(formula ? formula.value : '', unit);
         row.classList.toggle('other-on', !!(cfg && cfg.outro));
         row.dataset.volumeUnit = unit;
         if (formula) formula.placeholder = matBioPlaceholder();
-        if (tubos) tubos.textContent = parsed.tubos ? fmtNumber(parsed.tubos, 0) : '-';
-        if (total) total.textContent = (parsed.total ? fmtNumber(parsed.total, unit === 'L' ? 5 : 2) : '-') + ' ' + unit;
+        if (tubos) tubos.textContent = calc.tubosText;
+        if (total) total.textContent = calc.totalText;
       });
       matBioEnsureTrailingRow();
       renderDerived();
@@ -1254,19 +1212,11 @@
     }
 
     function matBioFormulaText(qtd, vol, dec) {
-      return fmtNumber(qtd, 0) + ' x ' + fmtNumber(vol, dec);
+      return CodexMatBioCore.formulaText(qtd, vol, dec);
     }
 
     function convertFormulaUnit(text, fromUnit, toUnit) {
-      fromUnit = matBioUnitKey(fromUnit);
-      toUnit = matBioUnitKey(toUnit);
-      if (fromUnit === toUnit) return String(text || '');
-      var parsed = matBioParseFormula(text);
-      if (!parsed.segmentos.length) return String(text || '');
-      var factor = fromUnit === 'mL' && toUnit === 'L' ? 1 / 1000 : (fromUnit === 'L' && toUnit === 'mL' ? 1000 : 1);
-      return parsed.segmentos.map(function(s) {
-        return matBioFormulaText(s.qtd, Number(s.vol || 0) * factor, toUnit === 'L' ? 5 : 2);
-      }).join(', ');
+      return CodexMatBioCore.convertFormulaUnit(text, fromUnit, toUnit);
     }
 
     function convertMatBioUnit(fromUnit, toUnit) {
@@ -1284,7 +1234,7 @@
     }
 
     function collectMaterials() {
-      var byKey = {};
+      var items = [];
       Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
         var tipoEl = row.querySelector('.ag-mat-type-select');
         var formulaEl = row.querySelector('.ag-mat-formula');
@@ -1294,38 +1244,20 @@
         var parsed = matBioParseFormula(formulaEl ? formulaEl.value : '');
         var label = cfg.outro ? ((row.querySelector('.ag-mat-other') || {}).value || '').trim() : cfg.label;
         if (!label || (!parsed.segmentos.length && !cfg.outro)) return;
-        var key = cfg.key;
-        if (!byKey[key]) {
-          byKey[key] = { ativo:true, material:label, tubos:0, formulas:[], total:0, ensaios:[], unit:matBioDisplayUnit(cfg.unit) };
-        }
-        byKey[key].tubos += parsed.tubos;
-        byKey[key].total += parsed.total;
-        if (formulaEl && formulaEl.value.trim()) byKey[key].formulas.push(formulaEl.value.trim());
-        if (ensaioEl && ensaioEl.value.trim()) byKey[key].ensaios.push(ensaioEl.value.trim());
+        items.push({
+          key: cfg.key,
+          tipo: label,
+          ensaio: ensaioEl ? ensaioEl.value.trim() : '',
+          formula: formulaEl ? formulaEl.value.trim() : '',
+          tubos: parsed.tubos,
+          total: parsed.total,
+          unit: matBioDisplayUnit(cfg.unit),
+          segmentos: parsed.segmentos
+        });
       });
-      var rows = ['sangue','soro','urina','plasma','tecido','saliva','fezes','vacina'].map(function(key) {
-        var cfg = matBioTypeConfig(key);
-        var item = byKey[key];
-        return item ? {
-          ativo:true,
-          material:cfg.label,
-          tubos:item.tubos,
-          formula:item.formulas.join(', '),
-          total:item.total,
-          ensaio:item.ensaios.join('; '),
-          unit:item.unit
-        } : { ativo:false, material:cfg.label, tubos:'', formula:'', total:'', ensaio:'', unit:matBioDisplayUnit(cfg.unit) };
+      return CodexMatBioCore.transportRowsFromItems(items, {
+        displayUnit: matBioDisplayUnit
       });
-      if (byKey.outro) rows.push({
-        ativo:true,
-        material:byKey.outro.material,
-        tubos:byKey.outro.tubos,
-        formula:byKey.outro.formulas.join(', '),
-        total:byKey.outro.total,
-        ensaio:byKey.outro.ensaios.join('; '),
-        unit:byKey.outro.unit
-      });
-      return rows;
     }
 
     function collectPayload() {
@@ -1419,15 +1351,11 @@
       if (!p.horaEnvio) issues.push({ type:'danger', text:'Janela de envio não informada.' });
       if (!p.agendadoPor) issues.push({ type:'danger', text:'Responsável pelo agendamento não informado.' });
       if (p.courier === 'PINEX (Agendamento)' && !p.responsavelEntrega) issues.push({ type:'danger', text:'Responsável pela entrega das amostras não informado.' });
-      var awbCheck = p.courier === 'MARKEN'
-        ? String(p.awb || '').replace(/[^A-Za-z0-9]/g, '')
-        : (p.courier === 'OCASA' ? normalizeAwbForCourier(p.awb, p.courier) : String(p.awb || '').replace(/\D/g, ''));
-      var rule = { MARKEN:12, DHL:10 }[p.courier];
+      var awbCheck = normalizeAwbForCourier(p.awb, p.courier);
       if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) {
         issues.push({ type:'danger', text:'AWB / código obrigatório para ' + p.courier + '.' });
       }
-      if (p.courier === 'OCASA' && awbCheck && !isValidOcasaAwb(awbCheck)) issues.push({ type:'warn', text:'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.' });
-      if (rule && p.courier !== 'OCASA' && awbCheck.length !== rule) issues.push({ type:'warn', text:'AWB ' + p.courier + ' deve ter ' + rule + (p.courier === 'MARKEN' ? ' caracteres.' : ' dígitos.') });
+      if (awbCheck && !CodexCourierRules.isValidAwb(awbCheck, p.courier)) issues.push({ type:'warn', text:CodexCourierRules.validationMessage(p.courier) });
       if (p.courier === 'PINEX' && !String(p.pinexColeta || '').match(/^\d{6}$/)) issues.push({ type:'warn', text:'PINEX COL. N° deve conter 6 dígitos.' });
       if (!p.materiais.some(function(m) { return m.ativo; })) issues.push({ type:'warn', text:'Nenhum material biológico marcado na declaração.' });
       if (!issues.length) issues.push({ type:'ok', text:'Dados principais prontos para sincronização.' });
