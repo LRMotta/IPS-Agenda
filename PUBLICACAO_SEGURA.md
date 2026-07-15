@@ -8,7 +8,7 @@ Use somente:
 npm run push
 ```
 
-O publicador exige a branch `main` sem alteracoes locais, gera temporariamente a versao da entrega, executa `npm run verify` e roda toda a suite de regressao. Ele localiza o `clasp.cmd` instalado em `%APPDATA%\npm` e o `clasp push --force` so comeca se todos os testes terminarem com codigo de saida zero.
+O publicador exige a branch `main` sem alteracoes locais, gera temporariamente a versao da entrega e executa `npm run verify`. Essa verificacao valida integralmente a sintaxe e depois roda toda a suite de regressao. Ele localiza o `clasp.cmd` instalado em `%APPDATA%\npm` e o `clasp push --force` so comeca se todas as verificacoes terminarem com codigo de saida zero.
 
 A versao segue o formato `AAAA.MM.DD.HHmm-commit`, usa o titulo do commit como rotulo e registra a data/hora de Sao Paulo. Depois do push, `WebApp.gs` e restaurado byte a byte para o conteudo aprovado no Git, inclusive quando ocorre falha.
 
@@ -24,9 +24,11 @@ npm run verify
 
 Esse comando nao acessa planilhas, Gmail, Drive ou calendarios reais.
 
+Antes dos testes, ele verifica todos os arquivos `.gs`, blocos `<script>` e manipuladores JavaScript inline dos arquivos `.html`. Tambem valida `appsscript.json`, `.clasp.json`, referencias `include(...)` e marcadores de conflito Git. Qualquer erro interrompe a publicacao.
+
 ## GitHub Actions
 
-O workflow `.github/workflows/regression-tests.yml` executa a mesma suite:
+O workflow `.github/workflows/regression-tests.yml` executa a mesma validacao sintatica e suite de testes:
 
 - a cada push para `main`;
 - em todo pull request destinado a `main`;

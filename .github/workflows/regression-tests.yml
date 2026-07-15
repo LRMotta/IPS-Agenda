@@ -29,5 +29,5 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Executar testes locais simulados
-        run: npm test
+      - name: Validar sintaxe e executar testes simulados
+        run: npm run verify

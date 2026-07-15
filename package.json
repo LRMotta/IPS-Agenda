@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "node --test --test-isolation=none tests/*.test.js",
-    "verify": "npm test",
+    "syntax": "node tools/validate-syntax.js",
+    "verify": "npm run syntax && npm test",
     "push": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/push-clasp.ps1",
     "push:safe": "npm run push"
   }
