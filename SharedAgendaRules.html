@@ -1,0 +1,372 @@
+<script>
+(function(global) {
+  'use strict';
+
+  var Context = Object.freeze({
+    LIST: 'lista',
+    DAILY_HEADER: 'cabecalho-diario',
+    WEEK: 'semana',
+    DAILY_PRINT: 'impressao-diaria',
+    WEEK_PRINT: 'impressao-semanal',
+    DASHBOARD: 'dashboard',
+    TRANSPORT: 'transporte',
+    REQUESTS: 'requisicoes',
+    HISTORY: 'historico'
+  });
+
+  var Action = Object.freeze({
+    ADD_TO_GOOGLE_CALENDAR: 'adicionar-google-agenda'
+  });
+
+  function normalizeText(value) {
+    return String(value == null ? '' : value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+  }
+
+  function statusKey(eventOrStatus) {
+    var status = normalizeText(
+      eventOrStatus && typeof eventOrStatus === 'object'
+        ? eventOrStatus.status
+        : eventOrStatus
+    );
+    if (status.indexOf('cancel') > -1) return 'cancelado';
+    if (status.indexOf('nao agend') > -1) return 'naoagendado';
+    if (status.indexOf('confirm') > -1) return 'confirmado';
+    if (status.indexOf('envi') > -1) return 'enviado';
+    if (status.indexOf('entreg') > -1) return 'entregue';
+    if (status.indexOf('realiz') > -1) return 'realizado';
+    if (status.indexOf('concl') > -1) return 'concluido';
+    if (status.indexOf('reag') > -1) return 'reagendado';
+    if (status.indexOf('pend') > -1) return 'pendente';
+    return 'agendado';
+  }
+
+  function typeKey(eventOrType) {
+    var type = normalizeText(
+      eventOrType && typeof eventOrType === 'object'
+        ? eventOrType.tipo
+        : eventOrType
+    );
+    if (type.indexOf('monitoria') > -1) return 'monitoria';
+    if (type === 'siv' || type.indexOf('site initiation') > -1) return 'siv';
+    if (type.indexOf('close-out') > -1 || type.indexOf('closeout') > -1) return 'closeout';
+    if (type.indexOf('visita') > -1) return 'visita';
+    if (type.indexOf('consulta') > -1) return 'consulta';
+    if (type.indexOf('imagem') > -1) return 'exame-imagem';
+    if (type.indexOf('laborator') > -1) return 'exame-laboratorial';
+    if (type.indexOf('amostra') > -1) return 'envio-amostras';
+    if (type.indexOf('feriado') > -1) return 'feriado';
+    if (type.indexOf('reuniao') > -1) return 'reuniao';
+    if (type.indexOf('auditoria') > -1) return 'auditoria';
+    return type || 'evento';
+  }
+
+  function isCancelled(event) {
+    return statusKey(event) === 'cancelado';
+  }
+
+  function isStatus(event, expectedStatus) {
+    return statusKey(event) === String(expectedStatus || '').toLowerCase();
+  }
+
+  function isType(event, expectedType) {
+    return typeKey(event) === String(expectedType || '').toLowerCase();
+  }
+
+  function isRescheduled(event) {
+    return statusKey(event) === 'reagendado';
+  }
+
+  function isCompleted(event) {
+    var status = statusKey(event);
+    return status === 'realizado' || status === 'concluido';
+  }
+
+  function isRealized(event) {
+    return isStatus(event, 'realizado');
+  }
+
+  function isConcluded(event) {
+    return isStatus(event, 'concluido');
+  }
+
+  function isMonitoring(event) {
+    return typeKey(event) === 'monitoria';
+  }
+
+  function isSiv(event) {
+    return isType(event, 'siv');
+  }
+
+  function isOperationalPeriod(event) {
+    return isMonitoring(event) || isSiv(event);
+  }
+
+  function isTerminalStatus(event) {
+    return isCancelled(event) || isCompleted(event);
+  }
+
+  function isVisit(event) {
+    return typeKey(event) === 'visita';
+  }
+
+  function hasTransportOperation(event) {
+    var type = typeKey(event);
+    return type === 'visita' || type === 'envio-amostras';
+  }
+
+  function typeRequiresLabCentral(eventOrType) {
+    if (isPhoneContact(eventOrType)) return false;
+    var type = typeKey(eventOrType);
+    return type === 'visita' || type === 'envio-amostras';
+  }
+
+  function formPolicy(eventOrType, isEditing) {
+    var type = typeKey(eventOrType);
+    var monitoring = type === 'monitoria';
+    var siv = type === 'siv';
+    var operationalPeriod = monitoring || siv;
+    var generalEvent = ['feriado', 'auditoria', 'reuniao'].indexOf(type) > -1;
+    var operationalWithoutParticipant = ['siv', 'closeout'].indexOf(type) > -1;
+    var technicalHidden = ['monitoria', 'siv', 'closeout', 'reuniao', 'feriado', 'auditoria', 'exame-imagem'].indexOf(type) > -1;
+    return {
+      type: type,
+      isMonitoring: monitoring,
+      isSiv: siv,
+      isOperationalPeriod: operationalPeriod,
+      isVisit: type === 'visita',
+      hideGeneralEvent: generalEvent,
+      hideDetails: generalEvent || operationalWithoutParticipant || monitoring,
+      technicalFieldsAvailable: (!!isEditing || type === 'envio-amostras') && !technicalHidden,
+      labChoiceAllowed: !technicalHidden && !isPhoneContact(eventOrType),
+      requiresLabCentral: typeRequiresLabCentral(eventOrType),
+      requiresProject: operationalPeriod,
+      requiresMonitorAndRoom: monitoring,
+      requiresTime: !operationalPeriod || monitoring
+    };
+  }
+
+  function typePluralLabel(eventOrType, count, fallback) {
+    var type = typeKey(eventOrType);
+    if (type === 'visita') return count === 1 ? 'Visita' : 'Visitas';
+    if (type === 'consulta') return count === 1 ? 'Consulta' : 'Consultas';
+    if (type === 'monitoria') return count === 1 ? 'Monitoria' : 'Monitorias';
+    if (type === 'envio-amostras') return count === 1 ? 'Envio de amostras' : 'Envios de amostras';
+    if (type === 'exame-imagem') return count === 1 ? 'Exame de imagem' : 'Exames de imagem';
+    if (type === 'exame-laboratorial') return count === 1 ? 'Exame laboratorial' : 'Exames laboratoriais';
+    if (isPhoneContact(eventOrType)) return count === 1 ? 'Contato telefônico' : 'Contatos telefônicos';
+    if (type === 'siv') return 'SIV';
+    if (type === 'closeout') return count === 1 ? 'Close-out' : 'Close-outs';
+    if (type === 'reuniao') return count === 1 ? 'Reuniao' : 'Reunioes';
+    if (type === 'auditoria') return count === 1 ? 'Auditoria' : 'Auditorias';
+    fallback = String(fallback || eventOrType || 'Evento');
+    return count === 1 ? fallback : fallback + 's';
+  }
+
+  function isLabCentral(event) {
+    var value = event && typeof event === 'object' ? event.labCentral : event;
+    return value === true || normalizeText(value) === 'sim';
+  }
+
+  function requestObservationIndicatesSent(observation) {
+    var text = normalizeText(observation);
+    return (text.indexOf('requi') > -1 || /\breq\b/.test(text)) &&
+      (text.indexOf('ok') > -1 || text.indexOf('enviad') > -1);
+  }
+
+  function requestIsSent(eventOrStatus, observation) {
+    var status = eventOrStatus && typeof eventOrStatus === 'object'
+      ? eventOrStatus.statusRequisicao
+      : eventOrStatus;
+    var obs = eventOrStatus && typeof eventOrStatus === 'object'
+      ? eventOrStatus.obs
+      : observation;
+    return normalizeText(status).indexOf('enviad') > -1 || requestObservationIndicatesSent(obs);
+  }
+
+  function visualClass(event) {
+    var status = statusKey(event);
+    var type = typeKey(event);
+    if (status === 'cancelado') return 'cancelado';
+    if (type === 'monitoria') return 'monitoria';
+    if (type === 'siv') return 'siv';
+    return status;
+  }
+
+  function statusChipClass(eventOrStatus) {
+    var status = normalizeText(
+      eventOrStatus && typeof eventOrStatus === 'object'
+        ? eventOrStatus.status
+        : eventOrStatus
+    );
+    if (status === 'cancelado') return 'chip-red';
+    if (status === 'realizado') return 'chip-green';
+    if (status === 'pendente') return 'chip-yellow';
+    return 'chip-purple';
+  }
+
+  function isPhoneContact(eventOrType) {
+    var type = normalizeText(
+      eventOrType && typeof eventOrType === 'object'
+        ? eventOrType.tipo
+        : eventOrType
+    );
+    return type.indexOf('contato telefonico') > -1 || type.indexOf('telefon') > -1;
+  }
+
+  function isPostVisitType(eventOrType) {
+    return isVisit(eventOrType) || isPhoneContact(eventOrType);
+  }
+
+  function typeClass(eventOrType) {
+    var type = normalizeText(
+      eventOrType && typeof eventOrType === 'object'
+        ? eventOrType.tipo
+        : eventOrType
+    );
+    if (type.indexOf('visita') > -1) return 'ag-type-visita';
+    if (isPhoneContact(type)) return 'ag-type-default';
+    if (type.indexOf('monitoria') > -1) return 'ag-type-monitoria';
+    if (type.indexOf('amostra') > -1) return 'ag-type-amostras';
+    if (type.indexOf('imagem') > -1) return 'ag-type-imagem';
+    if (type.indexOf('laborator') > -1 || type === 'exames laboratoriais') return 'ag-type-lab';
+    if (type.indexOf('feriado') > -1) return 'ag-type-feriado';
+    if (type === 'siv' || type.indexOf('site initiation') > -1) return 'ag-type-siv';
+    if (type.indexOf('close') > -1) return 'ag-type-closeout';
+    if (type.indexOf('reuniao') > -1) return 'ag-type-reuniao';
+    if (type.indexOf('auditoria') > -1) return 'ag-type-auditoria';
+    return 'ag-type-default';
+  }
+
+  function typeIcon(eventOrType) {
+    var type = normalizeText(
+      eventOrType && typeof eventOrType === 'object'
+        ? eventOrType.tipo
+        : eventOrType
+    );
+    if (type.indexOf('visita') > -1) return 'event_available';
+    if (isPhoneContact(type)) return 'call';
+    if (type.indexOf('monitoria') > -1) return 'visibility';
+    if (type.indexOf('amostra') > -1) return 'local_shipping';
+    if (type.indexOf('imagem') > -1) return 'image_search';
+    if (type.indexOf('laborator') > -1) return 'biotech';
+    if (type.indexOf('feriado') > -1) return 'event_busy';
+    if (type === 'siv' || type.indexOf('site initiation') > -1) return 'flag';
+    if (type.indexOf('close') > -1) return 'lock';
+    if (type.indexOf('reuniao') > -1) return 'groups';
+    if (type.indexOf('auditoria') > -1) return 'fact_check';
+    return 'event';
+  }
+
+  function typeVisualClass(eventOrType) {
+    return typeKey(eventOrType) === 'siv' ? ' type-siv' : '';
+  }
+
+  function courierStatusKey(statusValue) {
+    var status = normalizeText(statusValue);
+    if (status === 'nao aplicavel' || status === 'nao se aplica' || status === 'n/a' || status === 'na') return 'naoaplicavel';
+    if (status.indexOf('nao agend') > -1) return 'naoagendado';
+    if (status.indexOf('cancel') > -1) return 'cancelado';
+    if (status.indexOf('confirm') > -1) return 'confirmado';
+    if (status.indexOf('envi') > -1) return 'enviado';
+    if (status.indexOf('entreg') > -1) return 'entregue';
+    if (status.indexOf('colet') > -1) return 'confirmado';
+    if (status.indexOf('agend') > -1) return 'agendado';
+    if (status.indexOf('pend') > -1) return 'pendente';
+    return 'pendente';
+  }
+
+  function temperatureClass(value) {
+    var temperature = normalizeText(value);
+    if (temperature.indexOf('ambiente') > -1) return 'temp-ambiente';
+    if (temperature.indexOf('refriger') > -1) return 'temp-refrigerado';
+    if (temperature.indexOf('congel') > -1) return 'temp-congelado';
+    return '';
+  }
+
+  function isVisibleIn(event, context) {
+    switch (String(context || '').toLowerCase()) {
+      case Context.DAILY_HEADER:
+        return !isCancelled(event);
+      case Context.LIST:
+      case Context.WEEK:
+      case Context.DAILY_PRINT:
+      case Context.WEEK_PRINT:
+      case Context.DASHBOARD:
+      case Context.TRANSPORT:
+      case Context.HISTORY:
+        return true;
+      case Context.REQUESTS:
+        return !isCancelled(event);
+      default:
+        return true;
+    }
+  }
+
+  function canPerform(event, action) {
+    switch (String(action || '').toLowerCase()) {
+      case Action.ADD_TO_GOOGLE_CALENDAR:
+        return !isCancelled(event);
+      default:
+        return true;
+    }
+  }
+
+  function countsIn(event, indicator) {
+    var key = String(indicator || '').toLowerCase();
+    if (key === 'cancelamentos') return isCancelled(event);
+    if (key === 'cabecalho-diario') return !isCancelled(event);
+    if (key === 'dashboard-cancelamentos-reagendamentos') return isCancelled(event) || isRescheduled(event);
+    if (key === 'dashboard-monitorias') return isMonitoring(event) && !isCancelled(event);
+    if (key === 'dashboard-visitas-realizadas') return isVisit(event) && isCompleted(event) && !isCancelled(event);
+    if (key === 'dashboard-transportes-realizados') return hasTransportOperation(event) && isCompleted(event) && !isCancelled(event);
+    if (key === 'dashboard-lab-central') return isLabCentral(event) && !isCancelled(event);
+    if (key === 'lab-central') {
+      return !isCancelled(event) && isLabCentral(event);
+    }
+    return !isCancelled(event);
+  }
+
+  global.AgendaRules = Object.freeze({
+    Context: Context,
+    Action: Action,
+    normalizeText: normalizeText,
+    statusKey: statusKey,
+    typeKey: typeKey,
+    isCancelled: isCancelled,
+    isStatus: isStatus,
+    isType: isType,
+    isRescheduled: isRescheduled,
+    isCompleted: isCompleted,
+    isRealized: isRealized,
+    isConcluded: isConcluded,
+    isMonitoring: isMonitoring,
+    isSiv: isSiv,
+    isOperationalPeriod: isOperationalPeriod,
+    isTerminalStatus: isTerminalStatus,
+    isVisit: isVisit,
+    hasTransportOperation: hasTransportOperation,
+    isPhoneContact: isPhoneContact,
+    typeRequiresLabCentral: typeRequiresLabCentral,
+    isPostVisitType: isPostVisitType,
+    formPolicy: formPolicy,
+    typePluralLabel: typePluralLabel,
+    isLabCentral: isLabCentral,
+    requestObservationIndicatesSent: requestObservationIndicatesSent,
+    requestIsSent: requestIsSent,
+    visualClass: visualClass,
+    statusChipClass: statusChipClass,
+    typeClass: typeClass,
+    typeIcon: typeIcon,
+    typeVisualClass: typeVisualClass,
+    courierStatusKey: courierStatusKey,
+    temperatureClass: temperatureClass,
+    isVisibleIn: isVisibleIn,
+    canPerform: canPerform,
+    countsIn: countsIn
+  });
+})(window);
+</script>

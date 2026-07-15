@@ -8,9 +8,9 @@ var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
 // Atualize versão, rótulo e data a cada entrega do WebApp.
-var CODEX_APP_VERSION_ = '2026.07.14-prestador-email-friendly';
-var CODEX_APP_BUILD_LABEL_ = 'Edicao amigavel de e-mails de prestadores';
-var CODEX_APP_BUILD_DATE_ = '2026-07-14';
+var CODEX_APP_VERSION_ = '2026.07.15-agenda-print-cancelled';
+var CODEX_APP_BUILD_LABEL_ = 'Eventos cancelados destacados nos impressos';
+var CODEX_APP_BUILD_DATE_ = '2026-07-15';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function doGet(e) {
@@ -1715,19 +1715,15 @@ function normText_(v) {
 }
 
 function agendaStatusRealizado_(status) {
-  var n = normText_(status);
-  return n === 'realizado' || n === 'realizada';
+  return AgendaServerRules_.isRealized(status);
 }
 
 function agendaTipoExigeLabCentralServer_(tipo) {
-  var n = normText_(tipo);
-  if (agendaTipoContatoTelefonicoServer_(tipo)) return false;
-  return n.indexOf('visita') > -1 || n.indexOf('amostra') > -1;
+  return AgendaServerRules_.typeRequiresLabCentral(tipo);
 }
 
 function agendaTipoContatoTelefonicoServer_(tipo) {
-  var n = normText_(tipo);
-  return n.indexOf('contato telefonico') > -1 || n.indexOf('telefon') > -1;
+  return AgendaServerRules_.isPhoneContact(tipo);
 }
 
 
@@ -3142,10 +3138,10 @@ function getProjetosSivPorProjeto_() {
     if (!projeto) return;
     var tipo = normText_(r[i.tipo]);
     var visita = normText_(r[i.visita]);
-    if (tipo !== 'siv' && visita.indexOf('siv') === -1 && visita.indexOf('iniciacao do centro') === -1) return;
+    if (!AgendaServerRules_.isSiv(tipo) && visita.indexOf('siv') === -1 && visita.indexOf('iniciacao do centro') === -1) return;
     var status = normText_(r[i.status]);
-    if (status.indexOf('cancel') > -1) return;
-    if (status.indexOf('realiz') === -1 && status.indexOf('concl') === -1) return;
+    if (AgendaServerRules_.isCancelled(status)) return;
+    if (!AgendaServerRules_.isCompleted(status)) return;
     var dataObj = parseAgendaDateAny_(r[i.data]);
     if (!dataObj) return;
     dataObj.setHours(0, 0, 0, 0);
@@ -3234,12 +3230,21 @@ function getProjetoOptions_() {
 
 function salvarDadosProjeto(dados) {
   codexAssertCanWrite_('salvarDadosProjeto', 'Cadastros', dados && dados.id);
+  dados = dados || {};
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
   var aba = ss.getSheetByName('Projetos');
   if (!aba) throw new Error('Aba "Projetos" não encontrada.');
+  var rows = aba.getDataRange().getValues();
+  var ausentes = CadastroRules_.requiredProjectFields(dados);
+  if (ausentes.length) throw new Error('Preencha os campos obrigatórios: ' + ausentes.join(', ') + '.');
+  var duplicado = CadastroRules_.findProjectDuplicate(dados, rows);
+  if (duplicado) {
+    throw new Error(duplicado.field === 'codigo'
+      ? 'Já existe um projeto cadastrado com este código.'
+      : 'Já existe um projeto cadastrado com este nome abreviado.');
+  }
 
   if (dados.id) {
-    var rows = aba.getDataRange().getValues();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(dados.id)) {
         aba.getRange(i + 1, 2, 1, 16).setValues([[
@@ -3356,14 +3361,22 @@ function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   d = d || {};
   var projeto = String(d.projeto || '').trim();
-  if (projeto && !getProjetosParticipantesOptions_().some(function(item) {
-    return normText_(item.nome) === normText_(projeto);
-  })) {
+  var projetos = getProjetosParticipantesOptions_();
+  var ausentes = CadastroRules_.requiredParticipantFields(d);
+  if (ausentes.length) throw new Error('Preencha os campos obrigatórios: ' + ausentes.join(', ') + '.');
+  if (!CadastroRules_.projectExists(projeto, projetos)) {
     throw new Error('Selecione um projeto cadastrado para o participante.');
   }
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
+  if (!sh) throw new Error('Aba "Participantes" não encontrada.');
   var rows = sh.getDataRange().getValues();
+  var duplicado = CadastroRules_.findParticipantDuplicate(d, rows);
+  if (duplicado) {
+    throw new Error(duplicado.field === 'cpf'
+      ? 'Já existe um participante cadastrado com este CPF.'
+      : 'Já existe um participante com este ID vinculado ao mesmo projeto.');
+  }
 
   function parseDate(s) {
     if (!s) return '';
@@ -3899,8 +3912,8 @@ function getDashboardPendencias_(estoque) {
     vals.forEach(function(r) {
       var statusEvento = normText_(r[i.status]);
       var tipoEvento = normText_(r[i.tipo]);
-      if (statusEvento.indexOf('cancel') > -1) return;
-      var concluidoPorStatus = statusEvento.indexOf('concl') > -1;
+      if (AgendaServerRules_.isCancelled(statusEvento)) return;
+      var concluidoPorStatus = AgendaServerRules_.isConcluded(statusEvento);
       var isPosVisita = agendaStatusRealizado_(r[i.status]);
       var dataObj = parseAgendaDateAny_(r[i.data]);
       var isPastDate = false;
@@ -3940,7 +3953,7 @@ function getDashboardPendencias_(estoque) {
         }));
       });
       if (concluidoPorStatus) return;
-      var exigePosVisita = tipoEvento.indexOf('visita') > -1 || agendaTipoContatoTelefonicoServer_(r[i.tipo]);
+      var exigePosVisita = AgendaServerRules_.isPostVisitType(tipoEvento);
       if (isPosVisita && exigePosVisita && (!r[i.poloTrial] || !r[i.ecrf])) {
         var dataPosVisita = parseAgendaDateAny_(r[i.data]);
         if (dataPosVisita) dataPosVisita.setHours(0, 0, 0, 0);
@@ -3987,10 +4000,10 @@ function getDashboardPendencias_(estoque) {
           statusCourier: String(r[slot.cfg.status] || ''),
           awb: awb
         });
-        if (st === 'nao agendado' || st === 'pendente' || (!st && !awb)) {
+        if (AgendaServerRules_.courierNeedsSchedule(st, awb)) {
           out.counts.courierNaoAgendada++;
           out.courierNaoAgendada.push(item);
-        } else if (st === 'agendado') {
+        } else if (AgendaServerRules_.courierIsAwaitingConfirmation(st)) {
           out.counts.courierNaoConfirmada++;
           out.courierNaoConfirmada.push(item);
         }
@@ -4038,13 +4051,11 @@ function ordenarPendenciasAgendaPorDataHora_(lista) {
 }
 
 function agendaCourierStatusNaoAplicavel_(status) {
-  var st = normText_(status);
-  return st === 'nao aplicavel' || st === 'nao se aplica' || st === 'n/a' || st === 'na';
+  return AgendaServerRules_.courierIsNotApplicable(status);
 }
 
 function agendaCourierStatusEnviadoNaoEntregue_(status) {
-  var st = normText_(status);
-  return st.indexOf('envi') > -1 && st.indexOf('entreg') === -1;
+  return AgendaServerRules_.courierIsSentNotDelivered(status);
 }
 
 function prazoHorasPendenciaAgenda_(data, hora, feriados) {
@@ -4060,7 +4071,7 @@ function prazoHorasPendenciaAgenda_(data, hora, feriados) {
 function getAgendaFeriadosPendenciasMap_(rows, idx) {
   var out = {};
   (rows || []).forEach(function(r) {
-    if (normText_(r[idx.tipo]) !== 'feriado') return;
+    if (!AgendaServerRules_.isType(r[idx.tipo], 'feriado')) return;
     var d = parseAgendaDateAny_(r[idx.data]);
     if (d) out[agendaPendenciaDateKey_(d)] = true;
   });
@@ -4203,8 +4214,8 @@ function agendaDashboardRowInfo_(r, i, data) {
   var status = normText_(r[i.status]);
   var projeto = String(r[i.projeto] || 'Sem protocolo').trim() || 'Sem protocolo';
   var medico = String(r[i.medico] || 'Sem medico').trim() || 'Sem medico';
-  var lab = normText_(r[i.labCentral]) === 'sim';
-  var isVisita = tipo.indexOf('visita') > -1;
+  var lab = AgendaServerRules_.isLabCentral(r[i.labCentral]);
+  var isVisita = AgendaServerRules_.isVisit(tipo);
   var couriersEvento = agendaDashboardCouriersEvento_(r, i);
   var info = {
     data: data,
@@ -4213,12 +4224,12 @@ function agendaDashboardRowInfo_(r, i, data) {
     projeto: projeto,
     medico: medico,
     lab: lab,
-    isCancelado: status.indexOf('cancel') > -1,
-    isReagendado: status.indexOf('reag') > -1,
-    isMonitoria: tipo.indexOf('monitoria') > -1,
+    isCancelado: AgendaServerRules_.isCancelled(status),
+    isReagendado: AgendaServerRules_.isRescheduled(status),
+    isMonitoria: AgendaServerRules_.isMonitoring(tipo),
     isVisita: isVisita,
-    isEventoComTransporte: isVisita || tipo.indexOf('envio de amostra') > -1 || tipo.indexOf('amostra') > -1,
-    isRealizada: status.indexOf('realiz') > -1 || status.indexOf('concl') > -1
+    isEventoComTransporte: AgendaServerRules_.hasTransportOperation(tipo),
+    isRealizada: AgendaServerRules_.isCompleted(status)
   };
   info.evento = {
     dataIso: formatarDataIsoAgenda_(data),
@@ -6343,7 +6354,7 @@ function getAgendaStatuses_() {
     ['Status'],
     ['Agendado', 'Realizado', 'Concluído', 'Cancelado', 'Reagendado', 'Pendente']
   );
-  var temConcluido = valores.some(function(v) { return normText_(v) === 'concluido'; });
+  var temConcluido = valores.some(function(v) { return AgendaServerRules_.isConcluded(v); });
   if (!temConcluido) valores.push('Concluído');
   return valores;
 }
@@ -6650,8 +6661,8 @@ function getUltimasVisitasPorPacienteId_() {
       var categoria = normText_(r[3]);       // Col D: Categoria / Tipo de evento
       var status = normText_(r[4]);          // Col E: Status
       var paciente = normText_(r[5]);        // Col F: Paciente / Participante
-      if (!paciente || categoria !== 'visita') return;
-      if (status !== 'realizado' && status !== 'concluido') return;
+      if (!paciente || !AgendaServerRules_.isVisit(categoria)) return;
+      if (!AgendaServerRules_.isCompleted(status)) return;
       var data = agendaDateFromValue_(r[1]); // Col B: Data
       if (!data) return;
       var visita = String(r[10] == null ? '' : r[10]).trim(); // Col K: Nome da visita
@@ -6714,10 +6725,7 @@ function agendaRealizadoFuturoErro_(status, datas) {
 }
 
 function isAgendaTipoVisita_(tipo) {
-  var t = normText_(tipo);
-  if (!t) return true;
-  return ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem']
-    .indexOf(t) === -1;
+  return AgendaServerRules_.formPolicy(tipo).usesParticipantWorkflow;
 }
 
 function getUltimaVisitaParticipanteAgenda_(nome) {
@@ -6742,9 +6750,9 @@ function getUltimasVisitasParticipantesAgendaMap_() {
     vals.forEach(function(r) {
       var participante = normText_(r[idx.participante]);
       if (!participante) return;
-      if (normText_(r[idx.tipo]) !== 'visita') return;
+      if (!AgendaServerRules_.isVisit(r[idx.tipo])) return;
       var status = normText_(r[idx.status]);
-      if (status !== 'realizado' && status !== 'concluido') return;
+      if (!AgendaServerRules_.isCompleted(status)) return;
       var dt = agendaDateFromValue_(r[idx.data]);
       if (!dt || dt.getTime() > hoje.getTime()) return;
       if (!out[participante] || dt.getTime() > out[participante].dataObj.getTime()) {
@@ -6770,17 +6778,17 @@ function salvarNovoEventoCompleto(dados) {
   dados = dados || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
-  var tipoNorm = normText_(dados.tipo);
-  var isMonitoria = tipoNorm === 'monitoria';
-  var isPeriodo = agendaTipoPeriodo_(dados.tipo);
-  if ((!isPeriodo || isMonitoria) && !String(dados.hora || '').trim()) {
+  var policy = AgendaServerRules_.formPolicy(dados.tipo);
+  var isMonitoria = policy.isMonitoring;
+  var isPeriodo = policy.isOperationalPeriod;
+  if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
   if (isMonitoria && !String(dados.salaMonitoria || '').trim()) {
     return { erro: 'Informe o local (sala) da monitoria.' };
   }
-  if (tipoNorm === 'siv' && !String(dados.projeto || '').trim()) {
+  if (policy.isSiv && !String(dados.projeto || '').trim()) {
     return { erro: 'Informe o projeto/protocolo do SIV.' };
   }
   if (isMonitoria && !String(dados.monitorName || '').trim()) {
@@ -6794,8 +6802,7 @@ function salvarNovoEventoCompleto(dados) {
     var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
     for (var i = 0; i < vals.length; i++) {
       var ld = vals[i][AGENDA_CFG.idx.data];
-      var lt = normText_(vals[i][AGENDA_CFG.idx.tipo]);
-      if (lt !== 'feriado') continue;
+      if (!AgendaServerRules_.isType(vals[i][AGENDA_CFG.idx.tipo], 'feriado')) continue;
       var dl = parseAgendaDateAny_(ld);
       if (dl) {
         dl.setHours(0, 0, 0, 0);
@@ -6829,18 +6836,18 @@ function salvarNovoEventoComFeriado(dados) {
   dados = dados || {};
   var agenda = getAgendaSheet_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var tipoNorm = normText_(dados.tipo);
-  if ((!agendaTipoPeriodo_(dados.tipo) || tipoNorm === 'monitoria') && !String(dados.hora || '').trim()) {
+  var policy = AgendaServerRules_.formPolicy(dados.tipo);
+  if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
-  if (agendaTipoPeriodo_(dados.tipo)) {
-    if (tipoNorm === 'siv' && !String(dados.projeto || '').trim()) {
+  if (policy.isOperationalPeriod) {
+    if (policy.isSiv && !String(dados.projeto || '').trim()) {
       return { erro: 'Informe o projeto/protocolo do SIV.' };
     }
-    if (tipoNorm === 'monitoria' && !String(dados.monitorName || '').trim()) {
+    if (policy.isMonitoring && !String(dados.monitorName || '').trim()) {
       return { erro: 'Informe ao menos um monitor.' };
     }
-    if (tipoNorm === 'monitoria' && !String(dados.salaMonitoria || '').trim()) {
+    if (policy.isMonitoring && !String(dados.salaMonitoria || '').trim()) {
       return { erro: 'Informe o local (sala).' };
     }
     var datas = agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo));
@@ -6866,13 +6873,11 @@ function agendaDatasPeriodoMonitoria_(dataInicio, dataFim) {
 }
 
 function agendaTipoPeriodo_(tipo) {
-  var n = normText_(tipo);
-  return n === 'monitoria' || n === 'siv';
+  return AgendaServerRules_.isOperationalPeriod(tipo);
 }
 
 function agendaTipoPeriodoLabel_(tipo) {
-  var n = normText_(tipo);
-  return n === 'siv' ? 'SIV' : 'Monitoria';
+  return AgendaServerRules_.isSiv(tipo) ? 'SIV' : 'Monitoria';
 }
 
 function agendaDatasPeriodo_(dataInicio, dataFim, label) {
@@ -6915,15 +6920,15 @@ function agendaPeriodoRowsDoPeriodo_(agenda, linha, rowRef, tipoPeriodo) {
   if (lastRow < 2) return [];
   var idx = AGENDA_CFG.idx;
   var ref = rowRef || agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
-  var tipoNorm = normText_(tipoPeriodo || ref[idx.tipo]);
+  var tipoPeriodoValue = tipoPeriodo || ref[idx.tipo];
   var candidatos = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues()
     .map(function(row, i) {
       var data = parseAgendaDateAny_(row[idx.data]);
       if (!data) return null;
       data.setHours(0, 0, 0, 0);
-      if (normText_(row[idx.tipo]) !== tipoNorm) return null;
+      if (!AgendaServerRules_.sameType(row[idx.tipo], tipoPeriodoValue)) return null;
       if (normText_(row[idx.projeto]) !== normText_(ref[idx.projeto])) return null;
-      if (tipoNorm === 'monitoria' || tipoNorm === 'siv') {
+      if (AgendaServerRules_.isOperationalPeriod(tipoPeriodoValue)) {
         if (normText_(row[idx.monitorName]) !== normText_(ref[idx.monitorName])) return null;
         if (normText_(row[idx.salaMonitoria]) !== normText_(ref[idx.salaMonitoria])) return null;
       }
@@ -6971,9 +6976,9 @@ function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipo
   var status = String(dados.status || 'Agendado').trim();
   var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, d);
   if (erroRealizadoFuturo) throw new Error(erroRealizadoFuturo);
-  var tipoNorm = normText_(tipoPeriodo || dados.tipo);
-  var isPeriodoComMonitor = tipoNorm === 'monitoria' || tipoNorm === 'siv';
-  var isMonitoria = tipoNorm === 'monitoria';
+  var policy = AgendaServerRules_.formPolicy(tipoPeriodo || dados.tipo);
+  var isPeriodoComMonitor = policy.isOperationalPeriod;
+  var isMonitoria = policy.isMonitoring;
   var tipoLabel = String(dados.tipo || (isMonitoria ? 'Monitoria' : 'SIV')).trim();
   agenda.getRange(linha, AGENDA_CFG.col.data, 1, AGENDA_CFG.col.kit - AGENDA_CFG.col.data + 1).setValues([[
     formatAgendaDatePt_(d),
@@ -7007,7 +7012,7 @@ function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipo
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, {});
   agendaSetBackupLinha_(agenda, linha, {});
   agendaSetTransporteExtraLinha_(agenda, linha, {});
-  if (normText_(status) === 'cancelado') aplicarLogicaCancelamento(agenda, linha, status);
+  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento(agenda, linha, status);
 }
 
 function agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados) {
@@ -7160,13 +7165,11 @@ function agendaPostVisitValue_(value, previous) {
 }
 
 function agendaStatusConcluido_(status) {
-  return normText_(status).indexOf('concl') > -1;
+  return AgendaServerRules_.isConcluded(status);
 }
 
 function agendaPostVisitConcluidoPorStatus_(status, tipo) {
-  var tipoNorm = normText_(tipo);
-  return agendaStatusConcluido_(status) &&
-    (tipoNorm.indexOf('visita') > -1 || agendaTipoContatoTelefonicoServer_(tipo));
+  return agendaStatusConcluido_(status) && AgendaServerRules_.isPostVisitType(tipo);
 }
 
 function agendaBooleanValue_(value) {
@@ -7264,11 +7267,11 @@ function atualizarAgendaEventoCompleto(dados) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
-  var tipoNorm = normText_(tipo);
-  var isMonitoria = tipoNorm === 'monitoria';
-  var isSiv = tipoNorm === 'siv';
-  var isPeriodo = isMonitoria || isSiv;
-  if ((!isPeriodo || isMonitoria) && !String(dados.hora || '').trim()) {
+  var policy = AgendaServerRules_.formPolicy(tipo);
+  var isMonitoria = policy.isMonitoring;
+  var isSiv = policy.isSiv;
+  var isPeriodo = policy.isOperationalPeriod;
+  if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
@@ -7277,7 +7280,7 @@ function atualizarAgendaEventoCompleto(dados) {
     : [d];
   var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, datasValidacaoStatus);
   if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
-  dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
+  dados.carroRequerido = policy.isVisit && agendaBooleanValue_(dados.carroRequerido);
   if (isMonitoria) {
     if (!String(dados.projeto || '').trim()) {
       return { erro: 'Informe o projeto/protocolo da monitoria.' };
@@ -7313,18 +7316,17 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.salaMonitoria = '';
   }
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
-  var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem', 'contato telefonico'];
-  if (tiposNaoLab.indexOf(normText_(tipo)) > -1) labCentral = 'N\u00E3o aplic\u00E1vel';
+  if (!policy.labChoiceAllowed) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
     return { erro: 'Informe se haverá Laboratório Central.' };
   }
-  if (normText_(labCentral) === 'sim' && !String(dados.visita || '').trim()) {
+  if (AgendaServerRules_.isLabCentral(labCentral) && !String(dados.visita || '').trim()) {
     return { erro: 'Para "Laboratorio Central = Sim", informe a Visita.' };
   }
   var dataNovaPassada = agendaDateIsBeforeToday_(d);
   var dataAnteriorPassada = agendaDateIsBeforeToday_(rowAnterior[AGENDA_CFG.idx.data]);
-  var marcandoLabPassado = dataNovaPassada && normText_(labCentral) === 'sim' &&
-    (normText_(rowAnterior[AGENDA_CFG.idx.labCentral]) !== 'sim' || !dataAnteriorPassada);
+  var marcandoLabPassado = dataNovaPassada && AgendaServerRules_.isLabCentral(labCentral) &&
+    (!AgendaServerRules_.isLabCentral(rowAnterior[AGENDA_CFG.idx.labCentral]) || !dataAnteriorPassada);
   var marcandoReqPassada = dataNovaPassada && String(dados.servTerc || '').trim() &&
     (!String(rowAnterior[AGENDA_CFG.idx.servTerc] || '').trim() || !dataAnteriorPassada);
   if (marcandoLabPassado) {
@@ -7333,7 +7335,7 @@ function atualizarAgendaEventoCompleto(dados) {
   if (marcandoReqPassada) {
     return { erro: 'Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.' };
   }
-  if (normText_(status) === 'cancelado' && normText_(rowAnterior[AGENDA_CFG.idx.status]) !== 'cancelado') {
+  if (AgendaServerRules_.isCancelled(status) && !AgendaServerRules_.isCancelled(rowAnterior[AGENDA_CFG.idx.status])) {
     dados.obs = agendaAppendCancelamentoMotivo_(dados.obs, dados.cancelamento);
   }
   var dataAnterior = agenda.getRange(linha, AGENDA_CFG.col.data).getValue();
@@ -7346,8 +7348,8 @@ function atualizarAgendaEventoCompleto(dados) {
     normText_(formatarHoraSafe_(rowAnterior[AGENDA_CFG.idx.hora])) !== normText_(horaNova);
   var deveVerificarNotificacoes =
     datasAgendaDiferentes_(dataAnterior, d) ||
-    normText_(rowAnterior[AGENDA_CFG.idx.labCentral]) !== normText_(labCentral) ||
-    normText_(rowAnterior[AGENDA_CFG.idx.status]) !== normText_(status);
+    AgendaServerRules_.isLabCentral(rowAnterior[AGENDA_CFG.idx.labCentral]) !== AgendaServerRules_.isLabCentral(labCentral) ||
+    !AgendaServerRules_.sameStatus(rowAnterior[AGENDA_CFG.idx.status], status);
   var postVisitConcluidoPorStatus = agendaPostVisitConcluidoPorStatus_(status, tipo);
   var dataConclusaoPostVisit = new Date();
   var poloTrialValor = postVisitConcluidoPorStatus
@@ -7394,7 +7396,7 @@ function atualizarAgendaEventoCompleto(dados) {
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
   agendaSetBackupLinha_(agenda, linha, dados.backup);
   agendaSetTransporteExtraLinha_(agenda, linha, dados);
-  if (normText_(status) === 'cancelado') aplicarLogicaCancelamento(agenda, linha, status);
+  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento(agenda, linha, status);
   if (deveVerificarNotificacoes) {
     verificarNotificacoes(
       { source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
@@ -7539,8 +7541,8 @@ function marcarAgendaPassadaComoRealizada() {
   hoje.setHours(0, 0, 0, 0);
   var atualizados = 0;
   vals.forEach(function(r, idx) {
-    var status = normText_(r[AGENDA_CFG.idx.status]);
-    if (status === 'realizado' || status === 'cancelado' || status === 'concluido') return;
+    var status = r[AGENDA_CFG.idx.status];
+    if (AgendaServerRules_.isTerminalStatus(status)) return;
     var dt = agendaDateFromValue_(r[AGENDA_CFG.idx.data]);
     if (!dt) return;
     dt.setHours(0, 0, 0, 0);
@@ -7579,11 +7581,11 @@ function concluirPendenciasPoloTrialEcrfAntigas(dataCorteIso, dryRun) {
   var totalEcrf = 0;
 
   vals.forEach(function(r, idx) {
-    var statusEvento = normText_(r[i.status]);
-    if (statusEvento.indexOf('realiz') < 0) return;
+    var statusEvento = r[i.status];
+    if (!AgendaServerRules_.isRealized(statusEvento)) return;
 
-    var tipoEvento = normText_(r[i.tipo]);
-    var exigePosVisita = tipoEvento.indexOf('visita') > -1 || agendaTipoContatoTelefonicoServer_(r[i.tipo]);
+    var tipoEvento = r[i.tipo];
+    var exigePosVisita = AgendaServerRules_.isPostVisitType(tipoEvento);
     if (!exigePosVisita) return;
 
     var dataEvento = agendaDateFromValue_(r[i.data]) || parseAgendaDateAny_(r[i.data]);
@@ -7672,16 +7674,16 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
-  var tipoNorm = normText_(tipo);
-  var isMonitoria = tipoNorm === 'monitoria';
-  var isSiv = tipoNorm === 'siv';
-  var isPeriodo = isMonitoria || isSiv;
-  if ((!isPeriodo || isMonitoria) && !String(dados.hora || '').trim()) {
+  var policy = AgendaServerRules_.formPolicy(tipo);
+  var isMonitoria = policy.isMonitoring;
+  var isSiv = policy.isSiv;
+  var isPeriodo = policy.isOperationalPeriod;
+  if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, d);
   if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
-  dados.carroRequerido = normText_(tipo).indexOf('visita') > -1 && agendaBooleanValue_(dados.carroRequerido);
+  dados.carroRequerido = policy.isVisit && agendaBooleanValue_(dados.carroRequerido);
   if (isMonitoria) {
     if (!String(dados.projeto || '').trim()) {
       return { erro: 'Informe o projeto/protocolo da monitoria.' };
@@ -7715,15 +7717,14 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     dados.salaMonitoria = '';
   }
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
-  var tiposNaoLab = ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem', 'contato telefonico'];
-  if (tiposNaoLab.indexOf(normText_(tipo)) > -1) labCentral = 'N\u00E3o aplic\u00E1vel';
+  if (!policy.labChoiceAllowed) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
     return { erro: 'Informe se haverá Laboratório Central.' };
   }
-  if (normText_(labCentral) === 'sim' && !String(dados.visita || '').trim()) {
+  if (AgendaServerRules_.isLabCentral(labCentral) && !String(dados.visita || '').trim()) {
     return { erro: 'Para "Laboratorio Central = Sim", informe a Visita.' };
   }
-  if (agendaDateIsBeforeToday_(d) && normText_(labCentral) === 'sim') {
+  if (agendaDateIsBeforeToday_(d) && AgendaServerRules_.isLabCentral(labCentral)) {
     return { erro: 'Lab Central = Sim nao pode ser marcado para uma data anterior a hoje.' };
   }
   if (agendaDateIsBeforeToday_(d) && String(dados.servTerc || '').trim()) {
@@ -7778,7 +7779,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     .setFontWeight('normal');
   agenda.getRange(linhaNova, AGENDA_CFG.col.data).setFontWeight('bold');
   agenda.getRange(linhaNova, AGENDA_CFG.col.projeto).setFontWeight('bold');
-  if (normText_(status) === 'cancelado') aplicarLogicaCancelamento(agenda, linhaNova, status);
+  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento(agenda, linhaNova, status);
 
   verificarNotificacoes(
     { source: ss, range: agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
@@ -7988,7 +7989,7 @@ function monitorarEntregasDhlAgendadas(options) {
       (pendentes[awb] || []).forEach(function(item) {
         var statusRange = agenda.getRange(item.row, item.statusCol);
         var statusAnterior = statusRange.getValue();
-        if (normText_(statusAnterior) === 'entregue') return;
+        if (AgendaServerRules_.courierIsDelivered(statusAnterior)) return;
         statusRange.setValue('Entregue');
         entregues.push({
           agendaId: item.agendaId,
@@ -8067,7 +8068,7 @@ function getAgendaDhlAwbsPendentesEntrega_(values, display) {
       var courier = String(row[slot.cfg.nome] || '').trim();
       if (normText_(courier).indexOf('dhl') === -1) return;
       var status = normText_(row[slot.cfg.status]);
-      if (['entregue', 'cancelado', 'nao agendado'].indexOf(status) >= 0) return;
+      if (AgendaServerRules_.courierIsDeliveryTerminal(status)) return;
       var awb = String(display[i][slot.cfg.awb] || row[slot.cfg.awb] || '').trim();
       var awbKey = normalizarAwbCourier_(awb);
       if (!/^[0-9]{10}$/.test(awbKey)) return;
@@ -8172,7 +8173,7 @@ function monitorarConfirmacoesCourierAgendadas() {
       itens.forEach(function(item) {
         if (item.ruleKey !== ruleKey || item.confirmado) return;
         var statusAnterior = agenda.getRange(item.row, item.statusCol).getValue();
-        if (normText_(statusAnterior) !== 'agendado') return;
+        if (!AgendaServerRules_.courierIsAwaitingConfirmation(statusAnterior)) return;
         var novoStatus = regra.statusConfirmacao || 'Confirmado';
         agenda.getRange(item.row, item.statusCol).setValue(novoStatus);
         item.confirmado = true;
@@ -8197,8 +8198,7 @@ function monitorarConfirmacoesCourierAgendadas() {
       itensRef.forEach(function(item) {
         if (item.ruleKey !== ruleKey || item.confirmado) return;
         var statusAnteriorRef = agenda.getRange(item.row, item.statusCol).getValue();
-        var statusNorm = normText_(statusAnteriorRef);
-        if (['agendado', 'pendente', 'nao agendado', ''].indexOf(statusNorm) === -1) return;
+        if (!AgendaServerRules_.courierCanReceiveConfirmation(statusAnteriorRef)) return;
         var awbExtraida = escolherAwbConfirmacaoCourier_(regra, item, match.awbs);
         if (!awbExtraida) return;
         var awbAnterior = agenda.getRange(item.row, item.awbCol).getDisplayValue() || agenda.getRange(item.row, item.awbCol).getValue();
@@ -8293,8 +8293,8 @@ function getAgendaCourierAwbsPendentesConfirmacao_(values, display, regras) {
       var courier = String(row[slot.cfg.nome] || '').trim();
       var ruleKey = getCourierConfirmationRuleKey_(regras, courier);
       if (!ruleKey) return;
-      var status = normText_(row[slot.cfg.status]);
-      if (status !== 'agendado') return;
+      var status = row[slot.cfg.status];
+      if (!AgendaServerRules_.courierIsAwaitingConfirmation(status)) return;
       var awb = String(display[i][slot.cfg.awb] || row[slot.cfg.awb] || '').trim();
       var awbKey = normalizarAwbCourier_(awb);
       if (!awbKey) return;
@@ -8343,8 +8343,8 @@ function getAgendaCourierRefsPendentesConfirmacao_(values, display, regras) {
       var ruleKey = getCourierConfirmationRuleKey_(regras, courier);
       var regra = ruleKey ? regras[ruleKey] : null;
       if (!regra || !regra.extrairAwbPorReferencia) return;
-      var status = normText_(row[slot.cfg.status]);
-      if (['agendado', 'pendente', 'nao agendado', ''].indexOf(status) === -1) return;
+      var status = row[slot.cfg.status];
+      if (!AgendaServerRules_.courierCanReceiveConfirmation(status)) return;
       var awb = String(display[i][slot.cfg.awb] || row[slot.cfg.awb] || '').trim();
       if (normalizarAwbCourier_(awb)) return;
       var item = {
@@ -8778,24 +8778,28 @@ function verificarNotificacoes(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva)
   var sheet = sheetAtiva || getAgendaSheet_();
   var linha = Number(linhaAtiva || 0) || (idAtivo ? encontrarLinhaPorId(sheet, idAtivo) : e.range.getRow());
   if (!linha) return;
-  var gatilho = normText_(sheet.getRange(linha, AGENDA_CFG.col.labCentral).getValue());
-  var status = normText_(sheet.getRange(linha, AGENDA_CFG.col.status).getValue());
+  var gatilho = sheet.getRange(linha, AGENDA_CFG.col.labCentral).getValue();
+  var status = sheet.getRange(linha, AGENDA_CFG.col.status).getValue();
   var controle = String(sheet.getRange(linha, AGENDA_CFG.col.controle).getValue() || '');
-  var controleNorm = normText_(controle);
-  var jaAvisadoLab = controleNorm.indexOf('notificado') > -1 || controleNorm.indexOf('reagendado') > -1;
   var dataAtual = sheet.getRange(linha, AGENDA_CFG.col.data).getValue();
   var mudouData = datasAgendaDiferentes_(dataAnterior, dataAtual);
-  if (gatilho === 'sim' && status !== 'cancelado' && !jaAvisadoLab) {
+  var notificationAction = AgendaServerRules_.notificationAction({
+    labCentral: gatilho,
+    status: status,
+    control: controle,
+    dateChanged: mudouData
+  });
+  if (notificationAction === 'agendamento') {
     if (agendaEmailEnabled_()) {
       enviarEmailAgendamento(sheet, linha, e.user);
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Notificado ' + formatarDataSafe(sheet.getRange(linha, AGENDA_CFG.col.data).getValue()));
     } else {
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Pendente notificacao - modo teste');
     }
-  } else if (gatilho === 'sim' && status !== 'cancelado' && mudouData && jaAvisadoLab) {
+  } else if (notificationAction === 'reagendamento') {
     if (agendaEmailEnabled_()) enviarEmailReagendamento(sheet, linha, e.user, dataAnterior);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Reagendado ' + formatarDataSafe(dataAtual));
-  } else if (status === 'cancelado' && jaAvisadoLab) {
+  } else if (notificationAction === 'cancelamento') {
     if (agendaEmailEnabled_()) enviarEmailCancelamento(sheet, linha, e.user);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Cancelado');
   }
@@ -8813,7 +8817,7 @@ function datasAgendaDiferentes_(a, b) {
 
 function aplicarLogicaCancelamento(sheet, linha, status) {
   var range = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol);
-  if (normText_(status) === 'cancelado') {
+  if (AgendaServerRules_.isCancelled(status)) {
     range.setFontColor('#999999').setFontLine('line-through').setBackground('#eeeeee');
   } else {
     range.setFontColor('#434343').setFontLine('none').setBackground(null);
@@ -8833,7 +8837,7 @@ function enviarEmailAgendamento(sheet, linha, usuario) {
       : '<p>As informações de courier e transporte serão atualizadas na Agenda assim que estiverem disponíveis.</p>') +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Responsável', usuario) + '</div>';
-  MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
+  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
 
 function enviarEmailCancelamento(sheet, linha, usuario) {
@@ -8847,7 +8851,7 @@ function enviarEmailCancelamento(sheet, linha, usuario) {
     gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers(dados) +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Cancelado por', usuario) + '</div>';
-  MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
+  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
 
 function enviarEmailReagendamento(sheet, linha, usuario, dataAnteriorRaw) {
@@ -8868,7 +8872,7 @@ function enviarEmailReagendamento(sheet, linha, usuario, dataAnteriorRaw) {
     gerarTabelaAgendaEmail_(dados, true) + gerarHtmlCouriers(dados) +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Alterado por', usuario) + '</div>';
-  MailApp.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
+  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
 
 function ipsEmailLogoUrl_() {
@@ -9248,13 +9252,11 @@ function alinharStatusRequisicaoLegadoAgenda_(sh) {
 }
 
 function agendaObsIndicaRequisicaoOk_(obs) {
-  obs = normText_(obs);
-  return (obs.indexOf('requi') > -1 || /\breq\b/.test(obs)) &&
-    (obs.indexOf('ok') > -1 || obs.indexOf('enviad') > -1);
+  return AgendaServerRules_.requestObservationIndicatesSent(obs);
 }
 
 function agendaRequisicaoEnviada_(status, obs) {
-  return normText_(status).indexOf('enviad') > -1 || agendaObsIndicaRequisicaoOk_(obs);
+  return AgendaServerRules_.requestIsSent(status, obs);
 }
 
 function agendaStatusRequisicaoDisplay_(status, obs) {

@@ -615,13 +615,13 @@
       var noFuturo = dt && !isNaN(dt.getTime()) && dt.getTime() > hoje.getTime();
       var projeto = r.projeto || 'Sem protocolo';
       var medico = r.medico || 'Sem medico';
-      if ((r.isCancelado || r.isReagendado) && projeto) cancelReag[projeto] = (cancelReag[projeto] || 0) + 1;
-      if (r.isMonitoria && !r.isCancelado) porMonDia[projeto + '|' + (r.dataIso || '')] = projeto;
-      if (r.isVisita && r.isRealizada && !r.isCancelado && !noFuturo) {
+      if (AgendaRules.countsIn(r, 'dashboard-cancelamentos-reagendamentos') && projeto) cancelReag[projeto] = (cancelReag[projeto] || 0) + 1;
+      if (AgendaRules.countsIn(r, 'dashboard-monitorias')) porMonDia[projeto + '|' + (r.dataIso || '')] = projeto;
+      if (AgendaRules.countsIn(r, 'dashboard-visitas-realizadas') && !noFuturo) {
         porProt[projeto] = (porProt[projeto] || 0) + 1;
         porMed[medico] = (porMed[medico] || 0) + 1;
       }
-      if (r.isEventoComTransporte && r.isRealizada && !r.isCancelado && !noFuturo && r.labCentral) {
+      if (AgendaRules.countsIn(r, 'dashboard-transportes-realizados') && !noFuturo && AgendaRules.isLabCentral(r)) {
         (r.couriers || []).forEach(function(nome) {
           if (!nome) return;
           courierUso[nome] = (courierUso[nome] || 0) + 1;
@@ -672,12 +672,12 @@
       var dt = r.dataIso ? new Date(String(r.dataIso) + 'T12:00:00') : null;
       return dt && !isNaN(dt.getTime()) && dt.getTime() > hoje.getTime();
     }
-    function realizada(r) { return r.isVisita && r.isRealizada && !r.isCancelado && !noFuturo(r); }
-    function labCentral(r) { return r.labCentral && !r.isCancelado; }
+    function realizada(r) { return AgendaRules.countsIn(r, 'dashboard-visitas-realizadas') && !noFuturo(r); }
+    function labCentral(r) { return AgendaRules.countsIn(r, 'dashboard-lab-central'); }
 
     var monDias = {};
     rows.forEach(function(r) {
-      if (r.isMonitoria && !r.isCancelado) monDias[(r.projeto || 'Sem protocolo') + '|' + (r.dataIso || '')] = 1;
+      if (AgendaRules.countsIn(r, 'dashboard-monitorias')) monDias[(r.projeto || 'Sem protocolo') + '|' + (r.dataIso || '')] = 1;
     });
     var ids = _dashAgendaRaw.length ? {
       dashAgendaVisitasAno: rows.filter(realizada).length,

@@ -248,7 +248,10 @@ function applyAppBootstrapData(data) {
   document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
   document.getElementById('userInitial').textContent = String(displayName || email || '?')[0].toUpperCase();
   document.querySelectorAll('.admin-only').forEach(function(el) {
-    el.style.display = CURRENT_ACCESS.role === 'admin' ? '' : 'none';
+    var moduleName = String(el.id || '') === 'navUsersAdmin' ? 'usuarios'
+      : (String(el.id || '') === 'navAuditLog' ? 'audit-log'
+      : (String(el.id || '') === 'navDiagnostico' ? 'diagnostico' : ''));
+    el.style.display = CodexAccessRules.isModuleVisible(CURRENT_ACCESS, moduleName) ? '' : 'none';
   });
   updateFloatingAddButton();
   if (!CURRENT_ACCESS.ok && CURRENT_ACCESS.message) {

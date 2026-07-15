@@ -998,12 +998,11 @@
 
   function agendaTipoVisitaSelecionado() {
     var el = document.getElementById('agTipo');
-    return normAgenda(el ? el.value : '').indexOf('visita') > -1;
+    return AgendaRules.isVisit(el ? el.value : '');
   }
 
   function agendaTipoContatoTelefonico(tipo) {
-    var n = normAgenda(tipo || (document.getElementById('agTipo') || {}).value || '');
-    return n.indexOf('contato telefonico') > -1 || n.indexOf('telefon') > -1;
+    return AgendaRules.isPhoneContact(tipo || (document.getElementById('agTipo') || {}).value || '');
   }
 
   function atualizarAgendaProjetoLock() {
@@ -1088,10 +1087,10 @@
   function agendaMonitoresFiltradosPorProjeto() {
     var projeto = (document.getElementById('agProjeto') || {}).value || '';
     var projetoNorm = normAgenda(projeto);
-    var tipoNorm = normAgenda((document.getElementById('agTipo') || {}).value || '');
+    var tipoValor = (document.getElementById('agTipo') || {}).value || '';
     var todos = ((_agendaDados && _agendaDados.monitores) || []);
     if (!projetoNorm) return [];
-    if (tipoNorm === 'siv') {
+    if (AgendaRules.isSiv(tipoValor)) {
       return todos.slice().sort(function(a, b) {
         var aVinculado = agendaMonitorProjetos(a).some(function(p) { return normAgenda(p) === projetoNorm; }) ? 0 : 1;
         var bVinculado = agendaMonitorProjetos(b).some(function(p) { return normAgenda(p) === projetoNorm; }) ? 0 : 1;
@@ -1115,7 +1114,7 @@
       var el = document.getElementById(id);
       if (!el) return;
       var anterior = id === 'agMonitor1' ? atual1 : atual2;
-      var isSiv = normAgenda((document.getElementById('agTipo') || {}).value || '') === 'siv';
+      var isSiv = AgendaRules.isSiv((document.getElementById('agTipo') || {}).value || '');
       var placeholder = projeto ? (lista.length ? '-- selecione --' : (isSiv ? '-- sem monitor cadastrado --' : '-- sem monitor vinculado --')) : '-- selecione o projeto --';
       el.innerHTML = '<option value="">' + esc(placeholder) + '</option>';
       lista.forEach(function(m) {
@@ -1164,7 +1163,7 @@
     var kits = document.getElementById('agKitCard');
     var btnBaixa = document.getElementById('btnBaixarKitsAgenda');
     if (!lab) return;
-    var mostrar = normAgenda(lab.value) === 'sim';
+    var mostrar = AgendaRules.isLabCentral(lab.value);
     if (kits) kits.style.display = mostrar ? 'block' : 'none';
     atualizarAgendaCamposTecnicos();
     if (btnBaixa) btnBaixa.style.display = mostrar && _agendaEditId ? 'flex' : 'none';
@@ -1182,14 +1181,12 @@
   }
 
   function agendaTipoEnvioAmostras(tipo) {
-    var n = normAgenda(tipo || (document.getElementById('agTipo') || {}).value || '');
-    return n.indexOf('envio') > -1 && n.indexOf('amostra') > -1;
+    return AgendaRules.isType(tipo || (document.getElementById('agTipo') || {}).value || '', 'envio-amostras');
   }
 
   function agendaCamposTecnicosAplicaveis(tipo) {
     var tipoValor = tipo || (document.getElementById('agTipo') || {}).value || '';
-    var ocultarTipo = ['monitoria','siv','close-out','reuniao','feriado','auditoria','exame de imagem'].indexOf(normAgenda(tipoValor)) > -1;
-    return (agendaModoEdicao() || agendaTipoEnvioAmostras(tipoValor)) && !ocultarTipo;
+    return AgendaRules.formPolicy(tipoValor, agendaModoEdicao()).technicalFieldsAvailable;
   }
 
   function atualizarAgendaCamposTecnicos() {
@@ -1240,20 +1237,19 @@
   }
 
   function atualizarAgendaTipoVisibilidade() {
-    var tipo = normAgenda((document.getElementById('agTipo') || {}).value || '');
-    var isMonitoria = tipo === 'monitoria';
-    var isSiv = tipo === 'siv';
-    var isPeriodo = isMonitoria || isSiv;
-    var isVisita = tipo.indexOf('visita') > -1;
+    var tipo = (document.getElementById('agTipo') || {}).value || '';
+    var policy = AgendaRules.formPolicy(tipo, agendaModoEdicao());
+    var isMonitoria = policy.isMonitoring;
+    var isPeriodo = policy.isOperationalPeriod;
+    var isVisita = policy.isVisit;
     var projetoRequired = document.getElementById('agProjetoRequired');
     if (projetoRequired) projetoRequired.style.display = isPeriodo ? '' : 'none';
     var monitorRequired = document.getElementById('agMonitorRequired');
     if (monitorRequired) monitorRequired.style.display = isMonitoria ? '' : 'none';
     var salaRequired = document.getElementById('agSalaRequired');
     if (salaRequired) salaRequired.style.display = isMonitoria ? '' : 'none';
-    var ocultarEventoGeral = ['feriado','auditoria','reuniao'].indexOf(tipo) > -1;
-    var ocultarOperacional = ['siv','close-out'].indexOf(tipo) > -1;
-    var ocultarDetalhes = ocultarEventoGeral || ocultarOperacional || isMonitoria;
+    var ocultarEventoGeral = policy.hideGeneralEvent;
+    var ocultarDetalhes = policy.hideDetails;
 
     agendaSetWrapVisible('agParticipanteWrap', !ocultarDetalhes);
     agendaSetWrapVisible('agProjetoWrap', !ocultarEventoGeral);
@@ -1300,9 +1296,7 @@
   }
 
   function agendaTipoExigeLabCentral(tipo) {
-    var n = normAgenda(tipo || (document.getElementById('agTipo') || {}).value || '');
-    if (agendaTipoContatoTelefonico(n)) return false;
-    return n.indexOf('visita') > -1 || n.indexOf('amostra') > -1;
+    return AgendaRules.typeRequiresLabCentral(tipo || (document.getElementById('agTipo') || {}).value || '');
   }
 
   function atualizarAgendaLabCentralObrigatorio() {
@@ -1315,12 +1309,12 @@
   }
 
   function onAgendaTipoChange() {
-    var tipo = normAgenda(document.getElementById('agTipo').value);
+    var tipo = document.getElementById('agTipo').value;
+    var policy = AgendaRules.formPolicy(tipo, agendaModoEdicao());
     var lab = document.getElementById('agLabCentral');
     atualizarAgendaTipoVisibilidade();
-    var semLab = ['monitoria','siv','close-out','reuniao','feriado','auditoria','exame de imagem','contato telefonico'];
     if (!lab) return;
-    if (semLab.indexOf(tipo) > -1) {
+    if (!policy.labChoiceAllowed) {
       lab.value = '';
       lab.disabled = true;
     } else {
@@ -1358,11 +1352,10 @@
 
   function validarAgendaRealizadoFuturo() {
     var statusEl = document.getElementById('agStatus');
-    var status = normAgenda(statusEl && statusEl.value);
     var data = (document.getElementById('agData') || {}).value || '';
     var dataFim = (document.getElementById('agDataFim') || {}).value || '';
     var futuro = agendaIsFutureDate(data) || agendaIsFutureDate(dataFim);
-    var ok = status !== 'realizado' || !futuro;
+    var ok = !AgendaRules.isRealized(statusEl && statusEl.value) || !futuro;
     if (statusEl) {
       statusEl.classList.toggle('invalid', !ok);
       statusEl.setAttribute('aria-invalid', ok ? 'false' : 'true');
@@ -1383,11 +1376,11 @@
     var anterior = _agendaEditId ? (_agendaEventos || []).find(function(x) {
       return String(x.id || '') === String(_agendaEditId);
     }) : null;
-    var labSim = normAgenda((document.getElementById('agLabCentral') || {}).value || '') === 'sim';
+    var labSim = AgendaRules.isLabCentral((document.getElementById('agLabCentral') || {}).value || '');
     var temRequisicao = agendaMeaningfulValue((document.getElementById('agPrestador') || {}).value || '') ||
       !!(document.getElementById('agReqEnviada') && document.getElementById('agReqEnviada').checked);
     var anteriorPast = anterior && agendaIsPastDate(anterior.dataIso || anterior.data || '');
-    var marcandoLab = labSim && (!anterior || normAgenda(anterior.labCentral) !== 'sim' || !anteriorPast);
+    var marcandoLab = labSim && (!anterior || !AgendaRules.isLabCentral(anterior) || !anteriorPast);
     var marcandoRequisicao = temRequisicao && (!anterior || !agendaMeaningfulValue(anterior.servTerc) || !anteriorPast);
     if (marcandoLab) {
       snackErro('Lab Central = Sim nao pode ser marcado para uma data anterior a hoje.');
@@ -1422,10 +1415,10 @@
   }
 
   function agendaRequiredChecks() {
-    var tipoNorm = normAgenda((document.getElementById('agTipo') || {}).value || '');
-    var isMonitoria = tipoNorm === 'monitoria';
-    var isPeriodo = isMonitoria || tipoNorm === 'siv';
     var tipoValor = (document.getElementById('agTipo') || {}).value || '';
+    var policy = AgendaRules.formPolicy(tipoValor, agendaModoEdicao());
+    var isMonitoria = policy.isMonitoring;
+    var isPeriodo = policy.isOperationalPeriod;
     var labEl = document.getElementById('agLabCentral');
     var labRequired = agendaTipoExigeLabCentral(tipoValor);
     var checks = [
@@ -1731,9 +1724,9 @@
   }
 
   function agendaExigeMotivoCancelamento_(payload) {
-    if (!_agendaEditId || normAgenda(payload && payload.status) !== 'cancelado') return false;
+    if (!_agendaEditId || !AgendaRules.isCancelled(payload)) return false;
     var atual = agendaEventoAtualEditado_();
-    return !atual || normAgenda(atual.status) !== 'cancelado';
+    return !atual || !AgendaRules.isCancelled(atual);
   }
 
   function agendaDataAlteradaInfo_(payload) {
@@ -1789,9 +1782,10 @@
     opts = opts || {};
     if (!updateAgendaSaveAvailability(true)) return;
     var ok = true;
-    var tipoNorm = normAgenda((document.getElementById('agTipo') || {}).value || '');
-    var isMonitoria = tipoNorm === 'monitoria';
-    var isPeriodo = isMonitoria || tipoNorm === 'siv';
+    var tipoValorAtual = (document.getElementById('agTipo') || {}).value || '';
+    var policy = AgendaRules.formPolicy(tipoValorAtual, agendaModoEdicao());
+    var isMonitoria = policy.isMonitoring;
+    var isPeriodo = policy.isOperationalPeriod;
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
     if (!isPeriodo || isMonitoria) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
     if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
@@ -1806,7 +1800,7 @@
     var labEl = document.getElementById('agLabCentral');
     var tipoValor = (document.getElementById('agTipo') || {}).value || '';
     var labValor = labEl ? String(labEl.value || '').trim() : '';
-    var labSim = normAgenda(labValor) === 'sim';
+    var labSim = AgendaRules.isLabCentral(labValor);
     var labRequired = agendaTipoExigeLabCentral(tipoValor);
     var labErr = document.getElementById('errAgLabCentral');
     var labOk = (!labRequired || !!labValor) && (!labSim || !!document.getElementById('agVisita').value.trim());
@@ -1903,7 +1897,7 @@
   function coletarAgendaEvento() {
     atualizarAgendaMonitorNome();
     var proj = document.getElementById('agProjeto').value || (_agendaParticipanteInfo && _agendaParticipanteInfo.projeto) || '';
-    var labSim = normAgenda(document.getElementById('agLabCentral').value) === 'sim';
+    var labSim = AgendaRules.isLabCentral(document.getElementById('agLabCentral').value);
     var salvarDadosTecnicos = agendaCamposTecnicosAplicaveis();
     var mat1 = agendaMatBioSerialize('agC1');
     var mat2 = agendaMatBioSerialize('agC2');
@@ -2312,8 +2306,8 @@
   }
 
   function abrirDisplayAgendaFromForm() {
-    var tipo = normAgenda((document.getElementById('agTipo') || {}).value || '');
-    if (tipo === 'monitoria' || tipo === 'siv') {
+    var tipo = (document.getElementById('agTipo') || {}).value || '';
+    if (AgendaRules.isOperationalPeriod(tipo)) {
       abrirDisplayMonitoriaFromAgendaForm();
       return;
     }
@@ -2344,7 +2338,7 @@
     var projeto = String(r.projeto || '');
     var monitorName = String(r.monitorName || '');
     var salaMonitoria = String(r.salaMonitoria || '');
-    var tipo = normAgenda(r.tipo) === 'siv' ? 'SIV' : 'Monitoria';
+    var tipo = AgendaRules.isSiv(r) ? 'SIV' : 'Monitoria';
     var periodo = tipo === 'SIV'
       ? agendaSivPeriodo(projeto, monitorName, salaMonitoria, dataIso)
       : agendaMonitoriaPeriodo(projeto, monitorName, salaMonitoria, dataIso);
@@ -2395,8 +2389,8 @@
 
   function agendaSivPeriodo(projeto, monitorName, salaMonitoria, dataIso) {
     var rows = (_agendaEventos || []).filter(function(x) {
-      return normAgenda(x.tipo) === 'siv' &&
-        normAgenda(x.status).indexOf('cancel') < 0 &&
+      return AgendaRules.isSiv(x) &&
+        !AgendaRules.isCancelled(x) &&
         normAgenda(x.projeto) === normAgenda(projeto) &&
         normAgenda(x.monitorName) === normAgenda(monitorName) &&
         normAgenda(x.salaMonitoria) === normAgenda(salaMonitoria);
@@ -2436,7 +2430,7 @@
   function agendaPeriodoFromRow(r) {
     var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
     if (r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
-    if (r && normAgenda(r.tipo) === 'siv') return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    if (r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
     return { inicio: dataIso || '', fim: dataIso || '' };
   }
 
@@ -2772,8 +2766,7 @@
   }
 
   function agendaStatusChip(s) {
-    var n = normAgenda(s);
-    var cls = n === 'cancelado' ? 'chip-red' : n === 'realizado' ? 'chip-green' : n === 'pendente' ? 'chip-yellow' : 'chip-purple';
+    var cls = AgendaRules.statusChipClass(s);
     return '<span class="chip ' + cls + '">' + esc(s || '-') + '</span>';
   }
 
@@ -2797,8 +2790,8 @@
   function validarAgendaPeriodoMonitoria(showError) {
     var ini = document.getElementById('agData');
     var fim = document.getElementById('agDataFim');
-    var tipo = normAgenda((document.getElementById('agTipo') || {}).value || '');
-    var isPeriodo = tipo === 'monitoria' || tipo === 'siv';
+    var tipo = (document.getElementById('agTipo') || {}).value || '';
+    var isPeriodo = AgendaRules.isOperationalPeriod(tipo);
     if (!isPeriodo) return true;
     var fimOk = !!(fim && fim.value);
     var ordemOk = fimOk && !isNaN(agendaDateInputTime(ini && ini.value)) && agendaDateInputTime(fim.value) >= agendaDateInputTime(ini.value);
@@ -2953,17 +2946,15 @@
   }
 
   function agendaObsIndicaRequisicaoOk(obs) {
-    var n = normAgenda(obs);
-    return (n.indexOf('requi') > -1 || /\breq\b/.test(n)) &&
-      (n.indexOf('ok') > -1 || n.indexOf('enviad') > -1);
+    return AgendaRules.requestObservationIndicatesSent(obs);
   }
 
   function agendaRequisicaoEnviada(status, obs) {
-    return normAgenda(status).indexOf('enviad') > -1 || agendaObsIndicaRequisicaoOk(obs);
+    return AgendaRules.requestIsSent(status, obs);
   }
 
   function agendaReqChip(r) {
-    if (normAgenda(r && r.status) === 'cancelado') return '';
+    if (!AgendaRules.isVisibleIn(r, AgendaRules.Context.REQUESTS)) return '';
     var enviado = agendaRequisicaoEnviada(r && r.statusRequisicao, r && r.obs);
     var title = (r && r.statusRequisicao) || (enviado ? 'Requisição Enviada' : 'Requisição pendente');
     return '<span class="chip ' + (enviado ? 'chip-green' : 'chip-yellow') + '" title="' + esc(title) + '">' +
@@ -3075,16 +3066,16 @@
   }
 
   function agendaPostVisitAplica(status, tipo) {
-    var st = normAgenda(status || (document.getElementById('agStatus') || {}).value || '');
-    var tp = normAgenda(tipo || (document.getElementById('agTipo') || {}).value || '');
-    return !!_agendaEditId && (tp.indexOf('visita') > -1 || agendaTipoContatoTelefonico(tp)) && (st.indexOf('realiz') > -1 || st.indexOf('concl') > -1);
+    var statusValue = status || (document.getElementById('agStatus') || {}).value || '';
+    var typeValue = tipo || (document.getElementById('agTipo') || {}).value || '';
+    return !!_agendaEditId && AgendaRules.isPostVisitType(typeValue) && AgendaRules.isCompleted(statusValue);
   }
 
   function atualizarAgendaPostVisitVisibility() {
     var wrap = document.getElementById('agPostVisitWrap');
     var aplica = agendaPostVisitAplica();
     if (wrap) wrap.style.display = aplica ? 'flex' : 'none';
-    var statusConcluido = normAgenda((document.getElementById('agStatus') || {}).value || '').indexOf('concl') > -1;
+    var statusConcluido = AgendaRules.isConcluded((document.getElementById('agStatus') || {}).value || '');
     if (aplica && statusConcluido) {
       var poloBox = document.getElementById('agPoloTrialOk');
       var ecrfBox = document.getElementById('agEcrfOk');
@@ -3097,12 +3088,10 @@
     var aplica = agendaPostVisitAplica(r && r.status, r && r.tipo);
     var concluidoPorStatus = false;
     if (!aplica && r) {
-      var st = normAgenda(r.status);
-      var tp = normAgenda(r.tipo);
-      aplica = (tp.indexOf('visita') > -1 || agendaTipoContatoTelefonico(tp)) && (st.indexOf('realiz') > -1 || st.indexOf('concl') > -1);
-      concluidoPorStatus = st.indexOf('concl') > -1;
+      aplica = (AgendaRules.isVisit(r) || AgendaRules.isPhoneContact(r)) && AgendaRules.isCompleted(r);
+      concluidoPorStatus = AgendaRules.isConcluded(r);
     } else if (r) {
-      concluidoPorStatus = normAgenda(r.status).indexOf('concl') > -1;
+      concluidoPorStatus = AgendaRules.isConcluded(r);
     }
     if (!aplica) return null;
     return {
@@ -3444,7 +3433,9 @@
       for (var i = 0; i < 7; i++) {
         var d = agendaWeekStart(); d.setDate(d.getDate() + i);
         var iso = agendaIso(d);
-        var dayRows = rows.filter(function(r) { return r.dataIso === iso; });
+        var dayRows = rows.filter(function(r) {
+          return r.dataIso === iso && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
+        });
         html += agendaDayHeader(d, dayRows);
         html += dayRows.length
           ? dayRows.map(function(r, idx) { return agendaCardHtml(r, iso + '-' + idx); }).join('')
@@ -3463,7 +3454,9 @@
     for (var i = 0; i < 7; i++) {
       var d = agendaWeekStart(); d.setDate(d.getDate() + i);
       var iso = agendaIso(d);
-      var dayRows = rows.filter(function(r) { return r.dataIso === iso; });
+      var dayRows = rows.filter(function(r) {
+        return r.dataIso === iso && AgendaRules.isVisibleIn(r, AgendaRules.Context.WEEK);
+      });
       var carros = agendaCarroRequeridoCount(dayRows);
       html += '<div class="ag-wk-col ' + (iso === todayIso ? 'today-col' : '') + '" id="agendaWeekDay-' + iso + '">' +
         '<div class="ag-wk-col-hdr"><div class="ag-wk-wd">' + agendaWeekday(d) + '</div><div class="ag-wk-num">' + d.getDate() + '</div>' + (iso === todayIso ? '<div><span class="ag-wk-dot"></span></div>' : '') + (carros ? agendaCarroDiaPill(carros, true) : '') + '</div>' +
@@ -3475,10 +3468,13 @@
   }
 
   function agendaDayHeader(d, rows) {
+    rows = (rows || []).filter(function(r) {
+      return AgendaRules.isVisibleIn(r, AgendaRules.Context.DAILY_HEADER);
+    });
     var total = rows.length;
-    var lab = rows.filter(function(r) { return normAgenda(r.labCentral) === 'sim'; }).length;
-    var ok = rows.filter(function(r) { var s = normAgenda(r.status); return s === 'realizado' || s === 'concluido'; }).length;
-    var pend = rows.filter(function(r) { var s = normAgenda(r.status); return s !== 'realizado' && s !== 'concluido' && s !== 'cancelado'; }).length;
+    var lab = rows.filter(function(r) { return AgendaRules.countsIn(r, 'lab-central'); }).length;
+    var ok = rows.filter(AgendaRules.isCompleted).length;
+    var pend = rows.filter(function(r) { return !AgendaRules.isCompleted(r) && !AgendaRules.isCancelled(r); }).length;
     var tipoStats = agendaTipoStats(rows);
     var courierNaoAg = rows.reduce(function(sum, r) { return sum + agendaCourierNaoAgendadoCount(r); }, 0);
     var carros = agendaCarroRequeridoCount(rows);
@@ -3511,7 +3507,7 @@
     var mapa = {};
     rows.forEach(function(r) {
       var tipo = String(r.tipo || 'Evento').trim() || 'Evento';
-      if (normAgenda(tipo).indexOf('feriado') > -1) return;
+      if (AgendaRules.isType(tipo, 'feriado')) return;
       var key = normAgenda(tipo);
       if (!mapa[key]) mapa[key] = { tipo: tipo, count: 0 };
       mapa[key].count++;
@@ -3523,19 +3519,7 @@
   }
 
   function agendaTipoPlural(tipo, count) {
-    var n = normAgenda(tipo);
-    if (n.indexOf('visita') > -1) return count === 1 ? 'Visita' : 'Visitas';
-    if (n.indexOf('consulta') > -1) return count === 1 ? 'Consulta' : 'Consultas';
-    if (n.indexOf('monitoria') > -1) return count === 1 ? 'Monitoria' : 'Monitorias';
-    if (n.indexOf('amostra') > -1) return count === 1 ? 'Envio de amostras' : 'Envios de amostras';
-    if (n.indexOf('imagem') > -1) return count === 1 ? 'Exame de imagem' : 'Exames de imagem';
-    if (n.indexOf('laborator') > -1) return count === 1 ? 'Exame laboratorial' : 'Exames laboratoriais';
-    if (agendaTipoContatoTelefonico(n)) return count === 1 ? 'Contato telefônico' : 'Contatos telefônicos';
-    if (n === 'siv') return 'SIV';
-    if (n.indexOf('close') > -1) return count === 1 ? 'Close-out' : 'Close-outs';
-    if (n.indexOf('reuniao') > -1) return count === 1 ? 'Reuniao' : 'Reunioes';
-    if (n.indexOf('auditoria') > -1) return count === 1 ? 'Auditoria' : 'Auditorias';
-    return count === 1 ? tipo : tipo + 's';
+    return AgendaRules.typePluralLabel(tipo, count, tipo);
   }
 
   function agendaCourierNaoAgendadoCount(r) {
@@ -3560,7 +3544,9 @@
   function imprimirAgendaSemana() {
     var ini = agendaWeekStart();
     var fim = new Date(ini); fim.setDate(ini.getDate() + 6);
-    var rows = agendaRowsFiltradas();
+    var rows = agendaRowsFiltradas().filter(function(r) {
+      return AgendaRules.isVisibleIn(r, AgendaRules.Context.WEEK_PRINT);
+    });
     var html = agendaPrintShell({
       title: 'Agenda semanal',
       subtitle: agendaFmtShort(ini) + ' - ' + agendaFmtShort(fim),
@@ -3578,13 +3564,13 @@
 
   function agendaRowsVisitasConsultasPorDia(iso) {
     return agendaRowsPorDia(iso).filter(function(r) {
-      return agendaTipoVisitaOuConsulta(r && r.tipo);
+      return agendaTipoVisitaOuConsulta(r && r.tipo) &&
+        AgendaRules.isVisibleIn(r, AgendaRules.Context.DAILY_PRINT);
     });
   }
 
   function agendaTipoVisitaOuConsulta(tipo) {
-    var n = normAgenda(tipo);
-    return n.indexOf('visita') > -1 || n.indexOf('consulta') > -1;
+    return AgendaRules.isVisit(tipo) || AgendaRules.isType(tipo, 'consulta');
   }
 
   function agendaSortRows(a, b) {
@@ -3602,7 +3588,7 @@
       'body{font-family:Arial,sans-serif;color:#1f2937;margin:24px;background:#fff} .no-print{position:fixed;right:16px;top:16px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:9px 13px;font-weight:700;cursor:pointer}' +
       '.head{display:flex;align-items:center;gap:16px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:14px}.head img{height:44px;width:auto;object-fit:contain}.brand-text{font-weight:800;color:#1266f1;font-size:18px}' +
       'h1{font-size:20px;margin:0;color:#0b3f8a}p{margin:4px 0;color:#64748b;font-size:12px}.summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0 16px}.sum-card{border:1px solid #dbe7fb;background:#f7faff;border-radius:7px;padding:8px}.sum-n{font-size:18px;font-weight:800;color:#0b3f8a}.sum-l{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#64748b;font-weight:700}' +
-      'table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#eef4ff;color:#1266f1;text-align:left;text-transform:uppercase;font-size:8.5px;letter-spacing:.55px}th,td{border:1px solid #dbe3f0;padding:6px;vertical-align:top}.muted{color:#64748b}.strong{font-weight:700;color:#1f2937}.obs{white-space:pre-wrap;line-height:1.35}.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.week-day{border:1px solid #dbe3f0;border-radius:7px;overflow:hidden;min-height:520px}.week-head{background:#eef4ff;padding:7px;text-align:center;border-bottom:1px solid #dbe3f0}.week-wd{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:800}.week-num{font-size:18px;color:#0b3f8a;font-weight:800}.week-item{border-bottom:1px solid #edf2f7;padding:6px}.week-time{font-weight:800;color:#1266f1;font-size:11px}.week-name{font-weight:800;font-size:10.5px;margin-top:2px}.week-meta{font-size:9px;color:#64748b;line-height:1.3;margin-top:2px}.badge{display:inline-block;border-radius:5px;background:#e8f0fe;color:#0d47a1;border:1px solid #bdd0fb;padding:2px 5px;font-size:8.5px;font-weight:800;margin-top:3px}.empty{padding:10px;text-align:center;color:#94a3b8;font-size:10px;font-style:italic}' +
+      'table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#eef4ff;color:#1266f1;text-align:left;text-transform:uppercase;font-size:8.5px;letter-spacing:.55px}th,td{border:1px solid #dbe3f0;padding:6px;vertical-align:top}.muted{color:#64748b}.strong{font-weight:700;color:#1f2937}.obs{white-space:pre-wrap;line-height:1.35}.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.week-day{border:1px solid #dbe3f0;border-radius:7px;overflow:hidden;min-height:520px}.week-head{background:#eef4ff;padding:7px;text-align:center;border-bottom:1px solid #dbe3f0}.week-wd{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:800}.week-num{font-size:18px;color:#0b3f8a;font-weight:800}.week-item{border-bottom:1px solid #edf2f7;padding:6px}.week-time{font-weight:800;color:#1266f1;font-size:11px}.week-name{font-weight:800;font-size:10.5px;margin-top:2px}.week-meta{font-size:9px;color:#64748b;line-height:1.3;margin-top:2px}.badge{display:inline-block;border-radius:5px;background:#e8f0fe;color:#0d47a1;border:1px solid #bdd0fb;padding:2px 5px;font-size:8.5px;font-weight:800;margin-top:3px}.print-cancelled{background:#fff5f5}.print-cancelled td{border-color:#fecaca}.print-event-content.cancelled{text-decoration:line-through;text-decoration-color:#dc2626;text-decoration-thickness:1.5px;color:#7f1d1d}.cancelled-badge{display:inline-block;border-radius:999px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;padding:2px 6px;font-size:8px;font-weight:800;margin-top:3px;text-decoration:none}.empty{padding:10px;text-align:center;color:#94a3b8;font-size:10px;font-style:italic}' +
       'body.landscape{margin:14px}.landscape .head{gap:12px;padding-bottom:8px;margin-bottom:8px}.landscape .head img{height:34px}.landscape h1{font-size:17px}.landscape p{font-size:10px;margin:2px 0}.landscape .summary{gap:6px;margin:8px 0 10px}.landscape .sum-card{padding:5px 6px;border-radius:6px}.landscape .sum-n{font-size:15px}.landscape .sum-l{font-size:7.5px;letter-spacing:.45px}.landscape .week-grid{gap:5px;align-items:start}.landscape .week-day{min-height:0;border-radius:6px;overflow:visible}.landscape .week-head{padding:5px 4px}.landscape .week-wd{font-size:8px}.landscape .week-num{font-size:15px;line-height:1}.landscape .week-item{padding:4px 5px}.landscape .week-time{font-size:9px}.landscape .week-name{font-size:8.8px;line-height:1.15}.landscape .week-meta{font-size:7.8px;line-height:1.2}.landscape .badge{font-size:7px;padding:1px 4px;margin-top:2px}' +
       '@media print{body{margin:0}.no-print{display:none}.week-item{break-inside:avoid}tr{break-inside:avoid}}' +
       '</style></head><body class="' + (opts.landscape ? 'landscape' : 'portrait') + '"><button class="no-print" onclick="window.print()">Imprimir</button>' +
@@ -3614,7 +3600,7 @@
     rows = rows || [];
     opts = opts || {};
     var incluirLogistica = opts.incluirLogistica !== false;
-    var lab = rows.filter(function(r) { return normAgenda(r.labCentral) === 'sim'; }).length;
+    var lab = rows.filter(AgendaRules.isLabCentral).length;
     var couriers = rows.reduce(function(sum, r) { return sum + agendaCourierList(r).length; }, 0);
     var reqEnviadas = rows.filter(function(r) { return r.servTerc && agendaRequisicaoEnviada(r.statusRequisicao, r.obs); }).length;
     var reqPendentes = rows.filter(function(r) { return r.servTerc && !agendaRequisicaoEnviada(r.statusRequisicao, r.obs); }).length;
@@ -3637,10 +3623,13 @@
     return '<table><thead><tr><th>Hora</th><th>Participante/Evento</th><th>Data de Nascimento</th><th>Idade</th><th>ID do Participante / Braço</th><th>Projeto</th><th>Visita</th><th>Médico</th><th>Procedimentos</th><th>Lab Central</th><th>Observações</th></tr></thead><tbody>' +
       rows.map(function(r) {
         var nome = agendaPrintNome(r);
-        return '<tr><td class="strong">' + esc(r.hora || '--:--') + '</td><td><div class="strong">' + esc(nome) + '</div><div class="muted">' + esc(r.tipo || '') + '</div></td>' +
-          '<td>' + esc(r.nascimento || '-') + '</td><td>' + esc(r.idade ? r.idade + ' anos' : '-') + '</td><td><div class="strong">' + esc(r.idParticipante || '-') + '</div>' + (r.braco ? '<div class="muted">Braço ' + esc(r.braco) + '</div>' : '') + '</td>' +
-          '<td>' + esc(r.projeto || '-') + '</td><td>' + esc(r.visita || '-') + '</td><td>' + esc(r.medico || '-') + '</td><td class="obs">' + esc(r.procedimentos || '-') + '</td><td>' + esc(normAgenda(r.labCentral) === 'sim' ? 'Sim' : (r.labCentral || '-')) + '</td>' +
-          '<td class="obs">' + esc(r.obs || '') + '</td></tr>';
+        var cancelled = AgendaRules.isCancelled(r);
+        var contentClass = 'print-event-content' + (cancelled ? ' cancelled' : '');
+        var badge = cancelled ? '<span class="cancelled-badge">Cancelado</span>' : '';
+        return '<tr class="' + (cancelled ? 'print-cancelled' : '') + '"><td><div class="' + contentClass + ' strong">' + esc(r.hora || '--:--') + '</div></td><td><div class="' + contentClass + '"><div class="strong">' + esc(nome) + '</div><div class="muted">' + esc(r.tipo || '') + '</div></div>' + badge + '</td>' +
+          '<td><div class="' + contentClass + '">' + esc(r.nascimento || '-') + '</div></td><td><div class="' + contentClass + '">' + esc(r.idade ? r.idade + ' anos' : '-') + '</div></td><td><div class="' + contentClass + '"><div class="strong">' + esc(r.idParticipante || '-') + '</div>' + (r.braco ? '<div class="muted">Braço ' + esc(r.braco) + '</div>' : '') + '</div></td>' +
+          '<td><div class="' + contentClass + '">' + esc(r.projeto || '-') + '</div></td><td><div class="' + contentClass + '">' + esc(r.visita || '-') + '</div></td><td><div class="' + contentClass + '">' + esc(r.medico || '-') + '</div></td><td class="obs"><div class="' + contentClass + '">' + esc(r.procedimentos || '-') + '</div></td><td><div class="' + contentClass + '">' + esc(AgendaRules.isLabCentral(r) ? 'Sim' : (r.labCentral || '-')) + '</div></td>' +
+          '<td class="obs"><div class="' + contentClass + '">' + esc(r.obs || '') + '</div></td></tr>';
       }).join('') + '</tbody></table>';
   }
 
@@ -3658,21 +3647,23 @@
   }
 
   function agendaPrintSemanaItemHtml(r) {
-    var lab = normAgenda(r.labCentral) === 'sim';
+    var lab = AgendaRules.isLabCentral(r);
     var isMon = agendaIsMonitoria(r);
-    var isSiv = normAgenda(r.tipo) === 'siv';
+    var isSiv = AgendaRules.isSiv(r);
+    var cancelled = AgendaRules.isCancelled(r);
     var meta = isMon || isSiv
       ? [r.projeto, r.salaMonitoria, r.status]
       : [r.projeto, r.visita || r.tipo, r.status];
-    return '<div class="week-item"><div class="week-time">' + esc(r.hora || '--:--') + '</div><div class="week-name">' + esc(agendaPrintNome(r)) + '</div>' +
+    return '<div class="week-item ' + (cancelled ? 'print-cancelled' : '') + '"><div class="print-event-content' + (cancelled ? ' cancelled' : '') + '"><div class="week-time">' + esc(r.hora || '--:--') + '</div><div class="week-name">' + esc(agendaPrintNome(r)) + '</div>' +
       '<div class="week-meta">' + esc(meta.filter(Boolean).join(' · ')) + '</div>' +
       (lab ? '<span class="badge">Lab Central</span>' : '') +
-      (agendaCourierList(r).length ? '<span class="badge">' + agendaCourierList(r).length + ' courier(s)</span>' : '') + '</div>';
+      (agendaCourierList(r).length ? '<span class="badge">' + agendaCourierList(r).length + ' courier(s)</span>' : '') + '</div>' +
+      (cancelled ? '<span class="cancelled-badge">Cancelado</span>' : '') + '</div>';
   }
 
   function agendaPrintNome(r) {
     if (agendaIsMonitoria(r)) return 'Monitoria';
-    if (normAgenda(r.tipo) === 'siv') return 'SIV';
+    if (AgendaRules.isSiv(r)) return 'SIV';
     return r.participante || r.tipo || 'Evento';
   }
 
@@ -3729,7 +3720,7 @@
       if (value) linhas.push(label + ': ' + value);
     }
     add('Tipo de evento', r.tipo);
-    if (agendaIsMonitoria(r) || normAgenda(r.tipo) === 'siv') {
+    if (AgendaRules.isOperationalPeriod(r)) {
       add('Projeto', r.projeto);
       add('Monitor(es)', r.monitorName);
       add('Sala', r.salaMonitoria);
@@ -3750,7 +3741,7 @@
     var dataIso = agendaGoogleCalendarDateIso(r);
     if (!dataIso) return null;
     var isMonitoria = agendaIsMonitoria(r);
-    var isSiv = normAgenda(r.tipo) === 'siv' || normAgenda(r.tipo).indexOf('site initiation') > -1;
+    var isSiv = AgendaRules.isSiv(r);
     var titulo;
     var dates;
     var local = '';
@@ -3807,7 +3798,7 @@
       snackErro('Evento não encontrado na Agenda. Atualize a página e tente novamente.');
       return;
     }
-    if (normAgenda(r.status) === 'cancelado') {
+    if (!AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR)) {
       snackErro('Eventos cancelados não podem ser enviados ao Google Agenda.');
       return;
     }
@@ -3825,10 +3816,10 @@
     var cardId = agendaCardDomId(r);
     var st = agendaStatusClass(r);
     var isMon = agendaIsMonitoria(r);
-    var isSiv = normAgenda(r.tipo) === 'siv';
-    var isPeriodoOperacional = isMon || isSiv;
+    var isSiv = AgendaRules.isSiv(r);
+    var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
     var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento sem participante'));
-    var labSim = normAgenda(r.labCentral) === 'sim';
+    var labSim = AgendaRules.isLabCentral(r);
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
     var tipoChip = isPeriodoOperacional ? '' : agendaTipoChip(r.tipo);
     var postVisitIcons = agendaPostVisitIcons(r);
@@ -3836,7 +3827,7 @@
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
       : tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons;
     var sideHtml = agendaSidePanelHtml(r, labSim);
-    var calendarBtn = normAgenda(r.status) === 'cancelado' ? '' :
+    var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
     return '<div class="ag-appt st-' + st + agendaTipoVisualClass(r) + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
@@ -3865,7 +3856,7 @@
 
   function agendaDetailHtml(r) {
     var couriers = agendaCourierCards(r);
-    var isPeriodoOperacional = agendaIsMonitoria(r) || normAgenda(r.tipo) === 'siv';
+    var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
     var displayPayload = isPeriodoOperacional ? agendaMonitoriaDisplayPayload(r) : agendaDisplayPayload(r);
     var displayFn = isPeriodoOperacional ? 'abrirDisplayMonitoria' : 'abrirDisplayPaciente';
     var showDisplay = isPeriodoOperacional ? r.projeto : r.participante;
@@ -3944,11 +3935,7 @@
   }
 
   function agendaTempClass(v) {
-    var n = normAgenda(v);
-    if (n.indexOf('ambiente') > -1) return 'temp-ambiente';
-    if (n.indexOf('refriger') > -1) return 'temp-refrigerado';
-    if (n.indexOf('congel') > -1) return 'temp-congelado';
-    return '';
+    return AgendaRules.temperatureClass(v);
   }
 
   function agendaAwbHtml(awb, courier) {
@@ -4009,10 +3996,10 @@
   }
 
   function agendaWeekCardHtml(r) {
-    var labSim = normAgenda(r.labCentral) === 'sim';
+    var labSim = AgendaRules.isLabCentral(r);
     var isMon = agendaIsMonitoria(r);
-    var isSiv = normAgenda(r.tipo) === 'siv';
-    var isPeriodoOperacional = isMon || isSiv;
+    var isSiv = AgendaRules.isSiv(r);
+    var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
     return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + agendaTipoVisualClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
       '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento'))) + '</div>' +
       (isPeriodoOperacional ? '' : '<div style="margin:4px 0">' + agendaTipoChip(r.tipo) + '</div>') +
@@ -4035,30 +4022,15 @@
   }
 
   function agendaStatusClass(r) {
-    var n = normAgenda((r && r.status) || '');
-    var tipo = normAgenda((r && r.tipo) || '');
-    if (agendaIsMonitoria(r)) return 'monitoria';
-    if (tipo === 'siv' || tipo.indexOf('site initiation') > -1) return 'siv';
-    if (n.indexOf('nao agend') > -1) return 'naoagendado';
-    if (n.indexOf('cancel') > -1) return 'cancelado';
-    if (n.indexOf('confirm') > -1) return 'confirmado';
-    if (n.indexOf('envi') > -1) return 'enviado';
-    if (n.indexOf('entreg') > -1) return 'entregue';
-    if (n.indexOf('realiz') > -1) return 'realizado';
-    if (n.indexOf('concl') > -1) return 'concluido';
-    if (n.indexOf('reag') > -1) return 'reagendado';
-    if (n.indexOf('pend') > -1) return 'pendente';
-    return 'agendado';
+    return AgendaRules.visualClass(r);
   }
 
   function agendaTipoVisualClass(r) {
-    var tipo = normAgenda((r && r.tipo) || '');
-    if (tipo === 'siv' || tipo.indexOf('site initiation') > -1) return ' type-siv';
-    return '';
+    return AgendaRules.typeVisualClass(r);
   }
 
   function agendaIsMonitoria(r) {
-    return normAgenda((r && r.tipo) || '').indexOf('monitoria') > -1;
+    return AgendaRules.isMonitoring(r);
   }
 
   function agendaChip(v, cls, icon) {
@@ -4071,35 +4043,11 @@
   }
 
   function agendaTipoClass(tipo) {
-    var n = normAgenda(tipo);
-    if (n.indexOf('visita') > -1) return 'ag-type-visita';
-    if (agendaTipoContatoTelefonico(n)) return 'ag-type-default';
-    if (n.indexOf('monitoria') > -1) return 'ag-type-monitoria';
-    if (n.indexOf('amostra') > -1) return 'ag-type-amostras';
-    if (n.indexOf('imagem') > -1) return 'ag-type-imagem';
-    if (n.indexOf('laborator') > -1 || n === 'exames laboratoriais') return 'ag-type-lab';
-    if (n.indexOf('feriado') > -1) return 'ag-type-feriado';
-    if (n === 'siv' || n.indexOf('site initiation') > -1) return 'ag-type-siv';
-    if (n.indexOf('close') > -1) return 'ag-type-closeout';
-    if (n.indexOf('reuniao') > -1) return 'ag-type-reuniao';
-    if (n.indexOf('auditoria') > -1) return 'ag-type-auditoria';
-    return 'ag-type-default';
+    return AgendaRules.typeClass(tipo);
   }
 
   function agendaTipoIcon(tipo) {
-    var n = normAgenda(tipo);
-    if (n.indexOf('visita') > -1) return 'event_available';
-    if (agendaTipoContatoTelefonico(n)) return 'call';
-    if (n.indexOf('monitoria') > -1) return 'visibility';
-    if (n.indexOf('amostra') > -1) return 'local_shipping';
-    if (n.indexOf('imagem') > -1) return 'image_search';
-    if (n.indexOf('laborator') > -1) return 'biotech';
-    if (n.indexOf('feriado') > -1) return 'event_busy';
-    if (n === 'siv' || n.indexOf('site initiation') > -1) return 'flag';
-    if (n.indexOf('close') > -1) return 'lock';
-    if (n.indexOf('reuniao') > -1) return 'groups';
-    if (n.indexOf('auditoria') > -1) return 'fact_check';
-    return 'event';
+    return AgendaRules.typeIcon(tipo);
   }
 
   function agendaChipMeaningful(v, cls, icon) {
@@ -4145,21 +4093,11 @@
   }
 
   function agendaCourierStatusClass(status) {
-    var n = normAgenda(status);
-    if (agendaCourierStatusNaoAplicavel(n)) return 'naoaplicavel';
-    if (n.indexOf('nao agend') > -1) return 'naoagendado';
-    if (n.indexOf('cancel') > -1) return 'cancelado';
-    if (n.indexOf('confirm') > -1) return 'confirmado';
-    if (n.indexOf('envi') > -1) return 'enviado';
-    if (n.indexOf('entreg') > -1) return 'entregue';
-    if (n.indexOf('colet') > -1) return 'confirmado';
-    if (n.indexOf('agend') > -1) return 'agendado';
-    if (n.indexOf('pend') > -1) return 'pendente';
-    return 'pendente';
+    return AgendaRules.courierStatusKey(status);
   }
 
   function agendaTypeHint(r) {
-    if (normAgenda(r.labCentral) === 'sim' || agendaMeaningfulValue(r.kit) || agendaCourierList(r).length) return '';
+    if (AgendaRules.isLabCentral(r) || agendaMeaningfulValue(r.kit) || agendaCourierList(r).length) return '';
     return '';
   }
 
@@ -4170,8 +4108,7 @@
   }
 
   function agendaCourierStatusNaoAplicavel(status) {
-    var n = normAgenda(status);
-    return n === 'nao aplicavel' || n === 'nao se aplica' || n === 'n/a' || n === 'na';
+    return AgendaRules.courierStatusKey(status) === 'naoaplicavel';
   }
 
   function agendaCourierMeaningful(c) {

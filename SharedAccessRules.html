@@ -1,0 +1,27 @@
+<script>
+(function(global) {
+  'use strict';
+
+  var ADMIN_ONLY_MODULES = Object.freeze({
+    usuarios: true,
+    'audit-log': true,
+    diagnostico: true
+  });
+
+  function normalize(value) {
+    return String(value == null ? '' : value).trim().toLowerCase();
+  }
+
+  function isModuleVisible(accessOrRole, moduleName) {
+    var role = normalize(accessOrRole && typeof accessOrRole === 'object'
+      ? accessOrRole.role
+      : accessOrRole);
+    var moduleKey = normalize(moduleName);
+    return !ADMIN_ONLY_MODULES[moduleKey] || role === 'admin';
+  }
+
+  global.CodexAccessRules = Object.freeze({
+    isModuleVisible: isModuleVisible
+  });
+})(window);
+</script>
