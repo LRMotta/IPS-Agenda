@@ -4,7 +4,6 @@
   "scripts": {
     "test": "node --test --test-isolation=none tests/*.test.js",
     "verify": "npm test",
-    "prepush": "npm run verify",
     "push": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/push-clasp.ps1",
     "push:safe": "npm run push"
   }

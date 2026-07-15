@@ -8,7 +8,9 @@ Use somente:
 npm run push
 ```
 
-O npm executa automaticamente `prepush`, que chama `npm run verify` e roda toda a suite de regressao. O publicador localiza o `clasp.cmd` instalado em `%APPDATA%\npm` e o `clasp push --force` so comeca se todos os testes terminarem com codigo de saida zero.
+O publicador exige a branch `main` sem alteracoes locais, gera temporariamente a versao da entrega, executa `npm run verify` e roda toda a suite de regressao. Ele localiza o `clasp.cmd` instalado em `%APPDATA%\npm` e o `clasp push --force` so comeca se todos os testes terminarem com codigo de saida zero.
+
+A versao segue o formato `AAAA.MM.DD.HHmm-commit`, usa o titulo do commit como rotulo e registra a data/hora de Sao Paulo. Depois do push, `WebApp.gs` e restaurado byte a byte para o conteudo aprovado no Git, inclusive quando ocorre falha.
 
 `npm run push:safe` permanece como alias equivalente.
 
