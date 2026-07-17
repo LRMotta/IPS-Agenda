@@ -70,6 +70,24 @@ test('PINEX e canonicalizada antes de selecionar a documentacao', () => {
   assert.equal(context.transporteNormalizeCourierFromCodex_('Pinex'), 'PINEX');
   assert.equal(context.transporteNormalizeCourierFromCodex_('pinex'), 'PINEX');
   assert.equal(context.transporteNormalizeCourierFromCodex_('Pinex (Agendamento)'), 'PINEX (Agendamento)');
+
+  const spec = context.transportePdfSpec_(context.transporteNormalizeCourierFromCodex_('Pinex'), 'AMBIENTE', '', {});
+  assert.deepEqual(Array.from(spec.ordem), [
+    'folhaDhlPinex',
+    'invoicePinex',
+    'peticaoPinex',
+    'usdaStatementPinex',
+    'fichaEmergenciaPinex',
+    'declaracaoTransp'
+  ]);
+  assert.deepEqual({ ...spec.copias }, {
+    folhaDhlPinex: 1,
+    invoicePinex: 3,
+    peticaoPinex: 2,
+    usdaStatementPinex: 1,
+    fichaEmergenciaPinex: 3,
+    declaracaoTransp: 3
+  });
 });
 
 test('pre-agendamento prepara documentos sem sincronizar de volta para a Agenda', () => {
