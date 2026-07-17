@@ -165,12 +165,18 @@ function getAppBootstrapData() {
     auth: codexGetUserOAuthStatus_(),
     appVersion: codexGetAppVersion_(),
     webAppUrl: '',
+    agendaFormData: null,
     errors: {}
   };
   try {
     out.webAppUrl = ScriptApp.getService().getUrl();
   } catch (e1) {
     out.errors.webAppUrl = e1.message || String(e1);
+  }
+  try {
+    out.agendaFormData = getDadosFormularioAgenda();
+  } catch (e2) {
+    out.errors.agendaFormData = e2.message || String(e2);
   }
   return out;
 }
@@ -8732,10 +8738,26 @@ function getAgendaEventos(limite) {
   var sh = getAgendaSheet_();
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
-  var max = Math.min(Number(limite || 80), 5000, lastRow - 1);
+  var max = Math.min(Number(limite || 80), lastRow - 1);
   var start = Math.max(2, lastRow - max + 1);
   var vals = sh.getRange(start, 1, lastRow - start + 1, AGENDA_CFG.lastCol).getValues();
-  return agendaRowsToObjects_(vals, start).reverse();
+  var idsPorParticipante = {};
+  var bracosPorParticipante = {};
+  getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
+    var nome = normText_(r[1]);
+    if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
+    if (nome && !bracosPorParticipante[nome]) bracosPorParticipante[nome] = String(r[6] || '').trim();
+  });
+  return vals.map(function(r, i) {
+    var evento = agendaRowToObject_(r, start + i);
+    if (!evento.idParticipante && evento.participante) {
+      evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
+    }
+    if (!evento.braco && evento.participante) {
+      evento.braco = bracosPorParticipante[normText_(evento.participante)] || '';
+    }
+    return evento;
+  }).reverse();
 }
 
 function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
@@ -8745,7 +8767,7 @@ function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
   if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
   if ((fim.getTime() - inicio.getTime()) / 86400000 > 31) throw new Error('O periodo visivel nao pode exceder 31 dias.');
-  var max = Math.max(1, Math.min(Number(limite || 200), 300));
+  var max = Math.max(1, Math.min(Number(limite || 150), 200));
   if (lastRow < 2) return { items: [], total: 0, truncated: false };
   var cacheKey = ['AgendaWindow:v1', lastRow, inicioIso, fimIso, max].join(':');
   if (!ignorarCache) {

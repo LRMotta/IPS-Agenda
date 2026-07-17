@@ -11,7 +11,6 @@
   var _agendaFormDataRefreshPending = false;
   var _agendaEventosTruncated = false;
   var _agendaEventosRequestId = 0;
-  var _agendaLoadedWeeks = {};
   var _agendaHistoricoEventos = [];
   var _agendaHistoricoQuery = '';
   var _agendaHistoricoNextCursor = null;
@@ -67,22 +66,6 @@
 
   function agendaFormDataRefreshBloqueadoPorEdicao() {
     return !!(window.APP_UNSAVED_SCOPES && window.APP_UNSAVED_SCOPES.agendaCreatePanel);
-  }
-
-  function agendaFormDataAplicacaoBloqueadaPorEdicao() {
-    var painel = document.getElementById('agendaCreatePanel');
-    return !!(_agendaEditId && painel && painel.classList.contains('open'));
-  }
-
-  function agendaFormDataSelectIds() {
-    return [
-      'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
-      'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
-      'agC1Temp','agC2Temp','agC3Temp',
-      'agC1Status','agC2Status','agC3Status','agBackupStatus',
-      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
-      'agMonitor1','agMonitor2'
-    ].concat(agendaKitIds());
   }
 
   function agendaEstaAtiva() {
@@ -190,15 +173,7 @@
   }
 
   function applyAgendaFormData(d) {
-    var atuais = agendaCurrentValues(agendaFormDataSelectIds());
     setAgendaFormDataState(d || {});
-    // A resposta do formulário pode chegar depois de o usuário abrir um
-    // agendamento. Nesse caso, recriar os selects apagaria os valores que
-    // acabaram de ser carregados no modal de edição.
-    if (agendaFormDataAplicacaoBloqueadaPorEdicao()) {
-      _agendaFormDataRefreshPending = true;
-      return;
-    }
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
     }
@@ -226,7 +201,6 @@
     initAgendaMatBioForms();
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateUnitUi);
     preencherAgendaKitsSelects(_agendaDados.kitsColeta || []);
-    agendaRestoreValues(atuais);
     atualizarAgendaTipoVisibilidade();
     onAgendaLabCentralChange();
     var aviso = document.getElementById('agendaEmailAviso');
@@ -250,7 +224,15 @@
 
   function atualizarAgendaFormDataOpcoes(d) {
     if (!d) return;
-    var atuais = agendaCurrentValues(agendaFormDataSelectIds());
+    var selectIds = [
+      'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
+      'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
+      'agC1Temp','agC2Temp','agC3Temp',
+      'agC1Status','agC2Status','agC3Status','agBackupStatus',
+      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
+      'agMonitor1','agMonitor2'
+    ].concat(agendaKitIds());
+    var atuais = agendaCurrentValues(selectIds);
     setAgendaFormDataState(d || {});
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
@@ -2935,6 +2917,8 @@
   function carregarAgendaEventos(forcar, callback, options) {
     options = options || {};
     var lista = document.getElementById('agendaViewLista');
+    if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
+    agendaUpdatePeriod();
     function finalizarSucesso() {
       if (typeof callback === 'function') callback();
       if (typeof options.onComplete === 'function') options.onComplete();
@@ -2942,8 +2926,6 @@
     function finalizarTentativa() {
       if (typeof options.onComplete === 'function') options.onComplete();
     }
-    if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
-    agendaUpdatePeriod();
     google.script.run
       .withSuccessHandler(function(rows) {
         _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
@@ -2966,32 +2948,6 @@
     var fim = new Date(inicio);
     fim.setDate(inicio.getDate() + 7);
     return { inicio: agendaIso(inicio), fim: agendaIso(fim) };
-  }
-
-  function agendaPrefetchRange() {
-    var visible = agendaVisibleRange();
-    var inicio = agendaDateFromIso(visible.inicio);
-    var fim = agendaDateFromIso(visible.fim);
-    inicio.setDate(inicio.getDate() - 7);
-    fim.setDate(fim.getDate() + 7);
-    return { inicio: agendaIso(inicio), fim: agendaIso(fim) };
-  }
-
-  function agendaIsoIsInRange(iso, inicioIso, fimIso) {
-    return !!iso && iso >= inicioIso && iso < fimIso;
-  }
-
-  function agendaMarkWeeksLoaded(range) {
-    var cursor = agendaDateFromIso(range.inicio);
-    var fim = agendaDateFromIso(range.fim);
-    while (cursor && fim && cursor < fim) {
-      _agendaLoadedWeeks[agendaIso(cursor)] = true;
-      cursor.setDate(cursor.getDate() + 7);
-    }
-  }
-
-  function agendaVisibleWeekIsLoaded() {
-    return !!_agendaLoadedWeeks[agendaIso(agendaWeekStart())];
   }
 
   function agendaOnSearchInput() {
@@ -3445,16 +3401,15 @@
 
   function agendaNavWeek(delta) {
     _agendaWeekOffset += Number(delta || 0);
-    carregarAgendaEventos(false);
+    renderAgendaOperacional();
   }
 
   function agendaGoToday() {
     _agendaWeekOffset = 0;
     var input = document.getElementById('agendaGoDateInput');
     if (input) input.value = agendaIso(new Date());
-    carregarAgendaEventos(false, function() {
-      setTimeout(agendaScrollToToday, 0);
-    });
+    renderAgendaOperacional();
+    setTimeout(agendaScrollToToday, 0);
   }
 
   function agendaScrollToToday() {
@@ -3473,9 +3428,8 @@
     var baseUtc = Date.UTC(base.getFullYear(), base.getMonth(), base.getDate());
     var targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
     _agendaWeekOffset = Math.round((targetUtc - baseUtc) / 604800000);
-    carregarAgendaEventos(false, function() {
-      setTimeout(function() { agendaScrollToDate(iso); }, 0);
-    });
+    renderAgendaOperacional();
+    setTimeout(function() { agendaScrollToDate(iso); }, 0);
   }
 
   function agendaScrollToDate(iso) {

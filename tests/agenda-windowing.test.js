@@ -4,21 +4,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readProjectFile, runFile } = require('./helpers/load-app-script');
 
-function functionBody(source, name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} nao encontrada`);
-  const open = source.indexOf('{', start);
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1;
-    if (source[index] === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(open + 1, index);
-    }
-  }
-  throw new Error(`Corpo incompleto de ${name}`);
-}
-
 function fakeAgenda(server, records) {
   const cfg = server.AGENDA_CFG;
   const rows = records.map((record) => {
@@ -55,21 +40,12 @@ test('intervalos da agenda aceitam somente datas ISO validas', () => {
   assert.throws(() => server.agendaParseIsoBoundary_('</script>', 'inicio'), /invalida/);
 });
 
-test('carga principal traz os ultimos 5.000 eventos para incluir agendamentos futuros', () => {
+test('carga principal restaura os ultimos 5.000 eventos', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
   assert.match(client, /\.getAgendaEventos\(5000\)/);
-  assert.doesNotMatch(functionBody(client, 'carregarAgendaEventos'), /getAgendaEventosPorPeriodo/);
   assert.match(server, /function getAgendaEventos\(limite\)/);
-  assert.match(functionBody(server, 'getAgendaEventos'), /Math\.min\(Number\(limite \|\| 80\), 5000, lastRow - 1\)/);
-});
-
-test('navegacao semanal continua usando a carga integral da Agenda', () => {
-  const client = readProjectFile('IndexAgendaScripts.html');
-  const load = functionBody(client, 'carregarAgendaEventos');
-  assert.match(functionBody(client, 'agendaNavWeek'), /carregarAgendaEventos\(false\)/);
-  assert.doesNotMatch(load, /agendaVisibleWeekIsLoaded/);
-  assert.match(load, /\.getAgendaEventos\(5000\)/);
+  assert.match(server, /Math\.min\(Number\(limite \|\| 80\), lastRow - 1\)/);
 });
 
 test('servidor retorna somente a janela solicitada e informa truncamento', () => {
