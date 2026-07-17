@@ -33,6 +33,21 @@ function agendaServer() {
   return runFile('WebApp.gs', { AgendaServerRules_: rules });
 }
 
+function functionBody(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} nao encontrada`);
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    if (source[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+  throw new Error(`Corpo incompleto de ${name}`);
+}
+
 test('intervalos da agenda aceitam somente datas ISO validas', () => {
   const server = agendaServer();
   assert.equal(server.agendaParseIsoBoundary_('2026-07-17', 'inicio').getDate(), 17);
@@ -46,6 +61,17 @@ test('carga principal restaura os ultimos 5.000 eventos', () => {
   assert.match(client, /\.getAgendaEventos\(5000\)/);
   assert.match(server, /function getAgendaEventos\(limite\)/);
   assert.match(server, /Math\.min\(Number\(limite \|\| 80\), lastRow - 1\)/);
+});
+
+test('carga tardia do formulario preserva os selects de um agendamento aberto', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const apply = functionBody(client, 'applyAgendaFormData');
+  const lock = functionBody(client, 'agendaFormDataAplicacaoBloqueadaPorEdicao');
+  assert.match(apply, /agendaCurrentValues\(agendaFormDataSelectIds\(\)\)/);
+  assert.match(apply, /agendaFormDataAplicacaoBloqueadaPorEdicao\(\)/);
+  assert.match(apply, /agendaRestoreValues\(atuais\)/);
+  assert.match(lock, /_agendaEditId/);
+  assert.match(lock, /classList\.contains\('open'\)/);
 });
 
 test('servidor retorna somente a janela solicitada e informa truncamento', () => {
