@@ -8847,11 +8847,14 @@ function pesquisarAgendaHistorico(query, cursor, pageSize) {
   return { items: items, nextCursor: nextCursor, hasMore: nextCursor != null, pageSize: size };
 }
 
-function getAgendaEventoPorId(id) {
+function getAgendaEventoPorId(id, rowIndex) {
   id = String(id || '').trim();
   if (!id) return null;
   var sh = getAgendaSheet_();
-  var row = encontrarLinhaPorId(sh, id);
+  var row = Number(rowIndex) || 0;
+  if (row < 2 || row > sh.getLastRow() || String(sh.getRange(row, AGENDA_CFG.col.id).getValue() || '') !== id) {
+    row = encontrarLinhaPorId(sh, id);
+  }
   if (!row) return null;
   var item = agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
   agendaHydrateParticipantFields_([item]);

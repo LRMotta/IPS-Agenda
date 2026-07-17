@@ -119,12 +119,12 @@ test('abertura direta busca somente o evento solicitado', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
   assert.match(client, /\.getAgendaEventoPorId\(agendaId\)/);
-  assert.match(server, /function getAgendaEventoPorId\(id\)/);
+  assert.match(server, /function getAgendaEventoPorId\(id, rowIndex\)/);
 });
 
 test('edicao relê o registro completo antes de preencher o modal', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   assert.match(client, /function abrirAgendaEdicao\(id\)/);
-  assert.match(client, /\.getAgendaEventoPorId\(id\)/);
+  assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
 });

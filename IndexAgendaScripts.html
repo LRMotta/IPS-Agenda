@@ -3245,7 +3245,7 @@
       .withFailureHandler(function() {
         abrirAgendaEdicaoComRegistro_(r);
       })
-      .getAgendaEventoPorId(id);
+      .getAgendaEventoPorId(id, r.rowIndex);
   }
 
   function abrirAgendaEdicaoComRegistro_(r) {
