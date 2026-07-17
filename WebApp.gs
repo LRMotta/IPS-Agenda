@@ -8741,7 +8741,7 @@ function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
   if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
   if ((fim.getTime() - inicio.getTime()) / 86400000 > 31) throw new Error('O periodo visivel nao pode exceder 31 dias.');
-  var max = Math.max(1, Math.min(Number(limite || 150), 200));
+  var max = Math.max(1, Math.min(Number(limite || 200), 300));
   if (lastRow < 2) return { items: [], total: 0, truncated: false };
   var cacheKey = ['AgendaWindow:v1', lastRow, inicioIso, fimIso, max].join(':');
   if (!ignorarCache) {
