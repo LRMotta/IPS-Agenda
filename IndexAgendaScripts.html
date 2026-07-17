@@ -3302,17 +3302,22 @@
     }
   }
 
-  function abrirAgendaEdicao(id) {
+  function abrirAgendaEdicao(id, rowIndex) {
     id = String(id || '').trim();
+    rowIndex = Number(rowIndex || 0) || 0;
     if (!id) return;
-    var r = (_agendaEventos || []).concat(_agendaHistoricoEventos || []).find(function(x) {
-      return String(x.id || '') === id;
-    });
+    var candidatos = (_agendaEventos || []).concat(_agendaHistoricoEventos || []);
+    var r = rowIndex ? candidatos.find(function(x) {
+      return String(x.id || '') === id && Number(x.rowIndex || 0) === rowIndex;
+    }) : null;
+    if (!r) r = candidatos.find(function(x) { return String(x.id || '') === id; });
     if (!r) return;
     google.script.run
       .withSuccessHandler(function(registroAtualizado) {
         var registro = registroAtualizado ? agendaMergeEditRecord_(registroAtualizado, r) : agendaNormalizeRow(r);
-        var idx = (_agendaEventos || []).findIndex(function(x) { return String(x.id || '') === id; });
+        var idx = (_agendaEventos || []).findIndex(function(x) {
+          return String(x.id || '') === id && (!r.rowIndex || Number(x.rowIndex || 0) === Number(r.rowIndex || 0));
+        });
         if (idx >= 0 && registroAtualizado) _agendaEventos[idx] = registro;
         abrirAgendaEdicaoComRegistro_(registro);
       })
@@ -4061,7 +4066,7 @@
         (sideHtml ? '<div class="ag-appt-side">' + sideHtml + '</div>' : '') +
         '<div class="ag-appt-actions">' +
           calendarBtn +
-          '<button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\')" title="Editar"><span class="material-symbols-outlined">edit</span></button>' +
+          '<button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar"><span class="material-symbols-outlined">edit</span></button>' +
           (!past ? '<button class="ag-act-btn" onclick="event.stopPropagation();cancelarAgendaEvento(\'' + esc(r.id) + '\')" title="Cancelar"><span class="material-symbols-outlined">event_busy</span></button>' : '') +
           '<button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes"><span class="material-symbols-outlined">expand_more</span></button>' +
         '</div>' +

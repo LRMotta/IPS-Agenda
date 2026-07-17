@@ -131,9 +131,10 @@ test('abertura direta busca somente o evento solicitado', () => {
 
 test('edicao relê o registro completo antes de preencher o modal', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
-  assert.match(client, /function abrirAgendaEdicao\(id\)/);
+  assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
   assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
   assert.match(client, /function agendaMergeEditRecord_\(fresh, fallback\)/);
   assert.match(client, /agendaMergeEditRecord_\(registroAtualizado, r\)/);
+  assert.match(client, /abrirAgendaEdicao.*Number\(r\.rowIndex \|\| 0\)/);
 });
