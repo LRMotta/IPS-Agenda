@@ -165,18 +165,12 @@ function getAppBootstrapData() {
     auth: codexGetUserOAuthStatus_(),
     appVersion: codexGetAppVersion_(),
     webAppUrl: '',
-    agendaFormData: null,
     errors: {}
   };
   try {
     out.webAppUrl = ScriptApp.getService().getUrl();
   } catch (e1) {
     out.errors.webAppUrl = e1.message || String(e1);
-  }
-  try {
-    out.agendaFormData = getDadosFormularioAgenda();
-  } catch (e2) {
-    out.errors.agendaFormData = e2.message || String(e2);
   }
   return out;
 }
