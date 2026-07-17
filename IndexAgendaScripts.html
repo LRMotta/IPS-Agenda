@@ -9,6 +9,16 @@
   var _agendaFormDataLoadedAt = 0;
   var _agendaFormDataRefreshing = false;
   var _agendaFormDataRefreshPending = false;
+  var _agendaEventosTruncated = false;
+  var _agendaEventosRequestId = 0;
+  var _agendaHistoricoEventos = [];
+  var _agendaHistoricoQuery = '';
+  var _agendaHistoricoNextCursor = null;
+  var _agendaHistoricoCursors = [null];
+  var _agendaHistoricoPage = 0;
+  var _agendaHistoricoLoading = false;
+  var _agendaHistoricoRequestId = 0;
+  var _agendaSearchTimer = null;
   var _agendaCancelamentoContext = null;
   var _agendaConfirmarCancelamentoContext = null;
   var _agendaReagendamentoContext = null;
@@ -2892,7 +2902,13 @@
     if ((_agendaEventos || []).some(function(r) { return String(r.id || '') === agendaId; })) {
       agendaAbrirPendenteAposCarga();
     } else {
-      carregarAgendaEventos(true, agendaAbrirPendenteAposCarga, { silent: true });
+      google.script.run
+        .withSuccessHandler(function(row) {
+          if (row) _agendaEventos.push(agendaNormalizeRow(row));
+          agendaAbrirPendenteAposCarga();
+        })
+        .withFailureHandler(function(e) { snackErro(appErrorMessage(e)); })
+        .getAgendaEventoPorId(agendaId);
     }
     return true;
   }
@@ -2910,21 +2926,94 @@
     function finalizarTentativa() {
       if (typeof options.onComplete === 'function') options.onComplete();
     }
+    var range = agendaVisibleRange();
+    var requestId = ++_agendaEventosRequestId;
     google.script.run
-      .withSuccessHandler(function(rows) {
-        _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
+      .withSuccessHandler(function(response) {
+        if (requestId !== _agendaEventosRequestId) return;
+        var rows = response && response.items ? response.items : [];
+        _agendaEventos = rows.map(agendaNormalizeRow).sort(function(a, b) {
           return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
         });
+        _agendaEventosTruncated = !!(response && response.truncated);
         setAgendaEventosLoadedAtState(Date.now());
         agendaMatBioUpdateAllCopyOptions();
         renderAgendaOperacional();
         finalizarSucesso();
       })
       .withFailureHandler(function(e) {
+        if (requestId !== _agendaEventosRequestId) return;
         if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty" style="color:#e53935"><span class="material-symbols-outlined">error</span>' + esc(appErrorMessage(e)) + '</div>';
         finalizarTentativa();
       })
-      .getAgendaEventos(5000);
+      .getAgendaEventosPorPeriodo(range.inicio, range.fim, 200, !!forcar);
+  }
+
+  function agendaVisibleRange() {
+    var inicio = agendaWeekStart();
+    var fim = new Date(inicio);
+    fim.setDate(inicio.getDate() + 7);
+    return { inicio: agendaIso(inicio), fim: agendaIso(fim) };
+  }
+
+  function agendaOnSearchInput() {
+    if (_agendaSearchTimer) clearTimeout(_agendaSearchTimer);
+    var query = String((document.getElementById('agendaBusca') || {}).value || '').trim();
+    if (!query) {
+      _agendaHistoricoQuery = '';
+      _agendaHistoricoEventos = [];
+      _agendaHistoricoLoading = false;
+      renderAgendaOperacional();
+      return;
+    }
+    _agendaHistoricoLoading = true;
+    renderAgendaOperacional();
+    if (query.length < 2) {
+      _agendaHistoricoLoading = false;
+      renderAgendaOperacional();
+      return;
+    }
+    _agendaSearchTimer = setTimeout(function() {
+      agendaCarregarHistorico(query, null, 0);
+    }, 350);
+  }
+
+  function agendaCarregarHistorico(query, cursor, page) {
+    var requestId = ++_agendaHistoricoRequestId;
+    _agendaHistoricoLoading = true;
+    renderAgendaOperacional();
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (requestId !== _agendaHistoricoRequestId) return;
+        var current = String((document.getElementById('agendaBusca') || {}).value || '').trim();
+        if (normAgenda(current) !== normAgenda(query)) return;
+        _agendaHistoricoQuery = query;
+        _agendaHistoricoEventos = ((response && response.items) || []).map(agendaNormalizeRow);
+        _agendaHistoricoNextCursor = response && response.nextCursor != null ? response.nextCursor : null;
+        _agendaHistoricoPage = page;
+        _agendaHistoricoCursors[page] = cursor;
+        _agendaHistoricoCursors.length = page + 1;
+        _agendaHistoricoLoading = false;
+        renderAgendaOperacional();
+      })
+      .withFailureHandler(function(e) {
+        if (requestId !== _agendaHistoricoRequestId) return;
+        _agendaHistoricoLoading = false;
+        var lista = document.getElementById('agendaViewLista');
+        if (lista) lista.innerHTML = '<div class="ag-empty" style="color:#e53935"><span class="material-symbols-outlined">error</span>' + esc(appErrorMessage(e)) + '</div>';
+      })
+      .pesquisarAgendaHistorico(query, cursor, 25);
+  }
+
+  function agendaHistoricoProxima() {
+    if (_agendaHistoricoNextCursor == null || _agendaHistoricoLoading) return;
+    agendaCarregarHistorico(_agendaHistoricoQuery, _agendaHistoricoNextCursor, _agendaHistoricoPage + 1);
+  }
+
+  function agendaHistoricoAnterior() {
+    if (_agendaHistoricoPage <= 0 || _agendaHistoricoLoading) return;
+    var page = _agendaHistoricoPage - 1;
+    agendaCarregarHistorico(_agendaHistoricoQuery, _agendaHistoricoCursors[page], page);
   }
 
   function agendaNormalizeRow(r) {
@@ -3318,15 +3407,16 @@
 
   function agendaNavWeek(delta) {
     _agendaWeekOffset += Number(delta || 0);
-    renderAgendaOperacional();
+    carregarAgendaEventos(true);
   }
 
   function agendaGoToday() {
     _agendaWeekOffset = 0;
     var input = document.getElementById('agendaGoDateInput');
     if (input) input.value = agendaIso(new Date());
-    renderAgendaOperacional();
-    setTimeout(agendaScrollToToday, 0);
+    carregarAgendaEventos(true, function() {
+      setTimeout(agendaScrollToToday, 0);
+    });
   }
 
   function agendaScrollToToday() {
@@ -3345,8 +3435,9 @@
     var baseUtc = Date.UTC(base.getFullYear(), base.getMonth(), base.getDate());
     var targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
     _agendaWeekOffset = Math.round((targetUtc - baseUtc) / 604800000);
-    renderAgendaOperacional();
-    setTimeout(function() { agendaScrollToDate(iso); }, 0);
+    carregarAgendaEventos(true, function() {
+      setTimeout(function() { agendaScrollToDate(iso); }, 0);
+    });
   }
 
   function agendaScrollToDate(iso) {
@@ -3399,7 +3490,8 @@
     var ini = agendaWeekStart();
     var fim = new Date(ini); fim.setDate(ini.getDate() + 7);
     var q = normAgenda((document.getElementById('agendaBusca') || {}).value || '');
-    return _agendaEventos.filter(function(r) {
+    var source = q && _agendaView === 'lista' ? _agendaHistoricoEventos : _agendaEventos;
+    return source.filter(function(r) {
       var d = agendaDateFromIso(r.dataIso);
       if (!d) return false;
       if (!q || _agendaView !== 'lista') {
@@ -3416,11 +3508,20 @@
     var q = normAgenda((document.getElementById('agendaBusca') || {}).value || '');
     var html = '';
     if (q) {
+      var rawQuery = String((document.getElementById('agendaBusca') || {}).value || '').trim();
+      if (rawQuery.length < 2) {
+        el.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">manage_search</span>Digite pelo menos 2 caracteres para pesquisar no historico.</div>';
+        return;
+      }
+      if (_agendaHistoricoLoading || normAgenda(_agendaHistoricoQuery) !== q) {
+        el.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Pesquisando historico...</div>';
+        return;
+      }
       var days = {};
       rows.forEach(function(r) { if (r.dataIso) days[r.dataIso] = true; });
       var keys = Object.keys(days).sort();
       if (!keys.length) {
-        el.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">search_off</span>Nenhum resultado encontrado no historico carregado.</div>';
+        el.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">search_off</span>Nenhum resultado encontrado.</div>' + agendaHistoricoPagerHtml();
         return;
       }
       keys.forEach(function(iso) {
@@ -3442,7 +3543,19 @@
           : '<div class="ag-empty"><span class="material-symbols-outlined">event_busy</span>Dia livre - sem agendamentos registrados.</div>';
       }
     }
+    if (q) html += agendaHistoricoPagerHtml();
+    else if (_agendaEventosTruncated) html += '<div class="ag-empty">Exibindo os primeiros 200 eventos desta semana. Refine o periodo ou use a pesquisa historica.</div>';
     el.innerHTML = html;
+  }
+
+  function agendaHistoricoPagerHtml() {
+    var anterior = _agendaHistoricoPage > 0
+      ? '<button class="ag-tb-btn" onclick="agendaHistoricoAnterior()"><span class="material-symbols-outlined">chevron_left</span>Anterior</button>'
+      : '';
+    var proxima = _agendaHistoricoNextCursor != null
+      ? '<button class="ag-tb-btn" onclick="agendaHistoricoProxima()">Proxima<span class="material-symbols-outlined">chevron_right</span></button>'
+      : '';
+    return '<div class="ag-history-pager">' + anterior + '<span>Pagina ' + (_agendaHistoricoPage + 1) + '</span>' + proxima + '</div>';
   }
 
   function renderAgendaSemana() {
