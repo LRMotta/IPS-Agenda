@@ -28,6 +28,14 @@ test('testes acontecem depois da versao e antes do clasp push', () => {
   assert.ok(testIndex < claspIndex);
 });
 
+test('GitHub e atualizado somente depois da publicacao no Apps Script', () => {
+  const source = readProjectFile('tools/push-clasp.ps1');
+  const claspIndex = source.indexOf('& $clasp push --force');
+  const githubIndex = source.indexOf('git push origin main');
+  assert.ok(claspIndex > -1 && claspIndex < githubIndex);
+  assert.match(source, /GitHub atualizado com sucesso/);
+});
+
 test('arquivo local e restaurado mesmo quando a publicacao falha', () => {
   const source = readProjectFile('tools/push-clasp.ps1');
   assert.match(source, /finally\s*\{/);

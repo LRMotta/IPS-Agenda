@@ -44,7 +44,10 @@ try {
   Write-Host 'Testes aprovados. Iniciando clasp push --force...'
   & $clasp push --force
   if ($LASTEXITCODE -ne 0) { throw 'clasp push falhou.' }
-  Write-Host "Publicacao concluida com a versao $version."
+  Write-Host "Publicacao concluida com a versao $version. Enviando main para o GitHub..."
+  & git push origin main
+  if ($LASTEXITCODE -ne 0) { throw 'A publicacao no Apps Script foi concluida, mas o git push origin main falhou.' }
+  Write-Host 'GitHub atualizado com sucesso.'
   $exitCode = 0
 } catch {
   Write-Host ('ERRO: ' + $_.Exception.Message) -ForegroundColor Red
