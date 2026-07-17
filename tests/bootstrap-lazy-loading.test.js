@@ -36,3 +36,16 @@ test('Agenda continua carregando o formulario sob demanda ao ser aberta', () => 
   assert.match(init, /\.getDadosFormularioAgenda\(\)/);
   assert.match(init, /withSuccessHandler\(applyAgendaFormData\)/);
 });
+
+test('carga tardia do formulario da Agenda preserva valores e nao sobrescreve edicao aberta', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const apply = functionBody(client, 'applyAgendaFormData');
+  const lock = functionBody(client, 'agendaFormDataAplicacaoBloqueadaPorEdicao');
+
+  assert.match(apply, /agendaCurrentValues\(agendaFormDataSelectIds\(\)\)/);
+  assert.match(apply, /agendaFormDataAplicacaoBloqueadaPorEdicao\(\)/);
+  assert.match(apply, /_agendaFormDataRefreshPending\s*=\s*true/);
+  assert.match(apply, /agendaRestoreValues\(atuais\)/);
+  assert.match(lock, /_agendaEditId/);
+  assert.match(lock, /classList\.contains\('open'\)/);
+});
