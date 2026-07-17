@@ -69,6 +69,22 @@
     return !!(window.APP_UNSAVED_SCOPES && window.APP_UNSAVED_SCOPES.agendaCreatePanel);
   }
 
+  function agendaFormDataAplicacaoBloqueadaPorEdicao() {
+    var painel = document.getElementById('agendaCreatePanel');
+    return !!(_agendaEditId && painel && painel.classList.contains('open'));
+  }
+
+  function agendaFormDataSelectIds() {
+    return [
+      'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
+      'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
+      'agC1Temp','agC2Temp','agC3Temp',
+      'agC1Status','agC2Status','agC3Status','agBackupStatus',
+      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
+      'agMonitor1','agMonitor2'
+    ].concat(agendaKitIds());
+  }
+
   function agendaEstaAtiva() {
     if (typeof getCurrentPage === 'function') return getCurrentPage() === 'agenda';
     var page = document.getElementById('page-agenda');
@@ -174,7 +190,15 @@
   }
 
   function applyAgendaFormData(d) {
+    var atuais = agendaCurrentValues(agendaFormDataSelectIds());
     setAgendaFormDataState(d || {});
+    // A resposta do formulário pode chegar depois de o usuário abrir um
+    // agendamento. Nesse caso, recriar os selects apagaria os valores que
+    // acabaram de ser carregados no modal de edição.
+    if (agendaFormDataAplicacaoBloqueadaPorEdicao()) {
+      _agendaFormDataRefreshPending = true;
+      return;
+    }
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
     }
@@ -202,6 +226,7 @@
     initAgendaMatBioForms();
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateUnitUi);
     preencherAgendaKitsSelects(_agendaDados.kitsColeta || []);
+    agendaRestoreValues(atuais);
     atualizarAgendaTipoVisibilidade();
     onAgendaLabCentralChange();
     var aviso = document.getElementById('agendaEmailAviso');
@@ -225,15 +250,7 @@
 
   function atualizarAgendaFormDataOpcoes(d) {
     if (!d) return;
-    var selectIds = [
-      'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
-      'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
-      'agC1Temp','agC2Temp','agC3Temp',
-      'agC1Status','agC2Status','agC3Status','agBackupStatus',
-      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
-      'agMonitor1','agMonitor2'
-    ].concat(agendaKitIds());
-    var atuais = agendaCurrentValues(selectIds);
+    var atuais = agendaCurrentValues(agendaFormDataSelectIds());
     setAgendaFormDataState(d || {});
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
