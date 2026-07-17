@@ -421,8 +421,8 @@ function codexGetTriggersDiagnostics_() {
       try { source = t.getTriggerSource ? String(t.getTriggerSource()) : ''; } catch (eSource) {}
       try { eventType = t.getEventType ? String(t.getEventType()) : ''; } catch (eEvent) {}
       var fn = t.getHandlerFunction ? String(t.getHandlerFunction() || '') : '';
-      if (fn === 'monitorarConfirmacoesCourierAgendadas') out.monitorConfirmacaoCouriersAtivo = true;
-      if (fn === 'monitorarEntregasDhlAgendadas') out.monitorEntregasDhlAtivo = true;
+      if (fn === 'monitorarConfirmacoesCourierAgendadas' || fn === 'monitorarConfirmacoesCourierAgendadas_') out.monitorConfirmacaoCouriersAtivo = true;
+      if (fn === 'monitorarEntregasDhlAgendadas' || fn === 'monitorarEntregasDhlAgendadas_') out.monitorEntregasDhlAtivo = true;
       return { handler: fn, source: source, eventType: eventType, uid: t.getUniqueId ? String(t.getUniqueId() || '') : '' };
     });
     out.ok = true;
@@ -867,6 +867,27 @@ function codexAssertAdmin_() {
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
   if (access.role !== 'admin') throw new Error('Acesso permitido apenas para administradores.');
   return access;
+}
+
+function codexIsInstalledTriggerInvocation_(event, handlerName) {
+  var triggerUid = event && event.triggerUid ? String(event.triggerUid) : '';
+  if (!triggerUid || !handlerName) return false;
+  try {
+    return ScriptApp.getProjectTriggers().some(function(trigger) {
+      var uid = trigger.getUniqueId ? String(trigger.getUniqueId() || '') : '';
+      var handler = trigger.getHandlerFunction ? String(trigger.getHandlerFunction() || '') : '';
+      return uid === triggerUid && handler === handlerName;
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
+function codexAssertAdminOrInstalledTrigger_(event, handlerName) {
+  if (codexIsInstalledTriggerInvocation_(event, handlerName)) {
+    return { ok: true, userEmail: 'installed-trigger', role: 'admin', trigger: true };
+  }
+  return codexAssertAdmin_();
 }
 
 function codexGetCallerFunctionName_() {
@@ -2785,6 +2806,7 @@ function reqExamesGmailOAuthStatus_() {
 //  PDF, E-MAIL E ORGANIZAÇÃO VISUAL
 // ══════════════════════════════════════════════════════
 function organizarAbas() {
+  codexAssertAdmin_();
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
   var ordem = [
     'Agenda','Requisição de Exames','Participantes',
@@ -2799,6 +2821,7 @@ function organizarAbas() {
 }
 
 function focarDataHoje() {
+  codexAssertCanWrite_('focarDataHoje', 'Sistema', '');
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
   var aba = ss.getSheetByName('Agenda');
   if (!aba) return;
@@ -2836,6 +2859,7 @@ function buscarEmailDoLocal(nomeLocal) {
  * NÃO usar no contexto WebApp — use _exportarPDFWebApp() via gerarRequisicaoPDF().
  */
 function exportarPDF() {
+  codexAssertCanWrite_('exportarPDF', 'RequisicaoExames', '');
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   var sheet       = spreadsheet.getSheetByName('Requisição de Exames');
   var nomeLocal         = sheet.getRange('E10').getValue();
@@ -2979,6 +3003,7 @@ function getGmailSignature() {
 }
 
 function resetarCampos() {
+  codexAssertCanWrite_('resetarCampos', 'RequisicaoExames', '');
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Requisição de Exames');
   ['I5','E8','E9','E10','E11','H8','H9','H10','J10',
    'C14:C33','G14:G33','B36','H41','H42','H43']
@@ -7012,7 +7037,7 @@ function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipo
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, {});
   agendaSetBackupLinha_(agenda, linha, {});
   agendaSetTransporteExtraLinha_(agenda, linha, {});
-  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento(agenda, linha, status);
+  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
 }
 
 function agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados) {
@@ -7396,7 +7421,7 @@ function atualizarAgendaEventoCompleto(dados) {
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
   agendaSetBackupLinha_(agenda, linha, dados.backup);
   agendaSetTransporteExtraLinha_(agenda, linha, dados);
-  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento(agenda, linha, status);
+  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
   if (deveVerificarNotificacoes) {
     verificarNotificacoes(
       { source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
@@ -7438,7 +7463,7 @@ function cancelarAgendaEvento(id, cancelamento) {
   var obsComCancelamento = agendaAppendCancelamentoMotivo_(obsAtual, cancelamento);
   agenda.getRange(linha, AGENDA_CFG.col.status).setValue('Cancelado');
   agenda.getRange(linha, AGENDA_CFG.col.obs).setValue(obsComCancelamento);
-  aplicarLogicaCancelamento(agenda, linha, 'Cancelado');
+  aplicarLogicaCancelamento_(agenda, linha, 'Cancelado');
   verificarNotificacoes(
     { source: ss, range: agenda.getRange(linha, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
     id,
@@ -7531,7 +7556,12 @@ function atualizarStatusBackupAgenda(agendaId, status, recordVersion) {
   });
 }
 
-function marcarAgendaPassadaComoRealizada() {
+function marcarAgendaPassadaComoRealizada(event) {
+  codexAssertAdminOrInstalledTrigger_(event, 'marcarAgendaPassadaComoRealizada');
+  return marcarAgendaPassadaComoRealizada_();
+}
+
+function marcarAgendaPassadaComoRealizada_() {
   return codexWithDocumentLock_('marcarAgendaPassadaComoRealizada', function() {
   var agenda = getAgendaSheet_();
   var lastRow = agenda.getLastRow();
@@ -7556,6 +7586,7 @@ function marcarAgendaPassadaComoRealizada() {
 }
 
 function concluirPendenciasPoloTrialEcrfAntigas(dataCorteIso, dryRun) {
+  codexAssertAdmin_();
   return codexWithDocumentLock_('concluirPendenciasPoloTrialEcrfAntigas', function() {
   if (!dataCorteIso) {
     throw new Error('Informe a data de corte no formato AAAA-MM-DD. Ex.: concluirPendenciasPoloTrialEcrfAntigas("2026-05-23", true)');
@@ -7653,16 +7684,18 @@ function simularConclusaoPendenciasPoloTrialEcrfAntigas() {
 }
 
 function executarConclusaoPendenciasPoloTrialEcrfAntigas() {
+  codexAssertAdmin_();
   return concluirPendenciasPoloTrialEcrfAntigas('2026-05-23', false);
 }
 
 function instalarGatilhoAgendaRealizadoFimDoDia() {
+  codexAssertAdmin_();
   ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction && t.getHandlerFunction() === 'marcarAgendaPassadaComoRealizada') {
+    if (t.getHandlerFunction && ['marcarAgendaPassadaComoRealizada', 'marcarAgendaPassadaComoRealizada_'].indexOf(t.getHandlerFunction()) >= 0) {
       ScriptApp.deleteTrigger(t);
     }
   });
-  ScriptApp.newTrigger('marcarAgendaPassadaComoRealizada')
+  ScriptApp.newTrigger('marcarAgendaPassadaComoRealizada_')
     .timeBased()
     .everyDays(1)
     .atHour(23)
@@ -7779,7 +7812,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     .setFontWeight('normal');
   agenda.getRange(linhaNova, AGENDA_CFG.col.data).setFontWeight('bold');
   agenda.getRange(linhaNova, AGENDA_CFG.col.projeto).setFontWeight('bold');
-  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento(agenda, linhaNova, status);
+  if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linhaNova, status);
 
   verificarNotificacoes(
     { source: ss, range: agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
@@ -7931,6 +7964,7 @@ var DHL_TRACKING_API_KEY_PROPERTY_ = 'DHL_TRACKING_API_KEY';
 var DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_ = 45;
 
 function configurarDhlTrackingApiKey(apiKey) {
+  codexAssertAdmin_();
   apiKey = String(apiKey || '').trim();
   if (!apiKey) throw new Error('Informe a API Key da DHL.');
   PropertiesService.getScriptProperties().setProperty(DHL_TRACKING_API_KEY_PROPERTY_, apiKey);
@@ -7942,6 +7976,11 @@ function getDhlTrackingApiKey_() {
 }
 
 function monitorarEntregasDhlAgendadas(options) {
+  codexAssertAdminOrInstalledTrigger_(options, 'monitorarEntregasDhlAgendadas');
+  return monitorarEntregasDhlAgendadas_(options);
+}
+
+function monitorarEntregasDhlAgendadas_(options) {
   options = options || {};
   var apiKey = getDhlTrackingApiKey_();
   if (!apiKey) {
@@ -8023,6 +8062,7 @@ function monitorarEntregasDhlAgendadas(options) {
 }
 
 function diagnosticarMonitorEntregasDhl() {
+  codexAssertAdmin_();
   var agenda = getAgendaSheet_();
   var lastRow = agenda.getLastRow();
   var result = {
@@ -8145,7 +8185,12 @@ function dhlStatusIndicaEntrega_(texto) {
     n.indexOf('shipment delivered') >= 0;
 }
 
-function monitorarConfirmacoesCourierAgendadas() {
+function monitorarConfirmacoesCourierAgendadas(event) {
+  codexAssertAdminOrInstalledTrigger_(event, 'monitorarConfirmacoesCourierAgendadas');
+  return monitorarConfirmacoesCourierAgendadas_();
+}
+
+function monitorarConfirmacoesCourierAgendadas_() {
   var regras = getCourierConfirmationRules_();
   var ruleKeys = Object.keys(regras);
   if (!ruleKeys.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhuma regra ativa.' };
@@ -8234,6 +8279,7 @@ function monitorarConfirmacoesCourierAgendadas() {
 }
 
 function diagnosticarMonitorConfirmacoesCourier() {
+  codexAssertAdmin_();
   var regras = getCourierConfirmationRules_();
   var agenda = getAgendaSheet_();
   var lastRow = agenda.getLastRow();
@@ -8544,12 +8590,13 @@ function normalizarTextoMonitorCourier_(texto) {
 }
 
 function instalarGatilhoMonitorConfirmacaoCouriers() {
+  codexAssertAdmin_();
   ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarConfirmacoesCourierAgendadas') {
+    if (t.getHandlerFunction && ['monitorarConfirmacoesCourierAgendadas', 'monitorarConfirmacoesCourierAgendadas_'].indexOf(t.getHandlerFunction()) >= 0) {
       ScriptApp.deleteTrigger(t);
     }
   });
-  ScriptApp.newTrigger('monitorarConfirmacoesCourierAgendadas')
+  ScriptApp.newTrigger('monitorarConfirmacoesCourierAgendadas_')
     .timeBased()
     .everyMinutes(15)
     .create();
@@ -8557,9 +8604,10 @@ function instalarGatilhoMonitorConfirmacaoCouriers() {
 }
 
 function removerGatilhoMonitorConfirmacaoCouriers() {
+  codexAssertAdmin_();
   var removidos = 0;
   ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarConfirmacoesCourierAgendadas') {
+    if (t.getHandlerFunction && ['monitorarConfirmacoesCourierAgendadas', 'monitorarConfirmacoesCourierAgendadas_'].indexOf(t.getHandlerFunction()) >= 0) {
       ScriptApp.deleteTrigger(t);
       removidos++;
     }
@@ -8568,12 +8616,13 @@ function removerGatilhoMonitorConfirmacaoCouriers() {
 }
 
 function instalarGatilhoMonitorEntregasDhl() {
+  codexAssertAdmin_();
   ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarEntregasDhlAgendadas') {
+    if (t.getHandlerFunction && ['monitorarEntregasDhlAgendadas', 'monitorarEntregasDhlAgendadas_'].indexOf(t.getHandlerFunction()) >= 0) {
       ScriptApp.deleteTrigger(t);
     }
   });
-  ScriptApp.newTrigger('monitorarEntregasDhlAgendadas')
+  ScriptApp.newTrigger('monitorarEntregasDhlAgendadas_')
     .timeBased()
     .everyHours(4)
     .create();
@@ -8581,9 +8630,10 @@ function instalarGatilhoMonitorEntregasDhl() {
 }
 
 function removerGatilhoMonitorEntregasDhl() {
+  codexAssertAdmin_();
   var removidos = 0;
   ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction && t.getHandlerFunction() === 'monitorarEntregasDhlAgendadas') {
+    if (t.getHandlerFunction && ['monitorarEntregasDhlAgendadas', 'monitorarEntregasDhlAgendadas_'].indexOf(t.getHandlerFunction()) >= 0) {
       ScriptApp.deleteTrigger(t);
       removidos++;
     }
@@ -8791,16 +8841,16 @@ function verificarNotificacoes(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva)
   });
   if (notificationAction === 'agendamento') {
     if (agendaEmailEnabled_()) {
-      enviarEmailAgendamento(sheet, linha, e.user);
+      enviarEmailAgendamento_(sheet, linha, e.user);
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Notificado ' + formatarDataSafe(sheet.getRange(linha, AGENDA_CFG.col.data).getValue()));
     } else {
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Pendente notificacao - modo teste');
     }
   } else if (notificationAction === 'reagendamento') {
-    if (agendaEmailEnabled_()) enviarEmailReagendamento(sheet, linha, e.user, dataAnterior);
+    if (agendaEmailEnabled_()) enviarEmailReagendamento_(sheet, linha, e.user, dataAnterior);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Reagendado ' + formatarDataSafe(dataAtual));
   } else if (notificationAction === 'cancelamento') {
-    if (agendaEmailEnabled_()) enviarEmailCancelamento(sheet, linha, e.user);
+    if (agendaEmailEnabled_()) enviarEmailCancelamento_(sheet, linha, e.user);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Cancelado');
   }
 }
@@ -8815,7 +8865,7 @@ function datasAgendaDiferentes_(a, b) {
   return da.getTime() !== db.getTime();
 }
 
-function aplicarLogicaCancelamento(sheet, linha, status) {
+function aplicarLogicaCancelamento_(sheet, linha, status) {
   var range = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol);
   if (AgendaServerRules_.isCancelled(status)) {
     range.setFontColor('#999999').setFontLine('line-through').setBackground('#eeeeee');
@@ -8824,7 +8874,7 @@ function aplicarLogicaCancelamento(sheet, linha, status) {
   }
 }
 
-function enviarEmailAgendamento(sheet, linha, usuario) {
+function enviarEmailAgendamento_(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
   var webAppUrl = ScriptApp.getService().getUrl();
@@ -8833,14 +8883,14 @@ function enviarEmailAgendamento(sheet, linha, usuario) {
     '<p>Foi realizado um novo agendamento de visita clínica que requer envio ao laboratório:</p>' +
     gerarTabelaAgendaEmail_(dados, true) +
     (agendaTemLogisticaEmail_(dados)
-      ? gerarHtmlCouriers(dados)
+      ? gerarHtmlCouriers_(dados)
       : '<p>As informações de courier e transporte serão atualizadas na Agenda assim que estiverem disponíveis.</p>') +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Responsável', usuario) + '</div>';
-  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
+  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios_(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
 
-function enviarEmailCancelamento(sheet, linha, usuario) {
+function enviarEmailCancelamento_(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
   var webAppUrl = ScriptApp.getService().getUrl();
@@ -8848,13 +8898,13 @@ function enviarEmailCancelamento(sheet, linha, usuario) {
   var body = gerarHtmlCabecalhoEmail_('CANCELAMENTO DE VISITA / ENVIO', '#c0392b') +
     '<p>A seguinte visita foi <b>REMOVIDA</b> do fluxo de envio ao Lab Central:</p>' +
     agendaCancelamentoMotivoHtml_(dados[i.obs]) +
-    gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers(dados) +
+    gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers_(dados) +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Cancelado por', usuario) + '</div>';
-  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
+  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios_(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
 
-function enviarEmailReagendamento(sheet, linha, usuario, dataAnteriorRaw) {
+function enviarEmailReagendamento_(sheet, linha, usuario, dataAnteriorRaw) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
   var webAppUrl = ScriptApp.getService().getUrl();
@@ -8869,10 +8919,10 @@ function enviarEmailReagendamento(sheet, linha, usuario, dataAnteriorRaw) {
       '<p style="margin:0;"><b>NOVA DATA:</b> ' + escHtmlServer_(dataV) + '</p>' +
     '</div>' +
     '<p>Verifique a necessidade de ajustar o agendamento dos transportes de amostras já existentes:</p>' +
-    gerarTabelaAgendaEmail_(dados, true) + gerarHtmlCouriers(dados) +
+    gerarTabelaAgendaEmail_(dados, true) + gerarHtmlCouriers_(dados) +
     '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
     gerarRodapeEmailAgenda_('Alterado por', usuario) + '</div>';
-  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
+  CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios_(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
 
 function ipsEmailLogoUrl_() {
@@ -8919,7 +8969,7 @@ function agendaTemLogisticaEmail_(dados) {
   return nomeValido(i.c1) || nomeValido(i.c2) || nomeValido(i.c3) || nomeValido(i.cb);
 }
 
-function gerarHtmlCouriers(dados) {
+function gerarHtmlCouriers_(dados) {
   var i = AGENDA_CFG.idx;
   var html = '<div style="background:#f8f9fa;padding:14px;border-radius:5px;border:1px solid #ddd">' +
     '<h3 style="margin-top:0;color:#333">Informações de Logística / Transportes de Amostras</h3>';
@@ -8955,7 +9005,7 @@ function extrairIniciais_(nome) {
   }).join('');
 }
 
-function gerarListaDestinatarios(usuario) {
+function gerarListaDestinatarios_(usuario) {
   var destinatarios = [];
   var vals = getConfigAppValuesByKeys_(['Agenda'], ['Destinatarios email lab central', 'Destinatarios e-mail lab central'], []);
   vals.forEach(function(v) {
