@@ -3229,8 +3229,28 @@
   }
 
   function abrirAgendaEdicao(id) {
-    var r = (_agendaEventos || []).find(function(x) { return String(x.id || '') === String(id || ''); });
+    id = String(id || '').trim();
+    if (!id) return;
+    var r = (_agendaEventos || []).concat(_agendaHistoricoEventos || []).find(function(x) {
+      return String(x.id || '') === id;
+    });
     if (!r) return;
+    google.script.run
+      .withSuccessHandler(function(registroAtualizado) {
+        var registro = registroAtualizado ? agendaNormalizeRow(registroAtualizado) : r;
+        var idx = (_agendaEventos || []).findIndex(function(x) { return String(x.id || '') === id; });
+        if (idx >= 0 && registroAtualizado) _agendaEventos[idx] = registro;
+        abrirAgendaEdicaoComRegistro_(registro);
+      })
+      .withFailureHandler(function() {
+        abrirAgendaEdicaoComRegistro_(r);
+      })
+      .getAgendaEventoPorId(id);
+  }
+
+  function abrirAgendaEdicaoComRegistro_(r) {
+    if (!r) return;
+    var id = String(r.id || '').trim();
     if (_agendaEditId && String(_agendaEditId) !== String(id)) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
     _agendaEditId = r.id || '';
