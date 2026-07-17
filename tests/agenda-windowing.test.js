@@ -134,4 +134,6 @@ test('edicao relê o registro completo antes de preencher o modal', () => {
   assert.match(client, /function abrirAgendaEdicao\(id\)/);
   assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
+  assert.match(client, /function agendaMergeEditRecord_\(fresh, fallback\)/);
+  assert.match(client, /agendaMergeEditRecord_\(registroAtualizado, r\)/);
 });

@@ -3094,6 +3094,23 @@
     return r;
   }
 
+  function agendaMergeEditRecord_(fresh, fallback) {
+    fresh = agendaNormalizeRow(fresh || {});
+    fallback = agendaNormalizeRow(fallback || {});
+    var merged = Object.assign({}, fallback, fresh);
+    Object.keys(fallback).forEach(function(key) {
+      if (key.charAt(0) === '_' || key === 'rowIndex') return;
+      if ((merged[key] === null || merged[key] === undefined || merged[key] === '') && fallback[key] !== '') merged[key] = fallback[key];
+    });
+    ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(key) {
+      merged[key] = Object.assign({}, fallback[key] || {}, fresh[key] || {});
+      Object.keys(fallback[key] || {}).forEach(function(child) {
+        if ((merged[key][child] === null || merged[key][child] === undefined || merged[key][child] === '') && fallback[key][child] !== '') merged[key][child] = fallback[key][child];
+      });
+    });
+    return agendaNormalizeRow(merged);
+  }
+
   function agendaCourierSearch(c) {
     c = c || {};
     return [c.nome, c.destino, c.temperatura, c.status, c.awb, c.material, c.matBioJson].join(' ');
@@ -3294,7 +3311,7 @@
     if (!r) return;
     google.script.run
       .withSuccessHandler(function(registroAtualizado) {
-        var registro = registroAtualizado ? agendaNormalizeRow(registroAtualizado) : r;
+        var registro = registroAtualizado ? agendaMergeEditRecord_(registroAtualizado, r) : agendaNormalizeRow(r);
         var idx = (_agendaEventos || []).findIndex(function(x) { return String(x.id || '') === id; });
         if (idx >= 0 && registroAtualizado) _agendaEventos[idx] = registro;
         abrirAgendaEdicaoComRegistro_(registro);
