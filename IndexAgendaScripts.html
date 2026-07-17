@@ -274,14 +274,14 @@
     };
   }
 
-  function agendaRestoreEditRecordValues_() {
+  function agendaRestoreEditRecordValues_(restaurarTransportes) {
     if (!_agendaEditId || !_agendaEditFormValues) return;
     agendaRestoreValues(_agendaEditFormValues);
     atualizarAgendaTipoVisibilidade();
     atualizarAgendaProjetoLock();
     onAgendaLabCentralChange();
     agendaRestoreValues(_agendaEditFormValues);
-    if (_agendaEditTransportValues) {
+    if (restaurarTransportes && _agendaEditTransportValues) {
       preencherAgendaKitsEdit(_agendaEditTransportValues.kit);
       preencherAgendaCourierEdit('agC1', _agendaEditTransportValues.courier1);
       preencherAgendaCourierEdit('agC2', _agendaEditTransportValues.courier2);
@@ -329,7 +329,7 @@
     agendaRestoreValues(atuais);
     atualizarAgendaKitAdicionais();
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateUnitUi);
-    agendaRestoreEditRecordValues_();
+    agendaRestoreEditRecordValues_(true);
     var aviso = document.getElementById('agendaEmailAviso');
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
   }
@@ -3312,18 +3312,25 @@
     }) : null;
     if (!r) r = candidatos.find(function(x) { return String(x.id || '') === id; });
     if (!r) return;
+    var versaoAberta = String(r.editRecordVersion || r.recordVersion || '');
+    abrirAgendaEdicaoComRegistro_(r);
     google.script.run
       .withSuccessHandler(function(registroAtualizado) {
-        var registro = registroAtualizado ? agendaMergeEditRecord_(registroAtualizado, r) : agendaNormalizeRow(r);
+        if (!registroAtualizado) return;
+        var registro = agendaMergeEditRecord_(registroAtualizado, r);
+        var versaoAtual = String(registro.editRecordVersion || registro.recordVersion || '');
+        if (String(_agendaEditId || '') === id) {
+          if (versaoAberta && versaoAtual && versaoAberta !== versaoAtual) {
+            setAgendaStatus('Este agendamento foi alterado depois da carga da Agenda. Feche e reabra a edicao antes de salvar.', 'danger');
+          }
+          return;
+        }
         var idx = (_agendaEventos || []).findIndex(function(x) {
           return String(x.id || '') === id && (!r.rowIndex || Number(x.rowIndex || 0) === Number(r.rowIndex || 0));
         });
-        if (idx >= 0 && registroAtualizado) _agendaEventos[idx] = registro;
-        abrirAgendaEdicaoComRegistro_(registro);
+        if (idx >= 0) _agendaEventos[idx] = registro;
       })
-      .withFailureHandler(function() {
-        abrirAgendaEdicaoComRegistro_(r);
-      })
+      .withFailureHandler(function() {})
       .getAgendaEventoPorId(id, r.rowIndex);
   }
 
@@ -3387,7 +3394,7 @@
     agendaMatBioUpdateAllCopyOptions();
     atualizarAgendaTransportesOpcionais();
     atualizarAgendaProjetoLock();
-    agendaRestoreEditRecordValues_();
+    agendaRestoreEditRecordValues_(false);
     var title = document.querySelector('#agendaCreatePanel .modal-header-title');
     if (title) title.textContent = 'EDITAR AGENDAMENTO';
     var sec = document.querySelector('#agendaCreatePanel .section-label');

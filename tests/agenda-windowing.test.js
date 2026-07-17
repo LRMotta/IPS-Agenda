@@ -73,7 +73,9 @@ test('carga tardia do formulario preserva os selects de um agendamento aberto', 
   assert.match(lock, /_agendaEditId/);
   assert.match(lock, /classList\.contains\('open'\)/);
   assert.match(client, /function agendaEditValuesFromRecord_\(r\)/);
-  assert.match(client, /agendaRestoreEditRecordValues_\(\)/);
+  assert.match(client, /function agendaRestoreEditRecordValues_\(restaurarTransportes\)/);
+  assert.match(client, /agendaRestoreEditRecordValues_\(true\)/);
+  assert.match(client, /agendaRestoreEditRecordValues_\(false\)/);
   assert.match(client, /sincronizarAutocompleteProjeto\('agProjeto'\)/);
   assert.match(client, /agendaEditTransportValuesFromRecord_\(r\)/);
   assert.match(client, /preencherAgendaCourierEdit\('agC1'/);
@@ -136,12 +138,16 @@ test('abertura direta busca somente o evento solicitado', () => {
   assert.match(server, /function getAgendaEventoPorId\(id, rowIndex\)/);
 });
 
-test('edicao relê o registro completo antes de preencher o modal', () => {
+test('edicao abre imediatamente e revalida o registro em segundo plano', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
+  const open = functionBody(client, 'abrirAgendaEdicao');
   assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
   assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
   assert.match(client, /function agendaMergeEditRecord_\(fresh, fallback\)/);
   assert.match(client, /agendaMergeEditRecord_\(registroAtualizado, r\)/);
   assert.match(client, /abrirAgendaEdicao.*Number\(r\.rowIndex \|\| 0\)/);
+  assert.ok(open.indexOf('abrirAgendaEdicaoComRegistro_(r)') < open.indexOf('google.script.run'));
+  assert.match(open, /versaoAberta/);
+  assert.match(open, /Feche e reabra a edicao antes de salvar/);
 });
