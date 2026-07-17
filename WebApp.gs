@@ -8734,13 +8734,115 @@ function setAgendaValueAndFormat_(range, value, format) {
   }
 }
 
-function getAgendaEventos(limite) {
+function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
   var sh = getAgendaSheet_();
   var lastRow = sh.getLastRow();
-  if (lastRow < 2) return [];
-  var max = Math.min(Number(limite || 80), lastRow - 1);
-  var start = Math.max(2, lastRow - max + 1);
-  var vals = sh.getRange(start, 1, lastRow - start + 1, AGENDA_CFG.lastCol).getValues();
+  var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
+  var fim = agendaParseIsoBoundary_(fimIso, 'fim');
+  if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
+  if ((fim.getTime() - inicio.getTime()) / 86400000 > 31) throw new Error('O periodo visivel nao pode exceder 31 dias.');
+  var max = Math.max(1, Math.min(Number(limite || 150), 200));
+  if (lastRow < 2) return { items: [], total: 0, truncated: false };
+  var cacheKey = ['AgendaWindow:v1', lastRow, inicioIso, fimIso, max].join(':');
+  if (!ignorarCache) {
+    var cached = agendaWindowCacheGet_(cacheKey);
+    if (cached) return cached;
+  }
+  var datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues();
+  var firstOffset = -1;
+  var total = 0;
+  for (var d = 0; d < datas.length; d++) {
+    var data = parseAgendaDateAny_(datas[d][0]);
+    if (!data || isNaN(data.getTime())) continue;
+    data.setHours(0, 0, 0, 0);
+    if (data.getTime() >= inicio.getTime() && data.getTime() < fim.getTime()) {
+      if (firstOffset < 0) firstOffset = d;
+      total++;
+    } else if (firstOffset >= 0 && data.getTime() >= fim.getTime()) {
+      break;
+    }
+  }
+  if (firstOffset < 0) {
+    var emptyResult = { items: [], total: 0, truncated: false };
+    agendaWindowCachePut_(cacheKey, emptyResult);
+    return emptyResult;
+  }
+  var count = Math.min(total, max);
+  var start = firstOffset + 2;
+  var vals = sh.getRange(start, 1, count, AGENDA_CFG.lastCol).getValues();
+  var result = { items: agendaRowsToObjects_(vals, start), total: total, truncated: total > count };
+  agendaWindowCachePut_(cacheKey, result);
+  return result;
+}
+
+function agendaWindowCacheGet_(key) {
+  try {
+    var raw = CacheService.getScriptCache().get(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function agendaWindowCachePut_(key, value) {
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(value), 45);
+  } catch (e) {
+    // Respostas muito grandes apenas deixam de ser cacheadas; a janela segue limitada.
+  }
+}
+
+function pesquisarAgendaHistorico(query, cursor, pageSize) {
+  query = String(query || '').trim();
+  if (query.length < 2) throw new Error('Informe pelo menos 2 caracteres para pesquisar.');
+  var sh = getAgendaSheet_();
+  var lastRow = sh.getLastRow();
+  var size = Math.max(1, Math.min(Number(pageSize || 25), 50));
+  var scanEnd = cursor == null || cursor === '' ? lastRow : Math.min(lastRow, Math.max(2, Number(cursor) || lastRow));
+  var needle = normText_(query);
+  var items = [];
+  var nextCursor = null;
+  var batchSize = 200;
+  searchLoop:
+  while (scanEnd >= 2) {
+    var batchStart = Math.max(2, scanEnd - batchSize + 1);
+    var vals = sh.getRange(batchStart, 1, scanEnd - batchStart + 1, AGENDA_CFG.lastCol).getValues();
+    for (var i = vals.length - 1; i >= 0; i--) {
+      if (normText_(vals[i].map(function(value) { return String(value || ''); }).join(' ')).indexOf(needle) === -1) continue;
+      if (items.length >= size) {
+        nextCursor = batchStart + i;
+        break searchLoop;
+      }
+      items.push(agendaRowToObject_(vals[i], batchStart + i));
+    }
+    scanEnd = batchStart - 1;
+  }
+  agendaHydrateParticipantFields_(items);
+  return { items: items, nextCursor: nextCursor, hasMore: nextCursor != null, pageSize: size };
+}
+
+function getAgendaEventoPorId(id) {
+  id = String(id || '').trim();
+  if (!id) return null;
+  var sh = getAgendaSheet_();
+  var row = encontrarLinhaPorId(sh, id);
+  if (!row) return null;
+  var item = agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
+  agendaHydrateParticipantFields_([item]);
+  return item;
+}
+
+function agendaRowsToObjects_(vals, start) {
+  var items = vals.map(function(r, i) { return agendaRowToObject_(r, start + i); });
+  agendaHydrateParticipantFields_(items);
+  return items;
+}
+
+function agendaHydrateParticipantFields_(items) {
+  var precisaComplemento = (items || []).some(function(evento) {
+    return evento && evento.participante && (!evento.idParticipante || !evento.braco);
+  });
+  if (!precisaComplemento) return items;
   var idsPorParticipante = {};
   var bracosPorParticipante = {};
   getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
@@ -8748,16 +8850,27 @@ function getAgendaEventos(limite) {
     if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
     if (nome && !bracosPorParticipante[nome]) bracosPorParticipante[nome] = String(r[6] || '').trim();
   });
-  return vals.map(function(r, i) {
-    var evento = agendaRowToObject_(r, start + i);
+  items.forEach(function(evento) {
     if (!evento.idParticipante && evento.participante) {
       evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
     }
     if (!evento.braco && evento.participante) {
       evento.braco = bracosPorParticipante[normText_(evento.participante)] || '';
     }
-    return evento;
-  }).reverse();
+  });
+  return items;
+}
+
+function agendaParseIsoBoundary_(value, label) {
+  value = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Data de ' + label + ' invalida.');
+  var parts = value.split('-').map(Number);
+  var date = new Date(parts[0], parts[1] - 1, parts[2]);
+  if (date.getFullYear() !== parts[0] || date.getMonth() !== parts[1] - 1 || date.getDate() !== parts[2]) {
+    throw new Error('Data de ' + label + ' invalida.');
+  }
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
 
 function agendaRowToObject_(r, rowIndex) {
