@@ -40,14 +40,25 @@ test('intervalos da agenda aceitam somente datas ISO validas', () => {
   assert.throws(() => server.agendaParseIsoBoundary_('</script>', 'inicio'), /invalida/);
 });
 
-test('carga inicial usa janela visivel e limite de 200 registros', () => {
+test('carga inicial antecipa a semana anterior e a proxima em um unico lote', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
   assert.doesNotMatch(client, /getAgendaEventos\(5000\)/);
-  assert.match(client, /getAgendaEventosPorPeriodo\(range\.inicio, range\.fim, 200, !!forcar\)/);
-  assert.match(server, /Math\.min\(Number\(limite \|\| 150\), 200\)/);
+  assert.match(client, /function agendaPrefetchRange\(\)/);
+  assert.match(client, /inicio\.setDate\(inicio\.getDate\(\) - 7\)/);
+  assert.match(client, /fim\.setDate\(fim\.getDate\(\) \+ 7\)/);
+  assert.match(client, /getAgendaEventosPorPeriodo\(range\.inicio, range\.fim, 300, !!forcar\)/);
+  assert.match(client, /if \(!forcar && agendaVisibleWeekIsLoaded\(\)\)/);
+  assert.match(server, /Math\.min\(Number\(limite \|\| 200\), 300\)/);
   assert.match(server, /getRange\(2, AGENDA_CFG\.col\.data, lastRow - 1, 1\)/);
   assert.match(server, /CacheService\.getScriptCache\(\)\.put\(key, JSON\.stringify\(value\), 45\)/);
+});
+
+test('navegacao semanal reutiliza semanas carregadas sem forcar nova RPC', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  assert.match(client, /function agendaNavWeek\(delta\)[\s\S]*?carregarAgendaEventos\(false\)/);
+  assert.match(client, /function agendaMarkWeeksLoaded\(range\)/);
+  assert.match(client, /_agendaEventos\.filter\([\s\S]*?agendaIsoIsInRange/);
 });
 
 test('servidor retorna somente a janela solicitada e informa truncamento', () => {

@@ -11,6 +11,7 @@
   var _agendaFormDataRefreshPending = false;
   var _agendaEventosTruncated = false;
   var _agendaEventosRequestId = 0;
+  var _agendaLoadedWeeks = {};
   var _agendaHistoricoEventos = [];
   var _agendaHistoricoQuery = '';
   var _agendaHistoricoNextCursor = null;
@@ -2917,7 +2918,6 @@
   function carregarAgendaEventos(forcar, callback, options) {
     options = options || {};
     var lista = document.getElementById('agendaViewLista');
-    if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
     agendaUpdatePeriod();
     function finalizarSucesso() {
       if (typeof callback === 'function') callback();
@@ -2926,15 +2926,25 @@
     function finalizarTentativa() {
       if (typeof options.onComplete === 'function') options.onComplete();
     }
-    var range = agendaVisibleRange();
+    if (!forcar && agendaVisibleWeekIsLoaded()) {
+      renderAgendaOperacional();
+      finalizarSucesso();
+      return;
+    }
+    if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
+    var range = agendaPrefetchRange();
     var requestId = ++_agendaEventosRequestId;
     google.script.run
       .withSuccessHandler(function(response) {
         if (requestId !== _agendaEventosRequestId) return;
         var rows = response && response.items ? response.items : [];
-        _agendaEventos = rows.map(agendaNormalizeRow).sort(function(a, b) {
+        var fetched = rows.map(agendaNormalizeRow);
+        _agendaEventos = _agendaEventos.filter(function(row) {
+          return !agendaIsoIsInRange(row.dataIso, range.inicio, range.fim);
+        }).concat(fetched).sort(function(a, b) {
           return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
         });
+        agendaMarkWeeksLoaded(range);
         _agendaEventosTruncated = !!(response && response.truncated);
         setAgendaEventosLoadedAtState(Date.now());
         agendaMatBioUpdateAllCopyOptions();
@@ -2946,7 +2956,7 @@
         if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty" style="color:#e53935"><span class="material-symbols-outlined">error</span>' + esc(appErrorMessage(e)) + '</div>';
         finalizarTentativa();
       })
-      .getAgendaEventosPorPeriodo(range.inicio, range.fim, 200, !!forcar);
+      .getAgendaEventosPorPeriodo(range.inicio, range.fim, 300, !!forcar);
   }
 
   function agendaVisibleRange() {
@@ -2954,6 +2964,32 @@
     var fim = new Date(inicio);
     fim.setDate(inicio.getDate() + 7);
     return { inicio: agendaIso(inicio), fim: agendaIso(fim) };
+  }
+
+  function agendaPrefetchRange() {
+    var visible = agendaVisibleRange();
+    var inicio = agendaDateFromIso(visible.inicio);
+    var fim = agendaDateFromIso(visible.fim);
+    inicio.setDate(inicio.getDate() - 7);
+    fim.setDate(fim.getDate() + 7);
+    return { inicio: agendaIso(inicio), fim: agendaIso(fim) };
+  }
+
+  function agendaIsoIsInRange(iso, inicioIso, fimIso) {
+    return !!iso && iso >= inicioIso && iso < fimIso;
+  }
+
+  function agendaMarkWeeksLoaded(range) {
+    var cursor = agendaDateFromIso(range.inicio);
+    var fim = agendaDateFromIso(range.fim);
+    while (cursor && fim && cursor < fim) {
+      _agendaLoadedWeeks[agendaIso(cursor)] = true;
+      cursor.setDate(cursor.getDate() + 7);
+    }
+  }
+
+  function agendaVisibleWeekIsLoaded() {
+    return !!_agendaLoadedWeeks[agendaIso(agendaWeekStart())];
   }
 
   function agendaOnSearchInput() {
@@ -3407,14 +3443,14 @@
 
   function agendaNavWeek(delta) {
     _agendaWeekOffset += Number(delta || 0);
-    carregarAgendaEventos(true);
+    carregarAgendaEventos(false);
   }
 
   function agendaGoToday() {
     _agendaWeekOffset = 0;
     var input = document.getElementById('agendaGoDateInput');
     if (input) input.value = agendaIso(new Date());
-    carregarAgendaEventos(true, function() {
+    carregarAgendaEventos(false, function() {
       setTimeout(agendaScrollToToday, 0);
     });
   }
@@ -3435,7 +3471,7 @@
     var baseUtc = Date.UTC(base.getFullYear(), base.getMonth(), base.getDate());
     var targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
     _agendaWeekOffset = Math.round((targetUtc - baseUtc) / 604800000);
-    carregarAgendaEventos(true, function() {
+    carregarAgendaEventos(false, function() {
       setTimeout(function() { agendaScrollToDate(iso); }, 0);
     });
   }
