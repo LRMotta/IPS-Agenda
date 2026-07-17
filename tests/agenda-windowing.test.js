@@ -72,6 +72,13 @@ test('carga tardia do formulario preserva os selects de um agendamento aberto', 
   assert.match(apply, /agendaRestoreValues\(atuais\)/);
   assert.match(lock, /_agendaEditId/);
   assert.match(lock, /classList\.contains\('open'\)/);
+  assert.match(client, /function agendaEditValuesFromRecord_\(r\)/);
+  assert.match(client, /agendaRestoreEditRecordValues_\(\)/);
+  assert.match(client, /sincronizarAutocompleteProjeto\('agProjeto'\)/);
+  assert.match(client, /agendaEditTransportValuesFromRecord_\(r\)/);
+  assert.match(client, /preencherAgendaCourierEdit\('agC1'/);
+  assert.match(client, /preencherAgendaCourierEdit\('agC3'/);
+  assert.match(client, /agendaMatBioLoad\('agBackup'/);
 });
 
 test('servidor retorna somente a janela solicitada e informa truncamento', () => {

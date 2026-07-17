@@ -244,6 +244,58 @@
     });
   }
 
+  // Mantem os valores do registro em edicao mesmo quando as opcoes do formulario
+  // chegam assincronamente e recriam os selects depois que o modal foi aberto.
+  function agendaEditValuesFromRecord_(r) {
+    r = r || {};
+    var monitores = String(r.monitorName || '').split(';').map(function(v) { return v.trim(); });
+    return {
+      agTipo: r.tipo || '',
+      agStatus: r.status || 'Agendado',
+      agParticipante: r.participante || '',
+      agProjeto: r.projeto || '',
+      agMedico: r.medico || '',
+      agPrestador: r.servTerc || '',
+      agLabCentral: r.labCentral || '',
+      agSalaMonitoria: r.salaMonitoria || '',
+      agMonitor1: monitores[0] || '',
+      agMonitor2: monitores[1] || ''
+    };
+  }
+
+  function agendaEditTransportValuesFromRecord_(r) {
+    r = r || {};
+    return {
+      kit: r.kit || '',
+      courier1: r.courier1 || {},
+      courier2: r.courier2 || {},
+      courier3: r.courier3 || {},
+      backup: r.backup || {}
+    };
+  }
+
+  function agendaRestoreEditRecordValues_() {
+    if (!_agendaEditId || !_agendaEditFormValues) return;
+    agendaRestoreValues(_agendaEditFormValues);
+    atualizarAgendaTipoVisibilidade();
+    atualizarAgendaProjetoLock();
+    onAgendaLabCentralChange();
+    agendaRestoreValues(_agendaEditFormValues);
+    if (_agendaEditTransportValues) {
+      preencherAgendaKitsEdit(_agendaEditTransportValues.kit);
+      preencherAgendaCourierEdit('agC1', _agendaEditTransportValues.courier1);
+      preencherAgendaCourierEdit('agC2', _agendaEditTransportValues.courier2);
+      preencherAgendaCourierEdit('agC3', _agendaEditTransportValues.courier3);
+      setAgendaSelectValue('agBackupNome', _agendaEditTransportValues.backup.nome);
+      setAgendaSelectValue('agBackupDestino', _agendaEditTransportValues.backup.destino);
+      setAgendaSelectValue('agBackupStatus', _agendaEditTransportValues.backup.status);
+      setAgendaFieldValue('agBackupAwb', _agendaEditTransportValues.backup.awb);
+      agendaMatBioLoad('agBackup', _agendaEditTransportValues.backup);
+      onAgendaCourierChange('agBackup');
+    }
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('agProjeto');
+  }
+
   function atualizarAgendaFormDataOpcoes(d) {
     if (!d) return;
     var atuais = agendaCurrentValues(agendaFormDataSelectIds());
@@ -277,6 +329,7 @@
     agendaRestoreValues(atuais);
     atualizarAgendaKitAdicionais();
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateUnitUi);
+    agendaRestoreEditRecordValues_();
     var aviso = document.getElementById('agendaEmailAviso');
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
   }
@@ -2786,6 +2839,8 @@
     applyAgendaAwbRulesAll();
     _agendaEditRecordVersion = '';
     _agendaEditEditableVersion = '';
+    _agendaEditFormValues = null;
+    _agendaEditTransportValues = null;
     updateAgendaSaveAvailability(false);
   }
 
@@ -2836,6 +2891,8 @@
   var _agendaEditPresenceTimer = null;
   var _agendaEditRecordVersion = '';
   var _agendaEditEditableVersion = '';
+  var _agendaEditFormValues = null;
+  var _agendaEditTransportValues = null;
 
   function agendaEditPresenceSessionId() {
     if (_agendaEditSessionId) return _agendaEditSessionId;
@@ -3256,6 +3313,8 @@
     _agendaEditId = r.id || '';
     _agendaEditRecordVersion = r.recordVersion || '';
     _agendaEditEditableVersion = r.editRecordVersion || '';
+    _agendaEditFormValues = agendaEditValuesFromRecord_(r);
+    _agendaEditTransportValues = agendaEditTransportValuesFromRecord_(r);
     var periodoAgenda = agendaPeriodoFromRow(r);
     setAgendaFieldValue('agData', periodoAgenda.inicio || r.dataIso || agendaIsoFromBr(r.data));
     setAgendaFieldValue('agDataFim', periodoAgenda.fim || r.dataIso || agendaIsoFromBr(r.data));
@@ -3306,6 +3365,7 @@
     agendaMatBioUpdateAllCopyOptions();
     atualizarAgendaTransportesOpcionais();
     atualizarAgendaProjetoLock();
+    agendaRestoreEditRecordValues_();
     var title = document.querySelector('#agendaCreatePanel .modal-header-title');
     if (title) title.textContent = 'EDITAR AGENDAMENTO';
     var sec = document.querySelector('#agendaCreatePanel .section-label');
