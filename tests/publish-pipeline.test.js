@@ -22,18 +22,23 @@ test('publicacao gera versao com data e commit', () => {
 test('testes acontecem depois da versao e antes do clasp push', () => {
   const source = readProjectFile('tools/push-clasp.ps1');
   const versionIndex = source.indexOf('WriteAllText');
-  const testIndex = source.indexOf('npm.cmd run verify');
+  const testIndex = source.lastIndexOf('npm.cmd run verify');
   const claspIndex = source.indexOf('& $clasp push --force');
   assert.ok(versionIndex > -1 && versionIndex < testIndex);
   assert.ok(testIndex < claspIndex);
 });
 
-test('GitHub e atualizado somente depois da publicacao no Apps Script', () => {
+test('GitHub exige branch, PR, checks e merge antes da publicacao no Apps Script', () => {
   const source = readProjectFile('tools/push-clasp.ps1');
+  const branchIndex = source.indexOf('HEAD:refs/heads/$publishBranch');
+  const prIndex = source.indexOf('gh pr create');
+  const checksIndex = source.indexOf('gh pr checks');
+  const mergeIndex = source.indexOf('gh pr merge');
   const claspIndex = source.indexOf('& $clasp push --force');
-  const githubIndex = source.indexOf('git push origin main');
-  assert.ok(claspIndex > -1 && claspIndex < githubIndex);
-  assert.match(source, /GitHub atualizado com sucesso/);
+  assert.ok(branchIndex > -1 && branchIndex < prIndex);
+  assert.ok(prIndex < checksIndex && checksIndex < mergeIndex);
+  assert.ok(mergeIndex < claspIndex);
+  assert.match(source, /git merge --ff-only origin\/main/);
 });
 
 test('arquivo local e restaurado mesmo quando a publicacao falha', () => {
