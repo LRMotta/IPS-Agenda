@@ -766,7 +766,12 @@ function transporteNormalizeCourierFromCodex_(value) {
   if (n === 'dhl' || n.indexOf('dhl') >= 0) return 'DHL';
   if (n === 'marken') return 'MARKEN';
   if (n === 'ocasa') return 'OCASA';
-  if (n.indexOf('pinex') >= 0) return String(value || 'PINEX').trim();
+  // Todo o fluxo de documentos compara PINEX por valor canonico. Preservar a
+  // capitalizacao vinda da Agenda (por exemplo, "Pinex") faz o PDF cair no
+  // pacote generico de documentos.
+  if (n.indexOf('pinex') >= 0) {
+    return n.indexOf('agendamento') >= 0 ? 'PINEX (Agendamento)' : 'PINEX';
+  }
   return String(value || '').trim();
 }
 
@@ -1811,7 +1816,10 @@ function salvarTransporte(payload, options) {
   }
   transporteSetEnsaiosPeticao_(peticao, materiais);
 
-  if (!options.rascunho && options.preencherDocumentos !== false) {
+  // O pre-agendamento vindo da Agenda tambem precisa preparar as abas da
+  // courier. "rascunho" apenas impede a escrita de volta na Agenda abaixo;
+  // nao deve impedir o preenchimento da documentacao na planilha Transporte.
+  if (options.preencherDocumentos !== false) {
     transporteAplicarAutomacoesTemperatura_(ss, payload);
     aplicarSolicitacaoCaixaTransporte_(ss, payload);
     transporteAplicarCourierConfig_(ss, payload.courier);

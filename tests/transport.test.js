@@ -56,6 +56,40 @@ test('slots da Agenda sao normalizados sem trocar o transporte', () => {
   assert.equal(context.normalizarSlotTransporteCodex_('Backup'), 'backup');
 });
 
+test('PINEX e canonicalizada antes de selecionar a documentacao', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const normalize = sourceBetween(source, 'function transporteNormalizeCourierFromCodex_(', 'function transporteIsDhl_(');
+  const pdfSpec = sourceBetween(source, 'function transportePdfSpec_(', 'function transportePdfActualSheetName_(');
+  const context = vm.createContext({
+    transporteNorm_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
+    transporteIsDhl_: (value) => String(value || '').toLowerCase().indexOf('dhl') >= 0,
+    transportePdfActualSheetName_: (key) => key
+  });
+  vm.runInContext(normalize + '\n' + pdfSpec, context);
+
+  assert.equal(context.transporteNormalizeCourierFromCodex_('Pinex'), 'PINEX');
+  assert.equal(context.transporteNormalizeCourierFromCodex_('pinex'), 'PINEX');
+  assert.equal(context.transporteNormalizeCourierFromCodex_('Pinex (Agendamento)'), 'PINEX (Agendamento)');
+
+  const spec = context.transportePdfSpec_(context.transporteNormalizeCourierFromCodex_('Pinex'), 'AMBIENTE', '', {});
+  assert.deepEqual(Array.from(spec.ordem), [
+    'folhaDhlPinex',
+    'invoicePinex',
+    'peticaoPinex',
+    'usdaStatementPinex',
+    'fichaEmergenciaPinex',
+    'declaracaoTransp'
+  ]);
+});
+
+test('pre-agendamento prepara documentos sem sincronizar de volta para a Agenda', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const save = sourceBetween(source, 'function salvarTransporte(', 'function transporteSetEnsaiosPeticao_(');
+  assert.doesNotMatch(save, /if \(!options\.rascunho && options\.preencherDocumentos !== false\)/);
+  assert.match(save, /if \(options\.preencherDocumentos !== false\)/);
+  assert.match(save, /var agendaSync = options\.rascunho\s*\?\s*\{ atualizado: false/);
+});
+
 test('salvamento definitivo exige os dados criticos de Transporte', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(source, 'function transporteValidarObrigatoriosWebApp_(', 'function transporteValidarDataEnvioMinima_(');
