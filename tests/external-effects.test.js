@@ -22,8 +22,8 @@ test('adaptador de e-mail pode ser simulado sem enviar mensagem real', () => {
 
 test('fluxo de cancelamento usa o adaptador, nao MailApp diretamente', () => {
   const source = readProjectFile('WebApp.gs');
-  const start = source.indexOf('function enviarEmailCancelamento(');
-  const end = source.indexOf('\nfunction enviarEmailReagendamento(', start);
+  const start = source.indexOf('function enviarEmailCancelamento_(');
+  const end = source.indexOf('\nfunction enviarEmailReagendamento_(', start);
   const cancellationFunction = source.slice(start, end);
 
   assert.notEqual(start, -1);
@@ -34,7 +34,7 @@ test('fluxo de cancelamento usa o adaptador, nao MailApp diretamente', () => {
 
 test('todos os e-mails da Agenda usam o adaptador simulavel', () => {
   const source = readProjectFile('WebApp.gs');
-  const functionNames = ['enviarEmailAgendamento', 'enviarEmailReagendamento', 'enviarEmailCancelamento'];
+  const functionNames = ['enviarEmailAgendamento_', 'enviarEmailReagendamento_', 'enviarEmailCancelamento_'];
 
   functionNames.forEach((functionName) => {
     const start = source.indexOf('function ' + functionName + '(');

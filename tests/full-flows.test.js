@@ -115,7 +115,7 @@ function agendaCancellationContext(sheet) {
     SpreadsheetApp: { getActiveSpreadsheet: () => ({}), flush: () => {} },
     getAgendaSheet_: () => sheet,
     encontrarLinhaPorId: (_sheet, id) => id === 'EVT-1' ? 2 : 0,
-    aplicarLogicaCancelamento: () => {},
+    aplicarLogicaCancelamento_: () => {},
     verificarNotificacoes: () => { calls.notifications++; },
     codexWriteAuditChanges_: () => { calls.audits++; },
     agendaAuditChangesFromRows_: () => [{ field: 'Status' }],
