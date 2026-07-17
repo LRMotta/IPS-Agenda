@@ -4012,7 +4012,10 @@ function iniciarAutocompletesProjetoDinamicos() {
         if (node.nodeType !== 1) return;
         if (node.matches && node.matches('select')) ativarAutocompletesProjetoDinamicos(node.parentNode || document);
         var select = node.closest && node.closest('select');
-        if (select) ativarAutocompleteProjeto(select.id);
+        // Options sao adicionadas dinamicamente a muitos selects da Agenda.
+        // Reaplicar o filtro evita transformar tipo, participante, medico,
+        // couriers etc. em autocompletes visuais que nao recebem sincronizacao.
+        if (select) ativarAutocompletesProjetoDinamicos(select.parentNode || document);
       });
     });
   }).observe(document.body, { childList: true, subtree: true });

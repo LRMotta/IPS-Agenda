@@ -81,6 +81,13 @@ test('carga tardia do formulario preserva os selects de um agendamento aberto', 
   assert.match(client, /agendaMatBioLoad\('agBackup'/);
 });
 
+test('autocomplete de projeto nao converte os demais selects da Agenda', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const init = functionBody(core, 'iniciarAutocompletesProjetoDinamicos');
+  assert.match(init, /ativarAutocompletesProjetoDinamicos\(select\.parentNode \|\| document\)/);
+  assert.doesNotMatch(init, /if \(select\) ativarAutocompleteProjeto\(select\.id\)/);
+});
+
 test('servidor retorna somente a janela solicitada e informa truncamento', () => {
   const server = agendaServer();
   server.getAgendaSheet_ = () => fakeAgenda(server, [
