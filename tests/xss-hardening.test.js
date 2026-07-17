@@ -15,8 +15,9 @@ test('parametros da URL usam JSON seguro e escape contextual no script inicial',
 
   const index = readProjectFile('Index.html');
   assert.doesNotMatch(index, /<\?!=\s*(?:JSON\.stringify|codexJsonForScript_)/);
-  assert.match(index, /<\?=\s*codexJsonForScript_\(paginaInicial/);
-  assert.match(index, /<\?=\s*codexJsonForScript_\(agendaAbrirInicial/);
+  assert.match(index, /JSON\.parse\(<\?=\s*codexJsonForScript_\(paginaInicial/);
+  assert.match(index, /JSON\.parse\(<\?=\s*codexJsonForScript_\(agendaAbrirInicial/);
+  assert.match(index, /JSON\.parse\(<\?=\s*codexJsonForScript_\(Boolean\(includeEstoque\)/);
 });
 
 test('HTML de courier preserva somente tags permitidas sem atributos', () => {
