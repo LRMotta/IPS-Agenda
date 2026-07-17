@@ -13,6 +13,17 @@ var CODEX_APP_BUILD_LABEL_ = 'Eventos cancelados destacados nos impressos';
 var CODEX_APP_BUILD_DATE_ = '2026-07-15';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
+function codexJsonForScript_(value) {
+  var json = JSON.stringify(value);
+  if (typeof json !== 'string') json = 'null';
+  return json
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 function doGet(e) {
   var access = codexAuthorizeWebAppRequestSafe_(e);
   if (!access.ok) return codexAccessDeniedOutput_(access);
@@ -6429,7 +6440,7 @@ function getAgendaCourierRows_() {
       cnpj2: String(r[7] || '').trim(),
       telefone2: String(r[8] || '').trim(),
       fax2: String(r[9] || '').trim(),
-      conteudoDeclaracao: String(r[10] || '').trim(),
+      conteudoDeclaracao: codexSanitizeCourierHtml_(r[10]),
       email: headerValue(r, ['E-mail', 'Email', 'Destinatarios', 'Destinatários', 'E-mails', 'Emails']),
       emailAmbiente: headerValue(r, ['E-mail ambiente', 'Email ambiente', 'Destinatarios ambiente', 'Destinatários ambiente']),
       emailCongelado: headerValue(r, ['E-mail congelado', 'Email congelado', 'Destinatarios congelado', 'Destinatários congelado']),
@@ -9602,7 +9613,7 @@ function salvarCourier(dados) {
     String(dados.cnpj2 || '').trim(),
     String(dados.telefone2 || '').trim(),
     String(dados.fax2 || '').trim(),
-    String(dados.conteudoDeclaracao || '').trim(),
+    codexSanitizeCourierHtml_(dados.conteudoDeclaracao),
     String(dados.email || '').trim(),
     String(dados.emailAmbiente || '').trim(),
     String(dados.emailCongelado || '').trim(),
@@ -9626,6 +9637,44 @@ function salvarCourier(dados) {
   sh.appendRow(row);
   limparCacheCourier_();
   return 'Courier cadastrada com sucesso.';
+}
+
+function codexSanitizeCourierHtml_(value) {
+  var input = String(value || '').replace(/\u0000/g, '');
+  var allowed = { b: true, strong: true, i: true, em: true, u: true, br: true, p: true };
+  var output = '';
+  var lastIndex = 0;
+  var tagPattern = /<[^>]*>/g;
+  var match;
+
+  function escapeText(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  while ((match = tagPattern.exec(input)) !== null) {
+    output += escapeText(input.slice(lastIndex, match.index));
+    var parsed = /^<\s*(\/?)\s*([a-z][a-z0-9]*)\b[^>]*>$/i.exec(match[0]);
+    if (parsed && allowed[parsed[2].toLowerCase()]) {
+      var closing = parsed[1] === '/';
+      var tagName = parsed[2].toLowerCase();
+      if (tagName === 'br') {
+        output += '<br>';
+      } else {
+        output += closing ? '</' + tagName + '>' : '<' + tagName + '>';
+      }
+    } else {
+      output += escapeText(match[0]);
+    }
+    lastIndex = tagPattern.lastIndex;
+  }
+
+  output += escapeText(input.slice(lastIndex));
+  return output.trim();
 }
 
 function excluirCourier(id) {

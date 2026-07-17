@@ -5910,8 +5910,36 @@ function aplicarDefaultsCourierConfirmacao(force) {
 function courierEditorSetHtml(html) {
   var editor = document.getElementById('courierConteudoEditor');
   var hidden = document.getElementById('courierConteudo');
-  if (editor) editor.innerHTML = html || '';
-  if (hidden) hidden.value = html || '';
+  var sanitized = courierSanitizeHtmlClient(html);
+  if (editor) editor.innerHTML = sanitized;
+  if (hidden) hidden.value = sanitized;
+}
+
+function courierSanitizeHtmlClient(html) {
+  var allowed = { B: true, STRONG: true, I: true, EM: true, U: true, BR: true, P: true };
+  var template = document.createElement('template');
+  var container = document.createElement('div');
+  template.innerHTML = String(html || '');
+
+  function appendSafe(parent, node) {
+    if (node.nodeType === 3) {
+      parent.appendChild(document.createTextNode(node.nodeValue || ''));
+      return;
+    }
+    if (node.nodeType !== 1) return;
+
+    var target = parent;
+    if (allowed[node.tagName]) {
+      target = document.createElement(node.tagName.toLowerCase());
+      parent.appendChild(target);
+    }
+    for (var i = 0; i < node.childNodes.length; i++) appendSafe(target, node.childNodes[i]);
+  }
+
+  for (var i = 0; i < template.content.childNodes.length; i++) {
+    appendSafe(container, template.content.childNodes[i]);
+  }
+  return container.innerHTML;
 }
 
 function courierEditorHtml() {
@@ -5950,7 +5978,7 @@ function salvarCourierApp() {
     cnpj2: document.getElementById('courierCnpj2').value.trim(),
     telefone2: document.getElementById('courierTelefone2').value.trim(),
     fax2: document.getElementById('courierFax2').value.trim(),
-    conteudoDeclaracao: courierEditorHtml(),
+    conteudoDeclaracao: courierSanitizeHtmlClient(courierEditorHtml()),
     email: document.getElementById('courierEmail').value.trim(),
     emailAmbiente: document.getElementById('courierEmailAmbiente').value.trim(),
     emailCongelado: document.getElementById('courierEmailCongelado').value.trim(),

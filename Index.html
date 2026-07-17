@@ -8,13 +8,13 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <? } ?>
   <script>
-    window.INDEX_ESTOQUE_ENABLED = <?!= includeEstoque ? 'true' : 'false' ?>;
-    window.INDEX_DASHBOARD_ENABLED = <?!= includeDashboard ? 'true' : 'false' ?>;
-    window.INDEX_INITIAL_PAGE = <?!= JSON.stringify(paginaInicial || 'agenda') ?>;
-    window.INDEX_INITIAL_AGENDA_ID = <?!= JSON.stringify(agendaAbrirInicial || '') ?>;
-    window.INDEX_INITIAL_SEARCH = <?!= JSON.stringify(buscaInicial || '') ?>;
-    window.INDEX_DASHBOARD_FILTER = <?!= JSON.stringify(dashboardFiltroInicial || '') ?>;
-    window.INDEX_DASHBOARD_FILTER_KEYS = <?!= JSON.stringify(dashboardFiltroKeys || '') ?>;
+    window.INDEX_ESTOQUE_ENABLED = <?= codexJsonForScript_(Boolean(includeEstoque)) ?>;
+    window.INDEX_DASHBOARD_ENABLED = <?= codexJsonForScript_(Boolean(includeDashboard)) ?>;
+    window.INDEX_INITIAL_PAGE = <?= codexJsonForScript_(paginaInicial || 'agenda') ?>;
+    window.INDEX_INITIAL_AGENDA_ID = <?= codexJsonForScript_(agendaAbrirInicial || '') ?>;
+    window.INDEX_INITIAL_SEARCH = <?= codexJsonForScript_(buscaInicial || '') ?>;
+    window.INDEX_DASHBOARD_FILTER = <?= codexJsonForScript_(dashboardFiltroInicial || '') ?>;
+    window.INDEX_DASHBOARD_FILTER_KEYS = <?= codexJsonForScript_(dashboardFiltroKeys || '') ?>;
   </script>
   <title>IPS | UCS</title>
   <link rel="icon" type="image/x-icon" href="https://www.ucs.br/favicon.ico">
