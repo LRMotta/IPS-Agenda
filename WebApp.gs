@@ -8728,6 +8728,16 @@ function setAgendaValueAndFormat_(range, value, format) {
   }
 }
 
+function getAgendaEventos(limite) {
+  var sh = getAgendaSheet_();
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  var max = Math.min(Number(limite || 80), 5000, lastRow - 1);
+  var start = Math.max(2, lastRow - max + 1);
+  var vals = sh.getRange(start, 1, lastRow - start + 1, AGENDA_CFG.lastCol).getValues();
+  return agendaRowsToObjects_(vals, start).reverse();
+}
+
 function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
   var sh = getAgendaSheet_();
   var lastRow = sh.getLastRow();
