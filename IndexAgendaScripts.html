@@ -2935,7 +2935,6 @@
   function carregarAgendaEventos(forcar, callback, options) {
     options = options || {};
     var lista = document.getElementById('agendaViewLista');
-    agendaUpdatePeriod();
     function finalizarSucesso() {
       if (typeof callback === 'function') callback();
       if (typeof options.onComplete === 'function') options.onComplete();
@@ -2943,37 +2942,23 @@
     function finalizarTentativa() {
       if (typeof options.onComplete === 'function') options.onComplete();
     }
-    if (!forcar && agendaVisibleWeekIsLoaded()) {
-      renderAgendaOperacional();
-      finalizarSucesso();
-      return;
-    }
     if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
-    var range = agendaPrefetchRange();
-    var requestId = ++_agendaEventosRequestId;
+    agendaUpdatePeriod();
     google.script.run
-      .withSuccessHandler(function(response) {
-        if (requestId !== _agendaEventosRequestId) return;
-        var rows = response && response.items ? response.items : [];
-        var fetched = rows.map(agendaNormalizeRow);
-        _agendaEventos = _agendaEventos.filter(function(row) {
-          return !agendaIsoIsInRange(row.dataIso, range.inicio, range.fim);
-        }).concat(fetched).sort(function(a, b) {
+      .withSuccessHandler(function(rows) {
+        _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
           return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
         });
-        agendaMarkWeeksLoaded(range);
-        _agendaEventosTruncated = !!(response && response.truncated);
         setAgendaEventosLoadedAtState(Date.now());
         agendaMatBioUpdateAllCopyOptions();
         renderAgendaOperacional();
         finalizarSucesso();
       })
       .withFailureHandler(function(e) {
-        if (requestId !== _agendaEventosRequestId) return;
         if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty" style="color:#e53935"><span class="material-symbols-outlined">error</span>' + esc(appErrorMessage(e)) + '</div>';
         finalizarTentativa();
       })
-      .getAgendaEventosPorPeriodo(range.inicio, range.fim, 300, !!forcar);
+      .getAgendaEventos(5000);
   }
 
   function agendaVisibleRange() {
