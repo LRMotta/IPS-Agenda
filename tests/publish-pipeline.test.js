@@ -32,13 +32,21 @@ test('GitHub exige branch, PR, checks e merge antes da publicacao no Apps Script
   const source = readProjectFile('tools/push-clasp.ps1');
   const branchIndex = source.indexOf('HEAD:refs/heads/$publishBranch');
   const prIndex = source.indexOf('gh pr create');
-  const checksIndex = source.indexOf('gh pr checks');
+  const checksIndex = source.lastIndexOf('gh pr checks');
   const mergeIndex = source.indexOf('gh pr merge');
   const claspIndex = source.indexOf('& $clasp push --force');
   assert.ok(branchIndex > -1 && branchIndex < prIndex);
   assert.ok(prIndex < checksIndex && checksIndex < mergeIndex);
   assert.ok(mergeIndex < claspIndex);
   assert.match(source, /git merge --ff-only origin\/main/);
+});
+
+test('publicacao reconhece commit da main que ja passou por Pull Request', () => {
+  const source = readProjectFile('tools/push-clasp.ps1');
+  assert.match(source, /\$sourceFullSha -eq \$originMainSha/);
+  assert.match(source, /commits\/\$sourceFullSha\/pulls/);
+  assert.match(source, /select\(\.merged_at != null and \.base\.ref == "main"\)/);
+  assert.match(source, /gh pr checks \$prNumber --repo \$repo --required/);
 });
 
 test('arquivo local e restaurado mesmo quando a publicacao falha', () => {
