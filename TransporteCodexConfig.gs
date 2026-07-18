@@ -1082,10 +1082,15 @@ function transporteLabCentralCidadePais_(lab) {
   return cidade + ', ' + pais;
 }
 
+function transporteMedicoNomeKey_(nome) {
+  return transporteNorm_(String(nome || '')
+    .replace(/^\s*dr(?:a|\(a\))?\.?\s*/i, '')
+    .trim());
+}
+
 function transporteMedicoByNome_(nome) {
-  nome = String(nome || '').replace(/^dr\.?\(?a?\)?\s*/i, '').trim();
-  if (!nome) return null;
-  var key = transporteNorm_(nome);
+  var key = transporteMedicoNomeKey_(nome);
+  if (!key) return null;
   try {
     var medicos = [];
     if (typeof getMedicos === 'function') {
@@ -1098,7 +1103,7 @@ function transporteMedicoByNome_(nome) {
     if (!medicos.length) medicos = transporteReadMedicosDireto_();
     for (var i = 0; i < medicos.length; i++) {
       var medico = medicos[i] || {};
-      if (transporteNorm_(medico.nome) === key) return medico;
+      if (transporteMedicoNomeKey_(medico.nome) === key) return medico;
     }
   } catch (e) {
     Logger.log('Medico nao localizado para Transporte: ' + e.message);
@@ -1825,6 +1830,7 @@ function salvarTransporte(payload, options) {
     transporteAplicarCourierConfig_(ss, payload.courier);
     transportePreencherPeticaoMedico_(ss, payload);
     transportePreencherDeclaracaoCadastros_(ss, payload);
+    if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
     preencherDadosProtocoloPeticaoWebApp_(ss, payload);
     preencherPeticaoAnuenciaWebApp_(ss, payload);
     if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
@@ -2465,6 +2471,7 @@ function transporteSincronizarDependencias_(options) {
   transporteAplicarCourierConfig_(ss, payload.courier);
   transportePreencherPeticaoMedico_(ss, payload);
   transportePreencherDeclaracaoCadastros_(ss, payload);
+  if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
   preencherDadosProtocoloPeticaoWebApp_(ss, payload);
   preencherPeticaoAnuenciaWebApp_(ss, payload);
   preencherDhlWebApp_(ss, payload);
@@ -3257,8 +3264,9 @@ function transportePinexInvestigatorSummary_(investigador, conselho) {
   var nome = String(investigador || '').trim();
   if (!nome) return '';
   var nomeComTitulo = /^dr(?:\(a\))?\.?\s/i.test(nome) ? nome : 'Dr(a). ' + nome;
-  var cremers = String(conselho || '').trim().replace(/^CREMERS\s*:?\s*/i, '');
-  return 'Investigator principal: ' + nomeComTitulo +
+  var cremers = String(conselho || '').trim()
+    .replace(/^(?:CREMERS|CRM\s*\/?\s*RS)\s*[:.-]?\s*/i, '');
+  return 'Investigador Principal: ' + nomeComTitulo +
     (cremers ? ', CREMERS: ' + cremers : '') + '.';
 }
 
@@ -4149,6 +4157,9 @@ function imprimirTodasAbas(options) {
       investigador: investigador,
       destino: destino
     });
+    if (transporteNormalizeCourierFromCodex_(courier) === 'PINEX') {
+      atualizarCommercialInvoicePinexB34_(ss);
+    }
     preencherDadosProtocoloPeticaoWebApp_(ss, {
       protocolo: protocolo,
       destino: destino
