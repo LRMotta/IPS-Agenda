@@ -115,7 +115,26 @@ test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () 
     [[0], [1.6], [0], [0], [0], [0], [0], [0]],
     ''
   );
-  assert.equal(result, 'MSS - 2 tube(s) of serum - Total 1.60 mL / 0 slide(s) / 0 g');
+  assert.equal(result, 'Patient MSS - 2 tube(s) of human bio sample - Total 1.60 mL / 0 slide(s) / 0 g');
+});
+
+test('PINEX identifica o investigador principal e inclui o CREMERS', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const summary = sourceBetween(source, 'function transportePinexInvestigatorSummary_(', 'function atualizarCommercialInvoicePinexB34_(');
+  const invoiceUpdate = sourceBetween(source, 'function atualizarCommercialInvoicePinexB34_(', 'function atualizarCommercialInvoicePinexTemperatura_(');
+  const context = vm.createContext({});
+  vm.runInContext(summary, context);
+
+  assert.equal(
+    context.transportePinexInvestigatorSummary_('Catarine Silva Medeiros', '33123'),
+    'Investigator principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
+  );
+  assert.equal(
+    context.transportePinexInvestigatorSummary_('Dr(a). Catarine Silva Medeiros', 'CREMERS: 33123'),
+    'Investigator principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
+  );
+  assert.match(invoiceUpdate, /transporteMedicoByNome_\(investigador\)/);
+  assert.match(invoiceUpdate, /transportePinexInvestigatorSummary_\(/);
 });
 
 test('automacao PINEX atualiza os dados completos da Commercial Invoice', () => {

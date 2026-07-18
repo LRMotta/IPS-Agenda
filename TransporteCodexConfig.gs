@@ -3222,20 +3222,20 @@ function atualizarCommercialInvoicePinexB33_(ss) {
 }
 
 function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volumes, outros) {
-  var iniciais = transporteExtrairIniciais(paciente) || String(paciente || '').trim() || 'Patient';
-  var nomes = ['blood', 'serum', 'urine', 'plasma', 'tissue', 'saliva', 'stool', 'vaccine'];
+  var iniciais = transporteExtrairIniciais(paciente) || String(paciente || '').trim();
+  var pacienteResumo = iniciais ? 'Patient ' + iniciais : 'Patient';
   var unidadesGramas = { 4: true, 6: true };
-  var descricoes = [];
+  var totalTubos = 0;
   var totalMl = 0;
   var totalG = 0;
 
-  for (var i = 0; i < nomes.length; i++) {
+  for (var i = 0; i < 8; i++) {
     if (!checked[i] || checked[i][0] !== true) continue;
     var tubos = transporteNumber_(tubosPorMaterial[i] && tubosPorMaterial[i][0]);
     var volume = transporteNumber_(volumes[i] && volumes[i][0]);
+    totalTubos += tubos;
     if (unidadesGramas[i]) totalG += volume;
     else totalMl += volume;
-    descricoes.push((tubos || 0) + ' tube(s) of ' + nomes[i]);
   }
 
   outros = String(outros || '');
@@ -3244,15 +3244,22 @@ function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volu
   var slides = (outrosNorm.indexOf('lamina') >= 0 || outrosNorm.indexOf('slide') >= 0) && slideMatch
     ? transporteNumber_(slideMatch[1])
     : 0;
-  if (!descricoes.length) descricoes.push('0 tube(s) of human biological sample');
-
   function formatEn(value) {
     var number = transporteNumber_(value);
     return number ? number.toFixed(2) : '0';
   }
 
-  return iniciais + ' - ' + descricoes.join('; ') + ' - Total ' + formatEn(totalMl) +
+  return pacienteResumo + ' - ' + totalTubos + ' tube(s) of human bio sample - Total ' + formatEn(totalMl) +
     ' mL / ' + slides + ' slide(s) / ' + formatEn(totalG) + ' g';
+}
+
+function transportePinexInvestigatorSummary_(investigador, conselho) {
+  var nome = String(investigador || '').trim();
+  if (!nome) return '';
+  var nomeComTitulo = /^dr(?:\(a\))?\.?\s/i.test(nome) ? nome : 'Dr(a). ' + nome;
+  var cremers = String(conselho || '').trim().replace(/^CREMERS\s*:?\s*/i, '');
+  return 'Investigator principal: ' + nomeComTitulo +
+    (cremers ? ', CREMERS: ' + cremers : '') + '.';
 }
 
 function atualizarCommercialInvoicePinexB34_(ss) {
@@ -3263,8 +3270,13 @@ function atualizarCommercialInvoicePinexB34_(ss) {
     var invoice = transporteCodexGetSheet_(ss, 'invoicePinex', false);
     if (!folha || !invoice) return;
     var investigador = String(getCellValueSafe(folha, 'C5') || '').trim();
-    var conselho = declaracao ? String(getCellValueSafe(declaracao, 'M10') || '').trim() : '';
-    invoice.getRange('B34').setValue([investigador, conselho].filter(Boolean).join(' - '));
+    var medico = transporteMedicoByNome_(investigador);
+    var conselho = String((medico && medico.cremers) ||
+      (declaracao ? getCellValueSafe(declaracao, 'M10') : '') || '').trim();
+    invoice.getRange('B34').setValue(transportePinexInvestigatorSummary_(
+      (medico && medico.nome) || investigador,
+      conselho
+    ));
   } catch (error) {
     Logger.log('ERRO em atualizarCommercialInvoicePinexB34_: ' + error.toString());
   }
