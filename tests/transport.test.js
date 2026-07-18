@@ -127,14 +127,38 @@ test('PINEX identifica o investigador principal e inclui o CREMERS', () => {
 
   assert.equal(
     context.transportePinexInvestigatorSummary_('Catarine Silva Medeiros', '33123'),
-    'Investigator principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
+    'Investigador Principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
   );
   assert.equal(
-    context.transportePinexInvestigatorSummary_('Dr(a). Catarine Silva Medeiros', 'CREMERS: 33123'),
-    'Investigator principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
+    context.transportePinexInvestigatorSummary_('Dr(a). Catarine Silva Medeiros', 'CRM/RS 33123'),
+    'Investigador Principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
   );
   assert.match(invoiceUpdate, /transporteMedicoByNome_\(investigador\)/);
   assert.match(invoiceUpdate, /transportePinexInvestigatorSummary_\(/);
+});
+
+test('cadastro do investigador PINEX aceita nome com ou sem titulo medico', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const keyHelper = sourceBetween(source, 'function transporteMedicoNomeKey_(', 'function transporteMedicoByNome_(');
+  const context = vm.createContext({
+    transporteNorm_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+  });
+  vm.runInContext(keyHelper, context);
+
+  assert.equal(context.transporteMedicoNomeKey_('Catarine Silva Medeiros'), 'catarine silva medeiros');
+  assert.equal(context.transporteMedicoNomeKey_('Dra. Catarine Silva Medeiros'), 'catarine silva medeiros');
+  assert.equal(context.transporteMedicoNomeKey_('Dr(a). Catarine Silva Medeiros'), 'catarine silva medeiros');
+});
+
+test('PINEX atualiza o investigador novamente depois de preencher o cadastro medico', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const save = sourceBetween(source, 'function salvarTransporte(', 'function transporteSetEnsaiosPeticao_(');
+  const sync = sourceBetween(source, 'function transporteSincronizarDependencias_(', 'function sincronizarTransporte(');
+  const pdf = sourceBetween(source, 'function imprimirTodasAbas(', 'function transportePdfSpec_(');
+
+  [save, sync, pdf].forEach((block) => {
+    assert.match(block, /transportePreencherDeclaracaoCadastros_\([\s\S]*atualizarCommercialInvoicePinexB34_\(/);
+  });
 });
 
 test('automacao PINEX atualiza os dados completos da Commercial Invoice', () => {
