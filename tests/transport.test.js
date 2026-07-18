@@ -127,11 +127,11 @@ test('PINEX identifica o investigador principal e inclui o CREMERS', () => {
 
   assert.equal(
     context.transportePinexInvestigatorSummary_('Catarine Silva Medeiros', '33123'),
-    'Investigador Principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
+    'Investigador Principal: Dr(a). Catarine Silva Medeiros - CREMERS: 33123.'
   );
   assert.equal(
     context.transportePinexInvestigatorSummary_('Dr(a). Catarine Silva Medeiros', 'CRM/RS 33123'),
-    'Investigador Principal: Dr(a). Catarine Silva Medeiros, CREMERS: 33123.'
+    'Investigador Principal: Dr(a). Catarine Silva Medeiros - CREMERS: 33123.'
   );
   assert.match(invoiceUpdate, /transporteMedicoByNome_\(investigador\)/);
   assert.match(invoiceUpdate, /transportePinexInvestigatorSummary_\(/);
@@ -173,7 +173,10 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(source, 'function transporteValidarObrigatoriosWebApp_(', 'function transporteValidarDataEnvioMinima_(');
   const context = vm.createContext({
-    transporteLabCentralByDestino_: (destino) => destino === 'Lab Central Teste' ? { nome: destino } : null
+    transporteLabCentralByDestino_: (destino) => destino === 'Lab Central Teste' ? { nome: destino } : null,
+    transporteMedicoByNome_: (nome) => nome === 'Investigador com CREMERS'
+      ? { nome, cremers: '12345' }
+      : { nome, cremers: '' }
   });
   vm.runInContext(block, context);
 
@@ -194,6 +197,16 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
     destino: 'Lab inexistente', temperatura: 'AMBIENTE', courier: 'DHL',
     horaEnvio: '08:00-12:00', agendadoPor: 'Usuario Teste', dataEnvio: '2026-07-20'
   }), /nao encontrado no cadastro LabCentral/);
+  assert.throws(() => context.transporteValidarObrigatoriosWebApp_({
+    paciente: 'Participante Teste', protocolo: 'Projeto Teste', investigador: 'Investigador sem CREMERS',
+    destino: 'Lab Central Teste', temperatura: 'CONGELADO', courier: 'PINEX',
+    horaEnvio: '08:00-12:00', agendadoPor: 'Usuario Teste', dataEnvio: '2026-07-20', awb: '12345678'
+  }), /CREMERS do Investigador Principal/);
+  assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
+    paciente: 'Participante Teste', protocolo: 'Projeto Teste', investigador: 'Investigador com CREMERS',
+    destino: 'Lab Central Teste', temperatura: 'CONGELADO', courier: 'PINEX',
+    horaEnvio: '08:00-12:00', agendadoPor: 'Usuario Teste', dataEnvio: '2026-07-20', awb: '12345678'
+  }));
 });
 
 test('AWB existente na Agenda nunca e sobrescrita automaticamente', () => {

@@ -1937,6 +1937,12 @@ function transporteValidarObrigatoriosWebApp_(payload) {
   if (!String(payload.courier || '').trim()) missing.push('Courier');
   if (!String(payload.horaEnvio || '').trim()) missing.push('Janela de envio');
   if (!String(payload.agendadoPor || '').trim()) missing.push('Agendado por');
+  if (payload.courier === 'PINEX') {
+    var investigadorPinex = transporteMedicoByNome_(payload.investigador);
+    if (!investigadorPinex || !String(investigadorPinex.cremers || '').trim()) {
+      missing.push('CREMERS do Investigador Principal no cadastro de Medicos');
+    }
+  }
   if (payload.courier === 'PINEX (Agendamento)' && !String(payload.responsavelEntrega || '').trim()) {
     missing.push('Responsavel pela Entrega das Amostras');
   }
@@ -3267,7 +3273,7 @@ function transportePinexInvestigatorSummary_(investigador, conselho) {
   var cremers = String(conselho || '').trim()
     .replace(/^(?:CREMERS|CRM\s*\/?\s*RS)\s*[:.-]?\s*/i, '');
   return 'Investigador Principal: ' + nomeComTitulo +
-    (cremers ? ', CREMERS: ' + cremers : '') + '.';
+    (cremers ? ' - CREMERS: ' + cremers : '') + '.';
 }
 
 function atualizarCommercialInvoicePinexB34_(ss) {
