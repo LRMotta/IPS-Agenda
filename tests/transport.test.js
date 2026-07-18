@@ -98,6 +98,34 @@ test('pre-agendamento prepara documentos sem sincronizar de volta para a Agenda'
   assert.match(save, /var agendaSync = options\.rascunho\s*\?\s*\{ atualizado: false/);
 });
 
+test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const summary = sourceBetween(source, 'function transportePinexSampleSummary_(', 'function atualizarCommercialInvoicePinexB34_(');
+  const context = vm.createContext({
+    transporteExtrairIniciais: (value) => String(value || '').split(/\s+/).filter(Boolean).map((part) => part[0]).join('').toUpperCase(),
+    transporteNumber_: (value) => Number(String(value == null || value === '' ? 0 : value).replace(',', '.')) || 0,
+    transporteNorm_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+  });
+  vm.runInContext(summary, context);
+
+  const result = context.transportePinexSampleSummary_(
+    'Maria Silva Souza',
+    [[false], [true], [false], [false], [false], [false], [false], [false]],
+    [[0], [2], [0], [0], [0], [0], [0], [0]],
+    [[0], [1.6], [0], [0], [0], [0], [0], [0]],
+    ''
+  );
+  assert.equal(result, 'MSS - 2 tube(s) of serum - Total 1.60 mL / 0 slide(s) / 0 g');
+});
+
+test('automacao PINEX atualiza os dados completos da Commercial Invoice', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const automation = sourceBetween(source, 'function transporteAplicarAutomacoesTemperatura_(', 'function montarPayloadTransporteCodex(');
+  assert.match(automation, /if \(courier === 'PINEX'\)[\s\S]*atualizarCommercialInvoicePinex_\(ss\)/);
+  assert.match(automation, /if \(courier === 'PINEX'\)[\s\S]*atualizarCommercialInvoicePinexB33_\(ss\)/);
+  assert.match(automation, /if \(courier === 'PINEX'\)[\s\S]*atualizarCommercialInvoicePinexB34_\(ss\)/);
+});
+
 test('salvamento definitivo exige os dados criticos de Transporte', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(source, 'function transporteValidarObrigatoriosWebApp_(', 'function transporteValidarDataEnvioMinima_(');
