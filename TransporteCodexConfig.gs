@@ -2256,9 +2256,14 @@ function transporteAplicarAutomacoesTemperatura_(ss, payload) {
     atualizarOcasaProformaTipoAmostra_(ss);
   }
   if (courier === 'PINEX') {
+    atualizarCommercialInvoicePinex_(ss);
+    atualizarCommercialInvoicePinexB33_(ss);
+    atualizarCommercialInvoicePinexB34_(ss);
     atualizarCommercialInvoicePinexTemperatura_(ss);
     atualizarPeticaoPinexTemperatura_(ss);
     atualizarCommercialInvoicePinexE48_(ss);
+  } else if (courier === 'PINEX (Agendamento)') {
+    atualizarFormularioPinex_(ss);
   }
 }
 
@@ -3205,25 +3210,49 @@ function atualizarCommercialInvoicePinexB33_(ss) {
     var declaracao = transporteCodexGetSheet_(ss, 'declaracaoTransp', false);
     var invoice = transporteCodexGetSheet_(ss, 'invoicePinex', false);
     if (!folha || !declaracao || !invoice) return;
-    var iniciais = String(getCellValueSafe(folha, 'C3') || '').trim();
-    var tubos = declaracao.getRange('H21:H28').getValues().reduce(function(total, row) {
-      return total + transporteNumber_(row[0]);
-    }, 0);
+    var paciente = String(getCellValueSafe(folha, 'C3') || '').trim();
+    var checked = declaracao.getRange('B21:B28').getValues();
+    var tubosPorMaterial = declaracao.getRange('H21:H28').getValues();
     var volumes = declaracao.getRange('N21:N28').getValues();
-    var totalMl = 0;
-    [0, 1, 2, 3, 5, 6, 7].forEach(function(i) { totalMl += transporteNumber_(volumes[i][0]); });
-    var tecidoG = getCellValueSafe(declaracao, 'B25') === true ? transporteNumber_(volumes[4][0]) : 0;
     var outros = String(getCellValueSafe(declaracao, 'F30') || '');
-    var outrosNorm = transporteNorm_(outros);
-    var slideMatch = outros.match(/(\d+)\s*(?:slides?|l[aÃ¢Ã£]?minas?|laminas?)/i);
-    var slides = (outrosNorm.indexOf('lamina') >= 0 || outrosNorm.indexOf('slide') >= 0) && slideMatch ? slideMatch[1] : '0';
-    invoice.getRange('B33').setValue(
-      iniciais + ' - ' + tubos + ' tubes / ' + transporteFormatNumberPt_(totalMl, 2) +
-      ' mL / ' + transporteFormatNumberPt_(tecidoG, 2) + ' g / ' + slides + ' slides'
-    );
+    invoice.getRange('B33').setValue(transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volumes, outros));
   } catch (error) {
     Logger.log('ERRO em atualizarCommercialInvoicePinexB33_: ' + error.toString());
   }
+}
+
+function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volumes, outros) {
+  var iniciais = transporteExtrairIniciais(paciente) || String(paciente || '').trim() || 'Patient';
+  var nomes = ['blood', 'serum', 'urine', 'plasma', 'tissue', 'saliva', 'stool', 'vaccine'];
+  var unidadesGramas = { 4: true, 6: true };
+  var descricoes = [];
+  var totalMl = 0;
+  var totalG = 0;
+
+  for (var i = 0; i < nomes.length; i++) {
+    if (!checked[i] || checked[i][0] !== true) continue;
+    var tubos = transporteNumber_(tubosPorMaterial[i] && tubosPorMaterial[i][0]);
+    var volume = transporteNumber_(volumes[i] && volumes[i][0]);
+    if (unidadesGramas[i]) totalG += volume;
+    else totalMl += volume;
+    descricoes.push((tubos || 0) + ' tube(s) of ' + nomes[i]);
+  }
+
+  outros = String(outros || '');
+  var outrosNorm = transporteNorm_(outros);
+  var slideMatch = outros.match(/(\d+)\s*(?:slides?|l[aÃ¢Ã£]?minas?|laminas?)/i);
+  var slides = (outrosNorm.indexOf('lamina') >= 0 || outrosNorm.indexOf('slide') >= 0) && slideMatch
+    ? transporteNumber_(slideMatch[1])
+    : 0;
+  if (!descricoes.length) descricoes.push('0 tube(s) of human biological sample');
+
+  function formatEn(value) {
+    var number = transporteNumber_(value);
+    return number ? number.toFixed(2) : '0';
+  }
+
+  return iniciais + ' - ' + descricoes.join('; ') + ' - Total ' + formatEn(totalMl) +
+    ' mL / ' + slides + ' slide(s) / ' + formatEn(totalG) + ' g';
 }
 
 function atualizarCommercialInvoicePinexB34_(ss) {
