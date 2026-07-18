@@ -51,15 +51,28 @@ try {
   $repo = (& $gh repo view --json nameWithOwner --jq '.nameWithOwner').Trim()
   if ($LASTEXITCODE -ne 0 -or -not $repo) { throw 'Nao foi possivel identificar o repositorio GitHub.' }
   $publishBranch = "agent/publish-$sourceSha"
+  & git fetch origin main
+  if ($LASTEXITCODE -ne 0) { throw 'Falha ao consultar a referencia origin/main.' }
+  $originMainSha = (& git rev-parse origin/main).Trim()
+  $alreadyApproved = $sourceFullSha -eq $originMainSha
 
-  Write-Host "Enviando branch $publishBranch para o GitHub..."
-  & git push origin "HEAD:refs/heads/$publishBranch"
-  if ($LASTEXITCODE -ne 0) { throw 'Falha ao enviar a branch de publicacao ao GitHub.' }
+  if ($alreadyApproved) {
+    $prNumber = (& $gh api "repos/$repo/commits/$sourceFullSha/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | .[0].number').Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $prNumber) {
+      throw 'O commit atual ja esta na main remota, mas nenhuma Pull Request aprovada foi localizada.'
+    }
+    & $gh pr checks $prNumber --repo $repo --required
+    if ($LASTEXITCODE -ne 0) { throw 'Os checks obrigatorios da Pull Request aprovada nao estao verdes.' }
+    Write-Host "Commit ja aprovado e integrado pela Pull Request #$prNumber. Publicacao liberada."
+  } else {
+    Write-Host "Enviando branch $publishBranch para o GitHub..."
+    & git push origin "HEAD:refs/heads/$publishBranch"
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao enviar a branch de publicacao ao GitHub.' }
 
-  $prNumber = (& $gh pr list --repo $repo --head $publishBranch --base main --state open --json number --jq '.[0].number').Trim()
-  if (-not $prNumber) {
-    $prBodyPath = Join-Path ([System.IO.Path]::GetTempPath()) "ips-agenda-publish-$sourceSha.md"
-    $prBody = @"
+    $prNumber = (& $gh pr list --repo $repo --head $publishBranch --base main --state open --json number --jq '.[0].number').Trim()
+    if (-not $prNumber) {
+      $prBodyPath = Join-Path ([System.IO.Path]::GetTempPath()) "ips-agenda-publish-$sourceSha.md"
+      $prBody = @"
 ## O que mudou
 
 Integra os commits locais aprovados da Agenda IPS na branch protegida `main`.
@@ -73,36 +86,37 @@ Mantem o GitHub sincronizado com a publicacao do Apps Script sem remover a exige
 - `npm run verify` executado localmente antes da abertura do PR
 - check obrigatorio `Testes de regressao` aguardado antes do merge
 "@
-    [System.IO.File]::WriteAllText($prBodyPath, $prBody, [System.Text.UTF8Encoding]::new($false))
-    & $gh pr create --repo $repo --base main --head $publishBranch --title "Publish approved Agenda changes ($sourceSha)" --body-file $prBodyPath
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar o Pull Request de publicacao.' }
-    $prNumber = (& $gh pr view $publishBranch --repo $repo --json number --jq '.number').Trim()
-  }
-  if (-not $prNumber) { throw 'Nao foi possivel identificar o Pull Request de publicacao.' }
-  Write-Host "Pull Request #$prNumber criado. Aguardando o workflow obrigatorio..."
-
-  $checksRegistered = $false
-  for ($attempt = 0; $attempt -lt 12; $attempt++) {
-    $checkCount = (& $gh pr view $prNumber --repo $repo --json statusCheckRollup --jq '.statusCheckRollup | length').Trim()
-    if ($LASTEXITCODE -eq 0 -and [int]$checkCount -gt 0) {
-      $checksRegistered = $true
-      break
+      [System.IO.File]::WriteAllText($prBodyPath, $prBody, [System.Text.UTF8Encoding]::new($false))
+      & $gh pr create --repo $repo --base main --head $publishBranch --title "Publish approved Agenda changes ($sourceSha)" --body-file $prBodyPath
+      if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar o Pull Request de publicacao.' }
+      $prNumber = (& $gh pr view $publishBranch --repo $repo --json number --jq '.number').Trim()
     }
-    Start-Sleep -Seconds 5
+    if (-not $prNumber) { throw 'Nao foi possivel identificar o Pull Request de publicacao.' }
+    Write-Host "Pull Request #$prNumber criado. Aguardando o workflow obrigatorio..."
+
+    $checksRegistered = $false
+    for ($attempt = 0; $attempt -lt 12; $attempt++) {
+      $checkCount = (& $gh pr view $prNumber --repo $repo --json statusCheckRollup --jq '.statusCheckRollup | length').Trim()
+      if ($LASTEXITCODE -eq 0 -and [int]$checkCount -gt 0) {
+        $checksRegistered = $true
+        break
+      }
+      Start-Sleep -Seconds 5
+    }
+    if (-not $checksRegistered) { throw 'O workflow do Pull Request nao iniciou dentro do prazo esperado.' }
+
+    & $gh pr checks $prNumber --repo $repo --required --watch --fail-fast --interval 10
+    if ($LASTEXITCODE -ne 0) { throw 'O check obrigatorio do Pull Request falhou.' }
+
+    Write-Host "Checks aprovados. Integrando Pull Request #$prNumber..."
+    & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao integrar o Pull Request aprovado.' }
+
+    & git fetch origin main
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar a referencia origin/main depois do merge.' }
+    & git merge --ff-only origin/main
+    if ($LASTEXITCODE -ne 0) { throw 'A main local nao pode ser sincronizada por fast-forward depois do merge.' }
   }
-  if (-not $checksRegistered) { throw 'O workflow do Pull Request nao iniciou dentro do prazo esperado.' }
-
-  & $gh pr checks $prNumber --repo $repo --required --watch --fail-fast --interval 10
-  if ($LASTEXITCODE -ne 0) { throw 'O check obrigatorio do Pull Request falhou.' }
-
-  Write-Host "Checks aprovados. Integrando Pull Request #$prNumber..."
-  & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha
-  if ($LASTEXITCODE -ne 0) { throw 'Falha ao integrar o Pull Request aprovado.' }
-
-  & git fetch origin main
-  if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar a referencia origin/main depois do merge.' }
-  & git merge --ff-only origin/main
-  if ($LASTEXITCODE -ne 0) { throw 'A main local nao pode ser sincronizada por fast-forward depois do merge.' }
 
   $originalBytes = [System.IO.File]::ReadAllBytes($webAppPath)
   $source = [System.IO.File]::ReadAllText($webAppPath)
