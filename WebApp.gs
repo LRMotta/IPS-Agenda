@@ -3357,11 +3357,12 @@ function getParticipantes() {
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
   var tz  = Session.getScriptTimeZone();
-  var ultimaVisitaMap = getUltimasVisitasPorPacienteId_();
+  var ultimaVisitaMap = getUltimasVisitasParticipantesAgendaMap_();
 
   return rows.slice(1)
     .filter(function(r){ return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
     .map(function(r) {
+      var ultimaVisita = ultimaVisitaMap[normText_(r[1])] || { data: '', visita: '---' };
       function fmtDate(val) {
         if (!val) return '';
         try {
@@ -3378,7 +3379,8 @@ function getParticipantes() {
         idParticipante: String(r[4] || ''),
         projeto:        String(r[5] || ''),
         braco:          String(r[6] || ''),
-        ultimaVisita:   getUltimaVisitaFromMap_(r[1], ultimaVisitaMap),
+        ultimaVisita:   String(ultimaVisita.visita || '---'),
+        ultimaVisitaData: String(ultimaVisita.data || ''),
         status:         String(r[8] || ''),
         telefone:       String(r[9] || ''),
         cpf:            String(r[10] || ''),
