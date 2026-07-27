@@ -45,7 +45,8 @@ test('publicacao reconhece commit da main que ja passou por Pull Request', () =>
   const source = readProjectFile('tools/push-clasp.ps1');
   assert.match(source, /\$sourceFullSha -eq \$originMainSha/);
   assert.match(source, /commits\/\$sourceFullSha\/pulls/);
-  assert.match(source, /select\(\.merged_at != null and \.base\.ref == "main"\)/);
+  assert.match(source, /ConvertFrom-Json/);
+  assert.match(source, /Where-Object \{ \$_\.merged_at -and \$_\.base\.ref -eq 'main' \}/);
   assert.match(source, /gh pr checks \$prNumber --repo \$repo --required/);
 });
 
