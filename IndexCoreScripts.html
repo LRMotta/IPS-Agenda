@@ -2434,10 +2434,12 @@ function filtrarParticipantes(forceNow) {
     var q  = document.getElementById('searchParticipantes').value.toLowerCase().trim();
     var st = document.getElementById('filterStatusPar') ? document.getElementById('filterStatusPar').value : '';
     var f  = _participantes.filter(function(p){
+      var projetoCadastro = encontrarProjetoParticipante(p.projeto || '');
       var matchQ = !q
         || (p.nome||'').toLowerCase().includes(q)
         || (p.idParticipante||'').toLowerCase().includes(q)
         || (p.projeto||'').toLowerCase().includes(q)
+        || ((projetoCadastro && projetoCadastro.codigo)||'').toLowerCase().includes(q)
         || (p.status||'').toLowerCase().includes(q)
         || (p.cpf||'').toLowerCase().includes(q);
       var matchSt = !st || (p.status||'') === st;
@@ -2473,6 +2475,20 @@ function participanteStatusDynamicClass(status) {
   return 'chip-status-auto-' + (idx % 8);
 }
 
+function participanteProjetoCellHtml(participante) {
+  participante = participante || {};
+  var cadastro = encontrarProjetoParticipante(participante.projeto || '');
+  var nome = String((cadastro && cadastro.nome) || participante.projeto || '').trim();
+  var codigo = String((cadastro && cadastro.codigo) || '').trim();
+  var codigoHtml = codigo
+    ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">' + esc(codigo) + '</div>'
+    : '';
+  var bracoHtml = participante.braco
+    ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">Bra&ccedil;o: ' + esc(participante.braco) + '</div>'
+    : '';
+  return '<div class="row-name" style="font-size:13px;">' + esc(nome || '—') + '</div>' + codigoHtml + bracoHtml;
+}
+
 function renderTabelaPart(lista) {
   var tb = document.getElementById('bodyParticipantes');
   if (!lista.length) {
@@ -2493,8 +2509,7 @@ function renderTabelaPart(lista) {
       +(p.idParticipante?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">ID: '+esc(p.idParticipante)+'</div>':'')
       +'</td>'
       +'<td style="color:#5f6b7c;line-height:1.25;">'+nascIdadeHtml+'</td>'
-      +'<td><div class="row-name" style="font-size:13px;">'+esc(p.projeto||'—')+'</div>'
-      +(p.braco?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">'+esc(p.braco)+'</div>':'')+'</td>'
+      +'<td>'+participanteProjetoCellHtml(p)+'</td>'
       +'<td>'+chipStatus(p.status||'—')+'</td>'
       +'<td style="color:#5f6b7c;">'+esc(ultimaVisitaFmt || '---')+'</td>'
       +'<td style="text-align:right;"><div class="action-btns">'
@@ -2548,7 +2563,7 @@ function encontrarProjetoParticipante(valor) {
   var valorNorm = normSelectValue(valor || '');
   if (!valorNorm) return null;
   return (_projListPart || []).map(normalizarProjetoParticipante).find(function(projeto) {
-    return normSelectValue(projeto.nome) === valorNorm;
+    return normSelectValue(projeto.nome) === valorNorm || normSelectValue(projeto.codigo) === valorNorm;
   }) || null;
 }
 

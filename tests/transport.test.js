@@ -98,6 +98,119 @@ test('pre-agendamento prepara documentos sem sincronizar de volta para a Agenda'
   assert.match(save, /var agendaSync = options\.rascunho\s*\?\s*\{ atualizado: false/);
 });
 
+test('Transporte resolve participante pelo ID estavel mesmo com nome historico divergente', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'function transporteParticipantKey_(',
+    'function transporteAgendadoresConfig_('
+  );
+  const context = vm.createContext({
+    Logger: { log: () => {} },
+    getParticipantes: () => [{
+      id: '81231558',
+      idParticipante: '2011250001',
+      nome: 'Filipe Muneron da Silva',
+      projeto: 'SKYLINE-UC'
+    }],
+    getProjetos: () => [{
+      nomeAbreviado: 'SKYLINE-UC',
+      codigo: 'SPY123-201',
+      investigador: 'Eduardo Brambilla'
+    }],
+    buscarAgendaEventoPorIdTransp_: () => ({
+      participante: 'Filipe Mumeron da Silva',
+      idParticipante: '2011250001',
+      projeto: 'SKYLINE-UC',
+      medico: ''
+    })
+  });
+  vm.runInContext(block, context);
+
+  const payload = context.transporteDerivarDadosParticipante_({
+    paciente: 'Filipe Mumeron da Silva',
+    identificacaoParticipante: '2011250001'
+  });
+  assert.equal(payload.protocolo, 'SKYLINE-UC');
+  assert.equal(payload.investigador, 'Eduardo Brambilla');
+  assert.equal(payload.identificacaoParticipante, '2011250001');
+});
+
+test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'function transporteParticipantKey_(',
+    'function transporteAgendadoresConfig_('
+  );
+  const context = vm.createContext({
+    Logger: { log: () => {} },
+    getParticipantes: () => [{
+      idParticipante: '2011250001',
+      nome: 'Filipe Muneron da Silva',
+      projeto: 'SKYLINE-UC'
+    }],
+    getProjetos: () => [{
+      nomeAbreviado: 'SKYLINE-UC',
+      codigo: 'SPY123-201',
+      investigador: 'Eduardo Brambilla'
+    }],
+    buscarAgendaEventoPorIdTransp_: (id) => {
+      assert.equal(id, 'fc1ad99b');
+      return {
+        participante: 'Filipe Mumeron da Silva',
+        idParticipante: '2011250001',
+        projeto: 'SKYLINE-UC',
+        medico: ''
+      };
+    }
+  });
+  vm.runInContext(block, context);
+
+  const registro = context.transporteAtualizarRegistroPorAgenda_({
+    idAgenda: 'fc1ad99b',
+    paciente: 'Filipe Mumeron da Silva',
+    protocolo: 'SPY',
+    investigador: ''
+  });
+  assert.equal(registro.paciente, 'Filipe Muneron da Silva');
+  assert.equal(registro.protocolo, 'SKYLINE-UC (SPY123-201)');
+  assert.equal(registro.investigador, 'Eduardo Brambilla');
+  assert.equal(registro.identificacaoParticipante, '2011250001');
+});
+
+test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () => {
+  const source = readProjectFile('TransporteApp.html');
+  const block = sourceBetween(source, 'function sortRowsByText(', 'function fillSelectRows(');
+  const context = vm.createContext({});
+  vm.runInContext(block, context);
+
+  const original = [
+    { nome: 'Zelia' },
+    { nome: 'ana' },
+    { nome: 'Álvaro' },
+    { nome: 'Bruno 10' },
+    { nome: 'Bruno 2' }
+  ];
+  const ordenados = context.sortRowsByText(original, 'nome').map((item) => item.nome);
+
+  assert.deepEqual(Array.from(ordenados), ['Álvaro', 'ana', 'Bruno 2', 'Bruno 10', 'Zelia']);
+  assert.deepEqual(original.map((item) => item.nome), ['Zelia', 'ana', 'Álvaro', 'Bruno 10', 'Bruno 2']);
+  assert.match(source, /fillSelectRows\('paciente', sortRowsByText\(state\.options\.participantes, 'nome'\)/);
+  assert.match(source, /fillSelectRows\('paciente', sortRowsByText\(o\.participantes \|\| \[\], 'nome'\)/);
+});
+
+test('checklist do Transporte exige o numero de identificacao cadastrado do participante', () => {
+  const client = readProjectFile('TransporteApp.html');
+  const server = readProjectFile('TransporteCodexConfig.gs');
+
+  assert.match(client, /loadParticipantsOptions\(\);[\s\S]*if \(!opts\.skipCe\)/);
+  assert.match(client, /participantesLoaded\) return idCadastro/);
+  assert.match(client, /Nº de Identificação do paciente não preenchido no cadastro do participante\./);
+  assert.match(client, /out\.push\('Nº de Identificação do paciente'\)/);
+  assert.match(server, /missing\.push\('Numero de Identificacao do paciente no cadastro de Participantes'\)/);
+});
+
 test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const summary = sourceBetween(source, 'function transportePinexSampleSummary_(', 'function atualizarCommercialInvoicePinexB34_(');
@@ -161,6 +274,53 @@ test('PINEX atualiza o investigador novamente depois de preencher o cadastro med
   });
 });
 
+test('contato de emergencia da PINEX nao vaza para as demais couriers', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'var TRANSPORTE_CONTATO_EMERGENCIA_PINEX_',
+    'function imprimirTodasAbas('
+  );
+  let writtenContact = '';
+  const contactCell = {
+    isPartOfMerge: () => false,
+    setValue: (value) => { writtenContact = value; }
+  };
+  const contactSheet = {
+    getSheetId: () => 123,
+    getDataRange: () => ({
+      getDisplayValues: () => [['telefone de emergencia: 55 11 97095-3241 - Thais']],
+      getCell: () => contactCell
+    })
+  };
+  const context = vm.createContext({
+    Logger: { log: () => {} },
+    transporteCodexGetSheet_: () => contactSheet,
+    transporteNormalizeCourierFromCodex_: (courier) => String(courier || '').trim().toUpperCase()
+  });
+  vm.runInContext(block, context);
+
+  assert.equal(
+    context.transporteContatoEmergenciaTexto_('Pinex'),
+    'telefone de emerg\u00eancia (24H): 55 11 97095-3241 - thais thabata leite lopes'
+  );
+  assert.equal(
+    context.transporteContatoEmergenciaTexto_('MARKEN'),
+    'Telefone de Emerg\u00eancia (24H): +55 54 99909-1656'
+  );
+  assert.equal(
+    context.transporteContatoEmergenciaTexto_('OCASA'),
+    'Telefone de Emerg\u00eancia (24H): +55 54 99909-1656'
+  );
+  assert.equal(
+    context.transporteContatoEmergenciaTexto_('DHL'),
+    'Telefone de Emerg\u00eancia (24H): +55 54 99909-1656'
+  );
+  assert.equal(context.transporteAplicarContatoEmergenciaPdf_({}, 'MARKEN', { ordem: ['doc'] }), 1);
+  assert.equal(writtenContact, 'Telefone de Emerg\u00eancia (24H): +55 54 99909-1656');
+  assert.match(source, /transporteAplicarContatoEmergenciaPdf_\(workingSS, courier, spec\)/);
+});
+
 test('automacao PINEX atualiza os dados completos da Commercial Invoice', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const automation = sourceBetween(source, 'function transporteAplicarAutomacoesTemperatura_(', 'function montarPayloadTransporteCodex(');
@@ -181,8 +341,20 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
   vm.runInContext(block, context);
 
   assert.throws(() => context.transporteValidarObrigatoriosWebApp_({}), /Paciente.*Protocolo.*Investigador.*Laboratorio de destino/);
+  assert.throws(() => context.transporteValidarObrigatoriosWebApp_({
+    paciente: 'Participante sem identificacao',
+    protocolo: 'Projeto Teste',
+    investigador: 'Investigador Teste',
+    destino: 'Lab Central Teste',
+    temperatura: 'CONGELADO',
+    courier: 'DHL',
+    horaEnvio: '08:00-12:00',
+    agendadoPor: 'Usuario Teste',
+    dataEnvio: '2026-07-20'
+  }), /Numero de Identificacao do paciente no cadastro de Participantes/);
   assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
     paciente: 'Participante Teste',
+    identificacaoParticipante: 'P-001',
     protocolo: 'Projeto Teste',
     investigador: 'Investigador Teste',
     destino: 'Lab Central Teste',
@@ -193,17 +365,17 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
     dataEnvio: '2026-07-20'
   }));
   assert.throws(() => context.transporteValidarObrigatoriosWebApp_({
-    paciente: 'Participante Teste', protocolo: 'Projeto Teste', investigador: 'Investigador Teste',
+    paciente: 'Participante Teste', identificacaoParticipante: 'P-001', protocolo: 'Projeto Teste', investigador: 'Investigador Teste',
     destino: 'Lab inexistente', temperatura: 'AMBIENTE', courier: 'DHL',
     horaEnvio: '08:00-12:00', agendadoPor: 'Usuario Teste', dataEnvio: '2026-07-20'
   }), /nao encontrado no cadastro LabCentral/);
   assert.throws(() => context.transporteValidarObrigatoriosWebApp_({
-    paciente: 'Participante Teste', protocolo: 'Projeto Teste', investigador: 'Investigador sem CREMERS',
+    paciente: 'Participante Teste', identificacaoParticipante: 'P-001', protocolo: 'Projeto Teste', investigador: 'Investigador sem CREMERS',
     destino: 'Lab Central Teste', temperatura: 'CONGELADO', courier: 'PINEX',
     horaEnvio: '08:00-12:00', agendadoPor: 'Usuario Teste', dataEnvio: '2026-07-20', awb: '12345678'
   }), /CREMERS do Investigador Principal/);
   assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
-    paciente: 'Participante Teste', protocolo: 'Projeto Teste', investigador: 'Investigador com CREMERS',
+    paciente: 'Participante Teste', identificacaoParticipante: 'P-001', protocolo: 'Projeto Teste', investigador: 'Investigador com CREMERS',
     destino: 'Lab Central Teste', temperatura: 'CONGELADO', courier: 'PINEX',
     horaEnvio: '08:00-12:00', agendadoPor: 'Usuario Teste', dataEnvio: '2026-07-20', awb: '12345678'
   }));

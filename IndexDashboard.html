@@ -129,6 +129,15 @@
     return head;
   }
 
+  function _topDashResults(keys, map, topCount) {
+    var pairs = keys.map(function(k) { return { label: k, value: map[k] || 0 }; });
+    if (pairs.length <= topCount) return pairs;
+    var head = pairs.slice(0, topCount);
+    var rest = pairs.slice(topCount).reduce(function(sum, p) { return sum + p.value; }, 0);
+    head.push({ label: 'Outros', value: rest });
+    return head;
+  }
+
   function _setChartHeight(canvasId, labelCount, perRow, minHeight, maxHeight) {
     var canvas = document.getElementById(canvasId);
     var wrap = canvas ? canvas.closest('.chart-wrap') : null;
@@ -467,17 +476,17 @@
     }
     var patMap  = _agg(projetosAtivos, 'patrocinador');
     var patKeys = _sortDesc(patMap);
-    var patPairs = _topDashPairs(patKeys, patMap, 10);
+    var patPairs = _topDashResults(patKeys, patMap, 15);
     if (patPairs.length) {
-      _setChartHeight('chartPat', patPairs.length, 28, 220, 380);
-      _barH('chartPat', patPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: patPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, patPairs.length), borderRadius: 4 }]);
+      _setChartHeight('chartPat', patPairs.length, 28, 220, 520);
+      _barH('chartPat', patPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: patPairs.map(function(p){ return p.value; }), backgroundColor: patPairs.map(function(p, idx){ return p.label === 'Outros' ? '#90a4ae' : DASH_CORES[idx % DASH_CORES.length]; }), borderRadius: 4 }]);
     }
     var ipMap  = _agg(projetosAtivos, 'investigador');
     var ipKeys = _sortDesc(ipMap);
-    var ipPairs = _topDashPairs(ipKeys, ipMap, 10);
+    var ipPairs = _topDashResults(ipKeys, ipMap, 15);
     if (ipPairs.length) {
-      _setChartHeight('chartIP', ipPairs.length, 28, 220, 380);
-      _barH('chartIP', ipPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: ipPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, ipPairs.length), borderRadius: 4 }]);
+      _setChartHeight('chartIP', ipPairs.length, 28, 220, 520);
+      _barH('chartIP', ipPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: ipPairs.map(function(p){ return p.value; }), backgroundColor: ipPairs.map(function(p, idx){ return p.label === 'Outros' ? '#90a4ae' : DASH_CORES[idx % DASH_CORES.length]; }), borderRadius: 4 }]);
     }
     var coordMap  = _agg(projetosAtivos, 'coordenador');
     var coordKeys = _sortDesc(coordMap);
@@ -870,6 +879,8 @@
     var node = canvas;
     for (var i = 0; i < 6 && node; i++, node = node.parentElement) {
       var title = node.querySelector ? node.querySelector('.chart-card-title') : null;
+      var titleText = title && title.querySelector ? title.querySelector('.dash-chart-title-text') : null;
+      if (titleText && dashboardPrintText(titleText)) return dashboardPrintText(titleText).replace(/^[^\wÀ-ÿ]+/, '');
       if (title && title !== canvas && dashboardPrintText(title)) return dashboardPrintText(title).replace(/^[^\wÀ-ÿ]+/, '');
       var prev = node.previousElementSibling;
       while (prev) {
@@ -888,5 +899,58 @@
     if (!el) return false;
     var style = window.getComputedStyle(el);
     return style.display !== 'none' && style.visibility !== 'hidden' && el.offsetWidth > 0 && el.offsetHeight > 0;
+  }
+
+  function copiarGraficoDashboard(canvasId, button) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || !canvas.width || !canvas.height) {
+      dashboardCopyChartFeedback(button, false, 'Gráfico indisponível.');
+      return Promise.resolve(false);
+    }
+    if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+      dashboardCopyChartFeedback(button, false, 'Este navegador não permite copiar imagens.');
+      return Promise.resolve(false);
+    }
+
+    var copyCanvas = document.createElement('canvas');
+    copyCanvas.width = canvas.width;
+    copyCanvas.height = canvas.height;
+    var ctx = copyCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, copyCanvas.width, copyCanvas.height);
+    ctx.drawImage(canvas, 0, 0);
+    if (button) button.disabled = true;
+
+    return new Promise(function(resolve) {
+      copyCanvas.toBlob(function(blob) {
+        if (!blob) {
+          dashboardCopyChartFeedback(button, false, 'Não foi possível preparar o gráfico.');
+          resolve(false);
+          return;
+        }
+        navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(function() {
+          dashboardCopyChartFeedback(button, true, 'Gráfico copiado.');
+          resolve(true);
+        }, function() {
+          dashboardCopyChartFeedback(button, false, 'Não foi possível copiar o gráfico.');
+          resolve(false);
+        });
+      }, 'image/png');
+    });
+  }
+
+  function dashboardCopyChartFeedback(button, ok, message) {
+    if (button) {
+      if (!button.getAttribute('data-default-html')) button.setAttribute('data-default-html', button.innerHTML);
+      button.disabled = false;
+      button.classList.toggle('is-success', Boolean(ok));
+      button.innerHTML = '<span class="material-symbols-outlined">' + (ok ? 'check' : 'error') + '</span><span>' + (ok ? 'Copiado!' : 'Tentar novamente') + '</span>';
+      window.setTimeout(function() {
+        button.classList.remove('is-success');
+        button.innerHTML = button.getAttribute('data-default-html') || '<span class="material-symbols-outlined">content_copy</span><span>Copiar gráfico</span>';
+      }, 2200);
+    }
+    if (ok && typeof snack === 'function') snack(message);
+    if (!ok && typeof snackErro === 'function') snackErro(message);
   }
   </script>
