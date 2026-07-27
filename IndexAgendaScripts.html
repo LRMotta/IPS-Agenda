@@ -3,6 +3,7 @@
   var _agendaDados = null;
   var _agendaParticipanteInfo = null;
   var _agendaEditId = '';
+  var _agendaBackupOrigemId = '';
   var _agendaInitStarted = false;
   var _agendaEventosLoadedAt = 0;
   var _agendaEventosRefreshing = false;
@@ -1993,6 +1994,7 @@
       nascimento = eventoAtual.nascimento || '';
     }
     return {
+      backupOrigemAgendaId: _agendaBackupOrigemId || '',
       data: v('agData'),
       dataFim: v('agDataFim'),
       hora: v('agHora'),
@@ -2234,6 +2236,7 @@
       var origemId = _agendaEditId || origem.id || '';
       if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
       limparAgendaForm();
+      _agendaBackupOrigemId = origemId;
 
       agendaSetTipoEnvioAmostras();
       onAgendaTipoChange();
@@ -2267,60 +2270,11 @@
       snack('Novo Envio de Amostras iniciado com os dados do backup. Informe data e horario para salvar.');
     }
 
-    function marcarBackupOrigemEIniciar() {
-      var origemId = _agendaEditId || origem.id || '';
-      if (!origemId || typeof appServerRun !== 'function') {
-        iniciarNovoEnvio();
-        return;
-      }
-      var btn = document.getElementById('btnCriarEnvioBackup');
-      var originalHtml = btn ? btn.innerHTML : '';
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Preparando...';
-      }
-      appServerRun({
-        method: 'atualizarStatusBackupAgenda',
-        args: [origemId, 'Adicionado \u00E0 Agenda', _agendaEditRecordVersion || ''],
-        onSuccess: function(res) {
-          if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = originalHtml;
-          }
-          if (res && res.conflito) {
-            snackErro(res.erro || 'Este agendamento foi alterado. Atualize a Agenda antes de criar o envio do backup.');
-            carregarAgendaEventos(true);
-            return;
-          }
-          if (res && res.erro) {
-            snackErro(res.erro);
-            return;
-          }
-          if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
-          if (res && res.editRecordVersion) _agendaEditEditableVersion = res.editRecordVersion;
-          var evento = (_agendaEventos || []).find(function(x) { return String(x.id || '') === String(origemId); });
-          if (evento) {
-            evento.backup = Object.assign({}, evento.backup || {}, { status: 'Adicionado \u00E0 Agenda' });
-            evento.recordVersion = (res && res.recordVersion) || evento.recordVersion;
-            evento.editRecordVersion = (res && res.editRecordVersion) || evento.editRecordVersion;
-          }
-          iniciarNovoEnvio();
-        },
-        onFailure: function(e) {
-          if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = originalHtml;
-          }
-          snackErro(typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message || e));
-        }
-      });
-    }
-
     if (typeof appConfirmNavigationIfDirty === 'function' &&
-        !appConfirmNavigationIfDirty('agendaCreatePanel', marcarBackupOrigemEIniciar)) {
+        !appConfirmNavigationIfDirty('agendaCreatePanel', iniciarNovoEnvio)) {
       return;
     }
-    marcarBackupOrigemEIniciar();
+    iniciarNovoEnvio();
   }
 
   function gerarTransporteAgendaCard(agendaId, slot, btnId) {
@@ -2775,6 +2729,7 @@
   }
 
   function limparAgendaForm() {
+    _agendaBackupOrigemId = '';
     ['agTipo','agParticipante','agProjeto','agMedico','agPrestador','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
@@ -4152,8 +4107,9 @@
     var ok = ['coletado','enviado','entregue','confirmado'].indexOf(agendaCourierStatusClass(c.status)) > -1;
     var btnId = 'btnCardTransp' + String(agendaId || '').replace(/\W/g, '') + String(slot || '').replace(/\W/g, '');
     var docBtn = agendaId && !backup ? '<button class="ag-c-doc-btn" id="' + esc(btnId) + '" type="button" onclick="event.stopPropagation();gerarTransporteAgendaCard(\'' + esc(agendaId) + '\',\'' + esc(slot) + '\',\'' + esc(btnId) + '\')"><span class="material-symbols-outlined">description</span> Gerar docs</button>' : '';
+    var statusHtml = agendaCourierStatusHtml(c, backup, naoAplicavel, ok);
     return '<div class="ag-c-card ' + (backup ? 'backup' : '') + '">' +
-      '<div class="ag-c-head"><span class="ag-c-num">' + esc(n) + '</span><span class="ag-c-brand">' + esc(c.nome || (backup ? 'Backup' : 'Transporte')) + '</span>' + docBtn + '<span class="ag-c-status ag-ch-' + agendaCourierStatusClass(c.status) + '"><span class="material-symbols-outlined">' + (naoAplicavel ? 'block' : ok ? 'check_circle' : 'pending') + '</span>' + esc(c.status || 'Pendente') + '</span></div>' +
+      '<div class="ag-c-head"><span class="ag-c-num">' + esc(n) + '</span><span class="ag-c-brand">' + esc(c.nome || (backup ? 'Backup' : 'Transporte')) + '</span>' + docBtn + statusHtml + '</div>' +
       '<div class="ag-c-body">' +
         '<div class="ag-c-col"><div class="ag-c-col-label"><span class="material-symbols-outlined">device_thermostat</span>Temperatura</div>' + (c.temperatura ? '<span class="ag-temp ' + agendaTempClass(c.temperatura) + '">' + esc(c.temperatura) + '</span>' : '<span class="ag-awb-pend">Nao informado</span>') + '</div>' +
         '<div class="ag-c-col"><div class="ag-c-col-label"><span class="material-symbols-outlined">science</span>Laboratório destino</div><div class="ag-mat-text">' + esc(c.destino || '-') + '</div></div>' +
@@ -4251,6 +4207,25 @@
 
   function agendaStatusClass(r) {
     return AgendaRules.visualClass(r);
+  }
+
+  function agendaCourierStatusHtml(c, backup, naoAplicavel, ok) {
+    c = c || {};
+    var ref = backup && c.agendamento;
+    var icon = naoAplicavel ? 'block' : ok ? 'check_circle' : 'pending';
+    var cls = 'ag-c-status ag-ch-' + agendaCourierStatusClass(c.status);
+    if (ref && ref.id && normAgenda(c.status) === normAgenda('Adicionado à Agenda')) {
+      var quando = [ref.data || '', ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
+      var title = 'Abrir agendamento' + (quando ? ' de ' + quando : '');
+      return '<button class="' + cls + ' ag-c-status-link" type="button" title="' + esc(title) + '" aria-label="' + esc(title) + '" onclick="event.stopPropagation();agendaAbrirAgendamentoVinculado(\'' + esc(ref.id) + '\')">' +
+        '<span class="material-symbols-outlined">event_available</span><span class="ag-c-status-copy"><span>' + esc(c.status || 'Adicionado à Agenda') + '</span>' +
+        (quando ? '<strong>' + esc(quando) + '</strong>' : '') + '</span><span class="material-symbols-outlined ag-c-status-open">open_in_new</span></button>';
+    }
+    return '<span class="' + cls + '"><span class="material-symbols-outlined">' + icon + '</span>' + esc(c.status || 'Pendente') + '</span>';
+  }
+
+  function agendaAbrirAgendamentoVinculado(agendaId) {
+    return abrirAgendaRegistroPorId(agendaId);
   }
 
   function agendaTipoVisualClass(r) {

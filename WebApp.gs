@@ -6279,13 +6279,14 @@ function salvarMedicamentoRecebido(payload) {
 // ============================================================================
 var AGENDA_CFG = {
   abaNomes: ['\uD83D\uDCC5 Agenda', 'Agenda'],
-  lastCol: 50,
+  lastCol: 51,
   col: {
     id: 1, data: 2, hora: 3, tipo: 4, status: 5, participante: 6,
     nasc: 7, idParticipante: 8, projeto: 9, braco: 10, visita: 11,
     medico: 12, procedimentos: 13, servTerc: 14, obs: 15,
     labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46,
-    poloTrial: 47, ecrf: 48, salaMonitoria: 49, carroRequerido: 50
+    poloTrial: 47, ecrf: 48, salaMonitoria: 49, carroRequerido: 50,
+    backupAgendaRef: 51
   },
   idx: {
     id: 0, data: 1, hora: 2, tipo: 3, status: 4, participante: 5,
@@ -6296,13 +6297,14 @@ var AGENDA_CFG = {
     c2: { nome: 23, temp: 24, status: 25, awb: 26, material: 27, destino: 37, matBio: 41 },
     c3: { nome: 28, temp: 29, status: 30, awb: 31, material: 32, destino: 38, matBio: 42 },
     cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43 },
-    reqStatus: 44, monitorName: 45, poloTrial: 46, ecrf: 47, salaMonitoria: 48, carroRequerido: 49
+    reqStatus: 44, monitorName: 45, poloTrial: 46, ecrf: 47, salaMonitoria: 48, carroRequerido: 49,
+    backupAgendaRef: 50
   }
 };
 
 var CFG = typeof CFG !== 'undefined' ? CFG : {
   abaNome: '\uD83D\uDCC5 Agenda',
-  lastCol: 50,
+  lastCol: 51,
   colTerc: 14,
   colGatilho: 16,
   colControle: 17,
@@ -6336,7 +6338,7 @@ function getAgendaSheetForRead_() {
 }
 
 function ensureAgendaDestinoLabColumns_(sh) {
-  var schemaCacheKey = 'AgendaSchemaEnsured:v3';
+  var schemaCacheKey = 'AgendaSchemaEnsured:v4';
   if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
     sh.insertColumnsAfter(sh.getMaxColumns(), AGENDA_CFG.lastCol - sh.getMaxColumns());
@@ -6355,7 +6357,8 @@ function ensureAgendaDestinoLabColumns_(sh) {
     { col: AGENDA_CFG.col.poloTrial, label: 'Polo_Trial_Concluido' },
     { col: AGENDA_CFG.col.ecrf, label: 'eCRF_Concluida' },
     { col: AGENDA_CFG.col.salaMonitoria, label: 'Sala_Monitoria' },
-    { col: AGENDA_CFG.col.carroRequerido, label: 'Carro_Requerido' }
+    { col: AGENDA_CFG.col.carroRequerido, label: 'Carro_Requerido' },
+    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' }
   ];
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
@@ -6816,6 +6819,10 @@ function salvarNovoEventoCompleto(dados) {
   dados = dados || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
+  var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
+  if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {
+    return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
+  }
   var policy = AgendaServerRules_.formPolicy(dados.tipo);
   var isMonitoria = policy.isMonitoring;
   var isPeriodo = policy.isOperationalPeriod;
@@ -6862,9 +6869,13 @@ function salvarNovoEventoCompleto(dados) {
       if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
     }
-    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
+    var resultadoPeriodo = { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
+    agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultadoPeriodo.id, datasPeriodo[0]);
+    return resultadoPeriodo;
   }
-  return _gravarLinhaEvento(agenda, d, dados, ss);
+  var resultado = _gravarLinhaEvento(agenda, d, dados, ss);
+  if (resultado && resultado.ok) agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d);
+  return resultado;
   });
 }
 
@@ -6873,6 +6884,10 @@ function salvarNovoEventoComFeriado(dados) {
   return codexWithDocumentLock_('salvarNovoEventoComFeriado', function() {
   dados = dados || {};
   var agenda = getAgendaSheet_();
+  var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
+  if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {
+    return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var policy = AgendaServerRules_.formPolicy(dados.tipo);
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -6897,12 +6912,16 @@ function salvarNovoEventoComFeriado(dados) {
       if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
     }
-    return { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
+    var resultadoPeriodo = { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
+    agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultadoPeriodo.id, datas[0]);
+    return resultadoPeriodo;
   }
   var d = _parseDateHora(dados.data, dados.hora);
   var erroRealizadoFuturoUnico = agendaRealizadoFuturoErro_(dados.status, d);
   if (erroRealizadoFuturoUnico) return { erro: erroRealizadoFuturoUnico };
-  return _gravarLinhaEvento(agenda, d, dados, ss);
+  var resultado = _gravarLinhaEvento(agenda, d, dados, ss);
+  if (resultado && resultado.ok) agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d);
+  return resultado;
   });
 }
 
@@ -8663,6 +8682,65 @@ function agendaSetBackupLinha_(agenda, linha, backup) {
     backup.status || '',
     materialSummary
   ]]);
+  if (normText_(backup.status) !== normText_('Adicionado à Agenda')) {
+    agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).clearContent();
+  }
+}
+
+function agendaRowNumberById_(agenda, agendaId) {
+  agendaId = String(agendaId || '').trim();
+  if (!agendaId || agenda.getLastRow() < 2) return 0;
+  var ids = agenda.getRange(2, AGENDA_CFG.col.id, agenda.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === agendaId) return i + 2;
+  }
+  return 0;
+}
+
+function agendaBackupAgendaRefFromCell_(value) {
+  if (!value) return null;
+  var ref = value;
+  if (typeof value === 'string') {
+    try {
+      ref = JSON.parse(value);
+    } catch (e) {
+      return null;
+    }
+  }
+  if (!ref || typeof ref !== 'object' || !String(ref.id || '').trim()) return null;
+  return {
+    id: String(ref.id || '').trim(),
+    data: String(ref.data || '').trim(),
+    dataIso: String(ref.dataIso || '').trim(),
+    hora: String(ref.hora || '').trim()
+  };
+}
+
+function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHora) {
+  origemId = String(origemId || '').trim();
+  destinoId = String(destinoId || '').trim();
+  if (!origemId || !destinoId) return null;
+  var linhaOrigem = agendaRowNumberById_(agenda, origemId);
+  if (!linhaOrigem) throw new Error('O agendamento de origem do backup não foi encontrado.');
+  var statusCell = agenda.getRange(linhaOrigem, AGENDA_CFG.idx.cb.status + 1);
+  var refCell = agenda.getRange(linhaOrigem, AGENDA_CFG.col.backupAgendaRef);
+  var statusAnterior = String(statusCell.getValue() || '');
+  var refAnterior = String(refCell.getValue() || '');
+  var ref = {
+    id: destinoId,
+    data: formatarDataSafe(dataHora),
+    dataIso: formatarDataIsoAgenda_(dataHora),
+    hora: formatAgendaHora_(dataHora)
+  };
+  var refJson = JSON.stringify(ref);
+  statusCell.setValue('Adicionado à Agenda');
+  refCell.setValue(refJson);
+  codexWriteAuditChanges_('Agenda', 'vincularBackupAoAgendamento', origemId, [
+    { field: 'Backup - Status', oldValue: statusAnterior, newValue: 'Adicionado à Agenda' },
+    { field: 'Backup - Agendamento', oldValue: refAnterior, newValue: refJson }
+  ], 'Backup vinculado ao novo agendamento ' + destinoId);
+  SpreadsheetApp.flush();
+  return ref;
 }
 
 function agendaSetTransporteExtraLinha_(agenda, linha, dados) {
@@ -8946,7 +9024,8 @@ function agendaRowToObject_(r, rowIndex) {
       status: String(r[i.cb.status] || ''),
       material: agendaMaterialSummaryFromJson_(r[i.cb.matBio], r[i.cb.material]),
       destino: String(r[i.cb.destino] || ''),
-      matBioJson: String(r[i.cb.matBio] || '')
+      matBioJson: String(r[i.cb.matBio] || ''),
+      agendamento: agendaBackupAgendaRefFromCell_(r[i.backupAgendaRef])
     }
   };
 }
