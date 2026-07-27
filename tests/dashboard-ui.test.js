@@ -12,11 +12,16 @@ test('rankings de patrocinador e investigador exibem os 15 principais resultados
   assert.match(dashboard, /head\.push\(\{ label: 'Outros', value: rest \}\);/);
 });
 
-test('os dois rankings oferecem cópia isolada do gráfico em PNG', () => {
+test('todos os gráficos do dashboard recebem cópia isolada em PNG', () => {
   const dashboard = readProjectFile('IndexDashboard.html');
   const content = readProjectFile('IndexDashboardContent.html');
+  const canvasIds = Array.from(content.matchAll(/<canvas id="([^"]+)"/g), (match) => match[1]);
+  assert.equal(canvasIds.length, 16);
+  assert.equal(new Set(canvasIds).size, canvasIds.length);
   assert.match(dashboard, /function copiarGraficoDashboard\(canvasId, button\)/);
   assert.match(dashboard, /new ClipboardItem\(\{ 'image\/png': blob \}\)/);
-  assert.match(content, /copiarGraficoDashboard\('chartPat', this\)/);
-  assert.match(content, /copiarGraficoDashboard\('chartIP', this\)/);
+  assert.match(dashboard, /querySelectorAll\('#page-dashboard canvas\[id\]'\)/);
+  assert.match(dashboard, /button\.setAttribute\('data-canvas-id', canvas\.id\)/);
+  assert.match(dashboard, /copiarGraficoDashboard\(canvas\.id, button\)/);
+  assert.match(dashboard, /bindDashboardChartCopyButtons\(\);/);
 });

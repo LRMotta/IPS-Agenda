@@ -498,6 +498,7 @@
     moverBlocoAgendaDashboard();
     renderDashboardAgenda(d.agendaResumo || {});
     renderDashboardEstoque(est);
+    bindDashboardChartCopyButtons();
   }
 
   function moverBlocoAgendaDashboard() {
@@ -793,6 +794,7 @@
           });
         }).observe(pg, { attributes: true, attributeFilter: ['class'] });
       }
+      bindDashboardChartCopyButtons();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _attachDashEvents);
     else _attachDashEvents();
@@ -936,6 +938,56 @@
           resolve(false);
         });
       }, 'image/png');
+    });
+  }
+
+  function dashboardChartTitleElement(canvas) {
+    var wrap = canvas && canvas.closest ? canvas.closest('.chart-wrap') : null;
+    var node = wrap ? wrap.previousElementSibling : null;
+    while (node) {
+      if (node.classList && node.classList.contains('chart-card-title')) return node;
+      node = node.previousElementSibling;
+    }
+    return null;
+  }
+
+  function dashboardChartTitleTextElement(title) {
+    var current = title ? title.querySelector('.dash-chart-title-text') : null;
+    if (current) return current;
+    var label = document.createElement('span');
+    label.className = 'dash-chart-title-text';
+    Array.prototype.slice.call(title.childNodes).forEach(function(node) {
+      var isIcon = node.nodeType === 1 && node.classList && node.classList.contains('material-symbols-outlined');
+      var isButton = node.nodeType === 1 && node.classList && node.classList.contains('dash-chart-copy');
+      if (!isIcon && !isButton && (node.nodeType !== 3 || String(node.textContent || '').trim())) label.appendChild(node);
+    });
+    var icon = title.querySelector('.material-symbols-outlined');
+    if (icon && icon.nextSibling) title.insertBefore(label, icon.nextSibling);
+    else title.appendChild(label);
+    return label;
+  }
+
+  function bindDashboardChartCopyButtons() {
+    var canvases = document.querySelectorAll('#page-dashboard canvas[id]');
+    Array.prototype.forEach.call(canvases, function(canvas) {
+      var title = dashboardChartTitleElement(canvas);
+      if (!title) return;
+      var label = dashboardChartTitleTextElement(title);
+      var button = title.querySelector('.dash-chart-copy');
+      if (!button) {
+        button = document.createElement('button');
+        button.className = 'dash-chart-copy';
+        button.type = 'button';
+        button.innerHTML = '<span class="material-symbols-outlined">content_copy</span><span>Copiar gráfico</span>';
+        title.appendChild(button);
+      }
+      button.setAttribute('data-canvas-id', canvas.id);
+      button.title = 'Copiar somente o gráfico';
+      button.setAttribute('aria-label', 'Copiar gráfico ' + dashboardPrintText(label));
+      if (button.getAttribute('data-copy-bound') !== '1') {
+        button.setAttribute('data-copy-bound', '1');
+        button.addEventListener('click', function() { copiarGraficoDashboard(canvas.id, button); });
+      }
     });
   }
 

@@ -2489,6 +2489,16 @@ function participanteProjetoCellHtml(participante) {
   return '<div class="row-name" style="font-size:13px;">' + esc(nome || '—') + '</div>' + codigoHtml + bracoHtml;
 }
 
+function participanteUltimaVisitaCellHtml(participante) {
+  participante = participante || {};
+  var visita = String(participante.ultimaVisita || '').trim() || '---';
+  var data = String(participante.ultimaVisitaData || '').trim();
+  var dataHtml = data
+    ? '<div style="font-size:11px;color:#9aa3b0;margin-top:3px;">' + esc(data) + '</div>'
+    : '';
+  return '<div class="row-name" style="font-size:13px;">' + esc(visita) + '</div>' + dataHtml;
+}
+
 function renderTabelaPart(lista) {
   var tb = document.getElementById('bodyParticipantes');
   if (!lista.length) {
@@ -2499,7 +2509,6 @@ function renderTabelaPart(lista) {
     var ini  = (p.nome||'?')[0].toUpperCase();
     var pid  = 'par-row-'+idx;
     var nascFmt = formatDateBr(p.dataNascimento);
-    var ultimaVisitaFmt = String(p.ultimaVisita || '');
     var nascIdadeHtml = (nascFmt || p.idade)
       ? esc(nascFmt || '—') + (p.idade ? '<br><span style="font-size:0.85em;color:#666;">' + esc(p.idade) + ' anos</span>' : '')
       : '<span style="color:#9aa3b0;">—</span>';
@@ -2511,7 +2520,7 @@ function renderTabelaPart(lista) {
       +'<td style="color:#5f6b7c;line-height:1.25;">'+nascIdadeHtml+'</td>'
       +'<td>'+participanteProjetoCellHtml(p)+'</td>'
       +'<td>'+chipStatus(p.status||'—')+'</td>'
-      +'<td style="color:#5f6b7c;">'+esc(ultimaVisitaFmt || '---')+'</td>'
+      +'<td style="color:#5f6b7c;">'+participanteUltimaVisitaCellHtml(p)+'</td>'
       +'<td style="text-align:right;"><div class="action-btns">'
       +'<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="'+idx+'">'
       +'<span class="material-symbols-outlined">edit</span></button>'

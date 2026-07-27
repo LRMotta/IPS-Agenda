@@ -99,3 +99,33 @@ test('tabela de participantes exibe nome e codigo do projeto como no cadastro de
   assert.match(source, /\+\'<td>\'\+participanteProjetoCellHtml\(p\)\+\'<\/td>\'/);
   assert.match(source, /projetoCadastro && projetoCadastro\.codigo/);
 });
+
+test('listagem de participantes recebe e exibe a data da ultima visita realizada', () => {
+  const serverSource = readProjectFile('WebApp.gs');
+  const getParticipantesBlock = sourceBetween(serverSource, 'function getParticipantes()', 'function getParticipanteFormConfig()');
+  const serverContext = vm.createContext({
+    getCodexSheetDataByName_: () => [
+      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
+      ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo']
+    ],
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { formatDate: () => '01/01/2000' },
+    normText_: (value) => String(value || '').trim().toLowerCase(),
+    getUltimasVisitasParticipantesAgendaMap_: () => ({
+      'pessoa a': { data: '21/07/2026', visita: 'Visit 3 Week 3' }
+    })
+  });
+  vm.runInContext(getParticipantesBlock, serverContext);
+  const participantes = serverContext.getParticipantes();
+  assert.equal(participantes[0].ultimaVisita, 'Visit 3 Week 3');
+  assert.equal(participantes[0].ultimaVisitaData, '21/07/2026');
+
+  const clientSource = readProjectFile('IndexCoreScripts.html');
+  const cellBlock = sourceBetween(clientSource, 'function participanteUltimaVisitaCellHtml(', 'function renderTabelaPart(');
+  const clientContext = vm.createContext({ esc: (value) => String(value || '') });
+  vm.runInContext(cellBlock, clientContext);
+  const html = clientContext.participanteUltimaVisitaCellHtml(participantes[0]);
+  assert.match(html, /Visit 3 Week 3/);
+  assert.match(html, /21\/07\/2026/);
+  assert.ok(html.indexOf('Visit 3 Week 3') < html.indexOf('21/07/2026'));
+});
