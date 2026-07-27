@@ -1348,20 +1348,81 @@ function transporteProjetoAliases_(projeto) {
   return aliases;
 }
 
+function transporteParticipanteIdEstavel_(participante) {
+  participante = participante || {};
+  return String(participante.idParticipante || participante.numId || participante.id || '').trim();
+}
+
+function transporteEncontrarParticipante_(participantes, referencia) {
+  participantes = participantes || [];
+  referencia = referencia || {};
+  var idEstavel = String(
+    referencia.identificacaoParticipante || referencia.idParticipante || referencia.numId || ''
+  ).trim();
+  if (idEstavel) {
+    var idKey = transporteParticipantKey_(idEstavel);
+    for (var i = 0; i < participantes.length; i++) {
+      if (transporteParticipantKey_(transporteParticipanteIdEstavel_(participantes[i])) === idKey) {
+        return participantes[i];
+      }
+    }
+    return null;
+  }
+
+  var nome = String(referencia.paciente || referencia.participante || referencia.nome || '').trim();
+  if (!nome) return null;
+  var nomeKey = transporteParticipantKey_(nome);
+  for (var j = 0; j < participantes.length; j++) {
+    if (transporteParticipantKey_(participantes[j].nome || participantes[j].participante) === nomeKey) {
+      return participantes[j];
+    }
+  }
+  return null;
+}
+
+function transporteAtualizarRegistroPorAgenda_(registro) {
+  registro = registro || {};
+  var idAgenda = String(registro.idAgenda || '').trim();
+  if (!idAgenda) return registro;
+  try {
+    var evento = buscarAgendaEventoPorIdTransp_(idAgenda) || {};
+    var referencia = {
+      identificacaoParticipante: evento.idParticipante || registro.identificacaoParticipante || registro.idParticipante || '',
+      paciente: evento.participante || registro.paciente || registro.participante || ''
+    };
+    var participantes = typeof getParticipantes === 'function' ? (getParticipantes() || []) : [];
+    var participante = transporteEncontrarParticipante_(participantes, referencia);
+    var projeto = String(evento.projeto || (participante && participante.projeto) || registro.protocolo || '').trim();
+    var investigador = String(
+      transporteInvestigadorPorProjeto_(projeto) ||
+      evento.medico ||
+      (participante && (participante.investigador || participante.medico)) ||
+      registro.investigador || ''
+    ).trim();
+
+    registro.protocolo = transporteProjetoDisplay_(projeto) || registro.protocolo || '';
+    registro.investigador = investigador || registro.investigador || '';
+    registro.identificacaoParticipante = String(
+      evento.idParticipante ||
+      (participante && transporteParticipanteIdEstavel_(participante)) ||
+      registro.identificacaoParticipante ||
+      registro.idParticipante || ''
+    ).trim();
+    if (participante && participante.nome) registro.paciente = String(participante.nome).trim();
+  } catch (e) {
+    Logger.log('Dados vinculados da Agenda nao atualizados no Transporte: ' + e.message);
+  }
+  return registro;
+}
+
 function transporteDerivarDadosParticipante_(payload) {
   payload = payload || {};
   var nome = String(payload.paciente || payload.participante || '').trim();
-  if (!nome || typeof getParticipantes !== 'function') return payload;
+  var idEstavel = String(payload.identificacaoParticipante || payload.idParticipante || payload.numId || '').trim();
+  if ((!nome && !idEstavel) || typeof getParticipantes !== 'function') return payload;
   try {
     var participantes = getParticipantes() || [];
-    var key = transporteParticipantKey_(nome);
-    var participante = null;
-    for (var i = 0; i < participantes.length; i++) {
-      if (transporteParticipantKey_(participantes[i].nome || participantes[i].participante) === key) {
-        participante = participantes[i];
-        break;
-      }
-    }
+    var participante = transporteEncontrarParticipante_(participantes, payload);
     if (!participante) {
       return payload;
     }
@@ -1699,7 +1760,7 @@ function transporteIsValidOcasaAwb_(awb) {
 }
 
 function getTransporteBootstrap() {
-  var registro = transporteReadRegistro_();
+  var registro = transporteAtualizarRegistroPorAgenda_(transporteReadRegistro_());
   var options = transporteReadOptions_({ includeParticipants: false });
   var ativos = registro.materiais.filter(function(m) { return m.ativo; });
   var totalTubos = ativos.reduce(function(sum, m) { return sum + (Number(m.tubos) || 0); }, 0);
@@ -1755,10 +1816,12 @@ function salvarTransporte(payload, options) {
   var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
   var folhaDhl = transporteGetSheet_(ss, 'folhaDhlPinex', false);
   var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
-  payload = transporteDerivarDadosParticipante_(payload || {});
+  payload = payload || {};
   options = options || {};
-  if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
   transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
+  payload = transporteAtualizarRegistroPorAgenda_(payload);
+  payload = transporteDerivarDadosParticipante_(payload);
+  if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
 
   var campos = [
     { cell: 'C3', value: payload.paciente || '' },
@@ -1930,6 +1993,9 @@ function transporteValidarObrigatoriosWebApp_(payload) {
   payload = payload || {};
   var missing = [];
   if (!String(payload.paciente || '').trim()) missing.push('Paciente');
+  if (String(payload.paciente || '').trim() && !String(payload.identificacaoParticipante || payload.idParticipante || '').trim()) {
+    missing.push('Numero de Identificacao do paciente no cadastro de Participantes');
+  }
   if (!String(payload.protocolo || '').trim()) missing.push('Protocolo');
   if (!String(payload.investigador || '').trim()) missing.push('Investigador');
   if (!String(payload.destino || '').trim()) missing.push('Laboratorio de destino');
@@ -4099,6 +4165,52 @@ function transporteCodexEmailFallbackHtml_(projeto, dataEnvio, laboratorio, awb,
   return html + '</table><p style="margin:22px 0 22px 0;line-height:1.75;">Os documentos necess\u00e1rios para o agendamento est\u00e3o anexados a este e-mail.</p>';
 }
 
+var TRANSPORTE_CONTATO_EMERGENCIA_PINEX_ = 'telefone de emerg\u00eancia (24H): 55 11 97095-3241 - thais thabata leite lopes';
+var TRANSPORTE_CONTATO_EMERGENCIA_CENTRO_ = 'Telefone de Emerg\u00eancia (24H): +55 54 99909-1656';
+
+function transporteContatoEmergenciaTexto_(courier) {
+  return transporteNormalizeCourierFromCodex_(courier) === 'PINEX'
+    ? TRANSPORTE_CONTATO_EMERGENCIA_PINEX_
+    : TRANSPORTE_CONTATO_EMERGENCIA_CENTRO_;
+}
+
+function transporteAplicarContatoEmergenciaPdf_(ss, courier, spec) {
+  if (!ss) return 0;
+  var contato = transporteContatoEmergenciaTexto_(courier);
+  var sheetKeys = spec && spec.ordem ? spec.ordem : [];
+  var sheetsSeen = {};
+  var atualizadas = 0;
+
+  sheetKeys.forEach(function(key) {
+    var sheet = transporteCodexGetSheet_(ss, key, false);
+    if (!sheet) return;
+    var sheetId = String(sheet.getSheetId());
+    if (sheetsSeen[sheetId]) return;
+    sheetsSeen[sheetId] = true;
+
+    var dataRange = sheet.getDataRange();
+    var values = dataRange.getDisplayValues();
+    for (var row = 0; row < values.length; row++) {
+      for (var col = 0; col < values[row].length; col++) {
+        var digits = String(values[row][col] || '').replace(/\D/g, '');
+        if (digits.indexOf('970953241') === -1 && digits.indexOf('999091656') === -1) continue;
+        var cell = dataRange.getCell(row + 1, col + 1);
+        if (cell.isPartOfMerge()) {
+          var merged = cell.getMergedRanges();
+          if (merged.length) cell = merged[0].getCell(1, 1);
+        }
+        cell.setValue(contato);
+        atualizadas++;
+      }
+    }
+  });
+
+  if (!atualizadas) {
+    Logger.log('Contato de emergencia nao localizado nas abas do PDF para a courier ' + String(courier || '-'));
+  }
+  return atualizadas;
+}
+
 function imprimirTodasAbas(options) {
   var workingCopyFile = null;
   try {
@@ -4181,6 +4293,7 @@ function imprimirTodasAbas(options) {
     var pastaDestino = transportePdfDestinationFolder_(protocolo);
     workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy(nomeArquivo + ' - TEMP_PDF', pastaDestino);
     var workingSS = transportePdfOpenWorkingCopy_(workingCopyFile.getId());
+    transporteAplicarContatoEmergenciaPdf_(workingSS, courier, spec);
     transportePdfAnonimizarParticipante_(workingSS, payloadFallback, ss);
     transportePdfOcultarMetadadosInternos_(workingSS);
     transportePdfPruneDuplicateAndOrder_(workingSS, spec);

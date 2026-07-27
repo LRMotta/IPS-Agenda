@@ -2,7 +2,16 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile } = require('./helpers/load-app-script');
+const vm = require('node:vm');
+const { readProjectFile, runFile } = require('./helpers/load-app-script');
+
+function sourceBetween(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(start, -1, startMarker);
+  assert.notEqual(end, -1, endMarker);
+  return source.slice(start, end);
+}
 
 function rules() {
   return runFile('CadastroRules.gs').CadastroRules_;
@@ -70,4 +79,23 @@ test('atualizacao do participante ignora o proprio registro', () => {
   const cadastro = rules();
   assert.equal(cadastro.findParticipantDuplicate({ id: '1', projeto: 'Estudo Aurora', idParticipante: 'P-001', cpf: '12345678900' }, participantRows), null);
   assert.equal(cadastro.findParticipantDuplicate({ id: '1', projeto: 'Projeto Horizonte', idParticipante: 'P-001' }, participantRows).field, 'idParticipante');
+});
+
+test('tabela de participantes exibe nome e codigo do projeto como no cadastro de projetos', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function participanteProjetoCellHtml(', 'function renderTabelaPart(');
+  const context = vm.createContext({
+    esc: (value) => String(value || ''),
+    encontrarProjetoParticipante: (value) => value === 'SKYLINE-UC'
+      ? { nome: 'SKYLINE-UC', codigo: 'SPY123-201' }
+      : null
+  });
+  vm.runInContext(block, context);
+
+  const html = context.participanteProjetoCellHtml({ projeto: 'SKYLINE-UC', braco: 'Braço A' });
+  assert.match(html, /SKYLINE-UC/);
+  assert.match(html, /SPY123-201/);
+  assert.match(html, /Bra&ccedil;o: Braço A/);
+  assert.match(source, /\+\'<td>\'\+participanteProjetoCellHtml\(p\)\+\'<\/td>\'/);
+  assert.match(source, /projetoCadastro && projetoCadastro\.codigo/);
 });

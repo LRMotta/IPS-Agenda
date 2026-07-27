@@ -772,6 +772,14 @@
         }).join('');
     }
 
+    function sortRowsByText(rows, valueKey) {
+      return (rows || []).slice().sort(function(a, b) {
+        var aValue = String(valueKey ? (a && a[valueKey]) : a || '').trim();
+        var bValue = String(valueKey ? (b && b[valueKey]) : b || '').trim();
+        return aValue.localeCompare(bValue, 'pt-BR', { sensitivity: 'base', numeric: true });
+      });
+    }
+
     function fillSelectRows(id, rows, valueKey, selected, placeholder) {
       var current = document.getElementById(id);
       if (current && current.tagName !== 'SELECT') {
@@ -917,7 +925,7 @@
           state.options.participantesLoaded = rows.length > 0;
           state.options.participantesLoading = false;
           if (rows.length) window._transporteParticipantes = rows;
-          fillSelectRows('paciente', state.options.participantes, 'nome', document.getElementById('paciente').value, 'Selecione o paciente');
+          fillSelectRows('paciente', sortRowsByText(state.options.participantes, 'nome'), 'nome', document.getElementById('paciente').value, 'Selecione o paciente');
           applyParticipantSelection({ loadCe: false });
         })
         .withFailureHandler(function(e) {
@@ -969,7 +977,7 @@
       }
       selectedTemp = r.temperatura || (o.temperaturas || [])[0] || '';
       selectedCourier = canonicalCourier(r.courier || (o.couriers || [])[0] || '');
-      fillSelectRows('paciente', o.participantes || [], 'nome', r.paciente || '', 'Selecione o paciente');
+      fillSelectRows('paciente', sortRowsByText(o.participantes || [], 'nome'), 'nome', r.paciente || '', 'Selecione o paciente');
       fillSelectRows('destino', o.destinos || [], 'nome', r.destino || '', 'Selecione o laboratório');
       ['protocolo','investigador','dataColeta','dataEnvio','awb','pinexColeta','observacoes'].forEach(function(id) {
         document.getElementById(id).value = r[id] || '';
@@ -987,6 +995,7 @@
       applyParticipantSelection({ loadCe: false });
       renderMaterials(r.materiais || []);
       renderAuthNotice();
+      loadParticipantsOptions();
       if (!opts.skipCe) loadCeStatus(false);
     }
 
@@ -1016,9 +1025,27 @@
 
     function selectedParticipantInfo() {
       var nome = norm(document.getElementById('paciente').value);
-      return (state.options.participantes || []).filter(function(p) {
+      var participantes = (state.options && state.options.participantes) || [];
+      var registro = (state && state.registro) || {};
+      var registroNome = norm(registro.paciente || '');
+      var idEstavel = norm(registro.identificacaoParticipante || registro.idParticipante || '');
+      if (idEstavel && nome && nome === registroNome) {
+        var porId = participantes.filter(function(p) {
+          return norm(p.idParticipante || p.numId || p.id || '') === idEstavel;
+        })[0];
+        if (porId) return porId;
+      }
+      return participantes.filter(function(p) {
         return norm(p.nome) === nome;
       })[0] || {};
+    }
+
+    function selectedParticipantIdentification() {
+      var info = selectedParticipantInfo();
+      var idCadastro = String(info.idParticipante || info.numId || '').trim();
+      if (state.options && state.options.participantesLoaded) return idCadastro;
+      var registro = (state && state.registro) || {};
+      return idCadastro || String(registro.identificacaoParticipante || registro.idParticipante || '').trim();
     }
 
     function applyParticipantSelection(opts) {
@@ -1269,7 +1296,7 @@
         temperatura: selectedTemp,
         dataColeta: document.getElementById('dataColeta').value,
         dataEnvio: document.getElementById('dataEnvio').value,
-        identificacaoParticipante: selectedParticipantInfo().idParticipante || '',
+        identificacaoParticipante: selectedParticipantIdentification(),
         horaEnvio: document.getElementById('horaEnvio').value,
         courier: selectedCourier,
         destino: document.getElementById('destino').value,
@@ -1342,6 +1369,7 @@
         }
       }
       if (!p.paciente) issues.push({ type:'danger', text:'Paciente não informado.' });
+      if (p.paciente && !String(p.identificacaoParticipante || '').trim()) issues.push({ type:'danger', text:'Nº de Identificação do paciente não preenchido no cadastro do participante.' });
       if (!p.protocolo) issues.push({ type:'danger', text:'Protocolo não informado.' });
       if (!p.investigador) issues.push({ type:'danger', text:'Investigador não informado.' });
       if (!p.destino) issues.push({ type:'danger', text:'Laboratório de destino não informado.' });
@@ -1452,6 +1480,7 @@
       var p = collectPayload();
       var out = [];
       if (!String(p.paciente || '').trim()) out.push('Paciente');
+      if (String(p.paciente || '').trim() && !String(p.identificacaoParticipante || '').trim()) out.push('Nº de Identificação do paciente');
       if (!String(p.protocolo || '').trim()) out.push('Protocolo');
       if (!String(p.investigador || '').trim()) out.push('Investigador');
       if (!String(p.destino || '').trim()) out.push('Laboratório de destino');
@@ -1468,6 +1497,7 @@
     function transportRequiredFieldMap() {
       return {
         'Paciente': 'paciente',
+        'Nº de Identificação do paciente': 'paciente',
         'Protocolo': 'protocolo',
         'Investigador': 'investigador',
         'LaboratÃ³rio de destino': 'destino',

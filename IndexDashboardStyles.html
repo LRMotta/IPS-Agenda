@@ -14,6 +14,13 @@
     .dash-period-chip .material-symbols-outlined{font-size:15px}
     .chart-card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-faint);margin-bottom:12px;display:flex;align-items:center;gap:6px}
     .chart-card-title .material-symbols-outlined{font-size:15px;color:var(--primary)}
+    .dash-chart-title-text{flex:1 1 220px}
+    .dash-chart-copy{flex:0 0 auto;margin-left:auto;min-height:30px;display:inline-flex;align-items:center;gap:5px;border:1px solid #d7dee8;border-radius:var(--r-sm);background:#fff;color:var(--primary);font:600 11px/1 Roboto,sans-serif;text-transform:none;letter-spacing:0;padding:0 9px;cursor:pointer;transition:background .16s ease,border-color .16s ease,color .16s ease}
+    .dash-chart-copy:hover{background:#f7faff;border-color:#c5d5fb}
+    .dash-chart-copy:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    .dash-chart-copy:disabled{cursor:wait;opacity:.7}
+    .dash-chart-copy.is-success{background:#e8f5e9;border-color:#a5d6a7;color:#2e7d32}
+    .dash-chart-copy .material-symbols-outlined{font-size:16px;color:currentColor}
     .chart-wrap{position:relative}
     .dash-kpi{background:var(--surface);border:1px solid #e8edf8;border-radius:var(--r-lg);padding:18px 20px}
     .dash-kpi-clickable{cursor:pointer;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}
@@ -45,6 +52,7 @@
       #page-dashboard .chart-card{padding:9px!important;margin-bottom:8px!important}
       #page-dashboard .chart-card-title{font-size:8px!important;margin-bottom:6px!important;letter-spacing:.6px!important;color:#374151!important}
       #page-dashboard .chart-card-title .material-symbols-outlined{font-size:12px!important}
+      #page-dashboard .dash-chart-copy{display:none!important}
       #page-dashboard .chart-wrap{height:135px!important;min-height:0!important;max-height:150px!important;break-inside:avoid}
       #page-dashboard canvas{max-width:100%!important}
     }
