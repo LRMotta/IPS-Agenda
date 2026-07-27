@@ -57,8 +57,15 @@ try {
   $alreadyApproved = $sourceFullSha -eq $originMainSha
 
   if ($alreadyApproved) {
-    $prNumber = (& $gh api "repos/$repo/commits/$sourceFullSha/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | .[0].number').Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $prNumber) {
+    $pullsJson = & $gh api "repos/$repo/commits/$sourceFullSha/pulls"
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Falha ao consultar as Pull Requests associadas ao commit atual.'
+    }
+    $approvedPull = @(($pullsJson -join [Environment]::NewLine) | ConvertFrom-Json) |
+      Where-Object { $_.merged_at -and $_.base.ref -eq 'main' } |
+      Select-Object -First 1
+    $prNumber = if ($approvedPull) { [string]$approvedPull.number } else { '' }
+    if (-not $prNumber) {
       throw 'O commit atual ja esta na main remota, mas nenhuma Pull Request aprovada foi localizada.'
     }
     & $gh pr checks $prNumber --repo $repo --required
