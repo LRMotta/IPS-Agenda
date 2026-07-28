@@ -1353,6 +1353,25 @@ function transporteParticipanteIdEstavel_(participante) {
   return String(participante.idParticipante || participante.numId || participante.id || '').trim();
 }
 
+function transporteReadParticipantesDireto_() {
+  if (typeof getCodexSheetDataByName_ === 'function') {
+    var rows = getCodexSheetDataByName_('Participantes') || [];
+    return rows.slice(1).filter(function(r) {
+      return r[0] !== '' && r[0] !== undefined && r[0] !== null;
+    }).map(function(r) {
+      return {
+        id: String(r[0] || '').trim(),
+        nome: String(r[1] || '').trim(),
+        idParticipante: String(r[4] || '').trim(),
+        projeto: String(r[5] || '').trim(),
+        braco: String(r[6] || '').trim(),
+        status: String(r[8] || '').trim()
+      };
+    });
+  }
+  return typeof getParticipantes === 'function' ? (getParticipantes() || []) : [];
+}
+
 function transporteNomeDivergeUmCaractere_(a, b) {
   a = transporteParticipantKey_(a);
   b = transporteParticipantKey_(b);
@@ -1452,7 +1471,7 @@ function transporteAtualizarRegistroPorAgenda_(registro) {
       paciente: evento.participante || registro.paciente || registro.participante || '',
       protocolo: evento.projeto || registro.protocolo || registro.projeto || ''
     };
-    var participantes = typeof getParticipantes === 'function' ? (getParticipantes() || []) : [];
+    var participantes = transporteReadParticipantesDireto_();
     var participante = transporteEncontrarParticipante_(participantes, referencia);
     var projeto = String(evento.projeto || (participante && participante.projeto) || registro.protocolo || '').trim();
     var investigador = String(
@@ -1481,9 +1500,9 @@ function transporteDerivarDadosParticipante_(payload) {
   payload = payload || {};
   var nome = String(payload.paciente || payload.participante || '').trim();
   var idEstavel = String(payload.identificacaoParticipante || payload.idParticipante || payload.numId || '').trim();
-  if ((!nome && !idEstavel) || typeof getParticipantes !== 'function') return payload;
+  if (!nome && !idEstavel) return payload;
   try {
-    var participantes = getParticipantes() || [];
+    var participantes = transporteReadParticipantesDireto_();
     var participante = transporteEncontrarParticipante_(participantes, payload);
     if (!participante) {
       return payload;
@@ -1582,9 +1601,8 @@ function transporteWriteCachedJson_(key, value, seconds) {
 function transporteReadParticipantesOptions_() {
   var participantes = [];
   var investigadoresPorProjeto = transporteProjetoInvestigadorMap_();
-  if (typeof getParticipantes === 'function') {
-    try {
-      participantes = (getParticipantes() || []).map(function(p) {
+  try {
+      participantes = transporteReadParticipantesDireto_().map(function(p) {
         var projeto = String(p.projeto || '').trim();
         return {
           nome: String(p.nome || p.participante || '').trim(),
@@ -1594,10 +1612,9 @@ function transporteReadParticipantesOptions_() {
           status: String(p.status || '').trim()
         };
       }).filter(function(p) { return p.nome; });
-    } catch (ePart) {
-      Logger.log('Participantes nao carregados no Transporte: ' + ePart.message);
-      return [];
-    }
+  } catch (ePart) {
+    Logger.log('Participantes nao carregados no Transporte: ' + ePart.message);
+    return [];
   }
   return participantes;
 }
