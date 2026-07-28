@@ -713,6 +713,21 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="confirmPartDuplicate">
+  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmPartDuplicateTitle" aria-describedby="confirmPartDuplicateMsg">
+    <div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff4e5;color:#b06000;margin-bottom:12px;">
+      <span class="material-symbols-outlined">person_alert</span>
+    </div>
+    <h3 id="confirmPartDuplicateTitle">Participante já cadastrado</h3>
+    <p id="confirmPartDuplicateMsg">Já existe um participante cadastrado com este nome.</p>
+    <p id="confirmPartDuplicateDetails" style="display:none;background:#f6f8ff;border:1px solid #e0e6f0;border-radius:8px;padding:9px 10px;color:var(--text);font-weight:500;"></p>
+    <div class="confirm-actions">
+      <button class="btn-txt" onclick="fecharOverlay('confirmPartDuplicate')">Revisar cadastro</button>
+      <button class="btn-save" id="btnConfirmPartDuplicate" style="width:auto;padding:9px 18px;margin-top:0">Cadastrar mesmo assim</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="confirmUnsaved">
   <div class="confirm-box">
     <h3>Altera&ccedil;&otilde;es n&atilde;o salvas</h3>

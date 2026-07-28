@@ -2747,7 +2747,27 @@ function atualizarParticipanteIdObrigatorio() {
   return required;
 }
 
-function salvarPartApp() {
+function abrirConfirmacaoNomeParticipanteDuplicado(result) {
+  result = result || {};
+  var existing = result.existing || {};
+  document.getElementById('confirmPartDuplicateTitle').textContent = result.title || 'Participante já cadastrado';
+  document.getElementById('confirmPartDuplicateMsg').textContent = result.message || 'Já existe um participante cadastrado com este nome.';
+  var details = [
+    existing.idParticipante ? 'Nº de identificação: ' + existing.idParticipante : '',
+    existing.projeto ? 'Protocolo: ' + existing.projeto : ''
+  ].filter(Boolean).join(' · ');
+  var detailsEl = document.getElementById('confirmPartDuplicateDetails');
+  detailsEl.textContent = details;
+  detailsEl.style.display = details ? 'block' : 'none';
+  document.getElementById('btnConfirmPartDuplicate').onclick = function() {
+    fecharOverlay('confirmPartDuplicate');
+    salvarPartApp({ confirmarNomeDuplicado: true });
+  };
+  abrirOverlay('confirmPartDuplicate');
+}
+
+function salvarPartApp(opts) {
+  opts = opts || {};
   var nome=document.getElementById('ptNome').value.trim();
   var idPart=document.getElementById('ptId').value.trim();
   var projeto=document.getElementById('ptProjeto').value.trim();
@@ -2770,7 +2790,8 @@ function salvarPartApp() {
     braco: document.getElementById('ptBraco').value.trim(),
     status: status,
     telefone: document.getElementById('ptTelefone').value.trim(),
-    observacoes: document.getElementById('ptObs').value.trim()
+    observacoes: document.getElementById('ptObs').value.trim(),
+    confirmarNomeDuplicado: opts.confirmarNomeDuplicado === true
   };
   appSetButtonBusy(btn, true);
   appSetStatus('statusPart', 'Processando...');
@@ -2780,6 +2801,10 @@ function salvarPartApp() {
     onSuccess: function(r){
       appSetButtonBusy(btn, false);
       appSetStatus('statusPart', '');
+      if (r && r.requiresNameConfirmation) {
+        abrirConfirmacaoNomeParticipanteDuplicado(r);
+        return;
+      }
       fecharOverlay('modalParticipante');
       snack(r);
       carregarParticipantes(true);

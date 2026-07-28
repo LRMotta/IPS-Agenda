@@ -81,6 +81,24 @@ test('atualizacao do participante ignora o proprio registro', () => {
   assert.equal(cadastro.findParticipantDuplicate({ id: '1', projeto: 'Projeto Horizonte', idParticipante: 'P-001' }, participantRows).field, 'idParticipante');
 });
 
+test('nome repetido gera alerta, exceto para o proprio cadastro', () => {
+  const cadastro = rules();
+  const duplicate = cadastro.findParticipantNameDuplicate({ nome: 'Pessoa A' }, participantRows);
+  assert.equal(duplicate.id, '1');
+  assert.equal(duplicate.idParticipante, 'P-001');
+  assert.equal(cadastro.findParticipantNameDuplicate({ id: '1', nome: 'Pessoa A' }, participantRows), null);
+});
+
+test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  assert.match(client, /r && r\.requiresNameConfirmation/);
+  assert.match(client, /salvarPartApp\(\{ confirmarNomeDuplicado: true \}\)/);
+  assert.match(modal, /Participante já cadastrado/);
+  assert.match(modal, /Revisar cadastro/);
+  assert.match(modal, /Cadastrar mesmo assim/);
+});
+
 test('tabela de participantes exibe nome e codigo do projeto como no cadastro de projetos', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const block = sourceBetween(source, 'function participanteProjetoCellHtml(', 'function renderTabelaPart(');

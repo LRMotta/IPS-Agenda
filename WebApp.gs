@@ -3546,6 +3546,15 @@ function salvarDadosParticipante(d) {
       ? 'Já existe um participante cadastrado com este CPF.'
       : 'Já existe um participante com este ID vinculado ao mesmo projeto.');
   }
+  var nomeDuplicado = CadastroRules_.findParticipantNameDuplicate(d, rows);
+  if (nomeDuplicado && d.confirmarNomeDuplicado !== true) {
+    return {
+      requiresNameConfirmation: true,
+      title: 'Participante já cadastrado',
+      message: 'Já existe um participante cadastrado com este nome. Revise os dados antes de continuar. Um novo cadastro é recomendado somente quando o participante recebeu um novo número de identificação/triagem ou passou a participar de outro protocolo.',
+      existing: nomeDuplicado
+    };
+  }
 
   function parseDate(s) {
     if (!s) return '';
