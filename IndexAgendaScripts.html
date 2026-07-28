@@ -1326,6 +1326,8 @@
     if (monitorRequired) monitorRequired.style.display = isMonitoria ? '' : 'none';
     var salaRequired = document.getElementById('agSalaRequired');
     if (salaRequired) salaRequired.style.display = isMonitoria ? '' : 'none';
+    var medicoRequired = document.getElementById('agMedicoRequired');
+    if (medicoRequired) medicoRequired.style.display = policy.requiresDoctor ? '' : 'none';
     var ocultarEventoGeral = policy.hideGeneralEvent;
     var ocultarDetalhes = policy.hideDetails;
 
@@ -1868,6 +1870,11 @@
     if (!isPeriodo || isMonitoria) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
     if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
     ok = validarAgendaCampo('agTipo', 'errAgTipo', !!document.getElementById('agTipo').value) && ok;
+    if (policy.requiresDoctor) {
+      ok = validarAgendaCampo('agMedico', 'errAgMedico', !!document.getElementById('agMedico').value) && ok;
+    } else {
+      limparErro('agMedico', 'errAgMedico');
+    }
     if (isPeriodo) {
       ok = validarAgendaCampo('agProjeto', 'errAgProjeto', !!document.getElementById('agProjeto').value) && ok;
     }

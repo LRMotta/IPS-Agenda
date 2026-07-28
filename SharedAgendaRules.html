@@ -145,6 +145,7 @@
       requiresLabCentral: typeRequiresLabCentral(eventOrType),
       requiresProject: operationalPeriod,
       requiresMonitorAndRoom: monitoring,
+      requiresDoctor: type === 'consulta',
       requiresTime: !operationalPeriod || monitoring
     };
   }

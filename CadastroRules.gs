@@ -106,6 +106,26 @@ var CadastroRules_ = (function() {
     return null;
   }
 
+  function agendaEventMatchesParticipant(participant, event) {
+    participant = participant || {};
+    event = event || {};
+    var cadastroId = normalizeText(participant.id);
+    var eventCadastroId = normalizeText(event.participantCadastroId);
+    if (cadastroId && eventCadastroId) return cadastroId === eventCadastroId;
+
+    var participantId = normalizeText(participant.idParticipante);
+    var eventParticipantId = normalizeText(event.idParticipante);
+    var project = normalizeText(participant.projeto);
+    var eventProject = normalizeText(event.projeto);
+    if (participantId && eventParticipantId) {
+      return participantId === eventParticipantId && (!project || !eventProject || project === eventProject);
+    }
+
+    var name = normalizeText(participant.nome);
+    var eventName = normalizeText(event.participante);
+    return !!name && name === eventName && (!project || !eventProject || project === eventProject);
+  }
+
   return Object.freeze({
     normalizeText: normalizeText,
     digits: digits,
@@ -115,6 +135,7 @@ var CadastroRules_ = (function() {
     requiredParticipantFields: requiredParticipantFields,
     projectExists: projectExists,
     findParticipantDuplicate: findParticipantDuplicate,
-    findParticipantNameDuplicate: findParticipantNameDuplicate
+    findParticipantNameDuplicate: findParticipantNameDuplicate,
+    agendaEventMatchesParticipant: agendaEventMatchesParticipant
   });
 })();

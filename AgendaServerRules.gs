@@ -160,6 +160,7 @@ var AgendaServerRules_ = (function() {
       isVisit: type === 'visita',
       requiresProject: operationalPeriod,
       requiresMonitorAndRoom: monitoring,
+      requiresDoctor: type === 'consulta',
       requiresTime: !operationalPeriod || monitoring,
       labChoiceAllowed: !noLab,
       usesParticipantWorkflow: ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem'].indexOf(rawType) === -1

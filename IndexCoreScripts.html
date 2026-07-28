@@ -2868,7 +2868,7 @@ function confirmarExcluirPart(id, nome) {
         method: 'excluirParticipante',
         args: [id],
         onSuccess: function(){ snack('Participante excluido'); carregarParticipantes(true); },
-        onFailure: function(e){ snackErro(e); }
+        onFailure: function(e){ snackErro(appErrorMessage(e)); }
       });
     }
   });

@@ -89,6 +89,31 @@ test('nome repetido gera alerta, exceto para o proprio cadastro', () => {
   assert.equal(cadastro.findParticipantNameDuplicate({ id: '1', nome: 'Pessoa A' }, participantRows), null);
 });
 
+test('evento da Agenda impede exclusao do participante rastreado', () => {
+  const cadastro = rules();
+  const participant = { id: '81', nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo Aurora' };
+  assert.equal(cadastro.agendaEventMatchesParticipant(participant, {
+    participante: 'Nome antigo', idParticipante: 'P-001', projeto: 'Estudo Aurora'
+  }), true);
+  assert.equal(cadastro.agendaEventMatchesParticipant(participant, {
+    participante: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo Aurora'
+  }), false);
+  assert.equal(cadastro.agendaEventMatchesParticipant(
+    { id: '81', nome: 'Pessoa sem triagem', projeto: 'Estudo Aurora' },
+    { participante: 'Pessoa sem triagem', projeto: 'Estudo Aurora' }
+  ), true);
+});
+
+test('servidor bloqueia exclusao quando encontra evento na Agenda', () => {
+  const server = readProjectFile('WebApp.gs');
+  const block = sourceBetween(server, 'function excluirParticipante(', '// ════════════════════════════════\n//  MONITORES');
+  assert.match(block, /participanteReferenciaCadastro_\(rows\[i\]\)/);
+  assert.match(block, /codexWithDocumentLock_\('excluirParticipante'/);
+  assert.match(block, /CadastroRules_\.agendaEventMatchesParticipant/);
+  assert.match(block, /existe pelo menos um evento registrado para ele na Agenda/);
+  assert.ok(block.indexOf('possuiEvento') < block.indexOf('sh.deleteRow'));
+});
+
 test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () => {
   const client = readProjectFile('IndexCoreScripts.html');
   const modal = readProjectFile('IndexContentAfterStock.html');
