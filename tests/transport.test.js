@@ -307,7 +307,25 @@ test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', (
 
   assert.doesNotMatch(block, /transporteReadCachedJson_/);
   assert.doesNotMatch(block, /transporteWriteCachedJson_/);
-  assert.match(block, /getParticipantes\(\)/);
+  assert.match(block, /transporteReadParticipantesDireto_\(\)/);
+});
+
+test('Transporte le participantes sem calcular historico de visitas', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(source, 'function transporteReadParticipantesDireto_(', 'function transporteNomeDivergeUmCaractere_(');
+  const context = vm.createContext({
+    getCodexSheetDataByName_: () => [
+      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
+      ['81231558', 'Filipe Muneron da Silva', '', '', '2011250001', 'SKYLINE-UC', '', '', 'Ativo']
+    ],
+    getParticipantes: () => { throw new Error('listagem completa nao deve ser chamada'); }
+  });
+  vm.runInContext(block, context);
+
+  const participantes = context.transporteReadParticipantesDireto_();
+  assert.equal(participantes.length, 1);
+  assert.equal(participantes[0].idParticipante, '2011250001');
+  assert.equal(participantes[0].projeto, 'SKYLINE-UC');
 });
 
 test('geracao do PDF revalida a identificacao atual do participante', () => {
