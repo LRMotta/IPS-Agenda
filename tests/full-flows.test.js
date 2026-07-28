@@ -18,7 +18,7 @@ function cadastroContext(spreadsheet, projectOptions) {
   const web = readProjectFile('WebApp.gs');
   const source = readProjectFile('CadastroRules.gs') + '\n' +
     between(web, 'function salvarDadosProjeto(', 'function excluirProjeto(') + '\n' +
-    between(web, 'function salvarDadosParticipante(', 'function corrigirMatrizIdadeParticipantes(');
+    between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
   const counters = { cache: 0, transportCache: 0 };
   const context = vm.createContext({
     SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
@@ -86,6 +86,55 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(context.salvarDadosParticipante(Object.assign({}, participant, { id: 5, telefone: '555-0100' })), 'Participante atualizado com sucesso');
   assert.equal(sheet.rows[2][9], '555-0100');
   assert.equal(counters.cache, 2);
+});
+
+test('alteracao de nome propaga pelas referencias usando o ID da coluna A', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
+    [81231558, 'Filipe Mumeron da Silva', '', '', '2011250001', 'SKYLINE-UC', '', '', 'Ativo']
+  ]);
+  const agenda = new FakeSheet('Agenda', [
+    ['ID', 'Data', 'Hora', 'Tipo', 'Status', 'Participante', 'Nascimento', 'ID Participante', 'Projeto'],
+    ['EVT-1', '', '', 'Visita', 'Agendado', 'Filipe Mumeron da Silva', '', '2011250001', 'SKYLINE-UC'],
+    ['EVT-2', '', '', 'Visita', 'Agendado', 'Homônimo de outro estudo', '', '2011250001', 'OUTRO-ESTUDO']
+  ]);
+  const movimentos = new FakeSheet('Movimentações', [
+    ['ID_Mov', 'Data/hora', 'Tipo de movimento', 'ID_Item', 'Descrição', 'Tipo de item', 'Projeto', 'Qtde.', 'Validade', 'Localização', 'Lote', 'ID_Participante', 'Participante'],
+    ['MOV-1', '', 'Saída - Visita', '', '', '', 'SKYLINE-UC', 1, '', '', '', '2011250001', 'Filipe Mumeron da Silva']
+  ]);
+  const ss = new FakeSpreadsheet({ Participantes: participantes, Agenda: agenda, Movimentações: movimentos });
+  const { context } = cadastroContext(ss, [{ nome: 'SKYLINE-UC' }]);
+
+  assert.equal(context.salvarDadosParticipante({
+    id: 81231558,
+    nome: 'Filipe Muneron da Silva',
+    idParticipante: '2011250001',
+    projeto: 'SKYLINE-UC',
+    status: 'Ativo'
+  }), 'Participante atualizado com sucesso');
+
+  assert.equal(agenda.rows[1][5], 'Filipe Muneron da Silva');
+  assert.equal(agenda.rows[1][7], '2011250001');
+  assert.equal(agenda.rows[1][9], '81231558');
+  assert.equal(agenda.rows[2][5], 'Homônimo de outro estudo');
+  assert.equal(movimentos.rows[1][12], 'Filipe Muneron da Silva');
+  assert.equal(movimentos.rows[1][13], '81231558');
+});
+
+test('edicao preserva projeto, status e identificacao quando o formulario nao os devolve', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
+    [81231558, 'Filipe Mumeron da Silva', '', '', '2011250001', 'SKYLINE-UC', '', '', 'Ativo']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'SKYLINE-UC' }]);
+
+  assert.equal(context.salvarDadosParticipante({
+    id: 81231558,
+    nome: 'Filipe Muneron da Silva'
+  }), 'Participante atualizado com sucesso');
+  assert.equal(participantes.rows[1][4], '2011250001');
+  assert.equal(participantes.rows[1][5], 'SKYLINE-UC');
+  assert.equal(participantes.rows[1][8], 'Ativo');
 });
 
 test('vinculo ou duplicidade invalida nao altera participantes', () => {
