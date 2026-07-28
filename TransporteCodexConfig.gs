@@ -1380,8 +1380,23 @@ function transporteNomeDivergeUmCaractere_(a, b) {
 }
 
 function transporteProjetosCorrespondem_(a, b) {
-  var aliasesA = transporteProjetoAliases_(a).map(transporteParticipantKey_);
-  var aliasesB = transporteProjetoAliases_(b).map(transporteParticipantKey_);
+  function aliasesLocais(value) {
+    value = String(value || '').trim();
+    var aliases = [];
+    function add(item) {
+      item = transporteParticipantKey_(item);
+      if (item && aliases.indexOf(item) < 0) aliases.push(item);
+    }
+    add(value);
+    var paren = value.match(/^(.*?)\s*\((.*?)\)\s*$/);
+    if (paren) {
+      add(paren[1]);
+      add(paren[2]);
+    }
+    return aliases;
+  }
+  var aliasesA = aliasesLocais(a);
+  var aliasesB = aliasesLocais(b);
   return aliasesA.some(function(alias) { return alias && aliasesB.indexOf(alias) >= 0; });
 }
 
