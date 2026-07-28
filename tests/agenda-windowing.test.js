@@ -151,3 +151,19 @@ test('edicao abre imediatamente e revalida o registro em segundo plano', () => {
   assert.match(open, /versaoAberta/);
   assert.match(open, /Feche e reabra a edicao antes de salvar/);
 });
+
+test('consulta exige medico no cliente e no servidor', () => {
+  const clientRules = readProjectFile('SharedAgendaRules.html');
+  const serverRules = runFile('AgendaServerRules.gs').AgendaServerRules_;
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const content = readProjectFile('IndexContentAfterDashboard.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(clientRules, /requiresDoctor: type === 'consulta'/);
+  assert.equal(serverRules.formPolicy('Consulta').requiresDoctor, true);
+  assert.equal(serverRules.formPolicy('Visita').requiresDoctor, false);
+  assert.match(content, /id="agMedicoRequired"/);
+  assert.match(content, /id="errAgMedico"/);
+  assert.match(client, /if \(policy\.requiresDoctor\)/);
+  assert.match(client, /validarAgendaCampo\('agMedico', 'errAgMedico'/);
+  assert.match(server, /if \(policy\.requiresDoctor && !String\(dados\.medico \|\| ''\)\.trim\(\)\)/);
+});

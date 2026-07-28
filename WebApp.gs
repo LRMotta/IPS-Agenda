@@ -3629,11 +3629,27 @@ function corrigirMatrizIdadeParticipantes() {
 
 function excluirParticipante(id) {
   codexAssertCanWrite_('excluirParticipante', 'Cadastros', id);
+  return codexWithDocumentLock_('excluirParticipante', function() {
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
+      var participante = participanteReferenciaCadastro_(rows[i]);
+      var agenda = getAgendaSheet_();
+      if (agenda && agenda.getLastRow() >= 2) {
+        var agendaRows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+        var possuiEvento = agendaRows.some(function(row) {
+          return CadastroRules_.agendaEventMatchesParticipant(participante, {
+            participante: row[AGENDA_CFG.idx.participante],
+            idParticipante: row[AGENDA_CFG.idx.idParticipante],
+            projeto: row[AGENDA_CFG.idx.projeto]
+          });
+        });
+        if (possuiEvento) {
+          throw new Error('Não é possível excluir este participante porque existe pelo menos um evento registrado para ele na Agenda. Exclua ou desvincule os eventos antes de tentar novamente.');
+        }
+      }
       sh.deleteRow(i + 1);
       clearCodexRuntimeCaches_();
       if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
@@ -3641,6 +3657,7 @@ function excluirParticipante(id) {
     }
   }
   throw new Error('Participante não encontrado (id=' + id + ')');
+  });
 }
 
 // ════════════════════════════════
@@ -7472,6 +7489,9 @@ function atualizarAgendaEventoCompleto(dados) {
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
+  if (policy.requiresDoctor && !String(dados.medico || '').trim()) {
+    return { erro: 'Informe o médico responsável pela consulta.' };
+  }
   var d = _parseDateHora(dados.data, dados.hora);
   var datasValidacaoStatus = isPeriodo
     ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
@@ -7886,6 +7906,9 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var isPeriodo = policy.isOperationalPeriod;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
+  }
+  if (policy.requiresDoctor && !String(dados.medico || '').trim()) {
+    return { erro: 'Informe o médico responsável pela consulta.' };
   }
   var erroRealizadoFuturo = agendaRealizadoFuturoErro_(status, d);
   if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };

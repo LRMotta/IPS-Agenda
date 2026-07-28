@@ -656,7 +656,7 @@
           <div id="agPartInfo" style="display:none;margin-bottom:14px;background:#f0f7ff;border:1px solid #c5d5fb;border-radius:8px;padding:10px 12px;font-size:12px;color:#1a5276"></div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agVisitaWrap"><label class="field-label" for="agVisita">Visita</label><input type="text" id="agVisita" class="f-input" placeholder="Ex: V1, Triagem, C1D1"></div>
-            <div id="agMedicoWrap"><label class="field-label" for="agMedico">Medico</label><select id="agMedico" class="f-input f-select"></select></div>
+            <div id="agMedicoWrap"><label class="field-label" for="agMedico">Médico <span class="required-star" id="agMedicoRequired" style="display:none">*</span></label><select id="agMedico" class="f-input f-select" onchange="limparErro('agMedico','errAgMedico')"></select><div class="field-error" id="errAgMedico">Selecione o médico responsável pela consulta.</div></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agPrestadorWrap">
