@@ -267,7 +267,10 @@ test('Transporte exige e exibe o numero de identificacao vindo da coluna E de Pa
   assert.match(webApp, /idParticipante:\s*String\(r\[4\] \|\| ''\)/);
   assert.match(server, /idParticipante: String\(p\.idParticipante \|\| p\.numId \|\| ''\)\.trim\(\)/);
   assert.match(client, /id="identificacaoParticipante"[^>]*readonly/);
-  assert.match(client, /Coluna E da aba Participantes/);
+  assert.match(client, /id="identificacaoParticipante"[^>]*placeholder="Preenchido pelo participante"/);
+  assert.match(client, /form-grid study-grid/);
+  assert.match(client, /\.form-grid\.study-grid\s*\{[^}]*grid-template-columns:minmax\(0,1\.2fr\) minmax\(180px,\.8fr\) minmax\(0,1\.2fr\)/);
+  assert.match(client, /@media \(max-width:680px\)[\s\S]*\.form-grid\.study-grid\s*\{\s*grid-template-columns:1fr/);
   assert.match(client, /info\.idParticipante \|\| info\.numId/);
   assert.match(client, /out\.push\('Nº de Identificação do paciente'\)/);
   assert.match(server, /missing\.push\('Numero de Identificacao do paciente na coluna E da aba Participantes'\)/);

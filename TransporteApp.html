@@ -89,6 +89,7 @@
     .transport-section-title::after { content:''; height:1px; background:#d8e2f0; flex:1; }
     .transport-section-title .material-symbols-outlined { font-size:16px; }
     .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .form-grid.study-grid { grid-template-columns:minmax(0,1.2fr) minmax(180px,.8fr) minmax(0,1.2fr); }
     .field { display:flex; flex-direction:column; gap:5px; min-width:0; }
     .field.full { grid-column:1/-1; }
     label { color:#8a94a6; font-size:11px; font-weight:700; text-transform:uppercase; }
@@ -207,6 +208,7 @@
       .shell { padding:0 12px 86px; }
       .topbar { margin:0 -12px 12px; }
       .form-grid { grid-template-columns:1fr; }
+      .form-grid.study-grid { grid-template-columns:1fr; }
       .field-action-row { align-items:stretch; flex-direction:column; }
       .agenda-origin-actions.show { display:flex; }
       .origin-chip, .context-link { justify-content:center; }
@@ -270,10 +272,10 @@
         <div class="panel-body">
           <div class="transport-section">
             <div class="transport-section-title"><span class="material-symbols-outlined">assignment_ind</span>Dados de estudo</div>
-            <div class="form-grid">
+            <div class="form-grid study-grid">
               <div class="field"><label>Paciente(s) <span class="required-star">*</span></label><select id="paciente" required></select></div>
-              <div class="field"><label>Nº de Identificação <span class="required-star">*</span></label><input id="identificacaoParticipante" class="auto-fill" placeholder="Coluna E da aba Participantes" readonly required></div>
-              <div class="field full"><label>Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+              <div class="field"><label>Nº de Identificação <span class="required-star">*</span></label><input id="identificacaoParticipante" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+              <div class="field"><label>Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
               <div class="field full">
                 <label>Investigador <span class="required-star">*</span></label>
                 <div class="field-action-row">
