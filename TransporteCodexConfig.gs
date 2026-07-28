@@ -1990,9 +1990,6 @@ function transporteValidarObrigatoriosWebApp_(payload) {
   payload = payload || {};
   var missing = [];
   if (!String(payload.paciente || '').trim()) missing.push('Paciente');
-  if (String(payload.paciente || '').trim() && !String(payload.identificacaoParticipante || payload.idParticipante || '').trim()) {
-    missing.push('Numero de Identificacao do paciente no cadastro de Participantes');
-  }
   if (!String(payload.protocolo || '').trim()) missing.push('Protocolo');
   if (!String(payload.investigador || '').trim()) missing.push('Investigador');
   if (!String(payload.destino || '').trim()) missing.push('Laboratorio de destino');

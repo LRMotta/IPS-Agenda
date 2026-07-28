@@ -200,15 +200,15 @@ test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () =>
   assert.match(source, /fillSelectRows\('paciente', sortRowsByText\(o\.participantes \|\| \[\], 'nome'\)/);
 });
 
-test('checklist do Transporte exige o numero de identificacao cadastrado do participante', () => {
+test('numero de identificacao do participante e opcional no Transporte', () => {
   const client = readProjectFile('TransporteApp.html');
   const server = readProjectFile('TransporteCodexConfig.gs');
 
   assert.match(client, /loadParticipantsOptions\(\);[\s\S]*if \(!opts\.skipCe\)/);
   assert.match(client, /participantesLoaded\) return idCadastro/);
-  assert.match(client, /Nº de Identificação do paciente não preenchido no cadastro do participante\./);
-  assert.match(client, /out\.push\('Nº de Identificação do paciente'\)/);
-  assert.match(server, /missing\.push\('Numero de Identificacao do paciente no cadastro de Participantes'\)/);
+  assert.doesNotMatch(client, /Nº de Identificação do paciente não preenchido no cadastro do participante\./);
+  assert.doesNotMatch(client, /out\.push\('Nº de Identificação do paciente'\)/);
+  assert.doesNotMatch(server, /missing\.push\('Numero de Identificacao do paciente no cadastro de Participantes'\)/);
 });
 
 test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', () => {
@@ -358,7 +358,7 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
   vm.runInContext(block, context);
 
   assert.throws(() => context.transporteValidarObrigatoriosWebApp_({}), /Paciente.*Protocolo.*Investigador.*Laboratorio de destino/);
-  assert.throws(() => context.transporteValidarObrigatoriosWebApp_({
+  assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
     paciente: 'Participante sem identificacao',
     protocolo: 'Projeto Teste',
     investigador: 'Investigador Teste',
@@ -368,7 +368,7 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
     horaEnvio: '08:00-12:00',
     agendadoPor: 'Usuario Teste',
     dataEnvio: '2026-07-20'
-  }), /Numero de Identificacao do paciente no cadastro de Participantes/);
+  }));
   assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
     paciente: 'Participante Teste',
     identificacaoParticipante: 'P-001',

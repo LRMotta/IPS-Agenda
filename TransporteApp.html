@@ -1369,7 +1369,6 @@
         }
       }
       if (!p.paciente) issues.push({ type:'danger', text:'Paciente não informado.' });
-      if (p.paciente && !String(p.identificacaoParticipante || '').trim()) issues.push({ type:'danger', text:'Nº de Identificação do paciente não preenchido no cadastro do participante.' });
       if (!p.protocolo) issues.push({ type:'danger', text:'Protocolo não informado.' });
       if (!p.investigador) issues.push({ type:'danger', text:'Investigador não informado.' });
       if (!p.destino) issues.push({ type:'danger', text:'Laboratório de destino não informado.' });
@@ -1480,7 +1479,6 @@
       var p = collectPayload();
       var out = [];
       if (!String(p.paciente || '').trim()) out.push('Paciente');
-      if (String(p.paciente || '').trim() && !String(p.identificacaoParticipante || '').trim()) out.push('Nº de Identificação do paciente');
       if (!String(p.protocolo || '').trim()) out.push('Protocolo');
       if (!String(p.investigador || '').trim()) out.push('Investigador');
       if (!String(p.destino || '').trim()) out.push('Laboratório de destino');
@@ -1497,7 +1495,6 @@
     function transportRequiredFieldMap() {
       return {
         'Paciente': 'paciente',
-        'Nº de Identificação do paciente': 'paciente',
         'Protocolo': 'protocolo',
         'Investigador': 'investigador',
         'LaboratÃ³rio de destino': 'destino',
