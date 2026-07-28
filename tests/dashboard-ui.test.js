@@ -25,3 +25,11 @@ test('todos os gráficos do dashboard recebem cópia isolada em PNG', () => {
   assert.match(dashboard, /copiarGraficoDashboard\(canvas\.id, button\)/);
   assert.match(dashboard, /bindDashboardChartCopyButtons\(\);/);
 });
+
+test('impressao usa somente o titulo gerencial dos graficos', () => {
+  const dashboard = readProjectFile('IndexDashboard.html');
+  assert.match(dashboard, /function dashboardPrintChartTitleText\(title\)/);
+  assert.match(dashboard, /dashboardChartTitleElement\(canvas\)/);
+  assert.match(dashboard, /querySelectorAll\('\.material-symbols-outlined, \.dash-chart-copy'\)/);
+  assert.match(dashboard, /dashboardPrintChartTitleText\(prev\)/);
+});
