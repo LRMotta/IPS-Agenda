@@ -878,19 +878,38 @@
   }
 
   function dashboardPrintCanvasTitle(canvas) {
+    var directTitle = dashboardChartTitleElement(canvas);
+    var directText = dashboardPrintChartTitleText(directTitle);
+    if (directText) return directText;
     var node = canvas;
     for (var i = 0; i < 6 && node; i++, node = node.parentElement) {
       var title = node.querySelector ? node.querySelector('.chart-card-title') : null;
-      var titleText = title && title.querySelector ? title.querySelector('.dash-chart-title-text') : null;
-      if (titleText && dashboardPrintText(titleText)) return dashboardPrintText(titleText).replace(/^[^\wÀ-ÿ]+/, '');
-      if (title && title !== canvas && dashboardPrintText(title)) return dashboardPrintText(title).replace(/^[^\wÀ-ÿ]+/, '');
+      var titleValue = dashboardPrintChartTitleText(title);
+      if (title && title !== canvas && titleValue) return titleValue;
       var prev = node.previousElementSibling;
       while (prev) {
-        if (prev.classList && prev.classList.contains('chart-card-title') && dashboardPrintText(prev)) return dashboardPrintText(prev).replace(/^[^\wÀ-ÿ]+/, '');
+        var previousValue = prev.classList && prev.classList.contains('chart-card-title')
+          ? dashboardPrintChartTitleText(prev)
+          : '';
+        if (previousValue) return previousValue;
         prev = prev.previousElementSibling;
       }
     }
     return 'Indicador';
+  }
+
+  function dashboardPrintChartTitleText(title) {
+    if (!title) return '';
+    var explicitText = title.querySelector ? title.querySelector('.dash-chart-title-text') : null;
+    if (explicitText && dashboardPrintText(explicitText)) {
+      return dashboardPrintText(explicitText).replace(/^[^\wÀ-ÿ]+/, '');
+    }
+    var cleanTitle = title.cloneNode ? title.cloneNode(true) : null;
+    if (!cleanTitle) return '';
+    Array.prototype.slice.call(cleanTitle.querySelectorAll('.material-symbols-outlined, .dash-chart-copy')).forEach(function(el) {
+      el.remove();
+    });
+    return dashboardPrintText(cleanTitle).replace(/^[^\wÀ-ÿ]+/, '');
   }
 
   function dashboardPrintText(el) {
