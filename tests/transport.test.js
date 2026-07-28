@@ -184,6 +184,15 @@ test('Transporte corrige divergencia de um caractere somente quando participante
   assert.equal(ambiguo.identificacaoParticipante || '', '');
 });
 
+test('comparacao segura de projeto nao consulta a planilha para cada participante', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(source, 'function transporteProjetosCorrespondem_(', 'function transporteEncontrarParticipante_(');
+
+  assert.doesNotMatch(block, /transporteProjetoAliases_/);
+  assert.doesNotMatch(block, /getProjetos/);
+  assert.match(block, /value\.match\(\/\^\(\.\*\?\)/);
+});
+
 test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(
