@@ -1353,6 +1353,38 @@ function transporteParticipanteIdEstavel_(participante) {
   return String(participante.idParticipante || participante.numId || participante.id || '').trim();
 }
 
+function transporteNomeDivergeUmCaractere_(a, b) {
+  a = transporteParticipantKey_(a);
+  b = transporteParticipantKey_(b);
+  if (!a || !b || a === b || Math.abs(a.length - b.length) > 1) return false;
+  var i = 0;
+  var j = 0;
+  var diferencas = 0;
+  while (i < a.length && j < b.length) {
+    if (a.charAt(i) === b.charAt(j)) {
+      i++;
+      j++;
+      continue;
+    }
+    diferencas++;
+    if (diferencas > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  if (i < a.length || j < b.length) diferencas++;
+  return diferencas === 1;
+}
+
+function transporteProjetosCorrespondem_(a, b) {
+  var aliasesA = transporteProjetoAliases_(a).map(transporteParticipantKey_);
+  var aliasesB = transporteProjetoAliases_(b).map(transporteParticipantKey_);
+  return aliasesA.some(function(alias) { return alias && aliasesB.indexOf(alias) >= 0; });
+}
+
 function transporteEncontrarParticipante_(participantes, referencia) {
   participantes = participantes || [];
   referencia = referencia || {};
@@ -1372,12 +1404,26 @@ function transporteEncontrarParticipante_(participantes, referencia) {
   var nome = String(referencia.paciente || referencia.participante || referencia.nome || '').trim();
   if (!nome) return null;
   var nomeKey = transporteParticipantKey_(nome);
+  var projetoReferencia = String(referencia.protocolo || referencia.projeto || '').trim();
+  var exato = null;
   for (var j = 0; j < participantes.length; j++) {
-    if (transporteParticipantKey_(participantes[j].nome || participantes[j].participante) === nomeKey) {
-      return participantes[j];
-    }
+    var participanteExato = participantes[j] || {};
+    if (transporteParticipantKey_(participanteExato.nome || participanteExato.participante) !== nomeKey) continue;
+    if (projetoReferencia && !transporteProjetosCorrespondem_(participanteExato.projeto, projetoReferencia)) continue;
+    if (exato) return null;
+    exato = participanteExato;
   }
-  return null;
+  if (exato) return exato;
+  if (!projetoReferencia) return null;
+  var aproximado = null;
+  for (var k = 0; k < participantes.length; k++) {
+    var candidato = participantes[k] || {};
+    if (!transporteProjetosCorrespondem_(candidato.projeto, projetoReferencia)) continue;
+    if (!transporteNomeDivergeUmCaractere_(candidato.nome || candidato.participante, nome)) continue;
+    if (aproximado) return null;
+    aproximado = candidato;
+  }
+  return aproximado;
 }
 
 function transporteAtualizarRegistroPorAgenda_(registro) {
@@ -1388,7 +1434,8 @@ function transporteAtualizarRegistroPorAgenda_(registro) {
     var evento = buscarAgendaEventoPorIdTransp_(idAgenda) || {};
     var referencia = {
       identificacaoParticipante: evento.idParticipante || registro.identificacaoParticipante || registro.idParticipante || '',
-      paciente: evento.participante || registro.paciente || registro.participante || ''
+      paciente: evento.participante || registro.paciente || registro.participante || '',
+      protocolo: evento.projeto || registro.protocolo || registro.projeto || ''
     };
     var participantes = typeof getParticipantes === 'function' ? (getParticipantes() || []) : [];
     var participante = transporteEncontrarParticipante_(participantes, referencia);
@@ -1990,6 +2037,9 @@ function transporteValidarObrigatoriosWebApp_(payload) {
   payload = payload || {};
   var missing = [];
   if (!String(payload.paciente || '').trim()) missing.push('Paciente');
+  if (String(payload.paciente || '').trim() && !String(payload.identificacaoParticipante || payload.idParticipante || '').trim()) {
+    missing.push('Numero de Identificacao do paciente na coluna E da aba Participantes');
+  }
   if (!String(payload.protocolo || '').trim()) missing.push('Protocolo');
   if (!String(payload.investigador || '').trim()) missing.push('Investigador');
   if (!String(payload.destino || '').trim()) missing.push('Laboratorio de destino');

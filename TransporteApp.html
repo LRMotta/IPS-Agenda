@@ -272,7 +272,8 @@
             <div class="transport-section-title"><span class="material-symbols-outlined">assignment_ind</span>Dados de estudo</div>
             <div class="form-grid">
               <div class="field"><label>Paciente(s) <span class="required-star">*</span></label><select id="paciente" required></select></div>
-              <div class="field"><label>Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+              <div class="field"><label>Nº de Identificação <span class="required-star">*</span></label><input id="identificacaoParticipante" class="auto-fill" placeholder="Coluna E da aba Participantes" readonly required></div>
+              <div class="field full"><label>Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
               <div class="field full">
                 <label>Investigador <span class="required-star">*</span></label>
                 <div class="field-action-row">
@@ -982,6 +983,7 @@
       ['protocolo','investigador','dataColeta','dataEnvio','awb','pinexColeta','observacoes'].forEach(function(id) {
         document.getElementById(id).value = r[id] || '';
       });
+      document.getElementById('identificacaoParticipante').value = r.identificacaoParticipante || r.idParticipante || '';
       document.getElementById('solicitarCaixa').value = r.solicitarCaixa || defaultSolicitarCaixa(selectedCourier);
       applySolicitarCaixaDefault(false);
       fillSelect('horaEnvio', o.janelasEnvio || [], r.horaEnvio || '', 'Selecione a janela');
@@ -1053,12 +1055,18 @@
       var info = selectedParticipantInfo();
       if (!info.nome && !(state.options && state.options.participantesLoaded)) return;
       if (!document.getElementById('paciente').value) {
+        document.getElementById('identificacaoParticipante').value = '';
         document.getElementById('protocolo').value = '';
         document.getElementById('investigador').value = '';
         renderDerived();
         return;
       }
-      if (!info.nome) return;
+      if (!info.nome) {
+        document.getElementById('identificacaoParticipante').value = '';
+        renderDerived();
+        return;
+      }
+      document.getElementById('identificacaoParticipante').value = String(info.idParticipante || info.numId || '').trim();
       document.getElementById('protocolo').value = projectDisplay(info.projeto || '');
       document.getElementById('investigador').value = info.investigador || '';
       if (opts.loadCe !== false) loadCeStatus(true);
@@ -1369,6 +1377,7 @@
         }
       }
       if (!p.paciente) issues.push({ type:'danger', text:'Paciente não informado.' });
+      if (p.paciente && !String(p.identificacaoParticipante || '').trim()) issues.push({ type:'danger', text:'Nº de Identificação não localizado na coluna E da aba Participantes para o paciente selecionado.' });
       if (!p.protocolo) issues.push({ type:'danger', text:'Protocolo não informado.' });
       if (!p.investigador) issues.push({ type:'danger', text:'Investigador não informado.' });
       if (!p.destino) issues.push({ type:'danger', text:'Laboratório de destino não informado.' });
@@ -1479,6 +1488,7 @@
       var p = collectPayload();
       var out = [];
       if (!String(p.paciente || '').trim()) out.push('Paciente');
+      if (String(p.paciente || '').trim() && !String(p.identificacaoParticipante || '').trim()) out.push('Nº de Identificação do paciente');
       if (!String(p.protocolo || '').trim()) out.push('Protocolo');
       if (!String(p.investigador || '').trim()) out.push('Investigador');
       if (!String(p.destino || '').trim()) out.push('Laboratório de destino');
@@ -1495,6 +1505,7 @@
     function transportRequiredFieldMap() {
       return {
         'Paciente': 'paciente',
+        'Nº de Identificação do paciente': 'paciente',
         'Protocolo': 'protocolo',
         'Investigador': 'investigador',
         'LaboratÃ³rio de destino': 'destino',
