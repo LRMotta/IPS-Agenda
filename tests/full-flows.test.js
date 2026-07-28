@@ -151,6 +151,23 @@ test('vinculo ou duplicidade invalida nao altera participantes', () => {
   assert.equal(sheet.writes, 0);
 });
 
+test('nome repetido exige confirmacao antes de permitir novo cadastro legitimo', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Ativo']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Novo Estudo' }, { nome: 'Outro Estudo' }]);
+  const payload = { nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Outro Estudo', status: 'Ativo' };
+
+  const warning = context.salvarDadosParticipante(payload);
+  assert.equal(warning.requiresNameConfirmation, true);
+  assert.match(warning.message, /novo número de identificação\/triagem/i);
+  assert.equal(participantes.rows.length, 2);
+
+  assert.equal(context.salvarDadosParticipante(Object.assign({}, payload, { confirmarNomeDuplicado: true })), 'Participante cadastrado com sucesso');
+  assert.equal(participantes.rows.length, 3);
+});
+
 function agendaCancellationContext(sheet) {
   const web = readProjectFile('WebApp.gs');
   const helpers = between(web, 'function agendaNormalizeCancelamentoMotivo_(', 'function agendaPostVisitValue_(');

@@ -86,6 +86,26 @@ var CadastroRules_ = (function() {
     return null;
   }
 
+  function findParticipantNameDuplicate(data, rows) {
+    data = data || {};
+    var currentId = String(data.id || '');
+    var name = normalizeText(data.nome);
+    if (!name) return null;
+    rows = rows || [];
+    for (var i = 1; i < rows.length; i++) {
+      var row = rows[i] || [];
+      if (currentId && String(row[0] || '') === currentId) continue;
+      if (normalizeText(row[1]) !== name) continue;
+      return {
+        id: String(row[0] || ''),
+        nome: String(row[1] || ''),
+        idParticipante: String(row[4] || ''),
+        projeto: String(row[5] || '')
+      };
+    }
+    return null;
+  }
+
   return Object.freeze({
     normalizeText: normalizeText,
     digits: digits,
@@ -94,6 +114,7 @@ var CadastroRules_ = (function() {
     participantIdOptional: participantIdOptional,
     requiredParticipantFields: requiredParticipantFields,
     projectExists: projectExists,
-    findParticipantDuplicate: findParticipantDuplicate
+    findParticipantDuplicate: findParticipantDuplicate,
+    findParticipantNameDuplicate: findParticipantNameDuplicate
   });
 })();
