@@ -211,6 +211,23 @@ test('checklist do Transporte exige o numero de identificacao cadastrado do part
   assert.match(server, /missing\.push\('Numero de Identificacao do paciente no cadastro de Participantes'\)/);
 });
 
+test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', () => {
+  const server = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(server, 'function transporteReadParticipantesOptions_(', 'function getTransporteParticipantesOptions()');
+
+  assert.doesNotMatch(block, /transporteReadCachedJson_/);
+  assert.doesNotMatch(block, /transporteWriteCachedJson_/);
+  assert.match(block, /getParticipantes\(\)/);
+});
+
+test('geracao do PDF revalida a identificacao atual do participante', () => {
+  const server = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(server, 'function imprimirTodasAbas(', 'function transporteOcasaNeedsProforma_(');
+
+  assert.match(block, /payloadFallback = transporteDerivarDadosParticipante_\(options\.payload \|\| \{\}\)/);
+  assert.match(block, /identificacaoParticipante: payloadFallback\.identificacaoParticipante \|\| payloadFallback\.idParticipante \|\| ''/);
+});
+
 test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const summary = sourceBetween(source, 'function transportePinexSampleSummary_(', 'function atualizarCommercialInvoicePinexB34_(');
