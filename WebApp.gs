@@ -3395,9 +3395,144 @@ function getParticipanteFormConfig() {
   };
 }
 
+function participanteReferenciaCadastro_(row) {
+  row = row || [];
+  return {
+    idCadastro: String(row[0] || '').trim(),
+    nome: String(row[1] || '').trim(),
+    idParticipante: String(row[4] || '').trim(),
+    projeto: String(row[5] || '').trim()
+  };
+}
+
+function participanteReferenciaKey_(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function participanteTabelaReferencias_(sh) {
+  if (!sh || sh.getLastRow() < 1) return null;
+  var values = sh.getDataRange().getValues();
+  var maxHeaderRows = Math.min(values.length, 10);
+  var nomeAliases = ['participante', 'paciente', 'nomedoparticipante', 'nomedopaciente'];
+  var idAliases = ['idparticipante', 'numerodeidentificacao', 'nodeidentificacao', 'identificacaoparticipante'];
+  var projetoAliases = ['projeto', 'protocolo', 'estudo'];
+  var cadastroAliases = ['idcadastroparticipante', 'participantecadastroid', 'idinternoparticipante'];
+
+  function aliasIndex(map, aliases) {
+    for (var i = 0; i < aliases.length; i++) {
+      if (map[aliases[i]] !== undefined) return map[aliases[i]];
+    }
+    return -1;
+  }
+
+  for (var r = 0; r < maxHeaderRows; r++) {
+    var map = {};
+    for (var c = 0; c < values[r].length; c++) {
+      var key = participanteReferenciaKey_(values[r][c]);
+      if (key) map[key] = c;
+    }
+    var nomeCol = aliasIndex(map, nomeAliases);
+    if (nomeCol < 0) continue;
+    var idCol = aliasIndex(map, idAliases);
+    var projetoCol = aliasIndex(map, projetoAliases);
+    var cadastroCol = aliasIndex(map, cadastroAliases);
+    if (idCol < 0 && projetoCol < 0 && cadastroCol < 0) continue;
+    return {
+      values: values,
+      headerRow: r,
+      nomeCol: nomeCol,
+      idCol: idCol,
+      projetoCol: projetoCol,
+      cadastroCol: cadastroCol
+    };
+  }
+  return null;
+}
+
+function sincronizarNomeParticipanteReferencias_(ss, anterior, atual) {
+  anterior = anterior || {};
+  atual = atual || {};
+  var idCadastro = String(atual.idCadastro || anterior.idCadastro || '').trim();
+  var nomeNovo = String(atual.nome || '').trim();
+  if (!ss || !idCadastro || !nomeNovo) return { atualizadas: 0, abas: [] };
+
+  var sheets = typeof ss.getSheets === 'function' ? ss.getSheets() : [];
+  var atualizadas = 0;
+  var abas = [];
+  var oldNameKey = participanteReferenciaKey_(anterior.nome);
+  var idsValidos = {};
+  [anterior.idParticipante, atual.idParticipante].forEach(function(value) {
+    var key = participanteReferenciaKey_(value);
+    if (key) idsValidos[key] = true;
+  });
+  var projetosValidos = {};
+  [anterior.projeto, atual.projeto].forEach(function(value) {
+    var key = participanteReferenciaKey_(value);
+    if (key) projetosValidos[key] = true;
+  });
+
+  sheets.forEach(function(sh) {
+    if (!sh || participanteReferenciaKey_(sh.getName && sh.getName()) === 'participantes') return;
+    var table = participanteTabelaReferencias_(sh);
+    if (!table) return;
+    var cadastroCol = table.cadastroCol;
+    var matchedRows = [];
+    for (var r = table.headerRow + 1; r < table.values.length; r++) {
+      var row = table.values[r] || [];
+      var rowCadastro = cadastroCol >= 0 ? String(row[cadastroCol] || '').trim() : '';
+      var rowNomeKey = participanteReferenciaKey_(row[table.nomeCol]);
+      var rowIdKey = table.idCol >= 0 ? participanteReferenciaKey_(row[table.idCol]) : '';
+      var rowProjetoKey = table.projetoCol >= 0 ? participanteReferenciaKey_(row[table.projetoCol]) : '';
+      var projetoCompativel = !rowProjetoKey || !Object.keys(projetosValidos).length || !!projetosValidos[rowProjetoKey];
+      var legadoCompativel = projetoCompativel && (
+        (rowIdKey && idsValidos[rowIdKey]) ||
+        (oldNameKey && rowNomeKey === oldNameKey && !!rowProjetoKey)
+      );
+      if (rowCadastro !== idCadastro && (rowCadastro || !legadoCompativel)) continue;
+      matchedRows.push(r);
+    }
+    if (!matchedRows.length) return;
+    if (cadastroCol < 0) {
+      cadastroCol = table.values.reduce(function(max, row) { return Math.max(max, row.length); }, 0);
+      sh.getRange(table.headerRow + 1, cadastroCol + 1).setValue('ID Cadastro Participante');
+    }
+
+    matchedRows.forEach(function(r) {
+      sh.getRange(r + 1, table.nomeCol + 1).setValue(nomeNovo);
+      if (table.idCol >= 0 && String(atual.idParticipante || '').trim()) {
+        sh.getRange(r + 1, table.idCol + 1).setValue(String(atual.idParticipante).trim());
+      }
+      sh.getRange(r + 1, cadastroCol + 1).setValue(idCadastro);
+      atualizadas++;
+    });
+    abas.push(String(sh.getName ? sh.getName() : ''));
+  });
+  return { atualizadas: atualizadas, abas: abas };
+}
+
 function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   d = d || {};
+  var ss   = SpreadsheetApp.getActiveSpreadsheet();
+  var sh   = ss.getSheetByName('Participantes');
+  if (!sh) throw new Error('Aba "Participantes" não encontrada.');
+  var rows = sh.getDataRange().getValues();
+  var editRowIndex = -1;
+  if (d.id) {
+    for (var editIdx = 1; editIdx < rows.length; editIdx++) {
+      if (String(rows[editIdx][0]) === String(d.id)) {
+        editRowIndex = editIdx;
+        break;
+      }
+    }
+    if (editRowIndex < 0) throw new Error('Participante não encontrado (id=' + d.id + ')');
+    var existing = rows[editRowIndex] || [];
+    if (!String(d.projeto || '').trim()) d.projeto = String(existing[5] || '').trim();
+    if (!String(d.status || '').trim()) d.status = String(existing[8] || '').trim();
+    if (!String(d.idParticipante || '').trim()) d.idParticipante = String(existing[4] || '').trim();
+  }
   var projeto = String(d.projeto || '').trim();
   var projetos = getProjetosParticipantesOptions_();
   var ausentes = CadastroRules_.requiredParticipantFields(d);
@@ -3405,10 +3540,6 @@ function salvarDadosParticipante(d) {
   if (!CadastroRules_.projectExists(projeto, projetos)) {
     throw new Error('Selecione um projeto cadastrado para o participante.');
   }
-  var ss   = SpreadsheetApp.getActiveSpreadsheet();
-  var sh   = ss.getSheetByName('Participantes');
-  if (!sh) throw new Error('Aba "Participantes" não encontrada.');
-  var rows = sh.getDataRange().getValues();
   var duplicado = CadastroRules_.findParticipantDuplicate(d, rows);
   if (duplicado) {
     throw new Error(duplicado.field === 'cpf'
@@ -3446,17 +3577,18 @@ function salvarDadosParticipante(d) {
   ];
 
   if (d.id) {
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === String(d.id)) {
-        sh.getRange(i + 1, 1, 1, rowStart.length).setValues([rowStart]);
-        sh.getRange(i + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
-        if (i + 1 > 2) sh.getRange(i + 1, 4).clearContent();
-        clearCodexRuntimeCaches_();
-        if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
-        return 'Participante atualizado com sucesso';
-      }
-    }
-    throw new Error('Participante não encontrado (id=' + d.id + ')');
+    var referenciaAnterior = participanteReferenciaCadastro_(rows[editRowIndex]);
+    sh.getRange(editRowIndex + 1, 1, 1, rowStart.length).setValues([rowStart]);
+    sh.getRange(editRowIndex + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
+    if (editRowIndex + 1 > 2) sh.getRange(editRowIndex + 1, 4).clearContent();
+    var referenciaAtual = participanteReferenciaCadastro_([
+      d.id, d.nome, parseDate(d.dataNascimento), '', d.idParticipante,
+      projeto, d.braco || ''
+    ]);
+    sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual);
+    clearCodexRuntimeCaches_();
+    if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
+    return 'Participante atualizado com sucesso';
   } else {
     var maxId = 0;
     rows.slice(1).forEach(function(r) {

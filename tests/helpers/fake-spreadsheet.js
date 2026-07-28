@@ -73,12 +73,15 @@ class FakeSheet {
   }
 
   getLastRow() { return this.rows.length; }
+  getLastColumn() { return this.rows.reduce((max, row) => Math.max(max, row.length), 0); }
+  getName() { return this.name; }
   deleteRow(row) { this.rows.splice(row - 1, 1); this.writes++; }
 }
 
 class FakeSpreadsheet {
   constructor(sheets) { this.sheets = sheets || {}; }
   getSheetByName(name) { return this.sheets[name] || null; }
+  getSheets() { return Object.values(this.sheets); }
 }
 
 module.exports = { FakeRange, FakeSheet, FakeSpreadsheet };
