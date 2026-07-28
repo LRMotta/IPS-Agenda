@@ -1518,8 +1518,6 @@ function transporteWriteCachedJson_(key, value, seconds) {
 }
 
 function transporteReadParticipantesOptions_() {
-  var cached = transporteReadCachedJson_('TRANSPORTE_PARTICIPANTES_OPTIONS_V1');
-  if (Array.isArray(cached) && cached.length) return cached;
   var participantes = [];
   var investigadoresPorProjeto = transporteProjetoInvestigadorMap_();
   if (typeof getParticipantes === 'function') {
@@ -1539,7 +1537,6 @@ function transporteReadParticipantesOptions_() {
       return [];
     }
   }
-  if (participantes.length) transporteWriteCachedJson_('TRANSPORTE_PARTICIPANTES_OPTIONS_V1', participantes, 300);
   return participantes;
 }
 
@@ -4215,7 +4212,7 @@ function imprimirTodasAbas(options) {
   var workingCopyFile = null;
   try {
     options = options || {};
-    var payloadFallback = options.payload || {};
+    var payloadFallback = transporteDerivarDadosParticipante_(options.payload || {});
     var ss = getTransporteSpreadsheetCodex_();
     var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
     var marker = String(options.marker || '').trim();
@@ -4237,6 +4234,7 @@ function imprimirTodasAbas(options) {
     var responsavelEntrega = String((formPinex ? getCellValueSafe(formPinex, 'D32') : '') || payloadFallback.responsavelEntrega || '').trim();
     transporteValidarObrigatoriosWebApp_({
       paciente: paciente,
+      identificacaoParticipante: payloadFallback.identificacaoParticipante || payloadFallback.idParticipante || '',
       protocolo: protocolo,
       investigador: investigador,
       destino: destino,
