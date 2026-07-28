@@ -136,6 +136,54 @@ test('Transporte resolve participante pelo ID estavel mesmo com nome historico d
   assert.equal(payload.identificacaoParticipante, '2011250001');
 });
 
+test('Transporte corrige divergencia de um caractere somente quando participante e projeto sao unicos', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'function transporteParticipantKey_(',
+    'function transporteAgendadoresConfig_('
+  );
+  const participantes = [{
+    idParticipante: '2011250001',
+    nome: 'Filipe Muneron da Silva',
+    projeto: 'SKYLINE-UC'
+  }];
+  const context = vm.createContext({
+    Logger: { log: () => {} },
+    getParticipantes: () => participantes,
+    getProjetos: () => [{ nomeAbreviado: 'SKYLINE-UC', codigo: 'SPY123-201', investigador: 'Eduardo Brambilla' }]
+  });
+  vm.runInContext(block, context);
+
+  const corrigido = context.transporteDerivarDadosParticipante_({
+    paciente: 'Filipe Mumeron da Silva',
+    protocolo: 'SKYLINE-UC (SPY123-201)'
+  });
+  assert.equal(corrigido.identificacaoParticipante, '2011250001');
+
+  participantes.push({
+    idParticipante: 'OUTRO-ID',
+    nome: 'Filipe Mumeron da Silva',
+    projeto: 'OUTRO-ESTUDO'
+  });
+  const projetoDiferente = context.transporteDerivarDadosParticipante_({
+    paciente: 'Filipe Mumeron da Silva',
+    protocolo: 'SKYLINE-UC (SPY123-201)'
+  });
+  assert.equal(projetoDiferente.identificacaoParticipante, '2011250001');
+
+  participantes.push({
+    idParticipante: 'PID-DUPLICADO',
+    nome: 'Filipe Numeron da Silva',
+    projeto: 'SKYLINE-UC'
+  });
+  const ambiguo = context.transporteDerivarDadosParticipante_({
+    paciente: 'Filipe Mumeron da Silva',
+    protocolo: 'SKYLINE-UC (SPY123-201)'
+  });
+  assert.equal(ambiguo.identificacaoParticipante || '', '');
+});
+
 test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(
@@ -200,15 +248,48 @@ test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () =>
   assert.match(source, /fillSelectRows\('paciente', sortRowsByText\(o\.participantes \|\| \[\], 'nome'\)/);
 });
 
-test('numero de identificacao do participante e opcional no Transporte', () => {
+test('Transporte exige e exibe o numero de identificacao vindo da coluna E de Participantes', () => {
   const client = readProjectFile('TransporteApp.html');
   const server = readProjectFile('TransporteCodexConfig.gs');
+  const webApp = readProjectFile('WebApp.gs');
 
   assert.match(client, /loadParticipantsOptions\(\);[\s\S]*if \(!opts\.skipCe\)/);
   assert.match(client, /participantesLoaded\) return idCadastro/);
-  assert.doesNotMatch(client, /Nº de Identificação do paciente não preenchido no cadastro do participante\./);
-  assert.doesNotMatch(client, /out\.push\('Nº de Identificação do paciente'\)/);
-  assert.doesNotMatch(server, /missing\.push\('Numero de Identificacao do paciente no cadastro de Participantes'\)/);
+  assert.match(webApp, /idParticipante:\s*String\(r\[4\] \|\| ''\)/);
+  assert.match(server, /idParticipante: String\(p\.idParticipante \|\| p\.numId \|\| ''\)\.trim\(\)/);
+  assert.match(client, /id="identificacaoParticipante"[^>]*readonly/);
+  assert.match(client, /Coluna E da aba Participantes/);
+  assert.match(client, /info\.idParticipante \|\| info\.numId/);
+  assert.match(client, /out\.push\('Nº de Identificação do paciente'\)/);
+  assert.match(server, /missing\.push\('Numero de Identificacao do paciente na coluna E da aba Participantes'\)/);
+});
+
+test('campo de identificacao usa o ID do participante selecionado sem confundir nomes divergentes', () => {
+  const client = readProjectFile('TransporteApp.html');
+  const block = sourceBetween(client, 'function selectedParticipantInfo(', 'function projectDisplay(');
+  const patientField = { value: 'Filipe Muneron da Silva' };
+  const idField = { value: '' };
+  const context = vm.createContext({
+    state: {
+      registro: { paciente: 'Filipe Mumeron da Silva' },
+      options: {
+        participantesLoaded: true,
+        participantes: [{ nome: 'Filipe Muneron da Silva', idParticipante: '2011250001' }]
+      }
+    },
+    norm: (value) => String(value || '').trim().toLowerCase(),
+    document: {
+      getElementById: (id) => id === 'paciente' ? patientField : idField
+    },
+    renderDerived: () => {},
+    loadCeStatus: () => {},
+    projectDisplay: (value) => value
+  });
+  vm.runInContext(block, context);
+
+  assert.equal(context.selectedParticipantIdentification(), '2011250001');
+  patientField.value = 'Filipe Mumeron da Silva';
+  assert.equal(context.selectedParticipantIdentification(), '');
 });
 
 test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', () => {
@@ -358,7 +439,7 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
   vm.runInContext(block, context);
 
   assert.throws(() => context.transporteValidarObrigatoriosWebApp_({}), /Paciente.*Protocolo.*Investigador.*Laboratorio de destino/);
-  assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
+  assert.throws(() => context.transporteValidarObrigatoriosWebApp_({
     paciente: 'Participante sem identificacao',
     protocolo: 'Projeto Teste',
     investigador: 'Investigador Teste',
@@ -368,7 +449,7 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
     horaEnvio: '08:00-12:00',
     agendadoPor: 'Usuario Teste',
     dataEnvio: '2026-07-20'
-  }));
+  }), /Numero de Identificacao do paciente na coluna E da aba Participantes/);
   assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
     paciente: 'Participante Teste',
     identificacaoParticipante: 'P-001',
