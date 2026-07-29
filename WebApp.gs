@@ -166,6 +166,7 @@ function getAppBootstrapData() {
     appVersion: codexGetAppVersion_(),
     webAppUrl: '',
     agendaFormData: null,
+    teamBirthdays: [],
     errors: {}
   };
   try {
@@ -177,6 +178,11 @@ function getAppBootstrapData() {
     out.agendaFormData = getDadosFormularioAgenda();
   } catch (e2) {
     out.errors.agendaFormData = e2.message || String(e2);
+  }
+  try {
+    if (out.access && out.access.ok) out.teamBirthdays = codexGetTeamBirthdays_();
+  } catch (e3) {
+    out.errors.teamBirthdays = e3.message || String(e3);
   }
   return out;
 }
@@ -716,6 +722,7 @@ function codexAuthorizeWebAppRequest_(e) {
       userEmail: userEmail,
       name: user.name || '',
       firstName: codexFirstName_(user.name, userEmail),
+      birthday: user.birthday || '',
       role: user.role,
       message: 'Seu usuario esta inativo neste sistema.'
     };
@@ -726,6 +733,7 @@ function codexAuthorizeWebAppRequest_(e) {
     userEmail: userEmail,
     name: user.name || '',
     firstName: codexFirstName_(user.name, userEmail),
+    birthday: user.birthday || '',
     role: user.role,
     message: ''
   };
@@ -823,6 +831,61 @@ function codexNormalizeUserName_(name) {
   return String(name || '').replace(/\s+/g, ' ').trim();
 }
 
+function codexNormalizeBirthday_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  var month = 0;
+  var day = 0;
+  if (value && typeof value === 'object') {
+    month = Number(value.month || value.mes || 0);
+    day = Number(value.day || value.dia || 0);
+    if (!month && !day) return '';
+  } else {
+    var raw = String(value || '').trim();
+    var isoMatch = raw.match(/^(\d{1,2})-(\d{1,2})$/);
+    var brMatch = raw.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (isoMatch) {
+      month = Number(isoMatch[1]);
+      day = Number(isoMatch[2]);
+    } else if (brMatch) {
+      day = Number(brMatch[1]);
+      month = Number(brMatch[2]);
+    }
+  }
+  var maxDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (!month || !day || month < 1 || month > 12 || day < 1 || day > maxDays[month - 1]) {
+    throw new Error('Informe um aniversário válido.');
+  }
+  return ('0' + month).slice(-2) + '-' + ('0' + day).slice(-2);
+}
+
+function codexBirthdayParts_(value) {
+  var normalized = '';
+  try { normalized = codexNormalizeBirthday_(value); } catch (e) { normalized = ''; }
+  if (!normalized) return { birthday: '', birthdayMonth: '', birthdayDay: '', birthdayLabel: '' };
+  var parts = normalized.split('-');
+  var month = Number(parts[0]);
+  var day = Number(parts[1]);
+  return {
+    birthday: normalized,
+    birthdayMonth: month,
+    birthdayDay: day,
+    birthdayLabel: ('0' + day).slice(-2) + '/' + ('0' + month).slice(-2)
+  };
+}
+
+function codexEnsureUsersProfileColumns_(sheet) {
+  if (!sheet) throw new Error('Aba Users não encontrada.');
+  var current = String(sheet.getRange(1, 5).getValue() || '').trim();
+  if (!current) {
+    sheet.getRange(1, 5).setValue('Aniversário (MM-DD)');
+    return;
+  }
+  var normalized = codexNormalizeTextForSort_(current);
+  if (normalized.indexOf('anivers') === -1 && normalized.indexOf('birthday') === -1) {
+    throw new Error('A coluna E da aba Users já está em uso. Reserve-a para Aniversário (MM-DD) antes de salvar perfis.');
+  }
+}
+
 function codexNormalizeTextForSort_(value) {
   return String(value || '').trim().toLowerCase()
     .normalize('NFD')
@@ -847,11 +910,15 @@ function codexNormalizeActive_(value) {
 
 function codexGetCurrentUserAccess() {
   var access = codexAuthorizeWebAppRequestSafe_();
+  var birthday = codexBirthdayParts_(access.birthday || '');
   return {
     ok: !!access.ok,
     email: access.userEmail || '',
     name: access.name || '',
     firstName: access.firstName || codexFirstName_(access.name, access.userEmail),
+    birthday: birthday.birthday,
+    birthdayMonth: birthday.birthdayMonth,
+    birthdayDay: birthday.birthdayDay,
     role: access.role || '',
     canWrite: !!access.ok && access.role !== 'readonly',
     message: access.message || ''
@@ -1289,6 +1356,13 @@ function getAuditRowsPage_(sheetName, colCount, limit, offset, mapper, filters, 
   };
 }
 
+function codexAssertSelfProfileWrite_() {
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  codexWriteAuditLog_('salvarMeuPerfil', 'Sistema', access.userEmail || '');
+  return access;
+}
+
 function getAuditLog(limit) {
   return getAuditLogPage(limit, 0).rows;
 }
@@ -1344,21 +1418,167 @@ function getAuditData(limit) {
   };
 }
 
+function codexGetTeamBirthdays_() {
+  var users = codexGetAllowedUsers_();
+  return Object.keys(users || {}).map(function(email) {
+    var user = users[email] || {};
+    var birthday = codexBirthdayParts_(user.birthday || '');
+    if (!user.active || !birthday.birthday || !user.name) return null;
+    return {
+      name: user.name,
+      firstName: user.firstName || codexFirstName_(user.name, email),
+      birthday: birthday.birthday,
+      month: birthday.birthdayMonth,
+      day: birthday.birthdayDay
+    };
+  }).filter(Boolean).sort(function(a, b) {
+    if (a.birthday !== b.birthday) return a.birthday < b.birthday ? -1 : 1;
+    return codexNormalizeTextForSort_(a.name).localeCompare(codexNormalizeTextForSort_(b.name));
+  });
+}
+
+function getAniversariosEquipe() {
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  return codexGetTeamBirthdays_();
+}
+
+function getMeuPerfil() {
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  var birthday = codexBirthdayParts_(access.birthday || '');
+  return {
+    email: access.userEmail || '',
+    name: access.name || '',
+    firstName: access.firstName || codexFirstName_(access.name, access.userEmail),
+    role: access.role || '',
+    birthday: birthday.birthday,
+    birthdayMonth: birthday.birthdayMonth,
+    birthdayDay: birthday.birthdayDay
+  };
+}
+
+function salvarMeuPerfil(payload) {
+  var access = codexAssertSelfProfileWrite_();
+  payload = payload || {};
+  var name = codexNormalizeUserName_(payload.name);
+  var birthday = codexNormalizeBirthday_(payload.birthday || {
+    month: payload.birthdayMonth,
+    day: payload.birthdayDay
+  });
+  if (!name) throw new Error('Informe seu nome completo.');
+
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh || sh.getLastRow() < 2) throw new Error('Usuário não encontrado.');
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var email = codexNormalizeEmail_(access.userEmail);
+  var rowOffset = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (codexNormalizeEmail_(rows[i][0]) === email) {
+      rowOffset = i;
+      break;
+    }
+  }
+  if (rowOffset < 0) throw new Error('Usuário não encontrado.');
+  codexEnsureUsersProfileColumns_(sh);
+  var rowIndex = rowOffset + 2;
+  var oldName = rows[rowOffset][1];
+  var oldBirthday = rows[rowOffset][4];
+  sh.getRange(rowIndex, 2, 1, 4).setValues([[name, rows[rowOffset][2], rows[rowOffset][3], birthday]]);
+  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
+  codexWriteAuditChanges_('Sistema', 'salvarMeuPerfil', email, [
+    { field: 'Usuário - Nome', oldValue: oldName, newValue: name },
+    { field: 'Usuário - Aniversário', oldValue: oldBirthday, newValue: birthday }
+  ], 'Atualização do próprio perfil');
+  var parts = codexBirthdayParts_(birthday);
+  return {
+    ok: true,
+    email: email,
+    name: name,
+    firstName: codexFirstName_(name, email),
+    role: access.role || '',
+    birthday: parts.birthday,
+    birthdayMonth: parts.birthdayMonth,
+    birthdayDay: parts.birthdayDay,
+    teamBirthdays: codexGetTeamBirthdays_()
+  };
+}
+
+function salvarPerfisUsuariosAdmin(payload) {
+  codexAssertAdmin_();
+  payload = payload || {};
+  var updates = Array.isArray(payload.users) ? payload.users : [];
+  if (!updates.length) throw new Error('Nenhum perfil foi informado.');
+  if (updates.length > 500) throw new Error('A carga rápida aceita no máximo 500 usuários por vez.');
+
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh || sh.getLastRow() < 2) throw new Error('Aba Users não encontrada.');
+  var lastRow = sh.getLastRow();
+  var rows = sh.getRange(2, 1, lastRow - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var changes = [];
+  var seenRows = {};
+
+  updates.forEach(function(update) {
+    var rowIndex = Number(update && update.rowIndex || 0);
+    if (rowIndex < 2 || rowIndex > lastRow) throw new Error('Usuário inválido na carga rápida.');
+    if (seenRows[rowIndex]) throw new Error('Usuário duplicado na carga rápida.');
+    seenRows[rowIndex] = true;
+    var offset = rowIndex - 2;
+    var email = codexNormalizeEmail_(rows[offset][0]);
+    var name = codexNormalizeUserName_(update.name);
+    var birthday = codexNormalizeBirthday_(update.birthday || {
+      month: update.birthdayMonth,
+      day: update.birthdayDay
+    });
+    if (!email) throw new Error('Usuário sem e-mail na linha ' + rowIndex + '.');
+    if (!name) throw new Error('Informe o nome completo de ' + email + '.');
+    changes.push({
+      rowIndex: rowIndex,
+      email: email,
+      oldName: rows[offset][1],
+      oldBirthday: rows[offset][4],
+      name: name,
+      birthday: birthday
+    });
+    rows[offset][1] = name;
+    rows[offset][4] = birthday;
+  });
+
+  codexEnsureUsersProfileColumns_(sh);
+  sh.getRange(2, 1, rows.length, 5).setValues(rows.map(function(row) { return row.slice(0, 5); }));
+  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
+  changes.forEach(function(change) {
+    codexWriteAuditLog_('salvarPerfisUsuariosAdmin', 'Sistema', change.email);
+    codexWriteAuditChanges_('Sistema', 'salvarPerfisUsuariosAdmin', change.email, [
+      { field: 'Usuário - Nome', oldValue: change.oldName, newValue: change.name },
+      { field: 'Usuário - Aniversário', oldValue: change.oldBirthday, newValue: change.birthday }
+    ], 'Carga rápida de perfis');
+  });
+  return { ok: true, updated: changes.length, teamBirthdays: codexGetTeamBirthdays_() };
+}
+
 function getUsersAdminList() {
   codexAssertAdmin_();
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return [];
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, sh.getLastColumn())).getValues();
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
   return rows.map(function(r, idx) {
     var email = codexNormalizeEmail_(r[0]);
     var name = codexNormalizeUserName_(r[1]);
     if (!email) return null;
+    var birthday = codexBirthdayParts_(r[4]);
     return {
       rowIndex: idx + 2,
       email: email,
       name: name,
       firstName: codexFirstName_(name, email),
+      birthday: birthday.birthday,
+      birthdayMonth: birthday.birthdayMonth,
+      birthdayDay: birthday.birthdayDay,
+      birthdayLabel: birthday.birthdayLabel,
       role: codexNormalizeRole_(r[2]),
       ativo: codexNormalizeActive_(r[3]) ? 'Sim' : 'Não'
     };
@@ -1376,9 +1596,14 @@ function salvarUsuarioAdmin(payload) {
   payload = payload || {};
   var email = codexNormalizeEmail_(payload.email);
   var name = codexNormalizeUserName_(payload.name);
+  var birthday = codexNormalizeBirthday_(payload.birthday || {
+    month: payload.birthdayMonth,
+    day: payload.birthdayDay
+  });
   var role = codexNormalizeRole_(payload.role);
   var ativo = codexNormalizeActive_(payload.ativo) ? 'Sim' : 'Não';
   if (!email) throw new Error('Informe o e-mail do usuário.');
+  if (!name) throw new Error('Informe o nome completo do usuário.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('E-mail inválido.');
   if (email === codexNormalizeEmail_(access.userEmail) && (role !== 'admin' || ativo !== 'Sim')) {
     throw new Error('Você não pode remover seu próprio acesso administrativo.');
@@ -1389,7 +1614,7 @@ function salvarUsuarioAdmin(payload) {
   if (!sh) throw new Error('Aba Users não encontrada.');
   var rowIndex = Number(payload.rowIndex || 0);
   var lastRow = sh.getLastRow();
-  var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(4, sh.getLastColumn())).getValues() : [];
+  var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(5, sh.getLastColumn())).getValues() : [];
   for (var i = 0; i < rows.length; i++) {
     var existingEmail = codexNormalizeEmail_(rows[i][0]);
     var existingRow = i + 2;
@@ -1398,17 +1623,19 @@ function salvarUsuarioAdmin(payload) {
     }
   }
   if (!rowIndex || rowIndex < 2) rowIndex = Math.max(2, lastRow + 1);
-  var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 4).getValues()[0] : ['', '', '', ''];
-  sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
+  codexEnsureUsersProfileColumns_(sh);
+  var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 5).getValues()[0] : ['', '', '', '', ''];
+  sh.getRange(rowIndex, 1, 1, 5).setValues([[email, name, role, ativo, birthday]]);
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
   codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
     { field: 'Usuário - E-mail', oldValue: rowAnterior[0], newValue: email },
     { field: 'Usuário - Nome', oldValue: rowAnterior[1], newValue: name },
     { field: 'Usuário - Perfil', oldValue: rowAnterior[2], newValue: role },
-    { field: 'Usuário - Ativo', oldValue: rowAnterior[3], newValue: ativo }
+    { field: 'Usuário - Ativo', oldValue: rowAnterior[3], newValue: ativo },
+    { field: 'Usuário - Aniversário', oldValue: rowAnterior[4], newValue: birthday }
   ], rowAnterior[0] ? 'Alteração de usuário/permissão' : 'Cadastro de usuário/permissão');
-  return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo };
+  return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, teamBirthdays: codexGetTeamBirthdays_() };
 }
 
 function inativarUsuarioAdmin(rowIndex) {
@@ -1431,7 +1658,7 @@ function inativarUsuarioAdmin(rowIndex) {
     oldValue: ativoAnterior,
     newValue: 'Não'
   }], 'Inativação de usuário/permissão');
-  return { ok: true, rowIndex: rowIndex, email: email, ativo: 'Não' };
+  return { ok: true, rowIndex: rowIndex, email: email, ativo: 'Não', teamBirthdays: codexGetTeamBirthdays_() };
 }
 
 function codexIsValidWebAppApiToken_(token) {
@@ -1463,15 +1690,19 @@ function codexGetAllowedUsers_() {
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return {};
 
-  var values = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, sh.getLastColumn())).getValues();
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
   var users = {};
   values.forEach(function(row) {
     var email = codexNormalizeEmail_(row[0]);
     if (!email || users[email]) return;
     var name = codexNormalizeUserName_(row[1]);
+    var birthday = codexBirthdayParts_(row[4]);
     users[email] = {
       name: name,
       firstName: codexFirstName_(name, email),
+      birthday: birthday.birthday,
+      birthdayMonth: birthday.birthdayMonth,
+      birthdayDay: birthday.birthdayDay,
       role: codexNormalizeRole_(row[2]),
       active: codexNormalizeActive_(row[3])
     };

@@ -1113,6 +1113,9 @@
         <button class="btn-new" onclick="abrirFormUsuarioAdmin()">
           <span class="material-symbols-outlined">person_add</span> Novo usuário
         </button>
+        <button class="btn-new" onclick="abrirCargaPerfisAdmin()" style="background:#6a1b9a;box-shadow:0 2px 8px rgba(106,27,154,.22)">
+          <span class="material-symbols-outlined">group_add</span> Atualizar perfis
+        </button>
         <button class="btn-new" onclick="carregarUsersAdmin()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)">
           <span class="material-symbols-outlined">refresh</span> Atualizar
         </button>
@@ -1121,15 +1124,16 @@
         <table class="data-table" style="min-width:860px">
           <thead>
             <tr>
-              <th>Nome</th>
+              <th>Nome completo</th>
               <th>E-mail</th>
+              <th>Aniversário</th>
               <th>Perfil</th>
               <th>Status</th>
               <th style="text-align:right">Ações</th>
             </tr>
           </thead>
           <tbody id="bodyUsersAdmin">
-            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>
