@@ -25,6 +25,10 @@ function diagnosticServer(overrides) {
       rowWith(9, { 0: 'ID', 1: 'Nome', 4: 'ID Participante', 5: 'Projeto', 8: 'Status' }),
       rowWith(9, { 0: '1', 1: 'Pessoa Um', 4: 'SUB-1', 5: 'Estudo A', 8: 'Ativo' })
     ]),
+    Itens: new FakeSheet('Itens', [
+      rowWith(9, { 0: 'ID_Item', 1: 'Projeto', 2: 'Descrição do item', 3: 'Tipo de item', 8: 'Status' }),
+      rowWith(9, { 0: 'KIT-1', 1: 'Estudo A', 2: 'Kit coleta', 3: 'Kit', 8: 'Ativo' })
+    ]),
     Estoque: new FakeSheet('Estoque', [
       rowWith(9, { 0: 'ID Item', 2: 'Descricao', 4: 'Validade', 6: 'Quantidade', 8: 'Status' }),
       rowWith(9, { 0: 'KIT-1', 2: 'Kit coleta', 4: '2027-01-01', 6: 2, 8: 'Disponivel' })
@@ -76,7 +80,7 @@ test('diagnostico operacional evidencia versao antiga, IDs duplicados e vinculos
 
   assert.equal(result.versionSync.matches, false);
   assert.equal(result.integrity.totals.duplicateIds, 1);
-  assert.equal(result.integrity.totals.orphanLinks, 2);
+  assert.equal(result.integrity.totals.orphanLinks, 1);
   assert.ok(result.overall.errors >= 1);
   assert.ok(result.overall.warnings >= 1);
   assert.equal(result.overall.status, 'Erro');
@@ -90,9 +94,78 @@ test('diagnostico estrutural informa aba ou cabecalho obrigatorio ausente', () =
   const estoque = result.structure.items.find((item) => item.key === 'estoque');
 
   assert.equal(estoque.ok, false);
-  assert.ok(estoque.missingHeaders.includes('Validade'));
-  assert.ok(estoque.missingHeaders.includes('Quantidade'));
+  assert.ok(estoque.missingHeaders.some((header) => header.startsWith('Validade')));
+  assert.ok(estoque.missingHeaders.some((header) => header.startsWith('Quantidade')));
   assert.equal(result.overall.status, 'Erro');
+});
+
+test('rotulos personalizados na posicao funcional viram alerta, nao erro estrutural', () => {
+  const { server } = diagnosticServer({
+    Users: new FakeSheet('Users', [
+      ['E-mail autorizado', 'Nome completo', 'Perfil de acesso', 'Liberado', 'Nascimento sem ano'],
+      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01']
+    ])
+  });
+  const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  const users = result.structure.items.find((item) => item.key === 'users');
+
+  assert.equal(users.ok, true);
+  assert.equal(users.warning, true);
+  assert.equal(result.overall.errors, 0);
+  assert.ok(result.overall.warnings >= 1);
+});
+
+test('coluna obrigatoria deslocada continua sendo erro estrutural', () => {
+  const { server } = diagnosticServer({
+    Users: new FakeSheet('Users', [
+      ['Nome', 'Email', 'Perfil', 'Ativo', 'Aniversario'],
+      ['Admin', 'admin@example.invalid', 'admin', 'Sim', '04-01']
+    ])
+  });
+  const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  const users = result.structure.items.find((item) => item.key === 'users');
+
+  assert.equal(users.ok, false);
+  assert.ok(users.missingHeaders.some((header) => header.startsWith('Email')));
+  assert.ok(users.headerNotes.some((note) => note.includes('coluna 2')));
+  assert.equal(result.overall.status, 'Erro');
+});
+
+test('estoque permite repetir ID do item entre lotes e valida o cadastro de origem', () => {
+  const { server, sheets } = diagnosticServer();
+  sheets.Estoque.rows.push(rowWith(9, {
+    0: 'KIT-1', 1: 'Estudo A', 2: 'Kit coleta', 4: '2027-06-01', 6: 3, 8: 'Disponivel'
+  }));
+  const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  const estoque = result.integrity.items.find((item) => item.key === 'estoque-referencias');
+
+  assert.equal(estoque.ok, true);
+  assert.equal(result.integrity.totals.duplicateIds, 0);
+  assert.equal(result.integrity.items.some((item) => item.key === 'estoque-ids'), false);
+});
+
+test('vinculos aceitam nome ou codigo do mesmo projeto e detalham linha orfa', () => {
+  const { server, sheets } = diagnosticServer();
+  sheets.Participantes.rows[1][5] = 'EA-01';
+  let result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  assert.equal(result.integrity.totals.orphanLinks, 0);
+
+  sheets.Participantes.rows.push(rowWith(9, { 0: '2', 1: 'Pessoa Dois', 4: 'SUB-2', 5: 'Projeto removido', 8: 'Ativo' }));
+  result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  const orphan = result.integrity.items.find((item) => item.key === 'participante-projeto');
+  assert.match(orphan.detail, /linha 3: Projeto removido/);
+});
+
+test('detalhes de integridade preservam a linha real mesmo com linha vazia', () => {
+  const { server, sheets } = diagnosticServer();
+  sheets.Agenda.rows.splice(2, 0, rowWith(9, {}));
+  sheets.Agenda.rows.push(rowWith(9, {
+    0: 'AG-1', 1: '2026-07-30', 3: 'Visita', 4: 'Agendado', 5: 'Pessoa Um', 7: 'SUB-1', 8: 'Estudo A'
+  }));
+  const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  const agendaIds = result.integrity.items.find((item) => item.key === 'agenda-ids');
+
+  assert.match(agendaIds.detail, /linhas 2 e 4/);
 });
 
 test('cliente envia contexto da versao e renderiza os novos paineis', () => {

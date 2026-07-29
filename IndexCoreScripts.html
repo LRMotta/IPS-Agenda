@@ -980,8 +980,9 @@ function renderDiagnosticoImplantacao(data) {
   if (structureEl) structureEl.innerHTML = (structure.items || []).map(function(item) {
     var detail = item.status + ' | ' + Number(item.rows || 0) + ' linha(s)' +
       (item.sheetName ? ' | ' + item.sheetName : '') +
-      ((item.missingHeaders || []).length ? ' | faltando: ' + item.missingHeaders.join(', ') : '');
-    return diagCheckItem(item.label, detail, item.ok, item.ok ? 'OK' : 'Erro');
+      ((item.missingHeaders || []).length ? ' | faltando: ' + item.missingHeaders.join(', ') : '') +
+      ((item.headerNotes || []).length ? ' | revisar rotulos: ' + item.headerNotes.join('; ') : '');
+    return diagCheckItem(item.label, detail, item.ok && !item.warning, item.ok ? (item.warning ? 'Atencao' : 'OK') : 'Erro');
   }).join('') || diagCheckItem('Estrutura', structure.error || 'Sem dados.', false, 'Atencao');
   var activityEl = document.getElementById('diagModuleActivity');
   if (activityEl) activityEl.innerHTML = diagDl((activity.items || []).map(function(item) {

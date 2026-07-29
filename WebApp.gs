@@ -303,9 +303,11 @@ function codexGetOperationalHealthDiagnostics_(clientContext) {
         sheetName: table.sheetName,
         present: table.present,
         ok: table.present && !table.missingHeaders.length,
+        warning: table.present && !table.missingHeaders.length && !!table.headerNotes.length,
         rows: table.rows.length,
         missingHeaders: table.missingHeaders,
-        status: !table.present ? 'Aba ausente' : (table.missingHeaders.length ? 'Cabecalhos ausentes' : 'OK')
+        headerNotes: table.headerNotes,
+        status: !table.present ? 'Aba ausente' : (table.missingHeaders.length ? 'Colunas obrigatorias ausentes' : (table.headerNotes.length ? 'OK com rotulos personalizados' : 'OK'))
       });
     });
     out.integrity = codexBuildIntegrityDiagnostics_(tables);
@@ -327,10 +329,11 @@ function codexGetOperationalHealthDiagnostics_(clientContext) {
   (out.structure.items || []).forEach(function(item) {
     addCheck('Estrutura: ' + item.label, item.ok,
       item.status + (item.missingHeaders.length ? ' | ' + item.missingHeaders.join(', ') : ''), 'error');
+    if (item.warning) addCheck('Rotulos: ' + item.label, false, item.headerNotes.join(' | '), 'warning');
   });
   (out.integrity.items || []).forEach(function(item) {
     addCheck('Integridade: ' + item.label, item.ok, item.detail,
-      item.duplicateIds > 0 ? 'error' : 'warning');
+      item.duplicateIds > 0 || item.missingIds > 0 ? 'error' : 'warning');
   });
   if (out.structure.error) addCheck('Leitura estrutural', false, out.structure.error, 'error');
   if (out.integrity.error) addCheck('Leitura de integridade', false, out.integrity.error, 'error');
@@ -348,33 +351,40 @@ function codexDiagnosticSheetSpecs_() {
       { index: 3, label: 'Tipo', aliases: ['tipo', 'tipo de evento'] },
       { index: 4, label: 'Status', aliases: ['status'] },
       { index: 5, label: 'Participante', aliases: ['participante', 'nome participante'] },
-      { index: 7, label: 'ID Participante', aliases: ['id participante', 'identificacao participante'] },
+      { index: 7, label: 'ID Participante', aliases: ['id participante', 'identificacao participante', 'numero identificacao', 'numero de identificacao', 'n identificacao'] },
       { index: 8, label: 'Projeto', aliases: ['projeto', 'protocolo'] }
     ] },
     { key: 'projetos', label: 'Projetos', names: ['Projetos'], required: [
       { index: 0, label: 'ID', aliases: ['id', 'id projeto'] },
       { index: 1, label: 'Nome abreviado', aliases: ['nome abreviado', 'projeto', 'nome'] },
-      { index: 2, label: 'Codigo', aliases: ['codigo', 'codigo projeto', 'protocolo'] },
+      { index: 2, label: 'Codigo', aliases: ['codigo', 'codigo projeto', 'codigo do projeto', 'protocolo', 'protocolo do estudo'] },
       { index: 13, label: 'Status', aliases: ['status'] }
     ] },
     { key: 'participantes', label: 'Participantes', names: ['Participantes'], required: [
-      { index: 0, label: 'ID cadastro', aliases: ['id', 'id cadastro', 'id cadastro participante'] },
+      { index: 0, label: 'ID cadastro', aliases: ['id', 'id cadastro', 'id cadastro participante', 'id interno', 'codigo cadastro'] },
       { index: 1, label: 'Nome', aliases: ['nome', 'participante'] },
-      { index: 4, label: 'ID participante', aliases: ['id participante', 'identificacao', 'numero identificacao'] },
+      { index: 4, label: 'ID participante', aliases: ['id participante', 'identificacao', 'numero identificacao', 'numero de identificacao', 'n identificacao'] },
       { index: 5, label: 'Projeto', aliases: ['projeto', 'protocolo'] },
       { index: 8, label: 'Status', aliases: ['status'] }
     ] },
-    { key: 'estoque', label: 'Estoque', names: ['Estoque'], required: [
+    { key: 'itens', label: 'Estoque - Cadastro de itens', names: ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque'], required: [
       { index: 0, label: 'ID item', aliases: ['id item', 'id'] },
-      { index: 2, label: 'Descricao', aliases: ['descricao', 'item'] },
+      { index: 1, label: 'Projeto', aliases: ['projeto'] },
+      { index: 2, label: 'Descricao', aliases: ['descricao', 'descricao do item', 'item'] },
+      { index: 3, label: 'Tipo', aliases: ['tipo', 'tipo de item'] },
+      { index: 8, label: 'Status', aliases: ['status', 'ativo'] }
+    ] },
+    { key: 'estoque', label: 'Estoque - Lotes', names: ['Estoque'], required: [
+      { index: 0, label: 'ID item', aliases: ['id item', 'id'] },
+      { index: 2, label: 'Descricao', aliases: ['descricao', 'descricao do item', 'item'] },
       { index: 4, label: 'Validade', aliases: ['validade', 'data validade'] },
       { index: 6, label: 'Quantidade', aliases: ['quantidade', 'qtde', 'saldo'] },
       { index: 8, label: 'Status', aliases: ['status'] }
     ] },
     { key: 'users', label: 'Usuarios', names: [CODEX_ACL_SHEET_NAME_ || 'Users'], required: [
-      { index: 0, label: 'Email', aliases: ['email', 'e-mail'] },
+      { index: 0, label: 'Email', aliases: ['email', 'e-mail', 'email usuario', 'e-mail usuario', 'email autorizado'] },
       { index: 1, label: 'Nome', aliases: ['nome'] },
-      { index: 2, label: 'Perfil', aliases: ['perfil', 'role'] },
+      { index: 2, label: 'Perfil', aliases: ['perfil', 'perfil de acesso', 'nivel de acesso', 'role'] },
       { index: 3, label: 'Ativo', aliases: ['ativo', 'active'] },
       { index: 4, label: 'Aniversario', aliases: ['aniversario mm-dd', 'aniversario', 'birthday'] }
     ] },
@@ -393,22 +403,55 @@ function codexReadDiagnosticTable_(ss, spec) {
     sh = ss.getSheetByName(spec.names[n]);
     if (sh) break;
   }
-  if (!sh) return { present: false, sheetName: '', headers: [], rows: [], missingHeaders: (spec.required || []).map(function(x) { return x.label; }) };
+  if (!sh) return { present: false, sheetName: '', headers: [], rows: [], missingHeaders: (spec.required || []).map(function(x) { return x.label; }), headerNotes: [] };
   var lastRow = sh.getLastRow();
   var lastColumn = sh.getLastColumn();
   var values = lastRow && lastColumn ? sh.getRange(1, 1, lastRow, lastColumn).getValues() : [];
   var headers = values[0] || [];
-  var missing = (spec.required || []).filter(function(req) {
-    var actual = codexDiagnosticKey_(headers[req.index]);
-    return !(req.aliases || []).some(function(alias) { return actual === codexDiagnosticKey_(alias); });
-  }).map(function(req) { return req.label; });
+  var missing = [];
+  var headerNotes = [];
+  (spec.required || []).forEach(function(req) {
+    var actual = String(headers[req.index] || '').trim();
+    if (codexDiagnosticHeaderMatches_(actual, req.aliases || [])) return;
+    var foundAt = -1;
+    for (var i = 0; i < headers.length; i++) {
+      if (codexDiagnosticHeaderMatches_(headers[i], req.aliases || [])) { foundAt = i; break; }
+    }
+    if (foundAt >= 0) {
+      missing.push(req.label + ' (esperada na coluna ' + (req.index + 1) + ')');
+      headerNotes.push(req.label + ' localizada na coluna ' + (foundAt + 1) + ', mas a aplicacao le a coluna ' + (req.index + 1));
+      return;
+    }
+    if (actual) {
+      headerNotes.push(req.label + ' usa o rotulo "' + actual + '" na coluna ' + (req.index + 1));
+      return;
+    }
+    missing.push(req.label + ' (coluna ' + (req.index + 1) + ')');
+  });
   return {
     present: true,
     sheetName: sh.getName(),
     headers: headers,
-    rows: values.slice(1).filter(function(row) { return row.some(function(value) { return value !== '' && value !== null && value !== undefined; }); }),
-    missingHeaders: missing
+    rows: values.slice(1).map(function(row, index) {
+      row.__codexDiagnosticRow = index + 2;
+      return row;
+    }).filter(function(row) { return row.some(function(value) { return value !== '' && value !== null && value !== undefined; }); }),
+    missingHeaders: missing,
+    headerNotes: headerNotes
   };
+}
+
+function codexDiagnosticHeaderMatches_(value, aliases) {
+  var actual = codexDiagnosticKey_(value);
+  var compact = actual.replace(/\s+/g, '');
+  if (!actual) return false;
+  return (aliases || []).some(function(alias) {
+    var expected = codexDiagnosticKey_(alias);
+    var expectedCompact = expected.replace(/\s+/g, '');
+    if (!expected) return false;
+    if (actual === expected || compact === expectedCompact) return true;
+    return expectedCompact.length >= 5 && (compact.indexOf(expectedCompact) >= 0 || expectedCompact.indexOf(compact) >= 0);
+  });
 }
 
 function codexDiagnosticKey_(value) {
@@ -416,69 +459,121 @@ function codexDiagnosticKey_(value) {
     .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function codexDiagnosticRowNumber_(row, offset) {
+  return Number(row && row.__codexDiagnosticRow) || offset + 2;
+}
+
 function codexDiagnosticIdStats_(rows, index) {
   var seen = {};
   var duplicates = {};
   var missing = 0;
-  (rows || []).forEach(function(row) {
+  var examples = [];
+  (rows || []).forEach(function(row, offset) {
+    var rowNumber = codexDiagnosticRowNumber_(row, offset);
     var hasData = row.some(function(value) { return value !== '' && value !== null && value !== undefined; });
     if (!hasData) return;
     var id = String(row[index] || '').trim();
-    if (!id) { missing++; return; }
+    if (!id) {
+      missing++;
+      if (examples.length < 5) examples.push('linha ' + rowNumber + ': ID ausente');
+      return;
+    }
     var key = codexDiagnosticKey_(id);
-    if (seen[key]) duplicates[key] = true;
-    seen[key] = true;
+    if (seen[key]) {
+      duplicates[key] = true;
+      if (examples.length < 5) examples.push('ID ' + id + ': linhas ' + seen[key] + ' e ' + rowNumber);
+    } else {
+      seen[key] = rowNumber;
+    }
   });
-  return { duplicateIds: Object.keys(duplicates).length, missingIds: missing };
+  return { duplicateIds: Object.keys(duplicates).length, missingIds: missing, examples: examples };
 }
 
 function codexBuildIntegrityDiagnostics_(tables) {
   var out = { items: [], totals: { duplicateIds: 0, missingIds: 0, orphanLinks: 0 }, error: '' };
   try {
-    ['agenda', 'projetos', 'participantes', 'estoque'].forEach(function(key) {
+    ['agenda', 'projetos', 'participantes', 'itens'].forEach(function(key) {
       var table = tables[key] || { present: false, rows: [] };
       if (!table.present) return;
       var stats = codexDiagnosticIdStats_(table.rows, 0);
       out.totals.duplicateIds += stats.duplicateIds;
       out.totals.missingIds += stats.missingIds;
+      var label = key === 'itens' ? 'Cadastro de itens' : (key === 'agenda' ? 'Agenda' : key.charAt(0).toUpperCase() + key.slice(1));
       out.items.push({
-        key: key + '-ids', label: (key === 'agenda' ? 'Agenda' : key.charAt(0).toUpperCase() + key.slice(1)) + ' - IDs',
+        key: key + '-ids', label: label + ' - IDs',
         ok: stats.duplicateIds === 0 && stats.missingIds === 0,
         duplicateIds: stats.duplicateIds, missingIds: stats.missingIds, orphanLinks: 0,
-        detail: stats.duplicateIds + ' duplicado(s) | ' + stats.missingIds + ' ausente(s)'
+        detail: stats.duplicateIds + ' duplicado(s) | ' + stats.missingIds + ' ausente(s)' + (stats.examples.length ? ' | ' + stats.examples.join('; ') : '')
       });
     });
     var projectKeys = {};
-    ((tables.projetos || {}).rows || []).forEach(function(row) {
-      [row[1], row[2]].forEach(function(value) { var key = codexDiagnosticKey_(value); if (key) projectKeys[key] = true; });
+    ((tables.projetos || {}).rows || []).forEach(function(row, offset) {
+      var projectId = codexDiagnosticKey_(row[0]) || 'linha-' + codexDiagnosticRowNumber_(row, offset);
+      [row[0], row[1], row[2]].forEach(function(value) { var key = codexDiagnosticKey_(value); if (key) projectKeys[key] = projectId; });
     });
+    function resolveProject(value) { return projectKeys[codexDiagnosticKey_(value)] || ''; }
     var participantKeys = {};
     ((tables.participantes || {}).rows || []).forEach(function(row) {
       var idKey = codexDiagnosticKey_(row[4]);
-      var projectKey = codexDiagnosticKey_(row[5]);
+      var projectKey = resolveProject(row[5]);
       if (idKey) participantKeys[idKey + '|' + projectKey] = true;
     });
     var participantProjectOrphans = 0;
-    ((tables.participantes || {}).rows || []).forEach(function(row) {
-      var projectKey = codexDiagnosticKey_(row[5]);
-      if (projectKey && !projectKeys[projectKey]) participantProjectOrphans++;
+    var participantProjectExamples = [];
+    ((tables.participantes || {}).rows || []).forEach(function(row, offset) {
+      var rawProject = String(row[5] || '').trim();
+      if (rawProject && !resolveProject(rawProject)) {
+        participantProjectOrphans++;
+        if (participantProjectExamples.length < 5) participantProjectExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + rawProject);
+      }
     });
     var agendaProjectOrphans = 0;
     var agendaParticipantOrphans = 0;
-    ((tables.agenda || {}).rows || []).forEach(function(row) {
-      var projectKey = codexDiagnosticKey_(row[8]);
+    var agendaProjectExamples = [];
+    var agendaParticipantExamples = [];
+    ((tables.agenda || {}).rows || []).forEach(function(row, offset) {
+      var rawProject = String(row[8] || '').trim();
+      var projectKey = resolveProject(rawProject);
       var participantIdKey = codexDiagnosticKey_(row[7]);
-      if (projectKey && !projectKeys[projectKey]) agendaProjectOrphans++;
-      if (participantIdKey && !participantKeys[participantIdKey + '|' + projectKey]) agendaParticipantOrphans++;
+      if (rawProject && !projectKey) {
+        agendaProjectOrphans++;
+        if (agendaProjectExamples.length < 5) agendaProjectExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + rawProject);
+      }
+      if (participantIdKey && projectKey && !participantKeys[participantIdKey + '|' + projectKey]) {
+        agendaParticipantOrphans++;
+        if (agendaParticipantExamples.length < 5) agendaParticipantExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + String(row[7] || ''));
+      }
     });
+    var itemKeys = {};
+    ((tables.itens || {}).rows || []).forEach(function(row) { var key = codexDiagnosticKey_(row[0]); if (key) itemKeys[key] = true; });
+    var stockItemOrphans = 0;
+    var stockItemExamples = [];
+    var stockMissingIds = 0;
+    var hasItemCatalog = Object.keys(itemKeys).length > 0;
+    ((tables.estoque || {}).rows || []).forEach(function(row, offset) {
+      var rawId = String(row[0] || '').trim();
+      var idKey = codexDiagnosticKey_(rawId);
+      if (!idKey) { stockMissingIds++; return; }
+      if (hasItemCatalog && !itemKeys[idKey]) {
+        stockItemOrphans++;
+        if (stockItemExamples.length < 5) stockItemExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + rawId);
+      }
+    });
+    if ((tables.estoque || {}).present) {
+      out.totals.missingIds += stockMissingIds;
+      out.items.push({ key: 'estoque-referencias', label: 'Estoque - referencias de item', ok: stockMissingIds === 0,
+        duplicateIds: 0, missingIds: stockMissingIds, orphanLinks: 0,
+        detail: stockMissingIds + ' referencia(s) sem ID; repeticoes por lote/validade sao permitidas' });
+    }
     [
-      { key: 'participante-projeto', label: 'Participantes x Projetos', count: participantProjectOrphans },
-      { key: 'agenda-projeto', label: 'Agenda x Projetos', count: agendaProjectOrphans },
-      { key: 'agenda-participante', label: 'Agenda x Participantes', count: agendaParticipantOrphans }
+      { key: 'participante-projeto', label: 'Participantes x Projetos', count: participantProjectOrphans, examples: participantProjectExamples },
+      { key: 'agenda-projeto', label: 'Agenda x Projetos', count: agendaProjectOrphans, examples: agendaProjectExamples },
+      { key: 'agenda-participante', label: 'Agenda x Participantes', count: agendaParticipantOrphans, examples: agendaParticipantExamples },
+      { key: 'estoque-item', label: 'Estoque x Cadastro de itens', count: stockItemOrphans, examples: stockItemExamples }
     ].forEach(function(item) {
       out.totals.orphanLinks += item.count;
       out.items.push({ key: item.key, label: item.label, ok: item.count === 0, duplicateIds: 0, missingIds: 0,
-        orphanLinks: item.count, detail: item.count + ' vinculo(s) orfao(s)' });
+        orphanLinks: item.count, detail: item.count + ' vinculo(s) orfao(s)' + (item.examples.length ? ' | ' + item.examples.join('; ') : '') });
     });
   } catch (e) {
     out.error = e.message || String(e);
