@@ -51,10 +51,10 @@ var AUDIT_PREFETCHING = {};
 var AUDIT_FILTER_SIGNATURE = '';
 var APP_LOADED_VERSION = '';
 var APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+var APP_VERSION_INITIAL_CHECK_DELAY_MS = 10 * 1000;
 var APP_VERSION_CHECK_TIMER = null;
 var APP_VERSION_NOTICE_VISIBLE = false;
 var APP_VERSION_CHECK_IN_FLIGHT = false;
-var APP_VERSION_RUNTIME_IS_EXEC = false;
 var USERS_ADMIN_ROWS = [];
 var APP_DEPLOYMENT_DIAGNOSTICS = null;
 var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
@@ -279,24 +279,13 @@ function renderAppVersion(appVersion) {
 }
 
 function startAppVersionWatcher() {
-  APP_VERSION_RUNTIME_IS_EXEC = appIsPublishedExecRuntime();
-  if (!APP_LOADED_VERSION || APP_VERSION_CHECK_TIMER || !APP_VERSION_RUNTIME_IS_EXEC) return;
+  if (!APP_LOADED_VERSION || APP_VERSION_CHECK_TIMER) return;
   APP_VERSION_CHECK_TIMER = setInterval(checkAppRuntimeVersion, APP_VERSION_CHECK_INTERVAL_MS);
-  setTimeout(checkAppRuntimeVersion, APP_VERSION_CHECK_INTERVAL_MS);
-}
-
-function appIsPublishedExecRuntime() {
-  var urls = [];
-  try { urls.push(String(window.top && window.top.location && window.top.location.href || '')); } catch (eTop) {}
-  try { urls.push(String(window.location && window.location.href || '')); } catch (eWin) {}
-  try { urls.push(String(document.referrer || '')); } catch (eRef) {}
-  return urls.some(function(url) {
-    return /\/exec(?:[?#]|$)/i.test(url);
-  });
+  setTimeout(checkAppRuntimeVersion, APP_VERSION_INITIAL_CHECK_DELAY_MS);
 }
 
 function checkAppRuntimeVersion() {
-  if (!APP_LOADED_VERSION || !APP_VERSION_RUNTIME_IS_EXEC || APP_VERSION_NOTICE_VISIBLE || APP_VERSION_CHECK_IN_FLIGHT) return;
+  if (!APP_LOADED_VERSION || APP_VERSION_NOTICE_VISIBLE || APP_VERSION_CHECK_IN_FLIGHT) return;
   if (typeof google === 'undefined' || !google.script || !google.script.run) return;
   APP_VERSION_CHECK_IN_FLIGHT = true;
   google.script.run

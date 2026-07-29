@@ -25,6 +25,30 @@ test('aniversario e normalizado sem ano e valida o calendario', () => {
   assert.throws(() => server.codexNormalizeBirthday_({ day: 31, month: 4 }), /aniversário válido/);
 });
 
+test('aniversario legado convertido em data pela planilha continua sendo reconhecido', () => {
+  const server = runFile('WebApp.gs');
+  assert.equal(server.codexNormalizeBirthday_(new Date(2026, 3, 1)), '04-01');
+});
+
+test('meu perfil rele a linha atual e nao perde aniversario ausente no cache de acesso', () => {
+  const { server } = profileServer([
+    ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)'],
+    ['leonardo@example.invalid', 'Leonardo Rapone da Motta', 'admin', 'Sim', '04-01']
+  ]);
+  server.codexAuthorizeWebAppRequest_ = () => ({
+    ok: true,
+    userEmail: 'leonardo@example.invalid',
+    name: 'Leonardo Rapone da Motta',
+    role: 'admin',
+    birthday: ''
+  });
+
+  const result = server.getMeuPerfil();
+  assert.equal(result.birthday, '04-01');
+  assert.equal(result.birthdayDay, 1);
+  assert.equal(result.birthdayMonth, 4);
+});
+
 test('coluna de aniversario nao sobrescreve uma coluna E ja utilizada', () => {
   const server = runFile('WebApp.gs');
   const users = new FakeSheet('Users', [['Email', 'Nome', 'Perfil', 'Ativo', 'Outro dado']]);
