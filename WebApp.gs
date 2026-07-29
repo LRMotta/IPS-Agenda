@@ -2,7 +2,7 @@
 // WEBAPP — PONTO DE ENTRADA
 // ======================================================
 var CODEX_ACL_SHEET_NAME_ = 'Users';
-var CODEX_ACL_CACHE_KEY_ = 'UsersAclEmails:v2';
+var CODEX_ACL_CACHE_KEY_ = 'UsersAclEmails:v3';
 var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_API_TOKEN_REQUEST_ = false;
@@ -835,7 +835,18 @@ function codexNormalizeBirthday_(value) {
   if (value === null || value === undefined || value === '') return '';
   var month = 0;
   var day = 0;
-  if (value && typeof value === 'object') {
+  var isDate = Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime());
+  if (isDate) {
+    var dateParts = '';
+    try {
+      dateParts = Utilities.formatDate(value, Session.getScriptTimeZone(), 'MM-dd');
+    } catch (e) {
+      dateParts = ('0' + (value.getMonth() + 1)).slice(-2) + '-' + ('0' + value.getDate()).slice(-2);
+    }
+    var legacyDateMatch = dateParts.match(/^(\d{2})-(\d{2})$/);
+    month = legacyDateMatch ? Number(legacyDateMatch[1]) : 0;
+    day = legacyDateMatch ? Number(legacyDateMatch[2]) : 0;
+  } else if (value && typeof value === 'object') {
     month = Number(value.month || value.mes || 0);
     day = Number(value.day || value.dia || 0);
     if (!month && !day) return '';
@@ -1456,16 +1467,40 @@ function getAniversariosEquipe() {
 function getMeuPerfil() {
   var access = codexAuthorizeWebAppRequest_();
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
-  var birthday = codexBirthdayParts_(access.birthday || '');
+  var profile = codexGetUserProfileByEmail_(access.userEmail) || access;
+  var birthday = codexBirthdayParts_(profile.birthday || '');
   return {
     email: access.userEmail || '',
-    name: access.name || '',
-    firstName: access.firstName || codexFirstName_(access.name, access.userEmail),
+    name: profile.name || access.name || '',
+    firstName: profile.firstName || access.firstName || codexFirstName_(profile.name || access.name, access.userEmail),
     role: access.role || '',
     birthday: birthday.birthday,
     birthdayMonth: birthday.birthdayMonth,
     birthdayDay: birthday.birthdayDay
   };
+}
+
+function codexGetUserProfileByEmail_(email) {
+  email = codexNormalizeEmail_(email);
+  if (!email) return null;
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (codexNormalizeEmail_(rows[i][0]) !== email) continue;
+    var name = codexNormalizeUserName_(rows[i][1]);
+    var birthday = codexBirthdayParts_(rows[i][4]);
+    return {
+      email: email,
+      name: name,
+      firstName: codexFirstName_(name, email),
+      birthday: birthday.birthday,
+      birthdayMonth: birthday.birthdayMonth,
+      birthdayDay: birthday.birthdayDay
+    };
+  }
+  return null;
 }
 
 function salvarMeuPerfil(payload) {
