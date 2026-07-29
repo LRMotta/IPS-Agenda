@@ -896,7 +896,15 @@ function carregarDiagnosticoImplantacao(force) {
       if (ident) ident.innerHTML = '';
       snackErro(msg);
     })
-    .getCodexDeploymentDiagnostics();
+    .getCodexDeploymentDiagnostics(diagClientContext());
+}
+
+function diagClientContext() {
+  return {
+    loadedVersion: APP_LOADED_VERSION || '',
+    watcherActive: !!APP_VERSION_CHECK_TIMER,
+    noticeVisible: !!APP_VERSION_NOTICE_VISIBLE
+  };
 }
 
 function diagSetText(id, value) {
@@ -913,12 +921,14 @@ function diagDl(rows) {
 function diagStatusIcon(ok, status) {
   var s = String(status || '').toLowerCase();
   if (ok === true || s === 'ok') return 'check_circle';
-  if (s.indexOf('erro') > -1 || s.indexOf('falha') > -1 || s.indexOf('ausente') > -1 || ok === false) return 'error';
+  if (s.indexOf('erro') > -1 || s.indexOf('falha') > -1 || s.indexOf('ausente') > -1) return 'error';
   return 'warning';
 }
 
 function diagCheckItem(label, detail, ok, status) {
-  return '<div class="diag-check-item"><span class="material-symbols-outlined">' + diagStatusIcon(ok, status) + '</span><span><b>' + esc(label || '') + '</b>' + (detail ? '<br><small>' + esc(detail) + '</small>' : '') + '</span></div>';
+  var icon = diagStatusIcon(ok, status);
+  var cls = icon === 'error' ? ' diag-check-error' : (icon === 'warning' ? ' diag-check-warning' : '');
+  return '<div class="diag-check-item' + cls + '"><span class="material-symbols-outlined">' + icon + '</span><span><b>' + esc(label || '') + '</b>' + (detail ? '<br><small>' + esc(detail) + '</small>' : '') + '</span></div>';
 }
 
 function renderDiagnosticoImplantacao(data) {
@@ -934,11 +944,53 @@ function renderDiagnosticoImplantacao(data) {
   var triggers = data.triggers || {};
   var mail = data.mail || {};
   var permissions = data.permissions || {};
+  var operational = data.operational || {};
+  var overall = operational.overall || {};
+  var versionSync = operational.versionSync || {};
+  var structure = operational.structure || {};
+  var activity = operational.activity || {};
+  var integrity = operational.integrity || {};
+  diagSetText('diagOverall', overall.status || '--');
   diagSetText('diagVersion', version.version || '--');
   diagSetText('diagAccess', access.role || '--');
   diagSetText('diagAuth', auth.required ? 'Requer' : (auth.ok ? 'OK' : 'Falha'));
   diagSetText('diagSheet', sheet.ok ? 'OK' : 'Falha');
   diagSetText('diagCheckedAt', data.checkedAt ? 'Atualizado em ' + data.checkedAt : '');
+  var healthBanner = document.getElementById('diagHealthBanner');
+  if (healthBanner) {
+    healthBanner.className = 'diag-health-banner' + (overall.errors ? ' error' : (overall.warnings ? ' warning' : ''));
+    healthBanner.innerHTML = '<span>' + esc(overall.status || 'Sem dados') + '</span><span>' + Number(overall.errors || 0) + ' erro(s) · ' + Number(overall.warnings || 0) + ' alerta(s)</span>';
+  }
+  var healthSummary = document.getElementById('diagHealthSummary');
+  if (healthSummary) {
+    healthSummary.innerHTML = (overall.checks || []).map(function(item) {
+      var status = item.severity === 'error' ? 'Erro' : (item.ok ? 'OK' : 'Atencao');
+      return diagCheckItem(item.label, item.detail, item.ok, status);
+    }).join('') || diagCheckItem('Resumo operacional', 'Atualize o diagnostico para executar as verificacoes.', false, 'Atencao');
+  }
+  var versionSyncEl = document.getElementById('diagVersionSync');
+  if (versionSyncEl) versionSyncEl.innerHTML = diagDl([
+    ['Status', versionSync.status || ''],
+    ['Versao carregada', versionSync.loadedVersion || ''],
+    ['Versao publicada', versionSync.publishedVersion || ''],
+    ['Monitor ativo', versionSync.watcherActive ? 'Sim' : 'Nao'],
+    ['Aviso visivel', versionSync.noticeVisible ? 'Sim' : 'Nao']
+  ]);
+  var structureEl = document.getElementById('diagStructureChecks');
+  if (structureEl) structureEl.innerHTML = (structure.items || []).map(function(item) {
+    var detail = item.status + ' | ' + Number(item.rows || 0) + ' linha(s)' +
+      (item.sheetName ? ' | ' + item.sheetName : '') +
+      ((item.missingHeaders || []).length ? ' | faltando: ' + item.missingHeaders.join(', ') : '');
+    return diagCheckItem(item.label, detail, item.ok, item.ok ? 'OK' : 'Erro');
+  }).join('') || diagCheckItem('Estrutura', structure.error || 'Sem dados.', false, 'Atencao');
+  var activityEl = document.getElementById('diagModuleActivity');
+  if (activityEl) activityEl.innerHTML = diagDl((activity.items || []).map(function(item) {
+    return [item.label, item.found ? [item.timestamp, item.action, item.user].filter(Boolean).join(' | ') : 'Sem atividade nas ultimas 500 linhas'];
+  }).concat(activity.error ? [['Erro', activity.error]] : []));
+  var integrityEl = document.getElementById('diagIntegrityChecks');
+  if (integrityEl) integrityEl.innerHTML = (integrity.items || []).map(function(item) {
+    return diagCheckItem(item.label, item.detail, item.ok, item.ok ? 'OK' : (item.duplicateIds ? 'Erro' : 'Atencao'));
+  }).join('') || diagCheckItem('Integridade', integrity.error || 'Sem dados.', false, 'Atencao');
   var env = document.getElementById('diagEnvironment');
   if (env) {
     env.innerHTML = diagDl([
@@ -1076,9 +1128,15 @@ function copiarDiagnosticoImplantacao() {
   var triggers = data.triggers || {};
   var mail = data.mail || {};
   var permissions = data.permissions || {};
+  var operational = data.operational || {};
+  var overall = operational.overall || {};
+  var versionSync = operational.versionSync || {};
+  var integrity = operational.integrity || {};
   var resumo = [
     'CODEX diagnostico de implantacao',
+    'Saude geral: ' + (overall.status || '') + ' | ' + Number(overall.errors || 0) + ' erro(s) | ' + Number(overall.warnings || 0) + ' alerta(s)',
     'Versao: ' + (version.version || ''),
+    'Versao cliente: ' + (versionSync.loadedVersion || '') + ' | servidor: ' + (versionSync.publishedVersion || '') + ' | ' + (versionSync.status || ''),
     'Build: ' + (version.label || ''),
     'Data build: ' + (version.buildDate || ''),
     'Checked at: ' + (data.checkedAt || ''),
@@ -1092,6 +1150,7 @@ function copiarDiagnosticoImplantacao() {
     'MailApp quota restante: ' + (mail.remainingDailyQuota === '' ? (mail.error || '') : mail.remainingDailyQuota),
     'Drive: ' + ((permissions.drive && permissions.drive.status) || ''),
     'Calendar: ' + ((permissions.calendar && permissions.calendar.status) || ''),
+    'Integridade: ' + Number((integrity.totals || {}).duplicateIds || 0) + ' ID(s) duplicado(s) | ' + Number((integrity.totals || {}).missingIds || 0) + ' ID(s) ausente(s) | ' + Number((integrity.totals || {}).orphanLinks || 0) + ' vinculo(s) orfao(s)',
     'Config_App cache presente: ' + (cache.configRowsCachePresent ? 'Sim' : 'Nao'),
     'Agenda bootstrap cache hoje: ' + (cache.agendaBootstrapCachePresent ? 'Sim' : 'Nao'),
     'Ultima invalidacao cache: ' + (cache.lastConfigInvalidationAt || '')
@@ -1125,7 +1184,7 @@ function limparCachesDiagnostico() {
       if (cacheEl) cacheEl.innerHTML = '<dt>Erro</dt><dd>' + esc(msg) + '</dd>';
       snackErro(msg);
     })
-    .limparCodexCachesDiagnostico();
+    .limparCodexCachesDiagnostico(diagClientContext());
 }
 
 var PROFILE_MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];

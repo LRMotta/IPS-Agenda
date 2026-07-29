@@ -174,6 +174,11 @@
     <!-- ═══ PRESTADORES ═══ -->
     <div class="page" id="page-diagnostico">
       <div class="stats-row diag-stats">
+        <div class="stat-card" style="--accent:#137333;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="diagOverall">--</div>
+          <div class="stat-label">Saude geral</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">health_and_safety</span></div>
+        </div>
         <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
           <div class="stat-value" id="diagVersion">--</div>
           <div class="stat-label">Versao publicada</div>
@@ -208,6 +213,27 @@
         <span class="dash-ts" id="diagCheckedAt"></span>
       </div>
       <div class="diag-grid">
+        <section class="diag-panel diag-panel-wide">
+          <h3>Resumo operacional</h3>
+          <div class="diag-health-banner" id="diagHealthBanner"></div>
+          <div class="diag-checklist" id="diagHealthSummary"></div>
+        </section>
+        <section class="diag-panel">
+          <h3>Versao cliente x servidor</h3>
+          <dl id="diagVersionSync"></dl>
+        </section>
+        <section class="diag-panel">
+          <h3>Ultima atividade registrada</h3>
+          <dl id="diagModuleActivity"></dl>
+        </section>
+        <section class="diag-panel diag-panel-wide">
+          <h3>Estrutura obrigatoria</h3>
+          <div class="diag-checklist" id="diagStructureChecks"></div>
+        </section>
+        <section class="diag-panel diag-panel-wide">
+          <h3>Integridade de IDs e vinculos</h3>
+          <div class="diag-checklist" id="diagIntegrityChecks"></div>
+        </section>
         <section class="diag-panel">
           <h3>Ambiente</h3>
           <dl id="diagEnvironment"></dl>
