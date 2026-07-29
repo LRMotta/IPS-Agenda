@@ -20,6 +20,7 @@
   var _agendaHistoricoLoading = false;
   var _agendaHistoricoRequestId = 0;
   var _agendaSearchTimer = null;
+  var _agendaTeamBirthdays = Array.isArray(window.APP_TEAM_BIRTHDAYS) ? window.APP_TEAM_BIRTHDAYS : [];
   var _agendaCancelamentoContext = null;
   var _agendaConfirmarCancelamentoContext = null;
   var _agendaReagendamentoContext = null;
@@ -53,6 +54,39 @@
     _agendaEventosLoadedAt = Number(ts || 0);
     STATE.agenda.eventsLoadedAt = _agendaEventosLoadedAt;
     return _agendaEventosLoadedAt;
+  }
+
+  function agendaSetTeamBirthdays(items) {
+    _agendaTeamBirthdays = Array.isArray(items) ? items.slice() : [];
+    window.APP_TEAM_BIRTHDAYS = _agendaTeamBirthdays;
+    if (document.getElementById('page-agenda')) renderAgendaOperacional();
+  }
+  window.agendaSetTeamBirthdays = agendaSetTeamBirthdays;
+
+  function agendaBirthdaysForDate(d) {
+    if (!d || isNaN(d.getTime())) return [];
+    var month = d.getMonth() + 1;
+    var day = d.getDate();
+    return (_agendaTeamBirthdays || []).filter(function(item) {
+      return Number(item && item.month) === month && Number(item && item.day) === day;
+    }).sort(function(a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR');
+    });
+  }
+
+  function agendaBirthdayBannerHtml(d, compact) {
+    var birthdays = agendaBirthdaysForDate(d);
+    if (!birthdays.length) return '';
+    var names = birthdays.map(function(item) { return esc(item.name || item.firstName || ''); }).filter(Boolean);
+    if (compact) {
+      return '<div class="ag-wk-birthday" title="Aniversários da equipe: ' + names.join(', ') + '">' +
+        '<span class="material-symbols-outlined">cake</span><strong>' + names.join(', ') + '</strong></div>';
+    }
+    return '<div class="ag-birthday-banner" aria-label="Aniversários da equipe">' +
+      '<span class="ag-birthday-icon"><span class="material-symbols-outlined">cake</span></span>' +
+      '<div class="ag-birthday-copy"><strong>Aniversários da equipe</strong><span>' + names.join(' e ') + '</span></div>' +
+      '<span class="ag-birthday-count">' + birthdays.length + ' ' + (birthdays.length === 1 ? 'aniversariante' : 'aniversariantes') + '</span>' +
+      '</div>';
   }
 
   function agendaEventosEstaoDesatualizados() {
@@ -3615,6 +3649,7 @@
           return r.dataIso === iso && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
         });
         html += agendaDayHeader(d, dayRows);
+        html += agendaBirthdayBannerHtml(d, false);
         html += dayRows.length
           ? dayRows.map(function(r, idx) { return agendaCardHtml(r, iso + '-' + idx); }).join('')
           : '<div class="ag-empty"><span class="material-symbols-outlined">event_busy</span>Dia livre - sem agendamentos registrados.</div>';
@@ -3648,10 +3683,11 @@
         return r.dataIso === iso && AgendaRules.isVisibleIn(r, AgendaRules.Context.WEEK);
       });
       var carros = agendaCarroRequeridoCount(dayRows);
+      var birthdayHtml = agendaBirthdayBannerHtml(d, true);
       html += '<div class="ag-wk-col ' + (iso === todayIso ? 'today-col' : '') + '" id="agendaWeekDay-' + iso + '">' +
         '<div class="ag-wk-col-hdr"><div class="ag-wk-wd">' + agendaWeekday(d) + '</div><div class="ag-wk-num">' + d.getDate() + '</div>' + (iso === todayIso ? '<div><span class="ag-wk-dot"></span></div>' : '') + (carros ? agendaCarroDiaPill(carros, true) : '') + '</div>' +
-        '<div class="ag-wk-appts">' +
-        (dayRows.length ? dayRows.map(agendaWeekCardHtml).join('') : '<div class="ag-wk-empty">-</div>') +
+        '<div class="ag-wk-appts">' + birthdayHtml +
+        (dayRows.length ? dayRows.map(agendaWeekCardHtml).join('') : (birthdayHtml ? '' : '<div class="ag-wk-empty">-</div>')) +
         '</div></div>';
     }
     grid.innerHTML = html;

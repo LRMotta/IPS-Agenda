@@ -139,8 +139,9 @@
     </div>
     <div id="topDate"></div>
     <div class="app-version-chip" id="appVersionChip" title="Versao do WebApp">versao...</div>
-    <div class="user-chip">
+    <div class="user-chip" id="userProfileChip" role="button" tabindex="0" aria-label="Abrir meu perfil" title="Abrir meu perfil" onclick="abrirMeuPerfil()" onkeydown="userProfileChipKeydown(event)">
       <div class="user-avatar" id="userInitial">?</div>
+      <span class="material-symbols-outlined user-chip-chevron" aria-hidden="true">expand_more</span>
       <span id="userEmail">carregando…</span>
     </div>
   </div>

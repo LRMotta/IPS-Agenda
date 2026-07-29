@@ -247,6 +247,8 @@ function applyAppBootstrapData(data) {
   var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.name || email;
   document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
   document.getElementById('userInitial').textContent = String(displayName || email || '?')[0].toUpperCase();
+  window.APP_TEAM_BIRTHDAYS = Array.isArray(window.APP_BOOTSTRAP_DATA.teamBirthdays) ? window.APP_BOOTSTRAP_DATA.teamBirthdays : [];
+  if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays(window.APP_TEAM_BIRTHDAYS);
   document.querySelectorAll('.admin-only').forEach(function(el) {
     var moduleName = String(el.id || '') === 'navUsersAdmin' ? 'usuarios'
       : (String(el.id || '') === 'navAuditLog' ? 'audit-log'
@@ -386,7 +388,7 @@ function handleUserOAuthStatus(auth) {
   if (!auth || !auth.required || !auth.url) return;
   var userEl = document.getElementById('userEmail');
   if (userEl) {
-    userEl.innerHTML = '<a href="' + esc(auth.url) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;font-weight:800">Autorizar Agenda/Drive</a>';
+    userEl.innerHTML = '<a href="' + esc(auth.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:inherit;text-decoration:underline;font-weight:800">Autorizar Agenda/Drive</a>';
   }
   snack('Autorize Agenda e Drive para usar os recursos vinculados à sua conta.');
 }
@@ -1137,16 +1139,129 @@ function limparCachesDiagnostico() {
     .limparCodexCachesDiagnostico();
 }
 
+var PROFILE_MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function profileDayOptionsHtml(selected) {
+  var html = '<option value="">—</option>';
+  for (var day = 1; day <= 31; day++) html += '<option value="' + day + '"' + (Number(selected) === day ? ' selected' : '') + '>' + day + '</option>';
+  return html;
+}
+
+function profileMonthOptionsHtml(selected) {
+  var html = '<option value="">—</option>';
+  PROFILE_MONTH_NAMES.forEach(function(name, index) {
+    var month = index + 1;
+    html += '<option value="' + month + '"' + (Number(selected) === month ? ' selected' : '') + '>' + name + '</option>';
+  });
+  return html;
+}
+
+function preencherSelectsAniversario(dayId, monthId, selectedDay, selectedMonth) {
+  var dayEl = document.getElementById(dayId);
+  var monthEl = document.getElementById(monthId);
+  if (dayEl) dayEl.innerHTML = profileDayOptionsHtml(selectedDay);
+  if (monthEl) monthEl.innerHTML = profileMonthOptionsHtml(selectedMonth);
+}
+
+function validarAniversarioCliente(dayId, monthId, errorId) {
+  var day = Number((document.getElementById(dayId) || {}).value || 0);
+  var month = Number((document.getElementById(monthId) || {}).value || 0);
+  var maxDays = [31,29,31,30,31,30,31,31,30,31,30,31];
+  var valid = (!day && !month) || (!!day && !!month && day <= maxDays[month - 1]);
+  var errorEl = document.getElementById(errorId);
+  if (errorEl) errorEl.classList.toggle('show', !valid);
+  return valid;
+}
+
+function profileBirthdayPayload(dayId, monthId) {
+  return {
+    birthdayDay: (document.getElementById(dayId) || {}).value || '',
+    birthdayMonth: (document.getElementById(monthId) || {}).value || ''
+  };
+}
+
+function userProfileChipKeydown(event) {
+  if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
+  event.preventDefault();
+  abrirMeuPerfil();
+}
+
+function abrirMeuPerfil() {
+  if (!CURRENT_ACCESS || !CURRENT_ACCESS.ok) return;
+  preencherSelectsAniversario('meuPerfilDia', 'meuPerfilMes', '', '');
+  document.getElementById('meuPerfilNome').value = '';
+  document.getElementById('meuPerfilEmail').textContent = CURRENT_ACCESS.email || '—';
+  document.getElementById('meuPerfilRole').textContent = CURRENT_ACCESS.role || '—';
+  document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:var(--text-muted)">Carregando perfil...</span>';
+  abrirOverlay('modalMeuPerfil');
+  google.script.run
+    .withSuccessHandler(function(profile) {
+      profile = profile || {};
+      document.getElementById('meuPerfilNome').value = profile.name || '';
+      document.getElementById('meuPerfilEmail').textContent = profile.email || CURRENT_ACCESS.email || '—';
+      document.getElementById('meuPerfilRole').textContent = profile.role || CURRENT_ACCESS.role || '—';
+      preencherSelectsAniversario('meuPerfilDia', 'meuPerfilMes', profile.birthdayDay, profile.birthdayMonth);
+      document.getElementById('statusMeuPerfil').textContent = '';
+      document.getElementById('meuPerfilNome').focus();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
+    })
+    .getMeuPerfil();
+}
+
+function salvarMeuPerfilApp() {
+  var nameEl = document.getElementById('meuPerfilNome');
+  var name = String(nameEl.value || '').replace(/\s+/g, ' ').trim();
+  var nameValid = !!name;
+  document.getElementById('errMeuPerfilNome').classList.toggle('show', !nameValid);
+  var birthdayValid = validarAniversarioCliente('meuPerfilDia', 'meuPerfilMes', 'errMeuPerfilAniversario');
+  if (!nameValid || !birthdayValid) {
+    if (!nameValid) nameEl.focus();
+    document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">Revise os campos destacados.</span>';
+    return;
+  }
+  var btn = document.getElementById('btnSalvarMeuPerfil');
+  var old = btn.innerHTML;
+  var birthday = profileBirthdayPayload('meuPerfilDia', 'meuPerfilMes');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      result = result || {};
+      CURRENT_ACCESS.name = result.name || name;
+      CURRENT_ACCESS.firstName = result.firstName || name.split(' ')[0];
+      CURRENT_ACCESS.birthday = result.birthday || '';
+      CURRENT_ACCESS.birthdayDay = result.birthdayDay || '';
+      CURRENT_ACCESS.birthdayMonth = result.birthdayMonth || '';
+      var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.email || 'usuário';
+      document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
+      document.getElementById('userInitial').textContent = displayName[0].toUpperCase();
+      if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays(result.teamBirthdays || []);
+      fecharOverlay('modalMeuPerfil');
+      snack('Perfil atualizado com sucesso.');
+      if (CURRENT_ACCESS.role === 'admin' && document.getElementById('page-usuarios').classList.contains('active')) carregarUsersAdmin();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
+    })
+    .salvarMeuPerfil({ name: name, birthdayDay: birthday.birthdayDay, birthdayMonth: birthday.birthdayMonth });
+}
+
 function carregarUsersAdmin() {
   var tb = document.getElementById('bodyUsersAdmin');
-  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>';
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
   google.script.run
     .withSuccessHandler(function(rows) {
       USERS_ADMIN_ROWS = rows || [];
       renderUsersAdmin();
     })
     .withFailureHandler(function(e) {
-      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="5">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="6">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
     })
     .getUsersAdminList();
 }
@@ -1162,7 +1277,7 @@ function renderUsersAdmin(forceNow) {
   var qEl = document.getElementById('searchUsersAdmin');
   var q = norm(qEl ? qEl.value : '');
   var filtered = rows.filter(function(u) {
-    return !q || norm([u.name, u.firstName, u.email, u.role, u.ativo].join(' ')).indexOf(q) >= 0;
+    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.role, u.ativo].join(' ')).indexOf(q) >= 0;
   });
   var total = rows.length;
   var ativos = rows.filter(function(u) { return u.ativo === 'Sim'; }).length;
@@ -1176,7 +1291,7 @@ function renderUsersAdmin(forceNow) {
   var tb = document.getElementById('bodyUsersAdmin');
   if (!tb) return;
   if (!filtered.length) {
-    tb.innerHTML = '<tr class="empty-row"><td colspan="5">Nenhum usuário encontrado.</td></tr>';
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum usuário encontrado.</td></tr>';
     return;
   }
   tb.innerHTML = filtered.map(function(u) {
@@ -1187,6 +1302,7 @@ function renderUsersAdmin(forceNow) {
     return '<tr>' +
       '<td><div class="name-cell"><div class="row-avatar">' + esc(initial) + '</div><span class="row-name">' + esc(name) + '</span></div></td>' +
       '<td style="color:#5f6b7c;">' + esc(u.email) + '</td>' +
+      '<td><span class="chip ' + (u.birthdayLabel ? 'chip-purple' : '') + '">' + esc(u.birthdayLabel || '—') + '</span></td>' +
       '<td><span class="chip ' + roleCls + '">' + esc(u.role) + '</span></td>' +
       '<td><span class="chip ' + (ativo ? 'chip-green' : 'chip-red') + '">' + (ativo ? 'Ativo' : 'Inativo') + '</span></td>' +
       '<td><div class="action-btns">' +
@@ -1202,24 +1318,33 @@ function abrirFormUsuarioAdmin(rowIndex) {
   document.getElementById('modalUsuarioAdminTitle').textContent = u ? 'EDITAR USUÁRIO' : 'NOVO USUÁRIO';
   document.getElementById('userAdminRowIndex').value = u ? u.rowIndex : '';
   document.getElementById('userAdminNome').value = u ? (u.name || '') : '';
+  preencherSelectsAniversario('userAdminDia', 'userAdminMes', u ? u.birthdayDay : '', u ? u.birthdayMonth : '');
   document.getElementById('userAdminEmail').value = u ? u.email : '';
   document.getElementById('userAdminRole').value = u ? u.role : 'user';
   document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';
   document.getElementById('statusUsuarioAdmin').textContent = '';
   document.getElementById('errUserAdminEmail').classList.remove('show');
+  document.getElementById('errUserAdminNome').classList.remove('show');
+  document.getElementById('errUserAdminAniversario').classList.remove('show');
   document.getElementById('userAdminEmail').classList.remove('invalid');
   abrirOverlay('modalUsuarioAdmin');
 }
 
 function salvarUsuarioAdminApp() {
   var emailEl = document.getElementById('userAdminEmail');
+  var nameEl = document.getElementById('userAdminNome');
   var email = (emailEl.value || '').trim().toLowerCase();
+  var name = String(nameEl.value || '').replace(/\s+/g, ' ').trim();
   var valido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  var nomeValido = !!name;
+  var aniversarioValido = validarAniversarioCliente('userAdminDia', 'userAdminMes', 'errUserAdminAniversario');
   var err = document.getElementById('errUserAdminEmail');
   if (err) err.classList.toggle('show', !valido);
-  if (!valido) {
+  document.getElementById('errUserAdminNome').classList.toggle('show', !nomeValido);
+  if (!valido || !nomeValido || !aniversarioValido) {
     appRequiredFeedback([
-      { input: 'userAdminEmail', error: err, label: 'E-mail', value: '' }
+      { input: 'userAdminNome', error: document.getElementById('errUserAdminNome'), label: 'Nome completo', value: nomeValido ? name : '' },
+      { input: 'userAdminEmail', error: err, label: 'E-mail', value: valido ? email : '' }
     ], { status: 'statusUsuarioAdmin' });
     return;
   }
@@ -1228,11 +1353,12 @@ function salvarUsuarioAdminApp() {
   btn.disabled = true;
   btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
   google.script.run
-    .withSuccessHandler(function() {
+    .withSuccessHandler(function(result) {
       btn.disabled = false;
       btn.innerHTML = old;
       fecharOverlay('modalUsuarioAdmin');
       snack('Usuário salvo com sucesso.');
+      if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
       carregarUsersAdmin();
     })
     .withFailureHandler(function(e) {
@@ -1242,11 +1368,76 @@ function salvarUsuarioAdminApp() {
     })
     .salvarUsuarioAdmin({
       rowIndex: document.getElementById('userAdminRowIndex').value,
-      name: document.getElementById('userAdminNome').value.trim(),
+      name: name,
       email: email,
+      birthdayDay: document.getElementById('userAdminDia').value,
+      birthdayMonth: document.getElementById('userAdminMes').value,
       role: document.getElementById('userAdminRole').value,
       ativo: document.getElementById('userAdminAtivo').value
     });
+}
+
+function abrirCargaPerfisAdmin() {
+  var rows = USERS_ADMIN_ROWS || [];
+  if (!rows.length) {
+    snack('Carregue a lista de usuários antes de iniciar a carga rápida.');
+    carregarUsersAdmin();
+    return;
+  }
+  var tb = document.getElementById('bodyCargaPerfis');
+  tb.innerHTML = rows.map(function(u) {
+    var id = Number(u.rowIndex || 0);
+    return '<tr data-user-row="' + id + '">' +
+      '<td class="profile-bulk-email"><strong>' + esc(u.email) + '</strong><br><span class="chip ' + (u.ativo === 'Sim' ? 'chip-green' : 'chip-red') + '">' + (u.ativo === 'Sim' ? 'Ativo' : 'Inativo') + '</span></td>' +
+      '<td><input class="f-input profile-bulk-name" id="bulkUserName-' + id + '" type="text" value="' + esc(u.name || '') + '" aria-label="Nome completo de ' + esc(u.email) + '"></td>' +
+      '<td><select class="f-input f-select profile-bulk-day" id="bulkUserDay-' + id + '" aria-label="Dia do aniversário de ' + esc(u.email) + '">' + profileDayOptionsHtml(u.birthdayDay) + '</select></td>' +
+      '<td><select class="f-input f-select profile-bulk-month" id="bulkUserMonth-' + id + '" aria-label="Mês do aniversário de ' + esc(u.email) + '">' + profileMonthOptionsHtml(u.birthdayMonth) + '</select></td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('statusCargaPerfis').textContent = '';
+  abrirOverlay('modalCargaPerfis');
+}
+
+function salvarCargaPerfisAdminApp() {
+  var rows = USERS_ADMIN_ROWS || [];
+  var invalid = null;
+  var payload = rows.map(function(u) {
+    var id = Number(u.rowIndex || 0);
+    var nameEl = document.getElementById('bulkUserName-' + id);
+    var dayEl = document.getElementById('bulkUserDay-' + id);
+    var monthEl = document.getElementById('bulkUserMonth-' + id);
+    var name = String((nameEl || {}).value || '').replace(/\s+/g, ' ').trim();
+    var day = Number((dayEl || {}).value || 0);
+    var month = Number((monthEl || {}).value || 0);
+    var maxDays = [31,29,31,30,31,30,31,31,30,31,30,31];
+    var birthdayValid = (!day && !month) || (!!day && !!month && day <= maxDays[month - 1]);
+    if (!invalid && (!name || !birthdayValid)) invalid = { input: name ? (dayEl || monthEl) : nameEl, email: u.email, birthday: !birthdayValid };
+    return { rowIndex: id, name: name, birthdayDay: day || '', birthdayMonth: month || '' };
+  });
+  if (invalid) {
+    document.getElementById('statusCargaPerfis').innerHTML = '<span style="color:#b3261e">Revise ' + esc(invalid.email) + ': ' + (invalid.birthday ? 'aniversário inválido.' : 'nome completo obrigatório.') + '</span>';
+    if (invalid.input) invalid.input.focus();
+    return;
+  }
+  var btn = document.getElementById('btnSalvarCargaPerfis');
+  var old = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      fecharOverlay('modalCargaPerfis');
+      if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
+      snack((result && result.updated || payload.length) + ' perfil(is) atualizado(s).');
+      carregarUsersAdmin();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      document.getElementById('statusCargaPerfis').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
+    })
+    .salvarPerfisUsuariosAdmin({ users: payload });
 }
 
 function confirmarInativarUsuarioAdmin(rowIndex, email) {
@@ -1256,8 +1447,9 @@ function confirmarInativarUsuarioAdmin(rowIndex, email) {
     acao: 'Inativar',
     onConfirm: function() {
       google.script.run
-        .withSuccessHandler(function() {
+        .withSuccessHandler(function(result) {
           snack('Usuário inativado.');
+          if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
           carregarUsersAdmin();
         })
         .withFailureHandler(function(e) { snackErro(e); })

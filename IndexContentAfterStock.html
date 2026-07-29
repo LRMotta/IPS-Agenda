@@ -779,8 +779,9 @@
         <div class="section-label"><span class="material-symbols-outlined">alternate_email</span> Identificação</div>
         <div class="form-grid single">
           <div>
-            <label class="field-label" for="userAdminNome">Nome</label>
-            <input type="text" id="userAdminNome" class="f-input large" placeholder="Nome do usuário">
+            <label class="field-label" for="userAdminNome">Nome completo <span class="required-star">*</span></label>
+            <input type="text" id="userAdminNome" class="f-input large" placeholder="Nome completo do usuário" oninput="limparErro('userAdminNome','errUserAdminNome')">
+            <div class="field-error" id="errUserAdminNome">Informe o nome completo.</div>
           </div>
           <div>
             <label class="field-label" for="userAdminEmail">E-mail <span class="required-star">*</span></label>
@@ -788,6 +789,15 @@
             <div class="field-error" id="errUserAdminEmail">Informe um e-mail válido.</div>
           </div>
         </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">cake</span> Aniversário</div>
+        <div class="field-row cols-2 profile-birthday-fields">
+          <div><label class="field-label" for="userAdminDia">Dia</label><select id="userAdminDia" class="f-input f-select" onchange="validarAniversarioCliente('userAdminDia','userAdminMes','errUserAdminAniversario')"></select></div>
+          <div><label class="field-label" for="userAdminMes">Mês</label><select id="userAdminMes" class="f-input f-select" onchange="validarAniversarioCliente('userAdminDia','userAdminMes','errUserAdminAniversario')"></select></div>
+        </div>
+        <div class="field-error" id="errUserAdminAniversario">Selecione um dia válido para o mês.</div>
+        <p class="profile-helper">Opcional. O ano não será armazenado.</p>
       </div>
       <div class="field-row cols-2">
         <div>
@@ -810,6 +820,80 @@
         <span class="material-symbols-outlined">save</span> Salvar usuário
       </button>
       <div class="status-msg" id="statusUsuarioAdmin"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalMeuPerfil" onclick="fecharModalSeClicouFora(event,'modalMeuPerfil')">
+  <div class="modal-box profile-modal-box" style="max-width:600px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">manage_accounts</span></div>
+      <div>
+        <div class="modal-header-title">MEU PERFIL</div>
+        <div class="modal-header-sub">Informações visíveis para a equipe</div>
+      </div>
+      <button class="modal-close" type="button" onclick="fecharOverlay('modalMeuPerfil')" aria-label="Fechar">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+        <label class="field-label" for="meuPerfilNome">Nome completo <span class="required-star">*</span></label>
+        <input type="text" id="meuPerfilNome" class="f-input large" autocomplete="name" placeholder="Seu nome completo" oninput="limparErro('meuPerfilNome','errMeuPerfilNome')">
+        <div class="field-error" id="errMeuPerfilNome">Informe seu nome completo.</div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">cake</span> Aniversário</div>
+        <div class="field-row cols-2 profile-birthday-fields">
+          <div>
+            <label class="field-label" for="meuPerfilDia">Dia</label>
+            <select id="meuPerfilDia" class="f-input f-select" onchange="validarAniversarioCliente('meuPerfilDia','meuPerfilMes','errMeuPerfilAniversario')"></select>
+          </div>
+          <div>
+            <label class="field-label" for="meuPerfilMes">Mês</label>
+            <select id="meuPerfilMes" class="f-input f-select" onchange="validarAniversarioCliente('meuPerfilDia','meuPerfilMes','errMeuPerfilAniversario')"></select>
+          </div>
+        </div>
+        <div class="field-error" id="errMeuPerfilAniversario">Selecione um dia válido para o mês.</div>
+        <p class="profile-helper">O ano não é necessário. Ao preencher, seu aniversário aparecerá na agenda da equipe.</p>
+      </div>
+      <div class="profile-readonly-grid">
+        <div><span>E-mail</span><strong id="meuPerfilEmail">—</strong></div>
+        <div><span>Perfil de acesso</span><strong id="meuPerfilRole">—</strong></div>
+      </div>
+      <div class="profile-actions">
+        <button type="button" class="btn-txt" onclick="fecharOverlay('modalMeuPerfil')">Cancelar</button>
+        <button type="button" class="btn-save" id="btnSalvarMeuPerfil" onclick="salvarMeuPerfilApp()"><span class="material-symbols-outlined">save</span> Salvar alterações</button>
+      </div>
+      <div class="status-msg" id="statusMeuPerfil"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalCargaPerfis" onclick="fecharModalSeClicouFora(event,'modalCargaPerfis')">
+  <div class="modal-box profile-bulk-box" style="max-width:980px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">group_add</span></div>
+      <div>
+        <div class="modal-header-title">ATUALIZAR PERFIS</div>
+        <div class="modal-header-sub">Carga inicial de nomes completos e aniversários</div>
+      </div>
+      <button class="modal-close" type="button" onclick="fecharOverlay('modalCargaPerfis')" aria-label="Fechar"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <p class="profile-helper profile-bulk-intro">Preencha os dados e salve todos os usuários de uma vez. O aniversário é opcional e não inclui o ano.</p>
+      <div class="profile-bulk-table-wrap">
+        <table class="data-table profile-bulk-table">
+          <thead><tr><th>E-mail</th><th>Nome completo</th><th>Dia</th><th>Mês</th></tr></thead>
+          <tbody id="bodyCargaPerfis"></tbody>
+        </table>
+      </div>
+      <div class="profile-actions">
+        <button type="button" class="btn-txt" onclick="fecharOverlay('modalCargaPerfis')">Cancelar</button>
+        <button type="button" class="btn-save" id="btnSalvarCargaPerfis" onclick="salvarCargaPerfisAdminApp()"><span class="material-symbols-outlined">save</span> Salvar perfis</button>
+      </div>
+      <div class="status-msg" id="statusCargaPerfis"></div>
     </div>
   </div>
 </div>

@@ -235,6 +235,13 @@
     .ag-mini-awb{background:var(--primary-light);color:var(--primary);border:1px solid #c5d5fb;font-family:monospace}
     .ag-mini-status.ag-ch-agendado{background:#b9ddff;color:#0059a8}.ag-mini-status.ag-ch-confirmado{background:#c9efc7;color:#0b6b23}.ag-mini-status.ag-ch-enviado{background:#e1c5ff;color:#6d1b9a}.ag-mini-status.ag-ch-entregue{background:#008f45;color:#fff}.ag-mini-status.ag-ch-cancelado{background:#ffd0c9;color:#c5221f}.ag-mini-status.ag-ch-pendente{background:#fff3cd;color:#856404}.ag-mini-status.ag-ch-naoagendado{background:#eeeeee;color:#555}
     .ag-empty{padding:18px 22px;display:flex;align-items:center;gap:8px;color:var(--text-faint);font-size:12.5px;font-style:italic}
+    .ag-birthday-banner{display:flex;align-items:center;gap:12px;padding:10px 24px;border-bottom:1px solid #ddd6fe;background:#faf8ff;color:#4c1d95}
+    .ag-birthday-icon{width:32px;height:32px;border-radius:9px;background:#ede9fe;color:#6d28d9;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+    .ag-birthday-icon .material-symbols-outlined{font-size:18px}
+    .ag-birthday-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .ag-birthday-copy strong{font-size:12px;font-weight:800;color:#4c1d95}
+    .ag-birthday-copy span{font-size:12px;color:#5b21b6;white-space:normal}
+    .ag-birthday-count{margin-left:auto;font-size:10.5px;font-weight:700;color:#6d28d9;white-space:nowrap}
     .ag-day-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
     .ag-print-day{width:32px;height:32px;border:1.5px solid #d7dee8;border-radius:var(--r-sm);background:#fff;color:var(--primary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 3px rgba(18,102,241,.08)}
     .ag-print-day:hover{background:var(--primary-light);border-color:#c5d5fb}
@@ -245,6 +252,9 @@
     .ag-wk-wd{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-faint)}.ag-wk-num{font-size:20px;font-weight:700;line-height:1.1;color:var(--text)}.ag-wk-col.today-col .ag-wk-num{color:var(--primary)}
     .ag-wk-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--primary);margin-bottom:2px}.ag-wk-col-hdr .ag-dp-car{margin-top:5px;padding:2px 6px;font-size:9px}.ag-wk-col-hdr .ag-dp-car .material-symbols-outlined{font-size:13px}
     .ag-wk-appts{padding:6px 4px;display:flex;flex-direction:column;gap:4px}.ag-wk-empty{padding:16px 8px;text-align:center;color:var(--text-faint);font-size:11px;font-style:italic}
+    .ag-wk-birthday{border:1px solid #ddd6fe;border-left:3px solid #7c3aed;border-radius:6px;background:#faf8ff;color:#5b21b6;padding:6px;display:flex;align-items:flex-start;gap:5px;min-width:0}
+    .ag-wk-birthday .material-symbols-outlined{font-size:14px;flex-shrink:0}
+    .ag-wk-birthday strong{font-size:9.5px;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
     .ag-wk-appt{border-radius:6px;padding:5px 7px;cursor:pointer;border:1px solid #e0e6f0;border-left-width:3px;transition:box-shadow .12s;background:#fff}
     .ag-wk-appt:hover{box-shadow:0 2px 8px rgba(18,102,241,.14)}
     .ag-wk-appt.wa-agendado{border-left-color:#28a745;background:#f8fff9}.ag-wk-appt.wa-cancelado{border-left-color:#b3261e;background:#fff8f8;opacity:.75}.ag-wk-appt.wa-monitoria{border-left-color:#5b21b6;background:#faf8ff}.ag-wk-appt.wa-siv,.ag-wk-appt.type-siv{border-left-color:#b45309;background:#fff8f0}.ag-wk-appt.wa-realizado{border-left-color:#6c757d;background:#fafafa}.ag-wk-appt.wa-concluido{border-left-color:#212529;background:#f8f8f8}.ag-wk-appt.wa-pendente,.ag-wk-appt.wa-reagendado{border-left-color:#e65100;background:#fffaf3}
@@ -309,6 +319,8 @@
       .ag-day-label{font-size:13px}
       .ag-day-stats{justify-content:flex-start}
       .ag-day-actions{position:absolute;right:10px;top:9px}
+      .ag-birthday-banner{padding:10px 12px;align-items:flex-start}
+      .ag-birthday-count{display:none}
       .ag-appt-main{gap:9px;align-items:flex-start}
       .ag-appt-time{min-width:42px}
       .ag-appt-actions{margin-left:auto}

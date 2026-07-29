@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { readProjectFile } = require('./helpers/load-app-script');
 
 const MUTATION_PREFIX = /^(salvar|excluir|atualizar|configurar|instalar|remover|limpar|criar|gerar|importar|sincronizar|executar|registrar|receber|baixar|cancelar|marcar|concluir|aplicar|enviar|exportar|organizar|focar|resetar|corrigir|monitorar|manage|perform|processar|verificarEAtualizar)/;
-const AUTHORIZATION_GUARD = /\b(codexAssertAdmin_|codexAssertCanWrite_|codexAssertAdminOrInstalledTrigger_)\s*\(/;
+const AUTHORIZATION_GUARD = /\b(codexAssertAdmin_|codexAssertCanWrite_|codexAssertAdminOrInstalledTrigger_|codexAssertSelfProfileWrite_)\s*\(/;
 
 function topLevelFunctions(source) {
   const matches = Array.from(source.matchAll(/^function\s+([A-Za-z_$][\w$]*)\s*\(/gm));
