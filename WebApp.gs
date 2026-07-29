@@ -203,8 +203,9 @@ function getAppRuntimeInfo() {
   };
 }
 
-function getCodexDeploymentDiagnostics() {
+function getCodexDeploymentDiagnostics(clientContext) {
   var access = codexAssertAdmin_();
+  clientContext = clientContext || {};
   var out = {
     ok: true,
     appVersion: codexGetAppVersion_(),
@@ -234,6 +235,7 @@ function getCodexDeploymentDiagnostics() {
     auditRecent: codexGetRecentAuditIssuesDiagnostics_(),
     permissions: codexGetCriticalPermissionsDiagnostics_(),
     smoke: codexGetSmokeDiagnostics_(),
+    operational: codexGetOperationalHealthDiagnostics_(clientContext),
     script: {
       timeZone: '',
       expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
@@ -264,6 +266,264 @@ function getCodexDeploymentDiagnostics() {
     out.spreadsheet.error = e2.message || String(e2);
   }
   return out;
+}
+
+function codexGetOperationalHealthDiagnostics_(clientContext) {
+  clientContext = clientContext || {};
+  var publishedVersion = String(CODEX_APP_VERSION_ || '');
+  var loadedVersion = String(clientContext.loadedVersion || '');
+  var out = {
+    overall: { status: 'Saudavel', ok: true, errors: 0, warnings: 0, checks: [] },
+    versionSync: {
+      loadedVersion: loadedVersion,
+      publishedVersion: publishedVersion,
+      matches: !!loadedVersion && loadedVersion === publishedVersion,
+      watcherActive: !!clientContext.watcherActive,
+      noticeVisible: !!clientContext.noticeVisible,
+      status: ''
+    },
+    structure: { items: [], error: '' },
+    activity: { items: [], error: '' },
+    integrity: { items: [], totals: { duplicateIds: 0, missingIds: 0, orphanLinks: 0 }, error: '' }
+  };
+  out.versionSync.status = !loadedVersion
+    ? 'Versao carregada nao informada'
+    : (out.versionSync.matches ? 'Sincronizada' : 'Atualizacao pendente');
+
+  try {
+    var ss = getCodexSpreadsheet_();
+    var specs = codexDiagnosticSheetSpecs_();
+    var tables = {};
+    specs.forEach(function(spec) {
+      var table = codexReadDiagnosticTable_(ss, spec);
+      tables[spec.key] = table;
+      out.structure.items.push({
+        key: spec.key,
+        label: spec.label,
+        sheetName: table.sheetName,
+        present: table.present,
+        ok: table.present && !table.missingHeaders.length,
+        rows: table.rows.length,
+        missingHeaders: table.missingHeaders,
+        status: !table.present ? 'Aba ausente' : (table.missingHeaders.length ? 'Cabecalhos ausentes' : 'OK')
+      });
+    });
+    out.integrity = codexBuildIntegrityDiagnostics_(tables);
+    out.activity = codexBuildActivityDiagnostics_(ss);
+  } catch (e) {
+    out.structure.error = e.message || String(e);
+  }
+
+  function addCheck(label, ok, detail, severity) {
+    severity = severity || (ok ? 'ok' : 'warning');
+    if (!ok && severity === 'error') out.overall.errors++;
+    if (!ok && severity !== 'error') out.overall.warnings++;
+    out.overall.checks.push({ label: label, ok: !!ok, detail: detail || '', severity: severity });
+  }
+  addCheck('Versao cliente x servidor', out.versionSync.matches,
+    out.versionSync.status + (loadedVersion ? ' | cliente ' + loadedVersion + ' | servidor ' + publishedVersion : ''), 'warning');
+  addCheck('Monitor de nova versao', out.versionSync.watcherActive,
+    out.versionSync.watcherActive ? 'Monitor ativo no navegador.' : 'Monitor nao confirmado nesta sessao.', 'warning');
+  (out.structure.items || []).forEach(function(item) {
+    addCheck('Estrutura: ' + item.label, item.ok,
+      item.status + (item.missingHeaders.length ? ' | ' + item.missingHeaders.join(', ') : ''), 'error');
+  });
+  (out.integrity.items || []).forEach(function(item) {
+    addCheck('Integridade: ' + item.label, item.ok, item.detail,
+      item.duplicateIds > 0 ? 'error' : 'warning');
+  });
+  if (out.structure.error) addCheck('Leitura estrutural', false, out.structure.error, 'error');
+  if (out.integrity.error) addCheck('Leitura de integridade', false, out.integrity.error, 'error');
+  if (out.activity.error) addCheck('Leitura de atividade', false, out.activity.error, 'warning');
+  out.overall.ok = out.overall.errors === 0 && out.overall.warnings === 0;
+  out.overall.status = out.overall.errors > 0 ? 'Erro' : (out.overall.warnings > 0 ? 'Atencao' : 'Saudavel');
+  return out;
+}
+
+function codexDiagnosticSheetSpecs_() {
+  return [
+    { key: 'agenda', label: 'Agenda', names: AGENDA_CFG.abaNomes, required: [
+      { index: 0, label: 'ID', aliases: ['id', 'id agenda', 'agenda id'] },
+      { index: 1, label: 'Data', aliases: ['data'] },
+      { index: 3, label: 'Tipo', aliases: ['tipo', 'tipo de evento'] },
+      { index: 4, label: 'Status', aliases: ['status'] },
+      { index: 5, label: 'Participante', aliases: ['participante', 'nome participante'] },
+      { index: 7, label: 'ID Participante', aliases: ['id participante', 'identificacao participante'] },
+      { index: 8, label: 'Projeto', aliases: ['projeto', 'protocolo'] }
+    ] },
+    { key: 'projetos', label: 'Projetos', names: ['Projetos'], required: [
+      { index: 0, label: 'ID', aliases: ['id', 'id projeto'] },
+      { index: 1, label: 'Nome abreviado', aliases: ['nome abreviado', 'projeto', 'nome'] },
+      { index: 2, label: 'Codigo', aliases: ['codigo', 'codigo projeto', 'protocolo'] },
+      { index: 13, label: 'Status', aliases: ['status'] }
+    ] },
+    { key: 'participantes', label: 'Participantes', names: ['Participantes'], required: [
+      { index: 0, label: 'ID cadastro', aliases: ['id', 'id cadastro', 'id cadastro participante'] },
+      { index: 1, label: 'Nome', aliases: ['nome', 'participante'] },
+      { index: 4, label: 'ID participante', aliases: ['id participante', 'identificacao', 'numero identificacao'] },
+      { index: 5, label: 'Projeto', aliases: ['projeto', 'protocolo'] },
+      { index: 8, label: 'Status', aliases: ['status'] }
+    ] },
+    { key: 'estoque', label: 'Estoque', names: ['Estoque'], required: [
+      { index: 0, label: 'ID item', aliases: ['id item', 'id'] },
+      { index: 2, label: 'Descricao', aliases: ['descricao', 'item'] },
+      { index: 4, label: 'Validade', aliases: ['validade', 'data validade'] },
+      { index: 6, label: 'Quantidade', aliases: ['quantidade', 'qtde', 'saldo'] },
+      { index: 8, label: 'Status', aliases: ['status'] }
+    ] },
+    { key: 'users', label: 'Usuarios', names: [CODEX_ACL_SHEET_NAME_ || 'Users'], required: [
+      { index: 0, label: 'Email', aliases: ['email', 'e-mail'] },
+      { index: 1, label: 'Nome', aliases: ['nome'] },
+      { index: 2, label: 'Perfil', aliases: ['perfil', 'role'] },
+      { index: 3, label: 'Ativo', aliases: ['ativo', 'active'] },
+      { index: 4, label: 'Aniversario', aliases: ['aniversario mm-dd', 'aniversario', 'birthday'] }
+    ] },
+    { key: 'config', label: 'Config_App', names: ['Config_App'], required: [
+      { index: 0, label: 'Grupo', aliases: ['grupo'] },
+      { index: 1, label: 'Chave', aliases: ['chave'] },
+      { index: 2, label: 'Valor', aliases: ['valor'] },
+      { index: 3, label: 'Ativo', aliases: ['ativo'] }
+    ] }
+  ];
+}
+
+function codexReadDiagnosticTable_(ss, spec) {
+  var sh = null;
+  for (var n = 0; n < (spec.names || []).length; n++) {
+    sh = ss.getSheetByName(spec.names[n]);
+    if (sh) break;
+  }
+  if (!sh) return { present: false, sheetName: '', headers: [], rows: [], missingHeaders: (spec.required || []).map(function(x) { return x.label; }) };
+  var lastRow = sh.getLastRow();
+  var lastColumn = sh.getLastColumn();
+  var values = lastRow && lastColumn ? sh.getRange(1, 1, lastRow, lastColumn).getValues() : [];
+  var headers = values[0] || [];
+  var missing = (spec.required || []).filter(function(req) {
+    var actual = codexDiagnosticKey_(headers[req.index]);
+    return !(req.aliases || []).some(function(alias) { return actual === codexDiagnosticKey_(alias); });
+  }).map(function(req) { return req.label; });
+  return {
+    present: true,
+    sheetName: sh.getName(),
+    headers: headers,
+    rows: values.slice(1).filter(function(row) { return row.some(function(value) { return value !== '' && value !== null && value !== undefined; }); }),
+    missingHeaders: missing
+  };
+}
+
+function codexDiagnosticKey_(value) {
+  return String(value || '').trim().toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function codexDiagnosticIdStats_(rows, index) {
+  var seen = {};
+  var duplicates = {};
+  var missing = 0;
+  (rows || []).forEach(function(row) {
+    var hasData = row.some(function(value) { return value !== '' && value !== null && value !== undefined; });
+    if (!hasData) return;
+    var id = String(row[index] || '').trim();
+    if (!id) { missing++; return; }
+    var key = codexDiagnosticKey_(id);
+    if (seen[key]) duplicates[key] = true;
+    seen[key] = true;
+  });
+  return { duplicateIds: Object.keys(duplicates).length, missingIds: missing };
+}
+
+function codexBuildIntegrityDiagnostics_(tables) {
+  var out = { items: [], totals: { duplicateIds: 0, missingIds: 0, orphanLinks: 0 }, error: '' };
+  try {
+    ['agenda', 'projetos', 'participantes', 'estoque'].forEach(function(key) {
+      var table = tables[key] || { present: false, rows: [] };
+      if (!table.present) return;
+      var stats = codexDiagnosticIdStats_(table.rows, 0);
+      out.totals.duplicateIds += stats.duplicateIds;
+      out.totals.missingIds += stats.missingIds;
+      out.items.push({
+        key: key + '-ids', label: (key === 'agenda' ? 'Agenda' : key.charAt(0).toUpperCase() + key.slice(1)) + ' - IDs',
+        ok: stats.duplicateIds === 0 && stats.missingIds === 0,
+        duplicateIds: stats.duplicateIds, missingIds: stats.missingIds, orphanLinks: 0,
+        detail: stats.duplicateIds + ' duplicado(s) | ' + stats.missingIds + ' ausente(s)'
+      });
+    });
+    var projectKeys = {};
+    ((tables.projetos || {}).rows || []).forEach(function(row) {
+      [row[1], row[2]].forEach(function(value) { var key = codexDiagnosticKey_(value); if (key) projectKeys[key] = true; });
+    });
+    var participantKeys = {};
+    ((tables.participantes || {}).rows || []).forEach(function(row) {
+      var idKey = codexDiagnosticKey_(row[4]);
+      var projectKey = codexDiagnosticKey_(row[5]);
+      if (idKey) participantKeys[idKey + '|' + projectKey] = true;
+    });
+    var participantProjectOrphans = 0;
+    ((tables.participantes || {}).rows || []).forEach(function(row) {
+      var projectKey = codexDiagnosticKey_(row[5]);
+      if (projectKey && !projectKeys[projectKey]) participantProjectOrphans++;
+    });
+    var agendaProjectOrphans = 0;
+    var agendaParticipantOrphans = 0;
+    ((tables.agenda || {}).rows || []).forEach(function(row) {
+      var projectKey = codexDiagnosticKey_(row[8]);
+      var participantIdKey = codexDiagnosticKey_(row[7]);
+      if (projectKey && !projectKeys[projectKey]) agendaProjectOrphans++;
+      if (participantIdKey && !participantKeys[participantIdKey + '|' + projectKey]) agendaParticipantOrphans++;
+    });
+    [
+      { key: 'participante-projeto', label: 'Participantes x Projetos', count: participantProjectOrphans },
+      { key: 'agenda-projeto', label: 'Agenda x Projetos', count: agendaProjectOrphans },
+      { key: 'agenda-participante', label: 'Agenda x Participantes', count: agendaParticipantOrphans }
+    ].forEach(function(item) {
+      out.totals.orphanLinks += item.count;
+      out.items.push({ key: item.key, label: item.label, ok: item.count === 0, duplicateIds: 0, missingIds: 0,
+        orphanLinks: item.count, detail: item.count + ' vinculo(s) orfao(s)' });
+    });
+  } catch (e) {
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexBuildActivityDiagnostics_(ss) {
+  var out = { items: [], error: '' };
+  try {
+    var sh = ss.getSheetByName('Audit_Log');
+    if (!sh || sh.getLastRow() < 2) return out;
+    var count = Math.min(500, sh.getLastRow() - 1);
+    var startRow = sh.getLastRow() - count + 1;
+    var rows = sh.getRange(startRow, 1, count, Math.max(6, sh.getLastColumn())).getValues().reverse();
+    var groups = [
+      { key: 'agenda', label: 'Agenda', aliases: ['agenda'] },
+      { key: 'cadastros', label: 'Projetos e Participantes', aliases: ['cadastros'] },
+      { key: 'estoque', label: 'Estoque', aliases: ['estoque'] },
+      { key: 'transporte', label: 'Transporte', aliases: ['transporte'] },
+      { key: 'sistema', label: 'Sistema e configuracoes', aliases: ['sistema'] }
+    ];
+    groups.forEach(function(group) {
+      var found = rows.find(function(row) {
+        var moduleKey = codexDiagnosticKey_(row[4]);
+        return group.aliases.some(function(alias) { return moduleKey.indexOf(codexDiagnosticKey_(alias)) >= 0; });
+      });
+      out.items.push({ key: group.key, label: group.label, found: !!found,
+        timestamp: found ? codexDiagnosticFormatDate_(found[3]) : '',
+        action: found ? String(found[2] || '') : '', user: found ? String(found[1] || '') : '' });
+    });
+  } catch (e) {
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexDiagnosticFormatDate_(value) {
+  if (!value) return '';
+  try {
+    if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+      return Utilities.formatDate(value, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
+    }
+  } catch (e) {}
+  return String(value || '');
 }
 
 function codexGetCacheDiagnostics_() {
@@ -547,14 +807,14 @@ function codexGetSmokeDiagnostics_() {
   return out;
 }
 
-function limparCodexCachesDiagnostico() {
+function limparCodexCachesDiagnostico(clientContext) {
   var access = codexAssertAdmin_();
   clearConfigAppDefaultsCache_('Diagnostico');
   try {
     var props = PropertiesService.getScriptProperties();
     props.setProperty('CODEX_CONFIG_CACHE_INVALIDATED_BY', access.userEmail || '');
   } catch (e) {}
-  return getCodexDeploymentDiagnostics();
+  return getCodexDeploymentDiagnostics(clientContext || {});
 }
 
 function codexGetUserOAuthStatus_() {
