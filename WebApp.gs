@@ -886,6 +886,16 @@ function codexEnsureUsersProfileColumns_(sheet) {
   }
 }
 
+function codexSetUserBirthdaysAsText_(sheet, startRow, birthdays) {
+  birthdays = Array.isArray(birthdays) ? birthdays : [];
+  if (!sheet || !birthdays.length) return;
+  var range = sheet.getRange(startRow, 5, birthdays.length, 1);
+  range.setNumberFormat('@');
+  range.setValues(birthdays.map(function(value) {
+    return [String(value || '')];
+  }));
+}
+
 function codexNormalizeTextForSort_(value) {
   return String(value || '').trim().toLowerCase()
     .normalize('NFD')
@@ -1485,7 +1495,8 @@ function salvarMeuPerfil(payload) {
   var rowIndex = rowOffset + 2;
   var oldName = rows[rowOffset][1];
   var oldBirthday = rows[rowOffset][4];
-  sh.getRange(rowIndex, 2, 1, 4).setValues([[name, rows[rowOffset][2], rows[rowOffset][3], birthday]]);
+  sh.getRange(rowIndex, 2, 1, 3).setValues([[name, rows[rowOffset][2], rows[rowOffset][3]]]);
+  codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   codexWriteAuditChanges_('Sistema', 'salvarMeuPerfil', email, [
     { field: 'Usuário - Nome', oldValue: oldName, newValue: name },
@@ -1547,7 +1558,8 @@ function salvarPerfisUsuariosAdmin(payload) {
   });
 
   codexEnsureUsersProfileColumns_(sh);
-  sh.getRange(2, 1, rows.length, 5).setValues(rows.map(function(row) { return row.slice(0, 5); }));
+  sh.getRange(2, 1, rows.length, 4).setValues(rows.map(function(row) { return row.slice(0, 4); }));
+  codexSetUserBirthdaysAsText_(sh, 2, rows.map(function(row) { return row[4]; }));
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   changes.forEach(function(change) {
     codexWriteAuditLog_('salvarPerfisUsuariosAdmin', 'Sistema', change.email);
@@ -1625,7 +1637,8 @@ function salvarUsuarioAdmin(payload) {
   if (!rowIndex || rowIndex < 2) rowIndex = Math.max(2, lastRow + 1);
   codexEnsureUsersProfileColumns_(sh);
   var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 5).getValues()[0] : ['', '', '', '', ''];
-  sh.getRange(rowIndex, 1, 1, 5).setValues([[email, name, role, ativo, birthday]]);
+  sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
+  codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
   codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [

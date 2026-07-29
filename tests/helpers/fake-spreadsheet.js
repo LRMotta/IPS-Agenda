@@ -47,6 +47,16 @@ class FakeRange {
   setFontFamily() { return this; }
   setFontSize() { return this; }
   setFontWeight() { return this; }
+  setNumberFormat(format) {
+    this.sheet.numberFormats.push({
+      row: this.row,
+      column: this.column,
+      numRows: this.numRows,
+      numColumns: this.numColumns,
+      format
+    });
+    return this;
+  }
   sort() { return this; }
 }
 
@@ -55,6 +65,7 @@ class FakeSheet {
     this.name = name;
     this.rows = (rows || []).map((row) => row.slice());
     this.writes = 0;
+    this.numberFormats = [];
   }
 
   getDataRange() {
