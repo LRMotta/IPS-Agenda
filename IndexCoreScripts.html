@@ -950,6 +950,10 @@ function renderDiagnosticoImplantacao(data) {
   var structure = operational.structure || {};
   var activity = operational.activity || {};
   var integrity = operational.integrity || {};
+  var configValidation = data.configValidation || {};
+  var profileHealth = data.profileHealth || {};
+  var automationRuns = data.automationRuns || {};
+  var timings = data.timings || [];
   diagSetText('diagOverall', overall.status || '--');
   diagSetText('diagVersion', version.version || '--');
   diagSetText('diagAccess', access.role || '--');
@@ -992,6 +996,28 @@ function renderDiagnosticoImplantacao(data) {
   if (integrityEl) integrityEl.innerHTML = (integrity.items || []).map(function(item) {
     return diagCheckItem(item.label, item.detail, item.ok, item.ok ? 'OK' : (item.duplicateIds ? 'Erro' : 'Atencao'));
   }).join('') || diagCheckItem('Integridade', integrity.error || 'Sem dados.', false, 'Atencao');
+  var configValidationEl = document.getElementById('diagConfigValidation');
+  if (configValidationEl) configValidationEl.innerHTML = (configValidation.items || []).map(function(item) {
+    var hasDuplicates = item.duplicateValues && item.duplicateValues.length;
+    return diagCheckItem(item.label, item.detail, item.ok && !hasDuplicates, item.ok ? (hasDuplicates ? 'Atencao' : 'OK') : 'Atencao');
+  }).join('') || diagCheckItem('Config_App', configValidation.error || 'Sem dados.', false, 'Atencao');
+  var profileHealthEl = document.getElementById('diagProfileHealth');
+  if (profileHealthEl) profileHealthEl.innerHTML = diagDl([
+    ['Total', Number(profileHealth.total || 0)],
+    ['Ativos', Number(profileHealth.active || 0)],
+    ['Inativos', Number(profileHealth.inactive || 0)],
+    ['E-mails duplicados', Number(profileHealth.duplicateEmails || 0)],
+    ['Sem e-mail', Number(profileHealth.missingEmails || 0)],
+    ['Sem nome', Number(profileHealth.missingNames || 0)],
+    ['Aniversarios invalidos', Number(profileHealth.invalidBirthdays || 0)],
+    ['Exemplos', (profileHealth.duplicateExamples || []).concat(profileHealth.issueExamples || []).join('; ')],
+    ['Erro', profileHealth.error || '']
+  ]);
+  var automationRunsEl = document.getElementById('diagAutomationRuns');
+  if (automationRunsEl) automationRunsEl.innerHTML = (automationRuns.items || []).map(function(item) {
+    var detail = [item.finishedAt || item.startedAt || '', item.durationMs ? item.durationMs + ' ms' : '', item.summary || '', item.message || ''].filter(Boolean).join(' | ');
+    return diagCheckItem(item.label, detail || item.status, item.ok && item.status !== 'Nunca registrado', item.status === 'Falha' || item.status === 'Possivel interrupcao' ? 'Erro' : (item.status === 'Nunca registrado' ? 'Atencao' : 'OK'));
+  }).join('') || diagCheckItem('Automacoes', automationRuns.error || 'Sem historico.', false, 'Atencao');
   var env = document.getElementById('diagEnvironment');
   if (env) {
     env.innerHTML = diagDl([
@@ -1070,14 +1096,21 @@ function renderDiagnosticoImplantacao(data) {
     var triggerList = (triggers.triggers || []).map(function(t) {
       return [t.handler, t.eventType || t.source].filter(Boolean).join(' | ');
     }).join('; ');
-    triggerMailEl.innerHTML = diagDl([
+    var expectedTriggers = (triggers.expected || []).map(function(item) {
+      return [item.label, item.count === 1 ? 'OK' : (item.count === 0 ? 'Ausente' : item.count + ' duplicados')];
+    });
+    triggerMailEl.innerHTML = diagDl(expectedTriggers.concat([
       ['Monitor confirmacao courier', triggers.monitorConfirmacaoCouriersAtivo ? 'Ativo' : 'Nao encontrado'],
       ['Monitor entregas DHL', triggers.monitorEntregasDhlAtivo ? 'Ativo' : 'Nao encontrado'],
       ['Triggers instalados', triggerList || triggers.error || 'Nenhum'],
       ['Cota MailApp restante', mail.remainingDailyQuota === '' ? (mail.error || '') : mail.remainingDailyQuota],
       ['MailApp', mail.status || '']
-    ]);
+    ]));
   }
+  var timingsEl = document.getElementById('diagTimings');
+  if (timingsEl) timingsEl.innerHTML = diagDl((timings || []).map(function(item) {
+    return [item.label || item.key || '', Number(item.durationMs || 0) + ' ms' + (item.slow ? ' | lento' : '')];
+  }).concat([['Total', Number(data.totalDurationMs || 0) + ' ms']]));
   var permissionsEl = document.getElementById('diagPermissions');
   if (permissionsEl) {
     permissionsEl.innerHTML = diagDl([
@@ -1133,6 +1166,9 @@ function copiarDiagnosticoImplantacao() {
   var overall = operational.overall || {};
   var versionSync = operational.versionSync || {};
   var integrity = operational.integrity || {};
+  var configValidation = data.configValidation || {};
+  var profileHealth = data.profileHealth || {};
+  var automationRuns = data.automationRuns || {};
   var resumo = [
     'CODEX diagnostico de implantacao',
     'Saude geral: ' + (overall.status || '') + ' | ' + Number(overall.errors || 0) + ' erro(s) | ' + Number(overall.warnings || 0) + ' alerta(s)',
@@ -1152,6 +1188,10 @@ function copiarDiagnosticoImplantacao() {
     'Drive: ' + ((permissions.drive && permissions.drive.status) || ''),
     'Calendar: ' + ((permissions.calendar && permissions.calendar.status) || ''),
     'Integridade: ' + Number((integrity.totals || {}).duplicateIds || 0) + ' ID(s) duplicado(s) | ' + Number((integrity.totals || {}).missingIds || 0) + ' ID(s) ausente(s) | ' + Number((integrity.totals || {}).orphanLinks || 0) + ' vinculo(s) orfao(s)',
+    'Config_App: ' + Number(configValidation.missing || 0) + ' configuracao(oes) obrigatoria(s) ausente(s)',
+    'Perfis: ' + Number(profileHealth.active || 0) + ' ativo(s) | ' + Number(profileHealth.inactive || 0) + ' inativo(s) | ' + Number(profileHealth.duplicateEmails || 0) + ' e-mail(s) duplicado(s) | ' + Number(profileHealth.invalidBirthdays || 0) + ' aniversario(s) invalido(s)',
+    'Automacoes: ' + (automationRuns.items || []).map(function(item) { return item.label + '=' + item.status; }).join(' | '),
+    'Tempo total do diagnostico: ' + Number(data.totalDurationMs || 0) + ' ms',
     'Config_App cache presente: ' + (cache.configRowsCachePresent ? 'Sim' : 'Nao'),
     'Agenda bootstrap cache hoje: ' + (cache.agendaBootstrapCachePresent ? 'Sim' : 'Nao'),
     'Ultima invalidacao cache: ' + (cache.lastConfigInvalidationAt || '')

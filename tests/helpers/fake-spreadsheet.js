@@ -23,6 +23,7 @@ class FakeRange {
 
   getValue() { return this.getValues()[0][0]; }
   getDisplayValue() { return String(this.getValue() ?? ''); }
+  getDisplayValues() { return this.getValues().map((row) => row.map((value) => String(value ?? ''))); }
 
   setValues(values) {
     for (let r = 0; r < this.numRows; r++) {
