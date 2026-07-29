@@ -55,6 +55,13 @@ test('usuario altera somente o proprio nome e aniversario', () => {
   assert.equal(result.email, 'maria@example.invalid');
   assert.equal(result.firstName, 'Maria');
   assert.deepEqual(users.rows[1], ['maria@example.invalid', 'Maria Oliveira', 'readonly', 'Sim', '09-18']);
+  assert.deepEqual(users.numberFormats.at(-1), {
+    row: 2,
+    column: 5,
+    numRows: 1,
+    numColumns: 1,
+    format: '@'
+  });
 });
 
 test('carga administrativa valida todas as linhas antes da gravacao em lote', () => {
@@ -80,6 +87,40 @@ test('carga administrativa valida todas as linhas antes da gravacao em lote', ()
   assert.equal(result.updated, 2);
   assert.equal(users.rows[1][4], '09-18');
   assert.equal(users.rows[2][4], '11-03');
+  assert.deepEqual(users.numberFormats.at(-1), {
+    row: 2,
+    column: 5,
+    numRows: 2,
+    numColumns: 1,
+    format: '@'
+  });
+});
+
+test('edicao administrativa grava aniversario como texto para evitar conversao da planilha', () => {
+  const { server, users } = profileServer([
+    ['Email', 'Nome', 'Perfil', 'Ativo', 'AniversÃ¡rio (MM-DD)'],
+    ['priscila@example.invalid', 'Priscila Dias GonÃ§alves', 'user', 'Sim', '']
+  ]);
+  server.codexAssertAdmin_ = () => ({ ok: true, userEmail: 'admin@example.invalid', role: 'admin' });
+
+  server.salvarUsuarioAdmin({
+    rowIndex: 2,
+    email: 'priscila@example.invalid',
+    name: 'Priscila Dias GonÃ§alves',
+    birthdayDay: 1,
+    birthdayMonth: 4,
+    role: 'user',
+    ativo: 'Sim'
+  });
+
+  assert.equal(users.rows[1][4], '04-01');
+  assert.deepEqual(users.numberFormats.at(-1), {
+    row: 2,
+    column: 5,
+    numRows: 1,
+    numColumns: 1,
+    format: '@'
+  });
 });
 
 test('agenda trata aniversarios como faixa informativa fora dos eventos', () => {
