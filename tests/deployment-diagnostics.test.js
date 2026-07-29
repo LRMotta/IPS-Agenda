@@ -26,8 +26,8 @@ function diagnosticServer(overrides) {
       rowWith(9, { 0: '1', 1: 'Pessoa Um', 4: 'SUB-1', 5: 'Estudo A', 8: 'Ativo' })
     ]),
     Itens: new FakeSheet('Itens', [
-      rowWith(9, { 0: 'ID_Item', 1: 'Projeto', 2: 'Descrição do item', 3: 'Tipo de item', 8: 'Status' }),
-      rowWith(9, { 0: 'KIT-1', 1: 'Estudo A', 2: 'Kit coleta', 3: 'Kit', 8: 'Ativo' })
+      rowWith(10, { 0: 'ID_Item', 1: 'Projeto', 2: 'Descrição', 3: 'Detalhes Visita / Complemento', 4: 'Tipo de item', 5: 'Localização padrão', 6: 'Estoque mínimo', 7: 'Observações', 8: 'Laboratório', 9: 'Status' }),
+      rowWith(10, { 0: 'KIT-1', 1: 'Estudo A', 2: 'Kit coleta', 3: 'Visita 1', 4: 'Kit', 5: 'Sala A', 6: 2, 8: 'Lab A', 9: 'Ativo' })
     ]),
     Estoque: new FakeSheet('Estoque', [
       rowWith(9, { 0: 'ID Item', 2: 'Descricao', 4: 'Validade', 6: 'Quantidade', 8: 'Status' }),
@@ -113,6 +113,23 @@ test('rotulos personalizados na posicao funcional viram alerta, nao erro estrutu
   assert.equal(users.warning, true);
   assert.equal(result.overall.errors, 0);
   assert.ok(result.overall.warnings >= 1);
+});
+
+test('rotulos reais de participantes e usuarios sao reconhecidos sem alerta', () => {
+  const { server } = diagnosticServer({
+    Participantes: new FakeSheet('Participantes', [
+      rowWith(9, { 0: 'ID_Participante', 1: 'Nome', 4: 'ID Participante', 5: 'Projeto', 8: 'Status' }),
+      rowWith(9, { 0: '1', 1: 'Pessoa Um', 4: 'SUB-1', 5: 'Estudo A', 8: 'Ativo' })
+    ]),
+    Users: new FakeSheet('Users', [
+      ['Email', 'Nome', 'Função', 'Ativo', 'Aniversario'],
+      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01']
+    ])
+  });
+  const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+
+  assert.equal(result.structure.items.find((item) => item.key === 'participantes').warning, false);
+  assert.equal(result.structure.items.find((item) => item.key === 'users').warning, false);
 });
 
 test('coluna obrigatoria deslocada continua sendo erro estrutural', () => {

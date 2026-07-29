@@ -206,6 +206,7 @@ function getAppRuntimeInfo() {
 function getCodexDeploymentDiagnostics(clientContext) {
   var access = codexAssertAdmin_();
   clientContext = clientContext || {};
+  var diagnosticStartedAt = Date.now();
   var out = {
     ok: true,
     appVersion: codexGetAppVersion_(),
@@ -216,8 +217,8 @@ function getCodexDeploymentDiagnostics(clientContext) {
       role: access.role || ''
     },
     webAppUrl: '',
-    auth: codexGetUserOAuthStatus_(),
-    identity: codexGetIdentityDiagnostics_(),
+    auth: {},
+    identity: {},
     spreadsheet: {
       ok: false,
       name: '',
@@ -227,20 +228,40 @@ function getCodexDeploymentDiagnostics(clientContext) {
       sheets: [],
       error: ''
     },
-    cache: codexGetCacheDiagnostics_(),
-    transport: codexGetTransportDiagnostics_(),
-    dataCounts: codexGetDataCountsDiagnostics_(),
-    triggers: codexGetTriggersDiagnostics_(),
-    mail: codexGetMailDiagnostics_(),
-    auditRecent: codexGetRecentAuditIssuesDiagnostics_(),
-    permissions: codexGetCriticalPermissionsDiagnostics_(),
-    smoke: codexGetSmokeDiagnostics_(),
-    operational: codexGetOperationalHealthDiagnostics_(clientContext),
+    cache: {},
+    transport: {},
+    dataCounts: {},
+    triggers: {},
+    mail: {},
+    auditRecent: {},
+    permissions: {},
+    smoke: {},
+    operational: {},
+    configValidation: {},
+    profileHealth: {},
+    automationRuns: {},
+    timings: [],
     script: {
       timeZone: '',
       expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
     }
   };
+  out.auth = codexTimedDiagnostic_(out.timings, 'auth', 'OAuth', codexGetUserOAuthStatus_);
+  out.identity = codexTimedDiagnostic_(out.timings, 'identity', 'Identidade', codexGetIdentityDiagnostics_);
+  out.cache = codexTimedDiagnostic_(out.timings, 'cache', 'Caches', codexGetCacheDiagnostics_);
+  out.transport = codexTimedDiagnostic_(out.timings, 'transport', 'Transporte', codexGetTransportDiagnostics_);
+  out.dataCounts = codexTimedDiagnostic_(out.timings, 'data-counts', 'Contagens por modulo', codexGetDataCountsDiagnostics_);
+  out.triggers = codexTimedDiagnostic_(out.timings, 'triggers', 'Gatilhos', codexGetTriggersDiagnostics_);
+  out.automationRuns = codexTimedDiagnostic_(out.timings, 'automation-runs', 'Historico das automacoes', codexGetAutomationRunDiagnostics_);
+  out.mail = codexTimedDiagnostic_(out.timings, 'mail', 'Cota de e-mail', codexGetMailDiagnostics_);
+  out.auditRecent = codexTimedDiagnostic_(out.timings, 'audit', 'Auditoria recente', codexGetRecentAuditIssuesDiagnostics_);
+  out.permissions = codexTimedDiagnostic_(out.timings, 'permissions', 'Permissoes criticas', codexGetCriticalPermissionsDiagnostics_);
+  out.smoke = codexTimedDiagnostic_(out.timings, 'smoke', 'Smoke checks', codexGetSmokeDiagnostics_);
+  out.operational = codexTimedDiagnostic_(out.timings, 'operational', 'Dados e integridade', function() {
+    return codexGetOperationalHealthDiagnostics_(clientContext);
+  });
+  out.configValidation = codexTimedDiagnostic_(out.timings, 'config-validation', 'Config_App obrigatoria', codexBuildConfigAppDiagnostics_);
+  out.profileHealth = codexTimedDiagnostic_(out.timings, 'profiles', 'Perfis de acesso', codexGetProfileHealthDiagnostics_);
   try {
     var tz = Session.getScriptTimeZone() || 'America/Sao_Paulo';
     out.script.timeZone = tz;
@@ -249,12 +270,18 @@ function getCodexDeploymentDiagnostics(clientContext) {
     out.checkedAt = new Date().toISOString();
   }
   try {
-    out.webAppUrl = ScriptApp.getService().getUrl();
+    out.webAppUrl = codexTimedDiagnostic_(out.timings, 'webapp-url', 'URL do WebApp', function() {
+      return ScriptApp.getService().getUrl();
+    });
   } catch (e1) {
     out.webAppUrlError = e1.message || String(e1);
   }
   try {
-    var ss = getCodexSpreadsheet_();
+    var ss = null;
+    codexTimedDiagnostic_(out.timings, 'spreadsheet', 'Planilha principal', function() {
+      ss = getCodexSpreadsheet_();
+      return ss;
+    });
     var id = String(ss.getId() || '');
     out.spreadsheet.ok = true;
     out.spreadsheet.name = ss.getName();
@@ -265,7 +292,82 @@ function getCodexDeploymentDiagnostics(clientContext) {
   } catch (e2) {
     out.spreadsheet.error = e2.message || String(e2);
   }
+  codexAppendMediumPriorityChecks_(out);
+  out.totalDurationMs = Math.max(0, Date.now() - diagnosticStartedAt);
   return out;
+}
+
+function codexTimedDiagnostic_(timings, key, label, callback) {
+  var startedAt = Date.now();
+  var ok = true;
+  try {
+    var result = callback();
+    if (result && result.ok === false) ok = false;
+    return result;
+  } catch (e) {
+    ok = false;
+    throw e;
+  } finally {
+    var durationMs = Math.max(0, Date.now() - startedAt);
+    (timings || []).push({
+      key: key,
+      label: label,
+      durationMs: durationMs,
+      ok: ok,
+      slow: durationMs >= 1500
+    });
+  }
+}
+
+function codexAppendOperationalCheck_(operational, label, ok, detail, severity) {
+  operational = operational || {};
+  operational.overall = operational.overall || { status: 'Saudavel', ok: true, errors: 0, warnings: 0, checks: [] };
+  var overall = operational.overall;
+  overall.checks = overall.checks || [];
+  severity = severity || (ok ? 'ok' : 'warning');
+  if (!ok && severity === 'error') overall.errors = Number(overall.errors || 0) + 1;
+  if (!ok && severity !== 'error') overall.warnings = Number(overall.warnings || 0) + 1;
+  overall.checks.push({ label: label, ok: !!ok, detail: detail || '', severity: severity });
+  overall.ok = Number(overall.errors || 0) === 0 && Number(overall.warnings || 0) === 0;
+  overall.status = Number(overall.errors || 0) > 0 ? 'Erro' : (Number(overall.warnings || 0) > 0 ? 'Atencao' : 'Saudavel');
+}
+
+function codexAppendMediumPriorityChecks_(data) {
+  var operational = data.operational || {};
+  var config = data.configValidation || {};
+  var missingConfig = (config.items || []).filter(function(item) { return !item.ok; });
+  var configOk = config.ok !== false && missingConfig.length === 0;
+  codexAppendOperationalCheck_(operational, 'Config_App obrigatoria', configOk,
+    config.error || (missingConfig.length ? 'Sem valores ativos: ' + missingConfig.map(function(item) { return item.label; }).join(', ') : 'Todas as configuracoes essenciais possuem valor ativo.'), 'warning');
+
+  var triggers = data.triggers || {};
+  if (triggers.error) codexAppendOperationalCheck_(operational, 'Leitura dos gatilhos', false, triggers.error, 'warning');
+  (triggers.expected || []).forEach(function(item) {
+    codexAppendOperationalCheck_(operational, 'Gatilho: ' + item.label, item.count === 1,
+      item.count === 0 ? 'Ausente.' : (item.count > 1 ? item.count + ' instalacoes encontradas; mantenha apenas uma.' : 'Instalado uma vez.'), 'warning');
+  });
+
+  var profiles = data.profileHealth || {};
+  if (profiles.error) codexAppendOperationalCheck_(operational, 'Leitura dos perfis', false, profiles.error, 'warning');
+  codexAppendOperationalCheck_(operational, 'Perfis: e-mails duplicados', Number(profiles.duplicateEmails || 0) === 0,
+    Number(profiles.duplicateEmails || 0) + ' e-mail(s) duplicado(s)' + (profiles.duplicateExamples && profiles.duplicateExamples.length ? ' | ' + profiles.duplicateExamples.join('; ') : ''), 'error');
+  codexAppendOperationalCheck_(operational, 'Perfis: nomes obrigatorios', Number(profiles.missingNames || 0) === 0,
+    Number(profiles.missingNames || 0) + ' usuario(s) sem nome', 'warning');
+  codexAppendOperationalCheck_(operational, 'Perfis: e-mails obrigatorios', Number(profiles.missingEmails || 0) === 0,
+    Number(profiles.missingEmails || 0) + ' usuario(s) sem e-mail', 'error');
+  codexAppendOperationalCheck_(operational, 'Perfis: aniversarios validos', Number(profiles.invalidBirthdays || 0) === 0,
+    Number(profiles.invalidBirthdays || 0) + ' aniversario(s) invalido(s)', 'warning');
+
+  (data.automationRuns && data.automationRuns.items || []).forEach(function(item) {
+    if (item.status === 'Falha' || item.status === 'Possivel interrupcao') {
+      codexAppendOperationalCheck_(operational, 'Automacao: ' + item.label, false,
+        [item.status, item.finishedAt || item.startedAt, item.message].filter(Boolean).join(' | '), 'warning');
+    }
+  });
+  if (data.automationRuns && data.automationRuns.error) {
+    codexAppendOperationalCheck_(operational, 'Historico das automacoes', false, data.automationRuns.error, 'warning');
+  }
+  data.operational = operational;
 }
 
 function codexGetOperationalHealthDiagnostics_(clientContext) {
@@ -361,7 +463,7 @@ function codexDiagnosticSheetSpecs_() {
       { index: 13, label: 'Status', aliases: ['status'] }
     ] },
     { key: 'participantes', label: 'Participantes', names: ['Participantes'], required: [
-      { index: 0, label: 'ID cadastro', aliases: ['id', 'id cadastro', 'id cadastro participante', 'id interno', 'codigo cadastro'] },
+      { index: 0, label: 'ID cadastro', aliases: ['id', 'id cadastro', 'id cadastro participante', 'id interno', 'codigo cadastro', 'id participante'] },
       { index: 1, label: 'Nome', aliases: ['nome', 'participante'] },
       { index: 4, label: 'ID participante', aliases: ['id participante', 'identificacao', 'numero identificacao', 'numero de identificacao', 'n identificacao'] },
       { index: 5, label: 'Projeto', aliases: ['projeto', 'protocolo'] },
@@ -371,8 +473,9 @@ function codexDiagnosticSheetSpecs_() {
       { index: 0, label: 'ID item', aliases: ['id item', 'id'] },
       { index: 1, label: 'Projeto', aliases: ['projeto'] },
       { index: 2, label: 'Descricao', aliases: ['descricao', 'descricao do item', 'item'] },
-      { index: 3, label: 'Tipo', aliases: ['tipo', 'tipo de item'] },
-      { index: 8, label: 'Status', aliases: ['status', 'ativo'] }
+      { index: 3, label: 'Detalhes Visita / Complemento', aliases: ['detalhes visita complemento', 'detalhes visita', 'complemento'] },
+      { index: 4, label: 'Tipo', aliases: ['tipo', 'tipo de item'] },
+      { index: 9, label: 'Status', aliases: ['status', 'ativo'] }
     ] },
     { key: 'estoque', label: 'Estoque - Lotes', names: ['Estoque'], required: [
       { index: 0, label: 'ID item', aliases: ['id item', 'id'] },
@@ -384,7 +487,7 @@ function codexDiagnosticSheetSpecs_() {
     { key: 'users', label: 'Usuarios', names: [CODEX_ACL_SHEET_NAME_ || 'Users'], required: [
       { index: 0, label: 'Email', aliases: ['email', 'e-mail', 'email usuario', 'e-mail usuario', 'email autorizado'] },
       { index: 1, label: 'Nome', aliases: ['nome'] },
-      { index: 2, label: 'Perfil', aliases: ['perfil', 'perfil de acesso', 'nivel de acesso', 'role'] },
+      { index: 2, label: 'Perfil', aliases: ['perfil', 'perfil de acesso', 'nivel de acesso', 'funcao', 'role'] },
       { index: 3, label: 'Ativo', aliases: ['ativo', 'active'] },
       { index: 4, label: 'Aniversario', aliases: ['aniversario mm-dd', 'aniversario', 'birthday'] }
     ] },
@@ -784,8 +887,146 @@ function codexSheetCountDiagnostic_(ss, label, resolver) {
   }
 }
 
+function codexConfigRowIsActive_(row) {
+  var active = normText_(row && row.ativo || 'Sim');
+  return ['nao', 'false', '0', 'inativo'].indexOf(active) === -1;
+}
+
+function codexReadConfigAppRowsForDiagnostics_() {
+  var ss = getCodexSpreadsheet_();
+  var sh = ss.getSheetByName('Config_App');
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (!sh || lastRow < 2) return [];
+  var out = [];
+  [[1, 'Principal'], [8, 'Apoio']].forEach(function(block) {
+    var values = sh.getRange(2, block[0], lastRow - 1, 6).getValues();
+    values.forEach(function(row, offset) {
+      if (!String(row[0] || row[1] || row[2] || '').trim()) return;
+      out.push({
+        rowIndex: offset + 2,
+        bloco: block[1],
+        grupo: String(row[0] || '').trim(),
+        chave: String(row[1] || '').trim(),
+        valor: String(row[2] || '').trim(),
+        ativo: String(row[3] || 'Sim').trim()
+      });
+    });
+  });
+  return out;
+}
+
+function codexBuildConfigAppDiagnostics_() {
+  var out = { ok: true, items: [], missing: 0, duplicateValues: 0, error: '' };
+  try {
+    var rows = codexReadConfigAppRowsForDiagnostics_();
+    var requirements = [
+      { label: 'Agenda / Tipos de evento', groups: ['Agenda'], keys: ['Tipo de evento', 'Tipos de evento'] },
+      { label: 'Agenda / Status', groups: ['Agenda'], keys: ['Status'] },
+      { label: 'Projetos / Fase', groups: ['Projetos'], keys: ['Fase'] },
+      { label: 'Projetos / Status', groups: ['Projetos'], keys: ['Status'] },
+      { label: 'Estoque / Laboratorios', groups: ['Estoque'], keys: ['Laboratorio'], keyPrefix: true },
+      { label: 'Estoque / Localizacoes', groups: ['Estoque'], keys: ['Localizacao'], keyPrefix: true },
+      { label: 'Estoque / Tipos de item', groups: ['Estoque'], keys: ['Tipo de item'], keyPrefix: true }
+    ];
+    requirements.forEach(function(requirement) {
+      var groups = {};
+      var keys = {};
+      requirement.groups.forEach(function(value) { groups[normText_(value)] = true; });
+      requirement.keys.forEach(function(value) { keys[normText_(value)] = true; });
+      var values = [];
+      var seen = {};
+      var duplicates = [];
+      rows.forEach(function(row) {
+        var rowKey = normText_(row.chave);
+        var keyMatches = !!keys[rowKey] || (requirement.keyPrefix && Object.keys(keys).some(function(key) { return rowKey.indexOf(key) === 0; }));
+        if (!groups[normText_(row.grupo)] || !keyMatches || !codexConfigRowIsActive_(row)) return;
+        var value = String(row.valor || '').trim();
+        if (!value) return;
+        var valueKey = normText_(value);
+        if (seen[valueKey] && duplicates.indexOf(value) === -1) duplicates.push(value);
+        seen[valueKey] = true;
+        values.push(value);
+      });
+      var ok = values.length > 0;
+      if (!ok) out.missing++;
+      out.duplicateValues += duplicates.length;
+      out.items.push({
+        label: requirement.label,
+        ok: ok,
+        count: values.length,
+        duplicateValues: duplicates,
+        detail: ok ? values.length + ' valor(es) ativo(s)' + (duplicates.length ? ' | duplicados: ' + duplicates.join(', ') : '') : 'Nenhum valor ativo configurado.'
+      });
+    });
+    out.ok = out.missing === 0;
+  } catch (e) {
+    out.ok = false;
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexBuildProfileDiagnostics_(rows) {
+  var out = {
+    ok: true,
+    total: 0,
+    active: 0,
+    inactive: 0,
+    missingNames: 0,
+    missingEmails: 0,
+    invalidBirthdays: 0,
+    duplicateEmails: 0,
+    duplicateExamples: [],
+    issueExamples: []
+  };
+  var emails = {};
+  (rows || []).forEach(function(row, offset) {
+    if (!(row || []).some(function(value) { return value !== '' && value !== null && value !== undefined; })) return;
+    var rowNumber = offset + 2;
+    var email = codexNormalizeEmail_(row[0]);
+    var name = codexNormalizeUserName_(row[1]);
+    var active = codexNormalizeActive_(row[3]);
+    var birthday = row[4];
+    out.total++;
+    if (active) out.active++; else out.inactive++;
+    if (!email) {
+      out.missingEmails++;
+      if (out.issueExamples.length < 5) out.issueExamples.push('linha ' + rowNumber + ': e-mail ausente');
+    } else if (emails[email]) {
+      out.duplicateEmails++;
+      if (out.duplicateExamples.length < 5) out.duplicateExamples.push(email + ' (linhas ' + emails[email] + ' e ' + rowNumber + ')');
+    } else {
+      emails[email] = rowNumber;
+    }
+    if (!name) {
+      out.missingNames++;
+      if (out.issueExamples.length < 5) out.issueExamples.push('linha ' + rowNumber + ': nome ausente');
+    }
+    if (birthday !== '' && birthday !== null && birthday !== undefined) {
+      try { codexNormalizeBirthday_(birthday); }
+      catch (e) {
+        out.invalidBirthdays++;
+        if (out.issueExamples.length < 5) out.issueExamples.push('linha ' + rowNumber + ': aniversario invalido');
+      }
+    }
+  });
+  out.ok = out.duplicateEmails === 0 && out.missingNames === 0 && out.missingEmails === 0 && out.invalidBirthdays === 0;
+  return out;
+}
+
+function codexGetProfileHealthDiagnostics_() {
+  try {
+    var ss = getCodexSpreadsheet_();
+    var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_ || 'Users');
+    if (!sh || sh.getLastRow() < 2) return codexBuildProfileDiagnostics_([]);
+    return codexBuildProfileDiagnostics_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues());
+  } catch (e) {
+    return { ok: false, total: 0, active: 0, inactive: 0, missingNames: 0, missingEmails: 0, invalidBirthdays: 0, duplicateEmails: 0, duplicateExamples: [], issueExamples: [], error: e.message || String(e) };
+  }
+}
+
 function codexGetTriggersDiagnostics_() {
-  var out = { ok: false, triggers: [], monitorConfirmacaoCouriersAtivo: false, monitorEntregasDhlAtivo: false, error: '' };
+  var out = { ok: false, triggers: [], expected: [], missing: 0, duplicates: 0, monitorConfirmacaoCouriersAtivo: false, monitorEntregasDhlAtivo: false, error: '' };
   try {
     out.triggers = ScriptApp.getProjectTriggers().map(function(t) {
       var source = '';
@@ -797,8 +1038,105 @@ function codexGetTriggersDiagnostics_() {
       if (fn === 'monitorarEntregasDhlAgendadas' || fn === 'monitorarEntregasDhlAgendadas_') out.monitorEntregasDhlAtivo = true;
       return { handler: fn, source: source, eventType: eventType, uid: t.getUniqueId ? String(t.getUniqueId() || '') : '' };
     });
-    out.ok = true;
+    [
+      { key: 'courier', label: 'Confirmacoes de courier', aliases: ['monitorarConfirmacoesCourierAgendadas', 'monitorarConfirmacoesCourierAgendadas_'] },
+      { key: 'dhl', label: 'Entregas DHL', aliases: ['monitorarEntregasDhlAgendadas', 'monitorarEntregasDhlAgendadas_'] }
+    ].forEach(function(expected) {
+      var count = out.triggers.filter(function(trigger) { return expected.aliases.indexOf(trigger.handler) >= 0; }).length;
+      if (count === 0) out.missing++;
+      if (count > 1) out.duplicates += count - 1;
+      out.expected.push({ key: expected.key, label: expected.label, handlers: expected.aliases, count: count, ok: count === 1 });
+    });
+    out.ok = out.missing === 0 && out.duplicates === 0;
   } catch (e) {
+    out.error = e.message || String(e);
+  }
+  return out;
+}
+
+function codexAutomationRunKey_(handler) {
+  return 'CODEX_AUTOMATION_RUN_' + String(handler || '').replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+function codexAutomationResultSummary_(result) {
+  result = result || {};
+  return ['verificados', 'confirmados', 'entregues', 'pendentes'].map(function(key) {
+    return result[key] === undefined || result[key] === null ? '' : key + '=' + result[key];
+  }).filter(Boolean).join(' | ');
+}
+
+function codexSaveAutomationRun_(handler, state) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(codexAutomationRunKey_(handler), JSON.stringify(state || {}));
+  } catch (e) {
+    // O historico nao pode impedir a automacao principal.
+  }
+}
+
+function codexRunTrackedAutomation_(handler, callback) {
+  var startedAt = new Date();
+  var startedMs = startedAt.getTime();
+  codexSaveAutomationRun_(handler, { handler: handler, status: 'Executando', startedAt: startedAt.toISOString(), finishedAt: '', durationMs: 0, message: '', summary: '' });
+  try {
+    var result = callback();
+    var finishedAt = new Date();
+    var failed = result && result.ok === false;
+    codexSaveAutomationRun_(handler, {
+      handler: handler,
+      status: failed ? 'Falha' : 'Sucesso',
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: Math.max(0, finishedAt.getTime() - startedMs),
+      message: String(result && result.mensagem || ''),
+      summary: codexAutomationResultSummary_(result)
+    });
+    return result;
+  } catch (e) {
+    var failedAt = new Date();
+    codexSaveAutomationRun_(handler, {
+      handler: handler,
+      status: 'Falha',
+      startedAt: startedAt.toISOString(),
+      finishedAt: failedAt.toISOString(),
+      durationMs: Math.max(0, failedAt.getTime() - startedMs),
+      message: e.message || String(e),
+      summary: ''
+    });
+    throw e;
+  }
+}
+
+function codexGetAutomationRunDiagnostics_() {
+  var out = { ok: true, items: [], error: '' };
+  try {
+    var props = PropertiesService.getScriptProperties();
+    [
+      { handler: 'monitorarConfirmacoesCourierAgendadas', label: 'Confirmacoes de courier' },
+      { handler: 'monitorarEntregasDhlAgendadas', label: 'Entregas DHL' }
+    ].forEach(function(def) {
+      var raw = props.getProperty(codexAutomationRunKey_(def.handler));
+      var state = {};
+      if (raw) {
+        try { state = JSON.parse(raw) || {}; }
+        catch (eParse) { state = { status: 'Historico invalido', message: eParse.message || String(eParse) }; }
+      }
+      var status = state.status || 'Nunca registrado';
+      if (status === 'Executando' && state.startedAt && Date.now() - new Date(state.startedAt).getTime() > 30 * 60 * 1000) status = 'Possivel interrupcao';
+      out.items.push({
+        handler: def.handler,
+        label: def.label,
+        status: status,
+        startedAt: state.startedAt || '',
+        finishedAt: state.finishedAt || '',
+        durationMs: Number(state.durationMs || 0),
+        message: state.message || '',
+        summary: state.summary || '',
+        ok: status === 'Sucesso' || status === 'Nunca registrado'
+      });
+      if (status === 'Falha' || status === 'Possivel interrupcao' || status === 'Historico invalido') out.ok = false;
+    });
+  } catch (e) {
+    out.ok = false;
     out.error = e.message || String(e);
   }
   return out;
@@ -5172,6 +5510,31 @@ function agendaMapToPairs_(map, limit) {
 //  ESTOQUE — Itens
 // ═══════════════════════════════════════════════════════
 
+function getItensEstoqueColumnMap_(headers) {
+  var normalized = (headers || []).map(function(h) { return normText_(h); });
+  function find(aliases, fallbackIdx) {
+    for (var a = 0; a < aliases.length; a++) {
+      var idx = normalized.indexOf(normText_(aliases[a]));
+      if (idx >= 0) return idx;
+    }
+    return fallbackIdx;
+  }
+  var detalhes = find(['Detalhes Visita / Complemento', 'Detalhes Visita', 'Complemento'], -1);
+  var usaLayoutComDetalhes = detalhes >= 0;
+  return {
+    idItem: find(['ID_Item', 'ID Item', 'ID'], 0),
+    projeto: find(['Projeto'], 1),
+    descricao: find(['Descrição', 'Descricao', 'Descrição do item', 'Descricao do item', 'Item'], 2),
+    detalhesVisita: detalhes,
+    tipo: find(['Tipo', 'Tipo de item', 'Tipo item'], usaLayoutComDetalhes ? 4 : 3),
+    localizacao: find(['Localização padrão', 'Localizacao padrao', 'Localização', 'Localizacao', 'Local'], usaLayoutComDetalhes ? 5 : 4),
+    estoqueMin: find(['Estoque mínimo', 'Estoque minimo', 'EstoqueMin', 'Mínimo', 'Minimo'], usaLayoutComDetalhes ? 6 : 5),
+    observacoes: find(['Observações', 'Observacoes', 'Observação', 'Observacao', 'Obs'], usaLayoutComDetalhes ? 7 : 6),
+    laboratorio: find(['Laboratório', 'Laboratorio', 'Lab'], usaLayoutComDetalhes ? 8 : 7),
+    status: find(['Status', 'Ativo'], usaLayoutComDetalhes ? 9 : 8)
+  };
+}
+
 function getItensEstoque() {
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var shItens = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
@@ -5194,25 +5557,7 @@ function getItensEstoque() {
   }
 
   var data  = shItens.getDataRange().getValues();
-  var headers = (data[0] || []).map(function(h) { return normText_(h); });
-  function col(aliases, fallbackIdx) {
-    for (var a = 0; a < aliases.length; a++) {
-      var idx = headers.indexOf(normText_(aliases[a]));
-      if (idx >= 0) return idx;
-    }
-    return fallbackIdx;
-  }
-  var c = {
-    idItem: col(['ID_Item', 'ID Item', 'ID'], 0),
-    projeto: col(['Projeto'], 1),
-    descricao: col(['Descrição', 'Descricao', 'Descrição do item', 'Descricao do item', 'Item'], 2),
-    tipo: col(['Tipo', 'Tipo de item', 'Tipo item'], 3),
-    localizacao: col(['Localização padrão', 'Localizacao padrao', 'Localização', 'Localizacao', 'Local'], 4),
-    estoqueMin: col(['Estoque mínimo', 'Estoque minimo', 'EstoqueMin', 'Mínimo', 'Minimo'], 5),
-    observacoes: col(['Observações', 'Observacoes', 'Observação', 'Observacao', 'Obs'], 6),
-    laboratorio: col(['Laboratório', 'Laboratorio', 'Lab'], 7),
-    status: col(['Status', 'Ativo'], 8)
-  };
+  var c = getItensEstoqueColumnMap_(data[0] || []);
 
   var itens = [];
   for (var i = 1; i < data.length; i++) {
@@ -5223,6 +5568,7 @@ function getItensEstoque() {
       idItem:      String(r[c.idItem] || ''),
       projeto:     String(r[c.projeto] || ''),
       descricao:   String(r[c.descricao] || ''),
+      detalhesVisita: c.detalhesVisita >= 0 ? String(r[c.detalhesVisita] || '') : '',
       tipo:        String(r[c.tipo] || ''),
       localizacao: String(r[c.localizacao] || ''),
       estoqueMin:  (r[c.estoqueMin] !== '' && r[c.estoqueMin] !== null) ? r[c.estoqueMin] : '',
@@ -5252,36 +5598,48 @@ function salvarItemEstoque(payload) {
   if (!sheet) {
     sheet = ss.insertSheet('Itens');
     sheet.appendRow([
-      'ID_Item', 'Projeto', 'Descrição', 'Tipo de item',
-      'Localização padrão', 'Estoque mínimo', 'Observações',
-      'Laboratório', 'Status'
+      'ID_Item', 'Projeto', 'Descrição', 'Detalhes Visita / Complemento',
+      'Tipo de item', 'Localização padrão', 'Estoque mínimo',
+      'Observações', 'Laboratório', 'Status'
     ]);
-    var hRange = sheet.getRange(1, 1, 1, 9);
+    var hRange = sheet.getRange(1, 1, 1, 10);
     hRange.setFontWeight('bold').setBackground('#1266f1').setFontColor('#ffffff');
     sheet.setFrozenRows(1);
   }
 
   var estoqueMin = (payload.estoqueMin !== '' && payload.estoqueMin !== null && payload.estoqueMin !== undefined)
     ? Number(payload.estoqueMin) : '';
+  var lastColumn = Math.max(sheet.getLastColumn(), 10);
+  var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  var c = getItensEstoqueColumnMap_(headers);
+
+  function applyPayload(rowValues) {
+    rowValues[c.projeto] = payload.projeto;
+    rowValues[c.descricao] = payload.descricao;
+    if (c.detalhesVisita >= 0 && payload.detalhesVisita !== undefined) rowValues[c.detalhesVisita] = payload.detalhesVisita;
+    rowValues[c.tipo] = payload.tipo;
+    rowValues[c.localizacao] = payload.localizacao;
+    rowValues[c.estoqueMin] = estoqueMin;
+    rowValues[c.observacoes] = payload.observacoes;
+    rowValues[c.laboratorio] = payload.laboratorio;
+    rowValues[c.status] = payload.status;
+    return rowValues;
+  }
 
   if (payload.id) {
     // Edição
     var row = parseInt(payload.id);
-    sheet.getRange(row, 2, 1, 8).setValues([[
-      payload.projeto, payload.descricao, payload.tipo,
-      payload.localizacao, estoqueMin,
-      payload.observacoes, payload.laboratorio, payload.status
-    ]]);
+    var rowValues = sheet.getRange(row, 1, 1, lastColumn).getValues()[0];
+    sheet.getRange(row, 1, 1, lastColumn).setValues([applyPayload(rowValues)]);
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
     return 'Item atualizado com sucesso!';
   } else {
     // Novo — mantém padrão numérico "0001" igual aos existentes
     var novoId = gerarProximoIdItemEstoque_(sheet);
-    sheet.appendRow([
-      novoId, payload.projeto, payload.descricao, payload.tipo,
-      payload.localizacao, estoqueMin,
-      payload.observacoes, payload.laboratorio, payload.status
-    ]);
+    var newRow = [];
+    while (newRow.length < lastColumn) newRow.push('');
+    newRow[c.idItem] = novoId;
+    sheet.appendRow(applyPayload(newRow));
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
     return 'Item cadastrado! ID: ' + novoId;
   }
@@ -5867,18 +6225,19 @@ function receberPedidoEstoque(dados) {
   var dtReceb = new Date(dataReceb + 'T12:00:00');
 
   var catalogoRows = shCatalogo.getDataRange().getValues();
+  var catalogoCols = getItensEstoqueColumnMap_(catalogoRows[0] || []);
   var catalogoMap = {};
   for (var c = 1; c < catalogoRows.length; c++) {
     var cr = catalogoRows[c];
-    var idCat = String(cr[0] || '').trim();
+    var idCat = String(cr[catalogoCols.idItem] || '').trim();
     if (!idCat) continue;
     catalogoMap[idCat] = {
-      projeto: String(cr[1] || ''),
-      descricao: String(cr[2] || ''),
-      tipo: String(cr[3] || ''),
-      localizacao: String(cr[4] || ''),
-      estoqueMin: cr[5] !== '' && cr[5] !== null ? Number(cr[5]) : '',
-      status: String(cr[8] || 'Ativo')
+      projeto: String(cr[catalogoCols.projeto] || ''),
+      descricao: String(cr[catalogoCols.descricao] || ''),
+      tipo: String(cr[catalogoCols.tipo] || ''),
+      localizacao: String(cr[catalogoCols.localizacao] || ''),
+      estoqueMin: cr[catalogoCols.estoqueMin] !== '' && cr[catalogoCols.estoqueMin] !== null ? Number(cr[catalogoCols.estoqueMin]) : '',
+      status: String(cr[catalogoCols.status] || 'Ativo')
     };
   }
 
@@ -8807,7 +9166,9 @@ function getDhlTrackingApiKey_() {
 
 function monitorarEntregasDhlAgendadas(options) {
   codexAssertAdminOrInstalledTrigger_(options, 'monitorarEntregasDhlAgendadas');
-  return monitorarEntregasDhlAgendadas_(options);
+  return codexRunTrackedAutomation_('monitorarEntregasDhlAgendadas', function() {
+    return monitorarEntregasDhlAgendadas_(options);
+  });
 }
 
 function monitorarEntregasDhlAgendadas_(options) {
@@ -9017,7 +9378,9 @@ function dhlStatusIndicaEntrega_(texto) {
 
 function monitorarConfirmacoesCourierAgendadas(event) {
   codexAssertAdminOrInstalledTrigger_(event, 'monitorarConfirmacoesCourierAgendadas');
-  return monitorarConfirmacoesCourierAgendadas_();
+  return codexRunTrackedAutomation_('monitorarConfirmacoesCourierAgendadas', function() {
+    return monitorarConfirmacoesCourierAgendadas_();
+  });
 }
 
 function monitorarConfirmacoesCourierAgendadas_() {
