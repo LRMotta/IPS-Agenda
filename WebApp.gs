@@ -8902,30 +8902,64 @@ function setAgendaValueAndFormat_(range, value, format) {
   }
 }
 
+function codexMeasurePerformance_(operation, stage, metadata, callback) {
+  var startedAt = Date.now();
+  var success = false;
+  metadata = metadata || {};
+  try {
+    var result = callback();
+    success = true;
+    return result;
+  } finally {
+    try {
+      Logger.log('[CODEX_PERF] ' + JSON.stringify({
+        operation: String(operation || ''),
+        stage: String(stage || ''),
+        durationMs: Math.max(0, Date.now() - startedAt),
+        rowCount: Math.max(0, Number(metadata.rowCount) || 0),
+        success: success
+      }));
+    } catch (eLog) {
+      // A telemetria nunca pode alterar o resultado da operacao observada.
+    }
+  }
+}
+
 function getAgendaEventos(limite) {
-  var sh = getAgendaSheet_();
-  var lastRow = sh.getLastRow();
-  if (lastRow < 2) return [];
-  var max = Math.min(Number(limite || 80), lastRow - 1);
-  var start = Math.max(2, lastRow - max + 1);
-  var vals = sh.getRange(start, 1, lastRow - start + 1, AGENDA_CFG.lastCol).getValues();
-  var idsPorParticipante = {};
-  var bracosPorParticipante = {};
-  getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
-    var nome = normText_(r[1]);
-    if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
-    if (nome && !bracosPorParticipante[nome]) bracosPorParticipante[nome] = String(r[6] || '').trim();
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_('getAgendaEventos', 'total', totalMeta, function() {
+    var sh = codexMeasurePerformance_('getAgendaEventos', 'sheet', { rowCount: 0 }, function() {
+      return getAgendaSheet_();
+    });
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return [];
+    var max = Math.min(Number(limite || 80), lastRow - 1);
+    var start = Math.max(2, lastRow - max + 1);
+    var readMeta = { rowCount: lastRow - start + 1 };
+    var vals = codexMeasurePerformance_('getAgendaEventos', 'read', readMeta, function() {
+      return sh.getRange(start, 1, readMeta.rowCount, AGENDA_CFG.lastCol).getValues();
+    });
+    totalMeta.rowCount = vals.length;
+    return codexMeasurePerformance_('getAgendaEventos', 'convert_hydrate', { rowCount: vals.length }, function() {
+      var idsPorParticipante = {};
+      var bracosPorParticipante = {};
+      getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
+        var nome = normText_(r[1]);
+        if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
+        if (nome && !bracosPorParticipante[nome]) bracosPorParticipante[nome] = String(r[6] || '').trim();
+      });
+      return vals.map(function(r, i) {
+        var evento = agendaRowToObject_(r, start + i);
+        if (!evento.idParticipante && evento.participante) {
+          evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
+        }
+        if (!evento.braco && evento.participante) {
+          evento.braco = bracosPorParticipante[normText_(evento.participante)] || '';
+        }
+        return evento;
+      }).reverse();
+    });
   });
-  return vals.map(function(r, i) {
-    var evento = agendaRowToObject_(r, start + i);
-    if (!evento.idParticipante && evento.participante) {
-      evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
-    }
-    if (!evento.braco && evento.participante) {
-      evento.braco = bracosPorParticipante[normText_(evento.participante)] || '';
-    }
-    return evento;
-  }).reverse();
 }
 
 function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
@@ -9016,17 +9050,30 @@ function pesquisarAgendaHistorico(query, cursor, pageSize) {
 }
 
 function getAgendaEventoPorId(id, rowIndex) {
-  id = String(id || '').trim();
-  if (!id) return null;
-  var sh = getAgendaSheet_();
-  var row = Number(rowIndex) || 0;
-  if (row < 2 || row > sh.getLastRow() || String(sh.getRange(row, AGENDA_CFG.col.id).getValue() || '') !== id) {
-    row = encontrarLinhaPorId(sh, id);
-  }
-  if (!row) return null;
-  var item = agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
-  agendaHydrateParticipantFields_([item]);
-  return item;
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_('getAgendaEventoPorId', 'total', totalMeta, function() {
+    id = String(id || '').trim();
+    if (!id) return null;
+    var sh = getAgendaSheet_();
+    var locateMeta = { rowCount: 0 };
+    var row = codexMeasurePerformance_('getAgendaEventoPorId', 'locate', locateMeta, function() {
+      var hintedRow = Number(rowIndex) || 0;
+      if (hintedRow >= 2 && hintedRow <= sh.getLastRow() && String(sh.getRange(hintedRow, AGENDA_CFG.col.id).getValue() || '') === id) {
+        return hintedRow;
+      }
+      locateMeta.rowCount = Math.max(0, sh.getLastRow() - 1);
+      return encontrarLinhaPorId(sh, id);
+    });
+    if (!row) return null;
+    var item = codexMeasurePerformance_('getAgendaEventoPorId', 'read', { rowCount: 1 }, function() {
+      return agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
+    });
+    totalMeta.rowCount = 1;
+    codexMeasurePerformance_('getAgendaEventoPorId', 'hydrate', { rowCount: 1 }, function() {
+      agendaHydrateParticipantFields_([item]);
+    });
+    return item;
+  });
 }
 
 function agendaRowsToObjects_(vals, start) {

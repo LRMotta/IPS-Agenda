@@ -13,6 +13,32 @@ var PASTA_COMUNICADOS_ESPECIAIS_ID = typeof PASTA_COMUNICADOS_ESPECIAIS_ID !== '
   : '1em1j316UiWg5HQTYtPRHpXzeynqL-i11';
 var TRANSPORTE_ADJACENT_LABEL_CACHE_ = {};
 
+function transporteMeasurePerformance_(operation, stage, metadata, callback) {
+  if (typeof codexMeasurePerformance_ === 'function') {
+    return codexMeasurePerformance_(operation, stage, metadata, callback);
+  }
+  var startedAt = Date.now();
+  var success = false;
+  metadata = metadata || {};
+  try {
+    var result = callback();
+    success = true;
+    return result;
+  } finally {
+    try {
+      Logger.log('[CODEX_PERF] ' + JSON.stringify({
+        operation: String(operation || ''),
+        stage: String(stage || ''),
+        durationMs: Math.max(0, Date.now() - startedAt),
+        rowCount: Math.max(0, Number(metadata.rowCount) || 0),
+        success: success
+      }));
+    } catch (eLog) {
+      // O modulo continua funcional mesmo quando o log nao esta disponivel.
+    }
+  }
+}
+
 function configurarPlanilhaTransporteCodex(urlOuId) {
   if (typeof codexAssertAdmin_ === 'function') codexAssertAdmin_();
   var id = extrairIdPlanilhaTransporteCodex_(urlOuId);
@@ -150,8 +176,16 @@ function testarUrlWebAppTransporteCodex() {
   };
 }
 
-function montarPayloadTransporteParaTransp_(idAgenda, slot) {
+function montarContextoTransporteParaTransp_(idAgenda, slot) {
   var evento = buscarAgendaEventoPorIdTransp_(idAgenda);
+  return {
+    evento: evento,
+    payload: montarPayloadTransporteParaTransp_(idAgenda, slot, evento)
+  };
+}
+
+function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) {
+  var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda);
   var participanteInfo = {};
   try {
     participanteInfo = getInfoParticipante(evento.participante) || {};
@@ -282,12 +316,9 @@ function buscarAgendaEventoPorIdTransp_(idAgenda) {
   var sh = getAgendaSheet_();
   var lastRow = sh.getLastRow();
   if (lastRow < 2) throw new Error('Agenda sem registros.');
-
-  var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][AGENDA_CFG.idx.id] || '') === String(idAgenda)) {
-      return agendaRowToObject_(rows[i], i + 2);
-    }
+  var row = encontrarLinhaPorId(sh, idAgenda);
+  if (row) {
+    return agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
   }
   throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
 }
@@ -1201,6 +1232,24 @@ function transporteParticipantKey_(value) {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
+function transporteReadProjetosDireto_() {
+  var rows = typeof getCodexSheetDataByName_ === 'function'
+    ? (getCodexSheetDataByName_('Projetos') || [])
+    : [];
+  return rows.slice(1).filter(function(r) {
+    return r[0] !== '' && r[0] !== undefined && r[0] !== null;
+  }).map(function(r) {
+    return {
+      nomeAbreviado: String(r[1] || '').trim(),
+      codigo: String(r[2] || '').trim(),
+      investigador: String(r[5] || '').trim(),
+      numeroCE: String(r[14] || '').trim(),
+      expedienteCE: String(r[15] || '').trim(),
+      tituloCompleto: String(r[16] || '').trim()
+    };
+  });
+}
+
 function transporteProjetoInvestigadorMap_() {
   var map = {};
   function put(nome, investigador) {
@@ -1211,15 +1260,13 @@ function transporteProjetoInvestigadorMap_() {
     map[transporteParticipantKey_(nome)] = investigador;
   }
   try {
-    if (typeof getProjetos === 'function') {
-      (getProjetos() || []).forEach(function(p) {
-        var investigador = String(p.investigador || '').trim();
-        [p.nomeAbreviado, p.codigo].forEach(function(nome) {
-          put(nome, investigador);
-        });
+    transporteReadProjetosDireto_().forEach(function(p) {
+      var investigador = String(p.investigador || '').trim();
+      [p.nomeAbreviado, p.codigo].forEach(function(nome) {
+        put(nome, investigador);
       });
-      if (Object.keys(map).length) return map;
-    }
+    });
+    if (Object.keys(map).length) return map;
   } catch (eProjetos) {
     Logger.log('Projetos nao carregados no Transporte: ' + eProjetos.message);
   }
@@ -1254,17 +1301,7 @@ function transporteProjetoInfo_(projeto) {
   if (!alvo) return null;
   var rows = [];
   try {
-    if (typeof getProjetos === 'function') {
-      rows = (getProjetos() || []).map(function(p) {
-        return {
-          nomeAbreviado: String(p.nomeAbreviado || '').trim(),
-          codigo: String(p.codigo || '').trim(),
-          numeroCE: String(p.numeroCE || '').trim(),
-          expedienteCE: String(p.expedienteCE || '').trim(),
-          tituloCompleto: String(p.tituloCompleto || '').trim()
-        };
-      });
-    }
+    rows = transporteReadProjetosDireto_();
   } catch (eProjetos) {
     Logger.log('Projetos nao carregados para nome de transporte: ' + eProjetos.message);
   }
@@ -1460,12 +1497,12 @@ function transporteEncontrarParticipante_(participantes, referencia) {
   return aproximado;
 }
 
-function transporteAtualizarRegistroPorAgenda_(registro) {
+function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado) {
   registro = registro || {};
   var idAgenda = String(registro.idAgenda || '').trim();
   if (!idAgenda) return registro;
   try {
-    var evento = buscarAgendaEventoPorIdTransp_(idAgenda) || {};
+    var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda) || {};
     var referencia = {
       identificacaoParticipante: evento.idParticipante || registro.identificacaoParticipante || registro.idParticipante || '',
       paciente: evento.participante || registro.paciente || registro.participante || '',
@@ -1626,17 +1663,7 @@ function getTransporteParticipantesOptions() {
 function transporteReadProjetosOptions_() {
   var projetos = [];
   try {
-    if (typeof getProjetos === 'function') {
-      projetos = (getProjetos() || []).map(function(p) {
-        return {
-          nomeAbreviado: String(p.nomeAbreviado || '').trim(),
-          codigo: String(p.codigo || '').trim(),
-          numeroCE: String(p.numeroCE || '').trim(),
-          expedienteCE: String(p.expedienteCE || '').trim(),
-          tituloCompleto: String(p.tituloCompleto || '').trim()
-        };
-      }).filter(function(p) { return p.nomeAbreviado || p.codigo; });
-    }
+    projetos = transporteReadProjetosDireto_().filter(function(p) { return p.nomeAbreviado || p.codigo; });
   } catch (eProjetos) {
     Logger.log('Projetos nao carregados nas opcoes do Transporte: ' + eProjetos.message);
   }
@@ -1835,43 +1862,67 @@ function transporteIsValidOcasaAwb_(awb) {
   return codexCourierIsValidOcasaAwb_(awb);
 }
 
-function getTransporteBootstrap() {
-  var registro = transporteAtualizarRegistroPorAgenda_(transporteReadRegistro_());
-  var options = transporteReadOptions_({ includeParticipants: false });
-  var ativos = registro.materiais.filter(function(m) { return m.ativo; });
-  var totalTubos = ativos.reduce(function(sum, m) { return sum + (Number(m.tubos) || 0); }, 0);
-  var totalVolume = ativos.reduce(function(sum, m) { return sum + (Number(m.total) || 0); }, 0);
+function transporteBuildBootstrap_(eventoPrecarregado) {
+  return transporteMeasurePerformance_('getTransporteBootstrap', 'total', { rowCount: 1 }, function() {
+    var registro = transporteMeasurePerformance_('getTransporteBootstrap', 'record', { rowCount: 1 }, function() {
+      return transporteReadRegistro_();
+    });
+    registro = transporteMeasurePerformance_('getTransporteBootstrap', 'agenda_update', { rowCount: eventoPrecarregado ? 0 : 1 }, function() {
+      return transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado);
+    });
+    var options = transporteMeasurePerformance_('getTransporteBootstrap', 'options', { rowCount: 0 }, function() {
+      return transporteReadOptions_({ includeParticipants: false });
+    });
+    var ativos = registro.materiais.filter(function(m) { return m.ativo; });
+    var totalTubos = ativos.reduce(function(sum, m) { return sum + (Number(m.tubos) || 0); }, 0);
+    var totalVolume = ativos.reduce(function(sum, m) { return sum + (Number(m.total) || 0); }, 0);
 
-  return {
-    access: typeof codexGetCurrentUserAccess === 'function' ? codexGetCurrentUserAccess() : null,
-    runtime: transporteExecutionContext_(),
-    registro: registro,
-    options: options,
-    auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
-    issues: transporteValidate_(registro),
-    resumo: {
-      materiaisAtivos: ativos.length,
-      totalTubos: totalTubos,
-      totalVolume: totalVolume,
-      documentos: transporteDocumentosPorCourier_(registro.courier, registro.temperatura, registro.destino)
-    }
-  };
+    return transporteMeasurePerformance_('getTransporteBootstrap', 'validate', { rowCount: 1 }, function() {
+      return {
+        access: typeof codexGetCurrentUserAccess === 'function' ? codexGetCurrentUserAccess() : null,
+        runtime: transporteExecutionContext_(),
+        registro: registro,
+        options: options,
+        auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
+        issues: transporteValidate_(registro),
+        resumo: {
+          materiaisAtivos: ativos.length,
+          totalTubos: totalTubos,
+          totalVolume: totalVolume,
+          documentos: transporteDocumentosPorCourier_(registro.courier, registro.temperatura, registro.destino)
+        }
+      };
+    });
+  });
+}
+
+function getTransporteBootstrap() {
+  return transporteBuildBootstrap_();
 }
 
 function getTransporteBootstrapFromAgenda(idAgenda, slot) {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda);
-  idAgenda = String(idAgenda || '').trim();
-  if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
-  var payload = montarPayloadTransporteParaTransp_(idAgenda, slot);
-  var importResult = importarTransporteCodex(payload);
-  var data = getTransporteBootstrap();
-  data.registro = Object.assign({}, data.registro || {}, {
-    idAgenda: payload.idAgenda || idAgenda,
-    agendaSlot: normalizarSlotTransporteCodex_(payload.slot || slot || ''),
-    refInterna: payload.refInterna || transporteAgendaRefInterna_(idAgenda)
+  return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
+    if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda);
+    idAgenda = String(idAgenda || '').trim();
+    if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
+    var contexto = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'payload', { rowCount: 1 }, function() {
+      return montarContextoTransporteParaTransp_(idAgenda, slot);
+    });
+    var payload = contexto.payload;
+    var importResult = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'import_prepare', { rowCount: 1 }, function() {
+      return importarTransporteCodex(payload, contexto);
+    });
+    var data = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'bootstrap', { rowCount: 1 }, function() {
+      return transporteBuildBootstrap_(contexto.evento);
+    });
+    data.registro = Object.assign({}, data.registro || {}, {
+      idAgenda: payload.idAgenda || idAgenda,
+      agendaSlot: normalizarSlotTransporteCodex_(payload.slot || slot || ''),
+      refInterna: payload.refInterna || transporteAgendaRefInterna_(idAgenda)
+    });
+    data.importResult = importResult;
+    return data;
   });
-  data.importResult = importResult;
-  return data;
 }
 
 function transporteDocumentosPorCourier_(courier, temperatura, destino) {
@@ -1887,19 +1938,33 @@ function transporteDocumentosPorCourier_(courier, temperatura, destino) {
 
 function salvarTransporte(payload, options) {
   if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('salvarTransporte', 'Transporte', payload && (payload.idAgenda || payload.id || payload.paciente));
-  var ss = getTransporteSpreadsheetCodex_();
-  var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
-  var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
-  var folhaDhl = transporteGetSheet_(ss, 'folhaDhlPinex', false);
-  var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
-  payload = payload || {};
-  options = options || {};
-  transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
-  payload = transporteAtualizarRegistroPorAgenda_(payload);
-  payload = transporteDerivarDadosParticipante_(payload);
-  if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
+  return transporteMeasurePerformance_('salvarTransporte', 'total', { rowCount: 1 }, function() {
+    return salvarTransporteInterno_(payload, options);
+  });
+}
 
-  var campos = [
+function salvarTransporteInterno_(payload, options) {
+  var ss;
+  var folha;
+  var declaracao;
+  var folhaDhl;
+  var peticao;
+  transporteMeasurePerformance_('salvarTransporte', 'read_prepare', { rowCount: 1 }, function() {
+    ss = getTransporteSpreadsheetCodex_();
+    folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
+    declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
+    folhaDhl = transporteGetSheet_(ss, 'folhaDhlPinex', false);
+    peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
+    payload = payload || {};
+    options = options || {};
+    transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
+    payload = transporteAtualizarRegistroPorAgenda_(payload, options.agendaEvento);
+    payload = transporteDerivarDadosParticipante_(payload);
+    if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
+  });
+
+  transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
+    var campos = [
     { cell: 'C3', value: payload.paciente || '' },
     { cell: 'C4', value: transporteProjetoDisplay_(payload.protocolo || '') },
     { cell: 'C5', value: payload.investigador || '' },
@@ -1958,27 +2023,34 @@ function salvarTransporte(payload, options) {
   } else {
     declaracao.getRange('F30').clearContent();
   }
-  transporteSetEnsaiosPeticao_(peticao, materiais);
+    transporteSetEnsaiosPeticao_(peticao, materiais);
+  });
 
   // O pre-agendamento vindo da Agenda tambem precisa preparar as abas da
   // courier. "rascunho" apenas impede a escrita de volta na Agenda abaixo;
   // nao deve impedir o preenchimento da documentacao na planilha Transporte.
-  if (options.preencherDocumentos !== false) {
-    transporteAplicarAutomacoesTemperatura_(ss, payload);
-    aplicarSolicitacaoCaixaTransporte_(ss, payload);
-    transporteAplicarCourierConfig_(ss, payload.courier);
-    transportePreencherPeticaoMedico_(ss, payload);
-    transportePreencherDeclaracaoCadastros_(ss, payload);
-    if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
-    preencherDadosProtocoloPeticaoWebApp_(ss, payload);
-    preencherPeticaoAnuenciaWebApp_(ss, payload);
-    if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
-    preencherDhlWebApp_(ss, payload);
-  }
-  SpreadsheetApp.flush();
+  transporteMeasurePerformance_('salvarTransporte', 'prepare_documents', { rowCount: 1 }, function() {
+    if (options.preencherDocumentos !== false) {
+      transporteAplicarAutomacoesTemperatura_(ss, payload);
+      aplicarSolicitacaoCaixaTransporte_(ss, payload);
+      transporteAplicarCourierConfig_(ss, payload.courier);
+      transportePreencherPeticaoMedico_(ss, payload);
+      transportePreencherDeclaracaoCadastros_(ss, payload);
+      if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
+      preencherDadosProtocoloPeticaoWebApp_(ss, payload);
+      preencherPeticaoAnuenciaWebApp_(ss, payload);
+      if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
+      preencherDhlWebApp_(ss, payload);
+    }
+  });
+  transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
+    SpreadsheetApp.flush();
+  });
   var agendaSync = options.rascunho
     ? { atualizado: false, motivo: 'Pré-preenchimento ainda não confirmado' }
-    : transporteSincronizarAgenda_(payload);
+    : transporteMeasurePerformance_('salvarTransporte', 'agenda_sync', { rowCount: 1 }, function() {
+      return transporteSincronizarAgenda_(payload);
+    });
   if (options.returnBootstrap === false) {
     return { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync };
   }
@@ -2590,9 +2662,12 @@ function transporteSincronizarAgenda_(payload) {
   return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: slot, awb: awb, campos: changes.map(function(c) { return c.field; }), warnings: warnings };
 }
 
-function importarTransporteCodex(codexPayload) {
+function importarTransporteCodex(codexPayload, contextoInterno) {
   var payload = montarPayloadTransporteCodex(codexPayload);
-  return salvarTransporte(payload, { rascunho: true });
+  return salvarTransporte(payload, {
+    rascunho: true,
+    agendaEvento: contextoInterno && contextoInterno.evento ? contextoInterno.evento : null
+  });
 }
 
 function transporteSincronizarDependencias_(options) {
@@ -2775,27 +2850,39 @@ function limparSandboxCodex(marker) {
 }
 
 function gerarPdfTransporte(options) {
-  var access = typeof codexAssertCanWrite_ === 'function'
-    ? codexAssertCanWrite_('gerarPdfTransporte', 'Transporte', options && options.id)
-    : null;
-  if (typeof imprimirTodasAbas !== 'function') throw new Error('FunÃƒÂ§ÃƒÂ£o imprimirTodasAbas nÃƒÂ£o encontrada.');
+  return transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
+    var access = typeof codexAssertCanWrite_ === 'function'
+      ? codexAssertCanWrite_('gerarPdfTransporte', 'Transporte', options && options.id)
+      : null;
+    return gerarPdfTransporteInterno_(options, access);
+  });
+}
+
+function gerarPdfTransporteInterno_(options, access) {
+  transporteMeasurePerformance_('gerarPdfTransporte', 'prepare', { rowCount: 1 }, function() {
+    if (typeof imprimirTodasAbas !== 'function') throw new Error('FunÃƒÂ§ÃƒÂ£o imprimirTodasAbas nÃƒÂ£o encontrada.');
+  });
   options = options || {};
   if (!options.requestedByEmail && access && access.userEmail) options.requestedByEmail = access.userEmail;
   if (options.criarRascunho !== false) options.criarRascunho = true;
-  var result = imprimirTodasAbas(options);
+  var result = transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
+    return imprimirTodasAbas(options);
+  });
   if (String(result || '').indexOf('Erro') === 0) return result;
   var courier = result && typeof result === 'object' ? String(result.courier || options.courier || '').trim() : String(options.courier || '').trim();
   var driveAccessWarning = result && typeof result === 'object' ? transporteDriveAccessWarning_(result.driveAccess) : '';
   if (driveAccessWarning && result && typeof result === 'object') result.driveAccessWarning = driveAccessWarning;
   if (courier === 'PINEX') options.criarRascunho = false;
   if (options.criarRascunho) {
-    var draft = criarRascunhoTransporte_(result && typeof result === 'object' ? {
-      pdfFileId: result.fileId,
-      requestedByEmail: options.requestedByEmail || '',
-      agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : ''
-    } : {
-      requestedByEmail: options.requestedByEmail || '',
-      agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : ''
+    var draft = transporteMeasurePerformance_('gerarPdfTransporte', 'draft', { rowCount: 1 }, function() {
+      return criarRascunhoTransporte_(result && typeof result === 'object' ? {
+        pdfFileId: result.fileId,
+        requestedByEmail: options.requestedByEmail || '',
+        agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : ''
+      } : {
+        requestedByEmail: options.requestedByEmail || '',
+        agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : ''
+      });
     });
     var draftStatus = transporteDraftStatus_(draft);
     if (result && typeof result === 'object') {

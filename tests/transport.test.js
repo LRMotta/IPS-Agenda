@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { readProjectFile, runHtmlScript } = require('./helpers/load-app-script');
+const { readProjectFile, runFile, runHtmlScript } = require('./helpers/load-app-script');
 
 function sourceBetween(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -107,17 +107,15 @@ test('Transporte resolve participante pelo ID estavel mesmo com nome historico d
   );
   const context = vm.createContext({
     Logger: { log: () => {} },
-    getParticipantes: () => [{
-      id: '81231558',
-      idParticipante: '2011250001',
-      nome: 'Filipe Muneron da Silva',
-      projeto: 'SKYLINE-UC'
-    }],
-    getProjetos: () => [{
-      nomeAbreviado: 'SKYLINE-UC',
-      codigo: 'SPY123-201',
-      investigador: 'Eduardo Brambilla'
-    }],
+    getCodexSheetDataByName_: (name) => name === 'Participantes'
+      ? [
+        ['ID', 'Nome', '', '', 'ID Participante', 'Projeto'],
+        ['81231558', 'Filipe Muneron da Silva', '', '', '2011250001', 'SKYLINE-UC']
+      ]
+      : [
+        ['ID', 'Nome', 'Codigo', '', '', 'Investigador'],
+        ['P1', 'SKYLINE-UC', 'SPY123-201', '', '', 'Eduardo Brambilla']
+      ],
     buscarAgendaEventoPorIdTransp_: () => ({
       participante: 'Filipe Mumeron da Silva',
       idParticipante: '2011250001',
@@ -202,16 +200,15 @@ test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', (
   );
   const context = vm.createContext({
     Logger: { log: () => {} },
-    getParticipantes: () => [{
-      idParticipante: '2011250001',
-      nome: 'Filipe Muneron da Silva',
-      projeto: 'SKYLINE-UC'
-    }],
-    getProjetos: () => [{
-      nomeAbreviado: 'SKYLINE-UC',
-      codigo: 'SPY123-201',
-      investigador: 'Eduardo Brambilla'
-    }],
+    getCodexSheetDataByName_: (name) => name === 'Participantes'
+      ? [
+        ['ID', 'Nome', '', '', 'ID Participante', 'Projeto'],
+        ['81231558', 'Filipe Muneron da Silva', '', '', '2011250001', 'SKYLINE-UC']
+      ]
+      : [
+        ['ID', 'Nome', 'Codigo', '', '', 'Investigador'],
+        ['P1', 'SKYLINE-UC', 'SPY123-201', '', '', 'Eduardo Brambilla']
+      ],
     buscarAgendaEventoPorIdTransp_: (id) => {
       assert.equal(id, 'fc1ad99b');
       return {
@@ -311,6 +308,113 @@ test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', (
   assert.doesNotMatch(block, /transporteReadCachedJson_/);
   assert.doesNotMatch(block, /transporteWriteCachedJson_/);
   assert.match(block, /transporteReadParticipantesDireto_\(\)/);
+});
+
+test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', () => {
+  const calls = [];
+  const rows = [
+    ['EVT-1', 'primeiro'],
+    ['EVT-2', 'segundo']
+  ];
+  const sheet = {
+    getLastRow: () => 3,
+    getRange(row, column, numRows = 1, numColumns = 1) {
+      calls.push({ row, column, numRows, numColumns });
+      const values = rows.slice(row - 2, row - 2 + numRows)
+        .map((source) => Array.from({ length: numColumns }, (_, index) => source[column - 1 + index] || ''));
+      return { getValues: () => values };
+    }
+  };
+  const server = runFile('TransporteCodexConfig.gs', {
+    Logger: { log: () => {} },
+    AGENDA_CFG: { lastCol: 51, idx: { id: 0 }, col: { id: 1 } },
+    getAgendaSheet_: () => sheet,
+    encontrarLinhaPorId: (agenda, id) => {
+      const ids = agenda.getRange(2, 1, agenda.getLastRow() - 1, 1).getValues();
+      const offset = ids.findIndex((row) => String(row[0]) === String(id));
+      return offset >= 0 ? offset + 2 : null;
+    },
+    agendaRowToObject_: (row, rowIndex) => ({ id: row[0], rowIndex })
+  });
+
+  assert.equal(server.buscarAgendaEventoPorIdTransp_('EVT-2').id, 'EVT-2');
+  assert.equal(calls.filter((call) => call.numColumns === 1 && call.numRows === 2).length, 1);
+  assert.equal(calls.filter((call) => call.numColumns === 51 && call.numRows === 1).length, 1);
+  calls.length = 0;
+  assert.throws(() => server.buscarAgendaEventoPorIdTransp_('INEXISTENTE'), /nao encontrado/);
+  assert.equal(calls.filter((call) => call.numColumns === 51).length, 0);
+});
+
+test('bootstrap vindo da Agenda reutiliza um unico evento em todas as etapas internas', () => {
+  const server = runFile('TransporteCodexConfig.gs', {
+    Logger: { log: () => {} },
+    normText_: (value) => String(value || '').trim().toLowerCase()
+  });
+  let agendaReads = 0;
+  const evento = { id: 'EVT-1', participante: 'Participante', projeto: 'Projeto' };
+  server.codexAssertCanWrite_ = () => {};
+  server.buscarAgendaEventoPorIdTransp_ = () => { agendaReads += 1; return evento; };
+  server.montarPayloadTransporteParaTransp_ = (id, slot, received) => {
+    assert.equal(received, evento);
+    return { idAgenda: id, slot, refInterna: `AGD-${id}` };
+  };
+  server.importarTransporteCodex = (payload, context) => {
+    assert.equal(context.evento, evento);
+    return { rascunho: true };
+  };
+  server.transporteBuildBootstrap_ = (received) => {
+    assert.equal(received, evento);
+    return { registro: {} };
+  };
+
+  const data = server.getTransporteBootstrapFromAgenda('EVT-1', '2');
+  assert.equal(agendaReads, 1);
+  assert.equal(data.registro.idAgenda, 'EVT-1');
+  assert.equal(data.registro.agendaSlot, '2');
+});
+
+test('atualizacao do Transporte usa evento fornecido e preserva fallback de busca', () => {
+  const server = runFile('TransporteCodexConfig.gs', { Logger: { log: () => {} } });
+  let agendaReads = 0;
+  const evento = { participante: 'Nome', idParticipante: 'P-1', projeto: 'Projeto', medico: 'Medico' };
+  server.buscarAgendaEventoPorIdTransp_ = () => { agendaReads += 1; return evento; };
+  server.transporteReadParticipantesDireto_ = () => [];
+  server.transporteEncontrarParticipante_ = () => null;
+  server.transporteInvestigadorPorProjeto_ = () => 'Medico';
+  server.transporteProjetoDisplay_ = (value) => value;
+
+  server.transporteAtualizarRegistroPorAgenda_({ idAgenda: 'EVT-1', materiais: [] }, evento);
+  assert.equal(agendaReads, 0);
+  server.transporteAtualizarRegistroPorAgenda_({ idAgenda: 'EVT-1', materiais: [] });
+  assert.equal(agendaReads, 1);
+});
+
+test('opcoes de projetos do Transporte usam leitura direta sem estatisticas da Agenda', () => {
+  let getProjetosCalls = 0;
+  const server = runFile('TransporteCodexConfig.gs', {
+    Logger: { log: () => {} },
+    getProjetos: () => { getProjetosCalls += 1; throw new Error('nao deve ser chamado'); },
+    getCodexSheetDataByName_: (name) => {
+      assert.equal(name, 'Projetos');
+      return [
+        ['ID', 'Nome', 'Codigo', '', '', 'Investigador', '', '', '', '', '', '', '', 'Status', 'Numero CE', 'Expediente CE', 'Titulo'],
+        ['P2', 'Projeto B', 'B-2', '', '', 'Medico B', '', '', '', '', '', '', '', 'Ativo', 'CE-2', 'EXP-2', 'Titulo B'],
+        ['P1', 'Projeto A', 'A-1', '', '', 'Medico A', '', '', '', '', '', '', '', 'Ativo', 'CE-1', 'EXP-1', 'Titulo A']
+      ];
+    }
+  });
+
+  const options = server.transporteReadProjetosOptions_();
+  assert.equal(getProjetosCalls, 0);
+  assert.deepEqual(Array.from(options, (item) => item.nomeAbreviado), ['Projeto B', 'Projeto A']);
+  assert.deepEqual({ ...options[0] }, {
+    nomeAbreviado: 'Projeto B',
+    codigo: 'B-2',
+    investigador: 'Medico B',
+    numeroCE: 'CE-2',
+    expedienteCE: 'EXP-2',
+    tituloCompleto: 'Titulo B'
+  });
 });
 
 test('Transporte le participantes sem calcular historico de visitas', () => {

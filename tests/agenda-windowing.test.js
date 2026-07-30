@@ -28,9 +28,9 @@ function fakeAgenda(server, records) {
   };
 }
 
-function agendaServer() {
+function agendaServer(contextValues) {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
-  return runFile('WebApp.gs', { AgendaServerRules_: rules });
+  return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules }, contextValues || {}));
 }
 
 function functionBody(source, name) {
@@ -136,6 +136,78 @@ test('abertura direta busca somente o evento solicitado', () => {
   const server = readProjectFile('WebApp.gs');
   assert.match(client, /\.getAgendaEventoPorId\(agendaId\)/);
   assert.match(server, /function getAgendaEventoPorId\(id, rowIndex\)/);
+});
+
+test('abertura direta valida rowIndex e le somente a linha completa solicitada', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [Array(server.AGENDA_CFG.lastCol).fill(''), Array(server.AGENDA_CFG.lastCol).fill('')];
+  rows[0][server.AGENDA_CFG.idx.id] = 'EVT-1';
+  rows[1][server.AGENDA_CFG.idx.id] = 'EVT-2';
+  rows[1][server.AGENDA_CFG.idx.idParticipante] = 'P-2';
+  rows[1][server.AGENDA_CFG.idx.braco] = 'A';
+  const calls = [];
+  const sheet = {
+    getLastRow: () => 3,
+    getRange(row, column, numRows = 1, numColumns = 1) {
+      calls.push({ row, column, numRows, numColumns });
+      const values = rows.slice(row - 2, row - 2 + numRows)
+        .map((source) => source.slice(column - 1, column - 1 + numColumns));
+      return {
+        getValue: () => (values[0] || [])[0] || '',
+        getValues: () => values
+      };
+    }
+  };
+  server.getAgendaSheet_ = () => sheet;
+
+  const event = server.getAgendaEventoPorId('EVT-2', 3);
+  assert.equal(event.id, 'EVT-2');
+  assert.equal(calls.some((call) => call.row === 2 && call.numRows === 2 && call.numColumns === 1), false);
+  assert.equal(calls.filter((call) => call.numColumns === server.AGENDA_CFG.lastCol).length, 1);
+});
+
+test('abertura direta sem rowIndex procura apenas na coluna de IDs e preserva evento inexistente', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [Array(server.AGENDA_CFG.lastCol).fill(''), Array(server.AGENDA_CFG.lastCol).fill('')];
+  rows[0][server.AGENDA_CFG.idx.id] = 'EVT-1';
+  rows[1][server.AGENDA_CFG.idx.id] = 'EVT-2';
+  rows[0][server.AGENDA_CFG.idx.idParticipante] = 'P-1';
+  rows[0][server.AGENDA_CFG.idx.braco] = 'A';
+  const calls = [];
+  const sheet = {
+    getLastRow: () => 3,
+    getRange(row, column, numRows = 1, numColumns = 1) {
+      calls.push({ row, column, numRows, numColumns });
+      const values = rows.slice(row - 2, row - 2 + numRows)
+        .map((source) => source.slice(column - 1, column - 1 + numColumns));
+      return {
+        getValue: () => (values[0] || [])[0] || '',
+        getValues: () => values
+      };
+    }
+  };
+  server.getAgendaSheet_ = () => sheet;
+
+  assert.equal(server.getAgendaEventoPorId('EVT-1').id, 'EVT-1');
+  assert.equal(calls.filter((call) => call.column === server.AGENDA_CFG.col.id && call.numColumns === 1 && call.numRows === 2).length, 1);
+  assert.equal(calls.filter((call) => call.numColumns === server.AGENDA_CFG.lastCol).length, 1);
+  calls.length = 0;
+  assert.equal(server.getAgendaEventoPorId('INEXISTENTE'), null);
+  assert.equal(calls.filter((call) => call.numColumns === server.AGENDA_CFG.lastCol).length, 0);
+});
+
+test('instrumentacao registra somente metadados e relanca a falha original', () => {
+  const logs = [];
+  const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
+  assert.equal(server.codexMeasurePerformance_('operacao', 'etapa', { rowCount: 7, segredo: 'nao-logar' }, () => 'ok'), 'ok');
+  const failure = new Error('conteudo sensivel');
+  assert.throws(() => server.codexMeasurePerformance_('operacao', 'falha', { rowCount: 3 }, () => { throw failure; }), (error) => error === failure);
+
+  const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
+  assert.deepEqual(Object.keys(entries[0]).sort(), ['durationMs', 'operation', 'rowCount', 'stage', 'success']);
+  assert.equal(entries[0].success, true);
+  assert.equal(entries[1].success, false);
+  assert.equal(logs.some((message) => message.includes('segredo') || message.includes('conteudo sensivel')), false);
 });
 
 test('edicao abre imediatamente e revalida o registro em segundo plano', () => {
