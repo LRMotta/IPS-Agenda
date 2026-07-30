@@ -2,7 +2,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readProjectFile, runFile } = require('./helpers/load-app-script');
+const { readProjectFile, runFiles } = require('./helpers/load-app-script');
+
+function runFile(fileName, contextValues) {
+  assert.equal(fileName, 'WebApp.gs');
+  return runFiles(['WebApp.gs', 'DeploymentDiagnostics.gs'], contextValues);
+}
 
 function activeConfig(grupo, chave, valor) {
   return { grupo, chave, valor, ativo: 'Sim' };

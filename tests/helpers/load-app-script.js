@@ -16,6 +16,14 @@ function runFile(fileName, contextValues) {
   return context;
 }
 
+function runFiles(fileNames, contextValues) {
+  const context = vm.createContext(Object.assign({ console }, contextValues || {}));
+  (fileNames || []).forEach((fileName) => {
+    vm.runInContext(readProjectFile(fileName), context, { filename: fileName });
+  });
+  return context;
+}
+
 function runHtmlScript(fileName, contextValues) {
   const source = readProjectFile(fileName)
     .replace(/^\s*<script>\s*/i, '')
@@ -26,4 +34,4 @@ function runHtmlScript(fileName, contextValues) {
   return context.window;
 }
 
-module.exports = { projectRoot, readProjectFile, runFile, runHtmlScript };
+module.exports = { projectRoot, readProjectFile, runFile, runFiles, runHtmlScript };

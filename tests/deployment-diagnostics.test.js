@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readProjectFile, runFile } = require('./helpers/load-app-script');
+const { readProjectFile, runFiles } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 
 function rowWith(size, values) {
@@ -48,7 +48,7 @@ function diagnosticServer(overrides) {
     ])
   };
   Object.assign(sheets, overrides || {});
-  const server = runFile('WebApp.gs');
+  const server = runFiles(['WebApp.gs', 'DeploymentDiagnostics.gs']);
   server.getCodexSpreadsheet_ = () => new FakeSpreadsheet(sheets);
   return { server, sheets };
 }
@@ -196,7 +196,7 @@ test('cliente envia contexto da versao e renderiza os novos paineis', () => {
 });
 
 test('leitura estrutural limita dados as colunas usadas e preserva todos os cabecalhos', () => {
-  const server = runFile('WebApp.gs');
+  const server = runFiles(['WebApp.gs', 'DeploymentDiagnostics.gs']);
   const headers = Array.from({ length: 40 }, (_, index) => 'Coluna ' + (index + 1));
   headers[0] = 'ID';
   headers[8] = 'Projeto';
@@ -220,4 +220,15 @@ test('leitura estrutural limita dados as colunas usadas e preserva todos os cabe
   assert.equal(result.rows[0].length, 9);
   assert.deepEqual(calls[0], [1, 1, 1, 40]);
   assert.deepEqual(calls[1], [2, 1, 1, 9]);
+});
+
+test('diagnostico fica isolado em modulo proprio sem duplicar funcoes no WebApp', () => {
+  const web = readProjectFile('WebApp.gs');
+  const diagnostics = readProjectFile('DeploymentDiagnostics.gs');
+
+  assert.doesNotMatch(web, /^function getCodexDeploymentDiagnostics\s*\(/m);
+  assert.doesNotMatch(web, /^function codexGetOperationalHealthDiagnostics_\s*\(/m);
+  assert.match(diagnostics, /^function getCodexDeploymentDiagnostics\s*\(/m);
+  assert.match(diagnostics, /^function codexGetOperationalHealthDiagnostics_\s*\(/m);
+  assert.match(diagnostics, /^function limparCodexCachesDiagnostico\s*\(/m);
 });

@@ -22,7 +22,7 @@ function functionSource(fileName, functionName) {
 }
 
 test('toda funcao publica potencialmente mutavel possui autorizacao explicita', () => {
-  const files = ['WebApp.gs', 'TransporteCodexConfig.gs'];
+  const files = ['WebApp.gs', 'DeploymentDiagnostics.gs', 'TransporteCodexConfig.gs'];
   const exceptions = {
     limparNome: /return nome\.trim\(\)/,
     importarTransporteCodex: /return salvarTransporte\s*\(/
