@@ -215,18 +215,12 @@
       <input type="hidden" id="editPartId">
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
-        <div class="field-row cols-2" style="margin-bottom:14px;">
+        <div class="field" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="ptNome">Nome Completo <span class="required-star">*</span></label>
             <input type="text" id="ptNome" class="f-input large" placeholder="Nome completo do participante"
                    oninput="limparErro('ptNome','errPtNome')">
             <div class="field-error" id="errPtNome">Campo obrigatório.</div>
-          </div>
-          <div>
-            <label class="field-label" for="ptId">Nº de Identificação <span class="required-star" id="ptIdRequiredStar">*</span></label>
-            <input type="text" id="ptId" class="f-input" placeholder="Ex: P-001"
-                   oninput="limparErro('ptId','errPtId')">
-            <div class="field-error" id="errPtId">Campo obrigatório.</div>
           </div>
         </div>
         <div class="field-row cols-2">
@@ -244,7 +238,22 @@
         <div class="section-label"><span class="material-symbols-outlined">science</span> Protocolo</div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
           <div>
-            <label class="field-label" for="ptProjeto">Projeto</label>
+            <label class="field-label" for="ptStatus">Status <span class="required-star">*</span></label>
+            <select id="ptStatus" class="f-input f-select" onchange="limparErro('ptStatus','errPtStatus'); atualizarParticipanteIdObrigatorio()">
+              <option value="">-- Selecione --</option>
+            </select>
+            <div class="field-error" id="errPtStatus">Selecione um status.</div>
+          </div>
+          <div>
+            <label class="field-label" for="ptId">Nº de Identificação <span class="required-star" id="ptIdRequiredStar">*</span></label>
+            <input type="text" id="ptId" class="f-input" placeholder="Ex: P-001"
+                   oninput="limparErro('ptId','errPtId')">
+            <div class="field-error" id="errPtId">Campo obrigatório.</div>
+          </div>
+        </div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="ptProjeto">Protocolo</label>
             <div class="ac-wrap">
               <input type="text" id="ptProjeto" class="f-input" placeholder="Pesquise por nome ou código…"
                      autocomplete="off"
@@ -260,15 +269,6 @@
           <div>
             <label class="field-label" for="ptBraco">Braço</label>
             <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
-          </div>
-        </div>
-        <div class="field-row cols-2">
-          <div>
-            <label class="field-label" for="ptStatus">Status <span class="required-star">*</span></label>
-            <select id="ptStatus" class="f-input f-select" onchange="limparErro('ptStatus','errPtStatus'); atualizarParticipanteIdObrigatorio()">
-              <option value="">-- Selecione --</option>
-            </select>
-            <div class="field-error" id="errPtStatus">Selecione um status.</div>
           </div>
         </div>
       </div>
