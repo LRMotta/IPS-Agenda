@@ -940,7 +940,6 @@ function renderDiagnosticoImplantacao(data) {
   var sheet = data.spreadsheet || {};
   var cache = data.cache || {};
   var transport = data.transport || {};
-  var dataCounts = data.dataCounts || {};
   var triggers = data.triggers || {};
   var mail = data.mail || {};
   var permissions = data.permissions || {};
@@ -1020,17 +1019,20 @@ function renderDiagnosticoImplantacao(data) {
   }).join('') || diagCheckItem('Automacoes', automationRuns.error || 'Sem historico.', false, 'Atencao');
   var env = document.getElementById('diagEnvironment');
   if (env) {
+    var requiredSheets = structure.items || [];
+    var presentSheets = requiredSheets.filter(function(item) { return item.present; });
+    var missingSheets = requiredSheets.filter(function(item) { return !item.present; }).map(function(item) { return item.label; });
     env.innerHTML = diagDl([
       ['Versao', version.version || ''],
       ['Build', version.label || ''],
       ['Data do build', version.buildDate || ''],
       ['Execute as esperado', version.expectedExecuteAs || ''],
-      ['URL do WebApp', data.webAppUrl || data.webAppUrlError || ''],
       ['Planilha', sheet.name || sheet.error || ''],
       ['ID da planilha', sheet.idSuffix ? '...' + sheet.idSuffix : ''],
       ['Fuso da planilha', sheet.timeZone || ''],
       ['Fuso do script', data.script && data.script.timeZone || ''],
-      ['Abas encontradas', (sheet.sheets || []).join(', ')]
+      ['Abas obrigatorias', presentSheets.length + ' de ' + requiredSheets.length + ' presentes'],
+      ['Abas ausentes', missingSheets.join(', ') || 'Nenhuma']
     ]);
   }
   var ident = document.getElementById('diagIdentity');
@@ -1039,7 +1041,6 @@ function renderDiagnosticoImplantacao(data) {
       ['Usuario autorizado', access.email || ''],
       ['Perfil', access.role || ''],
       ['OAuth status', auth.status || (auth.required ? 'REQUIRED' : '')],
-      ['OAuth URL', auth.url || ''],
       ['Active user', identity.activeUserEmail || identity.activeUserError || ''],
       ['Effective user', identity.effectiveUserEmail || identity.effectiveUserError || ''],
       ['Userinfo status', identity.userinfoStatus || ''],
@@ -1047,6 +1048,8 @@ function renderDiagnosticoImplantacao(data) {
       ['Dica de deploy', identity.deploymentHint || '']
     ]);
   }
+  var reauthorizeWrap = document.getElementById('diagReauthorizeWrap');
+  if (reauthorizeWrap) reauthorizeWrap.hidden = !(auth.required && auth.url);
   var cacheEl = document.getElementById('diagCache');
   if (cacheEl) {
     var cacheRows = [
@@ -1084,12 +1087,6 @@ function renderDiagnosticoImplantacao(data) {
       ['POST', transport.postCode || ''],
       ['Mensagem', transport.message || transport.error || '']
     ]);
-  }
-  var countsEl = document.getElementById('diagDataCounts');
-  if (countsEl) {
-    countsEl.innerHTML = diagDl((dataCounts.items || []).map(function(item) {
-      return [item.label || item.sheetName || '', item.status + ' | ' + (item.rows || 0) + ' linha(s)' + (item.sheetName ? ' | ' + item.sheetName : '') + (item.error ? ' | ' + item.error : '')];
-    }));
   }
   var triggerMailEl = document.getElementById('diagTriggersMail');
   if (triggerMailEl) {
@@ -1129,7 +1126,7 @@ function renderDiagnosticoImplantacao(data) {
         ? audit.items.map(function(item) {
             return diagCheckItem(item.action || 'Evento', [item.timestamp, item.email, item.module, item.recordId].filter(Boolean).join(' | '), false, 'Atencao');
           }).join('')
-        : diagCheckItem('Sem erros/acessos negados recentes', 'Ultimas linhas de Audit_Log verificadas.', true, 'OK'));
+        : diagCheckItem('Nenhum indicio localizado na amostra', 'Busca textual por acesso, negado, erro ou falha nas ultimas ' + Number(audit.scannedRows || 0) + ' entradas da Audit_Log. Nao substitui monitoramento de erros.', true, 'OK'));
   }
   renderSmokeChecklist(data.smoke || {});
 }
@@ -1157,7 +1154,6 @@ function copiarDiagnosticoImplantacao() {
   var access = data.access || {};
   var auth = data.auth || {};
   var sheet = data.spreadsheet || {};
-  var cache = data.cache || {};
   var transport = data.transport || {};
   var triggers = data.triggers || {};
   var mail = data.mail || {};
@@ -1188,13 +1184,10 @@ function copiarDiagnosticoImplantacao() {
     'Drive: ' + ((permissions.drive && permissions.drive.status) || ''),
     'Calendar: ' + ((permissions.calendar && permissions.calendar.status) || ''),
     'Integridade: ' + Number((integrity.totals || {}).duplicateIds || 0) + ' ID(s) duplicado(s) | ' + Number((integrity.totals || {}).missingIds || 0) + ' ID(s) ausente(s) | ' + Number((integrity.totals || {}).orphanLinks || 0) + ' vinculo(s) orfao(s)',
-    'Config_App: ' + Number(configValidation.missing || 0) + ' configuracao(oes) obrigatoria(s) ausente(s)',
+    'Config_App: ' + Number(configValidation.missing || 0) + ' configuracao(oes) essencial(is) ausente(s) | ' + Number(configValidation.usingDefaults || 0) + ' grupo(s) usando padrao interno',
     'Perfis: ' + Number(profileHealth.active || 0) + ' ativo(s) | ' + Number(profileHealth.inactive || 0) + ' inativo(s) | ' + Number(profileHealth.duplicateEmails || 0) + ' e-mail(s) duplicado(s) | ' + Number(profileHealth.invalidBirthdays || 0) + ' aniversario(s) invalido(s)',
     'Automacoes: ' + (automationRuns.items || []).map(function(item) { return item.label + '=' + item.status; }).join(' | '),
-    'Tempo total do diagnostico: ' + Number(data.totalDurationMs || 0) + ' ms',
-    'Config_App cache presente: ' + (cache.configRowsCachePresent ? 'Sim' : 'Nao'),
-    'Agenda bootstrap cache hoje: ' + (cache.agendaBootstrapCachePresent ? 'Sim' : 'Nao'),
-    'Ultima invalidacao cache: ' + (cache.lastConfigInvalidationAt || '')
+    'Tempo total do diagnostico: ' + Number(data.totalDurationMs || 0) + ' ms'
   ].join('\n');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(resumo).then(function() {
@@ -1207,7 +1200,17 @@ function copiarDiagnosticoImplantacao() {
   }
 }
 
+function autorizarNovamenteDiagnostico() {
+  var auth = APP_DEPLOYMENT_DIAGNOSTICS && APP_DEPLOYMENT_DIAGNOSTICS.auth || {};
+  if (!auth.required || !auth.url) {
+    snack('A autorizacao atual esta valida.');
+    return;
+  }
+  window.open(auth.url, '_blank', 'noopener');
+}
+
 function limparCachesDiagnostico() {
+  if (!window.confirm('Limpar os caches compartilhados agora? A proxima abertura de alguns modulos pode ficar temporariamente mais lenta enquanto os dados sao recarregados.')) return;
   var btns = document.querySelectorAll('#page-diagnostico button');
   Array.prototype.forEach.call(btns, function(btn) { btn.disabled = true; });
   var cacheEl = document.getElementById('diagCache');

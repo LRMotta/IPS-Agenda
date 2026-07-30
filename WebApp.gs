@@ -225,12 +225,10 @@ function getCodexDeploymentDiagnostics(clientContext) {
       idSuffix: '',
       url: '',
       timeZone: '',
-      sheets: [],
       error: ''
     },
     cache: {},
     transport: {},
-    dataCounts: {},
     triggers: {},
     mail: {},
     auditRecent: {},
@@ -250,18 +248,21 @@ function getCodexDeploymentDiagnostics(clientContext) {
   out.identity = codexTimedDiagnostic_(out.timings, 'identity', 'Identidade', codexGetIdentityDiagnostics_);
   out.cache = codexTimedDiagnostic_(out.timings, 'cache', 'Caches', codexGetCacheDiagnostics_);
   out.transport = codexTimedDiagnostic_(out.timings, 'transport', 'Transporte', codexGetTransportDiagnostics_);
-  out.dataCounts = codexTimedDiagnostic_(out.timings, 'data-counts', 'Contagens por modulo', codexGetDataCountsDiagnostics_);
   out.triggers = codexTimedDiagnostic_(out.timings, 'triggers', 'Gatilhos', codexGetTriggersDiagnostics_);
   out.automationRuns = codexTimedDiagnostic_(out.timings, 'automation-runs', 'Historico das automacoes', codexGetAutomationRunDiagnostics_);
   out.mail = codexTimedDiagnostic_(out.timings, 'mail', 'Cota de e-mail', codexGetMailDiagnostics_);
-  out.auditRecent = codexTimedDiagnostic_(out.timings, 'audit', 'Auditoria recente', codexGetRecentAuditIssuesDiagnostics_);
   out.permissions = codexTimedDiagnostic_(out.timings, 'permissions', 'Permissoes criticas', codexGetCriticalPermissionsDiagnostics_);
-  out.smoke = codexTimedDiagnostic_(out.timings, 'smoke', 'Smoke checks', codexGetSmokeDiagnostics_);
   out.operational = codexTimedDiagnostic_(out.timings, 'operational', 'Dados e integridade', function() {
     return codexGetOperationalHealthDiagnostics_(clientContext);
   });
-  out.configValidation = codexTimedDiagnostic_(out.timings, 'config-validation', 'Config_App obrigatoria', codexBuildConfigAppDiagnostics_);
+  out.configValidation = codexTimedDiagnostic_(out.timings, 'config-validation', 'Config_App essencial', codexBuildConfigAppDiagnostics_);
   out.profileHealth = codexTimedDiagnostic_(out.timings, 'profiles', 'Perfis de acesso', codexGetProfileHealthDiagnostics_);
+  out.smoke = codexTimedDiagnostic_(out.timings, 'smoke', 'Smoke checks', function() {
+    return codexGetSmokeDiagnostics_({ profileHealth: out.profileHealth });
+  });
+  out.auditRecent = codexTimedDiagnostic_(out.timings, 'audit', 'Auditoria recente', function() {
+    return codexGetRecentAuditIssuesDiagnostics_(out.operational && out.operational.activity);
+  });
   try {
     var tz = Session.getScriptTimeZone() || 'America/Sao_Paulo';
     out.script.timeZone = tz;
@@ -288,7 +289,6 @@ function getCodexDeploymentDiagnostics(clientContext) {
     out.spreadsheet.idSuffix = id ? id.slice(-8) : '';
     out.spreadsheet.url = ss.getUrl();
     out.spreadsheet.timeZone = ss.getSpreadsheetTimeZone();
-    out.spreadsheet.sheets = ss.getSheets().map(function(sh) { return sh.getName(); }).slice(0, 40);
   } catch (e2) {
     out.spreadsheet.error = e2.message || String(e2);
   }
@@ -336,9 +336,15 @@ function codexAppendMediumPriorityChecks_(data) {
   var operational = data.operational || {};
   var config = data.configValidation || {};
   var missingConfig = (config.items || []).filter(function(item) { return !item.ok; });
-  var configOk = config.ok !== false && missingConfig.length === 0;
-  codexAppendOperationalCheck_(operational, 'Config_App obrigatoria', configOk,
-    config.error || (missingConfig.length ? 'Sem valores ativos: ' + missingConfig.map(function(item) { return item.label; }).join(', ') : 'Todas as configuracoes essenciais possuem valor ativo.'), 'warning');
+  var configOk = config.ok !== false && missingConfig.length === 0 && Number(config.duplicateValues || 0) === 0;
+  var configDetail = config.error || (missingConfig.length
+    ? 'Sem valores ativos: ' + missingConfig.map(function(item) { return item.label; }).join(', ')
+    : (Number(config.duplicateValues || 0) > 0
+      ? Number(config.duplicateValues || 0) + ' valor(es) duplicado(s).'
+      : (Number(config.usingDefaults || 0) > 0
+        ? 'Configuracoes essenciais validas; ' + Number(config.usingDefaults || 0) + ' grupo(s) usam os valores padrao do aplicativo.'
+        : 'Todas as configuracoes essenciais possuem valor ativo.')));
+  codexAppendOperationalCheck_(operational, 'Config_App essencial', configOk, configDetail, 'warning');
 
   var triggers = data.triggers || {};
   if (triggers.error) codexAppendOperationalCheck_(operational, 'Leitura dos gatilhos', false, triggers.error, 'warning');
@@ -509,8 +515,14 @@ function codexReadDiagnosticTable_(ss, spec) {
   if (!sh) return { present: false, sheetName: '', headers: [], rows: [], missingHeaders: (spec.required || []).map(function(x) { return x.label; }), headerNotes: [] };
   var lastRow = sh.getLastRow();
   var lastColumn = sh.getLastColumn();
-  var values = lastRow && lastColumn ? sh.getRange(1, 1, lastRow, lastColumn).getValues() : [];
-  var headers = values[0] || [];
+  var headers = lastColumn ? sh.getRange(1, 1, 1, lastColumn).getValues()[0] : [];
+  var dataColumnCount = (spec.required || []).reduce(function(max, req) {
+    return Math.max(max, Number(req.index || 0) + 1);
+  }, 1);
+  dataColumnCount = Math.min(Math.max(1, dataColumnCount), Math.max(1, lastColumn));
+  var rows = lastRow > 1 && lastColumn
+    ? sh.getRange(2, 1, lastRow - 1, dataColumnCount).getValues()
+    : [];
   var missing = [];
   var headerNotes = [];
   (spec.required || []).forEach(function(req) {
@@ -535,7 +547,7 @@ function codexReadDiagnosticTable_(ss, spec) {
     present: true,
     sheetName: sh.getName(),
     headers: headers,
-    rows: values.slice(1).map(function(row, index) {
+    rows: rows.map(function(row, index) {
       row.__codexDiagnosticRow = index + 2;
       return row;
     }).filter(function(row) { return row.some(function(value) { return value !== '' && value !== null && value !== undefined; }); }),
@@ -685,13 +697,28 @@ function codexBuildIntegrityDiagnostics_(tables) {
 }
 
 function codexBuildActivityDiagnostics_(ss) {
-  var out = { items: [], error: '' };
+  var out = { items: [], recentAuditIssues: [], auditScannedRows: 0, error: '' };
   try {
     var sh = ss.getSheetByName('Audit_Log');
     if (!sh || sh.getLastRow() < 2) return out;
     var count = Math.min(500, sh.getLastRow() - 1);
     var startRow = sh.getLastRow() - count + 1;
-    var rows = sh.getRange(startRow, 1, count, Math.max(6, sh.getLastColumn())).getValues().reverse();
+    var rows = sh.getRange(startRow, 1, count, 6).getValues().reverse();
+    var auditSample = rows.slice(0, 60);
+    out.auditScannedRows = auditSample.length;
+    out.recentAuditIssues = auditSample.filter(function(row) {
+      var action = normText_(row[2]);
+      return action.indexOf('acesso') > -1 || action.indexOf('negado') > -1 || action.indexOf('erro') > -1 || action.indexOf('falha') > -1;
+    }).slice(0, 8).map(function(row) {
+      return {
+        id: String(row[0] || ''),
+        email: String(row[1] || ''),
+        action: String(row[2] || ''),
+        timestamp: codexDiagnosticFormatDate_(row[3]),
+        module: String(row[4] || ''),
+        recordId: String(row[5] || '')
+      };
+    });
     var groups = [
       { key: 'agenda', label: 'Agenda', aliases: ['agenda'] },
       { key: 'cadastros', label: 'Projetos e Participantes', aliases: ['cadastros'] },
@@ -916,14 +943,12 @@ function codexReadConfigAppRowsForDiagnostics_() {
 }
 
 function codexBuildConfigAppDiagnostics_() {
-  var out = { ok: true, items: [], missing: 0, duplicateValues: 0, error: '' };
+  var out = { ok: true, items: [], missing: 0, usingDefaults: 0, duplicateValues: 0, error: '' };
   try {
     var rows = codexReadConfigAppRowsForDiagnostics_();
     var requirements = [
-      { label: 'Agenda / Tipos de evento', groups: ['Agenda'], keys: ['Tipo de evento', 'Tipos de evento'] },
-      { label: 'Agenda / Status', groups: ['Agenda'], keys: ['Status'] },
-      { label: 'Projetos / Fase', groups: ['Projetos'], keys: ['Fase'] },
-      { label: 'Projetos / Status', groups: ['Projetos'], keys: ['Status'] },
+      { label: 'Agenda / Tipos de evento', groups: ['Agenda'], keys: ['Tipo de evento', 'Tipos de evento'], fallbackCount: 11 },
+      { label: 'Agenda / Status', groups: ['Agenda'], keys: ['Status'], fallbackCount: 6 },
       { label: 'Estoque / Laboratorios', groups: ['Estoque'], keys: ['Laboratorio'], keyPrefix: true },
       { label: 'Estoque / Localizacoes', groups: ['Estoque'], keys: ['Localizacao'], keyPrefix: true },
       { label: 'Estoque / Tipos de item', groups: ['Estoque'], keys: ['Tipo de item'], keyPrefix: true }
@@ -934,12 +959,15 @@ function codexBuildConfigAppDiagnostics_() {
       requirement.groups.forEach(function(value) { groups[normText_(value)] = true; });
       requirement.keys.forEach(function(value) { keys[normText_(value)] = true; });
       var values = [];
+      var matched = false;
       var seen = {};
       var duplicates = [];
       rows.forEach(function(row) {
         var rowKey = normText_(row.chave);
         var keyMatches = !!keys[rowKey] || (requirement.keyPrefix && Object.keys(keys).some(function(key) { return rowKey.indexOf(key) === 0; }));
-        if (!groups[normText_(row.grupo)] || !keyMatches || !codexConfigRowIsActive_(row)) return;
+        if (!groups[normText_(row.grupo)] || !keyMatches) return;
+        matched = true;
+        if (!codexConfigRowIsActive_(row)) return;
         var value = String(row.valor || '').trim();
         if (!value) return;
         var valueKey = normText_(value);
@@ -947,15 +975,21 @@ function codexBuildConfigAppDiagnostics_() {
         seen[valueKey] = true;
         values.push(value);
       });
-      var ok = values.length > 0;
+      var usesFallback = !matched && !!requirement.fallbackCount;
+      var ok = values.length > 0 || usesFallback;
       if (!ok) out.missing++;
+      if (usesFallback) out.usingDefaults++;
       out.duplicateValues += duplicates.length;
       out.items.push({
         label: requirement.label,
         ok: ok,
         count: values.length,
+        configured: values.length > 0,
+        usesFallback: usesFallback,
         duplicateValues: duplicates,
-        detail: ok ? values.length + ' valor(es) ativo(s)' + (duplicates.length ? ' | duplicados: ' + duplicates.join(', ') : '') : 'Nenhum valor ativo configurado.'
+        detail: usesFallback
+          ? 'Usando ' + requirement.fallbackCount + ' valor(es) padrao do aplicativo.'
+          : (ok ? values.length + ' valor(es) ativo(s)' + (duplicates.length ? ' | duplicados: ' + duplicates.join(', ') : '') : (matched ? 'A configuracao existe, mas nao possui valor ativo.' : 'Nenhum valor ativo configurado.'))
       });
     });
     out.ok = out.missing === 0;
@@ -971,6 +1005,7 @@ function codexBuildProfileDiagnostics_(rows) {
     ok: true,
     total: 0,
     active: 0,
+    activeAdmins: 0,
     inactive: 0,
     missingNames: 0,
     missingEmails: 0,
@@ -986,9 +1021,13 @@ function codexBuildProfileDiagnostics_(rows) {
     var email = codexNormalizeEmail_(row[0]);
     var name = codexNormalizeUserName_(row[1]);
     var active = codexNormalizeActive_(row[3]);
+    var role = codexNormalizeRole_(row[2]);
     var birthday = row[4];
     out.total++;
-    if (active) out.active++; else out.inactive++;
+    if (active) {
+      out.active++;
+      if (role === 'admin') out.activeAdmins++;
+    } else out.inactive++;
     if (!email) {
       out.missingEmails++;
       if (out.issueExamples.length < 5) out.issueExamples.push('linha ' + rowNumber + ': e-mail ausente');
@@ -1021,7 +1060,7 @@ function codexGetProfileHealthDiagnostics_() {
     if (!sh || sh.getLastRow() < 2) return codexBuildProfileDiagnostics_([]);
     return codexBuildProfileDiagnostics_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues());
   } catch (e) {
-    return { ok: false, total: 0, active: 0, inactive: 0, missingNames: 0, missingEmails: 0, invalidBirthdays: 0, duplicateEmails: 0, duplicateExamples: [], issueExamples: [], error: e.message || String(e) };
+    return { ok: false, total: 0, active: 0, activeAdmins: 0, inactive: 0, missingNames: 0, missingEmails: 0, invalidBirthdays: 0, duplicateEmails: 0, duplicateExamples: [], issueExamples: [], error: e.message || String(e) };
   }
 }
 
@@ -1155,8 +1194,14 @@ function codexGetMailDiagnostics_() {
   return out;
 }
 
-function codexGetRecentAuditIssuesDiagnostics_() {
-  var out = { items: [], error: '' };
+function codexGetRecentAuditIssuesDiagnostics_(activity) {
+  var out = { items: [], scannedRows: 0, sampleLimit: 60, matchTerms: ['acesso', 'negado', 'erro', 'falha'], error: '' };
+  if (activity && Array.isArray(activity.recentAuditIssues)) {
+    out.items = activity.recentAuditIssues.slice(0, 8);
+    out.scannedRows = Number(activity.auditScannedRows || 0);
+    out.reusedOperationalSample = true;
+    return out;
+  }
   try {
     var page = getAuditRowsPage_('Audit_Log', 6, 60, 0, function(r) {
       return {
@@ -1168,6 +1213,7 @@ function codexGetRecentAuditIssuesDiagnostics_() {
         recordId: String(r[5] || '')
       };
     });
+    out.scannedRows = (page.rows || []).length;
     out.items = (page.rows || []).filter(function(r) {
       var a = normText_(r.action);
       return a.indexOf('acesso') > -1 || a.indexOf('negado') > -1 || a.indexOf('erro') > -1 || a.indexOf('falha') > -1;
@@ -1199,41 +1245,29 @@ function codexGetCriticalPermissionsDiagnostics_() {
   return out;
 }
 
-function codexGetSmokeDiagnostics_() {
+function codexGetSmokeDiagnostics_(context) {
+  context = context || {};
   var out = { checks: [] };
   function add(label, ok, detail, status) {
     out.checks.push({ label: label, ok: !!ok, status: status || (ok ? 'OK' : 'Atencao'), detail: detail || '' });
   }
+  var profiles = context.profileHealth || {};
+  var admins = Number(profiles.activeAdmins || 0);
+  add('Existe ao menos 1 admin ativo', !profiles.error && admins > 0,
+    profiles.error || admins + ' admin(s) ativo(s)', profiles.error ? 'Erro' : undefined);
   try {
-    var agenda = typeof getAgendaSheet_ === 'function' ? getAgendaSheet_() : getCodexSpreadsheet_().getSheetByName('Agenda');
-    var agendaRows = agenda ? Math.max(0, agenda.getLastRow() - 1) : 0;
-    add('Agenda tem registros', agendaRows > 0, agendaRows + ' linha(s)');
-  } catch (eAgenda) {
-    add('Agenda tem registros', false, eAgenda.message || String(eAgenda), 'Erro');
-  }
-  try {
-    var users = codexGetAllowedUsers_();
-    var admins = Object.keys(users || {}).filter(function(email) { return String(users[email].role || '').toLowerCase() === 'admin'; }).length;
-    add('Existe ao menos 1 admin ativo', admins > 0, admins + ' admin(s)');
-  } catch (eUsers) {
-    add('Existe ao menos 1 admin ativo', false, eUsers.message || String(eUsers), 'Erro');
-  }
-  try {
-    var cfg = getCodexSpreadsheet_().getSheetByName('Config_App');
-    var cfgRows = cfg ? Math.max(0, cfg.getLastRow() - 1) : 0;
-    add('Config_App tem linhas', cfgRows > 0, cfgRows + ' linha(s)');
-  } catch (eCfg) {
-    add('Config_App tem linhas', false, eCfg.message || String(eCfg), 'Erro');
-  }
-  try {
-    var labs = typeof getLabCentral === 'function' ? getLabCentral() : [];
-    add('LabCentral tem laboratorios', labs && labs.length > 0, (labs ? labs.length : 0) + ' laboratorio(s)');
+    var ss = getCodexSpreadsheet_();
+    var labSheet = ss.getSheetByName('LabCentral');
+    var labRows = labSheet ? Math.max(0, labSheet.getLastRow() - 1) : 0;
+    add('LabCentral tem laboratorios', labRows > 0, labRows + ' laboratorio(s)');
   } catch (eLab) {
     add('LabCentral tem laboratorios', false, eLab.message || String(eLab), 'Erro');
   }
   try {
-    var couriers = typeof getCouriersCadastro === 'function' ? getCouriersCadastro() : [];
-    add('Couriers cadastradas', couriers && couriers.length > 0, (couriers ? couriers.length : 0) + ' courier(s)');
+    var ssCourier = getCodexSpreadsheet_();
+    var courierSheet = ssCourier.getSheetByName('Courier') || ssCourier.getSheetByName('Couriers');
+    var courierRows = courierSheet ? Math.max(0, courierSheet.getLastRow() - 1) : 0;
+    add('Couriers cadastradas', courierRows > 0, courierRows + ' courier(s)');
   } catch (eCour) {
     add('Couriers cadastradas', false, eCour.message || String(eCour), 'Erro');
   }
