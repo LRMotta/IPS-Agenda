@@ -59,3 +59,14 @@ test('interface vincula somente depois de salvar e abre o agendamento pelo chip'
   assert.match(server, /agendaVincularBackupAoAgendamento_\(agenda, backupOrigemId, resultado\.id, d\)/);
   assert.match(server, /Backup_Agendamento_Ref/);
 });
+
+test('novo envio criado do backup preserva o medico do agendamento de origem', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda()');
+  const fim = client.indexOf('function gerarTransporteAgendaCard(', inicio);
+  const fluxoBackup = client.slice(inicio, fim);
+
+  assert.notEqual(inicio, -1);
+  assert.notEqual(fim, -1);
+  assert.match(fluxoBackup, /setAgendaSelectValue\('agMedico', origem\.medico\)/);
+});
