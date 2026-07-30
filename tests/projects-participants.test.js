@@ -124,6 +124,28 @@ test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () 
   assert.match(modal, /Cadastrar mesmo assim/);
 });
 
+test('modal de participante organiza identificacao e protocolo sem remover a regra do ID', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(modal, '<!-- ══ MODAL PARTICIPANTE', '<!-- ══ MODAL MÉDICO');
+
+  const nome = block.indexOf('id="ptNome"');
+  const nascimento = block.indexOf('id="ptNasc"');
+  const cpf = block.indexOf('id="ptCpf"');
+  const status = block.indexOf('id="ptStatus"');
+  const identificacao = block.indexOf('id="ptId"');
+  const protocolo = block.indexOf('id="ptProjeto"');
+  const braco = block.indexOf('id="ptBraco"');
+
+  assert.ok(nome < nascimento && nascimento < cpf);
+  assert.ok(status < identificacao && identificacao < protocolo && protocolo < braco);
+  assert.match(block, /class="field" style="margin-bottom:14px;">\s*<div>\s*<label[^>]+for="ptNome"/);
+  assert.match(block, /for="ptProjeto">Protocolo<\/label>/);
+  assert.match(block, /id="ptIdRequiredStar"/);
+  assert.match(client, /var required = !participanteIdOpcionalPorStatus\(status \? status\.value : ''\)/);
+  assert.match(client, /\{ input: 'ptId', error: 'errPtId',[\s\S]*value: idObrigatorio \? idPart : 'ok' \}/);
+});
+
 test('tabela de participantes exibe nome e codigo do projeto como no cadastro de projetos', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const block = sourceBetween(source, 'function participanteProjetoCellHtml(', 'function renderTabelaPart(');
