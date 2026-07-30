@@ -207,9 +207,6 @@
         <button class="btn-refresh" type="button" onclick="copiarDiagnosticoImplantacao()" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
           <span class="material-symbols-outlined">content_copy</span> Copiar resumo
         </button>
-        <button class="btn-refresh" type="button" onclick="limparCachesDiagnostico()" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
-          <span class="material-symbols-outlined">cached</span> Limpar caches
-        </button>
         <span class="dash-ts" id="diagCheckedAt"></span>
       </div>
       <div class="diag-grid">
@@ -235,7 +232,7 @@
           <div class="diag-checklist" id="diagIntegrityChecks"></div>
         </section>
         <section class="diag-panel diag-panel-wide">
-          <h3>Configuracoes obrigatorias</h3>
+          <h3>Configuracoes essenciais</h3>
           <div class="diag-checklist" id="diagConfigValidation"></div>
         </section>
         <section class="diag-panel">
@@ -253,18 +250,15 @@
         <section class="diag-panel">
           <h3>Identidade e autorizacao</h3>
           <dl id="diagIdentity"></dl>
-        </section>
-        <section class="diag-panel diag-panel-wide">
-          <h3>Cache e Config_App</h3>
-          <dl id="diagCache"></dl>
+          <div id="diagReauthorizeWrap" hidden style="margin-top:12px">
+            <button class="btn-refresh" type="button" onclick="autorizarNovamenteDiagnostico()" style="height:36px;margin:0;border-radius:var(--r-sm)">
+              <span class="material-symbols-outlined">key</span> Autorizar novamente
+            </button>
+          </div>
         </section>
         <section class="diag-panel">
           <h3>Transporte</h3>
           <dl id="diagTransport"></dl>
-        </section>
-        <section class="diag-panel">
-          <h3>Dados por modulo</h3>
-          <dl id="diagDataCounts"></dl>
         </section>
         <section class="diag-panel">
           <h3>Gatilhos e e-mail</h3>
@@ -286,6 +280,15 @@
           <h3>Smoke checks automaticos</h3>
           <div class="diag-checklist" id="diagSmokeChecklist"></div>
         </section>
+        <details class="diag-panel diag-panel-wide diag-advanced">
+          <summary><span class="material-symbols-outlined">build</span> Manutencao avancada</summary>
+          <p>Use a limpeza somente quando configuracoes ou listas permanecerem desatualizadas. A operacao invalida caches compartilhados e pode deixar a proxima abertura temporariamente mais lenta.</p>
+          <button class="btn-refresh" type="button" onclick="limparCachesDiagnostico()" style="height:40px;margin:0 0 16px;border-radius:var(--r-sm)">
+            <span class="material-symbols-outlined">cached</span> Limpar caches compartilhados
+          </button>
+          <h3>Detalhes internos dos caches</h3>
+          <dl id="diagCache"></dl>
+        </details>
       </div>
     </div>
 

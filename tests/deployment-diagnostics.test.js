@@ -194,3 +194,30 @@ test('cliente envia contexto da versao e renderiza os novos paineis', () => {
   ['diagOverall', 'diagHealthSummary', 'diagVersionSync', 'diagModuleActivity', 'diagStructureChecks', 'diagIntegrityChecks']
     .forEach((id) => assert.match(content, new RegExp(`id="${id}"`)));
 });
+
+test('leitura estrutural limita dados as colunas usadas e preserva todos os cabecalhos', () => {
+  const server = runFile('WebApp.gs');
+  const headers = Array.from({ length: 40 }, (_, index) => 'Coluna ' + (index + 1));
+  headers[0] = 'ID';
+  headers[8] = 'Projeto';
+  const sheet = new FakeSheet('Agenda', [headers, Array.from({ length: 40 }, (_, index) => 'v' + index)]);
+  const calls = [];
+  const originalGetRange = sheet.getRange.bind(sheet);
+  sheet.getRange = (...args) => {
+    calls.push(args);
+    return originalGetRange(...args);
+  };
+
+  const result = server.codexReadDiagnosticTable_(new FakeSpreadsheet({ Agenda: sheet }), {
+    names: ['Agenda'],
+    required: [
+      { index: 0, label: 'ID', aliases: ['ID'] },
+      { index: 8, label: 'Projeto', aliases: ['Projeto'] }
+    ]
+  });
+
+  assert.equal(result.headers.length, 40);
+  assert.equal(result.rows[0].length, 9);
+  assert.deepEqual(calls[0], [1, 1, 1, 40]);
+  assert.deepEqual(calls[1], [2, 1, 1, 9]);
+});
