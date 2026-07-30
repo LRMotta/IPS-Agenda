@@ -695,13 +695,24 @@ function codexGetEditPresenceSheet_() {
 function codexCleanupEditPresence_(sh, now) {
   now = now || new Date();
   var lastRow = sh.getLastRow();
-  if (lastRow < 2) return;
+  if (lastRow < 2) return [];
   var vals = sh.getRange(2, 1, lastRow - 1, 8).getValues();
-  for (var i = vals.length - 1; i >= 0; i--) {
-    var expiresAt = vals[i][6];
+  var active = vals.filter(function(row) {
+    var expiresAt = row[6];
     var expired = expiresAt instanceof Date ? expiresAt.getTime() < now.getTime() : true;
-    if (expired) sh.deleteRow(i + 2);
+    return !expired;
+  });
+  if (active.length !== vals.length) {
+    codexReplaceEditPresenceRows_(sh, active, lastRow);
   }
+  return active;
+}
+
+function codexReplaceEditPresenceRows_(sh, rows, lastRow) {
+  rows = rows || [];
+  lastRow = Number(lastRow || sh.getLastRow());
+  if (lastRow >= 2) sh.getRange(2, 1, lastRow - 1, 8).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, 8).setValues(rows);
 }
 
 function codexGetRecordVersion_(moduleName, recordId) {
@@ -731,7 +742,7 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
     var now = new Date();
     var ttlSeconds = 6 * 60;
     var expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
-    codexCleanupEditPresence_(sh, now);
+    var vals = codexCleanupEditPresence_(sh, now);
     var version = codexGetRecordVersion_(moduleName, recordId);
     var editVersion = '';
     if (normText_(moduleName) === 'agenda') {
@@ -743,8 +754,6 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
     }
     var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
     var name = access.name || access.firstName || email;
-    var lastRow = sh.getLastRow();
-    var vals = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, 8).getValues() : [];
     var targetRow = 0;
     var editors = [];
     vals.forEach(function(r, idx) {
@@ -788,19 +797,16 @@ function codexReleaseEditPresence(moduleName, recordId, sessionId) {
   if (!moduleName || !recordId || !sessionId) return { ok: true };
   return codexWithDocumentLock_('codexReleaseEditPresence', function() {
     var sh = codexGetEditPresenceSheet_();
-    codexCleanupEditPresence_(sh, new Date());
+    var vals = codexCleanupEditPresence_(sh, new Date());
     var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
-    var lastRow = sh.getLastRow();
-    if (lastRow < 2) return { ok: true };
-    var vals = sh.getRange(2, 1, lastRow - 1, 8).getValues();
-    for (var i = vals.length - 1; i >= 0; i--) {
-      var r = vals[i];
-      if (String(r[0] || '') === moduleName &&
+    var remaining = vals.filter(function(r) {
+      return !(String(r[0] || '') === moduleName &&
           String(r[1] || '') === recordId &&
           codexNormalizeEmail_(r[2]) === email &&
-          String(r[4] || '') === sessionId) {
-        sh.deleteRow(i + 2);
-      }
+          String(r[4] || '') === sessionId);
+    });
+    if (remaining.length !== vals.length) {
+      codexReplaceEditPresenceRows_(sh, remaining);
     }
     return { ok: true };
   });
