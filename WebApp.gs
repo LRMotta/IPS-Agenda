@@ -9059,7 +9059,6 @@ function getAgendaMateriaisAnteriores(criteria) {
     var limite = Math.max(1, Math.min(Number(criteria.limite || 5), 5));
     if (!participanteId && !projetoId) return { items: [], limit: limite };
 
-    var participanteNomes = participanteId ? agendaParticipanteNomesPorId_(participanteId) : {};
     var projeto = projetoId ? agendaProjetoIdentidade_(projetoId) : null;
     if (projetoId && (!projeto || !projeto.id)) return { items: [], limit: limite };
 
@@ -9091,7 +9090,6 @@ function getAgendaMateriaisAnteriores(criteria) {
       if (participanteId) {
         var idLinha = String(base[AGENDA_CFG.idx.idParticipante] || '').trim();
         var participanteCompativel = normText_(idLinha) === normText_(participanteId);
-        if (!participanteCompativel && !idLinha) participanteCompativel = !!participanteNomes[normText_(base[AGENDA_CFG.idx.participante])];
         if (!participanteCompativel) continue;
       } else if (!projetoAliases[normText_(base[AGENDA_CFG.idx.projeto])]) {
         continue;
@@ -9128,18 +9126,6 @@ function getAgendaMateriaisAnteriores(criteria) {
       };
     });
   });
-}
-
-function agendaParticipanteNomesPorId_(participanteId) {
-  var out = {};
-  var needle = normText_(participanteId);
-  if (!needle) return out;
-  getCodexSheetDataByName_('Participantes').slice(1).forEach(function(row) {
-    if (normText_(row[4]) !== needle) return;
-    var nome = normText_(row[1]);
-    if (nome) out[nome] = true;
-  });
-  return out;
 }
 
 function agendaProjetoIdentidade_(reference) {

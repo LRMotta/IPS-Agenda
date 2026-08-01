@@ -281,16 +281,16 @@ test('materiais anteriores usam consulta especifica, IDs estaveis e no maximo ci
   }));
   const calls = [];
   server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
-  server.getCodexSheetDataByName_ = (name) => name === 'Participantes'
-    ? [['Id', 'Nome', '', '', 'ID Participante'], ['CAD-1', 'Paciente Historico', '', '', 'PART-1']]
-    : [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+  server.getCodexSheetDataByName_ = (name) => name === 'Projetos'
+    ? [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']]
+    : [[]];
 
   const response = server.getAgendaMateriaisAnteriores({ participanteId: 'PART-1', excluirEventoId: 'EVT-7', limite: 80 });
   assert.equal(response.limit, 5);
-  assert.deepEqual(Array.from(response.items, (item) => item.id), ['EVT-6', 'EVT-5', 'EVT-4', 'EVT-3', 'EVT-2']);
+  assert.deepEqual(Array.from(response.items, (item) => item.id), ['EVT-5', 'EVT-4', 'EVT-3', 'EVT-2', 'EVT-1']);
   assert.equal(response.items[0].idParticipante, 'PART-1');
   assert.equal(response.items[0].projetoId, 'PROJ-1');
-  assert.equal(response.items[0].courier1.material, 'Material 6');
+  assert.equal(response.items[0].courier1.material, 'Material 5');
   assert.equal(calls.some((call) => call.row === 2 && call.numRows === rows.length && call.numColumns === server.AGENDA_CFG.lastCol), false);
   assert.equal(calls.some((call) => call.column === 1 && call.numColumns === server.AGENDA_CFG.col.visita), true);
   assert.equal(calls.some((call) => call.column === i.c1.material + 1 && call.numColumns === i.cb.matBio - i.c1.material + 1), true);
