@@ -19,6 +19,13 @@
   var _agendaHistoricoPage = 0;
   var _agendaHistoricoLoading = false;
   var _agendaHistoricoRequestId = 0;
+  var _agendaEventosPorId = {};
+  var _agendaEditRecord = null;
+  var _agendaMateriaisAnteriores = [];
+  var _agendaMateriaisContextKey = '';
+  var _agendaMateriaisLoadingKey = '';
+  var _agendaMateriaisRequestId = 0;
+  var _agendaPeriodosPorEventoId = {};
   var _agendaSearchTimer = null;
   var _agendaTeamBirthdays = Array.isArray(window.APP_TEAM_BIRTHDAYS) ? window.APP_TEAM_BIRTHDAYS : [];
   var _agendaCancelamentoContext = null;
@@ -824,6 +831,7 @@
 
   function agendaMatBioUpdateAllCopyOptions() {
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
+    agendaMatBioLoadPreviousOptions_();
   }
 
   function agendaMatBioUpdateCopyOptions(prefix) {
@@ -832,13 +840,13 @@
     var participante = normAgenda((document.getElementById('agParticipante') || {}).value || '');
     var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
     var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
-    var eventos = (_agendaEventos || []).filter(function(r) {
+    var eventos = agendaMatBioPreviousEvents_().filter(function(r) {
       if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
       if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
       if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
       if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
       return agendaMatBioEventOptions(r).length;
-    }).slice(-80).reverse();
+    }).slice(-5).reverse();
     var opts = ['<option value="">Copiar material de visita anterior...</option>'];
     eventos.forEach(function(r) {
       agendaMatBioEventOptions(r, prefix).forEach(function(opt) {
@@ -891,7 +899,7 @@
       return;
     }
     var parts = sel.value.split('|');
-    var ev = (_agendaEventos || []).find(function(r) { return String(r.id || '') === parts[0]; });
+    var ev = agendaMatBioFindPreviousEvent_(parts[0]);
     var mode = parts[2] || 'structured';
     var opt = agendaMatBioEventOptions(ev, prefix).find(function(o) { return o.prefix === parts[1] && o.mode === mode; });
     if (!opt) {
@@ -917,6 +925,118 @@
       };
     }));
     snack('Material copiado para este transporte.');
+  }
+
+  function agendaProjetoIdPorValor_(value) {
+    var needle = normAgenda(value);
+    if (!needle) return '';
+    var projetos = (_agendaDados && _agendaDados.projetos) || [];
+    for (var i = 0; i < projetos.length; i++) {
+      var projeto = projetos[i] || {};
+      if (typeof projeto !== 'object') continue;
+      if (normAgenda(projeto.nome || projeto.nomeAbreviado) === needle || normAgenda(projeto.codigo) === needle) {
+        return String(projeto.id || '').trim();
+      }
+    }
+    return '';
+  }
+
+  function agendaMatBioCurrentContext_() {
+    var participanteId = String((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '').trim();
+    var projetoValor = String((document.getElementById('agProjeto') || {}).value || '').trim();
+    var projetoId = participanteId ? '' : agendaProjetoIdPorValor_(projetoValor);
+    var excluirEventoId = String(_agendaEditId || '').trim();
+    var key = [participanteId ? 'P:' + participanteId : 'J:' + projetoId, excluirEventoId].join('|');
+    return {
+      participanteId: participanteId,
+      projetoId: projetoId,
+      excluirEventoId: excluirEventoId,
+      key: participanteId || projetoId ? key : ''
+    };
+  }
+
+  function agendaMatBioPreviousEvents_() {
+    var context = agendaMatBioCurrentContext_();
+    if (context.key && context.key === _agendaMateriaisContextKey) return _agendaMateriaisAnteriores || [];
+    return agendaMatBioFallbackEvents_();
+  }
+
+  function agendaMatBioFallbackEvents_() {
+    return (_agendaEventos || []).filter(function(r) {
+      if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
+      var participante = normAgenda((document.getElementById('agParticipante') || {}).value || '');
+      var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
+      var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
+      if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
+      if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
+      if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
+      return agendaMatBioEventOptions(r).length;
+    }).slice(-5);
+  }
+
+  function agendaMatBioHistoryEquivalent_(targeted, fallback) {
+    targeted = targeted || [];
+    fallback = fallback || [];
+    if (targeted.length !== fallback.length) return false;
+    for (var i = 0; i < targeted.length; i++) {
+      if (String(targeted[i].id || '') !== String(fallback[i].id || '')) return false;
+      if (agendaMatBioEventOptions(targeted[i]).length !== agendaMatBioEventOptions(fallback[i]).length) return false;
+    }
+    return true;
+  }
+
+  function agendaMatBioFindPreviousEvent_(id) {
+    id = String(id || '');
+    return (_agendaMateriaisAnteriores || []).find(function(r) { return String(r.id || '') === id; }) || agendaFindEventoLocal_(id);
+  }
+
+  function agendaMatBioLoadPreviousOptions_() {
+    var context = agendaMatBioCurrentContext_();
+    if (!context.key) {
+      _agendaMateriaisContextKey = '';
+      _agendaMateriaisLoadingKey = '';
+      _agendaMateriaisAnteriores = [];
+      return;
+    }
+    if (context.key === _agendaMateriaisContextKey || context.key === _agendaMateriaisLoadingKey) return;
+    var requestId = ++_agendaMateriaisRequestId;
+    _agendaMateriaisLoadingKey = context.key;
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (requestId !== _agendaMateriaisRequestId) return;
+        _agendaMateriaisLoadingKey = '';
+        var current = agendaMatBioCurrentContext_();
+        if (current.key !== context.key) return;
+        var targeted = ((response && response.items) || []).map(function(item) {
+          item = agendaNormalizeRow(item);
+          if (!item.idParticipante && context.participanteId) item.idParticipante = context.participanteId;
+          return item;
+        }).filter(function(item) {
+          return !!String(item.id || '').trim();
+        }).reverse();
+        var fallback = agendaMatBioFallbackEvents_();
+        if (!_agendaEventosTruncated && (_agendaEventos || []).length && !agendaMatBioHistoryEquivalent_(targeted, fallback)) {
+          _agendaMateriaisContextKey = '';
+          _agendaMateriaisAnteriores = [];
+          if (window.console && console.warn) console.warn('[Agenda] Consulta especifica de materiais divergente; fallback completo preservado.');
+          agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
+          return;
+        }
+        _agendaMateriaisContextKey = context.key;
+        _agendaMateriaisAnteriores = targeted;
+        agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
+      })
+      .withFailureHandler(function() {
+        if (requestId !== _agendaMateriaisRequestId) return;
+        _agendaMateriaisLoadingKey = '';
+        agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
+      })
+      .getAgendaMateriaisAnteriores({
+        participanteId: context.participanteId,
+        projetoId: context.projetoId,
+        excluirEventoId: context.excluirEventoId,
+        limite: 5
+      });
   }
 
   function agendaMatBioClearPaste(prefix) {
@@ -1487,9 +1607,7 @@
   function validarAgendaAlertasDataPassada() {
     var dataValor = (document.getElementById('agData') || {}).value || '';
     if (!agendaIsPastDate(dataValor)) return true;
-    var anterior = _agendaEditId ? (_agendaEventos || []).find(function(x) {
-      return String(x.id || '') === String(_agendaEditId);
-    }) : null;
+    var anterior = agendaEventoAtualEditado_();
     var labSim = AgendaRules.isLabCentral((document.getElementById('agLabCentral') || {}).value || '');
     var temRequisicao = agendaMeaningfulValue((document.getElementById('agPrestador') || {}).value || '') ||
       !!(document.getElementById('agReqEnviada') && document.getElementById('agReqEnviada').checked);
@@ -1832,9 +1950,7 @@
 
   function agendaEventoAtualEditado_() {
     if (!_agendaEditId) return null;
-    return (_agendaEventos || []).find(function(x) {
-      return String(x.id || '') === String(_agendaEditId);
-    }) || null;
+    return _agendaEditRecord || agendaFindEventoLocal_(_agendaEditId);
   }
 
   function agendaExigeMotivoCancelamento_(payload) {
@@ -1936,9 +2052,7 @@
     var btn = document.getElementById('btnSalvarAgenda');
     var payload = coletarAgendaEvento();
     if (_agendaEditId) {
-      var eventoEditado = (_agendaEventos || []).find(function(x) {
-        return String(x.id || '') === String(_agendaEditId);
-      });
+      var eventoEditado = agendaEventoAtualEditado_();
       payload.id = _agendaEditId;
       payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
       payload._editRecordVersion = _agendaEditEditableVersion || (eventoEditado && eventoEditado.editRecordVersion) || '';
@@ -2022,9 +2136,7 @@
     var mat2 = agendaMatBioSerialize('agC2');
     var mat3 = agendaMatBioSerialize('agC3');
     var matB = agendaMatBioSerialize('agBackup');
-    var eventoAtual = _agendaEditId ? (_agendaEventos || []).find(function(x) {
-      return String(x.id || '') === String(_agendaEditId);
-    }) : null;
+    var eventoAtual = agendaEventoAtualEditado_();
     function v(id) {
       var el = document.getElementById(id);
       return el ? el.value.trim() : '';
@@ -2204,9 +2316,7 @@
 
   function agendaParticipanteInfoFromPayload(dados) {
     var info = Object.assign({}, _agendaParticipanteInfo || {});
-    var eventoAtual = _agendaEditId ? (_agendaEventos || []).find(function(x) {
-      return String(x.id || '') === String(_agendaEditId);
-    }) : null;
+    var eventoAtual = agendaEventoAtualEditado_();
     if (!info.nascimento && eventoAtual && String(eventoAtual.participante || '') === String(dados.participante || '')) {
       info.nascimento = eventoAtual.nascimento || '';
       info.numId = eventoAtual.idParticipante || info.numId || '';
@@ -2324,7 +2434,7 @@
       snackErro('Agendamento nao informado para gerar o transporte.');
       return;
     }
-    var evento = (_agendaEventos || []).find(function(r) { return String(r.id || '') === String(agendaId || ''); }) || {};
+    var evento = agendaFindEventoLocal_(agendaId) || {};
     var transporteContext = transporteAgendaContextFromDados(evento, slot, agendaId);
     var transporteWindow = prepararJanelaTransporte(transporteContext);
     var btn = document.getElementById(btnId);
@@ -2388,7 +2498,7 @@
   }
 
   function abrirDisplayPacienteFromAgendaForm() {
-    var r = _agendaEditId ? (_agendaEventos || []).find(function(x) { return String(x.id || '') === String(_agendaEditId); }) : null;
+    var r = agendaEventoAtualEditado_();
     var info = _agendaParticipanteInfo || {};
     var participanteAtual = (document.getElementById('agParticipante') || {}).value || '';
     var payload = agendaDisplayPayload({
@@ -2426,7 +2536,7 @@
   }
 
   function abrirDisplayMonitoriaFromAgendaForm() {
-    var r = _agendaEditId ? (_agendaEventos || []).find(function(x) { return String(x.id || '') === String(_agendaEditId); }) : null;
+    var r = agendaEventoAtualEditado_();
     var payload = agendaMonitoriaDisplayPayload({
       projeto: (document.getElementById('agProjeto') || {}).value || (r && r.projeto) || '',
       monitorName: (document.getElementById('agMonitorNome') || {}).value || (r && r.monitorName) || '',
@@ -2502,9 +2612,30 @@
 
   function agendaPeriodoFromRow(r) {
     var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
+    var id = String((r && r.id) || '').trim();
+    var targeted = (r && r._periodoOperacional) || (id && _agendaPeriodosPorEventoId[id]);
+    if (targeted) return { inicio: targeted.inicio || dataIso || '', fim: targeted.fim || dataIso || '', ids: targeted.ids || [] };
     if (r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
     if (r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
     return { inicio: dataIso || '', fim: dataIso || '' };
+  }
+
+  function abrirDisplayMonitoriaAgendaCard(id, rowIndex) {
+    function abrirComRegistro(r) {
+      if (!r) {
+        snackErro('Evento da Agenda nao encontrado.');
+        return;
+      }
+      agendaLoadPeriodoOperacional_(r, function(periodo) {
+        agendaStorePeriodoOperacional_(r, periodo);
+        abrirDisplayMonitoria(agendaMonitoriaDisplayPayload(r));
+      }, function() {
+        abrirDisplayMonitoria(agendaMonitoriaDisplayPayload(r));
+      });
+    }
+    var r = agendaFindEventoLocal_(id, rowIndex);
+    if (r) abrirComRegistro(r);
+    else agendaFetchEventoPorId_(id, rowIndex, abrirComRegistro, function(error) { snackErro(appErrorMessage(error)); });
   }
 
   function abrirDisplayPaciente(payload) {
@@ -2793,6 +2924,7 @@
     onAgendaLabCentralChange();
     _agendaParticipanteInfo = null;
     _agendaEditId = '';
+    _agendaEditRecord = null;
     var title = document.querySelector('#agendaCreatePanel .modal-header-title');
     if (title) title.textContent = 'NOVO AGENDAMENTO';
     var sec = document.querySelector('#agendaCreatePanel .section-label');
@@ -2955,7 +3087,7 @@
     if (!_agendaAbrirAposCarga) return;
     var id = _agendaAbrirAposCarga;
     _agendaAbrirAposCarga = '';
-    if ((_agendaEventos || []).some(function(r) { return String(r.id || '') === String(id); })) {
+    if (agendaFindEventoLocal_(id)) {
       abrirAgendaEdicao(id);
     } else {
       snackErro('Registro da agenda não encontrado na carga atual.');
@@ -2967,16 +3099,17 @@
     if (!agendaId) return false;
     _agendaAbrirAposCarga = agendaId;
     if (typeof irPara === 'function') irPara('agenda');
-    if ((_agendaEventos || []).some(function(r) { return String(r.id || '') === agendaId; })) {
+    if (agendaFindEventoLocal_(agendaId)) {
       agendaAbrirPendenteAposCarga();
     } else {
-      google.script.run
-        .withSuccessHandler(function(row) {
-          if (row) _agendaEventos.push(agendaNormalizeRow(row));
+      agendaFetchEventoPorId_(agendaId, 0, function(row) {
+          if (!row) {
+            _agendaAbrirAposCarga = '';
+            snackErro('Registro da agenda nao encontrado.');
+            return;
+          }
           agendaAbrirPendenteAposCarga();
-        })
-        .withFailureHandler(function(e) { snackErro(appErrorMessage(e)); })
-        .getAgendaEventoPorId(agendaId);
+        }, function(e) { snackErro(appErrorMessage(e)); });
     }
     return true;
   }
@@ -2999,6 +3132,8 @@
         _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
           return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
         });
+        _agendaEventosPorId = {};
+        _agendaEventos.forEach(agendaStoreEventoLocal_);
         setAgendaEventosLoadedAtState(Date.now());
         agendaMatBioUpdateAllCopyOptions();
         renderAgendaOperacional();
@@ -3051,6 +3186,7 @@
         if (normAgenda(current) !== normAgenda(query)) return;
         _agendaHistoricoQuery = query;
         _agendaHistoricoEventos = ((response && response.items) || []).map(agendaNormalizeRow);
+        _agendaHistoricoEventos.forEach(agendaStoreEventoLocal_);
         _agendaHistoricoNextCursor = response && response.nextCursor != null ? response.nextCursor : null;
         _agendaHistoricoPage = page;
         _agendaHistoricoCursors[page] = cursor;
@@ -3089,6 +3225,105 @@
       agendaCourierSearch(r.courier3), agendaCourierSearch(r.backup)
     ].join(' ');
     return r;
+  }
+
+  function agendaStoreEventoLocal_(r) {
+    r = agendaNormalizeRow(r || {});
+    var id = String(r.id || '').trim();
+    if (id) _agendaEventosPorId[id] = r;
+    return r;
+  }
+
+  function agendaFindEventoLocal_(id, rowIndex) {
+    id = String(id || '').trim();
+    rowIndex = Number(rowIndex || 0) || 0;
+    if (!id) return null;
+    if (_agendaEditRecord && String(_agendaEditRecord.id || '') === id && (!rowIndex || Number(_agendaEditRecord.rowIndex || 0) === rowIndex)) {
+      return _agendaEditRecord;
+    }
+    var indexed = _agendaEventosPorId[id];
+    if (indexed && (!rowIndex || Number(indexed.rowIndex || 0) === rowIndex)) return indexed;
+    var candidatos = (_agendaEventos || []).concat(_agendaHistoricoEventos || []);
+    var found = rowIndex ? candidatos.find(function(x) {
+      return String(x.id || '') === id && Number(x.rowIndex || 0) === rowIndex;
+    }) : null;
+    if (!found) found = candidatos.find(function(x) { return String(x.id || '') === id; });
+    return found ? agendaStoreEventoLocal_(found) : null;
+  }
+
+  function agendaFetchEventoPorId_(id, rowIndex, onSuccess, onFailure) {
+    id = String(id || '').trim();
+    if (!id) {
+      if (typeof onSuccess === 'function') onSuccess(null);
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(row) {
+        var stored = row ? agendaStoreEventoLocal_(row) : null;
+        if (typeof onSuccess === 'function') onSuccess(stored);
+      })
+      .withFailureHandler(function(error) {
+        if (typeof onFailure === 'function') onFailure(error);
+      })
+      .getAgendaEventoPorId(id, rowIndex || undefined);
+  }
+
+  function agendaPeriodoFallbackLocal_(r) {
+    var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
+    if (r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
+    if (r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    return { inicio: dataIso || '', fim: dataIso || '', ids: r && r.id ? [r.id] : [] };
+  }
+
+  function agendaStorePeriodoOperacional_(r, periodo) {
+    periodo = periodo || {};
+    var id = String((r && r.id) || periodo.eventoId || '').trim();
+    var normalized = {
+      eventoId: id,
+      ids: Array.isArray(periodo.ids) ? periodo.ids.map(String) : (id ? [id] : []),
+      inicio: String(periodo.inicio || ''),
+      fim: String(periodo.fim || ''),
+      tipo: String(periodo.tipo || (r && r.tipo) || ''),
+      projetoId: String(periodo.projetoId || '')
+    };
+    if (id) {
+      _agendaPeriodosPorEventoId[id] = normalized;
+      if (r) r._periodoOperacional = normalized;
+    }
+    return normalized;
+  }
+
+  function agendaLoadPeriodoOperacional_(r, onSuccess, onFailure) {
+    r = r || {};
+    var id = String(r.id || '').trim();
+    if (!AgendaRules.isOperationalPeriod(r) || !id) {
+      if (typeof onSuccess === 'function') onSuccess(agendaPeriodoFallbackLocal_(r));
+      return;
+    }
+    var cached = r._periodoOperacional || _agendaPeriodosPorEventoId[id];
+    if (cached) {
+      if (typeof onSuccess === 'function') onSuccess(cached);
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(periodo) {
+        if (!periodo) {
+          if (typeof onFailure === 'function') onFailure(new Error('Periodo operacional nao encontrado.'));
+          return;
+        }
+        var local = agendaPeriodoFallbackLocal_(r);
+        if (!_agendaEventosTruncated && (_agendaEventos || []).length &&
+            (String(local.inicio || '') !== String(periodo.inicio || '') || String(local.fim || '') !== String(periodo.fim || ''))) {
+          if (window.console && console.warn) console.warn('[Agenda] Consulta especifica de periodo divergente; fallback completo preservado.');
+          if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, local));
+          return;
+        }
+        if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, periodo));
+      })
+      .withFailureHandler(function(error) {
+        if (typeof onFailure === 'function') onFailure(error);
+      })
+      .getAgendaPeriodoOperacionalPorEventoId(id, r.rowIndex);
   }
 
   function agendaMergeEditRecord_(fresh, fallback) {
@@ -3184,13 +3419,13 @@
   }
 
   function aplicarStatusRequisicaoAgendaLocal(agendaId, status, enviado, recordVersion, editRecordVersion) {
-    (_agendaEventos || []).forEach(function(r) {
-      if (String(r.id || '') === String(agendaId)) {
-        r.statusRequisicao = status || '';
-        if (recordVersion) r.recordVersion = recordVersion;
-        if (editRecordVersion) r.editRecordVersion = editRecordVersion;
-      }
-    });
+    var registro = agendaFindEventoLocal_(agendaId);
+    if (registro) {
+      registro.statusRequisicao = status || '';
+      if (recordVersion) registro.recordVersion = recordVersion;
+      if (editRecordVersion) registro.editRecordVersion = editRecordVersion;
+      agendaStoreEventoLocal_(registro);
+    }
     if (_agendaEditId && String(_agendaEditId) === String(agendaId)) {
       if (recordVersion) _agendaEditRecordVersion = recordVersion;
       if (editRecordVersion) _agendaEditEditableVersion = editRecordVersion;
@@ -3303,18 +3538,38 @@
     id = String(id || '').trim();
     rowIndex = Number(rowIndex || 0) || 0;
     if (!id) return;
-    var candidatos = (_agendaEventos || []).concat(_agendaHistoricoEventos || []);
-    var r = rowIndex ? candidatos.find(function(x) {
-      return String(x.id || '') === id && Number(x.rowIndex || 0) === rowIndex;
-    }) : null;
-    if (!r) r = candidatos.find(function(x) { return String(x.id || '') === id; });
-    if (!r) return;
+    var r = agendaFindEventoLocal_(id, rowIndex);
+    if (!r) {
+      agendaFetchEventoPorId_(id, rowIndex, function(row) {
+        if (!row) {
+          snackErro('Registro da agenda nao encontrado.');
+          return;
+        }
+        agendaAbrirEdicaoResolvida_(row, id);
+      }, function(error) { snackErro(appErrorMessage(error)); });
+      return;
+    }
+    agendaAbrirEdicaoResolvida_(r, id);
+  }
+
+  function agendaAbrirEdicaoResolvida_(r, id) {
+    agendaLoadPeriodoOperacional_(r, function(periodo) {
+      if (AgendaRules.isOperationalPeriod(r)) agendaStorePeriodoOperacional_(r, periodo);
+      agendaAbrirEdicaoComContexto_(r, id);
+    }, function() {
+      agendaStorePeriodoOperacional_(r, agendaPeriodoFallbackLocal_(r));
+      agendaAbrirEdicaoComContexto_(r, id);
+    });
+  }
+
+  function agendaAbrirEdicaoComContexto_(r, id) {
     var versaoAberta = String(r.editRecordVersion || r.recordVersion || '');
     abrirAgendaEdicaoComRegistro_(r);
     google.script.run
       .withSuccessHandler(function(registroAtualizado) {
         if (!registroAtualizado) return;
         var registro = agendaMergeEditRecord_(registroAtualizado, r);
+        agendaStoreEventoLocal_(registro);
         var versaoAtual = String(registro.editRecordVersion || registro.recordVersion || '');
         if (String(_agendaEditId || '') === id) {
           if (versaoAberta && versaoAtual && versaoAberta !== versaoAtual) {
@@ -3337,6 +3592,7 @@
     if (_agendaEditId && String(_agendaEditId) !== String(id)) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
     _agendaEditId = r.id || '';
+    _agendaEditRecord = agendaStoreEventoLocal_(r);
     _agendaEditRecordVersion = r.recordVersion || '';
     _agendaEditEditableVersion = r.editRecordVersion || '';
     _agendaEditFormValues = agendaEditValuesFromRecord_(r);
@@ -3973,7 +4229,7 @@
     var dates;
     var local = '';
     if (isMonitoria) {
-      var periodo = agendaMonitoriaPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+      var periodo = agendaPeriodoFromRow(r);
       var inicio = periodo.inicio || dataIso;
       var fimExclusivo = agendaGoogleCalendarAddDays(periodo.fim || dataIso, 1);
       if (!fimExclusivo) return null;
@@ -3981,7 +4237,7 @@
       dates = inicio.replace(/-/g, '') + '/' + fimExclusivo.replace(/-/g, '');
       local = 'Instituto de Pesquisas em Saúde';
     } else if (isSiv) {
-      var periodoSiv = agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+      var periodoSiv = agendaPeriodoFromRow(r);
       var inicioSiv = periodoSiv.inicio || dataIso;
       var fimSivExclusivo = agendaGoogleCalendarAddDays(periodoSiv.fim || dataIso, 1);
       if (!fimSivExclusivo) return null;
@@ -4020,7 +4276,19 @@
   }
 
   function abrirEventoNoGoogleCalendar(id) {
-    var r = (_agendaEventos || []).find(function(x) { return String(x.id || '') === String(id || ''); });
+    function continuar(r) {
+      if (!r) return;
+      agendaLoadPeriodoOperacional_(r, function(periodo) {
+        if (AgendaRules.isOperationalPeriod(r)) agendaStorePeriodoOperacional_(r, periodo);
+        agendaAbrirGoogleCalendarComRegistro_(r);
+      }, function() { agendaAbrirGoogleCalendarComRegistro_(r); });
+    }
+    var r = agendaFindEventoLocal_(id);
+    if (r) continuar(r);
+    else agendaFetchEventoPorId_(id, 0, continuar, function(error) { snackErro(appErrorMessage(error)); });
+  }
+
+  function agendaAbrirGoogleCalendarComRegistro_(r) {
     if (!r) {
       snackErro('Evento não encontrado na Agenda. Atualize a página e tente novamente.');
       return;
@@ -4084,10 +4352,11 @@
   function agendaDetailHtml(r) {
     var couriers = agendaCourierCards(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
-    var displayPayload = isPeriodoOperacional ? agendaMonitoriaDisplayPayload(r) : agendaDisplayPayload(r);
-    var displayFn = isPeriodoOperacional ? 'abrirDisplayMonitoria' : 'abrirDisplayPaciente';
     var showDisplay = isPeriodoOperacional ? r.projeto : r.participante;
-    var displayBtn = showDisplay ? '<div class="ag-det-actions"><button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayFn + '(\'' + encodeURIComponent(JSON.stringify(displayPayload)).replace(/'/g, '%27') + '\')"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button></div>' : '';
+    var displayAction = isPeriodoOperacional
+      ? 'abrirDisplayMonitoriaAgendaCard(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')'
+      : 'abrirDisplayPaciente(\'' + encodeURIComponent(JSON.stringify(agendaDisplayPayload(r))).replace(/'/g, '%27') + '\')';
+    var displayBtn = showDisplay ? '<div class="ag-det-actions"><button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayAction + '"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button></div>' : '';
     return displayBtn +
       (isPeriodoOperacional && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
       (isPeriodoOperacional && r.salaMonitoria ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">meeting_room</span>Local</div><div class="ag-obs-block"><span class="material-symbols-outlined">room</span><span>' + esc(r.salaMonitoria) + '</span></div></div>' : '') +

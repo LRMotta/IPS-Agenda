@@ -33,6 +33,33 @@ function agendaServer(contextValues) {
   return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules }, contextValues || {}));
 }
 
+function fakeAgendaRows(server, rows, calls = []) {
+  return {
+    getLastRow: () => rows.length + 1,
+    getRange(row, column, numRows = 1, numColumns = 1) {
+      calls.push({ row, column, numRows, numColumns });
+      const values = rows.slice(row - 2, row - 2 + numRows)
+        .map((source) => source.slice(column - 1, column - 1 + numColumns));
+      return {
+        getValue: () => (values[0] || [])[0] || '',
+        getValues: () => values
+      };
+    }
+  };
+}
+
+function agendaRow(server, values) {
+  const row = Array(server.AGENDA_CFG.lastCol).fill('');
+  const i = server.AGENDA_CFG.idx;
+  Object.keys(values || {}).forEach((key) => {
+    if (key === 'courier1Material') row[i.c1.material] = values[key];
+    else if (key === 'courier1Json') row[i.c1.matBio] = values[key];
+    else if (key === 'backupMaterial') row[i.cb.material] = values[key];
+    else if (Object.prototype.hasOwnProperty.call(i, key) && typeof i[key] === 'number') row[i[key]] = values[key];
+  });
+  return row;
+}
+
 function functionBody(source, name) {
   const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `${name} nao encontrada`);
@@ -134,7 +161,9 @@ test('cursor da pesquisa historica nao repete nem perde resultados', () => {
 test('abertura direta busca somente o evento solicitado', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
-  assert.match(client, /\.getAgendaEventoPorId\(agendaId\)/);
+  assert.match(client, /function agendaFetchEventoPorId_\(id, rowIndex, onSuccess, onFailure\)/);
+  assert.match(client, /\.getAgendaEventoPorId\(id, rowIndex \|\| undefined\)/);
+  assert.match(client, /agendaFetchEventoPorId_\(agendaId, 0/);
   assert.match(server, /function getAgendaEventoPorId\(id, rowIndex\)/);
 });
 
@@ -210,18 +239,118 @@ test('instrumentacao registra somente metadados e relanca a falha original', () 
   assert.equal(logs.some((message) => message.includes('segredo') || message.includes('conteudo sensivel')), false);
 });
 
-test('edicao abre imediatamente e revalida o registro em segundo plano', () => {
+test('edicao usa o registro por ID, carrega contexto operacional e revalida em segundo plano', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const open = functionBody(client, 'abrirAgendaEdicao');
   assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
+  assert.match(open, /agendaFindEventoLocal_\(id, rowIndex\)/);
+  assert.match(open, /agendaFetchEventoPorId_\(id, rowIndex/);
+  assert.match(client, /function agendaAbrirEdicaoResolvida_\(r, id\)/);
+  assert.match(client, /agendaLoadPeriodoOperacional_\(r/);
   assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
   assert.match(client, /function agendaMergeEditRecord_\(fresh, fallback\)/);
   assert.match(client, /agendaMergeEditRecord_\(registroAtualizado, r\)/);
   assert.match(client, /abrirAgendaEdicao.*Number\(r\.rowIndex \|\| 0\)/);
-  assert.ok(open.indexOf('abrirAgendaEdicaoComRegistro_(r)') < open.indexOf('google.script.run'));
-  assert.match(open, /versaoAberta/);
-  assert.match(open, /Feche e reabra a edicao antes de salvar/);
+  assert.match(client, /var versaoAberta/);
+  assert.match(client, /Feche e reabra a edicao antes de salvar/);
+});
+
+test('materiais anteriores usam consulta especifica, IDs estaveis e no maximo cinco visitas', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const i = server.AGENDA_CFG.idx;
+  const rows = [];
+  for (let day = 1; day <= 7; day += 1) {
+    const values = {
+      id: `EVT-${day}`,
+      data: `2026-07-0${day}`,
+      hora: '08:00',
+      tipo: 'Visita',
+      status: 'Agendado',
+      participante: 'Paciente Historico',
+      idParticipante: day === 6 ? '' : 'PART-1',
+      projeto: day % 2 ? 'Projeto Alpha' : 'PA',
+      visita: `V${day}`,
+      courier1Material: `Material ${day}`
+    };
+    rows.push(agendaRow(server, values));
+  }
+  rows.push(agendaRow(server, {
+    id: 'OUTRO', data: '2026-07-08', hora: '08:00', tipo: 'Visita', status: 'Agendado',
+    participante: 'Outro', idParticipante: 'PART-2', projeto: 'Projeto Alpha', courier1Material: 'Ignorar'
+  }));
+  const calls = [];
+  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
+  server.getCodexSheetDataByName_ = (name) => name === 'Participantes'
+    ? [['Id', 'Nome', '', '', 'ID Participante'], ['CAD-1', 'Paciente Historico', '', '', 'PART-1']]
+    : [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: 'PART-1', excluirEventoId: 'EVT-7', limite: 80 });
+  assert.equal(response.limit, 5);
+  assert.deepEqual(Array.from(response.items, (item) => item.id), ['EVT-6', 'EVT-5', 'EVT-4', 'EVT-3', 'EVT-2']);
+  assert.equal(response.items[0].idParticipante, 'PART-1');
+  assert.equal(response.items[0].projetoId, 'PROJ-1');
+  assert.equal(response.items[0].courier1.material, 'Material 6');
+  assert.equal(calls.some((call) => call.row === 2 && call.numRows === rows.length && call.numColumns === server.AGENDA_CFG.lastCol), false);
+  assert.equal(calls.some((call) => call.column === 1 && call.numColumns === server.AGENDA_CFG.col.visita), true);
+  assert.equal(calls.some((call) => call.column === i.c1.material + 1 && call.numColumns === i.cb.matBio - i.c1.material + 1), true);
+});
+
+test('materiais anteriores por projeto aceitam nome e codigo sem devolver mais de cinco registros', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [
+    agendaRow(server, { id: 'NOME', data: '2026-07-01', tipo: 'Visita', projeto: 'Projeto Alpha', backupMaterial: 'A' }),
+    agendaRow(server, { id: 'CODIGO', data: '2026-07-02', tipo: 'Visita', projeto: 'PA', backupMaterial: 'B' }),
+    agendaRow(server, { id: 'OUTRO', data: '2026-07-03', tipo: 'Visita', projeto: 'Outro Projeto', backupMaterial: 'C' })
+  ];
+  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows);
+  server.getCodexSheetDataByName_ = (name) => name === 'Projetos'
+    ? [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA'], ['PROJ-2', 'Outro Projeto', 'OP']]
+    : [[]];
+  const response = server.getAgendaMateriaisAnteriores({ projetoId: 'PROJ-1', limite: 5 });
+  assert.deepEqual(Array.from(response.items, (item) => item.id), ['CODIGO', 'NOME']);
+  assert.equal(response.items.every((item) => item.projetoId === 'PROJ-1'), true);
+});
+
+test('periodo operacional por ID preserva dias consecutivos e regra de cancelamento de SIV', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [
+    agendaRow(server, { id: 'M1', data: '2026-07-01', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M2', data: '2026-07-02', tipo: 'Monitoria', status: 'Cancelado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M3', data: '2026-07-03', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M5', data: '2026-07-05', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'S1', data: '2026-08-01', tipo: 'SIV', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'S2', data: '2026-08-02', tipo: 'SIV', status: 'Cancelado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'S3', data: '2026-08-03', tipo: 'SIV', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' })
+  ];
+  const calls = [];
+  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
+  server.getCodexSheetDataByName_ = () => [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+
+  const monitoria = server.getAgendaPeriodoOperacionalPorEventoId('M2', 3);
+  assert.deepEqual(Array.from(monitoria.ids), ['M1', 'M2', 'M3']);
+  assert.equal(monitoria.inicio, '2026-07-01');
+  assert.equal(monitoria.fim, '2026-07-03');
+  assert.equal(monitoria.projetoId, 'PROJ-1');
+  const siv = server.getAgendaPeriodoOperacionalPorEventoId('S1', 6);
+  assert.deepEqual(Array.from(siv.ids), ['S1']);
+  assert.equal(siv.inicio, '2026-08-01');
+  assert.equal(siv.fim, '2026-08-01');
+  assert.equal(calls.some((call) => call.row === 2 && call.numRows === rows.length && call.numColumns === server.AGENDA_CFG.lastCol), false);
+});
+
+test('cliente preserva carga completa mas consumidores usam consultas especificas com fallback', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  assert.match(client, /\.getAgendaEventos\(5000\)/);
+  assert.match(client, /\.getAgendaMateriaisAnteriores\([\s\S]*limite: 5/);
+  assert.match(client, /\.slice\(-5\)\.reverse\(\)/);
+  assert.doesNotMatch(client, /\.slice\(-80\)\.reverse\(\)/);
+  assert.match(client, /function agendaMatBioFindPreviousEvent_\(id\)/);
+  assert.match(client, /function agendaLoadPeriodoOperacional_\(r, onSuccess, onFailure\)/);
+  assert.match(client, /\.getAgendaPeriodoOperacionalPorEventoId\(id, r\.rowIndex\)/);
+  assert.match(client, /function abrirDisplayMonitoriaAgendaCard\(id, rowIndex\)/);
+  assert.match(client, /function agendaEventoAtualEditado_\(\)/);
+  assert.match(client, /return _agendaEditRecord \|\| agendaFindEventoLocal_\(_agendaEditId\)/);
 });
 
 test('consulta exige medico no cliente e no servidor', () => {

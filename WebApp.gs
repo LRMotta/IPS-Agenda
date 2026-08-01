@@ -3158,7 +3158,7 @@ function getProjetoOptions_() {
     var nome = String(r[1] || r[2] || '').trim();
     if (!nome || seen[nome]) return;
     seen[nome] = true;
-    out.push({ nome: nome, codigo: String(r[2] || '').trim() });
+    out.push({ id: String(r[0] || '').trim(), nome: nome, codigo: String(r[2] || '').trim() });
   });
   return out.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
 }
@@ -6695,7 +6695,7 @@ function getAgendaKitsEstoque_() {
 }
 
 function getDadosFormularioAgenda() {
-  var cacheKey = 'AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  var cacheKey = 'AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   var cached = codexCacheGet_(cacheKey);
   if (cached) return cached;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -9049,6 +9049,230 @@ function pesquisarAgendaHistorico(query, cursor, pageSize) {
   return { items: items, nextCursor: nextCursor, hasMore: nextCursor != null, pageSize: size };
 }
 
+function getAgendaMateriaisAnteriores(criteria) {
+  criteria = criteria || {};
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_('getAgendaMateriaisAnteriores', 'total', totalMeta, function() {
+    var participanteId = String(criteria.participanteId || '').trim();
+    var projetoId = String(criteria.projetoId || '').trim();
+    var excluirEventoId = String(criteria.excluirEventoId || '').trim();
+    var limite = Math.max(1, Math.min(Number(criteria.limite || 5), 5));
+    if (!participanteId && !projetoId) return { items: [], limit: limite };
+
+    var participanteNomes = participanteId ? agendaParticipanteNomesPorId_(participanteId) : {};
+    var projeto = projetoId ? agendaProjetoIdentidade_(projetoId) : null;
+    if (projetoId && (!projeto || !projeto.id)) return { items: [], limit: limite };
+
+    var sh = getAgendaSheet_();
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { items: [], limit: limite };
+    var rowCount = lastRow - 1;
+    totalMeta.rowCount = rowCount;
+    var scanMeta = { rowCount: rowCount };
+    var scan = codexMeasurePerformance_('getAgendaMateriaisAnteriores', 'scan', scanMeta, function() {
+      return {
+        base: sh.getRange(2, 1, rowCount, AGENDA_CFG.col.visita).getValues(),
+        logistics: sh.getRange(2, AGENDA_CFG.idx.c1.material + 1, rowCount, AGENDA_CFG.idx.cb.matBio - AGENDA_CFG.idx.c1.material + 1).getValues()
+      };
+    });
+
+    var projetoAliases = {};
+    if (projeto) {
+      [projeto.nome, projeto.codigo].forEach(function(value) {
+        var key = normText_(value);
+        if (key) projetoAliases[key] = true;
+      });
+    }
+    var candidatos = [];
+    for (var i = 0; i < scan.base.length; i++) {
+      var base = scan.base[i];
+      var id = String(base[AGENDA_CFG.idx.id] || '').trim();
+      if (!id || (excluirEventoId && id === excluirEventoId)) continue;
+      if (participanteId) {
+        var idLinha = String(base[AGENDA_CFG.idx.idParticipante] || '').trim();
+        var participanteCompativel = normText_(idLinha) === normText_(participanteId);
+        if (!participanteCompativel && !idLinha) participanteCompativel = !!participanteNomes[normText_(base[AGENDA_CFG.idx.participante])];
+        if (!participanteCompativel) continue;
+      } else if (!projetoAliases[normText_(base[AGENDA_CFG.idx.projeto])]) {
+        continue;
+      }
+      var row = Array(AGENDA_CFG.lastCol).fill('');
+      for (var b = 0; b < base.length; b++) row[b] = base[b];
+      var logistics = scan.logistics[i] || [];
+      for (var l = 0; l < logistics.length; l++) row[AGENDA_CFG.idx.c1.material + l] = logistics[l];
+      if (!agendaLinhaTemMaterialAnterior_(row)) continue;
+      candidatos.push({ row: row, rowIndex: i + 2 });
+    }
+    candidatos.sort(function(a, b) {
+      var aKey = formatarDataIsoAgenda_(a.row[AGENDA_CFG.idx.data]) + ' ' + formatarHoraSafe_(a.row[AGENDA_CFG.idx.hora]);
+      var bKey = formatarDataIsoAgenda_(b.row[AGENDA_CFG.idx.data]) + ' ' + formatarHoraSafe_(b.row[AGENDA_CFG.idx.hora]);
+      return bKey.localeCompare(aKey) || (a.rowIndex - b.rowIndex);
+    });
+    var selecionados = candidatos.slice(0, limite);
+    var projetoIdsPorAlias = {};
+    getCodexSheetDataByName_('Projetos').slice(1).forEach(function(row) {
+      var idProjeto = String(row[0] || '').trim();
+      if (!idProjeto) return;
+      [row[1], row[2]].forEach(function(alias) {
+        var key = normText_(alias);
+        if (key) projetoIdsPorAlias[key] = idProjeto;
+      });
+    });
+    return codexMeasurePerformance_('getAgendaMateriaisAnteriores', 'convert', { rowCount: selecionados.length }, function() {
+      return {
+        items: selecionados.map(function(item) {
+          var projetoResolvidoId = (projeto && projeto.id) || projetoIdsPorAlias[normText_(item.row[AGENDA_CFG.idx.projeto])] || '';
+          return agendaMaterialAnteriorFromRow_(item.row, item.rowIndex, participanteId, projetoResolvidoId);
+        }),
+        limit: limite
+      };
+    });
+  });
+}
+
+function agendaParticipanteNomesPorId_(participanteId) {
+  var out = {};
+  var needle = normText_(participanteId);
+  if (!needle) return out;
+  getCodexSheetDataByName_('Participantes').slice(1).forEach(function(row) {
+    if (normText_(row[4]) !== needle) return;
+    var nome = normText_(row[1]);
+    if (nome) out[nome] = true;
+  });
+  return out;
+}
+
+function agendaProjetoIdentidade_(reference) {
+  var needle = normText_(reference);
+  if (!needle) return null;
+  var rows = getCodexSheetDataByName_('Projetos').slice(1);
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (normText_(row[0]) !== needle && normText_(row[1]) !== needle && normText_(row[2]) !== needle) continue;
+    return {
+      id: String(row[0] || '').trim(),
+      nome: String(row[1] || '').trim(),
+      codigo: String(row[2] || '').trim()
+    };
+  }
+  return null;
+}
+
+function agendaLinhaTemMaterialAnterior_(row) {
+  var i = AGENDA_CFG.idx;
+  return [i.c1, i.c2, i.c3, i.cb].some(function(slot) {
+    var json = String(row[slot.matBio] || '').trim();
+    if (json) {
+      if (typeof codexMatBioParseJson_ === 'function') return codexMatBioParseJson_(json).length > 0;
+      try {
+        var parsed = JSON.parse(json);
+        var items = Array.isArray(parsed) ? parsed : parsed && parsed.items;
+        return Array.isArray(items) && items.length > 0;
+      } catch (e) {
+        return false;
+      }
+    }
+    return !!String(row[slot.material] || '').trim();
+  });
+}
+
+function agendaMaterialAnteriorFromRow_(row, rowIndex, participanteId, projetoId) {
+  var evento = agendaRowToObject_(row, rowIndex);
+  function material(slot) {
+    slot = slot || {};
+    return { material: String(slot.material || ''), matBioJson: String(slot.matBioJson || '') };
+  }
+  return {
+    id: evento.id,
+    rowIndex: evento.rowIndex,
+    participante: evento.participante,
+    idParticipante: evento.idParticipante || String(participanteId || ''),
+    projeto: evento.projeto,
+    projetoId: String(projetoId || ''),
+    data: evento.data,
+    dataIso: evento.dataIso,
+    hora: evento.hora,
+    tipo: evento.tipo,
+    visita: evento.visita,
+    courier1: material(evento.courier1),
+    courier2: material(evento.courier2),
+    courier3: material(evento.courier3),
+    backup: material(evento.backup)
+  };
+}
+
+function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_('getAgendaPeriodoOperacionalPorEventoId', 'total', totalMeta, function() {
+    id = String(id || '').trim();
+    if (!id) return null;
+    var sh = getAgendaSheet_();
+    var linha = agendaLocalizarLinhaPorId_(sh, id, rowIndex);
+    if (!linha) return null;
+    var ref = sh.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    var tipo = String(ref[AGENDA_CFG.idx.tipo] || '');
+    var dataRef = formatarDataIsoAgenda_(ref[AGENDA_CFG.idx.data]);
+    if (!AgendaServerRules_.isOperationalPeriod(tipo)) {
+      return { eventoId: id, ids: [id], inicio: dataRef, fim: dataRef, tipo: tipo, projetoId: '', rowCount: 1 };
+    }
+
+    var lastRow = sh.getLastRow();
+    var count = Math.max(0, lastRow - 1);
+    totalMeta.rowCount = count;
+    if (!count) return null;
+    var scan = codexMeasurePerformance_('getAgendaPeriodoOperacionalPorEventoId', 'scan', { rowCount: count }, function() {
+      return {
+        base: sh.getRange(2, 1, count, AGENDA_CFG.col.projeto).getValues(),
+        monitors: sh.getRange(2, AGENDA_CFG.col.monitorName, count, 1).getValues(),
+        rooms: sh.getRange(2, AGENDA_CFG.col.salaMonitoria, count, 1).getValues()
+      };
+    });
+    var isSiv = AgendaServerRules_.isSiv(tipo);
+    var candidatos = [];
+    for (var i = 0; i < scan.base.length; i++) {
+      var base = scan.base[i];
+      if (!AgendaServerRules_.sameType(base[AGENDA_CFG.idx.tipo], tipo)) continue;
+      if (isSiv && AgendaServerRules_.isCancelled(base[AGENDA_CFG.idx.status])) continue;
+      if (normText_(base[AGENDA_CFG.idx.projeto]) !== normText_(ref[AGENDA_CFG.idx.projeto])) continue;
+      if (normText_((scan.monitors[i] || [])[0]) !== normText_(ref[AGENDA_CFG.idx.monitorName])) continue;
+      if (normText_((scan.rooms[i] || [])[0]) !== normText_(ref[AGENDA_CFG.idx.salaMonitoria])) continue;
+      var data = parseAgendaDateAny_(base[AGENDA_CFG.idx.data]);
+      var eventoId = String(base[AGENDA_CFG.idx.id] || '').trim();
+      if (!data || !eventoId) continue;
+      data.setHours(0, 0, 0, 0);
+      candidatos.push({ id: eventoId, rowIndex: i + 2, data: data, dataIso: formatarDataIsoAgenda_(data) });
+    }
+    candidatos.sort(function(a, b) { return a.data.getTime() - b.data.getTime() || a.rowIndex - b.rowIndex; });
+    var pos = candidatos.findIndex(function(item) { return item.id === id && (!rowIndex || item.rowIndex === Number(rowIndex)); });
+    if (pos < 0) pos = candidatos.findIndex(function(item) { return item.id === id; });
+    if (pos < 0) return { eventoId: id, ids: [id], inicio: dataRef, fim: dataRef, tipo: tipo, projetoId: '', rowCount: 1 };
+    var start = pos;
+    var end = pos;
+    while (start > 0 && agendaDatasConsecutivas_(candidatos[start - 1].data, candidatos[start].data)) start--;
+    while (end < candidatos.length - 1 && agendaDatasConsecutivas_(candidatos[end].data, candidatos[end + 1].data)) end++;
+    var periodo = candidatos.slice(start, end + 1);
+    var projeto = agendaProjetoIdentidade_(ref[AGENDA_CFG.idx.projeto]);
+    return {
+      eventoId: id,
+      ids: periodo.map(function(item) { return item.id; }),
+      inicio: periodo[0].dataIso,
+      fim: periodo[periodo.length - 1].dataIso,
+      tipo: isSiv ? 'SIV' : 'Monitoria',
+      projetoId: projeto ? projeto.id : '',
+      rowCount: periodo.length
+    };
+  });
+}
+
+function agendaLocalizarLinhaPorId_(sh, id, rowIndex, metadata) {
+  var hintedRow = Number(rowIndex) || 0;
+  if (hintedRow >= 2 && hintedRow <= sh.getLastRow() && String(sh.getRange(hintedRow, AGENDA_CFG.col.id).getValue() || '') === id) {
+    return hintedRow;
+  }
+  if (metadata) metadata.rowCount = Math.max(0, sh.getLastRow() - 1);
+  return encontrarLinhaPorId(sh, id);
+}
+
 function getAgendaEventoPorId(id, rowIndex) {
   var totalMeta = { rowCount: 0 };
   return codexMeasurePerformance_('getAgendaEventoPorId', 'total', totalMeta, function() {
@@ -9057,12 +9281,7 @@ function getAgendaEventoPorId(id, rowIndex) {
     var sh = getAgendaSheet_();
     var locateMeta = { rowCount: 0 };
     var row = codexMeasurePerformance_('getAgendaEventoPorId', 'locate', locateMeta, function() {
-      var hintedRow = Number(rowIndex) || 0;
-      if (hintedRow >= 2 && hintedRow <= sh.getLastRow() && String(sh.getRange(hintedRow, AGENDA_CFG.col.id).getValue() || '') === id) {
-        return hintedRow;
-      }
-      locateMeta.rowCount = Math.max(0, sh.getLastRow() - 1);
-      return encontrarLinhaPorId(sh, id);
+      return agendaLocalizarLinhaPorId_(sh, id, rowIndex, locateMeta);
     });
     if (!row) return null;
     var item = codexMeasurePerformance_('getAgendaEventoPorId', 'read', { rowCount: 1 }, function() {
