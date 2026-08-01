@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 const { readProjectFile, runFile } = require('./helpers/load-app-script');
 
 function fakeAgenda(server, records) {
@@ -165,6 +166,37 @@ test('abertura direta busca somente o evento solicitado', () => {
   assert.match(client, /\.getAgendaEventoPorId\(id, rowIndex \|\| undefined\)/);
   assert.match(client, /agendaFetchEventoPorId_\(agendaId, 0/);
   assert.match(server, /function getAgendaEventoPorId\(id, rowIndex\)/);
+});
+
+test('projeto do participante sincroniza o autocomplete por nome, codigo ou ID estavel', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const body = functionBody(client, 'setAgendaSelectValue');
+  const option = {
+    value: 'Projeto Alpha',
+    text: 'Projeto Alpha — PA',
+    getAttribute: (name) => ({ 'data-codigo': 'PA', 'data-id': 'PROJ-1' })[name] || ''
+  };
+  const select = {
+    options: [option],
+    value: '',
+    insertAdjacentHTML: () => { throw new Error('nao deve criar alias avulso'); }
+  };
+  const syncCalls = [];
+  const context = vm.createContext({
+    document: { getElementById: () => select },
+    normAgenda: (value) => String(value || '').trim().toLowerCase(),
+    esc: (value) => String(value || ''),
+    sincronizarAutocompleteProjeto: (id) => syncCalls.push(id)
+  });
+  vm.runInContext(`function setAgendaSelectValue(id, value) {${body}}`, context);
+
+  context.setAgendaSelectValue('agProjeto', 'PA');
+  assert.equal(select.value, 'Projeto Alpha');
+  context.setAgendaSelectValue('agProjeto', 'PROJ-1');
+  assert.equal(select.value, 'Projeto Alpha');
+  assert.deepEqual(syncCalls, ['agProjeto', 'agProjeto']);
+  assert.match(functionBody(client, 'preencherAgendaSelect'), /data-codigo/);
+  assert.match(functionBody(client, 'preencherAgendaSelect'), /data-id/);
 });
 
 test('abertura direta valida rowIndex e le somente a linha completa solicitada', () => {

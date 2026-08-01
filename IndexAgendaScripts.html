@@ -387,7 +387,11 @@
     (lista || []).forEach(function(v) {
       var value = typeof v === 'object' ? (v.nome || v.nomeAbreviado || v.codigo || '') : v;
       var label = typeof v === 'object' && v.codigo && v.codigo !== value ? value + ' — ' + v.codigo : value;
-      el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '">' + esc(label) + '</option>');
+      var codigo = typeof v === 'object' ? String(v.codigo || '').trim() : '';
+      var stableId = typeof v === 'object' ? String(v.id || '').trim() : '';
+      var aliases = (codigo ? ' data-codigo="' + esc(codigo) + '"' : '') +
+        (stableId ? ' data-id="' + esc(stableId) + '"' : '');
+      el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '"' + aliases + '>' + esc(label) + '</option>');
     });
     if (id === 'agProjeto' && typeof ativarAutocompleteProjeto === 'function') ativarAutocompleteProjeto(id);
     if (id === 'agStatus' && !el.value && el.options.length) el.value = 'Agendado';
@@ -1254,12 +1258,19 @@
     if (!el || !value) return;
     var match = '';
     var existe = Array.prototype.some.call(el.options, function(opt) {
-      var ok = normAgenda(opt.value || opt.text) === normAgenda(value);
+      var aliases = [
+        opt.value,
+        opt.text,
+        opt.getAttribute && opt.getAttribute('data-codigo'),
+        opt.getAttribute && opt.getAttribute('data-id')
+      ];
+      var ok = aliases.some(function(alias) { return normAgenda(alias) === normAgenda(value); });
       if (ok) match = opt.value;
       return ok;
     });
     if (!existe) el.insertAdjacentHTML('beforeend', '<option>' + esc(value) + '</option>');
     el.value = match || value;
+    if (id === 'agProjeto' && typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto(id);
   }
 
   function preencherAgendaKitsSelects(lista) {
