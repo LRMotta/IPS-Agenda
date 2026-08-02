@@ -55,3 +55,30 @@ test('arquivo local e restaurado mesmo quando a publicacao falha', () => {
   assert.match(source, /finally\s*\{/);
   assert.match(source, /WriteAllBytes\(\$webAppPath, \$originalBytes\)/);
 });
+
+test('push deixa publicacao pendente ate a verificacao obrigatoria no Chrome', () => {
+  const source = readProjectFile('tools/push-clasp.ps1');
+  const claspIndex = source.indexOf('& $clasp push --force');
+  const pendingIndex = source.indexOf('PUBLICACAO PENDENTE: VERIFICACAO CHROME OBRIGATORIA.');
+  assert.ok(claspIndex > -1 && claspIndex < pendingIndex);
+  assert.match(source, /WebApp\.gs remoto/);
+  assert.match(source, /trecho funcional exclusivo/);
+  assert.match(source, /implantacao ativa/);
+  assert.match(source, /Recarregue \/exec/);
+  assert.doesNotMatch(source, /Publicacao concluida com a versao/);
+});
+
+test('instrucoes exigem conferir arquivo remoto, implantacao ativa e exec no Chrome', () => {
+  const agents = readProjectFile('AGENTS.md');
+  const publication = readProjectFile('PUBLICACAO_SEGURA.md');
+
+  for (const source of [agents, publication]) {
+    assert.match(source, /@Chrome/);
+    assert.match(source, /WebApp\.gs/);
+    assert.match(source, /CODEX_APP_VERSION_/);
+    assert.match(source, /trecho funcional exclusivo/);
+    assert.match(source, /implantacao ativa/);
+    assert.match(source, /\/exec/);
+    assert.match(source, /publicacao pendente/i);
+  }
+});
