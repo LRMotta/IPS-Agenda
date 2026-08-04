@@ -314,7 +314,8 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
   const context = vm.createContext({
     Date,
     _agendaWeekOffset: 0,
-    _agendaWindowedRange: null,
+    _agendaEventosScope: 'full',
+    _agendaEventosRange: null,
     agendaIso: (date) => [
       date.getFullYear(),
       String(date.getMonth() + 1).padStart(2, '0'),
@@ -330,7 +331,8 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
   const start = new Date(`${range.start}T12:00:00`);
   const end = new Date(`${range.endExclusive}T12:00:00`);
   assert.equal((end - start) / 86400000, 21);
-  context._agendaWindowedRange = range;
+  context._agendaEventosScope = 'window';
+  context._agendaEventosRange = { inicio: range.start, fim: range.endExclusive };
   assert.equal(context.agendaWindowContainsWeekOffset_(-1), true);
   assert.equal(context.agendaWindowContainsWeekOffset_(0), true);
   assert.equal(context.agendaWindowContainsWeekOffset_(1), true);
@@ -359,6 +361,29 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
   assert.equal(context.agendaBootstrapWindowValido_(response, range), false);
 });
 
+test('escopo explicito nunca confunde janela nao truncada com colecao completa', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({
+    _agendaEventosScope: 'full',
+    _agendaEventosRange: null,
+    _agendaEventosTruncated: false
+  });
+  vm.runInContext(`function agendaSetEventosScope_(scope, range, truncated) {${functionBody(client, 'agendaSetEventosScope_')}}`, context);
+  vm.runInContext(`function agendaEventosSaoColecaoCompleta_() {${functionBody(client, 'agendaEventosSaoColecaoCompleta_')}}`, context);
+
+  context.agendaSetEventosScope_('window', { inicio: '2026-08-01', fim: '2026-08-22' }, false);
+  assert.equal(context._agendaEventosScope, 'window');
+  assert.deepEqual(Object.assign({}, context._agendaEventosRange), { inicio: '2026-08-01', fim: '2026-08-22' });
+  assert.equal(context._agendaEventosTruncated, false);
+  assert.equal(context.agendaEventosSaoColecaoCompleta_(), false);
+
+  context.agendaSetEventosScope_('full', null, true);
+  assert.equal(context.agendaEventosSaoColecaoCompleta_(), false);
+  context.agendaSetEventosScope_('full', null, false);
+  assert.equal(context.agendaEventosSaoColecaoCompleta_(), true);
+  assert.equal(context._agendaEventosRange, null);
+});
+
 test('cliente preserva janela anterior, descarta respostas tardias e faz fallback completo na sessao', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const windowLoad = functionBody(client, 'carregarAgendaEventosPorJanela_');
@@ -369,9 +394,12 @@ test('cliente preserva janela anterior, descarta respostas tardias e faz fallbac
   assert.match(windowLoad, /agendaBootstrapWindowValido_\(response, requestedRange\)/);
   assert.match(windowLoad, /agendaFallbackCargaCompleta_\(callback, options, agendaBootstrapFallbackCode_/);
   assert.match(windowLoad, /agendaFallbackCargaCompleta_\(callback, options, 'rpc_failure'\)/);
+  assert.match(windowLoad, /agendaAplicarEventos_\(response\.events, 'window'/);
   assert.match(fallback, /_agendaWindowedLoadingDisabledForSession = true/);
   assert.match(fallback, /forceLegacyFull: true/);
   assert.match(fallback, /silent: _agendaEventos\.length > 0/);
+  assert.doesNotMatch(fallback, /_agendaEventosScope\s*=\s*'full'/);
+  assert.doesNotMatch(fallback, /_agendaEventosRange\s*=\s*null/);
   assert.match(navigation, /agendaWindowContainsWeekOffset_\(targetWeekOffset\)/);
   assert.match(navigation, /carregarAgendaEventosPorJanela_\(false, applyNavigation/);
   assert.doesNotMatch(windowLoad, /_agendaEventos\s*=.*before.*agendaBootstrapWindowValido_/s);
@@ -823,6 +851,14 @@ test('periodo operacional por ID preserva dias consecutivos e regra de cancelame
 
 test('cliente preserva carga completa mas consumidores usam consultas especificas com fallback', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
+  const materialPrevious = functionBody(client, 'agendaMatBioPreviousEvents_');
+  const materialLoad = functionBody(client, 'agendaMatBioLoadPreviousOptions_');
+  const materialRecovery = functionBody(client, 'agendaMatBioRecoverFromSpecificFailure_');
+  const monitorPayload = functionBody(client, 'agendaMonitoriaDisplayPayload');
+  const periodFromRow = functionBody(client, 'agendaPeriodoFromRow');
+  const periodFallback = functionBody(client, 'agendaPeriodoFallbackLocal_');
+  const periodLoad = functionBody(client, 'agendaLoadPeriodoOperacional_');
+  const fullLoad = functionBody(client, 'carregarAgendaEventos');
   assert.match(client, /\.getAgendaEventos\(5000\)/);
   assert.match(client, /\.getAgendaMateriaisAnteriores\([\s\S]*limite: 5/);
   assert.match(client, /\.slice\(-5\)\.reverse\(\)/);
@@ -833,6 +869,21 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.match(client, /function abrirDisplayMonitoriaAgendaCard\(id, rowIndex\)/);
   assert.match(client, /function agendaEventoAtualEditado_\(\)/);
   assert.match(client, /return _agendaEditRecord \|\| agendaFindEventoLocal_\(_agendaEditId\)/);
+  assert.match(materialPrevious, /agendaEventosSaoColecaoCompleta_\(\) \? agendaMatBioFallbackEvents_\(\) : \[\]/);
+  assert.match(materialLoad, /agendaEventosSaoColecaoCompleta_\(\).*agendaMatBioHistoryEquivalent_/s);
+  assert.match(materialLoad, /!response \|\| !Array\.isArray\(response\.items\)/);
+  assert.match(materialRecovery, /agendaFallbackCargaCompleta_\(aplicarFallbackCompleto, \{ silent: true \}, code\)/);
+  assert.match(monitorPayload, /var periodo = agendaPeriodoFromRow\(r\)/);
+  assert.doesNotMatch(monitorPayload, /agendaMonitoriaPeriodo\(|agendaSivPeriodo\(/);
+  assert.match(periodFromRow, /agendaEventosSaoColecaoCompleta_\(\).*agendaMonitoriaPeriodoFromRow/s);
+  assert.match(periodFallback, /agendaEventosSaoColecaoCompleta_\(\).*agendaMonitoriaPeriodoFromRow/s);
+  assert.match(periodLoad, /agendaEventosSaoColecaoCompleta_\(\).*String\(local\.inicio/s);
+  assert.match(periodLoad, /agendaFallbackCargaCompleta_\(function\(\)/);
+  assert.match(periodLoad, /agendaFindEventoLocal_\(id, r\.rowIndex\) \|\| r/);
+  assert.match(periodLoad, /if \(!periodo\) \{[\s\S]*recuperarConsultaEspecifica\(new Error/);
+  assert.match(periodLoad, /\.withFailureHandler\(function\(error\) \{[\s\S]*recuperarConsultaEspecifica\(error\)/);
+  assert.match(fullLoad, /agendaAplicarEventos_\(rows, 'full', null, false\)/);
+  assert.doesNotMatch(client, /_agendaWindowedRange/);
 });
 
 test('consulta exige medico no cliente e no servidor', () => {
