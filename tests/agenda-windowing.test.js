@@ -244,7 +244,15 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
   const result = server.getAgendaBootstrap('2026-07-14', '2026-07-21', true);
 
   assert.equal(forced, true);
+  assert.equal(typeof result, 'object');
+  assert.equal(typeof result.access, 'object');
+  assert.equal(result.access.ok, true);
   assert.equal(result.referenceData, referenceData);
+  assert.equal(typeof result.referenceData, 'object');
+  Object.keys(validAgendaReferenceData()).forEach((key) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(result.referenceData, key), true, `referenceData.${key}`);
+  });
+  assert.equal(Array.isArray(result.events), true);
   assert.equal(result.events.length, 1);
   assert.deepEqual(Object.assign({}, result.range), {
     start: '2026-07-14',
@@ -256,6 +264,10 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
     outOfOrder: false
   });
   assert.match(result.revision, /^agenda-bootstrap-v1-[0-9a-f]{8}$/);
+  assert.equal(typeof result.revision, 'string');
+  assert.equal(typeof result.complete, 'boolean');
+  assert.equal(typeof result.truncated, 'boolean');
+  assert.equal(typeof result.partialError, 'boolean');
   assert.equal(result.complete, true);
   assert.equal(result.truncated, false);
   assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
@@ -338,6 +350,13 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
   assert.equal(context.agendaWindowContainsWeekOffset_(1), true);
   assert.equal(context.agendaWindowContainsWeekOffset_(2), false);
 
+  [-520, -52, 52, 520].forEach((offset) => {
+    const arbitrary = context.agendaWindowForWeekOffset_(offset);
+    const arbitraryStart = new Date(`${arbitrary.start}T12:00:00`);
+    const arbitraryEnd = new Date(`${arbitrary.endExclusive}T12:00:00`);
+    assert.equal((arbitraryEnd - arbitraryStart) / 86400000, 21);
+  });
+
   const response = {
     access: { ok: true },
     referenceData: validAgendaReferenceData(),
@@ -403,6 +422,50 @@ test('cliente preserva janela anterior, descarta respostas tardias e faz fallbac
   assert.match(navigation, /agendaWindowContainsWeekOffset_\(targetWeekOffset\)/);
   assert.match(navigation, /carregarAgendaEventosPorJanela_\(false, applyNavigation/);
   assert.doesNotMatch(windowLoad, /_agendaEventos\s*=.*before.*agendaBootstrapWindowValido_/s);
+});
+
+test('resposta atrasada nao substitui a janela solicitada mais recentemente', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const requests = [];
+  const applied = [];
+  const runFactory = () => {
+    const request = {};
+    return {
+      withSuccessHandler(handler) { request.success = handler; return this; },
+      withFailureHandler(handler) { request.failure = handler; return this; },
+      getAgendaBootstrap(start, endExclusive, forceRefresh) {
+        request.start = start;
+        request.endExclusive = endExclusive;
+        request.forceRefresh = forceRefresh;
+        requests.push(request);
+      }
+    };
+  };
+  const context = vm.createContext({
+    Number,
+    document: { getElementById: () => null },
+    google: { script: { get run() { return runFactory(); } } },
+    _agendaEventos: [{ id: 'ANTERIOR' }],
+    _agendaWeekOffset: 0,
+    _agendaEventosRequestId: 0,
+    agendaUpdatePeriod: () => {},
+    agendaWindowForWeekOffset_: (offset) => ({ start: `inicio-${offset}`, endExclusive: `fim-${offset}` }),
+    agendaBootstrapWindowValido_: () => true,
+    applyAgendaFormData: () => true,
+    agendaReferenceDataValidation_: () => ({ ok: true }),
+    agendaAplicarEventos_: (events) => applied.push(events.map((item) => item.id)),
+    renderAgendaOperacional: () => {},
+    agendaFallbackCargaCompleta_: () => { throw new Error('fallback inesperado'); }
+  });
+  vm.runInContext(`function carregarAgendaEventosPorJanela_(forcar, callback, options) {${functionBody(client, 'carregarAgendaEventosPorJanela_')}}`, context);
+
+  context.carregarAgendaEventosPorJanela_(false, null, { targetWeekOffset: 1 });
+  context.carregarAgendaEventosPorJanela_(true, null, { targetWeekOffset: 8 });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].forceRefresh, true);
+  requests[1].success({ referenceData: {}, events: [{ id: 'NOVA' }], range: { loadedStart: 'inicio-8', loadedEndExclusive: 'fim-8' }, truncated: false });
+  requests[0].success({ referenceData: {}, events: [{ id: 'ATRASADA' }], range: { loadedStart: 'inicio-1', loadedEndExclusive: 'fim-1' }, truncated: false });
+  assert.deepEqual(applied, [['NOVA']]);
 });
 
 test('falha do bootstrap e relancada e restaura o bypass de cache da execucao', () => {
@@ -644,6 +707,32 @@ test('abertura direta busca somente o evento solicitado', () => {
   assert.match(server, /function getAgendaEventoPorId\(id, rowIndex\)/);
 });
 
+test('link para evento fora da janela busca por ID e abre o registro retornado', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const calls = [];
+  const context = vm.createContext({
+    String,
+    _agendaAbrirAposCarga: '',
+    irPara: (page) => calls.push(['page', page]),
+    agendaFindEventoLocal_: () => null,
+    agendaFetchEventoPorId_: (id, rowIndex, onSuccess) => {
+      calls.push(['fetch', id, rowIndex]);
+      onSuccess({ id, rowIndex: 999 });
+    },
+    agendaAbrirPendenteAposCarga: () => calls.push(['open']),
+    snackErro: (message) => calls.push(['error', message]),
+    appErrorMessage: (error) => String(error)
+  });
+  vm.runInContext(`function abrirAgendaRegistroPorId(agendaId) {${functionBody(client, 'abrirAgendaRegistroPorId')}}`, context);
+
+  assert.equal(context.abrirAgendaRegistroPorId('EVT-FORA'), true);
+  assert.deepEqual(calls, [
+    ['page', 'agenda'],
+    ['fetch', 'EVT-FORA', 0],
+    ['open']
+  ]);
+});
+
 test('projeto do participante sincroniza o autocomplete por nome, codigo ou ID estavel', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const body = functionBody(client, 'setAgendaSelectValue');
@@ -825,10 +914,10 @@ test('materiais anteriores por projeto aceitam nome e codigo sem devolver mais d
 test('periodo operacional por ID preserva dias consecutivos e regra de cancelamento de SIV', () => {
   const server = agendaServer({ Logger: { log: () => {} } });
   const rows = [
-    agendaRow(server, { id: 'M1', data: '2026-07-01', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
-    agendaRow(server, { id: 'M2', data: '2026-07-02', tipo: 'Monitoria', status: 'Cancelado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
-    agendaRow(server, { id: 'M3', data: '2026-07-03', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
-    agendaRow(server, { id: 'M5', data: '2026-07-05', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M1', data: '2026-07-31', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M2', data: '2026-08-01', tipo: 'Monitoria', status: 'Cancelado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M3', data: '2026-08-02', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M5', data: '2026-08-04', tipo: 'Monitoria', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
     agendaRow(server, { id: 'S1', data: '2026-08-01', tipo: 'SIV', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
     agendaRow(server, { id: 'S2', data: '2026-08-02', tipo: 'SIV', status: 'Cancelado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
     agendaRow(server, { id: 'S3', data: '2026-08-03', tipo: 'SIV', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' })
@@ -839,8 +928,8 @@ test('periodo operacional por ID preserva dias consecutivos e regra de cancelame
 
   const monitoria = server.getAgendaPeriodoOperacionalPorEventoId('M2', 3);
   assert.deepEqual(Array.from(monitoria.ids), ['M1', 'M2', 'M3']);
-  assert.equal(monitoria.inicio, '2026-07-01');
-  assert.equal(monitoria.fim, '2026-07-03');
+  assert.equal(monitoria.inicio, '2026-07-31');
+  assert.equal(monitoria.fim, '2026-08-02');
   assert.equal(monitoria.projetoId, 'PROJ-1');
   const siv = server.getAgendaPeriodoOperacionalPorEventoId('S1', 6);
   assert.deepEqual(Array.from(siv.ids), ['S1']);
@@ -884,6 +973,90 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.match(periodLoad, /\.withFailureHandler\(function\(error\) \{[\s\S]*recuperarConsultaEspecifica\(error\)/);
   assert.match(fullLoad, /agendaAplicarEventos_\(rows, 'full', null, false\)/);
   assert.doesNotMatch(client, /_agendaWindowedRange/);
+});
+
+test('compatibilidades da janela usam fontes autoritativas fora do periodo visivel', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const directOpen = functionBody(client, 'abrirAgendaRegistroPorId');
+  const materialPrevious = functionBody(client, 'agendaMatBioPreviousEvents_');
+  const periodLoad = functionBody(client, 'agendaLoadPeriodoOperacional_');
+  const historyLoad = functionBody(client, 'agendaCarregarHistorico');
+
+  assert.match(directOpen, /agendaFetchEventoPorId_\(agendaId, 0/);
+  assert.match(functionBody(client, 'agendaFetchEventoPorId_'), /\.getAgendaEventoPorId\(id, rowIndex \|\| undefined\)/);
+  assert.match(materialPrevious, /agendaEventosSaoColecaoCompleta_\(\) \? agendaMatBioFallbackEvents_\(\) : \[\]/);
+  assert.match(client, /\.getAgendaMateriaisAnteriores\([\s\S]*limite: 5/);
+  assert.match(periodLoad, /\.getAgendaPeriodoOperacionalPorEventoId\(id, r\.rowIndex\)/);
+  assert.match(historyLoad, /\.pesquisarAgendaHistorico\(query, cursor, 25\)/);
+});
+
+test('fallback concorrente aciona uma unica carga completa e desliga a janela na sessao', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  let fullLoads = 0;
+  let pendingCallback = null;
+  let pendingOptions = null;
+  const context = vm.createContext({
+    _agendaFallbackEventWaiters: [],
+    _agendaWindowedLoadingDisabledForSession: false,
+    _agendaEventosRequestId: 0,
+    _agendaFallbackCargaEmAndamento: false,
+    _agendaEventos: [{ id: 'VISIBLE' }],
+    agendaRegistrarFallback_: () => {},
+    agendaFormularioEstaPronto_: () => true,
+    agendaCarregarFormDataLegado_: () => {},
+    carregarAgendaEventos: (force, callback, options) => {
+      assert.equal(force, true);
+      assert.equal(options.forceLegacyFull, true);
+      fullLoads += 1;
+      pendingCallback = callback;
+      pendingOptions = options;
+    }
+  });
+  vm.runInContext(`function agendaFallbackCargaCompleta_(callback, options, code) {${functionBody(client, 'agendaFallbackCargaCompleta_')}}`, context);
+
+  context.agendaFallbackCargaCompleta_(() => {}, { silent: true }, 'truncated');
+  context.agendaFallbackCargaCompleta_(() => {}, { silent: true }, 'rpc_failure');
+  assert.equal(fullLoads, 1);
+  assert.equal(context._agendaWindowedLoadingDisabledForSession, true);
+  assert.equal(context._agendaFallbackCargaEmAndamento, true);
+  pendingCallback();
+  pendingOptions.onComplete();
+  assert.equal(context._agendaFallbackCargaEmAndamento, false);
+});
+
+test('mutacoes recarregam o escopo corrente sem cache e Transporte avisa a Agenda', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const transport = readProjectFile('TransporteApp.html');
+  const refresh = functionBody(client, 'agendaRecarregarJanelaAtual_');
+  const publicRefresh = functionBody(client, 'recarregarAgendaJanelaAtual');
+  const save = functionBody(client, 'salvarAgendaEvento');
+  const cancel = functionBody(client, 'cancelarAgendaEvento');
+  const requestUpdate = functionBody(client, 'marcarAgendaRequisicaoEnviadaLocal');
+  const transportSave = functionBody(transport, 'saveData');
+  const transportSaveAndRun = functionBody(transport, 'saveAndRun');
+  const transportSync = functionBody(transport, 'syncData');
+
+  assert.match(refresh, /carregarAgendaEventos\(true, callback, options \|\| \{\}\)/);
+  assert.match(publicRefresh, /agendaRecarregarJanelaAtual_\(null, \{ silent: true \}\)/);
+  assert.match(save, /agendaRecarregarJanelaAtual_\(\)/);
+  assert.match(cancel, /withSuccessHandler\(function\(\) \{ agendaRecarregarJanelaAtual_\(\); \}\)/);
+  assert.match(requestUpdate, /aplicarStatusRequisicaoAgendaLocal\([\s\S]*agendaRecarregarJanelaAtual_\(null, \{ silent: true \}\)/);
+  assert.match(functionBody(transport, 'refreshAgendaInOpener'), /transportAgendaContext\(\)\.id[\s\S]*openerWin\.recarregarAgendaJanelaAtual\(\)/);
+  assert.match(transportSave, /refreshAgendaInOpener\(\)/);
+  assert.match(transportSaveAndRun, /refreshAgendaInOpener\(\)/);
+  assert.match(transportSync, /refreshAgendaInOpener\(\)/);
+});
+
+test('compatibilidade nao altera contratos publicos de Transporte ou documentos', () => {
+  const server = readProjectFile('TransporteCodexConfig.gs');
+  const transport = readProjectFile('TransporteApp.html');
+  assert.match(server, /function getTransporteBootstrapFromAgenda\(idAgenda, slot\)/);
+  assert.match(server, /function getTransporteBootstrap\(\)/);
+  assert.match(server, /function importarTransporteCodex\(codexPayload, contextoInterno\)/);
+  assert.match(server, /function salvarTransporte\(payload, options\)/);
+  assert.match(server, /function gerarPdfTransporte\(options\)/);
+  assert.match(transport, /serverCall\('salvarTransporte', \[payload, \{ returnBootstrap: false, preencherDocumentos: false \}\]/);
+  assert.match(transport, /serverCall\('sincronizarTransporte', \[\]/);
 });
 
 test('consulta exige medico no cliente e no servidor', () => {

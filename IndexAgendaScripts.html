@@ -2287,7 +2287,7 @@
         if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
         limparAgendaForm();
         fecharAgendaModal();
-        carregarAgendaEventos(true);
+        agendaRecarregarJanelaAtual_();
       },
       onFailure: function(e) {
         setAgendaButtonState(btn, false);
@@ -2428,7 +2428,7 @@
         resetBtn();
         snack('Abrindo Transporte e sincronizando dados da Agenda...');
         if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
-        carregarAgendaEventos(true);
+        agendaRecarregarJanelaAtual_();
         abrirTransporteModulo(transporteWindow, transporteContext);
       })
       .withFailureHandler(function(e) {
@@ -2447,7 +2447,7 @@
             resetBtn();
             snack((res && res.message) || 'Transporte pré-preenchido. Complete os dados na tela de Transporte.');
             if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
-            carregarAgendaEventos(true);
+            agendaRecarregarJanelaAtual_();
             abrirTransporteModulo(transporteWindow);
           })
           .withFailureHandler(function(e) {
@@ -3452,6 +3452,15 @@
       .getAgendaEventos(5000);
   }
 
+  function agendaRecarregarJanelaAtual_(callback, options) {
+    carregarAgendaEventos(true, callback, options || {});
+  }
+
+  function recarregarAgendaJanelaAtual() {
+    agendaRecarregarJanelaAtual_(null, { silent: true });
+  }
+  window.recarregarAgendaJanelaAtual = recarregarAgendaJanelaAtual;
+
   function agendaVisibleRange() {
     var inicio = agendaWeekStart();
     var fim = new Date(inicio);
@@ -3737,6 +3746,7 @@
           enviado = false;
         }
         aplicarStatusRequisicaoAgendaLocal(agendaId, (res && res.statusRequisicao) || (enviado ? 'Enviado' : ''), enviado, res && res.recordVersion, res && res.editRecordVersion);
+        agendaRecarregarJanelaAtual_(null, { silent: true });
       })
       .withFailureHandler(function(e) { snackErro(e); })
       .atualizarStatusRequisicaoAgenda(agendaId, !!enviado);
@@ -4056,7 +4066,7 @@
         abrirAgendaCancelamentoMotivo({
           onConfirm: function(motivo) {
             google.script.run
-              .withSuccessHandler(function() { carregarAgendaEventos(true); })
+              .withSuccessHandler(function() { agendaRecarregarJanelaAtual_(); })
               .withFailureHandler(function(e) { snackErro(e); })
               .cancelarAgendaEvento(id, motivo);
           }
