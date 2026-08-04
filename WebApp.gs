@@ -176,6 +176,22 @@ function agendaWindowedLoadingV2EnabledForAccess_(access) {
   return agendaWindowedLoadingV2GlobalEnabled_() && !!access && access.ok === true && access.role === 'admin';
 }
 
+function agendaWindowFallbackLog(code) {
+  var access = codexGetCurrentUserAccess();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  var allowed = {
+    reference_incomplete: true,
+    invalid_payload: true,
+    rpc_failure: true,
+    range_mismatch: true,
+    truncated: true
+  };
+  code = String(code || '').trim();
+  if (!allowed[code]) code = 'invalid_payload';
+  Logger.log('[CODEX_AGENDA_FALLBACK] ' + JSON.stringify({ code: code }));
+  return true;
+}
+
 function getAppBootstrapData() {
   var access = codexGetCurrentUserAccess();
   var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
@@ -198,7 +214,7 @@ function getAppBootstrapData() {
   }
   if (!agendaWindowedLoadingEnabled) {
     try {
-      out.agendaFormData = getDadosFormularioAgenda();
+      out.agendaFormData = getDadosFormularioAgenda(true);
     } catch (e2) {
       out.errors.agendaFormData = e2.message || String(e2);
     }
@@ -6777,8 +6793,11 @@ function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
   return result;
 }
 
-function getDadosFormularioAgenda() {
-  var cacheKey = 'AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+function getDadosFormularioAgenda(strictValidation) {
+  var strict = strictValidation === true;
+  var cacheKey = (strict ? 'AgendaFormDataStrict:v1:' : 'AgendaFormData:v7:') +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  if (strict) return agendaGetDadosFormularioAgendaCached_(cacheKey, false, true);
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
 }
 
