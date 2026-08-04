@@ -396,6 +396,37 @@ test('feature de janela nasce desligada e somente e anunciada a administradores 
   assert.equal(formReads, 2);
 });
 
+test('kill switch do canario altera somente a flag global e exige administrador', () => {
+  const property = { value: null, writes: [] };
+  const logs = [];
+  const server = agendaServer({
+    Logger: { log: (message) => logs.push(message) },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: () => property.value,
+        setProperty: (key, value) => {
+          property.value = value;
+          property.writes.push({ key, value });
+        }
+      })
+    }
+  });
+  let authorized = 0;
+  server.codexAssertAdmin_ = () => { authorized += 1; return { ok: true, role: 'admin' }; };
+
+  assert.deepEqual(Object.assign({}, server.ativarAgendaWindowedLoadingV2Admin()), { globalEnabled: true, adminOnly: true });
+  assert.equal(server.agendaWindowedLoadingV2GlobalEnabled_(), true);
+  assert.deepEqual(Object.assign({}, server.desativarAgendaWindowedLoadingV2Admin()), { globalEnabled: false, adminOnly: true });
+  assert.equal(server.agendaWindowedLoadingV2GlobalEnabled_(), false);
+  assert.equal(authorized, 2);
+  assert.deepEqual(property.writes, [
+    { key: 'AGENDA_WINDOWED_LOADING_V2', value: 'true' },
+    { key: 'AGENDA_WINDOWED_LOADING_V2', value: 'false' }
+  ]);
+  assert.equal(logs.every((entry) => /\[CODEX_AGENDA_CANARY\]/.test(entry)), true);
+  assert.equal(logs.some((entry) => /@|nome|userEmail|participant/i.test(entry)), false);
+});
+
 test('cliente mantem caminho legado fora do canario e integra bootstrap apenas sob a feature', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const load = functionBody(client, 'carregarAgendaEventos');
