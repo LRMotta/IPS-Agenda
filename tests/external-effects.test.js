@@ -46,6 +46,28 @@ test('todos os e-mails da Agenda usam o adaptador simulavel', () => {
   });
 });
 
+test('notificacoes da Agenda excluem usuarios inativos dos destinatarios', () => {
+  const context = runFile('WebApp.gs');
+  context.getConfigAppValuesByKeys_ = () => [
+    'ativa@example.invalid; inativa@example.invalid; grupo@example.invalid'
+  ];
+  context.codexGetAllowedUsers_ = () => ({
+    'ativa@example.invalid': { active: true },
+    'inativa@example.invalid': { active: false },
+    'autora@example.invalid': { active: true }
+  });
+
+  const recipients = context.gerarListaDestinatarios_({
+    getEmail: () => 'autora@example.invalid'
+  }).split(',');
+
+  assert.deepEqual(Array.from(recipients), [
+    'ativa@example.invalid',
+    'grupo@example.invalid',
+    'autora@example.invalid'
+  ]);
+});
+
 test('codigo da Agenda nao cria nem remove eventos de calendarios reais', () => {
   const source = readProjectFile('WebApp.gs') + readProjectFile('IndexAgendaScripts.html');
   assert.doesNotMatch(source, /CalendarApp\s*\.\s*(createEvent|getEventById)/);
