@@ -14,6 +14,12 @@
   var _agendaEventosRequestId = 0;
   var _agendaWindowedLoadingDisabledForSession = false;
   var _agendaWindowedRange = null;
+  var _agendaReferenceDataConfirmed = false;
+  var _agendaFormReadyQueue = [];
+  var _agendaFormDataLegacyLoading = false;
+  var _agendaFallbackCargaEmAndamento = false;
+  var _agendaFallbackEventWaiters = [];
+  var _agendaFallbackCodesLogged = {};
   var _agendaHistoricoEventos = [];
   var _agendaHistoricoQuery = '';
   var _agendaHistoricoNextCursor = null;
@@ -50,7 +56,81 @@
     STATE.agenda.formData = _agendaDados;
     _agendaFormDataLoadedAt = _agendaDados ? Date.now() : 0;
     STATE.agenda.formDataLoadedAt = _agendaFormDataLoadedAt;
+    if (!_agendaDados) _agendaReferenceDataConfirmed = false;
     return _agendaDados;
+  }
+
+  function agendaReferenceDataValidation_(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { ok: false, code: 'invalid_payload' };
+    }
+    var arrayFields = [
+      'participantes','projetos','tiposEvento','status','medicos','prestadores','monitores',
+      'salasMonitoria','couriers','temperaturas','statusCourier','laboratoriosDestino',
+      'kitsColeta','procedimentoChips','laboratorios'
+    ];
+    for (var i = 0; i < arrayFields.length; i++) {
+      var field = arrayFields[i];
+      if (!Object.prototype.hasOwnProperty.call(data, field)) {
+        return { ok: false, code: 'reference_incomplete' };
+      }
+      if (!Array.isArray(data[field])) return { ok: false, code: 'invalid_payload' };
+    }
+    if (!Object.prototype.hasOwnProperty.call(data, 'courierConfig') ||
+        !Object.prototype.hasOwnProperty.call(data, 'emailLabAtivo')) {
+      return { ok: false, code: 'reference_incomplete' };
+    }
+    if (!data.courierConfig || typeof data.courierConfig !== 'object' || Array.isArray(data.courierConfig) ||
+        typeof data.emailLabAtivo !== 'boolean') {
+      return { ok: false, code: 'invalid_payload' };
+    }
+    return { ok: true, code: '' };
+  }
+
+  function agendaFormularioEstaPronto_() {
+    return _agendaReferenceDataConfirmed && agendaReferenceDataValidation_(_agendaDados).ok;
+  }
+
+  function agendaRegistrarFallback_(code) {
+    var allowed = {
+      reference_incomplete: true,
+      invalid_payload: true,
+      rpc_failure: true,
+      range_mismatch: true,
+      truncated: true
+    };
+    code = allowed[code] ? code : 'invalid_payload';
+    if (_agendaFallbackCodesLogged[code]) return code;
+    _agendaFallbackCodesLogged[code] = true;
+    google.script.run
+      .withSuccessHandler(function() {})
+      .withFailureHandler(function() {})
+      .agendaWindowFallbackLog(code);
+    return code;
+  }
+
+  function agendaMostrarFormularioBloqueado_() {
+    var status = document.getElementById('agendaStatusMsg');
+    if (status) status.innerHTML = '<span style="color:#7a5c00">Confirmando dados obrigatorios da Agenda...</span>';
+  }
+
+  function agendaLiberarFilaFormulario_() {
+    if (!agendaFormularioEstaPronto_()) return;
+    var queue = _agendaFormReadyQueue.slice();
+    _agendaFormReadyQueue = [];
+    queue.forEach(function(callback) { callback(); });
+  }
+
+  function agendaComFormularioPronto_(callback) {
+    if (typeof callback !== 'function') return false;
+    if (agendaFormularioEstaPronto_()) {
+      callback();
+      return true;
+    }
+    _agendaFormReadyQueue = [callback];
+    agendaMostrarFormularioBloqueado_();
+    agendaFallbackCargaCompleta_(null, { silent: true }, 'reference_incomplete');
+    return false;
   }
 
   function setAgendaInitStartedState(started) {
@@ -177,15 +257,19 @@
           if (typeof options.onComplete === 'function') options.onComplete(false);
           return;
         }
-        atualizarAgendaFormDataOpcoes(d || {});
+        var atualizado = atualizarAgendaFormDataOpcoes(d);
         _agendaFormDataRefreshing = false;
-        if (typeof options.onComplete === 'function') options.onComplete(true);
+        if (!atualizado && !agendaFormularioEstaPronto_()) {
+          agendaFallbackCargaCompleta_(null, { silent: true }, agendaReferenceDataValidation_(d).code);
+        }
+        if (typeof options.onComplete === 'function') options.onComplete(!!atualizado);
       })
       .withFailureHandler(function() {
         _agendaFormDataRefreshing = false;
+        if (!agendaFormularioEstaPronto_()) agendaFallbackCargaCompleta_(null, { silent: true }, 'rpc_failure');
         if (typeof options.onComplete === 'function') options.onComplete(false);
       })
-      .getDadosFormularioAgenda();
+      .getDadosFormularioAgenda(true);
   }
 
   function agendaExecutarRefreshFormDataPendente() {
@@ -220,29 +304,51 @@
     setAgendaInitStartedState(true);
     carregarAgendaEventos(false, agendaAbrirPendenteAposCarga);
     if (window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.agendaFormData) {
-      applyAgendaFormData(window.APP_BOOTSTRAP_DATA.agendaFormData);
+      var bootstrapFormData = window.APP_BOOTSTRAP_DATA.agendaFormData;
+      if (!applyAgendaFormData(bootstrapFormData)) {
+        agendaFallbackCargaCompleta_(null, { silent: true }, agendaReferenceDataValidation_(bootstrapFormData).code);
+      }
       return;
     }
     if (agendaWindowedLoadingAtivo_()) return;
     agendaCarregarFormDataLegado_();
   }
 
-  function agendaCarregarFormDataLegado_() {
+  function agendaCarregarFormDataLegado_(options) {
+    options = options || {};
+    if (_agendaFormDataLegacyLoading) return;
+    _agendaFormDataLegacyLoading = true;
     google.script.run
-      .withSuccessHandler(applyAgendaFormData)
-      .withFailureHandler(function(e) {
-        setAgendaInitStartedState(false);
-        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+      .withSuccessHandler(function(d) {
+        _agendaFormDataLegacyLoading = false;
+        var validation = agendaReferenceDataValidation_(d);
+        if (validation.ok && applyAgendaFormData(d)) return;
+        agendaRegistrarFallback_(validation.code);
+        if (!options.fallbackAttempt) {
+          agendaFallbackCargaCompleta_(null, { silent: true }, validation.code);
+          return;
+        }
+        agendaMostrarFormularioBloqueado_();
       })
-      .getDadosFormularioAgenda();
+      .withFailureHandler(function(e) {
+        _agendaFormDataLegacyLoading = false;
+        setAgendaInitStartedState(false);
+        agendaRegistrarFallback_('rpc_failure');
+        document.getElementById('agendaStatusMsg').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        if (!options.fallbackAttempt) agendaFallbackCargaCompleta_(null, { silent: true }, 'rpc_failure');
+      })
+      .getDadosFormularioAgenda(true);
   }
 
   function applyAgendaFormData(d) {
+    var validation = agendaReferenceDataValidation_(d);
+    if (!validation.ok) return false;
     var atuais = agendaCurrentValues(agendaFormDataSelectIds());
-    setAgendaFormDataState(d || {});
+    setAgendaFormDataState(d);
+    _agendaReferenceDataConfirmed = false;
     if (agendaFormDataAplicacaoBloqueadaPorEdicao()) {
       _agendaFormDataRefreshPending = true;
-      return;
+      return true;
     }
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
@@ -276,6 +382,9 @@
     onAgendaLabCentralChange();
     var aviso = document.getElementById('agendaEmailAviso');
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
+    _agendaReferenceDataConfirmed = true;
+    agendaLiberarFilaFormulario_();
+    return true;
   }
 
   function agendaCurrentValues(ids) {
@@ -346,9 +455,11 @@
   }
 
   function atualizarAgendaFormDataOpcoes(d) {
-    if (!d) return;
+    var validation = agendaReferenceDataValidation_(d);
+    if (!validation.ok) return false;
     var atuais = agendaCurrentValues(agendaFormDataSelectIds());
-    setAgendaFormDataState(d || {});
+    setAgendaFormDataState(d);
+    _agendaReferenceDataConfirmed = false;
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
       renderAgendaProcedimentoChips();
@@ -381,6 +492,9 @@
     agendaRestoreEditRecordValues_(true);
     var aviso = document.getElementById('agendaEmailAviso');
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
+    _agendaReferenceDataConfirmed = true;
+    agendaLiberarFilaFormulario_();
+    return true;
   }
 
   function preencherAgendaSelect(id, lista, placeholder) {
@@ -3157,15 +3271,7 @@
   }
 
   function agendaBootstrapReferenceDataValido_(data) {
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-    var arrays = [
-      'participantes','medicos','prestadores','projetos','laboratorios','couriers',
-      'temperaturas','statusCourier','laboratoriosDestino','kitsColeta','tiposEvento',
-      'salasMonitoria','status','procedimentoChips','monitores'
-    ];
-    if (!arrays.every(function(field) { return Array.isArray(data[field]); })) return false;
-    return !!data.courierConfig && typeof data.courierConfig === 'object' && !Array.isArray(data.courierConfig) &&
-      typeof data.emailLabAtivo === 'boolean' && typeof data.hojeIso === 'string';
+    return agendaReferenceDataValidation_(data).ok && typeof data.hojeIso === 'string';
   }
 
   function agendaBootstrapWindowValido_(response, requestedRange) {
@@ -3180,6 +3286,18 @@
       range.loaded === response.events.length && range.total === response.events.length;
   }
 
+  function agendaBootstrapFallbackCode_(response, requestedRange) {
+    if (response && response.truncated === true) return 'truncated';
+    var range = response && response.range;
+    if (range && (range.start !== requestedRange.start || range.endExclusive !== requestedRange.endExclusive ||
+        range.loadedStart !== requestedRange.start || range.loadedEndExclusive !== requestedRange.endExclusive)) {
+      return 'range_mismatch';
+    }
+    var validation = agendaReferenceDataValidation_(response && response.referenceData);
+    if (!validation.ok) return validation.code;
+    return 'invalid_payload';
+  }
+
   function agendaAplicarEventos_(rows) {
     _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
       return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
@@ -3190,17 +3308,40 @@
     agendaMatBioUpdateAllCopyOptions();
   }
 
-  function agendaFallbackCargaCompleta_(callback, options) {
+  function agendaFallbackCargaCompleta_(callback, options, code) {
+    options = options || {};
+    _agendaFallbackEventWaiters.push({
+      success: typeof callback === 'function' ? callback : null,
+      complete: typeof options.onComplete === 'function' ? options.onComplete : null,
+      successDelivered: false
+    });
     _agendaWindowedLoadingDisabledForSession = true;
     _agendaWindowedRange = null;
     _agendaEventosRequestId++;
-    if (!_agendaDados) agendaCarregarFormDataLegado_();
+    agendaRegistrarFallback_(code);
+    if (!agendaFormularioEstaPronto_()) agendaCarregarFormDataLegado_({ fallbackAttempt: true });
+    if (_agendaFallbackCargaEmAndamento) return;
+    _agendaFallbackCargaEmAndamento = true;
     var fallbackOptions = {
-      silent: _agendaEventos.length > 0 || !!(options && options.silent),
+      silent: _agendaEventos.length > 0 || !!options.silent,
       forceLegacyFull: true,
-      onComplete: options && options.onComplete
+      onComplete: function() {
+        var waiters = _agendaFallbackEventWaiters.slice();
+        _agendaFallbackEventWaiters = [];
+        _agendaFallbackCargaEmAndamento = false;
+        waiters.forEach(function(waiter) {
+          if (waiter.complete) waiter.complete();
+        });
+      }
     };
-    carregarAgendaEventos(true, callback, fallbackOptions);
+    carregarAgendaEventos(true, function() {
+      _agendaFallbackEventWaiters.forEach(function(waiter) {
+        if (waiter.success && !waiter.successDelivered) {
+          waiter.successDelivered = true;
+          waiter.success();
+        }
+      });
+    }, fallbackOptions);
   }
 
   function carregarAgendaEventosPorJanela_(forcar, callback, options) {
@@ -3220,10 +3361,13 @@
           return;
         }
         if (!agendaBootstrapWindowValido_(response, requestedRange)) {
-          agendaFallbackCargaCompleta_(callback, options);
+          agendaFallbackCargaCompleta_(callback, options, agendaBootstrapFallbackCode_(response, requestedRange));
           return;
         }
-        applyAgendaFormData(response.referenceData);
+        if (!applyAgendaFormData(response.referenceData)) {
+          agendaFallbackCargaCompleta_(callback, options, agendaReferenceDataValidation_(response.referenceData).code);
+          return;
+        }
         agendaAplicarEventos_(response.events);
         _agendaWindowedRange = requestedRange;
         renderAgendaOperacional();
@@ -3235,7 +3379,7 @@
           if (typeof options.onComplete === 'function') options.onComplete();
           return;
         }
-        agendaFallbackCargaCompleta_(callback, options);
+        agendaFallbackCargaCompleta_(callback, options, 'rpc_failure');
       })
       .getAgendaBootstrap(requestedRange.start, requestedRange.endExclusive, forcar === true);
   }
@@ -3629,6 +3773,10 @@
   }
 
   function abrirAgendaCreatePanelNovo() {
+    return agendaComFormularioPronto_(agendaAbrirCreatePanelNovoPronto_);
+  }
+
+  function agendaAbrirCreatePanelNovoPronto_() {
     if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
     var p = document.getElementById('agendaCreatePanel');
@@ -3639,28 +3787,36 @@
   }
 
   function toggleAgendaCreate() {
-    if (_agendaFormDataRefreshing) {
-      abrirAgendaCreatePanelNovo();
-      return;
-    }
-    var abriu = false;
-    agendaRevalidarFormDataEmBackground(true, {
-      onComplete: function() {
-        if (abriu) return;
+    agendaComFormularioPronto_(function() {
+      if (_agendaFormDataRefreshing) {
+        agendaAbrirCreatePanelNovoPronto_();
+        return;
+      }
+      var abriu = false;
+      agendaRevalidarFormDataEmBackground(true, {
+        onComplete: function() {
+          if (abriu) return;
+          abriu = true;
+          agendaAbrirCreatePanelNovoPronto_();
+        }
+      });
+      if (!_agendaFormDataRefreshing && !abriu) {
         abriu = true;
-        abrirAgendaCreatePanelNovo();
+        agendaAbrirCreatePanelNovoPronto_();
       }
     });
-    if (!_agendaFormDataRefreshing && !abriu) {
-      abriu = true;
-      abrirAgendaCreatePanelNovo();
-    }
   }
 
   function abrirAgendaEdicao(id, rowIndex) {
     id = String(id || '').trim();
     rowIndex = Number(rowIndex || 0) || 0;
     if (!id) return;
+    agendaComFormularioPronto_(function() {
+      agendaAbrirEdicaoPronta_(id, rowIndex);
+    });
+  }
+
+  function agendaAbrirEdicaoPronta_(id, rowIndex) {
     var r = agendaFindEventoLocal_(id, rowIndex);
     if (!r) {
       agendaFetchEventoPorId_(id, rowIndex, function(row) {
@@ -3711,6 +3867,12 @@
 
   function abrirAgendaEdicaoComRegistro_(r) {
     if (!r) return;
+    agendaComFormularioPronto_(function() {
+      agendaAbrirEdicaoComRegistroPronto_(r);
+    });
+  }
+
+  function agendaAbrirEdicaoComRegistroPronto_(r) {
     var id = String(r.id || '').trim();
     if (_agendaEditId && String(_agendaEditId) !== String(id)) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();

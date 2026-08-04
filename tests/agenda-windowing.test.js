@@ -321,9 +321,9 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
       String(date.getDate()).padStart(2, '0')
     ].join('-')
   });
-  ['agendaWeekStartForOffset_', 'agendaWindowForWeekOffset_', 'agendaWindowContainsWeekOffset_',
+  ['agendaReferenceDataValidation_', 'agendaWeekStartForOffset_', 'agendaWindowForWeekOffset_', 'agendaWindowContainsWeekOffset_',
     'agendaBootstrapReferenceDataValido_', 'agendaBootstrapWindowValido_'].forEach((name) => {
-    vm.runInContext(`function ${name}(${name === 'agendaWeekStartForOffset_' ? 'weekOffset' : name === 'agendaWindowForWeekOffset_' || name === 'agendaWindowContainsWeekOffset_' ? 'weekOffset' : name === 'agendaBootstrapReferenceDataValido_' ? 'data' : 'response, requestedRange'}) {${functionBody(client, name)}}`, context);
+    vm.runInContext(`function ${name}(${name === 'agendaReferenceDataValidation_' || name === 'agendaBootstrapReferenceDataValido_' ? 'data' : name === 'agendaWeekStartForOffset_' || name === 'agendaWindowForWeekOffset_' || name === 'agendaWindowContainsWeekOffset_' ? 'weekOffset' : 'response, requestedRange'}) {${functionBody(client, name)}}`, context);
   });
 
   const range = context.agendaWindowForWeekOffset_(0);
@@ -367,7 +367,8 @@ test('cliente preserva janela anterior, descarta respostas tardias e faz fallbac
   assert.match(windowLoad, /var requestId = \+\+_agendaEventosRequestId/);
   assert.match(windowLoad, /if \(requestId !== _agendaEventosRequestId\) \{[\s\S]*options\.onComplete/);
   assert.match(windowLoad, /agendaBootstrapWindowValido_\(response, requestedRange\)/);
-  assert.match(windowLoad, /agendaFallbackCargaCompleta_\(callback, options\)/);
+  assert.match(windowLoad, /agendaFallbackCargaCompleta_\(callback, options, agendaBootstrapFallbackCode_/);
+  assert.match(windowLoad, /agendaFallbackCargaCompleta_\(callback, options, 'rpc_failure'\)/);
   assert.match(fallback, /_agendaWindowedLoadingDisabledForSession = true/);
   assert.match(fallback, /forceLegacyFull: true/);
   assert.match(fallback, /silent: _agendaEventos\.length > 0/);
@@ -395,6 +396,109 @@ test('falha do bootstrap e relancada e restaura o bypass de cache da execucao', 
     ['total', false]
   ]);
   assert.equal(logs.some((message) => message.includes('dado sensivel')), false);
+});
+
+test('barreira do formulario valida todos os datasets antes de alterar selects', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({ Object, Array });
+  vm.runInContext(`function agendaReferenceDataValidation_(data) {${functionBody(client, 'agendaReferenceDataValidation_')}}`, context);
+
+  assert.equal(context.agendaReferenceDataValidation_(validAgendaReferenceData()).ok, true);
+  const missing = validAgendaReferenceData();
+  delete missing.projetos;
+  assert.deepEqual(Object.assign({}, context.agendaReferenceDataValidation_(missing)), {
+    ok: false,
+    code: 'reference_incomplete'
+  });
+  assert.equal(context.agendaReferenceDataValidation_(validAgendaReferenceData({ couriers: null })).code, 'invalid_payload');
+
+  const apply = functionBody(client, 'applyAgendaFormData');
+  const update = functionBody(client, 'atualizarAgendaFormDataOpcoes');
+  assert.ok(apply.indexOf('agendaReferenceDataValidation_(d)') < apply.indexOf('agendaCurrentValues'));
+  assert.ok(apply.indexOf('if (!validation.ok) return false') < apply.indexOf('setAgendaFormDataState'));
+  assert.ok(apply.indexOf('_agendaReferenceDataConfirmed = false') < apply.indexOf('agendaFormDataAplicacaoBloqueadaPorEdicao'));
+  assert.ok(apply.lastIndexOf('_agendaReferenceDataConfirmed = true') > apply.indexOf("preencherAgendaSelect('agParticipante'"));
+  assert.ok(update.indexOf('if (!validation.ok) return false') < update.indexOf('setAgendaFormDataState'));
+  assert.ok(update.lastIndexOf('_agendaReferenceDataConfirmed = true') > update.indexOf("preencherAgendaSelect('agParticipante'"));
+});
+
+test('barreira mantem o formulario fechado e libera somente a ultima abertura solicitada', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const calls = [];
+  const context = vm.createContext({
+    Object,
+    Array,
+    _agendaReferenceDataConfirmed: false,
+    _agendaDados: null,
+    _agendaFormReadyQueue: [],
+    agendaMostrarFormularioBloqueado_: () => calls.push('blocked'),
+    agendaFallbackCargaCompleta_: () => calls.push('fallback')
+  });
+  ['agendaReferenceDataValidation_', 'agendaFormularioEstaPronto_', 'agendaComFormularioPronto_', 'agendaLiberarFilaFormulario_']
+    .forEach((name) => {
+      const args = name === 'agendaReferenceDataValidation_' ? 'data' : name === 'agendaComFormularioPronto_' ? 'callback' : '';
+      vm.runInContext(`function ${name}(${args}) {${functionBody(client, name)}}`, context);
+    });
+  context.agendaComFormularioPronto_(() => calls.push('first'));
+  context.agendaComFormularioPronto_(() => calls.push('second'));
+  assert.deepEqual(calls, ['blocked', 'fallback', 'blocked', 'fallback']);
+  context._agendaDados = validAgendaReferenceData();
+  context._agendaReferenceDataConfirmed = true;
+  context.agendaLiberarFilaFormulario_();
+  assert.deepEqual(calls, ['blocked', 'fallback', 'blocked', 'fallback', 'second']);
+});
+
+test('criacao, edicao, link direto e outros modulos passam pela prontidao central', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const pending = readProjectFile('IndexPendenciasScripts.html');
+  const transport = readProjectFile('TransporteApp.html');
+  assert.match(functionBody(client, 'toggleAgendaCreate'), /agendaComFormularioPronto_\(function\(\)/);
+  assert.match(functionBody(client, 'abrirAgendaCreatePanelNovo'), /agendaComFormularioPronto_\(agendaAbrirCreatePanelNovoPronto_\)/);
+  assert.match(functionBody(client, 'abrirAgendaEdicao'), /agendaComFormularioPronto_\(function\(\)/);
+  assert.match(functionBody(client, 'abrirAgendaEdicaoComRegistro_'), /agendaComFormularioPronto_\(function\(\)/);
+  assert.match(functionBody(client, 'agendaAbrirPendenteAposCarga'), /abrirAgendaEdicao\(id\)/);
+  assert.match(pending, /abrirAgendaEdicao\(agendaId\)/);
+  assert.match(transport, /openerWin\.abrirAgendaRegistroPorId\(agendaId\)/);
+});
+
+test('fallback do formulario usa carga completa, legado validado e somente codigos permitidos', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const fallback = functionBody(client, 'agendaFallbackCargaCompleta_');
+  const legacy = functionBody(client, 'agendaCarregarFormDataLegado_');
+  assert.match(fallback, /forceLegacyFull: true/);
+  assert.match(fallback, /agendaCarregarFormDataLegado_\(\{ fallbackAttempt: true \}\)/);
+  assert.match(legacy, /agendaReferenceDataValidation_\(d\)/);
+  assert.match(legacy, /validation\.ok && applyAgendaFormData\(d\)/);
+  assert.match(legacy, /if \(!options\.fallbackAttempt\) agendaFallbackCargaCompleta_/);
+  assert.match(legacy, /\.getDadosFormularioAgenda\(true\)/);
+
+  const strictCalls = [];
+  const strictServer = agendaServer({
+    Utilities: { formatDate: () => '20260804' },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  strictServer.agendaGetDadosFormularioAgendaCached_ = (key, forceRefresh, strict) => {
+    strictCalls.push({ key, forceRefresh, strict });
+    return {};
+  };
+  strictServer.getDadosFormularioAgenda();
+  strictServer.getDadosFormularioAgenda(true);
+  assert.deepEqual(strictCalls, [
+    { key: 'AgendaFormData:v7:20260804', forceRefresh: false, strict: false },
+    { key: 'AgendaFormDataStrict:v1:20260804', forceRefresh: false, strict: true }
+  ]);
+  assert.match(functionBody(readProjectFile('WebApp.gs'), 'getAppBootstrapData'), /getDadosFormularioAgenda\(true\)/);
+
+  const logs = [];
+  const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
+  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
+  assert.equal(server.agendaWindowFallbackLog('truncated'), true);
+  assert.equal(server.agendaWindowFallbackLog('segredo-nao-permitido'), true);
+  assert.deepEqual(logs.map((message) => JSON.parse(message.replace(/^\[CODEX_AGENDA_FALLBACK\]\s*/, '')).code), [
+    'truncated',
+    'invalid_payload'
+  ]);
+  assert.equal(logs.some((message) => message.includes('segredo-nao-permitido')), false);
 });
 
 test('validacao distingue listas vazias validas de datasets ausentes ou com falha', () => {
@@ -618,9 +722,11 @@ test('instrumentacao registra somente metadados e relanca a falha original', () 
 test('edicao usa o registro por ID, carrega contexto operacional e revalida em segundo plano', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const open = functionBody(client, 'abrirAgendaEdicao');
+  const readyOpen = functionBody(client, 'agendaAbrirEdicaoPronta_');
   assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
-  assert.match(open, /agendaFindEventoLocal_\(id, rowIndex\)/);
-  assert.match(open, /agendaFetchEventoPorId_\(id, rowIndex/);
+  assert.match(open, /agendaComFormularioPronto_/);
+  assert.match(readyOpen, /agendaFindEventoLocal_\(id, rowIndex\)/);
+  assert.match(readyOpen, /agendaFetchEventoPorId_\(id, rowIndex/);
   assert.match(client, /function agendaAbrirEdicaoResolvida_\(r, id\)/);
   assert.match(client, /agendaLoadPeriodoOperacional_\(r/);
   assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
