@@ -212,6 +212,62 @@ test('janela aceita mais de 200 eventos e mantem teto equivalente ao caminho leg
   assert.equal(result.truncated, false);
 });
 
+test('comparacao administrativa confirma IDs e campos sem expor o payload', () => {
+  const logs = [];
+  const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
+  const rows = [
+    agendaRow(server, { id: 'EVT-SIGILOSO-1', data: '2026-07-15', participante: 'Pessoa sigilosa', idParticipante: 'P-1', braco: 'A' }),
+    agendaRow(server, { id: 'EVT-SIGILOSO-2', data: '2026-08-15', participante: 'Outra pessoa', idParticipante: 'P-2', braco: 'B' })
+  ];
+  let authorized = 0;
+  server.codexAssertAdmin_ = () => { authorized += 1; return { ok: true, role: 'admin' }; };
+  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows);
+  server.getCodexSheetDataByName_ = () => [[]];
+
+  const result = server.compararAgendaWindowComCargaCompleta('2026-07-14', '2026-07-21');
+
+  assert.equal(authorized, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.windowCount, 1);
+  assert.equal(result.fullFilteredCount, 1);
+  assert.equal(result.idsEqual, true);
+  assert.equal(result.criticalFieldsEqual, true);
+  assert.equal(result.windowTruncated, false);
+  assert.equal(result.legacyTruncated, false);
+  assert.equal(typeof result.durationMs.window, 'number');
+  const serialized = JSON.stringify({ result, logs });
+  assert.doesNotMatch(serialized, /2026-07|EVT-SIGILOSO|Pessoa sigilosa|Outra pessoa|P-1/);
+});
+
+test('comparacao administrativa detecta evento ou campo divergente e preserva falhas', () => {
+  const logs = [];
+  const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
+  server.codexAssertAdmin_ = () => ({ ok: true, role: 'admin' });
+  server.agendaGetEventosPorPeriodo_ = () => ({
+    items: [{ id: 'MESMO-ID', status: 'Cancelado' }, { id: 'EXTRA', status: 'Agendado' }],
+    total: 2,
+    truncated: false,
+    outOfOrder: false
+  });
+  server.getAgendaEventos = () => [{ id: 'MESMO-ID', dataIso: '2026-07-15', status: 'Agendado' }];
+  server.getAgendaSheet_ = () => ({ getLastRow: () => 2 });
+
+  const result = server.compararAgendaWindowComCargaCompleta('2026-07-14', '2026-07-21');
+  assert.equal(result.ok, false);
+  assert.equal(result.idsEqual, false);
+  assert.equal(result.criticalFieldsEqual, false);
+  assert.equal(result.extraCount, 1);
+  assert.equal(result.criticalMismatchCount, 1);
+
+  server.agendaGetEventosPorPeriodo_ = () => { throw new Error('falha original'); };
+  assert.throws(
+    () => server.compararAgendaWindowComCargaCompleta('2026-07-14', '2026-07-21'),
+    /falha original/
+  );
+  assert.match(logs.at(-1), /"success":false/);
+  assert.doesNotMatch(logs.at(-1), /falha original|2026-07/);
+});
+
 test('bootstrap negado interrompe antes de datas, referencias e planilhas', () => {
   const logs = [];
   const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });

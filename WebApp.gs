@@ -9120,6 +9120,124 @@ function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
   return agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, null);
 }
 
+function agendaComparisonCanonicalize_(value) {
+  if (Array.isArray(value)) return value.map(agendaComparisonCanonicalize_);
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce(function(out, key) {
+      out[key] = agendaComparisonCanonicalize_(value[key]);
+      return out;
+    }, {});
+  }
+  return value;
+}
+
+function agendaComparisonHash_(value) {
+  var input = JSON.stringify(agendaComparisonCanonicalize_(value));
+  var hash = 2166136261;
+  for (var i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+}
+
+function agendaComparisonBuckets_(items) {
+  return (items || []).reduce(function(buckets, item) {
+    var id = String(item && item.id || '');
+    if (!buckets[id]) buckets[id] = [];
+    buckets[id].push(agendaComparisonHash_(item));
+    return buckets;
+  }, {});
+}
+
+function agendaCompareEventCollections_(windowItems, fullItems) {
+  var windowBuckets = agendaComparisonBuckets_(windowItems);
+  var fullBuckets = agendaComparisonBuckets_(fullItems);
+  var keys = Object.keys(windowBuckets).concat(Object.keys(fullBuckets)).filter(function(key, index, all) {
+    return all.indexOf(key) === index;
+  });
+  var missingCount = 0;
+  var extraCount = 0;
+  var criticalMismatchCount = 0;
+  var duplicateIdCount = 0;
+  keys.forEach(function(key) {
+    var windowHashes = (windowBuckets[key] || []).slice().sort();
+    var fullHashes = (fullBuckets[key] || []).slice().sort();
+    if (windowHashes.length > 1 || fullHashes.length > 1) duplicateIdCount++;
+    if (fullHashes.length > windowHashes.length) missingCount += fullHashes.length - windowHashes.length;
+    if (windowHashes.length > fullHashes.length) extraCount += windowHashes.length - fullHashes.length;
+    var paired = Math.min(windowHashes.length, fullHashes.length);
+    for (var i = 0; i < paired; i++) {
+      if (windowHashes[i] !== fullHashes[i]) criticalMismatchCount++;
+    }
+  });
+  return {
+    idsEqual: missingCount === 0 && extraCount === 0,
+    criticalFieldsEqual: missingCount === 0 && extraCount === 0 && criticalMismatchCount === 0,
+    missingCount: missingCount,
+    extraCount: extraCount,
+    criticalMismatchCount: criticalMismatchCount,
+    duplicateIdCount: duplicateIdCount
+  };
+}
+
+function compararAgendaWindowComCargaCompleta(inicioIso, fimIso) {
+  codexAssertAdmin_();
+  var startedAt = Date.now();
+  var result;
+  try {
+    var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
+    var fim = agendaParseIsoBoundary_(fimIso, 'fim');
+    var rangeDays = (fim.getTime() - inicio.getTime()) / 86400000;
+    if (rangeDays <= 0 || rangeDays > 31) throw new Error('Periodo da Agenda invalido.');
+
+    var windowStartedAt = Date.now();
+    var windowData = agendaGetEventosPorPeriodo_(inicioIso, fimIso, AGENDA_WINDOW_MAX_RECORDS_, true, null);
+    var windowDurationMs = Date.now() - windowStartedAt;
+
+    var fullStartedAt = Date.now();
+    var fullEvents = getAgendaEventos(AGENDA_WINDOW_MAX_RECORDS_);
+    var fullDurationMs = Date.now() - fullStartedAt;
+    var fullFiltered = fullEvents.filter(function(item) {
+      return item && item.dataIso >= inicioIso && item.dataIso < fimIso;
+    });
+    var sourceRows = Math.max(0, getAgendaSheet_().getLastRow() - 1);
+    var legacyTruncated = sourceRows > AGENDA_WINDOW_MAX_RECORDS_;
+    var comparison = agendaCompareEventCollections_(windowData.items, fullFiltered);
+    result = {
+      ok: !windowData.truncated && !legacyTruncated && comparison.idsEqual && comparison.criticalFieldsEqual,
+      rangeDays: rangeDays,
+      windowCount: windowData.items.length,
+      windowTotal: windowData.total,
+      fullFilteredCount: fullFiltered.length,
+      fullReadCount: fullEvents.length,
+      windowTruncated: !!windowData.truncated,
+      legacyTruncated: legacyTruncated,
+      outOfOrder: !!windowData.outOfOrder,
+      idsEqual: comparison.idsEqual,
+      criticalFieldsEqual: comparison.criticalFieldsEqual,
+      missingCount: comparison.missingCount,
+      extraCount: comparison.extraCount,
+      criticalMismatchCount: comparison.criticalMismatchCount,
+      duplicateIdCount: comparison.duplicateIdCount,
+      durationMs: {
+        window: windowDurationMs,
+        full: fullDurationMs,
+        total: Date.now() - startedAt
+      }
+    };
+    Logger.log('[CODEX_AGENDA_COMPARE] ' + JSON.stringify(result));
+    return result;
+  } catch (error) {
+    Logger.log('[CODEX_AGENDA_COMPARE] ' + JSON.stringify({
+      ok: false,
+      success: false,
+      durationMs: Date.now() - startedAt
+    }));
+    throw error;
+  }
+}
+
 function agendaValidateReferenceData_(referenceData) {
   if (!referenceData || typeof referenceData !== 'object' || Array.isArray(referenceData)) {
     throw new Error('Dados de referencia da Agenda invalidos.');
