@@ -626,6 +626,21 @@
       return false;
     }
 
+    function refreshAgendaInOpener() {
+      try {
+        if (!transportAgendaContext().id) return false;
+        var openerWin = window.opener;
+        if (!openerWin || openerWin.closed) return false;
+        if (typeof openerWin.recarregarAgendaJanelaAtual === 'function') {
+          openerWin.recarregarAgendaJanelaAtual();
+          return true;
+        }
+      } catch (e) {
+        return false;
+      }
+      return false;
+    }
+
     function openAgendaFromTransport() {
       var ctx = transportAgendaContext();
       if (!ctx.id) {
@@ -1593,6 +1608,7 @@
         if (state) state.registro = Object.assign({}, state.registro || {}, payload);
         transportClearUnsaved();
         renderAll();
+        refreshAgendaInOpener();
         setButtonLabel('btnSaveTransport', 'Salvo');
         setTimeout(function() { setButtonLabel('btnSaveTransport', 'Salvar'); }, 1400);
       }, 'Salvando...');
@@ -1609,6 +1625,7 @@
         .withSuccessHandler(function(data) {
           var syncMsg = agendaSyncMessage(data, '');
           if (syncMsg && agendaSyncMessageType(data) === 'warn') toast(syncMsg, 'warn');
+          refreshAgendaInOpener();
           if (data && data.registro && data.options) {
             state = data;
             renderAll({ skipCe: true });
@@ -1651,6 +1668,7 @@
       serverCall('sincronizarTransporte', [], 'Dependências sincronizadas.', function(data) {
         state = data || state;
         renderAll();
+        refreshAgendaInOpener();
       }, 'Sincronizando dependencias...');
     }
 
