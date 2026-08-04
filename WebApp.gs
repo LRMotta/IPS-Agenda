@@ -172,6 +172,20 @@ function agendaWindowedLoadingV2GlobalEnabled_() {
   return String(configured).trim().toLowerCase() === 'true';
 }
 
+function ativarAgendaWindowedLoadingV2Admin() {
+  codexAssertAdmin_();
+  PropertiesService.getScriptProperties().setProperty('AGENDA_WINDOWED_LOADING_V2', 'true');
+  Logger.log('[CODEX_AGENDA_CANARY] ' + JSON.stringify({ operation: 'activate', success: true, adminOnly: true }));
+  return { globalEnabled: true, adminOnly: true };
+}
+
+function desativarAgendaWindowedLoadingV2Admin() {
+  codexAssertAdmin_();
+  PropertiesService.getScriptProperties().setProperty('AGENDA_WINDOWED_LOADING_V2', 'false');
+  Logger.log('[CODEX_AGENDA_CANARY] ' + JSON.stringify({ operation: 'deactivate', success: true, adminOnly: true }));
+  return { globalEnabled: false, adminOnly: true };
+}
+
 function agendaWindowedLoadingV2EnabledForAccess_(access) {
   return agendaWindowedLoadingV2GlobalEnabled_() && !!access && access.ok === true && access.role === 'admin';
 }
