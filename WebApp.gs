@@ -159,9 +159,28 @@ function getWebAppUrl() {
   return ScriptApp.getService().getUrl();
 }
 
+var AGENDA_WINDOWED_LOADING_V2 = false;
+
+function agendaWindowedLoadingV2GlobalEnabled_() {
+  var configured = '';
+  try {
+    configured = PropertiesService.getScriptProperties().getProperty('AGENDA_WINDOWED_LOADING_V2');
+  } catch (e) {
+    configured = '';
+  }
+  if (configured === null || String(configured).trim() === '') return AGENDA_WINDOWED_LOADING_V2 === true;
+  return String(configured).trim().toLowerCase() === 'true';
+}
+
+function agendaWindowedLoadingV2EnabledForAccess_(access) {
+  return agendaWindowedLoadingV2GlobalEnabled_() && !!access && access.ok === true && access.role === 'admin';
+}
+
 function getAppBootstrapData() {
+  var access = codexGetCurrentUserAccess();
+  var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
   var out = {
-    access: codexGetCurrentUserAccess(),
+    access: access,
     auth: codexGetUserOAuthStatus_(),
     appVersion: codexGetAppVersion_(),
     webAppUrl: '',
@@ -169,15 +188,20 @@ function getAppBootstrapData() {
     teamBirthdays: [],
     errors: {}
   };
+  if (agendaWindowedLoadingEnabled) {
+    out.features = { agendaWindowedLoadingV2: true };
+  }
   try {
     out.webAppUrl = ScriptApp.getService().getUrl();
   } catch (e1) {
     out.errors.webAppUrl = e1.message || String(e1);
   }
-  try {
-    out.agendaFormData = getDadosFormularioAgenda();
-  } catch (e2) {
-    out.errors.agendaFormData = e2.message || String(e2);
+  if (!agendaWindowedLoadingEnabled) {
+    try {
+      out.agendaFormData = getDadosFormularioAgenda();
+    } catch (e2) {
+      out.errors.agendaFormData = e2.message || String(e2);
+    }
   }
   try {
     if (out.access && out.access.ok) out.teamBirthdays = codexGetTeamBirthdays_();
@@ -1431,6 +1455,7 @@ var CODEX_SHEET_DATA_CACHE_ = {};
 var CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
 var CODEX_LAB_CENTRAL_CACHE_ = null;
 var CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+var CODEX_CACHE_BYPASS_READS_ = false;
 var CODEX_CACHE_TTL_SECONDS_ = 300;
 
 function getCodexSpreadsheet_() {
@@ -1456,6 +1481,7 @@ function clearCodexRuntimeCaches_() {
 }
 
 function codexCacheGet_(key) {
+  if (CODEX_CACHE_BYPASS_READS_) return null;
   try {
     var raw = CacheService.getScriptCache().get(key);
     return raw ? JSON.parse(raw) : null;
@@ -1499,7 +1525,7 @@ function getCodexSheetDataFromSheet_(sh) {
   var lastCol = sh.getLastColumn();
   if (!lastRow || !lastCol) return [];
   var key = sh.getSheetId() + ':' + lastRow + ':' + lastCol;
-  if (!CODEX_SHEET_DATA_CACHE_[key]) {
+  if (CODEX_CACHE_BYPASS_READS_ || !CODEX_SHEET_DATA_CACHE_[key]) {
     CODEX_SHEET_DATA_CACHE_[key] = sh.getDataRange().getValues();
   }
   return CODEX_SHEET_DATA_CACHE_[key];
@@ -1538,7 +1564,7 @@ function getSheetByPossibleNames_(ss, names) {
 }
 
 function readConfigAppRows_() {
-  if (CODEX_CONFIG_APP_ROWS_CACHE_) return CODEX_CONFIG_APP_ROWS_CACHE_;
+  if (CODEX_CONFIG_APP_ROWS_CACHE_ && !CODEX_CACHE_BYPASS_READS_) return CODEX_CONFIG_APP_ROWS_CACHE_;
   var cached = codexCacheGet_('ConfigAppRows:v2');
   if (cached) {
     CODEX_CONFIG_APP_ROWS_CACHE_ = cached;
@@ -6487,7 +6513,7 @@ function getAgendaLaboratorios_() {
 }
 
 function getAgendaCourierRows_() {
-  if (CODEX_AGENDA_COURIER_ROWS_CACHE_) return CODEX_AGENDA_COURIER_ROWS_CACHE_;
+  if (CODEX_AGENDA_COURIER_ROWS_CACHE_ && !CODEX_CACHE_BYPASS_READS_) return CODEX_AGENDA_COURIER_ROWS_CACHE_;
   var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), ['Courier', 'Couriers']);
   var lastRow = sh ? sh.getLastRow() : 0;
   if (!sh || lastRow < 2) {
@@ -6558,7 +6584,7 @@ function getAgendaCouriers_() {
   );
 }
 
-function getAgendaCourierConfigs_() {
+function getAgendaCourierConfigs_(strict) {
   var out = {};
   var courierRows = getAgendaCourierRows_();
   if (courierRows.length) {
@@ -6595,7 +6621,9 @@ function getAgendaCourierConfigs_() {
       if (m) out[key].unidade = String(m[1]).toUpperCase() === 'L' ? 'L' : 'mL';
       out[key].conversionRequired = out[key].unidade === 'L';
     });
-  } catch(e) {}
+  } catch(e) {
+    if (strict) throw e;
+  }
   return out;
 }
 
@@ -6635,7 +6663,7 @@ function getAgendaProcedimentoChips_() {
   return out;
 }
 
-function getAgendaLabDestinos_() {
+function getAgendaLabDestinos_(strict) {
   var seen = {};
   try {
     return getLabCentral().map(function(lab) {
@@ -6649,14 +6677,15 @@ function getAgendaLabDestinos_() {
       return a.localeCompare(b);
     });
   } catch (e) {
+    if (strict) throw e;
     Logger.log('getAgendaLabDestinos_: nao foi possivel carregar LabCentral: ' + e.message);
     return [];
   }
 }
 
-function getAgendaKitsEstoque_() {
+function getAgendaKitsEstoque_(strict) {
   try {
-    if (CODEX_AGENDA_KITS_ESTOQUE_CACHE_) return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
+    if (CODEX_AGENDA_KITS_ESTOQUE_CACHE_ && !CODEX_CACHE_BYPASS_READS_) return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
     var itens = getEstoque() || [];
     var seen = {};
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = itens.filter(function(it) {
@@ -6690,19 +6719,21 @@ function getAgendaKitsEstoque_() {
     }).sort(function(a, b) { return a.label.localeCompare(b.label); });
     return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
   } catch(e) {
+    if (strict) throw e;
     return [];
   }
 }
 
-function getDadosFormularioAgenda() {
-  var cacheKey = 'AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
-  var cached = codexCacheGet_(cacheKey);
-  if (cached) return cached;
+function agendaBuildDadosFormularioAgenda_(strict) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   function listaColB(nomesAba) {
     var sh = getSheetByPossibleNames_(ss, nomesAba);
     var lastRow = sh ? sh.getLastRow() : 0;
-    if (!sh || lastRow < 2) return [];
+    if (!sh) {
+      if (strict) throw new Error('Dataset obrigatorio da Agenda indisponivel.');
+      return [];
+    }
+    if (lastRow < 2) return [];
     return sh.getRange(2, 2, lastRow - 1, 1).getValues()
       .map(function(r) { return String(r[0] || '').trim(); })
       .filter(Boolean)
@@ -6712,6 +6743,9 @@ function getDadosFormularioAgenda() {
   var hojeIso = hoje.getFullYear() + '-' +
     ('0' + (hoje.getMonth() + 1)).slice(-2) + '-' +
     ('0' + hoje.getDate()).slice(-2);
+  if (strict && !getSheetByPossibleNames_(ss, ['Projetos'])) {
+    throw new Error('Dataset obrigatorio da Agenda indisponivel: projetos.');
+  }
   var result = {
     participantes: listaColB(['Participantes']),
     medicos: listaColB(['\uD83E\uDE7A M\u00E9dicos', 'Medicos', 'M\u00E9dicos']),
@@ -6719,11 +6753,11 @@ function getDadosFormularioAgenda() {
     projetos: getProjetoOptions_(),
     laboratorios: getAgendaLaboratorios_(),
     couriers: getAgendaCouriers_(),
-    courierConfig: getAgendaCourierConfigs_(),
+    courierConfig: getAgendaCourierConfigs_(strict),
     temperaturas: getAgendaTemperaturas_(),
     statusCourier: getAgendaCourierStatuses_(),
-    laboratoriosDestino: getAgendaLabDestinos_(),
-    kitsColeta: getAgendaKitsEstoque_(),
+    laboratoriosDestino: getAgendaLabDestinos_(strict),
+    kitsColeta: getAgendaKitsEstoque_(strict),
     tiposEvento: getAgendaEventTypes_(),
     salasMonitoria: getAgendaMonitoriaSalas_(),
     status: getAgendaStatuses_(),
@@ -6732,8 +6766,20 @@ function getDadosFormularioAgenda() {
     emailLabAtivo: agendaEmailEnabled_(),
     hojeIso: hojeIso
   };
+  return result;
+}
+
+function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
+  var cached = forceRefresh ? null : codexCacheGet_(cacheKey);
+  if (cached) return cached;
+  var result = agendaBuildDadosFormularioAgenda_(strict);
   codexCachePut_(cacheKey, result);
   return result;
+}
+
+function getDadosFormularioAgenda() {
+  var cacheKey = 'AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
 }
 
 function getInfoParticipante(nome) {
@@ -8962,45 +9008,232 @@ function getAgendaEventos(limite) {
   });
 }
 
-function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
-  var sh = getAgendaSheet_();
-  var lastRow = sh.getLastRow();
+var AGENDA_WINDOW_MAX_RECORDS_ = 5000;
+
+function agendaMeasureWindowStage_(measureStage, stage, metadata, callback) {
+  return measureStage ? measureStage(stage, metadata, callback) : callback();
+}
+
+function agendaWindowResultIsValid_(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value) &&
+    Array.isArray(value.items) && typeof value.total === 'number' && value.total >= value.items.length &&
+    typeof value.truncated === 'boolean';
+}
+
+function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage) {
   var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
   if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
   if ((fim.getTime() - inicio.getTime()) / 86400000 > 31) throw new Error('O periodo visivel nao pode exceder 31 dias.');
-  var max = Math.max(1, Math.min(Number(limite || 150), 200));
-  if (lastRow < 2) return { items: [], total: 0, truncated: false };
-  var cacheKey = ['AgendaWindow:v1', lastRow, inicioIso, fimIso, max].join(':');
-  if (!ignorarCache) {
-    var cached = agendaWindowCacheGet_(cacheKey);
-    if (cached) return cached;
-  }
-  var datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues();
-  var firstOffset = -1;
-  var total = 0;
-  for (var d = 0; d < datas.length; d++) {
-    var data = parseAgendaDateAny_(datas[d][0]);
-    if (!data || isNaN(data.getTime())) continue;
-    data.setHours(0, 0, 0, 0);
-    if (data.getTime() >= inicio.getTime() && data.getTime() < fim.getTime()) {
-      if (firstOffset < 0) firstOffset = d;
-      total++;
-    } else if (firstOffset >= 0 && data.getTime() >= fim.getTime()) {
-      break;
+  var requestedLimit = Number(limite || 150);
+  if (!isFinite(requestedLimit)) requestedLimit = 150;
+  var max = Math.max(1, Math.min(Math.floor(requestedLimit), AGENDA_WINDOW_MAX_RECORDS_));
+  var sh = getAgendaSheet_();
+  var lastRow = sh.getLastRow();
+  var cacheKey = ['AgendaWindow:v2', lastRow, inicioIso, fimIso, max].join(':');
+  var scanMeta = { rowCount: Math.max(0, lastRow - 1) };
+  var scan = agendaMeasureWindowStage_(measureStage, 'date_scan', scanMeta, function() {
+    var cached = ignorarCache ? null : agendaWindowCacheGet_(cacheKey);
+    if (cached && !agendaWindowResultIsValid_(cached)) cached = null;
+    if (cached) return { cached: cached };
+    if (lastRow < 2) return { segments: [], total: 0, outOfOrder: false };
+    var datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues();
+    var offsets = [];
+    for (var d = 0; d < datas.length; d++) {
+      var data = parseAgendaDateAny_(datas[d][0]);
+      if (!data || isNaN(data.getTime())) continue;
+      data.setHours(0, 0, 0, 0);
+      if (data.getTime() >= inicio.getTime() && data.getTime() < fim.getTime()) offsets.push(d);
     }
-  }
-  if (firstOffset < 0) {
-    var emptyResult = { items: [], total: 0, truncated: false };
-    agendaWindowCachePut_(cacheKey, emptyResult);
-    return emptyResult;
-  }
-  var count = Math.min(total, max);
-  var start = firstOffset + 2;
-  var vals = sh.getRange(start, 1, count, AGENDA_CFG.lastCol).getValues();
-  var result = { items: agendaRowsToObjects_(vals, start), total: total, truncated: total > count };
-  agendaWindowCachePut_(cacheKey, result);
+    var segments = [];
+    offsets.forEach(function(offset) {
+      var previous = segments.length ? segments[segments.length - 1] : null;
+      if (previous && previous.lastOffset + 1 === offset) {
+        previous.lastOffset = offset;
+        previous.count++;
+      } else {
+        segments.push({ firstOffset: offset, lastOffset: offset, count: 1 });
+      }
+    });
+    return { segments: segments, total: offsets.length, outOfOrder: segments.length > 1 };
+  });
+
+  var readMeta = { rowCount: scan.cached ? Math.min(scan.cached.items.length, max) : Math.min(scan.total, max) };
+  var rows = agendaMeasureWindowStage_(measureStage, 'row_read', readMeta, function() {
+    if (scan.cached) return { cachedItems: scan.cached.items };
+    var remaining = max;
+    var out = [];
+    (scan.segments || []).forEach(function(segment) {
+      if (remaining <= 0) return;
+      var count = Math.min(segment.count, remaining);
+      var startRow = segment.firstOffset + 2;
+      var values = sh.getRange(startRow, 1, count, AGENDA_CFG.lastCol).getValues();
+      values.forEach(function(row, index) {
+        out.push({ row: row, rowIndex: startRow + index });
+      });
+      remaining -= count;
+    });
+    return { rows: out };
+  });
+
+  var hydrateMeta = { rowCount: readMeta.rowCount };
+  var items = agendaMeasureWindowStage_(measureStage, 'hydrate', hydrateMeta, function() {
+    if (rows.cachedItems) return rows.cachedItems;
+    var hydrated = (rows.rows || []).map(function(entry) {
+      return agendaRowToObject_(entry.row, entry.rowIndex);
+    });
+    agendaHydrateParticipantFields_(hydrated);
+    return hydrated;
+  });
+
+  var result = scan.cached || {
+    items: items,
+    total: scan.total,
+    truncated: scan.total > items.length,
+    outOfOrder: !!scan.outOfOrder
+  };
+  if (!agendaWindowResultIsValid_(result)) throw new Error('Dataset de eventos da Agenda invalido.');
+  if (!scan.cached) agendaWindowCachePut_(cacheKey, result);
   return result;
+}
+
+function getAgendaEventosPorPeriodo(inicioIso, fimIso, limite, ignorarCache) {
+  return agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, null);
+}
+
+function agendaValidateReferenceData_(referenceData) {
+  if (!referenceData || typeof referenceData !== 'object' || Array.isArray(referenceData)) {
+    throw new Error('Dados de referencia da Agenda invalidos.');
+  }
+  var arrayFields = [
+    'participantes', 'medicos', 'prestadores', 'projetos', 'laboratorios', 'couriers',
+    'temperaturas', 'statusCourier', 'laboratoriosDestino', 'kitsColeta', 'tiposEvento',
+    'salasMonitoria', 'status', 'procedimentoChips', 'monitores'
+  ];
+  arrayFields.forEach(function(field) {
+    if (!Object.prototype.hasOwnProperty.call(referenceData, field) || !Array.isArray(referenceData[field])) {
+      throw new Error('Dataset obrigatorio da Agenda invalido: ' + field + '.');
+    }
+  });
+  if (!Object.prototype.hasOwnProperty.call(referenceData, 'courierConfig') ||
+      !referenceData.courierConfig || typeof referenceData.courierConfig !== 'object' ||
+      Array.isArray(referenceData.courierConfig)) {
+    throw new Error('Dataset obrigatorio da Agenda invalido: courierConfig.');
+  }
+  if (typeof referenceData.emailLabAtivo !== 'boolean') {
+    throw new Error('Dataset obrigatorio da Agenda invalido: emailLabAtivo.');
+  }
+  if (typeof referenceData.hojeIso !== 'string') {
+    throw new Error('Dataset obrigatorio da Agenda invalido: hojeIso.');
+  }
+  return referenceData;
+}
+
+function agendaReferenceRowCount_(referenceData) {
+  return Object.keys(referenceData || {}).reduce(function(total, key) {
+    return total + (Array.isArray(referenceData[key]) ? referenceData[key].length : 0);
+  }, 0);
+}
+
+function agendaGetReferenceData_(forceRefresh) {
+  var cacheKey = 'AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  return agendaValidateReferenceData_(
+    agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
+  );
+}
+
+function agendaBootstrapRevision_(referenceData, items, inicioIso, fimIso) {
+  var input = JSON.stringify({
+    range: [inicioIso, fimIso],
+    referenceData: referenceData,
+    events: (items || []).map(function(item) {
+      return [item.rowIndex, item.id, item.recordVersion, item.editRecordVersion];
+    })
+  });
+  var hash = 2166136261;
+  for (var i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return 'agenda-bootstrap-v1-' + ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+}
+
+function agendaDeniedBootstrap_(access) {
+  return {
+    access: access,
+    referenceData: null,
+    events: [],
+    range: null,
+    revision: '',
+    truncated: false,
+    complete: false,
+    partialError: false
+  };
+}
+
+function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_('getAgendaBootstrap', 'total', totalMeta, function() {
+    var accessMeta = { rowCount: 0 };
+    var access = codexMeasurePerformance_('getAgendaBootstrap', 'access', accessMeta, function() {
+      var currentAccess = codexGetCurrentUserAccess();
+      accessMeta.rowCount = currentAccess && currentAccess.ok ? 1 : 0;
+      return currentAccess;
+    });
+    if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
+
+    var refreshRequested = forceRefresh === true;
+    var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
+    CODEX_CACHE_BYPASS_READS_ = refreshRequested;
+    try {
+      var referenceMeta = { rowCount: 0 };
+      var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
+        var data = agendaGetReferenceData_(refreshRequested);
+        referenceMeta.rowCount = agendaReferenceRowCount_(data);
+        return data;
+      });
+      var measureWindow = function(stage, metadata, callback) {
+        return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
+      };
+      var windowData = agendaGetEventosPorPeriodo_(
+        inicioIso,
+        fimIso,
+        AGENDA_WINDOW_MAX_RECORDS_,
+        refreshRequested,
+        measureWindow
+      );
+      totalMeta.rowCount = windowData.items.length;
+      var revision = codexMeasurePerformance_(
+        'getAgendaBootstrap',
+        'revision',
+        { rowCount: windowData.items.length },
+        function() {
+          return agendaBootstrapRevision_(referenceData, windowData.items, inicioIso, fimIso);
+        }
+      );
+      var complete = !windowData.truncated;
+      return {
+        access: access,
+        referenceData: referenceData,
+        events: windowData.items,
+        range: {
+          start: inicioIso,
+          endExclusive: fimIso,
+          loadedStart: complete ? inicioIso : '',
+          loadedEndExclusive: complete ? fimIso : '',
+          total: windowData.total,
+          loaded: windowData.items.length,
+          outOfOrder: !!windowData.outOfOrder
+        },
+        revision: revision,
+        truncated: !!windowData.truncated,
+        complete: complete,
+        partialError: false
+      };
+    } finally {
+      CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
+    }
+  });
 }
 
 function agendaWindowCacheGet_(key) {
@@ -9611,10 +9844,12 @@ function gerarListaDestinatarios_(usuario) {
   }
   if (user) destinatarios.push(user);
 
+  var users = codexGetAllowedUsers_();
   var vistos = {};
   destinatarios = destinatarios.filter(function(email) {
     var key = String(email || '').trim().toLowerCase();
     if (!key || vistos[key]) return false;
+    if (users[key] && !users[key].active) return false;
     vistos[key] = true;
     return true;
   });
@@ -9909,7 +10144,7 @@ function getLabCentralSheet_() {
 }
 
 function getLabCentral() {
-  if (CODEX_LAB_CENTRAL_CACHE_) return CODEX_LAB_CENTRAL_CACHE_;
+  if (CODEX_LAB_CENTRAL_CACHE_ && !CODEX_CACHE_BYPASS_READS_) return CODEX_LAB_CENTRAL_CACHE_;
   var sh = getLabCentralSheet_();
   var lastRow = sh ? sh.getLastRow() : 0;
   if (!sh || lastRow < 2) {

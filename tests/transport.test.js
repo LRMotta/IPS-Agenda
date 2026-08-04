@@ -443,6 +443,15 @@ test('geracao do PDF revalida a identificacao atual do participante', () => {
   assert.match(block, /identificacaoParticipante: payloadFallback\.identificacaoParticipante \|\| payloadFallback\.idParticipante \|\| ''/);
 });
 
+test('PDF de Transporte usa margens laterais de 0.25 polegada e ajuste a largura', () => {
+  const server = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(server, 'function imprimirTodasAbas(', 'function transporteOcasaNeedsProforma_(');
+
+  assert.match(block, /'fitw=true'/);
+  assert.match(block, /'left_margin=0\.25'/);
+  assert.match(block, /'right_margin=0\.25'/);
+});
+
 test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const summary = sourceBetween(source, 'function transportePinexSampleSummary_(', 'function atualizarCommercialInvoicePinexB34_(');

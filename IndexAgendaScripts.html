@@ -12,6 +12,8 @@
   var _agendaFormDataRefreshPending = false;
   var _agendaEventosTruncated = false;
   var _agendaEventosRequestId = 0;
+  var _agendaWindowedLoadingDisabledForSession = false;
+  var _agendaWindowedRange = null;
   var _agendaHistoricoEventos = [];
   var _agendaHistoricoQuery = '';
   var _agendaHistoricoNextCursor = null;
@@ -221,6 +223,11 @@
       applyAgendaFormData(window.APP_BOOTSTRAP_DATA.agendaFormData);
       return;
     }
+    if (agendaWindowedLoadingAtivo_()) return;
+    agendaCarregarFormDataLegado_();
+  }
+
+  function agendaCarregarFormDataLegado_() {
     google.script.run
       .withSuccessHandler(applyAgendaFormData)
       .withFailureHandler(function(e) {
@@ -3126,8 +3133,119 @@
   }
   window.abrirAgendaRegistroPorId = abrirAgendaRegistroPorId;
 
+  function agendaWindowedLoadingAtivo_() {
+    var features = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.features;
+    return !_agendaWindowedLoadingDisabledForSession && !!features && features.agendaWindowedLoadingV2 === true;
+  }
+
+  function agendaWindowForWeekOffset_(weekOffset) {
+    var weekStart = agendaWeekStartForOffset_(weekOffset);
+    var start = new Date(weekStart);
+    var endExclusive = new Date(weekStart);
+    start.setDate(start.getDate() - 7);
+    endExclusive.setDate(endExclusive.getDate() + 14);
+    return { start: agendaIso(start), endExclusive: agendaIso(endExclusive) };
+  }
+
+  function agendaWindowContainsWeekOffset_(weekOffset) {
+    if (!_agendaWindowedRange) return false;
+    var weekStart = agendaWeekStartForOffset_(weekOffset);
+    var weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    return agendaIso(weekStart) >= _agendaWindowedRange.start &&
+      agendaIso(weekEnd) <= _agendaWindowedRange.endExclusive;
+  }
+
+  function agendaBootstrapReferenceDataValido_(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+    var arrays = [
+      'participantes','medicos','prestadores','projetos','laboratorios','couriers',
+      'temperaturas','statusCourier','laboratoriosDestino','kitsColeta','tiposEvento',
+      'salasMonitoria','status','procedimentoChips','monitores'
+    ];
+    if (!arrays.every(function(field) { return Array.isArray(data[field]); })) return false;
+    return !!data.courierConfig && typeof data.courierConfig === 'object' && !Array.isArray(data.courierConfig) &&
+      typeof data.emailLabAtivo === 'boolean' && typeof data.hojeIso === 'string';
+  }
+
+  function agendaBootstrapWindowValido_(response, requestedRange) {
+    var range = response && response.range;
+    return !!response && !!response.access && response.access.ok === true &&
+      agendaBootstrapReferenceDataValido_(response.referenceData) && Array.isArray(response.events) &&
+      response.complete === true && response.truncated === false && response.partialError === false &&
+      typeof response.revision === 'string' && !!response.revision && !!range &&
+      range.start === requestedRange.start && range.endExclusive === requestedRange.endExclusive &&
+      range.loadedStart === requestedRange.start && range.loadedEndExclusive === requestedRange.endExclusive &&
+      typeof range.total === 'number' && typeof range.loaded === 'number' &&
+      range.loaded === response.events.length && range.total === response.events.length;
+  }
+
+  function agendaAplicarEventos_(rows) {
+    _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
+      return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
+    });
+    _agendaEventosPorId = {};
+    _agendaEventos.forEach(agendaStoreEventoLocal_);
+    setAgendaEventosLoadedAtState(Date.now());
+    agendaMatBioUpdateAllCopyOptions();
+  }
+
+  function agendaFallbackCargaCompleta_(callback, options) {
+    _agendaWindowedLoadingDisabledForSession = true;
+    _agendaWindowedRange = null;
+    _agendaEventosRequestId++;
+    if (!_agendaDados) agendaCarregarFormDataLegado_();
+    var fallbackOptions = {
+      silent: _agendaEventos.length > 0 || !!(options && options.silent),
+      forceLegacyFull: true,
+      onComplete: options && options.onComplete
+    };
+    carregarAgendaEventos(true, callback, fallbackOptions);
+  }
+
+  function carregarAgendaEventosPorJanela_(forcar, callback, options) {
+    options = options || {};
+    var lista = document.getElementById('agendaViewLista');
+    if (lista && !_agendaEventos.length && !options.silent) {
+      lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
+    }
+    agendaUpdatePeriod();
+    var targetWeekOffset = Number(options.targetWeekOffset == null ? _agendaWeekOffset : options.targetWeekOffset);
+    var requestedRange = agendaWindowForWeekOffset_(targetWeekOffset);
+    var requestId = ++_agendaEventosRequestId;
+    google.script.run
+      .withSuccessHandler(function(response) {
+        if (requestId !== _agendaEventosRequestId) {
+          if (typeof options.onComplete === 'function') options.onComplete();
+          return;
+        }
+        if (!agendaBootstrapWindowValido_(response, requestedRange)) {
+          agendaFallbackCargaCompleta_(callback, options);
+          return;
+        }
+        applyAgendaFormData(response.referenceData);
+        agendaAplicarEventos_(response.events);
+        _agendaWindowedRange = requestedRange;
+        renderAgendaOperacional();
+        if (typeof callback === 'function') callback();
+        if (typeof options.onComplete === 'function') options.onComplete();
+      })
+      .withFailureHandler(function() {
+        if (requestId !== _agendaEventosRequestId) {
+          if (typeof options.onComplete === 'function') options.onComplete();
+          return;
+        }
+        agendaFallbackCargaCompleta_(callback, options);
+      })
+      .getAgendaBootstrap(requestedRange.start, requestedRange.endExclusive, forcar === true);
+  }
+
   function carregarAgendaEventos(forcar, callback, options) {
     options = options || {};
+    if (!options.forceLegacyFull && agendaWindowedLoadingAtivo_()) {
+      carregarAgendaEventosPorJanela_(forcar, callback, options);
+      return;
+    }
     var lista = document.getElementById('agendaViewLista');
     if (lista && !options.silent) lista.innerHTML = '<div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div>';
     agendaUpdatePeriod();
@@ -3140,13 +3258,7 @@
     }
     google.script.run
       .withSuccessHandler(function(rows) {
-        _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
-          return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
-        });
-        _agendaEventosPorId = {};
-        _agendaEventos.forEach(agendaStoreEventoLocal_);
-        setAgendaEventosLoadedAtState(Date.now());
-        agendaMatBioUpdateAllCopyOptions();
+        agendaAplicarEventos_(rows);
         renderAgendaOperacional();
         finalizarSucesso();
       })
@@ -3787,16 +3899,13 @@
   }
 
   function agendaNavWeek(delta) {
-    _agendaWeekOffset += Number(delta || 0);
-    renderAgendaOperacional();
+    agendaNavigateToWeekOffset_(_agendaWeekOffset + Number(delta || 0));
   }
 
   function agendaGoToday() {
-    _agendaWeekOffset = 0;
     var input = document.getElementById('agendaGoDateInput');
     if (input) input.value = agendaIso(new Date());
-    renderAgendaOperacional();
-    setTimeout(agendaScrollToToday, 0);
+    agendaNavigateToWeekOffset_(0, agendaScrollToToday);
   }
 
   function agendaScrollToToday() {
@@ -3814,9 +3923,8 @@
     target.setDate(target.getDate() + (targetDay === 0 ? -6 : 1 - targetDay));
     var baseUtc = Date.UTC(base.getFullYear(), base.getMonth(), base.getDate());
     var targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
-    _agendaWeekOffset = Math.round((targetUtc - baseUtc) / 604800000);
-    renderAgendaOperacional();
-    setTimeout(function() { agendaScrollToDate(iso); }, 0);
+    var targetWeekOffset = Math.round((targetUtc - baseUtc) / 604800000);
+    agendaNavigateToWeekOffset_(targetWeekOffset, function() { agendaScrollToDate(iso); });
   }
 
   function agendaScrollToDate(iso) {
@@ -3843,13 +3951,35 @@
     else renderAgendaLista();
   }
 
-  function agendaWeekStart() {
+  function agendaNavigateToWeekOffset_(targetWeekOffset, afterRender) {
+    targetWeekOffset = Number(targetWeekOffset || 0);
+    function applyNavigation() {
+      _agendaWeekOffset = targetWeekOffset;
+      renderAgendaOperacional();
+      if (typeof afterRender === 'function') setTimeout(afterRender, 0);
+    }
+    if (!agendaWindowedLoadingAtivo_() || agendaWindowContainsWeekOffset_(targetWeekOffset)) {
+      if (agendaWindowedLoadingAtivo_()) _agendaEventosRequestId++;
+      applyNavigation();
+      return;
+    }
+    carregarAgendaEventosPorJanela_(false, applyNavigation, {
+      silent: true,
+      targetWeekOffset: targetWeekOffset
+    });
+  }
+
+  function agendaWeekStartForOffset_(weekOffset) {
     var d = new Date();
     d.setHours(0,0,0,0);
     var day = d.getDay();
     var diff = day === 0 ? -6 : 1 - day;
-    d.setDate(d.getDate() + diff + (_agendaWeekOffset * 7));
+    d.setDate(d.getDate() + diff + (Number(weekOffset || 0) * 7));
     return d;
+  }
+
+  function agendaWeekStart() {
+    return agendaWeekStartForOffset_(_agendaWeekOffset);
   }
 
   function agendaUpdatePeriod() {
