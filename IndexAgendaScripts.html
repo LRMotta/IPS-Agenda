@@ -11,9 +11,10 @@
   var _agendaFormDataRefreshing = false;
   var _agendaFormDataRefreshPending = false;
   var _agendaEventosTruncated = false;
+  var _agendaEventosScope = 'full';
+  var _agendaEventosRange = null;
   var _agendaEventosRequestId = 0;
   var _agendaWindowedLoadingDisabledForSession = false;
-  var _agendaWindowedRange = null;
   var _agendaReferenceDataConfirmed = false;
   var _agendaFormReadyQueue = [];
   var _agendaFormDataLegacyLoading = false;
@@ -143,6 +144,24 @@
     _agendaEventosLoadedAt = Number(ts || 0);
     STATE.agenda.eventsLoadedAt = _agendaEventosLoadedAt;
     return _agendaEventosLoadedAt;
+  }
+
+  function agendaSetEventosScope_(scope, range, truncated) {
+    _agendaEventosScope = scope === 'window' ? 'window' : 'full';
+    _agendaEventosTruncated = truncated === true;
+    _agendaEventosRange = _agendaEventosScope === 'window' && range ? {
+      inicio: String(range.inicio || range.start || ''),
+      fim: String(range.fim || range.endExclusive || '')
+    } : null;
+    return {
+      scope: _agendaEventosScope,
+      range: _agendaEventosRange,
+      truncated: _agendaEventosTruncated
+    };
+  }
+
+  function agendaEventosSaoColecaoCompleta_() {
+    return _agendaEventosScope === 'full' && !_agendaEventosTruncated;
   }
 
   function agendaSetTeamBirthdays(items) {
@@ -1083,7 +1102,7 @@
   function agendaMatBioPreviousEvents_() {
     var context = agendaMatBioCurrentContext_();
     if (context.key && context.key === _agendaMateriaisContextKey) return _agendaMateriaisAnteriores || [];
-    return agendaMatBioFallbackEvents_();
+    return agendaEventosSaoColecaoCompleta_() ? agendaMatBioFallbackEvents_() : [];
   }
 
   function agendaMatBioFallbackEvents_() {
@@ -1132,7 +1151,11 @@
         _agendaMateriaisLoadingKey = '';
         var current = agendaMatBioCurrentContext_();
         if (current.key !== context.key) return;
-        var targeted = ((response && response.items) || []).map(function(item) {
+        if (!response || !Array.isArray(response.items)) {
+          agendaMatBioRecoverFromSpecificFailure_(context, requestId, 'invalid_payload');
+          return;
+        }
+        var targeted = response.items.map(function(item) {
           item = agendaNormalizeRow(item);
           if (!item.idParticipante && context.participanteId) item.idParticipante = context.participanteId;
           return item;
@@ -1140,7 +1163,7 @@
           return !!String(item.id || '').trim();
         }).reverse();
         var fallback = agendaMatBioFallbackEvents_();
-        if (!_agendaEventosTruncated && (_agendaEventos || []).length && !agendaMatBioHistoryEquivalent_(targeted, fallback)) {
+        if (agendaEventosSaoColecaoCompleta_() && (_agendaEventos || []).length && !agendaMatBioHistoryEquivalent_(targeted, fallback)) {
           _agendaMateriaisContextKey = '';
           _agendaMateriaisAnteriores = [];
           if (window.console && console.warn) console.warn('[Agenda] Consulta especifica de materiais divergente; fallback completo preservado.');
@@ -1154,7 +1177,7 @@
       .withFailureHandler(function() {
         if (requestId !== _agendaMateriaisRequestId) return;
         _agendaMateriaisLoadingKey = '';
-        agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
+        agendaMatBioRecoverFromSpecificFailure_(context, requestId, 'rpc_failure');
       })
       .getAgendaMateriaisAnteriores({
         participanteId: context.participanteId,
@@ -1162,6 +1185,22 @@
         excluirEventoId: context.excluirEventoId,
         limite: 5
       });
+  }
+
+  function agendaMatBioRecoverFromSpecificFailure_(context, requestId, code) {
+    function aplicarFallbackCompleto() {
+      if (requestId !== _agendaMateriaisRequestId) return;
+      var current = agendaMatBioCurrentContext_();
+      if (current.key !== context.key || !agendaEventosSaoColecaoCompleta_()) return;
+      _agendaMateriaisContextKey = context.key;
+      _agendaMateriaisAnteriores = agendaMatBioFallbackEvents_();
+      agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
+    }
+    if (agendaEventosSaoColecaoCompleta_()) {
+      aplicarFallbackCompleto();
+      return;
+    }
+    agendaFallbackCargaCompleta_(aplicarFallbackCompleto, { silent: true }, code);
   }
 
   function agendaMatBioClearPaste(prefix) {
@@ -2654,9 +2693,7 @@
     var monitorName = String(r.monitorName || '');
     var salaMonitoria = String(r.salaMonitoria || '');
     var tipo = AgendaRules.isSiv(r) ? 'SIV' : 'Monitoria';
-    var periodo = tipo === 'SIV'
-      ? agendaSivPeriodo(projeto, monitorName, salaMonitoria, dataIso)
-      : agendaMonitoriaPeriodo(projeto, monitorName, salaMonitoria, dataIso);
+    var periodo = agendaPeriodoFromRow(r);
     return {
       tipo: tipo,
       projeto: projeto,
@@ -2747,8 +2784,8 @@
     var id = String((r && r.id) || '').trim();
     var targeted = (r && r._periodoOperacional) || (id && _agendaPeriodosPorEventoId[id]);
     if (targeted) return { inicio: targeted.inicio || dataIso || '', fim: targeted.fim || dataIso || '', ids: targeted.ids || [] };
-    if (r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
-    if (r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    if (agendaEventosSaoColecaoCompleta_() && r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
+    if (agendaEventosSaoColecaoCompleta_() && r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
     return { inicio: dataIso || '', fim: dataIso || '' };
   }
 
@@ -3262,12 +3299,12 @@
   }
 
   function agendaWindowContainsWeekOffset_(weekOffset) {
-    if (!_agendaWindowedRange) return false;
+    if (_agendaEventosScope !== 'window' || !_agendaEventosRange) return false;
     var weekStart = agendaWeekStartForOffset_(weekOffset);
     var weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
-    return agendaIso(weekStart) >= _agendaWindowedRange.start &&
-      agendaIso(weekEnd) <= _agendaWindowedRange.endExclusive;
+    return agendaIso(weekStart) >= _agendaEventosRange.inicio &&
+      agendaIso(weekEnd) <= _agendaEventosRange.fim;
   }
 
   function agendaBootstrapReferenceDataValido_(data) {
@@ -3298,10 +3335,11 @@
     return 'invalid_payload';
   }
 
-  function agendaAplicarEventos_(rows) {
+  function agendaAplicarEventos_(rows, scope, range, truncated) {
     _agendaEventos = (rows || []).map(agendaNormalizeRow).sort(function(a, b) {
       return (a.dataIso + ' ' + (a.hora || '')).localeCompare(b.dataIso + ' ' + (b.hora || ''));
     });
+    agendaSetEventosScope_(scope, range, truncated);
     _agendaEventosPorId = {};
     _agendaEventos.forEach(agendaStoreEventoLocal_);
     setAgendaEventosLoadedAtState(Date.now());
@@ -3316,7 +3354,6 @@
       successDelivered: false
     });
     _agendaWindowedLoadingDisabledForSession = true;
-    _agendaWindowedRange = null;
     _agendaEventosRequestId++;
     agendaRegistrarFallback_(code);
     if (!agendaFormularioEstaPronto_()) agendaCarregarFormDataLegado_({ fallbackAttempt: true });
@@ -3368,8 +3405,10 @@
           agendaFallbackCargaCompleta_(callback, options, agendaReferenceDataValidation_(response.referenceData).code);
           return;
         }
-        agendaAplicarEventos_(response.events);
-        _agendaWindowedRange = requestedRange;
+        agendaAplicarEventos_(response.events, 'window', {
+          inicio: response.range.loadedStart,
+          fim: response.range.loadedEndExclusive
+        }, response.truncated);
         renderAgendaOperacional();
         if (typeof callback === 'function') callback();
         if (typeof options.onComplete === 'function') options.onComplete();
@@ -3402,7 +3441,7 @@
     }
     google.script.run
       .withSuccessHandler(function(rows) {
-        agendaAplicarEventos_(rows);
+        agendaAplicarEventos_(rows, 'full', null, false);
         renderAgendaOperacional();
         finalizarSucesso();
       })
@@ -3537,8 +3576,8 @@
 
   function agendaPeriodoFallbackLocal_(r) {
     var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
-    if (r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
-    if (r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    if (agendaEventosSaoColecaoCompleta_() && r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
+    if (agendaEventosSaoColecaoCompleta_() && r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
     return { inicio: dataIso || '', fim: dataIso || '', ids: r && r.id ? [r.id] : [] };
   }
 
@@ -3572,14 +3611,32 @@
       if (typeof onSuccess === 'function') onSuccess(cached);
       return;
     }
+    function recuperarConsultaEspecifica(error) {
+      if (!agendaEventosSaoColecaoCompleta_()) {
+        var fallbackSucceeded = false;
+        agendaFallbackCargaCompleta_(function() {
+          fallbackSucceeded = true;
+          var fullRow = agendaFindEventoLocal_(id, r.rowIndex) || r;
+          var fallback = agendaStorePeriodoOperacional_(fullRow, agendaPeriodoFallbackLocal_(fullRow));
+          if (typeof onSuccess === 'function') onSuccess(fallback);
+        }, {
+          silent: true,
+          onComplete: function() {
+            if (!fallbackSucceeded && typeof onFailure === 'function') onFailure(error);
+          }
+        }, 'rpc_failure');
+        return;
+      }
+      if (typeof onFailure === 'function') onFailure(error);
+    }
     google.script.run
       .withSuccessHandler(function(periodo) {
         if (!periodo) {
-          if (typeof onFailure === 'function') onFailure(new Error('Periodo operacional nao encontrado.'));
+          recuperarConsultaEspecifica(new Error('Periodo operacional nao encontrado.'));
           return;
         }
         var local = agendaPeriodoFallbackLocal_(r);
-        if (!_agendaEventosTruncated && (_agendaEventos || []).length &&
+        if (agendaEventosSaoColecaoCompleta_() && (_agendaEventos || []).length &&
             (String(local.inicio || '') !== String(periodo.inicio || '') || String(local.fim || '') !== String(periodo.fim || ''))) {
           if (window.console && console.warn) console.warn('[Agenda] Consulta especifica de periodo divergente; fallback completo preservado.');
           if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, local));
@@ -3588,7 +3645,7 @@
         if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, periodo));
       })
       .withFailureHandler(function(error) {
-        if (typeof onFailure === 'function') onFailure(error);
+        recuperarConsultaEspecifica(error);
       })
       .getAgendaPeriodoOperacionalPorEventoId(id, r.rowIndex);
   }
