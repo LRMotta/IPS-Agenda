@@ -9238,6 +9238,23 @@ function compararAgendaWindowComCargaCompleta(inicioIso, fimIso) {
   }
 }
 
+function compararAgendaWindowAtual() {
+  codexAssertAdmin_();
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  var inicioSemanaAtual = new Date(hoje);
+  inicioSemanaAtual.setDate(inicioSemanaAtual.getDate() - ((inicioSemanaAtual.getDay() + 6) % 7));
+  var inicio = new Date(inicioSemanaAtual);
+  inicio.setDate(inicio.getDate() - 7);
+  var fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 21);
+  var timezone = Session.getScriptTimeZone();
+  return compararAgendaWindowComCargaCompleta(
+    Utilities.formatDate(inicio, timezone, 'yyyy-MM-dd'),
+    Utilities.formatDate(fim, timezone, 'yyyy-MM-dd')
+  );
+}
+
 function agendaValidateReferenceData_(referenceData) {
   if (!referenceData || typeof referenceData !== 'object' || Array.isArray(referenceData)) {
     throw new Error('Dados de referencia da Agenda invalidos.');

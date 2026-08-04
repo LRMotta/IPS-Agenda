@@ -268,6 +268,36 @@ test('comparacao administrativa detecta evento ou campo divergente e preserva fa
   assert.doesNotMatch(logs.at(-1), /falha original|2026-07/);
 });
 
+test('comparacao administrativa atual usa exatamente tres semanas sem parametros', () => {
+  const server = agendaServer({
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: {
+      formatDate: (date) => [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+      ].join('-')
+    }
+  });
+  let authorized = 0;
+  let received = null;
+  server.codexAssertAdmin_ = () => { authorized += 1; return { ok: true, role: 'admin' }; };
+  server.compararAgendaWindowComCargaCompleta = (inicio, fim) => {
+    received = { inicio, fim };
+    return { ok: true };
+  };
+
+  const result = server.compararAgendaWindowAtual();
+  const inicio = new Date(`${received.inicio}T00:00:00`);
+  const fim = new Date(`${received.fim}T00:00:00`);
+  assert.equal(result.ok, true);
+  assert.equal(authorized, 1);
+  assert.equal(inicio.getDay(), 1);
+  assert.equal((fim.getTime() - inicio.getTime()) / 86400000, 21);
+  assert.ok(Date.now() >= inicio.getTime());
+  assert.ok(Date.now() < fim.getTime());
+});
+
 test('bootstrap negado interrompe antes de datas, referencias e planilhas', () => {
   const logs = [];
   const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
