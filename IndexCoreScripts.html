@@ -224,16 +224,7 @@ function getRoutePageConfig(pagina) {
   return (APP_ROUTE.pages && APP_ROUTE.pages[pagina]) || { label:'Agenda', icon:'calendar_today' };
 }
 
-var ESPS = [
-  'Anestesiologia','Cardiologia','Cirurgia Geral','Cirurgia Oncológica',
-  'Cirurgia Plástica','Clínica Médica','Dermatologia',
-  'Endocrinologia e Metabologia','Gastroenterologia','Geriatria',
-  'Ginecologia e Obstetrícia','Hematologia e Hemostasia','Infectologia',
-  'Mastologia','Medicina de Família e Comunidade','Medicina Intensiva',
-  'Nefrologia','Neurologia','Neurocirurgia','Oncologia Clínica',
-  'Ortopedia e Traumatologia','Pediatria','Pneumologia','Psiquiatria',
-  'Radiologia e Diagnóstico por Imagem','Reumatologia','Urologia'
-];
+var ESPS = [];
 
 function applyAppBootstrapData(data) {
   window.APP_BOOTSTRAP_DATA = data || {};
@@ -3162,7 +3153,10 @@ function carregarMedicos(force) {
   document.getElementById('bodyMedicos').innerHTML =
     '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
   getCadastrosBootstrapCached('medicos',
-    function(res) { renderMedicos(sortCadastroByField((res && res.data) || [], 'nome')); },
+    function(res) {
+      ESPS = ((res && res.config && res.config.especialidades) || []).slice();
+      renderMedicos(sortCadastroByField((res && res.data) || [], 'nome'));
+    },
     function(e) { snackErro(e); },
     !!force);
 }

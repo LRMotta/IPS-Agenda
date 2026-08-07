@@ -289,6 +289,7 @@ function getCadastrosBootstrapData(page) {
   } else if (page === 'medicamentos') {
     out.data = getMedicamentosRecebidos();
   } else if (page === 'medicos') {
+    out.config = getMedicoFormConfig();
     out.data = getMedicos();
   } else if (page === 'solicitantes') {
     out.data = getSolicitantes();
@@ -1734,6 +1735,12 @@ function agendaTipoContatoTelefonicoServer_(tipo) {
  */
 function salvarDadosMedico(dados) {
   codexAssertCanWrite_('salvarDadosMedico', 'Cadastros', dados && dados.id);
+  dados = dados || {};
+  var especialidade = String(dados.especialidade || '').trim();
+  var especialidadesConfig = getConfigValues_('Médicos', 'Especialidade', []);
+  if (!especialidade || especialidadesConfig.indexOf(especialidade) === -1) {
+    throw new Error('Selecione uma especialidade ativa cadastrada no ConfigApp.');
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('🩺 Médicos');
   if (!sh) throw new Error("Aba '🩺 Médicos' não encontrada.");
@@ -1744,7 +1751,7 @@ function salvarDadosMedico(dados) {
       if (ids[i][0].toString() === dados.id.toString()) {
         var linha = i + 2;
         sh.getRange(linha, 2).setValue(dados.nome          || '');
-        sh.getRange(linha, 3).setValue(dados.especialidade || '');
+        sh.getRange(linha, 3).setValue(especialidade);
         sh.getRange(linha, 4).setValue(dados.cpf           || '');
         sh.getRange(linha, 5).setValue(dados.cremers       || '');
         sh.getRange(linha, 6).setValue(dados.telefone      || '');
@@ -1756,7 +1763,7 @@ function salvarDadosMedico(dados) {
   }
 
   var novoId = 'MED-' + new Date().getTime();
-  sh.appendRow([novoId, dados.nome || '', dados.especialidade || '',
+  sh.appendRow([novoId, dados.nome || '', especialidade,
                 dados.cpf || '', dados.cremers || '',
                 dados.telefone || '', dados.email || '']);
   return 'Médico cadastrado com sucesso.';

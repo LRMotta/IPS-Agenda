@@ -497,6 +497,116 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
   assert.equal(context.agendaBootstrapWindowValido_(response, range), false);
 });
 
+test('cache de janelas vive somente em memoria, clona eventos e mantem as tres mais recentes', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({
+    JSON,
+    Object,
+    _agendaWindowMemoryCache: {},
+    _agendaWindowMemoryCacheOrder: [],
+    AGENDA_WINDOW_MEMORY_CACHE_LIMIT: 3,
+    agendaBootstrapWindowValido_: (response, range) => !!response && response.complete === true &&
+      response.truncated === false && response.range.start === range.start &&
+      response.range.endExclusive === range.endExclusive
+  });
+  [
+    'agendaWindowMemoryCacheKey_', 'agendaWindowMemoryCacheCloneResponse_',
+    'agendaWindowMemoryCacheRemoveKey_', 'agendaWindowMemoryCachePut_',
+    'agendaWindowMemoryCacheGet_', 'agendaWindowMemoryCacheClear_'
+  ].forEach((name) => {
+    const arg = name === 'agendaWindowMemoryCacheKey_' ? 'range' :
+      name === 'agendaWindowMemoryCacheGet_' ? 'requestedRange' :
+      name === 'agendaWindowMemoryCacheCloneResponse_' ? 'response' :
+      name === 'agendaWindowMemoryCacheRemoveKey_' ? 'key' :
+      name === 'agendaWindowMemoryCachePut_' ? 'response, requestedRange' : '';
+    vm.runInContext(`function ${name}(${arg}) {${functionBody(client, name)}}`, context);
+  });
+  const range = (start, end) => ({ start, endExclusive: end });
+  const response = (start, end, id) => ({
+    access: { ok: true },
+    referenceData: validAgendaReferenceData(),
+    events: [{ id, status: 'Agendado', courier1: { awb: '' } }],
+    range: { start, endExclusive: end, loadedStart: start, loadedEndExclusive: end, total: 1, loaded: 1 },
+    revision: `rev-${id}`,
+    truncated: false,
+    complete: true,
+    partialError: false
+  });
+  const aRange = range('2026-07-27', '2026-08-17');
+  const a = response(aRange.start, aRange.endExclusive, 'A');
+  assert.equal(context.agendaWindowMemoryCachePut_(a, aRange), true);
+  a.events[0].status = 'ALTERADO-FORA';
+  const firstRead = context.agendaWindowMemoryCacheGet_(aRange);
+  assert.equal(firstRead.events[0].status, 'Agendado');
+  firstRead.events[0].courier1.awb = 'ALTERADO-LOCAL';
+  assert.equal(context.agendaWindowMemoryCacheGet_(aRange).events[0].courier1.awb, '');
+
+  [
+    ['2026-08-10', '2026-08-31', 'B'],
+    ['2026-08-24', '2026-09-14', 'C'],
+    ['2026-09-07', '2026-09-28', 'D']
+  ].forEach(([start, end, id]) => context.agendaWindowMemoryCachePut_(response(start, end, id), range(start, end)));
+  assert.equal(context._agendaWindowMemoryCacheOrder.length, 3);
+  assert.equal(context.agendaWindowMemoryCacheGet_(aRange), null);
+  assert.equal(Object.keys(context._agendaWindowMemoryCache).length, 3);
+  context.agendaWindowMemoryCacheClear_();
+  assert.equal(Object.keys(context._agendaWindowMemoryCache).length, 0);
+  assert.equal(context._agendaWindowMemoryCacheOrder.length, 0);
+
+  const cacheSource = [
+    functionBody(client, 'agendaWindowMemoryCachePut_'),
+    functionBody(client, 'agendaWindowMemoryCacheGet_'),
+    functionBody(client, 'agendaWindowMemoryCacheClear_')
+  ].join('\n');
+  assert.doesNotMatch(cacheSource, /localStorage|sessionStorage|CacheService|google\.script/);
+});
+
+test('voltar a uma janela validada reaplica eventos sem nova RPC', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  let rpcReads = 0;
+  let applied = null;
+  let rendered = 0;
+  let callbacks = 0;
+  const cached = {
+    referenceData: validAgendaReferenceData(),
+    events: [{ id: 'CACHE-1' }],
+    range: { loadedStart: '2026-07-27', loadedEndExclusive: '2026-08-17' },
+    truncated: false
+  };
+  const context = vm.createContext({
+    Number,
+    document: { getElementById: () => null },
+    google: { script: { get run() { rpcReads += 1; throw new Error('RPC inesperada'); } } },
+    _agendaEventos: [{ id: 'OUTRA-JANELA' }],
+    _agendaWeekOffset: 0,
+    _agendaEventosRequestId: 0,
+    agendaUpdatePeriod: () => {},
+    agendaWindowForWeekOffset_: () => ({ start: '2026-07-27', endExclusive: '2026-08-17' }),
+    agendaWindowMemoryCacheGet_: () => cached,
+    agendaWindowMemoryCacheClear_: () => { throw new Error('cache nao deve ser limpo'); },
+    agendaFormularioEstaPronto_: () => true,
+    applyAgendaFormData: () => { throw new Error('referencias ja estavam prontas'); },
+    agendaReferenceDataValidation_: () => ({ ok: true }),
+    agendaAplicarEventos_: (events, scope, range, truncated) => { applied = { events, scope, range, truncated }; },
+    renderAgendaOperacional: () => { rendered += 1; },
+    agendaFallbackCargaCompleta_: () => { throw new Error('fallback inesperado'); }
+  });
+  vm.runInContext(`function carregarAgendaEventosPorJanela_(forcar, callback, options) {${functionBody(client, 'carregarAgendaEventosPorJanela_')}}`, context);
+
+  context.carregarAgendaEventosPorJanela_(false, () => { callbacks += 1; }, {
+    targetWeekOffset: 0,
+    onComplete: () => { callbacks += 1; }
+  });
+  assert.equal(rpcReads, 0);
+  assert.equal(context._agendaEventosRequestId, 1);
+  assert.deepEqual(Array.from(applied.events, (item) => item.id), ['CACHE-1']);
+  assert.equal(applied.scope, 'window');
+  assert.deepEqual(Object.assign({}, applied.range), { inicio: '2026-07-27', fim: '2026-08-17' });
+  assert.equal(applied.truncated, false);
+  assert.equal(rendered, 1);
+  assert.equal(callbacks, 2);
+});
+
 test('escopo explicito nunca confunde janela nao truncada com colecao completa', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const context = vm.createContext({
@@ -545,6 +655,7 @@ test('resposta atrasada nao substitui a janela solicitada mais recentemente', ()
   const client = readProjectFile('IndexAgendaScripts.html');
   const requests = [];
   const applied = [];
+  let cacheClears = 0;
   const runFactory = () => {
     const request = {};
     return {
@@ -567,6 +678,10 @@ test('resposta atrasada nao substitui a janela solicitada mais recentemente', ()
     _agendaEventosRequestId: 0,
     agendaUpdatePeriod: () => {},
     agendaWindowForWeekOffset_: (offset) => ({ start: `inicio-${offset}`, endExclusive: `fim-${offset}` }),
+    agendaWindowMemoryCacheGet_: () => null,
+    agendaWindowMemoryCachePut_: () => true,
+    agendaWindowMemoryCacheClear_: () => { cacheClears += 1; },
+    agendaFormularioEstaPronto_: () => true,
     agendaBootstrapWindowValido_: () => true,
     applyAgendaFormData: () => true,
     agendaReferenceDataValidation_: () => ({ ok: true }),
@@ -580,6 +695,7 @@ test('resposta atrasada nao substitui a janela solicitada mais recentemente', ()
   context.carregarAgendaEventosPorJanela_(true, null, { targetWeekOffset: 8 });
   assert.equal(requests.length, 2);
   assert.equal(requests[1].forceRefresh, true);
+  assert.equal(cacheClears, 1);
   requests[1].success({ referenceData: {}, events: [{ id: 'NOVA' }], range: { loadedStart: 'inicio-8', loadedEndExclusive: 'fim-8' }, truncated: false });
   requests[0].success({ referenceData: {}, events: [{ id: 'ATRASADA' }], range: { loadedStart: 'inicio-1', loadedEndExclusive: 'fim-1' }, truncated: false });
   assert.deepEqual(applied, [['NOVA']]);
@@ -1112,6 +1228,7 @@ test('fallback concorrente aciona uma unica carga completa e desliga a janela na
   let fullLoads = 0;
   let pendingCallback = null;
   let pendingOptions = null;
+  let cacheClears = 0;
   const context = vm.createContext({
     _agendaFallbackEventWaiters: [],
     _agendaWindowedLoadingDisabledForSession: false,
@@ -1121,6 +1238,7 @@ test('fallback concorrente aciona uma unica carga completa e desliga a janela na
     agendaRegistrarFallback_: () => {},
     agendaFormularioEstaPronto_: () => true,
     agendaCarregarFormDataLegado_: () => {},
+    agendaWindowMemoryCacheClear_: () => { cacheClears += 1; },
     carregarAgendaEventos: (force, callback, options) => {
       assert.equal(force, true);
       assert.equal(options.forceLegacyFull, true);
@@ -1134,6 +1252,7 @@ test('fallback concorrente aciona uma unica carga completa e desliga a janela na
   context.agendaFallbackCargaCompleta_(() => {}, { silent: true }, 'truncated');
   context.agendaFallbackCargaCompleta_(() => {}, { silent: true }, 'rpc_failure');
   assert.equal(fullLoads, 1);
+  assert.equal(cacheClears, 2);
   assert.equal(context._agendaWindowedLoadingDisabledForSession, true);
   assert.equal(context._agendaFallbackCargaEmAndamento, true);
   pendingCallback();
@@ -1145,6 +1264,7 @@ test('mutacoes recarregam o escopo corrente sem cache e Transporte avisa a Agend
   const client = readProjectFile('IndexAgendaScripts.html');
   const transport = readProjectFile('TransporteApp.html');
   const refresh = functionBody(client, 'agendaRecarregarJanelaAtual_');
+  const windowLoad = functionBody(client, 'carregarAgendaEventosPorJanela_');
   const publicRefresh = functionBody(client, 'recarregarAgendaJanelaAtual');
   const save = functionBody(client, 'salvarAgendaEvento');
   const cancel = functionBody(client, 'cancelarAgendaEvento');
@@ -1154,6 +1274,7 @@ test('mutacoes recarregam o escopo corrente sem cache e Transporte avisa a Agend
   const transportSync = functionBody(transport, 'syncData');
 
   assert.match(refresh, /carregarAgendaEventos\(true, callback, options \|\| \{\}\)/);
+  assert.match(windowLoad, /if \(forcar === true\) \{[\s\S]*agendaWindowMemoryCacheClear_\(\)/);
   assert.match(publicRefresh, /agendaRecarregarJanelaAtual_\(null, \{ silent: true \}\)/);
   assert.match(save, /agendaRecarregarJanelaAtual_\(\)/);
   assert.match(cancel, /withSuccessHandler\(function\(\) \{ agendaRecarregarJanelaAtual_\(\); \}\)/);

@@ -37,6 +37,18 @@ test('criacao de projeto exige os campos criticos', () => {
   );
 });
 
+test('cadastro de medicos usa somente especialidades do ConfigApp', () => {
+  const server = readProjectFile('WebApp.gs');
+  const client = readProjectFile('IndexCoreScripts.html');
+
+  assert.match(server, /page === 'medicos'[\s\S]*?out\.config = getMedicoFormConfig\(\);[\s\S]*?out\.data = getMedicos\(\);/);
+  assert.match(server, /var especialidadesConfig = getConfigValues_\('Médicos', 'Especialidade', \[\]\);/);
+  assert.match(server, /especialidadesConfig\.indexOf\(especialidade\) === -1/);
+  assert.match(client, /var ESPS = \[\];/);
+  assert.match(client, /ESPS = \(\(res && res\.config && res\.config\.especialidades\) \|\| \[\]\)\.slice\(\);/);
+  assert.doesNotMatch(client, /'Anestesiologia','Cardiologia'/);
+});
+
 test('projeto novo nao pode repetir nome ou codigo', () => {
   const cadastro = rules();
   assert.equal(cadastro.findProjectDuplicate({ nomeAbreviado: '  estudo áurora ' }, projectRows).field, 'nomeAbreviado');
