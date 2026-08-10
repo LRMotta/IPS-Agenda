@@ -108,6 +108,17 @@ test('perfil profissional usa formacoes do ConfigApp e preserva a permissao admi
   assert.deepEqual(users.rows[1].slice(5, 8), ['Médico(a)', 'CRM 456', 'Não']);
 });
 
+test('formacoes de usuarios reconhecem o grupo Profissionais do ConfigApp', () => {
+  const server = runFile('WebApp.gs');
+  let gruposRecebidos = [];
+  server.getConfigAppValuesByKeys_ = (grupos) => {
+    gruposRecebidos = grupos;
+    return ['Enfermeiro(a)'];
+  };
+  assert.deepEqual(JSON.parse(JSON.stringify(server.codexUserProfileFormations_())), ['Enfermeiro(a)']);
+  assert.ok(gruposRecebidos.includes('Profissionais'));
+});
+
 test('lista de solicitantes vem de Users e respeita ativo e pode solicitar exames', () => {
   const { server } = profileServer([
     ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames'],

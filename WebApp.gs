@@ -663,7 +663,7 @@ function codexNormalizeCanRequestExams_(value) {
 }
 
 function codexUserProfileFormations_() {
-  return getConfigAppValuesByKeys_(['Usuários', 'Usuarios', 'Solicitantes'], ['Formação', 'Formacao'], []);
+  return getConfigAppValuesByKeys_(['Profissionais', 'Usuários', 'Usuarios', 'Solicitantes'], ['Formação', 'Formacao'], []);
 }
 
 function codexNormalizeUserFormation_(value) {
