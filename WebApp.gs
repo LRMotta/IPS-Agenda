@@ -323,7 +323,8 @@ function getEstoqueBootstrapData(page) {
   else if (page === 'itens') out.data = getItensEstoque();
   else if (page === 'descartes') out.data = getDescartesEstoque();
   else if (page === 'movimentacoes') out.data = getMovimentacoesEstoque();
-  else if (page === 'relatorios' || page === 'estoque-view') out.data = getEstoque();
+  else if (page === 'relatorios') out.data = getEstoque();
+  else if (page === 'estoque-view') out.data = getEstoqueVisualizacao();
   else throw new Error('Bootstrap de estoque nao suportado: ' + page);
   return out;
 }
@@ -5947,7 +5948,7 @@ function getMovimentacoesEstoqueV3() {
 }
 
 // ===================== ESTOQUE - Visualização =====================
-function getEstoque() {
+function getEstoqueLinhas_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("Estoque");
   if (!sh || sh.getLastRow() < 2) return [];
@@ -6004,7 +6005,137 @@ function getEstoque() {
       };
     });
 
-  return agruparEstoquePorItemValidade_(itens);
+  return itens;
+}
+
+function getEstoque() {
+  return agruparEstoquePorItemValidade_(getEstoqueLinhas_());
+}
+
+function getEstoquePedidosPendentesPorItem_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    var idItem = String(r[5] || '').trim();
+    if (!idItem) continue;
+    var pendente = Math.max(0, (Number(r[6] || 0) || 0) - (Number(r[7] || 0) || 0));
+    if (!pendente) continue;
+    if (!out[idItem]) out[idItem] = { quantidade: 0, numerosPedido: [] };
+    out[idItem].quantidade += pendente;
+    var numeroPedido = String(r[1] || '').trim();
+    if (numeroPedido && out[idItem].numerosPedido.indexOf(numeroPedido) < 0) {
+      out[idItem].numerosPedido.push(numeroPedido);
+    }
+  }
+  return out;
+}
+
+function getEstoqueVisualizacao() {
+  var catalogo = getItensEstoque().itens || [];
+  var estoque = getEstoqueLinhas_() || [];
+  var pendentes = getEstoquePedidosPendentesPorItem_();
+  var lotesPorItem = {};
+  var ordemIdsEstoque = [];
+
+  estoque.forEach(function(lote) {
+    var ids = String(lote.idItem || '').split(/\s*,\s*/).filter(Boolean);
+    if (!ids.length) ids = ['__SEM_ID__' + ordemIdsEstoque.length];
+    ids.forEach(function(id) {
+      if (!lotesPorItem[id]) {
+        lotesPorItem[id] = [];
+        ordemIdsEstoque.push(id);
+      }
+      lotesPorItem[id].push({
+        projeto: lote.projeto || '',
+        descricao: lote.descricao || '',
+        tipoItem: lote.tipoItem || '',
+        validade: lote.validade || '',
+        localizacao: lote.localizacao || '',
+        qtde: Number(lote.qtde || 0) || 0,
+        estoqueMinimo: lote.estoqueMinimo,
+        status: lote.status || '',
+        qtdePedidaPendente: lote.qtdePedidaPendente,
+        numeroPedido: lote.numeroPedido || '',
+        ultimaAlteracao: lote.ultimaAlteracao || '',
+        responsavel: lote.responsavel || '',
+        observacoes: lote.observacoes || '',
+        detalhesVisita: lote.detalhesVisita || ''
+      });
+    });
+  });
+
+  function statusConsolidado(total, minimo) {
+    total = Number(total || 0) || 0;
+    minimo = Number(minimo || 0) || 0;
+    if (total <= 0 || (minimo > 0 && total <= minimo)) return 'Crítico';
+    if (minimo > 0 && total <= minimo * 1.5) return 'Estoque baixo';
+    return 'OK';
+  }
+
+  function montarItem(item, id, lotes) {
+    lotes = lotes || [];
+    var total = lotes.reduce(function(soma, lote) {
+      return soma + (Number(lote.qtde || 0) || 0);
+    }, 0);
+    var minimo = item.estoqueMin !== undefined && item.estoqueMin !== ''
+      ? Number(item.estoqueMin || 0) || 0
+      : lotes.reduce(function(maior, lote) { return Math.max(maior, Number(lote.estoqueMinimo || 0) || 0); }, 0);
+    var pedido = pendentes[id] || null;
+    var pendenteLegado = lotes.reduce(function(maior, lote) {
+      return Math.max(maior, Number(lote.qtdePedidaPendente || 0) || 0);
+    }, 0);
+    return {
+      idItem: id.indexOf('__SEM_ID__') === 0 ? '' : id,
+      projeto: item.projeto || '',
+      descricao: item.descricao || '',
+      tipoItem: item.tipo || item.tipoItem || '',
+      laboratorio: item.laboratorio || '',
+      observacoes: item.observacoes || '',
+      detalhesVisita: item.detalhesVisita || '',
+      cadastroStatus: item.status || '',
+      estoqueMinimo: minimo,
+      estoqueAtual: total,
+      qtde: total,
+      status: statusConsolidado(total, minimo),
+      qtdePedidaPendente: pedido ? pedido.quantidade : pendenteLegado,
+      numerosPedidoPendente: pedido ? pedido.numerosPedido : [],
+      lotes: lotes
+    };
+  }
+
+  var vistos = {};
+  var itens = catalogo.map(function(item) {
+    var id = String(item.idItem || '').trim();
+    vistos[id] = true;
+    return montarItem(item, id, lotesPorItem[id] || []);
+  });
+
+  ordemIdsEstoque.forEach(function(id) {
+    if (vistos[id]) return;
+    var lotes = lotesPorItem[id] || [];
+    var primeiro = lotes[0] || {};
+    itens.push(montarItem({
+      projeto: primeiro.projeto || '',
+      descricao: primeiro.descricao || '',
+      tipoItem: primeiro.tipoItem || '',
+      laboratorio: '',
+      observacoes: primeiro.observacoes || '',
+      detalhesVisita: primeiro.detalhesVisita || '',
+      estoqueMin: primeiro.estoqueMinimo || ''
+    }, id, lotes));
+  });
+
+  itens.sort(function(a, b) {
+    return [a.projeto, a.descricao, a.idItem].join('||').localeCompare(
+      [b.projeto, b.descricao, b.idItem].join('||'), 'pt-BR', { sensitivity: 'base' }
+    );
+  });
+  return itens;
 }
 
 function agruparEstoquePorItemValidade_(itens) {

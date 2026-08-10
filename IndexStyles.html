@@ -150,6 +150,15 @@
     .estoque-detail-note-title { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: .65px; text-transform: uppercase; }
     .estoque-detail-note-title .material-symbols-outlined { font-size: 15px; }
     .estoque-detail-note-body { color: var(--text-muted); font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+    .estoque-summary-total { line-height: 1.25; white-space: nowrap; }
+    .estoque-summary-meta, .estoque-summary-muted { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10.5px; line-height: 1.35; white-space: normal; }
+    .estoque-summary-muted { color: var(--text-faint); }
+    .estoque-lotes-wrap { padding: 4px 16px 10px 52px; overflow-x: auto; }
+    .estoque-lotes-table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #dde5f8; border-radius: var(--r-md); background: #fff; }
+    .estoque-lotes-table th { padding: 8px 10px; background: #f5f7fc; color: var(--text-faint); font-size: 9.5px; font-weight: 700; letter-spacing: .5px; text-align: left; text-transform: uppercase; white-space: nowrap; }
+    .estoque-lotes-table td { padding: 9px 10px; border-top: 1px solid #edf1f8; color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+    .estoque-empty-lots { display: flex; align-items: center; gap: 7px; margin: 4px 16px 10px 52px; padding: 12px 14px; border: 1px dashed #cfd8ea; border-radius: var(--r-md); background: #fff; color: var(--text-muted); font-size: 12px; }
+    .estoque-empty-lots .material-symbols-outlined { color: var(--text-faint); font-size: 18px; }
     .chip { display: inline-flex; align-items: center; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
     .chip-blue  { background: var(--primary-light); color: var(--primary); }
     .chip-green { background: #e6f4ea; color: #137333; }
@@ -192,7 +201,7 @@
     .pedido-item-form-grid { display: grid; grid-template-columns: minmax(120px, 160px) minmax(280px, 1fr) 80px auto; gap: 10px; align-items: end; margin-bottom: 12px; }
     .mov-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .mov-form-grid .full { grid-column: 1 / -1; }
-    @media (max-width: 760px) { .ped-detail-grid, .pedido-item-form-grid, .mov-form-grid, .estoque-detail-notes { grid-template-columns: 1fr; } .mov-form-grid .full { grid-column: auto; } .estoque-detail-notes { padding-left: 16px; } }
+    @media (max-width: 760px) { .ped-detail-grid, .pedido-item-form-grid, .mov-form-grid, .estoque-detail-notes { grid-template-columns: 1fr; } .mov-form-grid .full { grid-column: auto; } .estoque-detail-notes, .estoque-lotes-wrap { padding-left: 16px; } .estoque-empty-lots { margin-left: 16px; } }
 
     /* MODAL */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s; }
