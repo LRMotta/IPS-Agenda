@@ -3951,6 +3951,42 @@ function filtrarProjetos(forceNow) {
   }, !!forceNow);
 }
 
+function imprimirProjetos() {
+  var body = document.getElementById('bodyProjetos');
+  if (!body) return;
+  var rows = Array.prototype.slice.call(body.querySelectorAll('tr.proj-main'));
+  if (!rows.length) {
+    snack('Nao ha projetos exibidos para imprimir.');
+    return;
+  }
+  var search = document.getElementById('searchProjetos');
+  var filtro = String((search && search.value) || '').trim();
+  var headers = ['Projeto', 'Fase', 'Especialidade', 'Equipe', 'Patrocinador / CRO', 'Recrutamento', 'Centro', 'Status'];
+  var tableRows = rows.map(function(row) {
+    var cells = row.querySelectorAll('td');
+    var values = Array.prototype.slice.call(cells, 0, 8).map(function(cell) {
+      return esc(String(cell.innerText || '').trim()).replace(/\n/g, '<br>');
+    });
+    return '<tr>' + values.map(function(value) { return '<td>' + value + '</td>'; }).join('') + '</tr>';
+  }).join('');
+  var emitted = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
+  var logoHtml = logo ? '<img src="' + esc(logo) + '" alt="IPS | UCS">' : '<strong>IPS | UCS</strong>';
+  var subtitle = filtro ? 'Filtro: ' + filtro + ' · ' + rows.length + ' projeto(s)' : rows.length + ' projeto(s) exibido(s)';
+  var html = '<!doctype html><html><head><meta charset="utf-8"><title>Projetos</title><style>' +
+    '@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1f2937;margin:0}.no-print{position:fixed;right:12px;top:12px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}.head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1266f1;padding-bottom:9px;margin-bottom:12px}.head img{height:34px;width:auto;object-fit:contain}.head strong{font-size:18px;color:#1266f1}.head h1{font-size:18px;margin:0;color:#0b3f8a}.head p{font-size:10px;color:#64748b;margin:3px 0 0}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#eef4ff;color:#0b3f8a;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.45px;padding:7px 6px;border:1px solid #d8e2f0}td{vertical-align:top;font-size:9px;line-height:1.35;padding:6px;border:1px solid #e2e8f0;overflow-wrap:anywhere}th:nth-child(1){width:15%}th:nth-child(2){width:7%}th:nth-child(3){width:12%}th:nth-child(4){width:18%}th:nth-child(5){width:16%}th:nth-child(6){width:12%}th:nth-child(7){width:8%}th:nth-child(8){width:12%}tr{break-inside:avoid}@media print{.no-print{display:none}}</style></head><body>' +
+    '<button class="no-print" onclick="window.print()">Imprimir</button><div class="head">' + logoHtml + '<div><h1>Projetos</h1><p>' + esc(subtitle) + ' · Emitido em ' + esc(emitted) + '</p></div></div>' +
+    '<table><thead><tr>' + headers.map(function(header) { return '<th>' + esc(header) + '</th>'; }).join('') + '</tr></thead><tbody>' + tableRows + '</tbody></table><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>';
+  var w = window.open('', '_blank');
+  if (!w) {
+    snack('O navegador bloqueou a janela de impressao.');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 var FASE_COLORS = {'I':'#e8f0fe:#1266f1','II':'#e6f4ea:#137333','III':'#fff3e0:#e65100','IV':'#fce8e6:#b3261e'};
 var FASE_AUTO_COLORS = [
   '#e0f2fe:#075985',
