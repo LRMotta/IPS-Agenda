@@ -324,6 +324,22 @@
     }
   }
 
+  function dashOpenCoordinator(coordenador) {
+    coordenador = String(coordenador || '').trim();
+    if (!coordenador || coordenador === 'N/A' || coordenador === 'Outros') return;
+    if (dashOpenMainWithFilter('projetos', 'coordenador', coordenador)) return;
+    dashWaitAndApply('projetos', function() {
+      if (dashListIsLoading('bodyProjetos')) return false;
+      if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
+      var search = document.getElementById('searchProjetos');
+      if (search) search.value = coordenador;
+      renderTabelaProj(_projetos.filter(function(p) {
+        return _normDash(p && p.coordenador) === _normDash(coordenador);
+      }));
+      return true;
+    });
+  }
+
   function _destroyChart(id) {
     if (_dashCharts[id]) { _dashCharts[id].destroy(); delete _dashCharts[id]; }
   }
@@ -354,7 +370,7 @@
     });
   }
 
-  function _barH(canvasId, labels, datasets) {
+  function _barH(canvasId, labels, datasets, onBarClick) {
     _destroyChart(canvasId);
     var ctx = document.getElementById(canvasId).getContext('2d');
     var fullLabels = labels.slice();
@@ -364,6 +380,14 @@
       data: { labels: displayLabels, datasets: datasets },
       options: {
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        onClick: onBarClick ? function(event, elements) {
+          if (!elements || !elements.length) return;
+          onBarClick(fullLabels[elements[0].index] || '');
+        } : undefined,
+        onHover: onBarClick ? function(event, elements) {
+          var target = event && event.native && event.native.target;
+          if (target) target.style.cursor = elements && elements.length ? 'pointer' : 'default';
+        } : undefined,
         plugins: {
           legend: { display: datasets.length > 1,
             labels: { font: { size: 11, family: 'Roboto' }, padding: 10, boxWidth: 12 } },
@@ -493,7 +517,7 @@
     var coordPairs = _topDashPairs(coordKeys, coordMap, 12);
     if (coordPairs.length) {
       _setChartHeight('chartCoord', coordPairs.length, 28, 240, 440);
-      _barH('chartCoord', coordPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: coordPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, coordPairs.length), borderRadius: 4 }]);
+      _barH('chartCoord', coordPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: coordPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, coordPairs.length), borderRadius: 4 }], dashOpenCoordinator);
     }
     moverBlocoAgendaDashboard();
     renderDashboardAgenda(d.agendaResumo || {});
