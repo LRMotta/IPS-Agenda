@@ -140,6 +140,16 @@
     .name-cell { display: flex; align-items: center; gap: 11px; }
     .row-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 2px solid rgba(18,102,241,.15); }
     .row-name { font-weight: 500; }
+    .estoque-description-cell { min-width: 230px; max-width: 330px; white-space: normal; }
+    .estoque-item-name { font-weight: 500; color: var(--text); line-height: 1.35; }
+    .estoque-item-observation { display: flex; align-items: flex-start; gap: 5px; margin-top: 5px; color: #667085; font-size: 11px; line-height: 1.35; }
+    .estoque-item-observation .material-symbols-outlined { flex: 0 0 auto; margin-top: 1px; color: #8b96aa; font-size: 14px; }
+    .estoque-item-observation > span:last-child { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+    .estoque-detail-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 4px 16px 10px 52px; }
+    .estoque-detail-note { border: 1px solid #dde5f8; border-radius: var(--r-md); background: #fff; padding: 11px 13px; }
+    .estoque-detail-note-title { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: .65px; text-transform: uppercase; }
+    .estoque-detail-note-title .material-symbols-outlined { font-size: 15px; }
+    .estoque-detail-note-body { color: var(--text-muted); font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
     .chip { display: inline-flex; align-items: center; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
     .chip-blue  { background: var(--primary-light); color: var(--primary); }
     .chip-green { background: #e6f4ea; color: #137333; }
@@ -182,7 +192,7 @@
     .pedido-item-form-grid { display: grid; grid-template-columns: minmax(120px, 160px) minmax(280px, 1fr) 80px auto; gap: 10px; align-items: end; margin-bottom: 12px; }
     .mov-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .mov-form-grid .full { grid-column: 1 / -1; }
-    @media (max-width: 760px) { .ped-detail-grid, .pedido-item-form-grid, .mov-form-grid { grid-template-columns: 1fr; } .mov-form-grid .full { grid-column: auto; } }
+    @media (max-width: 760px) { .ped-detail-grid, .pedido-item-form-grid, .mov-form-grid, .estoque-detail-notes { grid-template-columns: 1fr; } .mov-form-grid .full { grid-column: auto; } .estoque-detail-notes { padding-left: 16px; } }
 
     /* MODAL */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s; }

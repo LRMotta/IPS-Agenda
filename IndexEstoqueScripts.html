@@ -107,6 +107,25 @@
     return String((it && (it.tipoItem || it.tipo)) || '').trim();
   }
 
+  function estoqueItemDescricaoHtml(it) {
+    var descricao = esc((it && it.descricao) || '—');
+    var observacao = String((it && it.observacoes) || '').trim();
+    return '<div class="estoque-item-name">' + descricao + '</div>' +
+      (observacao
+        ? '<div class="estoque-item-observation" title="' + esc(observacao) + '"><span class="material-symbols-outlined">notes</span><span>' + esc(observacao) + '</span></div>'
+        : '');
+  }
+
+  function estoqueItemNotasDetalheHtml(it) {
+    var observacao = String((it && it.observacoes) || '').trim();
+    var detalhesVisita = String((it && it.detalhesVisita) || '').trim();
+    if (!observacao && !detalhesVisita) return '';
+    return '<div class="estoque-detail-notes">' +
+      (observacao ? '<div class="estoque-detail-note"><div class="estoque-detail-note-title"><span class="material-symbols-outlined">notes</span>Observações do item</div><div class="estoque-detail-note-body">' + esc(observacao) + '</div></div>' : '') +
+      (detalhesVisita ? '<div class="estoque-detail-note"><div class="estoque-detail-note-title"><span class="material-symbols-outlined">event_note</span>Visitas / complemento</div><div class="estoque-detail-note-body">' + esc(detalhesVisita) + '</div></div>' : '') +
+    '</div>';
+  }
+
   function evStats(lista) {
     var ok = 0, baixo = 0, critico = 0, pend = 0;
     lista.forEach(function(it) {
@@ -142,7 +161,7 @@
     var status = document.getElementById('evFilterStatus').value.toLowerCase();
     var f = evItens.filter(function(it) {
       var tipoItem = evTipoItem(it);
-      if (q && !([it.descricao, it.projeto, tipoItem, it.localizacao, it.idItem, it.numeroPedido, it.responsavel]
+      if (q && !([it.descricao, it.projeto, tipoItem, it.localizacao, it.idItem, it.numeroPedido, it.responsavel, it.observacoes, it.detalhesVisita]
         .join(' ').toLowerCase().includes(q))) return false;
       if (proj   && (it.projeto  || '').toLowerCase() !== proj)   return false;
       if (tipo   && tipoItem.toLowerCase() !== tipo)   return false;
@@ -173,7 +192,7 @@
           '<span class="material-symbols-outlined" style="font-size:18px;transition:transform .25s;" id="evarw-' + uid + '">chevron_right</span>' +
         '</button></td>' +
         '<td><span class="chip chip-blue">' + esc(it.projeto || '—') + '</span></td>' +
-        '<td style="font-weight:500;max-width:220px;">' + esc(it.descricao) + '</td>' +
+        '<td class="estoque-description-cell">' + estoqueItemDescricaoHtml(it) + '</td>' +
         '<td>' + itemTipoChip(evTipoItem(it)) + '</td>' +
         '<td style="' + vCls + '">' + esc(it.validade || '—') + '</td>' +
         '<td style="color:var(--text-muted);">' + esc(it.localizacao || '—') + '</td>' +
@@ -200,6 +219,7 @@
               '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">Responsável:</b>&nbsp;' + esc(it.responsavel || '—') +
             '</span>' +
           '</div>' +
+          estoqueItemNotasDetalheHtml(it) +
         '</td>' +
       '</tr>';
 
@@ -702,7 +722,7 @@
     var itens = dados.itens || [];
     var q = (document.getElementById('eiSearch').value || '').toLowerCase();
     var filtrados = itens.filter(function(i) {
-      return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status].join(' ').toLowerCase().indexOf(q) >= 0;
+      return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status, i.observacoes, i.detalhesVisita].join(' ').toLowerCase().indexOf(q) >= 0;
     });
     var labs = {};
     itens.forEach(function(i){ if (i.laboratorio) labs[i.laboratorio] = 1; });
@@ -721,7 +741,7 @@
     document.getElementById('eiHead').innerHTML =
       '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Localização</th><th>Est. mín.</th><th>Laboratório</th><th>Status</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
     document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(i) {
-      return '<tr><td>' + projetoChip(i.projeto) + '</td><td>' + esc(i.descricao) +
+      return '<tr><td>' + projetoChip(i.projeto) + '</td><td class="estoque-description-cell">' + estoqueItemDescricaoHtml(i) +
         '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
         '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" onclick="abrirFormItemInline(&quot;' + encodeURIComponent(JSON.stringify(i)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
