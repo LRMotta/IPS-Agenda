@@ -50,9 +50,12 @@ test('grafico de coordenadores abre projetos com o coordenador selecionado', () 
 test('projetos disponibiliza impressao da lista exibida', () => {
   const content = readProjectFile('IndexContentAfterDashboard.html');
   const core = readProjectFile('IndexCoreScripts.html');
+  assert.match(content, /class="btn-new proj-print-btn"/);
   assert.match(content, /onclick="imprimirProjetos\(\)"/);
   assert.match(core, /function imprimirProjetos\(\)/);
   assert.match(core, /querySelectorAll\('tr\.proj-main'\)/);
   assert.match(core, /slice\.call\(cells, 0, 8\)/);
+  assert.match(core, /querySelectorAll\('\.proj-toggle, \.row-avatar'\)/);
+  assert.match(core, /querySelectorAll\('button, \.material-symbols-outlined'\)/);
   assert.match(core, /window\.open\('', '_blank'\)/);
 });
