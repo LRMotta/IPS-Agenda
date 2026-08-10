@@ -5953,6 +5953,21 @@ function getEstoque() {
   if (!sh || sh.getLastRow() < 2) return [];
   var data = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getValues();
   var tz = Session.getScriptTimeZone();
+  var catalogo = getItensEstoque().itens || [];
+  var catalogoPorId = {};
+  var catalogoPorDescricao = {};
+
+  function catalogoKey(projeto, descricao, tipo) {
+    return [projeto, descricao, tipo].map(function(v) {
+      return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    }).join('||');
+  }
+
+  catalogo.forEach(function(item) {
+    var id = String(item.idItem || '').trim();
+    if (id) catalogoPorId[id] = item;
+    catalogoPorDescricao[catalogoKey(item.projeto, item.descricao, item.tipo)] = item;
+  });
 
   var itens = data
     .filter(function(r) { return r[0] || r[2]; }) // ignora linhas totalmente vazias
@@ -5965,11 +5980,16 @@ function getEstoque() {
           return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
         } catch(e) { return String(v); }
       }
+      var idItem = String(r[0] || '');
+      var projeto = String(r[1] || '');
+      var descricao = String(r[2] || '');
+      var tipoItem = String(r[3] || '');
+      var itemCatalogo = catalogoPorId[idItem.trim()] || catalogoPorDescricao[catalogoKey(projeto, descricao, tipoItem)] || {};
       return {
-        idItem:           String(r[0]  || ''),
-        projeto:          String(r[1]  || ''),
-        descricao:        String(r[2]  || ''),
-        tipoItem:         String(r[3]  || ''),
+        idItem:           idItem,
+        projeto:          projeto,
+        descricao:        descricao,
+        tipoItem:         tipoItem,
         validade:         fmtDate(r[4]),
         localizacao:      String(r[5]  || ''),
         qtde:             r[6]  !== '' && r[6]  !== null ? Number(r[6])  : '',
@@ -5978,7 +5998,9 @@ function getEstoque() {
         ultimaAlteracao:  fmtDate(r[9]),
         responsavel:      String(r[10] || ''),
         qtdePedidaPendente: r[11] !== '' && r[11] !== null ? Number(r[11]) : '',
-        numeroPedido:     String(r[12] || '')
+        numeroPedido:     String(r[12] || ''),
+        observacoes:      String(itemCatalogo.observacoes || ''),
+        detalhesVisita:   String(itemCatalogo.detalhesVisita || '')
       };
     });
 

@@ -70,3 +70,25 @@ test('novo item mantém vazia a coluna de detalhes e alinha os demais campos', (
   assert.equal(row[8], 'Lab C');
   assert.equal(row[9], 'Ativo');
 });
+
+test('visualização do estoque incorpora observações e detalhes do cadastro do item', () => {
+  const itens = new FakeSheet('Itens', [
+    ITEM_HEADERS,
+    ['0001', 'Estudo A', 'Kit coleta', 'V1 e V2', 'Kit', 'Sala A', 2, 'Manter duas unidades', 'Lab A', 'Ativo']
+  ]);
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido'],
+    ['0001', 'Estudo A', 'Kit coleta', 'Kit', '', 'Sala A', 3, 2, 'OK', '', 'pessoa@ucs.br', '', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Itens: itens, Estoque: estoque });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { formatDate: () => '' }
+  });
+  server.getProjetosAtivosEstoque_ = () => [];
+
+  const item = server.getEstoque()[0];
+  assert.equal(item.observacoes, 'Manter duas unidades');
+  assert.equal(item.detalhesVisita, 'V1 e V2');
+});
