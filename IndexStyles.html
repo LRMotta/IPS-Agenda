@@ -229,6 +229,7 @@
     .field-row { display: grid; gap: 14px; }
     .field-row.cols-2 { grid-template-columns: 1fr 1fr; }
     .field-row.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .profile-professional-row { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; align-items: start; }
     .form-grid.single { grid-template-columns: minmax(0, 1fr); }
     .form-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -283,6 +284,9 @@
     .btn-danger { background: #b3261e; color: #fff; border: none; border-radius: 20px; padding: 8px 18px; font-family: 'Roboto', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
     .btn-danger:hover { background: #8c1a14; }
     .profile-helper { margin-top:8px; color:var(--text-muted); font-size:11.5px; line-height:1.45; }
+    .profile-modal-box { width:min(760px, calc(100vw - 48px)); max-width:760px!important; }
+    .profile-modal-box .form-section { padding:20px; }
+    .profile-modal-box .field-label { letter-spacing:.42px; }
     .profile-readonly-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:2px 0 18px; }
     .profile-readonly-grid>div { min-width:0; border:1px solid #e0e6f0; border-radius:var(--r-sm); background:#f6f8ff; padding:10px 12px; }
     .profile-readonly-grid span { display:block; color:var(--text-faint); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.65px; margin-bottom:4px; }
