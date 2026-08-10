@@ -62,7 +62,7 @@
   function carregarEstoqueView(force) {
     if (force) invalidateEstoqueClientCache();
     document.getElementById('evBody').innerHTML =
-      '<tr class="loading-row"><td colspan="11"><div class="spinner"></div>Carregando...</td></tr>';
+      '<tr class="loading-row"><td colspan="10"><div class="spinner"></div>Carregando...</td></tr>';
     estoqueCachedRun('bootstrap:estoque-view', 'getEstoqueBootstrapData', ['estoque-view'],
       function(res) { evRender((res && res.data) || res); },
       function(e) { snackErro(e); },
@@ -143,7 +143,7 @@
   }
 
   function evNivel(it) {
-    var q   = Number(it.qtde);
+    var q   = Number(it.estoqueAtual !== undefined ? it.estoqueAtual : it.qtde);
     var min = Number(it.estoqueMinimo);
     if (isNaN(q)) return 'desconhecido';
     if (q <= 0)   return 'critico';
@@ -161,8 +161,11 @@
     var status = document.getElementById('evFilterStatus').value.toLowerCase();
     var f = evItens.filter(function(it) {
       var tipoItem = evTipoItem(it);
-      if (q && !([it.descricao, it.projeto, tipoItem, it.localizacao, it.idItem, it.numeroPedido, it.responsavel, it.observacoes, it.detalhesVisita]
-        .join(' ').toLowerCase().includes(q))) return false;
+      var lotesBusca = (it.lotes || []).map(function(lote) {
+        return [lote.validade, lote.localizacao, lote.numeroPedido, lote.responsavel, lote.status].join(' ');
+      }).join(' ');
+      if (q && !([it.descricao, it.projeto, tipoItem, it.laboratorio, it.idItem, it.observacoes, it.detalhesVisita,
+        (it.numerosPedidoPendente || []).join(' '), lotesBusca].join(' ').toLowerCase().includes(q))) return false;
       if (proj   && (it.projeto  || '').toLowerCase() !== proj)   return false;
       if (tipo   && tipoItem.toLowerCase() !== tipo)   return false;
       if (status && (it.status   || '').toLowerCase() !== status) return false;
@@ -174,7 +177,7 @@
   function evRenderTabela(lista) {
     var tb = document.getElementById('evBody');
     if (!lista.length) {
-      tb.innerHTML = '<tr class="empty-row"><td colspan="11">Nenhum item encontrado.</td></tr>';
+      tb.innerHTML = '<tr class="empty-row"><td colspan="10">Nenhum item encontrado.</td></tr>';
       return;
     }
     tb.innerHTML = lista.map(function(it, idx) {
@@ -182,10 +185,36 @@
       var nivel = evNivel(it);
       var qCls  = nivel === 'critico' ? 'color:#b3261e;font-weight:700' :
                   nivel === 'baixo'   ? 'color:#e65100;font-weight:700' : 'color:#137333;font-weight:700';
-      var vCls  = evValCls(it.validade);
+      var lotes = (it.lotes || []).slice().sort(function(a, b) { return sortValidade(a.validade, b.validade); });
+      var validades = lotes.map(function(lote) { return String(lote.validade || '').trim(); }).filter(Boolean);
+      var locais = [];
+      lotes.forEach(function(lote) {
+        var local = String(lote.localizacao || '').trim();
+        if (local && locais.indexOf(local) < 0) locais.push(local);
+      });
+      var resumoValidade = !lotes.length
+        ? '<span class="estoque-summary-muted">Sem estoque</span>'
+        : '<span class="estoque-summary-meta">' + lotes.length + (lotes.length === 1 ? ' lote' : ' lotes') +
+          (validades.length ? ' · primeiro vencimento <span style="' + evValCls(validades[0]) + '">' + esc(validades[0]) + '</span>' : ' · validade não aplicável') + '</span>';
+      var resumoLocal = !locais.length ? '—' : (locais.length === 1 ? esc(locais[0]) : esc(locais.length + ' locais'));
       var pedPend = (it.qtdePedidaPendente !== '' && Number(it.qtdePedidaPendente) > 0)
         ? '<span class="chip chip-blue">' + esc(String(it.qtdePedidaPendente)) + '</span>'
         : '—';
+
+      var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
+        '<thead><tr><th>Validade</th><th>Localização</th><th>Qtde.</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
+        lotes.map(function(lote) {
+          return '<tr>' +
+            '<td style="' + evValCls(lote.validade) + '">' + esc(lote.validade || '—') + '</td>' +
+            '<td>' + esc(lote.localizacao || '—') + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(lote.qtde) + '</td>' +
+            '<td>' + evChipStatus(lote.status) + '</td>' +
+            '<td>' + evPedidoLink(lote.numeroPedido) + '</td>' +
+            '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
+            '<td>' + esc(lote.responsavel || '—') + '</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table></div>'
+        : '<div class="estoque-empty-lots"><span class="material-symbols-outlined">inventory_2</span>Item cadastrado sem saldo atual.</div>';
 
       var r1 = '<tr class="par-main" data-pair="' + uid + '">' +
         '<td><button style="width:28px;height:28px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-faint);border-radius:var(--r-sm);" onclick="evToggle(\'' + uid + '\')">' +
@@ -194,31 +223,28 @@
         '<td><span class="chip chip-blue">' + esc(it.projeto || '—') + '</span></td>' +
         '<td class="estoque-description-cell">' + estoqueItemDescricaoHtml(it) + '</td>' +
         '<td>' + itemTipoChip(evTipoItem(it)) + '</td>' +
-        '<td style="' + vCls + '">' + esc(it.validade || '—') + '</td>' +
-        '<td style="color:var(--text-muted);">' + esc(it.localizacao || '—') + '</td>' +
-        '<td style="text-align:center;' + qCls + '">' + (it.qtde !== undefined && it.qtde !== "" ? it.qtde : "—") + '</td>' +
+        '<td style="color:var(--text-muted);">' + esc(it.laboratorio || '—') + '</td>' +
+        '<td><div class="estoque-summary-total" style="' + qCls + '">Total: ' + esc(it.estoqueAtual || 0) + '</div>' + resumoValidade + '</td>' +
+        '<td style="color:var(--text-muted);">' + resumoLocal + '</td>' +
         '<td style="text-align:center;color:var(--text-muted);">' + (it.estoqueMinimo !== undefined && it.estoqueMinimo !== "" ? it.estoqueMinimo : "—") + '</td>' +
         '<td>' + evChipStatus(it.status) + '</td>' +
         '<td style="text-align:center;">' + pedPend + '</td>' +
-        '<td style="font-size:11.5px;color:var(--text-muted);">' + evPedidoLink(it.numeroPedido) + '</td>' +
       '</tr>';
 
       var r2 = '<tr class="par-detail" id="evdet-' + uid + '" data-pair="' + uid + '" style="display:none;">' +
-        '<td colspan="11" style="padding:4px 0 12px 0;background:#fafbff;">' +
+        '<td colspan="10" style="padding:4px 0 12px 0;background:#fafbff;">' +
           '<div style="padding:8px 12px 6px 52px;display:flex;flex-wrap:wrap;gap:6px 28px;">' +
             '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
               '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">tag</span>' +
               '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">ID:</b>&nbsp;' + esc(it.idItem || '—') +
             '</span>' +
             '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
-              '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">history</span>' +
-              '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">Última Alteração:</b>&nbsp;' + esc(it.ultimaAlteracao || '—') +
-            '</span>' +
-            '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
-              '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">person</span>' +
-              '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">Responsável:</b>&nbsp;' + esc(it.responsavel || '—') +
+              '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">local_shipping</span>' +
+              '<b style="font-size:10px;text-transform:uppercase;color:var(--text-faint);">Pedidos pendentes:</b>&nbsp;' +
+              ((it.numerosPedidoPendente || []).length ? (it.numerosPedidoPendente || []).map(evPedidoLink).join(', ') : '—') +
             '</span>' +
           '</div>' +
+          lotesHtml +
           estoqueItemNotasDetalheHtml(it) +
         '</td>' +
       '</tr>';
@@ -269,7 +295,7 @@
   function evChipStatus(s) {
     if (!s) return '<span style="color:#9aa3b0">—</span>';
     var n = s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var map = { 'ativo':'chip-green', 'inativo':'chip', 'vencido':'chip-red' };
+    var map = { 'ativo':'chip-green', 'inativo':'chip', 'vencido':'chip-red', 'ok':'chip-green', 'critico':'chip-red', 'estoque baixo':'chip-yellow' };
     return '<span class="chip ' + (map[n]||'chip') + '">' + esc(s) + '</span>';
   }
   // ===================== FIM VISUALIZAÇÃO DO ESTOQUE =====================
