@@ -107,6 +107,12 @@
     return String((it && (it.tipoItem || it.tipo)) || '').trim();
   }
 
+  function estoqueValidadeExibicao(valor) {
+    var raw = String(valor || '').trim();
+    if (!raw) return '';
+    return typeof formatDateBr === 'function' ? formatDateBr(raw) : raw;
+  }
+
   function estoqueItemDescricaoHtml(it) {
     var descricao = esc((it && it.descricao) || '—');
     var observacao = String((it && it.observacoes) || '').trim();
@@ -195,7 +201,7 @@
       var resumoValidade = !lotes.length
         ? '<span class="estoque-summary-muted">Sem estoque</span>'
         : '<span class="estoque-summary-meta">' + lotes.length + (lotes.length === 1 ? ' lote' : ' lotes') +
-          (validades.length ? ' · primeiro vencimento <span style="' + evValCls(validades[0]) + '">' + esc(validades[0]) + '</span>' : ' · validade não aplicável') + '</span>';
+          (validades.length ? ' · primeiro vencimento <span style="' + evValCls(validades[0]) + '">' + esc(estoqueValidadeExibicao(validades[0])) + '</span>' : ' · validade não aplicável') + '</span>';
       var resumoLocal = !locais.length ? '—' : (locais.length === 1 ? esc(locais[0]) : esc(locais.length + ' locais'));
       var pedPend = (it.qtdePedidaPendente !== '' && Number(it.qtdePedidaPendente) > 0)
         ? '<span class="chip chip-blue">' + esc(String(it.qtdePedidaPendente)) + '</span>'
@@ -205,7 +211,7 @@
         '<thead><tr><th>Validade</th><th>Localização</th><th>Qtde.</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
         lotes.map(function(lote) {
           return '<tr>' +
-            '<td style="' + evValCls(lote.validade) + '">' + esc(lote.validade || '—') + '</td>' +
+            '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
             '<td>' + esc(lote.localizacao || '—') + '</td>' +
             '<td style="text-align:center;font-weight:700">' + esc(lote.qtde) + '</td>' +
             '<td>' + evChipStatus(lote.status) + '</td>' +
@@ -845,7 +851,7 @@
         '</td><td>' + projetoChip(m.projeto) + '</td><td><div class="row-name">' + esc(m.descricao || '—') +
         '</div></td><td>' +
         itemTipoChip(m.tipoItem) + '</td><td style="text-align:center;font-weight:600">' + esc(m.qtde) +
-        '</td><td>' + esc(m.validade || '—') + '</td><td>' + esc(m.localizacao || '—') +
+        '</td><td>' + esc(estoqueValidadeExibicao(m.validade) || '—') + '</td><td>' + esc(m.localizacao || '—') +
         '</td><td>' + esc(m.responsavel || '—') + '</td></tr>';
     }).join('') : '<tr><td colspan="9" style="text-align:center;color:#9aa3b0;padding:20px">' + movEmptyMessage(dados.diag) + '</td></tr>';
   }
@@ -908,7 +914,7 @@
       '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Validade</th><th style="text-align:center">Qtde.</th><th>Localização</th><th>Status</th><th>N° Pedido</th></tr>';
     document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(it) {
       return '<tr><td>' + projetoChip(it.projeto) + '</td><td>' + esc(it.descricao || '—') +
-        '</td><td>' + itemTipoChip(it.tipoItem) + '</td><td style="' + evValCls(it.validade || '') + '">' + esc(it.validade || '—') +
+        '</td><td>' + itemTipoChip(it.tipoItem) + '</td><td style="' + evValCls(it.validade || '') + '">' + esc(estoqueValidadeExibicao(it.validade) || '—') +
         '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde) + '</td><td>' + esc(it.localizacao || '—') +
         '</td><td>' + evChipStatus(it.status) + '</td><td>' + evPedidoLink(it.numeroPedido) + '</td></tr>';
     }).join('') : '<tr><td colspan="8" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado para este tipo de relatório.</td></tr>';
@@ -980,7 +986,7 @@
     var busca = ((document.getElementById('eiSearch') || {}).value || '').trim();
     var rows = estoque.map(function(it) {
       return '<tr><td>' + esc(it.projeto || '') + '</td><td>' + esc(it.descricao || '') + '</td><td>' +
-        esc(it.tipoItem || '') + '</td><td>' + esc(it.validade || '') + '</td><td>' + esc(it.qtde || '') +
+        esc(it.tipoItem || '') + '</td><td>' + esc(estoqueValidadeExibicao(it.validade)) + '</td><td>' + esc(it.qtde || '') +
         '</td><td>' + esc(it.localizacao || '') + '</td><td>' + esc(it.status || '') + '</td></tr>';
     }).join('');
     var logo = ((document.querySelector('.nav-brand img') || {}).src || '');
@@ -1205,7 +1211,7 @@
     var itens = getDescarteItensFiltrados();
     body.innerHTML = itens.length ? itens.map(function(it) {
       var key = descarteItemKey(it);
-      return '<tr><td><div class="row-name">' + esc(it.descricao || '-') + '</div></td><td>' + itemTipoChip(it.tipoItem) + '</td><td><span style="' + evValCls(it.validade || '') + '">' + esc(it.validade || '-') + '</span></td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde || 0) + '</td><td><input type="number" min="0" max="' + esc(it.qtde || 0) + '" step="1" class="f-input" style="height:34px;text-align:center" value="' + esc(_descarteCarrinho[key] || 0) + '" oninput="atualizarDescarteQtd(&quot;' + esc(key) + '&quot;,this.value)"></td></tr>';
+      return '<tr><td><div class="row-name">' + esc(it.descricao || '-') + '</div></td><td>' + itemTipoChip(it.tipoItem) + '</td><td><span style="' + evValCls(it.validade || '') + '">' + esc(estoqueValidadeExibicao(it.validade) || '-') + '</span></td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde || 0) + '</td><td><input type="number" min="0" max="' + esc(it.qtde || 0) + '" step="1" class="f-input" style="height:34px;text-align:center" value="' + esc(_descarteCarrinho[key] || 0) + '" oninput="atualizarDescarteQtd(&quot;' + esc(key) + '&quot;,this.value)"></td></tr>';
     }).join('') : '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Nenhum lote disponível para este projeto.</td></tr>';
     renderDescarteResumo();
   }
@@ -1342,7 +1348,7 @@
       var lotes = (it.lotes || []).slice().sort(function(a, b) { return sortValidade(a.validade, b.validade); });
       var lotesHtml = lotes.length ? lotes.map(function(l) {
         return '<div style="display:flex;gap:6px;align-items:center;margin:2px 0">' +
-          '<span style="' + evValCls(l.validade || '') + '">' + esc(l.validade || '—') + '</span>' +
+          '<span style="' + evValCls(l.validade || '') + '">' + esc(estoqueValidadeExibicao(l.validade) || '—') + '</span>' +
           '<span class="chip chip-blue" style="font-size:10px;padding:1px 6px">' + esc(l.qtde || 0) + '</span>' +
         '</div>';
       }).join('') : '<span style="color:#9aa3b0">Sem estoque</span>';
@@ -1575,7 +1581,7 @@
       var itens = mapa[d.idDescarte] || [];
       var emPlanejamento = normSelectValue(d.status).indexOf('planejamento') >= 0;
       var detail = itens.length ? '<table class="ped-subtable"><thead><tr><th>Tipo</th><th>Descrição</th><th>Validade</th><th>Local</th><th>Qtd</th><th>Status</th></tr></thead><tbody>' +
-        itens.map(function(it) { return '<tr><td>' + itemTipoChip(it.tipo) + '</td><td>' + esc(it.descricao || '-') + '</td><td>' + esc(it.validade || '-') + '</td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtdDescartar || 0) + '</td><td>' + pedidoItemChip(it.status) + '</td></tr>'; }).join('') +
+        itens.map(function(it) { return '<tr><td>' + itemTipoChip(it.tipo) + '</td><td>' + esc(it.descricao || '-') + '</td><td>' + esc(estoqueValidadeExibicao(it.validade) || '-') + '</td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtdDescartar || 0) + '</td><td>' + pedidoItemChip(it.status) + '</td></tr>'; }).join('') +
         '</tbody></table>' : '<div class="sub-empty">Nenhum item listado.</div>';
       return '<tr class="ped-main" data-uid="' + uid + '">' +
         '<td style="padding-left:12px"><button class="expand-btn" id="desbtn-' + uid + '" onclick="toggleDescarteInline(&quot;' + uid + '&quot;)"><span class="material-symbols-outlined">chevron_right</span></button></td>' +
@@ -1623,7 +1629,7 @@
     var itens = (dados.itensMap || {})[id] || [];
     var logo = ((document.querySelector('.nav-brand img') || {}).src || '');
     var rows = itens.map(function(it) {
-      return '<tr><td>' + esc(it.descricao || '-') + '</td><td>' + esc(it.tipo || '-') + '</td><td>' + esc(it.validade || '-') + '</td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center">' + esc(it.qtdDescartada || it.qtdDescartar || 0) + '</td><td>' + esc(it.motivo || '') + '</td></tr>';
+      return '<tr><td>' + esc(it.descricao || '-') + '</td><td>' + esc(it.tipo || '-') + '</td><td>' + esc(estoqueValidadeExibicao(it.validade) || '-') + '</td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center">' + esc(it.qtdDescartada || it.qtdDescartar || 0) + '</td><td>' + esc(it.motivo || '') + '</td></tr>';
     }).join('');
     var dataDesc = descarte.dataEfetivacao || descarte.data || '';
     var html = '<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Descarte</title><style>' +
@@ -2368,7 +2374,7 @@
           lote: it.lote || '',
           numeroPedido: it.numeroPedido || ''
         }));
-        var label = it.descricao + ' · qtd ' + it.qtde + (it.validade ? ' · val. ' + it.validade : '') + (it.localizacao ? ' · ' + it.localizacao : '');
+        var label = it.descricao + ' · qtd ' + it.qtde + (it.validade ? ' · val. ' + estoqueValidadeExibicao(it.validade) : '') + (it.localizacao ? ' · ' + it.localizacao : '');
         itemSel.insertAdjacentHTML('beforeend', '<option value="' + key + '">' + esc(label) + '</option>');
       });
     if (itemSel.options.length === 1) {

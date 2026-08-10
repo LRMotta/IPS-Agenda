@@ -6014,13 +6014,27 @@ function getEstoque() {
 
 function getEstoquePedidosPendentesPorItem_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var shPedidos = getSheetByPossibleNames_(ss, ['Pedidos', 'Cadastro de Pedidos']);
   var sh = getSheetByPossibleNames_(ss, ['Pedidos_Itens', 'Pedido_Itens', 'Pedido Itens', 'Itens do Pedido']);
   var out = {};
-  if (!sh || sh.getLastRow() < 2) return out;
+  if (!shPedidos || shPedidos.getLastRow() < 2 || !sh || sh.getLastRow() < 2) return out;
+
+  var pedidosElegiveis = {};
+  var pedidosRows = shPedidos.getDataRange().getValues();
+  for (var p = 1; p < pedidosRows.length; p++) {
+    var pedidoId = String(pedidosRows[p][0] || '').trim();
+    if (!pedidoId) continue;
+    var statusPedido = String(pedidosRows[p][6] || 'Pendente')
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    pedidosElegiveis[pedidoId] = statusPedido.indexOf('planejamento') < 0 &&
+      statusPedido.indexOf('cancel') < 0 && statusPedido.indexOf('rascunho') < 0;
+  }
 
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
+    var idPedido = String(r[0] || '').trim();
+    if (!pedidosElegiveis[idPedido]) continue;
     var idItem = String(r[5] || '').trim();
     if (!idItem) continue;
     var pendente = Math.max(0, (Number(r[6] || 0) || 0) - (Number(r[7] || 0) || 0));
@@ -6086,9 +6100,6 @@ function getEstoqueVisualizacao() {
       ? Number(item.estoqueMin || 0) || 0
       : lotes.reduce(function(maior, lote) { return Math.max(maior, Number(lote.estoqueMinimo || 0) || 0); }, 0);
     var pedido = pendentes[id] || null;
-    var pendenteLegado = lotes.reduce(function(maior, lote) {
-      return Math.max(maior, Number(lote.qtdePedidaPendente || 0) || 0);
-    }, 0);
     return {
       idItem: id.indexOf('__SEM_ID__') === 0 ? '' : id,
       projeto: item.projeto || '',
@@ -6102,7 +6113,7 @@ function getEstoqueVisualizacao() {
       estoqueAtual: total,
       qtde: total,
       status: statusConsolidado(total, minimo),
-      qtdePedidaPendente: pedido ? pedido.quantidade : pendenteLegado,
+      qtdePedidaPendente: pedido ? pedido.quantidade : 0,
       numerosPedidoPendente: pedido ? pedido.numerosPedido : [],
       lotes: lotes
     };
@@ -6130,9 +6141,20 @@ function getEstoqueVisualizacao() {
     }, id, lotes));
   });
 
+  function ordemTipo(item) {
+    var tipo = String(item.tipoItem || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (tipo.indexOf('kit') >= 0) return 0;
+    if (tipo.indexOf('bulk') >= 0) return 1;
+    return 2;
+  }
+
   itens.sort(function(a, b) {
-    return [a.projeto, a.descricao, a.idItem].join('||').localeCompare(
-      [b.projeto, b.descricao, b.idItem].join('||'), 'pt-BR', { sensitivity: 'base' }
+    var projetoCmp = String(a.projeto || '').localeCompare(String(b.projeto || ''), 'pt-BR', { sensitivity: 'base' });
+    if (projetoCmp) return projetoCmp;
+    var tipoCmp = ordemTipo(a) - ordemTipo(b);
+    if (tipoCmp) return tipoCmp;
+    return [a.descricao, a.idItem].join('||').localeCompare(
+      [b.descricao, b.idItem].join('||'), 'pt-BR', { sensitivity: 'base' }
     );
   });
   return itens;
