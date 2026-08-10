@@ -56,6 +56,7 @@ var APP_VERSION_CHECK_TIMER = null;
 var APP_VERSION_NOTICE_VISIBLE = false;
 var APP_VERSION_CHECK_IN_FLIGHT = false;
 var USERS_ADMIN_ROWS = [];
+var USER_PROFILE_FORMACOES = [];
 var APP_DEPLOYMENT_DIAGNOSTICS = null;
 var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
 var _estoqueConfigLoaded = false;
@@ -1263,6 +1264,18 @@ function profileBirthdayPayload(dayId, monthId) {
   };
 }
 
+function profileFormationOptionsHtml(selected) {
+  selected = String(selected || '');
+  return '<option value="">— Selecione —</option>' + USER_PROFILE_FORMACOES.map(function(formacao) {
+    return '<option value="' + esc(formacao) + '"' + (formacao === selected ? ' selected' : '') + '>' + esc(formacao) + '</option>';
+  }).join('');
+}
+
+function preencherSelectFormacaoPerfil(selectId, selected) {
+  var select = document.getElementById(selectId);
+  if (select) select.innerHTML = profileFormationOptionsHtml(selected);
+}
+
 function userProfileChipKeydown(event) {
   if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
   event.preventDefault();
@@ -1275,6 +1288,9 @@ function abrirMeuPerfil() {
   document.getElementById('meuPerfilNome').value = '';
   document.getElementById('meuPerfilEmail').textContent = CURRENT_ACCESS.email || '—';
   document.getElementById('meuPerfilRole').textContent = CURRENT_ACCESS.role || '—';
+  preencherSelectFormacaoPerfil('meuPerfilFormacao', '');
+  document.getElementById('meuPerfilRegistro').value = '';
+  document.getElementById('meuPerfilPodeSolicitar').textContent = '—';
   document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:var(--text-muted)">Carregando perfil...</span>';
   abrirOverlay('modalMeuPerfil');
   google.script.run
@@ -1283,6 +1299,10 @@ function abrirMeuPerfil() {
       document.getElementById('meuPerfilNome').value = profile.name || '';
       document.getElementById('meuPerfilEmail').textContent = profile.email || CURRENT_ACCESS.email || '—';
       document.getElementById('meuPerfilRole').textContent = profile.role || CURRENT_ACCESS.role || '—';
+      USER_PROFILE_FORMACOES = profile.formacoes || [];
+      preencherSelectFormacaoPerfil('meuPerfilFormacao', profile.formacao);
+      document.getElementById('meuPerfilRegistro').value = profile.registroProfissional || '';
+      document.getElementById('meuPerfilPodeSolicitar').textContent = profile.podeSolicitarExames === 'Não' ? 'Não' : 'Sim';
       preencherSelectsAniversario('meuPerfilDia', 'meuPerfilMes', profile.birthdayDay, profile.birthdayMonth);
       document.getElementById('statusMeuPerfil').textContent = '';
       document.getElementById('meuPerfilNome').focus();
@@ -1332,21 +1352,29 @@ function salvarMeuPerfilApp() {
       btn.innerHTML = old;
       document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
     })
-    .salvarMeuPerfil({ name: name, birthdayDay: birthday.birthdayDay, birthdayMonth: birthday.birthdayMonth });
+    .salvarMeuPerfil({
+      name: name,
+      birthdayDay: birthday.birthdayDay,
+      birthdayMonth: birthday.birthdayMonth,
+      formacao: document.getElementById('meuPerfilFormacao').value,
+      registroProfissional: document.getElementById('meuPerfilRegistro').value
+    });
 }
 
 function carregarUsersAdmin() {
   var tb = document.getElementById('bodyUsersAdmin');
-  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+  if (tb) tb.innerHTML = '<tr class="loading-row"><td colspan="8"><div class="spinner"></div>Carregando…</td></tr>';
   google.script.run
-    .withSuccessHandler(function(rows) {
-      USERS_ADMIN_ROWS = rows || [];
+    .withSuccessHandler(function(result) {
+      result = result || {};
+      USERS_ADMIN_ROWS = result.users || [];
+      USER_PROFILE_FORMACOES = result.formacoes || [];
       renderUsersAdmin();
     })
     .withFailureHandler(function(e) {
-      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="6">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="8">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
     })
-    .getUsersAdminList();
+    .getUsersAdminBootstrap();
 }
 
 function renderUsersAdmin(forceNow) {
@@ -1360,7 +1388,7 @@ function renderUsersAdmin(forceNow) {
   var qEl = document.getElementById('searchUsersAdmin');
   var q = norm(qEl ? qEl.value : '');
   var filtered = rows.filter(function(u) {
-    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.role, u.ativo].join(' ')).indexOf(q) >= 0;
+    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.formacao, u.registroProfissional, u.podeSolicitarExames, u.role, u.ativo].join(' ')).indexOf(q) >= 0;
   });
   var total = rows.length;
   var ativos = rows.filter(function(u) { return u.ativo === 'Sim'; }).length;
@@ -1374,7 +1402,7 @@ function renderUsersAdmin(forceNow) {
   var tb = document.getElementById('bodyUsersAdmin');
   if (!tb) return;
   if (!filtered.length) {
-    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum usuário encontrado.</td></tr>';
+    tb.innerHTML = '<tr class="empty-row"><td colspan="8">Nenhum usuário encontrado.</td></tr>';
     return;
   }
   tb.innerHTML = filtered.map(function(u) {
@@ -1385,7 +1413,9 @@ function renderUsersAdmin(forceNow) {
     return '<tr>' +
       '<td><div class="name-cell"><div class="row-avatar">' + esc(initial) + '</div><span class="row-name">' + esc(name) + '</span></div></td>' +
       '<td style="color:#5f6b7c;">' + esc(u.email) + '</td>' +
+      '<td>' + esc(u.formacao || '—') + '<br><small style="color:#5f6b7c">' + esc(u.registroProfissional || '') + '</small></td>' +
       '<td><span class="chip ' + (u.birthdayLabel ? 'chip-purple' : '') + '">' + esc(u.birthdayLabel || '—') + '</span></td>' +
+      '<td><span class="chip ' + (u.podeSolicitarExames === 'Sim' ? 'chip-green' : 'chip-red') + '">' + esc(u.podeSolicitarExames || 'Não') + '</span></td>' +
       '<td><span class="chip ' + roleCls + '">' + esc(u.role) + '</span></td>' +
       '<td><span class="chip ' + (ativo ? 'chip-green' : 'chip-red') + '">' + (ativo ? 'Ativo' : 'Inativo') + '</span></td>' +
       '<td><div class="action-btns">' +
@@ -1405,6 +1435,9 @@ function abrirFormUsuarioAdmin(rowIndex) {
   document.getElementById('userAdminEmail').value = u ? u.email : '';
   document.getElementById('userAdminRole').value = u ? u.role : 'user';
   document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';
+  preencherSelectFormacaoPerfil('userAdminFormacao', u ? u.formacao : '');
+  document.getElementById('userAdminRegistro').value = u ? (u.registroProfissional || '') : '';
+  document.getElementById('userAdminPodeSolicitar').value = u ? u.podeSolicitarExames : 'Sim';
   document.getElementById('statusUsuarioAdmin').textContent = '';
   document.getElementById('errUserAdminEmail').classList.remove('show');
   document.getElementById('errUserAdminNome').classList.remove('show');
@@ -1456,7 +1489,10 @@ function salvarUsuarioAdminApp() {
       birthdayDay: document.getElementById('userAdminDia').value,
       birthdayMonth: document.getElementById('userAdminMes').value,
       role: document.getElementById('userAdminRole').value,
-      ativo: document.getElementById('userAdminAtivo').value
+      ativo: document.getElementById('userAdminAtivo').value,
+      formacao: document.getElementById('userAdminFormacao').value,
+      registroProfissional: document.getElementById('userAdminRegistro').value,
+      podeSolicitarExames: document.getElementById('userAdminPodeSolicitar').value
     });
 }
 
@@ -1475,6 +1511,9 @@ function abrirCargaPerfisAdmin() {
       '<td><input class="f-input profile-bulk-name" id="bulkUserName-' + id + '" type="text" value="' + esc(u.name || '') + '" aria-label="Nome completo de ' + esc(u.email) + '"></td>' +
       '<td><select class="f-input f-select profile-bulk-day" id="bulkUserDay-' + id + '" aria-label="Dia do aniversário de ' + esc(u.email) + '">' + profileDayOptionsHtml(u.birthdayDay) + '</select></td>' +
       '<td><select class="f-input f-select profile-bulk-month" id="bulkUserMonth-' + id + '" aria-label="Mês do aniversário de ' + esc(u.email) + '">' + profileMonthOptionsHtml(u.birthdayMonth) + '</select></td>' +
+      '<td><select class="f-input f-select profile-bulk-formation" id="bulkUserFormation-' + id + '" aria-label="Formação de ' + esc(u.email) + '">' + profileFormationOptionsHtml(u.formacao) + '</select></td>' +
+      '<td><input class="f-input profile-bulk-registration" id="bulkUserRegistration-' + id + '" type="text" value="' + esc(u.registroProfissional || '') + '" aria-label="Registro profissional de ' + esc(u.email) + '"></td>' +
+      '<td><select class="f-input f-select profile-bulk-request" id="bulkUserRequest-' + id + '" aria-label="Pode solicitar exames: ' + esc(u.email) + '"><option value="Sim"' + (u.podeSolicitarExames === 'Sim' ? ' selected' : '') + '>Sim</option><option value="Não"' + (u.podeSolicitarExames === 'Não' ? ' selected' : '') + '>Não</option></select></td>' +
       '</tr>';
   }).join('');
   document.getElementById('statusCargaPerfis').textContent = '';
@@ -1489,13 +1528,24 @@ function salvarCargaPerfisAdminApp() {
     var nameEl = document.getElementById('bulkUserName-' + id);
     var dayEl = document.getElementById('bulkUserDay-' + id);
     var monthEl = document.getElementById('bulkUserMonth-' + id);
+    var formationEl = document.getElementById('bulkUserFormation-' + id);
+    var registrationEl = document.getElementById('bulkUserRegistration-' + id);
+    var requestEl = document.getElementById('bulkUserRequest-' + id);
     var name = String((nameEl || {}).value || '').replace(/\s+/g, ' ').trim();
     var day = Number((dayEl || {}).value || 0);
     var month = Number((monthEl || {}).value || 0);
     var maxDays = [31,29,31,30,31,30,31,31,30,31,30,31];
     var birthdayValid = (!day && !month) || (!!day && !!month && day <= maxDays[month - 1]);
     if (!invalid && (!name || !birthdayValid)) invalid = { input: name ? (dayEl || monthEl) : nameEl, email: u.email, birthday: !birthdayValid };
-    return { rowIndex: id, name: name, birthdayDay: day || '', birthdayMonth: month || '' };
+    return {
+      rowIndex: id,
+      name: name,
+      birthdayDay: day || '',
+      birthdayMonth: month || '',
+      formacao: (formationEl || {}).value || '',
+      registroProfissional: (registrationEl || {}).value || '',
+      podeSolicitarExames: (requestEl || {}).value || 'Não'
+    };
   });
   if (invalid) {
     document.getElementById('statusCargaPerfis').innerHTML = '<span style="color:#b3261e">Revise ' + esc(invalid.email) + ': ' + (invalid.birthday ? 'aniversário inválido.' : 'nome completo obrigatório.') + '</span>';

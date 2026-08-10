@@ -799,6 +799,19 @@
         <div class="field-error" id="errUserAdminAniversario">Selecione um dia válido para o mês.</div>
         <p class="profile-helper">Opcional. O ano não será armazenado.</p>
       </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">workspace_premium</span> Dados profissionais</div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="userAdminFormacao">Formação</label>
+            <select id="userAdminFormacao" class="f-input f-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="userAdminRegistro">Registro no Conselho Profissional</label>
+            <input type="text" id="userAdminRegistro" class="f-input" placeholder="Número e conselho">
+          </div>
+        </div>
+      </div>
       <div class="field-row cols-2">
         <div>
           <label class="field-label" for="userAdminRole">Perfil</label>
@@ -815,6 +828,13 @@
             <option value="Não">Não</option>
           </select>
         </div>
+      </div>
+      <div style="margin-top:14px">
+        <label class="field-label" for="userAdminPodeSolicitar">Pode solicitar exames</label>
+        <select id="userAdminPodeSolicitar" class="f-input f-select">
+          <option value="Sim">Sim</option>
+          <option value="Não">Não</option>
+        </select>
       </div>
       <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
         <span class="material-symbols-outlined">save</span> Salvar usuário
@@ -858,9 +878,23 @@
         <div class="field-error" id="errMeuPerfilAniversario">Selecione um dia válido para o mês.</div>
         <p class="profile-helper">O ano não é necessário. Ao preencher, seu aniversário aparecerá na agenda da equipe.</p>
       </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">workspace_premium</span> Dados profissionais</div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="meuPerfilFormacao">Formação</label>
+            <select id="meuPerfilFormacao" class="f-input f-select"></select>
+          </div>
+          <div>
+            <label class="field-label" for="meuPerfilRegistro">Registro no Conselho Profissional</label>
+            <input type="text" id="meuPerfilRegistro" class="f-input" placeholder="Número e conselho">
+          </div>
+        </div>
+      </div>
       <div class="profile-readonly-grid">
         <div><span>E-mail</span><strong id="meuPerfilEmail">—</strong></div>
         <div><span>Perfil de acesso</span><strong id="meuPerfilRole">—</strong></div>
+        <div><span>Pode solicitar exames</span><strong id="meuPerfilPodeSolicitar">—</strong></div>
       </div>
       <div class="profile-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalMeuPerfil')">Cancelar</button>
@@ -872,20 +906,20 @@
 </div>
 
 <div class="modal-overlay" id="modalCargaPerfis" onclick="fecharModalSeClicouFora(event,'modalCargaPerfis')">
-  <div class="modal-box profile-bulk-box" style="max-width:980px;">
+  <div class="modal-box profile-bulk-box" style="max-width:1280px;">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">group_add</span></div>
       <div>
         <div class="modal-header-title">ATUALIZAR PERFIS</div>
-        <div class="modal-header-sub">Carga inicial de nomes completos e aniversários</div>
+        <div class="modal-header-sub">Edição múltipla de perfis profissionais e permissões</div>
       </div>
       <button class="modal-close" type="button" onclick="fecharOverlay('modalCargaPerfis')" aria-label="Fechar"><span class="material-symbols-outlined">close</span></button>
     </div>
     <div class="modal-body">
-      <p class="profile-helper profile-bulk-intro">Preencha os dados e salve todos os usuários de uma vez. O aniversário é opcional e não inclui o ano.</p>
+      <p class="profile-helper profile-bulk-intro">Atualize os usuários de uma vez. As opções de formação vêm do ConfigApp.</p>
       <div class="profile-bulk-table-wrap">
         <table class="data-table profile-bulk-table">
-          <thead><tr><th>E-mail</th><th>Nome completo</th><th>Dia</th><th>Mês</th></tr></thead>
+          <thead><tr><th>E-mail</th><th>Nome completo</th><th>Dia</th><th>Mês</th><th>Formação</th><th>Registro profissional</th><th>Solicita exames</th></tr></thead>
           <tbody id="bodyCargaPerfis"></tbody>
         </table>
       </div>

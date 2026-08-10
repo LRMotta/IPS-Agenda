@@ -297,7 +297,10 @@ function codexDiagnosticSheetSpecs_() {
       { index: 1, label: 'Nome', aliases: ['nome'] },
       { index: 2, label: 'Perfil', aliases: ['perfil', 'perfil de acesso', 'nivel de acesso', 'funcao', 'role'] },
       { index: 3, label: 'Ativo', aliases: ['ativo', 'active'] },
-      { index: 4, label: 'Aniversario', aliases: ['aniversario mm-dd', 'aniversario', 'birthday'] }
+      { index: 4, label: 'Aniversario', aliases: ['aniversario mm-dd', 'aniversario', 'birthday'] },
+      { index: 5, label: 'Formacao', aliases: ['formacao'] },
+      { index: 6, label: 'Registro profissional', aliases: ['registro no conselho profissional', 'registro profissional'] },
+      { index: 7, label: 'Pode solicitar exames', aliases: ['pode solicitar exames', 'solicitar exames'] }
     ] },
     { key: 'config', label: 'Config_App', names: ['Config_App'], required: [
       { index: 0, label: 'Grupo', aliases: ['grupo'] },

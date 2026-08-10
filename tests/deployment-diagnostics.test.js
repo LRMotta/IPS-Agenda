@@ -34,8 +34,8 @@ function diagnosticServer(overrides) {
       rowWith(9, { 0: 'KIT-1', 2: 'Kit coleta', 4: '2027-01-01', 6: 2, 8: 'Disponivel' })
     ]),
     Users: new FakeSheet('Users', [
-      ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversario (MM-DD)'],
-      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01']
+      ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversario (MM-DD)', 'Formacao', 'Registro no Conselho Profissional', 'Pode solicitar exames'],
+      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01', 'Enfermeiro(a)', 'COREN 1', 'Sim']
     ]),
     Config_App: new FakeSheet('Config_App', [
       ['Grupo', 'Chave', 'Valor', 'Ativo'],
@@ -102,8 +102,8 @@ test('diagnostico estrutural informa aba ou cabecalho obrigatorio ausente', () =
 test('rotulos personalizados na posicao funcional viram alerta, nao erro estrutural', () => {
   const { server } = diagnosticServer({
     Users: new FakeSheet('Users', [
-      ['E-mail autorizado', 'Nome completo', 'Perfil de acesso', 'Liberado', 'Nascimento sem ano'],
-      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01']
+      ['E-mail autorizado', 'Nome completo', 'Perfil de acesso', 'Liberado', 'Nascimento sem ano', 'Curso profissional', 'Conselho de classe', 'Autorizado a requisitar'],
+      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01', 'Enfermeiro(a)', 'COREN 1', 'Sim']
     ])
   });
   const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
@@ -122,8 +122,8 @@ test('rotulos reais de participantes e usuarios sao reconhecidos sem alerta', ()
       rowWith(9, { 0: '1', 1: 'Pessoa Um', 4: 'SUB-1', 5: 'Estudo A', 8: 'Ativo' })
     ]),
     Users: new FakeSheet('Users', [
-      ['Email', 'Nome', 'Função', 'Ativo', 'Aniversario'],
-      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01']
+      ['Email', 'Nome', 'Função', 'Ativo', 'Aniversario', 'Formacao', 'Registro profissional', 'Pode solicitar exames'],
+      ['admin@example.invalid', 'Admin', 'admin', 'Sim', '04-01', 'Enfermeiro(a)', 'COREN 1', 'Sim']
     ])
   });
   const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
@@ -135,8 +135,8 @@ test('rotulos reais de participantes e usuarios sao reconhecidos sem alerta', ()
 test('coluna obrigatoria deslocada continua sendo erro estrutural', () => {
   const { server } = diagnosticServer({
     Users: new FakeSheet('Users', [
-      ['Nome', 'Email', 'Perfil', 'Ativo', 'Aniversario'],
-      ['Admin', 'admin@example.invalid', 'admin', 'Sim', '04-01']
+      ['Nome', 'Email', 'Perfil', 'Ativo', 'Aniversario', 'Formacao', 'Registro profissional', 'Pode solicitar exames'],
+      ['Admin', 'admin@example.invalid', 'admin', 'Sim', '04-01', 'Enfermeiro(a)', 'COREN 1', 'Sim']
     ])
   });
   const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });

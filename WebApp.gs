@@ -403,6 +403,9 @@ function codexAuthorizeWebAppRequest_(e) {
     name: user.name || '',
     firstName: codexFirstName_(user.name, userEmail),
     birthday: user.birthday || '',
+    formacao: user.formacao || '',
+    registroProfissional: user.registroProfissional || '',
+    podeSolicitarExames: user.podeSolicitarExames || 'Sim',
     role: user.role,
     message: ''
   };
@@ -555,15 +558,30 @@ function codexBirthdayParts_(value) {
 
 function codexEnsureUsersProfileColumns_(sheet) {
   if (!sheet) throw new Error('Aba Users não encontrada.');
-  var current = String(sheet.getRange(1, 5).getValue() || '').trim();
-  if (!current) {
-    sheet.getRange(1, 5).setValue('Aniversário (MM-DD)');
-    return;
-  }
-  var normalized = codexNormalizeTextForSort_(current);
-  if (normalized.indexOf('anivers') === -1 && normalized.indexOf('birthday') === -1) {
-    throw new Error('A coluna E da aba Users já está em uso. Reserve-a para Aniversário (MM-DD) antes de salvar perfis.');
-  }
+  var specs = [
+    { column: 5, letter: 'E', header: 'Aniversário (MM-DD)', aliases: ['anivers', 'birthday'] },
+    { column: 6, letter: 'F', header: 'Formação', aliases: ['formacao', 'formação'] },
+    { column: 7, letter: 'G', header: 'Registro no Conselho Profissional', aliases: ['registro no conselho', 'registro profissional'] },
+    { column: 8, letter: 'H', header: 'Pode solicitar exames', aliases: ['pode solicitar exames', 'solicitar exames'] }
+  ];
+  var missing = [];
+  specs.forEach(function(spec) {
+    var current = String(sheet.getRange(1, spec.column).getValue() || '').trim();
+    if (!current) {
+      missing.push(spec);
+      return;
+    }
+    var normalized = codexNormalizeTextForSort_(current);
+    var matches = spec.aliases.some(function(alias) {
+      return normalized.indexOf(codexNormalizeTextForSort_(alias)) !== -1;
+    });
+    if (!matches) {
+      throw new Error('A coluna ' + spec.letter + ' da aba Users já está em uso. Reserve-a para ' + spec.header + ' antes de salvar perfis.');
+    }
+  });
+  missing.forEach(function(spec) {
+    sheet.getRange(1, spec.column).setValue(spec.header);
+  });
 }
 
 function codexSetUserBirthdaysAsText_(sheet, startRow, birthdays) {
@@ -609,6 +627,9 @@ function codexGetCurrentUserAccess() {
     birthday: birthday.birthday,
     birthdayMonth: birthday.birthdayMonth,
     birthdayDay: birthday.birthdayDay,
+    formacao: access.formacao || '',
+    registroProfissional: access.registroProfissional || '',
+    podeSolicitarExames: access.podeSolicitarExames || 'Sim',
     role: access.role || '',
     canWrite: !!access.ok && access.role !== 'readonly',
     message: access.message || ''
@@ -635,6 +656,27 @@ function codexAssertAdmin_() {
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
   if (access.role !== 'admin') throw new Error('Acesso permitido apenas para administradores.');
   return access;
+}
+
+function codexNormalizeCanRequestExams_(value) {
+  return codexNormalizeActive_(value) ? 'Sim' : 'Não';
+}
+
+function codexUserProfileFormations_() {
+  return getConfigAppValuesByKeys_(['Usuários', 'Usuarios', 'Solicitantes'], ['Formação', 'Formacao'], []);
+}
+
+function codexNormalizeUserFormation_(value) {
+  var formation = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!formation) return '';
+  if (codexUserProfileFormations_().indexOf(formation) === -1) {
+    throw new Error('Selecione uma formação ativa cadastrada no ConfigApp.');
+  }
+  return formation;
+}
+
+function codexNormalizeProfessionalRegistration_(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 function codexIsInstalledTriggerInvocation_(event, handlerName) {
@@ -1149,6 +1191,10 @@ function getMeuPerfil() {
     name: profile.name || access.name || '',
     firstName: profile.firstName || access.firstName || codexFirstName_(profile.name || access.name, access.userEmail),
     role: access.role || '',
+    formacao: profile.formacao || '',
+    registroProfissional: profile.registroProfissional || '',
+    podeSolicitarExames: profile.podeSolicitarExames || 'Sim',
+    formacoes: codexUserProfileFormations_(),
     birthday: birthday.birthday,
     birthdayMonth: birthday.birthdayMonth,
     birthdayDay: birthday.birthdayDay
@@ -1161,7 +1207,7 @@ function codexGetUserProfileByEmail_(email) {
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return null;
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
   for (var i = 0; i < rows.length; i++) {
     if (codexNormalizeEmail_(rows[i][0]) !== email) continue;
     var name = codexNormalizeUserName_(rows[i][1]);
@@ -1170,6 +1216,9 @@ function codexGetUserProfileByEmail_(email) {
       email: email,
       name: name,
       firstName: codexFirstName_(name, email),
+      formacao: String(rows[i][5] || '').trim(),
+      registroProfissional: String(rows[i][6] || '').trim(),
+      podeSolicitarExames: codexNormalizeCanRequestExams_(rows[i][7]),
       birthday: birthday.birthday,
       birthdayMonth: birthday.birthdayMonth,
       birthdayDay: birthday.birthdayDay
@@ -1186,12 +1235,14 @@ function salvarMeuPerfil(payload) {
     month: payload.birthdayMonth,
     day: payload.birthdayDay
   });
+  var formacao = codexNormalizeUserFormation_(payload.formacao);
+  var registroProfissional = codexNormalizeProfessionalRegistration_(payload.registroProfissional);
   if (!name) throw new Error('Informe seu nome completo.');
 
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) throw new Error('Usuário não encontrado.');
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
   var email = codexNormalizeEmail_(access.userEmail);
   var rowOffset = -1;
   for (var i = 0; i < rows.length; i++) {
@@ -1205,12 +1256,17 @@ function salvarMeuPerfil(payload) {
   var rowIndex = rowOffset + 2;
   var oldName = rows[rowOffset][1];
   var oldBirthday = rows[rowOffset][4];
+  var oldFormacao = rows[rowOffset][5];
+  var oldRegistro = rows[rowOffset][6];
   sh.getRange(rowIndex, 2, 1, 3).setValues([[name, rows[rowOffset][2], rows[rowOffset][3]]]);
   codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
+  sh.getRange(rowIndex, 6, 1, 2).setValues([[formacao, registroProfissional]]);
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   codexWriteAuditChanges_('Sistema', 'salvarMeuPerfil', email, [
     { field: 'Usuário - Nome', oldValue: oldName, newValue: name },
-    { field: 'Usuário - Aniversário', oldValue: oldBirthday, newValue: birthday }
+    { field: 'Usuário - Aniversário', oldValue: oldBirthday, newValue: birthday },
+    { field: 'Usuário - Formação', oldValue: oldFormacao, newValue: formacao },
+    { field: 'Usuário - Registro profissional', oldValue: oldRegistro, newValue: registroProfissional }
   ], 'Atualização do próprio perfil');
   var parts = codexBirthdayParts_(birthday);
   return {
@@ -1219,6 +1275,9 @@ function salvarMeuPerfil(payload) {
     name: name,
     firstName: codexFirstName_(name, email),
     role: access.role || '',
+    formacao: formacao,
+    registroProfissional: registroProfissional,
+    podeSolicitarExames: codexNormalizeCanRequestExams_(rows[rowOffset][7]),
     birthday: parts.birthday,
     birthdayMonth: parts.birthdayMonth,
     birthdayDay: parts.birthdayDay,
@@ -1237,7 +1296,7 @@ function salvarPerfisUsuariosAdmin(payload) {
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) throw new Error('Aba Users não encontrada.');
   var lastRow = sh.getLastRow();
-  var rows = sh.getRange(2, 1, lastRow - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var rows = sh.getRange(2, 1, lastRow - 1, Math.max(8, sh.getLastColumn())).getValues();
   var changes = [];
   var seenRows = {};
 
@@ -1253,6 +1312,9 @@ function salvarPerfisUsuariosAdmin(payload) {
       month: update.birthdayMonth,
       day: update.birthdayDay
     });
+    var formacao = codexNormalizeUserFormation_(update.formacao);
+    var registroProfissional = codexNormalizeProfessionalRegistration_(update.registroProfissional);
+    var podeSolicitarExames = codexNormalizeCanRequestExams_(update.podeSolicitarExames);
     if (!email) throw new Error('Usuário sem e-mail na linha ' + rowIndex + '.');
     if (!name) throw new Error('Informe o nome completo de ' + email + '.');
     changes.push({
@@ -1260,22 +1322,35 @@ function salvarPerfisUsuariosAdmin(payload) {
       email: email,
       oldName: rows[offset][1],
       oldBirthday: rows[offset][4],
+      oldFormacao: rows[offset][5],
+      oldRegistro: rows[offset][6],
+      oldPodeSolicitar: codexNormalizeCanRequestExams_(rows[offset][7]),
       name: name,
-      birthday: birthday
+      birthday: birthday,
+      formacao: formacao,
+      registroProfissional: registroProfissional,
+      podeSolicitarExames: podeSolicitarExames
     });
     rows[offset][1] = name;
     rows[offset][4] = birthday;
+    rows[offset][5] = formacao;
+    rows[offset][6] = registroProfissional;
+    rows[offset][7] = podeSolicitarExames;
   });
 
   codexEnsureUsersProfileColumns_(sh);
   sh.getRange(2, 1, rows.length, 4).setValues(rows.map(function(row) { return row.slice(0, 4); }));
   codexSetUserBirthdaysAsText_(sh, 2, rows.map(function(row) { return row[4]; }));
+  sh.getRange(2, 6, rows.length, 3).setValues(rows.map(function(row) { return row.slice(5, 8); }));
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   changes.forEach(function(change) {
     codexWriteAuditLog_('salvarPerfisUsuariosAdmin', 'Sistema', change.email);
     codexWriteAuditChanges_('Sistema', 'salvarPerfisUsuariosAdmin', change.email, [
       { field: 'Usuário - Nome', oldValue: change.oldName, newValue: change.name },
-      { field: 'Usuário - Aniversário', oldValue: change.oldBirthday, newValue: change.birthday }
+      { field: 'Usuário - Aniversário', oldValue: change.oldBirthday, newValue: change.birthday },
+      { field: 'Usuário - Formação', oldValue: change.oldFormacao, newValue: change.formacao },
+      { field: 'Usuário - Registro profissional', oldValue: change.oldRegistro, newValue: change.registroProfissional },
+      { field: 'Usuário - Pode solicitar exames', oldValue: change.oldPodeSolicitar, newValue: change.podeSolicitarExames }
     ], 'Carga rápida de perfis');
   });
   return { ok: true, updated: changes.length, teamBirthdays: codexGetTeamBirthdays_() };
@@ -1286,7 +1361,7 @@ function getUsersAdminList() {
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return [];
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
   return rows.map(function(r, idx) {
     var email = codexNormalizeEmail_(r[0]);
     var name = codexNormalizeUserName_(r[1]);
@@ -1301,6 +1376,9 @@ function getUsersAdminList() {
       birthdayMonth: birthday.birthdayMonth,
       birthdayDay: birthday.birthdayDay,
       birthdayLabel: birthday.birthdayLabel,
+      formacao: String(r[5] || '').trim(),
+      registroProfissional: String(r[6] || '').trim(),
+      podeSolicitarExames: codexNormalizeCanRequestExams_(r[7]),
       role: codexNormalizeRole_(r[2]),
       ativo: codexNormalizeActive_(r[3]) ? 'Sim' : 'Não'
     };
@@ -1313,6 +1391,13 @@ function getUsersAdminList() {
   });
 }
 
+function getUsersAdminBootstrap() {
+  return {
+    users: getUsersAdminList(),
+    formacoes: codexUserProfileFormations_()
+  };
+}
+
 function salvarUsuarioAdmin(payload) {
   var access = codexAssertAdmin_();
   payload = payload || {};
@@ -1322,6 +1407,9 @@ function salvarUsuarioAdmin(payload) {
     month: payload.birthdayMonth,
     day: payload.birthdayDay
   });
+  var formacao = codexNormalizeUserFormation_(payload.formacao);
+  var registroProfissional = codexNormalizeProfessionalRegistration_(payload.registroProfissional);
+  var podeSolicitarExames = codexNormalizeCanRequestExams_(payload.podeSolicitarExames);
   var role = codexNormalizeRole_(payload.role);
   var ativo = codexNormalizeActive_(payload.ativo) ? 'Sim' : 'Não';
   if (!email) throw new Error('Informe o e-mail do usuário.');
@@ -1336,7 +1424,7 @@ function salvarUsuarioAdmin(payload) {
   if (!sh) throw new Error('Aba Users não encontrada.');
   var rowIndex = Number(payload.rowIndex || 0);
   var lastRow = sh.getLastRow();
-  var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(5, sh.getLastColumn())).getValues() : [];
+  var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(8, sh.getLastColumn())).getValues() : [];
   for (var i = 0; i < rows.length; i++) {
     var existingEmail = codexNormalizeEmail_(rows[i][0]);
     var existingRow = i + 2;
@@ -1346,9 +1434,10 @@ function salvarUsuarioAdmin(payload) {
   }
   if (!rowIndex || rowIndex < 2) rowIndex = Math.max(2, lastRow + 1);
   codexEnsureUsersProfileColumns_(sh);
-  var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 5).getValues()[0] : ['', '', '', '', ''];
+  var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 8).getValues()[0] : ['', '', '', '', '', '', '', ''];
   sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
   codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
+  sh.getRange(rowIndex, 6, 1, 3).setValues([[formacao, registroProfissional, podeSolicitarExames]]);
   codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
   codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
@@ -1356,9 +1445,12 @@ function salvarUsuarioAdmin(payload) {
     { field: 'Usuário - Nome', oldValue: rowAnterior[1], newValue: name },
     { field: 'Usuário - Perfil', oldValue: rowAnterior[2], newValue: role },
     { field: 'Usuário - Ativo', oldValue: rowAnterior[3], newValue: ativo },
-    { field: 'Usuário - Aniversário', oldValue: rowAnterior[4], newValue: birthday }
+    { field: 'Usuário - Aniversário', oldValue: rowAnterior[4], newValue: birthday },
+    { field: 'Usuário - Formação', oldValue: rowAnterior[5], newValue: formacao },
+    { field: 'Usuário - Registro profissional', oldValue: rowAnterior[6], newValue: registroProfissional },
+    { field: 'Usuário - Pode solicitar exames', oldValue: codexNormalizeCanRequestExams_(rowAnterior[7]), newValue: podeSolicitarExames }
   ], rowAnterior[0] ? 'Alteração de usuário/permissão' : 'Cadastro de usuário/permissão');
-  return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, teamBirthdays: codexGetTeamBirthdays_() };
+  return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, formacao: formacao, registroProfissional: registroProfissional, podeSolicitarExames: podeSolicitarExames, teamBirthdays: codexGetTeamBirthdays_() };
 }
 
 function inativarUsuarioAdmin(rowIndex) {
@@ -1413,7 +1505,7 @@ function codexGetAllowedUsers_() {
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return {};
 
-  var values = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
   var users = {};
   values.forEach(function(row) {
     var email = codexNormalizeEmail_(row[0]);
@@ -1426,6 +1518,9 @@ function codexGetAllowedUsers_() {
       birthday: birthday.birthday,
       birthdayMonth: birthday.birthdayMonth,
       birthdayDay: birthday.birthdayDay,
+      formacao: String(row[5] || '').trim(),
+      registroProfissional: String(row[6] || '').trim(),
+      podeSolicitarExames: codexNormalizeCanRequestExams_(row[7]),
       role: codexNormalizeRole_(row[2]),
       active: codexNormalizeActive_(row[3])
     };
@@ -1802,28 +1897,32 @@ function excluirMedico(id) {
 // ══════════════════════════════════════════════════════
 //  SOLICITANTE
 // ══════════════════════════════════════════════════════
-// Mantida para compatibilidade com formulários legados
+// Contrato mantido para compatibilidade com o formulário de requisição.
+function codexGetExamRequesterUsers_() {
+  var users = codexGetAllowedUsers_();
+  return Object.keys(users).map(function(email) {
+    var user = users[email] || {};
+    if (!user.active || codexNormalizeCanRequestExams_(user.podeSolicitarExames) !== 'Sim') return null;
+    return {
+      id: email,
+      nome: user.name || codexFirstName_(user.name, email),
+      formacao: user.formacao || '',
+      registro: user.registroProfissional || '',
+      email: email
+    };
+  }).filter(function(user) { return user && user.nome; }).sort(function(a, b) {
+    return codexNormalizeTextForSort_(a.nome).localeCompare(codexNormalizeTextForSort_(b.nome));
+  });
+}
+
 /**
- * Retorna nome + formação + registro de todos os solicitantes.
+ * Retorna nome + formação + registro dos usuários autorizados a solicitar exames.
  * Usada pelo formulário de Requisição de Exames (WebApp).
- * A=id | B=nome | C=formacao | D=registro
  */
 function buscarSolicitantesCompleto() {
-  try {
-    var ss  = SpreadsheetApp.getActiveSpreadsheet();
-    var aba = ss.getSheetByName('🙋 Solicitantes');
-    if (!aba || aba.getLastRow() < 2) return [];
-    return aba.getRange(2, 2, aba.getLastRow() - 1, 4).getValues()
-      .filter(function(row) { return row[0]; })
-      .map(function(row) {
-        return {
-          nome:     row[0].toString().trim(),
-          formacao: row[1] ? row[1].toString().trim() : '',
-          registro: row[2] ? row[2].toString().trim() : '',
-          email:    row[3] ? row[3].toString().trim() : ''
-        };
-      });
-  } catch(e) { return []; }
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  return codexGetExamRequesterUsers_();
 }
 
 /**
@@ -1831,20 +1930,7 @@ function buscarSolicitantesCompleto() {
  * A=id | B=nome | C=formacao | D=registro
  */
 function getSolicitantes() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = getSheetByPossibleNames_(ss, ['🙋 Solicitantes', 'Solicitantes']);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues()
-    .filter(function(r) { return r[1] !== ''; })
-    .map(function(r) {
-      return {
-        id:       r[0] ? r[0].toString() : '',
-        nome:     r[1] ? r[1].toString() : '',
-        formacao: r[2] ? r[2].toString() : '',
-        registro: r[3] ? r[3].toString() : '',
-        email:    r[4] ? r[4].toString() : ''
-      };
-    });
+  return codexGetExamRequesterUsers_();
 }
 
 /**
@@ -2132,10 +2218,16 @@ function getReqExamesCcEmails_() {
 function gerarRequisicaoPDF(dados) {
   var access = codexAssertCanWrite_('gerarRequisicaoPDF', 'Agenda', dados && (dados.paciente || dados.protocolo));
   dados = dados || {};
+  if (access && access.userEmail !== 'api-token' && codexNormalizeCanRequestExams_(access.podeSolicitarExames) !== 'Sim') {
+    throw new Error('Seu usuário não está autorizado a solicitar exames. Procure um administrador do sistema.');
+  }
   if (agendaDateIsBeforeToday_(dados.dataAgendamento)) {
     throw new Error('Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.');
   }
   var solicitanteEmail = reqExamesSolicitanteEmail_(dados.solicitante);
+  if (!solicitanteEmail) {
+    throw new Error('Selecione um usuário ativo autorizado a solicitar exames.');
+  }
   if (!dados.requestedByEmail && access && access.userEmail) dados.requestedByEmail = access.userEmail;
   if (solicitanteEmail) dados.requestedByEmail = solicitanteEmail;
   const ss    = reqExamesOpenSpreadsheetForWrite_();
