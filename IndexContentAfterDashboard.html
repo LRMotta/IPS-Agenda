@@ -1153,7 +1153,7 @@
       <div class="audit-toolbar">
         <div class="search-wrap">
           <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchUsersAdmin" placeholder="Buscar por nome, e-mail, perfil ou status..." oninput="renderUsersAdmin()">
+          <input type="text" id="searchUsersAdmin" placeholder="Buscar por nome, formação, registro, e-mail ou status..." oninput="renderUsersAdmin()">
         </div>
         <button class="btn-new" onclick="abrirFormUsuarioAdmin()">
           <span class="material-symbols-outlined">person_add</span> Novo usuário
@@ -1166,19 +1166,21 @@
         </button>
       </div>
       <div class="table-card">
-        <table class="data-table" style="min-width:860px">
+        <table class="data-table" style="min-width:1120px">
           <thead>
             <tr>
               <th>Nome completo</th>
               <th>E-mail</th>
+              <th>Formação / Registro</th>
               <th>Aniversário</th>
+              <th>Solicita exames</th>
               <th>Perfil</th>
               <th>Status</th>
               <th style="text-align:right">Ações</th>
             </tr>
           </thead>
           <tbody id="bodyUsersAdmin">
-            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="8"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>

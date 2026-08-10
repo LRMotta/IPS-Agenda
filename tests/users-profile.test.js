@@ -78,7 +78,7 @@ test('usuario altera somente o proprio nome e aniversario', () => {
 
   assert.equal(result.email, 'maria@example.invalid');
   assert.equal(result.firstName, 'Maria');
-  assert.deepEqual(users.rows[1], ['maria@example.invalid', 'Maria Oliveira', 'readonly', 'Sim', '09-18']);
+  assert.deepEqual(users.rows[1], ['maria@example.invalid', 'Maria Oliveira', 'readonly', 'Sim', '09-18', '', '']);
   assert.deepEqual(users.numberFormats.at(-1), {
     row: 2,
     column: 5,
@@ -86,6 +86,68 @@ test('usuario altera somente o proprio nome e aniversario', () => {
     numColumns: 1,
     format: '@'
   });
+});
+
+test('perfil profissional usa formacoes do ConfigApp e preserva a permissao administrativa', () => {
+  const { server, users } = profileServer([
+    ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames'],
+    ['maria@example.invalid', 'Maria Antiga', 'user', 'Sim', '', 'Enfermeiro(a)', 'COREN 123', 'Não']
+  ]);
+  server.codexAssertSelfProfileWrite_ = () => ({ ok: true, userEmail: 'maria@example.invalid', role: 'user' });
+  server.codexUserProfileFormations_ = () => ['Enfermeiro(a)', 'Médico(a)'];
+
+  const result = server.salvarMeuPerfil({
+    name: 'Maria Oliveira',
+    formacao: 'Médico(a)',
+    registroProfissional: 'CRM 456'
+  });
+
+  assert.equal(result.formacao, 'Médico(a)');
+  assert.equal(result.registroProfissional, 'CRM 456');
+  assert.equal(result.podeSolicitarExames, 'Não');
+  assert.deepEqual(users.rows[1].slice(5, 8), ['Médico(a)', 'CRM 456', 'Não']);
+});
+
+test('lista de solicitantes vem de Users e respeita ativo e pode solicitar exames', () => {
+  const { server } = profileServer([
+    ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames'],
+    ['ana@example.invalid', 'Ana Souza', 'user', 'Sim', '', 'Enfermeiro(a)', 'COREN 1', 'Sim'],
+    ['bia@example.invalid', 'Bia Lima', 'user', 'Sim', '', 'Médico(a)', 'CRM 2', 'Não'],
+    ['caio@example.invalid', 'Caio Alves', 'user', 'Não', '', 'Médico(a)', 'CRM 3', 'Sim']
+  ]);
+  server.codexAuthorizeWebAppRequest_ = () => ({ ok: true, userEmail: 'ana@example.invalid', role: 'user' });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(server.buscarSolicitantesCompleto())), [{
+    id: 'ana@example.invalid',
+    nome: 'Ana Souza',
+    formacao: 'Enfermeiro(a)',
+    registro: 'COREN 1',
+    email: 'ana@example.invalid'
+  }]);
+});
+
+test('geracao de requisicao bloqueia usuario sem permissao antes de efeitos externos', () => {
+  const server = runFile('WebApp.gs');
+  server.codexAssertCanWrite_ = () => ({
+    ok: true,
+    userEmail: 'bia@example.invalid',
+    role: 'user',
+    podeSolicitarExames: 'Não'
+  });
+  assert.throws(() => server.gerarRequisicaoPDF({ paciente: 'Teste' }), /não está autorizado a solicitar exames/i);
+});
+
+test('interface unifica solicitantes em usuarios e oferece edicao multipla profissional', () => {
+  const nav = readProjectFile('IndexContent.html');
+  const content = readProjectFile('IndexContentAfterStock.html');
+  const core = readProjectFile('IndexCoreScripts.html');
+  assert.doesNotMatch(nav, /irPara\('solicitantes'\)/);
+  assert.match(content, /id="meuPerfilFormacao"/);
+  assert.match(content, /id="meuPerfilPodeSolicitar"/);
+  assert.match(content, /Solicita exames/);
+  assert.match(core, /bulkUserFormation-/);
+  assert.match(core, /getUsersAdminBootstrap\(\)/);
+  assert.match(core, /podeSolicitarExames/);
 });
 
 test('carga administrativa valida todas as linhas antes da gravacao em lote', () => {
