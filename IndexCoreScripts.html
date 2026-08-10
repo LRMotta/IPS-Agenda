@@ -3964,8 +3964,13 @@ function imprimirProjetos() {
   var headers = ['Projeto', 'Fase', 'Especialidade', 'Equipe', 'Patrocinador / CRO', 'Recrutamento', 'Centro', 'Status'];
   var tableRows = rows.map(function(row) {
     var cells = row.querySelectorAll('td');
-    var values = Array.prototype.slice.call(cells, 0, 8).map(function(cell) {
-      return esc(String(cell.innerText || '').trim()).replace(/\n/g, '<br>');
+    var values = Array.prototype.slice.call(cells, 0, 8).map(function(cell, index) {
+      var printCell = cell.cloneNode(true);
+      if (index === 0) {
+        Array.prototype.slice.call(printCell.querySelectorAll('.proj-toggle, .row-avatar')).forEach(function(el) { el.remove(); });
+      }
+      Array.prototype.slice.call(printCell.querySelectorAll('button, .material-symbols-outlined')).forEach(function(el) { el.remove(); });
+      return esc(String(printCell.innerText || '').trim()).replace(/\n/g, '<br>');
     });
     return '<tr>' + values.map(function(value) { return '<td>' + value + '</td>'; }).join('') + '</tr>';
   }).join('');
