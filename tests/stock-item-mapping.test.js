@@ -2,7 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile } = require('./helpers/load-app-script');
+const vm = require('node:vm');
+const { readProjectFile, runFile } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 
 const ITEM_HEADERS = [
@@ -96,19 +97,25 @@ test('visualização do estoque incorpora observações e detalhes do cadastro d
 test('visualização agregada consolida lotes por ID e mantém item zerado com pedido pendente', () => {
   const itens = new FakeSheet('Itens', [
     ITEM_HEADERS,
-    ['0001', 'MonumenTAL-3', 'T-2 Subsequent Cycles', 'C18, C24 e C30', 'Kit', 'Face F', 2, 'Um por participante', 'Labcorp', 'Ativo'],
-    ['0014', 'MonumenTAL-3', 'T-14 LTE Mass Spec', '', 'Bulk Supplies', '', 0, '', 'Labcorp', 'Ativo']
+    ['0014', 'MonumenTAL-3', 'A Bulk Item', '', 'Bulk Supplies', '', 0, '', 'Labcorp', 'Ativo'],
+    ['0001', 'MonumenTAL-3', 'Z Kit Item', 'C18, C24 e C30', 'Kit', 'Face F', 2, 'Um por participante', 'Labcorp', 'Ativo']
   ]);
   const estoque = new FakeSheet('Estoque', [
     ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido'],
-    ['0001', 'MonumenTAL-3', 'T-2 Subsequent Cycles', 'Kit', '31/12/2026', 'Face F', 2, 2, 'OK', '', 'a@ucs.br', '', 'PED-1'],
-    ['0001', 'MonumenTAL-3', 'T-2 Subsequent Cycles', 'Kit', '31/03/2027', 'Face F', 3, 2, 'OK', '', 'b@ucs.br', '', 'PED-2']
+    ['0001', 'MonumenTAL-3', 'Z Kit Item', 'Kit', '31/12/2026', 'Face F', 2, 2, 'OK', '', 'a@ucs.br', 99, 'PED-1'],
+    ['0001', 'MonumenTAL-3', 'Z Kit Item', 'Kit', '31/03/2027', 'Face F', 3, 2, 'OK', '', 'b@ucs.br', 99, 'PED-2']
+  ]);
+  const pedidos = new FakeSheet('Pedidos', [
+    ['ID_Pedido', 'N°', 'Data', 'Projeto', 'Laboratório', 'Responsável', 'Status', 'Observações'],
+    ['PED-14', 'PO-14', '', 'MonumenTAL-3', 'Labcorp', '', 'Pendente', ''],
+    ['PED-DRAFT', '', '', 'MonumenTAL-3', 'Labcorp', '', 'Em planejamento', '']
   ]);
   const pedidoItens = new FakeSheet('Pedido_Itens', [
     ['ID_Pedido', 'N°', 'Projeto', 'Descrição', 'Tipo', 'ID_Item', 'QtdSol', 'QtdRec', 'Status'],
-    ['PED-14', 'PO-14', 'MonumenTAL-3', 'T-14 LTE Mass Spec', 'Bulk Supplies', '0014', 4, 0, 'Pendente']
+    ['PED-14', 'PO-14', 'MonumenTAL-3', 'A Bulk Item', 'Bulk Supplies', '0014', 4, 0, 'Pendente'],
+    ['PED-DRAFT', '', 'MonumenTAL-3', 'A Bulk Item', 'Bulk Supplies', '0014', 2, 0, 'Em planejamento']
   ]);
-  const spreadsheet = new FakeSpreadsheet({ Itens: itens, Estoque: estoque, Pedido_Itens: pedidoItens });
+  const spreadsheet = new FakeSpreadsheet({ Itens: itens, Estoque: estoque, Pedidos: pedidos, Pedido_Itens: pedidoItens });
   const server = runFile('WebApp.gs', {
     SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
@@ -121,6 +128,7 @@ test('visualização agregada consolida lotes por ID e mantém item zerado com p
   const t14 = visualizacao.find(item => item.idItem === '0014');
 
   assert.equal(visualizacao.length, 2);
+  assert.equal(Array.from(visualizacao, item => item.idItem).join(','), '0001,0014');
   assert.equal(t2.estoqueAtual, 5);
   assert.equal(t2.lotes.length, 2);
   assert.equal(Array.from(t2.lotes, lote => lote.qtde).join(','), '2,3');
@@ -130,4 +138,17 @@ test('visualização agregada consolida lotes por ID e mantém item zerado com p
   assert.equal(t14.qtdePedidaPendente, 4);
   assert.equal(Array.from(t14.numerosPedidoPendente).join(','), 'PO-14');
   assert.equal(t14.status, 'Crítico');
+});
+
+test('validade do estoque é exibida com mês abreviado em português', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const estoque = readProjectFile('IndexEstoqueScripts.html');
+  const formatter = core.slice(core.indexOf('function formatDateBr('), core.indexOf('function dateToInputValue('));
+  const wrapper = estoque.slice(estoque.indexOf('function estoqueValidadeExibicao('), estoque.indexOf('function estoqueItemDescricaoHtml('));
+  const context = vm.createContext({});
+  vm.runInContext(`${formatter}\n${wrapper}`, context);
+
+  assert.equal(context.estoqueValidadeExibicao('31/12/2026'), '31/dez./2026');
+  assert.equal(context.estoqueValidadeExibicao('2027-03-31'), '31/mar./2027');
+  assert.equal(context.estoqueValidadeExibicao(''), '');
 });
