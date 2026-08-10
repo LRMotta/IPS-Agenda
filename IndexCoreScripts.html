@@ -530,14 +530,23 @@ function applyDashboardPendingFilter_(pagina) {
     return;
   }
   if (pagina === 'projetos') {
-    if (filtro !== 'projetosAtivos' && filtro !== 'recrutZero') return;
+    if (filtro !== 'projetosAtivos' && filtro !== 'recrutZero' && filtro !== 'coordenador') return;
     DASHBOARD_PENDING_FILTER = '';
+    var filterValue = String(DASHBOARD_PENDING_KEYS || '');
     var keys = dashboardFilterKeysMap_();
     DASHBOARD_PENDING_KEYS = '';
     var searchProj = document.getElementById('searchProjetos');
     if (searchProj) searchProj.value = '';
     if (filtro === 'projetosAtivos') {
       renderTabelaProj((_projetos || []).filter(dashboardProjetoAtivo_));
+      return;
+    }
+    if (filtro === 'coordenador') {
+      var coordenador = normSelectValue(filterValue);
+      if (searchProj) searchProj.value = filterValue;
+      renderTabelaProj((_projetos || []).filter(function(p) {
+        return normSelectValue(p && p.coordenador) === coordenador;
+      }));
       return;
     }
     renderTabelaProj((_projetos || []).filter(function(p) {
@@ -3926,6 +3935,7 @@ function filtrarProjetos(forceNow) {
           || (p.investigador||'').toLowerCase().includes(q)
           || (p.subInvestigador1||'').toLowerCase().includes(q)
           || (p.subInvestigador2||'').toLowerCase().includes(q)
+          || (p.coordenador||'').toLowerCase().includes(q)
           || (p.patrocinador||'').toLowerCase().includes(q)
           || (p.cro||'').toLowerCase().includes(q)
           || (p.centro||'').toLowerCase().includes(q)

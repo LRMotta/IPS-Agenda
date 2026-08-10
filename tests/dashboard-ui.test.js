@@ -33,3 +33,16 @@ test('impressao usa somente o titulo gerencial dos graficos', () => {
   assert.match(dashboard, /querySelectorAll\('\.material-symbols-outlined, \.dash-chart-copy'\)/);
   assert.match(dashboard, /dashboardPrintChartTitleText\(prev\)/);
 });
+
+test('grafico de coordenadores abre projetos com o coordenador selecionado', () => {
+  const dashboard = readProjectFile('IndexDashboard.html');
+  const core = readProjectFile('IndexCoreScripts.html');
+  const content = readProjectFile('IndexContentAfterDashboard.html');
+  assert.match(content, /placeholder="[^"]*coordenador[^"]*"/);
+  assert.match(core, /\(p\.coordenador\|\|''\)\.toLowerCase\(\)\.includes\(q\)/);
+  assert.match(core, /filtro !== 'coordenador'/);
+  assert.match(core, /normSelectValue\(p && p\.coordenador\) === coordenador/);
+  assert.match(dashboard, /function dashOpenCoordinator\(coordenador\)/);
+  assert.match(dashboard, /dashOpenMainWithFilter\('projetos', 'coordenador', coordenador\)/);
+  assert.match(dashboard, /_barH\('chartCoord',[\s\S]*dashOpenCoordinator\);/);
+});
