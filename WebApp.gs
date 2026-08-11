@@ -7699,6 +7699,20 @@ function agendaIdParticipanteFromDados_(dados, rowAnterior) {
   return info ? String(info.numId || '').trim() : '';
 }
 
+// Em Visitas, o projeto e uma propriedade do participante cadastrado. Isso
+// protege o vinculo mesmo quando a RPC nao passa pela interface da Agenda.
+function agendaSincronizarProjetoDoParticipante_(dados, policy) {
+  dados = dados || {};
+  if (!policy || !policy.isVisit) return null;
+  var participante = String(dados.participante || '').trim();
+  if (!participante) return null;
+  var info = getInfoParticipante(participante);
+  var projeto = String(info && info.projeto || '').trim();
+  if (!projeto) return { erro: 'O participante selecionado nao possui projeto/protocolo cadastrado.' };
+  dados.projeto = projeto;
+  return null;
+}
+
 function agendaBracoFromDados_(dados, rowAnterior) {
   dados = dados || {};
   var participante = String(dados.participante || '').trim();
@@ -7759,6 +7773,8 @@ function atualizarAgendaEventoCompleto(dados) {
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isOperationalPeriod;
+  var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy);
+  if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
@@ -8177,6 +8193,8 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isOperationalPeriod;
+  var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy);
+  if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
