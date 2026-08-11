@@ -153,11 +153,37 @@
     .estoque-summary-total { line-height: 1.25; white-space: nowrap; }
     .estoque-summary-meta, .estoque-summary-muted { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10.5px; line-height: 1.35; white-space: normal; }
     .estoque-summary-muted { color: var(--text-faint); }
+    .estoque-summary-balance { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; line-height: 1.3; white-space: nowrap; }
+    .estoque-summary-balance strong { color: var(--text); font-weight: 600; }
     .estoque-lotes-wrap { padding: 4px 16px 10px 52px; overflow-x: auto; }
     .estoque-lotes-table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #dde5f8; border-radius: var(--r-md); background: #fff; }
     .estoque-lotes-table th { padding: 8px 10px; background: #f5f7fc; color: var(--text-faint); font-size: 9.5px; font-weight: 700; letter-spacing: .5px; text-align: left; text-transform: uppercase; white-space: nowrap; }
     .estoque-lotes-table td { padding: 9px 10px; border-top: 1px solid #edf1f8; color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+    .estoque-lote-actions { text-align: right; }
+    .estoque-lote-transfer { height: 30px; padding: 0 10px; border: 1px solid #d6e2fb; border-radius: var(--r-sm); background: #f5f8ff; color: var(--primary); font-family: Roboto, sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
+    .estoque-lote-transfer:hover { background: var(--primary-light); border-color: #b9cdf7; color: var(--primary-dark); }
+    .estoque-lote-transfer .material-symbols-outlined { font-size: 16px; }
+    .estoque-lote-transfer-empty { color: var(--text-faint); font-size: 11px; }
     .estoque-empty-lots { display: flex; align-items: center; gap: 7px; margin: 4px 16px 10px 52px; padding: 12px 14px; border: 1px dashed #cfd8ea; border-radius: var(--r-md); background: #fff; color: var(--text-muted); font-size: 12px; }
+    .estoque-transfer-modal { max-width: 620px; }
+    .estoque-transfer-context { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(150px, 1fr); gap: 10px; margin-bottom: 16px; }
+    .estoque-transfer-context > div { min-width: 0; border: 1px solid #e0e6f0; border-radius: var(--r-sm); background: #f6f8ff; padding: 10px 12px; }
+    .estoque-transfer-context span { display: block; margin-bottom: 4px; color: var(--text-faint); font-size: 10px; font-weight: 700; letter-spacing: .65px; text-transform: uppercase; }
+    .estoque-transfer-context strong { display: block; overflow-wrap: anywhere; color: var(--text-muted); font-size: 12px; font-weight: 600; }
+    .estoque-transfer-available { margin-top: 5px; color: var(--text-muted); font-size: 11px; }
+    .estoque-transfer-available strong { display: inline; color: var(--primary); font-weight: 700; }
+    .estoque-transfer-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
+    .estoque-transfer-actions .btn-save { width: auto; min-width: 190px; margin-top: 0; padding: 0 18px; }
+    #page-estoque-view .estoque-summary-total + div[style*="7c3aed"] { color: var(--text-muted) !important; font-size: 11px !important; line-height: 1.3; }
+    #btnReservarKitsAgenda { background: var(--surface) !important; color: var(--text-muted) !important; border-color: #d6e2fb !important; box-shadow: none !important; }
+    #btnReservarKitsAgenda:hover:not(:disabled) { background: var(--primary-light) !important; color: var(--primary) !important; border-color: #c5d5fb !important; }
+    #btnReservarKitsAgenda:disabled { background: #f1f4f9 !important; color: var(--text-faint) !important; border-color: #e0e6f0 !important; }
+    @media (max-width: 640px) {
+      .estoque-transfer-modal { width: calc(100% - 24px); }
+      .estoque-transfer-context { grid-template-columns: 1fr; }
+      .estoque-transfer-actions { position: sticky; bottom: -20px; margin: 16px -20px -20px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: rgba(255,255,255,.97); border-top: 1px solid #e0e6f0; }
+      .estoque-transfer-actions .btn-save { flex: 1; min-width: 0; }
+    }
     .estoque-empty-lots .material-symbols-outlined { color: var(--text-faint); font-size: 18px; }
     .chip { display: inline-flex; align-items: center; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
     .chip-blue  { background: var(--primary-light); color: var(--primary); }

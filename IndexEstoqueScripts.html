@@ -2,6 +2,8 @@
 
   // ===================== VISUALIZAÇÃO DO ESTOQUE =====================
   var evItens = [];
+  var _evTransferRows = {};
+  var _evTransferSelecionado = null;
   var ESTOQUE_CLIENT_CACHE_TTL_MS = 5 * 60 * 1000;
   var ESTOQUE_CONFIG_TTL_MS = 5 * 60 * 1000;
   var ESTOQUE_CLIENT_CACHE = {};
@@ -182,6 +184,7 @@
 
   function evRenderTabela(lista) {
     var tb = document.getElementById('evBody');
+    _evTransferRows = {};
     if (!lista.length) {
       tb.innerHTML = '<tr class="empty-row"><td colspan="10">Nenhum item encontrado.</td></tr>';
       return;
@@ -209,15 +212,21 @@
 
       var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
         '<thead><tr><th>Validade</th><th>Localização</th><th>Físico</th><th>Reservado</th><th>Disponível</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
-        lotes.map(function(lote) {
+        lotes.map(function(lote, loteIndex) {
+          if (!_evTransferRows[idx]) _evTransferRows[idx] = {};
+          _evTransferRows[idx][loteIndex] = { item: it, lote: lote };
+          var disponivelLote = Number(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) || 0;
+          var transferirBtn = lote.idLote && disponivelLote > 0
+            ? '<button type="button" class="estoque-lote-transfer" title="Transferir este lote" onclick="event.stopPropagation();evAbrirTransferenciaIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">swap_horiz</span>Transferir</button>'
+            : '<span class="estoque-lote-transfer-empty">â€”</span>';
           return '<tr>' +
             '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
             '<td>' + esc(lote.localizacao || '—') + '</td>' +
             '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) + '</td>' +
-            '<td style="text-align:center;color:#7c3aed;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
-            '<td style="text-align:center;color:#137333;font-weight:700">' + esc(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(disponivelLote) + '</td>' +
             '<td>' + evChipStatus(lote.status) + '</td>' +
-            '<td>' + evPedidoLink(lote.numeroPedido) + '</td>' +
+            '<td>' + evPedidoLink(lote.numeroPedido) + '<div class="estoque-lote-actions">' + transferirBtn + '</div></td>' +
             '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
             '<td>' + esc(lote.responsavel || '—') + '</td>' +
           '</tr>';
@@ -260,6 +269,9 @@
       return r1 + r2;
     }).join('');
 
+    document.querySelectorAll('#page-estoque-view .estoque-lotes-table th').forEach(function(th) {
+      if (String(th.textContent || '').trim() === 'N° Pedido') th.textContent = 'Pedido / ação';
+    });
     document.querySelectorAll('#page-estoque-view .par-main, #page-estoque-view .par-detail').forEach(function(tr) {
       var pair = tr.dataset.pair;
       tr.addEventListener('mouseenter', function() {
@@ -284,6 +296,89 @@
     });
     det.style.display = open ? 'none' : 'table-row';
     if (arw) arw.style.transform = open ? '' : 'rotate(90deg)';
+  }
+
+  function evAbrirTransferenciaIndice(itemIndex, loteIndex) {
+    var row = _evTransferRows[itemIndex] && _evTransferRows[itemIndex][loteIndex];
+    if (!row || !row.item || !row.lote) return;
+    var lote = row.lote;
+    var disponivel = Number(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) || 0;
+    if (!lote.idLote || disponivel <= 0) {
+      snackErro('Este lote não possui saldo disponível para transferência.');
+      return;
+    }
+    _evTransferSelecionado = row;
+    var contexto = document.getElementById('transferContext');
+    if (contexto) {
+      contexto.innerHTML = '<div><span>Item</span><strong>' + esc(row.item.descricao || row.item.idItem || 'Kit') + '</strong><div class="estoque-transfer-available">' + esc(row.item.projeto || '') + (lote.validade ? ' · validade ' + esc(estoqueValidadeExibicao(lote.validade)) : '') + '</div></div>' +
+        '<div><span>Localização atual</span><strong>' + esc(lote.localizacao || '—') + '</strong><div class="estoque-transfer-available">Disponível: <strong>' + esc(disponivel) + '</strong></div></div>';
+    }
+    var origem = document.getElementById('trOrigem');
+    var destino = document.getElementById('trDestino');
+    var localAtual = lote.localizacao === 'Laboratório' ? 'Laboratório' : 'Estoque Principal';
+    if (origem) origem.value = localAtual;
+    atualizarTransferenciaDestinoInline();
+    if (destino && destino.value === origem.value) destino.value = origem.value === 'Estoque Principal' ? 'Laboratório' : 'Estoque Principal';
+    var qtd = document.getElementById('trQtd');
+    if (qtd) { qtd.value = '1'; qtd.max = String(disponivel); }
+    var disp = document.getElementById('trDisponivel');
+    if (disp) disp.innerHTML = 'Máximo disponível: <strong>' + esc(disponivel) + '</strong>';
+    var obs = document.getElementById('trObs');
+    if (obs) obs.value = '';
+    var status = document.getElementById('statusTransferInline');
+    if (status) status.textContent = '';
+    abrirOverlay('modalTransferInline');
+  }
+
+  function atualizarTransferenciaDestinoInline() {
+    var origem = document.getElementById('trOrigem');
+    var destino = document.getElementById('trDestino');
+    if (!origem || !destino) return;
+    destino.value = origem.value === 'Estoque Principal' ? 'Laboratório' : 'Estoque Principal';
+  }
+
+  function salvarTransferenciaInline() {
+    var row = _evTransferSelecionado;
+    var origem = document.getElementById('trOrigem');
+    var destino = document.getElementById('trDestino');
+    var qtd = document.getElementById('trQtd');
+    var obs = document.getElementById('trObs');
+    var btn = document.getElementById('btnSalvarTransferInline');
+    var status = document.getElementById('statusTransferInline');
+    var quantidade = Number(qtd && qtd.value);
+    if (!row || !row.item || !row.lote || !row.lote.idLote) {
+      if (status) status.textContent = 'Selecione um lote para transferir.';
+      return;
+    }
+    if (!origem || !destino || origem.value === destino.value) {
+      if (status) status.textContent = 'Escolha origem e destino diferentes.';
+      return;
+    }
+    if (!isFinite(quantidade) || quantidade <= 0 || quantidade % 1 !== 0 || quantidade > Number(qtd.max || 0)) {
+      if (status) status.textContent = 'Informe uma quantidade inteira dentro do saldo disponível.';
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined">progress_activity</span>Transferindo...'; }
+    if (status) status.textContent = '';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência'; }
+        fecharOverlay('modalTransferInline');
+        snack((res && res.msg) || 'Transferência registrada.');
+        carregarEstoqueInline(true);
+      })
+      .withFailureHandler(function(err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência'; }
+        if (status) status.textContent = err && err.message ? err.message : 'Não foi possível registrar a transferência.';
+      })
+      .transferirKitEstoque({
+        idItem: row.item.idItem,
+        idLote: row.lote.idLote,
+        origem: origem.value,
+        destino: destino.value,
+        qtde: quantidade,
+        observacao: obs ? obs.value.trim() : ''
+      });
   }
 
   function evValCls(val) {
@@ -452,7 +547,7 @@
               '<div class="form-section">' +
                 '<div class="section-label"><span class="material-symbols-outlined">assignment</span>Dados da Movimentação</div>' +
                 '<div class="mov-form-grid">' +
-                  '<div><label class="field-label" for="miTipoMov">Tipo de movimento <span class="required-star">*</span></label><select id="miTipoMov" class="f-input f-select" onchange="onMovTipoMovChange()"><option>Entrada</option><option>Saída - Visita</option><option>Saída - Ajuste/Descarte</option><option>Entrada - Transferência</option><option>Transferência entre localizações</option></select></div>' +
+                  '<div><label class="field-label" for="miTipoMov">Tipo de movimento <span class="required-star">*</span></label><select id="miTipoMov" class="f-input f-select" onchange="onMovTipoMovChange()"><option>Entrada</option><option>Saída - Visita</option><option>Saída - Ajuste/Descarte</option></select></div>' +
                   '<div><label class="field-label" for="miData">Data</label><input type="date" id="miData" class="f-input"></div>' +
                   '<div><label class="field-label" for="miProjeto">Projeto <span class="required-star">*</span></label><select id="miProjeto" class="f-input f-select" onchange="onMovProjetoChange()"><option value="">— Selecione —</option></select><div class="field-error" id="errMiProjeto">Selecione um projeto.</div></div>' +
                   '<div><label class="field-label" for="miTipoItem">Tipo de item <span class="required-star">*</span></label><select id="miTipoItem" class="f-input f-select" onchange="onMovTipoItemChange()"><option value="">— Selecione o projeto primeiro —</option></select><div class="field-error" id="errMiTipoItem">Selecione um tipo.</div></div>' +
@@ -461,12 +556,34 @@
                   '<div id="miParticipanteWrap"><label class="field-label" for="miParticipante">Participante</label><select id="miParticipante" class="f-input f-select"><option value="">— Selecione o projeto primeiro —</option></select></div>' +
                   '<div id="miVisitaWrap"><label class="field-label" for="miVisita">ID da visita</label><input type="text" id="miVisita" class="f-input" placeholder="Será integrado à Agenda"></div>' +
                   '<div><label class="field-label" for="miOrigem">Origem</label><input type="text" id="miOrigem" class="f-input" placeholder="Ex: formulário manual"></div>' +
-                  '<div id="miTransferenciaWrap" class="full" style="display:none"><div class="mov-form-grid"><div><label class="field-label" for="miOrigemLocal">Origem</label><select id="miOrigemLocal" class="f-input f-select"><option>Estoque Principal</option><option>Laboratório</option></select></div><div><label class="field-label" for="miDestinoLocal">Destino</label><select id="miDestinoLocal" class="f-input f-select"><option>Laboratório</option><option>Estoque Principal</option></select></div></div></div>' +
                   '<div class="full"><label class="field-label" for="miObs">Observação</label><textarea id="miObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Consumo em visita, descarte por validade, ajuste de inventário..."></textarea></div>' +
                 '</div>' +
               '</div>' +
               '<button class="btn-save" id="btnSalvarMovInline" onclick="salvarMovInline()"><span class="material-symbols-outlined">save</span> Registrar Movimentação</button>' +
               '<div class="status-msg" id="statusMovInline"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="modal-overlay" id="modalTransferInline" onclick="fecharModalSeClicouFora(event,&quot;modalTransferInline&quot;)">' +
+          '<div class="modal-box estoque-transfer-modal">' +
+            '<div class="modal-header">' +
+              '<div class="modal-header-icon"><span class="material-symbols-outlined">swap_horiz</span></div>' +
+              '<div><div class="modal-header-title">TRANSFERÊNCIA DE LOTE</div><div class="modal-header-sub">Mova kits entre o Estoque Principal e o Laboratório</div></div>' +
+              '<button class="modal-close" onclick="fecharOverlay(&quot;modalTransferInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<div class="estoque-transfer-context" id="transferContext"></div>' +
+              '<div class="form-section">' +
+                '<div class="section-label"><span class="material-symbols-outlined">swap_horiz</span>Dados da transferência</div>' +
+                '<div class="mov-form-grid">' +
+                  '<div><label class="field-label" for="trOrigem">Origem <span class="required-star">*</span></label><select id="trOrigem" class="f-input f-select" onchange="atualizarTransferenciaDestinoInline()"><option>Estoque Principal</option><option>Laboratório</option></select></div>' +
+                  '<div><label class="field-label" for="trDestino">Destino <span class="required-star">*</span></label><select id="trDestino" class="f-input f-select"><option>Laboratório</option><option>Estoque Principal</option></select></div>' +
+                  '<div><label class="field-label" for="trQtd">Quantidade <span class="required-star">*</span></label><input type="number" id="trQtd" class="f-input" min="1" step="1" value="1"><div class="estoque-transfer-available" id="trDisponivel"></div></div>' +
+                  '<div class="full"><label class="field-label" for="trObs">Observação</label><textarea id="trObs" class="f-input" style="height:72px;padding-top:10px;resize:vertical" placeholder="Ex: reposição semanal do laboratório..."></textarea></div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalTransferInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarTransferInline" onclick="salvarTransferenciaInline()"><span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência</button></div>' +
+              '<div class="status-msg" id="statusTransferInline"></div>' +
             '</div>' +
           '</div>' +
         '</div>';
@@ -2270,6 +2387,14 @@
     _movEstoqueItens = dados.estoque || [];
     var catalogo = dados.itensCatalogo || [];
     var movs = dados.movimentacoes || [];
+    var tipoMovLegacy = document.getElementById('miTipoMov');
+    if (tipoMovLegacy) {
+      Array.prototype.slice.call(tipoMovLegacy.options || []).forEach(function(opt) {
+        if ((opt.value || opt.text || '').toLowerCase().indexOf('transfer') > -1) opt.remove();
+      });
+    }
+    var transferWrapLegacy = document.getElementById('miTransferenciaWrap');
+    if (transferWrapLegacy) transferWrapLegacy.style.display = 'none';
     document.getElementById('miTipoMov').value = 'Saída - Visita';
     document.getElementById('miData').value = new Date().toISOString().split('T')[0];
     ['miParticipante','miVisita','miOrigem','miObs'].forEach(function(id) {
