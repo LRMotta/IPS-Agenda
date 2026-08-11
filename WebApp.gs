@@ -4614,7 +4614,8 @@ function getItensEstoqueColumnMap_(headers) {
     estoqueMin: find(['Estoque mínimo', 'Estoque minimo', 'EstoqueMin', 'Mínimo', 'Minimo'], usaLayoutComDetalhes ? 6 : 5),
     observacoes: find(['Observações', 'Observacoes', 'Observação', 'Observacao', 'Obs'], usaLayoutComDetalhes ? 7 : 6),
     laboratorio: find(['Laboratório', 'Laboratorio', 'Lab'], usaLayoutComDetalhes ? 8 : 7),
-    status: find(['Status', 'Ativo'], usaLayoutComDetalhes ? 9 : 8)
+    status: find(['Status', 'Ativo'], usaLayoutComDetalhes ? 9 : 8),
+    ordem: find(['Ordem de utilização', 'Ordem de utilizacao', 'Ordem de uso', 'Ordem'], -1)
   };
 }
 
@@ -4657,7 +4658,8 @@ function getItensEstoque() {
       estoqueMin:  (r[c.estoqueMin] !== '' && r[c.estoqueMin] !== null) ? r[c.estoqueMin] : '',
       observacoes: String(r[c.observacoes] || ''),
       laboratorio: String(r[c.laboratorio] || ''),
-      status:      String(r[c.status] || '')
+      status:      String(r[c.status] || ''),
+      ordem:       c.ordem >= 0 && r[c.ordem] !== '' && r[c.ordem] !== null ? Number(r[c.ordem]) : ''
     });
   }
 
@@ -4683,7 +4685,7 @@ function salvarItemEstoque(payload) {
     sheet.appendRow([
       'ID_Item', 'Projeto', 'Descrição', 'Detalhes Visita / Complemento',
       'Tipo de item', 'Localização padrão', 'Estoque mínimo',
-      'Observações', 'Laboratório', 'Status'
+      'Observações', 'Laboratório', 'Status', 'Ordem de utilização'
     ]);
     var hRange = sheet.getRange(1, 1, 1, 10);
     hRange.setFontWeight('bold').setBackground('#1266f1').setFontColor('#ffffff');
@@ -4692,9 +4694,22 @@ function salvarItemEstoque(payload) {
 
   var estoqueMin = (payload.estoqueMin !== '' && payload.estoqueMin !== null && payload.estoqueMin !== undefined)
     ? Number(payload.estoqueMin) : '';
-  var lastColumn = Math.max(sheet.getLastColumn(), 10);
-  var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-  var c = getItensEstoqueColumnMap_(headers);
+    var lastColumn = Math.max(sheet.getLastColumn(), 10);
+    var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    var c = getItensEstoqueColumnMap_(headers);
+    if (c.ordem < 0) {
+      var ordemCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, ordemCol).setValue('Ordem de utilização');
+      lastColumn = Math.max(lastColumn, ordemCol);
+      headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+      c = getItensEstoqueColumnMap_(headers);
+    }
+
+  var ordem = (payload.ordem !== '' && payload.ordem !== null && payload.ordem !== undefined)
+    ? Number(payload.ordem) : '';
+  if (ordem !== '' && (!isFinite(ordem) || Math.floor(ordem) !== ordem || ordem < 0)) {
+    throw new Error('A ordem de utilização deve ser um número inteiro maior ou igual a zero.');
+  }
 
   function applyPayload(rowValues) {
     rowValues[c.projeto] = payload.projeto;
@@ -4706,6 +4721,7 @@ function salvarItemEstoque(payload) {
     rowValues[c.observacoes] = payload.observacoes;
     rowValues[c.laboratorio] = payload.laboratorio;
     rowValues[c.status] = payload.status;
+    if (c.ordem >= 0) rowValues[c.ordem] = ordem;
     return rowValues;
   }
 
@@ -5290,10 +5306,11 @@ function receberPedidoEstoque(dados) {
     shEstoque.appendRow([
       'ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização',
       'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel',
-      'Qtde_pedida_pendente', 'N_Pedido'
+      'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'
     ]);
     shEstoque.setFrozenRows(1);
   }
+  var estoqueLoteCols = ensureEstoqueLoteIdColumn_(shEstoque);
 
   var itensRec = dados.itens || [];
   if (!itensRec.length) throw new Error('Nenhum item para receber.');
@@ -5351,10 +5368,14 @@ function receberPedidoEstoque(dados) {
       shEstoque.getRange(rowEstoque, 7).setValue(qtdAtual + qtd);
       shEstoque.getRange(rowEstoque, 10).setValue(agora).setNumberFormat('dd/MM/yyyy HH:mm');
       shEstoque.getRange(rowEstoque, 11).setValue(userEmail);
+      if (!String(shEstoque.getRange(rowEstoque, estoqueLoteCols.idLote + 1).getValue() || '').trim()) {
+        shEstoque.getRange(rowEstoque, estoqueLoteCols.idLote + 1).setValue(gerarIdLoteEstoque_());
+      }
     } else {
       shEstoque.appendRow([
         idItem, cat.projeto || '', ir.descricao || cat.descricao || '', cat.tipo || '',
-        validade, cat.localizacao || '', qtd, cat.estoqueMin, 'OK', agora, userEmail, '', numeroPedido
+        validade, cat.localizacao || '', qtd, cat.estoqueMin, 'OK', agora, userEmail, '', numeroPedido,
+        gerarIdLoteEstoque_()
       ]);
       var lr = shEstoque.getLastRow();
       if (validade) shEstoque.getRange(lr, 5).setNumberFormat('dd/MM/yyyy');
@@ -5948,11 +5969,87 @@ function getMovimentacoesEstoqueV3() {
 }
 
 // ===================== ESTOQUE - Visualização =====================
+function getEstoqueColumnMap_(headers) {
+  var normalized = (headers || []).map(function(h) { return normalizeHeader_(h); });
+  function find(aliases, fallbackIdx) {
+    for (var i = 0; i < aliases.length; i++) {
+      var key = normalizeHeader_(aliases[i]);
+      var idx = normalized.indexOf(key);
+      if (idx >= 0) return idx;
+    }
+    return fallbackIdx;
+  }
+  return {
+    idItem: find(['ID_Item', 'ID Item', 'ID'], 0),
+    projeto: find(['Projeto'], 1),
+    descricao: find(['Descrição', 'Descricao', 'Item'], 2),
+    tipo: find(['Tipo', 'Tipo de item'], 3),
+    validade: find(['Validade', 'Data de validade'], 4),
+    localizacao: find(['Localização', 'Localizacao', 'Local'], 5),
+    qtde: find(['Qtde', 'Quantidade', 'Saldo'], 6),
+    estoqueMin: find(['EstoqueMin', 'Estoque mínimo', 'Estoque minimo', 'Mínimo', 'Minimo'], 7),
+    status: find(['Status'], 8),
+    ultimaAlteracao: find(['UltimaAlteracao', 'Última alteração', 'Ultima alteracao'], 9),
+    responsavel: find(['Responsavel', 'Responsável'], 10),
+    qtdePedidaPendente: find(['Qtde_pedida_pendente', 'Quantidade pedida pendente'], 11),
+    numeroPedido: find(['N_Pedido', 'Número do pedido', 'Numero do pedido'], 12),
+    idLote: find(['ID_Lote', 'ID Lote', 'Identificador do lote'], 13)
+  };
+}
+
+function ensureEstoqueLoteIdColumn_(sheet) {
+  if (!sheet) throw new Error('Aba "Estoque" não encontrada.');
+  var lastColumn = Math.max(sheet.getLastColumn(), 13);
+  var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  var map = getEstoqueColumnMap_(headers);
+  if (map.idLote >= 0 && map.idLote < headers.length && normalizeHeader_(headers[map.idLote]) === 'idlote') return map;
+  var target = sheet.getLastColumn() + 1;
+  sheet.getRange(1, target).setValue('ID_Lote');
+  headers = sheet.getRange(1, 1, 1, Math.max(target, 14)).getValues()[0];
+  return getEstoqueColumnMap_(headers);
+}
+
+function gerarIdLoteEstoque_() {
+  try { return Utilities.getUuid(); } catch (e) {
+    return 'LOTE-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000000);
+  }
+}
+
+function migrarIdsLotesEstoque() {
+  codexAssertCanWrite_('migrarIdsLotesEstoque', 'Estoque', 'ID_Lote');
+  return codexWithDocumentLock_('migrarIdsLotesEstoque', function() {
+    var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Estoque']);
+    if (!sheet || sheet.getLastRow() < 1) throw new Error('Aba "Estoque" não encontrada.');
+    var map = ensureEstoqueLoteIdColumn_(sheet);
+    var preenchidos = 0;
+    var existentes = 0;
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      var values = sheet.getRange(2, 1, lastRow - 1, Math.max(sheet.getLastColumn(), map.idLote + 1)).getValues();
+      values.forEach(function(row, index) {
+        var temLinha = String(row[map.idItem] || '').trim() || String(row[map.descricao] || '').trim();
+        if (!temLinha) return;
+        if (String(row[map.idLote] || '').trim()) {
+          existentes++;
+          return;
+        }
+        sheet.getRange(index + 2, map.idLote + 1).setValue(gerarIdLoteEstoque_());
+        preenchidos++;
+      });
+    }
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, preenchidos: preenchidos, existentes: existentes, coluna: map.idLote + 1 };
+  });
+}
+
 function getEstoqueLinhas_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("Estoque");
   if (!sh || sh.getLastRow() < 2) return [];
-  var data = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getValues();
+  var headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 13)).getValues()[0];
+  var columns = getEstoqueColumnMap_(headers);
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 14)).getValues();
   var tz = Session.getScriptTimeZone();
   var catalogo = getItensEstoque().itens || [];
   var catalogoPorId = {};
@@ -5981,27 +6078,29 @@ function getEstoqueLinhas_() {
           return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
         } catch(e) { return String(v); }
       }
-      var idItem = String(r[0] || '');
-      var projeto = String(r[1] || '');
-      var descricao = String(r[2] || '');
-      var tipoItem = String(r[3] || '');
+      var idItem = String(r[columns.idItem] || '');
+      var projeto = String(r[columns.projeto] || '');
+      var descricao = String(r[columns.descricao] || '');
+      var tipoItem = String(r[columns.tipo] || '');
       var itemCatalogo = catalogoPorId[idItem.trim()] || catalogoPorDescricao[catalogoKey(projeto, descricao, tipoItem)] || {};
       return {
         idItem:           idItem,
         projeto:          projeto,
         descricao:        descricao,
         tipoItem:         tipoItem,
-        validade:         fmtDate(r[4]),
-        localizacao:      String(r[5]  || ''),
-        qtde:             r[6]  !== '' && r[6]  !== null ? Number(r[6])  : '',
-        estoqueMinimo:    r[7]  !== '' && r[7]  !== null ? Number(r[7])  : '',
-        status:           String(r[8]  || ''),
-        ultimaAlteracao:  fmtDate(r[9]),
-        responsavel:      String(r[10] || ''),
-        qtdePedidaPendente: r[11] !== '' && r[11] !== null ? Number(r[11]) : '',
-        numeroPedido:     String(r[12] || ''),
+        validade:         fmtDate(r[columns.validade]),
+        localizacao:      String(r[columns.localizacao]  || ''),
+        qtde:             r[columns.qtde]  !== '' && r[columns.qtde]  !== null ? Number(r[columns.qtde])  : '',
+        estoqueMinimo:    r[columns.estoqueMin]  !== '' && r[columns.estoqueMin]  !== null ? Number(r[columns.estoqueMin])  : '',
+        status:           String(r[columns.status]  || ''),
+        ultimaAlteracao:  fmtDate(r[columns.ultimaAlteracao]),
+        responsavel:      String(r[columns.responsavel] || ''),
+        qtdePedidaPendente: r[columns.qtdePedidaPendente] !== '' && r[columns.qtdePedidaPendente] !== null ? Number(r[columns.qtdePedidaPendente]) : '',
+        numeroPedido:     String(r[columns.numeroPedido] || ''),
+        idLote:           String(r[columns.idLote] || ''),
         observacoes:      String(itemCatalogo.observacoes || ''),
-        detalhesVisita:   String(itemCatalogo.detalhesVisita || '')
+        detalhesVisita:   String(itemCatalogo.detalhesVisita || ''),
+        ordem:            itemCatalogo.ordem !== undefined && itemCatalogo.ordem !== '' ? Number(itemCatalogo.ordem) : ''
       };
     });
 
@@ -6075,6 +6174,7 @@ function getEstoqueVisualizacao() {
         status: lote.status || '',
         qtdePedidaPendente: lote.qtdePedidaPendente,
         numeroPedido: lote.numeroPedido || '',
+        idLote: lote.idLote || '',
         ultimaAlteracao: lote.ultimaAlteracao || '',
         responsavel: lote.responsavel || '',
         observacoes: lote.observacoes || '',
@@ -6181,7 +6281,8 @@ function agruparEstoquePorItemValidade_(itens) {
       norm(it.tipoItem),
       norm(it.validade),
       norm(it.localizacao),
-      norm(it.status)
+      norm(it.status),
+      norm(it.idLote)
     ].join('||');
 
     if (!mapa[key]) {
@@ -7013,14 +7114,22 @@ function getAgendaKitsEstoque_(strict) {
         projeto: String(it.projeto || ''),
         projetoNorm: normText_(it.projeto || ''),
         validade: validade,
-        qtde: it.qtde
+        qtde: it.qtde,
+        idLote: String(it.idLote || ''),
+        ordem: it.ordem !== undefined && it.ordem !== '' ? Number(it.ordem) : ''
       };
     }).filter(function(it) {
-      var key = [it.id, it.projeto, it.validade].join('|');
+      var key = [it.id, it.projeto, it.validade, it.idLote].join('|');
       if (!it.label || seen[key]) return false;
       seen[key] = 1;
       return true;
-    }).sort(function(a, b) { return a.label.localeCompare(b.label); });
+    }).sort(function(a, b) {
+      var aSemOrdem = a.ordem === '' || !isFinite(Number(a.ordem));
+      var bSemOrdem = b.ordem === '' || !isFinite(Number(b.ordem));
+      if (aSemOrdem !== bSemOrdem) return aSemOrdem ? 1 : -1;
+      if (!aSemOrdem && Number(a.ordem) !== Number(b.ordem)) return Number(a.ordem) - Number(b.ordem);
+      return a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' });
+    });
     return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
   } catch(e) {
     if (strict) throw e;
