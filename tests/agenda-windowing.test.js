@@ -785,6 +785,16 @@ test('criacao, edicao, link direto e outros modulos passam pela prontidao centra
   assert.match(transport, /openerWin\.abrirAgendaRegistroPorId\(agendaId\)/);
 });
 
+test('novo agendamento abre sem aguardar a revalidacao remota e ignora cliques repetidos', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const toggle = functionBody(client, 'toggleAgendaCreate');
+  const open = functionBody(client, 'agendaAbrirCreatePanelNovoPronto_');
+  assert.match(toggle, /agendaCreatePanelJaAberto_\(\)\) return/);
+  assert.match(toggle, /agendaAbrirCreatePanelNovoPronto_\(\);\s*agendaRevalidarFormDataEmBackground\(true\);/);
+  assert.doesNotMatch(toggle, /onComplete/);
+  assert.match(open, /agendaCreatePanelJaAberto_\(\)\) return/);
+});
+
 test('fallback do formulario usa carga completa, legado validado e somente codigos permitidos', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const fallback = functionBody(client, 'agendaFallbackCargaCompleta_');
@@ -1024,6 +1034,19 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /Nascimento/);
   assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /calcularIdadeAgenda_/);
   assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes: agendaParticipantesFormulario_/);
+});
+
+test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const statusLock = functionBody(client, 'atualizarAgendaStatusNovoLock_');
+  assert.match(statusLock, /setAgendaSelectValue\('agStatus', 'Agendado'\)/);
+  assert.match(statusLock, /statusEl\.disabled = novo/);
+  assert.match(statusLock, /classList\.toggle\('auto-fill', novo\)/);
+  assert.match(functionBody(client, 'validarAgendaRealizadoFuturo'), /AgendaRules\.isCompleted/);
+  assert.match(functionBody(server, 'agendaRealizadoFuturoErro_'), /AgendaServerRules_\.isCompleted/);
+  assert.match(functionBody(server, 'salvarNovoEventoCompleto'), /dados\.status = 'Agendado'/);
+  assert.match(functionBody(server, 'salvarNovoEventoComFeriado'), /dados\.status = 'Agendado'/);
 });
 
 test('servidor substitui o projeto informado pelo projeto do participante em visitas e consultas', () => {
