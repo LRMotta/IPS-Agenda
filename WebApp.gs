@@ -7546,11 +7546,11 @@ function agendaDateIsAfterToday_(valor) {
 }
 
 function agendaRealizadoFuturoErro_(status, datas) {
-  if (!agendaStatusRealizado_(status)) return '';
+  if (!AgendaServerRules_.isCompleted(status)) return '';
   datas = Array.isArray(datas) ? datas : [datas];
   for (var i = 0; i < datas.length; i++) {
     if (agendaDateIsAfterToday_(datas[i])) {
-      return 'Visitas futuras nao podem ser marcadas como Realizado.';
+      return 'Eventos futuros nao podem ser marcados como Realizado ou Concluido.';
     }
   }
   return '';
@@ -7608,6 +7608,7 @@ function salvarNovoEventoCompleto(dados) {
   codexAssertCanWrite_('salvarNovoEventoCompleto', 'Agenda', dados && dados.id);
   return codexWithDocumentLock_('salvarNovoEventoCompleto', function() {
   dados = dados || {};
+  dados.status = 'Agendado';
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
   var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
@@ -7674,6 +7675,7 @@ function salvarNovoEventoComFeriado(dados) {
   codexAssertCanWrite_('salvarNovoEventoComFeriado', 'Agenda', dados && dados.id);
   return codexWithDocumentLock_('salvarNovoEventoComFeriado', function() {
   dados = dados || {};
+  dados.status = 'Agendado';
   var agenda = getAgendaSheet_();
   var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
   if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {

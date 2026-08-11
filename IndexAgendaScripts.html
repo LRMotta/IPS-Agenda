@@ -1746,6 +1746,16 @@
     return isNaN(d.getTime()) ? null : d;
   }
 
+  function atualizarAgendaStatusNovoLock_() {
+    var statusEl = document.getElementById('agStatus');
+    if (!statusEl) return;
+    var novo = !_agendaEditId;
+    if (novo) setAgendaSelectValue('agStatus', 'Agendado');
+    statusEl.disabled = novo;
+    statusEl.classList.toggle('auto-fill', novo);
+    statusEl.title = novo ? 'Status inicial definido como Agendado.' : '';
+  }
+
   function agendaIsPastDate(value) {
     var d = agendaDateOnlyFromIso(value);
     if (!d) return false;
@@ -1769,14 +1779,14 @@
     var data = (document.getElementById('agData') || {}).value || '';
     var dataFim = (document.getElementById('agDataFim') || {}).value || '';
     var futuro = agendaIsFutureDate(data) || agendaIsFutureDate(dataFim);
-    var ok = !AgendaRules.isRealized(statusEl && statusEl.value) || !futuro;
+    var ok = !AgendaRules.isCompleted(statusEl && statusEl.value) || !futuro;
     if (statusEl) {
       statusEl.classList.toggle('invalid', !ok);
       statusEl.setAttribute('aria-invalid', ok ? 'false' : 'true');
     }
     if (!ok) {
       if (statusEl) statusEl.dataset.futureRealizadoInvalid = '1';
-      setAgendaStatus('Atencao: visitas futuras nao podem ser marcadas como Realizado.', 'danger');
+      setAgendaStatus('Atencao: eventos futuros nao podem ser marcados como Realizado ou Concluido.', 'danger');
     } else if (statusEl && statusEl.dataset.futureRealizadoInvalid === '1') {
       statusEl.dataset.futureRealizadoInvalid = '';
       setAgendaStatus('', '');
@@ -3182,6 +3192,7 @@
     onAgendaLabCentralChange();
     _agendaParticipanteInfo = null;
     _agendaEditId = '';
+    atualizarAgendaStatusNovoLock_();
     _agendaEditRecord = null;
     var title = document.querySelector('#agendaCreatePanel .modal-header-title');
     if (title) title.textContent = 'NOVO AGENDAMENTO';
@@ -4011,7 +4022,13 @@
     return agendaComFormularioPronto_(agendaAbrirCreatePanelNovoPronto_);
   }
 
+  function agendaCreatePanelJaAberto_() {
+    var panel = document.getElementById('agendaCreatePanel');
+    return !!(panel && panel.classList.contains('open'));
+  }
+
   function agendaAbrirCreatePanelNovoPronto_() {
+    if (agendaCreatePanelJaAberto_()) return;
     if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
     var p = document.getElementById('agendaCreatePanel');
@@ -4023,22 +4040,9 @@
 
   function toggleAgendaCreate() {
     agendaComFormularioPronto_(function() {
-      if (_agendaFormDataRefreshing) {
-        agendaAbrirCreatePanelNovoPronto_();
-        return;
-      }
-      var abriu = false;
-      agendaRevalidarFormDataEmBackground(true, {
-        onComplete: function() {
-          if (abriu) return;
-          abriu = true;
-          agendaAbrirCreatePanelNovoPronto_();
-        }
-      });
-      if (!_agendaFormDataRefreshing && !abriu) {
-        abriu = true;
-        agendaAbrirCreatePanelNovoPronto_();
-      }
+      if (agendaCreatePanelJaAberto_()) return;
+      agendaAbrirCreatePanelNovoPronto_();
+      agendaRevalidarFormDataEmBackground(true);
     });
   }
 
@@ -4112,6 +4116,7 @@
     if (_agendaEditId && String(_agendaEditId) !== String(id)) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
     _agendaEditId = r.id || '';
+    atualizarAgendaStatusNovoLock_();
     _agendaEditRecord = agendaStoreEventoLocal_(r);
     _agendaEditRecordVersion = r.recordVersion || '';
     _agendaEditEditableVersion = r.editRecordVersion || '';
