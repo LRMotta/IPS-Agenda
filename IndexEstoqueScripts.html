@@ -203,7 +203,7 @@
       });
       var resumoValidade = !lotes.length
         ? '<span class="estoque-summary-muted">Sem estoque</span>'
-        : '<span class="estoque-summary-meta">' + lotes.length + (lotes.length === 1 ? ' lote' : ' lotes') +
+        : '<span class="estoque-summary-meta">' + lotes.length + ' ' + (lotes.length === 1 ? 'validade disponível' : 'validades disponíveis') +
           (validades.length ? ' · primeiro vencimento <span style="' + evValCls(validades[0]) + '">' + esc(estoqueValidadeExibicao(validades[0])) + '</span>' : ' · validade não aplicável') + '</span>';
       var resumoLocal = !locais.length ? '—' : (locais.length === 1 ? esc(locais[0]) : esc(locais.length + ' locais'));
       var pedPend = (it.qtdePedidaPendente !== '' && Number(it.qtdePedidaPendente) > 0)
@@ -270,6 +270,11 @@
     }).join('');
 
     document.querySelectorAll('#page-estoque-view .estoque-lotes-table').forEach(function(table) {
+      var hasAction = !!table.querySelector('.estoque-lote-actions button');
+      table.querySelectorAll('.estoque-lote-actions').forEach(function(wrap) {
+        if (!hasAction || wrap.querySelector('button') === null) wrap.remove();
+      });
+      if (!hasAction) return;
       var headRow = table.querySelector('thead tr');
       if (headRow && !headRow.querySelector('.estoque-lote-actions-head')) {
         var actionHead = document.createElement('th');
@@ -279,14 +284,17 @@
       }
       table.querySelectorAll('tbody tr').forEach(function(row) {
         var actionWrap = row.querySelector('.estoque-lote-actions');
-        if (!actionWrap || row.querySelector('.estoque-lote-actions-cell')) return;
+        if (row.querySelector('.estoque-lote-actions-cell')) return;
         var actionCell = document.createElement('td');
         actionCell.className = 'estoque-lote-actions-cell';
-        var action = actionWrap.querySelector('button, span');
+        var action = actionWrap && actionWrap.querySelector('button');
         if (action) actionCell.appendChild(action);
         row.appendChild(actionCell);
-        actionWrap.remove();
+        if (actionWrap) actionWrap.remove();
       });
+    });
+    document.querySelectorAll('#page-estoque-view .estoque-summary-total').forEach(function(el) {
+      el.textContent = String(el.textContent || '').replace(/^[^:]+:\s*/, '');
     });
     document.querySelectorAll('#page-estoque-view .par-main, #page-estoque-view .par-detail').forEach(function(tr) {
       var pair = tr.dataset.pair;
