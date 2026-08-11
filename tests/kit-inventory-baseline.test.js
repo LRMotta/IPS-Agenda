@@ -187,3 +187,42 @@ test('fase 3: reserva manual vincula agenda ao lote sem reduzir saldo físico', 
   assert.equal(lote.qtdeReservada, 1);
   assert.equal(lote.qtdeDisponivel, 2);
 });
+
+test('fase 3: transferência move o lote entre localizações com uma operação compartilhada', () => {
+  const itens = new FakeSheet('Itens', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo de item', 'Localização padrão', 'Estoque mínimo', 'Observações', 'Laboratório', 'Status'],
+    ['KIT-1', 'Estudo A', 'Kit coleta V1', 'Kit', 'Estoque Principal', 0, '', 'Lab A', 'Ativo']
+  ]);
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'],
+    ['KIT-1', 'Estudo A', 'Kit coleta V1', 'Kit', '31/12/2026', 'Estoque Principal', 3, 0, 'OK', '', 'a@ucs.br', '', '', 'LOTE-1']
+  ]);
+  const mov = new FakeSheet('Movimentações', [
+    ['ID_Mov', 'Data/Hora', 'Tipo de Movimento', 'ID_Item', 'Descrição', 'Tipo de Item', 'Projeto', 'Qtde', 'Validade', 'Localização', 'Lote', 'ID Participante', 'Participante', 'ID Visita', 'Responsável', 'Origem', 'Observação']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Itens: itens, Estoque: estoque, Movimentações: mov });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { getUuid: () => 'TRANS-1', formatDate: value => {
+      const d = new Date(value);
+      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    } }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const result = server.transferirKitEstoque({
+    idItem: 'KIT-1', idLote: 'LOTE-1', origem: 'Estoque Principal', destino: 'Laboratório', qtde: 2
+  });
+
+  assert.equal(result.quantidade, 2);
+  assert.equal(estoque.rows.length, 3);
+  assert.equal(estoque.rows[1][6], 1);
+  assert.equal(estoque.rows[2][5], 'Laboratório');
+  assert.equal(estoque.rows[2][6], 2);
+  assert.equal(mov.rows.length, 3);
+  assert.equal(mov.rows[1][0], mov.rows[2][0]);
+  assert.equal(mov.rows[1][2], 'Saída - Transferência');
+  assert.equal(mov.rows[2][2], 'Entrada - Transferência');
+});

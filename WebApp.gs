@@ -5548,6 +5548,81 @@ function registrarMovimentacaoEstoque(payload) {
   });
 }
 
+function transferirKitEstoque(payload) {
+  codexAssertCanWrite_('transferirKitEstoque', 'Estoque', payload && (payload.idItem || payload.idLote));
+  return codexWithDocumentLock_('transferirKitEstoque', function() {
+    payload = payload || {};
+    var idItem = String(payload.idItem || '').trim();
+    var idLote = String(payload.idLote || '').trim();
+    var origem = String(payload.origem || '').trim();
+    var destino = String(payload.destino || '').trim();
+    var qtd = Number(payload.qtde || 0);
+    if (!idItem || !idLote || !origem || !destino || origem === destino) throw new Error('Informe item, lote, origem e destino diferentes.');
+    if (qtd <= 0 || !isFinite(qtd)) throw new Error('Informe uma quantidade válida.');
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = getSheetByPossibleNames_(ss, ['Estoque']);
+    if (!sheet) throw new Error('Aba "Estoque" não encontrada.');
+    var map = ensureEstoqueLoteIdColumn_(sheet);
+    var rows = sheet.getDataRange().getValues();
+    var sourceRow = -1;
+    var destinationRow = -1;
+    var source = null;
+    for (var i = 1; i < rows.length; i++) {
+      var row = rows[i];
+      if (String(row[map.idItem] || '').trim() !== idItem || String(row[map.idLote] || '').trim() !== idLote) continue;
+      var local = estoqueLocalKey_(row[map.localizacao]);
+      if (local === estoqueLocalKey_(origem)) { sourceRow = i + 1; source = row; }
+      if (local === estoqueLocalKey_(destino)) destinationRow = i + 1;
+    }
+    if (sourceRow < 2 || !source) throw new Error('Lote não encontrado na localização de origem.');
+    var reservas = getKitReservasResumo_();
+    var validade = estoqueValidadeKey_(source[map.validade]);
+    var chaveReserva = kitReservaChave_(idItem, idLote, validade, origem);
+    var reservado = Number(reservas[chaveReserva] || 0);
+    var saldo = Number(source[map.qtde] || 0) || 0;
+    if (qtd > Math.max(0, saldo - reservado)) throw new Error('Quantidade maior que o saldo disponível na origem.');
+    if (destinationRow < 2) {
+      var novo = source.slice();
+      while (novo.length < Math.max(sheet.getLastColumn(), map.idLote + 1)) novo.push('');
+      novo[map.localizacao] = destino;
+      novo[map.qtde] = 0;
+      destinationRow = sheet.getLastRow() + 1;
+      sheet.getRange(destinationRow, 1, 1, novo.length).setValues([novo]);
+    }
+    var destinoAtual = Number(sheet.getRange(destinationRow, map.qtde + 1).getValue() || 0) || 0;
+    sheet.getRange(sourceRow, map.qtde + 1).setValue(saldo - qtd);
+    sheet.getRange(destinationRow, map.qtde + 1).setValue(destinoAtual + qtd);
+    var agora = new Date();
+    var userEmail = '';
+    try { userEmail = Session.getActiveUser().getEmail(); } catch (e) {}
+    sheet.getRange(sourceRow, map.ultimaAlteracao + 1).setValue(agora);
+    sheet.getRange(destinationRow, map.ultimaAlteracao + 1).setValue(agora);
+    if (map.responsavel >= 0) {
+      sheet.getRange(sourceRow, map.responsavel + 1).setValue(userEmail);
+      sheet.getRange(destinationRow, map.responsavel + 1).setValue(userEmail);
+    }
+    var shMov = getMovimentacoesSheet_(ss);
+    var opId = 'TRANS-' + gerarIdLoteEstoque_();
+    var origemTexto = 'Transferência ' + opId;
+    var meta = ensureMovimentacoesAgendaMetadataColumns_(shMov);
+    function append(tipo, local, quantidade) {
+      var mov = [
+        opId, agora, tipo, idItem, source[map.descricao] || '', source[map.tipo] || '',
+        source[map.projeto] || '', quantidade, source[map.validade] || '', local, idLote,
+        '', '', '', userEmail, origemTexto, 'Transferência entre estoques'
+      ];
+      shMov.appendRow(mov);
+      var lr = shMov.getLastRow();
+      if (meta.agendaid !== undefined) shMov.getRange(lr, meta.agendaid + 1).setValue('');
+    }
+    append('Saída - Transferência', origem, qtd);
+    append('Entrada - Transferência', destino, qtd);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, operacaoId: opId, quantidade: qtd, origem: origem, destino: destino, msg: 'Transferência registrada com sucesso.' };
+  });
+}
+
 function baixarKitsAgendaEvento(payload) {
   codexAssertCanWrite_('baixarKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
   return codexWithDocumentLock_('baixarKitsAgendaEvento', function() {
