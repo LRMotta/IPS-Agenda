@@ -6283,6 +6283,7 @@ function getEstoquePedidosPendentesPorItem_() {
 function getEstoqueVisualizacao() {
   var catalogo = getItensEstoque().itens || [];
   var estoque = getEstoqueLinhas_() || [];
+  var reservas = getKitReservasResumo_();
   var pendentes = getEstoquePedidosPendentesPorItem_();
   var lotesPorItem = {};
   var ordemIdsEstoque = [];
@@ -6295,13 +6296,19 @@ function getEstoqueVisualizacao() {
         lotesPorItem[id] = [];
         ordemIdsEstoque.push(id);
       }
+      var reservaChave = kitReservaChave_(lote.idItem, lote.idLote, lote.validade, lote.localizacao);
+      var qtdeFisica = Number(lote.qtde || 0) || 0;
+      var qtdeReservada = Number(reservas[reservaChave] || 0);
       lotesPorItem[id].push({
         projeto: lote.projeto || '',
         descricao: lote.descricao || '',
         tipoItem: lote.tipoItem || '',
         validade: lote.validade || '',
         localizacao: lote.localizacao || '',
-        qtde: Number(lote.qtde || 0) || 0,
+        qtde: qtdeFisica,
+        qtdeFisica: qtdeFisica,
+        qtdeReservada: qtdeReservada,
+        qtdeDisponivel: Math.max(0, qtdeFisica - qtdeReservada),
         estoqueMinimo: lote.estoqueMinimo,
         status: lote.status || '',
         qtdePedidaPendente: lote.qtdePedidaPendente,
@@ -6328,6 +6335,9 @@ function getEstoqueVisualizacao() {
     var total = lotes.reduce(function(soma, lote) {
       return soma + (Number(lote.qtde || 0) || 0);
     }, 0);
+    var reservado = lotes.reduce(function(soma, lote) {
+      return soma + (Number(lote.qtdeReservada || 0) || 0);
+    }, 0);
     var minimo = item.estoqueMin !== undefined && item.estoqueMin !== ''
       ? Number(item.estoqueMin || 0) || 0
       : lotes.reduce(function(maior, lote) { return Math.max(maior, Number(lote.estoqueMinimo || 0) || 0); }, 0);
@@ -6344,6 +6354,9 @@ function getEstoqueVisualizacao() {
       estoqueMinimo: minimo,
       estoqueAtual: total,
       qtde: total,
+      qtdeFisica: total,
+      qtdeReservada: reservado,
+      qtdeDisponivel: Math.max(0, total - reservado),
       status: statusConsolidado(total, minimo),
       qtdePedidaPendente: pedido ? pedido.quantidade : 0,
       numerosPedidoPendente: pedido ? pedido.numerosPedido : [],

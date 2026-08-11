@@ -208,12 +208,14 @@
         : '—';
 
       var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
-        '<thead><tr><th>Validade</th><th>Localização</th><th>Qtde.</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
+        '<thead><tr><th>Validade</th><th>Localização</th><th>Físico</th><th>Reservado</th><th>Disponível</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
         lotes.map(function(lote) {
           return '<tr>' +
             '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
             '<td>' + esc(lote.localizacao || '—') + '</td>' +
-            '<td style="text-align:center;font-weight:700">' + esc(lote.qtde) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) + '</td>' +
+            '<td style="text-align:center;color:#7c3aed;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
+            '<td style="text-align:center;color:#137333;font-weight:700">' + esc(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) + '</td>' +
             '<td>' + evChipStatus(lote.status) + '</td>' +
             '<td>' + evPedidoLink(lote.numeroPedido) + '</td>' +
             '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
@@ -230,7 +232,7 @@
         '<td class="estoque-description-cell">' + estoqueItemDescricaoHtml(it) + '</td>' +
         '<td>' + itemTipoChip(evTipoItem(it)) + '</td>' +
         '<td style="color:var(--text-muted);">' + esc(it.laboratorio || '—') + '</td>' +
-        '<td><div class="estoque-summary-total" style="' + qCls + '">Total: ' + esc(it.estoqueAtual || 0) + '</div>' + resumoValidade + '</td>' +
+        '<td><div class="estoque-summary-total" style="' + qCls + '">Físico: ' + esc(it.qtdeFisica !== undefined ? it.qtdeFisica : (it.estoqueAtual || 0)) + '</div><div style="font-size:11px;color:#7c3aed">Reservado: ' + esc(it.qtdeReservada || 0) + ' · Disponível: ' + esc(it.qtdeDisponivel !== undefined ? it.qtdeDisponivel : (it.estoqueAtual || 0)) + '</div>' + resumoValidade + '</td>' +
         '<td style="color:var(--text-muted);">' + resumoLocal + '</td>' +
         '<td style="text-align:center;color:var(--text-muted);">' + (it.estoqueMinimo !== undefined && it.estoqueMinimo !== "" ? it.estoqueMinimo : "—") + '</td>' +
         '<td>' + evChipStatus(it.status) + '</td>' +
