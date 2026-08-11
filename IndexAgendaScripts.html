@@ -1397,7 +1397,7 @@
 
   function agendaTipoVisitaSelecionado() {
     var el = document.getElementById('agTipo');
-    return AgendaRules.isVisit(el ? el.value : '');
+    return agendaTipoVisitaOuConsulta(el ? el.value : '');
   }
 
   function agendaTipoContatoTelefonico(tipo) {
