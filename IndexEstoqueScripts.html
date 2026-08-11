@@ -208,12 +208,14 @@
         : '—';
 
       var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
-        '<thead><tr><th>Validade</th><th>Localização</th><th>Qtde.</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
+        '<thead><tr><th>Validade</th><th>Localização</th><th>Físico</th><th>Reservado</th><th>Disponível</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
         lotes.map(function(lote) {
           return '<tr>' +
             '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
             '<td>' + esc(lote.localizacao || '—') + '</td>' +
-            '<td style="text-align:center;font-weight:700">' + esc(lote.qtde) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) + '</td>' +
+            '<td style="text-align:center;color:#7c3aed;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
+            '<td style="text-align:center;color:#137333;font-weight:700">' + esc(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) + '</td>' +
             '<td>' + evChipStatus(lote.status) + '</td>' +
             '<td>' + evPedidoLink(lote.numeroPedido) + '</td>' +
             '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
@@ -230,7 +232,7 @@
         '<td class="estoque-description-cell">' + estoqueItemDescricaoHtml(it) + '</td>' +
         '<td>' + itemTipoChip(evTipoItem(it)) + '</td>' +
         '<td style="color:var(--text-muted);">' + esc(it.laboratorio || '—') + '</td>' +
-        '<td><div class="estoque-summary-total" style="' + qCls + '">Total: ' + esc(it.estoqueAtual || 0) + '</div>' + resumoValidade + '</td>' +
+        '<td><div class="estoque-summary-total" style="' + qCls + '">Físico: ' + esc(it.qtdeFisica !== undefined ? it.qtdeFisica : (it.estoqueAtual || 0)) + '</div><div style="font-size:11px;color:#7c3aed">Reservado: ' + esc(it.qtdeReservada || 0) + ' · Disponível: ' + esc(it.qtdeDisponivel !== undefined ? it.qtdeDisponivel : (it.estoqueAtual || 0)) + '</div>' + resumoValidade + '</td>' +
         '<td style="color:var(--text-muted);">' + resumoLocal + '</td>' +
         '<td style="text-align:center;color:var(--text-muted);">' + (it.estoqueMinimo !== undefined && it.estoqueMinimo !== "" ? it.estoqueMinimo : "—") + '</td>' +
         '<td>' + evChipStatus(it.status) + '</td>' +
@@ -450,7 +452,7 @@
               '<div class="form-section">' +
                 '<div class="section-label"><span class="material-symbols-outlined">assignment</span>Dados da Movimentação</div>' +
                 '<div class="mov-form-grid">' +
-                  '<div><label class="field-label" for="miTipoMov">Tipo de movimento <span class="required-star">*</span></label><select id="miTipoMov" class="f-input f-select" onchange="onMovTipoMovChange()"><option>Entrada</option><option>Saída - Visita</option><option>Saída - Ajuste/Descarte</option><option>Entrada - Transferência</option></select></div>' +
+                  '<div><label class="field-label" for="miTipoMov">Tipo de movimento <span class="required-star">*</span></label><select id="miTipoMov" class="f-input f-select" onchange="onMovTipoMovChange()"><option>Entrada</option><option>Saída - Visita</option><option>Saída - Ajuste/Descarte</option><option>Entrada - Transferência</option><option>Transferência entre localizações</option></select></div>' +
                   '<div><label class="field-label" for="miData">Data</label><input type="date" id="miData" class="f-input"></div>' +
                   '<div><label class="field-label" for="miProjeto">Projeto <span class="required-star">*</span></label><select id="miProjeto" class="f-input f-select" onchange="onMovProjetoChange()"><option value="">— Selecione —</option></select><div class="field-error" id="errMiProjeto">Selecione um projeto.</div></div>' +
                   '<div><label class="field-label" for="miTipoItem">Tipo de item <span class="required-star">*</span></label><select id="miTipoItem" class="f-input f-select" onchange="onMovTipoItemChange()"><option value="">— Selecione o projeto primeiro —</option></select><div class="field-error" id="errMiTipoItem">Selecione um tipo.</div></div>' +
@@ -459,6 +461,7 @@
                   '<div id="miParticipanteWrap"><label class="field-label" for="miParticipante">Participante</label><select id="miParticipante" class="f-input f-select"><option value="">— Selecione o projeto primeiro —</option></select></div>' +
                   '<div id="miVisitaWrap"><label class="field-label" for="miVisita">ID da visita</label><input type="text" id="miVisita" class="f-input" placeholder="Será integrado à Agenda"></div>' +
                   '<div><label class="field-label" for="miOrigem">Origem</label><input type="text" id="miOrigem" class="f-input" placeholder="Ex: formulário manual"></div>' +
+                  '<div id="miTransferenciaWrap" class="full" style="display:none"><div class="mov-form-grid"><div><label class="field-label" for="miOrigemLocal">Origem</label><select id="miOrigemLocal" class="f-input f-select"><option>Estoque Principal</option><option>Laboratório</option></select></div><div><label class="field-label" for="miDestinoLocal">Destino</label><select id="miDestinoLocal" class="f-input f-select"><option>Laboratório</option><option>Estoque Principal</option></select></div></div></div>' +
                   '<div class="full"><label class="field-label" for="miObs">Observação</label><textarea id="miObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Consumo em visita, descarte por validade, ajuste de inventário..."></textarea></div>' +
                 '</div>' +
               '</div>' +
@@ -756,6 +759,15 @@
     var q = (document.getElementById('eiSearch').value || '').toLowerCase();
     var filtrados = itens.filter(function(i) {
       return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status, i.observacoes, i.detalhesVisita].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+    filtrados.sort(function(a, b) {
+      var projetoCmp = String(a.projeto || '').localeCompare(String(b.projeto || ''), 'pt-BR');
+      if (projetoCmp) return projetoCmp;
+      var aSemOrdem = a.ordem === '' || !isFinite(Number(a.ordem));
+      var bSemOrdem = b.ordem === '' || !isFinite(Number(b.ordem));
+      if (aSemOrdem !== bSemOrdem) return aSemOrdem ? 1 : -1;
+      if (!aSemOrdem && Number(a.ordem) !== Number(b.ordem)) return Number(a.ordem) - Number(b.ordem);
+      return String(a.descricao || '').localeCompare(String(b.descricao || ''), 'pt-BR');
     });
     var labs = {};
     itens.forEach(function(i){ if (i.laboratorio) labs[i.laboratorio] = 1; });
@@ -2302,6 +2314,7 @@
 
   function onMovTipoMovChange() {
     var isVisita = document.getElementById('miTipoMov').value === 'Saída - Visita';
+    var isTransferencia = document.getElementById('miTipoMov').value === 'Transferência entre localizações';
     ['miParticipanteWrap','miVisitaWrap'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.style.display = isVisita ? '' : 'none';
@@ -2312,6 +2325,8 @@
       if (part) part.value = '';
       if (visita) visita.value = '';
     }
+    var transferWrap = document.getElementById('miTransferenciaWrap');
+    if (transferWrap) transferWrap.style.display = isTransferencia ? '' : 'none';
   }
 
   function onMovProjetoChange() {
@@ -2376,6 +2391,7 @@
           qtde: it.qtde,
           validade: it.validade,
           localizacao: it.localizacao,
+          idLote: it.idLote || '',
           lote: it.lote || '',
           numeroPedido: it.numeroPedido || ''
         }));
@@ -2394,6 +2410,7 @@
             qtde: 0,
             validade: '',
             localizacao: it.localizacao || '',
+            idLote: '',
             lote: '',
             numeroPedido: ''
           }));
@@ -2421,17 +2438,27 @@
     var projeto = document.getElementById('miProjeto').value;
     var tipoItem = document.getElementById('miTipoItem').value;
     var qtd = Number(document.getElementById('miQtd').value || 0);
+    var tipoMovimento = document.getElementById('miTipoMov').value;
+    var isTransferencia = tipoMovimento === 'Transferência entre localizações';
     var ok = true;
     ok = validarCampoPedidoInline('miProjeto', 'errMiProjeto', !!projeto) && ok;
     ok = validarCampoPedidoInline('miTipoItem', 'errMiTipoItem', !!tipoItem) && ok;
     ok = validarCampoPedidoInline('miItem', 'errMiItem', !!item) && ok;
     ok = validarCampoPedidoInline('miQtd', 'errMiQtd', qtd > 0 && (!item || qtd <= Number(item.qtde || 0))) && ok;
+    if (isTransferencia && (!item || !item.idLote || !document.getElementById('miOrigemLocal').value || !document.getElementById('miDestinoLocal').value)) {
+      snackErro('Selecione um lote e as localizações de origem e destino.');
+      return;
+    }
+    if (isTransferencia && document.getElementById('miOrigemLocal').value === document.getElementById('miDestinoLocal').value) {
+      snackErro('Origem e destino devem ser diferentes.');
+      return;
+    }
     if (!ok) return;
 
     var btn = document.getElementById('btnSalvarMovInline');
     btn.disabled = true;
     document.getElementById('statusMovInline').innerHTML = '<span style="color:#5f6b7c">Registrando…</span>';
-    google.script.run
+    var rpc = google.script.run
       .withSuccessHandler(function(msg) {
         btn.disabled = false;
         fecharOverlay('modalMovInline');
@@ -2442,8 +2469,9 @@
         btn.disabled = false;
         document.getElementById('statusMovInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
       })
-      .registrarMovimentacaoEstoque({
-        tipoMovimento: document.getElementById('miTipoMov').value,
+      ;
+    rpc[isTransferencia ? 'transferirKitEstoque' : 'registrarMovimentacaoEstoque']({
+        tipoMovimento: tipoMovimento,
         data: document.getElementById('miData').value,
         idItem: item.idItem,
         descricao: item.descricao,
@@ -2453,9 +2481,11 @@
         validade: item.validade,
         localizacao: item.localizacao,
         lote: item.lote || '',
+        idLote: item.idLote || '',
+        origem: isTransferencia ? document.getElementById('miOrigemLocal').value : document.getElementById('miOrigem').value.trim() || 'Movimentação manual',
+        destino: isTransferencia ? document.getElementById('miDestinoLocal').value : undefined,
         participante: document.getElementById('miParticipante').value.trim(),
         idVisita: document.getElementById('miVisita').value.trim(),
-        origem: document.getElementById('miOrigem').value.trim() || 'Movimentação manual',
         observacao: document.getElementById('miObs').value.trim()
       });
   }
