@@ -354,6 +354,7 @@
                   '<div><label class="field-label" for="iiTipo">Tipo <span class="required-star">*</span></label><select id="iiTipo" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiTipo">Selecione um tipo.</div></div>' +
                 '</div>' +
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiDescricao">Descrição do Item <span class="required-star">*</span></label><input type="text" id="iiDescricao" class="f-input large" placeholder="Ex: Standard Bulk Supply Box"><div class="field-error" id="errIiDescricao">Campo obrigatório.</div></div>' +
+                '<div style="margin-bottom:12px"><label class="field-label" for="iiOrdem">Ordem de utilização no projeto</label><input type="number" id="iiOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"><div style="font-size:11px;color:#7b8794;margin-top:4px">Usada para ordenar kits na Agenda. Deixe em branco para manter a ordenação alfabética.</div><div class="field-error" id="errIiOrdem">Informe um número inteiro igual ou maior que zero.</div></div>' +
                 '<div class="field-row cols-2">' +
                   '<div><label class="field-label" for="iiLaboratorio">Laboratório <span class="required-star">*</span></label><select id="iiLaboratorio" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiLaboratorio">Selecione um laboratório.</div></div>' +
                   '<div><label class="field-label" for="iiStatus">Status</label><select id="iiStatus" class="f-input f-select"><option>Ativo</option><option>Inativo</option></select></div>' +
@@ -771,15 +772,15 @@
     setEstoqueMetric(4, tipo1Count, tipo1, 'inventory', '#6a1b9a');
     setEstoqueMetric(5, tipo2Count, tipo2, 'category', '#4a148c');
     document.getElementById('eiHead').innerHTML =
-      '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Localização</th><th>Est. mín.</th><th>Laboratório</th><th>Status</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
+      '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Ordem</th><th>Localização</th><th>Est. mín.</th><th>Laboratório</th><th>Status</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
     document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(i) {
       return '<tr><td>' + projetoChip(i.projeto) + '</td><td class="estoque-description-cell">' + estoqueItemDescricaoHtml(i) +
-        '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
+        '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + (i.ordem === '' || i.ordem === undefined ? '<span style="color:#9aa3b0">—</span>' : esc(i.ordem)) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
         '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" onclick="abrirFormItemInline(&quot;' + encodeURIComponent(JSON.stringify(i)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
         '<button class="icon-btn del" title="Excluir" onclick="excluirItemInline(&quot;' + esc(i.id) + '&quot;,&quot;' + esc(i.descricao) + '&quot;)"><span class="material-symbols-outlined">delete</span></button>' +
         '</div></td></tr>';
-    }).join('') : '<tr><td colspan="8" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado.</td></tr>';
+    }).join('') : '<tr><td colspan="9" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado.</td></tr>';
   }
 
   function itemTipoChip(tipo) {
@@ -1859,7 +1860,7 @@
 
   function montarFormItemInline(item, dados, projetos) {
     _itemInlineEditId = item ? (item.id || '') : '';
-    ['iiDescricao','iiLocalizacao','iiEstoqueMin','iiObs'].forEach(function(id) {
+    ['iiDescricao','iiOrdem','iiLocalizacao','iiEstoqueMin','iiObs'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -1900,6 +1901,7 @@
       document.getElementById('iiProjeto').value = item.projeto || '';
       document.getElementById('iiTipo').value = item.tipo || '';
       document.getElementById('iiDescricao').value = item.descricao || '';
+      document.getElementById('iiOrdem').value = item.ordem !== undefined && item.ordem !== '' ? item.ordem : '';
       document.getElementById('iiLaboratorio').value = item.laboratorio || '';
       document.getElementById('iiStatus').value = item.status || 'Ativo';
       document.getElementById('iiLocalizacao').value = item.localizacao || '';
@@ -1921,11 +1923,13 @@
     var projeto = document.getElementById('iiProjeto').value;
     var tipo = document.getElementById('iiTipo').value;
     var descricao = document.getElementById('iiDescricao').value.trim();
+    var ordem = document.getElementById('iiOrdem').value;
     var laboratorio = document.getElementById('iiLaboratorio').value;
     var ok = true;
     ok = validarCampoItemInline('iiProjeto', 'errIiProjeto', !!projeto) && ok;
     ok = validarCampoItemInline('iiTipo', 'errIiTipo', !!tipo) && ok;
     ok = validarCampoItemInline('iiDescricao', 'errIiDescricao', !!descricao) && ok;
+    ok = validarCampoItemInline('iiOrdem', 'errIiOrdem', ordem === '' || (Number.isInteger(Number(ordem)) && Number(ordem) >= 0)) && ok;
     ok = validarCampoItemInline('iiLaboratorio', 'errIiLaboratorio', !!laboratorio) && ok;
     if (!ok) return;
 
@@ -1949,6 +1953,7 @@
         projeto: projeto,
         tipo: tipo,
         descricao: descricao,
+        ordem: ordem,
         laboratorio: laboratorio,
         localizacao: document.getElementById('iiLocalizacao').value.trim(),
         estoqueMin: document.getElementById('iiEstoqueMin').value,
