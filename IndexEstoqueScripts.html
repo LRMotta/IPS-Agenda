@@ -757,6 +757,15 @@
     var filtrados = itens.filter(function(i) {
       return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status, i.observacoes, i.detalhesVisita].join(' ').toLowerCase().indexOf(q) >= 0;
     });
+    filtrados.sort(function(a, b) {
+      var projetoCmp = String(a.projeto || '').localeCompare(String(b.projeto || ''), 'pt-BR');
+      if (projetoCmp) return projetoCmp;
+      var aSemOrdem = a.ordem === '' || !isFinite(Number(a.ordem));
+      var bSemOrdem = b.ordem === '' || !isFinite(Number(b.ordem));
+      if (aSemOrdem !== bSemOrdem) return aSemOrdem ? 1 : -1;
+      if (!aSemOrdem && Number(a.ordem) !== Number(b.ordem)) return Number(a.ordem) - Number(b.ordem);
+      return String(a.descricao || '').localeCompare(String(b.descricao || ''), 'pt-BR');
+    });
     var labs = {};
     itens.forEach(function(i){ if (i.laboratorio) labs[i.laboratorio] = 1; });
     var ativos = itens.filter(function(i){ return String(i.status).toLowerCase() === 'ativo'; }).length;

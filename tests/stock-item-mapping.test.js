@@ -40,6 +40,24 @@ test('cadastro de itens lê o layout com detalhes de visita sem deslocar as colu
   assert.equal(item.status, 'Ativo');
 });
 
+test('cadastro de itens ordena por projeto e ordem de utilização, deixando vazios ao final', () => {
+  const itens = new FakeSheet('Itens', [
+    ITEM_HEADERS.concat('Ordem de utilização'),
+    ['0001', 'Estudo A', 'Kit 20', 'V2', 'Kit', 'Sala A', 0, '', 'Lab A', 'Ativo', 20],
+    ['0002', 'Estudo A', 'Kit sem ordem', 'V3', 'Kit', 'Sala A', 0, '', 'Lab A', 'Ativo', ''],
+    ['0003', 'Estudo A', 'Kit 10', 'V1', 'Kit', 'Sala A', 0, '', 'Lab A', 'Ativo', 10],
+    ['0004', 'Estudo B', 'Kit 1', 'V1', 'Kit', 'Sala A', 0, '', 'Lab A', 'Ativo', 1]
+  ]);
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ Itens: itens }) }
+  });
+  server.getProjetosAtivosEstoque_ = () => [];
+
+  assert.deepEqual(Array.from(server.getItensEstoque().itens, item => item.descricao), [
+    'Kit 10', 'Kit 20', 'Kit sem ordem', 'Kit 1'
+  ]);
+});
+
 test('edição de item preserva detalhes de visita e grava tipo até status nas colunas corretas', () => {
   const { server, itens } = stockServer();
   server.salvarItemEstoque({

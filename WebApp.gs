@@ -4669,6 +4669,18 @@ function getItensEstoque() {
   });
   if (Object.keys(projetosItens).length) projetos = Object.keys(projetosItens).sort();
 
+  // A ordem de utilização organiza os itens dentro de cada projeto. Itens sem
+  // ordem permanecem ao final, com descrição como desempate estável.
+  itens.sort(function(a, b) {
+    var projetoCmp = String(a.projeto || '').localeCompare(String(b.projeto || ''), 'pt-BR');
+    if (projetoCmp) return projetoCmp;
+    var aSemOrdem = a.ordem === '' || !isFinite(Number(a.ordem));
+    var bSemOrdem = b.ordem === '' || !isFinite(Number(b.ordem));
+    if (aSemOrdem !== bSemOrdem) return aSemOrdem ? 1 : -1;
+    if (!aSemOrdem && Number(a.ordem) !== Number(b.ordem)) return Number(a.ordem) - Number(b.ordem);
+    return String(a.descricao || '').localeCompare(String(b.descricao || ''), 'pt-BR');
+  });
+
   return { itens: itens, projetos: projetos, projetosAtivos: projetosAtivos };
 }
 
