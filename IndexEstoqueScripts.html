@@ -269,8 +269,24 @@
       return r1 + r2;
     }).join('');
 
-    document.querySelectorAll('#page-estoque-view .estoque-lotes-table th').forEach(function(th) {
-      if (String(th.textContent || '').trim() === 'N° Pedido') th.textContent = 'Pedido / ação';
+    document.querySelectorAll('#page-estoque-view .estoque-lotes-table').forEach(function(table) {
+      var headRow = table.querySelector('thead tr');
+      if (headRow && !headRow.querySelector('.estoque-lote-actions-head')) {
+        var actionHead = document.createElement('th');
+        actionHead.className = 'estoque-lote-actions-head';
+        actionHead.textContent = 'Ação';
+        headRow.appendChild(actionHead);
+      }
+      table.querySelectorAll('tbody tr').forEach(function(row) {
+        var actionWrap = row.querySelector('.estoque-lote-actions');
+        if (!actionWrap || row.querySelector('.estoque-lote-actions-cell')) return;
+        var actionCell = document.createElement('td');
+        actionCell.className = 'estoque-lote-actions-cell';
+        var action = actionWrap.querySelector('button, span');
+        if (action) actionCell.appendChild(action);
+        row.appendChild(actionCell);
+        actionWrap.remove();
+      });
     });
     document.querySelectorAll('#page-estoque-view .par-main, #page-estoque-view .par-detail').forEach(function(tr) {
       var pair = tr.dataset.pair;
