@@ -4417,6 +4417,9 @@ function sincronizarAutocompleteProjeto(selectId) {
   var option = select.options[select.selectedIndex]; input.value = option && option.value ? String(option.textContent || option.value).split(' — ')[0] : '';
   input.disabled = !!select.disabled;
   input.classList.toggle('auto-fill', select.classList.contains('auto-fill'));
+  input.placeholder = selectId === 'agProjeto' && select.disabled
+    ? 'Preenchido pelo participante'
+    : 'Pesquise por nome ou código…';
   input.title = select.title || '';
   if (list) list.classList.remove('open');
 }

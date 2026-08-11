@@ -1605,6 +1605,8 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaFormData:v4:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v5:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
 }
 
 function codexCacheGet_(key) {
@@ -7383,7 +7385,7 @@ function agendaBuildDadosFormularioAgenda_(strict) {
     throw new Error('Dataset obrigatorio da Agenda indisponivel: projetos.');
   }
   var result = {
-    participantes: listaColB(['Participantes']),
+    participantes: agendaParticipantesFormulario_(ss, strict),
     medicos: listaColB(['\uD83E\uDE7A M\u00E9dicos', 'Medicos', 'M\u00E9dicos']),
     prestadores: listaColB(['\uD83C\uDFE2 Prestadores', 'Prestadores']),
     projetos: getProjetoOptions_(),
@@ -7405,6 +7407,32 @@ function agendaBuildDadosFormularioAgenda_(strict) {
   return result;
 }
 
+// Dados exibidos imediatamente ao escolher um participante. A ultima visita
+// continua sendo atualizada em segundo plano, pois exige consultar a Agenda.
+function agendaParticipantesFormulario_(ss, strict) {
+  var sh = getSheetByPossibleNames_(ss, ['Participantes']);
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (!sh) {
+    if (strict) throw new Error('Dataset obrigatorio da Agenda indisponivel: participantes.');
+    return [];
+  }
+  if (lastRow < 2) return [];
+  return sh.getRange(2, 1, lastRow - 1, Math.max(7, sh.getLastColumn())).getValues()
+    .map(function(row) {
+      var nascimento = row[2];
+      return {
+        nome: String(row[1] || '').trim(),
+        nascimento: formatarDataSafe(nascimento),
+        idade: calcularIdadeAgenda_(nascimento),
+        numId: String(row[4] || '').trim(),
+        projeto: String(row[5] || '').trim(),
+        braco: String(row[6] || '').trim()
+      };
+    })
+    .filter(function(p) { return !!p.nome; })
+    .sort(function(a, b) { return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }); });
+}
+
 function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
   var cached = forceRefresh ? null : codexCacheGet_(cacheKey);
   if (cached) return cached;
@@ -7415,7 +7443,7 @@ function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
 
 function getDadosFormularioAgenda(strictValidation) {
   var strict = strictValidation === true;
-  var cacheKey = (strict ? 'AgendaFormDataStrict:v1:' : 'AgendaFormData:v7:') +
+  var cacheKey = (strict ? 'AgendaFormDataStrict:v2:' : 'AgendaFormData:v8:') +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   if (strict) return agendaGetDadosFormularioAgendaCached_(cacheKey, false, true);
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
@@ -11035,6 +11063,8 @@ function limparCacheLabCentral_() {
     codexCacheRemove_('AgendaFormData:v4:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormData:v5:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     var docCache = CacheService.getDocumentCache();
     if (docCache) {
       docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');
