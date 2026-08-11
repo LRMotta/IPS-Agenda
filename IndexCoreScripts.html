@@ -4415,6 +4415,9 @@ function sincronizarAutocompleteProjeto(selectId) {
   var select = document.getElementById(selectId), input = document.getElementById(selectId + 'AutocompleteInput'), list = document.getElementById(selectId + 'AutocompleteList');
   if (!select || !input) return;
   var option = select.options[select.selectedIndex]; input.value = option && option.value ? String(option.textContent || option.value).split(' — ')[0] : '';
+  input.disabled = !!select.disabled;
+  input.classList.toggle('auto-fill', select.classList.contains('auto-fill'));
+  input.title = select.title || '';
   if (list) list.classList.remove('open');
 }
 function navegarAutocompleteProjeto(event, selectId) {

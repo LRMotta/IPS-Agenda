@@ -1413,6 +1413,9 @@
     proj.disabled = lock;
     proj.classList.toggle('auto-fill', lock);
     proj.title = lock ? 'Projeto definido pelo participante selecionado.' : '';
+    // O select original fica oculto pelo autocomplete; mantenha o campo
+    // visivel igualmente bloqueado e destacado.
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('agProjeto');
   }
 
   function setAgendaSelectValue(id, value) {
@@ -1886,13 +1889,14 @@
     var nome = document.getElementById('agParticipante').value;
     _agendaParticipanteInfo = null;
     var info = document.getElementById('agPartInfo');
+    atualizarAgendaProjetoLock();
     if (!nome) {
       if (info) info.style.display = 'none';
-      atualizarAgendaProjetoLock();
       return;
     }
     google.script.run
       .withSuccessHandler(function(p) {
+        if ((document.getElementById('agParticipante') || {}).value !== nome) return;
         _agendaParticipanteInfo = p || null;
         if (!p) {
           info.style.display = 'none';
