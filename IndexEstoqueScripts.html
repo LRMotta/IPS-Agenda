@@ -203,8 +203,11 @@
       });
       var resumoValidade = !lotes.length
         ? '<span class="estoque-summary-muted">Sem estoque</span>'
-        : '<span class="estoque-summary-meta">' + lotes.length + ' ' + (lotes.length === 1 ? 'validade disponível' : 'validades disponíveis') +
-          (validades.length ? ' · primeiro vencimento <span style="' + evValCls(validades[0]) + '">' + esc(estoqueValidadeExibicao(validades[0])) + '</span>' : ' · validade não aplicável') + '</span>';
+        : '<span class="estoque-summary-meta">' +
+          (validades.length ? 'Validade: a partir de <span style="' + evValCls(validades[0]) + '">' + esc(estoqueValidadeExibicao(validades[0])) + '</span>' : 'Validade não aplicável') + '</span>';
+      var resumoReserva = Number(it.qtdeReservada || 0) > 0
+        ? '<div style="font-size:11px;color:#7c3aed">Reservado: ' + esc(it.qtdeReservada) + ' · Disponível: ' + esc(it.qtdeDisponivel !== undefined ? it.qtdeDisponivel : (it.estoqueAtual || 0)) + '</div>'
+        : '';
       var resumoLocal = !locais.length ? '—' : (locais.length === 1 ? esc(locais[0]) : esc(locais.length + ' locais'));
       var pedPend = (it.qtdePedidaPendente !== '' && Number(it.qtdePedidaPendente) > 0)
         ? '<span class="chip chip-blue">' + esc(String(it.qtdePedidaPendente)) + '</span>'
@@ -241,7 +244,7 @@
         '<td class="estoque-description-cell">' + estoqueItemDescricaoHtml(it) + '</td>' +
         '<td>' + itemTipoChip(evTipoItem(it)) + '</td>' +
         '<td style="color:var(--text-muted);">' + esc(it.laboratorio || '—') + '</td>' +
-        '<td><div class="estoque-summary-total" style="' + qCls + '">Físico: ' + esc(it.qtdeFisica !== undefined ? it.qtdeFisica : (it.estoqueAtual || 0)) + '</div><div style="font-size:11px;color:#7c3aed">Reservado: ' + esc(it.qtdeReservada || 0) + ' · Disponível: ' + esc(it.qtdeDisponivel !== undefined ? it.qtdeDisponivel : (it.estoqueAtual || 0)) + '</div>' + resumoValidade + '</td>' +
+        '<td><div class="estoque-summary-total" style="' + qCls + '">Físico: ' + esc(it.qtdeFisica !== undefined ? it.qtdeFisica : (it.estoqueAtual || 0)) + '</div>' + resumoReserva + resumoValidade + '</td>' +
         '<td style="color:var(--text-muted);">' + resumoLocal + '</td>' +
         '<td style="text-align:center;color:var(--text-muted);">' + (it.estoqueMinimo !== undefined && it.estoqueMinimo !== "" ? it.estoqueMinimo : "—") + '</td>' +
         '<td>' + evChipStatus(it.status) + '</td>' +

@@ -6332,7 +6332,9 @@ function getEstoquePedidosPendentesPorItem_() {
     if (!pedidoId) continue;
     var statusPedido = String(pedidosRows[p][6] || 'Pendente')
       .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    pedidosElegiveis[pedidoId] = statusPedido.indexOf('planejamento') < 0 &&
+    // Planejamentos ainda não são pedidos efetivamente realizados e não devem
+    // compor a quantidade pedida exibida no estoque.
+    pedidosElegiveis[pedidoId] = statusPedido.indexOf('planej') < 0 &&
       statusPedido.indexOf('cancel') < 0 && statusPedido.indexOf('rascunho') < 0;
   }
 
