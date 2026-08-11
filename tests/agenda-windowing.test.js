@@ -997,26 +997,30 @@ test('projeto do participante sincroniza o autocomplete por nome, codigo ou ID e
   assert.match(functionBody(client, 'preencherAgendaSelect'), /data-id/);
 });
 
-test('projeto da visita fica bloqueado no autocomplete enquanto o participante e carregado', () => {
+test('projeto de visita ou consulta fica bloqueado no autocomplete enquanto o participante e carregado', () => {
   const agenda = readProjectFile('IndexAgendaScripts.html');
   const core = readProjectFile('IndexCoreScripts.html');
   const participantChange = functionBody(agenda, 'onAgendaParticipanteChange');
   assert.match(participantChange, /atualizarAgendaProjetoLock\(\);/);
   assert.match(participantChange, /getElementById\('agParticipante'\).*value !== nome/);
+  assert.match(functionBody(agenda, 'agendaTipoVisitaSelecionado'), /agendaTipoVisitaOuConsulta/);
   assert.match(functionBody(agenda, 'atualizarAgendaProjetoLock'), /sincronizarAutocompleteProjeto\('agProjeto'\)/);
   const sync = functionBody(core, 'sincronizarAutocompleteProjeto');
   assert.match(sync, /input\.disabled = !!select\.disabled/);
   assert.match(sync, /input\.classList\.toggle\('auto-fill', select\.classList\.contains\('auto-fill'\)\)/);
 });
 
-test('servidor substitui o projeto informado pelo projeto do participante em visitas', () => {
+test('servidor substitui o projeto informado pelo projeto do participante em visitas e consultas', () => {
   const server = agendaServer();
   server.getInfoParticipante = (nome) => nome === 'Pessoa A' ? { projeto: 'Projeto Correto' } : null;
   const dados = { participante: 'Pessoa A', projeto: 'Projeto Indevido' };
   const erro = server.agendaSincronizarProjetoDoParticipante_(dados, { isVisit: true });
   assert.equal(erro, null);
   assert.equal(dados.projeto, 'Projeto Correto');
-  assert.equal(server.agendaSincronizarProjetoDoParticipante_({ participante: 'Pessoa A', projeto: 'Livre' }, { isVisit: false }), null);
+  const consulta = { participante: 'Pessoa A', projeto: 'Projeto Indevido' };
+  assert.equal(server.agendaSincronizarProjetoDoParticipante_(consulta, { isVisit: false, type: 'consulta' }), null);
+  assert.equal(consulta.projeto, 'Projeto Correto');
+  assert.equal(server.agendaSincronizarProjetoDoParticipante_({ participante: 'Pessoa A', projeto: 'Livre' }, { isVisit: false, type: 'evento' }), null);
 });
 
 test('abertura direta valida rowIndex e le somente a linha completa solicitada', () => {

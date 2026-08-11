@@ -7699,11 +7699,11 @@ function agendaIdParticipanteFromDados_(dados, rowAnterior) {
   return info ? String(info.numId || '').trim() : '';
 }
 
-// Em Visitas, o projeto e uma propriedade do participante cadastrado. Isso
-// protege o vinculo mesmo quando a RPC nao passa pela interface da Agenda.
+// Em Visitas e Consultas, o projeto e uma propriedade do participante
+// cadastrado. Isso protege o vinculo mesmo quando a RPC nao passa pela Agenda.
 function agendaSincronizarProjetoDoParticipante_(dados, policy) {
   dados = dados || {};
-  if (!policy || !policy.isVisit) return null;
+  if (!policy || (!policy.isVisit && policy.type !== 'consulta')) return null;
   var participante = String(dados.participante || '').trim();
   if (!participante) return null;
   var info = getInfoParticipante(participante);
