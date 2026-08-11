@@ -808,8 +808,8 @@ test('fallback do formulario usa carga completa, legado validado e somente codig
   strictServer.getDadosFormularioAgenda();
   strictServer.getDadosFormularioAgenda(true);
   assert.deepEqual(strictCalls, [
-    { key: 'AgendaFormData:v7:20260804', forceRefresh: false, strict: false },
-    { key: 'AgendaFormDataStrict:v1:20260804', forceRefresh: false, strict: true }
+      { key: 'AgendaFormData:v8:20260804', forceRefresh: false, strict: false },
+      { key: 'AgendaFormDataStrict:v2:20260804', forceRefresh: false, strict: true }
   ]);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'getAppBootstrapData'), /getDadosFormularioAgenda\(true\)/);
 
@@ -1008,6 +1008,22 @@ test('projeto de visita ou consulta fica bloqueado no autocomplete enquanto o pa
   const sync = functionBody(core, 'sincronizarAutocompleteProjeto');
   assert.match(sync, /input\.disabled = !!select\.disabled/);
   assert.match(sync, /input\.classList\.toggle\('auto-fill', select\.classList\.contains\('auto-fill'\)\)/);
+  assert.match(sync, /selectId === 'agProjeto' && select\.disabled/);
+  assert.match(sync, /Preenchido pelo participante/);
+  assert.match(readProjectFile('IndexContentAfterDashboard.html'), /for="agProjeto">Protocolo/);
+});
+
+test('resumo do participante e exibido de imediato e atualiza a ultima visita em segundo plano', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const change = functionBody(client, 'onAgendaParticipanteChange');
+  assert.match(change, /agendaParticipanteInfoPrecarregada_\(nome\)/);
+  assert.match(change, /agendaAplicarParticipanteInfo_\(infoPrecarregada\)/);
+  assert.match(change, /_ultimaVisitaPendente/);
+  assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /ag-part-info-row/);
+  assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /Nascimento/);
+  assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /calcularIdadeAgenda_/);
+  assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes: agendaParticipantesFormulario_/);
 });
 
 test('servidor substitui o projeto informado pelo projeto do participante em visitas e consultas', () => {

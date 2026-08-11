@@ -1890,35 +1890,51 @@
 
   function onAgendaParticipanteChange() {
     var nome = document.getElementById('agParticipante').value;
-    _agendaParticipanteInfo = null;
     var info = document.getElementById('agPartInfo');
+    var infoPrecarregada = agendaParticipanteInfoPrecarregada_(nome);
+    _agendaParticipanteInfo = infoPrecarregada;
     atualizarAgendaProjetoLock();
     if (!nome) {
       if (info) info.style.display = 'none';
       return;
     }
+    if (infoPrecarregada) {
+      infoPrecarregada._ultimaVisitaPendente = true;
+      agendaAplicarParticipanteInfo_(infoPrecarregada);
+    }
     google.script.run
       .withSuccessHandler(function(p) {
         if ((document.getElementById('agParticipante') || {}).value !== nome) return;
-        _agendaParticipanteInfo = p || null;
+        _agendaParticipanteInfo = p || infoPrecarregada || null;
         if (!p) {
-          info.style.display = 'none';
+          if (infoPrecarregada) {
+            delete infoPrecarregada._ultimaVisitaPendente;
+            agendaAplicarParticipanteInfo_(infoPrecarregada);
+          } else if (info) info.style.display = 'none';
           atualizarAgendaProjetoLock();
           return;
         }
-        if (p.projeto) setAgendaSelectValue('agProjeto', p.projeto);
-        onAgendaProjetoChange();
-        atualizarAgendaProjetoLock();
-        agendaMatBioUpdateAllCopyOptions();
-        info.innerHTML =
-          agendaBirthAgeHtml(p.nascimento, p.idade, 'ag-part-info-birth') +
-          '<b>ID:</b> ' + esc(p.numId || '-') +
-          ' &nbsp; <b>Braço:</b> ' + esc(p.braco || '-') +
-          ' &nbsp; <b>Data da Última Visita Realizada:</b> ' + esc(p.ultimaVisitaData || '-') +
-          ' &nbsp; <b>Visita:</b> ' + esc(p.ultimaVisitaId || '-');
-        info.style.display = 'block';
+        agendaAplicarParticipanteInfo_(p);
       })
       .getInfoParticipante(nome);
+  }
+
+  function agendaParticipanteInfoPrecarregada_(nome) {
+    var participantes = (_agendaDados && _agendaDados.participantes) || [];
+    for (var i = 0; i < participantes.length; i++) {
+      var p = participantes[i];
+      if (p && typeof p === 'object' && String(p.nome || '').trim() === String(nome || '').trim()) return Object.assign({}, p);
+    }
+    return null;
+  }
+
+  function agendaAplicarParticipanteInfo_(p) {
+    if (!p) return;
+    if (p.projeto) setAgendaSelectValue('agProjeto', p.projeto);
+    onAgendaProjetoChange();
+    atualizarAgendaProjetoLock();
+    agendaMatBioUpdateAllCopyOptions();
+    agendaMostrarParticipanteInfo(p);
   }
 
   function agendaCancelamentoMotivos() {
@@ -2509,14 +2525,29 @@
   function agendaMostrarParticipanteInfo(info) {
     var box = document.getElementById('agPartInfo');
     if (!box || !info) return;
-    var partes = [];
-    if (info.nascimento) partes.push(agendaBirthAgeHtml(info.nascimento, info.idade, 'ag-part-info-birth'));
-    if (info.numId) partes.push('<b>ID:</b> ' + esc(info.numId));
-    if (info.braco) partes.push('<b>Braco:</b> ' + esc(info.braco));
-    if (info.ultimaVisitaData) partes.push('<b>Data da Ultima Visita Realizada:</b> ' + esc(info.ultimaVisitaData));
-    if (info.ultimaVisitaId) partes.push('<b>Visita:</b> ' + esc(info.ultimaVisitaId));
-    box.innerHTML = partes.join(' &nbsp; ');
-    box.style.display = partes.length ? 'block' : 'none';
+    box.innerHTML = agendaParticipanteInfoHtml_(info);
+    box.style.display = 'block';
+  }
+
+  function agendaParticipanteInfoHtml_(info) {
+    info = info || {};
+    var itens = [];
+    function item(icon, label, value, muted) {
+      if (!value) return;
+      itens.push('<span class="ag-part-info-item' + (muted ? ' is-muted' : '') + '"><span class="material-symbols-outlined">' + icon + '</span><span><b>' + esc(label) + ':</b> ' + esc(value) + '</span></span>');
+    }
+    var nascimento = String(info.nascimento || '').trim();
+    var idade = String(info.idade || '').trim();
+    if (nascimento || idade) item('cake', 'Nascimento', nascimento + (idade ? ' · ' + idade + ' anos' : ''));
+    item('badge', 'ID', info.numId || '-');
+    item('call_split', 'Braço', info.braco || '-');
+    if (info.ultimaVisitaData || info._ultimaVisitaPendente) {
+      item('event_available', 'Última visita', info.ultimaVisitaData || 'carregando…', !!info._ultimaVisitaPendente);
+    }
+    if (info.ultimaVisitaId || info._ultimaVisitaPendente) {
+      item('flag', 'Visita', info.ultimaVisitaId || 'carregando…', !!info._ultimaVisitaPendente);
+    }
+    return '<div class="ag-part-info-row">' + itens.join('') + '</div>';
   }
 
   function agendaLoadMaterialBackupNoTransporteI(backup) {
