@@ -6120,7 +6120,127 @@ function getEstoqueLinhas_() {
 }
 
 function getEstoque() {
-  return agruparEstoquePorItemValidade_(getEstoqueLinhas_());
+  var itens = agruparEstoquePorItemValidade_(getEstoqueLinhas_());
+  var reservas = getKitReservasResumo_();
+  itens.forEach(function(item) {
+    var chave = kitReservaChave_(item.idItem, item.idLote, item.validade, item.localizacao);
+    var reservado = Number(reservas[chave] || 0);
+    item.qtdeFisica = Number(item.qtde || 0) || 0;
+    item.qtdeReservada = reservado;
+    item.qtdeDisponivel = Math.max(0, item.qtdeFisica - reservado);
+  });
+  return itens;
+}
+
+var KIT_RESERVA_HEADERS_ = [
+  'ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante',
+  'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde',
+  'Status', 'Data_Visita', 'Responsável', 'Observações'
+];
+
+function getKitReservasSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = getSheetByPossibleNames_(ss, ['Reservas_Kits', 'Reservas de Kits']);
+  if (!sh) {
+    sh = ss.insertSheet('Reservas_Kits');
+    sh.getRange(1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([KIT_RESERVA_HEADERS_]);
+  }
+  return sh;
+}
+
+function kitReservaChave_(idItem, idLote, validade, localizacao) {
+  return [idItem, idLote, validade, localizacao].map(function(v) {
+    return String(v || '').trim().toLowerCase();
+  }).join('|');
+}
+
+function getKitReservasLinhas_() {
+  var sh = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Reservas_Kits', 'Reservas de Kits']);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var tz = Session.getScriptTimeZone();
+  function fmtDate(v) {
+    if (!v) return '';
+    if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
+    return String(v || '');
+  }
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())).getValues()
+    .filter(function(r) { return String(r[0] || '').trim(); })
+    .map(function(r) {
+      return {
+        idReserva: String(r[0] || ''), agendaId: String(r[2] || ''), projeto: String(r[3] || ''),
+        participante: String(r[4] || ''), idItem: String(r[5] || ''), idLote: String(r[6] || ''),
+        descricao: String(r[7] || ''), validade: fmtDate(r[8]), localizacao: String(r[9] || ''),
+        qtde: Number(r[10] || 0) || 0, status: String(r[11] || 'Reservado'),
+        dataVisita: fmtDate(r[12]), responsavel: String(r[13] || ''), observacoes: String(r[14] || '')
+      };
+    });
+}
+
+function getKitReservasResumo_() {
+  var out = {};
+  getKitReservasLinhas_().forEach(function(r) {
+    if (normText_(r.status || 'Reservado') !== 'reservado') return;
+    var chave = kitReservaChave_(r.idItem, r.idLote, r.validade, r.localizacao);
+    out[chave] = Number(out[chave] || 0) + r.qtde;
+  });
+  return out;
+}
+
+function getKitsAgendaReservaStatus(agendaId) {
+  agendaId = String(agendaId || '').trim();
+  if (!agendaId) return { reservado: false, reservas: [] };
+  var reservas = getKitReservasLinhas_().filter(function(r) {
+    return r.agendaId === agendaId && normText_(r.status || 'Reservado') === 'reservado';
+  });
+  return { reservado: reservas.length > 0, reservas: reservas };
+}
+
+function reservarKitsAgendaEvento(payload) {
+  codexAssertCanWrite_('reservarKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
+  return codexWithDocumentLock_('reservarKitsAgendaEvento', function() {
+    payload = payload || {};
+    var agendaId = String(payload.agendaId || '').trim();
+    var kits = Array.isArray(payload.kits) ? payload.kits : [];
+    if (!agendaId) throw new Error('Agendamento nao informado.');
+    if (!kits.length) throw new Error('Nenhum kit selecionado para reserva.');
+    var visita = parseAgendaDateAny_(payload.data);
+    if (!visita || isNaN(visita.getTime())) throw new Error('Informe uma data valida para a visita.');
+    visita.setHours(0, 0, 0, 0);
+    var validadeMinima = new Date(visita.getTime());
+    validadeMinima.setDate(validadeMinima.getDate() + 10);
+    var statusAtual = getKitsAgendaReservaStatus(agendaId);
+    if (statusAtual.reservado) throw new Error('Esta visita ja possui kits reservados.');
+    var estoque = getEstoque() || [];
+    var reservasResumo = getKitReservasResumo_();
+    var sheet = getKitReservasSheet_();
+    var responsavel = Session.getActiveUser().getEmail() || '';
+    var linhas = [];
+    kits.forEach(function(kit) {
+      var idItem = String(kit.idItem || '').trim();
+      var idLote = String(kit.idLote || '').trim();
+      var qtd = Number(kit.qtde || 1);
+      if (!idItem || !idLote || !isFinite(qtd) || qtd <= 0) throw new Error('Kit sem lote ou quantidade valida para reserva.');
+      var lote = estoque.filter(function(item) { return String(item.idItem || '') === idItem && String(item.idLote || '') === idLote; })[0];
+      if (!lote) throw new Error('Lote selecionado nao foi localizado no estoque.');
+      var validade = parseDateBrOrBlank_(lote.validade);
+      if (!validade || isNaN(validade.getTime()) || validade < validadeMinima) {
+        throw new Error('O lote ' + String(lote.descricao || idItem) + ' nao possui validade suficiente para a data da visita.');
+      }
+      var chave = kitReservaChave_(lote.idItem, lote.idLote, lote.validade, lote.localizacao);
+      var disponivel = Math.max(0, Number(lote.qtde || 0) - Number(reservasResumo[chave] || 0));
+      if (qtd > disponivel) throw new Error('Saldo disponivel insuficiente para reservar ' + String(lote.descricao || idItem) + '.');
+      reservasResumo[chave] = Number(reservasResumo[chave] || 0) + qtd;
+      linhas.push([
+        gerarIdLoteEstoque_(), new Date(), agendaId, payload.projeto || lote.projeto || '', payload.participante || '',
+        lote.idItem, lote.idLote, lote.descricao, parseDateBrOrBlank_(lote.validade) || lote.validade,
+        lote.localizacao, qtd, 'Reservado', visita, responsavel, payload.observacoes || ''
+      ]);
+    });
+    if (linhas.length) sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, reservados: linhas.length, msg: linhas.length + ' kit(s) reservado(s) para a visita.' };
+  });
 }
 
 function getEstoquePedidosPendentesPorItem_() {
@@ -7108,7 +7228,7 @@ function getAgendaKitsEstoque_(strict) {
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = itens.filter(function(it) {
       var tipo = normText_(it.tipoItem || it.tipo || '');
       var desc = normText_(it.descricao || '');
-      var saldo = Number(it.qtde);
+      var saldo = Number(it.qtdeDisponivel !== undefined ? it.qtdeDisponivel : it.qtde);
       var temSaldo = it.qtde === undefined || it.qtde === '' || isNaN(saldo) || saldo > 0;
       var pareceKit = tipo.indexOf('kit') > -1 || tipo.indexOf('coleta') > -1 ||
         (desc.indexOf('kit') > -1 && desc.indexOf('coleta') > -1);
@@ -7119,7 +7239,8 @@ function getAgendaKitsEstoque_(strict) {
       var validade = formatarDataSafe(it.validade || it.dataValidade || '');
       var label = String(it.descricao || it.idItem || it.id || 'Kit de coleta').trim();
       if (validade) label += ' | validade ' + validade;
-      if (it.qtde !== undefined && it.qtde !== '') label += ' | qtd ' + it.qtde;
+      if (it.qtdeDisponivel !== undefined && it.qtdeDisponivel !== '') label += ' | disponível ' + it.qtdeDisponivel;
+      else if (it.qtde !== undefined && it.qtde !== '') label += ' | qtd ' + it.qtde;
       return {
         id: String(it.idItem || it.id || label),
         label: label,

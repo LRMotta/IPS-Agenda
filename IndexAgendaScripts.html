@@ -1458,7 +1458,8 @@
       filtrados.forEach(function(k) {
         var value = typeof k === 'object' ? (k.id || k.label || '') : k;
         var label = typeof k === 'object' ? (k.label || k.id || '') : k;
-        el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '">' + esc(label) + '</option>');
+        var lote = typeof k === 'object' ? (k.idLote || '') : '';
+        el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '" data-id-lote="' + esc(lote) + '">' + esc(label) + '</option>');
       });
     });
     atualizarAgendaKitAdicionais();
@@ -1571,11 +1572,13 @@
     var trans = document.getElementById('agTransporteCard');
     var kits = document.getElementById('agKitCard');
     var btnBaixa = document.getElementById('btnBaixarKitsAgenda');
+    var btnReserva = document.getElementById('btnReservarKitsAgenda');
     if (!lab) return;
     var mostrar = AgendaRules.isLabCentral(lab.value);
     if (kits) kits.style.display = mostrar ? 'block' : 'none';
     atualizarAgendaCamposTecnicos();
     if (btnBaixa) btnBaixa.style.display = mostrar && _agendaEditId ? 'flex' : 'none';
+    if (btnReserva) btnReserva.style.display = mostrar && _agendaEditId ? 'flex' : 'none';
     if (!mostrar) {
       agendaKitIds().forEach(function(id) {
         var el = document.getElementById(id);
@@ -2949,6 +2952,54 @@
     }
   }
 
+  function setAgendaKitsReservaState(reservado) {
+    var btn = document.getElementById('btnReservarKitsAgenda');
+    if (btn) {
+      btn.disabled = !!reservado;
+      btn.innerHTML = reservado
+        ? '<span class="material-symbols-outlined">lock</span> Kits reservados para esta visita'
+        : '<span class="material-symbols-outlined">lock</span> Reservar kits selecionados';
+    }
+  }
+
+  function atualizarEstadoReservaKitsAgenda(id) {
+    setAgendaKitsReservaState(false);
+    if (!id) return;
+    google.script.run
+      .withSuccessHandler(function(res) { setAgendaKitsReservaState(!!(res && res.reservado)); })
+      .withFailureHandler(function() { setAgendaKitsReservaState(false); })
+      .getKitsAgendaReservaStatus(id);
+  }
+
+  function agendaKitsSelecionadosParaReserva() {
+    return agendaKitIds().map(function(id) {
+      var el = document.getElementById(id);
+      if (!el || !el.value) return null;
+      var opt = el.options[el.selectedIndex];
+      return { idItem: el.value, idLote: opt && opt.dataset ? (opt.dataset.idLote || '') : '', qtde: 1, label: opt ? opt.text : el.value };
+    }).filter(Boolean);
+  }
+
+  function reservarKitsAgendaEvento() {
+    if (!_agendaEditId) { snackErro('Salve o agendamento antes de reservar os kits.'); return; }
+    var kits = agendaKitsSelecionadosParaReserva();
+    var dados = coletarAgendaEvento();
+    if (!kits.length) { snackErro('Selecione pelo menos um kit de coleta.'); return; }
+    if (kits.some(function(k) { return !k.idLote; })) { snackErro('Atualize a lista de kits para selecionar um lote identificável.'); return; }
+    confirmarAgendaKits('Reservar kits', 'Reservar ' + kits.length + ' kit(s) para esta visita?', function() {
+      var btn = document.getElementById('btnReservarKitsAgenda');
+      if (btn) btn.disabled = true;
+      google.script.run.withSuccessHandler(function(res) {
+        snack((res && res.msg) || 'Kits reservados.');
+        setAgendaKitsReservaState(true);
+        carregarAgendaEventos(true);
+      }).withFailureHandler(function(e) {
+        if (btn) btn.disabled = false;
+        snackErro(e);
+      }).reservarKitsAgendaEvento({ agendaId: _agendaEditId, participante: dados.participante, projeto: dados.projeto, data: dados.data, kits: kits });
+    });
+  }
+
   function atualizarEstadoBaixaKitsAgenda(id) {
     setAgendaKitsBaixaState(false);
     if (!id) return;
@@ -3106,8 +3157,11 @@
     var sec = document.querySelector('#agendaCreatePanel .section-label');
     if (sec) sec.innerHTML = '<span class="material-symbols-outlined">event</span> Novo evento';
     var btnBaixa = document.getElementById('btnBaixarKitsAgenda');
+    var btnReserva = document.getElementById('btnReservarKitsAgenda');
     if (btnBaixa) btnBaixa.style.display = 'none';
+    if (btnReserva) btnReserva.style.display = 'none';
     setAgendaKitsBaixaState(false);
+    setAgendaKitsReservaState(false);
     var reqBox = document.getElementById('agReqEnviada');
     if (reqBox) {
       reqBox.checked = false;
@@ -4088,8 +4142,11 @@
     var sec = document.querySelector('#agendaCreatePanel .section-label');
     if (sec) sec.innerHTML = '<span class="material-symbols-outlined">edit_calendar</span> Editar evento';
     var btnBaixa = document.getElementById('btnBaixarKitsAgenda');
+    var btnReserva = document.getElementById('btnReservarKitsAgenda');
     if (btnBaixa) btnBaixa.style.display = 'flex';
+    if (btnReserva) btnReserva.style.display = 'flex';
     atualizarEstadoBaixaKitsAgenda(r.id);
+    atualizarEstadoReservaKitsAgenda(r.id);
     var p = document.getElementById('agendaCreatePanel');
     if (p) p.classList.add('open');
     agendaOpenEditPresence(r.id, r.recordVersion || '', r.editRecordVersion || '');
