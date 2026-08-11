@@ -126,12 +126,14 @@ test('visualização agregada consolida lotes por ID e mantém item zerado com p
   const pedidos = new FakeSheet('Pedidos', [
     ['ID_Pedido', 'N°', 'Data', 'Projeto', 'Laboratório', 'Responsável', 'Status', 'Observações'],
     ['PED-14', 'PO-14', '', 'MonumenTAL-3', 'Labcorp', '', 'Pendente', ''],
-    ['PED-DRAFT', '', '', 'MonumenTAL-3', 'Labcorp', '', 'Em planejamento', '']
+    ['PED-DRAFT', '', '', 'MonumenTAL-3', 'Labcorp', '', 'Em planejamento', ''],
+    ['PED-PLANNED', 'PO-PLANNED', '', 'MonumenTAL-3', 'Labcorp', '', 'Planejado', '']
   ]);
   const pedidoItens = new FakeSheet('Pedido_Itens', [
     ['ID_Pedido', 'N°', 'Projeto', 'Descrição', 'Tipo', 'ID_Item', 'QtdSol', 'QtdRec', 'Status'],
     ['PED-14', 'PO-14', 'MonumenTAL-3', 'A Bulk Item', 'Bulk Supplies', '0014', 4, 0, 'Pendente'],
-    ['PED-DRAFT', '', 'MonumenTAL-3', 'A Bulk Item', 'Bulk Supplies', '0014', 2, 0, 'Em planejamento']
+    ['PED-DRAFT', '', 'MonumenTAL-3', 'A Bulk Item', 'Bulk Supplies', '0014', 2, 0, 'Em planejamento'],
+    ['PED-PLANNED', 'PO-PLANNED', 'MonumenTAL-3', 'A Bulk Item', 'Bulk Supplies', '0014', 3, 0, 'Planejado']
   ]);
   const spreadsheet = new FakeSpreadsheet({ Itens: itens, Estoque: estoque, Pedidos: pedidos, Pedido_Itens: pedidoItens });
   const server = runFile('WebApp.gs', {
@@ -169,4 +171,12 @@ test('validade do estoque é exibida com mês abreviado em português', () => {
   assert.equal(context.estoqueValidadeExibicao('31/12/2026'), '31/dez./2026');
   assert.equal(context.estoqueValidadeExibicao('2027-03-31'), '31/mar./2027');
   assert.equal(context.estoqueValidadeExibicao(''), '');
+});
+
+test('resumo da visualização evita saldo duplicado sem reserva e simplifica a validade', () => {
+  const estoque = readProjectFile('IndexEstoqueScripts.html');
+
+  assert.match(estoque, /Number\(it\.qtdeReservada \|\| 0\) > 0/);
+  assert.match(estoque, /Validade: a partir de/);
+  assert.doesNotMatch(estoque, /primeiro vencimento/);
 });
