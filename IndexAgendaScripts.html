@@ -1459,7 +1459,8 @@
         var value = typeof k === 'object' ? (k.id || k.label || '') : k;
         var label = typeof k === 'object' ? (k.label || k.id || '') : k;
         var lote = typeof k === 'object' ? (k.idLote || '') : '';
-        el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '" data-id-lote="' + esc(lote) + '">' + esc(label) + '</option>');
+        var accession = typeof k === 'object' ? (k.accessionNumber || '') : '';
+        el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '" data-id-lote="' + esc(lote) + '" data-accession-number="' + esc(accession) + '">' + esc(label) + '</option>');
       });
     });
     atualizarAgendaKitAdicionais();
@@ -2992,6 +2993,7 @@
       return {
         idItem: el.value,
         idLote: opt && opt.dataset ? (opt.dataset.idLote || '') : '',
+        accessionNumber: opt && opt.dataset ? (opt.dataset.accessionNumber || '') : '',
         label: opt ? opt.text : el.value
       };
     }).filter(Boolean);
@@ -3037,7 +3039,7 @@
       var el = document.getElementById(id);
       if (!el || !el.value) return null;
       var opt = el.options[el.selectedIndex];
-      return { idItem: el.value, idLote: opt && opt.dataset ? (opt.dataset.idLote || '') : '', qtde: 1, label: opt ? opt.text : el.value };
+      return { idItem: el.value, idLote: opt && opt.dataset ? (opt.dataset.idLote || '') : '', accessionNumber: opt && opt.dataset ? (opt.dataset.accessionNumber || '') : '', qtde: 1, label: opt ? opt.text : el.value };
     }).filter(Boolean);
   }
 

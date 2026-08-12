@@ -464,6 +464,97 @@ test('fase 5: Bulk Supply não exige reserva de participante', () => {
   assert.equal(estoque.rows[2][6], 1);
 });
 
+test('painel de alertas classifica reservas, validade e baixas sem conciliação', () => {
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({}) },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  const alertas = server.montarAlertasEstoque_([
+    {
+      tipoItem: 'Kit',
+      projeto: 'Estudo A',
+      descricao: 'Kit vencido',
+      lotes: [{ validade: '01/01/2026', qtdeFisica: 2, localizacao: 'Estoque Principal', idLote: 'L-1' }]
+    }
+  ], [
+    { idReserva: 'R-1', projeto: 'Estudo A', participante: 'Pessoa A', descricao: 'Kit A', semVisitaConciliada: true },
+    { idReserva: 'R-2', projeto: 'Estudo A', participante: 'Pessoa B', descricao: 'Kit B', proxima: true },
+    { idReserva: 'R-3', projeto: 'Estudo A', participante: 'Pessoa C', descricao: 'Kit C', validadeInsuficiente: true }
+  ], [
+    { idItem: 'KIT-BAIXADO', descricao: 'Kit baixado', projeto: 'Estudo A', agendaId: 'AG-1', qtde: 1 }
+  ], new Date(2026, 7, 12));
+
+  assert.equal(alertas.reservasSemVisita.count, 1);
+  assert.equal(alertas.visitasProximas.count, 1);
+  assert.equal(alertas.validadeInsuficiente.count, 1);
+  assert.equal(alertas.kitsVencidos.count, 1);
+  assert.equal(alertas.kitsBaixadosSemConciliacao.count, 1);
+  assert.equal(alertas.total, 5);
+});
+
+test('piloto importa reserva existente sem movimentar o saldo e sinaliza conferência física pendente', () => {
+  const reservas = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista', 'Accession_Number']
+  ]);
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ Reservas_Kits: reservas }), flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_acao, callback) => callback();
+  server.getKitReservasSheet_ = () => reservas;
+  server.getKitReservasLinhas_ = () => [];
+  server.getEstoqueLinhas_ = () => [{ idItem: 'KIT-1', projeto: 'Estudo A', descricao: 'Kit coleta V1', tipoItem: 'Kit', idLote: 'LOTE-1', validade: '31/12/2026', localizacao: 'Laboratório', qtde: 3, accessionNumber: '' }];
+  server.gerarIdLoteEstoque_ = () => 'RES-NEW';
+
+  const result = server.importarReservasOperacionais({ linhas: [{ projeto: 'Estudo A', participante: 'Pessoa A', participanteId: 'P-1', idItem: 'KIT-1', idLote: 'LOTE-1', visitaPrevista: 'V1', dataVisita: '15/12/2026', qtde: 1 }] });
+
+  assert.equal(result.importados, 1);
+  assert.equal(reservas.rows.length, 2);
+  assert.equal(reservas.rows[1][11], 'Reservado');
+  assert.match(String(reservas.rows[1][14]), /Conferência física pendente/);
+  assert.equal(reservas.rows[1][9], 'Laboratório');
+});
+
+test('piloto registra conferência física e mantém divergência explícita', () => {
+  const conferencias = new FakeSheet('Conferencias_Laboratorio', [
+    ['ID_Conferencia', 'Data_Conferencia', 'ID_Reserva', 'Projeto', 'Participante', 'ID_Participante', 'ID_Item', 'ID_Lote', 'Accession_Number', 'Descrição', 'Validade', 'Qtde_Esperada', 'Qtde_Conferida', 'Divergencia', 'Status', 'Responsável', 'Observações']
+  ]);
+  const reserva = { idReserva: 'RES-1', projeto: 'Estudo A', participante: 'Pessoa A', participanteId: 'P-1', idItem: 'KIT-1', idLote: 'LOTE-1', descricao: 'Kit coleta', validade: '31/12/2026', localizacao: 'Laboratório', qtde: 2, status: 'Reservado', accessionNumber: '' };
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({}), flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_acao, callback) => callback();
+  server.getKitReservasLinhas_ = () => [reserva];
+  server.getKitConferenciasSheet_ = () => conferencias;
+  server.gerarIdLoteEstoque_ = () => 'CONF-1';
+
+  const result = server.registrarConferenciaLaboratorio({ idReserva: 'RES-1', qtdeConferida: 1 });
+
+  assert.equal(result.status, 'Divergência');
+  assert.equal(result.divergencia, -1);
+  assert.equal(conferencias.rows[1][14], 'Divergência');
+  assert.equal(conferencias.rows[1][13], -1);
+});
+
+test('rastreabilidade individual mantém Accession Number opcional e separado do lote', () => {
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({}) }
+  });
+  const headers = ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote', 'Accession_Number'];
+  const map = server.getEstoqueColumnMap_(headers);
+  assert.equal(map.idLote, 13);
+  assert.equal(map.accessionNumber, 14);
+  assert.equal(server.getEstoqueColumnMap_(['ID_Item', 'ID_Lote', 'Accession Number']).accessionNumber, 2);
+  const agrupados = server.agruparEstoquePorItemValidade_([
+    { projeto: 'Estudo A', descricao: 'Kit', tipoItem: 'Kit', validade: '31/12/2026', localizacao: 'Principal', status: 'OK', idLote: 'L-1', accessionNumber: 'ACC-1', qtde: 1 },
+    { projeto: 'Estudo A', descricao: 'Kit', tipoItem: 'Kit', validade: '31/12/2026', localizacao: 'Principal', status: 'OK', idLote: 'L-1', accessionNumber: 'ACC-2', qtde: 1 }
+  ]);
+  assert.equal(agrupados.length, 2);
+});
+
 test('fase 6: encontra visita da Agenda por participante e projeto sem exigir o mesmo rótulo de visita', () => {
   const agendaHeaders = Array.from({ length: 51 }, (_, index) => 'C' + (index + 1));
   const agendaRow = Array.from({ length: 51 }, () => '');
