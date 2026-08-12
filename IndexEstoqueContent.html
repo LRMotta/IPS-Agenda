@@ -43,7 +43,11 @@
         <button class="btn-new" onclick="carregarEstoqueView(true)" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border);">
           <span class="material-symbols-outlined">refresh</span> Atualizar
         </button>
+        <button class="btn-new" onclick="evAbrirPiloto()" style="background:#fff8e7;color:#8a5a00;box-shadow:none;border:1.5px solid #efd69d;">
+          <span class="material-symbols-outlined">fact_check</span> Piloto / migração
+        </button>
       </div>
+      <div id="evAlertasPainel" class="estoque-alertas-panel" aria-live="polite"></div>
       <div id="evReservaPainel" class="estoque-reservas-panel" aria-live="polite"></div>
       <div class="table-card">
         <table class="data-table" style="min-width:820px;">

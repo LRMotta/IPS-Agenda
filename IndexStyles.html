@@ -156,6 +156,34 @@
     .estoque-summary-alert { color: #b45309; }
     .estoque-summary-balance { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; line-height: 1.3; white-space: nowrap; }
     .estoque-summary-balance strong { color: var(--text); font-weight: 600; }
+    .estoque-alertas-panel { margin: 0 0 14px; border: 1px solid #eadfca; border-radius: var(--r-md); background: #fffdf8; overflow: hidden; }
+    .estoque-alertas-head { display: flex; align-items: center; padding: 13px 16px; border-bottom: 1px solid #f0e8d8; background: #fffaf0; }
+    .estoque-alertas-head > div { display: grid; grid-template-columns: 20px 1fr; column-gap: 7px; align-items: center; }
+    .estoque-alertas-head .material-symbols-outlined { grid-row: span 2; color: #a15c00; font-size: 18px; }
+    .estoque-alertas-head strong { color: var(--text); font-size: 12px; font-weight: 700; }
+    .estoque-alertas-head p { margin: 2px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.35; }
+    .estoque-alertas-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 10px 12px; }
+    .estoque-alerta-card { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px; border: 1px solid #eadfca; border-radius: var(--r-sm); background: #fff; }
+    .estoque-alerta-card-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 24px; border-radius: 50%; }
+    .estoque-alerta-card-icon .material-symbols-outlined { font-size: 16px; }
+    .estoque-alerta-card-copy { min-width: 0; }
+    .estoque-alerta-card-copy strong, .estoque-alerta-card-copy span, .estoque-alerta-card-copy small { display: block; }
+    .estoque-alerta-card-copy strong { color: var(--text); font-size: 18px; line-height: 1; }
+    .estoque-alerta-card-copy span { margin-top: 4px; overflow-wrap: anywhere; color: var(--text); font-size: 10.5px; font-weight: 700; line-height: 1.2; }
+    .estoque-alerta-card-copy small { margin-top: 4px; color: var(--text-faint); font-size: 9.5px; line-height: 1.25; }
+    .estoque-alerta-card.info .estoque-alerta-card-icon { color: #1d4ed8; background: #e8f0ff; }
+    .estoque-alerta-card.warning .estoque-alerta-card-icon { color: #a15c00; background: #fff1cc; }
+    .estoque-alerta-card.danger .estoque-alerta-card-icon { color: #b3261e; background: #fce8e6; }
+    .estoque-alertas-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; padding: 0 16px 10px; }
+    .estoque-alerta-item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; padding: 8px 0; border-top: 1px solid #f0e8d8; }
+    .estoque-alerta-item-chip { display: inline-flex; align-items: center; min-height: 21px; max-width: 125px; padding: 2px 6px; border-radius: 5px; font-size: 9px; font-weight: 700; line-height: 1.15; }
+    .estoque-alerta-item.warning .estoque-alerta-item-chip { color: #a15c00; background: #fff1cc; }
+    .estoque-alerta-item.info .estoque-alerta-item-chip { color: #1d4ed8; background: #e8f0ff; }
+    .estoque-alerta-item.danger .estoque-alerta-item-chip { color: #b3261e; background: #fce8e6; }
+    .estoque-alerta-item > div { min-width: 0; }
+    .estoque-alerta-item strong, .estoque-alerta-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .estoque-alerta-item strong { color: var(--text); font-size: 11px; font-weight: 600; }
+    .estoque-alerta-item > div span { margin-top: 2px; color: var(--text-muted); font-size: 10.5px; }
     .estoque-reservas-panel { margin: 0 0 14px; border: 1px solid #dde5f8; border-radius: var(--r-md); background: #fff; overflow: hidden; }
     .estoque-reservas-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid #edf1f8; background: #f8faff; }
     .estoque-reservas-head > div { display: grid; grid-template-columns: 20px 1fr; column-gap: 7px; align-items: center; }
@@ -182,6 +210,45 @@
     .estoque-reserva-row-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
     .estoque-reserva-link { border-color: #c9d9f7; background: #f5f8ff; color: var(--primary); }
     .estoque-reserva-link:hover { background: var(--primary-light); border-color: #b9cdf7; }
+    .estoque-piloto-modal { width: min(980px, calc(100vw - 32px)); max-width: 980px; }
+    .estoque-piloto-scope { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .estoque-piloto-scope .field-label { flex: 0 0 auto; margin: 0; }
+    .estoque-piloto-scope .f-input { max-width: 360px; height: 34px; }
+    .estoque-piloto-resumo { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .estoque-piloto-resumo > div { padding: 10px 11px; border: 1px solid #e0e6f0; border-radius: var(--r-sm); background: #f8faff; }
+    .estoque-piloto-resumo strong, .estoque-piloto-resumo span { display: block; }
+    .estoque-piloto-resumo strong { color: var(--primary); font-size: 18px; line-height: 1; }
+    .estoque-piloto-resumo span { margin-top: 5px; color: var(--text-faint); font-size: 9.5px; font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: .35px; }
+    .estoque-piloto-tabs { display: flex; gap: 5px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid #e0e6f0; }
+    .estoque-piloto-tab { padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font: 700 11px Roboto, sans-serif; cursor: pointer; }
+    .estoque-piloto-tab.active { border-bottom-color: var(--primary); color: var(--primary); }
+    .estoque-piloto-note { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; padding: 10px 11px; border: 1px solid #d6e2fb; border-radius: var(--r-sm); background: #f5f8ff; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+    .estoque-piloto-note .material-symbols-outlined { flex: 0 0 auto; color: var(--primary); font-size: 17px; }
+    .estoque-piloto-note strong, .estoque-piloto-note span { display: block; }
+    .estoque-piloto-note strong { color: var(--text); margin-bottom: 2px; }
+    .estoque-piloto-textarea { min-height: 128px; resize: vertical; font-family: Consolas, monospace; font-size: 11px; line-height: 1.45; }
+    .estoque-piloto-preview { min-height: 20px; margin-top: 8px; color: var(--text-muted); font-size: 11px; }
+    .estoque-piloto-preview strong, .estoque-piloto-preview span { display: block; }
+    .estoque-piloto-table-wrap { max-height: 390px; overflow: auto; border: 1px solid #e0e6f0; border-radius: var(--r-sm); }
+    .estoque-piloto-table { min-width: 720px; }
+    .estoque-piloto-table th { position: sticky; top: 0; z-index: 1; background: #f4f7ff; }
+    .estoque-piloto-table td strong, .estoque-piloto-table td small { display: block; }
+    .estoque-piloto-table td strong { color: var(--text); font-size: 11px; }
+    .estoque-piloto-table td small { margin-top: 2px; color: var(--text-faint); font-size: 10px; }
+    .estoque-piloto-table .f-input { width: 84px; height: 32px; padding: 0 8px; }
+    .estoque-piloto-chip { display: inline-flex; min-height: 21px; align-items: center; padding: 2px 7px; border-radius: 5px; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+    .estoque-piloto-chip.ok { color: #137333; background: #e7f5e9; }
+    .estoque-piloto-chip.pending { color: #8a5a00; background: #fff1cc; }
+    .estoque-piloto-chip.danger { color: #b3261e; background: #fce8e6; }
+    .estoque-piloto-sem-reserva { display: grid; gap: 4px; margin-top: 12px; padding: 10px 11px; border: 1px solid #efd69d; border-radius: var(--r-sm); background: #fffaf0; color: var(--text-muted); font-size: 10.5px; }
+    .estoque-piloto-sem-reserva strong { color: #8a5a00; font-size: 11px; }
+    .estoque-piloto-sem-reserva span { margin-bottom: 3px; }
+    .estoque-piloto-empty { padding: 22px 12px; border: 1px dashed #d5deed; border-radius: var(--r-sm); color: var(--text-faint); font-size: 11px; text-align: center; }
+    .estoque-piloto-status-info, .estoque-piloto-status-ok, .estoque-piloto-status-warning, .estoque-piloto-status-danger { display: inline-block; padding: 4px 7px; border-radius: 5px; font-size: 10.5px; }
+    .estoque-piloto-status-info { color: var(--primary); background: var(--primary-light); }
+    .estoque-piloto-status-ok { color: #137333; background: #e7f5e9; }
+    .estoque-piloto-status-warning { color: #8a5a00; background: #fff1cc; }
+    .estoque-piloto-status-danger { color: #b3261e; background: #fce8e6; }
     .estoque-vinculo-status { min-height: 34px; margin-bottom: 8px; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
     .estoque-vinculo-help { margin-top: 8px; color: var(--text-faint); font-size: 10.5px; line-height: 1.4; }
     .estoque-reserva-row-alert .estoque-reserva-person strong { color: #9a6700; }
@@ -215,15 +282,23 @@
     #btnReservarKitsAgenda:hover:not(:disabled) { background: var(--primary-light) !important; color: var(--primary) !important; border-color: #c5d5fb !important; }
     #btnReservarKitsAgenda:disabled { background: #f1f4f9 !important; color: var(--text-faint) !important; border-color: #e0e6f0 !important; }
     @media (max-width: 640px) {
+      .estoque-alertas-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .estoque-alertas-list { grid-template-columns: 1fr; }
       .estoque-reservas-grid { grid-template-columns: 1fr; }
       .estoque-reservas-grid section + section { border-left: none; border-top: 1px solid #edf1f8; }
       .estoque-reserva-row { grid-template-columns: minmax(0, 1fr) auto; }
       .estoque-reserva-kit, .estoque-reserva-validade { grid-column: 1; }
       .estoque-reserva-row-actions { grid-column: 2; grid-row: 1 / span 2; }
       .estoque-transfer-modal { width: calc(100% - 24px); }
+      .estoque-piloto-modal { width: calc(100% - 24px); }
+      .estoque-piloto-scope { align-items: flex-start; flex-direction: column; gap: 5px; }
       .estoque-transfer-context { grid-template-columns: 1fr; }
       .estoque-transfer-actions { position: sticky; bottom: -20px; margin: 16px -20px -20px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: rgba(255,255,255,.97); border-top: 1px solid #e0e6f0; }
       .estoque-transfer-actions .btn-save { flex: 1; min-width: 0; }
+    }
+    @media (min-width: 641px) and (max-width: 1100px) {
+      .estoque-alertas-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .estoque-piloto-resumo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     .estoque-empty-lots .material-symbols-outlined { color: var(--text-faint); font-size: 18px; }
     .chip { display: inline-flex; align-items: center; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
