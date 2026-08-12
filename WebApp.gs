@@ -7466,6 +7466,7 @@ function getInfoParticipante(nome) {
       projeto: String(dados[i][5] || ''),
       braco: String(dados[i][6] || ''),
       ultimaVisitaData: ultima.data,
+      ultimaVisitaDataIso: ultima.dataIso,
       ultimaVisitaId: ultima.visita
     };
   }
@@ -7591,12 +7592,13 @@ function getUltimasVisitasParticipantesAgendaMap_() {
         out[participante] = {
           dataObj: dt,
           data: formatarDataSafe(r[idx.data]),
+          dataIso: formatarDataIsoAgenda_(dt),
           visita: String(r[idx.visita] || '---')
         };
       }
     });
     Object.keys(out).forEach(function(k) {
-      out[k] = { data: out[k].data, visita: out[k].visita };
+      out[k] = { data: out[k].data, dataIso: out[k].dataIso, visita: out[k].visita };
     });
     return out;
   } catch(e) {
