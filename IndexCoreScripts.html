@@ -2895,6 +2895,7 @@ function preencherProjetosParticipante(selected) {
   var projeto = encontrarProjetoParticipante(selected);
   _selPtProjeto = projeto ? projeto.nome : '';
   el.value = _selPtProjeto;
+  carregarBracosParticipante(_selPtProjeto, (document.getElementById('ptBraco') || {}).value || '');
 }
 
 function normalizarProjetoParticipante(item) {
@@ -2962,6 +2963,7 @@ function selecionarProjetoParticipante(projeto) {
   input.value = projeto.nome;
   document.getElementById('ptProjetoList').classList.remove('open');
   limparErro('ptProjeto', 'errPtProjeto');
+  carregarBracosParticipante(projeto.nome, '');
 }
 
 function fixarProjetoParticipante() {
@@ -2971,6 +2973,7 @@ function fixarProjetoParticipante() {
   _selPtProjeto = projeto ? projeto.nome : '';
   input.value = _selPtProjeto;
   document.getElementById('ptProjetoList').classList.remove('open');
+  carregarBracosParticipante(_selPtProjeto, (document.getElementById('ptBraco') || {}).value || '');
 }
 
 function navegarAcProjetoParticipante(event) {
@@ -2991,6 +2994,7 @@ function abrirFormPart(p) {
   }
   ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs']
     .forEach(function(id){ document.getElementById(id).value=''; });
+  renderBracosParticipante([], '');
   if (!STATUS_PART || !STATUS_PART.length) {
     fillSelectOptions('ptStatus', [], '', 'Carregando opcoes...');
   } else {
@@ -3016,6 +3020,7 @@ function abrirFormPart(p) {
     document.getElementById('ptCpf').value            = p.cpf||'';
     preencherProjetosParticipante(p.projeto || '');
     document.getElementById('ptBraco').value          = p.braco||'';
+    carregarBracosParticipante(p.projeto || '', p.braco || '');
     fillSelectOptions('ptStatus', STATUS_PART, p.status || '', '-- Selecione --');
     document.getElementById('ptTelefone').value       = p.telefone||'';
     document.getElementById('ptObs').value            = p.observacoes||'';
@@ -4210,6 +4215,172 @@ function renderTabelaProj(lista) {
   });
 }
 
+var _soaProjetoAtual = null;
+var _soaVisitasAtual = [];
+
+function renderSoAVisitas(lista) {
+  _soaVisitasAtual = lista || [];
+  var list = document.getElementById('pSoAList');
+  if (!list) return;
+  if (!_soaVisitasAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhuma visita SoA configurada.</div>'; return; }
+  list.innerHTML = _soaVisitasAtual.map(function(item) {
+    var aliases = (item.aliases || []).join(' · ');
+    var repeticao = item.repeticao || (item.intervaloDias !== '' ? 'a cada ' + item.intervaloDias + ' dias' : 'Única');
+    return '<div class="soa-visita-row"><div class="soa-visita-order">' + esc(item.ordem === '' ? '—' : item.ordem) + '</div>'
+      + '<div class="soa-visita-main"><div class="soa-visita-name">' + esc(item.nome) + (item.ativo === false ? ' <span class="soa-visita-inactive">inativa</span>' : '') + '</div>'
+      + '<div class="soa-visita-meta">' + (item.codigo ? '<span class="soa-visita-code">' + esc(item.codigo) + '</span>' : '') + esc(repeticao) + (aliases ? ' · ' + esc(aliases) : '') + '</div></div>'
+      + '<div class="soa-visita-actions"><button type="button" class="icon-btn" title="Editar visita" onclick="abrirSoAVisitaFormPorId(\'' + esc(item.idSoA) + '\')"><span class="material-symbols-outlined">edit</span></button>'
+      + '<button type="button" class="icon-btn del" title="Excluir visita" onclick="excluirSoAVisitaApp(\'' + esc(item.idSoA) + '\')"><span class="material-symbols-outlined">delete</span></button></div></div>';
+  }).join('');
+}
+
+function abrirSoAVisitaFormPorId(idSoA) {
+  var item = (_soaVisitasAtual || []).filter(function(visita) { return String(visita.idSoA || '') === String(idSoA || ''); })[0];
+  if (item) abrirSoAVisitaForm(item);
+}
+
+function carregarSoAVisitasProjeto(projeto) {
+  _soaProjetoAtual = projeto || null;
+  var list = document.getElementById('pSoAList');
+  var add = document.getElementById('btnAdicionarSoA');
+  var note = document.getElementById('soaProjetoNaoSalvo');
+  var salvo = !!(_soaProjetoAtual && (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo));
+  if (add) add.disabled = !salvo;
+  if (note) note.style.display = salvo ? 'none' : '';
+  if (!salvo) { renderSoAVisitas([]); return; }
+  if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando calendário SoA...</div>';
+  appServerRun({ method: 'getSoAVisitasProjeto', args: [_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo], onSuccess: renderSoAVisitas, onFailure: function(e) {
+    if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar o calendário SoA.')) + '</div>';
+  }});
+}
+
+function abrirSoAVisitaForm(visita) {
+  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de cadastrar o calendário SoA.'); return; }
+  visita = visita || null;
+  ['soaEditId', 'soaCodigo', 'soaNome', 'soaOrdem', 'soaRepeticao', 'soaIntervalo', 'soaAliases', 'soaObservacoes'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
+  document.getElementById('soaAtivo').checked = true;
+  document.getElementById('soaProjeto').value = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo || '';
+  document.getElementById('modalSoATitle').textContent = visita ? 'EDITAR VISITA SoA' : 'ADICIONAR VISITA SoA';
+  document.getElementById('modalSoASubtitle').textContent = 'Calendário de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
+  if (visita) {
+    document.getElementById('soaEditId').value = visita.idSoA || '';
+    document.getElementById('soaCodigo').value = visita.codigo || '';
+    document.getElementById('soaNome').value = visita.nome || '';
+    document.getElementById('soaOrdem').value = visita.ordem === '' ? '' : (visita.ordem || '');
+    document.getElementById('soaRepeticao').value = visita.repeticao || '';
+    document.getElementById('soaIntervalo').value = visita.intervaloDias === '' ? '' : (visita.intervaloDias || '');
+    document.getElementById('soaAliases').value = (visita.aliases || []).join('; ');
+    document.getElementById('soaObservacoes').value = visita.observacoes || '';
+    document.getElementById('soaAtivo').checked = visita.ativo !== false;
+  }
+  var erro = document.getElementById('errSoANome'); if (erro) erro.classList.remove('visible');
+  var nome = document.getElementById('soaNome'); if (nome) nome.classList.remove('invalid');
+  appSetStatus('statusSoA', ''); abrirOverlay('modalSoAVisita');
+}
+
+function salvarSoAVisitaApp() {
+  var nome = document.getElementById('soaNome').value.trim();
+  if (!appRequiredFeedback([{ input: 'soaNome', error: 'errSoANome', label: 'Nome padrão da visita', value: nome }], { status: 'statusSoA' })) return;
+  var btn = document.getElementById('btnSalvarSoA');
+  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim() };
+  appSetButtonBusy(btn, true); appSetStatus('statusSoA', '⏳ Processando...');
+  appServerRun({ method: 'salvarSoAVisita', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', ''); fecharOverlay('modalSoAVisita'); snack('✅ ' + ((res && res.msg) || 'Visita SoA salva.')); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+}
+
+function excluirSoAVisitaApp(idSoA) {
+  abrirConfirmacaoDestrutiva({ mensagem: 'Excluir esta visita do calendário SoA?', onConfirm: function() { appServerRun({ method: 'excluirSoAVisita', args: [idSoA], onSuccess: function(msg) { snack(msg || 'Visita SoA excluída.'); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: snackErro }); }});
+}
+
+var _bracosProjetoAtual = [];
+var _bracosParticipanteAtual = [];
+
+function renderBracosProjeto(lista) {
+  _bracosProjetoAtual = lista || [];
+  var list = document.getElementById('pBracosProjetoList');
+  if (!list) return;
+  if (!_bracosProjetoAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhum braço cadastrado.</div>'; return; }
+  list.innerHTML = _bracosProjetoAtual.map(function(item) {
+    return '<div class="soa-visita-row"><div class="soa-visita-order">' + esc(item.ordem === '' ? '—' : item.ordem) + '</div><div class="soa-visita-main"><div class="soa-visita-name">' + esc(item.nome) + '</div><div class="soa-visita-meta">' + (item.observacoes ? esc(item.observacoes) : 'Disponível como opção no cadastro de participantes') + '</div></div><div class="soa-visita-actions"><button type="button" class="icon-btn" title="Editar braço" onclick="abrirBracoProjetoFormPorId(\'' + esc(item.idBraco) + '\')"><span class="material-symbols-outlined">edit</span></button><button type="button" class="icon-btn del" title="Excluir braço" onclick="excluirBracoProjetoApp(\'' + esc(item.idBraco) + '\')"><span class="material-symbols-outlined">delete</span></button></div></div>';
+  }).join('');
+}
+
+function carregarBracosProjeto(projeto) {
+  var atual = projeto || null;
+  var list = document.getElementById('pBracosProjetoList');
+  var add = document.getElementById('btnAdicionarBracoProjeto');
+  var note = document.getElementById('bracosProjetoNaoSalvo');
+  var salvo = !!(atual && (atual.nomeAbreviado || atual.codigo));
+  if (add) add.disabled = !salvo;
+  if (note) note.style.display = salvo ? 'none' : '';
+  if (!salvo) { renderBracosProjeto([]); return; }
+  if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando catálogo de braços...</div>';
+  appServerRun({ method: 'getBracosProjeto', args: [atual.nomeAbreviado || atual.codigo], onSuccess: renderBracosProjeto, onFailure: function(e) { if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar os braços.')) + '</div>'; } });
+}
+
+function abrirBracoProjetoFormPorId(idBraco) {
+  var item = (_bracosProjetoAtual || []).filter(function(braco) { return String(braco.idBraco || '') === String(idBraco || ''); })[0];
+  if (item) abrirBracoProjetoForm(item);
+}
+
+function abrirBracoProjetoForm(braco) {
+  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de cadastrar os braços do estudo.'); return; }
+  braco = braco || null;
+  ['bracoProjetoEditId', 'bracoProjetoNomeInput', 'bracoProjetoOrdem', 'bracoProjetoObs'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
+  document.getElementById('bracoProjetoNome').value = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo || '';
+  document.getElementById('bracoProjetoAtivo').checked = true;
+  document.getElementById('modalBracoProjetoTitle').textContent = braco ? 'EDITAR BRAÇO' : 'ADICIONAR BRAÇO';
+  document.getElementById('modalBracoProjetoSub').textContent = 'Catálogo de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
+  if (braco) {
+    document.getElementById('bracoProjetoEditId').value = braco.idBraco || '';
+    document.getElementById('bracoProjetoNomeInput').value = braco.nome || '';
+    document.getElementById('bracoProjetoOrdem').value = braco.ordem === '' ? '' : (braco.ordem || '');
+    document.getElementById('bracoProjetoObs').value = braco.observacoes || '';
+    document.getElementById('bracoProjetoAtivo').checked = braco.ativo !== false;
+  }
+  var erro = document.getElementById('errBracoProjetoNome'); if (erro) erro.classList.remove('visible');
+  var nome = document.getElementById('bracoProjetoNomeInput'); if (nome) nome.classList.remove('invalid');
+  appSetStatus('statusBracoProjeto', ''); abrirOverlay('modalBracoProjeto');
+}
+
+function salvarBracoProjetoApp() {
+  var nome = document.getElementById('bracoProjetoNomeInput').value.trim();
+  if (!appRequiredFeedback([{ input: 'bracoProjetoNomeInput', error: 'errBracoProjetoNome', label: 'Nome do braço', value: nome }], { status: 'statusBracoProjeto' })) return;
+  var btn = document.getElementById('btnSalvarBracoProjeto');
+  var payload = { idBraco: document.getElementById('bracoProjetoEditId').value, projeto: document.getElementById('bracoProjetoNome').value.trim(), nome: nome, ordem: document.getElementById('bracoProjetoOrdem').value, ativo: document.getElementById('bracoProjetoAtivo').checked, observacoes: document.getElementById('bracoProjetoObs').value.trim() };
+  appSetButtonBusy(btn, true); appSetStatus('statusBracoProjeto', '⏳ Processando...');
+  appServerRun({ method: 'salvarBracoProjeto', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusBracoProjeto', ''); fecharOverlay('modalBracoProjeto'); snack('✅ ' + ((res && res.msg) || 'Braço salvo.')); carregarBracosProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusBracoProjeto', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+}
+
+function excluirBracoProjetoApp(idBraco) {
+  abrirConfirmacaoDestrutiva({ mensagem: 'Excluir este braço do catálogo do protocolo?', onConfirm: function() { appServerRun({ method: 'excluirBracoProjeto', args: [idBraco], onSuccess: function(msg) { snack(msg || 'Braço excluído.'); carregarBracosProjeto(_soaProjetoAtual); }, onFailure: snackErro }); }});
+}
+
+function renderBracosParticipante(lista, valorAtual) {
+  _bracosParticipanteAtual = (lista || []).filter(function(item) { return item.ativo !== false; });
+  var wrap = document.getElementById('ptBracoCatalogoWrap');
+  var select = document.getElementById('ptBracoOpcao');
+  if (!wrap || !select) return;
+  if (!_bracosParticipanteAtual.length) { wrap.style.display = 'none'; select.disabled = false; select.innerHTML = '<option value="">— Nenhum braço padronizado cadastrado —</option>'; return; }
+  wrap.style.display = '';
+  select.disabled = false;
+  select.innerHTML = '<option value="">— Selecione uma opção cadastrada —</option>' + _bracosParticipanteAtual.map(function(item) { return '<option value="' + esc(item.nome || '') + '">' + esc(item.nome || '') + '</option>'; }).join('');
+  var match = _bracosParticipanteAtual.filter(function(item) { return normSelectValue(item.nome) === normSelectValue(valorAtual || ''); })[0];
+  select.value = match ? match.nome : '';
+}
+
+function carregarBracosParticipante(projeto, valorAtual) {
+  var select = document.getElementById('ptBracoOpcao');
+  if (select) { select.disabled = true; select.innerHTML = '<option value="">Carregando opções...</option>'; }
+  if (!projeto) { renderBracosParticipante([], valorAtual); return; }
+  appServerRun({ method: 'getBracosProjeto', args: [projeto], onSuccess: function(lista) { renderBracosParticipante(lista, valorAtual || (document.getElementById('ptBraco') || {}).value || ''); }, onFailure: function() { renderBracosParticipante([], valorAtual); } });
+}
+
+function aplicarBracoProjetoSelecionado() {
+  var select = document.getElementById('ptBracoOpcao');
+  var input = document.getElementById('ptBraco');
+  if (select && input && select.value) input.value = select.value;
+}
+
 function abrirFormProjeto(projeto) {
   projeto = projeto || null;
   if (typeof projeto === 'string') {
@@ -4237,6 +4408,8 @@ function abrirFormProjeto(projeto) {
   });
   document.getElementById('statusProj').innerHTML = '';
   document.getElementById('btnSalvarProj').disabled = false;
+  carregarSoAVisitasProjeto(null);
+  carregarBracosProjeto(null);
 
   if (projeto) {
     document.getElementById('modalProjTitle').textContent = 'EDITAR PROJETO';
@@ -4257,6 +4430,8 @@ function abrirFormProjeto(projeto) {
     document.getElementById('pNumeroCE').value = projeto.numeroCE || '';
     document.getElementById('pExpedienteCE').value = projeto.expedienteCE || '';
     document.getElementById('pTituloCompleto').value = projeto.tituloCompleto || '';
+    carregarSoAVisitasProjeto(projeto);
+    carregarBracosProjeto(projeto);
   } else {
     document.getElementById('modalProjTitle').textContent = 'CADASTRO DE PROJETO';
   }

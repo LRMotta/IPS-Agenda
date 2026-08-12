@@ -158,6 +158,22 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   assert.match(client, /\{ input: 'ptId', error: 'errPtId',[\s\S]*value: idObrigatorio \? idPart : 'ok' \}/);
 });
 
+test('catálogo opcional de braços fica no projeto e sugere opções no participante', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(modal, /id="pBracosProjetoList"/);
+  assert.match(modal, /id="modalBracoProjeto"/);
+  assert.match(modal, /id="ptBracoOpcao"/);
+  assert.match(modal, /catálogo.*não bloqueia/i);
+  assert.match(client, /function carregarBracosProjeto/);
+  assert.match(client, /function carregarBracosParticipante/);
+  assert.match(client, /function aplicarBracoProjetoSelecionado/);
+  assert.match(server, /function getBracosProjeto\(projeto\)/);
+  assert.match(server, /function salvarBracoProjeto\(payload\)/);
+  assert.match(server, /function excluirBracoProjeto\(idBraco\)/);
+});
+
 test('tabela de participantes exibe nome e codigo do projeto como no cadastro de projetos', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const block = sourceBetween(source, 'function participanteProjetoCellHtml(', 'function renderTabelaPart(');

@@ -2361,6 +2361,7 @@
       tipo: v('agTipo'),
       status: v('agStatus') || 'Agendado',
       participante: participante,
+      participanteId: String((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '').trim(),
       nascimento: nascimento,
       projeto: proj,
       visita: v('agVisita'),
@@ -2989,6 +2990,7 @@
       var opt = el.options[el.selectedIndex];
       return {
         idItem: el.value,
+        idLote: opt && opt.dataset ? (opt.dataset.idLote || '') : '',
         label: opt ? opt.text : el.value
       };
     }).filter(Boolean);
@@ -3008,12 +3010,14 @@
     }
   }
 
-  function setAgendaKitsReservaState(reservado) {
+  function setAgendaKitsReservaState(reservado, encerrado) {
     var btn = document.getElementById('btnReservarKitsAgenda');
     if (btn) {
-      btn.disabled = !!reservado;
+      btn.disabled = !!reservado || !!encerrado;
       btn.innerHTML = reservado
         ? '<span class="material-symbols-outlined">lock</span> Kits reservados para esta visita'
+        : encerrado
+          ? '<span class="material-symbols-outlined">task_alt</span> Kits baixados para esta visita'
         : '<span class="material-symbols-outlined">lock</span> Reservar kits selecionados';
     }
   }
@@ -3022,8 +3026,8 @@
     setAgendaKitsReservaState(false);
     if (!id) return;
     google.script.run
-      .withSuccessHandler(function(res) { setAgendaKitsReservaState(!!(res && res.reservado)); })
-      .withFailureHandler(function() { setAgendaKitsReservaState(false); })
+      .withSuccessHandler(function(res) { setAgendaKitsReservaState(!!(res && res.reservado), !!(res && res.encerrado)); })
+      .withFailureHandler(function() { setAgendaKitsReservaState(false, false); })
       .getKitsAgendaReservaStatus(id);
   }
 
@@ -3052,7 +3056,7 @@
       }).withFailureHandler(function(e) {
         if (btn) btn.disabled = false;
         snackErro(e);
-      }).reservarKitsAgendaEvento({ agendaId: _agendaEditId, participante: dados.participante, projeto: dados.projeto, data: dados.data, kits: kits });
+      }).reservarKitsAgendaEvento({ agendaId: _agendaEditId, participante: dados.participante, participanteId: dados.participanteId, projeto: dados.projeto, data: dados.data, visita: dados.visita, kits: kits });
     });
   }
 
@@ -3110,6 +3114,10 @@
     }
     if (!kits.length) {
       snackErro('Selecione pelo menos um kit de coleta.');
+      return;
+    }
+    if (kits.some(function(k) { return !k.idLote; })) {
+      snackErro('Atualize a lista de kits para selecionar um lote identificável.');
       return;
     }
     confirmarAgendaKits('Dar baixa nos kits', 'Dar baixa de ' + kits.length + ' kit(s) selecionado(s) no estoque?', function() {

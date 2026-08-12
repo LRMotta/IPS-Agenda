@@ -190,10 +190,85 @@
         </div>
       </div>
 
+      <div class="form-section soa-project-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">event_note</span> Calendário SoA
+        </div>
+        <div class="soa-project-toolbar">
+          <div class="soa-project-help">Configure os nomes padrão, a ordem e os aliases das visitas deste protocolo. O preenchimento é opcional e não impede visitas históricas na Agenda.</div>
+          <button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()">
+            <span class="material-symbols-outlined">add</span> Adicionar visita
+          </button>
+        </div>
+        <div class="soa-project-unsaved" id="soaProjetoNaoSalvo">Salve o protocolo antes de cadastrar o seu calendário SoA.</div>
+        <div class="soa-visita-list" id="pSoAList"><div class="soa-visita-empty">Nenhuma visita SoA configurada.</div></div>
+      </div>
+
+      <div class="form-section soa-project-section">
+        <div class="section-label"><span class="material-symbols-outlined">call_split</span> Braços do estudo</div>
+        <div class="soa-project-toolbar">
+          <div class="soa-project-help">Cadastre os nomes padronizados dos braços deste protocolo. O catálogo é opcional e não bloqueia participantes ou eventos antigos.</div>
+          <button type="button" class="btn-txt soa-add-btn" id="btnAdicionarBracoProjeto" onclick="abrirBracoProjetoForm()"><span class="material-symbols-outlined">add</span> Adicionar braço</button>
+        </div>
+        <div class="soa-project-unsaved" id="bracosProjetoNaoSalvo">Salve o protocolo antes de cadastrar os braços do estudo.</div>
+        <div class="soa-visita-list" id="pBracosProjetoList"><div class="soa-visita-empty">Nenhum braço cadastrado.</div></div>
+      </div>
+
       <button class="btn-save" id="btnSalvarProj" onclick="salvarProjetoApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
       <div class="status-msg" id="statusProj"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL BRAÇO DO PROJETO -->
+<div class="modal-overlay" id="modalBracoProjeto" onclick="fecharModalSeClicouFora(event,'modalBracoProjeto')">
+  <div class="modal-box" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">call_split</span></div>
+      <div><div class="modal-header-title" id="modalBracoProjetoTitle">ADICIONAR BRAÇO</div><div class="modal-header-sub" id="modalBracoProjetoSub">Catálogo opcional do protocolo</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalBracoProjeto')"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="bracoProjetoEditId"><input type="hidden" id="bracoProjetoNome">
+      <div class="form-section">
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="bracoProjetoNomeInput">Nome padronizado do braço <span class="required-star">*</span></label><input type="text" id="bracoProjetoNomeInput" class="f-input large" placeholder="Ex: Braço A, Placebo, Controle"><div class="field-error" id="errBracoProjetoNome">Informe o nome do braço.</div></div>
+        <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="bracoProjetoOrdem">Ordem</label><input type="number" id="bracoProjetoOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div><div style="display:flex;align-items:flex-end;padding-bottom:8px;"><label class="soa-active-toggle"><input type="checkbox" id="bracoProjetoAtivo" checked> Braço ativo</label></div></div>
+        <div class="field"><label class="field-label" for="bracoProjetoObs">Observações</label><textarea id="bracoProjetoObs" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Notas sobre randomização ou nomenclatura"></textarea></div>
+      </div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalBracoProjeto')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarBracoProjeto" onclick="salvarBracoProjetoApp()"><span class="material-symbols-outlined">save</span> Salvar braço</button></div>
+      <div class="status-msg" id="statusBracoProjeto"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VISITA SoA -->
+<div class="modal-overlay" id="modalSoAVisita" onclick="fecharModalSeClicouFora(event,'modalSoAVisita')">
+  <div class="modal-box" style="max-width:620px;">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">event_note</span></div>
+      <div><div class="modal-header-title" id="modalSoATitle">ADICIONAR VISITA SoA</div><div class="modal-header-sub" id="modalSoASubtitle">Calendário do protocolo</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAVisita')"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="soaEditId"><input type="hidden" id="soaProjeto">
+      <div class="form-section">
+        <div class="field-row cols-2" style="margin-bottom:14px;">
+          <div><label class="field-label" for="soaCodigo">Código da visita</label><input type="text" id="soaCodigo" class="f-input" placeholder="Ex: V1, T-2, FU-03"></div>
+          <div><label class="field-label" for="soaOrdem">Ordem de exibição</label><input type="number" id="soaOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div>
+        </div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaNome">Nome padrão da visita <span class="required-star">*</span></label><input type="text" id="soaNome" class="f-input large" placeholder="Ex: T-2 Subsequentes"><div class="field-error" id="errSoANome">Informe o nome padrão da visita.</div></div>
+        <div class="field-row cols-2" style="margin-bottom:14px;">
+          <div><label class="field-label" for="soaRepeticao">Repetição</label><input type="text" id="soaRepeticao" class="f-input" placeholder="Ex: mensal, a cada 6 meses"></div>
+          <div><label class="field-label" for="soaIntervalo">Intervalo (dias)</label><input type="number" id="soaIntervalo" class="f-input" min="0" step="1" placeholder="Opcional"></div>
+        </div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaAliases">Aliases / nomes históricos</label><input type="text" id="soaAliases" class="f-input" placeholder="Separe por ponto e vírgula: FU 3; Follow-up 3"><div class="field-help">Usados como referência para conciliar nomes antigos da Agenda.</div></div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaObservacoes">Observações</label><textarea id="soaObservacoes" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Janela, requisitos ou notas da visita"></textarea></div>
+        <label class="soa-active-toggle"><input type="checkbox" id="soaAtivo" checked> Visita ativa no protocolo</label>
+      </div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAVisita')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSoA" onclick="salvarSoAVisitaApp()"><span class="material-symbols-outlined">save</span> Salvar visita</button></div>
+      <div class="status-msg" id="statusSoA"></div>
     </div>
   </div>
 </div>
@@ -251,7 +326,7 @@
             <div class="field-error" id="errPtId">Campo obrigatório.</div>
           </div>
         </div>
-        <div class="field-row cols-2">
+        <div class="field-row cols-3">
           <div>
             <label class="field-label" for="ptProjeto">Protocolo</label>
             <div class="ac-wrap">
@@ -265,6 +340,10 @@
               <div class="ac-list" id="ptProjetoList"></div>
             </div>
             <div class="field-error" id="errPtProjeto">Selecione um projeto cadastrado.</div>
+          </div>
+          <div id="ptBracoCatalogoWrap" style="display:none;">
+            <label class="field-label" for="ptBracoOpcao">Braço cadastrado no projeto</label>
+            <select id="ptBracoOpcao" class="f-input f-select" onchange="aplicarBracoProjetoSelecionado()"><option value="">— Nenhum braço padronizado cadastrado —</option></select>
           </div>
           <div>
             <label class="field-label" for="ptBraco">Braço</label>

@@ -7,6 +7,9 @@
   var _evTransferSelecionado = null;
   var _evTransferModo = 'transferir';
   var _evConciliacaoRows = [];
+  var _evReservaVinculoRows = [];
+  var _evReservaVinculoSelecionada = null;
+  var _evAgendaCandidatos = [];
   var ESTOQUE_CLIENT_CACHE_TTL_MS = 5 * 60 * 1000;
   var ESTOQUE_CONFIG_TTL_MS = 5 * 60 * 1000;
   var ESTOQUE_CLIENT_CACHE = {};
@@ -199,6 +202,7 @@
     var painel = document.getElementById('evReservaPainel');
     if (!painel) return;
     var reservas = evReservasUnicas(lista).filter(function(reserva) { return reserva.noLaboratorio; });
+    _evReservaVinculoRows = reservas;
     var atencao = reservas.filter(function(reserva) {
       return reserva.semVisitaConciliada || reserva.vencida || reserva.validadeInsuficiente;
     });
@@ -217,11 +221,15 @@
     function linha(reserva) {
       var sinal = evReservaSinal(reserva);
       var visita = reserva.visitaPrevista || 'Visita não identificada';
+      var indiceReserva = _evReservaVinculoRows.indexOf(reserva);
+      var acao = reserva.semVisitaConciliada
+        ? '<button type="button" class="estoque-reserva-action estoque-reserva-link" onclick="evAbrirVinculoAgendaIndice(' + indiceReserva + ')">Vincular Agenda</button>'
+        : '';
       return '<div class="estoque-reserva-row">' +
         '<div class="estoque-reserva-person"><strong>' + esc(reserva.participante || 'Participante não informado') + '</strong><span>' + esc(visita) + (reserva.dataVisita ? ' · ' + esc(reserva.dataVisita) : '') + '</span></div>' +
         '<div class="estoque-reserva-kit">' + esc(reserva.descricao || reserva.idItem || 'Kit') + ' · ' + esc(String(reserva.qtde || 0)) + ' un.</div>' +
         '<div class="estoque-reserva-validade">Validade ' + esc(estoqueValidadeExibicao(reserva.validade) || 'não informada') + '</div>' +
-        '<span class="estoque-reserva-chip ' + sinal.cls + '">' + esc(sinal.label) + '</span>' +
+        '<div class="estoque-reserva-row-actions"><span class="estoque-reserva-chip ' + sinal.cls + '">' + esc(sinal.label) + '</span>' + acao + '</div>' +
       '</div>';
     }
     var resumo = reservas.length
@@ -428,6 +436,85 @@
     if (arw) arw.style.transform = open ? '' : 'rotate(90deg)';
   }
 
+  function evGarantirModalVinculoAgenda() {
+    if (document.getElementById('modalVinculoReservaAgenda')) return;
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modalVinculoReservaAgenda';
+    overlay.setAttribute('onclick', "fecharModalSeClicouFora(event, 'modalVinculoReservaAgenda')");
+    overlay.innerHTML = '<div class="modal-box estoque-transfer-modal">' +
+      '<div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined">event_link</span></div>' +
+      '<div><div class="modal-header-title">VINCULAR VISITA DA AGENDA</div><div class="modal-header-sub">Escolha a visita real, mesmo que o nome seja diferente do SoA.</div></div>' +
+      '<button class="modal-close" onclick="fecharOverlay(&quot;modalVinculoReservaAgenda&quot;)"><span class="material-symbols-outlined">close</span></button></div>' +
+      '<div class="modal-body"><div class="estoque-transfer-context" id="evVinculoReservaContext"></div>' +
+      '<div class="form-section"><div class="section-label"><span class="material-symbols-outlined">event_available</span>Visitas compatíveis</div>' +
+      '<div id="evVinculoAgendaStatus" class="estoque-vinculo-status">Carregando visitas...</div>' +
+      '<select id="evVinculoAgendaSelect" class="f-input f-select" disabled><option value="">Aguarde...</option></select>' +
+      '<div class="estoque-vinculo-help">A busca considera participante, projeto e proximidade da data. O texto original da reserva será preservado.</div></div>' +
+      '<div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalVinculoReservaAgenda&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnConfirmarVinculoAgenda" onclick="evConfirmarVinculoAgenda()" disabled><span class="material-symbols-outlined">link</span>Vincular visita</button></div>' +
+      '<div class="status-msg" id="evVinculoAgendaMsg"></div></div></div>';
+    document.body.appendChild(overlay);
+  }
+
+  function evAbrirVinculoAgendaIndice(indice) {
+    var reserva = _evReservaVinculoRows[indice];
+    if (!reserva || !reserva.idReserva) return;
+    _evReservaVinculoSelecionada = reserva;
+    evGarantirModalVinculoAgenda();
+    var contexto = document.getElementById('evVinculoReservaContext');
+    if (contexto) contexto.innerHTML = '<div><span>Participante</span><strong>' + esc(reserva.participante || 'Não informado') + '</strong><div class="estoque-transfer-available">' + esc(reserva.participanteId || '') + '</div></div>' +
+      '<div><span>Reserva</span><strong>' + esc(reserva.visitaPrevista || 'Visita não identificada') + '</strong><div class="estoque-transfer-available">' + esc(reserva.dataVisita || 'Data não informada') + ' · ' + esc(reserva.descricao || reserva.idItem || 'Kit') + '</div></div>';
+    var select = document.getElementById('evVinculoAgendaSelect');
+    var status = document.getElementById('evVinculoAgendaStatus');
+    var msg = document.getElementById('evVinculoAgendaMsg');
+    var btn = document.getElementById('btnConfirmarVinculoAgenda');
+    if (select) { select.disabled = true; select.innerHTML = '<option value="">Carregando visitas...</option>'; }
+    if (status) status.textContent = 'Carregando visitas compatíveis...';
+    if (msg) msg.textContent = '';
+    if (btn) btn.disabled = true;
+    abrirOverlay('modalVinculoReservaAgenda');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        _evAgendaCandidatos = (res && res.candidatos) || [];
+        if (select) {
+          select.innerHTML = _evAgendaCandidatos.length
+            ? '<option value="">— Selecione a visita —</option>' + _evAgendaCandidatos.map(function(candidato, pos) {
+                return '<option value="' + esc(candidato.id) + '" data-pos="' + pos + '">' + esc((candidato.semId ? 'Sem ID · ' : '') + candidato.data + ' · ' + candidato.visita + ' · ' + (candidato.projeto || 'Projeto')) + '</option>';
+              }).join('')
+            : '<option value="">Nenhuma visita compatível encontrada</option>';
+          select.disabled = !_evAgendaCandidatos.length;
+          select.onchange = function() { if (btn) btn.disabled = !select.value; };
+        }
+        if (status) status.textContent = _evAgendaCandidatos.length ? _evAgendaCandidatos.length + ' visita(s) encontrada(s).' : 'Nenhuma visita compatível encontrada. A reserva continuará pendente de conciliação.';
+      })
+      .withFailureHandler(function(err) {
+        if (status) status.textContent = err && err.message ? err.message : 'Não foi possível consultar a Agenda.';
+      })
+      .getAgendaCandidatosReservaKit({ idReserva: reserva.idReserva });
+  }
+
+  function evConfirmarVinculoAgenda() {
+    var reserva = _evReservaVinculoSelecionada;
+    var select = document.getElementById('evVinculoAgendaSelect');
+    var candidato = _evAgendaCandidatos.filter(function(item) { return item.id === (select && select.value); })[0];
+    var msg = document.getElementById('evVinculoAgendaMsg');
+    var btn = document.getElementById('btnConfirmarVinculoAgenda');
+    if (!candidato || !select || !select.value) { if (msg) msg.textContent = 'Selecione uma visita da Agenda.'; return; }
+    if (!reserva) { if (msg) msg.textContent = 'Reserva não encontrada na tela.'; return; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined">progress_activity</span>Vinculando...'; }
+    google.script.run
+      .withSuccessHandler(function(res) {
+        fecharOverlay('modalVinculoReservaAgenda');
+        snack((res && res.msg) || 'Reserva vinculada à Agenda.');
+        carregarEstoqueInline(true);
+      })
+      .withFailureHandler(function(err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">link</span>Vincular visita'; }
+        if (msg) msg.textContent = err && err.message ? err.message : 'Não foi possível vincular a reserva.';
+      })
+      .vincularReservaKitAgenda({ idReserva: reserva.idReserva, agendaId: candidato.agendaId || '', rowIndex: candidato.rowIndex });
+  }
+
   function evAbrirTransferenciaIndice(itemIndex, loteIndex) {
     var row = _evTransferRows[itemIndex] && _evTransferRows[itemIndex][loteIndex];
     if (!row || !row.item || !row.lote) return;
@@ -482,6 +569,7 @@
         return '<option value="' + esc(p.id || '') + '" data-identificacao="' + esc(p.idParticipante || '') + '">' + esc(p.nome || p.idParticipante || 'Participante') + (p.idParticipante ? ' · ' + esc(p.idParticipante) : '') + '</option>';
       }).join('');
     }
+    evCarregarSugestoesSoA(row.item.projeto || '');
     var visita = document.getElementById('trVisitaPrevista');
     var dataVisita = document.getElementById('trDataVisita');
     var agendaId = document.getElementById('trAgendaId');
@@ -491,6 +579,27 @@
     var status = document.getElementById('statusTransferInline');
     if (status) status.textContent = '';
     abrirOverlay('modalTransferInline');
+  }
+
+  function evCarregarSugestoesSoA(projeto) {
+    var select = document.getElementById('trSoAVisita');
+    if (!select) return;
+    select.innerHTML = '<option value="">— Sem sugestão SoA —</option>';
+    select.disabled = true;
+    if (!projeto) return;
+    appServerRun({ method: 'getSoAVisitasProjeto', args: [projeto], onSuccess: function(visitas) {
+      var lista = (visitas || []).filter(function(item) { return item.ativo !== false; });
+      select.innerHTML = '<option value="">— Sem sugestão SoA —</option>' + lista.map(function(item) {
+        return '<option value="' + esc(item.nome || '') + '">' + esc((item.codigo ? item.codigo + ' · ' : '') + (item.nome || '')) + '</option>';
+      }).join('');
+      select.disabled = !lista.length;
+    }, onFailure: function() { select.disabled = true; } });
+  }
+
+  function evAplicarSugestaoSoA() {
+    var select = document.getElementById('trSoAVisita');
+    var visita = document.getElementById('trVisitaPrevista');
+    if (select && visita && select.value) visita.value = select.value;
   }
 
   function evAbrirConciliacaoIndice(indice) {
@@ -543,6 +652,8 @@
       var campo = document.getElementById(id);
       if (campo) campo.value = '';
     });
+    var soaSelect = document.getElementById('trSoAVisita');
+    if (soaSelect) { soaSelect.innerHTML = '<option value="">— Sem sugestão SoA —</option>'; soaSelect.disabled = true; }
     var status = document.getElementById('statusTransferInline');
     if (status) status.textContent = '';
     abrirOverlay('modalTransferInline');
@@ -843,6 +954,7 @@
                   '<div class="full" id="trReservaFields"><div class="mov-form-grid estoque-reserva-form">' +
                     '<div><label class="field-label" for="trParticipante">Participante <span class="required-star">*</span></label><select id="trParticipante" class="f-input f-select"><option value="">— Selecione o participante —</option></select></div>' +
                     '<div><label class="field-label" for="trDataVisita">Data estimada <span class="required-star">*</span></label><input type="date" id="trDataVisita" class="f-input"></div>' +
+                    '<div><label class="field-label" for="trSoAVisita">Sugestão SoA</label><select id="trSoAVisita" class="f-input f-select" onchange="evAplicarSugestaoSoA()"><option value="">— Sem sugestão SoA —</option></select></div>' +
                     '<div><label class="field-label" for="trVisitaPrevista">Visita prevista <span class="required-star">*</span></label><input type="text" id="trVisitaPrevista" class="f-input" placeholder="Ex: T-2 / Follow-up 3"></div>' +
                     '<div><label class="field-label" for="trAgendaId">ID da visita na Agenda</label><input type="text" id="trAgendaId" class="f-input" placeholder="Opcional, se já existir"></div>' +
                   '</div></div>' +
