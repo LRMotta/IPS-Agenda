@@ -160,6 +160,36 @@ test('visualização agregada consolida lotes por ID e mantém item zerado com p
   assert.equal(t14.status, 'Crítico');
 });
 
+test('visualização separa o saldo principal das reservas nominadas no Laboratório', () => {
+  const itens = new FakeSheet('Itens', [
+    ITEM_HEADERS,
+    ['KIT-1', 'Estudo A', 'Kit de coleta', '', 'Kit', 'Estoque Principal', 1, '', 'Lab A', 'Ativo']
+  ]);
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'],
+    ['KIT-1', 'Estudo A', 'Kit de coleta', 'Kit', '31/12/2026', 'Estoque Principal', 3, 1, 'OK', '', '', '', '', 'LOTE-1'],
+    ['KIT-1', 'Estudo A', 'Kit de coleta', 'Kit', '31/12/2026', 'Laboratório', 2, 1, 'OK', '', '', '', '', 'LOTE-1']
+  ]);
+  const reservas = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista'],
+    ['RES-1', '', '', 'Estudo A', 'Pessoa A', 'KIT-1', 'LOTE-1', 'Kit de coleta', '31/12/2026', 'Laboratório', 2, 'Reservado', '15/10/2026', '', '', 'PART-1', 'Follow-up 1']
+  ]);
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ Itens: itens, Estoque: estoque, Reservas_Kits: reservas }) },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { formatDate: value => String(value) }
+  });
+  server.getProjetosAtivosEstoque_ = () => [];
+
+  const item = server.getEstoqueVisualizacao().find(row => row.idItem === 'KIT-1');
+  assert.equal(item.estoquePrincipal, 3);
+  assert.equal(item.estoqueLaboratorio, 2);
+  assert.equal(item.qtdeReservadaLaboratorio, 2);
+  assert.equal(item.qtdeNaoConciliadaLaboratorio, 0);
+  assert.equal(item.reservasLaboratorio[0].participanteId, 'PART-1');
+  assert.equal(item.reservasLaboratorio[0].semVisitaConciliada, true);
+});
+
 test('validade do estoque é exibida com mês abreviado em português', () => {
   const core = readProjectFile('IndexCoreScripts.html');
   const estoque = readProjectFile('IndexEstoqueScripts.html');
@@ -173,10 +203,12 @@ test('validade do estoque é exibida com mês abreviado em português', () => {
   assert.equal(context.estoqueValidadeExibicao(''), '');
 });
 
-test('resumo da visualização evita saldo duplicado sem reserva e simplifica a validade', () => {
+test('resumo da visualização separa reservas nominadas do saldo do Estoque Principal', () => {
   const estoque = readProjectFile('IndexEstoqueScripts.html');
 
-  assert.match(estoque, /Number\(it\.qtdeReservada \|\| 0\) > 0/);
+  assert.match(estoque, /qtdeReservadaLaboratorio/);
+  assert.match(estoque, /evRenderReservas/);
+  assert.match(estoque, /Visita não identificada/);
   assert.match(estoque, /Validade: a partir de/);
-  assert.doesNotMatch(estoque, /primeiro vencimento/);
+  assert.doesNotMatch(estoque, /Físico/);
 });

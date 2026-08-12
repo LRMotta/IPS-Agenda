@@ -2,6 +2,7 @@
 
   // ===================== VISUALIZAÇÃO DO ESTOQUE =====================
   var evItens = [];
+  var _evParticipantes = [];
   var _evTransferRows = {};
   var _evTransferSelecionado = null;
   var ESTOQUE_CLIENT_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -66,13 +67,20 @@
     document.getElementById('evBody').innerHTML =
       '<tr class="loading-row"><td colspan="10"><div class="spinner"></div>Carregando...</td></tr>';
     estoqueCachedRun('bootstrap:estoque-view', 'getEstoqueBootstrapData', ['estoque-view'],
-      function(res) { evRender((res && res.data) || res); },
+      function(res) {
+        evRender({
+          itens: (res && res.data) || res || [],
+          participantes: (res && res.participantes) || []
+        });
+      },
       function(e) { snackErro(e); },
       !!force);
   }
 
-  function evRender(lista) {
-    evItens = lista || [];
+  function evRender(payload) {
+    var pacote = Array.isArray(payload) ? { itens: payload } : (payload || {});
+    evItens = pacote.itens || [];
+    _evParticipantes = pacote.participantes || [];
     var projs = {}, tipos = {}, status = {};
     evItens.forEach(function(i) {
       if (i.projeto) projs[i.projeto] = 1;
@@ -102,11 +110,16 @@
       }).join('');
     selStatus.value = curStatus;
     evStats(evItens);
+    evRenderReservas(evItens);
     evFiltrar();
   }
 
   function evTipoItem(it) {
     return String((it && (it.tipoItem || it.tipo)) || '').trim();
+  }
+
+  function evEhLaboratorio(localizacao) {
+    return String(localizacao || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().indexOf('laboratorio') >= 0;
   }
 
   function estoqueValidadeExibicao(valor) {
@@ -135,23 +148,87 @@
   }
 
   function evStats(lista) {
-    var ok = 0, baixo = 0, critico = 0, pend = 0;
+    var estoquePrincipal = 0;
+    var reservas = evReservasUnicas(lista);
+    var participantes = {};
+    var proximas = 0;
+    var paraConciliar = 0;
     lista.forEach(function(it) {
-      var n = evNivel(it);
-      if (n === 'ok') ok++;
-      else if (n === 'baixo') baixo++;
-      else if (n === 'critico') critico++;
-      if (it.qtdePedidaPendente && Number(it.qtdePedidaPendente) > 0) pend++;
+      estoquePrincipal += Number(it.estoquePrincipal !== undefined ? it.estoquePrincipal : it.estoqueAtual || 0) || 0;
+      paraConciliar += Number(it.qtdeNaoConciliadaLaboratorio || 0) || 0;
     });
-    document.getElementById('evStatTotal').textContent    = lista.length;
-    document.getElementById('evStatOk').textContent       = ok;
-    document.getElementById('evStatBaixo').textContent    = baixo;
-    document.getElementById('evStatCritico').textContent  = critico;
-    document.getElementById('evStatPendente').textContent = pend;
+    reservas.forEach(function(reserva) {
+      if (reserva.noLaboratorio) participantes[reserva.participanteId || reserva.participante || reserva.idReserva] = true;
+      if (reserva.proxima) proximas++;
+      if (reserva.semVisitaConciliada || reserva.vencida || reserva.validadeInsuficiente) paraConciliar++;
+    });
+    document.getElementById('evStatTotal').textContent    = estoquePrincipal;
+    document.getElementById('evStatOk').textContent       = reservas.filter(function(r) { return r.noLaboratorio; }).reduce(function(total, r) { return total + (Number(r.qtde || 0) || 0); }, 0);
+    document.getElementById('evStatBaixo').textContent    = Object.keys(participantes).length;
+    document.getElementById('evStatCritico').textContent  = proximas;
+    document.getElementById('evStatPendente').textContent = paraConciliar;
+  }
+
+  function evReservasUnicas(lista) {
+    var vistos = {};
+    return (lista || []).reduce(function(out, item) {
+      (item.reservasLaboratorio || []).forEach(function(reserva) {
+        if (!reserva || !reserva.idReserva || vistos[reserva.idReserva]) return;
+        vistos[reserva.idReserva] = true;
+        out.push(reserva);
+      });
+      return out;
+    }, []);
+  }
+
+  function evReservaSinal(reserva) {
+    if (reserva.vencida) return { label: 'Vencido', cls: 'danger' };
+    if (reserva.validadeInsuficiente) return { label: 'Validade insuficiente', cls: 'danger' };
+    if (reserva.semVisitaConciliada) return { label: 'Sem visita na Agenda', cls: 'warning' };
+    if (reserva.proxima) return { label: 'Próxima', cls: 'info' };
+    return { label: 'Reservado', cls: 'neutral' };
+  }
+
+  function evRenderReservas(lista) {
+    var painel = document.getElementById('evReservaPainel');
+    if (!painel) return;
+    var reservas = evReservasUnicas(lista).filter(function(reserva) { return reserva.noLaboratorio; });
+    var atencao = reservas.filter(function(reserva) {
+      return reserva.semVisitaConciliada || reserva.vencida || reserva.validadeInsuficiente;
+    });
+    var proximas = reservas.filter(function(reserva) { return reserva.proxima; });
+    var semVinculo = (lista || []).filter(function(item) {
+      return Number(item.qtdeNaoConciliadaLaboratorio || 0) > 0;
+    });
+    function linha(reserva) {
+      var sinal = evReservaSinal(reserva);
+      var visita = reserva.visitaPrevista || 'Visita não identificada';
+      return '<div class="estoque-reserva-row">' +
+        '<div class="estoque-reserva-person"><strong>' + esc(reserva.participante || 'Participante não informado') + '</strong><span>' + esc(visita) + (reserva.dataVisita ? ' · ' + esc(reserva.dataVisita) : '') + '</span></div>' +
+        '<div class="estoque-reserva-kit">' + esc(reserva.descricao || reserva.idItem || 'Kit') + ' · ' + esc(String(reserva.qtde || 0)) + ' un.</div>' +
+        '<div class="estoque-reserva-validade">Validade ' + esc(estoqueValidadeExibicao(reserva.validade) || 'não informada') + '</div>' +
+        '<span class="estoque-reserva-chip ' + sinal.cls + '">' + esc(sinal.label) + '</span>' +
+      '</div>';
+    }
+    var resumo = reservas.length
+      ? 'Kits no Laboratório sempre vinculados a um participante.'
+      : 'Nenhuma reserva nominada no Laboratório.';
+    var atencaoHtml = atencao.slice(0, 4).map(linha).join('') + semVinculo.slice(0, 3).map(function(item) {
+      return '<div class="estoque-reserva-row estoque-reserva-row-alert">' +
+        '<div class="estoque-reserva-person"><strong>' + esc(item.descricao || item.idItem) + '</strong><span>Kit no Laboratório sem reserva nominada</span></div>' +
+        '<div class="estoque-reserva-kit">' + esc(String(item.qtdeNaoConciliadaLaboratorio)) + ' un.</div>' +
+        '<span class="estoque-reserva-chip warning">Conciliar</span>' +
+      '</div>';
+    }).join('');
+    painel.innerHTML = '<div class="estoque-reservas-head"><div><span class="material-symbols-outlined">assignment_ind</span><strong>Reservas no Laboratório</strong><p>' + resumo + '</p></div></div>' +
+      '<div class="estoque-reservas-grid">' +
+        '<section><h3>Próximas visitas</h3>' + (proximas.length ? proximas.slice(0, 4).map(linha).join('') : '<p class="estoque-reservas-empty">Nenhuma visita prevista para os próximos 14 dias.</p>') + '</section>' +
+        '<section><h3>Atenção necessária</h3>' + (atencaoHtml || '<p class="estoque-reservas-empty">Nenhuma reserva pendente de conciliação.</p>') + '</section>' +
+      '</div>';
   }
 
   function evNivel(it) {
-    var q   = Number(it.estoqueAtual !== undefined ? it.estoqueAtual : it.qtde);
+    var q   = Number(it.estoquePrincipal !== undefined ? it.estoquePrincipal : (it.estoqueAtual !== undefined ? it.estoqueAtual : it.qtde));
     var min = Number(it.estoqueMinimo);
     if (isNaN(q)) return 'desconhecido';
     if (q <= 0)   return 'critico';
@@ -172,8 +249,11 @@
       var lotesBusca = (it.lotes || []).map(function(lote) {
         return [lote.validade, lote.localizacao, lote.numeroPedido, lote.responsavel, lote.status].join(' ');
       }).join(' ');
+      var reservasBusca = (it.reservasLaboratorio || []).map(function(reserva) {
+        return [reserva.participante, reserva.participanteId, reserva.visitaPrevista, reserva.dataVisita, reserva.agendaId].join(' ');
+      }).join(' ');
       if (q && !([it.descricao, it.projeto, tipoItem, it.laboratorio, it.idItem, it.observacoes, it.detalhesVisita,
-        (it.numerosPedidoPendente || []).join(' '), lotesBusca].join(' ').toLowerCase().includes(q))) return false;
+        (it.numerosPedidoPendente || []).join(' '), lotesBusca, reservasBusca].join(' ').toLowerCase().includes(q))) return false;
       if (proj   && (it.projeto  || '').toLowerCase() !== proj)   return false;
       if (tipo   && tipoItem.toLowerCase() !== tipo)   return false;
       if (status && (it.status   || '').toLowerCase() !== status) return false;
@@ -205,8 +285,11 @@
         ? '<span class="estoque-summary-muted">Sem estoque</span>'
         : '<span class="estoque-summary-meta">' +
           (validades.length ? 'Validade: a partir de <span style="' + evValCls(validades[0]) + '">' + esc(estoqueValidadeExibicao(validades[0])) + '</span>' : 'Validade não aplicável') + '</span>';
-      var resumoReserva = Number(it.qtdeReservada || 0) > 0
-        ? '<div style="font-size:11px;color:#7c3aed">Reservado: ' + esc(it.qtdeReservada) + ' · Disponível: ' + esc(it.qtdeDisponivel !== undefined ? it.qtdeDisponivel : (it.estoqueAtual || 0)) + '</div>'
+      var resumoReserva = Number(it.qtdeReservadaLaboratorio || 0) > 0
+        ? '<div class="estoque-summary-balance">Laboratório: <strong>' + esc(it.qtdeReservadaLaboratorio) + ' reservado(s)</strong></div>'
+        : '';
+      var resumoConciliacao = Number(it.qtdeNaoConciliadaLaboratorio || 0) > 0
+        ? '<div class="estoque-summary-meta estoque-summary-alert">Laboratório sem vínculo: ' + esc(it.qtdeNaoConciliadaLaboratorio) + ' un.</div>'
         : '';
       var resumoLocal = !locais.length ? '—' : (locais.length === 1 ? esc(locais[0]) : esc(locais.length + ' locais'));
       var pedPend = (it.qtdePedidaPendente !== '' && Number(it.qtdePedidaPendente) > 0)
@@ -214,20 +297,21 @@
         : '—';
 
       var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
-        '<thead><tr><th>Validade</th><th>Localização</th><th>Físico</th><th>Reservado</th><th>Disponível</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
+        '<thead><tr><th>Validade</th><th>Localização</th><th>Quantidade</th><th>Comprometido</th><th>Saldo p/ reserva</th><th>Status do lote</th><th>N° Pedido</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
         lotes.map(function(lote, loteIndex) {
           if (!_evTransferRows[idx]) _evTransferRows[idx] = {};
           _evTransferRows[idx][loteIndex] = { item: it, lote: lote };
           var disponivelLote = Number(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) || 0;
+          var noLaboratorio = evEhLaboratorio(lote.localizacao);
           var transferirBtn = lote.idLote && disponivelLote > 0
-            ? '<button type="button" class="estoque-lote-transfer" title="Transferir este lote" onclick="event.stopPropagation();evAbrirTransferenciaIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">swap_horiz</span>Transferir</button>'
+            ? '<button type="button" class="estoque-lote-transfer" title="' + (noLaboratorio ? 'Devolver ao Estoque Principal' : 'Reservar para participante') + '" onclick="event.stopPropagation();evAbrirTransferenciaIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">' + (noLaboratorio ? 'undo' : 'assignment_ind') + '</span>' + (noLaboratorio ? 'Devolver' : 'Reservar') + '</button>'
             : '<span class="estoque-lote-transfer-empty">â€”</span>';
           return '<tr>' +
             '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
             '<td>' + esc(lote.localizacao || '—') + '</td>' +
             '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) + '</td>' +
             '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
-            '<td style="text-align:center;font-weight:700">' + esc(disponivelLote) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + (noLaboratorio ? '—' : esc(disponivelLote)) + '</td>' +
             '<td>' + evChipStatus(lote.status) + '</td>' +
             '<td>' + evPedidoLink(lote.numeroPedido) + '<div class="estoque-lote-actions">' + transferirBtn + '</div></td>' +
             '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
@@ -244,7 +328,7 @@
         '<td class="estoque-description-cell">' + estoqueItemDescricaoHtml(it) + '</td>' +
         '<td>' + itemTipoChip(evTipoItem(it)) + '</td>' +
         '<td style="color:var(--text-muted);">' + esc(it.laboratorio || '—') + '</td>' +
-        '<td><div class="estoque-summary-total" style="' + qCls + '">Físico: ' + esc(it.qtdeFisica !== undefined ? it.qtdeFisica : (it.estoqueAtual || 0)) + '</div>' + resumoReserva + resumoValidade + '</td>' +
+        '<td><div class="estoque-summary-total" style="' + qCls + '">' + esc(it.estoquePrincipal !== undefined ? it.estoquePrincipal : (it.estoqueAtual || 0)) + '</div>' + resumoReserva + resumoConciliacao + resumoValidade + '</td>' +
         '<td style="color:var(--text-muted);">' + resumoLocal + '</td>' +
         '<td style="text-align:center;color:var(--text-muted);">' + (it.estoqueMinimo !== undefined && it.estoqueMinimo !== "" ? it.estoqueMinimo : "—") + '</td>' +
         '<td>' + evChipStatus(it.status) + '</td>' +
@@ -331,27 +415,54 @@
     var lote = row.lote;
     var disponivel = Number(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) || 0;
     if (!lote.idLote || disponivel <= 0) {
-      snackErro('Este lote não possui saldo disponível para transferência.');
+      snackErro('Este lote não possui quantidade disponível para esta ação.');
       return;
     }
     _evTransferSelecionado = row;
+    var noLaboratorio = evEhLaboratorio(lote.localizacao);
     var contexto = document.getElementById('transferContext');
     if (contexto) {
       contexto.innerHTML = '<div><span>Item</span><strong>' + esc(row.item.descricao || row.item.idItem || 'Kit') + '</strong><div class="estoque-transfer-available">' + esc(row.item.projeto || '') + (lote.validade ? ' · validade ' + esc(estoqueValidadeExibicao(lote.validade)) : '') + '</div></div>' +
-        '<div><span>Localização atual</span><strong>' + esc(lote.localizacao || '—') + '</strong><div class="estoque-transfer-available">Disponível: <strong>' + esc(disponivel) + '</strong></div></div>';
+        '<div><span>' + (noLaboratorio ? 'Retorno ao estoque' : 'Reserva no Laboratório') + '</span><strong>' + (noLaboratorio ? 'Estoque Principal' : 'Participante obrigatório') + '</strong><div class="estoque-transfer-available">Quantidade: <strong>' + esc(disponivel) + '</strong></div></div>';
     }
     var origem = document.getElementById('trOrigem');
     var destino = document.getElementById('trDestino');
-    var localAtual = lote.localizacao === 'Laboratório' ? 'Laboratório' : 'Estoque Principal';
-    if (origem) origem.value = localAtual;
-    atualizarTransferenciaDestinoInline();
-    if (destino && destino.value === origem.value) destino.value = origem.value === 'Estoque Principal' ? 'Laboratório' : 'Estoque Principal';
+    if (origem) origem.value = lote.localizacao || 'Estoque Principal';
+    if (destino) destino.value = noLaboratorio ? 'Estoque Principal' : 'Laboratório';
     var qtd = document.getElementById('trQtd');
     if (qtd) { qtd.value = '1'; qtd.max = String(disponivel); }
     var disp = document.getElementById('trDisponivel');
     if (disp) disp.innerHTML = 'Máximo disponível: <strong>' + esc(disponivel) + '</strong>';
     var obs = document.getElementById('trObs');
     if (obs) obs.value = '';
+    var fields = document.getElementById('trReservaFields');
+    if (fields) fields.style.display = noLaboratorio ? 'none' : '';
+    var note = document.getElementById('trReservaNote');
+    if (note) note.style.display = noLaboratorio ? 'none' : '';
+    var titulo = document.getElementById('transferTitle');
+    var subtitulo = document.getElementById('transferSubtitle');
+    var botao = document.getElementById('btnSalvarTransferInline');
+    if (titulo) titulo.textContent = noLaboratorio ? 'DEVOLVER AO ESTOQUE PRINCIPAL' : 'RESERVAR NO LABORATÓRIO';
+    if (subtitulo) subtitulo.textContent = noLaboratorio ? 'Libere apenas kits que não estejam comprometidos.' : 'A reserva é criada junto com a transferência.';
+    if (botao) botao.innerHTML = '<span class="material-symbols-outlined">' + (noLaboratorio ? 'undo' : 'assignment_ind') + '</span>' + (noLaboratorio ? 'Confirmar devolução' : 'Reservar e transferir');
+    var participante = document.getElementById('trParticipante');
+    if (participante) {
+      var projeto = String(row.item.projeto || '').toLowerCase();
+      var opcoes = _evParticipantes.filter(function(p) {
+        return String(p.projeto || '').toLowerCase() === projeto;
+      }).sort(function(a, b) {
+        return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' });
+      });
+      participante.innerHTML = '<option value="">— Selecione o participante —</option>' + opcoes.map(function(p) {
+        return '<option value="' + esc(p.id || '') + '" data-identificacao="' + esc(p.idParticipante || '') + '">' + esc(p.nome || p.idParticipante || 'Participante') + (p.idParticipante ? ' · ' + esc(p.idParticipante) : '') + '</option>';
+      }).join('');
+    }
+    var visita = document.getElementById('trVisitaPrevista');
+    var dataVisita = document.getElementById('trDataVisita');
+    var agendaId = document.getElementById('trAgendaId');
+    if (visita) visita.value = '';
+    if (dataVisita) dataVisita.value = '';
+    if (agendaId) agendaId.value = '';
     var status = document.getElementById('statusTransferInline');
     if (status) status.textContent = '';
     abrirOverlay('modalTransferInline');
@@ -370,6 +481,10 @@
     var destino = document.getElementById('trDestino');
     var qtd = document.getElementById('trQtd');
     var obs = document.getElementById('trObs');
+    var participante = document.getElementById('trParticipante');
+    var visita = document.getElementById('trVisitaPrevista');
+    var dataVisita = document.getElementById('trDataVisita');
+    var agendaId = document.getElementById('trAgendaId');
     var btn = document.getElementById('btnSalvarTransferInline');
     var status = document.getElementById('statusTransferInline');
     var quantidade = Number(qtd && qtd.value);
@@ -385,17 +500,34 @@
       if (status) status.textContent = 'Informe uma quantidade inteira dentro do saldo disponível.';
       return;
     }
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined">progress_activity</span>Transferindo...'; }
+    var reserva = null;
+    if (!evEhLaboratorio(origem.value) && evEhLaboratorio(destino.value)) {
+      var selecionado = participante && participante.options[participante.selectedIndex];
+      if (!participante || !participante.value || !selecionado || !visita || !visita.value.trim() || !dataVisita || !dataVisita.value) {
+        if (status) status.textContent = 'Informe participante, visita prevista e data estimada para reservar no Laboratório.';
+        return;
+      }
+      reserva = {
+        participanteId: participante.value,
+        participante: selecionado.textContent.split(' · ')[0],
+        projeto: row.item.projeto || '',
+        visitaPrevista: visita.value.trim(),
+        dataVisita: dataVisita.value,
+        agendaId: agendaId && agendaId.value ? agendaId.value.trim() : '',
+        observacoes: obs ? obs.value.trim() : ''
+      };
+    }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined">progress_activity</span>' + (reserva ? 'Reservando...' : 'Devolvendo...'); }
     if (status) status.textContent = '';
     google.script.run
       .withSuccessHandler(function(res) {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência'; }
+        if (btn) { btn.disabled = false; }
         fecharOverlay('modalTransferInline');
         snack((res && res.msg) || 'Transferência registrada.');
         carregarEstoqueInline(true);
       })
       .withFailureHandler(function(err) {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência'; }
+        if (btn) { btn.disabled = false; }
         if (status) status.textContent = err && err.message ? err.message : 'Não foi possível registrar a transferência.';
       })
       .transferirKitEstoque({
@@ -404,7 +536,8 @@
         origem: origem.value,
         destino: destino.value,
         qtde: quantidade,
-        observacao: obs ? obs.value.trim() : ''
+        observacao: obs ? obs.value.trim() : '',
+        reserva: reserva
       });
   }
 
@@ -595,7 +728,7 @@
           '<div class="modal-box estoque-transfer-modal">' +
             '<div class="modal-header">' +
               '<div class="modal-header-icon"><span class="material-symbols-outlined">swap_horiz</span></div>' +
-              '<div><div class="modal-header-title">TRANSFERÊNCIA DE LOTE</div><div class="modal-header-sub">Mova kits entre o Estoque Principal e o Laboratório</div></div>' +
+              '<div><div class="modal-header-title" id="transferTitle">RESERVAR NO LABORATÓRIO</div><div class="modal-header-sub" id="transferSubtitle">A reserva é criada junto com a transferência.</div></div>' +
               '<button class="modal-close" onclick="fecharOverlay(&quot;modalTransferInline&quot;)"><span class="material-symbols-outlined">close</span></button>' +
             '</div>' +
             '<div class="modal-body">' +
@@ -603,9 +736,16 @@
               '<div class="form-section">' +
                 '<div class="section-label"><span class="material-symbols-outlined">swap_horiz</span>Dados da transferência</div>' +
                 '<div class="mov-form-grid">' +
-                  '<div><label class="field-label" for="trOrigem">Origem <span class="required-star">*</span></label><select id="trOrigem" class="f-input f-select" onchange="atualizarTransferenciaDestinoInline()"><option>Estoque Principal</option><option>Laboratório</option></select></div>' +
-                  '<div><label class="field-label" for="trDestino">Destino <span class="required-star">*</span></label><select id="trDestino" class="f-input f-select"><option>Laboratório</option><option>Estoque Principal</option></select></div>' +
+                  '<div><label class="field-label" for="trOrigem">Origem</label><input id="trOrigem" class="f-input" readonly></div>' +
+                  '<div><label class="field-label" for="trDestino">Destino</label><input id="trDestino" class="f-input" readonly></div>' +
                   '<div><label class="field-label" for="trQtd">Quantidade <span class="required-star">*</span></label><input type="number" id="trQtd" class="f-input" min="1" step="1" value="1"><div class="estoque-transfer-available" id="trDisponivel"></div></div>' +
+                  '<div class="full estoque-reserva-note" id="trReservaNote"><span class="material-symbols-outlined">assignment_ind</span>Todo kit levado ao Laboratório permanece comprometido com o participante selecionado.</div>' +
+                  '<div class="full" id="trReservaFields"><div class="mov-form-grid estoque-reserva-form">' +
+                    '<div><label class="field-label" for="trParticipante">Participante <span class="required-star">*</span></label><select id="trParticipante" class="f-input f-select"><option value="">— Selecione o participante —</option></select></div>' +
+                    '<div><label class="field-label" for="trDataVisita">Data estimada <span class="required-star">*</span></label><input type="date" id="trDataVisita" class="f-input"></div>' +
+                    '<div><label class="field-label" for="trVisitaPrevista">Visita prevista <span class="required-star">*</span></label><input type="text" id="trVisitaPrevista" class="f-input" placeholder="Ex: T-2 / Follow-up 3"></div>' +
+                    '<div><label class="field-label" for="trAgendaId">ID da visita na Agenda</label><input type="text" id="trAgendaId" class="f-input" placeholder="Opcional, se já existir"></div>' +
+                  '</div></div>' +
                   '<div class="full"><label class="field-label" for="trObs">Observação</label><textarea id="trObs" class="f-input" style="height:72px;padding-top:10px;resize:vertical" placeholder="Ex: reposição semanal do laboratório..."></textarea></div>' +
                 '</div>' +
               '</div>' +
