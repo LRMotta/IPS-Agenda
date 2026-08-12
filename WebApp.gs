@@ -6357,6 +6357,7 @@ function efetivarDescarteEstoque(idDescarte) {
   }
   var shEstoque = getSheetByPossibleNames_(ss, ['Estoque']);
   if (!shEstoque) throw new Error('Aba "Estoque" nao encontrada.');
+  var estoqueMap = ensureEstoqueLoteIdColumn_(shEstoque);
   var tz = Session.getScriptTimeZone();
   var estoqueRows = shEstoque.getDataRange().getValues();
   var reservadoPorLinha = {};
@@ -6387,6 +6388,7 @@ function efetivarDescarteEstoque(idDescarte) {
         tipoItem: String(er[3] || r[3] || ''),
         validade: estoqueValidadeKey_(er[4], tz),
         localizacao: String(er[5] || r[5] || ''),
+        idLote: String(er[estoqueMap.idLote] || '').trim(),
         qtde: retirar
       });
       reservadoPorLinha[rowEstoque] = Number(reservadoPorLinha[rowEstoque] || 0) + retirar;
@@ -6414,9 +6416,13 @@ function efetivarDescarteEstoque(idDescarte) {
         qtde: baixa.qtde,
         validade: baixa.validade,
         localizacao: baixa.localizacao,
+        idLote: baixa.idLote,
         origem: 'Lista de descarte ' + id,
         observacao: obs || 'Descarte efetivado'
       });
+      if (baixa.idLote && typeof atualizarReservasPorLote_ === 'function') {
+        atualizarReservasPorLote_({ idItem: baixa.idItem, idLote: baixa.idLote, localizacao: baixa.localizacao, qtde: baixa.qtde, novoStatus: 'Descartado', observacao: 'Descarte efetivado · ' + id });
+      }
     });
     shItens.getRange(plano.item.row, 8).setValue(plano.item.qtdPlanejada);
     shItens.getRange(plano.item.row, 9).setValue('Efetivado');
@@ -6812,6 +6818,232 @@ function getKitReservasPainel_() {
   });
 }
 
+function atualizarReservasPorLote_(payload) {
+  payload = payload || {};
+  var idItem = String(payload.idItem || '').trim();
+  var idLote = String(payload.idLote || '').trim();
+  var localizacao = estoqueLocalKey_(payload.localizacao);
+  var novoStatus = String(payload.novoStatus || '').trim();
+  var quantidade = Math.max(0, Number(payload.qtde || 0) || 0);
+  if (!idItem || !idLote || !novoStatus || !quantidade) return 0;
+  var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Reservas_Kits', 'Reservas de Kits']);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KIT_RESERVA_HEADERS_.length).getValues();
+  var atualizados = 0;
+  var observacao = String(payload.observacao || '').trim();
+  for (var i = 0; i < rows.length && quantidade > 0; i++) {
+    var row = rows[i] || [];
+    if (String(row[5] || '').trim() !== idItem || String(row[6] || '').trim() !== idLote) continue;
+    if (localizacao && estoqueLocalKey_(row[9]) !== localizacao) continue;
+    if (normText_(row[11] || 'Reservado') !== 'reservado') continue;
+    var rowQty = Math.max(0, Number(row[10] || 0) || 0);
+    if (!rowQty) continue;
+    var retirar = Math.min(rowQty, quantidade);
+    if (retirar === rowQty) {
+      sheet.getRange(i + 2, 12).setValue(novoStatus);
+      if (observacao) sheet.getRange(i + 2, 15).setValue(String(row[14] || '') + ' · ' + observacao);
+    } else {
+      sheet.getRange(i + 2, 11).setValue(rowQty - retirar);
+      var historico = row.slice(0, KIT_RESERVA_HEADERS_.length);
+      historico[0] = gerarIdLoteEstoque_();
+      historico[1] = new Date();
+      historico[10] = retirar;
+      historico[11] = novoStatus;
+      historico[14] = String(historico[14] || '') + (observacao ? ' · ' + observacao : '');
+      sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([historico]);
+    }
+    quantidade -= retirar;
+    atualizados++;
+  }
+  return atualizados;
+}
+
+function cancelarReservaKitAgenda(payload) {
+  codexAssertCanWrite_('cancelarReservaKitAgenda', 'Estoque', payload && payload.idReserva);
+  return codexWithDocumentLock_('cancelarReservaKitAgenda', function() {
+    payload = payload || {};
+    var idReserva = String(payload.idReserva || '').trim();
+    var justificativa = String(payload.motivo || payload.justificativa || '').trim();
+    if (!idReserva) throw new Error('Reserva não informada.');
+    if (!justificativa) throw new Error('Informe a justificativa do cancelamento.');
+    var sheet = getKitReservasSheet_();
+    if (sheet.getLastRow() < 2) throw new Error('Reserva não encontrada.');
+    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KIT_RESERVA_HEADERS_.length).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() !== idReserva) continue;
+      if (normText_(rows[i][11] || '') !== 'reservado') throw new Error('Somente reservas ativas podem ser canceladas.');
+      sheet.getRange(i + 2, 12).setValue('Cancelada');
+      sheet.getRange(i + 2, 15).setValue(String(rows[i][14] || '') + ' · Cancelamento: ' + justificativa);
+      SpreadsheetApp.flush();
+      CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+      return { ok: true, idReserva: idReserva, status: 'Cancelada', msg: 'Reserva cancelada. Se o kit estiver no Laboratório, faça a devolução física separadamente.' };
+    }
+    throw new Error('Reserva não encontrada.');
+  });
+}
+
+function ajustarReservaKitAgenda(payload) {
+  codexAssertCanWrite_('ajustarReservaKitAgenda', 'Estoque', payload && payload.idReserva);
+  return codexWithDocumentLock_('ajustarReservaKitAgenda', function() {
+    payload = payload || {};
+    var idReserva = String(payload.idReserva || '').trim();
+    var justificativa = String(payload.justificativa || payload.motivo || '').trim();
+    var novaQuantidade = Number(payload.qtde);
+    if (!idReserva) throw new Error('Reserva não informada.');
+    if (!justificativa) throw new Error('Informe a justificativa do ajuste.');
+    if (!isFinite(novaQuantidade) || novaQuantidade <= 0 || novaQuantidade % 1 !== 0) throw new Error('Informe uma quantidade inteira maior que zero.');
+    var sheet = getKitReservasSheet_();
+    if (sheet.getLastRow() < 2) throw new Error('Reserva não encontrada.');
+    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KIT_RESERVA_HEADERS_.length).getValues();
+    var linha = -1;
+    var reserva = null;
+    rows.forEach(function(row, index) {
+      if (String(row[0] || '').trim() === idReserva) { linha = index + 2; reserva = row; }
+    });
+    if (linha < 2 || !reserva) throw new Error('Reserva não encontrada.');
+    if (normText_(reserva[11] || '') !== 'reservado') throw new Error('Somente reservas ativas podem ser ajustadas.');
+    var quantidadeAnterior = Number(reserva[10] || 0) || 0;
+    if (novaQuantidade === quantidadeAnterior) throw new Error('A nova quantidade é igual à quantidade atual.');
+    var estoque = getEstoque() || [];
+    var lote = estoque.filter(function(item) {
+      return String(item.idItem || '').trim() === String(reserva[5] || '').trim() &&
+        String(item.idLote || '').trim() === String(reserva[6] || '').trim() &&
+        estoqueLocalKey_(item.localizacao) === estoqueLocalKey_(reserva[9]);
+    })[0];
+    if (!lote) throw new Error('O lote da reserva não foi localizado no estoque.');
+    var resumo = getKitReservasResumo_();
+    var chave = kitReservaChave_(lote.idItem, lote.idLote, lote.validade, lote.localizacao);
+    var disponivelSemAtual = Math.max(0, Number(lote.qtde || 0) - Number(resumo[chave] || 0) + quantidadeAnterior);
+    if (novaQuantidade > disponivelSemAtual) throw new Error('Saldo insuficiente para aumentar a reserva. Disponível para esta reserva: ' + disponivelSemAtual + '.');
+    sheet.getRange(linha, 11).setValue(novaQuantidade);
+    sheet.getRange(linha, 15).setValue(String(reserva[14] || '') + ' · Quantidade ajustada de ' + quantidadeAnterior + ' para ' + novaQuantidade + ': ' + justificativa);
+    var historico = reserva.slice(0, KIT_RESERVA_HEADERS_.length);
+    historico[0] = gerarIdLoteEstoque_();
+    historico[1] = new Date();
+    historico[10] = quantidadeAnterior;
+    historico[11] = 'Ajustada';
+    historico[14] = 'Quantidade anterior: ' + quantidadeAnterior + ' · Nova quantidade: ' + novaQuantidade + ' · ' + justificativa;
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([historico]);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, idReserva: idReserva, quantidadeAnterior: quantidadeAnterior, quantidade: novaQuantidade, msg: 'Quantidade da reserva ajustada.' };
+  });
+}
+
+function cancelarReservasKitsAgenda_(agendaId, justificativa) {
+  agendaId = String(agendaId || '').trim();
+  justificativa = String(justificativa || 'Cancelamento da visita na Agenda').trim();
+  if (!agendaId) return 0;
+  var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Reservas_Kits', 'Reservas de Kits']);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KIT_RESERVA_HEADERS_.length).getValues();
+  var atualizados = 0;
+  rows.forEach(function(row, index) {
+    if (String(row[2] || '').trim() !== agendaId || normText_(row[11] || '') !== 'reservado') return;
+    sheet.getRange(index + 2, 12).setValue('Cancelada');
+    sheet.getRange(index + 2, 15).setValue(String(row[14] || '') + ' · Cancelamento da visita na Agenda: ' + justificativa);
+    atualizados++;
+  });
+  return atualizados;
+}
+
+function substituirReservaKitAgenda(payload) {
+  codexAssertCanWrite_('substituirReservaKitAgenda', 'Estoque', payload && payload.idReserva);
+  return codexWithDocumentLock_('substituirReservaKitAgenda', function() {
+    payload = payload || {};
+    var idReserva = String(payload.idReserva || '').trim();
+    var novoLoteId = String(payload.novoIdLote || payload.idLote || '').trim();
+    var justificativa = String(payload.justificativa || payload.motivo || '').trim();
+    var quantidadeSolicitada = Number(payload.qtde || 0);
+    if (!idReserva || !novoLoteId) throw new Error('Informe a reserva e o novo lote.');
+    if (!justificativa) throw new Error('Informe a justificativa da substituição.');
+    var sheet = getKitReservasSheet_();
+    if (sheet.getLastRow() < 2) throw new Error('Reserva não encontrada.');
+    var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KIT_RESERVA_HEADERS_.length).getValues();
+    var linha = -1;
+    var reserva = null;
+    rows.forEach(function(row, index) {
+      if (String(row[0] || '').trim() === idReserva) { linha = index + 2; reserva = row; }
+    });
+    if (linha < 2 || !reserva) throw new Error('Reserva não encontrada.');
+    if (normText_(reserva[11] || '') !== 'reservado') throw new Error('Somente reservas ativas podem ter o lote substituído.');
+    if (String(reserva[6] || '').trim() === novoLoteId) throw new Error('Selecione um lote diferente do atual.');
+    var estoque = getEstoque() || [];
+    var novo = estoque.filter(function(item) {
+      return String(item.idItem || '').trim() === String(reserva[5] || '').trim() && String(item.idLote || '').trim() === novoLoteId;
+    })[0];
+    if (!novo) throw new Error('O novo lote não foi localizado no estoque.');
+    var visita = parseAgendaDateAny_(reserva[12]);
+    var validade = parseDateBrOrBlank_(novo.validade);
+    if (!visita || !validade) throw new Error('A reserva e o novo lote precisam ter datas válidas.');
+    visita.setHours(0, 0, 0, 0);
+    var validadeMinima = new Date(visita.getTime());
+    validadeMinima.setDate(validadeMinima.getDate() + 10);
+    if (validade < validadeMinima) throw new Error('O novo lote não possui validade suficiente para a visita prevista.');
+    var chave = kitReservaChave_(novo.idItem, novo.idLote, novo.validade, novo.localizacao);
+    var reservado = Number(getKitReservasResumo_()[chave] || 0);
+    var disponivel = Math.max(0, Number(novo.qtde || 0) - reservado);
+    var quantidade = quantidadeSolicitada > 0 ? quantidadeSolicitada : (Number(reserva[10] || 0) || 0);
+    if (!isFinite(quantidade) || quantidade % 1 !== 0) throw new Error('Informe uma quantidade inteira válida para a nova reserva.');
+    if (quantidade <= 0 || quantidade > disponivel) throw new Error('Saldo insuficiente no novo lote para substituir a reserva.');
+    var agora = new Date();
+    sheet.getRange(linha, 12).setValue('Substituída');
+    sheet.getRange(linha, 15).setValue(String(reserva[14] || '') + ' · Substituída pelo lote ' + novoLoteId + ': ' + justificativa);
+    var novaLinha = [
+      gerarIdLoteEstoque_(), agora, reserva[2], reserva[3], reserva[4], novo.idItem, novo.idLote,
+      novo.descricao, parseDateBrOrBlank_(novo.validade) || novo.validade, novo.localizacao, quantidade,
+      'Reservado', visita, reserva[13], 'Substituição da reserva ' + idReserva + ': ' + justificativa, reserva[15], reserva[16]
+    ];
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([novaLinha]);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, antiga: idReserva, nova: novaLinha[0], msg: 'Lote substituído e nova reserva criada.' };
+  });
+}
+
+function registrarExcecaoKitEstoque(payload) {
+  codexAssertCanWrite_('registrarExcecaoKitEstoque', 'Estoque', payload && payload.idItem);
+  return codexWithDocumentLock_('registrarExcecaoKitEstoque', function() {
+    payload = payload || {};
+    var tipo = normText_(payload.tipo || '').replace(/\s+/g, '');
+    var tipos = { perda: { status: 'Perdido', movimento: 'Saída - Perda' }, descarte: { status: 'Descartado', movimento: 'Saída - Descarte' }, vencimento: { status: 'Vencido', movimento: 'Saída - Vencimento' } };
+    if (!tipos[tipo]) throw new Error('Tipo de exceção inválido.');
+    var idItem = String(payload.idItem || '').trim();
+    var idLote = String(payload.idLote || '').trim();
+    var quantidade = Number(payload.qtde || 0);
+    if (!idItem || !idLote || !isFinite(quantidade) || quantidade <= 0) throw new Error('Informe item, lote e quantidade.');
+    var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Estoque']);
+    if (!sheet) throw new Error('Aba "Estoque" não encontrada.');
+    var map = ensureEstoqueLoteIdColumn_(sheet);
+    var rows = sheet.getDataRange().getValues();
+    var rowIndex = -1;
+    var row = null;
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][map.idItem] || '').trim() !== idItem || String(rows[i][map.idLote] || '').trim() !== idLote) continue;
+      if (payload.localizacao && estoqueLocalKey_(rows[i][map.localizacao]) !== estoqueLocalKey_(payload.localizacao)) continue;
+      rowIndex = i + 1; row = rows[i]; break;
+    }
+    if (rowIndex < 2 || !row) throw new Error('Item/lote não encontrado no estoque.');
+    var saldo = Number(row[map.qtde] || 0) || 0;
+    if (quantidade > saldo) throw new Error('Quantidade maior que o saldo físico do lote.');
+    if (tipo === 'vencimento') {
+      var validade = parseDateBrOrBlank_(row[map.validade]);
+      var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+      if (!validade || validade >= hoje) throw new Error('O lote ainda não está vencido; registre perda ou descarte se necessário.');
+    }
+    registrarMovimentacaoEstoque({
+      estoqueRow: rowIndex, idItem: idItem, idLote: idLote, qtde: quantidade,
+      tipoMovimento: tipos[tipo].movimento, descricao: row[map.descricao] || '', tipoItem: row[map.tipo] || '',
+      projeto: row[map.projeto] || '', validade: row[map.validade] || '', localizacao: row[map.localizacao] || '',
+      origem: 'Exceção operacional', observacao: String(payload.motivo || '')
+    });
+    if (quantidade >= saldo && map.status >= 0) sheet.getRange(rowIndex, map.status + 1).setValue(tipos[tipo].status);
+    var reservasAtualizadas = atualizarReservasPorLote_({ idItem: idItem, idLote: idLote, localizacao: row[map.localizacao], qtde: quantidade, novoStatus: tipos[tipo].status, observacao: tipos[tipo].status + ' · ' + String(payload.motivo || 'Exceção operacional') });
+    SpreadsheetApp.flush();
+    return { ok: true, tipo: tipo, quantidade: quantidade, reservasAtualizadas: reservasAtualizadas, msg: 'Exceção registrada: ' + tipos[tipo].status + '.' };
+  });
+}
+
 function getKitsAgendaReservaStatus(agendaId) {
   agendaId = String(agendaId || '').trim();
   if (!agendaId) return { reservado: false, reservas: [] };
@@ -6820,7 +7052,7 @@ function getKitsAgendaReservaStatus(agendaId) {
     return normText_(r.status || 'Reservado') === 'reservado';
   });
   var historico = todas.filter(function(r) {
-    return ['baixado', 'consumido'].indexOf(normText_(r.status || '')) >= 0;
+    return ['baixado', 'consumido', 'cancelada', 'perdido', 'descartado', 'vencido'].indexOf(normText_(r.status || '')) >= 0;
   });
   return { reservado: reservas.length > 0, encerrado: historico.length > 0, reservas: reservas };
 }
@@ -8897,7 +9129,11 @@ function cancelarAgendaEvento(id, cancelamento) {
   if (!linha) throw new Error('Agendamento nao encontrado para cancelamento.');
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var obsAtual = String(rowAnterior[AGENDA_CFG.idx.obs] || '');
-  var obsComCancelamento = agendaAppendCancelamentoMotivo_(obsAtual, cancelamento);
+  var tipoAnteriorCancelamento = normText_(rowAnterior[AGENDA_CFG.idx.tipo] || '');
+  var cancelamentoSiv = tipoAnteriorCancelamento === 'siv' || tipoAnteriorCancelamento.indexOf('site initiation') > -1;
+  var obsComCancelamento = cancelamentoSiv
+    ? obsAtual
+    : agendaAppendCancelamentoMotivo_(obsAtual, cancelamento);
   agenda.getRange(linha, AGENDA_CFG.col.status).setValue('Cancelado');
   agenda.getRange(linha, AGENDA_CFG.col.obs).setValue(obsComCancelamento);
   aplicarLogicaCancelamento_(agenda, linha, 'Cancelado');
@@ -8909,9 +9145,10 @@ function cancelarAgendaEvento(id, cancelamento) {
     linha
   );
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var reservasCanceladas = typeof cancelarReservasKitsAgenda_ === 'function' ? cancelarReservasKitsAgenda_(id, obsComCancelamento || 'Cancelamento da visita na Agenda') : 0;
   codexWriteAuditChanges_('Agenda', 'cancelarAgendaEvento', id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Cancelamento de agendamento');
   SpreadsheetApp.flush();
-  return { ok: true, id: id, status: 'Cancelado' };
+  return { ok: true, id: id, status: 'Cancelado', reservasCanceladas: reservasCanceladas };
   });
 }
 

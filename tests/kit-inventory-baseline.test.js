@@ -76,6 +76,82 @@ test('contrato legado: baixa da Agenda registra uma unidade por kit e evita IDs 
   assert.equal(chamadas[0].agendaKitAcao, 'baixa');
 });
 
+test('excecao operacional registra perda e encerra a reserva correspondente', () => {
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'],
+    ['KIT-1', 'Estudo A', 'Kit coleta', 'Kit', '31/12/2026', 'Laboratório', 2, 0, 'OK', '', 'a@ucs.br', '', '', 'LOTE-1']
+  ]);
+  const reservas = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista'],
+    ['RES-1', '', 'AG-1', 'Estudo A', 'Pessoa A', 'KIT-1', 'LOTE-1', 'Kit coleta', '31/12/2026', 'Laboratório', 1, 'Reservado', '15/12/2026', '', '', 'P-1', 'V1']
+  ]);
+  const mov = new FakeSheet('Movimentações', [
+    ['ID_Mov', 'Data/Hora', 'Tipo de movimento', 'ID_Item', 'Descrição', 'Tipo de item', 'Projeto', 'Qtde', 'Validade', 'Localização', 'Lote', 'ID_Participante', 'Participante', 'ID_Visita', 'Responsável', 'Origem', 'Observação']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Estoque: estoque, Reservas_Kits: reservas, Movimentações: mov });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { getUuid: () => 'EXC-1', formatDate: value => String(value) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const result = server.registrarExcecaoKitEstoque({ idItem: 'KIT-1', idLote: 'LOTE-1', localizacao: 'Laboratório', qtde: 1, tipo: 'perda', motivo: 'Avaria no armazenamento' });
+  assert.equal(result.reservasAtualizadas, 1);
+  assert.equal(estoque.rows[1][6], 1);
+  assert.equal(reservas.rows[1][11], 'Perdido');
+  assert.equal(mov.rows[1][2], 'Saída - Perda');
+});
+
+test('substituição de lote preserva histórico e cria reserva elegível', () => {
+  const reservas = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista'],
+    ['RES-1', '', 'AG-1', 'Estudo A', 'Pessoa A', 'KIT-1', 'LOTE-1', 'Kit coleta', '31/12/2026', 'Laboratório', 1, 'Reservado', '15/12/2026', '', '', 'P-1', 'V1']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Reservas_Kits: reservas });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { getUuid: () => 'SUB-1', formatDate: value => String(value) }
+  });
+  server.getEstoque = () => [{ idItem: 'KIT-1', idLote: 'LOTE-2', descricao: 'Kit coleta', validade: '31/12/2026', localizacao: 'Estoque Principal', qtde: 2 }];
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const result = server.substituirReservaKitAgenda({ idReserva: 'RES-1', novoIdLote: 'LOTE-2', justificativa: 'Lote original comprometido.' });
+  assert.equal(result.ok, true);
+  assert.equal(reservas.rows[1][11], 'Substituída');
+  assert.equal(reservas.rows.length, 3);
+  assert.equal(reservas.rows[2][6], 'LOTE-2');
+  assert.equal(reservas.rows[2][11], 'Reservado');
+});
+
+test('gestão de reserva exige justificativa e ajusta quantidade com histórico', () => {
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'],
+    ['KIT-1', 'Estudo A', 'Kit coleta', 'Kit', '31/12/2026', 'Laboratório', 3, 0, 'OK', '', 'a@ucs.br', '', '', 'LOTE-1']
+  ]);
+  const reservas = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista'],
+    ['RES-1', '', 'AG-1', 'Estudo A', 'Pessoa A', 'KIT-1', 'LOTE-1', 'Kit coleta', '31/12/2026', 'Laboratório', 1, 'Reservado', '15/12/2026', '', '', 'P-1', 'V1']
+  ]);
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ Estoque: estoque, Reservas_Kits: reservas }), flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { getUuid: () => 'ADJ-1', formatDate: value => String(value) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  assert.throws(() => server.cancelarReservaKitAgenda({ idReserva: 'RES-1' }), /justificativa/);
+  const result = server.ajustarReservaKitAgenda({ idReserva: 'RES-1', qtde: 2, justificativa: 'Visita exige uma unidade adicional.' });
+  assert.equal(result.quantidadeAnterior, 1);
+  assert.equal(reservas.rows[1][10], 2);
+  assert.equal(reservas.rows[2][11], 'Ajustada');
+  assert.match(String(reservas.rows[2][14]), /Visita exige/);
+});
+
 test('fase 2: ordem configurada do projeto precede o rótulo alfabético na Agenda', () => {
   const server = agendaKitContext();
   server.getEstoque = () => [
