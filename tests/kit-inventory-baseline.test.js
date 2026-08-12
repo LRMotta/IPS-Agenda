@@ -242,3 +242,60 @@ test('fase 3: transferência move o lote entre localizações com uma operação
   assert.equal(reservasTransferencia.rows[1][15], 'PART-1');
   assert.equal(reservasTransferencia.rows[1][16], 'T-2');
 });
+
+test('fase 5: concilia kit já no Laboratório sem movimentar o saldo físico', () => {
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'],
+    ['KIT-1', 'Estudo A', 'Kit coleta V1', 'Kit', '31/12/2026', 'Laboratório', 2, 0, 'OK', '', 'a@ucs.br', '', '', 'LOTE-1']
+  ]);
+  const reservas = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Estoque: estoque, Reservas_Kits: reservas });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { getUuid: () => 'RES-CONCILIADA', formatDate: value => String(value) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const result = server.conciliarReservaKitLaboratorio({
+    idItem: 'KIT-1', idLote: 'LOTE-1', qtde: 2, participanteId: 'PART-1', participante: 'Pessoa A',
+    projeto: 'Estudo A', visitaPrevista: 'Follow-up 1', dataVisita: '2026-12-15'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(estoque.rows[1][6], 2);
+  assert.equal(reservas.rows.length, 2);
+  assert.equal(reservas.rows[1][4], 'Pessoa A');
+  assert.equal(reservas.rows[1][9], 'Laboratório');
+  assert.equal(reservas.rows[1][10], 2);
+  assert.equal(reservas.rows[1][16], 'Follow-up 1');
+});
+
+test('fase 5: Bulk Supply não exige reserva de participante', () => {
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote'],
+    ['BULK-1', 'Estudo A', 'Slides', 'Bulk Supply', '31/12/2026', 'Estoque Principal', 3, 0, 'OK', '', 'a@ucs.br', '', '', 'LOTE-B']
+  ]);
+  const mov = new FakeSheet('Movimentações', [
+    ['ID_Mov', 'Data/Hora', 'Tipo de Movimento', 'ID_Item', 'Descrição', 'Tipo de Item', 'Projeto', 'Qtde', 'Validade', 'Localização', 'Lote', 'ID Participante', 'Participante', 'ID Visita', 'Responsável', 'Origem', 'Observação']
+  ]);
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ Estoque: estoque, Movimentações: mov }), flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { getUuid: () => 'TRANS-BULK', formatDate: value => String(value) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const result = server.transferirKitEstoque({
+    idItem: 'BULK-1', idLote: 'LOTE-B', origem: 'Estoque Principal', destino: 'Laboratório', qtde: 1
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(estoque.rows[1][6], 2);
+  assert.equal(estoque.rows[2][5], 'Laboratório');
+  assert.equal(estoque.rows[2][6], 1);
+});

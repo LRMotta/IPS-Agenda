@@ -5574,9 +5574,6 @@ function transferirKitEstoque(payload) {
     var destinoLaboratorio = estoqueEhLaboratorio_(destino);
     if (!idItem || !idLote || !origem || !destino || origem === destino) throw new Error('Informe item, lote, origem e destino diferentes.');
     if (qtd <= 0 || !isFinite(qtd)) throw new Error('Informe uma quantidade válida.');
-    if (destinoLaboratorio && (!reserva || typeof reserva !== 'object')) {
-      throw new Error('Todo kit transferido ao Laboratório deve ser reservado para um participante.');
-    }
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getSheetByPossibleNames_(ss, ['Estoque']);
     if (!sheet) throw new Error('Aba "Estoque" não encontrada.');
@@ -5593,8 +5590,12 @@ function transferirKitEstoque(payload) {
       if (local === estoqueLocalKey_(destino)) destinationRow = i + 1;
     }
     if (sourceRow < 2 || !source) throw new Error('Lote não encontrado na localização de origem.');
+    var reservaObrigatoria = destinoLaboratorio && estoqueTipoEhKit_(source[map.tipo]);
+    if (reservaObrigatoria && (!reserva || typeof reserva !== 'object')) {
+      throw new Error('Todo kit transferido ao Laboratório deve ser reservado para um participante.');
+    }
     var visitaReserva = null;
-    if (destinoLaboratorio) {
+    if (reservaObrigatoria) {
       var participanteReserva = String(reserva.participante || '').trim();
       var participanteIdReserva = String(reserva.participanteId || '').trim();
       var visitaPrevistaReserva = String(reserva.visitaPrevista || '').trim();
@@ -5617,7 +5618,7 @@ function transferirKitEstoque(payload) {
     var reservado = Number(reservas[chaveReserva] || 0);
     var saldo = Number(source[map.qtde] || 0) || 0;
     if (qtd > Math.max(0, saldo - reservado)) throw new Error('Quantidade maior que o saldo disponível na origem.');
-    var shReservas = destinoLaboratorio ? getKitReservasSheet_() : null;
+    var shReservas = reservaObrigatoria ? getKitReservasSheet_() : null;
     if (destinationRow < 2) {
       var novo = source.slice();
       while (novo.length < Math.max(sheet.getLastColumn(), map.idLote + 1)) novo.push('');
@@ -5646,17 +5647,17 @@ function transferirKitEstoque(payload) {
       var mov = [
         opId, agora, tipo, idItem, source[map.descricao] || '', source[map.tipo] || '',
         source[map.projeto] || '', quantidade, source[map.validade] || '', local, idLote,
-        destinoLaboratorio ? String(reserva.participanteId || '') : '', destinoLaboratorio ? String(reserva.participante || '') : '',
-        destinoLaboratorio ? String(reserva.agendaId || reserva.visitaPrevista || '') : '', userEmail, origemTexto,
-        destinoLaboratorio ? 'Transferência com reserva para participante' : 'Transferência entre estoques'
+        reservaObrigatoria ? String(reserva.participanteId || '') : '', reservaObrigatoria ? String(reserva.participante || '') : '',
+        reservaObrigatoria ? String(reserva.agendaId || reserva.visitaPrevista || '') : '', userEmail, origemTexto,
+        reservaObrigatoria ? 'Transferência com reserva para participante' : 'Transferência entre estoques'
       ];
       shMov.appendRow(mov);
       var lr = shMov.getLastRow();
-      if (meta.agendaid !== undefined) shMov.getRange(lr, meta.agendaid + 1).setValue(destinoLaboratorio ? String(reserva.agendaId || '') : '');
+      if (meta.agendaid !== undefined) shMov.getRange(lr, meta.agendaid + 1).setValue(reservaObrigatoria ? String(reserva.agendaId || '') : '');
     }
     append('Saída - Transferência', origem, qtd);
     append('Entrada - Transferência', destino, qtd);
-    if (destinoLaboratorio) {
+    if (reservaObrigatoria) {
       var reservaRow = [
         gerarIdLoteEstoque_(), agora, String(reserva.agendaId || ''), String(reserva.projeto || source[map.projeto] || ''), String(reserva.participante || ''),
         idItem, idLote, source[map.descricao] || '', source[map.validade] || '', destino, qtd, 'Reservado', visitaReserva,
@@ -5668,8 +5669,75 @@ function transferirKitEstoque(payload) {
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
     return {
       ok: true, operacaoId: opId, quantidade: qtd, origem: origem, destino: destino,
-      msg: destinoLaboratorio ? 'Kit reservado e transferido ao Laboratório.' : 'Transferência registrada com sucesso.'
+      msg: reservaObrigatoria ? 'Kit reservado e transferido ao Laboratório.' : 'Transferência registrada com sucesso.'
     };
+  });
+}
+
+function conciliarReservaKitLaboratorio(payload) {
+  codexAssertCanWrite_('conciliarReservaKitLaboratorio', 'Estoque', payload && (payload.idItem || payload.idLote));
+  return codexWithDocumentLock_('conciliarReservaKitLaboratorio', function() {
+    payload = payload || {};
+    var idItem = String(payload.idItem || '').trim();
+    var idLote = String(payload.idLote || '').trim();
+    var participanteId = String(payload.participanteId || '').trim();
+    var participante = String(payload.participante || '').trim();
+    var visitaPrevista = String(payload.visitaPrevista || '').trim();
+    var quantidade = Number(payload.qtde || 0);
+    if (!idItem || !idLote) throw new Error('Informe o item e o lote a conciliar.');
+    if (!participanteId || !participante || !visitaPrevista) {
+      throw new Error('Informe o participante e a visita prevista para conciliar o kit.');
+    }
+    if (!isFinite(quantidade) || quantidade <= 0 || quantidade % 1 !== 0) {
+      throw new Error('Informe uma quantidade inteira válida.');
+    }
+
+    var visita = parseAgendaDateAny_(payload.dataVisita);
+    if (!visita || isNaN(visita.getTime())) throw new Error('Informe uma data válida para a visita prevista.');
+    visita.setHours(0, 0, 0, 0);
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var shEstoque = getSheetByPossibleNames_(ss, ['Estoque']);
+    if (!shEstoque) throw new Error('Aba "Estoque" não encontrada.');
+    var map = ensureEstoqueLoteIdColumn_(shEstoque);
+    var rows = shEstoque.getDataRange().getValues();
+    var lote = null;
+    for (var i = 1; i < rows.length; i++) {
+      var row = rows[i];
+      if (String(row[map.idItem] || '').trim() === idItem && String(row[map.idLote] || '').trim() === idLote && estoqueEhLaboratorio_(row[map.localizacao])) {
+        lote = row;
+        break;
+      }
+    }
+    if (!lote) throw new Error('O lote informado não está no Laboratório.');
+    if (!estoqueTipoEhKit_(lote[map.tipo])) throw new Error('Somente kits de coleta exigem conciliação de reserva.');
+
+    var validade = parseDateBrOrBlank_(lote[map.validade]);
+    var validadeMinima = new Date(visita.getTime());
+    validadeMinima.setDate(validadeMinima.getDate() + 10);
+    if (!validade || isNaN(validade.getTime()) || validade < validadeMinima) {
+      throw new Error('O lote selecionado não possui validade suficiente para a visita prevista.');
+    }
+
+    var chave = kitReservaChave_(idItem, idLote, estoqueValidadeKey_(lote[map.validade]), lote[map.localizacao]);
+    var reservado = Number(getKitReservasResumo_()[chave] || 0);
+    var saldoLaboratorio = Number(lote[map.qtde] || 0) || 0;
+    if (quantidade > Math.max(0, saldoLaboratorio - reservado)) {
+      throw new Error('Quantidade maior que os kits do lote ainda sem reserva nominada no Laboratório.');
+    }
+
+    var responsavel = '';
+    try { responsavel = Session.getActiveUser().getEmail(); } catch (e) {}
+    var shReservas = getKitReservasSheet_();
+    var reservaRow = [
+      gerarIdLoteEstoque_(), new Date(), String(payload.agendaId || ''), String(payload.projeto || lote[map.projeto] || ''), participante,
+      idItem, idLote, lote[map.descricao] || '', lote[map.validade] || '', lote[map.localizacao] || '', quantidade, 'Reservado', visita,
+      responsavel, String(payload.observacoes || 'Conciliação de kit já presente no Laboratório.'), participanteId, visitaPrevista
+    ];
+    shReservas.getRange(shReservas.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([reservaRow]);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, quantidade: quantidade, msg: 'Reserva conciliada no Laboratório.' };
   });
 }
 
@@ -6326,6 +6394,10 @@ function estoqueEhLaboratorio_(localizacao) {
   return estoqueLocalKey_(localizacao).indexOf('laboratorio') >= 0;
 }
 
+function estoqueTipoEhKit_(tipo) {
+  return normText_(tipo).indexOf('kit') >= 0;
+}
+
 function getKitReservasPainel_() {
   var hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -6540,6 +6612,7 @@ function getEstoqueVisualizacao() {
       return soma + (estoqueEhLaboratorio_(lote.localizacao) ? 0 : (Number(lote.qtde || 0) || 0));
     }, 0);
     var estoqueLaboratorio = total - estoquePrincipal;
+    var itemEhKit = estoqueTipoEhKit_(item.tipo || item.tipoItem || (lotes[0] && lotes[0].tipoItem) || '');
     var reservasLaboratorio = reservasItem.reduce(function(soma, reserva) {
       return soma + (reserva.noLaboratorio ? Number(reserva.qtde || 0) || 0 : 0);
     }, 0);
@@ -6560,10 +6633,10 @@ function getEstoqueVisualizacao() {
       estoquePrincipal: estoquePrincipal,
       estoqueLaboratorio: estoqueLaboratorio,
       qtdeReservadaLaboratorio: reservasLaboratorio,
-      qtdeNaoConciliadaLaboratorio: Math.max(0, estoqueLaboratorio - reservasLaboratorio),
+      qtdeNaoConciliadaLaboratorio: itemEhKit ? Math.max(0, estoqueLaboratorio - reservasLaboratorio) : 0,
       qtdeReservada: reservado,
       qtdeDisponivel: Math.max(0, total - reservado),
-      status: statusConsolidado(estoquePrincipal, minimo),
+      status: statusConsolidado(itemEhKit ? estoquePrincipal : total, minimo),
       qtdePedidaPendente: pedido ? pedido.quantidade : 0,
       numerosPedidoPendente: pedido ? pedido.numerosPedido : [],
       lotes: lotes,

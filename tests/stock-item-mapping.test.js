@@ -212,3 +212,13 @@ test('resumo da visualização separa reservas nominadas do saldo do Estoque Pri
   assert.match(estoque, /Validade: a partir de/);
   assert.doesNotMatch(estoque, /Físico/);
 });
+
+test('Bulk Supply fica fora do fluxo de reserva e conciliação de kits', () => {
+  const estoque = readProjectFile('IndexEstoqueScripts.html');
+  const webApp = readProjectFile('WebApp.gs');
+
+  assert.match(estoque, /function evEhKit\(item\)/);
+  assert.match(estoque, /if \(!evEhKit\(item\)\) return;/);
+  assert.match(webApp, /function estoqueTipoEhKit_\(tipo\)/);
+  assert.match(webApp, /itemEhKit \? Math\.max\(0, estoqueLaboratorio - reservasLaboratorio\) : 0/);
+});

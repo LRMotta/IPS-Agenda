@@ -40,6 +40,7 @@ caracterização para as próximas fases.
 ## Decisões confirmadas para a implementação
 
 - localizações iniciais: `Estoque Principal` e `Laboratório`;
+- itens do tipo `Bulk Supply` são estoque avulso mantido no Laboratório e não exigem reserva, participante ou visita;
 - margem mínima de validade: 10 dias antes da visita;
 - a reserva será limitada às visitas cuja data esteja coberta por algum lote válido;
 - o cancelamento não libera a reserva automaticamente;
