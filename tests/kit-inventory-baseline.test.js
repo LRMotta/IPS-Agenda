@@ -180,6 +180,46 @@ test('fase SoA: calendario do protocolo ordena visitas e preserva aliases', () =
   assert.equal(visitas[1].intervaloDias, 30);
 });
 
+test('fase SoA: referência e janelas opcionais são lidas sem exigir migração dos legados', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais'],
+    ['SOA-1', 'Estudo A', 'V1', 'Randomização', 10, '', '', '', 'Sim', '', '', '', ''],
+    ['SOA-2', 'Estudo A', 'V2', 'Seguimento', 20, 'mensal', 28, '', 'Sim', '', 'SOA-1', 3, 5]
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  const visitas = server.getSoAVisitasProjeto('Estudo A');
+
+  assert.equal(visitas[1].referencia, 'SOA-1');
+  assert.equal(visitas[1].janelaDiasMenos, 3);
+  assert.equal(visitas[1].janelaDiasMais, 5);
+  assert.equal(visitas[0].janelaDiasMenos, '');
+});
+
+test('fase SoA: salvar janela adiciona cabeçalhos ao schema legado e mantém a linha editável', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline', 10, '', '', '', 'Sim', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  server.salvarSoAVisita({
+    idSoA: 'SOA-1', projeto: 'Estudo A', codigo: 'V1', nome: 'Baseline', ordem: 10,
+    intervaloDias: 0, referencia: 'RANDOMIZACAO', janelaDiasMenos: 3, janelaDiasMais: 5
+  });
+
+  assert.equal(soa.rows[0][10], 'Referência (após)');
+  assert.equal(soa.rows[0][11], 'Janela dias menos');
+  assert.equal(soa.rows[0][12], 'Janela dias mais');
+  assert.equal(soa.rows[1][10], 'RANDOMIZACAO');
+  assert.equal(soa.rows[1][11], 3);
+  assert.equal(soa.rows[1][12], 5);
+  assert.throws(() => server.salvarSoAVisita({ projeto: 'Estudo A', nome: 'V2', janelaDiasMais: -1 }), /janela de dias mais/);
+});
+
 test('fase SoA: salvar visita atualiza registro existente sem duplicar', () => {
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
