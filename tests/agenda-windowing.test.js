@@ -1032,8 +1032,13 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(change, /_ultimaVisitaPendente/);
   assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /ag-part-info-row/);
   assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /Nascimento/);
+  assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /Intervalo desde a última visita/);
+  assert.match(functionBody(client, 'agendaIntervaloDesdeUltimaVisita_'), /ultimaVisitaDataIso/);
+  assert.match(functionBody(client, 'agendaIntervaloDesdeUltimaVisita_'), /86400000/);
   assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /calcularIdadeAgenda_/);
   assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes: agendaParticipantesFormulario_/);
+  assert.match(functionBody(server, 'getInfoParticipante'), /ultimaVisitaDataIso/);
+  assert.match(readProjectFile('IndexContentAfterDashboard.html'), /atualizarAgendaIntervaloUltimaVisita\(\)/);
 });
 
 test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {

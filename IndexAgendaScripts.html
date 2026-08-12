@@ -2557,7 +2557,22 @@
     if (info.ultimaVisitaId || info._ultimaVisitaPendente) {
       item('flag', 'Visita', info.ultimaVisitaId || 'carregando…', !!info._ultimaVisitaPendente);
     }
+    var intervalo = agendaIntervaloDesdeUltimaVisita_(info);
+    if (intervalo) item('schedule', 'Intervalo desde a última visita', intervalo);
     return '<div class="ag-part-info-row">' + itens.join('') + '</div>';
+  }
+
+  function agendaIntervaloDesdeUltimaVisita_(info) {
+    var ultima = agendaDateOnlyFromIso((info || {}).ultimaVisitaDataIso);
+    var agendada = agendaDateOnlyFromIso((document.getElementById('agData') || {}).value || '');
+    if (!ultima || !agendada) return '';
+    var dias = Math.round((agendada.getTime() - ultima.getTime()) / 86400000);
+    if (dias < 0) return '';
+    return dias + (dias === 1 ? ' dia' : ' dias');
+  }
+
+  function atualizarAgendaIntervaloUltimaVisita() {
+    if (_agendaParticipanteInfo) agendaMostrarParticipanteInfo(_agendaParticipanteInfo);
   }
 
   function agendaLoadMaterialBackupNoTransporteI(backup) {

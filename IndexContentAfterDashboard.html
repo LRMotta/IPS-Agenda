@@ -652,7 +652,7 @@
             E-mails de lab central estao em modo teste. Para envio real, configure Agenda / Enviar emails lab central = Sim no Config_App.
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
-            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()"><div class="field-error" id="errAgData">Informe a data.</div></div>
+            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo();atualizarAgendaIntervaloUltimaVisita()"><div class="field-error" id="errAgData">Informe a data.</div></div>
             <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao inicio.</div></div>
             <div id="agHoraWrap"><label class="field-label" for="agHora">Horario <span class="required-star">*</span></label><input type="time" id="agHora" class="f-input large" oninput="limparErro('agHora','errAgHora')"><div class="field-error" id="errAgHora">Informe o horario.</div></div>
           </div>
