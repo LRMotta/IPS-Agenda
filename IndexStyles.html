@@ -153,8 +153,32 @@
     .estoque-summary-total { line-height: 1.25; white-space: nowrap; }
     .estoque-summary-meta, .estoque-summary-muted { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10.5px; line-height: 1.35; white-space: normal; }
     .estoque-summary-muted { color: var(--text-faint); }
+    .estoque-summary-alert { color: #b45309; }
     .estoque-summary-balance { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; line-height: 1.3; white-space: nowrap; }
     .estoque-summary-balance strong { color: var(--text); font-weight: 600; }
+    .estoque-reservas-panel { margin: 0 0 14px; border: 1px solid #dde5f8; border-radius: var(--r-md); background: #fff; overflow: hidden; }
+    .estoque-reservas-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid #edf1f8; background: #f8faff; }
+    .estoque-reservas-head > div { display: grid; grid-template-columns: 20px 1fr; column-gap: 7px; align-items: center; }
+    .estoque-reservas-head .material-symbols-outlined { grid-row: span 2; color: var(--primary); font-size: 18px; }
+    .estoque-reservas-head strong { color: var(--text); font-size: 12px; font-weight: 700; }
+    .estoque-reservas-head p { margin: 2px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.35; }
+    .estoque-reservas-grid { display: grid; grid-template-columns: 1fr 1fr; }
+    .estoque-reservas-grid section { min-width: 0; padding: 12px 16px 14px; }
+    .estoque-reservas-grid section + section { border-left: 1px solid #edf1f8; }
+    .estoque-reservas-grid h3 { margin: 0 0 8px; color: var(--text-faint); font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; }
+    .estoque-reserva-row { display: grid; grid-template-columns: minmax(145px, 1.25fr) minmax(90px, 1fr) minmax(95px, .9fr) auto; align-items: center; gap: 9px; padding: 8px 0; border-top: 1px solid #f0f3f9; }
+    .estoque-reserva-row:first-of-type { border-top: none; }
+    .estoque-reserva-person { min-width: 0; }
+    .estoque-reserva-person strong, .estoque-reserva-person span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .estoque-reserva-person strong { color: var(--text); font-size: 11.5px; font-weight: 600; }
+    .estoque-reserva-person span, .estoque-reserva-kit, .estoque-reserva-validade { color: var(--text-muted); font-size: 10.5px; line-height: 1.35; }
+    .estoque-reserva-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 22px; padding: 2px 7px; border-radius: 5px; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+    .estoque-reserva-chip.info { color: #1d4ed8; background: #e8f0ff; }
+    .estoque-reserva-chip.warning { color: #a15c00; background: #fff4db; }
+    .estoque-reserva-chip.danger { color: #b3261e; background: #fce8e6; }
+    .estoque-reserva-chip.neutral { color: #475569; background: #eef2f7; }
+    .estoque-reserva-row-alert .estoque-reserva-person strong { color: #9a6700; }
+    .estoque-reservas-empty { margin: 0; color: var(--text-faint); font-size: 11px; line-height: 1.45; }
     .estoque-lotes-wrap { padding: 4px 16px 10px 52px; overflow-x: auto; }
     .estoque-lotes-table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #dde5f8; border-radius: var(--r-md); background: #fff; }
     .estoque-lotes-table th { padding: 8px 10px; background: #f5f7fc; color: var(--text-faint); font-size: 9.5px; font-weight: 700; letter-spacing: .5px; text-align: left; text-transform: uppercase; white-space: nowrap; }
@@ -174,6 +198,9 @@
     .estoque-transfer-context strong { display: block; overflow-wrap: anywhere; color: var(--text-muted); font-size: 12px; font-weight: 600; }
     .estoque-transfer-available { margin-top: 5px; color: var(--text-muted); font-size: 11px; }
     .estoque-transfer-available strong { display: inline; color: var(--primary); font-weight: 700; }
+    .estoque-reserva-note { display: flex; align-items: flex-start; gap: 7px; padding: 9px 10px; border: 1px solid #d6e2fb; border-radius: var(--r-sm); background: #f5f8ff; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+    .estoque-reserva-note .material-symbols-outlined { flex: 0 0 auto; color: var(--primary); font-size: 16px; }
+    .estoque-reserva-form { margin-top: 10px; }
     .estoque-transfer-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
     .estoque-transfer-actions .btn-save { width: auto; min-width: 190px; margin-top: 0; padding: 0 18px; }
     #page-estoque-view .estoque-summary-total + div[style*="7c3aed"] { color: var(--text-muted) !important; font-size: 11px !important; line-height: 1.3; }
@@ -181,6 +208,11 @@
     #btnReservarKitsAgenda:hover:not(:disabled) { background: var(--primary-light) !important; color: var(--primary) !important; border-color: #c5d5fb !important; }
     #btnReservarKitsAgenda:disabled { background: #f1f4f9 !important; color: var(--text-faint) !important; border-color: #e0e6f0 !important; }
     @media (max-width: 640px) {
+      .estoque-reservas-grid { grid-template-columns: 1fr; }
+      .estoque-reservas-grid section + section { border-left: none; border-top: 1px solid #edf1f8; }
+      .estoque-reserva-row { grid-template-columns: minmax(0, 1fr) auto; }
+      .estoque-reserva-kit, .estoque-reserva-validade { grid-column: 1; }
+      .estoque-reserva-chip { grid-column: 2; grid-row: 1 / span 2; }
       .estoque-transfer-modal { width: calc(100% - 24px); }
       .estoque-transfer-context { grid-template-columns: 1fr; }
       .estoque-transfer-actions { position: sticky; bottom: -20px; margin: 16px -20px -20px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: rgba(255,255,255,.97); border-top: 1px solid #e0e6f0; }

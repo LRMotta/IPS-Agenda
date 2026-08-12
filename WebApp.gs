@@ -324,7 +324,18 @@ function getEstoqueBootstrapData(page) {
   else if (page === 'descartes') out.data = getDescartesEstoque();
   else if (page === 'movimentacoes') out.data = getMovimentacoesEstoque();
   else if (page === 'relatorios') out.data = getEstoque();
-  else if (page === 'estoque-view') out.data = getEstoqueVisualizacao();
+  else if (page === 'estoque-view') {
+    out.data = getEstoqueVisualizacao();
+    out.participantes = getParticipantes().map(function(participante) {
+      return {
+        id: participante.id,
+        nome: participante.nome,
+        idParticipante: participante.idParticipante,
+        projeto: participante.projeto,
+        status: participante.status
+      };
+    });
+  }
   else throw new Error('Bootstrap de estoque nao suportado: ' + page);
   return out;
 }
@@ -5559,8 +5570,13 @@ function transferirKitEstoque(payload) {
     var origem = String(payload.origem || '').trim();
     var destino = String(payload.destino || '').trim();
     var qtd = Number(payload.qtde || 0);
+    var reserva = payload.reserva || null;
+    var destinoLaboratorio = estoqueEhLaboratorio_(destino);
     if (!idItem || !idLote || !origem || !destino || origem === destino) throw new Error('Informe item, lote, origem e destino diferentes.');
     if (qtd <= 0 || !isFinite(qtd)) throw new Error('Informe uma quantidade válida.');
+    if (destinoLaboratorio && (!reserva || typeof reserva !== 'object')) {
+      throw new Error('Todo kit transferido ao Laboratório deve ser reservado para um participante.');
+    }
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getSheetByPossibleNames_(ss, ['Estoque']);
     if (!sheet) throw new Error('Aba "Estoque" não encontrada.');
@@ -5577,12 +5593,31 @@ function transferirKitEstoque(payload) {
       if (local === estoqueLocalKey_(destino)) destinationRow = i + 1;
     }
     if (sourceRow < 2 || !source) throw new Error('Lote não encontrado na localização de origem.');
+    var visitaReserva = null;
+    if (destinoLaboratorio) {
+      var participanteReserva = String(reserva.participante || '').trim();
+      var participanteIdReserva = String(reserva.participanteId || '').trim();
+      var visitaPrevistaReserva = String(reserva.visitaPrevista || '').trim();
+      visitaReserva = parseAgendaDateAny_(reserva.dataVisita);
+      if (!participanteReserva || !participanteIdReserva || !visitaPrevistaReserva) {
+        throw new Error('Informe o participante, a visita prevista e a identificação do participante para reservar no Laboratório.');
+      }
+      if (!visitaReserva || isNaN(visitaReserva.getTime())) throw new Error('Informe uma data válida para a visita prevista.');
+      visitaReserva.setHours(0, 0, 0, 0);
+      var validadeReserva = parseDateBrOrBlank_(source[map.validade]);
+      var validadeMinimaReserva = new Date(visitaReserva.getTime());
+      validadeMinimaReserva.setDate(validadeMinimaReserva.getDate() + 10);
+      if (!validadeReserva || isNaN(validadeReserva.getTime()) || validadeReserva < validadeMinimaReserva) {
+        throw new Error('O lote selecionado não possui validade suficiente para a visita prevista.');
+      }
+    }
     var reservas = getKitReservasResumo_();
     var validade = estoqueValidadeKey_(source[map.validade]);
     var chaveReserva = kitReservaChave_(idItem, idLote, validade, origem);
     var reservado = Number(reservas[chaveReserva] || 0);
     var saldo = Number(source[map.qtde] || 0) || 0;
     if (qtd > Math.max(0, saldo - reservado)) throw new Error('Quantidade maior que o saldo disponível na origem.');
+    var shReservas = destinoLaboratorio ? getKitReservasSheet_() : null;
     if (destinationRow < 2) {
       var novo = source.slice();
       while (novo.length < Math.max(sheet.getLastColumn(), map.idLote + 1)) novo.push('');
@@ -5611,17 +5646,30 @@ function transferirKitEstoque(payload) {
       var mov = [
         opId, agora, tipo, idItem, source[map.descricao] || '', source[map.tipo] || '',
         source[map.projeto] || '', quantidade, source[map.validade] || '', local, idLote,
-        '', '', '', userEmail, origemTexto, 'Transferência entre estoques'
+        destinoLaboratorio ? String(reserva.participanteId || '') : '', destinoLaboratorio ? String(reserva.participante || '') : '',
+        destinoLaboratorio ? String(reserva.agendaId || reserva.visitaPrevista || '') : '', userEmail, origemTexto,
+        destinoLaboratorio ? 'Transferência com reserva para participante' : 'Transferência entre estoques'
       ];
       shMov.appendRow(mov);
       var lr = shMov.getLastRow();
-      if (meta.agendaid !== undefined) shMov.getRange(lr, meta.agendaid + 1).setValue('');
+      if (meta.agendaid !== undefined) shMov.getRange(lr, meta.agendaid + 1).setValue(destinoLaboratorio ? String(reserva.agendaId || '') : '');
     }
     append('Saída - Transferência', origem, qtd);
     append('Entrada - Transferência', destino, qtd);
+    if (destinoLaboratorio) {
+      var reservaRow = [
+        gerarIdLoteEstoque_(), agora, String(reserva.agendaId || ''), String(reserva.projeto || source[map.projeto] || ''), String(reserva.participante || ''),
+        idItem, idLote, source[map.descricao] || '', source[map.validade] || '', destino, qtd, 'Reservado', visitaReserva,
+        userEmail, String(reserva.observacoes || payload.observacao || ''), String(reserva.participanteId || ''), String(reserva.visitaPrevista || '')
+      ];
+      shReservas.getRange(shReservas.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([reservaRow]);
+    }
     SpreadsheetApp.flush();
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-    return { ok: true, operacaoId: opId, quantidade: qtd, origem: origem, destino: destino, msg: 'Transferência registrada com sucesso.' };
+    return {
+      ok: true, operacaoId: opId, quantidade: qtd, origem: origem, destino: destino,
+      msg: destinoLaboratorio ? 'Kit reservado e transferido ao Laboratório.' : 'Transferência registrada com sucesso.'
+    };
   });
 }
 
@@ -6212,7 +6260,8 @@ function getEstoque() {
 var KIT_RESERVA_HEADERS_ = [
   'ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante',
   'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde',
-  'Status', 'Data_Visita', 'Responsável', 'Observações'
+  'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante',
+  'Visita_Prevista'
 ];
 
 function getKitReservasSheet_() {
@@ -6221,6 +6270,15 @@ function getKitReservasSheet_() {
   if (!sh) {
     sh = ss.insertSheet('Reservas_Kits');
     sh.getRange(1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([KIT_RESERVA_HEADERS_]);
+  } else {
+    var headers = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+    var existentes = {};
+    headers.forEach(function(header) { existentes[normalizeHeader_(header)] = true; });
+    KIT_RESERVA_HEADERS_.forEach(function(header) {
+      if (existentes[normalizeHeader_(header)]) return;
+      sh.getRange(1, sh.getLastColumn() + 1).setValue(header);
+      existentes[normalizeHeader_(header)] = true;
+    });
   }
   return sh;
 }
@@ -6248,7 +6306,8 @@ function getKitReservasLinhas_() {
         participante: String(r[4] || ''), idItem: String(r[5] || ''), idLote: String(r[6] || ''),
         descricao: String(r[7] || ''), validade: fmtDate(r[8]), localizacao: String(r[9] || ''),
         qtde: Number(r[10] || 0) || 0, status: String(r[11] || 'Reservado'),
-        dataVisita: fmtDate(r[12]), responsavel: String(r[13] || ''), observacoes: String(r[14] || '')
+        dataVisita: fmtDate(r[12]), responsavel: String(r[13] || ''), observacoes: String(r[14] || ''),
+        participanteId: String(r[15] || ''), visitaPrevista: String(r[16] || '')
       };
     });
 }
@@ -6261,6 +6320,52 @@ function getKitReservasResumo_() {
     out[chave] = Number(out[chave] || 0) + r.qtde;
   });
   return out;
+}
+
+function estoqueEhLaboratorio_(localizacao) {
+  return estoqueLocalKey_(localizacao).indexOf('laboratorio') >= 0;
+}
+
+function getKitReservasPainel_() {
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  var limiteProximas = new Date(hoje.getTime());
+  limiteProximas.setDate(limiteProximas.getDate() + 14);
+  return getKitReservasLinhas_().filter(function(reserva) {
+    return normText_(reserva.status || 'Reservado') === 'reservado';
+  }).map(function(reserva) {
+    var validade = parseDateBrOrBlank_(reserva.validade);
+    var visita = parseAgendaDateAny_(reserva.dataVisita);
+    if (validade && !isNaN(validade.getTime())) validade.setHours(0, 0, 0, 0);
+    if (visita && !isNaN(visita.getTime())) visita.setHours(0, 0, 0, 0);
+    var validadeMinima = visita && !isNaN(visita.getTime()) ? new Date(visita.getTime()) : null;
+    if (validadeMinima) validadeMinima.setDate(validadeMinima.getDate() + 10);
+    var vencida = !!(validade && validade < hoje);
+    var validadeInsuficiente = !!(validadeMinima && (!validade || validade < validadeMinima));
+    var proxima = !!(visita && visita >= hoje && visita <= limiteProximas);
+    return {
+      idReserva: reserva.idReserva,
+      agendaId: reserva.agendaId,
+      projeto: reserva.projeto,
+      participante: reserva.participante,
+      participanteId: reserva.participanteId,
+      visitaPrevista: reserva.visitaPrevista,
+      idItem: reserva.idItem,
+      idLote: reserva.idLote,
+      descricao: reserva.descricao,
+      validade: reserva.validade,
+      localizacao: reserva.localizacao,
+      qtde: reserva.qtde,
+      dataVisita: reserva.dataVisita,
+      responsavel: reserva.responsavel,
+      observacoes: reserva.observacoes,
+      noLaboratorio: estoqueEhLaboratorio_(reserva.localizacao),
+      proxima: proxima,
+      vencida: vencida,
+      validadeInsuficiente: validadeInsuficiente,
+      semVisitaConciliada: !String(reserva.agendaId || '').trim()
+    };
+  });
 }
 
 function getKitsAgendaReservaStatus(agendaId) {
@@ -6310,7 +6415,8 @@ function reservarKitsAgendaEvento(payload) {
       linhas.push([
         gerarIdLoteEstoque_(), new Date(), agendaId, payload.projeto || lote.projeto || '', payload.participante || '',
         lote.idItem, lote.idLote, lote.descricao, parseDateBrOrBlank_(lote.validade) || lote.validade,
-        lote.localizacao, qtd, 'Reservado', visita, responsavel, payload.observacoes || ''
+        lote.localizacao, qtd, 'Reservado', visita, responsavel, payload.observacoes || '',
+        payload.participanteId || '', payload.visita || ''
       ]);
     });
     if (linhas.length) sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
@@ -6363,9 +6469,18 @@ function getEstoqueVisualizacao() {
   var catalogo = getItensEstoque().itens || [];
   var estoque = getEstoqueLinhas_() || [];
   var reservas = getKitReservasResumo_();
+  var reservasPainel = getKitReservasPainel_();
   var pendentes = getEstoquePedidosPendentesPorItem_();
   var lotesPorItem = {};
+  var reservasPorItem = {};
   var ordemIdsEstoque = [];
+
+  reservasPainel.forEach(function(reserva) {
+    var id = String(reserva.idItem || '').trim();
+    if (!id) return;
+    if (!reservasPorItem[id]) reservasPorItem[id] = [];
+    reservasPorItem[id].push(reserva);
+  });
 
   estoque.forEach(function(lote) {
     var ids = String(lote.idItem || '').split(/\s*,\s*/).filter(Boolean);
@@ -6411,6 +6526,7 @@ function getEstoqueVisualizacao() {
 
   function montarItem(item, id, lotes) {
     lotes = lotes || [];
+    var reservasItem = reservasPorItem[id] || [];
     var total = lotes.reduce(function(soma, lote) {
       return soma + (Number(lote.qtde || 0) || 0);
     }, 0);
@@ -6420,6 +6536,13 @@ function getEstoqueVisualizacao() {
     var minimo = item.estoqueMin !== undefined && item.estoqueMin !== ''
       ? Number(item.estoqueMin || 0) || 0
       : lotes.reduce(function(maior, lote) { return Math.max(maior, Number(lote.estoqueMinimo || 0) || 0); }, 0);
+    var estoquePrincipal = lotes.reduce(function(soma, lote) {
+      return soma + (estoqueEhLaboratorio_(lote.localizacao) ? 0 : (Number(lote.qtde || 0) || 0));
+    }, 0);
+    var estoqueLaboratorio = total - estoquePrincipal;
+    var reservasLaboratorio = reservasItem.reduce(function(soma, reserva) {
+      return soma + (reserva.noLaboratorio ? Number(reserva.qtde || 0) || 0 : 0);
+    }, 0);
     var pedido = pendentes[id] || null;
     return {
       idItem: id.indexOf('__SEM_ID__') === 0 ? '' : id,
@@ -6434,12 +6557,17 @@ function getEstoqueVisualizacao() {
       estoqueAtual: total,
       qtde: total,
       qtdeFisica: total,
+      estoquePrincipal: estoquePrincipal,
+      estoqueLaboratorio: estoqueLaboratorio,
+      qtdeReservadaLaboratorio: reservasLaboratorio,
+      qtdeNaoConciliadaLaboratorio: Math.max(0, estoqueLaboratorio - reservasLaboratorio),
       qtdeReservada: reservado,
       qtdeDisponivel: Math.max(0, total - reservado),
-      status: statusConsolidado(total, minimo),
+      status: statusConsolidado(estoquePrincipal, minimo),
       qtdePedidaPendente: pedido ? pedido.quantidade : 0,
       numerosPedidoPendente: pedido ? pedido.numerosPedido : [],
-      lotes: lotes
+      lotes: lotes,
+      reservasLaboratorio: reservasItem
     };
   }
 

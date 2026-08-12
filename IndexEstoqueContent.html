@@ -2,28 +2,28 @@
       <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr 1fr; border-radius:var(--r-lg) var(--r-lg) 0 0; border-top:1px solid #e8edf8;">
         <div class="stat-card" style="--accent:#1266f1; border-radius:var(--r-lg) 0 0 0;">
           <div class="stat-value" id="evStatTotal">—</div>
-          <div class="stat-label">Total de Itens</div>
+          <div class="stat-label">Estoque Principal</div>
           <div class="stat-icon"><span class="material-symbols-outlined">inventory_2</span></div>
         </div>
         <div class="stat-card" style="--accent:#137333;">
           <div class="stat-value" id="evStatOk">—</div>
-          <div class="stat-label">Estoque OK</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">check_circle</span></div>
+          <div class="stat-label">Reservas no Laboratório</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">biotech</span></div>
         </div>
         <div class="stat-card" style="--accent:#e65100;">
           <div class="stat-value" id="evStatBaixo">—</div>
-          <div class="stat-label">Estoque Baixo</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">warning</span></div>
+          <div class="stat-label">Participantes com kits</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">groups</span></div>
         </div>
         <div class="stat-card" style="--accent:#b3261e;">
           <div class="stat-value" id="evStatCritico">—</div>
-          <div class="stat-label">Crítico / Zerado</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">error</span></div>
+          <div class="stat-label">Visitas nos próximos 14 dias</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">event_upcoming</span></div>
         </div>
         <div class="stat-card" style="--accent:#6a1b9a; border-radius:0 var(--r-lg) 0 0;">
           <div class="stat-value" id="evStatPendente">—</div>
-          <div class="stat-label">Pedidos Pendentes</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+          <div class="stat-label">Reservas para conciliar</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">assignment_late</span></div>
         </div>
       </div>
       <div class="toolbar-card">
@@ -44,6 +44,7 @@
           <span class="material-symbols-outlined">refresh</span> Atualizar
         </button>
       </div>
+      <div id="evReservaPainel" class="estoque-reservas-panel" aria-live="polite"></div>
       <div class="table-card">
         <table class="data-table" style="min-width:820px;">
           <thead>
@@ -53,7 +54,7 @@
               <th>Descrição do Item</th>
               <th>Tipo</th>
               <th>Laboratório</th>
-              <th>Estoque / Validade</th>
+              <th>Principal / Validade</th>
               <th>Localização</th>
               <th style="text-align:center;">Est. Mín.</th>
               <th>Status</th>

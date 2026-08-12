@@ -211,9 +211,21 @@ test('fase 3: transferência move o lote entre localizações com uma operação
   });
   server.codexAssertCanWrite_ = () => {};
   server.codexWithDocumentLock_ = (_action, callback) => callback();
+  const reservasTransferencia = new FakeSheet('Reservas_Kits', [
+    ['ID_Reserva', 'Data_Reserva', 'Agenda_ID', 'Projeto', 'Participante', 'ID_Item', 'ID_Lote', 'Descrição', 'Validade', 'Localização', 'Qtde', 'Status', 'Data_Visita', 'Responsável', 'Observações', 'ID_Participante', 'Visita_Prevista']
+  ]);
+  server.getKitReservasSheet_ = () => reservasTransferencia;
+
+  assert.throws(() => server.transferirKitEstoque({
+    idItem: 'KIT-1', idLote: 'LOTE-1', origem: 'Estoque Principal', destino: 'Laboratório', qtde: 1
+  }), /deve ser reservado/);
 
   const result = server.transferirKitEstoque({
-    idItem: 'KIT-1', idLote: 'LOTE-1', origem: 'Estoque Principal', destino: 'Laboratório', qtde: 2
+    idItem: 'KIT-1', idLote: 'LOTE-1', origem: 'Estoque Principal', destino: 'Laboratório', qtde: 2,
+    reserva: {
+      participanteId: 'PART-1', participante: 'Pessoa A', projeto: 'Estudo A',
+      visitaPrevista: 'T-2', dataVisita: '2026-12-15'
+    }
   });
 
   assert.equal(result.quantidade, 2);
@@ -225,4 +237,8 @@ test('fase 3: transferência move o lote entre localizações com uma operação
   assert.equal(mov.rows[1][0], mov.rows[2][0]);
   assert.equal(mov.rows[1][2], 'Saída - Transferência');
   assert.equal(mov.rows[2][2], 'Entrada - Transferência');
+  assert.equal(reservasTransferencia.rows.length, 2);
+  assert.equal(reservasTransferencia.rows[1][4], 'Pessoa A');
+  assert.equal(reservasTransferencia.rows[1][15], 'PART-1');
+  assert.equal(reservasTransferencia.rows[1][16], 'T-2');
 });
