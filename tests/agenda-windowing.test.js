@@ -1041,6 +1041,11 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(readProjectFile('IndexContentAfterDashboard.html'), /atualizarAgendaIntervaloUltimaVisita\(\)/);
 });
 
+test('modal de agendamento acomoda o resumo completo em telas desktop', () => {
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  assert.match(styles, /\.ag-create-box\{[^}]*width:min\(1280px,96vw\)/);
+});
+
 test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
