@@ -1052,6 +1052,20 @@ test('campos automáticos desabilitados mantêm a mesma cor azul', () => {
   assert.match(styles, /-webkit-text-fill-color: #1a5276/);
 });
 
+test('edição de agendamento também carrega o resumo do participante', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const edit = functionBody(client, 'agendaAbrirEdicaoComRegistroPronto_');
+  assert.match(edit, /onAgendaParticipanteChange\(\)/);
+});
+
+test('cancelamento de SIV não exige motivo', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(functionBody(client, 'agendaExigeMotivoCancelamento_'), /AgendaRules\.isSiv/);
+  assert.match(functionBody(client, 'cancelarAgendaEvento'), /AgendaRules\.isSiv/);
+  assert.match(functionBody(server, 'cancelarAgendaEvento'), /tipoAnteriorCancelamento/);
+});
+
 test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');

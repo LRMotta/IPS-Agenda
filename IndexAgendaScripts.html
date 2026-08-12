@@ -2163,6 +2163,7 @@
   function agendaExigeMotivoCancelamento_(payload) {
     if (!_agendaEditId || !AgendaRules.isCancelled(payload)) return false;
     var atual = agendaEventoAtualEditado_();
+    if (AgendaRules.isSiv(payload) || AgendaRules.isSiv(atual)) return false;
     return !atual || !AgendaRules.isCancelled(atual);
   }
 
@@ -4196,6 +4197,9 @@
     atualizarAgendaTransportesOpcionais();
     atualizarAgendaProjetoLock();
     agendaRestoreEditRecordValues_(false);
+    // Reaproveita o resumo do participante também na edição, incluindo a
+    // última visita e o intervalo calculado para a data do agendamento.
+    onAgendaParticipanteChange();
     var title = document.querySelector('#agendaCreatePanel .modal-header-title');
     if (title) title.textContent = 'EDITAR AGENDAMENTO';
     var sec = document.querySelector('#agendaCreatePanel .section-label');
@@ -4257,6 +4261,14 @@
 
   function cancelarAgendaEvento(id) {
     if (!id) return;
+    var evento = agendaFindEventoLocal_(id) || {};
+    if (AgendaRules.isSiv(evento)) {
+      google.script.run
+        .withSuccessHandler(function() { agendaRecarregarJanelaAtual_(); })
+        .withFailureHandler(function(e) { snackErro(e); })
+        .cancelarAgendaEvento(id, null);
+      return;
+    }
     abrirConfirmacaoDestrutiva({
       titulo: 'Cancelar visita?',
       mensagem: 'Deseja iniciar o cancelamento deste agendamento? A visita só será cancelada após registrar o motivo na próxima etapa.',
