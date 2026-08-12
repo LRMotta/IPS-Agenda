@@ -1046,6 +1046,12 @@ test('modal de agendamento acomoda o resumo completo em telas desktop', () => {
   assert.match(styles, /\.ag-create-box\{[^}]*width:min\(1280px,96vw\)/);
 });
 
+test('campos automáticos desabilitados mantêm a mesma cor azul', () => {
+  const styles = readProjectFile('IndexStyles.html');
+  assert.match(styles, /select\.f-input\.auto-fill:disabled\s*\{[^}]*color: #1a5276/);
+  assert.match(styles, /-webkit-text-fill-color: #1a5276/);
+});
+
 test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');

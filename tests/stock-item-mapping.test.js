@@ -222,3 +222,25 @@ test('Bulk Supply fica fora do fluxo de reserva e conciliação de kits', () => 
   assert.match(webApp, /function estoqueTipoEhKit_\(tipo\)/);
   assert.match(webApp, /itemEhKit \? Math\.max\(0, estoqueLaboratorio - reservasLaboratorio\) : 0/);
 });
+
+test('reservas sem Agenda oferecem vínculo posterior por visita compatível', () => {
+  const estoque = readProjectFile('IndexEstoqueScripts.html');
+  const webApp = readProjectFile('WebApp.gs');
+
+  assert.match(estoque, /Vincular Agenda/);
+  assert.match(estoque, /getAgendaCandidatosReservaKit/);
+  assert.match(estoque, /vincularReservaKitAgenda/);
+  assert.match(webApp, /function getAgendaCandidatosReservaKit\(payload\)/);
+  assert.match(webApp, /function vincularReservaKitAgenda\(payload\)/);
+});
+
+test('baixa da Agenda preserva o ID do participante e o lote escolhido', () => {
+  const agenda = readProjectFile('IndexAgendaScripts.html');
+  const webApp = readProjectFile('WebApp.gs');
+
+  assert.match(agenda, /participanteId: String\(\(_agendaParticipanteInfo/);
+  assert.match(agenda, /idLote: opt && opt\.dataset/);
+  assert.match(agenda, /participanteId: dados\.participanteId/);
+  assert.match(webApp, /idLote: String\(kit\.idLote \|\| ''\)\.trim\(\)/);
+  assert.match(webApp, /atualizarStatusReservasAgendaItens_\(agendaId/);
+});

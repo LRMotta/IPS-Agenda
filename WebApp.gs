@@ -3225,6 +3225,217 @@ function getProjetos() {
   return lista;
 }
 
+// ════════════════════════════════
+//  CALENDÁRIO SoA — visitas por protocolo
+// ════════════════════════════════
+var SOA_VISITAS_HEADERS_ = [
+  'ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita',
+  'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações'
+];
+
+function getSoAVisitasSheet_(createIfMissing) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getSheetByPossibleNames_(ss, ['SoA_Visitas', 'Calendario_SoA', 'Calendário SoA']);
+  if (!sheet && createIfMissing) {
+    if (!ss || typeof ss.insertSheet !== 'function') throw new Error('Não foi possível criar a aba do calendário SoA.');
+    sheet = ss.insertSheet('SoA_Visitas');
+    sheet.getRange(1, 1, 1, SOA_VISITAS_HEADERS_.length).setValues([SOA_VISITAS_HEADERS_]);
+  }
+  return sheet;
+}
+
+function getSoAVisitasProjeto(projeto) {
+  var projetoNorm = normText_(projeto);
+  if (!projetoNorm) return [];
+  var sheet = getSoAVisitasSheet_(false);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0] || [];
+  var map = {};
+  headers.forEach(function(header, index) { map[normalizeHeader_(header)] = index; });
+  function col(names, fallback) {
+    for (var i = 0; i < names.length; i++) {
+      var index = map[normalizeHeader_(names[i])];
+      if (index !== undefined) return index;
+    }
+    return fallback;
+  }
+  var c = {
+    id: col(['ID_SoA'], 0), projeto: col(['Projeto'], 1), codigo: col(['Código da visita', 'Codigo da visita'], 2),
+    nome: col(['Nome padrão da visita', 'Nome padrao da visita'], 3), ordem: col(['Ordem'], 4),
+    repeticao: col(['Repetição', 'Repeticao'], 5), intervalo: col(['Intervalo (dias)', 'Intervalo dias'], 6),
+    aliases: col(['Aliases', 'Apelidos'], 7), ativo: col(['Ativo', 'Status'], 8), observacoes: col(['Observações', 'Observacoes'], 9)
+  };
+  return rows.slice(1).map(function(row) {
+    var aliases = String(row[c.aliases] || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean);
+    var ordemRaw = row[c.ordem];
+    var intervaloRaw = row[c.intervalo];
+    return {
+      idSoA: String(row[c.id] || '').trim(),
+      projeto: String(row[c.projeto] || '').trim(),
+      codigo: String(row[c.codigo] || '').trim(),
+      nome: String(row[c.nome] || '').trim(),
+      ordem: ordemRaw === '' || ordemRaw === null || ordemRaw === undefined ? '' : Number(ordemRaw),
+      repeticao: String(row[c.repeticao] || '').trim(),
+      intervaloDias: intervaloRaw === '' || intervaloRaw === null || intervaloRaw === undefined ? '' : Number(intervaloRaw),
+      aliases: aliases,
+      ativo: String(row[c.ativo] || 'Sim').trim() !== 'Não' && String(row[c.ativo] || 'Sim').trim().toLowerCase() !== 'nao',
+      observacoes: String(row[c.observacoes] || '').trim()
+    };
+  }).filter(function(item) {
+    return item.nome && normText_(item.projeto) === projetoNorm;
+  }).sort(function(a, b) {
+    var ao = a.ordem === '' || !isFinite(a.ordem) ? 999999 : a.ordem;
+    var bo = b.ordem === '' || !isFinite(b.ordem) ? 999999 : b.ordem;
+    return ao - bo || a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+  });
+}
+
+function salvarSoAVisita(payload) {
+  payload = payload || {};
+  codexAssertCanWrite_('salvarSoAVisita', 'Cadastros', payload.idSoA || payload.projeto || 'SoA');
+  var projeto = String(payload.projeto || '').trim();
+  var nome = String(payload.nome || payload.nomePadrao || '').trim();
+  if (!projeto) throw new Error('Informe o projeto do calendário SoA.');
+  if (!nome) throw new Error('Informe o nome padrão da visita.');
+  var ordem = payload.ordem === '' || payload.ordem === null || payload.ordem === undefined ? '' : Number(payload.ordem);
+  if (ordem !== '' && (!isFinite(ordem) || ordem < 0 || Math.floor(ordem) !== ordem)) throw new Error('A ordem deve ser um número inteiro maior ou igual a zero.');
+  var intervalo = payload.intervaloDias === '' || payload.intervaloDias === null || payload.intervaloDias === undefined ? '' : Number(payload.intervaloDias);
+  if (intervalo !== '' && (!isFinite(intervalo) || intervalo < 0 || Math.floor(intervalo) !== intervalo)) throw new Error('O intervalo deve ser um número inteiro de dias.');
+  return codexWithDocumentLock_('salvarSoAVisita', function() {
+    var sheet = getSoAVisitasSheet_(true);
+    var rows = sheet.getDataRange().getValues();
+    var id = String(payload.idSoA || '').trim() || ('SOA-' + gerarIdLoteEstoque_());
+    var aliases = Array.isArray(payload.aliases) ? payload.aliases.join('; ') : String(payload.aliases || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean).join('; ');
+    var rowValues = [[id, projeto, String(payload.codigo || '').trim(), nome, ordem, String(payload.repeticao || '').trim(), intervalo, aliases, payload.ativo === false ? 'Não' : 'Sim', String(payload.observacoes || '').trim()]];
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === id) {
+        sheet.getRange(i + 1, 1, 1, SOA_VISITAS_HEADERS_.length).setValues(rowValues);
+        return { idSoA: id, msg: 'Visita SoA atualizada.' };
+      }
+    }
+    sheet.appendRow(rowValues[0]);
+    return { idSoA: id, msg: 'Visita SoA adicionada.' };
+  });
+}
+
+function excluirSoAVisita(idSoA) {
+  codexAssertCanWrite_('excluirSoAVisita', 'Cadastros', idSoA);
+  var id = String(idSoA || '').trim();
+  if (!id) throw new Error('Visita SoA inválida.');
+  return codexWithDocumentLock_('excluirSoAVisita', function() {
+    var sheet = getSoAVisitasSheet_(false);
+    if (!sheet || sheet.getLastRow() < 2) throw new Error('Visita SoA não encontrada.');
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === id) {
+        sheet.deleteRow(i + 1);
+        return 'Visita SoA excluída.';
+      }
+    }
+    throw new Error('Visita SoA não encontrada.');
+  });
+}
+
+// ════════════════════════════════
+//  BRAÇOS DO ESTUDO — catálogo opcional por protocolo
+// ════════════════════════════════
+var PROJETO_BRACOS_HEADERS_ = ['ID_Braco', 'Projeto', 'Nome do braço', 'Ordem', 'Ativo', 'Observações'];
+
+function getProjetoBracosSheet_(createIfMissing) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getSheetByPossibleNames_(ss, ['Projeto_Bracos', 'Bracos_Projeto', 'Braços_Projeto']);
+  if (!sheet && createIfMissing) {
+    if (!ss || typeof ss.insertSheet !== 'function') throw new Error('Não foi possível criar a aba do catálogo de braços.');
+    sheet = ss.insertSheet('Projeto_Bracos');
+    sheet.getRange(1, 1, 1, PROJETO_BRACOS_HEADERS_.length).setValues([PROJETO_BRACOS_HEADERS_]);
+  }
+  return sheet;
+}
+
+function getBracosProjeto(projeto) {
+  var projetoNorm = normText_(projeto);
+  if (!projetoNorm) return [];
+  var sheet = getProjetoBracosSheet_(false);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0] || [];
+  var map = {};
+  headers.forEach(function(header, index) { map[normalizeHeader_(header)] = index; });
+  function col(names, fallback) {
+    for (var i = 0; i < names.length; i++) {
+      var index = map[normalizeHeader_(names[i])];
+      if (index !== undefined) return index;
+    }
+    return fallback;
+  }
+  var c = {
+    id: col(['ID_Braco'], 0), projeto: col(['Projeto'], 1), nome: col(['Nome do braço', 'Nome do braco', 'Braço', 'Braco'], 2),
+    ordem: col(['Ordem'], 3), ativo: col(['Ativo', 'Status'], 4), observacoes: col(['Observações', 'Observacoes'], 5)
+  };
+  return rows.slice(1).map(function(row) {
+    var ordemRaw = row[c.ordem];
+    var ativo = String(row[c.ativo] || 'Sim').trim();
+    return {
+      idBraco: String(row[c.id] || '').trim(),
+      projeto: String(row[c.projeto] || '').trim(),
+      nome: String(row[c.nome] || '').trim(),
+      ordem: ordemRaw === '' || ordemRaw === null || ordemRaw === undefined ? '' : Number(ordemRaw),
+      ativo: ativo.toLowerCase() !== 'não' && ativo.toLowerCase() !== 'nao',
+      observacoes: String(row[c.observacoes] || '').trim()
+    };
+  }).filter(function(item) {
+    return item.nome && normText_(item.projeto) === projetoNorm;
+  }).sort(function(a, b) {
+    var ao = a.ordem === '' || !isFinite(a.ordem) ? 999999 : a.ordem;
+    var bo = b.ordem === '' || !isFinite(b.ordem) ? 999999 : b.ordem;
+    return ao - bo || a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+  });
+}
+
+function salvarBracoProjeto(payload) {
+  payload = payload || {};
+  codexAssertCanWrite_('salvarBracoProjeto', 'Cadastros', payload.idBraco || payload.projeto || 'Braço');
+  var projeto = String(payload.projeto || '').trim();
+  var nome = String(payload.nome || '').trim();
+  if (!projeto) throw new Error('Informe o projeto do braço.');
+  if (!nome) throw new Error('Informe o nome do braço.');
+  var ordem = payload.ordem === '' || payload.ordem === null || payload.ordem === undefined ? '' : Number(payload.ordem);
+  if (ordem !== '' && (!isFinite(ordem) || ordem < 0 || Math.floor(ordem) !== ordem)) throw new Error('A ordem deve ser um número inteiro maior ou igual a zero.');
+  return codexWithDocumentLock_('salvarBracoProjeto', function() {
+    var sheet = getProjetoBracosSheet_(true);
+    var rows = sheet.getDataRange().getValues();
+    var id = String(payload.idBraco || '').trim() || ('BRACO-' + gerarIdLoteEstoque_());
+    var rowValues = [[id, projeto, nome, ordem, payload.ativo === false ? 'Não' : 'Sim', String(payload.observacoes || '').trim()]];
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === id) {
+        sheet.getRange(i + 1, 1, 1, PROJETO_BRACOS_HEADERS_.length).setValues(rowValues);
+        return { idBraco: id, msg: 'Braço atualizado.' };
+      }
+    }
+    sheet.appendRow(rowValues[0]);
+    return { idBraco: id, msg: 'Braço adicionado.' };
+  });
+}
+
+function excluirBracoProjeto(idBraco) {
+  codexAssertCanWrite_('excluirBracoProjeto', 'Cadastros', idBraco);
+  var id = String(idBraco || '').trim();
+  if (!id) throw new Error('Braço inválido.');
+  return codexWithDocumentLock_('excluirBracoProjeto', function() {
+    var sheet = getProjetoBracosSheet_(false);
+    if (!sheet || sheet.getLastRow() < 2) throw new Error('Braço não encontrado.');
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === id) {
+        sheet.deleteRow(i + 1);
+        return 'Braço excluído.';
+      }
+    }
+    throw new Error('Braço não encontrado.');
+  });
+}
+
 function getProjetosSivPorProjeto_() {
   var grupos = {};
   var out = {};
@@ -5508,6 +5719,7 @@ function registrarMovimentacaoEstoque(payload) {
   var dataBase = payload.data ? new Date(payload.data + 'T12:00:00') : agora;
   var validadeKey = estoqueValidadeKey_(payload.validade, tz);
   var locKey = estoqueLocalKey_(payload.localizacao);
+  var requestedLote = String(payload.idLote || payload.lote || '').trim();
   var rows = shEstoque.getDataRange().getValues();
   var rowEstoque = -1;
 
@@ -5516,7 +5728,8 @@ function registrarMovimentacaoEstoque(payload) {
     var requestedData = rows[requestedRow - 1] || [];
     var requestedMatches = String(requestedData[0] || '').trim() === idItem &&
       (!validadeKey || estoqueValidadeKey_(requestedData[4], tz) === validadeKey) &&
-      (!locKey || estoqueLocalKey_(requestedData[5]) === locKey);
+      (!locKey || estoqueLocalKey_(requestedData[5]) === locKey) &&
+      (!requestedLote || String(requestedData[13] || '').trim() === requestedLote);
     if (requestedMatches) rowEstoque = requestedRow;
   }
 
@@ -5525,7 +5738,8 @@ function registrarMovimentacaoEstoque(payload) {
     if (String(r[0] || '').trim() !== idItem) continue;
     var sameValidade = !validadeKey || estoqueValidadeKey_(r[4], tz) === validadeKey;
     var sameLocal = !locKey || estoqueLocalKey_(r[5]) === locKey;
-    if (sameValidade && sameLocal) {
+    var sameLote = !requestedLote || String(r[13] || '').trim() === requestedLote;
+    if (sameValidade && sameLocal && sameLote) {
       rowEstoque = i + 1;
       break;
     }
@@ -5545,7 +5759,7 @@ function registrarMovimentacaoEstoque(payload) {
     Utilities.getUuid().slice(0, 8), dataBase, tipoMov, idItem,
     payload.descricao || er[2] || '', payload.tipoItem || er[3] || '',
     payload.projeto || er[1] || '', qtd, er[4] || '',
-    payload.localizacao || er[5] || '', payload.lote || '', '',
+    payload.localizacao || er[5] || '', payload.lote || payload.idLote || er[13] || '', '',
     payload.participante || '', payload.idVisita || '', userEmail,
     payload.origem || 'Movimentação manual', payload.observacao || ''
   ];
@@ -5559,6 +5773,56 @@ function registrarMovimentacaoEstoque(payload) {
   CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
   return 'Movimentação registrada com sucesso.';
   });
+}
+
+function atualizarStatusReservasAgendaItens_(agendaId, itens, novoStatus, statusOrigem) {
+  agendaId = String(agendaId || '').trim();
+  novoStatus = String(novoStatus || '').trim();
+  if (!agendaId || !novoStatus || !Array.isArray(itens) || !itens.length) return 0;
+  var sheet = null;
+  try {
+    sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Reservas_Kits', 'Reservas de Kits']);
+  } catch (e) { return 0; }
+  if (!sheet) return 0;
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KIT_RESERVA_HEADERS_.length).getValues();
+  var atualizados = 0;
+  var usados = {};
+  var origens = Array.isArray(statusOrigem) ? statusOrigem.map(function(v) { return normText_(v); }) : [normText_(statusOrigem || 'Reservado')];
+  (itens || []).forEach(function(item) {
+    var idItem = String(item && item.idItem || '').trim();
+    var idLote = String(item && item.idLote || '').trim();
+    var quantidade = Math.max(1, Number(item && item.qtde || 1) || 1);
+    if (!idItem) return;
+    for (var i = 0; i < rows.length && quantidade > 0; i++) {
+      if (usados[i]) continue;
+      var row = rows[i];
+      if (String(row[2] || '').trim() !== agendaId) continue;
+      if (String(row[5] || '').trim() !== idItem) continue;
+      if (idLote && String(row[6] || '').trim() !== idLote) continue;
+      if (origens.indexOf(normText_(row[11] || 'Reservado')) < 0) continue;
+      var rowQty = Math.max(0, Number(row[10] || 0) || 0);
+      if (!rowQty) continue;
+      if (rowQty <= quantidade) {
+        sheet.getRange(i + 2, 12).setValue(novoStatus);
+        usados[i] = true;
+        quantidade -= rowQty;
+        atualizados++;
+      } else {
+        sheet.getRange(i + 2, 11).setValue(rowQty - quantidade);
+        var historico = row.slice(0, KIT_RESERVA_HEADERS_.length);
+        historico[0] = gerarIdLoteEstoque_();
+        historico[1] = new Date();
+        historico[10] = quantidade;
+        historico[11] = novoStatus;
+        historico[14] = String(historico[14] || '') + ' · Atualização automática da Agenda';
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([historico]);
+        quantidade = 0;
+        atualizados++;
+      }
+    }
+  });
+  return atualizados;
 }
 
 function transferirKitEstoque(payload) {
@@ -5741,6 +6005,108 @@ function conciliarReservaKitLaboratorio(payload) {
   });
 }
 
+function getAgendaCandidatosReservaKit(payload) {
+  payload = payload || {};
+  var idReserva = String(payload.idReserva || '').trim();
+  if (!idReserva) throw new Error('Reserva não informada.');
+  var access = codexGetCurrentUserAccess();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+
+  var reserva = getKitReservasLinhas_().filter(function(item) { return item.idReserva === idReserva; })[0];
+  if (!reserva) throw new Error('Reserva não encontrada.');
+  if (String(reserva.agendaId || '').trim()) return { vinculada: true, candidatos: [] };
+
+  var shAgenda = getAgendaSheetForRead_();
+  var lastRow = shAgenda.getLastRow();
+  if (lastRow < 2) return { vinculada: false, candidatos: [] };
+  var values = shAgenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  var participanteId = normText_(reserva.participanteId);
+  var participanteNome = normText_(reserva.participante);
+  var projeto = normText_(reserva.projeto);
+  var dataReferencia = parseAgendaDateAny_(reserva.dataVisita);
+  if (dataReferencia) dataReferencia.setHours(0, 0, 0, 0);
+  var candidatos = [];
+  values.forEach(function(row, index) {
+    var id = String(row[AGENDA_CFG.idx.id] || '').trim();
+    var nome = String(row[AGENDA_CFG.idx.participante] || '').trim();
+    var idAgendaParticipante = String(row[AGENDA_CFG.idx.idParticipante] || '').trim();
+    var projetoAgenda = String(row[AGENDA_CFG.idx.projeto] || '').trim();
+    var status = String(row[AGENDA_CFG.idx.status] || '').trim();
+    var data = parseAgendaDateAny_(row[AGENDA_CFG.idx.data]);
+    if (!data || AgendaServerRules_.isCancelled(status)) return;
+    var participanteCompativel = participanteId && normText_(idAgendaParticipante)
+      ? participanteId === normText_(idAgendaParticipante)
+      : participanteNome === normText_(nome);
+    if (!participanteCompativel || (projeto && projeto !== normText_(projetoAgenda))) return;
+    data.setHours(0, 0, 0, 0);
+    candidatos.push({
+      id: id || '__ROW__' + (index + 2), agendaId: id, semId: !id, rowIndex: index + 2, data: formatarDataMesCurtoPt_(data), dataIso: formatarDataIsoAgenda_(data),
+      visita: String(row[AGENDA_CFG.idx.visita] || '').trim() || 'Visita sem nome',
+      participante: nome, idParticipante: idAgendaParticipante, projeto: projetoAgenda, status: status,
+      distancia: dataReferencia ? Math.abs(data.getTime() - dataReferencia.getTime()) : 0
+    });
+  });
+  candidatos.sort(function(a, b) { return a.distancia - b.distancia || a.dataIso.localeCompare(b.dataIso) || a.rowIndex - b.rowIndex; });
+  return { vinculada: false, candidatos: candidatos.slice(0, 80) };
+}
+
+function vincularReservaKitAgenda(payload) {
+  codexAssertCanWrite_('vincularReservaKitAgenda', 'Estoque', payload && payload.idReserva);
+  return codexWithDocumentLock_('vincularReservaKitAgenda', function() {
+    payload = payload || {};
+    var idReserva = String(payload.idReserva || '').trim();
+    var agendaId = String(payload.agendaId || '').trim();
+    var rowIndex = Number(payload.rowIndex || 0);
+    if (!idReserva || (!agendaId && rowIndex < 2)) throw new Error('Informe a reserva e a visita da Agenda.');
+    var shReservas = getKitReservasSheet_();
+    var rowsReservas = shReservas.getRange(2, 1, Math.max(0, shReservas.getLastRow() - 1), KIT_RESERVA_HEADERS_.length).getValues();
+    var linhaReserva = -1;
+    var reserva = null;
+    rowsReservas.forEach(function(row, index) {
+      if (String(row[0] || '').trim() === idReserva) {
+        linhaReserva = index + 2;
+        reserva = {
+          participante: String(row[4] || '').trim(), idItem: String(row[5] || '').trim(), idLote: String(row[6] || '').trim(),
+          validade: row[8], localizacao: String(row[9] || '').trim(), qtde: Number(row[10] || 0) || 0,
+          projeto: String(row[3] || '').trim(), agendaId: String(row[2] || '').trim(), dataVisita: row[12], participanteId: String(row[15] || '').trim()
+        };
+      }
+    });
+    if (linhaReserva < 2 || !reserva) throw new Error('Reserva não encontrada.');
+    if (reserva.agendaId && reserva.agendaId !== agendaId) throw new Error('Esta reserva já está vinculada a outra visita.');
+
+    var shAgenda = getAgendaSheetForRead_();
+    var linhaAgenda = agendaLocalizarLinhaPorId_(shAgenda, agendaId, rowIndex);
+    if (!linhaAgenda) throw new Error('Visita da Agenda não encontrada.');
+    var agendaRow = shAgenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    if (!agendaId) {
+      agendaId = 'AG-' + gerarIdLoteEstoque_();
+      shAgenda.getRange(linhaAgenda, AGENDA_CFG.col.id).setValue(agendaId);
+      agendaRow[AGENDA_CFG.idx.id] = agendaId;
+    }
+    var agendaParticipanteId = String(agendaRow[AGENDA_CFG.idx.idParticipante] || '').trim();
+    var agendaParticipante = String(agendaRow[AGENDA_CFG.idx.participante] || '').trim();
+    var agendaProjeto = String(agendaRow[AGENDA_CFG.idx.projeto] || '').trim();
+    if ((reserva.participanteId && agendaParticipanteId && normText_(reserva.participanteId) !== normText_(agendaParticipanteId)) ||
+        (!agendaParticipanteId && normText_(reserva.participante) !== normText_(agendaParticipante)) ||
+        (reserva.projeto && normText_(reserva.projeto) !== normText_(agendaProjeto))) {
+      throw new Error('A visita selecionada não corresponde ao participante ou projeto da reserva.');
+    }
+    var dataAgenda = parseAgendaDateAny_(agendaRow[AGENDA_CFG.idx.data]);
+    if (!dataAgenda || isNaN(dataAgenda.getTime())) throw new Error('A visita selecionada não possui uma data válida.');
+    dataAgenda.setHours(0, 0, 0, 0);
+    var validade = parseDateBrOrBlank_(reserva.validade);
+    var validadeMinima = new Date(dataAgenda.getTime());
+    validadeMinima.setDate(validadeMinima.getDate() + 10);
+    if (!validade || validade < validadeMinima) throw new Error('A validade do lote não cobre a data real da visita com a margem de 10 dias.');
+    shReservas.getRange(linhaReserva, 3).setValue(agendaId);
+    shReservas.getRange(linhaReserva, 13).setValue(dataAgenda);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, agendaId: agendaId, dataVisita: formatarDataMesCurtoPt_(dataAgenda), msg: 'Reserva vinculada à visita da Agenda.' };
+  });
+}
+
 function baixarKitsAgendaEvento(payload) {
   codexAssertCanWrite_('baixarKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
   return codexWithDocumentLock_('baixarKitsAgendaEvento', function() {
@@ -5769,6 +6135,8 @@ function baixarKitsAgendaEvento(payload) {
         registrarMovimentacaoEstoque({
           idItem: id,
           qtde: 1,
+          idLote: String(kit.idLote || '').trim(),
+          lote: String(kit.idLote || '').trim(),
           tipoMovimento: 'Saida - Visita',
           projeto: payload.projeto || '',
           participante: payload.participante || '',
@@ -5781,6 +6149,7 @@ function baixarKitsAgendaEvento(payload) {
         });
         jaBaixados[id] = true;
         baixados++;
+        atualizarStatusReservasAgendaItens_(agendaId, [{ idItem: id, idLote: String(kit.idLote || '').trim(), qtde: 1 }], 'Baixado', 'Reservado');
         return;
       } catch(e) {
         if (i === ids.length - 1) throw e;
@@ -5840,6 +6209,8 @@ function devolverKitsAgendaEvento(payload) {
     registrarMovimentacaoEstoque({
       idItem: id,
       qtde: 1,
+      idLote: '',
+      lote: '',
       tipoMovimento: 'Entrada - Devolucao de kit da Agenda',
       projeto: payload.projeto || '',
       participante: payload.participante || '',
@@ -5850,6 +6221,7 @@ function devolverKitsAgendaEvento(payload) {
       agendaKitAcao: 'devolucao',
       observacao: 'Devolucao de kit baixado pela Agenda'
     });
+    atualizarStatusReservasAgendaItens_(agendaId, [{ idItem: id, qtde: 1 }], 'Devolvido', 'Baixado');
     devolvidos++;
   });
   return { ok: true, devolvidos: devolvidos, msg: devolvidos + ' kit(s) devolvido(s) ao estoque.' };
@@ -6443,10 +6815,14 @@ function getKitReservasPainel_() {
 function getKitsAgendaReservaStatus(agendaId) {
   agendaId = String(agendaId || '').trim();
   if (!agendaId) return { reservado: false, reservas: [] };
-  var reservas = getKitReservasLinhas_().filter(function(r) {
-    return r.agendaId === agendaId && normText_(r.status || 'Reservado') === 'reservado';
+  var todas = getKitReservasLinhas_().filter(function(r) { return r.agendaId === agendaId; });
+  var reservas = todas.filter(function(r) {
+    return normText_(r.status || 'Reservado') === 'reservado';
   });
-  return { reservado: reservas.length > 0, reservas: reservas };
+  var historico = todas.filter(function(r) {
+    return ['baixado', 'consumido'].indexOf(normText_(r.status || '')) >= 0;
+  });
+  return { reservado: reservas.length > 0, encerrado: historico.length > 0, reservas: reservas };
 }
 
 function reservarKitsAgendaEvento(payload) {
@@ -6464,6 +6840,20 @@ function reservarKitsAgendaEvento(payload) {
     validadeMinima.setDate(validadeMinima.getDate() + 10);
     var statusAtual = getKitsAgendaReservaStatus(agendaId);
     if (statusAtual.reservado) throw new Error('Esta visita ja possui kits reservados.');
+    var participanteId = String(payload.participanteId || '').trim();
+    if (!participanteId) {
+      try {
+        var agendaSheet = getAgendaSheetForRead_();
+        var agendaRows = agendaSheet && agendaSheet.getLastRow() > 1
+          ? agendaSheet.getRange(2, 1, agendaSheet.getLastRow() - 1, AGENDA_CFG.lastCol).getValues()
+          : [];
+        for (var agendaIndex = 0; agendaIndex < agendaRows.length; agendaIndex++) {
+          if (String(agendaRows[agendaIndex][AGENDA_CFG.idx.id] || '').trim() !== agendaId) continue;
+          participanteId = String(agendaRows[agendaIndex][AGENDA_CFG.idx.idParticipante] || '').trim();
+          break;
+        }
+      } catch (e) {}
+    }
     var estoque = getEstoque() || [];
     var reservasResumo = getKitReservasResumo_();
     var sheet = getKitReservasSheet_();
@@ -6488,7 +6878,7 @@ function reservarKitsAgendaEvento(payload) {
         gerarIdLoteEstoque_(), new Date(), agendaId, payload.projeto || lote.projeto || '', payload.participante || '',
         lote.idItem, lote.idLote, lote.descricao, parseDateBrOrBlank_(lote.validade) || lote.validade,
         lote.localizacao, qtd, 'Reservado', visita, responsavel, payload.observacoes || '',
-        payload.participanteId || '', payload.visita || ''
+        participanteId, payload.visita || ''
       ]);
     });
     if (linhas.length) sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
