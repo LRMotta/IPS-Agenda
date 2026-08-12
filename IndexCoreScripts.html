@@ -4218,6 +4218,57 @@ function renderTabelaProj(lista) {
 var _soaProjetoAtual = null;
 var _soaVisitasAtual = [];
 
+function soaReferenciaLabel_(referencia) {
+  var value = String(referencia || '').trim();
+  if (!value) return '';
+  var labels = {
+    VISITA_ANTERIOR: 'visita anterior',
+    RANDOMIZACAO: 'randomização',
+    INCLUSAO: 'inclusão'
+  };
+  if (labels[value]) return labels[value];
+  var visita = (_soaVisitasAtual || []).filter(function(item) { return String(item.idSoA || '') === value; })[0];
+  if (visita) return (visita.codigo ? visita.codigo + ' · ' : '') + visita.nome;
+  return value;
+}
+
+function soaResumoProgramacao_(item) {
+  var parts = [];
+  if (item.intervaloDias !== '' && item.referencia) {
+    parts.push('D+' + item.intervaloDias + ' após ' + soaReferenciaLabel_(item.referencia));
+  } else if (item.intervaloDias !== '') {
+    parts.push('Intervalo ' + item.intervaloDias + ' dias');
+  }
+  if (item.janelaDiasMenos !== '' || item.janelaDiasMais !== '') {
+    parts.push('janela −' + (item.janelaDiasMenos === '' ? '—' : item.janelaDiasMenos) + '/+' + (item.janelaDiasMais === '' ? '—' : item.janelaDiasMais) + ' dias');
+  }
+  return parts.join(' · ');
+}
+
+function soaPopulateReferenciaOptions_(selected) {
+  var select = document.getElementById('soaReferencia');
+  if (!select) return;
+  var options = [
+    { value: '', label: 'Sem referência (legado)' },
+    { value: 'VISITA_ANTERIOR', label: 'Visita anterior' },
+    { value: 'RANDOMIZACAO', label: 'Randomização' },
+    { value: 'INCLUSAO', label: 'Inclusão' }
+  ];
+  (_soaVisitasAtual || []).forEach(function(item) {
+    if (!item || !item.idSoA || String(item.idSoA) === String(document.getElementById('soaEditId').value || '')) return;
+    options.push({ value: item.idSoA, label: (item.codigo ? item.codigo + ' · ' : '') + item.nome });
+  });
+  if (selected && !options.some(function(option) { return option.value === selected; })) options.push({ value: selected, label: 'Referência salva' });
+  select.innerHTML = '';
+  options.forEach(function(option) {
+    var element = document.createElement('option');
+    element.value = option.value;
+    element.textContent = option.label;
+    select.appendChild(element);
+  });
+  select.value = selected || '';
+}
+
 function renderSoAVisitas(lista) {
   _soaVisitasAtual = lista || [];
   var list = document.getElementById('pSoAList');
@@ -4225,7 +4276,9 @@ function renderSoAVisitas(lista) {
   if (!_soaVisitasAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhuma visita SoA configurada.</div>'; return; }
   list.innerHTML = _soaVisitasAtual.map(function(item) {
     var aliases = (item.aliases || []).join(' · ');
-    var repeticao = item.repeticao || (item.intervaloDias !== '' ? 'a cada ' + item.intervaloDias + ' dias' : 'Única');
+    var programacao = soaResumoProgramacao_(item);
+    var repeticao = item.repeticao || programacao || 'Única';
+    if (item.repeticao && programacao) repeticao += ' · ' + programacao;
     return '<div class="soa-visita-row"><div class="soa-visita-order">' + esc(item.ordem === '' ? '—' : item.ordem) + '</div>'
       + '<div class="soa-visita-main"><div class="soa-visita-name">' + esc(item.nome) + (item.ativo === false ? ' <span class="soa-visita-inactive">inativa</span>' : '') + '</div>'
       + '<div class="soa-visita-meta">' + (item.codigo ? '<span class="soa-visita-code">' + esc(item.codigo) + '</span>' : '') + esc(repeticao) + (aliases ? ' · ' + esc(aliases) : '') + '</div></div>'
@@ -4257,18 +4310,21 @@ function carregarSoAVisitasProjeto(projeto) {
 function abrirSoAVisitaForm(visita) {
   if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de cadastrar o calendário SoA.'); return; }
   visita = visita || null;
-  ['soaEditId', 'soaCodigo', 'soaNome', 'soaOrdem', 'soaRepeticao', 'soaIntervalo', 'soaAliases', 'soaObservacoes'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
+  ['soaEditId', 'soaCodigo', 'soaNome', 'soaOrdem', 'soaRepeticao', 'soaIntervalo', 'soaJanelaMenos', 'soaJanelaMais', 'soaAliases', 'soaObservacoes'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
   document.getElementById('soaAtivo').checked = true;
   document.getElementById('soaProjeto').value = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo || '';
+  if (visita) document.getElementById('soaEditId').value = visita.idSoA || '';
+  soaPopulateReferenciaOptions_(visita ? (visita.referencia || '') : '');
   document.getElementById('modalSoATitle').textContent = visita ? 'EDITAR VISITA SoA' : 'ADICIONAR VISITA SoA';
   document.getElementById('modalSoASubtitle').textContent = 'Calendário de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
   if (visita) {
-    document.getElementById('soaEditId').value = visita.idSoA || '';
     document.getElementById('soaCodigo').value = visita.codigo || '';
     document.getElementById('soaNome').value = visita.nome || '';
     document.getElementById('soaOrdem').value = visita.ordem === '' ? '' : (visita.ordem || '');
     document.getElementById('soaRepeticao').value = visita.repeticao || '';
-    document.getElementById('soaIntervalo').value = visita.intervaloDias === '' ? '' : (visita.intervaloDias || '');
+    document.getElementById('soaIntervalo').value = visita.intervaloDias === '' ? '' : visita.intervaloDias;
+    document.getElementById('soaJanelaMenos').value = visita.janelaDiasMenos === '' ? '' : visita.janelaDiasMenos;
+    document.getElementById('soaJanelaMais').value = visita.janelaDiasMais === '' ? '' : visita.janelaDiasMais;
     document.getElementById('soaAliases').value = (visita.aliases || []).join('; ');
     document.getElementById('soaObservacoes').value = visita.observacoes || '';
     document.getElementById('soaAtivo').checked = visita.ativo !== false;
@@ -4282,7 +4338,7 @@ function salvarSoAVisitaApp() {
   var nome = document.getElementById('soaNome').value.trim();
   if (!appRequiredFeedback([{ input: 'soaNome', error: 'errSoANome', label: 'Nome padrão da visita', value: nome }], { status: 'statusSoA' })) return;
   var btn = document.getElementById('btnSalvarSoA');
-  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim() };
+  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, referencia: document.getElementById('soaReferencia').value, janelaDiasMenos: document.getElementById('soaJanelaMenos').value, janelaDiasMais: document.getElementById('soaJanelaMais').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim() };
   appSetButtonBusy(btn, true); appSetStatus('statusSoA', '⏳ Processando...');
   appServerRun({ method: 'salvarSoAVisita', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', ''); fecharOverlay('modalSoAVisita'); snack('✅ ' + ((res && res.msg) || 'Visita SoA salva.')); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', '⚠ ' + appErrorMessage(e), '#e53935'); } });
 }

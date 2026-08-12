@@ -3232,8 +3232,43 @@ function getProjetos() {
 // ════════════════════════════════
 var SOA_VISITAS_HEADERS_ = [
   'ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita',
-  'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações'
+  'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações',
+  'Referência (após)', 'Janela dias menos', 'Janela dias mais'
 ];
+
+function soaHeaderIndex_(headerMap, names, fallback) {
+  for (var i = 0; i < names.length; i++) {
+    var index = headerMap[normalizeHeader_(names[i])];
+    if (index !== undefined) return index;
+  }
+  return fallback;
+}
+
+function soaHeaderMap_(headers) {
+  var map = {};
+  (headers || []).forEach(function(header, index) {
+    map[normalizeHeader_(header)] = index;
+  });
+  return map;
+}
+
+function soaEnsureHeaders_(sheet) {
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0] || [];
+  if (!headers.length || !headers.some(function(header) { return String(header || '').trim(); })) {
+    sheet.getRange(1, 1, 1, SOA_VISITAS_HEADERS_.length).setValues([SOA_VISITAS_HEADERS_]);
+    return SOA_VISITAS_HEADERS_.slice();
+  }
+  var map = soaHeaderMap_(headers);
+  var missing = SOA_VISITAS_HEADERS_.filter(function(header) {
+    return map[normalizeHeader_(header)] === undefined;
+  });
+  if (missing.length) {
+    sheet.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
+    headers = headers.concat(missing);
+  }
+  return headers;
+}
 
 function getSoAVisitasSheet_(createIfMissing) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3252,26 +3287,25 @@ function getSoAVisitasProjeto(projeto) {
   var sheet = getSoAVisitasSheet_(false);
   if (!sheet || sheet.getLastRow() < 2) return [];
   var rows = sheet.getDataRange().getValues();
-  var headers = rows[0] || [];
-  var map = {};
-  headers.forEach(function(header, index) { map[normalizeHeader_(header)] = index; });
-  function col(names, fallback) {
-    for (var i = 0; i < names.length; i++) {
-      var index = map[normalizeHeader_(names[i])];
-      if (index !== undefined) return index;
-    }
-    return fallback;
-  }
+  var map = soaHeaderMap_(rows[0] || []);
   var c = {
-    id: col(['ID_SoA'], 0), projeto: col(['Projeto'], 1), codigo: col(['Código da visita', 'Codigo da visita'], 2),
-    nome: col(['Nome padrão da visita', 'Nome padrao da visita'], 3), ordem: col(['Ordem'], 4),
-    repeticao: col(['Repetição', 'Repeticao'], 5), intervalo: col(['Intervalo (dias)', 'Intervalo dias'], 6),
-    aliases: col(['Aliases', 'Apelidos'], 7), ativo: col(['Ativo', 'Status'], 8), observacoes: col(['Observações', 'Observacoes'], 9)
+    id: soaHeaderIndex_(map, ['ID_SoA'], 0), projeto: soaHeaderIndex_(map, ['Projeto'], 1),
+    codigo: soaHeaderIndex_(map, ['Código da visita', 'Codigo da visita'], 2),
+    nome: soaHeaderIndex_(map, ['Nome padrão da visita', 'Nome padrao da visita'], 3),
+    ordem: soaHeaderIndex_(map, ['Ordem'], 4), repeticao: soaHeaderIndex_(map, ['Repetição', 'Repeticao'], 5),
+    intervalo: soaHeaderIndex_(map, ['Intervalo (dias)', 'Intervalo dias'], 6),
+    aliases: soaHeaderIndex_(map, ['Aliases', 'Apelidos'], 7), ativo: soaHeaderIndex_(map, ['Ativo', 'Status'], 8),
+    observacoes: soaHeaderIndex_(map, ['Observações', 'Observacoes'], 9),
+    referencia: soaHeaderIndex_(map, ['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], 10),
+    janelaMenos: soaHeaderIndex_(map, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], 11),
+    janelaMais: soaHeaderIndex_(map, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], 12)
   };
   return rows.slice(1).map(function(row) {
     var aliases = String(row[c.aliases] || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean);
     var ordemRaw = row[c.ordem];
     var intervaloRaw = row[c.intervalo];
+    var janelaMenosRaw = row[c.janelaMenos];
+    var janelaMaisRaw = row[c.janelaMais];
     return {
       idSoA: String(row[c.id] || '').trim(),
       projeto: String(row[c.projeto] || '').trim(),
@@ -3282,7 +3316,10 @@ function getSoAVisitasProjeto(projeto) {
       intervaloDias: intervaloRaw === '' || intervaloRaw === null || intervaloRaw === undefined ? '' : Number(intervaloRaw),
       aliases: aliases,
       ativo: String(row[c.ativo] || 'Sim').trim() !== 'Não' && String(row[c.ativo] || 'Sim').trim().toLowerCase() !== 'nao',
-      observacoes: String(row[c.observacoes] || '').trim()
+      observacoes: String(row[c.observacoes] || '').trim(),
+      referencia: String(row[c.referencia] || '').trim(),
+      janelaDiasMenos: janelaMenosRaw === '' || janelaMenosRaw === null || janelaMenosRaw === undefined ? '' : Number(janelaMenosRaw),
+      janelaDiasMais: janelaMaisRaw === '' || janelaMaisRaw === null || janelaMaisRaw === undefined ? '' : Number(janelaMaisRaw)
     };
   }).filter(function(item) {
     return item.nome && normText_(item.projeto) === projetoNorm;
@@ -3304,15 +3341,40 @@ function salvarSoAVisita(payload) {
   if (ordem !== '' && (!isFinite(ordem) || ordem < 0 || Math.floor(ordem) !== ordem)) throw new Error('A ordem deve ser um número inteiro maior ou igual a zero.');
   var intervalo = payload.intervaloDias === '' || payload.intervaloDias === null || payload.intervaloDias === undefined ? '' : Number(payload.intervaloDias);
   if (intervalo !== '' && (!isFinite(intervalo) || intervalo < 0 || Math.floor(intervalo) !== intervalo)) throw new Error('O intervalo deve ser um número inteiro de dias.');
+  var referencia = String(payload.referencia || '').trim();
+  var janelaMenos = payload.janelaDiasMenos === '' || payload.janelaDiasMenos === null || payload.janelaDiasMenos === undefined ? '' : Number(payload.janelaDiasMenos);
+  if (janelaMenos !== '' && (!isFinite(janelaMenos) || janelaMenos < 0 || Math.floor(janelaMenos) !== janelaMenos)) throw new Error('A janela de dias menos deve ser um número inteiro maior ou igual a zero.');
+  var janelaMais = payload.janelaDiasMais === '' || payload.janelaDiasMais === null || payload.janelaDiasMais === undefined ? '' : Number(payload.janelaDiasMais);
+  if (janelaMais !== '' && (!isFinite(janelaMais) || janelaMais < 0 || Math.floor(janelaMais) !== janelaMais)) throw new Error('A janela de dias mais deve ser um número inteiro maior ou igual a zero.');
   return codexWithDocumentLock_('salvarSoAVisita', function() {
     var sheet = getSoAVisitasSheet_(true);
+    var headers = soaEnsureHeaders_(sheet);
+    var map = soaHeaderMap_(headers);
     var rows = sheet.getDataRange().getValues();
     var id = String(payload.idSoA || '').trim() || ('SOA-' + gerarIdLoteEstoque_());
     var aliases = Array.isArray(payload.aliases) ? payload.aliases.join('; ') : String(payload.aliases || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean).join('; ');
-    var rowValues = [[id, projeto, String(payload.codigo || '').trim(), nome, ordem, String(payload.repeticao || '').trim(), intervalo, aliases, payload.ativo === false ? 'Não' : 'Sim', String(payload.observacoes || '').trim()]];
+    var row = Array(headers.length).fill('');
+    function put(names, value, fallback) {
+      var index = soaHeaderIndex_(map, names, fallback);
+      if (index !== undefined && index >= 0) row[index] = value;
+    }
+    put(['ID_SoA'], id, 0);
+    put(['Projeto'], projeto, 1);
+    put(['Código da visita', 'Codigo da visita'], String(payload.codigo || '').trim(), 2);
+    put(['Nome padrão da visita', 'Nome padrao da visita'], nome, 3);
+    put(['Ordem'], ordem, 4);
+    put(['Repetição', 'Repeticao'], String(payload.repeticao || '').trim(), 5);
+    put(['Intervalo (dias)', 'Intervalo dias'], intervalo, 6);
+    put(['Aliases', 'Apelidos'], aliases, 7);
+    put(['Ativo', 'Status'], payload.ativo === false ? 'Não' : 'Sim', 8);
+    put(['Observações', 'Observacoes'], String(payload.observacoes || '').trim(), 9);
+    put(['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], referencia, 10);
+    put(['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], janelaMenos, 11);
+    put(['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], janelaMais, 12);
+    var rowValues = [row];
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim() === id) {
-        sheet.getRange(i + 1, 1, 1, SOA_VISITAS_HEADERS_.length).setValues(rowValues);
+        sheet.getRange(i + 1, 1, 1, headers.length).setValues(rowValues);
         return { idSoA: id, msg: 'Visita SoA atualizada.' };
       }
     }

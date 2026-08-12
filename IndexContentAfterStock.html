@@ -195,7 +195,7 @@
           <span class="material-symbols-outlined">event_note</span> Calendário SoA
         </div>
         <div class="soa-project-toolbar">
-          <div class="soa-project-help">Configure os nomes padrão, a ordem e os aliases das visitas deste protocolo. O preenchimento é opcional e não impede visitas históricas na Agenda.</div>
+          <div class="soa-project-help">Configure nomes, ordem e, quando disponível no protocolo, a referência, o intervalo previsto e a janela de cada visita. O preenchimento é opcional e não impede visitas históricas na Agenda.</div>
           <button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()">
             <span class="material-symbols-outlined">add</span> Adicionar visita
           </button>
@@ -260,9 +260,14 @@
         </div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaNome">Nome padrão da visita <span class="required-star">*</span></label><input type="text" id="soaNome" class="f-input large" placeholder="Ex: T-2 Subsequentes"><div class="field-error" id="errSoANome">Informe o nome padrão da visita.</div></div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
-          <div><label class="field-label" for="soaRepeticao">Repetição</label><input type="text" id="soaRepeticao" class="f-input" placeholder="Ex: mensal, a cada 6 meses"></div>
-          <div><label class="field-label" for="soaIntervalo">Intervalo (dias)</label><input type="number" id="soaIntervalo" class="f-input" min="0" step="1" placeholder="Opcional"></div>
+          <div><label class="field-label" for="soaReferencia">Referência (após)</label><select id="soaReferencia" class="f-input"><option value="">Sem referência (legado)</option></select><div class="field-help">Escolha a visita/evento que inicia a contagem.</div></div>
+          <div><label class="field-label" for="soaIntervalo">Dias após a referência</label><input type="number" id="soaIntervalo" class="f-input" min="0" step="1" placeholder="Ex: 28"><div class="field-help">Intervalo previsto até esta visita.</div></div>
         </div>
+        <div class="field-row cols-2" style="margin-bottom:14px;">
+          <div><label class="field-label" for="soaJanelaMenos">Janela dias menos</label><input type="number" id="soaJanelaMenos" class="f-input" min="0" step="1" placeholder="Ex: 3"><div class="field-help">Quantos dias antes da data prevista.</div></div>
+          <div><label class="field-label" for="soaJanelaMais">Janela dias mais</label><input type="number" id="soaJanelaMais" class="f-input" min="0" step="1" placeholder="Ex: 5"><div class="field-help">Quantos dias depois da data prevista.</div></div>
+        </div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaRepeticao">Repetição / ciclo</label><input type="text" id="soaRepeticao" class="f-input" placeholder="Ex: mensal, a cada 6 meses"><div class="field-help">Opcional; descreve ciclos repetidos sem substituir a referência e a janela.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaAliases">Aliases / nomes históricos</label><input type="text" id="soaAliases" class="f-input" placeholder="Separe por ponto e vírgula: FU 3; Follow-up 3"><div class="field-help">Usados como referência para conciliar nomes antigos da Agenda.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaObservacoes">Observações</label><textarea id="soaObservacoes" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Janela, requisitos ou notas da visita"></textarea></div>
         <label class="soa-active-toggle"><input type="checkbox" id="soaAtivo" checked> Visita ativa no protocolo</label>
