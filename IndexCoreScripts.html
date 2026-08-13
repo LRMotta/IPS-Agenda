@@ -4517,6 +4517,8 @@ function renderBracosParticipante(lista, valorAtual) {
   var wrap = document.getElementById('ptBracoCatalogoWrap');
   var select = document.getElementById('ptBracoOpcao');
   if (!wrap || !select) return;
+  var fields = wrap.parentElement;
+  if (fields) fields.classList.toggle('has-catalog', !!_bracosParticipanteAtual.length);
   if (!_bracosParticipanteAtual.length) { wrap.style.display = 'none'; select.disabled = false; select.innerHTML = '<option value="">— Nenhum braço padronizado cadastrado —</option>'; return; }
   wrap.style.display = '';
   select.disabled = false;

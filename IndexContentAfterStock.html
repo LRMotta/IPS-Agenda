@@ -6,7 +6,7 @@
 
 <!-- ══ MODAL PROJETO ══ -->
 <div class="modal-overlay" id="modalProjeto" onclick="fecharModalSeClicouFora(event,'modalProjeto')">
-  <div class="modal-box" style="max-width:720px;">
+  <div class="modal-box" style="max-width:900px;">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">folder_open</span></div>
       <div>
@@ -30,6 +30,10 @@
           <input type="text" id="pNome" class="f-input large" placeholder="Ex: TRIAL-ONCO-2024"
                  oninput="limparErro('pNome','errPNome')">
           <div class="field-error" id="errPNome">Campo obrigatório.</div>
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="pTituloCompleto">Título completo do projeto</label>
+          <textarea id="pTituloCompleto" class="f-input" placeholder="Título/referência completa do estudo"></textarea>
         </div>
         <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1.4fr; gap:12px; margin-bottom:14px;">
           <div>
@@ -184,10 +188,6 @@
             <input type="text" id="pExpedienteCE" class="f-input" placeholder="Ex: 25351...">
           </div>
         </div>
-        <div class="field">
-          <label class="field-label" for="pTituloCompleto">Título completo</label>
-          <textarea id="pTituloCompleto" class="f-input" placeholder="Título/referência completa do estudo"></textarea>
-        </div>
       </div>
 
       <div class="form-section soa-project-section">
@@ -299,7 +299,7 @@
 
 <!-- ══ MODAL PARTICIPANTE ══ -->
 <div class="modal-overlay" id="modalParticipante" onclick="fecharModalSeClicouFora(event,'modalParticipante')">
-  <div class="modal-box" style="max-width:640px;">
+  <div class="modal-box" style="max-width:900px;">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">person</span></div>
       <div>
@@ -350,7 +350,7 @@
             <div class="field-error" id="errPtId">Campo obrigatório.</div>
           </div>
         </div>
-        <div class="field-row cols-3">
+        <div class="field-row participant-protocol-fields">
           <div>
             <label class="field-label" for="ptProjeto">Protocolo</label>
             <div class="ac-wrap">

@@ -139,6 +139,7 @@ test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () 
 test('modal de participante organiza identificacao e protocolo sem remover a regra do ID', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
   const block = sourceBetween(modal, '<!-- ══ MODAL PARTICIPANTE', '<!-- ══ MODAL MÉDICO');
 
   const nome = block.indexOf('id="ptNome"');
@@ -154,8 +155,32 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   assert.match(block, /class="field" style="margin-bottom:14px;">\s*<div>\s*<label[^>]+for="ptNome"/);
   assert.match(block, /for="ptProjeto">Protocolo<\/label>/);
   assert.match(block, /id="ptIdRequiredStar"/);
+  assert.match(block, /class="modal-box" style="max-width:900px;"/);
+  assert.match(block, /class="field-row participant-protocol-fields"/);
   assert.match(client, /var required = !participanteIdOpcionalPorStatus\(status \? status\.value : ''\)/);
   assert.match(client, /\{ input: 'ptId', error: 'errPtId',[\s\S]*value: idObrigatorio \? idPart : 'ok' \}/);
+  assert.match(client, /fields\.classList\.toggle\('has-catalog', !!_bracosParticipanteAtual\.length\)/);
+  assert.ok(styles.includes('.participant-protocol-fields{grid-template-columns:repeat(2,minmax(0,1fr));}'));
+  assert.ok(styles.includes('.participant-protocol-fields.has-catalog{grid-template-columns:repeat(3,minmax(0,1fr));}'));
+  assert.ok(styles.includes('.participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}'));
+});
+
+test('modal de projeto amplia a area e posiciona o titulo na identificacao do protocolo', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const start = modal.indexOf('<div class="modal-overlay" id="modalProjeto"');
+  const end = modal.indexOf('<div class="modal-overlay" id="modalBracoProjeto"', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const block = modal.slice(start, end);
+  const identificacao = block.indexOf('id="pNome"');
+  const titulo = block.indexOf('id="pTituloCompleto"');
+  const codigo = block.indexOf('id="pCodigo"');
+  const regulatorio = block.indexOf('Dados Regulat');
+
+  assert.match(block, /class="modal-box" style="max-width:900px;"/);
+  assert.ok(identificacao < titulo && titulo < codigo);
+  assert.ok(regulatorio > titulo);
+  assert.equal(block.match(/id="pTituloCompleto"/g).length, 1);
 });
 
 test('catálogo opcional de braços fica no projeto e sugere opções no participante', () => {
