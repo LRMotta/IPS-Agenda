@@ -2277,6 +2277,7 @@
     if (_agendaEditId) {
       var eventoEditado = agendaEventoAtualEditado_();
       payload.id = _agendaEditId;
+      payload._rowIndex = Number(eventoEditado && eventoEditado.rowIndex || 0) || 0;
       payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
       payload._editRecordVersion = _agendaEditEditableVersion || (eventoEditado && eventoEditado.editRecordVersion) || '';
     }
