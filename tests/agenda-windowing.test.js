@@ -1164,23 +1164,64 @@ test('instrumentacao registra somente metadados e relanca a falha original', () 
   assert.equal(logs.some((message) => message.includes('segredo') || message.includes('conteudo sensivel')), false);
 });
 
-test('edicao usa o registro por ID, carrega contexto operacional e revalida em segundo plano', () => {
+test('edicao busca o registro atual por ID antes de abrir e carrega o contexto operacional', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const open = functionBody(client, 'abrirAgendaEdicao');
   const readyOpen = functionBody(client, 'agendaAbrirEdicaoPronta_');
+  const contextualOpen = functionBody(client, 'agendaAbrirEdicaoComContexto_');
   assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
   assert.match(open, /agendaComFormularioPronto_/);
-  assert.match(readyOpen, /agendaFindEventoLocal_\(id, rowIndex\)/);
   assert.match(readyOpen, /agendaFetchEventoPorId_\(id, rowIndex/);
   assert.match(client, /function agendaAbrirEdicaoResolvida_\(r, id\)/);
   assert.match(client, /agendaLoadPeriodoOperacional_\(r/);
-  assert.match(client, /\.getAgendaEventoPorId\(id, r\.rowIndex\)/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
-  assert.match(client, /function agendaMergeEditRecord_\(fresh, fallback\)/);
-  assert.match(client, /agendaMergeEditRecord_\(registroAtualizado, r\)/);
+  assert.match(contextualOpen, /abrirAgendaEdicaoComRegistro_\(r\)/);
+  assert.doesNotMatch(contextualOpen, /getAgendaEventoPorId|versaoAberta|Feche e reabra/);
   assert.match(client, /abrirAgendaEdicao.*Number\(r\.rowIndex \|\| 0\)/);
-  assert.match(client, /var versaoAberta/);
-  assert.match(client, /Feche e reabra a edicao antes de salvar/);
+});
+
+test('edicao nao abre a versao armazenada em cache quando existe uma linha atual no servidor', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const calls = [];
+  const cached = { id: 'EVT-1', rowIndex: 7, recordVersion: 'cache-antigo' };
+  const fresh = { id: 'EVT-1', rowIndex: 7, recordVersion: 'servidor-atual' };
+  const context = vm.createContext({
+    agendaFindEventoLocal_: () => cached,
+    agendaFetchEventoPorId_: (id, rowIndex, onSuccess) => {
+      calls.push(['fetch', id, rowIndex]);
+      onSuccess(fresh);
+    },
+    agendaAbrirEdicaoResolvida_: (row, id) => calls.push(['open', row, id]),
+    snackErro: (message) => calls.push(['error', message]),
+    appErrorMessage: (error) => String(error)
+  });
+  vm.runInContext(`function agendaAbrirEdicaoPronta_(id, rowIndex) {${functionBody(client, 'agendaAbrirEdicaoPronta_')}}`, context);
+
+  context.agendaAbrirEdicaoPronta_('EVT-1', 7);
+
+  assert.deepEqual(calls, [
+    ['fetch', 'EVT-1', 7],
+    ['open', fresh, 'EVT-1']
+  ]);
+});
+
+test('versao editavel ignora somente alteracoes auxiliares toleradas pela Agenda', () => {
+  const server = agendaServer();
+  const base = agendaRow(server, {
+    id: 'EVT-1',
+    participante: 'Participante A',
+    controle: 'Pendente',
+    reqStatus: ''
+  });
+  const auxiliar = base.slice();
+  auxiliar[server.AGENDA_CFG.idx.controle] = 'Notificado';
+  auxiliar[server.AGENDA_CFG.idx.reqStatus] = 'Enviado';
+  const negocio = base.slice();
+  negocio[server.AGENDA_CFG.idx.participante] = 'Participante B';
+
+  assert.notEqual(server.agendaRecordVersionFromRow_(base), server.agendaRecordVersionFromRow_(auxiliar));
+  assert.equal(server.agendaEditableRecordVersionFromRow_(base), server.agendaEditableRecordVersionFromRow_(auxiliar));
+  assert.notEqual(server.agendaEditableRecordVersionFromRow_(base), server.agendaEditableRecordVersionFromRow_(negocio));
 });
 
 test('materiais anteriores usam consulta especifica, IDs estaveis e no maximo cinco visitas', () => {
