@@ -183,6 +183,8 @@ test('participante oferece endereco, dados bancarios opcionais e bancos configur
   assert.match(block, /id="ptTitularConta"/);
   assert.match(block, /id="ptCpfTitular"/);
   assert.match(client, /BANCOS_PART = cfg\.bancos \|\| \[\]/);
+  assert.match(client, /Participantes: \['Status', 'Bancos'\]/);
+  assert.match(client, /valores = valores\.concat\(grupo \? \(catalogoBloco\[grupo\] \|\| \[\]\) : Object\.keys\(catalogoBloco\)\)/);
   assert.match(client, /banco: document\.getElementById\('ptBanco'\)\.value/);
   assert.match(server, /bancos: getConfigValues_\('Participantes', 'Bancos', \[\]\)/);
   assert.match(server, /function participanteColumnMap_\(sh, createMissing\)/);
