@@ -223,7 +223,7 @@
     return [
       'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
       'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
-      'agC1Temp','agC2Temp','agC3Temp',
+      'agC1Temp','agC2Temp','agC3Temp','agBackupTemp',
       'agC1Status','agC2Status','agC3Status','agBackupStatus',
       'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
       'agMonitor1','agMonitor2'
@@ -387,7 +387,7 @@
     ['agC1Nome','agC2Nome','agC3Nome','agBackupNome'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.couriers || [], '');
     });
-    ['agC1Temp','agC2Temp','agC3Temp'].forEach(function(id) {
+    ['agC1Temp','agC2Temp','agC3Temp','agBackupTemp'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.temperaturas || [], '');
     });
     ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
@@ -468,6 +468,7 @@
       preencherAgendaCourierEdit('agC3', _agendaEditTransportValues.courier3);
       setAgendaSelectValue('agBackupNome', _agendaEditTransportValues.backup.nome);
       setAgendaSelectValue('agBackupDestino', _agendaEditTransportValues.backup.destino);
+      setAgendaSelectValue('agBackupTemp', _agendaEditTransportValues.backup.temperatura || _agendaEditTransportValues.backup.temp);
       setAgendaSelectValue('agBackupStatus', _agendaEditTransportValues.backup.status);
       setAgendaFieldValue('agBackupAwb', _agendaEditTransportValues.backup.awb);
       agendaMatBioLoad('agBackup', _agendaEditTransportValues.backup);
@@ -496,7 +497,7 @@
     ['agC1Nome','agC2Nome','agC3Nome','agBackupNome'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.couriers || [], '');
     });
-    ['agC1Temp','agC2Temp','agC3Temp'].forEach(function(id) {
+    ['agC1Temp','agC2Temp','agC3Temp','agBackupTemp'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.temperaturas || [], '');
     });
     ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
@@ -1620,7 +1621,7 @@
       ['agC1Nome','agC1Destino','agC1Temp','agC1Status','agC1Awb',
        'agC2Nome','agC2Destino','agC2Temp','agC2Status','agC2Awb',
        'agC3Nome','agC3Destino','agC3Temp','agC3Status','agC3Awb',
-       'agBackupNome','agBackupDestino','agBackupStatus'].forEach(function(id) {
+       'agBackupNome','agBackupDestino','agBackupTemp','agBackupStatus'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -2387,7 +2388,7 @@
       courier1: salvarDadosTecnicos ? { nome: v('agC1Nome'), destino: v('agC1Destino'), temperatura: v('agC1Temp'), status: v('agC1Status'), awb: v('agC1Awb'), material: mat1.summary, matBioJson: mat1.json } : {},
       courier2: salvarDadosTecnicos ? { nome: v('agC2Nome'), destino: v('agC2Destino'), temperatura: v('agC2Temp'), status: v('agC2Status'), awb: v('agC2Awb'), material: mat2.summary, matBioJson: mat2.json } : {},
       courier3: salvarDadosTecnicos ? { nome: v('agC3Nome'), destino: v('agC3Destino'), temperatura: v('agC3Temp'), status: v('agC3Status'), awb: v('agC3Awb'), material: mat3.summary, matBioJson: mat3.json } : {},
-      backup: salvarDadosTecnicos ? { nome: v('agBackupNome'), destino: v('agBackupDestino'), status: v('agBackupStatus'), material: matB.summary, matBioJson: matB.json } : {}
+      backup: salvarDadosTecnicos ? { nome: v('agBackupNome'), destino: v('agBackupDestino'), temperatura: v('agBackupTemp'), status: v('agBackupStatus'), material: matB.summary, matBioJson: matB.json } : {}
     };
   }
 
@@ -3205,7 +3206,7 @@
      'agC1Nome','agC1Destino','agC1Temp','agC1Status','agC1Awb','agC1Material',
      'agC2Nome','agC2Destino','agC2Temp','agC2Status','agC2Awb','agC2Material',
      'agC3Nome','agC3Destino','agC3Temp','agC3Status','agC3Awb','agC3Material',
-     'agBackupNome','agBackupDestino','agBackupStatus','agBackupMaterial','agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].concat(agendaKitIds()).forEach(function(id) {
+     'agBackupNome','agBackupDestino','agBackupTemp','agBackupStatus','agBackupMaterial','agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].concat(agendaKitIds()).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -4192,6 +4193,7 @@
     preencherAgendaCourierEdit('agC3', r.courier3);
     setAgendaSelectValue('agBackupNome', r.backup && r.backup.nome);
     setAgendaSelectValue('agBackupDestino', r.backup && r.backup.destino);
+    setAgendaSelectValue('agBackupTemp', r.backup && (r.backup.temperatura || r.backup.temp));
     setAgendaSelectValue('agBackupStatus', r.backup && r.backup.status);
     agendaMatBioLoad('agBackup', r.backup);
     applyAgendaAwbRulesAll();
