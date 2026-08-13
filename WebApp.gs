@@ -3233,7 +3233,7 @@ function getProjetos() {
 var SOA_VISITAS_HEADERS_ = [
   'ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita',
   'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações',
-  'Referência (após)', 'Janela dias menos', 'Janela dias mais'
+  'Referência (após)', 'Janela dias menos', 'Janela dias mais', 'Braços (IDs)'
 ];
 
 function soaHeaderIndex_(headerMap, names, fallback) {
@@ -3250,6 +3250,24 @@ function soaHeaderMap_(headers) {
     map[normalizeHeader_(header)] = index;
   });
   return map;
+}
+
+function soaDelimitedIds_(value) {
+  if (Array.isArray(value)) return value.map(function(item) { return String(item || '').trim(); }).filter(Boolean);
+  return String(value || '').split(/[;|,\n]/).map(function(item) { return String(item || '').trim(); }).filter(Boolean);
+}
+
+function soaUniqueIds_(values) {
+  var seen = {};
+  return soaDelimitedIds_(values).filter(function(value) {
+    if (seen[value]) return false;
+    seen[value] = true;
+    return true;
+  });
+}
+
+function soaArmSignature_(ids) {
+  return soaUniqueIds_(ids).sort().join('|');
 }
 
 function soaEnsureHeaders_(sheet) {
@@ -3298,7 +3316,8 @@ function getSoAVisitasProjeto(projeto) {
     observacoes: soaHeaderIndex_(map, ['Observações', 'Observacoes'], 9),
     referencia: soaHeaderIndex_(map, ['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], 10),
     janelaMenos: soaHeaderIndex_(map, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], 11),
-    janelaMais: soaHeaderIndex_(map, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], 12)
+    janelaMais: soaHeaderIndex_(map, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], 12),
+    bracos: soaHeaderIndex_(map, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], 13)
   };
   return rows.slice(1).map(function(row) {
     var aliases = String(row[c.aliases] || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean);
@@ -3319,7 +3338,8 @@ function getSoAVisitasProjeto(projeto) {
       observacoes: String(row[c.observacoes] || '').trim(),
       referencia: String(row[c.referencia] || '').trim(),
       janelaDiasMenos: janelaMenosRaw === '' || janelaMenosRaw === null || janelaMenosRaw === undefined ? '' : Number(janelaMenosRaw),
-      janelaDiasMais: janelaMaisRaw === '' || janelaMaisRaw === null || janelaMaisRaw === undefined ? '' : Number(janelaMaisRaw)
+      janelaDiasMais: janelaMaisRaw === '' || janelaMaisRaw === null || janelaMaisRaw === undefined ? '' : Number(janelaMaisRaw),
+      bracoIds: soaUniqueIds_(row[c.bracos])
     };
   }).filter(function(item) {
     return item.nome && normText_(item.projeto) === projetoNorm;
@@ -3346,6 +3366,7 @@ function salvarSoAVisita(payload) {
   if (janelaMenos !== '' && (!isFinite(janelaMenos) || janelaMenos < 0 || Math.floor(janelaMenos) !== janelaMenos)) throw new Error('A janela de dias menos deve ser um número inteiro maior ou igual a zero.');
   var janelaMais = payload.janelaDiasMais === '' || payload.janelaDiasMais === null || payload.janelaDiasMais === undefined ? '' : Number(payload.janelaDiasMais);
   if (janelaMais !== '' && (!isFinite(janelaMais) || janelaMais < 0 || Math.floor(janelaMais) !== janelaMais)) throw new Error('A janela de dias mais deve ser um número inteiro maior ou igual a zero.');
+  var bracoIds = soaUniqueIds_(payload.bracoIds || payload.bracos);
   return codexWithDocumentLock_('salvarSoAVisita', function() {
     var sheet = getSoAVisitasSheet_(true);
     var headers = soaEnsureHeaders_(sheet);
@@ -3371,6 +3392,7 @@ function salvarSoAVisita(payload) {
     put(['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], referencia, 10);
     put(['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], janelaMenos, 11);
     put(['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], janelaMais, 12);
+    put(['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], bracoIds.join('; '), 13);
     var rowValues = [row];
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim() === id) {
@@ -3380,6 +3402,253 @@ function salvarSoAVisita(payload) {
     }
     sheet.appendRow(rowValues[0]);
     return { idSoA: id, msg: 'Visita SoA adicionada.' };
+  });
+}
+
+function soaImportParsePayload_(payload) {
+  payload = payload || {};
+  var dados = payload.dados || payload.data || payload.json;
+  if (typeof dados === 'string') {
+    try { dados = JSON.parse(dados); } catch (e) { throw new Error('O JSON do calendário SoA é inválido.'); }
+  }
+  if (!dados || typeof dados !== 'object') throw new Error('Informe um objeto JSON de calendário SoA.');
+  var projeto = String(payload.projeto || '').trim();
+  if (!projeto) throw new Error('Informe o projeto para importar o calendário SoA.');
+  return { projeto: projeto, dados: dados, modo: String(payload.modo || 'adicionar').trim().toLowerCase(), criarBracos: payload.criarBracos !== false };
+}
+
+function soaImportVisitSignature_(visit) {
+  return JSON.stringify([
+    normText_(visit.codigo), normText_(visit.nome), visit.intervaloDias == null ? '' : visit.intervaloDias,
+    String(visit.repeticao || '').trim(), String(visit.referenciaTipo || '').trim().toUpperCase(),
+    String(visit.referenciaCodigo || '').trim(), visit.janelaDiasMenos == null ? '' : visit.janelaDiasMenos,
+    visit.janelaDiasMais == null ? '' : visit.janelaDiasMais, soaDelimitedIds_(visit.aliases).join(';'),
+    visit.ativo === false ? false : true, visit.condicional === true, String(visit.observacoes || '').trim()
+  ]);
+}
+
+function soaImportEntries_(dados) {
+  var groups = [];
+  var indexes = {};
+  function add(visit, scope, armName) {
+    if (!visit || typeof visit !== 'object') return;
+    var key = scope + '|' + normText_(visit.codigo || visit.nome) + '|' + soaImportVisitSignature_(visit);
+    var group = indexes[key];
+    if (!group) {
+      group = { visit: visit, scope: scope, armNames: [], index: groups.length };
+      indexes[key] = group;
+      groups.push(group);
+    }
+    if (armName && !group.armNames.some(function(name) { return normText_(name) === normText_(armName); })) group.armNames.push(String(armName).trim());
+  }
+  (Array.isArray(dados.visitasComuns) ? dados.visitasComuns : []).forEach(function(visit) { add(visit, 'common', ''); });
+  (Array.isArray(dados.variantesPorBraco) ? dados.variantesPorBraco : []).forEach(function(variant) {
+    var armName = variant && (variant.braco || variant.nome || variant.nomeBraco);
+    if (!armName) return;
+    (Array.isArray(variant.visitas) ? variant.visitas : []).forEach(function(visit) { add(visit, 'variant', armName); });
+  });
+  groups.sort(function(a, b) {
+    var ao = Number(a.visit.ordem); var bo = Number(b.visit.ordem);
+    ao = isFinite(ao) ? ao : 999999; bo = isFinite(bo) ? bo : 999999;
+    return ao - bo || a.index - b.index;
+  });
+  return groups;
+}
+
+function soaImportReferenceType_(visit) {
+  var type = String(visit.referenciaTipo || '').trim().toUpperCase();
+  if (!type && visit.referenciaCodigo) type = 'VISITA_ESPECIFICA';
+  return type;
+}
+
+function soaImportArmPlan_(projeto, groups) {
+  var existing = getBracosProjeto(projeto);
+  var byName = {};
+  existing.forEach(function(arm) { byName[normText_(arm.nome)] = arm; });
+  var names = [];
+  groups.forEach(function(group) {
+    group.armNames.forEach(function(name) {
+      if (!names.some(function(item) { return normText_(item) === normText_(name); })) names.push(name);
+    });
+  });
+  var missing = names.filter(function(name) { return !byName[normText_(name)]; });
+  return { existing: existing, byName: byName, names: names, missing: missing };
+}
+
+function soaImportReferenceId_(group, groups, errors) {
+  var visit = group.visit || {};
+  var type = soaImportReferenceType_(visit);
+  if (!type) return '';
+  if (type !== 'VISITA_ESPECIFICA') return type;
+  var code = String(visit.referenciaCodigo || '').trim();
+  if (!code) { errors.push('A visita ' + (visit.codigo || visit.nome || '?') + ' exige referenciaCodigo.'); return ''; }
+  var candidates = groups.filter(function(candidate) { return normText_(candidate.visit.codigo) === normText_(code); });
+  if (!candidates.length) { errors.push('A referência ' + code + ' da visita ' + (visit.codigo || visit.nome || '?') + ' não foi encontrada.'); return ''; }
+  var targetArms = soaUniqueIds_(group.bracoIds);
+  var candidate = candidates.filter(function(item) {
+    var candidateArms = soaUniqueIds_(item.bracoIds);
+    return !targetArms.length || !candidateArms.length || targetArms.some(function(id) { return candidateArms.indexOf(id) !== -1; });
+  })[0] || candidates[0];
+  return candidate.idSoA || '';
+}
+
+function soaImportPrepare_(payload) {
+  var parsed = soaImportParsePayload_(payload);
+  var dados = parsed.dados;
+  var projectInfo = dados.projeto || {};
+  var projectName = String(projectInfo.nomeAbreviado || '').trim();
+  var projectCode = String(projectInfo.codigoProjeto || '').trim();
+  var targetMatches = !projectName || normText_(projectName) === normText_(parsed.projeto) || normText_(projectCode) === normText_(parsed.projeto);
+  var errors = [];
+  var warnings = Array.isArray(dados.alertas) ? dados.alertas.map(String) : [];
+  var review = Array.isArray(dados.revisaoNecessaria) ? dados.revisaoNecessaria : [];
+  var reviewByCode = {};
+  review.forEach(function(item) {
+    var code = typeof item === 'string' ? item : (item && item.codigo);
+    var reason = typeof item === 'string' ? item : (item && item.motivo);
+    if (code && reason) reviewByCode[normText_(code)] = String(reason);
+  });
+  if (!targetMatches) errors.push('O JSON pertence ao projeto ' + projectName + ' (' + projectCode + '), mas o projeto selecionado é ' + parsed.projeto + '.');
+  var groups = soaImportEntries_(dados);
+  if (!groups.length) errors.push('O JSON não contém visitas em visitasComuns ou variantesPorBraco.');
+  var armPlan = soaImportArmPlan_(parsed.projeto, groups);
+  if (armPlan.missing.length && !parsed.criarBracos) errors.push('Braços não cadastrados: ' + armPlan.missing.join(', ') + '.');
+  groups.forEach(function(group) {
+    var visit = group.visit || {};
+    if (!String(visit.nome || '').trim()) errors.push('Há uma visita sem nome.');
+    group.bracoIds = group.armNames.map(function(name) {
+      var existing = armPlan.byName[normText_(name)];
+      return existing ? existing.idBraco : '__NOVO__' + normText_(name);
+    });
+    group.idSoA = 'SOA-' + gerarIdLoteEstoque_();
+    group.codigo = String(visit.codigo || '').trim();
+    group.nome = String(visit.nome || '').trim();
+  });
+  var existingVisits = getSoAVisitasProjeto(parsed.projeto);
+  var modo = parsed.modo === 'atualizar' ? 'atualizar' : 'adicionar';
+  groups.forEach(function(group) {
+    var match = existingVisits.filter(function(item) {
+      return group.codigo && normText_(item.codigo) === normText_(group.codigo) && soaArmSignature_(item.bracoIds) === soaArmSignature_(group.bracoIds);
+    })[0];
+    group.existente = match || null;
+    if (match) group.idSoA = match.idSoA;
+    group.pular = !!(match && modo !== 'atualizar');
+  });
+  groups.forEach(function(group) { group.referencia = soaImportReferenceId_(group, groups, errors); });
+  var visitas = groups.filter(function(group) { return !group.pular; }).map(function(group) {
+    var visit = group.visit;
+    return {
+      idSoA: group.idSoA,
+      projeto: parsed.projeto,
+      codigo: group.codigo,
+      nome: group.nome,
+      ordem: visit.ordem === null || visit.ordem === undefined || visit.ordem === '' ? '' : Number(visit.ordem),
+      repeticao: String(visit.repeticao || '').trim(),
+      intervaloDias: visit.intervaloDias === null || visit.intervaloDias === undefined || visit.intervaloDias === '' ? '' : Number(visit.intervaloDias),
+      aliases: Array.isArray(visit.aliases) ? visit.aliases : soaDelimitedIds_(visit.aliases),
+      ativo: visit.ativo !== false,
+      observacoes: [String(visit.observacoes || '').trim(), reviewByCode[normText_(group.codigo)] ? 'Revisão necessária: ' + reviewByCode[normText_(group.codigo)] : ''].filter(Boolean).join(' '),
+      referencia: group.referencia,
+      janelaDiasMenos: visit.janelaDiasMenos === null || visit.janelaDiasMenos === undefined || visit.janelaDiasMenos === '' ? '' : Number(visit.janelaDiasMenos),
+      janelaDiasMais: visit.janelaDiasMais === null || visit.janelaDiasMais === undefined || visit.janelaDiasMais === '' ? '' : Number(visit.janelaDiasMais),
+      bracoIds: soaUniqueIds_(group.bracoIds),
+      bracoNomes: group.armNames,
+      existente: !!group.existente,
+      condicional: visit.condicional === true,
+      origem: String(visit.origem || '').trim()
+    };
+  });
+  var invalidNumbers = visitas.filter(function(item) {
+    return (item.ordem !== '' && (!isFinite(item.ordem) || item.ordem < 0 || Math.floor(item.ordem) !== item.ordem)) ||
+      (item.intervaloDias !== '' && (!isFinite(item.intervaloDias) || item.intervaloDias < 0 || Math.floor(item.intervaloDias) !== item.intervaloDias)) ||
+      (item.janelaDiasMenos !== '' && (!isFinite(item.janelaDiasMenos) || item.janelaDiasMenos < 0 || Math.floor(item.janelaDiasMenos) !== item.janelaDiasMenos)) ||
+      (item.janelaDiasMais !== '' && (!isFinite(item.janelaDiasMais) || item.janelaDiasMais < 0 || Math.floor(item.janelaDiasMais) !== item.janelaDiasMais));
+  });
+  if (invalidNumbers.length) errors.push('Há intervalos, ordens ou janelas que não são números inteiros maiores ou iguais a zero.');
+  return {
+    ok: errors.length === 0,
+    projeto: parsed.projeto,
+    projetoJson: projectInfo,
+    modo: modo,
+    criarBracos: parsed.criarBracos,
+    missingBracos: armPlan.missing,
+    bracosExistentes: armPlan.existing,
+    alertas: warnings,
+    revisaoNecessaria: review,
+    erros: errors,
+    visitas: visitas,
+    totalVisitas: groups.length,
+    novasVisitas: groups.filter(function(group) { return !group.existente; }).length,
+    atualizacoes: groups.filter(function(group) { return !!group.existente && modo === 'atualizar'; }).length,
+    ignoradas: groups.filter(function(group) { return group.pular; }).length
+  };
+}
+
+function validarImportacaoSoA(payload) {
+  return soaImportPrepare_(payload);
+}
+
+function soaCreateImportArms_(projeto, names) {
+  if (!names.length) return [];
+  var sheet = getProjetoBracosSheet_(true);
+  var rows = sheet.getDataRange().getValues();
+  var maxOrder = rows.slice(1).reduce(function(max, row) { var value = Number(row[3]); return isFinite(value) ? Math.max(max, value) : max; }, 0);
+  var created = [];
+  names.forEach(function(name, index) {
+    var id = 'BRACO-' + gerarIdLoteEstoque_();
+    sheet.appendRow([id, projeto, name, maxOrder + index + 1, 'Sim', 'Importado do calendário SoA.']);
+    created.push({ idBraco: id, nome: name });
+  });
+  return created;
+}
+
+function soaWriteImportRows_(prepared) {
+  var sheet = getSoAVisitasSheet_(true);
+  var headers = soaEnsureHeaders_(sheet);
+  var map = soaHeaderMap_(headers);
+  var rows = sheet.getDataRange().getValues();
+  var byId = {};
+  for (var i = 1; i < rows.length; i++) byId[String(rows[i][0] || '').trim()] = i + 1;
+  function put(row, names, value, fallback) {
+    var index = soaHeaderIndex_(map, names, fallback);
+    if (index !== undefined && index >= 0) row[index] = value;
+  }
+  prepared.visitas.forEach(function(visit) {
+    var rowNumber = byId[visit.idSoA];
+    var row = rowNumber ? (sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0] || Array(headers.length).fill('')) : Array(headers.length).fill('');
+    put(row, ['ID_SoA'], visit.idSoA, 0); put(row, ['Projeto'], visit.projeto, 1);
+    put(row, ['Código da visita', 'Codigo da visita'], visit.codigo, 2); put(row, ['Nome padrão da visita', 'Nome padrao da visita'], visit.nome, 3);
+    put(row, ['Ordem'], visit.ordem, 4); put(row, ['Repetição', 'Repeticao'], visit.repeticao, 5); put(row, ['Intervalo (dias)', 'Intervalo dias'], visit.intervaloDias, 6);
+    put(row, ['Aliases', 'Apelidos'], visit.aliases.join('; '), 7); put(row, ['Ativo', 'Status'], visit.ativo === false ? 'Não' : 'Sim', 8);
+    put(row, ['Observações', 'Observacoes'], visit.observacoes, 9); put(row, ['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], visit.referencia, 10);
+    put(row, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], visit.janelaDiasMenos, 11); put(row, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], visit.janelaDiasMais, 12);
+    put(row, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], soaUniqueIds_(visit.bracoIds).join('; '), 13);
+    if (rowNumber) sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]); else sheet.appendRow(row);
+  });
+}
+
+function importarSoAJson(payload) {
+  payload = payload || {};
+  codexAssertCanWrite_('importarSoAJson', 'Cadastros', payload.projeto || 'SoA');
+  return codexWithDocumentLock_('importarSoAJson', function() {
+    var parsed = soaImportParsePayload_(payload);
+    var prepared = soaImportPrepare_(payload);
+    if (!prepared.ok) throw new Error('Importação SoA inválida: ' + prepared.erros.join(' '));
+    var createdArms = soaCreateImportArms_(parsed.projeto, prepared.missingBracos);
+    var finalPayload = { projeto: parsed.projeto, dados: parsed.dados, modo: parsed.modo, criarBracos: false };
+    var finalPrepared = soaImportPrepare_(finalPayload);
+    if (!finalPrepared.ok) throw new Error('Importação SoA inválida após preparar os braços: ' + finalPrepared.erros.join(' '));
+    soaWriteImportRows_(finalPrepared);
+    return {
+      ok: true,
+      msg: 'Calendário SoA importado.',
+      adicionadas: finalPrepared.visitas.filter(function(item) { return !item.existente; }).length,
+      atualizadas: finalPrepared.atualizacoes,
+      ignoradas: finalPrepared.ignoradas,
+      bracosCriados: createdArms.length,
+      alertas: finalPrepared.alertas,
+      revisaoNecessaria: finalPrepared.revisaoNecessaria
+    };
   });
 }
 
@@ -8935,6 +9204,8 @@ function salvarNovoEventoCompleto(dados) {
   if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {
     return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
   }
+  var erroTemperaturaBackup = agendaNovoEnvioBackupTemperaturaErro_(dados);
+  if (erroTemperaturaBackup) return { erro: erroTemperaturaBackup };
   var policy = AgendaServerRules_.formPolicy(dados.tipo);
   var isMonitoria = policy.isMonitoring;
   var isPeriodo = policy.isOperationalPeriod;
@@ -9001,6 +9272,8 @@ function salvarNovoEventoComFeriado(dados) {
   if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {
     return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
   }
+  var erroTemperaturaBackup = agendaNovoEnvioBackupTemperaturaErro_(dados);
+  if (erroTemperaturaBackup) return { erro: erroTemperaturaBackup };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var policy = AgendaServerRules_.formPolicy(dados.tipo);
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -9177,9 +9450,11 @@ function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipo
     isPeriodoComMonitor ? (dados.salaMonitoria || '') : '',
     false
   ]]);
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, {});
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, {});
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, {});
+  // A conversao para periodo operacional limpa explicitamente os transportes.
+  // O setter preserva a AWB quando o campo nao faz parte do payload comum.
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, { awb: '' });
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, { awb: '' });
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, { awb: '' });
   agendaSetBackupLinha_(agenda, linha, {});
   agendaSetTransporteExtraLinha_(agenda, linha, {});
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
@@ -10009,14 +10284,17 @@ function agendaSetCourierLinha_(agenda, linha, idx, courier) {
   courier = courier || {};
   var courierNome = courier.nome || courier.courier || '';
   var materialSummary = agendaMaterialSummaryFromJson_(courier.matBioJson || courier.materialJson, courier.material);
-  agenda.getRange(linha, idx.nome + 1, 1, 5).setValues([[
+  agenda.getRange(linha, idx.nome + 1, 1, 3).setValues([[
     courierNome,
     courier.temperatura || courier.temp || '',
-    courier.status || '',
-    '',
-    materialSummary
+    courier.status || ''
   ]]);
-  agendaSetAwbValue_(agenda.getRange(linha, idx.awb + 1), courier.awb || '', courierNome);
+  agenda.getRange(linha, idx.material + 1).setValue(materialSummary);
+  // Payloads parciais nao podem apagar uma AWB existente. A limpeza continua
+  // disponivel somente quando o chamador envia explicitamente a propriedade.
+  if (Object.prototype.hasOwnProperty.call(courier, 'awb') && courier.awb !== undefined) {
+    agendaSetAwbValue_(agenda.getRange(linha, idx.awb + 1), courier.awb || '', courierNome);
+  }
 }
 
 function agendaMaterialSummaryFromJson_(matBioJson, fallback) {
@@ -10833,6 +11111,16 @@ function agendaSetBackupLinha_(agenda, linha, backup) {
   if (normText_(backup.status) !== normText_('Adicionado à Agenda')) {
     agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).clearContent();
   }
+}
+
+function agendaNovoEnvioBackupTemperaturaErro_(dados) {
+  dados = dados || {};
+  if (!String(dados.backupOrigemAgendaId || '').trim()) return '';
+  var backup = dados.backup || {};
+  if (!String(backup.temperatura || backup.temp || '').trim()) {
+    return 'Informe a Temperatura do Transporte de Amostras Backup antes de salvar o novo envio.';
+  }
+  return '';
 }
 
 function agendaRowNumberById_(agenda, agendaId) {

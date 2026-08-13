@@ -90,3 +90,29 @@ test('novo envio criado do backup preserva o medico do agendamento de origem', (
   assert.match(client, /agBackupTemp/);
   assert.match(client, /temperatura: v\('agBackupTemp'\)/);
 });
+
+test('novo envio do Backup exige temperatura sem alterar o legado', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const serverSource = readProjectFile('WebApp.gs');
+  const server = agendaServer();
+  const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda()');
+  const fim = client.indexOf('function gerarTransporteAgendaCard(', inicio);
+  const fluxoBackup = client.slice(inicio, fim);
+
+  assert.match(fluxoBackup, /backup\.temperatura \|\| backup\.temp/);
+  assert.match(fluxoBackup, /Informe a Temperatura do Transporte de Amostras Backup/);
+  assert.match(client, /function atualizarEstadoNovoEnvioBackup_\(\)/);
+  assert.match(client, /btn\.disabled = !temperaturaInformada/);
+  assert.match(serverSource, /function salvarNovoEventoCompleto[\s\S]*agendaNovoEnvioBackupTemperaturaErro_\(dados\)/);
+  assert.match(serverSource, /function salvarNovoEventoComFeriado[\s\S]*agendaNovoEnvioBackupTemperaturaErro_\(dados\)/);
+
+  assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({
+    backupOrigemAgendaId: 'LEGADO-1',
+    backup: { temperatura: '' }
+  }), 'Informe a Temperatura do Transporte de Amostras Backup antes de salvar o novo envio.');
+  assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({
+    backupOrigemAgendaId: 'ORIGEM-1',
+    backup: { temperatura: 'CONGELADO' }
+  }), '');
+  assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({ backup: { temperatura: '' } }), '');
+});

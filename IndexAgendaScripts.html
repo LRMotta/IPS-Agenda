@@ -746,6 +746,19 @@
     var backupForced = document.getElementById('agBackupWrap') && document.getElementById('agBackupWrap').dataset.forceOpen === '1';
     agendaSetOptionalTransportVisible('agC3', c3Forced || agendaCourierMeaningful(c2) || agendaCourierMeaningful(c3));
     agendaSetOptionalTransportVisible('agBackup', backupForced || agendaCourierMeaningful(backup));
+    atualizarEstadoNovoEnvioBackup_();
+  }
+
+  function atualizarEstadoNovoEnvioBackup_() {
+    var btn = document.getElementById('btnCriarEnvioBackup');
+    if (!btn) return;
+    var backup = agendaCourierFromForm('agBackup');
+    var temperaturaInformada = agendaMeaningfulValue(backup.temperatura || backup.temp);
+    btn.disabled = !temperaturaInformada;
+    btn.setAttribute('aria-disabled', temperaturaInformada ? 'false' : 'true');
+    btn.title = temperaturaInformada
+      ? 'Criar novo agendamento a partir do Backup'
+      : 'Informe a Temperatura do Transporte de Amostras Backup antes de criar um novo agendamento';
   }
 
   function mostrarAgendaTransporteOpcional(prefix) {
@@ -2616,6 +2629,10 @@
     }
     if (!agendaMeaningfulValue(origem.visita)) {
       snackErro('Informe a visita antes de criar o envio do backup.');
+      return;
+    }
+    if (!agendaMeaningfulValue(backup.temperatura || backup.temp)) {
+      snackErro('Informe a Temperatura do Transporte de Amostras Backup antes de criar o novo envio.');
       return;
     }
     if (!agendaCourierMeaningful(backup)) {

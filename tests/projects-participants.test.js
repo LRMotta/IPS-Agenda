@@ -174,6 +174,23 @@ test('catálogo opcional de braços fica no projeto e sugere opções no partici
   assert.match(server, /function excluirBracoProjeto\(idBraco\)/);
 });
 
+test('SoA oferece importacao JSON, mantem cadastro manual e associa visitas a bracos', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(modal, /id="btnImportarSoA"/);
+  assert.match(modal, /id="modalSoAImport"/);
+  assert.match(modal, /id="soaImportTexto"/);
+  assert.match(modal, /id="soaImportArquivo"/);
+  assert.match(modal, /id="soaBracosOpcoes"/);
+  assert.match(client, /function previsualizarSoAJsonApp/);
+  assert.match(client, /function confirmarImportacaoSoAApp/);
+  assert.match(client, /function soaSelectedBracos_/);
+  assert.match(server, /function validarImportacaoSoA\(payload\)/);
+  assert.match(server, /function importarSoAJson\(payload\)/);
+  assert.match(server, /Bra.{0,4}os \(IDs\)/);
+});
+
 test('tabela de participantes exibe nome e codigo do projeto como no cadastro de projetos', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const block = sourceBetween(source, 'function participanteProjetoCellHtml(', 'function renderTabelaPart(');
