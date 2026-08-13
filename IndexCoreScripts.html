@@ -4226,6 +4226,9 @@ function soaReferenciaLabel_(referencia) {
     RANDOMIZACAO: 'randomização',
     INCLUSAO: 'inclusão'
   };
+  labels.ULTIMA_DOSE = 'Última dose';
+  labels.PROGRESSAO_DOENCA = 'progressão da doença';
+  labels.OUTRA = 'referência especial';
   if (labels[value]) return labels[value];
   var visita = (_soaVisitasAtual || []).filter(function(item) { return String(item.idSoA || '') === value; })[0];
   if (visita) return (visita.codigo ? visita.codigo + ' · ' : '') + visita.nome;
@@ -4254,6 +4257,7 @@ function soaPopulateReferenciaOptions_(selected) {
     { value: 'RANDOMIZACAO', label: 'Randomização' },
     { value: 'INCLUSAO', label: 'Inclusão' }
   ];
+  options.push({ value: 'ULTIMA_DOSE', label: 'Última dose' }, { value: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' }, { value: 'OUTRA', label: 'Outra referência especial' });
   (_soaVisitasAtual || []).forEach(function(item) {
     if (!item || !item.idSoA || String(item.idSoA) === String(document.getElementById('soaEditId').value || '')) return;
     options.push({ value: item.idSoA, label: (item.codigo ? item.codigo + ' · ' : '') + item.nome });
@@ -4269,6 +4273,30 @@ function soaPopulateReferenciaOptions_(selected) {
   select.value = selected || '';
 }
 
+function soaPopulateBracosOptions_(selected) {
+  var wrap = document.getElementById('soaBracosOpcoes');
+  if (!wrap) return;
+  var chosen = (selected || []).map(String);
+  if (!_bracosProjetoAtual || !_bracosProjetoAtual.length) { wrap.innerHTML = '<span class="soa-arm-empty">Nenhum braço cadastrado. A visita ficará comum a todos.</span>'; return; }
+  wrap.innerHTML = _bracosProjetoAtual.filter(function(item) { return item.ativo !== false; }).map(function(item) {
+    var checked = chosen.indexOf(String(item.idBraco)) !== -1 ? ' checked' : '';
+    return '<label class="soa-arm-option"><input type="checkbox" value="' + esc(item.idBraco) + '"' + checked + '> ' + esc(item.nome) + '</label>';
+  }).join('') || '<span class="soa-arm-empty">Nenhum braço ativo cadastrado. A visita ficará comum a todos.</span>';
+}
+
+function soaSelectedBracos_() {
+  return Array.prototype.map.call(document.querySelectorAll('#soaBracosOpcoes input[type="checkbox"]:checked'), function(input) { return input.value; });
+}
+
+function soaBracosLabel_(ids) {
+  ids = ids || [];
+  if (!ids.length) return 'Todos os braços';
+  return ids.map(function(id) {
+    var item = (_bracosProjetoAtual || []).filter(function(arm) { return String(arm.idBraco) === String(id); })[0];
+    return item ? item.nome : id;
+  }).join(', ');
+}
+
 function renderSoAVisitas(lista) {
   _soaVisitasAtual = lista || [];
   var list = document.getElementById('pSoAList');
@@ -4276,7 +4304,7 @@ function renderSoAVisitas(lista) {
   if (!_soaVisitasAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhuma visita SoA configurada.</div>'; return; }
   list.innerHTML = _soaVisitasAtual.map(function(item) {
     var aliases = (item.aliases || []).join(' · ');
-    var programacao = soaResumoProgramacao_(item);
+    var programacao = [soaResumoProgramacao_(item), soaBracosLabel_(item.bracoIds || [])].filter(Boolean).join(' · ');
     var repeticao = item.repeticao || programacao || 'Única';
     if (item.repeticao && programacao) repeticao += ' · ' + programacao;
     return '<div class="soa-visita-row"><div class="soa-visita-order">' + esc(item.ordem === '' ? '—' : item.ordem) + '</div>'
@@ -4296,9 +4324,11 @@ function carregarSoAVisitasProjeto(projeto) {
   _soaProjetoAtual = projeto || null;
   var list = document.getElementById('pSoAList');
   var add = document.getElementById('btnAdicionarSoA');
+  var importBtn = document.getElementById('btnImportarSoA');
   var note = document.getElementById('soaProjetoNaoSalvo');
   var salvo = !!(_soaProjetoAtual && (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo));
   if (add) add.disabled = !salvo;
+  if (importBtn) importBtn.disabled = !salvo;
   if (note) note.style.display = salvo ? 'none' : '';
   if (!salvo) { renderSoAVisitas([]); return; }
   if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando calendário SoA...</div>';
@@ -4315,6 +4345,7 @@ function abrirSoAVisitaForm(visita) {
   document.getElementById('soaProjeto').value = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo || '';
   if (visita) document.getElementById('soaEditId').value = visita.idSoA || '';
   soaPopulateReferenciaOptions_(visita ? (visita.referencia || '') : '');
+  soaPopulateBracosOptions_(visita ? (visita.bracoIds || []) : []);
   document.getElementById('modalSoATitle').textContent = visita ? 'EDITAR VISITA SoA' : 'ADICIONAR VISITA SoA';
   document.getElementById('modalSoASubtitle').textContent = 'Calendário de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
   if (visita) {
@@ -4338,9 +4369,78 @@ function salvarSoAVisitaApp() {
   var nome = document.getElementById('soaNome').value.trim();
   if (!appRequiredFeedback([{ input: 'soaNome', error: 'errSoANome', label: 'Nome padrão da visita', value: nome }], { status: 'statusSoA' })) return;
   var btn = document.getElementById('btnSalvarSoA');
-  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, referencia: document.getElementById('soaReferencia').value, janelaDiasMenos: document.getElementById('soaJanelaMenos').value, janelaDiasMais: document.getElementById('soaJanelaMais').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim() };
+  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, referencia: document.getElementById('soaReferencia').value, janelaDiasMenos: document.getElementById('soaJanelaMenos').value, janelaDiasMais: document.getElementById('soaJanelaMais').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim(), bracoIds: soaSelectedBracos_() };
   appSetButtonBusy(btn, true); appSetStatus('statusSoA', '⏳ Processando...');
   appServerRun({ method: 'salvarSoAVisita', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', ''); fecharOverlay('modalSoAVisita'); snack('✅ ' + ((res && res.msg) || 'Visita SoA salva.')); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+}
+
+var _soaImportDadosAtual = null;
+
+function abrirSoAImportForm() {
+  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de importar o calendário SoA.'); return; }
+  _soaImportDadosAtual = null;
+  document.getElementById('soaImportTexto').value = '';
+  document.getElementById('soaImportArquivo').value = '';
+  document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div>';
+  document.getElementById('soaImportCriarBracos').checked = true;
+  document.getElementById('btnImportarSoAConfirm').disabled = true;
+  appSetStatus('statusSoAImport', '');
+  abrirOverlay('modalSoAImport');
+}
+
+function lerSoAArquivoApp(event) {
+  var file = event && event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function() { document.getElementById('soaImportTexto').value = String(reader.result || ''); appSetStatus('statusSoAImport', 'Arquivo carregado. Clique em Pré-visualizar.'); };
+  reader.onerror = function() { appSetStatus('statusSoAImport', 'Não foi possível ler o arquivo.', '#e53935'); };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function soaImportTextoPayload_() {
+  var texto = document.getElementById('soaImportTexto').value.trim();
+  if (!texto) throw new Error('Cole ou selecione um arquivo JSON.');
+  var dados;
+  try { dados = JSON.parse(texto); } catch (e) { throw new Error('O JSON é inválido. Verifique a codificação UTF-8 e a estrutura do arquivo.'); }
+  return { projeto: _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo, dados: dados, modo: document.getElementById('soaImportModo').value, criarBracos: document.getElementById('soaImportCriarBracos').checked };
+}
+
+function renderSoAImportPreview_(result) {
+  var preview = document.getElementById('soaImportPreview');
+  var confirm = document.getElementById('btnImportarSoAConfirm');
+  if (!preview || !confirm) return;
+  confirm.disabled = !result || result.ok !== true || !result.visitas || !result.visitas.length;
+  if (!result) { preview.innerHTML = '<div class="soa-visita-empty">Nenhuma prévia disponível.</div>'; return; }
+  var html = '<div class="soa-import-summary"><strong>' + (result.totalVisitas || 0) + '</strong> visitas encontradas · <strong>' + (result.novasVisitas || 0) + '</strong> novas · <strong>' + (result.ignoradas || 0) + '</strong> sem duplicar · <strong>' + ((result.missingBracos || []).length) + '</strong> braços a criar</div>';
+  if (result.erros && result.erros.length) html += '<div class="soa-import-error"><strong>Corrija antes de importar:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
+  if (result.missingBracos && result.missingBracos.length) html += '<div class="soa-import-warning"><strong>Braços novos:</strong> ' + result.missingBracos.map(esc).join(', ') + '</div>';
+  if (result.alertas && result.alertas.length) html += '<div class="soa-import-warning"><strong>Alertas do documento:</strong><ul>' + result.alertas.slice(0, 8).map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + (result.alertas.length > 8 ? '<li>+' + (result.alertas.length - 8) + ' alertas adicionais</li>' : '') + '</ul></div>';
+  if (result.revisaoNecessaria && result.revisaoNecessaria.length) html += '<div class="soa-import-warning"><strong>Revisão necessária:</strong> ' + result.revisaoNecessaria.length + ' item(ns) serão importados com a pendência registrada nas observações.</div>';
+  if (result.visitas && result.visitas.length) {
+    var previewRows = result.visitas.slice(0, 12).map(function (visita) {
+      var scope = visita.bracoNomes && visita.bracoNomes.length ? visita.bracoNomes.join(', ') : 'Todos os braços';
+      var status = visita.acao === 'atualizar' ? 'Atualiza' : (visita.acao === 'ignorar' ? 'Já existe' : 'Novo');
+      return '<div class="soa-import-row"><span><strong>' + esc(visita.codigo || '') + '</strong> · ' + esc(visita.nome || '') + '</span><span>' + esc(scope) + ' · ' + esc(status) + '</span></div>';
+    }).join('');
+    html += '<div class="soa-import-preview-list">' + previewRows + (result.visitas.length > 12 ? '<div class="soa-import-note">Mais ' + (result.visitas.length - 12) + ' visita(s) na importação.</div>' : '') + '</div>';
+  }
+  preview.innerHTML = html;
+}
+
+function previsualizarSoAJsonApp() {
+  var btn = document.getElementById('btnPreviewSoA');
+  var payload;
+  try { payload = soaImportTextoPayload_(); } catch (e) { renderSoAImportPreview_({ ok: false, erros: [e.message], visitas: [] }); appSetStatus('statusSoAImport', '⚠ ' + e.message, '#e53935'); return; }
+  appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Validando JSON...');
+  appServerRun({ method: 'validarImportacaoSoA', args: [payload], onSuccess: function(result) { appSetButtonBusy(btn, false); _soaImportDadosAtual = payload; renderSoAImportPreview_(result); appSetStatus('statusSoAImport', result.ok ? 'Prévia pronta. Revise os alertas antes de importar.' : 'Há pendências que impedem a importação.', result.ok ? '' : '#e53935'); }, onFailure: function(e) { appSetButtonBusy(btn, false); renderSoAImportPreview_({ ok: false, erros: [appErrorMessage(e)], visitas: [] }); appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+}
+
+function confirmarImportacaoSoAApp() {
+  if (!_soaImportDadosAtual) { previsualizarSoAJsonApp(); return; }
+  try { _soaImportDadosAtual = soaImportTextoPayload_(); } catch (e) { appSetStatus('statusSoAImport', '⚠ ' + e.message, '#e53935'); return; }
+  var btn = document.getElementById('btnImportarSoAConfirm');
+  appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Importando calendário...');
+  appServerRun({ method: 'importarSoAJson', args: [_soaImportDadosAtual], onSuccess: function(result) { appSetButtonBusy(btn, false); fecharOverlay('modalSoAImport'); snack('✅ ' + ((result && result.msg) || 'Calendário SoA importado.')); carregarSoAVisitasProjeto(_soaProjetoAtual); carregarBracosProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935'); } });
 }
 
 function excluirSoAVisitaApp(idSoA) {
@@ -4352,6 +4452,7 @@ var _bracosParticipanteAtual = [];
 
 function renderBracosProjeto(lista) {
   _bracosProjetoAtual = lista || [];
+  if (_soaVisitasAtual && _soaVisitasAtual.length) renderSoAVisitas(_soaVisitasAtual);
   var list = document.getElementById('pBracosProjetoList');
   if (!list) return;
   if (!_bracosProjetoAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhum braço cadastrado.</div>'; return; }

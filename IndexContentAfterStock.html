@@ -196,9 +196,7 @@
         </div>
         <div class="soa-project-toolbar">
           <div class="soa-project-help">Configure nomes, ordem e, quando disponível no protocolo, a referência, o intervalo previsto e a janela de cada visita. O preenchimento é opcional e não impede visitas históricas na Agenda.</div>
-          <button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()">
-            <span class="material-symbols-outlined">add</span> Adicionar visita
-          </button>
+          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined">upload_file</span> Importar JSON</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined">add</span> Adicionar visita</button></div>
         </div>
         <div class="soa-project-unsaved" id="soaProjetoNaoSalvo">Salve o protocolo antes de cadastrar o seu calendário SoA.</div>
         <div class="soa-visita-list" id="pSoAList"><div class="soa-visita-empty">Nenhuma visita SoA configurada.</div></div>
@@ -243,6 +241,26 @@
   </div>
 </div>
 
+<!-- MODAL IMPORTAÇÃO SoA -->
+<div class="modal-overlay" id="modalSoAImport" onclick="fecharModalSeClicouFora(event,'modalSoAImport')">
+  <div class="modal-box soa-import-modal-box">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">upload_file</span></div>
+      <div><div class="modal-header-title">IMPORTAR CALENDÁRIO SoA</div><div class="modal-header-sub" id="soaImportSubtitle">Prévia segura antes de gravar</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAImport')"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <div class="soa-import-note"><span class="material-symbols-outlined">info</span><div><strong>Como funciona</strong><span>O JSON é validado, referências por código são ligadas às visitas e braços ausentes podem ser criados. O cadastro manual continua disponível.</span></div></div>
+      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportArquivo">Arquivo JSON (opcional)</label><input type="file" id="soaImportArquivo" class="f-input" accept=".json,application/json" onchange="lerSoAArquivoApp(event)"></div>
+      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
+      <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" checked> Criar braços ausentes no catálogo</label></div>
+      <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined">download_done</span> Importar calendário</button></div>
+      <div class="status-msg" id="statusSoAImport"></div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL VISITA SoA -->
 <div class="modal-overlay" id="modalSoAVisita" onclick="fecharModalSeClicouFora(event,'modalSoAVisita')">
   <div class="modal-box" style="max-width:620px;">
@@ -267,6 +285,7 @@
           <div><label class="field-label" for="soaJanelaMenos">Janela dias menos</label><input type="number" id="soaJanelaMenos" class="f-input" min="0" step="1" placeholder="Ex: 3"><div class="field-help">Quantos dias antes da data prevista.</div></div>
           <div><label class="field-label" for="soaJanelaMais">Janela dias mais</label><input type="number" id="soaJanelaMais" class="f-input" min="0" step="1" placeholder="Ex: 5"><div class="field-help">Quantos dias depois da data prevista.</div></div>
         </div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label">Braços aplicáveis</label><div id="soaBracosOpcoes" class="soa-arm-options"></div><div class="field-help">Deixe todos desmarcados para uma visita comum a todos os braços.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaRepeticao">Repetição / ciclo</label><input type="text" id="soaRepeticao" class="f-input" placeholder="Ex: mensal, a cada 6 meses"><div class="field-help">Opcional; descreve ciclos repetidos sem substituir a referência e a janela.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaAliases">Aliases / nomes históricos</label><input type="text" id="soaAliases" class="f-input" placeholder="Separe por ponto e vírgula: FU 3; Follow-up 3"><div class="field-help">Usados como referência para conciliar nomes antigos da Agenda.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaObservacoes">Observações</label><textarea id="soaObservacoes" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Janela, requisitos ou notas da visita"></textarea></div>

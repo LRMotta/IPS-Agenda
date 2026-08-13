@@ -389,6 +389,7 @@
     .required-star { color: #e53935; font-size: 13px; font-weight: 700; margin-left: 2px; }
     .field-help { color:var(--text-faint); font-size:11px; line-height:1.4; margin-top:4px; }
     .soa-project-toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:12px; }
+    .soa-project-toolbar-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
     .soa-project-help { color:var(--text-muted); font-size:12px; line-height:1.45; max-width:460px; }
     .soa-add-btn { white-space:nowrap; display:inline-flex; align-items:center; gap:5px; padding:7px 10px; }
     .soa-add-btn:disabled { opacity:.45; cursor:not-allowed; background:transparent; }
@@ -404,9 +405,31 @@
     .soa-visita-error { color:#c62828; }
     .soa-active-toggle { display:flex; align-items:center; gap:8px; color:var(--text-muted); font-size:12px; }
     .soa-active-toggle input { accent-color:var(--primary); }
+    .soa-arm-options { display:flex; flex-wrap:wrap; gap:8px; min-height:34px; padding:8px 10px; border:1px solid var(--primary-border); border-radius:8px; background:#fbfcff; }
+    .soa-arm-option { display:inline-flex; align-items:center; gap:6px; padding:5px 8px; border-radius:6px; color:var(--text-muted); font-size:12px; background:#fff; border:1px solid #e0e7f3; }
+    .soa-arm-option input { accent-color:var(--primary); }
+    .soa-arm-empty { color:var(--text-faint); font-size:11px; }
+    .soa-import-modal-box { width:min(760px, calc(100vw - 32px)); max-width:760px!important; }
+    .soa-import-textarea { min-height:180px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11px; line-height:1.45; }
+    .soa-import-note { display:flex; gap:9px; align-items:flex-start; padding:10px 12px; margin-bottom:14px; border:1px solid #d9e5fb; border-radius:8px; background:#f6f9ff; color:var(--text-muted); font-size:11px; line-height:1.45; }
+    .soa-import-note .material-symbols-outlined { color:var(--primary); font-size:18px; }
+    .soa-import-note strong, .soa-import-note span { display:block; }
+    .soa-import-note strong { color:var(--text); margin-bottom:2px; }
+    .soa-import-check { display:flex; align-items:flex-end; gap:8px; padding-bottom:8px; color:var(--text-muted); font-size:12px; }
+    .soa-import-check input { accent-color:var(--primary); }
+    .soa-import-preview { max-height:220px; overflow:auto; margin-bottom:14px; border-top:1px solid var(--primary-border); border-bottom:1px solid var(--primary-border); }
+    .soa-import-summary { padding:10px 2px; color:var(--text); font-size:12px; line-height:1.55; }
+    .soa-import-summary strong { color:var(--primary); }
+    .soa-import-preview-list { border-top:1px solid var(--primary-border); }
+    .soa-import-row { display:flex; justify-content:space-between; gap:14px; padding:7px 2px; border-bottom:1px solid #eef2f7; color:var(--text-muted); font-size:11px; line-height:1.35; }
+    .soa-import-row:last-child { border-bottom:0; }
+    .soa-import-row strong { color:var(--text); }
+    .soa-import-row > span:last-child { text-align:right; color:var(--text-faint); }
+    .soa-import-warning { color:#8a5a00; background:#fffaf0; border-top:1px solid #f2dfae; padding:8px 10px; font-size:11px; line-height:1.45; }
+    .soa-import-error { color:#b42318; background:#fff5f4; border-top:1px solid #f2c7c3; padding:8px 10px; font-size:11px; line-height:1.45; }
     .soa-modal-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:4px; }
     .soa-modal-actions .btn-save { width:auto; min-width:150px; margin-top:0; }
-    @media (max-width:760px) { .soa-project-toolbar { align-items:flex-start; flex-direction:column; } .soa-add-btn { align-self:flex-start; } .soa-visita-meta { white-space:normal; } }
+    @media (max-width:760px) { .soa-project-toolbar { align-items:flex-start; flex-direction:column; } .soa-project-toolbar-actions { justify-content:flex-start; } .soa-add-btn { align-self:flex-start; } .soa-visita-meta { white-space:normal; } .field-row.cols-2 { grid-template-columns:1fr; } .soa-import-check { align-items:center; padding-bottom:0; } }
     .field-row { display: grid; gap: 14px; }
     .field-row.cols-2 { grid-template-columns: 1fr 1fr; }
     .field-row.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }

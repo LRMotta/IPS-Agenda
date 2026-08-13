@@ -220,6 +220,72 @@ test('fase SoA: salvar janela adiciona cabeçalhos ao schema legado e mantém a 
   assert.throws(() => server.salvarSoAVisita({ projeto: 'Estudo A', nome: 'V2', janelaDiasMais: -1 }), /janela de dias mais/);
 });
 
+test('fase SoA: associação opcional de braços é lida e preservada sem quebrar linhas legadas', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais'],
+    ['SOA-1', 'Estudo A', 'V1', 'Comum', 1, '', '', '', 'Sim', '', '', '', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+  server.salvarSoAVisita({ idSoA: 'SOA-1', projeto: 'Estudo A', nome: 'Comum', bracoIds: ['BR-2', 'BR-1', 'BR-2'] });
+  const visitas = server.getSoAVisitasProjeto('Estudo A');
+  assert.deepEqual(Array.from(visitas[0].bracoIds), ['BR-2', 'BR-1']);
+  assert.equal(soa.rows[0][13], 'Braços (IDs)');
+  assert.equal(soa.rows[1][13], 'BR-2; BR-1');
+});
+
+test('fase SoA: importador cria braços, resolve referências por código e mantém visitas comuns', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes']
+  ]);
+  const bracos = new FakeSheet('Projeto_Bracos', [
+    ['ID_Braco', 'Projeto', 'Nome do braço', 'Ordem', 'Ativo', 'Observações']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa, Projeto_Bracos: bracos });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+  const payload = {
+    projeto: 'Estudo A',
+    dados: {
+      projeto: { nomeAbreviado: 'Estudo A' },
+      visitasComuns: [{ codigo: 'V1', nome: 'Baseline', ordem: 1, intervaloDias: null, referenciaTipo: 'RANDOMIZACAO', aliases: ['V0'] }],
+      variantesPorBraco: [{ braco: 'BraÃ§o A', visitas: [{ codigo: 'V2', nome: 'Semana 4', ordem: 2, intervaloDias: 28, referenciaTipo: 'VISITA_ESPECIFICA', referenciaCodigo: 'V1', janelaDiasMenos: 3, janelaDiasMais: 5 }] }]
+    },
+    modo: 'adicionar', criarBracos: true
+  };
+  const preview = server.validarImportacaoSoA(payload);
+  assert.equal(preview.ok, true);
+  assert.deepEqual(Array.from(preview.missingBracos), ['BraÃ§o A']);
+  const result = server.importarSoAJson(payload);
+  assert.equal(result.ok, true);
+  assert.equal(result.bracosCriados, 1);
+  assert.equal(result.adicionadas, 2);
+  const visitas = server.getSoAVisitasProjeto('Estudo A');
+  assert.equal(visitas.length, 2);
+  assert.equal(visitas[0].referencia, 'RANDOMIZACAO');
+  assert.equal(visitas[1].referencia, visitas[0].idSoA);
+  assert.equal(visitas[1].bracoIds.length, 1);
+  assert.equal(server.getBracosProjeto('Estudo A').length, 1);
+});
+
+test('fase SoA: importador no modo adicionar não duplica visitas já existentes', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'BraÃ§os (IDs)'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline', 1, '', '', '', 'Sim', '', 'RANDOMIZACAO', '', '', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+  const payload = { projeto: 'Estudo A', dados: { projeto: { nomeAbreviado: 'Estudo A' }, visitasComuns: [{ codigo: 'V1', nome: 'Baseline', ordem: 1, referenciaTipo: 'RANDOMIZACAO' }] }, modo: 'adicionar', criarBracos: true };
+  const result = server.importarSoAJson(payload);
+  assert.equal(result.ignoradas, 1);
+  assert.equal(soa.rows.length, 2);
+});
+
 test('fase SoA: salvar visita atualiza registro existente sem duplicar', () => {
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
