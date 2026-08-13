@@ -61,6 +61,56 @@ function agendaRow(server, values) {
   return row;
 }
 
+test('versao editavel usa valores semanticos e ignora representacoes auxiliares equivalentes', () => {
+  const server = agendaServer();
+  const before = agendaRow(server, {
+    id: 'EVT-SEMANTICO',
+    status: 'Realizado',
+    poloTrial: '2026-08-13T10:00:00',
+    courier1Material: 'Soro',
+    courier1Json: '{"volume":2,"unidade":"mL"}'
+  });
+  const after = agendaRow(server, {
+    id: 'EVT-SEMANTICO',
+    status: 'Realizado',
+    poloTrial: '2026-08-13T10:01:00',
+    courier1Material: 'Soro',
+    courier1Json: '{"unidade":"mL","volume":2}'
+  });
+
+  assert.notEqual(server.agendaRecordVersionFromRow_(before), server.agendaRecordVersionFromRow_(after));
+  assert.equal(server.agendaEditableRecordVersionFromRow_(before), server.agendaEditableRecordVersionFromRow_(after));
+});
+
+test('versao editavel continua detectando alteracao real no formulario', () => {
+  const server = agendaServer();
+  const before = agendaRow(server, { id: 'EVT-REAL', status: 'Enviado' });
+  const after = agendaRow(server, { id: 'EVT-REAL', status: 'Entregue' });
+
+  assert.notEqual(server.agendaEditableRecordVersionFromRow_(before), server.agendaEditableRecordVersionFromRow_(after));
+});
+
+test('salvamento envia a linha aberta e o servidor revalida ID e rowIndex', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const save = functionBody(client, 'salvarAgendaEvento');
+  const update = functionBody(server, 'atualizarAgendaEventoCompleto');
+
+  assert.match(save, /payload\._rowIndex\s*=\s*Number\(eventoEditado\s*&&\s*eventoEditado\.rowIndex/);
+  assert.match(update, /agendaLocalizarLinhaPorId_\(agenda,\s*String\(dados\.id[^,]+,\s*dados\._rowIndex\)/);
+});
+
+test('monitores externos consultam Gmail e DHL antes de adquirir o bloqueio de escrita', () => {
+  const source = readProjectFile('WebApp.gs');
+  const dhl = functionBody(source, 'monitorarEntregasDhlAgendadas_');
+  const courier = functionBody(source, 'monitorarConfirmacoesCourierAgendadas_');
+
+  assert.ok(dhl.indexOf('consultarEntregaDhl_') < dhl.indexOf("codexWithDocumentLock_('monitorarEntregasDhlAgendadas'"));
+  assert.ok(courier.indexOf('buscarConfirmacoesCourierNoGmail_') < courier.indexOf("codexWithDocumentLock_('monitorarConfirmacoesCourierAgendadas'"));
+  assert.match(dhl, /agendaLocalizarLinhaPorId_\(agendaAtual/);
+  assert.match(courier, /agendaLocalizarLinhaPorId_\(agendaAtual/);
+});
+
 function validAgendaReferenceData(overrides = {}) {
   return Object.assign({
     participantes: [],

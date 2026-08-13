@@ -776,15 +776,57 @@ function agendaRecordVersionFromRow_(row) {
   return codexRecordVersionFromValues_(row || []);
 }
 
+function agendaCanonicalJsonForVersion_(value) {
+  var text = String(value || '').trim();
+  if (!text) return '';
+  function sortValue(current) {
+    if (Array.isArray(current)) return current.map(sortValue);
+    if (!current || typeof current !== 'object') return current;
+    var sorted = {};
+    Object.keys(current).sort().forEach(function(key) {
+      sorted[key] = sortValue(current[key]);
+    });
+    return sorted;
+  }
+  try {
+    return JSON.stringify(sortValue(JSON.parse(text)));
+  } catch (e) {
+    return text;
+  }
+}
+
+function agendaEditableRecordVersionValuesFromRow_(row) {
+  row = row || [];
+  var i = AGENDA_CFG.idx;
+  function text(idx) {
+    return idx >= 0 ? String(row[idx] == null ? '' : row[idx]).trim() : '';
+  }
+  function date(idx) {
+    return formatarDataIsoAgenda_(row[idx]) || text(idx);
+  }
+  function courier(cfg) {
+    return [
+      text(cfg.nome), text(cfg.temp), text(cfg.status), text(cfg.awb),
+      text(cfg.material), text(cfg.destino), agendaCanonicalJsonForVersion_(row[cfg.matBio])
+    ];
+  }
+  return [
+    text(i.id), date(i.data), formatarHoraSafe_(row[i.hora]), text(i.tipo), text(i.status),
+    text(i.participante), date(i.nasc), text(i.idParticipante), text(i.projeto), text(i.braco),
+    text(i.visita), text(i.medico), text(i.procedimentos), text(i.servTerc), text(i.obs),
+    text(i.labCentral), text(i.kit)
+  ].concat(
+    courier(i.c1), courier(i.c2), courier(i.c3), courier(i.cb),
+    [
+      text(i.monitorName), row[i.poloTrial] ? '1' : '', row[i.ecrf] ? '1' : '',
+      text(i.salaMonitoria), agendaBooleanValue_(row[i.carroRequerido]) ? '1' : '',
+      text(i.backupAgendaRef)
+    ]
+  );
+}
+
 function agendaEditableRecordVersionFromRow_(row) {
-  row = (row || []).slice();
-  [
-    AGENDA_CFG.idx.controle,
-    AGENDA_CFG.idx.reqStatus
-  ].forEach(function(idx) {
-    if (idx >= 0 && idx < row.length) row[idx] = '';
-  });
-  return codexRecordVersionFromValues_(row);
+  return codexRecordVersionFromValues_(agendaEditableRecordVersionValuesFromRow_(row));
 }
 
 function codexGetEditPresenceSheet_() {
@@ -9805,7 +9847,7 @@ function atualizarAgendaEventoCompleto(dados) {
   dados = dados || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
-  var linha = encontrarLinhaPorId(agenda, dados.id);
+  var linha = agendaLocalizarLinhaPorId_(agenda, String(dados.id || '').trim(), dados._rowIndex);
   if (!linha) throw new Error('Agendamento nao encontrado para edicao.');
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var versaoAtual = agendaRecordVersionFromRow_(rowAnterior);
@@ -10548,73 +10590,86 @@ function monitorarEntregasDhlAgendadas_(options) {
     };
   }
 
-  return codexWithDocumentLock_('monitorarEntregasDhlAgendadas', function() {
-    var agenda = getAgendaSheet_();
-    var lastRow = agenda.getLastRow();
-    if (lastRow < 2) return { ok: true, verificados: 0, entregues: 0 };
+  var agenda = getAgendaSheet_();
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return { ok: true, verificados: 0, entregues: 0 };
 
-    var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
-    var values = range.getValues();
-    var display = range.getDisplayValues();
-    var pendentes = getAgendaDhlAwbsPendentesEntrega_(values, display);
-    var awbs = Object.keys(pendentes);
-    if (!awbs.length) {
-      return { ok: true, verificados: 0, entregues: 0, mensagem: 'Nenhuma AWB DHL pendente de entrega.' };
-    }
+  var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
+  var values = range.getValues();
+  var display = range.getDisplayValues();
+  var pendentes = getAgendaDhlAwbsPendentesEntrega_(values, display);
+  var awbs = Object.keys(pendentes);
+  if (!awbs.length) {
+    return { ok: true, verificados: 0, entregues: 0, mensagem: 'Nenhuma AWB DHL pendente de entrega.' };
+  }
 
-    var limiteSolicitado = Number(options.maxConsultas || DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_);
-    if (!isFinite(limiteSolicitado) || limiteSolicitado < 1) limiteSolicitado = DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_;
-    var maxConsultas = Math.max(1, Math.min(limiteSolicitado, awbs.length));
-    var entregues = [];
-    var erros = [];
-    for (var i = 0; i < maxConsultas; i++) {
-      var awb = awbs[i];
-      var resposta;
-      try {
-        resposta = consultarEntregaDhl_(awb, apiKey);
-      } catch (e) {
-        erros.push({ awb: awb, erro: e.message });
-        if (i < maxConsultas - 1) Utilities.sleep(5200);
-        continue;
-      }
+  var limiteSolicitado = Number(options.maxConsultas || DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_);
+  if (!isFinite(limiteSolicitado) || limiteSolicitado < 1) limiteSolicitado = DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_;
+  var maxConsultas = Math.max(1, Math.min(limiteSolicitado, awbs.length));
+  var detectadas = [];
+  var erros = [];
+  for (var i = 0; i < maxConsultas; i++) {
+    var awb = awbs[i];
+    var resposta;
+    try {
+      resposta = consultarEntregaDhl_(awb, apiKey);
+    } catch (e) {
+      erros.push({ awb: awb, erro: e.message });
       if (i < maxConsultas - 1) Utilities.sleep(5200);
-      if (!resposta.entregue) {
-        continue;
-      }
-      (pendentes[awb] || []).forEach(function(item) {
-        var statusRange = agenda.getRange(item.row, item.statusCol);
-        var statusAnterior = statusRange.getValue();
-        if (AgendaServerRules_.courierIsDelivered(statusAnterior)) return;
-        statusRange.setValue('Entregue');
-        entregues.push({
-          agendaId: item.agendaId,
-          row: item.row,
-          slot: item.slot,
-          awb: item.awb,
-          courier: item.courier,
-          statusDhl: resposta.status || '',
-          timestampEntrega: resposta.timestampEntrega || ''
-        });
-        codexWriteAuditChanges_('Agenda', 'monitorarEntregasDhlAgendadas', item.agendaId || item.awb, [{
-          field: item.slot + ' - Status',
-          oldValue: statusAnterior,
-          newValue: 'Entregue'
-        }], 'Entrega automática DHL | AWB ' + item.awb +
-          (resposta.status ? ' | Status DHL ' + resposta.status : '') +
-          (resposta.timestampEntrega ? ' | Entrega ' + resposta.timestampEntrega : ''));
-      });
+      continue;
     }
+    if (i < maxConsultas - 1) Utilities.sleep(5200);
+    if (resposta.entregue) detectadas.push({ awb: awb, resposta: resposta, itens: pendentes[awb] || [] });
+  }
 
-    SpreadsheetApp.flush();
-    return {
-      ok: true,
-      verificados: maxConsultas,
-      pendentes: awbs.length,
-      entregues: entregues.length,
-      itens: entregues,
-      erros: erros
-    };
-  });
+  var entregues = [];
+  if (detectadas.length) {
+    entregues = codexWithDocumentLock_('monitorarEntregasDhlAgendadas', function() {
+      var agendaAtual = getAgendaSheet_();
+      var atualizados = [];
+      detectadas.forEach(function(detectada) {
+        detectada.itens.forEach(function(item) {
+          var linhaAtual = agendaLocalizarLinhaPorId_(agendaAtual, item.agendaId, item.row);
+          if (!linhaAtual) return;
+          var courierAtual = agendaAtual.getRange(linhaAtual, item.nameCol).getValue();
+          var awbAtual = agendaAtual.getRange(linhaAtual, item.awbCol).getDisplayValue() ||
+            agendaAtual.getRange(linhaAtual, item.awbCol).getValue();
+          var statusRange = agendaAtual.getRange(linhaAtual, item.statusCol);
+          var statusAnterior = statusRange.getValue();
+          if (normText_(courierAtual).indexOf('dhl') === -1 ||
+              normalizarAwbCourier_(awbAtual) !== detectada.awb ||
+              AgendaServerRules_.courierIsDeliveryTerminal(statusAnterior)) return;
+          statusRange.setValue('Entregue');
+          atualizados.push({
+            agendaId: item.agendaId,
+            row: linhaAtual,
+            slot: item.slot,
+            awb: item.awb,
+            courier: item.courier,
+            statusDhl: detectada.resposta.status || '',
+            timestampEntrega: detectada.resposta.timestampEntrega || ''
+          });
+          codexWriteAuditChanges_('Agenda', 'monitorarEntregasDhlAgendadas', item.agendaId || item.awb, [{
+            field: item.slot + ' - Status',
+            oldValue: statusAnterior,
+            newValue: 'Entregue'
+          }], 'Entrega automática DHL | AWB ' + item.awb +
+            (detectada.resposta.status ? ' | Status DHL ' + detectada.resposta.status : '') +
+            (detectada.resposta.timestampEntrega ? ' | Entrega ' + detectada.resposta.timestampEntrega : ''));
+        });
+      });
+      SpreadsheetApp.flush();
+      return atualizados;
+    });
+  }
+  return {
+    ok: true,
+    verificados: maxConsultas,
+    pendentes: awbs.length,
+    entregues: entregues.length,
+    itens: entregues,
+    erros: erros
+  };
 }
 
 function diagnosticarMonitorEntregasDhl() {
@@ -10673,7 +10728,9 @@ function getAgendaDhlAwbsPendentesEntrega_(values, display) {
         agendaId: String(row[idx.id] || '').trim(),
         row: i + 2,
         slot: slot.label,
+        nameCol: slot.cfg.nome + 1,
         statusCol: slot.cfg.status + 1,
+        awbCol: slot.cfg.awb + 1,
         courier: courier,
         awb: awb,
         statusAtual: String(row[slot.cfg.status] || '').trim()
@@ -10752,8 +10809,6 @@ function monitorarConfirmacoesCourierAgendadas_() {
   var regras = getCourierConfirmationRules_();
   var ruleKeys = Object.keys(regras);
   if (!ruleKeys.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhuma regra ativa.' };
-  return codexWithDocumentLock_('monitorarConfirmacoesCourierAgendadas', function() {
-
   var agenda = getAgendaSheet_();
   var lastRow = agenda.getLastRow();
   if (lastRow < 2) return { ok: true, verificados: 0, confirmados: 0 };
@@ -10767,73 +10822,103 @@ function monitorarConfirmacoesCourierAgendadas_() {
   var refs = Object.keys(pendentesRef);
   if (!awbs.length && !refs.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhum courier pendente de confirmação.' };
 
-  var confirmados = [];
+  var encontradosPorRegra = [];
   ruleKeys.forEach(function(ruleKey) {
     var regra = regras[ruleKey];
-    var encontrados = buscarConfirmacoesCourierNoGmail_(regra, pendentes);
-    encontrados.forEach(function(match) {
-      var itens = pendentes[match.awbKey] || [];
-      itens.forEach(function(item) {
-        if (item.ruleKey !== ruleKey || item.confirmado) return;
-        var statusAnterior = agenda.getRange(item.row, item.statusCol).getValue();
-        if (!AgendaServerRules_.courierIsAwaitingConfirmation(statusAnterior)) return;
-        var novoStatus = regra.statusConfirmacao || 'Confirmado';
-        agenda.getRange(item.row, item.statusCol).setValue(novoStatus);
-        item.confirmado = true;
-        confirmados.push({
-          agendaId: item.agendaId,
-          row: item.row,
-          slot: item.slot,
-          awb: item.awb,
-          courier: item.courier,
-          messageId: match.messageId
-        });
-        codexWriteAuditChanges_('Agenda', 'monitorarConfirmacoesCourierAgendadas', item.agendaId || item.awb, [{
-          field: item.slot + ' - Status',
-          oldValue: statusAnterior,
-          newValue: novoStatus
-        }], 'Confirmação automática por e-mail ' + item.courier + ' | AWB ' + item.awb + ' | Gmail message ' + match.messageId);
-      });
-    });
-    var encontradosRef = buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef);
-    encontradosRef.forEach(function(match) {
-      var itensRef = pendentesRef[match.refKey] || [];
-      itensRef.forEach(function(item) {
-        if (item.ruleKey !== ruleKey || item.confirmado) return;
-        var statusAnteriorRef = agenda.getRange(item.row, item.statusCol).getValue();
-        if (!AgendaServerRules_.courierCanReceiveConfirmation(statusAnteriorRef)) return;
-        var awbExtraida = escolherAwbConfirmacaoCourier_(regra, item, match.awbs);
-        if (!awbExtraida) return;
-        var awbAnterior = agenda.getRange(item.row, item.awbCol).getDisplayValue() || agenda.getRange(item.row, item.awbCol).getValue();
-        var novoStatusRef = regra.statusConfirmacao || 'Confirmado';
-        agendaSetAwbValue_(agenda.getRange(item.row, item.awbCol), awbExtraida, item.courier);
-        agenda.getRange(item.row, item.statusCol).setValue(novoStatusRef);
-        item.confirmado = true;
-        confirmados.push({
-          agendaId: item.agendaId,
-          row: item.row,
-          slot: item.slot,
-          awb: awbExtraida,
-          courier: item.courier,
-          messageId: match.messageId,
-          refInterna: item.refInterna
-        });
-        codexWriteAuditChanges_('Agenda', 'monitorarConfirmacoesCourierAgendadas', item.agendaId || awbExtraida, [{
-          field: item.slot + ' - AWB',
-          oldValue: awbAnterior,
-          newValue: awbExtraida
-        }, {
-          field: item.slot + ' - Status',
-          oldValue: statusAnteriorRef,
-          newValue: novoStatusRef
-        }], 'Confirmação automática por e-mail ' + item.courier + ' | Ref. ' + item.refInterna + ' | AWB ' + awbExtraida + ' | Gmail message ' + match.messageId);
-      });
+    encontradosPorRegra.push({
+      ruleKey: ruleKey,
+      regra: regra,
+      awbs: buscarConfirmacoesCourierNoGmail_(regra, pendentes),
+      refs: buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef)
     });
   });
 
-  SpreadsheetApp.flush();
-  return { ok: true, verificados: awbs.length + refs.length, confirmados: confirmados.length, itens: confirmados };
+  var temConfirmacao = encontradosPorRegra.some(function(item) {
+    return item.awbs.length || item.refs.length;
   });
+  if (!temConfirmacao) {
+    return { ok: true, verificados: awbs.length + refs.length, confirmados: 0, itens: [] };
+  }
+  var confirmados = codexWithDocumentLock_('monitorarConfirmacoesCourierAgendadas', function() {
+    var agendaAtual = getAgendaSheet_();
+    var atualizados = [];
+    var processados = {};
+    encontradosPorRegra.forEach(function(resultado) {
+      resultado.awbs.forEach(function(match) {
+        (pendentes[match.awbKey] || []).forEach(function(item) {
+          if (item.ruleKey !== resultado.ruleKey) return;
+          var linhaAtual = agendaLocalizarLinhaPorId_(agendaAtual, item.agendaId, item.row);
+          var chave = linhaAtual + ':' + item.statusCol;
+          if (!linhaAtual || processados[chave]) return;
+          var courierAtual = agendaAtual.getRange(linhaAtual, item.nameCol).getValue();
+          var awbAtual = agendaAtual.getRange(linhaAtual, item.awbCol).getDisplayValue() ||
+            agendaAtual.getRange(linhaAtual, item.awbCol).getValue();
+          var statusAnterior = agendaAtual.getRange(linhaAtual, item.statusCol).getValue();
+          if (getCourierConfirmationRuleKey_(regras, courierAtual) !== resultado.ruleKey ||
+              normalizarAwbCourier_(awbAtual) !== match.awbKey ||
+              !AgendaServerRules_.courierIsAwaitingConfirmation(statusAnterior)) return;
+          var novoStatus = resultado.regra.statusConfirmacao || 'Confirmado';
+          agendaAtual.getRange(linhaAtual, item.statusCol).setValue(novoStatus);
+          processados[chave] = true;
+          atualizados.push({
+            agendaId: item.agendaId,
+            row: linhaAtual,
+            slot: item.slot,
+            awb: item.awb,
+            courier: item.courier,
+            messageId: match.messageId
+          });
+          codexWriteAuditChanges_('Agenda', 'monitorarConfirmacoesCourierAgendadas', item.agendaId || item.awb, [{
+            field: item.slot + ' - Status',
+            oldValue: statusAnterior,
+            newValue: novoStatus
+          }], 'Confirmação automática por e-mail ' + item.courier + ' | AWB ' + item.awb + ' | Gmail message ' + match.messageId);
+        });
+      });
+      resultado.refs.forEach(function(match) {
+        (pendentesRef[match.refKey] || []).forEach(function(item) {
+          if (item.ruleKey !== resultado.ruleKey) return;
+          var linhaAtual = agendaLocalizarLinhaPorId_(agendaAtual, item.agendaId, item.row);
+          var chave = linhaAtual + ':' + item.statusCol;
+          if (!linhaAtual || processados[chave]) return;
+          var courierAtual = agendaAtual.getRange(linhaAtual, item.nameCol).getValue();
+          var statusAnterior = agendaAtual.getRange(linhaAtual, item.statusCol).getValue();
+          var awbRange = agendaAtual.getRange(linhaAtual, item.awbCol);
+          var awbAnterior = awbRange.getDisplayValue() || awbRange.getValue();
+          if (getCourierConfirmationRuleKey_(regras, courierAtual) !== resultado.ruleKey ||
+              normalizarAwbCourier_(awbAnterior) ||
+              !AgendaServerRules_.courierCanReceiveConfirmation(statusAnterior)) return;
+          var awbExtraida = escolherAwbConfirmacaoCourier_(resultado.regra, item, match.awbs);
+          if (!awbExtraida) return;
+          var novoStatus = resultado.regra.statusConfirmacao || 'Confirmado';
+          agendaSetAwbValue_(awbRange, awbExtraida, item.courier);
+          agendaAtual.getRange(linhaAtual, item.statusCol).setValue(novoStatus);
+          processados[chave] = true;
+          atualizados.push({
+            agendaId: item.agendaId,
+            row: linhaAtual,
+            slot: item.slot,
+            awb: awbExtraida,
+            courier: item.courier,
+            messageId: match.messageId,
+            refInterna: item.refInterna
+          });
+          codexWriteAuditChanges_('Agenda', 'monitorarConfirmacoesCourierAgendadas', item.agendaId || awbExtraida, [{
+            field: item.slot + ' - AWB',
+            oldValue: awbAnterior,
+            newValue: awbExtraida
+          }, {
+            field: item.slot + ' - Status',
+            oldValue: statusAnterior,
+            newValue: novoStatus
+          }], 'Confirmação automática por e-mail ' + item.courier + ' | Ref. ' + item.refInterna + ' | AWB ' + awbExtraida + ' | Gmail message ' + match.messageId);
+        });
+      });
+    });
+    SpreadsheetApp.flush();
+    return atualizados;
+  });
+  return { ok: true, verificados: awbs.length + refs.length, confirmados: confirmados.length, itens: confirmados };
 }
 
 function diagnosticarMonitorConfirmacoesCourier() {
@@ -10908,7 +10993,9 @@ function getAgendaCourierAwbsPendentesConfirmacao_(values, display, regras) {
         agendaId: String(row[idx.id] || '').trim(),
         row: i + 2,
         slot: slot.label,
+        nameCol: slot.cfg.nome + 1,
         statusCol: slot.cfg.status + 1,
+        awbCol: slot.cfg.awb + 1,
         courier: courier,
         awb: awb
       });
@@ -10957,6 +11044,7 @@ function getAgendaCourierRefsPendentesConfirmacao_(values, display, regras) {
         refInterna: refInterna,
         row: i + 2,
         slot: slot.label,
+        nameCol: slot.cfg.nome + 1,
         statusCol: slot.cfg.status + 1,
         awbCol: slot.cfg.awb + 1,
         courier: courier,
