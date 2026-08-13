@@ -6,7 +6,7 @@
 
 <!-- ══ MODAL PROJETO ══ -->
 <div class="modal-overlay" id="modalProjeto" onclick="fecharModalSeClicouFora(event,'modalProjeto')">
-  <div class="modal-box" style="max-width:720px;">
+  <div class="modal-box" style="max-width:900px;">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">folder_open</span></div>
       <div>
@@ -30,6 +30,10 @@
           <input type="text" id="pNome" class="f-input large" placeholder="Ex: TRIAL-ONCO-2024"
                  oninput="limparErro('pNome','errPNome')">
           <div class="field-error" id="errPNome">Campo obrigatório.</div>
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label class="field-label" for="pTituloCompleto">Título completo do projeto</label>
+          <textarea id="pTituloCompleto" class="f-input" placeholder="Título/referência completa do estudo"></textarea>
         </div>
         <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1.4fr; gap:12px; margin-bottom:14px;">
           <div>
@@ -184,10 +188,6 @@
             <input type="text" id="pExpedienteCE" class="f-input" placeholder="Ex: 25351...">
           </div>
         </div>
-        <div class="field">
-          <label class="field-label" for="pTituloCompleto">Título completo</label>
-          <textarea id="pTituloCompleto" class="f-input" placeholder="Título/referência completa do estudo"></textarea>
-        </div>
       </div>
 
       <div class="form-section soa-project-section">
@@ -299,7 +299,7 @@
 
 <!-- ══ MODAL PARTICIPANTE ══ -->
 <div class="modal-overlay" id="modalParticipante" onclick="fecharModalSeClicouFora(event,'modalParticipante')">
-  <div class="modal-box" style="max-width:640px;">
+  <div class="modal-box" style="max-width:900px;">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">person</span></div>
       <div>
@@ -350,7 +350,7 @@
             <div class="field-error" id="errPtId">Campo obrigatório.</div>
           </div>
         </div>
-        <div class="field-row cols-3">
+        <div class="field-row participant-protocol-fields">
           <div>
             <label class="field-label" for="ptProjeto">Protocolo</label>
             <div class="ac-wrap">
@@ -372,6 +372,56 @@
           <div>
             <label class="field-label" for="ptBraco">Braço</label>
             <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">location_on</span> Endereço</div>
+        <div class="field-row participant-address-grid">
+          <div class="participant-address-street">
+            <label class="field-label" for="ptRua">Rua</label>
+            <input type="text" id="ptRua" class="f-input" placeholder="Nome da rua">
+          </div>
+          <div>
+            <label class="field-label" for="ptNumero">Número</label>
+            <input type="text" id="ptNumero" class="f-input" placeholder="Nº">
+          </div>
+          <div>
+            <label class="field-label" for="ptCidade">Cidade</label>
+            <input type="text" id="ptCidade" class="f-input" placeholder="Cidade">
+          </div>
+          <div>
+            <label class="field-label" for="ptEstado">Estado</label>
+            <input type="text" id="ptEstado" class="f-input" maxlength="2" placeholder="UF">
+          </div>
+          <div>
+            <label class="field-label" for="ptCep">CEP</label>
+            <input type="text" id="ptCep" class="f-input" placeholder="00000-000">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">account_balance</span> Dados Bancários</div>
+        <div class="field-row participant-bank-grid">
+          <div>
+            <label class="field-label" for="ptBanco">Nome do Banco</label>
+            <select id="ptBanco" class="f-input f-select"><option value="">— Selecione —</option></select>
+          </div>
+          <div>
+            <label class="field-label" for="ptAgencia">Agência</label>
+            <input type="text" id="ptAgencia" class="f-input" placeholder="Agência">
+          </div>
+          <div>
+            <label class="field-label" for="ptContaCorrente">Conta corrente</label>
+            <input type="text" id="ptContaCorrente" class="f-input" placeholder="Conta corrente">
+          </div>
+          <div>
+            <label class="field-label" for="ptTitularConta">Titular da Conta Corrente</label>
+            <input type="text" id="ptTitularConta" class="f-input" placeholder="Nome do titular">
+          </div>
+          <div>
+            <label class="field-label" for="ptCpfTitular">CPF do Titular</label>
+            <input type="text" id="ptCpfTitular" class="f-input" placeholder="000.000.000-00">
           </div>
         </div>
       </div>

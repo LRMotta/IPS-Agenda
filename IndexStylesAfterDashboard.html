@@ -25,6 +25,10 @@
     .ag-create-head .material-symbols-outlined{font-size:20px}
     .ag-create-body{padding:20px 22px}
     .ag-modal-actions{margin-top:12px}
+    .participant-protocol-fields{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .participant-protocol-fields.has-catalog{grid-template-columns:repeat(3,minmax(0,1fr));}
+    .participant-address-grid{grid-template-columns:minmax(0,2fr) minmax(76px,.7fr) minmax(0,1.2fr) minmax(72px,.55fr) minmax(110px,.8fr);}
+    .participant-bank-grid{grid-template-columns:minmax(0,1.35fr) minmax(110px,.7fr) minmax(130px,.8fr) minmax(0,1.35fr) minmax(150px,.9fr);}
     .ag-display-btn{width:100%;height:40px;justify-content:center;margin-bottom:12px}
     .ag-modal-actions .btn-save{margin-top:0}
     .ag-form-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
@@ -349,6 +353,8 @@
       .ag-create-body{padding:14px 12px 118px;overflow-y:auto}
       .ag-modal-actions{position:sticky;bottom:0;z-index:5;margin:16px -12px -118px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid #e0e6f0;box-shadow:0 -8px 24px rgba(15,23,42,.12)}
       .ag-modal-actions .status-msg{margin-top:8px;text-align:left;min-height:16px}
+      .participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}
+      .participant-address-grid,.participant-bank-grid{grid-template-columns:1fr}
       .ag-modal-actions .btn-save{height:46px}
       .ag-display-btn{margin-bottom:8px}
       .ag-transport-fields,.ag-transport-fields.backup{grid-template-columns:1fr}

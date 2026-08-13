@@ -17,6 +17,7 @@ function between(source, startMarker, endMarker) {
 function cadastroContext(spreadsheet, projectOptions) {
   const web = readProjectFile('WebApp.gs');
   const source = readProjectFile('CadastroRules.gs') + '\n' +
+    between(web, 'function participanteCampoKey_', 'function salvarDadosParticipante(') + '\n' +
     between(web, 'function salvarDadosProjeto(', 'function excluirProjeto(') + '\n' +
     between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
   const counters = { cache: 0, transportCache: 0 };
@@ -86,6 +87,29 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(context.salvarDadosParticipante(Object.assign({}, participant, { id: 5, telefone: '555-0100' })), 'Participante atualizado com sucesso');
   assert.equal(sheet.rows[2][9], '555-0100');
   assert.equal(counters.cache, 2);
+});
+
+test('participante persiste endereco e dados bancarios opcionais sem deslocar o legado', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
+    [4, 'Pessoa Existente', '', '', 'P-004', 'Novo Estudo', '', '', 'Ativo', '', '', '']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+  const payload = {
+    nome: 'Pessoa Nova', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo',
+    rua: 'Rua das Flores', numero: '123', cidade: 'Caxias do Sul', estado: 'RS', cep: '95000-000',
+    banco: 'Banco de Teste', agencia: '001', contaCorrente: '12345-6',
+    titularConta: 'Pessoa Nova', cpfTitular: '111.222.333-44'
+  };
+
+  assert.equal(context.salvarDadosParticipante(payload), 'Participante cadastrado com sucesso');
+  const headers = sheet.rows[0];
+  const created = sheet.rows[2];
+  assert.equal(headers[12], 'Rua');
+  assert.equal(headers[21], 'CPF do Titular');
+  assert.equal(created[headers.indexOf('Rua')], 'Rua das Flores');
+  assert.equal(created[headers.indexOf('Banco')], 'Banco de Teste');
+  assert.equal(created[headers.indexOf('CPF do Titular')], '111.222.333-44');
 });
 
 test('alteracao de nome propaga pelas referencias usando o ID da coluna A', () => {

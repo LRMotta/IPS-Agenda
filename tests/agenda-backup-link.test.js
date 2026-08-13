@@ -51,6 +51,8 @@ test('temperatura do backup e persistida e devolvida no registro da Agenda', () 
   const server = agendaServer();
   const cfg = server.AGENDA_CFG;
   const row = Array(cfg.lastCol).fill('');
+  row[cfg.idx.tipo] = 'Visita';
+  row[cfg.idx.labCentral] = 'Sim';
   const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), row]);
 
   server.agendaSetBackupLinha_(sheet, 2, {
@@ -62,6 +64,40 @@ test('temperatura do backup e persistida e devolvida no registro da Agenda', () 
 
   assert.equal(sheet.rows[1][cfg.idx.cb.temp], 'CONGELADO');
   assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.temperatura, 'CONGELADO');
+});
+
+test('temperatura do backup nao vaza para SIV ou visita sem laboratorio', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const siv = Array(cfg.lastCol).fill('');
+  siv[cfg.idx.tipo] = 'SIV';
+  siv[cfg.idx.labCentral] = 'Não aplicável';
+  siv[cfg.idx.cb.temp] = '81231558';
+  const visitaSemLab = Array(cfg.lastCol).fill('');
+  visitaSemLab[cfg.idx.tipo] = 'Visita';
+  visitaSemLab[cfg.idx.labCentral] = 'Não';
+  visitaSemLab[cfg.idx.cb.temp] = 'CONGELADO';
+
+  assert.equal(server.agendaRowToObject_(siv, 2).backup.temperatura, '');
+  assert.equal(server.agendaRowToObject_(visitaSemLab, 3).backup.temperatura, '');
+});
+
+test('coluna de temperatura do backup e localizada pelo cabecalho sem reutilizar coluna legada', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const headers = Array(cfg.lastCol).fill('');
+  const siv = Array(cfg.lastCol).fill('');
+  headers[cfg.idx.cb.temp] = 'Telefone legado';
+  siv[cfg.idx.cb.temp] = '81231558';
+  const sheet = new FakeSheet('Agenda', [headers, siv]);
+
+  const column = server.agendaEnsureBackupTemperaturaColumn_(sheet);
+
+  assert.equal(column, 53);
+  assert.equal(sheet.rows[0][51], 'Telefone legado');
+  assert.equal(sheet.rows[1][51], '81231558');
+  assert.equal(sheet.rows[0][52], 'Backup - Temperatura');
+  assert.equal(cfg.idx.cb.temp, 52);
 });
 
 test('interface vincula somente depois de salvar e abre o agendamento pelo chip', () => {

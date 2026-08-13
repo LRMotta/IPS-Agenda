@@ -175,7 +175,8 @@ function appConfirmNavigationIfDirty(scopeId, onConfirm, onCancel) {
 function appEditableDirtyScope(target) {
   if (!target || !target.closest) return '';
   if (!target.matches('input, textarea, select, [contenteditable="true"]')) return '';
-  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload');
+  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante');
+  if (scope && scope.id === 'modalParticipante' && scope.dataset.editing !== '1') return '';
   return scope ? scope.id : '';
 }
 
@@ -2695,15 +2696,17 @@ function confirmarExcluirMedicamento(rowIndex, descricao) {
   });
 }
 
-var _participantes = [], _projListPart = [], _selPtProjeto = '', _acPtProjetoIndex = -1, STATUS_PART = [];
+var _participantes = [], _projListPart = [], _selPtProjeto = '', _acPtProjetoIndex = -1, STATUS_PART = [], BANCOS_PART = [];
 var _participanteConfigLoading = false;
 var _participanteConfigCallbacks = [];
 
 function aplicarParticipanteConfig(cfg) {
   cfg = cfg || {};
   STATUS_PART = cfg.status || [];
+  BANCOS_PART = cfg.bancos || [];
   fillSelectOptions('filterStatusPar', STATUS_PART, '', 'Todos os status');
   fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
+  fillSelectOptions('ptBanco', BANCOS_PART, '', '— Selecione —');
 }
 
 function garantirParticipanteConfig(callback) {
@@ -2988,12 +2991,15 @@ function navegarAcProjetoParticipante(event) {
 
 function abrirFormPart(p) {
   var modalPart = document.getElementById('modalParticipante');
+  appClearUnsavedChanges('modalParticipante');
   if (modalPart) {
     modalPart.style.zIndex = '';
     delete modalPart.dataset.agendaOrigem;
+    modalPart.dataset.editing = p ? '1' : '0';
   }
-  ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs']
+  ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular']
     .forEach(function(id){ document.getElementById(id).value=''; });
+  fillSelectOptions('ptBanco', BANCOS_PART, '', '— Selecione —');
   renderBracosParticipante([], '');
   if (!STATUS_PART || !STATUS_PART.length) {
     fillSelectOptions('ptStatus', [], '', 'Carregando opcoes...');
@@ -3024,6 +3030,16 @@ function abrirFormPart(p) {
     fillSelectOptions('ptStatus', STATUS_PART, p.status || '', '-- Selecione --');
     document.getElementById('ptTelefone').value       = p.telefone||'';
     document.getElementById('ptObs').value            = p.observacoes||'';
+    document.getElementById('ptRua').value             = p.rua||'';
+    document.getElementById('ptNumero').value          = p.numero||'';
+    document.getElementById('ptCidade').value           = p.cidade||'';
+    document.getElementById('ptEstado').value           = p.estado||'';
+    document.getElementById('ptCep').value              = p.cep||'';
+    fillSelectOptions('ptBanco', BANCOS_PART, p.banco || '', '— Selecione —');
+    document.getElementById('ptAgencia').value          = p.agencia||'';
+    document.getElementById('ptContaCorrente').value    = p.contaCorrente||'';
+    document.getElementById('ptTitularConta').value     = p.titularConta||'';
+    document.getElementById('ptCpfTitular').value       = p.cpfTitular||'';
   } else {
     document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
   }
@@ -3046,7 +3062,17 @@ function participanteAtualDoModal() {
     braco: document.getElementById('ptBraco').value.trim(),
     status: document.getElementById('ptStatus').value,
     telefone: document.getElementById('ptTelefone').value.trim(),
-    observacoes: document.getElementById('ptObs').value.trim()
+    observacoes: document.getElementById('ptObs').value.trim(),
+    rua: document.getElementById('ptRua').value.trim(),
+    numero: document.getElementById('ptNumero').value.trim(),
+    cidade: document.getElementById('ptCidade').value.trim(),
+    estado: document.getElementById('ptEstado').value.trim(),
+    cep: document.getElementById('ptCep').value.trim(),
+    banco: document.getElementById('ptBanco').value,
+    agencia: document.getElementById('ptAgencia').value.trim(),
+    contaCorrente: document.getElementById('ptContaCorrente').value.trim(),
+    titularConta: document.getElementById('ptTitularConta').value.trim(),
+    cpfTitular: document.getElementById('ptCpfTitular').value.trim()
   };
 }
 
@@ -3130,6 +3156,16 @@ function salvarPartApp(opts) {
     status: status,
     telefone: document.getElementById('ptTelefone').value.trim(),
     observacoes: document.getElementById('ptObs').value.trim(),
+    rua: document.getElementById('ptRua').value.trim(),
+    numero: document.getElementById('ptNumero').value.trim(),
+    cidade: document.getElementById('ptCidade').value.trim(),
+    estado: document.getElementById('ptEstado').value.trim(),
+    cep: document.getElementById('ptCep').value.trim(),
+    banco: document.getElementById('ptBanco').value,
+    agencia: document.getElementById('ptAgencia').value.trim(),
+    contaCorrente: document.getElementById('ptContaCorrente').value.trim(),
+    titularConta: document.getElementById('ptTitularConta').value.trim(),
+    cpfTitular: document.getElementById('ptCpfTitular').value.trim(),
     confirmarNomeDuplicado: opts.confirmarNomeDuplicado === true
   };
   appSetButtonBusy(btn, true);
@@ -3144,6 +3180,7 @@ function salvarPartApp(opts) {
         abrirConfirmacaoNomeParticipanteDuplicado(r);
         return;
       }
+      appClearUnsavedChanges('modalParticipante');
       fecharOverlay('modalParticipante');
       snack(r);
       carregarParticipantes(true);
@@ -4517,6 +4554,8 @@ function renderBracosParticipante(lista, valorAtual) {
   var wrap = document.getElementById('ptBracoCatalogoWrap');
   var select = document.getElementById('ptBracoOpcao');
   if (!wrap || !select) return;
+  var fields = wrap.parentElement;
+  if (fields) fields.classList.toggle('has-catalog', !!_bracosParticipanteAtual.length);
   if (!_bracosParticipanteAtual.length) { wrap.style.display = 'none'; select.disabled = false; select.innerHTML = '<option value="">— Nenhum braço padronizado cadastrado —</option>'; return; }
   wrap.style.display = '';
   select.disabled = false;
