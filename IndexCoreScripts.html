@@ -1895,6 +1895,11 @@ function renderAuditPager() {
 }
 
 var _configApp = [];
+var CONFIG_APP_CHAVES_DISPONIVEIS = {
+  Principal: {
+    Participantes: ['Status', 'Bancos']
+  }
+};
 
 function carregarConfigApp() {
   var tb = document.getElementById('bodyConfig');
@@ -1974,11 +1979,14 @@ function renderTabelaConfig(lista) {
 
 function configValoresUnicos(bloco, grupo) {
   var seen = {};
-  return _configApp.filter(function(i) {
+  var valores = _configApp.filter(function(i) {
     return (!bloco || i.bloco === bloco) && (!grupo || i.grupo === grupo);
   }).map(function(i) {
     return grupo ? i.chave : i.grupo;
-  }).filter(function(v) {
+  });
+  var catalogoBloco = CONFIG_APP_CHAVES_DISPONIVEIS[bloco] || {};
+  valores = valores.concat(grupo ? (catalogoBloco[grupo] || []) : Object.keys(catalogoBloco));
+  return valores.filter(function(v) {
     v = String(v || '').trim();
     if (!v || seen[v]) return false;
     seen[v] = 1;
