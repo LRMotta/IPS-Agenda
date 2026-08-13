@@ -47,6 +47,23 @@ test('referencia invalida do backup nao quebra a carga da Agenda', () => {
   assert.equal(server.agendaBackupAgendaRefFromCell_('{"data":"29/07/2026"}'), null);
 });
 
+test('temperatura do backup e persistida e devolvida no registro da Agenda', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const row = Array(cfg.lastCol).fill('');
+  const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), row]);
+
+  server.agendaSetBackupLinha_(sheet, 2, {
+    nome: 'OCASA',
+    temperatura: 'CONGELADO',
+    status: 'Não Agendado',
+    material: 'Soro'
+  });
+
+  assert.equal(sheet.rows[1][cfg.idx.cb.temp], 'CONGELADO');
+  assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.temperatura, 'CONGELADO');
+});
+
 test('interface vincula somente depois de salvar e abre o agendamento pelo chip', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
@@ -69,4 +86,7 @@ test('novo envio criado do backup preserva o medico do agendamento de origem', (
   assert.notEqual(inicio, -1);
   assert.notEqual(fim, -1);
   assert.match(fluxoBackup, /setAgendaSelectValue\('agMedico', origem\.medico\)/);
+  assert.match(fluxoBackup, /setAgendaSelectValue\('agC1Temp', agendaBackupTemperaturaOrigem\(origem, backup\)\)/);
+  assert.match(client, /agBackupTemp/);
+  assert.match(client, /temperatura: v\('agBackupTemp'\)/);
 });

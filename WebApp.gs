@@ -8322,19 +8322,19 @@ function salvarMedicamentoRecebido(payload) {
 }
 
 // ============================================================================
-// AGENDA WEBAPP V1 - estrutura atual com 36 colunas
+// AGENDA WEBAPP V1 - estrutura atual com 52 colunas
 // Mantem a documentacao de transporte separada.
 // ============================================================================
 var AGENDA_CFG = {
   abaNomes: ['\uD83D\uDCC5 Agenda', 'Agenda'],
-  lastCol: 51,
+  lastCol: 52,
   col: {
     id: 1, data: 2, hora: 3, tipo: 4, status: 5, participante: 6,
     nasc: 7, idParticipante: 8, projeto: 9, braco: 10, visita: 11,
     medico: 12, procedimentos: 13, servTerc: 14, obs: 15,
     labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46,
     poloTrial: 47, ecrf: 48, salaMonitoria: 49, carroRequerido: 50,
-    backupAgendaRef: 51
+    backupAgendaRef: 51, backupTemperatura: 52
   },
   idx: {
     id: 0, data: 1, hora: 2, tipo: 3, status: 4, participante: 5,
@@ -8344,7 +8344,7 @@ var AGENDA_CFG = {
     c1: { nome: 18, temp: 19, status: 20, awb: 21, material: 22, destino: 36, matBio: 40 },
     c2: { nome: 23, temp: 24, status: 25, awb: 26, material: 27, destino: 37, matBio: 41 },
     c3: { nome: 28, temp: 29, status: 30, awb: 31, material: 32, destino: 38, matBio: 42 },
-    cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43 },
+    cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43, temp: 51 },
     reqStatus: 44, monitorName: 45, poloTrial: 46, ecrf: 47, salaMonitoria: 48, carroRequerido: 49,
     backupAgendaRef: 50
   }
@@ -8352,7 +8352,7 @@ var AGENDA_CFG = {
 
 var CFG = typeof CFG !== 'undefined' ? CFG : {
   abaNome: '\uD83D\uDCC5 Agenda',
-  lastCol: 51,
+  lastCol: 52,
   colTerc: 14,
   colGatilho: 16,
   colControle: 17,
@@ -8386,7 +8386,7 @@ function getAgendaSheetForRead_() {
 }
 
 function ensureAgendaDestinoLabColumns_(sh) {
-  var schemaCacheKey = 'AgendaSchemaEnsured:v4';
+  var schemaCacheKey = 'AgendaSchemaEnsured:v5';
   if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
     sh.insertColumnsAfter(sh.getMaxColumns(), AGENDA_CFG.lastCol - sh.getMaxColumns());
@@ -8406,7 +8406,8 @@ function ensureAgendaDestinoLabColumns_(sh) {
     { col: AGENDA_CFG.col.ecrf, label: 'eCRF_Concluida' },
     { col: AGENDA_CFG.col.salaMonitoria, label: 'Sala_Monitoria' },
     { col: AGENDA_CFG.col.carroRequerido, label: 'Carro_Requerido' },
-    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' }
+    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' },
+    { col: AGENDA_CFG.col.backupTemperatura, label: 'Backup - Temperatura' }
   ];
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
@@ -9262,6 +9263,7 @@ function agendaAuditFields_() {
     { field: 'Transporte III - Material', idx: i.c3.material },
     { field: 'Transporte III - Destino', idx: i.c3.destino },
     { field: 'Backup - Courier', idx: i.cb.nome },
+    { field: 'Backup - Temperatura', idx: i.cb.temp },
     { field: 'Backup - Status', idx: i.cb.status },
     { field: 'Backup - Material', idx: i.cb.material },
     { field: 'Backup - Destino', idx: i.cb.destino },
@@ -10827,6 +10829,7 @@ function agendaSetBackupLinha_(agenda, linha, backup) {
     backup.status || '',
     materialSummary
   ]]);
+  agenda.getRange(linha, AGENDA_CFG.col.backupTemperatura).setValue(backup.temperatura || backup.temp || '');
   if (normText_(backup.status) !== normText_('Adicionado à Agenda')) {
     agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).clearContent();
   }
@@ -11740,6 +11743,7 @@ function agendaRowToObject_(r, rowIndex) {
     courier3: agendaCourierToObject_(r, i.c3),
     backup: {
       nome: String(r[i.cb.nome] || ''),
+      temperatura: String(r[i.cb.temp] || ''),
       status: String(r[i.cb.status] || ''),
       material: agendaMaterialSummaryFromJson_(r[i.cb.matBio], r[i.cb.material]),
       destino: String(r[i.cb.destino] || ''),
