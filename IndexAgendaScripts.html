@@ -3882,23 +3882,6 @@
       .getAgendaPeriodoOperacionalPorEventoId(id, r.rowIndex);
   }
 
-  function agendaMergeEditRecord_(fresh, fallback) {
-    fresh = agendaNormalizeRow(fresh || {});
-    fallback = agendaNormalizeRow(fallback || {});
-    var merged = Object.assign({}, fallback, fresh);
-    Object.keys(fallback).forEach(function(key) {
-      if (key.charAt(0) === '_' || key === 'rowIndex') return;
-      if ((merged[key] === null || merged[key] === undefined || merged[key] === '') && fallback[key] !== '') merged[key] = fallback[key];
-    });
-    ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(key) {
-      merged[key] = Object.assign({}, fallback[key] || {}, fresh[key] || {});
-      Object.keys(fallback[key] || {}).forEach(function(child) {
-        if ((merged[key][child] === null || merged[key][child] === undefined || merged[key][child] === '') && fallback[key][child] !== '') merged[key][child] = fallback[key][child];
-      });
-    });
-    return agendaNormalizeRow(merged);
-  }
-
   function agendaCourierSearch(c) {
     c = c || {};
     return [c.nome, c.destino, c.temperatura, c.status, c.awb, c.material, c.matBioJson].join(' ');
@@ -4100,18 +4083,13 @@
   }
 
   function agendaAbrirEdicaoPronta_(id, rowIndex) {
-    var r = agendaFindEventoLocal_(id, rowIndex);
-    if (!r) {
-      agendaFetchEventoPorId_(id, rowIndex, function(row) {
-        if (!row) {
-          snackErro('Registro da agenda nao encontrado.');
-          return;
-        }
-        agendaAbrirEdicaoResolvida_(row, id);
-      }, function(error) { snackErro(appErrorMessage(error)); });
-      return;
-    }
-    agendaAbrirEdicaoResolvida_(r, id);
+    agendaFetchEventoPorId_(id, rowIndex, function(row) {
+      if (!row) {
+        snackErro('Registro da agenda nao encontrado.');
+        return;
+      }
+      agendaAbrirEdicaoResolvida_(row, id);
+    }, function(error) { snackErro(appErrorMessage(error)); });
   }
 
   function agendaAbrirEdicaoResolvida_(r, id) {
@@ -4125,27 +4103,11 @@
   }
 
   function agendaAbrirEdicaoComContexto_(r, id) {
-    var versaoAberta = String(r.editRecordVersion || r.recordVersion || '');
+    if (!r || String(r.id || '') !== String(id || '')) {
+      snackErro('Registro da agenda nao encontrado.');
+      return;
+    }
     abrirAgendaEdicaoComRegistro_(r);
-    google.script.run
-      .withSuccessHandler(function(registroAtualizado) {
-        if (!registroAtualizado) return;
-        var registro = agendaMergeEditRecord_(registroAtualizado, r);
-        agendaStoreEventoLocal_(registro);
-        var versaoAtual = String(registro.editRecordVersion || registro.recordVersion || '');
-        if (String(_agendaEditId || '') === id) {
-          if (versaoAberta && versaoAtual && versaoAberta !== versaoAtual) {
-            setAgendaStatus('Este agendamento foi alterado depois da carga da Agenda. Feche e reabra a edicao antes de salvar.', 'danger');
-          }
-          return;
-        }
-        var idx = (_agendaEventos || []).findIndex(function(x) {
-          return String(x.id || '') === id && (!r.rowIndex || Number(x.rowIndex || 0) === Number(r.rowIndex || 0));
-        });
-        if (idx >= 0) _agendaEventos[idx] = registro;
-      })
-      .withFailureHandler(function() {})
-      .getAgendaEventoPorId(id, r.rowIndex);
   }
 
   function abrirAgendaEdicaoComRegistro_(r) {
