@@ -3965,9 +3965,67 @@ function excluirProjeto(id) {
 // ════════════════════════════════
 //  PARTICIPANTES — webapp
 // ════════════════════════════════
+function participanteCampoKey_(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function participanteColumnMap_(sh, createMissing) {
+  if (!sh) return {};
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var definitions = [
+    ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['cep', 'CEP'],
+    ['banco', 'Banco'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
+    ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular']
+  ];
+  var aliases = {
+    rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], cep: ['cep'],
+    banco: ['banco', 'nomedobanco'], agencia: ['agencia'], contaCorrente: ['contacorrente', 'conta'],
+    titularConta: ['titulardacontacorrente', 'titulardaconta'], cpfTitular: ['cpfdotitular']
+  };
+  var map = {};
+  headers.forEach(function(header, index) {
+    var key = participanteCampoKey_(header);
+    definitions.forEach(function(definition) {
+      if (map[definition[0]] !== undefined) return;
+      if ((aliases[definition[0]] || [participanteCampoKey_(definition[1])]).indexOf(key) >= 0) map[definition[0]] = index;
+    });
+  });
+  if (!createMissing) return map;
+  definitions.forEach(function(definition) {
+    if (map[definition[0]] !== undefined) return;
+    lastCol++;
+    if (typeof sh.getMaxColumns === 'function' && sh.getMaxColumns() < lastCol) sh.insertColumnsAfter(sh.getMaxColumns(), lastCol - sh.getMaxColumns());
+    sh.getRange(1, lastCol).setValue(definition[1]);
+    map[definition[0]] = lastCol - 1;
+  });
+  return map;
+}
+
+function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
+  var values = {
+    rua: d.rua || '', numero: d.numero || '', cidade: d.cidade || '', estado: d.estado || '', cep: d.cep || '',
+    banco: d.banco || '', agencia: d.agencia || '', contaCorrente: d.contaCorrente || '',
+    titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || ''
+  };
+  Object.keys(values).forEach(function(key) {
+    if (columns[key] !== undefined) sh.getRange(rowNumber, columns[key] + 1).setValue(values[key]);
+  });
+}
+
 function getParticipantes() {
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
+  var header = rows[0] || [];
+  var columns = {};
+  header.forEach(function(value, index) { columns[participanteCampoKey_(value)] = index; });
+  function valueFor(r, aliases) {
+    for (var i = 0; i < aliases.length; i++) {
+      var index = columns[aliases[i]];
+      if (index !== undefined) return r[index] || '';
+    }
+    return '';
+  }
   var tz  = Session.getScriptTimeZone();
   var ultimaVisitaMap = getUltimasVisitasParticipantesAgendaMap_();
 
@@ -3996,14 +4054,25 @@ function getParticipantes() {
         status:         String(r[8] || ''),
         telefone:       String(r[9] || ''),
         cpf:            String(r[10] || ''),
-        observacoes:    String(r[11] || '')
+        observacoes:    String(r[11] || ''),
+        rua:            String(valueFor(r, ['rua', 'endereco']) || ''),
+        numero:         String(valueFor(r, ['numero', 'n']) || ''),
+        cidade:         String(valueFor(r, ['cidade']) || ''),
+        estado:         String(valueFor(r, ['estado', 'uf']) || ''),
+        cep:            String(valueFor(r, ['cep']) || ''),
+        banco:          String(valueFor(r, ['banco', 'nomedobanco']) || ''),
+        agencia:        String(valueFor(r, ['agencia']) || ''),
+        contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
+        titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
+        cpfTitular:     String(valueFor(r, ['cpfdotitular']) || '')
       };
     });
 }
 
 function getParticipanteFormConfig() {
   return {
-    status: getConfigValues_('Participantes', 'Status', [])
+    status: getConfigValues_('Participantes', 'Status', []),
+    bancos: getConfigValues_('Participantes', 'Bancos', [])
   };
 }
 
@@ -4181,6 +4250,8 @@ function salvarDadosParticipante(d) {
     return s;
   }
 
+  var participantColumns = participanteColumnMap_(sh, true);
+
   var rowStart = [
     d.id || '',
     d.nome,
@@ -4201,6 +4272,7 @@ function salvarDadosParticipante(d) {
     var referenciaAnterior = participanteReferenciaCadastro_(rows[editRowIndex]);
     sh.getRange(editRowIndex + 1, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(editRowIndex + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
+    gravarParticipanteCamposNovos_(sh, editRowIndex + 1, d, participantColumns);
     if (editRowIndex + 1 > 2) sh.getRange(editRowIndex + 1, 4).clearContent();
     var referenciaAtual = participanteReferenciaCadastro_([
       d.id, d.nome, parseDate(d.dataNascimento), '', d.idParticipante,
@@ -4220,6 +4292,7 @@ function salvarDadosParticipante(d) {
     var targetRow = sh.getLastRow() + 1;
     sh.getRange(targetRow, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
+    gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns);
     clearCodexRuntimeCaches_();
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return 'Participante cadastrado com sucesso';
@@ -8654,8 +8727,35 @@ function getAgendaSheetForRead_() {
   return sh;
 }
 
+function agendaEnsureBackupTemperaturaColumn_(sh) {
+  var label = 'Backup - Temperatura';
+  var aliases = ['backup temperatura', 'temperatura backup'];
+  var lastColumn = Math.max(Number(sh.getLastColumn && sh.getLastColumn()) || 0, AGENDA_CFG.col.backupAgendaRef);
+  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
+  var column = 0;
+  for (var i = 0; i < headers.length; i++) {
+    if (aliases.indexOf(normText_(headers[i])) >= 0) {
+      column = i + 1;
+      break;
+    }
+  }
+  if (!column) {
+    column = lastColumn + 1;
+    if (typeof sh.getMaxColumns === 'function' && sh.getMaxColumns() < column) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), column - sh.getMaxColumns());
+    }
+    sh.getRange(1, column).setValue(label);
+  }
+  AGENDA_CFG.col.backupTemperatura = column;
+  AGENDA_CFG.idx.cb.temp = column - 1;
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.lastCol, column);
+  CFG.lastCol = Math.max(CFG.lastCol, column);
+  return column;
+}
+
 function ensureAgendaDestinoLabColumns_(sh) {
-  var schemaCacheKey = 'AgendaSchemaEnsured:v5';
+  var backupTemperaturaCol = agendaEnsureBackupTemperaturaColumn_(sh);
+  var schemaCacheKey = 'AgendaSchemaEnsured:v6:' + backupTemperaturaCol;
   if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
     sh.insertColumnsAfter(sh.getMaxColumns(), AGENDA_CFG.lastCol - sh.getMaxColumns());
@@ -8675,8 +8775,7 @@ function ensureAgendaDestinoLabColumns_(sh) {
     { col: AGENDA_CFG.col.ecrf, label: 'eCRF_Concluida' },
     { col: AGENDA_CFG.col.salaMonitoria, label: 'Sala_Monitoria' },
     { col: AGENDA_CFG.col.carroRequerido, label: 'Carro_Requerido' },
-    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' },
-    { col: AGENDA_CFG.col.backupTemperatura, label: 'Backup - Temperatura' }
+    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' }
   ];
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
@@ -9859,7 +9958,8 @@ function atualizarAgendaEventoCompleto(dados) {
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
-  agendaSetBackupLinha_(agenda, linha, dados.backup);
+  agendaSetBackupLinha_(agenda, linha,
+    policy.labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral) ? dados.backup : {});
   agendaSetTransporteExtraLinha_(agenda, linha, dados);
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
   if (deveVerificarNotificacoes) {
@@ -10253,7 +10353,8 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c3, dados.courier3);
-  agendaSetBackupLinha_(agenda, linhaNova, dados.backup);
+  agendaSetBackupLinha_(agenda, linhaNova,
+    policy.labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral) ? dados.backup : {});
   agendaSetTransporteExtraLinha_(agenda, linhaNova, dados);
   agenda.getRange(linhaNova, 1, 1, AGENDA_CFG.lastCol)
     .setFontFamily('Roboto')
@@ -11994,6 +12095,8 @@ function agendaParseIsoBoundary_(value, label) {
 
 function agendaRowToObject_(r, rowIndex) {
   var i = AGENDA_CFG.idx;
+  var backupAplicavel = AgendaServerRules_.formPolicy(r[i.tipo]).labChoiceAllowed &&
+    AgendaServerRules_.isLabCentral(r[i.labCentral]);
   return {
     rowIndex: rowIndex,
     id: String(r[i.id] || ''),
@@ -12030,13 +12133,13 @@ function agendaRowToObject_(r, rowIndex) {
     courier2: agendaCourierToObject_(r, i.c2),
     courier3: agendaCourierToObject_(r, i.c3),
     backup: {
-      nome: String(r[i.cb.nome] || ''),
-      temperatura: String(r[i.cb.temp] || ''),
-      status: String(r[i.cb.status] || ''),
-      material: agendaMaterialSummaryFromJson_(r[i.cb.matBio], r[i.cb.material]),
-      destino: String(r[i.cb.destino] || ''),
-      matBioJson: String(r[i.cb.matBio] || ''),
-      agendamento: agendaBackupAgendaRefFromCell_(r[i.backupAgendaRef])
+      nome: backupAplicavel ? String(r[i.cb.nome] || '') : '',
+      temperatura: backupAplicavel ? String(r[i.cb.temp] || '') : '',
+      status: backupAplicavel ? String(r[i.cb.status] || '') : '',
+      material: backupAplicavel ? agendaMaterialSummaryFromJson_(r[i.cb.matBio], r[i.cb.material]) : '',
+      destino: backupAplicavel ? String(r[i.cb.destino] || '') : '',
+      matBioJson: backupAplicavel ? String(r[i.cb.matBio] || '') : '',
+      agendamento: backupAplicavel ? agendaBackupAgendaRefFromCell_(r[i.backupAgendaRef]) : null
     }
   };
 }

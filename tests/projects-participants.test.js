@@ -165,6 +165,44 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   assert.ok(styles.includes('.participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}'));
 });
 
+test('participante oferece endereco, dados bancarios opcionais e bancos configuraveis', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const block = sourceBetween(modal, '<!-- ══ MODAL PARTICIPANTE', '<!-- ══ MODAL MÉDICO');
+  assert.match(block, /> Endereço<\/div>/);
+  assert.match(block, /id="ptRua"/);
+  assert.match(block, /id="ptNumero"/);
+  assert.match(block, /id="ptCidade"/);
+  assert.match(block, /id="ptEstado"/);
+  assert.match(block, /id="ptCep"/);
+  assert.match(block, /> Dados Bancários<\/div>/);
+  assert.match(block, /id="ptBanco"/);
+  assert.match(block, /id="ptAgencia"/);
+  assert.match(block, /id="ptContaCorrente"/);
+  assert.match(block, /id="ptTitularConta"/);
+  assert.match(block, /id="ptCpfTitular"/);
+  assert.match(client, /BANCOS_PART = cfg\.bancos \|\| \[\]/);
+  assert.match(client, /banco: document\.getElementById\('ptBanco'\)\.value/);
+  assert.match(server, /bancos: getConfigValues_\('Participantes', 'Bancos', \[\]\)/);
+  assert.match(server, /function participanteColumnMap_\(sh, createMissing\)/);
+  assert.match(server, /function gravarParticipanteCamposNovos_/);
+});
+
+test('edicao de participante confirma descarte ao fechar o modal', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  assert.match(client, /#modalParticipante/);
+  assert.match(client, /scope\.id === 'modalParticipante' && scope\.dataset\.editing !== '1'/);
+  assert.match(client, /appClearUnsavedChanges\('modalParticipante'\);/);
+  assert.match(client, /modalPart\.dataset\.editing = p \? '1' : '0'/);
+  assert.match(client, /function fecharModalSeClicouFora\(e,id\) \{ if\(e\.target\.id===id\) fecharOverlay\(id\); \}/);
+  assert.match(modal, /Altera&ccedil;&otilde;es n&atilde;o salvas/);
+  assert.match(modal, /Deseja sair mesmo assim/);
+  assert.match(modal, /Continuar editando/);
+  assert.match(modal, /Sair sem salvar/);
+});
+
 test('modal de projeto amplia a area e posiciona o titulo na identificacao do protocolo', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const start = modal.indexOf('<div class="modal-overlay" id="modalProjeto"');
@@ -237,7 +275,7 @@ test('tabela de participantes exibe nome e codigo do projeto como no cadastro de
 
 test('listagem de participantes recebe e exibe a data da ultima visita realizada', () => {
   const serverSource = readProjectFile('WebApp.gs');
-  const getParticipantesBlock = sourceBetween(serverSource, 'function getParticipantes()', 'function getParticipanteFormConfig()');
+  const getParticipantesBlock = sourceBetween(serverSource, 'function participanteCampoKey_', 'function getParticipanteFormConfig()');
   const serverContext = vm.createContext({
     getCodexSheetDataByName_: () => [
       ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
