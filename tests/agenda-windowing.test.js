@@ -149,6 +149,31 @@ function functionBody(source, name) {
   throw new Error(`Corpo incompleto de ${name}`);
 }
 
+test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', () => {
+  const server = readProjectFile('WebApp.gs');
+  const readGetter = functionBody(server, 'getAgendaSheetForRead_');
+  const writeGetter = functionBody(server, 'getAgendaSheet_');
+  const readFunctions = [
+    'getAgendaEventos',
+    'agendaGetEventosPorPeriodo_',
+    'pesquisarAgendaHistorico',
+    'getAgendaMateriaisAnteriores',
+    'getAgendaPeriodoOperacionalPorEventoId',
+    'getAgendaEventoPorId',
+    'getDashboardPendencias_',
+    'getAgendaDashboardResumo_',
+    'getUltimasVisitasParticipantesAgendaMap_'
+  ];
+
+  assert.match(readGetter, /agendaResolveBackupTemperaturaColumnForRead_\(sh\)/);
+  assert.doesNotMatch(readGetter, /ensureAgendaDestinoLabColumns_|alinharStatusRequisicaoLegadoAgenda_|setValue|insertColumns/);
+  assert.match(writeGetter, /ensureAgendaDestinoLabColumns_\(sh\)/);
+  assert.match(writeGetter, /alinharStatusRequisicaoLegadoAgenda_\(sh\)/);
+  readFunctions.forEach((name) => {
+    assert.match(functionBody(server, name), /getAgendaSheetForRead_\(\)/, `${name} deve usar leitura sem efeitos externos`);
+  });
+});
+
 test('intervalos da agenda aceitam somente datas ISO validas', () => {
   const server = agendaServer();
   assert.equal(server.agendaParseIsoBoundary_('2026-07-17', 'inicio').getDate(), 17);
@@ -193,7 +218,7 @@ test('autocomplete de projeto nao converte os demais selects da Agenda', () => {
 
 test('servidor retorna somente a janela solicitada e informa truncamento', () => {
   const server = agendaServer();
-  server.getAgendaSheet_ = () => fakeAgenda(server, [
+  server.getAgendaSheetForRead_ = () => fakeAgenda(server, [
     { id: '1', data: '2026-07-10', participante: 'Fora' },
     { id: '2', data: '2026-07-14', participante: 'Alpha' },
     { id: '3', data: '2026-07-16', participante: 'Beta' },
@@ -217,7 +242,7 @@ test('janela le primeiro somente datas e usa uma leitura contigua no caminho nor
     agendaRow(server, { id: 'FORA-2', data: '2026-07-25', idParticipante: 'P-4', braco: 'D' })
   ];
   const calls = [];
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
 
   const result = server.getAgendaEventosPorPeriodo('2026-07-14', '2026-07-21', 5000, true);
   assert.deepEqual(Array.from(result.items, (item) => item.id), ['EVT-1', 'EVT-2', 'EVT-3']);
@@ -238,7 +263,7 @@ test('janela encontra linhas fora de ordem sem ler registros alheios nem perder 
     agendaRow(server, { id: 'EVT-3', data: '2026-07-18', idParticipante: 'P-3', braco: 'C' })
   ];
   const calls = [];
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
 
   const result = server.getAgendaEventosPorPeriodo('2026-07-14', '2026-07-21', 5000, true);
   assert.deepEqual(Array.from(result.items, (item) => item.id), ['EVT-1', 'EVT-2', 'EVT-3']);
@@ -254,7 +279,7 @@ test('janela aceita mais de 200 eventos e mantem teto equivalente ao caminho leg
     idParticipante: `P-${index + 1}`,
     braco: 'A'
   }));
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
   const result = server.getAgendaEventosPorPeriodo('2026-07-14', '2026-07-21', 5000, true);
   assert.equal(server.AGENDA_WINDOW_MAX_RECORDS_, 5000);
   assert.equal(result.items.length, 205);
@@ -271,7 +296,7 @@ test('comparacao administrativa confirma IDs e campos sem expor o payload', () =
   ];
   let authorized = 0;
   server.codexAssertAdmin_ = () => { authorized += 1; return { ok: true, role: 'admin' }; };
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
   server.getCodexSheetDataByName_ = () => [[]];
 
   const result = server.compararAgendaWindowComCargaCompleta('2026-07-14', '2026-07-21');
@@ -300,7 +325,7 @@ test('comparacao administrativa detecta evento ou campo divergente e preserva fa
     outOfOrder: false
   });
   server.getAgendaEventos = () => [{ id: 'MESMO-ID', dataIso: '2026-07-15', status: 'Agendado' }];
-  server.getAgendaSheet_ = () => ({ getLastRow: () => 2 });
+  server.getAgendaSheetForRead_ = () => ({ getLastRow: () => 2 });
 
   const result = server.compararAgendaWindowComCargaCompleta('2026-07-14', '2026-07-21');
   assert.equal(result.ok, false);
@@ -353,7 +378,7 @@ test('bootstrap negado interrompe antes de datas, referencias e planilhas', () =
   const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
   server.codexGetCurrentUserAccess = () => ({ ok: false, message: 'Acesso negado.' });
   server.agendaGetReferenceData_ = () => { throw new Error('nao deve ler referencias'); };
-  server.getAgendaSheet_ = () => { throw new Error('nao deve ler agenda'); };
+  server.getAgendaSheetForRead_ = () => { throw new Error('nao deve ler agenda'); };
 
   const result = server.getAgendaBootstrap('data-invalida', 'tambem-invalida', true);
   assert.equal(result.access.ok, false);
@@ -374,7 +399,7 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
     forced = forceRefresh;
     return referenceData;
   };
-  server.getAgendaSheet_ = () => fakeAgenda(server, [
+  server.getAgendaSheetForRead_ = () => fakeAgenda(server, [
     { id: 'EVT-SIGILOSO', data: '2026-07-15', participante: 'Pessoa sigilosa' }
   ]);
   const result = server.getAgendaBootstrap('2026-07-14', '2026-07-21', true);
@@ -979,7 +1004,7 @@ test('pesquisa historica e paginada em lotes sem serializar toda a agenda', () =
 
 test('cursor da pesquisa historica nao repete nem perde resultados', () => {
   const server = agendaServer();
-  server.getAgendaSheet_ = () => fakeAgenda(server, [
+  server.getAgendaSheetForRead_ = () => fakeAgenda(server, [
     { id: '1', data: '2026-07-10', participante: 'Alpha' },
     { id: '2', data: '2026-07-11', participante: 'Outro' },
     { id: '3', data: '2026-07-12', participante: 'Alpha' }
@@ -1162,7 +1187,7 @@ test('abertura direta valida rowIndex e le somente a linha completa solicitada',
       };
     }
   };
-  server.getAgendaSheet_ = () => sheet;
+  server.getAgendaSheetForRead_ = () => sheet;
 
   const event = server.getAgendaEventoPorId('EVT-2', 3);
   assert.equal(event.id, 'EVT-2');
@@ -1190,7 +1215,7 @@ test('abertura direta sem rowIndex procura apenas na coluna de IDs e preserva ev
       };
     }
   };
-  server.getAgendaSheet_ = () => sheet;
+  server.getAgendaSheetForRead_ = () => sheet;
 
   assert.equal(server.getAgendaEventoPorId('EVT-1').id, 'EVT-1');
   assert.equal(calls.filter((call) => call.column === server.AGENDA_CFG.col.id && call.numColumns === 1 && call.numRows === 2).length, 1);
@@ -1298,7 +1323,7 @@ test('materiais anteriores usam consulta especifica, IDs estaveis e no maximo ci
     participante: 'Outro', idParticipante: 'PART-2', projeto: 'Projeto Alpha', courier1Material: 'Ignorar'
   }));
   const calls = [];
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
   server.getCodexSheetDataByName_ = (name) => name === 'Projetos'
     ? [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']]
     : [[]];
@@ -1321,7 +1346,7 @@ test('materiais anteriores por projeto aceitam nome e codigo sem devolver mais d
     agendaRow(server, { id: 'CODIGO', data: '2026-07-02', tipo: 'Visita', projeto: 'PA', backupMaterial: 'B' }),
     agendaRow(server, { id: 'OUTRO', data: '2026-07-03', tipo: 'Visita', projeto: 'Outro Projeto', backupMaterial: 'C' })
   ];
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
   server.getCodexSheetDataByName_ = (name) => name === 'Projetos'
     ? [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA'], ['PROJ-2', 'Outro Projeto', 'OP']]
     : [[]];
@@ -1342,7 +1367,7 @@ test('periodo operacional por ID preserva dias consecutivos e regra de cancelame
     agendaRow(server, { id: 'S3', data: '2026-08-03', tipo: 'SIV', status: 'Agendado', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' })
   ];
   const calls = [];
-  server.getAgendaSheet_ = () => fakeAgendaRows(server, rows, calls);
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
   server.getCodexSheetDataByName_ = () => [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
 
   const monitoria = server.getAgendaPeriodoOperacionalPorEventoId('M2', 3);

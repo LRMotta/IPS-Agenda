@@ -873,7 +873,7 @@ function codexGetRecordVersion_(moduleName, recordId) {
   recordId = String(recordId || '').trim();
   if (!recordId) return '';
   if (normText_(moduleName) === 'agenda') {
-    var agenda = getAgendaSheet_();
+    var agenda = getAgendaSheetForRead_();
     var linha = encontrarLinhaPorId(agenda, recordId);
     if (!linha) return '';
     var row = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
@@ -899,7 +899,7 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
     var version = codexGetRecordVersion_(moduleName, recordId);
     var editVersion = '';
     if (normText_(moduleName) === 'agenda') {
-      var agenda = getAgendaSheet_();
+      var agenda = getAgendaSheetForRead_();
       var linhaAgenda = encontrarLinhaPorId(agenda, recordId);
       if (linhaAgenda) {
         editVersion = agendaEditableRecordVersionFromRow_(agenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0]);
@@ -4823,7 +4823,7 @@ function getDashboardPendenciasVazio_() {
 
 function getDashboardPendencias_(estoque) {
   var out = getDashboardPendenciasVazio_();
-  var agenda = getAgendaSheet_();
+  var agenda = getAgendaSheetForRead_();
   var hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   var posVisitaCorte = parseAgendaDateAny_('2026-05-23');
@@ -5056,7 +5056,7 @@ function diasAteValidadeDashboard_(validade) {
 }
 
 function getAgendaDashboardResumo_() {
-  var sh = getAgendaSheet_();
+  var sh = getAgendaSheetForRead_();
   var lastRow = sh.getLastRow();
   var anoAtual = new Date().getFullYear();
   var meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -8765,34 +8765,48 @@ function getAgendaSheet_() {
 function getAgendaSheetForRead_() {
   var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), AGENDA_CFG.abaNomes);
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
-  ensureAgendaDestinoLabColumns_(sh);
+  agendaResolveBackupTemperaturaColumnForRead_(sh);
   return sh;
+}
+
+function agendaFindBackupTemperaturaColumn_(sh) {
+  var aliases = ['backup - temperatura', 'backup temperatura', 'temperatura backup'];
+  var lastColumn = Number(sh && sh.getLastColumn && sh.getLastColumn()) || 0;
+  if (lastColumn < 1) return 0;
+  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
+  for (var i = 0; i < headers.length; i++) {
+    if (aliases.indexOf(normText_(headers[i])) >= 0) {
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
+function agendaUseBackupTemperaturaColumn_(column) {
+  column = Math.max(0, Number(column) || 0);
+  AGENDA_CFG.col.backupTemperatura = column;
+  AGENDA_CFG.idx.cb.temp = column ? column - 1 : -1;
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, column);
+  CFG.lastCol = AGENDA_CFG.lastCol;
+  return column;
+}
+
+function agendaResolveBackupTemperaturaColumnForRead_(sh) {
+  return agendaUseBackupTemperaturaColumn_(agendaFindBackupTemperaturaColumn_(sh));
 }
 
 function agendaEnsureBackupTemperaturaColumn_(sh) {
   var label = 'Backup - Temperatura';
-  var aliases = ['backup temperatura', 'temperatura backup'];
-  var lastColumn = Math.max(Number(sh.getLastColumn && sh.getLastColumn()) || 0, AGENDA_CFG.col.backupAgendaRef);
-  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
-  var column = 0;
-  for (var i = 0; i < headers.length; i++) {
-    if (aliases.indexOf(normText_(headers[i])) >= 0) {
-      column = i + 1;
-      break;
-    }
-  }
+  var column = agendaFindBackupTemperaturaColumn_(sh);
   if (!column) {
+    var lastColumn = Math.max(Number(sh.getLastColumn && sh.getLastColumn()) || 0, AGENDA_CFG.col.backupAgendaRef);
     column = lastColumn + 1;
     if (typeof sh.getMaxColumns === 'function' && sh.getMaxColumns() < column) {
       sh.insertColumnsAfter(sh.getMaxColumns(), column - sh.getMaxColumns());
     }
     sh.getRange(1, column).setValue(label);
   }
-  AGENDA_CFG.col.backupTemperatura = column;
-  AGENDA_CFG.idx.cb.temp = column - 1;
-  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.lastCol, column);
-  CFG.lastCol = Math.max(CFG.lastCol, column);
-  return column;
+  return agendaUseBackupTemperaturaColumn_(column);
 }
 
 function ensureAgendaDestinoLabColumns_(sh) {
@@ -9301,7 +9315,7 @@ function getUltimaVisitaParticipanteAgenda_(nome) {
 function getUltimasVisitasParticipantesAgendaMap_() {
   var out = {};
   try {
-    var agenda = getAgendaSheet_();
+    var agenda = getAgendaSheetForRead_();
     var lastRow = agenda.getLastRow();
     if (lastRow < 2) return out;
     var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
@@ -10674,7 +10688,7 @@ function monitorarEntregasDhlAgendadas_(options) {
 
 function diagnosticarMonitorEntregasDhl() {
   codexAssertAdmin_();
-  var agenda = getAgendaSheet_();
+  var agenda = getAgendaSheetForRead_();
   var lastRow = agenda.getLastRow();
   var result = {
     apiKeyConfigurada: !!getDhlTrackingApiKey_(),
@@ -10924,7 +10938,7 @@ function monitorarConfirmacoesCourierAgendadas_() {
 function diagnosticarMonitorConfirmacoesCourier() {
   codexAssertAdmin_();
   var regras = getCourierConfirmationRules_();
-  var agenda = getAgendaSheet_();
+  var agenda = getAgendaSheetForRead_();
   var lastRow = agenda.getLastRow();
   var result = {
     regras: Object.keys(regras).map(function(k) {
@@ -11466,7 +11480,7 @@ function getAgendaEventos(limite) {
   var totalMeta = { rowCount: 0 };
   return codexMeasurePerformance_('getAgendaEventos', 'total', totalMeta, function() {
     var sh = codexMeasurePerformance_('getAgendaEventos', 'sheet', { rowCount: 0 }, function() {
-      return getAgendaSheet_();
+      return getAgendaSheetForRead_();
     });
     var lastRow = sh.getLastRow();
     if (lastRow < 2) return [];
@@ -11519,7 +11533,7 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
   var requestedLimit = Number(limite || 150);
   if (!isFinite(requestedLimit)) requestedLimit = 150;
   var max = Math.max(1, Math.min(Math.floor(requestedLimit), AGENDA_WINDOW_MAX_RECORDS_));
-  var sh = getAgendaSheet_();
+  var sh = getAgendaSheetForRead_();
   var lastRow = sh.getLastRow();
   var cacheKey = ['AgendaWindow:v2', lastRow, inicioIso, fimIso, max].join(':');
   var scanMeta = { rowCount: Math.max(0, lastRow - 1) };
@@ -11673,7 +11687,7 @@ function compararAgendaWindowComCargaCompleta(inicioIso, fimIso) {
     var fullFiltered = fullEvents.filter(function(item) {
       return item && item.dataIso >= inicioIso && item.dataIso < fimIso;
     });
-    var sourceRows = Math.max(0, getAgendaSheet_().getLastRow() - 1);
+    var sourceRows = Math.max(0, getAgendaSheetForRead_().getLastRow() - 1);
     var legacyTruncated = sourceRows > AGENDA_WINDOW_MAX_RECORDS_;
     var comparison = agendaCompareEventCollections_(windowData.items, fullFiltered);
     result = {
@@ -11882,7 +11896,7 @@ function agendaWindowCachePut_(key, value) {
 function pesquisarAgendaHistorico(query, cursor, pageSize) {
   query = String(query || '').trim();
   if (query.length < 2) throw new Error('Informe pelo menos 2 caracteres para pesquisar.');
-  var sh = getAgendaSheet_();
+  var sh = getAgendaSheetForRead_();
   var lastRow = sh.getLastRow();
   var size = Math.max(1, Math.min(Number(pageSize || 25), 50));
   var scanEnd = cursor == null || cursor === '' ? lastRow : Math.min(lastRow, Math.max(2, Number(cursor) || lastRow));
@@ -11921,7 +11935,7 @@ function getAgendaMateriaisAnteriores(criteria) {
     var projeto = projetoId ? agendaProjetoIdentidade_(projetoId) : null;
     if (projetoId && (!projeto || !projeto.id)) return { items: [], limit: limite };
 
-    var sh = getAgendaSheet_();
+    var sh = getAgendaSheetForRead_();
     var lastRow = sh.getLastRow();
     if (lastRow < 2) return { items: [], limit: limite };
     var rowCount = lastRow - 1;
@@ -12051,7 +12065,7 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
   return codexMeasurePerformance_('getAgendaPeriodoOperacionalPorEventoId', 'total', totalMeta, function() {
     id = String(id || '').trim();
     if (!id) return null;
-    var sh = getAgendaSheet_();
+    var sh = getAgendaSheetForRead_();
     var linha = agendaLocalizarLinhaPorId_(sh, id, rowIndex);
     if (!linha) return null;
     var ref = sh.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
@@ -12123,7 +12137,7 @@ function getAgendaEventoPorId(id, rowIndex) {
   return codexMeasurePerformance_('getAgendaEventoPorId', 'total', totalMeta, function() {
     id = String(id || '').trim();
     if (!id) return null;
-    var sh = getAgendaSheet_();
+    var sh = getAgendaSheetForRead_();
     var locateMeta = { rowCount: 0 };
     var row = codexMeasurePerformance_('getAgendaEventoPorId', 'locate', locateMeta, function() {
       return agendaLocalizarLinhaPorId_(sh, id, rowIndex, locateMeta);

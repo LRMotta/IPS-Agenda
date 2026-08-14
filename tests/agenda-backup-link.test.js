@@ -13,6 +13,26 @@ function agendaServer() {
   });
 }
 
+function readonlyAgendaSheet(rows, maxColumns) {
+  const sheet = new FakeSheet('Agenda', rows);
+  const getRange = sheet.getRange.bind(sheet);
+  function denyWrite() {
+    sheet.writeAttempts++;
+    throw new Error('Voce nao tem permissao para alterar o documento solicitado.');
+  }
+  sheet.writeAttempts = 0;
+  sheet.getMaxColumns = () => maxColumns;
+  sheet.insertColumnsAfter = denyWrite;
+  sheet.getRange = (...args) => {
+    const range = getRange(...args);
+    range.setValue = denyWrite;
+    range.setValues = denyWrite;
+    range.clearContent = denyWrite;
+    return range;
+  };
+  return sheet;
+}
+
 test('vinculo do backup guarda o agendamento de destino com data e hora', () => {
   const server = agendaServer();
   const cfg = server.AGENDA_CFG;
@@ -98,6 +118,67 @@ test('coluna de temperatura do backup e localizada pelo cabecalho sem reutilizar
   assert.equal(sheet.rows[1][51], '81231558');
   assert.equal(sheet.rows[0][52], 'Backup - Temperatura');
   assert.equal(cfg.idx.cb.temp, 52);
+
+  const sameColumn = server.agendaEnsureBackupTemperaturaColumn_(sheet);
+  assert.equal(sameColumn, 53);
+  assert.equal(sheet.rows[0].length, 53);
+});
+
+test('carga da Agenda em planilha readonly aceita esquema legado sem tentar criar coluna', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const headers = Array(cfg.col.backupAgendaRef).fill('');
+  const row = Array(cfg.col.backupAgendaRef).fill('');
+  row[cfg.idx.id] = 'EVT-READONLY';
+  row[cfg.idx.tipo] = 'Visita';
+  row[cfg.idx.status] = 'Agendado';
+  row[cfg.idx.labCentral] = 'Nao';
+  const sheet = readonlyAgendaSheet([headers, row], cfg.col.backupAgendaRef);
+
+  server.getCodexSpreadsheet_ = () => ({
+    getSheetByName: (name) => cfg.abaNomes.includes(name) ? sheet : null
+  });
+  server.getCodexSheetDataByName_ = () => [];
+
+  const eventos = server.getAgendaEventos(5000);
+
+  assert.equal(eventos.length, 1);
+  assert.equal(eventos[0].id, 'EVT-READONLY');
+  assert.equal(eventos[0].backup.temperatura, '');
+  assert.equal(cfg.lastCol, cfg.col.backupAgendaRef);
+  assert.equal(cfg.col.backupTemperatura, 0);
+  assert.equal(cfg.idx.cb.temp, -1);
+  assert.equal(sheet.writeAttempts, 0);
+});
+
+test('carga readonly localiza temperatura do backup em coluna dinamica sem escrever cabecalhos', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const headers = Array(53).fill('');
+  const row = Array(53).fill('');
+  headers[51] = 'Telefone legado';
+  headers[52] = 'Backup - Temperatura';
+  row[cfg.idx.id] = 'EVT-BACKUP';
+  row[cfg.idx.tipo] = 'Visita';
+  row[cfg.idx.status] = 'Agendado';
+  row[cfg.idx.labCentral] = 'Sim';
+  row[52] = 'CONGELADO';
+  const sheet = readonlyAgendaSheet([headers, row], 53);
+
+  server.getCodexSpreadsheet_ = () => ({
+    getSheetByName: (name) => cfg.abaNomes.includes(name) ? sheet : null
+  });
+  server.getCodexSheetDataByName_ = () => [];
+
+  const eventos = server.getAgendaEventos(5000);
+
+  assert.equal(cfg.lastCol, 53);
+  assert.equal(cfg.col.backupTemperatura, 53);
+  assert.equal(cfg.idx.cb.temp, 52);
+  assert.equal(eventos[0].tipo, 'Visita');
+  assert.equal(eventos[0].labCentral, 'Sim');
+  assert.equal(eventos[0].backup.temperatura, 'CONGELADO');
+  assert.equal(sheet.writeAttempts, 0);
 });
 
 test('interface vincula somente depois de salvar e abre o agendamento pelo chip', () => {
