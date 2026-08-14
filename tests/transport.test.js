@@ -191,7 +191,7 @@ test('comparacao segura de projeto nao consulta a planilha para cada participant
   assert.match(block, /value\.match\(\/\^\(\.\*\?\)/);
 });
 
-test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', () => {
+test('ficha vinculada atualiza protocolo, investigador e laboratorio pelo idAgenda e slot', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(
     source,
@@ -215,7 +215,8 @@ test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', (
         participante: 'Filipe Mumeron da Silva',
         idParticipante: '2011250001',
         projeto: 'SKYLINE-UC',
-        medico: ''
+        medico: '',
+        courier2: { destino: 'Lab Agenda II' }
       };
     }
   });
@@ -223,14 +224,53 @@ test('ficha vinculada atualiza protocolo e investigador atuais pelo idAgenda', (
 
   const registro = context.transporteAtualizarRegistroPorAgenda_({
     idAgenda: 'fc1ad99b',
+    agendaSlot: '2',
     paciente: 'Filipe Mumeron da Silva',
     protocolo: 'SPY',
-    investigador: ''
+    investigador: '',
+    destino: 'Lab alterado na tela'
   });
   assert.equal(registro.paciente, 'Filipe Muneron da Silva');
   assert.equal(registro.protocolo, 'SKYLINE-UC (SPY123-201)');
   assert.equal(registro.investigador, 'Eduardo Brambilla');
   assert.equal(registro.identificacaoParticipante, '2011250001');
+  assert.equal(registro.destino, 'Lab Agenda II');
+  assert.equal(context.transporteAtualizarRegistroPorAgenda_({ destino: 'Lab Manual' }).destino, 'Lab Manual');
+});
+
+test('laboratorio permanece editavel no Transporte manual e bloqueia quando vem da Agenda', () => {
+  const client = readProjectFile('TransporteApp.html');
+  const block = sourceBetween(client, 'function transportAgendaContext(', 'function focusAgendaInOpener(');
+  const destino = {
+    disabled: false,
+    title: '',
+    classList: {
+      values: new Set(),
+      toggle(name, enabled) { enabled ? this.values.add(name) : this.values.delete(name); }
+    },
+    removeAttribute(name) { if (name === 'title') this.title = ''; }
+  };
+  const agendaContext = {
+    title: '',
+    classList: { add() {}, remove() {} },
+    removeAttribute() {}
+  };
+  const context = vm.createContext({
+    state: { registro: {} },
+    document: { getElementById: (id) => id === 'destino' ? destino : agendaContext }
+  });
+  vm.runInContext(block, context);
+
+  context.renderAgendaContext();
+  assert.equal(destino.disabled, false);
+  assert.equal(destino.classList.values.has('auto-fill'), false);
+
+  context.state.registro.idAgenda = 'EVT-1';
+  context.renderAgendaContext();
+  assert.equal(destino.disabled, true);
+  assert.equal(destino.classList.values.has('auto-fill'), true);
+  assert.match(destino.title, /agendamento de origem/);
+  assert.match(client, /select\.auto-fill:disabled/);
 });
 
 test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () => {
