@@ -1497,6 +1497,28 @@ function transporteEncontrarParticipante_(participantes, referencia) {
   return aproximado;
 }
 
+function transporteDestinoAgenda_(evento, slot) {
+  evento = evento || {};
+  var slotKey = String(slot || '').trim().toLowerCase();
+  var slotMap = {
+    '1': 'courier1',
+    i: 'courier1',
+    'transporte i': 'courier1',
+    '2': 'courier2',
+    ii: 'courier2',
+    'transporte ii': 'courier2',
+    '3': 'courier3',
+    iii: 'courier3',
+    'transporte iii': 'courier3',
+    backup: 'backup',
+    b: 'backup'
+  };
+  var courierKey = slotMap[slotKey];
+  if (!courierKey) return '';
+  var courier = evento[courierKey] || {};
+  return String(courier.destino || courier.laboratorioDestino || '').trim();
+}
+
 function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado) {
   registro = registro || {};
   var idAgenda = String(registro.idAgenda || '').trim();
@@ -1517,9 +1539,11 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado) {
       (participante && (participante.investigador || participante.medico)) ||
       registro.investigador || ''
     ).trim();
+    var destinoAgenda = transporteDestinoAgenda_(evento, registro.agendaSlot || registro.slot);
 
     registro.protocolo = transporteProjetoDisplay_(projeto) || registro.protocolo || '';
     registro.investigador = investigador || registro.investigador || '';
+    if (destinoAgenda) registro.destino = destinoAgenda;
     registro.identificacaoParticipante = String(
       evento.idParticipante ||
       (participante && transporteParticipanteIdEstavel_(participante)) ||

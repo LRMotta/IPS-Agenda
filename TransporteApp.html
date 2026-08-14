@@ -110,11 +110,12 @@
       background:#fff8f7;
       box-shadow:0 0 0 3px rgba(179,38,30,.08);
     }
-    input.auto-fill[readonly] {
+    input.auto-fill[readonly], select.auto-fill:disabled {
       background:#f0f7ff;
       border-color:#b3d4f8;
       color:#1a5276;
       cursor:not-allowed;
+      opacity:1;
     }
     textarea { min-height:72px; resize:vertical; }
     .segmented { display:flex; gap:6px; flex-wrap:wrap; }
@@ -602,6 +603,7 @@
       var box = document.getElementById('agendaContext');
       if (!box) return;
       var ctx = transportAgendaContext();
+      updateAgendaLockedFields(!!ctx.id);
       if (!ctx.id) {
         box.classList.remove('show');
         box.removeAttribute('title');
@@ -609,6 +611,18 @@
       }
       box.title = [ctx.paciente, ctx.protocolo, ctx.visita].filter(Boolean).join(' - ') || ('Agendamento ' + ctx.id);
       box.classList.add('show');
+    }
+
+    function updateAgendaLockedFields(fromAgenda) {
+      var destino = document.getElementById('destino');
+      if (!destino) return;
+      destino.disabled = !!fromAgenda;
+      destino.classList.toggle('auto-fill', !!fromAgenda);
+      if (fromAgenda) {
+        destino.title = 'Laboratório definido no agendamento de origem.';
+      } else {
+        destino.removeAttribute('title');
+      }
     }
 
     function focusAgendaInOpener(agendaId) {
