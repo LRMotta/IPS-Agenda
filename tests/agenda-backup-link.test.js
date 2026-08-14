@@ -225,11 +225,13 @@ test('novo envio do Backup exige temperatura sem alterar o legado', () => {
 
   assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({
     backupOrigemAgendaId: 'LEGADO-1',
-    backup: { temperatura: '' }
-  }), 'Informe a Temperatura do Transporte de Amostras Backup antes de salvar o novo envio.');
+    courier1: { temperatura: '' },
+    backup: { temperatura: 'CONGELADO' }
+  }), 'Informe a Temperatura do Transporte de Amostras I antes de salvar o novo envio.');
   assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({
     backupOrigemAgendaId: 'ORIGEM-1',
-    backup: { temperatura: 'CONGELADO' }
+    courier1: { temperatura: 'CONGELADO' },
+    backup: {}
   }), '');
-  assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({ backup: { temperatura: '' } }), '');
+  assert.equal(server.agendaNovoEnvioBackupTemperaturaErro_({ courier1: { temperatura: '' } }), '');
 });
