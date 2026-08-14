@@ -11319,9 +11319,9 @@ function agendaSetBackupLinha_(agenda, linha, backup) {
 function agendaNovoEnvioBackupTemperaturaErro_(dados) {
   dados = dados || {};
   if (!String(dados.backupOrigemAgendaId || '').trim()) return '';
-  var backup = dados.backup || {};
-  if (!String(backup.temperatura || backup.temp || '').trim()) {
-    return 'Informe a Temperatura do Transporte de Amostras Backup antes de salvar o novo envio.';
+  var transporteI = dados.courier1 || {};
+  if (!String(transporteI.temperatura || transporteI.temp || '').trim()) {
+    return 'Informe a Temperatura do Transporte de Amostras I antes de salvar o novo envio.';
   }
   return '';
 }
