@@ -714,18 +714,20 @@
     atualizarAgendaTransportesOpcionais();
   }
 
-  function agendaCourierFromForm(prefix) {
-    var mat = agendaMatBioSerialize(prefix);
+  function agendaCourierFromForm(prefix, materialSnapshot) {
+    var mat = materialSnapshot || agendaMatBioSerialize(prefix);
     function val(suffix) {
       var el = document.getElementById(prefix + suffix);
       return el ? el.value : '';
     }
+    var awbEl = document.getElementById(prefix + 'Awb');
     return {
       nome: val('Nome'),
       destino: val('Destino'),
       temperatura: val('Temp'),
       status: val('Status'),
       awb: val('Awb'),
+      awbTouched: !!(awbEl && awbEl.dataset.awbTouched === 'true'),
       material: mat.summary,
       matBioJson: mat.json
     };
@@ -2399,9 +2401,9 @@
         var label = el.options[el.selectedIndex] ? el.options[el.selectedIndex].text : el.value;
         return label;
       }).filter(Boolean).join('; ') : '',
-      courier1: salvarDadosTecnicos ? { nome: v('agC1Nome'), destino: v('agC1Destino'), temperatura: v('agC1Temp'), status: v('agC1Status'), awb: v('agC1Awb'), material: mat1.summary, matBioJson: mat1.json } : {},
-      courier2: salvarDadosTecnicos ? { nome: v('agC2Nome'), destino: v('agC2Destino'), temperatura: v('agC2Temp'), status: v('agC2Status'), awb: v('agC2Awb'), material: mat2.summary, matBioJson: mat2.json } : {},
-      courier3: salvarDadosTecnicos ? { nome: v('agC3Nome'), destino: v('agC3Destino'), temperatura: v('agC3Temp'), status: v('agC3Status'), awb: v('agC3Awb'), material: mat3.summary, matBioJson: mat3.json } : {},
+      courier1: salvarDadosTecnicos ? agendaCourierFromForm('agC1', mat1) : {},
+      courier2: salvarDadosTecnicos ? agendaCourierFromForm('agC2', mat2) : {},
+      courier3: salvarDadosTecnicos ? agendaCourierFromForm('agC3', mat3) : {},
       backup: salvarDadosTecnicos ? { nome: v('agBackupNome'), destino: v('agBackupDestino'), temperatura: v('agBackupTemp'), status: v('agBackupStatus'), material: matB.summary, matBioJson: matB.json } : {}
     };
   }
@@ -3227,6 +3229,9 @@
      'agBackupNome','agBackupDestino','agBackupTemp','agBackupStatus','agBackupMaterial','agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].concat(agendaKitIds()).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
+    });
+    ['agC1','agC2','agC3'].forEach(function(prefix) {
+      agendaSetAwbTrackingBaseline_(prefix, '');
     });
     agendaMatBioPrefixes().forEach(agendaMatBioClear);
     document.getElementById('agLabCentral').disabled = false;
@@ -4205,6 +4210,18 @@
     if (el) el.value = value || '';
   }
 
+  function agendaSetAwbTrackingBaseline_(prefix, value) {
+    var el = document.getElementById(prefix + 'Awb');
+    if (!el) return;
+    el.dataset.awbOriginal = String(value || '');
+    el.dataset.awbTouched = 'false';
+    if (el.dataset.awbTrackingBound === 'true') return;
+    el.dataset.awbTrackingBound = 'true';
+    el.addEventListener('input', function() {
+      el.dataset.awbTouched = 'true';
+    });
+  }
+
   function preencherAgendaCourierEdit(prefix, c) {
     c = c || {};
     setAgendaSelectValue(prefix + 'Nome', c.nome);
@@ -4212,6 +4229,7 @@
     setAgendaSelectValue(prefix + 'Temp', c.temperatura);
     setAgendaSelectValue(prefix + 'Status', c.status);
     setAgendaFieldValue(prefix + 'Awb', c.awb);
+    agendaSetAwbTrackingBaseline_(prefix, c.awb);
     agendaMatBioLoad(prefix, c);
     onAgendaCourierChange(prefix);
   }

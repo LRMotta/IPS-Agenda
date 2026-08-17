@@ -9606,10 +9606,10 @@ function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipo
     false
   ]]);
   // A conversao para periodo operacional limpa explicitamente os transportes.
-  // O setter preserva a AWB quando o campo nao faz parte do payload comum.
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, { awb: '' });
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, { awb: '' });
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, { awb: '' });
+  // O setter exige a mesma intencao explicita usada quando o usuario toca a AWB.
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, { awb: '', awbTouched: true });
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, { awb: '', awbTouched: true });
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, { awb: '', awbTouched: true });
   agendaSetBackupLinha_(agenda, linha, {});
   agendaSetTransporteExtraLinha_(agenda, linha, {});
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
@@ -10447,9 +10447,16 @@ function agendaSetCourierLinha_(agenda, linha, idx, courier) {
     courier.status || ''
   ]]);
   agenda.getRange(linha, idx.material + 1).setValue(materialSummary);
-  // Payloads parciais nao podem apagar uma AWB existente. A limpeza continua
-  // disponivel somente quando o chamador envia explicitamente a propriedade.
-  if (Object.prototype.hasOwnProperty.call(courier, 'awb') && courier.awb !== undefined) {
+  // A tela pode estar desatualizada ou carregar temporariamente uma AWB vazia.
+  // O contrato novo so altera a celula quando o usuario tocou o campo. Clientes
+  // legados ainda podem preencher uma AWB, mas nunca limpar uma existente com
+  // um vazio incidental.
+  var hasAwb = Object.prototype.hasOwnProperty.call(courier, 'awb') && courier.awb !== undefined;
+  var hasTouchedFlag = Object.prototype.hasOwnProperty.call(courier, 'awbTouched');
+  var shouldUpdateAwb = hasAwb && (hasTouchedFlag
+    ? courier.awbTouched === true
+    : String(courier.awb || '').trim() !== '');
+  if (shouldUpdateAwb) {
     agendaSetAwbValue_(agenda.getRange(linha, idx.awb + 1), courier.awb || '', courierNome);
   }
 }
