@@ -30,7 +30,7 @@ function loadCourierSetter() {
   return { setter: context.agendaSetCourierLinha_, calls };
 }
 
-test('payload sem AWB preserva AWB existente nos Transportes I, II e III', () => {
+test('payload vazio ou sem intencao preserva AWB existente nos Transportes I, II e III', () => {
   Object.entries(AGENDA_TRANSPORT_INDEXES).forEach(([slot, idx]) => {
     const row = Array(52).fill('');
     const awbAnterior = `AWB-EXISTENTE-${slot}`;
@@ -38,24 +38,46 @@ test('payload sem AWB preserva AWB existente nos Transportes I, II e III', () =>
     const sheet = new FakeSheet('Agenda', [Array(52).fill(''), row]);
     const { setter, calls } = loadCourierSetter();
 
-    setter(sheet, 2, idx, { nome: 'DHL', status: 'Agendado', material: 'Soro', awb: undefined });
+    setter(sheet, 2, idx, { nome: 'DHL', status: 'Agendado', material: 'Soro', awb: '' });
+    setter(sheet, 2, idx, { nome: 'DHL', status: 'Agendado', material: 'Soro', awb: 'AWB-DESATUALIZADA', awbTouched: false });
 
     assert.equal(sheet.rows[1][idx.awb], awbAnterior, `Transporte ${slot}`);
     assert.deepEqual(calls, [], `Transporte ${slot} nao deveria limpar a AWB`);
   });
 });
 
-test('limpeza explicita de AWB continua funcionando nos Transportes I, II e III', () => {
+test('limpeza explicitamente tocada continua funcionando nos Transportes I, II e III', () => {
   Object.entries(AGENDA_TRANSPORT_INDEXES).forEach(([slot, idx]) => {
     const row = Array(52).fill('');
     row[idx.awb] = `AWB-EXISTENTE-${slot}`;
     const sheet = new FakeSheet('Agenda', [Array(52).fill(''), row]);
     const { setter, calls } = loadCourierSetter();
 
-    setter(sheet, 2, idx, { nome: 'DHL', awb: '', material: 'Soro' });
+    setter(sheet, 2, idx, { nome: 'DHL', awb: '', awbTouched: true, material: 'Soro' });
 
     assert.equal(sheet.rows[1][idx.awb], '', `Transporte ${slot}`);
     assert.equal(calls.length, 1, `Transporte ${slot} deveria limpar explicitamente`);
     assert.equal(calls[0].awb, '', `Transporte ${slot}`);
   });
+});
+
+test('AWB tocada continua podendo preencher ou substituir os Transportes I, II e III', () => {
+  Object.entries(AGENDA_TRANSPORT_INDEXES).forEach(([slot, idx]) => {
+    const row = Array(52).fill('');
+    row[idx.awb] = `AWB-ANTERIOR-${slot}`;
+    const sheet = new FakeSheet('Agenda', [Array(52).fill(''), row]);
+    const { setter, calls } = loadCourierSetter();
+
+    setter(sheet, 2, idx, { nome: 'MARKEN', awb: `AWB-NOVA-${slot}`, awbTouched: true, material: 'Soro' });
+
+    assert.equal(sheet.rows[1][idx.awb], `AWB-NOVA-${slot}`, `Transporte ${slot}`);
+    assert.equal(calls.length, 1, `Transporte ${slot} deveria atualizar a AWB`);
+  });
+});
+
+test('cliente envia intencao de AWB separada do valor carregado no formulario', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  assert.match(client, /awbTouched: !!\(awbEl && awbEl\.dataset\.awbTouched === 'true'\)/);
+  assert.match(client, /el\.addEventListener\('input',[\s\S]*?el\.dataset\.awbTouched = 'true'/);
+  assert.match(client, /agendaSetAwbTrackingBaseline_\(prefix, c\.awb\)/);
 });
