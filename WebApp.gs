@@ -1662,6 +1662,8 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormDataStrict:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
 }
 
 function codexCacheGet_(key) {
@@ -1909,6 +1911,7 @@ function salvarDadosMedico(dados) {
         sh.getRange(linha, 5).setValue(dados.cremers       || '');
         sh.getRange(linha, 6).setValue(dados.telefone      || '');
         sh.getRange(linha, 7).setValue(dados.email         || '');
+        clearCodexRuntimeCaches_();
         return 'Médico atualizado com sucesso.';
       }
     }
@@ -1919,6 +1922,7 @@ function salvarDadosMedico(dados) {
   sh.appendRow([novoId, dados.nome || '', especialidade,
                 dados.cpf || '', dados.cremers || '',
                 dados.telefone || '', dados.email || '']);
+  clearCodexRuntimeCaches_();
   return 'Médico cadastrado com sucesso.';
 }
 
@@ -1945,7 +1949,11 @@ function excluirMedico(id) {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🩺 Médicos');
   var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0] == id) { sh.deleteRow(i + 2); return 'ok'; }
+    if (ids[i][0] == id) {
+      sh.deleteRow(i + 2);
+      clearCodexRuntimeCaches_();
+      return 'ok';
+    }
   }
   throw new Error('Registro não encontrado.');
 }
@@ -5287,7 +5295,11 @@ function getItensEstoqueColumnMap_(headers) {
     observacoes: find(['Observações', 'Observacoes', 'Observação', 'Observacao', 'Obs'], usaLayoutComDetalhes ? 7 : 6),
     laboratorio: find(['Laboratório', 'Laboratorio', 'Lab'], usaLayoutComDetalhes ? 8 : 7),
     status: find(['Status', 'Ativo'], usaLayoutComDetalhes ? 9 : 8),
-    ordem: find(['Ordem de utilização', 'Ordem de utilizacao', 'Ordem de uso', 'Ordem'], -1)
+    ordem: find(['Ordem de utilização', 'Ordem de utilizacao', 'Ordem de uso', 'Ordem'], -1),
+    visitasAplicaveis: find([
+      'Visitas aplicáveis (IDs SoA)', 'Visitas aplicaveis (IDs SoA)',
+      'Visitas aplicáveis', 'Visitas aplicaveis'
+    ], -1)
   };
 }
 
@@ -5331,7 +5343,8 @@ function getItensEstoque() {
       observacoes: String(r[c.observacoes] || ''),
       laboratorio: String(r[c.laboratorio] || ''),
       status:      String(r[c.status] || ''),
-      ordem:       c.ordem >= 0 && r[c.ordem] !== '' && r[c.ordem] !== null ? Number(r[c.ordem]) : ''
+      ordem:       c.ordem >= 0 && r[c.ordem] !== '' && r[c.ordem] !== null ? Number(r[c.ordem]) : '',
+      visitasAplicaveisIds: c.visitasAplicaveis >= 0 ? soaUniqueIds_(r[c.visitasAplicaveis]) : []
     });
   }
 
@@ -5359,10 +5372,35 @@ function getItensEstoque() {
 // ───────────────────────────────────────────────────────
 
 function salvarItemEstoque(payload) {
+  payload = payload || {};
   codexAssertCanWrite_('salvarItemEstoque', 'Estoque', payload && (payload.idItem || payload.id));
   return codexWithDocumentLock_('salvarItemEstoque', function() {
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
+
+  var estoqueMin = (payload.estoqueMin !== '' && payload.estoqueMin !== null && payload.estoqueMin !== undefined)
+    ? Number(payload.estoqueMin) : '';
+  var ordem = (payload.ordem !== '' && payload.ordem !== null && payload.ordem !== undefined)
+    ? Number(payload.ordem) : '';
+  if (ordem !== '' && (!isFinite(ordem) || Math.floor(ordem) !== ordem || ordem < 0)) {
+    throw new Error('A ordem de utilização deve ser um número inteiro maior ou igual a zero.');
+  }
+  var visitasAplicaveisIds = Object.prototype.hasOwnProperty.call(payload, 'visitasAplicaveisIds')
+    ? soaUniqueIds_(payload.visitasAplicaveisIds) : null;
+  if (visitasAplicaveisIds && visitasAplicaveisIds.length) {
+    if (!estoqueTipoEhKit_(payload.tipo)) {
+      throw new Error('Somente itens do tipo Kit podem ser vinculados a visitas.');
+    }
+    var visitasProjeto = getSoAVisitasProjeto(payload.projeto);
+    var idsProjeto = {};
+    visitasProjeto.forEach(function(visita) {
+      if (visita.idSoA) idsProjeto[String(visita.idSoA)] = true;
+    });
+    var idsInvalidos = visitasAplicaveisIds.filter(function(id) { return !idsProjeto[id]; });
+    if (idsInvalidos.length) {
+      throw new Error('Uma ou mais visitas selecionadas não pertencem ao projeto informado. Atualize o cadastro e tente novamente.');
+    }
+  }
 
   if (!sheet) {
     sheet = ss.insertSheet('Itens');
@@ -5376,8 +5414,6 @@ function salvarItemEstoque(payload) {
     sheet.setFrozenRows(1);
   }
 
-  var estoqueMin = (payload.estoqueMin !== '' && payload.estoqueMin !== null && payload.estoqueMin !== undefined)
-    ? Number(payload.estoqueMin) : '';
     var lastColumn = Math.max(sheet.getLastColumn(), 10);
     var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
     var c = getItensEstoqueColumnMap_(headers);
@@ -5388,12 +5424,13 @@ function salvarItemEstoque(payload) {
       headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
       c = getItensEstoqueColumnMap_(headers);
     }
-
-  var ordem = (payload.ordem !== '' && payload.ordem !== null && payload.ordem !== undefined)
-    ? Number(payload.ordem) : '';
-  if (ordem !== '' && (!isFinite(ordem) || Math.floor(ordem) !== ordem || ordem < 0)) {
-    throw new Error('A ordem de utilização deve ser um número inteiro maior ou igual a zero.');
-  }
+    if (Object.prototype.hasOwnProperty.call(payload, 'visitasAplicaveisIds') && c.visitasAplicaveis < 0) {
+      var visitasCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, visitasCol).setValue('Visitas aplicáveis (IDs SoA)');
+      lastColumn = Math.max(lastColumn, visitasCol);
+      headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+      c = getItensEstoqueColumnMap_(headers);
+    }
 
   function applyPayload(rowValues) {
     rowValues[c.projeto] = payload.projeto;
@@ -5406,6 +5443,9 @@ function salvarItemEstoque(payload) {
     rowValues[c.laboratorio] = payload.laboratorio;
     rowValues[c.status] = payload.status;
     if (c.ordem >= 0) rowValues[c.ordem] = ordem;
+    if (c.visitasAplicaveis >= 0 && visitasAplicaveisIds !== null) {
+      rowValues[c.visitasAplicaveis] = visitasAplicaveisIds.join('; ');
+    }
     return rowValues;
   }
 
@@ -11787,6 +11827,18 @@ function agendaGetReferenceData_(forceRefresh) {
   return agendaValidateReferenceData_(
     agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
   );
+}
+
+function getAgendaReferenceDataFresh() {
+  var access = codexGetCurrentUserAccess();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
+  CODEX_CACHE_BYPASS_READS_ = true;
+  try {
+    return agendaGetReferenceData_(true);
+  } finally {
+    CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
+  }
 }
 
 function agendaBootstrapRevision_(referenceData, items, inicioIso, fimIso) {

@@ -3380,6 +3380,7 @@ function salvarMedicoApp() {
       fecharOverlay('modalMedico');
       snack('\u2705 ' + r);
       carregarMedicos(true);
+      if (typeof notificarAgendaReferenciasAlteradas === 'function') notificarAgendaReferenciasAlteradas();
     },
     onFailure: function(e) {
       appSetButtonBusy(btn, false);
@@ -3428,7 +3429,11 @@ function confirmarExcluir(id, nome) {
       appServerRun({
         method: 'excluirMedico',
         args: [id],
-        onSuccess: function() { snack('Medico excluido'); carregarMedicos(true); },
+        onSuccess: function() {
+          snack('Medico excluido');
+          carregarMedicos(true);
+          if (typeof notificarAgendaReferenciasAlteradas === 'function') notificarAgendaReferenciasAlteradas();
+        },
         onFailure: function(e) { snackErro(e); }
       });
     }
@@ -5015,16 +5020,9 @@ function salvarMonitorApp() {
 }
 
 function atualizarAgendaMonitoresAposCadastro(nomePreferido) {
-  if (!_agendaDados) {
-    if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState({});
-    else _agendaDados = {};
-  }
-  getCadastrosBootstrapCached('monitores',
-    function(res) {
-      _agendaDados.monitores = (res && res.data) || [];
-      if (res && res.projetos) _agendaDados.projetos = res.projetos;
-      if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(_agendaDados);
-      preencherAgendaMonitoresSelects(true);
+  if (typeof notificarAgendaReferenciasAlteradas !== 'function') return;
+  notificarAgendaReferenciasAlteradas({
+    onSuccess: function() {
       if (nomePreferido) {
         var m1 = document.getElementById('agMonitor1');
         var m2 = document.getElementById('agMonitor2');
@@ -5033,8 +5031,8 @@ function atualizarAgendaMonitoresAposCadastro(nomePreferido) {
         atualizarAgendaMonitorNome();
       }
     },
-    function() {},
-    false);
+    onFailure: function() {}
+  });
 }
 
 function confirmarExcluirMonitor(id, nome) {
@@ -5044,7 +5042,11 @@ function confirmarExcluirMonitor(id, nome) {
       appServerRun({
         method: 'excluirMonitor',
         args: [id],
-        onSuccess: function() { snack('Monitor excluido'); carregarMonitores(true); },
+        onSuccess: function() {
+          snack('Monitor excluido');
+          carregarMonitores(true);
+          if (typeof notificarAgendaReferenciasAlteradas === 'function') notificarAgendaReferenciasAlteradas();
+        },
         onFailure: function(e) { snackErro(e); }
       });
     }

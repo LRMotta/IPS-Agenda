@@ -90,6 +90,44 @@ test('novo item mantém vazia a coluna de detalhes e alinha os demais campos', (
   assert.equal(row[9], 'Ativo');
 });
 
+test('kit persiste múltiplas visitas SoA por ID e mantém leitura legada opcional', () => {
+  const { server, itens } = stockServer();
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita', 'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline', 1, '', '', '', 'Sim', ''],
+    ['SOA-2', 'Estudo A', 'V2', 'Semana 4', 2, '', '', '', 'Sim', ''],
+    ['SOA-3', 'Estudo B', 'V1', 'Outra visita', 1, '', '', '', 'Sim', '']
+  ]);
+  server.getSoAVisitasSheet_ = () => soa;
+
+  assert.deepEqual(Array.from(server.getItensEstoque().itens[0].visitasAplicaveisIds), []);
+  server.salvarItemEstoque({
+    id: '2', projeto: 'Estudo A', descricao: 'Kit coleta', tipo: 'Kit', localizacao: 'Sala A',
+    estoqueMin: 2, observacoes: '', laboratorio: 'Lab A', status: 'Ativo',
+    visitasAplicaveisIds: ['SOA-2', 'SOA-1', 'SOA-2']
+  });
+
+  const visitasCol = itens.rows[0].indexOf('Visitas aplicáveis (IDs SoA)');
+  assert.ok(visitasCol >= 0);
+  assert.equal(itens.rows[1][visitasCol], 'SOA-2; SOA-1');
+  assert.deepEqual(Array.from(server.getItensEstoque().itens[0].visitasAplicaveisIds), ['SOA-2', 'SOA-1']);
+});
+
+test('vínculo de kit rejeita visita pertencente a outro projeto', () => {
+  const { server } = stockServer();
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita'],
+    ['SOA-B', 'Estudo B', 'V1', 'Visita B']
+  ]);
+  server.getSoAVisitasSheet_ = () => soa;
+
+  assert.throws(() => server.salvarItemEstoque({
+    id: '2', projeto: 'Estudo A', descricao: 'Kit coleta', tipo: 'Kit', localizacao: 'Sala A',
+    estoqueMin: 2, observacoes: '', laboratorio: 'Lab A', status: 'Ativo',
+    visitasAplicaveisIds: ['SOA-B']
+  }), /não pertencem ao projeto/);
+});
+
 test('visualização do estoque incorpora observações e detalhes do cadastro do item', () => {
   const itens = new FakeSheet('Itens', [
     ITEM_HEADERS,
@@ -211,6 +249,15 @@ test('resumo da visualização separa reservas nominadas do saldo do Estoque Pri
   assert.match(estoque, /Visita não identificada/);
   assert.match(estoque, /Validade: a partir de/);
   assert.doesNotMatch(estoque, /Físico/);
+});
+
+test('modal de item oferece seleção múltipla de visitas somente para kits', () => {
+  const estoque = readProjectFile('IndexEstoqueScripts.html');
+
+  assert.match(estoque, /id="iiVisitasSection"/);
+  assert.match(estoque, /getSoAVisitasProjeto\(projeto\)/);
+  assert.match(estoque, /#iiVisitasLista input\[type="checkbox"\]:checked/);
+  assert.match(estoque, /visitasAplicaveisIds: itemInlineEhKit\(\)/);
 });
 
 test('Bulk Supply fica fora do fluxo de reserva e conciliação de kits', () => {
