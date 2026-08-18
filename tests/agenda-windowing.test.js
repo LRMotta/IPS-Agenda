@@ -587,12 +587,14 @@ test('cache de janelas vive somente em memoria, clona eventos e mantem as tres m
   [
     'agendaWindowMemoryCacheKey_', 'agendaWindowMemoryCacheCloneResponse_',
     'agendaWindowMemoryCacheRemoveKey_', 'agendaWindowMemoryCachePut_',
-    'agendaWindowMemoryCacheGet_', 'agendaWindowMemoryCacheClear_'
+    'agendaWindowMemoryCacheGet_', 'agendaWindowMemoryCacheClear_',
+    'agendaWindowMemoryCacheUpdateReferenceData_'
   ].forEach((name) => {
     const arg = name === 'agendaWindowMemoryCacheKey_' ? 'range' :
       name === 'agendaWindowMemoryCacheGet_' ? 'requestedRange' :
       name === 'agendaWindowMemoryCacheCloneResponse_' ? 'response' :
       name === 'agendaWindowMemoryCacheRemoveKey_' ? 'key' :
+      name === 'agendaWindowMemoryCacheUpdateReferenceData_' ? 'referenceData' :
       name === 'agendaWindowMemoryCachePut_' ? 'response, requestedRange' : '';
     vm.runInContext(`function ${name}(${arg}) {${functionBody(client, name)}}`, context);
   });
@@ -624,6 +626,9 @@ test('cache de janelas vive somente em memoria, clona eventos e mantem as tres m
   assert.equal(context._agendaWindowMemoryCacheOrder.length, 3);
   assert.equal(context.agendaWindowMemoryCacheGet_(aRange), null);
   assert.equal(Object.keys(context._agendaWindowMemoryCache).length, 3);
+  const referenciasNovas = validAgendaReferenceData({ medicos: ['Médico recém-cadastrado'] });
+  context.agendaWindowMemoryCacheUpdateReferenceData_(referenciasNovas);
+  assert.equal(Object.values(context._agendaWindowMemoryCache).every((entry) => entry.referenceData === referenciasNovas), true);
   context.agendaWindowMemoryCacheClear_();
   assert.equal(Object.keys(context._agendaWindowMemoryCache).length, 0);
   assert.equal(context._agendaWindowMemoryCacheOrder.length, 0);
@@ -631,7 +636,8 @@ test('cache de janelas vive somente em memoria, clona eventos e mantem as tres m
   const cacheSource = [
     functionBody(client, 'agendaWindowMemoryCachePut_'),
     functionBody(client, 'agendaWindowMemoryCacheGet_'),
-    functionBody(client, 'agendaWindowMemoryCacheClear_')
+    functionBody(client, 'agendaWindowMemoryCacheClear_'),
+    functionBody(client, 'agendaWindowMemoryCacheUpdateReferenceData_')
   ].join('\n');
   assert.doesNotMatch(cacheSource, /localStorage|sessionStorage|CacheService|google\.script/);
 });
@@ -908,6 +914,52 @@ test('fallback do formulario usa carga completa, legado validado e somente codig
     'invalid_payload'
   ]);
   assert.equal(logs.some((message) => message.includes('segredo-nao-permitido')), false);
+});
+
+test('atualizacao administrativa renova somente referencias e preserva as janelas de eventos', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const core = readProjectFile('IndexCoreScripts.html');
+  const notify = functionBody(client, 'notificarAgendaReferenciasAlteradas');
+  const refresh = functionBody(client, 'agendaAtualizarReferenciasPendentes_');
+  const configInvalidation = functionBody(client, 'invalidarAgendaConfigCache');
+  const applyOptions = functionBody(client, 'atualizarAgendaFormDataOpcoes');
+
+  assert.match(notify, /referenceDataDirty = true/);
+  assert.match(notify, /APP_BOOTSTRAP_DATA\.agendaFormData = null/);
+  assert.match(refresh, /getAgendaReferenceDataFresh\(\)/);
+  assert.match(refresh, /atualizarAgendaFormDataOpcoes\(data, \{ preservarValoresAtuais: true \}\)/);
+  assert.match(refresh, /agendaWindowMemoryCacheUpdateReferenceData_\(data\)/);
+  assert.doesNotMatch(refresh, /carregarAgendaEventos|agendaWindowMemoryCacheClear_/);
+  assert.match(applyOptions, /if \(options\.preservarValoresAtuais\)[\s\S]*agendaRestoreValues\(atuais\)[\s\S]*else[\s\S]*agendaRestoreEditRecordValues_\(true\)/);
+  assert.match(configInvalidation, /invalidateCadastroBootstrapCache\(\)/);
+  assert.match(functionBody(core, 'salvarMedicoApp'), /notificarAgendaReferenciasAlteradas\(\)/);
+  assert.match(functionBody(core, 'atualizarAgendaMonitoresAposCadastro'), /notificarAgendaReferenciasAlteradas/);
+});
+
+test('servidor invalida todos os caches de referencias e oferece leitura fresca autorizada', () => {
+  const removed = [];
+  const server = agendaServer({
+    Utilities: { formatDate: () => '20260817' },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  server.codexCacheRemove_ = (key) => removed.push(key);
+  server.clearCodexRuntimeCaches_();
+  assert.ok(removed.includes('AgendaFormDataStrict:v2:20260817'));
+  assert.ok(removed.includes('AgendaBootstrapReferenceData:v1:20260817'));
+
+  let forceRefresh = null;
+  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
+  server.agendaGetReferenceData_ = (force) => {
+    forceRefresh = force;
+    return validAgendaReferenceData();
+  };
+  const result = server.getAgendaReferenceDataFresh();
+  assert.equal(forceRefresh, true);
+  assert.deepEqual(Array.from(result.medicos), []);
+  assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
+
+  server.codexGetCurrentUserAccess = () => ({ ok: false, message: 'Negado' });
+  assert.throws(() => server.getAgendaReferenceDataFresh(), /Negado/);
 });
 
 test('validacao distingue listas vazias validas de datasets ausentes ou com falha', () => {

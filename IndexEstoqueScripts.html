@@ -1215,11 +1215,16 @@
               '<div class="form-section">' +
                 '<div class="section-label"><span class="material-symbols-outlined">label</span>Identificação do Item</div>' +
                 '<div class="field-row cols-2" style="margin-bottom:12px">' +
-                  '<div><label class="field-label" for="iiProjeto">Projeto <span class="required-star">*</span></label><select id="iiProjeto" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiProjeto">Selecione um projeto.</div></div>' +
-                  '<div><label class="field-label" for="iiTipo">Tipo <span class="required-star">*</span></label><select id="iiTipo" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiTipo">Selecione um tipo.</div></div>' +
+                  '<div><label class="field-label" for="iiProjeto">Projeto <span class="required-star">*</span></label><select id="iiProjeto" class="f-input f-select" onchange="atualizarVisitasItemInline([])"><option value="">— Selecione —</option></select><div class="field-error" id="errIiProjeto">Selecione um projeto.</div></div>' +
+                  '<div><label class="field-label" for="iiTipo">Tipo <span class="required-star">*</span></label><select id="iiTipo" class="f-input f-select" onchange="atualizarVisitasItemInline()"><option value="">— Selecione —</option></select><div class="field-error" id="errIiTipo">Selecione um tipo.</div></div>' +
                 '</div>' +
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiDescricao">Descrição do Item <span class="required-star">*</span></label><input type="text" id="iiDescricao" class="f-input large" placeholder="Ex: Standard Bulk Supply Box"><div class="field-error" id="errIiDescricao">Campo obrigatório.</div></div>' +
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiOrdem">Ordem de utilização no projeto</label><input type="number" id="iiOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"><div style="font-size:11px;color:#7b8794;margin-top:4px">Usada para ordenar kits na Agenda. Deixe em branco para manter a ordenação alfabética.</div><div class="field-error" id="errIiOrdem">Informe um número inteiro igual ou maior que zero.</div></div>' +
+                '<div id="iiVisitasSection" class="item-visitas-section" style="display:none">' +
+                  '<label class="field-label">Visitas aplicáveis</label>' +
+                  '<div class="item-visitas-help">Selecione uma ou mais visitas deste projeto. Sem seleção, o kit permanece sem restrição de visita.</div>' +
+                  '<div id="iiVisitasLista" class="item-visitas-list" aria-live="polite"></div>' +
+                '</div>' +
                 '<div class="field-row cols-2">' +
                   '<div><label class="field-label" for="iiLaboratorio">Laboratório <span class="required-star">*</span></label><select id="iiLaboratorio" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiLaboratorio">Selecione um laboratório.</div></div>' +
                   '<div><label class="field-label" for="iiStatus">Status</label><select id="iiStatus" class="f-input f-select"><option>Ativo</option><option>Inativo</option></select></div>' +
@@ -1407,6 +1412,7 @@
   var _pedidoInlineItens = [];
   var _pedidoInlineEdit = null;
   var _itemInlineEditId = '';
+  var _itemInlineVisitasRequest = 0;
   var _pedidoFiltroInicial = '';
   var _recebimentoPedidoInline = null;
   var _planejamentoPedidoData = null;
@@ -2842,7 +2848,57 @@
       document.getElementById('iiEstoqueMin').value = item.estoqueMin || '';
       document.getElementById('iiObs').value = item.observacoes || '';
     }
+    atualizarVisitasItemInline(item ? (item.visitasAplicaveisIds || []) : []);
     abrirOverlay('modalItemInline');
+  }
+
+  function itemInlineEhKit() {
+    var tipo = String((document.getElementById('iiTipo') || {}).value || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return tipo.indexOf('kit') >= 0;
+  }
+
+  function visitasSelecionadasItemInline() {
+    return Array.prototype.slice.call(document.querySelectorAll('#iiVisitasLista input[type="checkbox"]:checked'))
+      .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
+  }
+
+  function atualizarVisitasItemInline(idsPreservados) {
+    var section = document.getElementById('iiVisitasSection');
+    var lista = document.getElementById('iiVisitasLista');
+    if (!section || !lista) return;
+    var ehKit = itemInlineEhKit();
+    section.style.display = ehKit ? '' : 'none';
+    if (!ehKit) return;
+    var projeto = String((document.getElementById('iiProjeto') || {}).value || '').trim();
+    var selecionados = Array.isArray(idsPreservados) ? idsPreservados.map(String) : visitasSelecionadasItemInline();
+    if (!projeto) {
+      lista.innerHTML = '<div class="item-visitas-empty">Selecione primeiro o projeto do kit.</div>';
+      return;
+    }
+    var requestId = ++_itemInlineVisitasRequest;
+    lista.innerHTML = '<div class="item-visitas-empty"><div class="spinner"></div>Carregando visitas…</div>';
+    google.script.run
+      .withSuccessHandler(function(visitas) {
+        if (requestId !== _itemInlineVisitasRequest || projeto !== String(document.getElementById('iiProjeto').value || '').trim()) return;
+        visitas = (visitas || []).filter(function(visita) { return visita && visita.idSoA; });
+        if (!visitas.length) {
+          lista.innerHTML = '<div class="item-visitas-empty">Este projeto ainda não possui visitas cadastradas. O kit poderá ser salvo normalmente.</div>';
+          return;
+        }
+        lista.innerHTML = visitas.map(function(visita) {
+          var id = String(visita.idSoA || '');
+          var checked = selecionados.indexOf(id) >= 0 ? ' checked' : '';
+          var codigo = visita.codigo ? '<span>' + esc(visita.codigo) + '</span>' : '';
+          var inativa = visita.ativo === false ? '<small>Inativa</small>' : '';
+          return '<label class="item-visita-option"><input type="checkbox" value="' + esc(id) + '"' + checked + '><span><strong>' + esc(visita.nome || id) + '</strong>' + codigo + inativa + '</span></label>';
+        }).join('');
+      })
+      .withFailureHandler(function(e) {
+        if (requestId !== _itemInlineVisitasRequest) return;
+        lista.innerHTML = '<div class="item-visitas-empty error">Não foi possível carregar as visitas: ' + esc(appErrorMessage(e)) + '</div>';
+      })
+      .getSoAVisitasProjeto(projeto);
   }
 
   function validarCampoItemInline(id, errId, valido) {
@@ -2892,7 +2948,8 @@
         localizacao: document.getElementById('iiLocalizacao').value.trim(),
         estoqueMin: document.getElementById('iiEstoqueMin').value,
         status: document.getElementById('iiStatus').value,
-        observacoes: document.getElementById('iiObs').value.trim()
+        observacoes: document.getElementById('iiObs').value.trim(),
+        visitasAplicaveisIds: itemInlineEhKit() ? visitasSelecionadasItemInline() : []
       });
   }
 
