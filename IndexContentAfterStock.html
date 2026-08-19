@@ -190,6 +190,34 @@
         </div>
       </div>
 
+      <div class="form-section">
+        <div class="section-label">
+          <span class="material-symbols-outlined">local_shipping</span> Couriers do projeto
+        </div>
+        <div class="field-help" style="margin-bottom:14px">Vínculos opcionais. Cada courier pode atender uma ou mais temperaturas.</div>
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="pSituacaoEnvioAmostras">Envio de amostras</label>
+          <select id="pSituacaoEnvioAmostras" class="f-input f-select" onchange="onProjetoCourierChange()">
+            <option value="">— Não informado —</option>
+            <option value="Sim">Sim</option>
+            <option value="Não">Não</option>
+          </select>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:14px">
+          <div><label class="field-label" for="pCourierPrincipal">Courier principal</label><select id="pCourierPrincipal" class="f-input f-select" onchange="onProjetoCourierChange()"></select></div>
+          <div><label class="field-label">Temperaturas</label><div id="pCourierPrincipalTemperaturas" class="soa-arm-options projeto-temp-options"></div></div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:14px">
+          <div><label class="field-label" for="pCourierAdicional1">Courier adicional 1</label><select id="pCourierAdicional1" class="f-input f-select" onchange="onProjetoCourierChange()"></select></div>
+          <div><label class="field-label">Temperaturas</label><div id="pCourierAdicional1Temperaturas" class="soa-arm-options projeto-temp-options"></div></div>
+        </div>
+        <div class="field-row cols-2">
+          <div><label class="field-label" for="pCourierAdicional2">Courier adicional 2</label><select id="pCourierAdicional2" class="f-input f-select" onchange="onProjetoCourierChange()"></select></div>
+          <div><label class="field-label">Temperaturas</label><div id="pCourierAdicional2Temperaturas" class="soa-arm-options projeto-temp-options"></div></div>
+        </div>
+        <div class="field-error" id="errPCouriers">Use couriers diferentes. Projetos sem envio não podem ter courier ou temperatura vinculada.</div>
+      </div>
+
       <div class="form-section soa-project-section">
         <div class="section-label">
           <span class="material-symbols-outlined">event_note</span> Calendário SoA

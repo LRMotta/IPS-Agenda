@@ -18,7 +18,7 @@ function cadastroContext(spreadsheet, projectOptions) {
   const web = readProjectFile('WebApp.gs');
   const source = readProjectFile('CadastroRules.gs') + '\n' +
     between(web, 'function participanteCampoKey_', 'function salvarDadosParticipante(') + '\n' +
-    between(web, 'function salvarDadosProjeto(', 'function excluirProjeto(') + '\n' +
+    between(web, 'var PROJETO_COURIER_FIELDS_', 'function excluirProjeto(') + '\n' +
     between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
   const counters = { cache: 0, transportCache: 0 };
   const context = vm.createContext({
@@ -27,10 +27,30 @@ function cadastroContext(spreadsheet, projectOptions) {
     clearTransporteOptionsCache_: () => { counters.transportCache++; },
     clearCodexRuntimeCaches_: () => { counters.cache++; },
     getProjetosParticipantesOptions_: () => projectOptions || [],
+    getAgendaTemperaturas_: () => ['Ambiente', 'Refrigerado', 'Congelado'],
+    normText_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
     Date
   });
   vm.runInContext(source, context);
   return { context, counters };
+}
+
+function courierContext(sheet) {
+  const web = readProjectFile('WebApp.gs');
+  const source = between(web, 'var COURIER_HEADERS_', 'function codexSanitizeCourierHtml_');
+  const context = vm.createContext({
+    codexAssertCanWrite_: () => ({ ok: true }),
+    codexSanitizeCourierHtml_: (value) => String(value || ''),
+    limparCacheCourier_: () => {},
+    normText_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    Utilities: { formatDate: () => '20260819120000' },
+    Date,
+    Math
+  });
+  vm.runInContext(source, context);
+  context.getCourierSheet_ = () => sheet;
+  return context;
 }
 
 const validProject = {
@@ -87,6 +107,128 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(context.salvarDadosParticipante(Object.assign({}, participant, { id: 5, telefone: '555-0100' })), 'Participante atualizado com sucesso');
   assert.equal(sheet.rows[2][9], '555-0100');
   assert.equal(counters.cache, 2);
+});
+
+test('projeto grava couriers por ID e temperatura em colunas opcionais por cabecalho', () => {
+  const sheet = new FakeSheet('Projetos', [
+    ['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+  const payload = Object.assign({}, validProject, {
+    courierPrincipalId: 'COU-MARKEN',
+    courierPrincipalTemperaturas: ['Ambiente', 'Congelado'],
+    courierAdicional1Id: 'COU-DHL',
+    courierAdicional1Temperaturas: ['Refrigerado'],
+    courierAdicional2Id: '',
+    courierAdicional2Temperaturas: [],
+    situacaoEnvioAmostras: 'Sim'
+  });
+
+  assert.equal(context.salvarDadosProjeto(payload), 'Projeto cadastrado com sucesso!');
+  const headers = sheet.rows[0];
+  const row = sheet.rows[1];
+  assert.equal(row[headers.indexOf('Courier principal (ID)')], 'COU-MARKEN');
+  assert.equal(row[headers.indexOf('Temperaturas courier principal')], 'Ambiente; Congelado');
+  assert.equal(row[headers.indexOf('Courier adicional 1 (ID)')], 'COU-DHL');
+  assert.equal(row[headers.indexOf('Temperaturas courier adicional 1')], 'Refrigerado');
+  assert.equal(row[headers.indexOf('Situação envio de amostras')], 'Sim');
+});
+
+test('schema legado de projetos continua salvavel sem criar campos opcionais', () => {
+  const sheet = new FakeSheet('Projetos', [
+    ['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+
+  assert.equal(context.projetoCourierColumnMap_(sheet.rows[0]).principal, -1);
+  assert.equal(context.projetoCourierTemperatureColumnMap_(sheet.rows[0]).principal, -1);
+  assert.equal(context.salvarDadosProjeto(validProject), 'Projeto cadastrado com sucesso!');
+  assert.equal(sheet.rows[0].indexOf('Courier principal (ID)'), -1);
+  assert.equal(sheet.rows[0].indexOf('Temperaturas courier principal'), -1);
+});
+
+test('projeto rejeita courier repetida e temperatura sem courier antes de escrever', () => {
+  const duplicateSheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
+  const duplicate = cadastroContext(new FakeSpreadsheet({ Projetos: duplicateSheet })).context;
+  assert.throws(() => duplicate.salvarDadosProjeto(Object.assign({}, validProject, {
+    courierPrincipalId: 'COU-1', courierAdicional1Id: 'COU-1'
+  })), /couriers diferentes/);
+  assert.equal(duplicateSheet.writes, 0);
+
+  const temperatureSheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
+  const temperature = cadastroContext(new FakeSpreadsheet({ Projetos: temperatureSheet })).context;
+  assert.throws(() => temperature.salvarDadosProjeto(Object.assign({}, validProject, {
+    courierPrincipalId: '', courierPrincipalTemperaturas: ['Congelado']
+  })), /courier correspondente/);
+  assert.equal(temperatureSheet.writes, 0);
+});
+
+test('projeto registra explicitamente ausencia de envio sem exigir couriers', () => {
+  const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+
+  assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, {
+    situacaoEnvioAmostras: 'Não',
+    courierPrincipalId: '', courierPrincipalTemperaturas: []
+  })), 'Projeto cadastrado com sucesso!');
+  const statusCol = sheet.rows[0].indexOf('Situação envio de amostras');
+  assert.equal(sheet.rows[1][statusCol], 'Não');
+
+  const invalidSheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
+  const invalid = cadastroContext(new FakeSpreadsheet({ Projetos: invalidSheet })).context;
+  assert.throws(() => invalid.salvarDadosProjeto(Object.assign({}, validProject, {
+    situacaoEnvioAmostras: 'Não', courierPrincipalId: 'COU-1', courierPrincipalTemperaturas: ['Ambiente']
+  })), /sem envio de amostras/);
+  assert.equal(invalidSheet.writes, 0);
+});
+
+test('courier grava regras operacionais em cabecalhos opcionais sem exigir migracao previa', () => {
+  const headers = [
+    'ID_Courier', 'Courier', 'Empresa 1', 'CNPJ 1', 'Telefone 1', 'Fax 1',
+    'Empresa 2', 'CNPJ 2', 'Telefone 2', 'Fax 2', 'Declaração', 'E-mail',
+    'E-mail ambiente', 'E-mail congelado', 'Monitorar confirmação', 'E-mail confirmação',
+    'Texto confirmação', 'Status confirmação'
+  ];
+  const sheet = new FakeSheet('Courier', [headers, ['COU-1', 'Marken']]);
+  const context = courierContext(sheet);
+
+  assert.equal(context.salvarCourier({
+    id: 'COU-1', nome: 'Marken', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim',
+    restricaoAposFeriado: 'Sim', observacaoOperacional: 'Confirmar disponibilidade.'
+  }), 'Courier atualizada com sucesso.');
+
+  const atualizados = sheet.rows[0];
+  const row = sheet.rows[1];
+  assert.equal(row[atualizados.indexOf('Fornece gelo para coleta')], 'Sim');
+  assert.equal(row[atualizados.indexOf('Restrição às segundas-feiras')], 'Sim');
+  assert.equal(row[atualizados.indexOf('Restrição após feriado')], 'Sim');
+  assert.equal(row[atualizados.indexOf('Observação operacional')], 'Confirmar disponibilidade.');
+});
+
+test('cliente legado atualiza courier sem criar colunas operacionais', () => {
+  const headers = [
+    'ID_Courier', 'Courier', 'Empresa 1', 'CNPJ 1', 'Telefone 1', 'Fax 1',
+    'Empresa 2', 'CNPJ 2', 'Telefone 2', 'Fax 2', 'Declaração', 'E-mail',
+    'E-mail ambiente', 'E-mail congelado', 'Monitorar confirmação', 'E-mail confirmação',
+    'Texto confirmação', 'Status confirmação'
+  ];
+  const sheet = new FakeSheet('Courier', [headers, ['COU-1', 'Marken']]);
+  const context = courierContext(sheet);
+
+  assert.equal(context.salvarCourier({ id: 'COU-1', nome: 'Marken atualizada' }), 'Courier atualizada com sucesso.');
+  assert.equal(sheet.rows[0].indexOf('Fornece gelo para coleta'), -1);
+  assert.equal(sheet.rows[1][1], 'Marken atualizada');
+});
+
+test('courier rejeita regra operacional fora de Sim ou Nao antes de escrever', () => {
+  const headers = Array.from({ length: 18 }, (_, index) => index === 0 ? 'ID_Courier' : (index === 1 ? 'Courier' : 'Campo ' + index));
+  const sheet = new FakeSheet('Courier', [headers, ['COU-1', 'Marken']]);
+  const context = courierContext(sheet);
+
+  assert.throws(() => context.salvarCourier({
+    id: 'COU-1', nome: 'Marken', forneceGeloColeta: 'Talvez'
+  }), /Use Sim ou Não/);
+  assert.equal(sheet.writes, 0);
 });
 
 test('participante persiste endereco e dados bancarios opcionais sem deslocar o legado', () => {

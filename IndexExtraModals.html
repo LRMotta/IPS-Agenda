@@ -212,6 +212,28 @@
         </div>
       </div>
       <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined">ac_unit</span> Regras operacionais de gelo</div>
+        <div class="field-hint" style="margin-bottom:14px">Campos opcionais usados para orientar o planejamento de coletas.</div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="courierForneceGeloColeta">Fornece gelo para coleta</label>
+            <select id="courierForneceGeloColeta" class="f-input"><option value=""></option><option value="Sim">Sim</option><option value="Não">Não</option></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="courierRestricaoSegunda">Restrição às segundas-feiras</label>
+            <select id="courierRestricaoSegunda" class="f-input"><option value=""></option><option value="Sim">Sim</option><option value="Não">Não</option></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="courierRestricaoAposFeriado">Restrição após feriado</label>
+            <select id="courierRestricaoAposFeriado" class="f-input"><option value=""></option><option value="Sim">Sim</option><option value="Não">Não</option></select>
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label class="field-label" for="courierObservacaoOperacional">Observação operacional</label>
+            <textarea id="courierObservacaoOperacional" class="f-input" rows="3" placeholder="Ex: confirmar disponibilidade de gelo com antecedência."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">description</span> Declaração de Transporte</div>
         <div class="field">
           <label class="field-label" for="courierConteudo">Conteúdo da Declaração de Transporte</label>

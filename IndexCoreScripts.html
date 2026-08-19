@@ -3870,6 +3870,8 @@ var ESPS_PROJ = [];
 var PATS_PROJ = [];
 var CROS_PROJ = [];
 var STATUS_PROJ = [];
+var COURIERS_PROJ = [];
+var TEMPERATURAS_PROJ = [];
 
 var _projetos         = [];
 var _medicosProj      = [];
@@ -3932,6 +3934,8 @@ function carregarProjetos(force) {
       PATS_PROJ = cfg.patrocinadores || [];
       CROS_PROJ = cfg.cros || [];
       STATUS_PROJ = cfg.status || [];
+      COURIERS_PROJ = ((res && res.couriers) || []).slice();
+      TEMPERATURAS_PROJ = ((res && res.temperaturas) || []).slice();
       preencherSelectProjeto('pFase', cfg.fases || [], '', '--');
       preencherSelectProjeto('pStatus', STATUS_PROJ, '', '— Selecione —');
       _medicosProj = ((res && res.medicos) || []).map(function(m){ return m.nome || m; });
@@ -3952,6 +3956,107 @@ function preencherSelectProjeto(id, valores, selected, placeholder) {
       return '<option value="' + esc(v) + '">' + esc(label) + '</option>';
     }).join('');
   el.value = selected || '';
+}
+
+function projetoCourierSelectIds_() {
+  return ['pCourierPrincipal', 'pCourierAdicional1', 'pCourierAdicional2'];
+}
+
+function projetoCourierTemperaturaIds_() {
+  return ['pCourierPrincipalTemperaturas', 'pCourierAdicional1Temperaturas', 'pCourierAdicional2Temperaturas'];
+}
+
+function preencherProjetoCourierSelect_(id, selected) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var atual = String(selected || '').trim();
+  var options = (COURIERS_PROJ || []).filter(function(c) { return c && c.id && c.nome; }).map(function(c) {
+    return '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>';
+  });
+  if (atual && !(COURIERS_PROJ || []).some(function(c) { return String(c.id || '') === atual; })) {
+    options.unshift('<option value="' + esc(atual) + '">Courier não encontrada (' + esc(atual) + ')</option>');
+  }
+  el.innerHTML = '<option value="">— Não definida —</option>' + options.join('');
+  el.value = atual;
+}
+
+function projetoTemperaturasArray_(value) {
+  if (Array.isArray(value)) return value.map(function(item) { return String(item || '').trim(); }).filter(Boolean);
+  return String(value || '').split(/[;,]/).map(function(item) { return item.trim(); }).filter(Boolean);
+}
+
+function preencherProjetoCourierTemperaturas_(id, selected) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var escolhidas = projetoTemperaturasArray_(selected);
+  var valores = (TEMPERATURAS_PROJ || []).slice();
+  escolhidas.forEach(function(valor) { if (valores.indexOf(valor) === -1) valores.push(valor); });
+  el.innerHTML = valores.map(function(valor) {
+    var checked = escolhidas.indexOf(valor) >= 0 ? ' checked' : '';
+    return '<label class="soa-arm-option"><input type="checkbox" value="' + esc(valor) + '" onchange="onProjetoCourierChange()"' + checked + '> ' + esc(valor) + '</label>';
+  }).join('') || '<span class="soa-arm-empty">Nenhuma temperatura configurada.</span>';
+}
+
+function projetoCourierTemperaturasSelecionadas_(id) {
+  var el = document.getElementById(id);
+  if (!el) return [];
+  return Array.prototype.map.call(el.querySelectorAll('input[type="checkbox"]:checked'), function(input) { return input.value; });
+}
+
+function atualizarProjetoCourierOptions_() {
+  var courierIds = projetoCourierSelectIds_();
+  var selecionados = courierIds.map(function(id) { return String((document.getElementById(id) || {}).value || ''); });
+  courierIds.forEach(function(id, index) {
+    var select = document.getElementById(id);
+    if (!select) return;
+    Array.prototype.forEach.call(select.options || [], function(option) {
+      option.disabled = !!option.value && option.value !== selecionados[index] && selecionados.indexOf(option.value) >= 0;
+    });
+  });
+  projetoCourierTemperaturaIds_().forEach(function(id, index) {
+    var wrap = document.getElementById(id);
+    if (!wrap) return;
+    var disabled = !selecionados[index] || String((document.getElementById('pSituacaoEnvioAmostras') || {}).value || '') === 'Não';
+    wrap.classList.toggle('disabled', disabled);
+    Array.prototype.forEach.call(wrap.querySelectorAll('input[type="checkbox"]'), function(input) {
+      input.disabled = disabled;
+      if (!selecionados[index]) input.checked = false;
+    });
+  });
+}
+
+function validarProjetoCouriers_(mostrarErro) {
+  var courierIds = projetoCourierSelectIds_();
+  var tempIds = projetoCourierTemperaturaIds_();
+  var selecionados = courierIds.map(function(id) { return String((document.getElementById(id) || {}).value || ''); }).filter(Boolean);
+  var unicos = {};
+  var duplicado = selecionados.some(function(id) {
+    if (unicos[id]) return true;
+    unicos[id] = true;
+    return false;
+  });
+  var temperaturaSemCourier = tempIds.some(function(id, index) {
+    return projetoCourierTemperaturasSelecionadas_(id).length > 0 && !String((document.getElementById(courierIds[index]) || {}).value || '');
+  });
+  var semEnvio = String((document.getElementById('pSituacaoEnvioAmostras') || {}).value || '') === 'Não';
+  var vinculoComSemEnvio = semEnvio && (selecionados.length > 0 || tempIds.some(function(id) { return projetoCourierTemperaturasSelecionadas_(id).length > 0; }));
+  var ok = !duplicado && !temperaturaSemCourier && !vinculoComSemEnvio;
+  courierIds.concat(tempIds).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.toggle('invalid', !ok && !!mostrarErro);
+  });
+  var erro = document.getElementById('errPCouriers');
+  if (erro) erro.classList.toggle('visible', !ok && !!mostrarErro);
+  return ok;
+}
+
+function onProjetoCourierChange() {
+  var situacao = String((document.getElementById('pSituacaoEnvioAmostras') || {}).value || '');
+  if (situacao !== 'Não' && projetoCourierSelectIds_().some(function(id) { return !!String((document.getElementById(id) || {}).value || ''); })) {
+    document.getElementById('pSituacaoEnvioAmostras').value = 'Sim';
+  }
+  atualizarProjetoCourierOptions_();
+  validarProjetoCouriers_(true);
 }
 
 function renderProjetos(lista) {
@@ -4141,6 +4246,27 @@ function projetoSivDetailValue(p) {
   return projetoDetailValue(inicio + ' a ' + fim);
 }
 
+function projetoCourierNome_(id) {
+  var courier = (COURIERS_PROJ || []).filter(function(item) { return String((item && item.id) || '') === String(id || ''); })[0];
+  return courier ? courier.nome : (id ? 'Courier não encontrada (' + id + ')' : '');
+}
+
+function projetoCouriersDetalheHtml_(p) {
+  if (String((p && p.situacaoEnvioAmostras) || '') === 'Não') {
+    return '<div class="proj-courier-list"><span class="proj-courier-chip"><span class="material-symbols-outlined">block</span>Sem envio de amostras</span></div>';
+  }
+  var vinculos = [
+    [p.courierPrincipalId, p.courierPrincipalTemperaturas || p.courierPrincipalTemperatura],
+    [p.courierAdicional1Id, p.courierAdicional1Temperaturas || p.courierAdicional1Temperatura],
+    [p.courierAdicional2Id, p.courierAdicional2Temperaturas || p.courierAdicional2Temperatura]
+  ].filter(function(item) { return !!item[0]; });
+  if (!vinculos.length) return '';
+  return '<div class="proj-courier-list">' + vinculos.map(function(item) {
+    var temperaturas = projetoTemperaturasArray_(item[1]).join(' · ') || 'Temperatura não informada';
+    return '<span class="proj-courier-chip"><span class="material-symbols-outlined">local_shipping</span><strong>' + esc(projetoCourierNome_(item[0])) + '</strong> — ' + esc(temperaturas) + '</span>';
+  }).join('') + '</div>';
+}
+
 var _projetoCeStatusCache = {};
 
 function projetoDetalheHtml(p) {
@@ -4154,6 +4280,7 @@ function projetoDetalheHtml(p) {
       '<span class="det-item proj-ce-drive-status" data-projeto-ce="' + esc(projetoCe) + '" data-ce-status-id="' + esc(ceStatusId) + '"><span class="material-symbols-outlined">folder_open</span><span>CE localizada no Drive: <strong id="' + esc(ceStatusId) + '">Verificando...</strong></span></span>' +
       '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoSivDetailValue(p) + '</span></span>' +
     '</div>' +
+    projetoCouriersDetalheHtml_(p) +
   '</div>';
 }
 
@@ -4617,6 +4744,11 @@ function abrirFormProjeto(projeto) {
   });
   document.getElementById('statusProj').innerHTML = '';
   document.getElementById('btnSalvarProj').disabled = false;
+  projetoCourierSelectIds_().forEach(function(id) { preencherProjetoCourierSelect_(id, ''); });
+  projetoCourierTemperaturaIds_().forEach(function(id) { preencherProjetoCourierTemperaturas_(id, ''); });
+  document.getElementById('pSituacaoEnvioAmostras').value = '';
+  atualizarProjetoCourierOptions_();
+  validarProjetoCouriers_(false);
   carregarSoAVisitasProjeto(null);
   carregarBracosProjeto(null);
 
@@ -4639,6 +4771,14 @@ function abrirFormProjeto(projeto) {
     document.getElementById('pNumeroCE').value = projeto.numeroCE || '';
     document.getElementById('pExpedienteCE').value = projeto.expedienteCE || '';
     document.getElementById('pTituloCompleto').value = projeto.tituloCompleto || '';
+    preencherProjetoCourierSelect_('pCourierPrincipal', projeto.courierPrincipalId || '');
+    preencherProjetoCourierSelect_('pCourierAdicional1', projeto.courierAdicional1Id || '');
+    preencherProjetoCourierSelect_('pCourierAdicional2', projeto.courierAdicional2Id || '');
+    preencherProjetoCourierTemperaturas_('pCourierPrincipalTemperaturas', projeto.courierPrincipalTemperaturas || projeto.courierPrincipalTemperatura || '');
+    preencherProjetoCourierTemperaturas_('pCourierAdicional1Temperaturas', projeto.courierAdicional1Temperaturas || projeto.courierAdicional1Temperatura || '');
+    preencherProjetoCourierTemperaturas_('pCourierAdicional2Temperaturas', projeto.courierAdicional2Temperaturas || projeto.courierAdicional2Temperatura || '');
+    document.getElementById('pSituacaoEnvioAmostras').value = projeto.situacaoEnvioAmostras || '';
+    atualizarProjetoCourierOptions_();
     carregarSoAVisitasProjeto(projeto);
     carregarBracosProjeto(projeto);
   } else {
@@ -4650,6 +4790,10 @@ function abrirFormProjeto(projeto) {
 function salvarProjetoApp() {
   var btn = document.getElementById('btnSalvarProj');
   var nome = document.getElementById('pNome').value.trim();
+  if (!validarProjetoCouriers_(true)) {
+    appSetStatus('statusProj', '⚠ Selecione couriers diferentes e associe temperatura somente a uma courier.', '#e53935');
+    return;
+  }
   if (!appRequiredFeedback([
     { input: 'pNome', error: 'errPNome', label: 'Nome do projeto', value: nome },
     { input: 'pFase', error: 'errPFase', label: 'Fase', value: document.getElementById('pFase').value },
@@ -4674,7 +4818,14 @@ function salvarProjetoApp() {
     centro: document.getElementById('pCentro').value.trim(),
     numeroCE: document.getElementById('pNumeroCE').value.trim(),
     expedienteCE: document.getElementById('pExpedienteCE').value.trim(),
-    tituloCompleto: document.getElementById('pTituloCompleto').value.trim()
+    tituloCompleto: document.getElementById('pTituloCompleto').value.trim(),
+    courierPrincipalId: document.getElementById('pCourierPrincipal').value,
+    courierAdicional1Id: document.getElementById('pCourierAdicional1').value,
+    courierAdicional2Id: document.getElementById('pCourierAdicional2').value,
+    courierPrincipalTemperaturas: projetoCourierTemperaturasSelecionadas_('pCourierPrincipalTemperaturas'),
+    courierAdicional1Temperaturas: projetoCourierTemperaturasSelecionadas_('pCourierAdicional1Temperaturas'),
+    courierAdicional2Temperaturas: projetoCourierTemperaturasSelecionadas_('pCourierAdicional2Temperaturas'),
+    situacaoEnvioAmostras: document.getElementById('pSituacaoEnvioAmostras').value
   };
   appSetButtonBusy(btn, true);
   appSetStatus('statusProj', '\u23F3 Processando...');
@@ -6626,7 +6777,13 @@ function _renderTabelaCouriers(lista) {
     }).join('<br>') || '—';
     return '<tr>' +
       '<td><div class="name-cell"><div class="row-avatar">' + esc(ini) + '</div>' +
-        '<span class="row-name">' + esc(c.nome || '—') + '</span></div></td>' +
+        '<span class="row-name">' + esc(c.nome || '—') + '</span></div>' +
+        ((c.forneceGeloColeta || c.restricaoSegunda || c.restricaoAposFeriado || c.observacaoOperacional) ? '<div style="color:var(--text-muted);font-size:11px;margin-top:5px">' + esc([
+          c.forneceGeloColeta ? 'Gelo: ' + c.forneceGeloColeta : '',
+          c.restricaoSegunda ? 'Segundas: ' + c.restricaoSegunda : '',
+          c.restricaoAposFeriado ? 'Após feriado: ' + c.restricaoAposFeriado : '',
+          c.observacaoOperacional || ''
+        ].filter(Boolean).join(' · ')) + '</div>' : '') + '</td>' +
       '<td>' + esc(remessa1) + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">Fax: ' + esc(c.fax1 || '—') + '</div></td>' +
       '<td>' + esc(remessa2) + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">Fax: ' + esc(c.fax2 || '—') + '</div></td>' +
       '<td style="font-size:12px;line-height:1.45">' + emails + '</td>' +
@@ -6651,7 +6808,8 @@ function filtrarCouriers(forceNow) {
         c.id, c.nome, c.empresa1, c.cnpj1, c.telefone1, c.fax1,
         c.empresa2, c.cnpj2, c.telefone2, c.fax2, c.conteudoDeclaracao,
         c.email, c.emailAmbiente, c.emailCongelado, c.monitorConfirmacao,
-        c.emailConfirmacao, c.textoConfirmacao, c.statusConfirmacao
+        c.emailConfirmacao, c.textoConfirmacao, c.statusConfirmacao,
+        c.forneceGeloColeta, c.restricaoSegunda, c.restricaoAposFeriado, c.observacaoOperacional
       ].join(' ').toLowerCase().indexOf(q) !== -1;
     }));
   }, !!forceNow);
@@ -6664,7 +6822,8 @@ function abrirFormCourier(id) {
     'editCourierId','courierNome','courierEmpresa1','courierCnpj1','courierTelefone1','courierFax1',
     'courierEmpresa2','courierCnpj2','courierTelefone2','courierFax2','courierConteudo',
     'courierEmail','courierEmailAmbiente','courierEmailCongelado','courierMonitorConfirmacao',
-    'courierEmailConfirmacao','courierTextoConfirmacao','courierStatusConfirmacao'
+    'courierEmailConfirmacao','courierTextoConfirmacao','courierStatusConfirmacao',
+    'courierForneceGeloColeta','courierRestricaoSegunda','courierRestricaoAposFeriado','courierObservacaoOperacional'
   ].forEach(function(fId) { document.getElementById(fId).value = ''; });
   courierEditorSetHtml('');
   document.getElementById('statusCourier').textContent = '';
@@ -6691,6 +6850,10 @@ function abrirFormCourier(id) {
       document.getElementById('courierMonitorConfirmacao').value = c.monitorConfirmacao || '';
       document.getElementById('courierEmailConfirmacao').value = c.emailConfirmacao || '';
       document.getElementById('courierTextoConfirmacao').value = c.textoConfirmacao || '';
+      document.getElementById('courierForneceGeloColeta').value = c.forneceGeloColeta || '';
+      document.getElementById('courierRestricaoSegunda').value = c.restricaoSegunda || '';
+      document.getElementById('courierRestricaoAposFeriado').value = c.restricaoAposFeriado || '';
+      document.getElementById('courierObservacaoOperacional').value = c.observacaoOperacional || '';
       statusConfirmacaoAtual = c.statusConfirmacao || '';
     }
   }
@@ -6803,7 +6966,11 @@ function salvarCourierApp() {
     monitorConfirmacao: document.getElementById('courierMonitorConfirmacao').value.trim(),
     emailConfirmacao: document.getElementById('courierEmailConfirmacao').value.trim(),
     textoConfirmacao: document.getElementById('courierTextoConfirmacao').value.trim(),
-    statusConfirmacao: (ensureCourierStatusConfirmacaoSelect() || document.getElementById('courierStatusConfirmacao')).value.trim()
+    statusConfirmacao: (ensureCourierStatusConfirmacaoSelect() || document.getElementById('courierStatusConfirmacao')).value.trim(),
+    forneceGeloColeta: document.getElementById('courierForneceGeloColeta').value,
+    restricaoSegunda: document.getElementById('courierRestricaoSegunda').value,
+    restricaoAposFeriado: document.getElementById('courierRestricaoAposFeriado').value,
+    observacaoOperacional: document.getElementById('courierObservacaoOperacional').value.trim()
   };
   appSetButtonBusy(btn, true);
   appServerRun({
@@ -6812,6 +6979,7 @@ function salvarCourierApp() {
     onSuccess: function(msg) {
       appSetButtonBusy(btn, false);
       appSetStatus('statusCourier', '\u2713 ' + msg, '#137333');
+      invalidateCadastroBootstrapCache('projetos');
       carregarCouriers(true);
       setTimeout(function() { fecharOverlay('modalCourier'); }, 900);
     },
@@ -6832,6 +7000,7 @@ function confirmarExcluirCourier(id) {
       args: [id],
       onSuccess: function() {
         fecharOverlay('confirmCourier');
+        invalidateCadastroBootstrapCache('projetos');
         carregarCouriers(true);
         snack('Courier excluida.');
       },
