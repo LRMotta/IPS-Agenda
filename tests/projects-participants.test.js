@@ -223,6 +223,52 @@ test('modal de projeto amplia a area e posiciona o titulo na identificacao do pr
   assert.equal(block.match(/id="pTituloCompleto"/g).length, 1);
 });
 
+test('projeto oferece tres couriers opcionais por ID com finalidade de temperatura', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const start = modal.indexOf('<div class="modal-overlay" id="modalProjeto"');
+  const end = modal.indexOf('<div class="modal-overlay" id="modalBracoProjeto"', start);
+  const block = modal.slice(start, end);
+
+  assert.match(block, /Couriers do projeto/);
+  assert.match(block, /id="pCourierPrincipal"/);
+  assert.match(block, /id="pCourierAdicional1"/);
+  assert.match(block, /id="pCourierAdicional2"/);
+  assert.match(block, /id="pCourierPrincipalTemperaturas"/);
+  assert.match(block, /id="pCourierAdicional1Temperaturas"/);
+  assert.match(block, /id="pCourierAdicional2Temperaturas"/);
+  assert.match(block, /id="pSituacaoEnvioAmostras"/);
+  assert.match(client, /COURIERS_PROJ = \(\(res && res\.couriers\) \|\| \[\]\)\.slice\(\)/);
+  assert.match(client, /TEMPERATURAS_PROJ = \(\(res && res\.temperaturas\) \|\| \[\]\)\.slice\(\)/);
+  assert.match(client, /function validarProjetoCouriers_/);
+  assert.match(client, /courierPrincipalTemperaturas: projetoCourierTemperaturasSelecionadas_/);
+  assert.match(client, /function projetoCouriersDetalheHtml_/);
+  assert.match(server, /Courier principal \(ID\)/);
+  assert.match(server, /Temperaturas courier principal/);
+  assert.match(server, /Situação envio de amostras/);
+  assert.match(server, /out\.couriers = getAgendaCourierRows_\(\)/);
+  assert.match(server, /out\.temperaturas = getAgendaTemperaturas_\(\)/);
+});
+
+test('cadastro de courier oferece regras operacionais opcionais de gelo', () => {
+  const modal = readProjectFile('IndexExtraModals.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+
+  assert.match(modal, /Regras operacionais de gelo/);
+  assert.match(modal, /id="courierForneceGeloColeta"/);
+  assert.match(modal, /id="courierRestricaoSegunda"/);
+  assert.match(modal, /id="courierRestricaoAposFeriado"/);
+  assert.match(modal, /id="courierObservacaoOperacional"/);
+  assert.match(client, /forneceGeloColeta: document\.getElementById\('courierForneceGeloColeta'\)\.value/);
+  assert.match(server, /Fornece gelo para coleta/);
+  assert.match(server, /Restrição às segundas-feiras/);
+  assert.match(server, /Restrição após feriado/);
+  assert.match(server, /Observação operacional/);
+  assert.match(server, /function garantirCourierOperationalColumns_/);
+});
+
 test('catálogo opcional de braços fica no projeto e sugere opções no participante', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');

@@ -281,6 +281,8 @@ function getCadastrosBootstrapData(page) {
     out.data = getProjetos();
     out.medicos = getMedicos();
     out.solicitantes = getSolicitantes();
+    out.couriers = getAgendaCourierRows_();
+    out.temperaturas = getAgendaTemperaturas_();
   } else if (page === 'monitores') {
     out.data = getMonitores();
     out.projetos = getProjetosMonitoria_();
@@ -3229,6 +3231,9 @@ function getMedicoFormConfig() {
 function getProjetos() {
   var dados = getCodexSheetDataByName_('Projetos');
   if (!dados.length) return [];
+  var courierCols = projetoCourierColumnMap_(dados[0] || []);
+  var courierTempCols = projetoCourierTemperatureColumnMap_(dados[0] || []);
+  var situacaoEnvioCol = projetoSituacaoEnvioColumn_(dados[0] || []);
   var statsPorProjeto = getParticipantesStatsPorProjeto_();
   var sivPorProjeto = getProjetosSivPorProjeto_();
   var lista = [];
@@ -3269,6 +3274,13 @@ function getProjetos() {
       numeroCE:      r[14] || '',
       expedienteCE:  r[15] || '',
       tituloCompleto:r[16] || '',
+      courierPrincipalId: courierCols.principal >= 0 ? String(r[courierCols.principal] || '').trim() : '',
+      courierAdicional1Id: courierCols.adicional1 >= 0 ? String(r[courierCols.adicional1] || '').trim() : '',
+      courierAdicional2Id: courierCols.adicional2 >= 0 ? String(r[courierCols.adicional2] || '').trim() : '',
+      courierPrincipalTemperaturas: courierTempCols.principal >= 0 ? String(r[courierTempCols.principal] || '').trim() : '',
+      courierAdicional1Temperaturas: courierTempCols.adicional1 >= 0 ? String(r[courierTempCols.adicional1] || '').trim() : '',
+      courierAdicional2Temperaturas: courierTempCols.adicional2 >= 0 ? String(r[courierTempCols.adicional2] || '').trim() : '',
+      situacaoEnvioAmostras: situacaoEnvioCol >= 0 ? String(r[situacaoEnvioCol] || '').trim() : '',
       dataSiv:       siv.data || '',
       dataSivInicio: siv.inicio || siv.data || '',
       dataSivFim:    siv.fim || siv.data || ''
@@ -3926,6 +3938,150 @@ function getProjetoOptions_() {
   return out.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
 }
 
+var PROJETO_COURIER_FIELDS_ = [
+  { key: 'courierPrincipalId', header: 'Courier principal (ID)', aliases: ['Courier principal ID', 'ID Courier principal'] },
+  { key: 'courierAdicional1Id', header: 'Courier adicional 1 (ID)', aliases: ['Courier adicional 1 ID', 'ID Courier adicional 1'] },
+  { key: 'courierAdicional2Id', header: 'Courier adicional 2 (ID)', aliases: ['Courier adicional 2 ID', 'ID Courier adicional 2'] }
+];
+
+var PROJETO_COURIER_TEMPERATURE_FIELDS_ = [
+  { key: 'courierPrincipalTemperaturas', legacyKey: 'courierPrincipalTemperatura', courierKey: 'courierPrincipalId', header: 'Temperaturas courier principal', aliases: ['Temperatura courier principal', 'Temperatura Courier principal'] },
+  { key: 'courierAdicional1Temperaturas', legacyKey: 'courierAdicional1Temperatura', courierKey: 'courierAdicional1Id', header: 'Temperaturas courier adicional 1', aliases: ['Temperatura courier adicional 1', 'Temperatura Courier adicional 1'] },
+  { key: 'courierAdicional2Temperaturas', legacyKey: 'courierAdicional2Temperatura', courierKey: 'courierAdicional2Id', header: 'Temperaturas courier adicional 2', aliases: ['Temperatura courier adicional 2', 'Temperatura Courier adicional 2'] }
+];
+
+var PROJETO_SITUACAO_ENVIO_FIELD_ = {
+  key: 'situacaoEnvioAmostras',
+  header: 'Situação envio de amostras',
+  aliases: ['Situacao envio de amostras', 'Envio de amostras']
+};
+
+function projetoCourierColumnMap_(headers) {
+  var normalized = (headers || []).map(function(header) { return normText_(header); });
+  function find(field) {
+    var names = [field.header].concat(field.aliases || []);
+    for (var i = 0; i < names.length; i++) {
+      var index = normalized.indexOf(normText_(names[i]));
+      if (index >= 0) return index;
+    }
+    return -1;
+  }
+  return {
+    principal: find(PROJETO_COURIER_FIELDS_[0]),
+    adicional1: find(PROJETO_COURIER_FIELDS_[1]),
+    adicional2: find(PROJETO_COURIER_FIELDS_[2])
+  };
+}
+
+function projetoCourierTemperatureColumnMap_(headers) {
+  var normalized = (headers || []).map(function(header) { return normText_(header); });
+  function find(field) {
+    var names = [field.header].concat(field.aliases || []);
+    for (var i = 0; i < names.length; i++) {
+      var index = normalized.indexOf(normText_(names[i]));
+      if (index >= 0) return index;
+    }
+    return -1;
+  }
+  return {
+    principal: find(PROJETO_COURIER_TEMPERATURE_FIELDS_[0]),
+    adicional1: find(PROJETO_COURIER_TEMPERATURE_FIELDS_[1]),
+    adicional2: find(PROJETO_COURIER_TEMPERATURE_FIELDS_[2])
+  };
+}
+
+function projetoSituacaoEnvioColumn_(headers) {
+  var normalized = (headers || []).map(function(header) { return normText_(header); });
+  var names = [PROJETO_SITUACAO_ENVIO_FIELD_.header].concat(PROJETO_SITUACAO_ENVIO_FIELD_.aliases || []);
+  for (var i = 0; i < names.length; i++) {
+    var index = normalized.indexOf(normText_(names[i]));
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+function projetoCourierPayloadPresente_(dados) {
+  return PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).some(function(field) {
+    return Object.prototype.hasOwnProperty.call(dados || {}, field.key) || (field.legacyKey && Object.prototype.hasOwnProperty.call(dados || {}, field.legacyKey));
+  });
+}
+
+function normalizarProjetoTemperaturas_(value) {
+  var raw = Array.isArray(value) ? value : String(value || '').split(/[;,]/);
+  var permitidas = getAgendaTemperaturas_();
+  var porNome = {};
+  permitidas.forEach(function(item) { porNome[normText_(item)] = String(item); });
+  var usadas = {};
+  return raw.map(function(item) {
+    var texto = String(item || '').trim();
+    if (!texto) return '';
+    var normalizada = normText_(texto);
+    if (!porNome[normalizada]) throw new Error('Temperatura não cadastrada para a Agenda: ' + texto + '.');
+    if (usadas[normalizada]) return '';
+    usadas[normalizada] = true;
+    return porNome[normalizada];
+  }).filter(Boolean);
+}
+
+function projetoTemperaturasPayload_(dados, field) {
+  if (Object.prototype.hasOwnProperty.call(dados || {}, field.key)) return normalizarProjetoTemperaturas_(dados[field.key]);
+  if (field.legacyKey && Object.prototype.hasOwnProperty.call(dados || {}, field.legacyKey)) return normalizarProjetoTemperaturas_(dados[field.legacyKey]);
+  return [];
+}
+
+function validarProjetoCourierIds_(dados) {
+  var ids = PROJETO_COURIER_FIELDS_.map(function(field) {
+    return String((dados || {})[field.key] || '').trim();
+  }).filter(Boolean);
+  var usados = {};
+  for (var i = 0; i < ids.length; i++) {
+    if (usados[ids[i]]) throw new Error('Selecione couriers diferentes para o projeto.');
+    usados[ids[i]] = true;
+  }
+  PROJETO_COURIER_TEMPERATURE_FIELDS_.forEach(function(field) {
+    var temperaturas = projetoTemperaturasPayload_(dados, field);
+    var courierId = String((dados || {})[field.courierKey] || '').trim();
+    if (temperaturas.length && !courierId) throw new Error('Selecione a courier correspondente antes de informar a temperatura.');
+  });
+  var situacao = String((dados || {}).situacaoEnvioAmostras || '').trim();
+  if (situacao && situacao !== 'Sim' && situacao !== 'Não') throw new Error('Use Sim ou Não para a situação do envio de amostras.');
+  if (situacao === 'Não' && ids.length) throw new Error('Um projeto sem envio de amostras não pode ter courier vinculada.');
+}
+
+function garantirProjetoCourierColumns_(aba) {
+  var lastCol = Math.max(aba.getLastColumn(), 1);
+  var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var normalized = headers.map(function(header) { return normText_(header); });
+  var map = {};
+  PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).forEach(function(field) {
+    var names = [field.header].concat(field.aliases || []);
+    var index = -1;
+    for (var i = 0; i < names.length && index < 0; i++) index = normalized.indexOf(normText_(names[i]));
+    if (index < 0) {
+      index = headers.length;
+      aba.getRange(1, index + 1).setValue(field.header);
+      headers.push(field.header);
+      normalized.push(normText_(field.header));
+    }
+    map[field.key] = index;
+  });
+  return map;
+}
+
+function gravarProjetoCourierIds_(aba, rowNumber, dados) {
+  if (!projetoCourierPayloadPresente_(dados)) return;
+  validarProjetoCourierIds_(dados);
+  var columns = garantirProjetoCourierColumns_(aba);
+  PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).forEach(function(field) {
+    var presente = Object.prototype.hasOwnProperty.call(dados, field.key) || (field.legacyKey && Object.prototype.hasOwnProperty.call(dados, field.legacyKey));
+    if (!presente) return;
+    var value = PROJETO_COURIER_TEMPERATURE_FIELDS_.indexOf(field) >= 0
+      ? projetoTemperaturasPayload_(dados, field).join('; ')
+      : String(dados[field.key] || '').trim();
+    aba.getRange(rowNumber, columns[field.key] + 1).setValue(value);
+  });
+}
+
 function salvarDadosProjeto(dados) {
   codexAssertCanWrite_('salvarDadosProjeto', 'Cadastros', dados && dados.id);
   dados = dados || {};
@@ -3941,6 +4097,7 @@ function salvarDadosProjeto(dados) {
       ? 'Já existe um projeto cadastrado com este código.'
       : 'Já existe um projeto cadastrado com este nome abreviado.');
   }
+  if (projetoCourierPayloadPresente_(dados)) validarProjetoCourierIds_(dados);
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
@@ -3963,6 +4120,7 @@ function salvarDadosProjeto(dados) {
           dados.expedienteCE  || '',
           dados.tituloCompleto || ''
         ]]);
+        gravarProjetoCourierIds_(aba, i + 1, dados);
         clearTransporteOptionsCache_();
         return 'Projeto atualizado com sucesso!';
       }
@@ -3989,6 +4147,7 @@ function salvarDadosProjeto(dados) {
       dados.expedienteCE  || '',
       dados.tituloCompleto || ''
     ]);
+    gravarProjetoCourierIds_(aba, aba.getLastRow(), dados);
     clearTransporteOptionsCache_();
     return 'Projeto cadastrado com sucesso!';
   }
@@ -8965,7 +9124,11 @@ function getAgendaCourierRows_() {
       monitorConfirmacao: headerValue(r, ['Monitorar confirmação', 'Monitorar confirmacao', 'Monitor confirmacao', 'Monitorar e-mail confirmação']),
       emailConfirmacao: headerValue(r, ['E-mail confirmação', 'Email confirmação', 'E-mail confirmacao', 'Email confirmacao', 'Remetente confirmação', 'Remetente confirmacao']),
       textoConfirmacao: headerValue(r, ['Texto confirmação', 'Texto confirmacao', 'Chave confirmação', 'Chave confirmacao']),
-      statusConfirmacao: headerValue(r, ['Status confirmação', 'Status confirmacao', 'Status ao confirmar'])
+      statusConfirmacao: headerValue(r, ['Status confirmação', 'Status confirmacao', 'Status ao confirmar']),
+      forneceGeloColeta: headerValue(r, ['Fornece gelo para coleta', 'Fornece gelo']),
+      restricaoSegunda: headerValue(r, ['Restrição às segundas-feiras', 'Restricao as segundas-feiras', 'Restrição segunda-feira']),
+      restricaoAposFeriado: headerValue(r, ['Restrição após feriado', 'Restricao apos feriado']),
+      observacaoOperacional: headerValue(r, ['Observação operacional', 'Observacao operacional'])
     });
   });
   CODEX_AGENDA_COURIER_ROWS_CACHE_ = out;
@@ -12982,6 +13145,13 @@ var COURIER_HEADERS_ = [
   'Status confirmação'
 ];
 
+var COURIER_OPERATIONAL_FIELDS_ = [
+  { key: 'forneceGeloColeta', header: 'Fornece gelo para coleta', aliases: ['Fornece gelo'] },
+  { key: 'restricaoSegunda', header: 'Restrição às segundas-feiras', aliases: ['Restricao as segundas-feiras', 'Restrição segunda-feira'] },
+  { key: 'restricaoAposFeriado', header: 'Restrição após feriado', aliases: ['Restricao apos feriado'] },
+  { key: 'observacaoOperacional', header: 'Observação operacional', aliases: ['Observacao operacional'] }
+];
+
 function courierConfirmationDefaults_(nome) {
   var n = normText_(nome);
   if (n.indexOf('marken') >= 0) {
@@ -13096,11 +13266,63 @@ function gerarNovoIdCourier_(sh) {
   return id;
 }
 
+function courierOperationalPayloadPresente_(dados) {
+  return COURIER_OPERATIONAL_FIELDS_.some(function(field) {
+    return Object.prototype.hasOwnProperty.call(dados || {}, field.key);
+  });
+}
+
+function courierOperationalValue_(field, value) {
+  var raw = String(value || '').trim();
+  if (field.key === 'observacaoOperacional' || !raw) return raw;
+  var normalized = normText_(raw);
+  if (normalized === 'sim') return 'Sim';
+  if (normalized === 'nao') return 'Não';
+  throw new Error('Use Sim ou Não nos campos de regras operacionais da courier.');
+}
+
+function validarCourierOperationalFields_(dados) {
+  if (!courierOperationalPayloadPresente_(dados)) return;
+  COURIER_OPERATIONAL_FIELDS_.forEach(function(field) {
+    if (Object.prototype.hasOwnProperty.call(dados, field.key)) courierOperationalValue_(field, dados[field.key]);
+  });
+}
+
+function garantirCourierOperationalColumns_(sh) {
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var normalized = headers.map(function(header) { return normText_(header); });
+  var map = {};
+  COURIER_OPERATIONAL_FIELDS_.forEach(function(field) {
+    var names = [field.header].concat(field.aliases || []);
+    var index = -1;
+    for (var i = 0; i < names.length && index < 0; i++) index = normalized.indexOf(normText_(names[i]));
+    if (index < 0) {
+      index = headers.length;
+      sh.getRange(1, index + 1).setValue(field.header);
+      headers.push(field.header);
+      normalized.push(normText_(field.header));
+    }
+    map[field.key] = index;
+  });
+  return map;
+}
+
+function gravarCourierOperationalFields_(sh, rowNumber, dados) {
+  if (!courierOperationalPayloadPresente_(dados)) return;
+  var columns = garantirCourierOperationalColumns_(sh);
+  COURIER_OPERATIONAL_FIELDS_.forEach(function(field) {
+    if (!Object.prototype.hasOwnProperty.call(dados, field.key)) return;
+    sh.getRange(rowNumber, columns[field.key] + 1).setValue(courierOperationalValue_(field, dados[field.key]));
+  });
+}
+
 function salvarCourier(dados) {
   codexAssertCanWrite_('salvarCourier', 'Sistema', dados && dados.id);
   dados = dados || {};
   var nome = String(dados.nome || dados.courier || '').trim();
   if (!nome) throw new Error('Informe o nome da courier.');
+  validarCourierOperationalFields_(dados);
   var defaults = courierConfirmationDefaults_(nome);
   var monitorConfirmacao = String(dados.monitorConfirmacao || defaults.monitorConfirmacao || '').trim();
   var sh = getCourierSheet_();
@@ -13129,6 +13351,7 @@ function salvarCourier(dados) {
     for (var i = 0; i < ids.length; i++) {
       if (String(ids[i][0]) === row[0]) {
         sh.getRange(i + 2, 1, 1, COURIER_HEADERS_.length).setValues([row]);
+        gravarCourierOperationalFields_(sh, i + 2, dados);
         limparCacheCourier_();
         return 'Courier atualizada com sucesso.';
       }
@@ -13137,6 +13360,7 @@ function salvarCourier(dados) {
   }
   row[0] = gerarNovoIdCourier_(sh);
   sh.appendRow(row);
+  gravarCourierOperationalFields_(sh, sh.getLastRow(), dados);
   limparCacheCourier_();
   return 'Courier cadastrada com sucesso.';
 }
