@@ -413,6 +413,42 @@
       </div>
     </div>
 
+    <!-- ═══ FERIADOS ═══ -->
+    <div class="page" id="page-feriados">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
+        <div class="stat-card" style="--accent:#b3261e;border-radius:var(--r-lg) 0 0 0">
+          <div class="stat-value" id="feriadoTotal">0</div>
+          <div class="stat-label">Datas cadastradas</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">event_busy</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#b26a00">
+          <div class="stat-value" id="feriadoAnoTotal">0</div>
+          <div class="stat-label">Aplicáveis neste ano</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">calendar_month</span></div>
+        </div>
+        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+          <div class="stat-value" id="feriadoEmendaTotal">0</div>
+          <div class="stat-label">Emendas institucionais</div>
+          <div class="stat-icon"><span class="material-symbols-outlined">date_range</span></div>
+        </div>
+      </div>
+      <div class="toolbar-card">
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input type="text" id="searchFeriados" placeholder="Buscar por data, nome, tipo ou abrangência" oninput="filtrarFeriados()">
+        </div>
+        <button class="btn-new" onclick="abrirFormFeriado(null)"><span class="material-symbols-outlined">add</span> Novo Feriado</button>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr>
+            <th>Data</th><th>Nome</th><th>Recorrência</th><th>Tipo</th><th>Abrangência</th><th>Transporte de amostras</th><th>Status</th><th>Observação</th><th style="text-align:right;padding-right:20px">Ações</th>
+          </tr></thead>
+          <tbody id="bodyFeriados"><tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ═══ EQUIPAMENTOS RECEBIDOS ═══ -->
     <div class="page" id="page-equipamentos">
       <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
@@ -652,7 +688,7 @@
             E-mails de lab central estao em modo teste. Para envio real, configure Agenda / Enviar emails lab central = Sim no Config_App.
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
-            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo();atualizarAgendaIntervaloUltimaVisita()"><div class="field-error" id="errAgData">Informe a data.</div></div>
+            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo();atualizarAgendaIntervaloUltimaVisita();agendaAtualizarRiscoCourier_()"><div class="field-error" id="errAgData">Informe a data.</div></div>
             <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao inicio.</div></div>
             <div id="agHoraWrap"><label class="field-label" for="agHora">Horario <span class="required-star">*</span></label><input type="time" id="agHora" class="f-input large" oninput="limparErro('agHora','errAgHora')"><div class="field-error" id="errAgHora">Informe o horario.</div></div>
           </div>
@@ -718,6 +754,7 @@
             </div>
             <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratorio central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')"><option value=""></option><option>Sim</option><option>Nao</option></select><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
           </div>
+          <div id="agendaCourierRiskAlert" class="ag-operational-alert" role="status" aria-live="polite" style="display:none"></div>
           <div id="agProcedimentosWrap">
             <label class="field-label" for="agProcedimentos">Procedimentos</label>
             <div class="ag-proc-chips" id="agProcedimentosChips"></div>

@@ -8,6 +8,7 @@ var TITULOS = {
   prestadores:   { label:'Prestadores',          icon:'business' },
   labcentral:    { label:'Lab Central',          icon:'biotech' },
   couriers:       { label:'Couriers',             icon:'local_shipping' },
+  feriados:       { label:'Feriados',             icon:'event_busy' },
   solicitantes:  { label:'Solicitantes',         icon:'support_agent' },
   equipamentos:  { label:'Equipamentos Recebidos', icon:'devices' },
   medicamentos:  { label:'Medicamentos Recebidos', icon:'medication' },
@@ -568,6 +569,7 @@ function getFloatingAddConfig() {
     prestadores: { label: 'Novo prestador', action: function() { abrirFormPrestador(null); } },
     labcentral: { label: 'Novo Lab Central', action: function() { abrirFormLabCentral(null); } },
     couriers: { label: 'Novo courier', action: function() { abrirFormCourier(null); } },
+    feriados: { label: 'Novo feriado ou emenda', action: function() { abrirFormFeriado(null); } },
     solicitantes: { label: 'Novo solicitante', action: function() { abrirFormSolicitante(null); } },
     equipamentos: { label: 'Novo equipamento', action: function() { abrirFormEquipamento(null); } },
     medicamentos: { label: 'Novo medicamento', action: function() { abrirFormMedicamento(null); } },
@@ -732,7 +734,7 @@ function irPara(pagina, options) {
     var oc = el.getAttribute('onclick') || '';
     if (oc.indexOf("'" + pagina + "'") !== -1) el.classList.add('active');
   });
-  var cadastros = ['participantes', 'medicos', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'solicitantes', 'equipamentos', 'medicamentos'];
+  var cadastros = ['participantes', 'medicos', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'feriados', 'solicitantes', 'equipamentos', 'medicamentos'];
   if (cadastros.indexOf(pagina) !== -1) {
     document.getElementById('navCadastrosToggle').classList.add('open');
     document.getElementById('navCadastrosBody').classList.add('open');
@@ -762,6 +764,7 @@ function irPara(pagina, options) {
   if (pagina === 'prestadores') carregarPrestadores();
   if (pagina === 'labcentral') carregarLabCentral();
   if (pagina === 'couriers') carregarCouriers();
+  if (pagina === 'feriados') carregarFeriados();
   if (pagina === 'equipamentos') carregarEquipamentos();
   if (pagina === 'medicamentos') carregarMedicamentos();
   if (pagina === 'configuracoes') carregarConfigApp();
@@ -4253,7 +4256,10 @@ function projetoCourierNome_(id) {
 
 function projetoCouriersDetalheHtml_(p) {
   if (String((p && p.situacaoEnvioAmostras) || '') === 'Não') {
-    return '<div class="proj-courier-list"><span class="proj-courier-chip"><span class="material-symbols-outlined">block</span>Sem envio de amostras</span></div>';
+    return '<div class="proj-detail-section proj-detail-logistics">' +
+      '<div class="proj-detail-section-label"><span class="material-symbols-outlined">local_shipping</span>Logística de amostras</div>' +
+      '<div class="proj-courier-list"><span class="proj-courier-chip"><span class="material-symbols-outlined">block</span>Sem envio de amostras</span></div>' +
+    '</div>';
   }
   var vinculos = [
     [p.courierPrincipalId, p.courierPrincipalTemperaturas || p.courierPrincipalTemperatura],
@@ -4261,10 +4267,12 @@ function projetoCouriersDetalheHtml_(p) {
     [p.courierAdicional2Id, p.courierAdicional2Temperaturas || p.courierAdicional2Temperatura]
   ].filter(function(item) { return !!item[0]; });
   if (!vinculos.length) return '';
-  return '<div class="proj-courier-list">' + vinculos.map(function(item) {
+  return '<div class="proj-detail-section proj-detail-logistics">' +
+    '<div class="proj-detail-section-label"><span class="material-symbols-outlined">local_shipping</span>Logística de amostras</div>' +
+    '<div class="proj-courier-list">' + vinculos.map(function(item) {
     var temperaturas = projetoTemperaturasArray_(item[1]).join(' · ') || 'Temperatura não informada';
     return '<span class="proj-courier-chip"><span class="material-symbols-outlined">local_shipping</span><strong>' + esc(projetoCourierNome_(item[0])) + '</strong> — ' + esc(temperaturas) + '</span>';
-  }).join('') + '</div>';
+  }).join('') + '</div></div>';
 }
 
 var _projetoCeStatusCache = {};
@@ -4274,13 +4282,18 @@ function projetoDetalheHtml(p) {
   var ceStatusId = 'proj-ce-status-' + String(p.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
   return '<div class="proj-detail-panel">' +
     '<div class="proj-detail-title">' + projetoDetailValue(p.tituloCompleto) + '</div>' +
-    '<div class="proj-detail-items">' +
-      '<span class="det-item"><span class="material-symbols-outlined">approval</span><span>N&deg; CE: ' + projetoDetailValue(p.numeroCE) + '</span></span>' +
-      '<span class="det-item"><span class="material-symbols-outlined">tag</span><span>N&deg; expediente CE: ' + projetoDetailValue(p.expedienteCE) + '</span></span>' +
-      '<span class="det-item proj-ce-drive-status" data-projeto-ce="' + esc(projetoCe) + '" data-ce-status-id="' + esc(ceStatusId) + '"><span class="material-symbols-outlined">folder_open</span><span>CE localizada no Drive: <strong id="' + esc(ceStatusId) + '">Verificando...</strong></span></span>' +
-      '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoSivDetailValue(p) + '</span></span>' +
+    '<div class="proj-detail-layout">' +
+      '<div class="proj-detail-section proj-detail-study">' +
+        '<div class="proj-detail-section-label"><span class="material-symbols-outlined">fact_check</span>Marcos do estudo</div>' +
+        '<div class="proj-detail-items">' +
+          '<span class="det-item"><span class="material-symbols-outlined">approval</span><span>N&deg; CE: ' + projetoDetailValue(p.numeroCE) + '</span></span>' +
+          '<span class="det-item"><span class="material-symbols-outlined">tag</span><span>N&deg; expediente CE: ' + projetoDetailValue(p.expedienteCE) + '</span></span>' +
+          '<span class="det-item proj-ce-drive-status" data-projeto-ce="' + esc(projetoCe) + '" data-ce-status-id="' + esc(ceStatusId) + '"><span class="material-symbols-outlined">folder_open</span><span>CE localizada no Drive: <strong id="' + esc(ceStatusId) + '">Verificando...</strong></span></span>' +
+          '<span class="det-item"><span class="material-symbols-outlined">event_available</span><span>SIV realizada: ' + projetoSivDetailValue(p) + '</span></span>' +
+        '</div>' +
+      '</div>' +
+      projetoCouriersDetalheHtml_(p) +
     '</div>' +
-    projetoCouriersDetalheHtml_(p) +
   '</div>';
 }
 
@@ -7008,6 +7021,159 @@ function confirmarExcluirCourier(id) {
     });
   };
   document.getElementById('confirmCourier').classList.add('open');
+}
+
+var _feriados = [];
+
+function carregarFeriados(force) {
+  var body = document.getElementById('bodyFeriados');
+  if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
+  getCadastrosBootstrapCached('feriados', function(res) {
+    renderFeriados((res && res.data) || []);
+  }, function(e) { snackErro(appErrorMessage(e)); }, !!force);
+}
+
+function feriadoDataBr_(iso) {
+  var match = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? match[3] + '/' + match[2] + '/' + match[1] : String(iso || '—');
+}
+
+function feriadoRecorrenciaAnual_(item) {
+  return normSelectValue(item && item.recorrencia) === 'anual';
+}
+
+function feriadoAplicaAoAno_(item, year) {
+  var dataIso = String((item && item.dataIso) || '');
+  if (!feriadoRecorrenciaAnual_(item)) return dataIso.slice(0, 4) === String(year);
+  var candidate = String(year) + dataIso.slice(4);
+  return !!(window.CodexCourierRules && CodexCourierRules.parseIso(candidate));
+}
+
+function feriadoDataCadastroLabel_(item) {
+  var data = feriadoDataBr_(item && item.dataIso);
+  return feriadoRecorrenciaAnual_(item) ? data.slice(0, 5) : data;
+}
+
+function renderFeriados(lista) {
+  _feriados = (lista || []).slice().sort(function(a, b) {
+    return String(a.dataIso || '').localeCompare(String(b.dataIso || '')) || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+  });
+  var currentYear = String(new Date().getFullYear());
+  document.getElementById('feriadoTotal').textContent = _feriados.length || '0';
+  document.getElementById('feriadoAnoTotal').textContent = _feriados.filter(function(item) { return feriadoAplicaAoAno_(item, currentYear); }).length || '0';
+  document.getElementById('feriadoEmendaTotal').textContent = _feriados.filter(function(item) { return normSelectValue(item.tipo).indexOf('emenda') >= 0; }).length || '0';
+  filtrarFeriados(true);
+}
+
+function _renderTabelaFeriados(lista) {
+  var body = document.getElementById('bodyFeriados');
+  if (!lista.length) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum feriado ou emenda cadastrado.</td></tr>';
+    return;
+  }
+  body.innerHTML = lista.map(function(item, index) {
+    var tipoClass = normSelectValue(item.tipo).indexOf('emenda') >= 0 ? 'chip-orange' : 'chip-red';
+    return '<tr>' +
+      '<td><strong>' + esc(feriadoDataCadastroLabel_(item)) + '</strong><div style="font-size:11px;color:var(--text-muted);margin-top:3px">' + (feriadoRecorrenciaAnual_(item) ? 'Todos os anos' : esc(String(item.dataIso || '').slice(0, 4))) + '</div></td>' +
+      '<td><div class="row-name">' + esc(item.nome || '—') + '</div></td>' +
+      '<td><span class="chip ' + (feriadoRecorrenciaAnual_(item) ? 'chip-blue' : 'chip-gray') + '">' + esc(item.recorrencia || 'Data específica') + '</span></td>' +
+      '<td><span class="chip ' + tipoClass + '">' + esc(item.tipo || 'Feriado') + '</span></td>' +
+      '<td>' + esc(item.abrangencia || '—') + '</td>' +
+      '<td><span class="chip ' + (item.afetaOperacao === 'Sim' ? 'chip-orange' : 'chip-gray') + '">' + esc(item.afetaOperacao || 'Sim') + '</span></td>' +
+      '<td><span class="chip ' + (item.ativo === 'Sim' ? 'chip-green' : 'chip-gray') + '">' + esc(item.ativo || 'Sim') + '</span></td>' +
+      '<td style="max-width:280px;color:var(--text-muted);font-size:12px">' + esc(item.observacao || '—') + '</td>' +
+      '<td><div class="action-btns"><button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button><button class="icon-btn del" title="Excluir" data-record-action="delete" data-record-index="' + index + '"><span class="material-symbols-outlined">delete</span></button></div></td>' +
+    '</tr>';
+  }).join('');
+  bindTableRecordActions(body, lista, {
+    edit: function(item) { abrirFormFeriado(item.id); },
+    delete: function(item) { confirmarExcluirFeriado(item.id); }
+  });
+}
+
+function filtrarFeriados(forceNow) {
+  codexRunSearchFilter('searchFeriados', 'feriados', function() {
+    var query = normSelectValue((document.getElementById('searchFeriados') || {}).value || '');
+    _renderTabelaFeriados(!query ? _feriados : _feriados.filter(function(item) {
+      return normSelectValue([item.dataIso, item.nome, item.tipo, item.abrangencia, item.observacao].join(' ')).indexOf(query) >= 0;
+    }));
+  }, !!forceNow);
+}
+
+function abrirFormFeriado(id) {
+  var item = id ? _feriados.find(function(value) { return value.id === id; }) : null;
+  document.getElementById('editFeriadoId').value = item ? item.id : '';
+  document.getElementById('feriadoData').value = item ? item.dataIso || '' : '';
+  document.getElementById('feriadoRecorrencia').value = item ? item.recorrencia || 'Data específica' : 'Data específica';
+  document.getElementById('feriadoNome').value = item ? item.nome || '' : '';
+  document.getElementById('feriadoTipo').value = item ? item.tipo || 'Feriado' : 'Feriado';
+  document.getElementById('feriadoAbrangencia').value = item ? item.abrangencia || '' : '';
+  document.getElementById('feriadoAfetaOperacao').value = item ? item.afetaOperacao || 'Sim' : 'Sim';
+  document.getElementById('feriadoAtivo').value = item ? item.ativo || 'Sim' : 'Sim';
+  document.getElementById('feriadoObservacao').value = item ? item.observacao || '' : '';
+  document.getElementById('modalFeriadoTitle').textContent = item ? 'EDITAR FERIADO' : 'CADASTRO DE FERIADO';
+  document.getElementById('statusFeriado').textContent = '';
+  ['feriadoData','feriadoNome'].forEach(function(field) { document.getElementById(field).classList.remove('invalid'); });
+  ['errFeriadoData','errFeriadoNome'].forEach(function(field) { document.getElementById(field).classList.remove('visible'); });
+  document.getElementById('modalFeriado').classList.add('open');
+  onFeriadoRecorrenciaChange_();
+  setTimeout(function() { document.getElementById('feriadoData').focus(); }, 180);
+}
+
+function onFeriadoRecorrenciaChange_() {
+  var annual = document.getElementById('feriadoRecorrencia').value === 'Anual';
+  document.getElementById('feriadoRecorrenciaHint').textContent = annual
+    ? 'O ano serve como referência; o dia e o mês serão aplicados em todos os anos.'
+    : 'Válida somente para o ano informado.';
+}
+
+function salvarFeriadoApp() {
+  var dataIso = document.getElementById('feriadoData').value;
+  var nome = document.getElementById('feriadoNome').value.trim();
+  if (!appRequiredFeedback([
+    { input: 'feriadoData', error: 'errFeriadoData', label: 'Data', value: dataIso },
+    { input: 'feriadoNome', error: 'errFeriadoNome', label: 'Nome', value: nome }
+  ], { status: 'statusFeriado' })) return;
+  var button = document.getElementById('btnSalvarFeriado');
+  appSetButtonBusy(button, true);
+  appServerRun({
+    method: 'salvarFeriado',
+    args: [{
+      id: document.getElementById('editFeriadoId').value,
+      dataIso: dataIso,
+      recorrencia: document.getElementById('feriadoRecorrencia').value,
+      nome: nome,
+      tipo: document.getElementById('feriadoTipo').value,
+      abrangencia: document.getElementById('feriadoAbrangencia').value.trim(),
+      afetaOperacao: document.getElementById('feriadoAfetaOperacao').value,
+      ativo: document.getElementById('feriadoAtivo').value,
+      observacao: document.getElementById('feriadoObservacao').value.trim()
+    }],
+    onSuccess: function(message) {
+      appSetButtonBusy(button, false);
+      appSetStatus('statusFeriado', '✓ ' + message, '#137333');
+      if (typeof notificarAgendaReferenciasAlteradas === 'function') notificarAgendaReferenciasAlteradas();
+      carregarFeriados(true);
+      setTimeout(function() { fecharOverlay('modalFeriado'); }, 800);
+    },
+    onFailure: function(error) {
+      appSetButtonBusy(button, false);
+      appSetStatus('statusFeriado', '✗ ' + appErrorMessage(error), '#e53935');
+    }
+  });
+}
+
+function confirmarExcluirFeriado(id) {
+  var item = _feriados.find(function(value) { return value.id === id; }) || {};
+  document.getElementById('confirmFeriadoNome').textContent = 'Excluir "' + (item.nome || id) + '" em ' + feriadoDataBr_(item.dataIso) + '?';
+  document.getElementById('btnConfirmExcluirFeriado').onclick = function() {
+    appServerRun({
+      method: 'excluirFeriado', args: [id],
+      onSuccess: function() { fecharOverlay('confirmFeriado'); if (typeof notificarAgendaReferenciasAlteradas === 'function') notificarAgendaReferenciasAlteradas(); carregarFeriados(true); snack('Feriado excluído.'); },
+      onFailure: function(error) { snackErro(error); }
+    });
+  };
+  document.getElementById('confirmFeriado').classList.add('open');
 }
 
 </script>

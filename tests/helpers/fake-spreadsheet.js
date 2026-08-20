@@ -88,12 +88,19 @@ class FakeSheet {
   getLastColumn() { return this.rows.reduce((max, row) => Math.max(max, row.length), 0); }
   getName() { return this.name; }
   deleteRow(row) { this.rows.splice(row - 1, 1); this.writes++; }
+  setFrozenRows() { return this; }
+  hideColumns() { return this; }
 }
 
 class FakeSpreadsheet {
   constructor(sheets) { this.sheets = sheets || {}; }
   getSheetByName(name) { return this.sheets[name] || null; }
   getSheets() { return Object.values(this.sheets); }
+  insertSheet(name) {
+    const sheet = new FakeSheet(name, []);
+    this.sheets[name] = sheet;
+    return sheet;
+  }
 }
 
 module.exports = { FakeRange, FakeSheet, FakeSpreadsheet };

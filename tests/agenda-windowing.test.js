@@ -120,6 +120,8 @@ function validAgendaReferenceData(overrides = {}) {
     laboratorios: [],
     couriers: [],
     courierConfig: {},
+    projectCourierMap: {},
+    feriados: [],
     temperaturas: [],
     statusCourier: [],
     laboratoriosDestino: [],
@@ -899,8 +901,8 @@ test('fallback do formulario usa carga completa, legado validado e somente codig
   strictServer.getDadosFormularioAgenda();
   strictServer.getDadosFormularioAgenda(true);
   assert.deepEqual(strictCalls, [
-      { key: 'AgendaFormData:v8:20260804', forceRefresh: false, strict: false },
-      { key: 'AgendaFormDataStrict:v2:20260804', forceRefresh: false, strict: true }
+      { key: 'AgendaFormData:v9:20260804', forceRefresh: false, strict: false },
+      { key: 'AgendaFormDataStrict:v3:20260804', forceRefresh: false, strict: true }
   ]);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'getAppBootstrapData'), /getDadosFormularioAgenda\(true\)/);
 
@@ -944,8 +946,8 @@ test('servidor invalida todos os caches de referencias e oferece leitura fresca 
   });
   server.codexCacheRemove_ = (key) => removed.push(key);
   server.clearCodexRuntimeCaches_();
-  assert.ok(removed.includes('AgendaFormDataStrict:v2:20260817'));
-  assert.ok(removed.includes('AgendaBootstrapReferenceData:v1:20260817'));
+  assert.ok(removed.includes('AgendaFormDataStrict:v3:20260817'));
+  assert.ok(removed.includes('AgendaBootstrapReferenceData:v2:20260817'));
 
   let forceRefresh = null;
   server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
@@ -982,6 +984,8 @@ test('referencias do bootstrap preservam campos, aliases e ordem do formulario a
   server.getAgendaLaboratorios_ = () => [];
   server.getAgendaCouriers_ = () => [];
   server.getAgendaCourierConfigs_ = () => ({});
+  server.getAgendaProjetoCourierMap_ = () => ({});
+  server.getAgendaFeriadosOperacionais_ = () => [];
   server.getAgendaTemperaturas_ = () => [];
   server.getAgendaCourierStatuses_ = () => [];
   server.getAgendaLabDestinos_ = () => [];
@@ -996,7 +1000,7 @@ test('referencias do bootstrap preservam campos, aliases e ordem do formulario a
   const result = server.agendaBuildDadosFormularioAgenda_(true);
   assert.deepEqual(Object.keys(result), [
     'participantes', 'medicos', 'prestadores', 'projetos', 'laboratorios', 'couriers',
-    'courierConfig', 'temperaturas', 'statusCourier', 'laboratoriosDestino', 'kitsColeta',
+    'courierConfig', 'projectCourierMap', 'feriados', 'temperaturas', 'statusCourier', 'laboratoriosDestino', 'kitsColeta',
     'tiposEvento', 'salasMonitoria', 'status', 'procedimentoChips', 'monitores',
     'emailLabAtivo', 'hojeIso'
   ]);

@@ -244,6 +244,9 @@ test('projeto oferece tres couriers opcionais por ID com finalidade de temperatu
   assert.match(client, /function validarProjetoCouriers_/);
   assert.match(client, /courierPrincipalTemperaturas: projetoCourierTemperaturasSelecionadas_/);
   assert.match(client, /function projetoCouriersDetalheHtml_/);
+  assert.match(client, /proj-detail-layout/);
+  assert.match(client, /Marcos do estudo/);
+  assert.match(client, /Logística de amostras/);
   assert.match(server, /Courier principal \(ID\)/);
   assert.match(server, /Temperaturas courier principal/);
   assert.match(server, /Situação envio de amostras/);
