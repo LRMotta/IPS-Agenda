@@ -7106,7 +7106,8 @@ function abrirFormFeriado(id) {
   document.getElementById('feriadoData').value = item ? item.dataIso || '' : '';
   document.getElementById('feriadoRecorrencia').value = item ? item.recorrencia || 'Data específica' : 'Data específica';
   document.getElementById('feriadoNome').value = item ? item.nome || '' : '';
-  document.getElementById('feriadoTipo').value = item ? item.tipo || 'Feriado' : 'Feriado';
+  var tipo = item ? item.tipo || 'Feriado' : 'Feriado';
+  document.getElementById('feriadoTipo').value = tipo === 'Emenda institucional' ? 'Feriado Universitário' : tipo;
   document.getElementById('feriadoAbrangencia').value = item ? item.abrangencia || '' : '';
   document.getElementById('feriadoAfetaOperacao').value = item ? item.afetaOperacao || 'Sim' : 'Sim';
   document.getElementById('feriadoAtivo').value = item ? item.ativo || 'Sim' : 'Sim';

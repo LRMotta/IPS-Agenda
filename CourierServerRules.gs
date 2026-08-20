@@ -10,6 +10,14 @@ var CodexCourierRiskRules_ = (function() {
     return ['SIM', 'S', 'YES', 'TRUE', '1', 'ATIVO'].indexOf(norm(value)) >= 0;
   }
 
+  function dryIceTemperatures(values) {
+    var list = Array.isArray(values) ? values : String(values || '').split(/[;,]/);
+    return list.map(function(value) { return String(value || '').trim(); }).filter(function(value) {
+      var temperature = norm(value);
+      return temperature.indexOf('CONGEL') >= 0 || temperature.indexOf('FROZEN') >= 0;
+    });
+  }
+
   function parseIso(value) {
     var match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) return null;
@@ -89,6 +97,7 @@ var CodexCourierRiskRules_ = (function() {
   return {
     norm: norm,
     isYes: isYes,
+    dryIceTemperatures: dryIceTemperatures,
     parseIso: parseIso,
     previousCalendarIso: previousCalendarIso,
     isAnnualHoliday: isAnnualHoliday,

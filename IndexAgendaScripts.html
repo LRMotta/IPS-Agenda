@@ -698,6 +698,8 @@
       lines.push('<div class="ag-operational-alert-line"><strong>' + esc(agendaHolidayNames_(general.holiday) || 'Feriado ou fechamento operacional') + '</strong>: operação de transporte de amostras sujeita a restrições. Confirme os procedimentos especiais necessários para esta data.</div>');
     }
     (project && project.couriers || []).forEach(function(link) {
+      var dryIceTemperatures = CodexCourierRules.dryIceTemperatures(link.temperaturas);
+      if (!dryIceTemperatures.length) return;
       var config = agendaCourierConfigById_(link.courierId);
       if (!config) return;
       var risk = CodexCourierRules.operationalRisk(dateIso, config, holidays);
@@ -707,7 +709,7 @@
         return reason.code;
       });
       if (!reasons.length) return;
-      var temperatures = (link.temperaturas || []).length ? ' · ' + link.temperaturas.join(' / ') : '';
+      var temperatures = ' · ' + dryIceTemperatures.join(' / ');
       var observation = config.observacaoOperacional ? '<div class="ag-operational-alert-note">' + esc(config.observacaoOperacional) + '</div>' : '';
       var restrictionSubject = CodexCourierRules.isYes(config.forneceGeloColeta)
         ? 'fornecimento de gelo seco sujeito a '

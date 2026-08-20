@@ -41,6 +41,80 @@ test('navegador e servidor classificam as mesmas datas de risco', () => {
   });
 });
 
+test('navegador e servidor limitam gelo seco a temperaturas congeladas', () => {
+  const client = runHtmlScript('SharedCourierRules.html').CodexCourierRules;
+  const server = runFiles(['CourierServerRules.gs']).CodexCourierRiskRules_;
+  const scenarios = [
+    { input: ['Ambiente'], expected: [] },
+    { input: ['Refrigerado'], expected: [] },
+    { input: ['Ambiente', 'Congelado'], expected: ['Congelado'] },
+    { input: 'Ambiente; Frozen', expected: ['Frozen'] }
+  ];
+  scenarios.forEach(({ input, expected }) => {
+    assert.deepEqual(plain(client.dryIceTemperatures(input)), expected);
+    assert.deepEqual(plain(server.dryIceTemperatures(input)), expected);
+  });
+});
+
+test('Agenda nao alerta restricao de gelo para courier vinculada somente a Ambiente', () => {
+  const context = runFiles(['CourierServerRules.gs', 'AgendaCourierRisk.gs'], {
+    normText_: (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(),
+    AgendaServerRules_: { isLabCentral: (value) => value === 'Sim' },
+    getCodexSheetDataByName_: () => [],
+    projetoCourierColumnMap_: () => ({}),
+    projetoCourierTemperatureColumnMap_: () => ({}),
+    projetoSituacaoEnvioColumn_: () => -1,
+    getAgendaFeriadosOperacionais_: () => [],
+    getAgendaCourierConfigs_: () => ({}),
+    feriadoDateIso_: (value) => value,
+    Utilities: { formatDate: (value) => value },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  context.getAgendaProjetoCourierMap_ = () => ({
+    'PROJ-1': {
+      id: 'PROJ-1',
+      nome: 'Projeto misto',
+      couriers: [
+        { courierId: 'MARKEN', temperaturas: ['Ambiente'] },
+        { courierId: 'OCASA', temperaturas: ['Ambiente', 'Congelado'] }
+      ]
+    }
+  });
+  context.getAgendaCourierConfigs_ = () => ({
+    MARKEN: { id: 'MARKEN', nome: 'Marken', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim', restricaoAposFeriado: 'Sim' },
+    OCASA: { id: 'OCASA', nome: 'Ocasa', forneceGeloColeta: 'Sim', restricaoSegunda: 'Não', restricaoAposFeriado: 'Não' }
+  });
+  assert.deepEqual(plain(context.agendaOperationalRiskAlerts_({ data: '2026-06-08', projeto: 'PROJ-1', labCentral: 'Sim' })), []);
+  context.getAgendaFeriadosOperacionais_ = () => [holiday('2026-09-07', 'Independência do Brasil')];
+  assert.deepEqual(plain(context.agendaOperationalRiskAlerts_({ data: '2026-09-08', projeto: 'PROJ-1', labCentral: 'Sim' })), []);
+});
+
+test('Agenda alerta apenas a parcela Congelado de um vinculo com varias temperaturas', () => {
+  const context = runFiles(['CourierServerRules.gs', 'AgendaCourierRisk.gs'], {
+    normText_: (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(),
+    AgendaServerRules_: { isLabCentral: (value) => value === 'Sim' },
+    getCodexSheetDataByName_: () => [],
+    projetoCourierColumnMap_: () => ({}),
+    projetoCourierTemperatureColumnMap_: () => ({}),
+    projetoSituacaoEnvioColumn_: () => -1,
+    getAgendaFeriadosOperacionais_: () => [],
+    getAgendaCourierConfigs_: () => ({}),
+    feriadoDateIso_: (value) => value,
+    Utilities: { formatDate: (value) => value },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  context.getAgendaProjetoCourierMap_ = () => ({
+    'PROJ-2': { id: 'PROJ-2', couriers: [{ courierId: 'MARKEN', temperaturas: ['Ambiente', 'Congelado'] }] }
+  });
+  context.getAgendaCourierConfigs_ = () => ({
+    MARKEN: { id: 'MARKEN', nome: 'Marken', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim' }
+  });
+  const alerts = plain(context.agendaOperationalRiskAlerts_({ data: '2026-06-08', projeto: 'PROJ-2', labCentral: 'Sim' }));
+  assert.equal(alerts.length, 1);
+  assert.deepEqual(alerts[0].temperaturas, ['Congelado']);
+  assert.deepEqual(alerts[0].reasons.map((item) => item.code), ['MONDAY_RESTRICTION']);
+});
+
 test('feriado de sexta nao cria risco pos-feriado na segunda', () => {
   const rules = runHtmlScript('SharedCourierRules.html').CodexCourierRules;
   const holidays = [holiday('2026-05-01', 'Dia do Trabalho')];
@@ -123,4 +197,12 @@ test('Agenda carrega mapa de projeto, regras de courier e feriados e mostra aler
   assert.match(client, /operação de transporte de amostras sujeita a restrições/);
   assert.match(readProjectFile('IndexExtraModals.html'), /id="feriadoRecorrencia"/);
   assert.match(readProjectFile('IndexExtraModals.html'), /Operação de transporte de amostras sujeita a restrições/);
+  assert.match(readProjectFile('IndexExtraModals.html'), /<option>Feriado Universitário<\/option>/);
+  assert.doesNotMatch(readProjectFile('IndexExtraModals.html'), /<option>Emenda institucional<\/option>/);
+  assert.match(readProjectFile('IndexCoreScripts.html'), /tipo === 'Emenda institucional' \? 'Feriado Universitário' : tipo/);
+  assert.match(readProjectFile('IndexExtraModals.html'), /class="form-grid feriado-form-grid"/);
+  assert.match(readProjectFile('IndexExtraModals.html'), /class="field feriado-paired-field"[^>]*><label[^>]*for="feriadoAbrangencia"/);
+  assert.match(readProjectFile('IndexExtraModals.html'), /class="field feriado-paired-field"[^>]*><label[^>]*for="feriadoAfetaOperacao"/);
+  assert.match(readProjectFile('IndexStyles.html'), /#modalFeriado \.feriado-guidance\s*\{[^}]*color:\s*var\(--text-muted\)[^}]*font-size:\s*12px/);
+  assert.match(readProjectFile('IndexStyles.html'), /#modalFeriado \.feriado-paired-field \.field-label\s*\{[^}]*min-height:\s*28px/);
 });

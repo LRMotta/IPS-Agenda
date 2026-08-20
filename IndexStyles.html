@@ -451,7 +451,11 @@
     .form-grid.single { grid-template-columns: minmax(0, 1fr); }
     .form-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .form-grid .full { grid-column: 1 / -1; }
+    #modalFeriado .feriado-guidance { margin: -2px 0 14px; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+    #modalFeriado .feriado-field-hint { margin-top: 4px; color: var(--text-faint); font-size: 11px; line-height: 1.4; }
+    #modalFeriado .feriado-paired-field .field-label { min-height: 28px; display: flex; align-items: flex-end; }
     @media (max-width: 760px) { .field-row.cols-2, .field-row.cols-3, .form-grid, .form-grid.cols-3 { grid-template-columns: 1fr; } .form-grid .full { grid-column: auto; } }
+    @media (max-width: 760px) { #modalFeriado .feriado-paired-field .field-label { min-height: 0; } }
     .rich-toolbar { display: flex; gap: 6px; margin-bottom: 8px; }
     .rich-btn { width: 34px; height: 32px; border: 1px solid var(--border); border-radius: var(--r-sm); background: #fff; color: var(--text); font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .rich-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }

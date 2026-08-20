@@ -12670,9 +12670,33 @@ function gerarRodapeEmailAgenda_(label, usuario) {
 }
 
 function extrairIniciais_(nome) {
-  return String(nome || '').trim().split(/\s+/).filter(Boolean).map(function(p) {
-    return p.charAt(0).toUpperCase();
-  }).join('');
+  var raw = String(nome == null ? '' : nome).trim();
+  if (!raw) return '';
+  if (/^[A-Za-z\u00C0-\u00FF](?:\.[A-Za-z\u00C0-\u00FF])+\.?$/.test(raw.replace(/\s+/g, ''))) {
+    return raw.replace(/\s+/g, '').toUpperCase().replace(/\.?$/, '.');
+  }
+  var ignorar = {
+    de: true,
+    da: true,
+    das: true,
+    do: true,
+    dos: true,
+    e: true
+  };
+  return raw
+    .replace(/[.,;:()[\]{}]/g, ' ')
+    .split(/\s+/)
+    .filter(function(part) {
+      var normalized = String(part || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return part && !ignorar[normalized];
+    })
+    .map(function(part) {
+      return part.charAt(0).toUpperCase() + '.';
+    })
+    .join('');
 }
 
 function gerarListaDestinatarios_(usuario) {
