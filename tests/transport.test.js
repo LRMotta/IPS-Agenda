@@ -21,6 +21,19 @@ function serverCourierContext() {
   return context;
 }
 
+test('Agenda e Transporte compartilham a regra de iniciais que ignora particulas', () => {
+  const server = runFile('WebApp.gs');
+  const transportSource = readProjectFile('TransporteCodexConfig.gs');
+
+  assert.equal(server.extrairIniciais_('Joao dos Santos'), 'J.S.');
+  assert.equal(server.extrairIniciais_('Maria da Silva e Souza'), 'M.S.S.');
+  assert.equal(server.extrairIniciais_('A. B.'), 'A.B.');
+  assert.equal(server.extrairIniciais_(''), '');
+  assert.doesNotMatch(transportSource, /function\s+transporteExtrairIniciais\s*\(/);
+  assert.doesNotMatch(transportSource, /transporteExtrairIniciais\s*\(/);
+  assert.match(transportSource, /extrairIniciais_\s*\(/);
+});
+
 test('regras de AWB do navegador e servidor permanecem alinhadas', () => {
   const client = runHtmlScript('SharedCourierRules.html').CodexCourierRules;
   const server = serverCourierContext();
@@ -496,7 +509,7 @@ test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () 
   const source = readProjectFile('TransporteCodexConfig.gs');
   const summary = sourceBetween(source, 'function transportePinexSampleSummary_(', 'function atualizarCommercialInvoicePinexB34_(');
   const context = vm.createContext({
-    transporteExtrairIniciais: (value) => String(value || '').split(/\s+/).filter(Boolean).map((part) => part[0]).join('').toUpperCase(),
+    extrairIniciais_: (value) => String(value || '').split(/\s+/).filter(Boolean).map((part) => part[0] + '.').join('').toUpperCase(),
     transporteNumber_: (value) => Number(String(value == null || value === '' ? 0 : value).replace(',', '.')) || 0,
     transporteNorm_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
   });
@@ -509,7 +522,7 @@ test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () 
     [[0], [1.6], [0], [0], [0], [0], [0], [0]],
     ''
   );
-  assert.equal(result, 'Patient MSS - 2 tube(s) of human bio sample - Total 1.60 mL / 0 slide(s) / 0 g');
+  assert.equal(result, 'Patient M.S.S. - 2 tube(s) of human bio sample - Total 1.60 mL / 0 slide(s) / 0 g');
 });
 
 test('PINEX identifica o investigador principal e inclui o CREMERS', () => {

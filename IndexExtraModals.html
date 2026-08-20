@@ -140,18 +140,18 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="editFeriadoId">
-      <div class="form-section">
+      <div class="form-section feriado-form-section">
         <div class="section-label"><span class="material-symbols-outlined">calendar_month</span> Data e identificação</div>
-        <div class="field-hint" style="margin-bottom:14px">Use recorrência anual apenas para datas fixas, como 25 de dezembro. Emendas e feriados móveis devem permanecer como datas específicas.</div>
-        <div class="form-grid">
+        <p class="feriado-guidance">Use recorrência anual apenas para datas fixas, como 25 de dezembro. Feriados universitários e feriados móveis devem permanecer como datas específicas.</p>
+        <div class="form-grid feriado-form-grid">
           <div class="field"><label class="field-label" for="feriadoData">Data <span class="required-star">*</span></label><input type="date" id="feriadoData" class="f-input"><div class="field-error" id="errFeriadoData">Informe a data.</div></div>
-          <div class="field"><label class="field-label" for="feriadoRecorrencia">Recorrência</label><select id="feriadoRecorrencia" class="f-input f-select" onchange="onFeriadoRecorrenciaChange_()"><option>Data específica</option><option>Anual</option></select><div class="field-hint" id="feriadoRecorrenciaHint">Válida somente para o ano informado.</div></div>
-          <div class="field"><label class="field-label" for="feriadoTipo">Tipo</label><select id="feriadoTipo" class="f-input f-select"><option>Feriado</option><option>Emenda institucional</option><option>Fechamento institucional</option></select></div>
-          <div class="field" style="grid-column:1/-1"><label class="field-label" for="feriadoNome">Nome <span class="required-star">*</span></label><input type="text" id="feriadoNome" class="f-input" placeholder="Ex: Corpus Christi ou Emenda institucional"><div class="field-error" id="errFeriadoNome">Informe o nome.</div></div>
-          <div class="field"><label class="field-label" for="feriadoAbrangencia">Abrangência</label><input type="text" id="feriadoAbrangencia" class="f-input" list="feriadoAbrangencias" placeholder="Ex: Institucional"><datalist id="feriadoAbrangencias"><option value="Nacional"><option value="Rio Grande do Sul"><option value="Caxias do Sul"><option value="Institucional"></datalist></div>
-          <div class="field"><label class="field-label" for="feriadoAfetaOperacao">Operação de transporte de amostras sujeita a restrições</label><select id="feriadoAfetaOperacao" class="f-input f-select"><option>Sim</option><option>Não</option></select></div>
+          <div class="field"><label class="field-label" for="feriadoRecorrencia">Recorrência</label><select id="feriadoRecorrencia" class="f-input f-select" onchange="onFeriadoRecorrenciaChange_()"><option>Data específica</option><option>Anual</option></select><div class="feriado-field-hint" id="feriadoRecorrenciaHint">Válida somente para o ano informado.</div></div>
+          <div class="field"><label class="field-label" for="feriadoTipo">Tipo</label><select id="feriadoTipo" class="f-input f-select"><option>Feriado</option><option>Feriado Universitário</option><option>Fechamento institucional</option></select></div>
           <div class="field"><label class="field-label" for="feriadoAtivo">Ativo</label><select id="feriadoAtivo" class="f-input f-select"><option>Sim</option><option>Não</option></select></div>
-          <div class="field" style="grid-column:1/-1"><label class="field-label" for="feriadoObservacao">Observação operacional</label><textarea id="feriadoObservacao" class="f-input" rows="3" placeholder="Ex: expediente suspenso; confirmar coleta excepcional com antecedência."></textarea></div>
+          <div class="field full"><label class="field-label" for="feriadoNome">Nome <span class="required-star">*</span></label><input type="text" id="feriadoNome" class="f-input" placeholder="Ex: Natal ou Feriado Universitário"><div class="field-error" id="errFeriadoNome">Informe o nome.</div></div>
+          <div class="field feriado-paired-field"><label class="field-label" for="feriadoAbrangencia">Abrangência</label><input type="text" id="feriadoAbrangencia" class="f-input" list="feriadoAbrangencias" placeholder="Ex: Institucional"><datalist id="feriadoAbrangencias"><option value="Nacional"><option value="Rio Grande do Sul"><option value="Caxias do Sul"><option value="Institucional"></datalist></div>
+          <div class="field feriado-paired-field"><label class="field-label" for="feriadoAfetaOperacao">Operação de transporte de amostras sujeita a restrições</label><select id="feriadoAfetaOperacao" class="f-input f-select"><option>Sim</option><option>Não</option></select></div>
+          <div class="field full"><label class="field-label" for="feriadoObservacao">Observação operacional</label><textarea id="feriadoObservacao" class="f-input" rows="3" placeholder="Ex: expediente suspenso; confirmar coleta excepcional com antecedência."></textarea></div>
         </div>
       </div>
       <button class="btn-save" id="btnSalvarFeriado" onclick="salvarFeriadoApp()"><span class="material-symbols-outlined">save</span> SALVAR CADASTRO</button>

@@ -505,32 +505,6 @@ function transporteNorm_(value) {
     .trim();
 }
 
-function transporteExtrairIniciais(nome) {
-  var raw = String(nome == null ? '' : nome).trim();
-  if (!raw) return '';
-  if (/^[A-Za-z\u00C0-\u00FF](?:\.[A-Za-z\u00C0-\u00FF])+\.?$/.test(raw.replace(/\s+/g, ''))) {
-    return raw.replace(/\s+/g, '').toUpperCase().replace(/\.?$/, '.');
-  }
-  var ignorar = {
-    de: true,
-    da: true,
-    das: true,
-    do: true,
-    dos: true,
-    e: true
-  };
-  return raw
-    .replace(/[.,;:()[\]{}]/g, ' ')
-    .split(/\s+/)
-    .filter(function(part) {
-      return part && !ignorar[transporteNorm_(part)];
-    })
-    .map(function(part) {
-      return part.charAt(0).toUpperCase() + '.';
-    })
-    .join('');
-}
-
 function transporteMaterialKey_(value) {
   return codexMatBioKey_(value);
 }
@@ -2299,7 +2273,7 @@ function preencherPeticaoAnuenciaWebApp_(ss, payload) {
   if (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') peticao.getRange('K28').setValue(true);
   if (temperatura === 'REFRIGERADO') peticao.getRange('N28').setValue(true);
 
-  var iniciais = String(payload.iniciais || '').trim() || transporteExtrairIniciais(payload.paciente || payload.participante);
+  var iniciais = String(payload.iniciais || '').trim() || extrairIniciais_(payload.paciente || payload.participante);
   var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || payload.numeroIdentificacao || '').trim();
   if (!identificacao && typeof getInfoParticipante === 'function') {
     try {
@@ -2545,7 +2519,7 @@ function montarPayloadTransporteCodex(codexPayload) {
   return {
     paciente: agenda.participante || codexPayload.participante || '',
     participante: agenda.participante || codexPayload.participante || '',
-    iniciais: codexPayload.iniciais || transporteExtrairIniciais(agenda.participante || codexPayload.participante),
+    iniciais: codexPayload.iniciais || extrairIniciais_(agenda.participante || codexPayload.participante),
     identificacaoParticipante: identificacao,
     idParticipante: identificacao,
     protocolo: transporteProjetoDisplay_(agenda.projeto || codexPayload.projeto || ''),
@@ -3393,7 +3367,7 @@ function atualizarFormularioPinex_(ss) {
     var formulario = transporteCodexGetSheet_(ss, 'formularioPinex', false);
     if (!folha || !declaracao || !formulario) return;
 
-    var iniciais = transporteExtrairIniciais(getCellValueSafe(folha, 'C3'));
+    var iniciais = extrairIniciais_(getCellValueSafe(folha, 'C3'));
     var temperatura = getCellValueSafe(folha, 'C6');
     var checked = declaracao.getRange('B21:B28').getValues();
     var formulas = declaracao.getRange('K21:K28').getValues();
@@ -3488,7 +3462,7 @@ function atualizarCommercialInvoicePinexB33_(ss) {
 }
 
 function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volumes, outros) {
-  var iniciais = transporteExtrairIniciais(paciente) || String(paciente || '').trim();
+  var iniciais = extrairIniciais_(paciente) || String(paciente || '').trim();
   var pacienteResumo = iniciais ? 'Patient ' + iniciais : 'Patient';
   var unidadesGramas = { 4: true, 6: true };
   var totalTubos = 0;
@@ -4782,7 +4756,7 @@ function transportePdfAnonimizarParticipante_(workingSS, payloadFallback, source
     var sh = transporteFindSheetByNames_(workingSS, [name]);
     if (!sh) return;
     var atual = String(getCellValueSafe(sh, 'C3') || paciente || '').trim();
-    sh.getRange('C3').setValue(transporteExtrairIniciais(atual) || atual);
+    sh.getRange('C3').setValue(extrairIniciais_(atual) || atual);
   });
 }
 

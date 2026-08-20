@@ -82,6 +82,8 @@ function agendaOperationalRiskAlerts_(dados, dates) {
       });
     }
     (project && project.couriers || []).forEach(function(link) {
+      var dryIceTemperatures = CodexCourierRiskRules_.dryIceTemperatures(link.temperaturas);
+      if (!dryIceTemperatures.length) return;
       var config = agendaCourierConfigById_(configs, link.courierId);
       if (!config) return;
       var risk = CodexCourierRiskRules_.operationalRisk(dateIso, config, holidays);
@@ -92,7 +94,7 @@ function agendaOperationalRiskAlerts_(dados, dates) {
         dateIso: dateIso,
         courierId: link.courierId,
         courier: config.nome || config.courier || link.courierId,
-        temperaturas: link.temperaturas || [],
+        temperaturas: dryIceTemperatures,
         forneceGeloColeta: config.forneceGeloColeta || '',
         reasons: courierReasons,
         observacaoOperacional: config.observacaoOperacional || ''
