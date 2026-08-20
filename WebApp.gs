@@ -307,6 +307,8 @@ function getCadastrosBootstrapData(page) {
       statusCourier: getAgendaCourierStatuses_()
     };
     out.data = getCouriersCadastro();
+  } else if (page === 'feriados') {
+    out.data = getFeriadosCadastro_();
   } else {
     throw new Error('Bootstrap de cadastro nao suportado: ' + page);
   }
@@ -1664,8 +1666,11 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v9:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormDataStrict:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
 }
 
 function codexCacheGet_(key) {
@@ -9337,6 +9342,8 @@ function agendaBuildDadosFormularioAgenda_(strict) {
     laboratorios: getAgendaLaboratorios_(),
     couriers: getAgendaCouriers_(),
     courierConfig: getAgendaCourierConfigs_(strict),
+    projectCourierMap: getAgendaProjetoCourierMap_(),
+    feriados: getAgendaFeriadosOperacionais_(),
     temperaturas: getAgendaTemperaturas_(),
     statusCourier: getAgendaCourierStatuses_(),
     laboratoriosDestino: getAgendaLabDestinos_(strict),
@@ -9388,7 +9395,7 @@ function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
 
 function getDadosFormularioAgenda(strictValidation) {
   var strict = strictValidation === true;
-  var cacheKey = (strict ? 'AgendaFormDataStrict:v2:' : 'AgendaFormData:v8:') +
+  var cacheKey = (strict ? 'AgendaFormDataStrict:v3:' : 'AgendaFormData:v9:') +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   if (strict) return agendaGetDadosFormularioAgendaCached_(cacheKey, false, true);
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
@@ -9583,25 +9590,7 @@ function salvarNovoEventoCompleto(dados) {
   var datasPeriodo = isPeriodo ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo)) : [d];
   var erroRealizadoFuturo = agendaRealizadoFuturoErro_(dados.status, datasPeriodo);
   if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
-  var lastRow = agenda.getLastRow();
-  if (lastRow > 1) {
-    var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      var ld = vals[i][AGENDA_CFG.idx.data];
-      if (!AgendaServerRules_.isType(vals[i][AGENDA_CFG.idx.tipo], 'feriado')) continue;
-      var dl = parseAgendaDateAny_(ld);
-      if (dl) {
-        dl.setHours(0, 0, 0, 0);
-        for (var j = 0; j < datasPeriodo.length; j++) {
-          var dCmp = new Date(datasPeriodo[j]);
-          dCmp.setHours(0, 0, 0, 0);
-          if (dl.getTime() === dCmp.getTime()) {
-            return { feriado: true, dataFmt: formatarDataSafe(datasPeriodo[j]) };
-          }
-        }
-      }
-    }
-  }
+  var operationalAlerts = agendaOperationalRiskAlerts_(dados, datasPeriodo);
   if (isPeriodo) {
     var ids = [];
     for (var k = 0; k < datasPeriodo.length; k++) {
@@ -9610,12 +9599,13 @@ function salvarNovoEventoCompleto(dados) {
       if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
     }
-    var resultadoPeriodo = { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_() };
+    var resultadoPeriodo = { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_(), operationalAlerts: operationalAlerts };
     agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultadoPeriodo.id, datasPeriodo[0]);
     return resultadoPeriodo;
   }
   var resultado = _gravarLinhaEvento(agenda, d, dados, ss);
   if (resultado && resultado.ok) agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d);
+  if (resultado && resultado.ok) resultado.operationalAlerts = operationalAlerts;
   return resultado;
   });
 }
@@ -10146,6 +10136,8 @@ function atualizarAgendaEventoCompleto(dados) {
   if (AgendaServerRules_.isLabCentral(labCentral) && !String(dados.visita || '').trim()) {
     return { erro: 'Para "Laboratorio Central = Sim", informe a Visita.' };
   }
+  dados.labCentral = labCentral;
+  var operationalAlerts = agendaOperationalRiskAlerts_(dados, datasValidacaoStatus);
   var dataNovaPassada = agendaDateIsBeforeToday_(d);
   var dataAnteriorPassada = agendaDateIsBeforeToday_(rowAnterior[AGENDA_CFG.idx.data]);
   var marcandoLabPassado = dataNovaPassada && AgendaServerRules_.isLabCentral(labCentral) &&
@@ -10244,6 +10236,7 @@ function atualizarAgendaEventoCompleto(dados) {
     id: dados.id,
     atualizado: true,
     carroRequerido: carroSalvo,
+    operationalAlerts: operationalAlerts,
     recordVersion: agendaRecordVersionFromRow_(rowAtual),
     editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual)
   };
@@ -11958,7 +11951,7 @@ function agendaValidateReferenceData_(referenceData) {
   var arrayFields = [
     'participantes', 'medicos', 'prestadores', 'projetos', 'laboratorios', 'couriers',
     'temperaturas', 'statusCourier', 'laboratoriosDestino', 'kitsColeta', 'tiposEvento',
-    'salasMonitoria', 'status', 'procedimentoChips', 'monitores'
+    'salasMonitoria', 'status', 'procedimentoChips', 'monitores', 'feriados'
   ];
   arrayFields.forEach(function(field) {
     if (!Object.prototype.hasOwnProperty.call(referenceData, field) || !Array.isArray(referenceData[field])) {
@@ -11969,6 +11962,11 @@ function agendaValidateReferenceData_(referenceData) {
       !referenceData.courierConfig || typeof referenceData.courierConfig !== 'object' ||
       Array.isArray(referenceData.courierConfig)) {
     throw new Error('Dataset obrigatorio da Agenda invalido: courierConfig.');
+  }
+  if (!Object.prototype.hasOwnProperty.call(referenceData, 'projectCourierMap') ||
+      !referenceData.projectCourierMap || typeof referenceData.projectCourierMap !== 'object' ||
+      Array.isArray(referenceData.projectCourierMap)) {
+    throw new Error('Dataset obrigatorio da Agenda invalido: projectCourierMap.');
   }
   if (typeof referenceData.emailLabAtivo !== 'boolean') {
     throw new Error('Dataset obrigatorio da Agenda invalido: emailLabAtivo.');
@@ -11986,7 +11984,7 @@ function agendaReferenceRowCount_(referenceData) {
 }
 
 function agendaGetReferenceData_(forceRefresh) {
-  var cacheKey = 'AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  var cacheKey = 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   return agendaValidateReferenceData_(
     agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
   );
@@ -13110,6 +13108,9 @@ function limparCacheLabCentral_() {
     codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormData:v9:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    codexCacheRemove_('AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     var docCache = CacheService.getDocumentCache();
     if (docCache) {
       docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');

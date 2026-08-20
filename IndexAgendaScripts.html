@@ -74,7 +74,7 @@
     var arrayFields = [
       'participantes','projetos','tiposEvento','status','medicos','prestadores','monitores',
       'salasMonitoria','couriers','temperaturas','statusCourier','laboratoriosDestino',
-      'kitsColeta','procedimentoChips','laboratorios'
+      'kitsColeta','procedimentoChips','laboratorios','feriados'
     ];
     for (var i = 0; i < arrayFields.length; i++) {
       var field = arrayFields[i];
@@ -84,10 +84,12 @@
       if (!Array.isArray(data[field])) return { ok: false, code: 'invalid_payload' };
     }
     if (!Object.prototype.hasOwnProperty.call(data, 'courierConfig') ||
+        !Object.prototype.hasOwnProperty.call(data, 'projectCourierMap') ||
         !Object.prototype.hasOwnProperty.call(data, 'emailLabAtivo')) {
       return { ok: false, code: 'reference_incomplete' };
     }
     if (!data.courierConfig || typeof data.courierConfig !== 'object' || Array.isArray(data.courierConfig) ||
+        !data.projectCourierMap || typeof data.projectCourierMap !== 'object' || Array.isArray(data.projectCourierMap) ||
         typeof data.emailLabAtivo !== 'boolean') {
       return { ok: false, code: 'invalid_payload' };
     }
@@ -646,6 +648,79 @@
   function agendaCourierConfig(nome) {
     var cfg = (_agendaDados && _agendaDados.courierConfig) || {};
     return cfg[normAgenda(nome)] || {};
+  }
+
+  function agendaProjectCourierRecord_() {
+    var map = (_agendaDados && _agendaDados.projectCourierMap) || {};
+    var select = document.getElementById('agProjeto');
+    var value = String((select && select.value) || '').trim();
+    var selected = select && select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+    var stableId = selected ? String(selected.getAttribute('data-id') || '').trim() : '';
+    if (stableId && map[stableId]) return map[stableId];
+    var normalized = normAgenda(value);
+    var keys = Object.keys(map);
+    for (var i = 0; i < keys.length; i++) {
+      var record = map[keys[i]] || {};
+      if (normAgenda(record.nome) === normalized || normAgenda(record.codigo) === normalized) return record;
+    }
+    return null;
+  }
+
+  function agendaCourierConfigById_(courierId) {
+    var configs = (_agendaDados && _agendaDados.courierConfig) || {};
+    var keys = Object.keys(configs);
+    for (var i = 0; i < keys.length; i++) {
+      var config = configs[keys[i]] || {};
+      if (String(config.id || '').trim() === String(courierId || '').trim()) return config;
+    }
+    return null;
+  }
+
+  function agendaHolidayNames_(items) {
+    return (items || []).map(function(item) { return item && item.nome; }).filter(Boolean).join(', ');
+  }
+
+  function agendaAtualizarRiscoCourier_() {
+    var alert = document.getElementById('agendaCourierRiskAlert');
+    if (!alert) return;
+    var dateIso = String((document.getElementById('agData') || {}).value || '').trim();
+    var labCentral = AgendaRules.isLabCentral((document.getElementById('agLabCentral') || {}).value || '');
+    if (!dateIso || !labCentral || !_agendaDados || !window.CodexCourierRules) {
+      alert.style.display = 'none';
+      alert.innerHTML = '';
+      return;
+    }
+    var holidays = _agendaDados.feriados || [];
+    var project = agendaProjectCourierRecord_();
+    var lines = [];
+    var general = CodexCourierRules.operationalRisk(dateIso, {}, holidays);
+    if (general.holiday) {
+      lines.push('<div class="ag-operational-alert-line"><strong>' + esc(agendaHolidayNames_(general.holiday) || 'Feriado ou fechamento operacional') + '</strong>: operação de transporte de amostras sujeita a restrições. Confirme os procedimentos especiais necessários para esta data.</div>');
+    }
+    (project && project.couriers || []).forEach(function(link) {
+      var config = agendaCourierConfigById_(link.courierId);
+      if (!config) return;
+      var risk = CodexCourierRules.operationalRisk(dateIso, config, holidays);
+      var reasons = risk.reasons.filter(function(reason) { return reason.code !== 'HOLIDAY_DATE'; }).map(function(reason) {
+        if (reason.code === 'MONDAY_RESTRICTION') return 'restrição às segundas-feiras';
+        if (reason.code === 'DAY_AFTER_HOLIDAY') return 'restrição no dia imediatamente após ' + (agendaHolidayNames_(risk.previousHoliday) || 'feriado');
+        return reason.code;
+      });
+      if (!reasons.length) return;
+      var temperatures = (link.temperaturas || []).length ? ' · ' + link.temperaturas.join(' / ') : '';
+      var observation = config.observacaoOperacional ? '<div class="ag-operational-alert-note">' + esc(config.observacaoOperacional) + '</div>' : '';
+      var restrictionSubject = CodexCourierRules.isYes(config.forneceGeloColeta)
+        ? 'fornecimento de gelo seco sujeito a '
+        : 'operação da courier sujeita a ';
+      lines.push('<div class="ag-operational-alert-line"><strong>' + esc(config.nome || config.courier || link.courierId) + '</strong>' + esc(temperatures) + ': ' + esc(restrictionSubject + reasons.join(' e ') + '.') + observation + '</div>');
+    });
+    if (!lines.length) {
+      alert.style.display = 'none';
+      alert.innerHTML = '';
+      return;
+    }
+    alert.innerHTML = '<div class="ag-operational-alert-title"><span class="material-symbols-outlined">warning</span>Atenção operacional — o agendamento continua permitido</div>' + lines.join('');
+    alert.style.display = 'block';
   }
 
   function agendaCourierUnit(prefix) {
@@ -1562,6 +1637,7 @@
     preencherAgendaMonitoresSelects();
     atualizarAgendaProjetoLock();
     agendaMatBioUpdateAllCopyOptions();
+    agendaAtualizarRiscoCourier_();
   }
 
   function agendaMonitorProjetos(m) {
@@ -1662,6 +1738,7 @@
       });
       atualizarAgendaKitAdicionais();
     }
+    agendaAtualizarRiscoCourier_();
   }
 
   function agendaModoEdicao() {
@@ -2369,11 +2446,6 @@
       args: [payload],
       onSuccess: function(res) {
         setAgendaButtonState(btn, false);
-        if (res && res.feriado) {
-          document.getElementById('agendaStatusMsg').innerHTML =
-            '<span style="color:#7a5c00">Atencao: ha feriado em ' + esc(res.dataFmt) + '. Confirme salvando pela rotina com feriado.</span>';
-          return;
-        }
         if (res && res.conflito) {
           var conflitoMsg = res.erro || 'Este agendamento foi alterado desde que voce abriu.';
           document.getElementById('agendaStatusMsg').innerHTML =
@@ -2394,6 +2466,9 @@
         var msgOk = res && res.count > 1
           ? 'Salvo. ' + periodoLabel + ' salvo em ' + res.count + ' dias. Primeiro ID: ' + (res.id || '')
           : 'Salvo. Evento salvo. ID: ' + (res && res.id ? res.id : '');
+        if (res && Array.isArray(res.operationalAlerts) && res.operationalAlerts.length) {
+          msgOk += ' Atenção: há orientação operacional para a data; o agendamento foi mantido.';
+        }
         setAgendaStatus(msgOk, 'ok');
         if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
         if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
@@ -4542,7 +4617,7 @@
       }
       keys.forEach(function(iso) {
         var d = agendaDateFromIso(iso);
-        var dayRows = rows.filter(function(r) { return r.dataIso === iso; });
+        var dayRows = rows.filter(function(r) { return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado'); });
         html += agendaDayHeader(d, dayRows);
         html += dayRows.map(function(r, idx) { return agendaCardHtml(r, iso + '-' + idx); }).join('');
       });
@@ -4551,7 +4626,7 @@
         var d = agendaWeekStart(); d.setDate(d.getDate() + i);
         var iso = agendaIso(d);
         var dayRows = rows.filter(function(r) {
-          return r.dataIso === iso && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
+          return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado') && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
         });
         html += agendaDayHeader(d, dayRows);
         html += agendaBirthdayBannerHtml(d, false);
@@ -4585,14 +4660,15 @@
       var d = agendaWeekStart(); d.setDate(d.getDate() + i);
       var iso = agendaIso(d);
       var dayRows = rows.filter(function(r) {
-        return r.dataIso === iso && AgendaRules.isVisibleIn(r, AgendaRules.Context.WEEK);
+        return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado') && AgendaRules.isVisibleIn(r, AgendaRules.Context.WEEK);
       });
       var carros = agendaCarroRequeridoCount(dayRows);
       var birthdayHtml = agendaBirthdayBannerHtml(d, true);
-      html += '<div class="ag-wk-col ' + (iso === todayIso ? 'today-col' : '') + '" id="agendaWeekDay-' + iso + '">' +
+      var holidayHtml = agendaHolidayBannerHtml_(iso, true);
+      html += '<div class="ag-wk-col ' + (iso === todayIso ? 'today-col' : '') + (holidayHtml ? ' holiday-col' : '') + '" id="agendaWeekDay-' + iso + '">' +
         '<div class="ag-wk-col-hdr"><div class="ag-wk-wd">' + agendaWeekday(d) + '</div><div class="ag-wk-num">' + d.getDate() + '</div>' + (iso === todayIso ? '<div><span class="ag-wk-dot"></span></div>' : '') + (carros ? agendaCarroDiaPill(carros, true) : '') + '</div>' +
-        '<div class="ag-wk-appts">' + birthdayHtml +
-        (dayRows.length ? dayRows.map(agendaWeekCardHtml).join('') : (birthdayHtml ? '' : '<div class="ag-wk-empty">-</div>')) +
+        '<div class="ag-wk-appts">' + holidayHtml + birthdayHtml +
+        (dayRows.length ? dayRows.map(agendaWeekCardHtml).join('') : (birthdayHtml || holidayHtml ? '' : '<div class="ag-wk-empty">-</div>')) +
         '</div></div>';
     }
     grid.innerHTML = html;
@@ -4613,7 +4689,8 @@
     var iso = agendaIso(d);
     var today = iso === todayIso;
     var past = iso < todayIso;
-    return '<div class="ag-day-hdr ' + (today ? 'today' : past ? 'past' : '') + '" id="agendaDay-' + iso + '">' +
+    var holidayHtml = agendaHolidayBannerHtml_(iso, false);
+    return '<div class="ag-day-hdr ' + (today ? 'today' : past ? 'past' : '') + (holidayHtml ? ' holiday-day' : '') + '" id="agendaDay-' + iso + '">' +
       '<div class="ag-day-info"><div class="ag-day-cal"><div class="ag-day-wd">' + agendaWeekday(d) + '</div><div class="ag-day-n">' + agendaDayShortLabel(d) + '</div></div>' +
       '<div class="ag-day-stats">' + (tipoStats.length ? tipoStats.map(function(t) {
         return '<span class="ag-dpill ag-dp-n">' + t.count + ' ' + esc(t.label) + '</span>';
@@ -4621,7 +4698,19 @@
       (lab ? '<span class="ag-dpill ag-dp-lab">' + lab + ' Lab Central</span>' : '') +
       (carros ? agendaCarroDiaPill(carros, false) : '') +
       (courierNaoAg ? '<span class="ag-dpill ag-dp-pend">' + courierNaoAg + ' courier nao agendado</span>' : '') +
-      '</div></div><div class="ag-day-actions"><button type="button" class="ag-print-day" title="Imprimir visitas e consultas deste dia" aria-label="Imprimir visitas e consultas deste dia" onclick="imprimirAgendaDia(\'' + iso + '\')"><span class="material-symbols-outlined">print</span></button></div></div>';
+      '</div></div><div class="ag-day-actions"><button type="button" class="ag-print-day" title="Imprimir visitas e consultas deste dia" aria-label="Imprimir visitas e consultas deste dia" onclick="imprimirAgendaDia(\'' + iso + '\')"><span class="material-symbols-outlined">print</span></button></div></div>' + holidayHtml;
+  }
+
+  function agendaHolidayItems_(iso) {
+    return CodexCourierRules.holidayItemsForDate(iso, (_agendaDados && _agendaDados.feriados) || [], false);
+  }
+
+  function agendaHolidayBannerHtml_(iso, compact) {
+    var items = agendaHolidayItems_(iso);
+    if (!items.length) return '';
+    var names = items.map(function(item) { return item.nome || item.tipo || 'Feriado'; }).filter(Boolean).join(' · ');
+    var observations = items.map(function(item) { return item.observacao; }).filter(Boolean).join(' ');
+    return '<div class="ag-holiday-banner' + (compact ? ' compact' : '') + '"><span class="material-symbols-outlined">event_busy</span><div><strong>' + esc(names) + '</strong>' + (observations && !compact ? '<span>' + esc(observations) + '</span>' : '') + '</div></div>';
   }
 
   function agendaCarroRequeridoCount(rows) {
