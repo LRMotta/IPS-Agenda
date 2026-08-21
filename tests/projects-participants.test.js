@@ -349,6 +349,7 @@ test('SoA replica ciclos somente após prévia e preserva visitas existentes', (
   assert.match(modal, /id="soaCycleModelo"/);
   assert.match(modal, /id="soaCycleDestinos"/);
   assert.match(modal, /id="soaCyclePreview"/);
+  assert.match(modal, /vínculos de Kit e Bulk Supply da visita-modelo são copiados/);
   assert.match(client, /function previsualizarReplicacaoCiclosSoAApp\(\)/);
   assert.match(client, /function confirmarReplicacaoCiclosSoAApp\(\)/);
   assert.match(client, /method: 'validarReplicacaoCiclosSoA'/);
@@ -358,6 +359,9 @@ test('SoA replica ciclos somente após prévia e preserva visitas existentes', (
   assert.match(server, /function validarReplicacaoCiclosSoA\(payload\)/);
   assert.match(server, /function criarCiclosSoAPorReplicacao\(payload\)/);
   assert.match(server, /Visitas já existentes não serão alteradas|serão preservadas sem alteração/);
+  assert.match(client, /vínculo\(s\) de estoque/);
+  assert.match(client, /modelo de Kit\/Bulk copiado/);
+  assert.match(server, /vinculosEstoqueCriados/);
 });
 
 test('SoA exibe modelos de Kit e Bulk Supply por visita e laboratório', () => {

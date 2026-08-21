@@ -4792,7 +4792,7 @@ function renderReplicacaoCiclosSoAPreview_(result) {
   if (confirm) confirm.disabled = !result.podeGravar;
   var byId = {};
   (result.visitas || []).forEach(function(item) { byId[String(item.idSoA || '')] = item; });
-  var summary = '<div class="soa-import-summary"><strong>' + Number(result.visitasModelo || 0) + '</strong> visita(s) no modelo · <strong>' + Number(result.novas || 0) + '</strong> nova(s) · <strong>' + Number(result.existentes || 0) + '</strong> já existente(s) · <strong>' + Number(result.conflitos || 0) + '</strong> conflito(s)</div>';
+  var summary = '<div class="soa-import-summary"><strong>' + Number(result.visitasModelo || 0) + '</strong> visita(s) no modelo · <strong>' + Number(result.novas || 0) + '</strong> nova(s) · <strong>' + Number(result.existentes || 0) + '</strong> já existente(s) · <strong>' + Number(result.conflitos || 0) + '</strong> conflito(s) · <strong>' + Number(result.novosVinculosEstoque || 0) + '</strong> vínculo(s) de estoque</div>';
   var messages = '';
   if (result.avisos && result.avisos.length) messages += '<div class="soa-import-warning"><strong>Preservação de diferenças existentes:</strong><ul>' + result.avisos.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
   if (result.erros && result.erros.length) messages += '<div class="soa-import-error"><strong>Conflitos que impedem a gravação:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
@@ -4804,6 +4804,7 @@ function renderReplicacaoCiclosSoAPreview_(result) {
     if (item.intervaloDias !== '') details.push('D+' + item.intervaloDias);
     if (item.janelaDiasMenos !== '' || item.janelaDiasMais !== '') details.push('janela −' + (item.janelaDiasMenos === '' ? '—' : item.janelaDiasMenos) + '/+' + (item.janelaDiasMais === '' ? '—' : item.janelaDiasMais));
     details.push(soaBracosLabel_(item.bracoIds || []));
+    if (item.modelosEstoqueReplicados) details.push(item.modelosEstoqueReplicados + (item.modelosEstoqueReplicados === 1 ? ' modelo de Kit/Bulk copiado' : ' modelos de Kit/Bulk copiados'));
     var differences = item.diferencas && item.diferencas.length ? '<span class="soa-cycle-differences">Diferenças: ' + esc(item.diferencas.join(', ')) + '</span>' : '';
     return '<div class="soa-cycle-row soa-cycle-status-' + esc(String(item.status || '').toLowerCase()) + '"><div class="soa-cycle-number">C' + esc(item.cicloDestino) + '</div><div class="soa-cycle-main"><div class="soa-cycle-name">' + (item.codigo ? '<span class="soa-visita-code">' + esc(item.codigo) + '</span>' : '') + esc(item.nome) + '</div><div class="soa-cycle-meta">' + esc(details.join(' · ')) + '</div>' + differences + '</div><span class="soa-cycle-badge">' + esc(status) + '</span></div>';
   }).join('');
@@ -4835,7 +4836,7 @@ function confirmarReplicacaoCiclosSoAApp() {
   payload.assinaturaPrevia = _soaCyclePreviewAtual.assinaturaPrevia;
   var btn = document.getElementById('btnConfirmarCiclosSoA');
   appSetButtonBusy(btn, true);
-  appSetStatus('statusSoAReplicarCiclo', '⏳ Criando visitas com novos IDs...');
+  appSetStatus('statusSoAReplicarCiclo', '⏳ Criando visitas e copiando vínculos de estoque...');
   appServerRun({ method: 'criarCiclosSoAPorReplicacao', args: [payload], onSuccess: function(result) {
     appSetButtonBusy(btn, false);
     fecharOverlay('modalSoAReplicarCiclo');
