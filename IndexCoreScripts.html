@@ -3987,6 +3987,7 @@ function jornadaParticipanteOverlay_() {
 
 function jornadaParticipanteHtml_(dados) {
   var visitas = dados.visitas || [];
+  var conciliacao = dados.conciliacao || [];
   function estado(visita) {
     var mapa = { REALIZADA: ['Concluída', '#137333'], AGENDADA: ['Agendada', '#1266f1'], PREVISTA: ['Prevista', '#6c7a91'], A_PROGRAMAR: ['A programar', '#6c7a91'] };
     var item = mapa[visita.estado] || mapa.A_PROGRAMAR;
@@ -4009,7 +4010,49 @@ function jornadaParticipanteHtml_(dados) {
     return '<section style="border:1px solid #dbe6f6;border-left:4px solid ' + (visita.atrasada ? '#b3261e' : visita.emJanela ? '#e65100' : '#1266f1') + ';border-radius:8px;padding:12px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:10px"><strong>' + esc(visita.nome) + '</strong>' + estado(visita) + '</div><div style="font-size:12px;color:#5f6b7c;margin:5px 0 8px">' + esc(visita.dataAlvo || 'Sem data calculável') + (visita.janelaInicio ? ' · Janela ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) : '') + '</div>' + kits(visita) + '</section>';
   }).join('') || '<div style="color:#7b8794">Nenhuma visita futura identificada.</div>';
   if (!dados.possuiSoA) timeline = '<div style="color:#7b8794;padding:18px 0">Este projeto não possui SoA. O histórico abaixo permanece disponível e as visitas futuras podem ser acompanhadas quando forem agendadas.</div>';
-  return '<div style="display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:22px"><div><h3 style="margin:0 0 8px;color:#183b6b">Histórico e próximas visitas</h3><p style="margin:0 0 14px;color:#64748b;font-size:13px">A previsão é informativa; não cria agendamentos nem reservas.</p><div style="display:flex;gap:10px;overflow:auto;padding:6px 2px 14px">' + timeline + '</div><h3 style="margin:12px 0 8px;color:#183b6b">Visitas registradas</h3><div style="font-size:13px;color:#5f6b7c">' + ((dados.eventosLivres || []).map(function(evento) { return '<div style="padding:7px 0;border-top:1px solid #edf1f7"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + '</div>'; }).join('') || 'Nenhuma visita registrada.') + '</div></div><aside style="background:#f8fbff;border-left:1px solid #dbe6f6;padding:16px;border-radius:8px"><h3 style="margin:0 0 5px;color:#183b6b">Prontidão operacional</h3><p style="margin:0 0 12px;color:#64748b;font-size:12px">Fotografia atual de reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+  var historicoAnterior = dados.eventosAnteriores || [];
+  var historicoAnteriorHtml = historicoAnterior.length ? '<details style="margin-top:14px"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:700">Histórico anterior ao início do IPS em 2026 (' + historicoAnterior.length + ')</summary><div style="font-size:12px;color:#7b8794;padding:8px 0">Apenas informativo; não influencia a previsão, janelas ou prontidão.</div>' + historicoAnterior.map(function(evento) { return '<div style="padding:6px 0;border-top:1px solid #edf1f7;font-size:13px;color:#5f6b7c"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + '</div>'; }).join('') + '</details>' : '';
+  var conciliarHtml = conciliacao.length ? '<button class="ag-tb-btn" style="margin-left:auto" onclick="abrirConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">rule</span> Conciliar ' + conciliacao.length + ' nome(s)</button>' : '';
+  return '<div style="display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:22px"><div><div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0 0 8px;color:#183b6b">Histórico e próximas visitas</h3>' + conciliarHtml + '</div><p style="margin:0 0 14px;color:#64748b;font-size:13px">A previsão é informativa; não cria agendamentos nem reservas.</p><div style="display:flex;gap:10px;overflow:auto;padding:6px 2px 14px">' + timeline + '</div><h3 style="margin:12px 0 8px;color:#183b6b">Visitas registradas desde 2026</h3><div style="font-size:13px;color:#5f6b7c">' + ((dados.eventosLivres || []).map(function(evento) { return '<div style="padding:7px 0;border-top:1px solid #edf1f7"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + (evento.idSoA ? ' <span style="color:#137333;font-size:11px">· conciliada</span>' : '') + '</div>'; }).join('') || 'Nenhuma visita registrada.') + '</div>' + historicoAnteriorHtml + '</div><aside style="background:#f8fbff;border-left:1px solid #dbe6f6;padding:16px;border-radius:8px"><h3 style="margin:0 0 5px;color:#183b6b">Prontidão operacional</h3><p style="margin:0 0 12px;color:#64748b;font-size:12px">Fotografia atual de reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+}
+
+var _jornadaParticipanteAtual = null;
+var _jornadaParticipanteDados = null;
+
+function abrirConcilicaoVisitasParticipante() {
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  var dados = _jornadaParticipanteDados || {};
+  var visitas = dados.visitas || [];
+  var pendentes = dados.conciliacao || [];
+  if (!content || !pendentes.length) return;
+  var options = '<option value="">Não conciliar agora</option>' + visitas.map(function(visita) { return '<option value="' + esc(visita.idSoA) + '">' + esc((visita.codigo ? visita.codigo + ' · ' : '') + visita.nome) + '</option>'; }).join('');
+  content.innerHTML = '<div style="max-width:980px"><button class="ag-tb-btn" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Conciliar visitas registradas</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Escolha uma visita SoA por nome histórico. A aplicação vincula todas as ocorrências iguais deste participante desde 2026, preservando o texto original.</p>' + pendentes.map(function(item, index) {
+    var sugestao = item.sugestao || {};
+    return '<div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,1.4fr);gap:12px;align-items:center;border-top:1px solid #e5ebf5;padding:12px 0"><div><strong>' + esc(item.visitaOriginal) + '</strong><div style="font-size:12px;color:#64748b;margin-top:3px">' + Number(item.quantidade || 0) + ' ocorrência(s)' + (sugestao.motivo ? ' · ' + esc(sugestao.motivo) : ' · sem sugestão segura') + '</div></div><select class="f-input f-select" id="jornadaConciliacao_' + index + '" data-visita-original="' + esc(item.visitaOriginal) + '">' + options + '</select></div>';
+  }).join('') + '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn-secondary" onclick="voltarJornadaParticipante()">Cancelar</button><button class="btn-primary" id="btnSalvarConciliacaoJornada" onclick="salvarConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">done_all</span> Aplicar conciliação</button></div><div id="statusConciliacaoJornada" style="margin-top:10px"></div></div>';
+  pendentes.forEach(function(item, index) { var select = document.getElementById('jornadaConciliacao_' + index); if (select && item.sugestao && item.sugestao.idSoA) select.value = item.sugestao.idSoA; });
+}
+
+function voltarJornadaParticipante() {
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  if (content) content.innerHTML = jornadaParticipanteHtml_(_jornadaParticipanteDados || {});
+}
+
+function salvarConcilicaoVisitasParticipante() {
+  var participante = _jornadaParticipanteAtual || {};
+  var dados = _jornadaParticipanteDados || {};
+  var mapeamentos = (dados.conciliacao || []).map(function(item, index) {
+    var select = document.getElementById('jornadaConciliacao_' + index);
+    return { visitaOriginal: item.visitaOriginal, idSoA: select ? select.value : '' };
+  }).filter(function(item) { return item.idSoA; });
+  var status = document.getElementById('statusConciliacaoJornada');
+  if (!mapeamentos.length) { if (status) status.textContent = 'Selecione ao menos uma visita SoA para conciliar.'; return; }
+  var btn = document.getElementById('btnSalvarConciliacaoJornada');
+  appSetButtonBusy(btn, true);
+  if (status) status.textContent = 'Aplicando conciliação…';
+  appServerRun({ method: 'salvarConcilicaoVisitasParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, mapeamentos: mapeamentos }], onSuccess: function(res) {
+    appSetButtonBusy(btn, false); snack((res && res.msg) || 'Conciliação salva.'); abrirJornadaParticipante(participante);
+  }, onFailure: function(error) { appSetButtonBusy(btn, false); if (status) status.textContent = appErrorMessage(error); } });
 }
 
 function abrirJornadaParticipante(participante) {
@@ -4020,7 +4063,9 @@ function abrirJornadaParticipante(participante) {
   if (subtitle) subtitle.textContent = (participante.nome || 'Participante') + ' · ' + (participante.projeto || 'Projeto');
   content.innerHTML = '<div style="padding:34px;text-align:center;color:#64748b"><div class="spinner"></div>Carregando jornada…</div>';
   abrirOverlay('modalJornadaParticipante');
+  _jornadaParticipanteAtual = participante;
   appServerRun({ method: 'consultarJornadaParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
+    _jornadaParticipanteDados = dados || {};
     content.innerHTML = jornadaParticipanteHtml_(dados || {});
   }, onFailure: function(e) {
     content.innerHTML = '<div style="color:#b3261e">Não foi possível carregar a jornada: ' + esc(appErrorMessage(e)) + '</div>';

@@ -379,6 +379,23 @@ test('jornada do participante abre em janela sob demanda e combina SoA, Agenda e
   assert.match(server, /getEstoque\(\)/);
 });
 
+test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agenda', () => {
+  const server = runFile('WebApp.gs');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const sugestao = server.agendaSoASugerirVisita_('C34D1', [{ idSoA: 'SOA-C34D1', nome: 'Dia 1 do Ciclo 34', codigo: '' }]);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(sugestao)), {
+    idSoA: 'SOA-C34D1', nivel: 'SUGESTÃO', motivo: 'Padrão CxDy reconhecido; revise antes de aplicar'
+  });
+  assert.match(server.AGENDA_SOA_CONCILIACAO_HEADERS_.join('|'), /Agenda_ID\|ID_SoA\|Projeto/);
+  assert.match(server.agendaSoAEventoFazParteDoIPS_.toString(), /AGENDA_SOA_INICIO_IPS_/);
+  assert.match(client, /function abrirConcilicaoVisitasParticipante\(\)/);
+  assert.match(client, /method: 'salvarConcilicaoVisitasParticipante'/);
+  assert.match(client, /Histórico anterior ao início do IPS em 2026/);
+  assert.match(server.consultarConcilicaoVisitasParticipante.toString(), /getConcilicaoVisitasParticipante/);
+  assert.match(server.salvarConcilicaoVisitasParticipante.toString(), /salvarConcilicaoVisitasParticipante_/);
+});
+
 test('SoA exibe modelos de Kit e Bulk Supply por visita e laboratório', () => {
   const client = readProjectFile('IndexCoreScripts.html');
   const estoque = readProjectFile('IndexEstoqueScripts.html');

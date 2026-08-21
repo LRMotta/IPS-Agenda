@@ -86,6 +86,55 @@ test('temperatura do backup e persistida e devolvida no registro da Agenda', () 
   assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.temperatura, 'CONGELADO');
 });
 
+test('pendencias separam Transporte de Amostras Backup nao agendado e preservam o link da Agenda', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const backupNaoAgendado = Array(cfg.lastCol).fill('');
+  backupNaoAgendado[cfg.idx.id] = 'EVT-BACKUP-PENDENTE';
+  backupNaoAgendado[cfg.idx.data] = '2099-01-15';
+  backupNaoAgendado[cfg.idx.hora] = '09:00';
+  backupNaoAgendado[cfg.idx.tipo] = 'Visita';
+  backupNaoAgendado[cfg.idx.status] = 'Agendado';
+  backupNaoAgendado[cfg.idx.participante] = 'Participante Backup';
+  backupNaoAgendado[cfg.idx.projeto] = 'Projeto Backup';
+  backupNaoAgendado[cfg.idx.visita] = 'V1';
+  backupNaoAgendado[cfg.idx.cb.nome] = 'OCASA';
+  backupNaoAgendado[cfg.idx.cb.temp] = 'CONGELADO';
+  backupNaoAgendado[cfg.idx.cb.status] = 'Não Agendado';
+
+  const backupAgendado = backupNaoAgendado.slice();
+  backupAgendado[cfg.idx.id] = 'EVT-BACKUP-AGENDADO';
+  backupAgendado[cfg.idx.cb.status] = 'Agendado';
+  const backupSemCourier = backupNaoAgendado.slice();
+  backupSemCourier[cfg.idx.id] = 'EVT-BACKUP-SEM-COURIER';
+  backupSemCourier[cfg.idx.cb.nome] = '';
+
+  server.getAgendaSheetForRead_ = () => new FakeSheet('Agenda', [
+    Array(cfg.lastCol).fill(''), backupNaoAgendado, backupAgendado, backupSemCourier
+  ]);
+  server.getAgendaFeriadosPendenciasMap_ = () => ({});
+
+  const pendencias = server.getDashboardPendencias_([]);
+
+  assert.equal(pendencias.counts.transporteBackupNaoAgendado, 1);
+  assert.equal(pendencias.transporteBackupNaoAgendado.length, 1);
+  assert.match(readProjectFile('IndexPendenciasScripts.html'), /key: 'transporteBackupNaoAgendado',[\s\S]*?action: pendenciaAgendaAction/);
+  assert.deepEqual(JSON.parse(JSON.stringify(pendencias.transporteBackupNaoAgendado[0])), {
+    agendaId: 'EVT-BACKUP-PENDENTE',
+    data: '2099-01-15',
+    hora: '09:00',
+    prazoHoras: pendencias.transporteBackupNaoAgendado[0].prazoHoras,
+    participante: 'Participante Backup',
+    projeto: 'Projeto Backup',
+    visita: 'V1',
+    tipo: 'Visita',
+    slot: 'Transporte de Amostras Backup',
+    courier: 'OCASA',
+    temperatura: 'CONGELADO',
+    statusCourier: 'Não Agendado'
+  });
+});
+
 test('temperatura do backup nao vaza para SIV ou visita sem laboratorio', () => {
   const server = agendaServer();
   const cfg = server.AGENDA_CFG;

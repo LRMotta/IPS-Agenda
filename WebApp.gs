@@ -96,6 +96,15 @@ function consultarJornadaParticipante(payload) {
   return getJornadaParticipante(payload);
 }
 
+function consultarConcilicaoVisitasParticipante(payload) {
+  return getConcilicaoVisitasParticipante(payload);
+}
+
+function salvarConcilicaoVisitasParticipante(payload) {
+  codexAssertCanWrite_('salvarConcilicaoVisitasParticipante', 'Agenda', (payload && (payload.idParticipante || payload.nome || payload.projeto)) || '');
+  return salvarConcilicaoVisitasParticipante_(payload);
+}
+
 
 // Retorna a URL base do webapp (usada para navegação entre páginas)
 function doPost(e) {
@@ -5658,6 +5667,7 @@ function getEstoqueResumoParaPendencias_() {
 function getDashboardPendenciasVazio_() {
   return {
     courierNaoAgendada: [],
+    transporteBackupNaoAgendado: [],
     courierNaoConfirmada: [],
     awbEnviadaNaoEntregue: [],
     requisicaoExamesPendente: [],
@@ -5666,6 +5676,7 @@ function getDashboardPendenciasVazio_() {
     kitsVencendo: [],
     counts: {
       courierNaoAgendada: 0,
+      transporteBackupNaoAgendado: 0,
       courierNaoConfirmada: 0,
       awbEnviadaNaoEntregue: 0,
       requisicaoExamesPendente: 0,
@@ -5761,6 +5772,18 @@ function getDashboardPendencias_(estoque) {
           prestador: String(r[i.servTerc] || '')
         }));
       }
+      var backupNome = String(r[i.cb.nome] || '').trim();
+      var backupStatus = String(r[i.cb.status] || '').trim();
+      if (isCourierNomeValidoAgenda_(backupNome) &&
+          AgendaServerRules_.courierStatusKey(backupStatus) === 'naoagendado') {
+        out.counts.transporteBackupNaoAgendado++;
+        out.transporteBackupNaoAgendado.push(Object.assign({}, base, {
+          slot: 'Transporte de Amostras Backup',
+          courier: backupNome,
+          temperatura: String(r[i.cb.temp] || '').trim(),
+          statusCourier: backupStatus
+        }));
+      }
       [
         { label: 'Transporte I', cfg: i.c1 },
         { label: 'Transporte II', cfg: i.c2 },
@@ -5808,6 +5831,7 @@ function getDashboardPendencias_(estoque) {
     });
   });
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoAgendada);
+  ordenarPendenciasAgendaPorUrgencia_(out.transporteBackupNaoAgendado);
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoConfirmada);
   ordenarPendenciasAgendaPorUrgencia_(out.awbEnviadaNaoEntregue);
   ordenarPendenciasAgendaPorUrgencia_(out.requisicaoExamesPendente);
@@ -10263,13 +10287,17 @@ function getJornadaParticipante(payload) {
       });
     });
   }
+  var conciliacoes = getAgendaSoAConciliacoesPorAgendaId_(eventos.map(function(evento) { return evento.id; }));
+  eventos.forEach(function(evento) { evento.idSoA = String(conciliacoes[evento.id] || ''); });
   eventos.sort(function(a, b) { return a.data.getTime() - b.data.getTime(); });
+  var eventosAnteriores = eventos.filter(function(evento) { return !agendaSoAEventoFazParteDoIPS_(evento); });
+  eventos = eventos.filter(agendaSoAEventoFazParteDoIPS_);
   var visitas = getSoAVisitasProjeto(projeto);
   var porId = {};
   visitas.forEach(function(visita) { porId[String(visita.idSoA || '')] = visita; });
   function eventoParaVisita(visita) {
     var labels = [visita.nome, visita.codigo].concat(visita.aliases || []).map(normText_).filter(Boolean);
-    return eventos.filter(function(evento) { return labels.indexOf(normText_(evento.visita)) >= 0; })
+    return eventos.filter(function(evento) { return String(evento.idSoA || '') === String(visita.idSoA || '') || labels.indexOf(normText_(evento.visita)) >= 0; })
       .sort(function(a, b) { return Number(b.concluida) - Number(a.concluida) || b.data.getTime() - a.data.getTime(); })[0] || null;
   }
   var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
@@ -10332,11 +10360,131 @@ function getJornadaParticipante(payload) {
     delete visita.dataAlvoObj;
   });
   var historicoLivre = eventos.filter(function(evento) { return !evento.cancelada && !eventos.some(function(outro) { return outro !== evento && outro.id === evento.id; }); });
+  var conciliacao = agendaSoAMontarConcilicaoVisitas_(eventos, visitas);
   return {
     participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
     possuiSoA: visitas.length > 0, visitas: visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }),
-    eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida }; })
+    eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
+    eventosAnteriores: eventosAnteriores.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
+    conciliacao: conciliacao
   };
+}
+
+var AGENDA_SOA_CONCILIACAO_HEADERS_ = ['Agenda_ID', 'ID_SoA', 'Projeto', 'Participante_ID', 'Participante', 'Visita_original', 'Conciliado_em', 'Responsável'];
+var AGENDA_SOA_INICIO_IPS_ = new Date(2026, 0, 1);
+
+function getAgendaSoAConciliacaoSheet_(createIfMissing) {
+  var ss = getCodexSpreadsheet_();
+  var sheet = getSheetByPossibleNames_(ss, ['Agenda_SoA_Conciliacao', 'Agenda SoA Conciliacao']);
+  if (!sheet && createIfMissing) {
+    sheet = ss.insertSheet('Agenda_SoA_Conciliacao');
+    sheet.getRange(1, 1, 1, AGENDA_SOA_CONCILIACAO_HEADERS_.length).setValues([AGENDA_SOA_CONCILIACAO_HEADERS_]);
+  }
+  return sheet;
+}
+
+function getAgendaSoAConciliacoesPorAgendaId_(ids) {
+  var wanted = {};
+  (ids || []).forEach(function(id) { id = String(id || '').trim(); if (id) wanted[id] = true; });
+  if (!Object.keys(wanted).length) return {};
+  var sheet = getAgendaSoAConciliacaoSheet_(false);
+  if (!sheet || sheet.getLastRow() < 2) return {};
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, AGENDA_SOA_CONCILIACAO_HEADERS_.length).getValues();
+  var out = {};
+  rows.forEach(function(row) {
+    var agendaId = String(row[0] || '').trim();
+    var idSoA = String(row[1] || '').trim();
+    if (agendaId && idSoA && wanted[agendaId]) out[agendaId] = idSoA;
+  });
+  return out;
+}
+
+function agendaSoAEventoFazParteDoIPS_(evento) {
+  return evento && evento.data && evento.data.getTime() >= AGENDA_SOA_INICIO_IPS_.getTime();
+}
+
+function agendaSoASugerirVisita_(nomeOriginal, visitas) {
+  var nome = normText_(nomeOriginal).replace(/\s+/g, '');
+  if (!nome) return null;
+  var candidatos = (visitas || []).filter(function(visita) {
+    var labels = [visita.nome, visita.codigo].concat(visita.aliases || []).map(function(label) { return normText_(label).replace(/\s+/g, ''); });
+    return labels.indexOf(nome) >= 0;
+  });
+  if (candidatos.length === 1) return { idSoA: candidatos[0].idSoA, nivel: 'ALTA', motivo: 'Nome ou código equivalente' };
+  var cicloDia = nome.match(/^c(\d+)d(\d+)$/i);
+  if (!cicloDia) return null;
+  var alvo = 'dia' + cicloDia[2] + 'dociclo' + cicloDia[1];
+  candidatos = (visitas || []).filter(function(visita) {
+    return normText_(visita.nome).replace(/\s+/g, '') === alvo;
+  });
+  return candidatos.length === 1 ? { idSoA: candidatos[0].idSoA, nivel: 'SUGESTÃO', motivo: 'Padrão CxDy reconhecido; revise antes de aplicar' } : null;
+}
+
+function agendaSoAMontarConcilicaoVisitas_(eventos, visitas) {
+  var porNome = {};
+  (eventos || []).forEach(function(evento) {
+    if (!evento || evento.cancelada || evento.idSoA || !String(evento.visita || '').trim()) return;
+    var chave = normText_(evento.visita);
+    if (!chave) return;
+    if (!porNome[chave]) porNome[chave] = { visitaOriginal: evento.visita, quantidade: 0, agendaIds: [], sugestao: agendaSoASugerirVisita_(evento.visita, visitas) };
+    porNome[chave].quantidade++;
+    if (evento.id) porNome[chave].agendaIds.push(evento.id);
+  });
+  return Object.keys(porNome).map(function(chave) { return porNome[chave]; })
+    .sort(function(a, b) { return b.quantidade - a.quantidade || String(a.visitaOriginal).localeCompare(String(b.visitaOriginal), 'pt-BR'); });
+}
+
+function getConcilicaoVisitasParticipante(payload) {
+  return getJornadaParticipante(payload).conciliacao || [];
+}
+
+function salvarConcilicaoVisitasParticipante_(payload) {
+  payload = payload || {};
+  var nome = String(payload.nome || '').trim();
+  var participanteId = String(payload.idParticipante || '').trim();
+  var projeto = String(payload.projeto || '').trim();
+  var mapeamentos = Array.isArray(payload.mapeamentos) ? payload.mapeamentos : [];
+  codexAssertCanWrite_('salvarConcilicaoVisitasParticipante', 'Agenda', participanteId || nome || projeto);
+  if (!nome || !projeto || !mapeamentos.length) throw new Error('Informe participante, projeto e ao menos uma conciliação.');
+  var visitasProjeto = getSoAVisitasProjeto(projeto);
+  var visitasPorId = {};
+  visitasProjeto.forEach(function(visita) { visitasPorId[String(visita.idSoA || '')] = visita; });
+  var porNome = {};
+  mapeamentos.forEach(function(item) {
+    var visitaOriginal = String(item && item.visitaOriginal || '').trim();
+    var idSoA = String(item && item.idSoA || '').trim();
+    if (!visitaOriginal || !idSoA || !visitasPorId[idSoA]) throw new Error('Há uma visita SoA inválida na conciliação.');
+    porNome[normText_(visitaOriginal)] = idSoA;
+  });
+  return codexWithDocumentLock_('salvarConcilicaoVisitasParticipante', function() {
+    var agenda = getAgendaSheetForRead_();
+    var rows = agenda.getLastRow() >= 2 ? agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues() : [];
+    var idx = AGENDA_CFG.idx;
+    var participanteNorm = normText_(nome);
+    var participanteIdNorm = normText_(participanteId);
+    var projetoNorm = normText_(projeto);
+    var encontrados = [];
+    rows.forEach(function(row) {
+      if (!AgendaServerRules_.isVisit(row[idx.tipo]) || AgendaServerRules_.isCancelled(row[idx.status])) return;
+      var data = agendaDateFromValue_(row[idx.data]);
+      var mesmoId = participanteIdNorm && normText_(row[idx.idParticipante]) === participanteIdNorm;
+      if ((!mesmoId && normText_(row[idx.participante]) !== participanteNorm) || normText_(row[idx.projeto]) !== projetoNorm || !data || !agendaSoAEventoFazParteDoIPS_({ data: data })) return;
+      var idSoA = porNome[normText_(row[idx.visita])];
+      var agendaId = String(row[idx.id] || '').trim();
+      if (idSoA && agendaId) encontrados.push({ agendaId: agendaId, idSoA: idSoA, visitaOriginal: String(row[idx.visita] || '').trim() });
+    });
+    var sheet = getAgendaSoAConciliacaoSheet_(true);
+    var existentes = {};
+    if (sheet.getLastRow() >= 2) sheet.getRange(2, 1, sheet.getLastRow() - 1, AGENDA_SOA_CONCILIACAO_HEADERS_.length).getValues().forEach(function(row, index) { if (row[0]) existentes[String(row[0])] = index + 2; });
+    var agora = new Date();
+    var responsavel = codexGetActiveUserEmail_();
+    encontrados.forEach(function(item) {
+      var values = [[item.agendaId, item.idSoA, projeto, participanteId, nome, item.visitaOriginal, agora, responsavel]];
+      if (existentes[item.agendaId]) sheet.getRange(existentes[item.agendaId], 1, 1, AGENDA_SOA_CONCILIACAO_HEADERS_.length).setValues(values);
+      else sheet.getRange(sheet.getLastRow() + 1, 1, 1, AGENDA_SOA_CONCILIACAO_HEADERS_.length).setValues(values);
+    });
+    return { ok: true, conciliados: encontrados.length, ignoradosSemId: mapeamentos.length && !encontrados.length ? 1 : 0, msg: encontrados.length + ' visita(s) conciliada(s) sem alterar o nome original.' };
+  });
 }
 
 function agendaDateIsBeforeToday_(valor) {
