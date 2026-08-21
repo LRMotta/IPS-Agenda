@@ -566,6 +566,7 @@
     agendaRestoreValues(atuais);
     preencherAgendaMonitoresSelects(true);
     preencherAgendaKitsSelects(_agendaDados.kitsColeta || []);
+    atualizarAgendaVisitasSoA();
     agendaRestoreValues(atuais);
     atualizarAgendaKitAdicionais();
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateUnitUi);
@@ -1637,9 +1638,40 @@
   function onAgendaProjetoChange() {
     preencherAgendaKitsSelects(_agendaDados && _agendaDados.kitsColeta ? _agendaDados.kitsColeta : []);
     preencherAgendaMonitoresSelects();
+    atualizarAgendaVisitasSoA();
     atualizarAgendaProjetoLock();
     agendaMatBioUpdateAllCopyOptions();
     agendaAtualizarRiscoCourier_();
+  }
+
+  var _agendaVisitasSoARequest = 0;
+
+  function atualizarAgendaVisitasSoA() {
+    var projeto = String((document.getElementById('agProjeto') || {}).value || '').trim();
+    var lista = document.getElementById('agVisitaSoAList');
+    var hint = document.getElementById('agVisitaSoAHint');
+    if (!lista) return;
+    var requestId = ++_agendaVisitasSoARequest;
+    lista.innerHTML = '';
+    if (!projeto) {
+      if (hint) hint.textContent = 'Informe uma visita livre ou selecione primeiro o projeto para ver sugestões SoA.';
+      return;
+    }
+    if (hint) hint.textContent = 'Carregando sugestões do calendário SoA… A visita livre continua permitida.';
+    appServerRun({ method: 'getSoAVisitasProjeto', args: [projeto], onSuccess: function(visitas) {
+      if (requestId !== _agendaVisitasSoARequest || projeto !== String((document.getElementById('agProjeto') || {}).value || '').trim()) return;
+      visitas = (visitas || []).filter(function(visita) { return visita && visita.nome && visita.ativo !== false; });
+      lista.innerHTML = visitas.map(function(visita) {
+        var label = (visita.codigo ? visita.codigo + ' · ' : '') + visita.nome;
+        return '<option value="' + esc(visita.nome) + '" label="' + esc(label) + '"></option>';
+      }).join('');
+      if (hint) hint.textContent = visitas.length
+        ? 'Selecione uma visita SoA sugerida ou informe uma visita livre.'
+        : 'Este projeto não possui calendário SoA. Informe a visita livremente.';
+    }, onFailure: function() {
+      if (requestId !== _agendaVisitasSoARequest) return;
+      if (hint) hint.textContent = 'Não foi possível carregar sugestões SoA. Informe a visita livremente.';
+    } });
   }
 
   function agendaMonitorProjetos(m) {

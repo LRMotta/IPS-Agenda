@@ -364,6 +364,20 @@ test('SoA replica ciclos somente após prévia e preserva visitas existentes', (
   assert.match(server, /vinculosEstoqueCriados/);
 });
 
+test('jornada do participante abre em janela sob demanda e combina SoA, Agenda e prontidão de estoque', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(client, /data-record-action="journey"/);
+  assert.match(client, /function jornadaParticipanteOverlay_\(\)/);
+  assert.match(client, /id = 'modalJornadaParticipante'/);
+  assert.match(client, /method: 'getJornadaParticipante'/);
+  assert.match(client, /não cria agendamentos nem reservas/i);
+  assert.match(server, /function getJornadaParticipante\(payload\)/);
+  assert.match(server, /getSoAVisitasProjeto\(projeto\)/);
+  assert.match(server, /getKitReservasLinhas_\(\)/);
+  assert.match(server, /getEstoque\(\)/);
+});
+
 test('SoA exibe modelos de Kit e Bulk Supply por visita e laboratório', () => {
   const client = readProjectFile('IndexCoreScripts.html');
   const estoque = readProjectFile('IndexEstoqueScripts.html');

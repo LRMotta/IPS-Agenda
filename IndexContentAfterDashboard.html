@@ -739,7 +739,7 @@
           </div>
           <div id="agPartInfo" class="ag-part-info" style="display:none"></div>
           <div class="field-row cols-2" style="margin-bottom:14px">
-            <div id="agVisitaWrap"><label class="field-label" for="agVisita">Visita</label><input type="text" id="agVisita" class="f-input" placeholder="Ex: V1, Triagem, C1D1"></div>
+            <div id="agVisitaWrap"><label class="field-label" for="agVisita">Visita</label><input type="text" id="agVisita" class="f-input" list="agVisitaSoAList" placeholder="Ex: V1, Triagem, C1D1"><datalist id="agVisitaSoAList"></datalist><div id="agVisitaSoAHint" style="font-size:11px;color:#7b8794;margin-top:4px">Informe uma visita livre ou selecione uma sugestão do calendário SoA.</div></div>
             <div id="agMedicoWrap"><label class="field-label" for="agMedico">Médico <span class="required-star" id="agMedicoRequired" style="display:none">*</span></label><select id="agMedico" class="f-input f-select" onchange="limparErro('agMedico','errAgMedico')"></select><div class="field-error" id="errAgMedico">Selecione o médico responsável pela consulta.</div></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">

@@ -94,8 +94,8 @@ test('Kit e Bulk Supply compartilham visitas SoA por ID mesmo com laboratórios 
   const { server, itens } = stockServer();
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita', 'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações'],
-    ['SOA-1', 'Estudo A', 'V1', 'Baseline', 1, '', '', '', 'Sim', ''],
-    ['SOA-2', 'Estudo A', 'V2', 'Semana 4', 2, '', '', '', 'Sim', ''],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline', 2, '', '', '', 'Sim', ''],
+    ['SOA-2', 'Estudo A', 'V2', 'Semana 4', 1, '', '', '', 'Sim', ''],
     ['SOA-3', 'Estudo B', 'V1', 'Outra visita', 1, '', '', '', 'Sim', '']
   ]);
   server.getSoAVisitasSheet_ = () => soa;
@@ -306,7 +306,11 @@ test('modal de item oferece seleção múltipla de visitas para Kit e Bulk Suppl
   const estoque = readProjectFile('IndexEstoqueScripts.html');
 
   assert.match(estoque, /id="iiVisitasSection"/);
+  assert.match(estoque, /max-width:980px/);
+  assert.match(estoque, /width:min\(980px,calc\(100vw - 32px\)\)/);
   assert.match(estoque, /getSoAVisitasProjeto\(projeto\)/);
+  assert.match(estoque, /function ordenarVisitasSoAItemInline\(visitas\)/);
+  assert.match(estoque, /visitas = ordenarVisitasSoAItemInline/);
   assert.match(estoque, /#iiVisitasLista input\[type="checkbox"\]:checked/);
   assert.match(estoque, /function itemInlinePermiteVinculoSoA\(\)/);
   assert.match(estoque, /tipo\.indexOf\('kit'\).*tipo\.indexOf\('bulk'\)/);
