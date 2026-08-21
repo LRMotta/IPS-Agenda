@@ -4020,7 +4020,7 @@ function abrirJornadaParticipante(participante) {
   if (subtitle) subtitle.textContent = (participante.nome || 'Participante') + ' · ' + (participante.projeto || 'Projeto');
   content.innerHTML = '<div style="padding:34px;text-align:center;color:#64748b"><div class="spinner"></div>Carregando jornada…</div>';
   abrirOverlay('modalJornadaParticipante');
-  appServerRun({ method: 'getJornadaParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
+  appServerRun({ method: 'consultarJornadaParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
     content.innerHTML = jornadaParticipanteHtml_(dados || {});
   }, onFailure: function(e) {
     content.innerHTML = '<div style="color:#b3261e">Não foi possível carregar a jornada: ' + esc(appErrorMessage(e)) + '</div>';

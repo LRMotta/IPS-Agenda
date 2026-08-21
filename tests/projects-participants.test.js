@@ -370,8 +370,9 @@ test('jornada do participante abre em janela sob demanda e combina SoA, Agenda e
   assert.match(client, /data-record-action="journey"/);
   assert.match(client, /function jornadaParticipanteOverlay_\(\)/);
   assert.match(client, /id = 'modalJornadaParticipante'/);
-  assert.match(client, /method: 'getJornadaParticipante'/);
+  assert.match(client, /method: 'consultarJornadaParticipante'/);
   assert.match(client, /não cria agendamentos nem reservas/i);
+  assert.match(server, /function consultarJornadaParticipante\(payload\)/);
   assert.match(server, /function getJornadaParticipante\(payload\)/);
   assert.match(server, /getSoAVisitasProjeto\(projeto\)/);
   assert.match(server, /getKitReservasLinhas_\(\)/);

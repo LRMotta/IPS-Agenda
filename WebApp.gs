@@ -89,6 +89,13 @@ function doGet(e) {
     .setTitle('IPS | UCS');
 }
 
+// Mantida junto à superfície RPC do Web App: alguns deployments legados não
+// expõem de forma confiável funções adicionadas ao fim do arquivo extenso.
+// A implementação permanece abaixo, ao lado dos helpers de Agenda/SoA.
+function consultarJornadaParticipante(payload) {
+  return getJornadaParticipante(payload);
+}
+
 
 // Retorna a URL base do webapp (usada para navegação entre páginas)
 function doPost(e) {
