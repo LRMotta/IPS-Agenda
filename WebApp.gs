@@ -10258,6 +10258,17 @@ function agendaDateFromValue_(valor) {
   return parseAgendaDateAny_(valor);
 }
 
+function jornadaCalcularJanelaVisita_(dataIdeal, janelaDiasMenos, janelaDiasMais) {
+  if (!dataIdeal) return { inicio: null, fim: null };
+  var base = new Date(typeof dataIdeal.getTime === 'function' ? dataIdeal.getTime() : dataIdeal);
+  if (isNaN(base.getTime())) return { inicio: null, fim: null };
+  var diasAntes = Math.abs(Number(janelaDiasMenos) || 0);
+  var diasDepois = Math.abs(Number(janelaDiasMais) || 0);
+  var inicio = new Date(base.getTime()); inicio.setDate(inicio.getDate() - diasAntes);
+  var fim = new Date(base.getTime()); fim.setDate(fim.getDate() + diasDepois);
+  return { inicio: inicio, fim: fim };
+}
+
 function getJornadaParticipante(payload) {
   payload = payload || {};
   var nome = String(payload.nome || '').trim();
@@ -10309,11 +10320,8 @@ function getJornadaParticipante(payload) {
       dataAlvo = new Date(jornadaPorId[visita.referencia].dataAlvoObj.getTime());
       dataAlvo.setDate(dataAlvo.getDate() + (Number(visita.intervaloDias) || 0));
     }
-    var janelaInicio = null, janelaFim = null;
-    if (dataAlvo) {
-      janelaInicio = new Date(dataAlvo.getTime()); janelaInicio.setDate(janelaInicio.getDate() + (Number(visita.janelaDiasMenos) || 0));
-      janelaFim = new Date(dataAlvo.getTime()); janelaFim.setDate(janelaFim.getDate() + (Number(visita.janelaDiasMais) || 0));
-    }
+    var janela = jornadaCalcularJanelaVisita_(dataAlvo, visita.janelaDiasMenos, visita.janelaDiasMais);
+    var janelaInicio = janela.inicio, janelaFim = janela.fim;
     var estado = evento && evento.concluida ? 'REALIZADA' : evento && !evento.cancelada ? 'AGENDADA' : dataAlvo ? 'PREVISTA' : 'A_PROGRAMAR';
     jornadaPorId[visita.idSoA] = {
       idSoA: visita.idSoA, codigo: visita.codigo, nome: visita.nome, ordem: visita.ordem,

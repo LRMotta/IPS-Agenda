@@ -379,6 +379,30 @@ test('jornada do participante abre em janela sob demanda e combina SoA, Agenda e
   assert.match(server, /getEstoque\(\)/);
 });
 
+test('jornada do participante calcula e exibe a janela em torno da data ideal', () => {
+  const server = runFile('WebApp.gs');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const jornadaHtml = sourceBetween(client, 'function jornadaParticipanteHtml_', 'var _jornadaParticipanteAtual');
+  const context = vm.createContext({ esc: (value) => String(value || '') });
+  vm.runInContext(jornadaHtml, context);
+
+  const janela = server.jornadaCalcularJanelaVisita_(new Date(2027, 1, 10), 7, 7);
+  assert.equal(janela.inicio.getDate(), 3);
+  assert.equal(janela.fim.getDate(), 17);
+
+  const html = context.jornadaParticipanteHtml_({
+    possuiSoA: true,
+    visitas: [{
+      codigo: 'C39D1', nome: 'Dia 1 do Ciclo 39', estado: 'PREVISTA', dataAlvo: '10/fev./2027',
+      janelaInicio: '03/fev./2027', janelaFim: '17/fev./2027', kits: []
+    }],
+    eventosLivres: []
+  });
+
+  assert.match(html, /jornada-step-date">10\/fev\.\/2027/);
+  assert.match(html, /Janela: 03\/fev\.\/2027 – 17\/fev\.\/2027/);
+});
+
 test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agenda', () => {
   const server = runFile('WebApp.gs');
   const client = readProjectFile('IndexCoreScripts.html');
