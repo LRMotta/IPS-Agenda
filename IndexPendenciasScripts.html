@@ -123,22 +123,6 @@
         }
       },
       {
-        key: 'transporteBackupNaoAgendado',
-        title: 'Transporte de Amostras Backup não agendado',
-        icon: 'inventory',
-        tone: '#5b21b6',
-        bg: '#f5f3ff',
-        priority: true,
-        action: pendenciaAgendaAction,
-        items: p.transporteBackupNaoAgendado || [],
-        render: function(it) {
-          return {
-            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
-            meta: [pendenciaCourierComTemperatura(it), it.projeto, it.visita].filter(Boolean).join(' · ')
-          };
-        }
-      },
-      {
         key: 'courierNaoConfirmada',
         title: 'Courier não confirmada',
         icon: 'mark_email_unread',
@@ -233,6 +217,22 @@
           return {
             main: [it.descricao || it.idItem || 'Kit', it.validade ? 'vence ' + it.validade : ''].filter(Boolean).join(' · '),
             meta: [it.projeto, dias === 0 ? 'vence hoje' : 'vence em ' + dias + ' dia(s)', it.qtde !== '' && it.qtde !== undefined ? 'qtd ' + it.qtde : ''].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'transporteBackupNaoAgendado',
+        title: 'Transporte de Amostras Backup não agendado',
+        icon: 'inventory',
+        tone: '#5b21b6',
+        bg: '#f5f3ff',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.transporteBackupNaoAgendado || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: [pendenciaCourierComTemperatura(it), it.projeto, it.visita].filter(Boolean).join(' · ')
           };
         }
       }
