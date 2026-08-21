@@ -178,6 +178,155 @@ test('fase SoA: calendario do protocolo ordena visitas e preserva aliases', () =
   assert.deepEqual(Array.from(visitas, item => item.idSoA), ['SOA-1', 'SOA-2']);
   assert.deepEqual(Array.from(visitas[0].aliases), ['C18', 'C24']);
   assert.equal(visitas[1].intervaloDias, 30);
+  assert.equal(visitas[0].ordemSugerida, 1);
+  assert.equal(visitas[0].ordemAmbigua, true);
+});
+
+test('fase SoA: sugestão garante dependências, ordena irmãos por intervalo e envia fase terminal ao final', () => {
+  const server = runFile('WebApp.gs');
+  const suggestion = server.soaSugerirOrdemExecucao_([
+    { idSoA: 'TRI', nome: 'Triagem', ordem: 1, referencia: '', intervaloDias: '' },
+    { idSoA: 'C1D1', nome: 'Dia 1', ordem: 2, referencia: 'RANDOMIZACAO', intervaloDias: 0 },
+    { idSoA: 'EOT', nome: 'Final de tratamento', ordem: 3, referencia: 'ULTIMA_DOSE', intervaloDias: 30 },
+    { idSoA: 'C1D8', nome: 'Dia 8', ordem: 4, referencia: 'C1D1', intervaloDias: 7 },
+    { idSoA: 'C1D2', nome: 'Dia 2', ordem: 5, referencia: 'C1D1', intervaloDias: 1 }
+  ]);
+  const details = Object.fromEntries(Array.from(suggestion.visitas, item => [item.idSoA, item]));
+
+  assert.deepEqual(Array.from(suggestion.idsSoA), ['TRI', 'C1D1', 'C1D2', 'C1D8', 'EOT']);
+  assert.equal(details.EOT.ordemRecebida, 3);
+  assert.equal(details.EOT.ordemSugerida, 5);
+  assert.equal(details.TRI.ordemAmbigua, true);
+  assert.match(details.TRI.motivosOrdem[0], /Sem referência explícita/);
+});
+
+test('fase SoA: sugestão destaca empates e ciclos sem inventar sequência', () => {
+  const server = runFile('WebApp.gs');
+  const alreadyOrdered = server.soaSugerirOrdemExecucao_([
+    { idSoA: 'V1', nome: 'V1', ordem: 10, referencia: 'RANDOMIZACAO', intervaloDias: 0 },
+    { idSoA: 'V2', nome: 'V2', ordem: 20, referencia: 'V1', intervaloDias: 7 }
+  ]);
+  assert.equal(alreadyOrdered.mudancas, 0);
+
+  const tied = server.soaSugerirOrdemExecucao_([
+    { idSoA: 'A1', nome: 'Braço A', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0 },
+    { idSoA: 'B1', nome: 'Braço B', ordem: 2, referencia: 'RANDOMIZACAO', intervaloDias: 0 }
+  ]);
+  assert.deepEqual(Array.from(tied.idsSoA), ['A1', 'B1']);
+  assert.equal(tied.visitas.every(item => item.ordemAmbigua), true);
+  assert.ok(tied.ambiguidades.some(item => item.tipo === 'MESMO_INTERVALO'));
+
+  const cycle = server.soaSugerirOrdemExecucao_([
+    { idSoA: 'A', nome: 'A', ordem: 1, referencia: 'B', intervaloDias: 1 },
+    { idSoA: 'B', nome: 'B', ordem: 2, referencia: 'A', intervaloDias: 1 }
+  ]);
+  assert.deepEqual(Array.from(cycle.idsSoA), ['A', 'B']);
+  assert.ok(cycle.ambiguidades.some(item => item.tipo === 'CICLO'));
+  assert.equal(cycle.visitas.every(item => item.ordemAmbigua), true);
+});
+
+test('fase SoA: replicação de ciclos remapeia textos e referências, preserva campos e não sobrescreve existentes', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual'],
+    ['SOA-C1D1', 'Estudo A', 'C1D1', 'Dia 1 do Ciclo 1', 1, 'Ciclo 1', 0, 'Cycle 1 Day 1', 'Sim', 'modelo', 'RANDOMIZACAO', 0, 0, 'BR-A; BR-C', 'Não'],
+    ['SOA-C1D8', 'Estudo A', 'C1D8', 'Dia 8 do Ciclo 1', 2, 'Ciclo 1', 7, 'Cycle 1 Day 8', 'Sim', 'modelo', 'SOA-C1D1', 2, 2, 'BR-A; BR-C', 'Não'],
+    ['SOA-C2D1', 'Estudo A', 'C2D1', 'Dia 1 do Ciclo 2', 20, 'Ciclo 2', 0, 'Cycle 2 Day 1', 'Sim', 'ajuste específico', 'RANDOMIZACAO', 1, 1, 'BR-A; BR-C', 'Sim']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  let nextId = 0;
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
+    Utilities: { getUuid: () => `NOVO-${++nextId}` }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const payload = { projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '2–3' };
+  const preview = server.validarReplicacaoCiclosSoA(payload);
+  const byCode = Object.fromEntries(Array.from(preview.visitas, item => [item.codigo, item]));
+
+  assert.equal(preview.ok, true);
+  assert.equal(preview.novas, 3);
+  assert.equal(preview.existentes, 1);
+  assert.equal(byCode.C2D1.status, 'EXISTENTE_DIFERENTE');
+  assert.ok(byCode.C2D1.diferencas.includes('janela'));
+  assert.equal(byCode.C2D8.referencia, 'SOA-C2D1');
+  assert.equal(byCode.C3D8.referencia, byCode.C3D1.idSoA);
+  assert.deepEqual(Array.from(byCode.C3D8.bracoIds), ['BR-A', 'BR-C']);
+  assert.deepEqual([byCode.C3D8.intervaloDias, byCode.C3D8.janelaDiasMenos, byCode.C3D8.janelaDiasMais], [7, 2, 2]);
+  assert.match(byCode.C3D8.nome, /Ciclo 3/);
+  assert.deepEqual(Array.from(byCode.C3D8.aliases), ['Cycle 3 Day 8']);
+
+  const result = server.criarCiclosSoAPorReplicacao({ ...payload, assinaturaPrevia: preview.assinaturaPrevia });
+  const saved = server.getSoAVisitasProjeto('Estudo A');
+  const savedByCode = Object.fromEntries(Array.from(saved, item => [item.codigo, item]));
+  assert.equal(result.criadas, 3);
+  assert.equal(saved.length, 6);
+  assert.equal(savedByCode.C2D1.observacoes, 'ajuste específico');
+  assert.equal(savedByCode.C2D8.referencia, 'SOA-C2D1');
+  assert.equal(savedByCode.C3D8.referencia, savedByCode.C3D1.idSoA);
+  assert.notEqual(savedByCode.C3D1.idSoA, savedByCode.C3D8.idSoA);
+  assert.deepEqual(Array.from(savedByCode.C3D8.bracoIds), ['BR-A', 'BR-C']);
+});
+
+test('fase SoA: replicação bloqueia código existente com braços diferentes e exige prévia atual', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)'],
+    ['SOA-1', 'Estudo A', 'C1D1', 'Dia 1 do Ciclo 1', 1, '', 0, '', 'Sim', '', 'RANDOMIZACAO', 0, 0, 'BR-A'],
+    ['SOA-2', 'Estudo A', 'C2D1', 'Dia 1 do Ciclo 2', 2, '', 0, '', 'Sim', '', 'RANDOMIZACAO', 0, 0, 'BR-B']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const conflict = server.validarReplicacaoCiclosSoA({ projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '2' });
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.conflitos, 1);
+  assert.match(conflict.erros[0], /braços diferentes/);
+  assert.throws(() => server.criarCiclosSoAPorReplicacao({ projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '2', assinaturaPrevia: conflict.assinaturaPrevia }), /conflitos/);
+
+  const cleanPreview = server.validarReplicacaoCiclosSoA({ projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '3' });
+  soa.appendRow(['SOA-3', 'Estudo A', 'C3D1', 'Dia 1 do Ciclo 3', 3, '', 0, '', 'Sim', '', 'RANDOMIZACAO', 0, 0, 'BR-A']);
+  assert.throws(() => server.criarCiclosSoAPorReplicacao({ projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '3', assinaturaPrevia: cleanPreview.assinaturaPrevia }), /mudou desde a prévia/);
+});
+
+test('fase SoA: replicação não cria chave cega quando o ciclo aparece somente em campo auxiliar', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
+    ['SOA-1', 'Estudo A', 'D1', 'Dia de tratamento', 1, 'Ciclo 1', 0, '', 'Sim', '']
+  ]);
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ SoA_Visitas: soa }) } });
+  const preview = server.validarReplicacaoCiclosSoA({ projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '2' });
+  assert.equal(preview.ok, false);
+  assert.equal(preview.conflitos, 1);
+  assert.match(preview.erros[0], /não identifica o Ciclo 1/);
+});
+
+test('fase SoA: reordenação manual valida a lista completa, persiste em lote e não altera outro projeto', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline', 1, '', '', '', 'Sim', ''],
+    ['SOA-B', 'Estudo B', 'V1', 'Outra visita', 7, '', '', '', 'Sim', ''],
+    ['SOA-2', 'Estudo A', 'V2', 'Semana 4', 2, '', '', '', 'Sim', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  assert.throws(() => server.reordenarSoAVisitas({ projeto: 'Estudo A', idsSoA: ['SOA-2'] }), /lista de visitas mudou/i);
+  assert.equal(soa.rows[0].includes('Ordem manual'), false);
+
+  const result = server.reordenarSoAVisitas({ projeto: 'Estudo A', idsSoA: ['SOA-2', 'SOA-1'] });
+  const ordemManualCol = soa.rows[0].indexOf('Ordem manual');
+  const visitas = server.getSoAVisitasProjeto('Estudo A');
+  assert.equal(result.total, 2);
+  assert.deepEqual(Array.from(visitas, item => item.idSoA), ['SOA-2', 'SOA-1']);
+  assert.deepEqual(Array.from(visitas, item => item.ordem), [1, 2]);
+  assert.deepEqual(Array.from(visitas, item => item.ordemManual), [true, true]);
+  assert.equal(soa.rows[2][4], 7);
+  assert.equal(soa.rows[2][ordemManualCol], '');
 });
 
 test('fase SoA: referência e janelas opcionais são lidas sem exigir migração dos legados', () => {
@@ -259,6 +408,8 @@ test('fase SoA: importador cria braços, resolve referências por código e mant
   const preview = server.validarImportacaoSoA(payload);
   assert.equal(preview.ok, true);
   assert.deepEqual(Array.from(preview.missingBracos), ['BraÃ§o A']);
+  assert.deepEqual(Array.from(preview.visitas, item => [item.ordemRecebida, item.ordemSugerida]), [[1, 1], [2, 2]]);
+  assert.equal(preview.mudancasOrdemSugerida, 0);
   const result = server.importarSoAJson(payload);
   assert.equal(result.ok, true);
   assert.equal(result.bracosCriados, 1);
@@ -286,6 +437,38 @@ test('fase SoA: importador no modo adicionar não duplica visitas já existentes
   assert.equal(soa.rows.length, 2);
 });
 
+test('fase SoA: importação em modo atualizar preserva ordem manual e atualiza os demais campos', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline antiga', 20, '', '', '', 'Sim', '', 'RANDOMIZACAO', '', '', '', 'Sim'],
+    ['SOA-2', 'Estudo A', 'V2', 'Semana antiga', 30, '', '', '', 'Sim', '', 'SOA-1', '', '', '', 'Não']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+  const payload = {
+    projeto: 'Estudo A', modo: 'atualizar', criarBracos: true,
+    dados: { projeto: { nomeAbreviado: 'Estudo A' }, visitasComuns: [
+      { codigo: 'V1', nome: 'Baseline atualizada', ordem: 1, referenciaTipo: 'RANDOMIZACAO' },
+      { codigo: 'V2', nome: 'Semana atualizada', ordem: 2, referenciaTipo: 'VISITA_ESPECIFICA', referenciaCodigo: 'V1' },
+      { codigo: 'V3', nome: 'Visita nova', ordem: 3, referenciaTipo: 'VISITA_ESPECIFICA', referenciaCodigo: 'V2' }
+    ] }
+  };
+
+  const preview = server.validarImportacaoSoA(payload);
+  const result = server.importarSoAJson(payload);
+  const visitas = server.getSoAVisitasProjeto('Estudo A');
+  const porCodigo = Object.fromEntries(Array.from(visitas, item => [item.codigo, item]));
+  assert.equal(preview.ordensManuaisPreservadas, 1);
+  assert.equal(result.ordensManuaisPreservadas, 1);
+  assert.equal(porCodigo.V1.ordem, 20);
+  assert.equal(porCodigo.V1.nome, 'Baseline atualizada');
+  assert.equal(porCodigo.V2.ordem, 2);
+  assert.equal(porCodigo.V2.nome, 'Semana atualizada');
+  assert.equal(porCodigo.V3.ordem, 31);
+});
+
 test('fase SoA: salvar visita atualiza registro existente sem duplicar', () => {
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
@@ -299,6 +482,8 @@ test('fase SoA: salvar visita atualiza registro existente sem duplicar', () => {
   assert.equal(soa.rows.length, 2);
   assert.equal(soa.rows[1][3], 'Baseline atualizado');
   assert.equal(soa.rows[1][7], 'V0; Triagem');
+  assert.equal(soa.rows[0][14], 'Ordem manual');
+  assert.equal(soa.rows[1][14], 'Sim');
 });
 
 test('fase braços: catálogo do projeto ordena opções sem alterar a compatibilidade legada', () => {

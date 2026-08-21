@@ -8,8 +8,8 @@
   var _dashAgendaResumoAtual = {};
   var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
   var _dashKpiRecrutZeroKeys = {};
-  var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v2';
-  var DASHBOARD_SESSION_CACHE_VERSION = '2026.07.02-dashboard-cache-v2';
+  var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v3';
+  var DASHBOARD_SESSION_CACHE_VERSION = '2026.08.20-project-status-v3';
   var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
@@ -150,14 +150,9 @@
     return codexNormText(v);
   }
 
-  function _isProjetoAtivoDash(p) {
-    var st = _normDash(p.status);
-    return st.indexOf('concluido') === -1 && st.indexOf('cancelado') === -1;
-  }
-
   function _isProjetoContaParticipantesDash(p) {
     var st = _normDash(p.status);
-    return _isProjetoAtivoDash(p) && st.indexOf('etapa regulatoria') === -1;
+    return projetoEstaAtivo_(p) && st.indexOf('etapa regulatoria') === -1;
   }
 
   function _sameProjetoDash(partProjeto, proj) {
@@ -279,7 +274,7 @@
         if (dashListIsLoading('bodyProjetos')) return false;
         if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
         dashClearProjetoInputs();
-        renderTabelaProj(_projetos.filter(_isProjetoAtivoDash));
+        renderTabelaProj(_projetos.filter(projetoEstaAtivo_));
         return true;
       });
       return;
@@ -424,7 +419,7 @@
     var proj = d.projetos || [];
     var part = d.participantes || [];
     var est = d.estoqueResumo || {};
-    var projetosAtivos = proj.filter(_isProjetoAtivoDash);
+    var projetosAtivos = proj.filter(projetoEstaAtivo_);
     var projetosPart = proj.filter(_isProjetoContaParticipantesDash);
     var partProjetoStats = dashboardParticipantProjectStats(part);
     var ativosCount = part.reduce(function(total, p) {

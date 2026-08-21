@@ -505,9 +505,16 @@ function dashboardFilterKeysMap_() {
   return map;
 }
 
-function dashboardProjetoAtivo_(p) {
-  var st = normSelectValue(p && p.status);
-  return st.indexOf('concluido') === -1 && st.indexOf('cancelado') === -1;
+function projetoClassificacaoStatus_(p) {
+  return String((p && p.classificacaoStatus) || '');
+}
+
+function projetoEstaAtivo_(p) {
+  return projetoClassificacaoStatus_(p) === 'ativo';
+}
+
+function projetoEstaConcluido_(p) {
+  return projetoClassificacaoStatus_(p) === 'concluido';
 }
 
 function applyDashboardPendingFilter_(pagina) {
@@ -540,7 +547,7 @@ function applyDashboardPendingFilter_(pagina) {
     var searchProj = document.getElementById('searchProjetos');
     if (searchProj) searchProj.value = '';
     if (filtro === 'projetosAtivos') {
-      renderTabelaProj((_projetos || []).filter(dashboardProjetoAtivo_));
+      renderTabelaProj((_projetos || []).filter(projetoEstaAtivo_));
       return;
     }
     if (filtro === 'coordenador') {
@@ -3973,11 +3980,15 @@ function preencherProjetoCourierSelect_(id, selected) {
   var el = document.getElementById(id);
   if (!el) return;
   var atual = String(selected || '').trim();
-  var options = (COURIERS_PROJ || []).filter(function(c) { return c && c.id && c.nome; }).map(function(c) {
+  var catalogo = (COURIERS_PROJ || []).filter(function(c) { return c && c.id && c.nome; });
+  var courierAtual = catalogo.find(function(c) { return String(c.id || '') === atual; });
+  var options = catalogo.filter(function(c) { return c.disponivelProjetos !== false; }).map(function(c) {
     return '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>';
   });
-  if (atual && !(COURIERS_PROJ || []).some(function(c) { return String(c.id || '') === atual; })) {
-    options.unshift('<option value="' + esc(atual) + '">Courier não encontrada (' + esc(atual) + ')</option>');
+  if (atual && courierAtual && courierAtual.disponivelProjetos === false) {
+    options.unshift('<option value="' + esc(atual) + '" disabled>' + esc(courierAtual.nome) + ' — vínculo legado; substitua</option>');
+  } else if (atual && !courierAtual) {
+    options.unshift('<option value="' + esc(atual) + '" disabled>Courier não encontrada (' + esc(atual) + ') — vínculo legado; substitua</option>');
   }
   el.innerHTML = '<option value="">— Não definida —</option>' + options.join('');
   el.value = atual;
@@ -4067,10 +4078,11 @@ function renderProjetos(lista) {
   var esps = {}; var concluidos = 0; var projetosAtivos = 0; var ativosTotal = 0; var metaTotal = 0; var participantesTotal = 0; var falhasTotal = 0;
   _projetos.forEach(function(p){
     if (p.especialidade) esps[p.especialidade]=1;
-    if (isProjetoStatusConcluido(p.status)) {
+    if (projetoEstaConcluido_(p)) {
       concluidos++;
       return;
     }
+    if (!projetoEstaAtivo_(p)) return;
     projetosAtivos++;
     ativosTotal += Number(p.participantesAtivos || 0) || 0;
     metaTotal += Number(p.metaRecrutamento || 0) || 0;
@@ -4183,31 +4195,27 @@ function chipFase(fase) {
   return '<span class="chip" style="background:'+c[0]+';color:'+c[1]+'">' + esc(label) + '</span>';
 }
 
-function isProjetoStatusConcluido(status) {
-  var n = norm(status || '');
-  return n.indexOf('concluido') >= 0 || n.indexOf('concluida') >= 0;
-}
-
 function projetoStatusAutoColor(status) {
   var c = faseAutoColor('status:' + (status || '')).split(':');
   return c[1] + ':' + c[0];
 }
 
-function projetoStatusChip(status) {
-  var s = status || '—';
+function projetoStatusChip(projeto) {
+  var s = (projeto && projeto.status) || '—';
   var n = String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  var color = n.indexOf('concluido') >= 0 ? '#137333:#e6f4ea' :
+  var classificacao = projetoClassificacaoStatus_(projeto);
+  var color = classificacao === 'concluido' ? '#137333:#e6f4ea' :
     n.indexOf('acompanhamento') >= 0 ? '#276a7b:#d7eef5' :
     n.indexOf('recrutamento') >= 0 ? '#0b8043:#d7f5cf' :
     n.indexOf('regulatoria') >= 0 ? '#9a4b16:#ffd8bd' :
     n.indexOf('close-out') >= 0 || n.indexOf('closeout') >= 0 ? '#3c4043:#eeeeee' :
-    n.indexOf('cancelado') >= 0 ? '#c5221f:#fce8e6' : projetoStatusAutoColor(s);
+    classificacao === 'cancelado' ? '#c5221f:#fce8e6' : projetoStatusAutoColor(s);
   var p = color.split(':');
   return '<span class="chip" style="background:' + p[1] + ';color:' + p[0] + '">' + esc(s) + '</span>';
 }
 
 function recrutamentoProjetoHtml(p) {
-  var concluido = isProjetoStatusConcluido(p.status);
+  var concluido = projetoEstaConcluido_(p);
   var ativos = Number(p.participantesAtivos || 0);
   var falhas = Number(p.falhasTriagem || 0);
   var total = Number(p.totalParticipantes || 0);
@@ -4390,7 +4398,7 @@ function renderTabelaProj(lista) {
       + '<td><div class="row-name" style="font-size:13px;">' + esc(p.patrocinador || '-') + '</div>' + croHtml + '</td>'
       + '<td>' + recrutamentoProjetoHtml(p) + '</td>'
       + '<td class="wide-only" style="color:#5f6b7c;">' + esc(p.centro || '-') + '</td>'
-      + '<td>' + projetoStatusChip(p.status) + '</td>'
+      + '<td>' + projetoStatusChip(p) + '</td>'
       + '<td><div class="action-btns">'
       + '<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + idx + '">'
       + '<span class="material-symbols-outlined">edit</span></button>'
@@ -4407,6 +4415,11 @@ function renderTabelaProj(lista) {
 
 var _soaProjetoAtual = null;
 var _soaVisitasAtual = [];
+var _soaOrdemOriginalIds = [];
+var _soaOrdemAlterada = false;
+var _soaDragId = '';
+var _soaSugestaoOrdemAtual = [];
+var _soaCyclePreviewAtual = null;
 
 function soaReferenciaLabel_(referencia) {
   var value = String(referencia || '').trim();
@@ -4487,22 +4500,353 @@ function soaBracosLabel_(ids) {
   }).join(', ');
 }
 
-function renderSoAVisitas(lista) {
-  _soaVisitasAtual = lista || [];
+function soaModelosEstoqueHtml_(modelos) {
+  modelos = modelos || [];
+  if (!modelos.length) return '';
+  var limite = 4;
+  var chips = modelos.slice(0, limite).map(function(modelo) {
+    var tipo = String(modelo.tipo || '').toLowerCase().indexOf('bulk') >= 0 ? 'Bulk' : 'Kit';
+    var laboratorio = modelo.laboratorio ? ' · ' + modelo.laboratorio : '';
+    var bracos = modelo.bracosAplicaveisIds && modelo.bracosAplicaveisIds.length ? ' · ' + soaBracosLabel_(modelo.bracosAplicaveisIds) : ' · todos os braços';
+    var inativo = String(modelo.status || '').toLowerCase() === 'inativo' ? ' · inativo' : '';
+    return '<span class="soa-stock-model"><span class="material-symbols-outlined">' + (tipo === 'Bulk' ? 'deployed_code' : 'inventory_2') + '</span>' + esc(modelo.descricao || modelo.idItem || tipo) + '<small>' + esc(tipo + laboratorio + bracos + inativo) + '</small></span>';
+  }).join('');
+  if (modelos.length > limite) chips += '<span class="soa-stock-model soa-stock-model-more">+' + (modelos.length - limite) + ' modelo(s)</span>';
+  return '<div class="soa-stock-models"><span class="soa-stock-models-label">Estoque</span>' + chips + '</div>';
+}
+
+function aplicarModelosEstoqueNasVisitasSoA_(modelos) {
+  var porVisita = {};
+  (modelos || []).forEach(function(modelo) {
+    (modelo.visitasAplicaveisIds || []).forEach(function(idSoA) {
+      idSoA = String(idSoA || '');
+      if (!porVisita[idSoA]) porVisita[idSoA] = [];
+      porVisita[idSoA].push(modelo);
+    });
+  });
+  _soaVisitasAtual.forEach(function(visita) {
+    visita.modelosEstoque = porVisita[String(visita.idSoA || '')] || [];
+  });
+  renderSoAVisitas(_soaVisitasAtual, { preservarOrdemPendente: true });
+}
+
+function soaProjetoNomeAtual_() {
+  return _soaProjetoAtual && (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo) || '';
+}
+
+function soaAtualizarAcoesOrdem_() {
+  var salvo = !!soaProjetoNomeAtual_();
+  var save = document.getElementById('btnSalvarOrdemSoA');
+  var discard = document.getElementById('btnDescartarOrdemSoA');
+  var pending = document.getElementById('soaOrdemPendente');
+  var suggest = document.getElementById('btnSugerirOrdemSoA');
+  var replicate = document.getElementById('btnReplicarCicloSoA');
+  var add = document.getElementById('btnAdicionarSoA');
+  var importBtn = document.getElementById('btnImportarSoA');
+  if (save) save.hidden = !_soaOrdemAlterada;
+  if (discard) discard.hidden = !_soaOrdemAlterada;
+  if (pending) pending.hidden = !_soaOrdemAlterada;
+  if (suggest) suggest.disabled = !salvo || _soaOrdemAlterada || _soaVisitasAtual.length < 2;
+  if (replicate) replicate.disabled = !salvo || _soaOrdemAlterada || !_soaVisitasAtual.some(function(item) { return item.ciclos && item.ciclos.length; });
+  if (add) add.disabled = !salvo || _soaOrdemAlterada;
+  if (importBtn) importBtn.disabled = !salvo || _soaOrdemAlterada;
+}
+
+function renderSoAVisitas(lista, options) {
+  options = options || {};
+  _soaVisitasAtual = (lista || []).slice();
+  if (!options.preservarOrdemPendente) {
+    _soaOrdemOriginalIds = _soaVisitasAtual.map(function(item) { return String(item.idSoA || ''); });
+    _soaOrdemAlterada = false;
+  }
   var list = document.getElementById('pSoAList');
   if (!list) return;
+  soaAtualizarAcoesOrdem_();
   if (!_soaVisitasAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhuma visita SoA configurada.</div>'; return; }
-  list.innerHTML = _soaVisitasAtual.map(function(item) {
+  list.innerHTML = _soaVisitasAtual.map(function(item, index) {
     var aliases = (item.aliases || []).join(' · ');
     var programacao = [soaResumoProgramacao_(item), soaBracosLabel_(item.bracoIds || [])].filter(Boolean).join(' · ');
     var repeticao = item.repeticao || programacao || 'Única';
+    var id = esc(item.idSoA);
+    var ordemExibida = _soaOrdemAlterada ? index + 1 : (item.ordem === '' ? '—' : item.ordem);
+    var actionDisabled = _soaOrdemAlterada ? ' disabled' : '';
     if (item.repeticao && programacao) repeticao += ' · ' + programacao;
-    return '<div class="soa-visita-row"><div class="soa-visita-order">' + esc(item.ordem === '' ? '—' : item.ordem) + '</div>'
+    return '<div class="soa-visita-row soa-sortable-row" data-soa-id="' + id + '" ondragover="soaDragOver_(event)" ondragleave="soaDragLeave_(event)" ondrop="soaDrop_(event)"><button type="button" class="soa-drag-handle" draggable="true" data-soa-id="' + id + '" aria-label="Reordenar ' + esc(item.nome) + '. Arraste ou use as setas para cima e para baixo." title="Arraste ou use as setas para reordenar" ondragstart="soaDragStart_(event)" ondragend="soaDragEnd_()" onkeydown="soaOrdemTecla_(event)"><span class="material-symbols-outlined">drag_indicator</span></button><div class="soa-visita-order">' + esc(ordemExibida) + '</div>'
       + '<div class="soa-visita-main"><div class="soa-visita-name">' + esc(item.nome) + (item.ativo === false ? ' <span class="soa-visita-inactive">inativa</span>' : '') + '</div>'
-      + '<div class="soa-visita-meta">' + (item.codigo ? '<span class="soa-visita-code">' + esc(item.codigo) + '</span>' : '') + esc(repeticao) + (aliases ? ' · ' + esc(aliases) : '') + '</div></div>'
-      + '<div class="soa-visita-actions"><button type="button" class="icon-btn" title="Editar visita" onclick="abrirSoAVisitaFormPorId(\'' + esc(item.idSoA) + '\')"><span class="material-symbols-outlined">edit</span></button>'
-      + '<button type="button" class="icon-btn del" title="Excluir visita" onclick="excluirSoAVisitaApp(\'' + esc(item.idSoA) + '\')"><span class="material-symbols-outlined">delete</span></button></div></div>';
+      + '<div class="soa-visita-meta">' + (item.codigo ? '<span class="soa-visita-code">' + esc(item.codigo) + '</span>' : '') + esc(repeticao) + (aliases ? ' · ' + esc(aliases) : '') + '</div>' + soaModelosEstoqueHtml_(item.modelosEstoque) + '</div>'
+      + '<div class="soa-visita-actions"><button type="button" class="icon-btn" title="Editar visita" onclick="abrirSoAVisitaFormPorId(\'' + id + '\')"' + actionDisabled + '><span class="material-symbols-outlined">edit</span></button>'
+      + '<button type="button" class="icon-btn del" title="Excluir visita" onclick="excluirSoAVisitaApp(\'' + id + '\')"' + actionDisabled + '><span class="material-symbols-outlined">delete</span></button></div></div>';
   }).join('');
+}
+
+function soaLimparMarcadoresDrop_() {
+  Array.prototype.forEach.call(document.querySelectorAll('#pSoAList .soa-visita-row'), function(row) {
+    row.classList.remove('soa-drop-before', 'soa-drop-after');
+  });
+}
+
+function soaDragStart_(event) {
+  _soaDragId = String(event && event.currentTarget && event.currentTarget.getAttribute('data-soa-id') || '');
+  if (event && event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', _soaDragId);
+  }
+}
+
+function soaDragOver_(event) {
+  if (!_soaDragId || !event || !event.currentTarget) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  var row = event.currentTarget;
+  if (String(row.getAttribute('data-soa-id') || '') === _soaDragId) return;
+  soaLimparMarcadoresDrop_();
+  var rect = row.getBoundingClientRect();
+  row.classList.add(event.clientY >= rect.top + rect.height / 2 ? 'soa-drop-after' : 'soa-drop-before');
+}
+
+function soaDragLeave_(event) {
+  if (!event || !event.currentTarget || event.currentTarget.contains(event.relatedTarget)) return;
+  event.currentTarget.classList.remove('soa-drop-before', 'soa-drop-after');
+}
+
+function soaAplicarMovimento_(sourceId, targetId, after) {
+  var sourceIndex = _soaVisitasAtual.findIndex(function(item) { return String(item.idSoA || '') === String(sourceId || ''); });
+  if (sourceIndex < 0) return;
+  var moved = _soaVisitasAtual.splice(sourceIndex, 1)[0];
+  var targetIndex = _soaVisitasAtual.findIndex(function(item) { return String(item.idSoA || '') === String(targetId || ''); });
+  if (targetIndex < 0) {
+    _soaVisitasAtual.splice(sourceIndex, 0, moved);
+    return;
+  }
+  _soaVisitasAtual.splice(targetIndex + (after ? 1 : 0), 0, moved);
+  var idsAtuais = _soaVisitasAtual.map(function(item) { return String(item.idSoA || ''); });
+  _soaOrdemAlterada = idsAtuais.join('\n') !== _soaOrdemOriginalIds.join('\n');
+  renderSoAVisitas(_soaVisitasAtual, { preservarOrdemPendente: true });
+}
+
+function soaDrop_(event) {
+  if (!event || !event.currentTarget) return;
+  event.preventDefault();
+  var row = event.currentTarget;
+  var targetId = String(row.getAttribute('data-soa-id') || '');
+  var rect = row.getBoundingClientRect();
+  var after = event.clientY >= rect.top + rect.height / 2;
+  soaLimparMarcadoresDrop_();
+  if (_soaDragId && targetId && _soaDragId !== targetId) soaAplicarMovimento_(_soaDragId, targetId, after);
+  _soaDragId = '';
+}
+
+function soaDragEnd_() {
+  _soaDragId = '';
+  soaLimparMarcadoresDrop_();
+}
+
+function soaOrdemTecla_(event) {
+  if (!event || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+  event.preventDefault();
+  var handle = event.currentTarget;
+  var id = String(handle && handle.getAttribute('data-soa-id') || '');
+  var index = _soaVisitasAtual.findIndex(function(item) { return String(item.idSoA || '') === id; });
+  var targetIndex = event.key === 'ArrowUp' ? index - 1 : index + 1;
+  if (index < 0 || targetIndex < 0 || targetIndex >= _soaVisitasAtual.length) return;
+  var targetId = String(_soaVisitasAtual[targetIndex].idSoA || '');
+  soaAplicarMovimento_(id, targetId, event.key === 'ArrowDown');
+  setTimeout(function() {
+    var handles = document.querySelectorAll('#pSoAList .soa-drag-handle');
+    Array.prototype.some.call(handles, function(item) {
+      if (String(item.getAttribute('data-soa-id') || '') !== id) return false;
+      item.focus();
+      return true;
+    });
+  }, 0);
+}
+
+function descartarOrdemSoAApp() {
+  var byId = {};
+  _soaVisitasAtual.forEach(function(item) { byId[String(item.idSoA || '')] = item; });
+  _soaVisitasAtual = _soaOrdemOriginalIds.map(function(id) { return byId[id]; }).filter(Boolean);
+  _soaOrdemAlterada = false;
+  renderSoAVisitas(_soaVisitasAtual, { preservarOrdemPendente: true });
+}
+
+function salvarOrdemSoAApp() {
+  if (!_soaOrdemAlterada) return;
+  var projeto = soaProjetoNomeAtual_();
+  if (!projeto) { snack('Salve o protocolo antes de ordenar o calendário SoA.'); return; }
+  var btn = document.getElementById('btnSalvarOrdemSoA');
+  var idsSoA = _soaVisitasAtual.map(function(item) { return String(item.idSoA || ''); });
+  appSetButtonBusy(btn, true);
+  appServerRun({ method: 'reordenarSoAVisitas', args: [{ projeto: projeto, idsSoA: idsSoA }], onSuccess: function(result) {
+    appSetButtonBusy(btn, false);
+    snack('✅ ' + ((result && result.msg) || 'Ordem das visitas salva.'));
+    carregarSoAVisitasProjeto(_soaProjetoAtual);
+  }, onFailure: function(e) {
+    appSetButtonBusy(btn, false);
+    snackErro(e);
+    soaAtualizarAcoesOrdem_();
+  }});
+}
+
+function soaOrdemLabel_(value) {
+  return value === '' || value === null || value === undefined || !isFinite(Number(value)) ? '—' : String(value);
+}
+
+function abrirSugestaoOrdemSoAApp() {
+  if (_soaOrdemAlterada) { snack('Salve ou descarte a ordem pendente antes de gerar outra sugestão.'); return; }
+  if (!_soaVisitasAtual || _soaVisitasAtual.length < 2) { snack('Cadastre ao menos duas visitas para sugerir uma ordem.'); return; }
+  if (_soaVisitasAtual.some(function(item) { return !isFinite(Number(item.ordemSugerida)); })) { snack('A sugestão de ordem não está disponível. Recarregue o calendário.'); return; }
+  _soaSugestaoOrdemAtual = _soaVisitasAtual.slice().sort(function(a, b) {
+    var ao = Number(a.ordemSugerida); var bo = Number(b.ordemSugerida);
+    ao = isFinite(ao) ? ao : 999999; bo = isFinite(bo) ? bo : 999999;
+    return ao - bo;
+  });
+  var mudancas = _soaSugestaoOrdemAtual.filter(function(item, index) { return !_soaVisitasAtual[index] || String(_soaVisitasAtual[index].idSoA || '') !== String(item.idSoA || ''); }).length;
+  var ambiguas = _soaSugestaoOrdemAtual.filter(function(item) { return item.ordemAmbigua === true; });
+  var summary = document.getElementById('soaOrderSuggestionSummary');
+  if (summary) summary.innerHTML = '<strong>' + _soaSugestaoOrdemAtual.length + '</strong> visitas analisadas · <strong>' + mudancas + '</strong> ' + (mudancas === 1 ? 'mudança sugerida' : 'mudanças sugeridas') + ' · <strong>' + ambiguas.length + '</strong> ' + (ambiguas.length === 1 ? 'visita para revisão' : 'visitas para revisão');
+  var motivos = [];
+  ambiguas.forEach(function(item) {
+    (item.motivosOrdem || []).forEach(function(motivo) { if (motivos.indexOf(motivo) === -1) motivos.push(motivo); });
+  });
+  var warnings = document.getElementById('soaOrderSuggestionWarnings');
+  if (warnings) warnings.innerHTML = motivos.length ? '<div class="soa-import-warning"><strong>Ambiguidades mantidas na ordem recebida:</strong><ul>' + motivos.slice(0, 8).map(function(motivo) { return '<li>' + esc(motivo) + '</li>'; }).join('') + (motivos.length > 8 ? '<li>+' + (motivos.length - 8) + ' motivo(s) adicional(is)</li>' : '') + '</ul></div>' : '';
+  var list = document.getElementById('soaOrderSuggestionList');
+  if (list) list.innerHTML = _soaSugestaoOrdemAtual.map(function(item) {
+    var ambiguousClass = item.ordemAmbigua ? ' soa-order-ambiguous' : '';
+    var reason = item.ordemAmbigua && item.motivosOrdem && item.motivosOrdem.length ? '<span class="soa-order-reason">' + esc(item.motivosOrdem[0]) + '</span>' : '';
+    return '<div class="soa-order-preview-row' + ambiguousClass + '"><div><div class="soa-order-preview-name">' + (item.codigo ? '<span class="soa-order-preview-code">' + esc(item.codigo) + '</span>' : '') + esc(item.nome) + (item.ordemAmbigua ? '<span class="soa-order-review-badge">revisar</span>' : '') + '</div>' + reason + '</div><div class="soa-order-comparison">Recebida <strong>' + esc(soaOrdemLabel_(item.ordemRecebida)) + '</strong> → sugerida <strong>' + esc(soaOrdemLabel_(item.ordemSugerida)) + '</strong></div></div>';
+  }).join('');
+  var apply = document.getElementById('btnAplicarSugestaoOrdemSoA');
+  if (apply) apply.disabled = mudancas === 0;
+  abrirOverlay('modalSoAOrdem');
+}
+
+function aplicarSugestaoOrdemSoAApp() {
+  if (!_soaSugestaoOrdemAtual.length) return;
+  var byId = {};
+  _soaVisitasAtual.forEach(function(item) { byId[String(item.idSoA || '')] = item; });
+  _soaVisitasAtual = _soaSugestaoOrdemAtual.map(function(item) { return byId[String(item.idSoA || '')]; }).filter(Boolean);
+  var idsAtuais = _soaVisitasAtual.map(function(item) { return String(item.idSoA || ''); });
+  _soaOrdemAlterada = idsAtuais.join('\n') !== _soaOrdemOriginalIds.join('\n');
+  fecharOverlay('modalSoAOrdem');
+  renderSoAVisitas(_soaVisitasAtual, { preservarOrdemPendente: true });
+  snack(_soaOrdemAlterada ? 'Sugestão aplicada à lista. Revise e salve a nova ordem.' : 'A lista já está na ordem sugerida.');
+}
+
+function soaCiclosDisponiveis_() {
+  var found = {};
+  (_soaVisitasAtual || []).forEach(function(item) {
+    (item.ciclos || []).forEach(function(cycle) { if (Number(cycle) > 0) found[Number(cycle)] = true; });
+  });
+  return Object.keys(found).map(Number).sort(function(a, b) { return a - b; });
+}
+
+function invalidarPreviaReplicacaoCiclosSoA_() {
+  _soaCyclePreviewAtual = null;
+  var confirm = document.getElementById('btnConfirmarCiclosSoA');
+  if (confirm) confirm.disabled = true;
+  var preview = document.getElementById('soaCyclePreview');
+  if (preview) preview.innerHTML = '<div class="soa-visita-empty">Parâmetros alterados. Gere uma nova prévia antes de criar as visitas.</div>';
+  appSetStatus('statusSoAReplicarCiclo', '');
+}
+
+function abrirReplicacaoCiclosSoAApp() {
+  if (_soaOrdemAlterada) { snack('Salve ou descarte a ordem pendente antes de replicar ciclos.'); return; }
+  var cycles = soaCiclosDisponiveis_();
+  if (!cycles.length) { snack('Nenhum ciclo foi reconhecido nos códigos ou nomes das visitas.'); return; }
+  var select = document.getElementById('soaCycleModelo');
+  select.innerHTML = cycles.map(function(cycle) {
+    var count = _soaVisitasAtual.filter(function(item) { return (item.ciclos || []).indexOf(cycle) !== -1; }).length;
+    return '<option value="' + cycle + '">Ciclo ' + cycle + ' · ' + count + ' visita(s)</option>';
+  }).join('');
+  select.value = cycles.indexOf(1) !== -1 ? '1' : String(cycles[0]);
+  document.getElementById('soaCycleDestinos').value = select.value === '1' ? '2–12' : '';
+  var subtitle = document.getElementById('soaCycleSubtitle');
+  if (subtitle) subtitle.textContent = soaProjetoNomeAtual_() + ' · códigos, nomes e referências remapeados';
+  _soaCyclePreviewAtual = null;
+  document.getElementById('btnConfirmarCiclosSoA').disabled = true;
+  document.getElementById('soaCyclePreview').innerHTML = '<div class="soa-visita-empty">Escolha o modelo e os destinos, depois clique em Pré-visualizar.</div>';
+  appSetStatus('statusSoAReplicarCiclo', '');
+  abrirOverlay('modalSoAReplicarCiclo');
+}
+
+function soaCyclePayload_() {
+  return {
+    projeto: soaProjetoNomeAtual_(),
+    cicloModelo: document.getElementById('soaCycleModelo').value,
+    ciclosDestino: document.getElementById('soaCycleDestinos').value.trim()
+  };
+}
+
+function soaCycleReferenceLabel_(visit, byId) {
+  var reference = String(visit.referencia || '');
+  var linked = byId[reference] || (_soaVisitasAtual || []).filter(function(item) { return String(item.idSoA || '') === reference; })[0];
+  if (linked) return (linked.codigo ? linked.codigo + ' · ' : '') + linked.nome;
+  return soaReferenciaLabel_(reference) || 'Sem referência';
+}
+
+function renderReplicacaoCiclosSoAPreview_(result) {
+  result = result || { ok: false, visitas: [], erros: ['Não foi possível gerar a prévia.'] };
+  var preview = document.getElementById('soaCyclePreview');
+  var confirm = document.getElementById('btnConfirmarCiclosSoA');
+  if (confirm) confirm.disabled = !result.podeGravar;
+  var byId = {};
+  (result.visitas || []).forEach(function(item) { byId[String(item.idSoA || '')] = item; });
+  var summary = '<div class="soa-import-summary"><strong>' + Number(result.visitasModelo || 0) + '</strong> visita(s) no modelo · <strong>' + Number(result.novas || 0) + '</strong> nova(s) · <strong>' + Number(result.existentes || 0) + '</strong> já existente(s) · <strong>' + Number(result.conflitos || 0) + '</strong> conflito(s)</div>';
+  var messages = '';
+  if (result.avisos && result.avisos.length) messages += '<div class="soa-import-warning"><strong>Preservação de diferenças existentes:</strong><ul>' + result.avisos.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
+  if (result.erros && result.erros.length) messages += '<div class="soa-import-error"><strong>Conflitos que impedem a gravação:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
+  var rows = (result.visitas || []).map(function(item) {
+    var statusLabels = { NOVA: 'nova', EXISTENTE_IGUAL: 'já existe', EXISTENTE_DIFERENTE: 'preservar existente', CONFLITO: 'conflito' };
+    var status = statusLabels[item.status] || item.status;
+    var details = [];
+    details.push('Referência: ' + soaCycleReferenceLabel_(item, byId));
+    if (item.intervaloDias !== '') details.push('D+' + item.intervaloDias);
+    if (item.janelaDiasMenos !== '' || item.janelaDiasMais !== '') details.push('janela −' + (item.janelaDiasMenos === '' ? '—' : item.janelaDiasMenos) + '/+' + (item.janelaDiasMais === '' ? '—' : item.janelaDiasMais));
+    details.push(soaBracosLabel_(item.bracoIds || []));
+    var differences = item.diferencas && item.diferencas.length ? '<span class="soa-cycle-differences">Diferenças: ' + esc(item.diferencas.join(', ')) + '</span>' : '';
+    return '<div class="soa-cycle-row soa-cycle-status-' + esc(String(item.status || '').toLowerCase()) + '"><div class="soa-cycle-number">C' + esc(item.cicloDestino) + '</div><div class="soa-cycle-main"><div class="soa-cycle-name">' + (item.codigo ? '<span class="soa-visita-code">' + esc(item.codigo) + '</span>' : '') + esc(item.nome) + '</div><div class="soa-cycle-meta">' + esc(details.join(' · ')) + '</div>' + differences + '</div><span class="soa-cycle-badge">' + esc(status) + '</span></div>';
+  }).join('');
+  preview.innerHTML = summary + messages + '<div class="soa-cycle-preview-list">' + (rows || '<div class="soa-visita-empty">Nenhuma visita encontrada.</div>') + '</div>';
+}
+
+function previsualizarReplicacaoCiclosSoAApp() {
+  var payload = soaCyclePayload_();
+  var btn = document.getElementById('btnPreviewCiclosSoA');
+  _soaCyclePreviewAtual = null;
+  document.getElementById('btnConfirmarCiclosSoA').disabled = true;
+  appSetButtonBusy(btn, true);
+  appSetStatus('statusSoAReplicarCiclo', '⏳ Analisando ciclos e visitas existentes...');
+  appServerRun({ method: 'validarReplicacaoCiclosSoA', args: [payload], onSuccess: function(result) {
+    appSetButtonBusy(btn, false);
+    _soaCyclePreviewAtual = result;
+    renderReplicacaoCiclosSoAPreview_(result);
+    appSetStatus('statusSoAReplicarCiclo', result.podeGravar ? 'Prévia pronta. Revise todas as diferenças antes de criar.' : 'Não há visitas seguras para gravar.', result.ok ? '' : '#e53935');
+  }, onFailure: function(e) {
+    appSetButtonBusy(btn, false);
+    renderReplicacaoCiclosSoAPreview_({ ok: false, podeGravar: false, visitas: [], erros: [appErrorMessage(e)] });
+    appSetStatus('statusSoAReplicarCiclo', '⚠ ' + appErrorMessage(e), '#e53935');
+  }});
+}
+
+function confirmarReplicacaoCiclosSoAApp() {
+  if (!_soaCyclePreviewAtual || !_soaCyclePreviewAtual.podeGravar) { previsualizarReplicacaoCiclosSoAApp(); return; }
+  var payload = soaCyclePayload_();
+  payload.assinaturaPrevia = _soaCyclePreviewAtual.assinaturaPrevia;
+  var btn = document.getElementById('btnConfirmarCiclosSoA');
+  appSetButtonBusy(btn, true);
+  appSetStatus('statusSoAReplicarCiclo', '⏳ Criando visitas com novos IDs...');
+  appServerRun({ method: 'criarCiclosSoAPorReplicacao', args: [payload], onSuccess: function(result) {
+    appSetButtonBusy(btn, false);
+    fecharOverlay('modalSoAReplicarCiclo');
+    snack('✅ ' + ((result && result.msg) || 'Ciclos replicados.'));
+    carregarSoAVisitasProjeto(_soaProjetoAtual);
+  }, onFailure: function(e) {
+    appSetButtonBusy(btn, false);
+    document.getElementById('btnConfirmarCiclosSoA').disabled = true;
+    _soaCyclePreviewAtual = null;
+    appSetStatus('statusSoAReplicarCiclo', '⚠ ' + appErrorMessage(e), '#e53935');
+  }});
 }
 
 function abrirSoAVisitaFormPorId(idSoA) {
@@ -4513,16 +4857,20 @@ function abrirSoAVisitaFormPorId(idSoA) {
 function carregarSoAVisitasProjeto(projeto) {
   _soaProjetoAtual = projeto || null;
   var list = document.getElementById('pSoAList');
-  var add = document.getElementById('btnAdicionarSoA');
-  var importBtn = document.getElementById('btnImportarSoA');
   var note = document.getElementById('soaProjetoNaoSalvo');
   var salvo = !!(_soaProjetoAtual && (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo));
-  if (add) add.disabled = !salvo;
-  if (importBtn) importBtn.disabled = !salvo;
   if (note) note.style.display = salvo ? 'none' : '';
   if (!salvo) { renderSoAVisitas([]); return; }
+  soaAtualizarAcoesOrdem_();
   if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando calendário SoA...</div>';
-  appServerRun({ method: 'getSoAVisitasProjeto', args: [_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo], onSuccess: renderSoAVisitas, onFailure: function(e) {
+  var projetoNome = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
+  appServerRun({ method: 'getSoAVisitasProjeto', args: [projetoNome], onSuccess: function(visitas) {
+    renderSoAVisitas(visitas);
+    appServerRun({ method: 'getModelosEstoqueSoAPorProjeto', args: [projetoNome], onSuccess: function(modelos) {
+      if (soaProjetoNomeAtual_() !== projetoNome) return;
+      aplicarModelosEstoqueNasVisitasSoA_(modelos);
+    }, onFailure: function() {} });
+  }, onFailure: function(e) {
     if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar o calendário SoA.')) + '</div>';
   }});
 }
@@ -4606,11 +4954,14 @@ function renderSoAImportPreview_(result) {
   if (result.missingBracos && result.missingBracos.length) html += '<div class="soa-import-warning"><strong>Braços novos:</strong> ' + result.missingBracos.map(esc).join(', ') + '</div>';
   if (result.alertas && result.alertas.length) html += '<div class="soa-import-warning"><strong>Alertas do documento:</strong><ul>' + result.alertas.slice(0, 8).map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + (result.alertas.length > 8 ? '<li>+' + (result.alertas.length - 8) + ' alertas adicionais</li>' : '') + '</ul></div>';
   if (result.revisaoNecessaria && result.revisaoNecessaria.length) html += '<div class="soa-import-warning"><strong>Revisão necessária:</strong> ' + result.revisaoNecessaria.length + ' item(ns) serão importados com a pendência registrada nas observações.</div>';
+  if (result.ambiguidadesOrdem && result.ambiguidadesOrdem.length) html += '<div class="soa-import-warning"><strong>Ordem de execução:</strong> ' + result.ambiguidadesOrdem.length + ' ' + (result.ambiguidadesOrdem.length === 1 ? 'ambiguidade destacada' : 'ambiguidades destacadas') + '. A ordem recebida foi mantida onde faltou critério determinístico.</div>';
   if (result.visitas && result.visitas.length) {
     var previewRows = result.visitas.slice(0, 12).map(function (visita) {
       var scope = visita.bracoNomes && visita.bracoNomes.length ? visita.bracoNomes.join(', ') : 'Todos os braços';
       var status = visita.acao === 'atualizar' ? 'Atualiza' : (visita.acao === 'ignorar' ? 'Já existe' : 'Novo');
-      return '<div class="soa-import-row"><span><strong>' + esc(visita.codigo || '') + '</strong> · ' + esc(visita.nome || '') + '</span><span>' + esc(scope) + ' · ' + esc(status) + '</span></div>';
+      var ambiguousClass = visita.ordemAmbigua ? ' soa-order-ambiguous' : '';
+      var reason = visita.ordemAmbigua && visita.motivosOrdem && visita.motivosOrdem.length ? '<span class="soa-order-reason">' + esc(visita.motivosOrdem[0]) + '</span>' : '';
+      return '<div class="soa-import-row' + ambiguousClass + '"><span><strong>' + esc(visita.codigo || '') + '</strong> · ' + esc(visita.nome || '') + (visita.ordemAmbigua ? '<span class="soa-order-review-badge">revisar</span>' : '') + reason + '</span><span>' + esc(scope) + ' · ' + esc(status) + '<span class="soa-order-comparison">Recebida <strong>' + esc(soaOrdemLabel_(visita.ordemRecebida)) + '</strong> → sugerida <strong>' + esc(soaOrdemLabel_(visita.ordemSugerida)) + '</strong></span></span></div>';
     }).join('');
     html += '<div class="soa-import-preview-list">' + previewRows + (result.visitas.length > 12 ? '<div class="soa-import-note">Mais ' + (result.visitas.length - 12) + ' visita(s) na importação.</div>' : '') + '</div>';
   }
@@ -4642,7 +4993,7 @@ var _bracosParticipanteAtual = [];
 
 function renderBracosProjeto(lista) {
   _bracosProjetoAtual = lista || [];
-  if (_soaVisitasAtual && _soaVisitasAtual.length) renderSoAVisitas(_soaVisitasAtual);
+  if (_soaVisitasAtual && _soaVisitasAtual.length) renderSoAVisitas(_soaVisitasAtual, { preservarOrdemPendente: true });
   var list = document.getElementById('pBracosProjetoList');
   if (!list) return;
   if (!_bracosProjetoAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhum braço cadastrado.</div>'; return; }
@@ -6836,8 +7187,9 @@ function abrirFormCourier(id) {
     'courierEmpresa2','courierCnpj2','courierTelefone2','courierFax2','courierConteudo',
     'courierEmail','courierEmailAmbiente','courierEmailCongelado','courierMonitorConfirmacao',
     'courierEmailConfirmacao','courierTextoConfirmacao','courierStatusConfirmacao',
-    'courierForneceGeloColeta','courierRestricaoSegunda','courierRestricaoAposFeriado','courierObservacaoOperacional'
+    'courierDisponivelProjetos','courierForneceGeloColeta','courierRestricaoSegunda','courierRestricaoAposFeriado','courierObservacaoOperacional'
   ].forEach(function(fId) { document.getElementById(fId).value = ''; });
+  document.getElementById('courierDisponivelProjetos').value = 'Sim';
   courierEditorSetHtml('');
   document.getElementById('statusCourier').textContent = '';
   document.getElementById('errCourierNome').classList.remove('visible');
@@ -6863,6 +7215,7 @@ function abrirFormCourier(id) {
       document.getElementById('courierMonitorConfirmacao').value = c.monitorConfirmacao || '';
       document.getElementById('courierEmailConfirmacao').value = c.emailConfirmacao || '';
       document.getElementById('courierTextoConfirmacao').value = c.textoConfirmacao || '';
+      document.getElementById('courierDisponivelProjetos').value = c.disponivelProjetos === false ? 'Não' : 'Sim';
       document.getElementById('courierForneceGeloColeta').value = c.forneceGeloColeta || '';
       document.getElementById('courierRestricaoSegunda').value = c.restricaoSegunda || '';
       document.getElementById('courierRestricaoAposFeriado').value = c.restricaoAposFeriado || '';
@@ -6980,6 +7333,7 @@ function salvarCourierApp() {
     emailConfirmacao: document.getElementById('courierEmailConfirmacao').value.trim(),
     textoConfirmacao: document.getElementById('courierTextoConfirmacao').value.trim(),
     statusConfirmacao: (ensureCourierStatusConfirmacaoSelect() || document.getElementById('courierStatusConfirmacao')).value.trim(),
+    disponivelProjetos: document.getElementById('courierDisponivelProjetos').value,
     forneceGeloColeta: document.getElementById('courierForneceGeloColeta').value,
     restricaoSegunda: document.getElementById('courierRestricaoSegunda').value,
     restricaoAposFeriado: document.getElementById('courierRestricaoAposFeriado').value,

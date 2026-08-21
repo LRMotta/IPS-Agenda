@@ -252,6 +252,10 @@ test('projeto oferece tres couriers opcionais por ID com finalidade de temperatu
   assert.match(server, /Situação envio de amostras/);
   assert.match(server, /out\.couriers = getAgendaCourierRows_\(\)/);
   assert.match(server, /out\.temperaturas = getAgendaTemperaturas_\(\)/);
+  assert.match(client, /c\.disponivelProjetos !== false/);
+  assert.match(client, /vínculo legado; substitua/);
+  assert.match(server, /function courierDisponivelParaProjeto_/);
+  assert.match(server, /não pode ser vinculada a projetos/);
 });
 
 test('cadastro de courier oferece regras operacionais opcionais de gelo', () => {
@@ -260,11 +264,14 @@ test('cadastro de courier oferece regras operacionais opcionais de gelo', () => 
   const server = readProjectFile('WebApp.gs');
 
   assert.match(modal, /Regras operacionais de gelo/);
+  assert.match(modal, /id="courierDisponivelProjetos"/);
   assert.match(modal, /id="courierForneceGeloColeta"/);
   assert.match(modal, /id="courierRestricaoSegunda"/);
   assert.match(modal, /id="courierRestricaoAposFeriado"/);
   assert.match(modal, /id="courierObservacaoOperacional"/);
   assert.match(client, /forneceGeloColeta: document\.getElementById\('courierForneceGeloColeta'\)\.value/);
+  assert.match(client, /disponivelProjetos: document\.getElementById\('courierDisponivelProjetos'\)\.value/);
+  assert.match(server, /Disponível para projetos/);
   assert.match(server, /Fornece gelo para coleta/);
   assert.match(server, /Restrição às segundas-feiras/);
   assert.match(server, /Restrição após feriado/);
@@ -303,6 +310,68 @@ test('SoA oferece importacao JSON, mantem cadastro manual e associa visitas a br
   assert.match(server, /function validarImportacaoSoA\(payload\)/);
   assert.match(server, /function importarSoAJson\(payload\)/);
   assert.match(server, /Bra.{0,4}os \(IDs\)/);
+});
+
+test('SoA permite reordenar visitas por arraste e teclado com salvamento explícito', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(modal, /id="btnSalvarOrdemSoA"/);
+  assert.match(modal, /id="btnDescartarOrdemSoA"/);
+  assert.match(client, /function soaDragStart_\(event\)/);
+  assert.match(client, /function soaOrdemTecla_\(event\)/);
+  assert.match(client, /method: 'reordenarSoAVisitas'/);
+  assert.match(server, /function reordenarSoAVisitas\(payload\)/);
+  assert.match(server, /'Ordem manual'/);
+});
+
+test('SoA mostra e aplica sugestão revisável com ordem recebida e sugerida', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(modal, /id="btnSugerirOrdemSoA"/);
+  assert.match(modal, /id="modalSoAOrdem"/);
+  assert.match(modal, /id="soaOrderSuggestionList"/);
+  assert.match(client, /function abrirSugestaoOrdemSoAApp\(\)/);
+  assert.match(client, /function aplicarSugestaoOrdemSoAApp\(\)/);
+  assert.match(client, /Recebida .*sugerida/);
+  assert.match(server, /function soaSugerirOrdemExecucao_\(visitas, options\)/);
+  assert.match(server, /MESMO_INTERVALO/);
+  assert.match(server, /CICLO/);
+});
+
+test('SoA replica ciclos somente após prévia e preserva visitas existentes', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(modal, /id="btnReplicarCicloSoA"/);
+  assert.match(modal, /id="modalSoAReplicarCiclo"/);
+  assert.match(modal, /id="soaCycleModelo"/);
+  assert.match(modal, /id="soaCycleDestinos"/);
+  assert.match(modal, /id="soaCyclePreview"/);
+  assert.match(client, /function previsualizarReplicacaoCiclosSoAApp\(\)/);
+  assert.match(client, /function confirmarReplicacaoCiclosSoAApp\(\)/);
+  assert.match(client, /method: 'validarReplicacaoCiclosSoA'/);
+  assert.match(client, /method: 'criarCiclosSoAPorReplicacao'/);
+  assert.match(client, /assinaturaPrevia/);
+  assert.match(server, /function soaPrepareCycleReplication_\(payload\)/);
+  assert.match(server, /function validarReplicacaoCiclosSoA\(payload\)/);
+  assert.match(server, /function criarCiclosSoAPorReplicacao\(payload\)/);
+  assert.match(server, /Visitas já existentes não serão alteradas|serão preservadas sem alteração/);
+});
+
+test('SoA exibe modelos de Kit e Bulk Supply por visita e laboratório', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  const estoque = readProjectFile('IndexEstoqueScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(client, /function soaModelosEstoqueHtml_\(modelos\)/);
+  assert.match(client, /method: 'getModelosEstoqueSoAPorProjeto'/);
+  assert.match(client, /modelo\.laboratorio/);
+  assert.match(client, /modelo\.bracosAplicaveisIds/);
+  assert.match(client, /todos os braços/);
+  assert.match(estoque, /Visitas SoA aplicáveis/);
+  assert.match(server, /function estoqueTipoPermiteVinculoSoA_\(tipo\)/);
+  assert.match(server, /function getModelosEstoqueSoAPorProjeto\(projeto\)/);
 });
 
 test('tabela de participantes exibe nome e codigo do projeto como no cadastro de projetos', () => {

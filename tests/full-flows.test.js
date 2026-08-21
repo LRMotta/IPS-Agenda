@@ -14,7 +14,7 @@ function between(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
-function cadastroContext(spreadsheet, projectOptions) {
+function cadastroContext(spreadsheet, projectOptions, courierRows) {
   const web = readProjectFile('WebApp.gs');
   const source = readProjectFile('CadastroRules.gs') + '\n' +
     between(web, 'function participanteCampoKey_', 'function salvarDadosParticipante(') + '\n' +
@@ -27,6 +27,11 @@ function cadastroContext(spreadsheet, projectOptions) {
     clearTransporteOptionsCache_: () => { counters.transportCache++; },
     clearCodexRuntimeCaches_: () => { counters.cache++; },
     getProjetosParticipantesOptions_: () => projectOptions || [],
+    getAgendaCourierRows_: () => courierRows || [
+      { id: 'COU-1', nome: 'Courier 1', disponivelProjetos: true },
+      { id: 'COU-MARKEN', nome: 'Marken', disponivelProjetos: true },
+      { id: 'COU-DHL', nome: 'DHL', disponivelProjetos: true }
+    ],
     getAgendaTemperaturas_: () => ['Ambiente', 'Refrigerado', 'Congelado'],
     normText_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
     Date
@@ -163,6 +168,29 @@ test('projeto rejeita courier repetida e temperatura sem courier antes de escrev
   assert.equal(temperatureSheet.writes, 0);
 });
 
+test('projeto rejeita etapa operacional e permite apenas preservar vinculo legado no mesmo campo', () => {
+  const pinexAgendamento = [{ id: 'COU-PINEX-AG', nome: 'Pinex (Agendamento)', disponivelProjetos: false }];
+  const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }), null, pinexAgendamento);
+  const payload = Object.assign({}, validProject, { courierPrincipalId: 'COU-PINEX-AG' });
+
+  assert.throws(() => context.salvarDadosProjeto(payload), /não pode ser vinculada a projetos/);
+  assert.equal(sheet.writes, 0);
+  assert.doesNotThrow(() => context.validarProjetoCourierIds_(payload, {
+    legadosPorCampo: { courierPrincipalId: 'COU-PINEX-AG' }
+  }));
+  assert.doesNotThrow(() => context.validarProjetoCourierIds_(Object.assign({}, validProject, {
+    courierPrincipalId: 'COU-EXCLUIDA'
+  }), {
+    legadosPorCampo: { courierPrincipalId: 'COU-EXCLUIDA' }
+  }));
+  assert.throws(() => context.validarProjetoCourierIds_(Object.assign({}, validProject, {
+    courierAdicional1Id: 'COU-PINEX-AG'
+  }), {
+    legadosPorCampo: { courierPrincipalId: 'COU-PINEX-AG' }
+  }), /não pode ser vinculada a projetos/);
+});
+
 test('projeto registra explicitamente ausencia de envio sem exigir couriers', () => {
   const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
@@ -193,16 +221,26 @@ test('courier grava regras operacionais em cabecalhos opcionais sem exigir migra
   const context = courierContext(sheet);
 
   assert.equal(context.salvarCourier({
-    id: 'COU-1', nome: 'Marken', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim',
+    id: 'COU-1', nome: 'Marken', disponivelProjetos: 'Não', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim',
     restricaoAposFeriado: 'Sim', observacaoOperacional: 'Confirmar disponibilidade.'
   }), 'Courier atualizada com sucesso.');
 
   const atualizados = sheet.rows[0];
   const row = sheet.rows[1];
+  assert.equal(row[atualizados.indexOf('Disponível para projetos')], 'Não');
   assert.equal(row[atualizados.indexOf('Fornece gelo para coleta')], 'Sim');
   assert.equal(row[atualizados.indexOf('Restrição às segundas-feiras')], 'Sim');
   assert.equal(row[atualizados.indexOf('Restrição após feriado')], 'Sim');
   assert.equal(row[atualizados.indexOf('Observação operacional')], 'Confirmar disponibilidade.');
+});
+
+test('classificador de courier usa metadado e normaliza o padrao da etapa Pinex', () => {
+  const context = courierContext(new FakeSheet('Courier', [['ID_Courier', 'Courier']]));
+
+  assert.equal(context.courierDisponivelParaProjeto_({ nome: 'Pinex' }), true);
+  assert.equal(context.courierDisponivelParaProjeto_({ nome: '  PINEX (AGENDAMENTO)  ' }), false);
+  assert.equal(context.courierDisponivelParaProjeto_({ nome: 'Pinex (Agendamento)', disponivelProjetos: 'Sim' }), true);
+  assert.equal(context.courierDisponivelParaProjeto_({ nome: 'Marken', disponivelProjetos: 'Não' }), false);
 });
 
 test('cliente legado atualiza courier sem criar colunas operacionais', () => {
