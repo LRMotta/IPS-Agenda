@@ -6219,6 +6219,17 @@ function estoqueTipoPermiteVinculoSoA_(tipo) {
   return normalizado.indexOf('kit') >= 0 || normalizado.indexOf('bulk') >= 0;
 }
 
+function estoqueOrdenarVisitasSoAPorProjeto_(visitas, ids) {
+  var ordemPorId = {};
+  (visitas || []).forEach(function(visita, index) {
+    var id = String(visita && visita.idSoA || '').trim();
+    if (id) ordemPorId[id] = index;
+  });
+  return soaUniqueIds_(ids).sort(function(a, b) {
+    return ordemPorId[a] - ordemPorId[b];
+  });
+}
+
 function getModelosEstoqueSoAPorProjeto(projeto) {
   var projetoNorm = normText_(projeto);
   if (!projetoNorm) return [];
@@ -6259,6 +6270,7 @@ function salvarItemEstoque(payload) {
     ? soaUniqueIds_(payload.visitasAplicaveisIds) : null;
   var bracosAplicaveisIds = Object.prototype.hasOwnProperty.call(payload, 'bracosAplicaveisIds')
     ? soaUniqueIds_(payload.bracosAplicaveisIds) : null;
+  var visitasProjeto = null;
   if (bracosAplicaveisIds && bracosAplicaveisIds.length) {
     if (!estoqueTipoPermiteVinculoSoA_(payload.tipo)) {
       throw new Error('Somente modelos de Kit ou Bulk Supply podem ser específicos por braço.');
@@ -6277,7 +6289,7 @@ function salvarItemEstoque(payload) {
     if (!estoqueTipoPermiteVinculoSoA_(payload.tipo)) {
       throw new Error('Somente modelos de Kit ou Bulk Supply podem ser vinculados a visitas.');
     }
-    var visitasProjeto = getSoAVisitasProjeto(payload.projeto);
+    visitasProjeto = getSoAVisitasProjeto(payload.projeto);
     var idsProjeto = {};
     visitasProjeto.forEach(function(visita) {
       if (visita.idSoA) idsProjeto[String(visita.idSoA)] = true;
@@ -6286,6 +6298,7 @@ function salvarItemEstoque(payload) {
     if (idsInvalidos.length) {
       throw new Error('Uma ou mais visitas selecionadas não pertencem ao projeto informado. Atualize o cadastro e tente novamente.');
     }
+    visitasAplicaveisIds = estoqueOrdenarVisitasSoAPorProjeto_(visitasProjeto, visitasAplicaveisIds);
   }
 
   if (!sheet) {
@@ -10212,6 +10225,111 @@ function calcularIdadeAgenda_(valor) {
 
 function agendaDateFromValue_(valor) {
   return parseAgendaDateAny_(valor);
+}
+
+function getJornadaParticipante(payload) {
+  payload = payload || {};
+  var nome = String(payload.nome || '').trim();
+  var participanteId = String(payload.idParticipante || '').trim();
+  var projeto = String(payload.projeto || '').trim();
+  if (!nome || !projeto) throw new Error('Informe o participante e o projeto para consultar a jornada.');
+  var projetoNorm = normText_(projeto);
+  var participanteNorm = normText_(nome);
+  var participanteIdNorm = normText_(participanteId);
+  var agenda = getAgendaSheetForRead_();
+  var eventos = [];
+  if (agenda && agenda.getLastRow() >= 2) {
+    var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+    rows.forEach(function(row) {
+      var idx = AGENDA_CFG.idx;
+      if (!AgendaServerRules_.isVisit(row[idx.tipo])) return;
+      var mesmoParticipante = participanteIdNorm && normText_(row[idx.idParticipante]) === participanteIdNorm;
+      if (!mesmoParticipante) mesmoParticipante = normText_(row[idx.participante]) === participanteNorm;
+      if (!mesmoParticipante || normText_(row[idx.projeto]) !== projetoNorm) return;
+      var data = agendaDateFromValue_(row[idx.data]);
+      if (!data || isNaN(data.getTime())) return;
+      eventos.push({
+        id: String(row[idx.id] || ''), visita: String(row[idx.visita] || '').trim(), data: data,
+        dataIso: formatarDataIsoAgenda_(data), dataLabel: formatarDataSafe(row[idx.data]),
+        status: String(row[idx.status] || ''), concluida: AgendaServerRules_.isCompleted(row[idx.status]),
+        cancelada: AgendaServerRules_.isCancelled(row[idx.status])
+      });
+    });
+  }
+  eventos.sort(function(a, b) { return a.data.getTime() - b.data.getTime(); });
+  var visitas = getSoAVisitasProjeto(projeto);
+  var porId = {};
+  visitas.forEach(function(visita) { porId[String(visita.idSoA || '')] = visita; });
+  function eventoParaVisita(visita) {
+    var labels = [visita.nome, visita.codigo].concat(visita.aliases || []).map(normText_).filter(Boolean);
+    return eventos.filter(function(evento) { return labels.indexOf(normText_(evento.visita)) >= 0; })
+      .sort(function(a, b) { return Number(b.concluida) - Number(a.concluida) || b.data.getTime() - a.data.getTime(); })[0] || null;
+  }
+  var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  var jornadaPorId = {};
+  visitas.forEach(function(visita) {
+    var evento = eventoParaVisita(visita);
+    var dataAlvo = evento && !evento.cancelada ? new Date(evento.data.getTime()) : null;
+    if (!dataAlvo && visita.referencia && porId[visita.referencia] && jornadaPorId[visita.referencia] && jornadaPorId[visita.referencia].dataAlvoObj) {
+      dataAlvo = new Date(jornadaPorId[visita.referencia].dataAlvoObj.getTime());
+      dataAlvo.setDate(dataAlvo.getDate() + (Number(visita.intervaloDias) || 0));
+    }
+    var janelaInicio = null, janelaFim = null;
+    if (dataAlvo) {
+      janelaInicio = new Date(dataAlvo.getTime()); janelaInicio.setDate(janelaInicio.getDate() + (Number(visita.janelaDiasMenos) || 0));
+      janelaFim = new Date(dataAlvo.getTime()); janelaFim.setDate(janelaFim.getDate() + (Number(visita.janelaDiasMais) || 0));
+    }
+    var estado = evento && evento.concluida ? 'REALIZADA' : evento && !evento.cancelada ? 'AGENDADA' : dataAlvo ? 'PREVISTA' : 'A_PROGRAMAR';
+    jornadaPorId[visita.idSoA] = {
+      idSoA: visita.idSoA, codigo: visita.codigo, nome: visita.nome, ordem: visita.ordem,
+      estado: estado, agendaId: evento && evento.id || '', dataAlvo: dataAlvo ? formatarDataSafe(dataAlvo) : '',
+      dataAlvoIso: dataAlvo ? formatarDataIsoAgenda_(dataAlvo) : '', dataAlvoObj: dataAlvo,
+      janelaInicio: janelaInicio ? formatarDataSafe(janelaInicio) : '', janelaFim: janelaFim ? formatarDataSafe(janelaFim) : '',
+      emJanela: !!(janelaInicio && janelaFim && hoje >= janelaInicio && hoje <= janelaFim),
+      atrasada: !!(janelaFim && hoje > janelaFim && estado !== 'REALIZADA'),
+      referencia: visita.referencia || '', intervaloDias: visita.intervaloDias
+    };
+  });
+  var bracos = getBracosProjeto(projeto);
+  var braco = bracos.filter(function(item) { return normText_(item.nome) === normText_(payload.braco); })[0] || {};
+  var modelos = getModelosEstoqueSoAPorProjeto(projeto).filter(function(modelo) {
+    return !modelo.bracosAplicaveisIds.length || modelo.bracosAplicaveisIds.indexOf(braco.idBraco) >= 0;
+  });
+  var reservas = getKitReservasLinhas_().filter(function(reserva) {
+    var mesmoId = participanteIdNorm && normText_(reserva.participanteId) === participanteIdNorm;
+    return (mesmoId || normText_(reserva.participante) === participanteNorm) && normText_(reserva.projeto) === projetoNorm && normText_(reserva.status) !== 'cancelado';
+  });
+  var estoque = getEstoque();
+  Object.keys(jornadaPorId).forEach(function(idSoA) {
+    var visita = jornadaPorId[idSoA];
+    if (visita.estado !== 'REALIZADA') {
+      var modelosVisita = modelos.filter(function(modelo) { return modelo.visitasAplicaveisIds.indexOf(idSoA) >= 0; });
+      visita.kits = modelosVisita.map(function(modelo) {
+      var reserva = reservas.filter(function(item) { return String(item.idItem || '') === String(modelo.idItem || '') && normText_(item.visitaPrevista) === normText_(visita.nome); })[0] || null;
+      var dataAlvo = visita.dataAlvoObj;
+      var lotes = estoque.filter(function(item) { return String(item.idItem || '') === String(modelo.idItem || '') && Number(item.qtdeDisponivel) > 0; });
+      var estoqueValido = !dataAlvo || lotes.some(function(lote) { var validade = agendaDateFromValue_(lote.validade); return validade && validade >= dataAlvo; });
+      var validadeReserva = reserva && agendaDateFromValue_(reserva.validade);
+      var reservaValida = !!(reserva && (!dataAlvo || (validadeReserva && validadeReserva >= dataAlvo)));
+      var pedidos = lotes.map(function(lote) { return String(lote.numeroPedido || '').trim(); }).filter(Boolean);
+      return {
+        idItem: modelo.idItem, descricao: modelo.descricao, tipo: modelo.tipo, laboratorio: modelo.laboratorio,
+        reservado: !!reserva, lote: reserva && reserva.idLote || '', validade: reserva && reserva.validade || '',
+        reservaValida: reserva ? reservaValida : null, estoqueDisponivel: estoqueValido,
+        pedidoAberto: pedidos[0] || '', risco: reserva ? !reservaValida : !estoqueValido
+      };
+      });
+    } else {
+      visita.kits = [];
+    }
+    delete visita.dataAlvoObj;
+  });
+  var historicoLivre = eventos.filter(function(evento) { return !evento.cancelada && !eventos.some(function(outro) { return outro !== evento && outro.id === evento.id; }); });
+  return {
+    participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
+    possuiSoA: visitas.length > 0, visitas: visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }),
+    eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida }; })
+  };
 }
 
 function agendaDateIsBeforeToday_(valor) {

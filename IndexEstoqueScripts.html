@@ -1205,7 +1205,7 @@
           '<div class="table-card"><table class="data-table" id="eiTable" style="min-width:820px"><thead id="eiHead"></thead><tbody id="eiBody"><tr class="loading-row"><td><div class="spinner"></div>Carregando...</td></tr></tbody></table></div>' +
         '</div>' +
         '<div class="modal-overlay" id="modalItemInline" onclick="fecharModalSeClicouFora(event,&quot;modalItemInline&quot;)">' +
-          '<div class="modal-box" style="max-width:700px">' +
+          '<div class="modal-box" style="max-width:980px;width:min(980px,calc(100vw - 32px))">' +
             '<div class="modal-header">' +
               '<div class="modal-header-icon"><span class="material-symbols-outlined">inventory</span></div>' +
               '<div><div class="modal-header-title">NOVO ITEM DE ESTOQUE</div><div class="modal-header-sub">Cadastro de item para pedidos e controle de estoque</div></div>' +
@@ -2868,6 +2868,18 @@
       .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
   }
 
+  function ordenarVisitasSoAItemInline(visitas) {
+    return (visitas || []).slice().sort(function(a, b) {
+      var aSemOrdem = !a || a.ordem === '' || a.ordem === null || a.ordem === undefined || !isFinite(Number(a.ordem));
+      var bSemOrdem = !b || b.ordem === '' || b.ordem === null || b.ordem === undefined || !isFinite(Number(b.ordem));
+      var ao = aSemOrdem ? Infinity : Number(a.ordem);
+      var bo = bSemOrdem ? Infinity : Number(b.ordem);
+      if (aSemOrdem !== bSemOrdem) return aSemOrdem ? 1 : -1;
+      if (!aSemOrdem && ao !== bo) return ao - bo;
+      return String(a && a.nome || '').localeCompare(String(b && b.nome || ''), 'pt-BR', { sensitivity: 'base' });
+    });
+  }
+
   function bracosSelecionadosItemInline() {
     return Array.prototype.slice.call(document.querySelectorAll('#iiBracosLista input[type="checkbox"]:checked'))
       .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
@@ -2894,7 +2906,7 @@
     google.script.run
       .withSuccessHandler(function(visitas) {
         if (requestId !== _itemInlineVisitasRequest || projeto !== String(document.getElementById('iiProjeto').value || '').trim()) return;
-        visitas = (visitas || []).filter(function(visita) { return visita && visita.idSoA; });
+        visitas = ordenarVisitasSoAItemInline((visitas || []).filter(function(visita) { return visita && visita.idSoA; }));
         if (!visitas.length) {
           lista.innerHTML = '<div class="item-visitas-empty">Este projeto ainda não possui visitas cadastradas. O item poderá ser salvo normalmente.</div>';
           return;

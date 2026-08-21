@@ -2877,6 +2877,8 @@ function renderTabelaPart(lista) {
       +'<td>'+chipStatus(p.status||'—')+'</td>'
       +'<td style="color:#5f6b7c;">'+participanteUltimaVisitaCellHtml(p)+'</td>'
       +'<td style="text-align:right;"><div class="action-btns">'
+      +'<button class="icon-btn" title="Linha do tempo e prontidão" data-record-action="journey" data-record-index="'+idx+'">'
+      +'<span class="material-symbols-outlined">timeline</span></button>'
       +'<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="'+idx+'">'
       +'<span class="material-symbols-outlined">edit</span></button>'
       +'<button class="icon-btn del" title="Excluir" data-record-action="delete" data-record-index="'+idx+'">'
@@ -2905,6 +2907,7 @@ function renderTabelaPart(lista) {
     });
   });
   bindTableRecordActions(tb, lista, {
+    journey: function(item) { abrirJornadaParticipante(item); },
     edit: function(item) { abrirFormPart(item); },
     delete: function(item) { confirmarExcluirPart(item.id, item.nome || ''); }
   });
@@ -3966,6 +3969,62 @@ function preencherSelectProjeto(id, valores, selected, placeholder) {
       return '<option value="' + esc(v) + '">' + esc(label) + '</option>';
     }).join('');
   el.value = selected || '';
+}
+
+function jornadaParticipanteOverlay_() {
+  var overlay = document.getElementById('modalJornadaParticipante');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'modalJornadaParticipante';
+  overlay.className = 'modal-overlay';
+  overlay.setAttribute('onclick', "fecharModalSeClicouFora(event, 'modalJornadaParticipante')");
+  overlay.innerHTML = '<div class="modal-box" style="max-width:1240px;width:min(1240px,calc(100vw - 28px));max-height:92vh">'
+    + '<div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined">timeline</span></div><div><div class="modal-header-title">JORNADA DO PARTICIPANTE</div><div class="modal-header-sub" id="jornadaParticipanteSubtitulo">Histórico, próximas visitas e prontidão operacional</div></div><button class="modal-close" onclick="fecharOverlay(\'modalJornadaParticipante\')"><span class="material-symbols-outlined">close</span></button></div>'
+    + '<div class="modal-body" id="jornadaParticipanteConteudo" style="padding:20px;overflow:auto"></div></div>';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function jornadaParticipanteHtml_(dados) {
+  var visitas = dados.visitas || [];
+  function estado(visita) {
+    var mapa = { REALIZADA: ['Concluída', '#137333'], AGENDADA: ['Agendada', '#1266f1'], PREVISTA: ['Prevista', '#6c7a91'], A_PROGRAMAR: ['A programar', '#6c7a91'] };
+    var item = mapa[visita.estado] || mapa.A_PROGRAMAR;
+    if (visita.atrasada) item = ['Fora da janela', '#b3261e']; else if (visita.emJanela) item = ['Em janela', '#e65100'];
+    return '<span style="display:inline-block;border:1px solid ' + item[1] + ';color:' + item[1] + ';border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700">' + esc(item[0]) + '</span>';
+  }
+  function kits(visita) {
+    if (!visita.kits || !visita.kits.length) return '<div style="color:#7b8794;font-size:12px">Nenhum modelo de Kit/Bulk vinculado.</div>';
+    return visita.kits.map(function(kit) {
+      var sinal = kit.risco ? '#b3261e' : (kit.reservado ? '#137333' : '#e65100');
+      var reserva = kit.reservado ? 'Lote ' + (kit.lote || '—') + (kit.validade ? ' · validade ' + kit.validade : '') : 'Sem reserva';
+      var cobertura = kit.reservado ? (kit.reservaValida ? 'Validade cobre a visita' : 'Validade insuficiente') : (kit.estoqueDisponivel ? 'Estoque disponível hoje' : 'Sem estoque compatível');
+      return '<div style="border-top:1px solid #e5ebf5;padding:9px 0"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div style="font-size:12px;color:#5f6b7c;margin-top:3px">' + esc(reserva) + ' · <span style="color:' + sinal + ';font-weight:700">' + esc(cobertura) + '</span>' + (kit.pedidoAberto ? ' · Pedido aberto ' + esc(kit.pedidoAberto) : '') + '</div></div>';
+    }).join('');
+  }
+  var timeline = visitas.map(function(visita) {
+    return '<div style="min-width:168px;flex:1;border-left:3px solid ' + (visita.atrasada ? '#b3261e' : visita.estado === 'REALIZADA' ? '#137333' : '#1266f1') + ';padding:10px 12px;background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(30,60,100,.08)"><strong>' + esc((visita.codigo ? visita.codigo + ' · ' : '') + visita.nome) + '</strong><div style="margin:7px 0">' + estado(visita) + '</div><div style="font-size:12px;color:#5f6b7c">Data alvo: ' + esc(visita.dataAlvo || 'A programar') + '</div>' + (visita.janelaInicio ? '<div style="font-size:12px;color:#1266f1;margin-top:4px">Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) + '</div>' : '') + '</div>';
+  }).join('');
+  var operacao = visitas.filter(function(visita) { return visita.estado !== 'REALIZADA'; }).slice(0, 4).map(function(visita) {
+    return '<section style="border:1px solid #dbe6f6;border-left:4px solid ' + (visita.atrasada ? '#b3261e' : visita.emJanela ? '#e65100' : '#1266f1') + ';border-radius:8px;padding:12px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:10px"><strong>' + esc(visita.nome) + '</strong>' + estado(visita) + '</div><div style="font-size:12px;color:#5f6b7c;margin:5px 0 8px">' + esc(visita.dataAlvo || 'Sem data calculável') + (visita.janelaInicio ? ' · Janela ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) : '') + '</div>' + kits(visita) + '</section>';
+  }).join('') || '<div style="color:#7b8794">Nenhuma visita futura identificada.</div>';
+  if (!dados.possuiSoA) timeline = '<div style="color:#7b8794;padding:18px 0">Este projeto não possui SoA. O histórico abaixo permanece disponível e as visitas futuras podem ser acompanhadas quando forem agendadas.</div>';
+  return '<div style="display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:22px"><div><h3 style="margin:0 0 8px;color:#183b6b">Histórico e próximas visitas</h3><p style="margin:0 0 14px;color:#64748b;font-size:13px">A previsão é informativa; não cria agendamentos nem reservas.</p><div style="display:flex;gap:10px;overflow:auto;padding:6px 2px 14px">' + timeline + '</div><h3 style="margin:12px 0 8px;color:#183b6b">Visitas registradas</h3><div style="font-size:13px;color:#5f6b7c">' + ((dados.eventosLivres || []).map(function(evento) { return '<div style="padding:7px 0;border-top:1px solid #edf1f7"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + '</div>'; }).join('') || 'Nenhuma visita registrada.') + '</div></div><aside style="background:#f8fbff;border-left:1px solid #dbe6f6;padding:16px;border-radius:8px"><h3 style="margin:0 0 5px;color:#183b6b">Prontidão operacional</h3><p style="margin:0 0 12px;color:#64748b;font-size:12px">Fotografia atual de reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+}
+
+function abrirJornadaParticipante(participante) {
+  participante = participante || {};
+  var overlay = jornadaParticipanteOverlay_();
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  var subtitle = document.getElementById('jornadaParticipanteSubtitulo');
+  if (subtitle) subtitle.textContent = (participante.nome || 'Participante') + ' · ' + (participante.projeto || 'Projeto');
+  content.innerHTML = '<div style="padding:34px;text-align:center;color:#64748b"><div class="spinner"></div>Carregando jornada…</div>';
+  abrirOverlay('modalJornadaParticipante');
+  appServerRun({ method: 'getJornadaParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
+    content.innerHTML = jornadaParticipanteHtml_(dados || {});
+  }, onFailure: function(e) {
+    content.innerHTML = '<div style="color:#b3261e">Não foi possível carregar a jornada: ' + esc(appErrorMessage(e)) + '</div>';
+  } });
 }
 
 function projetoCourierSelectIds_() {
