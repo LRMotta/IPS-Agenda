@@ -298,7 +298,7 @@
       <button class="modal-close" onclick="fecharOverlay('modalSoAReplicarCiclo')"><span class="material-symbols-outlined">close</span></button>
     </div>
     <div class="modal-body">
-      <div class="soa-import-note"><span class="material-symbols-outlined">verified_user</span><div><strong>Cópia segura e revisável</strong><span>Códigos, nomes e referências internas são remapeados. Braços, janelas e intervalos são preservados. Visitas já existentes não serão alteradas.</span></div></div>
+      <div class="soa-import-note"><span class="material-symbols-outlined">verified_user</span><div><strong>Cópia segura e revisável</strong><span>Códigos, nomes e referências são remapeados. Braços, janelas e intervalos são preservados. Os vínculos de Kit e Bulk Supply da visita-modelo são copiados para as novas visitas. Visitas já existentes não serão alteradas.</span></div></div>
       <div class="field-row cols-2 soa-cycle-controls" style="margin-bottom:14px;">
         <div><label class="field-label" for="soaCycleModelo">Ciclo-modelo</label><select id="soaCycleModelo" class="f-input" onchange="invalidarPreviaReplicacaoCiclosSoA_()"></select></div>
         <div><label class="field-label" for="soaCycleDestinos">Ciclos de destino</label><input type="text" id="soaCycleDestinos" class="f-input" placeholder="Ex: 2–12" inputmode="numeric" oninput="invalidarPreviaReplicacaoCiclosSoA_()"><div class="field-help">Aceita intervalos e listas, como 2–12, 15, 18.</div></div>

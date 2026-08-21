@@ -3711,6 +3711,8 @@ function soaPrepareCycleReplication_(payload) {
   if (!model.length) throw new Error('O Ciclo ' + sourceCycle + ' não possui visitas reconhecíveis para replicar.');
   var modelById = {};
   model.forEach(function(visit) { modelById[String(visit.idSoA || '')] = visit; });
+  var existingById = {};
+  existing.forEach(function(visit) { if (visit.idSoA) existingById[String(visit.idSoA)] = visit; });
   var maxOrder = existing.reduce(function(max, visit) {
     var order = Number(visit.ordem);
     return isFinite(order) ? Math.max(max, order) : max;
@@ -3719,9 +3721,10 @@ function soaPrepareCycleReplication_(payload) {
   var warnings = [];
   var errors = [];
   var nextOrder = maxOrder;
+  var plansByTarget = {};
 
   targetCycles.forEach(function(targetCycle) {
-    var plans = model.map(function(sourceVisit, index) {
+    plansByTarget[targetCycle] = model.map(function(sourceVisit, index) {
       var code = soaCycleReplaceText_(sourceVisit.codigo, sourceCycle, targetCycle);
       var name = soaCycleReplaceText_(sourceVisit.nome, sourceCycle, targetCycle);
       var arms = soaUniqueIds_(sourceVisit.bracoIds);
@@ -3745,12 +3748,59 @@ function soaPrepareCycleReplication_(payload) {
         provisionalId: '__NOVO_C' + targetCycle + '_' + String(sourceVisit.idSoA || index)
       };
     });
+  });
+
+  function planTargetId_(plan) {
+    return plan.existente ? plan.existente.idSoA : plan.provisionalId;
+  }
+
+  function resolveShiftedReference_(sourceVisit, targetCycle, idMap) {
+    var referenceId = String(sourceVisit.referencia || '');
+    if (modelById[referenceId]) return idMap[referenceId];
+    var referenceVisit = existingById[referenceId];
+    if (!referenceVisit) return referenceId;
+    var referenceCycles = soaCycleNumbersFromVisit_(referenceVisit);
+    if (!referenceCycles.length) return referenceId;
+    if (referenceCycles.length !== 1) {
+      errors.push('A referência de ' + (sourceVisit.codigo || sourceVisit.nome) + ' contém mais de um ciclo e não pode ser remapeada automaticamente.');
+      return referenceId;
+    }
+    var shiftedCycle = referenceCycles[0] + (targetCycle - sourceCycle);
+    if (shiftedCycle < 1) {
+      errors.push('A referência de ' + (sourceVisit.codigo || sourceVisit.nome) + ' resultaria em um ciclo inválido no destino ' + targetCycle + '.');
+      return referenceId;
+    }
+    var shiftedCode = soaCycleReplaceText_(referenceVisit.codigo, referenceCycles[0], shiftedCycle);
+    var shiftedName = soaCycleReplaceText_(referenceVisit.nome, referenceCycles[0], shiftedCycle);
+    var armSignature = soaArmSignature_(referenceVisit.bracoIds);
+    var matches = [];
+    existing.forEach(function(candidate) {
+      var sameKey = shiftedCode ? normText_(candidate.codigo) === normText_(shiftedCode) : normText_(candidate.nome) === normText_(shiftedName);
+      if (sameKey && soaArmSignature_(candidate.bracoIds) === armSignature) matches.push(String(candidate.idSoA || ''));
+    });
+    Object.keys(plansByTarget).forEach(function(cycle) {
+      plansByTarget[cycle].forEach(function(plan) {
+        var sameKey = shiftedCode ? normText_(plan.codigo) === normText_(shiftedCode) : normText_(plan.nome) === normText_(shiftedName);
+        if (sameKey && soaArmSignature_(plan.bracoIds) === armSignature) matches.push(String(planTargetId_(plan) || ''));
+      });
+    });
+    matches = soaUniqueIds_(matches);
+    if (matches.length === 1) return matches[0];
+    var targetLabel = shiftedCode || shiftedName || ('Ciclo ' + shiftedCycle);
+    errors.push(matches.length
+      ? 'A referência deslocada ' + targetLabel + ' é ambígua e precisa ser revisada.'
+      : 'A referência deslocada ' + targetLabel + ' não foi encontrada; revise o ciclo antes de criar as visitas.');
+    return referenceId;
+  }
+
+  targetCycles.forEach(function(targetCycle) {
+    var plans = plansByTarget[targetCycle];
     var idMap = {};
-    plans.forEach(function(plan) { idMap[String(plan.source.idSoA || '')] = plan.existente ? plan.existente.idSoA : plan.provisionalId; });
+    plans.forEach(function(plan) { idMap[String(plan.source.idSoA || '')] = planTargetId_(plan); });
     var targetExisting = 0;
     plans.forEach(function(plan) {
       var sourceVisit = plan.source;
-      var reference = modelById[String(sourceVisit.referencia || '')] ? idMap[String(sourceVisit.referencia || '')] : String(sourceVisit.referencia || '');
+      var reference = resolveShiftedReference_(sourceVisit, targetCycle, idMap);
       var draft = {
         idSoA: plan.existente ? plan.existente.idSoA : plan.provisionalId,
         projeto: projeto,
@@ -3803,10 +3853,33 @@ function soaPrepareCycleReplication_(payload) {
   });
 
   var newVisits = generated.filter(function(visit) { return visit.status === 'NOVA'; });
-  var signatureData = generated.map(function(visit) {
-    return [visit.cicloDestino, visit.origemIdSoA, visit.codigo, visit.nome, visit.referencia, visit.status, visit.existenteIdSoA || '', soaCycleComparable_(visit)];
+  var stockItems = getItensEstoque().itens.filter(function(item) {
+    return normText_(item.projeto) === normText_(projeto) && estoqueTipoPermiteVinculoSoA_(item.tipo);
   });
-  var signature = JSON.stringify([projeto, sourceCycle, targetCycles, signatureData]);
+  var stockLinkPlans = [];
+  stockItems.forEach(function(item) {
+    var sourceIds = {};
+    soaUniqueIds_(item.visitasAplicaveisIds).forEach(function(id) { sourceIds[id] = true; });
+    var targetVisits = newVisits.filter(function(visit) { return sourceIds[String(visit.origemIdSoA || '')]; });
+    if (!targetVisits.length) return;
+    stockLinkPlans.push({
+      rowNumber: Number(item.id),
+      idItem: item.idItem,
+      descricao: item.descricao,
+      tipo: item.tipo,
+      visitasAtuaisIds: soaUniqueIds_(item.visitasAplicaveisIds),
+      destinosProvisoriosIds: targetVisits.map(function(visit) { return visit.idSoA; })
+    });
+    targetVisits.forEach(function(visit) {
+      visit.modelosEstoqueReplicados = Number(visit.modelosEstoqueReplicados || 0) + 1;
+    });
+  });
+  var stockLinkCount = stockLinkPlans.reduce(function(total, plan) { return total + plan.destinosProvisoriosIds.length; }, 0);
+  var signatureData = generated.map(function(visit) {
+    return [visit.cicloDestino, visit.origemIdSoA, visit.codigo, visit.nome, visit.referencia, visit.status, visit.existenteIdSoA || '', visit.modelosEstoqueReplicados || 0, soaCycleComparable_(visit)];
+  });
+  var stockSignature = stockLinkPlans.map(function(plan) { return [plan.rowNumber, plan.idItem, plan.visitasAtuaisIds, plan.destinosProvisoriosIds]; });
+  var signature = JSON.stringify([projeto, sourceCycle, targetCycles, signatureData, stockSignature]);
   return {
     ok: errors.length === 0,
     podeGravar: errors.length === 0 && newVisits.length > 0,
@@ -3818,6 +3891,9 @@ function soaPrepareCycleReplication_(payload) {
     novas: newVisits.length,
     existentes: generated.filter(function(visit) { return visit.status.indexOf('EXISTENTE_') === 0; }).length,
     conflitos: generated.filter(function(visit) { return visit.status === 'CONFLITO'; }).length,
+    modelosEstoque: stockLinkPlans.length,
+    novosVinculosEstoque: stockLinkCount,
+    vinculosEstoque: stockLinkPlans,
     avisos: warnings,
     erros: errors,
     assinaturaPrevia: signature
@@ -3842,6 +3918,20 @@ function criarCiclosSoAPorReplicacao(payload) {
     var headers = soaEnsureHeaders_(sheet);
     var map = soaHeaderMap_(headers);
     var newVisits = prepared.visitas.filter(function(visit) { return visit.status === 'NOVA'; });
+    var estoqueSheet = null;
+    var estoqueVisitasCol = -1;
+    if (prepared.novosVinculosEstoque) {
+      estoqueSheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
+      if (!estoqueSheet || estoqueSheet.getLastRow() < 2) throw new Error('O cadastro de itens mudou desde a prévia. Gere uma nova prévia antes de gravar.');
+      var estoqueHeaders = estoqueSheet.getRange(1, 1, 1, estoqueSheet.getLastColumn()).getValues()[0];
+      estoqueVisitasCol = getItensEstoqueColumnMap_(estoqueHeaders).visitasAplicaveis;
+      if (estoqueVisitasCol < 0) throw new Error('A coluna de visitas aplicáveis dos itens não foi encontrada.');
+      prepared.vinculosEstoque.forEach(function(plan) {
+        if (!isFinite(plan.rowNumber) || plan.rowNumber < 2 || plan.rowNumber > estoqueSheet.getLastRow()) {
+          throw new Error('O cadastro de itens mudou desde a prévia. Gere uma nova prévia antes de gravar.');
+        }
+      });
+    }
     var realIds = {};
     newVisits.forEach(function(visit) { realIds[visit.idSoA] = 'SOA-' + gerarIdLoteEstoque_(); });
     var rows = newVisits.map(function(visit) {
@@ -3868,7 +3958,19 @@ function criarCiclosSoAPorReplicacao(payload) {
       return row;
     });
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
-    return { ok: true, msg: rows.length + ' visita(s) criada(s) por replicação.', criadas: rows.length, preservadas: prepared.existentes };
+    prepared.vinculosEstoque.forEach(function(plan) {
+      var destinosReais = plan.destinosProvisoriosIds.map(function(id) { return realIds[id] || id; });
+      var finalIds = soaUniqueIds_(plan.visitasAtuaisIds.concat(destinosReais));
+      estoqueSheet.getRange(plan.rowNumber, estoqueVisitasCol + 1).setValue(finalIds.join('; '));
+    });
+    if (prepared.novosVinculosEstoque) CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return {
+      ok: true,
+      msg: rows.length + ' visita(s) criada(s) por replicação e ' + prepared.novosVinculosEstoque + ' vínculo(s) de estoque copiado(s).',
+      criadas: rows.length,
+      preservadas: prepared.existentes,
+      vinculosEstoqueCriados: prepared.novosVinculosEstoque
+    };
   });
 }
 

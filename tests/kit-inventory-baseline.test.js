@@ -291,6 +291,71 @@ test('fase SoA: replicação bloqueia código existente com braços diferentes e
   assert.throws(() => server.criarCiclosSoAPorReplicacao({ projeto: 'Estudo A', cicloModelo: 1, ciclosDestino: '3', assinaturaPrevia: cleanPreview.assinaturaPrevia }), /mudou desde a prévia/);
 });
 
+test('fase SoA: replicação encadeia referência externa ao ciclo-modelo entre os ciclos de destino', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)'],
+    ['SOA-C44D1', 'Estudo A', 'C44D1', 'Dia 1 do Ciclo 44', 44, '', 28, '', 'Sim', '', 'SOA-C43D1', 7, 7, 'BR-A'],
+    ['SOA-C45D1', 'Estudo A', 'C45D1', 'Dia 1 do Ciclo 45', 45, '', 28, '', 'Sim', '', 'SOA-C44D1', 7, 7, 'BR-A']
+  ]);
+  const itens = new FakeSheet('Itens', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Detalhes Visita / Complemento', 'Tipo de item', 'Localização padrão', 'Estoque mínimo', 'Observações', 'Laboratório', 'Status', 'Visitas aplicáveis (IDs SoA)', 'Braços aplicáveis (IDs)'],
+    ['KIT-A', 'Estudo A', 'Kit do ciclo', '', 'Kit', 'Sala A', 0, '', 'Lab A', 'Ativo', 'SOA-C45D1', 'BR-A'],
+    ['BULK-A', 'Estudo A', 'Bulk do ciclo', '', 'Bulk Supply', 'Sala A', 0, '', 'Lab B', 'Ativo', 'SOA-C45D1', 'BR-A'],
+    ['MAT-A', 'Estudo A', 'Material comum', '', 'Material', 'Sala A', 0, '', 'Lab A', 'Ativo', 'SOA-C45D1', 'BR-A']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa, Itens: itens });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
+    Utilities: { getUuid: (() => { let id = 0; return () => `NOVO-${++id}`; })() }
+  });
+  server.getProjetosAtivosEstoque_ = () => [];
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const payload = { projeto: 'Estudo A', cicloModelo: 45, ciclosDestino: '46–50' };
+  const preview = server.validarReplicacaoCiclosSoA(payload);
+  const previewByCode = Object.fromEntries(Array.from(preview.visitas, item => [item.codigo, item]));
+
+  assert.equal(preview.ok, true);
+  assert.equal(preview.novas, 5);
+  assert.equal(preview.modelosEstoque, 2);
+  assert.equal(preview.novosVinculosEstoque, 10);
+  assert.equal(previewByCode.C46D1.modelosEstoqueReplicados, 2);
+  assert.equal(previewByCode.C46D1.referencia, 'SOA-C45D1');
+  assert.equal(previewByCode.C47D1.referencia, previewByCode.C46D1.idSoA);
+  assert.equal(previewByCode.C48D1.referencia, previewByCode.C47D1.idSoA);
+  assert.equal(previewByCode.C49D1.referencia, previewByCode.C48D1.idSoA);
+  assert.equal(previewByCode.C50D1.referencia, previewByCode.C49D1.idSoA);
+
+  const result = server.criarCiclosSoAPorReplicacao({ ...payload, assinaturaPrevia: preview.assinaturaPrevia });
+  const savedByCode = Object.fromEntries(Array.from(server.getSoAVisitasProjeto('Estudo A'), item => [item.codigo, item]));
+  assert.equal(result.vinculosEstoqueCriados, 10);
+  assert.equal(savedByCode.C46D1.referencia, savedByCode.C45D1.idSoA);
+  assert.equal(savedByCode.C47D1.referencia, savedByCode.C46D1.idSoA);
+  assert.equal(savedByCode.C48D1.referencia, savedByCode.C47D1.idSoA);
+  assert.equal(savedByCode.C49D1.referencia, savedByCode.C48D1.idSoA);
+  assert.equal(savedByCode.C50D1.referencia, savedByCode.C49D1.idSoA);
+  const visitasCol = itens.rows[0].indexOf('Visitas aplicáveis (IDs SoA)');
+  const expectedLinkedIds = ['SOA-C45D1', savedByCode.C46D1.idSoA, savedByCode.C47D1.idSoA, savedByCode.C48D1.idSoA, savedByCode.C49D1.idSoA, savedByCode.C50D1.idSoA];
+  assert.deepEqual(String(itens.rows[1][visitasCol]).split('; '), expectedLinkedIds);
+  assert.deepEqual(String(itens.rows[2][visitasCol]).split('; '), expectedLinkedIds);
+  assert.equal(itens.rows[3][visitasCol], 'SOA-C45D1');
+});
+
+test('fase SoA: replicação bloqueia referência deslocada que não existe', () => {
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)'],
+    ['SOA-C40D1', 'Estudo A', 'C40D1', 'Dia 1 do Ciclo 40', 40, '', 28, '', 'Sim', '', 'RANDOMIZACAO'],
+    ['SOA-C45D1', 'Estudo A', 'C45D1', 'Dia 1 do Ciclo 45', 45, '', 28, '', 'Sim', '', 'SOA-C40D1']
+  ]);
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => new FakeSpreadsheet({ SoA_Visitas: soa }) } });
+  const preview = server.validarReplicacaoCiclosSoA({ projeto: 'Estudo A', cicloModelo: 45, ciclosDestino: '46' });
+
+  assert.equal(preview.ok, false);
+  assert.equal(preview.podeGravar, false);
+  assert.match(preview.erros[0], /referência deslocada C41D1 não foi encontrada/);
+});
+
 test('fase SoA: replicação não cria chave cega quando o ciclo aparece somente em campo auxiliar', () => {
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],
