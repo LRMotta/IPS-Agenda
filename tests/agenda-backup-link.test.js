@@ -118,7 +118,11 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
 
   assert.equal(pendencias.counts.transporteBackupNaoAgendado, 1);
   assert.equal(pendencias.transporteBackupNaoAgendado.length, 1);
-  assert.match(readProjectFile('IndexPendenciasScripts.html'), /key: 'transporteBackupNaoAgendado',[\s\S]*?action: pendenciaAgendaAction/);
+  const pendenciasClient = readProjectFile('IndexPendenciasScripts.html');
+  const backupCardIndex = pendenciasClient.indexOf("key: 'transporteBackupNaoAgendado'");
+  assert.match(pendenciasClient, /key: 'transporteBackupNaoAgendado',[\s\S]*?action: pendenciaAgendaAction/);
+  assert.ok(backupCardIndex > pendenciasClient.indexOf("key: 'kitsVencendo'"));
+  assert.equal(pendenciasClient.lastIndexOf("key: '"), backupCardIndex);
   assert.deepEqual(JSON.parse(JSON.stringify(pendencias.transporteBackupNaoAgendado[0])), {
     agendaId: 'EVT-BACKUP-PENDENTE',
     data: '2099-01-15',
