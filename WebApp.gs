@@ -10269,6 +10269,22 @@ function jornadaCalcularJanelaVisita_(dataIdeal, janelaDiasMenos, janelaDiasMais
   return { inicio: inicio, fim: fim };
 }
 
+// A Agenda IPS passou a ser a fonte operacional em 2026. Quando já existe uma
+// visita do participante registrada a partir desse marco, não devemos trazer
+// etapas anteriores do SoA para a linha do tempo ou para a prontidão: elas não
+// foram migradas e fariam a operação começar novamente pela Triagem.
+function jornadaVisitasDesdeInicioOperacional_(visitas) {
+  visitas = Array.isArray(visitas) ? visitas : [];
+  var primeiroRegistroIps = -1;
+  for (var i = 0; i < visitas.length; i++) {
+    if (visitas[i] && visitas[i].temEventoIPS) {
+      primeiroRegistroIps = i;
+      break;
+    }
+  }
+  return primeiroRegistroIps >= 0 ? visitas.slice(primeiroRegistroIps) : visitas;
+}
+
 function getJornadaParticipante(payload) {
   payload = payload || {};
   var nome = String(payload.nome || '').trim();
@@ -10327,6 +10343,7 @@ function getJornadaParticipante(payload) {
       idSoA: visita.idSoA, codigo: visita.codigo, nome: visita.nome, ordem: visita.ordem,
       estado: estado, agendaId: evento && evento.id || '', dataAlvo: dataAlvo ? formatarDataSafe(dataAlvo) : '',
       dataAlvoIso: dataAlvo ? formatarDataIsoAgenda_(dataAlvo) : '', dataAlvoObj: dataAlvo,
+      temEventoIPS: !!evento,
       janelaInicio: janelaInicio ? formatarDataSafe(janelaInicio) : '', janelaFim: janelaFim ? formatarDataSafe(janelaFim) : '',
       emJanela: !!(janelaInicio && janelaFim && hoje >= janelaInicio && hoje <= janelaFim),
       atrasada: !!(janelaFim && hoje > janelaFim && estado !== 'REALIZADA'),
@@ -10343,10 +10360,10 @@ function getJornadaParticipante(payload) {
     return (mesmoId || normText_(reserva.participante) === participanteNorm) && normText_(reserva.projeto) === projetoNorm && normText_(reserva.status) !== 'cancelado';
   });
   var estoque = getEstoque();
-  Object.keys(jornadaPorId).forEach(function(idSoA) {
-    var visita = jornadaPorId[idSoA];
+  var visitasJornada = jornadaVisitasDesdeInicioOperacional_(visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }));
+  visitasJornada.forEach(function(visita) {
     if (visita.estado !== 'REALIZADA') {
-      var modelosVisita = modelos.filter(function(modelo) { return modelo.visitasAplicaveisIds.indexOf(idSoA) >= 0; });
+      var modelosVisita = modelos.filter(function(modelo) { return modelo.visitasAplicaveisIds.indexOf(visita.idSoA) >= 0; });
       visita.kits = modelosVisita.map(function(modelo) {
       var reserva = reservas.filter(function(item) { return String(item.idItem || '') === String(modelo.idItem || '') && normText_(item.visitaPrevista) === normText_(visita.nome); })[0] || null;
       var dataAlvo = visita.dataAlvoObj;
@@ -10366,12 +10383,13 @@ function getJornadaParticipante(payload) {
       visita.kits = [];
     }
     delete visita.dataAlvoObj;
+    delete visita.temEventoIPS;
   });
   var historicoLivre = eventos.filter(function(evento) { return !evento.cancelada && !eventos.some(function(outro) { return outro !== evento && outro.id === evento.id; }); });
   var conciliacao = agendaSoAMontarConcilicaoVisitas_(eventos, visitas);
   return {
     participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
-    possuiSoA: visitas.length > 0, visitas: visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }),
+    possuiSoA: visitas.length > 0, visitas: visitasJornada,
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
     eventosAnteriores: eventosAnteriores.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
     conciliacao: conciliacao

@@ -377,6 +377,7 @@ test('jornada do participante abre em janela sob demanda e combina SoA, Agenda e
   assert.match(server, /getSoAVisitasProjeto\(projeto\)/);
   assert.match(server, /getKitReservasLinhas_\(\)/);
   assert.match(server, /getEstoque\(\)/);
+  assert.match(server, /visitasAplicaveisIds\.indexOf\(visita\.idSoA\)/);
 });
 
 test('jornada do participante calcula e exibe a janela em torno da data ideal', () => {
@@ -401,6 +402,22 @@ test('jornada do participante calcula e exibe a janela em torno da data ideal', 
 
   assert.match(html, /jornada-step-date">10\/fev\.\/2027/);
   assert.match(html, /Janela: 03\/fev\.\/2027 – 17\/fev\.\/2027/);
+});
+
+test('jornada inicia na primeira visita registrada pelo IPS e não reinicia a prontidão em etapas históricas', () => {
+  const server = runFile('WebApp.gs');
+  const visitas = server.jornadaVisitasDesdeInicioOperacional_([
+    { idSoA: 'TRIAGEM', nome: 'Visita de Triagem', temEventoIPS: false },
+    { idSoA: 'C1D1', nome: 'Dia 1 do Ciclo 1', temEventoIPS: false },
+    { idSoA: 'C39D1', nome: 'Dia 1 do Ciclo 39', temEventoIPS: true },
+    { idSoA: 'C40D1', nome: 'Dia 1 do Ciclo 40', temEventoIPS: true },
+    { idSoA: 'C41D1', nome: 'Dia 1 do Ciclo 41', temEventoIPS: false }
+  ]);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(visitas.map(visita => visita.idSoA))), ['C39D1', 'C40D1', 'C41D1']);
+  assert.deepEqual(JSON.parse(JSON.stringify(server.jornadaVisitasDesdeInicioOperacional_([
+    { idSoA: 'TRIAGEM', temEventoIPS: false }, { idSoA: 'C1D1', temEventoIPS: false }
+  ]).map(visita => visita.idSoA))), ['TRIAGEM', 'C1D1']);
 });
 
 test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agenda', () => {
