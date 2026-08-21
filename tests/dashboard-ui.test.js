@@ -2,7 +2,95 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readProjectFile } = require('./helpers/load-app-script');
+const vm = require('node:vm');
+const { readProjectFile, runFile } = require('./helpers/load-app-script');
+
+function sourceBetween(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(start, -1, startMarker);
+  assert.notEqual(end, -1, endMarker);
+  return source.slice(start, end);
+}
+
+test('servidor classifica status de projeto uma unica vez com normalizacao', () => {
+  const server = runFile('WebApp.gs');
+  const casos = [
+    ['Cancelado', 'cancelado'],
+    ['  CANCELADA  ', 'cancelado'],
+    ['Projeto cancelado', 'cancelado'],
+    ['Concluído', 'concluido'],
+    ['Concluída', 'concluido'],
+    ['Projeto concluido', 'concluido'],
+    ['Recrutamento Aberto', 'ativo'],
+    ['Em Acompanhamento', 'ativo'],
+    ['', 'ativo']
+  ];
+
+  casos.forEach(([status, esperado]) => {
+    assert.equal(server.classificarProjetoStatus_(status), esperado, status);
+  });
+});
+
+test('projetos, Dashboard e Estoque consomem a classificacao canonica do servidor', () => {
+  const server = runFile('WebApp.gs');
+  const rows = [
+    ['ID', 'Nome', 'Código', '', '', '', '', '', '', '', '', '', '', 'Status'],
+    ['1', 'Ativo', '', '', '', '', '', '', '', '', '', '', '', 'Em Acompanhamento'],
+    ['2', 'Cancelado', '', '', '', '', '', '', '', '', '', '', '', 'Cancelada'],
+    ['3', 'Concluído', '', '', '', '', '', '', '', '', '', '', '', 'Concluída']
+  ];
+  server.getCodexSheetDataByName_ = () => rows;
+  server.getParticipantesStatsPorProjeto_ = () => ({});
+  server.getProjetosSivPorProjeto_ = () => ({});
+  server.projetoCourierColumnMap_ = () => ({ principal: -1, adicional1: -1, adicional2: -1 });
+  server.projetoCourierTemperatureColumnMap_ = () => ({ principal: -1, adicional1: -1, adicional2: -1 });
+  server.projetoSituacaoEnvioColumn_ = () => -1;
+
+  const projetos = Array.from(server.getProjetos());
+  assert.deepEqual(projetos.map((p) => p.classificacaoStatus), ['ativo', 'cancelado', 'concluido']);
+  assert.deepEqual(Array.from(server.getProjetosAtivosEstoque_()), ['Ativo']);
+
+  const dashboard = readProjectFile('IndexDashboard.html');
+  const core = readProjectFile('IndexCoreScripts.html');
+  const webApp = readProjectFile('WebApp.gs');
+  assert.match(webApp, /classificacaoStatus: str\(p\.classificacaoStatus\)/);
+  assert.match(core, /filter\(projetoEstaAtivo_\)/);
+  assert.match(core, /classificacao === 'cancelado'/);
+  assert.match(core, /projetoStatusChip\(p\)/);
+  assert.match(dashboard, /proj\.filter\(projetoEstaAtivo_\)/);
+  assert.doesNotMatch(dashboard, /function _isProjetoAtivoDash/);
+  assert.doesNotMatch(core, /function dashboardProjetoAtivo_/);
+});
+
+test('resumo de Projetos exclui cancelados de todos os indicadores ativos', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const rulesBlock = sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(');
+  const renderBlock = sourceBetween(core, 'function renderProjetos(', 'function filtrarProjetos(');
+  const elements = {};
+  ['projTotal', 'projFases', 'projEsps', 'projRecrutamento', 'projRecrutamentoPct', 'projConcluidos'].forEach((id) => {
+    elements[id] = { textContent: '' };
+  });
+  const context = vm.createContext({
+    document: { getElementById: (id) => elements[id] },
+    filtrarProjetos: () => {},
+    applyDashboardPendingFilter_: () => {}
+  });
+  vm.runInContext(rulesBlock + renderBlock, context);
+
+  context.renderProjetos([
+    { classificacaoStatus: 'ativo', especialidade: 'Oncologia', participantesAtivos: 2, metaRecrutamento: 5, totalParticipantes: 3, falhasTriagem: 1 },
+    { classificacaoStatus: 'ativo', especialidade: 'Cardiologia', participantesAtivos: 1, metaRecrutamento: 4, totalParticipantes: 2, falhasTriagem: 0 },
+    { classificacaoStatus: 'cancelado', especialidade: 'Nefrologia', participantesAtivos: 50, metaRecrutamento: 60, totalParticipantes: 70, falhasTriagem: 8 },
+    { classificacaoStatus: 'concluido', especialidade: 'Hematologia', participantesAtivos: 40, metaRecrutamento: 50, totalParticipantes: 60, falhasTriagem: 7 }
+  ]);
+
+  assert.equal(elements.projTotal.textContent, 4);
+  assert.equal(elements.projFases.textContent, 2);
+  assert.equal(elements.projConcluidos.textContent, 1);
+  assert.equal(elements.projRecrutamento.textContent, '3 pacientes ativo(s)');
+  assert.equal(elements.projRecrutamentoPct.textContent, 'Meta 9 | Total 5 | Falhas 1');
+});
 
 test('rankings de patrocinador e investigador exibem os 15 principais resultados', () => {
   const dashboard = readProjectFile('IndexDashboard.html');

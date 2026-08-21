@@ -3233,6 +3233,13 @@ function getMedicoFormConfig() {
   };
 }
 
+function classificarProjetoStatus_(status) {
+  var normalizado = normText_(status);
+  if (normalizado.indexOf('concluid') >= 0) return 'concluido';
+  if (normalizado.indexOf('cancelad') >= 0) return 'cancelado';
+  return 'ativo';
+}
+
 function getProjetos() {
   var dados = getCodexSheetDataByName_('Projetos');
   if (!dados.length) return [];
@@ -3257,6 +3264,7 @@ function getProjetos() {
     var falhasTriagem = (statsNome.falhasTriagem || 0) + (statsCodigo.falhasTriagem || 0);
     var totalParticipantes = (statsNome.total || 0) + (statsCodigo.total || 0);
     var meta = Number(r[12] || 0);
+    var classificacaoStatus = classificarProjetoStatus_(r[13]);
     lista.push({
       id:            String(r[0]),
       nomeAbreviado: nomeProjeto,
@@ -3276,6 +3284,7 @@ function getProjetos() {
       totalParticipantes: totalParticipantes,
       percentualRecrutamento: meta > 0 ? Math.round((ativos * 1000) / meta) / 10 : '',
       status:        r[13] || '',
+      classificacaoStatus: classificacaoStatus,
       numeroCE:      r[14] || '',
       expedienteCE:  r[15] || '',
       tituloCompleto:r[16] || '',
@@ -3300,7 +3309,8 @@ function getProjetos() {
 var SOA_VISITAS_HEADERS_ = [
   'ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita',
   'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações',
-  'Referência (após)', 'Janela dias menos', 'Janela dias mais', 'Braços (IDs)'
+  'Referência (após)', 'Janela dias menos', 'Janela dias mais', 'Braços (IDs)',
+  'Ordem manual'
 ];
 
 function soaHeaderIndex_(headerMap, names, fallback) {
@@ -3335,6 +3345,189 @@ function soaUniqueIds_(values) {
 
 function soaArmSignature_(ids) {
   return soaUniqueIds_(ids).sort().join('|');
+}
+
+function soaOrdemManual_(value) {
+  return value === true || normText_(value) === 'sim';
+}
+
+function soaSugerirOrdemExecucao_(visitas, options) {
+  options = options || {};
+  var referenciasConhecidas = {};
+  (options.referenciasConhecidas || []).forEach(function(id) { referenciasConhecidas[String(id || '').trim()] = true; });
+  var especiais = {
+    INCLUSAO: 'inicio', RANDOMIZACAO: 'inicio',
+    ULTIMA_DOSE: 'terminal', PROGRESSAO_DOENCA: 'terminal',
+    OUTRA: 'outra'
+  };
+  var ambiguidades = [];
+  var ambiguidadeKeys = {};
+  var nodes = (visitas || []).map(function(visita, index) {
+    var id = String(visita && visita.idSoA || '').trim() || ('__SOA_ORDEM_' + index);
+    var ordem = visita && visita.ordem;
+    var ordemNumero = ordem === '' || ordem === null || ordem === undefined ? null : Number(ordem);
+    var intervalo = visita && visita.intervaloDias;
+    var intervaloNumero = intervalo === '' || intervalo === null || intervalo === undefined ? null : Number(intervalo);
+    return {
+      id: id,
+      visita: visita || {},
+      index: index,
+      ordemRecebida: ordemNumero !== null && isFinite(ordemNumero) ? ordemNumero : '',
+      prioridadeRecebida: ordemNumero !== null && isFinite(ordemNumero) ? ordemNumero : 1000000 + index,
+      intervalo: intervaloNumero !== null && isFinite(intervaloNumero) ? intervaloNumero : null,
+      referencia: String(visita && visita.referencia || '').trim(),
+      saidas: {},
+      entrada: 0,
+      motivos: []
+    };
+  });
+  var byId = {};
+  nodes.forEach(function(node) { byId[node.id] = node; });
+
+  function addAmbiguidade(tipo, mensagem, affected) {
+    var ids = (affected || []).map(function(node) { return node.id; }).sort();
+    var key = tipo + '|' + ids.join('|') + '|' + mensagem;
+    if (ambiguidadeKeys[key]) return;
+    ambiguidadeKeys[key] = true;
+    ambiguidades.push({ tipo: tipo, mensagem: mensagem, idsSoA: ids });
+    (affected || []).forEach(function(node) {
+      if (node.motivos.indexOf(mensagem) === -1) node.motivos.push(mensagem);
+    });
+  }
+
+  function addEdge(from, to) {
+    if (!from || !to || from.id === to.id || from.saidas[to.id]) return;
+    from.saidas[to.id] = true;
+    to.entrada++;
+  }
+
+  nodes.forEach(function(node) {
+    var referencia = node.referencia;
+    if (byId[referencia]) {
+      addEdge(byId[referencia], node);
+      return;
+    }
+    if (!referencia) {
+      addAmbiguidade('SEM_REFERENCIA', 'Sem referência explícita; a posição recebida foi mantida como desempate.', [node]);
+    } else if (referencia === 'VISITA_ANTERIOR') {
+      addAmbiguidade('VISITA_ANTERIOR', '“Visita anterior” depende da ordem recebida e precisa de revisão.', [node]);
+    } else if (referencia === 'OUTRA') {
+      addAmbiguidade('REFERENCIA_ESPECIAL', 'A referência especial “Outra” não determina uma posição de execução.', [node]);
+    } else if (!especiais[referencia]) {
+      if (referenciasConhecidas[referencia]) {
+        addAmbiguidade('REFERENCIA_FORA_PREVIA', 'A referência já existe fora desta prévia; a posição relativa foi mantida.', [node]);
+      } else {
+        addAmbiguidade('REFERENCIA_AUSENTE', 'A referência ' + referencia + ' não está disponível para ordenar esta visita.', [node]);
+      }
+    }
+  });
+
+  var siblings = {};
+  nodes.forEach(function(node) {
+    if (!node.referencia) return;
+    if (!siblings[node.referencia]) siblings[node.referencia] = [];
+    siblings[node.referencia].push(node);
+  });
+  Object.keys(siblings).forEach(function(referencia) {
+    var group = siblings[referencia];
+    if (group.length < 2 || referencia === 'VISITA_ANTERIOR' || referencia === 'OUTRA') return;
+    var withInterval = group.filter(function(node) { return node.intervalo !== null; });
+    var withoutInterval = group.filter(function(node) { return node.intervalo === null; });
+    if (withoutInterval.length) {
+      addAmbiguidade('INTERVALO_AUSENTE', 'Há visitas com a mesma referência sem intervalo; a posição recebida foi mantida entre elas.', withoutInterval);
+    }
+    var byInterval = {};
+    withInterval.forEach(function(node) {
+      var key = String(node.intervalo);
+      if (!byInterval[key]) byInterval[key] = [];
+      byInterval[key].push(node);
+    });
+    var intervals = Object.keys(byInterval).map(Number).sort(function(a, b) { return a - b; });
+    intervals.forEach(function(interval) {
+      if (byInterval[String(interval)].length > 1) {
+        addAmbiguidade('MESMO_INTERVALO', 'Visitas com a mesma referência e o mesmo intervalo não têm sequência determinística.', byInterval[String(interval)]);
+      }
+    });
+    for (var intervalIndex = 0; intervalIndex < intervals.length - 1; intervalIndex++) {
+      var current = byInterval[String(intervals[intervalIndex])];
+      var next = byInterval[String(intervals[intervalIndex + 1])];
+      current.forEach(function(from) { next.forEach(function(to) { addEdge(from, to); }); });
+    }
+  });
+
+  var rootCache = {};
+  function specialRoot(node, stack) {
+    if (rootCache[node.id] !== undefined) return rootCache[node.id];
+    stack = stack || {};
+    if (stack[node.id]) return '';
+    stack[node.id] = true;
+    if (especiais[node.referencia]) {
+      rootCache[node.id] = node.referencia;
+    } else if (byId[node.referencia]) {
+      rootCache[node.id] = specialRoot(byId[node.referencia], stack);
+    } else {
+      rootCache[node.id] = '';
+    }
+    delete stack[node.id];
+    return rootCache[node.id];
+  }
+  var inicio = [];
+  var terminal = [];
+  var terminaisPorRaiz = {};
+  nodes.forEach(function(node) {
+    var root = specialRoot(node, {});
+    if (root === 'INCLUSAO' || root === 'RANDOMIZACAO') inicio.push(node);
+    if (root === 'ULTIMA_DOSE' || root === 'PROGRESSAO_DOENCA') {
+      terminal.push(node);
+      if (!terminaisPorRaiz[root]) terminaisPorRaiz[root] = [];
+      terminaisPorRaiz[root].push(node);
+    }
+  });
+  inicio.forEach(function(from) { terminal.forEach(function(to) { addEdge(from, to); }); });
+  if (terminaisPorRaiz.ULTIMA_DOSE && terminaisPorRaiz.PROGRESSAO_DOENCA) {
+    addAmbiguidade('FASES_TERMINAIS', 'Última dose e progressão da doença são marcos alternativos; a sequência entre esses grupos precisa de revisão.', terminaisPorRaiz.ULTIMA_DOSE.concat(terminaisPorRaiz.PROGRESSAO_DOENCA));
+  }
+
+  function compareReceived(a, b) {
+    return a.prioridadeRecebida - b.prioridadeRecebida || a.index - b.index;
+  }
+  var queue = nodes.filter(function(node) { return node.entrada === 0; }).sort(compareReceived);
+  var ordered = [];
+  while (queue.length) {
+    var currentNode = queue.shift();
+    ordered.push(currentNode);
+    Object.keys(currentNode.saidas).forEach(function(targetId) {
+      var target = byId[targetId];
+      target.entrada--;
+      if (target.entrada === 0) {
+        queue.push(target);
+        queue.sort(compareReceived);
+      }
+    });
+  }
+  if (ordered.length < nodes.length) {
+    var remaining = nodes.filter(function(node) { return ordered.indexOf(node) === -1; }).sort(compareReceived);
+    addAmbiguidade('CICLO', 'Há um ciclo de referências; essas visitas permaneceram na ordem recebida.', remaining);
+    ordered = ordered.concat(remaining);
+  }
+  var suggestedById = {};
+  ordered.forEach(function(node, index) { suggestedById[node.id] = index + 1; });
+  var detalhes = nodes.map(function(node) {
+    return {
+      idSoA: node.id,
+      ordemRecebida: node.ordemRecebida,
+      ordemSugerida: suggestedById[node.id],
+      ordemAmbigua: node.motivos.length > 0,
+      motivosOrdem: node.motivos.slice()
+    };
+  });
+  var receivedSequence = nodes.slice().sort(compareReceived);
+  return {
+    idsSoA: ordered.map(function(node) { return node.id; }),
+    visitas: detalhes,
+    ambiguidades: ambiguidades,
+    mudancas: ordered.filter(function(node, index) { return !receivedSequence[index] || receivedSequence[index].id !== node.id; }).length
+  };
 }
 
 function soaEnsureHeaders_(sheet) {
@@ -3384,9 +3577,10 @@ function getSoAVisitasProjeto(projeto) {
     referencia: soaHeaderIndex_(map, ['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], 10),
     janelaMenos: soaHeaderIndex_(map, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], 11),
     janelaMais: soaHeaderIndex_(map, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], 12),
-    bracos: soaHeaderIndex_(map, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], 13)
+    bracos: soaHeaderIndex_(map, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], 13),
+    ordemManual: soaHeaderIndex_(map, ['Ordem manual'], 14)
   };
-  return rows.slice(1).map(function(row) {
+  var visitas = rows.slice(1).map(function(row) {
     var aliases = String(row[c.aliases] || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean);
     var ordemRaw = row[c.ordem];
     var intervaloRaw = row[c.intervalo];
@@ -3406,7 +3600,8 @@ function getSoAVisitasProjeto(projeto) {
       referencia: String(row[c.referencia] || '').trim(),
       janelaDiasMenos: janelaMenosRaw === '' || janelaMenosRaw === null || janelaMenosRaw === undefined ? '' : Number(janelaMenosRaw),
       janelaDiasMais: janelaMaisRaw === '' || janelaMaisRaw === null || janelaMaisRaw === undefined ? '' : Number(janelaMaisRaw),
-      bracoIds: soaUniqueIds_(row[c.bracos])
+      bracoIds: soaUniqueIds_(row[c.bracos]),
+      ordemManual: soaOrdemManual_(row[c.ordemManual])
     };
   }).filter(function(item) {
     return item.nome && normText_(item.projeto) === projetoNorm;
@@ -3414,6 +3609,266 @@ function getSoAVisitasProjeto(projeto) {
     var ao = a.ordem === '' || !isFinite(a.ordem) ? 999999 : a.ordem;
     var bo = b.ordem === '' || !isFinite(b.ordem) ? 999999 : b.ordem;
     return ao - bo || a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+  });
+  var sugestao = soaSugerirOrdemExecucao_(visitas);
+  var sugestaoPorId = {};
+  sugestao.visitas.forEach(function(item) { sugestaoPorId[item.idSoA] = item; });
+  visitas.forEach(function(item) {
+    var ordem = sugestaoPorId[item.idSoA] || {};
+    item.ordemRecebida = ordem.ordemRecebida;
+    item.ordemSugerida = ordem.ordemSugerida;
+    item.ordemAmbigua = ordem.ordemAmbigua === true;
+    item.motivosOrdem = ordem.motivosOrdem || [];
+    item.ciclos = soaCycleNumbersFromVisit_(item);
+  });
+  return visitas;
+}
+
+function soaCycleNumbersFromText_(value) {
+  var text = String(value || '');
+  var found = {};
+  var numbers = [];
+  function collect(regex) {
+    var match;
+    while ((match = regex.exec(text)) !== null) {
+      var number = Number(match[1]);
+      if (!isFinite(number) || number < 1 || Math.floor(number) !== number || found[number]) continue;
+      found[number] = true;
+      numbers.push(number);
+    }
+  }
+  collect(/\b(?:ciclo|cycle)\s*0*(\d+)\b/gi);
+  collect(/\bC0*(\d+)D\d+\b/gi);
+  return numbers.sort(function(a, b) { return a - b; });
+}
+
+function soaCycleNumbersFromVisit_(visit) {
+  var found = {};
+  var values = [visit && visit.codigo, visit && visit.nome, visit && visit.repeticao].concat(visit && visit.aliases || []);
+  values.forEach(function(value) {
+    soaCycleNumbersFromText_(value).forEach(function(number) { found[number] = true; });
+  });
+  return Object.keys(found).map(Number).sort(function(a, b) { return a - b; });
+}
+
+function soaCycleReplaceText_(value, sourceCycle, targetCycle) {
+  var text = String(value || '');
+  var source = String(Number(sourceCycle));
+  var target = String(Number(targetCycle));
+  var escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  text = text.replace(new RegExp('\\b(Ciclo\\s*)0*' + escaped + '\\b', 'gi'), function(_match, prefix) { return prefix + target; });
+  text = text.replace(new RegExp('\\b(Cycle\\s*)0*' + escaped + '\\b', 'gi'), function(_match, prefix) { return prefix + target; });
+  text = text.replace(new RegExp('\\b(C)0*' + escaped + '(?=D\\d+\\b)', 'gi'), function(_match, prefix) { return prefix + target; });
+  return text;
+}
+
+function soaCycleParseTargets_(value, sourceCycle) {
+  var raw = Array.isArray(value) ? value.join(',') : String(value || '');
+  raw = raw.replace(/[–—−]/g, '-').trim();
+  if (!raw) throw new Error('Informe ao menos um ciclo de destino.');
+  var found = {};
+  var targets = [];
+  raw.split(/[;,\s]+/).filter(Boolean).forEach(function(token) {
+    var range = token.match(/^(\d+)-(\d+)$/);
+    var start = range ? Number(range[1]) : Number(token);
+    var end = range ? Number(range[2]) : start;
+    if (!isFinite(start) || !isFinite(end) || start < 1 || end < 1 || Math.floor(start) !== start || Math.floor(end) !== end || start > 999 || end > 999) {
+      throw new Error('Use ciclos inteiros entre 1 e 999, por exemplo 2–12.');
+    }
+    if (end < start) throw new Error('O intervalo de ciclos ' + token + ' está invertido.');
+    for (var cycle = start; cycle <= end; cycle++) {
+      if (cycle === Number(sourceCycle) || found[cycle]) continue;
+      found[cycle] = true;
+      targets.push(cycle);
+      if (targets.length > 100) throw new Error('Gere no máximo 100 ciclos por operação.');
+    }
+  });
+  if (!targets.length) throw new Error('Os destinos devem incluir ao menos um ciclo diferente do modelo.');
+  return targets.sort(function(a, b) { return a - b; });
+}
+
+function soaCycleComparable_(visit) {
+  return JSON.stringify([
+    normText_(visit.codigo), normText_(visit.nome), String(visit.repeticao || '').trim(),
+    visit.intervaloDias === '' ? '' : Number(visit.intervaloDias),
+    visit.janelaDiasMenos === '' ? '' : Number(visit.janelaDiasMenos),
+    visit.janelaDiasMais === '' ? '' : Number(visit.janelaDiasMais),
+    soaArmSignature_(visit.bracoIds), String(visit.referencia || '').trim(),
+    soaDelimitedIds_(visit.aliases).map(normText_).join('|'), visit.ativo === false ? false : true,
+    String(visit.observacoes || '').trim()
+  ]);
+}
+
+function soaPrepareCycleReplication_(payload) {
+  payload = payload || {};
+  var projeto = String(payload.projeto || '').trim();
+  var sourceCycle = Number(payload.cicloModelo);
+  if (!projeto) throw new Error('Informe o projeto do calendário SoA.');
+  if (!isFinite(sourceCycle) || sourceCycle < 1 || Math.floor(sourceCycle) !== sourceCycle) throw new Error('Selecione um ciclo-modelo válido.');
+  var targetCycles = soaCycleParseTargets_(payload.ciclosDestino, sourceCycle);
+  var existing = getSoAVisitasProjeto(projeto);
+  var model = existing.filter(function(visit) { return soaCycleNumbersFromVisit_(visit).indexOf(sourceCycle) !== -1; });
+  if (!model.length) throw new Error('O Ciclo ' + sourceCycle + ' não possui visitas reconhecíveis para replicar.');
+  var modelById = {};
+  model.forEach(function(visit) { modelById[String(visit.idSoA || '')] = visit; });
+  var maxOrder = existing.reduce(function(max, visit) {
+    var order = Number(visit.ordem);
+    return isFinite(order) ? Math.max(max, order) : max;
+  }, 0);
+  var generated = [];
+  var warnings = [];
+  var errors = [];
+  var nextOrder = maxOrder;
+
+  targetCycles.forEach(function(targetCycle) {
+    var plans = model.map(function(sourceVisit, index) {
+      var code = soaCycleReplaceText_(sourceVisit.codigo, sourceCycle, targetCycle);
+      var name = soaCycleReplaceText_(sourceVisit.nome, sourceCycle, targetCycle);
+      var arms = soaUniqueIds_(sourceVisit.bracoIds);
+      var unchangedKey = code ? normText_(code) === normText_(sourceVisit.codigo) : normText_(name) === normText_(sourceVisit.nome);
+      var exact = existing.filter(function(visit) {
+        if (code) return normText_(visit.codigo) === normText_(code) && soaArmSignature_(visit.bracoIds) === soaArmSignature_(arms);
+        return normText_(visit.nome) === normText_(name) && soaArmSignature_(visit.bracoIds) === soaArmSignature_(arms);
+      })[0] || null;
+      var codeConflict = code && !exact ? existing.filter(function(visit) {
+        return normText_(visit.codigo) === normText_(code) && soaArmSignature_(visit.bracoIds) !== soaArmSignature_(arms);
+      })[0] || null : null;
+      return {
+        source: sourceVisit,
+        index: index,
+        codigo: code,
+        nome: name,
+        bracoIds: arms,
+        existente: unchangedKey ? null : exact,
+        conflito: codeConflict,
+        chaveSemCiclo: unchangedKey,
+        provisionalId: '__NOVO_C' + targetCycle + '_' + String(sourceVisit.idSoA || index)
+      };
+    });
+    var idMap = {};
+    plans.forEach(function(plan) { idMap[String(plan.source.idSoA || '')] = plan.existente ? plan.existente.idSoA : plan.provisionalId; });
+    var targetExisting = 0;
+    plans.forEach(function(plan) {
+      var sourceVisit = plan.source;
+      var reference = modelById[String(sourceVisit.referencia || '')] ? idMap[String(sourceVisit.referencia || '')] : String(sourceVisit.referencia || '');
+      var draft = {
+        idSoA: plan.existente ? plan.existente.idSoA : plan.provisionalId,
+        projeto: projeto,
+        cicloDestino: targetCycle,
+        codigo: plan.codigo,
+        nome: plan.nome,
+        ordem: plan.existente ? plan.existente.ordem : (plan.conflito ? plan.conflito.ordem : (plan.chaveSemCiclo ? '' : ++nextOrder)),
+        repeticao: soaCycleReplaceText_(sourceVisit.repeticao, sourceCycle, targetCycle),
+        intervaloDias: sourceVisit.intervaloDias,
+        aliases: (sourceVisit.aliases || []).map(function(alias) { return soaCycleReplaceText_(alias, sourceCycle, targetCycle); }),
+        ativo: sourceVisit.ativo !== false,
+        observacoes: String(sourceVisit.observacoes || ''),
+        referencia: reference,
+        referenciaCodigo: '',
+        janelaDiasMenos: sourceVisit.janelaDiasMenos,
+        janelaDiasMais: sourceVisit.janelaDiasMais,
+        bracoIds: plan.bracoIds.slice(),
+        origemIdSoA: sourceVisit.idSoA,
+        origemCodigo: sourceVisit.codigo,
+        status: 'NOVA',
+        diferencas: []
+      };
+      if (plan.chaveSemCiclo) {
+        draft.status = 'CONFLITO';
+        draft.diferencas = ['O código ou nome principal não contém o número do ciclo para substituir.'];
+        errors.push('A visita ' + (sourceVisit.codigo || sourceVisit.nome) + ' não identifica o Ciclo ' + sourceCycle + ' no código ou nome principal.');
+      } else if (plan.conflito) {
+        draft.status = 'CONFLITO';
+        draft.existenteIdSoA = plan.conflito.idSoA;
+        draft.diferencas = ['O código já existe com outra associação de braços.'];
+        errors.push('O código ' + (draft.codigo || draft.nome) + ' já existe no Ciclo ' + targetCycle + ' com braços diferentes.');
+        targetExisting++;
+      } else if (plan.existente) {
+        draft.status = soaCycleComparable_(draft) === soaCycleComparable_(plan.existente) ? 'EXISTENTE_IGUAL' : 'EXISTENTE_DIFERENTE';
+        draft.existenteIdSoA = plan.existente.idSoA;
+        if (normText_(draft.nome) !== normText_(plan.existente.nome)) draft.diferencas.push('nome');
+        if (String(draft.intervaloDias) !== String(plan.existente.intervaloDias)) draft.diferencas.push('intervalo');
+        if (String(draft.janelaDiasMenos) !== String(plan.existente.janelaDiasMenos) || String(draft.janelaDiasMais) !== String(plan.existente.janelaDiasMais)) draft.diferencas.push('janela');
+        if (soaArmSignature_(draft.bracoIds) !== soaArmSignature_(plan.existente.bracoIds)) draft.diferencas.push('braços');
+        if (String(draft.referencia) !== String(plan.existente.referencia)) draft.diferencas.push('referência');
+        if (String(draft.repeticao) !== String(plan.existente.repeticao)) draft.diferencas.push('repetição');
+        if (soaDelimitedIds_(draft.aliases).map(normText_).join('|') !== soaDelimitedIds_(plan.existente.aliases).map(normText_).join('|')) draft.diferencas.push('aliases');
+        if ((draft.ativo === false) !== (plan.existente.ativo === false)) draft.diferencas.push('status');
+        if (String(draft.observacoes) !== String(plan.existente.observacoes)) draft.diferencas.push('observações');
+        targetExisting++;
+      }
+      generated.push(draft);
+    });
+    if (targetExisting) warnings.push('Ciclo ' + targetCycle + ': ' + targetExisting + ' visita(s) já existente(s) serão preservadas sem alteração.');
+  });
+
+  var newVisits = generated.filter(function(visit) { return visit.status === 'NOVA'; });
+  var signatureData = generated.map(function(visit) {
+    return [visit.cicloDestino, visit.origemIdSoA, visit.codigo, visit.nome, visit.referencia, visit.status, visit.existenteIdSoA || '', soaCycleComparable_(visit)];
+  });
+  var signature = JSON.stringify([projeto, sourceCycle, targetCycles, signatureData]);
+  return {
+    ok: errors.length === 0,
+    podeGravar: errors.length === 0 && newVisits.length > 0,
+    projeto: projeto,
+    cicloModelo: sourceCycle,
+    ciclosDestino: targetCycles,
+    visitasModelo: model.length,
+    visitas: generated,
+    novas: newVisits.length,
+    existentes: generated.filter(function(visit) { return visit.status.indexOf('EXISTENTE_') === 0; }).length,
+    conflitos: generated.filter(function(visit) { return visit.status === 'CONFLITO'; }).length,
+    avisos: warnings,
+    erros: errors,
+    assinaturaPrevia: signature
+  };
+}
+
+function validarReplicacaoCiclosSoA(payload) {
+  return soaPrepareCycleReplication_(payload);
+}
+
+function criarCiclosSoAPorReplicacao(payload) {
+  payload = payload || {};
+  codexAssertCanWrite_('criarCiclosSoAPorReplicacao', 'Cadastros', payload.projeto || 'SoA');
+  return codexWithDocumentLock_('criarCiclosSoAPorReplicacao', function() {
+    var prepared = soaPrepareCycleReplication_(payload);
+    if (!prepared.ok) throw new Error('A replicação contém conflitos: ' + prepared.erros.join(' '));
+    if (!payload.assinaturaPrevia || String(payload.assinaturaPrevia) !== prepared.assinaturaPrevia) {
+      throw new Error('O calendário mudou desde a prévia. Gere uma nova prévia antes de gravar.');
+    }
+    if (!prepared.podeGravar) throw new Error('Não há visitas novas para gravar.');
+    var sheet = getSoAVisitasSheet_(true);
+    var headers = soaEnsureHeaders_(sheet);
+    var map = soaHeaderMap_(headers);
+    var newVisits = prepared.visitas.filter(function(visit) { return visit.status === 'NOVA'; });
+    var realIds = {};
+    newVisits.forEach(function(visit) { realIds[visit.idSoA] = 'SOA-' + gerarIdLoteEstoque_(); });
+    var rows = newVisits.map(function(visit) {
+      var row = Array(headers.length).fill('');
+      function put(names, value, fallback) {
+        var index = soaHeaderIndex_(map, names, fallback);
+        if (index !== undefined && index >= 0) row[index] = value;
+      }
+      put(['ID_SoA'], realIds[visit.idSoA], 0);
+      put(['Projeto'], visit.projeto, 1);
+      put(['Código da visita', 'Codigo da visita'], visit.codigo, 2);
+      put(['Nome padrão da visita', 'Nome padrao da visita'], visit.nome, 3);
+      put(['Ordem'], visit.ordem, 4);
+      put(['Repetição', 'Repeticao'], visit.repeticao, 5);
+      put(['Intervalo (dias)', 'Intervalo dias'], visit.intervaloDias, 6);
+      put(['Aliases', 'Apelidos'], soaDelimitedIds_(visit.aliases).join('; '), 7);
+      put(['Ativo', 'Status'], visit.ativo === false ? 'Não' : 'Sim', 8);
+      put(['Observações', 'Observacoes'], visit.observacoes, 9);
+      put(['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], realIds[visit.referencia] || visit.referencia, 10);
+      put(['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], visit.janelaDiasMenos, 11);
+      put(['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], visit.janelaDiasMais, 12);
+      put(['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], visit.bracoIds.join('; '), 13);
+      put(['Ordem manual'], 'Não', 14);
+      return row;
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
+    return { ok: true, msg: rows.length + ' visita(s) criada(s) por replicação.', criadas: rows.length, preservadas: prepared.existentes };
   });
 }
 
@@ -3440,6 +3895,21 @@ function salvarSoAVisita(payload) {
     var map = soaHeaderMap_(headers);
     var rows = sheet.getDataRange().getValues();
     var id = String(payload.idSoA || '').trim() || ('SOA-' + gerarIdLoteEstoque_());
+    var existingRowIndex = -1;
+    for (var existingIndex = 1; existingIndex < rows.length; existingIndex++) {
+      if (String(rows[existingIndex][0] || '').trim() === id) {
+        existingRowIndex = existingIndex;
+        break;
+      }
+    }
+    var ordemManual = ordem !== '';
+    if (existingRowIndex >= 0) {
+      var ordemIndex = soaHeaderIndex_(map, ['Ordem'], 4);
+      var ordemManualIndex = soaHeaderIndex_(map, ['Ordem manual'], 14);
+      var ordemAnterior = rows[existingRowIndex][ordemIndex];
+      var ordemAnteriorNormalizada = ordemAnterior === '' || ordemAnterior === null || ordemAnterior === undefined ? '' : Number(ordemAnterior);
+      ordemManual = soaOrdemManual_(rows[existingRowIndex][ordemManualIndex]) || ordemAnteriorNormalizada !== ordem;
+    }
     var aliases = Array.isArray(payload.aliases) ? payload.aliases.join('; ') : String(payload.aliases || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean).join('; ');
     var row = Array(headers.length).fill('');
     function put(names, value, fallback) {
@@ -3460,15 +3930,63 @@ function salvarSoAVisita(payload) {
     put(['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], janelaMenos, 11);
     put(['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], janelaMais, 12);
     put(['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], bracoIds.join('; '), 13);
+    put(['Ordem manual'], ordemManual ? 'Sim' : 'Não', 14);
     var rowValues = [row];
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0] || '').trim() === id) {
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues(rowValues);
-        return { idSoA: id, msg: 'Visita SoA atualizada.' };
-      }
+    if (existingRowIndex >= 0) {
+      sheet.getRange(existingRowIndex + 1, 1, 1, headers.length).setValues(rowValues);
+      return { idSoA: id, msg: 'Visita SoA atualizada.' };
     }
     sheet.appendRow(rowValues[0]);
     return { idSoA: id, msg: 'Visita SoA adicionada.' };
+  });
+}
+
+function reordenarSoAVisitas(payload) {
+  payload = payload || {};
+  var projeto = String(payload.projeto || '').trim();
+  var idsInformados = Array.isArray(payload.idsSoA) ? payload.idsSoA.map(function(id) { return String(id || '').trim(); }).filter(Boolean) : [];
+  codexAssertCanWrite_('reordenarSoAVisitas', 'Cadastros', projeto || 'SoA');
+  if (!projeto) throw new Error('Informe o projeto do calendário SoA.');
+  if (!idsInformados.length) throw new Error('Informe a nova ordem das visitas.');
+  if (soaUniqueIds_(idsInformados).length !== idsInformados.length) throw new Error('A nova ordem contém visitas duplicadas.');
+  return codexWithDocumentLock_('reordenarSoAVisitas', function() {
+    var sheet = getSoAVisitasSheet_(false);
+    if (!sheet || sheet.getLastRow() < 2) throw new Error('Calendário SoA não encontrado.');
+    var rowsAntes = sheet.getDataRange().getValues();
+    var mapAntes = soaHeaderMap_(rowsAntes[0] || []);
+    var cAntes = {
+      id: soaHeaderIndex_(mapAntes, ['ID_SoA'], 0),
+      projeto: soaHeaderIndex_(mapAntes, ['Projeto'], 1),
+      nome: soaHeaderIndex_(mapAntes, ['Nome padrão da visita', 'Nome padrao da visita'], 3)
+    };
+    var projetoNorm = normText_(projeto);
+    var idsAtuais = rowsAntes.slice(1).filter(function(row) {
+      return normText_(row[cAntes.projeto]) === projetoNorm && String(row[cAntes.nome] || '').trim();
+    }).map(function(row) { return String(row[cAntes.id] || '').trim(); });
+    if (idsAtuais.some(function(id) { return !id; })) throw new Error('Há uma visita sem ID técnico; corrija-a antes de reordenar.');
+    var atuais = {};
+    idsAtuais.forEach(function(id) { atuais[id] = true; });
+    var mesmaLista = idsAtuais.length === idsInformados.length && idsInformados.every(function(id) { return atuais[id]; });
+    if (!mesmaLista) throw new Error('A lista de visitas mudou. Recarregue o calendário antes de salvar a ordem.');
+
+    var headers = soaEnsureHeaders_(sheet);
+    var rows = sheet.getDataRange().getValues();
+    var map = soaHeaderMap_(headers);
+    var idCol = soaHeaderIndex_(map, ['ID_SoA'], 0);
+    var projetoCol = soaHeaderIndex_(map, ['Projeto'], 1);
+    var ordemCol = soaHeaderIndex_(map, ['Ordem'], 4);
+    var ordemManualCol = soaHeaderIndex_(map, ['Ordem manual'], 14);
+    var novaOrdem = {};
+    idsInformados.forEach(function(id, index) { novaOrdem[id] = index + 1; });
+    for (var i = 1; i < rows.length; i++) {
+      if (normText_(rows[i][projetoCol]) !== projetoNorm) continue;
+      var id = String(rows[i][idCol] || '').trim();
+      if (!novaOrdem[id]) continue;
+      rows[i][ordemCol] = novaOrdem[id];
+      rows[i][ordemManualCol] = 'Sim';
+    }
+    sheet.getRange(2, 1, rows.length - 1, headers.length).setValues(rows.slice(1));
+    return { ok: true, msg: 'Ordem das visitas salva.', total: idsInformados.length };
   });
 }
 
@@ -3621,6 +4139,7 @@ function soaImportPrepare_(payload) {
       bracoIds: soaUniqueIds_(group.bracoIds),
       bracoNomes: group.armNames,
       existente: !!group.existente,
+      ordemManual: !!(group.existente && group.existente.ordemManual),
       condicional: visit.condicional === true,
       origem: String(visit.origem || '').trim()
     };
@@ -3632,6 +4151,18 @@ function soaImportPrepare_(payload) {
       (item.janelaDiasMais !== '' && (!isFinite(item.janelaDiasMais) || item.janelaDiasMais < 0 || Math.floor(item.janelaDiasMais) !== item.janelaDiasMais));
   });
   if (invalidNumbers.length) errors.push('Há intervalos, ordens ou janelas que não são números inteiros maiores ou iguais a zero.');
+  var sugestaoOrdem = soaSugerirOrdemExecucao_(visitas, {
+    referenciasConhecidas: existingVisits.map(function(item) { return item.idSoA; })
+  });
+  var sugestaoOrdemPorId = {};
+  sugestaoOrdem.visitas.forEach(function(item) { sugestaoOrdemPorId[item.idSoA] = item; });
+  visitas.forEach(function(item) {
+    var ordem = sugestaoOrdemPorId[item.idSoA] || {};
+    item.ordemRecebida = ordem.ordemRecebida;
+    item.ordemSugerida = ordem.ordemSugerida;
+    item.ordemAmbigua = ordem.ordemAmbigua === true;
+    item.motivosOrdem = ordem.motivosOrdem || [];
+  });
   return {
     ok: errors.length === 0,
     projeto: parsed.projeto,
@@ -3647,7 +4178,10 @@ function soaImportPrepare_(payload) {
     totalVisitas: groups.length,
     novasVisitas: groups.filter(function(group) { return !group.existente; }).length,
     atualizacoes: groups.filter(function(group) { return !!group.existente && modo === 'atualizar'; }).length,
-    ignoradas: groups.filter(function(group) { return group.pular; }).length
+    ignoradas: groups.filter(function(group) { return group.pular; }).length,
+    ordensManuaisPreservadas: visitas.filter(function(item) { return item.existente && item.ordemManual; }).length,
+    mudancasOrdemSugerida: sugestaoOrdem.mudancas,
+    ambiguidadesOrdem: sugestaoOrdem.ambiguidades
   };
 }
 
@@ -3676,6 +4210,18 @@ function soaWriteImportRows_(prepared) {
   var rows = sheet.getDataRange().getValues();
   var byId = {};
   for (var i = 1; i < rows.length; i++) byId[String(rows[i][0] || '').trim()] = i + 1;
+  var projetoCol = soaHeaderIndex_(map, ['Projeto'], 1);
+  var ordemCol = soaHeaderIndex_(map, ['Ordem'], 4);
+  var ordemManualIndex = soaHeaderIndex_(map, ['Ordem manual'], 14);
+  var projetoNorm = normText_(prepared.projeto);
+  var temOrdemManualNoProjeto = false;
+  var maiorOrdemProjeto = 0;
+  rows.slice(1).forEach(function(row) {
+    if (normText_(row[projetoCol]) !== projetoNorm) return;
+    var ordemExistente = Number(row[ordemCol]);
+    if (isFinite(ordemExistente)) maiorOrdemProjeto = Math.max(maiorOrdemProjeto, ordemExistente);
+    if (soaOrdemManual_(row[ordemManualIndex])) temOrdemManualNoProjeto = true;
+  });
   function put(row, names, value, fallback) {
     var index = soaHeaderIndex_(map, names, fallback);
     if (index !== undefined && index >= 0) row[index] = value;
@@ -3683,13 +4229,17 @@ function soaWriteImportRows_(prepared) {
   prepared.visitas.forEach(function(visit) {
     var rowNumber = byId[visit.idSoA];
     var row = rowNumber ? (sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0] || Array(headers.length).fill('')) : Array(headers.length).fill('');
+    var preservarOrdemManual = !!rowNumber && soaOrdemManual_(row[ordemManualIndex]);
+    var ordemImportada = !rowNumber && temOrdemManualNoProjeto ? ++maiorOrdemProjeto : visit.ordem;
     put(row, ['ID_SoA'], visit.idSoA, 0); put(row, ['Projeto'], visit.projeto, 1);
     put(row, ['Código da visita', 'Codigo da visita'], visit.codigo, 2); put(row, ['Nome padrão da visita', 'Nome padrao da visita'], visit.nome, 3);
-    put(row, ['Ordem'], visit.ordem, 4); put(row, ['Repetição', 'Repeticao'], visit.repeticao, 5); put(row, ['Intervalo (dias)', 'Intervalo dias'], visit.intervaloDias, 6);
+    if (!preservarOrdemManual) put(row, ['Ordem'], ordemImportada, 4);
+    put(row, ['Repetição', 'Repeticao'], visit.repeticao, 5); put(row, ['Intervalo (dias)', 'Intervalo dias'], visit.intervaloDias, 6);
     put(row, ['Aliases', 'Apelidos'], visit.aliases.join('; '), 7); put(row, ['Ativo', 'Status'], visit.ativo === false ? 'Não' : 'Sim', 8);
     put(row, ['Observações', 'Observacoes'], visit.observacoes, 9); put(row, ['Referência (após)', 'Referencia (apos)', 'Referência da visita', 'Anchor'], visit.referencia, 10);
     put(row, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], visit.janelaDiasMenos, 11); put(row, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], visit.janelaDiasMais, 12);
     put(row, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], soaUniqueIds_(visit.bracoIds).join('; '), 13);
+    put(row, ['Ordem manual'], preservarOrdemManual ? 'Sim' : 'Não', 14);
     if (rowNumber) sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]); else sheet.appendRow(row);
   });
 }
@@ -3713,6 +4263,7 @@ function importarSoAJson(payload) {
       atualizadas: finalPrepared.atualizacoes,
       ignoradas: finalPrepared.ignoradas,
       bracosCriados: createdArms.length,
+      ordensManuaisPreservadas: finalPrepared.ordensManuaisPreservadas,
       alertas: finalPrepared.alertas,
       revisaoNecessaria: finalPrepared.revisaoNecessaria
     };
@@ -3907,18 +4458,13 @@ function getParticipantesStatsPorProjeto_() {
   return out;
 }
 
-function isProjetoAtivoEstoque_(status) {
-  var s = String(status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  return s !== 'concluido' && s !== 'cancelado';
-}
-
 function getProjetosAtivosEstoque_() {
   var rows = getCodexSheetDataByName_('Projetos').slice(1);
   if (!rows.length) return [];
   var seen = {}, out = [];
   rows.forEach(function(r) {
     var nome = String(r[1] || r[2] || '').trim();
-    if (!nome || !isProjetoAtivoEstoque_(r[13])) return;
+    if (!nome || classificarProjetoStatus_(r[13]) !== 'ativo') return;
     if (!seen[nome]) {
       seen[nome] = 1;
       out.push(nome);
@@ -4035,8 +4581,25 @@ function projetoTemperaturasPayload_(dados, field) {
 }
 
 function validarProjetoCourierIds_(dados) {
+  var opcoes = arguments.length > 1 && arguments[1] ? arguments[1] : {};
+  var legadosPorCampo = opcoes.legadosPorCampo || {};
+  var couriersPorId = {};
+  getAgendaCourierRows_().forEach(function(courier) {
+    var id = String(courier && courier.id || '').trim();
+    if (id) couriersPorId[id] = courier;
+  });
   var ids = PROJETO_COURIER_FIELDS_.map(function(field) {
-    return String((dados || {})[field.key] || '').trim();
+    var id = String((dados || {})[field.key] || '').trim();
+    if (!id) return '';
+    var courier = couriersPorId[id];
+    if (!courier) {
+      if (String(legadosPorCampo[field.key] || '') === id) return id;
+      throw new Error('Courier não cadastrada: ' + id + '.');
+    }
+    if (!courier.disponivelProjetos && String(legadosPorCampo[field.key] || '') !== id) {
+      throw new Error('A courier ' + String(courier.nome || courier.courier || id) + ' não pode ser vinculada a projetos.');
+    }
+    return id;
   }).filter(Boolean);
   var usados = {};
   for (var i = 0; i < ids.length; i++) {
@@ -4075,7 +4638,6 @@ function garantirProjetoCourierColumns_(aba) {
 
 function gravarProjetoCourierIds_(aba, rowNumber, dados) {
   if (!projetoCourierPayloadPresente_(dados)) return;
-  validarProjetoCourierIds_(dados);
   var columns = garantirProjetoCourierColumns_(aba);
   PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).forEach(function(field) {
     var presente = Object.prototype.hasOwnProperty.call(dados, field.key) || (field.legacyKey && Object.prototype.hasOwnProperty.call(dados, field.legacyKey));
@@ -4102,7 +4664,18 @@ function salvarDadosProjeto(dados) {
       ? 'Já existe um projeto cadastrado com este código.'
       : 'Já existe um projeto cadastrado com este nome abreviado.');
   }
-  if (projetoCourierPayloadPresente_(dados)) validarProjetoCourierIds_(dados);
+  var couriersLegadosPorCampo = {};
+  if (dados.id && rows.length) {
+    var courierColsExistentes = projetoCourierColumnMap_(rows[0] || []);
+    for (var linhaLegada = 1; linhaLegada < rows.length; linhaLegada++) {
+      if (String(rows[linhaLegada][0]) !== String(dados.id)) continue;
+      couriersLegadosPorCampo.courierPrincipalId = courierColsExistentes.principal >= 0 ? String(rows[linhaLegada][courierColsExistentes.principal] || '').trim() : '';
+      couriersLegadosPorCampo.courierAdicional1Id = courierColsExistentes.adicional1 >= 0 ? String(rows[linhaLegada][courierColsExistentes.adicional1] || '').trim() : '';
+      couriersLegadosPorCampo.courierAdicional2Id = courierColsExistentes.adicional2 >= 0 ? String(rows[linhaLegada][courierColsExistentes.adicional2] || '').trim() : '';
+      break;
+    }
+  }
+  if (projetoCourierPayloadPresente_(dados)) validarProjetoCourierIds_(dados, { legadosPorCampo: couriersLegadosPorCampo });
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
@@ -4820,7 +5393,8 @@ function getDashboardData() {
         falhasTriagem: p.falhasTriagem || 0,
         totalParticipantes: p.totalParticipantes || 0,
         percentualRecrutamento: p.percentualRecrutamento || '',
-        status:        str(p.status)
+        status:        str(p.status),
+        classificacaoStatus: str(p.classificacaoStatus)
       };
     });
   } catch(e) {
@@ -5463,6 +6037,10 @@ function getItensEstoqueColumnMap_(headers) {
     visitasAplicaveis: find([
       'Visitas aplicáveis (IDs SoA)', 'Visitas aplicaveis (IDs SoA)',
       'Visitas aplicáveis', 'Visitas aplicaveis'
+    ], -1),
+    bracosAplicaveis: find([
+      'Braços aplicáveis (IDs)', 'Bracos aplicaveis (IDs)',
+      'Braços aplicáveis', 'Bracos aplicaveis'
     ], -1)
   };
 }
@@ -5508,7 +6086,8 @@ function getItensEstoque() {
       laboratorio: String(r[c.laboratorio] || ''),
       status:      String(r[c.status] || ''),
       ordem:       c.ordem >= 0 && r[c.ordem] !== '' && r[c.ordem] !== null ? Number(r[c.ordem]) : '',
-      visitasAplicaveisIds: c.visitasAplicaveis >= 0 ? soaUniqueIds_(r[c.visitasAplicaveis]) : []
+      visitasAplicaveisIds: c.visitasAplicaveis >= 0 ? soaUniqueIds_(r[c.visitasAplicaveis]) : [],
+      bracosAplicaveisIds: c.bracosAplicaveis >= 0 ? soaUniqueIds_(r[c.bracosAplicaveis]) : []
     });
   }
 
@@ -5533,6 +6112,31 @@ function getItensEstoque() {
   return { itens: itens, projetos: projetos, projetosAtivos: projetosAtivos };
 }
 
+function estoqueTipoPermiteVinculoSoA_(tipo) {
+  var normalizado = normText_(tipo);
+  return normalizado.indexOf('kit') >= 0 || normalizado.indexOf('bulk') >= 0;
+}
+
+function getModelosEstoqueSoAPorProjeto(projeto) {
+  var projetoNorm = normText_(projeto);
+  if (!projetoNorm) return [];
+  return getItensEstoque().itens.filter(function(item) {
+    return normText_(item.projeto) === projetoNorm &&
+      estoqueTipoPermiteVinculoSoA_(item.tipo) &&
+      item.visitasAplicaveisIds && item.visitasAplicaveisIds.length;
+  }).map(function(item) {
+    return {
+      idItem: item.idItem,
+      descricao: item.descricao,
+      tipo: item.tipo,
+      laboratorio: item.laboratorio,
+      status: item.status,
+      visitasAplicaveisIds: item.visitasAplicaveisIds.slice(),
+      bracosAplicaveisIds: item.bracosAplicaveisIds.slice()
+    };
+  });
+}
+
 // ───────────────────────────────────────────────────────
 
 function salvarItemEstoque(payload) {
@@ -5551,9 +6155,25 @@ function salvarItemEstoque(payload) {
   }
   var visitasAplicaveisIds = Object.prototype.hasOwnProperty.call(payload, 'visitasAplicaveisIds')
     ? soaUniqueIds_(payload.visitasAplicaveisIds) : null;
+  var bracosAplicaveisIds = Object.prototype.hasOwnProperty.call(payload, 'bracosAplicaveisIds')
+    ? soaUniqueIds_(payload.bracosAplicaveisIds) : null;
+  if (bracosAplicaveisIds && bracosAplicaveisIds.length) {
+    if (!estoqueTipoPermiteVinculoSoA_(payload.tipo)) {
+      throw new Error('Somente modelos de Kit ou Bulk Supply podem ser específicos por braço.');
+    }
+    var bracosProjeto = getBracosProjeto(payload.projeto);
+    var idsBracosProjeto = {};
+    bracosProjeto.forEach(function(braco) {
+      if (braco.idBraco) idsBracosProjeto[String(braco.idBraco)] = true;
+    });
+    var bracosInvalidos = bracosAplicaveisIds.filter(function(id) { return !idsBracosProjeto[id]; });
+    if (bracosInvalidos.length) {
+      throw new Error('Um ou mais braços selecionados não pertencem ao projeto informado. Atualize o cadastro e tente novamente.');
+    }
+  }
   if (visitasAplicaveisIds && visitasAplicaveisIds.length) {
-    if (!estoqueTipoEhKit_(payload.tipo)) {
-      throw new Error('Somente itens do tipo Kit podem ser vinculados a visitas.');
+    if (!estoqueTipoPermiteVinculoSoA_(payload.tipo)) {
+      throw new Error('Somente modelos de Kit ou Bulk Supply podem ser vinculados a visitas.');
     }
     var visitasProjeto = getSoAVisitasProjeto(payload.projeto);
     var idsProjeto = {};
@@ -5595,6 +6215,13 @@ function salvarItemEstoque(payload) {
       headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
       c = getItensEstoqueColumnMap_(headers);
     }
+    if (Object.prototype.hasOwnProperty.call(payload, 'bracosAplicaveisIds') && c.bracosAplicaveis < 0) {
+      var bracosCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, bracosCol).setValue('Braços aplicáveis (IDs)');
+      lastColumn = Math.max(lastColumn, bracosCol);
+      headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+      c = getItensEstoqueColumnMap_(headers);
+    }
 
   function applyPayload(rowValues) {
     rowValues[c.projeto] = payload.projeto;
@@ -5609,6 +6236,9 @@ function salvarItemEstoque(payload) {
     if (c.ordem >= 0) rowValues[c.ordem] = ordem;
     if (c.visitasAplicaveis >= 0 && visitasAplicaveisIds !== null) {
       rowValues[c.visitasAplicaveis] = visitasAplicaveisIds.join('; ');
+    }
+    if (c.bracosAplicaveis >= 0 && bracosAplicaveisIds !== null) {
+      rowValues[c.bracosAplicaveis] = bracosAplicaveisIds.join('; ');
     }
     return rowValues;
   }
@@ -9110,6 +9740,7 @@ function getAgendaCourierRows_() {
   values.forEach(function(r) {
     var courier = String(r[1] || '').trim();
     if (!courier) return;
+    var disponivelProjetosInformado = headerValue(r, ['Disponível para projetos', 'Disponivel para projetos', 'Vinculável a projetos', 'Vinculavel a projetos']);
     out.push({
       id: String(r[0] || '').trim(),
       nome: courier,
@@ -9133,7 +9764,8 @@ function getAgendaCourierRows_() {
       forneceGeloColeta: headerValue(r, ['Fornece gelo para coleta', 'Fornece gelo']),
       restricaoSegunda: headerValue(r, ['Restrição às segundas-feiras', 'Restricao as segundas-feiras', 'Restrição segunda-feira']),
       restricaoAposFeriado: headerValue(r, ['Restrição após feriado', 'Restricao apos feriado']),
-      observacaoOperacional: headerValue(r, ['Observação operacional', 'Observacao operacional'])
+      observacaoOperacional: headerValue(r, ['Observação operacional', 'Observacao operacional']),
+      disponivelProjetos: courierDisponivelParaProjeto_({ nome: courier, disponivelProjetos: disponivelProjetosInformado })
     });
   });
   CODEX_AGENDA_COURIER_ROWS_CACHE_ = out;
@@ -13171,11 +13803,21 @@ var COURIER_HEADERS_ = [
 ];
 
 var COURIER_OPERATIONAL_FIELDS_ = [
+  { key: 'disponivelProjetos', header: 'Disponível para projetos', aliases: ['Disponivel para projetos', 'Vinculável a projetos', 'Vinculavel a projetos'] },
   { key: 'forneceGeloColeta', header: 'Fornece gelo para coleta', aliases: ['Fornece gelo'] },
   { key: 'restricaoSegunda', header: 'Restrição às segundas-feiras', aliases: ['Restricao as segundas-feiras', 'Restrição segunda-feira'] },
   { key: 'restricaoAposFeriado', header: 'Restrição após feriado', aliases: ['Restricao apos feriado'] },
   { key: 'observacaoOperacional', header: 'Observação operacional', aliases: ['Observacao operacional'] }
 ];
+
+function courierDisponivelParaProjeto_(courier) {
+  courier = courier || {};
+  if (typeof courier.disponivelProjetos === 'boolean') return courier.disponivelProjetos;
+  var informado = normText_(courier.disponivelProjetos);
+  if (informado === 'sim') return true;
+  if (informado === 'nao') return false;
+  return normText_(courier.nome || courier.courier) !== 'pinex (agendamento)';
+}
 
 function courierConfirmationDefaults_(nome) {
   var n = normText_(nome);

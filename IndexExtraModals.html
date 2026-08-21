@@ -186,6 +186,14 @@
           <input type="text" id="courierNome" class="f-input large" placeholder="Ex: MARKEN" oninput="limparErro('courierNome','errCourierNome'); aplicarDefaultsCourierConfirmacao(false)">
           <div class="field-error" id="errCourierNome">Campo obrigatório.</div>
         </div>
+        <div class="field" style="margin-top:14px">
+          <label class="field-label" for="courierDisponivelProjetos">Disponível para projetos</label>
+          <select id="courierDisponivelProjetos" class="f-input">
+            <option value="Sim">Sim</option>
+            <option value="Não">Não</option>
+          </select>
+          <div class="field-hint">Use “Não” para etapas operacionais que não representam a transportadora vinculada ao projeto.</div>
+        </div>
       </div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">apartment</span> Remessa Express / Courier 1</div>

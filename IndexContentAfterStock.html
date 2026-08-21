@@ -223,8 +223,8 @@
           <span class="material-symbols-outlined">event_note</span> Calendário SoA
         </div>
         <div class="soa-project-toolbar">
-          <div class="soa-project-help">Configure nomes, ordem e, quando disponível no protocolo, a referência, o intervalo previsto e a janela de cada visita. O preenchimento é opcional e não impede visitas históricas na Agenda.</div>
-          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined">upload_file</span> Importar JSON</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined">add</span> Adicionar visita</button></div>
+          <div class="soa-project-help">Configure nomes, ordem e, quando disponível no protocolo, a referência, o intervalo previsto e a janela de cada visita. Arraste pelo marcador à esquerda ou use as setas do teclado para reorganizar.<span class="soa-order-pending" id="soaOrdemPendente" hidden>Nova ordem ainda não salva.</span></div>
+          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnDescartarOrdemSoA" onclick="descartarOrdemSoAApp()" hidden><span class="material-symbols-outlined">undo</span> Descartar</button><button type="button" class="btn-save soa-order-save" id="btnSalvarOrdemSoA" onclick="salvarOrdemSoAApp()" hidden><span class="material-symbols-outlined">save</span> Salvar ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnSugerirOrdemSoA" onclick="abrirSugestaoOrdemSoAApp()"><span class="material-symbols-outlined">account_tree</span> Sugerir ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnReplicarCicloSoA" onclick="abrirReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined">content_copy</span> Replicar ciclo</button><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined">upload_file</span> Importar JSON</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined">add</span> Adicionar visita</button></div>
         </div>
         <div class="soa-project-unsaved" id="soaProjetoNaoSalvo">Salve o protocolo antes de cadastrar o seu calendário SoA.</div>
         <div class="soa-visita-list" id="pSoAList"><div class="soa-visita-empty">Nenhuma visita SoA configurada.</div></div>
@@ -285,6 +285,45 @@
       <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined">download_done</span> Importar calendário</button></div>
       <div class="status-msg" id="statusSoAImport"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REPLICAÇÃO DE CICLOS SoA -->
+<div class="modal-overlay" id="modalSoAReplicarCiclo" onclick="fecharModalSeClicouFora(event,'modalSoAReplicarCiclo')">
+  <div class="modal-box soa-cycle-modal-box">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">content_copy</span></div>
+      <div><div class="modal-header-title">REPLICAR CICLO</div><div class="modal-header-sub" id="soaCycleSubtitle">Gerar visitas a partir de um ciclo-modelo</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAReplicarCiclo')"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <div class="soa-import-note"><span class="material-symbols-outlined">verified_user</span><div><strong>Cópia segura e revisável</strong><span>Códigos, nomes e referências internas são remapeados. Braços, janelas e intervalos são preservados. Visitas já existentes não serão alteradas.</span></div></div>
+      <div class="field-row cols-2 soa-cycle-controls" style="margin-bottom:14px;">
+        <div><label class="field-label" for="soaCycleModelo">Ciclo-modelo</label><select id="soaCycleModelo" class="f-input" onchange="invalidarPreviaReplicacaoCiclosSoA_()"></select></div>
+        <div><label class="field-label" for="soaCycleDestinos">Ciclos de destino</label><input type="text" id="soaCycleDestinos" class="f-input" placeholder="Ex: 2–12" inputmode="numeric" oninput="invalidarPreviaReplicacaoCiclosSoA_()"><div class="field-help">Aceita intervalos e listas, como 2–12, 15, 18.</div></div>
+      </div>
+      <div id="soaCyclePreview" class="soa-cycle-preview"><div class="soa-visita-empty">Escolha o modelo e os destinos, depois clique em Pré-visualizar.</div></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAReplicarCiclo')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewCiclosSoA" onclick="previsualizarReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnConfirmarCiclosSoA" onclick="confirmarReplicacaoCiclosSoAApp()" disabled><span class="material-symbols-outlined">add_task</span> Criar visitas</button></div>
+      <div class="status-msg" id="statusSoAReplicarCiclo"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SUGESTÃO DE ORDEM SoA -->
+<div class="modal-overlay" id="modalSoAOrdem" onclick="fecharModalSeClicouFora(event,'modalSoAOrdem')">
+  <div class="modal-box soa-order-modal-box">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">account_tree</span></div>
+      <div><div class="modal-header-title">SUGERIR ORDEM DE EXECUÇÃO</div><div class="modal-header-sub">Referências, intervalos e fases especiais</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAOrdem')"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <div class="soa-import-note"><span class="material-symbols-outlined">info</span><div><strong>Sugestão revisável</strong><span>A análise garante dependências explícitas e ordena visitas com a mesma referência pelo intervalo. Quando não há critério suficiente, mantém a ordem recebida e destaca a pendência.</span></div></div>
+      <div id="soaOrderSuggestionSummary" class="soa-import-summary"></div>
+      <div id="soaOrderSuggestionWarnings"></div>
+      <div id="soaOrderSuggestionList" class="soa-order-preview-list"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAOrdem')">Cancelar</button><button type="button" class="btn-save" id="btnAplicarSugestaoOrdemSoA" onclick="aplicarSugestaoOrdemSoAApp()"><span class="material-symbols-outlined">done_all</span> Aplicar à lista</button></div>
     </div>
   </div>
 </div>

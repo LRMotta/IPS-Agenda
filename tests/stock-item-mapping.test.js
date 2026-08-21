@@ -90,7 +90,7 @@ test('novo item mantém vazia a coluna de detalhes e alinha os demais campos', (
   assert.equal(row[9], 'Ativo');
 });
 
-test('kit persiste múltiplas visitas SoA por ID e mantém leitura legada opcional', () => {
+test('Kit e Bulk Supply compartilham visitas SoA por ID mesmo com laboratórios diferentes', () => {
   const { server, itens } = stockServer();
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita', 'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações'],
@@ -110,10 +110,56 @@ test('kit persiste múltiplas visitas SoA por ID e mantém leitura legada opcion
   const visitasCol = itens.rows[0].indexOf('Visitas aplicáveis (IDs SoA)');
   assert.ok(visitasCol >= 0);
   assert.equal(itens.rows[1][visitasCol], 'SOA-2; SOA-1');
-  assert.deepEqual(Array.from(server.getItensEstoque().itens[0].visitasAplicaveisIds), ['SOA-2', 'SOA-1']);
+  server.salvarItemEstoque({
+    projeto: 'Estudo A', descricao: 'Tubos em bulk', tipo: 'Bulk Supply', localizacao: 'Sala B',
+    estoqueMin: 5, observacoes: '', laboratorio: 'Lab B', status: 'Ativo',
+    visitasAplicaveisIds: ['SOA-1']
+  });
+
+  const cadastrados = server.getItensEstoque().itens;
+  const modelos = server.getModelosEstoqueSoAPorProjeto('Estudo A');
+  assert.deepEqual(Array.from(cadastrados[0].visitasAplicaveisIds), ['SOA-2', 'SOA-1']);
+  assert.deepEqual(Array.from(cadastrados[1].visitasAplicaveisIds), ['SOA-1']);
+  assert.deepEqual(Array.from(modelos, modelo => [modelo.tipo, modelo.laboratorio, Array.from(modelo.visitasAplicaveisIds)]), [
+    ['Kit', 'Lab A', ['SOA-2', 'SOA-1']],
+    ['Bulk Supply', 'Lab B', ['SOA-1']]
+  ]);
 });
 
-test('vínculo de kit rejeita visita pertencente a outro projeto', () => {
+test('modelo de Kit pode restringir as visitas a braços cadastrados sem afetar itens legados', () => {
+  const { server, itens } = stockServer();
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline']
+  ]);
+  const bracos = new FakeSheet('Projeto_Bracos', [
+    ['ID_Braco', 'Projeto', 'Nome do braço', 'Ordem', 'Ativo', 'Observações'],
+    ['BR-A', 'Estudo A', 'Braço A', 1, 'Sim', ''],
+    ['BR-B', 'Estudo A', 'Braço B', 2, 'Sim', ''],
+    ['BR-X', 'Estudo B', 'Braço externo', 1, 'Sim', '']
+  ]);
+  server.getSoAVisitasSheet_ = () => soa;
+  server.getProjetoBracosSheet_ = () => bracos;
+
+  assert.deepEqual(Array.from(server.getItensEstoque().itens[0].bracosAplicaveisIds), []);
+  server.salvarItemEstoque({
+    id: '2', projeto: 'Estudo A', descricao: 'Kit Braço A', tipo: 'Kit', localizacao: 'Sala A',
+    estoqueMin: 2, observacoes: '', laboratorio: 'Lab A', status: 'Ativo',
+    visitasAplicaveisIds: ['SOA-1'], bracosAplicaveisIds: ['BR-A', 'BR-A']
+  });
+
+  const bracosCol = itens.rows[0].indexOf('Braços aplicáveis (IDs)');
+  assert.ok(bracosCol >= 0);
+  assert.equal(itens.rows[1][bracosCol], 'BR-A');
+  assert.deepEqual(Array.from(server.getModelosEstoqueSoAPorProjeto('Estudo A')[0].bracosAplicaveisIds), ['BR-A']);
+  assert.throws(() => server.salvarItemEstoque({
+    id: '2', projeto: 'Estudo A', descricao: 'Kit inválido', tipo: 'Kit', localizacao: 'Sala A',
+    estoqueMin: 2, observacoes: '', laboratorio: 'Lab A', status: 'Ativo',
+    visitasAplicaveisIds: ['SOA-1'], bracosAplicaveisIds: ['BR-X']
+  }), /braços selecionados não pertencem ao projeto/);
+});
+
+test('vínculo de Kit ou Bulk rejeita visita de outro projeto e outros tipos não aceitam vínculo', () => {
   const { server } = stockServer();
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita'],
@@ -122,10 +168,15 @@ test('vínculo de kit rejeita visita pertencente a outro projeto', () => {
   server.getSoAVisitasSheet_ = () => soa;
 
   assert.throws(() => server.salvarItemEstoque({
-    id: '2', projeto: 'Estudo A', descricao: 'Kit coleta', tipo: 'Kit', localizacao: 'Sala A',
+    id: '2', projeto: 'Estudo A', descricao: 'Bulk', tipo: 'Bulk Supplies', localizacao: 'Sala A',
     estoqueMin: 2, observacoes: '', laboratorio: 'Lab A', status: 'Ativo',
     visitasAplicaveisIds: ['SOA-B']
   }), /não pertencem ao projeto/);
+  assert.throws(() => server.salvarItemEstoque({
+    id: '2', projeto: 'Estudo A', descricao: 'Material', tipo: 'Material', localizacao: 'Sala A',
+    estoqueMin: 2, observacoes: '', laboratorio: 'Lab A', status: 'Ativo',
+    visitasAplicaveisIds: ['SOA-B']
+  }), /Somente modelos de Kit ou Bulk Supply/);
 });
 
 test('visualização do estoque incorpora observações e detalhes do cadastro do item', () => {
@@ -251,13 +302,20 @@ test('resumo da visualização separa reservas nominadas do saldo do Estoque Pri
   assert.doesNotMatch(estoque, /Físico/);
 });
 
-test('modal de item oferece seleção múltipla de visitas somente para kits', () => {
+test('modal de item oferece seleção múltipla de visitas para Kit e Bulk Supply', () => {
   const estoque = readProjectFile('IndexEstoqueScripts.html');
 
   assert.match(estoque, /id="iiVisitasSection"/);
   assert.match(estoque, /getSoAVisitasProjeto\(projeto\)/);
   assert.match(estoque, /#iiVisitasLista input\[type="checkbox"\]:checked/);
-  assert.match(estoque, /visitasAplicaveisIds: itemInlineEhKit\(\)/);
+  assert.match(estoque, /function itemInlinePermiteVinculoSoA\(\)/);
+  assert.match(estoque, /tipo\.indexOf\('kit'\).*tipo\.indexOf\('bulk'\)/);
+  assert.match(estoque, /visitasAplicaveisIds: itemInlinePermiteVinculoSoA\(\)/);
+  assert.match(estoque, /id="iiBracosLista"/);
+  assert.match(estoque, /function bracosSelecionadosItemInline\(\)/);
+  assert.match(estoque, /bracosAplicaveisIds: itemInlinePermiteVinculoSoA\(\)/);
+  assert.match(estoque, /getBracosProjeto\(projeto\)/);
+  assert.match(estoque, /laboratórios diferentes/);
 });
 
 test('Bulk Supply fica fora do fluxo de reserva e conciliação de kits', () => {

@@ -1215,15 +1215,18 @@
               '<div class="form-section">' +
                 '<div class="section-label"><span class="material-symbols-outlined">label</span>Identificação do Item</div>' +
                 '<div class="field-row cols-2" style="margin-bottom:12px">' +
-                  '<div><label class="field-label" for="iiProjeto">Projeto <span class="required-star">*</span></label><select id="iiProjeto" class="f-input f-select" onchange="atualizarVisitasItemInline([])"><option value="">— Selecione —</option></select><div class="field-error" id="errIiProjeto">Selecione um projeto.</div></div>' +
+                  '<div><label class="field-label" for="iiProjeto">Projeto <span class="required-star">*</span></label><select id="iiProjeto" class="f-input f-select" onchange="atualizarVisitasItemInline([], [])"><option value="">— Selecione —</option></select><div class="field-error" id="errIiProjeto">Selecione um projeto.</div></div>' +
                   '<div><label class="field-label" for="iiTipo">Tipo <span class="required-star">*</span></label><select id="iiTipo" class="f-input f-select" onchange="atualizarVisitasItemInline()"><option value="">— Selecione —</option></select><div class="field-error" id="errIiTipo">Selecione um tipo.</div></div>' +
                 '</div>' +
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiDescricao">Descrição do Item <span class="required-star">*</span></label><input type="text" id="iiDescricao" class="f-input large" placeholder="Ex: Standard Bulk Supply Box"><div class="field-error" id="errIiDescricao">Campo obrigatório.</div></div>' +
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiOrdem">Ordem de utilização no projeto</label><input type="number" id="iiOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"><div style="font-size:11px;color:#7b8794;margin-top:4px">Usada para ordenar kits na Agenda. Deixe em branco para manter a ordenação alfabética.</div><div class="field-error" id="errIiOrdem">Informe um número inteiro igual ou maior que zero.</div></div>' +
                 '<div id="iiVisitasSection" class="item-visitas-section" style="display:none">' +
-                  '<label class="field-label">Visitas aplicáveis</label>' +
-                  '<div class="item-visitas-help">Selecione uma ou mais visitas deste projeto. Sem seleção, o kit permanece sem restrição de visita.</div>' +
+                  '<label class="field-label">Visitas SoA aplicáveis</label>' +
+                  '<div class="item-visitas-help">Disponível para modelos de Kit e Bulk Supply. Uma visita pode usar vários modelos, inclusive de laboratórios diferentes. Sem seleção, o item permanece sem vínculo específico.</div>' +
                   '<div id="iiVisitasLista" class="item-visitas-list" aria-live="polite"></div>' +
+                  '<label class="field-label item-bracos-label">Braços aplicáveis</label>' +
+                  '<div class="item-visitas-help">Opcional. Deixe todos desmarcados para usar este modelo em todos os braços da visita.</div>' +
+                  '<div id="iiBracosLista" class="item-visitas-list item-bracos-list" aria-live="polite"></div>' +
                 '</div>' +
                 '<div class="field-row cols-2">' +
                   '<div><label class="field-label" for="iiLaboratorio">Laboratório <span class="required-star">*</span></label><select id="iiLaboratorio" class="f-input f-select"><option value="">— Selecione —</option></select><div class="field-error" id="errIiLaboratorio">Selecione um laboratório.</div></div>' +
@@ -1686,7 +1689,7 @@
     var itens = dados.itens || [];
     var q = (document.getElementById('eiSearch').value || '').toLowerCase();
     var filtrados = itens.filter(function(i) {
-      return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status, i.observacoes, i.detalhesVisita].join(' ').toLowerCase().indexOf(q) >= 0;
+      return !q || [i.projeto, i.descricao, i.tipo, i.localizacao, i.laboratorio, i.status, i.observacoes, i.detalhesVisita, (i.visitasAplicaveisIds || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0;
     });
     filtrados.sort(function(a, b) {
       var projetoCmp = String(a.projeto || '').localeCompare(String(b.projeto || ''), 'pt-BR');
@@ -1714,7 +1717,9 @@
     document.getElementById('eiHead').innerHTML =
       '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Ordem</th><th>Localização</th><th>Est. mín.</th><th>Laboratório</th><th>Status</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
     document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(i) {
-      return '<tr><td>' + projetoChip(i.projeto) + '</td><td class="estoque-description-cell">' + estoqueItemDescricaoHtml(i) +
+      var visitasVinculadas = (i.visitasAplicaveisIds || []).length;
+      var vinculoSoA = visitasVinculadas ? '<div class="item-soa-link"><span class="material-symbols-outlined">event_available</span>' + visitasVinculadas + (visitasVinculadas === 1 ? ' visita SoA' : ' visitas SoA') + '</div>' : '';
+      return '<tr><td>' + projetoChip(i.projeto) + '</td><td class="estoque-description-cell">' + estoqueItemDescricaoHtml(i) + vinculoSoA +
         '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + (i.ordem === '' || i.ordem === undefined ? '<span style="color:#9aa3b0">—</span>' : esc(i.ordem)) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
         '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" onclick="abrirFormItemInline(&quot;' + encodeURIComponent(JSON.stringify(i)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
@@ -2848,14 +2853,14 @@
       document.getElementById('iiEstoqueMin').value = item.estoqueMin || '';
       document.getElementById('iiObs').value = item.observacoes || '';
     }
-    atualizarVisitasItemInline(item ? (item.visitasAplicaveisIds || []) : []);
+    atualizarVisitasItemInline(item ? (item.visitasAplicaveisIds || []) : [], item ? (item.bracosAplicaveisIds || []) : []);
     abrirOverlay('modalItemInline');
   }
 
-  function itemInlineEhKit() {
+  function itemInlinePermiteVinculoSoA() {
     var tipo = String((document.getElementById('iiTipo') || {}).value || '')
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    return tipo.indexOf('kit') >= 0;
+    return tipo.indexOf('kit') >= 0 || tipo.indexOf('bulk') >= 0;
   }
 
   function visitasSelecionadasItemInline() {
@@ -2863,17 +2868,25 @@
       .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
   }
 
-  function atualizarVisitasItemInline(idsPreservados) {
+  function bracosSelecionadosItemInline() {
+    return Array.prototype.slice.call(document.querySelectorAll('#iiBracosLista input[type="checkbox"]:checked'))
+      .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
+  }
+
+  function atualizarVisitasItemInline(idsPreservados, bracosPreservados) {
     var section = document.getElementById('iiVisitasSection');
     var lista = document.getElementById('iiVisitasLista');
-    if (!section || !lista) return;
-    var ehKit = itemInlineEhKit();
-    section.style.display = ehKit ? '' : 'none';
-    if (!ehKit) return;
+    var listaBracos = document.getElementById('iiBracosLista');
+    if (!section || !lista || !listaBracos) return;
+    var permiteVinculo = itemInlinePermiteVinculoSoA();
+    section.style.display = permiteVinculo ? '' : 'none';
+    if (!permiteVinculo) return;
     var projeto = String((document.getElementById('iiProjeto') || {}).value || '').trim();
     var selecionados = Array.isArray(idsPreservados) ? idsPreservados.map(String) : visitasSelecionadasItemInline();
+    var bracosSelecionados = Array.isArray(bracosPreservados) ? bracosPreservados.map(String) : bracosSelecionadosItemInline();
     if (!projeto) {
-      lista.innerHTML = '<div class="item-visitas-empty">Selecione primeiro o projeto do kit.</div>';
+      lista.innerHTML = '<div class="item-visitas-empty">Selecione primeiro o projeto do item.</div>';
+      listaBracos.innerHTML = '<div class="item-visitas-empty">Selecione primeiro o projeto do item.</div>';
       return;
     }
     var requestId = ++_itemInlineVisitasRequest;
@@ -2883,7 +2896,7 @@
         if (requestId !== _itemInlineVisitasRequest || projeto !== String(document.getElementById('iiProjeto').value || '').trim()) return;
         visitas = (visitas || []).filter(function(visita) { return visita && visita.idSoA; });
         if (!visitas.length) {
-          lista.innerHTML = '<div class="item-visitas-empty">Este projeto ainda não possui visitas cadastradas. O kit poderá ser salvo normalmente.</div>';
+          lista.innerHTML = '<div class="item-visitas-empty">Este projeto ainda não possui visitas cadastradas. O item poderá ser salvo normalmente.</div>';
           return;
         }
         lista.innerHTML = visitas.map(function(visita) {
@@ -2899,6 +2912,26 @@
         lista.innerHTML = '<div class="item-visitas-empty error">Não foi possível carregar as visitas: ' + esc(appErrorMessage(e)) + '</div>';
       })
       .getSoAVisitasProjeto(projeto);
+    listaBracos.innerHTML = '<div class="item-visitas-empty"><div class="spinner"></div>Carregando braços…</div>';
+    google.script.run
+      .withSuccessHandler(function(bracos) {
+        if (requestId !== _itemInlineVisitasRequest || projeto !== String(document.getElementById('iiProjeto').value || '').trim()) return;
+        bracos = (bracos || []).filter(function(braco) { return braco && braco.idBraco && braco.ativo !== false; });
+        if (!bracos.length) {
+          listaBracos.innerHTML = '<div class="item-visitas-empty">Este projeto não possui braços cadastrados. O modelo será comum a todos.</div>';
+          return;
+        }
+        listaBracos.innerHTML = bracos.map(function(braco) {
+          var id = String(braco.idBraco || '');
+          var checked = bracosSelecionados.indexOf(id) >= 0 ? ' checked' : '';
+          return '<label class="item-visita-option"><input type="checkbox" value="' + esc(id) + '"' + checked + '><span><strong>' + esc(braco.nome || id) + '</strong></span></label>';
+        }).join('');
+      })
+      .withFailureHandler(function(e) {
+        if (requestId !== _itemInlineVisitasRequest) return;
+        listaBracos.innerHTML = '<div class="item-visitas-empty error">Não foi possível carregar os braços: ' + esc(appErrorMessage(e)) + '</div>';
+      })
+      .getBracosProjeto(projeto);
   }
 
   function validarCampoItemInline(id, errId, valido) {
@@ -2949,7 +2982,8 @@
         estoqueMin: document.getElementById('iiEstoqueMin').value,
         status: document.getElementById('iiStatus').value,
         observacoes: document.getElementById('iiObs').value.trim(),
-        visitasAplicaveisIds: itemInlineEhKit() ? visitasSelecionadasItemInline() : []
+        visitasAplicaveisIds: itemInlinePermiteVinculoSoA() ? visitasSelecionadasItemInline() : [],
+        bracosAplicaveisIds: itemInlinePermiteVinculoSoA() ? bracosSelecionadosItemInline() : []
       });
   }
 
