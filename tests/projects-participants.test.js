@@ -371,7 +371,7 @@ test('jornada do participante abre em janela sob demanda e combina SoA, Agenda e
   assert.match(client, /function jornadaParticipanteOverlay_\(\)/);
   assert.match(client, /id = 'modalJornadaParticipante'/);
   assert.match(client, /method: 'consultarJornadaParticipante'/);
-  assert.match(client, /não cria agendamentos nem reservas/i);
+  assert.match(client, /reservas podem ser feitas por lote na prontidão operacional/i);
   assert.match(server, /function consultarJornadaParticipante\(payload\)/);
   assert.match(server, /function getJornadaParticipante\(payload\)/);
   assert.match(server, /getSoAVisitasProjeto\(projeto\)/);
@@ -418,6 +418,33 @@ test('jornada inicia na primeira visita registrada pelo IPS e não reinicia a pr
   assert.deepEqual(JSON.parse(JSON.stringify(server.jornadaVisitasDesdeInicioOperacional_([
     { idSoA: 'TRIAGEM', temEventoIPS: false }, { idSoA: 'C1D1', temEventoIPS: false }
   ]).map(visita => visita.idSoA))), ['TRIAGEM', 'C1D1']);
+});
+
+test('jornada limita a prontidão às próximas visitas calculáveis em até seis meses', () => {
+  const server = runFile('WebApp.gs');
+  const hoje = new Date(2026, 7, 21);
+  const visitas = server.jornadaVisitasPrevisaoSeisMeses_([
+    { idSoA: 'C33', estado: 'AGENDADA', dataAlvoObj: new Date(2026, 7, 26) },
+    { idSoA: 'C34', estado: 'PREVISTA', dataAlvoObj: new Date(2027, 1, 21) },
+    { idSoA: 'C35', estado: 'PREVISTA', dataAlvoObj: new Date(2027, 1, 22) },
+    { idSoA: 'C32', estado: 'REALIZADA', dataAlvoObj: new Date(2026, 7, 1) }
+  ], hoje);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(visitas.map(visita => visita.idSoA))), ['C33', 'C34']);
+  assert.equal(server.jornadaLimitePrevisao_(hoje).getMonth(), 1);
+});
+
+test('jornada oferece reserva antecipada por lote com vínculo posterior à Agenda', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(client, /function abrirReservaPreviaJornada\(idSoA\)/);
+  assert.match(client, /method: 'consultarReservaPreviaJornada'/);
+  assert.match(client, /method: 'reservarKitsPrevisaoJornada'/);
+  assert.match(client, /visitasProntidao/);
+  assert.match(server, /function consultarReservaPreviaJornada\(payload\)/);
+  assert.match(server, /function reservarKitsPrevisaoJornada\(payload\)/);
+  assert.match(server, /próximos 6 meses/);
+  assert.match(server, /Agenda_ID|agendaId/);
 });
 
 test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agenda', () => {

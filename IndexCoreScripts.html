@@ -4000,7 +4000,8 @@ function jornadaParticipanteHtml_(dados) {
       var sinal = kit.risco ? '#b3261e' : (kit.reservado ? '#137333' : '#e65100');
       var reserva = kit.reservado ? 'Lote ' + (kit.lote || '—') + (kit.validade ? ' · validade ' + kit.validade : '') : 'Sem reserva';
       var cobertura = kit.reservado ? (kit.reservaValida ? 'Validade cobre a visita' : 'Validade insuficiente') : (kit.estoqueDisponivel ? 'Estoque disponível hoje' : 'Sem estoque compatível');
-      return '<div style="border-top:1px solid #e5ebf5;padding:9px 0"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div style="font-size:12px;color:#5f6b7c;margin-top:3px">' + esc(reserva) + ' · <span style="color:' + sinal + ';font-weight:700">' + esc(cobertura) + '</span>' + (kit.pedidoAberto ? ' · Pedido aberto ' + esc(kit.pedidoAberto) : '') + '</div></div>';
+      var reservar = !kit.reservado && !/bulk/i.test(String(kit.tipo || '')) ? '<button type="button" class="jornada-reserve-btn" onclick="abrirReservaPreviaJornada(\'' + esc(visita.idSoA) + '\')"><span class="material-symbols-outlined">lock</span> Reservar</button>' : '';
+      return '<div class="jornada-kit-row"><div><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div style="font-size:12px;color:#5f6b7c;margin-top:3px">' + esc(reserva) + ' · <span style="color:' + sinal + ';font-weight:700">' + esc(cobertura) + '</span>' + (kit.pedidoAberto ? ' · Pedido aberto ' + esc(kit.pedidoAberto) : '') + '</div></div>' + reservar + '</div>';
     }).join('');
   }
   var timeline = visitas.map(function(visita) {
@@ -4016,14 +4017,15 @@ function jornadaParticipanteHtml_(dados) {
       + (temJanela ? '<div class="jornada-step-window">Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) + '</div>' : '')
       + '</article>';
   }).join('');
-  var operacao = visitas.filter(function(visita) { return visita.estado !== 'REALIZADA'; }).slice(0, 4).map(function(visita) {
+  var prontidao = dados.visitasProntidao || visitas.filter(function(visita) { return visita.estado !== 'REALIZADA'; }).slice(0, 4);
+  var operacao = prontidao.map(function(visita) {
     return '<section class="jornada-readiness-card' + (visita.atrasada ? ' danger' : '') + '"><div class="jornada-readiness-title"><strong>' + esc(visita.nome) + '</strong>' + estado(visita) + '</div><div class="jornada-readiness-window">' + (visita.janelaInicio ? 'Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) : 'Data ideal: ' + esc(visita.dataAlvo || 'Sem data calculável')) + '</div>' + kits(visita) + '</section>';
   }).join('') || '<div style="color:#7b8794">Nenhuma visita futura identificada.</div>';
   if (!dados.possuiSoA) timeline = '<div style="color:#7b8794;padding:18px 0">Este projeto não possui SoA. O histórico abaixo permanece disponível e as visitas futuras podem ser acompanhadas quando forem agendadas.</div>';
   var historicoAnterior = dados.eventosAnteriores || [];
   var historicoAnteriorHtml = historicoAnterior.length ? '<details style="margin-top:14px"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:700">Histórico anterior ao início do IPS em 2026 (' + historicoAnterior.length + ')</summary><div style="font-size:12px;color:#7b8794;padding:8px 0">Apenas informativo; não influencia a previsão, janelas ou prontidão.</div>' + historicoAnterior.map(function(evento) { return '<div style="padding:6px 0;border-top:1px solid #edf1f7;font-size:13px;color:#5f6b7c"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + '</div>'; }).join('') + '</details>' : '';
   var conciliarHtml = conciliacao.length ? '<button class="ag-tb-btn" style="margin-left:auto" onclick="abrirConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">rule</span> Conciliar ' + conciliacao.length + ' nome(s)</button>' : '';
-  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + conciliarHtml + '</div><p class="jornada-note">A previsão é informativa; não cria agendamentos nem reservas.</p><div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><div class="jornada-history">' + ((dados.eventosLivres || []).map(function(evento) { return '<div><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + (evento.idSoA ? ' <span>· conciliada</span>' : '') + '</div>'; }).join('') || 'Nenhuma visita registrada.') + '</div>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Fotografia atual de reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + conciliarHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p><div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><div class="jornada-history">' + ((dados.eventosLivres || []).map(function(evento) { return '<div><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + (evento.idSoA ? ' <span>· conciliada</span>' : '') + '</div>'; }).join('') || 'Nenhuma visita registrada.') + '</div>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
 }
 
 var _jornadaParticipanteAtual = null;
@@ -4046,6 +4048,50 @@ function abrirConcilicaoVisitasParticipante() {
 function voltarJornadaParticipante() {
   var content = document.getElementById('jornadaParticipanteConteudo');
   if (content) content.innerHTML = jornadaParticipanteHtml_(_jornadaParticipanteDados || {});
+}
+
+function abrirReservaPreviaJornada(idSoA) {
+  var dados = _jornadaParticipanteDados || {};
+  var participante = _jornadaParticipanteAtual || {};
+  var visita = (dados.visitasProntidao || dados.visitas || []).filter(function(item) { return String(item.idSoA || '') === String(idSoA || ''); })[0];
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  if (!visita || !content) return;
+  var contexto = { projeto: participante.projeto, participante: participante.nome, participanteId: participante.idParticipante, braco: participante.braco || '', idSoA: visita.idSoA, visita: visita.nome, dataVisita: visita.dataAlvoIso };
+  content.innerHTML = '<div style="max-width:780px"><button class="ag-tb-btn" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Reservar kits para ' + esc(visita.nome) + '</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Data prevista: <strong>' + esc(visita.dataAlvo) + '</strong>. A reserva bloqueia o saldo do lote, sem criar agendamento. O vínculo com a Agenda será feito depois.</p><div id="jornadaReservaPreviaConteudo" style="padding:22px;text-align:center;color:#64748b"><div class="spinner"></div>Buscando lotes elegíveis…</div></div>';
+  appServerRun({ method: 'consultarReservaPreviaJornada', args: [contexto], onSuccess: function(resposta) {
+    var destino = document.getElementById('jornadaReservaPreviaConteudo');
+    if (!destino) return;
+    var kits = (resposta && resposta.kits) || [];
+    if (!kits.length) { destino.innerHTML = '<div style="color:#64748b">Não há modelos de Kit vinculados a esta visita e braço.</div>'; return; }
+    destino.innerHTML = '<div class="jornada-reserve-list">' + kits.map(function(kit, indice) {
+      var lotes = kit.lotes || [];
+      var opcoes = '<option value="">— Não reservar este kit —</option>' + lotes.map(function(lote) { return '<option value="' + esc(lote.idLote) + '" data-accession="' + esc(lote.accessionNumber || '') + '">Lote ' + esc(lote.idLote) + ' · validade ' + esc(lote.validade) + ' · disponível ' + esc(lote.qtdeDisponivel) + '</option>'; }).join('');
+      return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" id="jornadaReservaQtd_' + indice + '" type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
+    }).join('') + '</div><div class="jornada-reserve-actions"><button class="btn-secondary" onclick="voltarJornadaParticipante()">Cancelar</button><button class="btn-primary" id="btnConfirmarReservaJornada" onclick="confirmarReservaPreviaJornada()"><span class="material-symbols-outlined">lock</span> Reservar lotes selecionados</button></div><div id="statusReservaPreviaJornada" class="status-msg"></div>';
+    window._jornadaReservaPrevia = { contexto: contexto, kits: kits };
+  }, onFailure: function(e) { var destino = document.getElementById('jornadaReservaPreviaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
+}
+
+function confirmarReservaPreviaJornada() {
+  var reserva = window._jornadaReservaPrevia || {};
+  var kits = (reserva.kits || []).map(function(kit, indice) {
+    var lote = document.getElementById('jornadaReservaLote_' + indice);
+    var quantidade = document.getElementById('jornadaReservaQtd_' + indice);
+    if (!lote || !lote.value) return null;
+    var option = lote.options[lote.selectedIndex];
+    return { idItem: kit.idItem, idLote: lote.value, qtde: Number(quantidade && quantidade.value || 0), accessionNumber: option && option.getAttribute('data-accession') || '' };
+  }).filter(Boolean);
+  var status = document.getElementById('statusReservaPreviaJornada');
+  var btn = document.getElementById('btnConfirmarReservaJornada');
+  if (!kits.length) { if (status) status.textContent = 'Selecione ao menos um lote para reservar.'; return; }
+  if (kits.some(function(kit) { return !isFinite(kit.qtde) || kit.qtde <= 0 || kit.qtde % 1 !== 0; })) { if (status) status.textContent = 'Informe quantidades inteiras e positivas.'; return; }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Reservando lotes…';
+  var payload = Object.assign({}, reserva.contexto || {}, { kits: kits });
+  appServerRun({ method: 'reservarKitsPrevisaoJornada', args: [payload], onSuccess: function(resultado) {
+    snack((resultado && resultado.msg) || 'Kits reservados.');
+    abrirJornadaParticipante(_jornadaParticipanteAtual || {});
+  }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); } });
 }
 
 function salvarConcilicaoVisitasParticipante() {

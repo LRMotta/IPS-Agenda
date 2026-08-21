@@ -10285,6 +10285,23 @@ function jornadaVisitasDesdeInicioOperacional_(visitas) {
   return primeiroRegistroIps >= 0 ? visitas.slice(primeiroRegistroIps) : visitas;
 }
 
+function jornadaLimitePrevisao_(hoje) {
+  var limite = new Date((hoje || new Date()).getTime());
+  limite.setHours(23, 59, 59, 999);
+  limite.setMonth(limite.getMonth() + 6);
+  return limite;
+}
+
+function jornadaVisitasPrevisaoSeisMeses_(visitas, hoje) {
+  hoje = new Date((hoje || new Date()).getTime());
+  hoje.setHours(0, 0, 0, 0);
+  var limite = jornadaLimitePrevisao_(hoje);
+  return (visitas || []).filter(function(visita) {
+    var data = visita && visita.dataAlvoObj;
+    return visita && visita.estado !== 'REALIZADA' && data && data >= hoje && data <= limite;
+  });
+}
+
 function getJornadaParticipante(payload) {
   payload = payload || {};
   var nome = String(payload.nome || '').trim();
@@ -10361,6 +10378,7 @@ function getJornadaParticipante(payload) {
   });
   var estoque = getEstoque();
   var visitasJornada = jornadaVisitasDesdeInicioOperacional_(visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }));
+  var visitasProntidao = jornadaVisitasPrevisaoSeisMeses_(visitasJornada, hoje);
   visitasJornada.forEach(function(visita) {
     if (visita.estado !== 'REALIZADA') {
       var modelosVisita = modelos.filter(function(modelo) { return modelo.visitasAplicaveisIds.indexOf(visita.idSoA) >= 0; });
@@ -10390,10 +10408,105 @@ function getJornadaParticipante(payload) {
   return {
     participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
     possuiSoA: visitas.length > 0, visitas: visitasJornada,
+    visitasProntidao: visitasProntidao,
+    horizontePrevisao: formatarDataSafe(jornadaLimitePrevisao_(hoje)),
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
     eventosAnteriores: eventosAnteriores.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
     conciliacao: conciliacao
   };
+}
+
+function jornadaReservaPreviaContexto_(payload) {
+  payload = payload || {};
+  var projeto = String(payload.projeto || '').trim();
+  var participante = String(payload.participante || '').trim();
+  var participanteId = String(payload.participanteId || '').trim();
+  var idSoA = String(payload.idSoA || '').trim();
+  var visita = String(payload.visita || '').trim();
+  var dataVisita = agendaDateFromValue_(payload.dataVisita);
+  if (!projeto || !participante || !participanteId || !idSoA || !visita || !dataVisita || isNaN(dataVisita.getTime())) {
+    throw new Error('Informe participante, visita SoA e data estimada para reservar.');
+  }
+  dataVisita.setHours(0, 0, 0, 0);
+  var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  if (dataVisita < hoje || dataVisita > jornadaLimitePrevisao_(hoje)) {
+    throw new Error('A reserva antecipada está disponível somente para os próximos 6 meses.');
+  }
+  var visitaSoA = getSoAVisitasProjeto(projeto).filter(function(item) { return String(item.idSoA || '') === idSoA; })[0];
+  if (!visitaSoA) throw new Error('A visita informada não pertence ao SoA deste projeto.');
+  var braco = getBracosProjeto(projeto).filter(function(item) { return normText_(item.nome) === normText_(payload.braco); })[0] || {};
+  var modelos = getModelosEstoqueSoAPorProjeto(projeto).filter(function(modelo) {
+    return estoqueTipoEhKit_(modelo.tipo) && modelo.visitasAplicaveisIds.indexOf(idSoA) >= 0 &&
+      (!modelo.bracosAplicaveisIds.length || modelo.bracosAplicaveisIds.indexOf(braco.idBraco) >= 0);
+  });
+  return { projeto: projeto, participante: participante, participanteId: participanteId, idSoA: idSoA, visita: visitaSoA.nome || visita, dataVisita: dataVisita, modelos: modelos };
+}
+
+function consultarReservaPreviaJornada(payload) {
+  codexAssertCanWrite_('consultarReservaPreviaJornada', 'Estoque', payload && (payload.participanteId || payload.idSoA));
+  var contexto = jornadaReservaPreviaContexto_(payload);
+  var estoque = getEstoque();
+  var validadeMinima = new Date(contexto.dataVisita.getTime()); validadeMinima.setDate(validadeMinima.getDate() + 10);
+  return {
+    dataVisita: formatarDataIsoAgenda_(contexto.dataVisita),
+    limite: formatarDataIsoAgenda_(jornadaLimitePrevisao_(new Date())),
+    kits: contexto.modelos.map(function(modelo) {
+      return {
+        idItem: modelo.idItem, descricao: modelo.descricao, laboratorio: modelo.laboratorio || '',
+        lotes: estoque.filter(function(lote) {
+          var validade = agendaDateFromValue_(lote.validade);
+          return String(lote.idItem || '') === String(modelo.idItem || '') && Number(lote.qtdeDisponivel) > 0 && validade && validade >= validadeMinima;
+        }).map(function(lote) {
+          return { idLote: lote.idLote, validade: formatarDataSafe(lote.validade), qtdeDisponivel: Number(lote.qtdeDisponivel) || 0, accessionNumber: lote.accessionNumber || '' };
+        })
+      };
+    })
+  };
+}
+
+function reservarKitsPrevisaoJornada(payload) {
+  codexAssertCanWrite_('reservarKitsPrevisaoJornada', 'Estoque', payload && (payload.participanteId || payload.idSoA));
+  return codexWithDocumentLock_('reservarKitsPrevisaoJornada', function() {
+    var contexto = jornadaReservaPreviaContexto_(payload);
+    var kits = Array.isArray(payload.kits) ? payload.kits : [];
+    if (!kits.length) throw new Error('Selecione ao menos um lote para reservar.');
+    var modelosPorItem = {};
+    contexto.modelos.forEach(function(modelo) { modelosPorItem[String(modelo.idItem || '')] = modelo; });
+    var estoque = getEstoque();
+    var resumo = getKitReservasResumo_();
+    var reservasAtuais = getKitReservasLinhas_();
+    var validadeMinima = new Date(contexto.dataVisita.getTime()); validadeMinima.setDate(validadeMinima.getDate() + 10);
+    var responsavel = Session.getActiveUser().getEmail() || '';
+    var linhas = [];
+    kits.forEach(function(kit) {
+      var idItem = String(kit.idItem || '').trim();
+      var idLote = String(kit.idLote || '').trim();
+      var qtde = Number(kit.qtde || 1);
+      if (!modelosPorItem[idItem] || !idLote || !isFinite(qtde) || qtde <= 0 || qtde % 1 !== 0) throw new Error('A seleção de kit para reserva é inválida.');
+      if (reservasAtuais.some(function(reserva) {
+        return normText_(reserva.status) === 'reservado' && String(reserva.participanteId || '') === contexto.participanteId &&
+          normText_(reserva.projeto) === normText_(contexto.projeto) && String(reserva.idItem || '') === idItem &&
+          normText_(reserva.visitaPrevista) === normText_(contexto.visita);
+      })) throw new Error('Já existe uma reserva ativa deste kit para esta visita.');
+      var lote = estoque.filter(function(item) { return String(item.idItem || '') === idItem && String(item.idLote || '') === idLote; })[0];
+      if (!lote) throw new Error('O lote selecionado não foi localizado no estoque.');
+      var validade = agendaDateFromValue_(lote.validade);
+      if (!validade || validade < validadeMinima) throw new Error('O lote selecionado não possui validade suficiente para a data prevista.');
+      var chave = kitReservaChave_(lote.idItem, lote.idLote, lote.validade, lote.localizacao, lote.accessionNumber);
+      var disponivel = Math.max(0, Number(lote.qtde || 0) - Number(resumo[chave] || 0));
+      if (qtde > disponivel) throw new Error('Saldo disponível insuficiente para reservar ' + String(lote.descricao || idItem) + '.');
+      resumo[chave] = Number(resumo[chave] || 0) + qtde;
+      linhas.push([gerarIdLoteEstoque_(), new Date(), '', contexto.projeto, contexto.participante,
+        lote.idItem, lote.idLote, lote.descricao, validade, lote.localizacao, qtde, 'Reservado', contexto.dataVisita,
+        responsavel, String(payload.observacoes || 'Reserva antecipada na Jornada do Participante.'), contexto.participanteId,
+        contexto.visita, String(kit.accessionNumber || lote.accessionNumber || '')]);
+    });
+    var sheet = getKitReservasSheet_();
+    sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
+    SpreadsheetApp.flush();
+    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    return { ok: true, reservados: linhas.length, msg: linhas.length + ' kit(s) reservado(s). Vincule à Agenda quando a visita for agendada.' };
+  });
 }
 
 var AGENDA_SOA_CONCILIACAO_HEADERS_ = ['Agenda_ID', 'ID_SoA', 'Projeto', 'Participante_ID', 'Participante', 'Visita_original', 'Conciliado_em', 'Responsável'];
