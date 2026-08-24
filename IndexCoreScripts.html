@@ -4265,29 +4265,27 @@ function renderProjetos(lista) {
   applyDashboardPendingFilter_('projetos');
 }
 
+function projetoCorrespondeBusca_(p, q) {
+  var texto = String(q || '').toLowerCase().trim();
+  if (!texto) return true;
+  var campos = [
+    p.nomeAbreviado, p.codigo, p.fase, p.especialidade, p.investigador,
+    p.subInvestigador1, p.subInvestigador2, p.coordenador, p.patrocinador,
+    p.cro, p.centro, p.tituloCompleto, p.numeroCE, p.expedienteCE,
+    p.dataSiv, p.dataSivInicio, p.dataSivFim, p.status
+  ];
+  var courierIds = [p.courierPrincipalId, p.courierAdicional1Id, p.courierAdicional2Id];
+  return campos.some(function(valor) {
+    return String(valor || '').toLowerCase().includes(texto);
+  }) || courierIds.some(function(id) {
+    return String(projetoCourierNome_(id) || '').toLowerCase().includes(texto);
+  });
+}
+
 function filtrarProjetos(forceNow) {
   codexRunSearchFilter('searchProjetos', 'projetos', function() {
     var q = (document.getElementById('searchProjetos').value||'').toLowerCase().trim();
-    var f = q ? _projetos.filter(function(p){
-      return (p.nomeAbreviado||'').toLowerCase().includes(q)
-          || (p.codigo||'').toLowerCase().includes(q)
-          || (p.fase||'').toLowerCase().includes(q)
-          || (p.especialidade||'').toLowerCase().includes(q)
-          || (p.investigador||'').toLowerCase().includes(q)
-          || (p.subInvestigador1||'').toLowerCase().includes(q)
-          || (p.subInvestigador2||'').toLowerCase().includes(q)
-          || (p.coordenador||'').toLowerCase().includes(q)
-          || (p.patrocinador||'').toLowerCase().includes(q)
-          || (p.cro||'').toLowerCase().includes(q)
-          || (p.centro||'').toLowerCase().includes(q)
-          || (p.tituloCompleto||'').toLowerCase().includes(q)
-          || (p.numeroCE||'').toLowerCase().includes(q)
-          || (p.expedienteCE||'').toLowerCase().includes(q)
-          || (p.dataSiv||'').toLowerCase().includes(q)
-          || (p.dataSivInicio||'').toLowerCase().includes(q)
-          || (p.dataSivFim||'').toLowerCase().includes(q)
-          || (p.status||'').toLowerCase().includes(q);
-    }) : _projetos;
+    var f = q ? _projetos.filter(function(p){ return projetoCorrespondeBusca_(p, q); }) : _projetos;
     renderTabelaProj(f);
   }, !!forceNow);
 }

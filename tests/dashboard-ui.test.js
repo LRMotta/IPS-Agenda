@@ -92,6 +92,23 @@ test('resumo de Projetos exclui cancelados de todos os indicadores ativos', () =
   assert.equal(elements.projRecrutamentoPct.textContent, 'Meta 9 | Total 5 | Falhas 1');
 });
 
+test('pesquisa de Projetos encontra courier principal ou adicional pelo nome', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const buscaBlock = sourceBetween(core, 'function projetoCorrespondeBusca_(', 'function filtrarProjetos(');
+  const courierBlock = sourceBetween(core, 'function projetoCourierNome_(', 'function projetoCouriersDetalheHtml_(');
+  const context = vm.createContext({
+    COURIERS_PROJ: [
+      { id: 'COU-1', nome: 'DHL Express' },
+      { id: 'COU-2', nome: 'Marken Brasil' }
+    ]
+  });
+  vm.runInContext(courierBlock + buscaBlock, context);
+
+  assert.equal(context.projetoCorrespondeBusca_({ courierPrincipalId: 'COU-1' }, 'dhl'), true);
+  assert.equal(context.projetoCorrespondeBusca_({ courierAdicional2Id: 'COU-2' }, 'marken'), true);
+  assert.equal(context.projetoCorrespondeBusca_({ courierPrincipalId: 'COU-1' }, 'marken'), false);
+});
+
 test('rankings de patrocinador e investigador exibem os 15 principais resultados', () => {
   const dashboard = readProjectFile('IndexDashboard.html');
   assert.match(dashboard, /var patPairs = _topDashResults\(patKeys, patMap, 15\);/);
@@ -127,7 +144,8 @@ test('grafico de coordenadores abre projetos com o coordenador selecionado', () 
   const core = readProjectFile('IndexCoreScripts.html');
   const content = readProjectFile('IndexContentAfterDashboard.html');
   assert.match(content, /placeholder="[^"]*coordenador[^"]*"/);
-  assert.match(core, /\(p\.coordenador\|\|''\)\.toLowerCase\(\)\.includes\(q\)/);
+  assert.match(core, /p\.coordenador/);
+  assert.match(core, /projetoCorrespondeBusca_\(p, q\)/);
   assert.match(core, /filtro !== 'coordenador'/);
   assert.match(core, /normSelectValue\(p && p\.coordenador\) === coordenador/);
   assert.match(dashboard, /function dashOpenCoordinator\(coordenador\)/);
