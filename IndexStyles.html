@@ -833,5 +833,31 @@
     .jornada-reserve-fields { display:grid; grid-template-columns:minmax(0,1fr) 100px; gap:8px; margin-top:8px; }
     .jornada-reserve-warning { margin-top:7px; color:#b3261e; font-size:12px; }
     .jornada-reserve-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
-    @media(max-width:540px) { .jornada-reserve-fields { grid-template-columns:1fr; } .jornada-kit-row { align-items:flex-start; flex-direction:column; } }
+    .jornada-reserve-actions .ag-tb-btn { height:38px; padding:0 14px; font-size:13px; font-weight:600; }
+    .jornada-history-section { margin-top:18px; padding:14px 16px 4px; border:1px solid #e0e6f0; border-radius:var(--r-md); background:#fff; }
+    .jornada-history-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:10px; border-bottom:1px solid #e8edf8; }
+    .jornada-history-heading .jornada-history-title { margin:0; }
+    .jornada-history-heading > span { color:#64748b; font-size:11px; font-weight:700; }
+    .jornada-history-row { display:grid; grid-template-columns:28px minmax(150px,1fr) auto; align-items:center; gap:10px; min-height:52px; border-bottom:1px solid #edf1f7; }
+    .jornada-history-row:last-child { border-bottom:0; }
+    .jornada-history-marker { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:#edf4ff; color:#1266f1; }
+    .jornada-history-marker.done { background:#edf7ee; color:#137333; }
+    .jornada-history-marker.neutral { background:#f2f4f7; color:#64748b; }
+    .jornada-history-marker .material-symbols-outlined { font-size:15px; }
+    .jornada-history-visit { display:flex; align-items:baseline; gap:7px; min-width:0; }
+    .jornada-history-visit strong { color:#334155; font-size:13px; overflow-wrap:anywhere; }
+    .jornada-history-date { color:#64748b!important; font-size:12px!important; white-space:nowrap; }
+    .jornada-history-state { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    .jornada-history-status { color:#64748b!important; font-size:11px!important; font-weight:700; }
+    .jornada-history-status.done { color:#137333!important; }
+    .jornada-history-status.scheduled { color:#1266f1!important; }
+    .jornada-history-match { display:inline-flex; align-items:center; gap:3px; color:#137333!important; font-size:11px!important; }
+    .jornada-history-match .material-symbols-outlined { font-size:14px; }
+    .jornada-history-empty { padding:16px 0!important; color:#64748b; font-size:13px; text-align:center; }
+    .jornada-modal-box .modal-body { padding:20px; }
+    .jornada-layout { grid-template-columns:minmax(0,1fr) minmax(390px,430px); }
+    .jornada-kit-row { display:block; }
+    .jornada-kit-row .jornada-reserve-btn { display:flex; width:max-content; margin-top:8px; margin-left:auto; }
+    @media(max-width:540px) { .jornada-reserve-fields { grid-template-columns:1fr; } .jornada-kit-row { align-items:flex-start; flex-direction:column; } .jornada-history-section { padding:12px; } .jornada-history-row { grid-template-columns:28px minmax(0,1fr); gap:8px; padding:8px 0; } .jornada-history-visit { align-items:flex-start; flex-direction:column; gap:2px; } .jornada-history-state { grid-column:2; justify-content:flex-start; gap:10px; } .jornada-history-date { white-space:normal; } }
+    @media(max-width:980px) { .jornada-layout { grid-template-columns:1fr; } }
   </style>

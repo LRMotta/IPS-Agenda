@@ -436,6 +436,7 @@ test('jornada limita a prontidão às próximas visitas calculáveis em até sei
 
 test('jornada oferece reserva antecipada por lote com vínculo posterior à Agenda', () => {
   const client = readProjectFile('IndexCoreScripts.html');
+  const styles = readProjectFile('IndexStyles.html');
   const server = readProjectFile('WebApp.gs');
   assert.match(client, /function abrirReservaPreviaJornada\(idSoA\)/);
   assert.match(client, /method: 'consultarReservaPreviaJornada'/);
@@ -445,6 +446,10 @@ test('jornada oferece reserva antecipada por lote com vínculo posterior à Agen
   assert.match(server, /function reservarKitsPrevisaoJornada\(payload\)/);
   assert.match(server, /próximos 6 meses/);
   assert.match(server, /Agenda_ID|agendaId/);
+  assert.doesNotMatch(client, /btn-(?:primary|secondary)/);
+  assert.match(client, /ag-tb-btn primary/);
+  assert.match(styles, /jornada-history-row/);
+  assert.match(styles, /jornada-reserve-actions \.ag-tb-btn/);
 });
 
 test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agenda', () => {
