@@ -4072,21 +4072,27 @@ function abrirReservaPreviaJornada(idSoA) {
     destino.innerHTML = '<div class="jornada-reserve-list">' + kits.map(function(kit, indice) {
       var lotes = kit.lotes || [];
       var opcoes = '<option value="">— Não reservar este kit —</option>' + lotes.map(function(lote) { return '<option value="' + esc(lote.idLote) + '" data-accession="' + esc(lote.accessionNumber || '') + '">Lote ' + esc(lote.idLote) + ' · validade ' + esc(lote.validade) + ' · disponível ' + esc(lote.qtdeDisponivel) + '</option>'; }).join('');
-      return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" id="jornadaReservaQtd_' + indice + '" type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
+      return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" data-jornada-quantity type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
     }).join('') + '</div><div class="jornada-reserve-actions"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Cancelar</button><button class="ag-tb-btn primary" type="button" id="btnConfirmarReservaJornada" onclick="confirmarReservaPreviaJornada()"><span class="material-symbols-outlined">lock</span> Reservar lotes selecionados</button></div><div id="statusReservaPreviaJornada" class="status-msg"></div>';
     window._jornadaReservaPrevia = { contexto: contexto, kits: kits };
   }, onFailure: function(e) { var destino = document.getElementById('jornadaReservaPreviaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
 }
 
+function jornadaKitsSelecionadosParaReserva_() {
+  var conteudo = document.getElementById('jornadaReservaPreviaConteudo');
+  if (!conteudo || !conteudo.querySelectorAll) return [];
+  return Array.prototype.slice.call(conteudo.querySelectorAll('select[data-jornada-item]')).map(function(lote) {
+    var idItem = String((lote.dataset && lote.dataset.jornadaItem) || lote.getAttribute('data-jornada-item') || '').trim();
+    var quantidade = lote.parentNode && lote.parentNode.querySelector ? lote.parentNode.querySelector('input[data-jornada-quantity]') : null;
+    if (!idItem || !lote.value) return null;
+    var option = lote.options[lote.selectedIndex];
+    return { idItem: idItem, idLote: lote.value, qtde: Number(quantidade && quantidade.value || 0), accessionNumber: option && option.getAttribute('data-accession') || '' };
+  }).filter(Boolean);
+}
+
 function confirmarReservaPreviaJornada() {
   var reserva = window._jornadaReservaPrevia || {};
-  var kits = (reserva.kits || []).map(function(kit, indice) {
-    var lote = document.getElementById('jornadaReservaLote_' + indice);
-    var quantidade = document.getElementById('jornadaReservaQtd_' + indice);
-    if (!lote || !lote.value) return null;
-    var option = lote.options[lote.selectedIndex];
-    return { idItem: kit.idItem, idLote: lote.value, qtde: Number(quantidade && quantidade.value || 0), accessionNumber: option && option.getAttribute('data-accession') || '' };
-  }).filter(Boolean);
+  var kits = jornadaKitsSelecionadosParaReserva_();
   var status = document.getElementById('statusReservaPreviaJornada');
   var btn = document.getElementById('btnConfirmarReservaJornada');
   if (!kits.length) { if (status) status.textContent = 'Selecione ao menos um lote para reservar.'; return; }
