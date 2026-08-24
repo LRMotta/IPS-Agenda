@@ -1154,18 +1154,36 @@ test('projeto de visita ou consulta fica bloqueado no autocomplete enquanto o pa
   assert.match(readProjectFile('IndexContentAfterDashboard.html'), /for="agProjeto">Protocolo/);
 });
 
-test('Agenda sugere visitas SoA por projeto sem bloquear visita livre ou projetos legados', () => {
+test('Agenda sugere próximas visitas SoA e pendências sem vínculo sem bloquear visita livre ou projetos legados', () => {
   const agenda = readProjectFile('IndexAgendaScripts.html');
   const content = readProjectFile('IndexContentAfterDashboard.html');
+  const server = runFile('WebApp.gs');
   const load = functionBody(agenda, 'atualizarAgendaVisitasSoA');
   assert.match(content, /id="agVisita"[^>]*list="agVisitaSoAList"/);
   assert.match(content, /id="agVisitaSoAList"/);
   assert.match(content, /Informe uma visita livre/);
-  assert.match(load, /method: 'getSoAVisitasProjeto'/);
+  assert.match(load, /method: 'getAgendaVisitasSoASugeridas'/);
   assert.match(load, /visita livre continua permitida/i);
   assert.match(load, /projeto não possui calendário SoA/i);
+  assert.match(load, /concluída\(s\) já vinculada\(s\) foram ocultada\(s\)/i);
   assert.match(functionBody(agenda, 'onAgendaProjetoChange'), /atualizarAgendaVisitasSoA\(\)/);
   assert.match(functionBody(agenda, 'atualizarAgendaFormDataOpcoes'), /atualizarAgendaVisitasSoA\(\)/);
+  assert.deepEqual(JSON.parse(JSON.stringify(server.agendaSoAFiltrarSugestoesParticipante_([
+    { idSoA: 'TRI', nome: 'Triagem', ativo: true },
+    { idSoA: 'C1D1', nome: 'Dia 1 do Ciclo 1', ativo: true },
+    { idSoA: 'C2D1', nome: 'Dia 1 do Ciclo 2', ativo: true }
+  ], [
+    { id: 'A1', concluida: true },
+    { id: 'A2', concluida: true },
+    { id: 'A3', concluida: false }
+  ], { A1: 'TRI', A3: 'C1D1' }))), {
+    visitas: [
+      { idSoA: 'C1D1', nome: 'Dia 1 do Ciclo 1', ativo: true },
+      { idSoA: 'C2D1', nome: 'Dia 1 do Ciclo 2', ativo: true }
+    ],
+    concluidasOcultadas: 1,
+    historicasSemVinculo: 1
+  });
 });
 
 test('resumo do participante e exibido de imediato e atualiza a ultima visita em segundo plano', () => {
