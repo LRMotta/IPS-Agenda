@@ -1669,7 +1669,7 @@
         return '<option value="' + esc(visita.nome) + '" label="' + esc(label) + '"></option>';
       }).join('');
       if (hint) hint.textContent = visitas.length
-        ? (Number(resposta.concluidasOcultadas || 0) ? Number(resposta.concluidasOcultadas) + ' visita(s) concluída(s) já vinculada(s) foram ocultada(s). ' : '') + (Number(resposta.historicasSemVinculo || 0) ? Number(resposta.historicasSemVinculo) + ' visita(s) histórica(s) sem vínculo permanecem na sugestão. ' : '') + 'Selecione uma visita SoA sugerida ou informe uma visita livre.'
+        ? (Number(resposta.visitasAnterioresOcultadas || 0) ? Number(resposta.visitasAnterioresOcultadas) + ' visita(s) até o último vínculo SoA foram ocultada(s). ' : Number(resposta.concluidasOcultadas || 0) ? Number(resposta.concluidasOcultadas) + ' visita(s) concluída(s) já vinculada(s) foram ocultada(s). ' : '') + 'Selecione uma visita SoA sugerida ou informe uma visita livre.'
         : 'Este projeto não possui calendário SoA. Informe a visita livremente.';
     }, onFailure: function() {
       if (requestId !== _agendaVisitasSoARequest) return;

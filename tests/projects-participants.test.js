@@ -165,6 +165,11 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   assert.ok(styles.includes('.participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}'));
 });
 
+test('falha de pré-triagem usa o mesmo chip da falha de triagem', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  assert.match(source, /'falha de triagem':'chip-falhatriagem','falha de pre-triagem':'chip-falhatriagem'/);
+});
+
 test('participante oferece endereco, dados bancarios opcionais e bancos configuraveis', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');
@@ -452,6 +457,21 @@ test('jornada oferece reserva antecipada por lote com vínculo posterior à Agen
   assert.match(styles, /jornada-reserve-actions \.ag-tb-btn/);
 });
 
+test('telefones dos cadastros usam o padrão brasileiro', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function formatarTelefoneBrasileiro(valor)', 'var SEARCH_CLEAR_HANDLERS');
+  const context = vm.createContext({ String });
+  vm.runInContext(block, context);
+
+  assert.equal(context.formatarTelefoneBrasileiro('54999123456'), '(54) 99912 3456');
+  assert.equal(context.formatarTelefoneBrasileiro('5432123456'), '(54) 3212 3456');
+  assert.equal(context.formatarTelefoneBrasileiro('+55 54 99912-3456'), '(54) 99912 3456');
+  assert.match(readProjectFile('IndexContentAfterStock.html'), /ptTelefone[\s\S]*inputmode="tel"/);
+  assert.match(readProjectFile('IndexContentAfterStock.html'), /mTel[\s\S]*inputmode="tel"/);
+  assert.match(readProjectFile('IndexExtraModals.html'), /prestTelefone[\s\S]*inputmode="tel"/);
+  assert.match(source, /p\.telefone \? formatarTelefoneBrasileiro\(p\.telefone\)/);
+});
+
 test('reserva prévia da jornada envia os lotes visivelmente selecionados no modal', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const block = sourceBetween(source, 'function jornadaKitsSelecionadosParaReserva_()', 'function salvarConcilicaoVisitasParticipante()');
@@ -480,6 +500,30 @@ test('reserva prévia da jornada envia os lotes visivelmente selecionados no mod
   assert.deepEqual(JSON.parse(JSON.stringify(request.args[0].kits)), [
     { idItem: 'KIT-42', idLote: 'LOTE-A', qtde: 2, accessionNumber: 'ACC-A' },
     { idItem: 'KIT-43', idLote: 'LOTE-B', qtde: 1, accessionNumber: 'ACC-B' }
+  ]);
+});
+
+test('reserva prévia da jornada coleta os lotes visíveis mesmo após o conteúdo ser refeito', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function jornadaKitsSelecionadosParaReserva_()', 'function salvarConcilicaoVisitasParticipante()');
+  const selected = [{
+    dataset: { jornadaItem: 'KIT-44', jornadaReservaIndex: '0' }, value: '', selectedIndex: 0,
+    options: [{ value: 'LOTE-C', getAttribute: (name) => name === 'data-accession' ? 'ACC-C' : 'LOTE-C' }],
+    getAttribute: (name) => name === 'data-jornada-reserva-index' ? '0' : '', parentNode: null
+  }];
+  const context = vm.createContext({
+    document: {
+      getElementById: (id) => id === 'jornadaReservaPreviaConteudo' ? { querySelectorAll: () => [] } : id === 'jornadaReservaQuantidade_0' ? { value: '3' } : null,
+      querySelectorAll: () => selected
+    },
+    Array,
+    String,
+    Number
+  });
+  vm.runInContext(block, context);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(context.jornadaKitsSelecionadosParaReserva_())), [
+    { idItem: 'KIT-44', idLote: 'LOTE-C', qtde: 3, accessionNumber: 'ACC-C' }
   ]);
 });
 

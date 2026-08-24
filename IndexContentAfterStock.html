@@ -496,7 +496,7 @@
         <div class="section-label"><span class="material-symbols-outlined">contact_phone</span> Contato e Notas</div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="ptTelefone">Telefone de Contato</label>
-          <input type="text" id="ptTelefone" class="f-input" placeholder="(00) 00000-0000">
+          <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
         </div>
         <div class="field">
           <label class="field-label" for="ptObs">Observações</label>
@@ -577,7 +577,7 @@
         <div class="field-row cols-2">
           <div>
             <label class="field-label" for="mTel">Telefone / Celular</label>
-            <input type="text" id="mTel" class="f-input" placeholder="(00) 00000-0000">
+            <input type="text" id="mTel" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
           </div>
           <div>
             <label class="field-label" for="mEmail">E-mail Profissional</label>

@@ -2809,7 +2809,7 @@ function chipStatus(s) {
   var norm = normSelectValue(s);
   var m = {
     'pre-triagem':'chip-pretriagem','em triagem':'chip-emtriagem',
-    'falha de triagem':'chip-falhatriagem','ativo':'chip-ativo',
+    'falha de triagem':'chip-falhatriagem','falha de pre-triagem':'chip-falhatriagem','ativo':'chip-ativo',
     'em seguimento':'chip-emseguimento','concluido':'chip-concluido',
     'retirou consentimento':'chip-retirou','descontinuado':'chip-descontinuado',
     'perda de seguimento':'chip-perdaseguimento','obito':'chip-obito'
@@ -2887,7 +2887,7 @@ function renderTabelaPart(lista) {
     function msIcon(name){ return '<span class="material-symbols-outlined">'+name+'</span>'; }
     var items=[];
     if(p.cpf)            items.push('<span class="det-item">'+msIcon('badge')+'<span>'+esc(p.cpf)+'</span></span>');
-    if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(p.telefone)+'</span></span>');
+    if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(formatarTelefoneBrasileiro(p.telefone))+'</span></span>');
     if(p.observacoes)    items.push('<span class="det-item">'+msIcon('notes')+'<span class="det-obs" title="'+esc(p.observacoes)+'">'+esc(p.observacoes)+'</span></span>');
     var r2='<tr class="par-detail" data-pair="'+pid+'">'
       +'<td colspan="7" style="padding:3px 20px 12px;background:#fafbff;">'
@@ -3049,7 +3049,7 @@ function abrirFormPart(p) {
     document.getElementById('ptBraco').value          = p.braco||'';
     carregarBracosParticipante(p.projeto || '', p.braco || '');
     fillSelectOptions('ptStatus', STATUS_PART, p.status || '', '-- Selecione --');
-    document.getElementById('ptTelefone').value       = p.telefone||'';
+    document.getElementById('ptTelefone').value       = formatarTelefoneBrasileiro(p.telefone);
     document.getElementById('ptObs').value            = p.observacoes||'';
     document.getElementById('ptRua').value             = p.rua||'';
     document.getElementById('ptNumero').value          = p.numero||'';
@@ -3356,7 +3356,7 @@ function abrirFormMedico(m) {
     document.getElementById('mEsp').value          = m.especialidade || '';
     document.getElementById('mCpf').value          = m.cpf           || '';
     document.getElementById('mCremers').value      = m.cremers       || '';
-    document.getElementById('mTel').value          = m.telefone      || '';
+    document.getElementById('mTel').value          = formatarTelefoneBrasileiro(m.telefone);
     document.getElementById('mEmail').value        = m.email         || '';
     _selEsp = m.especialidade || '';
   } else {
@@ -3614,6 +3614,17 @@ function appRequiredFeedback(fields, opts) {
 }
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatarTelefoneBrasileiro(valor) {
+  var digitos = String(valor == null ? '' : valor).replace(/\D/g, '');
+  if (digitos.indexOf('55') === 0 && (digitos.length === 12 || digitos.length === 13)) digitos = digitos.slice(2);
+  digitos = digitos.slice(0, 11);
+  if (digitos.length <= 2) return digitos ? '(' + digitos : '';
+  var numero = digitos.slice(2);
+  if (numero.length <= 4) return '(' + digitos.slice(0, 2) + ') ' + numero;
+  var corte = numero.length > 8 ? 5 : 4;
+  return '(' + digitos.slice(0, 2) + ') ' + numero.slice(0, corte) + ' ' + numero.slice(corte);
 }
 
 var SEARCH_CLEAR_HANDLERS = {
@@ -4072,7 +4083,7 @@ function abrirReservaPreviaJornada(idSoA) {
     destino.innerHTML = '<div class="jornada-reserve-list">' + kits.map(function(kit, indice) {
       var lotes = kit.lotes || [];
       var opcoes = '<option value="">— Não reservar este kit —</option>' + lotes.map(function(lote) { return '<option value="' + esc(lote.idLote) + '" data-accession="' + esc(lote.accessionNumber || '') + '">Lote ' + esc(lote.idLote) + ' · validade ' + esc(lote.validade) + ' · disponível ' + esc(lote.qtdeDisponivel) + '</option>'; }).join('');
-      return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" data-jornada-quantity type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
+      return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" data-jornada-reserva-index="' + indice + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" data-jornada-quantity id="jornadaReservaQuantidade_' + indice + '" type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
     }).join('') + '</div><div class="jornada-reserve-actions"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Cancelar</button><button class="ag-tb-btn primary" type="button" id="btnConfirmarReservaJornada" onclick="confirmarReservaPreviaJornada()"><span class="material-symbols-outlined">lock</span> Reservar lotes selecionados</button></div><div id="statusReservaPreviaJornada" class="status-msg"></div>';
     window._jornadaReservaPrevia = { contexto: contexto, kits: kits };
   }, onFailure: function(e) { var destino = document.getElementById('jornadaReservaPreviaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
@@ -4080,13 +4091,19 @@ function abrirReservaPreviaJornada(idSoA) {
 
 function jornadaKitsSelecionadosParaReserva_() {
   var conteudo = document.getElementById('jornadaReservaPreviaConteudo');
-  if (!conteudo || !conteudo.querySelectorAll) return [];
-  return Array.prototype.slice.call(conteudo.querySelectorAll('select[data-jornada-item]')).map(function(lote) {
-    var idItem = String((lote.dataset && lote.dataset.jornadaItem) || lote.getAttribute('data-jornada-item') || '').trim();
-    var quantidade = lote.parentNode && lote.parentNode.querySelector ? lote.parentNode.querySelector('input[data-jornada-quantity]') : null;
-    if (!idItem || !lote.value) return null;
+  var lotes = conteudo && conteudo.querySelectorAll ? conteudo.querySelectorAll('select[data-jornada-item]') : [];
+  // O conteúdo da jornada é refeito após cada RPC. Se o nó de conteúdo ficou
+  // obsoleto, ainda coletamos os controles visíveis pelo atributo estável.
+  if ((!lotes || !lotes.length) && document.querySelectorAll) lotes = document.querySelectorAll('select[data-jornada-item]');
+  return Array.prototype.slice.call(lotes || []).map(function(lote) {
+    var atributo = lote.getAttribute ? lote.getAttribute.bind(lote) : function() { return ''; };
+    var idItem = String((lote.dataset && lote.dataset.jornadaItem) || atributo('data-jornada-item') || '').trim();
+    var indice = (lote.dataset && lote.dataset.jornadaReservaIndex) || atributo('data-jornada-reserva-index') || '';
+    var quantidade = document.getElementById('jornadaReservaQuantidade_' + indice) || (lote.parentNode && lote.parentNode.querySelector ? lote.parentNode.querySelector('input[data-jornada-quantity]') : null);
     var option = lote.options[lote.selectedIndex];
-    return { idItem: idItem, idLote: lote.value, qtde: Number(quantidade && quantidade.value || 0), accessionNumber: option && option.getAttribute('data-accession') || '' };
+    var idLote = String(lote.value || (option && (option.value || (option.getAttribute && option.getAttribute('value')))) || '').trim();
+    if (!idItem || !idLote) return null;
+    return { idItem: idItem, idLote: idLote, qtde: Number(quantidade && quantidade.value || 0), accessionNumber: option && option.getAttribute('data-accession') || '' };
   }).filter(Boolean);
 }
 
@@ -5608,7 +5625,7 @@ function renderTabelaMonitores(lista) {
       + '<td><div class="name-cell"><div class="row-avatar" style="border-radius:8px;">' + esc(ini) + '</div>'
       + '<div><div class="row-name">' + esc(m.nome || '—') + '</div></div></div></td>'
       + '<td style="color:#5f6b7c;">' + esc(m.email || '—') + '</td>'
-      + '<td style="color:#5f6b7c;">' + esc(m.telefone || '—') + '</td>'
+      + '<td style="color:#5f6b7c;">' + esc(m.telefone ? formatarTelefoneBrasileiro(m.telefone) : '—') + '</td>'
       + '<td>' + projetosHtml + '</td>'
       + '<td style="text-align:right;"><div class="action-btns">'
       + '<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button>'
@@ -6720,7 +6737,7 @@ function renderPrestadores(lista) {
 function _renderTabelaPrestadores(lista) {
   var tb = document.getElementById('bodyPrestadores');
   if (!lista.length) {
-    tb.innerHTML = '<tr class="empty-row"><td colspan="5">Nenhum prestador cadastrado.</td></tr>';
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum prestador cadastrado.</td></tr>';
     return;
   }
   tb.innerHTML = lista.map(function(p, index) {
@@ -6732,6 +6749,7 @@ function _renderTabelaPrestadores(lista) {
         '<span class="row-name">' + esc(p.empresa) + '</span></div></td>' +
       '<td>' + esc(p.endereco || '—') + '</td>' +
       '<td>' + tipoServicoCell + '</td>' +
+      '<td style="color:#5f6b7c;">' + esc(p.telefone ? formatarTelefoneBrasileiro(p.telefone) : '—') + '</td>' +
       '<td>' + emailCell + '</td>' +
       '<td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button>' +
@@ -6749,7 +6767,7 @@ function filtrarPrestadores(forceNow) {
   codexRunSearchFilter('searchPrestadores', 'prestadores', function() {
     var q = ((document.getElementById('searchPrestadores') || {}).value || '').toLowerCase();
     _renderTabelaPrestadores(!q ? _prestadores : _prestadores.filter(function(p) {
-      return (p.empresa + ' ' + p.endereco + ' ' + p.email + ' ' + (p.tipoServico || '')).toLowerCase().includes(q);
+      return (p.empresa + ' ' + p.endereco + ' ' + p.telefone + ' ' + p.email + ' ' + (p.tipoServico || '')).toLowerCase().includes(q);
     }));
   }, !!forceNow);
 }
@@ -6948,7 +6966,7 @@ function renderPrestadorTipoServicoOptions(currentValue) {
 }
 
 function abrirFormPrestador(id) {
-  ['editPrestId','prestEmpresa','prestEndereco','prestEmail','prestTipoServico'].forEach(function(fId) {
+  ['editPrestId','prestEmpresa','prestEndereco','prestTelefone','prestEmail','prestTipoServico'].forEach(function(fId) {
     document.getElementById(fId).value = '';
   });
   prepararEditorEmailsPrestador();
@@ -6970,6 +6988,7 @@ function abrirFormPrestador(id) {
       document.getElementById('editPrestId').value   = p.id;
       document.getElementById('prestEmpresa').value  = p.empresa;
       document.getElementById('prestEndereco').value = p.endereco || '';
+      document.getElementById('prestTelefone').value = formatarTelefoneBrasileiro(p.telefone);
       renderPrestadorEmails(p.email || '');
       renderPrestadorTipoServicoOptions(p.tipoServico || '');
     }
@@ -6997,6 +7016,7 @@ function salvarPrestadorApp() {
     id: document.getElementById('editPrestId').value,
     empresa: empresa,
     endereco: document.getElementById('prestEndereco').value.trim(),
+    telefone: document.getElementById('prestTelefone').value.trim(),
     email: email,
     tipoServico: tipoServico
   };

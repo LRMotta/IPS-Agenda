@@ -26,6 +26,10 @@
           <input type="text" id="prestEndereco" class="f-input" placeholder="Rua, número, bairro, cidade">
         </div>
         <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="prestTelefone">Telefone</label>
+          <input type="text" id="prestTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
+        </div>
+        <div class="field" style="margin-bottom:14px">
           <label class="field-label" for="prestTipoServico">Tipo de Serviço</label>
           <select id="prestTipoServico" class="f-input f-select" onchange="limparErro('prestTipoServico','errPrestTipoServico')"></select>
           <div class="field-error" id="errPrestTipoServico">Campo obrigatÃ³rio.</div>
