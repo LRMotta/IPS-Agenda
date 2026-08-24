@@ -3640,6 +3640,54 @@ function getSoAVisitasProjeto(projeto) {
   return visitas;
 }
 
+function agendaSoAFiltrarSugestoesParticipante_(visitas, eventos, conciliacoesPorAgendaId) {
+  var concluidasVinculadas = {};
+  var historicasSemVinculo = 0;
+  (eventos || []).forEach(function(evento) {
+    if (!evento || evento.cancelada || !evento.concluida) return;
+    var idSoA = String((conciliacoesPorAgendaId || {})[String(evento.id || '')] || '').trim();
+    if (idSoA) concluidasVinculadas[idSoA] = true;
+    else historicasSemVinculo++;
+  });
+  var sugestoes = (visitas || []).filter(function(visita) {
+    return visita && visita.ativo !== false && visita.nome && !concluidasVinculadas[String(visita.idSoA || '')];
+  });
+  return {
+    visitas: sugestoes,
+    concluidasOcultadas: Object.keys(concluidasVinculadas).length,
+    historicasSemVinculo: historicasSemVinculo
+  };
+}
+
+function getAgendaVisitasSoASugeridas(payload) {
+  payload = payload || {};
+  var projeto = String(payload.projeto || '').trim();
+  var participante = String(payload.participante || '').trim();
+  var participanteId = String(payload.participanteId || '').trim();
+  var agendaIdExcluido = String(payload.agendaId || '').trim();
+  var visitas = getSoAVisitasProjeto(projeto).filter(function(visita) { return visita && visita.ativo !== false && visita.nome; });
+  if (!participante || !projeto) return agendaSoAFiltrarSugestoesParticipante_(visitas, [], {});
+
+  var participanteNorm = normText_(participante);
+  var participanteIdNorm = normText_(participanteId);
+  var projetoNorm = normText_(projeto);
+  var agenda = getAgendaSheetForRead_();
+  var eventos = [];
+  if (agenda && agenda.getLastRow() >= 2) {
+    var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+    rows.forEach(function(row) {
+      var idx = AGENDA_CFG.idx;
+      var agendaId = String(row[idx.id] || '').trim();
+      if (!AgendaServerRules_.isVisit(row[idx.tipo]) || agendaId === agendaIdExcluido || AgendaServerRules_.isCancelled(row[idx.status])) return;
+      var mesmoParticipante = participanteIdNorm && normText_(row[idx.idParticipante]) === participanteIdNorm;
+      if (!mesmoParticipante) mesmoParticipante = normText_(row[idx.participante]) === participanteNorm;
+      if (!mesmoParticipante || normText_(row[idx.projeto]) !== projetoNorm) return;
+      eventos.push({ id: agendaId, concluida: AgendaServerRules_.isCompleted(row[idx.status]), cancelada: false });
+    });
+  }
+  return agendaSoAFiltrarSugestoesParticipante_(visitas, eventos, getAgendaSoAConciliacoesPorAgendaId_(eventos.map(function(evento) { return evento.id; })));
+}
+
 function soaCycleNumbersFromText_(value) {
   var text = String(value || '');
   var found = {};

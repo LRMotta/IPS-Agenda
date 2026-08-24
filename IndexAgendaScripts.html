@@ -1648,6 +1648,8 @@
 
   function atualizarAgendaVisitasSoA() {
     var projeto = String((document.getElementById('agProjeto') || {}).value || '').trim();
+    var participante = String((document.getElementById('agParticipante') || {}).value || '').trim();
+    var participanteId = String((_agendaParticipanteInfo && (_agendaParticipanteInfo.numId || _agendaParticipanteInfo.idParticipante)) || '').trim();
     var lista = document.getElementById('agVisitaSoAList');
     var hint = document.getElementById('agVisitaSoAHint');
     if (!lista) return;
@@ -1657,16 +1659,17 @@
       if (hint) hint.textContent = 'Informe uma visita livre ou selecione primeiro o projeto para ver sugestões SoA.';
       return;
     }
-    if (hint) hint.textContent = 'Carregando sugestões do calendário SoA… A visita livre continua permitida.';
-    appServerRun({ method: 'getSoAVisitasProjeto', args: [projeto], onSuccess: function(visitas) {
-      if (requestId !== _agendaVisitasSoARequest || projeto !== String((document.getElementById('agProjeto') || {}).value || '').trim()) return;
-      visitas = (visitas || []).filter(function(visita) { return visita && visita.nome && visita.ativo !== false; });
+    if (hint) hint.textContent = participante ? 'Carregando próximas visitas e pendências de vínculo… A visita livre continua permitida.' : 'Carregando sugestões do calendário SoA… A visita livre continua permitida.';
+    appServerRun({ method: 'getAgendaVisitasSoASugeridas', args: [{ projeto: projeto, participante: participante, participanteId: participanteId, agendaId: _agendaEditId || '' }], onSuccess: function(resposta) {
+      if (requestId !== _agendaVisitasSoARequest || projeto !== String((document.getElementById('agProjeto') || {}).value || '').trim() || participante !== String((document.getElementById('agParticipante') || {}).value || '').trim()) return;
+      resposta = resposta || {};
+      var visitas = (resposta.visitas || []).filter(function(visita) { return visita && visita.nome && visita.ativo !== false; });
       lista.innerHTML = visitas.map(function(visita) {
         var label = (visita.codigo ? visita.codigo + ' · ' : '') + visita.nome;
         return '<option value="' + esc(visita.nome) + '" label="' + esc(label) + '"></option>';
       }).join('');
       if (hint) hint.textContent = visitas.length
-        ? 'Selecione uma visita SoA sugerida ou informe uma visita livre.'
+        ? (Number(resposta.concluidasOcultadas || 0) ? Number(resposta.concluidasOcultadas) + ' visita(s) concluída(s) já vinculada(s) foram ocultada(s). ' : '') + (Number(resposta.historicasSemVinculo || 0) ? Number(resposta.historicasSemVinculo) + ' visita(s) histórica(s) sem vínculo permanecem na sugestão. ' : '') + 'Selecione uma visita SoA sugerida ou informe uma visita livre.'
         : 'Este projeto não possui calendário SoA. Informe a visita livremente.';
     }, onFailure: function() {
       if (requestId !== _agendaVisitasSoARequest) return;
