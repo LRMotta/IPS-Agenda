@@ -452,6 +452,37 @@ test('jornada oferece reserva antecipada por lote com vínculo posterior à Agen
   assert.match(styles, /jornada-reserve-actions \.ag-tb-btn/);
 });
 
+test('reserva prévia da jornada envia os lotes visivelmente selecionados no modal', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function jornadaKitsSelecionadosParaReserva_()', 'function salvarConcilicaoVisitasParticipante()');
+  const status = { textContent: '' };
+  const button = { disabled: false };
+  const selected = [
+    { dataset: { jornadaItem: 'KIT-42' }, value: 'LOTE-A', selectedIndex: 0, options: [{ getAttribute: () => 'ACC-A' }], parentNode: { querySelector: () => ({ value: '2' }) } },
+    { dataset: { jornadaItem: 'KIT-43' }, value: 'LOTE-B', selectedIndex: 0, options: [{ getAttribute: () => 'ACC-B' }], parentNode: { querySelector: () => ({ value: '1' }) } }
+  ];
+  let request;
+  const context = vm.createContext({
+    window: { _jornadaReservaPrevia: { contexto: { participanteId: 'P-42' } } },
+    document: { getElementById: (id) => id === 'jornadaReservaPreviaConteudo' ? { querySelectorAll: () => selected } : id === 'statusReservaPreviaJornada' ? status : id === 'btnConfirmarReservaJornada' ? button : null },
+    appServerRun: (opts) => { request = opts; },
+    isFinite,
+    Object,
+    Array
+  });
+  vm.runInContext(block, context);
+
+  context.confirmarReservaPreviaJornada();
+
+  assert.equal(button.disabled, true);
+  assert.equal(status.textContent, 'Reservando lotes…');
+  assert.equal(request.method, 'reservarKitsPrevisaoJornada');
+  assert.deepEqual(JSON.parse(JSON.stringify(request.args[0].kits)), [
+    { idItem: 'KIT-42', idLote: 'LOTE-A', qtde: 2, accessionNumber: 'ACC-A' },
+    { idItem: 'KIT-43', idLote: 'LOTE-B', qtde: 1, accessionNumber: 'ACC-B' }
+  ]);
+});
+
 test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agenda', () => {
   const server = runFile('WebApp.gs');
   const client = readProjectFile('IndexCoreScripts.html');
