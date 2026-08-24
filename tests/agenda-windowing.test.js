@@ -1165,7 +1165,7 @@ test('Agenda sugere próximas visitas SoA e pendências sem vínculo sem bloquea
   assert.match(load, /method: 'getAgendaVisitasSoASugeridas'/);
   assert.match(load, /visita livre continua permitida/i);
   assert.match(load, /projeto não possui calendário SoA/i);
-  assert.match(load, /concluída\(s\) já vinculada\(s\) foram ocultada\(s\)/i);
+  assert.match(load, /até o último vínculo SoA foram ocultada\(s\)/i);
   assert.match(functionBody(agenda, 'onAgendaProjetoChange'), /atualizarAgendaVisitasSoA\(\)/);
   assert.match(functionBody(agenda, 'atualizarAgendaFormDataOpcoes'), /atualizarAgendaVisitasSoA\(\)/);
   assert.deepEqual(JSON.parse(JSON.stringify(server.agendaSoAFiltrarSugestoesParticipante_([
@@ -1178,11 +1178,11 @@ test('Agenda sugere próximas visitas SoA e pendências sem vínculo sem bloquea
     { id: 'A3', concluida: false }
   ], { A1: 'TRI', A3: 'C1D1' }))), {
     visitas: [
-      { idSoA: 'C1D1', nome: 'Dia 1 do Ciclo 1', ativo: true },
       { idSoA: 'C2D1', nome: 'Dia 1 do Ciclo 2', ativo: true }
     ],
     concluidasOcultadas: 1,
-    historicasSemVinculo: 1
+    historicasSemVinculo: 1,
+    visitasAnterioresOcultadas: 2
   });
 });
 

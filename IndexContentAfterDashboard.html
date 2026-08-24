@@ -311,7 +311,7 @@
       <div class="toolbar-card">
         <div class="search-wrap">
           <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchPrestadores" placeholder="Buscar por empresa, endereço ou e-mail" oninput="filtrarPrestadores()">
+          <input type="text" id="searchPrestadores" placeholder="Buscar por empresa, endereço, telefone ou e-mail" oninput="filtrarPrestadores()">
         </div>
         <button class="btn-new" onclick="abrirFormPrestador(null)">
           <span class="material-symbols-outlined">add</span> Novo Prestador
@@ -323,11 +323,12 @@
             <th>Empresa</th>
             <th>Endereço</th>
             <th>Tipo de Serviço</th>
+            <th>Telefone</th>
             <th>E-mail</th>
             <th style="text-align:right;padding-right:20px">Ações</th>
           </tr></thead>
           <tbody id="bodyPrestadores">
-            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>

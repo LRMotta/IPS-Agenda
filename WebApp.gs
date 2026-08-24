@@ -3643,19 +3643,31 @@ function getSoAVisitasProjeto(projeto) {
 function agendaSoAFiltrarSugestoesParticipante_(visitas, eventos, conciliacoesPorAgendaId) {
   var concluidasVinculadas = {};
   var historicasSemVinculo = 0;
+  var vinculadas = {};
   (eventos || []).forEach(function(evento) {
-    if (!evento || evento.cancelada || !evento.concluida) return;
+    if (!evento || evento.cancelada) return;
     var idSoA = String((conciliacoesPorAgendaId || {})[String(evento.id || '')] || '').trim();
-    if (idSoA) concluidasVinculadas[idSoA] = true;
-    else historicasSemVinculo++;
+    if (idSoA) {
+      vinculadas[idSoA] = true;
+      if (evento.concluida) concluidasVinculadas[idSoA] = true;
+    } else if (evento.concluida) {
+      historicasSemVinculo++;
+    }
   });
-  var sugestoes = (visitas || []).filter(function(visita) {
-    return visita && visita.ativo !== false && visita.nome && !concluidasVinculadas[String(visita.idSoA || '')];
+  var ultimoIndiceVinculado = -1;
+  (visitas || []).forEach(function(visita, indice) {
+    if (visita && visita.ativo !== false && visita.nome && vinculadas[String(visita.idSoA || '')]) ultimoIndiceVinculado = indice;
+  });
+  var sugestoes = (visitas || []).filter(function(visita, indice) {
+    if (!visita || visita.ativo === false || !visita.nome) return false;
+    if (ultimoIndiceVinculado >= 0) return indice > ultimoIndiceVinculado;
+    return !concluidasVinculadas[String(visita.idSoA || '')];
   });
   return {
     visitas: sugestoes,
     concluidasOcultadas: Object.keys(concluidasVinculadas).length,
-    historicasSemVinculo: historicasSemVinculo
+    historicasSemVinculo: historicasSemVinculo,
+    visitasAnterioresOcultadas: ultimoIndiceVinculado + 1
   };
 }
 
@@ -5475,15 +5487,26 @@ function ensurePrestadoresTipoServicoColumn_(sh) {
   return target;
 }
 
+function prestadorTelefoneColumn_(sh, criar) {
+  var headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 4)).getValues()[0];
+  for (var i = 0; i < headers.length; i++) if (normText_(headers[i]) === 'telefone') return i + 1;
+  if (!criar) return 0;
+  var target = headers.length + 1;
+  if (sh.getMaxColumns() < target) sh.insertColumnsAfter(sh.getMaxColumns(), target - sh.getMaxColumns());
+  sh.getRange(1, target).setValue('Telefone');
+  return target;
+}
+
 function getPrestadores() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🏢 Prestadores');
   if (!sh) return [];
   var tipoCol = ensurePrestadoresTipoServicoColumn_(sh);
+  var telefoneCol = prestadorTelefoneColumn_(sh, false);
   if (sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, tipoCol)).getValues()
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(4, tipoCol, telefoneCol)).getValues()
     .filter(function(r) { return r[1]; })
     .map(function(r) {
-      return { id: r[0] || '', empresa: r[1] || '', endereco: r[2] || '', email: r[3] || '', tipoServico: r[tipoCol - 1] || '' };
+      return { id: r[0] || '', empresa: r[1] || '', endereco: r[2] || '', email: r[3] || '', tipoServico: r[tipoCol - 1] || '', telefone: telefoneCol ? r[telefoneCol - 1] || '' : '' };
     });
 }
 
@@ -5496,6 +5519,7 @@ function salvarDadosPrestador(dados) {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🏢 Prestadores');
   if (!sh) throw new Error("Aba 'Prestadores' não encontrada.");
   var tipoCol = ensurePrestadoresTipoServicoColumn_(sh);
+  var telefoneCol = prestadorTelefoneColumn_(sh, true);
   if (dados.id && dados.id !== '') {
     var ids = sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), 1).getValues();
     for (var i = 0; i < ids.length; i++) {
@@ -5505,6 +5529,7 @@ function salvarDadosPrestador(dados) {
         sh.getRange(ln, 3).setValue(dados.endereco || '');
         sh.getRange(ln, 4).setValue(dados.email    || '');
         sh.getRange(ln, tipoCol).setValue(dados.tipoServico || '');
+        sh.getRange(ln, telefoneCol).setValue(dados.telefone || '');
         return 'Prestador atualizado com sucesso.';
       }
     }
@@ -5513,6 +5538,8 @@ function salvarDadosPrestador(dados) {
   var row = ['PREST-' + Date.now(), dados.empresa || '', dados.endereco || '', dados.email || ''];
   while (row.length < tipoCol) row.push('');
   row[tipoCol - 1] = dados.tipoServico || '';
+  while (row.length < telefoneCol) row.push('');
+  row[telefoneCol - 1] = dados.telefone || '';
   sh.appendRow(row);
   return 'Prestador cadastrado com sucesso.';
 }
