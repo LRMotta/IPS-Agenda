@@ -4051,7 +4051,7 @@ var _jornadaParticipanteDados = null;
 function abrirConcilicaoVisitasParticipante() {
   var content = document.getElementById('jornadaParticipanteConteudo');
   var dados = _jornadaParticipanteDados || {};
-  var visitas = dados.visitas || [];
+  var visitas = dados.visitasConciliacao || dados.visitas || [];
   var pendentes = dados.conciliacao || [];
   if (!content || !pendentes.length) return;
   var options = '<option value="">Não conciliar agora</option>' + visitas.map(function(visita) { return '<option value="' + esc(visita.idSoA) + '">' + esc((visita.codigo ? visita.codigo + ' · ' : '') + visita.nome) + '</option>'; }).join('');

@@ -10360,6 +10360,15 @@ function jornadaVisitasDesdeInicioOperacional_(visitas) {
   return primeiroRegistroIps >= 0 ? visitas.slice(primeiroRegistroIps) : visitas;
 }
 
+// A conciliação é uma revisão explícita do histórico. Diferentemente da linha
+// do tempo operacional, ela precisa manter todas as visitas ativas do SoA como
+// destinos possíveis, inclusive as anteriores ao primeiro registro no IPS.
+function jornadaVisitasParaConciliacao_(visitas) {
+  return (Array.isArray(visitas) ? visitas : []).filter(function(visita) {
+    return visita && visita.ativo !== false && String(visita.idSoA || '').trim() && String(visita.nome || '').trim();
+  });
+}
+
 function jornadaLimitePrevisao_(hoje) {
   var limite = new Date((hoje || new Date()).getTime());
   limite.setHours(23, 59, 59, 999);
@@ -10483,6 +10492,7 @@ function getJornadaParticipante(payload) {
   return {
     participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
     possuiSoA: visitas.length > 0, visitas: visitasJornada,
+    visitasConciliacao: jornadaVisitasParaConciliacao_(visitas),
     visitasProntidao: visitasProntidao,
     horizontePrevisao: formatarDataSafe(jornadaLimitePrevisao_(hoje)),
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),

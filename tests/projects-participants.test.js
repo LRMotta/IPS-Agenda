@@ -432,6 +432,26 @@ test('jornada inicia na primeira visita registrada pelo IPS e não reinicia a pr
   ]).map(visita => visita.idSoA))), ['TRIAGEM', 'C1D1']);
 });
 
+test('conciliação mantém todas as visitas ativas do SoA, mesmo antes do início operacional da jornada', () => {
+  const server = runFile('WebApp.gs');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const visitasJornada = server.jornadaVisitasDesdeInicioOperacional_([
+    { idSoA: 'TRI', nome: 'Triagem', ativo: true, temEventoIPS: false },
+    { idSoA: 'D180', nome: 'Day 180', ativo: true, temEventoIPS: true },
+    { idSoA: 'EOS', nome: 'Final do Estudo', ativo: true, temEventoIPS: false }
+  ]);
+  const visitasConciliacao = server.jornadaVisitasParaConciliacao_([
+    { idSoA: 'TRI', nome: 'Triagem', ativo: true },
+    { idSoA: 'D180', nome: 'Day 180', ativo: true },
+    { idSoA: 'EOS', nome: 'Final do Estudo', ativo: true },
+    { idSoA: 'INATIVA', nome: 'Visita inativa', ativo: false }
+  ]);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(visitasJornada.map(visita => visita.idSoA))), ['D180', 'EOS']);
+  assert.deepEqual(JSON.parse(JSON.stringify(visitasConciliacao.map(visita => visita.idSoA))), ['TRI', 'D180', 'EOS']);
+  assert.match(client, /var visitas = dados\.visitasConciliacao \|\| dados\.visitas \|\| \[\];/);
+});
+
 test('jornada limita a prontidão às próximas visitas calculáveis em até seis meses', () => {
   const server = runFile('WebApp.gs');
   const hoje = new Date(2026, 7, 21);
