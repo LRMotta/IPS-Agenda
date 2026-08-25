@@ -170,6 +170,13 @@ test('falha de pré-triagem usa o mesmo chip da falha de triagem', () => {
   assert.match(source, /'falha de triagem':'chip-falhatriagem','falha de pre-triagem':'chip-falhatriagem'/);
 });
 
+test('tabela de prestadores reserva uma coluna compacta para telefone', () => {
+  const styles = readProjectFile('IndexStyles.html');
+  assert.match(styles, /\.prestadores-table th:nth-child\(4\) \{ width: 12%; white-space: nowrap; \}/);
+  assert.match(styles, /\.prestadores-table th:nth-child\(5\) \{ width: 16%; \}/);
+  assert.match(styles, /\.prestadores-table th:nth-child\(6\) \{ width: 96px; \}/);
+});
+
 test('participante oferece endereco, dados bancarios opcionais e bancos configuraveis', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');
@@ -455,6 +462,33 @@ test('jornada oferece reserva antecipada por lote com vínculo posterior à Agen
   assert.match(client, /ag-tb-btn primary/);
   assert.match(styles, /jornada-history-row/);
   assert.match(styles, /jornada-reserve-actions \.ag-tb-btn/);
+});
+
+test('consulta de reserva da jornada migra IDs de lotes legados antes de listar opções', () => {
+  const server = runFile('WebApp.gs');
+  let migrou = false;
+  let leituras = 0;
+  server.codexAssertCanWrite_ = () => {};
+  server.jornadaReservaPreviaContexto_ = () => ({
+    dataVisita: new Date(2026, 8, 23),
+    modelos: [{ idItem: 'KIT-LEGADO', descricao: 'Kit legado', laboratorio: '' }]
+  });
+  server.migrarIdsLotesEstoque = () => { migrou = true; };
+  server.getEstoque = () => {
+    leituras++;
+    return [{
+      idItem: 'KIT-LEGADO', idLote: migrou ? 'LOTE-GERADO' : '', validade: '30/11/2026',
+      qtdeDisponivel: 2, accessionNumber: ''
+    }];
+  };
+
+  const result = server.consultarReservaPreviaJornada({ participanteId: 'P-1', idSoA: 'SOA-1' });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.kits[0].lotes)), [{
+    idLote: 'LOTE-GERADO', validade: '30/11/2026', qtdeDisponivel: 2, accessionNumber: ''
+  }]);
+  assert.equal(leituras, 2, 'o estoque deve ser relido depois da migração');
+  assert.match(readProjectFile('IndexCoreScripts.html'), /\(kit\.lotes \|\| \[\]\)\.filter\(function\(lote\) \{ return String\(lote && lote\.idLote/);
 });
 
 test('telefones dos cadastros usam o padrão brasileiro', () => {

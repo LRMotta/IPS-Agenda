@@ -10520,7 +10520,16 @@ function jornadaReservaPreviaContexto_(payload) {
 function consultarReservaPreviaJornada(payload) {
   codexAssertCanWrite_('consultarReservaPreviaJornada', 'Estoque', payload && (payload.participanteId || payload.idSoA));
   var contexto = jornadaReservaPreviaContexto_(payload);
+  // Linhas legadas de estoque podem existir sem ID_Lote. A reserva usa esse ID
+  // como identidade estável; migre somente quando um dos modelos desta visita
+  // ainda aponta para um lote sem ID e então releia os dados já normalizados.
   var estoque = getEstoque();
+  var modelosPorId = {};
+  contexto.modelos.forEach(function(modelo) { modelosPorId[String(modelo.idItem || '')] = true; });
+  if (estoque.some(function(lote) { return modelosPorId[String(lote.idItem || '')] && !String(lote.idLote || '').trim(); })) {
+    migrarIdsLotesEstoque();
+    estoque = getEstoque();
+  }
   var validadeMinima = new Date(contexto.dataVisita.getTime()); validadeMinima.setDate(validadeMinima.getDate() + 10);
   return {
     dataVisita: formatarDataIsoAgenda_(contexto.dataVisita),
