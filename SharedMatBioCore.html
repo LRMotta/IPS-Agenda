@@ -51,15 +51,24 @@
     });
   }
 
+  function formatVolume(value, decimals) {
+    var num = Number(value || 0);
+    if (!isFinite(num)) num = 0;
+    return num.toLocaleString('pt-BR', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: decimals
+    });
+  }
+
   function formulaText(qtd, vol, decimals) {
-    return formatNumber(qtd, 0) + ' x ' + formatNumber(vol, decimals);
+    return formatNumber(qtd, 0) + '×' + formatVolume(vol, decimals);
   }
 
   function formulaFromSegments(segmentos, unit) {
     var decimals = unitKey(unit) === 'L' ? 5 : 2;
     return (segmentos || []).map(function(segmento) {
       return formulaText(segmento.qtd, segmento.vol, decimals);
-    }).join(', ');
+    }).join('; ');
   }
 
   function calculationDisplay(formula, unit) {
@@ -82,7 +91,7 @@
     var factor = fromUnit === 'mL' && toUnit === 'L' ? 1 / 1000 : (fromUnit === 'L' && toUnit === 'mL' ? 1000 : 1);
     return parsed.segmentos.map(function(segmento) {
       return formulaText(segmento.qtd, Number(segmento.vol || 0) * factor, toUnit === 'L' ? 5 : 2);
-    }).join(', ');
+    }).join('; ');
   }
 
   function parseJson(json) {
