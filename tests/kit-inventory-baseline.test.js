@@ -225,12 +225,23 @@ test('fase SoA: sugestão destaca empates e ciclos sem inventar sequência', () 
   assert.equal(cycle.visitas.every(item => item.ordemAmbigua), true);
 });
 
+test('fase SoA: referência alternativa também precede a visita na sugestão de ordem', () => {
+  const server = runFile('WebApp.gs');
+  const suggestion = server.soaSugerirOrdemExecucao_([
+    { idSoA: 'V1', nome: 'Início', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0 },
+    { idSoA: 'V3', nome: 'Follow-up', ordem: 2, referencia: 'V1', referenciaAlternativa: 'V2', intervaloDias: 30 },
+    { idSoA: 'V2', nome: 'Fim do tratamento', ordem: 3, referencia: 'V1', intervaloDias: 20 }
+  ]);
+
+  assert.deepEqual(Array.from(suggestion.idsSoA), ['V1', 'V2', 'V3']);
+});
+
 test('fase SoA: replicação de ciclos remapeia textos e referências, preserva campos e não sobrescreve existentes', () => {
   const soa = new FakeSheet('SoA_Visitas', [
-    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual'],
-    ['SOA-C1D1', 'Estudo A', 'C1D1', 'Dia 1 do Ciclo 1', 1, 'Ciclo 1', 0, 'Cycle 1 Day 1', 'Sim', 'modelo', 'RANDOMIZACAO', 0, 0, 'BR-A; BR-C', 'Não'],
-    ['SOA-C1D8', 'Estudo A', 'C1D8', 'Dia 8 do Ciclo 1', 2, 'Ciclo 1', 7, 'Cycle 1 Day 8', 'Sim', 'modelo', 'SOA-C1D1', 2, 2, 'BR-A; BR-C', 'Não'],
-    ['SOA-C2D1', 'Estudo A', 'C2D1', 'Dia 1 do Ciclo 2', 20, 'Ciclo 2', 0, 'Cycle 2 Day 1', 'Sim', 'ajuste específico', 'RANDOMIZACAO', 1, 1, 'BR-A; BR-C', 'Sim']
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual', 'Base para o cálculo', 'Papel no cronograma', 'Referência alternativa', 'Critério entre referências'],
+    ['SOA-C1D1', 'Estudo A', 'C1D1', 'Dia 1 do Ciclo 1', 1, 'Ciclo 1', 0, 'Cycle 1 Day 1', 'Sim', 'modelo', 'RANDOMIZACAO', 0, 0, 'BR-A; BR-C', 'Não', 'MANTER_DATAS_PREVISTAS', 'MARCO_CALCULO', '', ''],
+    ['SOA-C1D8', 'Estudo A', 'C1D8', 'Dia 8 do Ciclo 1', 2, 'Ciclo 1', 7, 'Cycle 1 Day 8', 'Sim', 'modelo', 'SOA-C1D1', 2, 2, 'BR-A; BR-C', 'Não', 'RECALCULAR_VISITA_REALIZADA', 'VISITA_CALCULADA', 'PROGRESSAO_DOENCA', 'SELECAO_MANUAL'],
+    ['SOA-C2D1', 'Estudo A', 'C2D1', 'Dia 1 do Ciclo 2', 20, 'Ciclo 2', 0, 'Cycle 2 Day 1', 'Sim', 'ajuste específico', 'RANDOMIZACAO', 1, 1, 'BR-A; BR-C', 'Sim', 'MANTER_DATAS_PREVISTAS', 'VISITA_CALCULADA', '', '']
   ]);
   const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
   let nextId = 0;
@@ -265,6 +276,10 @@ test('fase SoA: replicação de ciclos remapeia textos e referências, preserva 
   assert.equal(savedByCode.C2D1.observacoes, 'ajuste específico');
   assert.equal(savedByCode.C2D8.referencia, 'SOA-C2D1');
   assert.equal(savedByCode.C3D8.referencia, savedByCode.C3D1.idSoA);
+  assert.equal(savedByCode.C3D8.baseCalculo, 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(savedByCode.C3D8.papelCronograma, 'VISITA_CALCULADA');
+  assert.equal(savedByCode.C3D8.referenciaAlternativa, 'PROGRESSAO_DOENCA');
+  assert.equal(savedByCode.C3D8.criterioReferencias, 'SELECAO_MANUAL');
   assert.notEqual(savedByCode.C3D1.idSoA, savedByCode.C3D8.idSoA);
   assert.deepEqual(Array.from(savedByCode.C3D8.bracoIds), ['BR-A', 'BR-C']);
 });
@@ -408,6 +423,8 @@ test('fase SoA: referência e janelas opcionais são lidas sem exigir migração
   assert.equal(visitas[1].janelaDiasMenos, 3);
   assert.equal(visitas[1].janelaDiasMais, 5);
   assert.equal(visitas[0].janelaDiasMenos, '');
+  assert.equal(visitas[0].baseCalculo, '');
+  assert.equal(visitas[0].papelCronograma, '');
 });
 
 test('fase SoA: salvar janela adiciona cabeçalhos ao schema legado e mantém a linha editável', () => {
@@ -422,16 +439,26 @@ test('fase SoA: salvar janela adiciona cabeçalhos ao schema legado e mantém a 
 
   server.salvarSoAVisita({
     idSoA: 'SOA-1', projeto: 'Estudo A', codigo: 'V1', nome: 'Baseline', ordem: 10,
-    intervaloDias: 0, referencia: 'RANDOMIZACAO', janelaDiasMenos: 3, janelaDiasMais: 5
+    intervaloDias: 0, referencia: 'ULTIMA_DOSE', referenciaAlternativa: 'PROGRESSAO_DOENCA',
+    baseCalculo: 'RECALCULAR_VISITA_REALIZADA', papelCronograma: 'VISITA_CALCULADA', criterioReferencias: 'SELECAO_MANUAL',
+    janelaDiasMenos: 3, janelaDiasMais: 5
   });
 
   assert.equal(soa.rows[0][10], 'Referência (após)');
   assert.equal(soa.rows[0][11], 'Janela dias menos');
   assert.equal(soa.rows[0][12], 'Janela dias mais');
-  assert.equal(soa.rows[1][10], 'RANDOMIZACAO');
+  assert.equal(soa.rows[1][10], 'ULTIMA_DOSE');
   assert.equal(soa.rows[1][11], 3);
   assert.equal(soa.rows[1][12], 5);
+  assert.equal(soa.rows[0][15], 'Base para o cálculo');
+  assert.equal(soa.rows[1][15], 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(soa.rows[1][16], 'VISITA_CALCULADA');
+  assert.equal(soa.rows[1][17], 'PROGRESSAO_DOENCA');
+  assert.equal(soa.rows[1][18], 'SELECAO_MANUAL');
   assert.throws(() => server.salvarSoAVisita({ projeto: 'Estudo A', nome: 'V2', janelaDiasMais: -1 }), /janela de dias mais/);
+  assert.throws(() => server.salvarSoAVisita({ projeto: 'Estudo A', nome: 'V2', referencia: 'SOA-1', baseCalculo: 'INVENTADO' }), /base para o cálculo/);
+  assert.throws(() => server.salvarSoAVisita({ projeto: 'Estudo A', nome: 'V2', baseCalculo: 'MANTER_DATAS_PREVISTAS' }), /Selecione a referência/);
+  assert.throws(() => server.salvarSoAVisita({ projeto: 'Estudo A', nome: 'V2', referencia: 'SOA-1', baseCalculo: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'VISITA_CALCULADA', referenciaAlternativa: 'PROGRESSAO_DOENCA' }), /critério entre referências/);
 });
 
 test('fase SoA: associação opcional de braços é lida e preservada sem quebrar linhas legadas', () => {
@@ -465,13 +492,13 @@ test('fase SoA: importador cria braços, resolve referências por código e mant
     projeto: 'Estudo A',
     dados: {
       projeto: { nomeAbreviado: 'Estudo A' },
-      visitasComuns: [{ codigo: 'V1', nome: 'Baseline', ordem: 1, intervaloDias: null, referenciaTipo: 'RANDOMIZACAO', aliases: ['V0'] }],
-      variantesPorBraco: [{ braco: 'BraÃ§o A', visitas: [{ codigo: 'V2', nome: 'Semana 4', ordem: 2, intervaloDias: 28, referenciaTipo: 'VISITA_ESPECIFICA', referenciaCodigo: 'V1', janelaDiasMenos: 3, janelaDiasMais: 5 }] }]
+      visitasComuns: [{ codigo: 'V1', nome: 'Baseline', ordem: 1, intervaloDias: null, referenciaTipo: 'RANDOMIZACAO', baseCalculo: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'MARCO_CALCULO', aliases: ['V0'] }],
+      variantesPorBraco: [{ braco: 'BraÃ§o A', visitas: [{ codigo: 'V2', nome: 'Semana 4', ordem: 2, intervaloDias: 28, referenciaTipo: 'VISITA_ESPECIFICA', referenciaCodigo: 'V1', referenciaAlternativaTipo: 'PROGRESSAO_DOENCA', baseCalculo: 'RECALCULAR_VISITA_REALIZADA', papelCronograma: 'VISITA_CALCULADA', criterioReferencias: 'SELECAO_MANUAL', janelaDiasMenos: 3, janelaDiasMais: 5 }] }]
     },
     modo: 'adicionar', criarBracos: true
   };
   const preview = server.validarImportacaoSoA(payload);
-  assert.equal(preview.ok, true);
+  assert.equal(preview.ok, true, JSON.stringify(preview.erros));
   assert.deepEqual(Array.from(preview.missingBracos), ['BraÃ§o A']);
   assert.deepEqual(Array.from(preview.visitas, item => [item.ordemRecebida, item.ordemSugerida]), [[1, 1], [2, 2]]);
   assert.equal(preview.mudancasOrdemSugerida, 0);
@@ -483,6 +510,11 @@ test('fase SoA: importador cria braços, resolve referências por código e mant
   assert.equal(visitas.length, 2);
   assert.equal(visitas[0].referencia, 'RANDOMIZACAO');
   assert.equal(visitas[1].referencia, visitas[0].idSoA);
+  assert.equal(visitas[0].baseCalculo, 'MANTER_DATAS_PREVISTAS');
+  assert.equal(visitas[0].papelCronograma, 'MARCO_CALCULO');
+  assert.equal(visitas[1].baseCalculo, 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(visitas[1].referenciaAlternativa, 'PROGRESSAO_DOENCA');
+  assert.equal(visitas[1].criterioReferencias, 'SELECAO_MANUAL');
   assert.equal(visitas[1].bracoIds.length, 1);
   assert.equal(server.getBracosProjeto('Estudo A').length, 1);
 });
@@ -504,9 +536,9 @@ test('fase SoA: importador no modo adicionar não duplica visitas já existentes
 
 test('fase SoA: importação em modo atualizar preserva ordem manual e atualiza os demais campos', () => {
   const soa = new FakeSheet('SoA_Visitas', [
-    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual'],
-    ['SOA-1', 'Estudo A', 'V1', 'Baseline antiga', 20, '', '', '', 'Sim', '', 'RANDOMIZACAO', '', '', '', 'Sim'],
-    ['SOA-2', 'Estudo A', 'V2', 'Semana antiga', 30, '', '', '', 'Sim', '', 'SOA-1', '', '', '', 'Não']
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual', 'Tipo de referência'],
+    ['SOA-1', 'Estudo A', 'V1', 'Baseline antiga', 20, '', '', '', 'Sim', '', 'RANDOMIZACAO', '', '', '', 'Sim', 'FIXA_PROTOCOLAR'],
+    ['SOA-2', 'Estudo A', 'V2', 'Semana antiga', 30, '', '', '', 'Sim', '', 'SOA-1', '', '', '', 'Não', 'ROLANTE_VISITA_REALIZADA']
   ]);
   const spreadsheet = new FakeSpreadsheet({ SoA_Visitas: soa });
   const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
@@ -529,6 +561,9 @@ test('fase SoA: importação em modo atualizar preserva ordem manual e atualiza 
   assert.equal(result.ordensManuaisPreservadas, 1);
   assert.equal(porCodigo.V1.ordem, 20);
   assert.equal(porCodigo.V1.nome, 'Baseline atualizada');
+  assert.equal(porCodigo.V1.baseCalculo, 'MANTER_DATAS_PREVISTAS');
+  assert.equal(porCodigo.V2.baseCalculo, 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(soa.rows[0].includes('Base para o cálculo'), false);
   assert.equal(porCodigo.V2.ordem, 2);
   assert.equal(porCodigo.V2.nome, 'Semana atualizada');
   assert.equal(porCodigo.V3.ordem, 31);

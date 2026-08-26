@@ -4617,6 +4617,7 @@ function soaReferenciaLabel_(referencia) {
     INCLUSAO: 'inclusão'
   };
   labels.ULTIMA_DOSE = 'Última dose';
+  labels.FIM_TRATAMENTO = 'fim de tratamento';
   labels.PROGRESSAO_DOENCA = 'progressão da doença';
   labels.OUTRA = 'referência especial';
   if (labels[value]) return labels[value];
@@ -4635,19 +4636,28 @@ function soaResumoProgramacao_(item) {
   if (item.janelaDiasMenos !== '' || item.janelaDiasMais !== '') {
     parts.push('janela −' + (item.janelaDiasMenos === '' ? '—' : item.janelaDiasMenos) + '/+' + (item.janelaDiasMais === '' ? '—' : item.janelaDiasMais) + ' dias');
   }
+  if (item.baseCalculo === 'MANTER_DATAS_PREVISTAS') parts.push('manter datas previstas');
+  if (item.baseCalculo === 'RECALCULAR_VISITA_REALIZADA') parts.push('recalcular pela visita realizada');
+  if (item.papelCronograma === 'NAO_PARTICIPA_CALCULO') parts.push('não participa do cálculo');
+  if (item.papelCronograma === 'MARCO_CALCULO') parts.push('marco de cálculo');
+  if (item.papelCronograma === 'VISITA_CALCULADA') parts.push('visita calculada');
+  if (item.referenciaAlternativa) {
+    var criterios = { SELECAO_MANUAL: 'seleção manual', PRIMEIRO_OCORRER: 'primeiro que ocorrer', ULTIMO_OCORRER: 'último que ocorrer' };
+    parts.push('alternativa: ' + soaReferenciaLabel_(item.referenciaAlternativa) + (item.criterioReferencias ? ' (' + (criterios[item.criterioReferencias] || item.criterioReferencias) + ')' : ''));
+  }
   return parts.join(' · ');
 }
 
-function soaPopulateReferenciaOptions_(selected) {
-  var select = document.getElementById('soaReferencia');
+function soaPopulateReferenciaSelect_(selectId, selected, emptyLabel) {
+  var select = document.getElementById(selectId);
   if (!select) return;
   var options = [
-    { value: '', label: 'Sem referência (legado)' },
+    { value: '', label: emptyLabel },
     { value: 'VISITA_ANTERIOR', label: 'Visita anterior' },
     { value: 'RANDOMIZACAO', label: 'Randomização' },
     { value: 'INCLUSAO', label: 'Inclusão' }
   ];
-  options.push({ value: 'ULTIMA_DOSE', label: 'Última dose' }, { value: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' }, { value: 'OUTRA', label: 'Outra referência especial' });
+  options.push({ value: 'ULTIMA_DOSE', label: 'Última dose' }, { value: 'FIM_TRATAMENTO', label: 'Fim do tratamento' }, { value: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' }, { value: 'OUTRA', label: 'Outra referência especial' });
   (_soaVisitasAtual || []).forEach(function(item) {
     if (!item || !item.idSoA || String(item.idSoA) === String(document.getElementById('soaEditId').value || '')) return;
     options.push({ value: item.idSoA, label: (item.codigo ? item.codigo + ' · ' : '') + item.nome });
@@ -4661,6 +4671,19 @@ function soaPopulateReferenciaOptions_(selected) {
     select.appendChild(element);
   });
   select.value = selected || '';
+}
+
+function soaPopulateReferenciaOptions_(selected, alternativeSelected) {
+  soaPopulateReferenciaSelect_('soaReferencia', selected, 'Sem referência (legado)');
+  soaPopulateReferenciaSelect_('soaReferenciaAlternativa', alternativeSelected, 'Nenhuma');
+}
+
+function soaReferenciaAlternativaChange_() {
+  var alternative = document.getElementById('soaReferenciaAlternativa');
+  var criterion = document.getElementById('soaCriterioReferencias');
+  if (!alternative || !criterion) return;
+  if (alternative.value && !criterion.value) criterion.value = 'SELECAO_MANUAL';
+  if (!alternative.value) criterion.value = '';
 }
 
 function soaPopulateBracosOptions_(selected) {
@@ -5066,11 +5089,11 @@ function carregarSoAVisitasProjeto(projeto) {
 function abrirSoAVisitaForm(visita) {
   if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de cadastrar o calendário SoA.'); return; }
   visita = visita || null;
-  ['soaEditId', 'soaCodigo', 'soaNome', 'soaOrdem', 'soaRepeticao', 'soaIntervalo', 'soaJanelaMenos', 'soaJanelaMais', 'soaAliases', 'soaObservacoes'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
+  ['soaEditId', 'soaCodigo', 'soaNome', 'soaOrdem', 'soaRepeticao', 'soaIntervalo', 'soaJanelaMenos', 'soaJanelaMais', 'soaAliases', 'soaObservacoes', 'soaBaseCalculo', 'soaPapelCronograma', 'soaCriterioReferencias'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
   document.getElementById('soaAtivo').checked = true;
   document.getElementById('soaProjeto').value = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo || '';
   if (visita) document.getElementById('soaEditId').value = visita.idSoA || '';
-  soaPopulateReferenciaOptions_(visita ? (visita.referencia || '') : '');
+  soaPopulateReferenciaOptions_(visita ? (visita.referencia || '') : '', visita ? (visita.referenciaAlternativa || '') : '');
   soaPopulateBracosOptions_(visita ? (visita.bracoIds || []) : []);
   document.getElementById('modalSoATitle').textContent = visita ? 'EDITAR VISITA SoA' : 'ADICIONAR VISITA SoA';
   document.getElementById('modalSoASubtitle').textContent = 'Calendário de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
@@ -5080,6 +5103,9 @@ function abrirSoAVisitaForm(visita) {
     document.getElementById('soaOrdem').value = visita.ordem === '' ? '' : (visita.ordem || '');
     document.getElementById('soaRepeticao').value = visita.repeticao || '';
     document.getElementById('soaIntervalo').value = visita.intervaloDias === '' ? '' : visita.intervaloDias;
+    document.getElementById('soaBaseCalculo').value = visita.baseCalculo || '';
+    document.getElementById('soaPapelCronograma').value = visita.papelCronograma || '';
+    document.getElementById('soaCriterioReferencias').value = visita.criterioReferencias || '';
     document.getElementById('soaJanelaMenos').value = visita.janelaDiasMenos === '' ? '' : visita.janelaDiasMenos;
     document.getElementById('soaJanelaMais').value = visita.janelaDiasMais === '' ? '' : visita.janelaDiasMais;
     document.getElementById('soaAliases').value = (visita.aliases || []).join('; ');
@@ -5094,8 +5120,18 @@ function abrirSoAVisitaForm(visita) {
 function salvarSoAVisitaApp() {
   var nome = document.getElementById('soaNome').value.trim();
   if (!appRequiredFeedback([{ input: 'soaNome', error: 'errSoANome', label: 'Nome padrão da visita', value: nome }], { status: 'statusSoA' })) return;
+  var referencia = document.getElementById('soaReferencia').value;
+  var referenciaAlternativa = document.getElementById('soaReferenciaAlternativa').value;
+  var baseCalculo = document.getElementById('soaBaseCalculo').value;
+  var papelCronograma = document.getElementById('soaPapelCronograma').value;
+  var criterioReferencias = document.getElementById('soaCriterioReferencias').value;
+  if (baseCalculo && !referencia) { appSetStatus('statusSoA', '⚠ Selecione a referência antes de definir a base para o cálculo.', '#e53935'); return; }
+  if (papelCronograma === 'VISITA_CALCULADA' && (!referencia || !baseCalculo)) { appSetStatus('statusSoA', '⚠ Uma visita calculada exige referência e base para o cálculo.', '#e53935'); return; }
+  if (referenciaAlternativa && (!referencia || !criterioReferencias)) { appSetStatus('statusSoA', '⚠ A referência alternativa exige referência principal e critério.', '#e53935'); return; }
+  if (criterioReferencias && !referenciaAlternativa) { appSetStatus('statusSoA', '⚠ Selecione uma referência alternativa antes de definir o critério.', '#e53935'); return; }
+  if (referenciaAlternativa && referenciaAlternativa === referencia) { appSetStatus('statusSoA', '⚠ A referência alternativa deve ser diferente da principal.', '#e53935'); return; }
   var btn = document.getElementById('btnSalvarSoA');
-  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, referencia: document.getElementById('soaReferencia').value, janelaDiasMenos: document.getElementById('soaJanelaMenos').value, janelaDiasMais: document.getElementById('soaJanelaMais').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim(), bracoIds: soaSelectedBracos_() };
+  var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, referencia: referencia, referenciaAlternativa: referenciaAlternativa, baseCalculo: baseCalculo, papelCronograma: papelCronograma, criterioReferencias: criterioReferencias, janelaDiasMenos: document.getElementById('soaJanelaMenos').value, janelaDiasMais: document.getElementById('soaJanelaMais').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim(), bracoIds: soaSelectedBracos_() };
   appSetButtonBusy(btn, true); appSetStatus('statusSoA', '⏳ Processando...');
   appServerRun({ method: 'salvarSoAVisita', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', ''); fecharOverlay('modalSoAVisita'); snack('✅ ' + ((res && res.msg) || 'Visita SoA salva.')); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', '⚠ ' + appErrorMessage(e), '#e53935'); } });
 }

@@ -1442,23 +1442,36 @@ function transporteProjetosCorrespondem_(a, b) {
 function transporteEncontrarParticipante_(participantes, referencia) {
   participantes = participantes || [];
   referencia = referencia || {};
+  var nome = String(referencia.paciente || referencia.participante || referencia.nome || '').trim();
+  var nomeKey = transporteParticipantKey_(nome);
+  var projetoReferencia = String(referencia.protocolo || referencia.projeto || '').trim();
   var idEstavel = String(
     referencia.identificacaoParticipante || referencia.idParticipante || referencia.numId || ''
   ).trim();
   if (idEstavel) {
     var idKey = transporteParticipantKey_(idEstavel);
+    var candidatosId = [];
     for (var i = 0; i < participantes.length; i++) {
       if (transporteParticipantKey_(transporteParticipanteIdEstavel_(participantes[i])) === idKey) {
-        return participantes[i];
+        candidatosId.push(participantes[i]);
       }
+    }
+    if (projetoReferencia) {
+      candidatosId = candidatosId.filter(function(candidato) {
+        return transporteProjetosCorrespondem_(candidato && candidato.projeto, projetoReferencia);
+      });
+    }
+    if (candidatosId.length === 1) return candidatosId[0];
+    if (nomeKey && candidatosId.length > 1) {
+      var candidatosNome = candidatosId.filter(function(candidato) {
+        return transporteParticipantKey_(candidato && (candidato.nome || candidato.participante)) === nomeKey;
+      });
+      if (candidatosNome.length === 1) return candidatosNome[0];
     }
     return null;
   }
 
-  var nome = String(referencia.paciente || referencia.participante || referencia.nome || '').trim();
   if (!nome) return null;
-  var nomeKey = transporteParticipantKey_(nome);
-  var projetoReferencia = String(referencia.protocolo || referencia.projeto || '').trim();
   var exato = null;
   for (var j = 0; j < participantes.length; j++) {
     var participanteExato = participantes[j] || {};
@@ -1533,7 +1546,12 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado) {
       registro.identificacaoParticipante ||
       registro.idParticipante || ''
     ).trim();
-    if (participante && participante.nome) registro.paciente = String(participante.nome).trim();
+    registro.paciente = String(
+      (participante && participante.nome) ||
+      evento.participante ||
+      registro.paciente ||
+      registro.participante || ''
+    ).trim();
   } catch (e) {
     Logger.log('Dados vinculados da Agenda nao atualizados no Transporte: ' + e.message);
   }
@@ -3250,9 +3268,9 @@ function transporteDeclaracaoFormulaLinha_(sheet, row) {
 
 function transporteVolumeFormulaFontSize_(text) {
   var length = String(text || '').trim().length;
-  if (length <= 30) return 10;
-  if (length <= 36) return 9;
-  if (length <= 42) return 8;
+  if (length <= 30) return 11;
+  if (length <= 36) return 10;
+  if (length <= 42) return 9;
   return 0;
 }
 
@@ -3272,7 +3290,7 @@ function transporteAjustarVolumesDeclaracao_(declaracao, failOnOverflow) {
     var fontSize = transporteVolumeFormulaFontSize_(text);
     if (!fontSize) {
       overflowRows.push(row);
-      fontSize = 8;
+      fontSize = 9;
     }
     declaracao.getRange('J' + row + ':L' + row)
       .setFontSize(fontSize)

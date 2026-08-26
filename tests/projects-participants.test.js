@@ -416,6 +416,25 @@ test('jornada do participante calcula e exibe a janela em torno da data ideal', 
   assert.match(html, /Janela: 03\/fev\.\/2027 – 17\/fev\.\/2027/);
 });
 
+test('cadastro SoA configura base amigável, papel no cronograma e referências alternativas', () => {
+  const content = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+
+  assert.match(content, /id="soaBaseCalculo"/);
+  assert.match(content, /value="MANTER_DATAS_PREVISTAS">Manter datas previstas/);
+  assert.match(content, /value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada/);
+  assert.match(content, /id="soaPapelCronograma"/);
+  assert.match(content, /id="soaReferenciaAlternativa"/);
+  assert.match(content, /value="SELECAO_MANUAL">Seleção manual/);
+  assert.match(client, /baseCalculo: baseCalculo/);
+  assert.match(client, /referenciaAlternativa: referenciaAlternativa/);
+  assert.match(client, /function soaReferenciaAlternativaChange_\(\)/);
+  assert.match(client, /criterion\.value = 'SELECAO_MANUAL'/);
+  assert.match(server, /'Base para o cálculo'/);
+  assert.match(server, /soaNormalizarBaseCalculo_/);
+});
+
 test('jornada inicia na primeira visita registrada pelo IPS e não reinicia a prontidão em etapas históricas', () => {
   const server = runFile('WebApp.gs');
   const visitas = server.jornadaVisitasDesdeInicioOperacional_([

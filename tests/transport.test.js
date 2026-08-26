@@ -183,15 +183,15 @@ test('protecao de layout reduz a fonte e bloqueia volume ainda maior antes do PD
     }
   };
 
-  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(30)), 10);
-  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(31)), 9);
-  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(37)), 8);
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(30)), 11);
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(31)), 10);
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(37)), 9);
   assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(43)), 0);
   assert.deepEqual(Array.from(context.transporteAjustarVolumesDeclaracao_(sheet, true)), []);
   assert.equal(formulas[21], '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25');
-  assert.equal(fontSizes[21], 10);
-  assert.equal(fontSizes[22], 9);
-  assert.equal(fontSizes[23], 8);
+  assert.equal(fontSizes[21], 11);
+  assert.equal(fontSizes[22], 10);
+  assert.equal(fontSizes[23], 9);
   assert.equal(wrapModes[23], false);
   formulas[24] = 'x'.repeat(43);
   assert.throws(() => context.transporteAjustarVolumesDeclaracao_(sheet, true), /linha\(s\) 24/);
@@ -232,6 +232,50 @@ test('Transporte resolve participante pelo ID estavel mesmo com nome historico d
   assert.equal(payload.protocolo, 'SKYLINE-UC');
   assert.equal(payload.investigador, 'Eduardo Brambilla');
   assert.equal(payload.identificacaoParticipante, '2011250001');
+});
+
+test('Transporte combina ID e projeto quando o identificador se repete entre estudos', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'function transporteParticipantKey_(',
+    'function transporteAgendadoresConfig_('
+  );
+  const participantes = [
+    { id: '1', nome: 'Afonso Celso Kramer de Araujo', idParticipante: 'BR100010006', projeto: 'OrigAMI-3' },
+    { id: '93', nome: 'Sandro Sbardelotto', idParticipante: 'BR100010006', projeto: 'OrigAMI-2' }
+  ];
+  const context = vm.createContext({
+    Logger: { log: () => {} },
+    getParticipantes: () => participantes,
+    getProjetos: () => []
+  });
+  vm.runInContext(block, context);
+
+  const sandro = context.transporteEncontrarParticipante_(participantes, {
+    identificacaoParticipante: 'BR100010006',
+    paciente: 'Sandro Sbardelotto',
+    protocolo: 'OrigAMI-2'
+  });
+  assert.equal(sandro.nome, 'Sandro Sbardelotto');
+
+  const registro = context.transporteAtualizarRegistroPorAgenda_({
+    idAgenda: 'evt-sandro',
+    paciente: 'Afonso Celso Kramer de Araujo',
+    identificacaoParticipante: 'BR100010006',
+    protocolo: 'OrigAMI-3'
+  }, {
+    participante: 'Sandro Sbardelotto',
+    idParticipante: 'BR100010006',
+    projeto: 'OrigAMI-2'
+  });
+  assert.equal(registro.paciente, 'Sandro Sbardelotto');
+  assert.equal(registro.protocolo, 'OrigAMI-2');
+
+  const ambiguo = context.transporteEncontrarParticipante_(participantes, {
+    identificacaoParticipante: 'BR100010006'
+  });
+  assert.equal(ambiguo, null);
 });
 
 test('Transporte corrige divergencia de um caractere somente quando participante e projeto sao unicos', () => {
