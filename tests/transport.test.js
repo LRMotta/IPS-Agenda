@@ -111,6 +111,93 @@ test('pre-agendamento prepara documentos sem sincronizar de volta para a Agenda'
   assert.match(save, /var agendaSync = options\.rascunho\s*\?\s*\{ atualizado: false/);
 });
 
+test('volumes da Declaracao de Transporte usam o bloco mesclado J:L', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const read = sourceBetween(source, 'function transporteReadRegistro_(', 'function transporteValidate_(');
+  const save = sourceBetween(source, 'function salvarTransporte(', 'function transporteSetEnsaiosPeticao_(');
+  const calculations = sourceBetween(source, 'function transporteDeclaracaoFormulaLinha_(', 'function verificarEAtualizarG33Declaracao_(');
+  const pinex = sourceBetween(source, 'function atualizarFormularioPinex_(', 'function processarHorarioColeta_(');
+  const cleanup = sourceBetween(source, 'function performContentDeletion_(', 'function criarRascunhoEmail_(');
+
+  assert.match(read, /formula:\s*r\[8\]\s*\|\|\s*r\[9\]\s*\|\|\s*r\[10\]/);
+  assert.match(save, /transporteSetTopLeftInBlock_\(declaracao, 'J' \+ sheetRow \+ ':L' \+ sheetRow, row\[0\]\)/);
+  assert.match(calculations, /getRange\('J' \+ row \+ ':L' \+ row\)/);
+  assert.match(pinex, /getRange\('J21:L28'\)/);
+  assert.match(cleanup, /'J21:L28'/);
+  assert.doesNotMatch(source, /getRange\('K21:K28'\)/);
+});
+
+test('formulas de volume usam representacao compacta sem perder decimais significativos', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const serverBlock = sourceBetween(source, 'function codexMatBioFormatNumber_(', 'function codexMatBioParseJson_(');
+  const server = vm.createContext({
+    codexMatBioUnitKey_: (unit) => String(unit || '').toLowerCase() === 'l' ? 'L' : 'mL'
+  });
+  vm.runInContext(serverBlock, server);
+  const client = runHtmlScript('SharedMatBioCore.html').CodexMatBioCore;
+  const segments = [
+    { qtd: 1, vol: 0.5 },
+    { qtd: 1, vol: 1 },
+    { qtd: 1, vol: 1.75 },
+    { qtd: 2, vol: 0.25 }
+  ];
+
+  assert.equal(server.codexMatBioFormulaFromSegments_(segments, 'mL'), '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25');
+  assert.equal(client.formulaFromSegments(segments, 'mL'), '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25');
+  assert.equal(server.codexMatBioParseFormula_('1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25').total, 3.75);
+});
+
+test('protecao de layout reduz a fonte e bloqueia volume ainda maior antes do PDF', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const helpers = sourceBetween(source, 'function transporteVolumeFormulaFontSize_(', 'function calcularTotalTubos(');
+  const pdf = sourceBetween(source, 'function imprimirTodasAbas(', 'function transportePdfSpec_(');
+  const formulas = {
+    21: '1 x 0,50, 1 x 1,00, 1 x 1,75, 2 x 0,25',
+    22: 'x'.repeat(35),
+    23: 'x'.repeat(40)
+  };
+  const fontSizes = {};
+  const wrapModes = {};
+  const context = vm.createContext({
+    transporteDeclaracaoFormulaLinha_: (_sheet, row) => formulas[row] || '',
+    transporteParseFormula_: (text) => ({
+      segmentos: text === formulas[21]
+        ? [{ qtd: 1, vol: 0.5 }, { qtd: 1, vol: 1 }, { qtd: 1, vol: 1.75 }, { qtd: 2, vol: 0.25 }]
+        : []
+    }),
+    transporteFormulaFromSegments_: () => '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25',
+    transporteSetTopLeftInBlock_: (_sheet, a1, value) => { formulas[Number(a1.slice(1, 3))] = value; }
+  });
+  vm.runInContext(helpers, context);
+  const sheet = {
+    getRange: (a1) => {
+      const row = Number(a1.slice(1, 3));
+      return {
+        setFontSize: (size) => {
+          fontSizes[row] = size;
+          return {
+            setWrap: (wrap) => { wrapModes[row] = wrap; }
+          };
+        }
+      };
+    }
+  };
+
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(30)), 10);
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(31)), 9);
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(37)), 8);
+  assert.equal(context.transporteVolumeFormulaFontSize_('x'.repeat(43)), 0);
+  assert.deepEqual(Array.from(context.transporteAjustarVolumesDeclaracao_(sheet, true)), []);
+  assert.equal(formulas[21], '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25');
+  assert.equal(fontSizes[21], 10);
+  assert.equal(fontSizes[22], 9);
+  assert.equal(fontSizes[23], 8);
+  assert.equal(wrapModes[23], false);
+  formulas[24] = 'x'.repeat(43);
+  assert.throws(() => context.transporteAjustarVolumesDeclaracao_(sheet, true), /linha\(s\) 24/);
+  assert.match(pdf, /transporteAjustarVolumesDeclaracao_\([\s\S]*, true\);[\s\S]*SpreadsheetApp\.flush\(\);[\s\S]*makeCopy\(/);
+});
+
 test('Transporte resolve participante pelo ID estavel mesmo com nome historico divergente', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(

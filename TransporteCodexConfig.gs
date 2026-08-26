@@ -525,6 +525,15 @@ function codexMatBioFormatNumber_(value, decimals) {
   });
 }
 
+function codexMatBioFormatVolume_(value, decimals) {
+  var num = Number(value || 0);
+  if (!isFinite(num)) num = 0;
+  return num.toLocaleString('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: decimals
+  });
+}
+
 function codexMatBioParseFormula_(text) {
   var segmentos = [];
   var tubos = 0;
@@ -545,8 +554,8 @@ function codexMatBioParseFormula_(text) {
 function codexMatBioFormulaFromSegments_(segments, unit) {
   var decimals = codexMatBioUnitKey_(unit) === 'L' ? 5 : 2;
   return (segments || []).map(function(seg) {
-    return codexMatBioFormatNumber_(seg.qtd, 0) + ' x ' + codexMatBioFormatNumber_(seg.vol, decimals);
-  }).join(', ');
+    return codexMatBioFormatNumber_(seg.qtd, 0) + '\u00d7' + codexMatBioFormatVolume_(seg.vol, decimals);
+  }).join('; ');
 }
 
 function codexMatBioParseJson_(json) {
@@ -1773,7 +1782,7 @@ function transporteReadRegistro_() {
         ativo: r[0] === true,
         material: String(r[1] || TRANSPORTE_MATERIAIS[idx] || '').trim(),
         tubos: r[6] || '',
-        formula: r[9] || '',
+        formula: r[8] || r[9] || r[10] || '',
         total: r[12] || '',
         ensaio: ''
       });
@@ -2007,7 +2016,11 @@ function salvarTransporteInterno_(payload, options) {
   }
   declaracao.getRange('B21:B28').setValues(ativos);
   declaracao.getRange('H21:H28').setValues(tubos);
-  declaracao.getRange('K21:K28').setValues(formulas);
+  formulas.forEach(function(row, idx) {
+    var sheetRow = idx + 21;
+    transporteSetTopLeftInBlock_(declaracao, 'J' + sheetRow + ':L' + sheetRow, row[0]);
+  });
+  transporteAjustarVolumesDeclaracao_(declaracao, false);
   declaracao.getRange('N21:N28').setValues(totais);
   for (var j = 8; j < materiais.length; j++) {
     if (materiais[j] && materiais[j].ativo) {
@@ -3230,11 +3243,55 @@ function transporteCodexVolume_(value) {
   return n ? String(n).replace('.', ',') : '0';
 }
 
+function transporteDeclaracaoFormulaLinha_(sheet, row) {
+  var values = sheet.getRange('J' + row + ':L' + row).getValues()[0] || [];
+  return values[0] || values[1] || values[2] || '';
+}
+
+function transporteVolumeFormulaFontSize_(text) {
+  var length = String(text || '').trim().length;
+  if (length <= 30) return 10;
+  if (length <= 36) return 9;
+  if (length <= 42) return 8;
+  return 0;
+}
+
+function transporteAjustarVolumesDeclaracao_(declaracao, failOnOverflow) {
+  if (!declaracao) return [];
+  var overflowRows = [];
+  for (var row = 21; row <= 28; row++) {
+    var text = transporteDeclaracaoFormulaLinha_(declaracao, row);
+    var parsed = transporteParseFormula_(text);
+    if (parsed.segmentos && parsed.segmentos.length) {
+      var compactText = transporteFormulaFromSegments_(parsed.segmentos, 'mL');
+      if (compactText !== text) {
+        transporteSetTopLeftInBlock_(declaracao, 'J' + row + ':L' + row, compactText);
+        text = compactText;
+      }
+    }
+    var fontSize = transporteVolumeFormulaFontSize_(text);
+    if (!fontSize) {
+      overflowRows.push(row);
+      fontSize = 8;
+    }
+    declaracao.getRange('J' + row + ':L' + row)
+      .setFontSize(fontSize)
+      .setWrap(false);
+  }
+  if (failOnOverflow && overflowRows.length) {
+    throw new Error(
+      'Os volumes da Declara\u00e7\u00e3o de Transporte excedem o espa\u00e7o seguro na(s) linha(s) ' +
+      overflowRows.join(', ') + '. Agrupe ou revise os volumes antes de gerar a documenta\u00e7\u00e3o.'
+    );
+  }
+  return overflowRows;
+}
+
 function calcularTotalTubos(row) {
   try {
     var ss = getTransporteSpreadsheetCodex_();
     var sheet = transporteCodexGetSheet_(ss, 'declaracaoTransp', true);
-    var texto = getCellValueSafe(sheet, 'K' + row);
+    var texto = transporteDeclaracaoFormulaLinha_(sheet, row);
     var parsed = transporteParseFormula_(texto);
     if (String(texto || '').trim()) sheet.getRange('H' + row).setValue(parsed.tubos || 0);
     else sheet.getRange('H' + row).clearContent();
@@ -3247,7 +3304,7 @@ function calcularExpressaoLinha(row) {
   try {
     var ss = getTransporteSpreadsheetCodex_();
     var sheet = transporteCodexGetSheet_(ss, 'declaracaoTransp', true);
-    var texto = getCellValueSafe(sheet, 'K' + row);
+    var texto = transporteDeclaracaoFormulaLinha_(sheet, row);
     var parsed = transporteParseFormula_(texto);
     if (String(texto || '').trim()) sheet.getRange('N' + row).setValue(parsed.total || 0);
     else sheet.getRange('N' + row).clearContent();
@@ -3370,7 +3427,9 @@ function atualizarFormularioPinex_(ss) {
     var iniciais = extrairIniciais_(getCellValueSafe(folha, 'C3'));
     var temperatura = getCellValueSafe(folha, 'C6');
     var checked = declaracao.getRange('B21:B28').getValues();
-    var formulas = declaracao.getRange('K21:K28').getValues();
+    var formulas = declaracao.getRange('J21:L28').getValues().map(function(row) {
+      return [row[0] || row[1] || row[2] || ''];
+    });
     var nomes = ['Sangue', 'Soro', 'Urina', 'Plasma', 'Tecido', 'Saliva', 'Fezes', 'Vacina'];
     var values = [];
 
@@ -3752,7 +3811,7 @@ function performContentDeletion_() {
   try {
     var declaracao = transporteCodexGetSheet_(ss, 'declaracaoTransp', false);
     if (declaracao) {
-      declaracao.getRangeList(['H21:H28', 'K21:K28', 'N21:N28', 'F30', 'F32', 'H32', 'J32']).clearContent();
+      declaracao.getRangeList(['H21:H28', 'J21:L28', 'N21:N28', 'F30', 'F32', 'H32', 'J32']).clearContent();
       declaracao.getRange('B21:B28').setValue(false);
     }
   } catch (e1) {
@@ -4448,6 +4507,7 @@ function imprimirTodasAbas(options) {
       preencherPeticaoAnuenciaWebApp_(ss, payloadFallback);
     }
     preencherDhlWebApp_(ss, payloadFallback);
+    transporteAjustarVolumesDeclaracao_(transporteCodexGetSheet_(ss, 'declaracaoTransp', false), true);
 
     SpreadsheetApp.flush();
     var token = ScriptApp.getOAuthToken();
