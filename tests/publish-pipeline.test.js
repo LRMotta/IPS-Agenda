@@ -41,6 +41,12 @@ test('GitHub exige branch, PR, checks e merge antes da publicacao no Apps Script
   assert.match(source, /git merge --ff-only origin\/main/);
 });
 
+test('workflow registra o check tambem nas branches oficiais de publicacao', () => {
+  const source = readProjectFile('.github/workflows/regression-tests.yml');
+  assert.match(source, /push:\s*[\s\S]*branches:\s*[\s\S]*main\s*[\s\S]*agent\/publish-\*/);
+  assert.match(source, /pull_request:\s*[\s\S]*branches:\s*\[main\]/);
+});
+
 test('publicacao reconhece commit da main que ja passou por Pull Request', () => {
   const source = readProjectFile('tools/push-clasp.ps1');
   assert.match(source, /\$sourceFullSha -eq \$originMainSha/);

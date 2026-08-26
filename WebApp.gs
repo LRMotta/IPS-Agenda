@@ -3326,8 +3326,26 @@ var SOA_VISITAS_HEADERS_ = [
   'ID_SoA', 'Projeto', 'Código da visita', 'Nome padrão da visita',
   'Ordem', 'Repetição', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observações',
   'Referência (após)', 'Janela dias menos', 'Janela dias mais', 'Braços (IDs)',
-  'Ordem manual'
+  'Ordem manual', 'Base para o cálculo', 'Papel no cronograma',
+  'Referência alternativa', 'Critério entre referências'
 ];
+
+var SOA_BASES_CALCULO_ = {
+  MANTER_DATAS_PREVISTAS: 'Manter datas previstas',
+  RECALCULAR_VISITA_REALIZADA: 'Recalcular pela visita realizada'
+};
+
+var SOA_PAPEIS_CRONOGRAMA_ = {
+  NAO_PARTICIPA_CALCULO: 'Não participa do cálculo',
+  MARCO_CALCULO: 'Marco de cálculo',
+  VISITA_CALCULADA: 'Visita calculada'
+};
+
+var SOA_CRITERIOS_REFERENCIAS_ = {
+  SELECAO_MANUAL: 'Seleção manual',
+  PRIMEIRO_OCORRER: 'O primeiro que ocorrer',
+  ULTIMO_OCORRER: 'O último que ocorrer'
+};
 
 function soaHeaderIndex_(headerMap, names, fallback) {
   for (var i = 0; i < names.length; i++) {
@@ -3367,13 +3385,40 @@ function soaOrdemManual_(value) {
   return value === true || normText_(value) === 'sim';
 }
 
+function soaNormalizarBaseCalculo_(value) {
+  var raw = String(value || '').trim();
+  if (!raw) return '';
+  var normalized = normText_(raw).replace(/[^a-z0-9]+/g, '');
+  if (normalized === 'manterdatasprevistas' || normalized === 'fixaprotocolar') return 'MANTER_DATAS_PREVISTAS';
+  if (normalized === 'recalcularpelavisitrealizada' || normalized === 'recalcularvisitarealizada' || normalized === 'rolantevisitarealizada' || normalized === 'rolantepelavisitrealizada') return 'RECALCULAR_VISITA_REALIZADA';
+  return '';
+}
+
+function soaNormalizarPapelCronograma_(value) {
+  var normalized = normText_(value).replace(/[^a-z0-9]+/g, '');
+  if (!normalized) return '';
+  if (normalized === 'naoparticipadocalculo' || normalized === 'naoparticipacalculo' || normalized === 'anterioraocronogramacalculado') return 'NAO_PARTICIPA_CALCULO';
+  if (normalized === 'marcodecalculo' || normalized === 'marcocalculo') return 'MARCO_CALCULO';
+  if (normalized === 'visitacalculada') return 'VISITA_CALCULADA';
+  return '';
+}
+
+function soaNormalizarCriterioReferencias_(value) {
+  var normalized = normText_(value).replace(/[^a-z0-9]+/g, '');
+  if (!normalized) return '';
+  if (normalized === 'selecaomanual') return 'SELECAO_MANUAL';
+  if (normalized === 'primeiroocorrer' || normalized === 'oprimeiroqueocorrer') return 'PRIMEIRO_OCORRER';
+  if (normalized === 'ultimoocorrer' || normalized === 'oultimoqueocorrer') return 'ULTIMO_OCORRER';
+  return '';
+}
+
 function soaSugerirOrdemExecucao_(visitas, options) {
   options = options || {};
   var referenciasConhecidas = {};
   (options.referenciasConhecidas || []).forEach(function(id) { referenciasConhecidas[String(id || '').trim()] = true; });
   var especiais = {
     INCLUSAO: 'inicio', RANDOMIZACAO: 'inicio',
-    ULTIMA_DOSE: 'terminal', PROGRESSAO_DOENCA: 'terminal',
+    ULTIMA_DOSE: 'terminal', FIM_TRATAMENTO: 'terminal', PROGRESSAO_DOENCA: 'terminal',
     OUTRA: 'outra'
   };
   var ambiguidades = [];
@@ -3392,6 +3437,7 @@ function soaSugerirOrdemExecucao_(visitas, options) {
       prioridadeRecebida: ordemNumero !== null && isFinite(ordemNumero) ? ordemNumero : 1000000 + index,
       intervalo: intervaloNumero !== null && isFinite(intervaloNumero) ? intervaloNumero : null,
       referencia: String(visita && visita.referencia || '').trim(),
+      referenciaAlternativa: String(visita && visita.referenciaAlternativa || '').trim(),
       saidas: {},
       entrada: 0,
       motivos: []
@@ -3418,23 +3464,18 @@ function soaSugerirOrdemExecucao_(visitas, options) {
   }
 
   nodes.forEach(function(node) {
-    var referencia = node.referencia;
-    if (byId[referencia]) {
-      addEdge(byId[referencia], node);
-      return;
-    }
-    if (!referencia) {
-      addAmbiguidade('SEM_REFERENCIA', 'Sem referência explícita; a posição recebida foi mantida como desempate.', [node]);
-    } else if (referencia === 'VISITA_ANTERIOR') {
-      addAmbiguidade('VISITA_ANTERIOR', '“Visita anterior” depende da ordem recebida e precisa de revisão.', [node]);
-    } else if (referencia === 'OUTRA') {
-      addAmbiguidade('REFERENCIA_ESPECIAL', 'A referência especial “Outra” não determina uma posição de execução.', [node]);
-    } else if (!especiais[referencia]) {
-      if (referenciasConhecidas[referencia]) {
-        addAmbiguidade('REFERENCIA_FORA_PREVIA', 'A referência já existe fora desta prévia; a posição relativa foi mantida.', [node]);
-      } else {
-        addAmbiguidade('REFERENCIA_AUSENTE', 'A referência ' + referencia + ' não está disponível para ordenar esta visita.', [node]);
+    var referencias = [node.referencia, node.referenciaAlternativa].filter(Boolean);
+    referencias.forEach(function(referencia) {
+      if (byId[referencia]) addEdge(byId[referencia], node);
+      else if (referencia === 'VISITA_ANTERIOR') addAmbiguidade('VISITA_ANTERIOR', '“Visita anterior” depende da ordem recebida e precisa de revisão.', [node]);
+      else if (referencia === 'OUTRA') addAmbiguidade('REFERENCIA_ESPECIAL', 'A referência especial “Outra” não determina uma posição de execução.', [node]);
+      else if (!especiais[referencia]) {
+        if (referenciasConhecidas[referencia]) addAmbiguidade('REFERENCIA_FORA_PREVIA', 'A referência já existe fora desta prévia; a posição relativa foi mantida.', [node]);
+        else addAmbiguidade('REFERENCIA_AUSENTE', 'A referência ' + referencia + ' não está disponível para ordenar esta visita.', [node]);
       }
+    });
+    if (!referencias.length) {
+      addAmbiguidade('SEM_REFERENCIA', 'Sem referência explícita; a posição recebida foi mantida como desempate.', [node]);
     }
   });
 
@@ -3493,15 +3534,16 @@ function soaSugerirOrdemExecucao_(visitas, options) {
   nodes.forEach(function(node) {
     var root = specialRoot(node, {});
     if (root === 'INCLUSAO' || root === 'RANDOMIZACAO') inicio.push(node);
-    if (root === 'ULTIMA_DOSE' || root === 'PROGRESSAO_DOENCA') {
+    if (root === 'ULTIMA_DOSE' || root === 'FIM_TRATAMENTO' || root === 'PROGRESSAO_DOENCA') {
       terminal.push(node);
       if (!terminaisPorRaiz[root]) terminaisPorRaiz[root] = [];
       terminaisPorRaiz[root].push(node);
     }
   });
   inicio.forEach(function(from) { terminal.forEach(function(to) { addEdge(from, to); }); });
-  if (terminaisPorRaiz.ULTIMA_DOSE && terminaisPorRaiz.PROGRESSAO_DOENCA) {
-    addAmbiguidade('FASES_TERMINAIS', 'Última dose e progressão da doença são marcos alternativos; a sequência entre esses grupos precisa de revisão.', terminaisPorRaiz.ULTIMA_DOSE.concat(terminaisPorRaiz.PROGRESSAO_DOENCA));
+  var gruposTerminais = ['ULTIMA_DOSE', 'FIM_TRATAMENTO', 'PROGRESSAO_DOENCA'].filter(function(key) { return terminaisPorRaiz[key]; });
+  if (gruposTerminais.length > 1) {
+    addAmbiguidade('FASES_TERMINAIS', 'Há marcos terminais alternativos; a sequência entre esses grupos precisa de revisão.', gruposTerminais.reduce(function(all, key) { return all.concat(terminaisPorRaiz[key]); }, []));
   }
 
   function compareReceived(a, b) {
@@ -3555,7 +3597,10 @@ function soaEnsureHeaders_(sheet) {
   }
   var map = soaHeaderMap_(headers);
   var missing = SOA_VISITAS_HEADERS_.filter(function(header) {
-    return map[normalizeHeader_(header)] === undefined;
+    var aliases = normalizeHeader_(header) === normalizeHeader_('Base para o cálculo')
+      ? ['Base para o cálculo', 'Base para o calculo', 'Tipo de referência', 'Tipo de referencia', 'Tipo de cálculo da referência', 'Tipo de calculo da referencia']
+      : [header];
+    return aliases.every(function(alias) { return map[normalizeHeader_(alias)] === undefined; });
   });
   if (missing.length) {
     sheet.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
@@ -3594,7 +3639,11 @@ function getSoAVisitasProjeto(projeto) {
     janelaMenos: soaHeaderIndex_(map, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], 11),
     janelaMais: soaHeaderIndex_(map, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], 12),
     bracos: soaHeaderIndex_(map, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], 13),
-    ordemManual: soaHeaderIndex_(map, ['Ordem manual'], 14)
+    ordemManual: soaHeaderIndex_(map, ['Ordem manual'], 14),
+    baseCalculo: soaHeaderIndex_(map, ['Base para o cálculo', 'Base para o calculo', 'Tipo de referência', 'Tipo de referencia', 'Tipo de cálculo da referência', 'Tipo de calculo da referencia']),
+    papelCronograma: soaHeaderIndex_(map, ['Papel no cronograma']),
+    referenciaAlternativa: soaHeaderIndex_(map, ['Referência alternativa', 'Referencia alternativa']),
+    criterioReferencias: soaHeaderIndex_(map, ['Critério entre referências', 'Criterio entre referencias'])
   };
   var visitas = rows.slice(1).map(function(row) {
     var aliases = String(row[c.aliases] || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean);
@@ -3617,7 +3666,11 @@ function getSoAVisitasProjeto(projeto) {
       janelaDiasMenos: janelaMenosRaw === '' || janelaMenosRaw === null || janelaMenosRaw === undefined ? '' : Number(janelaMenosRaw),
       janelaDiasMais: janelaMaisRaw === '' || janelaMaisRaw === null || janelaMaisRaw === undefined ? '' : Number(janelaMaisRaw),
       bracoIds: soaUniqueIds_(row[c.bracos]),
-      ordemManual: soaOrdemManual_(row[c.ordemManual])
+      ordemManual: soaOrdemManual_(row[c.ordemManual]),
+      baseCalculo: soaNormalizarBaseCalculo_(row[c.baseCalculo]),
+      papelCronograma: soaNormalizarPapelCronograma_(row[c.papelCronograma]),
+      referenciaAlternativa: String(row[c.referenciaAlternativa] || '').trim(),
+      criterioReferencias: soaNormalizarCriterioReferencias_(row[c.criterioReferencias])
     };
   }).filter(function(item) {
     return item.nome && normText_(item.projeto) === projetoNorm;
@@ -3769,7 +3822,8 @@ function soaCycleComparable_(visit) {
     visit.intervaloDias === '' ? '' : Number(visit.intervaloDias),
     visit.janelaDiasMenos === '' ? '' : Number(visit.janelaDiasMenos),
     visit.janelaDiasMais === '' ? '' : Number(visit.janelaDiasMais),
-    soaArmSignature_(visit.bracoIds), String(visit.referencia || '').trim(),
+    soaArmSignature_(visit.bracoIds), String(visit.referencia || '').trim(), String(visit.baseCalculo || '').trim(),
+    String(visit.papelCronograma || '').trim(), String(visit.referenciaAlternativa || '').trim(), String(visit.criterioReferencias || '').trim(),
     soaDelimitedIds_(visit.aliases).map(normText_).join('|'), visit.ativo === false ? false : true,
     String(visit.observacoes || '').trim()
   ]);
@@ -3830,20 +3884,20 @@ function soaPrepareCycleReplication_(payload) {
     return plan.existente ? plan.existente.idSoA : plan.provisionalId;
   }
 
-  function resolveShiftedReference_(sourceVisit, targetCycle, idMap) {
-    var referenceId = String(sourceVisit.referencia || '');
+  function resolveShiftedReference_(sourceVisit, referenceValue, targetCycle, idMap, label) {
+    var referenceId = String(referenceValue || '');
     if (modelById[referenceId]) return idMap[referenceId];
     var referenceVisit = existingById[referenceId];
     if (!referenceVisit) return referenceId;
     var referenceCycles = soaCycleNumbersFromVisit_(referenceVisit);
     if (!referenceCycles.length) return referenceId;
     if (referenceCycles.length !== 1) {
-      errors.push('A referência de ' + (sourceVisit.codigo || sourceVisit.nome) + ' contém mais de um ciclo e não pode ser remapeada automaticamente.');
+      errors.push('A ' + (label || 'referência') + ' de ' + (sourceVisit.codigo || sourceVisit.nome) + ' contém mais de um ciclo e não pode ser remapeada automaticamente.');
       return referenceId;
     }
     var shiftedCycle = referenceCycles[0] + (targetCycle - sourceCycle);
     if (shiftedCycle < 1) {
-      errors.push('A referência de ' + (sourceVisit.codigo || sourceVisit.nome) + ' resultaria em um ciclo inválido no destino ' + targetCycle + '.');
+      errors.push('A ' + (label || 'referência') + ' de ' + (sourceVisit.codigo || sourceVisit.nome) + ' resultaria em um ciclo inválido no destino ' + targetCycle + '.');
       return referenceId;
     }
     var shiftedCode = soaCycleReplaceText_(referenceVisit.codigo, referenceCycles[0], shiftedCycle);
@@ -3864,8 +3918,8 @@ function soaPrepareCycleReplication_(payload) {
     if (matches.length === 1) return matches[0];
     var targetLabel = shiftedCode || shiftedName || ('Ciclo ' + shiftedCycle);
     errors.push(matches.length
-      ? 'A referência deslocada ' + targetLabel + ' é ambígua e precisa ser revisada.'
-      : 'A referência deslocada ' + targetLabel + ' não foi encontrada; revise o ciclo antes de criar as visitas.');
+      ? 'A ' + (label || 'referência') + ' deslocada ' + targetLabel + ' é ambígua e precisa ser revisada.'
+      : 'A ' + (label || 'referência') + ' deslocada ' + targetLabel + ' não foi encontrada; revise o ciclo antes de criar as visitas.');
     return referenceId;
   }
 
@@ -3876,7 +3930,8 @@ function soaPrepareCycleReplication_(payload) {
     var targetExisting = 0;
     plans.forEach(function(plan) {
       var sourceVisit = plan.source;
-      var reference = resolveShiftedReference_(sourceVisit, targetCycle, idMap);
+      var reference = resolveShiftedReference_(sourceVisit, sourceVisit.referencia, targetCycle, idMap, 'referência');
+      var alternativeReference = resolveShiftedReference_(sourceVisit, sourceVisit.referenciaAlternativa, targetCycle, idMap, 'referência alternativa');
       var draft = {
         idSoA: plan.existente ? plan.existente.idSoA : plan.provisionalId,
         projeto: projeto,
@@ -3891,6 +3946,10 @@ function soaPrepareCycleReplication_(payload) {
         observacoes: String(sourceVisit.observacoes || ''),
         referencia: reference,
         referenciaCodigo: '',
+        referenciaAlternativa: alternativeReference,
+        baseCalculo: sourceVisit.baseCalculo || '',
+        papelCronograma: sourceVisit.papelCronograma || '',
+        criterioReferencias: sourceVisit.criterioReferencias || '',
         janelaDiasMenos: sourceVisit.janelaDiasMenos,
         janelaDiasMais: sourceVisit.janelaDiasMais,
         bracoIds: plan.bracoIds.slice(),
@@ -3917,6 +3976,10 @@ function soaPrepareCycleReplication_(payload) {
         if (String(draft.janelaDiasMenos) !== String(plan.existente.janelaDiasMenos) || String(draft.janelaDiasMais) !== String(plan.existente.janelaDiasMais)) draft.diferencas.push('janela');
         if (soaArmSignature_(draft.bracoIds) !== soaArmSignature_(plan.existente.bracoIds)) draft.diferencas.push('braços');
         if (String(draft.referencia) !== String(plan.existente.referencia)) draft.diferencas.push('referência');
+        if (String(draft.baseCalculo || '') !== String(plan.existente.baseCalculo || '')) draft.diferencas.push('base do cálculo');
+        if (String(draft.papelCronograma || '') !== String(plan.existente.papelCronograma || '')) draft.diferencas.push('papel no cronograma');
+        if (String(draft.referenciaAlternativa || '') !== String(plan.existente.referenciaAlternativa || '')) draft.diferencas.push('referência alternativa');
+        if (String(draft.criterioReferencias || '') !== String(plan.existente.criterioReferencias || '')) draft.diferencas.push('critério entre referências');
         if (String(draft.repeticao) !== String(plan.existente.repeticao)) draft.diferencas.push('repetição');
         if (soaDelimitedIds_(draft.aliases).map(normText_).join('|') !== soaDelimitedIds_(plan.existente.aliases).map(normText_).join('|')) draft.diferencas.push('aliases');
         if ((draft.ativo === false) !== (plan.existente.ativo === false)) draft.diferencas.push('status');
@@ -4031,6 +4094,10 @@ function criarCiclosSoAPorReplicacao(payload) {
       put(['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], visit.janelaDiasMais, 12);
       put(['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], visit.bracoIds.join('; '), 13);
       put(['Ordem manual'], 'Não', 14);
+      put(['Base para o cálculo', 'Base para o calculo', 'Tipo de referência', 'Tipo de referencia', 'Tipo de cálculo da referência', 'Tipo de calculo da referencia'], visit.baseCalculo || '');
+      put(['Papel no cronograma'], visit.papelCronograma || '');
+      put(['Referência alternativa', 'Referencia alternativa'], visit.referenciaAlternativa || '');
+      put(['Critério entre referências', 'Criterio entre referencias'], visit.criterioReferencias || '');
       return row;
     });
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
@@ -4062,6 +4129,21 @@ function salvarSoAVisita(payload) {
   var intervalo = payload.intervaloDias === '' || payload.intervaloDias === null || payload.intervaloDias === undefined ? '' : Number(payload.intervaloDias);
   if (intervalo !== '' && (!isFinite(intervalo) || intervalo < 0 || Math.floor(intervalo) !== intervalo)) throw new Error('O intervalo deve ser um número inteiro de dias.');
   var referencia = String(payload.referencia || '').trim();
+  var baseCalculoRaw = String(payload.baseCalculo || payload.tipoCalculoReferencia || payload.tipoReferenciaCalculo || '').trim();
+  var baseCalculo = soaNormalizarBaseCalculo_(baseCalculoRaw);
+  var papelCronogramaRaw = String(payload.papelCronograma || '').trim();
+  var papelCronograma = soaNormalizarPapelCronograma_(papelCronogramaRaw);
+  var referenciaAlternativa = String(payload.referenciaAlternativa || '').trim();
+  var criterioReferenciasRaw = String(payload.criterioReferencias || '').trim();
+  var criterioReferencias = soaNormalizarCriterioReferencias_(criterioReferenciasRaw);
+  if (baseCalculoRaw && !baseCalculo) throw new Error('A base para o cálculo deve ser Manter datas previstas ou Recalcular pela visita realizada.');
+  if (papelCronogramaRaw && !papelCronograma) throw new Error('O papel no cronograma é inválido.');
+  if (criterioReferenciasRaw && !criterioReferencias) throw new Error('O critério entre referências é inválido.');
+  if (baseCalculo && !referencia) throw new Error('Selecione a referência antes de definir a base para o cálculo.');
+  if (papelCronograma === 'VISITA_CALCULADA' && (!referencia || !baseCalculo)) throw new Error('Uma visita calculada exige referência e base para o cálculo.');
+  if (referenciaAlternativa && (!referencia || !criterioReferencias)) throw new Error('A referência alternativa exige referência principal e critério entre referências.');
+  if (criterioReferencias && !referenciaAlternativa) throw new Error('Selecione uma referência alternativa antes de definir o critério entre referências.');
+  if (referenciaAlternativa && referenciaAlternativa === referencia) throw new Error('A referência alternativa deve ser diferente da referência principal.');
   var janelaMenos = payload.janelaDiasMenos === '' || payload.janelaDiasMenos === null || payload.janelaDiasMenos === undefined ? '' : Number(payload.janelaDiasMenos);
   if (janelaMenos !== '' && (!isFinite(janelaMenos) || janelaMenos < 0 || Math.floor(janelaMenos) !== janelaMenos)) throw new Error('A janela de dias menos deve ser um número inteiro maior ou igual a zero.');
   var janelaMais = payload.janelaDiasMais === '' || payload.janelaDiasMais === null || payload.janelaDiasMais === undefined ? '' : Number(payload.janelaDiasMais);
@@ -4109,6 +4191,10 @@ function salvarSoAVisita(payload) {
     put(['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], janelaMais, 12);
     put(['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], bracoIds.join('; '), 13);
     put(['Ordem manual'], ordemManual ? 'Sim' : 'Não', 14);
+    put(['Base para o cálculo', 'Base para o calculo', 'Tipo de referência', 'Tipo de referencia', 'Tipo de cálculo da referência', 'Tipo de calculo da referencia'], baseCalculo);
+    put(['Papel no cronograma'], papelCronograma);
+    put(['Referência alternativa', 'Referencia alternativa'], referenciaAlternativa);
+    put(['Critério entre referências', 'Criterio entre referencias'], criterioReferencias);
     var rowValues = [row];
     if (existingRowIndex >= 0) {
       sheet.getRange(existingRowIndex + 1, 1, 1, headers.length).setValues(rowValues);
@@ -4186,7 +4272,10 @@ function soaImportVisitSignature_(visit) {
     String(visit.repeticao || '').trim(), String(visit.referenciaTipo || '').trim().toUpperCase(),
     String(visit.referenciaCodigo || '').trim(), visit.janelaDiasMenos == null ? '' : visit.janelaDiasMenos,
     visit.janelaDiasMais == null ? '' : visit.janelaDiasMais, soaDelimitedIds_(visit.aliases).join(';'),
-    visit.ativo === false ? false : true, visit.condicional === true, String(visit.observacoes || '').trim()
+    visit.ativo === false ? false : true, visit.condicional === true, String(visit.observacoes || '').trim(),
+    String(visit.baseCalculo || visit.tipoCalculoReferencia || visit.tipoReferenciaCalculo || '').trim(),
+    String(visit.papelCronograma || '').trim(), String(visit.referenciaAlternativaTipo || '').trim().toUpperCase(),
+    String(visit.referenciaAlternativaCodigo || '').trim(), String(visit.criterioReferencias || '').trim()
   ]);
 }
 
@@ -4218,9 +4307,10 @@ function soaImportEntries_(dados) {
   return groups;
 }
 
-function soaImportReferenceType_(visit) {
-  var type = String(visit.referenciaTipo || '').trim().toUpperCase();
-  if (!type && visit.referenciaCodigo) type = 'VISITA_ESPECIFICA';
+function soaImportReferenceType_(visit, alternativa) {
+  var type = String((alternativa ? visit.referenciaAlternativaTipo : visit.referenciaTipo) || '').trim().toUpperCase();
+  var code = alternativa ? visit.referenciaAlternativaCodigo : visit.referenciaCodigo;
+  if (!type && code) type = 'VISITA_ESPECIFICA';
   return type;
 }
 
@@ -4238,15 +4328,16 @@ function soaImportArmPlan_(projeto, groups) {
   return { existing: existing, byName: byName, names: names, missing: missing };
 }
 
-function soaImportReferenceId_(group, groups, errors) {
+function soaImportReferenceId_(group, groups, errors, alternativa) {
   var visit = group.visit || {};
-  var type = soaImportReferenceType_(visit);
+  var type = soaImportReferenceType_(visit, alternativa);
   if (!type) return '';
   if (type !== 'VISITA_ESPECIFICA') return type;
-  var code = String(visit.referenciaCodigo || '').trim();
-  if (!code) { errors.push('A visita ' + (visit.codigo || visit.nome || '?') + ' exige referenciaCodigo.'); return ''; }
+  var code = String((alternativa ? visit.referenciaAlternativaCodigo : visit.referenciaCodigo) || '').trim();
+  var codeField = alternativa ? 'referenciaAlternativaCodigo' : 'referenciaCodigo';
+  if (!code) { errors.push('A visita ' + (visit.codigo || visit.nome || '?') + ' exige ' + codeField + '.'); return ''; }
   var candidates = groups.filter(function(candidate) { return normText_(candidate.visit.codigo) === normText_(code); });
-  if (!candidates.length) { errors.push('A referência ' + code + ' da visita ' + (visit.codigo || visit.nome || '?') + ' não foi encontrada.'); return ''; }
+  if (!candidates.length) { errors.push('A ' + (alternativa ? 'referência alternativa ' : 'referência ') + code + ' da visita ' + (visit.codigo || visit.nome || '?') + ' não foi encontrada.'); return ''; }
   var targetArms = soaUniqueIds_(group.bracoIds);
   var candidate = candidates.filter(function(item) {
     var candidateArms = soaUniqueIds_(item.bracoIds);
@@ -4297,9 +4388,23 @@ function soaImportPrepare_(payload) {
     if (match) group.idSoA = match.idSoA;
     group.pular = !!(match && modo !== 'atualizar');
   });
-  groups.forEach(function(group) { group.referencia = soaImportReferenceId_(group, groups, errors); });
+  groups.forEach(function(group) {
+    group.referencia = soaImportReferenceId_(group, groups, errors, false);
+    group.referenciaAlternativa = soaImportReferenceId_(group, groups, errors, true);
+  });
   var visitas = groups.filter(function(group) { return !group.pular; }).map(function(group) {
     var visit = group.visit;
+    var baseCalculoInformada = ['baseCalculo', 'tipoCalculoReferencia', 'tipoReferenciaCalculo'].some(function(key) { return Object.prototype.hasOwnProperty.call(visit, key); });
+    var baseCalculoRaw = baseCalculoInformada ? String(visit.baseCalculo || visit.tipoCalculoReferencia || visit.tipoReferenciaCalculo || '').trim() : '';
+    var baseCalculo = baseCalculoInformada ? soaNormalizarBaseCalculo_(baseCalculoRaw) : String(group.existente && group.existente.baseCalculo || '');
+    var papelInformado = Object.prototype.hasOwnProperty.call(visit, 'papelCronograma');
+    var papelRaw = papelInformado ? String(visit.papelCronograma || '').trim() : '';
+    var papelCronograma = papelInformado ? soaNormalizarPapelCronograma_(papelRaw) : String(group.existente && group.existente.papelCronograma || '');
+    var criterioInformado = Object.prototype.hasOwnProperty.call(visit, 'criterioReferencias');
+    var criterioRaw = criterioInformado ? String(visit.criterioReferencias || '').trim() : '';
+    var criterioReferencias = criterioInformado ? soaNormalizarCriterioReferencias_(criterioRaw) : String(group.existente && group.existente.criterioReferencias || '');
+    var referenciaAlternativaInformada = Object.prototype.hasOwnProperty.call(visit, 'referenciaAlternativaTipo') || Object.prototype.hasOwnProperty.call(visit, 'referenciaAlternativaCodigo');
+    var referenciaAlternativa = referenciaAlternativaInformada ? group.referenciaAlternativa : String(group.existente && group.existente.referenciaAlternativa || '');
     return {
       idSoA: group.idSoA,
       projeto: parsed.projeto,
@@ -4312,6 +4417,13 @@ function soaImportPrepare_(payload) {
       ativo: visit.ativo !== false,
       observacoes: [String(visit.observacoes || '').trim(), reviewByCode[normText_(group.codigo)] ? 'Revisão necessária: ' + reviewByCode[normText_(group.codigo)] : ''].filter(Boolean).join(' '),
       referencia: group.referencia,
+      baseCalculo: baseCalculo,
+      baseCalculoInvalida: !!(baseCalculoRaw && !baseCalculo),
+      papelCronograma: papelCronograma,
+      papelCronogramaInvalido: !!(papelRaw && !papelCronograma),
+      referenciaAlternativa: referenciaAlternativa,
+      criterioReferencias: criterioReferencias,
+      criterioReferenciasInvalido: !!(criterioRaw && !criterioReferencias),
       janelaDiasMenos: visit.janelaDiasMenos === null || visit.janelaDiasMenos === undefined || visit.janelaDiasMenos === '' ? '' : Number(visit.janelaDiasMenos),
       janelaDiasMais: visit.janelaDiasMais === null || visit.janelaDiasMais === undefined || visit.janelaDiasMais === '' ? '' : Number(visit.janelaDiasMais),
       bracoIds: soaUniqueIds_(group.bracoIds),
@@ -4329,6 +4441,14 @@ function soaImportPrepare_(payload) {
       (item.janelaDiasMais !== '' && (!isFinite(item.janelaDiasMais) || item.janelaDiasMais < 0 || Math.floor(item.janelaDiasMais) !== item.janelaDiasMais));
   });
   if (invalidNumbers.length) errors.push('Há intervalos, ordens ou janelas que não são números inteiros maiores ou iguais a zero.');
+  if (visitas.some(function(item) { return item.baseCalculoInvalida; })) errors.push('Há base para o cálculo inválida; use MANTER_DATAS_PREVISTAS ou RECALCULAR_VISITA_REALIZADA.');
+  if (visitas.some(function(item) { return item.papelCronogramaInvalido; })) errors.push('Há papel no cronograma inválido.');
+  if (visitas.some(function(item) { return item.criterioReferenciasInvalido; })) errors.push('Há critério entre referências inválido.');
+  if (visitas.some(function(item) { return item.baseCalculo && !item.referencia; })) errors.push('Há visita com base para o cálculo definida, mas sem referência selecionada.');
+  if (visitas.some(function(item) { return item.papelCronograma === 'VISITA_CALCULADA' && (!item.referencia || !item.baseCalculo); })) errors.push('Há visita calculada sem referência ou base para o cálculo.');
+  if (visitas.some(function(item) { return item.referenciaAlternativa && (!item.referencia || !item.criterioReferencias); })) errors.push('Há referência alternativa sem referência principal ou critério entre referências.');
+  if (visitas.some(function(item) { return item.criterioReferencias && !item.referenciaAlternativa; })) errors.push('Há critério entre referências sem referência alternativa.');
+  if (visitas.some(function(item) { return item.referenciaAlternativa && item.referenciaAlternativa === item.referencia; })) errors.push('A referência alternativa deve ser diferente da referência principal.');
   var sugestaoOrdem = soaSugerirOrdemExecucao_(visitas, {
     referenciasConhecidas: existingVisits.map(function(item) { return item.idSoA; })
   });
@@ -4418,6 +4538,10 @@ function soaWriteImportRows_(prepared) {
     put(row, ['Janela dias menos', 'Janela antes (dias)', 'Janela menos'], visit.janelaDiasMenos, 11); put(row, ['Janela dias mais', 'Janela depois (dias)', 'Janela mais'], visit.janelaDiasMais, 12);
     put(row, ['Braços (IDs)', 'Bracos (IDs)', 'Braços', 'Bracos'], soaUniqueIds_(visit.bracoIds).join('; '), 13);
     put(row, ['Ordem manual'], preservarOrdemManual ? 'Sim' : 'Não', 14);
+    put(row, ['Base para o cálculo', 'Base para o calculo', 'Tipo de referência', 'Tipo de referencia', 'Tipo de cálculo da referência', 'Tipo de calculo da referencia'], visit.baseCalculo || '');
+    put(row, ['Papel no cronograma'], visit.papelCronograma || '');
+    put(row, ['Referência alternativa', 'Referencia alternativa'], visit.referenciaAlternativa || '');
+    put(row, ['Critério entre referências', 'Criterio entre referencias'], visit.criterioReferencias || '');
     if (rowNumber) sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]); else sheet.appendRow(row);
   });
 }
