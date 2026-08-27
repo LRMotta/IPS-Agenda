@@ -3262,6 +3262,7 @@ function getProjetos() {
   var courierCols = projetoCourierColumnMap_(dados[0] || []);
   var courierTempCols = projetoCourierTemperatureColumnMap_(dados[0] || []);
   var situacaoEnvioCol = projetoSituacaoEnvioColumn_(dados[0] || []);
+  var soaConfigCols = projetoSoAConfigColumnMap_(dados[0] || []);
   var statsPorProjeto = getParticipantesStatsPorProjeto_();
   var sivPorProjeto = getProjetosSivPorProjeto_();
   var lista = [];
@@ -3311,6 +3312,7 @@ function getProjetos() {
       courierAdicional1Temperaturas: courierTempCols.adicional1 >= 0 ? String(r[courierTempCols.adicional1] || '').trim() : '',
       courierAdicional2Temperaturas: courierTempCols.adicional2 >= 0 ? String(r[courierTempCols.adicional2] || '').trim() : '',
       situacaoEnvioAmostras: situacaoEnvioCol >= 0 ? String(r[situacaoEnvioCol] || '').trim() : '',
+      soaBaseCalculoPadrao: soaConfigCols.baseCalculoPadrao >= 0 ? soaNormalizarBaseCalculo_(r[soaConfigCols.baseCalculoPadrao]) : '',
       dataSiv:       siv.data || '',
       dataSivInicio: siv.inicio || siv.data || '',
       dataSivFim:    siv.fim || siv.data || ''
@@ -3391,6 +3393,20 @@ function soaNormalizarBaseCalculo_(value) {
   var normalized = normText_(raw).replace(/[^a-z0-9]+/g, '');
   if (normalized === 'manterdatasprevistas' || normalized === 'fixaprotocolar') return 'MANTER_DATAS_PREVISTAS';
   if (normalized === 'recalcularpelavisitrealizada' || normalized === 'recalcularvisitarealizada' || normalized === 'rolantevisitarealizada' || normalized === 'rolantepelavisitrealizada') return 'RECALCULAR_VISITA_REALIZADA';
+  return '';
+}
+
+function soaCycleEquivalentKey_(visita) {
+  var values = [visita && visita.codigo, visita && visita.nome];
+  for (var i = 0; i < values.length; i++) {
+    var value = normText_(values[i]).replace(/\s+/g, ' ').trim();
+    if (!value) continue;
+    var matched = false;
+    value = value.replace(/\bciclo\s*\d+\b/g, function() { matched = true; return 'ciclo #'; });
+    value = value.replace(/\bcycle\s*\d+\b/g, function() { matched = true; return 'cycle #'; });
+    value = value.replace(/\bc\s*\d+\s*d\s*(\d+)\b/g, function(_all, day) { matched = true; return 'c#d' + day; });
+    if (matched) return value.replace(/[^a-z0-9#]+/g, '');
+  }
   return '';
 }
 
@@ -3645,12 +3661,14 @@ function getSoAVisitasProjeto(projeto) {
     referenciaAlternativa: soaHeaderIndex_(map, ['Referência alternativa', 'Referencia alternativa']),
     criterioReferencias: soaHeaderIndex_(map, ['Critério entre referências', 'Criterio entre referencias'])
   };
+  var baseCalculoPadrao = getProjetoBaseCalculoPadrao_(projeto);
   var visitas = rows.slice(1).map(function(row) {
     var aliases = String(row[c.aliases] || '').split(/[;|\n]/).map(function(value) { return String(value || '').trim(); }).filter(Boolean);
     var ordemRaw = row[c.ordem];
     var intervaloRaw = row[c.intervalo];
     var janelaMenosRaw = row[c.janelaMenos];
     var janelaMaisRaw = row[c.janelaMais];
+    var baseCalculo = soaNormalizarBaseCalculo_(row[c.baseCalculo]);
     return {
       idSoA: String(row[c.id] || '').trim(),
       projeto: String(row[c.projeto] || '').trim(),
@@ -3667,7 +3685,9 @@ function getSoAVisitasProjeto(projeto) {
       janelaDiasMais: janelaMaisRaw === '' || janelaMaisRaw === null || janelaMaisRaw === undefined ? '' : Number(janelaMaisRaw),
       bracoIds: soaUniqueIds_(row[c.bracos]),
       ordemManual: soaOrdemManual_(row[c.ordemManual]),
-      baseCalculo: soaNormalizarBaseCalculo_(row[c.baseCalculo]),
+      baseCalculo: baseCalculo,
+      baseCalculoEfetiva: baseCalculo || baseCalculoPadrao,
+      baseCalculoHerdada: !baseCalculo && !!baseCalculoPadrao,
       papelCronograma: soaNormalizarPapelCronograma_(row[c.papelCronograma]),
       referenciaAlternativa: String(row[c.referenciaAlternativa] || '').trim(),
       criterioReferencias: soaNormalizarCriterioReferencias_(row[c.criterioReferencias])
@@ -4131,6 +4151,7 @@ function salvarSoAVisita(payload) {
   var referencia = String(payload.referencia || '').trim();
   var baseCalculoRaw = String(payload.baseCalculo || payload.tipoCalculoReferencia || payload.tipoReferenciaCalculo || '').trim();
   var baseCalculo = soaNormalizarBaseCalculo_(baseCalculoRaw);
+  var baseCalculoEfetiva = baseCalculo || getProjetoBaseCalculoPadrao_(projeto);
   var papelCronogramaRaw = String(payload.papelCronograma || '').trim();
   var papelCronograma = soaNormalizarPapelCronograma_(papelCronogramaRaw);
   var referenciaAlternativa = String(payload.referenciaAlternativa || '').trim();
@@ -4140,7 +4161,7 @@ function salvarSoAVisita(payload) {
   if (papelCronogramaRaw && !papelCronograma) throw new Error('O papel no cronograma é inválido.');
   if (criterioReferenciasRaw && !criterioReferencias) throw new Error('O critério entre referências é inválido.');
   if (baseCalculo && !referencia) throw new Error('Selecione a referência antes de definir a base para o cálculo.');
-  if (papelCronograma === 'VISITA_CALCULADA' && (!referencia || !baseCalculo)) throw new Error('Uma visita calculada exige referência e base para o cálculo.');
+  if (papelCronograma === 'VISITA_CALCULADA' && (!referencia || !baseCalculoEfetiva)) throw new Error('Uma visita calculada exige referência e uma base para o cálculo, própria ou herdada do protocolo.');
   if (referenciaAlternativa && (!referencia || !criterioReferencias)) throw new Error('A referência alternativa exige referência principal e critério entre referências.');
   if (criterioReferencias && !referenciaAlternativa) throw new Error('Selecione uma referência alternativa antes de definir o critério entre referências.');
   if (referenciaAlternativa && referenciaAlternativa === referencia) throw new Error('A referência alternativa deve ser diferente da referência principal.');
@@ -4149,6 +4170,9 @@ function salvarSoAVisita(payload) {
   var janelaMais = payload.janelaDiasMais === '' || payload.janelaDiasMais === null || payload.janelaDiasMais === undefined ? '' : Number(payload.janelaDiasMais);
   if (janelaMais !== '' && (!isFinite(janelaMais) || janelaMais < 0 || Math.floor(janelaMais) !== janelaMais)) throw new Error('A janela de dias mais deve ser um número inteiro maior ou igual a zero.');
   var bracoIds = soaUniqueIds_(payload.bracoIds || payload.bracos);
+  var aplicarBaseEquivalentes = payload.aplicarBaseEquivalentes === true;
+  var equivalenciaKey = aplicarBaseEquivalentes ? soaCycleEquivalentKey_({ codigo: payload.codigo, nome: nome }) : '';
+  if (aplicarBaseEquivalentes && !equivalenciaKey) throw new Error('Não foi possível identificar visitas equivalentes em outros ciclos. Desmarque a aplicação em lote ou revise o código da visita.');
   return codexWithDocumentLock_('salvarSoAVisita', function() {
     var sheet = getSoAVisitasSheet_(true);
     var headers = soaEnsureHeaders_(sheet);
@@ -4196,12 +4220,32 @@ function salvarSoAVisita(payload) {
     put(['Referência alternativa', 'Referencia alternativa'], referenciaAlternativa);
     put(['Critério entre referências', 'Criterio entre referencias'], criterioReferencias);
     var rowValues = [row];
+    var msg;
     if (existingRowIndex >= 0) {
       sheet.getRange(existingRowIndex + 1, 1, 1, headers.length).setValues(rowValues);
-      return { idSoA: id, msg: 'Visita SoA atualizada.' };
+      msg = 'Visita SoA atualizada.';
+    } else {
+      sheet.appendRow(rowValues[0]);
+      msg = 'Visita SoA adicionada.';
     }
-    sheet.appendRow(rowValues[0]);
-    return { idSoA: id, msg: 'Visita SoA adicionada.' };
+    var equivalentesAtualizadas = 0;
+    if (aplicarBaseEquivalentes) {
+      var rowsAtualizadas = sheet.getDataRange().getValues();
+      var baseIndex = soaHeaderIndex_(map, ['Base para o cálculo', 'Base para o calculo', 'Tipo de referência', 'Tipo de referencia', 'Tipo de cálculo da referência', 'Tipo de calculo da referencia']);
+      var projetoIndex = soaHeaderIndex_(map, ['Projeto'], 1);
+      var idIndex = soaHeaderIndex_(map, ['ID_SoA'], 0);
+      var codigoIndex = soaHeaderIndex_(map, ['Código da visita', 'Codigo da visita'], 2);
+      var nomeIndex = soaHeaderIndex_(map, ['Nome padrão da visita', 'Nome padrao da visita'], 3);
+      rowsAtualizadas.slice(1).forEach(function(currentRow, index) {
+        if (String(currentRow[idIndex] || '').trim() === id) return;
+        if (normText_(currentRow[projetoIndex]) !== normText_(projeto)) return;
+        if (soaCycleEquivalentKey_({ codigo: currentRow[codigoIndex], nome: currentRow[nomeIndex] }) !== equivalenciaKey) return;
+        sheet.getRange(index + 2, baseIndex + 1).setValue(baseCalculo);
+        equivalentesAtualizadas++;
+      });
+      msg += ' Regra aplicada a ' + equivalentesAtualizadas + ' visita(s) equivalente(s) dos demais ciclos.';
+    }
+    return { idSoA: id, msg: msg, equivalentesAtualizadas: equivalentesAtualizadas };
   });
 }
 
@@ -4353,6 +4397,7 @@ function soaImportPrepare_(payload) {
   var projectName = String(projectInfo.nomeAbreviado || '').trim();
   var projectCode = String(projectInfo.codigoProjeto || '').trim();
   var targetMatches = !projectName || normText_(projectName) === normText_(parsed.projeto) || normText_(projectCode) === normText_(parsed.projeto);
+  var baseCalculoPadrao = getProjetoBaseCalculoPadrao_(parsed.projeto);
   var errors = [];
   var warnings = Array.isArray(dados.alertas) ? dados.alertas.map(String) : [];
   var review = Array.isArray(dados.revisaoNecessaria) ? dados.revisaoNecessaria : [];
@@ -4418,6 +4463,7 @@ function soaImportPrepare_(payload) {
       observacoes: [String(visit.observacoes || '').trim(), reviewByCode[normText_(group.codigo)] ? 'Revisão necessária: ' + reviewByCode[normText_(group.codigo)] : ''].filter(Boolean).join(' '),
       referencia: group.referencia,
       baseCalculo: baseCalculo,
+      baseCalculoEfetiva: baseCalculo || baseCalculoPadrao,
       baseCalculoInvalida: !!(baseCalculoRaw && !baseCalculo),
       papelCronograma: papelCronograma,
       papelCronogramaInvalido: !!(papelRaw && !papelCronograma),
@@ -4445,7 +4491,7 @@ function soaImportPrepare_(payload) {
   if (visitas.some(function(item) { return item.papelCronogramaInvalido; })) errors.push('Há papel no cronograma inválido.');
   if (visitas.some(function(item) { return item.criterioReferenciasInvalido; })) errors.push('Há critério entre referências inválido.');
   if (visitas.some(function(item) { return item.baseCalculo && !item.referencia; })) errors.push('Há visita com base para o cálculo definida, mas sem referência selecionada.');
-  if (visitas.some(function(item) { return item.papelCronograma === 'VISITA_CALCULADA' && (!item.referencia || !item.baseCalculo); })) errors.push('Há visita calculada sem referência ou base para o cálculo.');
+  if (visitas.some(function(item) { return item.papelCronograma === 'VISITA_CALCULADA' && (!item.referencia || !item.baseCalculoEfetiva); })) errors.push('Há visita calculada sem referência ou base para o cálculo própria ou herdada do protocolo.');
   if (visitas.some(function(item) { return item.referenciaAlternativa && (!item.referencia || !item.criterioReferencias); })) errors.push('Há referência alternativa sem referência principal ou critério entre referências.');
   if (visitas.some(function(item) { return item.criterioReferencias && !item.referenciaAlternativa; })) errors.push('Há critério entre referências sem referência alternativa.');
   if (visitas.some(function(item) { return item.referenciaAlternativa && item.referenciaAlternativa === item.referencia; })) errors.push('A referência alternativa deve ser diferente da referência principal.');
@@ -4809,6 +4855,67 @@ var PROJETO_SITUACAO_ENVIO_FIELD_ = {
   aliases: ['Situacao envio de amostras', 'Envio de amostras']
 };
 
+var PROJETO_SOA_CONFIG_FIELDS_ = [{
+  key: 'soaBaseCalculoPadrao',
+  header: 'Base padrão do cronograma SoA',
+  aliases: ['Base padrao do cronograma SoA', 'Base padrão SoA', 'Base padrao SoA']
+}];
+
+function projetoSoAConfigColumnMap_(headers) {
+  var normalized = (headers || []).map(function(header) { return normText_(header); });
+  var field = PROJETO_SOA_CONFIG_FIELDS_[0];
+  var names = [field.header].concat(field.aliases || []);
+  var index = -1;
+  for (var i = 0; i < names.length && index < 0; i++) index = normalized.indexOf(normText_(names[i]));
+  return { baseCalculoPadrao: index };
+}
+
+function projetoSoAConfigPayloadPresente_(dados) {
+  return Object.prototype.hasOwnProperty.call(dados || {}, 'soaBaseCalculoPadrao');
+}
+
+function validarProjetoSoAConfig_(dados) {
+  if (!projetoSoAConfigPayloadPresente_(dados)) return '';
+  var raw = String(dados.soaBaseCalculoPadrao || '').trim();
+  var normalized = soaNormalizarBaseCalculo_(raw);
+  if (raw && !normalized) throw new Error('A base padrão do cronograma deve ser Manter datas previstas ou Recalcular pela visita realizada.');
+  return normalized;
+}
+
+function garantirProjetoSoAConfigColumns_(aba) {
+  var lastCol = Math.max(aba.getLastColumn(), 1);
+  var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var map = projetoSoAConfigColumnMap_(headers);
+  if (map.baseCalculoPadrao >= 0) return map;
+  var index = headers.length;
+  aba.getRange(1, index + 1).setValue(PROJETO_SOA_CONFIG_FIELDS_[0].header);
+  return { baseCalculoPadrao: index };
+}
+
+function gravarProjetoSoAConfig_(aba, rowNumber, dados) {
+  if (!projetoSoAConfigPayloadPresente_(dados)) return;
+  var columns = garantirProjetoSoAConfigColumns_(aba);
+  aba.getRange(rowNumber, columns.baseCalculoPadrao + 1).setValue(validarProjetoSoAConfig_(dados));
+}
+
+function getProjetoBaseCalculoPadrao_(projeto) {
+  var projetoNorm = normText_(projeto);
+  if (!projetoNorm) return '';
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss && ss.getSheetByName('Projetos');
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length < 2) return '';
+  var columns = projetoSoAConfigColumnMap_(rows[0] || []);
+  if (columns.baseCalculoPadrao < 0) return '';
+  for (var i = 1; i < rows.length; i++) {
+    if (normText_(rows[i][1]) === projetoNorm || normText_(rows[i][2]) === projetoNorm) {
+      return soaNormalizarBaseCalculo_(rows[i][columns.baseCalculoPadrao]);
+    }
+  }
+  return '';
+}
+
 function projetoCourierColumnMap_(headers) {
   var normalized = (headers || []).map(function(header) { return normText_(header); });
   function find(field) {
@@ -4978,6 +5085,7 @@ function salvarDadosProjeto(dados) {
     }
   }
   if (projetoCourierPayloadPresente_(dados)) validarProjetoCourierIds_(dados, { legadosPorCampo: couriersLegadosPorCampo });
+  if (projetoSoAConfigPayloadPresente_(dados)) validarProjetoSoAConfig_(dados);
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
@@ -5001,6 +5109,7 @@ function salvarDadosProjeto(dados) {
           dados.tituloCompleto || ''
         ]]);
         gravarProjetoCourierIds_(aba, i + 1, dados);
+        gravarProjetoSoAConfig_(aba, i + 1, dados);
         clearTransporteOptionsCache_();
         return 'Projeto atualizado com sucesso!';
       }
@@ -5028,6 +5137,7 @@ function salvarDadosProjeto(dados) {
       dados.tituloCompleto || ''
     ]);
     gravarProjetoCourierIds_(aba, aba.getLastRow(), dados);
+    gravarProjetoSoAConfig_(aba, aba.getLastRow(), dados);
     clearTransporteOptionsCache_();
     return 'Projeto cadastrado com sucesso!';
   }
@@ -10338,6 +10448,11 @@ function agendaBuildDadosFormularioAgenda_(strict) {
 
 // Dados exibidos imediatamente ao escolher um participante. A ultima visita
 // continua sendo atualizada em segundo plano, pois exige consultar a Agenda.
+function agendaParticipanteDisponivelFormulario_(status) {
+  var statusNorm = normText_(status);
+  return statusNorm !== 'obito' && statusNorm !== 'descontinuado';
+}
+
 function agendaParticipantesFormulario_(ss, strict) {
   var sh = getSheetByPossibleNames_(ss, ['Participantes']);
   var lastRow = sh ? sh.getLastRow() : 0;
@@ -10347,6 +10462,7 @@ function agendaParticipantesFormulario_(ss, strict) {
   }
   if (lastRow < 2) return [];
   return sh.getRange(2, 1, lastRow - 1, Math.max(7, sh.getLastColumn())).getValues()
+    .filter(function(row) { return agendaParticipanteDisponivelFormulario_(row[8]); })
     .map(function(row) {
       var nascimento = row[2];
       return {
@@ -10372,7 +10488,7 @@ function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
 
 function getDadosFormularioAgenda(strictValidation) {
   var strict = strictValidation === true;
-  var cacheKey = (strict ? 'AgendaFormDataStrict:v3:' : 'AgendaFormData:v9:') +
+  var cacheKey = (strict ? 'AgendaFormDataStrict:v4:' : 'AgendaFormData:v10:') +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   if (strict) return agendaGetDadosFormularioAgendaCached_(cacheKey, false, true);
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);

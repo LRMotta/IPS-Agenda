@@ -422,17 +422,24 @@ test('cadastro SoA configura base amigável, papel no cronograma e referências 
   const server = readProjectFile('WebApp.gs');
 
   assert.match(content, /id="soaBaseCalculo"/);
+  assert.match(content, /id="pSoABaseCalculoPadrao"/);
+  assert.match(content, /Usar a regra do protocolo/);
+  assert.match(content, /id="soaAplicarBaseEquivalentes"/);
   assert.match(content, /value="MANTER_DATAS_PREVISTAS">Manter datas previstas/);
   assert.match(content, /value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada/);
   assert.match(content, /id="soaPapelCronograma"/);
   assert.match(content, /id="soaReferenciaAlternativa"/);
   assert.match(content, /value="SELECAO_MANUAL">Seleção manual/);
   assert.match(client, /baseCalculo: baseCalculo/);
+  assert.match(client, /soaBaseCalculoPadrao: document\.getElementById\('pSoABaseCalculoPadrao'\)\.value/);
+  assert.match(client, /aplicarBaseEquivalentes: document\.getElementById\('soaAplicarBaseEquivalentes'\)\.checked/);
   assert.match(client, /referenciaAlternativa: referenciaAlternativa/);
   assert.match(client, /function soaReferenciaAlternativaChange_\(\)/);
   assert.match(client, /criterion\.value = 'SELECAO_MANUAL'/);
   assert.match(server, /'Base para o cálculo'/);
   assert.match(server, /soaNormalizarBaseCalculo_/);
+  assert.match(server, /Base padrão do cronograma SoA/);
+  assert.match(server, /function soaCycleEquivalentKey_\(visita\)/);
 });
 
 test('jornada inicia na primeira visita registrada pelo IPS e não reinicia a prontidão em etapas históricas', () => {
