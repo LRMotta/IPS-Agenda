@@ -741,7 +741,7 @@ function irPara(pagina, options) {
     var oc = el.getAttribute('onclick') || '';
     if (oc.indexOf("'" + pagina + "'") !== -1) el.classList.add('active');
   });
-  var cadastros = ['participantes', 'medicos', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'feriados', 'solicitantes', 'equipamentos', 'medicamentos'];
+  var cadastros = ['participantes', 'medicos', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'solicitantes', 'equipamentos', 'medicamentos'];
   if (cadastros.indexOf(pagina) !== -1) {
     document.getElementById('navCadastrosToggle').classList.add('open');
     document.getElementById('navCadastrosBody').classList.add('open');
@@ -4009,10 +4009,12 @@ function jornadaParticipanteHtml_(dados) {
     if (!visita.kits || !visita.kits.length) return '<div style="color:#7b8794;font-size:12px">Nenhum modelo de Kit/Bulk vinculado.</div>';
     return visita.kits.map(function(kit) {
       var sinal = kit.risco ? '#b3261e' : (kit.reservado ? '#137333' : '#e65100');
-      var reserva = kit.reservado ? 'Lote ' + (kit.lote || '—') + (kit.validade ? ' · validade ' + kit.validade : '') : 'Sem reserva';
+      var reserva = kit.reservado ? 'Quantidade: ' + esc(kit.qtdeReservada || 1) + ' · Lote ' + esc(kit.lote || '—') + (kit.validade ? ' · validade ' + esc(kit.validade) : '') : 'Sem reserva';
+      var statusReserva = kit.reservado ? '<span class="chip chip-green jornada-kit-status">Reservado</span>' : '';
       var cobertura = kit.reservado ? (kit.reservaValida ? 'Validade cobre a visita' : 'Validade insuficiente') : (kit.estoqueDisponivel ? 'Estoque disponível hoje' : 'Sem estoque compatível');
       var reservar = !kit.reservado && !/bulk/i.test(String(kit.tipo || '')) ? '<button type="button" class="ag-tb-btn jornada-reserve-btn" onclick="abrirReservaPreviaJornada(\'' + esc(visita.idSoA) + '\')"><span class="material-symbols-outlined">lock</span> Reservar</button>' : '';
-      return '<div class="jornada-kit-row"><div><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div style="font-size:12px;color:#5f6b7c;margin-top:3px">' + esc(reserva) + ' · <span style="color:' + sinal + ';font-weight:700">' + esc(cobertura) + '</span>' + (kit.pedidoAberto ? ' · Pedido aberto ' + esc(kit.pedidoAberto) : '') + '</div></div>' + reservar + '</div>';
+      var gerenciar = kit.reservado && kit.idReserva ? '<button type="button" class="ag-tb-btn jornada-reserve-btn" onclick="abrirGestaoReservaJornada(\'' + esc(visita.idSoA) + '\',\'' + esc(kit.idItem) + '\')"><span class="material-symbols-outlined">edit</span> Gerenciar</button>' : '';
+      return '<div class="jornada-kit-row"><div><div class="jornada-kit-heading"><strong>' + esc(kit.descricao || kit.idItem) + '</strong>' + statusReserva + '</div><div style="font-size:12px;color:#5f6b7c;margin-top:4px">' + reserva + ' · <span style="color:' + sinal + ';font-weight:700">' + esc(cobertura) + '</span>' + (kit.pedidoAberto ? ' · Pedido aberto ' + esc(kit.pedidoAberto) : '') + '</div></div>' + reservar + gerenciar + '</div>';
     }).join('');
   }
   var timeline = visitas.map(function(visita) {
@@ -4089,6 +4091,80 @@ function abrirReservaPreviaJornada(idSoA) {
   }, onFailure: function(e) { var destino = document.getElementById('jornadaReservaPreviaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
 }
 
+function abrirGestaoReservaJornada(idSoA, idItem) {
+  var dados = _jornadaParticipanteDados || {};
+  var participante = _jornadaParticipanteAtual || {};
+  var visita = (dados.visitasProntidao || dados.visitas || []).filter(function(item) { return String(item.idSoA || '') === String(idSoA || ''); })[0];
+  var kit = visita && (visita.kits || []).filter(function(item) { return String(item.idItem || '') === String(idItem || '') && item.reservado; })[0];
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  if (!visita || !kit || !kit.idReserva || !content) return;
+  var contexto = { projeto: participante.projeto, participante: participante.nome, participanteId: participante.idParticipante, braco: participante.braco || '', idSoA: visita.idSoA, visita: visita.nome, dataVisita: visita.dataAlvoIso };
+  content.innerHTML = '<div style="max-width:780px"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Gerenciar reserva</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Ajuste a quantidade, substitua o lote ou cancele a reserva. Toda alteração exige justificativa e preserva o histórico.</p><div id="jornadaGestaoReservaConteudo" style="padding:22px;text-align:center;color:#64748b"><div class="spinner"></div>Buscando lotes elegíveis…</div></div>';
+  appServerRun({ method: 'consultarReservaPreviaJornada', args: [contexto], onSuccess: function(resposta) {
+    var destino = document.getElementById('jornadaGestaoReservaConteudo');
+    if (!destino) return;
+    var modelo = ((resposta && resposta.kits) || []).filter(function(item) { return String(item.idItem || '') === String(kit.idItem || ''); })[0] || {};
+    var alternativas = (modelo.lotes || []).filter(function(lote) { return String(lote && lote.idLote || '').trim() && String(lote.idLote) !== String(kit.lote || ''); });
+    var opcoes = '<option value="' + esc(kit.lote || '') + '" selected>Atual · Lote ' + esc(kit.lote || 'não informado') + (kit.validade ? ' · validade ' + esc(kit.validade) : '') + '</option>' + alternativas.map(function(lote) {
+      return '<option value="' + esc(lote.idLote) + '">Substituir por ' + esc(lote.idLote) + ' · validade ' + esc(lote.validade) + ' · disponível ' + esc(lote.qtdeDisponivel) + '</option>';
+    }).join('');
+    destino.innerHTML = '<div class="jornada-reserve-item jornada-manage-card"><div class="jornada-kit-heading"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><span class="chip chip-green jornada-kit-status">Reservado</span></div><div class="jornada-manage-grid"><div><label class="field-label" for="jornadaGestaoLote">Lote reservado</label><select class="f-input f-select" id="jornadaGestaoLote">' + opcoes + '</select></div><div><label class="field-label" for="jornadaGestaoQuantidade">Quantidade</label><input class="f-input" id="jornadaGestaoQuantidade" type="number" min="1" step="1" value="' + esc(kit.qtdeReserva || kit.qtdeReservada || 1) + '"></div><div class="full"><label class="field-label" for="jornadaGestaoJustificativa">Justificativa <span class="required-star">*</span></label><textarea class="f-input" id="jornadaGestaoJustificativa" placeholder="Explique o motivo do ajuste, substituição ou cancelamento."></textarea></div></div><div class="jornada-manage-note">A reserva compromete o saldo do lote, mas esta alteração não movimenta fisicamente o estoque.</div></div><div class="jornada-reserve-actions jornada-manage-actions"><button class="btn-danger" type="button" id="btnCancelarReservaJornada" onclick="cancelarGestaoReservaJornada()">Cancelar reserva</button><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Voltar</button><button class="ag-tb-btn primary" type="button" id="btnSalvarGestaoReservaJornada" onclick="salvarGestaoReservaJornada()"><span class="material-symbols-outlined">save</span> Salvar alterações</button></div><div id="statusGestaoReservaJornada" class="status-msg"></div>';
+    window._jornadaGestaoReserva = { contexto: contexto, kit: kit, alternativas: alternativas };
+  }, onFailure: function(e) { var destino = document.getElementById('jornadaGestaoReservaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
+}
+
+function jornadaAplicarRespostaAtualizada_(resultado, fallback) {
+  snack((resultado && resultado.msg) || fallback || 'Reserva atualizada.');
+  if (resultado && resultado.jornada) {
+    _jornadaParticipanteDados = resultado.jornada;
+    var content = document.getElementById('jornadaParticipanteConteudo');
+    if (content) content.innerHTML = jornadaParticipanteHtml_(resultado.jornada);
+    return;
+  }
+  abrirJornadaParticipante(_jornadaParticipanteAtual || {});
+}
+
+function salvarGestaoReservaJornada() {
+  var gestao = window._jornadaGestaoReserva || {};
+  var kit = gestao.kit || {};
+  var lote = document.getElementById('jornadaGestaoLote');
+  var quantidade = Number((document.getElementById('jornadaGestaoQuantidade') || {}).value || 0);
+  var justificativa = String((document.getElementById('jornadaGestaoJustificativa') || {}).value || '').trim();
+  var status = document.getElementById('statusGestaoReservaJornada');
+  var btn = document.getElementById('btnSalvarGestaoReservaJornada');
+  var novoLote = String(lote && lote.value || '').trim();
+  var trocouLote = novoLote && novoLote !== String(kit.lote || '');
+  var alterouQuantidade = quantidade !== Number(kit.qtdeReserva || kit.qtdeReservada || 1);
+  if (!trocouLote && !alterouQuantidade) { if (status) status.textContent = 'Altere a quantidade ou selecione outro lote.'; return; }
+  if (!isFinite(quantidade) || quantidade <= 0 || quantidade % 1 !== 0) { if (status) status.textContent = 'Informe uma quantidade inteira e positiva.'; return; }
+  if (!justificativa) { if (status) status.textContent = 'Informe a justificativa da alteração.'; return; }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = trocouLote ? 'Substituindo lote…' : 'Ajustando quantidade…';
+  var payload = { idReserva: kit.idReserva, qtde: quantidade, justificativa: justificativa, retornarJornada: true, braco: (gestao.contexto || {}).braco || '' };
+  appServerRun({
+    method: trocouLote ? 'substituirReservaKitAgenda' : 'ajustarReservaKitAgenda',
+    args: [Object.assign(payload, trocouLote ? { novoIdLote: novoLote } : {})],
+    onSuccess: function(resultado) { jornadaAplicarRespostaAtualizada_(resultado, trocouLote ? 'Lote substituído.' : 'Quantidade ajustada.'); },
+    onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); }
+  });
+}
+
+function cancelarGestaoReservaJornada() {
+  var gestao = window._jornadaGestaoReserva || {};
+  var kit = gestao.kit || {};
+  var justificativa = String((document.getElementById('jornadaGestaoJustificativa') || {}).value || '').trim();
+  var status = document.getElementById('statusGestaoReservaJornada');
+  if (!justificativa) { if (status) status.textContent = 'Informe a justificativa do cancelamento.'; return; }
+  abrirConfirmacaoDestrutiva({ mensagem: 'Cancelar esta reserva de ' + (kit.descricao || 'kit') + '? O histórico será preservado.', onConfirm: function() {
+    var btn = document.getElementById('btnCancelarReservaJornada');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Cancelando reserva…';
+    appServerRun({ method: 'cancelarReservaKitAgenda', args: [{ idReserva: kit.idReserva, justificativa: justificativa, retornarJornada: true, braco: (gestao.contexto || {}).braco || '' }], onSuccess: function(resultado) {
+      jornadaAplicarRespostaAtualizada_(resultado, 'Reserva cancelada.');
+    }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); } });
+  }});
+}
+
 function jornadaKitsSelecionadosParaReserva_() {
   var conteudo = document.getElementById('jornadaReservaPreviaConteudo');
   var lotes = conteudo && conteudo.querySelectorAll ? conteudo.querySelectorAll('select[data-jornada-item]') : [];
@@ -4118,8 +4194,7 @@ function confirmarReservaPreviaJornada() {
   if (status) status.textContent = 'Reservando lotes…';
   var payload = Object.assign({}, reserva.contexto || {}, { kits: kits });
   appServerRun({ method: 'reservarKitsPrevisaoJornada', args: [payload], onSuccess: function(resultado) {
-    snack((resultado && resultado.msg) || 'Kits reservados.');
-    abrirJornadaParticipante(_jornadaParticipanteAtual || {});
+    jornadaAplicarRespostaAtualizada_(resultado, 'Kits reservados.');
   }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); } });
 }
 

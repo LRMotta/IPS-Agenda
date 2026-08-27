@@ -502,12 +502,95 @@ test('jornada oferece reserva antecipada por lote com vínculo posterior à Agen
   assert.match(client, /visitasProntidao/);
   assert.match(server, /function consultarReservaPreviaJornada\(payload\)/);
   assert.match(server, /function reservarKitsPrevisaoJornada\(payload\)/);
+  assert.match(server, /jornada: getJornadaParticipante\(/);
   assert.match(server, /próximos 6 meses/);
   assert.match(server, /Agenda_ID|agendaId/);
   assert.doesNotMatch(client, /btn-(?:primary|secondary)/);
   assert.match(client, /ag-tb-btn primary/);
   assert.match(styles, /jornada-history-row/);
   assert.match(styles, /jornada-reserve-actions \.ag-tb-btn/);
+});
+
+test('jornada reconhece a reserva persistida e exibe quantidade e lote no cartão', () => {
+  const server = runFile('WebApp.gs');
+  const reservaAtiva = {
+    idReserva: 'RES-41', idItem: '2', idLote: 'LOTE-41', qtde: 1,
+    status: 'Reservado', visitaPrevista: 'Dia 1 do Ciclo 41'
+  };
+  const reservas = [
+    { idReserva: 'RES-ANTIGA', idItem: '2', idLote: 'LOTE-40', qtde: 1, status: 'Substituída', visitaPrevista: 'Dia 1 do Ciclo 41' },
+    reservaAtiva
+  ];
+  const encontradas = server.jornadaReservasModeloVisita_(
+    reservas,
+    { idItem: 2 },
+    { nome: 'Dia 1 do Ciclo 41', codigo: 'C41D1', aliases: [] }
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(encontradas)), [reservaAtiva]);
+
+  const client = readProjectFile('IndexCoreScripts.html');
+  const jornadaHtml = sourceBetween(client, 'function jornadaParticipanteHtml_', 'var _jornadaParticipanteAtual');
+  const context = vm.createContext({ esc: value => String(value == null ? '' : value) });
+  vm.runInContext(jornadaHtml, context);
+  const html = context.jornadaParticipanteHtml_({
+    possuiSoA: true,
+    visitas: [],
+    visitasProntidao: [{
+      idSoA: 'C41D1', nome: 'Dia 1 do Ciclo 41', estado: 'PREVISTA', dataAlvo: '16/set./2026',
+      kits: [{ idReserva: 'RES-41', idItem: '2', descricao: 'T-3 Disease Evaluation', reservado: true, qtdeReservada: 1, lote: 'LOTE-41', validade: '30/09/2026', reservaValida: true }]
+    }],
+    eventosLivres: []
+  });
+
+  assert.match(html, /chip chip-green jornada-kit-status">Reservado/);
+  assert.match(html, /Quantidade: 1 · Lote LOTE-41 · validade 30\/09\/2026/);
+  assert.doesNotMatch(html, />Reservar<\/button>/);
+  assert.match(html, /> Gerenciar<\/button>/);
+});
+
+test('gestão da reserva na jornada reutiliza ajuste, substituição e cancelamento auditáveis', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  assert.match(client, /function abrirGestaoReservaJornada\(idSoA, idItem\)/);
+  assert.match(client, /method: trocouLote \? 'substituirReservaKitAgenda' : 'ajustarReservaKitAgenda'/);
+  assert.match(client, /method: 'cancelarReservaKitAgenda'/);
+  assert.match(client, /retornarJornada: true/);
+  assert.match(client, /Toda alteração exige justificativa e preserva o histórico/);
+  assert.match(client, /abrirConfirmacaoDestrutiva/);
+});
+
+test('gestão da reserva escolhe ajuste ou substituição conforme o lote selecionado', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function salvarGestaoReservaJornada()', 'function cancelarGestaoReservaJornada()');
+  function executar(lote) {
+    let request;
+    const elements = {
+      jornadaGestaoLote: { value: lote },
+      jornadaGestaoQuantidade: { value: '2' },
+      jornadaGestaoJustificativa: { value: 'Correção operacional.' },
+      statusGestaoReservaJornada: { textContent: '' },
+      btnSalvarGestaoReservaJornada: { disabled: false }
+    };
+    const context = vm.createContext({
+      window: { _jornadaGestaoReserva: { contexto: { braco: 'A' }, kit: { idReserva: 'RES-41', lote: 'LOTE-41', qtdeReservada: 1 } } },
+      document: { getElementById: id => elements[id] || null },
+      appServerRun: opts => { request = opts; },
+      jornadaAplicarRespostaAtualizada_: () => {},
+      isFinite,
+      Object,
+      String,
+      Number
+    });
+    vm.runInContext(block, context);
+    context.salvarGestaoReservaJornada();
+    return request;
+  }
+
+  const ajuste = executar('LOTE-41');
+  assert.equal(ajuste.method, 'ajustarReservaKitAgenda');
+  assert.equal(ajuste.args[0].retornarJornada, true);
+  const substituicao = executar('LOTE-42');
+  assert.equal(substituicao.method, 'substituirReservaKitAgenda');
+  assert.equal(substituicao.args[0].novoIdLote, 'LOTE-42');
 });
 
 test('consulta de reserva da jornada migra IDs de lotes legados antes de listar opções', () => {
@@ -581,6 +664,39 @@ test('reserva prévia da jornada envia os lotes visivelmente selecionados no mod
     { idItem: 'KIT-42', idLote: 'LOTE-A', qtde: 2, accessionNumber: 'ACC-A' },
     { idItem: 'KIT-43', idLote: 'LOTE-B', qtde: 1, accessionNumber: 'ACC-B' }
   ]);
+});
+
+test('reserva prévia atualiza a jornada com a resposta da própria gravação', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function jornadaAplicarRespostaAtualizada_', 'function salvarConcilicaoVisitasParticipante()');
+  const content = { innerHTML: '' };
+  const selected = [{
+    dataset: { jornadaItem: 'KIT-42', jornadaReservaIndex: '0' }, value: 'LOTE-A', selectedIndex: 0,
+    options: [{ getAttribute: () => '' }], parentNode: { querySelector: () => ({ value: '1' }) }
+  }];
+  let request;
+  let reabriu = false;
+  const context = vm.createContext({
+    window: { _jornadaReservaPrevia: { contexto: { participanteId: 'P-42' } } },
+    document: { getElementById: id => id === 'jornadaReservaPreviaConteudo' ? { querySelectorAll: () => selected } : id === 'jornadaParticipanteConteudo' ? content : id === 'jornadaReservaQuantidade_0' ? { value: '1' } : { textContent: '', disabled: false } },
+    appServerRun: opts => { request = opts; },
+    jornadaParticipanteHtml_: dados => 'JORNADA:' + dados.marcador,
+    abrirJornadaParticipante: () => { reabriu = true; },
+    snack: () => {},
+    isFinite,
+    Object,
+    Array,
+    String,
+    Number
+  });
+  vm.runInContext(block, context);
+
+  context.confirmarReservaPreviaJornada();
+  request.onSuccess({ msg: '1 kit reservado.', jornada: { marcador: 'ATUALIZADA' } });
+
+  assert.equal(content.innerHTML, 'JORNADA:ATUALIZADA');
+  assert.equal(context._jornadaParticipanteDados.marcador, 'ATUALIZADA');
+  assert.equal(reabriu, false);
 });
 
 test('reserva prévia da jornada coleta os lotes visíveis mesmo após o conteúdo ser refeito', () => {
