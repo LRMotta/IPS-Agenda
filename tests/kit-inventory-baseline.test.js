@@ -427,6 +427,61 @@ test('fase SoA: referência e janelas opcionais são lidas sem exigir migração
   assert.equal(visitas[0].papelCronograma, '');
 });
 
+test('fase SoA: visita herda a base padrão do protocolo sem gravar override', () => {
+  const projects = new FakeSheet('Projetos', [
+    ['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador', '', '', '', '', '', '', '', '', '', '', '', 'Base padrão do cronograma SoA'],
+    ['PROJ-1', 'Estudo A', 'EA-01', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'MANTER_DATAS_PREVISTAS']
+  ]);
+  const soa = new FakeSheet('SoA_Visitas', [
+    ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual', 'Base para o cálculo', 'Papel no cronograma', 'Referência alternativa', 'Critério entre referências'],
+    ['SOA-1', 'Estudo A', 'C1D8', 'Dia 8 do Ciclo 1', 1, '', 7, '', 'Sim', '', 'RANDOMIZACAO', 2, 2, '', 'Não', '', 'VISITA_CALCULADA', '', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Projetos: projects, SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const visitas = server.getSoAVisitasProjeto('Estudo A');
+  assert.equal(visitas[0].baseCalculo, '');
+  assert.equal(visitas[0].baseCalculoEfetiva, 'MANTER_DATAS_PREVISTAS');
+  assert.equal(visitas[0].baseCalculoHerdada, true);
+  assert.doesNotThrow(() => server.salvarSoAVisita({
+    idSoA: 'SOA-1', projeto: 'Estudo A', codigo: 'C1D8', nome: 'Dia 8 do Ciclo 1', ordem: 1,
+    intervaloDias: 7, referencia: 'RANDOMIZACAO', baseCalculo: '', papelCronograma: 'VISITA_CALCULADA'
+  }));
+  assert.equal(soa.rows[1][15], '');
+});
+
+test('fase SoA: aplicação em lote altera somente visitas equivalentes de outros ciclos', () => {
+  const projects = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo'], ['PROJ-1', 'Estudo A', 'EA-01']]);
+  const headers = ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes', 'Referencia (apos)', 'Janela dias menos', 'Janela dias mais', 'Bracos (IDs)', 'Ordem manual', 'Base para o cálculo', 'Papel no cronograma', 'Referência alternativa', 'Critério entre referências'];
+  const soa = new FakeSheet('SoA_Visitas', [
+    headers,
+    ['SOA-1', 'Estudo A', 'C1D8', 'Dia 8 do Ciclo 1', 1, '', 7, '', 'Sim', '', 'RANDOMIZACAO', 2, 2, '', 'Não', 'MANTER_DATAS_PREVISTAS', 'VISITA_CALCULADA', '', ''],
+    ['SOA-2', 'Estudo A', 'C2D8', 'Dia 8 do Ciclo 2', 2, '', 7, '', 'Sim', '', 'SOA-1', 2, 2, '', 'Não', '', 'VISITA_CALCULADA', '', ''],
+    ['SOA-3', 'Estudo A', 'C2D15', 'Dia 15 do Ciclo 2', 3, '', 14, '', 'Sim', '', 'SOA-1', 2, 2, '', 'Não', 'MANTER_DATAS_PREVISTAS', 'VISITA_CALCULADA', '', '']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Projetos: projects, SoA_Visitas: soa });
+  const server = runFile('WebApp.gs', { SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet } });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+
+  const result = server.salvarSoAVisita({
+    idSoA: 'SOA-1', projeto: 'Estudo A', codigo: 'C1D8', nome: 'Dia 8 do Ciclo 1', ordem: 1,
+    intervaloDias: 7, referencia: 'RANDOMIZACAO', baseCalculo: 'RECALCULAR_VISITA_REALIZADA',
+    papelCronograma: 'VISITA_CALCULADA', aplicarBaseEquivalentes: true
+  });
+
+  assert.equal(result.equivalentesAtualizadas, 1);
+  assert.equal(soa.rows[1][15], 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(soa.rows[2][15], 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(soa.rows[3][15], 'MANTER_DATAS_PREVISTAS');
+  assert.throws(() => server.salvarSoAVisita({
+    projeto: 'Estudo A', codigo: 'FU', nome: 'Follow-up', referencia: 'RANDOMIZACAO',
+    baseCalculo: 'MANTER_DATAS_PREVISTAS', aplicarBaseEquivalentes: true
+  }), /Não foi possível identificar visitas equivalentes/);
+});
+
 test('fase SoA: salvar janela adiciona cabeçalhos ao schema legado e mantém a linha editável', () => {
   const soa = new FakeSheet('SoA_Visitas', [
     ['ID_SoA', 'Projeto', 'Codigo da visita', 'Nome padrao da visita', 'Ordem', 'Repeticao', 'Intervalo (dias)', 'Aliases', 'Ativo', 'Observacoes'],

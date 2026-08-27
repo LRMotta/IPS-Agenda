@@ -18,6 +18,7 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
   const web = readProjectFile('WebApp.gs');
   const source = readProjectFile('CadastroRules.gs') + '\n' +
     between(web, 'function participanteCampoKey_', 'function salvarDadosParticipante(') + '\n' +
+    between(web, 'function soaNormalizarBaseCalculo_', 'function soaNormalizarPapelCronograma_') + '\n' +
     between(web, 'var PROJETO_COURIER_FIELDS_', 'function excluirProjeto(') + '\n' +
     between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
   const counters = { cache: 0, transportCache: 0 };
@@ -150,6 +151,26 @@ test('schema legado de projetos continua salvavel sem criar campos opcionais', (
   assert.equal(context.salvarDadosProjeto(validProject), 'Projeto cadastrado com sucesso!');
   assert.equal(sheet.rows[0].indexOf('Courier principal (ID)'), -1);
   assert.equal(sheet.rows[0].indexOf('Temperaturas courier principal'), -1);
+  assert.equal(sheet.rows[0].indexOf('Base padrão do cronograma SoA'), -1);
+});
+
+test('projeto grava base padrão do SoA em coluna opcional e valida o valor', () => {
+  const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+
+  assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, {
+    soaBaseCalculoPadrao: 'MANTER_DATAS_PREVISTAS'
+  })), 'Projeto cadastrado com sucesso!');
+  const baseCol = sheet.rows[0].indexOf('Base padrão do cronograma SoA');
+  assert.ok(baseCol >= 0);
+  assert.equal(sheet.rows[1][baseCol], 'MANTER_DATAS_PREVISTAS');
+
+  const invalidSheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
+  const invalid = cadastroContext(new FakeSpreadsheet({ Projetos: invalidSheet })).context;
+  assert.throws(() => invalid.salvarDadosProjeto(Object.assign({}, validProject, {
+    soaBaseCalculoPadrao: 'REGRA_INVENTADA'
+  })), /base padrão do cronograma/);
+  assert.equal(invalidSheet.writes, 0);
 });
 
 test('projeto rejeita courier repetida e temperatura sem courier antes de escrever', () => {

@@ -901,8 +901,8 @@ test('fallback do formulario usa carga completa, legado validado e somente codig
   strictServer.getDadosFormularioAgenda();
   strictServer.getDadosFormularioAgenda(true);
   assert.deepEqual(strictCalls, [
-      { key: 'AgendaFormData:v9:20260804', forceRefresh: false, strict: false },
-      { key: 'AgendaFormDataStrict:v3:20260804', forceRefresh: false, strict: true }
+      { key: 'AgendaFormData:v10:20260804', forceRefresh: false, strict: false },
+      { key: 'AgendaFormDataStrict:v4:20260804', forceRefresh: false, strict: true }
   ]);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'getAppBootstrapData'), /getDadosFormularioAgenda\(true\)/);
 
@@ -1202,6 +1202,21 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes: agendaParticipantesFormulario_/);
   assert.match(functionBody(server, 'getInfoParticipante'), /ultimaVisitaDataIso/);
   assert.match(readProjectFile('IndexContentAfterDashboard.html'), /atualizarAgendaIntervaloUltimaVisita\(\)/);
+});
+
+test('selecao da Agenda oculta participantes em obito ou descontinuados', () => {
+  const server = agendaServer();
+  assert.equal(server.agendaParticipanteDisponivelFormulario_('Ativo'), true);
+  assert.equal(server.agendaParticipanteDisponivelFormulario_('Em seguimento'), true);
+  assert.equal(server.agendaParticipanteDisponivelFormulario_('Óbito'), false);
+  assert.equal(server.agendaParticipanteDisponivelFormulario_('Obito'), false);
+  assert.equal(server.agendaParticipanteDisponivelFormulario_(' Descontinuado '), false);
+
+  const source = readProjectFile('WebApp.gs');
+  assert.match(functionBody(source, 'agendaParticipantesFormulario_'),
+    /agendaParticipanteDisponivelFormulario_\(row\[8\]\)/);
+  assert.match(functionBody(source, 'getDadosFormularioAgenda'),
+    /AgendaFormDataStrict:v4:.*AgendaFormData:v10:/s);
 });
 
 test('modal de agendamento acomoda o resumo completo em telas desktop', () => {
