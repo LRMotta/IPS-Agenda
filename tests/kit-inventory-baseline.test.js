@@ -118,13 +118,15 @@ test('substituição de lote preserva histórico e cria reserva elegível', () =
   server.getEstoque = () => [{ idItem: 'KIT-1', idLote: 'LOTE-2', descricao: 'Kit coleta', validade: '31/12/2026', localizacao: 'Estoque Principal', qtde: 2 }];
   server.codexAssertCanWrite_ = () => {};
   server.codexWithDocumentLock_ = (_action, callback) => callback();
+  server.getJornadaParticipante = payload => ({ participante: payload.idParticipante, loteAtual: 'LOTE-2' });
 
-  const result = server.substituirReservaKitAgenda({ idReserva: 'RES-1', novoIdLote: 'LOTE-2', justificativa: 'Lote original comprometido.' });
+  const result = server.substituirReservaKitAgenda({ idReserva: 'RES-1', novoIdLote: 'LOTE-2', justificativa: 'Lote original comprometido.', retornarJornada: true });
   assert.equal(result.ok, true);
   assert.equal(reservas.rows[1][11], 'Substituída');
   assert.equal(reservas.rows.length, 3);
   assert.equal(reservas.rows[2][6], 'LOTE-2');
   assert.equal(reservas.rows[2][11], 'Reservado');
+  assert.equal(result.jornada.loteAtual, 'LOTE-2');
 });
 
 test('gestão de reserva exige justificativa e ajusta quantidade com histórico', () => {
@@ -143,13 +145,18 @@ test('gestão de reserva exige justificativa e ajusta quantidade com histórico'
   });
   server.codexAssertCanWrite_ = () => {};
   server.codexWithDocumentLock_ = (_action, callback) => callback();
+  server.getJornadaParticipante = payload => ({ participante: payload.idParticipante, atualizada: true });
 
   assert.throws(() => server.cancelarReservaKitAgenda({ idReserva: 'RES-1' }), /justificativa/);
-  const result = server.ajustarReservaKitAgenda({ idReserva: 'RES-1', qtde: 2, justificativa: 'Visita exige uma unidade adicional.' });
+  const result = server.ajustarReservaKitAgenda({ idReserva: 'RES-1', qtde: 2, justificativa: 'Visita exige uma unidade adicional.', retornarJornada: true });
   assert.equal(result.quantidadeAnterior, 1);
   assert.equal(reservas.rows[1][10], 2);
   assert.equal(reservas.rows[2][11], 'Ajustada');
   assert.match(String(reservas.rows[2][14]), /Visita exige/);
+  assert.equal(result.jornada.atualizada, true);
+  const cancelada = server.cancelarReservaKitAgenda({ idReserva: 'RES-1', justificativa: 'Visita remarcada.', retornarJornada: true });
+  assert.equal(cancelada.jornada.atualizada, true);
+  assert.equal(reservas.rows[1][11], 'Cancelada');
 });
 
 test('fase 2: ordem configurada do projeto precede o rótulo alfabético na Agenda', () => {

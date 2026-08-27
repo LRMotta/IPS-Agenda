@@ -8876,7 +8876,12 @@ function cancelarReservaKitAgenda(payload) {
       sheet.getRange(i + 2, 15).setValue(String(rows[i][14] || '') + ' · Cancelamento: ' + justificativa);
       SpreadsheetApp.flush();
       CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-      return { ok: true, idReserva: idReserva, status: 'Cancelada', msg: 'Reserva cancelada. Se o kit estiver no Laboratório, faça a devolução física separadamente.' };
+      var resultado = { ok: true, idReserva: idReserva, status: 'Cancelada', msg: 'Reserva cancelada. Se o kit estiver no Laboratório, faça a devolução física separadamente.' };
+      if (payload.retornarJornada) resultado.jornada = getJornadaParticipante({
+        nome: String(rows[i][4] || ''), idParticipante: String(rows[i][15] || ''),
+        projeto: String(rows[i][3] || ''), braco: payload.braco || ''
+      });
+      return resultado;
     }
     throw new Error('Reserva não encontrada.');
   });
@@ -8926,7 +8931,12 @@ function ajustarReservaKitAgenda(payload) {
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([historico]);
     SpreadsheetApp.flush();
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-    return { ok: true, idReserva: idReserva, quantidadeAnterior: quantidadeAnterior, quantidade: novaQuantidade, msg: 'Quantidade da reserva ajustada.' };
+    var resultado = { ok: true, idReserva: idReserva, quantidadeAnterior: quantidadeAnterior, quantidade: novaQuantidade, msg: 'Quantidade da reserva ajustada.' };
+    if (payload.retornarJornada) resultado.jornada = getJornadaParticipante({
+      nome: String(reserva[4] || ''), idParticipante: String(reserva[15] || ''),
+      projeto: String(reserva[3] || ''), braco: payload.braco || ''
+    });
+    return resultado;
   });
 }
 
@@ -8998,7 +9008,12 @@ function substituirReservaKitAgenda(payload) {
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([novaLinha]);
     SpreadsheetApp.flush();
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-    return { ok: true, antiga: idReserva, nova: novaLinha[0], msg: 'Lote substituído e nova reserva criada.' };
+    var resultado = { ok: true, antiga: idReserva, nova: novaLinha[0], msg: 'Lote substituído e nova reserva criada.' };
+    if (payload.retornarJornada) resultado.jornada = getJornadaParticipante({
+      nome: String(novaLinha[4] || ''), idParticipante: String(novaLinha[15] || ''),
+      projeto: String(novaLinha[3] || ''), braco: payload.braco || ''
+    });
+    return resultado;
   });
 }
 
@@ -10626,6 +10641,17 @@ function jornadaVisitasPrevisaoSeisMeses_(visitas, hoje) {
   });
 }
 
+function jornadaReservasModeloVisita_(reservas, modelo, visita) {
+  var labels = [visita && visita.nome, visita && visita.codigo]
+    .concat((visita && visita.aliases) || [])
+    .map(normText_).filter(Boolean);
+  return (reservas || []).filter(function(reserva) {
+    return normText_(reserva.status || 'Reservado') === 'reservado' &&
+      String(reserva.idItem || '') === String(modelo.idItem || '') &&
+      labels.indexOf(normText_(reserva.visitaPrevista)) >= 0;
+  });
+}
+
 function getJornadaParticipante(payload) {
   payload = payload || {};
   var nome = String(payload.nome || '').trim();
@@ -10698,7 +10724,8 @@ function getJornadaParticipante(payload) {
   });
   var reservas = getKitReservasLinhas_().filter(function(reserva) {
     var mesmoId = participanteIdNorm && normText_(reserva.participanteId) === participanteIdNorm;
-    return (mesmoId || normText_(reserva.participante) === participanteNorm) && normText_(reserva.projeto) === projetoNorm && normText_(reserva.status) !== 'cancelado';
+    return (mesmoId || normText_(reserva.participante) === participanteNorm) &&
+      normText_(reserva.projeto) === projetoNorm && normText_(reserva.status || 'Reservado') === 'reservado';
   });
   var estoque = getEstoque();
   var visitasJornada = jornadaVisitasDesdeInicioOperacional_(visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }));
@@ -10707,7 +10734,8 @@ function getJornadaParticipante(payload) {
     if (visita.estado !== 'REALIZADA') {
       var modelosVisita = modelos.filter(function(modelo) { return modelo.visitasAplicaveisIds.indexOf(visita.idSoA) >= 0; });
       visita.kits = modelosVisita.map(function(modelo) {
-      var reserva = reservas.filter(function(item) { return String(item.idItem || '') === String(modelo.idItem || '') && normText_(item.visitaPrevista) === normText_(visita.nome); })[0] || null;
+      var reservasKit = jornadaReservasModeloVisita_(reservas, modelo, visita);
+      var reserva = reservasKit[0] || null;
       var dataAlvo = visita.dataAlvoObj;
       var lotes = estoque.filter(function(item) { return String(item.idItem || '') === String(modelo.idItem || '') && Number(item.qtdeDisponivel) > 0; });
       var estoqueValido = !dataAlvo || lotes.some(function(lote) { var validade = agendaDateFromValue_(lote.validade); return validade && validade >= dataAlvo; });
@@ -10717,6 +10745,9 @@ function getJornadaParticipante(payload) {
       return {
         idItem: modelo.idItem, descricao: modelo.descricao, tipo: modelo.tipo, laboratorio: modelo.laboratorio,
         reservado: !!reserva, lote: reserva && reserva.idLote || '', validade: reserva && reserva.validade || '',
+        idReserva: reserva && reserva.idReserva || '', statusReserva: reserva && reserva.status || '',
+        qtdeReserva: reserva ? (Number(reserva.qtde) || 0) : 0,
+        qtdeReservada: reservasKit.reduce(function(total, item) { return total + (Number(item.qtde) || 0); }, 0),
         reservaValida: reserva ? reservaValida : null, estoqueDisponivel: estoqueValido,
         pedidoAberto: pedidos[0] || '', risco: reserva ? !reservaValida : !estoqueValido
       };
@@ -10839,7 +10870,17 @@ function reservarKitsPrevisaoJornada(payload) {
     sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
     SpreadsheetApp.flush();
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-    return { ok: true, reservados: linhas.length, msg: linhas.length + ' kit(s) reservado(s). Vincule à Agenda quando a visita for agendada.' };
+    return {
+      ok: true,
+      reservados: linhas.length,
+      msg: linhas.length + ' kit(s) reservado(s). Vincule à Agenda quando a visita for agendada.',
+      jornada: getJornadaParticipante({
+        nome: contexto.participante,
+        idParticipante: contexto.participanteId,
+        projeto: contexto.projeto,
+        braco: payload.braco || ''
+      })
+    };
   });
 }
 

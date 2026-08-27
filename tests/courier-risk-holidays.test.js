@@ -206,3 +206,13 @@ test('Agenda carrega mapa de projeto, regras de courier e feriados e mostra aler
   assert.match(readProjectFile('IndexStyles.html'), /#modalFeriado \.feriado-guidance\s*\{[^}]*color:\s*var\(--text-muted\)[^}]*font-size:\s*12px/);
   assert.match(readProjectFile('IndexStyles.html'), /#modalFeriado \.feriado-paired-field \.field-label\s*\{[^}]*min-height:\s*28px/);
 });
+
+test('menu posiciona Feriados em Sistema sem abrir o grupo Cadastros', () => {
+  const nav = readProjectFile('IndexContent.html');
+  const scripts = readProjectFile('IndexCoreScripts.html');
+  const systemStart = nav.indexOf('<div class="nav-section">Sistema</div>');
+  const holidaysItem = nav.indexOf("onclick=\"irPara('feriados')\"");
+
+  assert.ok(systemStart >= 0 && holidaysItem > systemStart);
+  assert.doesNotMatch(scripts, /var cadastros = \[[^\]]*'feriados'/);
+});
