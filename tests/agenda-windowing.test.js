@@ -1522,6 +1522,23 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.doesNotMatch(client, /_agendaWindowedRange/);
 });
 
+test('display de Close-Out segue o fluxo institucional sem exigir participante', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const classifier = functionBody(client, 'agendaUsaDisplayOperacional_');
+  const fromForm = functionBody(client, 'abrirDisplayAgendaFromForm');
+  const payload = functionBody(client, 'agendaMonitoriaDisplayPayload');
+  const patient = functionBody(client, 'abrirDisplayPacienteFromAgendaForm');
+  const card = functionBody(client, 'agendaDetailHtml');
+
+  assert.match(classifier, /AgendaRules\.isOperationalPeriod\(eventOrType\) \|\| AgendaRules\.isCloseout\(eventOrType\)/);
+  assert.match(fromForm, /agendaUsaDisplayOperacional_\(tipo\)/);
+  assert.match(fromForm, /abrirDisplayMonitoriaFromAgendaForm\(\)/);
+  assert.match(payload, /AgendaRules\.isCloseout\(r\) \? 'Close-Out'/);
+  assert.match(patient, /Selecione um participante para gerar o display/);
+  assert.match(card, /var showDisplay = usaDisplayOperacional \? r\.projeto : r\.participante/);
+  assert.match(card, /var displayAction = usaDisplayOperacional/);
+});
+
 test('compatibilidades da janela usam fontes autoritativas fora do periodo visivel', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const directOpen = functionBody(client, 'abrirAgendaRegistroPorId');

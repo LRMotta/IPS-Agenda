@@ -101,6 +101,10 @@
     return isType(event, 'siv');
   }
 
+  function isCloseout(event) {
+    return isType(event, 'closeout');
+  }
+
   function isOperationalPeriod(event) {
     return isMonitoring(event) || isSiv(event);
   }
@@ -346,6 +350,7 @@
     isConcluded: isConcluded,
     isMonitoring: isMonitoring,
     isSiv: isSiv,
+    isCloseout: isCloseout,
     isOperationalPeriod: isOperationalPeriod,
     isTerminalStatus: isTerminalStatus,
     isVisit: isVisit,

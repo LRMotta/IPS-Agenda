@@ -38,3 +38,15 @@ test('servidor e interface classificam os mesmos status da mesma forma', () => {
     assert.equal(client.statusKey(status), server.statusKey(status), status);
   });
 });
+
+test('servidor e interface reconhecem Close-Out sem transforma-lo em periodo operacional', () => {
+  const server = runFile('AgendaServerRules.gs').AgendaServerRules_;
+  const client = runHtmlScript('SharedAgendaRules.html').AgendaRules;
+
+  ['Close-Out', 'Closeout', { tipo: 'close-out' }].forEach((value) => {
+    assert.equal(server.isCloseout(value), true);
+    assert.equal(client.isCloseout(value), true);
+    assert.equal(server.isOperationalPeriod(value), false);
+    assert.equal(client.isOperationalPeriod(value), false);
+  });
+});

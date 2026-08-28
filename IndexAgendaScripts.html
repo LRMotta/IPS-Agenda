@@ -2920,9 +2920,13 @@
     };
   }
 
+  function agendaUsaDisplayOperacional_(eventOrType) {
+    return AgendaRules.isOperationalPeriod(eventOrType) || AgendaRules.isCloseout(eventOrType);
+  }
+
   function abrirDisplayAgendaFromForm() {
     var tipo = (document.getElementById('agTipo') || {}).value || '';
-    if (AgendaRules.isOperationalPeriod(tipo)) {
+    if (agendaUsaDisplayOperacional_(tipo)) {
       abrirDisplayMonitoriaFromAgendaForm();
       return;
     }
@@ -2953,7 +2957,7 @@
     var projeto = String(r.projeto || '');
     var monitorName = String(r.monitorName || '');
     var salaMonitoria = String(r.salaMonitoria || '');
-    var tipo = AgendaRules.isSiv(r) ? 'SIV' : 'Monitoria';
+    var tipo = AgendaRules.isSiv(r) ? 'SIV' : (AgendaRules.isCloseout(r) ? 'Close-Out' : 'Monitoria');
     var periodo = agendaPeriodoFromRow(r);
     return {
       tipo: tipo,
@@ -3054,6 +3058,10 @@
     function abrirComRegistro(r) {
       if (!r) {
         snackErro('Evento da Agenda nao encontrado.');
+        return;
+      }
+      if (AgendaRules.isCloseout(r)) {
+        abrirDisplayMonitoria(agendaMonitoriaDisplayPayload(r));
         return;
       }
       agendaLoadPeriodoOperacional_(r, function(periodo) {
@@ -5125,9 +5133,10 @@
 
   function agendaDetailHtml(r) {
     var couriers = agendaCourierCards(r);
+    var usaDisplayOperacional = agendaUsaDisplayOperacional_(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
-    var showDisplay = isPeriodoOperacional ? r.projeto : r.participante;
-    var displayAction = isPeriodoOperacional
+    var showDisplay = usaDisplayOperacional ? r.projeto : r.participante;
+    var displayAction = usaDisplayOperacional
       ? 'abrirDisplayMonitoriaAgendaCard(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')'
       : 'abrirDisplayPaciente(\'' + encodeURIComponent(JSON.stringify(agendaDisplayPayload(r))).replace(/'/g, '%27') + '\')';
     var displayBtn = showDisplay ? '<div class="ag-det-actions"><button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayAction + '"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button></div>' : '';

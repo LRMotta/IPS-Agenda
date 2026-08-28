@@ -81,6 +81,10 @@ var AgendaServerRules_ = (function() {
     return isType(eventOrType, 'siv');
   }
 
+  function isCloseout(eventOrType) {
+    return isType(eventOrType, 'closeout');
+  }
+
   function isOperationalPeriod(eventOrType) {
     return isMonitoring(eventOrType) || isSiv(eventOrType);
   }
@@ -252,6 +256,7 @@ var AgendaServerRules_ = (function() {
     isConcluded: isConcluded,
     isCompleted: isCompleted,
     isSiv: isSiv,
+    isCloseout: isCloseout,
     isOperationalPeriod: isOperationalPeriod,
     isTerminalStatus: isTerminalStatus,
     sameStatus: sameStatus,
