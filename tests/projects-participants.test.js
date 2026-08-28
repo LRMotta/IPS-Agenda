@@ -416,6 +416,30 @@ test('jornada do participante calcula e exibe a janela em torno da data ideal', 
   assert.match(html, /Janela: 03\/fev\.\/2027 – 17\/fev\.\/2027/);
 });
 
+test('jornada oferece prévia CTMS lado a lado sem substituir o cálculo atual', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  const styles = readProjectFile('IndexStyles.html');
+  const jornadaHtml = sourceBetween(client, 'function jornadaParticipanteHtml_', 'var _jornadaParticipanteAtual');
+  const context = vm.createContext({ esc: (value) => String(value || '') });
+  vm.runInContext(jornadaHtml, context);
+  const html = context.jornadaParticipanteHtml_({
+    possuiSoA: true,
+    visitas: [],
+    eventosLivres: [],
+    previaCtms: { somenteLeitura: true }
+  });
+
+  assert.match(html, /Prévia CTMS/);
+  assert.match(html, /abrirPreviaCtmsJornada/);
+  assert.match(client, /Prévia lado a lado do motor CTMS/);
+  assert.match(client, /Nenhuma alteração será gravada/);
+  assert.match(client, /não substitui a Jornada atual, não altera reservas e não alimenta a Agenda/);
+  assert.match(client, /Cálculo atual/);
+  assert.match(client, /Motor CTMS/);
+  assert.match(styles, /\.jornada-ctms-columns/);
+  assert.match(styles, /grid-template-columns:minmax\(0,\.8fr\) minmax\(0,1\.2fr\)/);
+});
+
 test('cadastro SoA configura base amigável, papel no cronograma e referências alternativas', () => {
   const content = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');
@@ -440,6 +464,97 @@ test('cadastro SoA configura base amigável, papel no cronograma e referências 
   assert.match(server, /soaNormalizarBaseCalculo_/);
   assert.match(server, /Base padrão do cronograma SoA/);
   assert.match(server, /function soaCycleEquivalentKey_\(visita\)/);
+});
+
+test('motor CTMS puro separa previsão fixa da recalculada pela realização', () => {
+  const server = runFile('WebApp.gs');
+  const visitas = [
+    { idSoA: 'A', codigo: 'C1D1', nome: 'Ciclo 1 Dia 1', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'MARCO_CALCULO', ativo: true },
+    { idSoA: 'B', codigo: 'C1D8-FIXA', nome: 'Dia 8 fixo', ordem: 2, referencia: 'A', intervaloDias: 7, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'VISITA_CALCULADA', ativo: true },
+    { idSoA: 'C', codigo: 'C1D8-ROLANTE', nome: 'Dia 8 rolante', ordem: 3, referencia: 'A', intervaloDias: 7, baseCalculoEfetiva: 'RECALCULAR_VISITA_REALIZADA', papelCronograma: 'VISITA_CALCULADA', ativo: true }
+  ];
+  const result = server.jornadaCtmsCalcularPreviaPura_({
+    projeto: 'MonumenTAL-3', participante: 'P-1', visitas,
+    marcos: { RANDOMIZACAO: '2026-01-01' },
+    eventos: [{ idSoA: 'A', visita: 'Ciclo 1 Dia 1', data: '2026-01-10', concluida: true, cancelada: false }]
+  });
+  const rows = Object.fromEntries(Array.from(result.linhas, row => [row.idSoA, row]));
+
+  assert.equal(rows.A.dataPrevistaIso, '2026-01-01');
+  assert.equal(rows.A.dataRealizadaIso, '2026-01-10');
+  assert.equal(rows.B.dataPrevistaIso, '2026-01-08');
+  assert.equal(rows.B.origemBase, 'PREVISÃO DE A');
+  assert.equal(rows.C.dataPrevistaIso, '2026-01-17');
+  assert.equal(rows.C.origemBase, 'REALIZAÇÃO DE A');
+  assert.equal(result.somenteLeitura, true);
+  assert.equal(result.motorAtivo, false);
+});
+
+test('motor CTMS não usa agendamento como realização e mantém previsão rolante provisória', () => {
+  const server = runFile('WebApp.gs');
+  const result = server.jornadaCtmsCalcularPreviaPura_({
+    visitas: [
+      { idSoA: 'A', nome: 'Marco', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'MARCO_CALCULO', ativo: true },
+      { idSoA: 'B', nome: 'Seguimento', ordem: 2, referencia: 'A', intervaloDias: 7, baseCalculoEfetiva: 'RECALCULAR_VISITA_REALIZADA', papelCronograma: 'VISITA_CALCULADA', ativo: true }
+    ],
+    marcos: { RANDOMIZACAO: '2026-02-01' },
+    eventos: [{ idSoA: 'A', visita: 'Marco', data: '2026-02-04', concluida: false, cancelada: false }]
+  });
+  const rows = Object.fromEntries(Array.from(result.linhas, row => [row.idSoA, row]));
+
+  assert.equal(rows.A.dataAgendadaIso, '2026-02-04');
+  assert.equal(rows.A.dataRealizadaIso, '');
+  assert.equal(rows.B.dataPrevistaIso, '2026-02-08');
+  assert.equal(rows.B.statusCalculo, 'PROVISORIA');
+  assert.equal(rows.B.origemBase, 'PREVISÃO PROVISÓRIA DE A');
+});
+
+test('motor CTMS exige escolha manual, filtra braço e fica restrito aos projetos piloto', () => {
+  const server = runFile('WebApp.gs');
+  const result = server.jornadaCtmsCalcularPreviaPura_({
+    bracoId: 'BR-A',
+    visitas: [
+      { idSoA: 'A', nome: 'Marco A', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'MARCO_CALCULO', ativo: true, bracoIds: ['BR-A'] },
+      { idSoA: 'B', nome: 'Alternativa', ordem: 2, referencia: 'A', referenciaAlternativa: 'PROGRESSAO_DOENCA', criterioReferencias: 'SELECAO_MANUAL', intervaloDias: 5, baseCalculoEfetiva: 'RECALCULAR_VISITA_REALIZADA', papelCronograma: 'VISITA_CALCULADA', ativo: true, bracoIds: ['BR-A'] },
+      { idSoA: 'OUTRO', nome: 'Outro braço', ordem: 3, referencia: 'A', intervaloDias: 9, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'VISITA_CALCULADA', ativo: true, bracoIds: ['BR-B'] }
+    ],
+    marcos: { RANDOMIZACAO: '2026-03-01', PROGRESSAO_DOENCA: '2026-04-01' }
+  });
+
+  assert.deepEqual(Array.from(result.linhas, row => row.idSoA), ['A', 'B']);
+  assert.equal(result.linhas[1].statusCalculo, 'PENDENTE');
+  assert.match(result.linhas[1].avisos.join(' '), /seleção manual/);
+  assert.equal(server.jornadaCtmsProjetoPiloto_('MonumenTAL-3'), true);
+  assert.equal(server.jornadaCtmsProjetoPiloto_('CONFIRMATION-HF'), true);
+  assert.equal(server.jornadaCtmsProjetoPiloto_('Outro protocolo'), false);
+});
+
+test('motor CTMS resolve primeiro e último marco e preserva visita legada sem regra', () => {
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => { throw new Error('motor puro não pode acessar planilhas'); } }
+  });
+  const visitas = [
+    { idSoA: 'A', nome: 'Marco inicial', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'MARCO_CALCULO', ativo: true },
+    { idSoA: 'FIRST', nome: 'Primeiro marco', ordem: 2, referencia: 'A', referenciaAlternativa: 'PROGRESSAO_DOENCA', criterioReferencias: 'PRIMEIRO_OCORRER', intervaloDias: 2, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'VISITA_CALCULADA', ativo: true },
+    { idSoA: 'LAST', nome: 'Último marco', ordem: 3, referencia: 'A', referenciaAlternativa: 'PROGRESSAO_DOENCA', criterioReferencias: 'ULTIMO_OCORRER', intervaloDias: 2, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'VISITA_CALCULADA', ativo: true },
+    { idSoA: 'LEGACY', nome: 'Visita legada', ordem: 4, referencia: 'A', intervaloDias: 10, baseCalculoEfetiva: '', papelCronograma: '', ativo: true }
+  ];
+  const before = JSON.stringify(visitas);
+  const result = server.jornadaCtmsCalcularPreviaPura_({
+    visitas,
+    marcos: { RANDOMIZACAO: '2026-03-01', PROGRESSAO_DOENCA: '2026-04-01' },
+    legacyVisitas: [{ idSoA: 'LEGACY', dataAlvo: '11/03/2026', dataAlvoIso: '2026-03-11', estado: 'PREVISTA' }]
+  });
+  const rows = Object.fromEntries(Array.from(result.linhas, row => [row.idSoA, row]));
+
+  assert.equal(rows.FIRST.referenciaUtilizada, 'A');
+  assert.equal(rows.FIRST.dataPrevistaIso, '2026-03-03');
+  assert.equal(rows.LAST.referenciaUtilizada, 'PROGRESSAO_DOENCA');
+  assert.equal(rows.LAST.dataPrevistaIso, '2026-04-03');
+  assert.equal(rows.LEGACY.statusCalculo, 'SEM_REGRA');
+  assert.equal(rows.LEGACY.dataPrevistaIso, '');
+  assert.equal(rows.LEGACY.atual.dataAlvoIso, '2026-03-11');
+  assert.equal(JSON.stringify(visitas), before);
 });
 
 test('jornada inicia na primeira visita registrada pelo IPS e não reinicia a prontidão em etapas históricas', () => {

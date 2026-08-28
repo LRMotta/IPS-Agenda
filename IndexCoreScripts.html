@@ -4043,8 +4043,10 @@ function jornadaParticipanteHtml_(dados) {
     return '<div class="jornada-history-row"><div class="jornada-history-marker ' + classeStatus + '"><span class="material-symbols-outlined">' + (classeStatus === 'done' ? 'check' : 'event') + '</span></div><div class="jornada-history-visit"><strong>' + esc(evento.visita || 'Visita livre') + '</strong><span class="jornada-history-date">' + esc(evento.data || '') + '</span></div><div class="jornada-history-state"><span class="jornada-history-status ' + classeStatus + '">' + esc(status) + '</span>' + (evento.idSoA ? '<span class="jornada-history-match"><span class="material-symbols-outlined">link</span>Conciliada</span>' : '') + '</div></div>';
   }).join('');
   var historicoAnteriorHtml = historicoAnterior.length ? '<details style="margin-top:14px"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:700">Histórico anterior ao início do IPS em 2026 (' + historicoAnterior.length + ')</summary><div style="font-size:12px;color:#7b8794;padding:8px 0">Apenas informativo; não influencia a previsão, janelas ou prontidão.</div>' + historicoAnterior.map(function(evento) { return '<div style="padding:6px 0;border-top:1px solid #edf1f7;font-size:13px;color:#5f6b7c"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + '</div>'; }).join('') + '</details>' : '';
-  var conciliarHtml = conciliacao.length ? '<button class="ag-tb-btn" style="margin-left:auto" onclick="abrirConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">rule</span> Conciliar ' + conciliacao.length + ' nome(s)</button>' : '';
-  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + conciliarHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p><div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+  var conciliarHtml = conciliacao.length ? '<button class="ag-tb-btn" onclick="abrirConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">rule</span> Conciliar ' + conciliacao.length + ' nome(s)</button>' : '';
+  var previaCtmsHtml = dados.previaCtms ? '<button class="ag-tb-btn primary" onclick="abrirPreviaCtmsJornada()"><span class="material-symbols-outlined">compare_arrows</span> Prévia CTMS</button>' : '';
+  var acoesHtml = previaCtmsHtml || conciliarHtml ? '<div class="jornada-title-actions">' + previaCtmsHtml + conciliarHtml + '</div>' : '';
+  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p><div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
 }
 
 var _jornadaParticipanteAtual = null;
@@ -4067,6 +4069,45 @@ function abrirConcilicaoVisitasParticipante() {
 function voltarJornadaParticipante() {
   var content = document.getElementById('jornadaParticipanteConteudo');
   if (content) content.innerHTML = jornadaParticipanteHtml_(_jornadaParticipanteDados || {});
+}
+
+function abrirPreviaCtmsJornada() {
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  var previa = (_jornadaParticipanteDados || {}).previaCtms;
+  if (!content || !previa) return;
+  var resumo = previa.resumo || {};
+  function value(label, value, empty) {
+    return '<div class="jornada-ctms-field"><span>' + esc(label) + '</span><strong>' + esc(value || empty || '—') + '</strong></div>';
+  }
+  function baseLabel(value) {
+    return value === 'MANTER_DATAS_PREVISTAS' ? 'Manter datas previstas' :
+      value === 'RECALCULAR_VISITA_REALIZADA' ? 'Recalcular pela realizada' : 'Sem regra CTMS';
+  }
+  function statusLabel(row) {
+    var labels = { CALCULADA: 'Calculada', PROVISORIA: 'Provisória', PENDENTE: 'Pendente', SEM_REGRA: 'Sem regra' };
+    return '<span class="jornada-ctms-status ' + String(row.statusCalculo || '').toLowerCase() + '">' + esc(labels[row.statusCalculo] || row.statusCalculo || 'Pendente') + '</span>';
+  }
+  var rows = (previa.linhas || []).map(function(row) {
+    var atual = row.atual || {};
+    var diverge = !!(row.dataPrevistaIso || atual.dataAlvoIso) && String(row.dataPrevistaIso || '') !== String(atual.dataAlvoIso || '');
+    var warnings = (row.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
+    return '<article class="jornada-ctms-row' + (diverge ? ' diverge' : '') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'SoA') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div>' + statusLabel(row) + '</div>' +
+      '<div class="jornada-ctms-columns"><section class="jornada-ctms-card current"><h4>Cálculo atual</h4>' +
+        value('Data exibida', atual.dataAlvo, 'Sem data calculável') + value('Estado', atual.estado, 'A programar') +
+        value('Janela', atual.janelaInicio ? atual.janelaInicio + ' – ' + atual.janelaFim : '', 'Sem janela') +
+      '</section><section class="jornada-ctms-card proposed"><h4>Motor CTMS <span>somente leitura</span></h4>' +
+        value('Prevista', row.dataPrevista, 'Sem data resolvida') + value('Agendada', row.dataAgendada, 'Não agendada') +
+        value('Realizada', row.dataRealizada, 'Não realizada') + value('Janela', row.janelaInicio ? row.janelaInicio + ' – ' + row.janelaFim : '', 'Sem janela') +
+        value('Regra', baseLabel(row.baseCalculo)) + value('Referência usada', row.referenciaUtilizada, 'Não resolvida') +
+        value('Origem da base', row.origemBase, 'Não resolvida') +
+      '</section></div>' + (warnings ? '<ul class="jornada-ctms-warnings">' + warnings + '</ul>' : '') + '</article>';
+  }).join('');
+  var globalWarnings = (previa.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
+  content.innerHTML = '<div class="jornada-ctms-preview"><div class="jornada-ctms-toolbar"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><div><h3>Prévia lado a lado do motor CTMS</h3><p>' + esc(previa.projeto || '') + ' · ' + esc(previa.participante || '') + '</p></div></div>' +
+    '<div class="jornada-ctms-readonly"><span class="material-symbols-outlined">visibility</span><div><strong>Nenhuma alteração será gravada.</strong><span>O cálculo CTMS abaixo não substitui a Jornada atual, não altera reservas e não alimenta a Agenda.</span></div></div>' +
+    '<div class="jornada-ctms-summary"><span><strong>' + Number(resumo.total || 0) + '</strong> visitas</span><span><strong>' + Number(resumo.calculadas || 0) + '</strong> calculadas</span><span><strong>' + Number(resumo.provisorias || 0) + '</strong> provisórias</span><span><strong>' + Number(resumo.pendentes || 0) + '</strong> pendentes</span></div>' +
+    (globalWarnings ? '<details class="jornada-ctms-global"><summary>Alertas da prévia (' + (previa.avisos || []).length + ')</summary><ul>' + globalWarnings + '</ul></details>' : '') +
+    '<div class="jornada-ctms-list">' + (rows || '<div class="jornada-history-empty">Nenhuma visita disponível para comparação.</div>') + '</div></div>';
 }
 
 function abrirReservaPreviaJornada(idSoA) {
