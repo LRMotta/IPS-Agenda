@@ -10599,6 +10599,271 @@ function jornadaCalcularJanelaVisita_(dataIdeal, janelaDiasMenos, janelaDiasMais
   return { inicio: inicio, fim: fim };
 }
 
+// Primeira etapa do motor CTMS: cálculo puro e comparativo, sem substituir a
+// Jornada operacional. O piloto fica restrito aos dois protocolos revisados.
+var JORNADA_CTMS_PREVIEW_PROJECTS_ = ['monumental3', 'confirmationhf'];
+
+function jornadaCtmsProjetoPiloto_(projeto) {
+  var key = normText_(projeto).replace(/[^a-z0-9]+/g, '');
+  return JORNADA_CTMS_PREVIEW_PROJECTS_.indexOf(key) >= 0;
+}
+
+function jornadaCtmsDate_(value) {
+  if (!value) return null;
+  if (value instanceof Date || (value && typeof value.getTime === 'function')) {
+    var cloned = new Date(value.getTime());
+    cloned.setHours(0, 0, 0, 0);
+    return isNaN(cloned.getTime()) ? null : cloned;
+  }
+  var raw = String(value || '').trim();
+  var match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  var parsed = new Date(raw);
+  if (isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function jornadaCtmsDateIso_(value) {
+  var date = jornadaCtmsDate_(value);
+  if (!date) return '';
+  function pad(number) { return String(number).padStart(2, '0'); }
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+}
+
+function jornadaCtmsDateLabel_(value) {
+  var date = jornadaCtmsDate_(value);
+  if (!date) return '';
+  function pad(number) { return String(number).padStart(2, '0'); }
+  return pad(date.getDate()) + '/' + pad(date.getMonth() + 1) + '/' + date.getFullYear();
+}
+
+function jornadaCtmsAddDays_(value, days) {
+  var date = jornadaCtmsDate_(value);
+  if (!date) return null;
+  date.setDate(date.getDate() + (Number(days) || 0));
+  return date;
+}
+
+function jornadaCtmsEventoParaVisita_(visita, eventos) {
+  var id = String(visita && visita.idSoA || '').trim();
+  var labels = [visita && visita.nome, visita && visita.codigo]
+    .concat((visita && visita.aliases) || []).map(normText_).filter(Boolean);
+  var candidatos = (eventos || []).filter(function(evento) {
+    if (!evento || evento.cancelada || !jornadaCtmsDate_(evento.data || evento.dataIso)) return false;
+    if (id && String(evento.idSoA || '').trim() === id) return true;
+    return !String(evento.idSoA || '').trim() && labels.indexOf(normText_(evento.visita)) >= 0;
+  });
+  candidatos.sort(function(a, b) {
+    return Number(!!b.concluida) - Number(!!a.concluida) ||
+      jornadaCtmsDate_(b.data || b.dataIso).getTime() - jornadaCtmsDate_(a.data || a.dataIso).getTime();
+  });
+  return candidatos[0] || null;
+}
+
+function jornadaCtmsReferenciaEspecial_(value) {
+  return ['RANDOMIZACAO', 'INCLUSAO', 'ULTIMA_DOSE', 'FIM_TRATAMENTO', 'PROGRESSAO_DOENCA', 'OUTRA']
+    .indexOf(String(value || '').trim()) >= 0;
+}
+
+function jornadaCtmsCalcularPreviaPura_(input) {
+  input = input || {};
+  var avisos = [];
+  var avisoKeys = {};
+  function warn(message) {
+    message = String(message || '').trim();
+    if (!message || avisoKeys[message]) return;
+    avisoKeys[message] = true;
+    avisos.push(message);
+  }
+  var bracoId = String(input.bracoId || '').trim();
+  var todas = (input.visitas || []).filter(function(visita) { return visita && visita.ativo !== false; });
+  var temVariantes = todas.some(function(visita) { return (visita.bracoIds || []).length; });
+  var visitas = todas.filter(function(visita) {
+    var ids = soaUniqueIds_(visita.bracoIds || []);
+    if (!ids.length) return true;
+    return !!bracoId && ids.indexOf(bracoId) >= 0;
+  });
+  if (temVariantes && !bracoId) warn('O participante não possui braço padronizado; a prévia mostra somente visitas comuns a todos os braços.');
+
+  var porId = {};
+  visitas.forEach(function(visita) { porId[String(visita.idSoA || '')] = visita; });
+  var ordem = soaSugerirOrdemExecucao_(visitas);
+  (ordem.ambiguidades || []).forEach(function(item) { warn(item.mensagem); });
+
+  var eventosPorId = {};
+  visitas.forEach(function(visita) {
+    eventosPorId[String(visita.idSoA || '')] = jornadaCtmsEventoParaVisita_(visita, input.eventos || []);
+  });
+
+  var marcos = {};
+  Object.keys(input.marcos || {}).forEach(function(key) {
+    var date = jornadaCtmsDate_(input.marcos[key]);
+    if (date) marcos[String(key || '').trim()] = { date: date, origem: 'MARCO_INFORMADO' };
+  });
+  var candidatosMarcos = {};
+  visitas.forEach(function(visita) {
+    var referencia = String(visita.referencia || '').trim();
+    var evento = eventosPorId[String(visita.idSoA || '')];
+    if (!jornadaCtmsReferenciaEspecial_(referencia) || referencia === 'OUTRA' ||
+        visita.papelCronograma !== 'MARCO_CALCULO' || !evento || !evento.concluida) return;
+    var base = jornadaCtmsAddDays_(evento.data || evento.dataIso, -(Number(visita.intervaloDias) || 0));
+    if (!base) return;
+    if (!candidatosMarcos[referencia]) candidatosMarcos[referencia] = {};
+    candidatosMarcos[referencia][jornadaCtmsDateIso_(base)] = base;
+  });
+  Object.keys(candidatosMarcos).forEach(function(key) {
+    if (marcos[key]) return;
+    var dates = Object.keys(candidatosMarcos[key]);
+    if (dates.length === 1) marcos[key] = { date: candidatosMarcos[key][dates[0]], origem: 'VISITA_MARCO_REALIZADA' };
+    else warn('O marco ' + key + ' possui datas candidatas divergentes e permaneceu sem resolução automática.');
+  });
+
+  var resultados = {};
+  var escolhas = input.escolhasReferencias || {};
+  function referenceCandidate(reference) {
+    reference = String(reference || '').trim();
+    if (!reference) return null;
+    if (jornadaCtmsReferenciaEspecial_(reference)) {
+      var marco = marcos[reference];
+      return marco ? { id: reference, prevista: marco.date, realizada: marco.date, origem: marco.origem } : null;
+    }
+    var result = resultados[reference];
+    if (!result || result.papelCronograma === 'NAO_PARTICIPA_CALCULO') return null;
+    return { id: reference, prevista: result._dataPrevista, realizada: result._dataRealizada, origem: 'VISITA_SOA' };
+  }
+  function chooseReference(visita, primary, alternative, rowWarnings) {
+    if (!visita.referenciaAlternativa) return primary;
+    var criterio = String(visita.criterioReferencias || '').trim();
+    if (criterio === 'SELECAO_MANUAL') {
+      var selected = String(escolhas[String(visita.idSoA || '')] || '').trim();
+      if (!selected) {
+        rowWarnings.push('A referência exige seleção manual para este participante.');
+        return null;
+      }
+      if (selected === String(visita.referencia || '')) return primary;
+      if (selected === String(visita.referenciaAlternativa || '')) return alternative;
+      rowWarnings.push('A seleção manual não corresponde às referências configuradas.');
+      return null;
+    }
+    if (!primary || !alternative) {
+      rowWarnings.push('Uma das referências configuradas ainda não possui data resolvida.');
+      return null;
+    }
+    var primaryOccurrence = primary.realizada || primary.prevista;
+    var alternativeOccurrence = alternative.realizada || alternative.prevista;
+    if (!primaryOccurrence || !alternativeOccurrence) return null;
+    if (criterio === 'PRIMEIRO_OCORRER') return primaryOccurrence <= alternativeOccurrence ? primary : alternative;
+    if (criterio === 'ULTIMO_OCORRER') return primaryOccurrence >= alternativeOccurrence ? primary : alternative;
+    rowWarnings.push('O critério entre referências não está configurado.');
+    return null;
+  }
+
+  (ordem.idsSoA || []).forEach(function(id) {
+    var visita = porId[id];
+    if (!visita) return;
+    var evento = eventosPorId[id];
+    var dataEvento = evento && jornadaCtmsDate_(evento.data || evento.dataIso);
+    var dataRealizada = evento && evento.concluida ? dataEvento : null;
+    var dataAgendada = evento && !evento.concluida ? dataEvento : null;
+    var rowWarnings = [];
+    var baseCalculo = String(visita.baseCalculoEfetiva || visita.baseCalculo || '').trim();
+    var primary = referenceCandidate(visita.referencia);
+    var alternative = referenceCandidate(visita.referenciaAlternativa);
+    var chosen = chooseReference(visita, primary, alternative, rowWarnings);
+    var prevista = null;
+    var origemBase = '';
+    var provisoria = false;
+
+    if (!baseCalculo) {
+      rowWarnings.push('Visita sem regra CTMS; o cálculo atual permanece como referência.');
+    } else if (!visita.referencia) {
+      if (visita.papelCronograma === 'MARCO_CALCULO' && dataRealizada) {
+        prevista = dataRealizada;
+        origemBase = 'PRÓPRIA VISITA REALIZADA';
+      } else {
+        rowWarnings.push('Visita CTMS sem referência configurada.');
+      }
+    } else if (!chosen) {
+      rowWarnings.push('A referência ' + String(visita.referencia || '') + ' ainda não possui data resolvida.');
+    } else {
+      var baseDate = null;
+      if (baseCalculo === 'MANTER_DATAS_PREVISTAS') {
+        baseDate = chosen.prevista;
+        origemBase = 'PREVISÃO DE ' + chosen.id;
+      } else if (baseCalculo === 'RECALCULAR_VISITA_REALIZADA') {
+        baseDate = chosen.realizada || chosen.prevista;
+        provisoria = !chosen.realizada && !!chosen.prevista;
+        origemBase = (chosen.realizada ? 'REALIZAÇÃO DE ' : 'PREVISÃO PROVISÓRIA DE ') + chosen.id;
+      }
+      if (baseDate) prevista = jornadaCtmsAddDays_(baseDate, visita.intervaloDias);
+      else rowWarnings.push('A base escolhida não possui data utilizável.');
+    }
+    var janela = jornadaCalcularJanelaVisita_(prevista, visita.janelaDiasMenos, visita.janelaDiasMais);
+    resultados[id] = {
+      idSoA: id,
+      codigo: String(visita.codigo || ''),
+      nome: String(visita.nome || ''),
+      ordem: visita.ordem,
+      baseCalculo: baseCalculo,
+      papelCronograma: String(visita.papelCronograma || ''),
+      referenciaConfigurada: String(visita.referencia || ''),
+      referenciaAlternativa: String(visita.referenciaAlternativa || ''),
+      referenciaUtilizada: chosen && chosen.id || '',
+      origemBase: origemBase,
+      provisoria: provisoria,
+      dataPrevistaIso: jornadaCtmsDateIso_(prevista),
+      dataPrevista: jornadaCtmsDateLabel_(prevista),
+      dataAgendadaIso: jornadaCtmsDateIso_(dataAgendada),
+      dataAgendada: jornadaCtmsDateLabel_(dataAgendada),
+      dataRealizadaIso: jornadaCtmsDateIso_(dataRealizada),
+      dataRealizada: jornadaCtmsDateLabel_(dataRealizada),
+      janelaInicio: jornadaCtmsDateLabel_(janela.inicio),
+      janelaFim: jornadaCtmsDateLabel_(janela.fim),
+      statusCalculo: !baseCalculo ? 'SEM_REGRA' : (prevista ? (provisoria ? 'PROVISORIA' : 'CALCULADA') : 'PENDENTE'),
+      avisos: rowWarnings,
+      _dataPrevista: prevista,
+      _dataRealizada: dataRealizada
+    };
+  });
+
+  var legacyMap = {};
+  (input.legacyVisitas || []).forEach(function(visita) { legacyMap[String(visita.idSoA || '')] = visita; });
+  var visibleIds = (input.idsVisiveis || []).map(String);
+  var rows = (ordem.idsSoA || []).map(function(id) { return resultados[id]; }).filter(function(row) {
+    return row && (!visibleIds.length || visibleIds.indexOf(String(row.idSoA || '')) >= 0);
+  }).map(function(row) {
+    var legacy = legacyMap[row.idSoA] || {};
+    row.atual = {
+      dataAlvo: String(legacy.dataAlvo || ''),
+      dataAlvoIso: String(legacy.dataAlvoIso || ''),
+      estado: String(legacy.estado || ''),
+      janelaInicio: String(legacy.janelaInicio || ''),
+      janelaFim: String(legacy.janelaFim || '')
+    };
+    delete row._dataPrevista;
+    delete row._dataRealizada;
+    return row;
+  });
+  rows.forEach(function(row) { (row.avisos || []).forEach(warn); });
+  return {
+    somenteLeitura: true,
+    motorAtivo: false,
+    projeto: String(input.projeto || ''),
+    participante: String(input.participante || ''),
+    linhas: rows,
+    avisos: avisos,
+    resumo: {
+      total: rows.length,
+      calculadas: rows.filter(function(row) { return row.statusCalculo === 'CALCULADA'; }).length,
+      provisorias: rows.filter(function(row) { return row.statusCalculo === 'PROVISORIA'; }).length,
+      pendentes: rows.filter(function(row) { return row.statusCalculo === 'PENDENTE' || row.statusCalculo === 'SEM_REGRA'; }).length
+    }
+  };
+}
+
 // A Agenda IPS passou a ser a fonte operacional em 2026. Quando já existe uma
 // visita do participante registrada a partir desse marco, não devemos trazer
 // etapas anteriores do SoA para a linha do tempo ou para a prontidão: elas não
@@ -10760,6 +11025,18 @@ function getJornadaParticipante(payload) {
   });
   var historicoLivre = eventos.filter(function(evento) { return !evento.cancelada && !eventos.some(function(outro) { return outro !== evento && outro.id === evento.id; }); });
   var conciliacao = agendaSoAMontarConcilicaoVisitas_(eventos, visitas);
+  var previaCtms = null;
+  if (jornadaCtmsProjetoPiloto_(projeto)) {
+    previaCtms = jornadaCtmsCalcularPreviaPura_({
+      projeto: projeto,
+      participante: nome,
+      bracoId: braco.idBraco || '',
+      visitas: visitas,
+      eventos: eventos,
+      legacyVisitas: visitasJornada,
+      idsVisiveis: visitasJornada.map(function(visita) { return String(visita.idSoA || ''); })
+    });
+  }
   return {
     participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
     possuiSoA: visitas.length > 0, visitas: visitasJornada,
@@ -10768,7 +11045,8 @@ function getJornadaParticipante(payload) {
     horizontePrevisao: formatarDataSafe(jornadaLimitePrevisao_(hoje)),
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
     eventosAnteriores: eventosAnteriores.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
-    conciliacao: conciliacao
+    conciliacao: conciliacao,
+    previaCtms: previaCtms
   };
 }
 
