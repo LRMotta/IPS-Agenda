@@ -4087,11 +4087,25 @@ function abrirPreviaCtmsJornada() {
     var labels = { CALCULADA: 'Calculada', PROVISORIA: 'Provisória', PENDENTE: 'Pendente', SEM_REGRA: 'Sem regra' };
     return '<span class="jornada-ctms-status ' + String(row.statusCalculo || '').toLowerCase() + '">' + esc(labels[row.statusCalculo] || row.statusCalculo || 'Pendente') + '</span>';
   }
+  function impactLabel(row) {
+    var impact = row.impacto || {};
+    var diff = Number(impact.diferencaDias);
+    var signed = isFinite(diff) && diff !== 0 ? (diff > 0 ? '+' : '') + diff + ' dias' : '';
+    var labels = {
+      SEM_MUDANCA: 'Sem mudança',
+      MUDARIA: signed ? 'Mudaria ' + signed : 'Nova previsão',
+      DIVERGENCIA_HISTORICA: 'Diferença histórica' + (signed ? ' ' + signed : ''),
+      REVISAO: 'Requer revisão'
+    };
+    return '<span class="jornada-ctms-impact ' + String(impact.tipo || 'REVISAO').toLowerCase() + '">' + esc(labels[impact.tipo] || 'Requer revisão') + '</span>';
+  }
   var rows = (previa.linhas || []).map(function(row) {
     var atual = row.atual || {};
-    var diverge = !!(row.dataPrevistaIso || atual.dataAlvoIso) && String(row.dataPrevistaIso || '') !== String(atual.dataAlvoIso || '');
+    var impact = row.impacto || { tipo: 'REVISAO', requerAtencao: true, motivo: 'Impacto ainda não classificado.' };
+    var attention = !!impact.requerAtencao || !!row.provisoria;
     var warnings = (row.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
-    return '<article class="jornada-ctms-row' + (diverge ? ' diverge' : '') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'SoA') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div>' + statusLabel(row) + '</div>' +
+    return '<article class="jornada-ctms-row impacto-' + String(impact.tipo || 'REVISAO').toLowerCase() + '" data-ctms-atencao="' + (attention ? '1' : '0') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'SoA') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div><div class="jornada-ctms-badges">' + impactLabel(row) + statusLabel(row) + '</div></div>' +
+      '<div class="jornada-ctms-reason"><span class="material-symbols-outlined">' + (impact.tipo === 'SEM_MUDANCA' ? 'check_circle' : impact.tipo === 'REVISAO' ? 'rule' : 'difference') + '</span><strong>' + esc(impact.motivo || 'Impacto ainda não explicado.') + '</strong></div>' +
       '<div class="jornada-ctms-columns"><section class="jornada-ctms-card current"><h4>Cálculo atual</h4>' +
         value('Data exibida', atual.dataAlvo, 'Sem data calculável') + value('Estado', atual.estado, 'A programar') +
         value('Janela', atual.janelaInicio ? atual.janelaInicio + ' – ' + atual.janelaFim : '', 'Sem janela') +
@@ -4105,9 +4119,23 @@ function abrirPreviaCtmsJornada() {
   var globalWarnings = (previa.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
   content.innerHTML = '<div class="jornada-ctms-preview"><div class="jornada-ctms-toolbar"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><div><h3>Prévia lado a lado do motor CTMS</h3><p>' + esc(previa.projeto || '') + ' · ' + esc(previa.participante || '') + '</p></div></div>' +
     '<div class="jornada-ctms-readonly"><span class="material-symbols-outlined">visibility</span><div><strong>Nenhuma alteração será gravada.</strong><span>O cálculo CTMS abaixo não substitui a Jornada atual, não altera reservas e não alimenta a Agenda.</span></div></div>' +
-    '<div class="jornada-ctms-summary"><span><strong>' + Number(resumo.total || 0) + '</strong> visitas</span><span><strong>' + Number(resumo.calculadas || 0) + '</strong> calculadas</span><span><strong>' + Number(resumo.provisorias || 0) + '</strong> provisórias</span><span><strong>' + Number(resumo.pendentes || 0) + '</strong> pendentes</span></div>' +
+    '<div class="jornada-ctms-summary"><span class="divergencias"><strong>' + Number(resumo.divergencias || 0) + '</strong> datas diferentes</span><span class="provisorias"><strong>' + Number(resumo.provisorias || 0) + '</strong> dependem de realização</span><span class="revisao"><strong>' + Number(resumo.revisao || 0) + '</strong> requerem revisão</span><span class="sem-mudanca"><strong>' + Number(resumo.semMudanca || 0) + '</strong> sem mudança</span></div>' +
+    '<div class="jornada-ctms-filter"><div><strong>' + Number(resumo.total || 0) + ' visitas comparadas</strong><span>Priorize o que mudaria ou ainda precisa de decisão.</span></div><label><input id="jornadaCtmsSomenteDivergencias" type="checkbox" checked onchange="filtrarPreviaCtmsJornada(this.checked)"><span>Mostrar somente diferenças e revisões</span></label></div>' +
     (globalWarnings ? '<details class="jornada-ctms-global"><summary>Alertas da prévia (' + (previa.avisos || []).length + ')</summary><ul>' + globalWarnings + '</ul></details>' : '') +
-    '<div class="jornada-ctms-list">' + (rows || '<div class="jornada-history-empty">Nenhuma visita disponível para comparação.</div>') + '</div></div>';
+    '<div class="jornada-ctms-list">' + rows + '<div id="jornadaCtmsFiltroVazio" class="jornada-history-empty" hidden>Nenhuma diferença ou revisão nesta prévia. Desative o filtro para ver todas as visitas.</div>' + (!rows ? '<div class="jornada-history-empty">Nenhuma visita disponível para comparação.</div>' : '') + '</div></div>';
+  filtrarPreviaCtmsJornada(true);
+}
+
+function filtrarPreviaCtmsJornada(somenteAtencao) {
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.jornada-ctms-row'));
+  var visible = 0;
+  rows.forEach(function(row) {
+    var show = !somenteAtencao || row.getAttribute('data-ctms-atencao') === '1';
+    row.hidden = !show;
+    if (show) visible++;
+  });
+  var empty = document.getElementById('jornadaCtmsFiltroVazio');
+  if (empty) empty.hidden = !rows.length || visible > 0;
 }
 
 function abrirReservaPreviaJornada(idSoA) {

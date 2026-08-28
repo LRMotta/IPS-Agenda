@@ -10668,6 +10668,48 @@ function jornadaCtmsReferenciaEspecial_(value) {
     .indexOf(String(value || '').trim()) >= 0;
 }
 
+function jornadaCtmsClassificarImpacto_(row) {
+  row = row || {};
+  var atual = row.atual || {};
+  var dataAtual = jornadaCtmsDate_(atual.dataAlvoIso || atual.dataAlvo);
+  var dataCtms = jornadaCtmsDate_(row.dataPrevistaIso || row.dataPrevista);
+  var estadoAtual = String(atual.estado || '').trim();
+  var statusCalculo = String(row.statusCalculo || '').trim();
+  var diferencaDias = null;
+  if (dataAtual && dataCtms) diferencaDias = Math.round((dataCtms.getTime() - dataAtual.getTime()) / 86400000);
+
+  if (statusCalculo === 'PENDENTE' || statusCalculo === 'SEM_REGRA' || !dataCtms) {
+    return {
+      tipo: 'REVISAO', diferencaDias: diferencaDias, requerAtencao: true,
+      motivo: dataAtual ? 'A Jornada atual possui data, mas o motor CTMS ainda não resolveu uma referência segura.' : 'O motor CTMS ainda não possui dados suficientes para calcular esta visita.'
+    };
+  }
+  if (!dataAtual) {
+    return {
+      tipo: 'MUDARIA', diferencaDias: null, requerAtencao: true,
+      motivo: 'O motor CTMS calcula uma data onde a Jornada atual ainda não possui previsão.'
+    };
+  }
+  if (diferencaDias === 0) {
+    return {
+      tipo: 'SEM_MUDANCA', diferencaDias: 0, requerAtencao: !!row.provisoria,
+      motivo: row.provisoria ? 'A data coincide, mas ainda depende da realização da visita de referência.' : 'A data CTMS coincide com o cálculo atual.'
+    };
+  }
+  var direcao = diferencaDias > 0 ? 'depois' : 'antes';
+  var quantidade = Math.abs(diferencaDias);
+  if (estadoAtual === 'REALIZADA') {
+    return {
+      tipo: 'DIVERGENCIA_HISTORICA', diferencaDias: diferencaDias, requerAtencao: true,
+      motivo: 'A data realizada ficou ' + quantidade + ' dia(s) ' + direcao + ' da previsão CTMS. O histórico não será alterado.'
+    };
+  }
+  return {
+    tipo: 'MUDARIA', diferencaDias: diferencaDias, requerAtencao: true,
+    motivo: 'O motor CTMS deslocaria esta visita em ' + quantidade + ' dia(s) para ' + direcao + ' do cálculo atual.'
+  };
+}
+
 function jornadaCtmsCalcularPreviaPura_(input) {
   input = input || {};
   var avisos = [];
@@ -10843,11 +10885,18 @@ function jornadaCtmsCalcularPreviaPura_(input) {
       janelaInicio: String(legacy.janelaInicio || ''),
       janelaFim: String(legacy.janelaFim || '')
     };
+    row.impacto = jornadaCtmsClassificarImpacto_(row);
     delete row._dataPrevista;
     delete row._dataRealizada;
     return row;
   });
   rows.forEach(function(row) { (row.avisos || []).forEach(warn); });
+  var resumoImpacto = {
+    semMudanca: rows.filter(function(row) { return row.impacto.tipo === 'SEM_MUDANCA'; }).length,
+    divergencias: rows.filter(function(row) { return row.impacto.tipo === 'MUDARIA' || row.impacto.tipo === 'DIVERGENCIA_HISTORICA'; }).length,
+    revisao: rows.filter(function(row) { return row.impacto.tipo === 'REVISAO'; }).length,
+    atencao: rows.filter(function(row) { return row.impacto.requerAtencao; }).length
+  };
   return {
     somenteLeitura: true,
     motorAtivo: false,
@@ -10859,7 +10908,11 @@ function jornadaCtmsCalcularPreviaPura_(input) {
       total: rows.length,
       calculadas: rows.filter(function(row) { return row.statusCalculo === 'CALCULADA'; }).length,
       provisorias: rows.filter(function(row) { return row.statusCalculo === 'PROVISORIA'; }).length,
-      pendentes: rows.filter(function(row) { return row.statusCalculo === 'PENDENTE' || row.statusCalculo === 'SEM_REGRA'; }).length
+      pendentes: rows.filter(function(row) { return row.statusCalculo === 'PENDENTE' || row.statusCalculo === 'SEM_REGRA'; }).length,
+      semMudanca: resumoImpacto.semMudanca,
+      divergencias: resumoImpacto.divergencias,
+      revisao: resumoImpacto.revisao,
+      atencao: resumoImpacto.atencao
     }
   };
 }

@@ -436,7 +436,14 @@ test('jornada oferece prévia CTMS lado a lado sem substituir o cálculo atual',
   assert.match(client, /não substitui a Jornada atual, não altera reservas e não alimenta a Agenda/);
   assert.match(client, /Cálculo atual/);
   assert.match(client, /Motor CTMS/);
+  assert.match(client, /Mostrar somente diferenças e revisões/);
+  assert.match(client, /function filtrarPreviaCtmsJornada\(somenteAtencao\)/);
+  assert.match(client, /MUDARIA: signed \? 'Mudaria '/);
+  assert.match(client, /Diferença histórica/);
+  assert.match(client, /Requer revisão/);
   assert.match(styles, /\.jornada-ctms-columns/);
+  assert.match(styles, /\.jornada-ctms-impact/);
+  assert.match(styles, /\.jornada-ctms-filter/);
   assert.match(styles, /grid-template-columns:minmax\(0,\.8fr\) minmax\(0,1\.2fr\)/);
 });
 
@@ -507,6 +514,46 @@ test('motor CTMS não usa agendamento como realização e mantém previsão rola
   assert.equal(rows.B.dataPrevistaIso, '2026-02-08');
   assert.equal(rows.B.statusCalculo, 'PROVISORIA');
   assert.equal(rows.B.origemBase, 'PREVISÃO PROVISÓRIA DE A');
+});
+
+test('motor CTMS classifica impacto, diferença em dias e resumo de decisão', () => {
+  const server = runFile('WebApp.gs');
+  const same = server.jornadaCtmsClassificarImpacto_({
+    dataPrevistaIso: '2026-04-10', statusCalculo: 'CALCULADA', provisoria: false,
+    atual: { dataAlvoIso: '2026-04-10', estado: 'PREVISTA' }
+  });
+  const changed = server.jornadaCtmsClassificarImpacto_({
+    dataPrevistaIso: '2026-04-15', statusCalculo: 'CALCULADA', provisoria: false,
+    atual: { dataAlvoIso: '2026-04-10', estado: 'PREVISTA' }
+  });
+  const historical = server.jornadaCtmsClassificarImpacto_({
+    dataPrevistaIso: '2026-04-08', statusCalculo: 'CALCULADA', provisoria: false,
+    atual: { dataAlvoIso: '2026-04-10', estado: 'REALIZADA' }
+  });
+  const review = server.jornadaCtmsClassificarImpacto_({
+    dataPrevistaIso: '', statusCalculo: 'PENDENTE', provisoria: false,
+    atual: { dataAlvoIso: '2026-04-10', estado: 'PREVISTA' }
+  });
+  const provisionalSame = server.jornadaCtmsClassificarImpacto_({
+    dataPrevistaIso: '2026-04-10', statusCalculo: 'PROVISORIA', provisoria: true,
+    atual: { dataAlvoIso: '2026-04-10', estado: 'PREVISTA' }
+  });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(same)), {
+    tipo: 'SEM_MUDANCA', diferencaDias: 0, requerAtencao: false,
+    motivo: 'A data CTMS coincide com o cálculo atual.'
+  });
+  assert.equal(changed.tipo, 'MUDARIA');
+  assert.equal(changed.diferencaDias, 5);
+  assert.match(changed.motivo, /5 dia\(s\).*depois/);
+  assert.equal(historical.tipo, 'DIVERGENCIA_HISTORICA');
+  assert.equal(historical.diferencaDias, -2);
+  assert.match(historical.motivo, /histórico não será alterado/);
+  assert.equal(review.tipo, 'REVISAO');
+  assert.equal(review.requerAtencao, true);
+  assert.equal(provisionalSame.tipo, 'SEM_MUDANCA');
+  assert.equal(provisionalSame.requerAtencao, true);
+  assert.match(provisionalSame.motivo, /depende da realização/);
 });
 
 test('motor CTMS exige escolha manual, filtra braço e fica restrito aos projetos piloto', () => {
