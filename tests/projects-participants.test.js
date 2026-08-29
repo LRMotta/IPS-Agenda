@@ -419,6 +419,7 @@ test('jornada do participante calcula e exibe a janela em torno da data ideal', 
 test('jornada oferece prévia CTMS lado a lado sem substituir o cálculo atual', () => {
   const client = readProjectFile('IndexCoreScripts.html');
   const styles = readProjectFile('IndexStyles.html');
+  const server = readProjectFile('WebApp.gs');
   const jornadaHtml = sourceBetween(client, 'function jornadaParticipanteHtml_', 'var _jornadaParticipanteAtual');
   const context = vm.createContext({ esc: (value) => String(value || '') });
   vm.runInContext(jornadaHtml, context);
@@ -432,8 +433,13 @@ test('jornada oferece prévia CTMS lado a lado sem substituir o cálculo atual',
   assert.match(html, /Prévia CTMS/);
   assert.match(html, /abrirPreviaCtmsJornada/);
   assert.match(client, /Prévia lado a lado do motor CTMS/);
-  assert.match(client, /Nenhuma alteração será gravada/);
-  assert.match(client, /não substitui a Jornada atual, não altera reservas e não alimenta a Agenda/);
+  assert.match(client, /Projeto em modo de prévia/);
+  assert.match(client, /Somente comparações aprovadas alimentam Jornada, janelas, alertas e estoque/);
+  assert.match(client, /function definirAprovacaoCtmsJornada\(button\)/);
+  assert.match(client, /Revisão CTMS pendente/);
+  assert.match(client, /CTMS aprovado/);
+  assert.match(server, /jornadaCtmsAplicarAoOperacional_\(visitasJornada, previaCtms, hoje\)[\s\S]*?jornadaVisitasPrevisaoSeisMeses_\(visitasJornada, hoje\)[\s\S]*?var dataAlvo = visita\.dataAlvoObj/);
+  assert.match(client, /Marcos e escolhas/);
   assert.match(client, /Cálculo atual/);
   assert.match(client, /Motor CTMS/);
   assert.match(client, /Mostrar somente diferenças e revisões/);
@@ -574,6 +580,115 @@ test('motor CTMS exige escolha manual, filtra braço e fica restrito aos projeto
   assert.equal(server.jornadaCtmsProjetoPiloto_('MonumenTAL-3'), true);
   assert.equal(server.jornadaCtmsProjetoPiloto_('CONFIRMATION-HF'), true);
   assert.equal(server.jornadaCtmsProjetoPiloto_('Outro protocolo'), false);
+});
+
+test('marcos e escolhas CTMS são individuais e a ativação continua manual no projeto', () => {
+  const content = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const serverSource = readProjectFile('WebApp.gs');
+  const server = runFile('WebApp.gs');
+
+  assert.match(content, /id="pCtmsJornadaAtivo"/);
+  assert.match(content, /Não — somente prévia/);
+  assert.match(client, /ctmsJornadaAtivo: document\.getElementById\('pCtmsJornadaAtivo'\)\.value === 'Sim'/);
+  assert.match(client, /function abrirConfiguracaoCtmsJornada\(\)/);
+  assert.match(client, /method: 'salvarConfiguracaoCtmsParticipante'/);
+  assert.match(serverSource, /header: 'CTMS Braço ID'/);
+  assert.match(serverSource, /header: 'CTMS Marcos \(JSON\)'/);
+  assert.match(serverSource, /header: 'CTMS Escolhas \(JSON\)'/);
+  assert.match(serverSource, /header: 'CTMS Aprovações \(JSON\)'/);
+  assert.match(serverSource, /codexAssertCanWrite_\('salvarConfiguracaoCtmsParticipante'/);
+  assert.match(serverSource, /codexAssertCanWrite_\('definirAprovacaoCtmsParticipante'/);
+
+  const config = server.jornadaCtmsMontarConfiguracao_([
+    { idSoA: 'A', nome: 'Marco', referencia: 'RANDOMIZACAO', ativo: true, bracoIds: ['BR-A'] },
+    { idSoA: 'B', codigo: 'V2', nome: 'Seguimento', referencia: 'A', referenciaAlternativa: 'PROGRESSAO_DOENCA', criterioReferencias: 'SELECAO_MANUAL', ativo: true, bracoIds: ['BR-A'] },
+    { idSoA: 'C', nome: 'Outro braço', referencia: 'INCLUSAO', ativo: true, bracoIds: ['BR-B'] }
+  ], [{ idBraco: 'BR-A', nome: 'Braço A' }, { idBraco: 'BR-B', nome: 'Braço B' }], {
+    bracoId: 'BR-A', marcos: { RANDOMIZACAO: '2026-03-01' }, escolhasReferencias: { B: 'A' }
+  }, '');
+  assert.deepEqual(Array.from(config.marcosNecessarios, item => item.chave), ['RANDOMIZACAO', 'PROGRESSAO_DOENCA']);
+  assert.deepEqual(Array.from(config.escolhasNecessarias, item => item.idSoA), ['B']);
+  assert.equal(config.escolhasReferencias.B, 'A');
+
+  assert.throws(() => server.jornadaCtmsNormalizarConfigParticipante_({ bracoId: 'BR-X' }, [], [{ idBraco: 'BR-A' }]), /não pertence/);
+  assert.throws(() => server.jornadaCtmsNormalizarConfigParticipante_({ marcos: { RANDOMIZACAO: '2026-02-31' } }, [], []), /inválida/);
+});
+
+test('ativação CTMS altera somente previsões futuras calculadas e preserva Agenda e histórico', () => {
+  const server = runFile('WebApp.gs');
+  const visitas = [
+    { idSoA: 'R', estado: 'REALIZADA', dataAlvoIso: '2026-01-01' },
+    { idSoA: 'A', estado: 'AGENDADA', dataAlvoIso: '2026-01-05' },
+    { idSoA: 'P', estado: 'PREVISTA', dataAlvoIso: '2026-01-10' },
+    { idSoA: 'X', estado: 'A_PROGRAMAR', dataAlvoIso: '' }
+  ];
+  const previa = { motorAtivo: true, linhas: [
+    { idSoA: 'R', statusCalculo: 'CALCULADA', dataPrevistaIso: '2026-02-01', dataPrevista: '01/02/2026' },
+    { idSoA: 'A', statusCalculo: 'CALCULADA', dataPrevistaIso: '2026-02-05', dataPrevista: '05/02/2026' },
+    { idSoA: 'P', statusCalculo: 'CALCULADA', dataPrevistaIso: '2026-02-10', dataPrevista: '10/02/2026', janelaInicio: '08/02/2026', janelaFim: '12/02/2026', aprovada: true },
+    { idSoA: 'X', statusCalculo: 'PENDENTE', dataPrevistaIso: '' }
+  ] };
+  const result = server.jornadaCtmsAplicarAoOperacional_(visitas, previa, new Date(2026, 1, 9));
+  assert.equal(result[0].dataAlvoIso, '2026-01-01');
+  assert.equal(result[1].dataAlvoIso, '2026-01-05');
+  assert.equal(result[2].dataAlvoIso, '2026-02-10');
+  assert.equal(result[2].fontePrevisao, 'CTMS');
+  assert.equal(result[2].ctmsComparacao.integrada, true);
+  assert.equal(result[2].emJanela, true);
+  assert.equal(result[2].atrasada, false);
+  assert.equal(result[3].estado, 'A_PROGRAMAR');
+  assert.equal(visitas[2].dataAlvoIso, '2026-01-10');
+});
+
+test('participante legado sem colunas CTMS continua legível e sem mutação', () => {
+  const server = runFile('WebApp.gs');
+  server.getCodexSheetDataByName_ = () => [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto'],
+    ['CAD-1', 'Pessoa', '', '', 'P-1', 'Projeto A']
+  ];
+  const config = server.jornadaCtmsLerConfigParticipante_({ idCadastro: 'CAD-1' });
+  assert.deepEqual(JSON.parse(JSON.stringify(config)), { bracoId: '', marcos: {}, escolhasReferencias: {}, aprovacoes: {} });
+});
+
+test('aprovação CTMS fica vinculada à comparação e expira quando o cálculo muda', () => {
+  const server = runFile('WebApp.gs');
+  const visitas = [{ idSoA: 'A', nome: 'Marco', ordem: 1, referencia: 'RANDOMIZACAO', intervaloDias: 0, baseCalculoEfetiva: 'MANTER_DATAS_PREVISTAS', papelCronograma: 'MARCO_CALCULO', ativo: true }];
+  const input = {
+    projeto: 'MonumenTAL-3', participante: 'P-1', motorAtivo: true, visitas,
+    marcos: { RANDOMIZACAO: '2026-03-01' },
+    legacyVisitas: [{ idSoA: 'A', estado: 'A_PROGRAMAR', dataAlvoIso: '', dataAlvo: '' }]
+  };
+  const pending = server.jornadaCtmsCalcularPreviaPura_(input);
+  assert.equal(pending.linhas[0].aprovavel, true);
+  assert.equal(pending.linhas[0].aprovada, false);
+  assert.equal(pending.resumo.pendentesAprovacao, 1);
+
+  const approved = server.jornadaCtmsCalcularPreviaPura_(Object.assign({}, input, {
+    aprovacoes: { A: { fingerprint: pending.linhas[0].fingerprint, aprovadoEm: '2026-08-28T10:00:00-03:00', aprovadoPor: 'qa@example.org' } }
+  }));
+  assert.equal(approved.linhas[0].aprovada, true);
+  assert.equal(approved.resumo.aprovadas, 1);
+
+  const changed = server.jornadaCtmsCalcularPreviaPura_(Object.assign({}, input, {
+    marcos: { RANDOMIZACAO: '2026-03-02' },
+    aprovacoes: { A: { fingerprint: pending.linhas[0].fingerprint } }
+  }));
+  assert.equal(changed.linhas[0].aprovada, false);
+  assert.equal(changed.linhas[0].aprovacaoObsoleta, true);
+  assert.notEqual(changed.linhas[0].fingerprint, pending.linhas[0].fingerprint);
+});
+
+test('CTMS ativo sem aprovação anota alerta mas não altera jornada, janela ou estoque', () => {
+  const server = runFile('WebApp.gs');
+  const original = [{ idSoA: 'P', estado: 'PREVISTA', dataAlvoIso: '2026-01-10', dataAlvo: '10/01/2026', dataAlvoObj: new Date(2026, 0, 10), janelaInicio: '08/01/2026', janelaFim: '12/01/2026' }];
+  const previa = { motorAtivo: true, linhas: [{ idSoA: 'P', statusCalculo: 'CALCULADA', dataPrevistaIso: '2026-02-10', dataPrevista: '10/02/2026', janelaInicio: '08/02/2026', janelaFim: '12/02/2026', aprovada: false, aprovavel: true, impacto: { motivo: 'Mudaria a data.' } }] };
+  const result = server.jornadaCtmsAplicarAoOperacional_(original, previa, new Date(2026, 1, 9));
+  assert.equal(result[0].dataAlvoIso, '2026-01-10');
+  assert.equal(result[0].fontePrevisao, undefined);
+  assert.equal(result[0].ctmsComparacao.integrada, false);
+  assert.equal(result[0].ctmsComparacao.aprovavel, true);
+  assert.equal(original[0].ctmsComparacao, undefined);
 });
 
 test('motor CTMS resolve primeiro e último marco e preserva visita legada sem regra', () => {

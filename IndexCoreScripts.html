@@ -3999,6 +3999,13 @@ function jornadaParticipanteOverlay_() {
 function jornadaParticipanteHtml_(dados) {
   var visitas = dados.visitas || [];
   var conciliacao = dados.conciliacao || [];
+  function ctmsState(visita) {
+    var ctms = visita.ctmsComparacao || {};
+    if (ctms.integrada) return '<span class="jornada-ctms-operational integrated"><span class="material-symbols-outlined">verified</span>CTMS aprovado</span>';
+    if (ctms.obsoleta) return '<span class="jornada-ctms-operational stale"><span class="material-symbols-outlined">update</span>Reaprovação CTMS</span>';
+    if (ctms.aprovavel && !ctms.aprovada) return '<span class="jornada-ctms-operational pending"><span class="material-symbols-outlined">pending_actions</span>CTMS pendente</span>';
+    return '';
+  }
   function estado(visita) {
     var mapa = { REALIZADA: ['Concluída', '#137333'], AGENDADA: ['Agendada', '#1266f1'], PREVISTA: ['Prevista', '#6c7a91'], A_PROGRAMAR: ['A programar', '#6c7a91'] };
     var item = mapa[visita.estado] || mapa.A_PROGRAMAR;
@@ -4025,14 +4032,14 @@ function jornadaParticipanteHtml_(dados) {
       + (temJanela && !realizada ? '<div class="jornada-window-band"></div>' : '')
       + '<div class="jornada-step-name">' + esc(visita.nome) + '</div><div class="jornada-step-code">' + esc(visita.codigo || 'Visita') + '</div>'
       + '<div class="jornada-node' + cor + '"><span class="material-symbols-outlined">' + (realizada ? 'check' : 'circle') + '</span></div>'
-      + '<div class="jornada-step-date">' + esc(visita.dataAlvo || 'A programar') + '</div>'
+      + '<div class="jornada-step-date">' + esc(visita.dataAlvo || 'A programar') + '</div>' + ctmsState(visita)
       + '<div class="jornada-step-status' + cor + '">' + esc(realizada ? 'Concluída' : (visita.atrasada ? 'Atenção necessária' : (visita.estado === 'AGENDADA' ? 'Agendada' : 'Prevista'))) + '</div>'
       + (temJanela ? '<div class="jornada-step-window">Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) + '</div>' : '')
       + '</article>';
   }).join('');
   var prontidao = dados.visitasProntidao || visitas.filter(function(visita) { return visita.estado !== 'REALIZADA'; }).slice(0, 4);
   var operacao = prontidao.map(function(visita) {
-    return '<section class="jornada-readiness-card' + (visita.atrasada ? ' danger' : '') + '"><div class="jornada-readiness-title"><strong>' + esc(visita.nome) + '</strong>' + estado(visita) + '</div><div class="jornada-readiness-window">' + (visita.janelaInicio ? 'Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) : 'Data ideal: ' + esc(visita.dataAlvo || 'Sem data calculável')) + '</div>' + kits(visita) + '</section>';
+    return '<section class="jornada-readiness-card' + (visita.atrasada ? ' danger' : '') + '"><div class="jornada-readiness-title"><strong>' + esc(visita.nome) + '</strong>' + estado(visita) + '</div><div class="jornada-readiness-window">' + (visita.janelaInicio ? 'Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) : 'Data ideal: ' + esc(visita.dataAlvo || 'Sem data calculável')) + '</div>' + ctmsState(visita) + kits(visita) + '</section>';
   }).join('') || '<div style="color:#7b8794">Nenhuma visita futura identificada.</div>';
   if (!dados.possuiSoA) timeline = '<div style="color:#7b8794;padding:18px 0">Este projeto não possui SoA. O histórico abaixo permanece disponível e as visitas futuras podem ser acompanhadas quando forem agendadas.</div>';
   var historicoAnterior = dados.eventosAnteriores || [];
@@ -4046,7 +4053,9 @@ function jornadaParticipanteHtml_(dados) {
   var conciliarHtml = conciliacao.length ? '<button class="ag-tb-btn" onclick="abrirConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">rule</span> Conciliar ' + conciliacao.length + ' nome(s)</button>' : '';
   var previaCtmsHtml = dados.previaCtms ? '<button class="ag-tb-btn primary" onclick="abrirPreviaCtmsJornada()"><span class="material-symbols-outlined">compare_arrows</span> Prévia CTMS</button>' : '';
   var acoesHtml = previaCtmsHtml || conciliarHtml ? '<div class="jornada-title-actions">' + previaCtmsHtml + conciliarHtml + '</div>' : '';
-  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p><div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+  var alertasCtms = dados.alertasCtms || {};
+  var alertaCtmsHtml = alertasCtms.projetoAtivo && (alertasCtms.pendentes || alertasCtms.obsoletas) ? '<div class="jornada-ctms-alert"><span class="material-symbols-outlined">rule</span><div><strong>Revisão CTMS pendente</strong><span>' + Number(alertasCtms.pendentes || 0) + ' comparação(ões) aguardam aprovação' + (alertasCtms.obsoletas ? ' e ' + Number(alertasCtms.obsoletas) + ' exigem reaprovação' : '') + '. Até lá, Jornada, janelas, alertas e estoque mantêm o cálculo atual.</span></div></div>' : '';
+  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p>' + alertaCtmsHtml + '<div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
 }
 
 var _jornadaParticipanteAtual = null;
@@ -4099,12 +4108,19 @@ function abrirPreviaCtmsJornada() {
     };
     return '<span class="jornada-ctms-impact ' + String(impact.tipo || 'REVISAO').toLowerCase() + '">' + esc(labels[impact.tipo] || 'Requer revisão') + '</span>';
   }
+  function approvalLabel(row) {
+    if (row.aprovada) return '<span class="jornada-ctms-approval approved">Aprovada</span>';
+    if (row.aprovacaoObsoleta) return '<span class="jornada-ctms-approval stale">Reaprovação necessária</span>';
+    if (row.aprovavel) return '<span class="jornada-ctms-approval pending">Aguardando aprovação</span>';
+    return '<span class="jornada-ctms-approval unavailable">Não aprovável</span>';
+  }
   var rows = (previa.linhas || []).map(function(row) {
     var atual = row.atual || {};
     var impact = row.impacto || { tipo: 'REVISAO', requerAtencao: true, motivo: 'Impacto ainda não classificado.' };
     var attention = !!impact.requerAtencao || !!row.provisoria;
     var warnings = (row.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
-    return '<article class="jornada-ctms-row impacto-' + String(impact.tipo || 'REVISAO').toLowerCase() + '" data-ctms-atencao="' + (attention ? '1' : '0') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'SoA') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div><div class="jornada-ctms-badges">' + impactLabel(row) + statusLabel(row) + '</div></div>' +
+    var approvalAction = row.aprovavel ? '<div class="jornada-ctms-approval-action"><div><strong>' + (row.aprovada ? 'Comparação aprovada' : row.aprovacaoObsoleta ? 'O cálculo mudou desde a aprovação' : 'Revisão operacional necessária') + '</strong><span>' + (row.aprovada ? 'Esta data e janela podem alimentar a operação enquanto permanecerem idênticas.' : row.aprovacaoObsoleta ? 'Revise a nova comparação antes de voltar a integrar a operação.' : 'A Jornada e o estoque continuam usando o cálculo atual até a aprovação.') + '</span></div><button type="button" class="ag-tb-btn ' + (row.aprovada ? '' : 'primary') + '" data-ctms-id="' + esc(row.idSoA) + '" data-ctms-fingerprint="' + esc(row.fingerprint) + '" data-ctms-approve="' + (row.aprovada ? '0' : '1') + '" onclick="definirAprovacaoCtmsJornada(this)"><span class="material-symbols-outlined">' + (row.aprovada ? 'undo' : 'approval') + '</span>' + (row.aprovada ? 'Revogar aprovação' : 'Aprovar comparação') + '</button></div>' : '';
+    return '<article class="jornada-ctms-row impacto-' + String(impact.tipo || 'REVISAO').toLowerCase() + '" data-ctms-atencao="' + (attention ? '1' : '0') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'SoA') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div><div class="jornada-ctms-badges">' + approvalLabel(row) + impactLabel(row) + statusLabel(row) + '</div></div>' +
       '<div class="jornada-ctms-reason"><span class="material-symbols-outlined">' + (impact.tipo === 'SEM_MUDANCA' ? 'check_circle' : impact.tipo === 'REVISAO' ? 'rule' : 'difference') + '</span><strong>' + esc(impact.motivo || 'Impacto ainda não explicado.') + '</strong></div>' +
       '<div class="jornada-ctms-columns"><section class="jornada-ctms-card current"><h4>Cálculo atual</h4>' +
         value('Data exibida', atual.dataAlvo, 'Sem data calculável') + value('Estado', atual.estado, 'A programar') +
@@ -4114,12 +4130,14 @@ function abrirPreviaCtmsJornada() {
         value('Realizada', row.dataRealizada, 'Não realizada') + value('Janela', row.janelaInicio ? row.janelaInicio + ' – ' + row.janelaFim : '', 'Sem janela') +
         value('Regra', baseLabel(row.baseCalculo)) + value('Referência usada', row.referenciaUtilizada, 'Não resolvida') +
         value('Origem da base', row.origemBase, 'Não resolvida') +
-      '</section></div>' + (warnings ? '<ul class="jornada-ctms-warnings">' + warnings + '</ul>' : '') + '</article>';
+      '</section></div>' + (warnings ? '<ul class="jornada-ctms-warnings">' + warnings + '</ul>' : '') + approvalAction + '</article>';
   }).join('');
   var globalWarnings = (previa.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
-  content.innerHTML = '<div class="jornada-ctms-preview"><div class="jornada-ctms-toolbar"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><div><h3>Prévia lado a lado do motor CTMS</h3><p>' + esc(previa.projeto || '') + ' · ' + esc(previa.participante || '') + '</p></div></div>' +
-    '<div class="jornada-ctms-readonly"><span class="material-symbols-outlined">visibility</span><div><strong>Nenhuma alteração será gravada.</strong><span>O cálculo CTMS abaixo não substitui a Jornada atual, não altera reservas e não alimenta a Agenda.</span></div></div>' +
-    '<div class="jornada-ctms-summary"><span class="divergencias"><strong>' + Number(resumo.divergencias || 0) + '</strong> datas diferentes</span><span class="provisorias"><strong>' + Number(resumo.provisorias || 0) + '</strong> dependem de realização</span><span class="revisao"><strong>' + Number(resumo.revisao || 0) + '</strong> requerem revisão</span><span class="sem-mudanca"><strong>' + Number(resumo.semMudanca || 0) + '</strong> sem mudança</span></div>' +
+  var activationText = previa.projetoAtivo ? 'CTMS ativo · integração após aprovação' : 'Projeto em modo de prévia';
+  var explanation = previa.projetoAtivo ? 'Somente comparações aprovadas alimentam Jornada, janelas, alertas e estoque. Realizadas e agendadas permanecem autoritativas.' : 'A comparação pode ser aprovada, mas só alimentará a operação quando o CTMS também estiver ativo no projeto.';
+  content.innerHTML = '<div class="jornada-ctms-preview"><div class="jornada-ctms-toolbar"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><div><h3>Prévia lado a lado do motor CTMS</h3><p>' + esc(previa.projeto || '') + ' · ' + esc(previa.participante || '') + '</p></div><div class="jornada-ctms-toolbar-actions"><span class="jornada-ctms-activation ' + (previa.projetoAtivo ? 'active' : '') + '">' + esc(activationText) + '</span><button class="ag-tb-btn primary" type="button" onclick="abrirConfiguracaoCtmsJornada()"><span class="material-symbols-outlined">tune</span> Marcos e escolhas</button></div></div>' +
+    '<div class="jornada-ctms-readonly"><span class="material-symbols-outlined">' + (previa.projetoAtivo ? 'verified' : 'visibility') + '</span><div><strong>' + esc(activationText) + '.</strong><span>' + esc(explanation) + '</span></div></div>' +
+    '<div class="jornada-ctms-summary"><span class="aprovadas"><strong>' + Number(resumo.aprovadas || 0) + '</strong> aprovadas</span><span class="pendentes-aprovacao"><strong>' + Number(resumo.pendentesAprovacao || 0) + '</strong> aguardam aprovação</span><span class="divergencias"><strong>' + Number(resumo.divergencias || 0) + '</strong> datas diferentes</span><span class="provisorias"><strong>' + Number(resumo.provisorias || 0) + '</strong> dependem de realização</span><span class="revisao"><strong>' + Number(resumo.revisao || 0) + '</strong> requerem revisão</span><span class="sem-mudanca"><strong>' + Number(resumo.semMudanca || 0) + '</strong> sem mudança</span></div>' +
     '<div class="jornada-ctms-filter"><div><strong>' + Number(resumo.total || 0) + ' visitas comparadas</strong><span>Priorize o que mudaria ou ainda precisa de decisão.</span></div><label><input id="jornadaCtmsSomenteDivergencias" type="checkbox" checked onchange="filtrarPreviaCtmsJornada(this.checked)"><span>Mostrar somente diferenças e revisões</span></label></div>' +
     (globalWarnings ? '<details class="jornada-ctms-global"><summary>Alertas da prévia (' + (previa.avisos || []).length + ')</summary><ul>' + globalWarnings + '</ul></details>' : '') +
     '<div class="jornada-ctms-list">' + rows + '<div id="jornadaCtmsFiltroVazio" class="jornada-history-empty" hidden>Nenhuma diferença ou revisão nesta prévia. Desative o filtro para ver todas as visitas.</div>' + (!rows ? '<div class="jornada-history-empty">Nenhuma visita disponível para comparação.</div>' : '') + '</div></div>';
@@ -4136,6 +4154,92 @@ function filtrarPreviaCtmsJornada(somenteAtencao) {
   });
   var empty = document.getElementById('jornadaCtmsFiltroVazio');
   if (empty) empty.hidden = !rows.length || visible > 0;
+}
+
+function definirAprovacaoCtmsJornada(button) {
+  var participante = _jornadaParticipanteAtual || {};
+  var dados = _jornadaParticipanteDados || {};
+  if (!button) return;
+  var aprovar = button.getAttribute('data-ctms-approve') === '1';
+  appSetButtonBusy(button, true);
+  appServerRun({ method: 'definirAprovacaoCtmsParticipante', args: [{
+    idCadastro: participante.id || (dados.participante || {}).idCadastro,
+    nome: participante.nome,
+    idParticipante: participante.idParticipante,
+    projeto: participante.projeto,
+    braco: participante.braco,
+    idSoA: button.getAttribute('data-ctms-id') || '',
+    fingerprint: button.getAttribute('data-ctms-fingerprint') || '',
+    aprovar: aprovar
+  }], onSuccess: function(result) {
+    appSetButtonBusy(button, false);
+    _jornadaParticipanteDados = result && result.jornada || dados;
+    snack((result && result.msg) || (aprovar ? 'Comparação CTMS aprovada.' : 'Aprovação CTMS revogada.'));
+    abrirPreviaCtmsJornada();
+  }, onFailure: function(error) {
+    appSetButtonBusy(button, false);
+    snackErro(appErrorMessage(error));
+  } });
+}
+
+function jornadaCtmsReferenciaLabel_(value) {
+  var labels = { RANDOMIZACAO: 'Randomização', INCLUSAO: 'Inclusão', ULTIMA_DOSE: 'Última dose', FIM_TRATAMENTO: 'Fim do tratamento', PROGRESSAO_DOENCA: 'Progressão da doença', OUTRA: 'Outra data de referência' };
+  return labels[value] || value || 'Referência';
+}
+
+function abrirConfiguracaoCtmsJornada() {
+  var content = document.getElementById('jornadaParticipanteConteudo');
+  var previa = (_jornadaParticipanteDados || {}).previaCtms || {};
+  var config = previa.configuracao || {};
+  if (!content) return;
+  var bracos = (config.bracos || []).map(function(braco) {
+    return '<option value="' + esc(braco.idBraco) + '"' + (String(config.bracoId || '') === String(braco.idBraco || '') ? ' selected' : '') + '>' + esc(braco.nome || braco.idBraco) + '</option>';
+  }).join('');
+  var marcos = (config.marcosNecessarios || []).map(function(marco) {
+    return '<label class="jornada-ctms-config-field"><span>' + esc(marco.label) + '</span><input class="f-input" type="date" data-ctms-marco="' + esc(marco.chave) + '" value="' + esc((config.marcos || {})[marco.chave] || '') + '"></label>';
+  }).join('') || '<div class="jornada-ctms-config-empty">Nenhum marco especial é exigido pelas visitas deste braço.</div>';
+  var escolhas = (config.escolhasNecessarias || []).map(function(item) {
+    var selected = String((config.escolhasReferencias || {})[item.idSoA] || '');
+    var options = (item.opcoes || []).map(function(option) { return '<option value="' + esc(option.valor) + '"' + (selected === String(option.valor) ? ' selected' : '') + '>' + esc(jornadaCtmsReferenciaLabel_(option.label)) + '</option>'; }).join('');
+    return '<label class="jornada-ctms-choice"><span><strong>' + esc(item.codigo || 'SoA') + '</strong>' + esc(item.nome || 'Visita') + '</span><select class="f-input" data-ctms-escolha="' + esc(item.idSoA) + '"><option value="">Decidir depois</option>' + options + '</select></label>';
+  }).join('') || '<div class="jornada-ctms-config-empty">Nenhuma visita deste braço exige escolha manual entre referências.</div>';
+  content.innerHTML = '<div class="jornada-ctms-config"><div class="jornada-ctms-toolbar"><button class="ag-tb-btn" type="button" onclick="abrirPreviaCtmsJornada()"><span class="material-symbols-outlined">arrow_back</span> Voltar à prévia</button><div><h3>Marcos e escolhas CTMS</h3><p>Configuração individual de ' + esc(previa.participante || '') + '</p></div><span class="jornada-ctms-activation ' + (previa.projetoAtivo ? 'active' : '') + '">' + esc(previa.projetoAtivo ? 'CTMS ativo no projeto' : 'Projeto em modo de prévia') + '</span></div>' +
+    '<div class="jornada-ctms-readonly"><span class="material-symbols-outlined">info</span><div><strong>Estas escolhas pertencem somente a este participante.</strong><span>A ativação do motor continua sendo feita manualmente no cadastro do projeto.</span></div></div>' +
+    '<section class="jornada-ctms-config-section"><h4>Braço do participante</h4><p>Escolha o braço padronizado para incluir as visitas específicas do protocolo.</p><select id="jornadaCtmsBraco" class="f-input"><option value="">Sem braço definido</option>' + bracos + '</select></section>' +
+    '<section class="jornada-ctms-config-section"><h4>Marcos de data</h4><p>Preencha apenas datas documentadas. Campos vazios permanecem pendentes.</p><div class="jornada-ctms-config-grid">' + marcos + '</div></section>' +
+    '<section class="jornada-ctms-config-section"><h4>Escolhas entre referências</h4><p>Use quando o protocolo aceita mais de uma referência e exige decisão por participante.</p><div class="jornada-ctms-choice-list">' + escolhas + '</div></section>' +
+    '<div class="jornada-ctms-config-actions"><button class="ag-tb-btn" type="button" onclick="abrirPreviaCtmsJornada()">Cancelar</button><button id="btnSalvarConfigCtms" class="ag-tb-btn primary" type="button" onclick="salvarConfiguracaoCtmsJornada()"><span class="material-symbols-outlined">save</span> Salvar escolhas</button></div><div id="statusConfigCtms" class="jornada-ctms-config-status"></div></div>';
+}
+
+function salvarConfiguracaoCtmsJornada() {
+  var participante = _jornadaParticipanteAtual || {};
+  var dados = _jornadaParticipanteDados || {};
+  var marcos = {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-marco]'), function(input) { if (input.value) marcos[input.getAttribute('data-ctms-marco')] = input.value; });
+  var escolhas = {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-escolha]'), function(select) { if (select.value) escolhas[select.getAttribute('data-ctms-escolha')] = select.value; });
+  var btn = document.getElementById('btnSalvarConfigCtms');
+  var status = document.getElementById('statusConfigCtms');
+  appSetButtonBusy(btn, true);
+  if (status) status.textContent = 'Salvando configuração…';
+  appServerRun({ method: 'salvarConfiguracaoCtmsParticipante', args: [{
+    idCadastro: participante.id || (dados.participante || {}).idCadastro,
+    nome: participante.nome,
+    idParticipante: participante.idParticipante,
+    projeto: participante.projeto,
+    braco: participante.braco,
+    bracoId: (document.getElementById('jornadaCtmsBraco') || {}).value || '',
+    marcos: marcos,
+    escolhasReferencias: escolhas
+  }], onSuccess: function(result) {
+    appSetButtonBusy(btn, false);
+    _jornadaParticipanteDados = result && result.jornada || dados;
+    snack((result && result.msg) || 'Configuração CTMS salva.');
+    abrirPreviaCtmsJornada();
+  }, onFailure: function(error) {
+    appSetButtonBusy(btn, false);
+    if (status) status.textContent = appErrorMessage(error);
+  } });
 }
 
 function abrirReservaPreviaJornada(idSoA) {
@@ -4293,7 +4397,7 @@ function abrirJornadaParticipante(participante) {
   content.innerHTML = '<div style="padding:34px;text-align:center;color:#64748b"><div class="spinner"></div>Carregando jornada…</div>';
   abrirOverlay('modalJornadaParticipante');
   _jornadaParticipanteAtual = participante;
-  appServerRun({ method: 'consultarJornadaParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
+  appServerRun({ method: 'consultarJornadaParticipante', args: [{ idCadastro: participante.id, nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
     _jornadaParticipanteDados = dados || {};
     content.innerHTML = jornadaParticipanteHtml_(dados || {});
   }, onFailure: function(e) {
@@ -5493,6 +5597,7 @@ function abrirFormProjeto(projeto) {
   projetoCourierTemperaturaIds_().forEach(function(id) { preencherProjetoCourierTemperaturas_(id, ''); });
   document.getElementById('pSituacaoEnvioAmostras').value = '';
   document.getElementById('pSoABaseCalculoPadrao').value = '';
+  document.getElementById('pCtmsJornadaAtivo').value = 'Nao';
   atualizarProjetoCourierOptions_();
   validarProjetoCouriers_(false);
   carregarSoAVisitasProjeto(null);
@@ -5525,6 +5630,7 @@ function abrirFormProjeto(projeto) {
     preencherProjetoCourierTemperaturas_('pCourierAdicional2Temperaturas', projeto.courierAdicional2Temperaturas || projeto.courierAdicional2Temperatura || '');
     document.getElementById('pSituacaoEnvioAmostras').value = projeto.situacaoEnvioAmostras || '';
     document.getElementById('pSoABaseCalculoPadrao').value = projeto.soaBaseCalculoPadrao || '';
+    document.getElementById('pCtmsJornadaAtivo').value = projeto.ctmsJornadaAtivo ? 'Sim' : 'Nao';
     atualizarProjetoCourierOptions_();
     carregarSoAVisitasProjeto(projeto);
     carregarBracosProjeto(projeto);
@@ -5573,7 +5679,8 @@ function salvarProjetoApp() {
     courierAdicional1Temperaturas: projetoCourierTemperaturasSelecionadas_('pCourierAdicional1Temperaturas'),
     courierAdicional2Temperaturas: projetoCourierTemperaturasSelecionadas_('pCourierAdicional2Temperaturas'),
     situacaoEnvioAmostras: document.getElementById('pSituacaoEnvioAmostras').value,
-    soaBaseCalculoPadrao: document.getElementById('pSoABaseCalculoPadrao').value
+    soaBaseCalculoPadrao: document.getElementById('pSoABaseCalculoPadrao').value,
+    ctmsJornadaAtivo: document.getElementById('pCtmsJornadaAtivo').value === 'Sim'
   };
   appSetButtonBusy(btn, true);
   appSetStatus('statusProj', '\u23F3 Processando...');

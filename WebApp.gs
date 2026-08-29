@@ -105,6 +105,16 @@ function salvarConcilicaoVisitasParticipante(payload) {
   return salvarConcilicaoVisitasParticipante_(payload);
 }
 
+function salvarConfiguracaoCtmsParticipante(payload) {
+  codexAssertCanWrite_('salvarConfiguracaoCtmsParticipante', 'Cadastros', (payload && (payload.idCadastro || payload.idParticipante || payload.nome)) || '');
+  return salvarConfiguracaoCtmsParticipante_(payload);
+}
+
+function definirAprovacaoCtmsParticipante(payload) {
+  codexAssertCanWrite_('definirAprovacaoCtmsParticipante', 'Cadastros', (payload && (payload.idCadastro || payload.idParticipante || payload.nome)) || '');
+  return definirAprovacaoCtmsParticipante_(payload);
+}
+
 
 // Retorna a URL base do webapp (usada para navegação entre páginas)
 function doPost(e) {
@@ -3313,6 +3323,7 @@ function getProjetos() {
       courierAdicional2Temperaturas: courierTempCols.adicional2 >= 0 ? String(r[courierTempCols.adicional2] || '').trim() : '',
       situacaoEnvioAmostras: situacaoEnvioCol >= 0 ? String(r[situacaoEnvioCol] || '').trim() : '',
       soaBaseCalculoPadrao: soaConfigCols.baseCalculoPadrao >= 0 ? soaNormalizarBaseCalculo_(r[soaConfigCols.baseCalculoPadrao]) : '',
+      ctmsJornadaAtivo: soaConfigCols.ctmsJornadaAtivo >= 0 && ['sim', 'true', '1'].indexOf(normText_(r[soaConfigCols.ctmsJornadaAtivo])) >= 0,
       dataSiv:       siv.data || '',
       dataSivInicio: siv.inicio || siv.data || '',
       dataSivFim:    siv.fim || siv.data || ''
@@ -4859,15 +4870,22 @@ var PROJETO_SOA_CONFIG_FIELDS_ = [{
   key: 'soaBaseCalculoPadrao',
   header: 'Base padrão do cronograma SoA',
   aliases: ['Base padrao do cronograma SoA', 'Base padrão SoA', 'Base padrao SoA']
+}, {
+  key: 'ctmsJornadaAtivo',
+  header: 'CTMS ativo na Jornada',
+  aliases: ['CTMS ativo', 'Motor CTMS ativo', 'Ativar CTMS na Jornada']
 }];
 
 function projetoSoAConfigColumnMap_(headers) {
   var normalized = (headers || []).map(function(header) { return normText_(header); });
-  var field = PROJETO_SOA_CONFIG_FIELDS_[0];
-  var names = [field.header].concat(field.aliases || []);
-  var index = -1;
-  for (var i = 0; i < names.length && index < 0; i++) index = normalized.indexOf(normText_(names[i]));
-  return { baseCalculoPadrao: index };
+  var map = { baseCalculoPadrao: -1, ctmsJornadaAtivo: -1 };
+  PROJETO_SOA_CONFIG_FIELDS_.forEach(function(field) {
+    var names = [field.header].concat(field.aliases || []);
+    var index = -1;
+    for (var i = 0; i < names.length && index < 0; i++) index = normalized.indexOf(normText_(names[i]));
+    map[field.key === 'soaBaseCalculoPadrao' ? 'baseCalculoPadrao' : field.key] = index;
+  });
+  return map;
 }
 
 function projetoSoAConfigPayloadPresente_(dados) {
@@ -4882,20 +4900,45 @@ function validarProjetoSoAConfig_(dados) {
   return normalized;
 }
 
-function garantirProjetoSoAConfigColumns_(aba) {
+function garantirProjetoSoAConfigColumn_(aba, fieldKey) {
   var lastCol = Math.max(aba.getLastColumn(), 1);
   var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
   var map = projetoSoAConfigColumnMap_(headers);
-  if (map.baseCalculoPadrao >= 0) return map;
+  var mapKey = fieldKey === 'soaBaseCalculoPadrao' ? 'baseCalculoPadrao' : fieldKey;
+  if (map[mapKey] >= 0) return map[mapKey];
+  var field = PROJETO_SOA_CONFIG_FIELDS_.filter(function(item) { return item.key === fieldKey; })[0];
+  if (!field) throw new Error('Configuração SoA desconhecida: ' + fieldKey + '.');
   var index = headers.length;
-  aba.getRange(1, index + 1).setValue(PROJETO_SOA_CONFIG_FIELDS_[0].header);
-  return { baseCalculoPadrao: index };
+  aba.getRange(1, index + 1).setValue(field.header);
+  return index;
 }
 
 function gravarProjetoSoAConfig_(aba, rowNumber, dados) {
-  if (!projetoSoAConfigPayloadPresente_(dados)) return;
-  var columns = garantirProjetoSoAConfigColumns_(aba);
-  aba.getRange(rowNumber, columns.baseCalculoPadrao + 1).setValue(validarProjetoSoAConfig_(dados));
+  if (projetoSoAConfigPayloadPresente_(dados)) {
+    var baseColumn = garantirProjetoSoAConfigColumn_(aba, 'soaBaseCalculoPadrao');
+    aba.getRange(rowNumber, baseColumn + 1).setValue(validarProjetoSoAConfig_(dados));
+  }
+  if (Object.prototype.hasOwnProperty.call(dados || {}, 'ctmsJornadaAtivo')) {
+    var ativo = dados.ctmsJornadaAtivo === true || ['sim', 'true', '1'].indexOf(normText_(dados.ctmsJornadaAtivo)) >= 0;
+    var ctmsColumn = garantirProjetoSoAConfigColumn_(aba, 'ctmsJornadaAtivo');
+    aba.getRange(rowNumber, ctmsColumn + 1).setValue(ativo ? 'Sim' : 'Não');
+  }
+}
+
+function projetoCtmsJornadaAtivo_(projeto) {
+  var projetoNorm = normText_(projeto);
+  if (!projetoNorm) return false;
+  var ss = getCodexSpreadsheet_();
+  var sheet = ss && ss.getSheetByName('Projetos');
+  if (!sheet || sheet.getLastRow() < 2) return false;
+  var rows = sheet.getDataRange().getValues();
+  var columns = projetoSoAConfigColumnMap_(rows[0] || []);
+  if (columns.ctmsJornadaAtivo < 0) return false;
+  for (var i = 1; i < rows.length; i++) {
+    if (normText_(rows[i][1]) !== projetoNorm && normText_(rows[i][2]) !== projetoNorm) continue;
+    return ['sim', 'true', '1'].indexOf(normText_(rows[i][columns.ctmsJornadaAtivo])) >= 0;
+  }
+  return false;
 }
 
 function getProjetoBaseCalculoPadrao_(projeto) {
@@ -5210,6 +5253,223 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
   Object.keys(values).forEach(function(key) {
     if (columns[key] !== undefined) sh.getRange(rowNumber, columns[key] + 1).setValue(values[key]);
   });
+}
+
+var PARTICIPANTE_CTMS_FIELDS_ = [
+  { key: 'bracoId', header: 'CTMS Braço ID', aliases: ['CTMS Braco ID', 'Braço CTMS ID', 'Braco CTMS ID'] },
+  { key: 'marcosJson', header: 'CTMS Marcos (JSON)', aliases: ['Marcos CTMS', 'CTMS Marcos'] },
+  { key: 'escolhasJson', header: 'CTMS Escolhas (JSON)', aliases: ['Escolhas CTMS', 'CTMS Escolhas'] },
+  { key: 'aprovacoesJson', header: 'CTMS Aprovações (JSON)', aliases: ['CTMS Aprovacoes (JSON)', 'Aprovações CTMS', 'Aprovacoes CTMS'] }
+];
+
+function participanteCtmsColumnMapFromHeaders_(headers) {
+  var normalized = (headers || []).map(participanteCampoKey_);
+  var map = { bracoId: -1, marcosJson: -1, escolhasJson: -1, aprovacoesJson: -1 };
+  PARTICIPANTE_CTMS_FIELDS_.forEach(function(field) {
+    var names = [field.header].concat(field.aliases || []).map(participanteCampoKey_);
+    for (var i = 0; i < normalized.length; i++) {
+      if (names.indexOf(normalized[i]) >= 0) { map[field.key] = i; break; }
+    }
+  });
+  return map;
+}
+
+function participanteCtmsGarantirColumns_(sh) {
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var map = participanteCtmsColumnMapFromHeaders_(headers);
+  PARTICIPANTE_CTMS_FIELDS_.forEach(function(field) {
+    if (map[field.key] >= 0) return;
+    lastCol++;
+    if (typeof sh.getMaxColumns === 'function' && sh.getMaxColumns() < lastCol) sh.insertColumnsAfter(sh.getMaxColumns(), lastCol - sh.getMaxColumns());
+    sh.getRange(1, lastCol).setValue(field.header);
+    map[field.key] = lastCol - 1;
+  });
+  return map;
+}
+
+function participanteCtmsJsonObject_(value) {
+  if (!String(value || '').trim()) return {};
+  try {
+    var parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function jornadaCtmsLocalizarParticipante_(rows, payload) {
+  payload = payload || {};
+  var idCadastro = String(payload.idCadastro || '').trim();
+  var idParticipante = normText_(payload.idParticipante);
+  var projeto = normText_(payload.projeto);
+  var nome = normText_(payload.nome);
+  for (var i = 1; i < (rows || []).length; i++) {
+    var row = rows[i] || [];
+    if (idCadastro && String(row[0] || '').trim() === idCadastro) return i;
+    if (idParticipante && projeto && normText_(row[4]) === idParticipante && normText_(row[5]) === projeto) return i;
+    if (!idParticipante && nome && projeto && normText_(row[1]) === nome && normText_(row[5]) === projeto) return i;
+  }
+  return -1;
+}
+
+function jornadaCtmsLerConfigParticipante_(payload) {
+  var rows = getCodexSheetDataByName_('Participantes');
+  if (!rows.length) return { bracoId: '', marcos: {}, escolhasReferencias: {}, aprovacoes: {} };
+  var rowIndex = jornadaCtmsLocalizarParticipante_(rows, payload);
+  if (rowIndex < 1) return { bracoId: '', marcos: {}, escolhasReferencias: {}, aprovacoes: {} };
+  var columns = participanteCtmsColumnMapFromHeaders_(rows[0] || []);
+  var row = rows[rowIndex] || [];
+  return {
+    bracoId: columns.bracoId >= 0 ? String(row[columns.bracoId] || '').trim() : '',
+    marcos: columns.marcosJson >= 0 ? participanteCtmsJsonObject_(row[columns.marcosJson]) : {},
+    escolhasReferencias: columns.escolhasJson >= 0 ? participanteCtmsJsonObject_(row[columns.escolhasJson]) : {},
+    aprovacoes: columns.aprovacoesJson >= 0 ? participanteCtmsJsonObject_(row[columns.aprovacoesJson]) : {}
+  };
+}
+
+var JORNADA_CTMS_MARCOS_ = [
+  { chave: 'RANDOMIZACAO', label: 'Randomização' },
+  { chave: 'INCLUSAO', label: 'Inclusão' },
+  { chave: 'ULTIMA_DOSE', label: 'Última dose' },
+  { chave: 'FIM_TRATAMENTO', label: 'Fim do tratamento' },
+  { chave: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' },
+  { chave: 'OUTRA', label: 'Outra data de referência' }
+];
+
+function jornadaCtmsMontarConfiguracao_(visitas, bracos, config, bracoIdEfetivo) {
+  config = config || {};
+  var bracoId = String(config.bracoId || bracoIdEfetivo || '').trim();
+  var ativas = (visitas || []).filter(function(visita) {
+    if (!visita || visita.ativo === false) return false;
+    var ids = soaUniqueIds_(visita.bracoIds || []);
+    return !ids.length || (!!bracoId && ids.indexOf(bracoId) >= 0);
+  });
+  var marcosUsados = {};
+  var escolhasNecessarias = [];
+  ativas.forEach(function(visita) {
+    [visita.referencia, visita.referenciaAlternativa].forEach(function(referencia) {
+      referencia = String(referencia || '').trim();
+      if (jornadaCtmsReferenciaEspecial_(referencia)) marcosUsados[referencia] = true;
+    });
+    if (String(visita.criterioReferencias || '').trim() !== 'SELECAO_MANUAL' || !visita.referenciaAlternativa) return;
+    escolhasNecessarias.push({
+      idSoA: String(visita.idSoA || ''),
+      codigo: String(visita.codigo || ''),
+      nome: String(visita.nome || ''),
+      opcoes: [
+        { valor: String(visita.referencia || ''), label: String(visita.referencia || '') },
+        { valor: String(visita.referenciaAlternativa || ''), label: String(visita.referenciaAlternativa || '') }
+      ]
+    });
+  });
+  return {
+    bracoId: bracoId,
+    bracos: (bracos || []).map(function(braco) { return { idBraco: String(braco.idBraco || ''), nome: String(braco.nome || '') }; }),
+    marcos: config.marcos || {},
+    marcosNecessarios: JORNADA_CTMS_MARCOS_.filter(function(marco) { return marcosUsados[marco.chave]; }),
+    escolhasReferencias: config.escolhasReferencias || {},
+    escolhasNecessarias: escolhasNecessarias
+  };
+}
+
+function jornadaCtmsNormalizarConfigParticipante_(payload, visitas, bracos) {
+  payload = payload || {};
+  var bracoId = String(payload.bracoId || '').trim();
+  var bracoIds = (bracos || []).map(function(braco) { return String(braco.idBraco || ''); });
+  if (bracoId && bracoIds.indexOf(bracoId) < 0) throw new Error('O braço CTMS selecionado não pertence a este projeto.');
+  var marcos = {};
+  Object.keys(payload.marcos || {}).forEach(function(key) {
+    var value = String(payload.marcos[key] || '').trim();
+    if (!value) return;
+    if (!jornadaCtmsReferenciaEspecial_(key)) throw new Error('O marco CTMS ' + key + ' não é reconhecido.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || jornadaCtmsDateIso_(value) !== value) throw new Error('A data do marco ' + key + ' é inválida.');
+    marcos[key] = value;
+  });
+  var manuais = {};
+  (visitas || []).forEach(function(visita) {
+    if (String(visita.criterioReferencias || '').trim() === 'SELECAO_MANUAL' && visita.referenciaAlternativa) {
+      manuais[String(visita.idSoA || '')] = [String(visita.referencia || ''), String(visita.referenciaAlternativa || '')];
+    }
+  });
+  var escolhas = {};
+  Object.keys(payload.escolhasReferencias || {}).forEach(function(idSoA) {
+    var value = String(payload.escolhasReferencias[idSoA] || '').trim();
+    if (!value) return;
+    if (!manuais[idSoA] || manuais[idSoA].indexOf(value) < 0) throw new Error('A escolha CTMS da visita ' + idSoA + ' não corresponde às referências permitidas.');
+    escolhas[idSoA] = value;
+  });
+  return { bracoId: bracoId, marcos: marcos, escolhasReferencias: escolhas };
+}
+
+function salvarConfiguracaoCtmsParticipante_(payload) {
+  payload = payload || {};
+  var projeto = String(payload.projeto || '').trim();
+  if (!projeto) throw new Error('Informe o projeto do participante.');
+  var visitas = getSoAVisitasProjeto(projeto);
+  var bracos = getBracosProjeto(projeto);
+  var config = jornadaCtmsNormalizarConfigParticipante_(payload, visitas, bracos);
+  codexWithDocumentLock_('salvar configuração CTMS do participante', function() {
+    var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
+    if (!sh) throw new Error('Aba Participantes não encontrada.');
+    var rows = sh.getDataRange().getValues();
+    var rowIndex = jornadaCtmsLocalizarParticipante_(rows, payload);
+    if (rowIndex < 1) throw new Error('Participante não encontrado para salvar a configuração CTMS.');
+    if (normText_(rows[rowIndex][5]) !== normText_(projeto)) throw new Error('O participante não pertence ao projeto informado.');
+    var columns = participanteCtmsGarantirColumns_(sh);
+    var rowNumber = rowIndex + 1;
+    sh.getRange(rowNumber, columns.bracoId + 1).setValue(config.bracoId);
+    sh.getRange(rowNumber, columns.marcosJson + 1).setValue(Object.keys(config.marcos).length ? JSON.stringify(config.marcos) : '');
+    sh.getRange(rowNumber, columns.escolhasJson + 1).setValue(Object.keys(config.escolhasReferencias).length ? JSON.stringify(config.escolhasReferencias) : '');
+    clearCodexRuntimeCaches_();
+  });
+  return {
+    ok: true,
+    msg: 'Marcos e escolhas CTMS salvos para o participante.',
+    jornada: getJornadaParticipante({ idCadastro: payload.idCadastro, nome: payload.nome, idParticipante: payload.idParticipante, projeto: projeto, braco: payload.braco })
+  };
+}
+
+function definirAprovacaoCtmsParticipante_(payload) {
+  payload = payload || {};
+  var idSoA = String(payload.idSoA || '').trim();
+  var fingerprint = String(payload.fingerprint || '').trim();
+  var aprovar = payload.aprovar === true;
+  if (!idSoA) throw new Error('Informe a visita CTMS a revisar.');
+  codexWithDocumentLock_('definir aprovação CTMS do participante', function() {
+    var jornadaAtual = getJornadaParticipante(payload);
+    var previa = jornadaAtual && jornadaAtual.previaCtms;
+    var row = previa && (previa.linhas || []).filter(function(item) { return String(item.idSoA || '') === idSoA; })[0];
+    if (!row) throw new Error('A comparação CTMS não está mais disponível. Reabra a prévia.');
+    if (aprovar && (!row.aprovavel || !fingerprint || fingerprint !== row.fingerprint)) {
+      throw new Error('A comparação CTMS mudou ou não pode ser aprovada. Reabra a prévia e revise novamente.');
+    }
+    var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
+    if (!sh) throw new Error('Aba Participantes não encontrada.');
+    var rows = sh.getDataRange().getValues();
+    var rowIndex = jornadaCtmsLocalizarParticipante_(rows, payload);
+    if (rowIndex < 1) throw new Error('Participante não encontrado para registrar a aprovação CTMS.');
+    if (normText_(rows[rowIndex][5]) !== normText_(payload.projeto)) throw new Error('O participante não pertence ao projeto informado.');
+    var columns = participanteCtmsGarantirColumns_(sh);
+    var aprovacoes = participanteCtmsJsonObject_(rows[rowIndex][columns.aprovacoesJson]);
+    if (aprovar) {
+      aprovacoes[idSoA] = {
+        fingerprint: row.fingerprint,
+        aprovadoEm: Utilities.formatDate(new Date(), 'America/Sao_Paulo', "yyyy-MM-dd'T'HH:mm:ssXXX"),
+        aprovadoPor: codexGetActiveUserEmail_()
+      };
+    } else {
+      delete aprovacoes[idSoA];
+    }
+    sh.getRange(rowIndex + 1, columns.aprovacoesJson + 1).setValue(Object.keys(aprovacoes).length ? JSON.stringify(aprovacoes) : '');
+    clearCodexRuntimeCaches_();
+  });
+  codexWriteAuditLog_('definirAprovacaoCtmsParticipante', 'Cadastros', idSoA + ':' + (aprovar ? 'aprovada' : 'revogada'));
+  return {
+    ok: true,
+    msg: aprovar ? 'Comparação CTMS aprovada.' : 'Aprovação CTMS revogada.',
+    jornada: getJornadaParticipante(payload)
+  };
 }
 
 function getParticipantes() {
@@ -10710,6 +10970,22 @@ function jornadaCtmsClassificarImpacto_(row) {
   };
 }
 
+function jornadaCtmsFingerprint_(row) {
+  row = row || {};
+  var atual = row.atual || {};
+  var raw = [
+    'v1', row.idSoA, row.dataPrevistaIso, row.janelaInicio, row.janelaFim,
+    row.referenciaUtilizada, row.baseCalculo, row.statusCalculo, row.provisoria ? '1' : '0',
+    atual.dataAlvoIso, atual.estado, atual.janelaInicio, atual.janelaFim
+  ].map(function(value) { return String(value == null ? '' : value); }).join('|');
+  var hash = 2166136261;
+  for (var i = 0; i < raw.length; i++) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return 'ctms-v1-' + ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+}
+
 function jornadaCtmsCalcularPreviaPura_(input) {
   input = input || {};
   var avisos = [];
@@ -10873,6 +11149,7 @@ function jornadaCtmsCalcularPreviaPura_(input) {
 
   var legacyMap = {};
   (input.legacyVisitas || []).forEach(function(visita) { legacyMap[String(visita.idSoA || '')] = visita; });
+  var aprovacoes = input.aprovacoes || {};
   var visibleIds = (input.idsVisiveis || []).map(String);
   var rows = (ordem.idsSoA || []).map(function(id) { return resultados[id]; }).filter(function(row) {
     return row && (!visibleIds.length || visibleIds.indexOf(String(row.idSoA || '')) >= 0);
@@ -10886,6 +11163,17 @@ function jornadaCtmsCalcularPreviaPura_(input) {
       janelaFim: String(legacy.janelaFim || '')
     };
     row.impacto = jornadaCtmsClassificarImpacto_(row);
+    row.fingerprint = jornadaCtmsFingerprint_(row);
+    row.aprovavel = (row.statusCalculo === 'CALCULADA' || row.statusCalculo === 'PROVISORIA') &&
+      row.atual.estado !== 'REALIZADA' && row.atual.estado !== 'AGENDADA';
+    var aprovacao = aprovacoes[row.idSoA] || null;
+    var fingerprintAprovado = typeof aprovacao === 'string' ? aprovacao : String(aprovacao && aprovacao.fingerprint || '');
+    row.aprovada = !!(row.aprovavel && fingerprintAprovado && fingerprintAprovado === row.fingerprint);
+    row.aprovacaoObsoleta = !!(fingerprintAprovado && fingerprintAprovado !== row.fingerprint);
+    row.aprovacao = row.aprovada ? {
+      aprovadoEm: String(aprovacao && aprovacao.aprovadoEm || ''),
+      aprovadoPor: String(aprovacao && aprovacao.aprovadoPor || '')
+    } : null;
     delete row._dataPrevista;
     delete row._dataRealizada;
     return row;
@@ -10899,7 +11187,7 @@ function jornadaCtmsCalcularPreviaPura_(input) {
   };
   return {
     somenteLeitura: true,
-    motorAtivo: false,
+    motorAtivo: input.motorAtivo === true,
     projeto: String(input.projeto || ''),
     participante: String(input.participante || ''),
     linhas: rows,
@@ -10912,9 +11200,48 @@ function jornadaCtmsCalcularPreviaPura_(input) {
       semMudanca: resumoImpacto.semMudanca,
       divergencias: resumoImpacto.divergencias,
       revisao: resumoImpacto.revisao,
-      atencao: resumoImpacto.atencao
+      atencao: resumoImpacto.atencao,
+      aprovadas: rows.filter(function(row) { return row.aprovada; }).length,
+      pendentesAprovacao: rows.filter(function(row) { return row.aprovavel && !row.aprovada; }).length,
+      aprovacoesObsoletas: rows.filter(function(row) { return row.aprovacaoObsoleta; }).length
     }
   };
+}
+
+function jornadaCtmsAplicarAoOperacional_(visitas, previa, hoje) {
+  previa = previa || {};
+  hoje = jornadaCtmsDate_(hoje || new Date());
+  var porId = {};
+  (previa.linhas || []).forEach(function(row) { porId[String(row.idSoA || '')] = row; });
+  return (visitas || []).map(function(visita) {
+    var row = porId[String(visita && visita.idSoA || '')];
+    if (!visita || !row) return visita;
+    var atualizado = {};
+    Object.keys(visita).forEach(function(key) { atualizado[key] = visita[key]; });
+    atualizado.ctmsComparacao = {
+      aprovada: row.aprovada === true,
+      aprovavel: row.aprovavel === true,
+      obsoleta: row.aprovacaoObsoleta === true,
+      integrada: false,
+      dataSugerida: row.dataPrevista,
+      motivo: row.impacto && row.impacto.motivo || ''
+    };
+    if (!previa || previa.motorAtivo !== true || row.aprovada !== true || visita.estado === 'REALIZADA' || visita.estado === 'AGENDADA' ||
+        (row.statusCalculo !== 'CALCULADA' && row.statusCalculo !== 'PROVISORIA') || !row.dataPrevistaIso) return atualizado;
+    atualizado.estado = 'PREVISTA';
+    atualizado.dataAlvo = row.dataPrevista;
+    atualizado.dataAlvoIso = row.dataPrevistaIso;
+    atualizado.dataAlvoObj = jornadaCtmsDate_(row.dataPrevistaIso);
+    atualizado.janelaInicio = row.janelaInicio;
+    atualizado.janelaFim = row.janelaFim;
+    atualizado.fontePrevisao = 'CTMS';
+    atualizado.ctmsComparacao.integrada = true;
+    var janelaInicio = jornadaCtmsDate_(row.janelaInicio);
+    var janelaFim = jornadaCtmsDate_(row.janelaFim);
+    atualizado.emJanela = !!(janelaInicio && janelaFim && hoje >= janelaInicio && hoje <= janelaFim);
+    atualizado.atrasada = !!(janelaFim && hoje > janelaFim);
+    return atualizado;
+  });
 }
 
 // A Agenda IPS passou a ser a fonte operacional em 2026. Quando já existe uma
@@ -11037,9 +11364,15 @@ function getJornadaParticipante(payload) {
   });
   var bracos = getBracosProjeto(projeto);
   var braco = bracos.filter(function(item) { return normText_(item.nome) === normText_(payload.braco); })[0] || {};
-  var modelos = getModelosEstoqueSoAPorProjeto(projeto).filter(function(modelo) {
-    return !modelo.bracosAplicaveisIds.length || modelo.bracosAplicaveisIds.indexOf(braco.idBraco) >= 0;
+  var configCtms = jornadaCtmsLerConfigParticipante_({
+    idCadastro: payload.idCadastro,
+    nome: nome,
+    idParticipante: participanteId,
+    projeto: projeto
   });
+  var bracoIdCtms = String(configCtms.bracoId || braco.idBraco || '').trim();
+  var ctmsAtivo = projetoCtmsJornadaAtivo_(projeto);
+  var modelosProjeto = getModelosEstoqueSoAPorProjeto(projeto);
   var reservas = getKitReservasLinhas_().filter(function(reserva) {
     var mesmoId = participanteIdNorm && normText_(reserva.participanteId) === participanteIdNorm;
     return (mesmoId || normText_(reserva.participante) === participanteNorm) &&
@@ -11047,6 +11380,29 @@ function getJornadaParticipante(payload) {
   });
   var estoque = getEstoque();
   var visitasJornada = jornadaVisitasDesdeInicioOperacional_(visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }));
+  var previaCtms = null;
+  if (jornadaCtmsProjetoPiloto_(projeto) || ctmsAtivo) {
+    previaCtms = jornadaCtmsCalcularPreviaPura_({
+      projeto: projeto,
+      participante: nome,
+      bracoId: bracoIdCtms,
+      marcos: configCtms.marcos,
+      escolhasReferencias: configCtms.escolhasReferencias,
+      aprovacoes: configCtms.aprovacoes,
+      motorAtivo: ctmsAtivo,
+      visitas: visitas,
+      eventos: eventos,
+      legacyVisitas: visitasJornada,
+      idsVisiveis: visitasJornada.map(function(visita) { return String(visita.idSoA || ''); })
+    });
+    previaCtms.projetoAtivo = ctmsAtivo;
+    previaCtms.configuracao = jornadaCtmsMontarConfiguracao_(visitas, bracos, configCtms, braco.idBraco || '');
+    visitasJornada = jornadaCtmsAplicarAoOperacional_(visitasJornada, previaCtms, hoje);
+  }
+  var bracoIdOperacional = ctmsAtivo && previaCtms && previaCtms.resumo.aprovadas > 0 ? bracoIdCtms : String(braco.idBraco || '');
+  var modelos = modelosProjeto.filter(function(modelo) {
+    return !modelo.bracosAplicaveisIds.length || modelo.bracosAplicaveisIds.indexOf(bracoIdOperacional) >= 0;
+  });
   var visitasProntidao = jornadaVisitasPrevisaoSeisMeses_(visitasJornada, hoje);
   visitasJornada.forEach(function(visita) {
     if (visita.estado !== 'REALIZADA') {
@@ -11078,20 +11434,8 @@ function getJornadaParticipante(payload) {
   });
   var historicoLivre = eventos.filter(function(evento) { return !evento.cancelada && !eventos.some(function(outro) { return outro !== evento && outro.id === evento.id; }); });
   var conciliacao = agendaSoAMontarConcilicaoVisitas_(eventos, visitas);
-  var previaCtms = null;
-  if (jornadaCtmsProjetoPiloto_(projeto)) {
-    previaCtms = jornadaCtmsCalcularPreviaPura_({
-      projeto: projeto,
-      participante: nome,
-      bracoId: braco.idBraco || '',
-      visitas: visitas,
-      eventos: eventos,
-      legacyVisitas: visitasJornada,
-      idsVisiveis: visitasJornada.map(function(visita) { return String(visita.idSoA || ''); })
-    });
-  }
   return {
-    participante: { nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
+    participante: { idCadastro: String(payload.idCadastro || ''), nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
     possuiSoA: visitas.length > 0, visitas: visitasJornada,
     visitasConciliacao: jornadaVisitasParaConciliacao_(visitas),
     visitasProntidao: visitasProntidao,
@@ -11099,6 +11443,12 @@ function getJornadaParticipante(payload) {
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
     eventosAnteriores: eventosAnteriores.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
     conciliacao: conciliacao,
+    alertasCtms: previaCtms ? {
+      projetoAtivo: ctmsAtivo,
+      aprovadas: Number(previaCtms.resumo.aprovadas || 0),
+      pendentes: Number(previaCtms.resumo.pendentesAprovacao || 0),
+      obsoletas: Number(previaCtms.resumo.aprovacoesObsoletas || 0)
+    } : null,
     previaCtms: previaCtms
   };
 }
@@ -11410,6 +11760,39 @@ function getUltimasVisitasParticipantesAgendaMap_() {
   }
 }
 
+function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento) {
+  dados = dados || {};
+  if (!AgendaServerRules_.isVisit(dados.tipo)) return null;
+  var participante = String(dados.participante || '').trim();
+  if (!participante || !agenda || agenda.getLastRow() < 2) return null;
+  var dataIso = formatarDataIsoAgenda_(dataEvento || dados.data);
+  if (!dataIso) return null;
+
+  var referencia = {
+    nome: participante,
+    idParticipante: String(dados.participanteId || dados.idParticipante || '').trim(),
+    projeto: String(dados.projeto || '').trim()
+  };
+  var idx = AGENDA_CFG.idx;
+  var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+  var encontradas = rows.filter(function(row) {
+    if (!AgendaServerRules_.isVisit(row[idx.tipo])) return false;
+    if (formatarDataIsoAgenda_(row[idx.data]) !== dataIso) return false;
+    return CadastroRules_.agendaEventMatchesParticipant(referencia, {
+      participante: row[idx.participante],
+      idParticipante: row[idx.idParticipante],
+      projeto: row[idx.projeto]
+    });
+  });
+  if (!encontradas.length) return null;
+  return {
+    visitaMesmaData: true,
+    data: dataIso,
+    quantidade: encontradas.length,
+    mensagem: 'Já existe uma visita criada para este participante nesta data.'
+  };
+}
+
 function salvarNovoEventoCompleto(dados) {
   codexAssertCanWrite_('salvarNovoEventoCompleto', 'Agenda', dados && dados.id);
   return codexWithDocumentLock_('salvarNovoEventoCompleto', function() {
@@ -11430,6 +11813,8 @@ function salvarNovoEventoCompleto(dados) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
+  if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   if (isMonitoria && !String(dados.salaMonitoria || '').trim()) {
     return { erro: 'Informe o local (sala) da monitoria.' };
   }
@@ -11503,6 +11888,8 @@ function salvarNovoEventoComFeriado(dados) {
     return resultadoPeriodo;
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
+  if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var erroRealizadoFuturoUnico = agendaRealizadoFuturoErro_(dados.status, d);
   if (erroRealizadoFuturoUnico) return { erro: erroRealizadoFuturoUnico };
   var resultado = _gravarLinhaEvento(agenda, d, dados, ss);
