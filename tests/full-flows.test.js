@@ -152,18 +152,23 @@ test('schema legado de projetos continua salvavel sem criar campos opcionais', (
   assert.equal(sheet.rows[0].indexOf('Courier principal (ID)'), -1);
   assert.equal(sheet.rows[0].indexOf('Temperaturas courier principal'), -1);
   assert.equal(sheet.rows[0].indexOf('Base padrão do cronograma SoA'), -1);
+  assert.equal(sheet.rows[0].indexOf('CTMS ativo na Jornada'), -1);
 });
 
-test('projeto grava base padrão do SoA em coluna opcional e valida o valor', () => {
+test('projeto grava base padrão e ativação CTMS em colunas opcionais e valida o valor', () => {
   const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
 
   assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, {
-    soaBaseCalculoPadrao: 'MANTER_DATAS_PREVISTAS'
+    soaBaseCalculoPadrao: 'MANTER_DATAS_PREVISTAS',
+    ctmsJornadaAtivo: true
   })), 'Projeto cadastrado com sucesso!');
   const baseCol = sheet.rows[0].indexOf('Base padrão do cronograma SoA');
+  const ctmsCol = sheet.rows[0].indexOf('CTMS ativo na Jornada');
   assert.ok(baseCol >= 0);
+  assert.ok(ctmsCol >= 0);
   assert.equal(sheet.rows[1][baseCol], 'MANTER_DATAS_PREVISTAS');
+  assert.equal(sheet.rows[1][ctmsCol], 'Sim');
 
   const invalidSheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
   const invalid = cadastroContext(new FakeSpreadsheet({ Projetos: invalidSheet })).context;

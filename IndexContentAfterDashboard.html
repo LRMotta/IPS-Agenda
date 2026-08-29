@@ -897,6 +897,23 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="modalAgendaVisitaMesmaData" onclick="event.stopPropagation()">
+      <div class="confirm-box" style="max-width:440px" onclick="event.stopPropagation()" role="alertdialog" aria-modal="true" aria-labelledby="agendaVisitaMesmaDataTitle" aria-describedby="agendaVisitaMesmaDataMsg">
+        <h3 id="agendaVisitaMesmaDataTitle">Visita já criada nesta data</h3>
+        <p id="agendaVisitaMesmaDataMsg">Já existe uma visita criada para este participante nesta data.</p>
+        <div class="agenda-cancel-guard" style="margin-bottom:16px">
+          <span class="material-symbols-outlined">warning</span>
+          Revise o agendamento existente antes de criar outra visita para o mesmo dia.
+        </div>
+        <div class="confirm-actions">
+          <button class="btn-txt" type="button" id="btnAgendaSalvarVisitaMesmaData" onclick="confirmarAgendaVisitaMesmaData()">Salvar mesmo assim</button>
+          <button class="btn-save" type="button" id="btnAgendaSairVisitaMesmaData" onclick="sairAgendaVisitaMesmaDataSemSalvar()" style="width:auto;padding:9px 18px;margin-top:0">
+            Sair sem salvar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="modalAgendaConfirmarCancelamento" onclick="fecharAgendaConfirmarCancelamento(event)">
       <div class="confirm-box" style="max-width:460px" onclick="event.stopPropagation()">
         <h3>Confirmar cancelamento?</h3>

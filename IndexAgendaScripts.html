@@ -44,6 +44,7 @@
   var _agendaTeamBirthdays = Array.isArray(window.APP_TEAM_BIRTHDAYS) ? window.APP_TEAM_BIRTHDAYS : [];
   var _agendaCancelamentoContext = null;
   var _agendaConfirmarCancelamentoContext = null;
+  var _agendaVisitaMesmaDataContext = null;
   var _agendaReagendamentoContext = null;
   var AGENDA_EVENTOS_TTL_MS = 3 * 60 * 1000;
   var AGENDA_FORMDATA_TTL_MS = 10 * 60 * 1000;
@@ -2406,6 +2407,41 @@
     salvarAgendaEvento(ctx.cancelamentoMotivo || null, { reagendamentoConfirmado: true });
   }
 
+  function abrirAgendaVisitaMesmaData(resposta, contexto) {
+    _agendaVisitaMesmaDataContext = contexto || {};
+    var msg = document.getElementById('agendaVisitaMesmaDataMsg');
+    if (msg) {
+      var dataLabel = formatDateBr(resposta && resposta.data) || (resposta && resposta.data) || 'a data selecionada';
+      msg.textContent = 'Já existe uma visita criada para este participante em ' + dataLabel + '.';
+    }
+    var modal = document.getElementById('modalAgendaVisitaMesmaData');
+    if (modal) {
+      if (modal.parentElement !== document.body) document.body.appendChild(modal);
+      modal.style.zIndex = '340';
+    }
+    abrirOverlay('modalAgendaVisitaMesmaData');
+  }
+
+  function fecharAgendaVisitaMesmaData() {
+    _agendaVisitaMesmaDataContext = null;
+    var modal = document.getElementById('modalAgendaVisitaMesmaData');
+    if (modal) modal.classList.remove('open');
+  }
+
+  function sairAgendaVisitaMesmaDataSemSalvar() {
+    fecharAgendaVisitaMesmaData();
+    if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
+    limparAgendaForm();
+    fecharAgendaModal();
+    snack('Visita não salva.');
+  }
+
+  function confirmarAgendaVisitaMesmaData() {
+    var ctx = _agendaVisitaMesmaDataContext || {};
+    fecharAgendaVisitaMesmaData();
+    salvarAgendaEvento(ctx.cancelamentoMotivo || null, { salvarVisitaMesmaDataConfirmado: true });
+  }
+
   function salvarAgendaEvento(cancelamentoMotivo, opts) {
     opts = opts || {};
     if (!updateAgendaSaveAvailability(true)) return;
@@ -2475,6 +2511,7 @@
       return;
     }
     if (reagendamentoInfo && opts.reagendamentoConfirmado) payload.reagendamentoConfirmado = true;
+    if (opts.salvarVisitaMesmaDataConfirmado) payload.salvarVisitaMesmaDataConfirmado = true;
     setAgendaButtonState(btn, true, 'Salvando...');
     setAgendaStatus('Salvando...', '');
     var method = _agendaEditId ? 'atualizarAgendaEventoCompleto' : 'salvarNovoEventoCompleto';
@@ -2493,6 +2530,11 @@
             '</div>';
           snackErro('Conflito de edicao. Atualize a Agenda antes de salvar novamente.');
           carregarAgendaEventos(true);
+          return;
+        }
+        if (res && res.visitaMesmaData) {
+          setAgendaStatus('Já existe uma visita criada para este participante nesta data.', 'danger');
+          abrirAgendaVisitaMesmaData(res, { cancelamentoMotivo: cancelamentoMotivo || null });
           return;
         }
         if (res && res.erro) {

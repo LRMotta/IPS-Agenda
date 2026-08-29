@@ -1,0 +1,346 @@
+Analise o protocolo, as emendas/adendos vigentes, o orçamento e a página atualmente aberta do estudo no Polo Trial como especialista em calendários de pesquisa clínica e em configuração de CTMS.
+
+CONTEXTO DE USO
+
+Este prompt será executado principalmente no Google Gemini integrado ao navegador, com um estudo do Polo Trial aberto. O resultado será revisado por uma pessoa antes de qualquer importação no aplicativo IPS | UCS.
+
+Não cadastre, edite, salve, aprove, exclua nem publique nada no Polo Trial ou no IPS | UCS. Não clique em “Adicionar”, “Editar”, “Excluir” ou controles equivalentes. A navegação deve ser somente para leitura.
+
+OBJETIVO
+
+1. Extrair um calendário SoA factual, estruturado e compatível com a prévia de importação do IPS | UCS.
+2. Preservar separadamente diferenças entre braços, coortes, fases e regimes.
+3. Extrair, quando houver evidência documental suficiente, as regras necessárias ao motor CTMS:
+   - referência principal;
+   - referência alternativa;
+   - critério entre referências;
+   - base para o cálculo;
+   - papel da visita no cronograma.
+4. Separadamente, propor como cada visita poderia ser preenchida no modal “Adicionar Visita SoA”.
+
+Não faça o cadastro diretamente e não invente dados.
+
+FONTES E HIERARQUIA
+
+Use a seguinte ordem de precedência:
+
+1. A emenda ou o adendo vigente do protocolo prevalece sobre versões anteriores.
+2. O protocolo vigente prevalece sobre o Polo Trial e sobre o orçamento.
+3. No Polo Trial, a aba “Flowchart > Visitas” pode ser usada como fonte operacional estruturada para braço, visita, intervalo, unidade, referência e janela.
+4. O “Flowchart Novo (beta)” pode ser consultado apenas para esclarecer a organização do flowchart. Não o use para substituir uma regra mais clara da aba “Visitas” ou do protocolo.
+5. O orçamento e as abas de procedimentos podem ser usados apenas para conferir nomenclatura e existência de eventos.
+
+Se somente o Polo Trial estiver disponível, faça a extração com base nele, mas registre em “alertas” que o calendário não foi confrontado com o protocolo vigente.
+
+Em qualquer conflito, preserve o valor da fonte hierarquicamente superior e descreva o conflito em “alertas”. Nunca faça média, escolha silenciosamente um valor nem substitua um conflito por null sem explicação.
+
+NAVEGAÇÃO SOMENTE LEITURA NO POLO TRIAL
+
+1. Confirme pelo cabeçalho da página o apelido e o número do protocolo do estudo aberto.
+2. Abra “Gerir detalhes > Flowchart”.
+3. Expanda o registro de flowchart aplicável, se necessário.
+4. Consulte prioritariamente a aba “Visitas”.
+5. Se a tabela estiver limitada, use “Relação Completa” ou paginação somente leitura para abranger todas as visitas.
+6. Considere as colunas visíveis da aba “Visitas”:
+   - Braço;
+   - Visita;
+   - Intervalo;
+   - Unidade;
+   - Referência (após);
+   - Visita Referência;
+   - Janela Dias Menos;
+   - Janela Dias Mais;
+   - Observações.
+7. Ignore completamente as colunas “Custo”, “Valor”, “Valor flowchart”, “Valor Total” e qualquer outra informação financeira.
+8. Não extraia a lista de procedimentos, exames ou atividades da matriz do flowchart.
+
+REGRAS DE EXTRAÇÃO DAS VISITAS
+
+- Extraia somente informações relacionadas a visitas, ciclos, fases, braços, intervalos, unidades, referências, janelas, repetição e condições de ocorrência.
+- Não inclua procedimentos, exames, critérios de inclusão, endpoints, medicações, custos, valores, pagamentos ou outras informações financeiras.
+- Não transforme diferenças entre braços, coortes, fases ou regimes em uma única regra.
+- Identifique primeiro todos os braços/regimes existentes. Não suponha que um rótulo combinado, como “Experimental/Placebo”, represente dois braços separados; preserve o rótulo como exibido, salvo se outra fonte definir claramente braços distintos.
+- Uma visita só pode ir para “visitasComuns” quando sua existência e todos os seus campos factuais forem iguais em todos os braços aplicáveis.
+- Se existência, intervalo, unidade, referência, referência alternativa, critério, base de cálculo, papel no cronograma, janela, repetição ou condição diferir entre braços, coloque a visita em “variantesPorBraco”.
+- Não duplique uma visita comum dentro das variantes.
+- Se o Polo Trial repetir a mesma visita em todos os braços com regras idênticas, consolide-a como comum. Se não for possível confirmar que todos os braços foram abrangidos, preserve-a como variante e registre a dúvida.
+- Preserve o nome oficial da visita. Quando a célula contiver nomes bilíngues separados por “/”, use como “nome” a forma mais adequada ao uso operacional em português e coloque a outra forma em “aliases”.
+- Use como “codigo” o código explícito da visita. Se não houver código explícito, derive um código curto somente quando isso for inequívoco e registre a derivação em “observacoes”. Caso contrário, use null e marque revisão.
+- Não gere IDs internos do aplicativo, como IDs “SOA-...”.
+- “ordem” deve ser um inteiro maior ou igual a zero e preservar a sequência clínica, não a ordem alfabética nem o valor financeiro.
+- “intervaloDias” é o deslocamento nominal da visita em relação à referência informada. Não é a duração da janela.
+- Converta semanas em dias somente quando a conversão for inequívoca, usando 1 semana = 7 dias.
+- Não converta meses em dias, salvo quando o protocolo definir explicitamente a equivalência.
+- Se a fonte trouxer uma unidade não representável em dias, use null em “intervaloDias”, preserve a regra textual em “repeticao” ou “observacoes” e marque revisão.
+- Não invente intervalo nominal quando a fonte informar apenas “até X dias”, “dentro de X dias”, “por demanda”, “conforme necessário” ou expressão equivalente.
+- “Por demanda” não significa automaticamente “OUTRA”, não define intervalo nominal e não define sozinho uma referência de cálculo.
+- Para visitas anteriores à referência, não use números negativos. Registre a relação temporal em “observacoes” e marque revisão se ela não puder ser representada sem perda.
+- Para janela somente positiva, como “+2 dias”, use null em “janelaDiasMenos” e 2 em “janelaDiasMais”.
+- Para janela somente negativa, como “-6 dias”, use 6 em “janelaDiasMenos” e null em “janelaDiasMais”.
+- Para janela simétrica, como “±7 dias”, use 7 em ambos os campos.
+- Zero é um valor válido e não deve ser convertido em null.
+- Nunca transforme uma janela conflitante em null sem explicar o conflito.
+- Quando a referência for outra visita, use “VISITA_ESPECIFICA” e preencha “referenciaCodigo” com o código concreto da visita de referência, como “C1D1”.
+- Não use “VISITA_ANTERIOR” como referência abstrata. Resolva o código concreto da visita anterior. Se isso não for possível sem ambiguidade, use null e marque revisão.
+- Para referências especiais, preserve o evento real: RANDOMIZACAO, INCLUSAO, ULTIMA_DOSE, FIM_TRATAMENTO, PROGRESSAO_DOENCA ou OUTRA.
+- Use “OUTRA” somente quando existir uma referência especial conhecida que não corresponda aos demais valores. Descreva qual é a referência em “observacoes” e marque revisão.
+- Preserve acentos e produza UTF-8 válido.
+- Use null quando o dado não estiver claramente informado. Não preencha campos apenas para eliminar null.
+- Registre toda dúvida, ausência, conflito, derivação ou adaptação em “alertas” ou “revisaoNecessaria”.
+
+VALORES PERMITIDOS PARA “referenciaTipo” E “referenciaAlternativaTipo”
+
+- “RANDOMIZACAO”
+- “INCLUSAO”
+- “VISITA_ESPECIFICA”
+- “ULTIMA_DOSE”
+- “FIM_TRATAMENTO”
+- “PROGRESSAO_DOENCA”
+- “OUTRA”
+- null
+
+REGRAS DO MOTOR CTMS
+
+Preencha os campos CTMS somente quando a fonte sustentar a regra. Na dúvida, use null e marque revisão.
+
+“baseCalculo” define se a realização da referência desloca as datas futuras:
+
+- “MANTER_DATAS_PREVISTAS”: use quando o cronograma é fixo/protocolar e as datas permanecem ancoradas na referência planejada, mesmo que uma visita intermediária ocorra fora da data ideal.
+- “RECALCULAR_VISITA_REALIZADA”: use quando o protocolo determina contagem rolante a partir da data efetivamente realizada da visita ou do evento de referência.
+- null: use quando a fonte não permite distinguir com segurança as duas regras ou quando a visita deve apenas herdar uma regra do projeto ainda não informada.
+
+Não deduza “RECALCULAR_VISITA_REALIZADA” apenas porque a visita aparece depois de outra na tabela. Não deduza “MANTER_DATAS_PREVISTAS” apenas porque existe um intervalo nominal.
+
+“papelCronograma” aceita:
+
+- “NAO_PARTICIPA_CALCULO”: evento ou visita que não deve gerar nem deslocar datas calculadas, quando isso estiver documentalmente sustentado;
+- “MARCO_CALCULO”: visita/evento cuja data pode servir de âncora para outras visitas;
+- “VISITA_CALCULADA”: visita cuja data prevista é calculada a partir de uma referência e de um intervalo;
+- null: classificação não demonstrada ou registro legado.
+
+Não classifique automaticamente toda triagem como “NAO_PARTICIPA_CALCULO”, toda visita basal como “MARCO_CALCULO” ou toda visita com intervalo como “VISITA_CALCULADA”. Use essas classificações apenas quando a relação do cronograma for clara.
+
+Referência alternativa:
+
+- Use “referenciaAlternativaTipo” e “referenciaAlternativaCodigo” somente quando a fonte admitir duas referências reais para a mesma visita.
+- A referência alternativa deve ser diferente da referência principal.
+- Quando a alternativa for outra visita, use “VISITA_ESPECIFICA” e seu código concreto.
+- Quando for um evento especial, use o tipo especial e deixe o código como null.
+
+“criterioReferencias” aceita:
+
+- “SELECAO_MANUAL”: a referência aplicável depende de decisão documentada para cada participante;
+- “PRIMEIRO_OCORRER”: aplica-se o evento que ocorrer primeiro;
+- “ULTIMO_OCORRER”: aplica-se o evento que ocorrer por último;
+- null: não há referência alternativa ou o critério não está claro.
+
+Nunca invente o critério. Se houver referência alternativa sem critério claro, preserve a alternativa, use null no critério e marque “REVISAR_ANTES”.
+
+REGRAS PARA SUGESTÕES DO MODAL
+
+- As sugestões são operacionais e não substituem os dados extraídos.
+- Gere uma sugestão para cada registro factual que poderia corresponder a uma visita no modal.
+- Não combine em uma única sugestão visitas com regras diferentes por braço.
+- Para visita comum, deixe “bracosAplicaveis” como array vazio; no modal, nenhum braço marcado significa visita comum.
+- Para variante, informe somente o braço ao qual aquela regra se aplica.
+- “codigoVisita” deve usar o código factual. Não gere ID interno.
+- “ordemExibicao” deve preservar a sequência clínica.
+- “nomePadraoVisita” deve ser curto, claro e operacional, preservando o significado da fonte.
+- Quando a referência for outra visita, use seu código em “referenciaApos.codigo”.
+- Quando houver referência alternativa, preencha “referenciaAlternativa” seguindo a mesma regra.
+- Eventos especiais atualmente representáveis no modal são Randomização, Inclusão, Última dose, Fim do tratamento, Progressão da doença e Outra referência especial.
+- Para “OUTRA”, use “compatibilidadeModal”: “COM_ADAPTACAO” e descreva em “pendencias” qual data deverá ser configurada para o participante.
+- Não selecione “Sem referência (legado)” para ocultar uma referência conhecida.
+- Use “Sem referência (legado)” somente quando a visita realmente não tiver referência cadastrável ou quando essa for uma adaptação deliberada e explicitada em “pendencias”.
+- Não preencha “diasAposReferencia” quando a fonte informar somente “até X dias”, “por demanda” ou outra regra sem intervalo nominal.
+- Em “repeticaoCiclo”, descreva a repetição sem substituir referência, intervalo ou janela.
+- Em “aliasesNomesHistoricos”, junte os aliases com ponto e vírgula, exatamente como esperado pelo modal.
+- Em “observacoes”, inclua apenas informação útil ao cadastro: condição por braço, referência especial, limite temporal não nominal, regime aplicável, derivação de código ou conflito documental.
+- “baseCalculo” null significa “usar a regra do protocolo/projeto” somente quando essa herança for uma decisão deliberada; caso contrário, explique a pendência.
+- Uma visita com “papelCronograma”: “VISITA_CALCULADA” exige referência e base de cálculo própria ou herdada claramente definida.
+- Uma referência alternativa exige referência principal e “criterioReferencias”.
+- Não sugira ativar o motor CTMS do projeto. A ativação é uma decisão humana posterior à prévia e à revisão do calendário.
+- Não sugira aplicar a base automaticamente a visitas equivalentes de outros ciclos; apenas mencione em “pendencias” quando essa aplicação em lote puder ser avaliada por uma pessoa.
+
+Use “acaoSugerida”:
+
+- “CADASTRAR”: todos os campos essenciais estão suficientemente definidos e não há perda relevante.
+- “REVISAR_ANTES”: há referência especial, alternativa sem critério, janela conflitante, intervalo não nominal, condição clínica, classificação CTMS incerta, código derivado ou adaptação necessária.
+- “NAO_CADASTRAR”: o evento não possui informação suficiente para ser tratado como visita ou é apenas procedimento/atividade.
+
+Use “compatibilidadeModal”:
+
+- “DIRETA”: todos os campos podem ser representados no modal.
+- “COM_ADAPTACAO”: algum dado exige decisão operacional explícita.
+- “NAO_REPRESENTAVEL”: o modal atual não representa a regra sem perda relevante.
+
+Toda sugestão com null relevante deve explicar a pendência.
+
+SAÍDA
+
+Retorne somente JSON válido, sem Markdown, comentários ou explicações fora do JSON. Não inclua chaves diferentes das especificadas abaixo. Se não houver registros em uma seção, retorne um array vazio; não mantenha objetos-modelo vazios.
+
+Use exatamente esta estrutura:
+
+{
+  "projeto": {
+    "nomeAbreviado": null,
+    "codigoProjeto": null,
+    "versaoProtocolo": null,
+    "emendaVigente": null
+  },
+  "visitasComuns": [
+    {
+      "codigo": null,
+      "nome": null,
+      "ordem": null,
+      "repeticao": null,
+      "intervaloDias": null,
+      "referenciaTipo": null,
+      "referenciaCodigo": null,
+      "referenciaAlternativaTipo": null,
+      "referenciaAlternativaCodigo": null,
+      "criterioReferencias": null,
+      "baseCalculo": null,
+      "papelCronograma": null,
+      "janelaDiasMenos": null,
+      "janelaDiasMais": null,
+      "aliases": [],
+      "ativo": true,
+      "condicional": false,
+      "observacoes": null,
+      "origem": null
+    }
+  ],
+  "variantesPorBraco": [
+    {
+      "braco": null,
+      "visitas": [
+        {
+          "codigo": null,
+          "nome": null,
+          "ordem": null,
+          "repeticao": null,
+          "intervaloDias": null,
+          "referenciaTipo": null,
+          "referenciaCodigo": null,
+          "referenciaAlternativaTipo": null,
+          "referenciaAlternativaCodigo": null,
+          "criterioReferencias": null,
+          "baseCalculo": null,
+          "papelCronograma": null,
+          "janelaDiasMenos": null,
+          "janelaDiasMais": null,
+          "aliases": [],
+          "ativo": true,
+          "condicional": false,
+          "observacoes": null,
+          "origem": null
+        }
+      ]
+    }
+  ],
+  "sugestoesCadastroModal": [
+    {
+      "escopo": null,
+      "braco": null,
+      "codigoOrigem": null,
+      "acaoSugerida": null,
+      "compatibilidadeModal": null,
+      "camposModal": {
+        "codigoVisita": null,
+        "ordemExibicao": null,
+        "nomePadraoVisita": null,
+        "referenciaApos": {
+          "tipo": null,
+          "codigo": null,
+          "textoSelecao": null
+        },
+        "referenciaAlternativa": {
+          "tipo": null,
+          "codigo": null,
+          "textoSelecao": null
+        },
+        "criterioReferencias": null,
+        "baseCalculo": null,
+        "papelCronograma": null,
+        "diasAposReferencia": null,
+        "janelaDiasMenos": null,
+        "janelaDiasMais": null,
+        "bracosAplicaveis": [],
+        "repeticaoCiclo": null,
+        "aliasesNomesHistoricos": null,
+        "observacoes": null
+      },
+      "pendencias": [],
+      "justificativa": null
+    }
+  ],
+  "alertas": [],
+  "revisaoNecessaria": [
+    {
+      "codigo": null,
+      "braco": null,
+      "motivo": null
+    }
+  ]
+}
+
+VALORES CONTROLADOS DA SAÍDA
+
+“escopo”:
+- “COMUM”
+- “BRACO”
+
+“acaoSugerida”:
+- “CADASTRAR”
+- “REVISAR_ANTES”
+- “NAO_CADASTRAR”
+
+“compatibilidadeModal”:
+- “DIRETA”
+- “COM_ADAPTACAO”
+- “NAO_REPRESENTAVEL”
+
+“referenciaApos.tipo” e “referenciaAlternativa.tipo”:
+- “VISITA”
+- “EVENTO_ESPECIAL”
+- “SEM_REFERENCIA”
+- null
+
+“baseCalculo”:
+- “MANTER_DATAS_PREVISTAS”
+- “RECALCULAR_VISITA_REALIZADA”
+- null
+
+“papelCronograma”:
+- “NAO_PARTICIPA_CALCULO”
+- “MARCO_CALCULO”
+- “VISITA_CALCULADA”
+- null
+
+“criterioReferencias”:
+- “SELECAO_MANUAL”
+- “PRIMEIRO_OCORRER”
+- “ULTIMO_OCORRER”
+- null
+
+EM “alertas”, REGISTRE
+
+- quais fontes foram efetivamente consultadas;
+- quando a extração foi feita somente a partir do Polo Trial;
+- conflitos entre protocolo, Polo Trial e orçamento;
+- diferenças entre braços;
+- rótulos de braço combinados ou ambíguos;
+- janelas ambíguas ou conflitantes;
+- eventos sem intervalo nominal;
+- referências especiais;
+- classificações CTMS não demonstradas;
+- limitações do modal que afetem mais de uma visita;
+- tabela paginada ou possivelmente incompleta.
+
+Em “origem”, identifique de forma curta a fonte do registro, por exemplo “Protocolo vigente, Tabela 3” ou “Polo Trial > Flowchart > Visitas”. Não inclua valores financeiros.
+
+Em “revisaoNecessaria”, liste sempre o código da visita, o braço quando aplicável e o motivo específico da conferência manual.
+
+As sugestões do modal devem ser derivadas exclusivamente dos dados factuais extraídos e devem manter rastreável qual visita ou variante originou cada sugestão.

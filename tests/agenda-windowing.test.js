@@ -1204,6 +1204,42 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(readProjectFile('IndexContentAfterDashboard.html'), /atualizarAgendaIntervaloUltimaVisita\(\)/);
 });
 
+test('nova visita na mesma data exige confirmação e mantém saída sem salvar em destaque', () => {
+  const server = agendaServer({ CadastroRules_: runFile('CadastroRules.gs').CadastroRules_ });
+  const existing = agendaRow(server, {
+    id: 'EVT-EXISTENTE', data: new Date(2026, 7, 28), tipo: 'Visita',
+    participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Projeto A'
+  });
+  const agenda = fakeAgendaRows(server, [existing]);
+
+  const duplicate = server.agendaVisitaCriadaNaMesmaData_(agenda, {
+    tipo: 'Visita', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28, 14, 30));
+  assert.equal(duplicate.visitaMesmaData, true);
+  assert.equal(duplicate.quantidade, 1);
+  assert.match(duplicate.mensagem, /Já existe uma visita criada/);
+
+  assert.equal(server.agendaVisitaCriadaNaMesmaData_(agenda, {
+    tipo: 'Visita', participante: 'Pessoa B', participanteId: 'P-002', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28)), null);
+  assert.equal(server.agendaVisitaCriadaNaMesmaData_(agenda, {
+    tipo: 'Consulta', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28)), null);
+
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const serverSource = readProjectFile('WebApp.gs');
+  const markup = readProjectFile('IndexContentAfterDashboard.html');
+  ['salvarNovoEventoCompleto', 'salvarNovoEventoComFeriado'].forEach((name) => {
+    const save = functionBody(serverSource, name);
+    assert.match(save, /agendaVisitaCriadaNaMesmaData_\(agenda, dados, d\)/);
+    assert.match(save, /dados\.salvarVisitaMesmaDataConfirmado !== true/);
+  });
+  assert.match(functionBody(client, 'salvarAgendaEvento'), /payload\.salvarVisitaMesmaDataConfirmado = true/);
+  assert.match(functionBody(client, 'salvarAgendaEvento'), /res && res\.visitaMesmaData/);
+  assert.match(markup, /id="btnAgendaSalvarVisitaMesmaData"[^>]*>Salvar mesmo assim<\/button>/);
+  assert.match(markup, /class="btn-save"[^>]*id="btnAgendaSairVisitaMesmaData"[\s\S]*?Sair sem salvar/);
+});
+
 test('selecao da Agenda oculta participantes em obito ou descontinuados', () => {
   const server = agendaServer();
   assert.equal(server.agendaParticipanteDisponivelFormulario_('Ativo'), true);
