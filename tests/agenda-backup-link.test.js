@@ -120,9 +120,11 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
   assert.equal(pendencias.transporteBackupNaoAgendado.length, 1);
   const pendenciasClient = readProjectFile('IndexPendenciasScripts.html');
   const backupCardIndex = pendenciasClient.indexOf("key: 'transporteBackupNaoAgendado'");
+  const documentacaoCardIndex = pendenciasClient.indexOf("key: 'documentacaoTransporteSemEnvio'");
   assert.match(pendenciasClient, /key: 'transporteBackupNaoAgendado',[\s\S]*?action: pendenciaAgendaAction/);
   assert.ok(backupCardIndex > pendenciasClient.indexOf("key: 'kitsVencendo'"));
-  assert.equal(pendenciasClient.lastIndexOf("key: '"), backupCardIndex);
+  assert.ok(documentacaoCardIndex > backupCardIndex);
+  assert.equal(pendenciasClient.lastIndexOf("key: '"), documentacaoCardIndex);
   assert.deepEqual(JSON.parse(JSON.stringify(pendencias.transporteBackupNaoAgendado[0])), {
     agendaId: 'EVT-BACKUP-PENDENTE',
     data: '2099-01-15',
@@ -171,7 +173,12 @@ test('pendencias exibem documentacao de transporte sem envio identificado', () =
   assert.equal(pendencias.counts.courierNaoAgendada, 0);
   assert.equal(pendencias.documentacaoTransporteSemEnvio[0].slot, 'Transporte I');
   assert.match(pendencias.documentacaoTransporteSemEnvio[0].motivo, /1 hora/);
-  assert.match(readProjectFile('IndexPendenciasScripts.html'), /key: 'documentacaoTransporteSemEnvio'/);
+  const pendenciasSource = readProjectFile('IndexPendenciasScripts.html');
+  assert.match(pendenciasSource, /key: 'documentacaoTransporteSemEnvio'/);
+  assert.ok(
+    pendenciasSource.indexOf("key: 'documentacaoTransporteSemEnvio'") > pendenciasSource.indexOf("key: 'transporteBackupNaoAgendado'"),
+    'documentacao de transporte sem envio deve ser a ultima caixa de Pendencias'
+  );
 });
 
 test('temperatura do backup nao vaza para SIV ou visita sem laboratorio', () => {
