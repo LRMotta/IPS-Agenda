@@ -6236,6 +6236,7 @@ function getEstoqueResumoParaPendencias_() {
 function getDashboardPendenciasVazio_() {
   return {
     courierNaoAgendada: [],
+    documentacaoTransporteSemEnvio: [],
     transporteBackupNaoAgendado: [],
     courierNaoConfirmada: [],
     awbEnviadaNaoEntregue: [],
@@ -6245,6 +6246,7 @@ function getDashboardPendenciasVazio_() {
     kitsVencendo: [],
     counts: {
       courierNaoAgendada: 0,
+      documentacaoTransporteSemEnvio: 0,
       transporteBackupNaoAgendado: 0,
       courierNaoConfirmada: 0,
       awbEnviadaNaoEntregue: 0,
@@ -6267,7 +6269,10 @@ function getDashboardPendencias_(estoque) {
   if (agenda.getLastRow() >= 2) {
     var vals = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getDisplayValues();
     var feriados = getAgendaFeriadosPendenciasMap_(vals, i);
+    var agendaPorId = {};
     vals.forEach(function(r) {
+      var agendaIdAtual = String(r[i.id] || '').trim();
+      if (agendaIdAtual) agendaPorId[agendaIdAtual] = r;
       var statusEvento = normText_(r[i.status]);
       var tipoEvento = normText_(r[i.tipo]);
       if (AgendaServerRules_.isCancelled(statusEvento)) return;
@@ -6379,6 +6384,47 @@ function getDashboardPendencias_(estoque) {
         }
       });
     });
+    var docsPendentes = typeof transporteDocumentosSemEnvioPendencias_ === 'function'
+      ? transporteDocumentosSemEnvioPendencias_(new Date())
+      : [];
+    docsPendentes.forEach(function(doc) {
+      var r = agendaPorId[String(doc.agendaId || '').trim()];
+      if (!r || AgendaServerRules_.isCancelled(r[i.status])) return;
+      var slotKey = String(doc.slot || '').trim();
+      var slotCfg = slotKey === '1' ? i.c1 : (slotKey === '2' ? i.c2 : (slotKey === '3' ? i.c3 : null));
+      if (!slotCfg) return;
+      var statusCourier = String(r[slotCfg.status] || '').trim();
+      var statusKey = AgendaServerRules_.courierStatusKey(statusCourier);
+      if (['naoagendado', 'pendente', 'agendado'].indexOf(statusKey) === -1) return;
+      var base = {
+        agendaId: String(r[i.id] || ''),
+        data: String(r[i.data] || ''),
+        hora: String(r[i.hora] || ''),
+        prazoHoras: prazoHorasPendenciaAgenda_(r[i.data], r[i.hora], feriados),
+        participante: String(r[i.participante] || ''),
+        projeto: String(r[i.projeto] || ''),
+        visita: String(r[i.visita] || ''),
+        tipo: String(r[i.tipo] || '')
+      };
+      var slotLabel = 'Transporte ' + (slotKey === '1' ? 'I' : (slotKey === '2' ? 'II' : 'III'));
+      ['courierNaoAgendada', 'courierNaoConfirmada'].forEach(function(key) {
+        var antes = out[key].length;
+        out[key] = out[key].filter(function(item) {
+          return !(item.agendaId === base.agendaId && item.slot === slotLabel);
+        });
+        out.counts[key] = Math.max(0, out.counts[key] - (antes - out[key].length));
+      });
+      out.counts.documentacaoTransporteSemEnvio++;
+      out.documentacaoTransporteSemEnvio.push(Object.assign({}, base, {
+        slot: slotLabel,
+        courier: String(r[slotCfg.nome] || doc.courier || '').trim(),
+        temperatura: String(r[slotCfg.temp] || '').trim(),
+        statusCourier: statusCourier,
+        referencia: String(doc.referencia || ''),
+        geradoEm: String(doc.geradoEm || ''),
+        motivo: String(doc.motivo || 'Documentos gerados; envio do e-mail não identificado.')
+      }));
+    });
   }
   (estoque || []).forEach(function(it) {
     var tipo = normText_(it.tipoItem || it.tipo || '');
@@ -6400,6 +6446,7 @@ function getDashboardPendencias_(estoque) {
     });
   });
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoAgendada);
+  ordenarPendenciasAgendaPorUrgencia_(out.documentacaoTransporteSemEnvio);
   ordenarPendenciasAgendaPorUrgencia_(out.transporteBackupNaoAgendado);
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoConfirmada);
   ordenarPendenciasAgendaPorUrgencia_(out.awbEnviadaNaoEntregue);
@@ -11711,6 +11758,26 @@ function agendaRealizadoFuturoErro_(status, datas) {
   return '';
 }
 
+function agendaCourierStatusFuturoErro_(dados, dataEvento, rowAnterior) {
+  if (!agendaDateIsAfterToday_(dataEvento)) return '';
+  dados = dados || {};
+  var idx = AGENDA_CFG.idx;
+  var slots = [
+    { label: 'Transporte I', value: dados.courier1, oldIdx: idx.c1.status },
+    { label: 'Transporte II', value: dados.courier2, oldIdx: idx.c2.status },
+    { label: 'Transporte III', value: dados.courier3, oldIdx: idx.c3.status },
+    { label: 'Transporte Backup', value: dados.backup, oldIdx: idx.cb.status }
+  ];
+  for (var i = 0; i < slots.length; i++) {
+    var statusNovo = String(slots[i].value && slots[i].value.status || '').trim();
+    if (!AgendaServerRules_.courierStatusRequiresEventDate(statusNovo)) continue;
+    var statusAnterior = rowAnterior ? String(rowAnterior[slots[i].oldIdx] || '').trim() : '';
+    if (rowAnterior && normText_(statusNovo) === normText_(statusAnterior)) continue;
+    return slots[i].label + ' nao pode ser marcado como ' + statusNovo + ' antes da data da visita.';
+  }
+  return '';
+}
+
 function isAgendaTipoVisita_(tipo) {
   return AgendaServerRules_.formPolicy(tipo).usesParticipantWorkflow;
 }
@@ -11813,6 +11880,8 @@ function salvarNovoEventoCompleto(dados) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, null);
+  if (erroCourierFuturo) return { erro: erroCourierFuturo };
   var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   if (isMonitoria && !String(dados.salaMonitoria || '').trim()) {
@@ -11888,6 +11957,8 @@ function salvarNovoEventoComFeriado(dados) {
     return resultadoPeriodo;
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, null);
+  if (erroCourierFuturo) return { erro: erroCourierFuturo };
   var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var erroRealizadoFuturoUnico = agendaRealizadoFuturoErro_(dados.status, d);
@@ -12327,6 +12398,8 @@ function atualizarAgendaEventoCompleto(dados) {
     return { erro: 'Informe o médico responsável pela consulta.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, rowAnterior);
+  if (erroCourierFuturo) return { erro: erroCourierFuturo };
   var datasValidacaoStatus = isPeriodo
     ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
     : [d];
@@ -13262,12 +13335,19 @@ function monitorarConfirmacoesCourierAgendadas(event) {
 }
 
 function monitorarConfirmacoesCourierAgendadas_() {
+  var envios = { ok: true, verificados: 0, enviados: 0, semAnexo: 0 };
+  try {
+    if (typeof transporteMonitorarEnviosPorEmail_ === 'function') envios = transporteMonitorarEnviosPorEmail_();
+  } catch (envioError) {
+    envios = { ok: false, erro: envioError.message || String(envioError) };
+    Logger.log('Monitor de envios de transporte: ' + envios.erro);
+  }
   var regras = getCourierConfirmationRules_();
   var ruleKeys = Object.keys(regras);
-  if (!ruleKeys.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhuma regra ativa.' };
+  if (!ruleKeys.length) return { ok: true, verificados: 0, confirmados: 0, envios: envios, mensagem: 'Nenhuma regra ativa.' };
   var agenda = getAgendaSheet_();
   var lastRow = agenda.getLastRow();
-  if (lastRow < 2) return { ok: true, verificados: 0, confirmados: 0 };
+  if (lastRow < 2) return { ok: true, verificados: 0, confirmados: 0, envios: envios };
 
   var range = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
   var values = range.getValues();
@@ -13276,7 +13356,7 @@ function monitorarConfirmacoesCourierAgendadas_() {
   var pendentesRef = getAgendaCourierRefsPendentesConfirmacao_(values, display, regras);
   var awbs = Object.keys(pendentes);
   var refs = Object.keys(pendentesRef);
-  if (!awbs.length && !refs.length) return { ok: true, verificados: 0, confirmados: 0, mensagem: 'Nenhum courier pendente de confirmação.' };
+  if (!awbs.length && !refs.length) return { ok: true, verificados: 0, confirmados: 0, envios: envios, mensagem: 'Nenhum courier pendente de confirmação.' };
 
   var encontradosPorRegra = [];
   ruleKeys.forEach(function(ruleKey) {
@@ -13293,7 +13373,7 @@ function monitorarConfirmacoesCourierAgendadas_() {
     return item.awbs.length || item.refs.length;
   });
   if (!temConfirmacao) {
-    return { ok: true, verificados: awbs.length + refs.length, confirmados: 0, itens: [] };
+    return { ok: true, verificados: awbs.length + refs.length, confirmados: 0, itens: [], envios: envios };
   }
   var confirmados = codexWithDocumentLock_('monitorarConfirmacoesCourierAgendadas', function() {
     var agendaAtual = getAgendaSheet_();
@@ -13374,7 +13454,7 @@ function monitorarConfirmacoesCourierAgendadas_() {
     SpreadsheetApp.flush();
     return atualizados;
   });
-  return { ok: true, verificados: awbs.length + refs.length, confirmados: confirmados.length, itens: confirmados };
+  return { ok: true, verificados: awbs.length + refs.length, confirmados: confirmados.length, itens: confirmados, envios: envios };
 }
 
 function diagnosticarMonitorConfirmacoesCourier() {

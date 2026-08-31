@@ -1558,6 +1558,31 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.doesNotMatch(client, /_agendaWindowedRange/);
 });
 
+test('status fisico de courier futuro e bloqueado no cliente e no servidor sem quebrar legado inalterado', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const oldRow = Array(cfg.lastCol).fill('');
+  oldRow[cfg.idx.c1.status] = 'Entregue';
+
+  assert.match(
+    server.agendaCourierStatusFuturoErro_({ courier1: { status: 'Entregue' } }, '2099-09-03', null),
+    /antes da data da visita/
+  );
+  assert.equal(
+    server.agendaCourierStatusFuturoErro_({ courier1: { status: 'Entregue' } }, '2099-09-03', oldRow),
+    ''
+  );
+  assert.equal(
+    server.agendaCourierStatusFuturoErro_({ courier1: { status: 'Confirmado' } }, '2099-09-03', null),
+    ''
+  );
+  assert.match(functionBody(client, 'atualizarAgendaCourierStatusData_'), /opt\.disabled/);
+  assert.match(functionBody(client, 'validarAgendaCourierStatusData_'), /courierStatusRequiresEventDate/);
+  assert.match(functionBody(client, 'salvarAgendaEvento'), /validarAgendaCourierStatusData_\(\)/);
+  assert.match(functionBody(readProjectFile('WebApp.gs'), 'atualizarAgendaEventoCompleto'), /agendaCourierStatusFuturoErro_/);
+});
+
 test('display de Close-Out segue o fluxo institucional sem exigir participante', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const classifier = functionBody(client, 'agendaUsaDisplayOperacional_');

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile } = require('./helpers/load-app-script');
+const { runFile, runHtmlScript } = require('./helpers/load-app-script');
 
 function rules() {
   return runFile('AgendaServerRules.gs').AgendaServerRules_;
@@ -51,4 +51,17 @@ test('cancelamento avisado gera uma notificacao de cancelamento', () => {
   const agenda = rules();
   assert.equal(agenda.notificationAction({ labCentral: 'Sim', status: 'Cancelado', control: 'Notificado 10/07/2026' }), 'cancelamento');
   assert.equal(agenda.notificationAction({ labCentral: 'Sim', status: 'Cancelado', control: 'Cancelado' }), '');
+});
+
+test('cliente e servidor restringem estados fisicos do courier antes da visita', () => {
+  const server = rules();
+  const client = runHtmlScript('SharedAgendaRules.html').AgendaRules;
+  ['Coletado', 'Enviado', 'Entregue'].forEach((status) => {
+    assert.equal(server.courierStatusRequiresEventDate(status), true, status);
+    assert.equal(client.courierStatusRequiresEventDate(status), true, status);
+  });
+  ['Não Agendado', 'Pendente', 'Agendado', 'Confirmado', 'Cancelado'].forEach((status) => {
+    assert.equal(server.courierStatusRequiresEventDate(status), false, status);
+    assert.equal(client.courierStatusRequiresEventDate(status), false, status);
+  });
 });

@@ -459,6 +459,7 @@
     agendaRestoreValues(atuais);
     atualizarAgendaTipoVisibilidade();
     onAgendaLabCentralChange();
+    atualizarAgendaCourierStatusData_();
     var aviso = document.getElementById('agendaEmailAviso');
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
     _agendaReferenceDataConfirmed = true;
@@ -576,6 +577,7 @@
     } else {
       agendaRestoreEditRecordValues_(true);
     }
+    atualizarAgendaCourierStatusData_();
     var aviso = document.getElementById('agendaEmailAviso');
     if (aviso) aviso.style.display = _agendaDados.emailLabAtivo ? 'none' : 'block';
     _agendaReferenceDataConfirmed = true;
@@ -1965,6 +1967,50 @@
     return d.getTime() > hoje.getTime();
   }
 
+  function agendaCourierStatusAnterior_(id) {
+    if (!_agendaEditId || !_agendaEditTransportValues) return '';
+    var map = {
+      agC1Status: 'courier1',
+      agC2Status: 'courier2',
+      agC3Status: 'courier3',
+      agBackupStatus: 'backup'
+    };
+    var item = _agendaEditTransportValues[map[id]] || {};
+    return String(item.status || '').trim();
+  }
+
+  function atualizarAgendaCourierStatusData_() {
+    var futuro = agendaIsFutureDate((document.getElementById('agData') || {}).value || '');
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var anterior = agendaCourierStatusAnterior_(id);
+      Array.prototype.forEach.call(el.options, function(opt) {
+        var restrito = futuro && AgendaRules.courierStatusRequiresEventDate(opt.value);
+        opt.disabled = !!(restrito && normAgenda(opt.value) !== normAgenda(anterior));
+      });
+      el.title = futuro
+        ? 'Coletado, Enviado e Entregue só ficam disponíveis na data da visita.'
+        : '';
+    });
+  }
+
+  function validarAgendaCourierStatusData_() {
+    var futuro = agendaIsFutureDate((document.getElementById('agData') || {}).value || '');
+    var valido = true;
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var incompativel = futuro && AgendaRules.courierStatusRequiresEventDate(el.value) &&
+        normAgenda(el.value) !== normAgenda(agendaCourierStatusAnterior_(id));
+      el.classList.toggle('invalid', incompativel);
+      el.setAttribute('aria-invalid', incompativel ? 'true' : 'false');
+      if (incompativel) valido = false;
+    });
+    if (!valido) setAgendaStatus('Atencao: Coletado, Enviado e Entregue só podem ser selecionados na data da visita.', 'danger');
+    return valido;
+  }
+
   function validarAgendaRealizadoFuturo() {
     var statusEl = document.getElementById('agStatus');
     var data = (document.getElementById('agData') || {}).value || '';
@@ -2477,6 +2523,7 @@
     ok = validarAgendaCampo('agLabCentral', 'errAgLabCentral', labOk) && ok;
     ok = validarAgendaAlertasDataPassada() && ok;
     ok = validarAgendaRealizadoFuturo() && ok;
+    ok = validarAgendaCourierStatusData_() && ok;
     ok = validateAgendaAwbs(true) && ok;
     if (!ok) {
       setAgendaStatus('Atencao: revise os campos destacados antes de salvar.', 'danger');
@@ -3475,6 +3522,7 @@
     if (btnReserva) btnReserva.style.display = 'none';
     setAgendaKitsBaixaState(false);
     setAgendaKitsReservaState(false);
+    atualizarAgendaCourierStatusData_();
     var reqBox = document.getElementById('agReqEnviada');
     if (reqBox) {
       reqBox.checked = false;
@@ -4408,6 +4456,7 @@
     setAgendaSelectValue('agBackupTemp', r.backup && (r.backup.temperatura || r.backup.temp));
     setAgendaSelectValue('agBackupStatus', r.backup && r.backup.status);
     agendaMatBioLoad('agBackup', r.backup);
+    atualizarAgendaCourierStatusData_();
     applyAgendaAwbRulesAll();
     agendaMatBioUpdateAllCopyOptions();
     atualizarAgendaTransportesOpcionais();
@@ -5561,6 +5610,7 @@
     if (!panel || !panel.classList.contains('open')) return;
     if (!event || !event.target || !event.target.closest || !event.target.closest('#agendaCreatePanel')) return;
     if (!/^ag(Data|DataFim|Hora|Tipo|Projeto|Monitor1|SalaMonitoria|LabCentral)$/.test(String(event.target.id || ''))) return;
+    if (event.target.id === 'agData') atualizarAgendaCourierStatusData_();
     updateAgendaSaveAvailability(false);
   }
 
