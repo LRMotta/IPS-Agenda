@@ -139,22 +139,6 @@
         }
       },
       {
-        key: 'documentacaoTransporteSemEnvio',
-        title: 'Documentação de transporte sem envio',
-        icon: 'drafts',
-        tone: '#8a4b08',
-        bg: '#fff4df',
-        priority: true,
-        action: pendenciaAgendaAction,
-        items: p.documentacaoTransporteSemEnvio || [],
-        render: function(it) {
-          return {
-            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
-            meta: [it.slot, pendenciaCourierComTemperatura(it), it.motivo, it.projeto].filter(Boolean).join(' · ')
-          };
-        }
-      },
-      {
         key: 'awbEnviadaNaoEntregue',
         title: 'AWB enviada não entregue',
         icon: 'outbox',
@@ -249,6 +233,22 @@
           return {
             main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
             meta: [pendenciaCourierComTemperatura(it), it.projeto, it.visita].filter(Boolean).join(' · ')
+          };
+        }
+      },
+      {
+        key: 'documentacaoTransporteSemEnvio',
+        title: 'Documentação de transporte sem envio',
+        icon: 'drafts',
+        tone: '#8a4b08',
+        bg: '#fff4df',
+        priority: true,
+        action: pendenciaAgendaAction,
+        items: p.documentacaoTransporteSemEnvio || [],
+        render: function(it) {
+          return {
+            main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
+            meta: [it.slot, pendenciaCourierComTemperatura(it), it.motivo, it.projeto].filter(Boolean).join(' · ')
           };
         }
       }
