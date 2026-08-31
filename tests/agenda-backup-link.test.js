@@ -139,6 +139,41 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
   });
 });
 
+test('pendencias exibem documentacao de transporte sem envio identificado', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const row = Array(cfg.lastCol).fill('');
+  row[cfg.idx.id] = 'EVT-DOCS-1';
+  row[cfg.idx.data] = '2099-09-03';
+  row[cfg.idx.hora] = '09:00';
+  row[cfg.idx.tipo] = 'Visita';
+  row[cfg.idx.status] = 'Agendado';
+  row[cfg.idx.participante] = 'Participante Docs';
+  row[cfg.idx.projeto] = 'Projeto Docs';
+  row[cfg.idx.visita] = 'V1';
+  row[cfg.idx.c1.nome] = 'DHL';
+  row[cfg.idx.c1.temp] = 'AMBIENTE';
+  row[cfg.idx.c1.status] = 'Pendente';
+  server.getAgendaSheetForRead_ = () => new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), row]);
+  server.getAgendaFeriadosPendenciasMap_ = () => ({});
+  server.transporteDocumentosSemEnvioPendencias_ = () => [{
+    agendaId: 'EVT-DOCS-1',
+    slot: '1',
+    referencia: 'IPS-TRP-EVT-DOCS-1-T1',
+    courier: 'DHL',
+    geradoEm: '2099-09-01T09:00:00',
+    motivo: 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.'
+  }];
+
+  const pendencias = server.getDashboardPendencias_([]);
+
+  assert.equal(pendencias.counts.documentacaoTransporteSemEnvio, 1);
+  assert.equal(pendencias.counts.courierNaoAgendada, 0);
+  assert.equal(pendencias.documentacaoTransporteSemEnvio[0].slot, 'Transporte I');
+  assert.match(pendencias.documentacaoTransporteSemEnvio[0].motivo, /1 hora/);
+  assert.match(readProjectFile('IndexPendenciasScripts.html'), /key: 'documentacaoTransporteSemEnvio'/);
+});
+
 test('temperatura do backup nao vaza para SIV ou visita sem laboratorio', () => {
   const server = agendaServer();
   const cfg = server.AGENDA_CFG;

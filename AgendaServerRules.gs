@@ -227,6 +227,11 @@ var AgendaServerRules_ = (function() {
     return status === 'nao agendado' || status === 'pendente' || (!status && !String(awb || '').trim());
   }
 
+  function courierStatusRequiresEventDate(statusValue) {
+    var status = normalizeText(statusValue);
+    return status.indexOf('colet') > -1 || status.indexOf('envi') > -1 || status.indexOf('entreg') > -1;
+  }
+
   // A Agenda representa uma equipe em varios locais. Eventos simultaneos sao validos.
   function allowsConcurrentEvents() {
     return true;
@@ -279,6 +284,7 @@ var AgendaServerRules_ = (function() {
     courierIsAwaitingConfirmation: courierIsAwaitingConfirmation,
     courierCanReceiveConfirmation: courierCanReceiveConfirmation,
     courierNeedsSchedule: courierNeedsSchedule,
+    courierStatusRequiresEventDate: courierStatusRequiresEventDate,
     allowsConcurrentEvents: allowsConcurrentEvents,
     notificationAction: notificationAction
   });

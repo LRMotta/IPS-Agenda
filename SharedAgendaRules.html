@@ -284,6 +284,11 @@
     return 'pendente';
   }
 
+  function courierStatusRequiresEventDate(statusValue) {
+    var status = normalizeText(statusValue);
+    return status.indexOf('colet') > -1 || status.indexOf('envi') > -1 || status.indexOf('entreg') > -1;
+  }
+
   function temperatureClass(value) {
     var temperature = normalizeText(value);
     if (temperature.indexOf('ambiente') > -1) return 'temp-ambiente';
@@ -369,6 +374,7 @@
     typeIcon: typeIcon,
     typeVisualClass: typeVisualClass,
     courierStatusKey: courierStatusKey,
+    courierStatusRequiresEventDate: courierStatusRequiresEventDate,
     temperatureClass: temperatureClass,
     isVisibleIn: isVisibleIn,
     canPerform: canPerform,
