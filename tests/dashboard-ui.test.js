@@ -139,6 +139,35 @@ test('impressao usa somente o titulo gerencial dos graficos', () => {
   assert.match(dashboard, /dashboardPrintChartTitleText\(prev\)/);
 });
 
+test('Dashboard conta participantes atendidos uma vez por recorte da Agenda', () => {
+  const dashboard = readProjectFile('IndexDashboard.html');
+  const content = readProjectFile('IndexDashboardContent.html');
+  const block = sourceBetween(dashboard, 'function dashAgendaParticipantesAtendidos(', 'function renderDashboardAgendaPeriodoResumo(');
+  const context = vm.createContext({});
+  vm.runInContext(block, context);
+
+  const realizados = [
+    { participanteKey: 'cadastro:1', realizado: true },
+    { participanteKey: 'cadastro:1', realizado: true },
+    { participanteKey: 'projeto:abc|id:22', realizado: true },
+    { participanteKey: 'cadastro:3', realizado: false },
+    { participanteKey: '', realizado: true }
+  ];
+  assert.equal(context.dashAgendaParticipantesAtendidos(realizados, (row) => row.realizado), 2);
+  assert.match(content, /id="dashAgendaParticipantesAtendidos"/);
+  assert.match(content, /Participantes atendidos/);
+});
+
+test('Dashboard identifica participante por cadastro e preserva fallback legado por protocolo', () => {
+  const server = runFile('WebApp.gs');
+  const idx = { participanteCadastroId: 0, projeto: 1, idParticipante: 2, participante: 3 };
+
+  assert.equal(server.agendaDashboardParticipantKey_(['CAD-81', 'Estudo A', 'P-10', 'Pessoa A'], idx), 'cadastro:cad-81');
+  assert.equal(server.agendaDashboardParticipantKey_(['', 'Estudo A', 'P-10', 'Pessoa A'], idx), 'projeto:estudo a|id:p-10');
+  assert.equal(server.agendaDashboardParticipantKey_(['', 'Estudo A', '', 'Pessoa A'], idx), 'projeto:estudo a|nome:pessoa a');
+  assert.equal(server.agendaDashboardParticipantKey_(['', 'Estudo A', '', ''], idx), '');
+});
+
 test('grafico de coordenadores abre projetos com o coordenador selecionado', () => {
   const dashboard = readProjectFile('IndexDashboard.html');
   const core = readProjectFile('IndexCoreScripts.html');
