@@ -82,9 +82,11 @@ test('ID e obrigatorio salvo nos status de pre-triagem', () => {
 
 test('participante nao pode repetir CPF nem ID dentro do mesmo projeto', () => {
   const cadastro = rules();
-  assert.equal(cadastro.findParticipantDuplicate({ cpf: '12345678900', projeto: 'Outro', idParticipante: 'P-999' }, participantRows).field, 'cpf');
+  assert.equal(cadastro.findParticipantDuplicate({ cpf: '12345678900', projeto: 'Estudo Aurora', idParticipante: 'P-999' }, participantRows).field, 'cpf');
+  assert.equal(cadastro.findParticipantDuplicate({ cpf: '12345678900', projeto: 'Outro', idParticipante: 'P-999' }, participantRows), null);
   assert.equal(cadastro.findParticipantDuplicate({ projeto: 'Estudo Aurora', idParticipante: 'p-001' }, participantRows).field, 'idParticipante');
   assert.equal(cadastro.findParticipantDuplicate({ projeto: 'Projeto Horizonte', idParticipante: 'P-003' }, participantRows), null);
+  assert.equal(cadastro.findParticipantCpfMatch({ cpf: '12345678900', projeto: 'Outro' }, participantRows).id, '1');
 });
 
 test('atualizacao do participante ignora o proprio registro', () => {
@@ -131,9 +133,27 @@ test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () 
   const modal = readProjectFile('IndexContentAfterStock.html');
   assert.match(client, /r && r\.requiresNameConfirmation/);
   assert.match(client, /salvarPartApp\(\{ confirmarNomeDuplicado: true \}\)/);
-  assert.match(modal, /Participante já cadastrado/);
+  assert.match(modal, /Pessoa já cadastrada/);
   assert.match(modal, /Revisar cadastro/);
-  assert.match(modal, /Cadastrar mesmo assim/);
+  assert.match(modal, /Criar nova participação/);
+});
+
+test('servidor preserva protocolo e identificacao de participacao com historico', () => {
+  const server = readProjectFile('WebApp.gs');
+  const save = sourceBetween(server, 'function salvarDadosParticipante(', 'function corrigirMatrizIdadeParticipantes(');
+  assert.match(save, /participantePossuiEventoAgenda_/);
+  assert.match(save, /alterouProjeto \|\| alterouIdParticipante/);
+  assert.match(save, /Encerre a participação atual e crie uma nova participação/);
+  assert.match(save, /codexWriteAuditChanges_\('Cadastros', 'atualizarParticipacaoParticipante'/);
+});
+
+test('status encerrado nao fica disponivel para novo agendamento', () => {
+  const cadastro = rules();
+  assert.equal(cadastro.participantAvailableForNewAgenda('Ativo'), true);
+  assert.equal(cadastro.participantAvailableForNewAgenda('Falha de Pré-Triagem'), false);
+  assert.equal(cadastro.participantAvailableForNewAgenda('Falha de Triagem'), false);
+  assert.equal(cadastro.participantAvailableForNewAgenda('Descontinuado'), false);
+  assert.equal(cadastro.participantAvailableForNewAgenda('Óbito'), false);
 });
 
 test('modal de participante organiza identificacao e protocolo sem remover a regra do ID', () => {

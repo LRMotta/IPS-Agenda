@@ -850,7 +850,7 @@ function agendaEditableRecordVersionValuesFromRow_(row) {
     [
       text(i.monitorName), row[i.poloTrial] ? '1' : '', row[i.ecrf] ? '1' : '',
       text(i.salaMonitoria), agendaBooleanValue_(row[i.carroRequerido]) ? '1' : '',
-      text(i.backupAgendaRef)
+      text(i.backupAgendaRef), text(i.participanteCadastroId)
     ]
   );
 }
@@ -5652,6 +5652,21 @@ function sincronizarNomeParticipanteReferencias_(ss, anterior, atual) {
   return { atualizadas: atualizadas, abas: abas };
 }
 
+function participantePossuiEventoAgenda_(participante) {
+  participante = participante || {};
+  var agenda = getAgendaSheetForRead_();
+  if (!agenda || agenda.getLastRow() < 2) return false;
+  var i = AGENDA_CFG.idx;
+  return agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues().some(function(row) {
+    return CadastroRules_.agendaEventMatchesParticipant(participante, {
+      participantCadastroId: i.participanteCadastroId >= 0 ? row[i.participanteCadastroId] : '',
+      participante: row[i.participante],
+      idParticipante: row[i.idParticipante],
+      projeto: row[i.projeto]
+    });
+  });
+}
+
 function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   d = d || {};
@@ -5660,6 +5675,7 @@ function salvarDadosParticipante(d) {
   if (!sh) throw new Error('Aba "Participantes" não encontrada.');
   var rows = sh.getDataRange().getValues();
   var editRowIndex = -1;
+  var existing = null;
   if (d.id) {
     for (var editIdx = 1; editIdx < rows.length; editIdx++) {
       if (String(rows[editIdx][0]) === String(d.id)) {
@@ -5668,7 +5684,7 @@ function salvarDadosParticipante(d) {
       }
     }
     if (editRowIndex < 0) throw new Error('Participante não encontrado (id=' + d.id + ')');
-    var existing = rows[editRowIndex] || [];
+    existing = rows[editRowIndex] || [];
     if (!String(d.projeto || '').trim()) d.projeto = String(existing[5] || '').trim();
     if (!String(d.status || '').trim()) d.status = String(existing[8] || '').trim();
     if (!String(d.idParticipante || '').trim()) d.idParticipante = String(existing[4] || '').trim();
@@ -5680,6 +5696,13 @@ function salvarDadosParticipante(d) {
   if (!CadastroRules_.projectExists(projeto, projetos)) {
     throw new Error('Selecione um projeto cadastrado para o participante.');
   }
+  if (existing) {
+    var alterouProjeto = normText_(existing[5]) !== normText_(projeto);
+    var alterouIdParticipante = normText_(existing[4]) !== normText_(d.idParticipante);
+    if ((alterouProjeto || alterouIdParticipante) && participantePossuiEventoAgenda_(participanteReferenciaCadastro_(existing))) {
+      throw new Error('O protocolo e o número de identificação não podem ser alterados porque esta participação já possui eventos na Agenda. Encerre a participação atual e crie uma nova participação para o outro protocolo.');
+    }
+  }
   var duplicado = CadastroRules_.findParticipantDuplicate(d, rows);
   if (duplicado) {
     throw new Error(duplicado.field === 'cpf'
@@ -5687,12 +5710,14 @@ function salvarDadosParticipante(d) {
       : 'Já existe um participante com este ID vinculado ao mesmo projeto.');
   }
   var nomeDuplicado = CadastroRules_.findParticipantNameDuplicate(d, rows);
-  if (nomeDuplicado && d.confirmarNomeDuplicado !== true) {
+  var cpfCorrespondente = CadastroRules_.findParticipantCpfMatch(d, rows);
+  var cadastroCorrespondente = cpfCorrespondente || nomeDuplicado;
+  if (cadastroCorrespondente && d.confirmarNomeDuplicado !== true) {
     return {
       requiresNameConfirmation: true,
-      title: 'Participante já cadastrado',
-      message: 'Já existe um participante cadastrado com este nome. Revise os dados antes de continuar. Um novo cadastro é recomendado somente quando o participante recebeu um novo número de identificação/triagem ou passou a participar de outro protocolo.',
-      existing: nomeDuplicado
+      title: 'Pessoa já cadastrada',
+      message: 'Já existe uma participação possivelmente vinculada a esta pessoa. Preserve o protocolo anterior e continue somente para criar uma nova participação em outro protocolo, com novo número de identificação/triagem quando aplicável.',
+      existing: cadastroCorrespondente
     };
   }
 
@@ -5738,6 +5763,15 @@ function salvarDadosParticipante(d) {
       projeto, d.braco || ''
     ]);
     sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual);
+    if (typeof codexWriteAuditChanges_ === 'function') {
+      codexWriteAuditChanges_('Cadastros', 'atualizarParticipacaoParticipante', d.id, [
+        { field: 'Nome', oldValue: existing[1], newValue: d.nome },
+        { field: 'Número de identificação', oldValue: existing[4], newValue: d.idParticipante },
+        { field: 'Protocolo', oldValue: existing[5], newValue: projeto },
+        { field: 'Braço', oldValue: existing[6], newValue: d.braco || '' },
+        { field: 'Status', oldValue: existing[8], newValue: d.status }
+      ], 'Cadastro de participação atualizado');
+    }
     clearCodexRuntimeCaches_();
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return 'Participante atualizado com sucesso';
@@ -5752,6 +5786,7 @@ function salvarDadosParticipante(d) {
     sh.getRange(targetRow, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
     gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns);
+    if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('criarParticipacaoParticipante', 'Cadastros', rowStart[0]);
     clearCodexRuntimeCaches_();
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return 'Participante cadastrado com sucesso';
@@ -5785,6 +5820,7 @@ function excluirParticipante(id) {
         var agendaRows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
         var possuiEvento = agendaRows.some(function(row) {
           return CadastroRules_.agendaEventMatchesParticipant(participante, {
+            participantCadastroId: AGENDA_CFG.idx.participanteCadastroId >= 0 ? row[AGENDA_CFG.idx.participanteCadastroId] : '',
             participante: row[AGENDA_CFG.idx.participante],
             idParticipante: row[AGENDA_CFG.idx.idParticipante],
             projeto: row[AGENDA_CFG.idx.projeto]
@@ -6147,6 +6183,7 @@ function getDashboardData() {
     diag.agendaResumo = {
       totalAno: 0,
       visitasRealizadasAno: 0,
+      participantesAtendidosAno: 0,
       labCentralAno: 0,
       monitoriaDiasAno: 0,
       visitasMes: [],
@@ -6559,6 +6596,7 @@ function getAgendaDashboardResumo_() {
   var resumo = {
     totalAno: 0,
     visitasRealizadasAno: 0,
+    participantesAtendidosAno: 0,
     labCentralAno: 0,
     monitoriaDiasAno: 0,
     visitasMes: meses.map(function(m) { return { label: m, value: 0 }; }),
@@ -6581,6 +6619,7 @@ function getAgendaDashboardResumo_() {
   var cancelReagProt = {};
   var courierUso = {};
   var antecedenciaPorTipo = {};
+  var participantesAtendidos = {};
   var hoje = new Date();
   hoje.setHours(23, 59, 59, 999);
   vals.forEach(function(r) {
@@ -6594,7 +6633,8 @@ function getAgendaDashboardResumo_() {
       porMed: porMed,
       cancelReagProt: cancelReagProt,
       courierUso: courierUso,
-      antecedenciaPorTipo: antecedenciaPorTipo
+      antecedenciaPorTipo: antecedenciaPorTipo,
+      participantesAtendidos: participantesAtendidos
     });
   });
   var monMap = {};
@@ -6603,6 +6643,7 @@ function getAgendaDashboardResumo_() {
     monMap[p] = (monMap[p] || 0) + 1;
   });
   resumo.monitoriaDiasAno = Object.keys(porMonProtDia).length;
+  resumo.participantesAtendidosAno = Object.keys(participantesAtendidos).length;
   resumo.visitasPorProtocolo = agendaMapToPairs_(porProt, 15);
   resumo.monitoriaPorProtocolo = agendaMapToPairs_(monMap, 15);
   resumo.visitasPorMedico = agendaMapToPairs_(porMed, 12);
@@ -6664,9 +6705,20 @@ function agendaDashboardRowInfo_(r, i, data) {
     isVisita: info.isVisita,
     isRealizada: info.isRealizada,
     isEventoComTransporte: info.isEventoComTransporte,
+    participanteKey: agendaDashboardParticipantKey_(r, i),
     couriers: couriersEvento
   };
   return info;
+}
+
+function agendaDashboardParticipantKey_(r, i) {
+  var cadastroId = i.participanteCadastroId >= 0 ? normText_(r[i.participanteCadastroId]) : '';
+  if (cadastroId) return 'cadastro:' + cadastroId;
+  var projeto = normText_(r[i.projeto]);
+  var participanteId = normText_(r[i.idParticipante]);
+  if (participanteId) return 'projeto:' + projeto + '|id:' + participanteId;
+  var participante = normText_(r[i.participante]);
+  return participante ? 'projeto:' + projeto + '|nome:' + participante : '';
 }
 
 function agendaDashboardCouriersEvento_(r, i) {
@@ -6700,6 +6752,8 @@ function agendaDashboardCountMonitoria_(info, porMonProtDia) {
 function agendaDashboardCountVisita_(r, info, ctx) {
   if (!info.isVisita || !info.isRealizada || info.isCancelado || info.data.getTime() > ctx.hoje.getTime()) return;
   ctx.resumo.visitasRealizadasAno++;
+  var participanteKey = info.evento.participanteKey;
+  if (participanteKey) ctx.participantesAtendidos[participanteKey] = 1;
   ctx.resumo.visitasMes[info.data.getMonth()].value++;
   ctx.resumo.visitasPorDiaSemana[info.data.getDay()].value++;
   ctx.porProt[info.projeto] = (ctx.porProt[info.projeto] || 0) + 1;
@@ -10329,7 +10383,7 @@ var AGENDA_CFG = {
     medico: 12, procedimentos: 13, servTerc: 14, obs: 15,
     labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46,
     poloTrial: 47, ecrf: 48, salaMonitoria: 49, carroRequerido: 50,
-    backupAgendaRef: 51, backupTemperatura: 52
+    backupAgendaRef: 51, backupTemperatura: 52, participanteCadastroId: 0
   },
   idx: {
     id: 0, data: 1, hora: 2, tipo: 3, status: 4, participante: 5,
@@ -10341,7 +10395,7 @@ var AGENDA_CFG = {
     c3: { nome: 28, temp: 29, status: 30, awb: 31, material: 32, destino: 38, matBio: 42 },
     cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43, temp: 51 },
     reqStatus: 44, monitorName: 45, poloTrial: 46, ecrf: 47, salaMonitoria: 48, carroRequerido: 49,
-    backupAgendaRef: 50
+    backupAgendaRef: 50, participanteCadastroId: -1
   }
 };
 
@@ -10377,6 +10431,7 @@ function getAgendaSheetForRead_() {
   var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), AGENDA_CFG.abaNomes);
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
   agendaResolveBackupTemperaturaColumnForRead_(sh);
+  agendaResolveParticipanteCadastroColumnForRead_(sh);
   return sh;
 }
 
@@ -10397,9 +10452,46 @@ function agendaUseBackupTemperaturaColumn_(column) {
   column = Math.max(0, Number(column) || 0);
   AGENDA_CFG.col.backupTemperatura = column;
   AGENDA_CFG.idx.cb.temp = column ? column - 1 : -1;
-  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, column);
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, column, AGENDA_CFG.col.participanteCadastroId || 0);
   CFG.lastCol = AGENDA_CFG.lastCol;
   return column;
+}
+
+function agendaFindParticipanteCadastroColumn_(sh) {
+  var aliases = ['id cadastro participante', 'participante cadastro id', 'id interno participante'];
+  var lastColumn = Number(sh && sh.getLastColumn && sh.getLastColumn()) || 0;
+  if (lastColumn < 1) return 0;
+  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
+  for (var i = 0; i < headers.length; i++) {
+    if (aliases.indexOf(normText_(headers[i])) >= 0) return i + 1;
+  }
+  return 0;
+}
+
+function agendaUseParticipanteCadastroColumn_(column) {
+  column = Math.max(0, Number(column) || 0);
+  AGENDA_CFG.col.participanteCadastroId = column;
+  AGENDA_CFG.idx.participanteCadastroId = column ? column - 1 : -1;
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, AGENDA_CFG.col.backupTemperatura || 0, column);
+  CFG.lastCol = AGENDA_CFG.lastCol;
+  return column;
+}
+
+function agendaResolveParticipanteCadastroColumnForRead_(sh) {
+  return agendaUseParticipanteCadastroColumn_(agendaFindParticipanteCadastroColumn_(sh));
+}
+
+function agendaEnsureParticipanteCadastroColumn_(sh) {
+  var label = 'ID Cadastro Participante';
+  var column = agendaFindParticipanteCadastroColumn_(sh);
+  if (!column) {
+    column = Math.max(Number(sh.getLastColumn && sh.getLastColumn()) || 0, AGENDA_CFG.lastCol) + 1;
+    if (typeof sh.getMaxColumns === 'function' && sh.getMaxColumns() < column) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), column - sh.getMaxColumns());
+    }
+    sh.getRange(1, column).setValue(label);
+  }
+  return agendaUseParticipanteCadastroColumn_(column);
 }
 
 function agendaResolveBackupTemperaturaColumnForRead_(sh) {
@@ -10422,7 +10514,8 @@ function agendaEnsureBackupTemperaturaColumn_(sh) {
 
 function ensureAgendaDestinoLabColumns_(sh) {
   var backupTemperaturaCol = agendaEnsureBackupTemperaturaColumn_(sh);
-  var schemaCacheKey = 'AgendaSchemaEnsured:v6:' + backupTemperaturaCol;
+  var participanteCadastroCol = agendaEnsureParticipanteCadastroColumn_(sh);
+  var schemaCacheKey = 'AgendaSchemaEnsured:v7:' + backupTemperaturaCol + ':' + participanteCadastroCol;
   if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
     sh.insertColumnsAfter(sh.getMaxColumns(), AGENDA_CFG.lastCol - sh.getMaxColumns());
@@ -10442,7 +10535,8 @@ function ensureAgendaDestinoLabColumns_(sh) {
     { col: AGENDA_CFG.col.ecrf, label: 'eCRF_Concluida' },
     { col: AGENDA_CFG.col.salaMonitoria, label: 'Sala_Monitoria' },
     { col: AGENDA_CFG.col.carroRequerido, label: 'Carro_Requerido' },
-    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' }
+    { col: AGENDA_CFG.col.backupAgendaRef, label: 'Backup_Agendamento_Ref' },
+    { col: AGENDA_CFG.col.participanteCadastroId, label: 'ID Cadastro Participante' }
   ];
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
@@ -10771,8 +10865,7 @@ function agendaBuildDadosFormularioAgenda_(strict) {
 // Dados exibidos imediatamente ao escolher um participante. A ultima visita
 // continua sendo atualizada em segundo plano, pois exige consultar a Agenda.
 function agendaParticipanteDisponivelFormulario_(status) {
-  var statusNorm = normText_(status);
-  return statusNorm !== 'obito' && statusNorm !== 'descontinuado';
+  return CadastroRules_.participantAvailableForNewAgenda(status);
 }
 
 function agendaParticipantesFormulario_(ss, strict) {
@@ -10788,12 +10881,14 @@ function agendaParticipantesFormulario_(ss, strict) {
     .map(function(row) {
       var nascimento = row[2];
       return {
+        id: String(row[0] || '').trim(),
         nome: String(row[1] || '').trim(),
         nascimento: formatarDataSafe(nascimento),
         idade: calcularIdadeAgenda_(nascimento),
         numId: String(row[4] || '').trim(),
         projeto: String(row[5] || '').trim(),
-        braco: String(row[6] || '').trim()
+        braco: String(row[6] || '').trim(),
+        status: String(row[8] || '').trim()
       };
     })
     .filter(function(p) { return !!p.nome; })
@@ -10810,34 +10905,63 @@ function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
 
 function getDadosFormularioAgenda(strictValidation) {
   var strict = strictValidation === true;
-  var cacheKey = (strict ? 'AgendaFormDataStrict:v4:' : 'AgendaFormData:v10:') +
+  var cacheKey = (strict ? 'AgendaFormDataStrict:v5:' : 'AgendaFormData:v11:') +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   if (strict) return agendaGetDadosFormularioAgendaCached_(cacheKey, false, true);
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
 }
 
-function getInfoParticipante(nome) {
-  if (!nome) return null;
+function agendaParticipantePorReferencia_(referencia) {
+  referencia = referencia || {};
+  if (typeof referencia !== 'object') referencia = { nome: String(referencia || '') };
+  var idCadastro = String(referencia.idCadastro || referencia.participanteCadastroId || referencia.id || '').trim();
+  var nome = String(referencia.nome || referencia.participante || '').trim();
+  var idParticipante = String(referencia.idParticipante || referencia.participanteId || '').trim();
+  var projeto = String(referencia.projeto || '').trim();
+  if (!idCadastro && !nome && !idParticipante) return null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('Participantes');
   if (!sh || sh.getLastRow() < 2) return null;
   var dados = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(7, sh.getLastColumn())).getValues();
+  var candidatosIdParticipante = [];
+  var candidatosNome = [];
   for (var i = 0; i < dados.length; i++) {
-    if (String(dados[i][1] || '').trim() !== String(nome || '').trim()) continue;
-    var nascRaw = dados[i][2];
-    var ultima = getUltimaVisitaParticipanteAgenda_(nome);
-    return {
-      nascimento: formatarDataSafe(nascRaw),
-      idade: calcularIdadeAgenda_(nascRaw),
-      numId: String(dados[i][4] || ''),
-      projeto: String(dados[i][5] || ''),
-      braco: String(dados[i][6] || ''),
-      ultimaVisitaData: ultima.data,
-      ultimaVisitaDataIso: ultima.dataIso,
-      ultimaVisitaId: ultima.visita
-    };
+    var row = dados[i] || [];
+    if (idCadastro && String(row[0] || '').trim() === idCadastro) return { row: row, rowIndex: i + 2 };
+    var mesmoProjeto = !projeto || normText_(row[5]) === normText_(projeto);
+    if (idParticipante && mesmoProjeto && normText_(row[4]) === normText_(idParticipante)) {
+      candidatosIdParticipante.push({ row: row, rowIndex: i + 2 });
+    }
+    if (nome && mesmoProjeto && normText_(row[1]) === normText_(nome)) {
+      candidatosNome.push({ row: row, rowIndex: i + 2 });
+    }
   }
-  return null;
+  if (idParticipante) return candidatosIdParticipante.length === 1 ? candidatosIdParticipante[0] : null;
+  return candidatosNome.length === 1 ? candidatosNome[0] : null;
+}
+
+function getInfoParticipante(referencia) {
+  var encontrado = agendaParticipantePorReferencia_(referencia);
+  if (!encontrado) return null;
+  var row = encontrado.row || [];
+  var nome = String(row[1] || '').trim();
+  var nascRaw = row[2];
+  var ultima = getUltimaVisitaParticipanteAgenda_(nome);
+  return {
+    id: String(row[0] || '').trim(),
+    nome: nome,
+    nascimento: formatarDataSafe(nascRaw),
+    idade: calcularIdadeAgenda_(nascRaw),
+    numId: String(row[4] || ''),
+    idParticipante: String(row[4] || ''),
+    projeto: String(row[5] || ''),
+    braco: String(row[6] || ''),
+    status: String(row[8] || ''),
+    disponivelNovoAgendamento: agendaParticipanteDisponivelFormulario_(row[8]),
+    ultimaVisitaData: ultima.data,
+    ultimaVisitaDataIso: ultima.dataIso,
+    ultimaVisitaId: ultima.visita
+  };
 }
 
 function getUltimaVisita(pacienteID) {
@@ -11836,6 +11960,7 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento) {
   if (!dataIso) return null;
 
   var referencia = {
+    id: String(dados.participanteCadastroId || '').trim(),
     nome: participante,
     idParticipante: String(dados.participanteId || dados.idParticipante || '').trim(),
     projeto: String(dados.projeto || '').trim()
@@ -11846,6 +11971,7 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento) {
     if (!AgendaServerRules_.isVisit(row[idx.tipo])) return false;
     if (formatarDataIsoAgenda_(row[idx.data]) !== dataIso) return false;
     return CadastroRules_.agendaEventMatchesParticipant(referencia, {
+      participantCadastroId: idx.participanteCadastroId >= 0 ? row[idx.participanteCadastroId] : '',
       participante: row[idx.participante],
       idParticipante: row[idx.idParticipante],
       projeto: row[idx.projeto]
@@ -12171,6 +12297,7 @@ function agendaAuditFields_() {
     { field: 'Data de nascimento', idx: i.nasc },
     { field: 'Número de identificação', idx: i.idParticipante },
     { field: 'Protocolo', idx: i.projeto },
+    { field: 'ID Cadastro Participante', idx: i.participanteCadastroId },
     { field: 'Visita', idx: i.visita },
     { field: 'Médico', idx: i.medico },
     { field: 'Serviço terceirizado', idx: i.servTerc },
@@ -12296,7 +12423,12 @@ function agendaNascimentoFromDados_(dados, rowAnterior) {
   }
 
   if (!participante) return '';
-  var info = getInfoParticipante(participante);
+  var info = getInfoParticipante({
+    idCadastro: dados.participanteCadastroId,
+    nome: participante,
+    idParticipante: dados.participanteId || dados.idParticipante,
+    projeto: dados.projeto
+  });
   return info && info.nascimento ? info.nascimento : '';
 }
 
@@ -12311,21 +12443,53 @@ function agendaIdParticipanteFromDados_(dados, rowAnterior) {
     var idAnterior = String(rowAnterior[i.idParticipante] || '').trim();
     if (idAnterior) return idAnterior;
   }
-  var info = getInfoParticipante(participante);
+  var info = getInfoParticipante({
+    idCadastro: dados.participanteCadastroId,
+    nome: participante,
+    idParticipante: dados.participanteId || dados.idParticipante,
+    projeto: dados.projeto
+  });
   return info ? String(info.numId || '').trim() : '';
 }
 
 // Em Visitas e Consultas, o projeto e uma propriedade do participante
 // cadastrado. Isso protege o vinculo mesmo quando a RPC nao passa pela Agenda.
-function agendaSincronizarProjetoDoParticipante_(dados, policy) {
+function agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior) {
   dados = dados || {};
   if (!policy || (!policy.isVisit && policy.type !== 'consulta')) return null;
   var participante = String(dados.participante || '').trim();
-  if (!participante) return null;
-  var info = getInfoParticipante(participante);
+  var participanteCadastroId = String(dados.participanteCadastroId || '').trim();
+  if (!participante && !participanteCadastroId) return null;
+  var info = getInfoParticipante({
+    idCadastro: participanteCadastroId,
+    nome: participante,
+    idParticipante: dados.participanteId || dados.idParticipante,
+    projeto: dados.projeto
+  });
   var projeto = String(info && info.projeto || '').trim();
   if (!projeto) return { erro: 'O participante selecionado nao possui projeto/protocolo cadastrado.' };
+  var mesmoRegistroHistorico = false;
+  if (rowAnterior) {
+    var i = AGENDA_CFG.idx;
+    var idHistorico = i.participanteCadastroId >= 0 ? String(rowAnterior[i.participanteCadastroId] || '').trim() : '';
+    mesmoRegistroHistorico = idHistorico
+      ? idHistorico === String(info.id || '').trim()
+      : CadastroRules_.agendaEventMatchesParticipant(info, {
+          participante: rowAnterior[i.participante],
+          idParticipante: rowAnterior[i.idParticipante],
+          projeto: rowAnterior[i.projeto]
+        });
+  }
+  if (info.disponivelNovoAgendamento === false && !mesmoRegistroHistorico) {
+    return { erro: 'Esta participação está encerrada e não pode ser usada em um novo agendamento.' };
+  }
+  dados.participanteCadastroId = String(info.id || '').trim();
+  dados.participante = String(info.nome || participante).trim();
+  dados.participanteId = String(info.numId || '').trim();
+  dados.idParticipante = dados.participanteId;
+  dados.nascimento = String(info.nascimento || '').trim();
   dados.projeto = projeto;
+  dados.braco = String(info.braco || '').trim();
   return null;
 }
 
@@ -12340,7 +12504,12 @@ function agendaBracoFromDados_(dados, rowAnterior) {
     var bracoAnterior = String(rowAnterior[i.braco] || '').trim();
     if (bracoAnterior) return bracoAnterior;
   }
-  var info = getInfoParticipante(participante);
+  var info = getInfoParticipante({
+    idCadastro: dados.participanteCadastroId,
+    nome: participante,
+    idParticipante: dados.participanteId || dados.idParticipante,
+    projeto: dados.projeto
+  });
   return info ? String(info.braco || '').trim() : '';
 }
 
@@ -12389,7 +12558,7 @@ function atualizarAgendaEventoCompleto(dados) {
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isOperationalPeriod;
-  var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy);
+  var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
@@ -12513,6 +12682,9 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.salaMonitoria || '',
     dados.carroRequerido
   ]]);
+  if (AGENDA_CFG.col.participanteCadastroId) {
+    agenda.getRange(linha, AGENDA_CFG.col.participanteCadastroId).setValue(dados.participanteCadastroId || '');
+  }
   SpreadsheetApp.flush();
   var carroSalvo = agendaBooleanValue_(agenda.getRange(linha, AGENDA_CFG.col.carroRequerido).getValue());
   if (carroSalvo !== dados.carroRequerido) {
@@ -12863,6 +13035,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     dados.monitorName = '';
     dados.salaMonitoria = '';
   }
+  if (isMonitoria || isSiv) dados.participanteCadastroId = '';
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
   if (!policy.labChoiceAllowed) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
@@ -12909,6 +13082,9 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     : agendaPostVisitValue_(dados.ecrfConcluida, ''));
   agenda.getRange(linhaNova, AGENDA_CFG.col.salaMonitoria).setValue(dados.salaMonitoria || '');
   agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).setValue(dados.carroRequerido);
+  if (AGENDA_CFG.col.participanteCadastroId) {
+    agenda.getRange(linhaNova, AGENDA_CFG.col.participanteCadastroId).setValue(dados.participanteCadastroId || '');
+  }
   SpreadsheetApp.flush();
   var carroSalvo = agendaBooleanValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).getValue());
   if (carroSalvo !== dados.carroRequerido) {
@@ -14014,23 +14190,9 @@ function getAgendaEventos(limite) {
     });
     totalMeta.rowCount = vals.length;
     return codexMeasurePerformance_('getAgendaEventos', 'convert_hydrate', { rowCount: vals.length }, function() {
-      var idsPorParticipante = {};
-      var bracosPorParticipante = {};
-      getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
-        var nome = normText_(r[1]);
-        if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
-        if (nome && !bracosPorParticipante[nome]) bracosPorParticipante[nome] = String(r[6] || '').trim();
-      });
-      return vals.map(function(r, i) {
-        var evento = agendaRowToObject_(r, start + i);
-        if (!evento.idParticipante && evento.participante) {
-          evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
-        }
-        if (!evento.braco && evento.participante) {
-          evento.braco = bracosPorParticipante[normText_(evento.participante)] || '';
-        }
-        return evento;
-      }).reverse();
+      var eventos = vals.map(function(r, i) { return agendaRowToObject_(r, start + i); });
+      agendaHydrateParticipantFields_(eventos);
+      return eventos.reverse();
     });
   });
 }
@@ -14704,20 +14866,26 @@ function agendaHydrateParticipantFields_(items) {
     return evento && evento.participante && (!evento.idParticipante || !evento.braco);
   });
   if (!precisaComplemento) return items;
-  var idsPorParticipante = {};
-  var bracosPorParticipante = {};
-  getCodexSheetDataByName_('Participantes').slice(1).forEach(function(r) {
-    var nome = normText_(r[1]);
-    if (nome && !idsPorParticipante[nome]) idsPorParticipante[nome] = String(r[4] || '').trim();
-    if (nome && !bracosPorParticipante[nome]) bracosPorParticipante[nome] = String(r[6] || '').trim();
+  var participantes = getCodexSheetDataByName_('Participantes').slice(1).map(function(r) {
+    return {
+      id: String(r[0] || '').trim(), nome: String(r[1] || '').trim(),
+      idParticipante: String(r[4] || '').trim(), projeto: String(r[5] || '').trim(),
+      braco: String(r[6] || '').trim()
+    };
   });
   items.forEach(function(evento) {
-    if (!evento.idParticipante && evento.participante) {
-      evento.idParticipante = idsPorParticipante[normText_(evento.participante)] || '';
-    }
-    if (!evento.braco && evento.participante) {
-      evento.braco = bracosPorParticipante[normText_(evento.participante)] || '';
-    }
+    var candidatos = participantes.filter(function(p) {
+      if (evento.participanteCadastroId) return p.id === String(evento.participanteCadastroId);
+      if (evento.idParticipante && evento.projeto) {
+        return normText_(p.idParticipante) === normText_(evento.idParticipante) && normText_(p.projeto) === normText_(evento.projeto);
+      }
+      return normText_(p.nome) === normText_(evento.participante) && normText_(p.projeto) === normText_(evento.projeto);
+    });
+    if (candidatos.length !== 1) return;
+    var participante = candidatos[0];
+    evento.participanteCadastroId = evento.participanteCadastroId || participante.id;
+    evento.idParticipante = evento.idParticipante || participante.idParticipante;
+    evento.braco = evento.braco || participante.braco;
   });
   return items;
 }
@@ -14752,6 +14920,7 @@ function agendaRowToObject_(r, rowIndex) {
     nascimento: formatarDataSafe(r[i.nasc]),
     idade: calcularIdadeAgenda_(r[i.nasc]),
     idParticipante: String(r[i.idParticipante] || ''),
+    participanteCadastroId: i.participanteCadastroId >= 0 ? String(r[i.participanteCadastroId] || '') : '',
     projeto: String(r[i.projeto] || ''),
     braco: String(r[i.braco] || ''),
     visita: String(r[i.visita] || ''),

@@ -455,6 +455,7 @@
             <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
           </div>
         </div>
+        <div class="field-hint" style="margin-top:10px;">Se esta pessoa iniciar outro protocolo, encerre a participação atual e crie uma nova participação. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
       </div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">location_on</span> Endereço</div>
@@ -952,12 +953,12 @@
     <div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff4e5;color:#b06000;margin-bottom:12px;">
       <span class="material-symbols-outlined">person_alert</span>
     </div>
-    <h3 id="confirmPartDuplicateTitle">Participante já cadastrado</h3>
-    <p id="confirmPartDuplicateMsg">Já existe um participante cadastrado com este nome.</p>
+    <h3 id="confirmPartDuplicateTitle">Pessoa já cadastrada</h3>
+    <p id="confirmPartDuplicateMsg">Já existe uma participação possivelmente vinculada a esta pessoa.</p>
     <p id="confirmPartDuplicateDetails" style="display:none;background:#f6f8ff;border:1px solid #e0e6f0;border-radius:8px;padding:9px 10px;color:var(--text);font-weight:500;"></p>
     <div class="confirm-actions">
       <button class="btn-txt" onclick="fecharOverlay('confirmPartDuplicate')">Revisar cadastro</button>
-      <button class="btn-save" id="btnConfirmPartDuplicate" style="width:auto;padding:9px 18px;margin-top:0">Cadastrar mesmo assim</button>
+      <button class="btn-save" id="btnConfirmPartDuplicate" style="width:auto;padding:9px 18px;margin-top:0">Criar nova participação</button>
     </div>
   </div>
 </div>
