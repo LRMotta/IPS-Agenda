@@ -6147,6 +6147,7 @@ function getDashboardData() {
     diag.agendaResumo = {
       totalAno: 0,
       visitasRealizadasAno: 0,
+      participantesAtendidosAno: 0,
       labCentralAno: 0,
       monitoriaDiasAno: 0,
       visitasMes: [],
@@ -6559,6 +6560,7 @@ function getAgendaDashboardResumo_() {
   var resumo = {
     totalAno: 0,
     visitasRealizadasAno: 0,
+    participantesAtendidosAno: 0,
     labCentralAno: 0,
     monitoriaDiasAno: 0,
     visitasMes: meses.map(function(m) { return { label: m, value: 0 }; }),
@@ -6581,6 +6583,7 @@ function getAgendaDashboardResumo_() {
   var cancelReagProt = {};
   var courierUso = {};
   var antecedenciaPorTipo = {};
+  var participantesAtendidos = {};
   var hoje = new Date();
   hoje.setHours(23, 59, 59, 999);
   vals.forEach(function(r) {
@@ -6594,7 +6597,8 @@ function getAgendaDashboardResumo_() {
       porMed: porMed,
       cancelReagProt: cancelReagProt,
       courierUso: courierUso,
-      antecedenciaPorTipo: antecedenciaPorTipo
+      antecedenciaPorTipo: antecedenciaPorTipo,
+      participantesAtendidos: participantesAtendidos
     });
   });
   var monMap = {};
@@ -6603,6 +6607,7 @@ function getAgendaDashboardResumo_() {
     monMap[p] = (monMap[p] || 0) + 1;
   });
   resumo.monitoriaDiasAno = Object.keys(porMonProtDia).length;
+  resumo.participantesAtendidosAno = Object.keys(participantesAtendidos).length;
   resumo.visitasPorProtocolo = agendaMapToPairs_(porProt, 15);
   resumo.monitoriaPorProtocolo = agendaMapToPairs_(monMap, 15);
   resumo.visitasPorMedico = agendaMapToPairs_(porMed, 12);
@@ -6664,9 +6669,20 @@ function agendaDashboardRowInfo_(r, i, data) {
     isVisita: info.isVisita,
     isRealizada: info.isRealizada,
     isEventoComTransporte: info.isEventoComTransporte,
+    participanteKey: agendaDashboardParticipantKey_(r, i),
     couriers: couriersEvento
   };
   return info;
+}
+
+function agendaDashboardParticipantKey_(r, i) {
+  var cadastroId = i.participanteCadastroId >= 0 ? normText_(r[i.participanteCadastroId]) : '';
+  if (cadastroId) return 'cadastro:' + cadastroId;
+  var projeto = normText_(r[i.projeto]);
+  var participanteId = normText_(r[i.idParticipante]);
+  if (participanteId) return 'projeto:' + projeto + '|id:' + participanteId;
+  var participante = normText_(r[i.participante]);
+  return participante ? 'projeto:' + projeto + '|nome:' + participante : '';
 }
 
 function agendaDashboardCouriersEvento_(r, i) {
@@ -6700,6 +6716,8 @@ function agendaDashboardCountMonitoria_(info, porMonProtDia) {
 function agendaDashboardCountVisita_(r, info, ctx) {
   if (!info.isVisita || !info.isRealizada || info.isCancelado || info.data.getTime() > ctx.hoje.getTime()) return;
   ctx.resumo.visitasRealizadasAno++;
+  var participanteKey = info.evento.participanteKey;
+  if (participanteKey) ctx.participantesAtendidos[participanteKey] = 1;
   ctx.resumo.visitasMes[info.data.getMonth()].value++;
   ctx.resumo.visitasPorDiaSemana[info.data.getDay()].value++;
   ctx.porProt[info.projeto] = (ctx.porProt[info.projeto] || 0) + 1;

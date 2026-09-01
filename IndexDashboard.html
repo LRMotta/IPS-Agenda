@@ -692,6 +692,16 @@
     }).map(function(label) { return { label: label, value: map[label] || 0 }; });
   }
 
+  function dashAgendaParticipantesAtendidos(rows, predicate) {
+    var participantes = {};
+    (rows || []).forEach(function(r) {
+      if (predicate && !predicate(r)) return;
+      var key = String(r.participanteKey || '').trim();
+      if (key) participantes[key] = 1;
+    });
+    return Object.keys(participantes).length;
+  }
+
   function renderDashboardAgendaPeriodoResumo() {
     var ag = _dashAgendaResumoAtual || {};
     var rows = _dashAgendaRaw.length ? dashAgendaRowsPeriodo() : [];
@@ -710,11 +720,13 @@
     });
     var ids = _dashAgendaRaw.length ? {
       dashAgendaVisitasAno: rows.filter(realizada).length,
+      dashAgendaParticipantesAtendidos: dashAgendaParticipantesAtendidos(rows, realizada),
       dashAgendaLabAno: rows.filter(labCentral).length,
       dashAgendaMonAno: Object.keys(monDias).length,
       dashAgendaTotalAno: rows.length
     } : {
       dashAgendaVisitasAno: ag.visitasRealizadasAno || 0,
+      dashAgendaParticipantesAtendidos: ag.participantesAtendidosAno || 0,
       dashAgendaLabAno: ag.labCentralAno || 0,
       dashAgendaMonAno: ag.monitoriaDiasAno || 0,
       dashAgendaTotalAno: ag.totalAno || 0
