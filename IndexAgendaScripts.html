@@ -5257,7 +5257,9 @@
     if (!data.items.length) {
       return c.material ? esc(c.material) : '<span class="ag-mat-empty">Nenhum material informado.</span>';
     }
-    return '<table class="ag-mat-table"><thead><tr>' +
+    return '<div class="ag-mat-table-wrap"><table class="ag-mat-table"><colgroup>' +
+      '<col class="ag-mat-col-subst"><col class="ag-mat-col-tubos"><col class="ag-mat-col-volume"><col class="ag-mat-col-total"><col class="ag-mat-col-ensaio">' +
+      '</colgroup><thead><tr>' +
       '<th>Substância</th><th class="r">Tubos</th><th>Volume por tubo</th><th class="r">Total</th><th>Ensaio</th>' +
       '</tr></thead><tbody>' + data.items.map(function(it) {
         return '<tr>' +
@@ -5267,7 +5269,7 @@
           '<td class="r"><b>' + esc(it.segmentos && it.segmentos.length ? agendaFmtNumber(it.total, agendaMatBioUnitKey(it.unit) === 'L' ? 5 : 2) : '-') + '</b>' + (it.segmentos && it.segmentos.length ? '<span class="ag-mat-unit">' + esc(agendaMatBioUnitKey(it.unit)) + '</span>' : '') + '</td>' +
           '<td>' + esc(it.ensaio || '-') + '</td>' +
         '</tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table></div>';
   }
 
   function agendaMatBioSegmentsHtml(it) {
