@@ -1260,6 +1260,28 @@ test('modal de agendamento acomoda o resumo completo em telas desktop', () => {
   assert.match(styles, /\.ag-create-box\{[^}]*width:min\(1280px,96vw\)/);
 });
 
+test('visita cancelada com Lab Central usa erlenmeyer vermelho suave', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  const card = functionBody(client, 'agendaCardHtml');
+
+  assert.match(card, /st-' \+ st[\s\S]*?labSim \? ' lab-central' : ''/);
+  assert.match(card, /labSim \? '<div class="ag-lab-watermark"/);
+  assert.match(styles, /\.ag-lab-watermark\{[^}]*color:#64748b;opacity:\.085/);
+  assert.match(styles, /\.ag-appt\.st-cancelado\.lab-central \.ag-lab-watermark\{color:#b3261e\}/);
+});
+
+test('resumos de material biologico alinham colunas entre transportes', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  const summary = functionBody(client, 'agendaMatBioSummaryHtml');
+
+  assert.match(summary, /<col class="ag-mat-col-subst"><col class="ag-mat-col-tubos"><col class="ag-mat-col-volume"><col class="ag-mat-col-total"><col class="ag-mat-col-ensaio">/);
+  assert.match(styles, /\.ag-mat-table\{[^}]*table-layout:fixed/);
+  assert.match(styles, /\.ag-mat-col-subst\{width:18%\}\.ag-mat-col-tubos\{width:7%\}\.ag-mat-col-volume\{width:44%\}\.ag-mat-col-total\{width:9%\}\.ag-mat-col-ensaio\{width:22%\}/);
+  assert.match(styles, /@media\(max-width:1180px\)\{[\s\S]*?\.ag-mat-table\{min-width:680px\}\}/);
+});
+
 test('campos automáticos desabilitados mantêm a mesma cor azul', () => {
   const styles = readProjectFile('IndexStyles.html');
   assert.match(styles, /select\.f-input\.auto-fill:disabled\s*\{[^}]*color: #1a5276/);
