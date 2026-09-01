@@ -490,7 +490,7 @@
     return {
       agTipo: r.tipo || '',
       agStatus: r.status || 'Agendado',
-      agParticipante: r.participante || '',
+      agParticipante: r.participanteCadastroId || (r.id ? 'legacy-event:' + r.id : r.participante) || '',
       agProjeto: r.projeto || '',
       agMedico: r.medico || '',
       agPrestador: r.servTerc || '',
@@ -594,12 +594,16 @@
       el.insertAdjacentHTML('beforeend', '<option value="">' + esc(label) + '</option>');
     }
     (lista || []).forEach(function(v) {
-      var value = typeof v === 'object' ? (v.nome || v.nomeAbreviado || v.codigo || '') : v;
-      var label = typeof v === 'object' && v.codigo && v.codigo !== value ? value + ' — ' + v.codigo : value;
+      var participanteOption = id === 'agParticipante' && v && typeof v === 'object';
+      var value = participanteOption ? (v.id || v.nome || '') : (typeof v === 'object' ? (v.nome || v.nomeAbreviado || v.codigo || '') : v);
+      var label = participanteOption
+        ? [v.nome || '', v.projeto || '', v.numId ? 'ID ' + v.numId : ''].filter(Boolean).join(' — ')
+        : (typeof v === 'object' && v.codigo && v.codigo !== value ? value + ' — ' + v.codigo : value);
       var codigo = typeof v === 'object' ? String(v.codigo || '').trim() : '';
       var stableId = typeof v === 'object' ? String(v.id || '').trim() : '';
       var aliases = (codigo ? ' data-codigo="' + esc(codigo) + '"' : '') +
-        (stableId ? ' data-id="' + esc(stableId) + '"' : '');
+        (stableId ? ' data-id="' + esc(stableId) + '"' : '') +
+        (participanteOption ? ' data-nome="' + esc(v.nome || '') + '" data-participante-id="' + esc(v.numId || '') + '"' : '');
       el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '"' + aliases + '>' + esc(label) + '</option>');
     });
     if (id === 'agProjeto' && typeof ativarAutocompleteProjeto === 'function') ativarAutocompleteProjeto(id);
@@ -1140,7 +1144,7 @@
   function agendaMatBioUpdateCopyOptions(prefix) {
     var sel = document.getElementById(prefix + 'MatCopy');
     if (!sel) return;
-    var participante = normAgenda((document.getElementById('agParticipante') || {}).value || '');
+    var participante = normAgenda(agendaParticipanteNomeSelecionado_());
     var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
     var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
     var eventos = agendaMatBioPreviousEvents_().filter(function(r) {
@@ -1267,7 +1271,7 @@
   function agendaMatBioFallbackEvents_() {
     return (_agendaEventos || []).filter(function(r) {
       if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
-      var participante = normAgenda((document.getElementById('agParticipante') || {}).value || '');
+      var participante = normAgenda(agendaParticipanteNomeSelecionado_());
       var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
       var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
       if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
@@ -1574,7 +1578,7 @@
     if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('agProjeto');
   }
 
-  function setAgendaSelectValue(id, value) {
+  function setAgendaSelectValue(id, value, fallbackLabel) {
     var el = document.getElementById(id);
     value = String(value || '').trim();
     if (!el || !value) return;
@@ -1584,13 +1588,19 @@
         opt.value,
         opt.text,
         opt.getAttribute && opt.getAttribute('data-codigo'),
-        opt.getAttribute && opt.getAttribute('data-id')
+        opt.getAttribute && opt.getAttribute('data-id'),
+        opt.getAttribute && opt.getAttribute('data-nome'),
+        opt.getAttribute && opt.getAttribute('data-participante-id')
       ];
       var ok = aliases.some(function(alias) { return normAgenda(alias) === normAgenda(value); });
       if (ok) match = opt.value;
       return ok;
     });
-    if (!existe) el.insertAdjacentHTML('beforeend', '<option>' + esc(value) + '</option>');
+    if (!existe) {
+      var label = String(fallbackLabel || value).trim();
+      var nomeAttr = id === 'agParticipante' ? ' data-nome="' + esc(label) + '"' : '';
+      el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '"' + nomeAttr + '>' + esc(label) + '</option>');
+    }
     el.value = match || value;
     if (id === 'agProjeto' && typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto(id);
   }
@@ -1651,7 +1661,8 @@
 
   function atualizarAgendaVisitasSoA() {
     var projeto = String((document.getElementById('agProjeto') || {}).value || '').trim();
-    var participante = String((document.getElementById('agParticipante') || {}).value || '').trim();
+    var participanteReferencia = String((document.getElementById('agParticipante') || {}).value || '').trim();
+    var participante = agendaParticipanteNomeSelecionado_();
     var participanteId = String((_agendaParticipanteInfo && (_agendaParticipanteInfo.numId || _agendaParticipanteInfo.idParticipante)) || '').trim();
     var lista = document.getElementById('agVisitaSoAList');
     var hint = document.getElementById('agVisitaSoAHint');
@@ -1664,7 +1675,7 @@
     }
     if (hint) hint.textContent = participante ? 'Carregando próximas visitas e pendências de vínculo… A visita livre continua permitida.' : 'Carregando sugestões do calendário SoA… A visita livre continua permitida.';
     appServerRun({ method: 'getAgendaVisitasSoASugeridas', args: [{ projeto: projeto, participante: participante, participanteId: participanteId, agendaId: _agendaEditId || '' }], onSuccess: function(resposta) {
-      if (requestId !== _agendaVisitasSoARequest || projeto !== String((document.getElementById('agProjeto') || {}).value || '').trim() || participante !== String((document.getElementById('agParticipante') || {}).value || '').trim()) return;
+      if (requestId !== _agendaVisitasSoARequest || projeto !== String((document.getElementById('agProjeto') || {}).value || '').trim() || participanteReferencia !== String((document.getElementById('agParticipante') || {}).value || '').trim()) return;
       resposta = resposta || {};
       var visitas = (resposta.visitas || []).filter(function(visita) { return visita && visita.nome && visita.ativo !== false; });
       lista.innerHTML = visitas.map(function(visita) {
@@ -2136,12 +2147,12 @@
   }
 
   function onAgendaParticipanteChange() {
-    var nome = document.getElementById('agParticipante').value;
+    var referencia = document.getElementById('agParticipante').value;
     var info = document.getElementById('agPartInfo');
-    var infoPrecarregada = agendaParticipanteInfoPrecarregada_(nome);
+    var infoPrecarregada = agendaParticipanteInfoPrecarregada_(referencia);
     _agendaParticipanteInfo = infoPrecarregada;
     atualizarAgendaProjetoLock();
-    if (!nome) {
+    if (!referencia) {
       if (info) info.style.display = 'none';
       return;
     }
@@ -2151,7 +2162,7 @@
     }
     google.script.run
       .withSuccessHandler(function(p) {
-        if ((document.getElementById('agParticipante') || {}).value !== nome) return;
+        if ((document.getElementById('agParticipante') || {}).value !== referencia) return;
         _agendaParticipanteInfo = p || infoPrecarregada || null;
         if (!p) {
           if (infoPrecarregada) {
@@ -2163,16 +2174,28 @@
         }
         agendaAplicarParticipanteInfo_(p);
       })
-      .getInfoParticipante(nome);
+      .getInfoParticipante({ idCadastro: referencia, nome: infoPrecarregada && infoPrecarregada.nome || '' });
   }
 
-  function agendaParticipanteInfoPrecarregada_(nome) {
+  function agendaParticipanteInfoPrecarregada_(referencia) {
     var participantes = (_agendaDados && _agendaDados.participantes) || [];
+    var referenciaNorm = String(referencia || '').trim();
+    var candidatoNome = null;
     for (var i = 0; i < participantes.length; i++) {
       var p = participantes[i];
-      if (p && typeof p === 'object' && String(p.nome || '').trim() === String(nome || '').trim()) return Object.assign({}, p);
+      if (!p || typeof p !== 'object') continue;
+      if (String(p.id || '').trim() === referenciaNorm) return Object.assign({}, p);
+      if (String(p.nome || '').trim() === referenciaNorm && !candidatoNome) candidatoNome = Object.assign({}, p);
     }
-    return null;
+    return candidatoNome;
+  }
+
+  function agendaParticipanteNomeSelecionado_() {
+    var select = document.getElementById('agParticipante');
+    if (!select || !select.value) return '';
+    if (_agendaParticipanteInfo && _agendaParticipanteInfo.nome) return String(_agendaParticipanteInfo.nome).trim();
+    var option = select.options && select.options[select.selectedIndex];
+    return String(option && option.getAttribute && option.getAttribute('data-nome') || select.value || '').trim();
   }
 
   function agendaAplicarParticipanteInfo_(p) {
@@ -2627,7 +2650,7 @@
       var el = document.getElementById(id);
       return el ? el.value.trim() : '';
     }
-    var participante = v('agParticipante');
+    var participante = agendaParticipanteNomeSelecionado_();
     var nascimento = (_agendaParticipanteInfo && _agendaParticipanteInfo.nascimento) || '';
     if (!nascimento && eventoAtual && String(eventoAtual.participante || '') === participante) {
       nascimento = eventoAtual.nascimento || '';
@@ -2640,6 +2663,7 @@
       tipo: v('agTipo'),
       status: v('agStatus') || 'Agendado',
       participante: participante,
+      participanteCadastroId: String((_agendaParticipanteInfo && _agendaParticipanteInfo.id) || '').trim(),
       participanteId: String((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '').trim(),
       nascimento: nascimento,
       projeto: proj,
@@ -2913,7 +2937,7 @@
       agendaSetTipoEnvioAmostras();
       onAgendaTipoChange();
       setAgendaSelectValue('agStatus', 'Agendado');
-      setAgendaSelectValue('agParticipante', origem.participante);
+      setAgendaSelectValue('agParticipante', origem.participanteCadastroId || origem.participante, origem.participante);
       _agendaParticipanteInfo = participanteInfo;
       setAgendaSelectValue('agProjeto', origem.projeto);
       onAgendaProjetoChange();
@@ -3025,7 +3049,7 @@
   function abrirDisplayPacienteFromAgendaForm() {
     var r = agendaEventoAtualEditado_();
     var info = _agendaParticipanteInfo || {};
-    var participanteAtual = (document.getElementById('agParticipante') || {}).value || '';
+    var participanteAtual = agendaParticipanteNomeSelecionado_();
     var payload = agendaDisplayPayload({
       participante: participanteAtual || (r && r.participante) || '',
       nascimento: info.nascimento || (r && r.nascimento) || '',
@@ -4415,8 +4439,10 @@
     setAgendaFieldValue('agHora', r.hora || '');
     setAgendaSelectValue('agTipo', r.tipo);
     setAgendaSelectValue('agStatus', r.status || 'Agendado');
-    setAgendaSelectValue('agParticipante', r.participante);
+    setAgendaSelectValue('agParticipante', r.participanteCadastroId || ('legacy-event:' + r.id), r.participante);
     _agendaParticipanteInfo = {
+      id: r.participanteCadastroId || '',
+      nome: r.participante || '',
       nascimento: r.nascimento || '',
       numId: r.idParticipante || '',
       projeto: r.projeto || '',

@@ -31,7 +31,8 @@ function fakeAgenda(server, records) {
 
 function agendaServer(contextValues) {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
-  return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules }, contextValues || {}));
+  const cadastro = runFile('CadastroRules.gs').CadastroRules_;
+  return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules, CadastroRules_: cadastro }, contextValues || {}));
 }
 
 function fakeAgendaRows(server, rows, calls = []) {
@@ -168,6 +169,7 @@ test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', ()
   ];
 
   assert.match(readGetter, /agendaResolveBackupTemperaturaColumnForRead_\(sh\)/);
+  assert.match(readGetter, /agendaResolveParticipanteCadastroColumnForRead_\(sh\)/);
   assert.doesNotMatch(readGetter, /ensureAgendaDestinoLabColumns_|alinharStatusRequisicaoLegadoAgenda_|setValue|insertColumns/);
   assert.match(writeGetter, /ensureAgendaDestinoLabColumns_\(sh\)/);
   assert.match(writeGetter, /alinharStatusRequisicaoLegadoAgenda_\(sh\)/);
@@ -901,8 +903,8 @@ test('fallback do formulario usa carga completa, legado validado e somente codig
   strictServer.getDadosFormularioAgenda();
   strictServer.getDadosFormularioAgenda(true);
   assert.deepEqual(strictCalls, [
-      { key: 'AgendaFormData:v10:20260804', forceRefresh: false, strict: false },
-      { key: 'AgendaFormDataStrict:v4:20260804', forceRefresh: false, strict: true }
+      { key: 'AgendaFormData:v11:20260804', forceRefresh: false, strict: false },
+      { key: 'AgendaFormDataStrict:v5:20260804', forceRefresh: false, strict: true }
   ]);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'getAppBootstrapData'), /getDadosFormularioAgenda\(true\)/);
 
@@ -1143,7 +1145,7 @@ test('projeto de visita ou consulta fica bloqueado no autocomplete enquanto o pa
   const core = readProjectFile('IndexCoreScripts.html');
   const participantChange = functionBody(agenda, 'onAgendaParticipanteChange');
   assert.match(participantChange, /atualizarAgendaProjetoLock\(\);/);
-  assert.match(participantChange, /getElementById\('agParticipante'\).*value !== nome/);
+  assert.match(participantChange, /getElementById\('agParticipante'\).*value !== referencia/);
   assert.match(functionBody(agenda, 'agendaTipoVisitaSelecionado'), /agendaTipoVisitaOuConsulta/);
   assert.match(functionBody(agenda, 'atualizarAgendaProjetoLock'), /sincronizarAutocompleteProjeto\('agProjeto'\)/);
   const sync = functionBody(core, 'sincronizarAutocompleteProjeto');
@@ -1190,7 +1192,7 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
   const change = functionBody(client, 'onAgendaParticipanteChange');
-  assert.match(change, /agendaParticipanteInfoPrecarregada_\(nome\)/);
+  assert.match(change, /agendaParticipanteInfoPrecarregada_\(referencia\)/);
   assert.match(change, /agendaAplicarParticipanteInfo_\(infoPrecarregada\)/);
   assert.match(change, /_ultimaVisitaPendente/);
   assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /ag-part-info-row/);
@@ -1202,6 +1204,25 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes: agendaParticipantesFormulario_/);
   assert.match(functionBody(server, 'getInfoParticipante'), /ultimaVisitaDataIso/);
   assert.match(readProjectFile('IndexContentAfterDashboard.html'), /atualizarAgendaIntervaloUltimaVisita\(\)/);
+});
+
+test('descoberta readonly do ID de cadastro preserva Agenda legada sem escrever', () => {
+  const server = agendaServer();
+  let writes = 0;
+  const headers = Array(52).fill('');
+  headers[51] = 'Backup - Temperatura';
+  const sheet = {
+    getLastColumn: () => headers.length,
+    getRange: () => ({
+      getValues: () => [headers],
+      setValue: () => { writes += 1; throw new Error('readonly'); },
+      setValues: () => { writes += 1; throw new Error('readonly'); }
+    }),
+    insertColumnsAfter: () => { writes += 1; throw new Error('readonly'); }
+  };
+  assert.equal(server.agendaResolveParticipanteCadastroColumnForRead_(sheet), 0);
+  assert.equal(server.AGENDA_CFG.idx.participanteCadastroId, -1);
+  assert.equal(writes, 0);
 });
 
 test('nova visita na mesma data exige confirmação e mantém saída sem salvar em destaque', () => {
@@ -1240,19 +1261,71 @@ test('nova visita na mesma data exige confirmação e mantém saída sem salvar 
   assert.match(markup, /class="btn-save"[^>]*id="btnAgendaSairVisitaMesmaData"[\s\S]*?Sair sem salvar/);
 });
 
-test('selecao da Agenda oculta participantes em obito ou descontinuados', () => {
+test('selecao da Agenda oculta participacoes encerradas', () => {
   const server = agendaServer();
   assert.equal(server.agendaParticipanteDisponivelFormulario_('Ativo'), true);
   assert.equal(server.agendaParticipanteDisponivelFormulario_('Em seguimento'), true);
   assert.equal(server.agendaParticipanteDisponivelFormulario_('Óbito'), false);
   assert.equal(server.agendaParticipanteDisponivelFormulario_('Obito'), false);
   assert.equal(server.agendaParticipanteDisponivelFormulario_(' Descontinuado '), false);
+  assert.equal(server.agendaParticipanteDisponivelFormulario_('Falha de Triagem'), false);
+  assert.equal(server.agendaParticipanteDisponivelFormulario_('Falha de Pré-Triagem'), false);
 
   const source = readProjectFile('WebApp.gs');
   assert.match(functionBody(source, 'agendaParticipantesFormulario_'),
     /agendaParticipanteDisponivelFormulario_\(row\[8\]\)/);
   assert.match(functionBody(source, 'getDadosFormularioAgenda'),
-    /AgendaFormDataStrict:v4:.*AgendaFormData:v10:/s);
+    /AgendaFormDataStrict:v5:.*AgendaFormData:v11:/s);
+});
+
+test('Agenda seleciona e persiste a participacao por ID estavel', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  assert.match(functionBody(client, 'preencherAgendaSelect'), /id === 'agParticipante'/);
+  assert.match(functionBody(client, 'preencherAgendaSelect'), /v\.id \|\| v\.nome/);
+  assert.match(functionBody(client, 'coletarAgendaEvento'), /participanteCadastroId/);
+  assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /id: String\(row\[0\]/);
+  assert.match(functionBody(server, 'agendaRowToObject_'), /participanteCadastroId/);
+  assert.match(functionBody(server, '_gravarLinhaEvento'), /col\.participanteCadastroId/);
+  assert.match(functionBody(server, 'atualizarAgendaEventoCompleto'), /col\.participanteCadastroId/);
+  assert.match(functionBody(server, 'getAgendaSheet_'), /ensureAgendaDestinoLabColumns_\(sh\)/);
+  assert.match(functionBody(server, 'ensureAgendaDestinoLabColumns_'), /agendaEnsureParticipanteCadastroColumn_\(sh\)/);
+});
+
+test('servidor bloqueia participacao encerrada em novo evento e preserva edicao historica', () => {
+  const server = agendaServer();
+  server.getInfoParticipante = () => ({
+    id: '81', nome: 'Pessoa A', numId: 'P-001', idParticipante: 'P-001',
+    projeto: 'Estudo Aurora', braco: 'A', nascimento: '01/01/1980',
+    disponivelNovoAgendamento: false
+  });
+  const novo = { participanteCadastroId: '81', participante: 'Pessoa A' };
+  assert.match(server.agendaSincronizarProjetoDoParticipante_(novo, { isVisit: true, type: 'visita' }).erro, /participação está encerrada/);
+
+  const historico = agendaRow(server, {
+    participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo Aurora'
+  });
+  const edicao = { participanteCadastroId: '81', participante: 'Pessoa A' };
+  assert.equal(server.agendaSincronizarProjetoDoParticipante_(edicao, { isVisit: true, type: 'visita' }, historico), null);
+  assert.equal(edicao.projeto, 'Estudo Aurora');
+  assert.equal(edicao.participanteCadastroId, '81');
+});
+
+test('fallback legado nao escolhe arbitrariamente entre participacoes ambiguas', () => {
+  const rows = [
+    ['81', 'Pessoa A', '', '', '', 'Estudo Aurora', '', '', 'Pré-triagem'],
+    ['82', 'Pessoa A', '', '', '', 'Estudo Aurora', '', '', 'Falha de Pré-Triagem']
+  ];
+  const sheet = {
+    getLastRow: () => rows.length + 1,
+    getLastColumn: () => 9,
+    getRange: () => ({ getValues: () => rows })
+  };
+  const server = agendaServer({
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => sheet }) }
+  });
+  assert.equal(server.agendaParticipantePorReferencia_({ nome: 'Pessoa A', projeto: 'Estudo Aurora' }), null);
+  assert.equal(server.agendaParticipantePorReferencia_({ idCadastro: '82' }).row[0], '82');
 });
 
 test('modal de agendamento acomoda o resumo completo em telas desktop', () => {
@@ -1317,7 +1390,9 @@ test('novo agendamento fixa o status em Agendado e bloqueia estados finais no fu
 
 test('servidor substitui o projeto informado pelo projeto do participante em visitas e consultas', () => {
   const server = agendaServer();
-  server.getInfoParticipante = (nome) => nome === 'Pessoa A' ? { projeto: 'Projeto Correto' } : null;
+  server.getInfoParticipante = (ref) => ref && ref.nome === 'Pessoa A'
+    ? { id: '81', nome: 'Pessoa A', numId: 'P-001', projeto: 'Projeto Correto', disponivelNovoAgendamento: true }
+    : null;
   const dados = { participante: 'Pessoa A', projeto: 'Projeto Indevido' };
   const erro = server.agendaSincronizarProjetoDoParticipante_(dados, { isVisit: true });
   assert.equal(erro, null);

@@ -47,6 +47,16 @@ var CadastroRules_ = (function() {
     return value === 'pre-triagem' || value === 'falha de pre-triagem';
   }
 
+  function participantAvailableForNewAgenda(status) {
+    var value = normalizeText(status);
+    return [
+      'falha de pre-triagem',
+      'falha de triagem',
+      'descontinuado',
+      'obito'
+    ].indexOf(value) === -1;
+  }
+
   function requiredParticipantFields(data) {
     data = data || {};
     var missing = [];
@@ -78,7 +88,9 @@ var CadastroRules_ = (function() {
     for (var i = 1; i < rows.length; i++) {
       var row = rows[i] || [];
       if (currentId && String(row[0] || '') === currentId) continue;
-      if (cpf && digits(row[10]) === cpf) return { field: 'cpf', value: row[10] };
+      if (cpf && project && digits(row[10]) === cpf && normalizeText(row[5]) === project) {
+        return { field: 'cpf', value: row[10] };
+      }
       if (participantId && project && normalizeText(row[4]) === participantId && normalizeText(row[5]) === project) {
         return { field: 'idParticipante', value: row[4] };
       }
@@ -101,6 +113,24 @@ var CadastroRules_ = (function() {
         nome: String(row[1] || ''),
         idParticipante: String(row[4] || ''),
         projeto: String(row[5] || '')
+      };
+    }
+    return null;
+  }
+
+  function findParticipantCpfMatch(data, rows) {
+    data = data || {};
+    var currentId = String(data.id || '');
+    var cpf = digits(data.cpf);
+    if (!cpf) return null;
+    rows = rows || [];
+    for (var i = 1; i < rows.length; i++) {
+      var row = rows[i] || [];
+      if (currentId && String(row[0] || '') === currentId) continue;
+      if (digits(row[10]) !== cpf) continue;
+      return {
+        id: String(row[0] || ''), nome: String(row[1] || ''),
+        idParticipante: String(row[4] || ''), projeto: String(row[5] || '')
       };
     }
     return null;
@@ -132,10 +162,12 @@ var CadastroRules_ = (function() {
     requiredProjectFields: requiredProjectFields,
     findProjectDuplicate: findProjectDuplicate,
     participantIdOptional: participantIdOptional,
+    participantAvailableForNewAgenda: participantAvailableForNewAgenda,
     requiredParticipantFields: requiredParticipantFields,
     projectExists: projectExists,
     findParticipantDuplicate: findParticipantDuplicate,
     findParticipantNameDuplicate: findParticipantNameDuplicate,
+    findParticipantCpfMatch: findParticipantCpfMatch,
     agendaEventMatchesParticipant: agendaEventMatchesParticipant
   });
 })();

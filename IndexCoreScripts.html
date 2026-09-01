@@ -3205,7 +3205,7 @@ function salvarPartApp(opts) {
       fecharOverlay('modalParticipante');
       snack(r);
       carregarParticipantes(true);
-      atualizarParticipanteAgendaAposCadastro(nome);
+      atualizarParticipanteAgendaAposCadastro({ id: payload.id, nome: nome, projeto: projeto, idParticipante: idPart });
     },
     onFailure: function(e){
       appSetButtonBusy(btn, false);
@@ -3225,33 +3225,30 @@ function abrirNovoParticipanteAgenda() {
   });
 }
 
-function atualizarParticipanteAgendaAposCadastro(nome) {
+function atualizarParticipanteAgendaAposCadastro(participanteSalvo) {
+  participanteSalvo = participanteSalvo || {};
+  if (typeof participanteSalvo === 'string') participanteSalvo = { nome: participanteSalvo };
   var modal = document.getElementById('modalParticipante');
   var veioDaAgenda = modal && modal.dataset.agendaOrigem === '1';
   if (modal) delete modal.dataset.agendaOrigem;
   if (!veioDaAgenda || !_agendaDados || !document.getElementById('agParticipante')) return;
-  var select = document.getElementById('agParticipante');
-  if (select && nome && !Array.prototype.some.call(select.options, function(opt) { return opt.value === nome || opt.text === nome; })) {
-    select.insertAdjacentHTML('beforeend', '<option>' + esc(nome) + '</option>');
-  }
-  if (_agendaDados) {
-    _agendaDados.participantes = (_agendaDados.participantes || []).concat([nome])
-      .filter(function(v, idx, arr) { return v && arr.indexOf(v) === idx; })
-      .sort(function(a, b) { return String(a).localeCompare(String(b)); });
-    if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(_agendaDados);
-  }
-  if (select && nome) {
-    select.value = nome;
-    onAgendaParticipanteChange();
-  }
   appServerRun({
     method: 'getDadosFormularioAgenda',
     onSuccess: function(d) {
       if (typeof setAgendaFormDataState === 'function') setAgendaFormDataState(d || _agendaDados || {});
       else _agendaDados = d || _agendaDados || {};
       preencherAgendaSelect('agParticipante', _agendaDados.participantes || [], '');
-      setAgendaSelectValue('agParticipante', nome);
-      onAgendaParticipanteChange();
+      var candidatos = (_agendaDados.participantes || []).filter(function(p) {
+        if (!p || typeof p !== 'object') return String(p || '') === String(participanteSalvo.nome || '');
+        if (participanteSalvo.id && String(p.id || '') === String(participanteSalvo.id)) return true;
+        return normSelectValue(p.nome) === normSelectValue(participanteSalvo.nome) &&
+          normSelectValue(p.projeto) === normSelectValue(participanteSalvo.projeto) &&
+          (!participanteSalvo.idParticipante || normSelectValue(p.numId) === normSelectValue(participanteSalvo.idParticipante));
+      });
+      if (candidatos.length === 1) {
+        setAgendaSelectValue('agParticipante', candidatos[0].id || candidatos[0].nome);
+        onAgendaParticipanteChange();
+      }
     },
     onFailure: function() {}
   });
