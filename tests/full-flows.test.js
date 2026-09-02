@@ -21,10 +21,11 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
     between(web, 'function soaNormalizarBaseCalculo_', 'function soaNormalizarPapelCronograma_') + '\n' +
     between(web, 'var PROJETO_COURIER_FIELDS_', 'function excluirProjeto(') + '\n' +
     between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
-  const counters = { cache: 0, transportCache: 0 };
+  const counters = { cache: 0, transportCache: 0, uuid: 0 };
   const context = vm.createContext({
     SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
     codexAssertCanWrite_: () => ({ ok: true }),
+    codexWithDocumentLock_: (_name, callback) => callback(),
     clearTransporteOptionsCache_: () => { counters.transportCache++; },
     clearCodexRuntimeCaches_: () => { counters.cache++; },
     getProjetosParticipantesOptions_: () => projectOptions || [],
@@ -35,6 +36,9 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
     ],
     getAgendaTemperaturas_: () => ['Ambiente', 'Refrigerado', 'Congelado'],
     normText_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
+    Utilities: {
+      getUuid: () => '00000000-0000-4000-8000-' + String(++counters.uuid).padStart(12, '0')
+    },
     Date
   });
   vm.runInContext(source, context);
@@ -108,11 +112,24 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(context.salvarDadosParticipante(participant), 'Participante cadastrado com sucesso');
   assert.equal(sheet.rows[2][0], 5);
   assert.equal(sheet.rows[2][5], 'Novo Estudo');
+  assert.match(sheet.rows[2][sheet.rows[0].indexOf('ID Pessoa')], /^PES-[A-F0-9]{20}$/);
   assert.equal(counters.cache, 1);
 
   assert.equal(context.salvarDadosParticipante(Object.assign({}, participant, { id: 5, telefone: '555-0100' })), 'Participante atualizado com sucesso');
   assert.equal(sheet.rows[2][9], '555-0100');
   assert.equal(counters.cache, 2);
+});
+
+test('consulta do schema de participante nao cria a coluna ID Pessoa', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }));
+
+  const columns = context.participanteColumnMap_(sheet, false);
+  assert.equal(columns.idPessoa, undefined);
+  assert.equal(sheet.rows[0].indexOf('ID Pessoa'), -1);
+  assert.equal(sheet.writes, 0);
 });
 
 test('projeto grava couriers por ID e temperatura em colunas opcionais por cabecalho', () => {
@@ -313,9 +330,11 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   const created = sheet.rows[2];
   assert.equal(headers[12], 'Rua');
   assert.equal(headers[21], 'CPF do Titular');
+  assert.equal(headers[22], 'ID Pessoa');
   assert.equal(created[headers.indexOf('Rua')], 'Rua das Flores');
   assert.equal(created[headers.indexOf('Banco')], 'Banco de Teste');
   assert.equal(created[headers.indexOf('CPF do Titular')], '111.222.333-44');
+  assert.match(created[headers.indexOf('ID Pessoa')], /^PES-/);
 });
 
 test('alteracao de nome propaga pelas referencias usando o ID da coluna A', () => {
@@ -384,7 +403,7 @@ test('vinculo ou duplicidade invalida nao altera participantes', () => {
 test('nome repetido exige confirmacao antes de permitir novo cadastro legitimo', () => {
   const participantes = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
-    [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Ativo']
+    [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Falha de Triagem']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Novo Estudo' }, { nome: 'Outro Estudo' }]);
   const payload = { nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Outro Estudo', status: 'Ativo' };
@@ -394,8 +413,124 @@ test('nome repetido exige confirmacao antes de permitir novo cadastro legitimo',
   assert.match(warning.message, /novo número de identificação\/triagem/i);
   assert.equal(participantes.rows.length, 2);
 
-  assert.equal(context.salvarDadosParticipante(Object.assign({}, payload, { confirmarNomeDuplicado: true })), 'Participante cadastrado com sucesso');
+  assert.equal(context.salvarDadosParticipante(Object.assign({}, payload, {
+    confirmarNomeDuplicado: true,
+    vincularPessoaCadastroId: warning.existing.id
+  })), 'Participante cadastrado com sucesso');
   assert.equal(participantes.rows.length, 3);
+  const pessoaCol = participantes.rows[0].indexOf('ID Pessoa');
+  assert.match(participantes.rows[1][pessoaCol], /^PES-/);
+  assert.equal(participantes.rows[2][pessoaCol], participantes.rows[1][pessoaCol]);
+});
+
+test('CPF igual em outro protocolo reutiliza automaticamente o ID Pessoa confirmado', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Falha de Triagem', '', '12345678900', '', 'PES-EXISTENTE']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
+  const payload = { nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Estudo B', status: 'Ativo', cpf: '123.456.789-00' };
+
+  const warning = context.salvarDadosParticipante(payload);
+  assert.equal(warning.matchType, 'cpf');
+  assert.equal(warning.allowDistinctPerson, false);
+  assert.equal(context.salvarDadosParticipante(Object.assign({}, payload, {
+    confirmarNomeDuplicado: true,
+    vincularPessoaCadastroId: warning.existing.id
+  })), 'Participante cadastrado com sucesso');
+
+  const pessoaCol = participantes.rows[0].indexOf('ID Pessoa');
+  assert.equal(participantes.rows[2][pessoaCol], 'PES-EXISTENTE');
+});
+
+test('homonimo sem CPF pode ser confirmado como outra pessoa', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Ativo', '', '', '', 'PES-ANTERIOR']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
+  const payload = { nome: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Ativo' };
+
+  const warning = context.salvarDadosParticipante(payload);
+  assert.equal(warning.allowDistinctPerson, true);
+  assert.equal(context.salvarDadosParticipante(Object.assign({}, payload, {
+    confirmarNomeDuplicado: true,
+    criarPessoaDistinta: true
+  })), 'Participante cadastrado com sucesso');
+
+  const pessoaCol = participantes.rows[0].indexOf('ID Pessoa');
+  assert.match(participantes.rows[2][pessoaCol], /^PES-/);
+  assert.notEqual(participantes.rows[2][pessoaCol], 'PES-ANTERIOR');
+});
+
+test('nome ambiguo exige escolha explicita da participação que identifica a pessoa', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Ativo', '', '', '', 'PES-UM'],
+    [2, 'Pessoa A', '', '', 'P-002', 'Estudo B', '', '', 'Falha de Triagem', '', '', '', 'PES-DOIS']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }, { nome: 'Estudo C' }]);
+  const payload = { nome: 'Pessoa A', idParticipante: 'P-003', projeto: 'Estudo C', status: 'Ativo' };
+
+  const warning = context.salvarDadosParticipante(payload);
+  assert.equal(warning.matches.length, 2);
+  assert.equal(context.salvarDadosParticipante(Object.assign({}, payload, {
+    confirmarNomeDuplicado: true,
+    vincularPessoaCadastroId: '2'
+  })), 'Participante cadastrado com sucesso');
+
+  const pessoaCol = participantes.rows[0].indexOf('ID Pessoa');
+  assert.equal(participantes.rows[3][pessoaCol], 'PES-DOIS');
+});
+
+test('mesmo CPF nao pode ser confirmado como pessoa distinta', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Ativo', '', '12345678900']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
+  assert.throws(() => context.salvarDadosParticipante({
+    nome: 'Pessoa B', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Ativo', cpf: '12345678900',
+    confirmarNomeDuplicado: true, criarPessoaDistinta: true
+  }), /mesmo CPF/);
+  assert.equal(participantes.rows.length, 2);
+  assert.equal(participantes.rows[0].indexOf('ID Pessoa'), -1);
+  assert.equal(participantes.writes, 0);
+});
+
+test('nova participação direta parte do cadastro encerrado e preserva o vínculo da pessoa', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', '076-05-007', 'AHEAD-MERIT', '', '', 'Falha de Triagem', '', '12345678900', '', 'PES-EXISTENTE']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'AHEAD-MERIT' }, { nome: 'SUNSCAPE' }]);
+
+  assert.equal(context.salvarDadosParticipante({
+    nome: 'Pessoa A', idParticipante: 'SUN-001', projeto: 'SUNSCAPE', status: 'Pré-Triagem', cpf: '12345678900',
+    novaParticipacaoDireta: true, vincularPessoaCadastroId: '1'
+  }), 'Participante cadastrado com sucesso');
+
+  const pessoaCol = participantes.rows[0].indexOf('ID Pessoa');
+  assert.equal(participantes.rows.length, 3);
+  assert.equal(participantes.rows[1][5], 'AHEAD-MERIT');
+  assert.equal(participantes.rows[1][8], 'Falha de Triagem');
+  assert.equal(participantes.rows[2][5], 'SUNSCAPE');
+  assert.equal(participantes.rows[2][pessoaCol], 'PES-EXISTENTE');
+});
+
+test('nova participação é bloqueada enquanto a pessoa possui participação ativa', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Ativo', '', '12345678900', '', 'PES-A']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
+
+  assert.throws(() => context.salvarDadosParticipante({
+    nome: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Pré-Triagem', cpf: '12345678900',
+    novaParticipacaoDireta: true, vincularPessoaCadastroId: '1'
+  }), /Encerre a participação atual/);
+  assert.equal(participantes.rows.length, 2);
+  assert.equal(participantes.writes, 0);
 });
 
 function agendaCancellationContext(sheet) {

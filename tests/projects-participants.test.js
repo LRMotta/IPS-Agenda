@@ -24,9 +24,9 @@ const projectRows = [
 ];
 
 const participantRows = [
-  ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF'],
-  ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo', '', '123.456.789-00'],
-  ['2', 'Pessoa B', '', '', 'P-001', 'Projeto Horizonte', '', '', 'Ativo', '', '']
+  ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'ID Pessoa'],
+  ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo', '', '123.456.789-00', 'PES-A'],
+  ['2', 'Pessoa B', '', '', 'P-001', 'Projeto Horizonte', '', '', 'Ativo', '', '', 'PES-B']
 ];
 
 test('criacao de projeto exige os campos criticos', () => {
@@ -87,6 +87,7 @@ test('participante nao pode repetir CPF nem ID dentro do mesmo projeto', () => {
   assert.equal(cadastro.findParticipantDuplicate({ projeto: 'Estudo Aurora', idParticipante: 'p-001' }, participantRows).field, 'idParticipante');
   assert.equal(cadastro.findParticipantDuplicate({ projeto: 'Projeto Horizonte', idParticipante: 'P-003' }, participantRows), null);
   assert.equal(cadastro.findParticipantCpfMatch({ cpf: '12345678900', projeto: 'Outro' }, participantRows).id, '1');
+  assert.equal(cadastro.findParticipantCpfMatch({ cpf: '12345678900', projeto: 'Outro' }, participantRows).idPessoa, 'PES-A');
 });
 
 test('atualizacao do participante ignora o proprio registro', () => {
@@ -97,9 +98,12 @@ test('atualizacao do participante ignora o proprio registro', () => {
 
 test('nome repetido gera alerta, exceto para o proprio cadastro', () => {
   const cadastro = rules();
+  assert.equal(cadastro.findParticipantNameMatches({ nome: 'Pessoa A' }, participantRows).length, 1);
   const duplicate = cadastro.findParticipantNameDuplicate({ nome: 'Pessoa A' }, participantRows);
   assert.equal(duplicate.id, '1');
   assert.equal(duplicate.idParticipante, 'P-001');
+  assert.equal(duplicate.idPessoa, 'PES-A');
+  assert.equal(duplicate.matchType, 'nome');
   assert.equal(cadastro.findParticipantNameDuplicate({ id: '1', nome: 'Pessoa A' }, participantRows), null);
 });
 
@@ -132,9 +136,13 @@ test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () 
   const client = readProjectFile('IndexCoreScripts.html');
   const modal = readProjectFile('IndexContentAfterStock.html');
   assert.match(client, /r && r\.requiresNameConfirmation/);
-  assert.match(client, /salvarPartApp\(\{ confirmarNomeDuplicado: true \}\)/);
+  assert.match(client, /vincularPessoaCadastroId: selectEl\.value \|\| existing\.id \|\| ''/);
+  assert.match(client, /criarPessoaDistinta: true/);
+  assert.match(client, /matches\.length > 1/);
   assert.match(modal, /Pessoa já cadastrada/);
   assert.match(modal, /Revisar cadastro/);
+  assert.match(modal, /Cadastrar outra pessoa/);
+  assert.match(modal, /confirmPartDuplicateSelect/);
   assert.match(modal, /Criar nova participação/);
 });
 
@@ -165,16 +173,19 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   const nome = block.indexOf('id="ptNome"');
   const nascimento = block.indexOf('id="ptNasc"');
   const cpf = block.indexOf('id="ptCpf"');
+  const pessoaId = block.indexOf('id="ptPessoaId"');
   const status = block.indexOf('id="ptStatus"');
   const identificacao = block.indexOf('id="ptId"');
   const protocolo = block.indexOf('id="ptProjeto"');
   const braco = block.indexOf('id="ptBraco"');
 
-  assert.ok(nome < nascimento && nascimento < cpf);
+  assert.ok(nome < nascimento && nascimento < cpf && cpf < pessoaId);
   assert.ok(status < identificacao && identificacao < protocolo && protocolo < braco);
   assert.match(block, /class="field" style="margin-bottom:14px;">\s*<div>\s*<label[^>]+for="ptNome"/);
   assert.match(block, /for="ptProjeto">Protocolo<\/label>/);
   assert.match(block, /id="ptIdRequiredStar"/);
+  assert.match(block, /id="ptPessoaId"[^>]+readonly/);
+  assert.match(block, /Gerado automaticamente ao salvar/);
   assert.match(block, /class="modal-box" style="max-width:900px;"/);
   assert.match(block, /class="field-row participant-protocol-fields"/);
   assert.match(client, /var required = !participanteIdOpcionalPorStatus\(status \? status\.value : ''\)/);
@@ -183,6 +194,25 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   assert.ok(styles.includes('.participant-protocol-fields{grid-template-columns:repeat(2,minmax(0,1fr));}'));
   assert.ok(styles.includes('.participant-protocol-fields.has-catalog{grid-template-columns:repeat(3,minmax(0,1fr));}'));
   assert.ok(styles.includes('.participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}'));
+});
+
+test('cadastro existente reúne participações e oferece nova participação sem duplicar dados pessoais', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  const server = readProjectFile('WebApp.gs');
+
+  assert.match(modal, /id="ptParticipacoesSection"/);
+  assert.match(modal, /Participações em pesquisas/);
+  assert.match(modal, /id="btnNovaParticipacaoPessoa"/);
+  assert.match(modal, /id="ptPessoaBaseCadastroId"/);
+  assert.match(client, /function abrirNovaParticipacaoPessoa\(\)/);
+  assert.match(client, /function prepararNovaParticipacaoPessoa_/);
+  assert.match(client, /participanteDefinirPessoaSomenteLeitura_\(true\)/);
+  assert.match(client, /novaParticipacaoDireta: !!document\.getElementById\('ptPessoaBaseCadastroId'\)\.value/);
+  assert.match(styles, /\.participant-participation-row\.is-current/);
+  assert.match(server, /Encerre a participação atual antes de criar outra participação para esta pessoa/);
+  assert.match(server, /Esta pessoa já possui uma participação ativa em/);
 });
 
 test('falha de pré-triagem usa o mesmo chip da falha de triagem', () => {
@@ -221,6 +251,10 @@ test('participante oferece endereco, dados bancarios opcionais e bancos configur
   assert.match(server, /bancos: getConfigValues_\('Participantes', 'Bancos', \[\]\)/);
   assert.match(server, /function participanteColumnMap_\(sh, createMissing\)/);
   assert.match(server, /function gravarParticipanteCamposNovos_/);
+  assert.match(server, /\['idPessoa', 'ID Pessoa'\]/);
+  assert.match(server, /function participanteGerarPessoaId_/);
+  assert.match(server, /codexWithDocumentLock_\('salvarDadosParticipante'/);
+  assert.match(client, /ID Pessoa: /);
 });
 
 test('edicao de participante confirma descarte ao fechar o modal', () => {
@@ -1075,8 +1109,8 @@ test('listagem de participantes recebe e exibe a data da ultima visita realizada
   const getParticipantesBlock = sourceBetween(serverSource, 'function participanteCampoKey_', 'function getParticipanteFormConfig()');
   const serverContext = vm.createContext({
     getCodexSheetDataByName_: () => [
-      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
-      ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo']
+      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+      ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo', '', '', '', 'PES-A']
     ],
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
     Utilities: { formatDate: () => '01/01/2000' },
@@ -1089,6 +1123,7 @@ test('listagem de participantes recebe e exibe a data da ultima visita realizada
   const participantes = serverContext.getParticipantes();
   assert.equal(participantes[0].ultimaVisita, 'Visit 3 Week 3');
   assert.equal(participantes[0].ultimaVisitaData, '21/07/2026');
+  assert.equal(participantes[0].idPessoa, 'PES-A');
 
   const clientSource = readProjectFile('IndexCoreScripts.html');
   const cellBlock = sourceBetween(clientSource, 'function participanteUltimaVisitaCellHtml(', 'function renderTabelaPart(');

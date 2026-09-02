@@ -2796,6 +2796,7 @@ function filtrarParticipantes(forceNow) {
         || (p.projeto||'').toLowerCase().includes(q)
         || ((projetoCadastro && projetoCadastro.codigo)||'').toLowerCase().includes(q)
         || (p.status||'').toLowerCase().includes(q)
+        || (p.idPessoa||'').toLowerCase().includes(q)
         || (p.cpf||'').toLowerCase().includes(q);
       var matchSt = !st || (p.status||'') === st;
       return matchQ && matchSt;
@@ -2886,6 +2887,7 @@ function renderTabelaPart(lista) {
       +'</div></td></tr>';
     function msIcon(name){ return '<span class="material-symbols-outlined">'+name+'</span>'; }
     var items=[];
+    if(p.idPessoa)       items.push('<span class="det-item">'+msIcon('fingerprint')+'<span>ID Pessoa: '+esc(p.idPessoa)+'</span></span>');
     if(p.cpf)            items.push('<span class="det-item">'+msIcon('badge')+'<span>'+esc(p.cpf)+'</span></span>');
     if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(formatarTelefoneBrasileiro(p.telefone))+'</span></span>');
     if(p.observacoes)    items.push('<span class="det-item">'+msIcon('notes')+'<span class="det-obs" title="'+esc(p.observacoes)+'">'+esc(p.observacoes)+'</span></span>');
@@ -3018,6 +3020,7 @@ function abrirFormPart(p) {
     delete modalPart.dataset.agendaOrigem;
     modalPart.dataset.editing = p ? '1' : '0';
   }
+  participanteDefinirPessoaSomenteLeitura_(false);
   ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular']
     .forEach(function(id){ document.getElementById(id).value=''; });
   fillSelectOptions('ptBanco', BANCOS_PART, '', '— Selecione —');
@@ -3037,6 +3040,8 @@ function abrirFormPart(p) {
   document.getElementById('statusPart').innerHTML='';
   document.getElementById('btnSalvarPart').disabled=false;
   document.getElementById('editPartId').value='';
+  document.getElementById('ptPessoaBaseCadastroId').value='';
+  document.getElementById('ptPessoaId').value='';
   if (p) {
     if (typeof p==='string') p=JSON.parse(p);
     document.getElementById('modalPartTitle').textContent='EDITAR PARTICIPANTE';
@@ -3045,6 +3050,7 @@ function abrirFormPart(p) {
     document.getElementById('ptId').value             = p.idParticipante||'';
     document.getElementById('ptNasc').value           = dateToInputValue(p.dataNascimento)||'';
     document.getElementById('ptCpf').value            = p.cpf||'';
+    document.getElementById('ptPessoaId').value       = p.idPessoa||'';
     preencherProjetosParticipante(p.projeto || '');
     document.getElementById('ptBraco').value          = p.braco||'';
     carregarBracosParticipante(p.projeto || '', p.braco || '');
@@ -3064,6 +3070,10 @@ function abrirFormPart(p) {
   } else {
     document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
   }
+  document.getElementById('modalPartSub').textContent='Dados da pessoa e de sua participação no protocolo';
+  document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">save</span> SALVAR CADASTRO';
+  document.getElementById('btnCriarReqParticipante').style.display='';
+  renderParticipacoesPessoa_(p || null, false);
   atualizarParticipanteIdObrigatorio();
   abrirOverlay('modalParticipante');
 }
@@ -3072,9 +3082,128 @@ function abrirFormParticipante(p) {
   abrirFormPart(p);
 }
 
+function participanteMesmoCadastroPessoa_(a, b) {
+  a = a || {};
+  b = b || {};
+  var idPessoaA = String(a.idPessoa || '').trim();
+  var idPessoaB = String(b.idPessoa || '').trim();
+  if (idPessoaA && idPessoaB) return idPessoaA === idPessoaB;
+  var cpfA = String(a.cpf || '').replace(/\D/g, '');
+  var cpfB = String(b.cpf || '').replace(/\D/g, '');
+  if (cpfA && cpfB) return cpfA === cpfB;
+  return String(a.id || '') && String(a.id || '') === String(b.id || '');
+}
+
+function participanteStatusEncerrado_(status) {
+  var st = normSelectValue(status || '');
+  return ['falha de pre-triagem','falha de triagem','descontinuado','obito'].indexOf(st) >= 0;
+}
+
+function participacoesDaPessoa_(participante) {
+  if (!participante) return [];
+  var vinculadas = (_participantes || []).filter(function(item) {
+    return participanteMesmoCadastroPessoa_(participante, item);
+  });
+  if (!vinculadas.some(function(item) { return String(item.id || '') === String(participante.id || ''); })) vinculadas.unshift(participante);
+  return vinculadas;
+}
+
+function renderParticipacoesPessoa_(participante, criandoNova) {
+  var section = document.getElementById('ptParticipacoesSection');
+  var list = document.getElementById('ptParticipacoesList');
+  var button = document.getElementById('btnNovaParticipacaoPessoa');
+  var hint = document.getElementById('ptParticipacoesHint');
+  if (!section || !list || !button || !hint) return;
+  if (!participante || !participante.id) {
+    section.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  var participacoes = participacoesDaPessoa_(participante);
+  section.style.display = '';
+  button.style.display = criandoNova ? 'none' : '';
+  var possuiAtiva = participacoes.some(function(item) { return !participanteStatusEncerrado_(item.status); });
+  button.disabled = possuiAtiva;
+  button.title = possuiAtiva ? 'Encerre a participação ativa antes de criar outra.' : 'Criar participação em outro protocolo';
+  hint.textContent = criandoNova
+    ? 'A nova participação será vinculada à mesma pessoa. Preencha somente os dados do novo protocolo.'
+    : (possuiAtiva
+      ? 'Existe uma participação ativa. Encerre-a antes de iniciar outra pesquisa.'
+      : 'As participações anteriores permanecem preservadas. Você já pode iniciar outro protocolo.');
+  list.innerHTML = participacoes.map(function(item) {
+    var atual = String(item.id || '') === String(participante.id || '');
+    var titulo = esc(item.projeto || 'Protocolo não informado');
+    var identificacao = item.idParticipante ? 'ID ' + esc(item.idParticipante) : 'Sem ID de triagem';
+    var contextoAtual = criandoNova ? 'Participação de origem' : 'Aberta nesta tela';
+    return '<div class="participant-participation-row'+(atual?' is-current':'')+'">'
+      +'<div><div class="participant-participation-title">'+titulo+(atual?'<span class="participant-participation-current">'+contextoAtual+'</span>':'')+'</div>'
+      +'<div class="participant-participation-meta">'+identificacao+'</div></div>'
+      +'<div>'+chipStatus(item.status || '—')+'</div></div>';
+  }).join('');
+}
+
+function participanteDefinirPessoaSomenteLeitura_(locked) {
+  ['ptNome','ptNasc','ptCpf','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.readOnly = !!locked;
+    el.classList.toggle('participant-person-locked', !!locked);
+  });
+  var banco = document.getElementById('ptBanco');
+  if (banco) {
+    banco.disabled = !!locked;
+    banco.classList.toggle('participant-person-locked', !!locked);
+  }
+}
+
+function prepararNovaParticipacaoPessoa_(participante) {
+  appClearUnsavedChanges('modalParticipante');
+  abrirFormPart(null);
+  document.getElementById('modalPartTitle').textContent='NOVA PARTICIPAÇÃO';
+  document.getElementById('modalPartSub').textContent='Mesma pessoa, novo protocolo de pesquisa';
+  document.getElementById('ptPessoaBaseCadastroId').value=participante.id||'';
+  document.getElementById('ptPessoaId').value=participante.idPessoa||'';
+  document.getElementById('ptNome').value=participante.nome||'';
+  document.getElementById('ptNasc').value=dateToInputValue(participante.dataNascimento)||'';
+  document.getElementById('ptCpf').value=participante.cpf||'';
+  document.getElementById('ptTelefone').value=formatarTelefoneBrasileiro(participante.telefone);
+  document.getElementById('ptObs').value=participante.observacoes||'';
+  document.getElementById('ptRua').value=participante.rua||'';
+  document.getElementById('ptNumero').value=participante.numero||'';
+  document.getElementById('ptCidade').value=participante.cidade||'';
+  document.getElementById('ptEstado').value=participante.estado||'';
+  document.getElementById('ptCep').value=participante.cep||'';
+  fillSelectOptions('ptBanco', BANCOS_PART, participante.banco || '', '— Selecione —');
+  document.getElementById('ptAgencia').value=participante.agencia||'';
+  document.getElementById('ptContaCorrente').value=participante.contaCorrente||'';
+  document.getElementById('ptTitularConta').value=participante.titularConta||'';
+  document.getElementById('ptCpfTitular').value=participante.cpfTitular||'';
+  document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">add_circle</span> CRIAR PARTICIPAÇÃO';
+  document.getElementById('btnCriarReqParticipante').style.display='none';
+  participanteDefinirPessoaSomenteLeitura_(true);
+  renderParticipacoesPessoa_(participante, true);
+}
+
+function abrirNovaParticipacaoPessoa() {
+  var cadastroId = document.getElementById('editPartId').value || '';
+  var participante = (_participantes || []).filter(function(item) { return String(item.id || '') === String(cadastroId); })[0];
+  if (!participante) {
+    snackErro('Salve o cadastro da pessoa antes de criar outra participação.');
+    return;
+  }
+  if (!participanteStatusEncerrado_(participante.status)) {
+    snackErro('Encerre a participação atual antes de criar outra participação.');
+    return;
+  }
+  var abrir = function() { prepararNovaParticipacaoPessoa_(participante); };
+  if (!appConfirmNavigationIfDirty('modalParticipante', abrir)) return;
+  abrir();
+}
+
 function participanteAtualDoModal() {
   return {
     id: document.getElementById('editPartId').value || '',
+    idPessoa: document.getElementById('ptPessoaId').value || '',
     nome: document.getElementById('ptNome').value.trim(),
     idParticipante: document.getElementById('ptId').value.trim(),
     dataNascimento: document.getElementById('ptNasc').value || '',
@@ -3136,19 +3265,47 @@ function atualizarParticipanteIdObrigatorio() {
 function abrirConfirmacaoNomeParticipanteDuplicado(result) {
   result = result || {};
   var existing = result.existing || {};
+  var matches = (result.matches || []).slice();
+  if (!matches.length && existing.id) matches.push(existing);
   document.getElementById('confirmPartDuplicateTitle').textContent = result.title || 'Participante já cadastrado';
   document.getElementById('confirmPartDuplicateMsg').textContent = result.message || 'Já existe um participante cadastrado com este nome.';
-  var details = [
-    existing.idParticipante ? 'Nº de identificação: ' + existing.idParticipante : '',
-    existing.projeto ? 'Protocolo: ' + existing.projeto : ''
-  ].filter(Boolean).join(' · ');
   var detailsEl = document.getElementById('confirmPartDuplicateDetails');
-  detailsEl.textContent = details;
-  detailsEl.style.display = details ? 'block' : 'none';
+  var choicesEl = document.getElementById('confirmPartDuplicateChoices');
+  var selectEl = document.getElementById('confirmPartDuplicateSelect');
+  selectEl.innerHTML = '';
+  matches.forEach(function(match) {
+    var option = document.createElement('option');
+    option.value = match.id || '';
+    option.textContent = [match.projeto || 'Protocolo não informado', match.idParticipante ? 'ID ' + match.idParticipante : 'sem ID de triagem', match.idPessoa || 'ID Pessoa ainda não gerado'].join(' — ');
+    selectEl.appendChild(option);
+  });
+  function atualizarDetalhesPessoaDuplicada() {
+    var selectedId = selectEl.value || (existing.id || '');
+    var selected = matches.filter(function(match) { return String(match.id || '') === String(selectedId); })[0] || existing;
+    var details = [
+      selected.idPessoa ? 'ID Pessoa: ' + selected.idPessoa : 'ID Pessoa: será criado ao confirmar',
+      selected.idParticipante ? 'Nº de identificação: ' + selected.idParticipante : '',
+      selected.projeto ? 'Protocolo: ' + selected.projeto : ''
+    ].filter(Boolean).join(' · ');
+    detailsEl.textContent = details;
+    detailsEl.style.display = details ? 'block' : 'none';
+  }
+  choicesEl.style.display = matches.length > 1 ? 'block' : 'none';
+  selectEl.onchange = atualizarDetalhesPessoaDuplicada;
+  atualizarDetalhesPessoaDuplicada();
   document.getElementById('btnConfirmPartDuplicate').onclick = function() {
     fecharOverlay('confirmPartDuplicate');
-    salvarPartApp({ confirmarNomeDuplicado: true });
+    salvarPartApp({
+      confirmarNomeDuplicado: true,
+      vincularPessoaCadastroId: selectEl.value || existing.id || ''
+    });
   };
+  var distinctBtn = document.getElementById('btnConfirmPartDistinct');
+  distinctBtn.style.display = result.allowDistinctPerson ? '' : 'none';
+  distinctBtn.onclick = result.allowDistinctPerson ? function() {
+    fecharOverlay('confirmPartDuplicate');
+    salvarPartApp({ confirmarNomeDuplicado: true, criarPessoaDistinta: true });
+  } : null;
   abrirOverlay('confirmPartDuplicate');
 }
 
@@ -3187,7 +3344,10 @@ function salvarPartApp(opts) {
     contaCorrente: document.getElementById('ptContaCorrente').value.trim(),
     titularConta: document.getElementById('ptTitularConta').value.trim(),
     cpfTitular: document.getElementById('ptCpfTitular').value.trim(),
-    confirmarNomeDuplicado: opts.confirmarNomeDuplicado === true
+    novaParticipacaoDireta: !!document.getElementById('ptPessoaBaseCadastroId').value,
+    confirmarNomeDuplicado: opts.confirmarNomeDuplicado === true,
+    vincularPessoaCadastroId: opts.vincularPessoaCadastroId || document.getElementById('ptPessoaBaseCadastroId').value || '',
+    criarPessoaDistinta: opts.criarPessoaDistinta === true
   };
   appSetButtonBusy(btn, true);
   appSetStatus('statusPart', 'Processando...');

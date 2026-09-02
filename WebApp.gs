@@ -5218,12 +5218,14 @@ function participanteColumnMap_(sh, createMissing) {
   var definitions = [
     ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['cep', 'CEP'],
     ['banco', 'Banco'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
-    ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular']
+    ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular'],
+    ['idPessoa', 'ID Pessoa']
   ];
   var aliases = {
     rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], cep: ['cep'],
     banco: ['banco', 'nomedobanco'], agencia: ['agencia'], contaCorrente: ['contacorrente', 'conta'],
-    titularConta: ['titulardacontacorrente', 'titulardaconta'], cpfTitular: ['cpfdotitular']
+    titularConta: ['titulardacontacorrente', 'titulardaconta'], cpfTitular: ['cpfdotitular'],
+    idPessoa: ['idpessoa', 'pessoaid', 'idinternopessoa']
   };
   var map = {};
   headers.forEach(function(header, index) {
@@ -5248,7 +5250,7 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
   var values = {
     rua: d.rua || '', numero: d.numero || '', cidade: d.cidade || '', estado: d.estado || '', cep: d.cep || '',
     banco: d.banco || '', agencia: d.agencia || '', contaCorrente: d.contaCorrente || '',
-    titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || ''
+    titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || '', idPessoa: d.idPessoa || ''
   };
   Object.keys(values).forEach(function(key) {
     if (columns[key] !== undefined) sh.getRange(rowNumber, columns[key] + 1).setValue(values[key]);
@@ -5523,7 +5525,8 @@ function getParticipantes() {
         agencia:        String(valueFor(r, ['agencia']) || ''),
         contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
         titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
-        cpfTitular:     String(valueFor(r, ['cpfdotitular']) || '')
+        cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
+        idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || '')
       };
     });
 }
@@ -5667,14 +5670,66 @@ function participantePossuiEventoAgenda_(participante) {
   });
 }
 
+function participantePessoaIdDaLinha_(row, personIdColumn) {
+  return personIdColumn === undefined || personIdColumn < 0
+    ? ''
+    : String((row || [])[personIdColumn] || '').trim();
+}
+
+function participanteLinhaPorCadastroId_(rows, cadastroId) {
+  cadastroId = String(cadastroId || '').trim();
+  if (!cadastroId) return -1;
+  for (var i = 1; i < (rows || []).length; i++) {
+    if (String((rows[i] || [])[0] || '').trim() === cadastroId) return i;
+  }
+  return -1;
+}
+
+function participantePessoaIdPorCpf_(rows, cpf, personIdColumn, currentCadastroId) {
+  cpf = CadastroRules_.digits(cpf);
+  if (!cpf || personIdColumn === undefined || personIdColumn < 0) return '';
+  currentCadastroId = String(currentCadastroId || '').trim();
+  var encontrados = {};
+  for (var i = 1; i < (rows || []).length; i++) {
+    var row = rows[i] || [];
+    if (currentCadastroId && String(row[0] || '').trim() === currentCadastroId) continue;
+    if (CadastroRules_.digits(row[10]) !== cpf) continue;
+    var idPessoa = participantePessoaIdDaLinha_(row, personIdColumn);
+    if (idPessoa) encontrados[idPessoa] = true;
+  }
+  var ids = Object.keys(encontrados);
+  if (ids.length > 1) {
+    throw new Error('O mesmo CPF está associado a mais de um ID Pessoa. Revise os cadastros antes de criar outra participação.');
+  }
+  return ids.length ? ids[0] : '';
+}
+
+function participanteGerarPessoaId_(rows, personIdColumn) {
+  var existentes = {};
+  for (var i = 1; i < (rows || []).length; i++) {
+    var atual = participantePessoaIdDaLinha_(rows[i], personIdColumn);
+    if (atual) existentes[atual] = true;
+  }
+  for (var tentativa = 0; tentativa < 5; tentativa++) {
+    var uuid = String(Utilities.getUuid()).replace(/[^a-z0-9]/gi, '').toUpperCase();
+    var candidato = 'PES-' + uuid.slice(-20);
+    if (!existentes[candidato]) return candidato;
+  }
+  throw new Error('Não foi possível gerar um ID Pessoa único. Tente novamente.');
+}
+
 function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   d = d || {};
+  return codexWithDocumentLock_('salvarDadosParticipante', function() {
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
   if (!sh) throw new Error('Aba "Participantes" não encontrada.');
   var rows = sh.getDataRange().getValues();
+  var participantColumnsRead = participanteColumnMap_(sh, false);
+  var personIdColumnRead = participantColumnsRead.idPessoa === undefined ? -1 : participantColumnsRead.idPessoa;
   var editRowIndex = -1;
+  var directOriginRowIndex = -1;
   var existing = null;
   if (d.id) {
     for (var editIdx = 1; editIdx < rows.length; editIdx++) {
@@ -5689,6 +5744,25 @@ function salvarDadosParticipante(d) {
     if (!String(d.status || '').trim()) d.status = String(existing[8] || '').trim();
     if (!String(d.idParticipante || '').trim()) d.idParticipante = String(existing[4] || '').trim();
   }
+  if (d.novaParticipacaoDireta === true) {
+    if (d.id) throw new Error('Uma nova participação não pode substituir um cadastro existente.');
+    directOriginRowIndex = participanteLinhaPorCadastroId_(rows, d.vincularPessoaCadastroId);
+    if (directOriginRowIndex < 1) throw new Error('A participação de origem não foi encontrada. Reabra o cadastro e tente novamente.');
+    var directOrigin = rows[directOriginRowIndex] || [];
+    if (CadastroRules_.participantAvailableForNewAgenda(directOrigin[8])) {
+      throw new Error('Encerre a participação atual antes de criar outra participação para esta pessoa.');
+    }
+    if (normText_(directOrigin[1]) !== normText_(d.nome)) {
+      throw new Error('Os dados da pessoa foram alterados durante a criação da participação. Reabra o cadastro e tente novamente.');
+    }
+    var directOriginCpf = CadastroRules_.digits(directOrigin[10]);
+    if (directOriginCpf && directOriginCpf !== CadastroRules_.digits(d.cpf)) {
+      throw new Error('O CPF não corresponde à pessoa selecionada para a nova participação.');
+    }
+    d.confirmarNomeDuplicado = true;
+    d.vincularPessoaCadastroId = String(directOrigin[0] || '').trim();
+  }
+  var existingPessoaId = existing ? participantePessoaIdDaLinha_(existing, personIdColumnRead) : '';
   var projeto = String(d.projeto || '').trim();
   var projetos = getProjetosParticipantesOptions_();
   var ausentes = CadastroRules_.requiredParticipantFields(d);
@@ -5709,16 +5783,37 @@ function salvarDadosParticipante(d) {
       ? 'Já existe um participante cadastrado com este CPF.'
       : 'Já existe um participante com este ID vinculado ao mesmo projeto.');
   }
-  var nomeDuplicado = CadastroRules_.findParticipantNameDuplicate(d, rows);
+  var nomeCorrespondencias = CadastroRules_.findParticipantNameMatches(d, rows);
+  var nomeDuplicado = nomeCorrespondencias.length ? nomeCorrespondencias[0] : null;
   var cpfCorrespondente = CadastroRules_.findParticipantCpfMatch(d, rows);
+  var cadastrosCorrespondentes = cpfCorrespondente ? [cpfCorrespondente] : nomeCorrespondencias;
   var cadastroCorrespondente = cpfCorrespondente || nomeDuplicado;
-  if (cadastroCorrespondente && d.confirmarNomeDuplicado !== true) {
+  if (cadastroCorrespondente && !existingPessoaId && d.confirmarNomeDuplicado !== true) {
     return {
       requiresNameConfirmation: true,
       title: 'Pessoa já cadastrada',
       message: 'Já existe uma participação possivelmente vinculada a esta pessoa. Preserve o protocolo anterior e continue somente para criar uma nova participação em outro protocolo, com novo número de identificação/triagem quando aplicável.',
-      existing: cadastroCorrespondente
+      existing: cadastroCorrespondente,
+      matches: cadastrosCorrespondentes,
+      matchType: cadastroCorrespondente.matchType || (cpfCorrespondente ? 'cpf' : 'nome'),
+      allowDistinctPerson: !cpfCorrespondente
     };
+  }
+  if (d.criarPessoaDistinta === true && cpfCorrespondente) {
+    throw new Error('Não é possível criar outra pessoa com o mesmo CPF. Revise o cadastro existente.');
+  }
+  if (cadastroCorrespondente && !existingPessoaId && d.confirmarNomeDuplicado === true && d.criarPessoaDistinta !== true) {
+    var cadastroVinculoId = String(d.vincularPessoaCadastroId || '').trim();
+    cadastroCorrespondente = null;
+    for (var cadastroMatchIndex = 0; cadastroMatchIndex < cadastrosCorrespondentes.length; cadastroMatchIndex++) {
+      if (String(cadastrosCorrespondentes[cadastroMatchIndex].id) === cadastroVinculoId) {
+        cadastroCorrespondente = cadastrosCorrespondentes[cadastroMatchIndex];
+        break;
+      }
+    }
+    if (!cadastroCorrespondente) {
+      throw new Error('A participação usada para identificar a pessoa mudou. Revise o cadastro e confirme novamente.');
+    }
   }
 
   function parseDate(s) {
@@ -5734,7 +5829,49 @@ function salvarDadosParticipante(d) {
     return s;
   }
 
+  var idPessoa = existingPessoaId;
+  var vinculoRowIndex = -1;
+  var cpfPessoaId = d.criarPessoaDistinta === true
+    ? ''
+    : participantePessoaIdPorCpf_(rows, d.cpf, personIdColumnRead, d.id);
+  if (idPessoa && cpfPessoaId && idPessoa !== cpfPessoaId) {
+    throw new Error('O CPF informado pertence a outro ID Pessoa. Revise o cadastro antes de salvar.');
+  }
+  if (!idPessoa && cpfPessoaId) idPessoa = cpfPessoaId;
+  if (cadastroCorrespondente && !existingPessoaId && d.confirmarNomeDuplicado === true && d.criarPessoaDistinta !== true) {
+    vinculoRowIndex = participanteLinhaPorCadastroId_(rows, d.vincularPessoaCadastroId);
+    if (vinculoRowIndex < 1) throw new Error('A participação selecionada para o vínculo não foi encontrada.');
+    var pessoaIdVinculada = participantePessoaIdDaLinha_(rows[vinculoRowIndex], personIdColumnRead);
+    if (idPessoa && pessoaIdVinculada && idPessoa !== pessoaIdVinculada) {
+      throw new Error('As participações selecionadas possuem IDs Pessoa diferentes. Revise os cadastros antes de continuar.');
+    }
+    if (!idPessoa) idPessoa = pessoaIdVinculada;
+  }
+  if (!idPessoa) idPessoa = participanteGerarPessoaId_(rows, personIdColumnRead);
+  if (!d.id && d.criarPessoaDistinta !== true) {
+    var cpfNovaParticipacao = CadastroRules_.digits(d.cpf);
+    for (var pessoaRowIndex = 1; pessoaRowIndex < rows.length; pessoaRowIndex++) {
+      var pessoaRow = rows[pessoaRowIndex] || [];
+      var mesmaPessoaPorId = idPessoa && participantePessoaIdDaLinha_(pessoaRow, personIdColumnRead) === idPessoa;
+      var mesmaPessoaPorCpf = cpfNovaParticipacao && CadastroRules_.digits(pessoaRow[10]) === cpfNovaParticipacao;
+      var linhaVinculada = vinculoRowIndex === pessoaRowIndex;
+      if (!(mesmaPessoaPorId || mesmaPessoaPorCpf || linhaVinculada)) continue;
+      if (CadastroRules_.participantAvailableForNewAgenda(pessoaRow[8])) {
+        throw new Error('Esta pessoa já possui uma participação ativa em ' + String(pessoaRow[5] || 'outro protocolo') + '. Encerre-a antes de criar uma nova participação.');
+      }
+    }
+  }
+  d.idPessoa = idPessoa;
   var participantColumns = participanteColumnMap_(sh, true);
+  var personIdColumn = participantColumns.idPessoa;
+  if (vinculoRowIndex > 0 && !participantePessoaIdDaLinha_(rows[vinculoRowIndex], personIdColumnRead)) {
+    sh.getRange(vinculoRowIndex + 1, personIdColumn + 1).setValue(idPessoa);
+    if (typeof codexWriteAuditChanges_ === 'function') {
+      codexWriteAuditChanges_('Cadastros', 'vincularIdPessoaParticipante', rows[vinculoRowIndex][0], [
+        { field: 'ID Pessoa', oldValue: '', newValue: idPessoa }
+      ], 'Participação anterior vinculada à mesma pessoa');
+    }
+  }
 
   var rowStart = [
     d.id || '',
@@ -5769,7 +5906,8 @@ function salvarDadosParticipante(d) {
         { field: 'Número de identificação', oldValue: existing[4], newValue: d.idParticipante },
         { field: 'Protocolo', oldValue: existing[5], newValue: projeto },
         { field: 'Braço', oldValue: existing[6], newValue: d.braco || '' },
-        { field: 'Status', oldValue: existing[8], newValue: d.status }
+        { field: 'Status', oldValue: existing[8], newValue: d.status },
+        { field: 'ID Pessoa', oldValue: existingPessoaId, newValue: idPessoa }
       ], 'Cadastro de participação atualizado');
     }
     clearCodexRuntimeCaches_();
@@ -5791,6 +5929,7 @@ function salvarDadosParticipante(d) {
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return 'Participante cadastrado com sucesso';
   }
+  });
 }
 
 function corrigirMatrizIdadeParticipantes() {

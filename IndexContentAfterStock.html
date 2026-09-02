@@ -385,7 +385,7 @@
       <div class="modal-header-icon"><span class="material-symbols-outlined">person</span></div>
       <div>
         <div class="modal-header-title" id="modalPartTitle">CADASTRO DE PARTICIPANTE</div>
-        <div class="modal-header-sub">Dados do participante no protocolo de pesquisa</div>
+        <div class="modal-header-sub" id="modalPartSub">Dados da pessoa e de sua participação no protocolo</div>
       </div>
       <button class="modal-close" onclick="fecharOverlay('modalParticipante')">
         <span class="material-symbols-outlined">close</span>
@@ -393,6 +393,7 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="editPartId">
+      <input type="hidden" id="ptPessoaBaseCadastroId">
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
         <div class="field" style="margin-bottom:14px;">
@@ -412,6 +413,11 @@
             <label class="field-label" for="ptCpf">CPF</label>
             <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00">
           </div>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label class="field-label" for="ptPessoaId">ID Pessoa</label>
+          <input type="text" id="ptPessoaId" class="f-input" readonly placeholder="Gerado automaticamente ao salvar">
+          <div class="field-hint" style="margin-top:6px;">Identificador automático compartilhado pelas participações da mesma pessoa.</div>
         </div>
       </div>
       <div class="form-section">
@@ -456,6 +462,18 @@
           </div>
         </div>
         <div class="field-hint" style="margin-top:10px;">Se esta pessoa iniciar outro protocolo, encerre a participação atual e crie uma nova participação. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
+      </div>
+      <div class="form-section participant-participations-section" id="ptParticipacoesSection" style="display:none;">
+        <div class="participant-participations-heading">
+          <div>
+            <div class="section-label"><span class="material-symbols-outlined">account_tree</span> Participações em pesquisas</div>
+            <p id="ptParticipacoesHint">Cada protocolo mantém identificação, status, Agenda e histórico próprios.</p>
+          </div>
+          <button class="ag-tb-btn primary" type="button" id="btnNovaParticipacaoPessoa" onclick="abrirNovaParticipacaoPessoa()">
+            <span class="material-symbols-outlined">add</span> Nova participação
+          </button>
+        </div>
+        <div class="participant-participations-list" id="ptParticipacoesList"></div>
       </div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">location_on</span> Endereço</div>
@@ -522,7 +540,7 @@
         <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()" style="flex:1 1 220px;">
           <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
         </button>
-        <button class="ag-tb-btn" type="button" onclick="abrirReqExamesDoParticipante()" title="Criar requisição com os dados deste participante">
+        <button class="ag-tb-btn" type="button" id="btnCriarReqParticipante" onclick="abrirReqExamesDoParticipante()" title="Criar requisição com os dados deste participante">
           <span class="material-symbols-outlined">assignment</span> Criar requisição
         </button>
       </div>
@@ -955,9 +973,14 @@
     </div>
     <h3 id="confirmPartDuplicateTitle">Pessoa já cadastrada</h3>
     <p id="confirmPartDuplicateMsg">Já existe uma participação possivelmente vinculada a esta pessoa.</p>
+    <div id="confirmPartDuplicateChoices" style="display:none;margin-top:10px;text-align:left;">
+      <label class="field-label" for="confirmPartDuplicateSelect">Selecione a participação pertencente à mesma pessoa</label>
+      <select id="confirmPartDuplicateSelect" class="f-input f-select"></select>
+    </div>
     <p id="confirmPartDuplicateDetails" style="display:none;background:#f6f8ff;border:1px solid #e0e6f0;border-radius:8px;padding:9px 10px;color:var(--text);font-weight:500;"></p>
     <div class="confirm-actions">
       <button class="btn-txt" onclick="fecharOverlay('confirmPartDuplicate')">Revisar cadastro</button>
+      <button class="btn-txt" id="btnConfirmPartDistinct" style="display:none">Cadastrar outra pessoa</button>
       <button class="btn-save" id="btnConfirmPartDuplicate" style="width:auto;padding:9px 18px;margin-top:0">Criar nova participação</button>
     </div>
   </div>
