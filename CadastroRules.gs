@@ -98,24 +98,47 @@ var CadastroRules_ = (function() {
     return null;
   }
 
-  function findParticipantNameDuplicate(data, rows) {
+  function participantPersonIdColumn(rows) {
+    var header = (rows && rows[0]) || [];
+    var aliases = ['id pessoa', 'pessoa id', 'id interno pessoa'];
+    for (var i = 0; i < header.length; i++) {
+      if (aliases.indexOf(normalizeText(header[i])) >= 0) return i;
+    }
+    return -1;
+  }
+
+  function participantMatchResult(row, rowIndex, personIdColumn, matchType) {
+    return {
+      id: String(row[0] || ''),
+      nome: String(row[1] || ''),
+      idParticipante: String(row[4] || ''),
+      projeto: String(row[5] || ''),
+      idPessoa: personIdColumn >= 0 ? String(row[personIdColumn] || '') : '',
+      rowIndex: rowIndex,
+      matchType: matchType
+    };
+  }
+
+  function findParticipantNameMatches(data, rows) {
     data = data || {};
     var currentId = String(data.id || '');
     var name = normalizeText(data.nome);
-    if (!name) return null;
+    if (!name) return [];
     rows = rows || [];
+    var personIdColumn = participantPersonIdColumn(rows);
+    var matches = [];
     for (var i = 1; i < rows.length; i++) {
       var row = rows[i] || [];
       if (currentId && String(row[0] || '') === currentId) continue;
       if (normalizeText(row[1]) !== name) continue;
-      return {
-        id: String(row[0] || ''),
-        nome: String(row[1] || ''),
-        idParticipante: String(row[4] || ''),
-        projeto: String(row[5] || '')
-      };
+      matches.push(participantMatchResult(row, i, personIdColumn, 'nome'));
     }
-    return null;
+    return matches;
+  }
+
+  function findParticipantNameDuplicate(data, rows) {
+    var matches = findParticipantNameMatches(data, rows);
+    return matches.length ? matches[0] : null;
   }
 
   function findParticipantCpfMatch(data, rows) {
@@ -124,16 +147,17 @@ var CadastroRules_ = (function() {
     var cpf = digits(data.cpf);
     if (!cpf) return null;
     rows = rows || [];
+    var personIdColumn = participantPersonIdColumn(rows);
+    var firstMatch = null;
     for (var i = 1; i < rows.length; i++) {
       var row = rows[i] || [];
       if (currentId && String(row[0] || '') === currentId) continue;
       if (digits(row[10]) !== cpf) continue;
-      return {
-        id: String(row[0] || ''), nome: String(row[1] || ''),
-        idParticipante: String(row[4] || ''), projeto: String(row[5] || '')
-      };
+      var match = participantMatchResult(row, i, personIdColumn, 'cpf');
+      if (match.idPessoa) return match;
+      if (!firstMatch) firstMatch = match;
     }
-    return null;
+    return firstMatch;
   }
 
   function agendaEventMatchesParticipant(participant, event) {
@@ -166,6 +190,7 @@ var CadastroRules_ = (function() {
     requiredParticipantFields: requiredParticipantFields,
     projectExists: projectExists,
     findParticipantDuplicate: findParticipantDuplicate,
+    findParticipantNameMatches: findParticipantNameMatches,
     findParticipantNameDuplicate: findParticipantNameDuplicate,
     findParticipantCpfMatch: findParticipantCpfMatch,
     agendaEventMatchesParticipant: agendaEventMatchesParticipant
