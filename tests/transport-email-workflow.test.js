@@ -138,6 +138,118 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
   assert.match(pendentes[0].motivo, /sem documentação anexada/);
 });
 
+test('email com anexo continua elegivel para nova tentativa se a Agenda divergir', () => {
+  const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
+  const book = new FakeSpreadsheet({});
+  const agenda = new FakeSheet('Agenda', [
+    ['Status evento', 'Courier', 'Status courier'],
+    ['Agendado', 'MARKEN divergente', 'Pendente']
+  ]);
+  const messageDate = new Date(Date.now() + 2 * 60 * 1000);
+  const server = transportServer({
+    book,
+    AgendaServerRules_: rules,
+    AGENDA_CFG: {
+      col: { status: 1 },
+      idx: {
+        c1: { nome: 1, status: 2 },
+        c2: { nome: 3, status: 4 },
+        c3: { nome: 5, status: 6 }
+      }
+    },
+    getAgendaSheet_: () => agenda,
+    encontrarLinhaPorId: () => 2,
+    codexWithDocumentLock_: (_label, fn) => fn(),
+    GmailApp: {
+      search: () => [{
+        getMessages: () => [{
+          getSubject: () => 'Agendamento de coleta',
+          getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-3-T1',
+          getDate: () => messageDate,
+          getId: () => 'MSG-3',
+          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+        }]
+      }]
+    }
+  });
+  server.transporteRegistrarDocumentacaoGerada_({
+    agendaId: 'EVT-3', slot: '1', courier: 'MARKEN', rascunhoOk: true
+  });
+
+  const primeira = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(primeira.enviados, 0);
+  assert.equal(primeira.naoPromovidos, 1);
+  assert.equal(server.transporteOperacoesRows_()[0].emailEnviadoEm, '');
+
+  agenda.rows[1][1] = 'MARKEN';
+  const segunda = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(segunda.enviados, 1);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+  assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm instanceof Date);
+});
+
+test('monitor recupera operacao antiga concluida antes de promover a Agenda', () => {
+  const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
+  const book = new FakeSpreadsheet({});
+  const agenda = new FakeSheet('Agenda', [
+    ['Status evento', 'Courier', 'Status courier'],
+    ['Agendado', 'MARKEN', 'Pendente']
+  ]);
+  const messageDate = new Date(Date.now() + 2 * 60 * 1000);
+  const server = transportServer({
+    book,
+    AgendaServerRules_: rules,
+    AGENDA_CFG: {
+      col: { status: 1 },
+      idx: {
+        c1: { nome: 1, status: 2 },
+        c2: { nome: 3, status: 4 },
+        c3: { nome: 5, status: 6 }
+      }
+    },
+    getAgendaSheet_: () => agenda,
+    encontrarLinhaPorId: () => 2,
+    codexWithDocumentLock_: (_label, fn) => fn(),
+    GmailApp: {
+      search: () => [{
+        getMessages: () => [{
+          getSubject: () => 'Agendamento de coleta',
+          getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-4-T1',
+          getDate: () => messageDate,
+          getId: () => 'MSG-4',
+          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+        }]
+      }]
+    }
+  });
+  const registro = server.transporteRegistrarDocumentacaoGerada_({
+    agendaId: 'EVT-4', slot: '1', courier: 'MARKEN', rascunhoOk: true
+  });
+  const operacoes = book.getSheetByName('Transporte_Operacoes');
+  operacoes.getRange(registro.row, 12, 1, 5).setValues([[
+    messageDate, messageDate, 'MSG-4', 1, messageDate
+  ]]);
+
+  const result = server.transporteMonitorarEnviosPorEmail_();
+
+  assert.equal(result.enviados, 1);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+});
+
+test('geracao de PDF reaplica o payload no mesmo lock antes de exportar', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const generate = source.slice(
+    source.indexOf('function gerarPdfTransporte(options)'),
+    source.indexOf('function transporteDriveAccessWarning_(')
+  );
+  assert.match(generate, /codexWithDocumentLock_\('gerarPdfTransporte'/);
+  assert.match(generate, /if \(options\.payload\)[\s\S]*salvarTransporteInterno_\(options\.payload/);
+  assert.ok(
+    generate.indexOf('salvarTransporteInterno_(options.payload') < generate.indexOf("'copy_export_drive'"),
+    'o payload deve ser reaplicado antes da exportacao'
+  );
+});
+
 test('salvar Transporte nao presume envio e o rascunho inclui referencia depois da assinatura', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   assert.match(source, /var statusNovo = String\(payload\.statusCourier \|\| payload\.status \|\| ''\)/);

@@ -449,7 +449,9 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
       ? 'PDF gerado, mas o rascunho não foi criado.'
       : (identificado && anexos < 1
         ? 'E-mail identificado, mas sem documentação anexada.'
-        : 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.');
+        : (identificado && anexos > 0
+          ? 'E-mail com documentação identificado; atualização da Agenda aguardando nova tentativa.'
+          : 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.'));
     return {
       agendaId: item.agendaId,
       slot: item.slot,
@@ -470,8 +472,26 @@ function transporteMensagemAnexos_(message) {
 }
 
 function transporteMonitorarEnviosPorEmail_() {
+  var agendaPrecheck = null;
   var pendentes = transporteOperacoesRows_().filter(function(item) {
-    return item.referencia && !transporteOperacaoDate_(item.emailEnviadoEm);
+    if (!item.referencia) return false;
+    if (!transporteOperacaoDate_(item.emailEnviadoEm)) return true;
+    // Recupera operações que versões anteriores concluíram antes de conseguir
+    // promover a Agenda. Depois que o status chega a Agendado, elas deixam de
+    // entrar naturalmente nas próximas execuções.
+    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || Number(item.anexos || 0) < 1) return false;
+    var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+    var idx = slotMap[item.slot];
+    if (!idx) return false;
+    agendaPrecheck = agendaPrecheck || getAgendaSheet_();
+    var linha = encontrarLinhaPorId(agendaPrecheck, item.agendaId);
+    if (!linha) return false;
+    var statusEvento = agendaPrecheck.getRange(linha, AGENDA_CFG.col.status).getValue();
+    if (AgendaServerRules_.isCancelled(statusEvento)) return false;
+    var statusAtual = agendaPrecheck.getRange(linha, idx.status + 1).getValue();
+    var precisaReprocessar = ['naoagendado', 'pendente'].indexOf(AgendaServerRules_.courierStatusKey(statusAtual)) !== -1;
+    if (precisaReprocessar) item.reprocessar = true;
+    return precisaReprocessar;
   });
   if (!pendentes.length) return { ok: true, verificados: 0, enviados: 0, semAnexo: 0 };
   var referencias = {};
@@ -505,18 +525,19 @@ function transporteMonitorarEnviosPorEmail_() {
   }
   return codexWithDocumentLock_('transporteMonitorarEnviosPorEmail', function() {
     var sh = transporteOperacoesSheet_(false);
-    var agenda = getAgendaSheet_();
+    var agenda = agendaPrecheck || getAgendaSheet_();
     var enviados = [];
     var semAnexo = [];
+    var naoPromovidos = [];
     pendentes.forEach(function(item) {
       var match = encontrados[item.referencia.toUpperCase()];
       if (!match || !sh) return;
       var atual = sh.getRange(item.row, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).getValues()[0];
-      if (String(atual[2] || '').trim() !== item.referencia || transporteOperacaoDate_(atual[12])) return;
+      if (String(atual[2] || '').trim() !== item.referencia || (transporteOperacaoDate_(atual[12]) && !item.reprocessar)) return;
       var attachmentCount = match.anexos.length;
       sh.getRange(item.row, 12, 1, 5).setValues([[
         match.date,
-        attachmentCount > 0 ? match.date : '',
+        '',
         match.messageId,
         attachmentCount,
         new Date()
@@ -528,15 +549,27 @@ function transporteMonitorarEnviosPorEmail_() {
       var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
       var idx = slotMap[item.slot];
       var linha = idx ? encontrarLinhaPorId(agenda, item.agendaId) : 0;
-      if (!idx || !linha) return;
+      if (!idx || !linha) {
+        naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: !idx ? 'Slot inválido' : 'Agendamento não encontrado' });
+        return;
+      }
       var statusEvento = agenda.getRange(linha, AGENDA_CFG.col.status).getValue();
-      if (AgendaServerRules_.isCancelled(statusEvento)) return;
+      if (AgendaServerRules_.isCancelled(statusEvento)) {
+        naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Agendamento cancelado' });
+        return;
+      }
       var courierAtual = String(agenda.getRange(linha, idx.nome + 1).getDisplayValue() || '').trim();
-      if (item.courier && normText_(courierAtual) !== normText_(item.courier)) return;
+      if (item.courier && normText_(courierAtual) !== normText_(item.courier)) {
+        naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Courier da Agenda diverge da documentação gerada' });
+        return;
+      }
       var statusRange = agenda.getRange(linha, idx.status + 1);
       var statusAnterior = String(statusRange.getValue() || '').trim();
       var statusKey = AgendaServerRules_.courierStatusKey(statusAnterior);
-      if (['naoagendado', 'pendente', 'agendado'].indexOf(statusKey) === -1) return;
+      if (['naoagendado', 'pendente', 'agendado'].indexOf(statusKey) === -1) {
+        naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Status atual não permite promoção automática: ' + (statusAnterior || 'vazio') });
+        return;
+      }
       if (statusKey !== 'agendado') {
         statusRange.setValue('Agendado');
         if (typeof codexWriteAuditChanges_ === 'function') {
@@ -547,6 +580,10 @@ function transporteMonitorarEnviosPorEmail_() {
           }], 'Envio identificado no Gmail | Ref. ' + item.referencia + ' | Gmail message ' + match.messageId);
         }
       }
+      // Somente conclui a operação depois que o vínculo com a Agenda foi
+      // validado. Assim, uma divergência transitória continua elegível para
+      // nova tentativa no próximo ciclo do monitor.
+      sh.getRange(item.row, 13).setValue(match.date);
       enviados.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, anexos: attachmentCount });
     });
     SpreadsheetApp.flush();
@@ -555,8 +592,10 @@ function transporteMonitorarEnviosPorEmail_() {
       verificados: pendentes.length,
       enviados: enviados.length,
       semAnexo: semAnexo.length,
+      naoPromovidos: naoPromovidos.length,
       itens: enviados,
-      itensSemAnexo: semAnexo
+      itensSemAnexo: semAnexo,
+      itensNaoPromovidos: naoPromovidos
     };
   });
 }
@@ -2192,8 +2231,10 @@ function transporteDocumentosPorCourier_(courier, temperatura, destino) {
 
 function salvarTransporte(payload, options) {
   if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('salvarTransporte', 'Transporte', payload && (payload.idAgenda || payload.id || payload.paciente));
-  return transporteMeasurePerformance_('salvarTransporte', 'total', { rowCount: 1 }, function() {
-    return salvarTransporteInterno_(payload, options);
+  return codexWithDocumentLock_('salvarTransporte', function() {
+    return transporteMeasurePerformance_('salvarTransporte', 'total', { rowCount: 1 }, function() {
+      return salvarTransporteInterno_(payload, options);
+    });
   });
 }
 
@@ -3110,11 +3151,13 @@ function limparSandboxCodex(marker) {
 }
 
 function gerarPdfTransporte(options) {
-  return transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
-    var access = typeof codexAssertCanWrite_ === 'function'
-      ? codexAssertCanWrite_('gerarPdfTransporte', 'Transporte', options && options.id)
-      : null;
-    return gerarPdfTransporteInterno_(options, access);
+  return codexWithDocumentLock_('gerarPdfTransporte', function() {
+    return transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
+      var access = typeof codexAssertCanWrite_ === 'function'
+        ? codexAssertCanWrite_('gerarPdfTransporte', 'Transporte', options && options.id)
+        : null;
+      return gerarPdfTransporteInterno_(options, access);
+    });
   });
 }
 
@@ -3125,6 +3168,15 @@ function gerarPdfTransporteInterno_(options, access) {
   options = options || {};
   if (!options.requestedByEmail && access && access.userEmail) options.requestedByEmail = access.userEmail;
   if (options.criarRascunho !== false) options.criarRascunho = true;
+  // A planilha de Transporte e compartilhada entre as telas. Reaplicar o
+  // payload dentro do mesmo lock da exportacao impede que outra aba troque o
+  // slot/courier entre o salvamento do formulario e a geracao do PDF.
+  if (options.payload) {
+    salvarTransporteInterno_(options.payload, {
+      returnBootstrap: false,
+      preencherDocumentos: true
+    });
+  }
   var result = transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
     return imprimirTodasAbas(options);
   });
