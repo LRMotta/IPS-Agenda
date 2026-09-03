@@ -604,6 +604,55 @@ test('bootstrap comum nao le a planilha durante outra gravacao de Transporte', (
   assert.equal(lockDepth, 0);
 });
 
+test('peticao identifica apenas linhas com material e limpa identificacao do envio anterior', () => {
+  const server = runFile('TransporteCodexConfig.gs', { Logger: { log: () => {} } });
+  const cells = {};
+  const peticao = {
+    getRangeList: () => ({ setValue() {} }),
+    getRange: (a1) => ({
+      setValue(value) { cells[a1] = value; },
+      setValues(values) { cells[a1] = Array.from(values, (row) => row[0]); }
+    })
+  };
+  server.transporteGetSheet_ = () => peticao;
+  server.codexMatBioUnit_ = () => 'mL';
+  const materiais = [
+    { ativo: true, material: 'Sangue', total: 4, ensaio: 'Quantiferon gold' },
+    { ativo: true, material: 'Soro', total: 2.5, ensaio: 'hsCRP 10292' },
+    { ativo: true, material: 'Urina', total: 7, ensaio: 'Urinalise' },
+    { ativo: true, material: 'Plasma', total: 1, ensaio: 'Plasma' },
+    { ativo: true, material: 'Saliva', total: 1, ensaio: 'Saliva' },
+    { ativo: true, material: 'Fezes', total: 10, unit: 'g', ensaio: 'Fezes' }
+  ];
+  function preencher(items, iniciais = 'D.S.', identificacaoParticipante = '10325') {
+    server.preencherPeticaoAnuenciaWebApp_({}, {
+      temperatura: 'AMBIENTE', iniciais, identificacaoParticipante, materiais: items
+    });
+  }
+  // Mesma planilha: seis materiais, depois dois, um e nenhum.
+  for (const quantidade of [6, 2, 1, 0]) {
+    preencher(materiais.slice(0, quantidade));
+    assert.deepEqual(cells['B30:B35'], Array.from({ length: 6 }, (_, i) => i < quantidade ? 'D.S.' : ''));
+    assert.deepEqual(cells['G30:G35'], Array.from({ length: 6 }, (_, i) => i < quantidade ? '10325' : ''));
+    assert.equal(cells['K30:K35'].filter(Boolean).length, quantidade);
+    assert.equal(cells['P30:P35'].filter(Boolean).length, quantidade);
+    if (quantidade === 2) {
+      assert.deepEqual(cells['K30:K35'], ['Sangue: 4,00 mL', 'Soro: 2,50 mL', '', '', '', '']);
+      assert.deepEqual(cells['P30:P35'], ['Quantiferon gold', 'hsCRP 10292', '', '', '', '']);
+    }
+  }
+  preencher([{ ...materiais[0], ativo: false }]);
+  assert.deepEqual(cells['B30:B35'], ['', '', '', '', '', '']);
+  assert.deepEqual(cells['G30:G35'], ['', '', '', '', '', '']);
+  const laminas = { ativo: true, material: 'Outro', formula: '2 laminas', ensaio: 'Hematologia' };
+  for (const items of [[laminas], [materiais[0], laminas]]) {
+    preencher(items, 'A.B.', 'TESTE-2');
+    assert.deepEqual(cells['B30:B35'], ['A.B.', '', '', '', '', '']);
+    assert.deepEqual(cells['G30:G35'], ['TESTE-2', '', '', '', '', '']);
+    assert.equal(cells['K30:K35'].filter(Boolean).length, 1);
+  }
+});
+
 test('bloqueio do PDF rejeita ensaio de outro slot antes da exportacao', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(

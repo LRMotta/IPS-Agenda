@@ -2645,7 +2645,9 @@ function preencherPeticaoAnuenciaWebApp_(ss, payload) {
     }
   }
   var rows = transportePeticaoMaterialRows_(payload.materiais || []).map(function(row) {
-    return [iniciais, identificacao, row[0], row[1]];
+    // O helper completa seis linhas; identificacao pertence apenas a material preenchido.
+    var temMaterial = String(row[0] || '').trim() !== '';
+    return [temMaterial ? iniciais : '', temMaterial ? identificacao : '', row[0], row[1]];
   });
   peticao.getRange('B30:B35').setValues(rows.map(function(r) { return [r[0]]; }));
   peticao.getRange('G30:G35').setValues(rows.map(function(r) { return [r[1]]; }));
