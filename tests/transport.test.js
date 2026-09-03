@@ -529,32 +529,147 @@ test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', 
   assert.equal(calls.filter((call) => call.numColumns === 51).length, 0);
 });
 
-test('bootstrap vindo da Agenda reutiliza um unico evento em todas as etapas internas', () => {
+test('bootstrap vindo da Agenda importa e rele o mesmo slot sob um unico lock', () => {
   const server = runFile('TransporteCodexConfig.gs', {
     Logger: { log: () => {} },
     normText_: (value) => String(value || '').trim().toLowerCase()
   });
   let agendaReads = 0;
+  let lockDepth = 0;
+  const steps = [];
   const evento = { id: 'EVT-1', participante: 'Participante', projeto: 'Projeto' };
   server.codexAssertCanWrite_ = () => {};
+  server.SpreadsheetApp = { flush: () => {
+    assert.equal(lockDepth, 1);
+    steps.push('flush');
+  } };
+  server.codexWithDocumentLock_ = (label, fn) => {
+    assert.equal(label, 'getTransporteBootstrapFromAgenda');
+    assert.equal(lockDepth, 0);
+    lockDepth += 1;
+    try {
+      return fn();
+    } finally {
+      lockDepth -= 1;
+    }
+  };
   server.buscarAgendaEventoPorIdTransp_ = () => { agendaReads += 1; return evento; };
   server.montarPayloadTransporteParaTransp_ = (id, slot, received) => {
+    assert.equal(lockDepth, 1);
     assert.equal(received, evento);
     return { idAgenda: id, slot, refInterna: `AGD-${id}` };
   };
-  server.importarTransporteCodex = (payload, context) => {
+  server.importarTransporteCodexInterno_ = (payload, context) => {
+    assert.equal(lockDepth, 1);
     assert.equal(context.evento, evento);
+    steps.push('import');
     return { rascunho: true };
   };
   server.transporteBuildBootstrap_ = (received) => {
+    assert.equal(lockDepth, 1);
     assert.equal(received, evento);
+    steps.push('read');
     return { registro: {} };
   };
 
   const data = server.getTransporteBootstrapFromAgenda('EVT-1', '2');
   assert.equal(agendaReads, 1);
+  assert.deepEqual(steps, ['import', 'flush', 'read']);
+  assert.equal(lockDepth, 0);
   assert.equal(data.registro.idAgenda, 'EVT-1');
   assert.equal(data.registro.agendaSlot, '2');
+});
+
+test('bootstrap comum nao le a planilha durante outra gravacao de Transporte', () => {
+  const server = runFile('TransporteCodexConfig.gs', {
+    Logger: { log: () => {} }
+  });
+  let lockDepth = 0;
+  server.codexWithDocumentLock_ = (label, fn) => {
+    assert.equal(label, 'getTransporteBootstrap');
+    lockDepth += 1;
+    try {
+      return fn();
+    } finally {
+      lockDepth -= 1;
+    }
+  };
+  server.transporteBuildBootstrap_ = () => {
+    assert.equal(lockDepth, 1);
+    return { registro: { materiais: [] } };
+  };
+
+  const data = server.getTransporteBootstrap();
+  assert.deepEqual(data.registro.materiais, []);
+  assert.equal(lockDepth, 0);
+});
+
+test('bloqueio do PDF rejeita ensaio de outro slot antes da exportacao', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'function transportePdfManifestText_(',
+    'function gerarPdfTransporte('
+  );
+  const payload = {
+    idAgenda: 'EVT-1',
+    agendaSlot: '1',
+    courier: 'OCASA',
+    temperatura: 'AMBIENTE',
+    destino: 'DASA (BARUERI)',
+    materiais: [
+      { ativo: true, material: 'Sangue', ensaio: 'Hematologia' },
+      { ativo: true, material: 'Soro', ensaio: 'Bioquimica' },
+      { ativo: true, material: 'Urina', ensaio: 'Urinalise' }
+    ]
+  };
+  let ensaiosPlanilha = [['Hematologia'], ['Bioquimica'], ['Urinalise'], [''], [''], ['']];
+  const peticao = {
+    getRange: (a1) => ({
+      getValues: () => a1 === 'K30:K35'
+        ? [['Sangue'], ['Soro'], ['Urina'], [''], [''], ['']]
+        : ensaiosPlanilha
+    })
+  };
+  const context = vm.createContext({
+    Utilities: {
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' },
+      computeDigest: (_algorithm, text) => [String(text).length % 256],
+      base64EncodeWebSafe: (bytes) => `hash-${bytes[0]}`
+    },
+    transporteNorm_: (value) => String(value == null ? '' : value)
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
+    transporteNormalizeCourierFromCodex_: (value) => String(value || '').trim().toUpperCase(),
+    transporteNormalizeTemperaturaFromCodex_: (value) => String(value || '').trim().toUpperCase(),
+    normalizarSlotTransporteCodex_: (value) => String(value || ''),
+    transporteAgendaLinkFromRef_: () => ({ idAgenda: '', agendaSlot: '' }),
+    transportePeticaoMaterialRows_: (materiais) => {
+      const rows = materiais.map((item) => [item.material, item.ensaio]);
+      while (rows.length < 6) rows.push(['', '']);
+      return rows;
+    },
+    getTransporteSpreadsheetCodex_: () => ({}),
+    transporteReadRegistro_: () => ({
+      idAgenda: 'EVT-1', agendaSlot: '1', courier: 'OCASA',
+      temperatura: 'AMBIENTE', destino: 'DASA (BARUERI)'
+    }),
+    transporteGetSheet_: () => peticao
+  });
+  vm.runInContext(block, context);
+
+  const ok = context.transporteValidarManifestoPdf_({ payload });
+  assert.match(ok.hash, /^hash-/);
+  assert.throws(
+    () => context.transporteValidarManifestoPdf_({}),
+    /vinculado a Agenda.*Nenhum PDF foi gerado/
+  );
+
+  ensaiosPlanilha = [['Paxgene'], ['HIV/LTS ser'], ['LTESHBV/HCV/HIV'], [''], [''], ['']];
+  assert.throws(
+    () => context.transporteValidarManifestoPdf_({ payload }),
+    /Bloqueio de seguranca do PDF:.*materiais e ensaios.*Nenhum PDF foi gerado/
+  );
 });
 
 test('atualizacao do Transporte usa evento fornecido e preserva fallback de busca', () => {
