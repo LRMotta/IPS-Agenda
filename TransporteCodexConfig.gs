@@ -2190,31 +2190,39 @@ function transporteBuildBootstrap_(eventoPrecarregado) {
 }
 
 function getTransporteBootstrap() {
-  return transporteBuildBootstrap_();
+  return codexWithDocumentLock_('getTransporteBootstrap', function() {
+    return transporteBuildBootstrap_();
+  });
 }
 
 function getTransporteBootstrapFromAgenda(idAgenda, slot) {
-  return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
-    if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda);
-    idAgenda = String(idAgenda || '').trim();
-    if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
-    var contexto = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'payload', { rowCount: 1 }, function() {
-      return montarContextoTransporteParaTransp_(idAgenda, slot);
+  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda);
+  idAgenda = String(idAgenda || '').trim();
+  if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
+  return codexWithDocumentLock_('getTransporteBootstrapFromAgenda', function() {
+    return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
+      var contexto = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'payload', { rowCount: 1 }, function() {
+        return montarContextoTransporteParaTransp_(idAgenda, slot);
+      });
+      var payload = contexto.payload;
+      var importResult = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'import_prepare', { rowCount: 1 }, function() {
+        return importarTransporteCodexInterno_(payload, contexto);
+      });
+      // A planilha de Transporte e compartilhada. A releitura precisa ocorrer
+      // no mesmo lock da importacao para nao combinar materiais de um slot com
+      // ensaios que outra aba gravou logo depois.
+      SpreadsheetApp.flush();
+      var data = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'bootstrap', { rowCount: 1 }, function() {
+        return transporteBuildBootstrap_(contexto.evento);
+      });
+      data.registro = Object.assign({}, data.registro || {}, {
+        idAgenda: payload.idAgenda || idAgenda,
+        agendaSlot: normalizarSlotTransporteCodex_(payload.slot || slot || ''),
+        refInterna: payload.refInterna || transporteAgendaRefInterna_(idAgenda)
+      });
+      data.importResult = importResult;
+      return data;
     });
-    var payload = contexto.payload;
-    var importResult = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'import_prepare', { rowCount: 1 }, function() {
-      return importarTransporteCodex(payload, contexto);
-    });
-    var data = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'bootstrap', { rowCount: 1 }, function() {
-      return transporteBuildBootstrap_(contexto.evento);
-    });
-    data.registro = Object.assign({}, data.registro || {}, {
-      idAgenda: payload.idAgenda || idAgenda,
-      agendaSlot: normalizarSlotTransporteCodex_(payload.slot || slot || ''),
-      refInterna: payload.refInterna || transporteAgendaRefInterna_(idAgenda)
-    });
-    data.importResult = importResult;
-    return data;
   });
 }
 
@@ -2355,7 +2363,7 @@ function salvarTransporteInterno_(payload, options) {
   }
   return options.rascunho
     ? { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.' }
-    : getTransporteBootstrap();
+    : transporteBuildBootstrap_();
 }
 
 function transporteSetEnsaiosPeticao_(peticao, materiais) {
@@ -2563,32 +2571,11 @@ function preencherDhlWebApp_(ss, payload) {
   }
 }
 
-function preencherPeticaoAnuenciaWebApp_(ss, payload) {
-  payload = payload || {};
-  var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
-  if (!peticao) return;
-
-  var temperatura = transporteNormalizeTemperaturaFromCodex_(payload.temperatura);
-  peticao.getRangeList(['G28', 'N28', 'K28']).setValue(false);
-  if (temperatura === 'AMBIENTE') peticao.getRange('G28').setValue(true);
-  if (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') peticao.getRange('K28').setValue(true);
-  if (temperatura === 'REFRIGERADO') peticao.getRange('N28').setValue(true);
-
-  var iniciais = String(payload.iniciais || '').trim() || extrairIniciais_(payload.paciente || payload.participante);
-  var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || payload.numeroIdentificacao || '').trim();
-  if (!identificacao && typeof getInfoParticipante === 'function') {
-    try {
-      var participanteInfo = getInfoParticipante(payload.paciente || payload.participante);
-      identificacao = String((participanteInfo && participanteInfo.numId) || '').trim();
-    } catch (eInfo) {
-      identificacao = '';
-    }
-  }
-  var materiais = payload.materiais || [];
+function transportePeticaoMaterialRows_(materiais) {
   var rows = [];
   var laminasHematologia = '';
 
-  materiais.forEach(function(item) {
+  (materiais || []).forEach(function(item) {
     if (!item || item.ativo !== true) return;
     var materialRaw = String(item.material || '').trim();
     var ensaioRaw = String(item.ensaio || item.exame || item.nomeExame || '').trim();
@@ -2614,30 +2601,52 @@ function preencherPeticaoAnuenciaWebApp_(ss, payload) {
     if (materialTexto && (String(item.formula || '').trim() || transporteNumber_(total) > 0)) {
       materialTexto += ': ' + transporteFormatNumberPt_(total, decimals) + ' ' + unit;
     }
-    rows.push([
-      iniciais,
-      identificacao,
-      materialTexto,
-      ensaioRaw
-    ]);
+    rows.push([materialTexto, ensaioRaw]);
   });
 
   if (laminasHematologia) {
     var sangueIdx = -1;
     for (var s = 0; s < rows.length; s++) {
-      if (transporteNorm_(rows[s][2]).indexOf('sangue') === 0) {
+      if (transporteNorm_(rows[s][0]).indexOf('sangue') === 0) {
         sangueIdx = s;
         break;
       }
     }
     if (sangueIdx >= 0) {
-      rows[sangueIdx][2] = String(rows[sangueIdx][2] || 'Sangue').trim() + ' + ' + laminasHematologia;
+      rows[sangueIdx][0] = String(rows[sangueIdx][0] || 'Sangue').trim() + ' + ' + laminasHematologia;
     } else if (rows.length < 6) {
-      rows.push([iniciais, identificacao, laminasHematologia, 'Hematologia']);
+      rows.push([laminasHematologia, 'Hematologia']);
     }
   }
 
-  while (rows.length < 6) rows.push(['', '', '', '']);
+  while (rows.length < 6) rows.push(['', '']);
+  return rows;
+}
+
+function preencherPeticaoAnuenciaWebApp_(ss, payload) {
+  payload = payload || {};
+  var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
+  if (!peticao) return;
+
+  var temperatura = transporteNormalizeTemperaturaFromCodex_(payload.temperatura);
+  peticao.getRangeList(['G28', 'N28', 'K28']).setValue(false);
+  if (temperatura === 'AMBIENTE') peticao.getRange('G28').setValue(true);
+  if (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') peticao.getRange('K28').setValue(true);
+  if (temperatura === 'REFRIGERADO') peticao.getRange('N28').setValue(true);
+
+  var iniciais = String(payload.iniciais || '').trim() || extrairIniciais_(payload.paciente || payload.participante);
+  var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || payload.numeroIdentificacao || '').trim();
+  if (!identificacao && typeof getInfoParticipante === 'function') {
+    try {
+      var participanteInfo = getInfoParticipante(payload.paciente || payload.participante);
+      identificacao = String((participanteInfo && participanteInfo.numId) || '').trim();
+    } catch (eInfo) {
+      identificacao = '';
+    }
+  }
+  var rows = transportePeticaoMaterialRows_(payload.materiais || []).map(function(row) {
+    return [iniciais, identificacao, row[0], row[1]];
+  });
   peticao.getRange('B30:B35').setValues(rows.map(function(r) { return [r[0]]; }));
   peticao.getRange('G30:G35').setValues(rows.map(function(r) { return [r[1]]; }));
   peticao.getRange('K30:K35').setValues(rows.map(function(r) { return [r[2]]; }));
@@ -2971,6 +2980,14 @@ function importarTransporteCodex(codexPayload, contextoInterno) {
   });
 }
 
+function importarTransporteCodexInterno_(codexPayload, contextoInterno) {
+  var payload = montarPayloadTransporteCodex(codexPayload);
+  return salvarTransporteInterno_(payload, {
+    rascunho: true,
+    agendaEvento: contextoInterno && contextoInterno.evento ? contextoInterno.evento : null
+  });
+}
+
 function transporteSincronizarDependencias_(options) {
   options = options || {};
   var ss = getTransporteSpreadsheetCodex_();
@@ -3037,7 +3054,7 @@ function executarSandboxTransporteCodex(options) {
     try {
       item.salvar = salvarTransporte(payload);
       if (options.gerarPdfs) {
-        item.pdf = gerarPdfTransporte({ marker: marker, courier: courier, criarRascunho: options.criarRascunhos });
+        item.pdf = gerarPdfTransporte({ marker: marker, courier: courier, criarRascunho: options.criarRascunhos, payload: payload });
         if (options.criarRascunhos) item.rascunho = 'Gerado automaticamente apos PDF.';
       } else if (options.criarRascunhos) {
         item.rascunho = criarRascunhoTransporte_();
@@ -3150,6 +3167,95 @@ function limparSandboxCodex(marker) {
   return out;
 }
 
+function transportePdfManifestText_(value) {
+  return transporteNorm_(value).replace(/\s+/g, ' ');
+}
+
+function transportePdfManifesto_(registro, materialRows) {
+  registro = registro || {};
+  var slotRaw = String(registro.agendaSlot || registro.slot || '').trim();
+  return {
+    versao: 1,
+    agendaId: String(registro.idAgenda || registro.agendaId || '').trim().toUpperCase(),
+    slot: slotRaw ? normalizarSlotTransporteCodex_(slotRaw) : '',
+    courier: transportePdfManifestText_(transporteNormalizeCourierFromCodex_(registro.courier || registro.nomeCourier || '')),
+    temperatura: transportePdfManifestText_(transporteNormalizeTemperaturaFromCodex_(registro.temperatura || registro.temp || '')),
+    destino: transportePdfManifestText_(registro.destino || registro.laboratorioDestino || ''),
+    materiais: (materialRows || []).map(function(row) {
+      return [
+        transportePdfManifestText_(row && row[0]),
+        transportePdfManifestText_(row && row[1])
+      ];
+    })
+  };
+}
+
+function transportePdfManifestoHash_(manifesto) {
+  var digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(manifesto || {}),
+    Utilities.Charset.UTF_8
+  );
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, '');
+}
+
+function transportePdfMaterialRowsPlanilha_(ss) {
+  var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
+  if (!peticao) return [];
+  var materiais = peticao.getRange('K30:K35').getValues();
+  var ensaios = peticao.getRange('P30:P35').getValues();
+  return materiais.map(function(row, idx) {
+    return [row[0], ensaios[idx] && ensaios[idx][0]];
+  });
+}
+
+function transporteValidarManifestoPdf_(options) {
+  options = options || {};
+  var ss = getTransporteSpreadsheetCodex_();
+  var registroAtual = transporteReadRegistro_();
+  var manifestoAtual = transportePdfManifesto_(registroAtual, transportePdfMaterialRowsPlanilha_(ss));
+  var payload = options.payload || null;
+
+  if (!payload) {
+    if (manifestoAtual.agendaId || manifestoAtual.slot) {
+      throw new Error(
+        'Bloqueio de seguranca do PDF: o Transporte esta vinculado a Agenda, mas a solicitacao nao trouxe o payload do slot. ' +
+        'Reabra a documentacao pela Agenda e tente novamente. Nenhum PDF foi gerado.'
+      );
+    }
+    return { hash: transportePdfManifestoHash_(manifestoAtual), manifesto: manifestoAtual, modo: 'manual' };
+  }
+
+  var linkPayload = transporteAgendaLinkFromRef_(payload.refInterna || '', '');
+  var registroEsperado = Object.assign({}, payload, {
+    idAgenda: payload.idAgenda || linkPayload.idAgenda || '',
+    agendaSlot: payload.agendaSlot || payload.slot || linkPayload.agendaSlot || ''
+  });
+  var manifestoEsperado = transportePdfManifesto_(
+    registroEsperado,
+    transportePeticaoMaterialRows_(payload.materiais || [])
+  );
+  if (JSON.stringify(manifestoEsperado) !== JSON.stringify(manifestoAtual)) {
+    var divergencias = [];
+    ['agendaId', 'slot', 'courier', 'temperatura', 'destino'].forEach(function(campo) {
+      if (manifestoEsperado[campo] !== manifestoAtual[campo]) divergencias.push(campo);
+    });
+    if (JSON.stringify(manifestoEsperado.materiais) !== JSON.stringify(manifestoAtual.materiais)) {
+      divergencias.push('materiais e ensaios');
+    }
+    throw new Error(
+      'Bloqueio de seguranca do PDF: os dados gravados divergem do transporte aberto' +
+      (divergencias.length ? ' (' + divergencias.join(', ') + ')' : '') +
+      '. Recarregue o transporte e confira os dados. Nenhum PDF foi gerado.'
+    );
+  }
+  return {
+    hash: transportePdfManifestoHash_(manifestoEsperado),
+    manifesto: manifestoEsperado,
+    modo: manifestoEsperado.agendaId ? 'agenda' : 'manual'
+  };
+}
+
 function gerarPdfTransporte(options) {
   return codexWithDocumentLock_('gerarPdfTransporte', function() {
     return transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
@@ -3177,10 +3283,15 @@ function gerarPdfTransporteInterno_(options, access) {
       preencherDocumentos: true
     });
   }
+  SpreadsheetApp.flush();
+  var manifestoPdf = transporteMeasurePerformance_('gerarPdfTransporte', 'manifest_validate', { rowCount: 1 }, function() {
+    return transporteValidarManifestoPdf_(options);
+  });
   var result = transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
     return imprimirTodasAbas(options);
   });
   if (String(result || '').indexOf('Erro') === 0) return result;
+  if (result && typeof result === 'object') result.manifestoPdfHash = manifestoPdf.hash;
   var courier = result && typeof result === 'object' ? String(result.courier || options.courier || '').trim() : String(options.courier || '').trim();
   var driveAccessWarning = result && typeof result === 'object' ? transporteDriveAccessWarning_(result.driveAccess) : '';
   var registroMonitor = {};

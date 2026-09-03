@@ -244,9 +244,14 @@ test('geracao de PDF reaplica o payload no mesmo lock antes de exportar', () => 
   );
   assert.match(generate, /codexWithDocumentLock_\('gerarPdfTransporte'/);
   assert.match(generate, /if \(options\.payload\)[\s\S]*salvarTransporteInterno_\(options\.payload/);
+  assert.match(generate, /transporteValidarManifestoPdf_\(options\)/);
   assert.ok(
     generate.indexOf('salvarTransporteInterno_(options.payload') < generate.indexOf("'copy_export_drive'"),
     'o payload deve ser reaplicado antes da exportacao'
+  );
+  assert.ok(
+    generate.indexOf('transporteValidarManifestoPdf_(options)') < generate.indexOf("'copy_export_drive'"),
+    'o manifesto deve ser validado antes de criar a copia do PDF'
   );
 });
 
