@@ -433,6 +433,12 @@ function transporteRegistrarDocumentacaoGerada_(info) {
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
   sh.getRange(rowNumber, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues(values);
+  try {
+    if (typeof courierLembreteRegistrarBase_ === 'function') courierLembreteRegistrarBase_(agendaId, slot, now);
+  } catch (lembreteError) {
+    // Sem base persistida, a cobrança permanece manual; documentos já gerados continuam válidos.
+    Logger.log('Base de cobrança não registrada: ' + String(lembreteError.message || lembreteError));
+  }
   return { registrado: true, agendaId: agendaId, slot: slot, referencia: referencia, row: rowNumber };
 }
 

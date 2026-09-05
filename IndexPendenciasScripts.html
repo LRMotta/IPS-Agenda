@@ -134,7 +134,7 @@
         render: function(it) {
           return {
             main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
-            meta: [pendenciaCourierComTemperatura(it), it.awb ? 'AWB ' + it.awb : '', it.projeto].filter(Boolean).join(' · ')
+            meta: [it.slot, pendenciaCourierComTemperatura(it), it.awb ? 'AWB ' + it.awb : '', it.projeto, it.lembreteStatus].filter(Boolean).join(' · ')
           };
         }
       },
@@ -152,7 +152,7 @@
           }
           return {
             main: [it.awb ? 'AWB ' + it.awb : 'AWB enviada', it.participante || it.projeto].filter(Boolean).join(' · '),
-            meta: [pendenciaCourierComTemperatura(it), it.data, it.hora, it.projeto].filter(Boolean).join(' · ')
+            meta: [it.slot, pendenciaCourierComTemperatura(it), it.data, it.hora, it.projeto].filter(Boolean).join(' · ')
           };
         }
       },

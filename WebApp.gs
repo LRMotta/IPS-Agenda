@@ -6622,6 +6622,7 @@ function getDashboardPendencias_(estoque) {
     });
   });
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoAgendada);
+  if (typeof courierLembreteAnotarPendencias_ === 'function') courierLembreteAnotarPendencias_(out.courierNaoConfirmada);
   ordenarPendenciasAgendaPorUrgencia_(out.documentacaoTransporteSemEnvio);
   ordenarPendenciasAgendaPorUrgencia_(out.transporteBackupNaoAgendado);
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoConfirmada);
@@ -10771,6 +10772,10 @@ function getAgendaCourierRows_() {
       emailConfirmacao: headerValue(r, ['E-mail confirmação', 'Email confirmação', 'E-mail confirmacao', 'Email confirmacao', 'Remetente confirmação', 'Remetente confirmacao']),
       textoConfirmacao: headerValue(r, ['Texto confirmação', 'Texto confirmacao', 'Chave confirmação', 'Chave confirmacao']),
       statusConfirmacao: headerValue(r, ['Status confirmação', 'Status confirmacao', 'Status ao confirmar']),
+      lembreteModo: headerValue(r, ['Lembrete modo']),
+      lembreteHoras: headerValue(r, ['Lembrete horas úteis']),
+      lembreteLimite: headerValue(r, ['Lembrete limite D-1']),
+      lembreteTexto: headerValue(r, ['Lembrete texto']),
       forneceGeloColeta: headerValue(r, ['Fornece gelo para coleta', 'Fornece gelo']),
       restricaoSegunda: headerValue(r, ['Restrição às segundas-feiras', 'Restricao as segundas-feiras', 'Restrição segunda-feira']),
       restricaoAposFeriado: headerValue(r, ['Restrição após feriado', 'Restricao apos feriado']),
@@ -15798,6 +15803,10 @@ var COURIER_HEADERS_ = [
 ];
 
 var COURIER_OPERATIONAL_FIELDS_ = [
+  { key: 'lembreteModo', header: 'Lembrete modo' },
+  { key: 'lembreteHoras', header: 'Lembrete horas úteis' },
+  { key: 'lembreteLimite', header: 'Lembrete limite D-1' },
+  { key: 'lembreteTexto', header: 'Lembrete texto' },
   { key: 'disponivelProjetos', header: 'Disponível para projetos', aliases: ['Disponivel para projetos', 'Vinculável a projetos', 'Vinculavel a projetos'] },
   { key: 'forneceGeloColeta', header: 'Fornece gelo para coleta', aliases: ['Fornece gelo'] },
   { key: 'restricaoSegunda', header: 'Restrição às segundas-feiras', aliases: ['Restricao as segundas-feiras', 'Restrição segunda-feira'] },
@@ -15936,6 +15945,14 @@ function courierOperationalPayloadPresente_(dados) {
 
 function courierOperationalValue_(field, value) {
   var raw = String(value || '').trim();
+  if (field.key.indexOf('lembrete') === 0) {
+    if (!raw) return '';
+    if (field.key === 'lembreteModo' && ['Simulação', 'Automático'].indexOf(raw) >= 0) return raw;
+    if (field.key === 'lembreteHoras' && /^\d+(\.\d+)?$/.test(raw) && Number(raw) > 0 && Number(raw) <= 80) return raw;
+    if (field.key === 'lembreteLimite' && /^(0[8-9]|1[0-7]):[0-5]\d$/.test(raw)) return raw;
+    if (field.key === 'lembreteTexto' && raw.length <= 4000) return raw;
+    throw new Error('Configuração de lembrete inválida. Use prazo de 0 a 80 horas (maior que zero) e limite entre 08:00 e 17:59.');
+  }
   if (field.key === 'observacaoOperacional' || !raw) return raw;
   var normalized = normText_(raw);
   if (normalized === 'sim') return 'Sim';
