@@ -25,6 +25,7 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
   const context = vm.createContext({
     SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
     codexAssertCanWrite_: () => ({ ok: true }),
+    codexAuthorizeWebAppRequest_: () => ({ ok: true }),
     codexWithDocumentLock_: (_name, callback) => callback(),
     clearTransporteOptionsCache_: () => { counters.transportCache++; },
     clearCodexRuntimeCaches_: () => { counters.cache++; },
@@ -118,6 +119,65 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(context.salvarDadosParticipante(Object.assign({}, participant, { id: 5, telefone: '555-0100' })), 'Participante atualizado com sucesso');
   assert.equal(sheet.rows[2][9], '555-0100');
   assert.equal(counters.cache, 2);
+});
+
+test('acompanhantes persistem por participante com bancos proprios, IDs estaveis e compatibilidade legada', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
+    [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Ativo', '', '', '']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+  const payload = { id: 1, nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', acompanhantes: [
+    { nome: 'Maria Teste', cpf: '12345678901', banco: 'Banco A', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '98765432100', numero: '001', cep: '95000000', estado: 'rs' },
+    { nome: 'João Teste', banco: 'Banco B' }
+  ] };
+  context.salvarDadosParticipante(payload);
+  const col = sheet.rows[0].indexOf('Acompanhantes (JSON)');
+  let saved = JSON.parse(sheet.rows[1][col]);
+  assert.equal(saved.length, 2);
+  assert.notEqual(saved[0].id, saved[1].id);
+  assert.equal(saved[0].cpf, '123.456.789-01');
+  assert.equal(saved[0].cpfTitular, '987.654.321-00');
+  assert.equal(saved[0].agencia, '0001');
+  assert.equal(saved[0].contaCorrente, '000023-4');
+  assert.equal(saved[0].cep, '95000-000');
+  assert.equal(saved[0].estado, 'RS');
+  assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Banco')], 'Banco Participante');
+  const originalId = saved[0].id;
+  const oldClient = { ...payload }; delete oldClient.acompanhantes;
+  context.salvarDadosParticipante(oldClient);
+  assert.equal(JSON.parse(sheet.rows[1][col]).length, 2);
+  context.salvarDadosParticipante({ ...payload, acompanhantes: [{ ...saved[0], banco: 'Banco C' }] });
+  saved = JSON.parse(sheet.rows[1][col]);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].id, originalId);
+  assert.equal(saved[0].banco, 'Banco C');
+  context.getCodexSheetDataByName_ = () => sheet.rows;
+  context.Session = { getScriptTimeZone: () => 'America/Sao_Paulo' };
+  context.getUltimasVisitasParticipantesAgendaMap_ = () => ({});
+  assert.equal(context.getParticipantes()[0].acompanhantes[0].id, originalId);
+  context.codexAuthorizeWebAppRequest_ = () => ({ ok: false, message: 'Acesso negado.' });
+  assert.throws(() => context.getParticipantes(), /Acesso negado/);
+  context.codexAssertCanWrite_ = () => { throw new Error('Somente leitura'); };
+  const beforeDeniedWrite = sheet.writes;
+  assert.throws(() => context.salvarDadosParticipante({ ...payload, acompanhantes: [] }), /Somente leitura/);
+  assert.equal(sheet.writes, beforeDeniedWrite);
+  context.codexAssertCanWrite_ = () => ({ ok: true });
+  context.salvarDadosParticipante({ ...payload, acompanhantes: [] });
+  assert.equal(sheet.rows[1][col], '[]');
+});
+
+test('acompanhantes invalidos bloqueiam toda escrita, inclusive criacao de colunas', () => {
+  for (const acompanhantes of [
+    [{ nome: '' }], [{ nome: 'Maria', cpf: '123' }], [{ nome: 'Maria', cpfTitular: 'abc12345678901' }],
+    [{ nome: 'Maria', id: 'ACO-outro-participante' }], [{ nome: 'Maria', estado: 'ZZ' }],
+    [{ nome: 'Maria', cep: '123' }], [{ nome: 'Maria', cpf: '12345678901' }, { nome: 'Ana', cpf: '123.456.789-01' }], {}
+  ]) {
+    const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+    assert.throws(() => context.salvarDadosParticipante({ nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', acompanhantes }));
+    assert.equal(sheet.writes, 0);
+  }
 });
 
 test('consulta do schema de participante nao cria a coluna ID Pessoa', () => {
