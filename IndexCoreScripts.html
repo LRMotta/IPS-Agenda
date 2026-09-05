@@ -7666,7 +7666,7 @@ var _courierStatusOptions = ['Não Agendado', 'Pendente', 'Agendado', 'Adicionad
 
 function carregarCouriers(force) {
   document.getElementById('bodyCouriers').innerHTML =
-    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando...</td></tr>';
+    '<div class="loading-row"><div class="spinner"></div>Carregando...</div>';
   getCadastrosBootstrapCached('couriers',
     function(res) {
       _courierStatusOptions = ((res && res.config && res.config.statusCourier) || _courierStatusOptions || []).slice();
@@ -7775,7 +7775,7 @@ function courierConfirmationHtml(c) {
 function _renderTabelaCouriers(lista) {
   var tb = document.getElementById('bodyCouriers');
   if (!lista.length) {
-    tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhuma courier cadastrada.</td></tr>';
+    tb.innerHTML = '<div class="empty-row">Nenhuma courier cadastrada.</div>';
     return;
   }
   tb.innerHTML = lista.map(function(c, index) {
@@ -7790,24 +7790,16 @@ function _renderTabelaCouriers(lista) {
     ].filter(Boolean).map(function(item) {
       return item.indexOf('<br>') >= 0 ? item : esc(item);
     }).join('<br>') || '—';
-    return '<tr>' +
-      '<td><div class="name-cell"><div class="row-avatar">' + esc(ini) + '</div>' +
-        '<span class="row-name">' + esc(c.nome || '—') + '</span></div>' +
-        ((c.forneceGeloColeta || c.restricaoSegunda || c.restricaoAposFeriado || c.observacaoOperacional) ? '<div style="color:var(--text-muted);font-size:11px;margin-top:5px">' + esc([
-          c.forneceGeloColeta ? 'Gelo: ' + c.forneceGeloColeta : '',
-          c.restricaoSegunda ? 'Segundas: ' + c.restricaoSegunda : '',
-          c.restricaoAposFeriado ? 'Após feriado: ' + c.restricaoAposFeriado : '',
-          c.observacaoOperacional || ''
-        ].filter(Boolean).join(' · ')) + '</div>' : '') + '</td>' +
-      '<td>' + esc(remessa1) + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">Fax: ' + esc(c.fax1 || '—') + '</div></td>' +
-      '<td>' + esc(remessa2) + '<div style="color:var(--text-muted);font-size:11px;margin-top:3px">Fax: ' + esc(c.fax2 || '—') + '</div></td>' +
-      '<td style="font-size:12px;line-height:1.45">' + emails + '</td>' +
-      '<td>' + esc(stripHtmlSimple(c.conteudoDeclaracao) || '—') + '</td>' +
-      '<td><div class="action-btns">' +
-        '<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button>' +
-        '<button class="icon-btn del" title="Excluir" data-record-action="delete" data-record-index="' + index + '"><span class="material-symbols-outlined">delete</span></button>' +
-      '</div></td>' +
-      '</tr>';
+    var resumo = [c.empresa1 || c.empresa2 || 'Sem empresa informada', (c.email || c.emailAmbiente || c.emailCongelado) ? 'E-mail configurado' : 'Sem e-mail'].join(' · ');
+    var regras = [c.forneceGeloColeta ? 'Gelo: ' + c.forneceGeloColeta : '', c.restricaoSegunda ? 'Segundas: ' + c.restricaoSegunda : '', c.restricaoAposFeriado ? 'Após feriado: ' + c.restricaoAposFeriado : '', c.observacaoOperacional || ''].filter(Boolean).join(' · ') || 'Sem regras operacionais informadas.';
+    return '<details class="courier-item">' +
+      '<summary><div class="row-avatar">' + esc(ini) + '</div><div class="courier-summary-main"><div class="courier-summary-title"><span class="row-name">' + esc(c.nome || '—') + '</span></div><div class="courier-summary-meta">' + esc(resumo) + '</div></div><span class="courier-summary-status">' + esc(c.monitorConfirmacao ? 'Confirmação: ' + c.monitorConfirmacao : 'Sem monitoramento') + '</span><span class="material-symbols-outlined courier-list-chevron">expand_more</span></summary>' +
+      '<div class="courier-detail"><section class="courier-detail-section"><h3>Remessa 1</h3><p>' + esc(remessa1) + '<br>Fax: ' + esc(c.fax1 || '—') + '</p></section>' +
+      '<section class="courier-detail-section"><h3>Remessa 2</h3><p>' + esc(remessa2) + '<br>Fax: ' + esc(c.fax2 || '—') + '</p></section>' +
+      '<section class="courier-detail-section"><h3>Regras operacionais</h3><p>' + esc(regras) + '</p></section>' +
+      '<section class="courier-detail-section"><h3>E-mails e confirmação</h3><p>' + emails + '</p></section>' +
+      '<section class="courier-detail-section"><h3>Declaração de transporte</h3><p>' + esc(stripHtmlSimple(c.conteudoDeclaracao) || 'Não informada.') + '</p></section>' +
+      '<section class="courier-detail-section courier-detail-actions"><div class="action-btns"><button class="icon-btn" title="Editar" aria-label="Editar ' + esc(c.nome || 'courier') + '" onclick="event.preventDefault();event.stopPropagation()" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button><button class="icon-btn del" title="Excluir" aria-label="Excluir ' + esc(c.nome || 'courier') + '" onclick="event.preventDefault();event.stopPropagation()" data-record-action="delete" data-record-index="' + index + '"><span class="material-symbols-outlined">delete</span></button></div></section></div></details>';
   }).join('');
   bindTableRecordActions(tb, lista, {
     edit: function(item) { abrirFormCourier(item.id); },

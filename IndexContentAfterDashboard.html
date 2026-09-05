@@ -397,20 +397,10 @@
           <span class="material-symbols-outlined">add</span> Nova Courier
         </button>
       </div>
-      <div class="table-card">
-        <table class="data-table">
-          <thead><tr>
-            <th>Courier</th>
-            <th>Remessa 1</th>
-            <th>Remessa 2</th>
-            <th>E-mails</th>
-            <th>Declaração</th>
-            <th style="text-align:right;padding-right:20px">Ações</th>
-          </tr></thead>
-          <tbody id="bodyCouriers">
-            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
-          </tbody>
-        </table>
+      <div class="table-card courier-list-card">
+        <div class="courier-list" id="bodyCouriers" aria-live="polite">
+          <div class="loading-row"><div class="spinner"></div>Carregando…</div>
+        </div>
       </div>
     </div>
 
