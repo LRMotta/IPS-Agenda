@@ -255,6 +255,12 @@
             <textarea id="courierTextoConfirmacao" class="f-input" rows="3" placeholder="Confirmamos o agendamento da retirada conforme informações abaixo."></textarea>
           </div>
           <div id="courierConfirmacaoDefaultInfo" class="field-hint" style="grid-column:1/-1;display:none;color:var(--primary);font-weight:600"></div>
+          <div class="field"><label class="field-label" for="courierLembreteModo">Cobrança de confirmação</label><select id="courierLembreteModo" class="f-input"><option value="">Desativada</option><option>Simulação</option><option>Automático</option></select></div>
+          <div class="field"><label class="field-label" for="courierLembreteHoras">Enviar após (horas úteis)</label><input id="courierLembreteHoras" class="f-input" type="number" min="0.25" max="80" step="0.25" placeholder="2"></div>
+          <div class="field"><label class="field-label" for="courierLembreteLimite">Horário-limite no dia útil anterior</label><input id="courierLembreteLimite" class="f-input" type="time" min="08:00" max="17:59"></div>
+          <div class="field" style="grid-column:1/-1"><label class="field-label" for="courierLembreteTexto">Texto da cobrança (opcional)</label><textarea id="courierLembreteTexto" class="f-input" rows="5" maxlength="4000" placeholder="Deixe vazio para usar o modelo padrão. Campos disponíveis: {data}, {transporte}, {referencia}, {awb}."></textarea></div>
+          <div class="field-hint" style="grid-column:1/-1">Uma cobrança por transporte, na conversa original. Horas úteis: segunda a sexta, 08h–18h, exceto feriados da Agenda (São Paulo). Prazo vazio mantém o envio desativado. O limite D-1 antecipa o prazo, respeitando ao menos 1 hora útil após o envio. Apenas documentos gerados após esta atualização, sem alterações posteriores e com conversa identificada. Simulação não envia e-mails.</div>
+          <div class="field" style="grid-column:1/-1"><button type="button" class="btn-secondary" onclick="configurarMonitorLembretesCourierFront(true)">Ativar monitor nesta conta</button> <button type="button" class="btn-secondary" onclick="configurarMonitorLembretesCourierFront(false)">Pausar todas as cobranças</button><span id="courierLembreteMonitorStatus" role="status"></span></div>
         </div>
       </div>
       <div class="form-section">

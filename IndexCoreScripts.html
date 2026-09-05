@@ -7830,6 +7830,14 @@ function filtrarCouriers(forceNow) {
   }, !!forceNow);
 }
 
+function configurarMonitorLembretesCourierFront(ativo) {
+  appServerRun({
+    method: 'configurarMonitorLembretesCourier', args: [ativo],
+    onSuccess: function(result) { document.getElementById('courierLembreteMonitorStatus').textContent = result.mensagem; },
+    onFailure: function(error) { document.getElementById('courierLembreteMonitorStatus').textContent = error.message || String(error); }
+  });
+}
+
 function abrirFormCourier(id) {
   var statusConfirmacaoAtual = '';
   ensureCourierStatusConfirmacaoSelect();
@@ -7838,6 +7846,7 @@ function abrirFormCourier(id) {
     'courierEmpresa2','courierCnpj2','courierTelefone2','courierFax2','courierConteudo',
     'courierEmail','courierEmailAmbiente','courierEmailCongelado','courierMonitorConfirmacao',
     'courierEmailConfirmacao','courierTextoConfirmacao','courierStatusConfirmacao',
+    'courierLembreteModo','courierLembreteHoras','courierLembreteLimite','courierLembreteTexto',
     'courierDisponivelProjetos','courierForneceGeloColeta','courierRestricaoSegunda','courierRestricaoAposFeriado','courierObservacaoOperacional'
   ].forEach(function(fId) { document.getElementById(fId).value = ''; });
   document.getElementById('courierDisponivelProjetos').value = 'Sim';
@@ -7866,6 +7875,10 @@ function abrirFormCourier(id) {
       document.getElementById('courierMonitorConfirmacao').value = c.monitorConfirmacao || '';
       document.getElementById('courierEmailConfirmacao').value = c.emailConfirmacao || '';
       document.getElementById('courierTextoConfirmacao').value = c.textoConfirmacao || '';
+      document.getElementById('courierLembreteModo').value = c.lembreteModo || '';
+      document.getElementById('courierLembreteHoras').value = c.lembreteHoras || '';
+      document.getElementById('courierLembreteLimite').value = c.lembreteLimite || '';
+      document.getElementById('courierLembreteTexto').value = c.lembreteTexto || '';
       document.getElementById('courierDisponivelProjetos').value = c.disponivelProjetos === false ? 'Não' : 'Sim';
       document.getElementById('courierForneceGeloColeta').value = c.forneceGeloColeta || '';
       document.getElementById('courierRestricaoSegunda').value = c.restricaoSegunda || '';
@@ -7983,6 +7996,10 @@ function salvarCourierApp() {
     monitorConfirmacao: document.getElementById('courierMonitorConfirmacao').value.trim(),
     emailConfirmacao: document.getElementById('courierEmailConfirmacao').value.trim(),
     textoConfirmacao: document.getElementById('courierTextoConfirmacao').value.trim(),
+    lembreteModo: document.getElementById('courierLembreteModo').value,
+    lembreteHoras: document.getElementById('courierLembreteHoras').value,
+    lembreteLimite: document.getElementById('courierLembreteLimite').value,
+    lembreteTexto: document.getElementById('courierLembreteTexto').value,
     statusConfirmacao: (ensureCourierStatusConfirmacaoSelect() || document.getElementById('courierStatusConfirmacao')).value.trim(),
     disponivelProjetos: document.getElementById('courierDisponivelProjetos').value,
     forneceGeloColeta: document.getElementById('courierForneceGeloColeta').value,
