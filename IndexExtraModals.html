@@ -183,8 +183,9 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="editCourierId">
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+      <details class="courier-form-panel" open>
+        <summary><span class="material-symbols-outlined">badge</span><span>Identificação</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="field">
           <label class="field-label" for="courierNome">Courier <span class="required-star">*</span></label>
           <input type="text" id="courierNome" class="f-input large" placeholder="Ex: MARKEN" oninput="limparErro('courierNome','errCourierNome'); aplicarDefaultsCourierConfirmacao(false)">
@@ -198,9 +199,11 @@
           </select>
           <div class="field-hint">Use “Não” para etapas operacionais que não representam a transportadora vinculada ao projeto.</div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">apartment</span> Remessa Express / Courier 1</div>
+        </div>
+      </details>
+      <details class="courier-form-panel">
+        <summary><span class="material-symbols-outlined">apartment</span><span>Remessa express / courier 1</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="form-grid">
           <div class="field" style="grid-column:1/-1">
             <label class="field-label" for="courierEmpresa1">Empresa de Remessa Express/Courier (1)</label>
@@ -210,9 +213,11 @@
           <div class="field"><label class="field-label" for="courierTelefone1">Telefone (1)</label><input type="text" id="courierTelefone1" class="f-input"></div>
           <div class="field"><label class="field-label" for="courierFax1">Fax(1)</label><input type="text" id="courierFax1" class="f-input"></div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">apartment</span> Remessa Express / Courier 2</div>
+        </div>
+      </details>
+      <details class="courier-form-panel">
+        <summary><span class="material-symbols-outlined">apartment</span><span>Remessa express / courier 2</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="form-grid">
           <div class="field" style="grid-column:1/-1">
             <label class="field-label" for="courierEmpresa2">Empresa de Remessa Express/Courier (2)</label>
@@ -222,17 +227,21 @@
           <div class="field"><label class="field-label" for="courierTelefone2">Telefone (2)</label><input type="text" id="courierTelefone2" class="f-input"></div>
           <div class="field"><label class="field-label" for="courierFax2">Fax (2)</label><input type="text" id="courierFax2" class="f-input"></div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">alternate_email</span> E-mails de rascunho</div>
+        </div>
+      </details>
+      <details class="courier-form-panel">
+        <summary><span class="material-symbols-outlined">alternate_email</span><span>E-mails de rascunho</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="form-grid">
           <div class="field"><label class="field-label" for="courierEmail">E-mail padrão</label><input type="text" id="courierEmail" class="f-input" placeholder="email@dominio.com; outro@dominio.com"></div>
           <div class="field"><label class="field-label" for="courierEmailAmbiente">E-mail ambiente</label><input type="text" id="courierEmailAmbiente" class="f-input"></div>
           <div class="field"><label class="field-label" for="courierEmailCongelado">E-mail congelado</label><input type="text" id="courierEmailCongelado" class="f-input"></div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">mark_email_read</span> Confirmação automática</div>
+        </div>
+      </details>
+      <details class="courier-form-panel">
+        <summary><span class="material-symbols-outlined">mark_email_read</span><span>Confirmação e cobrança</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="form-grid">
           <div class="field">
             <label class="field-label" for="courierMonitorConfirmacao">Monitorar confirmação</label>
@@ -262,9 +271,11 @@
           <div class="field-hint" style="grid-column:1/-1">Uma cobrança por transporte, na conversa original. Horas úteis: segunda a sexta, 08h–18h, exceto feriados da Agenda (São Paulo). Prazo vazio mantém o envio desativado. O limite D-1 antecipa o prazo, respeitando ao menos 1 hora útil após o envio. Apenas documentos gerados após esta atualização, sem alterações posteriores e com conversa identificada. Simulação não envia e-mails.</div>
           <div class="field" style="grid-column:1/-1"><button type="button" class="btn-secondary" onclick="configurarMonitorLembretesCourierFront(true)">Ativar monitor nesta conta</button> <button type="button" class="btn-secondary" onclick="configurarMonitorLembretesCourierFront(false)">Pausar todas as cobranças</button><span id="courierLembreteMonitorStatus" role="status"></span></div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">ac_unit</span> Regras operacionais de gelo</div>
+        </div>
+      </details>
+      <details class="courier-form-panel">
+        <summary><span class="material-symbols-outlined">ac_unit</span><span>Regras operacionais de gelo</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="field-hint" style="margin-bottom:14px">Campos opcionais usados para orientar o planejamento de coletas.</div>
         <div class="form-grid">
           <div class="field">
@@ -284,9 +295,11 @@
             <textarea id="courierObservacaoOperacional" class="f-input" rows="3" placeholder="Ex: confirmar disponibilidade de gelo com antecedência."></textarea>
           </div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">description</span> Declaração de Transporte</div>
+        </div>
+      </details>
+      <details class="courier-form-panel">
+        <summary><span class="material-symbols-outlined">description</span><span>Declaração de transporte</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
+        <div class="courier-form-panel-content">
         <div class="field">
           <label class="field-label" for="courierConteudo">Conteúdo da Declaração de Transporte</label>
           <div class="rich-toolbar" aria-label="Formatação do texto">
@@ -297,10 +310,12 @@
           <div id="courierConteudoEditor" class="f-input rich-editor" contenteditable="true" data-placeholder="Digite o texto da declaração" oninput="document.getElementById('courierConteudo').value = courierEditorHtml()" onpaste="courierEditorPastePlain(event)"></div>
           <input type="hidden" id="courierConteudo">
         </div>
+        </div>
+      </details>
+      <div class="courier-modal-actions">
+        <button type="button" class="btn-txt" onclick="fecharOverlay('modalCourier')">Cancelar</button>
+        <button class="btn-save" id="btnSalvarCourier" onclick="salvarCourierApp()"><span class="material-symbols-outlined">save</span> Salvar cadastro</button>
       </div>
-      <button class="btn-save" id="btnSalvarCourier" onclick="salvarCourierApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
-      </button>
       <div class="status-msg" id="statusCourier"></div>
     </div>
   </div>
