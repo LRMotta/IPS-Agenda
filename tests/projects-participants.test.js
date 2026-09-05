@@ -1108,6 +1108,7 @@ test('listagem de participantes recebe e exibe a data da ultima visita realizada
   const serverSource = readProjectFile('WebApp.gs');
   const getParticipantesBlock = sourceBetween(serverSource, 'function participanteCampoKey_', 'function getParticipanteFormConfig()');
   const serverContext = vm.createContext({
+    codexAuthorizeWebAppRequest_: () => ({ ok: true }),
     getCodexSheetDataByName_: () => [
       ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
       ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo', '', '', '', 'PES-A']

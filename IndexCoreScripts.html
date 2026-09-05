@@ -3012,6 +3012,102 @@ function navegarAcProjetoParticipante(event) {
   items.forEach(function(item, index) { item.classList.toggle('active', index === _acPtProjetoIndex); });
 }
 
+function acompanhanteFormatarCpf_(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 11).replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
+}
+
+function lerAcompanhantesPart_() {
+  return Array.prototype.map.call(document.querySelectorAll('#ptAcompanhantes [data-acompanhante]'), function(card) {
+    var item = { id: card.dataset.acompanhante || '' };
+    card.querySelectorAll('[data-campo]').forEach(function(input) { item[input.dataset.campo] = input.value.trim(); });
+    return item;
+  });
+}
+
+function renderAcompanhantesPart_(items) {
+  var list = document.getElementById('ptAcompanhantes');
+  if (!list) return;
+  list.replaceChildren();
+  if (!items || !items.length) {
+    var empty = document.createElement('p');
+    empty.className = 'participant-companion-help';
+    empty.textContent = 'Nenhum acompanhante cadastrado.';
+    list.appendChild(empty);
+    return;
+  }
+  items.forEach(function(item, index) {
+    var card = document.createElement('div');
+    card.className = 'participant-companion-card';
+    card.dataset.acompanhante = item.id || '';
+    var header = document.createElement('div');
+    header.className = 'participant-companion-header';
+    var title = document.createElement('strong');
+    title.textContent = 'Acompanhante ' + (index + 1);
+    header.appendChild(title);
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ag-tb-btn';
+    remove.textContent = 'Remover';
+    remove.setAttribute('aria-label', 'Remover acompanhante ' + (index + 1));
+    remove.onclick = function() {
+      var values = lerAcompanhantesPart_();
+      values.splice(index, 1);
+      renderAcompanhantesPart_(values);
+      appMarkUnsavedChanges('modalParticipante');
+    };
+    header.appendChild(remove);
+    card.appendChild(header);
+    [
+      { title: 'Identificação', fields: [['nome', 'Nome completo *'], ['cpf', 'CPF']] },
+      { title: 'Endereço', fields: [['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['cep', 'CEP']] },
+      { title: 'Dados bancários do acompanhante', fields: [['banco', 'Nome do banco'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'], ['cpfTitular', 'CPF do titular']] }
+    ].forEach(function(group) {
+      var subtitle = document.createElement('div');
+      subtitle.className = 'section-label';
+      subtitle.textContent = group.title;
+      card.appendChild(subtitle);
+      var grid = document.createElement('div');
+      grid.className = 'field-row participant-companion-grid';
+      group.fields.forEach(function(field) {
+        var wrapper = document.createElement('div');
+        var label = document.createElement('label');
+        label.className = 'field-label';
+        var input = document.createElement(field[0] === 'banco' ? 'select' : 'input');
+        input.id = 'ptAco' + index + '_' + field[0];
+        label.htmlFor = input.id;
+        label.textContent = field[1];
+        input.className = 'f-input' + (field[0] === 'banco' ? ' f-select' : '');
+        input.dataset.campo = field[0];
+        if (field[0] !== 'banco') { input.type = 'text'; input.maxLength = 250; }
+        if (field[0] === 'nome') input.required = true;
+        if (field[0] === 'cpf' || field[0] === 'cpfTitular') {
+          input.placeholder = '000.000.000-00'; input.inputMode = 'numeric'; input.maxLength = 14;
+          input.pattern = '\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}';
+          input.oninput = function() { input.value = acompanhanteFormatarCpf_(input.value); };
+        }
+        if (field[0] === 'estado') { input.maxLength = 2; input.placeholder = 'UF'; input.oninput = function() { input.value = input.value.toUpperCase(); }; }
+        if (field[0] === 'cep') {
+          input.maxLength = 9; input.inputMode = 'numeric'; input.placeholder = '00000-000'; input.pattern = '\\d{5}-\\d{3}';
+          input.oninput = function() { input.value = input.value.replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2'); };
+        }
+        input.value = item[field[0]] || '';
+        wrapper.appendChild(label); wrapper.appendChild(input); grid.appendChild(wrapper);
+      });
+      card.appendChild(grid);
+    });
+    list.appendChild(card);
+    fillSelectOptions('ptAco' + index + '_banco', BANCOS_PART, item.banco || '', '— Selecione —');
+  });
+}
+
+function adicionarAcompanhantePart() {
+  var items = lerAcompanhantesPart_();
+  items.push({});
+  renderAcompanhantesPart_(items);
+  appMarkUnsavedChanges('modalParticipante');
+  document.getElementById('ptAco' + (items.length - 1) + '_nome').focus();
+}
+
 function abrirFormPart(p) {
   var modalPart = document.getElementById('modalParticipante');
   appClearUnsavedChanges('modalParticipante');
@@ -3070,6 +3166,7 @@ function abrirFormPart(p) {
   } else {
     document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
   }
+  renderAcompanhantesPart_((p && p.acompanhantes) || []);
   document.getElementById('modalPartSub').textContent='Dados da pessoa e de sua participação no protocolo';
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">save</span> SALVAR CADASTRO';
   document.getElementById('btnCriarReqParticipante').style.display='';
@@ -3311,6 +3408,10 @@ function abrirConfirmacaoNomeParticipanteDuplicado(result) {
 
 function salvarPartApp(opts) {
   opts = opts || {};
+  var companionInputs = document.querySelectorAll('#ptAcompanhantes input');
+  for (var ci = 0; ci < companionInputs.length; ci++) {
+    if (!companionInputs[ci].reportValidity()) return;
+  }
   var nome=document.getElementById('ptNome').value.trim();
   var idPart=document.getElementById('ptId').value.trim();
   var projeto=document.getElementById('ptProjeto').value.trim();
@@ -3344,6 +3445,7 @@ function salvarPartApp(opts) {
     contaCorrente: document.getElementById('ptContaCorrente').value.trim(),
     titularConta: document.getElementById('ptTitularConta').value.trim(),
     cpfTitular: document.getElementById('ptCpfTitular').value.trim(),
+    acompanhantes: lerAcompanhantesPart_(),
     novaParticipacaoDireta: !!document.getElementById('ptPessoaBaseCadastroId').value,
     confirmarNomeDuplicado: opts.confirmarNomeDuplicado === true,
     vincularPessoaCadastroId: opts.vincularPessoaCadastroId || document.getElementById('ptPessoaBaseCadastroId').value || '',

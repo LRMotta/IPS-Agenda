@@ -5219,7 +5219,7 @@ function participanteColumnMap_(sh, createMissing) {
     ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['cep', 'CEP'],
     ['banco', 'Banco'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
     ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular'],
-    ['idPessoa', 'ID Pessoa']
+    ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)']
   ];
   var aliases = {
     rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], cep: ['cep'],
@@ -5252,9 +5252,59 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
     banco: d.banco || '', agencia: d.agencia || '', contaCorrente: d.contaCorrente || '',
     titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || '', idPessoa: d.idPessoa || ''
   };
+  // Clientes antigos que omitem a coleção não apagam acompanhantes existentes.
+  if (d.acompanhantes !== undefined) values.acompanhantesJson = JSON.stringify(d.acompanhantes);
   Object.keys(values).forEach(function(key) {
     if (columns[key] !== undefined) sh.getRange(rowNumber, columns[key] + 1).setValue(values[key]);
   });
+}
+
+function participanteLerAcompanhantes_(value) {
+  if (!value) return [];
+  var result;
+  try { result = JSON.parse(String(value)); } catch (e) {
+    throw new Error('Cadastro de acompanhantes inválido. Revise os dados armazenados antes de salvar.');
+  }
+  if (!Array.isArray(result)) throw new Error('Cadastro de acompanhantes inválido.');
+  return result;
+}
+
+function participanteValidarAcompanhantes_(items, anteriores) {
+  if (!Array.isArray(items)) throw new Error('Informe uma lista de acompanhantes.');
+  var ids = {}, cpfs = {};
+  var fields = ['nome', 'cpf', 'rua', 'numero', 'cidade', 'estado', 'cep', 'banco', 'agencia', 'contaCorrente', 'cpfTitular'];
+  var result = items.map(function(item, index) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Acompanhante inválido.');
+    var out = {};
+    fields.forEach(function(field) {
+      out[field] = String(item[field] == null ? '' : item[field]).trim();
+      if (out[field].length > 250) throw new Error('Campo muito longo no acompanhante ' + (index + 1) + '.');
+    });
+    if (!out.nome) throw new Error('Informe o nome completo do acompanhante ' + (index + 1) + '.');
+    ['cpf', 'cpfTitular'].forEach(function(field) {
+      if (!out[field]) return;
+      if (!/^(\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/.test(out[field])) {
+        throw new Error('CPF do acompanhante ' + (index + 1) + ': use 000.000.000-00' + (field === 'cpfTitular' ? ' para o titular.' : '.'));
+      }
+      out[field] = out[field].replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    });
+    if (out.cpf && cpfs[out.cpf]) throw new Error('CPF repetido na lista de acompanhantes.');
+    if (out.cpf) cpfs[out.cpf] = true;
+    out.estado = out.estado.toUpperCase();
+    if (out.estado && !/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)$/.test(out.estado)) throw new Error('Estado inválido no acompanhante ' + (index + 1) + '.');
+    if (out.cep) {
+      if (!/^\d{5}-?\d{3}$/.test(out.cep)) throw new Error('CEP inválido no acompanhante ' + (index + 1) + '.');
+      out.cep = out.cep.replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2');
+    }
+    var id = String(item.id || '');
+    if (id && !(anteriores || []).some(function(old) { return old.id === id; })) throw new Error('Acompanhante não pertence a este participante.');
+    out.id = id || 'ACO-' + Utilities.getUuid();
+    if (ids[out.id]) throw new Error('Acompanhante repetido.');
+    ids[out.id] = true;
+    return out;
+  });
+  if (JSON.stringify(result).length > 45000) throw new Error('A lista de acompanhantes excede o tamanho permitido.');
+  return result;
 }
 
 var PARTICIPANTE_CTMS_FIELDS_ = [
@@ -5475,6 +5525,10 @@ function definirAprovacaoCtmsParticipante_(payload) {
 }
 
 function getParticipantes() {
+  if (typeof CODEX_API_TOKEN_REQUEST_ === 'undefined' || !CODEX_API_TOKEN_REQUEST_) {
+    var access = codexAuthorizeWebAppRequest_();
+    if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+  }
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
   var header = rows[0] || [];
@@ -5526,7 +5580,8 @@ function getParticipantes() {
         contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
         titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
         cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
-        idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || '')
+        idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || ''),
+        acompanhantes:  participanteLerAcompanhantes_(valueFor(r, ['acompanhantesjson']))
       };
     });
 }
@@ -5862,6 +5917,11 @@ function salvarDadosParticipante(d) {
     }
   }
   d.idPessoa = idPessoa;
+  if (d.acompanhantes !== undefined) {
+    var acompanhantesAnteriores = editRowIndex > 0 && participantColumnsRead.acompanhantesJson !== undefined
+      ? participanteLerAcompanhantes_(rows[editRowIndex][participantColumnsRead.acompanhantesJson]) : [];
+    d.acompanhantes = participanteValidarAcompanhantes_(d.acompanhantes, acompanhantesAnteriores);
+  }
   var participantColumns = participanteColumnMap_(sh, true);
   var personIdColumn = participantColumns.idPessoa;
   if (vinculoRowIndex > 0 && !participantePessoaIdDaLinha_(rows[vinculoRowIndex], personIdColumnRead)) {
