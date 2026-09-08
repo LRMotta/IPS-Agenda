@@ -234,6 +234,61 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
   assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm instanceof Date);
 });
 
+test('status Agendado informado manualmente encerra pendencia mesmo com courier divergente', () => {
+  const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
+  const book = new FakeSpreadsheet({});
+  const agenda = new FakeSheet('Agenda', [
+    ['Status evento', 'Courier', 'Status courier'],
+    ['Agendado', 'PINEX divergente', 'Pendente']
+  ]);
+  const audits = [];
+  const messageDate = new Date(Date.now() + 2 * 60 * 1000);
+  const server = transportServer({
+    book,
+    AgendaServerRules_: rules,
+    AGENDA_CFG: {
+      col: { status: 1 },
+      idx: {
+        c1: { nome: 1, status: 2 },
+        c2: { nome: 3, status: 4 },
+        c3: { nome: 5, status: 6 }
+      }
+    },
+    getAgendaSheet_: () => agenda,
+    encontrarLinhaPorId: () => 2,
+    codexWithDocumentLock_: (_label, fn) => fn(),
+    codexWriteAuditChanges_: (...args) => audits.push(args),
+    GmailApp: {
+      search: () => [{
+        getMessages: () => [{
+          getSubject: () => 'Agendamento de coleta',
+          getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-MANUAL-T1',
+          getDate: () => messageDate,
+          getId: () => 'MSG-MANUAL',
+          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+        }]
+      }]
+    }
+  });
+  server.transporteRegistrarDocumentacaoGerada_({
+    agendaId: 'EVT-MANUAL', slot: '1', courier: 'PINEX', rascunhoOk: true
+  });
+
+  const primeira = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(primeira.enviados, 0);
+  assert.equal(primeira.naoPromovidos, 1);
+
+  agenda.rows[1][2] = 'Agendado';
+  const segunda = server.transporteMonitorarEnviosPorEmail_();
+
+  assert.equal(segunda.enviados, 1);
+  assert.equal(segunda.naoPromovidos, 0);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+  assert.equal(audits.length, 0);
+  assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm instanceof Date);
+  assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date(Date.now() + 61 * 60 * 1000)).length, 0);
+});
+
 test('monitor recupera operacao antiga concluida antes de promover a Agenda', () => {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});

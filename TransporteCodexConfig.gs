@@ -567,27 +567,33 @@ function transporteMonitorarEnviosPorEmail_() {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Agendamento cancelado' });
         return;
       }
+      var statusRange = agenda.getRange(linha, idx.status + 1);
+      var statusAnterior = String(statusRange.getValue() || '').trim();
+      var statusKey = AgendaServerRules_.courierStatusKey(statusAnterior);
+      // Uma confirmação manual na Agenda é autoritativa para encerrar a
+      // pendência. O courier histórico só precisa coincidir quando o monitor
+      // ainda vai promover automaticamente o status.
+      if (statusKey === 'agendado') {
+        sh.getRange(item.row, 13).setValue(match.date);
+        enviados.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, anexos: attachmentCount });
+        return;
+      }
       var courierAtual = String(agenda.getRange(linha, idx.nome + 1).getDisplayValue() || '').trim();
       if (item.courier && normText_(courierAtual) !== normText_(item.courier)) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Courier da Agenda diverge da documentação gerada' });
         return;
       }
-      var statusRange = agenda.getRange(linha, idx.status + 1);
-      var statusAnterior = String(statusRange.getValue() || '').trim();
-      var statusKey = AgendaServerRules_.courierStatusKey(statusAnterior);
-      if (['naoagendado', 'pendente', 'agendado'].indexOf(statusKey) === -1) {
+      if (['naoagendado', 'pendente'].indexOf(statusKey) === -1) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Status atual não permite promoção automática: ' + (statusAnterior || 'vazio') });
         return;
       }
-      if (statusKey !== 'agendado') {
-        statusRange.setValue('Agendado');
-        if (typeof codexWriteAuditChanges_ === 'function') {
-          codexWriteAuditChanges_('Agenda', 'transporteMonitorarEnviosPorEmail', item.agendaId, [{
-            field: 'Transporte ' + item.slot + ' - Status',
-            oldValue: statusAnterior,
-            newValue: 'Agendado'
-          }], 'Envio identificado no Gmail | Ref. ' + item.referencia + ' | Gmail message ' + match.messageId);
-        }
+      statusRange.setValue('Agendado');
+      if (typeof codexWriteAuditChanges_ === 'function') {
+        codexWriteAuditChanges_('Agenda', 'transporteMonitorarEnviosPorEmail', item.agendaId, [{
+          field: 'Transporte ' + item.slot + ' - Status',
+          oldValue: statusAnterior,
+          newValue: 'Agendado'
+        }], 'Envio identificado no Gmail | Ref. ' + item.referencia + ' | Gmail message ' + match.messageId);
       }
       // Somente conclui a operação depois que o vínculo com a Agenda foi
       // validado. Assim, uma divergência transitória continua elegível para
