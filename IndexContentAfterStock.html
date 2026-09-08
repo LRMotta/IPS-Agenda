@@ -397,7 +397,7 @@
 
 <!-- ══ MODAL PARTICIPANTE ══ -->
 <div class="modal-overlay" id="modalParticipante" onclick="fecharModalSeClicouFora(event,'modalParticipante')">
-  <div class="modal-box" style="max-width:900px;">
+  <div class="modal-box participant-modal-box">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">person</span></div>
       <div>
@@ -411,6 +411,7 @@
     <div class="modal-body">
       <input type="hidden" id="editPartId">
       <input type="hidden" id="ptPessoaBaseCadastroId">
+      <input type="hidden" id="ptPessoaId">
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
         <div class="field" style="margin-bottom:14px;">
@@ -430,11 +431,6 @@
             <label class="field-label" for="ptCpf">CPF</label>
             <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')">
           </div>
-        </div>
-        <div class="field" style="margin-top:14px;">
-          <label class="field-label" for="ptPessoaId">ID Pessoa</label>
-          <input type="text" id="ptPessoaId" class="f-input" readonly placeholder="Gerado automaticamente ao salvar">
-          <div class="field-hint" style="margin-top:6px;">Identificador automático compartilhado pelas participações da mesma pessoa.</div>
         </div>
       </div>
       <div class="form-section">
@@ -478,7 +474,7 @@
             <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
           </div>
         </div>
-        <div class="field-hint" style="margin-top:10px;">Se esta pessoa iniciar outro protocolo, encerre a participação atual e crie uma nova participação. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
+        <div class="participant-form-guidance">Se esta pessoa iniciar outro protocolo, encerre a participação atual e crie uma nova participação. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
       </div>
       <div class="form-section participant-participations-section" id="ptParticipacoesSection" style="display:none;">
         <div class="participant-participations-heading">

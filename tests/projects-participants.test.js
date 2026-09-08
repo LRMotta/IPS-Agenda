@@ -174,7 +174,7 @@ test('status encerrado nao fica disponivel para novo agendamento', () => {
   assert.equal(cadastro.participantAvailableForNewAgenda('Óbito'), false);
 });
 
-test('modal de participante organiza identificacao e protocolo sem remover a regra do ID', () => {
+test('modal de participante mantém ID Pessoa interno e organiza identificação e protocolo', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
@@ -183,26 +183,28 @@ test('modal de participante organiza identificacao e protocolo sem remover a reg
   const nome = block.indexOf('id="ptNome"');
   const nascimento = block.indexOf('id="ptNasc"');
   const cpf = block.indexOf('id="ptCpf"');
-  const pessoaId = block.indexOf('id="ptPessoaId"');
   const status = block.indexOf('id="ptStatus"');
   const identificacao = block.indexOf('id="ptId"');
   const protocolo = block.indexOf('id="ptProjeto"');
   const braco = block.indexOf('id="ptBraco"');
 
-  assert.ok(nome < nascimento && nascimento < cpf && cpf < pessoaId);
+  assert.ok(nome < nascimento && nascimento < cpf && cpf < status);
   assert.ok(status < identificacao && identificacao < protocolo && protocolo < braco);
   assert.match(block, /class="field" style="margin-bottom:14px;">\s*<div>\s*<label[^>]+for="ptNome"/);
   assert.match(block, /for="ptProjeto">Protocolo<\/label>/);
   assert.match(block, /id="ptIdRequiredStar"/);
-  assert.match(block, /id="ptPessoaId"[^>]+readonly/);
-  assert.match(block, /Gerado automaticamente ao salvar/);
-  assert.match(block, /class="modal-box" style="max-width:900px;"/);
+  assert.match(block, /<input type="hidden" id="ptPessoaId">/);
+  assert.doesNotMatch(block, /<label[^>]+for="ptPessoaId"/);
+  assert.doesNotMatch(block, /Gerado automaticamente ao salvar|Identificador automático compartilhado/);
+  assert.match(block, /class="modal-box participant-modal-box"/);
   assert.match(block, /class="field-row participant-protocol-fields"/);
   assert.match(client, /var required = !participanteIdOpcionalPorStatus\(status \? status\.value : ''\)/);
   assert.match(client, /\{ input: 'ptId', error: 'errPtId',[\s\S]*value: idObrigatorio \? idPart : 'ok' \}/);
   assert.match(client, /fields\.classList\.toggle\('has-catalog', !!_bracosParticipanteAtual\.length\)/);
   assert.ok(styles.includes('.participant-protocol-fields{grid-template-columns:repeat(2,minmax(0,1fr));}'));
+  assert.ok(styles.includes('.participant-modal-box{width:min(1100px,calc(100vw - 48px));max-width:1100px;}'));
   assert.ok(styles.includes('.participant-protocol-fields.has-catalog{grid-template-columns:repeat(3,minmax(0,1fr));}'));
+  assert.ok(styles.includes('.participant-form-guidance{margin-top:10px;color:var(--text-muted,#5f6b7c);font-size:12px;line-height:1.45;}'));
   assert.ok(styles.includes('.participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}'));
 });
 
