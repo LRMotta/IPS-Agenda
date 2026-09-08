@@ -146,6 +146,16 @@ test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () 
   assert.match(modal, /Criar nova participação/);
 });
 
+test('validador de CPF confirma dígitos verificadores e rejeita sequências ou números alterados', () => {
+  const cadastro = rules();
+  assert.equal(cadastro.isValidCpf('529.982.247-25'), true);
+  assert.equal(cadastro.isValidCpf('52998224725'), true);
+  assert.equal(cadastro.isValidCpf('529.982.247-24'), false);
+  assert.equal(cadastro.isValidCpf('000.000.000-00'), false);
+  assert.equal(cadastro.isValidCpf('111.111.111-11'), false);
+  assert.equal(cadastro.isValidCpf('5299822472'), false);
+});
+
 test('servidor preserva protocolo e identificacao de participacao com historico', () => {
   const server = readProjectFile('WebApp.gs');
   const save = sourceBetween(server, 'function salvarDadosParticipante(', 'function corrigirMatrizIdadeParticipantes(');

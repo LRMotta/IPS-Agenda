@@ -14,6 +14,20 @@ var CadastroRules_ = (function() {
     return String(value == null ? '' : value).replace(/\D/g, '');
   }
 
+  function isValidCpf(value) {
+    var cpf = digits(value);
+    if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+    function digit(base, weight) {
+      var total = 0;
+      for (var i = 0; i < base.length; i++) total += Number(base.charAt(i)) * (weight - i);
+      var rest = total % 11;
+      return rest < 2 ? 0 : 11 - rest;
+    }
+    var first = digit(cpf.slice(0, 9), 10);
+    var second = digit(cpf.slice(0, 9) + first, 11);
+    return first === Number(cpf.charAt(9)) && second === Number(cpf.charAt(10));
+  }
+
   function requiredProjectFields(data) {
     data = data || {};
     return [
@@ -183,6 +197,7 @@ var CadastroRules_ = (function() {
   return Object.freeze({
     normalizeText: normalizeText,
     digits: digits,
+    isValidCpf: isValidCpf,
     requiredProjectFields: requiredProjectFields,
     findProjectDuplicate: findProjectDuplicate,
     participantIdOptional: participantIdOptional,

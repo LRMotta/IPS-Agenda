@@ -353,7 +353,7 @@
             <div class="field"><label class="field-label" for="agendaReciboValor">Valor do ressarcimento</label><input id="agendaReciboValor" class="f-input" type="text" inputmode="decimal" placeholder="R$ 0,00" onblur="agendaReciboFormatarValorInput(this)"></div>
           </div>
           <div class="field-row cols-2 agenda-recibo-row">
-            <div class="field"><label class="field-label" for="agendaReciboCpf">CPF do beneficiário</label><input id="agendaReciboCpf" class="f-input" type="text"></div>
+            <div class="field"><label class="field-label" for="agendaReciboCpf">CPF do beneficiário</label><input id="agendaReciboCpf" class="f-input" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" oninput="agendaReciboFormatarCpfInput(this)" onblur="agendaReciboAtualizarValidacaoCpf_()"></div>
             <div class="field"><label class="field-label" for="agendaReciboTitular">Titular da conta</label><input id="agendaReciboTitular" class="f-input" type="text"></div>
           </div>
           <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboEndereco">Endereço do beneficiário</label><input id="agendaReciboEndereco" class="f-input" type="text"></div>
@@ -365,7 +365,7 @@
             <div class="field"><label class="field-label" for="agendaReciboTipoConta">Tipo de conta</label><select id="agendaReciboTipoConta" class="f-input f-select"><option value="">— Selecione —</option><option value="Conta corrente">Conta corrente</option><option value="Conta poupança">Conta poupança</option></select></div>
             <div class="field"><label class="field-label" for="agendaReciboAgencia">Agência</label><input id="agendaReciboAgencia" class="f-input" type="text"></div>
             <div class="field"><label class="field-label" for="agendaReciboConta">Número da conta</label><input id="agendaReciboConta" class="f-input" type="text"></div>
-            <div class="field"><label class="field-label" for="agendaReciboCpfTitular">CPF do titular</label><input id="agendaReciboCpfTitular" class="f-input" type="text"></div>
+            <div class="field"><label class="field-label" for="agendaReciboCpfTitular">CPF do titular</label><input id="agendaReciboCpfTitular" class="f-input" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" oninput="agendaReciboFormatarCpfInput(this)" onblur="agendaReciboAtualizarValidacaoCpf_()"></div>
           </div>
         </div>
         <div class="form-section">

@@ -3016,6 +3016,49 @@ function acompanhanteFormatarCpf_(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 11).replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
 }
 
+function participanteCpfValido_(value) {
+  var cpf = String(value || '').replace(/\D/g, '');
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  function digito(base, peso) {
+    var soma = 0;
+    for (var i = 0; i < base.length; i++) soma += Number(base.charAt(i)) * (peso - i);
+    var resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  }
+  var primeiro = digito(cpf.slice(0, 9), 10);
+  var segundo = digito(cpf.slice(0, 9) + primeiro, 11);
+  return primeiro === Number(cpf.charAt(9)) && segundo === Number(cpf.charAt(10));
+}
+
+function participanteValidarCpfCampo_(input, label) {
+  if (!input) return true;
+  var preenchido = String(input.value || '').replace(/\D/g, '').length > 0;
+  var valido = !preenchido || participanteCpfValido_(input.value);
+  input.classList.toggle('invalid', !valido);
+  input.setAttribute('aria-invalid', valido ? 'false' : 'true');
+  input.setCustomValidity(valido ? '' : (label || 'CPF') + ' inválido. Confira os 11 dígitos informados.');
+  return valido;
+}
+
+function participanteFormatarEValidarCpf_(input, label) {
+  if (!input) return;
+  input.value = acompanhanteFormatarCpf_(input.value);
+  participanteValidarCpfCampo_(input, label);
+}
+
+function participanteValidarCpfsDoFormulario_() {
+  var campos = [
+    { input: document.getElementById('ptCpf'), label: 'CPF do participante' },
+    { input: document.getElementById('ptCpfTitular'), label: 'CPF do titular da conta' }
+  ];
+  Array.prototype.forEach.call(document.querySelectorAll('#ptAcompanhantes [data-campo="cpf"], #ptAcompanhantes [data-campo="cpfTitular"]'), function(input) {
+    campos.push({ input: input, label: input.dataset.campo === 'cpfTitular' ? 'CPF do titular da conta' : 'CPF do acompanhante' });
+  });
+  var invalido = campos.filter(function(item) { return !participanteValidarCpfCampo_(item.input, item.label); })[0];
+  if (invalido && invalido.input) invalido.input.focus();
+  return !invalido;
+}
+
 function lerAcompanhantesPart_() {
   return Array.prototype.map.call(document.querySelectorAll('#ptAcompanhantes [data-acompanhante]'), function(card) {
     var item = { id: card.dataset.acompanhante || '' };
@@ -3084,7 +3127,8 @@ function renderAcompanhantesPart_(items) {
         if (field[0] === 'cpf' || field[0] === 'cpfTitular') {
           input.placeholder = '000.000.000-00'; input.inputMode = 'numeric'; input.maxLength = 14;
           input.pattern = '\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}';
-          input.oninput = function() { input.value = acompanhanteFormatarCpf_(input.value); };
+          input.oninput = function() { participanteFormatarEValidarCpf_(input, field[0] === 'cpfTitular' ? 'CPF do titular da conta' : 'CPF do acompanhante'); };
+          input.onblur = function() { participanteValidarCpfCampo_(input, field[0] === 'cpfTitular' ? 'CPF do titular da conta' : 'CPF do acompanhante'); };
         }
         if (field[0] === 'estado') { input.maxLength = 2; input.placeholder = 'UF'; input.oninput = function() { input.value = input.value.toUpperCase(); }; }
         if (field[0] === 'cep') {
@@ -3427,6 +3471,10 @@ function salvarPartApp(opts) {
   var projeto=document.getElementById('ptProjeto').value.trim();
   var status=document.getElementById('ptStatus').value;
   var idObrigatorio=atualizarParticipanteIdObrigatorio();
+  if (!participanteValidarCpfsDoFormulario_()) {
+    appSetStatus('statusPart', 'Corrija os campos de CPF destacados antes de salvar.');
+    return;
+  }
   if (!appRequiredFeedback([
     { input: 'ptNome', error: 'errPtNome', label: 'Nome', value: nome },
     { input: 'ptId', error: 'errPtId', label: 'ID do participante', value: idObrigatorio ? idPart : 'ok' },

@@ -428,7 +428,7 @@
           </div>
           <div>
             <label class="field-label" for="ptCpf">CPF</label>
-            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00">
+            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')">
           </div>
         </div>
         <div class="field" style="margin-top:14px;">
@@ -546,7 +546,7 @@
           </div>
           <div>
             <label class="field-label" for="ptCpfTitular">CPF do Titular</label>
-            <input type="text" id="ptCpfTitular" class="f-input" placeholder="000.000.000-00">
+            <input type="text" id="ptCpfTitular" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="participanteFormatarEValidarCpf_(this, 'CPF do titular da conta')" onblur="participanteValidarCpfCampo_(this, 'CPF do titular da conta')">
           </div>
         </div>
       </div>
