@@ -5459,7 +5459,7 @@
       var nomeExibido = viaIps ? 'participante nº ' + (dados.idParticipante || 'não informado') : recibo.nome;
       var identificacao = viaIps ? '' : ', CPF <b>' + esc(recibo.cpf || '________________') + '</b>';
       var endereco = !viaIps && recibo.endereco ? '<div class="meta"><b>Endereço do beneficiário:</b> ' + esc(recibo.endereco) + '</div>' : '';
-      var dadosBancarios = viaIps ? '' : '<div class="bank"><b>Dados bancários</b><br>' + esc(recibo.titular || recibo.nome) + (recibo.cpfTitular ? ' · CPF ' + esc(recibo.cpfTitular) : '') + '<br>' + esc(banco || 'Não informado') + '</div>';
+      var dadosBancarios = viaIps ? '' : '<div class="bank"><b>Dados bancários</b><br><span>Autorizo o crédito na conta bancária abaixo.</span><br>' + esc(recibo.titular || recibo.nome) + (recibo.cpfTitular ? ' · CPF ' + esc(recibo.cpfTitular) : '') + '<br>' + esc(banco || 'Não informado') + '</div>';
       var assinaturaBeneficiario = viaIps ? '<div class="signature"><span></span><b>Participante nº ' + esc(dados.idParticipante || 'não informado') + '</b></div>' : '<div class="signature"><span></span><b>' + esc(recibo.nome) + '</b><small>' + esc(recibo.tipo) + '</small></div>';
       var rubricaCoordenador = '<div class="signature coordinator-rubric"><span></span><b>' + esc(recibo.coordenador || 'Coordenador(a) de estudos') + '</b><small>Rubrica do(a) coordenador(a) de estudos</small></div>';
       return '<section class="receipt receipt-copy"><header class="receipt-head">' + logoHtml + '<b>' + esc(via) + '</b></header>' +

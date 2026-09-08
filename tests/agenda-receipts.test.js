@@ -62,6 +62,7 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.match(client, /viaIps \? 'participante nº '/);
   assert.match(client, /!viaIps && recibo\.endereco/);
   assert.match(client, /viaIps \? '' : '<div class="bank/);
+  assert.match(client, /Autorizo o crédito na conta bancária abaixo/);
   assert.match(client, /Rubrica do\(a\) coordenador\(a\) de estudos/);
   assert.match(client, /receipt-signatures/);
   assert.match(client, /Tipo de conta: ' \+ recibo\.tipoConta/);
