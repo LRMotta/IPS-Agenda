@@ -5334,6 +5334,7 @@
     document.getElementById('agendaReciboConta').value = pessoa.contaCorrente || '';
     document.getElementById('agendaReciboCpfTitular').value = pessoa.cpfTitular || pessoa.cpf || '';
     document.getElementById('agendaReciboValor').value = agendaReciboFormatarValor_(pessoa.valorPadrao);
+    agendaReciboAtualizarValidacaoCpf_();
   }
 
   function agendaReciboDataIso_(value) {
@@ -5363,6 +5364,51 @@
     if (input) input.value = agendaReciboFormatarValor_(input.value);
   }
 
+  function agendaReciboCpfValido_(value) {
+    var cpf = String(value || '').replace(/\D/g, '');
+    if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+    function digito(base, peso) {
+      var soma = 0;
+      for (var i = 0; i < base.length; i++) soma += Number(base.charAt(i)) * (peso - i);
+      var resto = soma % 11;
+      return resto < 2 ? 0 : 11 - resto;
+    }
+    var primeiro = digito(cpf.slice(0, 9), 10);
+    var segundo = digito(cpf.slice(0, 9) + primeiro, 11);
+    return primeiro === Number(cpf.charAt(9)) && segundo === Number(cpf.charAt(10));
+  }
+
+  function agendaReciboFormatarCpfInput(input) {
+    if (!input) return;
+    input.value = String(input.value || '').replace(/\D/g, '').slice(0, 11).replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
+    agendaReciboAtualizarValidacaoCpf_();
+  }
+
+  function agendaReciboAtualizarValidacaoCpf_() {
+    var campos = [
+      { id: 'agendaReciboCpf', label: 'CPF do beneficiário' },
+      { id: 'agendaReciboCpfTitular', label: 'CPF do titular da conta' }
+    ];
+    var invalido = campos.filter(function(item) {
+      var input = document.getElementById(item.id);
+      var preenchido = String((input || {}).value || '').replace(/\D/g, '').length > 0;
+      var valido = !preenchido || agendaReciboCpfValido_(input.value);
+      input.classList.toggle('invalid', !valido);
+      input.setAttribute('aria-invalid', valido ? 'false' : 'true');
+      return !valido;
+    });
+    var botao = document.getElementById('btnImprimirAgendaRecibo');
+    if (botao) botao.disabled = !!invalido.length;
+    var status = document.getElementById('agendaReciboStatus');
+    if (status && invalido.length) {
+      status.style.color = '#b3261e';
+      status.textContent = 'Corrija os campos de CPF destacados antes de imprimir.';
+    } else if (status && status.textContent === 'Corrija os campos de CPF destacados antes de imprimir.') {
+      status.textContent = '';
+    }
+    return !invalido.length;
+  }
+
   function agendaReciboCampo_(id) {
     return String((document.getElementById(id) || {}).value || '').trim();
   }
@@ -5373,6 +5419,7 @@
     var pessoa = _agendaReciboData.beneficiarios[index] || _agendaReciboData.beneficiarios[0];
     var valor = agendaReciboValorNumero_(agendaReciboCampo_('agendaReciboValor'));
     var status = document.getElementById('agendaReciboStatus');
+    if (!agendaReciboAtualizarValidacaoCpf_()) return;
     if (!isFinite(valor) || valor <= 0) {
       status.style.color = '#b3261e';
       status.textContent = 'Informe um valor de ressarcimento maior que zero.';

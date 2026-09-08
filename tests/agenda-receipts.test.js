@@ -71,6 +71,19 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.doesNotMatch(client, /salvarAgendaRecibo|registrarAgendaRecibo/);
 });
 
+test('recibo valida CPF do beneficiário e do titular antes de imprimir', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const modal = readProjectFile('IndexExtraModals.html');
+
+  assert.match(client, /function agendaReciboCpfValido_\(value\)/);
+  assert.match(client, /function agendaReciboAtualizarValidacaoCpf_\(\)/);
+  assert.match(client, /CPF do beneficiário/);
+  assert.match(client, /CPF do titular da conta/);
+  assert.match(client, /botao\.disabled = !!invalido\.length/);
+  assert.match(client, /if \(!agendaReciboAtualizarValidacaoCpf_\(\)\) return;/);
+  assert.match(modal, /oninput="agendaReciboFormatarCpfInput\(this\)"/);
+});
+
 test('valor do recibo é convertido automaticamente para reais e centavos por extenso', () => {
   const context = receiptValueContext();
 

@@ -5361,10 +5361,7 @@ function participanteValidarAcompanhantes_(items, anteriores) {
     out.tipoConta = participanteNormalizarTipoConta_(out.tipoConta, 'do acompanhante ' + (index + 1));
     ['cpf', 'cpfTitular'].forEach(function(field) {
       if (!out[field]) return;
-      if (!/^(\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/.test(out[field])) {
-        throw new Error('CPF do acompanhante ' + (index + 1) + ': use 000.000.000-00' + (field === 'cpfTitular' ? ' para o titular.' : '.'));
-      }
-      out[field] = out[field].replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+      out[field] = participanteNormalizarCpf_(out[field], 'do acompanhante ' + (index + 1) + (field === 'cpfTitular' ? ' (titular da conta)' : ''));
     });
     if (out.cpf && cpfs[out.cpf]) throw new Error('CPF repetido na lista de acompanhantes.');
     if (out.cpf) cpfs[out.cpf] = true;
@@ -5392,6 +5389,15 @@ function participanteNormalizarTipoConta_(value, contexto) {
   if (normalizado === 'contacorrente' || normalizado === 'corrente') return 'Conta corrente';
   if (normalizado === 'contapoupanca' || normalizado === 'poupanca') return 'Conta poupança';
   throw new Error('Tipo de conta inválido' + (contexto ? ' ' + contexto : '') + '.');
+}
+
+function participanteNormalizarCpf_(value, contexto) {
+  var digits = CadastroRules_.digits(value);
+  if (!digits) return '';
+  if (!CadastroRules_.isValidCpf(digits)) {
+    throw new Error('CPF inválido' + (contexto ? ' ' + contexto : '') + '. Confira os 11 dígitos informados.');
+  }
+  return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 }
 
 var PARTICIPANTE_CTMS_FIELDS_ = [
@@ -5913,6 +5919,8 @@ function salvarDadosParticipante(d) {
   if (!CadastroRules_.projectExists(projeto, projetos)) {
     throw new Error('Selecione um projeto cadastrado para o participante.');
   }
+  d.cpf = participanteNormalizarCpf_(d.cpf, 'do participante');
+  d.cpfTitular = participanteNormalizarCpf_(d.cpfTitular, 'do titular da conta');
   if (existing) {
     var alterouProjeto = normText_(existing[5]) !== normText_(projeto);
     var alterouIdParticipante = normText_(existing[4]) !== normText_(d.idParticipante);
