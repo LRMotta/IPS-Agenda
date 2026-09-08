@@ -446,7 +446,9 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
   agora = transporteOperacaoDate_(agora) || new Date();
   return transporteOperacoesRows_().filter(function(item) {
     var geradoEm = transporteOperacaoDate_(item.geradoEm);
-    return geradoEm && !transporteOperacaoDate_(item.emailEnviadoEm) &&
+    var identificadoSemAnexoAceito = transporteOperacaoDate_(item.emailIdentificadoEm) &&
+      Number(item.anexos || 0) < 1 && !transporteCourierExigeAnexoEnvio_(item.courier);
+    return geradoEm && !transporteOperacaoDate_(item.emailEnviadoEm) && !identificadoSemAnexoAceito &&
       agora.getTime() - geradoEm.getTime() >= TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_;
   }).map(function(item) {
     var identificado = transporteOperacaoDate_(item.emailIdentificadoEm);
@@ -541,6 +543,7 @@ function transporteMonitorarEnviosPorEmail_() {
       var atual = sh.getRange(item.row, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).getValues()[0];
       if (String(atual[2] || '').trim() !== item.referencia || (transporteOperacaoDate_(atual[12]) && !item.reprocessar)) return;
       var attachmentCount = match.anexos.length;
+      var exigeAnexoEnvio = transporteCourierExigeAnexoEnvio_(item.courier);
       sh.getRange(item.row, 12, 1, 5).setValues([[
         match.date,
         '',
@@ -548,7 +551,7 @@ function transporteMonitorarEnviosPorEmail_() {
         attachmentCount,
         new Date()
       ]]);
-      if (attachmentCount < 1) {
+      if (attachmentCount < 1 && exigeAnexoEnvio) {
         semAnexo.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId });
         return;
       }
@@ -1103,6 +1106,19 @@ function transporteCourierConfig_(courier) {
   var configs = transporteReadAgendaCourierConfigs_();
   var normalized = transporteNormalizeCourierFromCodex_(courier);
   return configs[transporteNorm_(normalized)] || configs[transporteNorm_(courier)] || {};
+}
+
+function transporteCourierExigeAnexoEnvio_(courier) {
+  var cfg = transporteCourierConfig_(courier);
+  var regra = {
+    nome: cfg.nome || cfg.courier || courier,
+    exigeAnexoEnvio: cfg.exigeAnexoEnvio
+  };
+  if (typeof courierExigeAnexoEnvio_ === 'function') return courierExigeAnexoEnvio_(regra);
+  var informado = transporteNorm_(regra.exigeAnexoEnvio);
+  if (informado === 'sim') return true;
+  if (informado === 'nao') return false;
+  return transporteNorm_(regra.nome).indexOf('dhl') === -1;
 }
 
 function transporteSetAdjacentByLabel_(sheet, labels, value, occurrence) {

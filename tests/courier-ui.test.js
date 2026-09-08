@@ -25,5 +25,10 @@ test('modal de courier agrupa configuracoes em persianas com acoes padrao', () =
   assert.match(modal, /class="courier-modal-actions"/);
   assert.match(modal, /onclick="fecharOverlay\('modalCourier'\)">Cancelar/);
   assert.match(modal, /id="btnSalvarCourier"/);
+  assert.match(modal, /class="courier-reminder-guidance"/);
+  assert.match(modal, /class="ag-tb-btn primary" onclick="configurarMonitorLembretesCourierFront\(true\)"/);
+  assert.match(modal, /class="ag-tb-btn" onclick="configurarMonitorLembretesCourierFront\(false\)"/);
   assert.match(styles, /\.courier-modal-actions \.btn-save/);
+  assert.match(styles, /\.courier-reminder-guidance/);
+  assert.match(styles, /\.courier-reminder-actions \.ag-tb-btn/);
 });

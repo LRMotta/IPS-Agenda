@@ -5256,14 +5256,220 @@
     var displayAction = usaDisplayOperacional
       ? 'abrirDisplayMonitoriaAgendaCard(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')'
       : 'abrirDisplayPaciente(\'' + encodeURIComponent(JSON.stringify(agendaDisplayPayload(r))).replace(/'/g, '%27') + '\')';
-    var displayBtn = showDisplay ? '<div class="ag-det-actions"><button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayAction + '"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button></div>' : '';
-    return displayBtn +
+    var displayBtn = showDisplay ? '<button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayAction + '"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button>' : '';
+    var reciboTipo = AgendaRules.formPolicy(r).type;
+    var reciboBtn = r.participante && ['visita', 'consulta'].indexOf(reciboTipo) >= 0 ? '<button class="ag-tb-btn" type="button" onclick="event.stopPropagation();abrirAgendaRecibo(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')"><span class="material-symbols-outlined">receipt_long</span> Gerar recibo</button>' : '';
+    var actions = displayBtn || reciboBtn ? '<div class="ag-det-actions">' + displayBtn + reciboBtn + '</div>' : '';
+    return actions +
       (isPeriodoOperacional && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
       (isPeriodoOperacional && r.salaMonitoria ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">meeting_room</span>Local</div><div class="ag-obs-block"><span class="material-symbols-outlined">room</span><span>' + esc(r.salaMonitoria) + '</span></div></div>' : '') +
       agendaPostVisitDetailHtml(r) +
       (r.obs ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">sticky_note_2</span>Observacoes</div><div class="ag-obs-block"><span class="material-symbols-outlined">info</span><span>' + esc(r.obs) + '</span></div></div>' : '') +
       '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">local_shipping</span>Transporte de Amostras</div>' +
       (couriers || '<div class="ag-empty" style="padding:0">Sem dados logisticos preenchidos nesta linha.</div>') + '</div>';
+  }
+
+  var _agendaReciboData = null;
+
+  function abrirAgendaRecibo(agendaId, rowIndex) {
+    _agendaReciboData = null;
+    var loading = document.getElementById('agendaReciboLoading');
+    var form = document.getElementById('agendaReciboForm');
+    var status = document.getElementById('agendaReciboStatus');
+    if (loading) loading.style.display = 'flex';
+    if (form) form.style.display = 'none';
+    if (status) status.textContent = '';
+    abrirOverlay('modalAgendaRecibo');
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (!data || !Array.isArray(data.beneficiarios) || !data.beneficiarios.length) {
+          agendaReciboFalha_({ message: 'Nenhum beneficiário cadastrado para este recibo.' });
+          return;
+        }
+        _agendaReciboData = data;
+        agendaReciboPreencher_(data);
+      })
+      .withFailureHandler(agendaReciboFalha_)
+      .getAgendaReciboData(agendaId, rowIndex || undefined);
+  }
+
+  function agendaReciboFalha_(error) {
+    var loading = document.getElementById('agendaReciboLoading');
+    var form = document.getElementById('agendaReciboForm');
+    var status = document.getElementById('agendaReciboStatus');
+    if (loading) loading.style.display = 'none';
+    if (form) form.style.display = 'block';
+    if (status) {
+      status.style.color = '#b3261e';
+      status.textContent = appErrorMessage(error, 'Não foi possível carregar os dados do recibo.');
+    }
+  }
+
+  function agendaReciboPreencher_(data) {
+    var select = document.getElementById('agendaReciboBeneficiario');
+    select.innerHTML = data.beneficiarios.map(function(item, index) {
+      return '<option value="' + index + '">' + esc(item.nome) + ' · ' + esc(item.tipo) + '</option>';
+    }).join('');
+    var contexto = document.getElementById('agendaReciboContexto');
+    if (contexto) contexto.textContent = [data.projeto, data.visita, data.dataVisita].filter(Boolean).join(' · ');
+    document.getElementById('agendaReciboDataVisita').value = data.dataVisitaIso || agendaIsoFromBr(data.dataVisita);
+    document.getElementById('agendaReciboDataEcrf').value = agendaReciboDataIso_(data.dataEcrf);
+    document.getElementById('agendaReciboDataEmissao').value = agendaHojeIso_();
+    document.getElementById('agendaReciboCoordenador').value = data.coordenador || '';
+    document.getElementById('agendaReciboLoading').style.display = 'none';
+    document.getElementById('agendaReciboForm').style.display = 'block';
+    agendaReciboSelecionarBeneficiario();
+  }
+
+  function agendaReciboSelecionarBeneficiario() {
+    if (!_agendaReciboData) return;
+    var index = Number((document.getElementById('agendaReciboBeneficiario') || {}).value || 0);
+    var pessoa = _agendaReciboData.beneficiarios[index] || _agendaReciboData.beneficiarios[0];
+    document.getElementById('agendaReciboCpf').value = pessoa.cpf || '';
+    document.getElementById('agendaReciboEndereco').value = pessoa.endereco || '';
+    document.getElementById('agendaReciboTitular').value = pessoa.titularConta || pessoa.nome || '';
+    document.getElementById('agendaReciboBanco').value = pessoa.banco || '';
+    document.getElementById('agendaReciboTipoConta').value = pessoa.tipoConta || '';
+    document.getElementById('agendaReciboAgencia').value = pessoa.agencia || '';
+    document.getElementById('agendaReciboConta').value = pessoa.contaCorrente || '';
+    document.getElementById('agendaReciboCpfTitular').value = pessoa.cpfTitular || pessoa.cpf || '';
+    document.getElementById('agendaReciboValor').value = agendaReciboFormatarValor_(pessoa.valorPadrao);
+  }
+
+  function agendaReciboDataIso_(value) {
+    var match = String(value || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    return match ? match[3] + '-' + match[2] + '-' + match[1] : '';
+  }
+
+  function agendaHojeIso_() {
+    var hoje = new Date();
+    return hoje.getFullYear() + '-' + ('0' + (hoje.getMonth() + 1)).slice(-2) + '-' + ('0' + hoje.getDate()).slice(-2);
+  }
+
+  function agendaReciboValorNumero_(value) {
+    var bruto = String(value == null ? '' : value).trim().replace(/\s|R\$/gi, '');
+    if (!bruto) return NaN;
+    if (bruto.indexOf(',') >= 0) bruto = bruto.replace(/\./g, '').replace(',', '.');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(bruto)) bruto = bruto.replace(/\./g, '');
+    return Number(bruto);
+  }
+
+  function agendaReciboFormatarValor_(value) {
+    var numero = agendaReciboValorNumero_(value);
+    return isFinite(numero) ? numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '';
+  }
+
+  function agendaReciboFormatarValorInput(input) {
+    if (input) input.value = agendaReciboFormatarValor_(input.value);
+  }
+
+  function agendaReciboCampo_(id) {
+    return String((document.getElementById(id) || {}).value || '').trim();
+  }
+
+  function imprimirAgendaRecibo() {
+    if (!_agendaReciboData) return;
+    var index = Number(agendaReciboCampo_('agendaReciboBeneficiario') || 0);
+    var pessoa = _agendaReciboData.beneficiarios[index] || _agendaReciboData.beneficiarios[0];
+    var valor = agendaReciboValorNumero_(agendaReciboCampo_('agendaReciboValor'));
+    var status = document.getElementById('agendaReciboStatus');
+    if (!isFinite(valor) || valor <= 0) {
+      status.style.color = '#b3261e';
+      status.textContent = 'Informe um valor de ressarcimento maior que zero.';
+      return;
+    }
+    var dataVisita = agendaReciboCampo_('agendaReciboDataVisita');
+    var dataEmissao = agendaReciboCampo_('agendaReciboDataEmissao');
+    if (!dataVisita || !dataEmissao) {
+      status.style.color = '#b3261e';
+      status.textContent = 'Informe a data da visita e a data de emissão.';
+      return;
+    }
+    status.textContent = '';
+    var payload = {
+      nome: pessoa.nome, tipo: pessoa.tipo,
+      cpf: agendaReciboCampo_('agendaReciboCpf'), endereco: agendaReciboCampo_('agendaReciboEndereco'), titular: agendaReciboCampo_('agendaReciboTitular'),
+      banco: agendaReciboCampo_('agendaReciboBanco'), tipoConta: agendaReciboCampo_('agendaReciboTipoConta'), agencia: agendaReciboCampo_('agendaReciboAgencia'),
+      conta: agendaReciboCampo_('agendaReciboConta'), cpfTitular: agendaReciboCampo_('agendaReciboCpfTitular'),
+      coordenador: agendaReciboCampo_('agendaReciboCoordenador'),
+      valor: valor, dataVisita: dataVisita, dataEcrf: agendaReciboCampo_('agendaReciboDataEcrf'), dataEmissao: dataEmissao
+    };
+    agendaAbrirJanelaImpressao('Recibo de ressarcimento - ' + pessoa.nome, agendaReciboPrintHtml_(_agendaReciboData, payload));
+  }
+
+  function agendaReciboDataBr_(iso) {
+    var parts = String(iso || '').split('-');
+    return parts.length === 3 ? parts[2] + '/' + parts[1] + '/' + parts[0] : '';
+  }
+
+  function agendaReciboGrupoExtenso_(numero) {
+    var unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+    var especiais = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+    var dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+    var centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+    numero = Math.floor(Number(numero) || 0);
+    if (!numero) return '';
+    if (numero === 100) return 'cem';
+    var partes = [];
+    if (numero >= 100) {
+      partes.push(centenas[Math.floor(numero / 100)]);
+      numero %= 100;
+    }
+    if (numero >= 20) {
+      partes.push(dezenas[Math.floor(numero / 10)]);
+      numero %= 10;
+    } else if (numero >= 10) {
+      partes.push(especiais[numero - 10]);
+      numero = 0;
+    }
+    if (numero) partes.push(unidades[numero]);
+    return partes.join(' e ');
+  }
+
+  function agendaReciboValorExtenso_(valor) {
+    var totalCentavos = Math.round(Number(valor) * 100);
+    if (!isFinite(totalCentavos) || totalCentavos < 0 || totalCentavos > 99999999999) return '';
+    var inteiro = Math.floor(totalCentavos / 100);
+    var centavos = totalCentavos % 100;
+    var partes = [];
+    var milhoes = Math.floor(inteiro / 1000000);
+    var milhares = Math.floor((inteiro % 1000000) / 1000);
+    var unidades = inteiro % 1000;
+    if (milhoes) partes.push(agendaReciboGrupoExtenso_(milhoes) + (milhoes === 1 ? ' milhão' : ' milhões'));
+    if (milhares) partes.push((milhares === 1 ? '' : agendaReciboGrupoExtenso_(milhares) + ' ') + 'mil');
+    if (unidades) partes.push(agendaReciboGrupoExtenso_(unidades));
+    var reais = partes.join(' e ');
+    if (inteiro) reais += inteiro === 1 ? ' real' : ' reais';
+    var cents = centavos ? agendaReciboGrupoExtenso_(centavos) + (centavos === 1 ? ' centavo' : ' centavos') : '';
+    if (!inteiro && !centavos) return 'zero reais';
+    if (!inteiro) return cents;
+    return cents ? reais + ' e ' + cents : reais;
+  }
+
+  function agendaReciboPrintHtml_(dados, recibo) {
+    var valor = agendaReciboFormatarValor_(recibo.valor);
+    var valorExtenso = agendaReciboValorExtenso_(recibo.valor);
+    var banco = [recibo.banco, recibo.tipoConta ? 'Tipo de conta: ' + recibo.tipoConta : '', recibo.agencia ? 'Agência ' + recibo.agencia : '', recibo.conta ? 'Conta ' + recibo.conta : ''].filter(Boolean).join(' · ');
+    var ecrf = recibo.dataEcrf ? '<div class="meta"><b>eCRF preenchida em:</b> ' + esc(agendaReciboDataBr_(recibo.dataEcrf)) + '</div>' : '';
+    var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
+    var logoHtml = logo ? '<img src="' + logo + '" alt="Instituto de Pesquisas em Saúde">' : '<b class="brand-text">IPS | UCS</b>';
+    var vias = ['1ª via — Financeiro UCS', '2ª via — IPS/UCS', '3ª via — Participante/Acompanhante'];
+    var body = vias.map(function(via, viaIndex) {
+      var viaIps = viaIndex === 1;
+      var nomeExibido = viaIps ? 'participante nº ' + (dados.idParticipante || 'não informado') : recibo.nome;
+      var identificacao = viaIps ? '' : ', CPF <b>' + esc(recibo.cpf || '________________') + '</b>';
+      var endereco = !viaIps && recibo.endereco ? '<div class="meta"><b>Endereço do beneficiário:</b> ' + esc(recibo.endereco) + '</div>' : '';
+      var dadosBancarios = viaIps ? '' : '<div class="bank"><b>Dados bancários</b><br>' + esc(recibo.titular || recibo.nome) + (recibo.cpfTitular ? ' · CPF ' + esc(recibo.cpfTitular) : '') + '<br>' + esc(banco || 'Não informado') + '</div>';
+      var assinaturaBeneficiario = viaIps ? '<div class="signature"><span></span><b>Participante nº ' + esc(dados.idParticipante || 'não informado') + '</b></div>' : '<div class="signature"><span></span><b>' + esc(recibo.nome) + '</b><small>' + esc(recibo.tipo) + '</small></div>';
+      var rubricaCoordenador = '<div class="signature coordinator-rubric"><span></span><b>' + esc(recibo.coordenador || 'Coordenador(a) de estudos') + '</b><small>Rubrica do(a) coordenador(a) de estudos</small></div>';
+      return '<section class="receipt receipt-copy"><header class="receipt-head">' + logoHtml + '<b>' + esc(via) + '</b></header>' +
+        '<h2>RECIBO DE RESSARCIMENTO</h2><div class="receipt-value">' + esc(valor) + '</div>' +
+        '<p>Eu, <b>' + esc(nomeExibido) + '</b>' + identificacao + ', declaro ter recebido do Instituto de Pesquisas em Saúde o valor de <b>' + esc(valor) + (valorExtenso ? ' (' + esc(valorExtenso) + ')' : '') + '</b>, referente ao ressarcimento de despesas com alimentação e transporte relacionadas à visita <b>' + esc(dados.visita || '-') + '</b> do projeto <b>' + esc(dados.projeto || '-') + '</b>, realizada em <b>' + esc(agendaReciboDataBr_(recibo.dataVisita)) + '</b>.</p>' +
+        '<div class="meta"><b>Participante do estudo:</b> ' + (viaIps ? 'nº ' + esc(dados.idParticipante || 'não informado') : esc(dados.participante || '-') + (dados.idParticipante ? ' · ID ' + esc(dados.idParticipante) : '')) + '</div>' + endereco + ecrf + dadosBancarios +
+        '<div class="place">Caxias do Sul, ' + esc(agendaReciboDataBr_(recibo.dataEmissao)) + '.</div><div class="receipt-signatures">' + assinaturaBeneficiario + rubricaCoordenador + '</div></section>';
+    }).join('');
+    var html = agendaPrintShell({ title: 'Recibo de ressarcimento', subtitle: dados.projeto || '', body: body });
+    return html.replace('class="portrait"', 'class="portrait receipt-document"').replace('</style>', '.receipt-document>.head{display:none}.receipt{max-width:170mm;min-height:255mm;margin:0 auto;color:#1f2937;box-sizing:border-box}.receipt-copy{break-after:page;page-break-after:always}.receipt-copy:last-child{break-after:auto;page-break-after:auto}.receipt-head{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:28px;color:#0b3f8a;font-size:12px}.receipt-head img{height:44px;width:auto;max-width:60mm;object-fit:contain}.receipt h2{text-align:center;color:#0b3f8a;font-size:20px;letter-spacing:.08em;margin:0 0 18px}.receipt-value{width:max-content;margin:0 auto 24px;padding:10px 22px;border:2px solid #1266f1;border-radius:8px;color:#0b3f8a;font-size:22px;font-weight:800}.receipt p{font-size:14px;line-height:1.8;text-align:justify;color:#1f2937}.receipt .meta,.receipt .bank{margin-top:14px;padding:11px 13px;border:1px solid #dbe3f0;border-radius:7px;font-size:12px;line-height:1.6}.receipt .bank{background:#f7faff}.receipt .place{text-align:center;margin-top:28px;font-size:13px}.receipt-signatures{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.7fr);gap:18mm;align-items:end}.receipt .signature{display:flex;flex-direction:column;align-items:center;margin:38px auto 0;width:100%;text-align:center}.receipt .signature span{width:100%;border-top:1px solid #1f2937;margin-bottom:7px}.receipt .signature b{font-size:13px}.receipt .signature small{color:#64748b;margin-top:3px}.receipt .coordinator-rubric b{font-size:11px}@media print{.receipt{margin:0 auto}}</style>');
   }
 
   function agendaCourierCards(r) {
