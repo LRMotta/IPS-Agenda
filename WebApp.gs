@@ -3273,6 +3273,7 @@ function getProjetos() {
   var courierTempCols = projetoCourierTemperatureColumnMap_(dados[0] || []);
   var situacaoEnvioCol = projetoSituacaoEnvioColumn_(dados[0] || []);
   var soaConfigCols = projetoSoAConfigColumnMap_(dados[0] || []);
+  var ressarcimentoCols = projetoRessarcimentoColumnMap_(dados[0] || []);
   var statsPorProjeto = getParticipantesStatsPorProjeto_();
   var sivPorProjeto = getProjetosSivPorProjeto_();
   var lista = [];
@@ -3324,6 +3325,8 @@ function getProjetos() {
       situacaoEnvioAmostras: situacaoEnvioCol >= 0 ? String(r[situacaoEnvioCol] || '').trim() : '',
       soaBaseCalculoPadrao: soaConfigCols.baseCalculoPadrao >= 0 ? soaNormalizarBaseCalculo_(r[soaConfigCols.baseCalculoPadrao]) : '',
       ctmsJornadaAtivo: soaConfigCols.ctmsJornadaAtivo >= 0 && ['sim', 'true', '1'].indexOf(normText_(r[soaConfigCols.ctmsJornadaAtivo])) >= 0,
+      ressarcimentoPadraoParticipante: ressarcimentoCols.participante >= 0 ? r[ressarcimentoCols.participante] : '',
+      ressarcimentoPadraoAcompanhante: ressarcimentoCols.acompanhante >= 0 ? r[ressarcimentoCols.acompanhante] : '',
       dataSiv:       siv.data || '',
       dataSivInicio: siv.inicio || siv.data || '',
       dataSivFim:    siv.fim || siv.data || ''
@@ -4876,6 +4879,76 @@ var PROJETO_SOA_CONFIG_FIELDS_ = [{
   aliases: ['CTMS ativo', 'Motor CTMS ativo', 'Ativar CTMS na Jornada']
 }];
 
+var PROJETO_RESSARCIMENTO_FIELDS_ = [{
+  key: 'ressarcimentoPadraoParticipante',
+  mapKey: 'participante',
+  header: 'Ressarcimento padrão participante',
+  aliases: ['Ressarcimento padrao participante', 'Ressarcimento participante']
+}, {
+  key: 'ressarcimentoPadraoAcompanhante',
+  mapKey: 'acompanhante',
+  header: 'Ressarcimento padrão acompanhante',
+  aliases: ['Ressarcimento padrao acompanhante', 'Ressarcimento acompanhante']
+}];
+
+function projetoRessarcimentoColumnMap_(headers) {
+  var normalized = (headers || []).map(function(header) { return normText_(header); });
+  var map = { participante: -1, acompanhante: -1 };
+  PROJETO_RESSARCIMENTO_FIELDS_.forEach(function(field) {
+    var names = [field.header].concat(field.aliases || []);
+    for (var i = 0; i < names.length && map[field.mapKey] < 0; i++) {
+      map[field.mapKey] = normalized.indexOf(normText_(names[i]));
+    }
+  });
+  return map;
+}
+
+function projetoRessarcimentoPayloadPresente_(dados) {
+  var payload = dados || {};
+  return PROJETO_RESSARCIMENTO_FIELDS_.some(function(field) {
+    return Object.prototype.hasOwnProperty.call(payload, field.key);
+  });
+}
+
+function normalizarProjetoRessarcimento_(valor, rotulo) {
+  if (valor === '' || valor == null) return '';
+  var bruto = String(valor).trim().replace(/\s|R\$/gi, '');
+  if (!bruto) return '';
+  if (bruto.indexOf(',') >= 0) bruto = bruto.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(bruto)) bruto = bruto.replace(/\./g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(bruto)) throw new Error('Informe um valor válido para o ressarcimento padrão do ' + rotulo + '.');
+  var numero = Number(bruto);
+  if (!isFinite(numero) || numero < 0) throw new Error('Informe um valor válido para o ressarcimento padrão do ' + rotulo + '.');
+  return numero;
+}
+
+function validarProjetoRessarcimentos_(dados) {
+  if (!projetoRessarcimentoPayloadPresente_(dados)) return {};
+  return {
+    ressarcimentoPadraoParticipante: normalizarProjetoRessarcimento_(dados.ressarcimentoPadraoParticipante, 'participante'),
+    ressarcimentoPadraoAcompanhante: normalizarProjetoRessarcimento_(dados.ressarcimentoPadraoAcompanhante, 'acompanhante')
+  };
+}
+
+function garantirProjetoRessarcimentoColumn_(aba, fieldKey) {
+  var lastCol = Math.max(aba.getLastColumn(), 1);
+  var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var map = projetoRessarcimentoColumnMap_(headers);
+  var field = PROJETO_RESSARCIMENTO_FIELDS_.filter(function(item) { return item.key === fieldKey; })[0];
+  if (!field) throw new Error('Campo de ressarcimento desconhecido: ' + fieldKey + '.');
+  if (map[field.mapKey] >= 0) return map[field.mapKey];
+  var index = headers.length;
+  aba.getRange(1, index + 1).setValue(field.header);
+  return index;
+}
+
+function gravarProjetoRessarcimentos_(aba, rowNumber, valores) {
+  PROJETO_RESSARCIMENTO_FIELDS_.forEach(function(field) {
+    var column = garantirProjetoRessarcimentoColumn_(aba, field.key);
+    aba.getRange(rowNumber, column + 1).setValue(valores[field.key]);
+  });
+}
+
 function projetoSoAConfigColumnMap_(headers) {
   var normalized = (headers || []).map(function(header) { return normText_(header); });
   var map = { baseCalculoPadrao: -1, ctmsJornadaAtivo: -1 };
@@ -5129,6 +5202,7 @@ function salvarDadosProjeto(dados) {
   }
   if (projetoCourierPayloadPresente_(dados)) validarProjetoCourierIds_(dados, { legadosPorCampo: couriersLegadosPorCampo });
   if (projetoSoAConfigPayloadPresente_(dados)) validarProjetoSoAConfig_(dados);
+  var ressarcimentos = validarProjetoRessarcimentos_(dados);
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
@@ -5153,6 +5227,7 @@ function salvarDadosProjeto(dados) {
         ]]);
         gravarProjetoCourierIds_(aba, i + 1, dados);
         gravarProjetoSoAConfig_(aba, i + 1, dados);
+        if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, i + 1, ressarcimentos);
         clearTransporteOptionsCache_();
         return 'Projeto atualizado com sucesso!';
       }
@@ -5181,6 +5256,7 @@ function salvarDadosProjeto(dados) {
     ]);
     gravarProjetoCourierIds_(aba, aba.getLastRow(), dados);
     gravarProjetoSoAConfig_(aba, aba.getLastRow(), dados);
+    if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, aba.getLastRow(), ressarcimentos);
     clearTransporteOptionsCache_();
     return 'Projeto cadastrado com sucesso!';
   }
@@ -5217,13 +5293,13 @@ function participanteColumnMap_(sh, createMissing) {
   var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
   var definitions = [
     ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['cep', 'CEP'],
-    ['banco', 'Banco'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
+    ['banco', 'Banco'], ['tipoConta', 'Tipo de conta'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
     ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular'],
     ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)']
   ];
   var aliases = {
     rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], cep: ['cep'],
-    banco: ['banco', 'nomedobanco'], agencia: ['agencia'], contaCorrente: ['contacorrente', 'conta'],
+    banco: ['banco', 'nomedobanco'], tipoConta: ['tipoconta', 'tipodeconta'], agencia: ['agencia'], contaCorrente: ['contacorrente', 'conta'],
     titularConta: ['titulardacontacorrente', 'titulardaconta'], cpfTitular: ['cpfdotitular'],
     idPessoa: ['idpessoa', 'pessoaid', 'idinternopessoa']
   };
@@ -5252,6 +5328,7 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
     banco: d.banco || '', agencia: d.agencia || '', contaCorrente: d.contaCorrente || '',
     titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || '', idPessoa: d.idPessoa || ''
   };
+  if (d.tipoConta !== undefined) values.tipoConta = d.tipoConta || '';
   // Clientes antigos que omitem a coleção não apagam acompanhantes existentes.
   if (d.acompanhantes !== undefined) values.acompanhantesJson = JSON.stringify(d.acompanhantes);
   Object.keys(values).forEach(function(key) {
@@ -5272,7 +5349,7 @@ function participanteLerAcompanhantes_(value) {
 function participanteValidarAcompanhantes_(items, anteriores) {
   if (!Array.isArray(items)) throw new Error('Informe uma lista de acompanhantes.');
   var ids = {}, cpfs = {};
-  var fields = ['nome', 'cpf', 'rua', 'numero', 'cidade', 'estado', 'cep', 'banco', 'agencia', 'contaCorrente', 'cpfTitular'];
+  var fields = ['nome', 'cpf', 'rua', 'numero', 'cidade', 'estado', 'cep', 'banco', 'tipoConta', 'agencia', 'contaCorrente', 'cpfTitular'];
   var result = items.map(function(item, index) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Acompanhante inválido.');
     var out = {};
@@ -5281,6 +5358,7 @@ function participanteValidarAcompanhantes_(items, anteriores) {
       if (out[field].length > 250) throw new Error('Campo muito longo no acompanhante ' + (index + 1) + '.');
     });
     if (!out.nome) throw new Error('Informe o nome completo do acompanhante ' + (index + 1) + '.');
+    out.tipoConta = participanteNormalizarTipoConta_(out.tipoConta, 'do acompanhante ' + (index + 1));
     ['cpf', 'cpfTitular'].forEach(function(field) {
       if (!out[field]) return;
       if (!/^(\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/.test(out[field])) {
@@ -5305,6 +5383,15 @@ function participanteValidarAcompanhantes_(items, anteriores) {
   });
   if (JSON.stringify(result).length > 45000) throw new Error('A lista de acompanhantes excede o tamanho permitido.');
   return result;
+}
+
+function participanteNormalizarTipoConta_(value, contexto) {
+  var original = String(value == null ? '' : value).trim();
+  var normalizado = participanteCampoKey_(original);
+  if (!normalizado) return '';
+  if (normalizado === 'contacorrente' || normalizado === 'corrente') return 'Conta corrente';
+  if (normalizado === 'contapoupanca' || normalizado === 'poupanca') return 'Conta poupança';
+  throw new Error('Tipo de conta inválido' + (contexto ? ' ' + contexto : '') + '.');
 }
 
 var PARTICIPANTE_CTMS_FIELDS_ = [
@@ -5576,6 +5663,7 @@ function getParticipantes() {
         estado:         String(valueFor(r, ['estado', 'uf']) || ''),
         cep:            String(valueFor(r, ['cep']) || ''),
         banco:          String(valueFor(r, ['banco', 'nomedobanco']) || ''),
+        tipoConta:      String(valueFor(r, ['tipoconta', 'tipodeconta']) || ''),
         agencia:        String(valueFor(r, ['agencia']) || ''),
         contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
         titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
@@ -5917,6 +6005,7 @@ function salvarDadosParticipante(d) {
     }
   }
   d.idPessoa = idPessoa;
+  if (d.tipoConta !== undefined) d.tipoConta = participanteNormalizarTipoConta_(d.tipoConta, 'do participante');
   if (d.acompanhantes !== undefined) {
     var acompanhantesAnteriores = editRowIndex > 0 && participantColumnsRead.acompanhantesJson !== undefined
       ? participanteLerAcompanhantes_(rows[editRowIndex][participantColumnsRead.acompanhantesJson]) : [];
@@ -10812,6 +10901,7 @@ function getAgendaCourierRows_() {
     var courier = String(r[1] || '').trim();
     if (!courier) return;
     var disponivelProjetosInformado = headerValue(r, ['Disponível para projetos', 'Disponivel para projetos', 'Vinculável a projetos', 'Vinculavel a projetos']);
+    var exigeAnexoEnvioInformado = headerValue(r, ['Exige anexo para confirmar envio', 'Exigir anexo para confirmar envio', 'Exige documentação anexada']);
     out.push({
       id: String(r[0] || '').trim(),
       nome: courier,
@@ -10836,6 +10926,7 @@ function getAgendaCourierRows_() {
       lembreteHoras: headerValue(r, ['Lembrete horas úteis']),
       lembreteLimite: headerValue(r, ['Lembrete limite D-1']),
       lembreteTexto: headerValue(r, ['Lembrete texto']),
+      exigeAnexoEnvio: courierExigeAnexoEnvio_({ nome: courier, exigeAnexoEnvio: exigeAnexoEnvioInformado }) ? 'Sim' : 'Não',
       forneceGeloColeta: headerValue(r, ['Fornece gelo para coleta', 'Fornece gelo']),
       restricaoSegunda: headerValue(r, ['Restrição às segundas-feiras', 'Restricao as segundas-feiras', 'Restrição segunda-feira']),
       restricaoAposFeriado: headerValue(r, ['Restrição após feriado', 'Restricao apos feriado']),
@@ -12170,8 +12261,10 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento) {
     projeto: String(dados.projeto || '').trim()
   };
   var idx = AGENDA_CFG.idx;
+  var agendaIdExcluido = String(dados.id || dados.agendaId || '').trim();
   var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
   var encontradas = rows.filter(function(row) {
+    if (agendaIdExcluido && String(row[idx.id] || '').trim() === agendaIdExcluido) return false;
     if (!AgendaServerRules_.isVisit(row[idx.tipo])) return false;
     if (formatarDataIsoAgenda_(row[idx.data]) !== dataIso) return false;
     return CadastroRules_.agendaEventMatchesParticipant(referencia, {
@@ -12773,6 +12866,8 @@ function atualizarAgendaEventoCompleto(dados) {
   var d = _parseDateHora(dados.data, dados.hora);
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, rowAnterior);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
+  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
+  if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var datasValidacaoStatus = isPeriodo
     ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
     : [d];
@@ -15059,6 +15154,65 @@ function getAgendaEventoPorId(id, rowIndex) {
   });
 }
 
+function getAgendaReciboData(id, rowIndex) {
+  var access = codexGetCurrentUserAccess();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  var evento = getAgendaEventoPorId(id, rowIndex);
+  if (!evento) throw new Error('Registro da Agenda nao encontrado.');
+  var tipoEvento = AgendaServerRules_.formPolicy(evento).type;
+  if (['visita', 'consulta'].indexOf(tipoEvento) < 0) throw new Error('Recibos podem ser gerados somente para visitas e consultas.');
+  if (!String(evento.participante || '').trim()) throw new Error('Este registro nao possui participante para gerar recibo.');
+
+  var cadastroId = String(evento.participanteCadastroId || '').trim();
+  var candidatos = getParticipantes().filter(function(participante) {
+    if (cadastroId) return String(participante.id || '').trim() === cadastroId;
+    return normText_(participante.nome) === normText_(evento.participante) &&
+      normText_(participante.projeto) === normText_(evento.projeto) &&
+      (!evento.idParticipante || normText_(participante.idParticipante) === normText_(evento.idParticipante));
+  });
+  if (candidatos.length !== 1) throw new Error('Nao foi possivel identificar unicamente o cadastro do participante.');
+
+  var participante = candidatos[0];
+  var projeto = getProjetos().filter(function(item) {
+    return normText_(item.nomeAbreviado) === normText_(evento.projeto);
+  })[0] || {};
+  function beneficiario(pessoa, tipo, valorPadrao) {
+    pessoa = pessoa || {};
+    return {
+      id: String(pessoa.id || participante.id || '').trim(),
+      tipo: tipo,
+      nome: String(pessoa.nome || '').trim(),
+      cpf: String(pessoa.cpf || '').trim(),
+      endereco: [pessoa.rua, pessoa.numero, pessoa.cidade, pessoa.estado, pessoa.cep].filter(function(value) { return String(value || '').trim(); }).join(', '),
+      banco: String(pessoa.banco || '').trim(),
+      tipoConta: String(pessoa.tipoConta || '').trim(),
+      agencia: String(pessoa.agencia || '').trim(),
+      contaCorrente: String(pessoa.contaCorrente || '').trim(),
+      titularConta: String(pessoa.titularConta || pessoa.nome || '').trim(),
+      cpfTitular: String(pessoa.cpfTitular || pessoa.cpf || '').trim(),
+      valorPadrao: valorPadrao === '' || valorPadrao == null ? '' : Number(valorPadrao)
+    };
+  }
+
+  var beneficiarios = [beneficiario(participante, 'Participante', projeto.ressarcimentoPadraoParticipante)];
+  (participante.acompanhantes || []).forEach(function(acompanhante) {
+    beneficiarios.push(beneficiario(acompanhante, 'Acompanhante', projeto.ressarcimentoPadraoAcompanhante));
+  });
+  return {
+    agendaId: String(evento.id || ''),
+    projeto: String(evento.projeto || ''),
+    coordenador: String(projeto.coordenador || '').trim(),
+    participante: String(evento.participante || ''),
+    idParticipante: String(evento.idParticipante || ''),
+    visita: String(evento.visita || evento.tipo || ''),
+    dataVisita: String(evento.data || ''),
+    dataVisitaIso: String(evento.dataIso || ''),
+    dataEcrf: String(evento.ecrfData || ''),
+    ecrfConcluida: !!evento.ecrfConcluida,
+    beneficiarios: beneficiarios
+  };
+}
+
 function agendaRowsToObjects_(vals, start) {
   var items = vals.map(function(r, i) { return agendaRowToObject_(r, start + i); });
   agendaHydrateParticipantFields_(items);
@@ -15867,12 +16021,22 @@ var COURIER_OPERATIONAL_FIELDS_ = [
   { key: 'lembreteHoras', header: 'Lembrete horas úteis' },
   { key: 'lembreteLimite', header: 'Lembrete limite D-1' },
   { key: 'lembreteTexto', header: 'Lembrete texto' },
+  { key: 'exigeAnexoEnvio', header: 'Exige anexo para confirmar envio', aliases: ['Exigir anexo para confirmar envio', 'Exige documentação anexada'] },
   { key: 'disponivelProjetos', header: 'Disponível para projetos', aliases: ['Disponivel para projetos', 'Vinculável a projetos', 'Vinculavel a projetos'] },
   { key: 'forneceGeloColeta', header: 'Fornece gelo para coleta', aliases: ['Fornece gelo'] },
   { key: 'restricaoSegunda', header: 'Restrição às segundas-feiras', aliases: ['Restricao as segundas-feiras', 'Restrição segunda-feira'] },
   { key: 'restricaoAposFeriado', header: 'Restrição após feriado', aliases: ['Restricao apos feriado'] },
   { key: 'observacaoOperacional', header: 'Observação operacional', aliases: ['Observacao operacional'] }
 ];
+
+function courierExigeAnexoEnvio_(courier) {
+  courier = courier || {};
+  if (typeof courier.exigeAnexoEnvio === 'boolean') return courier.exigeAnexoEnvio;
+  var informado = normText_(courier.exigeAnexoEnvio);
+  if (informado === 'sim') return true;
+  if (informado === 'nao') return false;
+  return normText_(courier.nome || courier.courier).indexOf('dhl') === -1;
+}
 
 function courierDisponivelParaProjeto_(courier) {
   courier = courier || {};

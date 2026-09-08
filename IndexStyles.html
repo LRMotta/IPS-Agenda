@@ -374,12 +374,16 @@
     .courier-form-panel summary > .material-symbols-outlined:first-child { color: var(--primary); font-size: 18px; }
     .courier-panel-chevron { margin-left: auto; color: var(--text-faint); font-size: 20px; transition: transform .18s ease; }
     .courier-form-panel[open] .courier-panel-chevron { transform: rotate(180deg); }
-    .courier-form-panel-content { padding: 2px 16px 16px; border-top: 1px solid var(--primary-border); }
-    .courier-form-panel-content > .field:first-child { margin-top: 14px; }
+    .courier-form-panel-content { padding: 14px 16px 16px; border-top: 1px solid var(--primary-border); }
     .courier-section-separator { height: 1px; margin: 18px 0; background: var(--primary-border); }
     .courier-modal-actions { position: sticky; bottom: -22px; z-index: 2; display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 16px -22px -22px; padding: 12px 22px; border-top: 1px solid #e0e6f0; background: rgba(255,255,255,.97); }
     .courier-modal-actions .btn-save { width: auto; min-width: 176px; height: 40px; margin: 0; padding: 0 16px; border-radius: var(--r-sm); text-transform: none; letter-spacing: 0; }
     .courier-modal-actions .btn-txt { padding: 8px 12px; }
+    .courier-reminder-guidance { color: var(--text-muted); font-family: 'Roboto', sans-serif; font-size: 12px; line-height: 1.5; }
+    .courier-reminder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .courier-reminder-actions .ag-tb-btn { height: 38px; padding: 0 14px; font-size: 13px; font-weight: 600; }
+    .courier-reminder-actions .ag-tb-btn .material-symbols-outlined { font-size: 18px; }
+    #courierLembreteMonitorStatus { flex-basis: 100%; color: var(--text-muted); font-family: 'Roboto', sans-serif; font-size: 12px; line-height: 1.4; }
     .courier-list-card { overflow: hidden; }
     .courier-list { background: var(--surface); }
     .courier-list > .loading-row, .courier-list > .empty-row { min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-faint); font-size: 12px; }
@@ -402,7 +406,7 @@
     .courier-detail-section h3 { margin: 0 0 7px; color: var(--text-faint); font-size: 10px; font-weight: 700; letter-spacing: .65px; text-transform: uppercase; }
     .courier-detail-section p { margin: 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.5; overflow-wrap: anywhere; }
     .courier-detail-actions { display: flex; justify-content: flex-end; }
-    @media (max-width: 760px) { .courier-modal-actions { bottom: -22px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); margin: 14px -22px -22px; } .courier-modal-actions .btn-save { flex: 1; min-width: 0; } .courier-item > summary { grid-template-columns: 38px minmax(0,1fr) 22px; padding: 13px 14px; } .courier-summary-status { display: none; } .courier-detail { grid-template-columns: 1fr; padding: 14px; } }
+    @media (max-width: 760px) { .courier-modal-actions { bottom: -22px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); margin: 14px -22px -22px; } .courier-modal-actions .btn-save { flex: 1; min-width: 0; } .courier-reminder-actions .ag-tb-btn { flex: 1 1 100%; justify-content: center; } .courier-item > summary { grid-template-columns: 38px minmax(0,1fr) 22px; padding: 13px 14px; } .courier-summary-status { display: none; } .courier-detail { grid-template-columns: 1fr; padding: 14px; } }
     .field-label { display: block; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 5px; }
     .field-label[for="prestTipoServico"]::after { content: " *"; color: #e53935; }
     .f-input { display: block; width: 100%; height: 40px; padding: 0 12px; background: #fff; border: 1.5px solid var(--border); border-radius: var(--r-sm); font-family: 'Roboto', sans-serif; font-size: 13px; color: var(--text); outline: none; transition: border-color .18s, box-shadow .18s; }
@@ -1008,4 +1012,13 @@
     .jornada-ctms-config-status { min-height:18px; margin-top:8px; color:#b3261e; font-size:12px; text-align:right; }
     @media(max-width:760px) { .jornada-title-actions { width:100%; margin-left:0; justify-content:flex-start; } .jornada-ctms-toolbar { align-items:flex-start; flex-direction:column; } .jornada-ctms-toolbar-actions { width:100%; margin-left:0; justify-content:flex-start; flex-wrap:wrap; } .jornada-ctms-config>.jornada-ctms-toolbar>.jornada-ctms-activation { margin-left:0; } .jornada-ctms-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .jornada-ctms-filter { align-items:flex-start; flex-direction:column; } .jornada-ctms-columns,.jornada-ctms-config-grid { grid-template-columns:1fr; } .jornada-ctms-choice { grid-template-columns:1fr; } .jornada-ctms-approval-action { align-items:stretch; flex-direction:column; } .jornada-ctms-approval-action .ag-tb-btn { justify-content:center; } }
     @media(max-width:480px) { .jornada-ctms-card { grid-template-columns:1fr; } .jornada-ctms-card h4 { grid-column:auto; } .jornada-ctms-visit { align-items:flex-start; flex-direction:column; } }
+    .agenda-recibo-modal { max-width:780px; }
+    .agenda-recibo-loading { min-height:180px; display:flex; align-items:center; justify-content:center; gap:10px; color:var(--text-muted); font-size:13px; }
+    .agenda-recibo-note { display:flex; align-items:flex-start; gap:9px; margin-bottom:14px; padding:10px 12px; border:1px solid #c9daf4; border-radius:9px; background:#f7faff; color:#52647d; font-size:12px; line-height:1.45; }
+    .agenda-recibo-note .material-symbols-outlined { color:var(--primary); font-size:20px; }
+    .agenda-recibo-row { margin-top:12px; }
+    .agenda-recibo-bank-grid { display:grid; grid-template-columns:2fr 1fr 1.2fr 1.4fr; gap:12px; }
+    .agenda-recibo-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
+    .agenda-recibo-actions .btn-save { width:auto; min-width:220px; margin-top:0; padding:0 18px; }
+    @media(max-width:760px) { .agenda-recibo-bank-grid { grid-template-columns:1fr; } .agenda-recibo-actions { align-items:stretch; flex-direction:column-reverse; } .agenda-recibo-actions .btn-save { width:100%; min-width:0; } }
   </style>

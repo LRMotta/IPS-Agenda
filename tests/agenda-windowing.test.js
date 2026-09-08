@@ -1225,7 +1225,7 @@ test('descoberta readonly do ID de cadastro preserva Agenda legada sem escrever'
   assert.equal(writes, 0);
 });
 
-test('nova visita na mesma data exige confirmação e mantém saída sem salvar em destaque', () => {
+test('nova ou edição de visita na mesma data exige confirmação e mantém saída sem salvar em destaque', () => {
   const server = agendaServer({ CadastroRules_: runFile('CadastroRules.gs').CadastroRules_ });
   const existing = agendaRow(server, {
     id: 'EVT-EXISTENTE', data: new Date(2026, 7, 28), tipo: 'Visita',
@@ -1246,6 +1246,9 @@ test('nova visita na mesma data exige confirmação e mantém saída sem salvar 
   assert.equal(server.agendaVisitaCriadaNaMesmaData_(agenda, {
     tipo: 'Consulta', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
   }, new Date(2026, 7, 28)), null);
+  assert.equal(server.agendaVisitaCriadaNaMesmaData_(agenda, {
+    id: 'EVT-EXISTENTE', tipo: 'Visita', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28)), null, 'a edição não deve alertar sobre o próprio evento');
 
   const client = readProjectFile('IndexAgendaScripts.html');
   const serverSource = readProjectFile('WebApp.gs');
@@ -1255,6 +1258,9 @@ test('nova visita na mesma data exige confirmação e mantém saída sem salvar 
     assert.match(save, /agendaVisitaCriadaNaMesmaData_\(agenda, dados, d\)/);
     assert.match(save, /dados\.salvarVisitaMesmaDataConfirmado !== true/);
   });
+  const update = functionBody(serverSource, 'atualizarAgendaEventoCompleto');
+  assert.match(update, /agendaVisitaCriadaNaMesmaData_\(agenda, dados, d\)/);
+  assert.match(update, /dados\.salvarVisitaMesmaDataConfirmado !== true/);
   assert.match(functionBody(client, 'salvarAgendaEvento'), /payload\.salvarVisitaMesmaDataConfirmado = true/);
   assert.match(functionBody(client, 'salvarAgendaEvento'), /res && res\.visitaMesmaData/);
   assert.match(markup, /id="btnAgendaSalvarVisitaMesmaData"[^>]*>Salvar mesmo assim<\/button>/);

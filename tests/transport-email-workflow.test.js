@@ -138,6 +138,52 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
   assert.match(pendentes[0].motivo, /sem documentação anexada/);
 });
 
+test('DHL sem anexo confirma o envio, promove para Agendado e sai das pendencias', () => {
+  const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
+  const book = new FakeSpreadsheet({});
+  const agenda = new FakeSheet('Agenda', [
+    ['Status evento', 'Courier', 'Status courier'],
+    ['Agendado', 'DHL', 'Pendente']
+  ]);
+  const server = transportServer({
+    book,
+    AgendaServerRules_: rules,
+    AGENDA_CFG: {
+      col: { status: 1 },
+      idx: {
+        c1: { nome: 1, status: 2 },
+        c2: { nome: 3, status: 4 },
+        c3: { nome: 5, status: 6 }
+      }
+    },
+    getAgendaSheet_: () => agenda,
+    encontrarLinhaPorId: () => 2,
+    codexWithDocumentLock_: (_label, fn) => fn(),
+    GmailApp: {
+      search: () => [{
+        getMessages: () => [{
+          getSubject: () => 'Agendamento DHL',
+          getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-DHL-T1',
+          getDate: () => new Date(Date.now() + 60 * 1000),
+          getId: () => 'MSG-DHL',
+          getAttachments: () => []
+        }]
+      }]
+    }
+  });
+  server.transporteRegistrarDocumentacaoGerada_({
+    agendaId: 'EVT-DHL', slot: '1', courier: 'DHL', rascunhoOk: true
+  });
+
+  const result = server.transporteMonitorarEnviosPorEmail_();
+
+  assert.equal(result.enviados, 1);
+  assert.equal(result.semAnexo, 0);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+  assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm instanceof Date);
+  assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date(Date.now() + 61 * 60 * 1000)).length, 0);
+});
+
 test('email com anexo continua elegivel para nova tentativa se a Agenda divergir', () => {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});

@@ -127,8 +127,8 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
     [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Ativo', '', '', '']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
-  const payload = { id: 1, nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', acompanhantes: [
-    { nome: 'Maria Teste', cpf: '12345678901', banco: 'Banco A', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '98765432100', numero: '001', cep: '95000000', estado: 'rs' },
+  const payload = { id: 1, nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', tipoConta: 'Conta poupança', acompanhantes: [
+    { nome: 'Maria Teste', cpf: '12345678901', banco: 'Banco A', tipoConta: 'corrente', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '98765432100', numero: '001', cep: '95000000', estado: 'rs' },
     { nome: 'João Teste', banco: 'Banco B' }
   ] };
   context.salvarDadosParticipante(payload);
@@ -139,14 +139,17 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   assert.equal(saved[0].cpf, '123.456.789-01');
   assert.equal(saved[0].cpfTitular, '987.654.321-00');
   assert.equal(saved[0].agencia, '0001');
+  assert.equal(saved[0].tipoConta, 'Conta corrente');
   assert.equal(saved[0].contaCorrente, '000023-4');
   assert.equal(saved[0].cep, '95000-000');
   assert.equal(saved[0].estado, 'RS');
   assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Banco')], 'Banco Participante');
+  assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Tipo de conta')], 'Conta poupança');
   const originalId = saved[0].id;
-  const oldClient = { ...payload }; delete oldClient.acompanhantes;
+  const oldClient = { ...payload }; delete oldClient.acompanhantes; delete oldClient.tipoConta;
   context.salvarDadosParticipante(oldClient);
   assert.equal(JSON.parse(sheet.rows[1][col]).length, 2);
+  assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Tipo de conta')], 'Conta poupança');
   context.salvarDadosParticipante({ ...payload, acompanhantes: [{ ...saved[0], banco: 'Banco C' }] });
   saved = JSON.parse(sheet.rows[1][col]);
   assert.equal(saved.length, 1);
@@ -171,13 +174,22 @@ test('acompanhantes invalidos bloqueiam toda escrita, inclusive criacao de colun
   for (const acompanhantes of [
     [{ nome: '' }], [{ nome: 'Maria', cpf: '123' }], [{ nome: 'Maria', cpfTitular: 'abc12345678901' }],
     [{ nome: 'Maria', id: 'ACO-outro-participante' }], [{ nome: 'Maria', estado: 'ZZ' }],
-    [{ nome: 'Maria', cep: '123' }], [{ nome: 'Maria', cpf: '12345678901' }, { nome: 'Ana', cpf: '123.456.789-01' }], {}
+    [{ nome: 'Maria', cep: '123' }], [{ nome: 'Maria', tipoConta: 'Conta salário' }], [{ nome: 'Maria', cpf: '12345678901' }, { nome: 'Ana', cpf: '123.456.789-01' }], {}
   ]) {
     const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
     const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
     assert.throws(() => context.salvarDadosParticipante({ nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', acompanhantes }));
     assert.equal(sheet.writes, 0);
   }
+});
+
+test('tipo de conta invalido do participante bloqueia escrita', () => {
+  const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+  assert.throws(() => context.salvarDadosParticipante({
+    nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', tipoConta: 'Conta salário'
+  }), /Tipo de conta inválido do participante/);
+  assert.equal(sheet.writes, 0);
 });
 
 test('consulta do schema de participante nao cria a coluna ID Pessoa', () => {
@@ -230,6 +242,29 @@ test('schema legado de projetos continua salvavel sem criar campos opcionais', (
   assert.equal(sheet.rows[0].indexOf('Temperaturas courier principal'), -1);
   assert.equal(sheet.rows[0].indexOf('Base padrão do cronograma SoA'), -1);
   assert.equal(sheet.rows[0].indexOf('CTMS ativo na Jornada'), -1);
+  assert.equal(sheet.rows[0].indexOf('Ressarcimento padrão participante'), -1);
+  assert.equal(sheet.rows[0].indexOf('Ressarcimento padrão acompanhante'), -1);
+});
+
+test('projeto grava ressarcimentos padrão opcionais e valida os valores antes de escrever', () => {
+  const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+
+  assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, {
+    ressarcimentoPadraoParticipante: 'R$ 125,50',
+    ressarcimentoPadraoAcompanhante: '80,00'
+  })), 'Projeto cadastrado com sucesso!');
+  const participanteCol = sheet.rows[0].indexOf('Ressarcimento padrão participante');
+  const acompanhanteCol = sheet.rows[0].indexOf('Ressarcimento padrão acompanhante');
+  assert.equal(sheet.rows[1][participanteCol], 125.5);
+  assert.equal(sheet.rows[1][acompanhanteCol], 80);
+
+  const invalidSheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo']]);
+  const invalid = cadastroContext(new FakeSpreadsheet({ Projetos: invalidSheet })).context;
+  assert.throws(() => invalid.salvarDadosProjeto(Object.assign({}, validProject, {
+    ressarcimentoPadraoParticipante: 'cem reais'
+  })), /ressarcimento padrão do participante/);
+  assert.equal(invalidSheet.writes, 0);
 });
 
 test('projeto grava base padrão e ativação CTMS em colunas opcionais e valida o valor', () => {
@@ -324,12 +359,13 @@ test('courier grava regras operacionais em cabecalhos opcionais sem exigir migra
   const context = courierContext(sheet);
 
   assert.equal(context.salvarCourier({
-    id: 'COU-1', nome: 'Marken', disponivelProjetos: 'Não', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim',
+    id: 'COU-1', nome: 'Marken', exigeAnexoEnvio: 'Sim', disponivelProjetos: 'Não', forneceGeloColeta: 'Sim', restricaoSegunda: 'Sim',
     restricaoAposFeriado: 'Sim', observacaoOperacional: 'Confirmar disponibilidade.'
   }), 'Courier atualizada com sucesso.');
 
   const atualizados = sheet.rows[0];
   const row = sheet.rows[1];
+  assert.equal(row[atualizados.indexOf('Exige anexo para confirmar envio')], 'Sim');
   assert.equal(row[atualizados.indexOf('Disponível para projetos')], 'Não');
   assert.equal(row[atualizados.indexOf('Fornece gelo para coleta')], 'Sim');
   assert.equal(row[atualizados.indexOf('Restrição às segundas-feiras')], 'Sim');
@@ -344,6 +380,15 @@ test('classificador de courier usa metadado e normaliza o padrao da etapa Pinex'
   assert.equal(context.courierDisponivelParaProjeto_({ nome: '  PINEX (AGENDAMENTO)  ' }), false);
   assert.equal(context.courierDisponivelParaProjeto_({ nome: 'Pinex (Agendamento)', disponivelProjetos: 'Sim' }), true);
   assert.equal(context.courierDisponivelParaProjeto_({ nome: 'Marken', disponivelProjetos: 'Não' }), false);
+});
+
+test('courier exige anexo por padrao, exceto DHL, e aceita configuracao explicita', () => {
+  const context = courierContext(new FakeSheet('Courier', [['ID_Courier', 'Courier']]));
+
+  assert.equal(context.courierExigeAnexoEnvio_({ nome: 'DHL Express' }), false);
+  assert.equal(context.courierExigeAnexoEnvio_({ nome: 'Marken' }), true);
+  assert.equal(context.courierExigeAnexoEnvio_({ nome: 'DHL', exigeAnexoEnvio: 'Sim' }), true);
+  assert.equal(context.courierExigeAnexoEnvio_({ nome: 'OCASA', exigeAnexoEnvio: 'Não' }), false);
 });
 
 test('cliente legado atualiza courier sem criar colunas operacionais', () => {
@@ -381,7 +426,7 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   const payload = {
     nome: 'Pessoa Nova', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo',
     rua: 'Rua das Flores', numero: '123', cidade: 'Caxias do Sul', estado: 'RS', cep: '95000-000',
-    banco: 'Banco de Teste', agencia: '001', contaCorrente: '12345-6',
+    banco: 'Banco de Teste', tipoConta: 'Conta corrente', agencia: '001', contaCorrente: '12345-6',
     titularConta: 'Pessoa Nova', cpfTitular: '111.222.333-44'
   };
 
@@ -389,10 +434,12 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   const headers = sheet.rows[0];
   const created = sheet.rows[2];
   assert.equal(headers[12], 'Rua');
-  assert.equal(headers[21], 'CPF do Titular');
-  assert.equal(headers[22], 'ID Pessoa');
+  assert.equal(headers[18], 'Tipo de conta');
+  assert.equal(headers[22], 'CPF do Titular');
+  assert.equal(headers[23], 'ID Pessoa');
   assert.equal(created[headers.indexOf('Rua')], 'Rua das Flores');
   assert.equal(created[headers.indexOf('Banco')], 'Banco de Teste');
+  assert.equal(created[headers.indexOf('Tipo de conta')], 'Conta corrente');
   assert.equal(created[headers.indexOf('CPF do Titular')], '111.222.333-44');
   assert.match(created[headers.indexOf('ID Pessoa')], /^PES-/);
 });

@@ -192,6 +192,23 @@
 
       <div class="form-section">
         <div class="section-label">
+          <span class="material-symbols-outlined">payments</span> Ressarcimento padrão
+        </div>
+        <div class="field-help" style="margin-bottom:14px">Valores opcionais de referência para o participante e seu acompanhante.</div>
+        <div class="field-row cols-2">
+          <div>
+            <label class="field-label" for="pRessarcimentoParticipante">Participante</label>
+            <input type="text" id="pRessarcimentoParticipante" class="f-input" inputmode="decimal" placeholder="R$ 0,00" onblur="formatarRessarcimentoProjetoInput(this)">
+          </div>
+          <div>
+            <label class="field-label" for="pRessarcimentoAcompanhante">Acompanhante</label>
+            <input type="text" id="pRessarcimentoAcompanhante" class="f-input" inputmode="decimal" placeholder="R$ 0,00" onblur="formatarRessarcimentoProjetoInput(this)">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-label">
           <span class="material-symbols-outlined">local_shipping</span> Couriers do projeto
         </div>
         <div class="field-help" style="margin-bottom:14px">Vínculos opcionais. Cada courier pode atender uma ou mais temperaturas.</div>
@@ -508,15 +525,23 @@
             <select id="ptBanco" class="f-input f-select"><option value="">— Selecione —</option></select>
           </div>
           <div>
+            <label class="field-label" for="ptTipoConta">Tipo de conta</label>
+            <select id="ptTipoConta" class="f-input f-select">
+              <option value="">— Selecione —</option>
+              <option value="Conta corrente">Conta corrente</option>
+              <option value="Conta poupança">Conta poupança</option>
+            </select>
+          </div>
+          <div>
             <label class="field-label" for="ptAgencia">Agência</label>
             <input type="text" id="ptAgencia" class="f-input" placeholder="Agência">
           </div>
           <div>
-            <label class="field-label" for="ptContaCorrente">Conta corrente</label>
-            <input type="text" id="ptContaCorrente" class="f-input" placeholder="Conta corrente">
+            <label class="field-label" for="ptContaCorrente">Número da conta</label>
+            <input type="text" id="ptContaCorrente" class="f-input" placeholder="Conta com dígito">
           </div>
           <div>
-            <label class="field-label" for="ptTitularConta">Titular da Conta Corrente</label>
+            <label class="field-label" for="ptTitularConta">Titular da conta</label>
             <input type="text" id="ptTitularConta" class="f-input" placeholder="Nome do titular">
           </div>
           <div>

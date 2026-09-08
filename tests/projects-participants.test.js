@@ -240,6 +240,9 @@ test('participante oferece endereco, dados bancarios opcionais e bancos configur
   assert.match(block, /id="ptCep"/);
   assert.match(block, /> Dados Bancários<\/div>/);
   assert.match(block, /id="ptBanco"/);
+  assert.match(block, /id="ptTipoConta"/);
+  assert.match(block, /value="Conta corrente"/);
+  assert.match(block, /value="Conta poupança"/);
   assert.match(block, /id="ptAgencia"/);
   assert.match(block, /id="ptContaCorrente"/);
   assert.match(block, /id="ptTitularConta"/);
@@ -248,9 +251,12 @@ test('participante oferece endereco, dados bancarios opcionais e bancos configur
   assert.match(client, /Participantes: \['Status', 'Bancos'\]/);
   assert.match(client, /valores = valores\.concat\(grupo \? \(catalogoBloco\[grupo\] \|\| \[\]\) : Object\.keys\(catalogoBloco\)\)/);
   assert.match(client, /banco: document\.getElementById\('ptBanco'\)\.value/);
+  assert.match(client, /tipoConta: document\.getElementById\('ptTipoConta'\)\.value/);
+  assert.match(client, /\['Conta corrente', 'Conta poupança'\]/);
   assert.match(server, /bancos: getConfigValues_\('Participantes', 'Bancos', \[\]\)/);
   assert.match(server, /function participanteColumnMap_\(sh, createMissing\)/);
   assert.match(server, /function gravarParticipanteCamposNovos_/);
+  assert.match(server, /\['tipoConta', 'Tipo de conta'\]/);
   assert.match(server, /\['idPessoa', 'ID Pessoa'\]/);
   assert.match(server, /function participanteGerarPessoaId_/);
   assert.match(server, /codexWithDocumentLock_\('salvarDadosParticipante'/);
@@ -287,6 +293,23 @@ test('modal de projeto amplia a area e posiciona o titulo na identificacao do pr
   assert.ok(identificacao < titulo && titulo < codigo);
   assert.ok(regulatorio > titulo);
   assert.equal(block.match(/id="pTituloCompleto"/g).length, 1);
+});
+
+test('modal de projeto oferece ressarcimentos padrão para participante e acompanhante', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const start = modal.indexOf('<div class="modal-overlay" id="modalProjeto"');
+  const end = modal.indexOf('<div class="modal-overlay" id="modalBracoProjeto"', start);
+  const block = modal.slice(start, end);
+
+  assert.match(block, /Ressarcimento padrão/);
+  assert.match(block, /id="pRessarcimentoParticipante"/);
+  assert.match(block, /id="pRessarcimentoAcompanhante"/);
+  assert.match(client, /ressarcimentoPadraoParticipante/);
+  assert.match(client, /formatarRessarcimentoProjeto/);
+  assert.match(server, /projetoRessarcimentoColumnMap_/);
+  assert.match(server, /normalizarProjetoRessarcimento_/);
 });
 
 test('projeto oferece tres couriers opcionais por ID com finalidade de temperatura', () => {
@@ -331,12 +354,15 @@ test('cadastro de courier oferece regras operacionais opcionais de gelo', () => 
 
   assert.match(modal, /Regras operacionais de gelo/);
   assert.match(modal, /id="courierDisponivelProjetos"/);
+  assert.match(modal, /id="courierExigeAnexoEnvio"/);
   assert.match(modal, /id="courierForneceGeloColeta"/);
   assert.match(modal, /id="courierRestricaoSegunda"/);
   assert.match(modal, /id="courierRestricaoAposFeriado"/);
   assert.match(modal, /id="courierObservacaoOperacional"/);
   assert.match(client, /forneceGeloColeta: document\.getElementById\('courierForneceGeloColeta'\)\.value/);
   assert.match(client, /disponivelProjetos: document\.getElementById\('courierDisponivelProjetos'\)\.value/);
+  assert.match(client, /exigeAnexoEnvio: document\.getElementById\('courierExigeAnexoEnvio'\)\.value/);
+  assert.match(server, /Exige anexo para confirmar envio/);
   assert.match(server, /Disponível para projetos/);
   assert.match(server, /Fornece gelo para coleta/);
   assert.match(server, /Restrição às segundas-feiras/);

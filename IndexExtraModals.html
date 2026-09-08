@@ -259,6 +259,15 @@
             <label class="field-label" for="courierStatusConfirmacao">Status ao confirmar</label>
             <select id="courierStatusConfirmacao" class="f-input"></select>
           </div>
+          <div class="field">
+            <label class="field-label" for="courierExigeAnexoEnvio">Exigir anexo para confirmar o envio</label>
+            <select id="courierExigeAnexoEnvio" class="f-input">
+              <option value="">Padrão automático</option>
+              <option value="Sim">Sim</option>
+              <option value="Não">Não</option>
+            </select>
+            <div class="field-hint">O padrão automático é “Não” para DHL e “Sim” para as demais couriers.</div>
+          </div>
           <div class="field" style="grid-column:1/-1">
             <label class="field-label" for="courierTextoConfirmacao">Texto de confirmação</label>
             <textarea id="courierTextoConfirmacao" class="f-input" rows="3" placeholder="Confirmamos o agendamento da retirada conforme informações abaixo."></textarea>
@@ -268,8 +277,12 @@
           <div class="field"><label class="field-label" for="courierLembreteHoras">Enviar após (horas úteis)</label><input id="courierLembreteHoras" class="f-input" type="number" min="0.25" max="80" step="0.25" placeholder="2"></div>
           <div class="field"><label class="field-label" for="courierLembreteLimite">Horário-limite no dia útil anterior</label><input id="courierLembreteLimite" class="f-input" type="time" min="08:00" max="17:59"></div>
           <div class="field" style="grid-column:1/-1"><label class="field-label" for="courierLembreteTexto">Texto da cobrança (opcional)</label><textarea id="courierLembreteTexto" class="f-input" rows="5" maxlength="4000" placeholder="Deixe vazio para usar o modelo padrão. Campos disponíveis: {data}, {transporte}, {referencia}, {awb}."></textarea></div>
-          <div class="field-hint" style="grid-column:1/-1">Uma cobrança por transporte, na conversa original. Horas úteis: segunda a sexta, 08h–18h, exceto feriados da Agenda (São Paulo). Prazo vazio mantém o envio desativado. O limite D-1 antecipa o prazo, respeitando ao menos 1 hora útil após o envio. Apenas documentos gerados após esta atualização, sem alterações posteriores e com conversa identificada. Simulação não envia e-mails.</div>
-          <div class="field" style="grid-column:1/-1"><button type="button" class="btn-secondary" onclick="configurarMonitorLembretesCourierFront(true)">Ativar monitor nesta conta</button> <button type="button" class="btn-secondary" onclick="configurarMonitorLembretesCourierFront(false)">Pausar todas as cobranças</button><span id="courierLembreteMonitorStatus" role="status"></span></div>
+          <div class="courier-reminder-guidance" style="grid-column:1/-1">Uma cobrança por transporte, na conversa original. Horas úteis: segunda a sexta, 08h–18h, exceto feriados da Agenda (São Paulo). Prazo vazio mantém o envio desativado. O limite D-1 antecipa o prazo, respeitando ao menos 1 hora útil após o envio. Apenas documentos gerados após esta atualização, sem alterações posteriores e com conversa identificada. Simulação não envia e-mails.</div>
+          <div class="courier-reminder-actions" style="grid-column:1/-1">
+            <button type="button" class="ag-tb-btn primary" onclick="configurarMonitorLembretesCourierFront(true)"><span class="material-symbols-outlined">notifications_active</span>Ativar monitor nesta conta</button>
+            <button type="button" class="ag-tb-btn" onclick="configurarMonitorLembretesCourierFront(false)"><span class="material-symbols-outlined">pause_circle</span>Pausar todas as cobranças</button>
+            <span id="courierLembreteMonitorStatus" role="status"></span>
+          </div>
         </div>
         </div>
       </details>
@@ -317,6 +330,59 @@
         <button class="btn-save" id="btnSalvarCourier" onclick="salvarCourierApp()"><span class="material-symbols-outlined">save</span> Salvar cadastro</button>
       </div>
       <div class="status-msg" id="statusCourier"></div>
+    </div>
+  </div>
+</div>
+
+<!-- RECIBO DE RESSARCIMENTO -->
+<div class="modal-overlay" id="modalAgendaRecibo" onclick="fecharModalSeClicouFora(event,'modalAgendaRecibo')">
+  <div class="modal-box agenda-recibo-modal">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">receipt_long</span></div>
+      <div><div class="modal-header-title">GERAR RECIBO</div><div class="modal-header-sub" id="agendaReciboContexto">Ressarcimento de alimentação e transporte</div></div>
+      <button class="modal-close" type="button" onclick="fecharOverlay('modalAgendaRecibo')"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="modal-body">
+      <div id="agendaReciboLoading" class="agenda-recibo-loading"><span class="spinner"></span>Carregando dados do recibo...</div>
+      <div id="agendaReciboForm" style="display:none">
+        <div class="agenda-recibo-note"><span class="material-symbols-outlined">edit_note</span><span>Revise os dados antes de imprimir. Alterações feitas aqui valem somente para este recibo.</span></div>
+        <div class="form-section">
+          <div class="section-label"><span class="material-symbols-outlined">person</span>Beneficiário</div>
+          <div class="field-row cols-2">
+            <div class="field"><label class="field-label" for="agendaReciboBeneficiario">Recebedor</label><select id="agendaReciboBeneficiario" class="f-input f-select" onchange="agendaReciboSelecionarBeneficiario()"></select></div>
+            <div class="field"><label class="field-label" for="agendaReciboValor">Valor do ressarcimento</label><input id="agendaReciboValor" class="f-input" type="text" inputmode="decimal" placeholder="R$ 0,00" onblur="agendaReciboFormatarValorInput(this)"></div>
+          </div>
+          <div class="field-row cols-2 agenda-recibo-row">
+            <div class="field"><label class="field-label" for="agendaReciboCpf">CPF do beneficiário</label><input id="agendaReciboCpf" class="f-input" type="text"></div>
+            <div class="field"><label class="field-label" for="agendaReciboTitular">Titular da conta</label><input id="agendaReciboTitular" class="f-input" type="text"></div>
+          </div>
+          <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboEndereco">Endereço do beneficiário</label><input id="agendaReciboEndereco" class="f-input" type="text"></div>
+        </div>
+        <div class="form-section">
+          <div class="section-label"><span class="material-symbols-outlined">account_balance</span>Dados bancários</div>
+          <div class="agenda-recibo-bank-grid">
+            <div class="field"><label class="field-label" for="agendaReciboBanco">Banco</label><input id="agendaReciboBanco" class="f-input" type="text"></div>
+            <div class="field"><label class="field-label" for="agendaReciboTipoConta">Tipo de conta</label><select id="agendaReciboTipoConta" class="f-input f-select"><option value="">— Selecione —</option><option value="Conta corrente">Conta corrente</option><option value="Conta poupança">Conta poupança</option></select></div>
+            <div class="field"><label class="field-label" for="agendaReciboAgencia">Agência</label><input id="agendaReciboAgencia" class="f-input" type="text"></div>
+            <div class="field"><label class="field-label" for="agendaReciboConta">Número da conta</label><input id="agendaReciboConta" class="f-input" type="text"></div>
+            <div class="field"><label class="field-label" for="agendaReciboCpfTitular">CPF do titular</label><input id="agendaReciboCpfTitular" class="f-input" type="text"></div>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="section-label"><span class="material-symbols-outlined">event</span>Datas</div>
+          <div class="field-row cols-2">
+            <div class="field"><label class="field-label" for="agendaReciboDataVisita">Data da visita</label><input id="agendaReciboDataVisita" class="f-input" type="date"></div>
+            <div class="field"><label class="field-label" for="agendaReciboDataEcrf">Preenchimento da eCRF</label><input id="agendaReciboDataEcrf" class="f-input" type="date"></div>
+          </div>
+          <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboDataEmissao">Data de emissão</label><input id="agendaReciboDataEmissao" class="f-input" type="date"></div>
+          <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboCoordenador">Coordenador(a) de estudos</label><input id="agendaReciboCoordenador" class="f-input" type="text" placeholder="Obtido do cadastro do projeto"></div>
+        </div>
+        <div class="agenda-recibo-actions">
+          <button type="button" class="btn-txt" onclick="fecharOverlay('modalAgendaRecibo')">Cancelar</button>
+          <button type="button" class="btn-save" id="btnImprimirAgendaRecibo" onclick="imprimirAgendaRecibo()"><span class="material-symbols-outlined">print</span>Imprimir / salvar PDF</button>
+        </div>
+        <div class="status-msg" id="agendaReciboStatus"></div>
+      </div>
     </div>
   </div>
 </div>
