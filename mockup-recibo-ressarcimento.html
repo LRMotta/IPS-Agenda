@@ -1,0 +1,163 @@
+<div id="ips-receipt-mockup">
+  <style>
+    #ips-receipt-mockup {
+      --ips-blue: #1266f1;
+      --ips-blue-dark: #0b3f8a;
+      --ips-ink: #1f2937;
+      --ips-muted: #64748b;
+      --ips-line: #dbe3f0;
+      --ips-soft: #f7faff;
+      font-family: Roboto, Arial, sans-serif;
+      color: var(--ips-ink);
+      width: 100%;
+    }
+    #ips-receipt-mockup .ips-preview-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    #ips-receipt-mockup .ips-preview-controls label { color: light-dark(#52647d, #cbd5e1); font-weight: 500; }
+    #ips-receipt-mockup .ips-preview-controls select { min-width: 230px; }
+    #ips-receipt-mockup .ips-paper {
+      box-sizing: border-box;
+      max-width: 700px;
+      min-height: 900px;
+      margin: 0 auto;
+      padding: 40px 48px 52px;
+      background: #ffffff;
+      border: 1px solid #dbe3f0;
+      box-shadow: 0 14px 40px rgba(15, 39, 75, .12);
+      color: var(--ips-ink);
+    }
+    #ips-receipt-mockup .ips-head {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--ips-blue);
+    }
+    #ips-receipt-mockup .ips-logo { width: 150px; height: auto; object-fit: contain; }
+    #ips-receipt-mockup .ips-copy { margin-left: auto; color: var(--ips-blue-dark); font-weight: 500; text-align: right; }
+    #ips-receipt-mockup .ips-brand strong { display: block; color: var(--ips-blue-dark); }
+    #ips-receipt-mockup .ips-brand span { color: var(--ips-muted); }
+    #ips-receipt-mockup .ips-title { margin: 36px 0 18px; text-align: center; color: var(--ips-blue-dark); letter-spacing: .08em; }
+    #ips-receipt-mockup .ips-value {
+      width: max-content;
+      margin: 0 auto 28px;
+      padding: 10px 24px;
+      border: 2px solid var(--ips-blue);
+      border-radius: 8px;
+      color: var(--ips-blue-dark);
+      font-weight: 500;
+    }
+    #ips-receipt-mockup .ips-statement { margin: 0; text-align: justify; line-height: 1.8; }
+    #ips-receipt-mockup .ips-meta,
+    #ips-receipt-mockup .ips-bank {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border: 1px solid var(--ips-line);
+      border-radius: 7px;
+      line-height: 1.65;
+    }
+    #ips-receipt-mockup .ips-bank { background: var(--ips-soft); }
+    #ips-receipt-mockup .ips-bank-title { display: flex; align-items: center; gap: 7px; color: var(--ips-blue-dark); }
+    #ips-receipt-mockup .ips-bank-title i { color: var(--ips-blue); }
+    #ips-receipt-mockup .ips-place { margin-top: 34px; text-align: center; }
+    #ips-receipt-mockup .ips-signatures { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .7fr); gap: 42px; align-items: end; margin-top: 62px; }
+    #ips-receipt-mockup .ips-signature { width: 100%; text-align: center; }
+    #ips-receipt-mockup .ips-signature-line { border-top: 1px solid var(--ips-ink); margin-bottom: 8px; }
+    #ips-receipt-mockup .ips-signature strong,
+    #ips-receipt-mockup .ips-signature span { display: block; }
+    #ips-receipt-mockup .ips-signature span { margin-top: 3px; color: var(--ips-muted); }
+    #ips-receipt-mockup .ips-demo-note { margin-top: 28px; text-align: center; color: var(--ips-muted); }
+    @media (max-width: 600px) {
+      #ips-receipt-mockup .ips-preview-controls { align-items: stretch; flex-direction: column; }
+      #ips-receipt-mockup .ips-preview-controls select { width: 100%; min-width: 0; }
+      #ips-receipt-mockup .ips-paper { min-height: 0; padding: 28px 22px 38px; }
+      #ips-receipt-mockup .ips-head { align-items: flex-start; }
+      #ips-receipt-mockup .ips-signatures { grid-template-columns: 1fr; gap: 46px; }
+    }
+  </style>
+
+  <div class="ips-preview-controls">
+    <label class="form-label" for="ips-receipt-person">Beneficiário</label>
+    <select class="form-select" id="ips-receipt-person">
+      <option value="participant">Participante</option>
+      <option value="companion">Acompanhante</option>
+    </select>
+    <label class="form-label" for="ips-receipt-copy">Via</label>
+    <select class="form-select" id="ips-receipt-copy">
+      <option value="1ª via — Financeiro UCS">1ª via — Financeiro UCS</option>
+      <option value="2ª via — IPS/UCS">2ª via — IPS/UCS</option>
+      <option value="3ª via — Participante/Acompanhante">3ª via — Participante/Acompanhante</option>
+    </select>
+  </div>
+
+  <article class="ips-paper" aria-label="Mockup do recibo de ressarcimento">
+    <header class="ips-head">
+      <img class="ips-logo" alt="Instituto de Pesquisas em Saúde" src="data:image/png;base64,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">
+      <div class="ips-copy" id="ips-receipt-copy-label">1ª via — Financeiro UCS</div>
+    </header>
+
+    <h2 class="ips-title">RECIBO DE RESSARCIMENTO</h2>
+    <div class="ips-value tabular-nums" id="ips-receipt-value">R$ 150,00</div>
+
+    <p class="ips-statement">Eu, <strong id="ips-receipt-name">Maria da Silva</strong><span id="ips-receipt-private-cpf">, CPF <strong id="ips-receipt-cpf">123.456.789-00</strong></span>, declaro ter recebido do Instituto de Pesquisas em Saúde o valor de <strong id="ips-receipt-body-value">R$ 150,00 (cento e cinquenta reais)</strong>, referente ao ressarcimento de despesas com alimentação e transporte relacionadas à visita <strong>Visita 4</strong> do projeto <strong>ESTUDO EXEMPLO</strong>, realizada em <strong>08/09/2026</strong>.</p>
+
+    <div class="ips-meta"><strong>Participante do estudo:</strong> <span id="ips-receipt-participant">Maria da Silva · ID 001-004</span><br><strong>eCRF preenchida em:</strong> 08/09/2026</div>
+    <div class="ips-meta" id="ips-receipt-address"><strong>Endereço do beneficiário:</strong> Rua Exemplo, 100, Caxias do Sul, RS, 95000-000</div>
+
+    <div class="ips-bank" id="ips-receipt-bank-box">
+      <div class="ips-bank-title"><i data-lucide="landmark" aria-hidden="true"></i><strong>Dados bancários</strong></div>
+      <p style="margin:8px 0 10px">Autorizo o crédito na conta bancária abaixo.</p>
+      <div id="ips-receipt-holder">Maria da Silva · CPF 123.456.789-00</div>
+      <div id="ips-receipt-bank">Banco do Brasil · Conta corrente · Agência 1234 · Conta 56789-0</div>
+    </div>
+
+    <div class="ips-place">Caxias do Sul, 08/09/2026.</div>
+    <div class="ips-signatures">
+      <div class="ips-signature"><div class="ips-signature-line"></div><strong id="ips-receipt-signature">Maria da Silva</strong><span id="ips-receipt-role">Participante</span></div>
+      <div class="ips-signature"><div class="ips-signature-line"></div><strong>Ana Souza</strong><span>Rubrica da coordenadora de estudos</span></div>
+    </div>
+    <div class="ips-demo-note text-small">Dados fictícios para demonstração</div>
+  </article>
+
+  <script>
+    (function () {
+      const root = document.getElementById('ips-receipt-mockup');
+      const select = document.getElementById('ips-receipt-person');
+      const copySelect = document.getElementById('ips-receipt-copy');
+      const examples = {
+        participant: { name: 'Maria da Silva', cpf: '123.456.789-00', value: 'R$ 150,00', bodyValue: 'R$ 150,00 (cento e cinquenta reais)', holder: 'Maria da Silva · CPF 123.456.789-00', bank: 'Banco do Brasil · Conta corrente · Agência 1234 · Conta 56789-0', role: 'Participante' },
+        companion: { name: 'João da Silva', cpf: '987.654.321-00', value: 'R$ 100,00', bodyValue: 'R$ 100,00 (cem reais)', holder: 'João da Silva · CPF 987.654.321-00', bank: 'Caixa Econômica Federal · Conta poupança · Agência 4321 · Conta 98765-1', role: 'Acompanhante' }
+      };
+      function render() {
+        const item = examples[select.value] || examples.participant;
+        const privateCopy = copySelect.value !== '2ª via — IPS/UCS';
+        root.querySelector('#ips-receipt-name').textContent = privateCopy ? item.name : 'participante nº 001-004';
+        root.querySelector('#ips-receipt-cpf').textContent = item.cpf;
+        root.querySelector('#ips-receipt-value').textContent = item.value;
+        root.querySelector('#ips-receipt-body-value').textContent = item.bodyValue;
+        root.querySelector('#ips-receipt-holder').textContent = item.holder;
+        root.querySelector('#ips-receipt-bank').textContent = item.bank;
+        root.querySelector('#ips-receipt-private-cpf').hidden = !privateCopy;
+        root.querySelector('#ips-receipt-address').hidden = !privateCopy;
+        root.querySelector('#ips-receipt-bank-box').hidden = !privateCopy;
+        root.querySelector('#ips-receipt-participant').textContent = privateCopy ? 'Maria da Silva · ID 001-004' : 'nº 001-004';
+        root.querySelector('#ips-receipt-signature').textContent = privateCopy ? item.name : 'Participante nº 001-004';
+        root.querySelector('#ips-receipt-role').textContent = privateCopy ? item.role : '';
+        root.querySelector('#ips-receipt-copy-label').textContent = copySelect.value;
+      }
+      select.addEventListener('change', render);
+      copySelect.addEventListener('change', render);
+      render();
+      if (globalThis.Tweak) {
+        const state = { beneficiary: 'participant' };
+        const tweak = new Tweak({ container: root, onChange: function () { select.value = state.beneficiary; render(); } });
+        tweak.addSelect(state, 'beneficiary', { label: 'Beneficiário', options: [{ label: 'Participante', value: 'participant' }, { label: 'Acompanhante', value: 'companion' }], reference: 'receipt.beneficiary' });
+      }
+    }());
+  </script>
+</div>
