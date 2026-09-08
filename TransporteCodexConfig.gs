@@ -483,7 +483,32 @@ function transporteMonitorarEnviosPorEmail_() {
   var agendaPrecheck = null;
   var pendentes = transporteOperacoesRows_().filter(function(item) {
     if (!item.referencia) return false;
-    if (!transporteOperacaoDate_(item.emailEnviadoEm)) return true;
+    if (!transporteOperacaoDate_(item.emailEnviadoEm)) {
+      // Se o e-mail ja foi identificado em uma execucao anterior, a confirmacao
+      // manual da Agenda deve encerrar a pendencia sem depender de o Gmail
+      // devolver novamente a mesma mensagem entre os 100 resultados recentes.
+      var identificadoEm = transporteOperacaoDate_(item.emailIdentificadoEm);
+      var anexosIdentificados = Math.max(0, Math.floor(Number(item.anexos || 0) || 0));
+      var documentacaoAceita = anexosIdentificados > 0 || !transporteCourierExigeAnexoEnvio_(item.courier);
+      if (identificadoEm && documentacaoAceita) {
+        var slotMapManual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+        var idxManual = slotMapManual[item.slot];
+        agendaPrecheck = agendaPrecheck || getAgendaSheet_();
+        var linhaManual = idxManual ? encontrarLinhaPorId(agendaPrecheck, item.agendaId) : 0;
+        if (linhaManual) {
+          var statusEventoManual = agendaPrecheck.getRange(linhaManual, AGENDA_CFG.col.status).getValue();
+          var statusManual = agendaPrecheck.getRange(linhaManual, idxManual.status + 1).getValue();
+          if (!AgendaServerRules_.isCancelled(statusEventoManual) && AgendaServerRules_.courierStatusKey(statusManual) === 'agendado') {
+            item.confirmacaoManual = {
+              date: identificadoEm,
+              messageId: item.gmailMessageId,
+              anexos: new Array(anexosIdentificados)
+            };
+          }
+        }
+      }
+      return true;
+    }
     // Recupera operações que versões anteriores concluíram antes de conseguir
     // promover a Agenda. Depois que o status chega a Agendado, elas deixam de
     // entrar naturalmente nas próximas execuções.
@@ -503,10 +528,18 @@ function transporteMonitorarEnviosPorEmail_() {
   });
   if (!pendentes.length) return { ok: true, verificados: 0, enviados: 0, semAnexo: 0 };
   var referencias = {};
-  pendentes.forEach(function(item) { referencias[item.referencia.toUpperCase()] = item; });
   var encontrados = {};
+  pendentes.forEach(function(item) {
+    var ref = item.referencia.toUpperCase();
+    if (item.confirmacaoManual) encontrados[ref] = item.confirmacaoManual;
+    else referencias[ref] = item;
+  });
   // Excluir rascunhos e essencial quando a propria conta monitora e agenda.
-  var threads = GmailApp.search('in:anywhere -in:drafts newer_than:30d "Ref. IPS:"', 0, 100);
+  // Uma confirmacao manual baseada em e-mail ja identificado nao precisa
+  // consultar o Gmail outra vez.
+  var threads = Object.keys(referencias).length
+    ? GmailApp.search('in:anywhere -in:drafts newer_than:30d "Ref. IPS:"', 0, 100)
+    : [];
   threads.forEach(function(thread) {
     thread.getMessages().forEach(function(message) {
       var corpo = [message.getSubject(), message.getPlainBody()].join('\n').toUpperCase();
