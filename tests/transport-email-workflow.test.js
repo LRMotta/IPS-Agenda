@@ -243,6 +243,7 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
   ]);
   const audits = [];
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
+  let gmailSearches = 0;
   const server = transportServer({
     book,
     AgendaServerRules_: rules,
@@ -259,15 +260,18 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
     codexWithDocumentLock_: (_label, fn) => fn(),
     codexWriteAuditChanges_: (...args) => audits.push(args),
     GmailApp: {
-      search: () => [{
-        getMessages: () => [{
-          getSubject: () => 'Agendamento de coleta',
-          getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-MANUAL-T1',
-          getDate: () => messageDate,
-          getId: () => 'MSG-MANUAL',
-          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
-        }]
-      }]
+      search: () => {
+        gmailSearches += 1;
+        return gmailSearches === 1 ? [{
+          getMessages: () => [{
+            getSubject: () => 'Agendamento de coleta',
+            getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-MANUAL-T1',
+            getDate: () => messageDate,
+            getId: () => 'MSG-MANUAL',
+            getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+          }]
+        }] : [];
+      }
     }
   });
   server.transporteRegistrarDocumentacaoGerada_({
@@ -285,7 +289,11 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
   assert.equal(segunda.naoPromovidos, 0);
   assert.equal(agenda.rows[1][2], 'Agendado');
   assert.equal(audits.length, 0);
-  assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm instanceof Date);
+  assert.equal(gmailSearches, 1, 'a segunda tentativa deve usar o e-mail ja identificado');
+  assert.equal(
+    new Date(server.transporteOperacoesRows_()[0].emailEnviadoEm).getTime(),
+    messageDate.getTime()
+  );
   assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date(Date.now() + 61 * 60 * 1000)).length, 0);
 });
 
