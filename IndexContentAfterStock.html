@@ -500,12 +500,24 @@
             <input type="text" id="ptNumero" class="f-input" placeholder="Nº">
           </div>
           <div>
-            <label class="field-label" for="ptCidade">Cidade</label>
-            <input type="text" id="ptCidade" class="f-input" placeholder="Cidade">
+            <label class="field-label" for="ptEstado">Estado</label>
+            <select id="ptEstado" class="f-input f-select" onchange="participanteEstadoMunicipioAlterado_('ptCidade')">
+              <option value="">— Selecione —</option>
+            </select>
           </div>
           <div>
-            <label class="field-label" for="ptEstado">Estado</label>
-            <input type="text" id="ptEstado" class="f-input" maxlength="2" placeholder="UF">
+            <label class="field-label" for="ptCidade">Município</label>
+            <div class="ac-wrap participant-municipio-wrap">
+              <input type="text" id="ptCidade" class="f-input" placeholder="Selecione primeiro a UF" autocomplete="off" disabled
+                     data-uf-target="ptEstado" data-list-target="ptCidadeList"
+                     role="combobox" aria-autocomplete="list" aria-controls="ptCidadeList" aria-expanded="false"
+                     onfocus="participanteRenderMunicipios_('ptCidade')"
+                     oninput="participanteMunicipioDigitado_('ptCidade')"
+                     onblur="setTimeout(function(){ participanteFixarMunicipio_('ptCidade'); },160)"
+                     onkeydown="participanteNavegarMunicipios_(event,'ptCidade')">
+              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+              <div class="ac-list participant-municipio-list" id="ptCidadeList" role="listbox"></div>
+            </div>
           </div>
           <div>
             <label class="field-label" for="ptCep">CEP</label>
