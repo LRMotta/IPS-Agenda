@@ -1856,10 +1856,11 @@
     var tipo = (document.getElementById('agTipo') || {}).value || '';
     var policy = AgendaRules.formPolicy(tipo, agendaModoEdicao());
     var isMonitoria = policy.isMonitoring;
-    var isPeriodo = policy.isOperationalPeriod;
+    var isPeriodo = policy.isMultiDay;
+    var isOperacional = policy.isOperationalPeriod;
     var isVisita = policy.isVisit;
     var projetoRequired = document.getElementById('agProjetoRequired');
-    if (projetoRequired) projetoRequired.style.display = isPeriodo ? '' : 'none';
+    if (projetoRequired) projetoRequired.style.display = policy.requiresProject ? '' : 'none';
     var monitorRequired = document.getElementById('agMonitorRequired');
     if (monitorRequired) monitorRequired.style.display = isMonitoria ? '' : 'none';
     var salaRequired = document.getElementById('agSalaRequired');
@@ -1877,9 +1878,9 @@
     agendaSetWrapVisible('agLabCentralWrap', !ocultarDetalhes);
     agendaSetWrapVisible('agProcedimentosWrap', !ocultarDetalhes);
     agendaSetWrapVisible('agCarroRequeridoWrap', isVisita);
-    agendaSetWrapVisible('agMonitorWrap', isPeriodo);
+    agendaSetWrapVisible('agMonitorWrap', isOperacional);
     agendaSetWrapVisible('agDataFimWrap', isPeriodo);
-    agendaSetWrapVisible('agHoraWrap', !isPeriodo || isMonitoria);
+    agendaSetWrapVisible('agHoraWrap', policy.requiresTime);
     var dataLabel = document.getElementById('agDataLabel');
     if (dataLabel) dataLabel.innerHTML = isPeriodo ? 'Data de Inicio <span class="required-star">*</span>' : 'Data <span class="required-star">*</span>';
     if (isPeriodo) {
@@ -1896,7 +1897,7 @@
       if (info) info.style.display = 'none';
       _agendaParticipanteInfo = null;
     }
-    if (!isPeriodo) {
+    if (!isOperacional) {
       ['agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].forEach(agendaClearHiddenField);
       limparErro('agMonitor1','errAgMonitor1');
       limparErro('agSalaMonitoria','errAgSalaMonitoria');
@@ -2088,15 +2089,15 @@
     var tipoValor = (document.getElementById('agTipo') || {}).value || '';
     var policy = AgendaRules.formPolicy(tipoValor, agendaModoEdicao());
     var isMonitoria = policy.isMonitoring;
-    var isPeriodo = policy.isOperationalPeriod;
+    var isPeriodo = policy.isMultiDay;
     var labEl = document.getElementById('agLabCentral');
     var labRequired = agendaTipoExigeLabCentral(tipoValor);
     var checks = [
       { id: 'agData', err: 'errAgData', label: isPeriodo ? 'data de inicio' : 'data', required: true },
-      { id: 'agHora', err: 'errAgHora', label: 'horario de inicio', required: !isPeriodo || isMonitoria },
+      { id: 'agHora', err: 'errAgHora', label: 'horario de inicio', required: policy.requiresTime },
       { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
       { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isPeriodo },
-      { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: isPeriodo },
+      { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: policy.requiresProject },
       { id: 'agMonitor1', err: 'errAgMonitor1', label: 'monitor 1', required: isMonitoria },
       { id: 'agSalaMonitoria', err: 'errAgSalaMonitoria', label: 'local', required: isMonitoria },
       { id: 'agLabCentral', err: 'errAgLabCentral', label: 'laboratorio central', required: labRequired && labEl && !labEl.disabled }
@@ -2518,9 +2519,9 @@
     var tipoValorAtual = (document.getElementById('agTipo') || {}).value || '';
     var policy = AgendaRules.formPolicy(tipoValorAtual, agendaModoEdicao());
     var isMonitoria = policy.isMonitoring;
-    var isPeriodo = policy.isOperationalPeriod;
+    var isPeriodo = policy.isMultiDay;
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
-    if (!isPeriodo || isMonitoria) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
+    if (policy.requiresTime) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
     if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
     ok = validarAgendaCampo('agTipo', 'errAgTipo', !!document.getElementById('agTipo').value) && ok;
     if (policy.requiresDoctor) {
@@ -2528,7 +2529,7 @@
     } else {
       limparErro('agMedico', 'errAgMedico');
     }
-    if (isPeriodo) {
+    if (policy.requiresProject) {
       ok = validarAgendaCampo('agProjeto', 'errAgProjeto', !!document.getElementById('agProjeto').value) && ok;
     }
     if (isMonitoria) {
@@ -3164,6 +3165,7 @@
     if (targeted) return { inicio: targeted.inicio || dataIso || '', fim: targeted.fim || dataIso || '', ids: targeted.ids || [] };
     if (agendaEventosSaoColecaoCompleta_() && r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
     if (agendaEventosSaoColecaoCompleta_() && r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    if (agendaEventosSaoColecaoCompleta_() && r && AgendaRules.isType(r, 'auditoria')) return agendaPeriodoFallbackLocal_(r);
     return { inicio: dataIso || '', fim: dataIso || '' };
   }
 
@@ -3614,7 +3616,7 @@
     var ini = document.getElementById('agData');
     var fim = document.getElementById('agDataFim');
     var tipo = (document.getElementById('agTipo') || {}).value || '';
-    var isPeriodo = AgendaRules.isOperationalPeriod(tipo);
+    var isPeriodo = AgendaRules.isMultiDay(tipo);
     if (!isPeriodo) return true;
     var fimOk = !!(fim && fim.value);
     var ordemOk = fimOk && !isNaN(agendaDateInputTime(ini && ini.value)) && agendaDateInputTime(fim.value) >= agendaDateInputTime(ini.value);
@@ -4115,6 +4117,21 @@
     var dataIso = r ? (r.dataIso || agendaIsoFromBr(r.data || '')) : '';
     if (agendaEventosSaoColecaoCompleta_() && r && agendaIsMonitoria(r)) return agendaMonitoriaPeriodoFromRow(r);
     if (agendaEventosSaoColecaoCompleta_() && r && AgendaRules.isSiv(r)) return agendaSivPeriodo(r.projeto || '', r.monitorName || '', r.salaMonitoria || '', dataIso);
+    if (agendaEventosSaoColecaoCompleta_() && r && AgendaRules.isType(r, 'auditoria')) {
+      var rows = (_agendaEventos || []).filter(function(item) {
+        return AgendaRules.isType(item, 'auditoria') && normAgenda(item.projeto) === normAgenda(r.projeto) && normAgenda(item.obs) === normAgenda(r.obs);
+      }).map(function(item) { return { item: item, date: item.dataIso || agendaIsoFromBr(item.data || '') }; })
+        .filter(function(item) { return item.date; })
+        .sort(function(a, b) { return a.date.localeCompare(b.date); });
+      var pos = rows.findIndex(function(item) { return String(item.item.id || '') === String(r.id || ''); });
+      if (pos >= 0) {
+        var start = pos;
+        var end = pos;
+        while (start > 0 && agendaDateInputTime(rows[start].date) + 86400000 === agendaDateInputTime(rows[start - 1].date)) start--;
+        while (end < rows.length - 1 && agendaDateInputTime(rows[end + 1].date) - 86400000 === agendaDateInputTime(rows[end].date)) end++;
+        return { inicio: rows[start].date, fim: rows[end].date, ids: rows.slice(start, end + 1).map(function(x) { return x.item.id; }) };
+      }
+    }
     return { inicio: dataIso || '', fim: dataIso || '', ids: r && r.id ? [r.id] : [] };
   }
 
@@ -4139,7 +4156,7 @@
   function agendaLoadPeriodoOperacional_(r, onSuccess, onFailure) {
     r = r || {};
     var id = String(r.id || '').trim();
-    if (!AgendaRules.isOperationalPeriod(r) || !id) {
+    if (!AgendaRules.isMultiDay(r) || !id) {
       if (typeof onSuccess === 'function') onSuccess(agendaPeriodoFallbackLocal_(r));
       return;
     }
@@ -4399,7 +4416,7 @@
 
   function agendaAbrirEdicaoResolvida_(r, id) {
     agendaLoadPeriodoOperacional_(r, function(periodo) {
-      if (AgendaRules.isOperationalPeriod(r)) agendaStorePeriodoOperacional_(r, periodo);
+      if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
       agendaAbrirEdicaoComContexto_(r, id);
     }, function() {
       agendaStorePeriodoOperacional_(r, agendaPeriodoFallbackLocal_(r));
@@ -5135,12 +5152,12 @@
       titulo = ['Monitoria', r.projeto, r.monitorName].filter(Boolean).join(' - ');
       dates = inicio.replace(/-/g, '') + '/' + fimExclusivo.replace(/-/g, '');
       local = 'Instituto de Pesquisas em Saúde';
-    } else if (isSiv) {
+    } else if (isSiv || AgendaRules.isType(r, 'auditoria')) {
       var periodoSiv = agendaPeriodoFromRow(r);
       var inicioSiv = periodoSiv.inicio || dataIso;
       var fimSivExclusivo = agendaGoogleCalendarAddDays(periodoSiv.fim || dataIso, 1);
       if (!fimSivExclusivo) return null;
-      titulo = ['SIV', r.projeto].filter(Boolean).join(' - ');
+      titulo = [isSiv ? 'SIV' : 'Auditoria', r.projeto].filter(Boolean).join(' - ');
       dates = inicioSiv.replace(/-/g, '') + '/' + fimSivExclusivo.replace(/-/g, '');
       local = 'Instituto de Pesquisas em Saúde';
     } else {
@@ -5178,7 +5195,7 @@
     function continuar(r) {
       if (!r) return;
       agendaLoadPeriodoOperacional_(r, function(periodo) {
-        if (AgendaRules.isOperationalPeriod(r)) agendaStorePeriodoOperacional_(r, periodo);
+        if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
         agendaAbrirGoogleCalendarComRegistro_(r);
       }, function() { agendaAbrirGoogleCalendarComRegistro_(r); });
     }

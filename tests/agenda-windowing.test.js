@@ -1661,6 +1661,21 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.doesNotMatch(client, /_agendaWindowedRange/);
 });
 
+test('periodo de auditoria por ID preserva dias consecutivos sem exigir sala ou monitor', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [
+    agendaRow(server, { id: 'A1', data: '2026-08-10', tipo: 'Auditoria', status: 'Agendado', obs: 'Auditoria anual' }),
+    agendaRow(server, { id: 'A2', data: '2026-08-11', tipo: 'Auditoria', status: 'Agendado', obs: 'Auditoria anual' }),
+    agendaRow(server, { id: 'A3', data: '2026-08-12', tipo: 'Auditoria', status: 'Agendado', obs: 'Auditoria anual' })
+  ];
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
+  const periodo = server.getAgendaPeriodoOperacionalPorEventoId('A2', 3);
+  assert.deepEqual(Array.from(periodo.ids), ['A1', 'A2', 'A3']);
+  assert.equal(periodo.inicio, '2026-08-10');
+  assert.equal(periodo.fim, '2026-08-12');
+  assert.equal(periodo.tipo, 'Auditoria');
+});
+
 test('status fisico de courier futuro e bloqueado no cliente e no servidor sem quebrar legado inalterado', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = agendaServer();

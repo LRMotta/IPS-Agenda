@@ -12310,7 +12310,7 @@ function salvarNovoEventoCompleto(dados) {
   if (erroTemperaturaBackup) return { erro: erroTemperaturaBackup };
   var policy = AgendaServerRules_.formPolicy(dados.tipo);
   var isMonitoria = policy.isMonitoring;
-  var isPeriodo = policy.isOperationalPeriod;
+  var isPeriodo = policy.isMultiDay;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
@@ -12368,7 +12368,7 @@ function salvarNovoEventoComFeriado(dados) {
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
-  if (policy.isOperationalPeriod) {
+  if (policy.isMultiDay) {
     if (policy.isSiv && !String(dados.projeto || '').trim()) {
       return { erro: 'Informe o projeto/protocolo do SIV.' };
     }
@@ -12409,11 +12409,13 @@ function agendaDatasPeriodoMonitoria_(dataInicio, dataFim) {
 }
 
 function agendaTipoPeriodo_(tipo) {
-  return AgendaServerRules_.isOperationalPeriod(tipo);
+  return AgendaServerRules_.isMultiDay(tipo);
 }
 
 function agendaTipoPeriodoLabel_(tipo) {
-  return AgendaServerRules_.isSiv(tipo) ? 'SIV' : 'Monitoria';
+  if (AgendaServerRules_.isSiv(tipo)) return 'SIV';
+  if (AgendaServerRules_.isType(tipo, 'auditoria')) return 'Auditoria';
+  return 'Monitoria';
 }
 
 function agendaDatasPeriodo_(dataInicio, dataFim, label) {
@@ -12464,6 +12466,7 @@ function agendaPeriodoRowsDoPeriodo_(agenda, linha, rowRef, tipoPeriodo) {
       data.setHours(0, 0, 0, 0);
       if (!AgendaServerRules_.sameType(row[idx.tipo], tipoPeriodoValue)) return null;
       if (normText_(row[idx.projeto]) !== normText_(ref[idx.projeto])) return null;
+      if (AgendaServerRules_.isType(tipoPeriodoValue, 'auditoria') && normText_(row[idx.obs]) !== normText_(ref[idx.obs])) return null;
       if (AgendaServerRules_.isOperationalPeriod(tipoPeriodoValue)) {
         if (normText_(row[idx.monitorName]) !== normText_(ref[idx.monitorName])) return null;
         if (normText_(row[idx.salaMonitoria]) !== normText_(ref[idx.salaMonitoria])) return null;
@@ -12866,7 +12869,7 @@ function atualizarAgendaEventoCompleto(dados) {
   var policy = AgendaServerRules_.formPolicy(tipo);
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
-  var isPeriodo = policy.isOperationalPeriod;
+  var isPeriodo = policy.isMultiDay;
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -12916,6 +12919,10 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.statusRequisicao = '';
     labCentral = 'Não aplicável';
     return agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, 'siv');
+  } else if (policy.isMultiDay) {
+    dados.monitorName = '';
+    dados.salaMonitoria = '';
+    return agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, tipo);
   } else {
     dados.monitorName = '';
     dados.salaMonitoria = '';
@@ -13302,7 +13309,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var policy = AgendaServerRules_.formPolicy(tipo);
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
-  var isPeriodo = policy.isOperationalPeriod;
+  var isPeriodo = policy.isMultiDay;
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy);
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -15083,7 +15090,7 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
     var ref = sh.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
     var tipo = String(ref[AGENDA_CFG.idx.tipo] || '');
     var dataRef = formatarDataIsoAgenda_(ref[AGENDA_CFG.idx.data]);
-    if (!AgendaServerRules_.isOperationalPeriod(tipo)) {
+    if (!AgendaServerRules_.isMultiDay(tipo)) {
       return { eventoId: id, ids: [id], inicio: dataRef, fim: dataRef, tipo: tipo, projetoId: '', rowCount: 1 };
     }
 
@@ -15105,8 +15112,10 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
       if (!AgendaServerRules_.sameType(base[AGENDA_CFG.idx.tipo], tipo)) continue;
       if (isSiv && AgendaServerRules_.isCancelled(base[AGENDA_CFG.idx.status])) continue;
       if (normText_(base[AGENDA_CFG.idx.projeto]) !== normText_(ref[AGENDA_CFG.idx.projeto])) continue;
-      if (normText_((scan.monitors[i] || [])[0]) !== normText_(ref[AGENDA_CFG.idx.monitorName])) continue;
-      if (normText_((scan.rooms[i] || [])[0]) !== normText_(ref[AGENDA_CFG.idx.salaMonitoria])) continue;
+      if (AgendaServerRules_.isOperationalPeriod(tipo)) {
+        if (normText_((scan.monitors[i] || [])[0]) !== normText_(ref[AGENDA_CFG.idx.monitorName])) continue;
+        if (normText_((scan.rooms[i] || [])[0]) !== normText_(ref[AGENDA_CFG.idx.salaMonitoria])) continue;
+      }
       var data = parseAgendaDateAny_(base[AGENDA_CFG.idx.data]);
       var eventoId = String(base[AGENDA_CFG.idx.id] || '').trim();
       if (!data || !eventoId) continue;
@@ -15128,7 +15137,7 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
       ids: periodo.map(function(item) { return item.id; }),
       inicio: periodo[0].dataIso,
       fim: periodo[periodo.length - 1].dataIso,
-      tipo: isSiv ? 'SIV' : 'Monitoria',
+      tipo: agendaTipoPeriodoLabel_(tipo),
       projetoId: projeto ? projeto.id : '',
       rowCount: periodo.length
     };

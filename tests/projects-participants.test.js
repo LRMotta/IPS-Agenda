@@ -291,6 +291,8 @@ test('participante e acompanhantes usam UF fixa e município IBGE pesquisável s
   assert.match(client, /slice\(0, 80\)/);
   assert.match(client, /dataset\.municipioInput = '1'/);
   assert.match(client, /municipioCodigo: document\.getElementById\('ptCidade'\)\.dataset\.municipioCodigo \|\| ''/);
+  assert.match(client, /var main = document\.createElement\('div'\); main\.className = 'ac-item-main'; main\.textContent = option\.nome/);
+  assert.doesNotMatch(client, /Código IBGE ' \+ option\.codigo/);
   assert.match(server, /\['municipioCodigo', 'Código IBGE do Município'\]/);
   assert.match(server, /brasilNormalizarLocalidade_\(d, 'do participante'\)/);
 });

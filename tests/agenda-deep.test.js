@@ -35,6 +35,17 @@ test('SIV exige projeto, permite periodo e nao exige horario', () => {
   assert.equal(policy.requiresTime, false);
 });
 
+test('auditoria aceita periodo de multiplos dias sem virar monitoria', () => {
+  const agenda = rules();
+  const policy = agenda.formPolicy('Auditoria');
+  assert.equal(policy.isMultiDay, true);
+  assert.equal(policy.isOperationalPeriod, false);
+  assert.equal(policy.requiresProject, false);
+  assert.equal(policy.requiresMonitorAndRoom, false);
+  assert.equal(policy.requiresTime, true);
+  assert.equal(agenda.isMultiDay('Auditoria'), true);
+});
+
 test('notificacao inicial ocorre somente para Lab Central ainda nao avisado', () => {
   const agenda = rules();
   assert.equal(agenda.notificationAction({ labCentral: 'Sim', status: 'Agendado', control: '' }), 'agendamento');
