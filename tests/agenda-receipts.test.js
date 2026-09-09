@@ -47,6 +47,18 @@ test('beneficiários incluem participante e somente acompanhantes cadastrados', 
   assert.match(client, /agendaReciboTipoConta/);
 });
 
+test('recibo normaliza estado para a sigla e o cadastro exibe apenas UF no pulldown', () => {
+  const server = readProjectFile('WebApp.gs');
+  const client = readProjectFile('IndexCoreScripts.html');
+
+  assert.match(server, /function agendaReciboEstadoSigla_\(value\)/);
+  assert.match(server, /agendaReciboEstadoSigla_\(pessoa\.estado\)/);
+  assert.match(server, /SANTACATARINA: 'SC'/);
+  assert.match(client, /option\.textContent = item\[0\];/);
+  assert.match(client, /option\.setAttribute\('aria-label', item\[1\] \+ ' \(' \+ item\[0\] \+ '\)'\)/);
+  assert.doesNotMatch(client, /option\.value = item\[0\]; option\.textContent = item\[0\] \+ ' — ' \+ item\[1\]/);
+});
+
 test('recibo permite revisão e gera impressão sem persistir dados', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
 

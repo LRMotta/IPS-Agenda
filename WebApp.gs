@@ -6628,6 +6628,21 @@ function getDashboardPendencias_(estoque) {
         visita: String(r[i.visita] || ''),
         tipo: String(r[i.tipo] || '')
       };
+      // O Backup representa uma operação de amostras independente do
+      // andamento da visita. Enquanto o seu status estiver Não Agendado,
+      // a pendência permanece visível, inclusive para registros históricos.
+      var backupNome = String(r[i.cb.nome] || '').trim();
+      var backupStatus = String(r[i.cb.status] || '').trim();
+      if (isCourierNomeValidoAgenda_(backupNome) &&
+          AgendaServerRules_.courierStatusKey(backupStatus) === 'naoagendado') {
+        out.counts.transporteBackupNaoAgendado++;
+        out.transporteBackupNaoAgendado.push(Object.assign({}, base, {
+          slot: 'Transporte de Amostras Backup',
+          courier: backupNome,
+          temperatura: String(r[i.cb.temp] || '').trim(),
+          statusCourier: backupStatus
+        }));
+      }
       [
         { label: 'Transporte I', cfg: i.c1 },
         { label: 'Transporte II', cfg: i.c2 },
@@ -6678,18 +6693,6 @@ function getDashboardPendencias_(estoque) {
         out.counts.requisicaoExamesPendente++;
         out.requisicaoExamesPendente.push(Object.assign({}, base, {
           prestador: String(r[i.servTerc] || '')
-        }));
-      }
-      var backupNome = String(r[i.cb.nome] || '').trim();
-      var backupStatus = String(r[i.cb.status] || '').trim();
-      if (isCourierNomeValidoAgenda_(backupNome) &&
-          AgendaServerRules_.courierStatusKey(backupStatus) === 'naoagendado') {
-        out.counts.transporteBackupNaoAgendado++;
-        out.transporteBackupNaoAgendado.push(Object.assign({}, base, {
-          slot: 'Transporte de Amostras Backup',
-          courier: backupNome,
-          temperatura: String(r[i.cb.temp] || '').trim(),
-          statusCourier: backupStatus
         }));
       }
       [
@@ -15163,6 +15166,25 @@ function getAgendaEventoPorId(id, rowIndex) {
   });
 }
 
+function agendaReciboEstadoSigla_(value) {
+  var raw = String(value || '').trim();
+  if (!raw) return '';
+  var upper = raw.toUpperCase();
+  if (/^[A-Z]{2}$/.test(upper)) return upper;
+  var prefixed = upper.match(/^([A-Z]{2})\s*(?:[-—:]|$)/);
+  if (prefixed) return prefixed[1];
+  var key = upper.normalize ? upper.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : upper;
+  key = key.replace(/[^A-Z]/g, '');
+  var siglas = {
+    ACRE: 'AC', ALAGOAS: 'AL', AMAPA: 'AP', AMAZONAS: 'AM', BAHIA: 'BA', CEARA: 'CE',
+    'DISTRITOFEDERAL': 'DF', 'ESPIRITOSANTO': 'ES', GOIAS: 'GO', MARANHAO: 'MA',
+    'MATOGROSSO': 'MT', 'MATOGROSSODOSUL': 'MS', 'MINASGERAIS': 'MG', PARA: 'PA', PARAIBA: 'PB',
+    PARANA: 'PR', PERNAMBUCO: 'PE', PIAUI: 'PI', RIODEJANEIRO: 'RJ', 'RIOGRANDEDONORTE': 'RN',
+    'RIOGRANDEDOSUL': 'RS', RONDONIA: 'RO', RORAIMA: 'RR', SANTACATARINA: 'SC', 'SAOPAULO': 'SP', SERGIPE: 'SE', TOCANTINS: 'TO'
+  };
+  return siglas[key] || raw;
+}
+
 function getAgendaReciboData(id, rowIndex) {
   var access = codexGetCurrentUserAccess();
   if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
@@ -15192,7 +15214,7 @@ function getAgendaReciboData(id, rowIndex) {
       tipo: tipo,
       nome: String(pessoa.nome || '').trim(),
       cpf: String(pessoa.cpf || '').trim(),
-      endereco: [pessoa.rua, pessoa.numero, pessoa.cidade, pessoa.estado, pessoa.cep].filter(function(value) { return String(value || '').trim(); }).join(', '),
+      endereco: [pessoa.rua, pessoa.numero, pessoa.cidade, agendaReciboEstadoSigla_(pessoa.estado), pessoa.cep].filter(function(value) { return String(value || '').trim(); }).join(', '),
       banco: String(pessoa.banco || '').trim(),
       tipoConta: String(pessoa.tipoConta || '').trim(),
       agencia: String(pessoa.agencia || '').trim(),

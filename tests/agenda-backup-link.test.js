@@ -108,16 +108,37 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
   const backupSemCourier = backupNaoAgendado.slice();
   backupSemCourier[cfg.idx.id] = 'EVT-BACKUP-SEM-COURIER';
   backupSemCourier[cfg.idx.cb.nome] = '';
+  const backupVisitaRealizada = backupNaoAgendado.slice();
+  backupVisitaRealizada[cfg.idx.id] = 'EVT-BACKUP-REALIZADA';
+  backupVisitaRealizada[cfg.idx.status] = 'Realizado';
+  const backupVisitaConcluida = backupNaoAgendado.slice();
+  backupVisitaConcluida[cfg.idx.id] = 'EVT-BACKUP-CONCLUIDA';
+  backupVisitaConcluida[cfg.idx.status] = 'Concluído';
+  const backupDataPassada = backupNaoAgendado.slice();
+  backupDataPassada[cfg.idx.id] = 'EVT-BACKUP-DATA-PASSADA';
+  const ontem = new Date();
+  ontem.setDate(ontem.getDate() - 1);
+  backupDataPassada[cfg.idx.data] = ontem.toISOString().slice(0, 10);
 
   server.getAgendaSheetForRead_ = () => new FakeSheet('Agenda', [
-    Array(cfg.lastCol).fill(''), backupNaoAgendado, backupAgendado, backupSemCourier
+    Array(cfg.lastCol).fill(''),
+    backupNaoAgendado,
+    backupAgendado,
+    backupSemCourier,
+    backupVisitaRealizada,
+    backupVisitaConcluida,
+    backupDataPassada
   ]);
   server.getAgendaFeriadosPendenciasMap_ = () => ({});
 
   const pendencias = server.getDashboardPendencias_([]);
 
-  assert.equal(pendencias.counts.transporteBackupNaoAgendado, 1);
-  assert.equal(pendencias.transporteBackupNaoAgendado.length, 1);
+  assert.equal(pendencias.counts.transporteBackupNaoAgendado, 4);
+  assert.equal(pendencias.transporteBackupNaoAgendado.length, 4);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(pendencias.transporteBackupNaoAgendado.map((item) => item.agendaId).sort())),
+    ['EVT-BACKUP-CONCLUIDA', 'EVT-BACKUP-DATA-PASSADA', 'EVT-BACKUP-PENDENTE', 'EVT-BACKUP-REALIZADA']
+  );
   const pendenciasClient = readProjectFile('IndexPendenciasScripts.html');
   const backupCardIndex = pendenciasClient.indexOf("key: 'transporteBackupNaoAgendado'");
   const documentacaoCardIndex = pendenciasClient.indexOf("key: 'documentacaoTransporteSemEnvio'");
@@ -125,11 +146,12 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
   assert.ok(backupCardIndex > pendenciasClient.indexOf("key: 'kitsVencendo'"));
   assert.ok(documentacaoCardIndex > backupCardIndex);
   assert.equal(pendenciasClient.lastIndexOf("key: '"), documentacaoCardIndex);
-  assert.deepEqual(JSON.parse(JSON.stringify(pendencias.transporteBackupNaoAgendado[0])), {
+  const pendenciaOriginal = pendencias.transporteBackupNaoAgendado.find((item) => item.agendaId === 'EVT-BACKUP-PENDENTE');
+  assert.deepEqual(JSON.parse(JSON.stringify(pendenciaOriginal)), {
     agendaId: 'EVT-BACKUP-PENDENTE',
     data: '2099-01-15',
     hora: '09:00',
-    prazoHoras: pendencias.transporteBackupNaoAgendado[0].prazoHoras,
+    prazoHoras: pendenciaOriginal.prazoHoras,
     participante: 'Participante Backup',
     projeto: 'Projeto Backup',
     visita: 'V1',

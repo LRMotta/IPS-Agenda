@@ -3077,7 +3077,12 @@ function participantePreencherEstadosBrasilElemento_(select, selected) {
   select.appendChild(empty);
   ESTADOS_BRASIL_PARTICIPANTE_.forEach(function(item) {
     var option = document.createElement('option');
-    option.value = item[0]; option.textContent = item[0] + ' — ' + item[1];
+    option.value = item[0];
+    // O controle fechado deve caber no grid do endereço; o nome completo
+    // permanece disponível como dica para quem precisar identificá-lo.
+    option.textContent = item[0];
+    option.title = item[1];
+    option.setAttribute('aria-label', item[1] + ' (' + item[0] + ')');
     select.appendChild(option);
   });
   select.value = String(selected || '').toUpperCase();
