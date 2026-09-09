@@ -275,6 +275,26 @@ test('participante oferece endereco, dados bancarios opcionais e bancos configur
   assert.match(client, /ID Pessoa: /);
 });
 
+test('participante e acompanhantes usam UF fixa e município IBGE pesquisável sob demanda', () => {
+  const modal = readProjectFile('IndexContentAfterStock.html');
+  const client = readProjectFile('IndexCoreScripts.html');
+  const server = readProjectFile('WebApp.gs');
+  const locations = runFile('BrazilLocations.gs');
+  const states = Object.keys(locations.BRASIL_MUNICIPIOS_IBGE_);
+  const municipalityCount = states.reduce((total, uf) => total + locations.BRASIL_MUNICIPIOS_IBGE_[uf].length, 0);
+  assert.equal(states.length, 27);
+  assert.equal(municipalityCount, 5571);
+  assert.match(modal, /id="ptEstado"[\s\S]*?participanteEstadoMunicipioAlterado_\('ptCidade'\)/);
+  assert.match(modal, /id="ptCidade"[\s\S]*?role="combobox"[\s\S]*?aria-autocomplete="list"/);
+  assert.match(modal, /data-uf-target="ptEstado"/);
+  assert.match(client, /method: 'getMunicipiosBrasil'/);
+  assert.match(client, /slice\(0, 80\)/);
+  assert.match(client, /dataset\.municipioInput = '1'/);
+  assert.match(client, /municipioCodigo: document\.getElementById\('ptCidade'\)\.dataset\.municipioCodigo \|\| ''/);
+  assert.match(server, /\['municipioCodigo', 'Código IBGE do Município'\]/);
+  assert.match(server, /brasilNormalizarLocalidade_\(d, 'do participante'\)/);
+});
+
 test('edicao de participante confirma descarte ao fechar o modal', () => {
   const client = readProjectFile('IndexCoreScripts.html');
   const modal = readProjectFile('IndexContentAfterStock.html');

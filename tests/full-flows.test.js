@@ -17,6 +17,7 @@ function between(source, startMarker, endMarker) {
 function cadastroContext(spreadsheet, projectOptions, courierRows) {
   const web = readProjectFile('WebApp.gs');
   const source = readProjectFile('CadastroRules.gs') + '\n' +
+    readProjectFile('BrazilLocations.gs') + '\n' +
     between(web, 'function participanteCampoKey_', 'function salvarDadosParticipante(') + '\n' +
     between(web, 'function soaNormalizarBaseCalculo_', 'function soaNormalizarPapelCronograma_') + '\n' +
     between(web, 'var PROJETO_COURIER_FIELDS_', 'function excluirProjeto(') + '\n' +
@@ -128,7 +129,7 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
   const payload = { id: 1, nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', tipoConta: 'Conta poupança', acompanhantes: [
-    { nome: 'Maria Teste', cpf: '52998224725', banco: 'Banco A', tipoConta: 'corrente', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '93541134780', numero: '001', cep: '95000000', estado: 'rs' },
+    { nome: 'Maria Teste', cpf: '52998224725', banco: 'Banco A', tipoConta: 'corrente', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '93541134780', numero: '001', cep: '95000000', cidade: 'Caxias do Sul', municipioCodigo: '4305108', estado: 'rs' },
     { nome: 'João Teste', banco: 'Banco B' }
   ] };
   context.salvarDadosParticipante(payload);
@@ -143,6 +144,8 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   assert.equal(saved[0].contaCorrente, '000023-4');
   assert.equal(saved[0].cep, '95000-000');
   assert.equal(saved[0].estado, 'RS');
+  assert.equal(saved[0].cidade, 'Caxias do Sul');
+  assert.equal(saved[0].municipioCodigo, '4305108');
   assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Banco')], 'Banco Participante');
   assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Tipo de conta')], 'Conta poupança');
   const originalId = saved[0].id;
@@ -181,6 +184,17 @@ test('acompanhantes invalidos bloqueiam toda escrita, inclusive criacao de colun
     assert.throws(() => context.salvarDadosParticipante({ nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', acompanhantes }));
     assert.equal(sheet.writes, 0);
   }
+});
+
+test('participante e acompanhante exigem município IBGE correspondente à UF', () => {
+  const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+  const base = { nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo' };
+  assert.throws(() => context.salvarDadosParticipante({ ...base, estado: 'RS', cidade: 'Caxias do Sul' }), /Selecione um município da lista/);
+  assert.throws(() => context.salvarDadosParticipante({ ...base, estado: 'SC', cidade: 'Caxias do Sul', municipioCodigo: '4305108' }), /não corresponde à UF/);
+  assert.throws(() => context.salvarDadosParticipante({ ...base, acompanhantes: [{ nome: 'Maria', estado: 'RS', cidade: 'Florianópolis', municipioCodigo: '4205407' }] }), /não corresponde à UF/);
+  assert.equal(sheet.writes, 0);
+  assert.equal(context.getMunicipiosBrasil('RS').some((item) => item.codigo === '4305108' && item.nome === 'Caxias do Sul'), true);
 });
 
 test('tipo de conta invalido do participante bloqueia escrita', () => {
@@ -440,7 +454,7 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
   const payload = {
     nome: 'Pessoa Nova', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo',
-    rua: 'Rua das Flores', numero: '123', cidade: 'Caxias do Sul', estado: 'RS', cep: '95000-000',
+    rua: 'Rua das Flores', numero: '123', cidade: 'Caxias do Sul', estado: 'RS', municipioCodigo: '4305108', cep: '95000-000',
     banco: 'Banco de Teste', tipoConta: 'Conta corrente', agencia: '001', contaCorrente: '12345-6',
     titularConta: 'Pessoa Nova', cpfTitular: '529.982.247-25'
   };
@@ -449,10 +463,11 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   const headers = sheet.rows[0];
   const created = sheet.rows[2];
   assert.equal(headers[12], 'Rua');
-  assert.equal(headers[18], 'Tipo de conta');
-  assert.equal(headers[22], 'CPF do Titular');
-  assert.equal(headers[23], 'ID Pessoa');
+  assert.ok(headers.indexOf('Tipo de conta') > 12);
+  assert.ok(headers.indexOf('CPF do Titular') > 12);
+  assert.ok(headers.indexOf('ID Pessoa') > 12);
   assert.equal(created[headers.indexOf('Rua')], 'Rua das Flores');
+  assert.equal(created[headers.indexOf('Código IBGE do Município')], '4305108');
   assert.equal(created[headers.indexOf('Banco')], 'Banco de Teste');
   assert.equal(created[headers.indexOf('Tipo de conta')], 'Conta corrente');
   assert.equal(created[headers.indexOf('CPF do Titular')], '529.982.247-25');

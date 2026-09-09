@@ -5292,13 +5292,13 @@ function participanteColumnMap_(sh, createMissing) {
   var lastCol = Math.max(sh.getLastColumn(), 1);
   var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
   var definitions = [
-    ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['cep', 'CEP'],
+    ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['municipioCodigo', 'Código IBGE do Município'], ['cep', 'CEP'],
     ['banco', 'Banco'], ['tipoConta', 'Tipo de conta'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
     ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular'],
     ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)']
   ];
   var aliases = {
-    rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], cep: ['cep'],
+    rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], municipioCodigo: ['codigoibgedomunicipio', 'codigoibgemunicipio', 'municipiocodigo'], cep: ['cep'],
     banco: ['banco', 'nomedobanco'], tipoConta: ['tipoconta', 'tipodeconta'], agencia: ['agencia'], contaCorrente: ['contacorrente', 'conta'],
     titularConta: ['titulardacontacorrente', 'titulardaconta'], cpfTitular: ['cpfdotitular'],
     idPessoa: ['idpessoa', 'pessoaid', 'idinternopessoa']
@@ -5324,7 +5324,7 @@ function participanteColumnMap_(sh, createMissing) {
 
 function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
   var values = {
-    rua: d.rua || '', numero: d.numero || '', cidade: d.cidade || '', estado: d.estado || '', cep: d.cep || '',
+    rua: d.rua || '', numero: d.numero || '', cidade: d.cidade || '', estado: d.estado || '', municipioCodigo: d.municipioCodigo || '', cep: d.cep || '',
     banco: d.banco || '', agencia: d.agencia || '', contaCorrente: d.contaCorrente || '',
     titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || '', idPessoa: d.idPessoa || ''
   };
@@ -5349,7 +5349,7 @@ function participanteLerAcompanhantes_(value) {
 function participanteValidarAcompanhantes_(items, anteriores) {
   if (!Array.isArray(items)) throw new Error('Informe uma lista de acompanhantes.');
   var ids = {}, cpfs = {};
-  var fields = ['nome', 'cpf', 'rua', 'numero', 'cidade', 'estado', 'cep', 'banco', 'tipoConta', 'agencia', 'contaCorrente', 'cpfTitular'];
+  var fields = ['nome', 'cpf', 'rua', 'numero', 'cidade', 'estado', 'municipioCodigo', 'cep', 'banco', 'tipoConta', 'agencia', 'contaCorrente', 'cpfTitular'];
   var result = items.map(function(item, index) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Acompanhante inválido.');
     var out = {};
@@ -5365,8 +5365,7 @@ function participanteValidarAcompanhantes_(items, anteriores) {
     });
     if (out.cpf && cpfs[out.cpf]) throw new Error('CPF repetido na lista de acompanhantes.');
     if (out.cpf) cpfs[out.cpf] = true;
-    out.estado = out.estado.toUpperCase();
-    if (out.estado && !/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)$/.test(out.estado)) throw new Error('Estado inválido no acompanhante ' + (index + 1) + '.');
+    brasilNormalizarLocalidade_(out, 'do acompanhante ' + (index + 1));
     if (out.cep) {
       if (!/^\d{5}-?\d{3}$/.test(out.cep)) throw new Error('CEP inválido no acompanhante ' + (index + 1) + '.');
       out.cep = out.cep.replace(/\D/g, '').replace(/(\d{5})(\d{3})/, '$1-$2');
@@ -5667,6 +5666,7 @@ function getParticipantes() {
         numero:         String(valueFor(r, ['numero', 'n']) || ''),
         cidade:         String(valueFor(r, ['cidade']) || ''),
         estado:         String(valueFor(r, ['estado', 'uf']) || ''),
+        municipioCodigo:String(valueFor(r, ['codigoibgedomunicipio', 'codigoibgemunicipio', 'municipiocodigo']) || ''),
         cep:            String(valueFor(r, ['cep']) || ''),
         banco:          String(valueFor(r, ['banco', 'nomedobanco']) || ''),
         tipoConta:      String(valueFor(r, ['tipoconta', 'tipodeconta']) || ''),
@@ -5921,6 +5921,7 @@ function salvarDadosParticipante(d) {
   }
   d.cpf = participanteNormalizarCpf_(d.cpf, 'do participante');
   d.cpfTitular = participanteNormalizarCpf_(d.cpfTitular, 'do titular da conta');
+  brasilNormalizarLocalidade_(d, 'do participante');
   if (existing) {
     var alterouProjeto = normText_(existing[5]) !== normText_(projeto);
     var alterouIdParticipante = normText_(existing[4]) !== normText_(d.idParticipante);
