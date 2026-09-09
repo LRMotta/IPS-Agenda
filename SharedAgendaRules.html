@@ -109,6 +109,10 @@
     return isMonitoring(event) || isSiv(event);
   }
 
+  function isMultiDay(event) {
+    return isOperationalPeriod(event) || isType(event, 'auditoria');
+  }
+
   function isTerminalStatus(event) {
     return isCancelled(event) || isCompleted(event);
   }
@@ -133,6 +137,7 @@
     var monitoring = type === 'monitoria';
     var siv = type === 'siv';
     var operationalPeriod = monitoring || siv;
+    var multiDay = operationalPeriod || type === 'auditoria';
     var generalEvent = ['feriado', 'auditoria', 'reuniao'].indexOf(type) > -1;
     var operationalWithoutParticipant = ['siv', 'closeout'].indexOf(type) > -1;
     var technicalHidden = ['monitoria', 'siv', 'closeout', 'reuniao', 'feriado', 'auditoria', 'exame-imagem'].indexOf(type) > -1;
@@ -141,6 +146,7 @@
       isMonitoring: monitoring,
       isSiv: siv,
       isOperationalPeriod: operationalPeriod,
+      isMultiDay: multiDay,
       isVisit: type === 'visita',
       hideGeneralEvent: generalEvent,
       hideDetails: generalEvent || operationalWithoutParticipant || monitoring,
@@ -357,6 +363,7 @@
     isSiv: isSiv,
     isCloseout: isCloseout,
     isOperationalPeriod: isOperationalPeriod,
+    isMultiDay: isMultiDay,
     isTerminalStatus: isTerminalStatus,
     isVisit: isVisit,
     hasTransportOperation: hasTransportOperation,

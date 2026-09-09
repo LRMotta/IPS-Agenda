@@ -3190,7 +3190,6 @@ function participanteRenderMunicipios_(inputId) {
       var item = document.createElement('div');
       item.className = 'ac-item'; item.dataset.index = index; item.id = inputId + 'MunicipioOption' + index; item.setAttribute('role', 'option');
       var main = document.createElement('div'); main.className = 'ac-item-main'; main.textContent = option.nome; item.appendChild(main);
-      var meta = document.createElement('div'); meta.className = 'ac-item-meta'; meta.textContent = 'Código IBGE ' + option.codigo; item.appendChild(meta);
       item.addEventListener('mousedown', function(event) { event.preventDefault(); participanteSelecionarMunicipio_(inputId, option); });
       els.lista.appendChild(item);
     });

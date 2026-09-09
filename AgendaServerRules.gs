@@ -89,6 +89,10 @@ var AgendaServerRules_ = (function() {
     return isMonitoring(eventOrType) || isSiv(eventOrType);
   }
 
+  function isMultiDay(eventOrType) {
+    return isOperationalPeriod(eventOrType) || isType(eventOrType, 'auditoria');
+  }
+
   function isTerminalStatus(eventOrStatus) {
     return isCancelled(eventOrStatus) || isCompleted(eventOrStatus);
   }
@@ -154,6 +158,7 @@ var AgendaServerRules_ = (function() {
     var monitoring = type === 'monitoria';
     var siv = type === 'siv';
     var operationalPeriod = monitoring || siv;
+    var multiDay = operationalPeriod || type === 'auditoria';
     var technicalFieldsHidden = ['monitoria', 'siv', 'closeout', 'reuniao', 'feriado', 'auditoria', 'exame-imagem'].indexOf(type) > -1;
     var noLab = technicalFieldsHidden || isPhoneContact(eventOrType);
     return {
@@ -161,6 +166,7 @@ var AgendaServerRules_ = (function() {
       isMonitoring: monitoring,
       isSiv: siv,
       isOperationalPeriod: operationalPeriod,
+      isMultiDay: multiDay,
       isVisit: type === 'visita',
       requiresProject: operationalPeriod,
       requiresMonitorAndRoom: monitoring,
@@ -263,6 +269,7 @@ var AgendaServerRules_ = (function() {
     isSiv: isSiv,
     isCloseout: isCloseout,
     isOperationalPeriod: isOperationalPeriod,
+    isMultiDay: isMultiDay,
     isTerminalStatus: isTerminalStatus,
     sameStatus: sameStatus,
     sameType: sameType,
