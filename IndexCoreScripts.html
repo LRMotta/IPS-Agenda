@@ -433,6 +433,7 @@ function abrirPaginaInicialApp() {
     return;
   }
   irPara(pagina || 'agenda', { initial: true });
+  if (pagina === 'agenda' && typeof agendaRegistrarShellVisivel_ === 'function') agendaRegistrarShellVisivel_();
 }
 
 function navegarParaRotaWebApp(query) {

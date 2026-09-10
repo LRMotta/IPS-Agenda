@@ -26,6 +26,7 @@
   var _agendaFormDataLegacyLoading = false;
   var _agendaFallbackCargaEmAndamento = false;
   var _agendaFallbackEventWaiters = [];
+  var _agendaShellVisibleAt = 0;
   var _agendaFallbackCodesLogged = {};
   var _agendaHistoricoEventos = [];
   var _agendaHistoricoQuery = '';
@@ -215,6 +216,14 @@
   function agendaFormDataEstaDesatualizado() {
     var loadedAt = _agendaFormDataLoadedAt || STATE.agenda.formDataLoadedAt || 0;
     return !loadedAt || (Date.now() - loadedAt) > AGENDA_FORMDATA_TTL_MS;
+  }
+
+  function agendaRegistrarShellVisivel_() {
+    if (_agendaShellVisibleAt) return _agendaShellVisibleAt;
+    _agendaShellVisibleAt = Date.now();
+    STATE.agenda.shellVisibleAt = _agendaShellVisibleAt;
+    try { console.info('[CODEX_PERF] ' + JSON.stringify({ operation: 'agendaLoad', stage: 'shell_visible', timestamp: _agendaShellVisibleAt })); } catch (e) {}
+    return _agendaShellVisibleAt;
   }
 
   function agendaBootstrapEstaEmCurso_() {
@@ -3860,6 +3869,8 @@
     _agendaEventosPorId = {};
     _agendaEventos.forEach(agendaStoreEventoLocal_);
     setAgendaEventosLoadedAtState(Date.now());
+    if (!_agendaShellVisibleAt) agendaRegistrarShellVisivel_();
+    try { console.info('[CODEX_PERF] ' + JSON.stringify({ operation: 'agendaLoad', stage: 'agenda_loaded', shellToAgendaMs: _agendaEventosLoadedAt - _agendaShellVisibleAt, eventCount: _agendaEventos.length })); } catch (e) {}
     agendaMatBioUpdateAllCopyOptions();
   }
 

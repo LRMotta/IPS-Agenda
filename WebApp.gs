@@ -14534,7 +14534,7 @@ function agendaWindowResultIsValid_(value) {
     typeof value.truncated === 'boolean';
 }
 
-function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage) {
+function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage, useCanaryDateIndex) {
   var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
   if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
@@ -14551,13 +14551,19 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
     if (cached && !agendaWindowResultIsValid_(cached)) cached = null;
     if (cached) return { cached: cached };
     if (lastRow < 2) return { segments: [], total: 0, outOfOrder: false };
-    var datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues();
+    var dateIndexKey = 'AgendaDateIndex:v1:' + lastRow;
+    var datas = useCanaryDateIndex && !ignorarCache ? codexCacheGet_(dateIndexKey) : null;
+    if (!datas) {
+      datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues().map(function(row) {
+        var data = parseAgendaDateAny_(row[0]);
+        return data && !isNaN(data.getTime()) ? data.getTime() : 0;
+      });
+      if (useCanaryDateIndex) codexCachePut_(dateIndexKey, datas, 300);
+    }
     var offsets = [];
     for (var d = 0; d < datas.length; d++) {
-      var data = parseAgendaDateAny_(datas[d][0]);
-      if (!data || isNaN(data.getTime())) continue;
-      data.setHours(0, 0, 0, 0);
-      if (data.getTime() >= inicio.getTime() && data.getTime() < fim.getTime()) offsets.push(d);
+      if (!datas[d]) continue;
+      if (datas[d] >= inicio.getTime() && datas[d] < fim.getTime()) offsets.push(d);
     }
     var segments = [];
     offsets.forEach(function(offset) {
@@ -14907,7 +14913,8 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
         fimIso,
         AGENDA_WINDOW_MAX_RECORDS_,
         refreshRequested,
-        measureWindow
+        measureWindow,
+        agendaWindowedLoadingV2EnabledForAccess_(access)
       );
       totalMeta.rowCount = windowData.items.length;
       var revision = codexMeasurePerformance_(
@@ -15319,16 +15326,21 @@ function agendaHydrateParticipantFields_(items) {
       braco: String(r[6] || '').trim()
     };
   });
+  var porCadastro = {}, porChave = {}, porNome = {};
+  participantes.forEach(function(p) {
+    if (p.id) porCadastro[p.id] = porCadastro[p.id] || p;
+    var chave = normText_(p.idParticipante) + '|' + normText_(p.projeto);
+    if (p.idParticipante && p.projeto) porChave[chave] = porChave[chave] || p;
+    var nome = normText_(p.nome) + '|' + normText_(p.projeto);
+    if (p.nome && p.projeto) porNome[nome] = porNome[nome] || p;
+  });
   items.forEach(function(evento) {
-    var candidatos = participantes.filter(function(p) {
-      if (evento.participanteCadastroId) return p.id === String(evento.participanteCadastroId);
-      if (evento.idParticipante && evento.projeto) {
-        return normText_(p.idParticipante) === normText_(evento.idParticipante) && normText_(p.projeto) === normText_(evento.projeto);
-      }
-      return normText_(p.nome) === normText_(evento.participante) && normText_(p.projeto) === normText_(evento.projeto);
-    });
-    if (candidatos.length !== 1) return;
-    var participante = candidatos[0];
+    var participante = evento.participanteCadastroId
+      ? porCadastro[String(evento.participanteCadastroId)]
+      : (evento.idParticipante && evento.projeto
+        ? porChave[normText_(evento.idParticipante) + '|' + normText_(evento.projeto)]
+        : porNome[normText_(evento.participante) + '|' + normText_(evento.projeto)]);
+    if (!participante) return;
     evento.participanteCadastroId = evento.participanteCadastroId || participante.id;
     evento.idParticipante = evento.idParticipante || participante.idParticipante;
     evento.braco = evento.braco || participante.braco;
