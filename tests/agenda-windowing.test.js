@@ -1049,6 +1049,52 @@ test('forceRefresh ignora o cache proprio sem remove-lo globalmente', () => {
   assert.doesNotMatch(functionBody(readProjectFile('WebApp.gs'), 'agendaGetDadosFormularioAgendaCached_'), /codexCacheRemove_|remove\(/);
 });
 
+test('referencias do bootstrap usam TTL proprio, telemetria sem dados e evitam cache acima do limite', () => {
+  const logs = [];
+  const server = agendaServer({
+    Logger: { log: (message) => logs.push(message) },
+    Utilities: {
+      formatDate: () => '20260910',
+      newBlob: (value) => ({ getBytes: () => Array.from(Buffer.from(value, 'utf8')) })
+    },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  let writes = 0;
+  server.codexCacheGet_ = () => null;
+  server.codexCachePut_ = (key, value, ttl) => {
+    writes += 1;
+    assert.match(key, /^AgendaBootstrapReferenceData:v2:/);
+    assert.equal(ttl, server.AGENDA_REFERENCE_CACHE_TTL_SECONDS_);
+    return true;
+  };
+  server.agendaBuildDadosFormularioAgenda_ = () => validAgendaReferenceData();
+
+  assert.deepEqual(server.agendaGetReferenceData_(false, true).medicos, []);
+  assert.equal(writes, 1);
+  const telemetry = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_AGENDA_REFERENCE_CACHE\]\s*/, '')));
+  assert.deepEqual(telemetry.map((entry) => entry.outcome), ['miss', 'stored']);
+  assert.equal(telemetry.every((entry) => Object.keys(entry).sort().join(',') === 'bytes,forceRefresh,outcome,ttlSeconds'), true);
+  assert.equal(logs.some((message) => /Pessoa|sigilosa|medicos/i.test(message)), false);
+
+  logs.length = 0;
+  writes = 0;
+  server.AGENDA_REFERENCE_CACHE_MAX_BYTES_ = 1;
+  server.agendaGetReferenceData_(false, true);
+  assert.equal(writes, 0);
+  assert.match(logs.join('\n'), /"skip_oversize"/);
+});
+
+test('cliente nao revalida formulario durante bootstrap da janela', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const refresh = functionBody(client, 'agendaRevalidarFormDataEmBackground');
+  const loadWindow = functionBody(client, 'carregarAgendaEventosPorJanela_');
+  assert.match(client, /var _agendaBootstrapInFlightRequestId = 0;/);
+  assert.match(client, /function agendaBootstrapEstaEmCurso_\(\)/);
+  assert.match(refresh, /!force && agendaWindowedLoadingAtivo_\(\) && agendaBootstrapEstaEmCurso_\(\)/);
+  assert.match(loadWindow, /_agendaBootstrapInFlightRequestId = requestId/);
+  assert.match(loadWindow, /concluirBootstrap\(\)/);
+});
+
 test('pesquisa historica e paginada em lotes sem serializar toda a agenda', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');

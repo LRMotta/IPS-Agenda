@@ -7,6 +7,7 @@
   var _agendaInitStarted = false;
   var _agendaEventosLoadedAt = 0;
   var _agendaEventosRefreshing = false;
+  var _agendaBootstrapInFlightRequestId = 0;
   var _agendaFormDataLoadedAt = 0;
   var _agendaFormDataRefreshing = false;
   var _agendaFormDataRefreshPending = false;
@@ -216,6 +217,10 @@
     return !loadedAt || (Date.now() - loadedAt) > AGENDA_FORMDATA_TTL_MS;
   }
 
+  function agendaBootstrapEstaEmCurso_() {
+    return _agendaBootstrapInFlightRequestId !== 0;
+  }
+
   function agendaFormDataRefreshBloqueadoPorEdicao() {
     return !!(window.APP_UNSAVED_SCOPES && window.APP_UNSAVED_SCOPES.agendaCreatePanel);
   }
@@ -271,6 +276,9 @@
   function agendaRevalidarFormDataEmBackground(force, options) {
     options = options || {};
     if (_agendaFormDataRefreshing) return;
+    // O bootstrap por janela ja entrega as referencias. Um evento de foco entre
+    // o inicio da RPC e sua resposta nao pode disparar a carga legada completa.
+    if (!force && agendaWindowedLoadingAtivo_() && agendaBootstrapEstaEmCurso_()) return;
     if (!force && !agendaFormDataEstaDesatualizado()) return;
     if (agendaFormDataRefreshBloqueadoPorEdicao()) {
       _agendaFormDataRefreshPending = true;
@@ -3901,6 +3909,9 @@
     var targetWeekOffset = Number(options.targetWeekOffset == null ? _agendaWeekOffset : options.targetWeekOffset);
     var requestedRange = agendaWindowForWeekOffset_(targetWeekOffset);
     var requestId = ++_agendaEventosRequestId;
+    function concluirBootstrap() {
+      if (_agendaBootstrapInFlightRequestId === requestId) _agendaBootstrapInFlightRequestId = 0;
+    }
     if (forcar === true) {
       agendaWindowMemoryCacheClear_();
     } else {
@@ -3920,8 +3931,10 @@
         return;
       }
     }
+    _agendaBootstrapInFlightRequestId = requestId;
     google.script.run
       .withSuccessHandler(function(response) {
+        concluirBootstrap();
         if (requestId !== _agendaEventosRequestId) {
           if (typeof options.onComplete === 'function') options.onComplete();
           return;
@@ -3944,6 +3957,7 @@
         if (typeof options.onComplete === 'function') options.onComplete();
       })
       .withFailureHandler(function() {
+        concluirBootstrap();
         if (requestId !== _agendaEventosRequestId) {
           if (typeof options.onComplete === 'function') options.onComplete();
           return;
