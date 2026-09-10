@@ -1680,6 +1680,9 @@ var AGENDA_REFERENCE_CACHE_MAX_BYTES_ = 95000;
 // A primeira renderizacao pode usar a referencia valida em cache. A renovacao
 // subsequente e coalescida para nao reconstruir o formulario para cada aba.
 var AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_ = 300;
+// Diretorio minimo, somente do canario, para completar eventos historicos sem
+// reler todas as colunas da aba Participantes a cada bootstrap de janela.
+var AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_ = 300;
 
 function agendaReferenceCacheKey_() {
   return 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
@@ -1692,6 +1695,14 @@ function agendaReferenceBackgroundRevalidateKey_() {
 function agendaInvalidateReferenceDataCache_() {
   codexCacheRemove_(agendaReferenceCacheKey_());
   codexCacheRemove_(agendaReferenceBackgroundRevalidateKey_());
+}
+
+function agendaParticipantHydrationCacheKey_() {
+  return 'AgendaParticipantHydration:v1';
+}
+
+function agendaInvalidateParticipantHydrationCache_() {
+  codexCacheRemove_(agendaParticipantHydrationCacheKey_());
 }
 
 function getCodexSpreadsheet_() {
@@ -1721,6 +1732,7 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   agendaInvalidateReferenceDataCache_();
+  agendaInvalidateParticipantHydrationCache_();
 }
 
 function codexCacheGet_(key) {
@@ -14554,7 +14566,7 @@ function agendaWindowResultIsValid_(value) {
     typeof value.truncated === 'boolean';
 }
 
-function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage) {
+function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage, hydrateOptions) {
   var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
   if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
@@ -14617,7 +14629,7 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
     var hydrated = (rows.rows || []).map(function(entry) {
       return agendaRowToObject_(entry.row, entry.rowIndex);
     });
-    agendaHydrateParticipantFields_(hydrated);
+    agendaHydrateParticipantFields_(hydrated, hydrateOptions);
     return hydrated;
   });
 
@@ -14935,8 +14947,9 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
     CODEX_CACHE_BYPASS_READS_ = refreshRequested;
     try {
       var referenceMeta = { rowCount: 0 };
+      var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
       var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
-        var data = agendaGetReferenceData_(refreshRequested, agendaWindowedLoadingV2EnabledForAccess_(access));
+        var data = agendaGetReferenceData_(refreshRequested, canaryEnabled);
         referenceMeta.rowCount = agendaReferenceRowCount_(data);
         return data;
       });
@@ -14948,7 +14961,8 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
         fimIso,
         AGENDA_WINDOW_MAX_RECORDS_,
         refreshRequested,
-        measureWindow
+        measureWindow,
+        { useCanaryCache: canaryEnabled }
       );
       totalMeta.rowCount = windowData.items.length;
       var revision = codexMeasurePerformance_(
@@ -15411,16 +15425,54 @@ function agendaRowsToObjects_(vals, start) {
   return items;
 }
 
-function agendaHydrateParticipantFields_(items) {
+function agendaParticipantHydrationRows_(useCanaryCache) {
+  if (useCanaryCache !== true) {
+    return getCodexSheetDataByName_('Participantes').slice(1).map(function(row) {
+      return [
+        String(row[0] || '').trim(),
+        String(row[1] || '').trim(),
+        String(row[4] || '').trim(),
+        String(row[5] || '').trim(),
+        String(row[6] || '').trim()
+      ];
+    });
+  }
+
+  var cacheKey = agendaParticipantHydrationCacheKey_();
+  var cached = codexCacheGet_(cacheKey);
+  if (Array.isArray(cached) && cached.every(function(row) { return Array.isArray(row) && row.length === 5; })) {
+    return cached;
+  }
+
+  var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (lastRow < 2) return [];
+  // As cinco colunas abaixo sao as unicas usadas pela hidratacao. Registros
+  // inativos continuam incluidos para manter os eventos historicos completos.
+  var rows = sh.getRange(2, 1, lastRow - 1, 7).getValues().map(function(row) {
+    return [
+      String(row[0] || '').trim(),
+      String(row[1] || '').trim(),
+      String(row[4] || '').trim(),
+      String(row[5] || '').trim(),
+      String(row[6] || '').trim()
+    ];
+  });
+  codexCachePut_(cacheKey, rows, AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_);
+  return rows;
+}
+
+function agendaHydrateParticipantFields_(items, options) {
   var precisaComplemento = (items || []).some(function(evento) {
     return evento && evento.participante && (!evento.idParticipante || !evento.braco);
   });
   if (!precisaComplemento) return items;
-  var participantes = getCodexSheetDataByName_('Participantes').slice(1).map(function(r) {
+  options = options || {};
+  var participantes = agendaParticipantHydrationRows_(options.useCanaryCache === true).map(function(r) {
     return {
       id: String(r[0] || '').trim(), nome: String(r[1] || '').trim(),
-      idParticipante: String(r[4] || '').trim(), projeto: String(r[5] || '').trim(),
-      braco: String(r[6] || '').trim()
+      idParticipante: String(r[2] || '').trim(), projeto: String(r[3] || '').trim(),
+      braco: String(r[4] || '').trim()
     };
   });
   var porCadastro = {}, porChave = {}, porNome = {};
