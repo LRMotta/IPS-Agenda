@@ -1669,6 +1669,10 @@ var CODEX_LAB_CENTRAL_CACHE_ = null;
 var CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
 var CODEX_CACHE_BYPASS_READS_ = false;
 var CODEX_CACHE_TTL_SECONDS_ = 300;
+// Referencias da Agenda mudam por mutacoes que ja invalidam esta chave. Um TTL
+// maior evita reconstruir o formulario completo a cada abertura da janela.
+var AGENDA_REFERENCE_CACHE_TTL_SECONDS_ = 1800;
+var AGENDA_REFERENCE_CACHE_MAX_BYTES_ = 95000;
 
 function getCodexSpreadsheet_() {
   if (!CODEX_ACTIVE_SPREADSHEET_CACHE_) {
@@ -1723,7 +1727,10 @@ function codexCachePut_(key, value, seconds) {
       expiresAtMs: expires.getTime(),
       ttlSeconds: ttl
     }));
-  } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 function codexCacheRemove_(key) {
@@ -14782,11 +14789,52 @@ function agendaReferenceRowCount_(referenceData) {
   }, 0);
 }
 
-function agendaGetReferenceData_(forceRefresh) {
+function agendaReferenceCacheSerializedBytes_(serialized) {
+  try {
+    return Utilities.newBlob(serialized).getBytes().length;
+  } catch (e) {
+    return String(serialized || '').length;
+  }
+}
+
+function agendaLogReferenceCache_(outcome, bytes, forceRefresh) {
+  try {
+    Logger.log('[CODEX_AGENDA_REFERENCE_CACHE] ' + JSON.stringify({
+      outcome: String(outcome || ''),
+      bytes: Math.max(0, Number(bytes) || 0),
+      ttlSeconds: AGENDA_REFERENCE_CACHE_TTL_SECONDS_,
+      forceRefresh: forceRefresh === true
+    }));
+  } catch (e) {
+    // A telemetria nunca pode alterar a carga da Agenda.
+  }
+}
+
+function agendaGetReferenceData_(forceRefresh, useCanaryCache) {
   var cacheKey = 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
-  return agendaValidateReferenceData_(
-    agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
-  );
+  if (useCanaryCache !== true) {
+    return agendaValidateReferenceData_(
+      agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
+    );
+  }
+  var cached = forceRefresh ? null : codexCacheGet_(cacheKey);
+  if (cached) {
+    agendaLogReferenceCache_('hit', agendaReferenceCacheSerializedBytes_(JSON.stringify(cached)), false);
+    return agendaValidateReferenceData_(cached);
+  }
+
+  agendaLogReferenceCache_(forceRefresh ? 'refresh' : 'miss', 0, !!forceRefresh);
+  var data = agendaBuildDadosFormularioAgenda_(true);
+  var serialized = JSON.stringify(data);
+  var bytes = agendaReferenceCacheSerializedBytes_(serialized);
+  if (bytes > AGENDA_REFERENCE_CACHE_MAX_BYTES_) {
+    agendaLogReferenceCache_('skip_oversize', bytes, !!forceRefresh);
+  } else if (codexCachePut_(cacheKey, data, AGENDA_REFERENCE_CACHE_TTL_SECONDS_)) {
+    agendaLogReferenceCache_('stored', bytes, !!forceRefresh);
+  } else {
+    agendaLogReferenceCache_('store_failed', bytes, !!forceRefresh);
+  }
+  return agendaValidateReferenceData_(data);
 }
 
 function getAgendaReferenceDataFresh() {
@@ -14795,7 +14843,7 @@ function getAgendaReferenceDataFresh() {
   var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
   CODEX_CACHE_BYPASS_READS_ = true;
   try {
-    return agendaGetReferenceData_(true);
+    return agendaGetReferenceData_(true, agendaWindowedLoadingV2EnabledForAccess_(access));
   } finally {
     CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
   }
@@ -14847,7 +14895,7 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
     try {
       var referenceMeta = { rowCount: 0 };
       var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
-        var data = agendaGetReferenceData_(refreshRequested);
+        var data = agendaGetReferenceData_(refreshRequested, agendaWindowedLoadingV2EnabledForAccess_(access));
         referenceMeta.rowCount = agendaReferenceRowCount_(data);
         return data;
       });

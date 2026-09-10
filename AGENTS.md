@@ -67,6 +67,16 @@ Este arquivo vale para todo o repositorio. Antes de alterar codigo, consulte tam
 - Evite introduzir chamadas diretas a `MailApp`, Calendar ou servicos equivalentes em fluxos que ja possuem adaptador simulavel.
 - Alteracoes em planilhas devem ser validadas antes da primeira escrita para evitar estados parciais.
 
+### Desempenho e boas praticas do Apps Script
+
+- Minimize chamadas a servicos Google e HTTP (`SpreadsheetApp`, Drive, Gmail, Calendar e `UrlFetchApp`). Busque os dados necessarios uma vez, processe-os em memoria e evite consultas repetidas dentro de lacos.
+- Para planilhas, leia e grave blocos com `getValues()`/`setValues()` (ou operacoes equivalentes em lote). Nao alterne leitura e escrita de celulas ou linhas em um laco quando uma faixa, matriz ou `RangeList` puder expressar a mesma operacao.
+- `SpreadsheetApp.flush()` so pode ser usado quando houver uma dependencia real de persistencia imediata (por exemplo, antes de exportar um PDF). Nunca o use em lacos nem como tentativa generica de corrigir consistencia ou desempenho; documente a dependencia no codigo.
+- Use `CacheService` para dados de referencia e consultas repetidas entre execucoes, com chave versionada, TTL proporcional e invalidacao explicita na mutacao que torna o dado obsoleto. Cache e apenas uma otimizacao: nao o use como fonte de autorizacao, controle de acesso, saldo, reserva ou dado clinico mutavel.
+- Nao adicione bibliotecas do Apps Script sem necessidade comprovada. Em interfaces HTML Service com RPCs curtas e frequentes, prefira codigo local do projeto para evitar custo de inicializacao.
+- Para rotinas que possam se aproximar do limite de execucao, processe em lotes idempotentes, grave o cursor minimo em `PropertiesService` e continue por gatilho instalavel. O desenho deve tolerar reexecucao sem duplicar efeitos externos.
+- Ao alterar fluxos que leem ou gravam Sheets, Drive, Gmail, Calendar ou HTTP, revise o numero de chamadas externas e adicione teste de regressao para a estrategia de lote, cache ou retomada quando ela for relevante. Excecoes devem ser pequenas, justificadas no codigo e cobertas por teste.
+
 ## Validacao
 
 Comandos locais oficiais:
