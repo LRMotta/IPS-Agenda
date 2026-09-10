@@ -1683,6 +1683,9 @@ var AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_ = 300;
 // Diretorio minimo, somente do canario, para completar eventos historicos sem
 // reler todas as colunas da aba Participantes a cada bootstrap de janela.
 var AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_ = 300;
+// O indice conserva somente timestamps e offsets. TTL curto limita a defasagem
+// caso a planilha seja alterada fora do Web App; toda escrita da Agenda o limpa.
+var AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_ = 60;
 
 function agendaReferenceCacheKey_() {
   return 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
@@ -1703,6 +1706,14 @@ function agendaParticipantHydrationCacheKey_() {
 
 function agendaInvalidateParticipantHydrationCache_() {
   codexCacheRemove_(agendaParticipantHydrationCacheKey_());
+}
+
+function agendaDateIndexCacheKey_() {
+  return 'AgendaDateIndex:v1';
+}
+
+function agendaInvalidateDateIndexCache_() {
+  codexCacheRemove_(agendaDateIndexCacheKey_());
 }
 
 function getCodexSpreadsheet_() {
@@ -1733,6 +1744,7 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   agendaInvalidateReferenceDataCache_();
   agendaInvalidateParticipantHydrationCache_();
+  agendaInvalidateDateIndexCache_();
 }
 
 function codexCacheGet_(key) {
@@ -12634,6 +12646,7 @@ function agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, ti
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   SpreadsheetApp.flush();
+  agendaInvalidateDateIndexCache_();
   return { ok: true, id: ids[0] || dados.id, ids: ids, count: datas.length, tipo: label, atualizado: true, emailLabAtivo: agendaEmailEnabled_() };
 }
 
@@ -13072,6 +13085,7 @@ function atualizarAgendaEventoCompleto(dados) {
   SpreadsheetApp.flush();
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  agendaInvalidateDateIndexCache_();
   return {
     ok: true,
     id: dados.id,
@@ -13475,6 +13489,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   SpreadsheetApp.flush();
+  agendaInvalidateDateIndexCache_();
   return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };
 }
 
@@ -14566,6 +14581,28 @@ function agendaWindowResultIsValid_(value) {
     typeof value.truncated === 'boolean';
 }
 
+function agendaDateIndexTimestamps_(sheet, lastRow, useCanaryCache) {
+  var rowCount = Math.max(0, lastRow - 1);
+  var readTimestamps = function() {
+    return sheet.getRange(2, AGENDA_CFG.col.data, rowCount, 1).getValues().map(function(row) {
+      var data = parseAgendaDateAny_(row[0]);
+      return data && !isNaN(data.getTime()) ? data.getTime() : 0;
+    });
+  };
+  if (useCanaryCache !== true || !rowCount) return readTimestamps();
+
+  var cacheKey = agendaDateIndexCacheKey_();
+  var cached = codexCacheGet_(cacheKey);
+  if (cached && cached.rowCount === rowCount && Array.isArray(cached.timestamps) &&
+      cached.timestamps.length === rowCount && cached.timestamps.every(function(value) { return typeof value === 'number'; })) {
+    return cached.timestamps;
+  }
+
+  var timestamps = readTimestamps();
+  codexCachePut_(cacheKey, { rowCount: rowCount, timestamps: timestamps }, AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_);
+  return timestamps;
+}
+
 function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage, hydrateOptions) {
   var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
@@ -14583,10 +14620,7 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
     if (cached && !agendaWindowResultIsValid_(cached)) cached = null;
     if (cached) return { cached: cached };
     if (lastRow < 2) return { segments: [], total: 0, outOfOrder: false };
-    var datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues().map(function(row) {
-      var data = parseAgendaDateAny_(row[0]);
-      return data && !isNaN(data.getTime()) ? data.getTime() : 0;
-    });
+    var datas = agendaDateIndexTimestamps_(sh, lastRow, hydrateOptions && hydrateOptions.useCanaryDateIndex === true);
     var offsets = [];
     for (var d = 0; d < datas.length; d++) {
       if (!datas[d]) continue;
@@ -14962,7 +14996,7 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
         AGENDA_WINDOW_MAX_RECORDS_,
         refreshRequested,
         measureWindow,
-        { useCanaryCache: canaryEnabled }
+        { useCanaryCache: canaryEnabled, useCanaryDateIndex: canaryEnabled }
       );
       totalMeta.rowCount = windowData.items.length;
       var revision = codexMeasurePerformance_(
