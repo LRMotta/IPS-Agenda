@@ -359,7 +359,7 @@
     });
     if (_agendaReferenceDataRefreshInFlight) return;
     _agendaReferenceDataRefreshInFlight = true;
-    google.script.run
+    var runner = google.script.run
       .withSuccessHandler(function(data) {
         var validation = agendaReferenceDataValidation_(data);
         if (!validation.ok || !atualizarAgendaFormDataOpcoes(data, { preservarValoresAtuais: true })) {
@@ -377,8 +377,24 @@
         _agendaReferenceDataDirty = true;
         STATE.agenda.referenceDataDirty = true;
         agendaFinalizarRefreshReferencias_(false, null, error);
-      })
-      .getAgendaReferenceDataFresh();
+      });
+    if (options.background === true) {
+      runner.getAgendaReferenceDataBackgroundRevalidate();
+    } else {
+      runner.getAgendaReferenceDataFresh();
+    }
+  }
+
+  var _agendaInitialReferenceRevalidationScheduled = false;
+
+  function agendaAgendarRevalidacaoInicialReferencias_() {
+    if (_agendaInitialReferenceRevalidationScheduled || _agendaReferenceDataDirty || _agendaReferenceDataRefreshInFlight) return;
+    _agendaInitialReferenceRevalidationScheduled = true;
+    window.setTimeout(function() {
+      _agendaInitialReferenceRevalidationScheduled = false;
+      if (!agendaFormularioEstaPronto_() || _agendaReferenceDataDirty || _agendaReferenceDataRefreshInFlight) return;
+      agendaAtualizarReferenciasPendentes_({ background: true });
+    }, 0);
   }
 
   function initAgendaV1() {
@@ -398,7 +414,7 @@
       return;
     }
     setAgendaInitStartedState(true);
-    carregarAgendaEventos(false, agendaAbrirPendenteAposCarga);
+    carregarAgendaEventos(false, agendaAbrirPendenteAposCarga, { initialLoad: true });
     if (window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.agendaFormData) {
       var bootstrapFormData = window.APP_BOOTSTRAP_DATA.agendaFormData;
       if (!applyAgendaFormData(bootstrapFormData)) {
@@ -3939,6 +3955,7 @@
         renderAgendaOperacional();
         if (typeof callback === 'function') callback();
         if (typeof options.onComplete === 'function') options.onComplete();
+        if (options.initialLoad && forcar !== true) agendaAgendarRevalidacaoInicialReferencias_();
         return;
       }
     }
@@ -3966,6 +3983,7 @@
         renderAgendaOperacional();
         if (typeof callback === 'function') callback();
         if (typeof options.onComplete === 'function') options.onComplete();
+        if (options.initialLoad && forcar !== true) agendaAgendarRevalidacaoInicialReferencias_();
       })
       .withFailureHandler(function() {
         concluirBootstrap();
