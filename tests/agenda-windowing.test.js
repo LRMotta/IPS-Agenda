@@ -1095,6 +1095,45 @@ test('cliente nao revalida formulario durante bootstrap da janela', () => {
   assert.match(loadWindow, /concluirBootstrap\(\)/);
 });
 
+test('hidratação indexada preserva a proteção contra participantes ambíguos', () => {
+  const server = agendaServer();
+  server.getCodexSheetDataByName_ = (name) => {
+    assert.equal(name, 'Participantes');
+    return [
+      ['ID', 'Nome', '', '', 'ID Participante', 'Projeto', 'Braço'],
+      ['CAD-1', 'Pessoa única', '', '', 'P-001', 'Projeto A', 'A'],
+      ['CAD-2', 'Pessoa duplicada', '', '', 'P-002', 'Projeto A', 'B'],
+      ['CAD-3', 'Pessoa duplicada', '', '', 'P-002', 'Projeto A', 'C']
+    ];
+  };
+  const eventos = [
+    { participante: 'Pessoa única', participanteCadastroId: '', idParticipante: '', projeto: 'Projeto A', braco: '' },
+    { participante: 'Pessoa duplicada', participanteCadastroId: '', idParticipante: '', projeto: 'Projeto A', braco: '' }
+  ];
+
+  server.agendaHydrateParticipantFields_(eventos);
+
+  assert.deepEqual(eventos[0], {
+    participante: 'Pessoa única', participanteCadastroId: 'CAD-1', idParticipante: 'P-001', projeto: 'Projeto A', braco: 'A'
+  });
+  assert.deepEqual(eventos[1], {
+    participante: 'Pessoa duplicada', participanteCadastroId: '', idParticipante: '', projeto: 'Projeto A', braco: ''
+  });
+});
+
+test('shell canário aparece antes do bootstrap, sem iniciar a carga da Agenda', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const start = functionBody(source, 'startCodexAppOnce');
+  const shell = functionBody(source, 'abrirShellInicialAgendaCanario_');
+  const route = functionBody(source, 'irPara');
+
+  assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('.getAppBootstrapData()'));
+  assert.match(shell, /irPara\('agenda', \{ initial: true, shellOnly: true \}\)/);
+  assert.ok(route.indexOf('if (options.shellOnly)') < route.indexOf("if (pagina === 'agenda') initAgendaV1()"));
+  assert.match(readProjectFile('Index.html'), /INDEX_INITIAL_AGENDA_CANARY_SHELL/);
+  assert.match(readProjectFile('WebApp.gs'), /tplIndex\.agendaCanaryShell = tplIndex\.paginaInicial === 'agenda'/);
+});
+
 test('pesquisa historica e paginada em lotes sem serializar toda a agenda', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');

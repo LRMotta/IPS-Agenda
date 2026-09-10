@@ -83,6 +83,10 @@ function doGet(e) {
   tplIndex.buscaInicial = '';
   tplIndex.dashboardFiltroInicial = e && e.parameter ? (e.parameter.dashFiltro || '') : '';
   tplIndex.dashboardFiltroKeys = e && e.parameter ? (e.parameter.dashKeys || '') : '';
+  // O shell antecipado não traz dados nem libera operações: apenas reduz o tempo
+  // até a estrutura visual da Agenda aparecer para o administrador do canário.
+  tplIndex.agendaCanaryShell = tplIndex.paginaInicial === 'agenda' &&
+    agendaWindowedLoadingV2EnabledForAccess_(access);
   return tplIndex
     .evaluate()
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -14534,7 +14538,7 @@ function agendaWindowResultIsValid_(value) {
     typeof value.truncated === 'boolean';
 }
 
-function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage, useCanaryDateIndex) {
+function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage) {
   var inicio = agendaParseIsoBoundary_(inicioIso, 'inicio');
   var fim = agendaParseIsoBoundary_(fimIso, 'fim');
   if (fim.getTime() <= inicio.getTime()) throw new Error('Periodo da Agenda invalido.');
@@ -14551,15 +14555,10 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
     if (cached && !agendaWindowResultIsValid_(cached)) cached = null;
     if (cached) return { cached: cached };
     if (lastRow < 2) return { segments: [], total: 0, outOfOrder: false };
-    var dateIndexKey = 'AgendaDateIndex:v1:' + lastRow;
-    var datas = useCanaryDateIndex && !ignorarCache ? codexCacheGet_(dateIndexKey) : null;
-    if (!datas) {
-      datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues().map(function(row) {
-        var data = parseAgendaDateAny_(row[0]);
-        return data && !isNaN(data.getTime()) ? data.getTime() : 0;
-      });
-      if (useCanaryDateIndex) codexCachePut_(dateIndexKey, datas, 300);
-    }
+    var datas = sh.getRange(2, AGENDA_CFG.col.data, lastRow - 1, 1).getValues().map(function(row) {
+      var data = parseAgendaDateAny_(row[0]);
+      return data && !isNaN(data.getTime()) ? data.getTime() : 0;
+    });
     var offsets = [];
     for (var d = 0; d < datas.length; d++) {
       if (!datas[d]) continue;
@@ -14913,8 +14912,7 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
         fimIso,
         AGENDA_WINDOW_MAX_RECORDS_,
         refreshRequested,
-        measureWindow,
-        agendaWindowedLoadingV2EnabledForAccess_(access)
+        measureWindow
       );
       totalMeta.rowCount = windowData.items.length;
       var revision = codexMeasurePerformance_(
@@ -15327,12 +15325,21 @@ function agendaHydrateParticipantFields_(items) {
     };
   });
   var porCadastro = {}, porChave = {}, porNome = {};
+  function indexarUnico(map, key, participante) {
+    if (!key) return;
+    if (!Object.prototype.hasOwnProperty.call(map, key)) {
+      map[key] = participante;
+    } else if (map[key] !== participante) {
+      // Preserva a regra anterior: registros ambíguos não podem ser hidratados.
+      map[key] = null;
+    }
+  }
   participantes.forEach(function(p) {
-    if (p.id) porCadastro[p.id] = porCadastro[p.id] || p;
+    indexarUnico(porCadastro, p.id, p);
     var chave = normText_(p.idParticipante) + '|' + normText_(p.projeto);
-    if (p.idParticipante && p.projeto) porChave[chave] = porChave[chave] || p;
+    if (p.idParticipante && p.projeto) indexarUnico(porChave, chave, p);
     var nome = normText_(p.nome) + '|' + normText_(p.projeto);
-    if (p.nome && p.projeto) porNome[nome] = porNome[nome] || p;
+    if (p.nome && p.projeto) indexarUnico(porNome, nome, p);
   });
   items.forEach(function(evento) {
     var participante = evento.participanteCadastroId
