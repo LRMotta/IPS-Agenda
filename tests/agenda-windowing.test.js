@@ -1162,6 +1162,50 @@ test('hidratação indexada preserva a proteção contra participantes ambíguos
   });
 });
 
+test('diretório de hidratação cacheado é usado somente pelo bootstrap do canário', () => {
+  const server = agendaServer();
+  let cached = null;
+  let reads = 0;
+  server.codexCacheGet_ = () => cached;
+  server.codexCachePut_ = (_key, value) => {
+    cached = value;
+    return true;
+  };
+  server.getCodexSpreadsheet_ = () => ({
+    getSheetByName: (name) => {
+      assert.equal(name, 'Participantes');
+      return {
+        getLastRow: () => 3,
+        getRange: (_row, _column, rows, columns) => ({
+          getValues: () => {
+            reads += 1;
+            assert.equal(rows, 2);
+            assert.equal(columns, 7);
+            return [
+              ['CAD-1', 'Pessoa histórica', '', '', 'P-001', 'Projeto A', 'Braço A'],
+              ['CAD-2', 'Pessoa inativa', '', '', 'P-002', 'Projeto A', 'Braço B']
+            ];
+          }
+        })
+      };
+    }
+  });
+  const first = [{ participante: 'Pessoa histórica', participanteCadastroId: '', idParticipante: '', projeto: 'Projeto A', braco: '' }];
+  const second = [{ participante: 'Pessoa inativa', participanteCadastroId: '', idParticipante: '', projeto: 'Projeto A', braco: '' }];
+
+  server.agendaHydrateParticipantFields_(first, { useCanaryCache: true });
+  server.agendaHydrateParticipantFields_(second, { useCanaryCache: true });
+
+  assert.equal(reads, 1);
+  assert.equal(first[0].braco, 'Braço A');
+  assert.equal(second[0].participanteCadastroId, 'CAD-2');
+
+  const bootstrap = functionBody(readProjectFile('WebApp.gs'), 'getAgendaBootstrap');
+  assert.match(bootstrap, /var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_\(access\)/);
+  assert.match(bootstrap, /\{ useCanaryCache: canaryEnabled \}/);
+  assert.match(functionBody(readProjectFile('WebApp.gs'), 'clearCodexRuntimeCaches_'), /agendaInvalidateParticipantHydrationCache_\(\)/);
+});
+
 test('shell canário aparece antes do bootstrap, sem iniciar a carga da Agenda', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const start = functionBody(source, 'startCodexAppOnce');
