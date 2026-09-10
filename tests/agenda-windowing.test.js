@@ -1202,8 +1202,43 @@ test('diretório de hidratação cacheado é usado somente pelo bootstrap do can
 
   const bootstrap = functionBody(readProjectFile('WebApp.gs'), 'getAgendaBootstrap');
   assert.match(bootstrap, /var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_\(access\)/);
-  assert.match(bootstrap, /\{ useCanaryCache: canaryEnabled \}/);
+  assert.match(bootstrap, /useCanaryCache: canaryEnabled, useCanaryDateIndex: canaryEnabled/);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'clearCodexRuntimeCaches_'), /agendaInvalidateParticipantHydrationCache_\(\)/);
+});
+
+test('índice de datas é cacheado somente no canário e é invalidado após escrita da Agenda', () => {
+  const server = agendaServer();
+  const rows = [
+    agendaRow(server, { id: 'EVT-1', data: '2026-07-14', idParticipante: 'P-1', braco: 'A' }),
+    agendaRow(server, { id: 'EVT-2', data: '2026-07-16', idParticipante: 'P-2', braco: 'B' })
+  ];
+  const calls = [];
+  const cache = new Map();
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
+  server.codexCacheGet_ = (key) => cache.get(key) || null;
+  server.codexCachePut_ = (key, value) => {
+    cache.set(key, value);
+    return true;
+  };
+  server.codexCacheRemove_ = (key) => cache.delete(key);
+
+  server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: true });
+  server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: true });
+  const dateReads = () => calls.filter((call) => call.column === server.AGENDA_CFG.col.data && call.numColumns === 1).length;
+  assert.equal(dateReads(), 1);
+
+  server.agendaInvalidateDateIndexCache_();
+  server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: true });
+  assert.equal(dateReads(), 2);
+
+  server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: false });
+  assert.equal(dateReads(), 3);
+
+  const source = readProjectFile('WebApp.gs');
+  assert.match(functionBody(source, 'clearCodexRuntimeCaches_'), /agendaInvalidateDateIndexCache_\(\)/);
+  assert.match(functionBody(source, 'atualizarAgendaEventoCompleto'), /agendaInvalidateDateIndexCache_\(\)/);
+  assert.match(functionBody(source, 'agendaAtualizarPeriodoEvento_'), /agendaInvalidateDateIndexCache_\(\)/);
+  assert.match(functionBody(source, '_gravarLinhaEvento'), /agendaInvalidateDateIndexCache_\(\)/);
 });
 
 test('shell canário aparece antes do bootstrap, sem iniciar a carga da Agenda', () => {
