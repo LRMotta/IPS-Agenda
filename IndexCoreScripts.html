@@ -398,6 +398,7 @@ function startCodexAppOnce() {
   var meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   document.getElementById('topDate').textContent =
     dias[d.getDay()] + ', ' + d.getDate() + ' ' + meses[d.getMonth()] + ' ' + d.getFullYear();
+  abrirShellInicialAgendaCanario_();
   google.script.run
     .withSuccessHandler(function(data) {
       applyAppBootstrapData(data);
@@ -411,6 +412,15 @@ function startCodexAppOnce() {
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);
+
+function abrirShellInicialAgendaCanario_() {
+  if (!window.INDEX_INITIAL_AGENDA_CANARY_SHELL ||
+      String(window.INDEX_INITIAL_PAGE || 'agenda') !== 'agenda' ||
+      isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque')) return;
+  // Não inicia RPCs nem ações enquanto perfil, permissões e dados do bootstrap
+  // ainda não foram aplicados; revela somente a estrutura visual da página.
+  irPara('agenda', { initial: true, shellOnly: true });
+}
 
 function abrirPaginaInicialApp() {
   if (APP_USER_NAVIGATED && getCurrentPage()) return;
@@ -764,6 +774,10 @@ function irPara(pagina, options) {
   var t = getRoutePageConfig(pagina);
   document.getElementById('topTitle').textContent = t.label;
   document.getElementById('topIcon').textContent  = t.icon;
+  if (options.shellOnly) {
+    if (pagina === 'agenda' && typeof agendaRegistrarShellVisivel_ === 'function') agendaRegistrarShellVisivel_();
+    return;
+  }
   if (pagina === 'participantes') carregarParticipantes();
   if (pagina === 'medicos') carregarMedicos();
   if (pagina === 'solicitantes') carregarSolicitantes();

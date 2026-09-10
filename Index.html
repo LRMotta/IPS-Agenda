@@ -11,6 +11,7 @@
     window.INDEX_ESTOQUE_ENABLED = JSON.parse(<?= codexJsonForScript_(Boolean(includeEstoque)) ?>);
     window.INDEX_DASHBOARD_ENABLED = JSON.parse(<?= codexJsonForScript_(Boolean(includeDashboard)) ?>);
     window.INDEX_INITIAL_PAGE = JSON.parse(<?= codexJsonForScript_(paginaInicial || 'agenda') ?>);
+    window.INDEX_INITIAL_AGENDA_CANARY_SHELL = JSON.parse(<?= codexJsonForScript_(Boolean(agendaCanaryShell)) ?>);
     window.INDEX_INITIAL_AGENDA_ID = JSON.parse(<?= codexJsonForScript_(agendaAbrirInicial || '') ?>);
     window.INDEX_INITIAL_SEARCH = JSON.parse(<?= codexJsonForScript_(buscaInicial || '') ?>);
     window.INDEX_DASHBOARD_FILTER = JSON.parse(<?= codexJsonForScript_(dashboardFiltroInicial || '') ?>);
