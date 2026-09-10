@@ -1677,6 +1677,22 @@ var CODEX_CACHE_TTL_SECONDS_ = 300;
 // maior evita reconstruir o formulario completo a cada abertura da janela.
 var AGENDA_REFERENCE_CACHE_TTL_SECONDS_ = 1800;
 var AGENDA_REFERENCE_CACHE_MAX_BYTES_ = 95000;
+// A primeira renderizacao pode usar a referencia valida em cache. A renovacao
+// subsequente e coalescida para nao reconstruir o formulario para cada aba.
+var AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_ = 300;
+
+function agendaReferenceCacheKey_() {
+  return 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+}
+
+function agendaReferenceBackgroundRevalidateKey_() {
+  return 'AgendaBootstrapReferenceRevalidated:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+}
+
+function agendaInvalidateReferenceDataCache_() {
+  codexCacheRemove_(agendaReferenceCacheKey_());
+  codexCacheRemove_(agendaReferenceBackgroundRevalidateKey_());
+}
 
 function getCodexSpreadsheet_() {
   if (!CODEX_ACTIVE_SPREADSHEET_CACHE_) {
@@ -1704,7 +1720,7 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaFormDataStrict:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  agendaInvalidateReferenceDataCache_();
 }
 
 function codexCacheGet_(key) {
@@ -14816,7 +14832,7 @@ function agendaLogReferenceCache_(outcome, bytes, forceRefresh) {
 }
 
 function agendaGetReferenceData_(forceRefresh, useCanaryCache) {
-  var cacheKey = 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  var cacheKey = agendaReferenceCacheKey_();
   if (useCanaryCache !== true) {
     return agendaValidateReferenceData_(
       agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
@@ -14849,6 +14865,26 @@ function getAgendaReferenceDataFresh() {
   CODEX_CACHE_BYPASS_READS_ = true;
   try {
     return agendaGetReferenceData_(true, agendaWindowedLoadingV2EnabledForAccess_(access));
+  } finally {
+    CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
+  }
+}
+
+function getAgendaReferenceDataBackgroundRevalidate() {
+  var access = codexGetCurrentUserAccess();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  var useCanaryCache = agendaWindowedLoadingV2EnabledForAccess_(access);
+  var revalidateKey = agendaReferenceBackgroundRevalidateKey_();
+  if (codexCacheGet_(revalidateKey)) {
+    return agendaGetReferenceData_(false, useCanaryCache);
+  }
+
+  var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
+  CODEX_CACHE_BYPASS_READS_ = true;
+  try {
+    var data = agendaGetReferenceData_(true, useCanaryCache);
+    codexCachePut_(revalidateKey, { refreshed: true }, AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
+    return data;
   } finally {
     CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
   }
@@ -16150,7 +16186,7 @@ function limparCacheLabCentral_() {
     codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormData:v9:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-    codexCacheRemove_('AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+    agendaInvalidateReferenceDataCache_();
     var docCache = CacheService.getDocumentCache();
     if (docCache) {
       docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');

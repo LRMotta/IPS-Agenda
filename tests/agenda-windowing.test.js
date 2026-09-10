@@ -950,6 +950,7 @@ test('servidor invalida todos os caches de referencias e oferece leitura fresca 
   server.clearCodexRuntimeCaches_();
   assert.ok(removed.includes('AgendaFormDataStrict:v3:20260817'));
   assert.ok(removed.includes('AgendaBootstrapReferenceData:v2:20260817'));
+  assert.ok(removed.includes('AgendaBootstrapReferenceRevalidated:v1:20260817'));
 
   let forceRefresh = null;
   server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
@@ -964,6 +965,46 @@ test('servidor invalida todos os caches de referencias e oferece leitura fresca 
 
   server.codexGetCurrentUserAccess = () => ({ ok: false, message: 'Negado' });
   assert.throws(() => server.getAgendaReferenceDataFresh(), /Negado/);
+});
+
+test('revalidacao inicial da referencia e coalescida sem trocar a leitura fresca administrativa', () => {
+  const writes = [];
+  const server = agendaServer({
+    Utilities: { formatDate: () => '20260817' },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
+  server.agendaWindowedLoadingV2EnabledForAccess_ = () => true;
+  server.codexCacheGet_ = () => null;
+  server.codexCachePut_ = (key, value, ttl) => writes.push({ key, value, ttl });
+  const refreshes = [];
+  server.agendaGetReferenceData_ = (forceRefresh, useCanaryCache) => {
+    refreshes.push({ forceRefresh, useCanaryCache });
+    return validAgendaReferenceData();
+  };
+
+  assert.deepEqual(server.getAgendaReferenceDataBackgroundRevalidate().medicos, []);
+  assert.deepEqual(refreshes, [{ forceRefresh: true, useCanaryCache: true }]);
+  assert.equal(writes[0].key, 'AgendaBootstrapReferenceRevalidated:v1:20260817');
+  assert.equal(writes[0].ttl, server.AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
+  assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
+
+  refreshes.length = 0;
+  writes.length = 0;
+  server.codexCacheGet_ = () => ({ refreshed: true });
+  server.getAgendaReferenceDataBackgroundRevalidate();
+  assert.deepEqual(refreshes, [{ forceRefresh: false, useCanaryCache: true }]);
+  assert.equal(writes.length, 0);
+
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const refresh = functionBody(client, 'agendaAtualizarReferenciasPendentes_');
+  const schedule = functionBody(client, 'agendaAgendarRevalidacaoInicialReferencias_');
+  const loadWindow = functionBody(client, 'carregarAgendaEventosPorJanela_');
+  assert.match(refresh, /options\.background === true[\s\S]*getAgendaReferenceDataBackgroundRevalidate\(\)/);
+  assert.match(refresh, /getAgendaReferenceDataFresh\(\)/);
+  assert.match(schedule, /window\.setTimeout[\s\S]*agendaFormularioEstaPronto_[\s\S]*agendaAtualizarReferenciasPendentes_\(\{ background: true \}\)/);
+  assert.doesNotMatch(schedule, /carregarAgendaEventos|agendaWindowMemoryCacheClear_/);
+  assert.match(loadWindow, /options\.initialLoad && forcar !== true\) agendaAgendarRevalidacaoInicialReferencias_\(\)/);
 });
 
 test('validacao distingue listas vazias validas de datasets ausentes ou com falha', () => {
