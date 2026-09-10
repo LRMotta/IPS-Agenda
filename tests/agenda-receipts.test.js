@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { readProjectFile } = require('./helpers/load-app-script');
+const { readProjectFile, runFile } = require('./helpers/load-app-script');
 
 function receiptValueContext() {
   const source = readProjectFile('IndexAgendaScripts.html');
@@ -45,6 +45,36 @@ test('beneficiários incluem participante e somente acompanhantes cadastrados', 
   assert.match(client, /data\.beneficiarios\.map/);
   assert.match(client, /pessoa\.valorPadrao/);
   assert.match(client, /agendaReciboTipoConta/);
+});
+
+test('recibo lê somente o participante e o projeto envolvidos, sem os getters globais', () => {
+  const calls = [];
+  const sheet = (name, rows) => ({
+    getLastRow: () => rows.length,
+    getLastColumn: () => rows[0].length,
+    getRange(row, column, numRows = 1, numColumns = 1) {
+      calls.push({ name, row, column, numRows, numColumns });
+      return { getValues: () => rows.slice(row - 1, row - 1 + numRows).map((source) => source.slice(column - 1, column - 1 + numColumns)) };
+    }
+  });
+  const participantHeader = ['ID', 'Nome', '', '', 'ID participante', 'Projeto', '', '', '', '', 'CPF', '', 'Rua', 'Número', 'Cidade', 'Estado', 'CEP', 'Banco', 'Tipo de conta', 'Agência', 'Conta corrente', 'Titular da Conta Corrente', 'CPF do Titular', 'Acompanhantes (JSON)'];
+  const participant = Array(participantHeader.length).fill('');
+  Object.assign(participant, { 0: 'CAD-1', 1: 'Pessoa A', 4: 'P-001', 5: 'Estudo A', 10: '123.456.789-09', 12: 'Rua A', 13: '10', 14: 'Caxias do Sul', 15: 'RS', 16: '95000-000', 17: 'Banco A', 18: 'Conta corrente', 19: '1234', 20: '5678', 21: 'Pessoa A', 22: '123.456.789-09', 23: JSON.stringify([{ id: 'ACO-1', nome: 'Acompanhante A', banco: 'Banco B' }]) });
+  const projectHeader = ['ID', 'Nome', '', '', '', '', '', '', '', '', '', 'Coordenador', '', '', '', '', '', 'Ressarcimento padrão participante', 'Ressarcimento padrão acompanhante'];
+  const project = Array(projectHeader.length).fill('');
+  Object.assign(project, { 0: 'PROJ-1', 1: 'Estudo A', 11: 'Coordenação A', 17: 100, 18: 80 });
+  const server = runFile('WebApp.gs', { AgendaServerRules_: { formPolicy: () => ({ type: 'visita' }) } });
+  server.codexGetCurrentUserAccess = () => ({ ok: true });
+  server.getAgendaEventoPorId = () => ({ id: 'AG-1', participanteCadastroId: 'CAD-1', participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo A', tipo: 'Visita', visita: 'V1', data: '10/09/2026', dataIso: '2026-09-10' });
+  server.getCodexSpreadsheet_ = () => ({ getSheetByName: (name) => name === 'Participantes' ? sheet(name, [participantHeader, participant]) : sheet(name, [projectHeader, project]) });
+  server.getParticipantes = () => { throw new Error('getter global não deve ser chamado'); };
+  server.getProjetos = () => { throw new Error('getter global não deve ser chamado'); };
+
+  const result = server.getAgendaReciboData('AG-1', 2);
+
+  assert.equal(JSON.stringify(result.beneficiarios.map((item) => [item.nome, item.tipo, item.valorPadrao])), JSON.stringify([['Pessoa A', 'Participante', 100], ['Acompanhante A', 'Acompanhante', 80]]));
+  assert.equal(result.coordenador, 'Coordenação A');
+  assert.ok(calls.every((call) => call.numRows === 1 || (call.name === 'Participantes' && call.column === 1) || (call.name === 'Projetos' && call.column === 2)));
 });
 
 test('recibo normaliza estado para a sigla e o cadastro exibe apenas UF no pulldown', () => {
