@@ -15247,6 +15247,79 @@ function agendaReciboEstadoSigla_(value) {
   return siglas[key] || raw;
 }
 
+function agendaReciboParticipante_(evento) {
+  var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
+  if (!sh || sh.getLastRow() < 2) return null;
+  var lastCol = Math.max(Number(sh.getLastColumn()) || 0, 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+  var cadastroId = String(evento.participanteCadastroId || '').trim();
+  var candidatos = [];
+  var inicio = 2;
+  var quantidade = sh.getLastRow() - 1;
+
+  if (cadastroId) {
+    sh.getRange(inicio, 1, quantidade, 1).getValues().forEach(function(row, index) {
+      if (String(row[0] || '').trim() === cadastroId) candidatos.push(inicio + index);
+    });
+  } else {
+    // Compatibilidade legada: só consulta as colunas de identidade necessárias
+    // quando o evento ainda não possui o ID estável do cadastro.
+    sh.getRange(inicio, 1, quantidade, 6).getValues().forEach(function(row, index) {
+      if (normText_(row[1]) === normText_(evento.participante) &&
+          normText_(row[5]) === normText_(evento.projeto) &&
+          (!evento.idParticipante || normText_(row[4]) === normText_(evento.idParticipante))) {
+        candidatos.push(inicio + index);
+      }
+    });
+  }
+  if (candidatos.length !== 1) return null;
+
+  var values = sh.getRange(candidatos[0], 1, 1, lastCol).getValues()[0] || [];
+  var columns = {};
+  headers.forEach(function(value, index) { columns[participanteCampoKey_(value)] = index; });
+  function valueFor(aliases) {
+    for (var i = 0; i < aliases.length; i++) {
+      var index = columns[aliases[i]];
+      if (index !== undefined) return values[index] || '';
+    }
+    return '';
+  }
+  return {
+    id: String(values[0] || ''), nome: String(values[1] || ''), cpf: String(values[10] || ''),
+    rua: String(valueFor(['rua', 'endereco']) || ''), numero: String(valueFor(['numero', 'n']) || ''),
+    cidade: String(valueFor(['cidade']) || ''), estado: String(valueFor(['estado', 'uf']) || ''),
+    cep: String(valueFor(['cep']) || ''), banco: String(valueFor(['banco', 'nomedobanco']) || ''),
+    tipoConta: String(valueFor(['tipoconta', 'tipodeconta']) || ''), agencia: String(valueFor(['agencia']) || ''),
+    contaCorrente: String(valueFor(['contacorrente', 'conta']) || ''),
+    titularConta: String(valueFor(['titulardacontacorrente', 'titulardaconta']) || ''),
+    cpfTitular: String(valueFor(['cpfdotitular']) || ''),
+    acompanhantes: participanteLerAcompanhantes_(valueFor(['acompanhantesjson']))
+  };
+}
+
+function agendaReciboProjeto_(nomeProjeto) {
+  var sh = getCodexSpreadsheet_().getSheetByName('Projetos');
+  if (!sh || sh.getLastRow() < 2) return {};
+  var lastCol = Math.max(Number(sh.getLastColumn()) || 0, 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+  var nomes = sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues();
+  var rowNumber = 0;
+  for (var i = 0; i < nomes.length; i++) {
+    if (normText_(nomes[i][0]) === normText_(nomeProjeto)) {
+      rowNumber = i + 2;
+      break;
+    }
+  }
+  if (!rowNumber) return {};
+  var values = sh.getRange(rowNumber, 1, 1, lastCol).getValues()[0] || [];
+  var ressarcimentoCols = projetoRessarcimentoColumnMap_(headers);
+  return {
+    coordenador: String(values[11] || '').trim(),
+    ressarcimentoPadraoParticipante: ressarcimentoCols.participante >= 0 ? values[ressarcimentoCols.participante] : '',
+    ressarcimentoPadraoAcompanhante: ressarcimentoCols.acompanhante >= 0 ? values[ressarcimentoCols.acompanhante] : ''
+  };
+}
+
 function getAgendaReciboData(id, rowIndex) {
   var access = codexGetCurrentUserAccess();
   if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
@@ -15256,19 +15329,9 @@ function getAgendaReciboData(id, rowIndex) {
   if (['visita', 'consulta'].indexOf(tipoEvento) < 0) throw new Error('Recibos podem ser gerados somente para visitas e consultas.');
   if (!String(evento.participante || '').trim()) throw new Error('Este registro nao possui participante para gerar recibo.');
 
-  var cadastroId = String(evento.participanteCadastroId || '').trim();
-  var candidatos = getParticipantes().filter(function(participante) {
-    if (cadastroId) return String(participante.id || '').trim() === cadastroId;
-    return normText_(participante.nome) === normText_(evento.participante) &&
-      normText_(participante.projeto) === normText_(evento.projeto) &&
-      (!evento.idParticipante || normText_(participante.idParticipante) === normText_(evento.idParticipante));
-  });
-  if (candidatos.length !== 1) throw new Error('Nao foi possivel identificar unicamente o cadastro do participante.');
-
-  var participante = candidatos[0];
-  var projeto = getProjetos().filter(function(item) {
-    return normText_(item.nomeAbreviado) === normText_(evento.projeto);
-  })[0] || {};
+  var participante = agendaReciboParticipante_(evento);
+  if (!participante) throw new Error('Nao foi possivel identificar unicamente o cadastro do participante.');
+  var projeto = agendaReciboProjeto_(evento.projeto);
   function beneficiario(pessoa, tipo, valorPadrao) {
     pessoa = pessoa || {};
     return {
