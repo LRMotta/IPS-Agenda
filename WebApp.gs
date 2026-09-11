@@ -6016,7 +6016,12 @@ function salvarDadosParticipante(d) {
   if (existing) {
     var alterouProjeto = normText_(existing[5]) !== normText_(projeto);
     var alterouIdParticipante = normText_(existing[4]) !== normText_(d.idParticipante);
-    if ((alterouProjeto || alterouIdParticipante) && participantePossuiEventoAgenda_(participanteReferenciaCadastro_(existing))) {
+    // A Pré-Triagem pode ser agendada antes da atribuição do número definitivo.
+    // Depois que há evento, preservar o protocolo e um número já atribuído, mas
+    // permitir o primeiro preenchimento (vazio -> número), que será sincronizado
+    // às referências pelo ID técnico do cadastro logo abaixo.
+    var substituiuIdentificacaoExistente = alterouIdParticipante && String(existing[4] || '').trim() !== '';
+    if ((alterouProjeto || substituiuIdentificacaoExistente) && participantePossuiEventoAgenda_(participanteReferenciaCadastro_(existing))) {
       throw new Error('O protocolo e o número de identificação não podem ser alterados porque esta participação já possui eventos na Agenda. Encerre a participação atual e crie uma nova participação para o outro protocolo.');
     }
   }

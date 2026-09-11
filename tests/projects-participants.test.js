@@ -156,11 +156,12 @@ test('validador de CPF confirma dígitos verificadores e rejeita sequências ou 
   assert.equal(cadastro.isValidCpf('5299822472'), false);
 });
 
-test('servidor preserva protocolo e identificacao de participacao com historico', () => {
+test('servidor preserva protocolo e identificacao ja atribuida de participacao com historico', () => {
   const server = readProjectFile('WebApp.gs');
   const save = sourceBetween(server, 'function salvarDadosParticipante(', 'function corrigirMatrizIdadeParticipantes(');
   assert.match(save, /participantePossuiEventoAgenda_/);
-  assert.match(save, /alterouProjeto \|\| alterouIdParticipante/);
+  assert.match(save, /alterouProjeto \|\| substituiuIdentificacaoExistente/);
+  assert.match(save, /String\(existing\[4\] \|\| ''\)\.trim\(\) !== ''/);
   assert.match(save, /Encerre a participação atual e crie uma nova participação/);
   assert.match(save, /codexWriteAuditChanges_\('Cadastros', 'atualizarParticipacaoParticipante'/);
 });
