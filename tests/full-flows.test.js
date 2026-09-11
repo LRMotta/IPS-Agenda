@@ -556,6 +556,31 @@ test('alteracao de nome propaga pelas referencias usando o ID da coluna A', () =
   assert.equal(movimentos.rows[1][13], '81231558');
 });
 
+test('primeira identificacao apos TC agendada atualiza a mesma participacao e a Agenda', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
+    [81231558, 'Paciente Kandela', '', '', '', 'KANDELA-302', '', '', 'Pré-Triagem']
+  ]);
+  const agenda = new FakeSheet('Agenda', [
+    ['ID', 'Data', 'Hora', 'Tipo', 'Status', 'Participante', 'Nascimento', 'ID Participante', 'Projeto'],
+    ['TC-1', '', '', 'TC', 'Agendado', 'Paciente Kandela', '', '', 'KANDELA-302']
+  ]);
+  const ss = new FakeSpreadsheet({ Participantes: participantes, Agenda: agenda });
+  const { context } = cadastroContext(ss, [{ nome: 'KANDELA-302' }]);
+
+  assert.equal(context.salvarDadosParticipante({
+    id: 81231558,
+    nome: 'Paciente Kandela',
+    idParticipante: 'KAN-001',
+    projeto: 'KANDELA-302',
+    status: 'Triagem'
+  }), 'Participante atualizado com sucesso');
+
+  assert.equal(participantes.rows[1][4], 'KAN-001');
+  assert.equal(agenda.rows[1][7], 'KAN-001');
+  assert.equal(agenda.rows[1][9], '81231558');
+});
+
 test('edicao preserva projeto, status e identificacao quando o formulario nao os devolve', () => {
   const participantes = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
