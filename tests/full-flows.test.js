@@ -502,6 +502,27 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   assert.match(created[headers.indexOf('ID Pessoa')], /^PES-/);
 });
 
+test('campos complementares contiguos do participante usam uma unica escrita em bloco', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs',
+      'Rua', 'Número', 'Cidade', 'Estado', 'Código IBGE do Município', 'CEP', 'Banco', 'Tipo de conta', 'Agência', 'Conta corrente',
+      'Titular da Conta Corrente', 'CPF do Titular', 'ID Pessoa', 'Acompanhantes (JSON)'],
+    [1, 'Pessoa A']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }));
+  const columns = context.participanteColumnMap_(sheet, false);
+
+  context.gravarParticipanteCamposNovos_(sheet, 2, {
+    rua: 'Rua A', numero: '1', cidade: 'Caxias do Sul', estado: 'RS', municipioCodigo: '4305108', cep: '95000-000',
+    banco: 'Banco A', tipoConta: 'Conta corrente', agencia: '0001', contaCorrente: '123', titularConta: 'Pessoa A',
+    cpfTitular: '529.982.247-25', idPessoa: 'PES-1', acompanhantes: []
+  }, columns);
+
+  assert.equal(sheet.writes, 1);
+  assert.equal(sheet.rows[1][12], 'Rua A');
+  assert.equal(sheet.rows[1][25], '[]');
+});
+
 test('alteracao de nome propaga pelas referencias usando o ID da coluna A', () => {
   const participantes = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],
