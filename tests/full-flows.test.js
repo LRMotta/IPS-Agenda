@@ -126,6 +126,30 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(counters.cache, 2);
 });
 
+test('edicao sem mudar identidade do participante nao varre referencias externas', () => {
+  const participants = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
+    [5, 'Pessoa A', '', '', 'P-005', 'Novo Estudo', '', '', 'Ativo', '', '', '']
+  ]);
+  const agenda = new FakeSheet('Agenda', [
+    ['Participante', 'ID Participante', 'Projeto', 'ID Cadastro Participante'],
+    ['Pessoa A', 'P-005', 'Novo Estudo', 5]
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Participantes: participants, Agenda: agenda });
+  const { context } = cadastroContext(spreadsheet, [{ nome: 'Novo Estudo' }]);
+
+  assert.equal(context.salvarDadosParticipante({
+    id: 5, nome: 'Pessoa A', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
+  }), 'Participante atualizado com sucesso');
+  assert.equal(agenda.writes, 0);
+
+  assert.equal(context.salvarDadosParticipante({
+    id: 5, nome: 'Pessoa A Atualizada', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
+  }), 'Participante atualizado com sucesso');
+  assert.equal(agenda.rows[1][0], 'Pessoa A Atualizada');
+  assert.ok(agenda.writes > 0);
+});
+
 test('acompanhantes persistem por participante com bancos proprios, IDs estaveis e compatibilidade legada', () => {
   const sheet = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],

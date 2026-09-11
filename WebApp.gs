@@ -5748,6 +5748,14 @@ function participanteReferenciaCadastro_(row) {
   };
 }
 
+function participanteReferenciaAlterada_(anterior, atual) {
+  anterior = anterior || {};
+  atual = atual || {};
+  return ['nome', 'idParticipante', 'projeto'].some(function(campo) {
+    return String(anterior[campo] || '').trim() !== String(atual[campo] || '').trim();
+  });
+}
+
 function participanteReferenciaKey_(value) {
   return String(value || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -6124,7 +6132,11 @@ function salvarDadosParticipante(d) {
       d.id, d.nome, parseDate(d.dataNascimento), '', d.idParticipante,
       projeto, d.braco || ''
     ]);
-    sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual);
+    // Referências externas só dependem destes três campos. Evitar uma varredura
+    // completa das abas quando a edição é, por exemplo, de telefone ou endereço.
+    if (participanteReferenciaAlterada_(referenciaAnterior, referenciaAtual)) {
+      sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual);
+    }
     if (typeof codexWriteAuditChanges_ === 'function') {
       codexWriteAuditChanges_('Cadastros', 'atualizarParticipacaoParticipante', d.id, [
         { field: 'Nome', oldValue: existing[1], newValue: d.nome },
