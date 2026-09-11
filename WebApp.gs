@@ -5382,9 +5382,31 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
   if (d.tipoConta !== undefined) values.tipoConta = d.tipoConta || '';
   // Clientes antigos que omitem a coleção não apagam acompanhantes existentes.
   if (d.acompanhantes !== undefined) values.acompanhantesJson = JSON.stringify(d.acompanhantes);
-  Object.keys(values).forEach(function(key) {
-    if (columns[key] !== undefined) sh.getRange(rowNumber, columns[key] + 1).setValue(values[key]);
+  var cells = Object.keys(values).filter(function(key) {
+    return columns[key] !== undefined;
+  }).map(function(key) {
+    return { column: columns[key] + 1, value: values[key] };
+  }).sort(function(a, b) {
+    return a.column - b.column;
   });
+
+  // Os campos novos normalmente são contíguos. Escrever cada trecho em bloco
+  // reduz chamadas remotas sem sobrescrever campos opcionais omitidos por clientes legados.
+  var block = null;
+  function flushBlock() {
+    if (!block) return;
+    sh.getRange(rowNumber, block.startColumn, 1, block.values.length).setValues([block.values]);
+    block = null;
+  }
+  cells.forEach(function(cell) {
+    if (!block || cell.column !== block.startColumn + block.values.length) {
+      flushBlock();
+      block = { startColumn: cell.column, values: [cell.value] };
+      return;
+    }
+    block.values.push(cell.value);
+  });
+  flushBlock();
 }
 
 function participanteLerAcompanhantes_(value) {
