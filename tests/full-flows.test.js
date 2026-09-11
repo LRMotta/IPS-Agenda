@@ -22,12 +22,13 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
     between(web, 'function soaNormalizarBaseCalculo_', 'function soaNormalizarPapelCronograma_') + '\n' +
     between(web, 'var PROJETO_COURIER_FIELDS_', 'function excluirProjeto(') + '\n' +
     between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
-  const counters = { cache: 0, transportCache: 0, uuid: 0 };
+  const counters = { cache: 0, transportCache: 0, uuid: 0, performance: [] };
   const context = vm.createContext({
     SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
     codexAssertCanWrite_: () => ({ ok: true }),
     codexAuthorizeWebAppRequest_: () => ({ ok: true }),
     codexWithDocumentLock_: (_name, callback) => callback(),
+    codexLogPerformance_: (...args) => { counters.performance.push(args); },
     clearTransporteOptionsCache_: () => { counters.transportCache++; },
     clearCodexRuntimeCaches_: () => { counters.cache++; },
     getProjetosParticipantesOptions_: () => projectOptions || [],
@@ -114,6 +115,9 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(context.salvarDadosParticipante(participant), 'Participante cadastrado com sucesso');
   assert.equal(sheet.rows[2][0], 5);
   assert.equal(sheet.rows[2][5], 'Novo Estudo');
+  assert.deepEqual(counters.performance.map(entry => entry[1]), [
+    'lock_wait', 'read_participants', 'validate_prepare', 'persist_and_sync', 'total'
+  ]);
   assert.match(sheet.rows[2][sheet.rows[0].indexOf('ID Pessoa')], /^PES-[A-F0-9]{20}$/);
   assert.equal(counters.cache, 1);
 

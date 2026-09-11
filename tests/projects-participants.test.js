@@ -165,6 +165,16 @@ test('servidor preserva protocolo e identificacao de participacao com historico'
   assert.match(save, /codexWriteAuditChanges_\('Cadastros', 'atualizarParticipacaoParticipante'/);
 });
 
+test('salvamento de participante registra telemetria sem dados pessoais', () => {
+  const server = readProjectFile('WebApp.gs');
+  const save = sourceBetween(server, 'function salvarDadosParticipante(', 'function corrigirMatrizIdadeParticipantes(');
+  assert.match(server, /function codexLogPerformance_\(/);
+  ['lock_wait', 'read_participants', 'validate_prepare', 'persist_and_sync', 'total'].forEach(stage => {
+    assert.match(save, new RegExp("codexLogPerformance_\\('salvarDadosParticipante', '" + stage + "'"));
+  });
+  assert.doesNotMatch(save, /codexLogPerformance_\([^\n]*(d\.nome|d\.cpf|d\.idParticipante|d\.idPessoa)/);
+});
+
 test('status encerrado nao fica disponivel para novo agendamento', () => {
   const cadastro = rules();
   assert.equal(cadastro.participantAvailableForNewAgenda('Ativo'), true);

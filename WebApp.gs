@@ -5921,13 +5921,23 @@ function participanteGerarPessoaId_(rows, personIdColumn) {
 function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   d = d || {};
-  return codexWithDocumentLock_('salvarDadosParticipante', function() {
+  // Somente tempos e contagens: nunca registrar valores identificaveis do cadastro.
+  var performanceStartedAt = Date.now();
+  var participantRowCount = 0;
+  var performanceSuccess = false;
+  try {
+  var result = codexWithDocumentLock_('salvarDadosParticipante', function() {
+  var lockAcquiredAt = Date.now();
+  codexLogPerformance_('salvarDadosParticipante', 'lock_wait', lockAcquiredAt - performanceStartedAt, { rowCount: 0 }, true);
   var ss   = SpreadsheetApp.getActiveSpreadsheet();
   var sh   = ss.getSheetByName('Participantes');
   if (!sh) throw new Error('Aba "Participantes" não encontrada.');
   var rows = sh.getDataRange().getValues();
+  participantRowCount = Math.max(0, rows.length - 1);
   var participantColumnsRead = participanteColumnMap_(sh, false);
   var personIdColumnRead = participantColumnsRead.idPessoa === undefined ? -1 : participantColumnsRead.idPessoa;
+  var validationStartedAt = Date.now();
+  codexLogPerformance_('salvarDadosParticipante', 'read_participants', validationStartedAt - lockAcquiredAt, { rowCount: participantRowCount }, true);
   var editRowIndex = -1;
   var directOriginRowIndex = -1;
   var existing = null;
@@ -6073,6 +6083,12 @@ function salvarDadosParticipante(d) {
   }
   var participantColumns = participanteColumnMap_(sh, true);
   var personIdColumn = participantColumns.idPessoa;
+  var persistStartedAt = Date.now();
+  codexLogPerformance_('salvarDadosParticipante', 'validate_prepare', persistStartedAt - validationStartedAt, { rowCount: participantRowCount }, true);
+  function concluirSalvarParticipante_(mensagem) {
+    codexLogPerformance_('salvarDadosParticipante', 'persist_and_sync', Date.now() - persistStartedAt, { rowCount: participantRowCount }, true);
+    return mensagem;
+  }
   if (vinculoRowIndex > 0 && !participantePessoaIdDaLinha_(rows[vinculoRowIndex], personIdColumnRead)) {
     sh.getRange(vinculoRowIndex + 1, personIdColumn + 1).setValue(idPessoa);
     if (typeof codexWriteAuditChanges_ === 'function') {
@@ -6121,7 +6137,7 @@ function salvarDadosParticipante(d) {
     }
     clearCodexRuntimeCaches_();
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
-    return 'Participante atualizado com sucesso';
+    return concluirSalvarParticipante_('Participante atualizado com sucesso');
   } else {
     var maxId = 0;
     rows.slice(1).forEach(function(r) {
@@ -6136,9 +6152,14 @@ function salvarDadosParticipante(d) {
     if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('criarParticipacaoParticipante', 'Cadastros', rowStart[0]);
     clearCodexRuntimeCaches_();
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
-    return 'Participante cadastrado com sucesso';
+    return concluirSalvarParticipante_('Participante cadastrado com sucesso');
   }
   });
+  performanceSuccess = true;
+  return result;
+  } finally {
+    codexLogPerformance_('salvarDadosParticipante', 'total', Date.now() - performanceStartedAt, { rowCount: participantRowCount }, performanceSuccess);
+  }
 }
 
 function corrigirMatrizIdadeParticipantes() {
@@ -14523,6 +14544,21 @@ function setAgendaValueAndFormat_(range, value, format) {
   }
 }
 
+function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
+  metadata = metadata || {};
+  try {
+    Logger.log('[CODEX_PERF] ' + JSON.stringify({
+      operation: String(operation || ''),
+      stage: String(stage || ''),
+      durationMs: Math.max(0, Number(durationMs) || 0),
+      rowCount: Math.max(0, Number(metadata.rowCount) || 0),
+      success: success === true
+    }));
+  } catch (eLog) {
+    // A telemetria nunca pode alterar o resultado da operacao observada.
+  }
+}
+
 function codexMeasurePerformance_(operation, stage, metadata, callback) {
   var startedAt = Date.now();
   var success = false;
@@ -14532,17 +14568,7 @@ function codexMeasurePerformance_(operation, stage, metadata, callback) {
     success = true;
     return result;
   } finally {
-    try {
-      Logger.log('[CODEX_PERF] ' + JSON.stringify({
-        operation: String(operation || ''),
-        stage: String(stage || ''),
-        durationMs: Math.max(0, Date.now() - startedAt),
-        rowCount: Math.max(0, Number(metadata.rowCount) || 0),
-        success: success
-      }));
-    } catch (eLog) {
-      // A telemetria nunca pode alterar o resultado da operacao observada.
-    }
+    codexLogPerformance_(operation, stage, Date.now() - startedAt, metadata, success);
   }
 }
 
