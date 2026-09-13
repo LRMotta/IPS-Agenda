@@ -414,6 +414,11 @@
       return;
     }
     setAgendaInitStartedState(true);
+    if (agendaAplicarBootstrapInicial_()) {
+      agendaAbrirPendenteAposCarga();
+      agendaAgendarRevalidacaoInicialReferencias_();
+      return;
+    }
     carregarAgendaEventos(false, agendaAbrirPendenteAposCarga, { initialLoad: true });
     if (window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.agendaFormData) {
       var bootstrapFormData = window.APP_BOOTSTRAP_DATA.agendaFormData;
@@ -4176,6 +4181,23 @@
       }
     }
     return { inicio: dataIso || '', fim: dataIso || '', ids: r && r.id ? [r.id] : [] };
+  }
+
+  function agendaAplicarBootstrapInicial_() {
+    if (!agendaWindowedLoadingAtivo_()) return false;
+    var response = window.APP_BOOTSTRAP_DATA && window.APP_BOOTSTRAP_DATA.agendaBootstrap;
+    var requestedRange = agendaWindowForWeekOffset_(_agendaWeekOffset);
+    if (!agendaBootstrapWindowValido_(response, requestedRange)) return false;
+    // A janela inicial só é aproveitada depois de preencher e confirmar todas
+    // as referências. Isso impede uma Agenda rápida com pulldowns parciais.
+    if (!applyAgendaFormData(response.referenceData) || !agendaFormularioEstaPronto_()) return false;
+    if (!agendaWindowMemoryCachePut_(response, requestedRange)) return false;
+    agendaAplicarEventos_(response.events, 'window', {
+      inicio: response.range.loadedStart,
+      fim: response.range.loadedEndExclusive
+    }, false);
+    renderAgendaOperacional();
+    return true;
   }
 
   function agendaStorePeriodoOperacional_(r, periodo) {
