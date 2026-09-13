@@ -283,7 +283,7 @@ test('participante oferece endereco, dados bancarios opcionais e bancos configur
   assert.match(server, /\['idPessoa', 'ID Pessoa'\]/);
   assert.match(server, /function participanteGerarPessoaId_/);
   assert.match(server, /codexWithDocumentLock_\('salvarDadosParticipante'/);
-  assert.match(client, /ID Pessoa: /);
+  assert.doesNotMatch(client, /ID Pessoa: '\+esc\(p\.idPessoa\)/);
 });
 
 test('participante e acompanhantes usam UF fixa e município IBGE pesquisável sob demanda', () => {

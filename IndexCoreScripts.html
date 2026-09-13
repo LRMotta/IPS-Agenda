@@ -408,10 +408,29 @@ function startCodexAppOnce() {
       handleAppBootstrapFailure(error);
       abrirPaginaInicialApp();
     })
-    .getAppBootstrapData();
+    .getAppBootstrapData(appInitialBootstrapRequest_());
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);
+
+function appInitialBootstrapRequest_() {
+  if (String(window.INDEX_INITIAL_PAGE || 'agenda') !== 'agenda' ||
+      isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque')) return { page: '' };
+  // Deve reproduzir a janela inicial da Agenda: semana atual, anterior e
+  // posterior. O servidor valida ambas as datas antes de ler a planilha.
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var day = today.getDay();
+  today.setDate(today.getDate() + (day === 0 ? -6 : 1 - day));
+  var start = new Date(today);
+  var endExclusive = new Date(today);
+  start.setDate(start.getDate() - 7);
+  endExclusive.setDate(endExclusive.getDate() + 14);
+  function iso(date) {
+    return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2);
+  }
+  return { page: 'agenda', agendaRange: { start: iso(start), endExclusive: iso(endExclusive) } };
+}
 
 function abrirShellInicialAgendaCanario_() {
   if (!window.INDEX_INITIAL_AGENDA_CANARY_SHELL ||
@@ -2902,7 +2921,6 @@ function renderTabelaPart(lista) {
       +'</div></td></tr>';
     function msIcon(name){ return '<span class="material-symbols-outlined">'+name+'</span>'; }
     var items=[];
-    if(p.idPessoa)       items.push('<span class="det-item">'+msIcon('fingerprint')+'<span>ID Pessoa: '+esc(p.idPessoa)+'</span></span>');
     if(p.cpf)            items.push('<span class="det-item">'+msIcon('badge')+'<span>'+esc(p.cpf)+'</span></span>');
     if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(formatarTelefoneBrasileiro(p.telefone))+'</span></span>');
     if(p.observacoes)    items.push('<span class="det-item">'+msIcon('notes')+'<span class="det-obs" title="'+esc(p.observacoes)+'">'+esc(p.observacoes)+'</span></span>');

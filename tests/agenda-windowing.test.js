@@ -442,7 +442,7 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
   assert.match(readProjectFile('IndexAgendaScripts.html'), /\.getAgendaBootstrap\(requestedRange\.start, requestedRange\.endExclusive, forcar === true\)/);
 });
 
-test('feature de janela nasce desligada e somente e anunciada a administradores do canario', () => {
+test('feature de janela nasce desligada e, quando habilitada, atende todo perfil autorizado', () => {
   const property = { value: null };
   const server = agendaServer({
     PropertiesService: {
@@ -464,18 +464,49 @@ test('feature de janela nasce desligada e somente e anunciada a administradores 
 
   property.value = 'true';
   server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'readonly' });
-  const nonAdmin = server.getAppBootstrapData();
-  assert.equal(nonAdmin.features, undefined);
-  assert.deepEqual(Object.assign({}, nonAdmin.agendaFormData), { legado: true });
+  const readonly = server.getAppBootstrapData();
+  assert.deepEqual(Object.assign({}, readonly.features), { agendaWindowedLoadingV2: true });
+  assert.equal(readonly.agendaFormData, null);
 
   server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
-  const canary = server.getAppBootstrapData();
-  assert.deepEqual(Object.assign({}, canary.features), { agendaWindowedLoadingV2: true });
-  assert.equal(canary.agendaFormData, null);
-  assert.equal(formReads, 2);
+  const admin = server.getAppBootstrapData();
+  assert.deepEqual(Object.assign({}, admin.features), { agendaWindowedLoadingV2: true });
+  assert.equal(admin.agendaFormData, null);
+  assert.equal(formReads, 1);
 });
 
-test('kill switch do canario altera somente a flag global e exige administrador', () => {
+test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma única RPC', () => {
+  const property = { value: 'true' };
+  const server = agendaServer({
+    PropertiesService: {
+      getScriptProperties: () => ({ getProperty: () => property.value })
+    },
+    ScriptApp: { getService: () => ({ getUrl: () => 'https://example.invalid/exec' }) }
+  });
+  const referenceData = validAgendaReferenceData();
+  const calls = [];
+  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'readonly' });
+  server.codexGetUserOAuthStatus_ = () => ({});
+  server.codexGetAppVersion_ = () => ({});
+  server.codexGetTeamBirthdays_ = () => [];
+  server.getAgendaBootstrap = (start, endExclusive, forceRefresh) => {
+    calls.push({ start, endExclusive, forceRefresh });
+    return { access: { ok: true }, referenceData, events: [], range: { start, endExclusive } };
+  };
+
+  const result = server.getAppBootstrapData({
+    page: 'agenda',
+    agendaRange: { start: '2026-09-07', endExclusive: '2026-09-28' }
+  });
+
+  assert.deepEqual(calls, [{ start: '2026-09-07', endExclusive: '2026-09-28', forceRefresh: false }]);
+  assert.equal(result.agendaFormData, null);
+  assert.equal(result.agendaBootstrap.referenceData, referenceData);
+  assert.deepEqual(Object.assign({}, result.features), { agendaWindowedLoadingV2: true });
+  assert.equal(server.agendaBootstrapRequestRange_({ page: 'agenda', agendaRange: { start: 'inválida', endExclusive: '2026-09-28' } }), null);
+});
+
+test('kill switch global exige administrador, mas habilita a carga por período para todos', () => {
   const property = { value: null, writes: [] };
   const logs = [];
   const server = agendaServer({
@@ -493,16 +524,16 @@ test('kill switch do canario altera somente a flag global e exige administrador'
   let authorized = 0;
   server.codexAssertAdmin_ = () => { authorized += 1; return { ok: true, role: 'admin' }; };
 
-  assert.deepEqual(Object.assign({}, server.ativarAgendaWindowedLoadingV2Admin()), { globalEnabled: true, adminOnly: true });
+  assert.deepEqual(Object.assign({}, server.ativarAgendaWindowedLoadingV2Admin()), { globalEnabled: true, adminOnly: false });
   assert.equal(server.agendaWindowedLoadingV2GlobalEnabled_(), true);
-  assert.deepEqual(Object.assign({}, server.desativarAgendaWindowedLoadingV2Admin()), { globalEnabled: false, adminOnly: true });
+  assert.deepEqual(Object.assign({}, server.desativarAgendaWindowedLoadingV2Admin()), { globalEnabled: false, adminOnly: false });
   assert.equal(server.agendaWindowedLoadingV2GlobalEnabled_(), false);
   assert.equal(authorized, 2);
   assert.deepEqual(property.writes, [
     { key: 'AGENDA_WINDOWED_LOADING_V2', value: 'true' },
     { key: 'AGENDA_WINDOWED_LOADING_V2', value: 'false' }
   ]);
-  assert.equal(logs.every((entry) => /\[CODEX_AGENDA_CANARY\]/.test(entry)), true);
+  assert.equal(logs.every((entry) => /\[CODEX_AGENDA_WINDOWED_LOADING\]/.test(entry)), true);
   assert.equal(logs.some((entry) => /@|nome|userEmail|participant/i.test(entry)), false);
 });
 
@@ -823,12 +854,15 @@ test('barreira do formulario valida todos os datasets antes de alterar selects',
 
   const apply = functionBody(client, 'applyAgendaFormData');
   const update = functionBody(client, 'atualizarAgendaFormDataOpcoes');
+  const applyInitial = functionBody(client, 'agendaAplicarBootstrapInicial_');
   assert.ok(apply.indexOf('agendaReferenceDataValidation_(d)') < apply.indexOf('agendaCurrentValues'));
   assert.ok(apply.indexOf('if (!validation.ok) return false') < apply.indexOf('setAgendaFormDataState'));
   assert.ok(apply.indexOf('_agendaReferenceDataConfirmed = false') < apply.indexOf('agendaFormDataAplicacaoBloqueadaPorEdicao'));
   assert.ok(apply.lastIndexOf('_agendaReferenceDataConfirmed = true') > apply.indexOf("preencherAgendaSelect('agParticipante'"));
   assert.ok(update.indexOf('if (!validation.ok) return false') < update.indexOf('setAgendaFormDataState'));
   assert.ok(update.lastIndexOf('_agendaReferenceDataConfirmed = true') > update.indexOf("preencherAgendaSelect('agParticipante'"));
+  assert.match(applyInitial, /!applyAgendaFormData\(response\.referenceData\) \|\| !agendaFormularioEstaPronto_\(\)/);
+  assert.ok(applyInitial.indexOf('agendaFormularioEstaPronto_()') < applyInitial.indexOf('agendaWindowMemoryCachePut_'));
 });
 
 test('barreira mantem o formulario fechado e libera somente a ultima abertura solicitada', () => {
@@ -1162,7 +1196,7 @@ test('hidratação indexada preserva a proteção contra participantes ambíguos
   });
 });
 
-test('diretório de hidratação cacheado é usado somente pelo bootstrap do canário', () => {
+test('diretório de hidratação cacheado é usado pelo bootstrap por período', () => {
   const server = agendaServer();
   let cached = null;
   let reads = 0;
@@ -1206,7 +1240,7 @@ test('diretório de hidratação cacheado é usado somente pelo bootstrap do can
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'clearCodexRuntimeCaches_'), /agendaInvalidateParticipantHydrationCache_\(\)/);
 });
 
-test('índice de datas é cacheado somente no canário e é invalidado após escrita da Agenda', () => {
+test('índice de datas é cacheado na carga por período e é invalidado após escrita da Agenda', () => {
   const server = agendaServer();
   const rows = [
     agendaRow(server, { id: 'EVT-1', data: '2026-07-14', idParticipante: 'P-1', braco: 'A' }),
@@ -1241,15 +1275,22 @@ test('índice de datas é cacheado somente no canário e é invalidado após esc
   assert.match(functionBody(source, '_gravarLinhaEvento'), /agendaInvalidateDateIndexCache_\(\)/);
 });
 
-test('shell canário aparece antes do bootstrap, sem iniciar a carga da Agenda', () => {
+test('shell da Agenda aparece antes do bootstrap unificado, sem iniciar RPC separada', () => {
   const source = readProjectFile('IndexCoreScripts.html');
+  const agendaClient = readProjectFile('IndexAgendaScripts.html');
   const start = functionBody(source, 'startCodexAppOnce');
   const shell = functionBody(source, 'abrirShellInicialAgendaCanario_');
+  const initialRequest = functionBody(source, 'appInitialBootstrapRequest_');
   const route = functionBody(source, 'irPara');
+  const init = functionBody(agendaClient, 'initAgendaV1');
+  const applyInitial = functionBody(agendaClient, 'agendaAplicarBootstrapInicial_');
 
-  assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('.getAppBootstrapData()'));
+  assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('.getAppBootstrapData(appInitialBootstrapRequest_())'));
   assert.match(shell, /irPara\('agenda', \{ initial: true, shellOnly: true \}\)/);
+  assert.match(initialRequest, /page: 'agenda', agendaRange:/);
   assert.ok(route.indexOf('if (options.shellOnly)') < route.indexOf("if (pagina === 'agenda') initAgendaV1()"));
+  assert.ok(init.indexOf('agendaAplicarBootstrapInicial_()') < init.indexOf('carregarAgendaEventos(false'));
+  assert.match(applyInitial, /window\.APP_BOOTSTRAP_DATA && window\.APP_BOOTSTRAP_DATA\.agendaBootstrap/);
   assert.match(readProjectFile('Index.html'), /INDEX_INITIAL_AGENDA_CANARY_SHELL/);
   assert.match(readProjectFile('WebApp.gs'), /tplIndex\.agendaCanaryShell = tplIndex\.paginaInicial === 'agenda'/);
 });

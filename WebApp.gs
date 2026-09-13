@@ -84,7 +84,7 @@ function doGet(e) {
   tplIndex.dashboardFiltroInicial = e && e.parameter ? (e.parameter.dashFiltro || '') : '';
   tplIndex.dashboardFiltroKeys = e && e.parameter ? (e.parameter.dashKeys || '') : '';
   // O shell antecipado não traz dados nem libera operações: apenas reduz o tempo
-  // até a estrutura visual da Agenda aparecer para o administrador do canário.
+  // até a estrutura visual da Agenda aparecer para usuários autorizados.
   tplIndex.agendaCanaryShell = tplIndex.paginaInicial === 'agenda' &&
     agendaWindowedLoadingV2EnabledForAccess_(access);
   return tplIndex
@@ -205,19 +205,21 @@ function agendaWindowedLoadingV2GlobalEnabled_() {
 function ativarAgendaWindowedLoadingV2Admin() {
   codexAssertAdmin_();
   PropertiesService.getScriptProperties().setProperty('AGENDA_WINDOWED_LOADING_V2', 'true');
-  Logger.log('[CODEX_AGENDA_CANARY] ' + JSON.stringify({ operation: 'activate', success: true, adminOnly: true }));
-  return { globalEnabled: true, adminOnly: true };
+  Logger.log('[CODEX_AGENDA_WINDOWED_LOADING] ' + JSON.stringify({ operation: 'activate', success: true }));
+  return { globalEnabled: true, adminOnly: false };
 }
 
 function desativarAgendaWindowedLoadingV2Admin() {
   codexAssertAdmin_();
   PropertiesService.getScriptProperties().setProperty('AGENDA_WINDOWED_LOADING_V2', 'false');
-  Logger.log('[CODEX_AGENDA_CANARY] ' + JSON.stringify({ operation: 'deactivate', success: true, adminOnly: true }));
-  return { globalEnabled: false, adminOnly: true };
+  Logger.log('[CODEX_AGENDA_WINDOWED_LOADING] ' + JSON.stringify({ operation: 'deactivate', success: true }));
+  return { globalEnabled: false, adminOnly: false };
 }
 
 function agendaWindowedLoadingV2EnabledForAccess_(access) {
-  return agendaWindowedLoadingV2GlobalEnabled_() && !!access && access.ok === true && access.role === 'admin';
+  // A autorização continua sendo decidida no servidor para cada RPC. Uma vez
+  // autorizado, todo perfil recebe a mesma carga por período e seus caches.
+  return agendaWindowedLoadingV2GlobalEnabled_() && !!access && access.ok === true;
 }
 
 function agendaWindowFallbackLog(code) {
@@ -236,9 +238,20 @@ function agendaWindowFallbackLog(code) {
   return true;
 }
 
-function getAppBootstrapData() {
+function agendaBootstrapRequestRange_(request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request) || request.page !== 'agenda') return null;
+  var range = request.agendaRange;
+  if (!range || typeof range !== 'object' || Array.isArray(range)) return null;
+  var inicio = String(range.start || '').trim();
+  var fim = String(range.endExclusive || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim)) return null;
+  return { start: inicio, endExclusive: fim };
+}
+
+function getAppBootstrapData(request) {
   var access = codexGetCurrentUserAccess();
   var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
+  var agendaRange = agendaBootstrapRequestRange_(request);
   var out = {
     access: access,
     auth: codexGetUserOAuthStatus_(),
@@ -261,6 +274,14 @@ function getAppBootstrapData() {
       out.agendaFormData = getDadosFormularioAgenda(true);
     } catch (e2) {
       out.errors.agendaFormData = e2.message || String(e2);
+    }
+  } else if (agendaRange) {
+    try {
+      // Entrega referencias e a janela visível na mesma RPC do bootstrap da
+      // página, eliminando a espera sequencial antes da primeira renderização.
+      out.agendaBootstrap = getAgendaBootstrap(agendaRange.start, agendaRange.endExclusive, false);
+    } catch (e2) {
+      out.errors.agendaBootstrap = e2.message || String(e2);
     }
   }
   try {
@@ -1680,7 +1701,7 @@ var AGENDA_REFERENCE_CACHE_MAX_BYTES_ = 95000;
 // A primeira renderizacao pode usar a referencia valida em cache. A renovacao
 // subsequente e coalescida para nao reconstruir o formulario para cada aba.
 var AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_ = 300;
-// Diretorio minimo, somente do canario, para completar eventos historicos sem
+// Diretorio minimo para completar eventos historicos sem
 // reler todas as colunas da aba Participantes a cada bootstrap de janela.
 var AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_ = 300;
 // O indice conserva somente timestamps e offsets. TTL curto limita a defasagem
