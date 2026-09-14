@@ -436,13 +436,14 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
   assert.equal(result.complete, true);
   assert.equal(result.truncated, false);
   assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
-  const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
+  const entries = logs.filter((message) => /^\[CODEX_PERF\]/.test(message))
+    .map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
   assert.deepEqual(entries.map((entry) => entry.stage), [
     'access', 'reference', 'date_index', 'date_lookup', 'date_scan',
     'row_read', 'hydrate_convert', 'hydrate', 'revision', 'total'
   ]);
   assert.equal(logs.some((message) => /2026-07|EVT-SIGILOSO|Pessoa sigilosa/.test(message)), false);
-  assert.match(readProjectFile('IndexAgendaScripts.html'), /\.getAgendaBootstrap\(requestedRange\.start, requestedRange\.endExclusive, forcar === true\)/);
+  assert.match(readProjectFile('IndexAgendaScripts.html'), /\.getAgendaBootstrap\([\s\S]*requestedRange\.start,[\s\S]*requestedRange\.endExclusive,[\s\S]*forcar === true,[\s\S]*refreshReason/);
 });
 
 test('feature de janela nasce desligada e, quando habilitada, atende todo perfil autorizado', () => {
@@ -516,7 +517,8 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
   assert.equal(result.agendaFormData, null);
   assert.equal(result.agendaBootstrap.referenceData, referenceData);
   assert.deepEqual(Object.assign({}, result.features), { agendaWindowedLoadingV2: true });
-  const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
+  const entries = logs.filter((message) => /^\[CODEX_PERF\]/.test(message))
+    .map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
   assert.deepEqual(entries.map((entry) => entry.stage), [
     'access', 'auth', 'version', 'web_app_url', 'agenda_bootstrap', 'team_birthdays', 'serialize', 'total'
   ]);
@@ -848,7 +850,8 @@ test('falha do bootstrap e relancada e restaura o bypass de cache da execucao', 
     (error) => error === failure
   );
   assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
-  const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
+  const entries = logs.filter((message) => /^\[CODEX_PERF\]/.test(message))
+    .map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
   assert.deepEqual(entries.map((entry) => [entry.stage, entry.success]), [
     ['access', true],
     ['reference', false],
@@ -1178,6 +1181,28 @@ test('referencias do bootstrap usam TTL proprio, telemetria sem dados e evitam c
   assert.match(logs.join('\n'), /"skip_oversize"/);
 });
 
+test('telemetria do bootstrap registra motivo seguro e subetapas sem identificar usuario', () => {
+  const logs = [];
+  const server = agendaServer({ Logger: { log: (message) => logs.push(message) } });
+
+  server.agendaLogBootstrapRequest_({ ok: true, role: 'readonly', userEmail: 'sigiloso@example.test' }, true, 'entrada-nao-confiavel', true);
+  const entry = JSON.parse(logs[0].replace(/^\[CODEX_AGENDA_BOOTSTRAP_REQUEST\]\s*/, ''));
+  assert.deepEqual(entry, {
+    forceRefresh: true,
+    refreshReason: 'forced_refresh',
+    role: 'readonly',
+    windowedLoading: true
+  });
+  assert.doesNotMatch(logs[0], /sigiloso|example/i);
+
+  const source = readProjectFile('WebApp.gs');
+  const build = functionBody(source, 'agendaBuildDadosFormularioAgenda_');
+  ['participantes', 'projetos', 'courier_config', 'kits_coleta', 'monitores'].forEach((stage) => {
+    assert.match(build, new RegExp("measureReference\\('" + stage + "'"));
+  });
+  assert.match(functionBody(source, 'agendaGetBootstrapForAccess_'), /agendaGetReferenceData_\(refreshRequested, canaryEnabled, function/);
+});
+
 test('cliente nao revalida formulario durante bootstrap da janela', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const refresh = functionBody(client, 'agendaRevalidarFormDataEmBackground');
@@ -1474,7 +1499,7 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   assert.match(functionBody(client, 'agendaIntervaloDesdeUltimaVisita_'), /ultimaVisitaDataIso/);
   assert.match(functionBody(client, 'agendaIntervaloDesdeUltimaVisita_'), /86400000/);
   assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /calcularIdadeAgenda_/);
-  assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes: agendaParticipantesFormulario_/);
+  assert.match(functionBody(server, 'agendaBuildDadosFormularioAgenda_'), /participantes:\s*measureReference\('participantes'/);
   assert.match(functionBody(server, 'getInfoParticipante'), /ultimaVisitaDataIso/);
   assert.match(readProjectFile('IndexContentAfterDashboard.html'), /atualizarAgendaIntervaloUltimaVisita\(\)/);
 });

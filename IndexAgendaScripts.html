@@ -304,7 +304,7 @@
     if (_agendaEventosRefreshing) return;
     if (!force && !agendaEventosEstaoDesatualizados()) return;
     _agendaEventosRefreshing = true;
-    carregarAgendaEventos(true, null, { silent: true, onComplete: function() {
+    carregarAgendaEventos(true, null, { silent: true, refreshReason: 'stale_event_revalidation', onComplete: function() {
       _agendaEventosRefreshing = false;
     } });
   }
@@ -4025,7 +4025,12 @@
         }
         agendaFallbackCargaCompleta_(callback, options, 'rpc_failure');
       })
-      .getAgendaBootstrap(requestedRange.start, requestedRange.endExclusive, forcar === true);
+      .getAgendaBootstrap(
+        requestedRange.start,
+        requestedRange.endExclusive,
+        forcar === true,
+        options.refreshReason || (forcar === true ? 'forced_refresh' : (options.initialLoad ? 'initial_window_load' : 'window_navigation'))
+      );
   }
 
   function carregarAgendaEventos(forcar, callback, options) {

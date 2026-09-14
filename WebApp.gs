@@ -290,7 +290,7 @@ function getAppBootstrapData(request) {
         // Reutiliza o acesso validado nesta execução. A RPC pública mantém
         // sua própria validação para chamadas diretas do cliente.
         out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', { rowCount: 0 }, function() {
-          return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false);
+          return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false, 'app_initial');
         });
       } catch (e2) {
         out.errors.agendaBootstrap = e2.message || String(e2);
@@ -11287,8 +11287,23 @@ function getAgendaKitsEstoque_(strict) {
   }
 }
 
-function agendaBuildDadosFormularioAgenda_(strict) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function agendaReferenceTelemetryCount_(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === 'object') return Object.keys(value).length;
+  return value === undefined || value === null || value === '' ? 0 : 1;
+}
+
+function agendaBuildDadosFormularioAgenda_(strict, measureStage) {
+  function measureReference(stage, callback) {
+    if (typeof measureStage !== 'function') return callback();
+    var metadata = { rowCount: 0 };
+    return measureStage('reference_' + stage, metadata, function() {
+      var value = callback();
+      metadata.rowCount = agendaReferenceTelemetryCount_(value);
+      return value;
+    });
+  }
+  var ss = measureReference('spreadsheet', function() { return SpreadsheetApp.getActiveSpreadsheet(); });
   function listaColB(nomesAba) {
     var sh = getSheetByPossibleNames_(ss, nomesAba);
     var lastRow = sh ? sh.getLastRow() : 0;
@@ -11310,25 +11325,25 @@ function agendaBuildDadosFormularioAgenda_(strict) {
     throw new Error('Dataset obrigatorio da Agenda indisponivel: projetos.');
   }
   var result = {
-    participantes: agendaParticipantesFormulario_(ss, strict),
-    medicos: listaColB(['\uD83E\uDE7A M\u00E9dicos', 'Medicos', 'M\u00E9dicos']),
-    prestadores: listaColB(['\uD83C\uDFE2 Prestadores', 'Prestadores']),
-    projetos: getProjetoOptions_(),
-    laboratorios: getAgendaLaboratorios_(),
-    couriers: getAgendaCouriers_(),
-    courierConfig: getAgendaCourierConfigs_(strict),
-    projectCourierMap: getAgendaProjetoCourierMap_(),
-    feriados: getAgendaFeriadosOperacionais_(),
-    temperaturas: getAgendaTemperaturas_(),
-    statusCourier: getAgendaCourierStatuses_(),
-    laboratoriosDestino: getAgendaLabDestinos_(strict),
-    kitsColeta: getAgendaKitsEstoque_(strict),
-    tiposEvento: getAgendaEventTypes_(),
-    salasMonitoria: getAgendaMonitoriaSalas_(),
-    status: getAgendaStatuses_(),
-    procedimentoChips: getAgendaProcedimentoChips_(),
-    monitores: getMonitores(),
-    emailLabAtivo: agendaEmailEnabled_(),
+    participantes: measureReference('participantes', function() { return agendaParticipantesFormulario_(ss, strict); }),
+    medicos: measureReference('medicos', function() { return listaColB(['\uD83E\uDE7A M\u00E9dicos', 'Medicos', 'M\u00E9dicos']); }),
+    prestadores: measureReference('prestadores', function() { return listaColB(['\uD83C\uDFE2 Prestadores', 'Prestadores']); }),
+    projetos: measureReference('projetos', function() { return getProjetoOptions_(); }),
+    laboratorios: measureReference('laboratorios', function() { return getAgendaLaboratorios_(); }),
+    couriers: measureReference('couriers', function() { return getAgendaCouriers_(); }),
+    courierConfig: measureReference('courier_config', function() { return getAgendaCourierConfigs_(strict); }),
+    projectCourierMap: measureReference('project_courier_map', function() { return getAgendaProjetoCourierMap_(); }),
+    feriados: measureReference('feriados', function() { return getAgendaFeriadosOperacionais_(); }),
+    temperaturas: measureReference('temperaturas', function() { return getAgendaTemperaturas_(); }),
+    statusCourier: measureReference('status_courier', function() { return getAgendaCourierStatuses_(); }),
+    laboratoriosDestino: measureReference('laboratorios_destino', function() { return getAgendaLabDestinos_(strict); }),
+    kitsColeta: measureReference('kits_coleta', function() { return getAgendaKitsEstoque_(strict); }),
+    tiposEvento: measureReference('tipos_evento', function() { return getAgendaEventTypes_(); }),
+    salasMonitoria: measureReference('salas_monitoria', function() { return getAgendaMonitoriaSalas_(); }),
+    status: measureReference('status', function() { return getAgendaStatuses_(); }),
+    procedimentoChips: measureReference('procedimento_chips', function() { return getAgendaProcedimentoChips_(); }),
+    monitores: measureReference('monitores', function() { return getMonitores(); }),
+    emailLabAtivo: measureReference('email_enabled', function() { return agendaEmailEnabled_(); }),
     hojeIso: hojeIso
   };
   return result;
@@ -14734,11 +14749,13 @@ function agendaDateIndexEntries_(sheet, lastRow, useCanaryCache) {
         return Array.isArray(entry) && entry.length === 2 &&
           typeof entry[0] === 'number' && typeof entry[1] === 'number';
       })) {
+    agendaLogDateIndexCache_('hit', rowCount);
     return cached.entries;
   }
 
   var entries = buildEntries();
-  codexCachePut_(cacheKey, { rowCount: rowCount, entries: entries }, AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_);
+  var stored = codexCachePut_(cacheKey, { rowCount: rowCount, entries: entries }, AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_);
+  agendaLogDateIndexCache_(stored === false ? 'store_failed' : 'stored', rowCount);
   return entries;
 }
 
@@ -15035,7 +15052,40 @@ function agendaLogReferenceCache_(outcome, bytes, forceRefresh) {
   }
 }
 
-function agendaGetReferenceData_(forceRefresh, useCanaryCache) {
+function agendaLogDateIndexCache_(outcome, rowCount) {
+  try {
+    Logger.log('[CODEX_AGENDA_DATE_INDEX_CACHE] ' + JSON.stringify({
+      outcome: String(outcome || ''),
+      rowCount: Math.max(0, Number(rowCount) || 0),
+      ttlSeconds: AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_
+    }));
+  } catch (e) {}
+}
+
+function agendaNormalizeBootstrapRefreshReason_(reason, forceRefresh) {
+  var value = String(reason || '').trim().toLowerCase();
+  var allowed = {
+    app_initial: true, initial_window_load: true, window_navigation: true,
+    stale_event_revalidation: true, explicit_refresh: true,
+    post_mutation_refresh: true, conflict_refresh: true, forced_refresh: true
+  };
+  if (allowed[value]) return value;
+  return forceRefresh === true ? 'forced_refresh' : 'window_load';
+}
+
+function agendaLogBootstrapRequest_(access, forceRefresh, reason, canaryEnabled) {
+  try {
+    var role = access && CODEX_USER_ROLES_[access.role] ? access.role : 'unknown';
+    Logger.log('[CODEX_AGENDA_BOOTSTRAP_REQUEST] ' + JSON.stringify({
+      forceRefresh: forceRefresh === true,
+      refreshReason: agendaNormalizeBootstrapRefreshReason_(reason, forceRefresh),
+      role: role,
+      windowedLoading: canaryEnabled === true
+    }));
+  } catch (e) {}
+}
+
+function agendaGetReferenceData_(forceRefresh, useCanaryCache, measureStage) {
   var cacheKey = agendaReferenceCacheKey_();
   if (useCanaryCache !== true) {
     return agendaValidateReferenceData_(
@@ -15049,7 +15099,7 @@ function agendaGetReferenceData_(forceRefresh, useCanaryCache) {
   }
 
   agendaLogReferenceCache_(forceRefresh ? 'refresh' : 'miss', 0, !!forceRefresh);
-  var data = agendaBuildDadosFormularioAgenda_(true);
+  var data = agendaBuildDadosFormularioAgenda_(true, measureStage);
   var serialized = JSON.stringify(data);
   var bytes = agendaReferenceCacheSerializedBytes_(serialized);
   if (bytes > AGENDA_REFERENCE_CACHE_MAX_BYTES_) {
@@ -15123,7 +15173,7 @@ function agendaDeniedBootstrap_(access) {
   };
 }
 
-function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh) {
+function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, refreshReason) {
   if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
   var refreshRequested = forceRefresh === true;
   var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
@@ -15131,8 +15181,11 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh) {
   try {
     var referenceMeta = { rowCount: 0 };
     var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
+    agendaLogBootstrapRequest_(access, refreshRequested, refreshReason, canaryEnabled);
     var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
-      var data = agendaGetReferenceData_(refreshRequested, canaryEnabled);
+      var data = agendaGetReferenceData_(refreshRequested, canaryEnabled, function(stage, metadata, callback) {
+        return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
+      });
       referenceMeta.rowCount = agendaReferenceRowCount_(data);
       return data;
     });
@@ -15179,7 +15232,7 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh) {
   }
 }
 
-function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
+function getAgendaBootstrap(inicioIso, fimIso, forceRefresh, refreshReason) {
   var totalMeta = { rowCount: 0 };
   return codexMeasurePerformance_('getAgendaBootstrap', 'total', totalMeta, function() {
     var accessMeta = { rowCount: 0 };
@@ -15189,7 +15242,7 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
       return currentAccess;
     });
     if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
-    var result = agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh);
+    var result = agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, refreshReason);
     totalMeta.rowCount = Array.isArray(result.events) ? result.events.length : 0;
     return result;
   });
