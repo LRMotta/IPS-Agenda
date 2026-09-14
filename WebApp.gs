@@ -249,47 +249,73 @@ function agendaBootstrapRequestRange_(request) {
 }
 
 function getAppBootstrapData(request) {
-  var access = codexGetCurrentUserAccess();
-  var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
-  var agendaRange = agendaBootstrapRequestRange_(request);
-  var out = {
-    access: access,
-    auth: codexGetUserOAuthStatus_(),
-    appVersion: codexGetAppVersion_(),
-    webAppUrl: '',
-    agendaFormData: null,
-    teamBirthdays: [],
-    errors: {}
-  };
-  if (agendaWindowedLoadingEnabled) {
-    out.features = { agendaWindowedLoadingV2: true };
-  }
-  try {
-    out.webAppUrl = ScriptApp.getService().getUrl();
-  } catch (e1) {
-    out.errors.webAppUrl = e1.message || String(e1);
-  }
-  if (!agendaWindowedLoadingEnabled) {
+  var totalMeta = { rowCount: 0, responseBytes: 0 };
+  return codexMeasurePerformance_('getAppBootstrapData', 'total', totalMeta, function() {
+    var access = codexMeasurePerformance_('getAppBootstrapData', 'access', { rowCount: 0 }, function() {
+      return codexGetCurrentUserAccess();
+    });
+    var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
+    var agendaRange = agendaBootstrapRequestRange_(request);
+    var out = {
+      access: access,
+      auth: codexMeasurePerformance_('getAppBootstrapData', 'auth', { rowCount: 0 }, function() {
+        return codexGetUserOAuthStatus_();
+      }),
+      appVersion: codexMeasurePerformance_('getAppBootstrapData', 'version', { rowCount: 0 }, function() {
+        return codexGetAppVersion_();
+      }),
+      webAppUrl: '',
+      agendaFormData: null,
+      teamBirthdays: [],
+      errors: {}
+    };
+    if (agendaWindowedLoadingEnabled) out.features = { agendaWindowedLoadingV2: true };
     try {
-      out.agendaFormData = getDadosFormularioAgenda(true);
-    } catch (e2) {
-      out.errors.agendaFormData = e2.message || String(e2);
+      out.webAppUrl = codexMeasurePerformance_('getAppBootstrapData', 'web_app_url', { rowCount: 0 }, function() {
+        return ScriptApp.getService().getUrl();
+      });
+    } catch (e1) {
+      out.errors.webAppUrl = e1.message || String(e1);
     }
-  } else if (agendaRange) {
+    if (!agendaWindowedLoadingEnabled) {
+      try {
+        out.agendaFormData = codexMeasurePerformance_('getAppBootstrapData', 'agenda_form_data', { rowCount: 0 }, function() {
+          return getDadosFormularioAgenda(true);
+        });
+      } catch (e2) {
+        out.errors.agendaFormData = e2.message || String(e2);
+      }
+    } else if (agendaRange) {
+      try {
+        // Reutiliza o acesso validado nesta execução. A RPC pública mantém
+        // sua própria validação para chamadas diretas do cliente.
+        out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', { rowCount: 0 }, function() {
+          return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false);
+        });
+      } catch (e2) {
+        out.errors.agendaBootstrap = e2.message || String(e2);
+      }
+    }
     try {
-      // Entrega referencias e a janela visível na mesma RPC do bootstrap da
-      // página, eliminando a espera sequencial antes da primeira renderização.
-      out.agendaBootstrap = getAgendaBootstrap(agendaRange.start, agendaRange.endExclusive, false);
-    } catch (e2) {
-      out.errors.agendaBootstrap = e2.message || String(e2);
+      if (out.access && out.access.ok) {
+        var birthdaysMeta = { rowCount: 0 };
+        out.teamBirthdays = codexMeasurePerformance_('getAppBootstrapData', 'team_birthdays', birthdaysMeta, function() {
+          var birthdays = codexGetTeamBirthdays_();
+          birthdaysMeta.rowCount = Array.isArray(birthdays) ? birthdays.length : 0;
+          return birthdays;
+        });
+      }
+    } catch (e3) {
+      out.errors.teamBirthdays = e3.message || String(e3);
     }
-  }
-  try {
-    if (out.access && out.access.ok) out.teamBirthdays = codexGetTeamBirthdays_();
-  } catch (e3) {
-    out.errors.teamBirthdays = e3.message || String(e3);
-  }
-  return out;
+    var serializationMeta = { rowCount: 0, responseBytes: 0 };
+    codexMeasurePerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
+      serializationMeta.responseBytes = JSON.stringify(out).length;
+    });
+    totalMeta.rowCount = out.agendaBootstrap && Array.isArray(out.agendaBootstrap.events) ? out.agendaBootstrap.events.length : 0;
+    totalMeta.responseBytes = serializationMeta.responseBytes;
+    return out;
+  });
 }
 
 function codexGetAppVersion_() {
@@ -14612,6 +14638,7 @@ function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
       stage: String(stage || ''),
       durationMs: Math.max(0, Number(durationMs) || 0),
       rowCount: Math.max(0, Number(metadata.rowCount) || 0),
+      responseBytes: Math.max(0, Number(metadata.responseBytes) || 0),
       success: success === true
     }));
   } catch (eLog) {
@@ -15051,50 +15078,40 @@ function agendaDeniedBootstrap_(access) {
   };
 }
 
-function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
-  var totalMeta = { rowCount: 0 };
-  return codexMeasurePerformance_('getAgendaBootstrap', 'total', totalMeta, function() {
-    var accessMeta = { rowCount: 0 };
-    var access = codexMeasurePerformance_('getAgendaBootstrap', 'access', accessMeta, function() {
-      var currentAccess = codexGetCurrentUserAccess();
-      accessMeta.rowCount = currentAccess && currentAccess.ok ? 1 : 0;
-      return currentAccess;
+function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh) {
+  if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
+  var refreshRequested = forceRefresh === true;
+  var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
+  CODEX_CACHE_BYPASS_READS_ = refreshRequested;
+  try {
+    var referenceMeta = { rowCount: 0 };
+    var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
+    var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
+      var data = agendaGetReferenceData_(refreshRequested, canaryEnabled);
+      referenceMeta.rowCount = agendaReferenceRowCount_(data);
+      return data;
     });
-    if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
-
-    var refreshRequested = forceRefresh === true;
-    var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
-    CODEX_CACHE_BYPASS_READS_ = refreshRequested;
-    try {
-      var referenceMeta = { rowCount: 0 };
-      var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
-      var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
-        var data = agendaGetReferenceData_(refreshRequested, canaryEnabled);
-        referenceMeta.rowCount = agendaReferenceRowCount_(data);
-        return data;
-      });
-      var measureWindow = function(stage, metadata, callback) {
-        return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
-      };
-      var windowData = agendaGetEventosPorPeriodo_(
-        inicioIso,
-        fimIso,
-        AGENDA_WINDOW_MAX_RECORDS_,
-        refreshRequested,
-        measureWindow,
-        { useCanaryCache: canaryEnabled, useCanaryDateIndex: canaryEnabled }
-      );
-      totalMeta.rowCount = windowData.items.length;
-      var revision = codexMeasurePerformance_(
-        'getAgendaBootstrap',
-        'revision',
-        { rowCount: windowData.items.length },
-        function() {
-          return agendaBootstrapRevision_(referenceData, windowData.items, inicioIso, fimIso);
-        }
-      );
-      var complete = !windowData.truncated;
-      return {
+    var measureWindow = function(stage, metadata, callback) {
+      return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
+    };
+    var windowData = agendaGetEventosPorPeriodo_(
+      inicioIso,
+      fimIso,
+      AGENDA_WINDOW_MAX_RECORDS_,
+      refreshRequested,
+      measureWindow,
+      { useCanaryCache: canaryEnabled, useCanaryDateIndex: canaryEnabled }
+    );
+    var revision = codexMeasurePerformance_(
+      'getAgendaBootstrap',
+      'revision',
+      { rowCount: windowData.items.length },
+      function() {
+        return agendaBootstrapRevision_(referenceData, windowData.items, inicioIso, fimIso);
+      }
+    );
+    var complete = !windowData.truncated;
+    return {
         access: access,
         referenceData: referenceData,
         events: windowData.items,
@@ -15111,10 +15128,25 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
         truncated: !!windowData.truncated,
         complete: complete,
         partialError: false
-      };
-    } finally {
-      CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
-    }
+    };
+  } finally {
+    CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
+  }
+}
+
+function getAgendaBootstrap(inicioIso, fimIso, forceRefresh) {
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_('getAgendaBootstrap', 'total', totalMeta, function() {
+    var accessMeta = { rowCount: 0 };
+    var access = codexMeasurePerformance_('getAgendaBootstrap', 'access', accessMeta, function() {
+      var currentAccess = codexGetCurrentUserAccess();
+      accessMeta.rowCount = currentAccess && currentAccess.ok ? 1 : 0;
+      return currentAccess;
+    });
+    if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
+    var result = agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh);
+    totalMeta.rowCount = Array.isArray(result.events) ? result.events.length : 0;
+    return result;
   });
 }
 
