@@ -238,7 +238,9 @@
 
   function dashClearProjetoInputs() {
     var search = document.getElementById('searchProjetos');
+    var status = document.getElementById('filterStatusProj');
     if (search) search.value = '';
+    if (status) status.value = '';
   }
 
   function dashClearParticipanteInputs() {
