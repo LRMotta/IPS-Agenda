@@ -1748,18 +1748,25 @@ function agendaInvalidateReferenceDataCache_() {
 }
 
 function agendaParticipantHydrationCacheKey_() {
-  return 'AgendaParticipantHydration:v1';
+  return 'AgendaParticipantHydration:v2';
+}
+
+function agendaParticipantHydrationRowsCacheKey_() {
+  return 'AgendaParticipantHydrationRows:v1';
 }
 
 function agendaInvalidateParticipantHydrationCache_() {
+  codexCacheRemove_('AgendaParticipantHydration:v1');
   codexCacheRemove_(agendaParticipantHydrationCacheKey_());
+  codexCacheRemove_(agendaParticipantHydrationRowsCacheKey_());
 }
 
 function agendaDateIndexCacheKey_() {
-  return 'AgendaDateIndex:v1';
+  return 'AgendaDateIndex:v2';
 }
 
 function agendaInvalidateDateIndexCache_() {
+  codexCacheRemove_('AgendaDateIndex:v1');
   codexCacheRemove_(agendaDateIndexCacheKey_());
 }
 
@@ -14706,26 +14713,44 @@ function agendaWindowResultIsValid_(value) {
     typeof value.truncated === 'boolean';
 }
 
-function agendaDateIndexTimestamps_(sheet, lastRow, useCanaryCache) {
+function agendaDateIndexEntries_(sheet, lastRow, useCanaryCache) {
   var rowCount = Math.max(0, lastRow - 1);
-  var readTimestamps = function() {
-    return sheet.getRange(2, AGENDA_CFG.col.data, rowCount, 1).getValues().map(function(row) {
+  var buildEntries = function() {
+    var entries = [];
+    sheet.getRange(2, AGENDA_CFG.col.data, rowCount, 1).getValues().forEach(function(row, offset) {
       var data = parseAgendaDateAny_(row[0]);
-      return data && !isNaN(data.getTime()) ? data.getTime() : 0;
+      if (data && !isNaN(data.getTime())) entries.push([data.getTime(), offset]);
     });
+    // A Agenda pode conter registros históricos fora de ordem. Ordenar a cópia
+    // indexada permite localizar somente a janela pedida sem alterar a planilha.
+    return entries.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
   };
-  if (useCanaryCache !== true || !rowCount) return readTimestamps();
+  if (useCanaryCache !== true || !rowCount) return buildEntries();
 
   var cacheKey = agendaDateIndexCacheKey_();
   var cached = codexCacheGet_(cacheKey);
-  if (cached && cached.rowCount === rowCount && Array.isArray(cached.timestamps) &&
-      cached.timestamps.length === rowCount && cached.timestamps.every(function(value) { return typeof value === 'number'; })) {
-    return cached.timestamps;
+  if (cached && cached.rowCount === rowCount && Array.isArray(cached.entries) &&
+      cached.entries.every(function(entry) {
+        return Array.isArray(entry) && entry.length === 2 &&
+          typeof entry[0] === 'number' && typeof entry[1] === 'number';
+      })) {
+    return cached.entries;
   }
 
-  var timestamps = readTimestamps();
-  codexCachePut_(cacheKey, { rowCount: rowCount, timestamps: timestamps }, AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_);
-  return timestamps;
+  var entries = buildEntries();
+  codexCachePut_(cacheKey, { rowCount: rowCount, entries: entries }, AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_);
+  return entries;
+}
+
+function agendaDateIndexLowerBound_(entries, timestamp) {
+  var low = 0;
+  var high = entries.length;
+  while (low < high) {
+    var middle = Math.floor((low + high) / 2);
+    if (entries[middle][0] < timestamp) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, measureStage, hydrateOptions) {
@@ -14745,12 +14770,16 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
     if (cached && !agendaWindowResultIsValid_(cached)) cached = null;
     if (cached) return { cached: cached };
     if (lastRow < 2) return { segments: [], total: 0, outOfOrder: false };
-    var datas = agendaDateIndexTimestamps_(sh, lastRow, hydrateOptions && hydrateOptions.useCanaryDateIndex === true);
-    var offsets = [];
-    for (var d = 0; d < datas.length; d++) {
-      if (!datas[d]) continue;
-      if (datas[d] >= inicio.getTime() && datas[d] < fim.getTime()) offsets.push(d);
-    }
+    var entries = agendaMeasureWindowStage_(measureStage, 'date_index', { rowCount: lastRow - 1 }, function() {
+      return agendaDateIndexEntries_(sh, lastRow, hydrateOptions && hydrateOptions.useCanaryDateIndex === true);
+    });
+    var offsets = agendaMeasureWindowStage_(measureStage, 'date_lookup', { rowCount: 0 }, function() {
+      var first = agendaDateIndexLowerBound_(entries, inicio.getTime());
+      var last = agendaDateIndexLowerBound_(entries, fim.getTime());
+      var selected = entries.slice(first, last).map(function(entry) { return entry[1]; });
+      selected.sort(function(a, b) { return a - b; });
+      return selected;
+    });
     var segments = [];
     offsets.forEach(function(offset) {
       var previous = segments.length ? segments[segments.length - 1] : null;
@@ -14785,10 +14814,14 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
   var hydrateMeta = { rowCount: readMeta.rowCount };
   var items = agendaMeasureWindowStage_(measureStage, 'hydrate', hydrateMeta, function() {
     if (rows.cachedItems) return rows.cachedItems;
-    var hydrated = (rows.rows || []).map(function(entry) {
-      return agendaRowToObject_(entry.row, entry.rowIndex);
+    var hydrated = agendaMeasureWindowStage_(measureStage, 'hydrate_convert', { rowCount: readMeta.rowCount }, function() {
+      return (rows.rows || []).map(function(entry) {
+        return agendaRowToObject_(entry.row, entry.rowIndex);
+      });
     });
-    agendaHydrateParticipantFields_(hydrated, hydrateOptions);
+    var hydrationOptions = hydrateOptions || {};
+    hydrationOptions.measureStage = measureStage;
+    agendaHydrateParticipantFields_(hydrated, hydrationOptions);
     return hydrated;
   });
 
@@ -15602,7 +15635,7 @@ function agendaParticipantHydrationRows_(useCanaryCache) {
     });
   }
 
-  var cacheKey = agendaParticipantHydrationCacheKey_();
+  var cacheKey = agendaParticipantHydrationRowsCacheKey_();
   var cached = codexCacheGet_(cacheKey);
   if (Array.isArray(cached) && cached.every(function(row) { return Array.isArray(row) && row.length === 5; })) {
     return cached;
@@ -15626,13 +15659,13 @@ function agendaParticipantHydrationRows_(useCanaryCache) {
   return rows;
 }
 
-function agendaHydrateParticipantFields_(items, options) {
-  var precisaComplemento = (items || []).some(function(evento) {
-    return evento && evento.participante && (!evento.idParticipante || !evento.braco);
-  });
-  if (!precisaComplemento) return items;
-  options = options || {};
-  var participantes = agendaParticipantHydrationRows_(options.useCanaryCache === true).map(function(r) {
+function agendaParticipantHydrationIndex_(useCanaryCache) {
+  var cacheKey = agendaParticipantHydrationCacheKey_();
+  if (useCanaryCache === true) {
+    var cached = codexCacheGet_(cacheKey);
+    if (cached && cached.version === 1 && cached.byCadastro && cached.byChave && cached.byNome) return cached;
+  }
+  var participantes = agendaParticipantHydrationRows_(useCanaryCache === true).map(function(r) {
     return {
       id: String(r[0] || '').trim(), nome: String(r[1] || '').trim(),
       idParticipante: String(r[2] || '').trim(), projeto: String(r[3] || '').trim(),
@@ -15656,16 +15689,35 @@ function agendaHydrateParticipantFields_(items, options) {
     var nome = normText_(p.nome) + '|' + normText_(p.projeto);
     if (p.nome && p.projeto) indexarUnico(porNome, nome, p);
   });
-  items.forEach(function(evento) {
-    var participante = evento.participanteCadastroId
-      ? porCadastro[String(evento.participanteCadastroId)]
-      : (evento.idParticipante && evento.projeto
-        ? porChave[normText_(evento.idParticipante) + '|' + normText_(evento.projeto)]
-        : porNome[normText_(evento.participante) + '|' + normText_(evento.projeto)]);
-    if (!participante) return;
-    evento.participanteCadastroId = evento.participanteCadastroId || participante.id;
-    evento.idParticipante = evento.idParticipante || participante.idParticipante;
-    evento.braco = evento.braco || participante.braco;
+  var index = { version: 1, byCadastro: porCadastro, byChave: porChave, byNome: porNome };
+  if (useCanaryCache === true) {
+    codexCachePut_(cacheKey, index, AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_);
+  }
+  return index;
+}
+
+function agendaHydrateParticipantFields_(items, options) {
+  var precisaComplemento = (items || []).some(function(evento) {
+    return evento && evento.participante && (!evento.idParticipante || !evento.braco);
+  });
+  if (!precisaComplemento) return items;
+  options = options || {};
+  var measureStage = options.measureStage;
+  var index = agendaMeasureWindowStage_(measureStage, 'hydrate_participant_index', { rowCount: 0 }, function() {
+    return agendaParticipantHydrationIndex_(options.useCanaryCache === true);
+  });
+  agendaMeasureWindowStage_(measureStage, 'hydrate_participant_match', { rowCount: items.length }, function() {
+    items.forEach(function(evento) {
+      var participante = evento.participanteCadastroId
+        ? index.byCadastro[String(evento.participanteCadastroId)]
+        : (evento.idParticipante && evento.projeto
+          ? index.byChave[normText_(evento.idParticipante) + '|' + normText_(evento.projeto)]
+          : index.byNome[normText_(evento.participante) + '|' + normText_(evento.projeto)]);
+      if (!participante) return;
+      evento.participanteCadastroId = evento.participanteCadastroId || participante.id;
+      evento.idParticipante = evento.idParticipante || participante.idParticipante;
+      evento.braco = evento.braco || participante.braco;
+    });
   });
   return items;
 }
