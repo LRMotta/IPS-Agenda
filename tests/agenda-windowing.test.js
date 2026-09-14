@@ -1762,10 +1762,10 @@ test('edicao busca o registro atual por ID antes de abrir e carrega o contexto o
   assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
   assert.match(open, /agendaComFormularioPronto_/);
   assert.match(readyOpen, /agendaFetchEventoPorId_\(id, rowIndex/);
-  assert.match(client, /function agendaAbrirEdicaoResolvida_\(r, id\)/);
+  assert.match(client, /function agendaAbrirEdicaoResolvida_\(r, id, perf\)/);
   assert.match(client, /agendaLoadPeriodoOperacional_\(r/);
-  assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r\)/);
-  assert.match(contextualOpen, /abrirAgendaEdicaoComRegistro_\(r\)/);
+  assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r, perf\)/);
+  assert.match(contextualOpen, /abrirAgendaEdicaoComRegistro_\(r, perf\)/);
   assert.doesNotMatch(contextualOpen, /getAgendaEventoPorId|versaoAberta|Feche e reabra/);
   assert.match(client, /abrirAgendaEdicao.*Number\(r\.rowIndex \|\| 0\)/);
 });
@@ -1781,11 +1781,12 @@ test('edicao nao abre a versao armazenada em cache quando existe uma linha atual
       calls.push(['fetch', id, rowIndex]);
       onSuccess(fresh);
     },
+    agendaLogEditOpenPerformance_: () => {},
     agendaAbrirEdicaoResolvida_: (row, id) => calls.push(['open', row, id]),
     snackErro: (message) => calls.push(['error', message]),
     appErrorMessage: (error) => String(error)
   });
-  vm.runInContext(`function agendaAbrirEdicaoPronta_(id, rowIndex) {${functionBody(client, 'agendaAbrirEdicaoPronta_')}}`, context);
+  vm.runInContext(`function agendaAbrirEdicaoPronta_(id, rowIndex, perf) {${functionBody(client, 'agendaAbrirEdicaoPronta_')}}`, context);
 
   context.agendaAbrirEdicaoPronta_('EVT-1', 7);
 
@@ -1932,6 +1933,28 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.match(periodLoad, /\.withFailureHandler\(function\(error\) \{[\s\S]*recuperarConsultaEspecifica\(error\)/);
   assert.match(fullLoad, /agendaAplicarEventos_\(rows, 'full', null, false\)/);
   assert.doesNotMatch(client, /_agendaWindowedRange/);
+});
+
+test('telemetria da abertura de edição mede barreira, RPCs e abertura sem dados do evento', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const telemetry = functionBody(client, 'agendaLogEditOpenPerformance_');
+  const open = functionBody(client, 'abrirAgendaEdicao');
+  const readyOpen = functionBody(client, 'agendaAbrirEdicaoPronta_');
+  const resolved = functionBody(client, 'agendaAbrirEdicaoResolvida_');
+  const readyRecord = functionBody(client, 'agendaAbrirEdicaoComRegistroPronto_');
+
+  assert.match(open, /agendaEditOpenPerformanceStart_\(\)/);
+  assert.match(open, /form_barrier_release/);
+  assert.match(readyOpen, /event_rpc_start/);
+  assert.match(readyOpen, /event_rpc_complete/);
+  assert.match(readyOpen, /event_rpc_failure/);
+  assert.match(resolved, /period_rpc_start/);
+  assert.match(resolved, /period_rpc_complete/);
+  assert.match(resolved, /period_rpc_failure/);
+  assert.match(readyRecord, /modal_open/);
+  assert.match(telemetry, /formReadyAtClick/);
+  assert.match(telemetry, /formReadyNow/);
+  assert.doesNotMatch(telemetry, /participante|agendaId|recordId|\.id\b/);
 });
 
 test('periodo de auditoria por ID preserva dias consecutivos sem exigir sala ou monitor', () => {

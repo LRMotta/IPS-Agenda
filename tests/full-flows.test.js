@@ -150,6 +150,32 @@ test('edicao sem mudar identidade do participante nao varre referencias externas
   assert.ok(agenda.writes > 0);
 });
 
+test('CPF e dados bancarios podem ser incluídos em participação com eventos sem trocar protocolo ou identificação', () => {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
+    [52, 'Pessoa com Agenda', '', '', 'ID-EXISTENTE', 'Estudo Existente', '', '', 'Ativo', '', '', '']
+  ]);
+  const agenda = new FakeSheet('Agenda', [
+    ['Participante', 'ID Participante', 'Projeto', 'ID Cadastro Participante'],
+    ['Pessoa com Agenda', 'ID-EXISTENTE', 'Estudo Existente', 52]
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes, Agenda: agenda }), [{ nome: 'Estudo Existente' }]);
+  context.AGENDA_CFG = { idx: { participante: 0, idParticipante: 1, projeto: 2, participanteCadastroId: 3 }, lastCol: 4 };
+  context.getAgendaSheetForRead_ = () => agenda;
+
+  assert.equal(context.salvarDadosParticipante({
+    id: 52, nome: 'Pessoa com Agenda', idParticipante: 'ID-EXISTENTE', projeto: 'Estudo Existente', status: 'Ativo',
+    cpf: '52998224725', banco: 'Banco de Teste', tipoConta: 'Conta corrente', agencia: '0001', contaCorrente: '12345-6',
+    titularConta: 'Pessoa com Agenda', cpfTitular: '52998224725'
+  }), 'Participante atualizado com sucesso');
+
+  assert.equal(participantes.rows[1][4], 'ID-EXISTENTE');
+  assert.equal(participantes.rows[1][5], 'Estudo Existente');
+  assert.equal(participantes.rows[1][10], '529.982.247-25');
+  assert.equal(participantes.rows[1][participantes.rows[0].indexOf('Banco')], 'Banco de Teste');
+  assert.equal(participantes.rows[1][participantes.rows[0].indexOf('CPF do Titular')], '529.982.247-25');
+});
+
 test('acompanhantes persistem por participante com bancos proprios, IDs estaveis e compatibilidade legada', () => {
   const sheet = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
