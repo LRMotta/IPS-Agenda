@@ -1973,13 +1973,24 @@ test('telemetria da abertura de edição mede barreira, RPCs e abertura sem dado
   assert.match(readyOpen, /event_rpc_start/);
   assert.match(readyOpen, /event_rpc_complete/);
   assert.match(readyOpen, /event_rpc_failure/);
-  assert.match(resolved, /period_rpc_start/);
+  assert.match(resolved, /period_resolve_start/);
   assert.match(resolved, /period_rpc_complete/);
+  assert.match(resolved, /period_local_complete/);
   assert.match(resolved, /period_rpc_failure/);
   assert.match(readyRecord, /modal_open/);
   assert.match(telemetry, /formReadyAtClick/);
   assert.match(telemetry, /formReadyNow/);
   assert.doesNotMatch(telemetry, /participante|agendaId|recordId|\.id\b/);
+});
+
+test('edição com coleção completa resolve período local e emite telemetria própria sem RPC', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const periodLoad = functionBody(client, 'agendaLoadPeriodoOperacional_');
+  const resolved = functionBody(client, 'agendaAbrirEdicaoResolvida_');
+
+  assert.match(periodLoad, /if \(agendaEventosSaoColecaoCompleta_\(\)\) \{[\s\S]*agendaStorePeriodoOperacional_\(r, agendaPeriodoFallbackLocal_\(r\)\)[\s\S]*onSuccess\(localCompleto, 'local_complete'\)[\s\S]*return;/);
+  assert.match(periodLoad, /\.getAgendaPeriodoOperacionalPorEventoId\(id, r\.rowIndex\)/);
+  assert.match(resolved, /function\(periodo, source\)[\s\S]*source === 'local_complete' \? 'period_local_complete' : 'period_rpc_complete'/);
 });
 
 test('periodo de auditoria por ID preserva dias consecutivos sem exigir sala ou monitor', () => {

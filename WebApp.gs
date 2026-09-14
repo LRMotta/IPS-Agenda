@@ -6309,6 +6309,102 @@ function getProjetosMonitoria_() {
   return getProjetoOptions_();
 }
 
+function monitorTextoChave_(valor) {
+  return normText_(valor);
+}
+
+function monitorTelefoneChave_(valor) {
+  return String(valor == null ? '' : valor).replace(/\D/g, '');
+}
+
+function monitorVinculosProjeto_(dados) {
+  var valores = Array.isArray(dados) ? dados : [
+    '', '', '', '',
+    dados && dados.projeto1, dados && dados.unblinded1,
+    dados && dados.projeto2, dados && dados.unblinded2,
+    dados && dados.projeto3, dados && dados.unblinded3,
+    dados && dados.projeto4, dados && dados.unblinded4
+  ];
+  return [[4, 5], [6, 7], [8, 9], [10, 11]].map(function(cols) {
+    var projeto = monitorTextoChave_(valores[cols[0]]);
+    if (!projeto) return '';
+    return projeto + '|' + monitorTextoChave_(normalizarMonitorUnblinded_(valores[cols[0]], valores[cols[1]]));
+  }).filter(Boolean).sort();
+}
+
+function monitorRegistroChave_(dados) {
+  var valores = Array.isArray(dados) ? dados : dados || {};
+  var nome = Array.isArray(valores) ? valores[1] : valores.nome;
+  var email = Array.isArray(valores) ? valores[2] : valores.email;
+  var telefone = Array.isArray(valores) ? valores[3] : valores.telefone;
+  return [
+    monitorTextoChave_(nome),
+    monitorTextoChave_(email),
+    monitorTelefoneChave_(telefone),
+    monitorVinculosProjeto_(valores).join(';')
+  ].join('\u001f');
+}
+
+function monitorGrupoPreviaChave_(linha) {
+  return [monitorTextoChave_(linha[1]), monitorVinculosProjeto_(linha).join(';')].join('\u001f');
+}
+
+function monitorResumoLinha_(linha, numeroLinha) {
+  var projetos = [[4, 5], [6, 7], [8, 9], [10, 11]].map(function(cols) {
+    var projeto = String(linha[cols[0]] || '').trim();
+    return projeto ? {
+      projeto: projeto,
+      unblinded: normalizarMonitorUnblinded_(projeto, linha[cols[1]])
+    } : null;
+  }).filter(Boolean);
+  return {
+    id: String(linha[0] || ''),
+    linha: numeroLinha,
+    nome: String(linha[1] || '').trim(),
+    email: String(linha[2] || '').trim(),
+    telefone: String(linha[3] || '').trim(),
+    projetos: projetos
+  };
+}
+
+function previsualizarDuplicidadesMonitores() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Monitores');
+  if (!sh || sh.getLastRow() < 2) return { grupos: [], totalGrupos: 0, totalRegistros: 0 };
+  var gruposPorChave = {};
+  sh.getDataRange().getValues().slice(1).forEach(function(linha, indice) {
+    if (!String(linha[0] || '').trim() || !String(linha[1] || '').trim()) return;
+    var chave = monitorGrupoPreviaChave_(linha);
+    if (!gruposPorChave[chave]) gruposPorChave[chave] = [];
+    gruposPorChave[chave].push(monitorResumoLinha_(linha, indice + 2));
+  });
+  var grupos = Object.keys(gruposPorChave).map(function(chave) {
+    var registros = gruposPorChave[chave];
+    if (registros.length < 2) return null;
+    var diferencas = ['email', 'telefone'].filter(function(campo) {
+      var valores = {};
+      registros.forEach(function(registro) {
+        var valor = String(registro[campo] || '').trim();
+        valores[monitorTextoChave_(valor) || '__VAZIO__'] = true;
+      });
+      return Object.keys(valores).length > 1;
+    });
+    return {
+      nome: registros[0].nome,
+      projetos: registros[0].projetos,
+      registros: registros,
+      camposDivergentes: diferencas,
+      registrosIguais: diferencas.length === 0
+    };
+  }).filter(Boolean).sort(function(a, b) {
+    return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+  });
+  return {
+    grupos: grupos,
+    totalGrupos: grupos.length,
+    totalRegistros: grupos.reduce(function(total, grupo) { return total + grupo.registros.length; }, 0)
+  };
+}
+
 function getMonitores() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Monitores');
   if (!sh) throw new Error('Aba "Monitores" não encontrada.');
@@ -6356,41 +6452,46 @@ function normalizarMonitorUnblinded_(projeto, valor) {
 
 function salvarDadosMonitor(d) {
   codexAssertCanWrite_('salvarDadosMonitor', 'Cadastros', d && d.id);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('Monitores');
-  if (!sh) throw new Error('Aba "Monitores" não encontrada.');
+  d = d || {};
+  if (!String(d.nome || '').trim()) throw new Error('Informe o nome do monitor.');
+  if (!monitorVinculosProjeto_(d).length) throw new Error('Selecione ao menos um projeto para o monitor.');
+  return codexWithDocumentLock_('salvarDadosMonitor', function() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName('Monitores');
+    if (!sh) throw new Error('Aba "Monitores" não encontrada.');
 
-  var rowData = [
-    d.id || '',
-    d.nome || '',
-    d.email || '',
-    d.telefone || '',
-    d.projeto1 || '',
-    normalizarMonitorUnblinded_(d.projeto1, d.unblinded1),
-    d.projeto2 || '',
-    normalizarMonitorUnblinded_(d.projeto2, d.unblinded2),
-    d.projeto3 || '',
-    normalizarMonitorUnblinded_(d.projeto3, d.unblinded3),
-    d.projeto4 || '',
-    normalizarMonitorUnblinded_(d.projeto4, d.unblinded4)
-  ];
-
-  if (d.id) {
+    var rowData = [
+      d.id || '', d.nome || '', d.email || '', d.telefone || '',
+      d.projeto1 || '', normalizarMonitorUnblinded_(d.projeto1, d.unblinded1),
+      d.projeto2 || '', normalizarMonitorUnblinded_(d.projeto2, d.unblinded2),
+      d.projeto3 || '', normalizarMonitorUnblinded_(d.projeto3, d.unblinded3),
+      d.projeto4 || '', normalizarMonitorUnblinded_(d.projeto4, d.unblinded4)
+    ];
     var rows = sh.getDataRange().getValues();
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === String(d.id)) {
-        sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
-        clearCodexRuntimeCaches_();
-        return 'Monitor atualizado com sucesso.';
-      }
+    var chave = monitorRegistroChave_(rowData);
+    var existente = rows.slice(1).filter(function(linha) {
+      return String(linha[0] || '') !== String(d.id || '') && monitorRegistroChave_(linha) === chave;
+    })[0];
+    if (existente) {
+      throw new Error('Já existe um monitor com o mesmo cadastro. Edite o registro existente em vez de criar uma duplicação.');
     }
-    throw new Error('Monitor não encontrado para edição.');
-  }
 
-  rowData[0] = 'MON-' + Date.now();
-  sh.appendRow(rowData);
-  clearCodexRuntimeCaches_();
-  return 'Monitor cadastrado com sucesso.';
+    if (d.id) {
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(d.id)) {
+          sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+          clearCodexRuntimeCaches_();
+          return 'Monitor atualizado com sucesso.';
+        }
+      }
+      throw new Error('Monitor não encontrado para edição.');
+    }
+
+    rowData[0] = 'MON-' + Date.now();
+    sh.appendRow(rowData);
+    clearCodexRuntimeCaches_();
+    return 'Monitor cadastrado com sucesso.';
+  });
 }
 
 function excluirMonitor(id) {

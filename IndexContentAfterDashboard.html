@@ -98,6 +98,9 @@
         <button class="btn-new" onclick="abrirFormMonitor(null)">
           <span class="material-symbols-outlined">add</span> Novo Monitor
         </button>
+        <button class="btn-new" type="button" onclick="abrirPreviaDuplicidadesMonitores()" style="background:#fff;color:#1266f1;border:1px solid #c5d5fb;">
+          <span class="material-symbols-outlined">content_copy</span> Revisar duplicidades
+        </button>
       </div>
       <div class="table-card">
         <table class="data-table">
@@ -114,6 +117,20 @@
             <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPreviaDuplicidadesMonitores" onclick="fecharModalSeClicouFora(event,'modalPreviaDuplicidadesMonitores')">
+      <div class="modal-box" style="max-width:860px;">
+        <div class="modal-header">
+          <div class="modal-header-icon"><span class="material-symbols-outlined">content_copy</span></div>
+          <div>
+            <div class="modal-header-title">PRÉVIA DE CADASTROS REPETIDOS</div>
+            <div class="modal-header-sub">Consulta somente leitura; nenhum registro será alterado ou excluído.</div>
+          </div>
+          <button class="modal-close" onclick="fecharOverlay('modalPreviaDuplicidadesMonitores')"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <div class="modal-body" id="previaDuplicidadesMonitoresConteudo"></div>
       </div>
     </div>
 

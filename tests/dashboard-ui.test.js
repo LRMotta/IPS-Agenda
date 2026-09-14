@@ -194,3 +194,21 @@ test('projetos disponibiliza impressao da lista exibida', () => {
   assert.match(core, /querySelectorAll\('button, \.material-symbols-outlined'\)/);
   assert.match(core, /window\.open\('', '_blank'\)/);
 });
+
+test('impressao de Projetos separa os indicadores de recrutamento por linha', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const formatter = sourceBetween(core, 'function recrutamentoProjetoImpressaoHtml_(', '\n\nvar FASE_COLORS');
+  const context = vm.createContext({ esc: (value) => String(value) });
+  vm.runInContext(formatter, context);
+
+  const html = context.recrutamentoProjetoImpressaoHtml_('1 pacientes ativo(s)12,5%Total: 7Meta: —');
+  assert.match(html, />1 pacientes ativo\(s\) \(12,5%\)<\/div>/);
+  assert.match(html, />Total: 7<\/div>/);
+  assert.match(html, />Meta: —<\/div>/);
+  assert.doesNotMatch(html, /Total: 7Meta:/);
+
+  const concluido = context.recrutamentoProjetoImpressaoHtml_('Projeto concluído Total: 7 Falha triagem: 1');
+  assert.match(concluido, />Projeto concluído<\/div>/);
+  assert.match(concluido, />Total: 7<\/div>/);
+  assert.match(concluido, />Falha triagem: 1<\/div>/);
+});
