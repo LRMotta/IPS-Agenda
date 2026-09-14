@@ -437,7 +437,10 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
   assert.equal(result.truncated, false);
   assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
   const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
-  assert.deepEqual(entries.map((entry) => entry.stage), ['access', 'reference', 'date_scan', 'row_read', 'hydrate', 'revision', 'total']);
+  assert.deepEqual(entries.map((entry) => entry.stage), [
+    'access', 'reference', 'date_index', 'date_lookup', 'date_scan',
+    'row_read', 'hydrate_convert', 'hydrate', 'revision', 'total'
+  ]);
   assert.equal(logs.some((message) => /2026-07|EVT-SIGILOSO|Pessoa sigilosa/.test(message)), false);
   assert.match(readProjectFile('IndexAgendaScripts.html'), /\.getAgendaBootstrap\(requestedRange\.start, requestedRange\.endExclusive, forcar === true\)/);
 });
@@ -1244,6 +1247,9 @@ test('diretório de hidratação cacheado é usado pelo bootstrap por período',
   const second = [{ participante: 'Pessoa inativa', participanteCadastroId: '', idParticipante: '', projeto: 'Projeto A', braco: '' }];
 
   server.agendaHydrateParticipantFields_(first, { useCanaryCache: true });
+  assert.equal(cached.version, 1);
+  assert.ok(cached.byCadastro['CAD-1']);
+  server.agendaParticipantHydrationRows_ = () => { throw new Error('o índice de participantes deve atender a carga quente'); };
   server.agendaHydrateParticipantFields_(second, { useCanaryCache: true });
 
   assert.equal(reads, 1);
@@ -1276,6 +1282,10 @@ test('índice de datas é cacheado na carga por período e é invalidado após e
   server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: true });
   const dateReads = () => calls.filter((call) => call.column === server.AGENDA_CFG.col.data && call.numColumns === 1).length;
   assert.equal(dateReads(), 1);
+  const cachedIndex = cache.get(server.agendaDateIndexCacheKey_());
+  assert.equal(Array.isArray(cachedIndex.entries), true);
+  assert.equal(cachedIndex.entries.length, 2);
+  assert.equal(server.agendaDateIndexLowerBound_(cachedIndex.entries, new Date('2026-07-15').getTime()), 1);
 
   server.agendaInvalidateDateIndexCache_();
   server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: true });
@@ -1289,6 +1299,7 @@ test('índice de datas é cacheado na carga por período e é invalidado após e
   assert.match(functionBody(source, 'atualizarAgendaEventoCompleto'), /agendaInvalidateDateIndexCache_\(\)/);
   assert.match(functionBody(source, 'agendaAtualizarPeriodoEvento_'), /agendaInvalidateDateIndexCache_\(\)/);
   assert.match(functionBody(source, '_gravarLinhaEvento'), /agendaInvalidateDateIndexCache_\(\)/);
+  assert.match(functionBody(source, 'agendaGetEventosPorPeriodo_'), /agendaDateIndexLowerBound_/);
 });
 
 test('shell da Agenda aparece antes do bootstrap unificado, sem iniciar RPC separada', () => {
