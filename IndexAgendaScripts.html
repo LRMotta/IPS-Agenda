@@ -145,6 +145,33 @@
     return false;
   }
 
+  // Telemetria local da abertura de edição. Não registra ID, participante ou
+  // qualquer dado do agendamento: serve apenas para correlacionar o clique
+  // com as métricas de RPC emitidas pelo servidor.
+  function agendaEditOpenPerformanceStart_() {
+    var attempt = {
+      startedAt: Date.now(),
+      formReadyAtClick: agendaFormularioEstaPronto_()
+    };
+    agendaLogEditOpenPerformance_(attempt, 'click', true);
+    if (!attempt.formReadyAtClick) agendaLogEditOpenPerformance_(attempt, 'form_barrier_wait', true);
+    return attempt;
+  }
+
+  function agendaLogEditOpenPerformance_(attempt, stage, success) {
+    if (!attempt) return;
+    try {
+      console.info('[CODEX_PERF] ' + JSON.stringify({
+        operation: 'agendaEditOpen',
+        stage: String(stage || ''),
+        durationMs: Math.max(0, Date.now() - Number(attempt.startedAt || Date.now())),
+        formReadyAtClick: attempt.formReadyAtClick === true,
+        formReadyNow: agendaFormularioEstaPronto_(),
+        success: success === true
+      }));
+    } catch (e) {}
+  }
+
   function setAgendaInitStartedState(started) {
     _agendaInitStarted = !!started;
     STATE.agenda.initStarted = _agendaInitStarted;
@@ -4464,47 +4491,57 @@
     id = String(id || '').trim();
     rowIndex = Number(rowIndex || 0) || 0;
     if (!id) return;
+    var perf = agendaEditOpenPerformanceStart_();
     agendaComFormularioPronto_(function() {
-      agendaAbrirEdicaoPronta_(id, rowIndex);
+      if (!perf.formReadyAtClick) agendaLogEditOpenPerformance_(perf, 'form_barrier_release', true);
+      agendaAbrirEdicaoPronta_(id, rowIndex, perf);
     });
   }
 
-  function agendaAbrirEdicaoPronta_(id, rowIndex) {
+  function agendaAbrirEdicaoPronta_(id, rowIndex, perf) {
+    agendaLogEditOpenPerformance_(perf, 'event_rpc_start', true);
     agendaFetchEventoPorId_(id, rowIndex, function(row) {
+      agendaLogEditOpenPerformance_(perf, 'event_rpc_complete', !!row);
       if (!row) {
         snackErro('Registro da agenda nao encontrado.');
         return;
       }
-      agendaAbrirEdicaoResolvida_(row, id);
-    }, function(error) { snackErro(appErrorMessage(error)); });
-  }
-
-  function agendaAbrirEdicaoResolvida_(r, id) {
-    agendaLoadPeriodoOperacional_(r, function(periodo) {
-      if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
-      agendaAbrirEdicaoComContexto_(r, id);
-    }, function() {
-      agendaStorePeriodoOperacional_(r, agendaPeriodoFallbackLocal_(r));
-      agendaAbrirEdicaoComContexto_(r, id);
+      agendaAbrirEdicaoResolvida_(row, id, perf);
+    }, function(error) {
+      agendaLogEditOpenPerformance_(perf, 'event_rpc_failure', false);
+      snackErro(appErrorMessage(error));
     });
   }
 
-  function agendaAbrirEdicaoComContexto_(r, id) {
+  function agendaAbrirEdicaoResolvida_(r, id, perf) {
+    agendaLogEditOpenPerformance_(perf, 'period_rpc_start', true);
+    agendaLoadPeriodoOperacional_(r, function(periodo) {
+      agendaLogEditOpenPerformance_(perf, 'period_rpc_complete', true);
+      if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
+      agendaAbrirEdicaoComContexto_(r, id, perf);
+    }, function() {
+      agendaLogEditOpenPerformance_(perf, 'period_rpc_failure', false);
+      agendaStorePeriodoOperacional_(r, agendaPeriodoFallbackLocal_(r));
+      agendaAbrirEdicaoComContexto_(r, id, perf);
+    });
+  }
+
+  function agendaAbrirEdicaoComContexto_(r, id, perf) {
     if (!r || String(r.id || '') !== String(id || '')) {
       snackErro('Registro da agenda nao encontrado.');
       return;
     }
-    abrirAgendaEdicaoComRegistro_(r);
+    abrirAgendaEdicaoComRegistro_(r, perf);
   }
 
-  function abrirAgendaEdicaoComRegistro_(r) {
+  function abrirAgendaEdicaoComRegistro_(r, perf) {
     if (!r) return;
     agendaComFormularioPronto_(function() {
-      agendaAbrirEdicaoComRegistroPronto_(r);
+      agendaAbrirEdicaoComRegistroPronto_(r, perf);
     });
   }
 
-  function agendaAbrirEdicaoComRegistroPronto_(r) {
+  function agendaAbrirEdicaoComRegistroPronto_(r, perf) {
     var id = String(r.id || '').trim();
     if (_agendaEditId && String(_agendaEditId) !== String(id)) agendaReleaseEditPresence(_agendaEditId);
     limparAgendaForm();
@@ -4585,6 +4622,7 @@
     atualizarEstadoReservaKitsAgenda(r.id);
     var p = document.getElementById('agendaCreatePanel');
     if (p) p.classList.add('open');
+    agendaLogEditOpenPerformance_(perf, 'modal_open', true);
     agendaOpenEditPresence(r.id, r.recordVersion || '', r.editRecordVersion || '');
     updateAgendaSaveAvailability(false);
   }

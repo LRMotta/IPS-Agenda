@@ -166,6 +166,15 @@ test('servidor preserva protocolo e identificacao ja atribuida de participacao c
   assert.match(save, /codexWriteAuditChanges_\('Cadastros', 'atualizarParticipacaoParticipante'/);
 });
 
+test('formulario preserva a identidade original em edição complementar, mas registra alteração manual', () => {
+  const client = readProjectFile('IndexCoreScripts.html');
+  assert.match(client, /function participantePreservarIdentidadeOriginal_\(payload\)/);
+  assert.match(client, /participacaoIdOriginal/);
+  assert.match(client, /participacaoProjetoOriginal/);
+  assert.match(client, /participacaoIdentidadeAlterada === '1'/);
+  assert.match(client, /participantePreservarIdentidadeOriginal_\(payload\);/);
+});
+
 test('salvamento de participante registra telemetria sem dados pessoais', () => {
   const server = readProjectFile('WebApp.gs');
   const save = sourceBetween(server, 'function salvarDadosParticipante(', 'function corrigirMatrizIdadeParticipantes(');
@@ -1173,6 +1182,28 @@ test('tabela de participantes exibe nome e codigo do projeto como no cadastro de
   assert.match(html, /Bra&ccedil;o: Braço A/);
   assert.match(source, /\+\'<td>\'\+participanteProjetoCellHtml\(p\)\+\'<\/td>\'/);
   assert.match(source, /projetoCadastro && projetoCadastro\.codigo/);
+});
+
+test('listagem de participantes agrupa participações da mesma pessoa e mantém a participação aberta como principal', () => {
+  const source = readProjectFile('IndexCoreScripts.html');
+  const block = sourceBetween(source, 'function participantesParaListagemUnificada_(', 'function filtrarParticipantes(');
+  const context = vm.createContext({
+    participanteStatusEncerrado_: (status) => ['Falha de Pré-Triagem', 'Falha de Triagem', 'Descontinuado', 'Óbito'].includes(status)
+  });
+  vm.runInContext(block, context);
+
+  const lista = context.participantesParaListagemUnificada_([
+    { id: '81231558', idPessoa: 'PES-FILIPE', nome: 'Filipe Mumeron da Silva', projeto: 'SKYLINE-UC', status: 'Falha de Pré-Triagem' },
+    { id: '81231573', idPessoa: 'PES-FILIPE', nome: 'Filipe Mumeron da Silva', projeto: 'SUNSCAPE-1', status: 'Pré-Triagem' },
+    { id: '99', idPessoa: '', nome: 'Outra pessoa', status: 'Ativo' }
+  ]);
+
+  assert.equal(lista.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(lista[0])), {
+    id: '81231573', idPessoa: 'PES-FILIPE', nome: 'Filipe Mumeron da Silva', projeto: 'SUNSCAPE-1', status: 'Pré-Triagem', quantidadeParticipacoes: 2
+  });
+  assert.equal(lista[1].quantidadeParticipacoes, 1);
+  assert.match(source, /participações vinculadas/);
 });
 
 test('listagem de participantes recebe e exibe a data da ultima visita realizada', () => {
