@@ -4254,12 +4254,20 @@
     r = r || {};
     var id = String(r.id || '').trim();
     if (!AgendaRules.isMultiDay(r) || !id) {
-      if (typeof onSuccess === 'function') onSuccess(agendaPeriodoFallbackLocal_(r));
+      if (typeof onSuccess === 'function') onSuccess(agendaPeriodoFallbackLocal_(r), 'local_single');
       return;
     }
     var cached = r._periodoOperacional || _agendaPeriodosPorEventoId[id];
     if (cached) {
-      if (typeof onSuccess === 'function') onSuccess(cached);
+      if (typeof onSuccess === 'function') onSuccess(cached, 'cache');
+      return;
+    }
+    // Com a coleção completa, o cálculo local é o mesmo fallback que já
+    // prevalece sobre a resposta específica divergente. Evita varrer toda a
+    // planilha novamente ao abrir uma edição, sem afetar cargas por janela.
+    if (agendaEventosSaoColecaoCompleta_()) {
+      var localCompleto = agendaStorePeriodoOperacional_(r, agendaPeriodoFallbackLocal_(r));
+      if (typeof onSuccess === 'function') onSuccess(localCompleto, 'local_complete');
       return;
     }
     function recuperarConsultaEspecifica(error) {
@@ -4269,7 +4277,7 @@
           fallbackSucceeded = true;
           var fullRow = agendaFindEventoLocal_(id, r.rowIndex) || r;
           var fallback = agendaStorePeriodoOperacional_(fullRow, agendaPeriodoFallbackLocal_(fullRow));
-          if (typeof onSuccess === 'function') onSuccess(fallback);
+          if (typeof onSuccess === 'function') onSuccess(fallback, 'local_after_full_load');
         }, {
           silent: true,
           onComplete: function() {
@@ -4290,10 +4298,10 @@
         if (agendaEventosSaoColecaoCompleta_() && (_agendaEventos || []).length &&
             (String(local.inicio || '') !== String(periodo.inicio || '') || String(local.fim || '') !== String(periodo.fim || ''))) {
           if (window.console && console.warn) console.warn('[Agenda] Consulta especifica de periodo divergente; fallback completo preservado.');
-          if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, local));
+          if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, local), 'local_complete');
           return;
         }
-        if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, periodo));
+        if (typeof onSuccess === 'function') onSuccess(agendaStorePeriodoOperacional_(r, periodo), 'rpc');
       })
       .withFailureHandler(function(error) {
         recuperarConsultaEspecifica(error);
@@ -4519,9 +4527,9 @@
   }
 
   function agendaAbrirEdicaoResolvida_(r, id, perf) {
-    agendaLogEditOpenPerformance_(perf, 'period_rpc_start', true);
-    agendaLoadPeriodoOperacional_(r, function(periodo) {
-      agendaLogEditOpenPerformance_(perf, 'period_rpc_complete', true);
+    agendaLogEditOpenPerformance_(perf, 'period_resolve_start', true);
+    agendaLoadPeriodoOperacional_(r, function(periodo, source) {
+      agendaLogEditOpenPerformance_(perf, source === 'local_complete' ? 'period_local_complete' : 'period_rpc_complete', true);
       if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
       agendaAbrirEdicaoComContexto_(r, id, perf);
     }, function() {
