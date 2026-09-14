@@ -477,7 +477,9 @@ test('feature de janela nasce desligada e, quando habilitada, atende todo perfil
 
 test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma única RPC', () => {
   const property = { value: 'true' };
+  const logs = [];
   const server = agendaServer({
+    Logger: { log: (message) => logs.push(message) },
     PropertiesService: {
       getScriptProperties: () => ({ getProperty: () => property.value })
     },
@@ -485,12 +487,16 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
   });
   const referenceData = validAgendaReferenceData();
   const calls = [];
-  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'readonly' });
+  let accessReads = 0;
+  server.codexGetCurrentUserAccess = () => {
+    accessReads += 1;
+    return { ok: true, role: 'readonly' };
+  };
   server.codexGetUserOAuthStatus_ = () => ({});
   server.codexGetAppVersion_ = () => ({});
   server.codexGetTeamBirthdays_ = () => [];
-  server.getAgendaBootstrap = (start, endExclusive, forceRefresh) => {
-    calls.push({ start, endExclusive, forceRefresh });
+  server.agendaGetBootstrapForAccess_ = (access, start, endExclusive, forceRefresh) => {
+    calls.push({ access, start, endExclusive, forceRefresh });
     return { access: { ok: true }, referenceData, events: [], range: { start, endExclusive } };
   };
 
@@ -499,10 +505,20 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
     agendaRange: { start: '2026-09-07', endExclusive: '2026-09-28' }
   });
 
-  assert.deepEqual(calls, [{ start: '2026-09-07', endExclusive: '2026-09-28', forceRefresh: false }]);
+  assert.deepEqual(calls, [{
+    access: { ok: true, role: 'readonly' },
+    start: '2026-09-07', endExclusive: '2026-09-28', forceRefresh: false
+  }]);
+  assert.equal(accessReads, 1);
   assert.equal(result.agendaFormData, null);
   assert.equal(result.agendaBootstrap.referenceData, referenceData);
   assert.deepEqual(Object.assign({}, result.features), { agendaWindowedLoadingV2: true });
+  const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
+  assert.deepEqual(entries.map((entry) => entry.stage), [
+    'access', 'auth', 'version', 'web_app_url', 'agenda_bootstrap', 'team_birthdays', 'serialize', 'total'
+  ]);
+  assert.ok(entries.find((entry) => entry.stage === 'serialize').responseBytes > 0);
+  assert.equal(entries.find((entry) => entry.stage === 'total').responseBytes, entries.find((entry) => entry.stage === 'serialize').responseBytes);
   assert.equal(server.agendaBootstrapRequestRange_({ page: 'agenda', agendaRange: { start: 'inválida', endExclusive: '2026-09-28' } }), null);
 });
 
@@ -1234,7 +1250,7 @@ test('diretório de hidratação cacheado é usado pelo bootstrap por período',
   assert.equal(first[0].braco, 'Braço A');
   assert.equal(second[0].participanteCadastroId, 'CAD-2');
 
-  const bootstrap = functionBody(readProjectFile('WebApp.gs'), 'getAgendaBootstrap');
+  const bootstrap = functionBody(readProjectFile('WebApp.gs'), 'agendaGetBootstrapForAccess_');
   assert.match(bootstrap, /var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_\(access\)/);
   assert.match(bootstrap, /useCanaryCache: canaryEnabled, useCanaryDateIndex: canaryEnabled/);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'clearCodexRuntimeCaches_'), /agendaInvalidateParticipantHydrationCache_\(\)/);
@@ -1721,7 +1737,7 @@ test('instrumentacao registra somente metadados e relanca a falha original', () 
   assert.throws(() => server.codexMeasurePerformance_('operacao', 'falha', { rowCount: 3 }, () => { throw failure; }), (error) => error === failure);
 
   const entries = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_PERF\]\s*/, '')));
-  assert.deepEqual(Object.keys(entries[0]).sort(), ['durationMs', 'operation', 'rowCount', 'stage', 'success']);
+  assert.deepEqual(Object.keys(entries[0]).sort(), ['durationMs', 'operation', 'responseBytes', 'rowCount', 'stage', 'success']);
   assert.equal(entries[0].success, true);
   assert.equal(entries[1].success, false);
   assert.equal(logs.some((message) => message.includes('segredo') || message.includes('conteudo sensivel')), false);
