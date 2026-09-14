@@ -146,6 +146,17 @@ test('alerta de nome repetido orienta quando um novo cadastro e apropriado', () 
   assert.match(modal, /Criar nova participação/);
 });
 
+test('Projetos oferece filtro de status preenchido pela configuracao e o aplica junto com a busca', () => {
+  const content = readProjectFile('IndexContentAfterDashboard.html');
+  const core = readProjectFile('IndexCoreScripts.html');
+  const carregarBlock = sourceBetween(core, 'function carregarProjetos(', 'function preencherSelectProjeto(');
+  const filtroBlock = sourceBetween(core, 'function filtrarProjetos(', 'function imprimirProjetos(');
+
+  assert.match(content, /id="filterStatusProj" onchange="filtrarProjetos\(\)"/);
+  assert.match(carregarBlock, /preencherSelectProjeto\('filterStatusProj', STATUS_PROJ, '', 'Todos os status'\)/);
+  assert.match(filtroBlock, /String\(p\.status \|\| ''\) === st/);
+});
+
 test('validador de CPF confirma dígitos verificadores e rejeita sequências ou números alterados', () => {
   const cadastro = rules();
   assert.equal(cadastro.isValidCpf('529.982.247-25'), true);

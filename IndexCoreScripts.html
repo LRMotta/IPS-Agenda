@@ -575,7 +575,9 @@ function applyDashboardPendingFilter_(pagina) {
     var keys = dashboardFilterKeysMap_();
     DASHBOARD_PENDING_KEYS = '';
     var searchProj = document.getElementById('searchProjetos');
+    var statusProj = document.getElementById('filterStatusProj');
     if (searchProj) searchProj.value = '';
+    if (statusProj) statusProj.value = '';
     if (filtro === 'projetosAtivos') {
       renderTabelaProj((_projetos || []).filter(projetoEstaAtivo_));
       return;
@@ -4609,6 +4611,7 @@ function carregarProjetos(force) {
       TEMPERATURAS_PROJ = ((res && res.temperaturas) || []).slice();
       preencherSelectProjeto('pFase', cfg.fases || [], '', '--');
       preencherSelectProjeto('pStatus', STATUS_PROJ, '', '— Selecione —');
+      preencherSelectProjeto('filterStatusProj', STATUS_PROJ, '', 'Todos os status');
       _medicosProj = ((res && res.medicos) || []).map(function(m){ return m.nome || m; });
       _solicitantesProj = ((res && res.solicitantes) || []).map(function(s){ return s.nome || s; });
       renderProjetos(sortCadastroByField((res && res.data) || [], 'nomeAbreviado', 'codigo'));
@@ -5203,7 +5206,10 @@ function projetoCorrespondeBusca_(p, q) {
 function filtrarProjetos(forceNow) {
   codexRunSearchFilter('searchProjetos', 'projetos', function() {
     var q = (document.getElementById('searchProjetos').value||'').toLowerCase().trim();
-    var f = q ? _projetos.filter(function(p){ return projetoCorrespondeBusca_(p, q); }) : _projetos;
+    var st = document.getElementById('filterStatusProj') ? document.getElementById('filterStatusProj').value : '';
+    var f = _projetos.filter(function(p) {
+      return (!q || projetoCorrespondeBusca_(p, q)) && (!st || String(p.status || '') === st);
+    });
     renderTabelaProj(f);
   }, !!forceNow);
 }

@@ -32,6 +32,9 @@
           <span class="material-symbols-outlined">search</span>
           <input type="text" id="searchProjetos" placeholder="Buscar por código, título, coordenador, patrocinador ou courier…" oninput="filtrarProjetos()">
         </div>
+        <select class="f-select" id="filterStatusProj" onchange="filtrarProjetos()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;">
+          <option value="">Todos os status</option>
+        </select>
         <button class="btn-new proj-print-btn" type="button" title="Imprimir projetos exibidos" onclick="imprimirProjetos()">
           <span class="material-symbols-outlined">print</span> Imprimir
         </button>
