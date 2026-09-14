@@ -186,8 +186,8 @@ test('Agenda carrega mapa de projeto, regras de courier e feriados e mostra aler
   const agendaRisk = readProjectFile('AgendaCourierRisk.gs');
   const client = readProjectFile('IndexAgendaScripts.html');
   const content = readProjectFile('IndexContentAfterDashboard.html');
-  assert.match(server, /projectCourierMap:\s*getAgendaProjetoCourierMap_\(\)/);
-  assert.match(server, /feriados:\s*getAgendaFeriadosOperacionais_\(\)/);
+  assert.match(server, /projectCourierMap:\s*measureReference\('project_courier_map'/);
+  assert.match(server, /feriados:\s*measureReference\('feriados'/);
   assert.match(agendaRisk, /function agendaOperationalRiskAlerts_/);
   assert.match(client, /Atenção operacional — o agendamento continua permitido/);
   assert.match(content, /id="agendaCourierRiskAlert"/);
