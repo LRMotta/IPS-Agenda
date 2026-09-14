@@ -310,7 +310,7 @@ function getAppBootstrapData(request) {
     }
     var serializationMeta = { rowCount: 0, responseBytes: 0 };
     codexMeasurePerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
-      serializationMeta.responseBytes = JSON.stringify(out).length;
+      serializationMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(out));
     });
     totalMeta.rowCount = out.agendaBootstrap && Array.isArray(out.agendaBootstrap.events) ? out.agendaBootstrap.events.length : 0;
     totalMeta.responseBytes = serializationMeta.responseBytes;
@@ -14644,6 +14644,18 @@ function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
   } catch (eLog) {
     // A telemetria nunca pode alterar o resultado da operacao observada.
   }
+}
+
+function codexSerializedByteLength_(serialized) {
+  var value = String(serialized || '');
+  try {
+    if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.newBlob === 'function') {
+      return Utilities.newBlob(value).getBytes().length;
+    }
+  } catch (e) {
+    // A métrica deve continuar disponível mesmo em ambientes sem Utilities.
+  }
+  return value.length;
 }
 
 function codexMeasurePerformance_(operation, stage, metadata, callback) {
