@@ -5233,6 +5233,7 @@ function imprimirProjetos() {
         Array.prototype.slice.call(printCell.querySelectorAll('.proj-toggle, .row-avatar')).forEach(function(el) { el.remove(); });
       }
       Array.prototype.slice.call(printCell.querySelectorAll('button, .material-symbols-outlined')).forEach(function(el) { el.remove(); });
+      if (index === 5) return recrutamentoProjetoImpressaoHtml_(printCell.innerText || '');
       return esc(String(printCell.innerText || '').trim()).replace(/\n/g, '<br>');
     });
     return '<tr>' + values.map(function(value) { return '<td>' + value + '</td>'; }).join('') + '</tr>';
@@ -5242,7 +5243,7 @@ function imprimirProjetos() {
   var logoHtml = logo ? '<img src="' + esc(logo) + '" alt="IPS | UCS">' : '<strong>IPS | UCS</strong>';
   var subtitle = filtro ? 'Filtro: ' + filtro + ' · ' + rows.length + ' projeto(s)' : rows.length + ' projeto(s) exibido(s)';
   var html = '<!doctype html><html><head><meta charset="utf-8"><title>Projetos</title><style>' +
-    '@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1f2937;margin:0}.no-print{position:fixed;right:12px;top:12px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}.head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1266f1;padding-bottom:9px;margin-bottom:12px}.head img{height:34px;width:auto;object-fit:contain}.head strong{font-size:18px;color:#1266f1}.head h1{font-size:18px;margin:0;color:#0b3f8a}.head p{font-size:10px;color:#64748b;margin:3px 0 0}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#eef4ff;color:#0b3f8a;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.45px;padding:7px 6px;border:1px solid #d8e2f0}td{vertical-align:top;font-size:9px;line-height:1.35;padding:6px;border:1px solid #e2e8f0;overflow-wrap:anywhere}th:nth-child(1){width:15%}th:nth-child(2){width:7%}th:nth-child(3){width:12%}th:nth-child(4){width:18%}th:nth-child(5){width:16%}th:nth-child(6){width:12%}th:nth-child(7){width:8%}th:nth-child(8){width:12%}tr{break-inside:avoid}@media print{.no-print{display:none}}</style></head><body>' +
+    '@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1f2937;margin:0}.no-print{position:fixed;right:12px;top:12px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}.head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1266f1;padding-bottom:9px;margin-bottom:12px}.head img{height:34px;width:auto;object-fit:contain}.head strong{font-size:18px;color:#1266f1}.head h1{font-size:18px;margin:0;color:#0b3f8a}.head p{font-size:10px;color:#64748b;margin:3px 0 0}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#eef4ff;color:#0b3f8a;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.45px;padding:7px 6px;border:1px solid #d8e2f0}td{vertical-align:top;font-size:9px;line-height:1.35;padding:6px;border:1px solid #e2e8f0;overflow-wrap:anywhere}.print-recruitment{display:grid;gap:3px}.print-recruitment-line{white-space:normal}th:nth-child(1){width:15%}th:nth-child(2){width:7%}th:nth-child(3){width:12%}th:nth-child(4){width:18%}th:nth-child(5){width:16%}th:nth-child(6){width:12%}th:nth-child(7){width:8%}th:nth-child(8){width:12%}tr{break-inside:avoid}@media print{.no-print{display:none}}</style></head><body>' +
     '<button class="no-print" onclick="window.print()">Imprimir</button><div class="head">' + logoHtml + '<div><h1>Projetos</h1><p>' + esc(subtitle) + ' · Emitido em ' + esc(emitted) + '</p></div></div>' +
     '<table><thead><tr>' + headers.map(function(header) { return '<th>' + esc(header) + '</th>'; }).join('') + '</tr></thead><tbody>' + tableRows + '</tbody></table><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>';
   var w = window.open('', '_blank');
@@ -5253,6 +5254,27 @@ function imprimirProjetos() {
   w.document.open();
   w.document.write(html);
   w.document.close();
+}
+
+function recrutamentoProjetoImpressaoHtml_(texto) {
+  var valor = String(texto || '').replace(/\s+/g, ' ').trim();
+  if (!valor) return '';
+  var ativos = valor.match(/(\d+)\s+pacientes ativo\(s\)/i);
+  var restante = ativos ? valor.slice(ativos.index + ativos[0].length) : valor;
+  var percentual = restante.match(/^\s*(\d+(?:[,.]\d+)?%|—)/);
+  var total = valor.match(/Total:\s*(\d+)(?=\s*(?:Falha triagem:|Meta:)|$)/i);
+  var falhas = valor.match(/Falha triagem:\s*(\d+)(?=\s*(?:Meta:)|$)/i);
+  var meta = valor.match(/Meta:\s*([^\s]+)(?:\s|$)/i);
+  var linhas = [];
+  if (/^Projeto conclu[ií]do/i.test(valor)) linhas.push('Projeto concluído');
+  if (ativos) linhas.push(ativos[1] + ' pacientes ativo(s)' + (percentual ? ' (' + percentual[1] + ')' : ''));
+  if (total) linhas.push('Total: ' + total[1]);
+  if (falhas) linhas.push('Falha triagem: ' + falhas[1]);
+  if (meta) linhas.push('Meta: ' + meta[1]);
+  if (!linhas.length) linhas.push(valor);
+  return '<div class="print-recruitment">' + linhas.map(function(linha) {
+    return '<div class="print-recruitment-line">' + esc(linha) + '</div>';
+  }).join('') + '</div>';
 }
 
 var FASE_COLORS = {'I':'#e8f0fe:#1266f1','II':'#e6f4ea:#137333','III':'#fff3e0:#e65100','IV':'#fce8e6:#b3261e'};
@@ -6612,6 +6634,50 @@ function renderTabelaMonitores(lista) {
     edit: function(item) { abrirFormMonitor(item); },
     delete: function(item) { confirmarExcluirMonitor(item.id, item.nome || ''); }
   });
+}
+
+function abrirPreviaDuplicidadesMonitores() {
+  var conteudo = document.getElementById('previaDuplicidadesMonitoresConteudo');
+  if (!conteudo) return;
+  conteudo.innerHTML = '<div style="padding:28px;text-align:center;color:#64748b"><div class="spinner"></div>Analisando cadastros...</div>';
+  abrirOverlay('modalPreviaDuplicidadesMonitores');
+  appServerRun({
+    method: 'previsualizarDuplicidadesMonitores',
+    args: [],
+    onSuccess: function(resultado) { renderPreviaDuplicidadesMonitores_(resultado || {}); },
+    onFailure: function(erro) {
+      conteudo.innerHTML = '<div style="color:#b3261e">Não foi possível gerar a prévia: ' + esc(appErrorMessage(erro)) + '</div>';
+    }
+  });
+}
+
+function renderPreviaDuplicidadesMonitores_(resultado) {
+  var conteudo = document.getElementById('previaDuplicidadesMonitoresConteudo');
+  if (!conteudo) return;
+  var grupos = (resultado && resultado.grupos) || [];
+  if (!grupos.length) {
+    conteudo.innerHTML = '<div class="empty-row" style="padding:28px">Nenhum grupo com o mesmo nome e os mesmos projetos foi encontrado.</div>';
+    return;
+  }
+  var html = '<div style="margin-bottom:16px;color:#475569">Foram encontrados <strong>' + Number(resultado.totalGrupos || 0) + '</strong> grupo(s), com <strong>' + Number(resultado.totalRegistros || 0) + '</strong> registros para revisão. Esta prévia não consolida nem remove dados.</div>';
+  grupos.forEach(function(grupo) {
+    var projetos = (grupo.projetos || []).map(function(projeto) {
+      return '<span class="chip chip-blue" style="margin:2px 4px 2px 0">' + esc(projeto.projeto + (normAgenda(projeto.unblinded) === 'sim' ? ' · Unblinded' : '')) + '</span>';
+    }).join('') || '<span style="color:#9aa3b0">Sem projeto</span>';
+    var divergencias = (grupo.camposDivergentes || []).map(function(campo) {
+      return campo === 'email' ? 'e-mail' : 'telefone';
+    });
+    html += '<div class="table-card" style="margin:12px 0;padding:14px">'
+      + '<div style="font-weight:700;color:#172033">' + esc(grupo.nome || 'Monitor sem nome') + '</div>'
+      + '<div style="margin:7px 0 10px">' + projetos + '</div>'
+      + '<div style="font-size:12px;color:' + (divergencias.length ? '#a15c00' : '#137333') + ';margin-bottom:9px">'
+      + (divergencias.length ? 'Diferenças a revisar: ' + esc(divergencias.join(', ')) + '.' : 'Registros idênticos nos campos exibidos.') + '</div>'
+      + '<table class="data-table"><thead><tr><th>Linha</th><th>E-mail</th><th>Telefone</th></tr></thead><tbody>'
+      + (grupo.registros || []).map(function(registro) {
+        return '<tr><td>' + Number(registro.linha || 0) + '</td><td>' + esc(registro.email || '—') + '</td><td>' + esc(registro.telefone ? formatarTelefoneBrasileiro(registro.telefone) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  });
+  conteudo.innerHTML = html;
 }
 
 function abrirFormMonitor(m) {
