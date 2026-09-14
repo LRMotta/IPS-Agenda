@@ -42,6 +42,36 @@ test('referencia discreta identifica Agenda e slot e a pendencia nasce apos uma 
   assert.match(pendentes[0].motivo, /mais de 1 hora/);
 });
 
+test('regenerar documentos preserva a evidencia de e-mail do mesmo transporte', () => {
+  const book = new FakeSpreadsheet({});
+  const server = transportServer({ book });
+  const primeiro = server.transporteRegistrarDocumentacaoGerada_({
+    agendaId: 'EVT-REGERAR', slot: '3', courier: 'MARKEN',
+    pdfId: 'PDF-ANTIGO', pdfNome: 'antigo.pdf', rascunhoOk: true
+  });
+  const identificadoEm = new Date('2026-09-11T16:48:00-03:00');
+  const enviadoEm = new Date('2026-09-11T16:49:00-03:00');
+  const verificadoEm = new Date('2026-09-11T16:50:00-03:00');
+  book.getSheetByName('Transporte_Operacoes').getRange(primeiro.row, 12, 1, 5).setValues([[
+    identificadoEm, enviadoEm, 'MSG-COM-ANEXOS', 2, verificadoEm
+  ]]);
+
+  server.transporteRegistrarDocumentacaoGerada_({
+    agendaId: 'EVT-REGERAR', slot: 'III', courier: 'MARKEN',
+    pdfId: 'PDF-NOVO', pdfNome: 'novo.pdf', rascunhoOk: true
+  });
+
+  const operacao = server.transporteOperacoesRows_()[0];
+  assert.equal(operacao.pdfId, 'PDF-NOVO');
+  assert.equal(operacao.pdfNome, 'novo.pdf');
+  assert.equal(operacao.gmailMessageId, 'MSG-COM-ANEXOS');
+  assert.equal(operacao.anexos, 2);
+  assert.equal(operacao.emailIdentificadoEm.getTime(), identificadoEm.getTime());
+  assert.equal(operacao.emailEnviadoEm.getTime(), enviadoEm.getTime());
+  assert.equal(operacao.ultimaVerificacao.getTime(), verificadoEm.getTime());
+  assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date('2026-09-14T12:00:00-03:00')).length, 0);
+});
+
 test('monitor da copia com anexo promove somente status pendente para Agendado', () => {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});

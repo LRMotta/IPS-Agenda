@@ -417,6 +417,19 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     }
   }
   var now = new Date();
+  // Regenerar PDFs ou rascunhos nao invalida uma evidencia de envio ja
+  // registrada para o mesmo agendamento e slot. Sem isso, uma nova geracao
+  // apaga a mensagem/anexos validados e obriga o monitor a encontrar um
+  // e-mail posterior, mesmo quando a documentacao ja foi enviada.
+  var evidenciaEnvio = existente
+    ? [
+      existente.emailIdentificadoEm,
+      existente.emailEnviadoEm,
+      existente.gmailMessageId,
+      existente.anexos,
+      existente.ultimaVerificacao
+    ]
+    : ['', '', '', '', now];
   var values = [[
     agendaId,
     slot,
@@ -429,7 +442,11 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     String(info.rascunhoId || '').trim(),
     info.rascunhoOk === true ? 'CRIADO' : 'ERRO',
     info.rascunhoOk === true ? '' : String(info.rascunhoErro || 'Rascunho não criado.').trim(),
-    '', '', '', '', now
+    evidenciaEnvio[0],
+    evidenciaEnvio[1],
+    evidenciaEnvio[2],
+    evidenciaEnvio[3],
+    evidenciaEnvio[4]
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
   sh.getRange(rowNumber, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues(values);
