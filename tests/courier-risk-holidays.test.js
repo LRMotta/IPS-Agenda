@@ -27,6 +27,7 @@ function holidayContext(spreadsheet) {
     codexAssertCanWrite_: () => {},
     codexWithDocumentLock_: (_name, callback) => callback(),
     codexCacheRemove_: () => {},
+    agendaInvalidateReferenceDataCache_: () => {},
     Logger: { log: () => {} }
   });
 }

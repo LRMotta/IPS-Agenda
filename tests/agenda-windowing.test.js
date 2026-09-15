@@ -408,7 +408,7 @@ test('bootstrap retorna referencias completas e janela atomica', () => {
   ]);
   const result = server.getAgendaBootstrap('2026-07-14', '2026-07-21', true);
 
-  assert.equal(forced, true);
+  assert.equal(forced, false);
   assert.equal(typeof result, 'object');
   assert.equal(typeof result.access, 'object');
   assert.equal(result.access.ok, true);
@@ -986,7 +986,7 @@ test('atualizacao administrativa renova somente referencias e preserva as janela
 
   assert.match(notify, /referenceDataDirty = true/);
   assert.match(notify, /APP_BOOTSTRAP_DATA\.agendaFormData = null/);
-  assert.match(refresh, /getAgendaReferenceDataFresh\(\)/);
+  assert.match(refresh, /getAgendaReferenceDataFresh\(true\)/);
   assert.match(refresh, /atualizarAgendaFormDataOpcoes\(data, \{ preservarValoresAtuais: true \}\)/);
   assert.match(refresh, /agendaWindowMemoryCacheUpdateReferenceData_\(data\)/);
   assert.doesNotMatch(refresh, /carregarAgendaEventos|agendaWindowMemoryCacheClear_/);
@@ -1057,7 +1057,7 @@ test('revalidacao inicial da referencia e coalescida sem trocar a leitura fresca
   const schedule = functionBody(client, 'agendaAgendarRevalidacaoInicialReferencias_');
   const loadWindow = functionBody(client, 'carregarAgendaEventosPorJanela_');
   assert.match(refresh, /options\.background === true[\s\S]*getAgendaReferenceDataBackgroundRevalidate\(\)/);
-  assert.match(refresh, /getAgendaReferenceDataFresh\(\)/);
+  assert.match(refresh, /getAgendaReferenceDataFresh\(true\)/);
   assert.match(schedule, /window\.setTimeout[\s\S]*agendaFormularioEstaPronto_[\s\S]*agendaAtualizarReferenciasPendentes_\(\{ background: true \}\)/);
   assert.doesNotMatch(schedule, /carregarAgendaEventos|agendaWindowMemoryCacheClear_/);
   assert.match(loadWindow, /options\.initialLoad && forcar !== true\) agendaAgendarRevalidacaoInicialReferencias_\(\)/);
@@ -1200,7 +1200,7 @@ test('telemetria do bootstrap registra motivo seguro e subetapas sem identificar
   ['participantes', 'projetos', 'courier_config', 'kits_coleta', 'monitores'].forEach((stage) => {
     assert.match(build, new RegExp("measureReference\\('" + stage + "'"));
   });
-  assert.match(functionBody(source, 'agendaGetBootstrapForAccess_'), /agendaGetReferenceData_\(refreshRequested, canaryEnabled, function/);
+  assert.match(functionBody(source, 'agendaGetBootstrapForAccess_'), /agendaGetReferenceData_\(false, canaryEnabled, function/);
 });
 
 test('cliente nao revalida formulario durante bootstrap da janela', () => {
@@ -1569,6 +1569,10 @@ test('nova ou edição de visita na mesma data exige confirmação e mantém sa�
   assert.equal(server.agendaVisitaCriadaNaMesmaData_(agenda, {
     id: 'EVT-EXISTENTE', tipo: 'Visita', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
   }, new Date(2026, 7, 28)), null, 'a edição não deve alertar sobre o próprio evento');
+  assert.equal(server.agendaVisitaCriadaNaMesmaData_(agenda, {
+    id: 'ID-LEGADO-DIVERGENTE', tipo: 'Visita', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28), 'EVT-EXISTENTE'), null,
+  'a edição deve priorizar o ID da linha localizada ao salvar atualização parcial');
 
   const client = readProjectFile('IndexAgendaScripts.html');
   const serverSource = readProjectFile('WebApp.gs');
@@ -1579,7 +1583,7 @@ test('nova ou edição de visita na mesma data exige confirmação e mantém sa�
     assert.match(save, /dados\.salvarVisitaMesmaDataConfirmado !== true/);
   });
   const update = functionBody(serverSource, 'atualizarAgendaEventoCompleto');
-  assert.match(update, /agendaVisitaCriadaNaMesmaData_\(agenda, dados, d\)/);
+  assert.match(update, /agendaVisitaCriadaNaMesmaData_\(agenda, dados, d, rowAnterior\[AGENDA_CFG\.idx\.id\]\)/);
   assert.match(update, /dados\.salvarVisitaMesmaDataConfirmado !== true/);
   assert.match(functionBody(client, 'salvarAgendaEvento'), /payload\.salvarVisitaMesmaDataConfirmado = true/);
   assert.match(functionBody(client, 'salvarAgendaEvento'), /res && res\.visitaMesmaData/);

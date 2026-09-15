@@ -2,8 +2,17 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile } = require('./helpers/load-app-script');
+const { runFile: loadFile } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
+
+// Servicos usados pelas invalidacoes persistentes das opcoes de kits.
+function runFile(name, context = {}) {
+  return loadFile(name, {
+    ...context,
+    Utilities: { formatDate: () => '20260915', ...context.Utilities },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo', ...context.Session }
+  });
+}
 
 function agendaKitContext() {
   const server = runFile('WebApp.gs', {
