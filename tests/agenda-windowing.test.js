@@ -1347,6 +1347,28 @@ test('shell da Agenda aparece antes do bootstrap unificado, sem iniciar RPC sepa
   assert.match(readProjectFile('WebApp.gs'), /tplIndex\.agendaCanaryShell = tplIndex\.paginaInicial === 'agenda'/);
 });
 
+test('Dashboard fornece a flag do shell canario exigida pelo template Index', () => {
+  let dashboardTemplate;
+  const output = {
+    addMetaTag() { return this; },
+    setTitle() { return this; }
+  };
+  const server = agendaServer({
+    HtmlService: {
+      createTemplateFromFile() {
+        dashboardTemplate = {};
+        dashboardTemplate.evaluate = () => output;
+        return dashboardTemplate;
+      }
+    }
+  });
+  server.codexAuthorizeWebAppRequestSafe_ = () => ({ ok: true });
+
+  server.doGet({ parameter: { page: 'dashboard' } });
+
+  assert.equal(dashboardTemplate.agendaCanaryShell, false);
+});
+
 test('pesquisa historica e paginada em lotes sem serializar toda a agenda', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
