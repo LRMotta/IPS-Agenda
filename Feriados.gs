@@ -123,6 +123,7 @@ function feriadoValidatePayload_(dados) {
 }
 
 function feriadoClearCaches_() {
+  agendaInvalidateReferenceDataCache_(['feriados']);
   var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   ['AgendaFormData:v8:', 'AgendaFormData:v9:', 'AgendaFormDataStrict:v2:', 'AgendaFormDataStrict:v3:', 'AgendaBootstrapReferenceData:v1:', 'AgendaBootstrapReferenceData:v2:'].forEach(function(prefix) {
     codexCacheRemove_(prefix + day);

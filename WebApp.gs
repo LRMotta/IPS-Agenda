@@ -1746,9 +1746,55 @@ function agendaReferenceBackgroundRevalidateKey_() {
   return 'AgendaBootstrapReferenceRevalidated:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
 }
 
-function agendaInvalidateReferenceDataCache_() {
+// Uma entrada por lista permite renovar somente as dependencias da mutacao.
+// Estas referencias alimentam opcoes; saldo e permissoes continuam validados
+// nas RPCs de escrita, diretamente nas fontes autoritativas.
+var AGENDA_REFERENCE_PARTS_ = [
+  'participantes', 'medicos', 'prestadores', 'projetos', 'laboratorios',
+  'couriers', 'courier_config', 'project_courier_map', 'feriados',
+  'temperaturas', 'status_courier', 'laboratorios_destino', 'kits_coleta',
+  'tipos_evento', 'salas_monitoria', 'status', 'procedimento_chips', 'monitores', 'email_enabled'
+];
+
+function agendaReferencePartKeys_() {
+  var prefix = 'AgendaReferencePart:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd') + ':';
+  var keys = {};
+  AGENDA_REFERENCE_PARTS_.forEach(function(part) { keys[part] = prefix + part; });
+  return keys;
+}
+
+function agendaInvalidateReferenceDataCache_(parts) {
   codexCacheRemove_(agendaReferenceCacheKey_());
   codexCacheRemove_(agendaReferenceBackgroundRevalidateKey_());
+  var keys = agendaReferencePartKeys_();
+  var selected = Array.isArray(parts) ? parts : AGENDA_REFERENCE_PARTS_;
+  try {
+    CacheService.getScriptCache().removeAll(selected.filter(function(part) { return !!keys[part]; }).map(function(part) { return keys[part]; }));
+  } catch (e) {}
+}
+
+function agendaInvalidateKitsReference_() {
+  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+  agendaInvalidateReferenceDataCache_(['kits_coleta']);
+  // Consumidores legados continuam recebendo o formulario completo atualizado.
+  var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  ['AgendaFormData:v9:', 'AgendaFormDataStrict:v3:'].forEach(function(prefix) { codexCacheRemove_(prefix + day); });
+}
+
+function agendaReferencePartsForRead_(forceRefresh) {
+  var keys = agendaReferencePartKeys_();
+  var cached = {};
+  try {
+    if (!forceRefresh && !CODEX_CACHE_BYPASS_READS_) {
+      cached = CacheService.getScriptCache().getAll(Object.keys(keys).map(function(part) { return keys[part]; })) || {};
+    }
+  } catch (e) {}
+  return { keys: keys, cached: cached, pending: {} };
+}
+
+function agendaReferencePartsStore_(parts) {
+  if (!Object.keys(parts.pending).length) return;
+  try { CacheService.getScriptCache().putAll(parts.pending, AGENDA_REFERENCE_CACHE_TTL_SECONDS_); } catch (e) {}
 }
 
 function agendaParticipantHydrationCacheKey_() {
@@ -1781,7 +1827,7 @@ function getCodexSpreadsheet_() {
   return CODEX_ACTIVE_SPREADSHEET_CACHE_;
 }
 
-function clearCodexRuntimeCaches_() {
+function clearCodexRuntimeCaches_(referenceParts) {
   CODEX_CONFIG_APP_ROWS_CACHE_ = null;
   CODEX_SHEET_DATA_CACHE_ = {};
   CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
@@ -1800,7 +1846,7 @@ function clearCodexRuntimeCaches_() {
   codexCacheRemove_('AgendaFormDataStrict:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  agendaInvalidateReferenceDataCache_();
+  agendaInvalidateReferenceDataCache_(referenceParts);
   agendaInvalidateParticipantHydrationCache_();
   agendaInvalidateDateIndexCache_();
 }
@@ -2053,7 +2099,7 @@ function salvarDadosMedico(dados) {
         sh.getRange(linha, 5).setValue(dados.cremers       || '');
         sh.getRange(linha, 6).setValue(dados.telefone      || '');
         sh.getRange(linha, 7).setValue(dados.email         || '');
-        clearCodexRuntimeCaches_();
+        clearCodexRuntimeCaches_(['medicos']);
         return 'Médico atualizado com sucesso.';
       }
     }
@@ -2064,7 +2110,7 @@ function salvarDadosMedico(dados) {
   sh.appendRow([novoId, dados.nome || '', especialidade,
                 dados.cpf || '', dados.cremers || '',
                 dados.telefone || '', dados.email || '']);
-  clearCodexRuntimeCaches_();
+  clearCodexRuntimeCaches_(['medicos']);
   return 'Médico cadastrado com sucesso.';
 }
 
@@ -2093,7 +2139,7 @@ function excluirMedico(id) {
   for (var i = 0; i < ids.length; i++) {
     if (ids[i][0] == id) {
       sh.deleteRow(i + 2);
-      clearCodexRuntimeCaches_();
+      clearCodexRuntimeCaches_(['medicos']);
       return 'ok';
     }
   }
@@ -4249,7 +4295,7 @@ function criarCiclosSoAPorReplicacao(payload) {
       var finalIds = soaUniqueIds_(plan.visitasAtuaisIds.concat(destinosReais));
       estoqueSheet.getRange(plan.rowNumber, estoqueVisitasCol + 1).setValue(finalIds.join('; '));
     });
-    if (prepared.novosVinculosEstoque) CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    if (prepared.novosVinculosEstoque) agendaInvalidateKitsReference_();
     return {
       ok: true,
       msg: rows.length + ' visita(s) criada(s) por replicação e ' + prepared.novosVinculosEstoque + ' vínculo(s) de estoque copiado(s).',
@@ -5338,6 +5384,7 @@ function salvarDadosProjeto(dados) {
         gravarProjetoSoAConfig_(aba, i + 1, dados);
         if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, i + 1, ressarcimentos);
         clearTransporteOptionsCache_();
+        clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta']);
         return 'Projeto atualizado com sucesso!';
       }
     }
@@ -5367,6 +5414,7 @@ function salvarDadosProjeto(dados) {
     gravarProjetoSoAConfig_(aba, aba.getLastRow(), dados);
     if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, aba.getLastRow(), ressarcimentos);
     clearTransporteOptionsCache_();
+    clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta']);
     return 'Projeto cadastrado com sucesso!';
   }
 }
@@ -5381,6 +5429,7 @@ function excluirProjeto(id) {
     if (String(rows[i][0]) === String(id)) {
       aba.deleteRow(i + 1);
       clearTransporteOptionsCache_();
+      clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta']);
       return 'Excluído com sucesso.';
     }
   }
@@ -5696,7 +5745,7 @@ function salvarConfiguracaoCtmsParticipante_(payload) {
     sh.getRange(rowNumber, columns.bracoId + 1).setValue(config.bracoId);
     sh.getRange(rowNumber, columns.marcosJson + 1).setValue(Object.keys(config.marcos).length ? JSON.stringify(config.marcos) : '');
     sh.getRange(rowNumber, columns.escolhasJson + 1).setValue(Object.keys(config.escolhasReferencias).length ? JSON.stringify(config.escolhasReferencias) : '');
-    clearCodexRuntimeCaches_();
+    clearCodexRuntimeCaches_(['participantes']);
   });
   return {
     ok: true,
@@ -5737,7 +5786,7 @@ function definirAprovacaoCtmsParticipante_(payload) {
       delete aprovacoes[idSoA];
     }
     sh.getRange(rowIndex + 1, columns.aprovacoesJson + 1).setValue(Object.keys(aprovacoes).length ? JSON.stringify(aprovacoes) : '');
-    clearCodexRuntimeCaches_();
+    clearCodexRuntimeCaches_(['participantes']);
   });
   codexWriteAuditLog_('definirAprovacaoCtmsParticipante', 'Cadastros', idSoA + ':' + (aprovar ? 'aprovada' : 'revogada'));
   return {
@@ -6232,7 +6281,7 @@ function salvarDadosParticipante(d) {
         { field: 'ID Pessoa', oldValue: existingPessoaId, newValue: idPessoa }
       ], 'Cadastro de participação atualizado');
     }
-    clearCodexRuntimeCaches_();
+    clearCodexRuntimeCaches_(['participantes']);
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return concluirSalvarParticipante_('Participante atualizado com sucesso');
   } else {
@@ -6247,7 +6296,7 @@ function salvarDadosParticipante(d) {
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
     gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns);
     if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('criarParticipacaoParticipante', 'Cadastros', rowStart[0]);
-    clearCodexRuntimeCaches_();
+    clearCodexRuntimeCaches_(['participantes']);
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return concluirSalvarParticipante_('Participante cadastrado com sucesso');
   }
@@ -6297,7 +6346,7 @@ function excluirParticipante(id) {
         }
       }
       sh.deleteRow(i + 1);
-      clearCodexRuntimeCaches_();
+      clearCodexRuntimeCaches_(['participantes']);
       if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
       return 'Participante excluído';
     }
@@ -6484,7 +6533,7 @@ function salvarDadosMonitor(d) {
       for (var i = 1; i < rows.length; i++) {
         if (String(rows[i][0]) === String(d.id)) {
           sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
-          clearCodexRuntimeCaches_();
+          clearCodexRuntimeCaches_(['monitores']);
           return 'Monitor atualizado com sucesso.';
         }
       }
@@ -6493,7 +6542,7 @@ function salvarDadosMonitor(d) {
 
     rowData[0] = 'MON-' + Date.now();
     sh.appendRow(rowData);
-    clearCodexRuntimeCaches_();
+    clearCodexRuntimeCaches_(['monitores']);
     return 'Monitor cadastrado com sucesso.';
   });
 }
@@ -6506,7 +6555,7 @@ function excluirMonitor(id) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
       sh.deleteRow(i + 1);
-      clearCodexRuntimeCaches_();
+      clearCodexRuntimeCaches_(['monitores']);
       return 'Monitor excluído.';
     }
   }
@@ -6627,6 +6676,7 @@ function salvarDadosPrestador(dados) {
         sh.getRange(ln, 4).setValue(dados.email    || '');
         sh.getRange(ln, tipoCol).setValue(dados.tipoServico || '');
         sh.getRange(ln, telefoneCol).setValue(dados.telefone || '');
+        clearCodexRuntimeCaches_(['prestadores']);
         return 'Prestador atualizado com sucesso.';
       }
     }
@@ -6638,6 +6688,7 @@ function salvarDadosPrestador(dados) {
   while (row.length < telefoneCol) row.push('');
   row[telefoneCol - 1] = dados.telefone || '';
   sh.appendRow(row);
+  clearCodexRuntimeCaches_(['prestadores']);
   return 'Prestador cadastrado com sucesso.';
 }
 
@@ -6647,7 +6698,7 @@ function excluirPrestador(id) {
   if (!sh || sh.getLastRow() < 2) throw new Error('Nenhum registro encontrado.');
   var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(id)) { sh.deleteRow(i + 2); return 'ok'; }
+    if (String(ids[i][0]) === String(id)) { sh.deleteRow(i + 2); clearCodexRuntimeCaches_(['prestadores']); return 'ok'; }
   }
   throw new Error('Prestador não encontrado.');
 }
@@ -7635,7 +7686,7 @@ function salvarItemEstoque(payload) {
     var row = parseInt(payload.id);
     var rowValues = sheet.getRange(row, 1, 1, lastColumn).getValues()[0];
     sheet.getRange(row, 1, 1, lastColumn).setValues([applyPayload(rowValues)]);
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return 'Item atualizado com sucesso!';
   } else {
     // Novo — mantém padrão numérico "0001" igual aos existentes
@@ -7644,7 +7695,7 @@ function salvarItemEstoque(payload) {
     while (newRow.length < lastColumn) newRow.push('');
     newRow[c.idItem] = novoId;
     sheet.appendRow(applyPayload(newRow));
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return 'Item cadastrado! ID: ' + novoId;
   }
   });
@@ -7705,7 +7756,7 @@ function excluirItemEstoque(id) {
       throw new Error('ID do item não informado.');
     }
     sheet.deleteRow(row);
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return 'Item excluído com sucesso.';
   });
 }
@@ -8340,7 +8391,7 @@ function receberPedidoEstoque(dados) {
   }
 
   SpreadsheetApp.flush();
-  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+  agendaInvalidateKitsReference_();
   return 'Recebimento registrado com sucesso!';
   });
 }
@@ -8446,7 +8497,7 @@ function registrarMovimentacaoEstoque(payload) {
   shMov.getRange(lr, 2).setNumberFormat('dd/MM/yyyy HH:mm');
   if (er[4]) shMov.getRange(lr, 9).setNumberFormat('dd/MM/yyyy');
   SpreadsheetApp.flush();
-  CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+  agendaInvalidateKitsReference_();
   return 'Movimentação registrada com sucesso.';
   });
 }
@@ -8500,6 +8551,7 @@ function atualizarStatusReservasAgendaItens_(agendaId, itens, novoStatus, status
       }
     }
   });
+  if (atualizados) agendaInvalidateKitsReference_();
   return atualizados;
 }
 
@@ -8612,7 +8664,7 @@ function transferirKitEstoque(payload) {
       shReservas.getRange(shReservas.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([reservaRow]);
     }
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return {
       ok: true, operacaoId: opId, quantidade: qtd, origem: origem, destino: destino,
       msg: reservaObrigatoria ? 'Kit reservado e transferido ao Laboratório.' : 'Transferência registrada com sucesso.'
@@ -8683,7 +8735,7 @@ function conciliarReservaKitLaboratorio(payload) {
     ];
     shReservas.getRange(shReservas.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([reservaRow]);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return { ok: true, quantidade: quantidade, msg: 'Reserva conciliada no Laboratório.' };
   });
 }
@@ -8785,7 +8837,7 @@ function vincularReservaKitAgenda(payload) {
     shReservas.getRange(linhaReserva, 3).setValue(agendaId);
     shReservas.getRange(linhaReserva, 13).setValue(dataAgenda);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return { ok: true, agendaId: agendaId, dataVisita: formatarDataMesCurtoPt_(dataAgenda), msg: 'Reserva vinculada à visita da Agenda.' };
   });
 }
@@ -9314,7 +9366,7 @@ function migrarIdsLotesEstoque() {
       });
     }
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return { ok: true, preenchidos: preenchidos, existentes: existentes, coluna: map.idLote + 1 };
   });
 }
@@ -9682,7 +9734,7 @@ function importarReservasOperacionais(payload) {
     });
     if (linhas.length) reservasSheet.getRange(reservasSheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return { ok: true, importados: linhas.length, ignorados: ignorados, erros: erros, avisos: avisos, msg: linhas.length + ' reserva(s) importada(s).' };
   });
 }
@@ -9787,6 +9839,7 @@ function atualizarReservasPorLote_(payload) {
     quantidade -= retirar;
     atualizados++;
   }
+  if (atualizados) agendaInvalidateKitsReference_();
   return atualizados;
 }
 
@@ -9807,7 +9860,7 @@ function cancelarReservaKitAgenda(payload) {
       sheet.getRange(i + 2, 12).setValue('Cancelada');
       sheet.getRange(i + 2, 15).setValue(String(rows[i][14] || '') + ' · Cancelamento: ' + justificativa);
       SpreadsheetApp.flush();
-      CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+      agendaInvalidateKitsReference_();
       var resultado = { ok: true, idReserva: idReserva, status: 'Cancelada', msg: 'Reserva cancelada. Se o kit estiver no Laboratório, faça a devolução física separadamente.' };
       if (payload.retornarJornada) resultado.jornada = getJornadaParticipante({
         nome: String(rows[i][4] || ''), idParticipante: String(rows[i][15] || ''),
@@ -9862,7 +9915,7 @@ function ajustarReservaKitAgenda(payload) {
     historico[14] = 'Quantidade anterior: ' + quantidadeAnterior + ' · Nova quantidade: ' + novaQuantidade + ' · ' + justificativa;
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([historico]);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     var resultado = { ok: true, idReserva: idReserva, quantidadeAnterior: quantidadeAnterior, quantidade: novaQuantidade, msg: 'Quantidade da reserva ajustada.' };
     if (payload.retornarJornada) resultado.jornada = getJornadaParticipante({
       nome: String(reserva[4] || ''), idParticipante: String(reserva[15] || ''),
@@ -9886,6 +9939,7 @@ function cancelarReservasKitsAgenda_(agendaId, justificativa) {
     sheet.getRange(index + 2, 15).setValue(String(row[14] || '') + ' · Cancelamento da visita na Agenda: ' + justificativa);
     atualizados++;
   });
+  if (atualizados) agendaInvalidateKitsReference_();
   return atualizados;
 }
 
@@ -9939,7 +9993,7 @@ function substituirReservaKitAgenda(payload) {
     ];
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([novaLinha]);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     var resultado = { ok: true, antiga: idReserva, nova: novaLinha[0], msg: 'Lote substituído e nova reserva criada.' };
     if (payload.retornarJornada) resultado.jornada = getJornadaParticipante({
       nome: String(novaLinha[4] || ''), idParticipante: String(novaLinha[15] || ''),
@@ -10064,7 +10118,7 @@ function reservarKitsAgendaEvento(payload) {
     });
     if (linhas.length) sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return { ok: true, reservados: linhas.length, msg: linhas.length + ' kit(s) reservado(s) para a visita.' };
   });
 }
@@ -11398,8 +11452,22 @@ function agendaReferenceTelemetryCount_(value) {
   return value === undefined || value === null || value === '' ? 0 : 1;
 }
 
-function agendaBuildDadosFormularioAgenda_(strict, measureStage) {
+function agendaBuildDadosFormularioAgenda_(strict, measureStage, referenceParts) {
   function measureReference(stage, callback) {
+    var key = referenceParts && referenceParts.keys[stage];
+    if (key && referenceParts.cached[key]) {
+      try {
+        var entry = JSON.parse(referenceParts.cached[key]);
+        if (entry && entry.version === 1 && Object.prototype.hasOwnProperty.call(entry, 'value')) return entry.value;
+      } catch (e) {}
+    }
+    var load = callback;
+    if (key) callback = function() {
+      var value = load();
+      var serialized = JSON.stringify({ version: 1, value: value });
+      if (agendaReferenceCacheSerializedBytes_(serialized) <= AGENDA_REFERENCE_CACHE_MAX_BYTES_) referenceParts.pending[key] = serialized;
+      return value;
+    };
     if (typeof measureStage !== 'function') return callback();
     var metadata = { rowCount: 0 };
     return measureStage('reference_' + stage, metadata, function() {
@@ -12313,7 +12381,7 @@ function reservarKitsPrevisaoJornada(payload) {
     var sheet = getKitReservasSheet_();
     sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
     SpreadsheetApp.flush();
-    CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
+    agendaInvalidateKitsReference_();
     return {
       ok: true,
       reservados: linhas.length,
@@ -12543,7 +12611,7 @@ function getUltimasVisitasParticipantesAgendaMap_() {
   }
 }
 
-function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento) {
+function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExcluido) {
   dados = dados || {};
   if (!AgendaServerRules_.isVisit(dados.tipo)) return null;
   var participante = String(dados.participante || '').trim();
@@ -12558,7 +12626,10 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento) {
     projeto: String(dados.projeto || '').trim()
   };
   var idx = AGENDA_CFG.idx;
-  var agendaIdExcluido = String(dados.id || dados.agendaId || '').trim();
+  // Na edição, a linha já localizada é a fonte autoritativa do ID. Isso evita
+  // que uma atualização parcial (por exemplo, só do transporte) compare o
+  // agendamento consigo mesmo caso o payload traga um ID legado ou divergente.
+  agendaIdExcluido = String(agendaIdExcluido || dados.id || dados.agendaId || '').trim();
   var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
   var encontradas = rows.filter(function(row) {
     if (agendaIdExcluido && String(row[idx.id] || '').trim() === agendaIdExcluido) return false;
@@ -13167,7 +13238,7 @@ function atualizarAgendaEventoCompleto(dados) {
   var d = _parseDateHora(dados.data, dados.hora);
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, rowAnterior);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
-  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
+  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d, rowAnterior[AGENDA_CFG.idx.id]);
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var datasValidacaoStatus = isPeriodo
     ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
@@ -13320,6 +13391,7 @@ function atualizarAgendaEventoCompleto(dados) {
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   agendaInvalidateDateIndexCache_();
+  if (AgendaServerRules_.isType(rowAnterior[AGENDA_CFG.idx.tipo], 'feriado') || AgendaServerRules_.isType(rowAtual[AGENDA_CFG.idx.tipo], 'feriado')) agendaInvalidateReferenceDataCache_(['feriados']);
   return {
     ok: true,
     id: dados.id,
@@ -13724,6 +13796,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   }
   SpreadsheetApp.flush();
   agendaInvalidateDateIndexCache_();
+  if (AgendaServerRules_.isType(dados.tipo, 'feriado')) agendaInvalidateReferenceDataCache_(['feriados']);
   return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };
 }
 
@@ -15204,7 +15277,9 @@ function agendaGetReferenceData_(forceRefresh, useCanaryCache, measureStage) {
   }
 
   agendaLogReferenceCache_(forceRefresh ? 'refresh' : 'miss', 0, !!forceRefresh);
-  var data = agendaBuildDadosFormularioAgenda_(true, measureStage);
+  var parts = agendaReferencePartsForRead_(forceRefresh);
+  var data = agendaValidateReferenceData_(agendaBuildDadosFormularioAgenda_(true, measureStage, parts));
+  agendaReferencePartsStore_(parts);
   var serialized = JSON.stringify(data);
   var bytes = agendaReferenceCacheSerializedBytes_(serialized);
   if (bytes > AGENDA_REFERENCE_CACHE_MAX_BYTES_) {
@@ -15217,9 +15292,12 @@ function agendaGetReferenceData_(forceRefresh, useCanaryCache, measureStage) {
   return agendaValidateReferenceData_(data);
 }
 
-function getAgendaReferenceDataFresh() {
+function getAgendaReferenceDataFresh(invalidatedOnly) {
   var access = codexGetCurrentUserAccess();
   if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  // Notificacoes de mutacao usam as invalidacoes feitas pelo servidor. A chamada
+  // sem argumento preserva a leitura integral fresca para atualizacao explicita.
+  if (invalidatedOnly === true) return agendaGetReferenceData_(false, agendaWindowedLoadingV2EnabledForAccess_(access));
   var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
   CODEX_CACHE_BYPASS_READS_ = true;
   try {
@@ -15282,13 +15360,14 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, r
   if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
   var refreshRequested = forceRefresh === true;
   var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
-  CODEX_CACHE_BYPASS_READS_ = refreshRequested;
+  // forceRefresh renova os eventos. As referencias tem invalidacao propria.
+  CODEX_CACHE_BYPASS_READS_ = false;
   try {
     var referenceMeta = { rowCount: 0 };
     var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
     agendaLogBootstrapRequest_(access, refreshRequested, refreshReason, canaryEnabled);
     var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
-      var data = agendaGetReferenceData_(refreshRequested, canaryEnabled, function(stage, metadata, callback) {
+      var data = agendaGetReferenceData_(false, canaryEnabled, function(stage, metadata, callback) {
         return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
       });
       referenceMeta.rowCount = agendaReferenceRowCount_(data);
@@ -15297,6 +15376,9 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, r
     var measureWindow = function(stage, metadata, callback) {
       return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
     };
+    // Mantem a leitura fresca do indice de datas e da hidratacao dos eventos,
+    // inclusive quando a planilha foi editada fora do Web App.
+    CODEX_CACHE_BYPASS_READS_ = refreshRequested;
     var windowData = agendaGetEventosPorPeriodo_(
       inicioIso,
       fimIso,
@@ -16612,7 +16694,7 @@ function limparCacheLabCentral_() {
     codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormData:v9:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
     codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-    agendaInvalidateReferenceDataCache_();
+    agendaInvalidateReferenceDataCache_(['laboratorios_destino', 'kits_coleta']);
     var docCache = CacheService.getDocumentCache();
     if (docCache) {
       docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');
@@ -16954,7 +17036,7 @@ function excluirCourier(id) {
 }
 
 function limparCacheCourier_() {
-  clearCodexRuntimeCaches_();
+  clearCodexRuntimeCaches_(['couriers', 'courier_config', 'project_courier_map']);
   try {
     var cache = CacheService.getScriptCache();
     cache.remove('TRANSPORTE_OPTIONS_BASE_V3');

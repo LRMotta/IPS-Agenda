@@ -3,8 +3,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { readProjectFile, runFile } = require('./helpers/load-app-script');
+const { readProjectFile, runFile: loadFile } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
+
+function runFile(name, context = {}) {
+  return loadFile(name, {
+    ...context,
+    Utilities: { formatDate: () => '20260915', ...context.Utilities },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo', ...context.Session }
+  });
+}
 
 const ITEM_HEADERS = [
   'ID_Item', 'Projeto', 'Descrição', 'Detalhes Visita / Complemento',
