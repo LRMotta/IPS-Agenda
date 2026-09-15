@@ -35,6 +35,9 @@ function doGet(e) {
     tplDashboard.includeEstoque = false;
     tplDashboard.includeDashboard = true;
     tplDashboard.paginaInicial = 'dashboard';
+    // Index.html sempre resolve esta variavel de template, inclusive fora da Agenda.
+    // O shell antecipado so se aplica a pagina principal da Agenda.
+    tplDashboard.agendaCanaryShell = false;
     tplDashboard.agendaAbrirInicial = '';
     tplDashboard.buscaInicial = '';
     tplDashboard.dashboardFiltroInicial = '';
@@ -52,6 +55,7 @@ function doGet(e) {
     tplEstoque.paginaInicial = page === 'pedidos'
       ? 'pedidos'
       : (page === 'estoque-view' ? 'visualizacao' : (e && e.parameter ? (e.parameter.pagina || 'itens') : 'itens'));
+    tplEstoque.agendaCanaryShell = false;
     tplEstoque.agendaAbrirInicial = '';
     tplEstoque.buscaInicial = e && e.parameter ? (e.parameter.busca || '') : '';
     tplEstoque.dashboardFiltroInicial = '';
