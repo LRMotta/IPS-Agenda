@@ -815,14 +815,18 @@ function codexGetCallerFunctionName_() {
   return 'ACAO_PROTEGIDA';
 }
 
-function codexWithDocumentLock_(label, fn) {
+function codexWithDocumentLock_(label, fn, performance) {
   // Cross-request concurrency is handled by LockService. This depth is only a
   // same-execution reentrancy guard for nested writes that already hold the lock.
   if (CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0) return fn();
   var lock = LockService.getDocumentLock() || LockService.getScriptLock();
   var acquired = false;
   try {
+    var lockStartedAt = Date.now();
     acquired = lock.tryLock(30000);
+    if (performance && performance.operation) {
+      codexLogPerformance_(performance.operation, 'document_lock', Date.now() - lockStartedAt, { rowCount: 0 }, acquired);
+    }
     if (!acquired) {
       throw new Error('Outra operação está gravando no sistema. Aguarde alguns segundos e tente novamente.');
     }
@@ -12655,14 +12659,22 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExclu
 }
 
 function salvarNovoEventoCompleto(dados) {
-  codexAssertCanWrite_('salvarNovoEventoCompleto', 'Agenda', dados && dados.id);
-  return codexWithDocumentLock_('salvarNovoEventoCompleto', function() {
+  var operation = 'salvarNovoEventoCompleto';
+  return codexMeasurePerformance_(operation, 'total', { rowCount: 1 }, function() {
+  codexAssertCanWrite_(operation, 'Agenda', dados && dados.id);
+  return codexWithDocumentLock_(operation, function() {
   dados = dados || {};
   dados.status = 'Agendado';
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var agenda = getAgendaSheet_();
+  var setup = codexMeasurePerformance_(operation, 'setup', { rowCount: 0 }, function() {
+    return { ss: SpreadsheetApp.getActiveSpreadsheet(), agenda: getAgendaSheet_() };
+  });
+  var ss = setup.ss;
+  var agenda = setup.agenda;
   var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
-  if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {
+  var backupOrigemValida = codexMeasurePerformance_(operation, 'backup_origin_check', { rowCount: 0 }, function() {
+    return !backupOrigemId || !!agendaRowNumberById_(agenda, backupOrigemId);
+  });
+  if (!backupOrigemValida) {
     return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
   }
   var erroTemperaturaBackup = agendaNovoEnvioBackupTemperaturaErro_(dados);
@@ -12676,7 +12688,11 @@ function salvarNovoEventoCompleto(dados) {
   var d = _parseDateHora(dados.data, dados.hora);
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, null);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
-  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
+  var visitaMesmaData = codexMeasurePerformance_(operation, 'duplicate_visit_check', {
+    rowCount: AgendaServerRules_.isVisit(dados.tipo) ? Math.max(0, agenda.getLastRow() - 1) : 0
+  }, function() {
+    return agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
+  });
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   if (isMonitoria && !String(dados.salaMonitoria || '').trim()) {
     return { erro: 'Informe o local (sala) da monitoria.' };
@@ -12690,23 +12706,30 @@ function salvarNovoEventoCompleto(dados) {
   var datasPeriodo = isPeriodo ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo)) : [d];
   var erroRealizadoFuturo = agendaRealizadoFuturoErro_(dados.status, datasPeriodo);
   if (erroRealizadoFuturo) return { erro: erroRealizadoFuturo };
-  var operationalAlerts = agendaOperationalRiskAlerts_(dados, datasPeriodo);
+  var operationalAlerts = codexMeasurePerformance_(operation, 'operational_alerts', { rowCount: datasPeriodo.length }, function() {
+    return agendaOperationalRiskAlerts_(dados, datasPeriodo);
+  });
   if (isPeriodo) {
     var ids = [];
     for (var k = 0; k < datasPeriodo.length; k++) {
       var dadosDia = agendaCloneDados_(dados);
-      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasPeriodo[k], dados.hora), dadosDia, ss);
+      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasPeriodo[k], dados.hora), dadosDia, ss, operation);
       if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
     }
     var resultadoPeriodo = { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_(), operationalAlerts: operationalAlerts };
-    agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultadoPeriodo.id, datasPeriodo[0]);
+    codexMeasurePerformance_(operation, 'backup_link', { rowCount: 1 }, function() {
+      return agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultadoPeriodo.id, datasPeriodo[0]);
+    });
     return resultadoPeriodo;
   }
-  var resultado = _gravarLinhaEvento(agenda, d, dados, ss);
-  if (resultado && resultado.ok) agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d);
+  var resultado = _gravarLinhaEvento(agenda, d, dados, ss, operation);
+  if (resultado && resultado.ok) codexMeasurePerformance_(operation, 'backup_link', { rowCount: 1 }, function() {
+    return agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d);
+  });
   if (resultado && resultado.ok) resultado.operationalAlerts = operationalAlerts;
   return resultado;
+  }, { operation: operation });
   });
 }
 
@@ -13664,7 +13687,13 @@ function instalarGatilhoAgendaRealizadoFimDoDia() {
   return { ok: true };
 }
 
-function _gravarLinhaEvento(agenda, d, dados, ss) {
+function agendaMeasureSaveStage_(operation, stage, metadata, callback) {
+  return operation
+    ? codexMeasurePerformance_(operation, stage, metadata, callback)
+    : callback();
+}
+
+function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation) {
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
@@ -13672,7 +13701,9 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isMultiDay;
-  var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy);
+  var projetoParticipanteErro = agendaMeasureSaveStage_(performanceOperation, 'participant_sync', { rowCount: 1 }, function() {
+    return agendaSincronizarProjetoDoParticipante_(dados, policy);
+  });
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
@@ -13733,6 +13764,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
 
   var linhaNova = agenda.getLastRow() + 1;
   var id = Utilities.getUuid().slice(0, 8);
+  agendaMeasureSaveStage_(performanceOperation, 'initial_row_write', { rowCount: 1 }, function() {
   agenda.getRange(linhaNova, AGENDA_CFG.col.id).setValue(id);
   setAgendaDateValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.data), d);
   agenda.getRange(linhaNova, AGENDA_CFG.col.hora).setValue(formatAgendaHora_(d));
@@ -13765,17 +13797,23 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   if (AGENDA_CFG.col.participanteCadastroId) {
     agenda.getRange(linhaNova, AGENDA_CFG.col.participanteCadastroId).setValue(dados.participanteCadastroId || '');
   }
+  });
+  var carroSalvo = agendaMeasureSaveStage_(performanceOperation, 'initial_flush_verify', { rowCount: 1 }, function() {
   SpreadsheetApp.flush();
-  var carroSalvo = agendaBooleanValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).getValue());
+  return agendaBooleanValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).getValue());
+  });
   if (carroSalvo !== dados.carroRequerido) {
     throw new Error('Não foi possível salvar a indicação de carro na Agenda.');
   }
+  agendaMeasureSaveStage_(performanceOperation, 'transport_fields', { rowCount: 1 }, function() {
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c1, dados.courier1);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c3, dados.courier3);
   agendaSetBackupLinha_(agenda, linhaNova,
     policy.labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral) ? dados.backup : {});
   agendaSetTransporteExtraLinha_(agenda, linhaNova, dados);
+  });
+  agendaMeasureSaveStage_(performanceOperation, 'format_row', { rowCount: 1 }, function() {
   agenda.getRange(linhaNova, 1, 1, AGENDA_CFG.lastCol)
     .setFontFamily('Roboto')
     .setFontSize(10)
@@ -13784,7 +13822,9 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
   agenda.getRange(linhaNova, AGENDA_CFG.col.data).setFontWeight('bold');
   agenda.getRange(linhaNova, AGENDA_CFG.col.projeto).setFontWeight('bold');
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linhaNova, status);
+  });
 
+  agendaMeasureSaveStage_(performanceOperation, 'notifications', { rowCount: 1 }, function() {
   verificarNotificacoes(
     { source: ss, range: agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
     id,
@@ -13792,12 +13832,17 @@ function _gravarLinhaEvento(agenda, d, dados, ss) {
     agenda,
     linhaNova
   );
+  });
 
+  agendaMeasureSaveStage_(performanceOperation, 'sort_agenda', { rowCount: Math.max(0, agenda.getLastRow() - 1) }, function() {
   if (agenda.getLastRow() > 2) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
+  });
+  agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: 1 }, function() {
   SpreadsheetApp.flush();
+  });
   agendaInvalidateDateIndexCache_();
   if (AgendaServerRules_.isType(dados.tipo, 'feriado')) agendaInvalidateReferenceDataCache_(['feriados']);
   return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };

@@ -4309,6 +4309,31 @@
       .getAgendaPeriodoOperacionalPorEventoId(id, r.rowIndex);
   }
 
+  function agendaPreloadPeriodoEdicao_(id, rowIndex, perf) {
+    var cached = agendaFindEventoLocal_(id, rowIndex);
+    // Só antecipa a RPC que realmente existe: em coleção completa o período
+    // já é resolvido localmente, e sem um evento multidia não há período a ler.
+    if (!cached || !AgendaRules.isMultiDay(cached) || agendaEventosSaoColecaoCompleta_()) return null;
+    var preload = { pending: true, periodo: null, source: '', error: null, onComplete: null };
+    agendaLogEditOpenPerformance_(perf, 'period_prefetch_start', true);
+    function conclude(error, periodo, source) {
+      preload.pending = false;
+      preload.error = error || null;
+      preload.periodo = periodo || null;
+      preload.source = source || '';
+      agendaLogEditOpenPerformance_(perf, error ? 'period_prefetch_failure' : 'period_prefetch_complete', !error);
+      if (typeof preload.onComplete === 'function') preload.onComplete(preload);
+    }
+    // O servidor usa ID e linha sugerida para reler o registro vigente; o
+    // objeto em memória só decide se vale iniciar a consulta em paralelo.
+    agendaLoadPeriodoOperacional_(cached, function(periodo, source) {
+      conclude(null, periodo, source);
+    }, function(error) {
+      conclude(error || new Error('Período operacional não encontrado.'));
+    });
+    return preload;
+  }
+
   function agendaCourierSearch(c) {
     c = c || {};
     return [c.nome, c.destino, c.temperatura, c.status, c.awb, c.material, c.matBioJson].join(' ');
@@ -4512,6 +4537,7 @@
   }
 
   function agendaAbrirEdicaoPronta_(id, rowIndex, perf) {
+    var periodPreload = agendaPreloadPeriodoEdicao_(id, rowIndex, perf);
     agendaLogEditOpenPerformance_(perf, 'event_rpc_start', true);
     agendaFetchEventoPorId_(id, rowIndex, function(row) {
       agendaLogEditOpenPerformance_(perf, 'event_rpc_complete', !!row);
@@ -4519,24 +4545,48 @@
         snackErro('Registro da agenda nao encontrado.');
         return;
       }
-      agendaAbrirEdicaoResolvida_(row, id, perf);
+      agendaAbrirEdicaoResolvida_(row, id, perf, periodPreload);
     }, function(error) {
       agendaLogEditOpenPerformance_(perf, 'event_rpc_failure', false);
       snackErro(appErrorMessage(error));
     });
   }
 
-  function agendaAbrirEdicaoResolvida_(r, id, perf) {
+  function agendaAbrirEdicaoConcluirPeriodo_(r, id, perf, periodo, source) {
+    agendaLogEditOpenPerformance_(perf, source === 'local_complete' ? 'period_local_complete' : 'period_rpc_complete', true);
+    if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
+    agendaAbrirEdicaoComContexto_(r, id, perf);
+  }
+
+  function agendaAbrirEdicaoResolverPeriodo_(r, id, perf) {
     agendaLogEditOpenPerformance_(perf, 'period_resolve_start', true);
     agendaLoadPeriodoOperacional_(r, function(periodo, source) {
-      agendaLogEditOpenPerformance_(perf, source === 'local_complete' ? 'period_local_complete' : 'period_rpc_complete', true);
-      if (AgendaRules.isMultiDay(r)) agendaStorePeriodoOperacional_(r, periodo);
-      agendaAbrirEdicaoComContexto_(r, id, perf);
+      agendaAbrirEdicaoConcluirPeriodo_(r, id, perf, periodo, source);
     }, function() {
       agendaLogEditOpenPerformance_(perf, 'period_rpc_failure', false);
       agendaStorePeriodoOperacional_(r, agendaPeriodoFallbackLocal_(r));
       agendaAbrirEdicaoComContexto_(r, id, perf);
     });
+  }
+
+  function agendaAbrirEdicaoResolvida_(r, id, perf, periodPreload) {
+    if (periodPreload && AgendaRules.isMultiDay(r)) {
+      function usarPreload(preload) {
+        if (preload && !preload.error && preload.periodo) {
+          agendaLogEditOpenPerformance_(perf, 'period_prefetch_reused', true);
+          agendaAbrirEdicaoConcluirPeriodo_(r, id, perf, preload.periodo, preload.source || 'rpc');
+          return;
+        }
+        agendaAbrirEdicaoResolverPeriodo_(r, id, perf);
+      }
+      if (periodPreload.pending) {
+        periodPreload.onComplete = usarPreload;
+        return;
+      }
+      usarPreload(periodPreload);
+      return;
+    }
+    agendaAbrirEdicaoResolverPeriodo_(r, id, perf);
   }
 
   function agendaAbrirEdicaoComContexto_(r, id, perf) {
