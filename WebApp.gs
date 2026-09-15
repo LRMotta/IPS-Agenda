@@ -1818,6 +1818,9 @@ function agendaDateIndexCacheKey_() {
 function agendaInvalidateDateIndexCache_() {
   codexCacheRemove_('AgendaDateIndex:v1');
   codexCacheRemove_(agendaDateIndexCacheKey_());
+  // Eventos em cache dependem do mesmo conjunto de linhas e precisam ficar
+  // inacessíveis após qualquer escrita que invalide o índice de datas.
+  agendaInvalidateWindowCache_();
 }
 
 function getCodexSpreadsheet_() {
@@ -14958,7 +14961,7 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
   var max = Math.max(1, Math.min(Math.floor(requestedLimit), AGENDA_WINDOW_MAX_RECORDS_));
   var sh = getAgendaSheetForRead_();
   var lastRow = sh.getLastRow();
-  var cacheKey = ['AgendaWindow:v2', lastRow, inicioIso, fimIso, max].join(':');
+  var cacheKey = agendaWindowCacheKey_(lastRow, inicioIso, fimIso, max);
   var scanMeta = { rowCount: Math.max(0, lastRow - 1) };
   var scan = agendaMeasureWindowStage_(measureStage, 'date_scan', scanMeta, function() {
     var cached = ignorarCache ? null : agendaWindowCacheGet_(cacheKey);
@@ -15435,20 +15438,215 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh, refreshReason) {
   });
 }
 
-function agendaWindowCacheGet_(key) {
+var AGENDA_WINDOW_CACHE_SCHEMA_VERSION_ = 4;
+var AGENDA_WINDOW_CACHE_MAX_ENTRY_BYTES_ = 90000;
+var AGENDA_WINDOW_CACHE_TTL_SECONDS_ = 45;
+var AGENDA_WINDOW_CACHE_GENERATION_KEY_ = 'AgendaWindowCacheGeneration:v2';
+
+function agendaWindowCacheGeneration_(createIfMissing) {
   try {
-    var raw = CacheService.getScriptCache().get(key);
-    return raw ? JSON.parse(raw) : null;
+    var cache = CacheService.getScriptCache();
+    var generation = cache.get(AGENDA_WINDOW_CACHE_GENERATION_KEY_);
+    if (!generation && createIfMissing) {
+      generation = Utilities.getUuid();
+      cache.put(AGENDA_WINDOW_CACHE_GENERATION_KEY_, generation, 21600);
+    }
+    return generation || null;
   } catch (e) {
+    agendaWindowCacheLog_('generation_unavailable', 0, 0);
+    return null;
+  }
+}
+
+function agendaInvalidateWindowCache_() {
+  try {
+    // A validade exige a presença deste marcador no próprio CacheService.
+    // Removê-lo invalida todas as janelas sem depender de escrita em Properties.
+    // Se ele expirar ou for expulso, uma nova geração nunca reutiliza blocos antigos.
+    CacheService.getScriptCache().remove(AGENDA_WINDOW_CACHE_GENERATION_KEY_);
+  } catch (e) {
+    try {
+      // Se a remoção falhar isoladamente, substituir o marcador também
+      // torna todas as chaves anteriores inacessíveis entre execuções.
+      CacheService.getScriptCache().put(AGENDA_WINDOW_CACHE_GENERATION_KEY_, Utilities.getUuid(), 21600);
+    } catch (eFallback) {
+      agendaWindowCacheLog_('invalidation_failed', 0, 0);
+    }
+  }
+}
+
+function agendaWindowCacheKey_(lastRow, inicioIso, fimIso, max) {
+  var generation = agendaWindowCacheGeneration_(true);
+  if (!generation) return null;
+  return [
+    'AgendaWindow:v' + AGENDA_WINDOW_CACHE_SCHEMA_VERSION_,
+    generation,
+    lastRow,
+    inicioIso,
+    fimIso,
+    max
+  ].join(':');
+}
+
+function agendaWindowCacheManifestKey_(key) {
+  return key + ':manifest';
+}
+
+function agendaWindowCacheChunkKey_(key, writeId, index) {
+  return key + ':chunk:' + writeId + ':' + index;
+}
+
+function agendaWindowCacheKeyIsCurrent_(key) {
+  return typeof key === 'string' && key.split(':')[2] === agendaWindowCacheGeneration_(false);
+}
+
+function agendaWindowCacheUtf8BytesAt_(value, index) {
+  var code = value.charCodeAt(index);
+  if (code < 0x80) return { bytes: 1, width: 1 };
+  if (code < 0x800) return { bytes: 2, width: 1 };
+  if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+    var next = value.charCodeAt(index + 1);
+    if (next >= 0xdc00 && next <= 0xdfff) return { bytes: 4, width: 2 };
+  }
+  return { bytes: 3, width: 1 };
+}
+
+function agendaWindowCacheSplitSerialized_(serialized, maxBytes) {
+  var chunks = [];
+  var start = 0;
+  var bytes = 0;
+  maxBytes = Math.max(1, Number(maxBytes) || AGENDA_WINDOW_CACHE_MAX_ENTRY_BYTES_);
+  for (var index = 0; index < serialized.length;) {
+    var unit = agendaWindowCacheUtf8BytesAt_(serialized, index);
+    if (bytes && bytes + unit.bytes > maxBytes) {
+      chunks.push(serialized.slice(start, index));
+      start = index;
+      bytes = 0;
+    }
+    bytes += unit.bytes;
+    index += unit.width;
+  }
+  if (start < serialized.length || !chunks.length) chunks.push(serialized.slice(start));
+  return chunks;
+}
+
+function agendaWindowCachePayloadBytes_(serialized) {
+  var bytes = 0;
+  for (var index = 0; index < serialized.length;) {
+    var unit = agendaWindowCacheUtf8BytesAt_(serialized, index);
+    bytes += unit.bytes;
+    index += unit.width;
+  }
+  return bytes;
+}
+
+function agendaWindowCacheChecksum_(serialized) {
+  var hash = 2166136261;
+  for (var index = 0; index < serialized.length; index++) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+}
+
+function agendaWindowCacheLog_(outcome, payloadBytes, chunkCount) {
+  try {
+    Logger.log('[CODEX_AGENDA_WINDOW_CACHE] ' + JSON.stringify({
+      outcome: outcome,
+      payloadBytes: Math.max(0, Number(payloadBytes) || 0),
+      chunkCount: Math.max(0, Number(chunkCount) || 0),
+      schemaVersion: AGENDA_WINDOW_CACHE_SCHEMA_VERSION_
+    }));
+  } catch (e) {}
+}
+
+function agendaWindowCacheGet_(key) {
+  if (!agendaWindowCacheKeyIsCurrent_(key)) return null;
+  try {
+    var cache = CacheService.getScriptCache();
+    var rawManifest = cache.get(agendaWindowCacheManifestKey_(key));
+    if (!rawManifest) return null;
+    var manifest = JSON.parse(rawManifest);
+    if (!manifest || manifest.schemaVersion !== AGENDA_WINDOW_CACHE_SCHEMA_VERSION_ ||
+        !Number.isInteger(manifest.chunkCount) || manifest.chunkCount < 1 ||
+        manifest.chunkCount > 999 || !Number.isInteger(manifest.payloadBytes) || manifest.payloadBytes < 1 ||
+        !Number.isInteger(manifest.serializedLength) || manifest.serializedLength < 1 ||
+        typeof manifest.writeId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(manifest.writeId) ||
+        typeof manifest.checksum !== 'string' || !/^[0-9a-f]{8}$/.test(manifest.checksum)) {
+      agendaWindowCacheLog_('invalid_manifest', 0, 0);
+      return null;
+    }
+    var chunkKeys = [];
+    for (var index = 0; index < Number(manifest.chunkCount); index++) {
+      chunkKeys.push(agendaWindowCacheChunkKey_(key, manifest.writeId, index));
+    }
+    var chunksByKey = typeof cache.getAll === 'function' ? cache.getAll(chunkKeys) : {};
+    if (typeof cache.getAll !== 'function') {
+      chunkKeys.forEach(function(chunkKey) { chunksByKey[chunkKey] = cache.get(chunkKey); });
+    }
+    var chunks = [];
+    for (var chunkIndex = 0; chunkIndex < chunkKeys.length; chunkIndex++) {
+      var chunk = chunksByKey[chunkKeys[chunkIndex]];
+      if (typeof chunk !== 'string') {
+        agendaWindowCacheLog_('incomplete', Number(manifest.payloadBytes), chunkKeys.length);
+        return null;
+      }
+      chunks.push(chunk);
+    }
+    var serialized = chunks.join('');
+    if (serialized.length !== Number(manifest.serializedLength) ||
+        agendaWindowCachePayloadBytes_(serialized) !== Number(manifest.payloadBytes) ||
+        agendaWindowCacheChecksum_(serialized) !== manifest.checksum) {
+      agendaWindowCacheLog_('invalid_payload', Number(manifest.payloadBytes), chunkKeys.length);
+      return null;
+    }
+    var value = JSON.parse(serialized);
+    if (!agendaWindowCacheKeyIsCurrent_(key)) return null;
+    agendaWindowCacheLog_('hit', Number(manifest.payloadBytes), chunkKeys.length);
+    return value;
+  } catch (e) {
+    agendaWindowCacheLog_('invalid_payload', 0, 0);
     return null;
   }
 }
 
 function agendaWindowCachePut_(key, value) {
+  if (!agendaWindowCacheKeyIsCurrent_(key)) return false;
   try {
-    CacheService.getScriptCache().put(key, JSON.stringify(value), 45);
+    var serialized = JSON.stringify(value);
+    var payloadBytes = agendaWindowCachePayloadBytes_(serialized);
+    var chunks = agendaWindowCacheSplitSerialized_(serialized, AGENDA_WINDOW_CACHE_MAX_ENTRY_BYTES_);
+    // Limite global do serviço; acima dele o resultado continua sendo servido sem cache.
+    if (chunks.length > 999) return false;
+    var writeId = Utilities.getUuid();
+    var cache = CacheService.getScriptCache();
+    var valuesByKey = {};
+    chunks.forEach(function(chunk, index) {
+      valuesByKey[agendaWindowCacheChunkKey_(key, writeId, index)] = chunk;
+    });
+    if (typeof cache.putAll === 'function') {
+      cache.putAll(valuesByKey, AGENDA_WINDOW_CACHE_TTL_SECONDS_);
+    } else {
+      Object.keys(valuesByKey).forEach(function(chunkKey) {
+        cache.put(chunkKey, valuesByKey[chunkKey], AGENDA_WINDOW_CACHE_TTL_SECONDS_);
+      });
+    }
+    // Escritas concorrentes têm blocos próprios; o manifesto só aponta um conjunto.
+    // Uma leitura iniciada antes da invalidação não pode repovoar a geração atual.
+    if (!agendaWindowCacheKeyIsCurrent_(key)) return false;
+    cache.put(agendaWindowCacheManifestKey_(key), JSON.stringify({
+      schemaVersion: AGENDA_WINDOW_CACHE_SCHEMA_VERSION_,
+      writeId: writeId,
+      payloadBytes: payloadBytes,
+      serializedLength: serialized.length,
+      chunkCount: chunks.length,
+      checksum: agendaWindowCacheChecksum_(serialized)
+    }), AGENDA_WINDOW_CACHE_TTL_SECONDS_);
+    agendaWindowCacheLog_('stored', payloadBytes, chunks.length);
+    return true;
   } catch (e) {
-    // Respostas muito grandes apenas deixam de ser cacheadas; a janela segue limitada.
+    agendaWindowCacheLog_('store_failed', 0, 0);
+    return false;
   }
 }
 
