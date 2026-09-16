@@ -1674,13 +1674,13 @@ test('visita cancelada com Lab Central usa erlenmeyer vermelho suave', () => {
   assert.match(styles, /\.ag-appt\.st-cancelado\.lab-central \.ag-lab-watermark\{color:#b3261e\}/);
 });
 
-test('lista agrupa monitorias no topo com local alinhado e acoes reais da Agenda', () => {
+test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da Agenda', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
   const dayRows = functionBody(client, 'agendaDayRowsHtml');
   const compact = functionBody(client, 'agendaMonitoriaCompactaHtml');
 
-  assert.match(dayRows, /filter\(agendaIsMonitoria\)/);
+  assert.match(dayRows, /filter\(AgendaRules\.isOperationalPeriod\)/);
   assert.match(dayRows, /agendaMonitoriasGrupoHtml\(monitorias, iso\)/);
   assert.match(dayRows, /ag-list-section-title">Visitas/);
   assert.match(functionBody(client, 'renderAgendaLista'), /agendaDayHeader\(d, dayRows\);[\s\S]*?agendaMonitoriasGrupoHtml\(monitorias, iso\)[\s\S]*?agendaBirthdayBannerHtml\(d, false\)/);
@@ -1688,6 +1688,9 @@ test('lista agrupa monitorias no topo com local alinhado e acoes reais da Agenda
   assert.match(compact, /abrirAgendaEdicao/);
   assert.match(compact, /cancelarAgendaEvento/);
   assert.match(compact, /agendaToggleDetail/);
+  assert.match(compact, /st-cancelado/);
+  assert.match(compact, /AgendaRules\.isCancelled\(r\) \? agendaStatusChipOp\(r\.status, r\.tipo\)/);
+  assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:74px minmax\(170px,\.85fr\) minmax\(210px,1fr\)/);
 });
 
@@ -1714,12 +1717,13 @@ test('edição de agendamento também carrega o resumo do participante', () => {
   assert.match(edit, /onAgendaParticipanteChange\(\)/);
 });
 
-test('cancelamento de SIV não exige motivo', () => {
+test('cancelamento de Monitoria e SIV não exige motivo, mas pede confirmação', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
-  assert.match(functionBody(client, 'agendaExigeMotivoCancelamento_'), /AgendaRules\.isSiv/);
-  assert.match(functionBody(client, 'cancelarAgendaEvento'), /AgendaRules\.isSiv/);
-  assert.match(functionBody(server, 'cancelarAgendaEvento'), /tipoAnteriorCancelamento/);
+  assert.match(functionBody(client, 'agendaExigeMotivoCancelamento_'), /AgendaRules\.isOperationalPeriod/);
+  assert.match(functionBody(client, 'agendaCancelamentoSemMotivo_'), /AgendaRules\.isOperationalPeriod/);
+  assert.match(functionBody(client, 'cancelarAgendaEvento'), /abrirConfirmacaoDestrutiva/);
+  assert.match(functionBody(server, 'cancelarAgendaEvento'), /cancelamentoOperacional/);
 });
 
 test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {
@@ -1837,6 +1841,9 @@ test('salvamento de novo evento registra etapas sem incluir dados do participant
   assert.match(functionBody(source, 'codexWithDocumentLock_'), /'document_lock'/);
   assert.match(save, /\{ operation: operation \}/);
   assert.doesNotMatch(save, /participante\s*:\s*dados\.participante/);
+  assert.match(write, /agendaWriteInitialEventRow_/);
+  assert.match(save, /deferMonitoriaFinalize/);
+  assert.match(source, /function agendaFinalizarLoteMonitoria_/);
 });
 
 test('edicao busca o registro atual por ID antes de abrir e carrega o contexto operacional', () => {
