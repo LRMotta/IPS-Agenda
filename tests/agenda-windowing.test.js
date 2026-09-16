@@ -1674,6 +1674,23 @@ test('visita cancelada com Lab Central usa erlenmeyer vermelho suave', () => {
   assert.match(styles, /\.ag-appt\.st-cancelado\.lab-central \.ag-lab-watermark\{color:#b3261e\}/);
 });
 
+test('lista agrupa monitorias no topo com local alinhado e acoes reais da Agenda', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  const dayRows = functionBody(client, 'agendaDayRowsHtml');
+  const compact = functionBody(client, 'agendaMonitoriaCompactaHtml');
+
+  assert.match(dayRows, /filter\(agendaIsMonitoria\)/);
+  assert.match(dayRows, /agendaMonitoriasGrupoHtml\(monitorias, iso\)/);
+  assert.match(dayRows, /ag-list-section-title">Visitas/);
+  assert.match(functionBody(client, 'renderAgendaLista'), /agendaDayHeader\(d, dayRows\);[\s\S]*?agendaMonitoriasGrupoHtml\(monitorias, iso\)[\s\S]*?agendaBirthdayBannerHtml\(d, false\)/);
+  assert.match(compact, /calendar_add_on/);
+  assert.match(compact, /abrirAgendaEdicao/);
+  assert.match(compact, /cancelarAgendaEvento/);
+  assert.match(compact, /agendaToggleDetail/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:74px minmax\(170px,\.85fr\) minmax\(210px,1fr\)/);
+});
+
 test('resumos de material biologico alinham colunas entre transportes', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');

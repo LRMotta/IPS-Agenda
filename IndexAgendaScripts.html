@@ -35,6 +35,7 @@
   var _agendaHistoricoPage = 0;
   var _agendaHistoricoLoading = false;
   var _agendaHistoricoRequestId = 0;
+  var _agendaMonitoriasExpandidasPorDia = {};
   var _agendaEventosPorId = {};
   var _agendaEditRecord = null;
   var _agendaMateriaisAnteriores = [];
@@ -4964,7 +4965,7 @@
         var d = agendaDateFromIso(iso);
         var dayRows = rows.filter(function(r) { return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado'); });
         html += agendaDayHeader(d, dayRows);
-        html += dayRows.map(function(r, idx) { return agendaCardHtml(r, iso + '-' + idx); }).join('');
+        html += agendaDayRowsHtml(dayRows, iso);
       });
     } else {
       for (var i = 0; i < 7; i++) {
@@ -4974,15 +4975,67 @@
           return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado') && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
         });
         html += agendaDayHeader(d, dayRows);
+        var monitorias = dayRows.filter(agendaIsMonitoria);
+        var demais = dayRows.filter(function(r) { return !agendaIsMonitoria(r); });
+        html += monitorias.length ? agendaMonitoriasGrupoHtml(monitorias, iso) : '';
         html += agendaBirthdayBannerHtml(d, false);
         html += dayRows.length
-          ? dayRows.map(function(r, idx) { return agendaCardHtml(r, iso + '-' + idx); }).join('')
+          ? (monitorias.length && demais.length ? '<div class="ag-list-section-title">Visitas</div>' : '') + demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('')
           : '<div class="ag-empty"><span class="material-symbols-outlined">event_busy</span>Dia livre - sem agendamentos registrados.</div>';
       }
     }
     if (q) html += agendaHistoricoPagerHtml();
     else if (_agendaEventosTruncated) html += '<div class="ag-empty">Exibindo os primeiros 200 eventos desta semana. Refine o periodo ou use a pesquisa historica.</div>';
     el.innerHTML = html;
+  }
+
+  function agendaDayRowsHtml(dayRows, iso) {
+    var monitorias = (dayRows || []).filter(agendaIsMonitoria);
+    var demais = (dayRows || []).filter(function(r) { return !agendaIsMonitoria(r); });
+    var html = monitorias.length ? agendaMonitoriasGrupoHtml(monitorias, iso) : '';
+    if (monitorias.length && demais.length) html += '<div class="ag-list-section-title">Visitas</div>';
+    return html + demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('');
+  }
+
+  function agendaMonitoriasGrupoHtml(monitorias, iso) {
+    var expanded = _agendaMonitoriasExpandidasPorDia[iso] !== false;
+    var countLabel = monitorias.length + ' ' + (monitorias.length === 1 ? 'agendada' : 'agendadas');
+    var chevron = expanded ? 'expand_less' : 'expand_more';
+    return '<section class="ag-monitorias-group" aria-label="Monitorias do dia">' +
+      '<div class="ag-monitorias-head">' +
+        '<div class="ag-monitorias-title"><strong>Monitorias do dia</strong><span class="ag-ch-monitoria ag-monitorias-count">' + esc(countLabel) + '</span></div>' +
+        '<button type="button" class="ag-act-btn ag-monitorias-toggle" onclick="agendaToggleMonitoriasDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-label="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
+      '</div>' +
+      (expanded ? '<div class="ag-monitorias-items">' + monitorias.map(function(r, idx) { return agendaMonitoriaCompactaHtml(r, iso + '-monitoria-' + idx); }).join('') + '</div>' : '') +
+    '</section>';
+  }
+
+  function agendaToggleMonitoriasDia(iso) {
+    _agendaMonitoriasExpandidasPorDia[iso] = _agendaMonitoriasExpandidasPorDia[iso] === false;
+    renderAgendaLista();
+  }
+
+  function agendaMonitoriaCompactaHtml(r, suffix) {
+    var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
+    var cardId = agendaCardDomId(r);
+    var past = r.dataIso && r.dataIso < agendaIso(new Date());
+    var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
+      '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
+    return '<div class="ag-appt ag-monitoria-compact st-monitoria' + (past ? ' past' : '') + '" id="' + cardId + '">' +
+      '<div class="ag-monitoria-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
+        '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
+        '<div class="ag-monitoria-project">' + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + '</div>' +
+        '<div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
+        '<div class="ag-monitoria-monitor">' + agendaLineItem('visibility', r.monitorName || 'Monitor não informado') + '</div>' +
+        '<div class="ag-appt-actions">' +
+          calendarBtn +
+          '<button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar"><span class="material-symbols-outlined">edit</span></button>' +
+          (!past ? '<button class="ag-act-btn" onclick="event.stopPropagation();cancelarAgendaEvento(\'' + esc(r.id) + '\')" title="Cancelar"><span class="material-symbols-outlined">event_busy</span></button>' : '') +
+          '<button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes"><span class="material-symbols-outlined">expand_more</span></button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ag-appt-detail" id="' + id + '">' + agendaDetailHtml(r) + '</div>' +
+    '</div>';
   }
 
   function agendaHistoricoPagerHtml() {
