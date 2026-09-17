@@ -876,6 +876,7 @@
       input.placeholder = agendaMatBioFormulaPlaceholder(prefix);
       input.setAttribute('aria-label', 'Volume (' + unit + ')');
     });
+    agendaMatBioUpdateDhlConvertAction_(prefix);
   }
 
   function agendaMatBioOnFormulaInput(input, prefix) {
@@ -892,33 +893,17 @@
     item = item || {};
     var cfg = agendaMatBioTypeConfig(item.key || item.tipo);
     var baseUnit = agendaMatBioUnitKey((cfg && cfg.unit) || item.unit || 'mL');
-    var targetUnit = agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, baseUnit));
     var sourceUnit = agendaMatBioUnitKey(item.unit || baseUnit);
     var out = Object.assign({}, item);
-    if (baseUnit === 'mL' && sourceUnit !== targetUnit) {
-      out.formula = agendaMatBioConvertFormulaUnit(
-        agendaMatBioFormulaFromSegments(item.segmentos, sourceUnit) || item.formula || '',
-        sourceUnit,
-        targetUnit
-      );
-      out.unit = targetUnit;
+    if (baseUnit === 'mL' && Array.isArray(item.segmentos) && item.segmentos.length) {
+      out.formula = agendaMatBioFormulaFromSegments(item.segmentos, sourceUnit) || item.formula || '';
     }
+    out.unit = sourceUnit;
     return out;
   }
 
   function onAgendaCourierChange(prefix) {
     applyAgendaAwbRule(prefix, true);
-    var nextUnit = agendaCourierUnit(prefix);
-    Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line[data-prefix="' + prefix + '"]'), function(row) {
-      var formula = row.querySelector('.ag-mat-formula');
-      var tipo = row.querySelector('.ag-mat-type-select');
-      var cfg = agendaMatBioTypeConfig(tipo && tipo.value);
-      if (!formula || !cfg || normAgenda(cfg.unit) !== 'ml') return;
-      var prevUnit = row.dataset.formulaUnit || row.dataset.volumeUnit || 'mL';
-      formula.value = agendaMatBioConvertFormulaUnit(formula.value, prevUnit, nextUnit);
-      row.dataset.formulaUnit = nextUnit;
-      row.dataset.volumeUnit = nextUnit;
-    });
     agendaMatBioUpdateUnitUi(prefix);
     agendaMatBioRecalcPrefix(prefix);
     atualizarAgendaTransportesOpcionais();
@@ -993,9 +978,10 @@
     box.dataset.ready = '1';
     box.innerHTML =
       '<div class="ag-mat-tools">' +
-        '<select id="' + esc(prefix) + 'MatCopy"></select>' +
-        '<button type="button" class="ag-mat-mini-btn" onclick="agendaMatBioCopyPrevious(\'' + esc(prefix) + '\')"><span class="material-symbols-outlined">content_copy</span>Copiar</button>' +
-        '<textarea id="' + esc(prefix) + 'MatPaste" placeholder="Cole aqui uma descrição anterior. Ex: Soro (Chemistry): 1 tubo(s), 1,25 mL; Sangue (Hematology): 1 tubo(s), 2,00 mL; 2 lâminas de hematologia"></textarea>' +
+      '<select id="' + esc(prefix) + 'MatCopy"></select>' +
+      '<button type="button" class="ag-mat-mini-btn" onclick="agendaMatBioCopyPrevious(\'' + esc(prefix) + '\')"><span class="material-symbols-outlined">content_copy</span>Copiar</button>' +
+      '<button type="button" class="ag-mat-mini-btn" id="' + esc(prefix) + 'MatConvertDhl" style="display:none" onclick="agendaMatBioConvertDhlVolumes(\'' + esc(prefix) + '\')" title="Divide os volumes em mL por 1.000 e converte para L"><span class="material-symbols-outlined">swap_vert</span>Converter mL para L</button>' +
+      '<textarea id="' + esc(prefix) + 'MatPaste" placeholder="Cole aqui uma descrição anterior. Ex: Soro (Chemistry): 1 tubo(s), 1,25 mL; Sangue (Hematology): 1 tubo(s), 2,00 mL; 2 lâminas de hematologia"></textarea>' +
         '<div class="ag-mat-tool-actions">' +
           '<button type="button" class="ag-mat-mini-btn" onclick="agendaMatBioInterpretPaste(\'' + esc(prefix) + '\')"><span class="material-symbols-outlined">auto_fix_high</span>Interpretar texto</button>' +
           '<button type="button" class="ag-mat-mini-btn" onclick="agendaMatBioClearPaste(\'' + esc(prefix) + '\')"><span class="material-symbols-outlined">backspace</span>Limpar texto</button>' +
@@ -1026,6 +1012,48 @@
     agendaMatBioUpdateUnitUi(prefix);
     agendaMatBioEnsureTrailingRow(prefix);
     atualizarAgendaTransportesOpcionais();
+  }
+
+  function agendaMatBioDhlConversionPending_(prefix) {
+    if (agendaCourierUnit(prefix) !== 'L') return false;
+    return Array.prototype.some.call(document.querySelectorAll('.ag-mat-line[data-prefix="' + prefix + '"]'), function(row) {
+      var tipo = row.querySelector('.ag-mat-type-select');
+      var cfg = agendaMatBioTypeConfig(tipo && tipo.value);
+      var formula = row.querySelector('.ag-mat-formula');
+      var formulaUnit = agendaMatBioUnitKey(row.dataset.formulaUnit || 'mL');
+      return !!(cfg && normAgenda(cfg.unit) === 'ml' && formulaUnit === 'mL' && formula && agendaMatBioParseFormula(formula.value).segmentos.length);
+    });
+  }
+
+  function agendaMatBioUpdateDhlConvertAction_(prefix) {
+    var button = document.getElementById(prefix + 'MatConvertDhl');
+    if (!button) return;
+    var isDhl = agendaCourierUnit(prefix) === 'L';
+    var pending = isDhl && agendaMatBioDhlConversionPending_(prefix);
+    button.style.display = isDhl ? 'inline-flex' : 'none';
+    button.disabled = !pending;
+    button.setAttribute('aria-disabled', pending ? 'false' : 'true');
+    button.title = pending
+      ? 'Divide os volumes em mL por 1.000 e converte para L'
+      : 'Não há volumes em mL pendentes para converter';
+  }
+
+  function agendaMatBioConvertDhlVolumes(prefix) {
+    if (agendaCourierUnit(prefix) !== 'L') return;
+    var converted = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line[data-prefix="' + prefix + '"]'), function(row) {
+      var tipo = row.querySelector('.ag-mat-type-select');
+      var cfg = agendaMatBioTypeConfig(tipo && tipo.value);
+      var formula = row.querySelector('.ag-mat-formula');
+      var currentUnit = agendaMatBioUnitKey(row.dataset.formulaUnit || 'mL');
+      if (!cfg || normAgenda(cfg.unit) !== 'ml' || !formula || currentUnit !== 'mL' || !agendaMatBioParseFormula(formula.value).segmentos.length) return;
+      formula.value = agendaMatBioConvertFormulaUnit(formula.value, 'mL', 'L');
+      row.dataset.formulaUnit = 'L';
+      row.dataset.volumeUnit = 'L';
+      converted += 1;
+    });
+    agendaMatBioRecalcPrefix(prefix);
+    if (typeof snack === 'function') snack(converted ? converted + ' material(is) convertido(s) para L.' : 'Não há volumes em mL para converter.');
   }
 
   function agendaMatBioOptionsHtml(value) {
@@ -1139,7 +1167,7 @@
       if (!t) return;
       var formula = formulaEl.value;
       var parsed = agendaMatBioParseFormula(formula);
-      var unit = agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, t.unit));
+      var unit = agendaMatBioUnitKey(row.dataset.formulaUnit || agendaMatBioDisplayUnit(prefix, t.unit));
       var outro = t.outro ? (row.querySelector('.ag-mat-other') || {}).value || '' : '';
       var label = t.outro ? outro.trim() : t.label;
       if (!label || (!parsed.segmentos.length && !t.outro)) return;
@@ -1766,18 +1794,9 @@
   function agendaMonitoresFiltradosPorProjeto() {
     var projeto = (document.getElementById('agProjeto') || {}).value || '';
     var projetoNorm = normAgenda(projeto);
-    var tipoValor = (document.getElementById('agTipo') || {}).value || '';
     var todos = ((_agendaDados && _agendaDados.monitores) || []);
     if (!projetoNorm) return [];
-    if (AgendaRules.isSiv(tipoValor)) {
-      return todos.slice().sort(function(a, b) {
-        var aVinculado = agendaMonitorProjetos(a).some(function(p) { return normAgenda(p) === projetoNorm; }) ? 0 : 1;
-        var bVinculado = agendaMonitorProjetos(b).some(function(p) { return normAgenda(p) === projetoNorm; }) ? 0 : 1;
-        return aVinculado - bVinculado || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' });
-      });
-    }
     return todos.filter(function(m) {
-      if (!projetoNorm) return false;
       return agendaMonitorProjetos(m).some(function(p) { return normAgenda(p) === projetoNorm; });
     }).sort(function(a, b) {
       return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', { sensitivity: 'base' });
@@ -5872,7 +5891,7 @@
   function agendaTrackingUrl(awb, courier) {
     awb = String(awb || '').trim();
     if (agendaIsPinexCourier(courier)) return 'https://pinextracking.com.br/#tracking-code';
-    if (/^620X[0-9]{8}$/i.test(awb)) return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(awb);
+    if (/^620X[0-9]{8}$/i.test(awb)) return 'https://pt.marken.com/track-shipment?jobNumber=' + encodeURIComponent(awb);
     if (/^[A-Z][0-9]{7}$/i.test(awb) || /^PK2[A-Z0-9]{9}$/i.test(awb)) return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(awb) + '&i=18&url=ocasa';
     if (/^[0-9]{10}$/.test(awb)) return 'https://www.dhl.com/br-en/home/tracking.html?tracking-id=' + encodeURIComponent(awb) + '&submit=1';
     return '';
@@ -5933,7 +5952,7 @@
   }
 
   function agendaStatusChipOp(status, tipo) {
-    var cls = agendaStatusClass({status: status, tipo: tipo});
+    var cls = agendaStatusClass({status: status});
     var label = status || tipo || '-';
     return '<span class="ag-st-chip ag-ch-' + cls + '">' + esc(label) + '</span>';
   }

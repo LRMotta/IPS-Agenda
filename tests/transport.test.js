@@ -55,6 +55,32 @@ test('regras de AWB do navegador e servidor permanecem alinhadas', () => {
   });
 });
 
+test('rastreio Marken usa o endpoint pt.marken com jobNumber em Agenda, Estoque e servidor', () => {
+  const awb = '620X41252054';
+  const expected = `https://pt.marken.com/track-shipment?jobNumber=${awb}`;
+  const serverSource = readProjectFile('WebApp.gs');
+  const server = runFile('WebApp.gs');
+
+  assert.equal(server.codexCourierTrackingUrl_(awb, 'MARKEN'), expected);
+  assert.equal(server.codexCourierTrackingUrl_(awb, ''), expected);
+
+  const agendaSource = readProjectFile('IndexAgendaScripts.html');
+  const agendaBlock = sourceBetween(agendaSource, 'function agendaTrackingUrl(', 'function agendaIsPinexCourier(');
+  const agenda = vm.createContext({ agendaIsPinexCourier: () => false });
+  vm.runInContext(agendaBlock, agenda);
+  assert.equal(agenda.agendaTrackingUrl(awb, 'MARKEN'), expected);
+
+  const estoqueSource = readProjectFile('IndexEstoqueScripts.html');
+  const estoqueBlock = sourceBetween(estoqueSource, 'function pedidoTrackingUrl(', 'function pedidoIsPinexCourier(');
+  const estoque = vm.createContext({ pedidoIsPinexCourier: () => false });
+  vm.runInContext(estoqueBlock, estoque);
+  assert.equal(estoque.pedidoTrackingUrl(awb, 'MARKEN'), expected);
+
+  [serverSource, agendaSource, estoqueSource].forEach((source) => {
+    assert.doesNotMatch(source, /https:\/\/online\.marken\.com\/FastTrack\/Shipment\?inputTrack=/);
+  });
+});
+
 test('slots da Agenda sao normalizados sem trocar o transporte', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(source, 'function normalizarSlotTransporteCodex_(', '/* ===== END CODEX_TransporteBridge.gs ===== */');
@@ -145,6 +171,22 @@ test('formulas de volume usam representacao compacta sem perder decimais signifi
   assert.equal(server.codexMatBioFormulaFromSegments_(segments, 'mL'), '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25');
   assert.equal(client.formulaFromSegments(segments, 'mL'), '1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25');
   assert.equal(server.codexMatBioParseFormula_('1\u00d70,5; 1\u00d71,0; 1\u00d71,75; 2\u00d70,25').total, 3.75);
+});
+
+test('DHL nao converte volumes ao trocar a courier e oferece conversao explicita mL para L', () => {
+  const source = readProjectFile('TransporteApp.html');
+  const selectCourier = sourceBetween(source, 'function selectCourier(', 'function updatePinexField(');
+  const converter = sourceBetween(source, 'function convertDhlVolumesToLiters(', 'function collectMaterials(');
+  const actions = sourceBetween(source, 'function updateDhlVolumeActions(', 'function convertDhlVolumesToLiters(');
+
+  assert.doesNotMatch(selectCourier, /convertMatBioUnit/);
+  assert.match(selectCourier, /matBioRecalc\(\)/);
+  assert.match(source, /id="btnConvertDhlVolumes"[^>]*>[^<]*<span[^>]*>swap_vert<\/span><span>Converter mL para L<\/span>/);
+  assert.match(actions, /selectedCourier === 'DHL'/);
+  assert.match(converter, /currentUnit !== 'mL'/);
+  assert.match(converter, /convertFormulaUnit\(formula\.value, 'mL', 'L'\)/);
+  assert.match(converter, /row\.dataset\.formulaUnit = 'L'/);
+  assert.match(source, /unit: m\.unit \|\| ''/);
 });
 
 test('protecao de layout reduz a fonte e bloqueia volume ainda maior antes do PDF', () => {

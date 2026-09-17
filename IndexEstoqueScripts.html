@@ -2638,7 +2638,7 @@
     rastreio = String(rastreio || '').trim();
     if (!rastreio) return '';
     if (pedidoIsPinexCourier(courier)) return 'https://pinextracking.com.br/#tracking-code';
-    if (/^620X[0-9]{8}$/i.test(rastreio)) return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(rastreio);
+    if (/^620X[0-9]{8}$/i.test(rastreio)) return 'https://pt.marken.com/track-shipment?jobNumber=' + encodeURIComponent(rastreio);
     if (/^[A-Z][0-9]{7}$/i.test(rastreio) || /^PK2[A-Z0-9]{9}$/i.test(rastreio)) return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(rastreio) + '&i=18&url=ocasa';
     if (/^[0-9]{10}$/.test(rastreio)) return 'https://www.dhl.com/br-en/home/tracking.html?tracking-id=' + encodeURIComponent(rastreio) + '&submit=1';
     return '';

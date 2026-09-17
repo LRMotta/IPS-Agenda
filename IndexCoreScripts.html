@@ -390,6 +390,47 @@ function handleAppBootstrapFailure(error) {
   snack(msg);
 }
 
+function codexClientNow_() {
+  try {
+    if (window.performance && typeof window.performance.now === 'function') return window.performance.now();
+  } catch (e) {}
+  return Date.now();
+}
+
+function codexClientBootstrapTraceId_() {
+  return 'bootstrap-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 0x1000000).toString(36);
+}
+
+function codexClientBootstrapPayloadBytes_(data) {
+  try {
+    var serialized = JSON.stringify(data);
+    return serialized ? serialized.length : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function codexLogClientBootstrapPerformance_(metrics) {
+  metrics = metrics || {};
+  try {
+    var payload = {
+      operation: 'getAppBootstrapData',
+      traceId: String(metrics.traceId || ''),
+      page: String(metrics.page || ''),
+      success: metrics.success === true,
+      rpcDurationMs: Math.max(0, Math.round(Number(metrics.rpcDurationMs) || 0)),
+      applyDurationMs: Math.max(0, Math.round(Number(metrics.applyDurationMs) || 0)),
+      readyDurationMs: Math.max(0, Math.round(Number(metrics.readyDurationMs) || 0)),
+      payloadBytes: Math.max(0, Number(metrics.payloadBytes) || 0)
+    };
+    if (window.console && typeof window.console.info === 'function') {
+      window.console.info('[CODEX_PERF_CLIENT] ' + JSON.stringify(payload));
+    }
+  } catch (e) {
+    // A telemetria do cliente nunca pode alterar o bootstrap.
+  }
+}
+
 function startCodexAppOnce() {
   if (window.APP_BOOTSTRAP_STARTED) return;
   window.APP_BOOTSTRAP_STARTED = true;
@@ -399,16 +440,40 @@ function startCodexAppOnce() {
   document.getElementById('topDate').textContent =
     dias[d.getDay()] + ', ' + d.getDate() + ' ' + meses[d.getMonth()] + ' ' + d.getFullYear();
   abrirShellInicialAgendaCanario_();
+  var bootstrapStartedAt = codexClientNow_();
+  var bootstrapTraceId = codexClientBootstrapTraceId_();
+  var bootstrapRequest = appInitialBootstrapRequest_() || {};
+  bootstrapRequest.traceId = bootstrapTraceId;
   google.script.run
     .withSuccessHandler(function(data) {
+      var rpcCompletedAt = codexClientNow_();
+      var applyStartedAt = rpcCompletedAt;
       applyAppBootstrapData(data);
+      var applyCompletedAt = codexClientNow_();
       abrirPaginaInicialApp();
+      codexLogClientBootstrapPerformance_({
+        traceId: data && data.bootstrapTraceId ? data.bootstrapTraceId : bootstrapTraceId,
+        page: window.INDEX_INITIAL_PAGE || 'agenda',
+        success: true,
+        rpcDurationMs: rpcCompletedAt - bootstrapStartedAt,
+        applyDurationMs: applyCompletedAt - applyStartedAt,
+        readyDurationMs: codexClientNow_() - bootstrapStartedAt,
+        payloadBytes: codexClientBootstrapPayloadBytes_(data)
+      });
     })
     .withFailureHandler(function(error) {
+      var rpcCompletedAt = codexClientNow_();
       handleAppBootstrapFailure(error);
       abrirPaginaInicialApp();
+      codexLogClientBootstrapPerformance_({
+        traceId: bootstrapTraceId,
+        page: window.INDEX_INITIAL_PAGE || 'agenda',
+        success: false,
+        rpcDurationMs: rpcCompletedAt - bootstrapStartedAt,
+        readyDurationMs: codexClientNow_() - bootstrapStartedAt
+      });
     })
-    .getAppBootstrapData(appInitialBootstrapRequest_());
+    .getAppBootstrapData(bootstrapRequest);
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);

@@ -252,20 +252,42 @@ function agendaBootstrapRequestRange_(request) {
   return { start: inicio, endExclusive: fim };
 }
 
+function codexBootstrapTraceId_(request) {
+  var supplied = request && request.traceId !== undefined && request.traceId !== null
+    ? String(request.traceId).trim()
+    : '';
+  if (/^[A-Za-z0-9_-]{8,80}$/.test(supplied)) return supplied;
+  try {
+    if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.getUuid === 'function') {
+      return String(Utilities.getUuid()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+    }
+  } catch (e) {
+    // A ausência do UUID não pode impedir o bootstrap.
+  }
+  return 'bootstrap-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 0x1000000).toString(36);
+}
+
 function getAppBootstrapData(request) {
-  var totalMeta = { rowCount: 0, responseBytes: 0 };
+  var traceId = codexBootstrapTraceId_(request);
+  var perfMeta = function(extra) {
+    extra = extra || {};
+    extra.traceId = traceId;
+    return extra;
+  };
+  var totalMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
   return codexMeasurePerformance_('getAppBootstrapData', 'total', totalMeta, function() {
-    var access = codexMeasurePerformance_('getAppBootstrapData', 'access', { rowCount: 0 }, function() {
+    var access = codexMeasurePerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
       return codexGetCurrentUserAccess();
     });
     var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
     var agendaRange = agendaBootstrapRequestRange_(request);
     var out = {
+      bootstrapTraceId: traceId,
       access: access,
-      auth: codexMeasurePerformance_('getAppBootstrapData', 'auth', { rowCount: 0 }, function() {
+      auth: codexMeasurePerformance_('getAppBootstrapData', 'auth', perfMeta({ rowCount: 0 }), function() {
         return codexGetUserOAuthStatus_();
       }),
-      appVersion: codexMeasurePerformance_('getAppBootstrapData', 'version', { rowCount: 0 }, function() {
+      appVersion: codexMeasurePerformance_('getAppBootstrapData', 'version', perfMeta({ rowCount: 0 }), function() {
         return codexGetAppVersion_();
       }),
       webAppUrl: '',
@@ -275,7 +297,7 @@ function getAppBootstrapData(request) {
     };
     if (agendaWindowedLoadingEnabled) out.features = { agendaWindowedLoadingV2: true };
     try {
-      out.webAppUrl = codexMeasurePerformance_('getAppBootstrapData', 'web_app_url', { rowCount: 0 }, function() {
+      out.webAppUrl = codexMeasurePerformance_('getAppBootstrapData', 'web_app_url', perfMeta({ rowCount: 0 }), function() {
         return ScriptApp.getService().getUrl();
       });
     } catch (e1) {
@@ -283,7 +305,7 @@ function getAppBootstrapData(request) {
     }
     if (!agendaWindowedLoadingEnabled) {
       try {
-        out.agendaFormData = codexMeasurePerformance_('getAppBootstrapData', 'agenda_form_data', { rowCount: 0 }, function() {
+        out.agendaFormData = codexMeasurePerformance_('getAppBootstrapData', 'agenda_form_data', perfMeta({ rowCount: 0 }), function() {
           return getDadosFormularioAgenda(true);
         });
       } catch (e2) {
@@ -293,7 +315,7 @@ function getAppBootstrapData(request) {
       try {
         // Reutiliza o acesso validado nesta execução. A RPC pública mantém
         // sua própria validação para chamadas diretas do cliente.
-        out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', { rowCount: 0 }, function() {
+        out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', perfMeta({ rowCount: 0 }), function() {
           return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false, 'app_initial');
         });
       } catch (e2) {
@@ -302,7 +324,7 @@ function getAppBootstrapData(request) {
     }
     try {
       if (out.access && out.access.ok) {
-        var birthdaysMeta = { rowCount: 0 };
+        var birthdaysMeta = perfMeta({ rowCount: 0 });
         out.teamBirthdays = codexMeasurePerformance_('getAppBootstrapData', 'team_birthdays', birthdaysMeta, function() {
           var birthdays = codexGetTeamBirthdays_();
           birthdaysMeta.rowCount = Array.isArray(birthdays) ? birthdays.length : 0;
@@ -312,7 +334,7 @@ function getAppBootstrapData(request) {
     } catch (e3) {
       out.errors.teamBirthdays = e3.message || String(e3);
     }
-    var serializationMeta = { rowCount: 0, responseBytes: 0 };
+    var serializationMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
     codexMeasurePerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
       serializationMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(out));
     });
@@ -11076,18 +11098,24 @@ function getAgendaSheet_() {
 function getAgendaSheetForRead_() {
   var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), AGENDA_CFG.abaNomes);
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
-  agendaResolveBackupTemperaturaColumnForRead_(sh);
-  agendaResolveParticipanteCadastroColumnForRead_(sh);
+  // Resolva os dois campos opcionais com uma unica leitura do cabecalho. A
+  // abertura de edicao e uma RPC curta, portanto duas leituras identicas de
+  // schema acabam sendo perceptiveis mesmo quando a linha ja foi indicada.
+  var lastColumn = Number(sh.getLastColumn && sh.getLastColumn()) || 0;
+  var headers = lastColumn ? (sh.getRange(1, 1, 1, lastColumn).getValues()[0] || []) : [];
+  agendaResolveBackupTemperaturaColumnForRead_(sh, headers);
+  agendaResolveParticipanteCadastroColumnForRead_(sh, headers);
   return sh;
 }
 
-function agendaFindBackupTemperaturaColumn_(sh) {
+function agendaFindBackupTemperaturaColumn_(sh, headers) {
   var aliases = ['backup - temperatura', 'backup temperatura', 'temperatura backup'];
-  var lastColumn = Number(sh && sh.getLastColumn && sh.getLastColumn()) || 0;
+  var values = Array.isArray(headers) ? headers : null;
+  var lastColumn = values ? values.length : Number(sh && sh.getLastColumn && sh.getLastColumn()) || 0;
   if (lastColumn < 1) return 0;
-  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
-  for (var i = 0; i < headers.length; i++) {
-    if (aliases.indexOf(normText_(headers[i])) >= 0) {
+  values = values || (sh.getRange(1, 1, 1, lastColumn).getValues()[0] || []);
+  for (var i = 0; i < values.length; i++) {
+    if (aliases.indexOf(normText_(values[i])) >= 0) {
       return i + 1;
     }
   }
@@ -11103,13 +11131,14 @@ function agendaUseBackupTemperaturaColumn_(column) {
   return column;
 }
 
-function agendaFindParticipanteCadastroColumn_(sh) {
+function agendaFindParticipanteCadastroColumn_(sh, headers) {
   var aliases = ['id cadastro participante', 'participante cadastro id', 'id interno participante'];
-  var lastColumn = Number(sh && sh.getLastColumn && sh.getLastColumn()) || 0;
+  var values = Array.isArray(headers) ? headers : null;
+  var lastColumn = values ? values.length : Number(sh && sh.getLastColumn && sh.getLastColumn()) || 0;
   if (lastColumn < 1) return 0;
-  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
-  for (var i = 0; i < headers.length; i++) {
-    if (aliases.indexOf(normText_(headers[i])) >= 0) return i + 1;
+  values = values || (sh.getRange(1, 1, 1, lastColumn).getValues()[0] || []);
+  for (var i = 0; i < values.length; i++) {
+    if (aliases.indexOf(normText_(values[i])) >= 0) return i + 1;
   }
   return 0;
 }
@@ -11123,8 +11152,8 @@ function agendaUseParticipanteCadastroColumn_(column) {
   return column;
 }
 
-function agendaResolveParticipanteCadastroColumnForRead_(sh) {
-  return agendaUseParticipanteCadastroColumn_(agendaFindParticipanteCadastroColumn_(sh));
+function agendaResolveParticipanteCadastroColumnForRead_(sh, headers) {
+  return agendaUseParticipanteCadastroColumn_(agendaFindParticipanteCadastroColumn_(sh, headers));
 }
 
 function agendaEnsureParticipanteCadastroColumn_(sh) {
@@ -11140,8 +11169,8 @@ function agendaEnsureParticipanteCadastroColumn_(sh) {
   return agendaUseParticipanteCadastroColumn_(column);
 }
 
-function agendaResolveBackupTemperaturaColumnForRead_(sh) {
-  return agendaUseBackupTemperaturaColumn_(agendaFindBackupTemperaturaColumn_(sh));
+function agendaResolveBackupTemperaturaColumnForRead_(sh, headers) {
+  return agendaUseBackupTemperaturaColumn_(agendaFindBackupTemperaturaColumn_(sh, headers));
 }
 
 function agendaEnsureBackupTemperaturaColumn_(sh) {
@@ -12672,16 +12701,54 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExclu
   // que uma atualização parcial (por exemplo, só do transporte) compare o
   // agendamento consigo mesmo caso o payload traga um ID legado ou divergente.
   agendaIdExcluido = String(agendaIdExcluido || dados.id || dados.agendaId || '').trim();
-  var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
-  var encontradas = rows.filter(function(row) {
-    if (agendaIdExcluido && String(row[idx.id] || '').trim() === agendaIdExcluido) return false;
-    if (!AgendaServerRules_.isVisit(row[idx.tipo])) return false;
-    if (formatarDataIsoAgenda_(row[idx.data]) !== dataIso) return false;
-    return CadastroRules_.agendaEventMatchesParticipant(referencia, {
-      participantCadastroId: idx.participanteCadastroId >= 0 ? row[idx.participanteCadastroId] : '',
-      participante: row[idx.participante],
-      idParticipante: row[idx.idParticipante],
-      projeto: row[idx.projeto]
+  var rowCount = agenda.getLastRow() - 1;
+  // A data e lida em uma faixa estreita e fresca sob o mesmo lock. A Agenda
+  // normalmente esta ordenada por data, entao a leitura seguinte percorre
+  // somente os blocos candidatos. O limite de blocos evita trocar uma leitura
+  // por centenas de RPCs quando o legado estiver fora de ordem.
+  var dateRows = agenda.getRange(2, AGENDA_CFG.col.data, rowCount, 1).getValues();
+  var candidateRows = [];
+  dateRows.forEach(function(row, offset) {
+    if (formatarDataIsoAgenda_(row[0]) === dataIso) candidateRows.push(offset + 2);
+  });
+  if (!candidateRows.length) return null;
+  var runs = [];
+  var runStart = candidateRows[0];
+  var previous = runStart;
+  candidateRows.slice(1).forEach(function(rowNumber) {
+    if (rowNumber !== previous + 1) {
+      runs.push({ start: runStart, count: previous - runStart + 1 });
+      runStart = rowNumber;
+    }
+    previous = rowNumber;
+  });
+  runs.push({ start: runStart, count: previous - runStart + 1 });
+  if (runs.length > 20) runs = [{ start: 2, count: rowCount }];
+
+  // A comparacao usa somente identidade, tipo e data. O ID de cadastro e
+  // opcional nos historicos; quando existe, ele continua incluido na projecao.
+  var readWidth = Math.max(
+    AGENDA_CFG.col.id,
+    AGENDA_CFG.col.data,
+    AGENDA_CFG.col.tipo,
+    AGENDA_CFG.col.participante,
+    AGENDA_CFG.col.idParticipante,
+    AGENDA_CFG.col.projeto,
+    AGENDA_CFG.col.participanteCadastroId || 0
+  );
+  var encontradas = [];
+  runs.forEach(function(run) {
+    var rows = agenda.getRange(run.start, 1, run.count, readWidth).getValues();
+    rows.forEach(function(row) {
+      if (agendaIdExcluido && String(row[idx.id] || '').trim() === agendaIdExcluido) return;
+      if (!AgendaServerRules_.isVisit(row[idx.tipo])) return;
+      if (formatarDataIsoAgenda_(row[idx.data]) !== dataIso) return;
+      if (CadastroRules_.agendaEventMatchesParticipant(referencia, {
+        participantCadastroId: idx.participanteCadastroId >= 0 ? row[idx.participanteCadastroId] : '',
+        participante: row[idx.participante],
+        idParticipante: row[idx.idParticipante],
+        projeto: row[idx.projeto]
+      })) encontradas.push(row);
     });
   });
   if (!encontradas.length) return null;
@@ -12691,6 +12758,44 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExclu
     quantidade: encontradas.length,
     mensagem: 'Já existe uma visita criada para este participante nesta data.'
   };
+}
+
+// A protecao de duplicidade deve cobrir a criacao ou a troca da identidade
+// operacional da visita. Alteracoes somente em transporte/status nao criam
+// uma visita nova e nao devem ser bloqueadas por outra visita legitima no dia.
+function agendaVisitaIdentidadeAlterada_(rowAnterior, dados) {
+  if (!rowAnterior || !dados) return true;
+  var idx = AGENDA_CFG.idx;
+  var has = Object.prototype.hasOwnProperty;
+  function valorDadosOuLinha_(nome, indice) {
+    return has.call(dados, nome) ? dados[nome] : rowAnterior[indice];
+  }
+  function valorParticipanteIdNovo_() {
+    if (has.call(dados, 'participanteId')) return dados.participanteId;
+    if (has.call(dados, 'idParticipante')) return dados.idParticipante;
+    return rowAnterior[idx.idParticipante];
+  }
+  var tipoAnterior = normText_(rowAnterior[idx.tipo]);
+  var tipoNovo = normText_(valorDadosOuLinha_('tipo', idx.tipo));
+  if (tipoAnterior !== tipoNovo) return true;
+
+  var dataAnterior = formatarDataIsoAgenda_(rowAnterior[idx.data]);
+  var dataNova = formatarDataIsoAgenda_(valorDadosOuLinha_('data', idx.data));
+  if (dataAnterior !== dataNova) return true;
+
+  var projetoAnterior = normText_(rowAnterior[idx.projeto]);
+  var projetoNovo = normText_(valorDadosOuLinha_('projeto', idx.projeto));
+  if (projetoAnterior !== projetoNovo) return true;
+
+  var nomeAnterior = normText_(rowAnterior[idx.participante]);
+  var nomeNovo = normText_(valorDadosOuLinha_('participante', idx.participante));
+  if (nomeAnterior !== nomeNovo) return true;
+
+  var idAnterior = normText_(rowAnterior[idx.idParticipante]);
+  var idNovo = normText_(valorParticipanteIdNovo_());
+  // Registros legados podem não ter o ID preenchido; a hidratação do
+  // formulário nesse caso não representa troca de participante.
+  return !!idAnterior && !!idNovo && idAnterior !== idNovo;
 }
 
 function salvarNovoEventoCompleto(dados) {
@@ -13292,6 +13397,7 @@ function atualizarAgendaEventoCompleto(dados) {
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isMultiDay;
+  var visitaIdentidadeAlterada = agendaVisitaIdentidadeAlterada_(rowAnterior, dados);
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -13303,7 +13409,9 @@ function atualizarAgendaEventoCompleto(dados) {
   var d = _parseDateHora(dados.data, dados.hora);
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, rowAnterior);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
-  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d, rowAnterior[AGENDA_CFG.idx.id]);
+  var visitaMesmaData = visitaIdentidadeAlterada
+    ? agendaVisitaCriadaNaMesmaData_(agenda, dados, d, rowAnterior[AGENDA_CFG.idx.id])
+    : null;
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var datasValidacaoStatus = isPeriodo
     ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
@@ -14008,7 +14116,7 @@ function codexCourierTrackingUrl_(awb, courier) {
     return 'https://pinextracking.com.br/#tracking-code';
   }
   if (rule.key === 'marken' && codexCourierIsValidAwb_(value, courier)) {
-    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(value);
+    return 'https://pt.marken.com/track-shipment?jobNumber=' + encodeURIComponent(value);
   }
   if (rule.key === 'ocasa' && codexCourierIsValidOcasaAwb_(value)) {
     return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(value) + '&i=18&url=ocasa';
@@ -14019,7 +14127,7 @@ function codexCourierTrackingUrl_(awb, courier) {
   if (rule.key) return '';
   var fallback = String(awb || '').trim();
   if (/^620X[0-9]{8}$/i.test(fallback)) {
-    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(fallback);
+    return 'https://pt.marken.com/track-shipment?jobNumber=' + encodeURIComponent(fallback);
   }
   if (/^[A-Z][0-9]{7}$/i.test(fallback) || /^PK2[A-Z0-9]{9}$/i.test(fallback)) {
     return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(fallback.toUpperCase()) + '&i=18&url=ocasa';
@@ -14932,14 +15040,17 @@ function setAgendaValueAndFormat_(range, value, format) {
 function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
   metadata = metadata || {};
   try {
-    Logger.log('[CODEX_PERF] ' + JSON.stringify({
+    var payload = {
       operation: String(operation || ''),
       stage: String(stage || ''),
       durationMs: Math.max(0, Number(durationMs) || 0),
       rowCount: Math.max(0, Number(metadata.rowCount) || 0),
       responseBytes: Math.max(0, Number(metadata.responseBytes) || 0),
       success: success === true
-    }));
+    };
+    var traceId = String(metadata.traceId || '').trim();
+    if (/^[A-Za-z0-9_-]{8,80}$/.test(traceId)) payload.traceId = traceId;
+    Logger.log('[CODEX_PERF] ' + JSON.stringify(payload));
   } catch (eLog) {
     // A telemetria nunca pode alterar o resultado da operacao observada.
   }
@@ -15994,12 +16105,26 @@ function getAgendaEventoPorId(id, rowIndex) {
     if (!id) return null;
     var sh = getAgendaSheetForRead_();
     var locateMeta = { rowCount: 0 };
-    var row = codexMeasurePerformance_('getAgendaEventoPorId', 'locate', locateMeta, function() {
-      return agendaLocalizarLinhaPorId_(sh, id, rowIndex, locateMeta);
+    var localizado = codexMeasurePerformance_('getAgendaEventoPorId', 'locate', locateMeta, function() {
+      var hintedRow = Number(rowIndex) || 0;
+      if (hintedRow >= 2) {
+        // A linha sugerida vem do evento que o usuario clicou. Leia a linha
+        // autoritativa uma vez e valide o ID nela; isso elimina o getValue()
+        // separado antes da leitura completa no caminho normal.
+        try {
+          var hintedValues = sh.getRange(hintedRow, 1, 1, AGENDA_CFG.lastCol).getValues()[0] || [];
+          if (String(hintedValues[AGENDA_CFG.idx.id] || '').trim() === id) {
+            return { row: hintedRow, values: hintedValues };
+          }
+        } catch (e) {}
+      }
+      var row = agendaLocalizarLinhaPorId_(sh, id, 0, locateMeta);
+      return row ? { row: row, values: null } : null;
     });
-    if (!row) return null;
+    if (!localizado) return null;
     var item = codexMeasurePerformance_('getAgendaEventoPorId', 'read', { rowCount: 1 }, function() {
-      return agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
+      var values = localizado.values || sh.getRange(localizado.row, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+      return agendaRowToObject_(values, localizado.row);
     });
     totalMeta.rowCount = 1;
     codexMeasurePerformance_('getAgendaEventoPorId', 'hydrate', { rowCount: 1 }, function() {

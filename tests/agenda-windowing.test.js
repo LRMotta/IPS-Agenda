@@ -168,8 +168,8 @@ test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', ()
     'getUltimasVisitasParticipantesAgendaMap_'
   ];
 
-  assert.match(readGetter, /agendaResolveBackupTemperaturaColumnForRead_\(sh\)/);
-  assert.match(readGetter, /agendaResolveParticipanteCadastroColumnForRead_\(sh\)/);
+  assert.match(readGetter, /agendaResolveBackupTemperaturaColumnForRead_\(sh(?:, headers)?\)/);
+  assert.match(readGetter, /agendaResolveParticipanteCadastroColumnForRead_\(sh(?:, headers)?\)/);
   assert.doesNotMatch(readGetter, /ensureAgendaDestinoLabColumns_|alinharStatusRequisicaoLegadoAgenda_|setValue|insertColumns/);
   assert.match(writeGetter, /ensureAgendaDestinoLabColumns_\(sh\)/);
   assert.match(writeGetter, /alinharStatusRequisicaoLegadoAgenda_\(sh\)/);
@@ -506,7 +506,8 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
 
   const result = server.getAppBootstrapData({
     page: 'agenda',
-    agendaRange: { start: '2026-09-07', endExclusive: '2026-09-28' }
+    agendaRange: { start: '2026-09-07', endExclusive: '2026-09-28' },
+    traceId: 'bootstrap-test-001'
   });
 
   assert.deepEqual(calls, [{
@@ -515,6 +516,7 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
   }]);
   assert.equal(accessReads, 1);
   assert.equal(result.agendaFormData, null);
+  assert.equal(result.bootstrapTraceId, 'bootstrap-test-001');
   assert.equal(result.agendaBootstrap.referenceData, referenceData);
   assert.deepEqual(Object.assign({}, result.features), { agendaWindowedLoadingV2: true });
   const entries = logs.filter((message) => /^\[CODEX_PERF\]/.test(message))
@@ -522,6 +524,7 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
   assert.deepEqual(entries.map((entry) => entry.stage), [
     'access', 'auth', 'version', 'web_app_url', 'agenda_bootstrap', 'team_birthdays', 'serialize', 'total'
   ]);
+  assert.equal(entries.every((entry) => entry.traceId === 'bootstrap-test-001'), true);
   assert.ok(entries.find((entry) => entry.stage === 'serialize').responseBytes > 0);
   assert.equal(entries.find((entry) => entry.stage === 'total').responseBytes, entries.find((entry) => entry.stage === 'serialize').responseBytes);
   assert.equal(server.agendaBootstrapRequestRange_({ page: 'agenda', agendaRange: { start: 'inválida', endExclusive: '2026-09-28' } }), null);
@@ -1337,7 +1340,7 @@ test('shell da Agenda aparece antes do bootstrap unificado, sem iniciar RPC sepa
   const init = functionBody(agendaClient, 'initAgendaV1');
   const applyInitial = functionBody(agendaClient, 'agendaAplicarBootstrapInicial_');
 
-  assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('.getAppBootstrapData(appInitialBootstrapRequest_())'));
+  assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('.getAppBootstrapData(bootstrapRequest)'));
   assert.match(shell, /irPara\('agenda', \{ initial: true, shellOnly: true \}\)/);
   assert.match(initialRequest, /page: 'agenda', agendaRange:/);
   assert.ok(route.indexOf('if (options.shellOnly)') < route.indexOf("if (pagina === 'agenda') initAgendaV1()"));
@@ -1574,6 +1577,16 @@ test('nova ou edição de visita na mesma data exige confirmação e mantém sa�
   }, new Date(2026, 7, 28), 'EVT-EXISTENTE'), null,
   'a edição deve priorizar o ID da linha localizada ao salvar atualização parcial');
 
+  const calls = [];
+  const measuredAgenda = fakeAgendaRows(server, [existing], calls);
+  server.agendaVisitaCriadaNaMesmaData_(measuredAgenda, {
+    tipo: 'Visita', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28));
+  assert.equal(calls[0].column, server.AGENDA_CFG.col.data);
+  assert.equal(calls[0].numColumns, 1);
+  assert.equal(calls[1].column, 1);
+  assert.equal(calls[1].numColumns, Math.max(server.AGENDA_CFG.col.projeto, server.AGENDA_CFG.col.participanteCadastroId || 0));
+
   const client = readProjectFile('IndexAgendaScripts.html');
   const serverSource = readProjectFile('WebApp.gs');
   const markup = readProjectFile('IndexContentAfterDashboard.html');
@@ -1589,6 +1602,55 @@ test('nova ou edição de visita na mesma data exige confirmação e mantém sa�
   assert.match(functionBody(client, 'salvarAgendaEvento'), /res && res\.visitaMesmaData/);
   assert.match(markup, /id="btnAgendaSalvarVisitaMesmaData"[^>]*>Salvar mesmo assim<\/button>/);
   assert.match(markup, /class="btn-save"[^>]*id="btnAgendaSairVisitaMesmaData"[\s\S]*?Sair sem salvar/);
+});
+
+test('alterar somente o status do transporte nao dispara alerta de visita duplicada', () => {
+  const server = agendaServer();
+  const row = agendaRow(server, {
+    id: 'EVT-TRANSPORTE',
+    data: new Date(2026, 7, 28),
+    tipo: 'Visita',
+    participante: 'Pessoa A',
+    idParticipante: 'P-001',
+    projeto: 'Projeto A'
+  });
+
+  assert.equal(server.agendaVisitaIdentidadeAlterada_(row, {
+    data: '2026-08-28',
+    tipo: 'Visita',
+    participante: 'Pessoa A',
+    participanteId: 'P-001',
+    projeto: 'Projeto A',
+    status: 'Agendado',
+    courier1: { status: 'Entregue' }
+  }), false);
+  const rowLegada = agendaRow(server, {
+    id: 'EVT-TRANSPORTE-LEGADO',
+    data: new Date(2026, 7, 28),
+    tipo: 'Visita',
+    participante: 'Pessoa A',
+    projeto: 'Projeto A'
+  });
+  assert.equal(server.agendaVisitaIdentidadeAlterada_(rowLegada, {
+    data: '2026-08-28',
+    tipo: 'Visita',
+    participante: 'Pessoa A',
+    participanteId: 'P-001',
+    projeto: 'Projeto A',
+    courier1: { status: 'Entregue' }
+  }), false);
+  assert.equal(server.agendaVisitaIdentidadeAlterada_(row, {
+    data: '2026-08-29',
+    tipo: 'Visita',
+    participante: 'Pessoa A',
+    participanteId: 'P-001',
+    projeto: 'Projeto A',
+    status: 'Agendado',
+    courier1: { status: 'Entregue' }
+  }), true);
+
+  const update = functionBody(readProjectFile('WebApp.gs'), 'atualizarAgendaEventoCompleto');
+  assert.match(update, /var visitaMesmaData = visitaIdentidadeAlterada\n\s+\? agendaVisitaCriadaNaMesmaData_/);
 });
 
 test('selecao da Agenda oculta participacoes encerradas', () => {
@@ -1679,6 +1741,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
   const dayRows = functionBody(client, 'agendaDayRowsHtml');
   const compact = functionBody(client, 'agendaMonitoriaCompactaHtml');
+  const operationalStatus = functionBody(client, 'agendaStatusChipOp');
 
   assert.match(dayRows, /filter\(AgendaRules\.isOperationalPeriod\)/);
   assert.match(dayRows, /agendaMonitoriasGrupoHtml\(monitorias, iso\)/);
@@ -1690,11 +1753,14 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /agendaToggleDetail/);
   assert.match(compact, /st-cancelado/);
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
+  assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
   assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
-  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:68px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:14px/);
   assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
+  assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
 });
 
 test('resumos de material biologico alinham colunas entre transportes', () => {
@@ -1797,6 +1863,7 @@ test('abertura direta valida rowIndex e le somente a linha completa solicitada',
   const event = server.getAgendaEventoPorId('EVT-2', 3);
   assert.equal(event.id, 'EVT-2');
   assert.equal(calls.some((call) => call.row === 2 && call.numRows === 2 && call.numColumns === 1), false);
+  assert.equal(calls.some((call) => call.row === 3 && call.column === 1 && call.numColumns === 1), false);
   assert.equal(calls.filter((call) => call.numColumns === server.AGENDA_CFG.lastCol).length, 1);
 });
 
@@ -2241,6 +2308,22 @@ test('mutacoes recarregam o escopo corrente sem cache e Transporte avisa a Agend
   assert.match(transportSave, /refreshAgendaInOpener\(\)/);
   assert.match(transportSaveAndRun, /refreshAgendaInOpener\(\)/);
   assert.match(transportSync, /refreshAgendaInOpener\(\)/);
+});
+
+test('conversao de volumes para DHL na Agenda exige acao explicita', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const courierChange = functionBody(client, 'onAgendaCourierChange');
+  const itemLoad = functionBody(client, 'agendaMatBioConvertItemForPrefix');
+  const converter = functionBody(client, 'agendaMatBioConvertDhlVolumes');
+  const serialize = functionBody(client, 'agendaMatBioSerialize');
+
+  assert.doesNotMatch(courierChange, /agendaMatBioConvertFormulaUnit/);
+  assert.doesNotMatch(itemLoad, /agendaMatBioConvertFormulaUnit/);
+  assert.match(client, /MatConvertDhl/);
+  assert.match(converter, /agendaCourierUnit\(prefix\) !== 'L'/);
+  assert.match(converter, /agendaMatBioConvertFormulaUnit\(formula\.value, 'mL', 'L'\)/);
+  assert.match(converter, /row\.dataset\.formulaUnit = 'L'/);
+  assert.match(serialize, /row\.dataset\.formulaUnit \|\| agendaMatBioDisplayUnit/);
 });
 
 test('compatibilidade nao altera contratos publicos de Transporte ou documentos', () => {

@@ -24,3 +24,14 @@ test('monitor consulta o servidor e exibe aviso quando a versao mudou', () => {
   assert.match(source, /Nova versão disponível\. Atualize a página para continuar\./);
   assert.match(source, /appReloadWebAppAfterVersionNotice\(\)/);
 });
+
+test('bootstrap mede RPC, aplicacao e payload com um trace correlacionavel', () => {
+  assert.match(source, /function codexClientBootstrapTraceId_\(\)/);
+  assert.match(source, /function codexLogClientBootstrapPerformance_\(metrics\)/);
+  assert.match(source, /bootstrapRequest\.traceId = bootstrapTraceId/);
+  assert.match(source, /rpcDurationMs: rpcCompletedAt - bootstrapStartedAt/);
+  assert.match(source, /applyDurationMs: applyCompletedAt - applyStartedAt/);
+  assert.match(source, /payloadBytes: codexClientBootstrapPayloadBytes_\(data\)/);
+  assert.match(source, /\[CODEX_PERF_CLIENT\]/);
+  assert.doesNotMatch(source, /CODEX_PERF_CLIENT[^\n]*(email|nome|cpf|participante|agendaId)/i);
+});
