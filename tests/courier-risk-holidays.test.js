@@ -116,6 +116,29 @@ test('Agenda alerta apenas a parcela Congelado de um vinculo com varias temperat
   assert.deepEqual(alerts[0].reasons.map((item) => item.code), ['MONDAY_RESTRICTION']);
 });
 
+test('alertas operacionais reutilizam referencias do cache do bootstrap quando disponiveis', () => {
+  const context = runFiles(['CourierServerRules.gs', 'AgendaCourierRisk.gs'], {
+    normText_: (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(),
+    AgendaServerRules_: { isLabCentral: (value) => value === 'Sim' },
+    feriadoDateIso_: (value) => value,
+    Utilities: { formatDate: (value) => value },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    agendaReferenceCacheKey_: () => 'agenda-refs',
+    codexCacheGet_: () => ({
+      projectCourierMap: { 'PROJ-3': { id: 'PROJ-3', couriers: [] } },
+      courierConfig: {},
+      feriados: []
+    })
+  });
+  let directReads = 0;
+  context.getAgendaProjetoCourierMap_ = () => { directReads += 1; return {}; };
+  context.getAgendaCourierConfigs_ = () => { directReads += 1; return {}; };
+  context.getAgendaFeriadosOperacionais_ = () => { directReads += 1; return []; };
+
+  assert.deepEqual(plain(context.agendaOperationalRiskAlerts_({ data: '2026-06-08', projeto: 'PROJ-3', labCentral: 'Sim' })), []);
+  assert.equal(directReads, 0);
+});
+
 test('feriado de sexta nao cria risco pos-feriado na segunda', () => {
   const rules = runHtmlScript('SharedCourierRules.html').CodexCourierRules;
   const holidays = [holiday('2026-05-01', 'Dia do Trabalho')];

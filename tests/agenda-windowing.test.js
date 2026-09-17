@@ -1616,7 +1616,7 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
   assert.match(functionBody(client, 'coletarAgendaEvento'), /participanteCadastroId/);
   assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /id: String\(row\[0\]/);
   assert.match(functionBody(server, 'agendaRowToObject_'), /participanteCadastroId/);
-  assert.match(functionBody(server, '_gravarLinhaEvento'), /col\.participanteCadastroId/);
+  assert.match(functionBody(server, 'agendaWriteInitialEventRow_'), /idx\.participanteCadastroId/);
   assert.match(functionBody(server, 'atualizarAgendaEventoCompleto'), /col\.participanteCadastroId/);
   assert.match(functionBody(server, 'getAgendaSheet_'), /ensureAgendaDestinoLabColumns_\(sh\)/);
   assert.match(functionBody(server, 'ensureAgendaDestinoLabColumns_'), /agendaEnsureParticipanteCadastroColumn_\(sh\)/);
@@ -1624,7 +1624,7 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
 
 test('servidor bloqueia participacao encerrada em novo evento e preserva edicao historica', () => {
   const server = agendaServer();
-  server.getInfoParticipante = () => ({
+  server.agendaInfoParticipanteParaSalvar_ = () => ({
     id: '81', nome: 'Pessoa A', numId: 'P-001', idParticipante: 'P-001',
     projeto: 'Estudo Aurora', braco: 'A', nascimento: '01/01/1980',
     disponivelNovoAgendamento: false
@@ -1674,13 +1674,13 @@ test('visita cancelada com Lab Central usa erlenmeyer vermelho suave', () => {
   assert.match(styles, /\.ag-appt\.st-cancelado\.lab-central \.ag-lab-watermark\{color:#b3261e\}/);
 });
 
-test('lista agrupa monitorias no topo com local alinhado e acoes reais da Agenda', () => {
+test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da Agenda', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
   const dayRows = functionBody(client, 'agendaDayRowsHtml');
   const compact = functionBody(client, 'agendaMonitoriaCompactaHtml');
 
-  assert.match(dayRows, /filter\(agendaIsMonitoria\)/);
+  assert.match(dayRows, /filter\(AgendaRules\.isOperationalPeriod\)/);
   assert.match(dayRows, /agendaMonitoriasGrupoHtml\(monitorias, iso\)/);
   assert.match(dayRows, /ag-list-section-title">Visitas/);
   assert.match(functionBody(client, 'renderAgendaLista'), /agendaDayHeader\(d, dayRows\);[\s\S]*?agendaMonitoriasGrupoHtml\(monitorias, iso\)[\s\S]*?agendaBirthdayBannerHtml\(d, false\)/);
@@ -1688,6 +1688,9 @@ test('lista agrupa monitorias no topo com local alinhado e acoes reais da Agenda
   assert.match(compact, /abrirAgendaEdicao/);
   assert.match(compact, /cancelarAgendaEvento/);
   assert.match(compact, /agendaToggleDetail/);
+  assert.match(compact, /st-cancelado/);
+  assert.match(compact, /AgendaRules\.isCancelled\(r\) \? agendaStatusChipOp\(r\.status, r\.tipo\)/);
+  assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:74px minmax\(170px,\.85fr\) minmax\(210px,1fr\)/);
 });
 
@@ -1714,12 +1717,13 @@ test('edição de agendamento também carrega o resumo do participante', () => {
   assert.match(edit, /onAgendaParticipanteChange\(\)/);
 });
 
-test('cancelamento de SIV não exige motivo', () => {
+test('cancelamento de Monitoria e SIV não exige motivo, mas pede confirmação', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
-  assert.match(functionBody(client, 'agendaExigeMotivoCancelamento_'), /AgendaRules\.isSiv/);
-  assert.match(functionBody(client, 'cancelarAgendaEvento'), /AgendaRules\.isSiv/);
-  assert.match(functionBody(server, 'cancelarAgendaEvento'), /tipoAnteriorCancelamento/);
+  assert.match(functionBody(client, 'agendaExigeMotivoCancelamento_'), /AgendaRules\.isOperationalPeriod/);
+  assert.match(functionBody(client, 'agendaCancelamentoSemMotivo_'), /AgendaRules\.isOperationalPeriod/);
+  assert.match(functionBody(client, 'cancelarAgendaEvento'), /abrirConfirmacaoDestrutiva/);
+  assert.match(functionBody(server, 'cancelarAgendaEvento'), /cancelamentoOperacional/);
 });
 
 test('novo agendamento fixa o status em Agendado e bloqueia estados finais no futuro', () => {
@@ -1737,7 +1741,7 @@ test('novo agendamento fixa o status em Agendado e bloqueia estados finais no fu
 
 test('servidor substitui o projeto informado pelo projeto do participante em visitas e consultas', () => {
   const server = agendaServer();
-  server.getInfoParticipante = (ref) => ref && ref.nome === 'Pessoa A'
+  server.agendaInfoParticipanteParaSalvar_ = (ref) => ref && ref.nome === 'Pessoa A'
     ? { id: '81', nome: 'Pessoa A', numId: 'P-001', projeto: 'Projeto Correto', disponivelNovoAgendamento: true }
     : null;
   const dados = { participante: 'Pessoa A', projeto: 'Projeto Indevido' };
@@ -1748,6 +1752,21 @@ test('servidor substitui o projeto informado pelo projeto do participante em vis
   assert.equal(server.agendaSincronizarProjetoDoParticipante_(consulta, { isVisit: false, type: 'consulta' }), null);
   assert.equal(consulta.projeto, 'Projeto Correto');
   assert.equal(server.agendaSincronizarProjetoDoParticipante_({ participante: 'Pessoa A', projeto: 'Livre' }, { isVisit: false, type: 'evento' }), null);
+});
+
+test('salvamento de visita evita varrer a Agenda e grava o ID do cadastro na escrita inicial', () => {
+  const server = readProjectFile('WebApp.gs');
+  const sync = functionBody(server, 'agendaSincronizarProjetoDoParticipante_');
+  const lookup = functionBody(server, 'agendaInfoParticipanteParaSalvar_');
+  const writeInitial = functionBody(server, 'agendaWriteInitialEventRow_');
+  const save = functionBody(server, '_gravarLinhaEvento');
+
+  assert.match(sync, /agendaInfoParticipanteParaSalvar_/);
+  assert.doesNotMatch(sync, /getInfoParticipante\(/);
+  assert.doesNotMatch(lookup, /getUltimaVisitaParticipanteAgenda_/);
+  assert.match(writeInitial, /Math\.max\(AGENDA_CFG\.col\.carroRequerido, AGENDA_CFG\.col\.participanteCadastroId \|\| 0\)/);
+  assert.match(writeInitial, /row\[AGENDA_CFG\.idx\.participanteCadastroId\] = dados\.participanteCadastroId \|\| ''/);
+  assert.doesNotMatch(save, /participanteCadastroId\)\.setValue/);
 });
 
 test('abertura direta valida rowIndex e le somente a linha completa solicitada', () => {
@@ -1837,6 +1856,9 @@ test('salvamento de novo evento registra etapas sem incluir dados do participant
   assert.match(functionBody(source, 'codexWithDocumentLock_'), /'document_lock'/);
   assert.match(save, /\{ operation: operation \}/);
   assert.doesNotMatch(save, /participante\s*:\s*dados\.participante/);
+  assert.match(write, /agendaWriteInitialEventRow_/);
+  assert.match(save, /deferMonitoriaFinalize/);
+  assert.match(source, /function agendaFinalizarLoteMonitoria_/);
 });
 
 test('edicao busca o registro atual por ID antes de abrir e carrega o contexto operacional', () => {

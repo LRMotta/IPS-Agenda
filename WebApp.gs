@@ -6757,7 +6757,9 @@ function getDashboardData() {
       return {
         nome:    str(p.nome),
         projeto: str(p.projeto),
-        status:  str(p.status)
+        status:  str(p.status),
+        cidade:  str(p.cidade),
+        estado:  str(p.estado)
       };
     });
   } catch(e) {
@@ -6852,13 +6854,25 @@ function getPendenciasOperacionais() {
 function getParticipantesDashboardResumo_() {
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
+  var headers = rows[0] || [];
+  var columns = {};
+  headers.forEach(function(header, index) {
+    var key = participanteCampoKey_(header);
+    if (columns.cidade === undefined && key === 'cidade') columns.cidade = index;
+    if (columns.estado === undefined && (key === 'estado' || key === 'uf')) columns.estado = index;
+  });
+  // Mantém leitura de cadastros legados que ainda não possuem cabeçalhos normalizados.
+  var cidadeColumn = columns.cidade === undefined ? 14 : columns.cidade;
+  var estadoColumn = columns.estado === undefined ? 15 : columns.estado;
   return rows.slice(1)
     .filter(function(r) { return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
     .map(function(r) {
       return {
         nome: String(r[1] || ''),
         projeto: String(r[5] || ''),
-        status: String(r[8] || '')
+        status: String(r[8] || ''),
+        cidade: String(r[cidadeColumn] || ''),
+        estado: String(r[estadoColumn] || '')
       };
     });
 }
@@ -11607,6 +11621,27 @@ function agendaParticipantePorReferencia_(referencia) {
   return candidatosNome.length === 1 ? candidatosNome[0] : null;
 }
 
+// O salvamento precisa do cadastro atual para validar o vinculo, mas nao usa o
+// historico de ultima visita. Evitar essa varredura integral da Agenda reduz o
+// tempo critico de gravacao sem flexibilizar status ou projeto do participante.
+function agendaInfoParticipanteParaSalvar_(referencia) {
+  var encontrado = agendaParticipantePorReferencia_(referencia);
+  if (!encontrado) return null;
+  var row = encontrado.row || [];
+  var nascRaw = row[2];
+  return {
+    id: String(row[0] || '').trim(),
+    nome: String(row[1] || '').trim(),
+    nascimento: formatarDataSafe(nascRaw),
+    numId: String(row[4] || ''),
+    idParticipante: String(row[4] || ''),
+    projeto: String(row[5] || ''),
+    braco: String(row[6] || ''),
+    status: String(row[8] || ''),
+    disponivelNovoAgendamento: agendaParticipanteDisponivelFormulario_(row[8])
+  };
+}
+
 function getInfoParticipante(referencia) {
   var encontrado = agendaParticipantePorReferencia_(referencia);
   if (!encontrado) return null;
@@ -12711,12 +12746,16 @@ function salvarNovoEventoCompleto(dados) {
   });
   if (isPeriodo) {
     var ids = [];
+    var deferMonitoriaFinalize = isMonitoria && datasPeriodo.length > 1;
     for (var k = 0; k < datasPeriodo.length; k++) {
       var dadosDia = agendaCloneDados_(dados);
-      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasPeriodo[k], dados.hora), dadosDia, ss, operation);
+      var resDia = _gravarLinhaEvento(agenda, agendaDateWithHora_(datasPeriodo[k], dados.hora), dadosDia, ss, operation, {
+        deferFinalize: deferMonitoriaFinalize
+      });
       if (resDia && resDia.erro) return resDia;
       if (resDia && resDia.id) ids.push(resDia.id);
     }
+    if (deferMonitoriaFinalize) agendaFinalizarLoteMonitoria_(agenda, operation, datasPeriodo.length);
     var resultadoPeriodo = { ok: true, id: ids[0] || '', ids: ids, count: ids.length, tipo: agendaTipoPeriodoLabel_(dados.tipo), emailLabAtivo: agendaEmailEnabled_(), operationalAlerts: operationalAlerts };
     codexMeasurePerformance_(operation, 'backup_link', { rowCount: 1 }, function() {
       return agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultadoPeriodo.id, datasPeriodo[0]);
@@ -13155,7 +13194,7 @@ function agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior) {
   var participante = String(dados.participante || '').trim();
   var participanteCadastroId = String(dados.participanteCadastroId || '').trim();
   if (!participante && !participanteCadastroId) return null;
-  var info = getInfoParticipante({
+  var info = agendaInfoParticipanteParaSalvar_({
     idCadastro: participanteCadastroId,
     nome: participante,
     idParticipante: dados.participanteId || dados.idParticipante,
@@ -13440,8 +13479,9 @@ function cancelarAgendaEvento(id, cancelamento) {
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var obsAtual = String(rowAnterior[AGENDA_CFG.idx.obs] || '');
   var tipoAnteriorCancelamento = normText_(rowAnterior[AGENDA_CFG.idx.tipo] || '');
-  var cancelamentoSiv = tipoAnteriorCancelamento === 'siv' || tipoAnteriorCancelamento.indexOf('site initiation') > -1;
-  var obsComCancelamento = cancelamentoSiv
+  var cancelamentoOperacional = tipoAnteriorCancelamento === 'monitoria' ||
+    tipoAnteriorCancelamento === 'siv' || tipoAnteriorCancelamento.indexOf('site initiation') > -1;
+  var obsComCancelamento = cancelamentoOperacional
     ? obsAtual
     : agendaAppendCancelamentoMotivo_(obsAtual, cancelamento);
   agenda.getRange(linha, AGENDA_CFG.col.status).setValue('Cancelado');
@@ -13693,7 +13733,8 @@ function agendaMeasureSaveStage_(operation, stage, metadata, callback) {
     : callback();
 }
 
-function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation) {
+function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOptions) {
+  saveOptions = saveOptions || {};
   var tipo = String(dados.tipo || '').trim();
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
@@ -13765,38 +13806,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation) {
   var linhaNova = agenda.getLastRow() + 1;
   var id = Utilities.getUuid().slice(0, 8);
   agendaMeasureSaveStage_(performanceOperation, 'initial_row_write', { rowCount: 1 }, function() {
-  agenda.getRange(linhaNova, AGENDA_CFG.col.id).setValue(id);
-  setAgendaDateValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.data), d);
-  agenda.getRange(linhaNova, AGENDA_CFG.col.hora).setValue(formatAgendaHora_(d));
-  agenda.getRange(linhaNova, AGENDA_CFG.col.tipo).setValue(tipo);
-  agenda.getRange(linhaNova, AGENDA_CFG.col.status).setValue(status);
-  agenda.getRange(linhaNova, AGENDA_CFG.col.participante).setValue(dados.participante || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.nasc).setValue(agendaNascimentoFromDados_(dados));
-  agenda.getRange(linhaNova, AGENDA_CFG.col.idParticipante).setValue(agendaIdParticipanteFromDados_(dados));
-  agenda.getRange(linhaNova, AGENDA_CFG.col.projeto).setValue(dados.projeto || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.braco).setValue(agendaBracoFromDados_(dados));
-  agenda.getRange(linhaNova, AGENDA_CFG.col.visita).setValue(dados.visita || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.medico).setValue(dados.medico || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.procedimentos).setValue(dados.procedimentos || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.servTerc).setValue(dados.servTerc || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.obs).setValue(dados.obs || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral).setValue(labCentral);
-  agenda.getRange(linhaNova, AGENDA_CFG.col.kit).setValue(dados.kit || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.reqStatus).setValue(dados.statusRequisicao || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.monitorName).setValue(dados.monitorName || '');
-  var postVisitConcluidoNovo = agendaPostVisitConcluidoPorStatus_(status, tipo);
-  var dataConclusaoPostVisitNova = new Date();
-  agenda.getRange(linhaNova, AGENDA_CFG.col.poloTrial).setValue(postVisitConcluidoNovo
-    ? dataConclusaoPostVisitNova
-    : agendaPostVisitValue_(dados.poloTrialConcluido, ''));
-  agenda.getRange(linhaNova, AGENDA_CFG.col.ecrf).setValue(postVisitConcluidoNovo
-    ? dataConclusaoPostVisitNova
-    : agendaPostVisitValue_(dados.ecrfConcluida, ''));
-  agenda.getRange(linhaNova, AGENDA_CFG.col.salaMonitoria).setValue(dados.salaMonitoria || '');
-  agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).setValue(dados.carroRequerido);
-  if (AGENDA_CFG.col.participanteCadastroId) {
-    agenda.getRange(linhaNova, AGENDA_CFG.col.participanteCadastroId).setValue(dados.participanteCadastroId || '');
-  }
+    agendaWriteInitialEventRow_(agenda, linhaNova, id, d, dados, tipo, status, labCentral);
   });
   var carroSalvo = agendaMeasureSaveStage_(performanceOperation, 'initial_flush_verify', { rowCount: 1 }, function() {
   SpreadsheetApp.flush();
@@ -13824,7 +13834,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation) {
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linhaNova, status);
   });
 
-  agendaMeasureSaveStage_(performanceOperation, 'notifications', { rowCount: 1 }, function() {
+  if (!isMonitoria) agendaMeasureSaveStage_(performanceOperation, 'notifications', { rowCount: 1 }, function() {
   verificarNotificacoes(
     { source: ss, range: agenda.getRange(linhaNova, AGENDA_CFG.col.labCentral), user: Session.getActiveUser() },
     id,
@@ -13834,18 +13844,59 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation) {
   );
   });
 
-  agendaMeasureSaveStage_(performanceOperation, 'sort_agenda', { rowCount: Math.max(0, agenda.getLastRow() - 1) }, function() {
+  if (!saveOptions.deferFinalize) agendaMeasureSaveStage_(performanceOperation, 'sort_agenda', { rowCount: Math.max(0, agenda.getLastRow() - 1) }, function() {
   if (agenda.getLastRow() > 2) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   });
-  agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: 1 }, function() {
+  if (!saveOptions.deferFinalize) agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: 1 }, function() {
   SpreadsheetApp.flush();
   });
   agendaInvalidateDateIndexCache_();
   if (AgendaServerRules_.isType(dados.tipo, 'feriado')) agendaInvalidateReferenceDataCache_(['feriados']);
   return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };
+}
+
+function agendaWriteInitialEventRow_(agenda, linha, id, d, dados, tipo, status, labCentral) {
+  var row = Array(Math.max(AGENDA_CFG.col.carroRequerido, AGENDA_CFG.col.participanteCadastroId || 0)).fill('');
+  var postVisitConcluido = agendaPostVisitConcluidoPorStatus_(status, tipo);
+  var dataConclusao = new Date();
+  row[AGENDA_CFG.idx.id] = id;
+  row[AGENDA_CFG.idx.data] = formatAgendaDatePt_(d);
+  row[AGENDA_CFG.idx.hora] = formatAgendaHora_(d);
+  row[AGENDA_CFG.idx.tipo] = tipo;
+  row[AGENDA_CFG.idx.status] = status;
+  row[AGENDA_CFG.idx.participante] = dados.participante || '';
+  row[AGENDA_CFG.idx.nasc] = agendaNascimentoFromDados_(dados);
+  row[AGENDA_CFG.idx.idParticipante] = agendaIdParticipanteFromDados_(dados);
+  row[AGENDA_CFG.idx.projeto] = dados.projeto || '';
+  row[AGENDA_CFG.idx.braco] = agendaBracoFromDados_(dados);
+  row[AGENDA_CFG.idx.visita] = dados.visita || '';
+  row[AGENDA_CFG.idx.medico] = dados.medico || '';
+  row[AGENDA_CFG.idx.procedimentos] = dados.procedimentos || '';
+  row[AGENDA_CFG.idx.servTerc] = dados.servTerc || '';
+  row[AGENDA_CFG.idx.obs] = dados.obs || '';
+  row[AGENDA_CFG.idx.labCentral] = labCentral;
+  row[AGENDA_CFG.idx.kit] = dados.kit || '';
+  row[AGENDA_CFG.idx.reqStatus] = dados.statusRequisicao || '';
+  row[AGENDA_CFG.idx.monitorName] = dados.monitorName || '';
+  row[AGENDA_CFG.idx.poloTrial] = postVisitConcluido ? dataConclusao : agendaPostVisitValue_(dados.poloTrialConcluido, '');
+  row[AGENDA_CFG.idx.ecrf] = postVisitConcluido ? dataConclusao : agendaPostVisitValue_(dados.ecrfConcluida, '');
+  row[AGENDA_CFG.idx.salaMonitoria] = dados.salaMonitoria || '';
+  row[AGENDA_CFG.idx.carroRequerido] = dados.carroRequerido;
+  if (AGENDA_CFG.idx.participanteCadastroId >= 0) row[AGENDA_CFG.idx.participanteCadastroId] = dados.participanteCadastroId || '';
+  agenda.getRange(linha, 1, 1, row.length).setValues([row]);
+}
+
+function agendaFinalizarLoteMonitoria_(agenda, performanceOperation, count) {
+  agendaMeasureSaveStage_(performanceOperation, 'sort_agenda', { rowCount: Math.max(0, agenda.getLastRow() - 1) }, function() {
+    if (agenda.getLastRow() > 2) {
+      agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
+        .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
+    }
+  });
+  agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: count }, function() { SpreadsheetApp.flush(); });
 }
 
 function agendaSetCourierLinha_(agenda, linha, idx, courier) {
