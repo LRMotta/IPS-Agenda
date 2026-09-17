@@ -252,20 +252,42 @@ function agendaBootstrapRequestRange_(request) {
   return { start: inicio, endExclusive: fim };
 }
 
+function codexBootstrapTraceId_(request) {
+  var supplied = request && request.traceId !== undefined && request.traceId !== null
+    ? String(request.traceId).trim()
+    : '';
+  if (/^[A-Za-z0-9_-]{8,80}$/.test(supplied)) return supplied;
+  try {
+    if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.getUuid === 'function') {
+      return String(Utilities.getUuid()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+    }
+  } catch (e) {
+    // A ausência do UUID não pode impedir o bootstrap.
+  }
+  return 'bootstrap-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 0x1000000).toString(36);
+}
+
 function getAppBootstrapData(request) {
-  var totalMeta = { rowCount: 0, responseBytes: 0 };
+  var traceId = codexBootstrapTraceId_(request);
+  var perfMeta = function(extra) {
+    extra = extra || {};
+    extra.traceId = traceId;
+    return extra;
+  };
+  var totalMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
   return codexMeasurePerformance_('getAppBootstrapData', 'total', totalMeta, function() {
-    var access = codexMeasurePerformance_('getAppBootstrapData', 'access', { rowCount: 0 }, function() {
+    var access = codexMeasurePerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
       return codexGetCurrentUserAccess();
     });
     var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
     var agendaRange = agendaBootstrapRequestRange_(request);
     var out = {
+      bootstrapTraceId: traceId,
       access: access,
-      auth: codexMeasurePerformance_('getAppBootstrapData', 'auth', { rowCount: 0 }, function() {
+      auth: codexMeasurePerformance_('getAppBootstrapData', 'auth', perfMeta({ rowCount: 0 }), function() {
         return codexGetUserOAuthStatus_();
       }),
-      appVersion: codexMeasurePerformance_('getAppBootstrapData', 'version', { rowCount: 0 }, function() {
+      appVersion: codexMeasurePerformance_('getAppBootstrapData', 'version', perfMeta({ rowCount: 0 }), function() {
         return codexGetAppVersion_();
       }),
       webAppUrl: '',
@@ -275,7 +297,7 @@ function getAppBootstrapData(request) {
     };
     if (agendaWindowedLoadingEnabled) out.features = { agendaWindowedLoadingV2: true };
     try {
-      out.webAppUrl = codexMeasurePerformance_('getAppBootstrapData', 'web_app_url', { rowCount: 0 }, function() {
+      out.webAppUrl = codexMeasurePerformance_('getAppBootstrapData', 'web_app_url', perfMeta({ rowCount: 0 }), function() {
         return ScriptApp.getService().getUrl();
       });
     } catch (e1) {
@@ -283,7 +305,7 @@ function getAppBootstrapData(request) {
     }
     if (!agendaWindowedLoadingEnabled) {
       try {
-        out.agendaFormData = codexMeasurePerformance_('getAppBootstrapData', 'agenda_form_data', { rowCount: 0 }, function() {
+        out.agendaFormData = codexMeasurePerformance_('getAppBootstrapData', 'agenda_form_data', perfMeta({ rowCount: 0 }), function() {
           return getDadosFormularioAgenda(true);
         });
       } catch (e2) {
@@ -293,7 +315,7 @@ function getAppBootstrapData(request) {
       try {
         // Reutiliza o acesso validado nesta execução. A RPC pública mantém
         // sua própria validação para chamadas diretas do cliente.
-        out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', { rowCount: 0 }, function() {
+        out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', perfMeta({ rowCount: 0 }), function() {
           return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false, 'app_initial');
         });
       } catch (e2) {
@@ -302,7 +324,7 @@ function getAppBootstrapData(request) {
     }
     try {
       if (out.access && out.access.ok) {
-        var birthdaysMeta = { rowCount: 0 };
+        var birthdaysMeta = perfMeta({ rowCount: 0 });
         out.teamBirthdays = codexMeasurePerformance_('getAppBootstrapData', 'team_birthdays', birthdaysMeta, function() {
           var birthdays = codexGetTeamBirthdays_();
           birthdaysMeta.rowCount = Array.isArray(birthdays) ? birthdays.length : 0;
@@ -312,7 +334,7 @@ function getAppBootstrapData(request) {
     } catch (e3) {
       out.errors.teamBirthdays = e3.message || String(e3);
     }
-    var serializationMeta = { rowCount: 0, responseBytes: 0 };
+    var serializationMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
     codexMeasurePerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
       serializationMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(out));
     });
@@ -12693,6 +12715,44 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExclu
   };
 }
 
+// A protecao de duplicidade deve cobrir a criacao ou a troca da identidade
+// operacional da visita. Alteracoes somente em transporte/status nao criam
+// uma visita nova e nao devem ser bloqueadas por outra visita legitima no dia.
+function agendaVisitaIdentidadeAlterada_(rowAnterior, dados) {
+  if (!rowAnterior || !dados) return true;
+  var idx = AGENDA_CFG.idx;
+  var has = Object.prototype.hasOwnProperty;
+  function valorDadosOuLinha_(nome, indice) {
+    return has.call(dados, nome) ? dados[nome] : rowAnterior[indice];
+  }
+  function valorParticipanteIdNovo_() {
+    if (has.call(dados, 'participanteId')) return dados.participanteId;
+    if (has.call(dados, 'idParticipante')) return dados.idParticipante;
+    return rowAnterior[idx.idParticipante];
+  }
+  var tipoAnterior = normText_(rowAnterior[idx.tipo]);
+  var tipoNovo = normText_(valorDadosOuLinha_('tipo', idx.tipo));
+  if (tipoAnterior !== tipoNovo) return true;
+
+  var dataAnterior = formatarDataIsoAgenda_(rowAnterior[idx.data]);
+  var dataNova = formatarDataIsoAgenda_(valorDadosOuLinha_('data', idx.data));
+  if (dataAnterior !== dataNova) return true;
+
+  var projetoAnterior = normText_(rowAnterior[idx.projeto]);
+  var projetoNovo = normText_(valorDadosOuLinha_('projeto', idx.projeto));
+  if (projetoAnterior !== projetoNovo) return true;
+
+  var nomeAnterior = normText_(rowAnterior[idx.participante]);
+  var nomeNovo = normText_(valorDadosOuLinha_('participante', idx.participante));
+  if (nomeAnterior !== nomeNovo) return true;
+
+  var idAnterior = normText_(rowAnterior[idx.idParticipante]);
+  var idNovo = normText_(valorParticipanteIdNovo_());
+  // Registros legados podem não ter o ID preenchido; a hidratação do
+  // formulário nesse caso não representa troca de participante.
+  return !!idAnterior && !!idNovo && idAnterior !== idNovo;
+}
+
 function salvarNovoEventoCompleto(dados) {
   var operation = 'salvarNovoEventoCompleto';
   return codexMeasurePerformance_(operation, 'total', { rowCount: 1 }, function() {
@@ -13292,6 +13352,7 @@ function atualizarAgendaEventoCompleto(dados) {
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isMultiDay;
+  var visitaIdentidadeAlterada = agendaVisitaIdentidadeAlterada_(rowAnterior, dados);
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -13303,7 +13364,9 @@ function atualizarAgendaEventoCompleto(dados) {
   var d = _parseDateHora(dados.data, dados.hora);
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, rowAnterior);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
-  var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d, rowAnterior[AGENDA_CFG.idx.id]);
+  var visitaMesmaData = visitaIdentidadeAlterada
+    ? agendaVisitaCriadaNaMesmaData_(agenda, dados, d, rowAnterior[AGENDA_CFG.idx.id])
+    : null;
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var datasValidacaoStatus = isPeriodo
     ? agendaDatasPeriodo_(dados.data, dados.dataFim, agendaTipoPeriodoLabel_(dados.tipo))
@@ -14008,7 +14071,7 @@ function codexCourierTrackingUrl_(awb, courier) {
     return 'https://pinextracking.com.br/#tracking-code';
   }
   if (rule.key === 'marken' && codexCourierIsValidAwb_(value, courier)) {
-    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(value);
+    return 'https://pt.marken.com/track-shipment?jobNumber=' + encodeURIComponent(value);
   }
   if (rule.key === 'ocasa' && codexCourierIsValidOcasaAwb_(value)) {
     return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(value) + '&i=18&url=ocasa';
@@ -14019,7 +14082,7 @@ function codexCourierTrackingUrl_(awb, courier) {
   if (rule.key) return '';
   var fallback = String(awb || '').trim();
   if (/^620X[0-9]{8}$/i.test(fallback)) {
-    return 'https://online.marken.com/FastTrack/Shipment?inputTrack=' + encodeURIComponent(fallback);
+    return 'https://pt.marken.com/track-shipment?jobNumber=' + encodeURIComponent(fallback);
   }
   if (/^[A-Z][0-9]{7}$/i.test(fallback) || /^PK2[A-Z0-9]{9}$/i.test(fallback)) {
     return 'https://tracking.ocasa.com/Tracking/index?client=&airbillnumber=' + encodeURIComponent(fallback.toUpperCase()) + '&i=18&url=ocasa';
@@ -14932,14 +14995,17 @@ function setAgendaValueAndFormat_(range, value, format) {
 function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
   metadata = metadata || {};
   try {
-    Logger.log('[CODEX_PERF] ' + JSON.stringify({
+    var payload = {
       operation: String(operation || ''),
       stage: String(stage || ''),
       durationMs: Math.max(0, Number(durationMs) || 0),
       rowCount: Math.max(0, Number(metadata.rowCount) || 0),
       responseBytes: Math.max(0, Number(metadata.responseBytes) || 0),
       success: success === true
-    }));
+    };
+    var traceId = String(metadata.traceId || '').trim();
+    if (/^[A-Za-z0-9_-]{8,80}$/.test(traceId)) payload.traceId = traceId;
+    Logger.log('[CODEX_PERF] ' + JSON.stringify(payload));
   } catch (eLog) {
     // A telemetria nunca pode alterar o resultado da operacao observada.
   }

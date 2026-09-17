@@ -150,6 +150,9 @@
     .ag-mat-remove:hover{background:#fce8e6;border-color:#ffc4be}
     .ag-mat-add{margin:8px 10px 10px;height:32px;border:1px dashed #b8c7e3;border-radius:6px;background:#f8faff;color:var(--primary);font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;cursor:pointer}
     .ag-mat-help{padding:8px 10px;background:#f8faff;color:var(--muted);font-size:11px;border-top:1px solid #f0f4f8}
+    .material-unit-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 10px; background:#fbfcff; border-bottom:1px solid #f0f4f8; }
+    .material-unit-actions .btn { height:32px; }
+    .material-unit-help { color:var(--muted); font-size:11px; line-height:1.35; }
     .docs { display:grid; gap:8px; }
     .doc { padding:11px 12px; display:flex; gap:9px; align-items:center; }
     .doc .material-symbols-outlined { color:var(--primary); }
@@ -325,6 +328,10 @@
           <div class="panel-title"><span class="material-symbols-outlined">science</span>Material Biol&oacute;gico</div>
         </div>
         <div class="panel-body">
+          <div class="material-unit-actions hidden" id="dhlVolumeActions">
+            <button class="btn secondary" id="btnConvertDhlVolumes" type="button" onclick="convertDhlVolumesToLiters()" title="Divide os volumes em mL por 1.000 e converte para L"><span class="material-symbols-outlined">swap_vert</span><span>Converter mL para L</span></button>
+            <span class="material-unit-help" id="dhlVolumeHint" role="status"></span>
+          </div>
           <div id="materials" class="ag-mat-editor"></div>
         </div>
       </section>
@@ -859,16 +866,14 @@
     }
 
     function selectCourier(v) {
-      var prevUnit = matBioCourierUnit();
       selectedCourier = canonicalCourier(v);
       segmented('couriers', state.options.couriers, selectedCourier, 'selectCourier');
       setTransportFieldInvalid('Courier', false);
       state.lastPdfResult = null;
       applyAwbRule(true);
-      convertMatBioUnit(prevUnit, matBioCourierUnit());
       applySolicitarCaixaDefault(true);
       updateResponsavelEntregaField();
-      renderDerived();
+      matBioRecalc();
     }
 
     function updatePinexField() {
@@ -1147,6 +1152,7 @@
           key: cfg ? cfg.key : 'outro',
           tipo: cfg ? cfg.label : m.material,
           formula: m.formula || '',
+          unit: m.unit || '',
           ensaio: m.ensaio || ''
         });
       });
@@ -1253,6 +1259,7 @@
         if (total) total.textContent = calc.totalText;
       });
       matBioEnsureTrailingRow();
+      updateDhlVolumeActions();
       renderDerived();
     }
 
@@ -1285,18 +1292,49 @@
       return CodexMatBioCore.convertFormulaUnit(text, fromUnit, toUnit);
     }
 
-    function convertMatBioUnit(fromUnit, toUnit) {
-      if (fromUnit === toUnit) return;
+    function dhlVolumeConversionPending() {
+      if (selectedCourier !== 'DHL') return false;
+      return Array.prototype.some.call(document.querySelectorAll('.ag-mat-line'), function(row) {
+        var tipo = row.querySelector('.ag-mat-type-select');
+        var cfg = matBioTypeConfig(tipo && tipo.value);
+        var formula = row.querySelector('.ag-mat-formula');
+        var formulaUnit = matBioUnitKey(row.dataset.formulaUnit || 'mL');
+        return !!(cfg && String(cfg.unit).toLowerCase() === 'ml' && formulaUnit === 'mL' && formula && matBioParseFormula(formula.value).segmentos.length);
+      });
+    }
+
+    function updateDhlVolumeActions() {
+      var wrap = document.getElementById('dhlVolumeActions');
+      var button = document.getElementById('btnConvertDhlVolumes');
+      var hint = document.getElementById('dhlVolumeHint');
+      if (!wrap || !button) return;
+      var isDhl = selectedCourier === 'DHL';
+      var pending = isDhl && dhlVolumeConversionPending();
+      wrap.classList.toggle('hidden', !isDhl);
+      button.disabled = !pending;
+      button.setAttribute('aria-disabled', pending ? 'false' : 'true');
+      if (hint) hint.textContent = pending
+        ? 'Os volumes ainda estão em mL.'
+        : 'Não há volumes em mL pendentes para converter.';
+    }
+
+    function convertDhlVolumesToLiters() {
+      if (selectedCourier !== 'DHL') return;
+      var converted = 0;
       Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
         var tipo = row.querySelector('.ag-mat-type-select');
         var cfg = matBioTypeConfig(tipo && tipo.value);
         if (!cfg || String(cfg.unit).toLowerCase() !== 'ml') return;
         var formula = row.querySelector('.ag-mat-formula');
-        var currentUnit = row.dataset.formulaUnit || row.dataset.volumeUnit || fromUnit;
-        if (formula) formula.value = convertFormulaUnit(formula.value, currentUnit, toUnit);
-        row.dataset.formulaUnit = toUnit;
-        row.dataset.volumeUnit = toUnit;
+        var currentUnit = matBioUnitKey(row.dataset.formulaUnit || 'mL');
+        if (!formula || currentUnit !== 'mL' || !matBioParseFormula(formula.value).segmentos.length) return;
+        formula.value = convertFormulaUnit(formula.value, 'mL', 'L');
+        row.dataset.formulaUnit = 'L';
+        row.dataset.volumeUnit = 'L';
+        converted += 1;
       });
+      matBioRecalc();
+      toast(converted ? converted + ' material(is) convertido(s) para L.' : 'Não há volumes em mL para converter.', converted ? 'ok' : 'warn');
     }
 
     function collectMaterials() {
