@@ -60,13 +60,39 @@ function agendaCourierConfigById_(configs, courierId) {
   return null;
 }
 
+// O bootstrap da Agenda ja mantem estas tres referencias em cache e as invalida
+// quando Projetos, couriers ou feriados mudam. Reutiliza-las no salvamento evita
+// reler tres abas sem transformar o cache em fonte autoritativa: na ausencia de
+// uma entrada valida, a leitura continua vindo diretamente das fontes.
+function agendaOperationalRiskReferences_() {
+  var cached = null;
+  try {
+    if (typeof codexCacheGet_ === 'function' && typeof agendaReferenceCacheKey_ === 'function') {
+      cached = codexCacheGet_(agendaReferenceCacheKey_());
+    }
+  } catch (e) {}
+  if (cached && cached.projectCourierMap && cached.courierConfig && Array.isArray(cached.feriados)) {
+    return {
+      projectMap: cached.projectCourierMap,
+      configs: cached.courierConfig,
+      holidays: cached.feriados
+    };
+  }
+  return {
+    projectMap: getAgendaProjetoCourierMap_(),
+    configs: getAgendaCourierConfigs_(false),
+    holidays: getAgendaFeriadosOperacionais_()
+  };
+}
+
 function agendaOperationalRiskAlerts_(dados, dates) {
   dados = dados || {};
   if (!AgendaServerRules_.isLabCentral(dados.labCentral)) return [];
-  var projectMap = getAgendaProjetoCourierMap_();
+  var references = agendaOperationalRiskReferences_();
+  var projectMap = references.projectMap;
   var project = agendaProjetoCourierRecord_(projectMap, dados.projeto);
-  var holidays = getAgendaFeriadosOperacionais_();
-  var configs = getAgendaCourierConfigs_(false);
+  var holidays = references.holidays;
+  var configs = references.configs;
   var dateValues = (dates && dates.length ? dates : [dados.data]).map(function(value) {
     if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
     return feriadoDateIso_(value);

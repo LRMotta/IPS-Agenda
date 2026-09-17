@@ -121,7 +121,7 @@ test('todos os gráficos do dashboard recebem cópia isolada em PNG', () => {
   const dashboard = readProjectFile('IndexDashboard.html');
   const content = readProjectFile('IndexDashboardContent.html');
   const canvasIds = Array.from(content.matchAll(/<canvas id="([^"]+)"/g), (match) => match[1]);
-  assert.equal(canvasIds.length, 16);
+  assert.equal(canvasIds.length, 17);
   assert.equal(new Set(canvasIds).size, canvasIds.length);
   assert.match(dashboard, /function copiarGraficoDashboard\(canvasId, button\)/);
   assert.match(dashboard, /new ClipboardItem\(\{ 'image\/png': blob \}\)/);
@@ -137,6 +137,39 @@ test('impressao usa somente o titulo gerencial dos graficos', () => {
   assert.match(dashboard, /dashboardChartTitleElement\(canvas\)/);
   assert.match(dashboard, /querySelectorAll\('\.material-symbols-outlined, \.dash-chart-copy'\)/);
   assert.match(dashboard, /dashboardPrintChartTitleText\(prev\)/);
+});
+
+test('Dashboard agrega a cidade e UF dos participantes com status Ativo', () => {
+  const server = runFile('WebApp.gs');
+  server.getCodexSheetDataByName_ = () => [
+    ['ID', 'Nome', '', '', '', 'Projeto', '', '', 'Status', '', '', '', '', '', 'Cidade', 'UF'],
+    ['1', 'Pessoa A', '', '', '', 'Estudo A', '', '', 'Ativo', '', '', '', '', '', 'Caxias do Sul', 'RS'],
+    ['2', 'Pessoa B', '', '', '', 'Estudo A', '', '', 'Em seguimento', '', '', '', '', '', 'Caxias do Sul', 'RS']
+  ];
+  assert.deepEqual(JSON.parse(JSON.stringify(server.getParticipantesDashboardResumo_())), [
+    { nome: 'Pessoa A', projeto: 'Estudo A', status: 'Ativo', cidade: 'Caxias do Sul', estado: 'RS' },
+    { nome: 'Pessoa B', projeto: 'Estudo A', status: 'Em seguimento', cidade: 'Caxias do Sul', estado: 'RS' }
+  ]);
+
+  const dashboard = readProjectFile('IndexDashboard.html');
+  const content = readProjectFile('IndexDashboardContent.html');
+  const cityBlock = sourceBetween(dashboard, 'function dashboardParticipantCityPairs(', 'function dashboardProjectStat(');
+  const context = vm.createContext({
+    _isParticipanteAtivoDash: (p) => String(p.status || '').toLowerCase() === 'ativo',
+    _sortDesc: (map) => Object.keys(map).sort((a, b) => map[b] - map[a]),
+    _topDashResults: (keys, map, limit) => keys.slice(0, limit).map((key) => ({ label: key, value: map[key] }))
+  });
+  vm.runInContext(cityBlock, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.dashboardParticipantCityPairs([
+    { status: 'Ativo', cidade: 'Caxias do Sul', estado: 'RS' },
+    { status: 'Ativo', cidade: 'Caxias do Sul', estado: 'rs' },
+    { status: 'Em seguimento', cidade: 'Bento Gonçalves', estado: 'RS' },
+    { status: 'Ativo', cidade: '', estado: 'RS' }
+  ]))), [{ label: 'Caxias do Sul/RS', value: 2 }]);
+  assert.match(content, /id="chartPartCidade"/);
+  assert.match(content, /Cidade de Origem dos Participantes Ativos/);
+  assert.match(dashboard, /dashboardParticipantCityPairs\(part\)/);
+  assert.match(dashboard, /_barH\('chartPartCidade'/);
 });
 
 test('Dashboard conta participantes atendidos uma vez por recorte da Agenda', () => {

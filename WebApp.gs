@@ -6757,7 +6757,9 @@ function getDashboardData() {
       return {
         nome:    str(p.nome),
         projeto: str(p.projeto),
-        status:  str(p.status)
+        status:  str(p.status),
+        cidade:  str(p.cidade),
+        estado:  str(p.estado)
       };
     });
   } catch(e) {
@@ -6852,13 +6854,25 @@ function getPendenciasOperacionais() {
 function getParticipantesDashboardResumo_() {
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
+  var headers = rows[0] || [];
+  var columns = {};
+  headers.forEach(function(header, index) {
+    var key = participanteCampoKey_(header);
+    if (columns.cidade === undefined && key === 'cidade') columns.cidade = index;
+    if (columns.estado === undefined && (key === 'estado' || key === 'uf')) columns.estado = index;
+  });
+  // Mantém leitura de cadastros legados que ainda não possuem cabeçalhos normalizados.
+  var cidadeColumn = columns.cidade === undefined ? 14 : columns.cidade;
+  var estadoColumn = columns.estado === undefined ? 15 : columns.estado;
   return rows.slice(1)
     .filter(function(r) { return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
     .map(function(r) {
       return {
         nome: String(r[1] || ''),
         projeto: String(r[5] || ''),
-        status: String(r[8] || '')
+        status: String(r[8] || ''),
+        cidade: String(r[cidadeColumn] || ''),
+        estado: String(r[estadoColumn] || '')
       };
     });
 }
@@ -11607,6 +11621,27 @@ function agendaParticipantePorReferencia_(referencia) {
   return candidatosNome.length === 1 ? candidatosNome[0] : null;
 }
 
+// O salvamento precisa do cadastro atual para validar o vinculo, mas nao usa o
+// historico de ultima visita. Evitar essa varredura integral da Agenda reduz o
+// tempo critico de gravacao sem flexibilizar status ou projeto do participante.
+function agendaInfoParticipanteParaSalvar_(referencia) {
+  var encontrado = agendaParticipantePorReferencia_(referencia);
+  if (!encontrado) return null;
+  var row = encontrado.row || [];
+  var nascRaw = row[2];
+  return {
+    id: String(row[0] || '').trim(),
+    nome: String(row[1] || '').trim(),
+    nascimento: formatarDataSafe(nascRaw),
+    numId: String(row[4] || ''),
+    idParticipante: String(row[4] || ''),
+    projeto: String(row[5] || ''),
+    braco: String(row[6] || ''),
+    status: String(row[8] || ''),
+    disponivelNovoAgendamento: agendaParticipanteDisponivelFormulario_(row[8])
+  };
+}
+
 function getInfoParticipante(referencia) {
   var encontrado = agendaParticipantePorReferencia_(referencia);
   if (!encontrado) return null;
@@ -13159,7 +13194,7 @@ function agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior) {
   var participante = String(dados.participante || '').trim();
   var participanteCadastroId = String(dados.participanteCadastroId || '').trim();
   if (!participante && !participanteCadastroId) return null;
-  var info = getInfoParticipante({
+  var info = agendaInfoParticipanteParaSalvar_({
     idCadastro: participanteCadastroId,
     nome: participante,
     idParticipante: dados.participanteId || dados.idParticipante,
@@ -13771,10 +13806,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   var linhaNova = agenda.getLastRow() + 1;
   var id = Utilities.getUuid().slice(0, 8);
   agendaMeasureSaveStage_(performanceOperation, 'initial_row_write', { rowCount: 1 }, function() {
-  agendaWriteInitialEventRow_(agenda, linhaNova, id, d, dados, tipo, status, labCentral);
-  if (AGENDA_CFG.col.participanteCadastroId) {
-    agenda.getRange(linhaNova, AGENDA_CFG.col.participanteCadastroId).setValue(dados.participanteCadastroId || '');
-  }
+    agendaWriteInitialEventRow_(agenda, linhaNova, id, d, dados, tipo, status, labCentral);
   });
   var carroSalvo = agendaMeasureSaveStage_(performanceOperation, 'initial_flush_verify', { rowCount: 1 }, function() {
   SpreadsheetApp.flush();
@@ -13827,7 +13859,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
 }
 
 function agendaWriteInitialEventRow_(agenda, linha, id, d, dados, tipo, status, labCentral) {
-  var row = Array(AGENDA_CFG.col.carroRequerido).fill('');
+  var row = Array(Math.max(AGENDA_CFG.col.carroRequerido, AGENDA_CFG.col.participanteCadastroId || 0)).fill('');
   var postVisitConcluido = agendaPostVisitConcluidoPorStatus_(status, tipo);
   var dataConclusao = new Date();
   row[AGENDA_CFG.idx.id] = id;
@@ -13853,6 +13885,7 @@ function agendaWriteInitialEventRow_(agenda, linha, id, d, dados, tipo, status, 
   row[AGENDA_CFG.idx.ecrf] = postVisitConcluido ? dataConclusao : agendaPostVisitValue_(dados.ecrfConcluida, '');
   row[AGENDA_CFG.idx.salaMonitoria] = dados.salaMonitoria || '';
   row[AGENDA_CFG.idx.carroRequerido] = dados.carroRequerido;
+  if (AGENDA_CFG.idx.participanteCadastroId >= 0) row[AGENDA_CFG.idx.participanteCadastroId] = dados.participanteCadastroId || '';
   agenda.getRange(linha, 1, 1, row.length).setValues([row]);
 }
 

@@ -182,6 +182,18 @@
     return stats;
   }
 
+  function dashboardParticipantCityPairs(participantes) {
+    var cidadeMap = {};
+    (participantes || []).filter(_isParticipanteAtivoDash).forEach(function(p) {
+      var cidade = String(p.cidade || '').trim();
+      if (!cidade) return;
+      var estado = String(p.estado || '').trim().toUpperCase();
+      var label = cidade + (estado ? '/' + estado : '');
+      cidadeMap[label] = (cidadeMap[label] || 0) + 1;
+    });
+    return _topDashResults(_sortDesc(cidadeMap), cidadeMap, 15);
+  }
+
   function dashboardProjectStat(stats, proj, field) {
     var keys = {};
     var nome = _normDash(proj && proj.nomeAbreviado);
@@ -494,6 +506,16 @@
         { label: 'Total', data: projPairs.map(function(p){ return p.total; }), backgroundColor: 'rgba(18,102,241,.7)', borderRadius: 4 },
         { label: 'Ativos / Em Seguimento', data: projPairs.map(function(p){ return p.ativos; }), backgroundColor: 'rgba(0,121,107,.7)', borderRadius: 4 }
       ]);
+    }
+    var cidadePairs = dashboardParticipantCityPairs(part);
+    if (cidadePairs.length) {
+      _setChartHeight('chartPartCidade', cidadePairs.length, 28, 260, 520);
+      _barH('chartPartCidade', cidadePairs.map(function(p){ return p.label; }), [{
+        label: 'Participantes ativos',
+        data: cidadePairs.map(function(p){ return p.value; }),
+        backgroundColor: cidadePairs.map(function(p, idx){ return p.label === 'Outros' ? '#90a4ae' : DASH_CORES[idx % DASH_CORES.length]; }),
+        borderRadius: 4
+      }]);
     }
     var patMap  = _agg(projetosAtivos, 'patrocinador');
     var patKeys = _sortDesc(patMap);

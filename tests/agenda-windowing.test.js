@@ -1616,7 +1616,7 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
   assert.match(functionBody(client, 'coletarAgendaEvento'), /participanteCadastroId/);
   assert.match(functionBody(server, 'agendaParticipantesFormulario_'), /id: String\(row\[0\]/);
   assert.match(functionBody(server, 'agendaRowToObject_'), /participanteCadastroId/);
-  assert.match(functionBody(server, '_gravarLinhaEvento'), /col\.participanteCadastroId/);
+  assert.match(functionBody(server, 'agendaWriteInitialEventRow_'), /idx\.participanteCadastroId/);
   assert.match(functionBody(server, 'atualizarAgendaEventoCompleto'), /col\.participanteCadastroId/);
   assert.match(functionBody(server, 'getAgendaSheet_'), /ensureAgendaDestinoLabColumns_\(sh\)/);
   assert.match(functionBody(server, 'ensureAgendaDestinoLabColumns_'), /agendaEnsureParticipanteCadastroColumn_\(sh\)/);
@@ -1624,7 +1624,7 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
 
 test('servidor bloqueia participacao encerrada em novo evento e preserva edicao historica', () => {
   const server = agendaServer();
-  server.getInfoParticipante = () => ({
+  server.agendaInfoParticipanteParaSalvar_ = () => ({
     id: '81', nome: 'Pessoa A', numId: 'P-001', idParticipante: 'P-001',
     projeto: 'Estudo Aurora', braco: 'A', nascimento: '01/01/1980',
     disponivelNovoAgendamento: false
@@ -1741,7 +1741,7 @@ test('novo agendamento fixa o status em Agendado e bloqueia estados finais no fu
 
 test('servidor substitui o projeto informado pelo projeto do participante em visitas e consultas', () => {
   const server = agendaServer();
-  server.getInfoParticipante = (ref) => ref && ref.nome === 'Pessoa A'
+  server.agendaInfoParticipanteParaSalvar_ = (ref) => ref && ref.nome === 'Pessoa A'
     ? { id: '81', nome: 'Pessoa A', numId: 'P-001', projeto: 'Projeto Correto', disponivelNovoAgendamento: true }
     : null;
   const dados = { participante: 'Pessoa A', projeto: 'Projeto Indevido' };
@@ -1752,6 +1752,21 @@ test('servidor substitui o projeto informado pelo projeto do participante em vis
   assert.equal(server.agendaSincronizarProjetoDoParticipante_(consulta, { isVisit: false, type: 'consulta' }), null);
   assert.equal(consulta.projeto, 'Projeto Correto');
   assert.equal(server.agendaSincronizarProjetoDoParticipante_({ participante: 'Pessoa A', projeto: 'Livre' }, { isVisit: false, type: 'evento' }), null);
+});
+
+test('salvamento de visita evita varrer a Agenda e grava o ID do cadastro na escrita inicial', () => {
+  const server = readProjectFile('WebApp.gs');
+  const sync = functionBody(server, 'agendaSincronizarProjetoDoParticipante_');
+  const lookup = functionBody(server, 'agendaInfoParticipanteParaSalvar_');
+  const writeInitial = functionBody(server, 'agendaWriteInitialEventRow_');
+  const save = functionBody(server, '_gravarLinhaEvento');
+
+  assert.match(sync, /agendaInfoParticipanteParaSalvar_/);
+  assert.doesNotMatch(sync, /getInfoParticipante\(/);
+  assert.doesNotMatch(lookup, /getUltimaVisitaParticipanteAgenda_/);
+  assert.match(writeInitial, /Math\.max\(AGENDA_CFG\.col\.carroRequerido, AGENDA_CFG\.col\.participanteCadastroId \|\| 0\)/);
+  assert.match(writeInitial, /row\[AGENDA_CFG\.idx\.participanteCadastroId\] = dados\.participanteCadastroId \|\| ''/);
+  assert.doesNotMatch(save, /participanteCadastroId\)\.setValue/);
 });
 
 test('abertura direta valida rowIndex e le somente a linha completa solicitada', () => {
