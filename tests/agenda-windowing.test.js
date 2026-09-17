@@ -1689,9 +1689,12 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /cancelarAgendaEvento/);
   assert.match(compact, /agendaToggleDetail/);
   assert.match(compact, /st-cancelado/);
-  assert.match(compact, /AgendaRules\.isCancelled\(r\) \? agendaStatusChipOp\(r\.status, r\.tipo\)/);
+  assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
-  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:74px minmax\(170px,\.85fr\) minmax\(210px,1fr\)/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:68px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
+  assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
+  assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
+  assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
 });
 
 test('resumos de material biologico alinham colunas entre transportes', () => {
