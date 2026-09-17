@@ -168,8 +168,8 @@ test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', ()
     'getUltimasVisitasParticipantesAgendaMap_'
   ];
 
-  assert.match(readGetter, /agendaResolveBackupTemperaturaColumnForRead_\(sh\)/);
-  assert.match(readGetter, /agendaResolveParticipanteCadastroColumnForRead_\(sh\)/);
+  assert.match(readGetter, /agendaResolveBackupTemperaturaColumnForRead_\(sh(?:, headers)?\)/);
+  assert.match(readGetter, /agendaResolveParticipanteCadastroColumnForRead_\(sh(?:, headers)?\)/);
   assert.doesNotMatch(readGetter, /ensureAgendaDestinoLabColumns_|alinharStatusRequisicaoLegadoAgenda_|setValue|insertColumns/);
   assert.match(writeGetter, /ensureAgendaDestinoLabColumns_\(sh\)/);
   assert.match(writeGetter, /alinharStatusRequisicaoLegadoAgenda_\(sh\)/);
@@ -1577,6 +1577,16 @@ test('nova ou edição de visita na mesma data exige confirmação e mantém sa�
   }, new Date(2026, 7, 28), 'EVT-EXISTENTE'), null,
   'a edição deve priorizar o ID da linha localizada ao salvar atualização parcial');
 
+  const calls = [];
+  const measuredAgenda = fakeAgendaRows(server, [existing], calls);
+  server.agendaVisitaCriadaNaMesmaData_(measuredAgenda, {
+    tipo: 'Visita', participante: 'Pessoa A', participanteId: 'P-001', projeto: 'Projeto A'
+  }, new Date(2026, 7, 28));
+  assert.equal(calls[0].column, server.AGENDA_CFG.col.data);
+  assert.equal(calls[0].numColumns, 1);
+  assert.equal(calls[1].column, 1);
+  assert.equal(calls[1].numColumns, Math.max(server.AGENDA_CFG.col.projeto, server.AGENDA_CFG.col.participanteCadastroId || 0));
+
   const client = readProjectFile('IndexAgendaScripts.html');
   const serverSource = readProjectFile('WebApp.gs');
   const markup = readProjectFile('IndexContentAfterDashboard.html');
@@ -1853,6 +1863,7 @@ test('abertura direta valida rowIndex e le somente a linha completa solicitada',
   const event = server.getAgendaEventoPorId('EVT-2', 3);
   assert.equal(event.id, 'EVT-2');
   assert.equal(calls.some((call) => call.row === 2 && call.numRows === 2 && call.numColumns === 1), false);
+  assert.equal(calls.some((call) => call.row === 3 && call.column === 1 && call.numColumns === 1), false);
   assert.equal(calls.filter((call) => call.numColumns === server.AGENDA_CFG.lastCol).length, 1);
 });
 
