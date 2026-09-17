@@ -179,12 +179,13 @@
     .ag-monitorias-count{padding:3px 9px;font-size:11px;white-space:nowrap}
     .ag-monitorias-toggle{flex-shrink:0}
     .ag-monitoria-compact{border-left:0}
-    .ag-monitoria-compact-main{display:grid;grid-template-columns:74px minmax(170px,.85fr) minmax(210px,1fr) minmax(170px,.85fr) auto;align-items:center;gap:14px;padding:8px 24px;cursor:pointer;transition:background .12s}
+    .ag-monitoria-compact-main{display:grid;grid-template-columns:68px minmax(300px,1.05fr) minmax(240px,.95fr) minmax(220px,.9fr) 124px;align-items:center;column-gap:22px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
     .ag-monitoria-compact:hover>.ag-monitoria-compact-main{background:#f8faff}
-    .ag-monitoria-compact .ag-appt-time{margin:0}
+    .ag-monitoria-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start}
     .ag-monitoria-project,.ag-monitoria-location,.ag-monitoria-monitor{min-width:0;display:flex;align-items:center}
+    .ag-monitoria-project{gap:6px;flex-wrap:wrap}
     .ag-monitoria-location .ag-meta,.ag-monitoria-monitor .ag-line{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .ag-monitoria-compact .ag-appt-actions{padding-top:0}
+    .ag-monitoria-compact .ag-appt-actions{width:124px;justify-content:flex-end;padding-top:0}
     .ag-monitoria-compact .ag-appt-detail{padding-left:98px}
     .ag-det-section{margin-bottom:14px}.ag-det-section:last-child{margin-bottom:0}
     .ag-det-label{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-faint);margin-bottom:8px;display:flex;align-items:center;gap:5px}

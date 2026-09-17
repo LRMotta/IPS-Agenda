@@ -5053,7 +5053,7 @@
     return '<div class="ag-appt ag-monitoria-compact' + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
       '<div class="ag-monitoria-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
-        '<div class="ag-monitoria-project">' + agendaTipoChip(isSiv ? 'SIV' : 'Monitoria') + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (AgendaRules.isCancelled(r) ? agendaStatusChipOp(r.status, r.tipo) : '') + '</div>' +
+        '<div class="ag-monitoria-project">' + agendaTipoChip(isSiv ? 'SIV' : 'Monitoria') + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
         '<div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
         '<div class="ag-monitoria-monitor">' + agendaLineItem('visibility', r.monitorName || 'Monitor não informado') + '</div>' +
         '<div class="ag-appt-actions">' +
