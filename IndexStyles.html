@@ -588,6 +588,18 @@
     .confirm-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
     .confirm-box p  { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
     .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .pendencia-entrega-box { width: min(620px, calc(100vw - 28px)); max-width: 620px; }
+    .pendencia-entrega-icon { width: 42px; height: 42px; border-radius: 50%; background: #d9f5ef; color: #0f766e; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+    .pendencia-entrega-icon .material-symbols-outlined { font-size: 23px; }
+    .pendencia-entrega-box p { line-height: 1.45; }
+    .pendencia-entrega-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 20px; }
+    .pendencia-entrega-grid > div { min-width: 0; border: 1px solid #e0e6f0; border-radius: var(--r-sm); background: #f8fafc; padding: 9px 10px; }
+    .pendencia-entrega-grid > div:first-child { grid-column: 1 / -1; }
+    .pendencia-entrega-grid span { display: block; color: var(--text-faint); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .45px; margin-bottom: 4px; }
+    .pendencia-entrega-grid strong { display: block; color: var(--text); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.35; }
+    .pendencia-entrega-submit { width: auto; min-width: 170px; height: 38px; margin: 0; padding: 0 15px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+    .pendencia-entrega-submit .material-symbols-outlined { font-size: 17px; }
+    @media(max-width:600px){ .pendencia-entrega-grid { grid-template-columns: 1fr; } .pendencia-entrega-grid > div:first-child { grid-column: auto; } .pendencia-entrega-submit { flex: 1; } }
     .req-success-box { text-align: left; }
     .req-success-icon { width: 42px; height: 42px; border-radius: 50%; background: #e6f4ea; color: #137333; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
     .req-success-icon .material-symbols-outlined { color: #137333; font-size: 24px; }
