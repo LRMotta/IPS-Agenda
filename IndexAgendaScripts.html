@@ -37,6 +37,7 @@
   var _agendaHistoricoRequestId = 0;
   var _agendaMonitoriasExpandidasPorDia = {};
   var _agendaCanceladosExpandidosPorDia = {};
+  var _agendaCanceladosExpandidosPorSemana = {};
   var _agendaEventosPorId = {};
   var _agendaEditRecord = null;
   var _agendaMateriaisAnteriores = [];
@@ -5202,13 +5203,43 @@
       var carros = agendaCarroRequeridoCount(dayRows);
       var birthdayHtml = agendaBirthdayBannerHtml(d, true);
       var holidayHtml = agendaHolidayBannerHtml_(iso, true);
+      var groupedRowsHtml = agendaWeekDayRowsHtml(dayRows, iso);
       html += '<div class="ag-wk-col ' + (iso === todayIso ? 'today-col' : '') + (holidayHtml ? ' holiday-col' : '') + '" id="agendaWeekDay-' + iso + '">' +
         '<div class="ag-wk-col-hdr"><div class="ag-wk-wd">' + agendaWeekday(d) + '</div><div class="ag-wk-num">' + d.getDate() + '</div>' + (iso === todayIso ? '<div><span class="ag-wk-dot"></span></div>' : '') + (carros ? agendaCarroDiaPill(carros, true) : '') + '</div>' +
         '<div class="ag-wk-appts">' + holidayHtml + birthdayHtml +
-        (dayRows.length ? dayRows.map(agendaWeekCardHtml).join('') : (birthdayHtml || holidayHtml ? '' : '<div class="ag-wk-empty">-</div>')) +
+        (groupedRowsHtml || (birthdayHtml || holidayHtml ? '' : '<div class="ag-wk-empty">-</div>')) +
         '</div></div>';
     }
     grid.innerHTML = html;
+  }
+
+  function agendaWeekDayRowsHtml(dayRows, iso) {
+    var grupos = agendaSepararLinhasDoDia_(dayRows);
+    var monitorias = grupos.monitorias.slice().sort(agendaSortRows);
+    var demais = grupos.demais.slice().sort(agendaSortRows);
+    var cancelados = grupos.cancelados.slice().sort(agendaSortRows);
+    var html = '';
+    if (monitorias.length) {
+      html += '<section class="ag-wk-section ag-wk-section-operacional" aria-label="Monitorias e SIV do dia"><div class="ag-wk-section-head"><strong>Monitorias e SIV</strong><span>' + esc(monitorias.length) + '</span></div>' + monitorias.map(agendaWeekCardHtml).join('') + '</section>';
+    }
+    if (demais.length) {
+      html += '<section class="ag-wk-section ag-wk-section-visitas" aria-label="Visitas e demais eventos do dia"><div class="ag-wk-section-head"><strong>Visitas e demais eventos</strong><span>' + esc(demais.length) + '</span></div>' + demais.map(agendaWeekCardHtml).join('') + '</section>';
+    }
+    if (cancelados.length) html += agendaWeekCanceladosHtml(cancelados, iso);
+    return html;
+  }
+
+  function agendaWeekCanceladosHtml(cancelados, iso) {
+    var expanded = _agendaCanceladosExpandidosPorSemana[iso] === true;
+    var chevron = expanded ? 'expand_less' : 'expand_more';
+    var countLabel = cancelados.length + ' ' + (cancelados.length === 1 ? 'registro' : 'registros');
+    return '<section class="ag-wk-section ag-wk-section-cancelados" aria-label="Cancelados do dia"><div class="ag-wk-section-head"><strong>Cancelados</strong><span>' + esc(countLabel) + '</span><button type="button" class="ag-wk-cancelados-toggle" onclick="agendaToggleCanceladosSemana(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-label="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button></div>' +
+      (expanded ? '<div class="ag-wk-cancelados-items">' + cancelados.map(agendaWeekCardHtml).join('') + '</div>' : '') + '</section>';
+  }
+
+  function agendaToggleCanceladosSemana(iso) {
+    _agendaCanceladosExpandidosPorSemana[iso] = _agendaCanceladosExpandidosPorSemana[iso] !== true;
+    renderAgendaSemana();
   }
 
   function agendaDayHeader(d, rows) {
@@ -5349,6 +5380,7 @@
       '.head{display:flex;align-items:center;gap:16px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:14px}.head img{height:44px;width:auto;object-fit:contain}.brand-text{font-weight:800;color:#1266f1;font-size:18px}' +
       'h1{font-size:20px;margin:0;color:#0b3f8a}p{margin:4px 0;color:#64748b;font-size:12px}.summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0 16px}.sum-card{border:1px solid #dbe7fb;background:#f7faff;border-radius:7px;padding:8px}.sum-n{font-size:18px;font-weight:800;color:#0b3f8a}.sum-l{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#64748b;font-weight:700}' +
       'table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:#eef4ff;color:#1266f1;text-align:left;text-transform:uppercase;font-size:8.5px;letter-spacing:.55px}th,td{border:1px solid #dbe3f0;padding:6px;vertical-align:top}.muted{color:#64748b}.strong{font-weight:700;color:#1f2937}.obs{white-space:pre-wrap;line-height:1.35}.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.week-day{border:1px solid #dbe3f0;border-radius:7px;overflow:hidden;min-height:520px}.week-head{background:#eef4ff;padding:7px;text-align:center;border-bottom:1px solid #dbe3f0}.week-wd{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:800}.week-num{font-size:18px;color:#0b3f8a;font-weight:800}.week-item{border-bottom:1px solid #edf2f7;padding:6px}.week-time{font-weight:800;color:#1266f1;font-size:11px}.week-name{font-weight:800;font-size:10.5px;margin-top:2px}.week-meta{font-size:9px;color:#64748b;line-height:1.3;margin-top:2px}.badge{display:inline-block;border-radius:5px;background:#e8f0fe;color:#0d47a1;border:1px solid #bdd0fb;padding:2px 5px;font-size:8.5px;font-weight:800;margin-top:3px}.print-cancelled{background:#fff5f5}.print-cancelled td{border-color:#fecaca}.print-event-content.cancelled{text-decoration:line-through;text-decoration-color:#dc2626;text-decoration-thickness:1.5px;color:#7f1d1d}.cancelled-badge{display:inline-block;border-radius:999px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;padding:2px 6px;font-size:8px;font-weight:800;margin-top:3px;text-decoration:none}.empty{padding:10px;text-align:center;color:#94a3b8;font-size:10px;font-style:italic}' +
+      '.week-section{padding:3px 0}.week-section-title{display:flex;align-items:center;justify-content:space-between;padding:3px 6px 2px;border-bottom:1px solid #edf2f7;color:#64748b;font-size:8px;text-transform:uppercase;letter-spacing:.5px}.week-section-title span{font-weight:800}.week-section-operational .week-section-title{color:#5b21b6;background:#faf8ff}.week-section-visitas .week-section-title{color:#1266f1;background:#f7faff}.week-section-cancelados{border-top:1px dashed #efb1b1}.week-section-cancelados .week-section-title{color:#b3261e;background:#fff5f5}' +
       'body.landscape{margin:14px}.landscape .head{gap:12px;padding-bottom:8px;margin-bottom:8px}.landscape .head img{height:34px}.landscape h1{font-size:17px}.landscape p{font-size:10px;margin:2px 0}.landscape .summary{gap:6px;margin:8px 0 10px}.landscape .sum-card{padding:5px 6px;border-radius:6px}.landscape .sum-n{font-size:15px}.landscape .sum-l{font-size:7.5px;letter-spacing:.45px}.landscape .week-grid{gap:5px;align-items:start}.landscape .week-day{min-height:0;border-radius:6px;overflow:visible}.landscape .week-head{padding:5px 4px}.landscape .week-wd{font-size:8px}.landscape .week-num{font-size:15px;line-height:1}.landscape .week-item{padding:4px 5px}.landscape .week-time{font-size:9px}.landscape .week-name{font-size:8.8px;line-height:1.15}.landscape .week-meta{font-size:7.8px;line-height:1.2}.landscape .badge{font-size:7px;padding:1px 4px;margin-top:2px}' +
       '@media print{body{margin:0}.no-print{display:none}.week-item{break-inside:avoid}tr{break-inside:avoid}}' +
       '</style></head><body class="' + (opts.landscape ? 'landscape' : 'portrait') + '"><button class="no-print" onclick="window.print()">Imprimir</button>' +
@@ -5401,9 +5433,21 @@
       var iso = agendaIso(d);
       var dayRows = rows.filter(function(r) { return r.dataIso === iso; });
       html += '<div class="week-day"><div class="week-head"><div class="week-wd">' + agendaWeekday(d) + '</div><div class="week-num">' + d.getDate() + '</div><p>' + agendaFmtShort(d) + '</p></div>' +
-        (dayRows.length ? dayRows.map(agendaPrintSemanaItemHtml).join('') : '<div class="empty">Sem agenda</div>') + '</div>';
+        (dayRows.length ? agendaPrintSemanaDayHtml(dayRows) : '<div class="empty">Sem agenda</div>') + '</div>';
     }
     return html + '</div>';
+  }
+
+  function agendaPrintSemanaDayHtml(dayRows) {
+    var grupos = agendaSepararLinhasDoDia_(dayRows);
+    var html = '';
+    var section = function(label, cls, rows) {
+      return rows.length ? '<div class="week-section ' + cls + '"><div class="week-section-title"><strong>' + esc(label) + '</strong><span>' + esc(rows.length) + '</span></div>' + rows.slice().sort(agendaSortRows).map(agendaPrintSemanaItemHtml).join('') + '</div>' : '';
+    };
+    html += section('Monitorias e SIV', 'week-section-operational', grupos.monitorias);
+    html += section('Visitas e demais eventos', 'week-section-visitas', grupos.demais);
+    html += section('Cancelados', 'week-section-cancelados', grupos.cancelados);
+    return html;
   }
 
   function agendaPrintSemanaItemHtml(r) {
@@ -6030,6 +6074,7 @@
     var isMon = agendaIsMonitoria(r);
     var isSiv = AgendaRules.isSiv(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
+    var cancelled = AgendaRules.isCancelled(r);
     return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + agendaTipoVisualClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
       '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento'))) + '</div>' +
       (isPeriodoOperacional ? '' : '<div style="margin:4px 0">' + agendaTipoChip(r.tipo) + '</div>') +
@@ -6037,6 +6082,7 @@
       (r.carroRequerido ? '<div style="margin-top:4px">' + agendaCarroChip() + '</div>' : '') +
       '<div class="ag-wk-visit">' + esc(isPeriodoOperacional ? (r.salaMonitoria || '-') : (r.visita || r.tipo || '-')) + '</div>' +
       (labSim ? '<div class="ag-wk-lab">Lab central</div>' : '') +
+      (cancelled ? '<span class="ag-wk-cancel-badge">Cancelado</span>' : '') +
       '</div>';
   }
 

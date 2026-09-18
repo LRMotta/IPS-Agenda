@@ -35,6 +35,26 @@ test('abertura e liberacao de presenca nao usam exclusao fisica de linhas', () =
   assert.ok(open);
   assert.ok(release);
   assert.doesNotMatch(cleanup[0] + open[0] + release[0], /\.deleteRow\s*\(/);
-  assert.match(open[0], /var vals = codexCleanupEditPresence_\(sh, now\)/);
+  assert.match(open[0], /codexCleanupEditPresence_\(sh, now\)/);
   assert.match(release[0], /codexReplaceEditPresenceRows_\(sh, remaining\)/);
+});
+
+test('abertura de presenca mede as etapas sem incluir dados do registro na telemetria', () => {
+  const source = readProjectFile('WebApp.gs');
+  const open = source.match(/function codexOpenEditPresence\([\s\S]*?\n\}/);
+
+  assert.ok(open);
+  assert.match(open[0], /codexMeasurePerformance_\('codexOpenEditPresence', 'total'/);
+  for (const stage of [
+    'authorization',
+    'presence_sheet',
+    'presence_cleanup',
+    'record_version',
+    'editable_version',
+    'presence_write'
+  ]) {
+    assert.match(open[0], new RegExp("codexMeasurePerformance_\\('codexOpenEditPresence', '" + stage + "'"));
+  }
+  assert.match(open[0], /codexWithDocumentLock_\('codexOpenEditPresence',[\s\S]*\{ operation: 'codexOpenEditPresence' \}/);
+  assert.doesNotMatch(open[0], /codexLogPerformance_\([^\n]*(recordId|sessionId|email)/);
 });
