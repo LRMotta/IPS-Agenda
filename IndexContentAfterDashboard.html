@@ -1024,30 +1024,7 @@
               <input type="text" id="rqMedico" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
             </div>
           </div>
-          <!-- 2. Solicitante -->
-          <div class="form-section">
-            <div class="section-label">
-              <span class="material-symbols-outlined">support_agent</span> Solicitante
-            </div>
-            <div class="field">
-              <label class="field-label" for="rqSolicitante">Nome do Solicitante <span class="required-star">*</span></label>
-              <div class="ac-wrap">
-                <input type="text" id="rqSolicitante" class="f-input" placeholder="Digite o nome do solicitante" autocomplete="off"
-                  onfocus="renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
-                  oninput="_rqSelSolicitante=null;renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
-                  onblur="setTimeout(function(){fecharReqAC('rqSolicitanteList');preencherDadosSolicitante()},160)"
-                  onkeydown="navReqAC(event,'rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')">
-                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-                <div class="ac-list" id="rqSolicitanteList"></div>
-              </div>
-              <div class="field-error" id="errRqSolicitante">Informe o solicitante.</div>
-              <div class="solicitante-card" id="solicitanteCard">
-                <div class="sol-name" id="solCardNome">—</div>
-                <div class="sol-detail" id="solCardDetalhe">—</div>
-              </div>
-            </div>
-          </div>
-          <!-- 3. Prestador -->
+          <!-- 2. Prestador: o tipo de serviço vem do cadastro do prestador -->
           <div class="form-section">
             <div class="section-label">
               <span class="material-symbols-outlined">business</span> Prestador / Laboratório
@@ -1085,13 +1062,39 @@
               <input type="text" id="rqPrestadorTipo" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
             </div>
           </div>
+          <!-- 3. Solicitante -->
+          <div class="form-section">
+            <div class="section-label">
+              <span class="material-symbols-outlined">support_agent</span> Solicitante
+            </div>
+            <div class="field">
+              <label class="field-label" for="rqSolicitante">Nome do Solicitante <span class="required-star">*</span></label>
+              <div class="ac-wrap">
+                <input type="text" id="rqSolicitante" class="f-input" placeholder="Digite o nome do solicitante" autocomplete="off"
+                  onfocus="renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
+                  oninput="_rqSelSolicitante=null;renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
+                  onblur="setTimeout(function(){fecharReqAC('rqSolicitanteList');preencherDadosSolicitante()},160)"
+                  onkeydown="navReqAC(event,'rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')">
+                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+                <div class="ac-list" id="rqSolicitanteList"></div>
+              </div>
+              <div class="field-error" id="errRqSolicitante">Informe o solicitante.</div>
+              <div class="solicitante-card" id="solicitanteCard">
+                <div class="sol-name" id="solCardNome">—</div>
+                <div class="sol-detail" id="solCardDetalhe">—</div>
+              </div>
+            </div>
+          </div>
           <!-- 4. Exames -->
           <div class="form-section">
             <div class="section-label">
               <span class="material-symbols-outlined">biotech</span> Exames Solicitados
               <span class="exam-count" id="examCount">0 exame(s)</span>
-              <button class="ag-tb-btn" type="button" onclick="abrirReqPreloadModal()" title="Gerenciar exames padrão do projeto" style="margin-left:auto">
-                <span class="material-symbols-outlined">tune</span> Gerenciar exames padrão
+              <button class="ag-tb-btn" type="button" onclick="abrirReqPreloadSelecao()" title="Escolher uma lista de exames do projeto" style="margin-left:auto">
+                <span class="material-symbols-outlined">playlist_add_check</span> Escolher lista de exames
+              </button>
+              <button class="ag-tb-btn" type="button" onclick="abrirReqPreloadModal()" title="Gerenciar listas de exames do projeto">
+                <span class="material-symbols-outlined">tune</span> Gerenciar listas
               </button>
             </div>
             <div id="examList"></div>
@@ -1137,8 +1140,8 @@
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">biotech</span></div>
       <div>
-        <div class="modal-header-title">EXAMES PADRÃO DO PROJETO</div>
-        <div class="modal-header-sub" id="reqPreloadSub">Preload da Requisição de Exames</div>
+        <div class="modal-header-title">LISTA DE EXAMES DO PROJETO</div>
+        <div class="modal-header-sub" id="reqPreloadSub">Edite a lista selecionada; o número é gerado automaticamente</div>
       </div>
       <button class="modal-close" onclick="fecharReqPreloadModal()">
         <span class="material-symbols-outlined">close</span>
@@ -1158,7 +1161,7 @@
         <textarea id="reqPreloadExames" class="f-textarea" style="height:280px;font-family:Roboto Mono,Consolas,monospace" placeholder="Um exame por linha"></textarea>
         <div class="preload-shared-note">
           <span class="material-symbols-outlined">group</span>
-          Este padrao e compartilhado com todos os usuarios. Se outra pessoa salvar primeiro, voce precisara carregar a versao atual antes de gravar.
+          A lista é compartilhada com todos os usuários. O sistema não solicita nome: cada nova lista recebe automaticamente o próximo número.
         </div>
       </div>
       <div class="req-actions req-preload-actions" style="justify-content:space-between;margin-top:18px">
@@ -1168,7 +1171,7 @@
         <div class="req-preload-right">
           <button class="ag-tb-btn" type="button" onclick="fecharReqPreloadModal()">Cancelar</button>
           <button class="btn-save req-preload-save" id="btnSalvarReqPreload" type="button" onclick="salvarReqPreloadProjeto()">
-            <span class="material-symbols-outlined">save</span> Salvar padrão
+            <span class="material-symbols-outlined">save</span> Salvar lista
           </button>
         </div>
       </div>
@@ -1177,14 +1180,63 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalReqPreloadSelect" onclick="fecharReqPreloadSelecaoSeFora(event)">
+  <div class="modal-box req-preload-select-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined">playlist_add_check</span></div>
+      <div>
+        <div class="modal-header-title">ESCOLHER LISTA DE EXAMES</div>
+        <div class="modal-header-sub">Confira a prévia antes de carregar na requisição</div>
+      </div>
+      <button class="modal-close" type="button" onclick="fecharReqPreloadSelecao()">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row cols-2 req-preload-context-fields">
+        <div class="field">
+          <label class="field-label" for="reqPreloadSelectionProjeto">Projeto</label>
+          <input type="text" id="reqPreloadSelectionProjeto" class="f-input auto-fill" readonly>
+        </div>
+        <div class="field">
+          <label class="field-label" for="reqPreloadSelectionTipo">Tipo de serviço do prestador</label>
+          <input type="text" id="reqPreloadSelectionTipo" class="f-input auto-fill" readonly>
+        </div>
+      </div>
+      <div class="req-preload-selection-layout">
+        <div>
+          <div class="field-label">Listas disponíveis</div>
+          <div id="reqPreloadSelectionList" class="req-preload-selection-list"></div>
+        </div>
+        <div class="req-preload-preview-panel">
+          <div class="field-label">Prévia</div>
+          <div id="reqPreloadSelectionPreview" class="req-preload-preview"></div>
+        </div>
+      </div>
+      <div class="status-msg" id="statusReqPreloadSelection"></div>
+      <div class="req-actions req-preload-actions" style="justify-content:space-between;margin-top:18px">
+        <button class="ag-tb-btn" type="button" id="btnEditarReqPreloadSelecionado" onclick="abrirReqPreloadEditorDaSelecao()" style="display:none">
+          <span class="material-symbols-outlined">edit</span> Editar lista
+        </button>
+        <div class="req-preload-right">
+          <button class="ag-tb-btn" type="button" onclick="fecharReqPreloadSelecao()">Cancelar</button>
+          <button class="btn-save req-preload-save" type="button" id="btnUsarReqPreloadSelecionado" onclick="usarReqPreloadListaSelecionada_()">
+            <span class="material-symbols-outlined">playlist_add_check</span> Carregar lista
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="confirmReqPreload">
   <div class="confirm-box" style="max-width:440px;">
-    <h3>Carregar exames padrao?</h3>
-    <p id="confirmReqPreloadMsg">Confirme para carregar os exames padr&atilde;o do projeto.</p>
+    <h3>Carregar esta lista?</h3>
+    <p id="confirmReqPreloadMsg">Confirme para carregar os exames da lista selecionada.</p>
     <div class="confirm-actions">
       <button class="btn-txt" type="button" onclick="recusarReqPreloadEncontrado()">Nao usar agora</button>
       <button class="btn-new" type="button" id="btnConfirmReqPreload">
-        <span class="material-symbols-outlined">playlist_add_check</span> Usar padrao
+        <span class="material-symbols-outlined">playlist_add_check</span> Carregar lista
       </button>
     </div>
   </div>
@@ -1192,13 +1244,14 @@
 
 <div class="modal-overlay" id="confirmReqPreloadSave">
   <div class="confirm-box" style="max-width:460px;">
-    <h3>Salvar exames como padrao?</h3>
-    <p id="confirmReqPreloadSaveMsg">Esta combinacao ainda nao possui um padrao salvo.</p>
+    <h3>Salvar como nova lista?</h3>
+    <p id="confirmReqPreloadSaveMsg">Esta combinação ainda não está salva em uma lista.</p>
+    <div id="reqPreloadSavePreview" class="req-preload-preview req-preload-save-preview"></div>
     <div class="status-msg" id="statusReqPreloadSave" style="text-align:left;margin-top:0;margin-bottom:12px"></div>
     <div class="confirm-actions">
       <button class="btn-txt" type="button" onclick="fecharReqPreloadSaveOffer()">Agora nao</button>
       <button class="btn-new" type="button" id="btnConfirmReqPreloadSave" onclick="salvarReqPreloadAposGerar()">
-        <span class="material-symbols-outlined">save</span> Salvar padrao
+        <span class="material-symbols-outlined">save</span> Salvar nova lista
       </button>
     </div>
   </div>

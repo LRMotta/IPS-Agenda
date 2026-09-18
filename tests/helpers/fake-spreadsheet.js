@@ -31,6 +31,7 @@ class FakeRange {
       const target = this.sheet.rows[this.row - 1 + r];
       for (let c = 0; c < this.numColumns; c++) target[this.column - 1 + c] = values[r][c];
     }
+    this.sheet.maxColumns = Math.max(this.sheet.maxColumns, this.column + this.numColumns - 1);
     this.sheet.writes++;
     return this;
   }
@@ -65,6 +66,7 @@ class FakeSheet {
   constructor(name, rows) {
     this.name = name;
     this.rows = (rows || []).map((row) => row.slice());
+    this.maxColumns = this.rows.reduce((max, row) => Math.max(max, row.length), 0);
     this.writes = 0;
     this.numberFormats = [];
   }
@@ -86,6 +88,15 @@ class FakeSheet {
 
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows.reduce((max, row) => Math.max(max, row.length), 0); }
+  getMaxColumns() { return Math.max(this.maxColumns, this.getLastColumn()); }
+  insertColumnsAfter(afterPosition, howMany) {
+    const targetColumns = afterPosition + howMany;
+    this.maxColumns = Math.max(this.maxColumns, targetColumns);
+    this.rows.forEach((row) => {
+      while (row.length < this.maxColumns) row.push('');
+    });
+    return this;
+  }
   getName() { return this.name; }
   deleteRow(row) { this.rows.splice(row - 1, 1); this.writes++; }
   setFrozenRows() { return this; }

@@ -728,7 +728,7 @@ test('voltar a uma janela validada reaplica eventos sem nova RPC', () => {
     applyAgendaFormData: () => { throw new Error('referencias ja estavam prontas'); },
     agendaReferenceDataValidation_: () => ({ ok: true }),
     agendaAplicarEventos_: (events, scope, range, truncated) => { applied = { events, scope, range, truncated }; },
-    renderAgendaOperacional: () => { rendered += 1; },
+    agendaRenderAposCarga_: () => { rendered += 1; },
     agendaFallbackCargaCompleta_: () => { throw new Error('fallback inesperado'); }
   });
   vm.runInContext(`function carregarAgendaEventosPorJanela_(forcar, callback, options) {${functionBody(client, 'carregarAgendaEventosPorJanela_')}}`, context);
@@ -826,7 +826,7 @@ test('resposta atrasada nao substitui a janela solicitada mais recentemente', ()
     applyAgendaFormData: () => true,
     agendaReferenceDataValidation_: () => ({ ok: true }),
     agendaAplicarEventos_: (events) => applied.push(events.map((item) => item.id)),
-    renderAgendaOperacional: () => {},
+    agendaRenderAposCarga_: () => {},
     agendaFallbackCargaCompleta_: () => { throw new Error('fallback inesperado'); }
   });
   vm.runInContext(`function carregarAgendaEventosPorJanela_(forcar, callback, options) {${functionBody(client, 'carregarAgendaEventosPorJanela_')}}`, context);
@@ -925,7 +925,8 @@ test('criacao, edicao, link direto e outros modulos passam pela prontidao centra
   assert.match(functionBody(client, 'abrirAgendaEdicao'), /agendaComFormularioPronto_\(function\(\)/);
   assert.match(functionBody(client, 'abrirAgendaEdicaoComRegistro_'), /agendaComFormularioPronto_\(function\(\)/);
   assert.match(functionBody(client, 'agendaAbrirPendenteAposCarga'), /abrirAgendaEdicao\(id\)/);
-  assert.match(pending, /abrirAgendaEdicao\(agendaId\)/);
+  assert.match(pending, /agendaFetchEventoPorId_\(agendaId/);
+  assert.match(pending, /aplicarAgendaNaRequisicao\(dados, 0\)/);
   assert.match(transport, /openerWin\.abrirAgendaRegistroPorId\(agendaId\)/);
 });
 
@@ -1333,9 +1334,11 @@ test('índice de datas é cacheado na carga por período e é invalidado após e
 test('shell da Agenda aparece antes do bootstrap unificado, sem iniciar RPC separada', () => {
   const source = readProjectFile('IndexCoreScripts.html');
   const agendaClient = readProjectFile('IndexAgendaScripts.html');
+  const nav = readProjectFile('IndexContent.html');
   const start = functionBody(source, 'startCodexAppOnce');
   const shell = functionBody(source, 'abrirShellInicialAgendaCanario_');
   const initialRequest = functionBody(source, 'appInitialBootstrapRequest_');
+  const initialPage = functionBody(source, 'abrirPaginaInicialApp');
   const route = functionBody(source, 'irPara');
   const init = functionBody(agendaClient, 'initAgendaV1');
   const applyInitial = functionBody(agendaClient, 'agendaAplicarBootstrapInicial_');
@@ -1343,11 +1346,69 @@ test('shell da Agenda aparece antes do bootstrap unificado, sem iniciar RPC sepa
   assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('.getAppBootstrapData(bootstrapRequest)'));
   assert.match(shell, /irPara\('agenda', \{ initial: true, shellOnly: true \}\)/);
   assert.match(initialRequest, /page: 'agenda', agendaRange:/);
-  assert.ok(route.indexOf('if (options.shellOnly)') < route.indexOf("if (pagina === 'agenda') initAgendaV1()"));
+  assert.match(initialPage, /goToday: \(pagina \|\| 'agenda'\) === 'agenda'/);
+  assert.match(route, /options\.goToday && typeof agendaEntrarNoHoje_ === 'function'/);
+  assert.match(nav, /onclick="irPara\('agenda', \{ goToday: true \}\)"/);
+  assert.ok(route.indexOf('if (options.shellOnly)') < route.indexOf("if (pagina === 'agenda') {"));
   assert.ok(init.indexOf('agendaAplicarBootstrapInicial_()') < init.indexOf('carregarAgendaEventos(false'));
   assert.match(applyInitial, /window\.APP_BOOTSTRAP_DATA && window\.APP_BOOTSTRAP_DATA\.agendaBootstrap/);
+  assert.match(agendaClient, /agendaRenderAposCarga_\(\)/);
   assert.match(readProjectFile('Index.html'), /INDEX_INITIAL_AGENDA_CANARY_SHELL/);
   assert.match(readProjectFile('WebApp.gs'), /tplIndex\.agendaCanaryShell = tplIndex\.paginaInicial === 'agenda'/);
+});
+
+test('entrada da Agenda no Hoje preserva a semantica do botao Hoje', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const enter = functionBody(client, 'agendaEntrarNoHoje_');
+  const afterLoad = functionBody(client, 'agendaRenderAposCarga_');
+  const calls = [];
+  const input = { value: '' };
+  const context = vm.createContext({
+    Date,
+    STATE: { agenda: { eventsLoadedAt: 123 } },
+    _agendaWeekOffset: 4,
+    _agendaFocarHojeAposCarga: false,
+    _agendaEventosLoadedAt: 123,
+    document: { getElementById: () => input },
+    agendaIso: () => '2026-09-18',
+    agendaNavigateToWeekOffset_: (offset, callback) => {
+      calls.push(offset);
+      if (callback) callback();
+    },
+    agendaScrollToToday: () => calls.push('scroll'),
+    setTimeout: (callback) => callback()
+  });
+  vm.runInContext(`function agendaEntrarNoHoje_() {${enter}}`, context);
+
+  context.agendaEntrarNoHoje_();
+
+  assert.equal(context._agendaWeekOffset, 0);
+  assert.equal(input.value, '2026-09-18');
+  assert.deepEqual(calls, [0, 'scroll']);
+  assert.equal(context._agendaFocarHojeAposCarga, false);
+
+  const pendingCalls = [];
+  const pendingContext = vm.createContext({
+    Date,
+    STATE: { agenda: { eventsLoadedAt: 0 } },
+    _agendaWeekOffset: 3,
+    _agendaFocarHojeAposCarga: false,
+    _agendaEventosLoadedAt: 0,
+    document: { getElementById: () => input },
+    agendaIso: () => '2026-09-18',
+    renderAgendaOperacional: () => pendingCalls.push('render'),
+    agendaScrollToToday: () => pendingCalls.push('scroll'),
+    setTimeout: (callback) => callback()
+  });
+  vm.runInContext(`function agendaEntrarNoHoje_() {${enter}}`, pendingContext);
+  vm.runInContext(`function agendaRenderAposCarga_() {${afterLoad}}`, pendingContext);
+
+  pendingContext.agendaEntrarNoHoje_();
+  assert.equal(pendingContext._agendaFocarHojeAposCarga, true);
+  assert.deepEqual(pendingCalls, []);
+  pendingContext.agendaRenderAposCarga_();
+  assert.deepEqual(pendingCalls, ['render', 'scroll']);
+  assert.equal(pendingContext._agendaFocarHojeAposCarga, false);
 });
 
 test('Dashboard fornece a flag do shell canario exigida pelo template Index', () => {
@@ -1739,14 +1800,28 @@ test('visita cancelada com Lab Central usa erlenmeyer vermelho suave', () => {
 test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da Agenda', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  const groups = functionBody(client, 'agendaSepararLinhasDoDia_');
   const dayRows = functionBody(client, 'agendaDayRowsHtml');
   const compact = functionBody(client, 'agendaMonitoriaCompactaHtml');
+  const cancelledGroup = functionBody(client, 'agendaCanceladosGrupoHtml');
+  const cancelledCompact = functionBody(client, 'agendaCanceladoCompactoHtml');
   const operationalStatus = functionBody(client, 'agendaStatusChipOp');
 
-  assert.match(dayRows, /filter\(AgendaRules\.isOperationalPeriod\)/);
-  assert.match(dayRows, /agendaMonitoriasGrupoHtml\(monitorias, iso\)/);
+  assert.match(groups, /var cancelados = rows\.filter\(AgendaRules\.isCancelled\)/);
+  assert.match(groups, /!AgendaRules\.isCancelled\(r\) && AgendaRules\.isOperationalPeriod\(r\)/);
+  assert.match(groups, /!AgendaRules\.isCancelled\(r\) && !AgendaRules\.isOperationalPeriod\(r\)/);
+  assert.match(dayRows, /agendaSepararLinhasDoDia_\(dayRows\)/);
+  assert.match(dayRows, /agendaMonitoriasGrupoHtml\(grupos\.monitorias, iso\)/);
+  assert.match(dayRows, /agendaCanceladosGrupoHtml\(grupos\.cancelados, iso\)/);
   assert.match(dayRows, /ag-list-section-title">Visitas/);
-  assert.match(functionBody(client, 'renderAgendaLista'), /agendaDayHeader\(d, dayRows\);[\s\S]*?agendaMonitoriasGrupoHtml\(monitorias, iso\)[\s\S]*?agendaBirthdayBannerHtml\(d, false\)/);
+  const render = functionBody(client, 'renderAgendaLista');
+  assert.match(render, /var gruposDia = agendaSepararLinhasDoDia_\(dayRows\)/);
+  assert.match(render, /agendaMonitoriasGrupoHtml\(gruposDia\.monitorias, iso\)/);
+  assert.match(render, /agendaCanceladosGrupoHtml\(gruposDia\.cancelados, iso\)/);
+  assert.match(render, /html \+= agendaBirthdayBannerHtml\(d, false\)/);
+  const dayHeader = functionBody(client, 'agendaDayHeader');
+  assert.match(dayHeader, /var cancelados = todos\.filter\(AgendaRules\.isCancelled\)\.length/);
+  assert.match(dayHeader, /ag-dpill ag-dp-cancel/);
   assert.match(compact, /calendar_add_on/);
   assert.match(compact, /abrirAgendaEdicao/);
   assert.match(compact, /cancelarAgendaEvento/);
@@ -1755,12 +1830,48 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
   assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
+  assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
+  assert.match(cancelledGroup, /aria-label="Cancelados do dia"/);
+  assert.match(cancelledCompact, /st-cancelado/);
+  assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
+  assert.match(cancelledCompact, /abrirAgendaEdicao/);
+  assert.match(cancelledCompact, /agendaToggleDetail/);
+  assert.doesNotMatch(cancelledCompact, /cancelarAgendaEvento/);
+  assert.doesNotMatch(cancelledCompact, /abrirEventoNoGoogleCalendar/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:14px/);
   assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
-  assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
+  assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
+  assert.match(styles, /\.ag-cancelados-group\{border-left:3px solid #b3261e/);
+  assert.match(styles, /\.ag-dp-cancel\{background:#fde7e7;color:#b3261e\}/);
+  assert.match(styles, /\.ag-cancelado-compact-main\{display:grid;grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
+});
+
+test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativas', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const body = functionBody(client, 'agendaSepararLinhasDoDia_');
+  const context = vm.createContext({
+    Array,
+    AgendaRules: {
+      isCancelled: row => row.status === 'Cancelado',
+      isOperationalPeriod: row => ['Monitoria', 'SIV'].includes(row.tipo)
+    }
+  });
+  vm.runInContext(`function agendaSepararLinhasDoDia_(dayRows) {${body}}`, context);
+
+  const groups = context.agendaSepararLinhasDoDia_([
+    { id: 'M1', tipo: 'Monitoria', status: 'Agendado' },
+    { id: 'M2', tipo: 'Monitoria', status: 'Cancelado' },
+    { id: 'V1', tipo: 'Visita', status: 'Agendado' },
+    { id: 'V2', tipo: 'Visita', status: 'Cancelado' }
+  ]);
+
+  assert.deepEqual(groups.monitorias.map(row => row.id), ['M1']);
+  assert.deepEqual(groups.cancelados.map(row => row.id), ['M2', 'V2']);
+  assert.deepEqual(groups.demais.map(row => row.id), ['V1']);
+  assert.equal(new Set(groups.monitorias.concat(groups.cancelados, groups.demais).map(row => row.id)).size, 4);
 });
 
 test('resumos de material biologico alinham colunas entre transportes', () => {
