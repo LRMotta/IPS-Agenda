@@ -526,7 +526,7 @@ function abrirPaginaInicialApp() {
     abrirModuloDashboard();
     return;
   }
-  irPara(pagina || 'agenda', { initial: true });
+  irPara(pagina || 'agenda', { initial: true, goToday: (pagina || 'agenda') === 'agenda' });
   if (pagina === 'agenda' && typeof agendaRegistrarShellVisivel_ === 'function') agendaRegistrarShellVisivel_();
 }
 
@@ -895,7 +895,10 @@ function irPara(pagina, options) {
     initRequisicao();
   }
   if (pagina === 'estoque-view') carregarEstoqueView();
-  if (pagina === 'agenda') initAgendaV1();
+  if (pagina === 'agenda') {
+    if (options.goToday && typeof agendaEntrarNoHoje_ === 'function') agendaEntrarNoHoje_();
+    initAgendaV1();
+  }
   updateFloatingAddButton();
 }
 
@@ -3574,7 +3577,6 @@ function abrirFormPart(p) {
   renderAcompanhantesPart_((p && p.acompanhantes) || []);
   document.getElementById('modalPartSub').textContent='Dados da pessoa e de sua participação no protocolo';
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">save</span> SALVAR CADASTRO';
-  document.getElementById('btnCriarReqParticipante').style.display='';
   renderParticipacoesPessoa_(p || null, false);
   participanteMonitorarIdentidadeDoModal_();
   atualizarParticipanteIdObrigatorio();
@@ -3718,7 +3720,6 @@ function prepararNovaParticipacaoPessoa_(participante) {
   document.getElementById('ptTitularConta').value=participante.titularConta||'';
   document.getElementById('ptCpfTitular').value=participante.cpfTitular||'';
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">add_circle</span> CRIAR PARTICIPAÇÃO';
-  document.getElementById('btnCriarReqParticipante').style.display='none';
   participanteDefinirPessoaSomenteLeitura_(true);
   renderParticipacoesPessoa_(participante, true);
 }
@@ -3737,52 +3738,6 @@ function abrirNovaParticipacaoPessoa() {
   var abrir = function() { prepararNovaParticipacaoPessoa_(participante); };
   if (!appConfirmNavigationIfDirty('modalParticipante', abrir)) return;
   abrir();
-}
-
-function participanteAtualDoModal() {
-  return {
-    id: document.getElementById('editPartId').value || '',
-    idPessoa: document.getElementById('ptPessoaId').value || '',
-    nome: document.getElementById('ptNome').value.trim(),
-    idParticipante: document.getElementById('ptId').value.trim(),
-    dataNascimento: document.getElementById('ptNasc').value || '',
-    cpf: document.getElementById('ptCpf').value.trim(),
-    projeto: document.getElementById('ptProjeto').value.trim(),
-    braco: document.getElementById('ptBraco').value.trim(),
-    status: document.getElementById('ptStatus').value,
-    telefone: document.getElementById('ptTelefone').value.trim(),
-    observacoes: document.getElementById('ptObs').value.trim(),
-    rua: document.getElementById('ptRua').value.trim(),
-    numero: document.getElementById('ptNumero').value.trim(),
-    cidade: document.getElementById('ptCidade').value.trim(),
-    estado: document.getElementById('ptEstado').value.trim(),
-    municipioCodigo: document.getElementById('ptCidade').dataset.municipioCodigo || '',
-    cep: document.getElementById('ptCep').value.trim(),
-    banco: document.getElementById('ptBanco').value,
-    tipoConta: document.getElementById('ptTipoConta').value,
-    agencia: document.getElementById('ptAgencia').value.trim(),
-    contaCorrente: document.getElementById('ptContaCorrente').value.trim(),
-    titularConta: document.getElementById('ptTitularConta').value.trim(),
-    cpfTitular: document.getElementById('ptCpfTitular').value.trim()
-  };
-}
-
-function abrirReqExamesDoParticipante() {
-  var participante = participanteAtualDoModal();
-  if (!participante.nome) {
-    snackErro('Informe o nome do participante antes de abrir a requisição.');
-    return;
-  }
-  _rqAgendaOrigemId = '';
-  _rqOrigemContext = { tipo: 'participante', participante: participante };
-  fecharOverlay('modalParticipante');
-  irPara('requisicao');
-  setTimeout(function() {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    var page = document.getElementById('page-requisicao');
-    if (page) page.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }, 80);
-  aplicarParticipanteNaRequisicao(participante);
 }
 
 function participanteIdOpcionalPorStatus(status) {
@@ -6892,6 +6847,11 @@ var _rqPreloadLastKey = '';
 var _rqPreloadPromptKey = '';
 var _rqPendingPreloadData = null;
 var _rqPostGeneratePreloadOffer = null;
+var _rqPreloadSelectionData = null;
+var _rqPreloadSelectionIndex = 0;
+var _rqPreloadSelectionMode = 'select';
+var _rqPreloadSelectionContextKey = '';
+var _reqPreloadEditorId = '';
 var _rqValidationVisible = false;
 var _rqSuccessAfterClose = null;
 
@@ -7071,7 +7031,7 @@ function pickReqAC(inputId, listId, val, selVarName) {
   document.getElementById(listId).classList.remove('open');
   if (REQUISICAO_ID_ALIASES.prestador.indexOf(inputId) > -1) {
     preencherEnderecoReq();
-    carregarReqPreloadAtual();
+    abrirReqPreloadSelecaoSePronto_({ auto: true });
   }
   if (inputId === 'rqPaciente') preencherDadosPaciente();
   if (inputId === 'rqSolicitante') preencherDadosSolicitante();
@@ -7107,7 +7067,6 @@ function preencherDadosPaciente() {
     document.getElementById('rqNascimento').value  = p.nascimento || '';
     document.getElementById('rqProtocolo').value   = p.protocolo  || '';
     document.getElementById('rqMedico').value      = p.medico     || '';
-    carregarReqPreloadAtual();
   } else {
     ['rqNascimento','rqProtocolo','rqMedico'].forEach(function(id){
       document.getElementById(id).value = '';
@@ -7126,40 +7085,197 @@ function tipoServicoPrestadorRequisicaoAtual() {
   return p ? (p.tipoServico || '') : '';
 }
 
-function carregarReqPreloadAtual() {
+function reqPreloadSelectionKey_(item) {
+  if (!item) return '';
+  return String(item.id || item.chave || '') + '|' + String(item.numero || '');
+}
+
+function reqPreloadListsMatch_(a, b) {
+  a = (a || []).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
+  b = (b || []).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
+  if (a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function abrirReqPreloadSelecao(options) {
+  options = options || {};
+  var projeto = getProjetoRequisicaoAtual();
+  var tipoServico = tipoServicoPrestadorRequisicaoAtual();
+  if (!projeto) {
+    snackErro('Selecione um paciente/projeto antes de escolher uma lista de exames.');
+    return;
+  }
+  if (!tipoServico) {
+    snackErro('O prestador selecionado não possui tipo de serviço cadastrado.');
+    return;
+  }
+  carregarReqPreloadListas_(projeto, tipoServico, { mode: 'select', force: true });
+}
+
+function abrirReqPreloadSelecaoSePronto_(options) {
+  options = options || {};
   var projeto = getProjetoRequisicaoAtual();
   var tipoServico = tipoServicoPrestadorRequisicaoAtual();
   if (!projeto || !tipoServico) return;
-  carregarReqPreloadProjeto(projeto, tipoServico);
+  var contextKey = projeto + '|' + tipoServico;
+  if (!options.force && _rqPreloadSelectionContextKey === contextKey) return;
+  _rqPreloadSelectionContextKey = contextKey;
+  carregarReqPreloadListas_(projeto, tipoServico, {
+    mode: 'select',
+    auto: !!options.auto,
+    force: !!options.force
+  });
 }
 
-function carregarReqPreloadProjeto(projeto, tipoServico) {
-  projeto = String(projeto || '').trim();
-  tipoServico = String(tipoServico || '').trim();
-  if (!projeto) return;
+function carregarReqPreloadListas_(projeto, tipoServico, options) {
+  options = options || {};
   appServerRun({
-    method: 'getReqExamesPreloadProjetoContext',
+    method: 'getReqExamesPreloadProjetoLists',
     args: [projeto, tipoServico],
     onSuccess: function(data) {
-      var exames = data && data.exames ? data.exames : (Array.isArray(data) ? data : []);
-      var chave = data && data.chave ? data.chave : (projeto + (tipoServico ? ' | ' + tipoServico : ''));
-      if (!exames.length) return;
-      if (chave && chave === _rqPreloadLastKey) return;
-      if (chave && chave === _rqPreloadPromptKey) return;
-      var atuais = Array.from(document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input'))
-        .map(function(i){ return i.value.trim(); }).filter(Boolean);
-      var label = tipoServico ? (projeto + ' / ' + tipoServico) : projeto;
-      abrirConfirmReqPreload(label, atuais.length, exames.length, function() {
-        preencherReqExames(exames);
-        _rqPreloadLastKey = chave || '';
-        _rqPreloadPromptKey = chave || '';
-        snack('Exames padrao carregados.');
-      }, function() {
-        _rqPreloadPromptKey = chave || '';
-      });
+      data = data || {};
+      _rqPreloadSelectionData = data;
+      if (!(data.listas || []).length) {
+        if (options.allowEmpty) {
+          abrirReqPreloadEditorVazio_(data);
+        } else if (options.auto) {
+          snack('Ainda não há listas salvas para este projeto e tipo de serviço.');
+        }
+        return;
+      }
+      abrirReqPreloadSelecaoComDados_(data, options.mode || 'select');
     },
     onFailure: function(e) { snackErro(appErrorMessage(e)); }
   });
+}
+
+function abrirReqPreloadSelecaoComDados_(data, mode) {
+  var modal = document.getElementById('modalReqPreloadSelect');
+  if (!modal) return;
+  _rqPreloadSelectionData = data || { listas: [] };
+  _rqPreloadSelectionMode = mode || 'select';
+  _rqPreloadSelectionIndex = 0;
+  var projeto = document.getElementById('reqPreloadSelectionProjeto');
+  var tipo = document.getElementById('reqPreloadSelectionTipo');
+  if (projeto) projeto.value = data.projeto || '';
+  if (tipo) tipo.value = data.tipoServico || '';
+  renderReqPreloadSelecao_();
+  abrirOverlay('modalReqPreloadSelect');
+}
+
+function renderReqPreloadSelecao_() {
+  var data = _rqPreloadSelectionData || {};
+  var listas = data.listas || [];
+  var listEl = document.getElementById('reqPreloadSelectionList');
+  var previewEl = document.getElementById('reqPreloadSelectionPreview');
+  var editBtn = document.getElementById('btnEditarReqPreloadSelecionado');
+  var useBtn = document.getElementById('btnUsarReqPreloadSelecionado');
+  if (!listEl || !previewEl) return;
+  if (!listas.length) {
+    listEl.innerHTML = '<div class="req-preload-empty">Nenhuma lista cadastrada para este projeto e tipo de serviço.</div>';
+    previewEl.innerHTML = '<div class="req-preload-preview-empty">Os exames poderão ser digitados manualmente.</div>';
+    if (editBtn) editBtn.style.display = 'none';
+    if (useBtn) useBtn.disabled = true;
+    return;
+  }
+  if (_rqPreloadSelectionIndex >= listas.length) _rqPreloadSelectionIndex = 0;
+  listEl.innerHTML = listas.map(function(item, index) {
+    var selected = index === _rqPreloadSelectionIndex;
+    var fallback = item.fallbackUsed ? '<span class="req-preload-option-note">geral do projeto</span>' : '';
+    return '<label class="req-preload-option' + (selected ? ' selected' : '') + '">' +
+      '<input type="radio" name="reqPreloadSelection" value="' + index + '"' + (selected ? ' checked' : '') + '>' +
+      '<span class="req-preload-option-main"><strong>' + esc(item.label || ('Lista ' + (index + 1))) + '</strong>' +
+      '<span class="req-preload-option-count">' + esc((item.exames || []).length) + ' exame(s)</span>' + fallback + '</span>' +
+      '<span class="material-symbols-outlined req-preload-option-check">check_circle</span>' +
+      '</label>';
+  }).join('');
+  Array.prototype.forEach.call(listEl.querySelectorAll('input[name="reqPreloadSelection"]'), function(input) {
+    input.addEventListener('change', function() {
+      _rqPreloadSelectionIndex = Number(input.value) || 0;
+      renderReqPreloadSelecao_();
+    });
+  });
+  var item = listas[_rqPreloadSelectionIndex] || {};
+  previewEl.innerHTML = '<div class="req-preload-preview-title">Prévia da ' + esc(item.label || 'lista') + '</div>' +
+    '<ol class="req-preload-preview-list">' + (item.exames || []).map(function(exame) {
+      return '<li>' + esc(exame) + '</li>';
+    }).join('') + '</ol>';
+  if (editBtn) editBtn.style.display = _rqPreloadSelectionMode === 'manage' ? '' : 'none';
+  if (useBtn) {
+    useBtn.disabled = false;
+    useBtn.innerHTML = '<span class="material-symbols-outlined">playlist_add_check</span> Carregar ' + esc(item.label || 'lista');
+  }
+}
+
+function usarReqPreloadListaSelecionada_() {
+  var data = _rqPreloadSelectionData || {};
+  var item = (data.listas || [])[_rqPreloadSelectionIndex];
+  if (!item) return;
+  var atuais = examesAtuaisRequisicao();
+  var aplicar = function() {
+    preencherReqExames(item.exames || []);
+    _rqPreloadLastKey = reqPreloadSelectionKey_(item);
+    _rqPreloadPromptKey = _rqPreloadLastKey;
+    fecharReqPreloadSelecao();
+    snack((item.label || 'Lista') + ' carregada na requisição.');
+  };
+  if (atuais.length && !reqPreloadListsMatch_(atuais, item.exames)) {
+    abrirConfirmReqPreload(
+      (data.projeto || '') + ' / ' + (data.tipoServico || '') + ' / ' + (item.label || 'lista'),
+      atuais.length,
+      (item.exames || []).length,
+      aplicar,
+      function() {}
+    );
+    return;
+  }
+  aplicar();
+}
+
+function abrirReqPreloadEditorDaSelecao() {
+  var data = _rqPreloadSelectionData || {};
+  var item = (data.listas || [])[_rqPreloadSelectionIndex];
+  if (!item) return;
+  fecharReqPreloadSelecao();
+  var projeto = document.getElementById('reqPreloadProjeto');
+  var tipo = document.getElementById('reqPreloadTipoServico');
+  var exames = document.getElementById('reqPreloadExames');
+  var status = document.getElementById('statusReqPreload');
+  _reqPreloadEditorId = item.id || '';
+  _reqPreloadEditorHash = item.hash || '';
+  _reqPreloadConflictData = null;
+  if (projeto) projeto.value = data.projeto || '';
+  if (tipo) tipo.value = data.tipoServico || '';
+  if (exames) exames.value = (item.exames || []).join('\n');
+  if (status) status.innerHTML = item.fallbackUsed
+    ? '<span style="color:#5f6b7c;">Esta é uma lista geral herdada. Ao salvar, será criada uma lista específica para este tipo de serviço.</span>'
+    : '';
+  abrirOverlay('modalReqPreload');
+}
+
+function fecharReqPreloadSelecao() {
+  fecharOverlay('modalReqPreloadSelect');
+}
+
+function fecharReqPreloadSelecaoSeFora(event) {
+  if (event && event.target && event.target.id !== 'modalReqPreloadSelect') return;
+  fecharReqPreloadSelecao();
+}
+
+function abrirReqPreloadEditorVazio_(data) {
+  var projeto = document.getElementById('reqPreloadProjeto');
+  var tipo = document.getElementById('reqPreloadTipoServico');
+  var exames = document.getElementById('reqPreloadExames');
+  var status = document.getElementById('statusReqPreload');
+  _reqPreloadEditorId = '';
+  _reqPreloadEditorHash = '';
+  _reqPreloadConflictData = null;
+  if (projeto) projeto.value = data.projeto || '';
+  if (tipo) tipo.value = data.tipoServico || '';
+  if (exames) exames.value = '';
+  if (status) status.innerHTML = '<span style="color:#5f6b7c;">Nenhuma lista cadastrada. Ao salvar, será criada automaticamente a Lista 01.</span>';
+  abrirOverlay('modalReqPreload');
 }
 
 function abrirConfirmReqPreload(projeto, atuais, novos, onConfirm, onSkip) {
@@ -7226,34 +7342,11 @@ function abrirReqPreloadModal() {
     snackErro('Selecione um paciente/projeto antes de gerenciar os exames padrão.');
     return;
   }
-  var status = document.getElementById('statusReqPreload');
-  if (status) status.innerHTML = '<span style="color:#5f6b7c;">Carregando...</span>';
-  _reqPreloadConflictData = null;
-  document.getElementById('reqPreloadProjeto').value = projeto;
-  var tipoEl = document.getElementById('reqPreloadTipoServico');
-  if (tipoEl) tipoEl.value = tipoServico || 'Geral do projeto';
-  document.getElementById('reqPreloadExames').value = '';
-  abrirOverlay('modalReqPreload');
-  appServerRun({
-    method: 'getReqExamesPreloadProjetoEditor',
-    args: [projeto, tipoServico],
-    onSuccess: function(data) {
-      var exames = data && data.exames ? data.exames : [];
-      _reqPreloadEditorHash = data && data.hash ? data.hash : '';
-      _reqPreloadConflictData = null;
-      if (tipoEl) tipoEl.value = (data && data.tipoServico) || tipoServico || 'Geral do projeto';
-      document.getElementById('reqPreloadExames').value = exames.join('\n');
-      if (status) {
-        status.innerHTML = data && data.fallbackUsed
-          ? '<span style="color:#5f6b7c;">Carregado o padrão geral do projeto. Ao salvar, será criado/atualizado o padrão específico para este tipo de serviço.</span>'
-          : '';
-      }
-    },
-    onFailure: function(e) {
-      _reqPreloadEditorHash = '';
-      if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(appErrorMessage(e)) + '</span>';
-    }
-  });
+  if (!tipoServico) {
+    snackErro('O prestador selecionado não possui tipo de serviço cadastrado.');
+    return;
+  }
+  carregarReqPreloadListas_(projeto, tipoServico, { mode: 'manage', allowEmpty: true });
 }
 
 function reqPreloadUsarListaAtual() {
@@ -7285,8 +7378,8 @@ function salvarReqPreloadProjeto() {
   appSetButtonBusy(btn, true);
   if (status) status.innerHTML = '<span style="color:#5f6b7c;">Salvando...</span>';
   appServerRun({
-    method: 'salvarReqExamesPreloadProjeto',
-    args: [projeto, exames, _reqPreloadEditorHash, tipoServico],
+    method: 'salvarReqExamesPreloadLista',
+    args: [projeto, tipoServico, exames, _reqPreloadEditorHash, _reqPreloadEditorId],
     onSuccess: function(res) {
       appSetButtonBusy(btn, false);
       if (res && res.conflict) {
@@ -7304,7 +7397,8 @@ function salvarReqPreloadProjeto() {
       if (status) status.innerHTML = '';
       preencherReqExames((res && res.exames) || exames);
       _reqPreloadEditorHash = res && res.hash ? res.hash : '';
-      _rqPreloadLastKey = res && res.chave ? res.chave : _rqPreloadLastKey;
+      _reqPreloadEditorId = res && res.list && res.list.id ? res.list.id : _reqPreloadEditorId;
+      _rqPreloadLastKey = res && res.list ? reqPreloadSelectionKey_(res.list) : _rqPreloadLastKey;
       _reqPreloadConflictData = null;
       appClearUnsavedChanges('modalReqPreload');
       fecharOverlay('modalReqPreload');
@@ -7320,9 +7414,10 @@ function salvarReqPreloadProjeto() {
 function reqPreloadCarregarVersaoAtual() {
   var data = _reqPreloadConflictData;
   if (!data) return;
-  var exames = data.exames || [];
+  var exames = data.list && data.list.exames ? data.list.exames : (data.exames || []);
   document.getElementById('reqPreloadExames').value = exames.join('\n');
   _reqPreloadEditorHash = data.hash || '';
+  if (data.list && data.list.id) _reqPreloadEditorId = data.list.id;
   _reqPreloadConflictData = null;
   var status = document.getElementById('statusReqPreload');
   if (status) {
@@ -7369,6 +7464,10 @@ function limparRequisicaoForm(options) {
   _rqPreloadPromptKey = '';
   _rqPendingPreloadData = null;
   _rqPostGeneratePreloadOffer = null;
+  _rqPreloadSelectionData = null;
+  _rqPreloadSelectionIndex = 0;
+  _rqPreloadSelectionContextKey = '';
+  _reqPreloadEditorId = '';
   _rqValidationVisible = false;
   clearRequisicaoValidation();
   if (!options.skipAvailabilityUpdate) updateRequisicaoGenerateAvailability(false);
@@ -7894,11 +7993,15 @@ function montarReqPreloadOfferAposGerar() {
 function oferecerSalvarReqPreloadAposGerar(snapshot) {
   if (!snapshot) return;
   appServerRun({
-    method: 'getReqExamesPreloadProjetoEditor',
+    method: 'getReqExamesPreloadProjetoLists',
     args: [snapshot.projeto, snapshot.tipoServico],
     onSuccess: function(data) {
-      if (data && data.exists && data.active !== false) return;
-      abrirReqPreloadSaveOffer(snapshot, data && data.hash ? data.hash : '');
+      var listas = data && data.listas ? data.listas : [];
+      var igual = listas.some(function(item) {
+        return item && item.active !== false && reqPreloadListsMatch_(item.exames, snapshot.exames);
+      });
+      if (igual) return;
+      abrirReqPreloadSaveOffer(snapshot, data && data.proximoNumero ? data.proximoNumero : (listas.length + 1));
     },
     onFailure: function(e) {
       snackErro(appErrorMessage(e));
@@ -7906,7 +8009,7 @@ function oferecerSalvarReqPreloadAposGerar(snapshot) {
   });
 }
 
-function abrirReqPreloadSaveOffer(snapshot, hash) {
+function abrirReqPreloadSaveOffer(snapshot, proximoNumero) {
   var modal = document.getElementById('confirmReqPreloadSave');
   var msg = document.getElementById('confirmReqPreloadSaveMsg');
   var status = document.getElementById('statusReqPreloadSave');
@@ -7916,11 +8019,16 @@ function abrirReqPreloadSaveOffer(snapshot, hash) {
     projeto: snapshot.projeto,
     tipoServico: snapshot.tipoServico,
     exames: snapshot.exames || [],
-    hash: hash || ''
+    proximoNumero: proximoNumero || 1
   };
   msg.innerHTML =
-    'A requisicao foi gerada com sucesso e ainda nao existe padrao salvo para <strong>' + esc(snapshot.projeto) + ' / ' + esc(snapshot.tipoServico) + '</strong>.' +
-    '<br><br>Deseja salvar os exames desta requisicao como padrao para os proximos usos?';
+    'A requisição foi gerada com sucesso. Esta combinação ainda não está salva em uma lista de <strong>' + esc(snapshot.projeto) + ' / ' + esc(snapshot.tipoServico) + '</strong>.' +
+    '<br><br>Se salvar, o sistema criará automaticamente a <strong>Lista ' + (proximoNumero < 10 ? '0' : '') + esc(proximoNumero) + '</strong>, sem pedir um nome.';
+  var preview = document.getElementById('reqPreloadSavePreview');
+  if (preview) {
+    preview.innerHTML = '<div class="req-preload-preview-title">Exames que serão salvos</div><ol class="req-preload-preview-list">' +
+      (snapshot.exames || []).map(function(exame) { return '<li>' + esc(exame) + '</li>'; }).join('') + '</ol>';
+  }
   if (status) status.innerHTML = '';
   btn.disabled = false;
   abrirOverlay('confirmReqPreloadSave');
@@ -7939,15 +8047,15 @@ function salvarReqPreloadAposGerar() {
   appSetButtonBusy(btn, true);
   if (status) status.innerHTML = '<span style="color:#5f6b7c;">Salvando...</span>';
   appServerRun({
-    method: 'salvarReqExamesPreloadProjeto',
-    args: [data.projeto, data.exames, data.hash, data.tipoServico],
+    method: 'salvarReqExamesPreloadLista',
+    args: [data.projeto, data.tipoServico, data.exames, '', ''],
     onSuccess: function(res) {
       appSetButtonBusy(btn, false);
       if (res && res.conflict) {
         if (status) status.innerHTML = '<span style="color:#b3261e;">' + esc(res.message || 'Este padrao foi alterado por outro usuario.') + '</span>';
         return;
       }
-      _rqPreloadLastKey = res && res.chave ? res.chave : _rqPreloadLastKey;
+      _rqPreloadLastKey = res && res.list ? reqPreloadSelectionKey_(res.list) : _rqPreloadLastKey;
       _rqPostGeneratePreloadOffer = null;
       fecharOverlay('confirmReqPreloadSave');
       snack((res && res.message) || 'Exames padrao salvos.');

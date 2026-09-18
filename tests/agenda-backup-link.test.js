@@ -61,6 +61,34 @@ test('vinculo do backup guarda o agendamento de destino com data e hora', () => 
   );
 });
 
+test('novo vinculo do backup preserva os anteriores e a leitura retorna o ultimo', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const source = Array(cfg.lastCol).fill('');
+  source[cfg.idx.id] = 'origem-1';
+  source[cfg.idx.cb.status] = 'Adicionado à Agenda';
+  const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), source]);
+
+  server.formatarDataSafe = (value) => value instanceof Date ? value.getDate() + '/08/2026' : String(value || '');
+  server.formatarDataIsoAgenda_ = (value) => value instanceof Date
+    ? '2026-08-' + String(value.getDate()).padStart(2, '0')
+    : String(value || '');
+  server.formatAgendaHora_ = (value) => String(value.getHours()).padStart(2, '0') + ':00';
+  server.codexWriteAuditChanges_ = () => {};
+
+  server.agendaVincularBackupAoAgendamento_(sheet, 'origem-1', 'destino-1', new Date(2026, 7, 5, 9));
+  server.agendaVincularBackupAoAgendamento_(sheet, 'origem-1', 'destino-2', new Date(2026, 7, 19, 11));
+
+  const refs = JSON.parse(sheet.rows[1][cfg.idx.backupAgendaRef]);
+  assert.deepEqual(JSON.parse(JSON.stringify(refs.map((ref) => ref.id))), ['destino-1', 'destino-2']);
+  assert.equal(server.agendaBackupAgendaRefFromCell_(sheet.rows[1][cfg.idx.backupAgendaRef]).id, 'destino-2');
+  sheet.rows[1][cfg.idx.tipo] = 'Visita';
+  sheet.rows[1][cfg.idx.labCentral] = 'Sim';
+  sheet.rows[1][cfg.idx.cb.nome] = 'OCASA';
+  sheet.rows[1][cfg.idx.cb.status] = 'Adicionado à Agenda';
+  assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.agendamento.id, 'destino-2');
+});
+
 test('referencia invalida do backup nao quebra a carga da Agenda', () => {
   const server = agendaServer();
   assert.equal(server.agendaBackupAgendaRefFromCell_('conteudo legado'), null);

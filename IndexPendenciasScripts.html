@@ -402,17 +402,35 @@
 
   function abrirPendenciaAgenda(agendaId) {
     if (!agendaId) {
-      irPara('agenda');
+      irPara('requisicao');
       return;
     }
-    if ((_agendaEventos || []).some(function(r) { return String(r.id || '') === String(agendaId); })) {
-      irPara('agenda');
-      setTimeout(function() { abrirAgendaEdicao(agendaId); }, 0);
-    } else {
-      _agendaAbrirAposCarga = agendaId;
-      irPara('agenda');
-      if (_agendaInitStarted) carregarAgendaEventos(true, agendaAbrirPendenteAposCarga);
+    function abrirRequisicaoComEvento_(dados) {
+      if (!dados) {
+        snackErro('Agendamento da pendência não encontrado.');
+        return;
+      }
+      irPara('requisicao');
+      setTimeout(function() {
+        if (typeof aplicarAgendaNaRequisicao === 'function') {
+          aplicarAgendaNaRequisicao(dados, 0);
+        } else {
+          snackErro('A tela de requisição ainda não está pronta.');
+        }
+      }, 80);
     }
+    var local = typeof agendaFindEventoLocal_ === 'function' ? agendaFindEventoLocal_(agendaId) : null;
+    if (local) {
+      abrirRequisicaoComEvento_(local);
+      return;
+    }
+    if (typeof agendaFetchEventoPorId_ === 'function') {
+      agendaFetchEventoPorId_(agendaId, 0, abrirRequisicaoComEvento_, function(e) {
+        snackErro(appErrorMessage(e));
+      });
+      return;
+    }
+    snackErro('Não foi possível carregar o agendamento da pendência.');
   }
 
   function abrirPendenciaEstoque(q) {

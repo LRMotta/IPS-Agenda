@@ -36,6 +36,7 @@
   var _agendaHistoricoLoading = false;
   var _agendaHistoricoRequestId = 0;
   var _agendaMonitoriasExpandidasPorDia = {};
+  var _agendaCanceladosExpandidosPorDia = {};
   var _agendaEventosPorId = {};
   var _agendaEditRecord = null;
   var _agendaMateriaisAnteriores = [];
@@ -3584,6 +3585,7 @@
       if (document.getElementById('rqHorario')) document.getElementById('rqHorario').value = dados.hora || '';
       preencherDadosPaciente();
       preencherEnderecoReq();
+      if (typeof abrirReqPreloadSelecaoSePronto_ === 'function') abrirReqPreloadSelecaoSePronto_({ auto: true, force: true });
       if (typeof updateRequisicaoGenerateAvailability === 'function') updateRequisicaoGenerateAvailability(false);
       var exams = document.querySelectorAll('#rqExamesLista .exam-input, #examList .exam-input');
       if (!exams.length) {
@@ -3736,6 +3738,7 @@
   var _agendaEventos = [];
   var _agendaView = 'lista';
   var _agendaWeekOffset = 0;
+  var _agendaFocarHojeAposCarga = false;
   var _agendaKitsBaixados = false;
   var _agendaAbrirAposCarga = '';
   var _agendaEditSessionId = '';
@@ -4024,7 +4027,7 @@
           inicio: cached.range.loadedStart,
           fim: cached.range.loadedEndExclusive
         }, false);
-        renderAgendaOperacional();
+        agendaRenderAposCarga_();
         if (typeof callback === 'function') callback();
         if (typeof options.onComplete === 'function') options.onComplete();
         if (options.initialLoad && forcar !== true) agendaAgendarRevalidacaoInicialReferencias_();
@@ -4052,7 +4055,7 @@
           inicio: response.range.loadedStart,
           fim: response.range.loadedEndExclusive
         }, response.truncated);
-        renderAgendaOperacional();
+        agendaRenderAposCarga_();
         if (typeof callback === 'function') callback();
         if (typeof options.onComplete === 'function') options.onComplete();
         if (options.initialLoad && forcar !== true) agendaAgendarRevalidacaoInicialReferencias_();
@@ -4092,7 +4095,7 @@
     google.script.run
       .withSuccessHandler(function(rows) {
         agendaAplicarEventos_(rows, 'full', null, false);
-        renderAgendaOperacional();
+        agendaRenderAposCarga_();
         finalizarSucesso();
       })
       .withFailureHandler(function(e) {
@@ -4268,7 +4271,7 @@
       inicio: response.range.loadedStart,
       fim: response.range.loadedEndExclusive
     }, false);
-    renderAgendaOperacional();
+    agendaRenderAposCarga_();
     return true;
   }
 
@@ -4882,6 +4885,23 @@
     agendaNavigateToWeekOffset_(0, agendaScrollToToday);
   }
 
+  function agendaEntrarNoHoje_() {
+    _agendaWeekOffset = 0;
+    var input = document.getElementById('agendaGoDateInput');
+    if (input) input.value = agendaIso(new Date());
+    _agendaFocarHojeAposCarga = true;
+    if (!(_agendaEventosLoadedAt || STATE.agenda.eventsLoadedAt)) return;
+    _agendaFocarHojeAposCarga = false;
+    agendaNavigateToWeekOffset_(0, agendaScrollToToday);
+  }
+
+  function agendaRenderAposCarga_() {
+    renderAgendaOperacional();
+    if (!_agendaFocarHojeAposCarga) return;
+    _agendaFocarHojeAposCarga = false;
+    setTimeout(agendaScrollToToday, 0);
+  }
+
   function agendaScrollToToday() {
     agendaScrollToDate(agendaIso(new Date()));
   }
@@ -5021,12 +5041,12 @@
           return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado') && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
         });
         html += agendaDayHeader(d, dayRows);
-        var monitorias = dayRows.filter(AgendaRules.isOperationalPeriod);
-        var demais = dayRows.filter(function(r) { return !AgendaRules.isOperationalPeriod(r); });
-        html += monitorias.length ? agendaMonitoriasGrupoHtml(monitorias, iso) : '';
+        var gruposDia = agendaSepararLinhasDoDia_(dayRows);
+        html += gruposDia.monitorias.length ? agendaMonitoriasGrupoHtml(gruposDia.monitorias, iso) : '';
+        html += gruposDia.cancelados.length ? agendaCanceladosGrupoHtml(gruposDia.cancelados, iso) : '';
         html += agendaBirthdayBannerHtml(d, false);
         html += dayRows.length
-          ? (monitorias.length && demais.length ? '<div class="ag-list-section-title">Visitas</div>' : '') + demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('')
+          ? (gruposDia.demais.length && (gruposDia.monitorias.length || gruposDia.cancelados.length) ? '<div class="ag-list-section-title">Visitas</div>' : '') + gruposDia.demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('')
           : '<div class="ag-empty"><span class="material-symbols-outlined">event_busy</span>Dia livre - sem agendamentos registrados.</div>';
       }
     }
@@ -5035,12 +5055,22 @@
     el.innerHTML = html;
   }
 
+  function agendaSepararLinhasDoDia_(dayRows) {
+    var rows = Array.isArray(dayRows) ? dayRows : [];
+    var cancelados = rows.filter(AgendaRules.isCancelled);
+    return {
+      monitorias: rows.filter(function(r) { return !AgendaRules.isCancelled(r) && AgendaRules.isOperationalPeriod(r); }),
+      cancelados: cancelados,
+      demais: rows.filter(function(r) { return !AgendaRules.isCancelled(r) && !AgendaRules.isOperationalPeriod(r); })
+    };
+  }
+
   function agendaDayRowsHtml(dayRows, iso) {
-    var monitorias = (dayRows || []).filter(AgendaRules.isOperationalPeriod);
-    var demais = (dayRows || []).filter(function(r) { return !AgendaRules.isOperationalPeriod(r); });
-    var html = monitorias.length ? agendaMonitoriasGrupoHtml(monitorias, iso) : '';
-    if (monitorias.length && demais.length) html += '<div class="ag-list-section-title">Visitas</div>';
-    return html + demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('');
+    var grupos = agendaSepararLinhasDoDia_(dayRows);
+    var html = grupos.monitorias.length ? agendaMonitoriasGrupoHtml(grupos.monitorias, iso) : '';
+    html += grupos.cancelados.length ? agendaCanceladosGrupoHtml(grupos.cancelados, iso) : '';
+    if (grupos.demais.length && (grupos.monitorias.length || grupos.cancelados.length)) html += '<div class="ag-list-section-title">Visitas</div>';
+    return html + grupos.demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('');
   }
 
   function agendaMonitoriasGrupoHtml(monitorias, iso) {
@@ -5059,6 +5089,67 @@
   function agendaToggleMonitoriasDia(iso) {
     _agendaMonitoriasExpandidasPorDia[iso] = _agendaMonitoriasExpandidasPorDia[iso] === false;
     renderAgendaLista();
+  }
+
+  function agendaCanceladosGrupoHtml(cancelados, iso) {
+    var expanded = _agendaCanceladosExpandidosPorDia[iso] !== false;
+    var countLabel = cancelados.length + ' ' + (cancelados.length === 1 ? 'registro' : 'registros');
+    var chevron = expanded ? 'expand_less' : 'expand_more';
+    return '<section class="ag-cancelados-group" aria-label="Cancelados do dia">' +
+      '<div class="ag-cancelados-head">' +
+        '<div class="ag-cancelados-title"><strong>Cancelados do dia</strong><span class="ag-ch-cancelado ag-cancelados-count">' + esc(countLabel) + '</span></div>' +
+        '<button type="button" class="ag-act-btn ag-cancelados-toggle" onclick="agendaToggleCanceladosDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-label="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
+      '</div>' +
+      (expanded ? '<div class="ag-cancelados-items">' + cancelados.map(function(r, idx) { return agendaCanceladoCompactoHtml(r, iso + '-cancelado-' + idx); }).join('') + '</div>' : '') +
+    '</section>';
+  }
+
+  function agendaToggleCanceladosDia(iso) {
+    _agendaCanceladosExpandidosPorDia[iso] = _agendaCanceladosExpandidosPorDia[iso] === false;
+    renderAgendaLista();
+  }
+
+  function agendaCanceladoTitulo_(r) {
+    if (agendaIsMonitoria(r)) return 'Monitoria';
+    if (AgendaRules.isSiv(r)) return 'SIV';
+    return r.participante || r.tipo || 'Evento sem participante';
+  }
+
+  function agendaCanceladoContexto_(r) {
+    var parts = [];
+    if (AgendaRules.isOperationalPeriod(r)) {
+      if (r.salaMonitoria) parts.push(r.salaMonitoria);
+      if (r.monitorName) parts.push(r.monitorName);
+    } else {
+      if (r.visita) parts.push('Visita ' + r.visita);
+      if (r.medico) parts.push(r.medico);
+    }
+    return parts.join(' · ') || 'Detalhes não informados';
+  }
+
+  function agendaCancelamentoResumo_(r) {
+    var linhas = String((r || {}).obs || '').split(/\r?\n/);
+    for (var i = linhas.length - 1; i >= 0; i--) {
+      var linha = String(linhas[i] || '').trim();
+      if (normAgenda(linha).indexOf('cancelamento | categoria:') === 0) return linha.replace(/^Cancelamento\s*\|\s*/i, '');
+    }
+    return AgendaRules.isOperationalPeriod(r) ? 'Cancelamento confirmado' : 'Motivo não informado';
+  }
+
+  function agendaCanceladoCompactoHtml(r, suffix) {
+    var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
+    var cardId = agendaCardDomId(r);
+    var tipoChip = AgendaRules.isOperationalPeriod(r) ? '' : agendaTipoChip(r.tipo);
+    return '<div class="ag-appt ag-cancelado-compact st-cancelado" id="' + cardId + '">' +
+      '<div class="ag-cancelado-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
+        '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
+        '<div class="ag-cancelado-event"><div class="ag-cancelado-name">' + esc(agendaCanceladoTitulo_(r)) + agendaStatusChipOp(r.status, r.tipo) + '</div><div class="ag-cancelado-project">' + tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + '</div></div>' +
+        '<div class="ag-cancelado-context">' + agendaMetaText(AgendaRules.isOperationalPeriod(r) ? 'meeting_room' : 'flag', agendaCanceladoContexto_(r)) + '</div>' +
+        '<div class="ag-cancelado-motive">' + agendaMetaText('info', agendaCancelamentoResumo_(r)) + '</div>' +
+        '<div class="ag-appt-actions"><button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></button><button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes" aria-label="Detalhes"><span class="material-symbols-outlined">expand_more</span></button></div>' +
+      '</div>' +
+      '<div class="ag-appt-detail" id="' + id + '">' + agendaDetailHtml(r) + '</div>' +
+    '</div>';
   }
 
   function agendaMonitoriaCompactaHtml(r, suffix) {
@@ -5121,7 +5212,9 @@
   }
 
   function agendaDayHeader(d, rows) {
-    rows = (rows || []).filter(function(r) {
+    var todos = rows || [];
+    var cancelados = todos.filter(AgendaRules.isCancelled).length;
+    rows = todos.filter(function(r) {
       return AgendaRules.isVisibleIn(r, AgendaRules.Context.DAILY_HEADER);
     });
     var total = rows.length;
@@ -5141,6 +5234,7 @@
       '<div class="ag-day-stats">' + (tipoStats.length ? tipoStats.map(function(t) {
         return '<span class="ag-dpill ag-dp-n">' + t.count + ' ' + esc(t.label) + '</span>';
       }).join('') : '<span class="ag-dpill ag-dp-n">' + total + ' evento(s)</span>') +
+      (cancelados ? '<span class="ag-dpill ag-dp-cancel">' + cancelados + ' ' + (cancelados === 1 ? 'cancelado' : 'cancelados') + '</span>' : '') +
       (lab ? '<span class="ag-dpill ag-dp-lab">' + lab + ' Lab Central</span>' : '') +
       (carros ? agendaCarroDiaPill(carros, false) : '') +
       (courierNaoAg ? '<span class="ag-dpill ag-dp-pend">' + courierNaoAg + ' courier nao agendado</span>' : '') +
