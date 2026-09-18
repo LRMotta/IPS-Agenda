@@ -387,6 +387,28 @@
   </div>
 </div>
 
+<!-- CONFIRMAR ENTREGA DE TRANSPORTE -->
+<div class="modal-overlay" id="modalConfirmarEntregaPendencia" onclick="if(event.target.id==='modalConfirmarEntregaPendencia') fecharConfirmacaoEntregaPendencia()">
+  <div class="confirm-box pendencia-entrega-box" role="dialog" aria-modal="true" aria-labelledby="pendenciaEntregaTitle">
+    <div class="pendencia-entrega-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+    <h3 id="pendenciaEntregaTitle">Confirmar entrega?</h3>
+    <p>Confira os dados abaixo. O status deste transporte será alterado para <strong>Entregue</strong> no Agendamento.</p>
+    <div class="pendencia-entrega-grid">
+      <div><span>Participante</span><strong id="pendenciaEntregaParticipante">—</strong></div>
+      <div><span>Transporte</span><strong id="pendenciaEntregaTransporte">—</strong></div>
+      <div><span>Courier / temperatura</span><strong id="pendenciaEntregaCourier">—</strong></div>
+      <div><span>AWB</span><strong id="pendenciaEntregaAwb">—</strong></div>
+      <div><span>Data e hora</span><strong id="pendenciaEntregaDataHora">—</strong></div>
+      <div><span>Projeto</span><strong id="pendenciaEntregaProjeto">—</strong></div>
+      <div><span>Visita</span><strong id="pendenciaEntregaVisita">—</strong></div>
+    </div>
+    <div class="confirm-actions">
+      <button type="button" class="btn-txt" onclick="fecharConfirmacaoEntregaPendencia()">Cancelar</button>
+      <button type="button" class="btn-save pendencia-entrega-submit" id="btnConfirmarEntregaPendencia"><span class="material-symbols-outlined">task_alt</span>Confirmar entrega</button>
+    </div>
+  </div>
+</div>
+
 <!-- CONFIRM EXCLUIR COURIER -->
 <div class="modal-overlay" id="confirmCourier">
   <div class="confirm-box">

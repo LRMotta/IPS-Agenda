@@ -170,7 +170,7 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
   const pendenciasClient = readProjectFile('IndexPendenciasScripts.html');
   const backupCardIndex = pendenciasClient.indexOf("key: 'transporteBackupNaoAgendado'");
   const documentacaoCardIndex = pendenciasClient.indexOf("key: 'documentacaoTransporteSemEnvio'");
-  assert.match(pendenciasClient, /key: 'transporteBackupNaoAgendado',[\s\S]*?action: pendenciaAgendaAction/);
+  assert.match(pendenciasClient, /key: 'transporteBackupNaoAgendado',[\s\S]*?action: pendenciaAgendaRegistroAction/);
   assert.ok(backupCardIndex > pendenciasClient.indexOf("key: 'kitsVencendo'"));
   assert.ok(documentacaoCardIndex > backupCardIndex);
   assert.equal(pendenciasClient.lastIndexOf("key: '"), documentacaoCardIndex);

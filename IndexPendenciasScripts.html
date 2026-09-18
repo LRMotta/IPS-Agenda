@@ -56,6 +56,10 @@
     return "abrirPendenciaAgenda('" + jsArg(it && it.agendaId) + "')";
   }
 
+  function pendenciaAgendaRegistroAction(it) {
+    return "abrirPendenciaAgendaRegistro('" + jsArg(it && it.agendaId) + "')";
+  }
+
   function pendenciaAwbAction(it) {
     return "abrirPendenciaAwb('" + jsArg(it && it.agendaId) + "')";
   }
@@ -117,7 +121,7 @@
         tone: '#856404',
         bg: '#fff3cd',
         priority: true,
-        action: pendenciaAgendaAction,
+        action: pendenciaAgendaRegistroAction,
         items: p.courierNaoAgendada || [],
         render: function(it) {
           return {
@@ -133,7 +137,7 @@
         tone: '#0059a8',
         bg: '#d8ebff',
         priority: true,
-        action: pendenciaAgendaAction,
+        action: pendenciaAgendaRegistroAction,
         items: p.courierNaoConfirmada || [],
         render: function(it) {
           return {
@@ -183,7 +187,7 @@
         tone: '#9a4b16',
         bg: '#fff7e6',
         priority: true,
-        action: pendenciaAgendaAction,
+        action: pendenciaAgendaRegistroAction,
         items: p.posVisitaPoloTrialPendente || [],
         render: function(it) {
           return {
@@ -199,7 +203,7 @@
         tone: '#5b21b6',
         bg: '#f5f3ff',
         priority: true,
-        action: pendenciaAgendaAction,
+        action: pendenciaAgendaRegistroAction,
         items: p.posVisitaEcrfPendente || [],
         render: function(it) {
           return {
@@ -231,7 +235,7 @@
         tone: '#5b21b6',
         bg: '#f5f3ff',
         priority: true,
-        action: pendenciaAgendaAction,
+        action: pendenciaAgendaRegistroAction,
         items: p.transporteBackupNaoAgendado || [],
         render: function(it) {
           return {
@@ -247,7 +251,7 @@
         tone: '#8a4b08',
         bg: '#fff4df',
         priority: true,
-        action: pendenciaAgendaAction,
+        action: pendenciaAgendaRegistroAction,
         items: p.documentacaoTransporteSemEnvio || [],
         render: function(it) {
           return {
@@ -271,7 +275,7 @@
           ? '<button type="button" class="dash-pend-track" title="Abrir rastreio" onclick="abrirPendenciaTracking(event,\'' + jsArg(it.trackingUrl) + '\')"><span class="material-symbols-outlined">travel_explore</span></button>'
           : '';
         var confirmDelivery = card.key === 'awbEnviadaNaoEntregue'
-          ? '<button type="button" class="dash-pend-confirm" title="Confirmar entrega" onclick="confirmarEntregaPendencia(event,\'' + jsArg(it.agendaId) + '\',\'' + jsArg(it.slot) + '\',\'' + jsArg(it.awb) + '\')"><span class="material-symbols-outlined">task_alt</span><span>Confirmar entrega</span></button>'
+          ? '<button type="button" class="dash-pend-confirm" title="Confirmar entrega" onclick="confirmarEntregaPendencia(event,\'' + jsArg(it.agendaId) + '\',\'' + jsArg(it.slot) + '\',\'' + jsArg(it.awb) + '\',\'' + jsArg(it.participante) + '\',\'' + jsArg(it.courier) + '\',\'' + jsArg(it.temperatura) + '\',\'' + jsArg(it.data) + '\',\'' + jsArg(it.hora) + '\',\'' + jsArg(it.projeto) + '\',\'' + jsArg(it.visita) + '\')"><span class="material-symbols-outlined">task_alt</span><span>Confirmar entrega</span></button>'
           : '';
         return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '" onclick="' + action + '" title="' + esc((r.main || '') + ' ' + (r.meta || '')) + '">' +
           (urgent ? '<div class="dash-pend-alert"><span class="material-symbols-outlined">priority_high</span>' + esc(prazo || 'até 24h') + '</div>' : '') +
@@ -440,7 +444,7 @@
     snackErro('Não foi possível carregar o agendamento da pendência.');
   }
 
-  function abrirPendenciaAwb(agendaId) {
+  function abrirPendenciaAgendaRegistro(agendaId) {
     agendaId = String(agendaId || '').trim();
     if (!agendaId) {
       snackErro('Agendamento da pendência não encontrado.');
@@ -456,7 +460,13 @@
     snackErro('A tela de edição da Agenda ainda não está pronta.');
   }
 
-  function confirmarEntregaPendencia(ev, agendaId, slot, awb) {
+  function abrirPendenciaAwb(agendaId) {
+    abrirPendenciaAgendaRegistro(agendaId);
+  }
+
+  var _pendenciaEntregaPendente = null;
+
+  function confirmarEntregaPendencia(ev, agendaId, slot, awb, participante, courier, temperatura, data, hora, projeto, visita) {
     if (ev && ev.stopPropagation) ev.stopPropagation();
     agendaId = String(agendaId || '').trim();
     slot = String(slot || '').trim();
@@ -465,35 +475,76 @@
       snackErro('Não foi possível identificar o transporte da pendência.');
       return;
     }
-    var label = [slot, awb ? 'AWB ' + awb : 'AWB'].filter(Boolean).join(' · ');
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function' &&
-        !window.confirm('Confirmar a entrega de ' + label + '?')) return;
-    var btn = ev && ev.currentTarget;
+    _pendenciaEntregaPendente = {
+      agendaId: agendaId,
+      slot: slot,
+      awb: awb,
+      participante: String(participante || '').trim(),
+      courier: String(courier || '').trim(),
+      temperatura: String(temperatura || '').trim(),
+      data: String(data || '').trim(),
+      hora: String(hora || '').trim(),
+      projeto: String(projeto || '').trim(),
+      visita: String(visita || '').trim()
+    };
+    var p = _pendenciaEntregaPendente;
+    var values = {
+      participante: p.participante || 'Não informado',
+      transporte: p.slot || 'Não informado',
+      courier: pendenciaCourierComTemperatura(p) || 'Não informado',
+      awb: p.awb ? 'AWB ' + p.awb : 'Não informada',
+      dataHora: [p.data, p.hora].filter(Boolean).join(' · ') || 'Não informado',
+      projeto: p.projeto || 'Não informado',
+      visita: p.visita || 'Não informada'
+    };
+    Object.keys(values).forEach(function(key) {
+      var el = document.getElementById('pendenciaEntrega' + key.charAt(0).toUpperCase() + key.slice(1));
+      if (el) el.textContent = values[key];
+    });
+    var confirmBtn = document.getElementById('btnConfirmarEntregaPendencia');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = '<span class="material-symbols-outlined">task_alt</span>Confirmar entrega';
+      confirmBtn.onclick = executarConfirmarEntregaPendencia_;
+    }
+    abrirOverlay('modalConfirmarEntregaPendencia');
+  }
+
+  function fecharConfirmacaoEntregaPendencia() {
+    _pendenciaEntregaPendente = null;
+    fecharOverlay('modalConfirmarEntregaPendencia');
+  }
+
+  function executarConfirmarEntregaPendencia_() {
+    var p = _pendenciaEntregaPendente;
+    if (!p) return;
+    var btn = document.getElementById('btnConfirmarEntregaPendencia');
     if (btn) {
       btn.disabled = true;
-      btn.dataset.originalLabel = btn.dataset.originalLabel || btn.textContent;
-      btn.querySelectorAll('.material-symbols-outlined').forEach(function(icon) { icon.textContent = 'hourglass_empty'; });
-      var btnLabel = btn.querySelector('span:not(.material-symbols-outlined)');
-      if (btnLabel) btnLabel.textContent = 'Confirmando…';
+      btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span>Confirmando…';
     }
     appServerRun({
       method: 'confirmarEntregaTransportePendencia',
-      args: [agendaId, slot, awb],
+      args: [p.agendaId, p.slot, p.awb],
       onSuccess: function(res) {
         if (res && (res.erro || res.conflito)) {
           if (btn) btn.disabled = false;
           snackErro(res.erro || 'A pendência mudou. Atualize a lista antes de confirmar.');
+          fecharOverlay('modalConfirmarEntregaPendencia');
+          _pendenciaEntregaPendente = null;
           carregarPendencias(true);
           return;
         }
         if (_pendenciasCache && Array.isArray(_pendenciasCache.awbEnviadaNaoEntregue)) {
           _pendenciasCache.awbEnviadaNaoEntregue = _pendenciasCache.awbEnviadaNaoEntregue.filter(function(item) {
-            return !(String(item.agendaId || '') === agendaId && String(item.slot || '') === slot);
+            return !(String(item.agendaId || '') === p.agendaId && String(item.slot || '') === p.slot);
           });
           if (_pendenciasCache.counts) _pendenciasCache.counts.awbEnviadaNaoEntregue = _pendenciasCache.awbEnviadaNaoEntregue.length;
           renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
         }
-        setPendenciasStatus('Entrega confirmada para ' + label + '.', 'ok');
+        fecharOverlay('modalConfirmarEntregaPendencia');
+        _pendenciaEntregaPendente = null;
+        setPendenciasStatus('Entrega confirmada para ' + [p.slot, p.awb ? 'AWB ' + p.awb : 'AWB'].filter(Boolean).join(' · ') + '.', 'ok');
         snack('Entrega confirmada no Agendamento.');
         carregarPendencias(true, { silent: true });
       },

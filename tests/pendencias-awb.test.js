@@ -43,7 +43,35 @@ test('Pendencias AWB exibem acao propria, botao de confirmacao e editor da Agend
   assert.match(source, /confirmarEntregaPendencia\(event/);
   assert.match(source, /method: 'confirmarEntregaTransportePendencia'/);
   assert.match(source, /stopPropagation/);
+  assert.match(source, /modalConfirmarEntregaPendencia/);
+  assert.match(source, /executarConfirmarEntregaPendencia_/);
+  assert.doesNotMatch(source, /window\.confirm\(/);
+  assert.match(readProjectFile('IndexExtraModals.html'), /pendenciaEntregaParticipante/);
   assert.match(readProjectFile('IndexStyles.html'), /\.dash-pend-confirm/);
+});
+
+test('pendencias operacionais abrem o agendamento e apenas requisicao usa o fluxo de Req. Exames', () => {
+  const source = readProjectFile('IndexPendenciasScripts.html');
+  const agendaKeys = [
+    'courierNaoAgendada',
+    'courierNaoConfirmada',
+    'posVisitaPoloTrialPendente',
+    'posVisitaEcrfPendente',
+    'transporteBackupNaoAgendado',
+    'documentacaoTransporteSemEnvio'
+  ];
+  agendaKeys.forEach((key) => {
+    const start = source.indexOf(`key: '${key}'`);
+    const end = source.indexOf("key: '", start + 1);
+    const card = source.slice(start, end === -1 ? source.length : end);
+    assert.match(card, /action: pendenciaAgendaRegistroAction/);
+  });
+  const requisicaoStart = source.indexOf("key: 'requisicaoExamesPendente'");
+  const requisicaoEnd = source.indexOf("key: '", requisicaoStart + 1);
+  const requisicao = source.slice(requisicaoStart, requisicaoEnd === -1 ? source.length : requisicaoEnd);
+  assert.match(requisicao, /action: pendenciaAgendaAction/);
+  assert.match(source, /function abrirPendenciaAgendaRegistro\(agendaId\)/);
+  assert.match(source, /window\.abrirAgendaRegistroPorId/);
 });
 
 test('confirmar entrega atualiza somente o slot AWB correspondente e audita a mutacao', () => {
