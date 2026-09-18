@@ -24,11 +24,16 @@ test('requisicao exige o prestador antes do solicitante e oferece selecao com pr
   assert.doesNotMatch(core, /method:\s*'getReqExamesPreloadProjetoContext'/);
 });
 
-test('pendencia abre o Req. Exames com o agendamento carregado diretamente', () => {
+test('pendencia de requisicao continua abrindo o Req. Exames com o agendamento carregado', () => {
   const pendencias = readProjectFile('IndexPendenciasScripts.html');
-  assert.match(pendencias, /irPara\('requisicao'\)/);
+  const requisicaoCard = pendencias.slice(
+    pendencias.indexOf("key: 'requisicaoExamesPendente'"),
+    pendencias.indexOf("key: 'posVisitaPoloTrialPendente'")
+  );
+  assert.match(requisicaoCard, /action: pendenciaAgendaAction/);
+  assert.match(pendencias, /function abrirPendenciaAgenda\(agendaId\)/);
   assert.match(pendencias, /agendaFindEventoLocal_\(/);
   assert.match(pendencias, /agendaFetchEventoPorId_\(/);
   assert.match(pendencias, /aplicarAgendaNaRequisicao\(dados, 0\)/);
-  assert.doesNotMatch(pendencias, /abrirAgendaEdicao\(agendaId\)/);
+  assert.doesNotMatch(requisicaoCard, /abrirAgendaEdicao/);
 });

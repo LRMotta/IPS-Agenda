@@ -56,6 +56,10 @@
     return "abrirPendenciaAgenda('" + jsArg(it && it.agendaId) + "')";
   }
 
+  function pendenciaAwbAction(it) {
+    return "abrirPendenciaAwb('" + jsArg(it && it.agendaId) + "')";
+  }
+
   function pendenciaEstoqueAction(it) {
     var q = (it && (it.idItem || it.descricao || it.projeto)) || '';
     return "abrirPendenciaEstoque('" + jsArg(q) + "')";
@@ -144,7 +148,7 @@
         icon: 'outbox',
         tone: '#0f766e',
         bg: '#d9f5ef',
-        action: pendenciaAgendaAction,
+        action: pendenciaAwbAction,
         items: p.awbEnviadaNaoEntregue || [],
         render: function(it) {
           if (it.temperatura && String(it.courier || '').indexOf(String(it.temperatura || '')) < 0) {
@@ -266,12 +270,15 @@
         var tracking = card.key === 'awbEnviadaNaoEntregue' && it.trackingUrl
           ? '<button type="button" class="dash-pend-track" title="Abrir rastreio" onclick="abrirPendenciaTracking(event,\'' + jsArg(it.trackingUrl) + '\')"><span class="material-symbols-outlined">travel_explore</span></button>'
           : '';
+        var confirmDelivery = card.key === 'awbEnviadaNaoEntregue'
+          ? '<button type="button" class="dash-pend-confirm" title="Confirmar entrega" onclick="confirmarEntregaPendencia(event,\'' + jsArg(it.agendaId) + '\',\'' + jsArg(it.slot) + '\',\'' + jsArg(it.awb) + '\')"><span class="material-symbols-outlined">task_alt</span><span>Confirmar entrega</span></button>'
+          : '';
         return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '" onclick="' + action + '" title="' + esc((r.main || '') + ' ' + (r.meta || '')) + '">' +
           (urgent ? '<div class="dash-pend-alert"><span class="material-symbols-outlined">priority_high</span>' + esc(prazo || 'até 24h') + '</div>' : '') +
           '<div class="dash-pend-row"><div class="dash-pend-text">' +
             '<div class="dash-pend-main">' + esc(r.main || '-') + '</div>' +
             '<div class="dash-pend-meta">' + esc(r.meta || '-') + '</div>' +
-          '</div>' + tracking + '</div>' +
+          '</div>' + tracking + confirmDelivery + '</div>' +
         '</div>';
       }).join('');
       if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>Sem pendências</div>';
@@ -431,6 +438,67 @@
       return;
     }
     snackErro('Não foi possível carregar o agendamento da pendência.');
+  }
+
+  function abrirPendenciaAwb(agendaId) {
+    agendaId = String(agendaId || '').trim();
+    if (!agendaId) {
+      snackErro('Agendamento da pendência não encontrado.');
+      return;
+    }
+    if (typeof abrirAgendaEdicao === 'function') {
+      abrirAgendaEdicao(agendaId);
+      return;
+    }
+    snackErro('A tela de edição da Agenda ainda não está pronta.');
+  }
+
+  function confirmarEntregaPendencia(ev, agendaId, slot, awb) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    agendaId = String(agendaId || '').trim();
+    slot = String(slot || '').trim();
+    awb = String(awb || '').trim();
+    if (!agendaId || !slot) {
+      snackErro('Não foi possível identificar o transporte da pendência.');
+      return;
+    }
+    var label = [slot, awb ? 'AWB ' + awb : 'AWB'].filter(Boolean).join(' · ');
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' &&
+        !window.confirm('Confirmar a entrega de ' + label + '?')) return;
+    var btn = ev && ev.currentTarget;
+    if (btn) {
+      btn.disabled = true;
+      btn.dataset.originalLabel = btn.dataset.originalLabel || btn.textContent;
+      btn.querySelectorAll('.material-symbols-outlined').forEach(function(icon) { icon.textContent = 'hourglass_empty'; });
+      var btnLabel = btn.querySelector('span:not(.material-symbols-outlined)');
+      if (btnLabel) btnLabel.textContent = 'Confirmando…';
+    }
+    appServerRun({
+      method: 'confirmarEntregaTransportePendencia',
+      args: [agendaId, slot, awb],
+      onSuccess: function(res) {
+        if (res && (res.erro || res.conflito)) {
+          if (btn) btn.disabled = false;
+          snackErro(res.erro || 'A pendência mudou. Atualize a lista antes de confirmar.');
+          carregarPendencias(true);
+          return;
+        }
+        if (_pendenciasCache && Array.isArray(_pendenciasCache.awbEnviadaNaoEntregue)) {
+          _pendenciasCache.awbEnviadaNaoEntregue = _pendenciasCache.awbEnviadaNaoEntregue.filter(function(item) {
+            return !(String(item.agendaId || '') === agendaId && String(item.slot || '') === slot);
+          });
+          if (_pendenciasCache.counts) _pendenciasCache.counts.awbEnviadaNaoEntregue = _pendenciasCache.awbEnviadaNaoEntregue.length;
+          renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
+        }
+        setPendenciasStatus('Entrega confirmada para ' + label + '.', 'ok');
+        snack('Entrega confirmada no Agendamento.');
+        carregarPendencias(true, { silent: true });
+      },
+      onFailure: function(e) {
+        if (btn) btn.disabled = false;
+        snackErro(appErrorMessage(e));
+      }
+    });
   }
 
   function abrirPendenciaEstoque(q) {

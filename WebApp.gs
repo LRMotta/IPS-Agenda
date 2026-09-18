@@ -994,62 +994,83 @@ function codexGetRecordVersion_(moduleName, recordId) {
 }
 
 function codexOpenEditPresence(moduleName, recordId, sessionId) {
-  var access = codexAuthorizeWebAppRequest_();
-  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
-  moduleName = String(moduleName || '').trim();
-  recordId = String(recordId || '').trim();
-  sessionId = String(sessionId || '').trim();
-  if (!moduleName || !recordId || !sessionId) return { editors: [], version: '' };
-  try {
-    return codexWithDocumentLock_('codexOpenEditPresence', function() {
-    var sh = codexGetEditPresenceSheet_();
-    var now = new Date();
-    var ttlSeconds = 6 * 60;
-    var expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
-    var vals = codexCleanupEditPresence_(sh, now);
-    var version = codexGetRecordVersion_(moduleName, recordId);
-    var editVersion = '';
-    if (normText_(moduleName) === 'agenda') {
-      var agenda = getAgendaSheetForRead_();
-      var linhaAgenda = encontrarLinhaPorId(agenda, recordId);
-      if (linhaAgenda) {
-        editVersion = agendaEditableRecordVersionFromRow_(agenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0]);
-      }
-    }
-    var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
-    var name = access.name || access.firstName || email;
-    var targetRow = 0;
-    var editors = [];
-    vals.forEach(function(r, idx) {
-      var sameRecord = String(r[0] || '') === moduleName && String(r[1] || '') === recordId;
-      if (!sameRecord) return;
-      var sameSession = codexNormalizeEmail_(r[2]) === email && String(r[4] || '') === sessionId;
-      if (sameSession) {
-        targetRow = idx + 2;
-        return;
-      }
-      if (codexNormalizeEmail_(r[2]) !== email) {
-        editors.push({
-          email: String(r[2] || ''),
-          name: String(r[3] || ''),
-          sessionId: String(r[4] || ''),
-          openedAt: r[5] instanceof Date ? Utilities.formatDate(r[5], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') : String(r[5] || ''),
-          expiresAt: r[6] instanceof Date ? Utilities.formatDate(r[6], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') : String(r[6] || ''),
-          version: String(r[7] || '')
+  return codexMeasurePerformance_('codexOpenEditPresence', 'total', { rowCount: 0 }, function() {
+    var access = codexMeasurePerformance_('codexOpenEditPresence', 'authorization', { rowCount: 0 }, function() {
+      return codexAuthorizeWebAppRequest_();
+    });
+    if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+    moduleName = String(moduleName || '').trim();
+    recordId = String(recordId || '').trim();
+    sessionId = String(sessionId || '').trim();
+    if (!moduleName || !recordId || !sessionId) return { editors: [], version: '' };
+    try {
+      return codexWithDocumentLock_('codexOpenEditPresence', function() {
+        var sheetMeta = { rowCount: 0 };
+        var sh = codexMeasurePerformance_('codexOpenEditPresence', 'presence_sheet', sheetMeta, function() {
+          var sheet = codexGetEditPresenceSheet_();
+          sheetMeta.rowCount = Math.max(0, Number(sheet.getLastRow && sheet.getLastRow()) || 0);
+          return sheet;
         });
+        var now = new Date();
+        var ttlSeconds = 6 * 60;
+        var expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
+        var cleanupMeta = { rowCount: 0 };
+        var vals = codexMeasurePerformance_('codexOpenEditPresence', 'presence_cleanup', cleanupMeta, function() {
+          var active = codexCleanupEditPresence_(sh, now);
+          cleanupMeta.rowCount = active.length;
+          return active;
+        });
+        var version = codexMeasurePerformance_('codexOpenEditPresence', 'record_version', { rowCount: 1 }, function() {
+          return codexGetRecordVersion_(moduleName, recordId);
+        });
+        var editVersion = codexMeasurePerformance_('codexOpenEditPresence', 'editable_version', { rowCount: 1 }, function() {
+          var result = '';
+          if (normText_(moduleName) === 'agenda') {
+            var agenda = getAgendaSheetForRead_();
+            var linhaAgenda = encontrarLinhaPorId(agenda, recordId);
+            if (linhaAgenda) {
+              result = agendaEditableRecordVersionFromRow_(agenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0]);
+            }
+          }
+          return result;
+        });
+        var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
+        var name = access.name || access.firstName || email;
+        var targetRow = 0;
+        var editors = [];
+        vals.forEach(function(r, idx) {
+          var sameRecord = String(r[0] || '') === moduleName && String(r[1] || '') === recordId;
+          if (!sameRecord) return;
+          var sameSession = codexNormalizeEmail_(r[2]) === email && String(r[4] || '') === sessionId;
+          if (sameSession) {
+            targetRow = idx + 2;
+            return;
+          }
+          if (codexNormalizeEmail_(r[2]) !== email) {
+            editors.push({
+              email: String(r[2] || ''),
+              name: String(r[3] || ''),
+              sessionId: String(r[4] || ''),
+              openedAt: r[5] instanceof Date ? Utilities.formatDate(r[5], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') : String(r[5] || ''),
+              expiresAt: r[6] instanceof Date ? Utilities.formatDate(r[6], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') : String(r[6] || ''),
+              version: String(r[7] || '')
+            });
+          }
+        });
+        var row = [moduleName, recordId, email, name, sessionId, now, expiresAt, version];
+        codexMeasurePerformance_('codexOpenEditPresence', 'presence_write', { rowCount: 1 }, function() {
+          if (targetRow) sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
+          else sh.appendRow(row);
+        });
+        return { ok: true, module: moduleName, recordId: recordId, sessionId: sessionId, version: version, editVersion: editVersion, editors: editors, ttlSeconds: ttlSeconds };
+      }, { operation: 'codexOpenEditPresence' });
+    } catch (e) {
+      if (codexIsDocumentLockBusyError_(e)) {
+        return { ok: false, lockBusy: true, editors: [], version: '', message: e.message || String(e) };
       }
-    });
-    var row = [moduleName, recordId, email, name, sessionId, now, expiresAt, version];
-    if (targetRow) sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
-    else sh.appendRow(row);
-    return { ok: true, module: moduleName, recordId: recordId, sessionId: sessionId, version: version, editVersion: editVersion, editors: editors, ttlSeconds: ttlSeconds };
-    });
-  } catch (e) {
-    if (codexIsDocumentLockBusyError_(e)) {
-      return { ok: false, lockBusy: true, editors: [], version: '', message: e.message || String(e) };
+      throw e;
     }
-    throw e;
-  }
+  });
 }
 
 function codexReleaseEditPresence(moduleName, recordId, sessionId) {
@@ -13929,6 +13950,83 @@ function atualizarStatusBackupAgenda(agendaId, status, recordVersion) {
     recordVersion: agendaRecordVersionFromRow_(rowAtual),
     editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual)
   };
+  });
+}
+
+function confirmarEntregaTransportePendencia(agendaId, slot, awb) {
+  codexAssertCanWrite_('confirmarEntregaTransportePendencia', 'Agenda', agendaId);
+  return codexWithDocumentLock_('confirmarEntregaTransportePendencia', function() {
+    agendaId = String(agendaId || '').trim();
+    slot = String(slot || '').trim();
+    awb = String(awb || '').trim();
+    if (!agendaId) return { erro: 'Agendamento nao informado.' };
+
+    var slotKey = normText_(slot);
+    var slotMap = {
+      '1': AGENDA_CFG.idx.c1,
+      'transporte i': AGENDA_CFG.idx.c1,
+      '2': AGENDA_CFG.idx.c2,
+      'transporte ii': AGENDA_CFG.idx.c2,
+      '3': AGENDA_CFG.idx.c3,
+      'transporte iii': AGENDA_CFG.idx.c3
+    };
+    var transporte = slotMap[slotKey];
+    if (!transporte) return { erro: 'Transporte invalido para confirmar entrega.' };
+
+    var agenda = getAgendaSheet_();
+    var linha = encontrarLinhaPorId(agenda, agendaId);
+    if (!linha) return { erro: 'Agendamento nao encontrado.' };
+    var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    var statusRange = agenda.getRange(linha, transporte.status + 1);
+    var statusAnterior = String(rowAnterior[transporte.status] || '').trim();
+    if (AgendaServerRules_.courierIsDelivered(statusAnterior)) {
+      return {
+        ok: true,
+        jaEntregue: true,
+        id: agendaId,
+        slot: slot,
+        status: statusAnterior,
+        awb: String(rowAnterior[transporte.awb] || '').trim()
+      };
+    }
+    if (!AgendaServerRules_.courierIsSentNotDelivered(statusAnterior)) {
+      return {
+        conflito: true,
+        erro: 'O status atual deste transporte nao e mais "Enviado". Atualize as Pendencias antes de confirmar.',
+        id: agendaId,
+        slot: slot,
+        status: statusAnterior
+      };
+    }
+
+    var awbAtual = String(rowAnterior[transporte.awb] || '').trim();
+    if (awb && normalizarAwbCourier_(awbAtual) !== normalizarAwbCourier_(awb)) {
+      return {
+        conflito: true,
+        erro: 'A AWB deste transporte mudou desde o carregamento da pendencia. Atualize as Pendencias antes de confirmar.',
+        id: agendaId,
+        slot: slot,
+        awb: awbAtual
+      };
+    }
+
+    statusRange.setValue('Entregue');
+    codexWriteAuditChanges_('Agenda', 'confirmarEntregaTransportePendencia', agendaId, [{
+      field: slot + ' - Status',
+      oldValue: statusAnterior,
+      newValue: 'Entregue'
+    }], 'Entrega confirmada manualmente nas Pendencias' + (awbAtual ? ' | AWB ' + awbAtual : ''));
+    SpreadsheetApp.flush();
+    var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    return {
+      ok: true,
+      id: agendaId,
+      slot: slot,
+      status: String(rowAtual[transporte.status] || ''),
+      awb: String(rowAtual[transporte.awb] || '').trim(),
+      recordVersion: agendaRecordVersionFromRow_(rowAtual),
+      editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual)
+    };
   });
 }
 

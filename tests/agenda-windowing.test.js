@@ -1874,6 +1874,47 @@ test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativa
   assert.equal(new Set(groups.monitorias.concat(groups.cancelados, groups.demais).map(row => row.id)).size, 4);
 });
 
+test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const weekly = functionBody(client, 'agendaWeekDayRowsHtml');
+  const cancelled = functionBody(client, 'agendaWeekCanceladosHtml');
+  const printWeekly = functionBody(client, 'agendaPrintSemanaDayHtml');
+  const card = functionBody(client, 'agendaWeekCardHtml');
+
+  assert.match(weekly, /agendaSepararLinhasDoDia_\(dayRows\)/);
+  assert.match(weekly, /grupos\.monitorias\.slice\(\)\.sort\(agendaSortRows\)/);
+  assert.match(weekly, /grupos\.demais\.slice\(\)\.sort\(agendaSortRows\)/);
+  assert.match(weekly, /agendaWeekCanceladosHtml\(cancelados, iso\)/);
+  assert.match(cancelled, /_agendaCanceladosExpandidosPorSemana\[iso\] === true/);
+  assert.match(cancelled, /agendaToggleCanceladosSemana/);
+  assert.match(printWeekly, /section\('Monitorias e SIV', 'week-section-operational', grupos\.monitorias\)/);
+  assert.match(printWeekly, /section\('Cancelados', 'week-section-cancelados', grupos\.cancelados\)/);
+  assert.match(card, /AgendaRules\.isCancelled\(r\)/);
+  assert.match(card, /ag-wk-cancel-badge/);
+
+  const context = vm.createContext({
+    agendaSepararLinhasDoDia_: rows => ({
+      monitorias: rows.filter(row => row.group === 'monitoria'),
+      demais: rows.filter(row => row.group === 'visita'),
+      cancelados: rows.filter(row => row.group === 'cancelado')
+    }),
+    agendaSortRows: (a, b) => a.hora.localeCompare(b.hora),
+    agendaWeekCardHtml: row => '[' + row.id + ']',
+    agendaWeekCanceladosHtml: rows => '<cancelados>' + rows.map(row => row.id).join(',') + '</cancelados>',
+    esc: value => String(value)
+  });
+  vm.runInContext(`function agendaWeekDayRowsHtml(dayRows, iso) {${weekly}}`, context);
+  const html = context.agendaWeekDayRowsHtml([
+    { id: 'V2', group: 'visita', hora: '14:00' },
+    { id: 'M2', group: 'monitoria', hora: '15:00' },
+    { id: 'C1', group: 'cancelado', hora: '08:00' },
+    { id: 'M1', group: 'monitoria', hora: '09:00' },
+    { id: 'V1', group: 'visita', hora: '10:00' }
+  ], '2026-09-18');
+  assert.ok(html.indexOf('[M1][M2]') < html.indexOf('[V1][V2]'));
+  assert.ok(html.indexOf('[V1][V2]') < html.indexOf('<cancelados>C1</cancelados>'));
+});
+
 test('resumos de material biologico alinham colunas entre transportes', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
