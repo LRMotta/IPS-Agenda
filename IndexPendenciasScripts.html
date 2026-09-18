@@ -446,8 +446,11 @@
       snackErro('Agendamento da pendência não encontrado.');
       return;
     }
-    if (typeof abrirAgendaEdicao === 'function') {
-      abrirAgendaEdicao(agendaId);
+    var abrirRegistro = typeof window !== 'undefined' && typeof window.abrirAgendaRegistroPorId === 'function'
+      ? window.abrirAgendaRegistroPorId
+      : (typeof abrirAgendaRegistroPorId === 'function' ? abrirAgendaRegistroPorId : null);
+    if (abrirRegistro) {
+      abrirRegistro(agendaId);
       return;
     }
     snackErro('A tela de edição da Agenda ainda não está pronta.');
