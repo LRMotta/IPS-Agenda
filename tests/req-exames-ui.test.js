@@ -26,6 +26,7 @@ test('requisicao exige o prestador antes do solicitante e oferece selecao com pr
 
 test('requisicao compacta os campos relacionados na mesma linha', () => {
   const content = readProjectFile('IndexContentAfterDashboard.html');
+  const styles = readProjectFile('IndexStyles.html');
 
   assert.match(
     content,
@@ -35,6 +36,7 @@ test('requisicao compacta os campos relacionados na mesma linha', () => {
     content,
     /<div class="field-row cols-2 req-provider-row">[\s\S]*?id="rqPrestador"[\s\S]*?id="rqPrestadorTipo"/
   );
+  assert.match(styles, /\.req-patient-row \+ \.req-patient-row \{ margin-top: 14px; \}/);
 });
 
 test('pendencia de requisicao continua abrindo o Req. Exames com o agendamento carregado', () => {

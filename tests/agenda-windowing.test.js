@@ -1832,6 +1832,9 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
   assert.match(cancelledGroup, /aria-label="Cancelados do dia"/);
+  assert.match(cancelledGroup, /<strong>Cancelados<\/strong>/);
+  const operationalGroup = functionBody(client, 'agendaMonitoriasGrupoHtml');
+  assert.match(operationalGroup, /<strong>Monitorias e SIV<\/strong>/);
   assert.match(cancelledCompact, /st-cancelado/);
   assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(cancelledCompact, /abrirAgendaEdicao/);
@@ -1843,6 +1846,8 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
+  assert.match(styles, /\.ag-monitorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
+  assert.match(styles, /\.ag-monitorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
   assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
   assert.match(styles, /\.ag-cancelados-group\{border-left:3px solid #b3261e/);
   assert.match(styles, /\.ag-dp-cancel\{background:#fde7e7;color:#b3261e\}/);
