@@ -13723,6 +13723,9 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.salaMonitoria = '';
   }
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
+  if (policy.requiresThirdPartyService && !String(dados.servTerc || '').trim()) {
+    return { erro: 'Informe o serviço terceirizado para este tipo de exame.' };
+  }
   if (!policy.labChoiceAllowed) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
     return { erro: 'Informe se haverá Laboratório Central.' };
@@ -14239,6 +14242,9 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   }
   if (isMonitoria || isSiv) dados.participanteCadastroId = '';
   if (!String(dados.servTerc || '').trim()) dados.statusRequisicao = '';
+  if (policy.requiresThirdPartyService && !String(dados.servTerc || '').trim()) {
+    return { erro: 'Informe o serviço terceirizado para este tipo de exame.' };
+  }
   if (!policy.labChoiceAllowed) labCentral = 'N\u00E3o aplic\u00E1vel';
   if (agendaTipoExigeLabCentralServer_(tipo) && !labCentral) {
     return { erro: 'Informe se haverá Laboratório Central.' };

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile, runHtmlScript } = require('./helpers/load-app-script');
+const { readProjectFile, runFile, runHtmlScript } = require('./helpers/load-app-script');
 
 function rules() {
   return runFile('AgendaServerRules.gs').AgendaServerRules_;
@@ -75,4 +75,44 @@ test('cliente e servidor restringem estados fisicos do courier antes da visita',
     assert.equal(server.courierStatusRequiresEventDate(status), false, status);
     assert.equal(client.courierStatusRequiresEventDate(status), false, status);
   });
+});
+
+test('exames de imagem e laboratoriais exigem servico terceirizado e nao permitem Lab Central', () => {
+  const server = rules();
+  const client = runHtmlScript('SharedAgendaRules.html').AgendaRules;
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const webApp = readProjectFile('WebApp.gs');
+
+  ['Exame de imagem', 'Exames laboratoriais'].forEach((tipo) => {
+    assert.equal(server.formPolicy(tipo).labChoiceAllowed, false, tipo);
+    assert.equal(client.formPolicy(tipo).labChoiceAllowed, false, tipo);
+    assert.equal(server.formPolicy(tipo).requiresThirdPartyService, true, tipo);
+    assert.equal(client.formPolicy(tipo).requiresThirdPartyService, true, tipo);
+  });
+  assert.equal(server.formPolicy('Visita').requiresThirdPartyService, false);
+  assert.match(source, /id: 'agPrestador', err: 'errAgPrestador'/);
+  assert.match(source, /policy\.requiresThirdPartyService/);
+  assert.match(webApp, /policy\.requiresThirdPartyService[\s\S]*Informe o servi[cç]o terceirizado/);
+  assert.match(webApp, /function atualizarAgendaEventoCompleto[\s\S]*policy\.requiresThirdPartyService[\s\S]*Informe o servi[cç]o terceirizado/);
+});
+
+test('agenda resume multiplos envios e abre detalhes sob demanda com rastreio de Pendencias', () => {
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
+
+  assert.match(source, /function agendaCourierEntries_\(r\)/);
+  assert.match(source, /courier: r\.courier1/);
+  assert.match(source, /courier: r\.courier2/);
+  assert.match(source, /courier: r\.courier3/);
+  assert.match(source, /courier: r\.backup/);
+  assert.match(source, /data-logistics-count/);
+  assert.match(source, /data-row-index=/);
+  assert.match(source, /popover\.dataset\.loaded/);
+  assert.match(source, /agendaFindEventoLocal_\(popover\.dataset\.agendaId/);
+  assert.match(source, /Logística \/ Amostras/);
+  assert.match(source, /abrirPendenciaTracking\(event/);
+  assert.match(source, /travel_explore/);
+  assert.doesNotMatch(source, /X acompanhados/);
+  assert.match(styles, /\.ag-log-popover\.open/);
+  assert.match(styles, /\.ag-log-track-btn/);
 });

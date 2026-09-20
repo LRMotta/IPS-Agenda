@@ -24,6 +24,19 @@ test('requisicao exige o prestador antes do solicitante e oferece selecao com pr
   assert.doesNotMatch(core, /method:\s*'getReqExamesPreloadProjetoContext'/);
 });
 
+test('requisicao compacta os campos relacionados na mesma linha', () => {
+  const content = readProjectFile('IndexContentAfterDashboard.html');
+
+  assert.match(
+    content,
+    /<div class="field-row cols-2 req-patient-row">[\s\S]*?id="rqPaciente"[\s\S]*?id="rqNascimento"[\s\S]*?<\/div>\s*<div class="field-row cols-2 req-patient-row">[\s\S]*?id="rqProtocolo"[\s\S]*?id="rqMedico"/
+  );
+  assert.match(
+    content,
+    /<div class="field-row cols-2 req-provider-row">[\s\S]*?id="rqPrestador"[\s\S]*?id="rqPrestadorTipo"/
+  );
+});
+
 test('pendencia de requisicao continua abrindo o Req. Exames com o agendamento carregado', () => {
   const pendencias = readProjectFile('IndexPendenciasScripts.html');
   const requisicaoCard = pendencias.slice(

@@ -141,6 +141,7 @@
     var generalEvent = ['feriado', 'auditoria', 'reuniao'].indexOf(type) > -1;
     var operationalWithoutParticipant = ['siv', 'closeout'].indexOf(type) > -1;
     var technicalHidden = ['monitoria', 'siv', 'closeout', 'reuniao', 'feriado', 'auditoria', 'exame-imagem'].indexOf(type) > -1;
+    var requiresThirdPartyService = type === 'exame-imagem' || type === 'exame-laboratorial';
     return {
       type: type,
       isMonitoring: monitoring,
@@ -151,7 +152,8 @@
       hideGeneralEvent: generalEvent,
       hideDetails: generalEvent || operationalWithoutParticipant || monitoring,
       technicalFieldsAvailable: (!!isEditing || type === 'envio-amostras') && !technicalHidden,
-      labChoiceAllowed: !technicalHidden && !isPhoneContact(eventOrType),
+      labChoiceAllowed: !technicalHidden && !isPhoneContact(eventOrType) && type !== 'exame-laboratorial',
+      requiresThirdPartyService: requiresThirdPartyService,
       requiresLabCentral: typeRequiresLabCentral(eventOrType),
       requiresProject: operationalPeriod,
       requiresMonitorAndRoom: monitoring,
