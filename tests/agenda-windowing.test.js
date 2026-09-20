@@ -1812,11 +1812,13 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(groups, /!AgendaRules\.isCancelled\(r\) && !AgendaRules\.isOperationalPeriod\(r\)/);
   assert.match(dayRows, /agendaSepararLinhasDoDia_\(dayRows\)/);
   assert.match(dayRows, /agendaMonitoriasGrupoHtml\(grupos\.monitorias, iso\)/);
+  assert.match(dayRows, /agendaAuditoriasGrupoHtml\(grupos\.auditorias, iso\)/);
   assert.match(dayRows, /agendaCanceladosGrupoHtml\(grupos\.cancelados, iso\)/);
   assert.match(dayRows, /ag-list-section-title">Visitas/);
   const render = functionBody(client, 'renderAgendaLista');
   assert.match(render, /var gruposDia = agendaSepararLinhasDoDia_\(dayRows\)/);
   assert.match(render, /agendaMonitoriasGrupoHtml\(gruposDia\.monitorias, iso\)/);
+  assert.match(render, /agendaAuditoriasGrupoHtml\(gruposDia\.auditorias, iso\)/);
   assert.match(render, /agendaCanceladosGrupoHtml\(gruposDia\.cancelados, iso\)/);
   assert.match(render, /html \+= agendaBirthdayBannerHtml\(d, false\)/);
   const dayHeader = functionBody(client, 'agendaDayHeader');
@@ -1837,6 +1839,10 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const operationalGroup = functionBody(client, 'agendaMonitoriasGrupoHtml');
   assert.match(operationalGroup, /<strong>Monitorias e SIV<\/strong>/);
   assert.doesNotMatch(operationalGroup, /ag-monitorias-count/);
+  const auditGroup = functionBody(client, 'agendaAuditoriasGrupoHtml');
+  assert.match(auditGroup, /<strong>Auditorias<\/strong>/);
+  assert.match(auditGroup, /agendaCardHtml\(r, iso \+ '-auditoria-' \+ idx\)/);
+  assert.match(functionBody(client, 'agendaCardHtml'), /ag-obs-preview/);
   assert.match(dayHeader, /ag-dpill ag-dp-n/);
   assert.match(cancelledCompact, /st-cancelado/);
   assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
@@ -1849,8 +1855,8 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
-  assert.match(styles, /\.ag-monitorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
-  assert.match(styles, /\.ag-monitorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
+  assert.match(styles, /\.ag-monitorias-head,\.ag-auditorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
+  assert.match(styles, /\.ag-monitorias-title,\.ag-auditorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
   assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
   assert.match(styles, /\.ag-cancelados-group\{border-left:3px solid #b3261e/);
   assert.match(styles, /\.ag-dp-cancel\{background:#fde7e7;color:#b3261e\}/);
@@ -1864,7 +1870,8 @@ test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativa
     Array,
     AgendaRules: {
       isCancelled: row => row.status === 'Cancelado',
-      isOperationalPeriod: row => ['Monitoria', 'SIV'].includes(row.tipo)
+      isOperationalPeriod: row => ['Monitoria', 'SIV'].includes(row.tipo),
+      isType: (value, type) => type === 'auditoria' && String(value).toLowerCase() === 'auditoria'
     }
   });
   vm.runInContext(`function agendaSepararLinhasDoDia_(dayRows) {${body}}`, context);
@@ -1872,14 +1879,17 @@ test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativa
   const groups = context.agendaSepararLinhasDoDia_([
     { id: 'M1', tipo: 'Monitoria', status: 'Agendado' },
     { id: 'M2', tipo: 'Monitoria', status: 'Cancelado' },
+    { id: 'A1', tipo: 'Auditoria', status: 'Agendado' },
+    { id: 'A2', tipo: 'Auditoria', status: 'Cancelado' },
     { id: 'V1', tipo: 'Visita', status: 'Agendado' },
     { id: 'V2', tipo: 'Visita', status: 'Cancelado' }
   ]);
 
   assert.deepEqual(groups.monitorias.map(row => row.id), ['M1']);
-  assert.deepEqual(groups.cancelados.map(row => row.id), ['M2', 'V2']);
+  assert.deepEqual(groups.auditorias.map(row => row.id), ['A1']);
+  assert.deepEqual(groups.cancelados.map(row => row.id), ['M2', 'A2', 'V2']);
   assert.deepEqual(groups.demais.map(row => row.id), ['V1']);
-  assert.equal(new Set(groups.monitorias.concat(groups.cancelados, groups.demais).map(row => row.id)).size, 4);
+  assert.equal(new Set(groups.monitorias.concat(groups.auditorias, groups.cancelados, groups.demais).map(row => row.id)).size, 6);
 });
 
 test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', () => {
@@ -1891,11 +1901,14 @@ test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', ()
 
   assert.match(weekly, /agendaSepararLinhasDoDia_\(dayRows\)/);
   assert.match(weekly, /grupos\.monitorias\.slice\(\)\.sort\(agendaSortRows\)/);
+  assert.match(weekly, /grupos\.auditorias\.slice\(\)\.sort\(agendaSortRows\)/);
+  assert.match(weekly, /ag-wk-section-auditorias/);
   assert.match(weekly, /grupos\.demais\.slice\(\)\.sort\(agendaSortRows\)/);
   assert.match(weekly, /agendaWeekCanceladosHtml\(cancelados, iso\)/);
   assert.match(cancelled, /_agendaCanceladosExpandidosPorSemana\[iso\] === true/);
   assert.match(cancelled, /agendaToggleCanceladosSemana/);
   assert.match(printWeekly, /section\('Monitorias e SIV', 'week-section-operational', grupos\.monitorias\)/);
+  assert.match(printWeekly, /section\('Auditorias', 'week-section-auditorias', grupos\.auditorias\)/);
   assert.match(printWeekly, /section\('Cancelados', 'week-section-cancelados', grupos\.cancelados\)/);
   assert.match(card, /AgendaRules\.isCancelled\(r\)/);
   assert.match(card, /ag-wk-cancel-badge/);
@@ -1903,6 +1916,7 @@ test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', ()
   const context = vm.createContext({
     agendaSepararLinhasDoDia_: rows => ({
       monitorias: rows.filter(row => row.group === 'monitoria'),
+      auditorias: rows.filter(row => row.group === 'auditoria'),
       demais: rows.filter(row => row.group === 'visita'),
       cancelados: rows.filter(row => row.group === 'cancelado')
     }),
@@ -1915,11 +1929,14 @@ test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', ()
   const html = context.agendaWeekDayRowsHtml([
     { id: 'V2', group: 'visita', hora: '14:00' },
     { id: 'M2', group: 'monitoria', hora: '15:00' },
+    { id: 'A1', group: 'auditoria', hora: '11:00' },
     { id: 'C1', group: 'cancelado', hora: '08:00' },
     { id: 'M1', group: 'monitoria', hora: '09:00' },
     { id: 'V1', group: 'visita', hora: '10:00' }
   ], '2026-09-18');
   assert.ok(html.indexOf('[M1][M2]') < html.indexOf('[V1][V2]'));
+  assert.ok(html.indexOf('[M1][M2]') < html.indexOf('[A1]'));
+  assert.ok(html.indexOf('[A1]') < html.indexOf('[V1][V2]'));
   assert.ok(html.indexOf('[V1][V2]') < html.indexOf('<cancelados>C1</cancelados>'));
 });
 
