@@ -1833,8 +1833,11 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
   assert.match(cancelledGroup, /aria-label="Cancelados do dia"/);
   assert.match(cancelledGroup, /<strong>Cancelados<\/strong>/);
+  assert.doesNotMatch(cancelledGroup, /ag-cancelados-count/);
   const operationalGroup = functionBody(client, 'agendaMonitoriasGrupoHtml');
   assert.match(operationalGroup, /<strong>Monitorias e SIV<\/strong>/);
+  assert.doesNotMatch(operationalGroup, /ag-monitorias-count/);
+  assert.match(dayHeader, /ag-dpill ag-dp-n/);
   assert.match(cancelledCompact, /st-cancelado/);
   assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(cancelledCompact, /abrirAgendaEdicao/);
