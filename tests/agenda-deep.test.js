@@ -114,5 +114,8 @@ test('agenda resume multiplos envios e abre detalhes sob demanda com rastreio de
   assert.match(source, /travel_explore/);
   assert.doesNotMatch(source, /X acompanhados/);
   assert.match(styles, /\.ag-log-popover\.open/);
+  assert.match(source, /card\.classList\.add\('logistics-popover-open'\)/);
+  assert.match(source, /card\.classList\.remove\('logistics-popover-open'\)/);
+  assert.match(styles, /\.ag-appt\.logistics-popover-open\{position:relative;z-index:4\}/);
   assert.match(styles, /\.ag-log-track-btn/);
 });

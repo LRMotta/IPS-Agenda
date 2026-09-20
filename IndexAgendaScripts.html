@@ -5105,7 +5105,7 @@
     var chevron = expanded ? 'expand_less' : 'expand_more';
     return '<section class="ag-monitorias-group" aria-label="Monitorias e SIV do dia">' +
       '<div class="ag-monitorias-head">' +
-        '<div class="ag-monitorias-title"><strong>Monitorias e SIV do dia</strong><span class="ag-ch-monitoria ag-monitorias-count">' + esc(countLabel) + '</span></div>' +
+        '<div class="ag-monitorias-title"><strong>Monitorias e SIV</strong><span class="ag-ch-monitoria ag-monitorias-count">' + esc(countLabel) + '</span></div>' +
         '<button type="button" class="ag-act-btn ag-monitorias-toggle" onclick="agendaToggleMonitoriasDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-label="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
       '</div>' +
       (expanded ? '<div class="ag-monitorias-items">' + monitorias.map(function(r, idx) { return agendaMonitoriaCompactaHtml(r, iso + '-monitoria-' + idx); }).join('') + '</div>' : '') +
@@ -5123,7 +5123,7 @@
     var chevron = expanded ? 'expand_less' : 'expand_more';
     return '<section class="ag-cancelados-group" aria-label="Cancelados do dia">' +
       '<div class="ag-cancelados-head">' +
-        '<div class="ag-cancelados-title"><strong>Cancelados do dia</strong><span class="ag-ch-cancelado ag-cancelados-count">' + esc(countLabel) + '</span></div>' +
+        '<div class="ag-cancelados-title"><strong>Cancelados</strong><span class="ag-ch-cancelado ag-cancelados-count">' + esc(countLabel) + '</span></div>' +
         '<button type="button" class="ag-act-btn ag-cancelados-toggle" onclick="agendaToggleCanceladosDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-label="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
       '</div>' +
       (expanded ? '<div class="ag-cancelados-items">' + cancelados.map(function(r, idx) { return agendaCanceladoCompactoHtml(r, iso + '-cancelado-' + idx); }).join('') + '</div>' : '') +
@@ -6292,6 +6292,8 @@
   function agendaCloseLogisticaPopovers_() {
     document.querySelectorAll('.ag-log-popover.open').forEach(function(popover) {
       popover.classList.remove('open');
+      var card = popover.closest('.ag-appt');
+      if (card) card.classList.remove('logistics-popover-open');
       var trigger = popover.parentNode && popover.parentNode.querySelector('[aria-controls="' + popover.id + '"]');
       if (trigger) trigger.setAttribute('aria-expanded', 'false');
     });
@@ -6311,6 +6313,8 @@
     agendaCloseLogisticaPopovers_();
     if (!wasOpen) {
       popover.classList.add('open');
+      var card = popover.closest('.ag-appt');
+      if (card) card.classList.add('logistics-popover-open');
       if (trigger) trigger.setAttribute('aria-expanded', 'true');
     }
   }
