@@ -5101,11 +5101,10 @@
 
   function agendaMonitoriasGrupoHtml(monitorias, iso) {
     var expanded = _agendaMonitoriasExpandidasPorDia[iso] !== false;
-    var countLabel = monitorias.length + ' ' + (monitorias.length === 1 ? 'agendado' : 'agendados');
     var chevron = expanded ? 'expand_less' : 'expand_more';
     return '<section class="ag-monitorias-group" aria-label="Monitorias e SIV do dia">' +
       '<div class="ag-monitorias-head">' +
-        '<div class="ag-monitorias-title"><strong>Monitorias e SIV</strong><span class="ag-ch-monitoria ag-monitorias-count">' + esc(countLabel) + '</span></div>' +
+        '<div class="ag-monitorias-title"><strong>Monitorias e SIV</strong></div>' +
         '<button type="button" class="ag-act-btn ag-monitorias-toggle" onclick="agendaToggleMonitoriasDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-label="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
       '</div>' +
       (expanded ? '<div class="ag-monitorias-items">' + monitorias.map(function(r, idx) { return agendaMonitoriaCompactaHtml(r, iso + '-monitoria-' + idx); }).join('') + '</div>' : '') +
@@ -5119,11 +5118,10 @@
 
   function agendaCanceladosGrupoHtml(cancelados, iso) {
     var expanded = _agendaCanceladosExpandidosPorDia[iso] !== false;
-    var countLabel = cancelados.length + ' ' + (cancelados.length === 1 ? 'registro' : 'registros');
     var chevron = expanded ? 'expand_less' : 'expand_more';
     return '<section class="ag-cancelados-group" aria-label="Cancelados do dia">' +
       '<div class="ag-cancelados-head">' +
-        '<div class="ag-cancelados-title"><strong>Cancelados</strong><span class="ag-ch-cancelado ag-cancelados-count">' + esc(countLabel) + '</span></div>' +
+        '<div class="ag-cancelados-title"><strong>Cancelados</strong></div>' +
         '<button type="button" class="ag-act-btn ag-cancelados-toggle" onclick="agendaToggleCanceladosDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-label="' + (expanded ? 'Ocultar cancelados' : 'Exibir cancelados') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
       '</div>' +
       (expanded ? '<div class="ag-cancelados-items">' + cancelados.map(function(r, idx) { return agendaCanceladoCompactoHtml(r, iso + '-cancelado-' + idx); }).join('') + '</div>' : '') +
