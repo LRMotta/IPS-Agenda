@@ -160,7 +160,8 @@ var AgendaServerRules_ = (function() {
     var operationalPeriod = monitoring || siv;
     var multiDay = operationalPeriod || type === 'auditoria';
     var technicalFieldsHidden = ['monitoria', 'siv', 'closeout', 'reuniao', 'feriado', 'auditoria', 'exame-imagem'].indexOf(type) > -1;
-    var noLab = technicalFieldsHidden || isPhoneContact(eventOrType);
+    var requiresThirdPartyService = type === 'exame-imagem' || type === 'exame-laboratorial';
+    var noLab = technicalFieldsHidden || isPhoneContact(eventOrType) || type === 'exame-laboratorial';
     return {
       type: type,
       isMonitoring: monitoring,
@@ -173,6 +174,7 @@ var AgendaServerRules_ = (function() {
       requiresDoctor: type === 'consulta',
       requiresTime: !operationalPeriod || monitoring,
       labChoiceAllowed: !noLab,
+      requiresThirdPartyService: requiresThirdPartyService,
       usesParticipantWorkflow: ['monitoria', 'siv', 'close-out', 'reuniao', 'feriado', 'auditoria', 'exame de imagem'].indexOf(rawType) === -1
     };
   }

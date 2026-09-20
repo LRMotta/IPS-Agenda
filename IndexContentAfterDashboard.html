@@ -755,13 +755,14 @@
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agPrestadorWrap">
-              <label class="field-label" for="agPrestador">Servicos terceirizados</label>
+              <label class="field-label" for="agPrestador">Servicos terceirizados <span class="required-star" id="agPrestadorRequired" style="display:none">*</span></label>
               <div style="display:flex;gap:8px;align-items:center">
-                <select id="agPrestador" class="f-input f-select" style="flex:1" onchange="atualizarAgendaReqStatusVisibility();validarAgendaAlertasDataPassada()"></select>
+                <select id="agPrestador" class="f-input f-select" style="flex:1" onchange="atualizarAgendaReqStatusVisibility();validarAgendaAlertasDataPassada();limparErro('agPrestador','errAgPrestador')"></select>
                 <button type="button" class="ag-tb-btn" title="Criar requisicao de exames com os dados deste agendamento" onclick="abrirReqExamesDaAgenda()">
                   <span class="material-symbols-outlined">assignment_add</span> Req.
                 </button>
               </div>
+              <div class="field-error" id="errAgPrestador">Informe o serviço terceirizado.</div>
             </div>
             <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratorio central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')"><option value=""></option><option>Sim</option><option>Nao</option></select><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
           </div>
@@ -996,32 +997,34 @@
             <div class="section-label">
               <span class="material-symbols-outlined">badge</span> Dados do Paciente
             </div>
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label" for="rqPaciente">Nome do Paciente <span class="required-star">*</span></label>
-              <div class="ac-wrap">
-                <input type="text" id="rqPaciente" class="f-input large" placeholder="Digite o nome do paciente" autocomplete="off"
-                  onfocus="renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
-                  oninput="_rqSelPaciente=null;renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
-                  onblur="setTimeout(function(){fecharReqAC('rqPacienteList');preencherDadosPaciente()},160)"
-                  onkeydown="navReqAC(event,'rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')">
-                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-                <div class="ac-list" id="rqPacienteList"></div>
+            <div class="field-row cols-2 req-patient-row">
+              <div class="field">
+                <label class="field-label" for="rqPaciente">Nome do Paciente <span class="required-star">*</span></label>
+                <div class="ac-wrap">
+                  <input type="text" id="rqPaciente" class="f-input large" placeholder="Digite o nome do paciente" autocomplete="off"
+                    onfocus="renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
+                    oninput="_rqSelPaciente=null;renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
+                    onblur="setTimeout(function(){fecharReqAC('rqPacienteList');preencherDadosPaciente()},160)"
+                    onkeydown="navReqAC(event,'rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')">
+                  <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+                  <div class="ac-list" id="rqPacienteList"></div>
+                </div>
+                <div class="field-error" id="errRqPaciente">Informe o paciente.</div>
               </div>
-              <div class="field-error" id="errRqPaciente">Informe o paciente.</div>
-            </div>
-            <div class="field-row cols-2">
               <div>
                 <label class="field-label" for="rqNascimento">Data de Nascimento</label>
                 <input type="text" id="rqNascimento" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
               </div>
+            </div>
+            <div class="field-row cols-2 req-patient-row">
               <div>
                 <label class="field-label" for="rqProtocolo">Protocolo / Projeto</label>
                 <input type="text" id="rqProtocolo" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
               </div>
-            </div>
-            <div class="field" style="margin-top:14px">
-              <label class="field-label" for="rqMedico">Médico Solicitante</label>
-              <input type="text" id="rqMedico" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
+              <div>
+                <label class="field-label" for="rqMedico">Médico Solicitante</label>
+                <input type="text" id="rqMedico" class="f-input auto-fill" placeholder="Preenchido automaticamente" readonly>
+              </div>
             </div>
           </div>
           <!-- 2. Prestador: o tipo de serviço vem do cadastro do prestador -->
@@ -1029,18 +1032,24 @@
             <div class="section-label">
               <span class="material-symbols-outlined">business</span> Prestador / Laboratório
             </div>
-            <div class="field">
-              <label class="field-label" for="rqPrestador">Prestador <span class="required-star">*</span></label>
-              <div class="ac-wrap">
-                <input type="text" id="rqPrestador" class="f-input" placeholder="Digite o nome do prestador" autocomplete="off"
-                  onfocus="renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
-                  oninput="_rqSelPrestador=null;renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
-                  onblur="setTimeout(function(){fecharReqAC('rqPrestadorList')},160)"
-                  onkeydown="navReqAC(event,'rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')">
-                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-                <div class="ac-list" id="rqPrestadorList"></div>
+            <div class="field-row cols-2 req-provider-row">
+              <div class="field">
+                <label class="field-label" for="rqPrestador">Prestador <span class="required-star">*</span></label>
+                <div class="ac-wrap">
+                  <input type="text" id="rqPrestador" class="f-input" placeholder="Digite o nome do prestador" autocomplete="off"
+                    onfocus="renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
+                    oninput="_rqSelPrestador=null;renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
+                    onblur="setTimeout(function(){fecharReqAC('rqPrestadorList')},160)"
+                    onkeydown="navReqAC(event,'rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')">
+                  <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+                  <div class="ac-list" id="rqPrestadorList"></div>
+                </div>
+                <div class="field-error" id="errRqPrestador">Informe o local do exame.</div>
               </div>
-              <div class="field-error" id="errRqPrestador">Informe o local do exame.</div>
+              <div>
+                <label class="field-label" for="rqPrestadorTipo">Tipo de serviço</label>
+                <input type="text" id="rqPrestadorTipo" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
+              </div>
             </div>
             <div class="field-row cols-2" style="margin-top:14px">
               <div class="field">
@@ -1056,10 +1065,6 @@
             <div class="field" style="margin-top:14px">
               <label class="field-label" for="rqEndereco">Endereco</label>
               <input type="text" id="rqEndereco" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
-            </div>
-            <div class="field" style="margin-top:14px">
-              <label class="field-label" for="rqPrestadorTipo">Tipo de serviço</label>
-              <input type="text" id="rqPrestadorTipo" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
             </div>
           </div>
           <!-- 3. Solicitante -->
