@@ -122,6 +122,7 @@ test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da 
   assert.match(sidePanel, /entries\.map\(agendaLogisticaLinhaHtml_\)/);
   assert.doesNotMatch(sidePanel, /summary\.statuses/);
   assert.match(logisticsRow, /agendaAwbHtml\(courier\.awb, courier\.nome\)/);
+  assert.match(logisticsRow, /ag-log-row-head[\s\S]*\+\n\s+status[\s\S]*ag-log-row-awb/);
   assert.match(logisticsRow, /agendaCourierStatusHtml\(courier, entry\.slot === 'B'/);
   assert.doesNotMatch(logisticsRow, /ag-st-chip/);
   assert.doesNotMatch(source, /agendaLogisticaRastreioHtml_/);
@@ -136,9 +137,12 @@ test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da 
   assert.match(styles, /\.ag-log-rows\{[^}]*position:relative/);
   assert.match(styles, /\.ag-log-rows::before\{[^}]*left:133px/);
   assert.match(styles, /\.ag-log-row\{[^}]*grid-template-columns:134px minmax\(0,1fr\)/);
-  assert.match(styles, /\.ag-log-row-head\{[^}]*grid-template-columns:minmax\(0,1fr\) 108px/);
-  assert.match(styles, /\.ag-log-row \.ag-c-status\{[^}]*justify-self:end/);
-  assert.match(styles, /\.ag-log-row-detail\{display:grid/);
+  assert.match(styles, /\.ag-appt-side\{width:400px/);
+  assert.match(styles, /\.ag-log-widget\{[^}]*max-width:400px/);
+  assert.match(styles, /\.ag-log-row-head\{[^}]*grid-template-columns:minmax\(0,1fr\) auto auto/);
+  assert.match(styles, /\.ag-log-row \.ag-c-status\{[^}]*grid-column:2[^}]*justify-self:end/);
+  assert.match(styles, /\.ag-log-row-awb\{grid-column:3[^}]*display:flex/);
+  assert.match(styles, /\.ag-log-row-detail\{display:grid;align-content:center/);
   assert.match(styles, /\.ag-log-row-awb \.ag-awb/);
   assert.match(logisticsRow, /ag-log-row-slot/);
   assert.match(logisticsRow, /ag-log-row-detail/);
