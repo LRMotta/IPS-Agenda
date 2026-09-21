@@ -6,27 +6,21 @@ const { runFile, readProjectFile } = require('./helpers/load-app-script');
 const d = (s) => new Date(s + 'Z');
 function base() { return runFile('CourierLembretes.gs', { Date }); }
 
-test('prazo soma somente 08h a 18h e exclui fins de semana e feriados', () => {
+test('horario D-1 e o unico gatilho da cobranca', () => {
   const s = base();
-  assert.equal(s.courierLembreteHoras_(d('2026-09-04T17:00:00'), d('2026-09-08T09:00:00'), { '2026-09-07': true }), 2);
-  assert.equal(s.courierLembreteHoras_(d('2026-09-04T18:00:00'), d('2026-09-05T09:00:00'), {}), 0);
-});
-
-test('limite D-1 respeita uma hora util minima e antecipa fim de semana/feriado', () => {
-  const s = base();
-  const c = { lembreteHoras: '4', lembreteLimite: '15:00' };
+  const c = { lembreteLimite: '15:00' };
   const feriados = { '2026-09-07': true };
-  assert.equal(s.courierLembreteVencido_(d('2026-09-04T14:30:00'), d('2026-09-04T15:00:00'), '2026-09-08', c, feriados), false);
-  assert.equal(s.courierLembreteVencido_(d('2026-09-04T14:00:00'), d('2026-09-04T15:00:00'), '2026-09-08', c, feriados), true);
-  assert.equal(s.courierLembreteVencido_(d('2026-09-04T10:00:00'), d('2026-09-04T18:00:00'), '2026-09-08', c, feriados), false);
+  assert.equal(s.courierLembreteVencido_(d('2026-09-21T14:30:00'), d('2026-09-21T16:30:00'), '2026-09-24', c, feriados), false);
+  assert.equal(s.courierLembreteVencido_(d('2026-09-23T10:00:00'), d('2026-09-23T14:59:00'), '2026-09-24', c, feriados), false);
+  assert.equal(s.courierLembreteVencido_(d('2026-09-23T14:30:00'), d('2026-09-23T15:00:00'), '2026-09-24', c, feriados), true);
+  assert.equal(s.courierLembreteVencido_(d('2026-09-23T14:30:00'), d('2026-09-23T15:00:00'), '2026-09-24', {}, feriados), false);
   assert.equal(s.courierLembreteVencido_(d('2026-09-04T10:00:00'), d('2026-09-04T15:00:00'), '2026-09-04', c, feriados), false);
-  assert.equal(s.courierLembreteVencido_(d('2026-09-04T10:00:00'), d('2026-09-04T15:00:00'), '2026-09-08', { lembreteHoras: '' }, feriados), false);
 });
 
 function fixture() {
   const rows = [{ key: 'evt:1', agendaId: 'evt', slot: '1', gerado: d('2026-09-04T11:00:00'), base: 'base', estado: 'BASE' }];
   const op = { agendaId: 'evt', slot: '1', geradoEm: rows[0].gerado, geradoPor: 'staff@example.invalid', emailEnviadoEm: d('2026-09-04T12:00:00'), gmailMessageId: 'orig', referencia: 'IPS-TRP-EVT-T1' };
-  const config = { nome: 'Marken', email: 'courier@example.invalid', lembreteModo: 'Automático', lembreteHoras: '2' };
+  const config = { nome: 'Marken', email: 'courier@example.invalid', lembreteModo: 'Automático', lembreteLimite: '15:00' };
   const current = { base: 'base', status: 'Agendado', courierStatus: 'Agendado', courier: 'Marken', data: '05/09/2026', feriados: {}, awb: '123' };
   let sent = 0;
   let throwSend = false;
@@ -35,9 +29,11 @@ function fixture() {
   const original = {
     getFrom: () => op.geradoPor, getTo: () => 'courier@example.invalid', getCc: () => 'monitor@example.invalid',
     getBcc: () => '', getReplyTo: () => '', getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-T1',
+    getSubject: () => 'Agendamento de coleta', getAttachments: () => ['documento.pdf'],
     isDraft: () => false, isInTrash: () => false, getDate: () => op.emailEnviadoEm, getId: () => 'orig', getThread: () => thread
   };
   const messages = [original];
+  let lastReplyOptions = null;
   const s = runFile('CourierLembretes.gs', {
     Date, Session: { getEffectiveUser: () => ({ getEmail: () => 'monitor@example.invalid' }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] }) },
@@ -47,10 +43,12 @@ function fixture() {
     AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
     normText_: (v) => String(v).toLowerCase(), parseAgendaDateAny_: () => new Date(),
     Utilities: { formatDate: () => '2026-09-05' },
+    getGmailSignature: () => '<div>Minha assinatura<br>Telefone da equipe</div>',
     transporteMonitorReferencia_: () => 'IPS-TRP-EVT-T1',
     codexWithDocumentLock_: (_name, fn) => fn(), Logger: { log() {} },
-    CodexExternalEffects_: { replyCourierReminder(_orig, body) {
+    CodexExternalEffects_: { replyCourierReminder(_orig, body, options) {
       sent++;
+      lastReplyOptions = options;
       messages.push({ getId: () => 'sent', isDraft: () => false, getDate: () => d('2026-09-04T15:00:00'), getFrom: () => 'monitor@example.invalid', getPlainBody: () => body });
       if (throwSend) throw new Error('timeout after acceptance');
     } }
@@ -60,7 +58,7 @@ function fixture() {
   s.courierLembreteHoraLocal_ = (date) => date;
   s.courierLembreteVencido_ = () => true;
   s.courierLembreteSalvar_ = (item, estado, detalhe, threadId, messageId) => Object.assign(item, { estado, detalhe, thread: threadId || '', message: messageId || '' });
-  return { s, rows, op, config, current, props, messages, original, sent: () => sent, failSend: () => { throwSend = true; } };
+  return { s, rows, op, config, current, props, messages, original, sent: () => sent, replyOptions: () => lastReplyOptions, failSend: () => { throwSend = true; } };
 }
 
 test('envia uma unica cobranca na conversa original e confirma ID da mensagem enviada', () => {
@@ -68,6 +66,11 @@ test('envia uma unica cobranca na conversa original e confirma ID da mensagem en
   assert.equal(f.s.courierLembreteExecutar_().enviados, 1);
   assert.equal(f.rows[0].estado, 'ENVIADO');
   assert.equal(f.rows[0].message, 'sent');
+  assert.equal(f.replyOptions().attachments.length, 1);
+  assert.equal(f.replyOptions().attachments[0], 'documento.pdf');
+  assert.match(f.replyOptions().htmlBody, /Minha assinatura/);
+  assert.match(f.messages[1].getPlainBody(), /--- E-mail original completo ---/);
+  assert.match(f.messages[1].getPlainBody(), /Ref\. IPS: IPS-TRP-EVT-T1/);
   f.s.courierLembreteExecutar_();
   assert.equal(f.sent(), 1);
 });
@@ -132,7 +135,9 @@ test('modelo preserva paragrafos e substitui apenas campos conhecidos', () => {
   const f = fixture();
   const body = f.s.courierLembreteTexto_(f.config, f.current, f.op);
   assert.match(body, /Prezados,\n\n/);
-  assert.match(body, /Transporte I/);
+  assert.doesNotMatch(body, /Transporte I/);
+  assert.match(body, /coleta prevista para 05\/09\/2026 \(AWB: 123\)/);
+  assert.match(body, /Minha assinatura\nTelefone da equipe/);
   assert.match(body, /resposta a este mesmo e-mail/);
   assert.doesNotMatch(body, /\{data\}/);
 });

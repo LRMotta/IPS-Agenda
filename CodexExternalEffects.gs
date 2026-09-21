@@ -9,8 +9,8 @@ var CodexExternalEffects_ = (function() {
 
   return Object.freeze({
     sendEmail: sendEmail,
-    replyCourierReminder: function(message, body) {
-      return message.replyAll(body);
+    replyCourierReminder: function(message, body, options) {
+      return message.replyAll(body, options || {});
     }
   });
 })();

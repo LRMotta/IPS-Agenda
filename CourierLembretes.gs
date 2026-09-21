@@ -83,32 +83,20 @@ function courierLembreteDiaUtil_(date, feriados) {
   return date.getUTCDay() !== 0 && date.getUTCDay() !== 6 && !feriados[date.toISOString().slice(0, 10)];
 }
 
-function courierLembreteHoras_(inicio, fim, feriados) {
-  if (fim <= inicio || fim - inicio > 31 * 86400000) return 0;
-  var cursor = new Date(inicio);
-  cursor.setUTCHours(0, 0, 0, 0);
-  var total = 0;
-  while (cursor <= fim) {
-    if (courierLembreteDiaUtil_(cursor, feriados)) {
-      total += Math.max(0, Math.min(+fim, +cursor + 18 * 3600000) - Math.max(+inicio, +cursor + 8 * 3600000));
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return total / 3600000;
+function courierLembreteHorarioD1_(coletaIso, limiteTexto, feriados) {
+  if (!/^(0[8-9]|1[0-7]):[0-5]\d$/.test(limiteTexto || '')) return null;
+  var limite = new Date(coletaIso + 'T00:00:00Z');
+  do { limite.setUTCDate(limite.getUTCDate() - 1); } while (!courierLembreteDiaUtil_(limite, feriados));
+  var h = limiteTexto.split(':');
+  limite.setUTCHours(Number(h[0]), Number(h[1]), 0, 0);
+  return limite;
 }
 
 function courierLembreteVencido_(inicio, agora, coletaIso, config, feriados) {
-  var horas = Number(config.lembreteHoras);
-  if (!(horas > 0 && horas <= 80) || !courierLembreteDiaUtil_(agora, feriados) || agora.getUTCHours() < 8 || agora.getUTCHours() >= 18) return false;
+  if (!courierLembreteDiaUtil_(agora, feriados) || agora.getUTCHours() < 8 || agora.getUTCHours() >= 18) return false;
   if (coletaIso <= agora.toISOString().slice(0, 10)) return false;
-  var decorrido = courierLembreteHoras_(inicio, agora, feriados);
-  if (decorrido >= horas) return true;
-  if (!/^(0[8-9]|1[0-7]):[0-5]\d$/.test(config.lembreteLimite || '') || decorrido < 1) return false;
-  var limite = new Date(coletaIso + 'T00:00:00Z');
-  do { limite.setUTCDate(limite.getUTCDate() - 1); } while (!courierLembreteDiaUtil_(limite, feriados));
-  var h = config.lembreteLimite.split(':');
-  limite.setUTCHours(Number(h[0]), Number(h[1]), 0, 0);
-  return agora >= limite;
+  var limite = courierLembreteHorarioD1_(coletaIso, config.lembreteLimite, feriados);
+  return !!limite && agora >= limite;
 }
 
 function courierLembreteEmails_(value) {
@@ -134,10 +122,69 @@ function courierLembreteValidarConversa_(original, op, config, own) {
   return '';
 }
 
-function courierLembreteTexto_(config, atual, op) {
-  var template = config.lembreteTexto || 'Prezados,\n\nAté o momento, não identificamos a confirmação da coleta prevista para {data}, referente ao {transporte} (AWB: {awb}). Poderiam, por gentileza, confirmar o agendamento?\n\nPara mantermos o histórico centralizado e evitarmos desencontro de informações, pedimos que qualquer confirmação, alteração ou cancelamento seja informada como resposta a este mesmo e-mail.\n\nAtenciosamente,\nEquipe IPS';
+function courierLembreteHtmlToPlain_(html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function courierLembreteAssinaturaHtml_() {
+  if (typeof getGmailSignature !== 'function') return '';
+  try { return String(getGmailSignature() || '').trim(); } catch (e) { return ''; }
+}
+
+function courierLembreteTexto_(config, atual, op, original) {
+  var textoCustomizado = String(config.lembreteTexto || '').trim();
+  var template = textoCustomizado || 'Prezados,\n\nAté o momento, não identificamos a confirmação da coleta prevista para {data} (AWB: {awb}). Poderiam, por gentileza, confirmar o agendamento?\n\nPara mantermos o histórico centralizado e evitarmos desencontro de informações, pedimos que qualquer confirmação, alteração ou cancelamento seja informada como resposta a este mesmo e-mail.\n\nAtenciosamente,';
   var vars = { data: atual.data, transporte: 'Transporte ' + ({ '1': 'I', '2': 'II', '3': 'III' }[op.slot]), referencia: op.referencia, awb: atual.awb || 'não informada' };
-  return template.replace(/\{(data|transporte|referencia|awb)\}/g, function(_, k) { return vars[k]; }) + '\n\nRef. IPS: ' + op.referencia + '\nCobrança IPS: ' + op.agendaId + ':' + op.slot;
+  var texto = template.replace(/\{(data|transporte|referencia|awb)\}/g, function(_, k) { return vars[k]; }) + '\n\nRef. IPS: ' + op.referencia + '\nCobrança IPS: ' + op.agendaId + ':' + op.slot;
+  var assinaturaHtml = courierLembreteAssinaturaHtml_();
+  var assinatura = courierLembreteHtmlToPlain_(assinaturaHtml);
+  if (assinatura) {
+    var marcador = '\n\nRef. IPS: ' + op.referencia;
+    texto = texto.replace(marcador, '\n' + assinatura + marcador);
+  } else if (!textoCustomizado) {
+    texto = texto.replace('\n\nRef. IPS: ' + op.referencia, '\nEquipe IPS\n\nRef. IPS: ' + op.referencia);
+  }
+  if (!original || typeof original.getPlainBody !== 'function') return texto;
+  var body = String(original.getPlainBody() || '').trim();
+  if (!body) return texto;
+  var originalHeader = ['--- E-mail original completo ---'];
+  if (typeof original.getSubject === 'function') originalHeader.push('Assunto: ' + String(original.getSubject() || '').trim());
+  if (typeof original.getFrom === 'function') originalHeader.push('De: ' + String(original.getFrom() || '').trim());
+  if (typeof original.getTo === 'function') originalHeader.push('Para: ' + String(original.getTo() || '').trim());
+  if (typeof original.getCc === 'function' && String(original.getCc() || '').trim()) originalHeader.push('Cc: ' + String(original.getCc() || '').trim());
+  return texto + '\n\n' + originalHeader.join('\n') + '\n\n' + body + '\n--- Fim do e-mail original ---';
+}
+
+function courierLembreteReplyOptions_(original, texto) {
+  var options = {};
+  if (original && typeof original.getAttachments === 'function') {
+    var attachments = original.getAttachments({ includeInlineImages: false, includeAttachments: true }) || [];
+    if (attachments.length) options.attachments = attachments;
+  }
+  var assinaturaHtml = courierLembreteAssinaturaHtml_();
+  var assinatura = courierLembreteHtmlToPlain_(assinaturaHtml);
+  if (assinatura && texto) {
+    var pos = texto.indexOf(assinatura);
+    if (pos >= 0) {
+      var antes = texto.slice(0, pos);
+      var depois = texto.slice(pos + assinatura.length);
+      options.htmlBody = antes.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') + assinaturaHtml + depois.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+  }
+  return options;
 }
 
 function monitorarLembretesCourier(event) {
@@ -202,8 +249,16 @@ function courierLembreteExecutar_() {
           courierLembreteSalvar_(item, 'REVISAO', motivo || 'Monitor pausado antes do envio', threadId);
           continue;
         }
-        var texto = courierLembreteTexto_(config, atual, op);
-        CodexExternalEffects_.replyCourierReminder(original, texto);
+        var texto = courierLembreteTexto_(config, atual, op, original);
+        var replyOptions;
+        try {
+          replyOptions = courierLembreteReplyOptions_(original, texto);
+        } catch (replyContentError) {
+          courierLembreteSalvar_(item, 'REVISAO', 'Conteúdo ou anexos do e-mail original não puderam ser recuperados — revisar', threadId);
+          Logger.log('Conteúdo original da cobrança ' + item.key + ': ' + String(replyContentError.message || replyContentError));
+          continue;
+        }
+        CodexExternalEffects_.replyCourierReminder(original, texto, replyOptions);
         // replyAll retorna a mensagem original; só o e-mail enviado comprova o novo ID.
         var thread = GmailApp.getThreadById(threadId);
         thread.refresh();
