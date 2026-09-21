@@ -6232,12 +6232,14 @@
     var courier = (entry && entry.courier) || {};
     var status = agendaCourierStatusHtml(courier, entry.slot === 'B', false, ['coletado', 'enviado', 'entregue', 'confirmado'].indexOf(entry.statusKey) > -1);
     return '<div class="ag-log-row">' +
-      '<div class="ag-log-row-head">' +
-        '<span class="ag-log-slot">' + esc(entry.label) + '</span>' +
-        '<span class="ag-log-courier">' + esc(courier.nome || 'Transporte') + '</span>' +
-        status +
+      '<div class="ag-log-row-slot"><span class="ag-log-slot">' + esc(entry.label) + '</span></div>' +
+      '<div class="ag-log-row-detail">' +
+        '<div class="ag-log-row-head">' +
+          '<span class="ag-log-courier">' + esc(courier.nome || 'Transporte') + '</span>' +
+          status +
+        '</div>' +
+        '<div class="ag-log-row-awb">' + agendaAwbHtml(courier.awb, courier.nome) + '</div>' +
       '</div>' +
-      '<div class="ag-log-row-awb">' + agendaAwbHtml(courier.awb, courier.nome) + '</div>' +
       '</div>';
   }
 
