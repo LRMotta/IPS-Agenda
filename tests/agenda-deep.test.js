@@ -122,7 +122,8 @@ test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da 
   assert.match(sidePanel, /entries\.map\(agendaLogisticaLinhaHtml_\)/);
   assert.doesNotMatch(sidePanel, /summary\.statuses/);
   assert.match(logisticsRow, /agendaAwbHtml\(courier\.awb, courier\.nome\)/);
-  assert.match(logisticsRow, /ag-st-chip ag-ch-/);
+  assert.match(logisticsRow, /agendaCourierStatusHtml\(courier, entry\.slot === 'B'/);
+  assert.doesNotMatch(logisticsRow, /ag-st-chip/);
   assert.doesNotMatch(source, /agendaLogisticaRastreioHtml_/);
   assert.doesNotMatch(source, /abrirPendenciaTracking\(event/);
   assert.doesNotMatch(source, /travel_explore/);
