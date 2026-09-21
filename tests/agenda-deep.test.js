@@ -133,5 +133,9 @@ test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da 
   assert.doesNotMatch(styles, /ag-log-popover/);
   assert.doesNotMatch(styles, /logistics-popover-open/);
   assert.match(styles, /\.ag-log-row/);
+  assert.match(styles, /\.ag-log-row-slot\{[^}]*border-right:1px solid/);
+  assert.match(styles, /\.ag-log-row-detail\{display:grid/);
   assert.match(styles, /\.ag-log-row-awb \.ag-awb/);
+  assert.match(logisticsRow, /ag-log-row-slot/);
+  assert.match(logisticsRow, /ag-log-row-detail/);
 });
