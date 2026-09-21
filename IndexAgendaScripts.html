@@ -6237,8 +6237,8 @@
         '<div class="ag-log-row-head">' +
           '<span class="ag-log-courier">' + esc(courier.nome || 'Transporte') + '</span>' +
           status +
+          '<div class="ag-log-row-awb">' + agendaAwbHtml(courier.awb, courier.nome) + '</div>' +
         '</div>' +
-        '<div class="ag-log-row-awb">' + agendaAwbHtml(courier.awb, courier.nome) + '</div>' +
       '</div>' +
       '</div>';
   }
