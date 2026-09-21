@@ -134,10 +134,10 @@ test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da 
   assert.doesNotMatch(styles, /logistics-popover-open/);
   assert.match(styles, /\.ag-log-row/);
   assert.match(styles, /\.ag-log-rows\{[^}]*position:relative/);
-  assert.match(styles, /\.ag-log-rows::before\{[^}]*left:89px/);
-  assert.match(styles, /\.ag-log-row\{[^}]*grid-template-columns:90px minmax\(0,1fr\)/);
+  assert.match(styles, /\.ag-log-rows::before\{[^}]*left:133px/);
+  assert.match(styles, /\.ag-log-row\{[^}]*grid-template-columns:134px minmax\(0,1fr\)/);
   assert.match(styles, /\.ag-log-row-head\{[^}]*grid-template-columns:minmax\(0,1fr\) 108px/);
-  assert.match(styles, /\.ag-log-row \.ag-c-status\{[^}]*justify-self:start/);
+  assert.match(styles, /\.ag-log-row \.ag-c-status\{[^}]*justify-self:end/);
   assert.match(styles, /\.ag-log-row-detail\{display:grid/);
   assert.match(styles, /\.ag-log-row-awb \.ag-awb/);
   assert.match(logisticsRow, /ag-log-row-slot/);
