@@ -6230,7 +6230,7 @@
 
   function agendaLogisticaLinhaHtml_(entry) {
     var courier = (entry && entry.courier) || {};
-    var status = '<span class="ag-st-chip ag-ch-' + esc(entry.statusKey) + '">' + esc(entry.statusLabel) + '</span>';
+    var status = agendaCourierStatusHtml(courier, entry.slot === 'B', false, ['coletado', 'enviado', 'entregue', 'confirmado'].indexOf(entry.statusKey) > -1);
     return '<div class="ag-log-row">' +
       '<div class="ag-log-row-head">' +
         '<span class="ag-log-slot">' + esc(entry.label) + '</span>' +
