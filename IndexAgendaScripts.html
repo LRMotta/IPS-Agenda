@@ -5688,30 +5688,31 @@
     var isMon = agendaIsMonitoria(r);
     var isSiv = AgendaRules.isSiv(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
-    var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento sem participante'));
+    var isAuditoria = AgendaRules.isType(r.tipo, 'auditoria');
+    var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (isAuditoria ? '' : (r.participante || r.tipo || 'Evento sem participante')));
     var labSim = AgendaRules.isLabCentral(r);
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
     var tipoChip = isPeriodoOperacional ? '' : agendaTipoChip(r.tipo);
     var postVisitIcons = agendaPostVisitIcons(r);
     var contextoPrincipal = isPeriodoOperacional
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
-      : tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons;
+      : (isAuditoria ? '' : tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
     var sideHtml = agendaSidePanelHtml(r, labSim, id);
     var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
-    return '<div class="ag-appt st-' + st + agendaTipoVisualClass(r) + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
+    return '<div class="ag-appt st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         (labSim ? '<div class="ag-lab-watermark" title="Laboratorio central"><span class="material-symbols-outlined">science</span></div>' : '') +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
         '<div class="ag-appt-body">' +
-          '<div class="ag-l1"><span class="ag-appt-name">' + esc(titulo) + '</span>' + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
-          '<div class="ag-l2">' + contextoPrincipal + '</div>' +
+          '<div class="ag-l1">' + (isAuditoria ? tipoChip : '<span class="ag-appt-name">' + esc(titulo) + '</span>') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
+          (!isAuditoria && contextoPrincipal ? '<div class="ag-l2">' + contextoPrincipal + '</div>' : '') +
           (r.visita || r.braco ? '<div class="ag-l2">' + agendaMetaText('flag', r.visita ? 'Visita ' + r.visita : '') + agendaMetaText('call_split', r.braco ? 'Braço ' + r.braco : '') + '</div>' : '') +
           (isPeriodoOperacional
             ? (r.monitorName ? '<div class="ag-l3">' + agendaLineItem('visibility', r.monitorName) + '</div>' : '')
-            : '<div class="ag-l3">' + agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '') + '</div>') +
+            : (!isAuditoria ? '<div class="ag-l3">' + agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '') + '</div>' : '')) +
           (r.procedimentos ? '<div class="ag-proc-preview">' + esc(r.procedimentos) + '</div>' : '') +
-          (AgendaRules.isType(r.tipo, 'auditoria') && r.obs ? '<div class="ag-obs-preview"><span class="material-symbols-outlined">sticky_note_2</span><span>' + esc(r.obs) + '</span></div>' : '') +
+          (isAuditoria && r.obs ? '<div class="ag-obs-preview"><span class="material-symbols-outlined">sticky_note_2</span><span>' + esc(r.obs) + '</span></div>' : '') +
         '</div>' +
         (sideHtml ? '<div class="ag-appt-side">' + sideHtml + '</div>' : '') +
         '<div class="ag-appt-actions">' +

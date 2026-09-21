@@ -1842,7 +1842,12 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const auditGroup = functionBody(client, 'agendaAuditoriasGrupoHtml');
   assert.match(auditGroup, /<strong>Auditorias<\/strong>/);
   assert.match(auditGroup, /agendaCardHtml\(r, iso \+ '-auditoria-' \+ idx\)/);
-  assert.match(functionBody(client, 'agendaCardHtml'), /ag-obs-preview/);
+  const auditCard = functionBody(client, 'agendaCardHtml');
+  assert.match(auditCard, /var isAuditoria = AgendaRules\.isType\(r\.tipo, 'auditoria'\)/);
+  assert.match(auditCard, /isAuditoria \? tipoChip : '<span class="ag-appt-name">'/);
+  assert.match(auditCard, /isAuditoria \? '' : tipoChip/);
+  assert.match(auditCard, /ag-auditoria-card/);
+  assert.match(auditCard, /isAuditoria && r\.obs/);
   assert.match(dayHeader, /ag-dpill ag-dp-n/);
   assert.match(cancelledCompact, /st-cancelado/);
   assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
