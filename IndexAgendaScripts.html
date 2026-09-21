@@ -2020,13 +2020,18 @@
   function atualizarAgendaLabCentralDisponibilidade() {
     var lab = document.getElementById('agLabCentral');
     if (!lab) return;
+    var hint = document.getElementById('agLabCentralDisabledHint');
     var policy = AgendaRules.formPolicy((document.getElementById('agTipo') || {}).value || '', agendaModoEdicao());
-    if (!policy.labChoiceAllowed) {
+    var disabled = !policy.labChoiceAllowed;
+    if (disabled) {
       lab.value = '';
       lab.disabled = true;
     } else {
       lab.disabled = false;
     }
+    lab.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    lab.title = disabled ? 'Indisponível para exames terceirizados.' : '';
+    if (hint) hint.classList.toggle('visible', disabled && !!policy.requiresThirdPartyService);
   }
 
   function atualizarAgendaPrestadorObrigatorio() {
@@ -5697,7 +5702,7 @@
     var contextoPrincipal = isPeriodoOperacional
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
       : (isAuditoria ? '' : tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
-    var sideHtml = agendaSidePanelHtml(r, labSim, id);
+    var sideHtml = agendaSidePanelHtml(r, labSim);
     var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
     return '<div class="ag-appt st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
@@ -6074,10 +6079,11 @@
     var url = agendaTrackingUrl(awb, courier);
     if (url) {
       var link = '<a class="ag-awb" href="' + esc(url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' + esc(awb) + '</a>';
+      var track = agendaLogisticaRastreioHtml_({awb: awb, nome: courier});
       if (agendaIsPinexCourier(courier)) {
-        return '<span class="ag-awb-actions">' + link + agendaAwbCopyButton(awb) + '</span>';
+        return '<span class="ag-awb-actions">' + link + track + agendaAwbCopyButton(awb) + '</span>';
       }
-      return link;
+      return '<span class="ag-awb-actions">' + link + track + '</span>';
     }
     return '<span class="ag-awb">' + esc(awb) + '</span>';
   }
@@ -6145,7 +6151,6 @@
   }
 
   function agendaToggleDetail(id) {
-    agendaCloseLogisticaPopovers_();
     var el = document.getElementById(id);
     if (el) el.classList.toggle('open');
   }
@@ -6214,10 +6219,9 @@
     return total ? '<span class="ag-lab-ind">' + total + ' courier(s)</span>' : '';
   }
 
-  function agendaSidePanelHtml(r, labSim, cardKey) {
+  function agendaSidePanelHtml(r, labSim) {
     var entries = agendaCourierEntries_(r);
     if (!entries.length) return '';
-    var popoverId = 'agLogPop' + String(cardKey || r.rowIndex || r.id || '').replace(/\W/g, '');
     var summary = agendaLogisticaResumoData_(entries);
     var countLabel = summary.total === 1 ? '1 envio' : summary.total + ' envios';
     var single = summary.single;
@@ -6230,18 +6234,7 @@
       '<div class="ag-log-heading"><span class="material-symbols-outlined">local_shipping</span><span>Logística</span></div>' +
       '<div class="ag-log-summary-line"><span class="ag-log-count">' + esc(countLabel) + '</span></div>' +
       singleLine +
-      '<button type="button" class="ag-log-trigger" aria-controls="' + popoverId + '" aria-expanded="false" onclick="event.stopPropagation();agendaToggleLogisticaPopover(\'' + popoverId + '\', this)" title="Ver detalhes dos envios"><span>Ver detalhes</span><span class="material-symbols-outlined">expand_more</span></button>' +
-      agendaLogisticaPopoverHtml_(popoverId, r) +
       '</div>';
-  }
-
-  function agendaLogisticaResumo(r) {
-    var entries = agendaCourierEntries_(r);
-    if (!entries.length) return '';
-    var summary = agendaLogisticaResumoData_(entries);
-    return summary.total + (summary.total === 1 ? ' envio' : ' envios') + ': ' + summary.statuses.map(function(item) {
-      return item.count + ' ' + item.label;
-    }).join(' · ');
   }
 
   function agendaCourierEntries_(r) {
@@ -6290,66 +6283,11 @@
     return { total: entries.length, statuses: statuses, single: entries.length === 1 ? entries[0] : null };
   }
 
-  function agendaLogisticaPopoverHtml_(popoverId, r) {
-    return '<div class="ag-log-popover" id="' + popoverId + '" data-agenda-id="' + esc(r.id || '') + '" data-row-index="' + Number(r.rowIndex || 0) + '" role="dialog" aria-label="Detalhes de logística" onclick="event.stopPropagation()"></div>';
-  }
-
-  function agendaLogisticaPopoverBodyHtml_(popoverId, summary, entries) {
-    return '<div class="ag-log-popover-head"><div><span class="material-symbols-outlined">local_shipping</span><strong>Logística / Amostras</strong></div><button type="button" class="ag-log-close" title="Fechar detalhes" aria-label="Fechar detalhes" onclick="agendaToggleLogisticaPopover(\'' + popoverId + '\', this)"><span class="material-symbols-outlined">close</span></button></div>' +
-      '<div class="ag-log-popover-summary"><strong>' + esc(summary.total + (summary.total === 1 ? ' envio' : ' envios')) + '</strong><span>' + summary.statuses.map(function(item) { return item.count + ' ' + item.label; }).join(' · ') + '</span></div>' +
-      '<div class="ag-log-shipments">' + entries.map(function(entry) {
-        var c = entry.courier || {};
-        var awb = String(c.awb || '').trim();
-        var destino = String(c.destino || '').trim();
-        var temperatura = String(c.temperatura || '').trim();
-        return '<div class="ag-log-shipment">' +
-          '<div class="ag-log-shipment-head"><span class="ag-log-shipment-slot">' + esc(entry.label) + '</span><span class="ag-log-courier">' + esc(c.nome || 'Transporte') + '</span><span class="ag-st-chip ag-ch-' + esc(entry.statusKey) + '">' + esc(entry.statusLabel) + '</span></div>' +
-          '<div class="ag-log-shipment-meta">' +
-            (destino ? '<span><span class="material-symbols-outlined">science</span>' + esc(destino) + '</span>' : '') +
-            (temperatura ? '<span><span class="material-symbols-outlined">device_thermostat</span>' + esc(temperatura) + '</span>' : '') +
-            (awb ? '<span class="ag-log-awb"><span class="material-symbols-outlined">confirmation_number</span>' + esc(awb) + '</span>' : '<span class="ag-log-awb ag-log-awb-pending">AWB pendente</span>') +
-            agendaLogisticaRastreioHtml_(c) +
-          '</div>' +
-        '</div>';
-      }).join('') + '</div>' +
-    '</div>';
-  }
-
   function agendaLogisticaRastreioHtml_(courier) {
     courier = courier || {};
     var awb = String(courier.awb || '').trim();
     var url = agendaTrackingUrl(awb, courier.nome);
     return url ? '<button type="button" class="dash-pend-track ag-log-track-btn" title="Abrir rastreio" aria-label="Abrir rastreio" onclick="abrirPendenciaTracking(event,\'' + esc(url) + '\')"><span class="material-symbols-outlined">travel_explore</span></button>' : '';
-  }
-
-  function agendaCloseLogisticaPopovers_() {
-    document.querySelectorAll('.ag-log-popover.open').forEach(function(popover) {
-      popover.classList.remove('open');
-      var card = popover.closest('.ag-appt');
-      if (card) card.classList.remove('logistics-popover-open');
-      var trigger = popover.parentNode && popover.parentNode.querySelector('[aria-controls="' + popover.id + '"]');
-      if (trigger) trigger.setAttribute('aria-expanded', 'false');
-    });
-  }
-
-  function agendaToggleLogisticaPopover(popoverId, trigger) {
-    var popover = document.getElementById(popoverId);
-    if (!popover) return;
-    var wasOpen = popover.classList.contains('open');
-    if (!wasOpen && popover.dataset.loaded !== '1') {
-      var row = agendaFindEventoLocal_(popover.dataset.agendaId, popover.dataset.rowIndex);
-      var entries = agendaCourierEntries_(row);
-      if (!row || !entries.length) return;
-      popover.innerHTML = agendaLogisticaPopoverBodyHtml_(popoverId, agendaLogisticaResumoData_(entries), entries);
-      popover.dataset.loaded = '1';
-    }
-    agendaCloseLogisticaPopovers_();
-    if (!wasOpen) {
-      popover.classList.add('open');
-      var card = popover.closest('.ag-appt');
-      if (card) card.classList.add('logistics-popover-open');
-      if (trigger) trigger.setAttribute('aria-expanded', 'true');
-    }
   }
 
   function agendaAwbMiniHtml(awb, courier) {
@@ -6501,13 +6439,6 @@
   document.addEventListener('change', onAgendaTransporteOpcionalInput);
   document.addEventListener('input', onAgendaRequiredInput);
   document.addEventListener('change', onAgendaRequiredInput);
-  document.addEventListener('click', function(event) {
-    if (event.target && event.target.closest && event.target.closest('.ag-log-widget')) return;
-    agendaCloseLogisticaPopovers_();
-  });
-  document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') agendaCloseLogisticaPopovers_();
-  });
 
   document.addEventListener('DOMContentLoaded', function() {
     setTimeout(function() {
