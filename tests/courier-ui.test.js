@@ -26,6 +26,10 @@ test('modal de courier agrupa configuracoes em persianas com acoes padrao', () =
   assert.match(modal, /onclick="fecharOverlay\('modalCourier'\)">Cancelar/);
   assert.match(modal, /id="btnSalvarCourier"/);
   assert.match(modal, /class="courier-reminder-guidance"/);
+  assert.doesNotMatch(modal, /courierLembreteHoras|Enviar após \(horas úteis/);
+  assert.match(modal, /Enviar no dia útil anterior às/);
+  assert.match(modal, /horário informado é o único gatilho/);
+  assert.match(modal, /e seus anexos/);
   assert.match(modal, /class="ag-tb-btn primary" onclick="configurarMonitorLembretesCourierFront\(true\)"/);
   assert.match(modal, /class="ag-tb-btn" onclick="configurarMonitorLembretesCourierFront\(false\)"/);
   assert.match(styles, /\.courier-modal-actions \.btn-save/);

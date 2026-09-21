@@ -8596,7 +8596,7 @@ function abrirFormCourier(id) {
     'courierEmpresa2','courierCnpj2','courierTelefone2','courierFax2','courierConteudo',
     'courierEmail','courierEmailAmbiente','courierEmailCongelado','courierMonitorConfirmacao',
     'courierEmailConfirmacao','courierTextoConfirmacao','courierStatusConfirmacao',
-    'courierLembreteModo','courierLembreteHoras','courierLembreteLimite','courierLembreteTexto',
+    'courierLembreteModo','courierLembreteLimite','courierLembreteTexto',
     'courierExigeAnexoEnvio','courierDisponivelProjetos','courierForneceGeloColeta','courierRestricaoSegunda','courierRestricaoAposFeriado','courierObservacaoOperacional'
   ].forEach(function(fId) { document.getElementById(fId).value = ''; });
   document.getElementById('courierDisponivelProjetos').value = 'Sim';
@@ -8626,7 +8626,6 @@ function abrirFormCourier(id) {
       document.getElementById('courierEmailConfirmacao').value = c.emailConfirmacao || '';
       document.getElementById('courierTextoConfirmacao').value = c.textoConfirmacao || '';
       document.getElementById('courierLembreteModo').value = c.lembreteModo || '';
-      document.getElementById('courierLembreteHoras').value = c.lembreteHoras || '';
       document.getElementById('courierLembreteLimite').value = c.lembreteLimite || '';
       document.getElementById('courierLembreteTexto').value = c.lembreteTexto || '';
       document.getElementById('courierExigeAnexoEnvio').value = c.exigeAnexoEnvio || (courierNormNome(c.nome).indexOf('dhl') >= 0 ? 'Não' : 'Sim');
@@ -8749,7 +8748,6 @@ function salvarCourierApp() {
     emailConfirmacao: document.getElementById('courierEmailConfirmacao').value.trim(),
     textoConfirmacao: document.getElementById('courierTextoConfirmacao').value.trim(),
     lembreteModo: document.getElementById('courierLembreteModo').value,
-    lembreteHoras: document.getElementById('courierLembreteHoras').value,
     lembreteLimite: document.getElementById('courierLembreteLimite').value,
     lembreteTexto: document.getElementById('courierLembreteTexto').value,
     exigeAnexoEnvio: document.getElementById('courierExigeAnexoEnvio').value,

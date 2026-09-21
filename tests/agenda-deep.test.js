@@ -137,10 +137,10 @@ test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da 
   assert.match(styles, /\.ag-log-rows\{[^}]*position:relative/);
   assert.match(styles, /\.ag-log-rows::before\{[^}]*left:133px/);
   assert.match(styles, /\.ag-log-row\{[^}]*grid-template-columns:134px minmax\(0,1fr\)/);
-  assert.match(styles, /\.ag-appt-side\{width:400px/);
-  assert.match(styles, /\.ag-log-widget\{[^}]*max-width:400px/);
-  assert.match(styles, /\.ag-log-row-head\{[^}]*grid-template-columns:minmax\(0,1fr\) auto auto/);
-  assert.match(styles, /\.ag-log-row \.ag-c-status\{[^}]*grid-column:2[^}]*justify-self:end/);
+  assert.match(styles, /\.ag-appt-side\{width:420px/);
+  assert.match(styles, /\.ag-log-widget\{[^}]*max-width:420px/);
+  assert.match(styles, /\.ag-log-row-head\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(108px,max-content\) 96px/);
+  assert.match(styles, /\.ag-log-row \.ag-c-status\{[^}]*grid-column:2[^}]*justify-self:start/);
   assert.match(styles, /\.ag-log-row-awb\{grid-column:3[^}]*display:flex/);
   assert.match(styles, /\.ag-log-row-detail\{display:grid;align-content:center/);
   assert.match(styles, /\.ag-log-row-awb \.ag-awb/);
