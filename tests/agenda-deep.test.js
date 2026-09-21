@@ -81,6 +81,8 @@ test('exames de imagem e laboratoriais exigem servico terceirizado e nao permite
   const server = rules();
   const client = runHtmlScript('SharedAgendaRules.html').AgendaRules;
   const source = readProjectFile('IndexAgendaScripts.html');
+  const content = readProjectFile('IndexContentAfterDashboard.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
   const webApp = readProjectFile('WebApp.gs');
 
   ['Exame de imagem', 'Exames laboratoriais'].forEach((tipo) => {
@@ -92,11 +94,14 @@ test('exames de imagem e laboratoriais exigem servico terceirizado e nao permite
   assert.equal(server.formPolicy('Visita').requiresThirdPartyService, false);
   assert.match(source, /id: 'agPrestador', err: 'errAgPrestador'/);
   assert.match(source, /policy\.requiresThirdPartyService/);
+  assert.match(source, /agLabCentralDisabledHint/);
+  assert.match(content, /id="agLabCentralDisabledHint"/);
+  assert.match(styles, /#agLabCentral:disabled\{background:#f2f5fa/);
   assert.match(webApp, /policy\.requiresThirdPartyService[\s\S]*Informe o servi[cç]o terceirizado/);
   assert.match(webApp, /function atualizarAgendaEventoCompleto[\s\S]*policy\.requiresThirdPartyService[\s\S]*Informe o servi[cç]o terceirizado/);
 });
 
-test('agenda resume multiplos envios e abre detalhes sob demanda com rastreio de Pendencias', () => {
+test('agenda resume multiplos envios e usa a persiana existente para os detalhes', () => {
   const source = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
 
@@ -106,16 +111,14 @@ test('agenda resume multiplos envios e abre detalhes sob demanda com rastreio de
   assert.match(source, /courier: r\.courier3/);
   assert.match(source, /courier: r\.backup/);
   assert.match(source, /data-logistics-count/);
-  assert.match(source, /data-row-index=/);
-  assert.match(source, /popover\.dataset\.loaded/);
-  assert.match(source, /agendaFindEventoLocal_\(popover\.dataset\.agendaId/);
-  assert.match(source, /Logística \/ Amostras/);
+  assert.match(source, /agendaToggleDetail/);
+  assert.match(source, /agendaAwbHtml[\s\S]*agendaLogisticaRastreioHtml_\(\{awb: awb, nome: courier\}\)/);
   assert.match(source, /abrirPendenciaTracking\(event/);
   assert.match(source, /travel_explore/);
   assert.doesNotMatch(source, /X acompanhados/);
-  assert.match(styles, /\.ag-log-popover\.open/);
-  assert.match(source, /card\.classList\.add\('logistics-popover-open'\)/);
-  assert.match(source, /card\.classList\.remove\('logistics-popover-open'\)/);
-  assert.match(styles, /\.ag-appt\.logistics-popover-open\{position:relative;z-index:4\}/);
+  assert.doesNotMatch(source, /agendaToggleLogisticaPopover/);
+  assert.doesNotMatch(source, /ag-log-popover/);
+  assert.doesNotMatch(styles, /ag-log-popover/);
+  assert.doesNotMatch(styles, /logistics-popover-open/);
   assert.match(styles, /\.ag-log-track-btn/);
 });

@@ -764,7 +764,7 @@
               </div>
               <div class="field-error" id="errAgPrestador">Informe o serviço terceirizado.</div>
             </div>
-            <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratorio central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')"><option value=""></option><option>Sim</option><option>Nao</option></select><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
+            <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratorio central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" aria-describedby="agLabCentralDisabledHint" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')"><option value=""></option><option>Sim</option><option>Nao</option></select><div id="agLabCentralDisabledHint" class="field-help ag-lab-central-disabled-hint"><span class="material-symbols-outlined" aria-hidden="true">info</span><span>Indisponível para exames terceirizados.</span></div><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
           </div>
           <div id="agendaCourierRiskAlert" class="ag-operational-alert" role="status" aria-live="polite" style="display:none"></div>
           <div id="agProcedimentosWrap">

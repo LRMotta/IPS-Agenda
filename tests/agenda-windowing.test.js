@@ -35,6 +35,16 @@ function agendaServer(contextValues) {
   return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules, CadastroRules_: cadastro }, contextValues || {}));
 }
 
+function agendaDateOnlyUtc(iso) {
+  const match = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  assert.ok(match, `data ISO esperada: ${iso}`);
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function agendaCalendarDaysBetween(startIso, endIso) {
+  return (agendaDateOnlyUtc(endIso) - agendaDateOnlyUtc(startIso)) / 86400000;
+}
+
 function fakeAgendaRows(server, rows, calls = []) {
   return {
     getLastRow: () => rows.length + 1,
@@ -371,8 +381,8 @@ test('comparacao administrativa atual usa exatamente tres semanas sem parametros
   const fim = new Date(`${received.fim}T00:00:00`);
   assert.equal(result.ok, true);
   assert.equal(authorized, 1);
-  assert.equal(inicio.getDay(), 1);
-  assert.equal((fim.getTime() - inicio.getTime()) / 86400000, 21);
+  assert.equal(new Date(agendaDateOnlyUtc(received.inicio)).getUTCDay(), 1);
+  assert.equal(agendaCalendarDaysBetween(received.inicio, received.fim), 21);
   assert.ok(Date.now() >= inicio.getTime());
   assert.ok(Date.now() < fim.getTime());
 });
@@ -591,9 +601,7 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
   });
 
   const range = context.agendaWindowForWeekOffset_(0);
-  const start = new Date(`${range.start}T12:00:00`);
-  const end = new Date(`${range.endExclusive}T12:00:00`);
-  assert.equal((end - start) / 86400000, 21);
+  assert.equal(agendaCalendarDaysBetween(range.start, range.endExclusive), 21);
   context._agendaEventosScope = 'window';
   context._agendaEventosRange = { inicio: range.start, fim: range.endExclusive };
   assert.equal(context.agendaWindowContainsWeekOffset_(-1), true);
@@ -603,9 +611,7 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
 
   [-520, -52, 52, 520].forEach((offset) => {
     const arbitrary = context.agendaWindowForWeekOffset_(offset);
-    const arbitraryStart = new Date(`${arbitrary.start}T12:00:00`);
-    const arbitraryEnd = new Date(`${arbitrary.endExclusive}T12:00:00`);
-    assert.equal((arbitraryEnd - arbitraryStart) / 86400000, 21);
+    assert.equal(agendaCalendarDaysBetween(arbitrary.start, arbitrary.endExclusive), 21);
   });
 
   const response = {
