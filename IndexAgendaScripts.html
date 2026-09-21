@@ -6079,11 +6079,10 @@
     var url = agendaTrackingUrl(awb, courier);
     if (url) {
       var link = '<a class="ag-awb" href="' + esc(url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' + esc(awb) + '</a>';
-      var track = agendaLogisticaRastreioHtml_({awb: awb, nome: courier});
       if (agendaIsPinexCourier(courier)) {
-        return '<span class="ag-awb-actions">' + link + track + agendaAwbCopyButton(awb) + '</span>';
+        return '<span class="ag-awb-actions">' + link + agendaAwbCopyButton(awb) + '</span>';
       }
-      return '<span class="ag-awb-actions">' + link + track + '</span>';
+      return '<span class="ag-awb-actions">' + link + '</span>';
     }
     return '<span class="ag-awb">' + esc(awb) + '</span>';
   }
@@ -6223,26 +6222,31 @@
     var entries = agendaCourierEntries_(r);
     if (!entries.length) return '';
     var summary = agendaLogisticaResumoData_(entries);
-    var countLabel = summary.total === 1 ? '1 envio' : summary.total + ' envios';
-    var single = summary.single;
-    var singleLine = single
-      ? '<div class="ag-log-single-line"><span class="ag-log-courier">' + esc(single.courier.nome || 'Transporte') + '</span><span class="ag-log-separator">·</span><span class="ag-log-status-text">' + esc(single.statusLabel) + '</span>' + agendaLogisticaRastreioHtml_(single.courier) + '</div>'
-      : '<div class="ag-log-statuses">' + summary.statuses.map(function(item) {
-          return '<span class="ag-log-status ag-log-status-' + esc(item.key) + '"><span class="ag-log-status-dot"></span>' + esc(String(item.count)) + ' ' + esc(item.label) + '</span>';
-        }).join('<span class="ag-log-status-separator">·</span>') + '</div>';
     return '<div class="ag-log-widget" data-logistics-count="' + summary.total + '">' +
-      '<div class="ag-log-heading"><span class="material-symbols-outlined">local_shipping</span><span>Logística</span></div>' +
-      '<div class="ag-log-summary-line"><span class="ag-log-count">' + esc(countLabel) + '</span></div>' +
-      singleLine +
+      '<div class="ag-log-heading"><span class="material-symbols-outlined">local_shipping</span><span>Transporte</span></div>' +
+      '<div class="ag-log-rows">' + entries.map(agendaLogisticaLinhaHtml_).join('') + '</div>' +
+      '</div>';
+  }
+
+  function agendaLogisticaLinhaHtml_(entry) {
+    var courier = (entry && entry.courier) || {};
+    var status = '<span class="ag-st-chip ag-ch-' + esc(entry.statusKey) + '">' + esc(entry.statusLabel) + '</span>';
+    return '<div class="ag-log-row">' +
+      '<div class="ag-log-row-head">' +
+        '<span class="ag-log-slot">' + esc(entry.label) + '</span>' +
+        '<span class="ag-log-courier">' + esc(courier.nome || 'Transporte') + '</span>' +
+        status +
+      '</div>' +
+      '<div class="ag-log-row-awb">' + agendaAwbHtml(courier.awb, courier.nome) + '</div>' +
       '</div>';
   }
 
   function agendaCourierEntries_(r) {
     r = r || {};
     return [
-      { slot: 'I', label: 'Envio I', courier: r.courier1 },
-      { slot: 'II', label: 'Envio II', courier: r.courier2 },
-      { slot: 'III', label: 'Envio III', courier: r.courier3 },
+      { slot: 'I', label: 'Transporte I', courier: r.courier1 },
+      { slot: 'II', label: 'Transporte II', courier: r.courier2 },
+      { slot: 'III', label: 'Transporte III', courier: r.courier3 },
       { slot: 'B', label: 'Backup', courier: r.backup }
     ].filter(function(item) {
       return agendaCourierMeaningful(item.courier) && !agendaCourierStatusNaoAplicavel(item.courier && item.courier.status);
@@ -6281,13 +6285,6 @@
       return { key: key, count: counts[key], label: agendaCourierStatusLabel_(key) };
     });
     return { total: entries.length, statuses: statuses, single: entries.length === 1 ? entries[0] : null };
-  }
-
-  function agendaLogisticaRastreioHtml_(courier) {
-    courier = courier || {};
-    var awb = String(courier.awb || '').trim();
-    var url = agendaTrackingUrl(awb, courier.nome);
-    return url ? '<button type="button" class="dash-pend-track ag-log-track-btn" title="Abrir rastreio" aria-label="Abrir rastreio" onclick="abrirPendenciaTracking(event,\'' + esc(url) + '\')"><span class="material-symbols-outlined">travel_explore</span></button>' : '';
   }
 
   function agendaAwbMiniHtml(awb, courier) {

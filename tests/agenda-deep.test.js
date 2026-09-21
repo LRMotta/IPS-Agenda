@@ -101,24 +101,36 @@ test('exames de imagem e laboratoriais exigem servico terceirizado e nao permite
   assert.match(webApp, /function atualizarAgendaEventoCompleto[\s\S]*policy\.requiresThirdPartyService[\s\S]*Informe o servi[cç]o terceirizado/);
 });
 
-test('agenda resume multiplos envios e usa a persiana existente para os detalhes', () => {
+test('agenda exibe envios individuais no minipainel e reaproveita o chip AWB da persiana', () => {
   const source = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
+  const awbHtml = source.slice(source.indexOf('function agendaAwbHtml'), source.indexOf('function agendaTrackingUrl'));
+  const sidePanel = source.slice(source.indexOf('function agendaSidePanelHtml'), source.indexOf('function agendaCourierEntries_'));
+  const logisticsRow = source.slice(source.indexOf('function agendaLogisticaLinhaHtml_'), source.indexOf('function agendaCourierEntries_'));
 
   assert.match(source, /function agendaCourierEntries_\(r\)/);
   assert.match(source, /courier: r\.courier1/);
   assert.match(source, /courier: r\.courier2/);
   assert.match(source, /courier: r\.courier3/);
   assert.match(source, /courier: r\.backup/);
+  assert.match(source, /label: 'Transporte I'/);
+  assert.match(source, /label: 'Transporte II'/);
+  assert.match(source, /label: 'Transporte III'/);
   assert.match(source, /data-logistics-count/);
   assert.match(source, /agendaToggleDetail/);
-  assert.match(source, /agendaAwbHtml[\s\S]*agendaLogisticaRastreioHtml_\(\{awb: awb, nome: courier\}\)/);
-  assert.match(source, /abrirPendenciaTracking\(event/);
-  assert.match(source, /travel_explore/);
+  assert.doesNotMatch(awbHtml, /agendaLogisticaRastreioHtml_/);
+  assert.match(sidePanel, /entries\.map\(agendaLogisticaLinhaHtml_\)/);
+  assert.doesNotMatch(sidePanel, /summary\.statuses/);
+  assert.match(logisticsRow, /agendaAwbHtml\(courier\.awb, courier\.nome\)/);
+  assert.match(logisticsRow, /ag-st-chip ag-ch-/);
+  assert.doesNotMatch(source, /agendaLogisticaRastreioHtml_/);
+  assert.doesNotMatch(source, /abrirPendenciaTracking\(event/);
+  assert.doesNotMatch(source, /travel_explore/);
   assert.doesNotMatch(source, /X acompanhados/);
   assert.doesNotMatch(source, /agendaToggleLogisticaPopover/);
   assert.doesNotMatch(source, /ag-log-popover/);
   assert.doesNotMatch(styles, /ag-log-popover/);
   assert.doesNotMatch(styles, /logistics-popover-open/);
-  assert.match(styles, /\.ag-log-track-btn/);
+  assert.match(styles, /\.ag-log-row/);
+  assert.match(styles, /\.ag-log-row-awb \.ag-awb/);
 });
