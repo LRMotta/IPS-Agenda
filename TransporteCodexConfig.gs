@@ -1719,6 +1719,11 @@ function transporteParticipanteIdEstavel_(participante) {
   return String(participante.idParticipante || participante.numId || participante.id || '').trim();
 }
 
+function transporteParticipanteCadastroId_(participante) {
+  participante = participante || {};
+  return String(participante.participanteCadastroId || participante.idCadastro || participante.id || '').trim();
+}
+
 function transporteReadParticipantesDireto_() {
   if (typeof getCodexSheetDataByName_ === 'function') {
     var rows = getCodexSheetDataByName_('Participantes') || [];
@@ -1791,9 +1796,16 @@ function transporteEncontrarParticipante_(participantes, referencia) {
   var nome = String(referencia.paciente || referencia.participante || referencia.nome || '').trim();
   var nomeKey = transporteParticipantKey_(nome);
   var projetoReferencia = String(referencia.protocolo || referencia.projeto || '').trim();
+  var cadastroId = String(referencia.participanteCadastroId || referencia.idCadastro || '').trim();
   var idEstavel = String(
     referencia.identificacaoParticipante || referencia.idParticipante || referencia.numId || ''
   ).trim();
+  if (cadastroId) {
+    var candidatosCadastro = participantes.filter(function(participante) {
+      return transporteParticipanteCadastroId_(participante) === cadastroId;
+    });
+    return candidatosCadastro.length === 1 ? candidatosCadastro[0] : null;
+  }
   if (idEstavel) {
     var idKey = transporteParticipantKey_(idEstavel);
     var candidatosId = [];
@@ -1920,6 +1932,8 @@ function transporteDerivarDadosParticipante_(payload) {
     payload.protocolo = projeto || payload.protocolo || '';
     payload.investigador = investigador || payload.investigador || '';
     payload.identificacaoParticipante = String(participante.idParticipante || participante.numId || payload.identificacaoParticipante || '').trim();
+    payload.participanteCadastroId = transporteParticipanteCadastroId_(participante) || payload.participanteCadastroId || '';
+    payload.paciente = String(participante.nome || participante.participante || payload.paciente || payload.participante || '').trim();
   } catch (e) {
     Logger.log('Dados do participante nao derivados no Transporte: ' + e.message);
   }
@@ -2013,6 +2027,7 @@ function transporteReadParticipantesOptions_() {
       participantes = transporteReadParticipantesDireto_().map(function(p) {
         var projeto = String(p.projeto || '').trim();
         return {
+          participanteCadastroId: transporteParticipanteCadastroId_(p),
           nome: String(p.nome || p.participante || '').trim(),
           idParticipante: String(p.idParticipante || p.numId || '').trim(),
           projeto: projeto,

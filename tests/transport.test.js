@@ -476,8 +476,65 @@ test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () =>
 
   assert.deepEqual(Array.from(ordenados), ['Álvaro', 'ana', 'Bruno 2', 'Bruno 10', 'Zelia']);
   assert.deepEqual(original.map((item) => item.nome), ['Zelia', 'ana', 'Álvaro', 'Bruno 10', 'Bruno 2']);
-  assert.match(source, /fillSelectRows\('paciente', sortRowsByText\(state\.options\.participantes, 'nome'\)/);
-  assert.match(source, /fillSelectRows\('paciente', sortRowsByText\(o\.participantes \|\| \[\], 'nome'\)/);
+  assert.match(source, /fillParticipantOptions\(sortRowsByText\(state\.options\.participantes, 'nome'\)/);
+  assert.match(source, /fillParticipantOptions\(sortRowsByText\(o\.participantes \|\| \[\], 'nome'\)/);
+});
+
+test('Transporte mantém participações com o mesmo nome separadas pelo ID interno e projeto', () => {
+  const client = readProjectFile('TransporteApp.html');
+  const optionBlock = sourceBetween(client, 'function sortRowsByText(', 'function fillSelectRows(');
+  const selectionBlock = sourceBetween(client, 'function selectedParticipantInfo(', 'function projectDisplay(');
+  const paciente = { tagName: 'SELECT', value: '', innerHTML: '' };
+  const participantes = [
+    { nome: 'Ivone Nunes Veruch', idParticipante: '055018-001', participanteCadastroId: 'cad-bgb', projeto: 'BGB-43395-101' },
+    { nome: 'Ivone Nunes Veruch', idParticipante: '055018-001', participanteCadastroId: 'cad-kandela', projeto: 'KANDELA-302' }
+  ];
+  const context = vm.createContext({
+    state: { registro: {}, options: { participantes, participantesLoaded: true, projetos: [] } },
+    document: { getElementById: () => paciente },
+    norm: (value) => String(value == null ? '' : value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
+    esc: (value) => String(value == null ? '' : value).replace(/[&<>"']/g, ''),
+    projectDisplay: (value) => value
+  });
+  vm.runInContext(optionBlock + '\n' + selectionBlock, context);
+
+  context.fillParticipantOptions(participantes, {
+    paciente: 'Ivone Nunes Veruch',
+    identificacaoParticipante: '055018-001',
+    protocolo: 'KANDELA-302'
+  });
+
+  assert.match(paciente.innerHTML, /value="participante:cad-bgb"/);
+  assert.match(paciente.innerHTML, /value="participante:cad-kandela"/);
+  assert.match(paciente.innerHTML, /Ivone Nunes Veruch — BGB-43395-101 · ID 055018-001/);
+  assert.match(paciente.innerHTML, /Ivone Nunes Veruch — KANDELA-302 · ID 055018-001/);
+  assert.equal(paciente.value, 'participante:cad-kandela');
+  assert.equal(context.selectedParticipantInfo().projeto, 'KANDELA-302');
+});
+
+test('Transporte deriva o projeto pelo ID interno mesmo quando o protocolo antigo diverge', () => {
+  const source = readProjectFile('TransporteCodexConfig.gs');
+  const block = sourceBetween(
+    source,
+    'function transporteParticipantKey_(',
+    'function transporteAgendadoresConfig_('
+  );
+  const participantes = [
+    { id: 'cad-bgb', nome: 'Ivone Nunes Veruch', idParticipante: '055018-001', projeto: 'BGB-43395-101' },
+    { id: 'cad-kandela', nome: 'Ivone Nunes Veruch', idParticipante: '055018-001', projeto: 'KANDELA-302' }
+  ];
+  const context = vm.createContext({ Logger: { log: () => {} }, getParticipantes: () => participantes, getProjetos: () => [] });
+  vm.runInContext(block, context);
+
+  const payload = context.transporteDerivarDadosParticipante_({
+    paciente: 'Ivone Nunes Veruch',
+    participanteCadastroId: 'cad-kandela',
+    identificacaoParticipante: '055018-001',
+    protocolo: 'BGB-43395-101'
+  });
+  assert.equal(payload.protocolo, 'KANDELA-302');
+  assert.equal(payload.participanteCadastroId, 'cad-kandela');
+  assert.equal(payload.paciente, 'Ivone Nunes Veruch');
 });
 
 test('Transporte exige e exibe o numero de identificacao vindo da coluna E de Participantes', () => {
@@ -501,7 +558,8 @@ test('Transporte exige e exibe o numero de identificacao vindo da coluna E de Pa
 
 test('campo de identificacao usa o ID do participante selecionado sem confundir nomes divergentes', () => {
   const client = readProjectFile('TransporteApp.html');
-  const block = sourceBetween(client, 'function selectedParticipantInfo(', 'function projectDisplay(');
+  const optionBlock = sourceBetween(client, 'function sortRowsByText(', 'function fillSelectRows(');
+  const block = optionBlock + '\n' + sourceBetween(client, 'function selectedParticipantInfo(', 'function projectDisplay(');
   const patientField = { value: 'Filipe Muneron da Silva' };
   const idField = { value: '' };
   const context = vm.createContext({
@@ -534,6 +592,7 @@ test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', (
   assert.doesNotMatch(block, /transporteReadCachedJson_/);
   assert.doesNotMatch(block, /transporteWriteCachedJson_/);
   assert.match(block, /transporteReadParticipantesDireto_\(\)/);
+  assert.match(block, /participanteCadastroId: transporteParticipanteCadastroId_\(p\)/);
 });
 
 test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', () => {
@@ -821,6 +880,7 @@ test('Transporte le participantes sem calcular historico de visitas', () => {
 
   const participantes = context.transporteReadParticipantesDireto_();
   assert.equal(participantes.length, 1);
+  assert.equal(participantes[0].id, '81231558');
   assert.equal(participantes[0].idParticipante, '2011250001');
   assert.equal(participantes[0].projeto, 'SKYLINE-UC');
 });
