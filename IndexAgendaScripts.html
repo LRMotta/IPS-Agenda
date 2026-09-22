@@ -951,13 +951,42 @@
 
   function atualizarEstadoNovoEnvioBackup_() {
     var btn = document.getElementById('btnCriarEnvioBackup');
-    if (!btn) return;
     var backup = agendaCourierFromForm('agBackup');
+    var status = normAgenda(backup.status);
+    var statusIndicaAgendamento = status === normAgenda('Agendado') ||
+      status === normAgenda('Adicionado à Agenda') ||
+      status === normAgenda('Confirmado');
+    var eventoAtual = agendaEventoAtualEditado_();
+    var ref = eventoAtual && eventoAtual.backup && eventoAtual.backup.agendamento;
+    var refValida = ref && ref.id && agendaBackupStatusMantemRef_(backup.status);
+    var info = document.getElementById('backupAgendaRefInfo');
+    if (info) {
+      if (refValida) {
+        var dataRef = ref.data || (ref.dataIso ? formatDateBr(ref.dataIso) : '');
+        var quando = [dataRef, ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
+        var abrir = '<button class="ag-backup-agenda-open" type="button" onclick="agendaAbrirAgendamentoVinculado(\'' + esc(ref.id) + '\')">Abrir agendamento</button>';
+        var awbInfo = ref.awb ? ' <span>AWB: <strong>' + esc(ref.awb) + '</strong></span>' : '';
+        info.className = 'ag-backup-agenda-info';
+        info.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">event_available</span><span>Agendamento vinculado na Agenda' + (quando ? ': <strong>' + esc(quando) + '</strong>.' : '.') + awbInfo + '</span>' + abrir;
+        info.style.display = 'flex';
+      } else if (statusIndicaAgendamento) {
+        info.className = 'ag-backup-agenda-info is-warning';
+        info.textContent = status === normAgenda('Agendado')
+          ? 'O courier está marcado como Agendado, mas não há data/horário vinculados a um evento da Agenda.'
+          : 'O status indica um agendamento, mas não há referência de data/horário vinculada na Agenda.';
+        info.style.display = 'flex';
+      } else {
+        info.textContent = '';
+        info.style.display = 'none';
+      }
+    }
+    if (!btn) return;
+    btn.style.display = statusIndicaAgendamento ? 'none' : '';
     var temperaturaInformada = agendaMeaningfulValue(backup.temperatura || backup.temp);
     btn.disabled = !temperaturaInformada;
     btn.setAttribute('aria-disabled', temperaturaInformada ? 'false' : 'true');
     btn.title = temperaturaInformada
-      ? 'Criar novo agendamento a partir do Backup'
+      ? 'Agendar a partir do Backup'
       : 'Informe a Temperatura do Transporte de Amostras Backup antes de criar um novo agendamento';
   }
 
@@ -6169,8 +6198,9 @@
     var ref = backup && c.agendamento;
     var icon = naoAplicavel ? 'block' : ok ? 'check_circle' : 'pending';
     var cls = 'ag-c-status ag-ch-' + agendaCourierStatusClass(c.status);
-    if (ref && ref.id && normAgenda(c.status) === normAgenda('Adicionado à Agenda')) {
-      var quando = [ref.data || '', ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
+    if (ref && ref.id && agendaBackupStatusMantemRef_(c.status)) {
+      var dataRef = ref.data || (ref.dataIso ? formatDateBr(ref.dataIso) : '');
+      var quando = [dataRef, ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
       var title = 'Abrir agendamento' + (quando ? ' de ' + quando : '');
       return '<button class="' + cls + ' ag-c-status-link" type="button" title="' + esc(title) + '" aria-label="' + esc(title) + '" onclick="event.stopPropagation();agendaAbrirAgendamentoVinculado(\'' + esc(ref.id) + '\')">' +
         '<span class="material-symbols-outlined">event_available</span><span class="ag-c-status-copy"><span>' + esc(c.status || 'Adicionado à Agenda') + '</span>' +
@@ -6226,6 +6256,12 @@
       '<div class="ag-log-heading"><span class="material-symbols-outlined">local_shipping</span><span>Transporte</span></div>' +
       '<div class="ag-log-rows">' + entries.map(agendaLogisticaLinhaHtml_).join('') + '</div>' +
       '</div>';
+  }
+
+  function agendaBackupStatusMantemRef_(status) {
+    return [
+      'Adicionado à Agenda', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue'
+    ].some(function(item) { return normAgenda(status) === normAgenda(item); });
   }
 
   function agendaLogisticaLinhaHtml_(entry) {

@@ -61,6 +61,33 @@ test('vinculo do backup guarda o agendamento de destino com data e hora', () => 
   );
 });
 
+test('vinculo do backup devolve e atualiza a AWB do envio na visita original', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const source = Array(cfg.lastCol).fill('');
+  source[cfg.idx.id] = 'origem-awb';
+  source[cfg.idx.tipo] = 'Visita';
+  source[cfg.idx.labCentral] = 'Sim';
+  source[cfg.idx.cb.nome] = 'MARKEN';
+  source[cfg.idx.cb.status] = 'Não Agendado';
+  const destination = Array(cfg.lastCol).fill('');
+  destination[cfg.idx.id] = 'destino-awb';
+  destination[cfg.idx.c1.awb] = '620X12345678';
+  const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), source, destination]);
+
+  server.formatarDataSafe = () => '29/07/2026';
+  server.formatarDataIsoAgenda_ = () => '2026-07-29';
+  server.formatAgendaHora_ = () => '14:30';
+  server.codexWriteAuditChanges_ = () => {};
+
+  const ref = server.agendaVincularBackupAoAgendamento_(sheet, 'origem-awb', 'destino-awb', new Date(2026, 6, 29, 14, 30));
+  assert.equal(ref.awb, '620X12345678');
+  assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.awb, '620X12345678');
+
+  server.agendaAtualizarBackupAwbVinculado_(sheet, 3, '620X87654321');
+  assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.awb, '620X87654321');
+});
+
 test('novo vinculo do backup preserva os anteriores e a leitura retorna o ultimo', () => {
   const server = agendaServer();
   const cfg = server.AGENDA_CFG;

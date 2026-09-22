@@ -3045,6 +3045,11 @@ function transporteSincronizarAgenda_(payload) {
       warnings.push('Agenda ja possui AWB diferente para o transporte ' + slot + ' (' + awbAnterior + '). A AWB do Transporte (' + awb + ') nao foi sobrescrita automaticamente.');
     }
   }
+  if (slot === '1' && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
+    var awbAtualRange = agenda.getRange(linha, idx.awb + 1);
+    var awbAtual = String(awbAtualRange.getDisplayValue() || awbAtualRange.getValue() || '').trim();
+    agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual);
+  }
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {
     codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
   }

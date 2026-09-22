@@ -863,12 +863,13 @@
               </button>
             </div>
             <div class="ag-transport-box" id="agBackupWrap">
-              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnCriarEnvioBackup" type="button" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined">add</span> Novo agendamento</button></div>
+              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnCriarEnvioBackup" type="button" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined">add</span> Agendar</button></div>
+              <div id="backupAgendaRefInfo" class="ag-backup-agenda-info" style="display:none" aria-live="polite"></div>
               <div class="ag-transport-fields backup">
                 <div><label class="field-label" for="agBackupNome">Courier</label><select id="agBackupNome" class="f-input f-select" onchange="onAgendaCourierChange('agBackup')"></select></div>
                 <div><label class="field-label" for="agBackupDestino">Laboratório destino</label><select id="agBackupDestino" class="f-input f-select"></select></div>
                 <div><label class="field-label" for="agBackupTemp">Temperatura</label><select id="agBackupTemp" class="f-input f-select"></select></div>
-                <div><label class="field-label" for="agBackupStatus">Status</label><select id="agBackupStatus" class="f-input f-select"></select></div>
+                <div><label class="field-label" for="agBackupStatus">Status</label><select id="agBackupStatus" class="f-input f-select" onchange="atualizarEstadoNovoEnvioBackup_()"></select></div>
               </div>
               <label class="field-label" for="agBackupMaterial">Material biológico</label>
               <div id="agBackupMaterial" class="ag-mat-editor"></div>
