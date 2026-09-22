@@ -819,6 +819,119 @@
       });
     }
 
+    function participantOptionKey(participant, index) {
+      participant = participant || {};
+      var cadastroId = String(participant.participanteCadastroId || participant.idCadastro || participant.id || '').trim();
+      if (cadastroId) return 'participante:' + cadastroId;
+      return 'participante:legado:' + [participant.nome || participant.participante, participant.idParticipante || participant.numId, participant.projeto, index].map(norm).join('|');
+    }
+
+    function participantProjectAliases(value) {
+      var raw = String(value || '').trim();
+      var aliases = [];
+      function add(item) {
+        item = norm(item);
+        if (item && aliases.indexOf(item) < 0) aliases.push(item);
+      }
+      add(raw);
+      var display = projectDisplay(raw);
+      add(display);
+      var paren = String(display || raw).match(/^(.*?)\s*\((.*?)\)\s*$/);
+      if (paren) {
+        add(paren[1]);
+        add(paren[2]);
+      }
+      return aliases;
+    }
+
+    function participantProjectsMatch(a, b) {
+      var aliasesA = participantProjectAliases(a);
+      var aliasesB = participantProjectAliases(b);
+      return aliasesA.some(function(alias) { return aliasesB.indexOf(alias) >= 0; });
+    }
+
+    function resolveParticipantOption(rows, reference) {
+      rows = rows || [];
+      reference = reference || {};
+      var cadastroId = String(reference.participanteCadastroId || reference.idCadastro || '').trim();
+      if (cadastroId) {
+        var byCadastroId = rows.filter(function(p) {
+          return String(p && (p.participanteCadastroId || p.idCadastro || p.id) || '').trim() === cadastroId;
+        });
+        return byCadastroId.length === 1 ? byCadastroId[0] : null;
+      }
+
+      var id = norm(reference.identificacaoParticipante || reference.idParticipante || reference.numId || '');
+      var name = norm(reference.paciente || reference.participante || reference.nome || '');
+      var project = String(reference.protocolo || reference.projeto || '').trim();
+      var candidates = rows.slice();
+      if (id) {
+        candidates = candidates.filter(function(p) {
+          return norm(p && (p.idParticipante || p.numId) || '') === id;
+        });
+      } else if (name) {
+        candidates = candidates.filter(function(p) {
+          return norm(p && (p.nome || p.participante) || '') === name;
+        });
+      } else {
+        return null;
+      }
+      if (project) candidates = candidates.filter(function(p) { return participantProjectsMatch(p && p.projeto, project); });
+      if (candidates.length === 1) return candidates[0];
+      if (name && candidates.length > 1) {
+        var exactName = candidates.filter(function(p) {
+          return norm(p && (p.nome || p.participante) || '') === name;
+        });
+        if (exactName.length === 1) return exactName[0];
+      }
+      return null;
+    }
+
+    function fillParticipantOptions(rows, reference) {
+      rows = rows || [];
+      reference = reference || {};
+      var current = document.getElementById('paciente');
+      if (current && current.tagName !== 'SELECT') {
+        var select = document.createElement('select');
+        select.id = current.id;
+        select.required = current.required;
+        select.className = current.className;
+        current.parentNode.replaceChild(select, current);
+        current = select;
+      }
+      if (!current) return;
+
+      var currentValue = String(current.value || '');
+      var currentParticipant = rows.filter(function(p, index) { return participantOptionKey(p, index) === currentValue; })[0];
+      var selected = resolveParticipantOption(rows, reference) || currentParticipant;
+      var selectedKey = selected ? participantOptionKey(selected, rows.indexOf(selected)) : '';
+      var referenceName = String(reference.paciente || reference.participante || '').trim();
+      if (!selected && referenceName) selectedKey = 'legado:' + referenceName;
+
+      var nameCounts = {};
+      rows.forEach(function(p) {
+        var nameKey = norm(p && (p.nome || p.participante) || '');
+        if (nameKey) nameCounts[nameKey] = (nameCounts[nameKey] || 0) + 1;
+      });
+      var options = rows.map(function(p, index) {
+        p = p || {};
+        var name = String(p.nome || p.participante || '').trim();
+        var key = participantOptionKey(p, index);
+        var label = name;
+        if (nameCounts[norm(name)] > 1) {
+          var details = [projectDisplay(p.projeto) || p.projeto, p.idParticipante || p.numId ? 'ID ' + (p.idParticipante || p.numId) : ''];
+          if (!details[0] && !details[1]) details.push('Cadastro ' + (p.participanteCadastroId || p.idCadastro || p.id || ''));
+          label += ' — ' + details.filter(Boolean).join(' · ');
+        }
+        return '<option value="' + esc(key) + '"' + (key === selectedKey ? ' selected' : '') + '>' + esc(label) + '</option>';
+      });
+      if (selectedKey && !selected) {
+        options.unshift('<option value="' + esc(selectedKey) + '" selected>' + esc(referenceName) + '</option>');
+      }
+      current.innerHTML = '<option value="">Selecione o paciente</option>' + options.join('');
+      current.value = selectedKey;
+    }
+
     function fillSelectRows(id, rows, valueKey, selected, placeholder) {
       var current = document.getElementById(id);
       if (current && current.tagName !== 'SELECT') {
@@ -962,7 +1075,7 @@
           state.options.participantesLoaded = rows.length > 0;
           state.options.participantesLoading = false;
           if (rows.length) window._transporteParticipantes = rows;
-          fillSelectRows('paciente', sortRowsByText(state.options.participantes, 'nome'), 'nome', document.getElementById('paciente').value, 'Selecione o paciente');
+          fillParticipantOptions(sortRowsByText(state.options.participantes, 'nome'), state.registro || {});
           applyParticipantSelection({ loadCe: false });
         })
         .withFailureHandler(function(e) {
@@ -1014,7 +1127,7 @@
       }
       selectedTemp = r.temperatura || (o.temperaturas || [])[0] || '';
       selectedCourier = canonicalCourier(r.courier || (o.couriers || [])[0] || '');
-      fillSelectRows('paciente', sortRowsByText(o.participantes || [], 'nome'), 'nome', r.paciente || '', 'Selecione o paciente');
+      fillParticipantOptions(sortRowsByText(o.participantes || [], 'nome'), r);
       fillSelectRows('destino', o.destinos || [], 'nome', r.destino || '', 'Selecione o laboratório');
       ['protocolo','investigador','dataColeta','dataEnvio','awb','pinexColeta','observacoes'].forEach(function(id) {
         document.getElementById(id).value = r[id] || '';
@@ -1062,20 +1175,23 @@
     }
 
     function selectedParticipantInfo() {
-      var nome = norm(document.getElementById('paciente').value);
+      var selectedKey = String(document.getElementById('paciente').value || '');
+      if (!selectedKey || selectedKey.indexOf('legado:') === 0) return {};
       var participantes = (state.options && state.options.participantes) || [];
-      var registro = (state && state.registro) || {};
-      var registroNome = norm(registro.paciente || '');
-      var idEstavel = norm(registro.identificacaoParticipante || registro.idParticipante || '');
-      if (idEstavel && nome && nome === registroNome) {
-        var porId = participantes.filter(function(p) {
-          return norm(p.idParticipante || p.numId || p.id || '') === idEstavel;
-        })[0];
-        if (porId) return porId;
-      }
-      return participantes.filter(function(p) {
-        return norm(p.nome) === nome;
-      })[0] || {};
+      var byKey = participantes.filter(function(p, index) {
+        return participantOptionKey(p, index) === selectedKey;
+      });
+      if (byKey.length === 1) return byKey[0];
+      var byName = participantes.filter(function(p) { return norm(p.nome || p.participante) === norm(selectedKey); });
+      return byName.length === 1 ? byName[0] : {};
+    }
+
+    function selectedParticipantName() {
+      var info = selectedParticipantInfo();
+      if (info.nome) return String(info.nome).trim();
+      var selectedKey = String(document.getElementById('paciente').value || '');
+      if (selectedKey.indexOf('legado:') === 0) return String((state.registro || {}).paciente || selectedKey.slice(7)).trim();
+      return '';
     }
 
     function selectedParticipantIdentification() {
@@ -1366,8 +1482,10 @@
 
     function collectPayload() {
       var registroAtual = (state && state.registro) || {};
+      var participanteSelecionado = selectedParticipantInfo();
       return {
-        paciente: document.getElementById('paciente').value,
+        paciente: selectedParticipantName(),
+        participanteCadastroId: String(participanteSelecionado.participanteCadastroId || participanteSelecionado.idCadastro || participanteSelecionado.id || '').trim(),
         protocolo: document.getElementById('protocolo').value,
         investigador: document.getElementById('investigador').value,
         temperatura: selectedTemp,
