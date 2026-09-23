@@ -958,16 +958,17 @@
       status === normAgenda('Confirmado');
     var eventoAtual = agendaEventoAtualEditado_();
     var ref = eventoAtual && eventoAtual.backup && eventoAtual.backup.agendamento;
-    var refValida = ref && ref.id && agendaBackupStatusMantemRef_(backup.status);
+    var refValida = ref && ref.id;
     var info = document.getElementById('backupAgendaRefInfo');
     if (info) {
       if (refValida) {
         var dataRef = ref.data || (ref.dataIso ? formatDateBr(ref.dataIso) : '');
         var quando = [dataRef, ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
-        var abrir = '<button class="ag-backup-agenda-open" type="button" onclick="agendaAbrirAgendamentoVinculado(\'' + esc(ref.id) + '\')">Abrir agendamento</button>';
+        var abrir = '<button class="ag-backup-agenda-open" type="button" data-agenda-id="' + esc(ref.id) + '" onclick="agendaAbrirAgendamentoVinculado(this.dataset.agendaId)">Abrir agendamento</button>';
         var awbInfo = ref.awb ? ' <span>AWB: <strong>' + esc(ref.awb) + '</strong></span>' : '';
+        var slotInfo = ref.slot ? ' <strong>Transporte ' + esc(ref.slot) + '</strong>' : '';
         info.className = 'ag-backup-agenda-info';
-        info.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">event_available</span><span>Agendamento vinculado na Agenda' + (quando ? ': <strong>' + esc(quando) + '</strong>.' : '.') + awbInfo + '</span>' + abrir;
+        info.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">event_available</span><span>Agendamento vinculado na Agenda' + (quando ? ': <strong>' + esc(quando) + '</strong>.' : '.') + slotInfo + awbInfo + '</span>' + abrir;
         info.style.display = 'flex';
       } else if (statusIndicaAgendamento) {
         info.className = 'ag-backup-agenda-info is-warning';
@@ -981,13 +982,146 @@
       }
     }
     if (!btn) return;
-    btn.style.display = statusIndicaAgendamento ? 'none' : '';
+    btn.style.display = refValida ? 'none' : '';
     var temperaturaInformada = agendaMeaningfulValue(backup.temperatura || backup.temp);
     btn.disabled = !temperaturaInformada;
     btn.setAttribute('aria-disabled', temperaturaInformada ? 'false' : 'true');
     btn.title = temperaturaInformada
-      ? 'Agendar a partir do Backup'
-      : 'Informe a Temperatura do Transporte de Amostras Backup antes de criar um novo agendamento';
+      ? 'Escolha como agendar o Transporte de Amostras Backup'
+      : 'Informe a Temperatura do Transporte de Amostras Backup antes de agendá-lo';
+  }
+
+  function abrirOpcoesAgendamentoBackupAgenda() {
+    var actions = document.getElementById('backupAgendaActions');
+    var visitas = document.getElementById('backupAgendaVisitas');
+    if (!actions) return;
+    var abrir = actions.style.display === 'none' || !actions.style.display;
+    actions.style.display = abrir ? 'flex' : 'none';
+    var toggle = document.getElementById('btnCriarEnvioBackup');
+    if (toggle) toggle.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    if (visitas) {
+      visitas.style.display = 'none';
+      visitas.innerHTML = '';
+    }
+  }
+
+  function agendaFecharOpcoesBackup_() {
+    var actions = document.getElementById('backupAgendaActions');
+    var visitas = document.getElementById('backupAgendaVisitas');
+    if (actions) actions.style.display = 'none';
+    var toggle = document.getElementById('btnCriarEnvioBackup');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    if (visitas) {
+      visitas.style.display = 'none';
+      visitas.innerHTML = '';
+    }
+  }
+
+  function carregarVisitasFuturasBackupAgenda() {
+    var visitasEl = document.getElementById('backupAgendaVisitas');
+    var origemId = String(_agendaEditId || '').trim();
+    if (!visitasEl) return;
+    if (!origemId) {
+      snackErro('Salve o agendamento de origem antes de usar uma visita futura.');
+      return;
+    }
+    if (typeof appHasUnsavedChanges === 'function' && appHasUnsavedChanges('agendaCreatePanel')) {
+      snackErro('Salve as alterações do agendamento de origem antes de vincular o backup.');
+      return;
+    }
+    visitasEl.style.display = 'grid';
+    visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">Buscando visitas futuras…</div>';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        agendaBackupVisitasHtml_(visitasEl, res && res.visitas || []);
+      })
+      .withFailureHandler(function(error) {
+        var message = appErrorMessage(error);
+        visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(message) + '</div>';
+        snackErro(message);
+      })
+      .getAgendaVisitasFuturasParaBackup(origemId);
+  }
+
+  function agendaBackupVisitasHtml_(container, visitas) {
+    visitas = Array.isArray(visitas) ? visitas : [];
+    if (!visitas.length) {
+      container.innerHTML = '<div class="ag-backup-candidate-empty">Não há visitas futuras elegíveis com Transporte II ou III disponível para este participante e projeto.</div>';
+      return;
+    }
+    container.innerHTML = visitas.map(function(visita) {
+      function slotButton(slot, dados) {
+        dados = dados || {};
+        var available = dados.disponivel === true;
+        var label = 'Usar Transporte ' + slot;
+        return '<button class="ag-backup-candidate-slot" type="button" ' + (available ? '' : 'disabled ') +
+          'data-visita-id="' + esc(visita.id) + '" data-visita-version="' + esc(visita.recordVersion) + '" data-slot="' + slot + '" ' +
+          (available ? 'onclick="aplicarBackupEmVisitaFuturaAgenda(this.dataset.visitaId,this.dataset.visitaVersion,this.dataset.slot)"' : 'aria-label="Transporte ' + slot + ' ocupado"') + '>' +
+          esc(available ? label : 'Transporte ' + slot + ' ocupado') + '</button>';
+      }
+      return '<div class="ag-backup-candidate"><div class="ag-backup-candidate-info"><strong>' +
+        esc([visita.data, visita.hora].filter(Boolean).join(' às ') || 'Data/horário não informado') + '</strong><span>' +
+        esc(visita.visita || 'Visita') + '</span></div><div class="ag-backup-candidate-slots">' +
+        slotButton('II', visita.transporteII) + slotButton('III', visita.transporteIII) + '</div></div>';
+    }).join('');
+  }
+
+  function aplicarBackupEmVisitaFuturaAgenda(destinoId, destinoVersion, slot) {
+    var visitasEl = document.getElementById('backupAgendaVisitas');
+    var origem = agendaEventoAtualEditado_();
+    if (!visitasEl || !_agendaEditId || !origem) {
+      snackErro('Abra novamente o agendamento de origem antes de vincular o backup.');
+      return;
+    }
+    if (typeof appHasUnsavedChanges === 'function' && appHasUnsavedChanges('agendaCreatePanel')) {
+      snackErro('Salve as alterações do agendamento de origem antes de vincular o backup.');
+      return;
+    }
+    var origemVersion = _agendaEditRecordVersion || origem.recordVersion || '';
+    visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">Vinculando o backup ao Transporte ' + esc(slot) + '…</div>';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.conflito) {
+          var conflito = res.erro || 'Um dos agendamentos foi alterado. Atualize os dados.';
+          visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(conflito) + '</div>';
+          snackErro(conflito);
+          agendaFetchEventoPorId_(_agendaEditId, 0, function(registroAtualizado) {
+            if (!registroAtualizado) return;
+            agendaAbrirEdicaoComRegistro_(registroAtualizado);
+            setTimeout(carregarVisitasFuturasBackupAgenda, 250);
+          }, function(error) { snackErro(appErrorMessage(error)); });
+          return;
+        }
+        if (!res || res.erro || !res.ok || !res.origem || !res.destino) {
+          var erro = res && res.erro || 'Não foi possível vincular o backup à visita.';
+          visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(erro) + '</div>';
+          snackErro(erro);
+          return;
+        }
+        _agendaEditRecord = agendaStoreEventoLocal_(res.origem);
+        agendaStoreEventoLocal_(res.destino);
+        setAgendaSelectValue('agBackupStatus', res.origem.backup && res.origem.backup.status);
+        _agendaEditRecordVersion = res.origem.recordVersion || '';
+        _agendaEditEditableVersion = res.origem.editRecordVersion || '';
+        _agendaEditFormValues = agendaEditValuesFromRecord_(res.origem);
+        _agendaEditTransportValues = agendaEditTransportValuesFromRecord_(res.origem);
+        atualizarEstadoNovoEnvioBackup_();
+        agendaFecharOpcoesBackup_();
+        agendaRecarregarJanelaAtual_();
+        snack(res.jaVinculado ? 'Este backup já estava vinculado a esta visita.' : 'Backup vinculado ao Transporte ' + slot + '.');
+      })
+      .withFailureHandler(function(error) {
+        var message = appErrorMessage(error);
+        visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(message) + '</div>';
+        snackErro(message);
+      })
+      .aplicarBackupEmVisitaFutura({
+        origemId: _agendaEditId,
+        destinoId: destinoId,
+        slot: slot,
+        origemVersion: origemVersion,
+        destinoVersion: destinoVersion
+      });
   }
 
   function mostrarAgendaTransporteOpcional(prefix) {
@@ -3096,6 +3230,7 @@
     }
 
     function iniciarNovoEnvio() {
+      agendaFecharOpcoesBackup_();
       var participanteInfo = agendaParticipanteInfoFromPayload(origem);
       var origemId = _agendaEditId || origem.id || '';
       if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
@@ -3680,6 +3815,7 @@
 
   function limparAgendaForm() {
     _agendaBackupOrigemId = '';
+    agendaFecharOpcoesBackup_();
     ['agTipo','agParticipante','agProjeto','agMedico','agPrestador','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
@@ -6213,13 +6349,14 @@
     var ref = backup && c.agendamento;
     var icon = naoAplicavel ? 'block' : ok ? 'check_circle' : 'pending';
     var cls = 'ag-c-status ag-ch-' + agendaCourierStatusClass(c.status);
-    if (ref && ref.id && agendaBackupStatusMantemRef_(c.status)) {
+    if (ref && ref.id) {
       var dataRef = ref.data || (ref.dataIso ? formatDateBr(ref.dataIso) : '');
       var quando = [dataRef, ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
       var title = 'Abrir agendamento' + (quando ? ' de ' + quando : '');
-      return '<button class="' + cls + ' ag-c-status-link" type="button" title="' + esc(title) + '" aria-label="' + esc(title) + '" onclick="event.stopPropagation();agendaAbrirAgendamentoVinculado(\'' + esc(ref.id) + '\')">' +
+      var slot = ref.slot ? 'Transporte ' + ref.slot : '';
+      return '<button class="' + cls + ' ag-c-status-link" type="button" title="' + esc(title) + '" aria-label="' + esc(title) + '" data-agenda-id="' + esc(ref.id) + '" onclick="event.stopPropagation();agendaAbrirAgendamentoVinculado(this.dataset.agendaId)">' +
         '<span class="material-symbols-outlined">event_available</span><span class="ag-c-status-copy"><span>' + esc(c.status || 'Adicionado à Agenda') + '</span>' +
-        (quando ? '<strong>' + esc(quando) + '</strong>' : '') + '</span><span class="material-symbols-outlined ag-c-status-open">open_in_new</span></button>';
+        (quando ? '<strong>' + esc(quando) + '</strong>' : '') + (slot ? '<strong>' + esc(slot) + '</strong>' : '') + '</span><span class="material-symbols-outlined ag-c-status-open">open_in_new</span></button>';
     }
     return '<span class="' + cls + '"><span class="material-symbols-outlined">' + icon + '</span>' + esc(c.status || 'Pendente') + '</span>';
   }

@@ -14399,10 +14399,13 @@ function agendaSetCourierLinha_(agenda, linha, idx, courier, options) {
   if (shouldUpdateAwb) {
     var awbRange = agenda.getRange(linha, idx.awb + 1);
     agendaSetAwbValue_(awbRange, courier.awb || '', courierNome);
-    var idxTransporteUm = typeof AGENDA_CFG !== 'undefined' && AGENDA_CFG.idx && AGENDA_CFG.idx.c1;
-    if (!options.skipBackupAwbSync && idxTransporteUm && idx && idx.awb === idxTransporteUm.awb) {
+    var idxTransportes = typeof AGENDA_CFG !== 'undefined' && AGENDA_CFG.idx
+      ? [AGENDA_CFG.idx.c1, AGENDA_CFG.idx.c2, AGENDA_CFG.idx.c3]
+      : [];
+    var slotBackupSync = idxTransportes.indexOf(idx) >= 0 ? ['I', 'II', 'III'][idxTransportes.indexOf(idx)] : '';
+    if (!options.skipBackupAwbSync && slotBackupSync) {
       var awbSalva = String(awbRange.getDisplayValue() || awbRange.getValue() || '').trim();
-      agendaAtualizarBackupAwbVinculado_(agenda, linha, awbSalva);
+      agendaAtualizarBackupAwbVinculado_(agenda, linha, awbSalva, slotBackupSync);
     }
   }
 }
@@ -14866,8 +14869,8 @@ function monitorarConfirmacoesCourierAgendadas_() {
           if (!awbExtraida) return;
           var novoStatus = resultado.regra.statusConfirmacao || 'Confirmado';
           agendaSetAwbValue_(awbRange, awbExtraida, item.courier);
-          if (item.slot === 'Transporte I') {
-            agendaAtualizarBackupAwbVinculado_(agendaAtual, linhaAtual, awbExtraida);
+          if (/^Transporte (I|II|III)$/.test(String(item.slot || ''))) {
+            agendaAtualizarBackupAwbVinculado_(agendaAtual, linhaAtual, awbExtraida, String(item.slot).replace('Transporte ', ''));
           }
           agendaAtual.getRange(linhaAtual, item.statusCol).setValue(novoStatus);
           processados[chave] = true;
@@ -15322,6 +15325,7 @@ function agendaBackupAgendaRefsFromCell_(value) {
       dataIso: String(ref.dataIso || '').trim(),
       hora: String(ref.hora || '').trim()
     });
+    if (Object.prototype.hasOwnProperty.call(ref, 'slot')) parsed.slot = String(ref.slot || '').trim().toUpperCase();
     if (Object.prototype.hasOwnProperty.call(ref, 'awb')) parsed.awb = String(ref.awb || '').trim();
     return parsed;
   }).filter(Boolean);
@@ -15332,8 +15336,256 @@ function agendaBackupAgendaRefFromCell_(value) {
   return refs.length ? refs[refs.length - 1] : null;
 }
 
-function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb) {
+function agendaBackupCourierSlot_(slot) {
+  slot = String(slot || '').trim().toUpperCase();
+  if (slot === 'II') return { key: 'II', idx: AGENDA_CFG.idx.c2, label: 'Transporte II' };
+  if (slot === 'III') return { key: 'III', idx: AGENDA_CFG.idx.c3, label: 'Transporte III' };
+  return null;
+}
+
+function agendaBackupCourierSlotVazio_(row, slotCfg) {
+  if (!row || !slotCfg || !slotCfg.idx) return false;
+  var idx = slotCfg.idx;
+  return ![idx.nome, idx.temp, idx.status, idx.awb, idx.material, idx.destino, idx.matBio].some(function(column) {
+    return column >= 0 && String(row[column] == null ? '' : row[column]).trim() !== '';
+  });
+}
+
+function agendaBackupCourierSlotConfereOrigem_(origem, destino, slotCfg) {
+  if (!origem || !destino || !slotCfg || !slotCfg.idx) return false;
+  var backup = AGENDA_CFG.idx.cb;
+  var slot = slotCfg.idx;
+  // Status e AWB podem avançar depois do vínculo sem mudar a identidade do envio.
+  return [
+    [backup.nome, slot.nome], [backup.temp, slot.temp],
+    [backup.material, slot.material], [backup.destino, slot.destino],
+    [backup.matBio, slot.matBio]
+  ].every(function(pair) {
+    return String(origem[pair[0]] == null ? '' : origem[pair[0]]).trim() ===
+      String(destino[pair[1]] == null ? '' : destino[pair[1]]).trim();
+  });
+}
+
+function agendaBackupDadosOrigemErro_(row) {
+  var idx = AGENDA_CFG.idx;
+  var policy = AgendaServerRules_.formPolicy(row && row[idx.tipo]);
+  if (!policy.labChoiceAllowed || !AgendaServerRules_.isLabCentral(row[idx.labCentral])) {
+    return 'Este agendamento não possui um Transporte de Amostras Backup aplicável.';
+  }
+  if (idx.participanteCadastroId < 0 || !String(row[idx.participanteCadastroId] || '').trim()) {
+    return 'O agendamento não tem um ID cadastral de participante para localizar visitas com segurança.';
+  }
+  if (!String(row[idx.projeto] || '').trim()) return 'Informe o projeto do agendamento de origem antes de buscar uma visita futura.';
+  if (!String(row[idx.cb.nome] || '').trim() || !String(row[idx.cb.destino] || '').trim() ||
+      idx.cb.temp < 0 || !String(row[idx.cb.temp] || '').trim()) {
+    return 'Preencha courier, laboratório destino e temperatura do backup antes de vinculá-lo a uma visita.';
+  }
+  return '';
+}
+
+function agendaBackupVisitaElegivel_(origem, destino, agora) {
+  var idx = AGENDA_CFG.idx;
+  if (!origem || !destino || String(origem[idx.id] || '') === String(destino[idx.id] || '')) return false;
+  var participanteId = String(origem[idx.participanteCadastroId] || '').trim();
+  if (!participanteId || participanteId !== String(destino[idx.participanteCadastroId] || '').trim()) return false;
+  if (String(origem[idx.projeto] || '').trim() !== String(destino[idx.projeto] || '').trim()) return false;
+  if (!AgendaServerRules_.isVisit(destino[idx.tipo]) ||
+      AgendaServerRules_.isCancelled(destino[idx.status]) || AgendaServerRules_.isConcluded(destino[idx.status]) ||
+      !AgendaServerRules_.isLabCentral(destino[idx.labCentral])) return false;
+  var limite = agora.getTime();
+  var dataOrigem = _parseDateHora(origem[idx.data], formatarHoraSafe_(origem[idx.hora]));
+  if (dataOrigem && !isNaN(dataOrigem.getTime())) limite = Math.max(limite, dataOrigem.getTime());
+  var dataHora = _parseDateHora(destino[idx.data], formatarHoraSafe_(destino[idx.hora]));
+  return !!(dataHora && !isNaN(dataHora.getTime()) && dataHora.getTime() > limite);
+}
+
+function getAgendaVisitasFuturasParaBackup(origemId) {
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  origemId = String(origemId || '').trim();
+  if (!origemId) throw new Error('Agendamento de origem não informado.');
+  var agenda = getAgendaSheetForRead_();
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return { visitas: [], origemVersion: '' };
+  var rows = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  var origem = null;
+  rows.some(function(row) {
+    if (String(row[AGENDA_CFG.idx.id] || '').trim() !== origemId) return false;
+    origem = row;
+    return true;
+  });
+  if (!origem) throw new Error('O agendamento de origem do backup não foi encontrado. Atualize a Agenda.');
+  var origemErro = agendaBackupDadosOrigemErro_(origem);
+  if (origemErro) throw new Error(origemErro);
+  var agora = new Date();
+  var visitas = rows.filter(function(row) {
+    return agendaBackupVisitaElegivel_(origem, row, agora) &&
+      (agendaBackupCourierSlotVazio_(row, agendaBackupCourierSlot_('II')) ||
+       agendaBackupCourierSlotVazio_(row, agendaBackupCourierSlot_('III')));
+  }).map(function(row) {
+    var ii = agendaBackupCourierSlot_('II');
+    var iii = agendaBackupCourierSlot_('III');
+    var dataHora = _parseDateHora(row[AGENDA_CFG.idx.data], formatarHoraSafe_(row[AGENDA_CFG.idx.hora]));
+    return {
+      id: String(row[AGENDA_CFG.idx.id] || '').trim(),
+      recordVersion: agendaRecordVersionFromRow_(row),
+      data: formatarDataSafe(row[AGENDA_CFG.idx.data]),
+      dataIso: formatarDataIsoAgenda_(row[AGENDA_CFG.idx.data]),
+      hora: formatAgendaHora_(dataHora),
+      visita: String(row[AGENDA_CFG.idx.visita] || ''),
+      transporteII: { disponivel: agendaBackupCourierSlotVazio_(row, ii) },
+      transporteIII: { disponivel: agendaBackupCourierSlotVazio_(row, iii) }
+    };
+  }).sort(function(a, b) {
+    return String(a.dataIso + ' ' + a.hora).localeCompare(String(b.dataIso + ' ' + b.hora));
+  });
+  return { visitas: visitas, origemVersion: agendaRecordVersionFromRow_(origem) };
+}
+
+function agendaBackupWriteCourierSlot_(agenda, linha, slotCfg, courier) {
+  var idx = slotCfg.idx;
+  var status = Object.prototype.hasOwnProperty.call(courier, 'status') ? String(courier.status || '') : 'Não Agendado';
+  agenda.getRange(linha, idx.nome + 1, 1, 3).setValues([[
+    String(courier.nome || ''), String(courier.temperatura || ''), status
+  ]]);
+  agenda.getRange(linha, idx.material + 1).setValue(String(courier.material || ''));
+  agenda.getRange(linha, idx.destino + 1).setValue(String(courier.destino || ''));
+  agenda.getRange(linha, idx.matBio + 1).setValue(String(courier.matBioJson || ''));
+}
+
+function aplicarBackupEmVisitaFutura(payload) {
+  payload = payload || {};
+  codexAssertCanWrite_('aplicarBackupEmVisitaFutura', 'Agenda', payload.origemId || '');
+  return codexWithDocumentLock_('aplicarBackupEmVisitaFutura', function() {
+    var origemId = String(payload.origemId || '').trim();
+    var destinoId = String(payload.destinoId || '').trim();
+    var slotCfg = agendaBackupCourierSlot_(payload.slot);
+    if (!origemId || !destinoId || !slotCfg) return { erro: 'Selecione uma visita e um slot II ou III válidos.' };
+    if (origemId === destinoId) return { erro: 'O agendamento de origem não pode ser usado como destino.' };
+
+    var agenda = getAgendaSheet_();
+    var linhaOrigem = agendaRowNumberById_(agenda, origemId);
+    var linhaDestino = agendaRowNumberById_(agenda, destinoId);
+    if (!linhaOrigem || !linhaDestino) return { erro: 'Um dos agendamentos não foi encontrado. Atualize a Agenda e tente novamente.' };
+    var origemAntes = agenda.getRange(linhaOrigem, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    var destinoAntes = agenda.getRange(linhaDestino, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+
+    var refsAntes = agendaBackupAgendaRefsFromCell_(origemAntes[AGENDA_CFG.idx.backupAgendaRef]);
+    var origemVersion = agendaRecordVersionFromRow_(origemAntes);
+    var destinoVersion = agendaRecordVersionFromRow_(destinoAntes);
+    var vinculoExistente = refsAntes.filter(function(ref) {
+      return ref.id === destinoId && String(ref.slot || 'I').toUpperCase() === slotCfg.key;
+    })[0];
+    if (vinculoExistente) {
+      var mesmaTentativa = String(payload.origemVersion || '') && String(payload.destinoVersion || '') &&
+        String(vinculoExistente.origemVersionAntes || '') === String(payload.origemVersion) &&
+        String(vinculoExistente.destinoVersionAntes || '') === String(payload.destinoVersion);
+      if (!mesmaTentativa || agendaBackupDadosOrigemErro_(origemAntes) ||
+          !agendaBackupVisitaElegivel_(origemAntes, destinoAntes, new Date()) ||
+          !agendaBackupCourierSlotConfereOrigem_(origemAntes, destinoAntes, slotCfg)) {
+        return { conflito: true, erro: 'O vínculo ou os agendamentos foram alterados. Atualize os dados antes de tentar novamente.' };
+      }
+      return {
+        ok: true,
+        jaVinculado: true,
+        referencia: vinculoExistente,
+        origem: agendaRowToObject_(origemAntes, linhaOrigem),
+        destino: agendaRowToObject_(destinoAntes, linhaDestino)
+      };
+    }
+
+    if (!String(payload.origemVersion || '') || origemVersion !== String(payload.origemVersion) ||
+        !String(payload.destinoVersion || '') || destinoVersion !== String(payload.destinoVersion)) {
+      return { conflito: true, erro: 'Um dos agendamentos foi alterado. Atualize os dados antes de tentar novamente.' };
+    }
+    var origemErro = agendaBackupDadosOrigemErro_(origemAntes);
+    if (origemErro) return { erro: origemErro };
+    if (!agendaBackupVisitaElegivel_(origemAntes, destinoAntes, new Date())) {
+      return { erro: 'A visita selecionada não é mais elegível. Atualize a lista de visitas futuras.' };
+    }
+    if (!agendaBackupCourierSlotVazio_(destinoAntes, slotCfg)) {
+      return { erro: slotCfg.label + ' já foi preenchido. Atualize a lista e escolha outro slot.' };
+    }
+
+    var idx = AGENDA_CFG.idx;
+    var backup = {
+      nome: String(origemAntes[idx.cb.nome] || ''),
+      temperatura: String(origemAntes[idx.cb.temp] || ''),
+      destino: String(origemAntes[idx.cb.destino] || ''),
+      material: String(origemAntes[idx.cb.material] || ''),
+      matBioJson: String(origemAntes[idx.cb.matBio] || '')
+    };
+    var refsAtualizadas = refsAntes.filter(function(ref) {
+      return !(ref.id === destinoId && String(ref.slot || 'I').toUpperCase() === slotCfg.key);
+    });
+    var referencia = {
+      id: destinoId,
+      slot: slotCfg.key,
+      origemVersionAntes: origemVersion,
+      destinoVersionAntes: destinoVersion,
+      data: formatarDataSafe(destinoAntes[idx.data]),
+      dataIso: formatarDataIsoAgenda_(destinoAntes[idx.data]),
+      hora: formatarHoraSafe_(destinoAntes[idx.hora])
+    };
+    refsAtualizadas.push(referencia);
+    var refJson = JSON.stringify(refsAtualizadas.length === 1 ? refsAtualizadas[0] : refsAtualizadas);
+    var statusAnterior = String(origemAntes[idx.cb.status] || '');
+    var refAnterior = String(origemAntes[idx.backupAgendaRef] || '');
+    var statusCell = agenda.getRange(linhaOrigem, idx.cb.status + 1);
+    var refCell = agenda.getRange(linhaOrigem, AGENDA_CFG.col.backupAgendaRef);
+
+    try {
+      agendaBackupWriteCourierSlot_(agenda, linhaDestino, slotCfg, backup);
+      var c = slotCfg.idx;
+      statusCell.setValue('Adicionado à Agenda');
+      refCell.setValue(refJson);
+      codexWriteAuditChanges_('Agenda', 'vincularBackupAVisitaFutura', origemId, [
+        { field: 'Backup - Status', oldValue: statusAnterior, newValue: 'Adicionado à Agenda' },
+        { field: 'Backup - Agendamento', oldValue: refAnterior, newValue: refJson },
+        { field: slotCfg.label + ' - Courier', oldValue: destinoAntes[c.nome], newValue: backup.nome },
+        { field: slotCfg.label + ' - Temperatura', oldValue: destinoAntes[c.temp], newValue: backup.temperatura },
+        { field: slotCfg.label + ' - Status', oldValue: destinoAntes[c.status], newValue: 'Não Agendado' },
+        { field: slotCfg.label + ' - Material', oldValue: destinoAntes[c.material], newValue: backup.material },
+        { field: slotCfg.label + ' - Destino', oldValue: destinoAntes[c.destino], newValue: backup.destino }
+      ], 'Backup vinculado a ' + slotCfg.label + ' no agendamento ' + destinoId);
+    } catch (error) {
+      try {
+        agendaBackupWriteCourierSlot_(agenda, linhaDestino, slotCfg, {
+          nome: destinoAntes[slotCfg.idx.nome],
+          temperatura: destinoAntes[slotCfg.idx.temp],
+          status: destinoAntes[slotCfg.idx.status],
+          material: destinoAntes[slotCfg.idx.material],
+          destino: destinoAntes[slotCfg.idx.destino],
+          matBioJson: destinoAntes[slotCfg.idx.matBio]
+        });
+        statusCell.setValue(statusAnterior);
+        refCell.setValue(refAnterior);
+        // Uma leitura concorrente pode ter colocado o estado parcial no cache.
+        agendaInvalidateWindowCache_();
+      } catch (rollbackError) {
+        agendaInvalidateWindowCache_();
+        throw new Error('A gravação falhou e a restauração automática também falhou. Origem: ' +
+          String(error && error.message || error) + '; restauração: ' + String(rollbackError && rollbackError.message || rollbackError));
+      }
+      throw error;
+    }
+
+    agendaInvalidateWindowCache_();
+    var origemDepois = agenda.getRange(linhaOrigem, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    var destinoDepois = agenda.getRange(linhaDestino, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    return {
+      ok: true,
+      referencia: referencia,
+      origem: agendaRowToObject_(origemDepois, linhaOrigem),
+      destino: agendaRowToObject_(destinoDepois, linhaDestino)
+    };
+  }, { operation: 'aplicarBackupEmVisitaFutura' });
+}
+
+function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb, slot) {
   if (!agenda || agenda.getLastRow() < 2) return { atualizado: 0 };
+  slot = String(slot || 'I').replace(/^Transporte\s+/i, '').toUpperCase();
+  if (slot !== 'II' && slot !== 'III') slot = 'I';
   linhaAgendamento = Number(linhaAgendamento || 0);
   if (linhaAgendamento < 2) return { atualizado: 0 };
   var agendamentoId = String(agenda.getRange(linhaAgendamento, AGENDA_CFG.col.id).getValue() || '').trim();
@@ -15347,7 +15599,8 @@ function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb) {
     var alterou = false;
     var awbsAnteriores = [];
     refs.forEach(function(ref) {
-      if (ref.id !== agendamentoId || String(ref.awb || '').trim() === awb) return;
+      if (ref.id !== agendamentoId || String(ref.slot || 'I').toUpperCase() !== slot ||
+          String(ref.awb || '').trim() === awb) return;
       awbsAnteriores.push(String(ref.awb || '').trim());
       ref.awb = awb;
       alterou = true;
