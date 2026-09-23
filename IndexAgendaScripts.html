@@ -6005,9 +6005,19 @@
     return cents ? reais + ' e ' + cents : reais;
   }
 
+  function agendaReciboDataExtenso_(iso) {
+    var partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!partes) return '';
+    var meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    var dia = Number(partes[3]);
+    var mes = meses[Number(partes[2]) - 1];
+    return dia >= 1 && dia <= 31 && mes ? dia + ' de ' + mes + ' de ' + partes[1] : '';
+  }
+
   function agendaReciboPrintHtml_(dados, recibo) {
     var valor = agendaReciboFormatarValor_(recibo.valor);
     var valorExtenso = agendaReciboValorExtenso_(recibo.valor);
+    var dataEmissaoExtenso = agendaReciboDataExtenso_(recibo.dataEmissao);
     var banco = [recibo.banco, recibo.tipoConta ? 'Tipo de conta: ' + recibo.tipoConta : '', recibo.agencia ? 'Agência ' + recibo.agencia : '', recibo.conta ? 'Conta ' + recibo.conta : ''].filter(Boolean).join(' · ');
     var isAcompanhante = recibo.tipo === 'Acompanhante';
     var titularContaBancaria = isAcompanhante
@@ -6030,7 +6040,7 @@
         '<h2>RECIBO DE RESSARCIMENTO</h2><div class="receipt-value">' + esc(valor) + '</div>' +
         '<p>Eu, <b>' + esc(nomeExibido) + '</b>' + identificacao + ', declaro ter recebido do Instituto de Pesquisas em Saúde o valor de <b>' + esc(valor) + (valorExtenso ? ' (' + esc(valorExtenso) + ')' : '') + '</b>, referente ao ressarcimento de despesas com alimentação e transporte relacionadas à visita <b>' + esc(dados.visita || '-') + '</b> do projeto <b>' + esc(dados.projeto || '-') + '</b>, realizada em <b>' + esc(agendaReciboDataBr_(recibo.dataVisita)) + '</b>.</p>' +
         '<div class="meta"><b>Participante do estudo:</b> ' + (viaIps ? 'nº ' + esc(dados.idParticipante || 'não informado') : esc(dados.participante || '-') + (dados.idParticipante ? ' · ID ' + esc(dados.idParticipante) : '')) + '</div>' + endereco + ecrf + dadosBancarios +
-        '<div class="place">Caxias do Sul, ' + esc(agendaReciboDataBr_(recibo.dataEmissao)) + '.</div><div class="receipt-signatures">' + assinaturaBeneficiario + rubricaCoordenador + '</div></section>';
+        '<div class="place">Caxias do Sul, ' + esc(dataEmissaoExtenso) + '.</div><div class="receipt-signatures">' + assinaturaBeneficiario + rubricaCoordenador + '</div></section>';
     }).join('');
     var html = agendaPrintShell({ title: 'Recibo de ressarcimento', subtitle: dados.projeto || '', body: body });
     return html.replace('class="portrait"', 'class="portrait receipt-document"').replace('</style>', '.receipt-document>.head{display:none}.receipt{max-width:170mm;min-height:255mm;margin:0 auto;color:#1f2937;box-sizing:border-box}.receipt-page-break{break-after:page;page-break-after:always}.receipt-head{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:28px;color:#0b3f8a;font-size:12px}.receipt-head img{height:44px;width:auto;max-width:60mm;object-fit:contain}.receipt h2{text-align:center;color:#0b3f8a;font-size:20px;letter-spacing:.08em;margin:0 0 18px}.receipt-value{width:max-content;margin:0 auto 24px;padding:10px 22px;border:2px solid #1266f1;border-radius:8px;color:#0b3f8a;font-size:22px;font-weight:800}.receipt p{font-size:14px;line-height:1.8;text-align:justify;color:#1f2937}.receipt .meta,.receipt .bank{margin-top:14px;padding:11px 13px;border:1px solid #dbe3f0;border-radius:7px;font-size:12px;line-height:1.6}.receipt .bank{background:#f7faff}.receipt .place{text-align:center;margin-top:28px;font-size:13px}.receipt-signatures{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.7fr);gap:18mm;align-items:start}.receipt .signature{display:flex;flex-direction:column;align-items:center;margin:54px auto 0;width:100%;text-align:center}.receipt .signature span{width:100%;border-top:1px solid #1f2937;margin-bottom:7px}.receipt .signature b{font-size:13px}.receipt .signature small{color:#64748b;margin-top:3px}@media print{.receipt{margin:0 auto}}</style>');

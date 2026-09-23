@@ -2436,8 +2436,8 @@ function reqExamesSalvarLista_(projeto, tipoServico, exames, expectedHash, prelo
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
     if (!sh) sh = ss.insertSheet('ReqExames_Preloads');
-    ensureReqExamesPreloadSheet_(sh);
-    reqExamesPreloadEnsureMetadata_(sh);
+    var metadataColumns = ensureReqExamesPreloadSheet_(sh);
+    reqExamesPreloadEnsureMetadata_(sh, metadataColumns);
 
     var catalog = reqExamesPreloadCatalog_(projeto, tipoServico, sh);
     var target = preloadId ? reqExamesPreloadFindItem_(catalog, preloadId) : null;
@@ -2489,16 +2489,14 @@ function reqExamesSalvarLista_(projeto, tipoServico, exames, expectedHash, prelo
     var id = updatingExact ? target.id : reqExamesPreloadNewId_();
     var row = [chave].concat(exames);
     while (row.length < 41) row.push('');
-    row.push('Sim', numero, id);
-    if (updatingExact) {
-      sh.getRange(target.rowIndex, 1, 1, REQ_EXAMES_PRELOAD_TOTAL_COLS_).setValues([row]);
-    } else {
-      sh.getRange(sh.getLastRow() + 1, 1, 1, REQ_EXAMES_PRELOAD_TOTAL_COLS_).setValues([row]);
-    }
+    row.push('Sim');
+    var rowIndex = updatingExact ? target.rowIndex : sh.getLastRow() + 1;
+    sh.getRange(rowIndex, 1, 1, REQ_EXAMES_PRELOAD_ACTIVE_COL_).setValues([row]);
+    sh.getRange(rowIndex, metadataColumns.listCol, 1, 2).setValues([[numero, id]]);
 
     var list = {
       id: id,
-      rowIndex: updatingExact ? target.rowIndex : sh.getLastRow(),
+      rowIndex: rowIndex,
       projeto: projeto,
       tipoServico: tipoServico,
       chave: chave,
@@ -2543,20 +2541,21 @@ function reqExamesPreloadNewId_() {
   return 'RQP-' + Utilities.getUuid();
 }
 
-function reqExamesPreloadReadRawRows_(sh) {
+function reqExamesPreloadReadRawRows_(sh, metadataColumns) {
   if (!sh || sh.getLastRow() < 2) return [];
-  var maxColumns = typeof sh.getMaxColumns === 'function' ? sh.getMaxColumns() : sh.getLastColumn();
-  var columns = Math.min(REQ_EXAMES_PRELOAD_TOTAL_COLS_, Math.max(42, maxColumns || 42));
+  metadataColumns = metadataColumns || reqExamesPreloadMetadataColumns_(sh, false);
+  var columns = Math.max(REQ_EXAMES_PRELOAD_ACTIVE_COL_, metadataColumns.idCol || 0);
   return sh.getRange(2, 1, sh.getLastRow() - 1, columns).getValues();
 }
 
-function reqExamesPreloadRowItem_(row, rowIndex, projeto, tipoServico, fallbackUsed, numeroOverride) {
+function reqExamesPreloadRowItem_(row, rowIndex, projeto, tipoServico, fallbackUsed, numeroOverride, metadataColumns) {
+  metadataColumns = metadataColumns || { listCol: REQ_EXAMES_PRELOAD_LIST_COL_, idCol: REQ_EXAMES_PRELOAD_ID_COL_ };
   var ativo = String(row[REQ_EXAMES_PRELOAD_ACTIVE_COL_ - 1] || '').trim();
   var inactive = ativo && ['nao', 'não', 'n', 'false', 'inativo'].indexOf(normText_(ativo)) > -1;
   var exames = row.slice(1, 41).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
-  var numero = Number(numeroOverride || row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1]);
+  var numero = Number(numeroOverride || (metadataColumns.listCol ? row[metadataColumns.listCol - 1] : ''));
   if (!isFinite(numero) || numero < 1) numero = 0;
-  var id = String(row[REQ_EXAMES_PRELOAD_ID_COL_ - 1] || '').trim();
+  var id = String(metadataColumns.idCol ? row[metadataColumns.idCol - 1] : '').trim();
   if (!id) id = 'LEGACY-' + rowIndex;
   return {
     id: id,
@@ -2581,7 +2580,8 @@ function reqExamesPreloadCatalog_(projeto, tipoServico, providedSheet) {
   if (!sh || sh.getLastRow() < 2) {
     return { items: [], exactItems: [], fallbackItems: [], exactRows: [], fallbackRows: [], fallbackUsed: false, nextNumero: 1 };
   }
-  var rows = reqExamesPreloadReadRawRows_(sh);
+  var metadataColumns = reqExamesPreloadMetadataColumns_(sh, false);
+  var rows = reqExamesPreloadReadRawRows_(sh, metadataColumns);
   var exactKey = normText_(reqExamesPreloadKey_(projeto, tipoServico));
   var genericKey = normText_(projeto);
   var exactRows = [];
@@ -2595,14 +2595,14 @@ function reqExamesPreloadCatalog_(projeto, tipoServico, providedSheet) {
   var usedNumbers = {};
   var nextNumber = 1;
   activeRows.forEach(function(entry) {
-    var raw = Number(entry.row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1]);
+    var raw = Number(metadataColumns.listCol ? entry.row[metadataColumns.listCol - 1] : '');
     if (isFinite(raw) && raw > 0 && !usedNumbers[raw]) {
       usedNumbers[raw] = true;
       nextNumber = Math.max(nextNumber, raw + 1);
     }
   });
   activeRows.forEach(function(entry) {
-    var raw = Number(entry.row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1]);
+    var raw = Number(metadataColumns.listCol ? entry.row[metadataColumns.listCol - 1] : '');
     if (!isFinite(raw) || raw < 1 || usedNumbers['assigned:' + raw]) {
       while (usedNumbers[nextNumber]) nextNumber++;
       raw = nextNumber++;
@@ -2615,15 +2615,15 @@ function reqExamesPreloadCatalog_(projeto, tipoServico, providedSheet) {
   });
   var fallbackUsed = !exactRows.length && fallbackRows.length > 0;
   var items = activeRows.map(function(entry) {
-    return reqExamesPreloadRowItem_(entry.row, entry.rowIndex, projeto, tipoServico, fallbackUsed, entry.assignedNumber);
+    return reqExamesPreloadRowItem_(entry.row, entry.rowIndex, projeto, tipoServico, fallbackUsed, entry.assignedNumber, metadataColumns);
   });
   var exactItems = exactRows.map(function(entry) {
     var match = items.filter(function(item) { return item.rowIndex === entry.rowIndex; })[0];
-    return match || reqExamesPreloadRowItem_(entry.row, entry.rowIndex, projeto, tipoServico, false, entry.assignedNumber);
+    return match || reqExamesPreloadRowItem_(entry.row, entry.rowIndex, projeto, tipoServico, false, entry.assignedNumber, metadataColumns);
   });
   var fallbackItems = fallbackRows.map(function(entry) {
     var match = items.filter(function(item) { return item.rowIndex === entry.rowIndex; })[0];
-    return match || reqExamesPreloadRowItem_(entry.row, entry.rowIndex, projeto, tipoServico, true, entry.assignedNumber);
+    return match || reqExamesPreloadRowItem_(entry.row, entry.rowIndex, projeto, tipoServico, true, entry.assignedNumber, metadataColumns);
   });
   var nextNumero = 1;
   exactItems.forEach(function(item) {
@@ -2650,31 +2650,31 @@ function reqExamesPreloadFindItem_(catalog, preloadId) {
   })[0] || null;
 }
 
-function reqExamesPreloadEnsureMetadata_(sh) {
-  ensureReqExamesPreloadSheet_(sh);
-  var rows = reqExamesPreloadReadRawRows_(sh);
+function reqExamesPreloadEnsureMetadata_(sh, metadataColumns) {
+  metadataColumns = metadataColumns || ensureReqExamesPreloadSheet_(sh);
+  var rows = reqExamesPreloadReadRawRows_(sh, metadataColumns);
   if (!rows.length) return;
   var nextByKey = {};
   rows.forEach(function(row) {
     var key = normText_(row[0]);
-    var number = Number(row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1]);
+    var number = Number(row[metadataColumns.listCol - 1]);
     if (key && isFinite(number) && number > 0) nextByKey[key] = Math.max(nextByKey[key] || 1, number + 1);
   });
   var metadata = [];
   var changed = false;
   rows.forEach(function(row) {
     var key = normText_(row[0]);
-    var number = Number(row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1]);
-    var id = String(row[REQ_EXAMES_PRELOAD_ID_COL_ - 1] || '').trim();
+    var number = Number(row[metadataColumns.listCol - 1]);
+    var id = String(row[metadataColumns.idCol - 1] || '').trim();
     if (key && (!isFinite(number) || number < 1)) {
       number = nextByKey[key] || 1;
       nextByKey[key] = number + 1;
     }
     if (key && !id) id = reqExamesPreloadNewId_();
-    if (String(row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1] || '') !== (number ? String(number) : '') || String(row[REQ_EXAMES_PRELOAD_ID_COL_ - 1] || '') !== id) changed = true;
+    if (String(row[metadataColumns.listCol - 1] || '') !== (number ? String(number) : '') || String(row[metadataColumns.idCol - 1] || '') !== id) changed = true;
     metadata.push([number || '', id]);
   });
-  if (changed) sh.getRange(2, REQ_EXAMES_PRELOAD_LIST_COL_, metadata.length, 2).setValues(metadata);
+  if (changed) sh.getRange(2, metadataColumns.listCol, metadata.length, 2).setValues(metadata);
 }
 
 function reqExamesPreloadReadProjeto_(projeto, sh, tipoServico, exactOnly) {
@@ -2684,9 +2684,8 @@ function reqExamesPreloadReadProjeto_(projeto, sh, tipoServico, exactOnly) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   sh = sh || getSheetByPossibleNames_(ss, ['ReqExames_Preloads', 'Req_Exames_Preloads', 'ReqExames Preloads']);
   if (!sh || sh.getLastRow() < 2) return null;
-  var maxColumns = typeof sh.getMaxColumns === 'function' ? sh.getMaxColumns() : sh.getLastColumn();
-  var columns = Math.min(REQ_EXAMES_PRELOAD_TOTAL_COLS_, Math.max(42, maxColumns || 42));
-  var data = sh.getRange(2, 1, sh.getLastRow() - 1, columns).getValues();
+  var metadataColumns = reqExamesPreloadMetadataColumns_(sh, false);
+  var data = reqExamesPreloadReadRawRows_(sh, metadataColumns);
   var chaves = [reqExamesPreloadKey_(projeto, tipoServico)];
   if (tipoServico && !exactOnly) chaves.push(projeto);
   var alvoMap = {};
@@ -2705,8 +2704,8 @@ function reqExamesPreloadReadProjeto_(projeto, sh, tipoServico, exactOnly) {
       exames: exames,
       active: !inactive,
       hash: reqExamesPreloadHash_(inactive ? [] : exames),
-      numero: Number(row[REQ_EXAMES_PRELOAD_LIST_COL_ - 1]) || 0,
-      preloadId: String(row[REQ_EXAMES_PRELOAD_ID_COL_ - 1] || '').trim()
+      numero: Number(metadataColumns.listCol ? row[metadataColumns.listCol - 1] : '') || 0,
+      preloadId: String(metadataColumns.idCol ? row[metadataColumns.idCol - 1] : '').trim()
     };
   }
   return null;
@@ -2724,24 +2723,46 @@ function reqExamesPreloadHash_(exames) {
   }).join('');
 }
 
+function reqExamesPreloadMetadataColumns_(sh, createIfMissing) {
+  if (!sh) return { listCol: REQ_EXAMES_PRELOAD_LIST_COL_, idCol: REQ_EXAMES_PRELOAD_ID_COL_ };
+  var lastColumn = Math.max(REQ_EXAMES_PRELOAD_TOTAL_COLS_, sh.getLastColumn() || 0);
+  var headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0];
+  for (var i = REQ_EXAMES_PRELOAD_ACTIVE_COL_; i < headers.length - 1; i++) {
+    if (String(headers[i] || '').trim() === 'Lista' && String(headers[i + 1] || '').trim() === 'Preload ID') {
+      return { listCol: i + 1, idCol: i + 2 };
+    }
+  }
+  var listaHeader = String(headers[REQ_EXAMES_PRELOAD_LIST_COL_ - 1] || '').trim();
+  var idHeader = String(headers[REQ_EXAMES_PRELOAD_ID_COL_ - 1] || '').trim();
+  if (!createIfMissing) {
+    return !listaHeader && !idHeader
+      ? { listCol: REQ_EXAMES_PRELOAD_LIST_COL_, idCol: REQ_EXAMES_PRELOAD_ID_COL_ }
+      : { listCol: null, idCol: null };
+  }
+  if (!listaHeader && !idHeader) return { listCol: REQ_EXAMES_PRELOAD_LIST_COL_, idCol: REQ_EXAMES_PRELOAD_ID_COL_ };
+
+  var listCol = Math.max(REQ_EXAMES_PRELOAD_ACTIVE_COL_, sh.getLastColumn() || 0) + 1;
+  var idCol = listCol + 1;
+  var maxColumns = sh.getMaxColumns();
+  if (maxColumns < idCol) sh.insertColumnsAfter(maxColumns, idCol - maxColumns);
+  return { listCol: listCol, idCol: idCol };
+}
+
 function ensureReqExamesPreloadSheet_(sh) {
   if (sh.getMaxColumns() < REQ_EXAMES_PRELOAD_TOTAL_COLS_) {
     sh.insertColumnsAfter(sh.getMaxColumns(), REQ_EXAMES_PRELOAD_TOTAL_COLS_ - sh.getMaxColumns());
   }
-  var existingMetadataHeaders = sh.getRange(1, REQ_EXAMES_PRELOAD_LIST_COL_, 1, 2).getValues()[0];
-  var listaHeader = String(existingMetadataHeaders[0] || '').trim();
-  var idHeader = String(existingMetadataHeaders[1] || '').trim();
-  if ((listaHeader && listaHeader !== 'Lista') || (idHeader && idHeader !== 'Preload ID')) {
-    throw new Error('A aba de listas de exames já usa as colunas de metadados reservadas. Nenhuma alteração foi feita.');
-  }
+  var metadataColumns = reqExamesPreloadMetadataColumns_(sh, true);
   var headers = ['Projeto'];
   for (var i = 1; i <= 40; i++) headers.push('Exame ' + i);
-  headers.push('Ativo', 'Lista', 'Preload ID');
+  headers.push('Ativo');
   sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sh.getRange(1, metadataColumns.listCol, 1, 2).setValues([['Lista', 'Preload ID']]);
   sh.setFrozenRows(1);
   if (typeof sh.hideColumns === 'function') {
-    try { sh.hideColumns(REQ_EXAMES_PRELOAD_LIST_COL_, 2); } catch (e) {}
+    try { sh.hideColumns(metadataColumns.listCol, 2); } catch (e) {}
   }
+  return metadataColumns;
 }
 
 function getReqExamesCcEmails_() {

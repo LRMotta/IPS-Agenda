@@ -136,11 +136,45 @@ test('lista generica legada vira lista especifica sem sobrescrever a fonte geral
   assert.deepEqual(JSON.parse(JSON.stringify(server.getReqExamesPreloadProjetoLists('PROTO-4', 'Serviço de imagem').listas.map((item) => item.exames))), [['Exame específico']]);
 });
 
-test('schema inesperado nas colunas de metadados bloqueia a escrita para nao sobrescrever dados', () => {
-  const headers = ['Projeto'].concat(Array.from({ length: 40 }, (_, i) => 'Exame ' + (i + 1)), ['Ativo', 'Observação interna']);
-  const { server, sheet } = preloadContext([headers, row('PROTO-5 | Serviço de imagem', ['Exame'])]);
-  const writesBefore = sheet.writes;
-  assert.throws(() => server.salvarReqExamesPreloadLista('PROTO-5', 'Serviço de imagem', ['Outro'], '', ''), /colunas de metadados reservadas/);
-  assert.equal(sheet.writes, writesBefore);
-  assert.equal(sheet.rows[0][42], 'Observação interna');
+test('colunas adicionais sao preservadas e multiplas listas usam metadados anexados', () => {
+  const headers = ['Projeto'].concat(Array.from({ length: 40 }, (_, i) => 'Exame ' + (i + 1)), ['Ativo', 'Origem interna', 'Observação interna']);
+  const existing = row('PROTO-5 | Serviço de imagem', ['Exame existente']);
+  existing[42] = 'origem preservada';
+  existing[43] = 'observação preservada';
+  const { server, sheet } = preloadContext([headers, existing]);
+  const legado = server.getReqExamesPreloadProjetoLists('PROTO-5', 'Serviço de imagem').listas[0];
+  assert.equal(legado.id, 'LEGACY-2');
+  assert.equal(legado.label, 'Lista 01');
+
+  const primeira = server.salvarReqExamesPreloadLista('PROTO-5', 'Serviço de imagem', ['Exame novo 1'], '', '');
+  const segunda = server.salvarReqExamesPreloadLista('PROTO-5', 'Serviço de imagem', ['Exame novo 2'], '', '');
+
+  assert.equal(primeira.ok, true);
+  assert.equal(primeira.list.label, 'Lista 02');
+  assert.equal(segunda.ok, true);
+  assert.equal(segunda.list.label, 'Lista 03');
+  assert.equal(sheet.rows[0][42], 'Origem interna');
+  assert.equal(sheet.rows[0][43], 'Observação interna');
+  assert.equal(sheet.rows[1][42], 'origem preservada');
+  assert.equal(sheet.rows[1][43], 'observação preservada');
+
+  const metadataStart = sheet.rows[0].indexOf('Lista');
+  assert.ok(metadataStart > 43);
+  assert.equal(sheet.rows[0][metadataStart + 1], 'Preload ID');
+  const listas = server.getReqExamesPreloadProjetoLists('PROTO-5', 'Serviço de imagem').listas;
+  assert.deepEqual(JSON.parse(JSON.stringify(listas.map((item) => item.label))), ['Lista 01', 'Lista 02', 'Lista 03']);
+  assert.deepEqual(JSON.parse(JSON.stringify(listas.map((item) => item.exames[0]))), ['Exame existente', 'Exame novo 1', 'Exame novo 2']);
+
+  const atualizada = server.salvarReqExamesPreloadLista(
+    'PROTO-5',
+    'Serviço de imagem',
+    ['Exame existente atualizado'],
+    legado.hash,
+    legado.id
+  );
+  assert.equal(atualizada.ok, true);
+  assert.equal(atualizada.created, false);
+  assert.equal(sheet.rows[1][42], 'origem preservada');
+  assert.equal(sheet.rows[1][43], 'observação preservada');
+  assert.deepEqual(JSON.parse(JSON.stringify(server.getReqExamesPreloadProjetoLists('PROTO-5', 'Serviço de imagem').listas.map((item) => item.exames[0]))), ['Exame existente atualizado', 'Exame novo 1', 'Exame novo 2']);
 });
