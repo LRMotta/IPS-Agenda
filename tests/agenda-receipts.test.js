@@ -14,6 +14,25 @@ function receiptValueContext() {
   return context;
 }
 
+function receiptPrintContext() {
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const start = source.indexOf('function agendaReciboGrupoExtenso_');
+  const end = source.indexOf('function agendaCourierCards', start);
+  const context = vm.createContext({
+    Math,
+    Number,
+    isFinite,
+    document: { querySelector: () => null },
+    getPatientDisplayLogoSrc: () => 'logo.png',
+    esc: (value) => String(value == null ? '' : value),
+    agendaPrintShell: ({ body }) => '<html><head><style></style></head><body class="portrait">' + body + '</body></html>'
+  });
+  vm.runInContext(source.slice(start, end), context);
+  context.agendaReciboFormatarValor_ = (value) => String(value);
+  context.agendaReciboDataBr_ = (value) => String(value || '');
+  return context;
+}
+
 test('Agenda oferece recibo somente para visita ou consulta com participante e usa RPC protegida', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const server = readProjectFile('WebApp.gs');
@@ -109,8 +128,31 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.match(client, /receipt-signatures/);
   assert.match(client, /Tipo de conta: ' \+ recibo\.tipoConta/);
   assert.match(client, /\.receipt \.place\{text-align:center/);
+  assert.match(client, /var subtituloAcompanhante = isAcompanhante \? '<div class="receipt-subtitle">Acompanhante de participante de pesquisa clínica<\/div>' : ''/);
+  assert.match(client, /var classeQuebraPagina = viaIndex < vias\.length - 1 \? ' receipt-page-break' : ''/);
+  assert.match(client, /\.receipt-page-break\{break-after:page;page-break-after:always\}/);
+  assert.match(client, /receipt-signatures\{display:grid[^']*align-items:start/);
+  assert.match(client, /\.receipt \.signature\{[^']*margin:54px auto 0/);
+  assert.match(client, /\.receipt \.signature b\{font-size:13px\}/);
+  assert.doesNotMatch(client, /\.receipt \.coordinator-rubric b\{font-size:11px\}/);
   assert.match(client, /relacionadas à visita[^\n]+<\/b> do projeto/);
   assert.doesNotMatch(client, /salvarAgendaRecibo|registrarAgendaRecibo/);
+});
+
+test('recibo de acompanhante mantém subtítulo, assinaturas alinhadas e sem quebra após a última via', () => {
+  const context = receiptPrintContext();
+  const data = { idParticipante: 'P-001', participante: 'Participante', visita: 'V1', projeto: 'Estudo' };
+  const recibo = { tipo: 'Acompanhante', nome: 'Acompanhante', cpf: '111', valor: 80, dataVisita: '10/09/2026', dataEmissao: '23/09/2026', coordenador: 'Coordenação' };
+
+  const html = context.agendaReciboPrintHtml_(data, recibo);
+
+  assert.equal((html.match(/Acompanhante de participante de pesquisa clínica/g) || []).length, 3);
+  assert.equal((html.match(/class="receipt receipt-copy receipt-acompanhante receipt-page-break"/g) || []).length, 2);
+  assert.equal((html.match(/class="receipt receipt-copy receipt-acompanhante"/g) || []).length, 1);
+  assert.match(html, /align-items:start/);
+  assert.match(html, /font-size:13px/);
+  assert.doesNotMatch(html, /font-size:11px/);
+  assert.match(html, /margin:54px auto 0/);
 });
 
 test('recibo valida CPF do beneficiário e do titular antes de imprimir', () => {
