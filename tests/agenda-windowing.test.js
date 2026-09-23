@@ -1869,7 +1869,10 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(styles, /\.ag-monitorias-head,\.ag-auditorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
   assert.match(styles, /\.ag-monitorias-title,\.ag-auditorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
   assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
-  assert.match(styles, /\.ag-cancelados-group\{border-left:3px solid #b3261e/);
+  assert.match(styles, /\.ag-cancelados-group\{border-left:0;border-bottom:1px solid #f1dada;background:#fff\}/);
+  assert.match(styles, /\.ag-appt\{border-left:0;border-bottom:1px solid #f0f4f8;--ag-time-marker:#6c757d\}/);
+  assert.match(styles, /\.ag-appt-time\{[^}]*font-size:13px/);
+  assert.match(styles, /\.ag-proj-chip\{background:transparent;color:var\(--primary\);border:0;padding:0;font-weight:600\}/);
   assert.match(styles, /\.ag-dp-cancel\{background:#fde7e7;color:#b3261e\}/);
   assert.match(styles, /\.ag-cancelado-compact-main\{display:grid;grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
 });
