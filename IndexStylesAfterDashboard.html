@@ -94,8 +94,10 @@
     .ag-appt:hover>.ag-appt-main{background:#f8faff}
     .ag-appt.st-agendado{border-left-color:#28a745}.ag-appt.st-realizado{border-left-color:#6c757d}.ag-appt.st-cancelado{border-left-color:#b3261e}.ag-appt.st-concluido{border-left-color:#212529}.ag-appt.st-monitoria{border-left-color:#5b21b6}.ag-appt.st-siv,.ag-appt.type-siv{border-left-color:#b45309}.ag-appt.st-pendente,.ag-appt.st-reagendado{border-left-color:#e65100}
     .ag-appt-main{position:relative;display:flex;align-items:flex-start;gap:14px;padding:12px 24px 12px 24px;cursor:pointer;transition:background .12s;overflow:visible}
-    .ag-appt-time{min-width:46px;height:26px;border-radius:13px;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;background:#f0f4f8;color:var(--text-muted)}
-    .ag-appt.st-agendado .ag-appt-time{background:#d4edda;color:#155724}.ag-appt.st-cancelado .ag-appt-time{background:#fce8e6;color:#b3261e}.ag-appt.st-monitoria .ag-appt-time{background:#f5f3ff;color:#5b21b6}.ag-appt.st-siv .ag-appt-time,.ag-appt.type-siv .ag-appt-time{background:#fff3e0;color:#b45309}
+    /* Coluna fixa de horario; o marcador ocupa apenas o espaco entre horario e conteudo. */
+    .ag-appt-time{width:46px;min-width:46px;min-height:26px;align-self:stretch;padding-top:5px;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;line-height:16px;display:flex;align-items:flex-start;justify-content:center;flex-shrink:0;margin-top:2px;background:transparent;color:var(--text);white-space:nowrap}
+    .ag-appt-time::after{content:"";position:absolute;right:-8px;top:2px;bottom:2px;width:2px;border-radius:1px;background:var(--ag-time-marker,#6c757d);pointer-events:none}
+    .ag-appt.st-agendado{--ag-time-marker:#28a745}.ag-appt.st-cancelado{--ag-time-marker:#b3261e}.ag-appt.st-concluido{--ag-time-marker:#212529}.ag-appt.st-monitoria{--ag-time-marker:#5b21b6}.ag-appt.st-siv,.ag-appt.type-siv{--ag-time-marker:#b45309}.ag-appt.st-pendente,.ag-appt.st-reagendado{--ag-time-marker:#e65100}
     .ag-appt-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
     .ag-appt-side{width:420px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-top:1px}
     .ag-lab-watermark{position:absolute;right:-28px;top:50%;transform:translateY(-50%) rotate(-8deg);pointer-events:none;color:#64748b;opacity:.085;z-index:0}
@@ -197,7 +199,7 @@
     .ag-cancelado-compact{border-left:0;background:#fffafa}
     .ag-cancelado-compact-main{display:grid;grid-template-columns:46px minmax(300px,1.05fr) minmax(240px,.95fr) minmax(220px,.9fr) 124px;align-items:center;column-gap:14px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
     .ag-cancelado-compact:hover>.ag-cancelado-compact-main{background:#fff5f5}
-    .ag-cancelado-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start;background:#fce8e6;color:#b3261e}
+    .ag-cancelado-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start}
     .ag-cancelado-event,.ag-cancelado-context,.ag-cancelado-motive{min-width:0}
     .ag-cancelado-name{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap;font-size:13px;font-weight:700;color:#7f1d1d}
     .ag-cancelado-project{display:flex;align-items:center;gap:6px;min-width:0;margin-top:4px;flex-wrap:wrap}
@@ -425,7 +427,7 @@
       .ag-birthday-banner{padding:10px 12px;align-items:flex-start}
       .ag-birthday-count{display:none}
       .ag-appt-main{gap:9px;align-items:flex-start}
-      .ag-appt-time{min-width:42px}
+      .ag-appt-main .ag-appt-time::after{right:-5px}
       .ag-appt-actions{margin-left:auto}
       .ag-l1,.ag-l2,.ag-l3,.ag-l4{gap:5px}
       .ag-proj-chip,.ag-visit-chip,.ag-mon-chip,.ag-cro-chip,.ag-braco-tag,.ag-lab-ind,.ag-type-chip{font-size:11px;padding:3px 7px}
