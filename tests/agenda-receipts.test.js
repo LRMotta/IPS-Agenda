@@ -128,7 +128,6 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.match(client, /receipt-signatures/);
   assert.match(client, /Tipo de conta: ' \+ recibo\.tipoConta/);
   assert.match(client, /\.receipt \.place\{text-align:center/);
-  assert.match(client, /var subtituloAcompanhante = isAcompanhante \? '<div class="receipt-subtitle">Acompanhante de participante de pesquisa clínica<\/div>' : ''/);
   assert.match(client, /var classeQuebraPagina = viaIndex < vias\.length - 1 \? ' receipt-page-break' : ''/);
   assert.match(client, /\.receipt-page-break\{break-after:page;page-break-after:always\}/);
   assert.match(client, /receipt-signatures\{display:grid[^']*align-items:start/);
@@ -139,16 +138,17 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.doesNotMatch(client, /salvarAgendaRecibo|registrarAgendaRecibo/);
 });
 
-test('recibo de acompanhante mantém subtítulo, assinaturas alinhadas e sem quebra após a última via', () => {
+test('recibo de acompanhante mantém identificação na assinatura e sem quebra após a última via', () => {
   const context = receiptPrintContext();
   const data = { idParticipante: 'P-001', participante: 'Participante', visita: 'V1', projeto: 'Estudo' };
   const recibo = { tipo: 'Acompanhante', nome: 'Acompanhante', cpf: '111', valor: 80, dataVisita: '10/09/2026', dataEmissao: '23/09/2026', coordenador: 'Coordenação' };
 
   const html = context.agendaReciboPrintHtml_(data, recibo);
 
-  assert.equal((html.match(/Acompanhante de participante de pesquisa clínica/g) || []).length, 3);
-  assert.equal((html.match(/class="receipt receipt-copy receipt-acompanhante receipt-page-break"/g) || []).length, 2);
-  assert.equal((html.match(/class="receipt receipt-copy receipt-acompanhante"/g) || []).length, 1);
+  assert.doesNotMatch(html, /Acompanhante de participante de pesquisa clínica/);
+  assert.equal((html.match(/<small>Acompanhante<\/small>/g) || []).length, 2);
+  assert.equal((html.match(/class="receipt receipt-copy receipt-page-break"/g) || []).length, 2);
+  assert.equal((html.match(/class="receipt receipt-copy"/g) || []).length, 1);
   assert.match(html, /align-items:start/);
   assert.match(html, /font-size:13px/);
   assert.doesNotMatch(html, /font-size:11px/);
