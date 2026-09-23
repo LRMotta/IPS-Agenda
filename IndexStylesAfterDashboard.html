@@ -86,7 +86,7 @@
     .ag-day-stats{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
     .ag-dpill{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700}
     .ag-dp-n{background:#edf3ff;color:#0b4fa3}.ag-dp-ok{background:#e6f4ea;color:#137333}.ag-dp-pend{background:#fff3cd;color:#856404}.ag-dp-lab{background:#f1f5f9;color:#475569}.ag-dp-mon{background:#f5f3ff;color:#5b21b6}.ag-dp-cancel{background:#fde7e7;color:#b3261e}.ag-dp-car{background:#fff4d6;color:#7a4d00;border:1px solid #f2c35b}.ag-dp-car .material-symbols-outlined{font-size:14px}
-    .ag-appt{border-left:0;border-bottom:1px solid #f0f4f8;--ag-time-marker:#6c757d}
+    .ag-appt{border-left:3px solid var(--ag-time-marker,#6c757d);border-bottom:1px solid #f0f4f8;--ag-time-marker:#6c757d}
     .ag-appt.past{opacity:.72}
     .ag-appt.past:hover{opacity:1}
     .ag-appt.focus-from-week{box-shadow:inset 0 0 0 2px #1266f1;background:#f8fbff}
@@ -186,7 +186,6 @@
     .ag-monitorias-toggle,.ag-auditorias-toggle,.ag-cancelados-toggle{flex-shrink:0}
     .ag-obs-preview{display:flex;align-items:flex-start;gap:5px;max-width:680px;color:#7a4b22;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .ag-obs-preview .material-symbols-outlined{font-size:15px;flex-shrink:0}
-    .ag-monitoria-compact{border-left:0}
     .ag-monitoria-compact-main{display:grid;grid-template-columns:46px minmax(300px,1.05fr) minmax(240px,.95fr) minmax(220px,.9fr) 124px;align-items:center;column-gap:14px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
     .ag-monitoria-compact:hover>.ag-monitoria-compact-main{background:#f8faff}
     .ag-monitoria-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start}
@@ -195,7 +194,7 @@
     .ag-monitoria-location .ag-meta,.ag-monitoria-monitor .ag-line{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .ag-monitoria-compact .ag-appt-actions{width:124px;justify-content:flex-end;padding-top:0}
     .ag-monitoria-compact .ag-appt-detail{padding-left:98px}
-    .ag-cancelado-compact{border-left:0;background:#fffafa}
+    .ag-cancelado-compact{background:#fffafa}
     .ag-cancelado-compact-main{display:grid;grid-template-columns:46px minmax(300px,1.05fr) minmax(240px,.95fr) minmax(220px,.9fr) 124px;align-items:center;column-gap:14px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
     .ag-cancelado-compact:hover>.ag-cancelado-compact-main{background:#fff5f5}
     .ag-cancelado-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start}

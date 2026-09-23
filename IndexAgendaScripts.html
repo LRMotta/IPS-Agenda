@@ -5866,7 +5866,7 @@
     var postVisitIcons = agendaPostVisitIcons(r);
     var contextoPrincipal = isPeriodoOperacional
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
-      : (isAuditoria ? '' : tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
+      : (isAuditoria ? '' : agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + tipoChip + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
     var sideHtml = agendaSidePanelHtml(r, labSim);
     var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
