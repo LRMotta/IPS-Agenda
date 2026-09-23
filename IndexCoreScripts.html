@@ -127,7 +127,8 @@ function getCadastrosBootstrapCached(page, onSuccess, onFailure, force) {
   });
 }
 
-function appHasUnsavedChanges() {
+function appHasUnsavedChanges(scopeId) {
+  if (scopeId) return !!APP_UNSAVED_SCOPES[scopeId];
   return Object.keys(APP_UNSAVED_SCOPES).some(function(k) { return !!APP_UNSAVED_SCOPES[k]; });
 }
 
