@@ -5360,7 +5360,7 @@
     var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
     var cardId = agendaCardDomId(r);
     var tipoChip = AgendaRules.isOperationalPeriod(r) ? '' : agendaTipoChip(r.tipo);
-    return '<div class="ag-appt ag-cancelado-compact st-cancelado" id="' + cardId + '">' +
+    return '<div class="ag-appt ag-cancelado-compact' + (tipoChip ? ' ' + agendaTipoAccentClass(r.tipo) : '') + ' st-cancelado" id="' + cardId + '">' +
       '<div class="ag-cancelado-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
         '<div class="ag-cancelado-event"><div class="ag-cancelado-name">' + esc(agendaCanceladoTitulo_(r)) + agendaStatusChipOp(r.status, r.tipo) + '</div><div class="ag-cancelado-project">' + tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + '</div></div>' +
@@ -5380,7 +5380,7 @@
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
     var isSiv = AgendaRules.isSiv(r);
     var statusClass = AgendaRules.isCancelled(r) ? ' st-cancelado' : (isSiv ? ' st-siv' : ' st-monitoria');
-    return '<div class="ag-appt ag-monitoria-compact' + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
+    return '<div class="ag-appt ag-monitoria-compact ' + agendaTipoAccentClass(isSiv ? 'SIV' : 'Monitoria') + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
       '<div class="ag-monitoria-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
         '<div class="ag-monitoria-project">' + agendaTipoChip(isSiv ? 'SIV' : 'Monitoria') + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
@@ -5870,7 +5870,7 @@
     var sideHtml = agendaSidePanelHtml(r, labSim);
     var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
-    return '<div class="ag-appt st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
+    return '<div class="ag-appt ' + (tipoChip ? agendaTipoAccentClass(r.tipo) : '') + ' st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         (labSim ? '<div class="ag-lab-watermark" title="Laboratorio central"><span class="material-symbols-outlined">science</span></div>' : '') +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
@@ -6384,6 +6384,10 @@
 
   function agendaTipoClass(tipo) {
     return AgendaRules.typeClass(tipo);
+  }
+
+  function agendaTipoAccentClass(tipo) {
+    return String(agendaTipoClass(tipo) || 'ag-type-default').replace(/^ag-type-/, 'ag-event-');
   }
 
   function agendaTipoIcon(tipo) {
