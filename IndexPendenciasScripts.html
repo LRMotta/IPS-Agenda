@@ -256,7 +256,7 @@
         render: function(it) {
           return {
             main: [it.data, it.hora, it.participante || it.projeto].filter(Boolean).join(' · '),
-            meta: [it.slot, pendenciaCourierComTemperatura(it), it.motivo, it.projeto].filter(Boolean).join(' · ')
+            meta: [it.slot, pendenciaCourierComTemperatura(it), it.awb ? 'AWB ' + it.awb : '', it.motivo, it.projeto].filter(Boolean).join(' · ')
           };
         }
       }
