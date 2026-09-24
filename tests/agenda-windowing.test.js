@@ -1838,6 +1838,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
   assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
+  assert.match(compact, /agendaTipoAccentClass\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
   assert.match(cancelledGroup, /aria-label="Cancelados do dia"/);
   assert.match(cancelledGroup, /<strong>Cancelados<\/strong>/);
@@ -1853,10 +1854,14 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(auditCard, /isAuditoria \? tipoChip : '<span class="ag-appt-name">'/);
   assert.match(auditCard, /isAuditoria \? '' : agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoChip/);
   assert.match(auditCard, /ag-auditoria-card/);
+  assert.match(auditCard, /agendaTipoAccentClass\(r\.tipo\)/);
   assert.match(auditCard, /isAuditoria && r\.obs/);
   assert.match(auditCard, /agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoChip/);
+  const typeAccentClass = functionBody(client, 'agendaTipoAccentClass');
+  assert.match(typeAccentClass, /agendaTipoClass\(tipo\).*replace\(\/\^ag-type-\/, 'ag-event-'\)/);
   assert.match(dayHeader, /ag-dpill ag-dp-n/);
   assert.match(cancelledCompact, /st-cancelado/);
+  assert.match(cancelledCompact, /agendaTipoAccentClass\(r\.tipo\)/);
   assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(cancelledCompact, /abrirAgendaEdicao/);
   assert.match(cancelledCompact, /agendaToggleDetail/);
@@ -1873,7 +1878,11 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(styles, /\.ag-monitorias-group\{border-left:0;border-bottom:1px solid #e7e3f5;background:#fff\}/);
   assert.match(styles, /\.ag-auditorias-group\{border-left:0;border-bottom:1px solid #f3dfd2;background:#fff\}/);
   assert.match(styles, /\.ag-cancelados-group\{border-left:0;border-bottom:1px solid #f1dada;background:#fff\}/);
-  assert.match(styles, /\.ag-appt\{border-left:3px solid var\(--ag-time-marker,#6c757d\);border-bottom:1px solid #f0f4f8;--ag-time-marker:#6c757d\}/);
+  assert.match(styles, /\.ag-appt\{position:relative;border-bottom:1px solid #f0f4f8;--ag-time-marker:#6c757d;--ag-event-accent:#6c757d\}/);
+  assert.match(styles, /\.ag-appt::before\{[^}]*top:2px;bottom:2px;width:3px;[^}]*background:var\(--ag-event-accent,#6c757d\)/);
+  assert.match(styles, /\.ag-appt\.ag-event-visita\{--ag-event-accent:#0b4fa3\}/);
+  assert.match(styles, /\.ag-appt-time::after\{[^}]*right:0;[^}]*width:2px/);
+  assert.match(styles, /\.ag-appt-main \.ag-appt-time::after\{right:0\}/);
   assert.doesNotMatch(styles, /\.ag-monitoria-compact\{border-left:0\}/);
   assert.doesNotMatch(styles, /\.ag-cancelado-compact\{border-left:0/);
   assert.match(styles, /\.ag-appt-time\{[^}]*font-size:13px/);
