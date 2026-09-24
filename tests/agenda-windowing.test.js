@@ -1868,27 +1868,31 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.doesNotMatch(cancelledCompact, /cancelarAgendaEvento/);
   assert.doesNotMatch(cancelledCompact, /abrirEventoNoGoogleCalendar/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
-  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:14px/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:28px/);
   assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
   assert.match(styles, /\.ag-monitorias-head,\.ag-auditorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
   assert.match(styles, /\.ag-monitorias-title,\.ag-auditorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
-  assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 14px\}/);
+  assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 22px\}\.ag-monitoria-compact-main \.ag-appt-time::after,\.ag-cancelado-compact-main \.ag-appt-time::after\{right:-8px\}/);
   assert.match(styles, /\.ag-monitorias-group\{border-left:0;border-bottom:1px solid #e7e3f5;background:#fff\}/);
   assert.match(styles, /\.ag-auditorias-group\{border-left:0;border-bottom:1px solid #f3dfd2;background:#fff\}/);
   assert.match(styles, /\.ag-cancelados-group\{border-left:0;border-bottom:1px solid #f1dada;background:#fff\}/);
-  assert.match(styles, /\.ag-appt\{position:relative;border-bottom:1px solid #f0f4f8;--ag-time-marker:#6c757d;--ag-event-accent:#6c757d\}/);
+  assert.match(styles, /\.ag-appt\{position:relative;border-bottom:1px solid #f0f4f8;--ag-event-accent:#6c757d\}/);
   assert.match(styles, /\.ag-appt::before\{[^}]*top:2px;bottom:2px;width:3px;[^}]*background:var\(--ag-event-accent,#6c757d\)/);
   assert.match(styles, /\.ag-appt\.ag-event-visita\{--ag-event-accent:#0b4fa3\}/);
-  assert.match(styles, /\.ag-appt-time::after\{[^}]*right:0;[^}]*width:2px/);
-  assert.match(styles, /\.ag-appt-main \.ag-appt-time::after\{right:0\}/);
+  assert.match(styles, /\.ag-appt-main\{[^}]*gap:29px/);
+  assert.match(styles, /\.ag-appt-time::after\{[^}]*right:-14px;[^}]*width:2px;[^}]*background:var\(--ag-event-accent,#6c757d\)/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:28px/);
+  assert.match(styles, /\.ag-cancelado-compact-main\{[^}]*column-gap:28px/);
+  assert.match(styles, /\.ag-appt-main\{gap:22px;align-items:flex-start\}\s+\.ag-appt-main \.ag-appt-time::after\{right:-8px\}/);
+  assert.doesNotMatch(styles, /--ag-time-marker/);
   assert.doesNotMatch(styles, /\.ag-monitoria-compact\{border-left:0\}/);
   assert.doesNotMatch(styles, /\.ag-cancelado-compact\{border-left:0/);
   assert.match(styles, /\.ag-appt-time\{[^}]*font-size:13px/);
   assert.match(styles, /\.ag-proj-chip\{background:transparent;color:var\(--primary\);border:0;padding:0;font-weight:600\}/);
   assert.match(styles, /\.ag-dp-cancel\{background:#fde7e7;color:#b3261e\}/);
-  assert.match(styles, /\.ag-cancelado-compact-main\{display:grid;grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
+  assert.match(styles, /\.ag-cancelado-compact-main\{display:grid;grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px;align-items:center;column-gap:28px/);
 });
 
 test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativas', () => {
