@@ -632,6 +632,7 @@ test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', 
 
 test('bootstrap vindo da Agenda importa e rele o mesmo slot sob um unico lock', () => {
   const server = runFile('TransporteCodexConfig.gs', {
+    ...serverCourierContext(),
     Logger: { log: () => {} },
     normText_: (value) => String(value || '').trim().toLowerCase()
   });
@@ -658,7 +659,7 @@ test('bootstrap vindo da Agenda importa e rele o mesmo slot sob um unico lock', 
   server.montarPayloadTransporteParaTransp_ = (id, slot, received) => {
     assert.equal(lockDepth, 1);
     assert.equal(received, evento);
-    return { idAgenda: id, slot, refInterna: `AGD-${id}` };
+    return { idAgenda: id, slot, courier: { nome: 'DHL', awb: '' }, refInterna: `AGD-${id}` };
   };
   server.importarTransporteCodexInterno_ = (payload, context) => {
     assert.equal(lockDepth, 1);
@@ -1024,6 +1025,7 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(source, 'function transporteValidarObrigatoriosWebApp_(', 'function transporteValidarDataEnvioMinima_(');
   const context = vm.createContext({
+    ...serverCourierContext(),
     transporteLabCentralByDestino_: (destino) => destino === 'Lab Central Teste' ? { nome: destino } : null,
     transporteMedicoByNome_: (nome) => nome === 'Investigador com CREMERS'
       ? { nome, cremers: '12345' }
@@ -1097,4 +1099,64 @@ test('data de envio anterior a hoje e rejeitada antes da documentacao', () => {
   assert.throws(() => context.transporteValidarDataEnvioMinima_(yesterday), /igual ou posterior/);
   assert.doesNotThrow(() => context.transporteValidarDataEnvioMinima_(today));
   assert.doesNotThrow(() => context.transporteValidarDataEnvioMinima_(tomorrow));
+});
+
+ test('AWB obrigatoria somente no contexto documental, alinhada no cliente e servidor', () => {
+  const client = runHtmlScript('SharedCourierRules.html').CodexCourierRules;
+  const server = serverCourierContext();
+  for (const courier of ['MARKEN', 'Marken Brasil', 'OCASA', 'PINEX', 'DHL', 'PINEX (Agendamento)']) {
+    const required = !['DHL', 'PINEX (Agendamento)'].includes(courier);
+    assert.equal(client.requiresAwb(courier), required);
+    assert.equal(server.codexCourierRequiresAwb_(courier), required);
+    for (const value of ['', '   ']) {
+      assert.equal(client.isValidAwb(value, courier, true), !required);
+      assert.equal(server.codexCourierIsValidAwb_(value, courier, true), !required);
+      assert.equal(client.isValidAwb(value, courier), true);
+    }
+  }
+ });
+
+ test('Gerar docs bloqueia modal e card antes de abrir janela com AWB vazia', () => {
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({
+    CodexCourierRules: runHtmlScript('SharedCourierRules.html').CodexCourierRules,
+    _agendaEditId: 'EVT',
+    coletarAgendaEvento: () => ({ participante: 'Teste', courier1: { nome: 'MARKEN', awb: '' } }),
+    agendaMeaningfulValue: Boolean,
+    agendaCourierMeaningful: () => true,
+    agendaFindEventoLocal_: () => ({ courier1: { nome: 'OCASA', awb: '' } }),
+    snackErro: message => { assert.match(message, /AWB/); },
+    prepararJanelaTransporte: () => { throw new Error('Janela não pode abrir'); }
+  });
+  vm.runInContext(sourceBetween(source, '  function agendaValidarAwbDocumentos_(', '  function gerarTransporteAgenda(slot'), context);
+  // Recorta cada declaração pela próxima função no mesmo nível.
+  for (const name of ['gerarTransporteAgenda', 'gerarTransporteAgendaCard']) {
+    const start = source.indexOf('  function ' + name + '(');
+    const end = source.indexOf('\n  function ', start + 3);
+    vm.runInContext(source.slice(start, end), context);
+  }
+  context.gerarTransporteAgenda('1', 'btn');
+  context.gerarTransporteAgendaCard('EVT', '1', 'btn');
+ });
+
+test('servidor bloqueia AWB obrigatoria antes de importar transporte da Agenda', () => {
+  const server = runFile('TransporteCodexConfig.gs', {
+    ...serverCourierContext(),
+    codexAssertCanWrite_: () => {}, codexWithDocumentLock_: (_key, fn) => fn(),
+    Logger: { log() {} }
+  });
+  server.montarContextoTransporteParaTransp_ = () => ({ payload: { courier: { nome: 'MARKEN', awb: '' } } });
+  server.importarTransporteCodexInterno_ = () => { throw new Error('Importação não pode ocorrer'); };
+  assert.throws(() => server.getTransporteBootstrapFromAgenda('EVT', '1'), /Informe a AWB/);
+});
+
+test('salvamento do modal valida documentos antes da primeira escrita', () => {
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({}) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_key, fn) => fn();
+  server.getAgendaSheet_ = () => ({ getRange() { throw new Error('Não deve escrever nem continuar'); } });
+  server.agendaLocalizarLinhaPorId_ = () => 2;
+  assert.throws(() => server.atualizarAgendaEventoCompleto({ id: 'EVT', transporteDocumentosSlot: '1', courier1: { nome: 'OCASA', awb: '' } }), /Informe a AWB/);
 });

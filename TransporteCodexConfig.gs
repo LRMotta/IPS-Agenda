@@ -109,6 +109,7 @@ function configurarUrlWebAppTransporteCodex(url) {
 function gerarDocumentacaoTransporteCodex(idAgenda, slot) {
   if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('gerarDocumentacaoTransporteCodex', 'Transporte', idAgenda);
   var payload = montarPayloadTransporteParaTransp_(idAgenda, slot);
+  codexCourierAssertDocumentAwb_(payload.courier.awb, payload.courier.nome);
   if (typeof importarTransporteCodex === 'function') {
     return { ok: true, data: importarTransporteCodex(payload), modo: 'acoplado' };
   }
@@ -496,10 +497,27 @@ function transporteMensagemAnexos_(message) {
   }
 }
 
-function transporteMonitorarEnviosPorEmail_() {
+function transporteMonitorarEnviosPorEmail_(agendaId) {
+  var diagnostico = { threads: 0, mensagensComReferencia: 0, buscaLimitada: false, recusas: [] };
+  var result = transporteMonitorarEnviosExecutar_(agendaId, diagnostico);
+  result.diagnostico = diagnostico;
+  if (typeof Logger !== 'undefined') Logger.log('Monitor de envio: ' + JSON.stringify(result));
+  return result;
+}
+
+function transporteMonitorContemReferencia_(texto, referencia) {
+  // Tolera espaços junto aos separadores, sem aceitar ID parcial ou outro slot.
+  var ref = String(referencia || '').trim();
+  if (!/^IPS-TRP-[A-Z0-9_-]+-T[123]$/i.test(ref)) return false;
+  var escaped = ref.split('-').join('\\s*-\\s*');
+  return !!escaped && new RegExp('(^|[^A-Z0-9_-])' + escaped + '(?![A-Z0-9_-])', 'i').test(String(texto || ''));
+}
+
+function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   var agendaPrecheck = null;
   var pendentes = transporteOperacoesRows_().filter(function(item) {
-    if (!item.referencia) return false;
+    if (agendaId && item.agendaId !== agendaId) return false;
+    if (!item.referencia) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Referência ausente' }); return false; }
     if (!transporteOperacaoDate_(item.emailEnviadoEm)) {
       // Se o e-mail ja foi identificado em uma execucao anterior, a confirmacao
       // manual da Agenda deve encerrar a pendencia sem depender de o Gmail
@@ -529,7 +547,7 @@ function transporteMonitorarEnviosPorEmail_() {
     // Recupera operações que versões anteriores concluíram antes de conseguir
     // promover a Agenda. Depois que o status chega a Agendado, elas deixam de
     // entrar naturalmente nas próximas execuções.
-    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || Number(item.anexos || 0) < 1) return false;
+    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || (Number(item.anexos || 0) < 1 && transporteCourierExigeAnexoEnvio_(item.courier))) return false;
     var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
     var idx = slotMap[item.slot];
     if (!idx) return false;
@@ -554,21 +572,35 @@ function transporteMonitorarEnviosPorEmail_() {
   // Excluir rascunhos e essencial quando a propria conta monitora e agenda.
   // Uma confirmacao manual baseada em e-mail ja identificado nao precisa
   // consultar o Gmail outra vez.
-  var threads = Object.keys(referencias).length
-    ? GmailApp.search('in:anywhere -in:drafts newer_than:30d "Ref. IPS:"', 0, 100)
-    : [];
+  var threads = [];
+  if (Object.keys(referencias).length) {
+    // Lotes limitados evitam uma consulta por operação e expõem truncamento.
+    for (var offset = 0; offset < 500; offset += 100) {
+      var pagina = GmailApp.search('in:anywhere -in:drafts newer_than:30d {"Ref. IPS:" "IPS-TRP" "IPS TRP"}', offset, 100);
+      threads = threads.concat(pagina);
+      if (pagina.length < 100) break;
+      if (offset === 400) diagnostico.buscaLimitada = true;
+    }
+  }
+  diagnostico.threads = threads.length;
   threads.forEach(function(thread) {
     thread.getMessages().forEach(function(message) {
-      var corpo = [message.getSubject(), message.getPlainBody()].join('\n').toUpperCase();
+      if (message.isDraft && message.isDraft()) return;
+      var corpo = [message.getSubject(), message.getPlainBody()].join('\n');
+      var temReferencia = false;
       var messageDate = message.getDate ? message.getDate() : new Date();
       Object.keys(referencias).forEach(function(ref) {
-        if (corpo.indexOf(ref) === -1) return;
+        if (!transporteMonitorContemReferencia_(corpo, ref)) return;
+        if (!temReferencia) { diagnostico.mensagensComReferencia++; temReferencia = true; }
         var item = referencias[ref];
         var geradoEm = transporteOperacaoDate_(item.geradoEm);
-        if (geradoEm && messageDate.getTime() < geradoEm.getTime() - 5 * 60 * 1000) return;
+        if (geradoEm && messageDate.getTime() < geradoEm.getTime() - 5 * 60 * 1000) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Mensagem anterior à geração' }); return; }
         var anexos = transporteMensagemAnexos_(message);
         var atual = encontrados[ref];
-        if (!atual || messageDate.getTime() > atual.date.getTime() || (anexos.length && !atual.anexos.length)) {
+        var exigeAnexo = transporteCourierExigeAnexoEnvio_(item.courier);
+        var aceita = anexos.length > 0 || !exigeAnexo;
+        var atualAceita = atual && (atual.anexos.length > 0 || !exigeAnexo);
+        if (!atual || (aceita && !atualAceita) || (aceita === atualAceita && messageDate.getTime() > atual.date.getTime())) {
           encontrados[ref] = {
             date: messageDate,
             messageId: message.getId(),
@@ -577,6 +609,9 @@ function transporteMonitorarEnviosPorEmail_() {
         }
       });
     });
+  });
+  pendentes.forEach(function(item) {
+    if (!encontrados[item.referencia.toUpperCase()]) diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Referência não encontrada em mensagem elegível na conta executora (janela de 30 dias)' });
   });
   if (!Object.keys(encontrados).length) {
     return { ok: true, verificados: pendentes.length, enviados: 0, semAnexo: 0 };
@@ -591,7 +626,7 @@ function transporteMonitorarEnviosPorEmail_() {
       var match = encontrados[item.referencia.toUpperCase()];
       if (!match || !sh) return;
       var atual = sh.getRange(item.row, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).getValues()[0];
-      if (String(atual[2] || '').trim() !== item.referencia || (transporteOperacaoDate_(atual[12]) && !item.reprocessar)) return;
+      if (String(atual[2] || '').trim() !== item.referencia || (transporteOperacaoDate_(atual[12]) && !item.reprocessar)) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Operação alterada ou concluída durante a busca' }); return; }
       var attachmentCount = match.anexos.length;
       var exigeAnexoEnvio = transporteCourierExigeAnexoEnvio_(item.courier);
       sh.getRange(item.row, 12, 1, 5).setValues([[
@@ -651,7 +686,7 @@ function transporteMonitorarEnviosPorEmail_() {
       sh.getRange(item.row, 13).setValue(match.date);
       enviados.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, anexos: attachmentCount });
     });
-    SpreadsheetApp.flush();
+    diagnostico.recusas = diagnostico.recusas.concat(naoPromovidos, semAnexo.map(function(item) { return Object.assign({}, item, { motivo: 'Anexos ausentes; courier exige documentação' }); }));
     return {
       ok: true,
       verificados: pendentes.length,
@@ -2298,6 +2333,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
         return montarContextoTransporteParaTransp_(idAgenda, slot);
       });
       var payload = contexto.payload;
+      codexCourierAssertDocumentAwb_(payload.courier.awb, payload.courier.nome);
       var importResult = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'import_prepare', { rowCount: 1 }, function() {
         return importarTransporteCodexInterno_(payload, contexto);
       });
@@ -2560,11 +2596,12 @@ function transporteValidarObrigatoriosWebApp_(payload) {
   if (payload.courier === 'PINEX (Agendamento)' && !String(payload.responsavelEntrega || '').trim()) {
     missing.push('Responsavel pela Entrega das Amostras');
   }
-  if ((payload.courier === 'MARKEN' || payload.courier === 'OCASA' || payload.courier === 'PINEX') && !String(payload.awb || '').trim()) {
+  if (codexCourierRequiresAwb_(payload.courier) && !String(payload.awb || '').trim()) {
     missing.push('AWB / codigo');
   }
   if (!String(payload.dataEnvio || '').trim()) missing.push('Data de envio');
   if (missing.length) throw new Error('Preencha os campos obrigatorios: ' + missing.join(', ') + '.');
+  codexCourierAssertDocumentAwb_(payload.awb, payload.courier);
   if (String(payload.destino || '').trim() && !transporteLabCentralByDestino_(payload.destino)) {
     throw new Error('Laboratorio de destino nao encontrado no cadastro LabCentral: ' + payload.destino + '.');
   }
@@ -3402,6 +3439,14 @@ function gerarPdfTransporteInterno_(options, access) {
   }
   var monitorRef = transporteMonitorReferencia_(registroMonitor.idAgenda, registroMonitor.agendaSlot);
   if (driveAccessWarning && result && typeof result === 'object') result.driveAccessWarning = driveAccessWarning;
+  if (courier === 'PINEX' || normalizarSlotTransporteCodex_(registroMonitor.agendaSlot) === 'backup') {
+    var avisoManual = 'PINEX ou Backup: o envio não promove automaticamente o status. Atualize o transporte manualmente na Agenda.';
+    Logger.log(avisoManual);
+    if (result && typeof result === 'object') {
+      result.monitorWarning = avisoManual;
+      result.message = (result.message || 'PDF gerado.') + ' ' + avisoManual;
+    }
+  }
   if (courier === 'PINEX') options.criarRascunho = false;
   if (options.criarRascunho) {
     var draft = transporteMeasurePerformance_('gerarPdfTransporte', 'draft', { rowCount: 1 }, function() {
@@ -4478,7 +4523,7 @@ function criarRascunhoEmail_(options) {
     }
     return {
       ok: true,
-      message: 'Rascunho criado com sucesso!',
+      message: 'Rascunho criado com sucesso! Preserve a referência IPS-TRP no corpo ao enviar.',
       draftId: draftId,
       monitorRef: refInterna,
       subject: assunto,

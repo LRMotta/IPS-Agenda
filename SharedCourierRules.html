@@ -29,10 +29,15 @@
     return /^[A-Z][0-9]{7}$/.test(value) || /^PK2[A-Z0-9]{9}$/.test(value);
   }
 
-  function isValidAwb(value, courier) {
+  function requiresAwb(courier) {
+    var r = rule(courier);
+    return r.label === 'MARKEN' || r.label === 'OCASA' || norm(courier) === 'PINEX';
+  }
+
+  function isValidAwb(value, courier, forDocuments) {
     var r = rule(courier);
     var normalized = normalizeAwb(value, courier);
-    if (!normalized) return true;
+    if (!normalized.trim()) return !forDocuments || !requiresAwb(courier);
     if (r.mode === 'ocasa') return isValidOcasaAwb(normalized);
     return !r.len || normalized.length === r.len;
   }
@@ -153,6 +158,7 @@
 
   global.CodexCourierRules = {
     norm: norm,
+    requiresAwb: requiresAwb,
     awbRule: rule,
     normalizeAwb: normalizeAwb,
     isValidAwb: isValidAwb,
