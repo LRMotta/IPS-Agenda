@@ -311,11 +311,12 @@ test('pendencias exibem documentacao de transporte sem envio identificado', () =
   row[cfg.idx.tipo] = 'Visita';
   row[cfg.idx.status] = 'Agendado';
   row[cfg.idx.participante] = 'Participante Docs';
-  row[cfg.idx.projeto] = 'Projeto Docs';
+  row[cfg.idx.projeto] = 'STARSCAPE-1';
   row[cfg.idx.visita] = 'V1';
-  row[cfg.idx.c1.nome] = 'DHL';
-  row[cfg.idx.c1.temp] = 'AMBIENTE';
+  row[cfg.idx.c1.nome] = 'Marken';
+  row[cfg.idx.c1.temp] = 'Ambiente';
   row[cfg.idx.c1.status] = 'Pendente';
+  row[cfg.idx.c1.awb] = '620X37130758';
   server.getAgendaSheetForRead_ = () => new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), row]);
   server.getAgendaFeriadosPendenciasMap_ = () => ({});
   server.transporteDocumentosSemEnvioPendencias_ = () => [{
@@ -332,9 +333,14 @@ test('pendencias exibem documentacao de transporte sem envio identificado', () =
   assert.equal(pendencias.counts.documentacaoTransporteSemEnvio, 1);
   assert.equal(pendencias.counts.courierNaoAgendada, 0);
   assert.equal(pendencias.documentacaoTransporteSemEnvio[0].slot, 'Transporte I');
+  assert.equal(pendencias.documentacaoTransporteSemEnvio[0].courier, 'Marken');
+  assert.equal(pendencias.documentacaoTransporteSemEnvio[0].temperatura, 'Ambiente');
+  assert.equal(pendencias.documentacaoTransporteSemEnvio[0].awb, '620X37130758');
+  assert.equal(pendencias.documentacaoTransporteSemEnvio[0].projeto, 'STARSCAPE-1');
   assert.match(pendencias.documentacaoTransporteSemEnvio[0].motivo, /1 hora/);
   const pendenciasSource = readProjectFile('IndexPendenciasScripts.html');
   assert.match(pendenciasSource, /key: 'documentacaoTransporteSemEnvio'/);
+  assert.match(pendenciasSource, /meta: \[it\.slot, pendenciaCourierComTemperatura\(it\), it\.awb \? 'AWB ' \+ it\.awb : '', it\.motivo, it\.projeto\]/);
   assert.ok(
     pendenciasSource.indexOf("key: 'documentacaoTransporteSemEnvio'") > pendenciasSource.indexOf("key: 'transporteBackupNaoAgendado'"),
     'documentacao de transporte sem envio deve ser a ultima caixa de Pendencias'

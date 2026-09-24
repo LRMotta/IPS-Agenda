@@ -7406,6 +7406,7 @@ function getDashboardPendencias_(estoque) {
         slot: slotLabel,
         courier: String(r[slotCfg.nome] || doc.courier || '').trim(),
         temperatura: String(r[slotCfg.temp] || '').trim(),
+        awb: String(r[slotCfg.awb] || '').trim(),
         statusCourier: statusCourier,
         referencia: String(doc.referencia || ''),
         geradoEm: String(doc.geradoEm || ''),

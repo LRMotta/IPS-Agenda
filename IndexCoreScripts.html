@@ -4193,10 +4193,40 @@ function appNotify(msg, type) {
   if (type === 'error') snack('⚠ ' + appErrorMessage(msg));
   else snack(msg);
 }
-function appSetStatus(elOrId, msg, color) {
+function appSetInlineStatusMessage(elOrId, msg, type, color) {
   var el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
   if (!el) return;
-  el.innerHTML = msg ? '<span style="color:' + (color || '#5f6b7c') + '">' + esc(msg) + '</span>' : '';
+  var message = String(msg || '').trim();
+  if (!message) {
+    el.innerHTML = '';
+    el.dataset.appStatusRendered = '';
+    return;
+  }
+  var normalizedType = String(type || '').toLowerCase();
+  var severity = normalizedType === 'danger' || normalizedType === 'validation' || normalizedType === 'error'
+    ? 'danger'
+    : (normalizedType === 'warn' || normalizedType === 'warning' ? 'warning' : '');
+  if (severity) {
+    var icon = severity === 'danger' ? 'error' : 'warning';
+    message = message.replace(/^\s*(?:⚠|✗|×|❌)\s*/, '');
+    el.dataset.appStatusRendered = severity;
+    if (!el.hasAttribute('role')) el.setAttribute('role', 'status');
+    if (!el.hasAttribute('aria-live')) el.setAttribute('aria-live', 'polite');
+    if (!el.hasAttribute('aria-atomic')) el.setAttribute('aria-atomic', 'true');
+    el.innerHTML = '<div class="app-inline-notice app-inline-notice--' + severity + '"><span class="material-symbols-outlined app-inline-notice-icon" aria-hidden="true">' + icon + '</span><span class="app-inline-notice-copy">' + esc(message) + '</span></div>';
+    return;
+  }
+  el.dataset.appStatusRendered = '';
+  var safeColor = String(color || (normalizedType === 'ok' || normalizedType === 'success' ? '#137333' : '#5f6b7c'));
+  if (!/^#[\da-f]{3,8}$/i.test(safeColor)) safeColor = '#5f6b7c';
+  el.innerHTML = '<span style="color:' + safeColor + '">' + esc(message) + '</span>';
+}
+function appSetStatus(elOrId, msg, color) {
+  var normalizedColor = String(color || '').toLowerCase();
+  var type = /#(?:e53935|b3261e|c62828|b91c1c)/.test(normalizedColor)
+    ? 'danger'
+    : (/(?:#7a5c00|#92400e|#e65100|#a15c00)/.test(normalizedColor) ? 'warning' : 'info');
+  appSetInlineStatusMessage(elOrId, msg, type, color);
 }
 function appSetButtonBusy(btnOrId, busy) {
   var btn = typeof btnOrId === 'string' ? document.getElementById(btnOrId) : btnOrId;
@@ -7768,9 +7798,8 @@ function updateRequisicaoGenerateAvailability(showStatus) {
 function setRequisicaoStatus(msg, type) {
   var statusEl = requisicaoEl('status');
   if (!statusEl) return;
-  var color = type === 'ok' ? '#137333' : (type === 'danger' || type === 'validation' ? '#e53935' : '#5f6b7c');
   statusEl.dataset.validationMessage = type === 'validation' || type === 'danger' ? '1' : '';
-  statusEl.innerHTML = msg ? '<span style="color:' + color + '">' + esc(msg) + '</span>' : '';
+  appSetInlineStatusMessage(statusEl, msg, type);
 }
 
 function setRequisicaoButtonState(btn, busy, label) {

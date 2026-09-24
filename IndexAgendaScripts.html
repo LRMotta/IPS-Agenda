@@ -2341,9 +2341,8 @@
   function setAgendaStatus(msg, type) {
     var el = document.getElementById('agendaStatusMsg');
     if (!el) return;
-    var color = type === 'ok' ? '#137333' : (type === 'danger' || type === 'validation' ? '#e53935' : '#5f6b7c');
     el.dataset.validationMessage = type === 'validation' ? '1' : '';
-    el.innerHTML = msg ? '<span style="color:' + color + '">' + esc(msg) + '</span>' : '';
+    appSetInlineStatusMessage(el, msg, type);
   }
 
   function setAgendaButtonState(btn, busy, label) {

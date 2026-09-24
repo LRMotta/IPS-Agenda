@@ -570,6 +570,16 @@
     .btn-save:active { transform: translateY(1px); }
     .btn-save:disabled { background: #b0bec5; box-shadow: none; cursor: not-allowed; transform: none; }
     .status-msg { text-align: center; font-size: 13px; font-weight: 500; margin-top: 10px; min-height: 18px; }
+    .app-inline-notice { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 9px 13px; border: 1px solid; border-radius: 8px; text-align: left; font-size: 13px; font-weight: 500; line-height: 1.4; }
+    .app-inline-notice--danger { border-color: #f1c5c3; background: #fcebed; color: #8c1a14; }
+    .app-inline-notice--warning { border-color: #f0d7a6; background: #fff8e8; color: #7a4f00; }
+    .app-inline-notice-icon { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20; font-size: 22px; flex: 0 0 auto; }
+    .app-inline-notice--danger .app-inline-notice-icon { color: #c62828; }
+    .app-inline-notice--warning .app-inline-notice-icon { color: #a15c00; }
+    .app-inline-notice-copy { min-width: 0; }
+    /* Transitional styling for legacy status-msg writers that still emit colored spans. */
+    .status-msg > span[style*="#e53935"], .status-msg > span[style*="#b3261e"], .status-msg > div[style*="#e53935"], .status-msg > div[style*="#b3261e"] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 9px 13px; border: 1px solid #f1c5c3; border-radius: 8px; background: #fcebed; color: #8c1a14 !important; text-align: left !important; box-sizing: border-box; }
+    .status-msg > span[style*="#e53935"]::before, .status-msg > span[style*="#b3261e"]::before, .status-msg > div[style*="#e53935"]::before, .status-msg > div[style*="#b3261e"]::before { content: 'error'; color: #c62828; font-family: 'Material Symbols Outlined'; font-size: 22px; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20; flex: 0 0 auto; }
     .status-conflict { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; gap: 10px; align-items: center; text-align: left; border: 1px solid #f4b5b2; background: #fff8f7; color: #8c1a14; border-radius: var(--r-sm); padding: 10px 12px; line-height: 1.35; }
     .status-conflict .material-symbols-outlined { color: #b3261e; font-size: 22px; }
     .status-conflict strong { color: #8c1a14; }
