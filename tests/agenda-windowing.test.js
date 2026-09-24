@@ -1848,14 +1848,14 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.doesNotMatch(operationalGroup, /ag-monitorias-count/);
   const auditGroup = functionBody(client, 'agendaAuditoriasGrupoHtml');
   assert.match(auditGroup, /<strong>Auditorias<\/strong>/);
-  assert.match(auditGroup, /agendaCardHtml\(r, iso \+ '-auditoria-' \+ idx\)/);
+  assert.match(auditGroup, /agendaCardHtml\(r, iso \+ '-auditoria-' \+ idx, \{ groupedAudit: true \}\)/);
   const auditCard = functionBody(client, 'agendaCardHtml');
   assert.match(auditCard, /var isAuditoria = AgendaRules\.isType\(r\.tipo, 'auditoria'\)/);
-  assert.match(auditCard, /isAuditoria \? tipoChip : '<span class="ag-appt-name">'/);
+  assert.match(auditCard, /groupedAudit \? '<span class="ag-appt-name">'/);
   assert.match(auditCard, /isAuditoria \? '' : agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoChip/);
   assert.match(auditCard, /ag-auditoria-card/);
   assert.match(auditCard, /agendaTipoAccentClass\(r\.tipo\)/);
-  assert.match(auditCard, /isAuditoria && r\.obs/);
+  assert.match(auditCard, /isAuditoria && !groupedAudit && r\.obs/);
   assert.match(auditCard, /agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoChip/);
   const typeAccentClass = functionBody(client, 'agendaTipoAccentClass');
   assert.match(typeAccentClass, /agendaTipoClass\(tipo\).*replace\(\/\^ag-type-\/, 'ag-event-'\)/);
@@ -1867,14 +1867,14 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(cancelledCompact, /agendaToggleDetail/);
   assert.doesNotMatch(cancelledCompact, /cancelarAgendaEvento/);
   assert.doesNotMatch(cancelledCompact, /abrirEventoNoGoogleCalendar/);
-  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(0,1fr\) 124px/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:28px/);
-  assert.match(styles, /\.ag-monitoria-project\{gap:6px;flex-wrap:wrap\}/);
+  assert.match(styles, /\.ag-monitoria-project\{gap:8px 12px;flex-wrap:wrap\}/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
   assert.match(styles, /\.ag-monitorias-head,\.ag-auditorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
   assert.match(styles, /\.ag-monitorias-title,\.ag-auditorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
-  assert.match(styles, /@media\(max-width:900px\)\{\.ag-monitoria-compact-main,\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 22px\}\.ag-monitoria-compact-main \.ag-appt-time::after,\.ag-cancelado-compact-main \.ag-appt-time::after\{right:-8px\}/);
+  assert.match(styles, /@media\(max-width:900px\)\{\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 22px\}\.ag-monitoria-compact-main \.ag-appt-time::after,\.ag-cancelado-compact-main \.ag-appt-time::after\{right:-8px\}/);
   assert.match(styles, /\.ag-monitorias-group\{border-left:0;border-bottom:1px solid #e7e3f5;background:#fff\}/);
   assert.match(styles, /\.ag-auditorias-group\{border-left:0;border-bottom:1px solid #f3dfd2;background:#fff\}/);
   assert.match(styles, /\.ag-cancelados-group\{border-left:0;border-bottom:1px solid #f1dada;background:#fff\}/);
@@ -2561,4 +2561,36 @@ test('consulta exige medico no cliente e no servidor', () => {
   assert.match(client, /if \(policy\.requiresDoctor\)/);
   assert.match(client, /validarAgendaCampo\('agMedico', 'errAgMedico'/);
   assert.match(server, /if \(policy\.requiresDoctor && !String\(dados\.medico \|\| ''\)\.trim\(\)\)/);
+});
+
+test('composicao operacional preserva texto escapado, status e chips conforme o contexto', () => {
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({
+    AgendaRules: runFile('AgendaServerRules.gs').AgendaServerRules_,
+    Date,
+    esc: value => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    normAgenda: value => String(value || '').toLowerCase()
+  });
+  context.window = context;
+  vm.runInContext(readProjectFile('SharedAgendaRules.html').replace(/<\/?script>/g, ''), context);
+  vm.runInContext(source.match(/^  function \w+\([^\n]*\) \{[\s\S]*?^  \}/gm).join('\n'), context);
+  context.agendaDetailHtml = () => '';
+  context.agendaPostVisitIcons = () => '';
+  context.agendaSidePanelHtml = () => '';
+  const row = { id: 'test', rowIndex: 2, tipo: 'Monitoria', projeto: '<Projeto>', status: 'Agendado', salaMonitoria: 'Sala A', monitorName: '<Responsavel>', hora: '08:00' };
+  const monitoria = context.agendaMonitoriaCompactaHtml(row, 'test');
+  assert.match(monitoria, /ag-appt-name">&lt;Projeto&gt;/);
+  assert.match(monitoria, /ag-monitoria-meta/);
+  assert.match(monitoria, /&lt;Responsavel&gt;/);
+  assert.match(monitoria, /ag-type-chip[^>]*>.*Monitoria/);
+  assert.match(monitoria, /Agendado/);
+  const siv = context.agendaMonitoriaCompactaHtml({ ...row, tipo: 'SIV' }, 'test');
+  assert.match(siv, /ag-type-chip[^>]*>.*SIV/);
+  const audit = { ...row, tipo: 'Auditoria', obs: '<Auditoria interna> - Laboratorio - Norma' };
+  const grouped = context.agendaCardHtml(audit, 'test', { groupedAudit: true });
+  assert.doesNotMatch(grouped, /ag-type-chip/);
+  assert.match(grouped, /ag-appt-name">&lt;Auditoria interna&gt; - Laboratorio - Norma/);
+  assert.match(grouped, /Agendado/);
+  assert.match(context.agendaCardHtml(audit, 'test'), /ag-type-chip/);
+  assert.match(context.agendaCardHtml({ ...audit, obs: '' }, 'test', { groupedAudit: true }), /ag-appt-name">Auditoria/);
 });

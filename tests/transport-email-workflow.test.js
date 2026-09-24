@@ -401,3 +401,113 @@ test('salvar Transporte nao presume envio e o rascunho inclui referencia depois 
   assert.match(source, /getGmailSignature\(\) \+ transporteMonitorRefHtml_\(refInterna\)/);
   assert.match(source, /in:anywhere -in:drafts newer_than:30d/);
 });
+
+function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', draft = false, attachments = [], status = 'Não Agendado' } = {}) {
+  const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status'], ['Agendado', courier, status]]);
+  const logs = [];
+  const message = {
+    getSubject: () => body, getPlainBody: () => '', isDraft: () => draft,
+    getDate: () => new Date(Date.now() + 60000), getId: () => 'MSG-TEST', getAttachments: () => attachments
+  };
+  const server = transportServer({
+    AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
+    AGENDA_CFG: { col: { status: 1 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
+    getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
+    codexWithDocumentLock_: (_label, fn) => fn(),
+    Logger: { log: text => logs.push(text) },
+    GmailApp: { search: () => [{ getMessages: () => [message] }] }
+  });
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1', courier, rascunhoOk: true });
+  return { server, agenda, message, logs };
+}
+
+test('monitor reconhece caixa e espacos, filtra AgendaId e registra contagens', () => {
+  const { server, agenda, logs } = monitorFixture();
+  assert.equal(server.transporteMonitorarEnviosPorEmail_('OUTRO').verificados, 0);
+  assert.equal(agenda.rows[1][2], 'Não Agendado');
+  const result = server.transporteMonitorarEnviosPorEmail_('EVT-TEST');
+  assert.equal(result.enviados, 1);
+  assert.equal(result.diagnostico.mensagensComReferencia, 1);
+  assert.equal(result.diagnostico.threads, 1);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+  assert.ok(logs.some(text => text.includes('mensagensComReferencia')));
+});
+
+test('referencia exige identidade inteira e slot exato', () => {
+  const { server } = monitorFixture();
+  for (const text of ['IPS-TRP-EVT-TEST-T10', 'IPS-TRP-EVT-TEST-T2', 'XIPS-TRP-EVT-TEST-T1', 'IPS-TRP-EVT-TEST-T1-extra']) {
+    assert.equal(server.transporteMonitorContemReferencia_(text, 'IPS-TRP-EVT-TEST-T1'), false, text);
+  }
+  assert.equal(server.transporteMonitorContemReferencia_('[ips - trp - evt-test - t1]', 'IPS-TRP-EVT-TEST-T1'), true);
+});
+
+test('rascunho em conversa retornada pelo Gmail nao comprova envio', () => {
+  const { server, agenda } = monitorFixture({ draft: true });
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 0);
+  assert.equal(result.diagnostico.mensagensComReferencia, 0);
+  assert.match(result.diagnostico.recusas[0].motivo, /não encontrada/);
+  assert.equal(agenda.rows[1][2], 'Não Agendado');
+});
+
+test('monitor pagina Gmail e encontra referencia alem dos primeiros 100 resultados', () => {
+  const { server, message } = monitorFixture();
+  const offsets = [];
+  server.GmailApp.search = (_query, offset, limit) => {
+    offsets.push(offset); assert.equal(limit, 100);
+    return offset === 0 ? Array.from({ length: 100 }, () => ({ getMessages: () => [] })) : [{ getMessages: () => [message] }];
+  };
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 1);
+  assert.deepEqual(offsets, [0, 100]);
+});
+
+test('recupera operacao DHL concluida anteriormente sem anexo e status ainda pendente', () => {
+  const { server, agenda } = monitorFixture();
+  const old = new Date(Date.now() - 60000);
+  server.book.getSheetByName('Transporte_Operacoes').getRange(2, 12, 1, 5).setValues([[old, old, 'ANTIGA', 0, old]]);
+  assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 1);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+});
+
+test('diagnostico explica anexos ausentes, divergencia e status incompatível', () => {
+  for (const scenario of [
+    { courier: 'OCASA', motivo: /Anexos ausentes/ },
+    { status: 'Confirmado', motivo: /Status atual/ },
+    { diverge: true, motivo: /Courier da Agenda diverge/ }
+  ]) {
+    const { server, agenda } = monitorFixture(scenario);
+    if (scenario.diverge) agenda.rows[1][1] = 'MARKEN';
+    const result = server.transporteMonitorarEnviosPorEmail_();
+    assert.equal(result.enviados, 0);
+    assert.ok(result.diagnostico.recusas.some(item => scenario.motivo.test(item.motivo)));
+  }
+});
+
+test('mensagem posterior sem anexo nao oculta envio anterior com documentos', () => {
+  const { server, message } = monitorFixture({ courier: 'OCASA', attachments: [{}] });
+  const reply = { ...message, getDate: () => new Date(Date.now() + 120000), getAttachments: () => [], getId: () => 'RESPOSTA' };
+  server.GmailApp.search = () => [{ getMessages: () => [message, reply] }];
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 1);
+  assert.equal(result.itens[0].messageId, 'MSG-TEST');
+});
+
+test('diagnostico manual exige administrador e restringe a execucao ao AgendaId', () => {
+  const server = runFile('WebApp.gs');
+  let reads = 0;
+  server.codexAssertAdmin_ = () => { throw new Error('NEGADO'); };
+  server.getAgendaSheetForRead_ = () => { reads++; return {}; };
+  assert.throws(() => server.testarMonitorConfirmacaoManual('EVT-TEST'), /NEGADO/);
+  assert.equal(reads, 0);
+  server.codexAssertAdmin_ = () => {};
+  assert.throws(() => server.testarMonitorConfirmacaoManual(''), /Informe o AgendaId/);
+  server.encontrarLinhaPorId = () => 2;
+  const row = [];
+  row[server.AGENDA_CFG.idx.cb.nome] = 'MARKEN';
+  server.getAgendaSheetForRead_ = () => ({ getRange: () => ({ getValues: () => [row] }) });
+  server.transporteMonitorarEnviosPorEmail_ = id => { assert.equal(id, 'EVT-TEST'); return { verificados: 1 }; };
+  server.Logger = { log() {} };
+  const result = server.testarMonitorConfirmacaoManual('EVT-TEST');
+  assert.match(result.avisos[0].motivo, /Backup/);
+});

@@ -3026,6 +3026,17 @@
     });
   }
 
+  function agendaValidarAwbDocumentos_(courier) {
+    courier = courier || {};
+    if (!CodexCourierRules.isValidAwb(courier.awb, courier.nome, true)) {
+      snackErro(!String(courier.awb || '').trim()
+        ? 'Informe a AWB / código de ' + courier.nome + ' antes de gerar os documentos.'
+        : CodexCourierRules.validationMessage(courier.nome));
+      return false;
+    }
+    return true;
+  }
+
   function gerarTransporteAgenda(slot, btnId) {
     if (!_agendaEditId) {
       snackErro('Salve o agendamento antes de gerar a documentação de transporte.');
@@ -3048,6 +3059,8 @@
       snackErro('Preencha os dados deste transporte antes de gerar os documentos.');
       return;
     }
+    if (!agendaValidarAwbDocumentos_(courier)) return;
+    dados.transporteDocumentosSlot = slot;
     var prefix = { '1': 'agC1', '2': 'agC2', '3': 'agC3' }[slot];
     if (prefix && !validateAgendaAwb(prefix, true)) return;
     var transporteContext = transporteAgendaContextFromDados(dados, slot, _agendaEditId);
@@ -3066,8 +3079,13 @@
     }
 
     google.script.run
-      .withSuccessHandler(function() {
+      .withSuccessHandler(function(res) {
         resetBtn();
+        if (res && (res.erro || res.conflito)) {
+          atualizarJanelaTransporteErro(transporteWindow, res.erro);
+          snackErro(res.erro);
+          return;
+        }
         snack('Abrindo Transporte e sincronizando dados da Agenda...');
         if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
         agendaRecarregarJanelaAtual_();
@@ -3283,6 +3301,9 @@
       return;
     }
     var evento = agendaFindEventoLocal_(agendaId) || {};
+    var courier = ({ '1': evento.courier1, '2': evento.courier2, '3': evento.courier3, backup: evento.backup })[slot];
+    if (!courier) { snackErro('Atualize a Agenda para carregar este transporte.'); return; }
+    if (!agendaValidarAwbDocumentos_(courier)) return;
     var transporteContext = transporteAgendaContextFromDados(evento, slot, agendaId);
     var transporteWindow = prepararJanelaTransporte(transporteContext);
     var btn = document.getElementById(btnId);
@@ -5303,7 +5324,7 @@
         '<div class="ag-auditorias-title"><strong>Auditorias</strong></div>' +
         '<button type="button" class="ag-act-btn ag-auditorias-toggle" onclick="agendaToggleAuditoriasDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar auditorias' : 'Exibir auditorias') + '" aria-label="' + (expanded ? 'Ocultar auditorias' : 'Exibir auditorias') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
       '</div>' +
-      (expanded ? '<div class="ag-auditorias-items">' + auditorias.map(function(r, idx) { return agendaCardHtml(r, iso + '-auditoria-' + idx); }).join('') + '</div>' : '') +
+      (expanded ? '<div class="ag-auditorias-items">' + auditorias.map(function(r, idx) { return agendaCardHtml(r, iso + '-auditoria-' + idx, { groupedAudit: true }); }).join('') + '</div>' : '') +
     '</section>';
   }
 
@@ -5383,9 +5404,9 @@
     return '<div class="ag-appt ag-monitoria-compact ' + agendaTipoAccentClass(isSiv ? 'SIV' : 'Monitoria') + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
       '<div class="ag-monitoria-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
-        '<div class="ag-monitoria-project">' + agendaTipoChip(isSiv ? 'SIV' : 'Monitoria') + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
-        '<div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
-        '<div class="ag-monitoria-monitor">' + agendaLineItem('visibility', r.monitorName || 'Monitor não informado') + '</div>' +
+        '<div class="ag-monitoria-body"><div class="ag-monitoria-project"><span class="ag-appt-name">' + esc(r.projeto || 'Projeto não informado') + '</span>' + agendaTipoChip(isSiv ? 'SIV' : 'Monitoria') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
+        '<div class="ag-monitoria-meta"><div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
+        '<div class="ag-monitoria-monitor">' + agendaMetaText('person', r.monitorName || 'Monitor não informado') + '</div></div></div>' +
         '<div class="ag-appt-actions">' +
           calendarBtn +
           '<button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar"><span class="material-symbols-outlined">edit</span></button>' +
@@ -5851,7 +5872,7 @@
     if (!w) snackErro('O navegador bloqueou a abertura do Google Agenda. Permita pop-ups para este WebApp.');
   }
 
-  function agendaCardHtml(r, suffix) {
+  function agendaCardHtml(r, suffix, options) {
     var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
     var cardId = agendaCardDomId(r);
     var st = agendaStatusClass(r);
@@ -5859,6 +5880,7 @@
     var isSiv = AgendaRules.isSiv(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
     var isAuditoria = AgendaRules.isType(r.tipo, 'auditoria');
+    var groupedAudit = isAuditoria && options && options.groupedAudit;
     var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (isAuditoria ? '' : (r.participante || r.tipo || 'Evento sem participante')));
     var labSim = AgendaRules.isLabCentral(r);
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
@@ -5875,14 +5897,14 @@
         (labSim ? '<div class="ag-lab-watermark" title="Laboratorio central"><span class="material-symbols-outlined">science</span></div>' : '') +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
         '<div class="ag-appt-body">' +
-          '<div class="ag-l1">' + (isAuditoria ? tipoChip : '<span class="ag-appt-name">' + esc(titulo) + '</span>') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
+          '<div class="ag-l1">' + (isAuditoria ? (groupedAudit ? '<span class="ag-appt-name">' + esc(r.obs || 'Auditoria') + '</span>' : tipoChip) : '<span class="ag-appt-name">' + esc(titulo) + '</span>') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
           (!isAuditoria && contextoPrincipal ? '<div class="ag-l2">' + contextoPrincipal + '</div>' : '') +
           (r.visita || r.braco ? '<div class="ag-l2">' + agendaMetaText('flag', r.visita ? 'Visita ' + r.visita : '') + agendaMetaText('call_split', r.braco ? 'Braço ' + r.braco : '') + '</div>' : '') +
           (isPeriodoOperacional
             ? (r.monitorName ? '<div class="ag-l3">' + agendaLineItem('visibility', r.monitorName) + '</div>' : '')
             : (!isAuditoria ? '<div class="ag-l3">' + agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '') + '</div>' : '')) +
           (r.procedimentos ? '<div class="ag-proc-preview">' + esc(r.procedimentos) + '</div>' : '') +
-          (isAuditoria && r.obs ? '<div class="ag-obs-preview"><span class="material-symbols-outlined">sticky_note_2</span><span>' + esc(r.obs) + '</span></div>' : '') +
+          (isAuditoria && !groupedAudit && r.obs ? '<div class="ag-obs-preview"><span class="material-symbols-outlined">sticky_note_2</span><span>' + esc(r.obs) + '</span></div>' : '') +
         '</div>' +
         (sideHtml ? '<div class="ag-appt-side">' + sideHtml + '</div>' : '') +
         '<div class="ag-appt-actions">' +

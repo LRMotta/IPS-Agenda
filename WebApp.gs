@@ -13660,6 +13660,12 @@ function atualizarAgendaEventoCompleto(dados) {
   var agenda = getAgendaSheet_();
   var linha = agendaLocalizarLinhaPorId_(agenda, String(dados.id || '').trim(), dados._rowIndex);
   if (!linha) throw new Error('Agendamento nao encontrado para edicao.');
+  // Agendamento preliminar pode anteceder a AWB; Gerar docs exige validação.
+  if (dados.transporteDocumentosSlot) {
+    var docCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, backup: dados.backup })[dados.transporteDocumentosSlot];
+    if (!docCourier) throw new Error('Transporte não informado para gerar documentos.');
+    codexCourierAssertDocumentAwb_(docCourier.awb, docCourier.nome);
+  }
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var versaoAtual = agendaRecordVersionFromRow_(rowAnterior);
   var versaoEsperada = String(dados._recordVersion || '').trim();
@@ -14472,10 +14478,22 @@ function codexCourierIsValidOcasaAwb_(awb) {
   return /^[A-Z][0-9]{7}$/.test(awb) || /^PK2[A-Z0-9]{9}$/.test(awb);
 }
 
-function codexCourierIsValidAwb_(awb, courier) {
+function codexCourierRequiresAwb_(courier) {
+  return ['marken', 'ocasa', 'pinex'].indexOf(codexCourierAwbRule_(courier).key) >= 0;
+}
+
+function codexCourierAssertDocumentAwb_(awb, courier) {
+  if (!codexCourierIsValidAwb_(awb, courier, true)) {
+    throw new Error(!codexCourierNormalizeAwb_(awb, courier)
+      ? 'Informe a AWB / codigo de ' + courier + ' antes de gerar os documentos.'
+      : codexCourierAwbValidationMessage_(courier));
+  }
+}
+
+function codexCourierIsValidAwb_(awb, courier, forDocuments) {
   var rule = codexCourierAwbRule_(courier);
   var value = codexCourierNormalizeAwb_(awb, courier);
-  if (!value) return true;
+  if (!value) return !forDocuments || !codexCourierRequiresAwb_(courier);
   if (rule.mode === 'ocasa') return codexCourierIsValidOcasaAwb_(value);
   return !rule.len || value.length === rule.len;
 }
@@ -14779,6 +14797,7 @@ function monitorarConfirmacoesCourierAgendadas_() {
   var envios = { ok: true, verificados: 0, enviados: 0, semAnexo: 0 };
   try {
     if (typeof transporteMonitorarEnviosPorEmail_ === 'function') envios = transporteMonitorarEnviosPorEmail_();
+    Logger.log('Monitor de envios de transporte: ' + JSON.stringify(envios));
   } catch (envioError) {
     envios = { ok: false, erro: envioError.message || String(envioError) };
     Logger.log('Monitor de envios de transporte: ' + envios.erro);
@@ -14899,6 +14918,31 @@ function monitorarConfirmacoesCourierAgendadas_() {
     return atualizados;
   });
   return { ok: true, verificados: awbs.length + refs.length, confirmados: confirmados.length, itens: confirmados, envios: envios };
+}
+
+/** Executa a promoção real somente deste AgendaId; não envia e-mail. Requer administrador. */
+function testarMonitorConfirmacaoManual(agendaId) {
+  codexAssertAdmin_();
+  agendaId = String(agendaId || '').trim();
+  if (!agendaId) throw new Error('Informe o AgendaId: testarMonitorConfirmacaoManual("ID").');
+  var agenda = getAgendaSheetForRead_();
+  var linha = encontrarLinhaPorId(agenda, agendaId);
+  if (!linha) throw new Error('Agendamento não encontrado: ' + agendaId);
+  var row = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var avisos = [];
+  ['c1', 'c2', 'c3', 'cb'].forEach(function(key) {
+    var idx = AGENDA_CFG.idx[key];
+    var courier = String(row[idx.nome] || '').trim();
+    if (courier && (key === 'cb' || codexCourierAwbRule_(courier).key === 'pinex')) {
+      avisos.push({ slot: key, motivo: 'PINEX ou Backup: promoção manual necessária.' });
+    }
+  });
+  var result = transporteMonitorarEnviosPorEmail_(agendaId);
+  result.agendaId = agendaId;
+  result.avisos = avisos;
+  if (!result.verificados) result.avisos.push({ motivo: 'Nenhuma operação elegível em Transporte_Operacoes. Verifique geração, vínculo, conclusão prévia e status.' });
+  Logger.log('testarMonitorConfirmacaoManual: ' + JSON.stringify(result));
+  return result;
 }
 
 function diagnosticarMonitorConfirmacoesCourier() {
