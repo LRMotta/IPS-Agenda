@@ -880,12 +880,12 @@
               <div id="agBackupMaterial" class="ag-mat-editor"></div>
             </div>
           </div>
+          <div id="agendaStatusMsg" class="status-msg" role="status" aria-live="polite"></div>
           <div class="ag-modal-actions">
             <button class="ag-tb-btn ag-display-btn" type="button" onclick="abrirDisplayAgendaFromForm()">
               <span class="material-symbols-outlined">picture_in_picture</span> Gerar Display
             </button>
             <button class="btn-save" id="btnSalvarAgenda" onclick="salvarAgendaEvento()"><span class="material-symbols-outlined">event_available</span> <span class="btn-label">Salvar evento</span></button>
-            <div id="agendaStatusMsg" class="status-msg" role="status" aria-live="polite"></div>
           </div>
             </div>
           </div>
@@ -978,11 +978,11 @@
             <span class="material-symbols-outlined">info</span>
             Fechar esta janela ou voltar agora não cancela a visita. O cancelamento só será aplicado após registrar o motivo.
           </div>
+          <div class="status-msg" id="agendaCancelMotivoStatus"></div>
           <div class="confirm-actions" style="margin-top:18px">
             <button class="btn-txt" type="button" onclick="fecharAgendaCancelamentoMotivo()">Voltar sem cancelar</button>
             <button class="btn-danger" type="button" id="btnAgendaConfirmarCancelamentoMotivo" onclick="confirmarAgendaCancelamentoMotivo()">Registrar motivo e cancelar</button>
           </div>
-          <div class="status-msg" id="agendaCancelMotivoStatus"></div>
         </div>
       </div>
     </div>
@@ -1175,6 +1175,7 @@
           A lista é compartilhada com todos os usuários. O sistema não solicita nome: cada nova lista recebe automaticamente o próximo número.
         </div>
       </div>
+      <div class="status-msg" id="statusReqPreload"></div>
       <div class="req-actions req-preload-actions" style="justify-content:space-between;margin-top:18px">
         <button class="ag-tb-btn" type="button" onclick="reqPreloadUsarListaAtual()">
           <span class="material-symbols-outlined">content_paste</span> Usar lista atual
@@ -1186,7 +1187,6 @@
           </button>
         </div>
       </div>
-      <div class="status-msg" id="statusReqPreload"></div>
     </div>
   </div>
 </div>

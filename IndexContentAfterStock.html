@@ -262,10 +262,10 @@
         <div class="soa-visita-list" id="pBracosProjetoList"><div class="soa-visita-empty">Nenhum braço cadastrado.</div></div>
       </div>
 
+      <div class="status-msg" id="statusProj"></div>
       <button class="btn-save" id="btnSalvarProj" onclick="salvarProjetoApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
-      <div class="status-msg" id="statusProj"></div>
     </div>
   </div>
 </div>
@@ -285,8 +285,8 @@
         <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="bracoProjetoOrdem">Ordem</label><input type="number" id="bracoProjetoOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div><div style="display:flex;align-items:flex-end;padding-bottom:8px;"><label class="soa-active-toggle"><input type="checkbox" id="bracoProjetoAtivo" checked> Braço ativo</label></div></div>
         <div class="field"><label class="field-label" for="bracoProjetoObs">Observações</label><textarea id="bracoProjetoObs" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Notas sobre randomização ou nomenclatura"></textarea></div>
       </div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalBracoProjeto')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarBracoProjeto" onclick="salvarBracoProjetoApp()"><span class="material-symbols-outlined">save</span> Salvar braço</button></div>
       <div class="status-msg" id="statusBracoProjeto"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalBracoProjeto')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarBracoProjeto" onclick="salvarBracoProjetoApp()"><span class="material-symbols-outlined">save</span> Salvar braço</button></div>
     </div>
   </div>
 </div>
@@ -305,8 +305,8 @@
       <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
       <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" checked> Criar braços ausentes no catálogo</label></div>
       <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined">download_done</span> Importar calendário</button></div>
       <div class="status-msg" id="statusSoAImport"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined">download_done</span> Importar calendário</button></div>
     </div>
   </div>
 </div>
@@ -326,8 +326,8 @@
         <div><label class="field-label" for="soaCycleDestinos">Ciclos de destino</label><input type="text" id="soaCycleDestinos" class="f-input" placeholder="Ex: 2–12" inputmode="numeric" oninput="invalidarPreviaReplicacaoCiclosSoA_()"><div class="field-help">Aceita intervalos e listas, como 2–12, 15, 18.</div></div>
       </div>
       <div id="soaCyclePreview" class="soa-cycle-preview"><div class="soa-visita-empty">Escolha o modelo e os destinos, depois clique em Pré-visualizar.</div></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAReplicarCiclo')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewCiclosSoA" onclick="previsualizarReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnConfirmarCiclosSoA" onclick="confirmarReplicacaoCiclosSoAApp()" disabled><span class="material-symbols-outlined">add_task</span> Criar visitas</button></div>
       <div class="status-msg" id="statusSoAReplicarCiclo"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAReplicarCiclo')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewCiclosSoA" onclick="previsualizarReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnConfirmarCiclosSoA" onclick="confirmarReplicacaoCiclosSoAApp()" disabled><span class="material-symbols-outlined">add_task</span> Criar visitas</button></div>
     </div>
   </div>
 </div>
@@ -389,8 +389,8 @@
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaObservacoes">Observações</label><textarea id="soaObservacoes" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Janela, requisitos ou notas da visita"></textarea></div>
         <label class="soa-active-toggle"><input type="checkbox" id="soaAtivo" checked> Visita ativa no protocolo</label>
       </div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAVisita')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSoA" onclick="salvarSoAVisitaApp()"><span class="material-symbols-outlined">save</span> Salvar visita</button></div>
       <div class="status-msg" id="statusSoA"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAVisita')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSoA" onclick="salvarSoAVisitaApp()"><span class="material-symbols-outlined">save</span> Salvar visita</button></div>
     </div>
   </div>
 </div>
@@ -575,12 +575,12 @@
           <textarea id="ptObs" class="f-input" placeholder="Informações adicionais relevantes…"></textarea>
         </div>
       </div>
+      <div class="status-msg" id="statusPart"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()" style="flex:1 1 220px;">
           <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
         </button>
       </div>
-      <div class="status-msg" id="statusPart"></div>
     </div>
   </div>
 </div>
@@ -654,10 +654,10 @@
           </div>
         </div>
       </div>
+      <div class="status-msg" id="statusMedico"></div>
       <button class="btn-save" id="btnSalvarMedico" onclick="salvarMedicoApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
-      <div class="status-msg" id="statusMedico"></div>
     </div>
   </div>
 </div>
@@ -709,10 +709,10 @@
           <input type="email" id="sEmail" class="f-input" placeholder="nome@dominio.com">
         </div>
       </div>
+      <div class="status-msg" id="statusSol"></div>
       <button class="btn-save" id="btnSalvarSol" onclick="salvarSolicitanteApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
-      <div class="status-msg" id="statusSol"></div>
     </div>
   </div>
 </div>
@@ -807,10 +807,10 @@
         <label class="field-label" for="eqObs">Observações</label>
         <textarea id="eqObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Informações adicionais..."></textarea>
       </div>
+      <div class="status-msg" id="statusEq"></div>
       <button class="btn-save" id="btnSalvarEq" onclick="salvarEquipamentoApp()">
         <span class="material-symbols-outlined">save</span> SALVAR EQUIPAMENTO
       </button>
-      <div class="status-msg" id="statusEq"></div>
     </div>
   </div>
 </div>
@@ -878,10 +878,10 @@
         <label class="field-label" for="medObs">Observações</label>
         <textarea id="medObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Informações adicionais..."></textarea>
       </div>
+      <div class="status-msg" id="statusMedRec"></div>
       <button class="btn-save" id="btnSalvarMedRec" onclick="salvarMedicamentoApp()">
         <span class="material-symbols-outlined">save</span> SALVAR MEDICAMENTO
       </button>
-      <div class="status-msg" id="statusMedRec"></div>
     </div>
   </div>
 </div>
@@ -945,10 +945,10 @@
         <label class="field-label" for="cfgObs">Observação</label>
         <textarea id="cfgObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Detalhes, alias ou uso interno..."></textarea>
       </div>
+      <div class="status-msg" id="statusCfg"></div>
       <button class="btn-save" id="btnSalvarCfg" onclick="salvarConfigApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CONFIGURAÇÃO
       </button>
-      <div class="status-msg" id="statusCfg"></div>
     </div>
   </div>
 </div>
@@ -1130,10 +1130,10 @@
           <option value="Não">Não</option>
         </select>
       </div>
+      <div class="status-msg" id="statusUsuarioAdmin"></div>
       <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
         <span class="material-symbols-outlined">save</span> Salvar usuário
       </button>
-      <div class="status-msg" id="statusUsuarioAdmin"></div>
     </div>
   </div>
 </div>
@@ -1190,11 +1190,11 @@
         <div><span>Perfil de acesso</span><strong id="meuPerfilRole">—</strong></div>
         <div><span>Pode solicitar exames</span><strong id="meuPerfilPodeSolicitar">—</strong></div>
       </div>
+      <div class="status-msg" id="statusMeuPerfil"></div>
       <div class="profile-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalMeuPerfil')">Cancelar</button>
         <button type="button" class="btn-save" id="btnSalvarMeuPerfil" onclick="salvarMeuPerfilApp()"><span class="material-symbols-outlined">save</span> Salvar alterações</button>
       </div>
-      <div class="status-msg" id="statusMeuPerfil"></div>
     </div>
   </div>
 </div>
@@ -1217,11 +1217,11 @@
           <tbody id="bodyCargaPerfis"></tbody>
         </table>
       </div>
+      <div class="status-msg" id="statusCargaPerfis"></div>
       <div class="profile-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalCargaPerfis')">Cancelar</button>
         <button type="button" class="btn-save" id="btnSalvarCargaPerfis" onclick="salvarCargaPerfisAdminApp()"><span class="material-symbols-outlined">save</span> Salvar perfis</button>
       </div>
-      <div class="status-msg" id="statusCargaPerfis"></div>
     </div>
   </div>
 </div>
@@ -1316,10 +1316,10 @@
           </div>
         </div>
       </div>
+      <div class="status-msg" id="statusMonitor"></div>
       <button class="btn-save" id="btnSalvarMonitor" onclick="salvarMonitorApp()">
         <span class="material-symbols-outlined">save</span> Salvar monitor
       </button>
-      <div class="status-msg" id="statusMonitor"></div>
     </div>
   </div>
 </div>

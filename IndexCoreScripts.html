@@ -1416,7 +1416,7 @@ function abrirMeuPerfil() {
   preencherSelectFormacaoPerfil('meuPerfilFormacao', '');
   document.getElementById('meuPerfilRegistro').value = '';
   document.getElementById('meuPerfilPodeSolicitar').textContent = '—';
-  document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:var(--text-muted)">Carregando perfil...</span>';
+  appSetStatus('statusMeuPerfil', 'Carregando perfil…');
   abrirOverlay('modalMeuPerfil');
   google.script.run
     .withSuccessHandler(function(profile) {
@@ -1429,11 +1429,11 @@ function abrirMeuPerfil() {
       document.getElementById('meuPerfilRegistro').value = profile.registroProfissional || '';
       document.getElementById('meuPerfilPodeSolicitar').textContent = profile.podeSolicitarExames === 'Não' ? 'Não' : 'Sim';
       preencherSelectsAniversario('meuPerfilDia', 'meuPerfilMes', profile.birthdayDay, profile.birthdayMonth);
-      document.getElementById('statusMeuPerfil').textContent = '';
+      appSetStatus('statusMeuPerfil', '');
       document.getElementById('meuPerfilNome').focus();
     })
     .withFailureHandler(function(e) {
-      document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
+      appSetStatus('statusMeuPerfil', appErrorMessage(e), '#e53935');
     })
     .getMeuPerfil();
 }
@@ -1446,7 +1446,7 @@ function salvarMeuPerfilApp() {
   var birthdayValid = validarAniversarioCliente('meuPerfilDia', 'meuPerfilMes', 'errMeuPerfilAniversario');
   if (!nameValid || !birthdayValid) {
     if (!nameValid) nameEl.focus();
-    document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">Revise os campos destacados.</span>';
+    appSetStatus('statusMeuPerfil', 'Revise os campos destacados.', '#e53935');
     return;
   }
   var btn = document.getElementById('btnSalvarMeuPerfil');
@@ -1454,6 +1454,7 @@ function salvarMeuPerfilApp() {
   var birthday = profileBirthdayPayload('meuPerfilDia', 'meuPerfilMes');
   btn.disabled = true;
   btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
+  appSetStatus('statusMeuPerfil', 'Salvando alterações…');
   google.script.run
     .withSuccessHandler(function(result) {
       btn.disabled = false;
@@ -1468,6 +1469,7 @@ function salvarMeuPerfilApp() {
       document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
       document.getElementById('userInitial').textContent = displayName[0].toUpperCase();
       if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays(result.teamBirthdays || []);
+      appSetStatus('statusMeuPerfil', '');
       fecharOverlay('modalMeuPerfil');
       snack('Perfil atualizado com sucesso.');
       if (CURRENT_ACCESS.role === 'admin' && document.getElementById('page-usuarios').classList.contains('active')) carregarUsersAdmin();
@@ -1475,7 +1477,7 @@ function salvarMeuPerfilApp() {
     .withFailureHandler(function(e) {
       btn.disabled = false;
       btn.innerHTML = old;
-      document.getElementById('statusMeuPerfil').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
+      appSetStatus('statusMeuPerfil', appErrorMessage(e), '#e53935');
     })
     .salvarMeuPerfil({
       name: name,
@@ -2169,11 +2171,11 @@ function salvarConfigApp() {
   ], { status: 'statusCfg' })) return;
   var btn = document.getElementById('btnSalvarCfg');
   btn.disabled = true;
-  document.getElementById('statusCfg').innerHTML = '<span style="color:#5f6b7c;">Processando…</span>';
+  appSetStatus('statusCfg', 'Processando…');
   google.script.run
     .withSuccessHandler(function(r) {
       btn.disabled = false;
-      document.getElementById('statusCfg').innerHTML = '';
+      appSetStatus('statusCfg', '');
       fecharOverlay('modalConfig');
       snack(r || 'Configuração salva.');
       _estoqueConfigLoaded = false;
@@ -2184,7 +2186,7 @@ function salvarConfigApp() {
     })
     .withFailureHandler(function(e) {
       btn.disabled = false;
-      document.getElementById('statusCfg').innerHTML = '<span style="color:#e53935;">' + esc(appErrorMessage(e)) + '</span>';
+      appSetStatus('statusCfg', appErrorMessage(e), '#e53935');
     })
     .salvarConfigAppItem({
       rowIndex: document.getElementById('cfgRowIndex').value,
@@ -4200,12 +4202,32 @@ function appSetInlineStatusMessage(elOrId, msg, type, color) {
   if (!message) {
     el.innerHTML = '';
     el.dataset.appStatusRendered = '';
+    if (el.hasAttribute('aria-busy')) el.removeAttribute('aria-busy');
     return;
   }
   var normalizedType = String(type || '').toLowerCase();
   var severity = normalizedType === 'danger' || normalizedType === 'validation' || normalizedType === 'error'
     ? 'danger'
     : (normalizedType === 'warn' || normalizedType === 'warning' ? 'warning' : '');
+  var isProgressMessage = /^(?:[\u23F3\u231B\u23F1]\s*)?(?:processando|salvando|gravando|importando|validando|analisando|criando|gerando|calculando|preparando|atualizando|carregando|registrando|recebendo|transferindo|reservando|conciliando|ajustando|cancelando|substituindo|vinculando)\b/i.test(message);
+  var isModalLoading = normalizedType === 'loading' || (!severity && normalizedType !== 'success' && normalizedType !== 'ok' && isProgressMessage && el.closest && el.closest('.modal-overlay'));
+  if (isModalLoading) {
+    var title = message.replace(/^[\u23F3\u231B\u23F1]\s*/, '').trim();
+    if (/^(?:processando|salvando)\b/i.test(title)) title = 'Salvando alterações…';
+    else if (!/[.…]$/.test(title)) title += '…';
+    var detail = /^Salvando alterações…$/i.test(title)
+      ? 'Aguarde, estamos atualizando os dados.'
+      : 'Aguarde enquanto concluímos esta operação.';
+    el.dataset.appStatusRendered = 'loading';
+    if (!el.hasAttribute('role')) el.setAttribute('role', 'status');
+    if (!el.hasAttribute('aria-live')) el.setAttribute('aria-live', 'polite');
+    if (!el.hasAttribute('aria-atomic')) el.setAttribute('aria-atomic', 'true');
+    // Keep this live region available to announce progress immediately.
+    if (el.hasAttribute('aria-busy')) el.removeAttribute('aria-busy');
+    el.innerHTML = '<div class="app-inline-notice app-inline-notice--loading"><span class="app-inline-notice-spinner" aria-hidden="true"></span><span class="app-inline-notice-copy"><strong>' + esc(title) + '</strong><small>' + esc(detail) + '</small></span></div>';
+    return;
+  }
+  if (el.hasAttribute('aria-busy')) el.removeAttribute('aria-busy');
   if (severity) {
     var icon = severity === 'danger' ? 'error' : 'warning';
     message = message.replace(/^\s*(?:⚠|✗|×|❌)\s*/, '');
@@ -4909,7 +4931,7 @@ function abrirConfiguracaoCtmsJornada() {
     '<section class="jornada-ctms-config-section"><h4>Braço do participante</h4><p>Escolha o braço padronizado para incluir as visitas específicas do protocolo.</p><select id="jornadaCtmsBraco" class="f-input"><option value="">Sem braço definido</option>' + bracos + '</select></section>' +
     '<section class="jornada-ctms-config-section"><h4>Marcos de data</h4><p>Preencha apenas datas documentadas. Campos vazios permanecem pendentes.</p><div class="jornada-ctms-config-grid">' + marcos + '</div></section>' +
     '<section class="jornada-ctms-config-section"><h4>Escolhas entre referências</h4><p>Use quando o protocolo aceita mais de uma referência e exige decisão por participante.</p><div class="jornada-ctms-choice-list">' + escolhas + '</div></section>' +
-    '<div class="jornada-ctms-config-actions"><button class="ag-tb-btn" type="button" onclick="abrirPreviaCtmsJornada()">Cancelar</button><button id="btnSalvarConfigCtms" class="ag-tb-btn primary" type="button" onclick="salvarConfiguracaoCtmsJornada()"><span class="material-symbols-outlined">save</span> Salvar escolhas</button></div><div id="statusConfigCtms" class="jornada-ctms-config-status"></div></div>';
+    '<div id="statusConfigCtms" class="status-msg jornada-ctms-config-status"></div><div class="jornada-ctms-config-actions"><button class="ag-tb-btn" type="button" onclick="abrirPreviaCtmsJornada()">Cancelar</button><button id="btnSalvarConfigCtms" class="ag-tb-btn primary" type="button" onclick="salvarConfiguracaoCtmsJornada()"><span class="material-symbols-outlined">save</span> Salvar escolhas</button></div></div>';
 }
 
 function salvarConfiguracaoCtmsJornada() {
@@ -4922,7 +4944,7 @@ function salvarConfiguracaoCtmsJornada() {
   var btn = document.getElementById('btnSalvarConfigCtms');
   var status = document.getElementById('statusConfigCtms');
   appSetButtonBusy(btn, true);
-  if (status) status.textContent = 'Salvando configuração…';
+  if (status) appSetStatus(status, 'Salvando configuração…');
   appServerRun({ method: 'salvarConfiguracaoCtmsParticipante', args: [{
     idCadastro: participante.id || (dados.participante || {}).idCadastro,
     nome: participante.nome,
@@ -4935,11 +4957,12 @@ function salvarConfiguracaoCtmsJornada() {
   }], onSuccess: function(result) {
     appSetButtonBusy(btn, false);
     _jornadaParticipanteDados = result && result.jornada || dados;
+    if (status) appSetStatus(status, '');
     snack((result && result.msg) || 'Configuração CTMS salva.');
     abrirPreviaCtmsJornada();
   }, onFailure: function(error) {
     appSetButtonBusy(btn, false);
-    if (status) status.textContent = appErrorMessage(error);
+    if (status) appSetStatus(status, appErrorMessage(error), '#e53935');
   } });
 }
 
@@ -4960,7 +4983,7 @@ function abrirReservaPreviaJornada(idSoA) {
       var lotes = (kit.lotes || []).filter(function(lote) { return String(lote && lote.idLote || '').trim(); });
       var opcoes = '<option value="">— Não reservar este kit —</option>' + lotes.map(function(lote) { return '<option value="' + esc(lote.idLote) + '" data-accession="' + esc(lote.accessionNumber || '') + '">Lote ' + esc(lote.idLote) + ' · validade ' + esc(lote.validade) + ' · disponível ' + esc(lote.qtdeDisponivel) + '</option>'; }).join('');
       return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" data-jornada-reserva-index="' + indice + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" data-jornada-quantity id="jornadaReservaQuantidade_' + indice + '" type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
-    }).join('') + '</div><div class="jornada-reserve-actions"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Cancelar</button><button class="ag-tb-btn primary" type="button" id="btnConfirmarReservaJornada" onclick="confirmarReservaPreviaJornada()"><span class="material-symbols-outlined">lock</span> Reservar lotes selecionados</button></div><div id="statusReservaPreviaJornada" class="status-msg"></div>';
+    }).join('') + '</div><div id="statusReservaPreviaJornada" class="status-msg"></div><div class="jornada-reserve-actions"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Cancelar</button><button class="ag-tb-btn primary" type="button" id="btnConfirmarReservaJornada" onclick="confirmarReservaPreviaJornada()"><span class="material-symbols-outlined">lock</span> Reservar lotes selecionados</button></div>';
     window._jornadaReservaPrevia = { contexto: contexto, kits: kits };
   }, onFailure: function(e) { var destino = document.getElementById('jornadaReservaPreviaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
 }
@@ -4982,7 +5005,7 @@ function abrirGestaoReservaJornada(idSoA, idItem) {
     var opcoes = '<option value="' + esc(kit.lote || '') + '" selected>Atual · Lote ' + esc(kit.lote || 'não informado') + (kit.validade ? ' · validade ' + esc(kit.validade) : '') + '</option>' + alternativas.map(function(lote) {
       return '<option value="' + esc(lote.idLote) + '">Substituir por ' + esc(lote.idLote) + ' · validade ' + esc(lote.validade) + ' · disponível ' + esc(lote.qtdeDisponivel) + '</option>';
     }).join('');
-    destino.innerHTML = '<div class="jornada-reserve-item jornada-manage-card"><div class="jornada-kit-heading"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><span class="chip chip-green jornada-kit-status">Reservado</span></div><div class="jornada-manage-grid"><div><label class="field-label" for="jornadaGestaoLote">Lote reservado</label><select class="f-input f-select" id="jornadaGestaoLote">' + opcoes + '</select></div><div><label class="field-label" for="jornadaGestaoQuantidade">Quantidade</label><input class="f-input" id="jornadaGestaoQuantidade" type="number" min="1" step="1" value="' + esc(kit.qtdeReserva || kit.qtdeReservada || 1) + '"></div><div class="full"><label class="field-label" for="jornadaGestaoJustificativa">Justificativa <span class="required-star">*</span></label><textarea class="f-input" id="jornadaGestaoJustificativa" placeholder="Explique o motivo do ajuste, substituição ou cancelamento."></textarea></div></div><div class="jornada-manage-note">A reserva compromete o saldo do lote, mas esta alteração não movimenta fisicamente o estoque.</div></div><div class="jornada-reserve-actions jornada-manage-actions"><button class="btn-danger" type="button" id="btnCancelarReservaJornada" onclick="cancelarGestaoReservaJornada()">Cancelar reserva</button><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Voltar</button><button class="ag-tb-btn primary" type="button" id="btnSalvarGestaoReservaJornada" onclick="salvarGestaoReservaJornada()"><span class="material-symbols-outlined">save</span> Salvar alterações</button></div><div id="statusGestaoReservaJornada" class="status-msg"></div>';
+    destino.innerHTML = '<div class="jornada-reserve-item jornada-manage-card"><div class="jornada-kit-heading"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><span class="chip chip-green jornada-kit-status">Reservado</span></div><div class="jornada-manage-grid"><div><label class="field-label" for="jornadaGestaoLote">Lote reservado</label><select class="f-input f-select" id="jornadaGestaoLote">' + opcoes + '</select></div><div><label class="field-label" for="jornadaGestaoQuantidade">Quantidade</label><input class="f-input" id="jornadaGestaoQuantidade" type="number" min="1" step="1" value="' + esc(kit.qtdeReserva || kit.qtdeReservada || 1) + '"></div><div class="full"><label class="field-label" for="jornadaGestaoJustificativa">Justificativa <span class="required-star">*</span></label><textarea class="f-input" id="jornadaGestaoJustificativa" placeholder="Explique o motivo do ajuste, substituição ou cancelamento."></textarea></div></div><div class="jornada-manage-note">A reserva compromete o saldo do lote, mas esta alteração não movimenta fisicamente o estoque.</div></div><div id="statusGestaoReservaJornada" class="status-msg"></div><div class="jornada-reserve-actions jornada-manage-actions"><button class="btn-danger" type="button" id="btnCancelarReservaJornada" onclick="cancelarGestaoReservaJornada()">Cancelar reserva</button><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Voltar</button><button class="ag-tb-btn primary" type="button" id="btnSalvarGestaoReservaJornada" onclick="salvarGestaoReservaJornada()"><span class="material-symbols-outlined">save</span> Salvar alterações</button></div>';
     window._jornadaGestaoReserva = { contexto: contexto, kit: kit, alternativas: alternativas };
   }, onFailure: function(e) { var destino = document.getElementById('jornadaGestaoReservaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
 }
@@ -5009,17 +5032,17 @@ function salvarGestaoReservaJornada() {
   var novoLote = String(lote && lote.value || '').trim();
   var trocouLote = novoLote && novoLote !== String(kit.lote || '');
   var alterouQuantidade = quantidade !== Number(kit.qtdeReserva || kit.qtdeReservada || 1);
-  if (!trocouLote && !alterouQuantidade) { if (status) status.textContent = 'Altere a quantidade ou selecione outro lote.'; return; }
-  if (!isFinite(quantidade) || quantidade <= 0 || quantidade % 1 !== 0) { if (status) status.textContent = 'Informe uma quantidade inteira e positiva.'; return; }
-  if (!justificativa) { if (status) status.textContent = 'Informe a justificativa da alteração.'; return; }
+  if (!trocouLote && !alterouQuantidade) { if (status) appSetStatus(status, 'Altere a quantidade ou selecione outro lote.', '#e53935'); return; }
+  if (!isFinite(quantidade) || quantidade <= 0 || quantidade % 1 !== 0) { if (status) appSetStatus(status, 'Informe uma quantidade inteira e positiva.', '#e53935'); return; }
+  if (!justificativa) { if (status) appSetStatus(status, 'Informe a justificativa da alteração.', '#e53935'); return; }
   if (btn) btn.disabled = true;
-  if (status) status.textContent = trocouLote ? 'Substituindo lote…' : 'Ajustando quantidade…';
+  if (status) appSetStatus(status, trocouLote ? 'Substituindo lote…' : 'Ajustando quantidade…');
   var payload = { idReserva: kit.idReserva, qtde: quantidade, justificativa: justificativa, retornarJornada: true, braco: (gestao.contexto || {}).braco || '' };
   appServerRun({
     method: trocouLote ? 'substituirReservaKitAgenda' : 'ajustarReservaKitAgenda',
     args: [Object.assign(payload, trocouLote ? { novoIdLote: novoLote } : {})],
     onSuccess: function(resultado) { jornadaAplicarRespostaAtualizada_(resultado, trocouLote ? 'Lote substituído.' : 'Quantidade ajustada.'); },
-    onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); }
+    onFailure: function(e) { if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); }
   });
 }
 
@@ -5028,14 +5051,14 @@ function cancelarGestaoReservaJornada() {
   var kit = gestao.kit || {};
   var justificativa = String((document.getElementById('jornadaGestaoJustificativa') || {}).value || '').trim();
   var status = document.getElementById('statusGestaoReservaJornada');
-  if (!justificativa) { if (status) status.textContent = 'Informe a justificativa do cancelamento.'; return; }
+  if (!justificativa) { if (status) appSetStatus(status, 'Informe a justificativa do cancelamento.', '#e53935'); return; }
   abrirConfirmacaoDestrutiva({ mensagem: 'Cancelar esta reserva de ' + (kit.descricao || 'kit') + '? O histórico será preservado.', onConfirm: function() {
     var btn = document.getElementById('btnCancelarReservaJornada');
     if (btn) btn.disabled = true;
-    if (status) status.textContent = 'Cancelando reserva…';
+    if (status) appSetStatus(status, 'Cancelando reserva…');
     appServerRun({ method: 'cancelarReservaKitAgenda', args: [{ idReserva: kit.idReserva, justificativa: justificativa, retornarJornada: true, braco: (gestao.contexto || {}).braco || '' }], onSuccess: function(resultado) {
       jornadaAplicarRespostaAtualizada_(resultado, 'Reserva cancelada.');
-    }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); } });
+    }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); } });
   }});
 }
 
@@ -5062,14 +5085,14 @@ function confirmarReservaPreviaJornada() {
   var kits = jornadaKitsSelecionadosParaReserva_();
   var status = document.getElementById('statusReservaPreviaJornada');
   var btn = document.getElementById('btnConfirmarReservaJornada');
-  if (!kits.length) { if (status) status.textContent = 'Selecione ao menos um lote para reservar.'; return; }
-  if (kits.some(function(kit) { return !isFinite(kit.qtde) || kit.qtde <= 0 || kit.qtde % 1 !== 0; })) { if (status) status.textContent = 'Informe quantidades inteiras e positivas.'; return; }
+  if (!kits.length) { if (status) appSetStatus(status, 'Selecione ao menos um lote para reservar.', '#e53935'); return; }
+  if (kits.some(function(kit) { return !isFinite(kit.qtde) || kit.qtde <= 0 || kit.qtde % 1 !== 0; })) { if (status) appSetStatus(status, 'Informe quantidades inteiras e positivas.', '#e53935'); return; }
   if (btn) btn.disabled = true;
-  if (status) status.textContent = 'Reservando lotes…';
+  if (status) appSetStatus(status, 'Reservando lotes…');
   var payload = Object.assign({}, reserva.contexto || {}, { kits: kits });
   appServerRun({ method: 'reservarKitsPrevisaoJornada', args: [payload], onSuccess: function(resultado) {
     jornadaAplicarRespostaAtualizada_(resultado, 'Kits reservados.');
-  }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) status.textContent = appErrorMessage(e); } });
+  }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); } });
 }
 
 function salvarConcilicaoVisitasParticipante() {
@@ -7403,11 +7426,11 @@ function salvarReqPreloadProjeto() {
   var btn = document.getElementById('btnSalvarReqPreload');
   var status = document.getElementById('statusReqPreload');
   if (!projeto) {
-    if (status) status.innerHTML = '<span style="color:#e53935;">Projeto não identificado.</span>';
+    if (status) appSetStatus(status, 'Projeto não identificado.', '#e53935');
     return;
   }
   appSetButtonBusy(btn, true);
-  if (status) status.innerHTML = '<span style="color:#5f6b7c;">Salvando...</span>';
+  if (status) appSetStatus(status, 'Salvando…');
   appServerRun({
     method: 'salvarReqExamesPreloadLista',
     args: [projeto, tipoServico, exames, _reqPreloadEditorHash, _reqPreloadEditorId],
@@ -7416,16 +7439,16 @@ function salvarReqPreloadProjeto() {
       if (res && res.conflict) {
         _reqPreloadConflictData = res;
         if (status) {
-          status.innerHTML =
-            '<span style="color:#b3261e;">' + esc(res.message || 'Este preload foi alterado por outro usuario.') + '</span>' +
+          appSetStatus(status, res.message || 'Este preload foi alterado por outro usuario.', '#e53935');
+          status.insertAdjacentHTML('beforeend',
             '<div style="margin-top:8px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
               '<button class="ag-tb-btn" type="button" onclick="reqPreloadCarregarVersaoAtual()">Carregar versao atual</button>' +
-            '</div>';
+            '</div>');
         }
         snackErro('Preload alterado por outro usuario. Revise a versao atual antes de salvar.');
         return;
       }
-      if (status) status.innerHTML = '';
+      if (status) appSetStatus(status, '');
       preencherReqExames((res && res.exames) || exames);
       _reqPreloadEditorHash = res && res.hash ? res.hash : '';
       _reqPreloadEditorId = res && res.list && res.list.id ? res.list.id : _reqPreloadEditorId;
@@ -7437,7 +7460,7 @@ function salvarReqPreloadProjeto() {
     },
     onFailure: function(e) {
       appSetButtonBusy(btn, false);
-      if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(appErrorMessage(e)) + '</span>';
+      if (status) appSetStatus(status, appErrorMessage(e), '#e53935');
     }
   });
 }
@@ -7452,7 +7475,7 @@ function reqPreloadCarregarVersaoAtual() {
   _reqPreloadConflictData = null;
   var status = document.getElementById('statusReqPreload');
   if (status) {
-    status.innerHTML = '<span style="color:#137333;">Versao atual carregada. Revise a lista antes de salvar.</span>';
+    appSetStatus(status, 'Versao atual carregada. Revise a lista antes de salvar.', '#137333');
   }
   appMarkUnsavedChanges('modalReqPreload');
 }
@@ -8075,14 +8098,14 @@ function salvarReqPreloadAposGerar() {
   var btn = document.getElementById('btnConfirmReqPreloadSave');
   var status = document.getElementById('statusReqPreloadSave');
   appSetButtonBusy(btn, true);
-  if (status) status.innerHTML = '<span style="color:#5f6b7c;">Salvando...</span>';
+  if (status) appSetStatus(status, 'Salvando…');
   appServerRun({
     method: 'salvarReqExamesPreloadLista',
     args: [data.projeto, data.tipoServico, data.exames, '', ''],
     onSuccess: function(res) {
       appSetButtonBusy(btn, false);
       if (res && res.conflict) {
-        if (status) status.innerHTML = '<span style="color:#b3261e;">' + esc(res.message || 'Este padrao foi alterado por outro usuario.') + '</span>';
+        if (status) appSetStatus(status, res.message || 'Este padrão foi alterado por outro usuário.', '#e53935');
         return;
       }
       _rqPreloadLastKey = res && res.list ? reqPreloadSelectionKey_(res.list) : _rqPreloadLastKey;
@@ -8092,7 +8115,7 @@ function salvarReqPreloadAposGerar() {
     },
     onFailure: function(e) {
       appSetButtonBusy(btn, false);
-      if (status) status.innerHTML = '<span style="color:#e53935;">' + esc(appErrorMessage(e)) + '</span>';
+      if (status) appSetStatus(status, appErrorMessage(e), '#e53935');
     }
   });
 }

@@ -50,10 +50,10 @@
           <div class="field-error" id="errPrestEmail">Campo obrigatório.</div>
         </div>
       </div>
+      <div class="status-msg" id="statusPrest"></div>
       <button class="btn-save" id="btnSalvarPrest" onclick="salvarPrestadorApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
-      <div class="status-msg" id="statusPrest"></div>
     </div>
   </div>
 </div>
@@ -126,10 +126,10 @@
           </div>
         </div>
       </div>
+      <div class="status-msg" id="statusLabCentral"></div>
       <button class="btn-save" id="btnSalvarLabCentral" onclick="salvarLabCentralApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
-      <div class="status-msg" id="statusLabCentral"></div>
     </div>
   </div>
 </div>
@@ -158,8 +158,8 @@
           <div class="field full"><label class="field-label" for="feriadoObservacao">Observação operacional</label><textarea id="feriadoObservacao" class="f-input" rows="3" placeholder="Ex: expediente suspenso; confirmar coleta excepcional com antecedência."></textarea></div>
         </div>
       </div>
-      <button class="btn-save" id="btnSalvarFeriado" onclick="salvarFeriadoApp()"><span class="material-symbols-outlined">save</span> SALVAR CADASTRO</button>
       <div class="status-msg" id="statusFeriado"></div>
+      <button class="btn-save" id="btnSalvarFeriado" onclick="salvarFeriadoApp()"><span class="material-symbols-outlined">save</span> SALVAR CADASTRO</button>
     </div>
   </div>
 </div>
@@ -324,11 +324,11 @@
         </div>
         </div>
       </details>
+      <div class="status-msg" id="statusCourier"></div>
       <div class="courier-modal-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalCourier')">Cancelar</button>
         <button class="btn-save" id="btnSalvarCourier" onclick="salvarCourierApp()"><span class="material-symbols-outlined">save</span> Salvar cadastro</button>
       </div>
-      <div class="status-msg" id="statusCourier"></div>
     </div>
   </div>
 </div>
@@ -376,11 +376,11 @@
           <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboDataEmissao">Data de emissão</label><input id="agendaReciboDataEmissao" class="f-input" type="date"></div>
           <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboCoordenador">Coordenador(a) de estudos</label><input id="agendaReciboCoordenador" class="f-input" type="text" placeholder="Obtido do cadastro do projeto"></div>
         </div>
+        <div class="status-msg" id="agendaReciboStatus"></div>
         <div class="agenda-recibo-actions">
           <button type="button" class="btn-txt" onclick="fecharOverlay('modalAgendaRecibo')">Cancelar</button>
           <button type="button" class="btn-save" id="btnImprimirAgendaRecibo" onclick="imprimirAgendaRecibo()"><span class="material-symbols-outlined">print</span>Imprimir / salvar PDF</button>
         </div>
-        <div class="status-msg" id="agendaReciboStatus"></div>
       </div>
     </div>
   </div>

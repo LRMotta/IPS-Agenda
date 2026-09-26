@@ -233,7 +233,8 @@
   function evPilotoMostrarStatus(texto, tom) {
     var el = document.getElementById('pilotoStatus');
     if (!el) return;
-    el.innerHTML = texto ? '<span class="estoque-piloto-status-' + (tom || 'info') + '">' + esc(texto) + '</span>' : '';
+    var color = tom === 'danger' ? '#e53935' : (tom === 'warning' ? '#92400e' : (tom === 'ok' ? '#137333' : ''));
+    appSetStatus(el, texto, color);
   }
 
   function evGarantirModalPiloto() {
@@ -248,11 +249,12 @@
       '<button class="modal-close" onclick="fecharOverlay(&quot;modalPilotoEstoque&quot;)"><span class="material-symbols-outlined">close</span></button></div>' +
       '<div class="modal-body"><div class="estoque-piloto-scope"><label class="field-label" for="pilotoProjetoFiltro">Projeto do piloto</label><select id="pilotoProjetoFiltro" class="f-input f-select"><option value="">Todos os projetos</option></select></div><div id="pilotoResumo" class="estoque-piloto-resumo"></div>' +
       '<div class="estoque-piloto-tabs"><button type="button" class="estoque-piloto-tab active" id="pilotoTabImportar">Importar reservas</button><button type="button" class="estoque-piloto-tab" id="pilotoTabConferir">Conferir pilhas</button></div>' +
+      '<div id="pilotoStatus" class="status-msg"></div>' +
       '<section id="pilotoImportarPane" class="estoque-piloto-pane"><div class="estoque-piloto-note"><span class="material-symbols-outlined">info</span><div><strong>Como usar</strong><span>Cole a partir de uma planilha. Use a primeira linha como cabeçalho; a ordem sugerida é Projeto, Participante, ID_Participante, Descrição, ID_Item, ID_Lote, Accession Number, Visita, Data estimada, Quantidade, Validade e Observações.</span></div></div>' +
       '<textarea id="pilotoImportacaoTexto" class="f-input estoque-piloto-textarea" placeholder="Projeto\tParticipante\tID_Participante\tDescrição\tID_Item\tID_Lote\tAccession Number\tVisita\tData estimada\tQuantidade\tValidade\tObservações"></textarea>' +
       '<div id="pilotoImportPreview" class="estoque-piloto-preview"></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" id="pilotoBtnPreview">Pré-visualizar</button><button type="button" class="btn-save" id="pilotoBtnImportar">Importar reservas</button></div></section>' +
       '<section id="pilotoConferirPane" class="estoque-piloto-pane" style="display:none"><div id="pilotoConferenciaTabela"></div><div class="estoque-transfer-actions"><button type="button" class="btn-save" id="pilotoBtnConferir">Salvar conferências</button></div></section>' +
-      '<div id="pilotoStatus" class="status-msg"></div></div></div>';
+      '</div></div>';
     document.body.appendChild(overlay);
     document.getElementById('pilotoTabImportar').onclick = function() { evPilotoAlternarAba('importar'); };
     document.getElementById('pilotoTabConferir').onclick = function() { evPilotoAlternarAba('conferir'); };
@@ -513,7 +515,7 @@
     document.getElementById('excecaoKitQtd').max = Number(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) || 1;
     document.getElementById('excecaoKitQtd').value = 1;
     document.getElementById('excecaoKitMotivo').value = '';
-    document.getElementById('statusExcecaoKit').innerHTML = '';
+    appSetStatus('statusExcecaoKit', '');
     abrirOverlay('modalExcecaoKitInline');
   }
 
@@ -524,10 +526,10 @@
     if (!qtd || qtd <= 0) { snackErro('Informe uma quantidade válida.'); return; }
     var btn = document.getElementById('btnSalvarExcecaoKit');
     btn.disabled = true;
-    document.getElementById('statusExcecaoKit').innerHTML = '<span style="color:#5f6b7c">Registrando...</span>';
+    appSetStatus('statusExcecaoKit', 'Registrando…');
     google.script.run
       .withSuccessHandler(function(res) { btn.disabled = false; fecharOverlay('modalExcecaoKitInline'); snack((res && res.msg) || 'Exceção registrada.'); carregarEstoqueInline(true); })
-      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusExcecaoKit').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>'; })
+      .withFailureHandler(function(e) { btn.disabled = false; appSetStatus('statusExcecaoKit', appErrorMessage(e), '#e53935'); })
       .registrarExcecaoKitEstoque({
         tipo: document.getElementById('excecaoKitTipo').value,
         idItem: _evExcecaoSelecionada.item.idItem,
@@ -545,7 +547,7 @@
     document.getElementById('ajusteReservaContext').innerHTML = '<strong>' + esc(reserva.descricao || reserva.idItem) + '</strong><div>' + esc(reserva.participante || 'Participante não informado') + ' · lote ' + esc(reserva.idLote || 'não informado') + '</div>';
     document.getElementById('ajusteReservaQtd').value = Number(reserva.qtde || 1);
     document.getElementById('ajusteReservaMotivo').value = '';
-    document.getElementById('statusAjusteReserva').innerHTML = '';
+    appSetStatus('statusAjusteReserva', '');
     abrirOverlay('modalAjusteReservaInline');
   }
 
@@ -558,8 +560,9 @@
     if (!justificativa) { snackErro('Informe a justificativa do ajuste.'); return; }
     var btn = document.getElementById('btnSalvarAjusteReserva');
     btn.disabled = true;
+    appSetStatus('statusAjusteReserva', 'Salvando alterações…');
     google.script.run.withSuccessHandler(function(res) { btn.disabled = false; fecharOverlay('modalAjusteReservaInline'); snack((res && res.msg) || 'Quantidade ajustada.'); carregarEstoqueView(true); })
-      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusAjusteReserva').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>'; })
+      .withFailureHandler(function(e) { btn.disabled = false; appSetStatus('statusAjusteReserva', appErrorMessage(e), '#e53935'); })
       .ajustarReservaKitAgenda({ idReserva: reserva.idReserva, qtde: qtd, justificativa: justificativa });
   }
 
@@ -569,7 +572,7 @@
     window._evCancelamentoReservaSelecionada = reserva;
     document.getElementById('cancelamentoReservaContext').innerHTML = '<strong>' + esc(reserva.descricao || reserva.idItem) + '</strong><div>' + esc(reserva.participante || 'Participante não informado') + ' · ' + esc(reserva.qtde || 0) + ' un.</div>';
     document.getElementById('cancelamentoReservaMotivo').value = '';
-    document.getElementById('statusCancelamentoReserva').innerHTML = '';
+    appSetStatus('statusCancelamentoReserva', '');
     abrirOverlay('modalCancelamentoReservaInline');
   }
 
@@ -580,8 +583,9 @@
     if (!justificativa) { snackErro('Informe a justificativa do cancelamento.'); return; }
     var btn = document.getElementById('btnSalvarCancelamentoReserva');
     btn.disabled = true;
+    appSetStatus('statusCancelamentoReserva', 'Cancelando reserva…');
     google.script.run.withSuccessHandler(function(res) { btn.disabled = false; fecharOverlay('modalCancelamentoReservaInline'); snack((res && res.msg) || 'Reserva cancelada.'); carregarEstoqueView(true); })
-      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusCancelamentoReserva').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>'; })
+      .withFailureHandler(function(e) { btn.disabled = false; appSetStatus('statusCancelamentoReserva', appErrorMessage(e), '#e53935'); })
       .cancelarReservaKitAgenda({ idReserva: reserva.idReserva, justificativa: justificativa });
   }
 
@@ -616,7 +620,7 @@
     document.getElementById('substituirReservaContext').innerHTML = '<strong>' + esc(reserva.descricao || reserva.idItem) + '</strong><div>' + esc(reserva.participante || 'Participante não informado') + ' · lote atual ' + esc(reserva.idLote || 'não informado') + '</div>';
     document.getElementById('substituirReservaQtd').value = Number(reserva.qtde || 1);
     document.getElementById('substituirReservaMotivo').value = '';
-    document.getElementById('statusSubstituicaoReserva').innerHTML = candidatos.length ? '' : '<span style="color:#b3261e">Não há lote com saldo suficiente. A validade será validada no servidor.</span>';
+    appSetStatus('statusSubstituicaoReserva', candidatos.length ? '' : 'Não há lote com saldo suficiente. A validade será validada no servidor.', candidatos.length ? '' : '#92400e');
     abrirOverlay('modalSubstituirReservaInline');
   }
 
@@ -630,8 +634,9 @@
     if (!qtd || qtd <= 0) { snackErro('Informe uma quantidade válida.'); return; }
     var btn = document.getElementById('btnSalvarSubstituicaoReserva');
     btn.disabled = true;
+    appSetStatus('statusSubstituicaoReserva', 'Substituindo lote…');
     google.script.run.withSuccessHandler(function(res) { btn.disabled = false; fecharOverlay('modalSubstituirReservaInline'); snack((res && res.msg) || 'Lote substituído.'); carregarEstoqueView(true); })
-      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusSubstituicaoReserva').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>'; })
+      .withFailureHandler(function(e) { btn.disabled = false; appSetStatus('statusSubstituicaoReserva', appErrorMessage(e), '#e53935'); })
       .substituirReservaKitAgenda({ idReserva: _evSubstituicaoSelecionada.idReserva, novoIdLote: novoIdLote, qtde: qtd, justificativa: justificativa });
   }
 
@@ -840,8 +845,9 @@
       '<div id="evVinculoAgendaStatus" class="estoque-vinculo-status">Carregando visitas...</div>' +
       '<select id="evVinculoAgendaSelect" class="f-input f-select" disabled><option value="">Aguarde...</option></select>' +
       '<div class="estoque-vinculo-help">A busca considera participante, projeto e proximidade da data. O texto original da reserva será preservado.</div></div>' +
+      '<div class="status-msg" id="evVinculoAgendaMsg"></div>' +
       '<div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalVinculoReservaAgenda&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnConfirmarVinculoAgenda" onclick="evConfirmarVinculoAgenda()" disabled><span class="material-symbols-outlined">link</span>Vincular visita</button></div>' +
-      '<div class="status-msg" id="evVinculoAgendaMsg"></div></div></div>';
+      '</div></div>';
     document.body.appendChild(overlay);
   }
 
@@ -859,7 +865,7 @@
     var btn = document.getElementById('btnConfirmarVinculoAgenda');
     if (select) { select.disabled = true; select.innerHTML = '<option value="">Carregando visitas...</option>'; }
     if (status) status.textContent = 'Carregando visitas compatíveis...';
-    if (msg) msg.textContent = '';
+    if (msg) appSetStatus(msg, '');
     if (btn) btn.disabled = true;
     abrirOverlay('modalVinculoReservaAgenda');
     google.script.run
@@ -888,8 +894,9 @@
     var candidato = _evAgendaCandidatos.filter(function(item) { return item.id === (select && select.value); })[0];
     var msg = document.getElementById('evVinculoAgendaMsg');
     var btn = document.getElementById('btnConfirmarVinculoAgenda');
-    if (!candidato || !select || !select.value) { if (msg) msg.textContent = 'Selecione uma visita da Agenda.'; return; }
-    if (!reserva) { if (msg) msg.textContent = 'Reserva não encontrada na tela.'; return; }
+    if (!candidato || !select || !select.value) { if (msg) appSetStatus(msg, 'Selecione uma visita da Agenda.', '#e53935'); return; }
+    if (!reserva) { if (msg) appSetStatus(msg, 'Reserva não encontrada na tela.', '#e53935'); return; }
+    if (msg) appSetStatus(msg, 'Vinculando visita…');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined">progress_activity</span>Vinculando...'; }
     google.script.run
       .withSuccessHandler(function(res) {
@@ -899,7 +906,7 @@
       })
       .withFailureHandler(function(err) {
         if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">link</span>Vincular visita'; }
-        if (msg) msg.textContent = err && err.message ? err.message : 'Não foi possível vincular a reserva.';
+        if (msg) appSetStatus(msg, err && err.message ? err.message : 'Não foi possível vincular a reserva.', '#e53935');
       })
       .vincularReservaKitAgenda({ idReserva: reserva.idReserva, agendaId: candidato.agendaId || '', rowIndex: candidato.rowIndex });
   }
@@ -968,7 +975,7 @@
     if (dataVisita) dataVisita.value = '';
     if (agendaId) agendaId.value = '';
     var status = document.getElementById('statusTransferInline');
-    if (status) status.textContent = '';
+    if (status) appSetStatus(status, '');
     abrirOverlay('modalTransferInline');
   }
 
@@ -1048,7 +1055,7 @@
     var soaSelect = document.getElementById('trSoAVisita');
     if (soaSelect) { soaSelect.innerHTML = '<option value="">— Sem sugestão SoA —</option>'; soaSelect.disabled = true; }
     var status = document.getElementById('statusTransferInline');
-    if (status) status.textContent = '';
+    if (status) appSetStatus(status, '');
     abrirOverlay('modalTransferInline');
   }
 
@@ -1074,22 +1081,22 @@
     var status = document.getElementById('statusTransferInline');
     var quantidade = Number(qtd && qtd.value);
     if (!row || !row.item || !row.lote || !row.lote.idLote) {
-      if (status) status.textContent = 'Selecione um lote para transferir.';
+      if (status) appSetStatus(status, 'Selecione um lote para transferir.', '#e53935');
       return;
     }
     if (_evTransferModo !== 'conciliar' && (!origem || !destino || origem.value === destino.value)) {
-      if (status) status.textContent = 'Escolha origem e destino diferentes.';
+      if (status) appSetStatus(status, 'Escolha origem e destino diferentes.', '#e53935');
       return;
     }
     if (!isFinite(quantidade) || quantidade <= 0 || quantidade % 1 !== 0 || quantidade > Number(qtd.max || 0)) {
-      if (status) status.textContent = 'Informe uma quantidade inteira dentro do saldo disponível.';
+      if (status) appSetStatus(status, 'Informe uma quantidade inteira dentro do saldo disponível.', '#e53935');
       return;
     }
     var reserva = null;
     if (_evTransferModo === 'conciliar' || (evEhKit(row.item) && !evEhLaboratorio(origem.value) && evEhLaboratorio(destino.value))) {
       var selecionado = participante && participante.options[participante.selectedIndex];
       if (!participante || !participante.value || !selecionado || !visita || !visita.value.trim() || !dataVisita || !dataVisita.value) {
-        if (status) status.textContent = 'Informe participante, visita prevista e data estimada para reservar no Laboratório.';
+        if (status) appSetStatus(status, 'Informe participante, visita prevista e data estimada para reservar no Laboratório.', '#e53935');
         return;
       }
       reserva = {
@@ -1104,7 +1111,7 @@
       };
     }
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined">progress_activity</span>' + (_evTransferModo === 'conciliar' ? 'Conciliando...' : (reserva ? 'Reservando...' : 'Transferindo...')); }
-    if (status) status.textContent = '';
+    if (status) appSetStatus(status, _evTransferModo === 'conciliar' ? 'Conciliando reserva…' : (reserva ? 'Reservando no Laboratório…' : 'Transferindo itens…'));
     if (_evTransferModo === 'conciliar') {
       google.script.run
         .withSuccessHandler(function(res) {
@@ -1115,7 +1122,7 @@
         })
         .withFailureHandler(function(err) {
           if (btn) btn.disabled = false;
-          if (status) status.textContent = err && err.message ? err.message : 'Não foi possível conciliar a reserva.';
+          if (status) appSetStatus(status, err && err.message ? err.message : 'Não foi possível conciliar a reserva.', '#e53935');
         })
         .conciliarReservaKitLaboratorio({
           idItem: row.item.idItem, idLote: row.lote.idLote, qtde: quantidade,
@@ -1135,7 +1142,7 @@
       })
       .withFailureHandler(function(err) {
         if (btn) { btn.disabled = false; }
-        if (status) status.textContent = err && err.message ? err.message : 'Não foi possível registrar a transferência.';
+        if (status) appSetStatus(status, err && err.message ? err.message : 'Não foi possível registrar a transferência.', '#e53935');
       })
       .transferirKitEstoque({
         idItem: row.item.idItem,
@@ -1241,8 +1248,8 @@
                 '</div>' +
                 '<label class="field-label" for="iiObs">Observações</label><textarea id="iiObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Detalhes adicionais do item, condições de armazenamento, uso preferencial..."></textarea>' +
               '</div>' +
-              '<button class="btn-save" id="btnSalvarItemInline" onclick="salvarItemInline()"><span class="material-symbols-outlined">save</span> Salvar Item</button>' +
               '<div class="status-msg" id="statusItemInline"></div>' +
+              '<button class="btn-save" id="btnSalvarItemInline" onclick="salvarItemInline()"><span class="material-symbols-outlined">save</span> Salvar Item</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1283,8 +1290,8 @@
                   '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f0f4ff"><th style="padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--primary);border-bottom:1px solid #e0e6f0;text-align:left">Tipo</th><th style="padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--primary);border-bottom:1px solid #e0e6f0;text-align:left">Descrição</th><th style="padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--primary);border-bottom:1px solid #e0e6f0;text-align:left">Qtd</th><th style="padding:7px 10px;border-bottom:1px solid #e0e6f0"></th></tr></thead><tbody id="piItensBody"></tbody></table>' +
                 '</div>' +
               '</div>' +
-              '<button class="btn-save" id="btnSalvarPedidoInline" onclick="salvarPedidoInline()"><span class="material-symbols-outlined">save</span> Salvar Pedido</button>' +
               '<div class="status-msg" id="statusPedidoInline"></div>' +
+              '<button class="btn-save" id="btnSalvarPedidoInline" onclick="salvarPedidoInline()"><span class="material-symbols-outlined">save</span> Salvar Pedido</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1307,8 +1314,8 @@
                 '<div class="section-label"><span class="material-symbols-outlined">category</span>Itens recebidos</div>' +
                 '<div id="rpItensWrap"></div>' +
               '</div>' +
-              '<button class="btn-save" id="btnSalvarRecebimentoInline" onclick="salvarRecebimentoPedidoInline()"><span class="material-symbols-outlined">save</span> Registrar Recebimento</button>' +
               '<div class="status-msg" id="statusRecebimentoInline"></div>' +
+              '<button class="btn-save" id="btnSalvarRecebimentoInline" onclick="salvarRecebimentoPedidoInline()"><span class="material-symbols-outlined">save</span> Registrar Recebimento</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1335,8 +1342,8 @@
                   '<div class="full"><label class="field-label" for="miObs">Observação</label><textarea id="miObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Consumo em visita, descarte por validade, ajuste de inventário..."></textarea></div>' +
                 '</div>' +
               '</div>' +
-              '<button class="btn-save" id="btnSalvarMovInline" onclick="salvarMovInline()"><span class="material-symbols-outlined">save</span> Registrar Movimentação</button>' +
               '<div class="status-msg" id="statusMovInline"></div>' +
+              '<button class="btn-save" id="btnSalvarMovInline" onclick="salvarMovInline()"><span class="material-symbols-outlined">save</span> Registrar Movimentação</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1367,8 +1374,8 @@
                   '<div class="full"><label class="field-label" for="trObs">Observação</label><textarea id="trObs" class="f-input" style="height:72px;padding-top:10px;resize:vertical" placeholder="Ex: reposição semanal do laboratório..."></textarea></div>' +
                 '</div>' +
               '</div>' +
-              '<div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalTransferInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarTransferInline" onclick="salvarTransferenciaInline()"><span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência</button></div>' +
               '<div class="status-msg" id="statusTransferInline"></div>' +
+              '<div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalTransferInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarTransferInline" onclick="salvarTransferenciaInline()"><span class="material-symbols-outlined">swap_horiz</span>Confirmar transferência</button></div>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1379,25 +1386,25 @@
               '<div><label class="field-label" for="excecaoKitTipo">Tipo <span class="required-star">*</span></label><select id="excecaoKitTipo" class="f-input f-select"><option value="perda">Perda</option><option value="descarte">Descarte</option><option value="vencimento">Vencimento</option></select></div>' +
               '<div><label class="field-label" for="excecaoKitQtd">Quantidade <span class="required-star">*</span></label><input type="number" id="excecaoKitQtd" class="f-input" min="1" step="1" value="1"></div>' +
               '<div class="full"><label class="field-label" for="excecaoKitMotivo">Motivo / evidência</label><textarea id="excecaoKitMotivo" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Descreva o que ocorreu e, se aplicável, o responsável pela conferência."></textarea></div>' +
-            '</div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalExcecaoKitInline&quot;)">Cancelar</button><button type="button" class="btn-danger" id="btnSalvarExcecaoKit" onclick="salvarExcecaoKitInline()">Registrar exceção</button></div><div class="status-msg" id="statusExcecaoKit"></div></div>' +
+            '</div><div class="status-msg" id="statusExcecaoKit"></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalExcecaoKitInline&quot;)">Cancelar</button><button type="button" class="btn-danger" id="btnSalvarExcecaoKit" onclick="salvarExcecaoKitInline()">Registrar exceção</button></div></div>' +
           '</div>' +
         '</div>' +
         '<div class="modal-overlay" id="modalAjusteReservaInline" onclick="fecharModalSeClicouFora(event,&quot;modalAjusteReservaInline&quot;)">' +
           '<div class="modal-box" style="max-width:560px">' +
             '<div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined">edit_note</span></div><div><div class="modal-header-title">AJUSTAR RESERVA</div><div class="modal-header-sub">A quantidade física não será movimentada.</div></div><button class="modal-close" onclick="fecharOverlay(&quot;modalAjusteReservaInline&quot;)"><span class="material-symbols-outlined">close</span></button></div>' +
-            '<div class="modal-body"><div class="estoque-transfer-context" id="ajusteReservaContext"></div><div class="mov-form-grid"><div><label class="field-label" for="ajusteReservaQtd">Nova quantidade <span class="required-star">*</span></label><input type="number" id="ajusteReservaQtd" class="f-input" min="1" step="1"></div><div class="full"><label class="field-label" for="ajusteReservaMotivo">Justificativa <span class="required-star">*</span></label><textarea id="ajusteReservaMotivo" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Explique por que a quantidade foi alterada."></textarea></div></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalAjusteReservaInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarAjusteReserva" onclick="salvarAjusteReservaInline()">Salvar ajuste</button></div><div class="status-msg" id="statusAjusteReserva"></div></div>' +
+            '<div class="modal-body"><div class="estoque-transfer-context" id="ajusteReservaContext"></div><div class="mov-form-grid"><div><label class="field-label" for="ajusteReservaQtd">Nova quantidade <span class="required-star">*</span></label><input type="number" id="ajusteReservaQtd" class="f-input" min="1" step="1"></div><div class="full"><label class="field-label" for="ajusteReservaMotivo">Justificativa <span class="required-star">*</span></label><textarea id="ajusteReservaMotivo" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Explique por que a quantidade foi alterada."></textarea></div></div><div class="status-msg" id="statusAjusteReserva"></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalAjusteReservaInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarAjusteReserva" onclick="salvarAjusteReservaInline()">Salvar ajuste</button></div></div>' +
           '</div>' +
         '</div>' +
         '<div class="modal-overlay" id="modalCancelamentoReservaInline" onclick="fecharModalSeClicouFora(event,&quot;modalCancelamentoReservaInline&quot;)">' +
           '<div class="modal-box" style="max-width:560px">' +
             '<div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined">event_busy</span></div><div><div class="modal-header-title">CANCELAR RESERVA</div><div class="modal-header-sub">O histórico será preservado.</div></div><button class="modal-close" onclick="fecharOverlay(&quot;modalCancelamentoReservaInline&quot;)"><span class="material-symbols-outlined">close</span></button></div>' +
-            '<div class="modal-body"><div class="estoque-transfer-context" id="cancelamentoReservaContext"></div><div><label class="field-label" for="cancelamentoReservaMotivo">Justificativa <span class="required-star">*</span></label><textarea id="cancelamentoReservaMotivo" class="f-input" style="height:90px;padding-top:10px;resize:vertical" placeholder="Ex.: visita cancelada, participante desistiu, lote devolvido."></textarea></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalCancelamentoReservaInline&quot;)">Voltar</button><button type="button" class="btn-danger" id="btnSalvarCancelamentoReserva" onclick="salvarCancelamentoReservaInline()">Cancelar reserva</button></div><div class="status-msg" id="statusCancelamentoReserva"></div></div>' +
+            '<div class="modal-body"><div class="estoque-transfer-context" id="cancelamentoReservaContext"></div><div><label class="field-label" for="cancelamentoReservaMotivo">Justificativa <span class="required-star">*</span></label><textarea id="cancelamentoReservaMotivo" class="f-input" style="height:90px;padding-top:10px;resize:vertical" placeholder="Ex.: visita cancelada, participante desistiu, lote devolvido."></textarea></div><div class="status-msg" id="statusCancelamentoReserva"></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalCancelamentoReservaInline&quot;)">Voltar</button><button type="button" class="btn-danger" id="btnSalvarCancelamentoReserva" onclick="salvarCancelamentoReservaInline()">Cancelar reserva</button></div></div>' +
           '</div>' +
         '</div>' +
         '<div class="modal-overlay" id="modalSubstituirReservaInline" onclick="fecharModalSeClicouFora(event,&quot;modalSubstituirReservaInline&quot;)">' +
           '<div class="modal-box" style="max-width:620px">' +
             '<div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined">swap_horiz</span></div><div><div class="modal-header-title">SUBSTITUIR LOTE</div><div class="modal-header-sub">A reserva antiga será preservada como substituída.</div></div><button class="modal-close" onclick="fecharOverlay(&quot;modalSubstituirReservaInline&quot;)"><span class="material-symbols-outlined">close</span></button></div>' +
-            '<div class="modal-body"><div class="estoque-transfer-context" id="substituirReservaContext"></div><div class="mov-form-grid"><div><label class="field-label" for="substituirReservaLote">Novo lote <span class="required-star">*</span></label><select id="substituirReservaLote" class="f-input f-select"></select></div><div><label class="field-label" for="substituirReservaQtd">Quantidade <span class="required-star">*</span></label><input type="number" id="substituirReservaQtd" class="f-input" min="1" step="1"></div><div class="full"><label class="field-label" for="substituirReservaMotivo">Justificativa <span class="required-star">*</span></label><textarea id="substituirReservaMotivo" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Explique por que o lote foi substituído."></textarea></div></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalSubstituirReservaInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSubstituicaoReserva" onclick="salvarSubstituicaoReservaInline()">Substituir lote</button></div><div class="status-msg" id="statusSubstituicaoReserva"></div></div>' +
+            '<div class="modal-body"><div class="estoque-transfer-context" id="substituirReservaContext"></div><div class="mov-form-grid"><div><label class="field-label" for="substituirReservaLote">Novo lote <span class="required-star">*</span></label><select id="substituirReservaLote" class="f-input f-select"></select></div><div><label class="field-label" for="substituirReservaQtd">Quantidade <span class="required-star">*</span></label><input type="number" id="substituirReservaQtd" class="f-input" min="1" step="1"></div><div class="full"><label class="field-label" for="substituirReservaMotivo">Justificativa <span class="required-star">*</span></label><textarea id="substituirReservaMotivo" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Explique por que o lote foi substituído."></textarea></div></div><div class="status-msg" id="statusSubstituicaoReserva"></div><div class="estoque-transfer-actions"><button type="button" class="btn-txt" onclick="fecharOverlay(&quot;modalSubstituirReservaInline&quot;)">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSubstituicaoReserva" onclick="salvarSubstituicaoReservaInline()">Substituir lote</button></div></div>' +
           '</div>' +
         '</div>';
     }
@@ -1990,8 +1997,8 @@
             '</div>' +
             '<div id="planResumoPedidos" style="margin-top:12px;color:#5f6b7c;font-size:12px"></div>' +
           '</div>' +
-          '<button class="btn-save" id="btnSalvarPlanejamento" onclick="salvarPlanejamentoPedidoInline()"><span class="material-symbols-outlined">shopping_cart_checkout</span> Criar Pedido(s)</button>' +
           '<div class="status-msg" id="statusPlanejamentoPedido"></div>' +
+          '<button class="btn-save" id="btnSalvarPlanejamento" onclick="salvarPlanejamentoPedidoInline()"><span class="material-symbols-outlined">shopping_cart_checkout</span> Criar Pedido(s)</button>' +
         '</div>' +
       '</div>';
     page.appendChild(wrap);
@@ -2013,7 +2020,7 @@
     var pr = document.getElementById('planParticipantesResumo');
     if (pr) { pr.style.display = 'none'; pr.innerHTML = ''; }
     document.getElementById('planResumoPedidos').innerHTML = '';
-    document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#5f6b7c">Carregando catálogo e estoque…</span>';
+    appSetStatus('statusPlanejamentoPedido', 'Carregando catálogo e estoque…');
     document.getElementById('btnSalvarPlanejamento').disabled = true;
     document.getElementById('planProjeto').innerHTML = '<option value="">Carregando...</option>';
     document.getElementById('planItensBody').innerHTML = '<tr class="loading-row"><td colspan="7"><div class="spinner"></div>Carregando...</td></tr>';
@@ -2021,14 +2028,14 @@
     google.script.run
       .withSuccessHandler(function(dados) {
         _planejamentoPedidoData = dados || { projetos: [], itens: [] };
-        document.getElementById('statusPlanejamentoPedido').innerHTML = '';
+        appSetStatus('statusPlanejamentoPedido', '');
         document.getElementById('btnSalvarPlanejamento').disabled = false;
         renderPlanejamentoProjetos();
         renderPlanejamentoSolicitantes();
         renderPlanejamentoItens();
       })
       .withFailureHandler(function(e) {
-        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusPlanejamentoPedido', appErrorMessage(e), '#e53935');
         document.getElementById('planItensBody').innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#b3261e">Erro ao carregar planejamento.</td></tr>';
       })
       .getPlanejamentoPedidoEstoque();
@@ -2047,20 +2054,20 @@
     document.getElementById('desSolicitante').innerHTML = '<option value="">Carregando...</option>';
     document.getElementById('desItensBody').innerHTML = '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando...</td></tr>';
     document.getElementById('desResumo').textContent = '';
-    document.getElementById('statusDescarte').innerHTML = '<span style="color:#5f6b7c">Carregando estoque e solicitantes...</span>';
+    appSetStatus('statusDescarte', 'Carregando estoque e solicitantes…');
     document.getElementById('btnSalvarDescarte').disabled = true;
     abrirOverlay('modalPlanejarDescarteInline');
     google.script.run
       .withSuccessHandler(function(dados) {
         _descarteData = dados || { estoque: [], solicitantes: [] };
-        document.getElementById('statusDescarte').innerHTML = '';
+        appSetStatus('statusDescarte', '');
         document.getElementById('btnSalvarDescarte').disabled = false;
         renderDescarteProjetos();
         renderDescarteSolicitantes();
         renderDescarteItens();
       })
       .withFailureHandler(function(e) {
-        document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">Erro ao carregar dados: ' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusDescarte', 'Erro ao carregar dados: ' + appErrorMessage(e), '#e53935');
         document.getElementById('desProjeto').innerHTML = '<option value="">Falha ao carregar</option>';
         document.getElementById('desSolicitante').innerHTML = '<option value="">Falha ao carregar</option>';
         document.getElementById('desItensBody').innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#b3261e">Não foi possível carregar os itens.</td></tr>';
@@ -2100,8 +2107,8 @@
             '<div class="table-card" style="border-radius:8px;max-height:360px;overflow:auto;border-top:1px solid #e8edf8"><table class="data-table" style="min-width:960px"><thead><tr><th>Item</th><th>Tipo</th><th>Validade</th><th>Local</th><th style="text-align:center">Saldo</th><th style="width:120px;text-align:center">Descartar</th></tr></thead><tbody id="desItensBody"></tbody></table></div>' +
             '<div id="desResumo" style="margin-top:12px;color:#5f6b7c;font-size:12px"></div>' +
           '</div>' +
-          '<button class="btn-save" id="btnSalvarDescarte" onclick="salvarPlanejamentoDescarteInline()"><span class="material-symbols-outlined">delete_sweep</span> Gerar Lista de Descarte</button>' +
           '<div class="status-msg" id="statusDescarte"></div>' +
+          '<button class="btn-save" id="btnSalvarDescarte" onclick="salvarPlanejamentoDescarteInline()"><span class="material-symbols-outlined">delete_sweep</span> Gerar Lista de Descarte</button>' +
         '</div>' +
       '</div>';
     page.appendChild(wrap);
@@ -2195,10 +2202,10 @@
     if (!itens.length) { snack('Informe pelo menos um item para descarte.'); return; }
     var btn = document.getElementById('btnSalvarDescarte');
     btn.disabled = true;
-    document.getElementById('statusDescarte').innerHTML = '<span style="color:#5f6b7c">Gerando lista...</span>';
+    appSetStatus('statusDescarte', 'Gerando lista…');
     google.script.run
       .withSuccessHandler(function(msg) { btn.disabled = false; fecharOverlay('modalPlanejarDescarteInline'); snack(msg || 'Lista criada.'); carregarEstoqueInline(true); })
-      .withFailureHandler(function(e) { btn.disabled = false; document.getElementById('statusDescarte').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>'; })
+      .withFailureHandler(function(e) { btn.disabled = false; appSetStatus('statusDescarte', appErrorMessage(e), '#e53935'); })
       .salvarPlanejamentoDescarteEstoque({ projeto: projeto, data: document.getElementById('desData').value, solicitante: document.getElementById('desSolicitante').value, email: document.getElementById('desEmail').value.trim(), observacoes: document.getElementById('desObs').value.trim(), itens: itens });
   }
 
@@ -2365,12 +2372,12 @@
     document.getElementById('errPlanProjeto').classList.toggle('visible', !ok);
     if (!ok) return;
     if (!itens.length) {
-      document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">Informe a quantidade de pelo menos um item.</span>';
+      appSetStatus('statusPlanejamentoPedido', 'Informe a quantidade de pelo menos um item.', '#e53935');
       return;
     }
     var btn = document.getElementById('btnSalvarPlanejamento');
     btn.disabled = true;
-    document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#5f6b7c">Criando pedidos por laboratório…</span>';
+    appSetStatus('statusPlanejamentoPedido', 'Criando pedidos por laboratório…');
     google.script.run
       .withSuccessHandler(function(r) {
         btn.disabled = false;
@@ -2382,7 +2389,7 @@
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusPlanejamentoPedido').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusPlanejamentoPedido', appErrorMessage(e), '#e53935');
       })
       .salvarPlanejamentoPedidoEstoque({
         projeto: projeto,
@@ -2706,7 +2713,7 @@
     document.getElementById('receberPedidoSub').textContent = (pedido.numeroPedido || 'Pedido') + ' · ' + (pedido.projeto || '') + ' · ' + (pedido.laboratorio || '');
     document.getElementById('rpData').value = new Date().toISOString().split('T')[0];
     document.getElementById('rpObs').value = '';
-    document.getElementById('statusRecebimentoInline').innerHTML = '';
+    appSetStatus('statusRecebimentoInline', '');
     document.getElementById('btnSalvarRecebimentoInline').disabled = false;
     renderRecebimentoPedidoInline();
     abrirOverlay('modalReceberPedidoInline');
@@ -2764,16 +2771,16 @@
       }
     });
     if (!ok) {
-      document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">Confira quantidade e validade dos itens recebidos.</span>';
+      appSetStatus('statusRecebimentoInline', 'Confira quantidade e validade dos itens recebidos.', '#e53935');
       return;
     }
     if (!itens.length) {
-      document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">Informe pelo menos um item recebido.</span>';
+      appSetStatus('statusRecebimentoInline', 'Informe pelo menos um item recebido.', '#e53935');
       return;
     }
     var btn = document.getElementById('btnSalvarRecebimentoInline');
     btn.disabled = true;
-    document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#5f6b7c">Registrando recebimento…</span>';
+    appSetStatus('statusRecebimentoInline', 'Registrando recebimento…');
     google.script.run
       .withSuccessHandler(function(msg) {
         btn.disabled = false;
@@ -2783,7 +2790,7 @@
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusRecebimentoInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusRecebimentoInline', appErrorMessage(e), '#e53935');
       })
       .receberPedidoEstoque({
         rowIndex: rec.pedido.rowIndex,
@@ -2820,7 +2827,7 @@
       var el = document.getElementById(id);
       if (el) el.classList.remove('visible');
     });
-    document.getElementById('statusItemInline').innerHTML = '';
+    appSetStatus('statusItemInline', '');
     document.getElementById('btnSalvarItemInline').disabled = false;
     var projSel = document.getElementById('iiProjeto');
     projSel.innerHTML = '<option value="">— Selecione —</option>';
@@ -2970,18 +2977,18 @@
 
     var btn = document.getElementById('btnSalvarItemInline');
     btn.disabled = true;
-    document.getElementById('statusItemInline').innerHTML = '<span style="color:#5f6b7c">Salvando…</span>';
+    appSetStatus('statusItemInline', 'Salvando…');
     google.script.run
       .withSuccessHandler(function(msg) {
         btn.disabled = false;
-        document.getElementById('statusItemInline').innerHTML = '';
+        appSetStatus('statusItemInline', '');
         fecharOverlay('modalItemInline');
         snack(msg || 'Item cadastrado.');
         carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusItemInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusItemInline', appErrorMessage(e), '#e53935');
       })
       .salvarItemEstoque({
         id: _itemInlineEditId,
@@ -3034,7 +3041,7 @@
       var el = document.getElementById(id);
       if (el) el.classList.remove('visible');
     });
-    document.getElementById('statusPedidoInline').innerHTML = '';
+    appSetStatus('statusPedidoInline', '');
     document.getElementById('btnSalvarPedidoInline').disabled = false;
 
     var projSel = document.getElementById('piProjeto');
@@ -3246,18 +3253,18 @@
 
     var btn = document.getElementById('btnSalvarPedidoInline');
     btn.disabled = true;
-    document.getElementById('statusPedidoInline').innerHTML = '<span style="color:#5f6b7c">Salvando…</span>';
+    appSetStatus('statusPedidoInline', 'Salvando…');
     google.script.run
       .withSuccessHandler(function(msg) {
         btn.disabled = false;
-        document.getElementById('statusPedidoInline').innerHTML = '';
+        appSetStatus('statusPedidoInline', '');
         fecharOverlay('modalPedidoInline');
         snack(msg || 'Pedido cadastrado.');
         carregarEstoqueInline(true);
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusPedidoInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusPedidoInline', appErrorMessage(e), '#e53935');
       })
       .salvarPedidoEstoque({
         rowIndex: _pedidoInlineEdit ? _pedidoInlineEdit.rowIndex : '',
@@ -3340,7 +3347,7 @@
     document.getElementById('miItem').innerHTML = '<option value="">— Selecione o tipo —</option>';
     preencherParticipantesMov('');
     onMovTipoMovChange();
-    document.getElementById('statusMovInline').innerHTML = '';
+    appSetStatus('statusMovInline', '');
     document.getElementById('btnSalvarMovInline').disabled = false;
     abrirOverlay('modalMovInline');
   }
@@ -3492,7 +3499,7 @@
 
     var btn = document.getElementById('btnSalvarMovInline');
     btn.disabled = true;
-    document.getElementById('statusMovInline').innerHTML = '<span style="color:#5f6b7c">Registrando…</span>';
+    appSetStatus('statusMovInline', 'Registrando…');
     var rpc = google.script.run
       .withSuccessHandler(function(msg) {
         btn.disabled = false;
@@ -3502,7 +3509,7 @@
       })
       .withFailureHandler(function(e) {
         btn.disabled = false;
-        document.getElementById('statusMovInline').innerHTML = '<span style="color:#e53935">' + esc(appErrorMessage(e)) + '</span>';
+        appSetStatus('statusMovInline', appErrorMessage(e), '#e53935');
       })
       ;
     rpc[isTransferencia ? 'transferirKitEstoque' : 'registrarMovimentacaoEstoque']({
