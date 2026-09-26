@@ -4210,7 +4210,7 @@ function appSetInlineStatusMessage(elOrId, msg, type, color) {
     ? 'danger'
     : (normalizedType === 'warn' || normalizedType === 'warning' ? 'warning' : '');
   var isProgressMessage = /^(?:[\u23F3\u231B\u23F1]\s*)?(?:processando|salvando|gravando|importando|validando|analisando|criando|gerando|calculando|preparando|atualizando|carregando|registrando|recebendo|transferindo|reservando|conciliando|ajustando|cancelando|substituindo|vinculando)\b/i.test(message);
-  var isModalLoading = normalizedType === 'loading' || (!severity && normalizedType !== 'success' && normalizedType !== 'ok' && isProgressMessage && el.closest && el.closest('.modal-overlay'));
+  var isModalLoading = normalizedType === 'loading' || (!severity && normalizedType !== 'success' && normalizedType !== 'ok' && isProgressMessage && el.closest && el.closest('.modal-overlay, .ag-create-panel'));
   if (isModalLoading) {
     var title = message.replace(/^[\u23F3\u231B\u23F1]\s*/, '').trim();
     if (/^(?:processando|salvando)\b/i.test(title)) title = 'Salvando alterações…';

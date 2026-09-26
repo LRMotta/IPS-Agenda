@@ -99,7 +99,7 @@
     .ag-appt-time{width:46px;min-width:46px;min-height:26px;align-self:stretch;padding-top:5px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;line-height:18px;display:flex;align-items:flex-start;justify-content:center;flex-shrink:0;margin-top:2px;background:transparent;color:var(--text);white-space:nowrap}
     .ag-appt-time::after{content:"";position:absolute;right:-14px;top:2px;bottom:2px;width:2px;border-radius:1px;background:var(--ag-event-accent,#6c757d);pointer-events:none}
     .ag-appt-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-    .ag-appt-side{width:520px;max-width:55%;min-width:0;flex-shrink:1;display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-top:1px}
+    .ag-appt-side{width:420px;max-width:48%;min-width:0;flex-shrink:1;display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-top:1px}
     .ag-lab-watermark{position:absolute;right:-28px;top:50%;transform:translateY(-50%) rotate(-8deg);pointer-events:none;color:#64748b;opacity:.085;z-index:0}
     .ag-appt.st-cancelado.lab-central .ag-lab-watermark{color:#b3261e}
     .ag-lab-watermark .material-symbols-outlined{font-size:116px;font-variation-settings:'FILL' 0,'wght' 300,'GRAD' 0,'opsz' 48}
@@ -321,7 +321,7 @@
     .ag-mat-mini-btn{height:30px;border:1.5px solid #d7dee8;border-radius:var(--r-sm);background:#fff;color:#475569;font-size:11.5px;font-weight:700;padding:0 10px;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
     .ag-mat-mini-btn:hover{background:#f0f4f8;border-color:#c4ccd8;color:var(--primary)}
     .ag-mat-mini-btn .material-symbols-outlined{font-size:14px}
-    .ag-log-widget{display:flex;flex-direction:column;align-items:stretch;width:100%;max-width:520px;min-width:0;container-type:inline-size;color:#475569}
+    .ag-log-widget{display:flex;flex-direction:column;align-items:stretch;width:100%;max-width:420px;min-width:0;container-type:inline-size;color:#475569}
     .ag-log-rows{display:flex;flex-direction:column;width:100%;min-width:0}
     .ag-log-row{display:grid;grid-template-columns:112px minmax(0,1fr);column-gap:12px;align-items:center;width:100%;min-width:0;padding:4px 0;border-bottom:1px solid #e7edf5}
     .ag-log-row:last-child{border-bottom:none}
@@ -338,7 +338,7 @@
     .ag-log-row-awb .ag-awb-actions{justify-content:flex-start;max-width:100%;min-width:0}
     .ag-log-row-awb .ag-awb{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:2px 7px}
     .ag-log-row-awb .ag-awb-copy{width:22px;height:22px;flex-shrink:0}
-    @container(max-width:460px){.ag-log-row{grid-template-columns:minmax(0,1fr);row-gap:4px}.ag-log-row-slot{min-height:22px;border-right:0;padding-right:0}}
+    @container(max-width:380px){.ag-log-row{grid-template-columns:minmax(0,1fr);row-gap:4px}.ag-log-row-slot{min-height:22px;border-right:0;padding-right:0}}
     @container(max-width:320px){.ag-log-row-head{grid-template-columns:minmax(64px,1fr) minmax(0,2fr)}.ag-log-row-awb{grid-column:1 / -1}}
     .ag-empty{padding:18px 22px;display:flex;align-items:center;gap:8px;color:var(--text-faint);font-size:12.5px;font-style:italic}
     .ag-birthday-banner{display:flex;align-items:center;gap:12px;padding:10px 24px;border-bottom:1px solid #ddd6fe;background:#faf8ff;color:#4c1d95}
