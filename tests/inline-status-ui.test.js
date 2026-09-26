@@ -96,7 +96,8 @@ test('avisos inline e progresso de modais compartilham o mesmo componente visual
   assert.match(modaisExtras, /status-msg" id="statusPrest"[\s\S]*btnSalvarPrest/);
   assert.match(modaisExtras, /status-msg" id="agendaReciboStatus"[\s\S]*agenda-recibo-actions/);
   assert.match(modaisCadastro, /status-msg" id="statusProj"[\s\S]*btnSalvarProj/);
-  assert.match(modaisAgenda, /agendaStatusMsg[\s\S]*btnSalvarAgenda/);
+  assert.match(modaisAgenda, /class="ag-modal-actions">\s*<button[^>]*id="btnSalvarAgenda"[\s\S]*?<\/button>\s*<div id="agendaStatusMsg"/);
+  assert.doesNotMatch(modaisAgenda, /onclick="abrirDisplayAgendaFromForm\(\)"/);
   assert.match(modaisAgenda, /agendaCancelMotivoStatus[\s\S]*confirm-actions/);
   assert.match(modaisAgenda, /statusReqPreload"[\s\S]*req-preload-actions/);
 });
