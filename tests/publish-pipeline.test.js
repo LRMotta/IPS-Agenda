@@ -41,6 +41,24 @@ test('GitHub exige branch, PR, checks e merge antes da publicacao no Apps Script
   assert.match(source, /git merge --ff-only origin\/main/);
 });
 
+test('publicacao tenta somente merge protegido, aguarda a regra transitoria e confirma o commit na main antes do clasp', () => {
+  const source = readProjectFile('tools/push-clasp.ps1');
+  const retryIndex = source.indexOf('for ($attempt = 0; $attempt -lt 60; $attempt++)');
+  const mergeIndex = source.indexOf('& $gh pr merge', retryIndex);
+  const waitIndex = source.indexOf('for ($attempt = 0; $attempt -lt 360; $attempt++)', mergeIndex);
+  const fetchIndex = source.indexOf('git fetch origin main', waitIndex);
+  const ancestryIndex = source.indexOf('git merge-base --is-ancestor $sourceFullSha HEAD', fetchIndex);
+  const claspIndex = source.indexOf('& $clasp push --force');
+
+  assert.ok(retryIndex > -1 && mergeIndex > retryIndex && waitIndex > mergeIndex);
+  assert.ok(fetchIndex > waitIndex && ancestryIndex > fetchIndex && claspIndex > ancestryIndex);
+  assert.match(source, /gh pr merge \$prNumber --repo \$repo --merge --delete-branch --match-head-commit \$sourceFullSha/);
+  assert.match(source, /\$ErrorActionPreference = 'Continue'[\s\S]*?\$ErrorActionPreference = \$mergeErrorActionPreference/);
+  assert.match(source, /base branch policy prohibits the merge/);
+  assert.match(source, /\$prState -eq 'MERGED'/);
+  assert.doesNotMatch(source, /--admin|--auto/);
+});
+
 test('workflow registra o check tambem nas branches oficiais de publicacao', () => {
   const source = readProjectFile('.github/workflows/regression-tests.yml');
   assert.match(source, /push:\s*[\s\S]*branches:\s*[\s\S]*main\s*[\s\S]*agent\/publish-\*/);

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile, readProjectFile } = require('./helpers/load-app-script');
+const { runFile } = require('./helpers/load-app-script');
 
 const d = (s) => new Date(s + 'Z');
 function base() { return runFile('CourierLembretes.gs', { Date }); }

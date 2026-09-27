@@ -116,13 +116,53 @@ Mantem o GitHub sincronizado com a publicacao do Apps Script sem remover a exige
     if ($LASTEXITCODE -ne 0) { throw 'O check obrigatorio do Pull Request falhou.' }
 
     Write-Host "Checks aprovados. Integrando Pull Request #$prNumber..."
-    & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao integrar o Pull Request aprovado.' }
+    $mergeIntegrated = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+      $mergeErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mergeOutput = & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha 2>&1
+        $mergeExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $mergeErrorActionPreference
+      }
+      if ($mergeExitCode -eq 0) {
+        $mergeIntegrated = $true
+        break
+      }
+
+      $mergeMessage = ($mergeOutput | Out-String).Trim()
+      if ($mergeMessage -notmatch '(?i)base branch policy prohibits the merge') {
+        if ($mergeMessage) { Write-Host $mergeMessage -ForegroundColor Yellow }
+        throw 'Falha no merge protegido do Pull Request. O clasp push nao foi iniciado.'
+      }
+
+      if ($attempt -eq 59) { break }
+      if ($attempt -eq 0) { Write-Host 'O GitHub ainda informa que as regras da main bloqueiam o merge. Aguardando a atualizacao dos checks protegidos...' }
+      Start-Sleep -Seconds 10
+    }
+    if (-not $mergeIntegrated) { throw 'As regras protegidas da main nao liberaram o merge em 10 minutos. O clasp push nao foi iniciado.' }
+
+    $prMerged = $false
+    for ($attempt = 0; $attempt -lt 360; $attempt++) {
+      $prState = (& $gh pr view $prNumber --repo $repo --json state --jq '.state').Trim()
+      if ($LASTEXITCODE -ne 0) { throw 'Falha ao consultar o estado do Pull Request durante a integracao protegida.' }
+      if ($prState -eq 'MERGED') {
+        $prMerged = $true
+        break
+      }
+      if ($prState -ne 'OPEN') { throw "Pull Request #$prNumber foi fechado sem integrar (estado: $prState)." }
+      if ($attempt -eq 0) { Write-Host 'Merge solicitado. Aguardando todas as regras da main serem satisfeitas...' }
+      Start-Sleep -Seconds 10
+    }
+    if (-not $prMerged) { throw 'O Pull Request continuou pendente depois de 60 minutos. O push para o Apps Script nao foi iniciado.' }
 
     & git fetch origin main
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar a referencia origin/main depois do merge.' }
     & git merge --ff-only origin/main
     if ($LASTEXITCODE -ne 0) { throw 'A main local nao pode ser sincronizada por fast-forward depois do merge.' }
+    & git merge-base --is-ancestor $sourceFullSha HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'A main sincronizada nao contem o commit aprovado. Push para o Apps Script cancelado.' }
   }
 
   $originalBytes = [System.IO.File]::ReadAllBytes($webAppPath)

@@ -37,7 +37,7 @@ function row(key, exams, active = 'Sim', number = '', id = '') {
 }
 
 test('listas legadas de imagem e analises continuam separadas e recebem numeracao automatica', () => {
-  const { server, sheet } = preloadContext([
+  const { server } = preloadContext([
     ['Projeto'].concat(Array.from({ length: 40 }, (_, i) => 'Exame ' + (i + 1)), ['Ativo']),
     row('PROTO-1 | Serviço de imagem', ['Ressonância de crânio']),
     row('PROTO-1 | Análises clínicas', ['Hemograma'])

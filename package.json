@@ -4,8 +4,14 @@
   "scripts": {
     "test": "node --test --test-isolation=none tests/*.test.js",
     "syntax": "node tools/validate-syntax.js",
-    "verify": "npm run syntax && npm test",
+    "lint": "eslint \"tools/**/*.js\" \"tests/**/*.js\" \"*.gs\"",
+    "verify": "npm run syntax && npm run lint && npm test",
     "push": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/push-clasp.ps1",
     "push:safe": "npm run push"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
+    "globals": "17.12.0"
   }
 }
