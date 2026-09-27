@@ -22,4 +22,5 @@ JavaScript in this Apps Script project:
 
 The `verify` script runs syntax validation, ESLint, then the existing Node test
 suite. ESLint is not configured to enforce formatting, and no autofix is part
-of the verification flow.
+of the verification flow. The root `eslint.config.js` is excluded from Apps
+Script uploads by `.claspignore`; it is a Node-only development file.
