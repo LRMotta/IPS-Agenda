@@ -57,15 +57,18 @@ function fakeElement() {
 function fakePrintWindow() {
   const written = [];
   const elements = {};
+  const classElements = {};
   const doc = {
     open() {},
     write(html) { written.push(String(html)); },
     close() {},
-    getElementById(id) { return elements[id] || null; }
+    getElementById(id) { return elements[id] || null; },
+    querySelectorAll(selector) { return classElements[selector] || []; }
   };
   return {
     written,
     elements,
+    classElements,
     window: { open: () => ({ document: doc }) }
   };
 }
@@ -233,6 +236,7 @@ test('relatorios da Agenda atribuem a origem do logo como propriedade, fora do H
   const source = readProjectFile('IndexAgendaScripts.html');
   const shell = sourceBetween(source, 'function agendaPrintShell(opts)', 'function agendaPrintResumoHtml(');
   const opener = sourceBetween(source, 'function agendaAbrirJanelaImpressao(titulo, html)', 'function agendaGoogleCalendarDateIso(');
+  const receipt = sourceBetween(source, 'function agendaReciboPrintHtml_(dados, recibo)', 'function agendaCourierCards(');
   const logo = '"><img src=x onerror=alert(1)>';
   const popup = fakePrintWindow();
   popup.elements.agendaPrintLogo = fakeElement();
@@ -242,9 +246,13 @@ test('relatorios da Agenda atribuem a origem do logo como propriedade, fora do H
     document: { querySelector: () => ({ src: logo }) },
     window: popup.window,
     esc: escapeHtml,
+    agendaReciboFormatarValor_: () => 'R$ 10,00',
+    agendaReciboValorExtenso_: () => 'dez reais',
+    agendaReciboDataExtenso_: () => '27 de setembro de 2026',
+    agendaReciboDataBr_: () => '27/09/2026',
     snack() {}
   });
-  vm.runInContext(shell + opener, context);
+  vm.runInContext(shell + opener + receipt, context);
 
   const html = context.agendaPrintShell({ title: 'Agenda', body: '<div>Resumo</div>', landscape: true });
   assert.doesNotMatch(html, /onerror=alert/);
@@ -254,6 +262,21 @@ test('relatorios da Agenda atribuem a origem do logo como propriedade, fora do H
   assert.equal(popup.elements.agendaPrintLogo.src, logo);
   assert.equal(popup.elements.agendaPrintLogo.style.display, '');
   assert.equal(popup.elements.agendaPrintLogoFallback.style.display, 'none');
+
+  popup.classElements['.agendaPrintReceiptLogo'] = [fakeElement(), fakeElement(), fakeElement()];
+  popup.classElements['.agendaPrintReceiptLogoFallback'] = [fakeElement(), fakeElement(), fakeElement()];
+  const receiptHtml = context.agendaReciboPrintHtml_(
+    { projeto: 'IPS', idParticipante: 'P-123', visita: 'V1' },
+    { valor: 10, dataEmissao: '2026-09-27', dataVisita: '2026-09-20', nome: 'Ana', tipo: 'Participante' }
+  );
+  assert.equal((receiptHtml.match(/class="agendaPrintReceiptLogo"/g) || []).length, 3);
+  assert.doesNotMatch(receiptHtml, /onerror=alert/);
+  assert.doesNotMatch(receiptHtml, /src="[^"]*onerror/);
+  context.agendaAbrirJanelaImpressao('Recibo', receiptHtml);
+  assert.doesNotMatch(popup.written[1], /onerror=alert/);
+  assert.deepEqual(popup.classElements['.agendaPrintReceiptLogo'].map(image => image.src), [logo, logo, logo]);
+  assert.ok(popup.classElements['.agendaPrintReceiptLogo'].every(image => image.style.display === ''));
+  assert.ok(popup.classElements['.agendaPrintReceiptLogoFallback'].every(fallback => fallback.style.display === 'none'));
 });
 
 test('relatorios de estoque atribuem a origem do logo como propriedade, fora do HTML escrito', () => {
