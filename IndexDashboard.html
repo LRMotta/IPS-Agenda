@@ -1067,16 +1067,26 @@
 
   function dashboardCopyChartFeedback(button, ok, message) {
     if (button) {
-      if (!button.getAttribute('data-default-html')) button.setAttribute('data-default-html', button.innerHTML);
       button.disabled = false;
       button.classList.toggle('is-success', Boolean(ok));
-      button.innerHTML = '<span class="material-symbols-outlined">' + (ok ? 'check' : 'error') + '</span><span>' + (ok ? 'Copiado!' : 'Tentar novamente') + '</span>';
+      dashboardSetChartCopyButtonContent_(button, ok ? 'check' : 'error', ok ? 'Copiado!' : 'Tentar novamente');
       window.setTimeout(function() {
         button.classList.remove('is-success');
-        button.innerHTML = button.getAttribute('data-default-html') || '<span class="material-symbols-outlined">content_copy</span><span>Copiar gráfico</span>';
+        dashboardSetChartCopyButtonContent_(button, 'content_copy', 'Copiar gráfico');
       }, 2200);
     }
     if (ok && typeof snack === 'function') snack(message);
     if (!ok && typeof snackErro === 'function') snackErro(message);
+  }
+
+  function dashboardSetChartCopyButtonContent_(button, iconName, label) {
+    button.textContent = '';
+    var icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.textContent = iconName;
+    var text = document.createElement('span');
+    text.textContent = label;
+    button.appendChild(icon);
+    button.appendChild(text);
   }
   </script>

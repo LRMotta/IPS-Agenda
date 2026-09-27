@@ -35,6 +35,16 @@ function agendaServer(contextValues) {
   return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules, CadastroRules_: cadastro }, contextValues || {}));
 }
 
+function sharedAgendaRuleScript(source) {
+  const openingTag = '<script>';
+  const closingTag = '</script>';
+  const opening = source.indexOf(openingTag);
+  const closing = source.indexOf(closingTag, opening + openingTag.length);
+  assert.notEqual(opening, -1, 'SharedAgendaRules.html deve conter a abertura do script');
+  assert.notEqual(closing, -1, 'SharedAgendaRules.html deve conter o fechamento do script');
+  return source.slice(opening + openingTag.length, closing);
+}
+
 function agendaDateOnlyUtc(iso) {
   const match = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   assert.ok(match, `data ISO esperada: ${iso}`);
@@ -2580,7 +2590,7 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
     normAgenda: value => String(value || '').toLowerCase()
   });
   context.window = context;
-  vm.runInContext(readProjectFile('SharedAgendaRules.html').replace(/<\/?script>/g, ''), context);
+  vm.runInContext(sharedAgendaRuleScript(readProjectFile('SharedAgendaRules.html')), context);
   vm.runInContext(source.match(/^  function \w+\([^\n]*\) \{[\s\S]*?^  \}/gm).join('\n'), context);
   context.agendaDetailHtml = () => '';
   context.agendaPostVisitIcons = () => '';

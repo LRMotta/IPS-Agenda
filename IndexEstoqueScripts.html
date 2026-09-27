@@ -1943,7 +1943,7 @@
         '</td><td>' + esc(it.localizacao || '') + '</td><td>' + esc(it.status || '') + '</td></tr>';
     }).join('');
     var logo = ((document.querySelector('.nav-brand img') || {}).src || '');
-    var logoHtml = logo ? '<img src="' + logo + '" style="height:42px;width:auto;object-fit:contain">' : '';
+    var logoHtml = '<img id="estoquePrintLogo" style="display:none;height:42px;width:auto;object-fit:contain">';
     var html = '<!doctype html><html><head><title>Relatório de Estoque</title><style>' +
       'body{font-family:Arial,sans-serif;color:#1f2937;margin:28px}.print-head{display:flex;align-items:center;gap:18px;margin-bottom:18px;border-bottom:2px solid #e8edf8;padding-bottom:12px}h1{font-size:18px;margin:0 0 4px}p{font-size:12px;color:#64748b;margin:0}' +
       'table{width:100%;border-collapse:collapse;font-size:11px}th{background:#eef2ff;color:#1266f1;text-align:left;text-transform:uppercase;font-size:9px;letter-spacing:.5px}th,td{border:1px solid #dbe3f0;padding:6px 8px}td:nth-child(5){text-align:center;font-weight:700}' +
@@ -1957,6 +1957,11 @@
     w.document.open();
     w.document.write(html);
     w.document.close();
+    var logoEl = w.document.getElementById('estoquePrintLogo');
+    if (logo && logoEl) {
+      logoEl.src = logo;
+      logoEl.style.display = '';
+    }
   }
 
   function ensurePlanejamentoPedidoModal() {
@@ -2587,7 +2592,7 @@
     var dataDesc = descarte.dataEfetivacao || descarte.data || '';
     var html = '<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Descarte</title><style>' +
       'body{font-family:Arial,sans-serif;color:#1f2937;margin:32px} .head{display:flex;gap:18px;align-items:center;border-bottom:2px solid #1266f1;padding-bottom:14px;margin-bottom:20px} .head img{height:46px} h1{font-size:20px;margin:0;color:#0b3f8a} p{margin:4px 0;color:#5f6b7c;font-size:12px} table{width:100%;border-collapse:collapse;margin-top:18px} th{background:#eef4ff;color:#1266f1;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.7px;padding:8px;border:1px solid #dbe7fb} td{font-size:12px;padding:8px;border:1px solid #e5e7eb}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;font-size:12px}.sign{margin-top:70px;width:360px;border-top:1px solid #111;text-align:center;padding-top:8px;font-size:12px}@media print{button{display:none}}' +
-      '</style></head><body><div class="head">' + (logo ? '<img src="' + logo + '">' : '') + '<div><h1>Relatório de Descarte de Estoque</h1><p>Instituto de Pesquisas em Saúde - UCS</p></div></div>' +
+      '</style></head><body><div class="head"><img id="estoqueDescartePrintLogo" style="display:none;height:46px"><div><h1>Relatório de Descarte de Estoque</h1><p>Instituto de Pesquisas em Saúde - UCS</p></div></div>' +
       '<div class="meta"><div><b>ID:</b> ' + esc(descarte.idDescarte || '-') + '</div><div><b>Data de descarte:</b> ' + esc(dataDesc || '-') + '</div><div><b>Projeto:</b> ' + esc(descarte.projeto || '-') + '</div><div><b>Solicitante:</b> ' + esc(descarte.solicitante || '-') + '</div><div><b>Status:</b> ' + esc(descarte.status || '-') + '</div><div><b>Responsável:</b> ' + esc(descarte.responsavel || '-') + '</div></div>' +
       (descarte.observacoes ? '<p style="margin-top:14px"><b>Observações:</b> ' + esc(descarte.observacoes) + '</p>' : '') +
       '<table><thead><tr><th>Item</th><th>Tipo</th><th>Validade</th><th>Localização</th><th>Qtd</th><th>Motivo</th></tr></thead><tbody>' + rows + '</tbody></table>' +
@@ -2597,6 +2602,11 @@
     win.document.open();
     win.document.write(html);
     win.document.close();
+    var logoEl = win.document.getElementById('estoqueDescartePrintLogo');
+    if (logo && logoEl) {
+      logoEl.src = logo;
+      logoEl.style.display = '';
+    }
   }
 
   function pedidoStatusChip(status) {

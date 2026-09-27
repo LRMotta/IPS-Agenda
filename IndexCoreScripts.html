@@ -4080,13 +4080,25 @@ function renderAcList(q) {
   var el = document.getElementById('acEspList');
   var matches = q ? ESPS.filter(function(e) { return norm(e).includes(norm(q)); }) : ESPS;
   _acIdx = -1;
-  el.innerHTML = !matches.length
-    ? '<div class="ac-empty">Nenhuma especialidade encontrada.</div>'
-    : matches.map(function(e) {
-        return '<div class="ac-item" data-val="' + esc(e) + '"'
-          + ' onmousedown="event.preventDefault();selectEsp(\'' + e.replace(/'/g,"\\'") + '\')">'
-          + esc(e) + '</div>';
-      }).join('');
+  el.textContent = '';
+  if (!matches.length) {
+    var empty = document.createElement('div');
+    empty.className = 'ac-empty';
+    empty.textContent = 'Nenhuma especialidade encontrada.';
+    el.appendChild(empty);
+  } else {
+    matches.forEach(function(e) {
+      var item = document.createElement('div');
+      item.className = 'ac-item';
+      item.dataset.val = e;
+      item.textContent = e;
+      item.addEventListener('mousedown', function(event) {
+        event.preventDefault();
+        selectEsp(e);
+      });
+      el.appendChild(item);
+    });
+  }
   el.classList.add('open');
 }
 function selectEsp(val) {
@@ -4567,13 +4579,25 @@ function renderAcListSol(q) {
   var el = document.getElementById('acFormacaoList');
   var matches = q ? FORMACOES.filter(function(f) { return norm(f).includes(norm(q)); }) : FORMACOES;
   _acIdxSol = -1;
-  el.innerHTML = !matches.length
-    ? '<div class="ac-empty">Nenhuma formação encontrada.</div>'
-    : matches.map(function(f) {
-        return '<div class="ac-item" data-val="' + esc(f) + '"'
-          + ' onmousedown="event.preventDefault();selectFormacao(\'' + f.replace(/'/g,"\\'") + '\')">'
-          + esc(f) + '</div>';
-      }).join('');
+  el.textContent = '';
+  if (!matches.length) {
+    var empty = document.createElement('div');
+    empty.className = 'ac-empty';
+    empty.textContent = 'Nenhuma formação encontrada.';
+    el.appendChild(empty);
+  } else {
+    matches.forEach(function(f) {
+      var item = document.createElement('div');
+      item.className = 'ac-item';
+      item.dataset.val = f;
+      item.textContent = f;
+      item.addEventListener('mousedown', function(event) {
+        event.preventDefault();
+        selectFormacao(f);
+      });
+      el.appendChild(item);
+    });
+  }
   el.classList.add('open');
 }
 function selectFormacao(val) {
@@ -4632,12 +4656,25 @@ function renderAcProj(inputId, listId, opts, selVar) {
   var el  = document.getElementById(listId);
   var matches = q ? opts.filter(function(o){ return norm(o).includes(q); }) : opts;
   _acIdxProj[listId] = -1;
-  el.innerHTML = !matches.length
-    ? '<div class="ac-empty">Nenhum resultado encontrado.</div>'
-    : matches.map(function(o) {
-        return '<div class="ac-item" data-val="' + esc(o) + '" onmousedown="event.preventDefault();pickAcProj(\'' + inputId + '\',\'' + listId + '\',\'' + o.replace(/'/g,"\\'") + '\',\'' + selVar + '\')">'
-          + esc(o) + '</div>';
-      }).join('');
+  el.textContent = '';
+  if (!matches.length) {
+    var empty = document.createElement('div');
+    empty.className = 'ac-empty';
+    empty.textContent = 'Nenhum resultado encontrado.';
+    el.appendChild(empty);
+  } else {
+    matches.forEach(function(o) {
+      var item = document.createElement('div');
+      item.className = 'ac-item';
+      item.dataset.val = o;
+      item.textContent = o;
+      item.addEventListener('mousedown', function(event) {
+        event.preventDefault();
+        pickAcProj(inputId, listId, o, selVar);
+      });
+      el.appendChild(item);
+    });
+  }
   el.classList.add('open');
 }
 function pickAcProj(inputId, listId, val, selVar) {
