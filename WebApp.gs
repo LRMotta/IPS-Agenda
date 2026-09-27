@@ -11517,8 +11517,10 @@ function getAgendaEventTypes_() {
     ['Agenda'],
     ['Tipo de evento', 'Tipos de evento'],
     ['Visita', 'Monitoria', 'Envio de amostras', 'Exame de imagem',
-     'Exames laboratoriais', 'Contato telefônico', 'Feriado', 'SIV', 'Close-out', 'Reuniao', 'Auditoria']
-  );
+     'Exames laboratoriais', 'Contato telefônico', 'SIV', 'Close-out', 'Reuniao', 'Auditoria']
+  ).filter(function(tipo) {
+    return !AgendaServerRules_.isType(tipo, 'feriado');
+  });
 }
 
 function getAgendaMonitoriaSalas_() {

@@ -2564,6 +2564,12 @@ test('consulta exige medico no cliente e no servidor', () => {
   assert.match(server, /if \(policy\.requiresDoctor && !String\(dados\.medico \|\| ''\)\.trim\(\)\)/);
 });
 
+test('feriados nao aparecem como tipos de evento selecionaveis no servidor', () => {
+  const server = agendaServer();
+  server.getConfigAppValuesByKeys_ = () => ['Visita', 'Feriado', 'SIV'];
+  assert.deepEqual(Array.from(server.getAgendaEventTypes_()), ['Visita', 'SIV']);
+});
+
 test('composicao operacional preserva texto escapado, status e rótulos conforme o contexto', () => {
   const source = readProjectFile('IndexAgendaScripts.html');
   const styles = readProjectFile('IndexStylesAfterDashboard.html');
@@ -2600,8 +2606,11 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   assert.match(context.agendaTipoLabel('Consulta'), /ag-event-type ag-type-consulta/);
   assert.match(context.agendaTipoLabel('Contato telefônico'), /ag-event-type ag-type-default/);
   assert.doesNotMatch(context.agendaTipoLabel('Consulta'), /ag-type-chip/);
-  assert.match(styles, /\.ag-appt \.ag-proj-chip,\.ag-appt \.ag-event-type\{font-size:11\.5px/);
+  assert.deepEqual(Array.from(context.agendaTiposEventoSelecionaveis_(['Visita', 'Feriado', 'SIV'])), ['Visita', 'SIV']);
+  assert.match(styles, /\.ag-appt \.ag-proj-chip,\.ag-appt \.ag-event-type\{font-size:12px/);
   assert.match(styles, /\.ag-type-consulta\{color:#000\}/);
   assert.match(styles, /\.ag-type-default\{color:#374151\}/);
-  assert.match(styles, /\.ag-wk-proj\{font-size:11\.5px/);
+  assert.match(styles, /\.ag-event-type\{[^}]*font-size:12px/);
+  assert.match(styles, /\.ag-wk-proj\{font-size:12px/);
+  assert.match(styles, /\.ag-wk-type\{font-size:12px/);
 });

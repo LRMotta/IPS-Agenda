@@ -502,7 +502,7 @@
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
     }
     renderAgendaProcedimentoChips();
-    preencherAgendaSelect('agTipo', _agendaDados.tiposEvento || [], '');
+    preencherAgendaSelect('agTipo', agendaTiposEventoSelecionaveis_(_agendaDados.tiposEvento), '');
     preencherAgendaSelect('agStatus', _agendaDados.status || [], null);
     preencherAgendaSelect('agParticipante', _agendaDados.participantes || [], '');
     preencherAgendaSelect('agProjeto', _agendaDados.projetos || [], '');
@@ -615,7 +615,7 @@
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
       renderAgendaProcedimentoChips();
     }
-    preencherAgendaSelect('agTipo', _agendaDados.tiposEvento || [], '');
+    preencherAgendaSelect('agTipo', agendaTiposEventoSelecionaveis_(_agendaDados.tiposEvento), '');
     preencherAgendaSelect('agStatus', _agendaDados.status || [], null);
     preencherAgendaSelect('agParticipante', _agendaDados.participantes || [], '');
     preencherAgendaSelect('agProjeto', _agendaDados.projetos || [], '');
@@ -652,6 +652,12 @@
     _agendaReferenceDataConfirmed = true;
     agendaLiberarFilaFormulario_();
     return true;
+  }
+
+  function agendaTiposEventoSelecionaveis_(tipos) {
+    return (tipos || []).filter(function(tipo) {
+      return !AgendaRules.isType(tipo, 'feriado');
+    });
   }
 
   function preencherAgendaSelect(id, lista, placeholder) {
