@@ -5760,6 +5760,19 @@
       var fallback = w.document.getElementById('agendaPrintLogoFallback');
       if (fallback) fallback.style.display = 'none';
     }
+    var receiptLogos = w.document.querySelectorAll('.agendaPrintReceiptLogo');
+    var receiptFallbacks = w.document.querySelectorAll('.agendaPrintReceiptLogoFallback');
+    for (var i = 0; i < receiptLogos.length; i++) {
+      if (logo) {
+        receiptLogos[i].src = logo;
+        receiptLogos[i].style.display = '';
+      } else {
+        receiptLogos[i].style.display = 'none';
+      }
+    }
+    for (var j = 0; j < receiptFallbacks.length; j++) {
+      receiptFallbacks[j].style.display = logo ? 'none' : '';
+    }
   }
 
   function agendaGoogleCalendarDateIso(r) {
@@ -6211,8 +6224,8 @@
       ? (recibo.cpfTitular ? 'CPF ' + esc(recibo.cpfTitular) + '<br>' : '')
       : esc(recibo.titular || recibo.nome) + (recibo.cpfTitular ? ' · CPF ' + esc(recibo.cpfTitular) : '') + '<br>';
     var ecrf = recibo.dataEcrf ? '<div class="meta"><b>eCRF preenchida em:</b> ' + esc(agendaReciboDataBr_(recibo.dataEcrf)) + '</div>' : '';
-    var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
-    var logoHtml = logo ? '<img src="' + logo + '" alt="Instituto de Pesquisas em Saúde">' : '<b class="brand-text">IPS | UCS</b>';
+    var logoHtml = '<img class="agendaPrintReceiptLogo" alt="Instituto de Pesquisas em Saúde" style="display:none">' +
+      '<b class="agendaPrintReceiptLogoFallback brand-text">IPS | UCS</b>';
     var vias = ['1ª via — Financeiro UCS', '2ª via — IPS/UCS', '3ª via — Participante/Acompanhante'];
     var body = vias.map(function(via, viaIndex) {
       var viaIps = viaIndex === 1;
