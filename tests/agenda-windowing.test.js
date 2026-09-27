@@ -1823,6 +1823,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(dayRows, /ag-list-section-title">Visitas/);
   const render = functionBody(client, 'renderAgendaLista');
   assert.match(render, /var gruposDia = agendaSepararLinhasDoDia_\(dayRows\)/);
+  assert.match(render, /html \+= agendaDayHeader\(d, dayRows\);\s*html \+= agendaBirthdayBannerHtml\(d, false\);\s*var gruposDia = agendaSepararLinhasDoDia_\(dayRows\)/);
   assert.match(render, /agendaMonitoriasGrupoHtml\(gruposDia\.monitorias, iso\)/);
   assert.match(render, /agendaAuditoriasGrupoHtml\(gruposDia\.auditorias, iso\)/);
   assert.match(render, /agendaCanceladosGrupoHtml\(gruposDia\.cancelados, iso\)/);
