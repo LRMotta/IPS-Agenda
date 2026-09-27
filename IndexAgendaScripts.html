@@ -3965,6 +3965,7 @@
   var _agendaKitsBaixados = false;
   var _agendaAbrirAposCarga = '';
   var _agendaEditSessionId = '';
+  var _agendaEditSessionSequence = 0;
   var _agendaEditPresenceTimer = null;
   var _agendaEditRecordVersion = '';
   var _agendaEditEditableVersion = '';
@@ -3973,7 +3974,22 @@
 
   function agendaEditPresenceSessionId() {
     if (_agendaEditSessionId) return _agendaEditSessionId;
-    _agendaEditSessionId = 'ag-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    var cryptoApi = window.crypto;
+    if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+      var bytes = new Uint8Array(16);
+      cryptoApi.getRandomValues(bytes);
+      var randomPart = Array.prototype.map.call(bytes, function(byte) {
+        return ('0' + byte.toString(16)).slice(-2);
+      }).join('');
+      _agendaEditSessionId = 'ag-' + Date.now() + '-' + randomPart;
+    } else {
+      // This ID distinguishes tabs for presence only; it is not an authorization token.
+      _agendaEditSessionSequence += 1;
+      var performanceNow = window.performance && typeof window.performance.now === 'function'
+        ? window.performance.now()
+        : 0;
+      _agendaEditSessionId = 'ag-' + Date.now() + '-' + performanceNow + '-' + _agendaEditSessionSequence;
+    }
     return _agendaEditSessionId;
   }
 
@@ -5620,8 +5636,8 @@
 
   function agendaPrintShell(opts) {
     opts = opts || {};
-    var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
-    var logoHtml = logo ? '<img src="' + logo + '" alt="IPS | UCS">' : '<div class="brand-text">IPS | UCS</div>';
+    var logoHtml = '<img id="agendaPrintLogo" alt="IPS | UCS" style="display:none">' +
+      '<div id="agendaPrintLogoFallback" class="brand-text">IPS | UCS</div>';
     var emitted = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(opts.title || 'Agenda') + '</title><style>' +
       '@page{size:' + (opts.landscape ? 'A4 landscape' : 'A4 portrait') + ';margin:' + (opts.landscape ? '7mm' : '12mm') + '}' +
@@ -5736,6 +5752,14 @@
     w.document.open();
     w.document.write(html);
     w.document.close();
+    var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
+    var logoEl = w.document.getElementById('agendaPrintLogo');
+    if (logo && logoEl) {
+      logoEl.src = logo;
+      logoEl.style.display = '';
+      var fallback = w.document.getElementById('agendaPrintLogoFallback');
+      if (fallback) fallback.style.display = 'none';
+    }
   }
 
   function agendaGoogleCalendarDateIso(r) {

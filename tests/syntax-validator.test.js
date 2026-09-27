@@ -26,6 +26,17 @@ test('validador detecta include HTML inexistente', () => {
   assert.match(result.errors[0], /Ausente\.html/);
 });
 
+test('validador reconhece limites de script com atributos citados e fechamento com espacos HTML', () => {
+  const source = '<!-- <script>comentario</script> -->' +
+    '<script data-label=">">const markup = \'<button onclick="broken("> texto\';</script\t\n atributo>' +
+    '<button onclick="return true;"></button>';
+  const result = validateHtml('Index.html', source, new Set(['Index']));
+
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.scriptCount, 1);
+  assert.equal(result.handlerCount, 1);
+});
+
 test('todo o projeto passa pela validacao sintatica integral', () => {
   const result = validateProject(path.resolve(__dirname, '..'));
   assert.deepEqual(result.errors, []);
