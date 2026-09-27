@@ -53,6 +53,7 @@ test('publicacao tenta somente merge protegido, aguarda a regra transitoria e co
   assert.ok(retryIndex > -1 && mergeIndex > retryIndex && waitIndex > mergeIndex);
   assert.ok(fetchIndex > waitIndex && ancestryIndex > fetchIndex && claspIndex > ancestryIndex);
   assert.match(source, /gh pr merge \$prNumber --repo \$repo --merge --delete-branch --match-head-commit \$sourceFullSha/);
+  assert.match(source, /\$ErrorActionPreference = 'Continue'[\s\S]*?\$ErrorActionPreference = \$mergeErrorActionPreference/);
   assert.match(source, /base branch policy prohibits the merge/);
   assert.match(source, /\$prState -eq 'MERGED'/);
   assert.doesNotMatch(source, /--admin|--auto/);

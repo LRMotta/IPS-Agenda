@@ -118,8 +118,14 @@ Mantem o GitHub sincronizado com a publicacao do Apps Script sem remover a exige
     Write-Host "Checks aprovados. Integrando Pull Request #$prNumber..."
     $mergeIntegrated = $false
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
-      $mergeOutput = & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha 2>&1
-      $mergeExitCode = $LASTEXITCODE
+      $mergeErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mergeOutput = & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha 2>&1
+        $mergeExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $mergeErrorActionPreference
+      }
       if ($mergeExitCode -eq 0) {
         $mergeIntegrated = $true
         break
