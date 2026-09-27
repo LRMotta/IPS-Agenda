@@ -10,6 +10,11 @@ test('publicacao exige main limpa', () => {
   assert.match(source, /git status --porcelain/);
 });
 
+test('configuracao Node do ESLint nao e enviada ao projeto Apps Script', () => {
+  const source = readProjectFile('.claspignore');
+  assert.match(source, /^eslint\.config\.js$/m);
+});
+
 test('publicacao gera versao com data e commit', () => {
   const source = readProjectFile('tools/push-clasp.ps1');
   assert.match(source, /yyyy\.MM\.dd\.HHmm/);
