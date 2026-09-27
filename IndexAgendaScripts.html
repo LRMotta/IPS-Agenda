@@ -5379,11 +5379,11 @@
   function agendaCanceladoCompactoHtml(r, suffix) {
     var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
     var cardId = agendaCardDomId(r);
-    var tipoChip = AgendaRules.isOperationalPeriod(r) ? '' : agendaTipoChip(r.tipo);
-    return '<div class="ag-appt ag-cancelado-compact' + (tipoChip ? ' ' + agendaTipoAccentClass(r.tipo) : '') + ' st-cancelado" id="' + cardId + '">' +
+    var tipoLabel = AgendaRules.isOperationalPeriod(r) ? '' : agendaTipoLabel(r.tipo);
+    return '<div class="ag-appt ag-cancelado-compact' + (tipoLabel ? ' ' + agendaTipoAccentClass(r.tipo) : '') + ' st-cancelado" id="' + cardId + '">' +
       '<div class="ag-cancelado-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
-        '<div class="ag-cancelado-event"><div class="ag-cancelado-name">' + esc(agendaCanceladoTitulo_(r)) + agendaStatusChipOp(r.status, r.tipo) + '</div><div class="ag-cancelado-project">' + tipoChip + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + '</div></div>' +
+        '<div class="ag-cancelado-event"><div class="ag-cancelado-name">' + esc(agendaCanceladoTitulo_(r)) + agendaStatusChipOp(r.status, r.tipo) + '</div><div class="ag-cancelado-project">' + tipoLabel + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + '</div></div>' +
         '<div class="ag-cancelado-context">' + agendaMetaText(AgendaRules.isOperationalPeriod(r) ? 'meeting_room' : 'flag', agendaCanceladoContexto_(r)) + '</div>' +
         '<div class="ag-cancelado-motive">' + agendaMetaText('info', agendaCancelamentoResumo_(r)) + '</div>' +
         '<div class="ag-appt-actions"><button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></button><button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes" aria-label="Detalhes"><span class="material-symbols-outlined">expand_more</span></button></div>' +
@@ -5403,7 +5403,7 @@
     return '<div class="ag-appt ag-monitoria-compact ' + agendaTipoAccentClass(isSiv ? 'SIV' : 'Monitoria') + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
       '<div class="ag-monitoria-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
-        '<div class="ag-monitoria-body"><div class="ag-monitoria-project"><span class="ag-appt-name">' + esc(r.projeto || 'Projeto não informado') + '</span>' + agendaTipoChip(isSiv ? 'SIV' : 'Monitoria') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
+        '<div class="ag-monitoria-body"><div class="ag-monitoria-project"><span class="ag-appt-name">' + esc(r.projeto || 'Projeto não informado') + '</span>' + agendaTipoLabel(isSiv ? 'SIV' : 'Monitoria') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
         '<div class="ag-monitoria-meta"><div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
         '<div class="ag-monitoria-monitor">' + agendaMetaText('person', r.monitorName || 'Monitor não informado') + '</div></div></div>' +
         '<div class="ag-appt-actions">' +
@@ -5883,20 +5883,20 @@
     var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (isAuditoria ? '' : (r.participante || r.tipo || 'Evento sem participante')));
     var labSim = AgendaRules.isLabCentral(r);
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
-    var tipoChip = isPeriodoOperacional ? '' : agendaTipoChip(r.tipo);
+    var tipoLabel = isPeriodoOperacional ? '' : agendaTipoLabel(r.tipo);
     var postVisitIcons = agendaPostVisitIcons(r);
     var contextoPrincipal = isPeriodoOperacional
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
-      : (isAuditoria ? '' : agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + tipoChip + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
+      : (isAuditoria ? '' : agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + tipoLabel + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
     var sideHtml = agendaSidePanelHtml(r, labSim);
     var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
       '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
-    return '<div class="ag-appt ' + (tipoChip ? agendaTipoAccentClass(r.tipo) : '') + ' st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
+    return '<div class="ag-appt ' + (tipoLabel ? agendaTipoAccentClass(r.tipo) : '') + ' st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         (labSim ? '<div class="ag-lab-watermark" title="Laboratorio central"><span class="material-symbols-outlined">science</span></div>' : '') +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
         '<div class="ag-appt-body">' +
-          '<div class="ag-l1">' + (isAuditoria ? (groupedAudit ? '<span class="ag-appt-name">' + esc(r.obs || 'Auditoria') + '</span>' : tipoChip) : '<span class="ag-appt-name">' + esc(titulo) + '</span>') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
+          '<div class="ag-l1">' + (isAuditoria ? (groupedAudit ? '<span class="ag-appt-name">' + esc(r.obs || 'Auditoria') + '</span>' : tipoLabel) : '<span class="ag-appt-name">' + esc(titulo) + '</span>') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
           (!isAuditoria && contextoPrincipal ? '<div class="ag-l2">' + contextoPrincipal + '</div>' : '') +
           (r.visita || r.braco ? '<div class="ag-l2">' + agendaMetaText('flag', r.visita ? 'Visita ' + r.visita : '') + agendaMetaText('call_split', r.braco ? 'Braço ' + r.braco : '') + '</div>' : '') +
           (isPeriodoOperacional
@@ -6340,7 +6340,7 @@
     var observation = AgendaRules.isType(r.tipo, 'auditoria') && r.obs ? '<div class="ag-wk-obs"><span class="material-symbols-outlined">sticky_note_2</span>' + esc(r.obs) + '</div>' : '';
     return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + agendaTipoVisualClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
       '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento'))) + '</div>' +
-      (isPeriodoOperacional ? '' : '<div style="margin:4px 0">' + agendaTipoChip(r.tipo) + '</div>') +
+      (isPeriodoOperacional ? '' : '<div class="ag-wk-type" style="margin:4px 0">' + agendaTipoLabel(r.tipo) + '</div>') +
       '<div class="ag-wk-proj"><span class="material-symbols-outlined">folder_open</span>' + esc(r.projeto || '-') + '</div>' +
       (r.carroRequerido ? '<div style="margin-top:4px">' + agendaCarroChip() + '</div>' : '') +
       '<div class="ag-wk-visit">' + esc(isPeriodoOperacional ? (r.salaMonitoria || '-') : (r.visita || r.tipo || '-')) + '</div>' +
@@ -6398,9 +6398,9 @@
     return v ? '<span class="' + cls + '"><span class="material-symbols-outlined">' + icon + '</span>' + esc(v) + '</span>' : '';
   }
 
-  function agendaTipoChip(tipo) {
+  function agendaTipoLabel(tipo) {
     if (!tipo) return '';
-    return '<span class="ag-type-chip ' + agendaTipoClass(tipo) + '"><span class="material-symbols-outlined">' + agendaTipoIcon(tipo) + '</span>' + esc(tipo) + '</span>';
+    return '<span class="ag-event-type ' + agendaTipoClass(tipo) + '"><span class="material-symbols-outlined">' + agendaTipoIcon(tipo) + '</span>' + esc(tipo) + '</span>';
   }
 
   function agendaTipoClass(tipo) {

@@ -1838,7 +1838,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /st-cancelado/);
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
-  assert.match(compact, /agendaTipoChip\(isSiv \? 'SIV' : 'Monitoria'\)/);
+  assert.match(compact, /agendaTipoLabel\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(compact, /agendaTipoAccentClass\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
   assert.match(cancelledGroup, /aria-label="Cancelados do dia"/);
@@ -1853,11 +1853,11 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const auditCard = functionBody(client, 'agendaCardHtml');
   assert.match(auditCard, /var isAuditoria = AgendaRules\.isType\(r\.tipo, 'auditoria'\)/);
   assert.match(auditCard, /groupedAudit \? '<span class="ag-appt-name">'/);
-  assert.match(auditCard, /isAuditoria \? '' : agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoChip/);
+  assert.match(auditCard, /isAuditoria \? '' : agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoLabel/);
   assert.match(auditCard, /ag-auditoria-card/);
   assert.match(auditCard, /agendaTipoAccentClass\(r\.tipo\)/);
   assert.match(auditCard, /isAuditoria && !groupedAudit && r\.obs/);
-  assert.match(auditCard, /agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoChip/);
+  assert.match(auditCard, /agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoLabel/);
   const typeAccentClass = functionBody(client, 'agendaTipoAccentClass');
   assert.match(typeAccentClass, /agendaTipoClass\(tipo\).*replace\(\/\^ag-type-\/, 'ag-event-'\)/);
   assert.match(dayHeader, /ag-dpill ag-dp-n/);
@@ -2564,8 +2564,9 @@ test('consulta exige medico no cliente e no servidor', () => {
   assert.match(server, /if \(policy\.requiresDoctor && !String\(dados\.medico \|\| ''\)\.trim\(\)\)/);
 });
 
-test('composicao operacional preserva texto escapado, status e chips conforme o contexto', () => {
+test('composicao operacional preserva texto escapado, status e rótulos conforme o contexto', () => {
   const source = readProjectFile('IndexAgendaScripts.html');
+  const styles = readProjectFile('IndexStylesAfterDashboard.html');
   const context = vm.createContext({
     AgendaRules: runFile('AgendaServerRules.gs').AgendaServerRules_,
     Date,
@@ -2583,15 +2584,24 @@ test('composicao operacional preserva texto escapado, status e chips conforme o 
   assert.match(monitoria, /ag-appt-name">&lt;Projeto&gt;/);
   assert.match(monitoria, /ag-monitoria-meta/);
   assert.match(monitoria, /&lt;Responsavel&gt;/);
-  assert.match(monitoria, /ag-type-chip[^>]*>.*Monitoria/);
+  assert.match(monitoria, /ag-event-type[^>]*>.*Monitoria/);
   assert.match(monitoria, /Agendado/);
   const siv = context.agendaMonitoriaCompactaHtml({ ...row, tipo: 'SIV' }, 'test');
-  assert.match(siv, /ag-type-chip[^>]*>.*SIV/);
+  assert.match(siv, /ag-event-type[^>]*>.*SIV/);
   const audit = { ...row, tipo: 'Auditoria', obs: '<Auditoria interna> - Laboratorio - Norma' };
   const grouped = context.agendaCardHtml(audit, 'test', { groupedAudit: true });
-  assert.doesNotMatch(grouped, /ag-type-chip/);
+  assert.doesNotMatch(grouped, /ag-event-type/);
   assert.match(grouped, /ag-appt-name">&lt;Auditoria interna&gt; - Laboratorio - Norma/);
   assert.match(grouped, /Agendado/);
-  assert.match(context.agendaCardHtml(audit, 'test'), /ag-type-chip/);
+  assert.match(context.agendaCardHtml(audit, 'test'), /ag-event-type/);
   assert.match(context.agendaCardHtml({ ...audit, obs: '' }, 'test', { groupedAudit: true }), /ag-appt-name">Auditoria/);
+  assert.equal(context.AgendaRules.typeClass('Consulta'), 'ag-type-consulta');
+  assert.equal(context.AgendaRules.typeClass('Contato telefônico'), 'ag-type-default');
+  assert.match(context.agendaTipoLabel('Consulta'), /ag-event-type ag-type-consulta/);
+  assert.match(context.agendaTipoLabel('Contato telefônico'), /ag-event-type ag-type-default/);
+  assert.doesNotMatch(context.agendaTipoLabel('Consulta'), /ag-type-chip/);
+  assert.match(styles, /\.ag-appt \.ag-proj-chip,\.ag-appt \.ag-event-type\{font-size:11\.5px/);
+  assert.match(styles, /\.ag-type-consulta\{color:#000\}/);
+  assert.match(styles, /\.ag-type-default\{color:#374151\}/);
+  assert.match(styles, /\.ag-wk-proj\{font-size:11\.5px/);
 });

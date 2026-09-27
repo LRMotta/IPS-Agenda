@@ -242,6 +242,7 @@
     );
     if (type.indexOf('visita') > -1) return 'ag-type-visita';
     if (isPhoneContact(type)) return 'ag-type-default';
+    if (type === 'consulta') return 'ag-type-consulta';
     if (type.indexOf('monitoria') > -1) return 'ag-type-monitoria';
     if (type.indexOf('amostra') > -1) return 'ag-type-amostras';
     if (type.indexOf('imagem') > -1) return 'ag-type-imagem';

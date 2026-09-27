@@ -88,7 +88,7 @@
     .ag-dp-n{background:#edf3ff;color:#0b4fa3}.ag-dp-ok{background:#e6f4ea;color:#137333}.ag-dp-pend{background:#fff3cd;color:#856404}.ag-dp-lab{background:#f1f5f9;color:#475569}.ag-dp-mon{background:#f5f3ff;color:#5b21b6}.ag-dp-cancel{background:#fde7e7;color:#b3261e}.ag-dp-car{background:#fff4d6;color:#7a4d00;border:1px solid #f2c35b}.ag-dp-car .material-symbols-outlined{font-size:14px}
     .ag-appt{position:relative;border-bottom:1px solid #f0f4f8;--ag-event-accent:#6c757d}
     .ag-appt::before{content:"";position:absolute;z-index:2;left:0;top:2px;bottom:2px;width:3px;border-radius:0 2px 2px 0;background:var(--ag-event-accent,#6c757d);pointer-events:none}
-    .ag-appt.ag-event-visita{--ag-event-accent:#0b4fa3}.ag-appt.ag-event-monitoria{--ag-event-accent:#7a4f00}.ag-appt.ag-event-amostras{--ag-event-accent:#6c2a8f}.ag-appt.ag-event-imagem{--ag-event-accent:#365f00}.ag-appt.ag-event-lab{--ag-event-accent:#14586b}.ag-appt.ag-event-feriado{--ag-event-accent:#b3261e}.ag-appt.ag-event-siv{--ag-event-accent:#3e3aa0}.ag-appt.ag-event-closeout{--ag-event-accent:#333}.ag-appt.ag-event-reuniao{--ag-event-accent:#8a3d00}.ag-appt.ag-event-auditoria{--ag-event-accent:#8a3d00}.ag-appt.ag-event-default{--ag-event-accent:#374151}
+    .ag-appt.ag-event-visita{--ag-event-accent:#0b4fa3}.ag-appt.ag-event-monitoria{--ag-event-accent:#7a4f00}.ag-appt.ag-event-amostras{--ag-event-accent:#6c2a8f}.ag-appt.ag-event-imagem{--ag-event-accent:#365f00}.ag-appt.ag-event-lab{--ag-event-accent:#14586b}.ag-appt.ag-event-feriado{--ag-event-accent:#b3261e}.ag-appt.ag-event-siv{--ag-event-accent:#3e3aa0}.ag-appt.ag-event-closeout{--ag-event-accent:#333}.ag-appt.ag-event-reuniao{--ag-event-accent:#8a3d00}.ag-appt.ag-event-auditoria{--ag-event-accent:#8a3d00}.ag-appt.ag-event-consulta{--ag-event-accent:#000}.ag-appt.ag-event-default{--ag-event-accent:#374151}
     .ag-appt.past{opacity:.72}
     .ag-appt.past:hover{opacity:1}
     .ag-appt.focus-from-week{box-shadow:inset 0 0 0 2px #1266f1;background:#f8fbff}
@@ -132,8 +132,10 @@
     .ag-part-info-item.is-muted b{color:#5d7f9f}
     @media(max-width:680px){.ag-part-info-row{gap:7px 12px}.ag-part-info-item{white-space:normal}}
     .ag-appt-name{font-size:14px;font-weight:700;color:var(--text)}.ag-appt.st-cancelado .ag-appt-name{text-decoration:line-through;color:var(--text-faint)}
-    .ag-proj-chip,.ag-visit-chip,.ag-mon-chip,.ag-cro-chip,.ag-braco-tag,.ag-lab-ind,.ag-type-chip{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700}
+    .ag-proj-chip,.ag-visit-chip,.ag-mon-chip,.ag-cro-chip,.ag-braco-tag,.ag-lab-ind{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700}
     .ag-proj-chip{background:transparent;color:var(--primary);border:0;padding:0;font-weight:600}
+    .ag-appt .ag-proj-chip,.ag-appt .ag-event-type{font-size:11.5px;padding:0}
+    .ag-event-type{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:0;padding:0;background:transparent;font-size:11.5px;font-weight:700;line-height:1.2}
     .ag-visit-chip{background:#f0f4f8;color:#374151;border:1px solid #d1d5db}
     .ag-mon-chip{background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe}
     .ag-post-icons{display:inline-flex;align-items:center;gap:4px}
@@ -154,18 +156,8 @@
     .ag-post-check img{width:18px;height:18px;object-fit:contain}
     .ag-post-check .ag-polo-icon{width:18px;height:18px}
     .ag-post-check .material-symbols-outlined{font-size:17px;color:#5f6b7c}
-    .ag-type-chip .material-symbols-outlined{font-size:14px}
-    .ag-type-visita{background:#bfd7ff;color:#0b4fa3;border:1px solid #9ec2fb}
-    .ag-type-monitoria{background:#ffe4a8;color:#7a4f00;border:1px solid #f5cd75}
-    .ag-type-amostras{background:#e0c2f3;color:#6c2a8f;border:1px solid #d0a7ea}
-    .ag-type-imagem{background:#d7ef9b;color:#365f00;border:1px solid #bedc77}
-    .ag-type-lab{background:#bddde7;color:#14586b;border:1px solid #9bc8d5}
-    .ag-type-feriado{background:#ffc8c3;color:#b3261e;border:1px solid #f5aaa3}
-    .ag-type-siv{background:#c9c4ff;color:#3e3aa0;border:1px solid #aaa4ee}
-    .ag-type-closeout{background:#e0e0e0;color:#333;border:1px solid #c9c9c9}
-    .ag-type-reuniao{background:#ffc9a8;color:#8a3d00;border:1px solid #f2aa7b}
-    .ag-type-auditoria{background:#ffd0b3;color:#8a3d00;border:1px solid #f1b48e}
-    .ag-type-default{background:#eef2f7;color:#374151;border:1px solid #d7dee8}
+    .ag-event-type .material-symbols-outlined{font-size:14px}
+    .ag-type-visita{color:#0b4fa3}.ag-type-monitoria{color:#7a4f00}.ag-type-amostras{color:#6c2a8f}.ag-type-imagem{color:#365f00}.ag-type-lab{color:#14586b}.ag-type-feriado{color:#b3261e}.ag-type-siv{color:#3e3aa0}.ag-type-closeout{color:#333}.ag-type-reuniao,.ag-type-auditoria{color:#8a3d00}.ag-type-consulta{color:#000}.ag-type-default{color:#374151}
     .ag-cro-chip{background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe}
     .ag-braco-tag{font-size:11.5px;color:var(--text-muted);background:#f6f8ff;border:1px solid #e0e6f0;padding:3px 8px}
     .ag-lab-ind{background:#e8f0fe;border:1.5px solid #94b8ff;color:#0d47a1;font-size:11.5px;box-shadow:inset 0 0 0 1px rgba(18,102,241,.08)}
@@ -365,7 +357,7 @@
     .ag-wk-appt{border-radius:6px;padding:5px 7px;cursor:pointer;border:1px solid #e0e6f0;border-left-width:3px;transition:box-shadow .12s;background:#fff}
     .ag-wk-appt:hover{box-shadow:0 2px 8px rgba(18,102,241,.14)}
     .ag-wk-appt.wa-agendado{border-left-color:#28a745;background:#f8fff9}.ag-wk-appt.wa-cancelado{border-left-color:#b3261e;background:#fff8f8;opacity:.75}.ag-wk-appt.wa-monitoria{border-left-color:#5b21b6;background:#faf8ff}.ag-wk-appt.wa-siv,.ag-wk-appt.type-siv{border-left-color:#b45309;background:#fff8f0}.ag-wk-appt.wa-realizado{border-left-color:#6c757d;background:#fafafa}.ag-wk-appt.wa-concluido{border-left-color:#212529;background:#f8f8f8}.ag-wk-appt.wa-pendente,.ag-wk-appt.wa-reagendado{border-left-color:#e65100;background:#fffaf3}
-    .ag-wk-time{font-size:10px;font-weight:700;color:var(--text-faint);margin-bottom:2px}.ag-wk-name{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-wk-proj{font-size:10px;color:var(--primary);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;display:flex;align-items:center;gap:3px}.ag-wk-visit{font-size:10px;color:var(--text-muted);margin-top:1px}.ag-wk-lab{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;color:#fff;background:#1266f1;border-radius:10px;padding:2px 7px;font-weight:700;text-transform:uppercase;letter-spacing:.2px}
+    .ag-wk-time{font-size:10px;font-weight:700;color:var(--text-faint);margin-bottom:2px}.ag-wk-name{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-wk-proj{font-size:11.5px;color:var(--primary);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;display:flex;align-items:center;gap:3px}.ag-wk-type{font-size:11.5px}.ag-wk-visit{font-size:10px;color:var(--text-muted);margin-top:1px}.ag-wk-lab{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;color:#fff;background:#1266f1;border-radius:10px;padding:2px 7px;font-weight:700;text-transform:uppercase;letter-spacing:.2px}
     .ag-wk-appt.wa-cancelado .ag-wk-name{text-decoration:line-through;text-decoration-color:#b3261e;text-decoration-thickness:1.5px;color:#8c3b36}
     @media(max-width:1180px){.ag-transport-fields,.ag-transport-fields.backup{grid-template-columns:1fr 1fr}.ag-mat-head{display:none}.ag-mat-line{grid-template-columns:1fr 1fr}.ag-mat-line.other-on{grid-template-columns:1fr auto}.ag-mat-line.other-on .ag-mat-type-cell{grid-template-columns:1fr 1fr}.ag-mat-calc{text-align:left}.ag-mat-remove{justify-self:end}.ag-mat-table{min-width:680px}}
     @media(max-width:980px){.ag-form-grid-3{grid-template-columns:1fr}}
@@ -438,7 +430,7 @@
       .ag-appt-main .ag-appt-time::after{right:-8px}
       .ag-appt-actions{margin-left:auto}
       .ag-l1,.ag-l2,.ag-l3,.ag-l4{gap:5px}
-      .ag-proj-chip,.ag-visit-chip,.ag-mon-chip,.ag-cro-chip,.ag-braco-tag,.ag-lab-ind,.ag-type-chip{font-size:11px;padding:3px 7px}
+      .ag-visit-chip,.ag-mon-chip,.ag-cro-chip,.ag-braco-tag,.ag-lab-ind{font-size:11px;padding:3px 7px}
       .ag-proc-preview{white-space:normal;overflow:visible}
       .ag-week-wrap{scroll-snap-type:x mandatory;overscroll-behavior-x:contain}
       .ag-week-grid{grid-template-columns:repeat(7,82vw);min-width:574vw}
