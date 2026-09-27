@@ -5258,11 +5258,11 @@
           return r.dataIso === iso && !AgendaRules.isType(r.tipo, 'feriado') && AgendaRules.isVisibleIn(r, AgendaRules.Context.LIST);
         });
         html += agendaDayHeader(d, dayRows);
+        html += agendaBirthdayBannerHtml(d, false);
         var gruposDia = agendaSepararLinhasDoDia_(dayRows);
         html += gruposDia.monitorias.length ? agendaMonitoriasGrupoHtml(gruposDia.monitorias, iso) : '';
         html += gruposDia.auditorias.length ? agendaAuditoriasGrupoHtml(gruposDia.auditorias, iso) : '';
         html += gruposDia.cancelados.length ? agendaCanceladosGrupoHtml(gruposDia.cancelados, iso) : '';
-        html += agendaBirthdayBannerHtml(d, false);
         html += dayRows.length
           ? (gruposDia.demais.length && (gruposDia.monitorias.length || gruposDia.auditorias.length || gruposDia.cancelados.length) ? '<div class="ag-list-section-title">Visitas</div>' : '') + gruposDia.demais.map(function(r, idx) { return agendaCardHtml(r, iso + '-visit-' + idx); }).join('')
           : '<div class="ag-empty"><span class="material-symbols-outlined">event_busy</span>Dia livre - sem agendamentos registrados.</div>';
