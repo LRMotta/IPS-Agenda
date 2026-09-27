@@ -116,8 +116,26 @@ Mantem o GitHub sincronizado com a publicacao do Apps Script sem remover a exige
     if ($LASTEXITCODE -ne 0) { throw 'O check obrigatorio do Pull Request falhou.' }
 
     Write-Host "Checks aprovados. Integrando Pull Request #$prNumber..."
-    & $gh pr merge $prNumber --repo $repo --merge --delete-branch --auto --match-head-commit $sourceFullSha
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao solicitar a integracao protegida do Pull Request.' }
+    $mergeIntegrated = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+      $mergeOutput = & $gh pr merge $prNumber --repo $repo --merge --delete-branch --match-head-commit $sourceFullSha 2>&1
+      $mergeExitCode = $LASTEXITCODE
+      if ($mergeExitCode -eq 0) {
+        $mergeIntegrated = $true
+        break
+      }
+
+      $mergeMessage = ($mergeOutput | Out-String).Trim()
+      if ($mergeMessage -notmatch '(?i)base branch policy prohibits the merge') {
+        if ($mergeMessage) { Write-Host $mergeMessage -ForegroundColor Yellow }
+        throw 'Falha no merge protegido do Pull Request. O clasp push nao foi iniciado.'
+      }
+
+      if ($attempt -eq 59) { break }
+      if ($attempt -eq 0) { Write-Host 'O GitHub ainda informa que as regras da main bloqueiam o merge. Aguardando a atualizacao dos checks protegidos...' }
+      Start-Sleep -Seconds 10
+    }
+    if (-not $mergeIntegrated) { throw 'As regras protegidas da main nao liberaram o merge em 10 minutos. O clasp push nao foi iniciado.' }
 
     $prMerged = $false
     for ($attempt = 0; $attempt -lt 360; $attempt++) {
