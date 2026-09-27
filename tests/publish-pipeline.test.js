@@ -41,6 +41,21 @@ test('GitHub exige branch, PR, checks e merge antes da publicacao no Apps Script
   assert.match(source, /git merge --ff-only origin\/main/);
 });
 
+test('publicacao respeita o merge protegido e aguarda o commit chegar a main antes do clasp', () => {
+  const source = readProjectFile('tools/push-clasp.ps1');
+  const mergeIndex = source.indexOf('gh pr merge');
+  const waitIndex = source.indexOf('for ($attempt = 0; $attempt -lt 360; $attempt++)', mergeIndex);
+  const fetchIndex = source.indexOf('git fetch origin main', waitIndex);
+  const ancestryIndex = source.indexOf('git merge-base --is-ancestor $sourceFullSha HEAD', fetchIndex);
+  const claspIndex = source.indexOf('& $clasp push --force');
+
+  assert.ok(mergeIndex > -1 && waitIndex > mergeIndex);
+  assert.ok(fetchIndex > waitIndex && ancestryIndex > fetchIndex && claspIndex > ancestryIndex);
+  assert.match(source, /gh pr merge \$prNumber --repo \$repo --merge --delete-branch --auto --match-head-commit \$sourceFullSha/);
+  assert.match(source, /\$prState -eq 'MERGED'/);
+  assert.doesNotMatch(source, /--admin/);
+});
+
 test('workflow registra o check tambem nas branches oficiais de publicacao', () => {
   const source = readProjectFile('.github/workflows/regression-tests.yml');
   assert.match(source, /push:\s*[\s\S]*branches:\s*[\s\S]*main\s*[\s\S]*agent\/publish-\*/);

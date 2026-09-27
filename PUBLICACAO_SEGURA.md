@@ -8,7 +8,7 @@ Use somente:
 npm run push
 ```
 
-O publicador exige a branch `main` sem alteracoes locais e uma sessao autenticada no GitHub CLI. Primeiro executa `npm run verify`, envia o commit atual para uma branch `agent/publish-*`, abre um Pull Request, aguarda o check obrigatorio **Testes de regressao** e faz o merge. Depois sincroniza a `main` local por fast-forward, gera temporariamente a versao da entrega e repete `npm run verify`. O `clasp push --force` so comeca depois que o GitHub aceitou o PR e todas as verificacoes terminaram com codigo de saida zero.
+O publicador exige a branch `main` sem alteracoes locais e uma sessao autenticada no GitHub CLI. Primeiro executa `npm run verify`, envia o commit atual para uma branch `agent/publish-*`, abre um Pull Request, aguarda o check obrigatorio **Testes de regressao** e solicita o merge automatico respeitando as regras ativas da branch. O pipeline aguarda o PR ficar integrado, sincroniza a `main` local por fast-forward e confirma que ela contem o commit aprovado antes de gerar temporariamente a versao da entrega e repetir `npm run verify`. O `clasp push --force` so comeca depois que o GitHub integrou o PR e todas as verificacoes terminaram com codigo de saida zero.
 
 A versao segue o formato `AAAA.MM.DD.HHmm-commit`, usa o titulo do commit aprovado como rotulo e registra a data/hora de Sao Paulo. Depois do push, `WebApp.gs` e restaurado byte a byte para o conteudo aprovado no Git, inclusive quando ocorre falha. Por isso, o arquivo local nao pode ser usado como comprovacao da versao enviada.
 
