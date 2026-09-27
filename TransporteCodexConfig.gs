@@ -134,6 +134,7 @@ function gerarDocumentacaoTransporteCodex(idAgenda, slot) {
   try {
     parsed = JSON.parse(body || '{}');
   } catch (e) {
+    // eslint-disable-next-line preserve-caught-error -- Translate malformed TRANSP responses to a stable integration error.
     throw new Error('TRANSP respondeu em formato inesperado. Confira se a URL aponta para o deploy /exec correto.');
   }
   if (!parsed.ok) throw new Error(parsed.error || 'Falha ao importar transporte no TRANSP.');
@@ -3943,18 +3944,8 @@ function atualizarMarkenVolumes_(ss) {
 }
 
 function atualizarEmailMarkenB8_(ss) {
-  try {
-    return;
-    ss = ss || getTransporteSpreadsheetCodex_();
-    var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
-    var email = transporteCodexGetSheet_(ss, 'emailMarken', false);
-    if (!folha || !email) return;
-    var temperatura = String(getCellValueSafe(folha, 'C6') || '').trim();
-    var exigeGelo = temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO';
-    email.getRange('B8').setValue(exigeGelo ? 'SIM' : 'N\u00c3O');
-  } catch (error) {
-    Logger.log('ERRO em atualizarEmailMarkenB8_: ' + error.toString());
-  }
+  // Este no-op preserva o retorno incondicional existente.
+  return;
 }
 
 function atualizarPeticaoAnuencia_(ss) {

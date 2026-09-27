@@ -31,5 +31,8 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Validar sintaxe e executar testes simulados
+      - name: Instalar dependencias de desenvolvimento
+        run: npm ci
+
+      - name: Validar sintaxe, lint e executar testes simulados
         run: npm run verify

@@ -453,6 +453,7 @@ function include(filename) {
   try {
     return HtmlService.createHtmlOutputFromFile(filename).getContent();
   } catch (err) {
+    // eslint-disable-next-line preserve-caught-error -- Add the include target to the surfaced Apps Script error.
     throw new Error('Falha ao incluir arquivo HTML "' + filename + '": ' + (err.message || String(err)));
   }
 }
@@ -3097,6 +3098,7 @@ function reqExamesExportPdfBlob_(url, nomeArquivo, options) {
           aviso: 'O rascunho foi criado com PDF em modo de contingencia porque o exportador do Google Sheets falhou. Confira o anexo antes de enviar.'
         };
       } catch (htmlError) {
+        // eslint-disable-next-line preserve-caught-error -- Flatten all attempted PDF fallback errors into one user-facing message.
         throw new Error(
           primaryError.message +
           ' Fallback por planilha temporaria isolada tambem falhou: ' + fallbackError.message +
@@ -4786,6 +4788,7 @@ function soaImportParsePayload_(payload) {
   payload = payload || {};
   var dados = payload.dados || payload.data || payload.json;
   if (typeof dados === 'string') {
+    // eslint-disable-next-line preserve-caught-error -- Hide parser details behind a stable validation message.
     try { dados = JSON.parse(dados); } catch (e) { throw new Error('O JSON do calendário SoA é inválido.'); }
   }
   if (!dados || typeof dados !== 'object') throw new Error('Informe um objeto JSON de calendário SoA.');
@@ -5835,6 +5838,7 @@ function participanteLerAcompanhantes_(value) {
   if (!value) return [];
   var result;
   try { result = JSON.parse(String(value)); } catch (e) {
+    // eslint-disable-next-line preserve-caught-error -- Hide stored JSON details behind a safe data-validation message.
     throw new Error('Cadastro de acompanhantes inválido. Revise os dados armazenados antes de salvar.');
   }
   if (!Array.isArray(result)) throw new Error('Cadastro de acompanhantes inválido.');
@@ -6493,6 +6497,7 @@ function salvarDadosParticipante(d) {
       return new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
     }
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      // eslint-disable-next-line no-redeclare -- Preserve legacy function-scoped var reuse in this Apps Script function.
       var p = s.split('/');
       return new Date(Number(p[2]), Number(p[1])-1, Number(p[0]));
     }
@@ -8140,6 +8145,7 @@ function getPedidosEstoque() {
   if (shPedIt && shPedIt.getLastRow() > 1) {
     var piRows = shPedIt.getDataRange().getValues();
     for (var j = 1; j < piRows.length; j++) {
+      // eslint-disable-next-line no-redeclare -- Preserve legacy function-scoped var reuse in this Apps Script function.
       var r = piRows[j];
       var idP = String(r[0]||'').trim();
       if (!idP) continue;
@@ -15611,6 +15617,7 @@ function aplicarBackupEmVisitaFutura(payload) {
         agendaInvalidateWindowCache_();
       } catch (rollbackError) {
         agendaInvalidateWindowCache_();
+        // eslint-disable-next-line preserve-caught-error -- Report both original and rollback failures in the existing message format.
         throw new Error('A gravação falhou e a restauração automática também falhou. Origem: ' +
           String(error && error.message || error) + '; restauração: ' + String(rollbackError && rollbackError.message || rollbackError));
       }
@@ -18143,6 +18150,7 @@ function salvarCourier(dados) {
 }
 
 function codexSanitizeCourierHtml_(value) {
+  // eslint-disable-next-line no-control-regex -- Strip NUL bytes before HTML sanitization.
   var input = String(value || '').replace(/\u0000/g, '');
   var allowed = { b: true, strong: true, i: true, em: true, u: true, br: true, p: true };
   var output = '';
