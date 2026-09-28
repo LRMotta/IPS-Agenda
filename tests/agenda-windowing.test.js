@@ -1874,7 +1874,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const auditCard = functionBody(client, 'agendaCardHtml');
   assert.match(auditCard, /var isAuditoria = AgendaRules\.isType\(r\.tipo, 'auditoria'\)/);
   assert.match(auditCard, /groupedAudit \? '<span class="ag-appt-name">'/);
-  assert.match(auditCard, /isAuditoria \? '' : agendaChip\(r\.projeto, 'ag-proj-chip', 'folder_open'\) \+ tipoLabel/);
+  assert.match(auditCard, /isAuditoria \? '' :[\s\S]*?ag-context-identity[\s\S]*?ag-context-signals/);
   assert.match(auditCard, /ag-auditoria-card/);
   assert.match(auditCard, /agendaTipoAccentClass\(r\.tipo\)/);
   assert.match(auditCard, /isAuditoria && !groupedAudit && r\.obs/);
@@ -2637,6 +2637,11 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   assert.match(grouped, /Agendado/);
   assert.match(context.agendaCardHtml(audit, 'test'), /ag-event-type/);
   assert.match(context.agendaCardHtml({ ...audit, obs: '' }, 'test', { groupedAudit: true }), /ag-appt-name">Auditoria/);
+  const visitaComIndicadores = context.agendaCardHtml({ ...row, tipo: 'Visita', participante: 'Pessoa A', carroRequerido: true, servTerc: 'Prestador', statusRequisicao: 'Enviada' }, 'visita');
+  assert.match(visitaComIndicadores, /ag-context-identity ag-context-has-project[^>]*>[\s\S]*?&lt;Projeto&gt;[\s\S]*?ag-event-type[^>]*>[\s\S]*?Visita[\s\S]*?<\/span><\/span><span class="ag-context-signals ag-context-after-identity"[^>]*>[\s\S]*?Carro requerido[\s\S]*?Req\. enviada/);
+  assert.doesNotMatch(context.agendaCardHtml({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'sem-indicadores'), /ag-context-signals/);
+  assert.match(styles, /\.ag-context-signals\.ag-context-after-identity\{border-left:1px solid/);
+  assert.match(styles, /@media\(max-width:600px\)\{\.ag-context-signals\.ag-context-after-identity\{width:100%;border-left:0;border-top:1px solid/);
   assert.equal(context.AgendaRules.typeClass('Consulta'), 'ag-type-consulta');
   assert.equal(context.AgendaRules.typeClass('Contato telefônico'), 'ag-type-default');
   assert.match(context.agendaTipoLabel('Consulta'), /ag-event-type ag-type-consulta/);

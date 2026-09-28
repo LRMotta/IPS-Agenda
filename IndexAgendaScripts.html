@@ -6036,9 +6036,13 @@
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
     var tipoLabel = isPeriodoOperacional ? '' : agendaTipoLabel(r.tipo);
     var postVisitIcons = agendaPostVisitIcons(r);
+    var identificacaoEvento = agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + tipoLabel;
+    var indicadoresEvento = (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons;
     var contextoPrincipal = isPeriodoOperacional
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
-      : (isAuditoria ? '' : agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + tipoLabel + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
+      : (isAuditoria ? '' :
+        (identificacaoEvento ? '<span class="ag-context-identity' + (r.projeto && tipoLabel ? ' ag-context-has-project' : '') + '">' + identificacaoEvento + '</span>' : '') +
+        (indicadoresEvento ? '<span class="ag-context-signals' + (identificacaoEvento ? ' ag-context-after-identity' : '') + '">' + indicadoresEvento + '</span>' : ''));
     var sideHtml = agendaSidePanelHtml(r, labSim);
     return '<div class="ag-appt ' + (tipoLabel ? agendaTipoAccentClass(r.tipo) : '') + ' st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
