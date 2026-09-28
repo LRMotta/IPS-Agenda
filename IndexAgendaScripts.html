@@ -39,6 +39,7 @@
   var _agendaAuditoriasExpandidasPorDia = {};
   var _agendaCanceladosExpandidosPorDia = {};
   var _agendaCanceladosExpandidosPorSemana = {};
+  var _agendaActionMenuDismissHandlersInstalled = false;
   var _agendaEventosPorId = {};
   var _agendaEditRecord = null;
   var _agendaMateriaisAnteriores = [];
@@ -5401,6 +5402,7 @@
   function agendaCanceladoCompactoHtml(r, suffix) {
     var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
     var cardId = agendaCardDomId(r);
+    var past = r.dataIso && r.dataIso < agendaIso(new Date());
     var tipoLabel = AgendaRules.isOperationalPeriod(r) ? '' : agendaTipoLabel(r.tipo);
     return '<div class="ag-appt ag-cancelado-compact' + (tipoLabel ? ' ' + agendaTipoAccentClass(r.tipo) : '') + ' st-cancelado" id="' + cardId + '">' +
       '<div class="ag-cancelado-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
@@ -5408,7 +5410,7 @@
         '<div class="ag-cancelado-event"><div class="ag-cancelado-name">' + esc(agendaCanceladoTitulo_(r)) + agendaStatusChipOp(r.status, r.tipo) + '</div><div class="ag-cancelado-project">' + tipoLabel + agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + '</div></div>' +
         '<div class="ag-cancelado-context">' + agendaMetaText(AgendaRules.isOperationalPeriod(r) ? 'meeting_room' : 'flag', agendaCanceladoContexto_(r)) + '</div>' +
         '<div class="ag-cancelado-motive">' + agendaMetaText('info', agendaCancelamentoResumo_(r)) + '</div>' +
-        '<div class="ag-appt-actions"><button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></button><button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes" aria-label="Detalhes"><span class="material-symbols-outlined">expand_more</span></button></div>' +
+        agendaActionMenuHtml_(r, id, past, { hideCancel: true }) +
       '</div>' +
       '<div class="ag-appt-detail" id="' + id + '">' + agendaDetailHtml(r) + '</div>' +
     '</div>';
@@ -5418,8 +5420,6 @@
     var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
     var cardId = agendaCardDomId(r);
     var past = r.dataIso && r.dataIso < agendaIso(new Date());
-    var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
-      '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
     var isSiv = AgendaRules.isSiv(r);
     var statusClass = AgendaRules.isCancelled(r) ? ' st-cancelado' : (isSiv ? ' st-siv' : ' st-monitoria');
     return '<div class="ag-appt ag-monitoria-compact ' + agendaTipoAccentClass(isSiv ? 'SIV' : 'Monitoria') + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
@@ -5428,12 +5428,7 @@
         '<div class="ag-monitoria-body"><div class="ag-monitoria-project"><span class="ag-appt-name">' + esc(r.projeto || 'Projeto não informado') + '</span>' + agendaTipoLabel(isSiv ? 'SIV' : 'Monitoria') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
         '<div class="ag-monitoria-meta"><div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
         '<div class="ag-monitoria-monitor">' + agendaMetaText('person', r.monitorName || 'Monitor não informado') + '</div></div></div>' +
-        '<div class="ag-appt-actions">' +
-          calendarBtn +
-          '<button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar"><span class="material-symbols-outlined">edit</span></button>' +
-          (!past ? '<button class="ag-act-btn" onclick="event.stopPropagation();cancelarAgendaEvento(\'' + esc(r.id) + '\')" title="Cancelar"><span class="material-symbols-outlined">event_busy</span></button>' : '') +
-          '<button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes"><span class="material-symbols-outlined">expand_more</span></button>' +
-        '</div>' +
+        agendaActionMenuHtml_(r, id, past) +
       '</div>' +
       '<div class="ag-appt-detail" id="' + id + '">' + agendaDetailHtml(r) + '</div>' +
     '</div>';
@@ -5914,6 +5909,119 @@
     if (!w) snackErro('O navegador bloqueou a abertura do Google Agenda. Permita pop-ups para este WebApp.');
   }
 
+  function agendaActionMenuHtml_(r, id, past, options) {
+    options = options || {};
+    var menuId = 'agActionMenu' + String(id || '').replace(/\W/g, '');
+    var editButton = '<button class="ag-act-btn" type="button" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar" aria-label="Editar"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>';
+    var items = [];
+
+    if (AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR)) {
+      items.push({
+        icon: 'calendar_add_on',
+        label: 'Adicionar ao Google Agenda',
+        action: 'abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')'
+      });
+    }
+    if (!past && !options.hideCancel) {
+      items.push({
+        icon: 'event_busy',
+        label: 'Cancelar',
+        action: 'cancelarAgendaEvento(\'' + esc(r.id) + '\')',
+        danger: true
+      });
+    }
+
+    var usaDisplayOperacional = agendaUsaDisplayOperacional_(r);
+    var showDisplay = usaDisplayOperacional ? r.projeto : r.participante;
+    if (showDisplay) {
+      var displayAction = usaDisplayOperacional
+        ? 'abrirDisplayMonitoriaAgendaCard(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')'
+        : 'abrirDisplayPaciente(\'' + encodeURIComponent(JSON.stringify(agendaDisplayPayload(r))).replace(/'/g, '%27') + '\')';
+      items.push({icon: 'picture_in_picture', label: 'Gerar Display', action: displayAction});
+    }
+
+    if (!items.length) return '<div class="ag-appt-actions">' + editButton + '</div>';
+
+    var menuItems = items.map(function(item) {
+      return '<button class="ag-action-menu-item' + (item.danger ? ' danger' : '') + '" type="button" role="menuitem" onclick="event.stopPropagation();agendaCloseActionMenus();' + item.action + '">' +
+        '<span class="material-symbols-outlined" aria-hidden="true">' + item.icon + '</span><span>' + esc(item.label) + '</span></button>';
+    }).join('');
+
+    return '<div class="ag-appt-actions">' + editButton +
+      '<div class="ag-action-menu-wrap">' +
+        '<button class="ag-act-btn ag-action-menu-trigger" type="button" onclick="event.stopPropagation();agendaToggleActionMenu(\'' + menuId + '\', this)" title="Mais ações" aria-label="Mais ações" aria-haspopup="menu" aria-expanded="false" aria-controls="' + menuId + '">' +
+          '<span class="material-symbols-outlined" aria-hidden="true">more_vert</span></button>' +
+        '<div class="ag-action-menu" id="' + menuId + '" role="menu" aria-label="Ações do agendamento">' + menuItems + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function agendaInstallActionMenuDismissHandlers_() {
+    if (_agendaActionMenuDismissHandlersInstalled || typeof document === 'undefined') return;
+    _agendaActionMenuDismissHandlersInstalled = true;
+    document.addEventListener('click', function(event) {
+      var target = event && event.target;
+      if (target && target.closest && target.closest('.ag-action-menu-wrap')) return;
+      agendaCloseActionMenus();
+    });
+    document.addEventListener('keydown', function(event) {
+      if (!event) return;
+      var target = event.target;
+      var activeMenu = target && target.closest ? target.closest('.ag-action-menu') : null;
+      if (event.key === 'Escape') {
+        var menus = document.querySelectorAll('.ag-action-menu.open');
+        if (!menus.length) return;
+        var trigger = menus[0].parentNode.querySelector('.ag-action-menu-trigger');
+        event.preventDefault();
+        agendaCloseActionMenus();
+        if (trigger) trigger.focus();
+        return;
+      }
+      if (!activeMenu || !/^(ArrowDown|ArrowUp|Home|End)$/.test(event.key)) return;
+      var items = activeMenu.querySelectorAll('[role="menuitem"]');
+      if (!items.length) return;
+      var activeIndex = Array.prototype.indexOf.call(items, target);
+      if (event.key === 'Home') activeIndex = -1;
+      else if (event.key === 'End') activeIndex = 0;
+      else if (activeIndex < 0) activeIndex = 0;
+      var nextIndex = event.key === 'End' ? items.length - 1
+        : event.key === 'Home' ? 0
+        : (activeIndex + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+      event.preventDefault();
+      items[nextIndex].focus();
+    });
+  }
+
+  function agendaCloseActionMenus() {
+    var menus = document.querySelectorAll('.ag-action-menu.open');
+    for (var i = 0; i < menus.length; i++) {
+      var menu = menus[i];
+      menu.classList.remove('open');
+      var wrap = menu.parentNode;
+      var trigger = wrap && wrap.querySelector('.ag-action-menu-trigger');
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      var card = menu.closest('.ag-appt');
+      if (card) card.classList.remove('ag-action-menu-open');
+    }
+  }
+
+  function agendaToggleActionMenu(menuId, trigger) {
+    agendaInstallActionMenuDismissHandlers_();
+    var menu = document.getElementById(menuId);
+    if (!menu) return;
+    var closing = menu.classList.contains('open');
+    agendaCloseActionMenus();
+    if (closing) return;
+
+    menu.classList.add('open');
+    trigger = trigger || menu.parentNode.querySelector('.ag-action-menu-trigger');
+    if (trigger) trigger.setAttribute('aria-expanded', 'true');
+    var card = menu.closest('.ag-appt');
+    if (card) card.classList.add('ag-action-menu-open');
+    var firstItem = menu.querySelector('[role="menuitem"]');
+    if (firstItem) firstItem.focus();
+  }
+
   function agendaCardHtml(r, suffix, options) {
     var id = 'agDet' + String(r.rowIndex || suffix).replace(/\W/g, '');
     var cardId = agendaCardDomId(r);
@@ -5932,8 +6040,6 @@
       ? agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + agendaMetaText('meeting_room', r.salaMonitoria)
       : (isAuditoria ? '' : agendaChip(r.projeto, 'ag-proj-chip', 'folder_open') + tipoLabel + (r.carroRequerido ? agendaCarroChip() : '') + (r.servTerc ? agendaReqChip(r) : '') + postVisitIcons);
     var sideHtml = agendaSidePanelHtml(r, labSim);
-    var calendarBtn = !AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR) ? '' :
-      '<button class="ag-act-btn" onclick="event.stopPropagation();abrirEventoNoGoogleCalendar(\'' + esc(r.id) + '\')" title="Adicionar ao Google Agenda" aria-label="Adicionar ao Google Agenda"><span class="material-symbols-outlined">calendar_add_on</span></button>';
     return '<div class="ag-appt ' + (tipoLabel ? agendaTipoAccentClass(r.tipo) : '') + ' st-' + st + agendaTipoVisualClass(r) + (isAuditoria ? ' ag-auditoria-card' : '') + (past ? ' past' : '') + (labSim ? ' lab-central' : '') + '" id="' + cardId + '">' +
       '<div class="ag-appt-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         (labSim ? '<div class="ag-lab-watermark" title="Laboratorio central"><span class="material-symbols-outlined">science</span></div>' : '') +
@@ -5949,12 +6055,7 @@
           (isAuditoria && !groupedAudit && r.obs ? '<div class="ag-obs-preview"><span class="material-symbols-outlined">sticky_note_2</span><span>' + esc(r.obs) + '</span></div>' : '') +
         '</div>' +
         (sideHtml ? '<div class="ag-appt-side">' + sideHtml + '</div>' : '') +
-        '<div class="ag-appt-actions">' +
-          calendarBtn +
-          '<button class="ag-act-btn" onclick="event.stopPropagation();abrirAgendaEdicao(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')" title="Editar"><span class="material-symbols-outlined">edit</span></button>' +
-          (!past ? '<button class="ag-act-btn" onclick="event.stopPropagation();cancelarAgendaEvento(\'' + esc(r.id) + '\')" title="Cancelar"><span class="material-symbols-outlined">event_busy</span></button>' : '') +
-          '<button class="ag-act-btn" onclick="event.stopPropagation();agendaToggleDetail(\'' + id + '\')" title="Detalhes"><span class="material-symbols-outlined">expand_more</span></button>' +
-        '</div>' +
+        agendaActionMenuHtml_(r, id, past) +
       '</div>' +
       '<div class="ag-appt-detail" id="' + id + '">' + agendaDetailHtml(r) + '</div>' +
     '</div>';
@@ -5962,16 +6063,10 @@
 
   function agendaDetailHtml(r) {
     var couriers = agendaCourierCards(r);
-    var usaDisplayOperacional = agendaUsaDisplayOperacional_(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
-    var showDisplay = usaDisplayOperacional ? r.projeto : r.participante;
-    var displayAction = usaDisplayOperacional
-      ? 'abrirDisplayMonitoriaAgendaCard(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')'
-      : 'abrirDisplayPaciente(\'' + encodeURIComponent(JSON.stringify(agendaDisplayPayload(r))).replace(/'/g, '%27') + '\')';
-    var displayBtn = showDisplay ? '<button class="ag-tb-btn" type="button" onclick="event.stopPropagation();' + displayAction + '"><span class="material-symbols-outlined">picture_in_picture</span> Gerar Display</button>' : '';
     var reciboTipo = AgendaRules.formPolicy(r).type;
     var reciboBtn = r.participante && ['visita', 'consulta'].indexOf(reciboTipo) >= 0 ? '<button class="ag-tb-btn" type="button" onclick="event.stopPropagation();abrirAgendaRecibo(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')"><span class="material-symbols-outlined">receipt_long</span> Gerar recibo</button>' : '';
-    var actions = displayBtn || reciboBtn ? '<div class="ag-det-actions">' + displayBtn + reciboBtn + '</div>' : '';
+    var actions = reciboBtn ? '<div class="ag-det-actions">' + reciboBtn + '</div>' : '';
     return actions +
       (isPeriodoOperacional && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
       (isPeriodoOperacional && r.salaMonitoria ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">meeting_room</span>Local</div><div class="ag-obs-block"><span class="material-symbols-outlined">room</span><span>' + esc(r.salaMonitoria) + '</span></div></div>' : '') +

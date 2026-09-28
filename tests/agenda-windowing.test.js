@@ -1822,6 +1822,9 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const cancelledGroup = functionBody(client, 'agendaCanceladosGrupoHtml');
   const cancelledCompact = functionBody(client, 'agendaCanceladoCompactoHtml');
   const operationalStatus = functionBody(client, 'agendaStatusChipOp');
+  const actionMenu = functionBody(client, 'agendaActionMenuHtml_');
+  const actionMenuDismiss = functionBody(client, 'agendaInstallActionMenuDismissHandlers_');
+  const actionMenuToggle = functionBody(client, 'agendaToggleActionMenu');
 
   assert.match(groups, /var cancelados = rows\.filter\(AgendaRules\.isCancelled\)/);
   assert.match(groups, /!AgendaRules\.isCancelled\(r\) && AgendaRules\.isOperationalPeriod\(r\)/);
@@ -1841,10 +1844,18 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const dayHeader = functionBody(client, 'agendaDayHeader');
   assert.match(dayHeader, /var cancelados = todos\.filter\(AgendaRules\.isCancelled\)\.length/);
   assert.match(dayHeader, /ag-dpill ag-dp-cancel/);
-  assert.match(compact, /calendar_add_on/);
-  assert.match(compact, /abrirAgendaEdicao/);
-  assert.match(compact, /cancelarAgendaEvento/);
+  assert.match(compact, /agendaActionMenuHtml_\(r, id, past\)/);
   assert.match(compact, /agendaToggleDetail/);
+  assert.doesNotMatch(compact, /expand_more|title="Detalhes"/);
+  assert.match(actionMenu, /abrirAgendaEdicao/);
+  assert.match(actionMenu, /calendar_add_on/);
+  assert.match(actionMenu, /cancelarAgendaEvento/);
+  assert.match(actionMenu, /picture_in_picture/);
+  assert.match(actionMenu, /aria-haspopup="menu"/);
+  assert.match(actionMenu, /if \(!past && !options\.hideCancel\)/);
+  assert.match(actionMenuDismiss, /event\.key === 'Escape'/);
+  assert.match(actionMenuDismiss, /ArrowDown\|ArrowUp\|Home\|End/);
+  assert.match(actionMenuToggle, /firstItem\.focus\(\)/);
   assert.match(compact, /st-cancelado/);
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
@@ -1874,14 +1885,14 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(cancelledCompact, /st-cancelado/);
   assert.match(cancelledCompact, /agendaTipoAccentClass\(r\.tipo\)/);
   assert.match(cancelledCompact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
-  assert.match(cancelledCompact, /abrirAgendaEdicao/);
   assert.match(cancelledCompact, /agendaToggleDetail/);
+  assert.match(cancelledCompact, /agendaActionMenuHtml_\(r, id, past, \{ hideCancel: true \}\)/);
   assert.doesNotMatch(cancelledCompact, /cancelarAgendaEvento/);
   assert.doesNotMatch(cancelledCompact, /abrirEventoNoGoogleCalendar/);
-  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(0,1fr\) 124px/);
+  assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*grid-template-columns:46px minmax\(0,1fr\) 64px/);
   assert.match(styles, /\.ag-monitoria-compact-main\{[^}]*column-gap:28px/);
   assert.match(styles, /\.ag-monitoria-project\{gap:8px 12px;flex-wrap:wrap\}/);
-  assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:124px;justify-content:flex-end/);
+  assert.match(styles, /\.ag-monitoria-compact \.ag-appt-actions\{width:64px;justify-content:flex-end/);
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
   assert.match(styles, /\.ag-monitorias-head,\.ag-auditorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
   assert.match(styles, /\.ag-monitorias-title,\.ag-auditorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
@@ -1903,7 +1914,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(styles, /\.ag-appt-time\{[^}]*font-size:13px/);
   assert.match(styles, /\.ag-proj-chip\{background:transparent;color:var\(--primary\);border:0;padding:0;font-weight:600\}/);
   assert.match(styles, /\.ag-dp-cancel\{background:#fde7e7;color:#b3261e\}/);
-  assert.match(styles, /\.ag-cancelado-compact-main\{display:grid;grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 124px;align-items:center;column-gap:28px/);
+  assert.match(styles, /\.ag-cancelado-compact-main\{display:grid;grid-template-columns:46px minmax\(300px,1\.05fr\) minmax\(240px,\.95fr\) minmax\(220px,\.9fr\) 64px;align-items:center;column-gap:28px/);
 });
 
 test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativas', () => {
@@ -2442,15 +2453,18 @@ test('display de Close-Out segue o fluxo institucional sem exigir participante',
   const fromForm = functionBody(client, 'abrirDisplayAgendaFromForm');
   const payload = functionBody(client, 'agendaMonitoriaDisplayPayload');
   const patient = functionBody(client, 'abrirDisplayPacienteFromAgendaForm');
-  const card = functionBody(client, 'agendaDetailHtml');
+  const cardActions = functionBody(client, 'agendaActionMenuHtml_');
+  const details = functionBody(client, 'agendaDetailHtml');
 
   assert.match(classifier, /AgendaRules\.isOperationalPeriod\(eventOrType\) \|\| AgendaRules\.isCloseout\(eventOrType\)/);
   assert.match(fromForm, /agendaUsaDisplayOperacional_\(tipo\)/);
   assert.match(fromForm, /abrirDisplayMonitoriaFromAgendaForm\(\)/);
   assert.match(payload, /AgendaRules\.isCloseout\(r\) \? 'Close-Out'/);
   assert.match(patient, /Selecione um participante para gerar o display/);
-  assert.match(card, /var showDisplay = usaDisplayOperacional \? r\.projeto : r\.participante/);
-  assert.match(card, /var displayAction = usaDisplayOperacional/);
+  assert.match(cardActions, /var showDisplay = usaDisplayOperacional \? r\.projeto : r\.participante/);
+  assert.match(cardActions, /abrirDisplayMonitoriaAgendaCard/);
+  assert.match(cardActions, /abrirDisplayPaciente/);
+  assert.doesNotMatch(details, /Gerar Display|picture_in_picture/);
 });
 
 test('compatibilidades da janela usam fontes autoritativas fora do periodo visivel', () => {
@@ -2602,6 +2616,18 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   assert.match(monitoria, /&lt;Responsavel&gt;/);
   assert.match(monitoria, /ag-event-type[^>]*>.*Monitoria/);
   assert.match(monitoria, /Agendado/);
+  assert.match(monitoria, /more_vert/);
+  assert.match(monitoria, /aria-haspopup="menu"/);
+  assert.match(monitoria, /Adicionar ao Google Agenda/);
+  assert.match(monitoria, /Cancelar/);
+  assert.doesNotMatch(monitoria, /expand_more|title="Detalhes"/);
+  context.agendaDisplayPayload = event => ({ participante: event.participante });
+  const patientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'patient', false);
+  assert.match(patientActions, /Gerar Display/);
+  assert.match(patientActions, /abrirDisplayPaciente/);
+  assert.equal((patientActions.match(/role="menuitem"/g) || []).length, 3);
+  const pastPatientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'past-patient', true);
+  assert.doesNotMatch(pastPatientActions, /cancelarAgendaEvento/);
   const siv = context.agendaMonitoriaCompactaHtml({ ...row, tipo: 'SIV' }, 'test');
   assert.match(siv, /ag-event-type[^>]*>.*SIV/);
   const audit = { ...row, tipo: 'Auditoria', obs: '<Auditoria interna> - Laboratorio - Norma' };
