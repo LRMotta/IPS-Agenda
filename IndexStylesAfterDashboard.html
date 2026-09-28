@@ -164,10 +164,23 @@
     .ag-st-chip{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;white-space:nowrap}
     .ag-ch-agendado{background:#b9ddff;color:#0059a8}.ag-ch-confirmado{background:#c9efc7;color:#0b6b23}.ag-ch-enviado{background:#e1c5ff;color:#6d1b9a}.ag-ch-entregue{background:#008f45;color:#fff}.ag-ch-cancelado{background:#ffd0c9;color:#c5221f}.ag-ch-realizado{background:#f8f9fa;color:#495057;border:1.5px solid #dee2e6}.ag-ch-concluido{background:#212529;color:#fff}.ag-ch-pendente,.ag-ch-reagendado{background:#fff3cd;color:#856404}.ag-ch-naoagendado{background:#eeeeee;color:#555}.ag-ch-monitoria{background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe}.ag-ch-siv{background:#fff3e0;color:#b45309;border:1px solid #fed7aa}
     .ag-proc-preview{font-size:12px;color:#374151;line-height:1.35;max-width:680px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ag-appt-actions{display:flex;gap:4px;align-items:flex-start;flex-shrink:0;padding-top:2px}
+    .ag-appt-actions{display:flex;gap:4px;align-items:flex-start;flex-shrink:0;padding-top:2px;z-index:5}
     .ag-act-btn{width:28px;height:28px;border-radius:var(--r-sm);border:1.5px solid #e0e6f0;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-muted);transition:all .14s}
     .ag-act-btn:hover{background:var(--primary-light);border-color:#c5d5fb;color:var(--primary)}
+    .ag-act-btn:focus-visible{outline:2px solid #7ca8f2;outline-offset:2px}
     .ag-act-btn.open{transform:rotate(180deg);background:var(--primary-light);border-color:#c5d5fb;color:var(--primary)}
+    .ag-appt.ag-action-menu-open{z-index:20}
+    .ag-action-menu-wrap{position:relative;flex:0 0 auto}
+    .ag-action-menu-trigger[aria-expanded="true"]{background:var(--primary-light);border-color:#c5d5fb;color:var(--primary)}
+    .ag-action-menu{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:244px;max-width:min(280px,calc(100vw - 28px));padding:5px;border:1px solid #e0e6f0;border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.16)}
+    .ag-action-menu.open{display:flex;flex-direction:column}
+    .ag-action-menu-item{min-height:38px;width:100%;display:flex;align-items:center;gap:11px;padding:0 10px;border:0;border-radius:6px;background:#fff;color:var(--text-muted);font:500 12px Roboto,sans-serif;text-align:left;white-space:nowrap;cursor:pointer}
+    .ag-action-menu-item+.ag-action-menu-item{border-top:1px solid #f0f3f7}
+    .ag-action-menu-item .material-symbols-outlined{font-size:18px;color:#718096;flex:0 0 auto}
+    .ag-action-menu-item:hover{background:#f4f7fc;color:var(--primary)}
+    .ag-action-menu-item:focus-visible{outline:2px solid #7ca8f2;outline-offset:-2px}
+    .ag-action-menu-item.danger,.ag-action-menu-item.danger .material-symbols-outlined{color:#b3261e}
+    .ag-action-menu-item.danger:hover{background:#fff4f2}
     .ag-appt-detail{display:none;padding:12px 24px 16px 84px;background:#f8faff;border-top:1px dashed #d8e2f0}
     .ag-appt-detail.open{display:block}
     .ag-list-section-title{padding:10px 24px;border-bottom:1px solid #dce6f5;background:#f8fbff;color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:.9px;text-transform:uppercase}
@@ -179,7 +192,7 @@
     .ag-monitorias-toggle,.ag-auditorias-toggle,.ag-cancelados-toggle{flex-shrink:0}
     .ag-obs-preview{display:flex;align-items:flex-start;gap:5px;max-width:680px;color:#7a4b22;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .ag-obs-preview .material-symbols-outlined{font-size:15px;flex-shrink:0}
-    .ag-monitoria-compact-main{display:grid;grid-template-columns:46px minmax(0,1fr) 124px;align-items:center;column-gap:28px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
+    .ag-monitoria-compact-main{display:grid;grid-template-columns:46px minmax(0,1fr) 64px;align-items:center;column-gap:28px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
     .ag-monitoria-compact:hover>.ag-monitoria-compact-main{background:#f8faff}
     .ag-monitoria-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start}
     .ag-monitoria-project,.ag-monitoria-location,.ag-monitoria-monitor{min-width:0;display:flex;align-items:center}
@@ -190,10 +203,10 @@
     .ag-monitoria-project .ag-appt-name,.ag-auditoria-card .ag-appt-name{overflow-wrap:anywhere}
     .ag-auditoria-card .ag-l1{flex-wrap:wrap}
     .ag-monitoria-location .ag-meta-text,.ag-monitoria-monitor .ag-meta-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .ag-monitoria-compact .ag-appt-actions{width:124px;justify-content:flex-end;padding-top:0}
+    .ag-monitoria-compact .ag-appt-actions{width:64px;justify-content:flex-end;padding-top:0}
     .ag-monitoria-compact .ag-appt-detail{padding-left:98px}
     .ag-cancelado-compact{background:#fffafa}
-    .ag-cancelado-compact-main{display:grid;grid-template-columns:46px minmax(300px,1.05fr) minmax(240px,.95fr) minmax(220px,.9fr) 124px;align-items:center;column-gap:28px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
+    .ag-cancelado-compact-main{display:grid;grid-template-columns:46px minmax(300px,1.05fr) minmax(240px,.95fr) minmax(220px,.9fr) 64px;align-items:center;column-gap:28px;row-gap:8px;padding:8px 24px;cursor:pointer;transition:background .12s}
     .ag-cancelado-compact:hover>.ag-cancelado-compact-main{background:#fff5f5}
     .ag-cancelado-compact .ag-appt-time{width:46px;min-width:46px;margin:0;justify-self:start}
     .ag-cancelado-event,.ag-cancelado-context,.ag-cancelado-motive{min-width:0}
@@ -201,7 +214,7 @@
     .ag-cancelado-project{display:flex;align-items:center;gap:6px;min-width:0;margin-top:4px;flex-wrap:wrap}
     .ag-cancelado-context,.ag-cancelado-motive{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#7b4b4b}
     .ag-cancelado-context .ag-meta-text,.ag-cancelado-motive .ag-meta-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#7b4b4b}
-    .ag-cancelado-compact .ag-appt-actions{width:124px;justify-content:flex-end;padding-top:0}
+    .ag-cancelado-compact .ag-appt-actions{width:64px;justify-content:flex-end;padding-top:0}
     .ag-cancelado-compact .ag-appt-detail{padding-left:98px}
     .ag-det-section{margin-bottom:14px}.ag-det-section:last-child{margin-bottom:0}
     .ag-det-label{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-faint);margin-bottom:8px;display:flex;align-items:center;gap:5px}
@@ -366,7 +379,7 @@
     @media(max-width:760px){.ag-appt-main{padding:10px 12px}.ag-appt-side{padding-left:0}.ag-appt-detail{padding:10px 12px 14px 18px}.ag-c-body{grid-template-columns:1fr}.ag-c-col{border-right:none;border-bottom:1px solid #e0e6f0}.ag-c-col:last-child{border-bottom:none}.ag-period{width:100%;order:5}.ag-search{order:6;width:100%}}
     @media(max-width:1180px){.wide-only{display:none!important}}
 
-    @media(max-width:600px){.ag-monitoria-compact-main,.ag-auditoria-card .ag-appt-main{display:grid;grid-template-columns:46px minmax(0,1fr);padding:10px 12px;column-gap:22px}.ag-monitoria-compact .ag-appt-actions,.ag-auditoria-card .ag-appt-actions{grid-column:2;justify-content:flex-start;width:auto}.ag-monitoria-meta{align-items:flex-start;flex-direction:column}.ag-monitoria-monitor{border-left:0;padding-left:0}.ag-monitoria-location .ag-meta-text,.ag-monitoria-monitor .ag-meta-text{white-space:normal;overflow-wrap:anywhere}}
+    @media(max-width:600px){.ag-monitoria-compact-main,.ag-auditoria-card .ag-appt-main{display:grid;grid-template-columns:46px minmax(0,1fr);padding:10px 12px;column-gap:22px}.ag-monitoria-compact .ag-appt-actions,.ag-auditoria-card .ag-appt-actions{grid-column:2;justify-content:flex-start;width:auto}.ag-monitoria-compact .ag-action-menu,.ag-auditoria-card .ag-action-menu{left:0;right:auto}.ag-monitoria-meta{align-items:flex-start;flex-direction:column}.ag-monitoria-monitor{border-left:0;padding-left:0}.ag-monitoria-location .ag-meta-text,.ag-monitoria-monitor .ag-meta-text{white-space:normal;overflow-wrap:anywhere}}
 
     /* MOBILE SHELL + AGENDA/PENDENCIAS */
     @media(max-width:900px){
