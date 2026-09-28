@@ -215,6 +215,7 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   context.getCodexSheetDataByName_ = () => sheet.rows;
   context.Session = { getScriptTimeZone: () => 'America/Sao_Paulo' };
   context.getUltimasVisitasParticipantesAgendaMap_ = () => ({});
+  context.agendaUltimaVisitaCadastroKey_ = () => '';
   assert.equal(context.getParticipantes()[0].acompanhantes[0].id, originalId);
   context.codexAuthorizeWebAppRequest_ = () => ({ ok: false, message: 'Acesso negado.' });
   assert.throws(() => context.getParticipantes(), /Acesso negado/);

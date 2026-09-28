@@ -1462,6 +1462,7 @@ test('pesquisa historica e paginada em lotes sem serializar toda a agenda', () =
 
 test('cursor da pesquisa historica nao repete nem perde resultados', () => {
   const server = agendaServer();
+  server.agendaParticipantHydrationRows_ = () => [];
   server.getAgendaSheetForRead_ = () => fakeAgenda(server, [
     { id: '1', data: '2026-07-10', participante: 'Alpha' },
     { id: '2', data: '2026-07-11', participante: 'Outro' },
@@ -1780,6 +1781,45 @@ test('servidor bloqueia participacao encerrada em novo evento e preserva edicao 
   assert.equal(edicao.participanteCadastroId, '81');
 });
 
+test('salvamento recusa ID de cadastro divergente sem trocar a identidade da visita', () => {
+  const server = agendaServer();
+  server.agendaInfoParticipanteParaSalvar_ = () => ({
+    id: '81231565', nome: 'Ezio Gonçalves dos Reis', numId: 'PSCR-055018-002',
+    projeto: 'BGB-58067-101', braco: 'Fase 1b Parte D',
+    nascimento: '20/05/1949', disponivelNovoAgendamento: true
+  });
+  const historico = agendaRow(server, {
+    participanteCadastroId: '81231565', participante: 'Margarida de Fátima Skonetzky',
+    idParticipante: '', projeto: 'TROPION-Lung07'
+  });
+  const dados = {
+    participanteCadastroId: '81231565', participante: 'Margarida de Fátima Skonetzky',
+    idParticipante: '', projeto: 'TROPION-Lung07'
+  };
+  assert.match(server.agendaSincronizarProjetoDoParticipante_(dados, { isVisit: true }, historico).erro, /vínculo do participante/);
+  assert.equal(dados.participante, 'Margarida de Fátima Skonetzky');
+  assert.equal(dados.projeto, 'TROPION-Lung07');
+
+  const trocaExplicita = {
+    participanteCadastroId: '81231565', participante: 'Ezio Gonçalves dos Reis',
+    idParticipante: 'PSCR-055018-002', projeto: 'BGB-58067-101'
+  };
+  assert.equal(server.agendaSincronizarProjetoDoParticipante_(trocaExplicita, { isVisit: true }, historico), null);
+  assert.equal(trocaExplicita.participante, 'Ezio Gonçalves dos Reis');
+
+  const outroProtocolo = {
+    participanteCadastroId: '81231565', participante: 'Ezio Gonçalves dos Reis',
+    idParticipante: 'PSCR-055018-002', projeto: 'TROPION-Lung07'
+  };
+  assert.match(server.agendaSincronizarProjetoDoParticipante_(outroProtocolo, { isVisit: true }).erro, /vínculo do participante/);
+
+  const numeroDeOutroCadastro = {
+    participante: 'Margarida de Fátima Skonetzky',
+    idParticipante: 'PSCR-055018-002', projeto: 'BGB-58067-101'
+  };
+  assert.match(server.agendaSincronizarProjetoDoParticipante_(numeroDeOutroCadastro, { isVisit: true }).erro, /vínculo do participante/);
+});
+
 test('fallback legado nao escolhe arbitrariamente entre participacoes ambiguas', () => {
   const rows = [
     ['81', 'Pessoa A', '', '', '', 'Estudo Aurora', '', '', 'Pré-triagem'],
@@ -2051,6 +2091,9 @@ test('servidor substitui o projeto informado pelo projeto do participante em vis
   const consulta = { participante: 'Pessoa A', projeto: 'Projeto Indevido' };
   assert.equal(server.agendaSincronizarProjetoDoParticipante_(consulta, { isVisit: false, type: 'consulta' }), null);
   assert.equal(consulta.projeto, 'Projeto Correto');
+  const legadoComNumero = { participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Projeto Indevido' };
+  assert.equal(server.agendaSincronizarProjetoDoParticipante_(legadoComNumero, { isVisit: true }), null);
+  assert.equal(legadoComNumero.projeto, 'Projeto Correto');
   assert.equal(server.agendaSincronizarProjetoDoParticipante_({ participante: 'Pessoa A', projeto: 'Livre' }, { isVisit: false, type: 'evento' }), null);
 });
 

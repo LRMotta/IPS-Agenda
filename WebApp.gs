@@ -6138,7 +6138,8 @@ function getParticipantes() {
   return rows.slice(1)
     .filter(function(r){ return r[0] !== '' && r[0] !== undefined && r[0] !== null; })
     .map(function(r) {
-      var ultimaVisita = ultimaVisitaMap[normText_(r[1])] || { data: '', visita: '---' };
+      var ultimaVisita = ultimaVisitaMap[agendaUltimaVisitaCadastroKey_(r[0])] ||
+        ultimaVisitaMap[normText_(r[1])] || { data: '', visita: '---' };
       function fmtDate(val) {
         if (!val) return '';
         try {
@@ -8306,7 +8307,8 @@ function getPlanejamentoPedidoEstoque() {
   participantes.forEach(function(p) {
     if (!projetosMap[p.projeto]) return;
     if (isParticipanteAtivoPlanejamento_(p.status)) {
-      var ultima = ultimasVisitasMap[normText_(p.nome)] || { data: '', visita: '' };
+      var ultima = ultimasVisitasMap[agendaUltimaVisitaCadastroKey_(p.id)] ||
+        ultimasVisitasMap[normText_(p.nome)] || { data: '', visita: '' };
       projetosMap[p.projeto].participantesAtivos++;
       projetosMap[p.projeto].participantes.push({
         nome: p.nome || '',
@@ -11972,7 +11974,7 @@ function getInfoParticipante(referencia) {
   var row = encontrado.row || [];
   var nome = String(row[1] || '').trim();
   var nascRaw = row[2];
-  var ultima = getUltimaVisitaParticipanteAgenda_(nome);
+  var ultima = getUltimaVisitaParticipanteAgenda_(nome, row[0]);
   return {
     id: String(row[0] || '').trim(),
     nome: nome,
@@ -12496,6 +12498,7 @@ function jornadaReservasModeloVisita_(reservas, modelo, visita) {
 
 function getJornadaParticipante(payload) {
   payload = payload || {};
+  var idCadastro = String(payload.idCadastro || payload.participanteCadastroId || '').trim();
   var nome = String(payload.nome || '').trim();
   var participanteId = String(payload.idParticipante || '').trim();
   var projeto = String(payload.projeto || '').trim();
@@ -12503,6 +12506,7 @@ function getJornadaParticipante(payload) {
   var projetoNorm = normText_(projeto);
   var participanteNorm = normText_(nome);
   var participanteIdNorm = normText_(participanteId);
+  var cadastroIdNorm = normText_(idCadastro);
   var agenda = getAgendaSheetForRead_();
   var eventos = [];
   if (agenda && agenda.getLastRow() >= 2) {
@@ -12510,9 +12514,19 @@ function getJornadaParticipante(payload) {
     rows.forEach(function(row) {
       var idx = AGENDA_CFG.idx;
       if (!AgendaServerRules_.isVisit(row[idx.tipo])) return;
-      var mesmoParticipante = participanteIdNorm && normText_(row[idx.idParticipante]) === participanteIdNorm;
-      if (!mesmoParticipante) mesmoParticipante = normText_(row[idx.participante]) === participanteNorm;
-      if (!mesmoParticipante || normText_(row[idx.projeto]) !== projetoNorm) return;
+      var cadastroIdEventoNorm = idx.participanteCadastroId >= 0
+        ? normText_(row[idx.participanteCadastroId])
+        : '';
+      var mesmoCadastro = !!(cadastroIdNorm && cadastroIdEventoNorm && cadastroIdEventoNorm === cadastroIdNorm);
+      var mesmoParticipante = CadastroRules_.agendaEventMatchesParticipant({
+        id: idCadastro, nome: nome, idParticipante: participanteId, projeto: projeto
+      }, {
+        participantCadastroId: cadastroIdEventoNorm,
+        participante: row[idx.participante],
+        idParticipante: row[idx.idParticipante],
+        projeto: row[idx.projeto]
+      });
+      if (!mesmoParticipante || (!mesmoCadastro && normText_(row[idx.projeto]) !== projetoNorm)) return;
       var data = agendaDateFromValue_(row[idx.data]);
       if (!data || isNaN(data.getTime())) return;
       eventos.push({
@@ -12562,7 +12576,7 @@ function getJornadaParticipante(payload) {
   var bracos = getBracosProjeto(projeto);
   var braco = bracos.filter(function(item) { return normText_(item.nome) === normText_(payload.braco); })[0] || {};
   var configCtms = jornadaCtmsLerConfigParticipante_({
-    idCadastro: payload.idCadastro,
+    idCadastro: idCadastro,
     nome: nome,
     idParticipante: participanteId,
     projeto: projeto
@@ -12632,7 +12646,7 @@ function getJornadaParticipante(payload) {
   var historicoLivre = eventos.filter(function(evento) { return !evento.cancelada && !eventos.some(function(outro) { return outro !== evento && outro.id === evento.id; }); });
   var conciliacao = agendaSoAMontarConcilicaoVisitas_(eventos, visitas);
   return {
-    participante: { idCadastro: String(payload.idCadastro || ''), nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
+    participante: { idCadastro: idCadastro, nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
     possuiSoA: visitas.length > 0, visitas: visitasJornada,
     visitasConciliacao: jornadaVisitasParaConciliacao_(visitas),
     visitasProntidao: visitasProntidao,
@@ -12932,10 +12946,16 @@ function isAgendaTipoVisita_(tipo) {
   return AgendaServerRules_.formPolicy(tipo).usesParticipantWorkflow;
 }
 
-function getUltimaVisitaParticipanteAgenda_(nome) {
+function agendaUltimaVisitaCadastroKey_(idCadastro) {
+  var key = normText_(idCadastro);
+  return key ? 'cadastro:' + key : '';
+}
+
+function getUltimaVisitaParticipanteAgenda_(nome, idCadastro) {
   var vazio = { data: '', visita: '' };
   try {
-    return getUltimasVisitasParticipantesAgendaMap_()[normText_(nome)] || vazio;
+    var visitas = getUltimasVisitasParticipantesAgendaMap_();
+    return visitas[agendaUltimaVisitaCadastroKey_(idCadastro)] || visitas[normText_(nome)] || vazio;
   } catch(e) {
     return vazio;
   }
@@ -12953,19 +12973,23 @@ function getUltimasVisitasParticipantesAgendaMap_() {
     hoje.setHours(23, 59, 59, 999);
     vals.forEach(function(r) {
       var participante = normText_(r[idx.participante]);
-      if (!participante) return;
+      var cadastroId = idx.participanteCadastroId >= 0 ? r[idx.participanteCadastroId] : '';
+      if (!participante && !normText_(cadastroId)) return;
       if (!AgendaServerRules_.isVisit(r[idx.tipo])) return;
       var status = normText_(r[idx.status]);
       if (!AgendaServerRules_.isCompleted(status)) return;
       var dt = agendaDateFromValue_(r[idx.data]);
       if (!dt || dt.getTime() > hoje.getTime()) return;
-      if (!out[participante] || dt.getTime() > out[participante].dataObj.getTime()) {
-        out[participante] = {
-          dataObj: dt,
-          data: formatarDataSafe(r[idx.data]),
-          dataIso: formatarDataIsoAgenda_(dt),
-          visita: String(r[idx.visita] || '---')
-        };
+      var ultimaVisita = {
+        dataObj: dt, data: formatarDataSafe(r[idx.data]),
+        dataIso: formatarDataIsoAgenda_(dt), visita: String(r[idx.visita] || '---')
+      };
+      if (participante && (!out[participante] || dt.getTime() > out[participante].dataObj.getTime())) {
+        out[participante] = ultimaVisita;
+      }
+      var chaveCadastro = agendaUltimaVisitaCadastroKey_(cadastroId);
+      if (chaveCadastro && (!out[chaveCadastro] || dt.getTime() > out[chaveCadastro].dataObj.getTime())) {
+        out[chaveCadastro] = ultimaVisita;
       }
     });
     Object.keys(out).forEach(function(k) {
@@ -13602,6 +13626,17 @@ function agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior) {
   });
   var projeto = String(info && info.projeto || '').trim();
   if (!projeto) return { erro: 'O participante selecionado nao possui projeto/protocolo cadastrado.' };
+  var numeroInformado = String(dados.participanteId || dados.idParticipante || '').trim();
+  if (participanteCadastroId || numeroInformado) {
+    // Um ID historico incorreto nao pode substituir nome e protocolo em uma edicao comum.
+    var vinculoDivergente = (participanteCadastroId && normText_(participanteCadastroId) !== normText_(info.id)) ||
+      (participante && normText_(participante) !== normText_(info.nome)) ||
+      (numeroInformado && normText_(numeroInformado) !== normText_(info.numId)) ||
+      (participanteCadastroId && dados.projeto && normText_(dados.projeto) !== normText_(projeto));
+    if (vinculoDivergente) {
+      return { erro: 'O vínculo do participante não corresponde ao nome, número ou projeto deste agendamento. Selecione novamente a participação correta antes de salvar.' };
+    }
+  }
   var mesmoRegistroHistorico = false;
   if (rowAnterior) {
     var i = AGENDA_CFG.idx;
@@ -16605,6 +16640,19 @@ function agendaWindowCachePut_(key, value) {
   }
 }
 
+function agendaCadastroIdsConsultaHistorico_(query) {
+  var needle = normText_(query);
+  var ids = {};
+  if (!needle) return ids;
+  agendaParticipantHydrationRows_().forEach(function(row) {
+    var searchable = [row[1], row[2], row[3]].map(normText_).join(' ');
+    if (searchable.indexOf(needle) < 0) return;
+    var id = normText_(row[0]);
+    if (id) ids[id] = true;
+  });
+  return ids;
+}
+
 function pesquisarAgendaHistorico(query, cursor, pageSize) {
   query = String(query || '').trim();
   if (query.length < 2) throw new Error('Informe pelo menos 2 caracteres para pesquisar.');
@@ -16613,6 +16661,8 @@ function pesquisarAgendaHistorico(query, cursor, pageSize) {
   var size = Math.max(1, Math.min(Number(pageSize || 25), 50));
   var scanEnd = cursor == null || cursor === '' ? lastRow : Math.min(lastRow, Math.max(2, Number(cursor) || lastRow));
   var needle = normText_(query);
+  var cadastroIds = agendaCadastroIdsConsultaHistorico_(query);
+  var cadastroIdIndex = AGENDA_CFG.idx.participanteCadastroId;
   var items = [];
   var nextCursor = null;
   var batchSize = 200;
@@ -16621,7 +16671,9 @@ function pesquisarAgendaHistorico(query, cursor, pageSize) {
     var batchStart = Math.max(2, scanEnd - batchSize + 1);
     var vals = sh.getRange(batchStart, 1, scanEnd - batchStart + 1, AGENDA_CFG.lastCol).getValues();
     for (var i = vals.length - 1; i >= 0; i--) {
-      if (normText_(vals[i].map(function(value) { return String(value || ''); }).join(' ')).indexOf(needle) === -1) continue;
+      var cadastroIdEvento = cadastroIdIndex >= 0 ? normText_(vals[i][cadastroIdIndex]) : '';
+      var buscaTexto = normText_(vals[i].map(function(value) { return String(value || ''); }).join(' ')).indexOf(needle) >= 0;
+      if (!buscaTexto && !(cadastroIdEvento && cadastroIds[cadastroIdEvento])) continue;
       if (items.length >= size) {
         nextCursor = batchStart + i;
         break searchLoop;
@@ -17105,7 +17157,7 @@ function agendaParticipantHydrationIndex_(useCanaryCache) {
 
 function agendaHydrateParticipantFields_(items, options) {
   var precisaComplemento = (items || []).some(function(evento) {
-    return evento && evento.participante && (!evento.idParticipante || !evento.braco);
+    return evento && (evento.participanteCadastroId || (evento.participante && (!evento.idParticipante || !evento.braco)));
   });
   if (!precisaComplemento) return items;
   options = options || {};
@@ -17115,12 +17167,33 @@ function agendaHydrateParticipantFields_(items, options) {
   });
   agendaMeasureWindowStage_(measureStage, 'hydrate_participant_match', { rowCount: items.length }, function() {
     items.forEach(function(evento) {
-      var participante = evento.participanteCadastroId
-        ? index.byCadastro[String(evento.participanteCadastroId)]
-        : (evento.idParticipante && evento.projeto
-          ? index.byChave[normText_(evento.idParticipante) + '|' + normText_(evento.projeto)]
-          : index.byNome[normText_(evento.participante) + '|' + normText_(evento.projeto)]);
+      var temCadastroId = !!String(evento.participanteCadastroId || '').trim();
+      function identidadeCompativel(participante) {
+        if (!participante) return false;
+        var campos = [
+          [evento.participante, participante.nome],
+          [evento.idParticipante, participante.idParticipante],
+          [evento.projeto, participante.projeto]
+        ];
+        return campos.every(function(par) {
+          var valorEvento = normText_(par[0]);
+          var valorCadastro = normText_(par[1]);
+          return !valorEvento || !valorCadastro || valorEvento === valorCadastro;
+        });
+      }
+      var participante = temCadastroId ? index.byCadastro[String(evento.participanteCadastroId)] : null;
+      if (!identidadeCompativel(participante) && evento.idParticipante && evento.projeto) {
+        participante = index.byChave[normText_(evento.idParticipante) + '|' + normText_(evento.projeto)];
+      }
+      if (!identidadeCompativel(participante) && evento.participante && evento.projeto) {
+        participante = index.byNome[normText_(evento.participante) + '|' + normText_(evento.projeto)];
+      }
+      if (!identidadeCompativel(participante)) return;
       if (!participante) return;
+      // O ID ajuda a completar campos vazios, mas um vínculo divergente não
+      // pode substituir a identidade já registrada no evento.
+      evento.participante = evento.participante || participante.nome;
+      evento.projeto = evento.projeto || participante.projeto;
       evento.participanteCadastroId = evento.participanteCadastroId || participante.id;
       evento.idParticipante = evento.idParticipante || participante.idParticipante;
       evento.braco = evento.braco || participante.braco;

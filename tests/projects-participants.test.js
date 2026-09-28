@@ -122,6 +122,21 @@ test('evento da Agenda impede exclusao do participante rastreado', () => {
   ), true);
 });
 
+test('ID interno prevalece na localizacao de evento e ID interno divergente bloqueia fallback', () => {
+  const cadastro = rules();
+  const participant = { id: 'CAD-81', nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo Aurora' };
+
+  assert.equal(cadastro.agendaEventMatchesParticipant(participant, {
+    participantCadastroId: 'CAD-81', participante: 'Nome legado', idParticipante: 'P-999', projeto: 'Projeto legado'
+  }), true);
+  assert.equal(cadastro.agendaEventMatchesParticipant(participant, {
+    participantCadastroId: 'CAD-82', participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo Aurora'
+  }), false);
+  assert.equal(cadastro.agendaEventMatchesParticipant(participant, {
+    participantCadastroId: '', participante: 'Nome legado', idParticipante: 'P-001', projeto: 'Estudo Aurora'
+  }), true);
+});
+
 test('servidor bloqueia exclusao quando encontra evento na Agenda', () => {
   const server = readProjectFile('WebApp.gs');
   const block = sourceBetween(server, 'function excluirParticipante(', '// ════════════════════════════════\n//  MONITORES');
@@ -1227,19 +1242,23 @@ test('listagem de participantes recebe e exibe a data da ultima visita realizada
     codexAuthorizeWebAppRequest_: () => ({ ok: true }),
     getCodexSheetDataByName_: () => [
       ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
-      ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo', '', '', '', 'PES-A']
+      ['1', 'Pessoa A', '', '', 'P-001', 'Estudo Aurora', '', '', 'Ativo', '', '', '', 'PES-A'],
+      ['2', 'Pessoa B', '', '', 'P-002', 'Estudo Aurora', '', '', 'Ativo', '', '', '', 'PES-B']
     ],
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
     Utilities: { formatDate: () => '01/01/2000' },
     normText_: (value) => String(value || '').trim().toLowerCase(),
+    agendaUltimaVisitaCadastroKey_: (id) => id ? 'cadastro:' + String(id).trim().toLowerCase() : '',
     getUltimasVisitasParticipantesAgendaMap_: () => ({
+      'cadastro:1': { data: '22/07/2026', visita: 'Visit vinculada pelo ID' },
       'pessoa a': { data: '21/07/2026', visita: 'Visit 3 Week 3' }
     })
   });
   vm.runInContext(getParticipantesBlock, serverContext);
   const participantes = serverContext.getParticipantes();
-  assert.equal(participantes[0].ultimaVisita, 'Visit 3 Week 3');
-  assert.equal(participantes[0].ultimaVisitaData, '21/07/2026');
+  assert.equal(participantes[0].ultimaVisita, 'Visit vinculada pelo ID');
+  assert.equal(participantes[0].ultimaVisitaData, '22/07/2026');
+  assert.equal(participantes[1].ultimaVisita, '---');
   assert.equal(participantes[0].idPessoa, 'PES-A');
 
   const clientSource = readProjectFile('IndexCoreScripts.html');
@@ -1247,7 +1266,122 @@ test('listagem de participantes recebe e exibe a data da ultima visita realizada
   const clientContext = vm.createContext({ esc: (value) => String(value || '') });
   vm.runInContext(cellBlock, clientContext);
   const html = clientContext.participanteUltimaVisitaCellHtml(participantes[0]);
-  assert.match(html, /Visit 3 Week 3/);
-  assert.match(html, /21\/07\/2026/);
-  assert.ok(html.indexOf('Visit 3 Week 3') < html.indexOf('21/07/2026'));
+  assert.match(html, /Visit vinculada pelo ID/);
+  assert.match(html, /22\/07\/2026/);
+  assert.ok(html.indexOf('Visit vinculada pelo ID') < html.indexOf('22/07/2026'));
+});
+
+test('mapa de ultima visita indexa eventos concluidos pelo ID interno mesmo sem nome', () => {
+  const serverSource = readProjectFile('WebApp.gs');
+  const block = sourceBetween(serverSource, 'function agendaUltimaVisitaCadastroKey_(idCadastro)', 'function agendaVisitaCriadaNaMesmaData_(');
+  const row = Array(12).fill('');
+  row[1] = new Date(2026, 7, 6);
+  row[3] = 'Visita';
+  row[4] = 'Concluído';
+  row[10] = 'C27D1';
+  row[11] = 'CAD-1';
+  const serverContext = vm.createContext({
+    AGENDA_CFG: { lastCol: row.length, idx: { participante: 5, tipo: 3, status: 4, data: 1, visita: 10, participanteCadastroId: 11 } },
+    AgendaServerRules_: { isVisit: (value) => value === 'Visita', isCompleted: (value) => value === 'concluído' },
+    getAgendaSheetForRead_: () => ({ getLastRow: () => 2, getRange: () => ({ getValues: () => [row] }) }),
+    normText_: (value) => String(value || '').trim().toLowerCase(),
+    agendaDateFromValue_: (value) => value,
+    formatarDataSafe: () => '06/ago./2026',
+    formatarDataIsoAgenda_: () => '2026-08-06'
+  });
+  vm.runInContext(block, serverContext);
+
+  const map = serverContext.getUltimasVisitasParticipantesAgendaMap_();
+  assert.equal(map['cadastro:cad-1'].visita, 'C27D1');
+  assert.deepEqual(JSON.parse(JSON.stringify(serverContext.getUltimaVisitaParticipanteAgenda_('Margarida', 'CAD-1'))), {
+    data: '06/ago./2026', dataIso: '2026-08-06', visita: 'C27D1'
+  });
+});
+
+test('historico preserva a pessoa do evento quando o cadastro vinculado aponta outra participação', () => {
+  const server = runFile('WebApp.gs');
+  const indexCadastro = 52;
+  const row = Array(53).fill('');
+  row[0] = 'EV-1';
+  row[3] = 'Visita';
+  row[5] = 'Margarida de Fátima Skonetzky';
+  row[7] = '55020013';
+  row[8] = 'TROPION-Lung07';
+  row[indexCadastro] = 'CAD-EZIO';
+
+  server.AGENDA_CFG.idx.participanteCadastroId = indexCadastro;
+  server.AGENDA_CFG.lastCol = row.length;
+  server.normText_ = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  server.getAgendaSheetForRead_ = () => ({
+    getLastRow: () => 2,
+    getRange: (start, _column, count, width) => ({
+      getValues: () => start === 1 ? [Array(width).fill('')] : [row.slice(0, width)].slice(0, count)
+    })
+  });
+  server.agendaParticipantHydrationRows_ = () => [
+    ['CAD-EZIO', 'Ezio Gonçalves dos Reis', '55020010', 'BGB-58067-101', 'Braço A'],
+    ['CAD-MARGARIDA', 'Margarida de Fátima Skonetzky', '55020013', 'TROPION-Lung07', 'Braço B']
+  ];
+  server.agendaRowToObject_ = (values) => ({
+    id: values[0], participanteCadastroId: values[indexCadastro], participante: values[5],
+    idParticipante: values[7], projeto: values[8]
+  });
+
+  const result = server.pesquisarAgendaHistorico('Margarida', null, 25);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].id, 'EV-1');
+  assert.equal(result.items[0].participante, 'Margarida de Fátima Skonetzky');
+  assert.equal(result.items[0].idParticipante, '55020013');
+  assert.equal(result.items[0].projeto, 'TROPION-Lung07');
+  assert.equal(result.items[0].participanteCadastroId, 'CAD-EZIO');
+  assert.equal(result.items[0].braco, 'Braço B');
+});
+
+test('Jornada usa ID interno e mapa de ultima visita consulta essa chave antes do nome', () => {
+  const server = readProjectFile('WebApp.gs');
+  const jornada = sourceBetween(server, 'function getJornadaParticipante(payload)', 'function jornadaReservaPreviaContexto_(payload)');
+  const ultimaVisita = sourceBetween(server, 'function agendaUltimaVisitaCadastroKey_(idCadastro)', 'function agendaVisitaCriadaNaMesmaData_(');
+
+  assert.match(jornada, /agendaEventMatchesParticipant\(\{[\s\S]*?id:\s*idCadastro/);
+  assert.match(jornada, /participantCadastroId:\s*cadastroIdEventoNorm/);
+  assert.match(jornada, /cadastroIdEventoNorm/);
+  assert.match(ultimaVisita, /agendaUltimaVisitaCadastroKey_\(idCadastro\)/);
+  assert.match(ultimaVisita, /r\[idx\.participanteCadastroId\]/);
+});
+
+test('ID interno divergente nao sobrescreve a identidade registrada no evento', () => {
+  const serverSource = readProjectFile('WebApp.gs');
+  const block = sourceBetween(serverSource, 'function agendaHydrateParticipantFields_(items, options)', 'function agendaParseIsoBoundary_(');
+  const serverContext = vm.createContext({
+    agendaParticipantHydrationIndex_: () => ({
+      byCadastro: {
+        'CAD-EZIO': { id: 'CAD-EZIO', nome: 'Ezio Gonçalves dos Reis', idParticipante: '55020010', projeto: 'BGB-58067-101', braco: 'Braço A' }
+      },
+      byChave: {
+        '55020013|tropion-lung07': { id: 'CAD-MARGARIDA', nome: 'Margarida de Fátima Skonetzky', idParticipante: '55020013', projeto: 'TROPION-Lung07', braco: 'Braço B' }
+      },
+      byNome: {}
+    }),
+    agendaMeasureWindowStage_: (_stage, _name, _metadata, callback) => callback(),
+    normText_: (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  });
+  vm.runInContext(block, serverContext);
+  const evento = {
+    participanteCadastroId: 'CAD-EZIO', participante: 'Margarida de Fátima Skonetzky', idParticipante: '55020013',
+    projeto: 'TROPION-Lung07', braco: ''
+  };
+
+  serverContext.agendaHydrateParticipantFields_([evento]);
+  assert.equal(evento.participante, 'Margarida de Fátima Skonetzky');
+  assert.equal(evento.idParticipante, '55020013');
+  assert.equal(evento.projeto, 'TROPION-Lung07');
+  assert.equal(evento.participanteCadastroId, 'CAD-EZIO');
+  assert.equal(evento.braco, 'Braço B');
+
+  const incompleto = { participanteCadastroId: 'CAD-EZIO', participante: '', idParticipante: '', projeto: '', braco: '' };
+  serverContext.agendaHydrateParticipantFields_([incompleto]);
+  assert.deepEqual(JSON.parse(JSON.stringify(incompleto)), {
+    participanteCadastroId: 'CAD-EZIO', participante: 'Ezio Gonçalves dos Reis', idParticipante: '55020010',
+    projeto: 'BGB-58067-101', braco: 'Braço A'
+  });
 });
