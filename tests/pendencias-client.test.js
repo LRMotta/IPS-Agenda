@@ -30,7 +30,7 @@ function fixture() {
     return { withSuccessHandler(fn) { return runner(fn, failure); }, withFailureHandler(fn) { return runner(success, fn); }, getPendenciasOperacionais() { requests.push({ success, failure }); } };
   }
   context.google = { script: { run: runner() } };
-  vm.runInContext(readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, ''), context);
+  vm.runInContext(readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, ''), context);
   return { context, grid, buttons, requests, timers, status, button };
 }
 

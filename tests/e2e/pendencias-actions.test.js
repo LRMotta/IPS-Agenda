@@ -33,7 +33,7 @@ test('Pendencias: dados literais, teclado, rastreio, modal e expansao em desktop
         window.fecharOverlay = id => document.getElementById(id).classList.remove('open');
         window.open = (url, target, features) => window.calls.push(['tracking', url, target, features]);
       });
-      await page.addScriptTag({ content: readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '') });
+      await page.addScriptTag({ content: readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, '') });
       const literal = 'Kit "especial" &quot; </button><img src=x onerror=alert(1)>';
       await page.evaluate(value => renderDashboardPendencias({
         kitsVencendo: Array.from({ length: 11 }, (_, index) => ({ descricao: index === 0 ? value : 'Kit ' + index, dias: 3 })),

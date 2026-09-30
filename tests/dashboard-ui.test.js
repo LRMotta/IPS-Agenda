@@ -17,7 +17,7 @@ function dashboardContext(values) {
   const context = vm.createContext(Object.assign({
     window: {}, document: { readyState: 'loading', addEventListener() {} },
   }, values));
-  vm.runInContext(readProjectFile('IndexDashboard.html').replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, ''), context);
+  vm.runInContext(readProjectFile('IndexDashboard.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, ''), context);
   return context;
 }
 
