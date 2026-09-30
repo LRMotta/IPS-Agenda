@@ -1,5 +1,5 @@
 <!-- MODAL PRESTADOR -->
-<div class="modal-overlay" id="modalPrestador" onclick="fecharModalSeClicouFora(event,'modalPrestador')">
+<div class="modal-overlay" id="modalPrestador" data-accessible-dialog data-extra-dialog inert onclick="fecharModalSeClicouFora(event,'modalPrestador')">
   <div class="modal-box" style="max-width:520px">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">business</span></div>
@@ -7,8 +7,8 @@
         <div class="modal-header-title" id="modalPrestTitle">CADASTRO DE PRESTADOR</div>
         <div class="modal-header-sub">Laboratório, clínica ou serviço de exames</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalPrestador')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalPrestador')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -18,7 +18,7 @@
         <div class="field" style="margin-bottom:14px">
           <label class="field-label" for="prestEmpresa">Empresa <span class="required-star">*</span></label>
           <input type="text" id="prestEmpresa" class="f-input large" placeholder="Ex: Laboratório ABC"
-            oninput="limparErro('prestEmpresa','errPrestEmpresa')">
+            oninput="limparErro('prestEmpresa','errPrestEmpresa')" aria-describedby="errPrestEmpresa" aria-invalid="false" aria-required="true">
           <div class="field-error" id="errPrestEmpresa">Campo obrigatório.</div>
         </div>
         <div class="field" style="margin-bottom:14px">
@@ -31,8 +31,8 @@
         </div>
         <div class="field" style="margin-bottom:14px">
           <label class="field-label" for="prestTipoServico">Tipo de Serviço</label>
-          <select id="prestTipoServico" class="f-input f-select" onchange="limparErro('prestTipoServico','errPrestTipoServico')"></select>
-          <div class="field-error" id="errPrestTipoServico">Campo obrigatÃ³rio.</div>
+          <select id="prestTipoServico" class="f-input f-select" required onchange="limparErro('prestTipoServico','errPrestTipoServico')" aria-describedby="errPrestTipoServico" aria-invalid="false" aria-required="true"></select>
+          <div class="field-error" id="errPrestTipoServico">Campo obrigatório.</div>
         </div>
         <div class="field">
           <label class="field-label" for="prestEmailEntry">E-mails para requisições <span class="required-star">*</span></label>
@@ -40,7 +40,7 @@
           <div class="prest-email-editor" id="prestEmailEditor">
             <div class="prest-email-chips" id="prestEmailRecipients" aria-live="polite"></div>
             <div class="prest-email-add-row">
-              <input type="email" id="prestEmailEntry" class="f-input" placeholder="contato@laboratorio.com.br" autocomplete="email">
+              <input type="email" id="prestEmailEntry" class="f-input" aria-invalid="false" aria-describedby="errPrestEmail" aria-required="true" placeholder="contato@laboratorio.com.br" autocomplete="email">
               <button type="button" class="prest-email-add" id="prestEmailAdd">
                 <span class="material-symbols-outlined">add</span> Adicionar
               </button>
@@ -50,16 +50,19 @@
           <div class="field-error" id="errPrestEmail">Campo obrigatório.</div>
         </div>
       </div>
-      <div class="status-msg" id="statusPrest"></div>
-      <button class="btn-save" id="btnSalvarPrest" onclick="salvarPrestadorApp()">
+      <div class="status-msg" id="statusPrest" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="courier-modal-actions extra-modal-actions">
+        <button type="button" class="btn-txt" onclick="fecharOverlay('modalPrestador')">Cancelar</button>
+        <button class="btn-save" id="btnSalvarPrest" onclick="salvarPrestadorApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- MODAL LAB CENTRAL -->
-<div class="modal-overlay" id="modalLabCentral" onclick="fecharModalSeClicouFora(event,'modalLabCentral')">
+<div class="modal-overlay" id="modalLabCentral" data-accessible-dialog data-extra-dialog inert onclick="fecharModalSeClicouFora(event,'modalLabCentral')">
   <div class="modal-box" style="max-width:760px">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">biotech</span></div>
@@ -67,8 +70,8 @@
         <div class="modal-header-title" id="modalLabCentralTitle">CADASTRO DE LAB CENTRAL</div>
         <div class="modal-header-sub">Laboratórios centrais para transporte de amostras</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalLabCentral')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalLabCentral')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -78,12 +81,12 @@
         <div class="form-grid">
           <div class="field">
             <label class="field-label" for="labCentralNomeAbrev">Nome abreviado <span class="required-star">*</span></label>
-            <input type="text" id="labCentralNomeAbrev" class="f-input" placeholder="Ex: LABCORP (INDIANAPOLIS)" oninput="limparErro('labCentralNomeAbrev','errLabCentralNomeAbrev')">
+            <input type="text" id="labCentralNomeAbrev" class="f-input" placeholder="Ex: LABCORP (INDIANAPOLIS)" oninput="limparErro('labCentralNomeAbrev','errLabCentralNomeAbrev')" aria-describedby="errLabCentralNomeAbrev" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errLabCentralNomeAbrev">Campo obrigatório.</div>
           </div>
           <div class="field">
             <label class="field-label" for="labCentralNomeCompleto">Nome completo <span class="required-star">*</span></label>
-            <input type="text" id="labCentralNomeCompleto" class="f-input" placeholder="Nome completo do laboratório" oninput="limparErro('labCentralNomeCompleto','errLabCentralNomeCompleto')">
+            <input type="text" id="labCentralNomeCompleto" class="f-input" placeholder="Nome completo do laboratório" oninput="limparErro('labCentralNomeCompleto','errLabCentralNomeCompleto')" aria-describedby="errLabCentralNomeCompleto" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errLabCentralNomeCompleto">Campo obrigatório.</div>
           </div>
         </div>
@@ -101,7 +104,8 @@
           </div>
           <div class="field">
             <label class="field-label" for="labCentralCep">CEP</label>
-            <input type="text" id="labCentralCep" class="f-input" placeholder="CEP / ZIP">
+            <input type="text" id="labCentralCep" class="f-input" placeholder="Ex: 95070-560 ou 46214" aria-describedby="labCentralCepHint">
+            <div class="field-hint" id="labCentralCepHint">Informe o código postal no formato usado pelo país.</div>
           </div>
           <div class="field">
             <label class="field-label" for="labCentralPais">País</label>
@@ -118,7 +122,8 @@
         <div class="form-grid">
           <div class="field">
             <label class="field-label" for="labCentralTelefone">Telefone</label>
-            <input type="text" id="labCentralTelefone" class="f-input" placeholder="+1 ...">
+            <input type="text" id="labCentralTelefone" class="f-input" inputmode="tel" placeholder="Ex: +1 317 555 0100" aria-describedby="labCentralTelefoneHint">
+            <div class="field-hint" id="labCentralTelefoneHint">Inclua o código do país. Ramais e formatos internacionais são aceitos.</div>
           </div>
           <div class="field">
             <label class="field-label" for="labCentralContato">Contato</label>
@@ -126,21 +131,24 @@
           </div>
         </div>
       </div>
-      <div class="status-msg" id="statusLabCentral"></div>
-      <button class="btn-save" id="btnSalvarLabCentral" onclick="salvarLabCentralApp()">
+      <div class="status-msg" id="statusLabCentral" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="courier-modal-actions extra-modal-actions">
+        <button type="button" class="btn-txt" onclick="fecharOverlay('modalLabCentral')">Cancelar</button>
+        <button class="btn-save" id="btnSalvarLabCentral" onclick="salvarLabCentralApp()">
         <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
       </button>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- MODAL FERIADO -->
-<div class="modal-overlay" id="modalFeriado" onclick="fecharModalSeClicouFora(event,'modalFeriado')">
+<div class="modal-overlay" id="modalFeriado" data-accessible-dialog data-extra-dialog inert onclick="fecharModalSeClicouFora(event,'modalFeriado')">
   <div class="modal-box" style="max-width:720px">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">event_busy</span></div>
       <div><div class="modal-header-title" id="modalFeriadoTitle">CADASTRO DE FERIADO</div><div class="modal-header-sub">Datas operacionais específicas do ano-calendário</div></div>
-      <button class="modal-close" onclick="fecharOverlay('modalFeriado')"><span class="material-symbols-outlined">close</span></button>
+      <button class="modal-close" onclick="fecharOverlay('modalFeriado')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="editFeriadoId">
@@ -148,28 +156,31 @@
         <div class="section-label"><span class="material-symbols-outlined">calendar_month</span> Data e identificação</div>
         <p class="feriado-guidance">Use recorrência anual apenas para datas fixas, como 25 de dezembro. Feriados universitários e feriados móveis devem permanecer como datas específicas.</p>
         <div class="form-grid feriado-form-grid">
-          <div class="field"><label class="field-label" for="feriadoData">Data <span class="required-star">*</span></label><input type="date" id="feriadoData" class="f-input"><div class="field-error" id="errFeriadoData">Informe a data.</div></div>
+          <div class="field"><label class="field-label" for="feriadoData">Data <span class="required-star">*</span></label><input type="date" id="feriadoData" class="f-input" aria-describedby="errFeriadoData" aria-invalid="false" aria-required="true"><div class="field-error" id="errFeriadoData">Informe a data.</div></div>
           <div class="field"><label class="field-label" for="feriadoRecorrencia">Recorrência</label><select id="feriadoRecorrencia" class="f-input f-select" onchange="onFeriadoRecorrenciaChange_()"><option>Data específica</option><option>Anual</option></select><div class="feriado-field-hint" id="feriadoRecorrenciaHint">Válida somente para o ano informado.</div></div>
           <div class="field"><label class="field-label" for="feriadoTipo">Tipo</label><select id="feriadoTipo" class="f-input f-select"><option>Feriado</option><option>Feriado Universitário</option><option>Fechamento institucional</option></select></div>
           <div class="field"><label class="field-label" for="feriadoAtivo">Ativo</label><select id="feriadoAtivo" class="f-input f-select"><option>Sim</option><option>Não</option></select></div>
-          <div class="field full"><label class="field-label" for="feriadoNome">Nome <span class="required-star">*</span></label><input type="text" id="feriadoNome" class="f-input" placeholder="Ex: Natal ou Feriado Universitário"><div class="field-error" id="errFeriadoNome">Informe o nome.</div></div>
+          <div class="field full"><label class="field-label" for="feriadoNome">Nome <span class="required-star">*</span></label><input type="text" id="feriadoNome" class="f-input" placeholder="Ex: Natal ou Feriado Universitário" aria-describedby="errFeriadoNome" aria-invalid="false" aria-required="true"><div class="field-error" id="errFeriadoNome">Informe o nome.</div></div>
           <div class="field feriado-paired-field"><label class="field-label" for="feriadoAbrangencia">Abrangência</label><input type="text" id="feriadoAbrangencia" class="f-input" list="feriadoAbrangencias" placeholder="Ex: Institucional"><datalist id="feriadoAbrangencias"><option value="Nacional"><option value="Rio Grande do Sul"><option value="Caxias do Sul"><option value="Institucional"></datalist></div>
           <div class="field feriado-paired-field"><label class="field-label" for="feriadoAfetaOperacao">Operação de transporte de amostras sujeita a restrições</label><select id="feriadoAfetaOperacao" class="f-input f-select"><option>Sim</option><option>Não</option></select></div>
           <div class="field full"><label class="field-label" for="feriadoObservacao">Observação operacional</label><textarea id="feriadoObservacao" class="f-input" rows="3" placeholder="Ex: expediente suspenso; confirmar coleta excepcional com antecedência."></textarea></div>
         </div>
       </div>
-      <div class="status-msg" id="statusFeriado"></div>
-      <button class="btn-save" id="btnSalvarFeriado" onclick="salvarFeriadoApp()"><span class="material-symbols-outlined">save</span> SALVAR CADASTRO</button>
+      <div class="status-msg" id="statusFeriado" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="courier-modal-actions extra-modal-actions">
+        <button type="button" class="btn-txt" onclick="fecharOverlay('modalFeriado')">Cancelar</button>
+        <button class="btn-save" id="btnSalvarFeriado" onclick="salvarFeriadoApp()"><span class="material-symbols-outlined">save</span> SALVAR CADASTRO</button>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmFeriado">
+<div class="modal-overlay" id="confirmFeriado" data-accessible-dialog data-extra-dialog inert>
   <div class="confirm-box"><span class="material-symbols-outlined confirm-icon">delete_forever</span><h3>Excluir feriado?</h3><p id="confirmFeriadoNome"></p><div class="confirm-actions"><button class="btn-cancel" onclick="fecharOverlay('confirmFeriado')">Cancelar</button><button class="btn-danger" id="btnConfirmExcluirFeriado">Excluir</button></div></div>
 </div>
 
 <!-- MODAL COURIER -->
-<div class="modal-overlay" id="modalCourier" onclick="fecharModalSeClicouFora(event,'modalCourier')">
+<div class="modal-overlay" id="modalCourier" data-accessible-dialog data-extra-dialog inert onclick="fecharModalSeClicouFora(event,'modalCourier')">
   <div class="modal-box" style="max-width:860px">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">local_shipping</span></div>
@@ -177,8 +188,8 @@
         <div class="modal-header-title" id="modalCourierTitle">CADASTRO DE COURIER</div>
         <div class="modal-header-sub">Dados usados nos documentos e rascunhos de transporte</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalCourier')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalCourier')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -188,7 +199,7 @@
         <div class="courier-form-panel-content">
         <div class="field">
           <label class="field-label" for="courierNome">Courier <span class="required-star">*</span></label>
-          <input type="text" id="courierNome" class="f-input large" placeholder="Ex: MARKEN" oninput="limparErro('courierNome','errCourierNome'); aplicarDefaultsCourierConfirmacao(false)">
+          <input type="text" id="courierNome" class="f-input large" placeholder="Ex: MARKEN" oninput="limparErro('courierNome','errCourierNome'); aplicarDefaultsCourierConfirmacao(false)" aria-describedby="errCourierNome" aria-invalid="false" aria-required="true">
           <div class="field-error" id="errCourierNome">Campo obrigatório.</div>
         </div>
         <div class="field" style="margin-top:14px">
@@ -313,18 +324,18 @@
         <summary><span class="material-symbols-outlined">description</span><span>Declaração de transporte</span><span class="material-symbols-outlined courier-panel-chevron">expand_more</span></summary>
         <div class="courier-form-panel-content">
         <div class="field">
-          <label class="field-label" for="courierConteudo">Conteúdo da Declaração de Transporte</label>
+          <label class="field-label" id="courierConteudoLabel" for="courierConteudoEditor">Conteúdo da Declaração de Transporte</label>
           <div class="rich-toolbar" aria-label="Formatação do texto">
-            <button type="button" class="rich-btn" title="Negrito" onclick="courierEditorCommand('bold')">B</button>
-            <button type="button" class="rich-btn" title="Itálico" onclick="courierEditorCommand('italic')"><i>I</i></button>
-            <button type="button" class="rich-btn" title="Sublinhado" onclick="courierEditorCommand('underline')"><u>U</u></button>
+            <button type="button" class="rich-btn" title="Negrito" aria-label="Negrito" aria-pressed="false" data-rich-command="bold" onmousedown="event.preventDefault()" onclick="courierEditorCommand('bold')">B</button>
+            <button type="button" class="rich-btn" title="Itálico" aria-label="Itálico" aria-pressed="false" data-rich-command="italic" onmousedown="event.preventDefault()" onclick="courierEditorCommand('italic')"><i>I</i></button>
+            <button type="button" class="rich-btn" title="Sublinhado" aria-label="Sublinhado" aria-pressed="false" data-rich-command="underline" onmousedown="event.preventDefault()" onclick="courierEditorCommand('underline')"><u>U</u></button>
           </div>
-          <div id="courierConteudoEditor" class="f-input rich-editor" contenteditable="true" data-placeholder="Digite o texto da declaração" oninput="document.getElementById('courierConteudo').value = courierEditorHtml()" onpaste="courierEditorPastePlain(event)"></div>
+          <div id="courierConteudoEditor" class="f-input rich-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="courierConteudoLabel" data-placeholder="Digite o texto da declaração" oninput="document.getElementById('courierConteudo').value = courierEditorHtml()" onpaste="courierEditorPastePlain(event)"></div>
           <input type="hidden" id="courierConteudo">
         </div>
         </div>
       </details>
-      <div class="status-msg" id="statusCourier"></div>
+      <div class="status-msg" id="statusCourier" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="courier-modal-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalCourier')">Cancelar</button>
         <button class="btn-save" id="btnSalvarCourier" onclick="salvarCourierApp()"><span class="material-symbols-outlined">save</span> Salvar cadastro</button>
@@ -334,15 +345,15 @@
 </div>
 
 <!-- RECIBO DE RESSARCIMENTO -->
-<div class="modal-overlay" id="modalAgendaRecibo" onclick="fecharModalSeClicouFora(event,'modalAgendaRecibo')">
+<div class="modal-overlay" id="modalAgendaRecibo" data-accessible-dialog data-extra-dialog inert onclick="fecharModalSeClicouFora(event,'modalAgendaRecibo')">
   <div class="modal-box agenda-recibo-modal">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined">receipt_long</span></div>
       <div><div class="modal-header-title">GERAR RECIBO</div><div class="modal-header-sub" id="agendaReciboContexto">Ressarcimento de alimentação e transporte</div></div>
-      <button class="modal-close" type="button" onclick="fecharOverlay('modalAgendaRecibo')"><span class="material-symbols-outlined">close</span></button>
+      <button class="modal-close" type="button" onclick="fecharOverlay('modalAgendaRecibo')" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
-      <div id="agendaReciboLoading" class="agenda-recibo-loading"><span class="spinner"></span>Carregando dados do recibo...</div>
+      <div id="agendaReciboLoading" class="agenda-recibo-loading" role="status" aria-live="polite"><span class="spinner"></span>Carregando dados do recibo...</div>
       <div id="agendaReciboForm" style="display:none">
         <div class="agenda-recibo-note"><span class="material-symbols-outlined">edit_note</span><span>Revise os dados antes de imprimir. Alterações feitas aqui valem somente para este recibo.</span></div>
         <div class="agenda-recibo-choice">
@@ -384,7 +395,7 @@
           <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboDataEmissao">Data de emissão</label><input id="agendaReciboDataEmissao" class="f-input" type="date"></div>
           <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboCoordenador">Coordenador(a) de estudos</label><input id="agendaReciboCoordenador" class="f-input" type="text" placeholder="Obtido do cadastro do projeto"></div>
         </div>
-        <div class="status-msg" id="agendaReciboStatus"></div>
+        <div class="status-msg" id="agendaReciboStatus" role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="agenda-recibo-actions">
           <button type="button" class="btn-txt" onclick="fecharOverlay('modalAgendaRecibo')">Cancelar</button>
           <button type="button" class="btn-save" id="btnImprimirAgendaRecibo" onclick="imprimirAgendaRecibo()" disabled><span class="material-symbols-outlined">print</span><span id="agendaReciboImprimirLabel">Imprimir / salvar PDF</span></button>
@@ -395,7 +406,7 @@
 </div>
 
 <!-- CONFIRMAR ENTREGA DE TRANSPORTE -->
-<div class="modal-overlay" id="modalConfirmarEntregaPendencia" onclick="if(event.target.id==='modalConfirmarEntregaPendencia') fecharConfirmacaoEntregaPendencia()">
+<div class="modal-overlay" id="modalConfirmarEntregaPendencia" data-accessible-dialog data-extra-dialog inert data-dialog-close="fecharConfirmacaoEntregaPendencia" onclick="if(event.target.id==='modalConfirmarEntregaPendencia') fecharConfirmacaoEntregaPendencia()">
   <div class="confirm-box pendencia-entrega-box" role="dialog" aria-modal="true" aria-labelledby="pendenciaEntregaTitle">
     <div class="pendencia-entrega-icon"><span class="material-symbols-outlined">local_shipping</span></div>
     <h3 id="pendenciaEntregaTitle">Confirmar entrega?</h3>
@@ -417,7 +428,7 @@
 </div>
 
 <!-- CONFIRM EXCLUIR COURIER -->
-<div class="modal-overlay" id="confirmCourier">
+<div class="modal-overlay" id="confirmCourier" data-accessible-dialog data-extra-dialog inert>
   <div class="confirm-box">
     <h3>Excluir Courier?</h3>
     <p id="confirmCourierNome"></p>
@@ -429,7 +440,7 @@
 </div>
 
 <!-- CONFIRM EXCLUIR LAB CENTRAL -->
-<div class="modal-overlay" id="confirmLabCentral">
+<div class="modal-overlay" id="confirmLabCentral" data-accessible-dialog data-extra-dialog inert>
   <div class="confirm-box">
     <h3>Excluir Lab Central?</h3>
     <p id="confirmLabCentralNome"></p>
@@ -441,7 +452,7 @@
 </div>
 
 <!-- CONFIRM EXCLUIR PRESTADOR -->
-<div class="modal-overlay" id="confirmPrestador">
+<div class="modal-overlay" id="confirmPrestador" data-accessible-dialog data-extra-dialog inert>
   <div class="confirm-box">
     <h3>Excluir Prestador?</h3>
     <p id="confirmPrestNome"></p>

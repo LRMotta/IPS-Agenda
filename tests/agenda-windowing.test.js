@@ -1904,7 +1904,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(actionMenu, /if \(!past && !options\.hideCancel\)/);
   assert.match(actionMenuDismiss, /event\.key === 'Escape'/);
   assert.match(actionMenuDismiss, /ArrowDown\|ArrowUp\|Home\|End/);
-  assert.match(actionMenuToggle, /firstItem\.focus\(\)/);
+  assert.match(actionMenuToggle, /firstItem\.focus\(\{ preventScroll: true \}\)/);
   assert.match(compact, /st-cancelado/);
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
@@ -1945,7 +1945,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(styles, /\.ag-monitoria-compact \.ag-appt-time\{width:46px;min-width:46px;margin:0;justify-self:start\}/);
   assert.match(styles, /\.ag-monitorias-head,\.ag-auditorias-head,\.ag-cancelados-head\{min-height:0;padding:6px 24px;[^}]*background:#f8fbff;border-bottom:1px solid #dce6f5\}/);
   assert.match(styles, /\.ag-monitorias-title,\.ag-auditorias-title,\.ag-cancelados-title\{[^}]*color:#6d89a6;font-size:10px;font-weight:800;letter-spacing:\.9px;text-transform:uppercase\}/);
-  assert.match(styles, /@media\(max-width:900px\)\{\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(150px,1fr\) auto;gap:8px 22px\}\.ag-monitoria-compact-main \.ag-appt-time::after,\.ag-cancelado-compact-main \.ag-appt-time::after\{right:-8px\}/);
+  assert.match(styles, /@media\(max-width:900px\)\{\.ag-cancelado-compact-main\{grid-template-columns:46px minmax\(0,1fr\) 64px;gap:8px 22px\}\.ag-monitoria-compact-main \.ag-appt-time::after,\.ag-cancelado-compact-main \.ag-appt-time::after\{right:-8px\}/);
   assert.match(styles, /\.ag-monitorias-group\{border-left:0;border-bottom:1px solid #e7e3f5;background:#fff\}/);
   assert.match(styles, /\.ag-auditorias-group\{border-left:0;border-bottom:1px solid #f3dfd2;background:#fff\}/);
   assert.match(styles, /\.ag-cancelados-group\{border-left:0;border-bottom:1px solid #f1dada;background:#fff\}/);
@@ -2677,7 +2677,7 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   const patientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'patient', false);
   assert.match(patientActions, /Gerar Display/);
   assert.match(patientActions, /abrirDisplayPaciente/);
-  assert.equal((patientActions.match(/role="menuitem"/g) || []).length, 3);
+  assert.equal((patientActions.match(/role="menuitem"/g) || []).length, 4);
   const pastPatientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'past-patient', true);
   assert.doesNotMatch(pastPatientActions, /cancelarAgendaEvento/);
   const siv = context.agendaMonitoriaCompactaHtml({ ...row, tipo: 'SIV' }, 'test');

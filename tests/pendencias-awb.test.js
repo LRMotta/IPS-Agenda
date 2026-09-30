@@ -40,7 +40,7 @@ test('Pendencias AWB exibem acao propria, botao de confirmacao e editor da Agend
   assert.match(source, /function pendenciaAwbAction\(it\)/);
   assert.match(source, /function abrirPendenciaAwb\(agendaId\)/);
   assert.match(source, /abrirAgendaRegistroPorId/);
-  assert.match(source, /confirmarEntregaPendencia\(event/);
+  assert.match(source, /confirmarEntregaPendencia\(event, it\.agendaId, it\.slot, it\.awb/);
   assert.match(source, /method: 'confirmarEntregaTransportePendencia'/);
   assert.match(source, /stopPropagation/);
   assert.match(source, /modalConfirmarEntregaPendencia/);

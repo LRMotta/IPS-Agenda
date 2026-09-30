@@ -54,6 +54,7 @@ function fixture() {
     } }
   });
   s.courierLembreteRows_ = () => rows;
+  s.courierLembreteAgendaSnapshot_ = () => ({});
   s.courierLembreteAgenda_ = () => current;
   s.courierLembreteHoraLocal_ = (date) => date;
   s.courierLembreteVencido_ = () => true;
@@ -129,6 +130,141 @@ test('nova resposta entre reserva e envio cancela cobranca', () => {
   f.s.courierLembreteExecutar_();
   assert.equal(f.sent(), 0);
   assert.equal(f.rows[0].estado, 'REVISAO');
+});
+
+for (const field of ['geradoEm', 'referencia', 'geradoPor', 'courier', 'gmailMessageId', 'emailEnviadoEm']) {
+  test('operacao alterada antes da reserva bloqueia envio: ' + field, () => {
+    const f = fixture();
+    let latest = f.op;
+    f.s.transporteOperacoesRows_ = () => [latest];
+    f.s.codexWithDocumentLock_ = (_name, fn) => {
+      latest = { ...f.op, [field]: field.endsWith('Em') ? d('2026-09-04T14:00:00') : 'alterado' };
+      return fn();
+    };
+    f.s.courierLembreteExecutar_();
+    assert.equal(f.sent(), 0);
+    assert.equal(f.rows[0].estado, 'BASE');
+  });
+}
+
+test('operacoes duplicadas bloqueiam envio sem selecionar a primeira', () => {
+  const f = fixture();
+  f.s.transporteOperacoesRows_ = () => [f.op, { ...f.op }];
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+});
+
+test('nova base persistida antes da reserva nao e sobrescrita', () => {
+  const f = fixture();
+  f.s.codexWithDocumentLock_ = (_name, fn) => {
+    f.rows[0] = { ...f.rows[0], base: 'nova-base', gerado: d('2026-09-04T14:00:00') };
+    return fn();
+  };
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+  assert.equal(f.rows[0].base, 'nova-base');
+  assert.equal(f.rows[0].estado, 'BASE');
+});
+
+for (const [name, change] of [
+  ['confirmacao', f => { f.current.courierStatus = 'Confirmado'; }],
+  ['cancelamento', f => { f.current.status = 'Cancelado'; }],
+  ['dados', f => { f.current.base = 'changed'; }],
+  ['operacao', f => { f.s.transporteOperacoesRows_ = () => [{ ...f.op, gmailMessageId: 'nova' }]; }],
+  ['pausa', f => { f.props.COURIER_LEMBRETES_ATIVO = 'false'; }],
+  ['conta', f => { f.props.COURIER_LEMBRETES_CONTA = 'other@example.invalid'; }],
+  ['configuracao', f => { f.s.getAgendaCourierRows_ = () => [{ ...f.config, lembreteModo: 'Simulação' }]; }],
+  ['horario ou feriado', f => { f.s.courierLembreteVencido_ = () => false; }],
+  ['resposta Gmail', f => { f.messages.push({ getId: () => 'reply', getDate: () => new Date() }); }]
+]) test('revalida depois de recuperar anexos: ' + name, () => {
+  const f = fixture();
+  f.original.getAttachments = () => { change(f); return ['documento.pdf']; };
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+  assert.equal(f.rows[0].estado, 'REVISAO');
+});
+
+test('uma leitura inicial da Agenda atende varios candidatos ainda fora do prazo', () => {
+  const f = fixture();
+  let leituras = 0;
+  const snapshot = {};
+  f.rows.push({ ...f.rows[0], key: 'evt:2', slot: '2' });
+  f.s.transporteOperacoesRows_ = () => [f.op, { ...f.op, slot: '2' }];
+  f.s.courierLembreteAgendaSnapshot_ = () => { leituras++; return snapshot; };
+  f.s.courierLembreteAgenda_ = (_id, _slot, supplied) => {
+    assert.equal(supplied, snapshot);
+    return f.current;
+  };
+  f.s.courierLembreteVencido_ = () => false;
+  f.s.courierLembreteExecutar_();
+  assert.equal(leituras, 1);
+  assert.equal(f.sent(), 0);
+});
+
+test('Agenda sem candidatos rastreaveis nao e carregada', () => {
+  const f = fixture();
+  f.op.gmailMessageId = '';
+  f.s.courierLembreteAgendaSnapshot_ = () => { throw new Error('leitura desnecessaria'); };
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+});
+
+test('releitura da Agenda usa bloco reduzido e linha atual, preservando IDs unicos e feriados', () => {
+  const ranges = [];
+  const idx = { id: 2, data: 3, tipo: 4, hora: 5, participante: 6, projeto: 7, visita: 8, status: 9, c1: { nome: 10, status: 11, awb: 12 } };
+  const rows = [
+    ['', '', 'evt', '08/09/2026', 'Visita', '10:00', 'P', 'Proj', 'V1', 'Agendado', 'Marken', 'Agendado', '123'],
+    ['', '', 'feriado', '07/09/2026', 'Feriado']
+  ];
+  const sheet = {
+    getLastRow: () => rows.length + 1,
+    getRange(row, col, height, width) {
+      ranges.push({ row, col, height, width });
+      return { getDisplayValues: () => rows.slice(row - 2, row - 2 + height).map(r => Array.from({ length: width }, (_, i) => r[col - 1 + i] || '')) };
+    }
+  };
+  let feriados = 0;
+  const s = runFile('CourierLembretes.gs', {
+    getAgendaSheetForRead_: () => sheet, AGENDA_CFG: { idx, lastCol: 13 },
+    getAgendaFeriadosPendenciasMap_: (values, columns) => {
+      feriados++;
+      assert.equal(values[1][columns.tipo], 'Feriado');
+      assert.equal(values[1][columns.data], '07/09/2026');
+      return { '2026-09-07': true };
+    }
+  });
+  const snapshot = s.courierLembreteAgendaSnapshot_(false);
+  const initial = s.courierLembreteAgenda_('evt', '1', snapshot);
+  s.courierLembreteAgenda_('evt', '1', snapshot);
+  assert.equal(ranges.length, 1);
+  assert.equal(feriados, 1);
+  rows[0][11] = 'Confirmado';
+  const fresh = s.courierLembreteAgenda_('evt', '1');
+  assert.equal(fresh.courierStatus, 'Confirmado');
+  assert.equal(fresh.base, initial.base);
+  assert.equal(fresh.feriados['2026-09-07'], true);
+  assert.deepEqual(ranges.slice(1), [
+    { row: 2, col: 3, height: 2, width: 3 },
+    { row: 2, col: 1, height: 1, width: 13 }
+  ]);
+  rows.push([...rows[0]]);
+  assert.equal(s.courierLembreteAgenda_('evt', '1'), null);
+  assert.equal(ranges.length, 4); // ID duplicado dispensa leitura da linha inteira.
+});
+
+test('flush ocorre somente na reserva duravel anterior ao efeito externo', () => {
+  const calls = [];
+  const sheet = { getRange: () => ({ setValues: () => calls.push('write') }) };
+  const s = runFile('CourierLembretes.gs', {
+    Date, getCodexSpreadsheet_: () => ({ getSheetByName: () => sheet }),
+    SpreadsheetApp: { flush: () => calls.push('flush') }
+  });
+  const item = { row: 2, key: 'evt:1', agendaId: 'evt', slot: '1', gerado: d('2026-09-04T11:00:00'), base: 'base' };
+  s.courierLembreteSalvar_(item, 'TENTATIVA', 'reservado');
+  assert.deepEqual(calls, ['write', 'flush']);
+  calls.length = 0;
+  for (const state of ['BASE', 'SIMULACAO', 'REVISAO', 'ENVIADO', 'INCERTO']) s.courierLembreteSalvar_(item, state, 'estado');
+  assert.deepEqual(calls, ['write', 'write', 'write', 'write', 'write']);
 });
 
 test('modelo preserva paragrafos e substitui apenas campos conhecidos', () => {

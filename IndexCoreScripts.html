@@ -60,6 +60,12 @@ var APP_VERSION_CHECK_IN_FLIGHT = false;
 var USERS_ADMIN_ROWS = [];
 var USER_PROFILE_FORMACOES = [];
 var APP_DEPLOYMENT_DIAGNOSTICS = null;
+var APP_DIAGNOSTICS_REQUEST_ID = 0;
+var APP_DIAGNOSTICS_IN_FLIGHT = false;
+var APP_DIAGNOSTICS_CLEARING = false;
+var APP_DIAGNOSTICS_RECEIVED_AT = 0;
+var APP_DIAGNOSTICS_EXPIRY_TIMER = null;
+var APP_DIAGNOSTICS_TTL_MS = 5 * 60 * 1000;
 var ESTOQUE_CONFIG = { laboratorios: [], localizacoes: [], tiposItem: [] };
 var _estoqueConfigLoaded = false;
 var _estoqueConfigLoadedAt = 0;
@@ -188,7 +194,7 @@ function appConfirmNavigationIfDirty(scopeId, onConfirm, onCancel) {
 function appEditableDirtyScope(target) {
   if (!target || !target.closest) return '';
   if (!target.matches('input, textarea, select, [contenteditable="true"]')) return '';
-  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante');
+  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante, #modalPrestador, #modalLabCentral, #modalFeriado, #modalCourier');
   if (scope && scope.id === 'modalParticipante' && scope.dataset.editing !== '1') return '';
   return scope ? scope.id : '';
 }
@@ -207,7 +213,8 @@ document.addEventListener('paste', function(event) {
   var scopeId = appEditableDirtyScope(event.target);
   if (!scopeId) return;
   appMarkUnsavedChanges(scopeId);
-  event.stopPropagation();
+  // O editor de courier deve receber o paste para inserir apenas texto simples.
+  if (scopeId !== 'modalCourier') event.stopPropagation();
 }, true);
 
 window.addEventListener('beforeunload', function(event) {
@@ -762,6 +769,22 @@ function initScrollTopButton() {
 document.addEventListener('DOMContentLoaded', initScrollTopButton);
 
 // ── Accordions e navegação Estoque ──────────────────────────────────────────
+function appSyncNavAccessibility() {
+  document.querySelectorAll('.nav-group-toggle').forEach(function(toggle) {
+    var expanded = toggle.classList.contains('open');
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    var body = document.getElementById(toggle.getAttribute('aria-controls'));
+    if (body) {
+      if (expanded) body.removeAttribute('inert');
+      else body.setAttribute('inert', '');
+    }
+  });
+  document.querySelectorAll('.nav-item').forEach(function(item) {
+    if (item.classList.contains('active')) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+}
+
 function toggleNavCadastros() {
   var toggle = document.getElementById('navCadastrosToggle');
   var body = document.getElementById('navCadastrosBody');
@@ -770,6 +793,7 @@ function toggleNavCadastros() {
   document.getElementById('navEstoqueBody').classList.remove('open');
   toggle.classList.toggle('open', willOpen);
   body.classList.toggle('open', willOpen);
+  appSyncNavAccessibility();
 }
 
 function toggleNavEstoque() {
@@ -780,22 +804,54 @@ function toggleNavEstoque() {
   document.getElementById('navCadastrosBody').classList.remove('open');
   toggle.classList.toggle('open', willOpen);
   body.classList.toggle('open', willOpen);
+  appSyncNavAccessibility();
 }
 
 function setMobileNav(open) {
-  var shouldOpen = !!open && window.matchMedia('(max-width: 900px)').matches;
+  var mobile = window.matchMedia('(max-width: 900px)').matches;
+  var wasOpen = document.body.classList.contains('mobile-nav-open');
+  var shouldOpen = !!open && mobile;
   document.body.classList.toggle('mobile-nav-open', shouldOpen);
   var btn = document.getElementById('mobileMenuBtn');
   var backdrop = document.getElementById('mobileNavBackdrop');
   var drawer = document.getElementById('appNavDrawer');
-  if (backdrop) backdrop.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
-  if (drawer) drawer.setAttribute('aria-hidden', shouldOpen ? 'false' : (window.matchMedia('(max-width: 900px)').matches ? 'true' : 'false'));
+  if (backdrop) backdrop.setAttribute('aria-hidden', 'true');
+  if (drawer) {
+    drawer.setAttribute('aria-hidden', mobile && !shouldOpen ? 'true' : 'false');
+    // Off-screen mobile controls must also leave the keyboard focus order.
+    if (mobile && !shouldOpen) drawer.setAttribute('inert', '');
+    else drawer.removeAttribute('inert');
+  }
   if (btn) {
     btn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
     btn.setAttribute('aria-label', shouldOpen ? 'Fechar menu' : 'Abrir menu');
     btn.title = shouldOpen ? 'Fechar menu' : 'Abrir menu';
     var icon = btn.querySelector('.material-symbols-outlined');
     if (icon) icon.textContent = shouldOpen ? 'close' : 'menu';
+  }
+  if (shouldOpen && !wasOpen && drawer) {
+    var first = drawer.querySelector('.nav-item');
+    (first || drawer).focus();
+  } else if (wasOpen && !shouldOpen && mobile && btn) btn.focus();
+}
+
+function appMobileNavKeydown(event) {
+  if (!document.body.classList.contains('mobile-nav-open')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeMobileNav();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  var drawer = document.getElementById('appNavDrawer');
+  var btn = document.getElementById('mobileMenuBtn');
+  var controls = [btn].concat(Array.from(drawer.querySelectorAll('button'))).filter(function(el) {
+    return el && !el.disabled && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  });
+  var index = controls.indexOf(document.activeElement);
+  if (index < 0 || (event.shiftKey && index === 0) || (!event.shiftKey && index === controls.length - 1)) {
+    event.preventDefault();
+    controls[event.shiftKey ? controls.length - 1 : 0].focus();
   }
 }
 
@@ -807,16 +863,14 @@ function closeMobileNav() {
   setMobileNav(false);
 }
 
-document.addEventListener('keydown', function(event) {
-  if (event.key === 'Escape' && document.body.classList.contains('mobile-nav-open')) closeMobileNav();
-});
+document.addEventListener('keydown', appMobileNavKeydown);
 
 window.addEventListener('resize', function() {
   if (!window.matchMedia('(max-width: 900px)').matches) closeMobileNav();
   else if (!document.body.classList.contains('mobile-nav-open')) setMobileNav(false);
 });
 
-document.addEventListener('DOMContentLoaded', function() { setMobileNav(false); });
+document.addEventListener('DOMContentLoaded', function() { appSyncNavAccessibility(); setMobileNav(false); });
 
 function irPara(pagina, options) {
   options = options || {};
@@ -865,6 +919,7 @@ function irPara(pagina, options) {
     var navDashboard = document.getElementById('navDashboard');
     if (navDashboard) navDashboard.classList.add('active');
   }
+  appSyncNavAccessibility();
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
   var pg = document.getElementById('page-' + pagina);
   if (pg) pg.classList.add('active');
@@ -1004,27 +1059,71 @@ function abrirTransporteModulo(targetWindow, args) {
 }
 
 function carregarDiagnosticoImplantacao(force) {
-  if (!force && APP_DEPLOYMENT_DIAGNOSTICS) {
+  if (APP_DIAGNOSTICS_CLEARING || (!force && APP_DIAGNOSTICS_IN_FLIGHT)) return;
+  if (!force && diagSnapshotFresh()) {
     renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
     return;
   }
+  var requestId = diagBeginRequest();
   var env = document.getElementById('diagEnvironment');
   var ident = document.getElementById('diagIdentity');
   if (env) env.innerHTML = '<dt>Status</dt><dd>Carregando diagnostico...</dd>';
   if (ident) ident.innerHTML = '';
   google.script.run
     .withSuccessHandler(function(data) {
-      APP_DEPLOYMENT_DIAGNOSTICS = data || {};
-      renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
+      if (!diagApplyResult(requestId, data)) return;
       if (force) snack('Diagnostico atualizado.');
     })
     .withFailureHandler(function(e) {
+      if (requestId !== APP_DIAGNOSTICS_REQUEST_ID) return;
+      APP_DIAGNOSTICS_IN_FLIGHT = false;
+      APP_DIAGNOSTICS_RECEIVED_AT = 0;
+      diagRenderFreshness();
       var msg = e && e.message ? e.message : String(e || 'Falha ao carregar diagnostico.');
       if (env) env.innerHTML = '<dt>Erro</dt><dd>' + esc(msg) + '</dd>';
       if (ident) ident.innerHTML = '';
       snackErro(msg);
     })
     .getCodexDeploymentDiagnostics(diagClientContext());
+}
+
+function diagSnapshotFresh() {
+  return !!APP_DEPLOYMENT_DIAGNOSTICS && APP_DIAGNOSTICS_RECEIVED_AT > 0 &&
+    Date.now() - APP_DIAGNOSTICS_RECEIVED_AT < APP_DIAGNOSTICS_TTL_MS;
+}
+
+function diagBeginRequest() {
+  APP_DIAGNOSTICS_REQUEST_ID++;
+  APP_DIAGNOSTICS_IN_FLIGHT = true;
+  APP_DIAGNOSTICS_RECEIVED_AT = 0;
+  if (APP_DIAGNOSTICS_EXPIRY_TIMER) clearTimeout(APP_DIAGNOSTICS_EXPIRY_TIMER);
+  diagRenderFreshness();
+  return APP_DIAGNOSTICS_REQUEST_ID;
+}
+
+function diagApplyResult(requestId, data) {
+  if (requestId !== APP_DIAGNOSTICS_REQUEST_ID) return false;
+  APP_DIAGNOSTICS_IN_FLIGHT = false;
+  APP_DEPLOYMENT_DIAGNOSTICS = data || {};
+  APP_DIAGNOSTICS_RECEIVED_AT = Date.now();
+  renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
+  APP_DIAGNOSTICS_EXPIRY_TIMER = setTimeout(diagRenderFreshness, APP_DIAGNOSTICS_TTL_MS);
+  return true;
+}
+
+function diagRenderFreshness() {
+  var fresh = diagSnapshotFresh();
+  var status = APP_DIAGNOSTICS_IN_FLIGHT ? 'Atualizando; resultados anteriores nao confirmados.' :
+    (fresh ? 'Leitura valida por 5 minutos.' : 'Leitura vencida ou indisponivel. Atualize o diagnostico.');
+  diagSetText('diagFreshness', status);
+  if (!fresh) {
+    diagSetText('diagOverall', 'Não verificado');
+    var banner = document.getElementById('diagHealthBanner');
+    if (banner) {
+      banner.className = 'diag-health-banner warning';
+      banner.textContent = 'Não verificado — ' + status;
+    }
+  }
 }
 
 function diagClientContext() {
@@ -1048,6 +1147,7 @@ function diagDl(rows) {
 
 function diagStatusIcon(ok, status) {
   var s = String(status || '').toLowerCase();
+  if (s === 'nao verificado' || s === 'não verificado') return 'help';
   if (ok === true || s === 'ok') return 'check_circle';
   if (s.indexOf('erro') > -1 || s.indexOf('falha') > -1 || s.indexOf('ausente') > -1) return 'error';
   return 'warning';
@@ -1055,7 +1155,7 @@ function diagStatusIcon(ok, status) {
 
 function diagCheckItem(label, detail, ok, status) {
   var icon = diagStatusIcon(ok, status);
-  var cls = icon === 'error' ? ' diag-check-error' : (icon === 'warning' ? ' diag-check-warning' : '');
+  var cls = icon === 'error' ? ' diag-check-error' : (icon === 'warning' || icon === 'help' ? ' diag-check-warning' : '');
   return '<div class="diag-check-item' + cls + '"><span class="material-symbols-outlined">' + icon + '</span><span><b>' + esc(label || '') + '</b>' + (detail ? '<br><small>' + esc(detail) + '</small>' : '') + '</span></div>';
 }
 
@@ -1089,13 +1189,13 @@ function renderDiagnosticoImplantacao(data) {
   diagSetText('diagCheckedAt', data.checkedAt ? 'Atualizado em ' + data.checkedAt : '');
   var healthBanner = document.getElementById('diagHealthBanner');
   if (healthBanner) {
-    healthBanner.className = 'diag-health-banner' + (overall.errors ? ' error' : (overall.warnings ? ' warning' : ''));
-    healthBanner.innerHTML = '<span>' + esc(overall.status || 'Sem dados') + '</span><span>' + Number(overall.errors || 0) + ' erro(s) · ' + Number(overall.warnings || 0) + ' alerta(s)</span>';
+    healthBanner.className = 'diag-health-banner' + (overall.errors ? ' error' : (overall.warnings || overall.unverified ? ' warning' : ''));
+    healthBanner.innerHTML = '<span>' + esc(overall.status || 'Não verificado') + '</span><span>' + Number(overall.errors || 0) + ' erro(s) · ' + Number(overall.warnings || 0) + ' alerta(s) · ' + Number(overall.unverified || 0) + ' não verificado(s)</span>';
   }
   var healthSummary = document.getElementById('diagHealthSummary');
   if (healthSummary) {
     healthSummary.innerHTML = (overall.checks || []).map(function(item) {
-      var status = item.severity === 'error' ? 'Erro' : (item.ok ? 'OK' : 'Atencao');
+      var status = item.ok == null || item.severity === 'unverified' ? 'Não verificado' : (item.ok ? 'OK' : (item.severity === 'error' ? 'Erro' : 'Atencao'));
       return diagCheckItem(item.label, item.detail, item.ok, status);
     }).join('') || diagCheckItem('Resumo operacional', 'Atualize o diagnostico para executar as verificacoes.', false, 'Atencao');
   }
@@ -1103,7 +1203,8 @@ function renderDiagnosticoImplantacao(data) {
   if (versionSyncEl) versionSyncEl.innerHTML = diagDl([
     ['Status', versionSync.status || ''],
     ['Versao carregada', versionSync.loadedVersion || ''],
-    ['Versao publicada', versionSync.publishedVersion || ''],
+    ['Versao respondida pelo servidor', versionSync.publishedVersion || ''],
+    ['Confirmacao da ultima entrega', 'Não verificado nesta página. Confira editor remoto, implantação e /exec no Chrome.'],
     ['Monitor ativo', versionSync.watcherActive ? 'Sim' : 'Nao'],
     ['Aviso visivel', versionSync.noticeVisible ? 'Sim' : 'Nao']
   ]);
@@ -1121,7 +1222,7 @@ function renderDiagnosticoImplantacao(data) {
   }).concat(activity.error ? [['Erro', activity.error]] : []));
   var integrityEl = document.getElementById('diagIntegrityChecks');
   if (integrityEl) integrityEl.innerHTML = (integrity.items || []).map(function(item) {
-    return diagCheckItem(item.label, item.detail, item.ok, item.ok ? 'OK' : (item.duplicateIds ? 'Erro' : 'Atencao'));
+    return diagCheckItem(item.label, item.detail, item.ok, item.ok ? 'OK' : (item.duplicateIds || item.missingIds ? 'Erro' : 'Atencao'));
   }).join('') || diagCheckItem('Integridade', integrity.error || 'Sem dados.', false, 'Atencao');
   var configValidationEl = document.getElementById('diagConfigValidation');
   if (configValidationEl) configValidationEl.innerHTML = (configValidation.items || []).map(function(item) {
@@ -1143,7 +1244,9 @@ function renderDiagnosticoImplantacao(data) {
   var automationRunsEl = document.getElementById('diagAutomationRuns');
   if (automationRunsEl) automationRunsEl.innerHTML = (automationRuns.items || []).map(function(item) {
     var detail = [item.finishedAt || item.startedAt || '', item.durationMs ? item.durationMs + ' ms' : '', item.summary || '', item.message || ''].filter(Boolean).join(' | ');
-    return diagCheckItem(item.label, detail || item.status, item.ok && item.status !== 'Nunca registrado', item.status === 'Falha' || item.status === 'Possivel interrupcao' ? 'Erro' : (item.status === 'Nunca registrado' ? 'Atencao' : 'OK'));
+    var unknown = item.status === 'Nunca registrado' || item.status === 'Executando';
+    return diagCheckItem(item.label, [item.status, detail, 'Revise o histórico e a conta responsável antes de reinstalar.'].filter(Boolean).join(' | '), unknown ? null : item.ok,
+      unknown ? 'Não verificado' : (item.ok ? 'OK' : 'Atencao'));
   }).join('') || diagCheckItem('Automacoes', automationRuns.error || 'Sem historico.', false, 'Atencao');
   var env = document.getElementById('diagEnvironment');
   if (env) {
@@ -1225,6 +1328,7 @@ function renderDiagnosticoImplantacao(data) {
       return [item.label, item.count === 1 ? 'OK' : (item.count === 0 ? 'Ausente' : item.count + ' duplicados')];
     });
     triggerMailEl.innerHTML = diagDl(expectedTriggers.concat([
+      ['Alcance', triggers.scope || triggers.error || 'Não verificado'],
       ['Monitor confirmacao courier', triggers.monitorConfirmacaoCouriersAtivo ? 'Ativo' : 'Nao encontrado'],
       ['Monitor entregas DHL', triggers.monitorEntregasDhlAtivo ? 'Ativo' : 'Nao encontrado'],
       ['Triggers instalados', triggerList || triggers.error || 'Nenhum'],
@@ -1257,6 +1361,8 @@ function renderDiagnosticoImplantacao(data) {
         : diagCheckItem('Nenhum indicio localizado na amostra', 'Busca textual por acesso, negado, erro ou falha nas ultimas ' + Number(audit.scannedRows || 0) + ' entradas da Audit_Log. Nao substitui monitoramento de erros.', true, 'OK'));
   }
   renderSmokeChecklist(data.smoke || {});
+  diagSetText('diagCoverage', data.coverage || 'Alcance não informado.');
+  diagRenderFreshness();
 }
 
 function renderSmokeChecklist(smoke) {
@@ -1295,7 +1401,9 @@ function copiarDiagnosticoImplantacao() {
   var automationRuns = data.automationRuns || {};
   var resumo = [
     'CODEX diagnostico de implantacao',
-    'Saude geral: ' + (overall.status || '') + ' | ' + Number(overall.errors || 0) + ' erro(s) | ' + Number(overall.warnings || 0) + ' alerta(s)',
+    'Saude das verificacoes: ' + (diagSnapshotFresh() ? (overall.status || 'Nao verificado') : 'Nao verificado: leitura vencida ou indisponivel') + ' | ' + Number(overall.errors || 0) + ' erro(s) | ' + Number(overall.warnings || 0) + ' alerta(s) | ' + Number(overall.unverified || 0) + ' nao verificado(s)',
+    'Alcance: ' + (data.coverage || 'Nao informado'),
+    'Publicacao: nao confirmada por esta pagina; verificar codigo remoto, implantacao ativa e /exec.',
     'Versao: ' + (version.version || ''),
     'Versao cliente: ' + (versionSync.loadedVersion || '') + ' | servidor: ' + (versionSync.publishedVersion || '') + ' | ' + (versionSync.status || ''),
     'Build: ' + (version.label || ''),
@@ -1315,7 +1423,12 @@ function copiarDiagnosticoImplantacao() {
     'Config_App: ' + Number(configValidation.missing || 0) + ' configuracao(oes) essencial(is) ausente(s) | ' + Number(configValidation.usingDefaults || 0) + ' grupo(s) usando padrao interno',
     'Perfis: ' + Number(profileHealth.active || 0) + ' ativo(s) | ' + Number(profileHealth.inactive || 0) + ' inativo(s) | ' + Number(profileHealth.duplicateEmails || 0) + ' e-mail(s) duplicado(s) | ' + Number(profileHealth.invalidBirthdays || 0) + ' aniversario(s) invalido(s)',
     'Automacoes: ' + (automationRuns.items || []).map(function(item) { return item.label + '=' + item.status; }).join(' | '),
-    'Tempo total do diagnostico: ' + Number(data.totalDurationMs || 0) + ' ms'
+    'Tempo total do diagnostico: ' + Number(data.totalDurationMs || 0) + ' ms',
+    'Gatilhos: ' + (triggers.expected || []).map(function(item) { return item.label + '=' + item.count; }).join(' | ') + ' | ' + (triggers.scope || ''),
+    'Ocorrencias e proximos passos:',
+    (overall.checks || []).filter(function(item) { return item.ok !== true; }).map(function(item) {
+      return (item.ok == null ? 'Nao verificado' : (item.severity === 'error' ? 'Erro' : 'Atencao')) + ': ' + item.label + ' | ' + item.detail;
+    }).join('\n') || 'Nenhuma ocorrencia nas verificacoes executadas.'
   ].join('\n');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(resumo).then(function() {
@@ -1338,19 +1451,27 @@ function autorizarNovamenteDiagnostico() {
 }
 
 function limparCachesDiagnostico() {
+  if (APP_DIAGNOSTICS_CLEARING) return;
   if (!window.confirm('Limpar os caches compartilhados agora? A proxima abertura de alguns modulos pode ficar temporariamente mais lenta enquanto os dados sao recarregados.')) return;
+  APP_DIAGNOSTICS_CLEARING = true;
+  var requestId = diagBeginRequest();
   var btns = document.querySelectorAll('#page-diagnostico button');
   Array.prototype.forEach.call(btns, function(btn) { btn.disabled = true; });
   var cacheEl = document.getElementById('diagCache');
   if (cacheEl) cacheEl.innerHTML = '<dt>Status</dt><dd>Limpando caches...</dd>';
   google.script.run
     .withSuccessHandler(function(data) {
+      APP_DIAGNOSTICS_CLEARING = false;
       Array.prototype.forEach.call(btns, function(btn) { btn.disabled = false; });
-      APP_DEPLOYMENT_DIAGNOSTICS = data || {};
-      renderDiagnosticoImplantacao(APP_DEPLOYMENT_DIAGNOSTICS);
+      if (!diagApplyResult(requestId, data)) return;
       snack('Caches limpos e diagnostico atualizado.');
     })
     .withFailureHandler(function(e) {
+      APP_DIAGNOSTICS_CLEARING = false;
+      if (requestId !== APP_DIAGNOSTICS_REQUEST_ID) return;
+      APP_DIAGNOSTICS_IN_FLIGHT = false;
+      APP_DIAGNOSTICS_RECEIVED_AT = 0;
+      diagRenderFreshness();
       Array.prototype.forEach.call(btns, function(btn) { btn.disabled = false; });
       var msg = e && e.message ? e.message : String(e || 'Falha ao limpar caches.');
       if (cacheEl) cacheEl.innerHTML = '<dt>Erro</dt><dd>' + esc(msg) + '</dd>';
@@ -4215,14 +4336,14 @@ function appFocusDialog(entry) {
 
 function appSyncContentFieldAccessibility() {
   var roots = ['agendaCreatePanel', 'modalAgendaCancelamentoMotivo', 'page-requisicao'].map(function(id) { return document.getElementById(id); });
-  roots = roots.concat(Array.prototype.slice.call(document.querySelectorAll('[data-stock-dialog]')));
+  roots = roots.concat(Array.prototype.slice.call(document.querySelectorAll('[data-stock-dialog], [data-extra-dialog]')));
   roots.forEach(function(root) {
     if (!root) return;
     root.querySelectorAll('label[for]').forEach(function(label) {
       var input = document.getElementById(label.htmlFor);
       if (!input || !input.matches('input, select, textarea')) return;
       var star = label.querySelector('.required-star');
-      input.setAttribute('aria-required', star && star.getClientRects().length && getComputedStyle(star).display !== 'none' ? 'true' : 'false');
+      input.setAttribute('aria-required', input.required || (star && star.getClientRects().length && getComputedStyle(star).display !== 'none') ? 'true' : 'false');
       if (input.hasAttribute('aria-describedby')) input.setAttribute('aria-invalid', input.classList.contains('invalid') ? 'true' : 'false');
     });
     if (!root.hasAttribute('data-stock-dialog')) return;
@@ -4329,7 +4450,7 @@ function appAccessibleDialogKeydown(event) {
     if (closeName && typeof window[closeName] === 'function') window[closeName]();
     else if (entry.overlay.id === 'confirmUnsaved') fecharConfirmUnsaved();
     else {
-      var cancel = entry.box.querySelector('.modal-close, .btn-txt');
+      var cancel = entry.box.querySelector('.modal-close, .btn-txt, .btn-cancel');
       if (cancel) cancel.click();
     }
   } else if (event.key === 'Tab') {
@@ -4367,7 +4488,7 @@ function appInitContentAccessibility() {
     // Ignorar alterações de tabelas e listas: observar apenas diálogo/campo relevante.
     if (records.some(function(record) {
       return record.target.matches && (record.target.matches('.modal-overlay, .ag-create-panel') ||
-        record.target.closest('#agendaCreatePanel, #modalAgendaCancelamentoMotivo, #page-requisicao, [data-stock-dialog]'));
+        record.target.closest('#agendaCreatePanel, #modalAgendaCancelamentoMotivo, #page-requisicao, [data-stock-dialog], [data-extra-dialog]'));
     })) appSyncAccessibleDialogs(records);
   });
   observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class', 'style'], childList: true });
@@ -4378,6 +4499,11 @@ appInitContentAccessibility();
 
 function abrirOverlay(id)  { document.getElementById(id).classList.add('open'); }
 function fecharOverlay(id) {
+  var pendingModal = document.getElementById(id);
+  if (pendingModal && pendingModal.dataset && pendingModal.dataset.extraSaving === '1') {
+    appSetStatus(pendingModal.querySelector('.status-msg'), 'A gravação já foi enviada. Aguarde a conclusão antes de fechar.', '#b3261e');
+    return false;
+  }
   if (!appConfirmNavigationIfDirty(id, function() {
     appClearUnsavedChanges(id);
     fecharOverlay(id);
@@ -4411,7 +4537,10 @@ function limparErro(inputId,errId) {
   var input = document.getElementById(inputId);
   var err = document.getElementById(errId);
   if (input) input.classList.remove('invalid');
-  if (err) err.classList.remove('visible');
+  if (err) {
+    err.classList.remove('visible');
+    err.classList.remove('show');
+  }
 }
 function snack(msg) {
   var s = document.getElementById('snackbar');
@@ -8582,6 +8711,7 @@ function renderPrestadorEmails(raw) {
     remover.setAttribute('aria-label', 'Remover ' + email);
     remover.innerHTML = '<span class="material-symbols-outlined">close</span>';
     remover.addEventListener('click', function() {
+      appMarkUnsavedChanges('modalPrestador');
       renderPrestadorEmails(prestadorEmailsNormalizados(valor.value).filter(function(item) {
         return item.toLowerCase() !== email.toLowerCase();
       }));
@@ -8591,7 +8721,7 @@ function renderPrestadorEmails(raw) {
     lista.appendChild(chip);
   });
   if (editor) editor.classList.toggle('invalid', !emails.length);
-  if (emails.length) limparErro('prestEmail', 'errPrestEmail');
+  if (emails.length) limparErro('prestEmailEntry', 'errPrestEmail');
 }
 
 function adicionarEmailPrestador() {
@@ -8615,6 +8745,7 @@ function adicionarEmailPrestador() {
   entrada.classList.remove('invalid');
   renderPrestadorEmails(prestadorEmailsNormalizados((document.getElementById('prestEmail').value || '') + ';' + novos.join(';')));
   entrada.value = '';
+  appMarkUnsavedChanges('modalPrestador');
   entrada.focus();
   return true;
 }
@@ -8651,6 +8782,9 @@ function renderPrestadorTipoServicoOptions(currentValue) {
 }
 
 function abrirFormPrestador(id) {
+  appClearUnsavedChanges('modalPrestador');
+  var modal = document.getElementById('modalPrestador');
+  modal.dataset.extraEditRevision = String(Number(modal.dataset.extraEditRevision || 0) + 1);
   ['editPrestId','prestEmpresa','prestEndereco','prestTelefone','prestEmail','prestTipoServico'].forEach(function(fId) {
     document.getElementById(fId).value = '';
   });
@@ -8664,7 +8798,7 @@ function abrirFormPrestador(id) {
   ['errPrestEmpresa','errPrestTipoServico','errPrestEmail'].forEach(function(eId) {
     document.getElementById(eId).classList.remove('visible');
   });
-  ['prestEmpresa','prestTipoServico','prestEmail'].forEach(function(fId) {
+  ['prestEmpresa','prestTipoServico','prestEmailEntry'].forEach(function(fId) {
     document.getElementById(fId).classList.remove('invalid');
   });
   if (id) {
@@ -8682,6 +8816,34 @@ function abrirFormPrestador(id) {
   setTimeout(function() { document.getElementById('prestEmpresa').focus(); }, 180);
 }
 
+// Não fechar nem limpar alterações feitas enquanto a gravação estava em andamento.
+function appBeginExtraModalSave_(id) {
+  var modal = document.getElementById(id);
+  if (modal.dataset.extraSaving === '1') return false;
+  modal.dataset.extraSaving = '1';
+  appSetStatus(modal.querySelector('.status-msg'), 'Salvando cadastro… Aguarde a conclusão antes de fechar.');
+  return true;
+}
+
+function appEndExtraModalSave_(id) {
+  delete document.getElementById(id).dataset.extraSaving;
+}
+
+function appExtraModalSnapshot_(id) {
+  var modal = document.getElementById(id);
+  return JSON.stringify([modal.dataset.extraEditRevision || '', Array.prototype.map.call(modal.querySelectorAll('input, select, textarea, [contenteditable="true"]'), function(el) {
+    return [el.id, el.matches('[contenteditable="true"]') ? el.innerHTML : el.value, !!el.checked];
+  })]);
+}
+
+function appFinishExtraModalSave_(id, snapshot, delay) {
+  if (appExtraModalSnapshot_(id) !== snapshot) return;
+  appClearUnsavedChanges(id);
+  setTimeout(function() {
+    if (!appHasUnsavedChanges(id) && appExtraModalSnapshot_(id) === snapshot) fecharOverlay(id);
+  }, delay);
+}
+
 function salvarPrestadorApp() {
   var entradaEmail = document.getElementById('prestEmailEntry');
   if (entradaEmail && entradaEmail.value.trim() && !adicionarEmailPrestador()) return;
@@ -8691,7 +8853,7 @@ function salvarPrestadorApp() {
   if (!appRequiredFeedback([
     { input: 'prestEmpresa', error: 'errPrestEmpresa', label: 'Empresa', value: empresa },
     { input: 'prestTipoServico', error: 'errPrestTipoServico', label: 'Tipo de servico', value: tipoServico },
-    { input: 'prestEmail', error: 'errPrestEmail', label: 'E-mail', value: email }
+    { input: 'prestEmailEntry', error: 'errPrestEmail', label: 'E-mail', value: email }
   ], { status: 'statusPrest' })) {
     document.getElementById('prestEmailEditor').classList.toggle('invalid', !email);
     return;
@@ -8705,17 +8867,21 @@ function salvarPrestadorApp() {
     email: email,
     tipoServico: tipoServico
   };
+  if (!appBeginExtraModalSave_('modalPrestador')) return;
   appSetButtonBusy(btn, true);
+  var savedSnapshot = appExtraModalSnapshot_('modalPrestador');
   appServerRun({
     method: 'salvarDadosPrestador',
     args: [payload],
     onSuccess: function(msg) {
+      appEndExtraModalSave_('modalPrestador');
       appSetButtonBusy(btn, false);
       appSetStatus('statusPrest', '\u2713 ' + msg, '#137333');
       carregarPrestadores(true);
-      setTimeout(function() { fecharOverlay('modalPrestador'); }, 900);
+      appFinishExtraModalSave_('modalPrestador', savedSnapshot, 900);
     },
     onFailure: function(e) {
+      appEndExtraModalSave_('modalPrestador');
       appSetButtonBusy(btn, false);
       appSetStatus('statusPrest', '\u2717 ' + appErrorMessage(e), '#e53935');
     }
@@ -8798,6 +8964,9 @@ function filtrarLabCentral(forceNow) {
 }
 
 function abrirFormLabCentral(id) {
+  appClearUnsavedChanges('modalLabCentral');
+  var modal = document.getElementById('modalLabCentral');
+  modal.dataset.extraEditRevision = String(Number(modal.dataset.extraEditRevision || 0) + 1);
   ['editLabCentralId','labCentralNomeAbrev','labCentralNomeCompleto','labCentralEndereco','labCentralCidade','labCentralCep','labCentralTelefone','labCentralContato','labCentralPais','labCentralCdcPermit'].forEach(function(fId) {
     document.getElementById(fId).value = '';
   });
@@ -8849,17 +9018,21 @@ function salvarLabCentralApp() {
     pais: document.getElementById('labCentralPais').value.trim(),
     cdcPermit: document.getElementById('labCentralCdcPermit').value.trim()
   };
+  if (!appBeginExtraModalSave_('modalLabCentral')) return;
   appSetButtonBusy(btn, true);
+  var savedSnapshot = appExtraModalSnapshot_('modalLabCentral');
   appServerRun({
     method: 'salvarLabCentral',
     args: [payload],
     onSuccess: function(msg) {
+      appEndExtraModalSave_('modalLabCentral');
       appSetButtonBusy(btn, false);
       appSetStatus('statusLabCentral', '\u2713 ' + msg, '#137333');
       carregarLabCentral(true);
-      setTimeout(function() { fecharOverlay('modalLabCentral'); }, 900);
+      appFinishExtraModalSave_('modalLabCentral', savedSnapshot, 900);
     },
     onFailure: function(e) {
+      appEndExtraModalSave_('modalLabCentral');
       appSetButtonBusy(btn, false);
       appSetStatus('statusLabCentral', '\u2717 ' + appErrorMessage(e), '#e53935');
     }
@@ -9059,6 +9232,10 @@ function configurarMonitorLembretesCourierFront(ativo) {
 }
 
 function abrirFormCourier(id) {
+  prepararEditorCourier_();
+  appClearUnsavedChanges('modalCourier');
+  var modal = document.getElementById('modalCourier');
+  modal.dataset.extraEditRevision = String(Number(modal.dataset.extraEditRevision || 0) + 1);
   var statusConfirmacaoAtual = '';
   ensureCourierStatusConfirmacaoSelect();
   [
@@ -9143,7 +9320,9 @@ function courierEditorSetHtml(html) {
   var editor = document.getElementById('courierConteudoEditor');
   var hidden = document.getElementById('courierConteudo');
   var sanitized = courierSanitizeHtmlClient(html);
+  COURIER_EDITOR_RANGE = null;
   if (editor) editor.innerHTML = sanitized;
+  courierEditorSyncToolbar_();
   if (hidden) hidden.value = sanitized;
 }
 
@@ -9179,12 +9358,39 @@ function courierEditorHtml() {
   return editor ? editor.innerHTML.trim() : '';
 }
 
+var COURIER_EDITOR_RANGE = null;
+
+function prepararEditorCourier_() {
+  var editor = document.getElementById('courierConteudoEditor');
+  if (!editor || editor.dataset.selectionBound === '1') return;
+  editor.dataset.selectionBound = '1';
+  document.addEventListener('selectionchange', courierEditorSyncToolbar_);
+}
+
+function courierEditorSyncToolbar_() {
+  var editor = document.getElementById('courierConteudoEditor');
+  if (!editor) return;
+  var selection = window.getSelection();
+  var range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+  var inside = range && editor.contains(range.startContainer) && editor.contains(range.endContainer);
+  if (inside) COURIER_EDITOR_RANGE = range.cloneRange();
+  editor.closest('.field').querySelectorAll('[data-rich-command]').forEach(function(button) {
+    button.setAttribute('aria-pressed', inside && document.queryCommandState(button.dataset.richCommand) ? 'true' : 'false');
+  });
+}
+
 function courierEditorCommand(cmd) {
   var editor = document.getElementById('courierConteudoEditor');
   if (!editor) return;
   editor.focus();
-  document.execCommand(cmd, false, null);
+  if (COURIER_EDITOR_RANGE && editor.contains(COURIER_EDITOR_RANGE.startContainer) && editor.contains(COURIER_EDITOR_RANGE.endContainer)) {
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(COURIER_EDITOR_RANGE);
+  }
+  if (document.execCommand(cmd, false, null)) appMarkUnsavedChanges('modalCourier');
   document.getElementById('courierConteudo').value = courierEditorHtml();
+  courierEditorSyncToolbar_();
 }
 
 function courierEditorPastePlain(event) {
@@ -9228,18 +9434,22 @@ function salvarCourierApp() {
     restricaoAposFeriado: document.getElementById('courierRestricaoAposFeriado').value,
     observacaoOperacional: document.getElementById('courierObservacaoOperacional').value.trim()
   };
+  if (!appBeginExtraModalSave_('modalCourier')) return;
   appSetButtonBusy(btn, true);
+  var savedSnapshot = appExtraModalSnapshot_('modalCourier');
   appServerRun({
     method: 'salvarCourier',
     args: [payload],
     onSuccess: function(msg) {
+      appEndExtraModalSave_('modalCourier');
       appSetButtonBusy(btn, false);
       appSetStatus('statusCourier', '\u2713 ' + msg, '#137333');
       invalidateCadastroBootstrapCache('projetos');
       carregarCouriers(true);
-      setTimeout(function() { fecharOverlay('modalCourier'); }, 900);
+      appFinishExtraModalSave_('modalCourier', savedSnapshot, 900);
     },
     onFailure: function(e) {
+      appEndExtraModalSave_('modalCourier');
       appSetButtonBusy(btn, false);
       appSetStatus('statusCourier', '\u2717 ' + appErrorMessage(e), '#e53935');
     }
@@ -9344,6 +9554,9 @@ function filtrarFeriados(forceNow) {
 }
 
 function abrirFormFeriado(id) {
+  appClearUnsavedChanges('modalFeriado');
+  var modal = document.getElementById('modalFeriado');
+  modal.dataset.extraEditRevision = String(Number(modal.dataset.extraEditRevision || 0) + 1);
   var item = id ? _feriados.find(function(value) { return value.id === id; }) : null;
   document.getElementById('editFeriadoId').value = item ? item.id : '';
   document.getElementById('feriadoData').value = item ? item.dataIso || '' : '';
@@ -9379,7 +9592,9 @@ function salvarFeriadoApp() {
     { input: 'feriadoNome', error: 'errFeriadoNome', label: 'Nome', value: nome }
   ], { status: 'statusFeriado' })) return;
   var button = document.getElementById('btnSalvarFeriado');
+  if (!appBeginExtraModalSave_('modalFeriado')) return;
   appSetButtonBusy(button, true);
+  var savedSnapshot = appExtraModalSnapshot_('modalFeriado');
   appServerRun({
     method: 'salvarFeriado',
     args: [{
@@ -9394,13 +9609,15 @@ function salvarFeriadoApp() {
       observacao: document.getElementById('feriadoObservacao').value.trim()
     }],
     onSuccess: function(message) {
+      appEndExtraModalSave_('modalFeriado');
       appSetButtonBusy(button, false);
       appSetStatus('statusFeriado', '✓ ' + message, '#137333');
       if (typeof notificarAgendaReferenciasAlteradas === 'function') notificarAgendaReferenciasAlteradas();
       carregarFeriados(true);
-      setTimeout(function() { fecharOverlay('modalFeriado'); }, 800);
+      appFinishExtraModalSave_('modalFeriado', savedSnapshot, 800);
     },
     onFailure: function(error) {
+      appEndExtraModalSave_('modalFeriado');
       appSetButtonBusy(button, false);
       appSetStatus('statusFeriado', '✗ ' + appErrorMessage(error), '#e53935');
     }

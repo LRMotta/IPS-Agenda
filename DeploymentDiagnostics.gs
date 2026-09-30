@@ -46,23 +46,23 @@ function getCodexDeploymentDiagnostics(clientContext) {
       expectedExecuteAs: CODEX_APP_EXPECTED_EXECUTE_AS_
     }
   };
-  out.auth = codexTimedDiagnostic_(out.timings, 'auth', 'OAuth', codexGetUserOAuthStatus_);
-  out.identity = codexTimedDiagnostic_(out.timings, 'identity', 'Identidade', codexGetIdentityDiagnostics_);
-  out.cache = codexTimedDiagnostic_(out.timings, 'cache', 'Caches', codexGetCacheDiagnostics_);
-  out.transport = codexTimedDiagnostic_(out.timings, 'transport', 'Transporte', codexGetTransportDiagnostics_);
-  out.triggers = codexTimedDiagnostic_(out.timings, 'triggers', 'Gatilhos', codexGetTriggersDiagnostics_);
-  out.automationRuns = codexTimedDiagnostic_(out.timings, 'automation-runs', 'Historico das automacoes', codexGetAutomationRunDiagnostics_);
-  out.mail = codexTimedDiagnostic_(out.timings, 'mail', 'Cota de e-mail', codexGetMailDiagnostics_);
-  out.permissions = codexTimedDiagnostic_(out.timings, 'permissions', 'Permissoes criticas', codexGetCriticalPermissionsDiagnostics_);
-  out.operational = codexTimedDiagnostic_(out.timings, 'operational', 'Dados e integridade', function() {
+  out.auth = codexSafeDiagnostic_(out.timings, 'auth', 'OAuth', codexGetUserOAuthStatus_);
+  out.identity = codexSafeDiagnostic_(out.timings, 'identity', 'Identidade', codexGetIdentityDiagnostics_);
+  out.cache = codexSafeDiagnostic_(out.timings, 'cache', 'Caches', codexGetCacheDiagnostics_);
+  out.transport = codexSafeDiagnostic_(out.timings, 'transport', 'Transporte', codexGetTransportDiagnostics_);
+  out.triggers = codexSafeDiagnostic_(out.timings, 'triggers', 'Gatilhos', codexGetTriggersDiagnostics_);
+  out.automationRuns = codexSafeDiagnostic_(out.timings, 'automation-runs', 'Historico das automacoes', codexGetAutomationRunDiagnostics_);
+  out.mail = codexSafeDiagnostic_(out.timings, 'mail', 'Cota de e-mail', codexGetMailDiagnostics_);
+  out.permissions = codexSafeDiagnostic_(out.timings, 'permissions', 'Permissoes criticas', codexGetCriticalPermissionsDiagnostics_);
+  out.operational = codexSafeDiagnostic_(out.timings, 'operational', 'Dados e integridade', function() {
     return codexGetOperationalHealthDiagnostics_(clientContext);
   });
-  out.configValidation = codexTimedDiagnostic_(out.timings, 'config-validation', 'Config_App essencial', codexBuildConfigAppDiagnostics_);
-  out.profileHealth = codexTimedDiagnostic_(out.timings, 'profiles', 'Perfis de acesso', codexGetProfileHealthDiagnostics_);
-  out.smoke = codexTimedDiagnostic_(out.timings, 'smoke', 'Smoke checks', function() {
+  out.configValidation = codexSafeDiagnostic_(out.timings, 'config-validation', 'Config_App essencial', codexBuildConfigAppDiagnostics_);
+  out.profileHealth = codexSafeDiagnostic_(out.timings, 'profiles', 'Perfis de acesso', codexGetProfileHealthDiagnostics_);
+  out.smoke = codexSafeDiagnostic_(out.timings, 'smoke', 'Smoke checks', function() {
     return codexGetSmokeDiagnostics_({ profileHealth: out.profileHealth });
   });
-  out.auditRecent = codexTimedDiagnostic_(out.timings, 'audit', 'Auditoria recente', function() {
+  out.auditRecent = codexSafeDiagnostic_(out.timings, 'audit', 'Auditoria recente', function() {
     return codexGetRecentAuditIssuesDiagnostics_(out.operational && out.operational.activity);
   });
   try {
@@ -95,6 +95,10 @@ function getCodexDeploymentDiagnostics(clientContext) {
     out.spreadsheet.error = e2.message || String(e2);
   }
   codexAppendMediumPriorityChecks_(out);
+  codexAppendCriticalChecks_(out);
+  out.checkedAtMs = Date.now();
+  out.validUntilMs = out.checkedAtMs + 5 * 60 * 1000;
+  out.coverage = 'Verificacoes administrativas, estrutura e referencias de Agenda, Participantes, Projetos e Estoque. Nao valida saldos/reservas, conciliacao SoA, documentos de Transporte nem erros globais de execucao.';
   out.totalDurationMs = Math.max(0, Date.now() - diagnosticStartedAt);
   return out;
 }
@@ -121,17 +125,33 @@ function codexTimedDiagnostic_(timings, key, label, callback) {
   }
 }
 
+function codexSafeDiagnostic_(timings, key, label, callback) {
+  try {
+    return codexTimedDiagnostic_(timings, key, label, callback);
+  } catch (e) {
+    return { ok: false, status: 'Nao verificado', error: e.message || String(e) };
+  }
+}
+
+function codexRefreshOverallStatus_(overall) {
+  overall.unverified = Number(overall.unverified || 0);
+  overall.ok = !overall.errors && !overall.warnings && !overall.unverified;
+  overall.status = overall.errors ? 'Erro' : (overall.warnings ? 'Atencao' : (overall.unverified ? 'Nao verificado' : 'Saudavel'));
+}
+
 function codexAppendOperationalCheck_(operational, label, ok, detail, severity) {
   operational = operational || {};
   operational.overall = operational.overall || { status: 'Saudavel', ok: true, errors: 0, warnings: 0, checks: [] };
   var overall = operational.overall;
   overall.checks = overall.checks || [];
   severity = severity || (ok ? 'ok' : 'warning');
-  if (!ok && severity === 'error') overall.errors = Number(overall.errors || 0) + 1;
-  if (!ok && severity !== 'error') overall.warnings = Number(overall.warnings || 0) + 1;
-  overall.checks.push({ label: label, ok: !!ok, detail: detail || '', severity: severity });
-  overall.ok = Number(overall.errors || 0) === 0 && Number(overall.warnings || 0) === 0;
-  overall.status = Number(overall.errors || 0) > 0 ? 'Erro' : (Number(overall.warnings || 0) > 0 ? 'Atencao' : 'Saudavel');
+  if (ok == null) {
+    severity = 'unverified';
+    overall.unverified = Number(overall.unverified || 0) + 1;
+  } else if (!ok && severity === 'error') overall.errors = Number(overall.errors || 0) + 1;
+  else if (!ok) overall.warnings = Number(overall.warnings || 0) + 1;
+  overall.checks.push({ label: label, ok: ok == null ? null : !!ok, detail: detail || '', severity: severity });
+  codexRefreshOverallStatus_(overall);
 }
 
 function codexAppendMediumPriorityChecks_(data) {
@@ -167,15 +187,42 @@ function codexAppendMediumPriorityChecks_(data) {
     Number(profiles.invalidBirthdays || 0) + ' aniversario(s) invalido(s)', 'warning');
 
   (data.automationRuns && data.automationRuns.items || []).forEach(function(item) {
-    if (item.status === 'Falha' || item.status === 'Possivel interrupcao') {
-      codexAppendOperationalCheck_(operational, 'Automacao: ' + item.label, false,
-        [item.status, item.finishedAt || item.startedAt, item.message].filter(Boolean).join(' | '), 'warning');
-    }
+    codexAppendOperationalCheck_(operational, 'Automacao: ' + item.label,
+      item.status === 'Nunca registrado' || item.status === 'Executando' ? null : item.ok === true,
+      [item.status, item.finishedAt || item.startedAt, item.message, 'Revise o historico e a conta responsavel antes de reinstalar gatilhos.'].filter(Boolean).join(' | '), 'warning');
   });
   if (data.automationRuns && data.automationRuns.error) {
     codexAppendOperationalCheck_(operational, 'Historico das automacoes', false, data.automationRuns.error, 'warning');
   }
   data.operational = operational;
+}
+
+function codexAppendCriticalChecks_(data) {
+  var operational = data.operational;
+  if (operational && operational.error) codexAppendOperationalCheck_(operational, 'Dados e integridade', null, operational.error);
+  function probe(label, result, detail, action) {
+    result = result || {};
+    var unknown = result.status === 'Nao verificado' || typeof result.ok !== 'boolean';
+    codexAppendOperationalCheck_(operational, label, unknown ? null : result.ok,
+      [result.error || detail, (unknown || !result.ok) ? action : ''].filter(Boolean).join(' | '), 'error');
+  }
+  var auth = data.auth || {};
+  probe('OAuth', { ok: typeof auth.ok === 'boolean' ? auth.ok && !auth.required : null, status: auth.status, error: auth.error }, auth.status, 'Revise a autorizacao da conta atual.');
+  probe('Planilha principal', data.spreadsheet, data.spreadsheet.name, 'Revise o acesso a planilha principal.');
+  probe('Permissao Drive', (data.permissions || {}).drive, 'Leitura da pasta raiz; nao comprova acesso a todos os documentos.', 'Revise a autorizacao e o acesso ao documento afetado.');
+  probe('Permissao Calendar', (data.permissions || {}).calendar, 'Leitura do calendario padrao; nao comprova acesso a outros calendarios.', 'Revise a autorizacao e o calendario afetado.');
+  var transport = data.transport || {};
+  probe('Disponibilidade do Transporte', transport, transport.message || transport.status, 'Revise o modulo e a URL configurada.');
+  probe('Cota de e-mail', data.mail, 'Restante: ' + (data.mail || {}).remainingDailyQuota, 'Revise a cota da conta responsavel; nao envie mensagens de teste.');
+  (data.smoke && data.smoke.checks || []).forEach(function(item) {
+    codexAppendOperationalCheck_(operational, 'Verificacao basica: ' + item.label, item.ok, item.detail, item.status === 'Erro' ? 'error' : 'warning');
+  });
+  if (!(data.smoke && data.smoke.checks && data.smoke.checks.length)) codexAppendOperationalCheck_(operational, 'Verificacoes basicas de cadastro', null, 'Nao foi possivel confirmar os cadastros de apoio.');
+  ['identity', 'cache', 'smoke', 'auditRecent'].forEach(function(key) {
+    if (data[key] && data[key].error) codexAppendOperationalCheck_(operational, 'Leitura: ' + key, null, data[key].error);
+  });
+  codexAppendOperationalCheck_(operational, 'Confirmacao da ultima entrega', null,
+    'Cliente e servidor sincronizados nao comprovam a ultima entrega. Confira o codigo remoto, a implantacao ativa, o badge /exec e o fluxo no Chrome.');
 }
 
 function codexGetOperationalHealthDiagnostics_(clientContext) {
@@ -242,6 +289,11 @@ function codexGetOperationalHealthDiagnostics_(clientContext) {
     if (item.warning) addCheck('Rotulos: ' + item.label, false, item.headerNotes.join(' | '), 'warning');
   });
   (out.integrity.items || []).forEach(function(item) {
+    if (!item.ok) {
+      item.nextStep = item.referenceMismatches ? 'Revise a participacao e o protocolo original; preserve o historico ate confirmar a origem.' :
+        (item.duplicateIds || item.missingIds ? 'Revise os IDs e as referencias antes de consolidar ou excluir registros.' : 'Localize o registro original pelo ID e confirme a participacao/projeto; nao vincule apenas pelo nome.');
+      item.detail += ' | Proximo passo: ' + item.nextStep;
+    }
     addCheck('Integridade: ' + item.label, item.ok, item.detail,
       item.duplicateIds > 0 || item.missingIds > 0 ? 'error' : 'warning');
   });
@@ -324,6 +376,11 @@ function codexReadDiagnosticTable_(ss, spec) {
   var dataColumnCount = (spec.required || []).reduce(function(max, req) {
     return Math.max(max, Number(req.index || 0) + 1);
   }, 1);
+  // O ID tecnico e opcional no legado e sua coluna pode mudar de posicao.
+  var participantCadastroIndex = spec.key === 'agenda' ? headers.findIndex(function(header) {
+    return codexDiagnosticKey_(header) === 'id cadastro participante';
+  }) : -1;
+  if (participantCadastroIndex >= 0) dataColumnCount = Math.max(dataColumnCount, participantCadastroIndex + 1);
   dataColumnCount = Math.min(Math.max(1, dataColumnCount), Math.max(1, lastColumn));
   var rows = lastRow > 1 && lastColumn
     ? sh.getRange(2, 1, lastRow - 1, dataColumnCount).getValues()
@@ -352,6 +409,7 @@ function codexReadDiagnosticTable_(ss, spec) {
     present: true,
     sheetName: sh.getName(),
     headers: headers,
+    participantCadastroIndex: participantCadastroIndex,
     rows: rows.map(function(row, index) {
       row.__codexDiagnosticRow = index + 2;
       return row;
@@ -433,10 +491,13 @@ function codexBuildIntegrityDiagnostics_(tables) {
     });
     function resolveProject(value) { return projectKeys[codexDiagnosticKey_(value)] || ''; }
     var participantKeys = {};
+    var participantCadastros = {};
     ((tables.participantes || {}).rows || []).forEach(function(row) {
       var idKey = codexDiagnosticKey_(row[4]);
       var projectKey = resolveProject(row[5]);
       if (idKey) participantKeys[idKey + '|' + projectKey] = true;
+      var cadastroKey = codexDiagnosticKey_(row[0]);
+      if (cadastroKey) participantCadastros[cadastroKey] = row;
     });
     var participantProjectOrphans = 0;
     var participantProjectExamples = [];
@@ -451,6 +512,9 @@ function codexBuildIntegrityDiagnostics_(tables) {
     var agendaParticipantOrphans = 0;
     var agendaProjectExamples = [];
     var agendaParticipantExamples = [];
+    var agendaReferenceMismatches = 0;
+    var agendaReferenceExamples = [];
+    var cadastroIndex = (tables.agenda || {}).participantCadastroIndex;
     ((tables.agenda || {}).rows || []).forEach(function(row, offset) {
       var rawProject = String(row[8] || '').trim();
       var projectKey = resolveProject(rawProject);
@@ -459,9 +523,17 @@ function codexBuildIntegrityDiagnostics_(tables) {
         agendaProjectOrphans++;
         if (agendaProjectExamples.length < 5) agendaProjectExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + rawProject);
       }
-      if (participantIdKey && projectKey && !participantKeys[participantIdKey + '|' + projectKey]) {
+      var cadastroId = cadastroIndex >= 0 ? String(row[cadastroIndex] || '').trim() : '';
+      var cadastro = cadastroId ? participantCadastros[codexDiagnosticKey_(cadastroId)] : null;
+      // Assim como nas regras da Agenda, ID explicito nunca recorre ao numero
+      // de outra participacao. Referencias historicas divergentes nao sao orfaos.
+      var orphan = cadastroId ? !cadastro : (participantIdKey && projectKey && !participantKeys[participantIdKey + '|' + projectKey]);
+      if (orphan) {
         agendaParticipantOrphans++;
-        if (agendaParticipantExamples.length < 5) agendaParticipantExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + String(row[7] || ''));
+        if (agendaParticipantExamples.length < 5) agendaParticipantExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ' + (cadastroId ? 'ID cadastro ' + cadastroId : String(row[7] || '')));
+      } else if (cadastro && (participantIdKey !== codexDiagnosticKey_(cadastro[4]) || projectKey !== resolveProject(cadastro[5]))) {
+        agendaReferenceMismatches++;
+        if (agendaReferenceExamples.length < 5) agendaReferenceExamples.push('linha ' + codexDiagnosticRowNumber_(row, offset) + ': ID cadastro ' + cadastroId + ', Agenda ' + String(row[7] || '') + ' / ' + rawProject + ', cadastro ' + String(cadastro[4] || '') + ' / ' + String(cadastro[5] || ''));
       }
     });
     var itemKeys = {};
@@ -495,6 +567,10 @@ function codexBuildIntegrityDiagnostics_(tables) {
       out.items.push({ key: item.key, label: item.label, ok: item.count === 0, duplicateIds: 0, missingIds: 0,
         orphanLinks: item.count, detail: item.count + ' vinculo(s) orfao(s)' + (item.examples.length ? ' | ' + item.examples.join('; ') : '') });
     });
+    out.items.push({ key: 'agenda-participante-referencias', label: 'Agenda x Participantes - referencias divergentes',
+      ok: agendaReferenceMismatches === 0, duplicateIds: 0, missingIds: 0, orphanLinks: 0,
+      referenceMismatches: agendaReferenceMismatches,
+      detail: agendaReferenceMismatches + ' referencia(s) divergente(s) com ID cadastro existente; revisar sem substituir o historico automaticamente' + (agendaReferenceExamples.length ? ' | ' + agendaReferenceExamples.join('; ') : '') });
   } catch (e) {
     out.error = e.message || String(e);
   }
@@ -638,7 +714,7 @@ function codexCacheItemPresent_(key, reader) {
 }
 
 function codexGetTransportDiagnostics_() {
-  var out = { status: '', url: '', responseCode: '', mode: '', message: '', error: '' };
+  var out = { ok: null, status: '', url: '', responseCode: '', mode: '', message: '', error: '' };
   try {
     var acoplado = typeof salvarTransporte === 'function' &&
       typeof gerarPdfTransporte === 'function' &&
@@ -646,28 +722,33 @@ function codexGetTransportDiagnostics_() {
     if (acoplado) {
       out.status = 'OK (acoplado)';
       out.mode = 'acoplado';
+      out.ok = true;
       out.message = 'Transporte roda dentro do CODEX; URL externa nao e necessaria.';
       return out;
     }
     if (typeof getTransporteWebAppUrlCodex_ !== 'function') {
       out.status = 'Indisponivel';
       out.error = 'Leitor getTransporteWebAppUrlCodex_ nao encontrado.';
+      out.ok = false;
       return out;
     }
     out.url = String(getTransporteWebAppUrlCodex_() || '').trim();
     if (!out.url) {
       out.status = 'URL ausente';
       out.message = 'Necessaria apenas quando o Transporte roda como WebApp externo.';
+      out.ok = false;
       return out;
     }
     if (!/^https:\/\/script\.google\.com\/.+\/exec$/i.test(out.url)) {
       out.status = 'URL invalida';
+      out.ok = false;
       return out;
     }
     out.status = 'URL valida';
     if (typeof testarUrlWebAppTransporteCodex === 'function') {
       var res = testarUrlWebAppTransporteCodex();
       out.mode = 'fetch';
+      out.ok = !!(res && res.ok);
       out.responseCode = res && res.getCode;
       out.status = res && res.ok ? 'OK' : 'Fetch com alerta';
       out.message = res && res.ok
@@ -680,6 +761,7 @@ function codexGetTransportDiagnostics_() {
   } catch (e) {
     out.status = out.url ? 'Fetch falhou' : 'URL ausente';
     out.error = e.message || String(e);
+    out.ok = false;
   }
   return out;
 }
@@ -870,7 +952,7 @@ function codexGetProfileHealthDiagnostics_() {
 }
 
 function codexGetTriggersDiagnostics_() {
-  var out = { ok: false, triggers: [], expected: [], missing: 0, duplicates: 0, monitorConfirmacaoCouriersAtivo: false, monitorEntregasDhlAtivo: false, error: '' };
+  var out = { ok: false, triggers: [], expected: [], missing: 0, duplicates: 0, monitorConfirmacaoCouriersAtivo: false, monitorEntregasDhlAtivo: false, error: '', scope: 'Inventario retornado para a conta atual. Confirme tambem a conta responsavel pelas automacoes antes de reinstalar gatilhos.' };
   try {
     out.triggers = ScriptApp.getProjectTriggers().map(function(t) {
       var source = '';
@@ -882,10 +964,7 @@ function codexGetTriggersDiagnostics_() {
       if (fn === 'monitorarEntregasDhlAgendadas' || fn === 'monitorarEntregasDhlAgendadas_') out.monitorEntregasDhlAtivo = true;
       return { handler: fn, source: source, eventType: eventType, uid: t.getUniqueId ? String(t.getUniqueId() || '') : '' };
     });
-    [
-      { key: 'courier', label: 'Confirmacoes de courier', aliases: ['monitorarConfirmacoesCourierAgendadas', 'monitorarConfirmacoesCourierAgendadas_'] },
-      { key: 'dhl', label: 'Entregas DHL', aliases: ['monitorarEntregasDhlAgendadas', 'monitorarEntregasDhlAgendadas_'] }
-    ].forEach(function(expected) {
+    codexDiagnosticAutomations_().forEach(function(expected) {
       var count = out.triggers.filter(function(trigger) { return expected.aliases.indexOf(trigger.handler) >= 0; }).length;
       if (count === 0) out.missing++;
       if (count > 1) out.duplicates += count - 1;
@@ -896,6 +975,15 @@ function codexGetTriggersDiagnostics_() {
     out.error = e.message || String(e);
   }
   return out;
+}
+
+function codexDiagnosticAutomations_() {
+  // Margem de tres intervalos; atraso e indicio para revisao, nao prova de falha.
+  return [
+    { key: 'courier', handler: 'monitorarConfirmacoesCourierAgendadas', label: 'Confirmacoes de courier', aliases: ['monitorarConfirmacoesCourierAgendadas', 'monitorarConfirmacoesCourierAgendadas_'], staleMinutes: 45 },
+    { key: 'dhl', handler: 'monitorarEntregasDhlAgendadas', label: 'Entregas DHL', aliases: ['monitorarEntregasDhlAgendadas', 'monitorarEntregasDhlAgendadas_'], staleMinutes: 720 },
+    { key: 'lembretes', handler: 'monitorarLembretesCourier', label: 'Lembretes de courier', aliases: ['monitorarLembretesCourier'], staleMinutes: 45 }
+  ];
 }
 
 function codexAutomationRunKey_(handler) {
@@ -954,10 +1042,7 @@ function codexGetAutomationRunDiagnostics_() {
   var out = { ok: true, items: [], error: '' };
   try {
     var props = PropertiesService.getScriptProperties();
-    [
-      { handler: 'monitorarConfirmacoesCourierAgendadas', label: 'Confirmacoes de courier' },
-      { handler: 'monitorarEntregasDhlAgendadas', label: 'Entregas DHL' }
-    ].forEach(function(def) {
+    codexDiagnosticAutomations_().forEach(function(def) {
       var raw = props.getProperty(codexAutomationRunKey_(def.handler));
       var state = {};
       if (raw) {
@@ -965,7 +1050,11 @@ function codexGetAutomationRunDiagnostics_() {
         catch (eParse) { state = { status: 'Historico invalido', message: eParse.message || String(eParse) }; }
       }
       var status = state.status || 'Nunca registrado';
+      var timestamp = status === 'Executando' ? state.startedAt : state.finishedAt;
+      var lastRunMs = timestamp ? new Date(timestamp).getTime() : NaN;
+      if (raw && (!isFinite(lastRunMs) || lastRunMs > Date.now())) status = 'Historico invalido';
       if (status === 'Executando' && state.startedAt && Date.now() - new Date(state.startedAt).getTime() > 30 * 60 * 1000) status = 'Possivel interrupcao';
+      if (status === 'Sucesso' && Date.now() - lastRunMs > def.staleMinutes * 60 * 1000) status = 'Execucao atrasada';
       out.items.push({
         handler: def.handler,
         label: def.label,
@@ -975,9 +1064,10 @@ function codexGetAutomationRunDiagnostics_() {
         durationMs: Number(state.durationMs || 0),
         message: state.message || '',
         summary: state.summary || '',
-        ok: status === 'Sucesso' || status === 'Nunca registrado'
+        ok: status === 'Sucesso',
+        staleMinutes: def.staleMinutes
       });
-      if (status === 'Falha' || status === 'Possivel interrupcao' || status === 'Historico invalido') out.ok = false;
+      if (status !== 'Sucesso') out.ok = false;
     });
   } catch (e) {
     out.ok = false;
@@ -990,8 +1080,8 @@ function codexGetMailDiagnostics_() {
   var out = { ok: false, remainingDailyQuota: '', status: '', error: '' };
   try {
     out.remainingDailyQuota = MailApp.getRemainingDailyQuota();
-    out.status = 'OK';
-    out.ok = true;
+    out.ok = out.remainingDailyQuota > 0;
+    out.status = out.ok ? 'OK' : 'Cota esgotada';
   } catch (e) {
     out.status = 'Falha';
     out.error = e.message || String(e);

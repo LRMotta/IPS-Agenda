@@ -3,18 +3,21 @@
   //  DASHBOARD
   // ═══════════════════════════════════════════════════════════════
   var _dashInited = false;
+  var _dashLoading = false;
+  var _dashLoadedAt = 0;
   var _dashCharts = {};
   var _dashAgendaRaw = [];
   var _dashAgendaResumoAtual = {};
   var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
   var _dashKpiRecrutZeroKeys = {};
   var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v3';
-  var DASHBOARD_SESSION_CACHE_VERSION = '2026.08.20-project-status-v3';
+  var DASHBOARD_SESSION_CACHE_VERSION = '2026.09.30-section-status-v4';
   var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
   function carregarDashboard(forcar) {
-    if (_dashInited && !forcar) return;
+    if (_dashLoading) return;
+    if (_dashInited && !forcar && Date.now() - _dashLoadedAt < DASHBOARD_SESSION_CACHE_TTL_MS) return;
     if (forcar) {
       try {
         if (window.sessionStorage) sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY);
@@ -24,7 +27,7 @@
       _dashInited = true;
       return;
     }
-    _dashInited = true;
+    _dashLoading = true;
     var kpiEl = document.getElementById('dashKpis');
     var btn   = document.getElementById('btnDashRefresh');
     if (kpiEl) {
@@ -34,11 +37,13 @@
     if (btn) btn.disabled = true;
     google.script.run
       .withSuccessHandler(function(d) {
+        _dashLoading = false;
         try {
           if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
           if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
-          dashboardStoreSessionCache(d || {});
-          renderDashboard(d || {});
+          _dashInited = renderDashboard(d || {});
+          _dashLoadedAt = _dashInited ? Date.now() : 0;
+          if (_dashInited) dashboardStoreSessionCache(d || {});
         } catch(err) {
           _dashInited = false;
           if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
@@ -46,6 +51,7 @@
         }
       })
       .withFailureHandler(function(e) {
+        _dashLoading = false;
         _dashInited = false;
         if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
         if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
@@ -69,8 +75,9 @@
         return false;
       }
       cached.data._dashboardCachedAt = cached.cachedAt || Date.now();
-      renderDashboard(cached.data);
-      return true;
+      var rendered = renderDashboard(cached.data);
+      if (rendered) _dashLoadedAt = cachedAt;
+      return rendered;
     } catch (e) {
       try { sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY); } catch (ignore) {}
       return false;
@@ -82,6 +89,10 @@
       if (!window.sessionStorage) return;
       data = data || {};
       if (data.erros && data.erros.length) return;
+      if (data.secoes && Object.keys(data.secoes).some(function(key) { return data.secoes[key] === false; })) {
+        sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY);
+        return;
+      }
       data._dashboardCachedAt = Date.now();
       sessionStorage.setItem(DASHBOARD_SESSION_CACHE_KEY, JSON.stringify({
         version: DASHBOARD_SESSION_CACHE_VERSION,
@@ -98,7 +109,7 @@
     var page = document.getElementById('page-dashboard');
     if (!page) return;
     page.insertAdjacentHTML('afterbegin',
-      '<div id="dashErrorBox" style="background:#fce8e6;border:1.5px solid #f4b5b2;border-radius:10px;padding:16px;color:#b3261e;font-size:13px;margin-bottom:12px">' +
+      '<div id="dashErrorBox" role="alert" style="background:#fce8e6;border:1.5px solid #f4b5b2;border-radius:10px;padding:16px;color:#b3261e;font-size:13px;margin-bottom:12px;white-space:pre-line">' +
       '<strong>Erro ao carregar dashboard:</strong> ' + esc(typeof appErrorMessage === 'function' ? appErrorMessage(msg) : msg) + '</div>');
   }
 
@@ -418,18 +429,28 @@
   }
 
   function renderDashboard(d) {
+    var oldError = document.getElementById('dashErrorBox');
+    if (oldError) oldError.remove();
+    Object.keys(_dashCharts).forEach(_destroyChart);
     if (d.erros && d.erros.length) {
-      document.getElementById('dashKpis').innerHTML =
-        '<div style="grid-column:1/-1;background:#fce8e6;border:1.5px solid #f4b5b2;border-radius:10px;padding:16px;color:#b3261e;font-size:13px">' +
-        '<strong>Erro ao carregar dados:</strong><br>' + d.erros.join('<br>') + '</div>';
-      return;
+      ['kpiProjetos', 'kpiPart', 'kpiAtivos', 'kpiZeroRecrut'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = '—';
+      });
+      ['dashAgendaBlock', 'dashEstoqueBlock'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+      mostrarErroDashboard(d.erros.join('\n'));
+      return false;
     }
     if (typeof Chart === 'undefined') {
-      document.getElementById('dashKpis').innerHTML =
-        '<div style="grid-column:1/-1;background:#fff3e0;border:1.5px solid #ffcc02;border-radius:10px;padding:16px;color:#e65100;font-size:13px">' +
-        '<strong>Chart.js não carregou.</strong> Verifique a conexão com a internet e recarregue a página.</div>';
-      return;
+      mostrarErroDashboard('Chart.js não carregou. Verifique a conexão com a internet e recarregue a página.');
+      return false;
     }
+    // Restaura as dimensões antes de criar gráficos após uma falha parcial.
+    dashboardSectionAvailability_('dashAgendaBlock', true);
+    dashboardSectionAvailability_('dashEstoqueBlock', true);
     var proj = d.projetos || [];
     var part = d.participantes || [];
     var est = d.estoqueResumo || {};
@@ -454,11 +475,6 @@
     var now = new Date(d._dashboardCachedAt || Date.now());
     document.getElementById('dashTs').textContent =
       'Atualizado: ' + now.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
-    if (!proj.length) {
-      document.getElementById('dashKpis').insertAdjacentHTML('afterend',
-        '<div style="background:#e8f0fe;border:1.5px solid #c5d5fb;border-radius:10px;padding:14px;color:#1266f1;font-size:13px;margin-bottom:16px">' +
-        'Nenhum projeto encontrado. Verifique se há dados na aba Projetos.</div>');
-    }
     var faseMap  = _agg(projetosAtivos, 'fase');
     var faseKeys = _sortDesc(faseMap);
     if (faseKeys.length) _doughnut('chartFase', faseKeys, faseKeys.map(function(k){ return faseMap[k]; }));
@@ -541,7 +557,29 @@
     moverBlocoAgendaDashboard();
     renderDashboardAgenda(d.agendaResumo || {});
     renderDashboardEstoque(est);
+    Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
+      if (!_dashCharts[canvas.id]) dashboardDrawEmptyChart_(canvas, 'Sem dados disponíveis');
+    });
+    var sections = d.secoes || {};
+    dashboardSectionAvailability_('dashAgendaBlock', sections.agenda !== false);
+    dashboardSectionAvailability_('dashEstoqueBlock', sections.estoque !== false);
+    if (d.avisos && d.avisos.length) mostrarErroDashboard(d.avisos.join('\n'));
     bindDashboardChartCopyButtons();
+    return true;
+  }
+
+  function dashboardSectionAvailability_(id, available) {
+    var block = document.getElementById(id);
+    if (!block) return;
+    block.setAttribute('data-dashboard-available', available ? '1' : '0');
+    block.classList.toggle('dash-section-unavailable', !available);
+    Array.prototype.forEach.call(block.querySelectorAll('.dash-kpi-val'), function(el) {
+      if (!available) el.textContent = 'Dados indisponíveis';
+    });
+    Array.prototype.forEach.call(block.querySelectorAll('.chart-wrap, .dash-grid-2, #dashAgendaMesCards, .dash-period-controls'), function(el) {
+      el.style.display = available ? '' : 'none';
+    });
+    block.style.display = '';
   }
 
   function moverBlocoAgendaDashboard() {
@@ -563,7 +601,7 @@
     }).sort(function(a, b) {
       return b.value - a.value || a.label.localeCompare(b.label);
     });
-    return pairs.slice(0, limit || 15);
+    return _topDashPairs(pairs.map(function(p) { return p.label; }), map, limit || 15);
   }
 
   function dashAgendaYears(rows) {
@@ -624,16 +662,7 @@
       var canvas = document.getElementById(canvasId);
       var wrap = canvas ? canvas.closest('.chart-wrap') : null;
       if (wrap) wrap.style.height = '240px';
-      if (canvas) {
-        var ctx = canvas.getContext('2d');
-        var w = canvas.width || canvas.clientWidth || 320;
-        var h = canvas.height || canvas.clientHeight || 220;
-        ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#9aa3b0';
-        ctx.font = '600 13px Roboto, Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Sem dados para o período selecionado', w / 2, h / 2);
-      }
+      dashboardDrawEmptyChart_(canvas, 'Sem dados para o período selecionado');
       return;
     }
     _setChartHeight(canvasId, pairs.length, 26, 240, maxH || 430);
@@ -716,6 +745,18 @@
     }).map(function(label) { return { label: label, value: map[label] || 0 }; });
   }
 
+  function dashboardDrawEmptyChart_(canvas, message) {
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width || canvas.clientWidth || 320;
+    var h = canvas.height || canvas.clientHeight || 220;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#9aa3b0';
+    ctx.font = '600 13px Roboto, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(message, w / 2, h / 2);
+  }
+
   function dashAgendaParticipantesAtendidos(rows, predicate) {
     var participantes = {};
     (rows || []).forEach(function(r) {
@@ -762,6 +803,13 @@
 
     var labelEl = document.getElementById('dashAgendaPeriodoAtual');
     if (labelEl) labelEl.textContent = dashAgendaPeriodoLabel();
+    ['chartAgendaVisitasMes', 'chartAgendaLabMes'].forEach(function(id) {
+      var canvas = document.getElementById(id);
+      var title = dashboardChartTitleElement(canvas);
+      if (title) dashboardChartTitleTextElement(title).textContent =
+        (id === 'chartAgendaVisitasMes' ? 'Visitas realizadas' : 'Lab Central') +
+        (_dashAgendaPeriod.tipo === 'global' ? ' por ano' : ' por mês');
+    });
     var visitasPeriodo = _dashAgendaRaw.length ? dashAgendaPeriodoBuckets(rows, realizada) : (ag.visitasMes || []);
     var labPeriodo = _dashAgendaRaw.length ? dashAgendaPeriodoBuckets(rows, labCentral) : (ag.labCentralMes || []);
     var mesCards = document.getElementById('dashAgendaMesCards');
@@ -909,7 +957,8 @@
       return dashboardPrintVisible(el) && !el.closest('#dashAgendaMesCards');
     }).map(dashboardPrintKpiCard).join('');
     if (!cards) return '';
-    return '<div class="section"><div class="section-title">Indicadores da Agenda</div><div class="kpi-grid">' + cards + '</div></div>';
+    var period = block.getAttribute('data-dashboard-available') === '0' ? 'Dados indisponíveis' : dashAgendaPeriodoLabel();
+    return '<div class="section"><div class="section-title">Indicadores da Agenda · ' + esc(period) + '</div><div class="kpi-grid">' + cards + '</div></div>';
   }
 
   function dashboardPrintKpiCard(el) {

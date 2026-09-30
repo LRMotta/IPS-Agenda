@@ -5304,6 +5304,7 @@
   }
 
   function renderAgendaLista() {
+    agendaCloseActionMenus();
     var el = document.getElementById('agendaViewLista');
     if (!el) return;
     var rows = agendaRowsFiltradas();
@@ -5504,6 +5505,7 @@
   }
 
   function renderAgendaSemana() {
+    agendaCloseActionMenus();
     var grid = document.getElementById('agendaWeekGrid');
     if (!grid) return;
     var rows = agendaRowsFiltradas();
@@ -5999,6 +6001,15 @@
       items.push({icon: 'picture_in_picture', label: 'Gerar Display', action: displayAction});
     }
 
+    var reciboTipo = AgendaRules.formPolicy(r).type;
+    if (r.participante && ['visita', 'consulta'].indexOf(reciboTipo) >= 0) {
+      items.push({
+        icon: 'receipt_long',
+        label: 'Gerar recibo',
+        action: 'abrirAgendaRecibo(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')'
+      });
+    }
+
     if (!items.length) return '<div class="ag-appt-actions">' + editButton + '</div>';
 
     var menuItems = items.map(function(item) {
@@ -6020,9 +6031,15 @@
     _agendaActionMenuDismissHandlersInstalled = true;
     document.addEventListener('click', function(event) {
       var target = event && event.target;
-      if (target && target.closest && target.closest('.ag-action-menu-wrap')) return;
+      if (target && target.closest && target.closest('.ag-action-menu-wrap, .ag-action-menu')) return;
       agendaCloseActionMenus();
     });
+    // Um menu ancorado ao viewport deve fechar quando sua lista se desloca.
+    document.addEventListener('scroll', function(event) {
+      if (event.target && event.target.closest && event.target.closest('.ag-action-menu')) return;
+      agendaCloseActionMenus();
+    }, true);
+    window.addEventListener('resize', agendaCloseActionMenus);
     document.addEventListener('keydown', function(event) {
       if (!event) return;
       var target = event.target;
@@ -6030,7 +6047,8 @@
       if (event.key === 'Escape') {
         var menus = document.querySelectorAll('.ag-action-menu.open');
         if (!menus.length) return;
-        var trigger = menus[0].parentNode.querySelector('.ag-action-menu-trigger');
+        var wrap = menus[0]._agendaActionWrap || menus[0].parentNode;
+        var trigger = wrap.querySelector('.ag-action-menu-trigger');
         event.preventDefault();
         agendaCloseActionMenus();
         if (trigger) trigger.focus();
@@ -6056,11 +6074,15 @@
     for (var i = 0; i < menus.length; i++) {
       var menu = menus[i];
       menu.classList.remove('open');
-      var wrap = menu.parentNode;
+      var wrap = menu._agendaActionWrap || menu.parentNode;
       var trigger = wrap && wrap.querySelector('.ag-action-menu-trigger');
       if (trigger) trigger.setAttribute('aria-expanded', 'false');
-      var card = menu.closest('.ag-appt');
+      var card = wrap.closest('.ag-appt');
       if (card) card.classList.remove('ag-action-menu-open');
+      if (menu._agendaActionWrap) {
+        wrap.appendChild(menu);
+        delete menu._agendaActionWrap;
+      }
     }
   }
 
@@ -6072,13 +6094,30 @@
     agendaCloseActionMenus();
     if (closing) return;
 
-    menu.classList.add('open');
     trigger = trigger || menu.parentNode.querySelector('.ag-action-menu-trigger');
-    if (trigger) trigger.setAttribute('aria-expanded', 'true');
+    if (!trigger) return;
     var card = menu.closest('.ag-appt');
+    // Fora do contêiner da Agenda: overflow e containment não podem cortar as ações.
+    menu._agendaActionWrap = menu.parentNode;
+    document.body.appendChild(menu);
+    menu.classList.add('open');
+    menu.style.maxHeight = 'calc(100dvh - 28px)';
+    var anchor = trigger.getBoundingClientRect();
+    var bounds = menu.getBoundingClientRect();
+    var viewportWidth = document.documentElement.clientWidth;
+    var viewportHeight = window.innerHeight;
+    var below = viewportHeight - anchor.bottom - 20;
+    var above = anchor.top - 20;
+    var openAbove = bounds.height > below && above > below;
+    menu.style.maxHeight = Math.max(38, openAbove ? above : below) + 'px';
+    var height = menu.getBoundingClientRect().height;
+    menu.style.left = Math.max(14, Math.min(anchor.right - bounds.width, viewportWidth - bounds.width - 14)) + 'px';
+    menu.style.right = 'auto';
+    menu.style.top = Math.max(14, openAbove ? anchor.top - height - 6 : anchor.bottom + 6) + 'px';
+    if (trigger) trigger.setAttribute('aria-expanded', 'true');
     if (card) card.classList.add('ag-action-menu-open');
     var firstItem = menu.querySelector('[role="menuitem"]');
-    if (firstItem) firstItem.focus();
+    if (firstItem) firstItem.focus({ preventScroll: true });
   }
 
   function agendaCardHtml(r, suffix, options) {
@@ -6127,11 +6166,7 @@
   function agendaDetailHtml(r) {
     var couriers = agendaCourierCards(r);
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
-    var reciboTipo = AgendaRules.formPolicy(r).type;
-    var reciboBtn = r.participante && ['visita', 'consulta'].indexOf(reciboTipo) >= 0 ? '<button class="ag-tb-btn" type="button" onclick="event.stopPropagation();abrirAgendaRecibo(\'' + esc(r.id) + '\',' + Number(r.rowIndex || 0) + ')"><span class="material-symbols-outlined">receipt_long</span> Gerar recibo</button>' : '';
-    var actions = reciboBtn ? '<div class="ag-det-actions">' + reciboBtn + '</div>' : '';
-    return actions +
-      (isPeriodoOperacional && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
+    return (isPeriodoOperacional && r.monitorName ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">visibility</span>Monitor</div><div class="ag-obs-block"><span class="material-symbols-outlined">person</span><span>' + esc(r.monitorName) + '</span></div></div>' : '') +
       (isPeriodoOperacional && r.salaMonitoria ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">meeting_room</span>Local</div><div class="ag-obs-block"><span class="material-symbols-outlined">room</span><span>' + esc(r.salaMonitoria) + '</span></div></div>' : '') +
       agendaPostVisitDetailHtml(r) +
       (r.obs ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">sticky_note_2</span>Observacoes</div><div class="ag-obs-block"><span class="material-symbols-outlined">info</span><span>' + esc(r.obs) + '</span></div></div>' : '') +
@@ -6142,7 +6177,24 @@
   var _agendaReciboData = null;
   var _agendaReciboRequestId = 0;
 
+  function agendaReciboLogPerformance_(startedAt, stage, stageStartedAt, success) {
+    try {
+      var now = Date.now();
+      console.info('[CODEX_PERF] ' + JSON.stringify({
+        operation: 'agendaReceiptOpen',
+        stage: stage,
+        durationMs: Math.max(0, now - startedAt),
+        stageDurationMs: Math.max(0, now - stageStartedAt),
+        success: success === true
+      }));
+    } catch (e) {
+      // Falhas de telemetria nao interferem na abertura nem no recibo.
+    }
+  }
+
   function abrirAgendaRecibo(agendaId, rowIndex) {
+    var receiptStartedAt = Date.now();
+    agendaReciboLogPerformance_(receiptStartedAt, 'click', receiptStartedAt, true);
     var requestId = ++_agendaReciboRequestId;
     _agendaReciboData = null;
     var recebedor = document.getElementById('agendaReciboBeneficiario');
@@ -6156,17 +6208,32 @@
     if (form) form.style.display = 'none';
     if (status) status.textContent = '';
     abrirOverlay('modalAgendaRecibo');
+    agendaReciboLogPerformance_(receiptStartedAt, 'modal_open', receiptStartedAt, true);
+    var receiptRpcStartedAt = Date.now();
     google.script.run
       .withSuccessHandler(function(data) {
-        if (requestId !== _agendaReciboRequestId) return;
+        agendaReciboLogPerformance_(receiptStartedAt, 'rpc_complete', receiptRpcStartedAt, true);
+        if (requestId !== _agendaReciboRequestId) {
+          agendaReciboLogPerformance_(receiptStartedAt, 'stale_response', receiptRpcStartedAt, false);
+          return;
+        }
         if (!data || !Array.isArray(data.beneficiarios) || !data.beneficiarios.length) {
+          agendaReciboLogPerformance_(receiptStartedAt, 'invalid_response', receiptRpcStartedAt, false);
           agendaReciboFalha_({ message: 'Nenhum beneficiário cadastrado para este recibo.' });
           return;
         }
         _agendaReciboData = data;
-        agendaReciboPreencher_(data);
+        var receiptRenderStartedAt = Date.now();
+        var receiptRenderSuccess = false;
+        try {
+          agendaReciboPreencher_(data);
+          receiptRenderSuccess = true;
+        } finally {
+          agendaReciboLogPerformance_(receiptStartedAt, 'form_ready', receiptRenderStartedAt, receiptRenderSuccess);
+        }
       })
       .withFailureHandler(function(error) {
+        agendaReciboLogPerformance_(receiptStartedAt, 'rpc_failure', receiptRpcStartedAt, false);
         if (requestId !== _agendaReciboRequestId) return;
         agendaReciboFalha_(error);
       })
