@@ -26,9 +26,9 @@ test('ações do Estoque tratam aspas, barras e HTML como dados, sem handlers in
     excluirPedidoInline: noop, abrirPedidoPorNumero: noop, imprimirRelatorioDescarte: noop, efetivarDescarteInline: noop,
     atualizarDescarteQtd: (...args) => calls.push(args)
   }, ['estoqueActionAttrs', 'estoqueBindActions']);
-  const values = ['ID"<&', 'Kit "Especial" \\ </button><script>throw 1</script>'];
+  const values = ['ID"<&', 'Kit "Especial" \\ </button><script>throw 1</script><SCRIPT>throw 2</SCRIPT>'];
   const html = c.estoqueActionAttrs('item-excluir', values);
-  assert.doesNotMatch(html, /onclick|<script>/);
+  assert.doesNotMatch(html, /onclick|<script>/i);
   const args = html.match(/data-estoque-args="([^"]*)"/)[1];
   const control = { value: '2', getAttribute: name => name === 'data-estoque-action' ? 'item-excluir' : args };
   const event = { type: 'click', target: { closest: () => control }, stopPropagation() {} };
