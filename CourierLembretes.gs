@@ -43,21 +43,63 @@ function courierLembreteSalvar_(item, estado, detalhe, thread, message) {
   item.message = message || item.message || '';
   item.detalhe = detalhe || '';
   sh.getRange(item.row, 1, 1, 10).setValues([[item.key, item.agendaId, item.slot, item.gerado, item.base, estado, item.atualizado, item.thread, item.message, item.detalhe]]);
-  SpreadsheetApp.flush();
+  // A reserva deve estar persistida antes do envio Gmail, que pode falhar após o aceite.
+  if (estado === 'TENTATIVA') SpreadsheetApp.flush();
 }
 
-function courierLembreteAgenda_(id, slot) {
+function courierLembreteIndexar_(rows, key) {
+  var out = Object.create(null);
+  rows.forEach(function(row) {
+    var k = key(row);
+    if (!out[k]) out[k] = [];
+    out[k].push(row);
+  });
+  return out;
+}
+
+function courierLembreteAgendaSnapshot_(somenteIndice) {
   var sh = getAgendaSheetForRead_();
-  var rows = sh.getLastRow() < 2 ? [] : sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol).getDisplayValues();
   var idx = AGENDA_CFG.idx;
-  var matches = rows.filter(function(r) { return String(r[idx.id]).trim() === id; });
+  var lastRow = sh.getLastRow();
+  // Na releitura, o bloco reduzido mantém unicidade do ID e feriados atuais.
+  // Os demais dados vêm apenas da linha selecionada, sem cache entre execuções.
+  var primeiraCol = somenteIndice ? Math.min(idx.id, idx.tipo, idx.data) : 0;
+  var ultimaCol = somenteIndice ? Math.max(idx.id, idx.tipo, idx.data) : AGENDA_CFG.lastCol - 1;
+  var rows = lastRow < 2 ? [] : sh.getRange(2, primeiraCol + 1, lastRow - 1, ultimaCol - primeiraCol + 1).getDisplayValues().map(function(r) {
+    return primeiraCol ? new Array(primeiraCol).concat(r) : r;
+  });
+  var entries = rows.map(function(row, n) { return { row: n + 2, values: row }; });
+  return {
+    sheet: sh,
+    somenteIndice: !!somenteIndice,
+    porId: courierLembreteIndexar_(entries, function(e) { return String(e.values[idx.id]).trim(); }),
+    feriados: getAgendaFeriadosPendenciasMap_(rows, idx)
+  };
+}
+
+function courierLembreteAgenda_(id, slot, snapshot) {
+  snapshot = snapshot || courierLembreteAgendaSnapshot_(true);
+  var idx = AGENDA_CFG.idx;
+  var matches = snapshot.porId[id] || [];
   var cfg = { '1': idx.c1, '2': idx.c2, '3': idx.c3 }[slot];
   if (matches.length !== 1 || !cfg) return null;
-  var row = matches[0];
+  var row = snapshot.somenteIndice
+    ? snapshot.sheet.getRange(matches[0].row, 1, 1, AGENDA_CFG.lastCol).getDisplayValues()[0]
+    : matches[0].values;
+  if (String(row[idx.id]).trim() !== id) return null;
   var keys = ['id', 'data', 'hora', 'tipo', 'participante', 'projeto', 'visita'];
   var base = keys.map(function(k) { return row[idx[k]] || ''; });
   Object.keys(cfg).sort().forEach(function(k) { if (k !== 'status') base.push(k, row[cfg[k]] || ''); });
-  return { base: JSON.stringify(base), status: row[idx.status], courierStatus: row[cfg.status], courier: row[cfg.nome], awb: row[cfg.awb], data: row[idx.data], feriados: getAgendaFeriadosPendenciasMap_(rows, idx) };
+  return { base: JSON.stringify(base), status: row[idx.status], courierStatus: row[cfg.status], courier: row[cfg.nome], awb: row[cfg.awb], data: row[idx.data], feriados: snapshot.feriados };
+}
+
+function courierLembreteOperacaoBase_(op) {
+  return JSON.stringify([op.agendaId, op.slot, op.referencia, op.courier, +new Date(op.geradoEm), op.geradoPor, op.gmailMessageId, +new Date(op.emailEnviadoEm)]);
+}
+
+function courierLembreteOperacaoAtual_(item, op) {
+  var matches = transporteOperacoesRows_().filter(function(o) { return o.agendaId === item.agendaId && o.slot === item.slot; });
+  return matches.length === 1 && courierLembreteOperacaoBase_(matches[0]) === courierLembreteOperacaoBase_(op);
 }
 
 function courierLembreteRegistrarBase_(agendaId, slot, gerado) {
@@ -204,19 +246,24 @@ function courierLembreteExecutar_() {
     var configs = getAgendaCourierRows_();
     var ops = transporteOperacoesRows_();
     var itens = courierLembreteRows_();
+    var opsPorChave = courierLembreteIndexar_(ops, function(o) { return JSON.stringify([o.agendaId, o.slot]); });
+    var configsPorNome = courierLembreteIndexar_(configs, function(c) { return normText_(c.nome); });
+    var agenda = null;
     var enviados = 0;
     var tentativas = 0;
     var iniciou = Date.now();
     for (var n = 0; n < itens.length && tentativas < 5 && Date.now() - iniciou < 180000; n++) {
       var item = itens[n];
       if (['TENTATIVA', 'ENVIADO', 'INCERTO', 'REVISAO'].indexOf(item.estado) >= 0) continue;
-      var op = ops.filter(function(o) { return o.agendaId === item.agendaId && o.slot === item.slot; })[0];
+      var matches = opsPorChave[JSON.stringify([item.agendaId, item.slot])] || [];
+      var op = matches.length === 1 ? matches[0] : null;
       if (!op || !op.emailEnviadoEm || !op.gmailMessageId || +new Date(op.geradoEm) !== +new Date(item.gerado)) continue;
-      var atual = courierLembreteAgenda_(item.agendaId, item.slot);
+      if (!agenda) agenda = courierLembreteAgendaSnapshot_(false);
+      var atual = courierLembreteAgenda_(item.agendaId, item.slot, agenda);
       if (!atual || !AgendaServerRules_.courierIsAwaitingConfirmation(atual.courierStatus)) continue;
       if (AgendaServerRules_.isCancelled(atual.status) || AgendaServerRules_.isConcluded(atual.status) || AgendaServerRules_.isRescheduled(atual.status) || normText_(atual.status) !== 'agendado') continue;
       if (atual.base !== item.base) { courierLembreteSalvar_(item, 'REVISAO', 'Dados do transporte alterados — revisar'); continue; }
-      var config = configs.filter(function(c) { return normText_(c.nome) === normText_(atual.courier); });
+      var config = configsPorNome[normText_(atual.courier)] || [];
       if (config.length !== 1 || ['Simulação', 'Automático'].indexOf(config[0].lembreteModo) < 0) continue;
       config = config[0];
       if (item.estado === 'SIMULACAO' && config.lembreteModo === 'Simulação') continue;
@@ -233,22 +280,16 @@ function courierLembreteExecutar_() {
         if (motivo) { courierLembreteSalvar_(item, 'REVISAO', motivo, threadId); continue; }
         if (config.lembreteModo === 'Simulação') { courierLembreteSalvar_(item, 'SIMULACAO', 'Simulação: cobrança seria enviada', threadId); continue; }
         var reservado = codexWithDocumentLock_('courierLembreteReservar', function() {
+          if (!courierLembreteOperacaoAtual_(item, op)) return false;
+          var ledger = courierLembreteRows_().filter(function(r) { return r.key === item.key; });
+          if (ledger.length !== 1 || ledger[0].base !== item.base || +new Date(ledger[0].gerado) !== +new Date(item.gerado) || ledger[0].estado !== item.estado) return false;
+          item.row = ledger[0].row;
           var fresh = courierLembreteAgenda_(item.agendaId, item.slot);
-          if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || !AgendaServerRules_.courierIsAwaitingConfirmation(fresh.courierStatus)) return false;
+          if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || normText_(fresh.status) !== 'agendado' || !AgendaServerRules_.courierIsAwaitingConfirmation(fresh.courierStatus)) return false;
           courierLembreteSalvar_(item, 'TENTATIVA', 'Envio em verificação; não repetir automaticamente', threadId);
           return true;
         });
         if (!reservado) continue;
-        // Reconsulta imediatamente antes do efeito externo; nunca reutiliza um snapshot Gmail antigo.
-        original = GmailApp.getMessageById(op.gmailMessageId);
-        motivo = courierLembreteValidarConversa_(original, op, config, own);
-        CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
-        var configFinal = getAgendaCourierRows_().filter(function(c) { return normText_(c.nome) === normText_(atual.courier); });
-        if (configFinal.length !== 1 || JSON.stringify(configFinal[0]) !== JSON.stringify(config)) motivo = 'Configuração da courier alterada — revisar';
-        if (motivo || props.getProperty('COURIER_LEMBRETES_ATIVO') !== 'true') {
-          courierLembreteSalvar_(item, 'REVISAO', motivo || 'Monitor pausado antes do envio', threadId);
-          continue;
-        }
         var texto = courierLembreteTexto_(config, atual, op, original);
         var replyOptions;
         try {
@@ -256,6 +297,26 @@ function courierLembreteExecutar_() {
         } catch (replyContentError) {
           courierLembreteSalvar_(item, 'REVISAO', 'Conteúdo ou anexos do e-mail original não puderam ser recuperados — revisar', threadId);
           Logger.log('Conteúdo original da cobrança ' + item.key + ': ' + String(replyContentError.message || replyContentError));
+          continue;
+        }
+        // Preparar assinatura/anexos antes das últimas verificações diminui a janela de corrida.
+        original = GmailApp.getMessageById(op.gmailMessageId);
+        motivo = courierLembreteValidarConversa_(original, op, config, own);
+        CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
+        var configFinal = getAgendaCourierRows_().filter(function(c) { return normText_(c.nome) === normText_(atual.courier); });
+        if (configFinal.length !== 1 || JSON.stringify(configFinal[0]) !== JSON.stringify(config)) motivo = 'Configuração da courier alterada — revisar';
+        if (!motivo) {
+          motivo = codexWithDocumentLock_('courierLembreteValidarEnvio', function() {
+            if (props.getProperty('COURIER_LEMBRETES_ATIVO') !== 'true' || props.getProperty('COURIER_LEMBRETES_CONTA') !== conta) return 'Monitor pausado ou conta alterada antes do envio';
+            if (!courierLembreteOperacaoAtual_(item, op)) return 'Operação do transporte alterada — revisar';
+            var fresh = courierLembreteAgenda_(item.agendaId, item.slot);
+            if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || normText_(fresh.status) !== 'agendado' || !AgendaServerRules_.courierIsAwaitingConfirmation(fresh.courierStatus)) return 'Dados ou status do transporte alterados — revisar';
+            if (!courierLembreteVencido_(courierLembreteHoraLocal_(new Date(op.emailEnviadoEm)), courierLembreteHoraLocal_(new Date()), coletaIso, config, fresh.feriados)) return 'Horário de cobrança não permitido — revisar';
+            return '';
+          });
+        }
+        if (motivo) {
+          courierLembreteSalvar_(item, 'REVISAO', motivo, threadId);
           continue;
         }
         CodexExternalEffects_.replyCourierReminder(original, texto, replyOptions);

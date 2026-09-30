@@ -111,10 +111,11 @@ test('diagnostico diferencia gatilho ausente, unico e duplicado', () => {
   const result = server.codexGetTriggersDiagnostics_();
 
   assert.equal(result.ok, false);
-  assert.equal(result.missing, 1);
+  assert.equal(result.missing, 2);
   assert.equal(result.duplicates, 1);
   assert.equal(result.expected.find((item) => item.key === 'courier').count, 2);
   assert.equal(result.expected.find((item) => item.key === 'dhl').count, 0);
+  assert.equal(result.expected.find((item) => item.key === 'lembretes').count, 0);
 });
 
 test('automacoes registram ultima execucao, duracao, sucesso e falha', () => {

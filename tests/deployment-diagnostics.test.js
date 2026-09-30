@@ -195,6 +195,48 @@ test('cliente envia contexto da versao e renderiza os novos paineis', () => {
     .forEach((id) => assert.match(content, new RegExp(`id="${id}"`)));
 });
 
+test('ID cadastro existente distingue referencia historica divergente de vinculo orfao', () => {
+  const { server, sheets } = diagnosticServer();
+  sheets.Agenda.rows[0][51] = 'ID Cadastro Participante';
+  sheets.Agenda.rows[1][51] = '1';
+  sheets.Projetos.rows.push(rowWith(14, { 0: 'PROJ-2', 1: 'Estudo historico', 2: 'EH' }));
+  sheets.Agenda.rows[1][8] = 'Estudo historico';
+  const result = server.codexGetOperationalHealthDiagnostics_({ loadedVersion: server.CODEX_APP_VERSION_, watcherActive: true });
+  assert.equal(result.integrity.totals.orphanLinks, 0);
+  const references = result.integrity.items.find(item => item.key === 'agenda-participante-referencias');
+  assert.equal(references.referenceMismatches, 1);
+  assert.equal(references.ok, false);
+  assert.match(references.detail, /linha 2: ID cadastro 1, Agenda SUB-1 \/ Estudo historico, cadastro SUB-1 \/ Estudo A/);
+  assert.equal(result.overall.status, 'Atencao');
+  assert.equal(sheets.Agenda.rows[1][8], 'Estudo historico');
+});
+
+test('ID cadastro ausente nao usa fallback mesmo com numero e projeto validos', () => {
+  const { server, sheets } = diagnosticServer();
+  sheets.Agenda.rows[0][12] = 'ID Cadastro Participante';
+  sheets.Agenda.rows[1][12] = 'CAD-INEXISTENTE';
+  sheets.Agenda.rows[1][7] = '';
+  let result = server.codexGetOperationalHealthDiagnostics_({});
+  assert.equal(result.integrity.totals.orphanLinks, 1);
+  assert.match(result.integrity.items.find(item => item.key === 'agenda-participante').detail, /ID cadastro CAD-INEXISTENTE/);
+  sheets.Agenda.rows[1][7] = 'SUB-1';
+  result = server.codexGetOperationalHealthDiagnostics_({});
+  assert.equal(result.integrity.totals.orphanLinks, 1);
+});
+
+test('coluna opcional deslocada aceita ID existente e preserva fallback legado sem ID', () => {
+  const { server, sheets } = diagnosticServer();
+  sheets.Agenda.rows[0][12] = 'ID Cadastro Participante';
+  sheets.Agenda.rows[1][12] = '1';
+  let result = server.codexGetOperationalHealthDiagnostics_({});
+  assert.equal(result.integrity.totals.orphanLinks, 0);
+  assert.equal(result.integrity.items.find(item => item.key === 'agenda-participante-referencias').referenceMismatches, 0);
+  sheets.Agenda.rows[1][12] = '';
+  sheets.Agenda.rows[1][7] = 'SUB-404';
+  result = server.codexGetOperationalHealthDiagnostics_({});
+  assert.equal(result.integrity.totals.orphanLinks, 1);
+});
+
 test('leitura estrutural limita dados as colunas usadas e preserva todos os cabecalhos', () => {
   const server = runFiles(['WebApp.gs', 'DeploymentDiagnostics.gs']);
   const headers = Array.from({ length: 40 }, (_, index) => 'Coluna ' + (index + 1));

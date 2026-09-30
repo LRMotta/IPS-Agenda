@@ -13,6 +13,151 @@ function sourceBetween(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+function dashboardContext(values) {
+  const context = vm.createContext(Object.assign({
+    window: {}, document: { readyState: 'loading', addEventListener() {} },
+  }, values));
+  vm.runInContext(readProjectFile('IndexDashboard.html').replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, ''), context);
+  return context;
+}
+
+test('Dashboard recupera os KPIs após falha e remove gráficos antigos quando a lista fica vazia', () => {
+  const elements = Object.fromEntries(['dashKpis', 'kpiProjetos', 'kpiPart', 'kpiAtivos', 'kpiZeroRecrut', 'dashTs']
+    .map(id => [id, { textContent: '', style: {} }]));
+  Object.defineProperty(elements.dashKpis, 'innerHTML', { set() {
+    ['kpiProjetos', 'kpiPart', 'kpiAtivos', 'kpiZeroRecrut'].forEach(id => delete elements[id]);
+  } });
+  const context = dashboardContext({
+    Chart: function() {}, codexNormText: value => String(value || '').toLowerCase(),
+    projetoEstaAtivo_: p => p.classificacaoStatus === 'ativo',
+    document: { readyState: 'loading', addEventListener() {}, getElementById: id => elements[id], querySelectorAll: () => [] },
+  });
+  let errorMessage;
+  context.mostrarErroDashboard = message => { errorMessage = message; };
+  ['bindDashboardKpiClicks', 'moverBlocoAgendaDashboard', 'renderDashboardAgenda', 'renderDashboardEstoque',
+    'bindDashboardChartCopyButtons'].forEach(name => { context[name] = () => {}; });
+  assert.equal(context.renderDashboard({ erros: ['Erro de leitura'] }), false);
+  assert.equal(errorMessage, 'Erro de leitura');
+  let destroyed = 0;
+  context._dashCharts.chartFase = { destroy() { destroyed++; } };
+  assert.equal(context.renderDashboard({ projetos: [], participantes: [] }), true);
+  assert.equal(elements.kpiProjetos.textContent, '0');
+  assert.equal(destroyed, 1);
+  assert.equal(context._dashCharts.chartFase, undefined);
+  context.Chart = undefined;
+  assert.equal(context.renderDashboard({}), false);
+  context.Chart = function() {};
+  assert.equal(context.renderDashboard({}), true);
+});
+
+test('Dashboard escapa mensagens de erro antes de inseri-las no HTML', () => {
+  let html;
+  const context = dashboardContext({
+    document: { readyState: 'loading', addEventListener() {}, getElementById: id => id === 'page-dashboard'
+      ? { insertAdjacentHTML(position, value) { html = value; } } : null },
+    esc: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+  });
+  context.mostrarErroDashboard('<img src=x onerror=alert(1)>');
+  assert.ok(html.includes('&lt;img'));
+  assert.ok(!html.includes('<img'));
+});
+
+test('Dashboard conserva a soma dos rankings em Outros como o servidor', () => {
+  const map = { A: 10, B: 7, C: 3, D: 1 };
+  const context = dashboardContext();
+  const server = runFile('WebApp.gs');
+  const pairs = JSON.parse(JSON.stringify(context.dashAgendaPairs(map, 3)));
+  assert.deepEqual(pairs, JSON.parse(JSON.stringify(server.agendaMapToPairs_(map, 3))));
+  assert.equal(pairs.reduce((sum, pair) => sum + pair.value, 0), 21);
+});
+
+test('Dashboard distingue indisponibilidade de zero e restaura a seção na recuperação', () => {
+  const values = [{ textContent: '0' }];
+  const charts = [{ style: {} }];
+  const classes = new Set();
+  const attributes = {};
+  const block = { style: {}, setAttribute(key, value) { attributes[key] = value; },
+    classList: { toggle(key, enabled) { if (enabled) classes.add(key); else classes.delete(key); } },
+    querySelectorAll(selector) { return selector === '.dash-kpi-val' ? values : charts; } };
+  const context = dashboardContext({ document: { readyState: 'loading', addEventListener() {}, getElementById: () => block } });
+  context.dashboardSectionAvailability_('dashAgendaBlock', false);
+  assert.equal(values[0].textContent, 'Dados indisponíveis');
+  assert.equal(charts[0].style.display, 'none');
+  assert.equal(attributes['data-dashboard-available'], '0');
+  context.dashboardSectionAvailability_('dashAgendaBlock', true);
+  assert.equal(charts[0].style.display, '');
+  assert.equal(attributes['data-dashboard-available'], '1');
+  assert.equal(classes.size, 0);
+});
+
+test('impressão do Dashboard identifica o recorte da Agenda e a indisponibilidade', () => {
+  let available = true;
+  const block = { querySelectorAll: () => [{ closest: () => null }],
+    getAttribute: () => available ? '1' : '0' };
+  const context = dashboardContext({ document: { readyState: 'loading', addEventListener() {}, getElementById: () => block },
+    esc: value => String(value) });
+  context.dashboardPrintVisible = () => true;
+  context.dashboardPrintKpiCard = () => '<div>3</div>';
+  context._dashAgendaPeriod = { tipo: 'mes', ano: 2026, mes: 9 };
+  assert.match(context.dashboardPrintAgendaKpis(), /Set\/2026/);
+  context._dashAgendaPeriod.tipo = 'global';
+  assert.match(context.dashboardPrintAgendaKpis(), /Global/);
+  available = false;
+  assert.match(context.dashboardPrintAgendaKpis(), /Dados indisponíveis/);
+});
+
+test('Dashboard renova dados em memória após o TTL e bloqueia RPCs concorrentes', () => {
+  let requests = 0;
+  let success;
+  const runner = { withSuccessHandler(callback) { success = callback; return this; },
+    withFailureHandler() { return this; }, getDashboardData() { requests++; } };
+  const context = dashboardContext({ google: { script: { run: runner } },
+    document: { readyState: 'loading', addEventListener() {}, getElementById: () => null } });
+  context.dashboardRenderFromSessionCache = () => false;
+  context.renderDashboard = () => true;
+  context.dashboardStoreSessionCache = () => {};
+  context._dashInited = true;
+  context._dashLoadedAt = Date.now();
+  context.carregarDashboard(false);
+  assert.equal(requests, 0);
+  context._dashLoadedAt = Date.now() - context.DASHBOARD_SESSION_CACHE_TTL_MS - 100;
+  context.carregarDashboard(false);
+  context.carregarDashboard(true);
+  assert.equal(requests, 1);
+  success({});
+  assert.equal(context._dashLoading, false);
+  assert.ok(context._dashLoadedAt > Date.now() - 1000);
+});
+
+test('Dashboard informa falhas parciais de Agenda e Estoque e não as guarda no cache', () => {
+  const server = runFile('WebApp.gs', { Logger: { log() {} } });
+  server.codexAssertCanRead_ = () => {};
+  server.getProjetos = () => [];
+  server.getParticipantesDashboardResumo_ = () => [];
+  server.getEstoque = () => { throw new Error('falha estoque'); };
+  server.getAgendaDashboardResumo_ = () => { throw new Error('falha agenda'); };
+  server.getDashboardPendencias_ = () => ({});
+  const data = server.getDashboardData();
+  assert.equal(data.erros.length, 0);
+  assert.equal(data.secoes.estoque, false);
+  assert.equal(data.secoes.agenda, false);
+  assert.equal(data.avisos.length, 2);
+  let stored = 0;
+  let removed = 0;
+  const storage = { setItem() { stored++; }, removeItem() { removed++; } };
+  const context = dashboardContext({ window: { sessionStorage: storage }, sessionStorage: storage });
+  context.dashboardStoreSessionCache(data);
+  assert.equal(stored, 0);
+  assert.equal(removed, 1);
+  server.getEstoque = () => [];
+  server.getAgendaDashboardResumo_ = () => ({});
+  const recovered = server.getDashboardData();
+  assert.equal(recovered.secoes.agenda, true);
+  assert.equal(recovered.secoes.estoque, true);
+  context.dashboardStoreSessionCache(recovered);
+  assert.equal(stored, 1);
+});
+
 test('servidor classifica status de projeto uma unica vez com normalizacao', () => {
   const server = runFile('WebApp.gs');
   const casos = [

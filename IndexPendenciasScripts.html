@@ -3,15 +3,13 @@
   var _pendenciasLoadedAt = null;
   var _pendenciasRefreshing = false;
   var _pendenciasRefreshWaiters = [];
+  var _pendenciasRefreshQueued = false;
+  var _pendenciasRefreshVisible = false;
   var PENDENCIAS_VISIBLE_LIMIT = 10;
   var PENDENCIAS_TTL_MS = 3 * 60 * 1000;
   window.STATE = window.STATE || {};
   var STATE = window.STATE;
   STATE.pendencias = STATE.pendencias || {};
-
-  function jsArg(v) {
-    return String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\r\n]+/g, ' ');
-  }
 
   function pendenciasLoadedAtTime() {
     if (_pendenciasLoadedAt instanceof Date) return _pendenciasLoadedAt.getTime();
@@ -53,20 +51,20 @@
   }
 
   function pendenciaAgendaAction(it) {
-    return "abrirPendenciaAgenda('" + jsArg(it && it.agendaId) + "')";
+    return function() { abrirPendenciaAgenda(it && it.agendaId); };
   }
 
   function pendenciaAgendaRegistroAction(it) {
-    return "abrirPendenciaAgendaRegistro('" + jsArg(it && it.agendaId) + "')";
+    return function() { abrirPendenciaAgendaRegistro(it && it.agendaId); };
   }
 
   function pendenciaAwbAction(it) {
-    return "abrirPendenciaAwb('" + jsArg(it && it.agendaId) + "')";
+    return function() { abrirPendenciaAwb(it && it.agendaId); };
   }
 
   function pendenciaEstoqueAction(it) {
     var q = (it && (it.idItem || it.descricao || it.projeto)) || '';
-    return "abrirPendenciaEstoque('" + jsArg(q) + "')";
+    return function() { abrirPendenciaEstoque(q); };
   }
 
   function abrirPendenciaTracking(ev, url) {
@@ -155,9 +153,6 @@
         action: pendenciaAwbAction,
         items: p.awbEnviadaNaoEntregue || [],
         render: function(it) {
-          if (it.temperatura && String(it.courier || '').indexOf(String(it.temperatura || '')) < 0) {
-            it.courier = [it.courier, it.temperatura].filter(Boolean).join(' / ');
-          }
           return {
             main: [it.awb ? 'AWB ' + it.awb : 'AWB enviada', it.participante || it.projeto].filter(Boolean).join(' · '),
             meta: [it.slot, pendenciaCourierComTemperatura(it), it.data, it.hora, it.projeto].filter(Boolean).join(' · ')
@@ -261,6 +256,10 @@
         }
       }
     ];
+    var handlers = [];
+    function bindAction(handler) {
+      return ' data-pendencia-action="' + (handlers.push(handler) - 1) + '"';
+    }
     grid.innerHTML = cards.map(function(card) {
       var total = counts[card.key] || (card.items || []).length || 0;
       var urgentTotal = card.priority ? (card.items || []).filter(pendenciaUrgente24h).length : 0;
@@ -272,21 +271,23 @@
         var urgent = card.priority && pendenciaUrgente24h(it);
         var prazo = urgent ? pendenciaPrazoLabel(it) : '';
         var tracking = card.key === 'awbEnviadaNaoEntregue' && it.trackingUrl
-          ? '<button type="button" class="dash-pend-track" title="Abrir rastreio" onclick="abrirPendenciaTracking(event,\'' + jsArg(it.trackingUrl) + '\')"><span class="material-symbols-outlined">travel_explore</span></button>'
+          ? '<button type="button" class="dash-pend-track" title="Abrir rastreio" aria-label="Abrir rastreio"' + bindAction(function(event) { abrirPendenciaTracking(event, it.trackingUrl); }) + '><span class="material-symbols-outlined">travel_explore</span></button>'
           : '';
         var confirmDelivery = card.key === 'awbEnviadaNaoEntregue'
-          ? '<button type="button" class="dash-pend-confirm" title="Confirmar entrega" onclick="confirmarEntregaPendencia(event,\'' + jsArg(it.agendaId) + '\',\'' + jsArg(it.slot) + '\',\'' + jsArg(it.awb) + '\',\'' + jsArg(it.participante) + '\',\'' + jsArg(it.courier) + '\',\'' + jsArg(it.temperatura) + '\',\'' + jsArg(it.data) + '\',\'' + jsArg(it.hora) + '\',\'' + jsArg(it.projeto) + '\',\'' + jsArg(it.visita) + '\')"><span class="material-symbols-outlined">task_alt</span><span>Confirmar entrega</span></button>'
+          ? '<button type="button" class="dash-pend-confirm" title="Confirmar entrega"' + bindAction(function(event) {
+              confirmarEntregaPendencia(event, it.agendaId, it.slot, it.awb, it.participante, it.courier, it.temperatura, it.data, it.hora, it.projeto, it.visita);
+            }) + '><span class="material-symbols-outlined">task_alt</span><span>Confirmar entrega</span></button>'
           : '';
-        return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '" onclick="' + action + '" title="' + esc((r.main || '') + ' ' + (r.meta || '')) + '">' +
+        return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '">' +
           (urgent ? '<div class="dash-pend-alert"><span class="material-symbols-outlined">priority_high</span>' + esc(prazo || 'até 24h') + '</div>' : '') +
-          '<div class="dash-pend-row"><div class="dash-pend-text">' +
-            '<div class="dash-pend-main">' + esc(r.main || '-') + '</div>' +
-            '<div class="dash-pend-meta">' + esc(r.meta || '-') + '</div>' +
-          '</div>' + tracking + confirmDelivery + '</div>' +
+          '<div class="dash-pend-row"><button type="button" class="dash-pend-text dash-pend-open" title="' + esc((r.main || '') + ' ' + (r.meta || '')) + '"' + bindAction(action) + '>' +
+            '<span class="dash-pend-main">' + esc(r.main || '-') + '</span>' +
+            '<span class="dash-pend-meta">' + esc(r.meta || '-') + '</span>' +
+          '</button>' + tracking + confirmDelivery + '</div>' +
         '</div>';
       }).join('');
       if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>Sem pendências</div>';
-      var expandButton = remaining ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="false" onclick="togglePendenciasCard(this)">' +
+      var expandButton = remaining ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="false"' + bindAction(function(event) { togglePendenciasCard(event.currentTarget); }) + '>' +
         '<span class="dash-pend-more-label">Mostrar mais (' + remaining + ')</span>' +
         '<span class="material-symbols-outlined">expand_more</span>' +
       '</button>' : '';
@@ -300,6 +301,9 @@
         '<div class="dash-pend-list">' + rows + '</div>' + expandButton +
       '</div>';
     }).join('');
+    grid.querySelectorAll('[data-pendencia-action]').forEach(function(button) {
+      button.addEventListener('click', handlers[Number(button.getAttribute('data-pendencia-action'))]);
+    });
   }
 
   function atualizarPendenciasTs(fromCache) {
@@ -336,25 +340,23 @@
     setupPendenciasAutoRefreshListeners();
     var grid = document.getElementById('pendenciasGrid');
     var loadingHtml = '<div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>';
-    if (!forcar && _pendenciasCache && !pendenciasEstaoDesatualizadas()) {
+    if (!_pendenciasRefreshing && !forcar && _pendenciasCache && !pendenciasEstaoDesatualizadas()) {
       renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
       atualizarPendenciasTs(true);
       setPendenciasStatus('', '');
       if (typeof options.onComplete === 'function') options.onComplete();
       return;
     }
+    if (typeof options.onComplete === 'function') _pendenciasRefreshWaiters.push(options.onComplete);
+    if (!options.silent) _pendenciasRefreshVisible = true;
     if (_pendenciasRefreshing) {
+      // Uma mutacao exige uma consulta iniciada depois dela; a resposta atual pode estar obsoleta.
+      if (forcar) _pendenciasRefreshQueued = true;
       if (grid && !_pendenciasCache && !grid.innerHTML.trim()) grid.innerHTML = loadingHtml;
       if (!options.silent) {
         setPendenciasStatus('', '');
         setPendenciasButtonBusy(true, 'Atualizando...');
-        _pendenciasRefreshWaiters.push(function(result) {
-          setPendenciasButtonBusy(false);
-          if (result && result.ok === false) setPendenciasStatus(result.message, result.type || 'danger');
-          else setPendenciasStatus('', '');
-        });
       }
-      if (typeof options.onComplete === 'function') options.onComplete();
       return;
     }
     _pendenciasRefreshing = true;
@@ -372,15 +374,28 @@
     function finishPendenciasRefresh(result) {
       if (watchdog) clearTimeout(watchdog);
       _pendenciasRefreshing = false;
+      if (_pendenciasRefreshQueued) {
+        _pendenciasRefreshQueued = false;
+        carregarPendencias(true, { silent: !_pendenciasRefreshVisible });
+        return;
+      }
+      if (_pendenciasRefreshVisible) {
+        setPendenciasButtonBusy(false);
+        setPendenciasStatus(result && result.ok === false ? result.message : '', result && result.type);
+      }
+      _pendenciasRefreshVisible = false;
       var waiters = _pendenciasRefreshWaiters.splice(0);
       waiters.forEach(function(fn) {
         try { fn(result); } catch (ignore) {}
       });
-      if (typeof options.onComplete === 'function') options.onComplete();
     }
     function failPendenciasRefresh(e) {
       if (finished) return;
       finished = true;
+      if (_pendenciasRefreshQueued) {
+        finishPendenciasRefresh();
+        return;
+      }
       if (!options.silent) setPendenciasButtonBusy(false);
       var msg = (typeof appErrorMessage === 'function' ? appErrorMessage(e) : (e && e.message ? e.message : e)) || 'Erro inesperado ao carregar pendencias.';
       var manterCache = !!_pendenciasCache;
@@ -397,6 +412,10 @@
       .withSuccessHandler(function(d) {
         if (finished) return;
         finished = true;
+        if (_pendenciasRefreshQueued) {
+          finishPendenciasRefresh();
+          return;
+        }
         if (!options.silent) setPendenciasButtonBusy(false);
         _pendenciasCache = (d && d.pendencias) || {};
         setPendenciasLoadedAtState(new Date());

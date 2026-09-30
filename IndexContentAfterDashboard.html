@@ -199,12 +199,12 @@
       <div class="stats-row diag-stats content-stats-row">
         <div class="stat-card stat-accent-green stat-corner-left">
           <div class="stat-value" id="diagOverall">--</div>
-          <div class="stat-label">Saúde geral</div>
+          <div class="stat-label">Saúde das verificações</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">health_and_safety</span></div>
         </div>
         <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="diagVersion">--</div>
-          <div class="stat-label">Versão publicada</div>
+          <div class="stat-label">Versão em execução</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">new_releases</span></div>
         </div>
         <div class="stat-card stat-accent-green">
@@ -231,10 +231,12 @@
           <span class="material-symbols-outlined" aria-hidden="true">content_copy</span> Copiar resumo
         </button>
         <span class="dash-ts" id="diagCheckedAt"></span>
+        <span class="dash-ts" id="diagFreshness" role="status" aria-live="polite"></span>
       </div>
       <div class="diag-grid">
         <section class="diag-panel diag-panel-wide">
-          <h3>Resumo operacional</h3>
+          <h3>Saúde das verificações</h3>
+          <p id="diagCoverage"></p>
           <div class="diag-health-banner" id="diagHealthBanner"></div>
           <div class="diag-checklist" id="diagHealthSummary"></div>
         </section>
@@ -300,7 +302,7 @@
           <div class="diag-checklist" id="diagAuditRecent"></div>
         </section>
         <section class="diag-panel diag-panel-wide">
-          <h3>Smoke checks automáticos</h3>
+          <h3>Verificações básicas de cadastro</h3>
           <div class="diag-checklist" id="diagSmokeChecklist"></div>
         </section>
         <details class="diag-panel diag-panel-wide diag-advanced">
@@ -669,7 +671,7 @@
       <div class="ag-wrap">
         <div class="ag-toolbar">
           <button class="ag-tb-btn icon" title="Semana anterior" onclick="agendaNavWeek(-1)"><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
-          <button class="ag-tb-btn primary" onclick="agendaGoToday()"><span class="material-symbols-outlined" aria-hidden="true">today</span> Hoje</button>
+          <button class="ag-tb-btn primary" id="agendaBtnHoje" onclick="agendaGoToday()"><span class="material-symbols-outlined" aria-hidden="true">today</span> Hoje</button>
           <label class="ag-date-jump" id="agendaDateJump" title="Ir para data">
             <span class="ag-tb-btn icon" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">calendar_month</span></span>
             <input type="date" id="agendaGoDateInput" aria-label="Ir para uma data" onclick="this.value=''" onchange="agendaGoToDate(this.value)">
@@ -681,8 +683,8 @@
           <button class="ag-tb-btn" id="agendaBtnSemana" onclick="agendaSetView('semana')"><span class="material-symbols-outlined" aria-hidden="true">calendar_view_week</span> Semana</button>
           <button class="ag-tb-btn" id="agendaBtnPrintWeek" title="Imprimir semana" onclick="imprimirAgendaSemana()" style="display:none"><span class="material-symbols-outlined" aria-hidden="true">print</span> Imprimir semana</button>
           <div class="ag-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="text" id="agendaBusca" placeholder="Buscar no histórico: participante, projeto, visita, courier..." oninput="agendaOnSearchInput()" aria-label="Buscar no histórico da Agenda"></div>
-          <button class="ag-tb-btn" title="Atualizar" onclick="carregarAgendaEventos(true)"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
-          <button class="ag-tb-btn primary" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Agendamento</button>
+          <button class="ag-tb-btn" id="agendaBtnAtualizar" title="Atualizar" onclick="carregarAgendaEventos(true)"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
+          <button class="ag-tb-btn primary" id="agendaBtnNovo" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Agendamento</button>
         </div>
         <div class="ag-create-panel" id="agendaCreatePanel" onclick="fecharAgendaModalSeFora(event)" data-accessible-dialog data-dialog-close="fecharAgendaModal">
           <div class="ag-create-box" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="agendaCreateTitle" tabindex="-1">

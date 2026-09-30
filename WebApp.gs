@@ -277,8 +277,8 @@ function getAppBootstrapData(request) {
     return extra;
   };
   var totalMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
-  return codexMeasurePerformance_('getAppBootstrapData', 'total', totalMeta, function() {
-    var access = codexMeasurePerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
+  return codexMeasureReadPerformance_('getAppBootstrapData', 'total', totalMeta, function() {
+    var access = codexMeasureReadPerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
       return codexGetCurrentUserAccess();
     });
     var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
@@ -286,10 +286,10 @@ function getAppBootstrapData(request) {
     var out = {
       bootstrapTraceId: traceId,
       access: access,
-      auth: codexMeasurePerformance_('getAppBootstrapData', 'auth', perfMeta({ rowCount: 0 }), function() {
+      auth: codexMeasureReadPerformance_('getAppBootstrapData', 'auth', perfMeta({ rowCount: 0 }), function() {
         return codexGetUserOAuthStatus_();
       }),
-      appVersion: codexMeasurePerformance_('getAppBootstrapData', 'version', perfMeta({ rowCount: 0 }), function() {
+      appVersion: codexMeasureReadPerformance_('getAppBootstrapData', 'version', perfMeta({ rowCount: 0 }), function() {
         return codexGetAppVersion_();
       }),
       webAppUrl: '',
@@ -299,7 +299,7 @@ function getAppBootstrapData(request) {
     };
     if (agendaWindowedLoadingEnabled) out.features = { agendaWindowedLoadingV2: true };
     try {
-      out.webAppUrl = codexMeasurePerformance_('getAppBootstrapData', 'web_app_url', perfMeta({ rowCount: 0 }), function() {
+      out.webAppUrl = codexMeasureReadPerformance_('getAppBootstrapData', 'web_app_url', perfMeta({ rowCount: 0 }), function() {
         return ScriptApp.getService().getUrl();
       });
     } catch (e1) {
@@ -307,7 +307,7 @@ function getAppBootstrapData(request) {
     }
     if (!agendaWindowedLoadingEnabled) {
       try {
-        out.agendaFormData = codexMeasurePerformance_('getAppBootstrapData', 'agenda_form_data', perfMeta({ rowCount: 0 }), function() {
+        out.agendaFormData = codexMeasureReadPerformance_('getAppBootstrapData', 'agenda_form_data', perfMeta({ rowCount: 0 }), function() {
           return getDadosFormularioAgenda(true);
         });
       } catch (e2) {
@@ -317,7 +317,7 @@ function getAppBootstrapData(request) {
       try {
         // Reutiliza o acesso validado nesta execução. A RPC pública mantém
         // sua própria validação para chamadas diretas do cliente.
-        out.agendaBootstrap = codexMeasurePerformance_('getAppBootstrapData', 'agenda_bootstrap', perfMeta({ rowCount: 0 }), function() {
+        out.agendaBootstrap = codexMeasureReadPerformance_('getAppBootstrapData', 'agenda_bootstrap', perfMeta({ rowCount: 0 }), function() {
           return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false, 'app_initial');
         });
       } catch (e2) {
@@ -327,7 +327,7 @@ function getAppBootstrapData(request) {
     try {
       if (out.access && out.access.ok) {
         var birthdaysMeta = perfMeta({ rowCount: 0 });
-        out.teamBirthdays = codexMeasurePerformance_('getAppBootstrapData', 'team_birthdays', birthdaysMeta, function() {
+        out.teamBirthdays = codexMeasureReadPerformance_('getAppBootstrapData', 'team_birthdays', birthdaysMeta, function() {
           var birthdays = codexGetTeamBirthdays_();
           birthdaysMeta.rowCount = Array.isArray(birthdays) ? birthdays.length : 0;
           return birthdays;
@@ -337,7 +337,7 @@ function getAppBootstrapData(request) {
       out.errors.teamBirthdays = e3.message || String(e3);
     }
     var serializationMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
-    codexMeasurePerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
+    codexMeasureReadPerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
       serializationMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(out));
     });
     totalMeta.rowCount = out.agendaBootstrap && Array.isArray(out.agendaBootstrap.events) ? out.agendaBootstrap.events.length : 0;
@@ -1722,7 +1722,7 @@ function codexGetAllowedUsers_() {
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return {};
 
-  var values = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
+  var values = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())), false);
   var users = {};
   values.forEach(function(row) {
     var email = codexNormalizeEmail_(row[0]);
@@ -1978,7 +1978,7 @@ function getCodexSheetDataFromSheet_(sh) {
   if (!lastRow || !lastCol) return [];
   var key = sh.getSheetId() + ':' + lastRow + ':' + lastCol;
   if (CODEX_CACHE_BYPASS_READS_ || !CODEX_SHEET_DATA_CACHE_[key]) {
-    CODEX_SHEET_DATA_CACHE_[key] = sh.getDataRange().getValues();
+    CODEX_SHEET_DATA_CACHE_[key] = codexReadValuesMeasured_(sh.getDataRange(), false);
   }
   return CODEX_SHEET_DATA_CACHE_[key];
 }
@@ -5278,7 +5278,7 @@ function getProjetosSivPorProjeto_() {
     return out;
   }
   if (!sh || sh.getLastRow() < 2) return out;
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol).getDisplayValues();
+  var rows = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol), true);
   var i = AGENDA_CFG.idx;
   rows.forEach(function(r) {
     var projeto = String(r[i.projeto] || '').trim();
@@ -7093,14 +7093,16 @@ function excluirPrestador(id) {
 //  DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 function getDashboardData() {
-  codexAssertCanRead_();
+  var totalMeta = { rowCount: 0, responseBytes: 0 };
+  return codexMeasureReadPerformance_('getDashboardData', 'total', totalMeta, function() {
+  codexMeasureReadPerformance_('getDashboardData', 'access', {}, function() { codexAssertCanRead_(); });
   Logger.log('[getDashboardData] Iniciando...');
-  var diag = { erros: [], projetos: [], participantes: [] };
+  var diag = { erros: [], avisos: [], secoes: { agenda: true, estoque: true }, projetos: [], participantes: [] };
 
   function str(v) { return v == null ? '' : String(v); }
 
   try {
-    var projs = getProjetos() || [];
+    var projs = codexMeasureReadPerformance_('getDashboardData', 'projects', {}, function() { return getProjetos() || []; });
     Logger.log('[getDashboardData] Projetos: ' + projs.length);
     diag.projetos = projs.map(function(p) {
       return {
@@ -7131,7 +7133,7 @@ function getDashboardData() {
   }
 
   try {
-    var partAll = getParticipantesDashboardResumo_() || [];
+    var partAll = codexMeasureReadPerformance_('getDashboardData', 'participants', {}, function() { return getParticipantesDashboardResumo_() || []; });
     Logger.log('[getDashboardData] Participantes: ' + partAll.length);
     diag.participantes = partAll.map(function(p) {
       return {
@@ -7149,7 +7151,7 @@ function getDashboardData() {
 
   var estoque = [];
   try {
-    estoque = getEstoque() || [];
+    estoque = codexMeasureReadPerformance_('getDashboardData', 'stock', {}, function() { return getEstoque() || []; });
     var hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     function diasAte(val) {
@@ -7180,13 +7182,17 @@ function getDashboardData() {
     };
   } catch(e) {
     Logger.log('[getDashboardData] ERRO estoque: ' + e.message);
+    diag.secoes.estoque = false;
+    diag.avisos.push('Estoque: dados indisponíveis. Tente atualizar novamente.');
     diag.estoqueResumo = { lotes: 0, ok: 0, baixo: 0, vencidos: 0, proximosValidade: 0 };
   }
 
   try {
-    diag.agendaResumo = getAgendaDashboardResumo_();
+    diag.agendaResumo = codexMeasureReadPerformance_('getDashboardData', 'agenda', {}, function() { return getAgendaDashboardResumo_(); });
   } catch(e) {
     Logger.log('[getDashboardData] ERRO agenda: ' + e.message);
+    diag.secoes.agenda = false;
+    diag.avisos.push('Agenda: dados indisponíveis. Tente atualizar novamente.');
     diag.agendaResumo = {
       totalAno: 0,
       visitasRealizadasAno: 0,
@@ -7206,14 +7212,19 @@ function getDashboardData() {
     };
   }
   try {
-    diag.pendencias = getDashboardPendencias_(estoque);
+    diag.pendencias = codexMeasureReadPerformance_('getDashboardData', 'pending', {}, function() { return getDashboardPendencias_(estoque); });
   } catch(e) {
     Logger.log('[getDashboardData] ERRO pendencias: ' + e.message);
     diag.pendencias = getDashboardPendenciasVazio_();
   }
 
   Logger.log('[getDashboardData] Retornando. Erros: ' + JSON.stringify(diag.erros));
+  totalMeta.rowCount = diag.projetos.length + diag.participantes.length;
+  codexMeasureReadPerformance_('getDashboardData', 'serialize', totalMeta, function() {
+    try { totalMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(diag)); } catch (ignored) {}
+  });
   return diag;
+  });
 }
 
 function getPendenciasOperacionais() {
@@ -7323,7 +7334,7 @@ function getDashboardPendencias_(estoque) {
   if (posVisitaCorte) posVisitaCorte.setHours(23, 59, 59, 999);
   var i = AGENDA_CFG.idx;
   if (agenda.getLastRow() >= 2) {
-    var vals = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getDisplayValues();
+    var vals = codexReadValuesMeasured_(agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol), true);
     var feriados = getAgendaFeriadosPendenciasMap_(vals, i);
     var agendaPorId = {};
     vals.forEach(function(r) {
@@ -7635,7 +7646,7 @@ function getAgendaDashboardResumo_() {
     antecedenciaMediaPorTipo: []
   };
   if (lastRow < 2) return resumo;
-  var vals = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  var vals = codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol), false);
   var i = AGENDA_CFG.idx;
   var porProt = {};
   var porMonProtDia = {};
@@ -9835,9 +9846,9 @@ function getEstoqueLinhas_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("Estoque");
   if (!sh || sh.getLastRow() < 2) return [];
-  var headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 15)).getValues()[0];
+  var headers = codexReadValuesMeasured_(sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 15)), false)[0];
   var columns = getEstoqueColumnMap_(headers);
-  var data = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 15)).getValues();
+  var data = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 15)), false);
   var tz = Session.getScriptTimeZone();
   var catalogo = getItensEstoque().itens || [];
   var catalogoPorId = {};
@@ -9951,7 +9962,7 @@ function getKitReservasLinhas_() {
     if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
     return String(v || '');
   }
-  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())).getValues()
+  return codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())), false)
     .filter(function(r) { return String(r[0] || '').trim(); })
     .map(function(r) {
       return {
@@ -11695,7 +11706,7 @@ function getAgendaCourierRows_() {
     return CODEX_AGENDA_COURIER_ROWS_CACHE_;
   }
   var lastCol = Math.max(sh.getLastColumn(), COURIER_HEADERS_.length || 11);
-  var headers = sh.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function(h) {
+  var headers = codexReadValuesMeasured_(sh.getRange(1, 1, 1, lastCol), true)[0].map(function(h) {
     return normText_(h);
   });
   function headerValue(row, aliases) {
@@ -11706,7 +11717,7 @@ function getAgendaCourierRows_() {
     }
     return '';
   }
-  var values = sh.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+  var values = codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, lastCol), true);
   var out = [];
   values.forEach(function(r) {
     var courier = String(r[1] || '').trim();
@@ -11960,7 +11971,7 @@ function agendaBuildDadosFormularioAgenda_(strict, measureStage, referenceParts)
       return [];
     }
     if (lastRow < 2) return [];
-    return sh.getRange(2, 2, lastRow - 1, 1).getValues()
+    return codexReadValuesMeasured_(sh.getRange(2, 2, lastRow - 1, 1), false)
       .map(function(r) { return String(r[0] || '').trim(); })
       .filter(Boolean)
       .sort();
@@ -16007,6 +16018,30 @@ function setAgendaValueAndFormat_(range, value, format) {
   }
 }
 
+// Contagens locais à execução: somente os pontos de leitura instrumentados.
+// Não representam metadados de Sheets, escritas ou chamadas a outros serviços.
+var CODEX_PERF_READ_COUNTERS_ = { calls: 0, cells: 0 };
+
+function codexReadValuesMeasured_(range, display) {
+  CODEX_PERF_READ_COUNTERS_.calls++;
+  var values = display ? range.getDisplayValues() : range.getValues();
+  CODEX_PERF_READ_COUNTERS_.cells += values.length * (values.length ? values[0].length : 0);
+  return values;
+}
+
+function codexMeasureReadPerformance_(operation, stage, metadata, callback) {
+  metadata = metadata || {};
+  var calls = CODEX_PERF_READ_COUNTERS_.calls;
+  var cells = CODEX_PERF_READ_COUNTERS_.cells;
+  return codexMeasurePerformance_(operation, stage, metadata, function() {
+    try { return callback(); }
+    finally {
+      metadata.instrumentedReadCalls = CODEX_PERF_READ_COUNTERS_.calls - calls;
+      metadata.instrumentedCellsRead = CODEX_PERF_READ_COUNTERS_.cells - cells;
+    }
+  });
+}
+
 function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
   metadata = metadata || {};
   try {
@@ -16019,6 +16054,9 @@ function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
       success: success === true
     };
     var traceId = String(metadata.traceId || '').trim();
+    ['instrumentedReadCalls', 'instrumentedCellsRead'].forEach(function(key) {
+      if (metadata[key] !== undefined) payload[key] = Math.max(0, Number(metadata[key]) || 0);
+    });
     if (/^[A-Za-z0-9_-]{8,80}$/.test(traceId)) payload.traceId = traceId;
     Logger.log('[CODEX_PERF] ' + JSON.stringify(payload));
   } catch (eLog) {
@@ -16091,7 +16129,7 @@ function agendaDateIndexEntries_(sheet, lastRow, useCanaryCache) {
   var rowCount = Math.max(0, lastRow - 1);
   var buildEntries = function() {
     var entries = [];
-    sheet.getRange(2, AGENDA_CFG.col.data, rowCount, 1).getValues().forEach(function(row, offset) {
+    codexReadValuesMeasured_(sheet.getRange(2, AGENDA_CFG.col.data, rowCount, 1), false).forEach(function(row, offset) {
       var data = parseAgendaDateAny_(row[0]);
       if (data && !isNaN(data.getTime())) entries.push([data.getTime(), offset]);
     });
@@ -16178,7 +16216,7 @@ function agendaGetEventosPorPeriodo_(inicioIso, fimIso, limite, ignorarCache, me
       if (remaining <= 0) return;
       var count = Math.min(segment.count, remaining);
       var startRow = segment.firstOffset + 2;
-      var values = sh.getRange(startRow, 1, count, AGENDA_CFG.lastCol).getValues();
+      var values = codexReadValuesMeasured_(sh.getRange(startRow, 1, count, AGENDA_CFG.lastCol), false);
       values.forEach(function(row, index) {
         out.push({ row: row, rowIndex: startRow + index });
       });
@@ -17220,17 +17258,28 @@ function agendaReciboProjeto_(nomeProjeto) {
 }
 
 function getAgendaReciboData(id, rowIndex) {
-  var access = codexGetCurrentUserAccess();
+  var receiptStartedAt = Date.now();
+  var receiptSuccess = false;
+  try {
+  var access = codexMeasurePerformance_('getAgendaReciboData', 'authorize', {}, function() {
+    return codexGetCurrentUserAccess();
+  });
   if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
-  var evento = getAgendaEventoPorId(id, rowIndex);
+  var evento = codexMeasurePerformance_('getAgendaReciboData', 'event', {}, function() {
+    return getAgendaEventoPorId(id, rowIndex);
+  });
   if (!evento) throw new Error('Registro da Agenda nao encontrado.');
   var tipoEvento = AgendaServerRules_.formPolicy(evento).type;
   if (['visita', 'consulta'].indexOf(tipoEvento) < 0) throw new Error('Recibos podem ser gerados somente para visitas e consultas.');
   if (!String(evento.participante || '').trim()) throw new Error('Este registro nao possui participante para gerar recibo.');
 
-  var participante = agendaReciboParticipante_(evento);
+  var participante = codexMeasurePerformance_('getAgendaReciboData', 'participant', {}, function() {
+    return agendaReciboParticipante_(evento);
+  });
   if (!participante) throw new Error('Nao foi possivel identificar unicamente o cadastro do participante.');
-  var projeto = agendaReciboProjeto_(evento.projeto);
+  var projeto = codexMeasurePerformance_('getAgendaReciboData', 'project', {}, function() {
+    return agendaReciboProjeto_(evento.projeto);
+  });
   function beneficiario(pessoa, tipo, valorPadrao) {
     pessoa = pessoa || {};
     return {
@@ -17254,6 +17303,7 @@ function getAgendaReciboData(id, rowIndex) {
   (participante.acompanhantes || []).forEach(function(acompanhante) {
     beneficiarios.push(beneficiario(acompanhante, 'Acompanhante', projeto.ressarcimentoPadraoAcompanhante));
   });
+  receiptSuccess = true;
   return {
     agendaId: String(evento.id || ''),
     projeto: String(evento.projeto || ''),
@@ -17267,6 +17317,10 @@ function getAgendaReciboData(id, rowIndex) {
     ecrfConcluida: !!evento.ecrfConcluida,
     beneficiarios: beneficiarios
   };
+  } finally {
+    // Apenas tempos e etapas; nunca IDs, nomes, dados bancarios ou conteudo do recibo.
+    codexLogPerformance_('getAgendaReciboData', 'total', Date.now() - receiptStartedAt, {}, receiptSuccess);
+  }
 }
 
 function agendaRowsToObjects_(vals, start) {

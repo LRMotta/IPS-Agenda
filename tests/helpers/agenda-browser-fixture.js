@@ -54,7 +54,7 @@ async function agendaBrowserFixture(page) {
   });
   // Os overlays locais usam inert; inicializar a infraestrutura real que acompanha a classe open.
   await page.addScriptTag({ content: 'var APP_ACCESSIBLE_DIALOGS = [], APP_CONTENT_ACCESSIBILITY_READY = false;\n' +
-    contentAccessibilitySource(['appDialogFocusable', 'appFocusDialog', 'appSyncContentFieldAccessibility',
+    contentAccessibilitySource(['formatarTelefoneBrasileiro', 'appDialogFocusable', 'appFocusDialog', 'appSyncContentFieldAccessibility',
       'appSyncAccessibleDialogs', 'appAccessibleDialogKeydown', 'appInitContentAccessibility']) +
     '\nappInitContentAccessibility();' });
   for (const file of ['SharedAccessRules.html', 'SharedCourierRules.html', 'SharedMatBioTypes.html', 'SharedMatBioCore.html', 'SharedAgendaRules.html', 'IndexAgendaScripts.html']) {

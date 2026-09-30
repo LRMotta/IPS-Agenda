@@ -53,6 +53,43 @@ test('Agenda oferece recibo somente para visita ou consulta com participante e u
   assert.match(modal, /id="agendaReciboTipoConta"/);
 });
 
+test('recibo fica no menu de ações e sai dos detalhes, preservando elegibilidade e referência do evento', () => {
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({
+    esc: value => String(value || ''),
+    agendaUsaDisplayOperacional_: () => false,
+    agendaDisplayPayload: row => ({ participante: row.participante }),
+    agendaCourierCards: () => '',
+    agendaPostVisitDetailHtml: () => ''
+  });
+  context.window = context;
+  vm.runInContext(readProjectFile('SharedAgendaRules.html').replace(/^\s*<script>\s*/i, '').replace(/\s*<\/script>\s*$/i, ''), context);
+  const menuStart = source.indexOf('  function agendaActionMenuHtml_');
+  const menuEnd = source.indexOf('  function agendaInstallActionMenuDismissHandlers_', menuStart);
+  const detailStart = source.indexOf('  function agendaDetailHtml');
+  const detailEnd = source.indexOf('  var _agendaReciboData', detailStart);
+  vm.runInContext(source.slice(menuStart, menuEnd) + source.slice(detailStart, detailEnd), context);
+
+  for (const tipo of ['Visita', 'Consulta']) {
+    for (const past of [false, true]) {
+      const row = { id: 'AG-123', rowIndex: 42, tipo, participante: 'Pessoa', status: 'Agendado' };
+      const menu = context.agendaActionMenuHtml_(row, 'test', past);
+      assert.match(menu, /role="menuitem"[^>]*agendaCloseActionMenus\(\);abrirAgendaRecibo\('AG-123',42\)/);
+      assert.match(menu, /receipt_long.*Gerar recibo/);
+      assert.ok(menu.indexOf('Gerar recibo') > menu.indexOf('Gerar Display'));
+      assert.doesNotMatch(context.agendaDetailHtml(row), /Gerar recibo|abrirAgendaRecibo/);
+    }
+  }
+  for (const row of [
+    { tipo: 'Visita', participante: '' },
+    { tipo: 'Consulta', participante: '' },
+    { tipo: 'Monitoria', participante: 'Pessoa' },
+    { tipo: 'SIV', participante: 'Pessoa' }
+  ]) {
+    assert.doesNotMatch(context.agendaActionMenuHtml_(row, 'test', false), /Gerar recibo|abrirAgendaRecibo/);
+  }
+});
+
 test('beneficiários incluem participante e somente acompanhantes cadastrados', () => {
   const server = readProjectFile('WebApp.gs');
   const client = readProjectFile('IndexAgendaScripts.html');
@@ -94,6 +131,71 @@ test('recibo lê somente o participante e o projeto envolvidos, sem os getters g
   assert.equal(JSON.stringify(result.beneficiarios.map((item) => [item.nome, item.tipo, item.valorPadrao, item.telefone])), JSON.stringify([['Pessoa A', 'Participante', 100, '(54) 99999-0101'], ['Acompanhante A', 'Acompanhante', 80, '(54) 99999-0202'], ['Sem telefone', 'Acompanhante', 80, '']]));
   assert.equal(result.coordenador, 'Coordenação A');
   assert.ok(calls.every((call) => call.numRows === 1 || (call.name === 'Participantes' && call.column === 1) || (call.name === 'Projetos' && call.column === 2)));
+});
+
+test('telemetria do servidor separa etapas do recibo sem dados pessoais e registra falhas', () => {
+  const logs = [];
+  let now = 1000;
+  const server = runFile('WebApp.gs', {
+    Logger: { log: value => logs.push(JSON.parse(value.replace('[CODEX_PERF] ', ''))) },
+    AgendaServerRules_: { formPolicy: () => ({ type: 'visita' }) }
+  });
+  server.Date = { now: () => now };
+  server.codexGetCurrentUserAccess = () => { now += 10; return { ok: true }; };
+  server.getAgendaEventoPorId = () => { now += 20; return { id: 'PRIVATE-ID', participante: 'PRIVATE-NAME', projeto: 'PRIVATE-PROJECT' }; };
+  server.agendaReciboParticipante_ = () => { now += 30; return { nome: 'PRIVATE-NAME', cpf: 'PRIVATE-CPF', banco: 'PRIVATE-BANK' }; };
+  server.agendaReciboProjeto_ = () => { now += 40; return {}; };
+  const result = server.getAgendaReciboData('PRIVATE-ID', 2);
+  assert.equal(result.beneficiarios[0].cpf, 'PRIVATE-CPF');
+  assert.deepEqual(logs.map(log => [log.stage, log.durationMs, log.success]), [
+    ['authorize', 10, true], ['event', 20, true], ['participant', 30, true], ['project', 40, true], ['total', 100, true]
+  ]);
+  assert.doesNotMatch(JSON.stringify(logs), /PRIVATE|cpf|banco|agendaId|rowIndex/);
+
+  logs.length = 0;
+  server.agendaReciboParticipante_ = () => { now += 30; throw new Error('PRIVATE-ERROR'); };
+  assert.throws(() => server.getAgendaReciboData('PRIVATE-ID', 2), /PRIVATE-ERROR/);
+  assert.deepEqual(logs.slice(-2).map(log => [log.stage, log.success]), [['participant', false], ['total', false]]);
+  assert.doesNotMatch(JSON.stringify(logs), /PRIVATE/);
+  server.Logger.log = () => { throw new Error('logger unavailable'); };
+  server.agendaReciboParticipante_ = () => ({ nome: 'PRIVATE-NAME' });
+  assert.equal(server.getAgendaReciboData('PRIVATE-ID', 2).beneficiarios.length, 1);
+});
+
+test('telemetria do cliente separa RPC e preenchimento, ignora retornos antigos e tolera logger indisponivel', () => {
+  const { context } = receiptFormContext();
+  const logs = [];
+  const pending = [];
+  let now = 1000;
+  context.Date = { now: () => now };
+  context.console = { info: value => logs.push(JSON.parse(value.replace('[CODEX_PERF] ', ''))) };
+  context.abrirOverlay = () => { now += 5; };
+  context.google = { script: { run: {
+    withSuccessHandler(success) {
+      return { withFailureHandler(failure) {
+        return { getAgendaReciboData: () => pending.push({ success, failure }) };
+      } };
+    }
+  } } };
+  context.agendaReciboPreencher_ = () => { now += 7; };
+  context.agendaReciboFalha_ = () => {};
+  context.abrirAgendaRecibo('PRIVATE-ID', 42);
+  now += 100;
+  pending[0].success({ beneficiarios: [{ nome: 'PRIVATE-NAME', cpf: 'PRIVATE-CPF' }] });
+  assert.deepEqual(logs.map(log => [log.stage, log.durationMs, log.stageDurationMs]), [
+    ['click', 0, 0], ['modal_open', 5, 5], ['rpc_complete', 105, 100], ['form_ready', 112, 7]
+  ]);
+  assert.doesNotMatch(JSON.stringify(logs), /PRIVATE|agendaId|rowIndex|cpf/);
+  context.abrirAgendaRecibo('PRIVATE-ID', 42);
+  pending[0].success({ beneficiarios: [{ nome: 'PRIVATE-NAME' }] });
+  assert.equal(logs.at(-1).stage, 'stale_response');
+  pending[1].failure(new Error('PRIVATE-ERROR'));
+  assert.equal(logs.at(-1).stage, 'rpc_failure');
+  assert.equal(logs.at(-1).success, false);
+  assert.doesNotMatch(JSON.stringify(logs), /PRIVATE/);
+  context.console.info = () => { throw new Error('console unavailable'); };
+  assert.doesNotThrow(() => context.abrirAgendaRecibo('PRIVATE-ID', 42));
+  assert.doesNotThrow(() => pending[2].success({ beneficiarios: [{}] }));
 });
 
 test('recibo normaliza estado para a sigla e o cadastro exibe apenas UF no pulldown', () => {
