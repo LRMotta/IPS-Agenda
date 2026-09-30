@@ -50,6 +50,7 @@ var AUDIT_PAGE_META = {
 var AUDIT_PAGE_CACHE = { log: {}, changes: {} };
 var AUDIT_PREFETCHING = {};
 var AUDIT_FILTER_SIGNATURE = '';
+var AUDIT_PAGE_REQUEST_ID = 0;
 var APP_LOADED_VERSION = '';
 var APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 var APP_VERSION_INITIAL_CHECK_DELAY_MS = 10 * 1000;
@@ -92,35 +93,45 @@ function cadastroBootstrapCacheValid(entry) {
 function invalidateCadastroBootstrapCache(page) {
   if (page) {
     delete CADASTROS_BOOTSTRAP_CACHE[page];
-    delete CADASTROS_BOOTSTRAP_IN_FLIGHT[page];
+    // Uma leitura iniciada antes da mutação não pode revalidar o cache.
+    // Transfere seus consumidores para uma única leitura atualizada.
+    if (CADASTROS_BOOTSTRAP_IN_FLIGHT[page]) getCadastrosBootstrapCached(page, null, null, true);
     return;
   }
   CADASTROS_BOOTSTRAP_CACHE = {};
-  CADASTROS_BOOTSTRAP_IN_FLIGHT = {};
+  Object.keys(CADASTROS_BOOTSTRAP_IN_FLIGHT).forEach(function(key) {
+    getCadastrosBootstrapCached(key, null, null, true);
+  });
 }
 
 function getCadastrosBootstrapCached(page, onSuccess, onFailure, force) {
   var cached = CADASTROS_BOOTSTRAP_CACHE[page];
   if (!force && cadastroBootstrapCacheValid(cached)) {
-    onSuccess(cached.data);
+    if (onSuccess) onSuccess(cached.data);
     return;
   }
   if (!force && CADASTROS_BOOTSTRAP_IN_FLIGHT[page]) {
-    CADASTROS_BOOTSTRAP_IN_FLIGHT[page].push({ ok: onSuccess, fail: onFailure });
+    CADASTROS_BOOTSTRAP_IN_FLIGHT[page].waiters.push({ ok: onSuccess, fail: onFailure });
     return;
   }
-  CADASTROS_BOOTSTRAP_IN_FLIGHT[page] = [{ ok: onSuccess, fail: onFailure }];
+  var previous = CADASTROS_BOOTSTRAP_IN_FLIGHT[page];
+  if (force) delete CADASTROS_BOOTSTRAP_CACHE[page];
+  var request = { waiters: previous ? previous.waiters.splice(0) : [] };
+  if (onSuccess || onFailure) request.waiters.push({ ok: onSuccess, fail: onFailure });
+  CADASTROS_BOOTSTRAP_IN_FLIGHT[page] = request;
   appServerRun({
     method: 'getCadastrosBootstrapData',
     args: [page],
     onSuccess: function(res) {
+      if (CADASTROS_BOOTSTRAP_IN_FLIGHT[page] !== request) return;
       CADASTROS_BOOTSTRAP_CACHE[page] = { data: res, loadedAt: Date.now() };
-      var waiters = CADASTROS_BOOTSTRAP_IN_FLIGHT[page] || [];
+      var waiters = request.waiters.splice(0);
       delete CADASTROS_BOOTSTRAP_IN_FLIGHT[page];
       waiters.forEach(function(w) { if (w.ok) w.ok(res); });
     },
     onFailure: function(e) {
-      var waiters = CADASTROS_BOOTSTRAP_IN_FLIGHT[page] || [];
+      if (CADASTROS_BOOTSTRAP_IN_FLIGHT[page] !== request) return;
+      var waiters = request.waiters.splice(0);
       delete CADASTROS_BOOTSTRAP_IN_FLIGHT[page];
       waiters.forEach(function(w) { if (w.fail) w.fail(e); });
     }
@@ -1812,13 +1823,19 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
   var signature = auditFilterSignature();
   if (signature !== AUDIT_FILTER_SIGNATURE) {
     AUDIT_FILTER_SIGNATURE = signature;
-    AUDIT_PAGE_OFFSET[type] = 0;
-    AUDIT_PAGE_CACHE[type] = {};
+    AUDIT_PAGE_OFFSET = { log: 0, changes: 0 };
+    AUDIT_PAGE_CACHE = { log: {}, changes: {} };
     offset = 0;
   }
   var limit = AUDIT_PAGE_SIZE || 100;
   var key = auditCacheKey(limit, offset);
   var cached = AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key];
+  if (!cached && fromCacheOnly) return;
+  var requestId = ++AUDIT_PAGE_REQUEST_ID;
+  function isCurrentRequest() {
+    return requestId === AUDIT_PAGE_REQUEST_ID && type === AUDIT_VIEW &&
+      signature === auditFilterSignature() && limit === AUDIT_PAGE_SIZE;
+  }
   if (cached) {
     AUDIT_PAGE_OFFSET[type] = offset;
     AUDIT_PAGE_META[type] = cached.meta;
@@ -1827,7 +1844,6 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
     prefetchAuditNextPage(type);
     return;
   }
-  if (fromCacheOnly) return;
   var tb = document.getElementById('bodyAuditLog');
   var colSpan = type === 'changes' ? 9 : 6;
   if (tb) {
@@ -1841,6 +1857,7 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
   }
   google.script.run
     .withSuccessHandler(function(data) {
+      if (!isCurrentRequest()) return;
       data = data || {};
       var rows = data.rows || [];
       var meta = {
@@ -1859,6 +1876,7 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
       prefetchAuditNextPage(type);
     })
     .withFailureHandler(function(e) {
+      if (!isCurrentRequest()) return;
       if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
     })
     .getAuditPage(type, limit, offset, filters);
@@ -1874,10 +1892,14 @@ function prefetchAuditNextPage(type) {
   var nextOffset = (meta.offset || 0) + rows.length;
   var key = auditCacheKey(limit, nextOffset);
   var prefetchKey = type + ':' + key;
+  var cache = AUDIT_PAGE_CACHE[type];
+  var signature = auditFilterSignature();
   if ((AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key]) || AUDIT_PREFETCHING[prefetchKey]) return;
   AUDIT_PREFETCHING[prefetchKey] = true;
   google.script.run
     .withSuccessHandler(function(data) {
+      delete AUDIT_PREFETCHING[prefetchKey];
+      if (cache !== AUDIT_PAGE_CACHE[type] || signature !== auditFilterSignature() || limit !== AUDIT_PAGE_SIZE) return;
       data = data || {};
       AUDIT_PAGE_CACHE[type][key] = {
         rows: data.rows || [],
@@ -1890,7 +1912,6 @@ function prefetchAuditNextPage(type) {
           moduleCount: Number(data.moduleCount || 0)
         }
       };
-      delete AUDIT_PREFETCHING[prefetchKey];
       renderAuditPager();
     })
     .withFailureHandler(function() {
@@ -1901,7 +1922,34 @@ function prefetchAuditNextPage(type) {
 
 function setAuditView(view) {
   AUDIT_VIEW = view === 'changes' ? 'changes' : 'log';
+  updateAuditTabAccessibility(AUDIT_VIEW);
   carregarAuditPage(AUDIT_VIEW, AUDIT_PAGE_OFFSET[AUDIT_VIEW] || 0, false);
+}
+
+function updateAuditTabAccessibility(view) {
+  ['auditTabLog', 'auditTabChanges'].forEach(function(id, index) {
+    var tab = document.getElementById(id);
+    if (!tab) return;
+    var selected = index === (view === 'changes' ? 1 : 0);
+    tab.classList.toggle('active', selected);
+    tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+    tab.setAttribute('tabindex', selected ? '0' : '-1');
+  });
+  var panel = document.getElementById('auditResultsPanel');
+  if (panel) panel.setAttribute('aria-labelledby', view === 'changes' ? 'auditTabChanges' : 'auditTabLog');
+}
+
+function auditTabKeydown(event) {
+  var ids = ['auditTabLog', 'auditTabChanges'];
+  var index = ids.indexOf(event.currentTarget.id);
+  if (index < 0) return;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') index = 1 - index;
+  else if (event.key === 'Home') index = 0;
+  else if (event.key === 'End') index = 1;
+  else return;
+  event.preventDefault();
+  setAuditView(index ? 'changes' : 'log');
+  document.getElementById(ids[index]).focus();
 }
 
 function auditNextPage() {
@@ -1940,10 +1988,7 @@ function renderAuditLog(forceNow) {
     if (r.email) users[r.email] = true;
     if (r.module) modules[r.module] = true;
   });
-  var tabLog = document.getElementById('auditTabLog');
-  var tabChanges = document.getElementById('auditTabChanges');
-  if (tabLog) tabLog.classList.toggle('active', !isChanges);
-  if (tabChanges) tabChanges.classList.toggle('active', isChanges);
+  updateAuditTabAccessibility(AUDIT_VIEW);
   document.getElementById('auditTotal').textContent = rows.length;
   document.getElementById('auditTotalLabel').textContent = isChanges ? 'Alterações carregadas' : 'Registros carregados';
   var meta = AUDIT_PAGE_META[AUDIT_VIEW] || { total: rows.length, offset: 0, limit: AUDIT_PAGE_SIZE };
@@ -3138,6 +3183,11 @@ function fixarProjetoParticipante() {
 }
 
 function navegarAcProjetoParticipante(event) {
+  var list = document.getElementById('ptProjetoList');
+  if (!list || !list.classList.contains('open')) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    renderAcProjetoParticipante();
+  }
   var items = Array.prototype.slice.call(document.querySelectorAll('#ptProjetoList .ac-item'));
   if (!items.length) return;
   if (event.key === 'ArrowDown') { event.preventDefault(); _acPtProjetoIndex = Math.min(_acPtProjetoIndex + 1, items.length - 1); }
@@ -3374,7 +3424,7 @@ function participanteFixarMunicipio_(inputId) {
 function participanteNavegarMunicipios_(event, inputId) {
   var state = _municipioBrasilAutocompleteAtivo_[inputId];
   var els = participanteMunicipioElementos_(inputId);
-  if (!state || !els.lista || !state.options.length) return;
+  if (!state || !els.lista || !els.lista.classList.contains('open') || !state.options.length) return;
   if (event.key === 'ArrowDown') { event.preventDefault(); state.index = Math.min(state.index + 1, state.options.length - 1); }
   else if (event.key === 'ArrowUp') { event.preventDefault(); state.index = Math.max(state.index - 1, 0); }
   else if (event.key === 'Enter' && state.index >= 0) { event.preventDefault(); participanteSelecionarMunicipio_(inputId, state.options[state.index]); return; }
@@ -4110,6 +4160,11 @@ function selectEsp(val) {
 }
 function fecharAcList() { document.getElementById('acEspList').classList.remove('open'); }
 function navAcList(e) {
+  var list = document.getElementById('acEspList');
+  if (!list || !list.classList.contains('open')) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    renderAcList(document.getElementById('mEsp').value);
+  }
   var items = document.querySelectorAll('#acEspList .ac-item');
   if (!items.length) return;
   if (e.key==='ArrowDown')  { e.preventDefault(); _acIdx=Math.min(_acIdx+1,items.length-1); }
@@ -4136,6 +4191,187 @@ function confirmarExcluir(id, nome) {
     }
   });
 }
+// Os diálogos deste fragmento e seus filhos compartilham uma pilha de foco.
+// Observar a classe também cobre fechamentos pelos fluxos legados da Agenda.
+var APP_ACCESSIBLE_DIALOGS = [];
+var APP_CONTENT_ACCESSIBILITY_READY = false;
+
+function appDialogFocusable(box) {
+  return Array.prototype.filter.call(box.querySelectorAll('button, input, select, textarea, a[href], [tabindex], [contenteditable="true"]'), function(el) {
+    return !el.disabled && el.type !== 'hidden' && el.tabIndex >= 0 && !el.closest('[inert]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  });
+}
+
+function appFocusDialog(entry) {
+  var controls = appDialogFocusable(entry.box);
+  var preferred = entry.box.querySelector('[data-dialog-initial-focus]');
+  var editable = controls.filter(function(el) { return el.matches('input, select, textarea') && !el.readOnly; })[0];
+  (controls.indexOf(preferred) >= 0 ? preferred : editable || controls[0] || entry.box).focus();
+}
+
+function appSyncContentFieldAccessibility() {
+  var roots = ['agendaCreatePanel', 'modalAgendaCancelamentoMotivo', 'page-requisicao'].map(function(id) { return document.getElementById(id); });
+  roots = roots.concat(Array.prototype.slice.call(document.querySelectorAll('[data-stock-dialog]')));
+  roots.forEach(function(root) {
+    if (!root) return;
+    root.querySelectorAll('label[for]').forEach(function(label) {
+      var input = document.getElementById(label.htmlFor);
+      if (!input || !input.matches('input, select, textarea')) return;
+      var star = label.querySelector('.required-star');
+      input.setAttribute('aria-required', star && star.getClientRects().length && getComputedStyle(star).display !== 'none' ? 'true' : 'false');
+      if (input.hasAttribute('aria-describedby')) input.setAttribute('aria-invalid', input.classList.contains('invalid') ? 'true' : 'false');
+    });
+    if (!root.hasAttribute('data-stock-dialog')) return;
+    root.querySelectorAll('[role="combobox"][aria-controls]').forEach(function(input) {
+      var list = document.getElementById(input.getAttribute('aria-controls'));
+      if (!list) return;
+      var open = list.classList.contains('open');
+      input.setAttribute('aria-expanded', open ? 'true' : 'false');
+      input.removeAttribute('aria-activedescendant');
+      list.setAttribute('role', 'listbox');
+      list.querySelectorAll('.ac-item').forEach(function(item, index) {
+        if (!item.id) item.id = list.id + '-option-' + index;
+        item.setAttribute('role', 'option');
+        var active = open && item.classList.contains('active');
+        item.setAttribute('aria-selected', active ? 'true' : 'false');
+        if (active) input.setAttribute('aria-activedescendant', item.id);
+      });
+    });
+  });
+}
+
+function appSyncAccessibleDialogs(records) {
+  var overlays = [];
+  (records || []).forEach(function(record) {
+    if (record.type === 'attributes' && record.target.matches('.modal-overlay, .ag-create-panel')) overlays.push(record.target);
+  });
+  document.querySelectorAll('.modal-overlay.open, .ag-create-panel.open').forEach(function(el) {
+    if (overlays.indexOf(el) < 0) overlays.push(el);
+  });
+  overlays.forEach(function(overlay) {
+    if (!overlay.classList.contains('open') || APP_ACCESSIBLE_DIALOGS.some(function(entry) { return entry.overlay === overlay; })) return;
+    // Outros modais só entram quando abertos sobre um diálogo acompanhado aqui.
+    if (!overlay.hasAttribute('data-accessible-dialog') && !APP_ACCESSIBLE_DIALOGS.length) return;
+    var box = overlay.querySelector('.modal-box, .confirm-box, .ag-create-box');
+    if (!box) return;
+    var originalInert = overlay.hasAttribute('inert');
+    var originalModal = box.getAttribute('aria-modal');
+    overlay.removeAttribute('inert');
+    if (!box.hasAttribute('role')) box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('tabindex', '-1');
+    if (!box.hasAttribute('aria-labelledby')) {
+      var title = box.querySelector('.modal-header-title, h3');
+      if (title) {
+        if (!title.id) title.id = overlay.id + 'AccessibleTitle';
+        box.setAttribute('aria-labelledby', title.id);
+      }
+    }
+    var opener = document.activeElement;
+    // Trocar um diálogo por outro na mesma tarefa conserva o acionador original.
+    for (var index = APP_ACCESSIBLE_DIALOGS.length - 1; index >= 0; index--) {
+      var previous = APP_ACCESSIBLE_DIALOGS[index];
+      if (!previous.overlay.classList.contains('open') && previous.box.contains(opener)) opener = previous.opener;
+    }
+    APP_ACCESSIBLE_DIALOGS.push({ overlay: overlay, box: box, opener: opener, originalInert: originalInert, originalModal: originalModal });
+  });
+  var restore = null;
+  // Remover de cima para baixo conserva o acionador externo ao fechar pai e filho.
+  for (var i = APP_ACCESSIBLE_DIALOGS.length - 1; i >= 0; i--) {
+    var entry = APP_ACCESSIBLE_DIALOGS[i];
+    if (!entry.overlay.isConnected || !entry.overlay.classList.contains('open')) {
+      restore = entry.opener;
+      if (entry.overlay.hasAttribute('data-accessible-dialog')) {
+        entry.box.removeAttribute('aria-modal');
+        entry.overlay.setAttribute('inert', '');
+      } else {
+        // Um filho legado pode voltar a abrir sozinho fora destes formulários.
+        if (entry.originalModal === null) entry.box.removeAttribute('aria-modal');
+        else entry.box.setAttribute('aria-modal', entry.originalModal);
+        if (entry.originalInert) entry.overlay.setAttribute('inert', '');
+        else entry.overlay.removeAttribute('inert');
+      }
+      APP_ACCESSIBLE_DIALOGS.splice(i, 1);
+    }
+  }
+  var top = APP_ACCESSIBLE_DIALOGS[APP_ACCESSIBLE_DIALOGS.length - 1];
+  document.querySelectorAll('[data-accessible-dialog]').forEach(function(overlay) {
+    if (!overlay.classList.contains('open')) overlay.setAttribute('inert', '');
+  });
+  APP_ACCESSIBLE_DIALOGS.forEach(function(entry) {
+    if (entry === top) {
+      entry.overlay.removeAttribute('inert');
+      entry.box.setAttribute('aria-modal', 'true');
+    } else {
+      if (!entry.overlay.contains(top.overlay)) entry.overlay.setAttribute('inert', '');
+      entry.box.removeAttribute('aria-modal');
+    }
+  });
+  if (top && !top.box.contains(document.activeElement)) {
+    if (restore && restore.isConnected && top.box.contains(restore) && restore.getClientRects().length) restore.focus();
+    else appFocusDialog(top);
+  } else if (!top && restore && restore.isConnected && restore.getClientRects().length) restore.focus();
+  appSyncContentFieldAccessibility();
+}
+
+function appAccessibleDialogKeydown(event) {
+  var entry = APP_ACCESSIBLE_DIALOGS[APP_ACCESSIBLE_DIALOGS.length - 1];
+  if (!entry || event.defaultPrevented) return;
+  // O autocomplete trata Escape primeiro; uma segunda tecla pode fechar o modal.
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (entry.overlay.getAttribute('data-dialog-escape') === 'blocked') return;
+    var closeName = entry.overlay.getAttribute('data-dialog-close');
+    if (closeName && typeof window[closeName] === 'function') window[closeName]();
+    else if (entry.overlay.id === 'confirmUnsaved') fecharConfirmUnsaved();
+    else {
+      var cancel = entry.box.querySelector('.modal-close, .btn-txt');
+      if (cancel) cancel.click();
+    }
+  } else if (event.key === 'Tab') {
+    var controls = appDialogFocusable(entry.box);
+    var first = controls[0], last = controls[controls.length - 1];
+    if (!controls.length || !entry.box.contains(document.activeElement) || document.activeElement === entry.box ||
+        (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last || entry.box : first || entry.box).focus();
+    }
+  }
+}
+
+function appInitContentAccessibility() {
+  if (APP_CONTENT_ACCESSIBILITY_READY || !window.MutationObserver || !document.body) return;
+  APP_CONTENT_ACCESSIBILITY_READY = true;
+  document.addEventListener('keydown', function(event) {
+    // Escape deve fechar inclusive listas vazias antes da confirmação de saída.
+    var input = event.target.closest && event.target.closest('[role="combobox"][aria-controls]');
+    if (event.key !== 'Escape' || !input || !input.closest('[data-stock-dialog]')) return;
+    var list = document.getElementById(input.getAttribute('aria-controls'));
+    if (list && list.classList.contains('open')) {
+      event.preventDefault();
+      list.classList.remove('open');
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+  }, true);
+  document.addEventListener('keydown', appAccessibleDialogKeydown);
+  document.addEventListener('focusin', function(event) {
+    var top = APP_ACCESSIBLE_DIALOGS[APP_ACCESSIBLE_DIALOGS.length - 1];
+    if (top && !top.box.contains(event.target)) appFocusDialog(top);
+  });
+  var observer = new MutationObserver(function(records) {
+    // Ignorar alterações de tabelas e listas: observar apenas diálogo/campo relevante.
+    if (records.some(function(record) {
+      return record.target.matches && (record.target.matches('.modal-overlay, .ag-create-panel') ||
+        record.target.closest('#agendaCreatePanel, #modalAgendaCancelamentoMotivo, #page-requisicao, [data-stock-dialog]'));
+    })) appSyncAccessibleDialogs(records);
+  });
+  observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class', 'style'], childList: true });
+  appSyncAccessibleDialogs();
+}
+
+appInitContentAccessibility();
+
 function abrirOverlay(id)  { document.getElementById(id).classList.add('open'); }
 function fecharOverlay(id) {
   if (!appConfirmNavigationIfDirty(id, function() {
@@ -4143,10 +4379,18 @@ function fecharOverlay(id) {
     fecharOverlay(id);
   })) return false;
   document.getElementById(id).classList.remove('open');
+  if (id === 'modalJornadaParticipante') {
+    window._jornadaParticipanteConsulta = null;
+    _jornadaParticipanteAtual = null;
+    _jornadaParticipanteDados = null;
+    window._jornadaReservaPrevia = null;
+    window._jornadaGestaoReserva = null;
+  }
   appClearUnsavedChanges(id);
   return true;
 }
 function fecharModalSeClicouFora(e,id) { if(e.target.id===id) fecharOverlay(id); }
+function fecharPreviaDuplicidadesMonitores() { fecharOverlay('modalPreviaDuplicidadesMonitores'); }
 function abrirConfirmacaoDestrutiva(opts) {
   opts = opts || {};
   document.getElementById('confirmDelTitle').textContent = opts.titulo || 'Confirmar exclusão';
@@ -4609,6 +4853,11 @@ function selectFormacao(val) {
 }
 function fecharAcListSol() { document.getElementById('acFormacaoList').classList.remove('open'); }
 function navAcListSol(e) {
+  var list = document.getElementById('acFormacaoList');
+  if (!list || !list.classList.contains('open')) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    renderAcListSol(document.getElementById('sFormacao').value);
+  }
   var items = document.querySelectorAll('#acFormacaoList .ac-item');
   if (!items.length) return;
   if (e.key==='ArrowDown')  { e.preventDefault(); _acIdxSol=Math.min(_acIdxSol+1,items.length-1); }
@@ -4694,6 +4943,11 @@ function fixAcProj(inputId, listId, opts, selVar) {
   }
 }
 function navAcProj(e, inputId, listId, opts, selVar) {
+  var list = document.getElementById(listId);
+  if (!list || !list.classList.contains('open')) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    renderAcProj(inputId, listId, opts, selVar);
+  }
   var items = document.querySelectorAll('#' + listId + ' .ac-item');
   if (!items.length) return;
   var idx = _acIdxProj[listId] !== undefined ? _acIdxProj[listId] : -1;
@@ -4917,6 +5171,7 @@ function filtrarPreviaCtmsJornada(somenteAtencao) {
 }
 
 function definirAprovacaoCtmsJornada(button) {
+  var consulta = window._jornadaParticipanteConsulta;
   var participante = _jornadaParticipanteAtual || {};
   var dados = _jornadaParticipanteDados || {};
   if (!button) return;
@@ -4932,11 +5187,13 @@ function definirAprovacaoCtmsJornada(button) {
     fingerprint: button.getAttribute('data-ctms-fingerprint') || '',
     aprovar: aprovar
   }], onSuccess: function(result) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     appSetButtonBusy(button, false);
     _jornadaParticipanteDados = result && result.jornada || dados;
     snack((result && result.msg) || (aprovar ? 'Comparação CTMS aprovada.' : 'Aprovação CTMS revogada.'));
     abrirPreviaCtmsJornada();
   }, onFailure: function(error) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     appSetButtonBusy(button, false);
     snackErro(appErrorMessage(error));
   } });
@@ -4972,6 +5229,7 @@ function abrirConfiguracaoCtmsJornada() {
 }
 
 function salvarConfiguracaoCtmsJornada() {
+  var consulta = window._jornadaParticipanteConsulta;
   var participante = _jornadaParticipanteAtual || {};
   var dados = _jornadaParticipanteDados || {};
   var marcos = {};
@@ -4992,18 +5250,21 @@ function salvarConfiguracaoCtmsJornada() {
     marcos: marcos,
     escolhasReferencias: escolhas
   }], onSuccess: function(result) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     appSetButtonBusy(btn, false);
     _jornadaParticipanteDados = result && result.jornada || dados;
     if (status) appSetStatus(status, '');
     snack((result && result.msg) || 'Configuração CTMS salva.');
     abrirPreviaCtmsJornada();
   }, onFailure: function(error) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     appSetButtonBusy(btn, false);
     if (status) appSetStatus(status, appErrorMessage(error), '#e53935');
   } });
 }
 
 function abrirReservaPreviaJornada(idSoA) {
+  var consulta = window._jornadaParticipanteConsulta;
   var dados = _jornadaParticipanteDados || {};
   var participante = _jornadaParticipanteAtual || {};
   var visita = (dados.visitasProntidao || dados.visitas || []).filter(function(item) { return String(item.idSoA || '') === String(idSoA || ''); })[0];
@@ -5011,9 +5272,9 @@ function abrirReservaPreviaJornada(idSoA) {
   if (!visita || !content) return;
   var contexto = { projeto: participante.projeto, participante: participante.nome, participanteId: participante.idParticipante, braco: participante.braco || '', idSoA: visita.idSoA, visita: visita.nome, dataVisita: visita.dataAlvoIso };
   content.innerHTML = '<div style="max-width:780px"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Reservar kits para ' + esc(visita.nome) + '</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Data prevista: <strong>' + esc(visita.dataAlvo) + '</strong>. A reserva bloqueia o saldo do lote, sem criar agendamento. O vínculo com a Agenda será feito depois.</p><div id="jornadaReservaPreviaConteudo" style="padding:22px;text-align:center;color:#64748b"><div class="spinner"></div>Buscando lotes elegíveis…</div></div>';
+  var destino = document.getElementById('jornadaReservaPreviaConteudo');
   appServerRun({ method: 'consultarReservaPreviaJornada', args: [contexto], onSuccess: function(resposta) {
-    var destino = document.getElementById('jornadaReservaPreviaConteudo');
-    if (!destino) return;
+    if (!destino || window._jornadaParticipanteConsulta !== consulta || document.getElementById('jornadaReservaPreviaConteudo') !== destino) return;
     var kits = (resposta && resposta.kits) || [];
     if (!kits.length) { destino.innerHTML = '<div style="color:#64748b">Não há modelos de Kit vinculados a esta visita e braço.</div>'; return; }
     destino.innerHTML = '<div class="jornada-reserve-list">' + kits.map(function(kit, indice) {
@@ -5022,10 +5283,11 @@ function abrirReservaPreviaJornada(idSoA) {
       return '<div class="jornada-reserve-item"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><div class="jornada-reserve-fields"><select class="f-input f-select" data-jornada-item="' + esc(kit.idItem) + '" data-jornada-reserva-index="' + indice + '" id="jornadaReservaLote_' + indice + '"' + (lotes.length ? '' : ' disabled') + '>' + opcoes + '</select><input class="f-input" data-jornada-quantity id="jornadaReservaQuantidade_' + indice + '" type="number" min="1" step="1" value="1"' + (lotes.length ? '' : ' disabled') + '></div>' + (lotes.length ? '' : '<div class="jornada-reserve-warning">Sem lote elegível: saldo ou validade insuficiente.</div>') + '</div>';
     }).join('') + '</div><div id="statusReservaPreviaJornada" class="status-msg"></div><div class="jornada-reserve-actions"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Cancelar</button><button class="ag-tb-btn primary" type="button" id="btnConfirmarReservaJornada" onclick="confirmarReservaPreviaJornada()"><span class="material-symbols-outlined">lock</span> Reservar lotes selecionados</button></div>';
     window._jornadaReservaPrevia = { contexto: contexto, kits: kits };
-  }, onFailure: function(e) { var destino = document.getElementById('jornadaReservaPreviaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
+  }, onFailure: function(e) { if (destino && window._jornadaParticipanteConsulta === consulta && document.getElementById('jornadaReservaPreviaConteudo') === destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
 }
 
 function abrirGestaoReservaJornada(idSoA, idItem) {
+  var consulta = window._jornadaParticipanteConsulta;
   var dados = _jornadaParticipanteDados || {};
   var participante = _jornadaParticipanteAtual || {};
   var visita = (dados.visitasProntidao || dados.visitas || []).filter(function(item) { return String(item.idSoA || '') === String(idSoA || ''); })[0];
@@ -5034,9 +5296,9 @@ function abrirGestaoReservaJornada(idSoA, idItem) {
   if (!visita || !kit || !kit.idReserva || !content) return;
   var contexto = { projeto: participante.projeto, participante: participante.nome, participanteId: participante.idParticipante, braco: participante.braco || '', idSoA: visita.idSoA, visita: visita.nome, dataVisita: visita.dataAlvoIso };
   content.innerHTML = '<div style="max-width:780px"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Gerenciar reserva</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Ajuste a quantidade, substitua o lote ou cancele a reserva. Toda alteração exige justificativa e preserva o histórico.</p><div id="jornadaGestaoReservaConteudo" style="padding:22px;text-align:center;color:#64748b"><div class="spinner"></div>Buscando lotes elegíveis…</div></div>';
+  var destino = document.getElementById('jornadaGestaoReservaConteudo');
   appServerRun({ method: 'consultarReservaPreviaJornada', args: [contexto], onSuccess: function(resposta) {
-    var destino = document.getElementById('jornadaGestaoReservaConteudo');
-    if (!destino) return;
+    if (!destino || window._jornadaParticipanteConsulta !== consulta || document.getElementById('jornadaGestaoReservaConteudo') !== destino) return;
     var modelo = ((resposta && resposta.kits) || []).filter(function(item) { return String(item.idItem || '') === String(kit.idItem || ''); })[0] || {};
     var alternativas = (modelo.lotes || []).filter(function(lote) { return String(lote && lote.idLote || '').trim() && String(lote.idLote) !== String(kit.lote || ''); });
     var opcoes = '<option value="' + esc(kit.lote || '') + '" selected>Atual · Lote ' + esc(kit.lote || 'não informado') + (kit.validade ? ' · validade ' + esc(kit.validade) : '') + '</option>' + alternativas.map(function(lote) {
@@ -5044,10 +5306,11 @@ function abrirGestaoReservaJornada(idSoA, idItem) {
     }).join('');
     destino.innerHTML = '<div class="jornada-reserve-item jornada-manage-card"><div class="jornada-kit-heading"><strong>' + esc(kit.descricao || kit.idItem) + '</strong><span class="chip chip-green jornada-kit-status">Reservado</span></div><div class="jornada-manage-grid"><div><label class="field-label" for="jornadaGestaoLote">Lote reservado</label><select class="f-input f-select" id="jornadaGestaoLote">' + opcoes + '</select></div><div><label class="field-label" for="jornadaGestaoQuantidade">Quantidade</label><input class="f-input" id="jornadaGestaoQuantidade" type="number" min="1" step="1" value="' + esc(kit.qtdeReserva || kit.qtdeReservada || 1) + '"></div><div class="full"><label class="field-label" for="jornadaGestaoJustificativa">Justificativa <span class="required-star">*</span></label><textarea class="f-input" id="jornadaGestaoJustificativa" placeholder="Explique o motivo do ajuste, substituição ou cancelamento."></textarea></div></div><div class="jornada-manage-note">A reserva compromete o saldo do lote, mas esta alteração não movimenta fisicamente o estoque.</div></div><div id="statusGestaoReservaJornada" class="status-msg"></div><div class="jornada-reserve-actions jornada-manage-actions"><button class="btn-danger" type="button" id="btnCancelarReservaJornada" onclick="cancelarGestaoReservaJornada()">Cancelar reserva</button><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Voltar</button><button class="ag-tb-btn primary" type="button" id="btnSalvarGestaoReservaJornada" onclick="salvarGestaoReservaJornada()"><span class="material-symbols-outlined">save</span> Salvar alterações</button></div>';
     window._jornadaGestaoReserva = { contexto: contexto, kit: kit, alternativas: alternativas };
-  }, onFailure: function(e) { var destino = document.getElementById('jornadaGestaoReservaConteudo'); if (destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
+  }, onFailure: function(e) { if (destino && window._jornadaParticipanteConsulta === consulta && document.getElementById('jornadaGestaoReservaConteudo') === destino) destino.innerHTML = '<div style="color:#b3261e">' + esc(appErrorMessage(e)) + '</div>'; } });
 }
 
-function jornadaAplicarRespostaAtualizada_(resultado, fallback) {
+function jornadaAplicarRespostaAtualizada_(resultado, fallback, consulta) {
+  if (window._jornadaParticipanteConsulta !== consulta) return;
   snack((resultado && resultado.msg) || fallback || 'Reserva atualizada.');
   if (resultado && resultado.jornada) {
     _jornadaParticipanteDados = resultado.jornada;
@@ -5059,6 +5322,7 @@ function jornadaAplicarRespostaAtualizada_(resultado, fallback) {
 }
 
 function salvarGestaoReservaJornada() {
+  var consulta = window._jornadaParticipanteConsulta;
   var gestao = window._jornadaGestaoReserva || {};
   var kit = gestao.kit || {};
   var lote = document.getElementById('jornadaGestaoLote');
@@ -5078,24 +5342,26 @@ function salvarGestaoReservaJornada() {
   appServerRun({
     method: trocouLote ? 'substituirReservaKitAgenda' : 'ajustarReservaKitAgenda',
     args: [Object.assign(payload, trocouLote ? { novoIdLote: novoLote } : {})],
-    onSuccess: function(resultado) { jornadaAplicarRespostaAtualizada_(resultado, trocouLote ? 'Lote substituído.' : 'Quantidade ajustada.'); },
-    onFailure: function(e) { if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); }
+    onSuccess: function(resultado) { jornadaAplicarRespostaAtualizada_(resultado, trocouLote ? 'Lote substituído.' : 'Quantidade ajustada.', consulta); },
+    onFailure: function(e) { if (window._jornadaParticipanteConsulta !== consulta) return; if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); }
   });
 }
 
 function cancelarGestaoReservaJornada() {
+  var consulta = window._jornadaParticipanteConsulta;
   var gestao = window._jornadaGestaoReserva || {};
   var kit = gestao.kit || {};
   var justificativa = String((document.getElementById('jornadaGestaoJustificativa') || {}).value || '').trim();
   var status = document.getElementById('statusGestaoReservaJornada');
   if (!justificativa) { if (status) appSetStatus(status, 'Informe a justificativa do cancelamento.', '#e53935'); return; }
   abrirConfirmacaoDestrutiva({ mensagem: 'Cancelar esta reserva de ' + (kit.descricao || 'kit') + '? O histórico será preservado.', onConfirm: function() {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     var btn = document.getElementById('btnCancelarReservaJornada');
     if (btn) btn.disabled = true;
     if (status) appSetStatus(status, 'Cancelando reserva…');
     appServerRun({ method: 'cancelarReservaKitAgenda', args: [{ idReserva: kit.idReserva, justificativa: justificativa, retornarJornada: true, braco: (gestao.contexto || {}).braco || '' }], onSuccess: function(resultado) {
-      jornadaAplicarRespostaAtualizada_(resultado, 'Reserva cancelada.');
-    }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); } });
+      jornadaAplicarRespostaAtualizada_(resultado, 'Reserva cancelada.', consulta);
+    }, onFailure: function(e) { if (window._jornadaParticipanteConsulta !== consulta) return; if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); } });
   }});
 }
 
@@ -5118,6 +5384,7 @@ function jornadaKitsSelecionadosParaReserva_() {
 }
 
 function confirmarReservaPreviaJornada() {
+  var consulta = window._jornadaParticipanteConsulta;
   var reserva = window._jornadaReservaPrevia || {};
   var kits = jornadaKitsSelecionadosParaReserva_();
   var status = document.getElementById('statusReservaPreviaJornada');
@@ -5128,11 +5395,12 @@ function confirmarReservaPreviaJornada() {
   if (status) appSetStatus(status, 'Reservando lotes…');
   var payload = Object.assign({}, reserva.contexto || {}, { kits: kits });
   appServerRun({ method: 'reservarKitsPrevisaoJornada', args: [payload], onSuccess: function(resultado) {
-    jornadaAplicarRespostaAtualizada_(resultado, 'Kits reservados.');
-  }, onFailure: function(e) { if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); } });
+    jornadaAplicarRespostaAtualizada_(resultado, 'Kits reservados.', consulta);
+  }, onFailure: function(e) { if (window._jornadaParticipanteConsulta !== consulta) return; if (btn) btn.disabled = false; if (status) appSetStatus(status, appErrorMessage(e), '#e53935'); } });
 }
 
 function salvarConcilicaoVisitasParticipante() {
+  var consulta = window._jornadaParticipanteConsulta;
   var participante = _jornadaParticipanteAtual || {};
   var dados = _jornadaParticipanteDados || {};
   var mapeamentos = (dados.conciliacao || []).map(function(item, index) {
@@ -5145,13 +5413,19 @@ function salvarConcilicaoVisitasParticipante() {
   appSetButtonBusy(btn, true);
   if (status) status.textContent = 'Aplicando conciliação…';
   appServerRun({ method: 'salvarConcilicaoVisitasParticipante', args: [{ nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, mapeamentos: mapeamentos }], onSuccess: function(res) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     appSetButtonBusy(btn, false); snack((res && res.msg) || 'Conciliação salva.'); abrirJornadaParticipante(participante);
-  }, onFailure: function(error) { appSetButtonBusy(btn, false); if (status) status.textContent = appErrorMessage(error); } });
+  }, onFailure: function(error) { if (window._jornadaParticipanteConsulta !== consulta) return; appSetButtonBusy(btn, false); if (status) status.textContent = appErrorMessage(error); } });
 }
 
 function abrirJornadaParticipante(participante) {
   participante = participante || {};
-  var overlay = jornadaParticipanteOverlay_();
+  jornadaParticipanteOverlay_();
+  var consulta = {};
+  window._jornadaParticipanteConsulta = consulta;
+  _jornadaParticipanteDados = null;
+  window._jornadaReservaPrevia = null;
+  window._jornadaGestaoReserva = null;
   var content = document.getElementById('jornadaParticipanteConteudo');
   var subtitle = document.getElementById('jornadaParticipanteSubtitulo');
   if (subtitle) subtitle.textContent = (participante.nome || 'Participante') + ' · ' + (participante.projeto || 'Projeto');
@@ -5159,9 +5433,11 @@ function abrirJornadaParticipante(participante) {
   abrirOverlay('modalJornadaParticipante');
   _jornadaParticipanteAtual = participante;
   appServerRun({ method: 'consultarJornadaParticipante', args: [{ idCadastro: participante.id, nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     _jornadaParticipanteDados = dados || {};
     content.innerHTML = jornadaParticipanteHtml_(dados || {});
   }, onFailure: function(e) {
+    if (window._jornadaParticipanteConsulta !== consulta) return;
     content.innerHTML = '<div style="color:#b3261e">Não foi possível carregar a jornada: ' + esc(appErrorMessage(e)) + '</div>';
   } });
 }
@@ -6184,10 +6460,23 @@ function salvarSoAVisitaApp() {
 }
 
 var _soaImportDadosAtual = null;
+var _soaImportFingerprintAtual = '';
+var _soaImportRevisao = 0;
+var _soaImportEmAndamento = false;
+
+function invalidarPreviaImportacaoSoA_() {
+  _soaImportRevisao++;
+  _soaImportDadosAtual = null;
+  _soaImportFingerprintAtual = '';
+  document.getElementById('btnImportarSoAConfirm').disabled = true;
+  appSetButtonBusy(document.getElementById('btnPreviewSoA'), false);
+  document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Clique em Pré-visualizar para revisar o conteúdo atual.</div>';
+  appSetStatus('statusSoAImport', '');
+}
 
 function abrirSoAImportForm() {
   if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de importar o calendário SoA.'); return; }
-  _soaImportDadosAtual = null;
+  invalidarPreviaImportacaoSoA_();
   document.getElementById('soaImportTexto').value = '';
   document.getElementById('soaImportArquivo').value = '';
   document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div>';
@@ -6198,11 +6487,20 @@ function abrirSoAImportForm() {
 }
 
 function lerSoAArquivoApp(event) {
+  invalidarPreviaImportacaoSoA_();
   var file = event && event.target && event.target.files && event.target.files[0];
   if (!file) return;
+  var revisao = _soaImportRevisao;
   var reader = new FileReader();
-  reader.onload = function() { document.getElementById('soaImportTexto').value = String(reader.result || ''); appSetStatus('statusSoAImport', 'Arquivo carregado. Clique em Pré-visualizar.'); };
-  reader.onerror = function() { appSetStatus('statusSoAImport', 'Não foi possível ler o arquivo.', '#e53935'); };
+  reader.onload = function() {
+    if (revisao !== _soaImportRevisao || !document.getElementById('modalSoAImport').classList.contains('open')) return;
+    document.getElementById('soaImportTexto').value = String(reader.result || '');
+    invalidarPreviaImportacaoSoA_();
+    appSetStatus('statusSoAImport', 'Arquivo carregado. Clique em Pré-visualizar.');
+  };
+  reader.onerror = function() {
+    if (revisao === _soaImportRevisao) appSetStatus('statusSoAImport', 'Não foi possível ler o arquivo.', '#e53935');
+  };
   reader.readAsText(file, 'UTF-8');
 }
 
@@ -6240,19 +6538,61 @@ function renderSoAImportPreview_(result) {
 }
 
 function previsualizarSoAJsonApp() {
+  if (_soaImportEmAndamento) return;
+  invalidarPreviaImportacaoSoA_();
+  var revisao = _soaImportRevisao;
   var btn = document.getElementById('btnPreviewSoA');
   var payload;
   try { payload = soaImportTextoPayload_(); } catch (e) { renderSoAImportPreview_({ ok: false, erros: [e.message], visitas: [] }); appSetStatus('statusSoAImport', '⚠ ' + e.message, '#e53935'); return; }
   appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Validando JSON...');
-  appServerRun({ method: 'validarImportacaoSoA', args: [payload], onSuccess: function(result) { appSetButtonBusy(btn, false); _soaImportDadosAtual = payload; renderSoAImportPreview_(result); appSetStatus('statusSoAImport', result.ok ? 'Prévia pronta. Revise os alertas antes de importar.' : 'Há pendências que impedem a importação.', result.ok ? '' : '#e53935'); }, onFailure: function(e) { appSetButtonBusy(btn, false); renderSoAImportPreview_({ ok: false, erros: [appErrorMessage(e)], visitas: [] }); appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+  appServerRun({ method: 'validarImportacaoSoA', args: [payload], onSuccess: function(result) {
+    if (revisao !== _soaImportRevisao || !document.getElementById('modalSoAImport').classList.contains('open')) return;
+    appSetButtonBusy(btn, false);
+    var atual;
+    try { atual = soaImportTextoPayload_(); } catch (e) { invalidarPreviaImportacaoSoA_(); return; }
+    if (JSON.stringify(atual) !== JSON.stringify(payload)) { invalidarPreviaImportacaoSoA_(); return; }
+    if (result && result.ok === true && result.visitas && result.visitas.length) {
+      _soaImportDadosAtual = payload;
+      _soaImportFingerprintAtual = JSON.stringify(payload);
+    }
+    renderSoAImportPreview_(result);
+    appSetStatus('statusSoAImport', result && result.ok ? 'Prévia pronta. Revise os alertas antes de importar.' : 'Há pendências que impedem a importação.', result && result.ok ? '' : '#e53935');
+  }, onFailure: function(e) {
+    if (revisao !== _soaImportRevisao) return;
+    appSetButtonBusy(btn, false);
+    renderSoAImportPreview_({ ok: false, erros: [appErrorMessage(e)], visitas: [] });
+    appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935');
+  } });
 }
 
 function confirmarImportacaoSoAApp() {
+  if (_soaImportEmAndamento) return;
   if (!_soaImportDadosAtual) { previsualizarSoAJsonApp(); return; }
-  try { _soaImportDadosAtual = soaImportTextoPayload_(); } catch (e) { appSetStatus('statusSoAImport', '⚠ ' + e.message, '#e53935'); return; }
+  var atual;
+  try { atual = soaImportTextoPayload_(); } catch (e) { invalidarPreviaImportacaoSoA_(); appSetStatus('statusSoAImport', '⚠ ' + e.message, '#e53935'); return; }
+  if (JSON.stringify(atual) !== _soaImportFingerprintAtual) {
+    invalidarPreviaImportacaoSoA_();
+    appSetStatus('statusSoAImport', 'O conteúdo mudou. Pré-visualize novamente antes de importar.', '#e53935');
+    return;
+  }
+  // Enviar exatamente o snapshot revisado, mesmo se o formulário mudar durante a RPC.
+  var payload = JSON.parse(_soaImportFingerprintAtual);
+  var projeto = _soaProjetoAtual;
+  var revisao = _soaImportRevisao;
   var btn = document.getElementById('btnImportarSoAConfirm');
+  _soaImportEmAndamento = true;
   appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Importando calendário...');
-  appServerRun({ method: 'importarSoAJson', args: [_soaImportDadosAtual], onSuccess: function(result) { appSetButtonBusy(btn, false); fecharOverlay('modalSoAImport'); snack('✅ ' + ((result && result.msg) || 'Calendário SoA importado.')); carregarSoAVisitasProjeto(_soaProjetoAtual); carregarBracosProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+  appServerRun({ method: 'importarSoAJson', args: [payload], onSuccess: function(result) {
+    _soaImportEmAndamento = false;
+    if (revisao === _soaImportRevisao) { appSetButtonBusy(btn, false); fecharOverlay('modalSoAImport'); }
+    snack('✅ ' + ((result && result.msg) || 'Calendário SoA importado.'));
+    if (_soaProjetoAtual === projeto) { carregarSoAVisitasProjeto(projeto); carregarBracosProjeto(projeto); }
+  }, onFailure: function(e) {
+    _soaImportEmAndamento = false;
+    if (revisao !== _soaImportRevisao) return;
+    appSetButtonBusy(btn, false);
+    appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935');
+  } });
 }
 
 function excluirSoAVisitaApp(idSoA) {
@@ -7089,7 +7429,8 @@ function reqAcOptionsIndex(key, opts) {
 }
 
 function renderReqAC(inputId, listId, opts, selVarName) {
-  var q = _rqNorm(document.getElementById(inputId).value);
+  var input = document.getElementById(inputId);
+  var q = _rqNorm(input.value);
   var el = document.getElementById(listId);
   var indexed = reqAcOptionsIndex(listId, opts);
   var matches = [];
@@ -7097,13 +7438,17 @@ function renderReqAC(inputId, listId, opts, selVarName) {
     if (!q || indexed[i].norm.indexOf(q) >= 0) matches.push(indexed[i].value);
   }
   _rqAcIdx[listId] = -1;
+  input.removeAttribute('aria-activedescendant');
   el.innerHTML = '';
   if (!matches.length) {
-    el.innerHTML = '<div class="ac-empty">Nenhum resultado encontrado.</div>';
+    el.innerHTML = '<div class="ac-empty" role="status">Nenhum resultado encontrado.</div>';
   } else {
-    matches.forEach(function(o) {
+    matches.forEach(function(o, index) {
       var div = document.createElement('div');
       div.className = 'ac-item';
+      div.id = listId + '-option-' + index;
+      div.setAttribute('role', 'option');
+      div.setAttribute('aria-selected', 'false');
       div.dataset.val = o;
       div.textContent = o;
       div.addEventListener('mousedown', function(evt) {
@@ -7114,12 +7459,13 @@ function renderReqAC(inputId, listId, opts, selVarName) {
     });
   }
   el.classList.add('open');
+  input.setAttribute('aria-expanded', 'true');
 }
 
 function pickReqAC(inputId, listId, val, selVarName) {
   window[selVarName] = val;
   document.getElementById(inputId).value = val;
-  document.getElementById(listId).classList.remove('open');
+  fecharReqAC(listId);
   if (REQUISICAO_ID_ALIASES.prestador.indexOf(inputId) > -1) {
     preencherEnderecoReq();
     abrirReqPreloadSelecaoSePronto_({ auto: true });
@@ -7131,10 +7477,33 @@ function pickReqAC(inputId, listId, val, selVarName) {
 
 function fecharReqAC(listId) {
   var el = document.getElementById(listId);
-  if (el) el.classList.remove('open');
+  if (el) {
+    el.classList.remove('open');
+    el.querySelectorAll('.ac-item').forEach(function(item) {
+      item.classList.remove('active');
+      item.setAttribute('aria-selected', 'false');
+    });
+  }
+  var input = document.querySelector('[aria-controls="' + listId + '"]');
+  if (input) {
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  }
+  _rqAcIdx[listId] = -1;
 }
 
 function navReqAC(e, inputId, listId, opts, selVarName) {
+  var list = document.getElementById(listId);
+  if (!list) return;
+  if (!list.classList.contains('open')) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    renderReqAC(inputId, listId, opts, selVarName);
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    fecharReqAC(listId);
+    return;
+  }
   var items = document.querySelectorAll('#' + listId + ' .ac-item');
   if (!items.length) return;
   var idx = _rqAcIdx[listId] !== undefined ? _rqAcIdx[listId] : -1;
@@ -7144,10 +7513,16 @@ function navReqAC(e, inputId, listId, opts, selVarName) {
     e.preventDefault();
     pickReqAC(inputId, listId, items[idx].dataset.val, selVarName);
     return;
-  } else if (e.key === 'Escape') { fecharReqAC(listId); return; }
+  } else return;
   _rqAcIdx[listId] = idx;
-  items.forEach(function(el,i){ el.classList.toggle('active', i===idx); });
-  if (idx >= 0) items[idx].scrollIntoView({block:'nearest'});
+  items.forEach(function(el,i){
+    el.classList.toggle('active', i===idx);
+    el.setAttribute('aria-selected', i===idx ? 'true' : 'false');
+  });
+  if (idx >= 0) {
+    document.getElementById(inputId).setAttribute('aria-activedescendant', items[idx].id);
+    items[idx].scrollIntoView({block:'nearest'});
+  }
 }
 
 // ── Auto-preenchimento ────────────────────────────────────────────────────
@@ -7615,6 +7990,7 @@ function toggleUrgente() {
   var row  = document.getElementById('urgenteRow');
   var icon = document.getElementById('urgenteIcon');
   var lbl  = document.getElementById('urgenteLabel');
+  btn.setAttribute('aria-pressed', _rqUrgente ? 'true' : 'false');
   if (_rqUrgente) {
     btn.classList.add('ativo');
     row.classList.add('ativo');

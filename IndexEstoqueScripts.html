@@ -12,6 +12,48 @@
   var _evAlertas = null;
   var _evPiloto = null;
   var _evAgendaCandidatos = [];
+  var _evVinculoAgendaRequest = 0;
+  var _evSoASugestoesRequest = 0;
+  var _estoqueInlineRequest = 0;
+  var _estoqueBusinessDateFormatter = null;
+  var _estoqueActionsBound = false;
+
+  function estoqueActionAttrs(action, args) {
+    estoqueBindActions();
+    return ' data-estoque-action="' + esc(action) + '" data-estoque-args="' + esc(encodeURIComponent(JSON.stringify(args || []))) + '"';
+  }
+
+  function estoqueBindActions() {
+    if (_estoqueActionsBound) return;
+    _estoqueActionsBound = true;
+    function dispatch(event) {
+      var control = event.target.closest('[data-estoque-action]');
+      if (!control || control.disabled) return;
+      var action = control.getAttribute('data-estoque-action');
+      if (action === 'descarte-qtd') {
+        if (event.type === 'input') atualizarDescarteQtd(JSON.parse(decodeURIComponent(control.getAttribute('data-estoque-args')))[0], control.value);
+        return;
+      }
+      if (event.type !== 'click') return;
+      var handlers = {
+        'item-editar': abrirFormItemInline, 'item-excluir': excluirItemInline,
+        'pedido-editar': abrirFormPedidoInline, 'pedido-excluir': excluirPedidoInline,
+        'pedido-abrir': abrirPedidoPorNumero,
+        'descarte-imprimir': imprimirRelatorioDescarte, 'descarte-efetivar': efetivarDescarteInline
+      };
+      if (!Object.prototype.hasOwnProperty.call(handlers, action)) return;
+      event.stopPropagation();
+      handlers[action].apply(null, JSON.parse(decodeURIComponent(control.getAttribute('data-estoque-args'))));
+    }
+    document.addEventListener('click', dispatch);
+    document.addEventListener('input', dispatch);
+  }
+
+  function estoqueQuantidadeValida(value, minimo, maximo, inteira) {
+    var numero = Number(value);
+    return String(value).trim() !== '' && isFinite(numero) && numero >= minimo &&
+      (maximo === undefined || numero <= maximo) && (!inteira || Number.isInteger(numero));
+  }
   var ESTOQUE_CLIENT_CACHE_TTL_MS = 5 * 60 * 1000;
   var ESTOQUE_CONFIG_TTL_MS = 5 * 60 * 1000;
   var ESTOQUE_CLIENT_CACHE = {};
@@ -43,6 +85,7 @@
   }
 
   function estoqueCachedRun(key, method, args, onSuccess, onFailure, force) {
+    if (force) delete ESTOQUE_CLIENT_CACHE[key];
     var cached = ESTOQUE_CLIENT_CACHE[key];
     if (!force && estoqueClientCacheValid(cached)) {
       onSuccess(cached.data, cached.loadedAt);
@@ -52,9 +95,12 @@
       ESTOQUE_CLIENT_IN_FLIGHT[key].push({ ok: onSuccess, fail: onFailure });
       return;
     }
-    ESTOQUE_CLIENT_IN_FLIGHT[key] = [{ ok: onSuccess, fail: onFailure }];
+    // Cada resposta pertence à sua fila; force reaproveita consumidores, invalidação os descarta.
+    var request = (ESTOQUE_CLIENT_IN_FLIGHT[key] || []).concat([{ ok: onSuccess, fail: onFailure }]);
+    ESTOQUE_CLIENT_IN_FLIGHT[key] = request;
     var runner = google.script.run
       .withSuccessHandler(function(res) {
+        if (ESTOQUE_CLIENT_IN_FLIGHT[key] !== request) return;
         var loadedAt = Date.now();
         ESTOQUE_CLIENT_CACHE[key] = { data: res, loadedAt: loadedAt };
         var waiters = ESTOQUE_CLIENT_IN_FLIGHT[key] || [];
@@ -62,6 +108,7 @@
         waiters.forEach(function(w) { if (w.ok) w.ok(res, loadedAt); });
       })
       .withFailureHandler(function(e) {
+        if (ESTOQUE_CLIENT_IN_FLIGHT[key] !== request) return;
         var waiters = ESTOQUE_CLIENT_IN_FLIGHT[key] || [];
         delete ESTOQUE_CLIENT_IN_FLIGHT[key];
         waiters.forEach(function(w) { if (w.fail) w.fail(e); });
@@ -344,27 +391,48 @@
   function evPilotoSalvarConferencias() {
     var entradas = Array.prototype.slice.call(document.querySelectorAll('#pilotoConferenciaTabela .piloto-qtde-conferida')).filter(function(input) { return input.value !== ''; });
     if (!entradas.length) { evPilotoMostrarStatus('Informe ao menos uma quantidade física conferida.', 'danger'); return; }
+    var reservas = {};
+    ((_evPiloto && _evPiloto.reservas) || []).forEach(function(reserva) { reservas[reserva.idReserva] = reserva; });
+    var tarefas = [];
+    for (var i = 0; i < entradas.length; i++) {
+      var input = entradas[i];
+      var reserva = reservas[input.getAttribute('data-id-reserva')];
+      if (!reserva || !estoqueQuantidadeValida(input.value, 0, undefined, true)) {
+        evPilotoMostrarStatus('Revise a reserva e informe uma quantidade inteira não negativa em todas as linhas. Nenhuma conferência foi enviada.', 'danger');
+        return;
+      }
+      tarefas.push({ input: input, valor: input.value, payload: {
+        idReserva: reserva.idReserva, idItem: reserva.idItem, idLote: reserva.idLote, accessionNumber: reserva.accessionNumber,
+        projeto: reserva.projeto, participante: reserva.participante, participanteId: reserva.participanteId, descricao: reserva.descricao,
+        validade: reserva.validade, qtdeEsperada: reserva.qtdeEsperada, qtdeConferida: Number(input.value)
+      } });
+    }
     var btn = document.getElementById('pilotoBtnConferir');
+    if (btn.disabled) return;
     btn.disabled = true;
     var indice = 0;
     function proxima() {
-      if (indice >= entradas.length) {
+      if (indice >= tarefas.length) {
         btn.disabled = false;
-        evPilotoMostrarStatus('Conferências salvas. Divergências permanecem destacadas para decisão operacional.', 'ok');
+        if (tarefas.some(function(tarefa) { return tarefa.input.value !== ''; })) {
+          evPilotoMostrarStatus(indice + ' de ' + tarefas.length + ' conferências salvas. Há novos valores preenchidos; revise-os antes de reenviar.', 'warning');
+          return;
+        }
+        evPilotoMostrarStatus(indice + ' de ' + tarefas.length + ' conferências salvas. Divergências permanecem destacadas para decisão operacional.', 'ok');
         carregarEstoqueView(true);
         return;
       }
-      var input = entradas[indice++];
-      var reserva = ((_evPiloto && _evPiloto.reservas) || []).filter(function(item) { return item.idReserva === input.getAttribute('data-id-reserva'); })[0];
-      if (!reserva) { proxima(); return; }
-      google.script.run.withSuccessHandler(proxima).withFailureHandler(function(e) {
+      // A RPC existente é mantida; só as linhas confirmadas saem da próxima tentativa.
+      var tarefa = tarefas[indice];
+      evPilotoMostrarStatus(indice + ' de ' + tarefas.length + ' conferências salvas. Salvando a próxima…', 'info');
+      google.script.run.withSuccessHandler(function() {
+        if (tarefa.input.value === tarefa.valor) tarefa.input.value = '';
+        indice++;
+        proxima();
+      }).withFailureHandler(function(e) {
         btn.disabled = false;
-        evPilotoMostrarStatus(appErrorMessage(e), 'danger');
-      }).registrarConferenciaLaboratorio({
-        idReserva: reserva.idReserva, idItem: reserva.idItem, idLote: reserva.idLote, accessionNumber: reserva.accessionNumber,
-        projeto: reserva.projeto, participante: reserva.participante, participanteId: reserva.participanteId, descricao: reserva.descricao,
-        validade: reserva.validade, qtdeEsperada: reserva.qtdeEsperada, qtdeConferida: Number(input.value || 0)
-      });
+        evPilotoMostrarStatus(indice + ' de ' + tarefas.length + ' conferências salvas. Falha na reserva ' + tarefa.payload.idReserva + ': ' + appErrorMessage(e) + ' As linhas ainda preenchidas poderão ser reenviadas.', 'danger');
+      }).registrarConferenciaLaboratorio(tarefa.payload);
     }
     proxima();
   }
@@ -591,15 +659,6 @@
 
   function evCancelarReservaIndice(indice) {
     evAbrirCancelamentoReservaIndice(indice);
-  }
-
-  function evAbrirSubstituicaoReservaIndice(indice) {
-    var reserva = _evReservaVinculoRows[indice];
-    if (!reserva || !reserva.idReserva) return;
-    abrirConfirmacaoDestrutiva({ mensagem: 'Cancelar a reserva de ' + (reserva.descricao || 'kit') + ' para ' + (reserva.participante || 'o participante') + '?', onConfirm: function() {
-      google.script.run.withSuccessHandler(function(res) { snack((res && res.msg) || 'Reserva cancelada.'); carregarEstoqueView(true); })
-        .withFailureHandler(function(e) { snackErro(e); }).cancelarReservaKitAgenda({ idReserva: reserva.idReserva });
-    }});
   }
 
   function evAbrirSubstituicaoReservaIndice(indice) {
@@ -855,6 +914,8 @@
     var reserva = _evReservaVinculoRows[indice];
     if (!reserva || !reserva.idReserva) return;
     _evReservaVinculoSelecionada = reserva;
+    var requestId = ++_evVinculoAgendaRequest;
+    _evAgendaCandidatos = [];
     evGarantirModalVinculoAgenda();
     var contexto = document.getElementById('evVinculoReservaContext');
     if (contexto) contexto.innerHTML = '<div><span>Participante</span><strong>' + esc(reserva.participante || 'Não informado') + '</strong><div class="estoque-transfer-available">' + esc(reserva.participanteId || '') + '</div></div>' +
@@ -867,9 +928,11 @@
     if (status) status.textContent = 'Carregando visitas compatíveis...';
     if (msg) appSetStatus(msg, '');
     if (btn) btn.disabled = true;
+    if (btn) btn.innerHTML = '<span class="material-symbols-outlined">link</span>Vincular visita';
     abrirOverlay('modalVinculoReservaAgenda');
     google.script.run
       .withSuccessHandler(function(res) {
+        if (requestId !== _evVinculoAgendaRequest || _evReservaVinculoSelecionada !== reserva || !document.getElementById('modalVinculoReservaAgenda').classList.contains('open')) return;
         _evAgendaCandidatos = (res && res.candidatos) || [];
         if (select) {
           select.innerHTML = _evAgendaCandidatos.length
@@ -883,6 +946,7 @@
         if (status) status.textContent = _evAgendaCandidatos.length ? _evAgendaCandidatos.length + ' visita(s) encontrada(s).' : 'Nenhuma visita compatível encontrada. A reserva continuará pendente de conciliação.';
       })
       .withFailureHandler(function(err) {
+        if (requestId !== _evVinculoAgendaRequest || _evReservaVinculoSelecionada !== reserva || !document.getElementById('modalVinculoReservaAgenda').classList.contains('open')) return;
         if (status) status.textContent = err && err.message ? err.message : 'Não foi possível consultar a Agenda.';
       })
       .getAgendaCandidatosReservaKit({ idReserva: reserva.idReserva });
@@ -980,18 +1044,24 @@
   }
 
   function evCarregarSugestoesSoA(projeto) {
+    var requestId = ++_evSoASugestoesRequest;
+    var selecionado = _evTransferSelecionado;
     var select = document.getElementById('trSoAVisita');
     if (!select) return;
     select.innerHTML = '<option value="">— Sem sugestão SoA —</option>';
     select.disabled = true;
     if (!projeto) return;
     appServerRun({ method: 'getSoAVisitasProjeto', args: [projeto], onSuccess: function(visitas) {
+      if (requestId !== _evSoASugestoesRequest || _evTransferSelecionado !== selecionado || !document.getElementById('modalTransferInline').classList.contains('open')) return;
       var lista = (visitas || []).filter(function(item) { return item.ativo !== false; });
       select.innerHTML = '<option value="">— Sem sugestão SoA —</option>' + lista.map(function(item) {
         return '<option value="' + esc(item.nome || '') + '">' + esc((item.codigo ? item.codigo + ' · ' : '') + (item.nome || '')) + '</option>';
       }).join('');
       select.disabled = !lista.length;
-    }, onFailure: function() { select.disabled = true; } });
+    }, onFailure: function() {
+      if (requestId !== _evSoASugestoesRequest || _evTransferSelecionado !== selecionado || !document.getElementById('modalTransferInline').classList.contains('open')) return;
+      select.disabled = true;
+    } });
   }
 
   function evAplicarSugestaoSoA() {
@@ -1053,6 +1123,7 @@
       if (campo) campo.value = '';
     });
     var soaSelect = document.getElementById('trSoAVisita');
+    ++_evSoASugestoesRequest;
     if (soaSelect) { soaSelect.innerHTML = '<option value="">— Sem sugestão SoA —</option>'; soaSelect.disabled = true; }
     var status = document.getElementById('statusTransferInline');
     if (status) appSetStatus(status, '');
@@ -1157,17 +1228,11 @@
   }
 
   function evValCls(val) {
-    if (!val || val === '—') return '';
-    try {
-      var p = val.split('/');
-      if (p.length !== 3) return '';
-      var d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
-      var hoje = new Date(); hoje.setHours(0,0,0,0);
-      var diff = (d - hoje) / 86400000;
-      if (diff < 0)  return 'color:#b3261e;font-weight:600;';
-      if (diff < 90) return 'color:#e65100;font-weight:500;';
-      return 'color:#137333;';
-    } catch(e) { return ''; }
+    var diff = diasAteValidade(val);
+    if (diff === 999999) return '';
+    if (diff < 0) return 'color:#b3261e;font-weight:600;';
+    if (diff < 90) return 'color:#e65100;font-weight:500;';
+    return 'color:#137333;';
   }
 
   function evChipStatus(s) {
@@ -1423,6 +1488,7 @@
   var _pedidoInlineEdit = null;
   var _itemInlineEditId = '';
   var _itemInlineVisitasRequest = 0;
+  var _itemInlineVinculosState = null;
   var _pedidoFiltroInicial = '';
   var _recebimentoPedidoInline = null;
   var _planejamentoPedidoData = null;
@@ -1523,7 +1589,7 @@
     if (force) invalidateEstoqueClientCache();
     var body = document.getElementById('eiBody');
     if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
-    estoqueCachedRun('bootstrap:' + _estoqueInlinePagina, 'getEstoqueBootstrapData', [_estoqueInlinePagina],
+    estoqueInlineCachedRun('bootstrap:' + _estoqueInlinePagina, 'getEstoqueBootstrapData', [_estoqueInlinePagina],
       function(res, loadedAt) {
         res = res || {};
         applyEstoqueBootstrapConfig(res.config || {}, loadedAt);
@@ -1557,12 +1623,34 @@
         if (done) done();
       })
       .withFailureHandler(function() {
-        _estoqueConfigLoaded = true;
-        _estoqueConfigLoadedAt = Date.now();
-        if (window.STATE && window.STATE.estoque) window.STATE.estoque.configLoadedAt = _estoqueConfigLoadedAt;
+        resetEstoqueConfigCacheState();
+        snack('Não foi possível atualizar a configuração do Estoque. Usando os valores anteriores; tente novamente.');
         if (done) done();
       })
       .getEstoqueConfig();
+  }
+
+  function estoqueInlineCachedRun(key, method, args, onSuccess, onFailure, force) {
+    var pagina = _estoqueInlinePagina;
+    var requestId = ++_estoqueInlineRequest;
+    estoqueCachedRun(key, method, args, function(data, loadedAt) {
+      if (requestId !== _estoqueInlineRequest || pagina !== _estoqueInlinePagina) return;
+      onSuccess(data, loadedAt);
+    }, function(error) {
+      if (requestId !== _estoqueInlineRequest || pagina !== _estoqueInlinePagina) return;
+      if (onFailure) onFailure(error);
+    }, force);
+  }
+
+  function estoqueHojeIso() {
+    if (!_estoqueBusinessDateFormatter) {
+      _estoqueBusinessDateFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+      });
+    }
+    var fields = {};
+    _estoqueBusinessDateFormatter.formatToParts(new Date()).forEach(function(part) { fields[part.type] = part.value; });
+    return fields.year + '-' + fields.month + '-' + fields.day;
   }
 
   function carregarEstoqueInline(force) {
@@ -1570,7 +1658,7 @@
     var body = document.getElementById('eiBody');
     if (body) body.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando...</td></tr>';
     if (_estoqueInlinePagina === 'pedidos') {
-      estoqueCachedRun('data:pedidos', 'getPedidosEstoque', [],
+      estoqueInlineCachedRun('data:pedidos', 'getPedidosEstoque', [],
         function(d) {
           setEstoqueInlineDadosState(d || {});
           if (_pedidoFiltroInicial) {
@@ -1585,28 +1673,28 @@
       return;
     }
     if (_estoqueInlinePagina === 'itens') {
-      estoqueCachedRun('data:itens', 'getItensEstoque', [],
+      estoqueInlineCachedRun('data:itens', 'getItensEstoque', [],
         function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); },
         function(e) { estoqueInlineErro(e); },
         !!force);
       return;
     }
     if (_estoqueInlinePagina === 'descartes') {
-      estoqueCachedRun('data:descartes', 'getDescartesEstoque', [],
+      estoqueInlineCachedRun('data:descartes', 'getDescartesEstoque', [],
         function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); },
         function(e) { estoqueInlineErro(e); },
         !!force);
       return;
     }
     if (_estoqueInlinePagina === 'movimentacoes') {
-      estoqueCachedRun('data:movimentacoes', 'getMovimentacoesEstoque', [],
+      estoqueInlineCachedRun('data:movimentacoes', 'getMovimentacoesEstoque', [],
         function(d) { setEstoqueInlineDadosState(d || {}); renderEstoqueInline(); },
         function(e) { estoqueInlineErro(e); },
         !!force);
       return;
     }
     if (_estoqueInlinePagina === 'relatorios') {
-      estoqueCachedRun('data:relatorios', 'getEstoque', [],
+      estoqueInlineCachedRun('data:relatorios', 'getEstoque', [],
         function(d) { setEstoqueInlineDadosState({ estoque: d || [] }); renderEstoqueInline(); },
         function(e) { estoqueInlineErro(e); },
         !!force);
@@ -1639,7 +1727,7 @@
 
   function evPedidoLink(numero) {
     if (!numero) return '—';
-    return '<button class="chip chip-blue" style="border:none;cursor:pointer" onclick="abrirPedidoPorNumero(&quot;' + esc(numero) + '&quot;)">' + esc(numero) + '</button>';
+    return '<button class="chip chip-blue" style="border:none;cursor:pointer" ' + estoqueActionAttrs('pedido-abrir', [numero]) + '>' + esc(numero) + '</button>';
   }
 
   function abrirPedidoPorNumero(numero) {
@@ -1729,8 +1817,8 @@
       return '<tr><td>' + projetoChip(i.projeto) + '</td><td class="estoque-description-cell">' + estoqueItemDescricaoHtml(i) + vinculoSoA +
         '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + (i.ordem === '' || i.ordem === undefined ? '<span style="color:#9aa3b0">—</span>' : esc(i.ordem)) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
         '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +
-        '<button class="icon-btn" title="Editar" onclick="abrirFormItemInline(&quot;' + encodeURIComponent(JSON.stringify(i)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
-        '<button class="icon-btn del" title="Excluir" onclick="excluirItemInline(&quot;' + esc(i.id) + '&quot;,&quot;' + esc(i.descricao) + '&quot;)"><span class="material-symbols-outlined">delete</span></button>' +
+        '<button class="icon-btn" title="Editar" ' + estoqueActionAttrs('item-editar', [encodeURIComponent(JSON.stringify(i))]) + '><span class="material-symbols-outlined">edit</span></button>' +
+        '<button class="icon-btn del" title="Excluir" ' + estoqueActionAttrs('item-excluir', [i.id, i.descricao]) + '><span class="material-symbols-outlined">delete</span></button>' +
         '</div></td></tr>';
     }).join('') : '<tr><td colspan="9" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado.</td></tr>';
   }
@@ -1908,19 +1996,24 @@
   }
 
   function diasAteValidade(val) {
-    if (!val || val === '—') return 999999;
-    var s = String(val).trim();
-    var p = s.split('/');
-    if (p.length === 3) {
-      var d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
-      var hoje = new Date(); hoje.setHours(0,0,0,0);
-      return Math.floor((d - hoje) / 86400000);
-    }
-    p = s.split('-');
-    if (p.length !== 3) return 999999;
-    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-    var hoje = new Date(); hoje.setHours(0,0,0,0);
-    return Math.floor((d - hoje) / 86400000);
+    var data = estoqueDataCivilTimestamp(val);
+    var hoje = estoqueDataCivilTimestamp(estoqueHojeIso());
+    return data === null ? 999999 : (data - hoje) / 86400000;
+  }
+
+  function estoqueDataCivilTimestamp(value) {
+    var texto = String(value || '').trim();
+    var br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    var iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!br && !iso) return null;
+    var ano = Number(br ? br[3] : iso[1]);
+    var mes = Number(br ? br[2] : iso[2]);
+    var dia = Number(br ? br[1] : iso[3]);
+    if (ano < 100 || mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+    var timestamp = Date.UTC(ano, mes - 1, dia);
+    var date = new Date(timestamp);
+    if (date.getUTCFullYear() !== ano || date.getUTCMonth() !== mes - 1 || date.getUTCDate() !== dia) return null;
+    return timestamp;
   }
 
   function sortValidade(a, b) {
@@ -2015,7 +2108,7 @@
     _planejamentoPedidoData = null;
     _planejamentoProjeto = null;
     _planejamentoCarrinho = {};
-    document.getElementById('planData').value = new Date().toISOString().split('T')[0];
+    document.getElementById('planData').value = estoqueHojeIso();
     document.getElementById('planEmail').value = '';
     var sol = document.getElementById('planSolicitante');
     if (sol) sol.innerHTML = '<option value="">Carregando...</option>';
@@ -2050,7 +2143,7 @@
     ensurePlanejamentoDescarteModal();
     _descarteData = null;
     _descarteCarrinho = {};
-    var hoje = new Date().toISOString().split('T')[0];
+    var hoje = estoqueHojeIso();
     document.getElementById('desData').value = hoje;
     document.getElementById('desEmail').value = '';
     document.getElementById('desObs').value = '';
@@ -2169,7 +2262,7 @@
     var itens = getDescarteItensFiltrados();
     body.innerHTML = itens.length ? itens.map(function(it) {
       var key = descarteItemKey(it);
-      return '<tr><td><div class="row-name">' + esc(it.descricao || '-') + '</div></td><td>' + itemTipoChip(it.tipoItem) + '</td><td><span style="' + evValCls(it.validade || '') + '">' + esc(estoqueValidadeExibicao(it.validade) || '-') + '</span></td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde || 0) + '</td><td><input type="number" min="0" max="' + esc(it.qtde || 0) + '" step="1" class="f-input" style="height:34px;text-align:center" value="' + esc(_descarteCarrinho[key] || 0) + '" oninput="atualizarDescarteQtd(&quot;' + esc(key) + '&quot;,this.value)"></td></tr>';
+      return '<tr><td><div class="row-name">' + esc(it.descricao || '-') + '</div></td><td>' + itemTipoChip(it.tipoItem) + '</td><td><span style="' + evValCls(it.validade || '') + '">' + esc(estoqueValidadeExibicao(it.validade) || '-') + '</span></td><td>' + esc(it.localizacao || '-') + '</td><td style="text-align:center;font-weight:600">' + esc(it.qtde || 0) + '</td><td><input type="number" min="0" max="' + esc(it.qtde || 0) + '" step="1" class="f-input" style="height:34px;text-align:center" value="' + esc(_descarteCarrinho[key] || 0) + '" ' + estoqueActionAttrs('descarte-qtd', [key]) + '></td></tr>';
     }).join('') : '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9aa3b0">Nenhum lote disponível para este projeto.</td></tr>';
     renderDescarteResumo();
   }
@@ -2487,9 +2580,9 @@
           '<td>' + pedidoStatusChip(p.status) + '</td>' +
           '<td style="text-align:center">' + badge + '</td>' +
           '<td><div class="action-btns">' +
-            '<button class="icon-btn" title="Editar" onclick="abrirFormPedidoInline(&quot;' + encodeURIComponent(JSON.stringify(p)) + '&quot;)"><span class="material-symbols-outlined">edit</span></button>' +
+            '<button class="icon-btn" title="Editar" ' + estoqueActionAttrs('pedido-editar', [encodeURIComponent(JSON.stringify(p))]) + '><span class="material-symbols-outlined">edit</span></button>' +
             (emPlanejamento ? '' : '<button class="icon-btn" title="Receber pedido" onclick="abrirRecebimentoPedidoInline(&quot;' + uid + '&quot;)"><span class="material-symbols-outlined">inventory</span></button>') +
-            '<button class="icon-btn del" title="Excluir" onclick="excluirPedidoInline(&quot;' + esc(p.rowIndex) + '&quot;,&quot;' + esc(p.idPedido) + '&quot;,&quot;' + esc(p.numeroPedido) + '&quot;)"><span class="material-symbols-outlined">delete</span></button>' +
+            '<button class="icon-btn del" title="Excluir" ' + estoqueActionAttrs('pedido-excluir', [p.rowIndex, p.idPedido, p.numeroPedido]) + '><span class="material-symbols-outlined">delete</span></button>' +
           '</div></td>' +
         '</tr>' +
         '<tr class="ped-detail" id="peddetail-' + uid + '" data-uid="' + uid + '">' +
@@ -2546,7 +2639,7 @@
         '<td><div class="row-name">' + esc(d.idDescarte || '-') + '</div><div style="font-size:11px;color:#9aa3b0;margin-top:2px">' + esc(d.data || '-') + '</div></td>' +
         '<td>' + projetoChip(d.projeto) + '</td><td>' + esc(d.solicitante || d.email || '-') + '</td><td>' + pedidoStatusChip(d.status) + '</td>' +
         '<td style="text-align:center"><span class="chip chip-blue">' + itens.length + '</span></td>' +
-        '<td><div class="action-btns"><button class="icon-btn" title="Relatório PDF" onclick="imprimirRelatorioDescarte(&quot;' + esc(d.idDescarte) + '&quot;)"><span class="material-symbols-outlined">picture_as_pdf</span></button>' + (emPlanejamento ? '<button class="icon-btn" title="Efetivar descarte" onclick="efetivarDescarteInline(&quot;' + esc(d.idDescarte) + '&quot;)"><span class="material-symbols-outlined">delete_forever</span></button>' : '') + '</div></td>' +
+        '<td><div class="action-btns"><button class="icon-btn" title="Relatório PDF" ' + estoqueActionAttrs('descarte-imprimir', [d.idDescarte]) + '><span class="material-symbols-outlined">picture_as_pdf</span></button>' + (emPlanejamento ? '<button class="icon-btn" title="Efetivar descarte" ' + estoqueActionAttrs('descarte-efetivar', [d.idDescarte]) + '><span class="material-symbols-outlined">delete_forever</span></button>' : '') + '</div></td>' +
         '</tr><tr class="ped-detail" id="desdetail-' + uid + '"><td colspan="7"><div class="ped-detail-inner">' + detail + (d.observacoes ? '<div class="ped-detail-note" style="margin-top:10px"><div class="ped-detail-note-title"><span class="material-symbols-outlined">notes</span>Observações</div><div class="ped-detail-note-body">' + esc(d.observacoes) + '</div></div>' : '') + '</div></td></tr>';
     }).join('') : '<tr><td colspan="7" style="text-align:center;color:#9aa3b0;padding:20px">Nenhuma lista de descarte encontrada.</td></tr>';
   }
@@ -2721,7 +2814,7 @@
     }
     _recebimentoPedidoInline = { pedido: pedido, itens: itens };
     document.getElementById('receberPedidoSub').textContent = (pedido.numeroPedido || 'Pedido') + ' · ' + (pedido.projeto || '') + ' · ' + (pedido.laboratorio || '');
-    document.getElementById('rpData').value = new Date().toISOString().split('T')[0];
+    document.getElementById('rpData').value = estoqueHojeIso();
     document.getElementById('rpObs').value = '';
     appSetStatus('statusRecebimentoInline', '');
     document.getElementById('btnSalvarRecebimentoInline').disabled = false;
@@ -2763,7 +2856,7 @@
       var qtd = Number(qtdEl.value || 0);
       qtdEl.classList.remove('invalid');
       valEl.classList.remove('invalid');
-      if (qtd < 0 || qtd > it.pendente) {
+      if (!estoqueQuantidadeValida(qtdEl.value, 0, it.pendente)) {
         qtdEl.classList.add('invalid');
         ok = false;
       }
@@ -2821,6 +2914,7 @@
   }
 
   function montarFormItemInline(item, dados, projetos) {
+    _itemInlineVinculosState = null;
     _itemInlineEditId = item ? (item.id || '') : '';
     ['iiDescricao','iiOrdem','iiLocalizacao','iiEstoqueMin','iiObs'].forEach(function(id) {
       var el = document.getElementById(id);
@@ -2881,6 +2975,7 @@
   }
 
   function visitasSelecionadasItemInline() {
+    if (_itemInlineVinculosState && !_itemInlineVinculosState.visitasLoaded) return _itemInlineVinculosState.visitas.slice();
     return Array.prototype.slice.call(document.querySelectorAll('#iiVisitasLista input[type="checkbox"]:checked'))
       .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
   }
@@ -2898,6 +2993,7 @@
   }
 
   function bracosSelecionadosItemInline() {
+    if (_itemInlineVinculosState && !_itemInlineVinculosState.bracosLoaded) return _itemInlineVinculosState.bracos.slice();
     return Array.prototype.slice.call(document.querySelectorAll('#iiBracosLista input[type="checkbox"]:checked'))
       .map(function(input) { return String(input.value || '').trim(); }).filter(Boolean);
   }
@@ -2908,22 +3004,25 @@
     var listaBracos = document.getElementById('iiBracosLista');
     if (!section || !lista || !listaBracos) return;
     var permiteVinculo = itemInlinePermiteVinculoSoA();
+    var requestId = ++_itemInlineVisitasRequest;
     section.style.display = permiteVinculo ? '' : 'none';
     if (!permiteVinculo) return;
     var projeto = String((document.getElementById('iiProjeto') || {}).value || '').trim();
     var selecionados = Array.isArray(idsPreservados) ? idsPreservados.map(String) : visitasSelecionadasItemInline();
     var bracosSelecionados = Array.isArray(bracosPreservados) ? bracosPreservados.map(String) : bracosSelecionadosItemInline();
+    // O placeholder de carga/erro não representa remoção de vínculos pelo usuário.
+    _itemInlineVinculosState = { visitas: selecionados, bracos: bracosSelecionados, visitasLoaded: false, bracosLoaded: false };
     if (!projeto) {
       lista.innerHTML = '<div class="item-visitas-empty">Selecione primeiro o projeto do item.</div>';
       listaBracos.innerHTML = '<div class="item-visitas-empty">Selecione primeiro o projeto do item.</div>';
       return;
     }
-    var requestId = ++_itemInlineVisitasRequest;
     lista.innerHTML = '<div class="item-visitas-empty"><div class="spinner"></div>Carregando visitas…</div>';
     google.script.run
       .withSuccessHandler(function(visitas) {
         if (requestId !== _itemInlineVisitasRequest || projeto !== String(document.getElementById('iiProjeto').value || '').trim()) return;
         visitas = ordenarVisitasSoAItemInline((visitas || []).filter(function(visita) { return visita && visita.idSoA; }));
+        _itemInlineVinculosState.visitasLoaded = true;
         if (!visitas.length) {
           lista.innerHTML = '<div class="item-visitas-empty">Este projeto ainda não possui visitas cadastradas. O item poderá ser salvo normalmente.</div>';
           return;
@@ -2946,6 +3045,7 @@
       .withSuccessHandler(function(bracos) {
         if (requestId !== _itemInlineVisitasRequest || projeto !== String(document.getElementById('iiProjeto').value || '').trim()) return;
         bracos = (bracos || []).filter(function(braco) { return braco && braco.idBraco && braco.ativo !== false; });
+        _itemInlineVinculosState.bracosLoaded = true;
         if (!bracos.length) {
           listaBracos.innerHTML = '<div class="item-visitas-empty">Este projeto não possui braços cadastrados. O modelo será comum a todos.</div>';
           return;
@@ -3042,7 +3142,7 @@
       var el = document.getElementById(id);
       if (el) el.value = '';
     });
-    document.getElementById('piData').value = pedido ? (pedido.dataISO || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0];
+    document.getElementById('piData').value = pedido ? (pedido.dataISO || estoqueHojeIso()) : estoqueHojeIso();
     ['piNumero','piProjeto','piLab'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.classList.remove('invalid');
@@ -3172,9 +3272,14 @@
     var tipo = document.getElementById('piTipo').value;
     var itemSel = document.getElementById('piItem');
     var idItem = itemSel.value;
-    var qtd = parseInt(document.getElementById('piQtd').value, 10) || 1;
+    var valorQtd = document.getElementById('piQtd').value;
+    var qtd = Number(valorQtd);
     if (!tipo || !idItem) {
       snack('Selecione tipo e item.');
+      return;
+    }
+    if (!estoqueQuantidadeValida(valorQtd, 0) || qtd <= 0) {
+      snackErro('Informe uma quantidade positiva e válida.');
       return;
     }
     var descricao = itemSel.options[itemSel.selectedIndex].text;
@@ -3321,7 +3426,7 @@
     var transferWrapLegacy = document.getElementById('miTransferenciaWrap');
     if (transferWrapLegacy) transferWrapLegacy.style.display = 'none';
     document.getElementById('miTipoMov').value = 'Saída - Visita';
-    document.getElementById('miData').value = new Date().toISOString().split('T')[0];
+    document.getElementById('miData').value = estoqueHojeIso();
     ['miParticipante','miVisita','miOrigem','miObs'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
@@ -3496,7 +3601,7 @@
     ok = validarCampoPedidoInline('miProjeto', 'errMiProjeto', !!projeto) && ok;
     ok = validarCampoPedidoInline('miTipoItem', 'errMiTipoItem', !!tipoItem) && ok;
     ok = validarCampoPedidoInline('miItem', 'errMiItem', !!item) && ok;
-    ok = validarCampoPedidoInline('miQtd', 'errMiQtd', qtd > 0 && (!item || qtd <= Number(item.qtde || 0))) && ok;
+    ok = validarCampoPedidoInline('miQtd', 'errMiQtd', qtd > 0 && estoqueQuantidadeValida(document.getElementById('miQtd').value, 0, item ? Number(item.qtde || 0) : undefined, isTransferencia)) && ok;
     if (isTransferencia && (!item || !item.idLote || !document.getElementById('miOrigemLocal').value || !document.getElementById('miDestinoLocal').value)) {
       snackErro('Selecione um lote e as localizações de origem e destino.');
       return;

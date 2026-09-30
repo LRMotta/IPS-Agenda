@@ -116,6 +116,8 @@ test('retorno de salvar A conserva formulario e alteracoes pendentes de B', asyn
 test('apagar a busca descarta falha antiga durante debounce', async () => {
   await scenario(async (page) => {
     await page.evaluate(() => {
+      // A busca fica fora do diálogo: fechar a edição antes de interagir com a lista.
+      window.fecharOverlay('agendaCreatePanel');
       window.renderAgendaOperacional = () => { document.getElementById('agendaViewLista').textContent = 'Lista atual'; };
       document.getElementById('agendaBusca').value = 'Pessoa A';
       window.agendaCarregarHistorico('Pessoa A', null, 0);

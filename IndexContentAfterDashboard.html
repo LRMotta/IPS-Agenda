@@ -1,45 +1,45 @@
     <!-- ═══ PROJETOS ═══ -->
     <div class="page" id="page-projetos">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
-        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+      <div class="stats-row content-stats-row content-stats-cols-5">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="projTotal">—</div>
           <div class="stat-label">Total de projetos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
         </div>
-        <div class="stat-card" style="--accent:#00796b;">
+        <div class="stat-card stat-accent-teal">
           <div class="stat-value" id="projFases">—</div>
           <div class="stat-label">Projetos ativos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">play_circle</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">play_circle</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;">
+        <div class="stat-card stat-accent-purple">
           <div class="stat-value" id="projEsps">—</div>
           <div class="stat-label">Especialidades</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">stethoscope</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">stethoscope</span></div>
         </div>
-        <div class="stat-card" style="--accent:#e65100;">
+        <div class="stat-card stat-accent-orange">
           <div class="stat-value" id="projRecrutamento">—</div>
           <div class="stat-label" id="projRecrutamentoPct">Recrutamento</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">groups</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">groups</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333; border-radius: 0 var(--r-lg) 0 0;">
+        <div class="stat-card stat-accent-green stat-corner-right">
           <div class="stat-value" id="projConcluidos">—</div>
           <div class="stat-label">Projetos concluídos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">task_alt</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">task_alt</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchProjetos" placeholder="Buscar por código, título, coordenador, patrocinador ou courier…" oninput="filtrarProjetos()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchProjetos" placeholder="Buscar por código, título, coordenador, patrocinador ou courier…" oninput="filtrarProjetos()" aria-label="Buscar projetos">
         </div>
-        <select class="f-select" id="filterStatusProj" onchange="filtrarProjetos()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;">
+        <select class="f-select" id="filterStatusProj" onchange="filtrarProjetos()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;" aria-label="Filtrar projetos por status">
           <option value="">Todos os status</option>
         </select>
         <button class="btn-new proj-print-btn" type="button" title="Imprimir projetos exibidos" onclick="imprimirProjetos()">
-          <span class="material-symbols-outlined">print</span> Imprimir
+          <span class="material-symbols-outlined" aria-hidden="true">print</span> Imprimir
         </button>
         <button class="btn-new" onclick="abrirFormProjeto(null)">
-          <span class="material-symbols-outlined">add</span> Novo Projeto
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Projeto
         </button>
       </div>
       <div class="table-card">
@@ -65,41 +65,41 @@
     </div>
 
     <button class="scroll-top-btn" id="btnScrollTop" type="button" title="Voltar ao topo" aria-label="Voltar ao topo" onclick="scrollAppToTop()">
-      <span class="material-symbols-outlined">keyboard_arrow_up</span>
+      <span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span>
     </button>
     <button class="floating-add-btn" id="btnFloatingAdd" type="button" title="Novo registro" aria-label="Novo registro" onclick="handleFloatingAdd()">
-      <span class="material-symbols-outlined">add</span>
+      <span class="material-symbols-outlined" aria-hidden="true">add</span>
     </button>
 
     <!-- ═══ MONITORES ═══ -->
     <div class="page" id="page-monitores">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
-        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+      <div class="stats-row content-stats-row content-stats-cols-3">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="monTotal">—</div>
           <div class="stat-label">Monitores cadastrados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">visibility</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">visibility</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;">
+        <div class="stat-card stat-accent-purple">
           <div class="stat-value" id="monProjetos">—</div>
           <div class="stat-label">Projetos monitorados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333; border-radius: 0 var(--r-lg) 0 0;">
+        <div class="stat-card stat-accent-green stat-corner-right">
           <div class="stat-value" id="monMulti">—</div>
           <div class="stat-label">Em mais de 1 projeto</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">account_tree</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchMonitores" placeholder="Buscar por nome, e-mail, telefone ou projeto…" oninput="filtrarMonitores()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchMonitores" placeholder="Buscar por nome, e-mail, telefone ou projeto…" oninput="filtrarMonitores()" aria-label="Buscar monitores">
         </div>
         <button class="btn-new" onclick="abrirFormMonitor(null)">
-          <span class="material-symbols-outlined">add</span> Novo Monitor
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Monitor
         </button>
         <button class="btn-new" type="button" onclick="abrirPreviaDuplicidadesMonitores()" style="background:#fff;color:#1266f1;border:1px solid #c5d5fb;">
-          <span class="material-symbols-outlined">content_copy</span> Revisar duplicidades
+          <span class="material-symbols-outlined" aria-hidden="true">content_copy</span> Revisar duplicidades
         </button>
       </div>
       <div class="table-card">
@@ -120,15 +120,15 @@
       </div>
     </div>
 
-    <div class="modal-overlay" id="modalPreviaDuplicidadesMonitores" onclick="fecharModalSeClicouFora(event,'modalPreviaDuplicidadesMonitores')">
-      <div class="modal-box" style="max-width:860px;">
+    <div class="modal-overlay" id="modalPreviaDuplicidadesMonitores" onclick="fecharModalSeClicouFora(event,'modalPreviaDuplicidadesMonitores')" data-accessible-dialog data-dialog-close="fecharPreviaDuplicidadesMonitores">
+      <div class="modal-box" style="max-width:860px;" role="dialog" aria-modal="true" aria-labelledby="modalPreviaDuplicidadesMonitoresTitle" tabindex="-1">
         <div class="modal-header">
-          <div class="modal-header-icon"><span class="material-symbols-outlined">content_copy</span></div>
+          <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></div>
           <div>
-            <div class="modal-header-title">PRÉVIA DE CADASTROS REPETIDOS</div>
+            <div class="modal-header-title" id="modalPreviaDuplicidadesMonitoresTitle">PRÉVIA DE CADASTROS REPETIDOS</div>
             <div class="modal-header-sub">Consulta somente leitura; nenhum registro será alterado ou excluído.</div>
           </div>
-          <button class="modal-close" onclick="fecharOverlay('modalPreviaDuplicidadesMonitores')"><span class="material-symbols-outlined">close</span></button>
+          <button class="modal-close" onclick="fecharOverlay('modalPreviaDuplicidadesMonitores')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
         </div>
         <div class="modal-body" id="previaDuplicidadesMonitoresConteudo"></div>
       </div>
@@ -136,43 +136,43 @@
 
     <!-- ═══ CONFIGURAÇÕES ═══ -->
     <div class="page" id="page-configuracoes">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-4">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="cfgTotal">0</div>
           <div class="stat-label">Configurações</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">settings</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">settings</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="cfgAtivas">0</div>
           <div class="stat-label">Ativas</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">check_circle</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span></div>
         </div>
-        <div class="stat-card" style="--accent:#e65100">
+        <div class="stat-card stat-accent-orange">
           <div class="stat-value" id="cfgGrupos">0</div>
           <div class="stat-label">Grupos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">category</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">category</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="cfgApoio">0</div>
           <div class="stat-label">Itens de apoio</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">tune</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">tune</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchConfig" placeholder="Buscar por grupo, chave, valor ou observação..." oninput="filtrarConfig()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchConfig" placeholder="Buscar por grupo, chave, valor ou observação..." oninput="filtrarConfig()" aria-label="Buscar configurações">
         </div>
-        <select class="f-input f-select" id="filterConfigBloco" onchange="filtrarConfig()" style="max-width:160px;height:40px">
+        <select class="f-input f-select" id="filterConfigBloco" onchange="filtrarConfig()" style="max-width:160px;height:40px" aria-label="Filtrar configurações por bloco">
           <option value="">Todos os blocos</option>
           <option value="Principal">Principal</option>
           <option value="Apoio">Apoio</option>
         </select>
         <button class="btn-refresh" onclick="abrirOverlay('modalConfigAjuda')" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
-          <span class="material-symbols-outlined">help</span> Ajuda
+          <span class="material-symbols-outlined" aria-hidden="true">help</span> Ajuda
         </button>
         <button class="btn-new" onclick="abrirFormConfig(null)">
-          <span class="material-symbols-outlined">add</span> Nova Configuração
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Nova Configuração
         </button>
       </div>
       <div class="table-card">
@@ -194,41 +194,41 @@
       </div>
     </div>
 
-    <!-- ═══ PRESTADORES ═══ -->
+    <!-- ═══ DIAGNÓSTICO ═══ -->
     <div class="page" id="page-diagnostico">
-      <div class="stats-row diag-stats">
-        <div class="stat-card" style="--accent:#137333;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row diag-stats content-stats-row">
+        <div class="stat-card stat-accent-green stat-corner-left">
           <div class="stat-value" id="diagOverall">--</div>
-          <div class="stat-label">Saude geral</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">health_and_safety</span></div>
+          <div class="stat-label">Saúde geral</div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">health_and_safety</span></div>
         </div>
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="diagVersion">--</div>
-          <div class="stat-label">Versao publicada</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">new_releases</span></div>
+          <div class="stat-label">Versão publicada</div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">new_releases</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="diagAccess">--</div>
-          <div class="stat-label">Usuario atual</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">verified_user</span></div>
+          <div class="stat-label">Usuário atual</div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">verified_user</span></div>
         </div>
-        <div class="stat-card" style="--accent:#e65100">
+        <div class="stat-card stat-accent-orange">
           <div class="stat-value" id="diagAuth">--</div>
           <div class="stat-label">OAuth</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">key</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">key</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="diagSheet">--</div>
           <div class="stat-label">Planilha</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">table_chart</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">table_chart</span></div>
         </div>
       </div>
       <div class="toolbar-card diag-toolbar">
         <button class="btn-new" type="button" onclick="carregarDiagnosticoImplantacao(true)">
-          <span class="material-symbols-outlined">refresh</span> Atualizar diagnostico
+          <span class="material-symbols-outlined" aria-hidden="true">refresh</span> Atualizar diagnóstico
         </button>
         <button class="btn-refresh" type="button" onclick="copiarDiagnosticoImplantacao()" style="height:40px;margin-bottom:0;border-radius:var(--r-sm)">
-          <span class="material-symbols-outlined">content_copy</span> Copiar resumo
+          <span class="material-symbols-outlined" aria-hidden="true">content_copy</span> Copiar resumo
         </button>
         <span class="dash-ts" id="diagCheckedAt"></span>
       </div>
@@ -239,15 +239,15 @@
           <div class="diag-checklist" id="diagHealthSummary"></div>
         </section>
         <section class="diag-panel">
-          <h3>Versao cliente x servidor</h3>
+          <h3>Versão cliente x servidor</h3>
           <dl id="diagVersionSync"></dl>
         </section>
         <section class="diag-panel">
-          <h3>Ultima atividade registrada</h3>
+          <h3>Última atividade registrada</h3>
           <dl id="diagModuleActivity"></dl>
         </section>
         <section class="diag-panel diag-panel-wide">
-          <h3>Estrutura obrigatoria</h3>
+          <h3>Estrutura obrigatória</h3>
           <div class="diag-checklist" id="diagStructureChecks"></div>
         </section>
         <section class="diag-panel diag-panel-wide">
@@ -255,15 +255,15 @@
           <div class="diag-checklist" id="diagIntegrityChecks"></div>
         </section>
         <section class="diag-panel diag-panel-wide">
-          <h3>Configuracoes essenciais</h3>
+          <h3>Configurações essenciais</h3>
           <div class="diag-checklist" id="diagConfigValidation"></div>
         </section>
         <section class="diag-panel">
-          <h3>Saude dos perfis</h3>
+          <h3>Saúde dos perfis</h3>
           <dl id="diagProfileHealth"></dl>
         </section>
         <section class="diag-panel">
-          <h3>Execucoes das automacoes</h3>
+          <h3>Execuções das automações</h3>
           <div class="diag-checklist" id="diagAutomationRuns"></div>
         </section>
         <section class="diag-panel">
@@ -271,11 +271,11 @@
           <dl id="diagEnvironment"></dl>
         </section>
         <section class="diag-panel">
-          <h3>Identidade e autorizacao</h3>
+          <h3>Identidade e autorização</h3>
           <dl id="diagIdentity"></dl>
           <div id="diagReauthorizeWrap" hidden style="margin-top:12px">
             <button class="btn-refresh" type="button" onclick="autorizarNovamenteDiagnostico()" style="height:36px;margin:0;border-radius:var(--r-sm)">
-              <span class="material-symbols-outlined">key</span> Autorizar novamente
+              <span class="material-symbols-outlined" aria-hidden="true">key</span> Autorizar novamente
             </button>
           </div>
         </section>
@@ -288,11 +288,11 @@
           <dl id="diagTriggersMail"></dl>
         </section>
         <section class="diag-panel">
-          <h3>Tempo das verificacoes</h3>
+          <h3>Tempo das verificações</h3>
           <dl id="diagTimings"></dl>
         </section>
         <section class="diag-panel">
-          <h3>Permissoes criticas</h3>
+          <h3>Permissões críticas</h3>
           <dl id="diagPermissions"></dl>
         </section>
         <section class="diag-panel diag-panel-wide">
@@ -300,14 +300,14 @@
           <div class="diag-checklist" id="diagAuditRecent"></div>
         </section>
         <section class="diag-panel diag-panel-wide">
-          <h3>Smoke checks automaticos</h3>
+          <h3>Smoke checks automáticos</h3>
           <div class="diag-checklist" id="diagSmokeChecklist"></div>
         </section>
         <details class="diag-panel diag-panel-wide diag-advanced">
-          <summary><span class="material-symbols-outlined">build</span> Manutencao avancada</summary>
-          <p>Use a limpeza somente quando configuracoes ou listas permanecerem desatualizadas. A operacao invalida caches compartilhados e pode deixar a proxima abertura temporariamente mais lenta.</p>
+          <summary><span class="material-symbols-outlined" aria-hidden="true">build</span> Manutenção avançada</summary>
+          <p>Use a limpeza somente quando configurações ou listas permanecerem desatualizadas. A operação invalida caches compartilhados e pode deixar a próxima abertura temporariamente mais lenta.</p>
           <button class="btn-refresh" type="button" onclick="limparCachesDiagnostico()" style="height:40px;margin:0 0 16px;border-radius:var(--r-sm)">
-            <span class="material-symbols-outlined">cached</span> Limpar caches compartilhados
+            <span class="material-symbols-outlined" aria-hidden="true">cached</span> Limpar caches compartilhados
           </button>
           <h3>Detalhes internos dos caches</h3>
           <dl id="diagCache"></dl>
@@ -315,26 +315,27 @@
       </div>
     </div>
 
+    <!-- ═══ PRESTADORES ═══ -->
     <div class="page" id="page-prestadores">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-2">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="prestTotal">0</div>
           <div class="stat-label">Total cadastrados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">business</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">business</span></div>
         </div>
-        <div class="stat-card" style="--accent:#00796b;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-teal stat-corner-right">
           <div class="stat-value" id="prestComEmail">0</div>
           <div class="stat-label">Com e-mail cadastrado</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">mail</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">mail</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchPrestadores" placeholder="Buscar por empresa, endereço, telefone ou e-mail" oninput="filtrarPrestadores()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchPrestadores" placeholder="Buscar por empresa, endereço, telefone ou e-mail" oninput="filtrarPrestadores()" aria-label="Buscar prestadores">
         </div>
         <button class="btn-new" onclick="abrirFormPrestador(null)">
-          <span class="material-symbols-outlined">add</span> Novo Prestador
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Prestador
         </button>
       </div>
       <div class="table-card">
@@ -356,25 +357,25 @@
 
     <!-- ═══ LAB CENTRAL ═══ -->
     <div class="page" id="page-labcentral">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-2">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="labCentralTotal">0</div>
           <div class="stat-label">Laboratórios centrais</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">biotech</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">biotech</span></div>
         </div>
-        <div class="stat-card" style="--accent:#00796b;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-teal stat-corner-right">
           <div class="stat-value" id="labCentralCdc">0</div>
           <div class="stat-label">Com CDC Permit</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">verified</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">verified</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchLabCentral" placeholder="Buscar por laboratório, cidade, país, contato ou CDC Permit" oninput="filtrarLabCentral()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchLabCentral" placeholder="Buscar por laboratório, cidade, país, contato ou CDC Permit" oninput="filtrarLabCentral()" aria-label="Buscar laboratórios centrais">
         </div>
         <button class="btn-new" onclick="abrirFormLabCentral(null)">
-          <span class="material-symbols-outlined">add</span> Novo Lab Central
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Lab Central
         </button>
       </div>
       <div class="table-card">
@@ -396,25 +397,25 @@
 
     <!-- ═══ COURIERS ═══ -->
     <div class="page" id="page-couriers">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-2">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="courierTotal">0</div>
           <div class="stat-label">Couriers cadastradas</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span></div>
         </div>
-        <div class="stat-card" style="--accent:#00796b;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-teal stat-corner-right">
           <div class="stat-value" id="courierEmailTotal">0</div>
           <div class="stat-label">Com e-mail configurado</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">alternate_email</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">alternate_email</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchCouriers" placeholder="Buscar por courier, CNPJ, empresa ou e-mail" oninput="filtrarCouriers()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchCouriers" placeholder="Buscar por courier, CNPJ, empresa ou e-mail" oninput="filtrarCouriers()" aria-label="Buscar couriers">
         </div>
         <button class="btn-new" onclick="abrirFormCourier(null)">
-          <span class="material-symbols-outlined">add</span> Nova Courier
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Nova Courier
         </button>
       </div>
       <div class="table-card courier-list-card">
@@ -426,29 +427,29 @@
 
     <!-- ═══ FERIADOS ═══ -->
     <div class="page" id="page-feriados">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#b3261e;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-3">
+        <div class="stat-card stat-accent-red stat-corner-left">
           <div class="stat-value" id="feriadoTotal">0</div>
           <div class="stat-label">Datas cadastradas</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">event_busy</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">event_busy</span></div>
         </div>
-        <div class="stat-card" style="--accent:#b26a00">
+        <div class="stat-card stat-accent-amber">
           <div class="stat-value" id="feriadoAnoTotal">0</div>
           <div class="stat-label">Aplicáveis neste ano</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">calendar_month</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">calendar_month</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="feriadoEmendaTotal">0</div>
           <div class="stat-label">Emendas institucionais</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">date_range</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">date_range</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchFeriados" placeholder="Buscar por data, nome, tipo ou abrangência" oninput="filtrarFeriados()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchFeriados" placeholder="Buscar por data, nome, tipo ou abrangência" oninput="filtrarFeriados()" aria-label="Buscar feriados">
         </div>
-        <button class="btn-new" onclick="abrirFormFeriado(null)"><span class="material-symbols-outlined">add</span> Novo Feriado</button>
+        <button class="btn-new" onclick="abrirFormFeriado(null)"><span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Feriado</button>
       </div>
       <div class="table-card">
         <table class="data-table">
@@ -462,35 +463,35 @@
 
     <!-- ═══ EQUIPAMENTOS RECEBIDOS ═══ -->
     <div class="page" id="page-equipamentos">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-4">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="eqTotal">0</div>
           <div class="stat-label">Equipamentos recebidos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">devices</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">devices</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="eqUcsSim">0</div>
           <div class="stat-label">Cadastro UCS</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">verified</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">verified</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a">
+        <div class="stat-card stat-accent-purple">
           <div class="stat-value" id="eqRmSim">0</div>
           <div class="stat-label">Registro RM</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">fact_check</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span></div>
         </div>
-        <div class="stat-card" style="--accent:#e65100;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-orange stat-corner-right">
           <div class="stat-value" id="eqDevolvidos">0</div>
           <div class="stat-label">Devolvidos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">assignment_return</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">assignment_return</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchEquipamentos" placeholder="Buscar por projeto, descrição, série, nota fiscal ou responsável..." oninput="filtrarEquipamentos()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchEquipamentos" placeholder="Buscar por projeto, descrição, série, nota fiscal ou responsável..." oninput="filtrarEquipamentos()" aria-label="Buscar equipamentos">
         </div>
         <button class="btn-new" onclick="abrirFormEquipamento(null)">
-          <span class="material-symbols-outlined">add</span> Novo Equipamento Recebido
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Equipamento Recebido
         </button>
       </div>
       <div class="table-card">
@@ -515,35 +516,35 @@
 
     <!-- ═══ MEDICAMENTOS ═══ -->
     <div class="page" id="page-medicamentos">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-4">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="medicamentosTotal">0</div>
           <div class="stat-label">Registros de recebimento</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">medication</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">medication</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="medRmSim">0</div>
           <div class="stat-label">Registro RM</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">fact_check</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span></div>
         </div>
-        <div class="stat-card" style="--accent:#e65100">
+        <div class="stat-card stat-accent-orange">
           <div class="stat-value" id="medProjetos">0</div>
           <div class="stat-label">Projetos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
         </div>
-        <div class="stat-card" style="--accent:#b3261e;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-red stat-corner-right">
           <div class="stat-value" id="medQuantidadeRecebida">0</div>
           <div class="stat-label">Quantidade recebida</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">inventory_2</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchMedicamentos" placeholder="Buscar por projeto, descrição, lote, nota fiscal ou responsável..." oninput="filtrarMedicamentos()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchMedicamentos" placeholder="Buscar por projeto, descrição, lote, nota fiscal ou responsável..." oninput="filtrarMedicamentos()" aria-label="Buscar medicamentos">
         </div>
         <button class="btn-new" onclick="abrirFormMedicamento(null)">
-          <span class="material-symbols-outlined">add</span> Novo Medicamento
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Medicamento
         </button>
       </div>
       <div class="table-card">
@@ -568,25 +569,25 @@
 
     <!-- ═══ SOLICITANTES ═══ -->
     <div class="page" id="page-solicitantes">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
-        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+      <div class="stats-row content-stats-row content-stats-cols-2">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="solTotal">—</div>
           <div class="stat-label">Total cadastrados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">group</span></div>
         </div>
-        <div class="stat-card" style="--accent:#00796b; border-radius: 0 var(--r-lg) 0 0;">
+        <div class="stat-card stat-accent-teal stat-corner-right">
           <div class="stat-value" id="solFormacoes">—</div>
           <div class="stat-label">Formações distintas</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">school</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">school</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchSolicitantes" placeholder="Buscar por nome, formação, registro ou e-mail…" oninput="filtrarSolicitantes()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchSolicitantes" placeholder="Buscar por nome, formação, registro ou e-mail…" oninput="filtrarSolicitantes()" aria-label="Buscar solicitantes">
         </div>
         <button class="btn-new" onclick="abrirFormSolicitante(null)">
-          <span class="material-symbols-outlined">add</span> Novo Solicitante
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Solicitante
         </button>
       </div>
       <div class="table-card">
@@ -609,38 +610,38 @@
 
     <!-- ═══ PARTICIPANTES ═══ -->
     <div class="page" id="page-participantes">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr 1fr; border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8;">
-        <div class="stat-card" style="--accent:#1266f1; border-radius: var(--r-lg) 0 0 0;">
+      <div class="stats-row content-stats-row content-stats-cols-4">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="parTotal">—</div>
           <div class="stat-label">Total cadastrados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">group</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333;">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="parAtivos">—</div>
           <div class="stat-label">Ativos / Em Seguimento</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">favorite</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">favorite</span></div>
         </div>
-        <div class="stat-card" style="--accent:#e65100;">
+        <div class="stat-card stat-accent-orange">
           <div class="stat-value" id="parTriagem">—</div>
           <div class="stat-label">Em triagem</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">pending</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">pending</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a; border-radius: 0 var(--r-lg) 0 0;">
+        <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="parProjetos">—</div>
           <div class="stat-label">Projetos ativos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">folder_open</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
         </div>
       </div>
       <div class="toolbar-card">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchParticipantes" placeholder="Buscar por nome, projeto ou status…" oninput="filtrarParticipantes()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchParticipantes" placeholder="Buscar por nome, projeto ou status…" oninput="filtrarParticipantes()" aria-label="Buscar participantes">
         </div>
-        <select class="f-select" id="filterStatusPar" onchange="filtrarParticipantes()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;">
+        <select class="f-select" id="filterStatusPar" onchange="filtrarParticipantes()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;" aria-label="Filtrar participantes por status">
           <option value="">Todos os status</option>
         </select>
         <button class="btn-new" onclick="abrirFormParticipante(null)">
-          <span class="material-symbols-outlined">add</span> Novo Participante
+          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Participante
         </button>
       </div>
       <div class="table-card">
@@ -667,44 +668,44 @@
     <div class="page" id="page-agenda">
       <div class="ag-wrap">
         <div class="ag-toolbar">
-          <button class="ag-tb-btn icon" title="Semana anterior" onclick="agendaNavWeek(-1)"><span class="material-symbols-outlined">chevron_left</span></button>
-          <button class="ag-tb-btn primary" onclick="agendaGoToday()"><span class="material-symbols-outlined">today</span> Hoje</button>
+          <button class="ag-tb-btn icon" title="Semana anterior" onclick="agendaNavWeek(-1)"><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+          <button class="ag-tb-btn primary" onclick="agendaGoToday()"><span class="material-symbols-outlined" aria-hidden="true">today</span> Hoje</button>
           <label class="ag-date-jump" id="agendaDateJump" title="Ir para data">
-            <span class="ag-tb-btn icon" aria-hidden="true"><span class="material-symbols-outlined">calendar_month</span></span>
+            <span class="ag-tb-btn icon" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">calendar_month</span></span>
             <input type="date" id="agendaGoDateInput" aria-label="Ir para uma data" onclick="this.value=''" onchange="agendaGoToDate(this.value)">
           </label>
-          <button class="ag-tb-btn icon" title="Proxima semana" onclick="agendaNavWeek(1)"><span class="material-symbols-outlined">chevron_right</span></button>
+          <button class="ag-tb-btn icon" title="Próxima semana" onclick="agendaNavWeek(1)"><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
           <span class="ag-period" id="agendaPeriodo">Semana atual</span>
           <span class="ag-sep"></span>
-          <button class="ag-tb-btn active" id="agendaBtnLista" onclick="agendaSetView('lista')"><span class="material-symbols-outlined">view_agenda</span> Lista</button>
-          <button class="ag-tb-btn" id="agendaBtnSemana" onclick="agendaSetView('semana')"><span class="material-symbols-outlined">calendar_view_week</span> Semana</button>
-          <button class="ag-tb-btn" id="agendaBtnPrintWeek" title="Imprimir semana" onclick="imprimirAgendaSemana()" style="display:none"><span class="material-symbols-outlined">print</span> Imprimir semana</button>
-          <div class="ag-search"><span class="material-symbols-outlined">search</span><input type="text" id="agendaBusca" placeholder="Buscar no historico: participante, projeto, visita, courier..." oninput="agendaOnSearchInput()"></div>
-          <button class="ag-tb-btn" title="Atualizar" onclick="carregarAgendaEventos(true)"><span class="material-symbols-outlined">refresh</span></button>
-          <button class="ag-tb-btn primary" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined">add</span> Novo Agendamento</button>
+          <button class="ag-tb-btn active" id="agendaBtnLista" onclick="agendaSetView('lista')"><span class="material-symbols-outlined" aria-hidden="true">view_agenda</span> Lista</button>
+          <button class="ag-tb-btn" id="agendaBtnSemana" onclick="agendaSetView('semana')"><span class="material-symbols-outlined" aria-hidden="true">calendar_view_week</span> Semana</button>
+          <button class="ag-tb-btn" id="agendaBtnPrintWeek" title="Imprimir semana" onclick="imprimirAgendaSemana()" style="display:none"><span class="material-symbols-outlined" aria-hidden="true">print</span> Imprimir semana</button>
+          <div class="ag-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="text" id="agendaBusca" placeholder="Buscar no histórico: participante, projeto, visita, courier..." oninput="agendaOnSearchInput()" aria-label="Buscar no histórico da Agenda"></div>
+          <button class="ag-tb-btn" title="Atualizar" onclick="carregarAgendaEventos(true)"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
+          <button class="ag-tb-btn primary" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Agendamento</button>
         </div>
-        <div class="ag-create-panel" id="agendaCreatePanel" onclick="fecharAgendaModalSeFora(event)">
-          <div class="ag-create-box" onclick="event.stopPropagation()">
+        <div class="ag-create-panel" id="agendaCreatePanel" onclick="fecharAgendaModalSeFora(event)" data-accessible-dialog data-dialog-close="fecharAgendaModal">
+          <div class="ag-create-box" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="agendaCreateTitle" tabindex="-1">
             <div class="ag-create-head">
-              <span class="material-symbols-outlined">event</span>
+              <span class="material-symbols-outlined" aria-hidden="true">event</span>
               <div style="flex:1">
-                <div class="modal-header-title">NOVO AGENDAMENTO</div>
-                <div class="modal-header-sub">Evento da Agenda e dados logisticos vinculados</div>
+                <div class="modal-header-title" id="agendaCreateTitle">NOVO AGENDAMENTO</div>
+                <div class="modal-header-sub">Evento da Agenda e dados logísticos vinculados</div>
               </div>
-              <button class="modal-close" onclick="fecharAgendaModal()"><span class="material-symbols-outlined">close</span></button>
+              <button class="modal-close" onclick="fecharAgendaModal()" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
             </div>
             <div class="ag-create-body">
-          <div class="section-label"><span class="material-symbols-outlined">event</span> Novo evento</div>
+          <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">event</span> Novo evento</div>
           <div id="agendaEmailAviso" style="display:none;margin-bottom:12px;background:#fff8e1;border-left:3px solid #ffc107;border-radius:6px;padding:10px 12px;color:#7a5c00;font-size:12px">
-            E-mails de lab central estao em modo teste. Para envio real, configure Agenda / Enviar emails lab central = Sim no Config_App.
+            E-mails de lab central estão em modo teste. Para envio real, configure Agenda / Enviar emails lab central = Sim no Config_App.
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
-            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo();atualizarAgendaIntervaloUltimaVisita();agendaAtualizarRiscoCourier_()"><div class="field-error" id="errAgData">Informe a data.</div></div>
-            <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao inicio.</div></div>
-            <div id="agHoraWrap"><label class="field-label" for="agHora">Horario <span class="required-star">*</span></label><input type="time" id="agHora" class="f-input large" oninput="limparErro('agHora','errAgHora')"><div class="field-error" id="errAgHora">Informe o horario.</div></div>
+            <div><label class="field-label" for="agData" id="agDataLabel">Data <span class="required-star">*</span></label><input type="date" id="agData" class="f-input large" oninput="limparErro('agData','errAgData');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo();atualizarAgendaIntervaloUltimaVisita();agendaAtualizarRiscoCourier_()" aria-describedby="errAgData" aria-invalid="false"><div class="field-error" id="errAgData">Informe a data.</div></div>
+            <div id="agDataFimWrap" style="display:none"><label class="field-label" for="agDataFim">Data Final <span class="required-star">*</span></label><input type="date" id="agDataFim" class="f-input large" oninput="limparErro('agDataFim','errAgDataFim');validarAgendaPeriodoMonitoria(false);validarAgendaRealizadoFuturo()" aria-describedby="errAgDataFim" aria-invalid="false"><div class="field-error" id="errAgDataFim">Data final deve ser igual ou posterior ao início.</div></div>
+            <div id="agHoraWrap"><label class="field-label" for="agHora">Horário <span class="required-star">*</span></label><input type="time" id="agHora" class="f-input large" oninput="limparErro('agHora','errAgHora')" aria-describedby="errAgHora" aria-invalid="false"><div class="field-error" id="errAgHora">Informe o horário.</div></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
-            <div><label class="field-label" for="agTipo">Tipo de evento <span class="required-star">*</span></label><select id="agTipo" class="f-input f-select" onchange="onAgendaTipoChange();limparErro('agTipo','errAgTipo')"></select><div class="field-error" id="errAgTipo">Selecione o tipo.</div></div>
+            <div><label class="field-label" for="agTipo">Tipo de evento <span class="required-star">*</span></label><select id="agTipo" class="f-input f-select" onchange="onAgendaTipoChange();limparErro('agTipo','errAgTipo')" aria-describedby="errAgTipo" aria-invalid="false"></select><div class="field-error" id="errAgTipo">Selecione o tipo.</div></div>
             <div><label class="field-label" for="agStatus">Status</label><select id="agStatus" class="f-input f-select" onchange="atualizarAgendaPostVisitVisibility();validarAgendaRealizadoFuturo()"></select></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
@@ -713,20 +714,20 @@
               <div style="display:flex;gap:8px;align-items:center">
                 <select id="agParticipante" class="f-input f-select" onchange="onAgendaParticipanteChange()" style="flex:1"></select>
                 <button type="button" class="ag-tb-btn" title="Cadastrar novo participante" onclick="abrirNovoParticipanteAgenda()">
-                  <span class="material-symbols-outlined">person_add</span>
+                  <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                 </button>
               </div>
             </div>
-            <div id="agProjetoWrap"><label class="field-label" for="agProjeto">Protocolo <span class="required-star" id="agProjetoRequired" style="display:none">*</span></label><select id="agProjeto" class="f-input f-select" onchange="onAgendaProjetoChange();limparErro('agProjeto','errAgProjeto')"></select><div class="field-error" id="errAgProjeto">Selecione o projeto/protocolo.</div></div>
+            <div id="agProjetoWrap"><label class="field-label" for="agProjeto">Protocolo <span class="required-star" id="agProjetoRequired" style="display:none">*</span></label><select id="agProjeto" class="f-input f-select" onchange="onAgendaProjetoChange();limparErro('agProjeto','errAgProjeto')" aria-describedby="errAgProjeto" aria-invalid="false"></select><div class="field-error" id="errAgProjeto">Selecione o projeto/protocolo.</div></div>
           </div>
           <div id="agMonitorWrap" style="display:none;margin-bottom:14px">
             <div class="field-row cols-2">
               <div>
                 <label class="field-label" for="agMonitor1">Monitor 1 <span class="required-star" id="agMonitorRequired">*</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
-                  <select id="agMonitor1" class="f-input f-select" onchange="atualizarAgendaMonitorNome();limparErro('agMonitor1','errAgMonitor1')" style="flex:1"></select>
+                  <select id="agMonitor1" class="f-input f-select" onchange="atualizarAgendaMonitorNome();limparErro('agMonitor1','errAgMonitor1')" style="flex:1" aria-describedby="errAgMonitor1" aria-invalid="false"></select>
                   <button type="button" class="ag-tb-btn" title="Cadastrar novo monitor" onclick="abrirNovoMonitorAgenda()">
-                    <span class="material-symbols-outlined">person_add</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                   </button>
                 </div>
                 <div class="field-error" id="errAgMonitor1">Selecione ao menos um monitor vinculado ao projeto.</div>
@@ -736,14 +737,14 @@
                 <div style="display:flex;gap:8px;align-items:center">
                   <select id="agMonitor2" class="f-input f-select" onchange="atualizarAgendaMonitorNome()" style="flex:1"></select>
                   <button type="button" class="ag-tb-btn" title="Cadastrar novo monitor" onclick="abrirNovoMonitorAgenda()">
-                    <span class="material-symbols-outlined">person_add</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                   </button>
                 </div>
               </div>
             </div>
             <div style="margin-top:14px">
               <label class="field-label" for="agSalaMonitoria">Local (sala) <span class="required-star" id="agSalaRequired">*</span></label>
-              <select id="agSalaMonitoria" class="f-input f-select" onchange="limparErro('agSalaMonitoria','errAgSalaMonitoria')"></select>
+              <select id="agSalaMonitoria" class="f-input f-select" onchange="limparErro('agSalaMonitoria','errAgSalaMonitoria')" aria-describedby="errAgSalaMonitoria" aria-invalid="false"></select>
               <div class="field-error" id="errAgSalaMonitoria">Selecione o local (sala) do evento.</div>
             </div>
             <input type="hidden" id="agMonitorNome">
@@ -751,20 +752,20 @@
           <div id="agPartInfo" class="ag-part-info" style="display:none"></div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agVisitaWrap"><label class="field-label" for="agVisita">Visita</label><input type="text" id="agVisita" class="f-input" list="agVisitaSoAList" placeholder="Ex: V1, Triagem, C1D1"><datalist id="agVisitaSoAList"></datalist><div id="agVisitaSoAHint" style="font-size:11px;color:#7b8794;margin-top:4px">Informe uma visita livre ou selecione uma sugestão do calendário SoA.</div></div>
-            <div id="agMedicoWrap"><label class="field-label" for="agMedico">Médico <span class="required-star" id="agMedicoRequired" style="display:none">*</span></label><select id="agMedico" class="f-input f-select" onchange="limparErro('agMedico','errAgMedico')"></select><div class="field-error" id="errAgMedico">Selecione o médico responsável pela consulta.</div></div>
+            <div id="agMedicoWrap"><label class="field-label" for="agMedico">Médico <span class="required-star" id="agMedicoRequired" style="display:none">*</span></label><select id="agMedico" class="f-input f-select" onchange="limparErro('agMedico','errAgMedico')" aria-describedby="errAgMedico" aria-invalid="false"></select><div class="field-error" id="errAgMedico">Selecione o médico responsável pela consulta.</div></div>
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agPrestadorWrap">
-              <label class="field-label" for="agPrestador">Servicos terceirizados <span class="required-star" id="agPrestadorRequired" style="display:none">*</span></label>
+              <label class="field-label" for="agPrestador">Serviços terceirizados <span class="required-star" id="agPrestadorRequired" style="display:none">*</span></label>
               <div style="display:flex;gap:8px;align-items:center">
-                <select id="agPrestador" class="f-input f-select" style="flex:1" onchange="atualizarAgendaReqStatusVisibility();validarAgendaAlertasDataPassada();limparErro('agPrestador','errAgPrestador')"></select>
-                <button type="button" class="ag-tb-btn" title="Criar requisicao de exames com os dados deste agendamento" onclick="abrirReqExamesDaAgenda()">
-                  <span class="material-symbols-outlined">assignment_add</span> Req.
+                <select id="agPrestador" class="f-input f-select" style="flex:1" onchange="atualizarAgendaReqStatusVisibility();validarAgendaAlertasDataPassada();limparErro('agPrestador','errAgPrestador')" aria-describedby="errAgPrestador" aria-invalid="false"></select>
+                <button type="button" class="ag-tb-btn" title="Criar requisição de exames com os dados deste agendamento" onclick="abrirReqExamesDaAgenda()">
+                  <span class="material-symbols-outlined" aria-hidden="true">assignment_add</span> Req.
                 </button>
               </div>
               <div class="field-error" id="errAgPrestador">Informe o serviço terceirizado.</div>
             </div>
-            <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratorio central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" aria-describedby="agLabCentralDisabledHint" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')"><option value=""></option><option>Sim</option><option>Nao</option></select><div id="agLabCentralDisabledHint" class="field-help ag-lab-central-disabled-hint"><span class="material-symbols-outlined" aria-hidden="true">info</span><span>Indisponível para exames terceirizados.</span></div><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
+            <div id="agLabCentralWrap"><label class="field-label" for="agLabCentral">Laboratório central <span class="required-star" id="agLabCentralStar" style="display:none">*</span></label><select id="agLabCentral" class="f-input f-select" aria-describedby="agLabCentralDisabledHint errAgLabCentral" onchange="onAgendaLabCentralChange();limparErro('agLabCentral','errAgLabCentral')" aria-invalid="false"><option value=""></option><option>Sim</option><option value="Nao">Não</option></select><div id="agLabCentralDisabledHint" class="field-help ag-lab-central-disabled-hint"><span class="material-symbols-outlined" aria-hidden="true">info</span><span>Indisponível para exames terceirizados.</span></div><div class="field-error" id="errAgLabCentral">Informe se haverá Laboratório Central.</div></div>
           </div>
           <div id="agendaCourierRiskAlert" class="ag-operational-alert" role="status" aria-live="polite" style="display:none"></div>
           <div id="agProcedimentosWrap">
@@ -775,17 +776,17 @@
           <div id="agCarroRequeridoWrap" style="display:none;margin:4px 0 22px">
             <label for="agCarroRequerido" style="display:flex;align-items:center;gap:8px;color:#5f6b7c;font-size:12px;font-weight:600;cursor:pointer">
               <input type="checkbox" id="agCarroRequerido" style="width:18px;height:18px;accent-color:#b26a00;margin:0">
-              <span class="material-symbols-outlined" style="font-size:19px;color:#b26a00">electric_car</span>
+              <span class="material-symbols-outlined" style="font-size:19px;color:#b26a00" aria-hidden="true">electric_car</span>
               <span>Requer carro para deslocamento da equipe</span>
             </label>
           </div>
-          <label class="field-label" for="agObs">Observacoes</label><textarea id="agObs" class="f-input" placeholder="Observacoes adicionais..."></textarea>
+          <label class="field-label" for="agObs">Observações</label><textarea id="agObs" class="f-input" placeholder="Observações adicionais..."></textarea>
           <label id="agReqEnviadaWrap" style="display:none;align-items:center;gap:8px;margin:10px 0 14px;color:#5f6b7c;font-size:12px;font-weight:600">
             <input type="checkbox" id="agReqEnviada" onchange="onAgendaReqEnviadaChange()" style="width:18px;height:18px;accent-color:#137333">
             Requisição Enviada
           </label>
           <div class="ag-post-checks" id="agPostVisitWrap">
-            <span class="ag-post-checks-title"><span class="material-symbols-outlined">fact_check</span> Pós-visita</span>
+            <span class="ag-post-checks-title"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pós-visita</span>
             <label class="ag-post-check" for="agPoloTrialOk">
               <input type="checkbox" id="agPoloTrialOk">
               <span class="ag-polo-icon" aria-hidden="true"></span>
@@ -793,12 +794,12 @@
             </label>
             <label class="ag-post-check" for="agEcrfOk">
               <input type="checkbox" id="agEcrfOk">
-              <span class="material-symbols-outlined">dynamic_form</span>
+              <span class="material-symbols-outlined" aria-hidden="true">dynamic_form</span>
               <span>eCRF</span>
             </label>
           </div>
           <div class="ag-log-card" id="agKitCard" style="display:none">
-            <div class="ag-log-title"><span class="material-symbols-outlined">inventory_2</span> Kits de coleta</div>
+            <div class="ag-log-title"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span> Kits de coleta</div>
             <div class="ag-form-grid-3">
               <div><label class="field-label" for="agKit1">Kit principal</label><select id="agKit1" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
               <div id="agKit2Wrap" style="display:none"><label class="field-label" for="agKit2">Kit adicional</label><select id="agKit2" class="f-input f-select" onchange="atualizarAgendaKitAdicionais()"></select></div>
@@ -808,17 +809,17 @@
               <div id="agKit6Wrap" style="display:none"><label class="field-label" for="agKit6">Kit adicional</label><select id="agKit6" class="f-input f-select"></select></div>
             </div>
             <button class="ag-tb-btn" id="btnBaixarKitsAgenda" type="button" onclick="baixarKitsAgendaEvento()" style="display:none;margin-top:12px;width:100%;justify-content:center">
-              <span class="material-symbols-outlined">inventory</span> Dar baixa nos kits selecionados
+              <span class="material-symbols-outlined" aria-hidden="true">inventory</span> Dar baixa nos kits selecionados
             </button>
             <button class="ag-tb-btn" id="btnReservarKitsAgenda" type="button" onclick="reservarKitsAgendaEvento()" style="display:none;margin-top:8px;width:100%;justify-content:center">
-              <span class="material-symbols-outlined">lock</span> Reservar kits selecionados
+              <span class="material-symbols-outlined" aria-hidden="true">lock</span> Reservar kits selecionados
             </button>
           </div>
           <div class="ag-log-card" id="agTransporteCard" style="display:none">
-            <div class="ag-log-title"><span class="material-symbols-outlined">local_shipping</span> Transporte de Amostras</div>
+            <div class="ag-log-title"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span> Transporte de Amostras</div>
             <div class="ag-form-grid-3">
               <div id="agC1Wrap">
-                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">counter_1</span> Transporte de Amostras I <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp1" type="button" onclick="gerarTransporteAgenda('1','btnGerarTransp1')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">counter_1</span> Transporte de Amostras I <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp1" type="button" onclick="gerarTransporteAgenda('1','btnGerarTransp1')"><span class="material-symbols-outlined" aria-hidden="true">description</span> Gerar docs</button></div>
                 <div class="ag-transport-fields">
                   <div><label class="field-label" for="agC1Nome">Courier</label><select id="agC1Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC1')"></select></div>
                   <div><label class="field-label" for="agC1Destino">Laboratório destino</label><select id="agC1Destino" class="f-input f-select"></select></div>
@@ -826,11 +827,11 @@
                   <div><label class="field-label" for="agC1Status">Status</label><select id="agC1Status" class="f-input f-select"></select></div>
                   <div><label class="field-label" for="agC1Awb">AWB</label><input type="text" id="agC1Awb" class="f-input" placeholder="AWB"></div>
                 </div>
-                <label class="field-label" for="agC1Material">Material biológico</label>
-                <div id="agC1Material" class="ag-mat-editor"></div>
+                <div class="field-label" id="agC1MaterialLabel">Material biológico</div>
+                <div id="agC1Material" class="ag-mat-editor" role="group" aria-labelledby="agC1MaterialLabel"></div>
               </div>
               <div id="agC2Wrap">
-                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">counter_2</span> Transporte de Amostras II <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp2" type="button" onclick="gerarTransporteAgenda('2','btnGerarTransp2')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">counter_2</span> Transporte de Amostras II <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp2" type="button" onclick="gerarTransporteAgenda('2','btnGerarTransp2')"><span class="material-symbols-outlined" aria-hidden="true">description</span> Gerar docs</button></div>
                 <div class="ag-transport-fields">
                   <div><label class="field-label" for="agC2Nome">Courier</label><select id="agC2Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC2')"></select></div>
                   <div><label class="field-label" for="agC2Destino">Laboratório destino</label><select id="agC2Destino" class="f-input f-select"></select></div>
@@ -838,11 +839,11 @@
                   <div><label class="field-label" for="agC2Status">Status</label><select id="agC2Status" class="f-input f-select"></select></div>
                   <div><label class="field-label" for="agC2Awb">AWB</label><input type="text" id="agC2Awb" class="f-input" placeholder="AWB"></div>
                 </div>
-                <label class="field-label" for="agC2Material">Material biológico</label>
-                <div id="agC2Material" class="ag-mat-editor"></div>
+                <div class="field-label" id="agC2MaterialLabel">Material biológico</div>
+                <div id="agC2Material" class="ag-mat-editor" role="group" aria-labelledby="agC2MaterialLabel"></div>
               </div>
               <div id="agC3Wrap">
-                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">counter_3</span> Transporte de Amostras III <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp3" type="button" onclick="gerarTransporteAgenda('3','btnGerarTransp3')"><span class="material-symbols-outlined">description</span> Gerar docs</button></div>
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">counter_3</span> Transporte de Amostras III <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp3" type="button" onclick="gerarTransporteAgenda('3','btnGerarTransp3')"><span class="material-symbols-outlined" aria-hidden="true">description</span> Gerar docs</button></div>
                 <div class="ag-transport-fields">
                   <div><label class="field-label" for="agC3Nome">Courier</label><select id="agC3Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC3')"></select></div>
                   <div><label class="field-label" for="agC3Destino">Laboratório destino</label><select id="agC3Destino" class="f-input f-select"></select></div>
@@ -850,24 +851,24 @@
                   <div><label class="field-label" for="agC3Status">Status</label><select id="agC3Status" class="f-input f-select"></select></div>
                   <div><label class="field-label" for="agC3Awb">AWB</label><input type="text" id="agC3Awb" class="f-input" placeholder="AWB"></div>
                 </div>
-                <label class="field-label" for="agC3Material">Material biológico</label>
-                <div id="agC3Material" class="ag-mat-editor"></div>
+                <div class="field-label" id="agC3MaterialLabel">Material biológico</div>
+                <div id="agC3Material" class="ag-mat-editor" role="group" aria-labelledby="agC3MaterialLabel"></div>
               </div>
             </div>
             <div class="ag-transport-actions">
               <button class="ag-tb-btn" id="btnMostrarAgC3" type="button" onclick="mostrarAgendaTransporteOpcional('agC3')">
-                <span class="material-symbols-outlined">add</span> Adicionar Transporte III
+                <span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar Transporte III
               </button>
               <button class="ag-tb-btn" id="btnMostrarAgBackup" type="button" onclick="mostrarAgendaTransporteOpcional('agBackup')">
-                <span class="material-symbols-outlined">add</span> Adicionar backup
+                <span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar backup
               </button>
             </div>
             <div class="ag-transport-box" id="agBackupWrap">
-              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnCriarEnvioBackup" type="button" aria-expanded="false" aria-controls="backupAgendaActions" onclick="abrirOpcoesAgendamentoBackupAgenda()"><span class="material-symbols-outlined">add</span> Agendar</button></div>
+              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnCriarEnvioBackup" type="button" aria-expanded="false" aria-controls="backupAgendaActions" onclick="abrirOpcoesAgendamentoBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Agendar</button></div>
               <div id="backupAgendaRefInfo" class="ag-backup-agenda-info" style="display:none" aria-live="polite"></div>
               <div id="backupAgendaActions" class="ag-backup-agenda-actions" style="display:none" role="group" aria-label="Opções para agendar o backup">
-                <button class="ag-tb-btn" type="button" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined">event</span> Criar novo Envio de Amostras</button>
-                <button class="ag-tb-btn" type="button" onclick="carregarVisitasFuturasBackupAgenda()"><span class="material-symbols-outlined">event_available</span> Usar visita futura</button>
+                <button class="ag-tb-btn" type="button" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">event</span> Criar novo Envio de Amostras</button>
+                <button class="ag-tb-btn" type="button" onclick="carregarVisitasFuturasBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">event_available</span> Usar visita futura</button>
               </div>
               <div id="backupAgendaVisitas" class="ag-backup-agenda-visitas" style="display:none" aria-live="polite"></div>
               <div class="ag-transport-fields backup">
@@ -876,34 +877,34 @@
                 <div><label class="field-label" for="agBackupTemp">Temperatura</label><select id="agBackupTemp" class="f-input f-select"></select></div>
                 <div><label class="field-label" for="agBackupStatus">Status</label><select id="agBackupStatus" class="f-input f-select" onchange="atualizarEstadoNovoEnvioBackup_()"></select></div>
               </div>
-              <label class="field-label" for="agBackupMaterial">Material biológico</label>
-              <div id="agBackupMaterial" class="ag-mat-editor"></div>
+              <div class="field-label" id="agBackupMaterialLabel">Material biológico</div>
+              <div id="agBackupMaterial" class="ag-mat-editor" role="group" aria-labelledby="agBackupMaterialLabel"></div>
             </div>
           </div>
           <div class="ag-modal-actions">
-            <button class="btn-save" id="btnSalvarAgenda" onclick="salvarAgendaEvento()"><span class="material-symbols-outlined">event_available</span> <span class="btn-label">Salvar evento</span></button>
+            <button class="btn-save" id="btnSalvarAgenda" onclick="salvarAgendaEvento()"><span class="material-symbols-outlined" aria-hidden="true">event_available</span> <span class="btn-label">Salvar evento</span></button>
             <div id="agendaStatusMsg" class="status-msg" role="status" aria-live="polite"></div>
           </div>
             </div>
           </div>
         </div>
         <div class="ag-view-wrap">
-          <div id="agendaViewLista"><div class="ag-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando agenda...</div></div>
+          <div id="agendaViewLista"><div class="ag-empty"><span class="material-symbols-outlined" aria-hidden="true">hourglass_empty</span>Carregando agenda...</div></div>
           <div id="agendaViewSemana" style="display:none"><div class="ag-week-wrap"><div class="ag-week-grid" id="agendaWeekGrid"></div></div></div>
         </div>
       </div>
     </div>
 
-    <div class="modal-overlay" id="modalAgendaConfirmarReagendamento" onclick="fecharAgendaConfirmarReagendamento(event)">
-      <div class="confirm-box" style="max-width:440px" onclick="event.stopPropagation()">
-        <h3>Confirmar troca de data?</h3>
+    <div class="modal-overlay" id="modalAgendaConfirmarReagendamento" onclick="fecharAgendaConfirmarReagendamento(event)" data-accessible-dialog data-dialog-close="fecharAgendaConfirmarReagendamento">
+      <div class="confirm-box" style="max-width:440px" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="agendaConfirmarReagendamentoTitle" tabindex="-1">
+        <h3 id="agendaConfirmarReagendamentoTitle">Confirmar troca de data?</h3>
         <p id="agendaConfirmarReagendamentoMsg">A data deste agendamento foi alterada.</p>
         <div class="agenda-cancel-guard" style="margin-bottom:16px">
-          <span class="material-symbols-outlined">info</span>
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
           O e-mail de reagendamento, quando aplicável, só será enviado após esta confirmação.
         </div>
         <div class="confirm-actions">
-          <button class="btn-txt" type="button" onclick="fecharAgendaConfirmarReagendamento()">Voltar sem salvar</button>
+          <button class="btn-txt" type="button" data-dialog-initial-focus onclick="fecharAgendaConfirmarReagendamento()">Voltar sem salvar</button>
           <button class="btn-save" type="button" id="btnAgendaConfirmarReagendamento" onclick="confirmarAgendaReagendamento()" style="width:auto;padding:9px 18px;margin-top:0">
             Confirmar e salvar
           </button>
@@ -911,33 +912,33 @@
       </div>
     </div>
 
-    <div class="modal-overlay" id="modalAgendaVisitaMesmaData" onclick="event.stopPropagation()">
-      <div class="confirm-box" style="max-width:440px" onclick="event.stopPropagation()" role="alertdialog" aria-modal="true" aria-labelledby="agendaVisitaMesmaDataTitle" aria-describedby="agendaVisitaMesmaDataMsg">
+    <div class="modal-overlay" id="modalAgendaVisitaMesmaData" onclick="event.stopPropagation()" data-accessible-dialog data-dialog-escape="blocked">
+      <div class="confirm-box" style="max-width:440px" onclick="event.stopPropagation()" role="alertdialog" aria-modal="true" aria-labelledby="agendaVisitaMesmaDataTitle" aria-describedby="agendaVisitaMesmaDataMsg" tabindex="-1">
         <h3 id="agendaVisitaMesmaDataTitle">Visita já criada nesta data</h3>
         <p id="agendaVisitaMesmaDataMsg">Já existe uma visita criada para este participante nesta data.</p>
         <div class="agenda-cancel-guard" style="margin-bottom:16px">
-          <span class="material-symbols-outlined">warning</span>
+          <span class="material-symbols-outlined" aria-hidden="true">warning</span>
           Revise o agendamento existente antes de criar outra visita para o mesmo dia.
         </div>
         <div class="confirm-actions">
           <button class="btn-txt" type="button" id="btnAgendaSalvarVisitaMesmaData" onclick="confirmarAgendaVisitaMesmaData()">Salvar mesmo assim</button>
-          <button class="btn-save" type="button" id="btnAgendaSairVisitaMesmaData" onclick="sairAgendaVisitaMesmaDataSemSalvar()" style="width:auto;padding:9px 18px;margin-top:0">
+          <button class="btn-save" type="button" id="btnAgendaSairVisitaMesmaData" data-dialog-initial-focus onclick="sairAgendaVisitaMesmaDataSemSalvar()" style="width:auto;padding:9px 18px;margin-top:0">
             Sair sem salvar
           </button>
         </div>
       </div>
     </div>
 
-    <div class="modal-overlay" id="modalAgendaConfirmarCancelamento" onclick="fecharAgendaConfirmarCancelamento(event)">
-      <div class="confirm-box" style="max-width:460px" onclick="event.stopPropagation()">
-        <h3>Confirmar cancelamento?</h3>
-        <p>Esta visita ainda nao sera cancelada. Na proxima etapa voce devera registrar o motivo obrigatorio do cancelamento.</p>
+    <div class="modal-overlay" id="modalAgendaConfirmarCancelamento" onclick="fecharAgendaConfirmarCancelamento(event)" data-accessible-dialog data-dialog-close="fecharAgendaConfirmarCancelamento">
+      <div class="confirm-box" style="max-width:460px" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="agendaConfirmarCancelamentoTitle" tabindex="-1">
+        <h3 id="agendaConfirmarCancelamentoTitle">Confirmar cancelamento?</h3>
+        <p>Esta visita ainda não será cancelada. Na próxima etapa você deverá registrar o motivo obrigatório do cancelamento.</p>
         <div class="agenda-cancel-guard" style="margin-bottom:16px">
-          <span class="material-symbols-outlined">info</span>
-          Se voce voltar agora, o status sera restaurado e nada sera salvo.
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          Se você voltar agora, o status será restaurado e nada será salvo.
         </div>
         <div class="confirm-actions">
-          <button class="btn-txt" type="button" onclick="fecharAgendaConfirmarCancelamento()">Voltar sem cancelar</button>
+          <button class="btn-txt" type="button" data-dialog-initial-focus onclick="fecharAgendaConfirmarCancelamento()">Voltar sem cancelar</button>
           <button class="btn-danger" type="button" id="btnAgendaConfirmarCancelamento" onclick="confirmarAgendaCancelamento()" style="width:auto;padding:9px 18px;margin-top:0">
             Prosseguir
           </button>
@@ -945,34 +946,34 @@
       </div>
     </div>
 
-    <div class="modal-overlay" id="modalAgendaCancelamentoMotivo" onclick="fecharAgendaCancelamentoMotivo(event)">
-      <div class="modal-box" style="max-width:760px" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="modalAgendaCancelamentoMotivo" onclick="fecharAgendaCancelamentoMotivo(event)" data-accessible-dialog data-dialog-close="fecharAgendaCancelamentoMotivo">
+      <div class="modal-box" style="max-width:760px" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="agendaCancelamentoMotivoTitle" tabindex="-1">
         <div class="modal-header">
-          <div class="modal-header-icon"><span class="material-symbols-outlined">event_busy</span></div>
+          <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">event_busy</span></div>
           <div>
-            <div class="modal-header-title">MOTIVO DO CANCELAMENTO</div>
+            <div class="modal-header-title" id="agendaCancelamentoMotivoTitle">MOTIVO DO CANCELAMENTO</div>
             <div class="modal-header-sub">Registro obrigatório antes de cancelar a visita ou consulta</div>
           </div>
-          <button class="modal-close" type="button" onclick="fecharAgendaCancelamentoMotivo()">
-            <span class="material-symbols-outlined">close</span>
+          <button class="modal-close" type="button" onclick="fecharAgendaCancelamentoMotivo()" aria-label="Fechar janela">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
           </button>
         </div>
         <div class="modal-body">
           <div class="form-section">
-            <div class="section-label"><span class="material-symbols-outlined">assignment_late</span> Selecione o motivo</div>
-            <div id="agendaCancelMotivos" class="agenda-cancel-reasons"></div>
+            <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">assignment_late</span> Selecione o motivo</div>
+            <div id="agendaCancelMotivos" class="agenda-cancel-reasons" role="group" aria-label="Motivo do cancelamento" aria-describedby="errAgendaCancelMotivo"></div>
             <div class="field-error" id="errAgendaCancelMotivo">Selecione um motivo de cancelamento.</div>
           </div>
           <div class="form-section" id="agendaCancelOutroWrap" style="display:none">
             <label class="field-label" for="agendaCancelOutro">Outro motivo <span class="required-star">*</span></label>
-            <textarea id="agendaCancelOutro" class="f-input" maxlength="255" rows="3" placeholder="Descreva brevemente o motivo do cancelamento" oninput="agendaCancelOutroCounter();limparErro('agendaCancelOutro','errAgendaCancelOutro')"></textarea>
+            <textarea id="agendaCancelOutro" class="f-input" maxlength="255" rows="3" placeholder="Descreva brevemente o motivo do cancelamento" oninput="agendaCancelOutroCounter();limparErro('agendaCancelOutro','errAgendaCancelOutro')" aria-describedby="errAgendaCancelOutro" aria-invalid="false"></textarea>
             <div style="display:flex;justify-content:space-between;gap:10px;margin-top:4px">
               <div class="field-error" id="errAgendaCancelOutro">Descreva o motivo em até 255 caracteres.</div>
               <span class="agenda-cancel-count" id="agendaCancelOutroCount">0/255</span>
             </div>
           </div>
           <div class="agenda-cancel-guard">
-            <span class="material-symbols-outlined">info</span>
+            <span class="material-symbols-outlined" aria-hidden="true">info</span>
             Fechar esta janela ou voltar agora não cancela a visita. O cancelamento só será aplicado após registrar o motivo.
           </div>
           <div class="status-msg" id="agendaCancelMotivoStatus"></div>
@@ -990,15 +991,15 @@
         <div class="req-body">
           <!-- Toggle URGENTE -->
           <div class="urgente-row" id="urgenteRow">
-            <button class="urgente-toggle-btn" id="urgenteBtnForm" onclick="toggleUrgente()">
-              <span class="material-symbols-outlined" id="urgenteIcon">radio_button_unchecked</span>
+            <button class="urgente-toggle-btn" id="urgenteBtnForm" type="button" aria-pressed="false" onclick="toggleUrgente()">
+              <span class="material-symbols-outlined" id="urgenteIcon" aria-hidden="true">radio_button_unchecked</span>
               <span id="urgenteLabel">NÃO URGENTE</span>
             </button>
           </div>
           <!-- 1. Dados do Paciente -->
           <div class="form-section">
             <div class="section-label">
-              <span class="material-symbols-outlined">badge</span> Dados do Paciente
+              <span class="material-symbols-outlined" aria-hidden="true">badge</span> Dados do Paciente
             </div>
             <div class="field-row cols-2 req-patient-row">
               <div class="field">
@@ -1008,9 +1009,9 @@
                     onfocus="renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
                     oninput="_rqSelPaciente=null;renderReqAC('rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')"
                     onblur="setTimeout(function(){fecharReqAC('rqPacienteList');preencherDadosPaciente()},160)"
-                    onkeydown="navReqAC(event,'rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')">
-                  <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-                  <div class="ac-list" id="rqPacienteList"></div>
+                    onkeydown="navReqAC(event,'rqPaciente','rqPacienteList',_rqParticipantesNomes,'_rqSelPaciente')" aria-describedby="errRqPaciente" aria-invalid="false" role="combobox" aria-autocomplete="list" aria-controls="rqPacienteList" aria-expanded="false" aria-required="true">
+                  <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+                  <div class="ac-list" id="rqPacienteList" role="listbox" aria-label="Sugestões"></div>
                 </div>
                 <div class="field-error" id="errRqPaciente">Informe o paciente.</div>
               </div>
@@ -1033,7 +1034,7 @@
           <!-- 2. Prestador: o tipo de serviço vem do cadastro do prestador -->
           <div class="form-section">
             <div class="section-label">
-              <span class="material-symbols-outlined">business</span> Prestador / Laboratório
+              <span class="material-symbols-outlined" aria-hidden="true">business</span> Prestador / Laboratório
             </div>
             <div class="field-row cols-2 req-provider-row">
               <div class="field">
@@ -1043,37 +1044,37 @@
                     onfocus="renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
                     oninput="_rqSelPrestador=null;renderReqAC('rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')"
                     onblur="setTimeout(function(){fecharReqAC('rqPrestadorList')},160)"
-                    onkeydown="navReqAC(event,'rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')">
-                  <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-                  <div class="ac-list" id="rqPrestadorList"></div>
+                    onkeydown="navReqAC(event,'rqPrestador','rqPrestadorList',_rqPrestadoresNomes,'_rqSelPrestador')" aria-describedby="errRqPrestador" aria-invalid="false" role="combobox" aria-autocomplete="list" aria-controls="rqPrestadorList" aria-expanded="false" aria-required="true">
+                  <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+                  <div class="ac-list" id="rqPrestadorList" role="listbox" aria-label="Sugestões"></div>
                 </div>
                 <div class="field-error" id="errRqPrestador">Informe o local do exame.</div>
               </div>
               <div>
                 <label class="field-label" for="rqPrestadorTipo">Tipo de serviço</label>
-                <input type="text" id="rqPrestadorTipo" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
+                <input type="text" id="rqPrestadorTipo" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponível" readonly>
               </div>
             </div>
             <div class="field-row cols-2" style="margin-top:14px">
               <div class="field">
                 <label class="field-label" for="rqData">Data do Exame <span class="required-star">*</span></label>
-                <input type="date" id="rqData" class="f-input">
+                <input type="date" id="rqData" class="f-input" aria-describedby="errRqData" aria-invalid="false" aria-required="true">
                 <div class="field-error" id="errRqData">Informe a data do exame.</div>
               </div>
               <div>
-                <label class="field-label" for="rqHorario">Horario</label>
+                <label class="field-label" for="rqHorario">Horário</label>
                 <input type="time" id="rqHorario" class="f-input">
               </div>
             </div>
             <div class="field" style="margin-top:14px">
-              <label class="field-label" for="rqEndereco">Endereco</label>
-              <input type="text" id="rqEndereco" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponivel" readonly>
+              <label class="field-label" for="rqEndereco">Endereço</label>
+              <input type="text" id="rqEndereco" class="f-input auto-fill" placeholder="Preenchido pelo prestador quando disponível" readonly>
             </div>
           </div>
           <!-- 3. Solicitante -->
           <div class="form-section">
             <div class="section-label">
-              <span class="material-symbols-outlined">support_agent</span> Solicitante
+              <span class="material-symbols-outlined" aria-hidden="true">support_agent</span> Solicitante
             </div>
             <div class="field">
               <label class="field-label" for="rqSolicitante">Nome do Solicitante <span class="required-star">*</span></label>
@@ -1082,9 +1083,9 @@
                   onfocus="renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
                   oninput="_rqSelSolicitante=null;renderReqAC('rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')"
                   onblur="setTimeout(function(){fecharReqAC('rqSolicitanteList');preencherDadosSolicitante()},160)"
-                  onkeydown="navReqAC(event,'rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')">
-                <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-                <div class="ac-list" id="rqSolicitanteList"></div>
+                  onkeydown="navReqAC(event,'rqSolicitante','rqSolicitanteList',_rqSolicitantesNomes,'_rqSelSolicitante')" aria-describedby="errRqSolicitante" aria-invalid="false" role="combobox" aria-autocomplete="list" aria-controls="rqSolicitanteList" aria-expanded="false" aria-required="true">
+                <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+                <div class="ac-list" id="rqSolicitanteList" role="listbox" aria-label="Sugestões"></div>
               </div>
               <div class="field-error" id="errRqSolicitante">Informe o solicitante.</div>
               <div class="solicitante-card" id="solicitanteCard">
@@ -1096,63 +1097,64 @@
           <!-- 4. Exames -->
           <div class="form-section">
             <div class="section-label">
-              <span class="material-symbols-outlined">biotech</span> Exames Solicitados
+              <span class="material-symbols-outlined" aria-hidden="true">biotech</span> Exames Solicitados
               <span class="exam-count" id="examCount">0 exame(s)</span>
               <button class="ag-tb-btn" type="button" onclick="abrirReqPreloadSelecao()" title="Escolher uma lista de exames do projeto" style="margin-left:auto">
-                <span class="material-symbols-outlined">playlist_add_check</span> Escolher lista de exames
+                <span class="material-symbols-outlined" aria-hidden="true">playlist_add_check</span> Escolher lista de exames
               </button>
               <button class="ag-tb-btn" type="button" onclick="abrirReqPreloadModal()" title="Gerenciar listas de exames do projeto">
-                <span class="material-symbols-outlined">tune</span> Gerenciar listas
+                <span class="material-symbols-outlined" aria-hidden="true">tune</span> Gerenciar listas
               </button>
             </div>
             <div id="examList"></div>
             <button class="btn-add-exam" onclick="addExam()">
-              <span class="material-symbols-outlined">add</span> Adicionar exame
+              <span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar exame
             </button>
           </div>
           <!-- 5. Observações -->
           <div class="form-section">
             <div class="section-label">
-              <span class="material-symbols-outlined">notes</span> Observações
+              <span class="material-symbols-outlined" aria-hidden="true">notes</span> Observações
             </div>
+            <label class="sr-only" for="rqObs">Observações da requisição</label>
             <textarea id="rqObs" class="f-textarea" placeholder="Informações adicionais, jejum, preparo especial…"></textarea>
           </div>
-          <!-- Botão salvar -->
+          <!-- Gerar requisição -->
           <div class="req-actions">
           <button class="btn-save" id="btnSalvarReq" type="button" onclick="salvarRequisicao()" aria-disabled="true" title="Preencha: Paciente, Local do Exame, Data do Exame, Solicitante">
-            <span class="material-symbols-outlined">print</span> <span class="btn-label">GERAR REQUISIÇÃO</span>
+            <span class="material-symbols-outlined" aria-hidden="true">print</span> <span class="btn-label">GERAR REQUISIÇÃO</span>
           </button>
-          <button class="ag-tb-btn" type="button" onclick="limparRequisicaoForm()" title="Limpar formulario"><span class="material-symbols-outlined">cleaning_services</span> Limpar</button>
+          <button class="ag-tb-btn" type="button" onclick="limparRequisicaoForm()" title="Limpar formulário"><span class="material-symbols-outlined" aria-hidden="true">cleaning_services</span> Limpar</button>
           </div>
           <div class="status-msg" id="statusReq" role="status" aria-live="polite"></div>
         </div>
       </div>
     </div>
 
-<div class="modal-overlay" id="modalReqSuccess" onclick="fecharRequisicaoSucessoModal(event)">
-  <div class="confirm-box req-success-box" style="max-width:460px;" onclick="event.stopPropagation()">
-    <div class="req-success-icon"><span class="material-symbols-outlined">mark_email_read</span></div>
-    <h3 id="reqSuccessTitle">Requisicao gerada</h3>
+<div class="modal-overlay" id="modalReqSuccess" onclick="fecharRequisicaoSucessoModal(event)" data-accessible-dialog data-dialog-close="fecharRequisicaoSucessoModal">
+  <div class="confirm-box req-success-box" style="max-width:460px;" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="reqSuccessTitle" tabindex="-1">
+    <div class="req-success-icon"><span class="material-symbols-outlined" aria-hidden="true">mark_email_read</span></div>
+    <h3 id="reqSuccessTitle">Requisição gerada</h3>
     <p id="reqSuccessMsg">O PDF foi gerado e o rascunho de e-mail foi criado com sucesso.</p>
     <div class="status-msg" id="reqSuccessWarnings" style="text-align:left;margin-top:0;margin-bottom:12px"></div>
     <div class="confirm-actions">
       <button class="btn-new" type="button" onclick="fecharRequisicaoSucessoModal()">
-        <span class="material-symbols-outlined">check</span> Entendi
+        <span class="material-symbols-outlined" aria-hidden="true">check</span> Entendi
       </button>
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="modalReqPreload" onclick="fecharReqPreloadModalSeFora(event)">
-  <div class="modal-box" style="max-width:760px;">
+<div class="modal-overlay" id="modalReqPreload" onclick="fecharReqPreloadModalSeFora(event)" data-accessible-dialog data-dialog-close="fecharReqPreloadModal">
+  <div class="modal-box" style="max-width:760px;" role="dialog" aria-modal="true" aria-labelledby="reqPreloadTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">biotech</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">biotech</span></div>
       <div>
-        <div class="modal-header-title">LISTA DE EXAMES DO PROJETO</div>
+        <div class="modal-header-title" id="reqPreloadTitle">LISTA DE EXAMES DO PROJETO</div>
         <div class="modal-header-sub" id="reqPreloadSub">Edite a lista selecionada; o número é gerado automaticamente</div>
       </div>
-      <button class="modal-close" onclick="fecharReqPreloadModal()">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharReqPreloadModal()" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -1168,19 +1170,19 @@
         <label class="field-label" for="reqPreloadExames">Exames</label>
         <textarea id="reqPreloadExames" class="f-textarea" style="height:280px;font-family:Roboto Mono,Consolas,monospace" placeholder="Um exame por linha"></textarea>
         <div class="preload-shared-note">
-          <span class="material-symbols-outlined">group</span>
+          <span class="material-symbols-outlined" aria-hidden="true">group</span>
           A lista é compartilhada com todos os usuários. O sistema não solicita nome: cada nova lista recebe automaticamente o próximo número.
         </div>
       </div>
       <div class="status-msg" id="statusReqPreload"></div>
       <div class="req-actions req-preload-actions" style="justify-content:space-between;margin-top:18px">
         <button class="ag-tb-btn" type="button" onclick="reqPreloadUsarListaAtual()">
-          <span class="material-symbols-outlined">content_paste</span> Usar lista atual
+          <span class="material-symbols-outlined" aria-hidden="true">content_paste</span> Usar lista atual
         </button>
         <div class="req-preload-right">
           <button class="ag-tb-btn" type="button" onclick="fecharReqPreloadModal()">Cancelar</button>
           <button class="btn-save req-preload-save" id="btnSalvarReqPreload" type="button" onclick="salvarReqPreloadProjeto()">
-            <span class="material-symbols-outlined">save</span> Salvar lista
+            <span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar lista
           </button>
         </div>
       </div>
@@ -1188,16 +1190,16 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="modalReqPreloadSelect" onclick="fecharReqPreloadSelecaoSeFora(event)">
-  <div class="modal-box req-preload-select-box" onclick="event.stopPropagation()">
+<div class="modal-overlay" id="modalReqPreloadSelect" onclick="fecharReqPreloadSelecaoSeFora(event)" data-accessible-dialog data-dialog-close="fecharReqPreloadSelecao">
+  <div class="modal-box req-preload-select-box" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="reqPreloadSelectTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">playlist_add_check</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">playlist_add_check</span></div>
       <div>
-        <div class="modal-header-title">ESCOLHER LISTA DE EXAMES</div>
+        <div class="modal-header-title" id="reqPreloadSelectTitle">ESCOLHER LISTA DE EXAMES</div>
         <div class="modal-header-sub">Confira a prévia antes de carregar na requisição</div>
       </div>
-      <button class="modal-close" type="button" onclick="fecharReqPreloadSelecao()">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" type="button" onclick="fecharReqPreloadSelecao()" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -1224,12 +1226,12 @@
       <div class="status-msg" id="statusReqPreloadSelection"></div>
       <div class="req-actions req-preload-actions" style="justify-content:space-between;margin-top:18px">
         <button class="ag-tb-btn" type="button" id="btnEditarReqPreloadSelecionado" onclick="abrirReqPreloadEditorDaSelecao()" style="display:none">
-          <span class="material-symbols-outlined">edit</span> Editar lista
+          <span class="material-symbols-outlined" aria-hidden="true">edit</span> Editar lista
         </button>
         <div class="req-preload-right">
           <button class="ag-tb-btn" type="button" onclick="fecharReqPreloadSelecao()">Cancelar</button>
           <button class="btn-save req-preload-save" type="button" id="btnUsarReqPreloadSelecionado" onclick="usarReqPreloadListaSelecionada_()">
-            <span class="material-symbols-outlined">playlist_add_check</span> Carregar lista
+            <span class="material-symbols-outlined" aria-hidden="true">playlist_add_check</span> Carregar lista
           </button>
         </div>
       </div>
@@ -1237,65 +1239,66 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmReqPreload">
-  <div class="confirm-box" style="max-width:440px;">
-    <h3>Carregar esta lista?</h3>
+<div class="modal-overlay" id="confirmReqPreload" data-accessible-dialog data-dialog-close="recusarReqPreloadEncontrado">
+  <div class="confirm-box" style="max-width:440px;" role="dialog" aria-modal="true" aria-labelledby="confirmReqPreloadTitle" tabindex="-1">
+    <h3 id="confirmReqPreloadTitle">Carregar esta lista?</h3>
     <p id="confirmReqPreloadMsg">Confirme para carregar os exames da lista selecionada.</p>
     <div class="confirm-actions">
-      <button class="btn-txt" type="button" onclick="recusarReqPreloadEncontrado()">Nao usar agora</button>
+      <button class="btn-txt" type="button" data-dialog-initial-focus onclick="recusarReqPreloadEncontrado()">Não usar agora</button>
       <button class="btn-new" type="button" id="btnConfirmReqPreload">
-        <span class="material-symbols-outlined">playlist_add_check</span> Carregar lista
+        <span class="material-symbols-outlined" aria-hidden="true">playlist_add_check</span> Carregar lista
       </button>
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmReqPreloadSave">
-  <div class="confirm-box" style="max-width:460px;">
-    <h3>Salvar como nova lista?</h3>
+<div class="modal-overlay" id="confirmReqPreloadSave" data-accessible-dialog data-dialog-close="fecharReqPreloadSaveOffer">
+  <div class="confirm-box" style="max-width:460px;" role="dialog" aria-modal="true" aria-labelledby="confirmReqPreloadSaveTitle" tabindex="-1">
+    <h3 id="confirmReqPreloadSaveTitle">Salvar como nova lista?</h3>
     <p id="confirmReqPreloadSaveMsg">Esta combinação ainda não está salva em uma lista.</p>
     <div id="reqPreloadSavePreview" class="req-preload-preview req-preload-save-preview"></div>
     <div class="status-msg" id="statusReqPreloadSave" style="text-align:left;margin-top:0;margin-bottom:12px"></div>
     <div class="confirm-actions">
-      <button class="btn-txt" type="button" onclick="fecharReqPreloadSaveOffer()">Agora nao</button>
+      <button class="btn-txt" type="button" data-dialog-initial-focus onclick="fecharReqPreloadSaveOffer()">Agora não</button>
       <button class="btn-new" type="button" id="btnConfirmReqPreloadSave" onclick="salvarReqPreloadAposGerar()">
-        <span class="material-symbols-outlined">save</span> Salvar nova lista
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar nova lista
       </button>
     </div>
   </div>
 </div>
 
+    <!-- ═══ USUÁRIOS ═══ -->
     <div class="page" id="page-usuarios">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-3">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="usersTotal">—</div>
           <div class="stat-label">Usuários cadastrados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">group</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="usersAtivos">—</div>
           <div class="stat-label">Ativos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">verified_user</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">verified_user</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="usersAdmins">—</div>
           <div class="stat-label">Admins</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">admin_panel_settings</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span></div>
         </div>
       </div>
       <div class="audit-toolbar">
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchUsersAdmin" placeholder="Buscar por nome, formação, registro, e-mail ou status..." oninput="renderUsersAdmin()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchUsersAdmin" placeholder="Buscar por nome, formação, registro, e-mail ou status..." oninput="renderUsersAdmin()" aria-label="Buscar usuários">
         </div>
         <button class="btn-new" onclick="abrirFormUsuarioAdmin()">
-          <span class="material-symbols-outlined">person_add</span> Novo usuário
+          <span class="material-symbols-outlined" aria-hidden="true">person_add</span> Novo usuário
         </button>
         <button class="btn-new" onclick="abrirCargaPerfisAdmin()" style="background:#6a1b9a;box-shadow:0 2px 8px rgba(106,27,154,.22)">
-          <span class="material-symbols-outlined">group_add</span> Atualizar perfis
+          <span class="material-symbols-outlined" aria-hidden="true">group_add</span> Atualizar perfis
         </button>
         <button class="btn-new" onclick="carregarUsersAdmin()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)">
-          <span class="material-symbols-outlined">refresh</span> Atualizar
+          <span class="material-symbols-outlined" aria-hidden="true">refresh</span> Atualizar
         </button>
       </div>
       <div class="table-card">
@@ -1319,66 +1322,66 @@
       </div>
     </div>
 
-    <!-- ═══ VISUALIZAÇÃO DO ESTOQUE ═══ -->
+    <!-- ═══ AUDITORIA ═══ -->
     <div class="page" id="page-audit-log">
-      <div class="stats-row" style="grid-template-columns:1fr 1fr 1fr;border-radius:var(--r-lg) var(--r-lg) 0 0;border-top:1px solid #e8edf8">
-        <div class="stat-card" style="--accent:#1266f1;border-radius:var(--r-lg) 0 0 0">
+      <div class="stats-row content-stats-row content-stats-cols-3">
+        <div class="stat-card stat-accent-blue stat-corner-left">
           <div class="stat-value" id="auditTotal">—</div>
           <div class="stat-label" id="auditTotalLabel">Registros carregados</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">receipt_long</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span></div>
         </div>
-        <div class="stat-card" style="--accent:#137333">
+        <div class="stat-card stat-accent-green">
           <div class="stat-value" id="auditUsers">—</div>
           <div class="stat-label">Usuários</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">group</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">group</span></div>
         </div>
-        <div class="stat-card" style="--accent:#6a1b9a;border-radius:0 var(--r-lg) 0 0">
+        <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="auditModules">—</div>
           <div class="stat-label">Módulos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined">widgets</span></div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">widgets</span></div>
         </div>
       </div>
       <div class="audit-toolbar">
         <div class="audit-tabs" role="tablist" aria-label="Tipo de auditoria">
-          <button type="button" class="audit-tab active" id="auditTabLog" onclick="setAuditView('log')">
-            <span class="material-symbols-outlined">receipt_long</span>Ações
+          <button type="button" class="audit-tab active" id="auditTabLog" role="tab" aria-selected="true" aria-controls="auditResultsPanel" tabindex="0" onkeydown="auditTabKeydown(event)" onclick="setAuditView('log')">
+            <span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>Ações
           </button>
-          <button type="button" class="audit-tab" id="auditTabChanges" onclick="setAuditView('changes')">
-            <span class="material-symbols-outlined">difference</span>Alterações
+          <button type="button" class="audit-tab" id="auditTabChanges" role="tab" aria-selected="false" aria-controls="auditResultsPanel" tabindex="-1" onkeydown="auditTabKeydown(event)" onclick="setAuditView('changes')">
+            <span class="material-symbols-outlined" aria-hidden="true">difference</span>Alterações
           </button>
         </div>
         <div class="search-wrap">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" id="searchAudit" placeholder="Buscar por e-mail, ação, módulo, campo ou ID..." oninput="renderAuditLog()">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="text" id="searchAudit" placeholder="Buscar por e-mail, ação, módulo, campo ou ID..." oninput="renderAuditLog()" aria-label="Buscar na auditoria">
         </div>
         <div class="audit-filter-wrap">
-          <span class="material-symbols-outlined">person_search</span>
-          <input class="audit-filter-input" type="text" id="auditFilterUser" placeholder="Usuário" onchange="carregarAuditLog()" onkeydown="auditFilterKeydown(event)">
+          <span class="material-symbols-outlined" aria-hidden="true">person_search</span>
+          <input class="audit-filter-input" type="text" id="auditFilterUser" placeholder="Usuário" onchange="carregarAuditLog()" onkeydown="auditFilterKeydown(event)" aria-label="Filtrar auditoria por usuário">
         </div>
         <div class="audit-filter-wrap audit-date-filter">
-          <span class="material-symbols-outlined">calendar_today</span>
-          <input class="audit-filter-input" type="date" id="auditFilterStart" title="Data inicial" onchange="carregarAuditLog()">
-          <input class="audit-filter-input" type="date" id="auditFilterEnd" title="Data final" onchange="carregarAuditLog()">
+          <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+          <input class="audit-filter-input" type="date" id="auditFilterStart" title="Data inicial" onchange="carregarAuditLog()" aria-label="Data inicial da auditoria">
+          <input class="audit-filter-input" type="date" id="auditFilterEnd" title="Data final" onchange="carregarAuditLog()" aria-label="Data final da auditoria">
         </div>
         <div class="audit-filter-wrap">
-          <span class="material-symbols-outlined">rule</span>
-          <input class="audit-filter-input" type="text" id="auditFilterAction" placeholder="Tipo de ação" onchange="carregarAuditLog()" onkeydown="auditFilterKeydown(event)">
+          <span class="material-symbols-outlined" aria-hidden="true">rule</span>
+          <input class="audit-filter-input" type="text" id="auditFilterAction" placeholder="Tipo de ação" onchange="carregarAuditLog()" onkeydown="auditFilterKeydown(event)" aria-label="Filtrar auditoria por tipo de ação">
         </div>
         <button class="audit-filter-clear" type="button" onclick="limparFiltrosAudit()" title="Limpar filtros" aria-label="Limpar filtros">
-          <span class="material-symbols-outlined">filter_alt_off</span>
+          <span class="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>
         </button>
-        <select class="f-input f-select" id="auditLimit" onchange="carregarAuditLog()" style="max-width:150px;height:40px">
+        <select class="f-input f-select" id="auditLimit" onchange="carregarAuditLog()" style="max-width:150px;height:40px" aria-label="Quantidade de registros por página">
           <option value="100">Últimos 100</option>
           <option value="200" selected>Últimos 200</option>
           <option value="500">Últimos 500</option>
           <option value="1000">Últimos 1000</option>
         </select>
         <button class="btn-new" onclick="carregarAuditLog()" style="background:var(--primary-light);color:var(--primary);box-shadow:none;border:1.5px solid var(--primary-border)">
-          <span class="material-symbols-outlined">refresh</span> Atualizar
+          <span class="material-symbols-outlined" aria-hidden="true">refresh</span> Atualizar
         </button>
         <div class="audit-pager" id="auditPager"></div>
       </div>
-      <div class="table-card">
+      <div class="table-card" id="auditResultsPanel" role="tabpanel" aria-labelledby="auditTabLog" tabindex="0">
         <table class="data-table" style="min-width:900px">
           <thead id="headAuditLog"></thead>
           <tbody id="bodyAuditLog">

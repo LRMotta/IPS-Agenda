@@ -163,7 +163,7 @@ test('interface reposiciona manutencao e remove detalhes redundantes do resumo',
   const client = readProjectFile('IndexCoreScripts.html');
 
   assert.match(content, /<details[^>]+diag-advanced/);
-  assert.match(content, /Manutencao avancada/);
+  assert.match(content, /Manutenção avançada/);
   assert.match(content, /Limpar caches compartilhados/);
   assert.doesNotMatch(content, /id="diagDataCounts"/);
   assert.doesNotMatch(client, /\['OAuth URL'/);

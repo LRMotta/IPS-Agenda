@@ -890,7 +890,7 @@ test('geracao do PDF revalida a identificacao atual do participante', () => {
   const server = readProjectFile('TransporteCodexConfig.gs');
   const block = sourceBetween(server, 'function imprimirTodasAbas(', 'function transporteOcasaNeedsProforma_(');
 
-  assert.match(block, /payloadFallback = transporteDerivarDadosParticipante_\(options\.payload \|\| \{\}\)/);
+  assert.match(block, /payloadFallback = transporteDerivarDadosParticipante_\(options\.payload \|\| transporteReadRegistro_\(\), \{ obrigatorio: true \}\)/);
   assert.match(block, /identificacaoParticipante: payloadFallback\.identificacaoParticipante \|\| payloadFallback\.idParticipante \|\| ''/);
 });
 
