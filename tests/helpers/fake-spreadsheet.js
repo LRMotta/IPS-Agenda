@@ -80,6 +80,24 @@ class FakeSheet {
     return new FakeRange(this, row, column, numRows, numColumns);
   }
 
+  getRangeList(addresses) {
+    const ranges = addresses.map(address => {
+      const match = /^([A-Z]+)(\d+)$/.exec(address);
+      if (!match) throw new Error('Unsupported fake A1 range: ' + address);
+      const column = Array.from(match[1]).reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0);
+      return this.getRange(Number(match[2]), column);
+    });
+    const apply = (method, value) => {
+      ranges.forEach(range => range[method](value));
+      return result;
+    };
+    const result = {
+      setValue: value => apply('setValue', value),
+      setNumberFormat: value => apply('setNumberFormat', value)
+    };
+    return result;
+  }
+
   appendRow(row) {
     this.rows.push(row.slice());
     this.writes++;

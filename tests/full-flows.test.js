@@ -24,7 +24,7 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
     between(web, 'function participanteReferenciaCadastro_(', 'function corrigirMatrizIdadeParticipantes(');
   const counters = { cache: 0, transportCache: 0, uuid: 0, performance: [] };
   const context = vm.createContext({
-    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush: () => {} },
     codexAssertCanWrite_: () => ({ ok: true }),
     codexAuthorizeWebAppRequest_: () => ({ ok: true }),
     codexWithDocumentLock_: (_name, callback) => callback(),

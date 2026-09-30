@@ -34,6 +34,7 @@ test('servidor classifica status de projeto uma unica vez com normalizacao', () 
 
 test('projetos, Dashboard e Estoque consomem a classificacao canonica do servidor', () => {
   const server = runFile('WebApp.gs');
+  server.codexAssertCanRead_ = () => ({ ok: true, role: 'user' });
   const rows = [
     ['ID', 'Nome', 'Código', '', '', '', '', '', '', '', '', '', '', 'Status'],
     ['1', 'Ativo', '', '', '', '', '', '', '', '', '', '', '', 'Em Acompanhamento'],

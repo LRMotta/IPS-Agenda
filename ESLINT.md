@@ -14,11 +14,15 @@ JavaScript in this Apps Script project:
   at RPC/input boundaries, and the NUL-removal regex in `WebApp.gs` have
   line-level exceptions. `no-useless-assignment` is a warning in `.gs` so
   possible redundant initializations stay visible without blocking the build.
-- `.html` files are excluded from ESLint. They combine Apps Script template
-  expressions, included fragments, shared browser globals, and inline event
-  handlers; extracting each block as independent JavaScript would not preserve
-  those execution relationships. `tools/validate-syntax.js` continues to
-  validate inline script and handler syntax, including Apps Script templates.
+- `IndexAgendaScripts.html` also uses the recommended correctness rules,
+  including `no-undef` and `no-unreachable`. Its processor preserves source line
+  numbers, masks HTML and neutralizes Apps Script templates. Shared global
+  declarations and exports from browser IIFEs are collected from the root HTML
+  files, so calls across includes are recognized. Browser and Google RPC globals
+  are allowed; unused globals are not flagged. No autofix is enabled.
+- Other HTML files and inline handlers remain covered by
+  `tools/validate-syntax.js`. The Agenda lint does not evaluate template logic or
+  check whether a global is available in every conditional include at runtime.
 
 The `verify` script runs syntax validation, ESLint, then the existing Node test
 suite. ESLint is not configured to enforce formatting, and no autofix is part

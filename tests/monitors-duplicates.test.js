@@ -15,6 +15,7 @@ function monitorServer(rows) {
   const server = runFile('WebApp.gs', {
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => sheet }) }
   });
+  server.codexAssertCanRead_ = () => ({ ok: true, role: 'user' });
   server.codexAssertCanWrite_ = () => ({});
   server.codexWithDocumentLock_ = (_label, fn) => fn();
   server.clearCodexRuntimeCaches_ = () => { writes.caches++; };

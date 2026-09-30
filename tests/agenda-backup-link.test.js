@@ -7,10 +7,12 @@ const { FakeSheet } = require('./helpers/fake-spreadsheet');
 
 function agendaServer() {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
-  return runFile('WebApp.gs', {
+  const server = runFile('WebApp.gs', {
     AgendaServerRules_: rules,
     SpreadsheetApp: { flush() {} }
   });
+  server.codexAssertCanRead_ = () => ({ ok: true, role: 'readonly' });
+  return server;
 }
 
 function readonlyAgendaSheet(rows, maxColumns) {

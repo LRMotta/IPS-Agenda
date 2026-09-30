@@ -32,7 +32,9 @@ function fakeAgenda(server, records) {
 function agendaServer(contextValues) {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const cadastro = runFile('CadastroRules.gs').CadastroRules_;
-  return runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules, CadastroRules_: cadastro }, contextValues || {}));
+  const server = runFile('WebApp.gs', Object.assign({ AgendaServerRules_: rules, CadastroRules_: cadastro }, contextValues || {}));
+  server.codexAssertCanRead_ = () => ({ ok: true, role: 'readonly' });
+  return server;
 }
 
 function sharedAgendaRuleScript(source) {
@@ -128,8 +130,10 @@ test('monitores externos consultam Gmail e DHL antes de adquirir o bloqueio de e
 
   assert.ok(dhl.indexOf('consultarEntregaDhl_') < dhl.indexOf("codexWithDocumentLock_('monitorarEntregasDhlAgendadas'"));
   assert.ok(courier.indexOf('buscarConfirmacoesCourierNoGmail_') < courier.indexOf("codexWithDocumentLock_('monitorarConfirmacoesCourierAgendadas'"));
-  assert.match(dhl, /agendaLocalizarLinhaPorId_\(agendaAtual/);
-  assert.match(courier, /agendaLocalizarLinhaPorId_\(agendaAtual/);
+  assert.match(dhl, /agendaAutomationSnapshot_\(agendaAtual\)/);
+  assert.match(courier, /agendaAutomationSnapshot_\(agendaAtual\)/);
+  assert.match(dhl, /agendaAutomationFindRow_\(snapshot, item\.agendaId\)/);
+  assert.match(courier, /agendaAutomationFindRow_\(snapshot, item\.agendaId\)/);
 });
 
 function validAgendaReferenceData(overrides = {}) {
@@ -599,6 +603,8 @@ test('janela cliente cobre tres semanas, valida resposta atomica e rejeita trunc
     _agendaWeekOffset: 0,
     _agendaEventosScope: 'full',
     _agendaEventosRange: null,
+    agendaHojeIso_: () => '2026-09-30',
+    agendaDateFromIso: (iso) => new Date(iso + 'T00:00:00'),
     agendaIso: (date) => [
       date.getFullYear(),
       String(date.getMonth() + 1).padStart(2, '0'),
@@ -655,6 +661,7 @@ test('cache de janelas vive somente em memoria, clona eventos e mantem as tres m
     _agendaWindowMemoryCache: {},
     _agendaWindowMemoryCacheOrder: [],
     AGENDA_WINDOW_MEMORY_CACHE_LIMIT: 3,
+    AGENDA_EVENTOS_TTL_MS: 3 * 60 * 1000,
     agendaBootstrapWindowValido_: (response, range) => !!response && response.complete === true &&
       response.truncated === false && response.range.start === range.start &&
       response.range.endExclusive === range.endExclusive
@@ -1387,6 +1394,7 @@ test('entrada da Agenda no Hoje preserva a semantica do botao Hoje', () => {
     _agendaEventosLoadedAt: 123,
     document: { getElementById: () => input },
     agendaIso: () => '2026-09-18',
+    agendaHojeIso_: () => '2026-09-18',
     agendaNavigateToWeekOffset_: (offset, callback) => {
       calls.push(offset);
       if (callback) callback();
@@ -1412,6 +1420,7 @@ test('entrada da Agenda no Hoje preserva a semantica do botao Hoje', () => {
     _agendaEventosLoadedAt: 0,
     document: { getElementById: () => input },
     agendaIso: () => '2026-09-18',
+    agendaHojeIso_: () => '2026-09-18',
     renderAgendaOperacional: () => pendingCalls.push('render'),
     agendaScrollToToday: () => pendingCalls.push('scroll'),
     setTimeout: (callback) => callback()
@@ -1594,7 +1603,7 @@ test('resumo do participante e exibido de imediato e atualiza a ultima visita em
   const server = readProjectFile('WebApp.gs');
   const change = functionBody(client, 'onAgendaParticipanteChange');
   assert.match(change, /agendaParticipanteInfoPrecarregada_\(referencia\)/);
-  assert.match(change, /agendaAplicarParticipanteInfo_\(infoPrecarregada\)/);
+  assert.match(change, /agendaAplicarParticipanteInfo_\(infoPrecarregada, options\)/);
   assert.match(change, /_ultimaVisitaPendente/);
   assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /ag-part-info-row/);
   assert.match(functionBody(client, 'agendaParticipanteInfoHtml_'), /Nascimento/);
@@ -2054,7 +2063,7 @@ test('campos automáticos desabilitados mantêm a mesma cor azul', () => {
 test('edição de agendamento também carrega o resumo do participante', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const edit = functionBody(client, 'agendaAbrirEdicaoComRegistroPronto_');
-  assert.match(edit, /onAgendaParticipanteChange\(\)/);
+  assert.match(edit, /onAgendaParticipanteChange\(\{ preservarCampos: true \}\)/);
 });
 
 test('cancelamento de Monitoria e SIV não exige motivo, mas pede confirmação', () => {
