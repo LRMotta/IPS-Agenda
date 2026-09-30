@@ -3,6 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { contentAccessibilitySource } = require('./content-accessibility-source');
 const root = path.resolve(__dirname, '../..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
@@ -51,6 +52,11 @@ async function agendaBrowserFixture(page) {
     window.google = { script: { run: runner() } };
     window.appServerRun = ({ method, args, onSuccess, onFailure }) => window.calls.push({ method, args, success: onSuccess, failure: onFailure });
   });
+  // Os overlays locais usam inert; inicializar a infraestrutura real que acompanha a classe open.
+  await page.addScriptTag({ content: 'var APP_ACCESSIBLE_DIALOGS = [], APP_CONTENT_ACCESSIBILITY_READY = false;\n' +
+    contentAccessibilitySource(['appDialogFocusable', 'appFocusDialog', 'appSyncContentFieldAccessibility',
+      'appSyncAccessibleDialogs', 'appAccessibleDialogKeydown', 'appInitContentAccessibility']) +
+    '\nappInitContentAccessibility();' });
   for (const file of ['SharedAccessRules.html', 'SharedCourierRules.html', 'SharedMatBioTypes.html', 'SharedMatBioCore.html', 'SharedAgendaRules.html', 'IndexAgendaScripts.html']) {
     await page.addScriptTag({ content: read(file).replace(/^\s*<script>\s*/i, '').replace(/\s*<\/script>\s*$/i, '') });
   }

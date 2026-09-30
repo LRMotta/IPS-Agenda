@@ -92,12 +92,23 @@
     .form-grid.study-grid { grid-template-columns:minmax(0,1.2fr) minmax(180px,.8fr) minmax(0,1.2fr); }
     .field { display:flex; flex-direction:column; gap:5px; min-width:0; }
     .field.full { grid-column:1/-1; }
+    .transport-participant-search { position:relative; min-width:0; }
+    .transport-participant-search input { padding-right:34px; }
+    .transport-participant-clear { position:absolute; right:3px; top:3px; width:30px; height:30px; border:0; border-radius:4px; background:transparent; color:var(--muted); font-size:22px; cursor:pointer; }
+    .transport-participant-list { position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:12; max-height:280px; overflow-y:auto; background:#fff; border:1px solid var(--border); border-radius:6px; box-shadow:0 8px 24px rgba(15,23,42,.16); }
+    .transport-participant-option { display:block; width:100%; padding:10px; border:0; border-bottom:1px solid var(--border); background:#fff; color:var(--text); text-align:left; font:13px Roboto,Arial,sans-serif; cursor:pointer; }
+    .transport-participant-option:last-child { border-bottom:0; }
+    .transport-participant-option:hover, .transport-participant-option.active { background:var(--primary-light); }
+    .transport-participant-option strong, .transport-participant-option span { display:block; overflow-wrap:anywhere; }
+    .transport-participant-option span, .transport-participant-detail { margin-top:3px; color:var(--muted); font-size:11px; line-height:1.4; overflow-wrap:anywhere; }
+    .transport-participant-empty { padding:10px; color:var(--muted); font-size:12px; }
     label { color:#8a94a6; font-size:11px; font-weight:700; text-transform:uppercase; }
     .required-star { color:var(--danger); font-size:12px; font-weight:800; margin-left:2px; }
     input, select, textarea {
       width:100%; border:1px solid var(--border); border-radius:6px; min-height:36px; padding:8px 10px;
       font:13px Roboto,Arial,sans-serif; color:var(--text); background:#fff;
     }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
     input.invalid, select.invalid, textarea.invalid {
       border-color:var(--danger);
       box-shadow:0 0 0 3px rgba(179,38,30,.12);
@@ -133,8 +144,8 @@
     .material-row input[type="checkbox"] { width:18px; min-height:18px; justify-self:center; accent-color:var(--primary); }
     .material-name { font-weight:600; }
     .mini-label { display:none; color:#8a94a6; font-size:10px; font-weight:700; text-transform:uppercase; margin-bottom:3px; }
-    .ag-mat-editor{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden}
-    .ag-mat-head,.ag-mat-line{display:grid;grid-template-columns:160px 180px 64px 82px minmax(90px,.7fr) 34px;gap:8px;align-items:center}
+    .ag-mat-editor{background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;container-type:inline-size}
+    .ag-mat-head,.ag-mat-line{display:grid;grid-template-columns:minmax(100px,1fr) minmax(130px,1.1fr) 56px 76px minmax(90px,.7fr) 34px;gap:8px;align-items:center}
     .ag-mat-head{padding:8px 10px;background:var(--soft);border-bottom:1px solid var(--border);font-size:10px;font-weight:800;text-transform:uppercase;color:#8a94a6}
     .ag-mat-line{padding:8px 10px;border-bottom:1px solid #f0f4f8}
     .ag-mat-line:last-child{border-bottom:0}
@@ -150,6 +161,14 @@
     .ag-mat-remove:hover{background:#fce8e6;border-color:#ffc4be}
     .ag-mat-add{margin:8px 10px 10px;height:32px;border:1px dashed #b8c7e3;border-radius:6px;background:#f8faff;color:var(--primary);font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;cursor:pointer}
     .ag-mat-help{padding:8px 10px;background:#f8faff;color:var(--muted);font-size:11px;border-top:1px solid #f0f4f8}
+    @container (max-width:660px) {
+      .ag-mat-head{display:none}
+      .ag-mat-line{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+      .ag-mat-line.other-on{grid-template-columns:minmax(0,1fr) 34px}
+      .ag-mat-line.other-on .ag-mat-type-cell{grid-template-columns:minmax(0,1fr)}
+      .ag-mat-calc{text-align:left}
+      .ag-mat-remove{justify-self:end}
+    }
     .material-unit-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 10px; background:#fbfcff; border-bottom:1px solid #f0f4f8; }
     .material-unit-actions .btn { height:32px; }
     .material-unit-help { color:var(--muted); font-size:11px; line-height:1.35; }
@@ -187,8 +206,8 @@
     }
     .modal-backdrop.open { display:flex; }
     .modal {
-      width:min(660px,100%); background:#fff; border:1px solid var(--border); border-radius:8px;
-      box-shadow:0 24px 70px rgba(15,23,42,.28); overflow:hidden;
+      width:min(660px,100%); max-height:calc(100dvh - 36px); overflow-y:auto; background:#fff; border:1px solid var(--border); border-radius:8px;
+      box-shadow:0 24px 70px rgba(15,23,42,.28);
     }
     .modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--soft); }
     .modal-title { display:flex; align-items:center; gap:8px; font-weight:800; color:#283142; }
@@ -277,11 +296,20 @@
           <div class="transport-section">
             <div class="transport-section-title"><span class="material-symbols-outlined">assignment_ind</span>Dados de estudo</div>
             <div class="form-grid study-grid">
-              <div class="field"><label>Paciente(s) <span class="required-star">*</span></label><select id="paciente" required></select></div>
-              <div class="field"><label>Nº de Identificação <span class="required-star">*</span></label><input id="identificacaoParticipante" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
-              <div class="field"><label>Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+              <div class="field">
+                <label for="pacienteSearch">Paciente(s) <span class="required-star">*</span></label>
+                <select id="paciente" class="hidden" required aria-hidden="true" tabindex="-1"></select>
+                <div class="transport-participant-search">
+                  <input id="pacienteSearch" type="text" role="combobox" aria-required="true" aria-autocomplete="list" aria-controls="pacienteSearchList" aria-expanded="false" aria-describedby="pacienteSearchDetail" autocomplete="off" placeholder="Pesquise por nome, estudo ou identificação" onfocus="openTransportParticipantSearch()" oninput="renderTransportParticipantSearch()" onkeydown="navigateTransportParticipantSearch(event)" onblur="closeTransportParticipantSearch()">
+                  <button id="pacienteSearchClear" class="transport-participant-clear hidden" type="button" aria-label="Limpar seleção do participante" title="Limpar seleção" onclick="clearTransportParticipantSearch()">&times;</button>
+                  <div id="pacienteSearchList" class="transport-participant-list hidden" role="listbox" aria-label="Participações encontradas"></div>
+                </div>
+                <div id="pacienteSearchDetail" class="transport-participant-detail"></div>
+              </div>
+              <div class="field"><label for="identificacaoParticipante">Nº de Identificação <span class="required-star">*</span></label><input id="identificacaoParticipante" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
+              <div class="field"><label for="protocolo">Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
               <div class="field full">
-                <label>Investigador <span class="required-star">*</span></label>
+                <label for="investigador">Investigador <span class="required-star">*</span></label>
                 <div class="field-action-row">
                   <input id="investigador" class="auto-fill" placeholder="Preenchido pelo participante" readonly required>
                   <div class="agenda-origin-actions" id="agendaContext">
@@ -295,29 +323,29 @@
           <div class="transport-section">
             <div class="transport-section-title"><span class="material-symbols-outlined">schedule</span>Temporiza&ccedil;&atilde;o da remessa</div>
             <div class="form-grid">
-              <div class="field"><label>Data da coleta</label><input id="dataColeta" type="date"></div>
-              <div class="field"><label>Data do envio <span class="required-star">*</span></label><input id="dataEnvio" type="date" required></div>
-              <div class="field"><label>Janela de envio <span class="required-star">*</span></label><select id="horaEnvio" required></select></div>
+              <div class="field"><label for="dataColeta">Data da coleta</label><input id="dataColeta" type="date"></div>
+              <div class="field"><label for="dataEnvio">Data do envio <span class="required-star">*</span></label><input id="dataEnvio" type="date" required></div>
+              <div class="field"><label for="horaEnvio">Janela de envio <span class="required-star">*</span></label><select id="horaEnvio" required></select></div>
             </div>
           </div>
           <div class="transport-section">
             <div class="transport-section-title"><span class="material-symbols-outlined">local_shipping</span>Log&iacute;stica / Courier</div>
             <div class="form-grid">
-              <div class="field"><label>Laborat&oacute;rio de destino <span class="required-star">*</span></label><select id="destino" required></select></div>
-              <div class="field"><label>Agendado por <span class="required-star">*</span></label><select id="agendadoPor" required></select></div>
+              <div class="field"><label for="destino">Laborat&oacute;rio de destino <span class="required-star">*</span></label><select id="destino" required></select></div>
+              <div class="field"><label for="agendadoPor">Agendado por <span class="required-star">*</span></label><select id="agendadoPor" required></select></div>
               <div class="field full">
-                <label>Temperatura <span class="required-star">*</span></label>
-                <div class="segmented" id="temperaturas"></div>
+                <label id="temperaturasLabel">Temperatura <span class="required-star">*</span></label>
+                <div class="segmented" id="temperaturas" role="group" aria-labelledby="temperaturasLabel"></div>
               </div>
               <div class="field full">
-                <label>Courier <span class="required-star">*</span></label>
-                <div class="segmented" id="couriers"></div>
+                <label id="couriersLabel">Courier <span class="required-star">*</span></label>
+                <div class="segmented" id="couriers" role="group" aria-labelledby="couriersLabel"></div>
               </div>
-              <div class="field"><label>AWB / c&oacute;digo</label><input id="awb"></div>
-              <div class="field" id="solicitarCaixaField"><label>Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
-              <div class="field hidden" id="responsavelEntregaField"><label>Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
-              <div class="field hidden" id="pinexColetaField"><label>PINEX COL. N&deg;</label><input id="pinexColeta" placeholder="000000" disabled></div>
-              <div class="field full"><label>Observa&ccedil;&otilde;es</label><textarea id="observacoes"></textarea></div>
+              <div class="field"><label for="awb">AWB / c&oacute;digo</label><input id="awb"></div>
+              <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
+              <div class="field hidden" id="responsavelEntregaField"><label for="responsavelEntrega">Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
+              <div class="field hidden" id="pinexColetaField"><label for="pinexColeta">PINEX COL. N&deg;</label><input id="pinexColeta" placeholder="000000" disabled></div>
+              <div class="field full"><label for="observacoes">Observa&ccedil;&otilde;es</label><textarea id="observacoes"></textarea></div>
             </div>
           </div>
         </div>
@@ -419,8 +447,15 @@
     var state = { registro: {}, options: {}, resumo: {}, issues: [] };
     var selectedTemp = '';
     var selectedCourier = '';
-    var INITIAL_TRANS_ARGS = <?!= JSON.stringify(initialTransporteArgs || {}) ?>;
+    var INITIAL_TRANS_ARGS = JSON.parse(<?= codexJsonForScript_(initialTransporteArgs || {}) ?>);
     var MATBIO_TIPOS = CodexMatBioTypes.list();
+    var transportCeRequestId = 0;
+    var transportFormGeneration = 0;
+    var transportBusy = false;
+    var transportModalId = '';
+    var transportModalReturnFocus = null;
+    var transportParticipantMatches = [];
+    var transportParticipantActiveIndex = -1;
 
     function esc(v) {
       return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
@@ -437,11 +472,15 @@
     var transportUnsavedMessage = 'Ha alteracoes nao salvas. Deseja sair mesmo assim?';
 
     function transportIsEditable(target) {
-      return !!(target && target.matches && target.matches('input, textarea, select, [contenteditable="true"]'));
+      return !!(target && target.id !== 'pacienteSearch' && target.matches && target.matches('input, textarea, select, [contenteditable="true"]'));
     }
 
     function transportMarkUnsaved() {
       transportHasUnsavedChanges = true;
+      transportAllowLeaveOnce = false;
+      var hadPdf = !!state.lastPdfResult;
+      state.lastPdfResult = null;
+      if (hadPdf) renderIssues();
       setButtonLabel('btnSaveTransport', 'Salvar alteracoes');
       updateTransportActionState();
       var el = document.getElementById('actionStatus');
@@ -469,22 +508,59 @@
     }
 
     function openTransportUnsavedModal() {
-      var modal = document.getElementById('confirmTransportUnsavedModal');
-      if (modal) modal.classList.add('open');
+      openTransportModal('confirmTransportUnsavedModal');
       setActionStatus(transportUnsavedMessage, 'warn', { dirty: true });
     }
 
     function closeTransportUnsavedModal() {
-      var modal = document.getElementById('confirmTransportUnsavedModal');
-      if (modal) modal.classList.remove('open');
+      closeTransportModal('confirmTransportUnsavedModal');
     }
 
     function confirmTransportLeaveUnsaved() {
       closeTransportUnsavedModal();
+      renderAll();
       transportAllowLeaveOnce = true;
       transportClearUnsaved();
       toast('Alteracoes descartadas. Voce ja pode sair desta tela.', 'warn');
     }
+
+    function openTransportModal(id) {
+      var modal = document.getElementById(id);
+      if (!modal) return;
+      transportModalReturnFocus = document.activeElement;
+      transportModalId = id;
+      modal.classList.add('open');
+      document.getElementById('app').inert = true;
+      var first = modal.querySelector('button:not(:disabled), a[href]:not(.disabled)');
+      if (first) first.focus();
+    }
+
+    function closeTransportModal(id) {
+      var modal = document.getElementById(id);
+      if (modal) modal.classList.remove('open');
+      if (transportModalId !== id) return;
+      transportModalId = '';
+      document.getElementById('app').inert = transportBusy;
+      if (transportModalReturnFocus && transportModalReturnFocus.isConnected) transportModalReturnFocus.focus();
+      transportModalReturnFocus = null;
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (!transportModalId) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeTransportModal(transportModalId);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      var modal = document.getElementById(transportModalId);
+      var controls = Array.prototype.filter.call(modal.querySelectorAll('button:not(:disabled), a[href]:not(.disabled), [tabindex="0"]'), function(el) { return el.getClientRects().length > 0; });
+      if (!controls.length) { e.preventDefault(); return; }
+      var first = controls[0];
+      var last = controls[controls.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
 
     document.addEventListener('input', function(e) {
       if (transportIsEditable(e.target)) transportMarkUnsaved();
@@ -516,10 +592,15 @@
     }
 
     function setBusy(on, msg) {
+      transportBusy = !!on;
+      document.getElementById('app').inert = !!on || !!transportModalId;
       document.getElementById('app').classList.toggle('loading', !!on);
       Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn) { btn.disabled = !!on; });
       if (on) setActionStatus(msg || 'Processando...', '');
-      else updateTransportActionState();
+      else {
+        updateTransportActionState();
+        updateDhlVolumeActions();
+      }
     }
 
     function setButtonState(id, disabled, title) {
@@ -538,8 +619,8 @@
 
     function updateTransportActionState() {
       var missing = blockingIssues();
-      var blocked = missing.length > 0;
-      var title = blocked
+      var blocked = transportBusy || missing.length > 0;
+      var title = transportBusy ? 'Processando transporte...' : missing.length
         ? 'Preencha para continuar: ' + missing.join(', ')
         : (transportHasUnsavedChanges ? 'Ha alteracoes nao salvas.' : 'Pronto para salvar.');
       setButtonState('btnSaveTransport', blocked, title);
@@ -722,7 +803,7 @@
         ceLink.setAttribute('aria-disabled', 'true');
         ceLink.title = 'CE não localizada';
       }
-      document.getElementById('pdfModal').classList.add('open');
+      openTransportModal('pdfModal');
     }
 
     function downloadGeneratedPdf() {
@@ -760,7 +841,7 @@
     }
 
     function closePdfModal() {
-      document.getElementById('pdfModal').classList.remove('open');
+      closeTransportModal('pdfModal');
     }
 
     function serverCall(name, args, okMsg, after, busyMsg) {
@@ -930,6 +1011,140 @@
       }
       current.innerHTML = '<option value="">Selecione o paciente</option>' + options.join('');
       current.value = selectedKey;
+      syncTransportParticipantSearch();
+    }
+
+    function transportParticipantSearchRows(query) {
+      var parts = norm(query).split(/\s+/).filter(Boolean);
+      return ((state.options && state.options.participantes) || []).map(function(participant, index) {
+        var name = String(participant.nome || participant.participante || '');
+        var project = projectDisplay(participant.projeto) || String(participant.projeto || '');
+        var identification = String(participant.idParticipante || participant.numId || '');
+        var search = norm([name, project, participant.projeto, identification].join(' '));
+        return { key: participantOptionKey(participant, index), name: name, project: project, identification: identification, search: search };
+      }).filter(function(row) {
+        return parts.every(function(part) {
+          // Em "estudo A", a letra isolada deve corresponder ao codigo, nao a uma letra do nome.
+          return part.length === 1 && parts.length > 1
+            ? row.search.split(/[^a-z0-9]+/).indexOf(part) >= 0
+            : row.search.indexOf(part) >= 0;
+        });
+      }).sort(function(a, b) { return a.name.localeCompare(b.name, 'pt-BR', { sensitivity:'base', numeric:true }); });
+    }
+
+    function syncTransportParticipantSearch() {
+      var input = document.getElementById('pacienteSearch');
+      if (!input || input.tagName !== 'INPUT') return;
+      var fromAgenda = !!transportAgendaContext().id;
+      var select = document.getElementById('paciente');
+      var info = selectedParticipantInfo();
+      input.value = selectedParticipantName();
+      input.readOnly = fromAgenda;
+      input.classList.toggle('auto-fill', fromAgenda);
+      input.setAttribute('aria-readonly', fromAgenda ? 'true' : 'false');
+      select.disabled = fromAgenda;
+      document.getElementById('pacienteSearchClear').classList.toggle('hidden', fromAgenda || !select.value);
+      input.placeholder = fromAgenda ? 'Preenchido pela Agenda' : 'Pesquise por nome, estudo ou identificação';
+      var details = [projectDisplay(info.projeto) || info.projeto, info.idParticipante || info.numId ? 'ID ' + (info.idParticipante || info.numId) : ''].filter(Boolean).join(' · ');
+      document.getElementById('pacienteSearchDetail').textContent = details + (fromAgenda ? (details ? '. ' : '') + 'Definido na Agenda. Para alterar, use Ver agendamento.' : '');
+      input.setAttribute('aria-invalid', select.getAttribute('aria-invalid') || 'false');
+      input.classList.toggle('invalid', select.classList.contains('invalid'));
+      hideTransportParticipantSearch();
+    }
+
+    function hideTransportParticipantSearch() {
+      var input = document.getElementById('pacienteSearch');
+      var list = document.getElementById('pacienteSearchList');
+      if (!input || !list) return;
+      list.classList.add('hidden');
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+      transportParticipantActiveIndex = -1;
+    }
+
+    function closeTransportParticipantSearch() {
+      // Os resultados usam pointerdown com preventDefault para selecionar antes do blur.
+      syncTransportParticipantSearch();
+    }
+
+    function openTransportParticipantSearch() {
+      if (transportAgendaContext().id || transportBusy) return;
+      document.getElementById('pacienteSearch').select();
+      loadParticipantsOptions();
+      renderTransportParticipantSearch('');
+    }
+
+    function renderTransportParticipantSearch(query) {
+      var input = document.getElementById('pacienteSearch');
+      var list = document.getElementById('pacienteSearchList');
+      if (!input || !list || transportAgendaContext().id || transportBusy) return;
+      transportParticipantMatches = transportParticipantSearchRows(typeof query === 'string' ? query : input.value);
+      transportParticipantActiveIndex = -1;
+      var selected = document.getElementById('paciente').value;
+      list.innerHTML = transportParticipantMatches.map(function(row, index) {
+        var detail = [row.project, row.identification ? 'ID ' + row.identification : ''].filter(Boolean).join(' · ');
+        return '<div class="transport-participant-option" role="option" id="pacienteSearchOption' + index + '" aria-selected="' + (row.key === selected ? 'true' : 'false') + '" onpointerdown="event.preventDefault(); selectTransportParticipantSearch(' + index + ')"><strong>' + esc(row.name) + '</strong><span>' + esc(detail) + '</span></div>';
+      }).join('');
+      if (!transportParticipantMatches.length) {
+        list.innerHTML = '<div class="transport-participant-empty">' + (state.options && state.options.participantesLoading ? 'Carregando participantes...' : 'Nenhuma participação encontrada.') + '</div>';
+      }
+      list.classList.remove('hidden');
+      input.setAttribute('aria-expanded', 'true');
+      input.removeAttribute('aria-activedescendant');
+    }
+
+    function selectTransportParticipantSearch(index) {
+      if (transportAgendaContext().id || transportBusy) return;
+      var match = transportParticipantMatches[index];
+      if (!match) return;
+      var select = document.getElementById('paciente');
+      var changed = select.value !== match.key;
+      select.value = match.key;
+      if (changed && select.value === match.key) select.dispatchEvent(new Event('change', { bubbles:true }));
+      syncTransportParticipantSearch();
+    }
+
+    function clearTransportParticipantSearch() {
+      if (transportAgendaContext().id || transportBusy) return;
+      var select = document.getElementById('paciente');
+      if (!select.value) return;
+      select.value = '';
+      select.dispatchEvent(new Event('change', { bubbles:true }));
+      syncTransportParticipantSearch();
+      document.getElementById('pacienteSearch').focus();
+    }
+
+    function navigateTransportParticipantSearch(event) {
+      if (transportAgendaContext().id || transportBusy) return;
+      var list = document.getElementById('pacienteSearchList');
+      if (event.key === 'Escape') {
+        if (list.classList.contains('hidden')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        syncTransportParticipantSearch();
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (list.classList.contains('hidden')) return;
+        var index = transportParticipantActiveIndex;
+        if (index < 0 && transportParticipantMatches.length === 1) index = 0;
+        if (index >= 0) selectTransportParticipantSearch(index);
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      if (list.classList.contains('hidden')) renderTransportParticipantSearch('');
+      if (!transportParticipantMatches.length) return;
+      if (event.key === 'ArrowDown') transportParticipantActiveIndex = Math.min(transportParticipantActiveIndex + 1, transportParticipantMatches.length - 1);
+      else transportParticipantActiveIndex = transportParticipantActiveIndex < 0 ? transportParticipantMatches.length - 1 : Math.max(transportParticipantActiveIndex - 1, 0);
+      Array.prototype.forEach.call(list.querySelectorAll('[role="option"]'), function(option, index) {
+        option.classList.toggle('active', index === transportParticipantActiveIndex);
+        if (index === transportParticipantActiveIndex) {
+          document.getElementById('pacienteSearch').setAttribute('aria-activedescendant', option.id);
+          option.scrollIntoView({ block:'nearest' });
+        }
+      });
     }
 
     function fillSelectRows(id, rows, valueKey, selected, placeholder) {
@@ -960,17 +1175,19 @@
 
     function segmented(id, values, selected, cb) {
       document.getElementById(id).innerHTML = (values || []).map(function(v) {
-        return '<button type="button" class="' + (v === selected ? 'active' : '') + '" onclick="' + cb + '(' + JSON.stringify(v).replace(/"/g, '&quot;') + ')">' + esc(v) + '</button>';
+        return '<button type="button" aria-pressed="' + (v === selected ? 'true' : 'false') + '" class="' + (v === selected ? 'active' : '') + '" onclick="' + cb + '(' + esc(JSON.stringify(v)) + ')">' + esc(v) + '</button>';
       }).join('');
     }
 
     function selectTemp(v) {
+      var changed = selectedTemp !== v;
       selectedTemp = v;
       segmented('temperaturas', state.options.temperaturas, selectedTemp, 'selectTemp');
       setTransportFieldInvalid('Temperatura', false);
       state.lastPdfResult = null;
       applySolicitarCaixaDefault(false);
       renderDerived();
+      if (changed) transportMarkUnsaved();
     }
 
     function canonicalCourier(v) {
@@ -979,6 +1196,7 @@
     }
 
     function selectCourier(v) {
+      var changed = selectedCourier !== canonicalCourier(v);
       selectedCourier = canonicalCourier(v);
       segmented('couriers', state.options.couriers, selectedCourier, 'selectCourier');
       setTransportFieldInvalid('Courier', false);
@@ -987,6 +1205,7 @@
       applySolicitarCaixaDefault(true);
       updateResponsavelEntregaField();
       matBioRecalc();
+      if (changed) transportMarkUnsaved();
     }
 
     function updatePinexField() {
@@ -1050,35 +1269,58 @@
     }
 
     function loadData(force) {
-      var initialArgs = !force && window.INITIAL_TRANS_ARGS ? window.INITIAL_TRANS_ARGS : INITIAL_TRANS_ARGS;
+      var initialArgs = force ? {} : INITIAL_TRANS_ARGS;
       var fromAgenda = initialArgs && initialArgs.agendaId && initialArgs.slot;
       var fn = fromAgenda ? 'getTransporteBootstrapFromAgenda' : 'getTransporteBootstrap';
       var args = fromAgenda ? [initialArgs.agendaId, initialArgs.slot] : [];
       serverCall(fn, args, force ? 'Dados atualizados.' : (fromAgenda ? 'Dados da Agenda sincronizados.' : ''), function(data) {
         state = data || state;
-        if (fromAgenda) window.INITIAL_TRANS_ARGS = {};
+        if (fromAgenda) INITIAL_TRANS_ARGS = {};
         transportClearUnsaved();
         renderAll();
       }, force ? 'Atualizando dados...' : (fromAgenda ? 'Sincronizando com a Agenda...' : 'Carregando dados...'));
     }
 
     function loadParticipantsOptions() {
+      if (state.registro && (state.registro.idAgenda || state.registro.agendaId)) return;
       if (state.options && state.options.participantesLoaded) return;
       if (state.options && state.options.participantesLoading) return;
       state.options = state.options || {};
       state.options.participantesLoading = true;
+      var generation = transportFormGeneration;
+      var registro = state.registro;
+      var selectedAtRequest = document.getElementById('paciente').value;
       google.script.run
         .withSuccessHandler(function(rows) {
+          if (generation !== transportFormGeneration || registro !== state.registro) return;
+          var searchInput = document.getElementById('pacienteSearch');
+          var searchQuery = searchInput && document.activeElement === searchInput && searchInput.getAttribute('aria-expanded') === 'true' ? searchInput.value : null;
+          var currentValue = document.getElementById('paciente').value;
+          var currentParticipant = selectedParticipantInfo();
+          var reference = currentValue === selectedAtRequest ? registro : {
+            participanteCadastroId: currentParticipant.participanteCadastroId || currentParticipant.idCadastro || currentParticipant.id || '',
+            paciente: selectedParticipantName(),
+            identificacaoParticipante: selectedParticipantIdentification(),
+            protocolo: document.getElementById('protocolo').value
+          };
           state.options = state.options || {};
           rows = rows || [];
           state.options.participantes = rows;
-          state.options.participantesLoaded = rows.length > 0;
+          state.options.participantesLoaded = true;
           state.options.participantesLoading = false;
-          if (rows.length) window._transporteParticipantes = rows;
-          fillParticipantOptions(sortRowsByText(state.options.participantes, 'nome'), state.registro || {});
+          window._transporteParticipantes = rows;
+          fillParticipantOptions(sortRowsByText(state.options.participantes, 'nome'), reference || {});
+          if (!currentValue) document.getElementById('paciente').value = '';
           applyParticipantSelection({ loadCe: false });
+          loadCeStatus(false);
+          syncTransportParticipantSearch();
+          if (searchQuery !== null) {
+            searchInput.value = searchQuery;
+            renderTransportParticipantSearch(searchQuery);
+          }
         })
         .withFailureHandler(function(e) {
+          if (generation !== transportFormGeneration || registro !== state.registro) return;
           state.options.participantesLoading = false;
           var msg = e && e.message ? e.message : String(e);
           setActionStatus('Participantes não carregados: ' + msg, 'warn');
@@ -1087,8 +1329,10 @@
     }
 
     function loadCeStatus(force) {
+      var generation = transportFormGeneration;
       var protocolo = document.getElementById('protocolo').value;
       if (!protocolo) {
+        transportCeRequestId++;
         state.ceStatus = null;
         renderIssues();
         return;
@@ -1097,15 +1341,18 @@
         renderIssues();
         return;
       }
+      var requestId = ++transportCeRequestId;
       state.ceStatus = { protocolo: protocolo, checked: false, found: false, message: 'Verificando CE do estudo...' };
       renderIssues();
       google.script.run
         .withSuccessHandler(function(status) {
+          if (requestId !== transportCeRequestId || generation !== transportFormGeneration || document.getElementById('protocolo').value !== protocolo) return;
           state.ceStatus = status || {};
           state.ceStatus.protocolo = protocolo;
           renderIssues();
         })
         .withFailureHandler(function(e) {
+          if (requestId !== transportCeRequestId || generation !== transportFormGeneration || document.getElementById('protocolo').value !== protocolo) return;
           state.ceStatus = {
             protocolo: protocolo,
             checked: true,
@@ -1118,9 +1365,13 @@
     }
 
     function renderAll(opts) {
+      transportFormGeneration++;
+      transportCeRequestId++;
       opts = opts || {};
       var r = state.registro || {};
       var o = state.options || {};
+      o.participantesLoading = false;
+      if (state.ceStatus && state.ceStatus.checked === false) state.ceStatus = null;
       if ((!o.participantes || !o.participantes.length) && window._transporteParticipantes && window._transporteParticipantes.length) {
         o.participantes = window._transporteParticipantes;
         o.participantesLoaded = true;
@@ -1144,6 +1395,7 @@
       renderAgendaContext();
       applyAwbRule(true);
       applyParticipantSelection({ loadCe: false });
+      syncTransportParticipantSearch();
       renderMaterials(r.materiais || []);
       renderAuthNotice();
       loadParticipantsOptions();
@@ -1175,6 +1427,16 @@
     }
 
     function selectedParticipantInfo() {
+      var registro = state.registro || {};
+      if (registro.idAgenda || registro.agendaId) {
+        return {
+          participanteCadastroId: registro.participanteCadastroId || registro.idCadastro || '',
+          nome: registro.paciente || registro.participante || '',
+          idParticipante: registro.identificacaoParticipante || registro.idParticipante || '',
+          projeto: registro.protocolo || registro.projeto || '',
+          investigador: registro.investigador || ''
+        };
+      }
       var selectedKey = String(document.getElementById('paciente').value || '');
       if (!selectedKey || selectedKey.indexOf('legado:') === 0) return {};
       var participantes = (state.options && state.options.participantes) || [];
@@ -1313,14 +1575,17 @@
       box.innerHTML =
         '<div class="ag-mat-head"><span>Tipo</span><span id="matBioVolumeHead">Tubos x volume (' + esc(matBioCourierUnit()) + ')</span><span>Tubos</span><span>Total</span><span>Ensaio</span><span></span></div>' +
         '<div class="ag-mat-lines" id="matBioLines"></div>' +
-        '<button type="button" class="ag-mat-add" onclick="matBioAddRow()"><span class="material-symbols-outlined">add</span>Adicionar material</button>' +
+        '<button type="button" class="ag-mat-add" onclick="matBioAddRow({}, true)"><span class="material-symbols-outlined">add</span>Adicionar material</button>' +
         '<div class="ag-mat-help">Use <b>2 x 0,5</b> ou <b>2 x 0,5, 1 x 1,5</b>. Para DHL, volumes de base mL são informados em litros.</div>';
+      var wrap = document.getElementById('matBioLines');
+      wrap.dataset.loading = '1';
       (items && items.length ? items : [{}]).forEach(function(item) { matBioAddRow(item); });
+      wrap.dataset.loading = '';
       matBioEnsureTrailingRow();
       matBioRecalc();
     }
 
-    function matBioAddRow(item) {
+    function matBioAddRow(item, userAction) {
       var wrap = document.getElementById('matBioLines');
       if (!wrap) return;
       var idx = Number(wrap.dataset.next || 0);
@@ -1332,14 +1597,26 @@
       var unit = item.unit || matBioDisplayUnit((cfg && cfg.unit) || 'mL');
       wrap.insertAdjacentHTML('beforeend',
         '<div class="ag-mat-line" data-idx="' + idx + '" data-formula-unit="' + esc(unit) + '">' +
-          '<div class="ag-mat-type-cell"><select class="ag-mat-type-select" onchange="matBioRecalc()">' + matBioOptionsHtml(key) + '</select>' +
-          '<input class="ag-mat-other" type="text" value="' + esc(outro) + '" placeholder="Ex: Lâminas" oninput="matBioRecalc()"></div>' +
-          '<input class="ag-mat-formula" type="text" value="' + esc(item.formula || '') + '" inputmode="decimal" placeholder="' + esc(matBioPlaceholder()) + '" oninput="matBioOnFormulaInput(this)">' +
+          '<div class="ag-mat-type-cell"><select class="ag-mat-type-select" aria-label="Tipo do material" onchange="matBioRecalc()">' + matBioOptionsHtml(key) + '</select>' +
+          '<input class="ag-mat-other" type="text" aria-label="Descrição de Outro" value="' + esc(outro) + '" placeholder="Ex: Lâminas" oninput="matBioRecalc()"></div>' +
+          '<input class="ag-mat-formula" type="text" aria-label="Tubos e volume" value="' + esc(item.formula || '') + '" inputmode="decimal" placeholder="' + esc(matBioPlaceholder()) + '" oninput="matBioOnFormulaInput(this)">' +
           '<div class="ag-mat-calc ag-mat-tubos">-</div>' +
           '<div class="ag-mat-calc ag-mat-total-line">-</div>' +
-          '<input class="ag-mat-ensaio" type="text" value="' + esc(item.ensaio || '') + '" placeholder="Nome do exame" oninput="matBioRecalc()">' +
-          '<button type="button" class="ag-mat-remove" title="Remover" onclick="matBioRemoveRow(this)"><span class="material-symbols-outlined">close</span></button>' +
+          '<input class="ag-mat-ensaio" type="text" aria-label="Ensaio" value="' + esc(item.ensaio || '') + '" placeholder="Nome do exame" oninput="matBioRecalc()">' +
+          '<button type="button" class="ag-mat-remove" aria-label="Remover material" title="Remover" onclick="matBioRemoveRow(this)"><span class="material-symbols-outlined">close</span></button>' +
         '</div>');
+      if (wrap.dataset.loading !== '1') {
+        var added = wrap.lastElementChild;
+        var firstOther = Array.prototype.find.call(wrap.querySelectorAll('.ag-mat-line'), function(row) {
+          var type = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
+          return type && type.outro;
+        });
+        if (!(cfg && cfg.outro) && firstOther) wrap.insertBefore(added, firstOther);
+      }
+      if (userAction) {
+        matBioRecalc();
+        transportMarkUnsaved();
+      }
     }
 
     function matBioRemoveRow(btn) {
@@ -1347,6 +1624,7 @@
       if (row) row.remove();
       if (!document.querySelectorAll('.ag-mat-line').length) matBioAddRow();
       matBioRecalc();
+      if (row) transportMarkUnsaved();
     }
 
     function matBioParseFormula(text) {
@@ -1384,17 +1662,23 @@
       if (!wrap || wrap.dataset.loading === '1') return;
       var rows = Array.prototype.slice.call(document.querySelectorAll('.ag-mat-line'));
       if (!rows.length) return;
-      var outroIdx = -1;
-      rows.forEach(function(row, idx) {
+      var normalRows = [];
+      var otherRows = [];
+      rows.forEach(function(row) {
         var cfg = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
-        if (outroIdx < 0 && cfg && cfg.outro) outroIdx = idx;
+        (cfg && cfg.outro ? otherRows : normalRows).push(row);
       });
-      if (outroIdx > -1) {
-        rows.slice(outroIdx + 1).forEach(function(row) { row.remove(); });
-        return;
+      // Reordene os mesmos elementos: formulas, ensaios e texto livre permanecem intactos.
+      var ordered = normalRows.concat(otherRows);
+      var moved = ordered.some(function(row, idx) { return row !== rows[idx]; });
+      if (moved) {
+        var active = document.activeElement;
+        otherRows.forEach(function(row) { wrap.appendChild(row); });
+        if (active && active.focus && wrap.contains(active)) active.focus({ preventScroll: true });
+        if (wrap.dataset.loading !== '1') toast('Outro foi movido para o final.', '');
       }
-      var last = rows[rows.length - 1];
-      var hasValue = Array.prototype.some.call(last.querySelectorAll('select,input'), function(el) {
+      var last = normalRows[normalRows.length - 1];
+      var hasValue = !last || Array.prototype.some.call(last.querySelectorAll('select,input'), function(el) {
         return String(el.value || '').trim();
       });
       if (hasValue) matBioAddRow();
@@ -1450,6 +1734,7 @@
         converted += 1;
       });
       matBioRecalc();
+      if (converted) transportMarkUnsaved();
       toast(converted ? converted + ' material(is) convertido(s) para L.' : 'Não há volumes em mL para converter.', converted ? 'ok' : 'warn');
     }
 
@@ -1543,7 +1828,7 @@
     function renderIssues() {
       var p = collectPayload();
       var issues = [];
-      if (p.protocolo && state.ceStatus) {
+      if (p.protocolo && state.ceStatus && state.ceStatus.protocolo === p.protocolo) {
         if (state.ceStatus.checked === false) {
           issues.push({ type:'warn', text: state.ceStatus.message || 'Verificando CE do estudo...' });
         } else if (state.ceStatus.found) {
@@ -1643,6 +1928,7 @@
     }
 
     function focusTransportChecklistTarget(target) {
+      if (target === 'paciente') target = 'pacienteSearch';
       var el = document.getElementById(target);
       if (target === 'pdfDriveLink' && (!el || el.offsetParent === null)) el = document.getElementById('btnPdfTransport');
       if (!el) return;
@@ -1724,6 +2010,7 @@
       el.setAttribute('aria-invalid', invalid ? 'true' : 'false');
       var field = el.closest ? el.closest('.field') : null;
       if (field) field.classList.toggle('invalid', !!invalid);
+      if (id === 'paciente') syncTransportParticipantSearch();
     }
 
     function clearTransportValidation() {
@@ -1735,6 +2022,7 @@
         var field = el.closest ? el.closest('.field') : null;
         if (field) field.classList.remove('invalid');
       });
+      syncTransportParticipantSearch();
     }
 
     function ensureRequiredTransportFields() {
@@ -1759,7 +2047,7 @@
         'AWB / código': 'awb'
       };
       var focusId = transportRequiredFieldId(missing[0]) || focusMap[missing[0]];
-      var el = document.getElementById(focusId);
+      var el = document.getElementById(focusId === 'paciente' ? 'pacienteSearch' : focusId);
       if (el) {
         var focusTarget = el.matches && el.matches('.segmented') ? el.querySelector('button') : el;
         if (focusTarget && focusTarget.focus) focusTarget.focus();
@@ -1872,11 +2160,11 @@
     }
 
     function clearData() {
-      document.getElementById('confirmClearModal').classList.add('open');
+      openTransportModal('confirmClearModal');
     }
 
     function closeClearModal() {
-      document.getElementById('confirmClearModal').classList.remove('open');
+      closeTransportModal('confirmClearModal');
     }
 
     function confirmClearData() {

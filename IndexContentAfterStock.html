@@ -2,19 +2,19 @@
   </div><!-- fim .content -->
 </div><!-- fim .main -->
 
-<div class="snackbar" id="snackbar"></div>
+<div class="snackbar" id="snackbar" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- ══ MODAL PROJETO ══ -->
-<div class="modal-overlay" id="modalProjeto" onclick="fecharModalSeClicouFora(event,'modalProjeto')">
-  <div class="modal-box" style="max-width:900px;">
+<div class="modal-overlay" id="modalProjeto" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalProjeto')">
+  <div class="modal-box" style="max-width:900px;" role="dialog" aria-labelledby="modalProjTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">folder_open</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
       <div>
         <div class="modal-header-title" id="modalProjTitle">CADASTRO DE PROJETO</div>
         <div class="modal-header-sub">Protocolo de Pesquisa Clínica</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalProjeto')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalProjeto')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -23,26 +23,26 @@
       <!-- SEÇÃO 1: Identificação -->
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">label</span> Identificação do Protocolo
+          <span class="material-symbols-outlined" aria-hidden="true">label</span> Identificação do Protocolo
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="pNome">Nome Abreviado <span class="required-star">*</span></label>
           <input type="text" id="pNome" class="f-input large" placeholder="Ex: TRIAL-ONCO-2024"
-                 oninput="limparErro('pNome','errPNome')">
+                 oninput="limparErro('pNome','errPNome')" aria-describedby="errPNome" aria-invalid="false" aria-required="true">
           <div class="field-error" id="errPNome">Campo obrigatório.</div>
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="pTituloCompleto">Título completo do projeto</label>
           <textarea id="pTituloCompleto" class="f-input" placeholder="Título/referência completa do estudo"></textarea>
         </div>
-        <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1.4fr; gap:12px; margin-bottom:14px;">
+        <div class="field-row stock-project-identification" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="pCodigo">Código do Projeto</label>
             <input type="text" id="pCodigo" class="f-input" placeholder="Ex: NCT00000000">
           </div>
           <div>
             <label class="field-label" for="pFase">Fase <span class="required-star">*</span></label>
-            <select id="pFase" class="f-input f-select" onchange="limparErro('pFase','errPFase')">
+            <select id="pFase" class="f-input f-select" onchange="limparErro('pFase','errPFase')" aria-describedby="errPFase" aria-invalid="false" aria-required="true">
               <option value="">--</option>
               <option value="I">Fase I</option>
               <option value="II">Fase II</option>
@@ -57,7 +57,7 @@
           </div>
           <div>
             <label class="field-label" for="pStatus">Status <span class="required-star">*</span></label>
-            <select id="pStatus" class="f-input f-select" onchange="limparErro('pStatus','errPStatus')">
+            <select id="pStatus" class="f-input f-select" onchange="limparErro('pStatus','errPStatus')" aria-describedby="errPStatus" aria-invalid="false" aria-required="true">
               <option value="">— Selecione —</option>
             </select>
             <div class="field-error" id="errPStatus">Selecione.</div>
@@ -70,9 +70,9 @@
                    onfocus="renderAcProj('pEsp','pEspList',ESPS_PROJ,'_selPEsp')"
                    oninput="_selPEsp=''; renderAcProj('pEsp','pEspList',ESPS_PROJ,'_selPEsp')"
                    onblur="setTimeout(function(){fecharAcProj('pEspList');fixAcProj('pEsp','pEspList',ESPS_PROJ,'_selPEsp')},160)"
-                   onkeydown="navAcProj(event,'pEsp','pEspList',ESPS_PROJ,'_selPEsp')">
-            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-            <div class="ac-list" id="pEspList"></div>
+                   onkeydown="navAcProj(event,'pEsp','pEspList',ESPS_PROJ,'_selPEsp')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pEspList" aria-expanded="false" aria-describedby="errPEsp" aria-invalid="false" aria-required="true">
+            <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            <div class="ac-list" id="pEspList" role="listbox"></div>
           </div>
           <div class="field-error" id="errPEsp">Selecione uma especialidade.</div>
         </div>
@@ -81,7 +81,7 @@
       <!-- SEÇÃO 2: Equipe -->
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">group</span> Equipe Responsável
+          <span class="material-symbols-outlined" aria-hidden="true">group</span> Equipe Responsável
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="pIP">Investigador Principal <span class="required-star">*</span></label>
@@ -90,13 +90,13 @@
                    onfocus="renderAcProj('pIP','pIPList',_medicosProj,'_selPIP')"
                    oninput="_selPIP=''; renderAcProj('pIP','pIPList',_medicosProj,'_selPIP')"
                    onblur="setTimeout(function(){fecharAcProj('pIPList');fixAcProj('pIP','pIPList',_medicosProj,'_selPIP')},160)"
-                   onkeydown="navAcProj(event,'pIP','pIPList',_medicosProj,'_selPIP')">
-            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-            <div class="ac-list" id="pIPList"></div>
+                   onkeydown="navAcProj(event,'pIP','pIPList',_medicosProj,'_selPIP')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pIPList" aria-expanded="false" aria-describedby="errPIP" aria-invalid="false" aria-required="true">
+            <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            <div class="ac-list" id="pIPList" role="listbox"></div>
           </div>
           <div class="field-error" id="errPIP">Selecione o Investigador Principal.</div>
         </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+        <div class="field-row cols-2" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="pSub1">Sub Investigador 1</label>
             <div class="ac-wrap">
@@ -104,9 +104,9 @@
                      onfocus="renderAcProj('pSub1','pSub1List',_medicosProj,'_selPSub1')"
                      oninput="_selPSub1=''; renderAcProj('pSub1','pSub1List',_medicosProj,'_selPSub1')"
                      onblur="setTimeout(function(){fecharAcProj('pSub1List');fixAcProj('pSub1','pSub1List',_medicosProj,'_selPSub1')},160)"
-                     onkeydown="navAcProj(event,'pSub1','pSub1List',_medicosProj,'_selPSub1')">
-              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-              <div class="ac-list" id="pSub1List"></div>
+                     onkeydown="navAcProj(event,'pSub1','pSub1List',_medicosProj,'_selPSub1')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pSub1List" aria-expanded="false">
+              <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+              <div class="ac-list" id="pSub1List" role="listbox"></div>
             </div>
           </div>
           <div>
@@ -116,9 +116,9 @@
                      onfocus="renderAcProj('pSub2','pSub2List',_medicosProj,'_selPSub2')"
                      oninput="_selPSub2=''; renderAcProj('pSub2','pSub2List',_medicosProj,'_selPSub2')"
                      onblur="setTimeout(function(){fecharAcProj('pSub2List');fixAcProj('pSub2','pSub2List',_medicosProj,'_selPSub2')},160)"
-                     onkeydown="navAcProj(event,'pSub2','pSub2List',_medicosProj,'_selPSub2')">
-              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-              <div class="ac-list" id="pSub2List"></div>
+                     onkeydown="navAcProj(event,'pSub2','pSub2List',_medicosProj,'_selPSub2')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pSub2List" aria-expanded="false">
+              <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+              <div class="ac-list" id="pSub2List" role="listbox"></div>
             </div>
           </div>
         </div>
@@ -129,9 +129,9 @@
                    onfocus="renderAcProj('pCoord','pCoordList',_solicitantesProj,'_selPCoord')"
                    oninput="_selPCoord=''; renderAcProj('pCoord','pCoordList',_solicitantesProj,'_selPCoord')"
                    onblur="setTimeout(function(){fecharAcProj('pCoordList');fixAcProj('pCoord','pCoordList',_solicitantesProj,'_selPCoord')},160)"
-                   onkeydown="navAcProj(event,'pCoord','pCoordList',_solicitantesProj,'_selPCoord')">
-            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-            <div class="ac-list" id="pCoordList"></div>
+                   onkeydown="navAcProj(event,'pCoord','pCoordList',_solicitantesProj,'_selPCoord')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pCoordList" aria-expanded="false">
+            <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            <div class="ac-list" id="pCoordList" role="listbox"></div>
           </div>
         </div>
       </div>
@@ -139,7 +139,7 @@
       <!-- SEÇÃO 3: Patrocinador e Centro -->
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">business</span> Patrocinador e Centro
+          <span class="material-symbols-outlined" aria-hidden="true">business</span> Patrocinador e Centro
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="pPat">Patrocinador</label>
@@ -148,12 +148,12 @@
                    onfocus="renderAcProj('pPat','pPatList',PATS_PROJ,'_selPPat')"
                    oninput="_selPPat=''; renderAcProj('pPat','pPatList',PATS_PROJ,'_selPPat')"
                    onblur="setTimeout(function(){fecharAcProj('pPatList');fixAcProj('pPat','pPatList',PATS_PROJ,'_selPPat')},160)"
-                   onkeydown="navAcProj(event,'pPat','pPatList',PATS_PROJ,'_selPPat')">
-            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-            <div class="ac-list" id="pPatList"></div>
+                   onkeydown="navAcProj(event,'pPat','pPatList',PATS_PROJ,'_selPPat')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pPatList" aria-expanded="false">
+            <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            <div class="ac-list" id="pPatList" role="listbox"></div>
           </div>
         </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="field-row cols-2">
           <div>
             <label class="field-label" for="pCRO">CRO</label>
             <div class="ac-wrap">
@@ -161,9 +161,9 @@
                      onfocus="renderAcProj('pCRO','pCROList',CROS_PROJ,'_selPCRO')"
                      oninput="_selPCRO=''; renderAcProj('pCRO','pCROList',CROS_PROJ,'_selPCRO')"
                      onblur="setTimeout(function(){fecharAcProj('pCROList');fixAcProj('pCRO','pCROList',CROS_PROJ,'_selPCRO')},160)"
-                     onkeydown="navAcProj(event,'pCRO','pCROList',CROS_PROJ,'_selPCRO')">
-              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-              <div class="ac-list" id="pCROList"></div>
+                     onkeydown="navAcProj(event,'pCRO','pCROList',CROS_PROJ,'_selPCRO')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="pCROList" aria-expanded="false">
+              <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+              <div class="ac-list" id="pCROList" role="listbox"></div>
             </div>
           </div>
           <div>
@@ -176,9 +176,9 @@
       <!-- SEÇÃO 4: Dados regulatórios -->
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">verified</span> Dados Regulatórios
+          <span class="material-symbols-outlined" aria-hidden="true">verified</span> Dados Regulatórios
         </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+        <div class="field-row cols-2" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="pNumeroCE">N° CE</label>
             <input type="text" id="pNumeroCE" class="f-input" placeholder="Ex: 20250618-1925A">
@@ -192,7 +192,7 @@
 
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">payments</span> Ressarcimento padrão
+          <span class="material-symbols-outlined" aria-hidden="true">payments</span> Ressarcimento padrão
         </div>
         <div class="field-help" style="margin-bottom:14px">Valores opcionais de referência para o participante e seu acompanhante.</div>
         <div class="field-row cols-2">
@@ -209,7 +209,7 @@
 
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">local_shipping</span> Couriers do projeto
+          <span class="material-symbols-outlined" aria-hidden="true">local_shipping</span> Couriers do projeto
         </div>
         <div class="field-help" style="margin-bottom:14px">Vínculos opcionais. Cada courier pode atender uma ou mais temperaturas.</div>
         <div class="field" style="margin-bottom:14px">
@@ -237,7 +237,7 @@
 
       <div class="form-section soa-project-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">event_note</span> Calendário SoA
+          <span class="material-symbols-outlined" aria-hidden="true">event_note</span> Calendário SoA
         </div>
         <div class="field-row cols-2" style="margin-bottom:14px">
           <div><label class="field-label" for="pSoABaseCalculoPadrao">Base padrão do cronograma</label><select id="pSoABaseCalculoPadrao" class="f-input"><option value="">Sem regra padrão (legado)</option><option value="MANTER_DATAS_PREVISTAS">Manter datas previstas</option><option value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada</option></select><div class="field-help">As visitas configuradas para usar a regra do protocolo herdam esta opção.</div></div>
@@ -246,117 +246,117 @@
         </div>
         <div class="soa-project-toolbar">
           <div class="soa-project-help">Configure nomes, ordem e, quando disponível no protocolo, o papel no cronograma, as referências, a base do cálculo, o intervalo previsto e a janela de cada visita. Arraste pelo marcador à esquerda ou use as setas do teclado para reorganizar.<span class="soa-order-pending" id="soaOrdemPendente" hidden>Nova ordem ainda não salva.</span></div>
-          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnDescartarOrdemSoA" onclick="descartarOrdemSoAApp()" hidden><span class="material-symbols-outlined">undo</span> Descartar</button><button type="button" class="btn-save soa-order-save" id="btnSalvarOrdemSoA" onclick="salvarOrdemSoAApp()" hidden><span class="material-symbols-outlined">save</span> Salvar ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnSugerirOrdemSoA" onclick="abrirSugestaoOrdemSoAApp()"><span class="material-symbols-outlined">account_tree</span> Sugerir ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnReplicarCicloSoA" onclick="abrirReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined">content_copy</span> Replicar ciclo</button><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined">upload_file</span> Importar JSON</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined">add</span> Adicionar visita</button></div>
+          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnDescartarOrdemSoA" onclick="descartarOrdemSoAApp()" hidden><span class="material-symbols-outlined" aria-hidden="true">undo</span> Descartar</button><button type="button" class="btn-save soa-order-save" id="btnSalvarOrdemSoA" onclick="salvarOrdemSoAApp()" hidden><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnSugerirOrdemSoA" onclick="abrirSugestaoOrdemSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span> Sugerir ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnReplicarCicloSoA" onclick="abrirReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span> Replicar ciclo</button><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span> Importar JSON</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar visita</button></div>
         </div>
         <div class="soa-project-unsaved" id="soaProjetoNaoSalvo">Salve o protocolo antes de cadastrar o seu calendário SoA.</div>
         <div class="soa-visita-list" id="pSoAList"><div class="soa-visita-empty">Nenhuma visita SoA configurada.</div></div>
       </div>
 
       <div class="form-section soa-project-section">
-        <div class="section-label"><span class="material-symbols-outlined">call_split</span> Braços do estudo</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">call_split</span> Braços do estudo</div>
         <div class="soa-project-toolbar">
           <div class="soa-project-help">Cadastre os nomes padronizados dos braços deste protocolo. O catálogo é opcional e não bloqueia participantes ou eventos antigos.</div>
-          <button type="button" class="btn-txt soa-add-btn" id="btnAdicionarBracoProjeto" onclick="abrirBracoProjetoForm()"><span class="material-symbols-outlined">add</span> Adicionar braço</button>
+          <button type="button" class="btn-txt soa-add-btn" id="btnAdicionarBracoProjeto" onclick="abrirBracoProjetoForm()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar braço</button>
         </div>
         <div class="soa-project-unsaved" id="bracosProjetoNaoSalvo">Salve o protocolo antes de cadastrar os braços do estudo.</div>
         <div class="soa-visita-list" id="pBracosProjetoList"><div class="soa-visita-empty">Nenhum braço cadastrado.</div></div>
       </div>
 
-      <div class="status-msg" id="statusProj"></div>
+      <div class="status-msg" id="statusProj" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarProj" onclick="salvarProjetoApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CADASTRO
       </button>
     </div>
   </div>
 </div>
 
 <!-- MODAL BRAÇO DO PROJETO -->
-<div class="modal-overlay" id="modalBracoProjeto" onclick="fecharModalSeClicouFora(event,'modalBracoProjeto')">
-  <div class="modal-box" style="max-width:520px;">
+<div class="modal-overlay" id="modalBracoProjeto" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalBracoProjeto')">
+  <div class="modal-box" style="max-width:520px;" role="dialog" aria-labelledby="modalBracoProjetoTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">call_split</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">call_split</span></div>
       <div><div class="modal-header-title" id="modalBracoProjetoTitle">ADICIONAR BRAÇO</div><div class="modal-header-sub" id="modalBracoProjetoSub">Catálogo opcional do protocolo</div></div>
-      <button class="modal-close" onclick="fecharOverlay('modalBracoProjeto')"><span class="material-symbols-outlined">close</span></button>
+      <button class="modal-close" onclick="fecharOverlay('modalBracoProjeto')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="bracoProjetoEditId"><input type="hidden" id="bracoProjetoNome">
       <div class="form-section">
-        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="bracoProjetoNomeInput">Nome padronizado do braço <span class="required-star">*</span></label><input type="text" id="bracoProjetoNomeInput" class="f-input large" placeholder="Ex: Braço A, Placebo, Controle"><div class="field-error" id="errBracoProjetoNome">Informe o nome do braço.</div></div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="bracoProjetoNomeInput">Nome padronizado do braço <span class="required-star">*</span></label><input type="text" id="bracoProjetoNomeInput" class="f-input large" placeholder="Ex: Braço A, Placebo, Controle" aria-describedby="errBracoProjetoNome" aria-invalid="false" aria-required="true"><div class="field-error" id="errBracoProjetoNome">Informe o nome do braço.</div></div>
         <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="bracoProjetoOrdem">Ordem</label><input type="number" id="bracoProjetoOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div><div style="display:flex;align-items:flex-end;padding-bottom:8px;"><label class="soa-active-toggle"><input type="checkbox" id="bracoProjetoAtivo" checked> Braço ativo</label></div></div>
         <div class="field"><label class="field-label" for="bracoProjetoObs">Observações</label><textarea id="bracoProjetoObs" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Notas sobre randomização ou nomenclatura"></textarea></div>
       </div>
-      <div class="status-msg" id="statusBracoProjeto"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalBracoProjeto')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarBracoProjeto" onclick="salvarBracoProjetoApp()"><span class="material-symbols-outlined">save</span> Salvar braço</button></div>
+      <div class="status-msg" id="statusBracoProjeto" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalBracoProjeto')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarBracoProjeto" onclick="salvarBracoProjetoApp()"><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar braço</button></div>
     </div>
   </div>
 </div>
 
 <!-- MODAL IMPORTAÇÃO SoA -->
-<div class="modal-overlay" id="modalSoAImport" onclick="fecharModalSeClicouFora(event,'modalSoAImport')">
-  <div class="modal-box soa-import-modal-box">
+<div class="modal-overlay" id="modalSoAImport" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAImport')">
+  <div class="modal-box soa-import-modal-box" role="dialog" aria-labelledby="modalSoAImportAccessibleTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">upload_file</span></div>
-      <div><div class="modal-header-title">IMPORTAR CALENDÁRIO SoA</div><div class="modal-header-sub" id="soaImportSubtitle">Prévia segura antes de gravar</div></div>
-      <button class="modal-close" onclick="fecharOverlay('modalSoAImport')"><span class="material-symbols-outlined">close</span></button>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span></div>
+      <div><div class="modal-header-title" id="modalSoAImportAccessibleTitle">IMPORTAR CALENDÁRIO SoA</div><div class="modal-header-sub" id="soaImportSubtitle">Prévia segura antes de gravar</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAImport')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
-      <div class="soa-import-note"><span class="material-symbols-outlined">info</span><div><strong>Como funciona</strong><span>O JSON é validado, referências por código são ligadas às visitas e braços ausentes podem ser criados. A baseCalculo aceita MANTER_DATAS_PREVISTAS ou RECALCULAR_VISITA_REALIZADA; papelCronograma e referências alternativas também são opcionais. O cadastro manual continua disponível.</span></div></div>
+      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Como funciona</strong><span>O JSON é validado, referências por código são ligadas às visitas e braços ausentes podem ser criados. A baseCalculo aceita MANTER_DATAS_PREVISTAS ou RECALCULAR_VISITA_REALIZADA; papelCronograma e referências alternativas também são opcionais. O cadastro manual continua disponível.</span></div></div>
       <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportArquivo">Arquivo JSON (opcional)</label><input type="file" id="soaImportArquivo" class="f-input" accept=".json,application/json" onchange="lerSoAArquivoApp(event)"></div>
-      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
-      <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" checked> Criar braços ausentes no catálogo</label></div>
+      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" oninput="invalidarPreviaImportacaoSoA_()" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
+      <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" onchange="invalidarPreviaImportacaoSoA_()" checked> Criar braços ausentes no catálogo</label></div>
       <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
-      <div class="status-msg" id="statusSoAImport"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined">download_done</span> Importar calendário</button></div>
+      <div class="status-msg" id="statusSoAImport" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar calendário</button></div>
     </div>
   </div>
 </div>
 
 <!-- MODAL REPLICAÇÃO DE CICLOS SoA -->
-<div class="modal-overlay" id="modalSoAReplicarCiclo" onclick="fecharModalSeClicouFora(event,'modalSoAReplicarCiclo')">
-  <div class="modal-box soa-cycle-modal-box">
+<div class="modal-overlay" id="modalSoAReplicarCiclo" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAReplicarCiclo')">
+  <div class="modal-box soa-cycle-modal-box" role="dialog" aria-labelledby="modalSoAReplicarCicloAccessibleTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">content_copy</span></div>
-      <div><div class="modal-header-title">REPLICAR CICLO</div><div class="modal-header-sub" id="soaCycleSubtitle">Gerar visitas a partir de um ciclo-modelo</div></div>
-      <button class="modal-close" onclick="fecharOverlay('modalSoAReplicarCiclo')"><span class="material-symbols-outlined">close</span></button>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></div>
+      <div><div class="modal-header-title" id="modalSoAReplicarCicloAccessibleTitle">REPLICAR CICLO</div><div class="modal-header-sub" id="soaCycleSubtitle">Gerar visitas a partir de um ciclo-modelo</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAReplicarCiclo')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
-      <div class="soa-import-note"><span class="material-symbols-outlined">verified_user</span><div><strong>Cópia segura e revisável</strong><span>Códigos, nomes e referências são remapeados. Braços, janelas e intervalos são preservados. Os vínculos de Kit e Bulk Supply da visita-modelo são copiados para as novas visitas. Visitas já existentes não serão alteradas.</span></div></div>
+      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">verified_user</span><div><strong>Cópia segura e revisável</strong><span>Códigos, nomes e referências são remapeados. Braços, janelas e intervalos são preservados. Os vínculos de Kit e Bulk Supply da visita-modelo são copiados para as novas visitas. Visitas já existentes não serão alteradas.</span></div></div>
       <div class="field-row cols-2 soa-cycle-controls" style="margin-bottom:14px;">
         <div><label class="field-label" for="soaCycleModelo">Ciclo-modelo</label><select id="soaCycleModelo" class="f-input" onchange="invalidarPreviaReplicacaoCiclosSoA_()"></select></div>
         <div><label class="field-label" for="soaCycleDestinos">Ciclos de destino</label><input type="text" id="soaCycleDestinos" class="f-input" placeholder="Ex: 2–12" inputmode="numeric" oninput="invalidarPreviaReplicacaoCiclosSoA_()"><div class="field-help">Aceita intervalos e listas, como 2–12, 15, 18.</div></div>
       </div>
       <div id="soaCyclePreview" class="soa-cycle-preview"><div class="soa-visita-empty">Escolha o modelo e os destinos, depois clique em Pré-visualizar.</div></div>
-      <div class="status-msg" id="statusSoAReplicarCiclo"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAReplicarCiclo')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewCiclosSoA" onclick="previsualizarReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnConfirmarCiclosSoA" onclick="confirmarReplicacaoCiclosSoAApp()" disabled><span class="material-symbols-outlined">add_task</span> Criar visitas</button></div>
+      <div class="status-msg" id="statusSoAReplicarCiclo" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAReplicarCiclo')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewCiclosSoA" onclick="previsualizarReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnConfirmarCiclosSoA" onclick="confirmarReplicacaoCiclosSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">add_task</span> Criar visitas</button></div>
     </div>
   </div>
 </div>
 
 <!-- MODAL SUGESTÃO DE ORDEM SoA -->
-<div class="modal-overlay" id="modalSoAOrdem" onclick="fecharModalSeClicouFora(event,'modalSoAOrdem')">
-  <div class="modal-box soa-order-modal-box">
+<div class="modal-overlay" id="modalSoAOrdem" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAOrdem')">
+  <div class="modal-box soa-order-modal-box" role="dialog" aria-labelledby="modalSoAOrdemAccessibleTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">account_tree</span></div>
-      <div><div class="modal-header-title">SUGERIR ORDEM DE EXECUÇÃO</div><div class="modal-header-sub">Referências, intervalos e fases especiais</div></div>
-      <button class="modal-close" onclick="fecharOverlay('modalSoAOrdem')"><span class="material-symbols-outlined">close</span></button>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span></div>
+      <div><div class="modal-header-title" id="modalSoAOrdemAccessibleTitle">SUGERIR ORDEM DE EXECUÇÃO</div><div class="modal-header-sub">Referências, intervalos e fases especiais</div></div>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAOrdem')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
-      <div class="soa-import-note"><span class="material-symbols-outlined">info</span><div><strong>Sugestão revisável</strong><span>A análise garante dependências explícitas e ordena visitas com a mesma referência pelo intervalo. Quando não há critério suficiente, mantém a ordem recebida e destaca a pendência.</span></div></div>
+      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Sugestão revisável</strong><span>A análise garante dependências explícitas e ordena visitas com a mesma referência pelo intervalo. Quando não há critério suficiente, mantém a ordem recebida e destaca a pendência.</span></div></div>
       <div id="soaOrderSuggestionSummary" class="soa-import-summary"></div>
       <div id="soaOrderSuggestionWarnings"></div>
       <div id="soaOrderSuggestionList" class="soa-order-preview-list"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAOrdem')">Cancelar</button><button type="button" class="btn-save" id="btnAplicarSugestaoOrdemSoA" onclick="aplicarSugestaoOrdemSoAApp()"><span class="material-symbols-outlined">done_all</span> Aplicar à lista</button></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAOrdem')">Cancelar</button><button type="button" class="btn-save" id="btnAplicarSugestaoOrdemSoA" onclick="aplicarSugestaoOrdemSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">done_all</span> Aplicar à lista</button></div>
     </div>
   </div>
 </div>
 
 <!-- MODAL VISITA SoA -->
-<div class="modal-overlay" id="modalSoAVisita" onclick="fecharModalSeClicouFora(event,'modalSoAVisita')">
-  <div class="modal-box" style="max-width:620px;">
+<div class="modal-overlay" id="modalSoAVisita" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAVisita')">
+  <div class="modal-box" style="max-width:620px;" role="dialog" aria-labelledby="modalSoATitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">event_note</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">event_note</span></div>
       <div><div class="modal-header-title" id="modalSoATitle">ADICIONAR VISITA SoA</div><div class="modal-header-sub" id="modalSoASubtitle">Calendário do protocolo</div></div>
-      <button class="modal-close" onclick="fecharOverlay('modalSoAVisita')"><span class="material-symbols-outlined">close</span></button>
+      <button class="modal-close" onclick="fecharOverlay('modalSoAVisita')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="soaEditId"><input type="hidden" id="soaProjeto">
@@ -365,7 +365,7 @@
           <div><label class="field-label" for="soaCodigo">Código da visita</label><input type="text" id="soaCodigo" class="f-input" placeholder="Ex: V1, T-2, FU-03"></div>
           <div><label class="field-label" for="soaOrdem">Ordem de exibição</label><input type="number" id="soaOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div>
         </div>
-        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaNome">Nome padrão da visita <span class="required-star">*</span></label><input type="text" id="soaNome" class="f-input large" placeholder="Ex: T-2 Subsequentes"><div class="field-error" id="errSoANome">Informe o nome padrão da visita.</div></div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaNome">Nome padrão da visita <span class="required-star">*</span></label><input type="text" id="soaNome" class="f-input large" placeholder="Ex: T-2 Subsequentes" aria-describedby="errSoANome" aria-invalid="false" aria-required="true"><div class="field-error" id="errSoANome">Informe o nome padrão da visita.</div></div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
           <div><label class="field-label" for="soaReferencia">Referência (após)</label><select id="soaReferencia" class="f-input"><option value="">Sem referência (legado)</option></select><div class="field-help">Escolha a visita/evento que inicia a contagem.</div></div>
           <div><label class="field-label" for="soaReferenciaAlternativa">Referência alternativa</label><select id="soaReferenciaAlternativa" class="f-input" onchange="soaReferenciaAlternativaChange_()"><option value="">Nenhuma</option></select><div class="field-help">Use quando o protocolo admitir outro marco, como fim do tratamento ou progressão.</div></div>
@@ -389,23 +389,23 @@
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaObservacoes">Observações</label><textarea id="soaObservacoes" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Janela, requisitos ou notas da visita"></textarea></div>
         <label class="soa-active-toggle"><input type="checkbox" id="soaAtivo" checked> Visita ativa no protocolo</label>
       </div>
-      <div class="status-msg" id="statusSoA"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAVisita')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSoA" onclick="salvarSoAVisitaApp()"><span class="material-symbols-outlined">save</span> Salvar visita</button></div>
+      <div class="status-msg" id="statusSoA" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAVisita')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSoA" onclick="salvarSoAVisitaApp()"><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar visita</button></div>
     </div>
   </div>
 </div>
 
 <!-- ══ MODAL PARTICIPANTE ══ -->
-<div class="modal-overlay" id="modalParticipante" onclick="fecharModalSeClicouFora(event,'modalParticipante')">
-  <div class="modal-box participant-modal-box">
+<div class="modal-overlay" id="modalParticipante" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalParticipante')">
+  <div class="modal-box participant-modal-box" role="dialog" aria-labelledby="modalPartTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">person</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">person</span></div>
       <div>
         <div class="modal-header-title" id="modalPartTitle">CADASTRO DE PARTICIPANTE</div>
         <div class="modal-header-sub" id="modalPartSub">Dados da pessoa e de sua participação no protocolo</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalParticipante')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalParticipante')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
@@ -413,12 +413,12 @@
       <input type="hidden" id="ptPessoaBaseCadastroId">
       <input type="hidden" id="ptPessoaId">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">badge</span> Identificação</div>
         <div class="field" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="ptNome">Nome Completo <span class="required-star">*</span></label>
             <input type="text" id="ptNome" class="f-input large" placeholder="Nome completo do participante"
-                   oninput="limparErro('ptNome','errPtNome')">
+                   oninput="limparErro('ptNome','errPtNome')" aria-describedby="errPtNome" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errPtNome">Campo obrigatório.</div>
           </div>
         </div>
@@ -434,11 +434,11 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">science</span> Protocolo</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">science</span> Protocolo</div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="ptStatus">Status <span class="required-star">*</span></label>
-            <select id="ptStatus" class="f-input f-select" onchange="limparErro('ptStatus','errPtStatus'); atualizarParticipanteIdObrigatorio()">
+            <select id="ptStatus" class="f-input f-select" onchange="limparErro('ptStatus','errPtStatus'); atualizarParticipanteIdObrigatorio()" aria-describedby="errPtStatus" aria-invalid="false" aria-required="true">
               <option value="">-- Selecione --</option>
             </select>
             <div class="field-error" id="errPtStatus">Selecione um status.</div>
@@ -446,7 +446,7 @@
           <div>
             <label class="field-label" for="ptId">Nº de Identificação <span class="required-star" id="ptIdRequiredStar">*</span></label>
             <input type="text" id="ptId" class="f-input" placeholder="Ex: P-001"
-                   oninput="limparErro('ptId','errPtId')">
+                   oninput="limparErro('ptId','errPtId')" aria-describedby="errPtId" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errPtId">Campo obrigatório.</div>
           </div>
         </div>
@@ -459,9 +459,9 @@
                      onfocus="renderAcProjetoParticipante()"
                      oninput="_selPtProjeto=''; renderAcProjetoParticipante()"
                      onblur="setTimeout(fixarProjetoParticipante,160)"
-                     onkeydown="navegarAcProjetoParticipante(event)">
-              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-              <div class="ac-list" id="ptProjetoList"></div>
+                     onkeydown="navegarAcProjetoParticipante(event)" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="ptProjetoList" aria-expanded="false" aria-describedby="errPtProjeto" aria-invalid="false">
+              <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+              <div class="ac-list" id="ptProjetoList" role="listbox"></div>
             </div>
             <div class="field-error" id="errPtProjeto">Selecione um projeto cadastrado.</div>
           </div>
@@ -479,17 +479,17 @@
       <div class="form-section participant-participations-section" id="ptParticipacoesSection" style="display:none;">
         <div class="participant-participations-heading">
           <div>
-            <div class="section-label"><span class="material-symbols-outlined">account_tree</span> Participações em pesquisas</div>
+            <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span> Participações em pesquisas</div>
             <p id="ptParticipacoesHint">Cada protocolo mantém identificação, status, Agenda e histórico próprios.</p>
           </div>
           <button class="ag-tb-btn primary" type="button" id="btnNovaParticipacaoPessoa" onclick="abrirNovaParticipacaoPessoa()">
-            <span class="material-symbols-outlined">add</span> Nova participação
+            <span class="material-symbols-outlined" aria-hidden="true">add</span> Nova participação
           </button>
         </div>
         <div class="participant-participations-list" id="ptParticipacoesList"></div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">location_on</span> Endereço</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">location_on</span> Endereço</div>
         <div class="field-row participant-address-grid">
           <div class="participant-address-street">
             <label class="field-label" for="ptRua">Rua</label>
@@ -515,7 +515,7 @@
                      oninput="participanteMunicipioDigitado_('ptCidade')"
                      onblur="setTimeout(function(){ participanteFixarMunicipio_('ptCidade'); },160)"
                      onkeydown="participanteNavegarMunicipios_(event,'ptCidade')">
-              <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
+              <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
               <div class="ac-list participant-municipio-list" id="ptCidadeList" role="listbox"></div>
             </div>
           </div>
@@ -526,7 +526,7 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">account_balance</span> Dados Bancários</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">account_balance</span> Dados Bancários</div>
         <div class="field-row participant-bank-grid">
           <div>
             <label class="field-label" for="ptBanco">Nome do Banco</label>
@@ -559,13 +559,13 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">groups</span> Acompanhantes</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">groups</span> Acompanhantes</div>
         <p class="participant-companion-help">Cadastre os acompanhantes desta participação, com endereço e dados bancários próprios. O nome é obrigatório; os demais dados podem ser completados depois.</p>
         <div id="ptAcompanhantes"></div>
-        <button type="button" class="ag-tb-btn" onclick="adicionarAcompanhantePart()"><span class="material-symbols-outlined">person_add</span> Adicionar acompanhante</button>
+        <button type="button" class="ag-tb-btn" onclick="adicionarAcompanhantePart()"><span class="material-symbols-outlined" aria-hidden="true">person_add</span> Adicionar acompanhante</button>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">contact_phone</span> Contato e Notas</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">contact_phone</span> Contato e Notas</div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="ptTelefone">Telefone de Contato</label>
           <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
@@ -575,10 +575,10 @@
           <textarea id="ptObs" class="f-input" placeholder="Informações adicionais relevantes…"></textarea>
         </div>
       </div>
-      <div class="status-msg" id="statusPart"></div>
+      <div class="status-msg" id="statusPart" role="status" aria-live="polite" aria-atomic="true"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()" style="flex:1 1 220px;">
-          <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+          <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CADASTRO
         </button>
       </div>
     </div>
@@ -586,28 +586,28 @@
 </div>
 
 <!-- ══ MODAL MÉDICO ══ -->
-<div class="modal-overlay" id="modalMedico" onclick="fecharModalSeClicouFora(event,'modalMedico')">
-  <div class="modal-box">
+<div class="modal-overlay" id="modalMedico" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalMedico')">
+  <div class="modal-box" role="dialog" aria-labelledby="modalMedicoTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">medical_services</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">medical_services</span></div>
       <div>
         <div class="modal-header-title" id="modalMedicoTitle">CADASTRO DE MÉDICO</div>
         <div class="modal-header-sub">Investigadores Principais e Corpo Clínico</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalMedico')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalMedico')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="editMedicoId">
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">badge</span> Dados Profissionais
+          <span class="material-symbols-outlined" aria-hidden="true">badge</span> Dados Profissionais
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="mNome">Nome Completo <span class="required-star">*</span></label>
           <input type="text" id="mNome" class="f-input large" placeholder="Dr(a). Nome Completo"
-                 oninput="limparErro('mNome','errMNome')">
+                 oninput="limparErro('mNome','errMNome')" aria-describedby="errMNome" aria-invalid="false" aria-required="true">
           <div class="field-error" id="errMNome">Campo obrigatório.</div>
         </div>
         <div class="field">
@@ -617,16 +617,16 @@
                    onfocus="renderAcList(this.value)"
                    oninput="_selEsp='';renderAcList(this.value)"
                    onblur="setTimeout(function(){fecharAcList();if(!ESPS.includes(document.getElementById('mEsp').value)){document.getElementById('mEsp').value=_selEsp||''}},160)"
-                   onkeydown="navAcList(event)">
-            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-            <div class="ac-list" id="acEspList"></div>
+                   onkeydown="navAcList(event)" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="acEspList" aria-expanded="false" aria-describedby="errMEsp" aria-invalid="false" aria-required="true">
+            <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            <div class="ac-list" id="acEspList" role="listbox"></div>
           </div>
           <div class="field-error" id="errMEsp">Selecione uma especialidade válida.</div>
         </div>
       </div>
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">assignment_ind</span> Identificação
+          <span class="material-symbols-outlined" aria-hidden="true">assignment_ind</span> Identificação
         </div>
         <div class="field-row cols-2">
           <div>
@@ -641,7 +641,7 @@
       </div>
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">mail</span> Contato
+          <span class="material-symbols-outlined" aria-hidden="true">mail</span> Contato
         </div>
         <div class="field-row cols-2">
           <div>
@@ -654,37 +654,37 @@
           </div>
         </div>
       </div>
-      <div class="status-msg" id="statusMedico"></div>
+      <div class="status-msg" id="statusMedico" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarMedico" onclick="salvarMedicoApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CADASTRO
       </button>
     </div>
   </div>
 </div>
 
 <!-- ══ MODAL SOLICITANTE ══ -->
-<div class="modal-overlay" id="modalSolicitante" onclick="fecharModalSeClicouFora(event,'modalSolicitante')">
-  <div class="modal-box">
+<div class="modal-overlay" id="modalSolicitante" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSolicitante')">
+  <div class="modal-box" role="dialog" aria-labelledby="modalSolTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">support_agent</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">support_agent</span></div>
       <div>
         <div class="modal-header-title" id="modalSolTitle">CADASTRO DE SOLICITANTE</div>
         <div class="modal-header-sub">Profissionais que solicitam exames e procedimentos</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalSolicitante')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalSolicitante')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="editSolId">
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined">badge</span> Dados Profissionais
+          <span class="material-symbols-outlined" aria-hidden="true">badge</span> Dados Profissionais
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label class="field-label" for="sNome">Nome Completo <span class="required-star">*</span></label>
           <input type="text" id="sNome" class="f-input large" placeholder="Nome completo do solicitante"
-                 oninput="limparErro('sNome','errSNome')">
+                 oninput="limparErro('sNome','errSNome')" aria-describedby="errSNome" aria-invalid="false" aria-required="true">
           <div class="field-error" id="errSNome">Campo obrigatório.</div>
         </div>
         <div class="field" style="margin-bottom:14px;">
@@ -694,9 +694,9 @@
                    onfocus="renderAcListSol(this.value)"
                    oninput="_selFormacao='';renderAcListSol(this.value)"
                    onblur="setTimeout(function(){fecharAcListSol();if(!FORMACOES.includes(document.getElementById('sFormacao').value)){document.getElementById('sFormacao').value=_selFormacao||''}},160)"
-                   onkeydown="navAcListSol(event)">
-            <span class="ac-chevron"><span class="material-symbols-outlined">expand_more</span></span>
-            <div class="ac-list" id="acFormacaoList"></div>
+                   onkeydown="navAcListSol(event)" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="acFormacaoList" aria-expanded="false" aria-describedby="errSFormacao" aria-invalid="false" aria-required="true">
+            <span class="ac-chevron"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            <div class="ac-list" id="acFormacaoList" role="listbox"></div>
           </div>
           <div class="field-error" id="errSFormacao">Selecione uma formação válida.</div>
         </div>
@@ -709,31 +709,31 @@
           <input type="email" id="sEmail" class="f-input" placeholder="nome@dominio.com">
         </div>
       </div>
-      <div class="status-msg" id="statusSol"></div>
+      <div class="status-msg" id="statusSol" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarSol" onclick="salvarSolicitanteApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR CADASTRO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CADASTRO
       </button>
     </div>
   </div>
 </div>
 
 <!-- ══ MODAL EQUIPAMENTO ══ -->
-<div class="modal-overlay" id="modalEquipamento" onclick="fecharModalSeClicouFora(event,'modalEquipamento')">
-  <div class="modal-box" style="max-width:760px">
+<div class="modal-overlay" id="modalEquipamento" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalEquipamento')">
+  <div class="modal-box" style="max-width:760px" role="dialog" aria-labelledby="modalEqTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">devices</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">devices</span></div>
       <div>
         <div class="modal-header-title" id="modalEqTitle">NOVO EQUIPAMENTO</div>
         <div class="modal-header-sub">Entrada de equipamentos recebidos pelos projetos</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalEquipamento')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalEquipamento')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="eqRowIndex">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">assignment</span> Dados do Equipamento</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">assignment</span> Dados do Equipamento</div>
         <div class="field-row cols-2" style="margin-bottom:12px">
           <div>
             <label class="field-label" for="eqDataReceb">Data de recebimento</label>
@@ -741,7 +741,7 @@
           </div>
           <div>
             <label class="field-label" for="eqProjeto">Projeto <span class="required-star">*</span></label>
-            <select id="eqProjeto" class="f-input f-select" onchange="limparErro('eqProjeto','errEqProjeto')">
+            <select id="eqProjeto" class="f-input f-select" onchange="limparErro('eqProjeto','errEqProjeto')" aria-describedby="errEqProjeto" aria-invalid="false" aria-required="true">
               <option value="">— Selecione —</option>
             </select>
             <div class="field-error" id="errEqProjeto">Selecione um projeto.</div>
@@ -754,8 +754,8 @@
                    oninput="limparErro('eqDescricao','errEqDescricao');mostrarSugestoesItem('equipamento')"
                    onfocus="mostrarSugestoesItem('equipamento')"
                    onkeydown="navegarSugestoesItem(event,'equipamento')"
-                   onblur="fecharSugestoesItemDepois('equipamento')">
-            <div class="ac-list" id="eqDescricaoList"></div>
+                   onblur="fecharSugestoesItemDepois('equipamento')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="eqDescricaoList" aria-expanded="false" aria-describedby="errEqDescricao" aria-invalid="false" aria-required="true">
+            <div class="ac-list" id="eqDescricaoList" role="listbox"></div>
           </div>
           <div class="field-error" id="errEqDescricao">Campo obrigatório.</div>
         </div>
@@ -791,7 +791,7 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">receipt_long</span> Dados administrativos</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span> Dados administrativos</div>
         <div class="field-row cols-2" style="margin-bottom:12px">
           <div><label class="field-label" for="eqNotaFiscal">N° da Nota Fiscal</label><input type="text" id="eqNotaFiscal" class="f-input"></div>
           <div><label class="field-label" for="eqRemetente">Remetente</label><input type="text" id="eqRemetente" class="f-input"></div>
@@ -807,36 +807,36 @@
         <label class="field-label" for="eqObs">Observações</label>
         <textarea id="eqObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Informações adicionais..."></textarea>
       </div>
-      <div class="status-msg" id="statusEq"></div>
+      <div class="status-msg" id="statusEq" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarEq" onclick="salvarEquipamentoApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR EQUIPAMENTO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR EQUIPAMENTO
       </button>
     </div>
   </div>
 </div>
 
 <!-- ══ MODAL MEDICAMENTO ══ -->
-<div class="modal-overlay" id="modalMedicamento" onclick="fecharModalSeClicouFora(event,'modalMedicamento')">
-  <div class="modal-box" style="max-width:760px">
+<div class="modal-overlay" id="modalMedicamento" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalMedicamento')">
+  <div class="modal-box" style="max-width:760px" role="dialog" aria-labelledby="modalMedRecTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">medication</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">medication</span></div>
       <div>
         <div class="modal-header-title" id="modalMedRecTitle">NOVO MEDICAMENTO</div>
         <div class="modal-header-sub">Entrada de medicamentos recebidos</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalMedicamento')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalMedicamento')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="medRowIndex">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">assignment</span> Dados do Medicamento</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">assignment</span> Dados do Medicamento</div>
         <div class="field-row cols-2" style="margin-bottom:12px">
           <div><label class="field-label" for="medDataReceb">Data de recebimento</label><input type="date" id="medDataReceb" class="f-input"></div>
           <div>
             <label class="field-label" for="medProjeto">Projeto <span class="required-star">*</span></label>
-            <select id="medProjeto" class="f-input f-select" onchange="limparErro('medProjeto','errMedProjeto')"><option value="">— Selecione —</option></select>
+            <select id="medProjeto" class="f-input f-select" onchange="limparErro('medProjeto','errMedProjeto')" aria-describedby="errMedProjeto" aria-invalid="false" aria-required="true"><option value="">— Selecione —</option></select>
             <div class="field-error" id="errMedProjeto">Selecione um projeto.</div>
           </div>
         </div>
@@ -847,8 +847,8 @@
                    oninput="limparErro('medDescricao','errMedDescricao');mostrarSugestoesItem('medicamento')"
                    onfocus="mostrarSugestoesItem('medicamento')"
                    onkeydown="navegarSugestoesItem(event,'medicamento')"
-                   onblur="fecharSugestoesItemDepois('medicamento')">
-            <div class="ac-list" id="medDescricaoList"></div>
+                   onblur="fecharSugestoesItemDepois('medicamento')" data-stock-autocomplete role="combobox" aria-autocomplete="list" aria-controls="medDescricaoList" aria-expanded="false" aria-describedby="errMedDescricao" aria-invalid="false" aria-required="true">
+            <div class="ac-list" id="medDescricaoList" role="listbox"></div>
           </div>
           <div class="field-error" id="errMedDescricao">Campo obrigatório.</div>
         </div>
@@ -866,7 +866,7 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">receipt_long</span> Dados administrativos</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span> Dados administrativos</div>
         <div class="field-row cols-2" style="margin-bottom:12px">
           <div><label class="field-label" for="medNotaFiscal">N° da Nota Fiscal</label><input type="text" id="medNotaFiscal" class="f-input"></div>
           <div><label class="field-label" for="medRemetente">Remetente</label><input type="text" id="medRemetente" class="f-input"></div>
@@ -878,32 +878,32 @@
         <label class="field-label" for="medObs">Observações</label>
         <textarea id="medObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Informações adicionais..."></textarea>
       </div>
-      <div class="status-msg" id="statusMedRec"></div>
+      <div class="status-msg" id="statusMedRec" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarMedRec" onclick="salvarMedicamentoApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR MEDICAMENTO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR MEDICAMENTO
       </button>
     </div>
   </div>
 </div>
 
 <!-- ══ MODAL CONFIGURAÇÃO ══ -->
-<div class="modal-overlay" id="modalConfig" onclick="fecharModalSeClicouFora(event,'modalConfig')">
-  <div class="modal-box" style="max-width:680px">
+<div class="modal-overlay" id="modalConfig" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalConfig')">
+  <div class="modal-box" style="max-width:680px" role="dialog" aria-labelledby="modalCfgTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">settings</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">settings</span></div>
       <div>
         <div class="modal-header-title" id="modalCfgTitle">NOVA CONFIGURAÇÃO</div>
         <div class="modal-header-sub">Valores usados por menus, filtros e listas do sistema</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalConfig')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalConfig')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="cfgRowIndex">
       <input type="hidden" id="cfgStartCol">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">tune</span> Dados da Configuração</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">tune</span> Dados da Configuração</div>
         <div class="field-row cols-2" style="margin-bottom:12px">
           <div>
             <label class="field-label" for="cfgBloco">Bloco</label>
@@ -920,14 +920,14 @@
         <div class="field-row cols-2" style="margin-bottom:12px">
           <div>
             <label class="field-label" for="cfgGrupo">Grupo <span class="required-star">*</span></label>
-            <select id="cfgGrupo" class="f-input f-select" onchange="onConfigGrupoChange();limparErro('cfgGrupo','errCfgGrupo')">
+            <select id="cfgGrupo" class="f-input f-select" onchange="onConfigGrupoChange();limparErro('cfgGrupo','errCfgGrupo')" aria-describedby="errCfgGrupo" aria-invalid="false" aria-required="true">
               <option value="">— Selecione —</option>
             </select>
             <div class="field-error" id="errCfgGrupo">Campo obrigatório.</div>
           </div>
           <div>
             <label class="field-label" for="cfgChave">Chave <span class="required-star">*</span></label>
-            <select id="cfgChave" class="f-input f-select" onchange="limparErro('cfgChave','errCfgChave')">
+            <select id="cfgChave" class="f-input f-select" onchange="limparErro('cfgChave','errCfgChave')" aria-describedby="errCfgChave" aria-invalid="false" aria-required="true">
               <option value="">— Selecione o grupo primeiro —</option>
             </select>
             <div class="field-error" id="errCfgChave">Campo obrigatório.</div>
@@ -935,7 +935,7 @@
         </div>
         <div style="margin-bottom:12px">
           <label class="field-label" for="cfgValor">Valor <span class="required-star">*</span></label>
-          <input type="text" id="cfgValor" class="f-input large" placeholder="Valor exibido no app" oninput="limparErro('cfgValor','errCfgValor')">
+          <input type="text" id="cfgValor" class="f-input large" placeholder="Valor exibido no app" oninput="limparErro('cfgValor','errCfgValor')" aria-describedby="errCfgValor" aria-invalid="false" aria-required="true">
           <div class="field-error" id="errCfgValor">Campo obrigatório.</div>
         </div>
         <div class="field-row cols-2" style="margin-bottom:12px">
@@ -945,30 +945,30 @@
         <label class="field-label" for="cfgObs">Observação</label>
         <textarea id="cfgObs" class="f-input" style="height:78px;padding-top:10px;resize:vertical" placeholder="Detalhes, alias ou uso interno..."></textarea>
       </div>
-      <div class="status-msg" id="statusCfg"></div>
+      <div class="status-msg" id="statusCfg" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarCfg" onclick="salvarConfigApp()">
-        <span class="material-symbols-outlined">save</span> SALVAR CONFIGURAÇÃO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CONFIGURAÇÃO
       </button>
     </div>
   </div>
 </div>
 
 <!-- ══ MODAL AJUDA CONFIGURAÇÕES ══ -->
-<div class="modal-overlay" id="modalConfigAjuda" onclick="fecharModalSeClicouFora(event,'modalConfigAjuda')">
-  <div class="modal-box" style="max-width:720px">
+<div class="modal-overlay" id="modalConfigAjuda" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalConfigAjuda')">
+  <div class="modal-box" style="max-width:720px" role="dialog" aria-labelledby="modalConfigAjudaAccessibleTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">help</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">help</span></div>
       <div>
-        <div class="modal-header-title">AJUDA: CONFIGURAÇÕES</div>
+        <div class="modal-header-title" id="modalConfigAjudaAccessibleTitle">AJUDA: CONFIGURAÇÕES</div>
         <div class="modal-header-sub">Como manter listas e menus do aplicativo sem alterar código</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalConfigAjuda')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalConfigAjuda')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">rule</span> Estrutura</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">rule</span> Estrutura</div>
         <div style="font-size:13px;line-height:1.7;color:var(--text-muted)">
           <p>Esta página alimenta menus, chips e destinatários do WebApp. Cada linha representa uma opção ou uma regra simples.</p>
           <p><strong>Grupo</strong> é o módulo, como Agenda, Estoque ou Requisição de Exames. <strong>Chave</strong> é a lista dentro do módulo, como Courier, Temperatura ou E-mails em cópia. <strong>Valor</strong> é a opção usada pelo sistema.</p>
@@ -977,7 +977,7 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">tips_and_updates</span> Exemplos práticos</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">tips_and_updates</span> Exemplos práticos</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;color:var(--text-muted)">
           <div><span class="chip chip-blue">Agenda</span> Couriers, status do transporte, temperaturas e chips de procedimento.</div>
           <div><span class="chip chip-blue">Req. Exames</span> E-mails em cópia dos rascunhos enviados a serviços terceirizados.</div>
@@ -991,8 +991,8 @@
 </div>
 
 <!-- ══ MODAL CONFIRMAR EXCLUSÃO ══ -->
-<div class="modal-overlay" id="confirmDel">
-  <div class="confirm-box">
+<div class="modal-overlay" id="confirmDel" data-accessible-dialog data-stock-dialog inert>
+  <div class="confirm-box" role="dialog" aria-labelledby="confirmDelTitle" tabindex="-1">
     <h3 id="confirmDelTitle">Confirmar exclusão</h3>
     <p id="confirmDelMsg">Esta ação não pode ser desfeita.</p>
     <div class="confirm-actions">
@@ -1002,10 +1002,10 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmPartDuplicate">
-  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmPartDuplicateTitle" aria-describedby="confirmPartDuplicateMsg">
+<div class="modal-overlay" id="confirmPartDuplicate" data-accessible-dialog data-stock-dialog inert>
+  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmPartDuplicateTitle" aria-describedby="confirmPartDuplicateMsg" role="dialog" aria-labelledby="confirmPartDuplicateTitle" tabindex="-1">
     <div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff4e5;color:#b06000;margin-bottom:12px;">
-      <span class="material-symbols-outlined">person_alert</span>
+      <span class="material-symbols-outlined" aria-hidden="true">person_alert</span>
     </div>
     <h3 id="confirmPartDuplicateTitle">Pessoa já cadastrada</h3>
     <p id="confirmPartDuplicateMsg">Já existe uma participação possivelmente vinculada a esta pessoa.</p>
@@ -1022,9 +1022,9 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmUnsaved">
-  <div class="confirm-box">
-    <h3>Altera&ccedil;&otilde;es n&atilde;o salvas</h3>
+<div class="modal-overlay" id="confirmUnsaved" data-accessible-dialog data-stock-dialog inert>
+  <div class="confirm-box" role="dialog" aria-labelledby="confirmUnsavedAccessibleTitle" tabindex="-1">
+    <h3 id="confirmUnsavedAccessibleTitle">Altera&ccedil;&otilde;es n&atilde;o salvas</h3>
     <p>Existem altera&ccedil;&otilde;es n&atilde;o salvas nesta tela. Deseja sair mesmo assim?</p>
     <div class="confirm-actions">
       <button class="btn-txt" onclick="fecharConfirmUnsaved()">Continuar editando</button>
@@ -1033,8 +1033,8 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmAgendaKits">
-  <div class="confirm-box">
+<div class="modal-overlay" id="confirmAgendaKits" data-accessible-dialog data-stock-dialog inert>
+  <div class="confirm-box" role="dialog" aria-labelledby="confirmAgendaKitsTitle" tabindex="-1">
     <h3 id="confirmAgendaKitsTitle">Confirmar movimentacao</h3>
     <p id="confirmAgendaKitsMsg">Confirme a acao.</p>
     <div class="confirm-actions">
@@ -1044,9 +1044,9 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="confirmDescarte">
-  <div class="confirm-box">
-    <h3>Efetivar descarte</h3>
+<div class="modal-overlay" id="confirmDescarte" data-accessible-dialog data-stock-dialog inert>
+  <div class="confirm-box" role="dialog" aria-labelledby="confirmDescarteAccessibleTitle" tabindex="-1">
+    <h3 id="confirmDescarteAccessibleTitle">Efetivar descarte</h3>
     <p>Efetivar esta lista de descarte e dar saída no estoque?</p>
     <div class="confirm-actions">
       <button class="btn-txt" onclick="fecharOverlay('confirmDescarte')">Cancelar</button>
@@ -1055,46 +1055,46 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="modalUsuarioAdmin" onclick="fecharModalSeClicouFora(event,'modalUsuarioAdmin')">
-  <div class="modal-box profile-modal-box" style="max-width:760px;">
+<div class="modal-overlay" id="modalUsuarioAdmin" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalUsuarioAdmin')">
+  <div class="modal-box profile-modal-box" style="max-width:760px;" role="dialog" aria-labelledby="modalUsuarioAdminTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">admin_panel_settings</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span></div>
       <div>
         <div class="modal-header-title" id="modalUsuarioAdminTitle">NOVO USUÁRIO</div>
         <div class="modal-header-sub">Controle de acesso ao WebApp</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalUsuarioAdmin')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalUsuarioAdmin')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="userAdminRowIndex">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">alternate_email</span> Identificação</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">alternate_email</span> Identificação</div>
         <div class="form-grid single">
           <div>
             <label class="field-label" for="userAdminNome">Nome completo <span class="required-star">*</span></label>
-            <input type="text" id="userAdminNome" class="f-input large" placeholder="Nome completo do usuário" oninput="limparErro('userAdminNome','errUserAdminNome')">
+            <input type="text" id="userAdminNome" class="f-input large" placeholder="Nome completo do usuário" oninput="limparErro('userAdminNome','errUserAdminNome')" aria-describedby="errUserAdminNome" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errUserAdminNome">Informe o nome completo.</div>
           </div>
           <div>
             <label class="field-label" for="userAdminEmail">E-mail <span class="required-star">*</span></label>
-            <input type="email" id="userAdminEmail" class="f-input large" placeholder="usuario@dominio.com">
+            <input type="email" id="userAdminEmail" class="f-input large" placeholder="usuario@dominio.com" aria-describedby="errUserAdminEmail" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errUserAdminEmail">Informe um e-mail válido.</div>
           </div>
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">cake</span> Aniversário</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">cake</span> Aniversário</div>
         <div class="field-row cols-2 profile-birthday-fields">
           <div><label class="field-label" for="userAdminDia">Dia</label><select id="userAdminDia" class="f-input f-select" onchange="validarAniversarioCliente('userAdminDia','userAdminMes','errUserAdminAniversario')"></select></div>
-          <div><label class="field-label" for="userAdminMes">Mês</label><select id="userAdminMes" class="f-input f-select" onchange="validarAniversarioCliente('userAdminDia','userAdminMes','errUserAdminAniversario')"></select></div>
+          <div><label class="field-label" for="userAdminMes">Mês</label><select id="userAdminMes" class="f-input f-select" onchange="validarAniversarioCliente('userAdminDia','userAdminMes','errUserAdminAniversario')" aria-describedby="errUserAdminAniversario" aria-invalid="false"></select></div>
         </div>
         <div class="field-error" id="errUserAdminAniversario">Selecione um dia válido para o mês.</div>
         <p class="profile-helper">Opcional. O ano não será armazenado.</p>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">workspace_premium</span> Dados profissionais</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span> Dados profissionais</div>
         <div class="field-row cols-2 profile-professional-row">
           <div>
             <label class="field-label" for="userAdminFormacao">Formação</label>
@@ -1130,35 +1130,35 @@
           <option value="Não">Não</option>
         </select>
       </div>
-      <div class="status-msg" id="statusUsuarioAdmin"></div>
+      <div class="status-msg" id="statusUsuarioAdmin" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
-        <span class="material-symbols-outlined">save</span> Salvar usuário
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar usuário
       </button>
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="modalMeuPerfil" onclick="fecharModalSeClicouFora(event,'modalMeuPerfil')">
-  <div class="modal-box profile-modal-box" style="max-width:760px;">
+<div class="modal-overlay" id="modalMeuPerfil" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalMeuPerfil')">
+  <div class="modal-box profile-modal-box" style="max-width:760px;" role="dialog" aria-labelledby="modalMeuPerfilAccessibleTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">manage_accounts</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span></div>
       <div>
-        <div class="modal-header-title">MEU PERFIL</div>
+        <div class="modal-header-title" id="modalMeuPerfilAccessibleTitle">MEU PERFIL</div>
         <div class="modal-header-sub">Informações visíveis para a equipe</div>
       </div>
       <button class="modal-close" type="button" onclick="fecharOverlay('modalMeuPerfil')" aria-label="Fechar">
-        <span class="material-symbols-outlined">close</span>
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">badge</span> Identificação</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">badge</span> Identificação</div>
         <label class="field-label" for="meuPerfilNome">Nome completo <span class="required-star">*</span></label>
-        <input type="text" id="meuPerfilNome" class="f-input large" autocomplete="name" placeholder="Seu nome completo" oninput="limparErro('meuPerfilNome','errMeuPerfilNome')">
+        <input type="text" id="meuPerfilNome" class="f-input large" autocomplete="name" placeholder="Seu nome completo" oninput="limparErro('meuPerfilNome','errMeuPerfilNome')" aria-describedby="errMeuPerfilNome" aria-invalid="false" aria-required="true">
         <div class="field-error" id="errMeuPerfilNome">Informe seu nome completo.</div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">cake</span> Aniversário</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">cake</span> Aniversário</div>
         <div class="field-row cols-2 profile-birthday-fields">
           <div>
             <label class="field-label" for="meuPerfilDia">Dia</label>
@@ -1166,14 +1166,14 @@
           </div>
           <div>
             <label class="field-label" for="meuPerfilMes">Mês</label>
-            <select id="meuPerfilMes" class="f-input f-select" onchange="validarAniversarioCliente('meuPerfilDia','meuPerfilMes','errMeuPerfilAniversario')"></select>
+            <select id="meuPerfilMes" class="f-input f-select" onchange="validarAniversarioCliente('meuPerfilDia','meuPerfilMes','errMeuPerfilAniversario')" aria-describedby="errMeuPerfilAniversario" aria-invalid="false"></select>
           </div>
         </div>
         <div class="field-error" id="errMeuPerfilAniversario">Selecione um dia válido para o mês.</div>
         <p class="profile-helper">O ano não é necessário. Ao preencher, seu aniversário aparecerá na agenda da equipe.</p>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">workspace_premium</span> Dados profissionais</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span> Dados profissionais</div>
         <div class="field-row cols-2 profile-professional-row">
           <div>
             <label class="field-label" for="meuPerfilFormacao">Formação</label>
@@ -1190,24 +1190,24 @@
         <div><span>Perfil de acesso</span><strong id="meuPerfilRole">—</strong></div>
         <div><span>Pode solicitar exames</span><strong id="meuPerfilPodeSolicitar">—</strong></div>
       </div>
-      <div class="status-msg" id="statusMeuPerfil"></div>
+      <div class="status-msg" id="statusMeuPerfil" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="profile-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalMeuPerfil')">Cancelar</button>
-        <button type="button" class="btn-save" id="btnSalvarMeuPerfil" onclick="salvarMeuPerfilApp()"><span class="material-symbols-outlined">save</span> Salvar alterações</button>
+        <button type="button" class="btn-save" id="btnSalvarMeuPerfil" onclick="salvarMeuPerfilApp()"><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar alterações</button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="modalCargaPerfis" onclick="fecharModalSeClicouFora(event,'modalCargaPerfis')">
-  <div class="modal-box profile-bulk-box" style="max-width:1280px;">
+<div class="modal-overlay" id="modalCargaPerfis" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalCargaPerfis')">
+  <div class="modal-box profile-bulk-box" style="max-width:1280px;" role="dialog" aria-labelledby="modalCargaPerfisAccessibleTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">group_add</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">group_add</span></div>
       <div>
-        <div class="modal-header-title">ATUALIZAR PERFIS</div>
+        <div class="modal-header-title" id="modalCargaPerfisAccessibleTitle">ATUALIZAR PERFIS</div>
         <div class="modal-header-sub">Edição múltipla de perfis profissionais e permissões</div>
       </div>
-      <button class="modal-close" type="button" onclick="fecharOverlay('modalCargaPerfis')" aria-label="Fechar"><span class="material-symbols-outlined">close</span></button>
+      <button class="modal-close" type="button" onclick="fecharOverlay('modalCargaPerfis')" aria-label="Fechar"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
       <p class="profile-helper profile-bulk-intro">Atualize os usuários de uma vez. As opções de formação vêm do ConfigApp.</p>
@@ -1217,35 +1217,35 @@
           <tbody id="bodyCargaPerfis"></tbody>
         </table>
       </div>
-      <div class="status-msg" id="statusCargaPerfis"></div>
+      <div class="status-msg" id="statusCargaPerfis" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="profile-actions">
         <button type="button" class="btn-txt" onclick="fecharOverlay('modalCargaPerfis')">Cancelar</button>
-        <button type="button" class="btn-save" id="btnSalvarCargaPerfis" onclick="salvarCargaPerfisAdminApp()"><span class="material-symbols-outlined">save</span> Salvar perfis</button>
+        <button type="button" class="btn-save" id="btnSalvarCargaPerfis" onclick="salvarCargaPerfisAdminApp()"><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar perfis</button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="modalMonitor" onclick="fecharModalSeClicouFora(event,'modalMonitor')">
-  <div class="modal-box" style="max-width:760px;">
+<div class="modal-overlay" id="modalMonitor" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalMonitor')">
+  <div class="modal-box" style="max-width:760px;" role="dialog" aria-labelledby="modalMonitorTitle" tabindex="-1">
     <div class="modal-header">
-      <div class="modal-header-icon"><span class="material-symbols-outlined">visibility</span></div>
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">visibility</span></div>
       <div>
         <div class="modal-header-title" id="modalMonitorTitle">CADASTRO DE MONITOR</div>
         <div class="modal-header-sub">Contato e projetos acompanhados</div>
       </div>
-      <button class="modal-close" onclick="fecharOverlay('modalMonitor')">
-        <span class="material-symbols-outlined">close</span>
+      <button class="modal-close" onclick="fecharOverlay('modalMonitor')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="editMonitorId">
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">badge</span> Dados do monitor</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">badge</span> Dados do monitor</div>
         <div class="field-row cols-2">
           <div>
             <label class="field-label" for="monNome">Nome completo <span class="required-star">*</span></label>
-            <input type="text" id="monNome" class="f-input large" placeholder="Nome completo">
+            <input type="text" id="monNome" class="f-input large" placeholder="Nome completo" aria-describedby="errMonNome" aria-invalid="false" aria-required="true">
             <div class="field-error" id="errMonNome">Informe o nome do monitor.</div>
           </div>
           <div>
@@ -1261,11 +1261,11 @@
         </div>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined">folder_open</span> Projetos monitorados</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span> Projetos monitorados</div>
         <div class="field-row cols-2" style="margin-bottom:14px">
           <div>
             <label class="field-label" for="monProjeto1">Projeto 1 <span class="required-star">*</span></label>
-            <select id="monProjeto1" class="f-input f-select"></select>
+            <select id="monProjeto1" class="f-input f-select" aria-describedby="errMonProjeto1" aria-invalid="false" aria-required="true"></select>
             <div class="field-error" id="errMonProjeto1">Selecione ao menos um projeto.</div>
           </div>
           <div>
@@ -1316,9 +1316,9 @@
           </div>
         </div>
       </div>
-      <div class="status-msg" id="statusMonitor"></div>
+      <div class="status-msg" id="statusMonitor" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarMonitor" onclick="salvarMonitorApp()">
-        <span class="material-symbols-outlined">save</span> Salvar monitor
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar monitor
       </button>
     </div>
   </div>
