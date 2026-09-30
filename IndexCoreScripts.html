@@ -3486,7 +3486,7 @@ function renderAcompanhantesPart_(items) {
     header.appendChild(remove);
     card.appendChild(header);
     [
-      { title: 'Identificação', fields: [['nome', 'Nome completo *'], ['cpf', 'CPF']] },
+      { title: 'Identificação', fields: [['nome', 'Nome completo *'], ['cpf', 'CPF'], ['telefone', 'Telefone']] },
       { title: 'Endereço', fields: [['rua', 'Rua'], ['numero', 'Número'], ['estado', 'Estado'], ['cidade', 'Município'], ['cep', 'CEP']] },
       { title: 'Dados bancários do acompanhante', fields: [['banco', 'Nome do banco'], ['tipoConta', 'Tipo de conta'], ['agencia', 'Agência'], ['contaCorrente', 'Número da conta'], ['cpfTitular', 'CPF do titular']] }
     ].forEach(function(group) {
@@ -3509,6 +3509,10 @@ function renderAcompanhantesPart_(items) {
         input.dataset.campo = field[0];
         if (!campoSelect) { input.type = 'text'; input.maxLength = 250; }
         if (field[0] === 'nome') input.required = true;
+        if (field[0] === 'telefone') {
+          input.type = 'tel'; input.maxLength = 30; input.placeholder = '(00) 00000-0000';
+          input.onblur = function() { input.value = formatarTelefoneBrasileiro(input.value); };
+        }
         if (field[0] === 'cpf' || field[0] === 'cpfTitular') {
           input.placeholder = '000.000.000-00'; input.inputMode = 'numeric'; input.maxLength = 14;
           input.pattern = '\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}';

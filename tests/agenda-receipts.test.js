@@ -78,7 +78,7 @@ test('recibo lê somente o participante e o projeto envolvidos, sem os getters g
   });
   const participantHeader = ['ID', 'Nome', '', '', 'ID participante', 'Projeto', '', '', '', '', 'CPF', '', 'Rua', 'Número', 'Cidade', 'Estado', 'CEP', 'Banco', 'Tipo de conta', 'Agência', 'Conta corrente', 'Titular da Conta Corrente', 'CPF do Titular', 'Acompanhantes (JSON)'];
   const participant = Array(participantHeader.length).fill('');
-  Object.assign(participant, { 0: 'CAD-1', 1: 'Pessoa A', 4: 'P-001', 5: 'Estudo A', 10: '123.456.789-09', 12: 'Rua A', 13: '10', 14: 'Caxias do Sul', 15: 'RS', 16: '95000-000', 17: 'Banco A', 18: 'Conta corrente', 19: '1234', 20: '5678', 21: 'Pessoa A', 22: '123.456.789-09', 23: JSON.stringify([{ id: 'ACO-1', nome: 'Acompanhante A', banco: 'Banco B' }]) });
+  Object.assign(participant, { 0: 'CAD-1', 1: 'Pessoa A', 4: 'P-001', 5: 'Estudo A', 9: '(54) 99999-0101', 10: '123.456.789-09', 12: 'Rua A', 13: '10', 14: 'Caxias do Sul', 15: 'RS', 16: '95000-000', 17: 'Banco A', 18: 'Conta corrente', 19: '1234', 20: '5678', 21: 'Pessoa A', 22: '123.456.789-09', 23: JSON.stringify([{ id: 'ACO-1', nome: 'Acompanhante A', banco: 'Banco B', telefone: '(54) 99999-0202' }, { id: 'ACO-2', nome: 'Sem telefone' }]) });
   const projectHeader = ['ID', 'Nome', '', '', '', '', '', '', '', '', '', 'Coordenador', '', '', '', '', '', 'Ressarcimento padrão participante', 'Ressarcimento padrão acompanhante'];
   const project = Array(projectHeader.length).fill('');
   Object.assign(project, { 0: 'PROJ-1', 1: 'Estudo A', 11: 'Coordenação A', 17: 100, 18: 80 });
@@ -91,7 +91,7 @@ test('recibo lê somente o participante e o projeto envolvidos, sem os getters g
 
   const result = server.getAgendaReciboData('AG-1', 2);
 
-  assert.equal(JSON.stringify(result.beneficiarios.map((item) => [item.nome, item.tipo, item.valorPadrao])), JSON.stringify([['Pessoa A', 'Participante', 100], ['Acompanhante A', 'Acompanhante', 80]]));
+  assert.equal(JSON.stringify(result.beneficiarios.map((item) => [item.nome, item.tipo, item.valorPadrao, item.telefone])), JSON.stringify([['Pessoa A', 'Participante', 100, '(54) 99999-0101'], ['Acompanhante A', 'Acompanhante', 80, '(54) 99999-0202'], ['Sem telefone', 'Acompanhante', 80, '']]));
   assert.equal(result.coordenador, 'Coordenação A');
   assert.ok(calls.every((call) => call.numRows === 1 || (call.name === 'Participantes' && call.column === 1) || (call.name === 'Projetos' && call.column === 2)));
 });
@@ -121,7 +121,7 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.match(client, /receipt-copy/);
   assert.match(client, /var viaIps = viaIndex === 1/);
   assert.match(client, /viaIps \? 'participante nº '/);
-  assert.match(client, /!viaIps && recibo\.endereco/);
+  assert.match(client, /!viaIps && \(recibo\.endereco \|\| recibo\.telefone\)/);
   assert.match(client, /viaIps \? '' : '<div class="bank/);
   assert.match(client, /Autorizo o crédito na conta bancária abaixo/);
   assert.match(client, /Rubrica do\(a\) coordenador\(a\) de estudos/);
@@ -163,7 +163,7 @@ test('recibo valida CPF do beneficiário e do titular antes de imprimir', () => 
   assert.match(client, /function agendaReciboAtualizarValidacaoCpf_\(\)/);
   assert.match(client, /CPF do beneficiário/);
   assert.match(client, /CPF do titular da conta/);
-  assert.match(client, /botao\.disabled = !!invalido\.length/);
+  assert.match(client, /botao\.disabled = !!invalido\.length \|\| !pessoa \|\| telefoneAusente/);
   assert.match(client, /if \(!agendaReciboAtualizarValidacaoCpf_\(\)\) return;/);
   assert.match(modal, /oninput="agendaReciboFormatarCpfInput\(this\)"/);
 });
@@ -175,4 +175,96 @@ test('valor do recibo é convertido automaticamente para reais e centavos por ex
   assert.equal(context.agendaReciboValorExtenso_(125.5), 'cento e vinte e cinco reais e cinquenta centavos');
   assert.equal(context.agendaReciboValorExtenso_(0.75), 'setenta e cinco centavos');
   assert.equal(context.agendaReciboValorExtenso_(1000.01), 'mil reais e um centavo');
+});
+
+function receiptFormContext() {
+  const elements = {};
+  function element() {
+    return {
+      value: '', textContent: '', style: {}, children: [], classList: { toggle() {} },
+      appendChild(child) { this.children.push(child); },
+      replaceChildren() { this.children = []; },
+      querySelectorAll() {
+        const inputs = [];
+        function visit(node) { if (node.type === 'radio') inputs.push(node); node.children.forEach(visit); }
+        visit(this); return inputs;
+      },
+      setAttribute() {}
+    };
+  }
+  const source = readProjectFile('IndexAgendaScripts.html');
+  const context = vm.createContext({
+    document: { getElementById: id => elements[id] || (elements[id] = element()), createElement: element },
+    formatarTelefoneBrasileiro: value => String(value), agendaIsoFromBr: () => '2026-09-30',
+    agendaAbrirJanelaImpressao: () => { throw new Error('Não deveria imprimir sem escolha'); }
+  });
+  vm.runInContext(source.slice(source.indexOf('var _agendaReciboData ='), source.indexOf('function agendaReciboDataBr_')), context);
+  context.agendaHojeIso_ = () => '2026-09-30';
+  return { context, elements };
+}
+
+test('recibo exige escolha explícita com acompanhantes, troca todos os dados e mantém validação de CPF', () => {
+  const { context, elements } = receiptFormContext();
+  const data = { beneficiarios: [
+    { nome: 'Participante', tipo: 'Participante', telefone: '111', valorPadrao: 120 },
+    { nome: 'Acompanhante', tipo: 'Acompanhante', telefone: '222', valorPadrao: 80, cpf: '529.982.247-25', banco: 'Banco B' },
+    { nome: 'Sem contato', tipo: 'Acompanhante', valorPadrao: 80 }
+  ] };
+  context._agendaReciboData = data;
+  context.agendaReciboPreencher_(data);
+  assert.equal(elements.agendaReciboBeneficiario.value, '');
+  assert.equal(elements.agendaReciboTelefone.value, '');
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false);
+  context.imprimirAgendaRecibo();
+  assert.match(elements.agendaReciboStatus.textContent, /Escolha o recebedor/);
+
+  const radios = elements.agendaReciboOpcoes.querySelectorAll('input');
+  radios[1].onchange();
+  assert.equal(elements.agendaReciboTelefone.value, '222');
+  assert.equal(elements.agendaReciboBanco.value, 'Banco B');
+  assert.match(elements.agendaReciboImprimirLabel.textContent, /acompanhante/);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+  elements.agendaReciboCpf.value = '111';
+  assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  radios[2].onchange();
+  assert.equal(elements.agendaReciboTelefone.value, '');
+  assert.equal(elements.agendaReciboBanco.value, '');
+  assert.equal(elements.agendaReciboTelefone.required, true);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  assert.match(elements.agendaReciboStatus.textContent, /Informe o telefone do acompanhante/);
+  context.imprimirAgendaRecibo();
+  elements.agendaReciboTelefone.value = '   ';
+  assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false);
+  elements.agendaReciboTelefone.value = '(54) 99999-0303';
+  assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), true);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+  radios[0].onchange();
+  assert.equal(elements.agendaReciboTelefone.value, '111');
+  assert.match(elements.agendaReciboImprimirLabel.textContent, /participante/);
+  assert.equal(elements.agendaReciboTelefone.required, false);
+  context.agendaReciboPreencher_(data);
+  assert.equal(elements.agendaReciboBeneficiario.value, '');
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  context._agendaReciboData = { beneficiarios: [data.beneficiarios[0]] };
+  context.agendaReciboPreencher_(context._agendaReciboData);
+  assert.equal(elements.agendaReciboBeneficiario.value, '0');
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+});
+
+test('telefone fica no quadro de endereço das duas vias identificadas, sem vazar na via IPS nem executar HTML', () => {
+  const context = receiptPrintContext();
+  context.esc = value => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = context.agendaReciboPrintHtml_({ idParticipante: 'P-1' }, {
+    tipo: 'Acompanhante', nome: 'Pessoa', endereco: 'Rua Teste', telefone: '<img src=x onerror=alert(1)>', valor: 80
+  });
+  const copies = html.match(/<section[\s\S]*?<\/section>/g);
+  assert.match(copies[0], /Endereço do beneficiário:[\s\S]*Telefone do beneficiário:/);
+  assert.match(copies[0], /&lt;img/);
+  assert.doesNotMatch(copies[0], /<img src=x/);
+  assert.doesNotMatch(copies[1], /Telefone do beneficiário:|Rua Teste|onerror/);
+  assert.match(copies[2], /Telefone do beneficiário:/);
+  const phoneOnly = context.agendaReciboPrintHtml_({}, { telefone: '222', valor: 80 });
+  assert.equal((phoneOnly.match(/Telefone do beneficiário:/g) || []).length, 2);
 });
