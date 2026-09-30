@@ -5268,6 +5268,19 @@ function excluirBracoProjeto(idBraco) {
   });
 }
 
+// Ativo somente durante getDashboardData; não reutiliza dados entre RPCs.
+var CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = null;
+
+function getDashboardAgendaDisplayRows_(sh) {
+  var context = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
+  if (context && context.rows !== null) return context.rows;
+  var lastRow = sh.getLastRow();
+  var rows = lastRow < 2 ? [] : codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol), true);
+  // Só memoriza leituras bem-sucedidas, inclusive a Agenda vazia.
+  if (context) context.rows = rows;
+  return rows;
+}
+
 function getProjetosSivPorProjeto_() {
   var grupos = {};
   var out = {};
@@ -5277,8 +5290,8 @@ function getProjetosSivPorProjeto_() {
   } catch (e) {
     return out;
   }
-  if (!sh || sh.getLastRow() < 2) return out;
-  var rows = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol), true);
+  if (!sh) return out;
+  var rows = getDashboardAgendaDisplayRows_(sh);
   var i = AGENDA_CFG.idx;
   rows.forEach(function(r) {
     var projeto = String(r[i.projeto] || '').trim();
@@ -7096,6 +7109,9 @@ function getDashboardData() {
   var totalMeta = { rowCount: 0, responseBytes: 0 };
   return codexMeasureReadPerformance_('getDashboardData', 'total', totalMeta, function() {
   codexMeasureReadPerformance_('getDashboardData', 'access', {}, function() { codexAssertCanRead_(); });
+  var previousAgendaDisplayContext = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
+  CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = { rows: null };
+  try {
   Logger.log('[getDashboardData] Iniciando...');
   var diag = { erros: [], avisos: [], secoes: { agenda: true, estoque: true }, projetos: [], participantes: [] };
 
@@ -7224,6 +7240,9 @@ function getDashboardData() {
     try { totalMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(diag)); } catch (ignored) {}
   });
   return diag;
+  } finally {
+    CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = previousAgendaDisplayContext;
+  }
   });
 }
 
@@ -7333,8 +7352,8 @@ function getDashboardPendencias_(estoque) {
   var posVisitaCorte = parseAgendaDateAny_('2026-05-23');
   if (posVisitaCorte) posVisitaCorte.setHours(23, 59, 59, 999);
   var i = AGENDA_CFG.idx;
-  if (agenda.getLastRow() >= 2) {
-    var vals = codexReadValuesMeasured_(agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol), true);
+  var vals = getDashboardAgendaDisplayRows_(agenda);
+  if (vals.length) {
     var feriados = getAgendaFeriadosPendenciasMap_(vals, i);
     var agendaPorId = {};
     vals.forEach(function(r) {
