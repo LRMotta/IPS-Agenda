@@ -24,6 +24,7 @@ function preloadContext(rows) {
       getUuid: () => '00000000-0000-4000-8000-' + String(++uuid).padStart(12, '0')
     }
   });
+  server.codexAssertCanRead_ = () => ({ ok: true, role: 'user' });
   server.codexAssertCanWrite_ = () => ({ ok: true, userEmail: 'tester@example.invalid' });
   server.codexWithDocumentLock_ = (_name, callback) => callback();
   return { server, sheet };

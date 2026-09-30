@@ -127,6 +127,7 @@ function findScriptBlocks(source) {
       index: opening,
       end,
       attrs: source.slice(opening + 7, openingEnd),
+      codeIndex: openingEnd + 1,
       code: source.slice(openingEnd + 1, closing < 0 ? source.length : closing),
       raw: source.slice(opening, end)
     });
@@ -247,6 +248,6 @@ function main() {
   console.log('Manifestos, includes e marcadores de conflito tambem foram validados.');
 }
 
-module.exports = { decodeHtml, removeAppsScriptTemplates, syntaxError, validateHtml, validateProject };
+module.exports = { decodeHtml, findScriptBlocks, hasHtmlAttribute, maskPreservingLineBreaks, removeAppsScriptTemplates, syntaxError, validateHtml, validateProject };
 
 if (require.main === module) main();

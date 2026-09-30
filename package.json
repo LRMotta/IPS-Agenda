@@ -3,8 +3,9 @@
   "private": true,
   "scripts": {
     "test": "node --test --test-isolation=none tests/*.test.js",
+    "test:ui": "node --test --test-isolation=none tests/e2e/*.test.js",
     "syntax": "node tools/validate-syntax.js",
-    "lint": "eslint \"tools/**/*.js\" \"tests/**/*.js\" \"*.gs\"",
+    "lint": "eslint \"tools/**/*.js\" \"tests/**/*.js\" \"*.gs\" IndexAgendaScripts.html",
     "verify": "npm run syntax && npm run lint && npm test",
     "push": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/push-clasp.ps1",
     "push:safe": "npm run push"

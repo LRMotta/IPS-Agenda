@@ -7,11 +7,14 @@ const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 
 // Servicos usados pelas invalidacoes persistentes das opcoes de kits.
 function runFile(name, context = {}) {
-  return loadFile(name, {
+  const server = loadFile(name, {
     ...context,
     Utilities: { formatDate: () => '20260915', ...context.Utilities },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo', ...context.Session }
   });
+  // Domínio isolado com um usuário já autorizado; ACL é testada separadamente.
+  if (name === 'WebApp.gs') server.codexAssertCanRead_ = () => ({ ok: true, role: 'user' });
+  return server;
 }
 
 function agendaKitContext() {

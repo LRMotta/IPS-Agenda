@@ -2,12 +2,36 @@
 
 const js = require('@eslint/js');
 const globals = require('globals');
+const { htmlScriptSource, collectBrowserGlobals } = require('./tools/html-lint-context');
 
 module.exports = [
   {
     ignores: ['node_modules/**'],
   },
   js.configs.recommended,
+  {
+    files: ['IndexAgendaScripts.html'],
+    plugins: {
+      'apps-script-html': {
+        processors: {
+          script: { preprocess: (source) => [htmlScriptSource(source)], postprocess: (messages) => messages.flat() },
+        },
+      },
+    },
+    processor: 'apps-script-html/script',
+    languageOptions: {
+      sourceType: 'script',
+      globals: { ...globals.browser, ...collectBrowserGlobals(__dirname) },
+    },
+    rules: {
+      'no-redeclare': ['error', { builtinGlobals: false }],
+      'no-unused-vars': 'off',
+      'no-regex-spaces': 'off',
+      'no-useless-escape': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-useless-assignment': 'warn',
+    },
+  },
   {
     files: ['tools/**/*.js', 'tests/**/*.js'],
     languageOptions: {

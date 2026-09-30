@@ -1300,6 +1300,7 @@ test('mapa de ultima visita indexa eventos concluidos pelo ID interno mesmo sem 
 
 test('historico preserva a pessoa do evento quando o cadastro vinculado aponta outra participação', () => {
   const server = runFile('WebApp.gs');
+  server.codexAssertCanRead_ = () => ({ ok: true, role: 'user' });
   const indexCadastro = 52;
   const row = Array(53).fill('');
   row[0] = 'EV-1';
