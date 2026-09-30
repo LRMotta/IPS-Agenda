@@ -6145,6 +6145,10 @@
   function abrirAgendaRecibo(agendaId, rowIndex) {
     var requestId = ++_agendaReciboRequestId;
     _agendaReciboData = null;
+    var recebedor = document.getElementById('agendaReciboBeneficiario');
+    var imprimir = document.getElementById('btnImprimirAgendaRecibo');
+    if (recebedor) recebedor.value = '';
+    if (imprimir) imprimir.disabled = true;
     var loading = document.getElementById('agendaReciboLoading');
     var form = document.getElementById('agendaReciboForm');
     var status = document.getElementById('agendaReciboStatus');
@@ -6183,9 +6187,38 @@
 
   function agendaReciboPreencher_(data) {
     var select = document.getElementById('agendaReciboBeneficiario');
-    select.innerHTML = data.beneficiarios.map(function(item, index) {
-      return '<option value="' + index + '">' + esc(item.nome) + ' · ' + esc(item.tipo) + '</option>';
-    }).join('');
+    select.replaceChildren();
+    var opcoes = document.getElementById('agendaReciboOpcoes');
+    opcoes.replaceChildren();
+    var empty = document.createElement('option');
+    empty.value = ''; empty.textContent = 'Selecione uma pessoa';
+    select.appendChild(empty);
+    data.beneficiarios.map(function(item, index) {
+      var option = document.createElement('option');
+      option.value = String(index); option.textContent = item.nome + ' · ' + item.tipo;
+      select.appendChild(option);
+      var label = document.createElement('label');
+      label.className = 'agenda-recibo-option';
+      var radio = document.createElement('input');
+      radio.type = 'radio'; radio.name = 'agendaReciboRecebedor'; radio.value = String(index);
+      radio.onchange = function() {
+        select.value = radio.value;
+        agendaReciboSelecionarBeneficiario();
+      };
+      var text = document.createElement('span');
+      var tipo = document.createElement('small');
+      tipo.textContent = item.tipo + (item.tipo === 'Acompanhante' ? ' ' + index : '');
+      var nome = document.createElement('b'); nome.textContent = item.nome;
+      text.appendChild(tipo); text.appendChild(nome);
+      label.appendChild(radio); label.appendChild(text); opcoes.appendChild(label);
+      return radio;
+    });
+    var acompanhantes = data.beneficiarios.filter(function(item) { return item.tipo === 'Acompanhante'; }).length;
+    document.getElementById('agendaReciboEscolhaAjuda').textContent = acompanhantes
+      ? 'Há ' + acompanhantes + (acompanhantes === 1 ? ' acompanhante cadastrado. ' : ' acompanhantes cadastrados. ') + 'Escolha o recebedor para continuar.'
+      : 'Recibo para o participante cadastrado.';
+    select.value = acompanhantes ? '' : '0';
+    Array.prototype.forEach.call(opcoes.querySelectorAll('input'), function(radio) { radio.checked = radio.value === select.value; });
     var contexto = document.getElementById('agendaReciboContexto');
     if (contexto) contexto.textContent = [data.projeto, data.visita, data.dataVisita].filter(Boolean).join(' · ');
     document.getElementById('agendaReciboDataVisita').value = data.dataVisitaIso || agendaIsoFromBr(data.dataVisita);
@@ -6199,10 +6232,18 @@
 
   function agendaReciboSelecionarBeneficiario() {
     if (!_agendaReciboData) return;
-    var index = Number((document.getElementById('agendaReciboBeneficiario') || {}).value || 0);
-    var pessoa = _agendaReciboData.beneficiarios[index] || _agendaReciboData.beneficiarios[0];
+    var pessoa = agendaReciboBeneficiarioSelecionado_();
+    document.getElementById('agendaReciboNomeSelecionado').textContent = pessoa ? pessoa.nome + ' · ' + pessoa.tipo : 'Selecione uma pessoa acima';
+    document.getElementById('agendaReciboSelecao').textContent = pessoa ? 'Recibo para ' + pessoa.tipo.toLowerCase() + ': ' + pessoa.nome + '.' : 'Nenhum recebedor selecionado.';
+    document.getElementById('agendaReciboImprimirLabel').textContent = pessoa ? 'Imprimir recibo do ' + pessoa.tipo.toLowerCase() : 'Imprimir / salvar PDF';
+    pessoa = pessoa || {};
+    var telefone = document.getElementById('agendaReciboTelefone');
+    telefone.required = pessoa.tipo === 'Acompanhante';
+    telefone.setAttribute('aria-required', telefone.required ? 'true' : 'false');
+    document.getElementById('agendaReciboTelefoneLabel').textContent = 'Telefone do beneficiário' + (telefone.required ? ' *' : '');
     document.getElementById('agendaReciboCpf').value = pessoa.cpf || '';
     document.getElementById('agendaReciboEndereco').value = pessoa.endereco || '';
+    document.getElementById('agendaReciboTelefone').value = formatarTelefoneBrasileiro(pessoa.telefone || '');
     document.getElementById('agendaReciboTitular').value = pessoa.titularConta || pessoa.nome || '';
     document.getElementById('agendaReciboBanco').value = pessoa.banco || '';
     document.getElementById('agendaReciboTipoConta').value = pessoa.tipoConta || '';
@@ -6211,6 +6252,12 @@
     document.getElementById('agendaReciboCpfTitular').value = pessoa.cpfTitular || pessoa.cpf || '';
     document.getElementById('agendaReciboValor').value = agendaReciboFormatarValor_(pessoa.valorPadrao);
     agendaReciboAtualizarValidacaoCpf_();
+  }
+
+  function agendaReciboBeneficiarioSelecionado_() {
+    var value = agendaReciboCampo_('agendaReciboBeneficiario');
+    if (!_agendaReciboData || !/^\d+$/.test(value)) return null;
+    return _agendaReciboData.beneficiarios[Number(value)] || null;
   }
 
   function agendaReciboDataIso_(value) {
@@ -6282,15 +6329,25 @@
       return !valido;
     });
     var botao = document.getElementById('btnImprimirAgendaRecibo');
-    if (botao) botao.disabled = !!invalido.length;
+    var pessoa = agendaReciboBeneficiarioSelecionado_();
+    var telefone = document.getElementById('agendaReciboTelefone');
+    var telefoneAusente = !!pessoa && pessoa.tipo === 'Acompanhante' && !agendaReciboCampo_('agendaReciboTelefone');
+    if (telefone) {
+      telefone.classList.toggle('invalid', telefoneAusente);
+      telefone.setAttribute('aria-invalid', telefoneAusente ? 'true' : 'false');
+    }
+    if (botao) botao.disabled = !!invalido.length || !pessoa || telefoneAusente;
     var status = document.getElementById('agendaReciboStatus');
     if (status && invalido.length) {
       status.style.color = '#b3261e';
       status.textContent = 'Corrija os campos de CPF destacados antes de imprimir.';
-    } else if (status && status.textContent === 'Corrija os campos de CPF destacados antes de imprimir.') {
+    } else if (status && telefoneAusente) {
+      status.style.color = '#b3261e';
+      status.textContent = 'Informe o telefone do acompanhante antes de imprimir.';
+    } else if (status && ['Corrija os campos de CPF destacados antes de imprimir.', 'Informe o telefone do acompanhante antes de imprimir.', 'Escolha o recebedor antes de imprimir.'].indexOf(status.textContent) >= 0) {
       status.textContent = '';
     }
-    return !invalido.length;
+    return !invalido.length && !!pessoa && !telefoneAusente;
   }
 
   function agendaReciboCampo_(id) {
@@ -6299,10 +6356,14 @@
 
   function imprimirAgendaRecibo() {
     if (!_agendaReciboData) return;
-    var index = Number(agendaReciboCampo_('agendaReciboBeneficiario') || 0);
-    var pessoa = _agendaReciboData.beneficiarios[index] || _agendaReciboData.beneficiarios[0];
+    var pessoa = agendaReciboBeneficiarioSelecionado_();
     var valor = agendaReciboValorNumero_(agendaReciboCampo_('agendaReciboValor'));
     var status = document.getElementById('agendaReciboStatus');
+    if (!pessoa) {
+      status.style.color = '#b3261e';
+      status.textContent = 'Escolha o recebedor antes de imprimir.';
+      return;
+    }
     if (!agendaReciboAtualizarValidacaoCpf_()) return;
     if (!isFinite(valor) || valor <= 0) {
       status.style.color = '#b3261e';
@@ -6319,7 +6380,7 @@
     status.textContent = '';
     var payload = {
       nome: pessoa.nome, tipo: pessoa.tipo,
-      cpf: agendaReciboCampo_('agendaReciboCpf'), endereco: agendaReciboCampo_('agendaReciboEndereco'), titular: agendaReciboCampo_('agendaReciboTitular'),
+      cpf: agendaReciboCampo_('agendaReciboCpf'), endereco: agendaReciboCampo_('agendaReciboEndereco'), telefone: agendaReciboCampo_('agendaReciboTelefone'), titular: agendaReciboCampo_('agendaReciboTitular'),
       banco: agendaReciboCampo_('agendaReciboBanco'), tipoConta: agendaReciboCampo_('agendaReciboTipoConta'), agencia: agendaReciboCampo_('agendaReciboAgencia'),
       conta: agendaReciboCampo_('agendaReciboConta'), cpfTitular: agendaReciboCampo_('agendaReciboCpfTitular'),
       coordenador: agendaReciboCampo_('agendaReciboCoordenador'),
@@ -6404,7 +6465,9 @@
       var classeQuebraPagina = viaIndex < vias.length - 1 ? ' receipt-page-break' : '';
       var nomeExibido = viaIps ? 'participante nº ' + (dados.idParticipante || 'não informado') : recibo.nome;
       var identificacao = viaIps ? '' : ', CPF <b>' + esc(recibo.cpf || '________________') + '</b>';
-      var endereco = !viaIps && recibo.endereco ? '<div class="meta"><b>Endereço do beneficiário:</b> ' + esc(recibo.endereco) + '</div>' : '';
+      var endereco = !viaIps && (recibo.endereco || recibo.telefone) ? '<div class="meta">' +
+        (recibo.endereco ? '<b>Endereço do beneficiário:</b> ' + esc(recibo.endereco) + '<br>' : '') +
+        '<b>Telefone do beneficiário:</b> ' + esc(recibo.telefone || 'Não informado') + '</div>' : '';
       var dadosBancarios = viaIps ? '' : '<div class="bank"><b>Dados bancários</b><br><span>Autorizo o crédito na conta bancária abaixo.</span><br>' + titularContaBancaria + esc(banco || 'Não informado') + '</div>';
       var assinaturaBeneficiario = viaIps ? '<div class="signature"><span></span><b>Participante nº ' + esc(dados.idParticipante || 'não informado') + '</b></div>' : '<div class="signature"><span></span><b>' + esc(recibo.nome) + '</b><small>' + esc(recibo.tipo) + '</small></div>';
       var rubricaCoordenador = '<div class="signature coordinator-rubric"><span></span><b>' + esc(recibo.coordenador || 'Coordenador(a) de estudos') + '</b><small>Rubrica do(a) coordenador(a) de estudos</small></div>';

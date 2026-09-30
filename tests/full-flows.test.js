@@ -183,7 +183,7 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
   const payload = { id: 1, nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', tipoConta: 'Conta poupança', acompanhantes: [
-    { nome: 'Maria Teste', cpf: '52998224725', banco: 'Banco A', tipoConta: 'corrente', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '93541134780', numero: '001', cep: '95000000', cidade: 'Caxias do Sul', municipioCodigo: '4305108', estado: 'rs' },
+    { nome: 'Maria Teste', cpf: '52998224725', telefone: '(54) 99999-0202', banco: 'Banco A', tipoConta: 'corrente', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '93541134780', numero: '001', cep: '95000000', cidade: 'Caxias do Sul', municipioCodigo: '4305108', estado: 'rs' },
     { nome: 'João Teste', banco: 'Banco B' }
   ] };
   context.salvarDadosParticipante(payload);
@@ -193,6 +193,8 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   assert.notEqual(saved[0].id, saved[1].id);
   assert.equal(saved[0].cpf, '529.982.247-25');
   assert.equal(saved[0].cpfTitular, '935.411.347-80');
+  assert.equal(saved[0].telefone, '(54) 99999-0202');
+  assert.equal(saved[1].telefone, '');
   assert.equal(saved[0].agencia, '0001');
   assert.equal(saved[0].tipoConta, 'Conta corrente');
   assert.equal(saved[0].contaCorrente, '000023-4');
@@ -212,6 +214,9 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
   assert.equal(saved.length, 1);
   assert.equal(saved[0].id, originalId);
   assert.equal(saved[0].banco, 'Banco C');
+  const legacyCompanion = { ...saved[0] }; delete legacyCompanion.telefone;
+  context.salvarDadosParticipante({ ...payload, acompanhantes: [legacyCompanion] });
+  assert.equal(JSON.parse(sheet.rows[1][col])[0].telefone, '(54) 99999-0202');
   context.getCodexSheetDataByName_ = () => sheet.rows;
   context.Session = { getScriptTimeZone: () => 'America/Sao_Paulo' };
   context.getUltimasVisitasParticipantesAgendaMap_ = () => ({});

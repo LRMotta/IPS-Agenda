@@ -5904,7 +5904,7 @@ function participanteLerAcompanhantes_(value) {
 function participanteValidarAcompanhantes_(items, anteriores) {
   if (!Array.isArray(items)) throw new Error('Informe uma lista de acompanhantes.');
   var ids = {}, cpfs = {};
-  var fields = ['nome', 'cpf', 'rua', 'numero', 'cidade', 'estado', 'municipioCodigo', 'cep', 'banco', 'tipoConta', 'agencia', 'contaCorrente', 'cpfTitular'];
+  var fields = ['nome', 'cpf', 'telefone', 'rua', 'numero', 'cidade', 'estado', 'municipioCodigo', 'cep', 'banco', 'tipoConta', 'agencia', 'contaCorrente', 'cpfTitular'];
   var result = items.map(function(item, index) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Acompanhante inválido.');
     var out = {};
@@ -5927,6 +5927,11 @@ function participanteValidarAcompanhantes_(items, anteriores) {
     }
     var id = String(item.id || '');
     if (id && !(anteriores || []).some(function(old) { return old.id === id; })) throw new Error('Acompanhante não pertence a este participante.');
+    // Clientes anteriores ao campo telefone preservam o contato já cadastrado.
+    if (item.telefone === undefined && id) {
+      var anterior = (anteriores || []).filter(function(old) { return old.id === id; })[0];
+      out.telefone = String((anterior || {}).telefone || '').trim();
+    }
     out.id = id || 'ACO-' + Utilities.getUuid();
     if (ids[out.id]) throw new Error('Acompanhante repetido.');
     ids[out.id] = true;
@@ -17179,7 +17184,7 @@ function agendaReciboParticipante_(evento) {
     return '';
   }
   return {
-    id: String(values[0] || ''), nome: String(values[1] || ''), cpf: String(values[10] || ''),
+    id: String(values[0] || ''), nome: String(values[1] || ''), cpf: String(values[10] || ''), telefone: String(values[9] || ''),
     rua: String(valueFor(['rua', 'endereco']) || ''), numero: String(valueFor(['numero', 'n']) || ''),
     cidade: String(valueFor(['cidade']) || ''), estado: String(valueFor(['estado', 'uf']) || ''),
     cep: String(valueFor(['cep']) || ''), banco: String(valueFor(['banco', 'nomedobanco']) || ''),
@@ -17233,6 +17238,7 @@ function getAgendaReciboData(id, rowIndex) {
       tipo: tipo,
       nome: String(pessoa.nome || '').trim(),
       cpf: String(pessoa.cpf || '').trim(),
+      telefone: String(pessoa.telefone || '').trim(),
       endereco: [pessoa.rua, pessoa.numero, pessoa.cidade, agendaReciboEstadoSigla_(pessoa.estado), pessoa.cep].filter(function(value) { return String(value || '').trim(); }).join(', '),
       banco: String(pessoa.banco || '').trim(),
       tipoConta: String(pessoa.tipoConta || '').trim(),

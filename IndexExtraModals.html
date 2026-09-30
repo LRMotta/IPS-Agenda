@@ -345,10 +345,17 @@
       <div id="agendaReciboLoading" class="agenda-recibo-loading"><span class="spinner"></span>Carregando dados do recibo...</div>
       <div id="agendaReciboForm" style="display:none">
         <div class="agenda-recibo-note"><span class="material-symbols-outlined">edit_note</span><span>Revise os dados antes de imprimir. Alterações feitas aqui valem somente para este recibo.</span></div>
+        <div class="agenda-recibo-choice">
+          <div class="agenda-recibo-choice-title" id="agendaReciboEscolhaTitulo">Para quem é este recibo?</div>
+          <p id="agendaReciboEscolhaAjuda"></p>
+          <div class="agenda-recibo-options" id="agendaReciboOpcoes" role="radiogroup" aria-labelledby="agendaReciboEscolhaTitulo"></div>
+          <div class="agenda-recibo-selection" id="agendaReciboSelecao" role="status" aria-live="polite">Nenhum recebedor selecionado.</div>
+          <select id="agendaReciboBeneficiario" hidden aria-hidden="true" tabindex="-1"></select>
+        </div>
         <div class="form-section">
           <div class="section-label"><span class="material-symbols-outlined">person</span>Beneficiário</div>
           <div class="field-row cols-2">
-            <div class="field"><label class="field-label" for="agendaReciboBeneficiario">Recebedor</label><select id="agendaReciboBeneficiario" class="f-input f-select" onchange="agendaReciboSelecionarBeneficiario()"></select></div>
+            <div class="field"><span class="field-label">Recebedor selecionado</span><div id="agendaReciboNomeSelecionado" class="f-input agenda-recibo-selected-name">Selecione uma pessoa acima</div></div>
             <div class="field"><label class="field-label" for="agendaReciboValor">Valor do ressarcimento</label><input id="agendaReciboValor" class="f-input" type="text" inputmode="decimal" placeholder="R$ 0,00" onblur="agendaReciboFormatarValorInput(this)"></div>
           </div>
           <div class="field-row cols-2 agenda-recibo-row">
@@ -356,6 +363,7 @@
             <div class="field"><label class="field-label" for="agendaReciboTitular">Titular da conta</label><input id="agendaReciboTitular" class="f-input" type="text"></div>
           </div>
           <div class="field agenda-recibo-row"><label class="field-label" for="agendaReciboEndereco">Endereço do beneficiário</label><input id="agendaReciboEndereco" class="f-input" type="text"></div>
+          <div class="field agenda-recibo-row"><label class="field-label" id="agendaReciboTelefoneLabel" for="agendaReciboTelefone">Telefone do beneficiário</label><input id="agendaReciboTelefone" class="f-input" type="tel" maxlength="30" placeholder="Não informado" oninput="agendaReciboAtualizarValidacaoCpf_()" onblur="this.value = formatarTelefoneBrasileiro(this.value); agendaReciboAtualizarValidacaoCpf_()"></div>
         </div>
         <div class="form-section">
           <div class="section-label"><span class="material-symbols-outlined">account_balance</span>Dados bancários</div>
@@ -379,7 +387,7 @@
         <div class="status-msg" id="agendaReciboStatus"></div>
         <div class="agenda-recibo-actions">
           <button type="button" class="btn-txt" onclick="fecharOverlay('modalAgendaRecibo')">Cancelar</button>
-          <button type="button" class="btn-save" id="btnImprimirAgendaRecibo" onclick="imprimirAgendaRecibo()"><span class="material-symbols-outlined">print</span>Imprimir / salvar PDF</button>
+          <button type="button" class="btn-save" id="btnImprimirAgendaRecibo" onclick="imprimirAgendaRecibo()" disabled><span class="material-symbols-outlined">print</span><span id="agendaReciboImprimirLabel">Imprimir / salvar PDF</span></button>
         </div>
       </div>
     </div>
