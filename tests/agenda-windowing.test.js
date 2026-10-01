@@ -986,8 +986,8 @@ test('fallback do formulario usa carga completa, legado validado e somente codig
   strictServer.getDadosFormularioAgenda();
   strictServer.getDadosFormularioAgenda(true);
   assert.deepEqual(strictCalls, [
-      { key: 'AgendaFormData:v11:20260804', forceRefresh: false, strict: false },
-      { key: 'AgendaFormDataStrict:v5:20260804', forceRefresh: false, strict: true }
+      { key: 'AgendaFormData:v12:20260804', forceRefresh: false, strict: false },
+      { key: 'AgendaFormDataStrict:v6:20260804', forceRefresh: false, strict: true }
   ]);
   assert.match(functionBody(readProjectFile('WebApp.gs'), 'getAppBootstrapData'), /getDadosFormularioAgenda\(true\)/);
 
@@ -1032,8 +1032,8 @@ test('servidor invalida todos os caches de referencias e oferece leitura fresca 
   server.codexCacheRemove_ = (key) => removed.push(key);
   server.clearCodexRuntimeCaches_();
   assert.ok(removed.includes('AgendaFormDataStrict:v3:20260817'));
-  assert.ok(removed.includes('AgendaBootstrapReferenceData:v2:20260817'));
-  assert.ok(removed.includes('AgendaBootstrapReferenceRevalidated:v1:20260817'));
+  assert.ok(removed.includes('AgendaBootstrapReferenceData:v3:20260817'));
+  assert.ok(removed.includes('AgendaBootstrapReferenceRevalidated:v2:20260817'));
 
   let forceRefresh = null;
   server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
@@ -1068,7 +1068,7 @@ test('revalidacao inicial da referencia e coalescida sem trocar a leitura fresca
 
   assert.deepEqual(server.getAgendaReferenceDataBackgroundRevalidate().medicos, []);
   assert.deepEqual(refreshes, [{ forceRefresh: true, useCanaryCache: true }]);
-  assert.equal(writes[0].key, 'AgendaBootstrapReferenceRevalidated:v1:20260817');
+  assert.equal(writes[0].key, 'AgendaBootstrapReferenceRevalidated:v2:20260817');
   assert.equal(writes[0].ttl, server.AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
   assert.equal(server.CODEX_CACHE_BYPASS_READS_, false);
 
@@ -1187,7 +1187,7 @@ test('referencias do bootstrap usam TTL proprio, telemetria sem dados e evitam c
   server.codexCacheGet_ = () => null;
   server.codexCachePut_ = (key, value, ttl) => {
     writes += 1;
-    assert.match(key, /^AgendaBootstrapReferenceData:v2:/);
+    assert.match(key, /^AgendaBootstrapReferenceData:v3:/);
     assert.equal(ttl, server.AGENDA_REFERENCE_CACHE_TTL_SECONDS_);
     return true;
   };
@@ -1754,7 +1754,7 @@ test('selecao da Agenda oculta participacoes encerradas', () => {
   assert.match(functionBody(source, 'agendaParticipantesFormulario_'),
     /agendaParticipanteDisponivelFormulario_\(row\[8\]\)/);
   assert.match(functionBody(source, 'getDadosFormularioAgenda'),
-    /AgendaFormDataStrict:v5:.*AgendaFormData:v11:/s);
+    /AgendaFormDataStrict:v6:.*AgendaFormData:v12:/s);
 });
 
 test('Agenda seleciona e persiste a participacao por ID estavel', () => {
@@ -1769,6 +1769,15 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
   assert.match(functionBody(server, 'atualizarAgendaEventoCompleto'), /col\.participanteCadastroId/);
   assert.match(functionBody(server, 'getAgendaSheet_'), /ensureAgendaDestinoLabColumns_\(sh\)/);
   assert.match(functionBody(server, 'ensureAgendaDestinoLabColumns_'), /agendaEnsureParticipanteCadastroColumn_\(sh\)/);
+});
+
+test('Agenda oculta o identificador sintetico de eventos legados no titulo', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const context = {};
+  vm.runInNewContext(`function agendaEventoTitulo_(r, fallback) {${functionBody(client, 'agendaEventoTitulo_')}}`, context);
+  assert.equal(context.agendaEventoTitulo_({ participante: 'legacy-event:01e12b5a' }, 'Evento'), 'Evento legado');
+  assert.equal(context.agendaEventoTitulo_({ participante: 'legacy-event:01e12b5a', tipo: 'Visita' }, 'Evento'), 'Visita');
+  assert.equal(context.agendaEventoTitulo_({ participante: 'Pessoa A', tipo: 'Visita' }, 'Evento'), 'Pessoa A');
 });
 
 test('servidor bloqueia participacao encerrada em novo evento e preserva edicao historica', () => {
@@ -1876,7 +1885,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   const actionMenuToggle = functionBody(client, 'agendaToggleActionMenu');
 
   assert.match(groups, /var cancelados = rows\.filter\(AgendaRules\.isCancelled\)/);
-  assert.match(groups, /!AgendaRules\.isCancelled\(r\) && AgendaRules\.isOperationalPeriod\(r\)/);
+  assert.match(groups, /!AgendaRules\.isCancelled\(r\) && \(AgendaRules\.isOperationalPeriod\(r\) \|\| AgendaRules\.isCloseout\(r\)\)/);
   assert.match(groups, /!AgendaRules\.isCancelled\(r\) && !AgendaRules\.isOperationalPeriod\(r\)/);
   assert.match(dayRows, /agendaSepararLinhasDoDia_\(dayRows\)/);
   assert.match(dayRows, /agendaMonitoriasGrupoHtml\(grupos\.monitorias, iso\)/);
@@ -1908,14 +1917,14 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(compact, /st-cancelado/);
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
   assert.match(operationalStatus, /AgendaRules\.statusChipClass\(status\)/);
-  assert.match(compact, /agendaTipoLabel\(isSiv \? 'SIV' : 'Monitoria'\)/);
-  assert.match(compact, /agendaTipoAccentClass\(isSiv \? 'SIV' : 'Monitoria'\)/);
+  assert.match(compact, /agendaTipoLabel\(tipo\)/);
+  assert.match(compact, /agendaTipoAccentClass\(tipo\)/);
   assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
   assert.match(cancelledGroup, /aria-label="Cancelados do dia"/);
   assert.match(cancelledGroup, /<strong>Cancelados<\/strong>/);
   assert.doesNotMatch(cancelledGroup, /ag-cancelados-count/);
   const operationalGroup = functionBody(client, 'agendaMonitoriasGrupoHtml');
-  assert.match(operationalGroup, /<strong>Monitorias e SIV<\/strong>/);
+  assert.match(operationalGroup, /<strong>Monitorias, SIV e Close-outs<\/strong>/);
   assert.doesNotMatch(operationalGroup, /ag-monitorias-count/);
   const auditGroup = functionBody(client, 'agendaAuditoriasGrupoHtml');
   assert.match(auditGroup, /<strong>Auditorias<\/strong>/);
@@ -1974,6 +1983,7 @@ test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativa
     AgendaRules: {
       isCancelled: row => row.status === 'Cancelado',
       isOperationalPeriod: row => ['Monitoria', 'SIV'].includes(row.tipo),
+      isCloseout: row => row.tipo === 'Close-out',
       isType: (value, type) => type === 'auditoria' && String(value).toLowerCase() === 'auditoria'
     }
   });
@@ -1982,17 +1992,20 @@ test('cancelados ficam em grupo proprio sem duplicar monitorias ou visitas ativa
   const groups = context.agendaSepararLinhasDoDia_([
     { id: 'M1', tipo: 'Monitoria', status: 'Agendado' },
     { id: 'M2', tipo: 'Monitoria', status: 'Cancelado' },
+    { id: 'S1', tipo: 'SIV', status: 'Agendado' },
+    { id: 'C1', tipo: 'Close-out', status: 'Agendado', participante: 'legacy-event:01e12b5a' },
+    { id: 'C2', tipo: 'Close-out', status: 'Cancelado' },
     { id: 'A1', tipo: 'Auditoria', status: 'Agendado' },
     { id: 'A2', tipo: 'Auditoria', status: 'Cancelado' },
     { id: 'V1', tipo: 'Visita', status: 'Agendado' },
     { id: 'V2', tipo: 'Visita', status: 'Cancelado' }
   ]);
 
-  assert.deepEqual(groups.monitorias.map(row => row.id), ['M1']);
+  assert.deepEqual(groups.monitorias.map(row => row.id), ['M1', 'S1', 'C1']);
   assert.deepEqual(groups.auditorias.map(row => row.id), ['A1']);
-  assert.deepEqual(groups.cancelados.map(row => row.id), ['M2', 'A2', 'V2']);
+  assert.deepEqual(groups.cancelados.map(row => row.id), ['M2', 'C2', 'A2', 'V2']);
   assert.deepEqual(groups.demais.map(row => row.id), ['V1']);
-  assert.equal(new Set(groups.monitorias.concat(groups.auditorias, groups.cancelados, groups.demais).map(row => row.id)).size, 6);
+  assert.equal(new Set(groups.monitorias.concat(groups.auditorias, groups.cancelados, groups.demais).map(row => row.id)).size, 9);
 });
 
 test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', () => {
@@ -2010,7 +2023,7 @@ test('grade semanal prioriza monitorias e SIV e separa cancelados no rodape', ()
   assert.match(weekly, /agendaWeekCanceladosHtml\(cancelados, iso\)/);
   assert.match(cancelled, /_agendaCanceladosExpandidosPorSemana\[iso\] === true/);
   assert.match(cancelled, /agendaToggleCanceladosSemana/);
-  assert.match(printWeekly, /section\('Monitorias e SIV', 'week-section-operational', grupos\.monitorias\)/);
+  assert.match(printWeekly, /section\('Monitorias, SIV e Close-outs', 'week-section-operational', grupos\.monitorias\)/);
   assert.match(printWeekly, /section\('Auditorias', 'week-section-auditorias', grupos\.auditorias\)/);
   assert.match(printWeekly, /section\('Cancelados', 'week-section-cancelados', grupos\.cancelados\)/);
   assert.match(card, /AgendaRules\.isCancelled\(r\)/);

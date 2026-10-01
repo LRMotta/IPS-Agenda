@@ -1820,11 +1820,11 @@ var AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_ = 300;
 var AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_ = 60;
 
 function agendaReferenceCacheKey_() {
-  return 'AgendaBootstrapReferenceData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  return 'AgendaBootstrapReferenceData:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
 }
 
 function agendaReferenceBackgroundRevalidateKey_() {
-  return 'AgendaBootstrapReferenceRevalidated:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  return 'AgendaBootstrapReferenceRevalidated:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
 }
 
 // Uma entrada por lista permite renovar somente as dependencias da mutacao.
@@ -1840,7 +1840,7 @@ var AGENDA_REFERENCE_PARTS_ = [
 function agendaReferencePartKeys_() {
   var prefix = 'AgendaReferencePart:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd') + ':';
   var keys = {};
-  AGENDA_REFERENCE_PARTS_.forEach(function(part) { keys[part] = prefix + part; });
+  AGENDA_REFERENCE_PARTS_.forEach(function(part) { keys[part] = prefix + part + (part === 'feriados' ? ':central-v2' : ''); });
   return keys;
 }
 
@@ -1859,7 +1859,7 @@ function agendaInvalidateKitsReference_() {
   agendaInvalidateReferenceDataCache_(['kits_coleta']);
   // Consumidores legados continuam recebendo o formulario completo atualizado.
   var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
-  ['AgendaFormData:v9:', 'AgendaFormDataStrict:v3:'].forEach(function(prefix) { codexCacheRemove_(prefix + day); });
+  ['AgendaFormData:v9:', 'AgendaFormDataStrict:v3:', 'AgendaFormData:v12:', 'AgendaFormDataStrict:v6:'].forEach(function(prefix) { codexCacheRemove_(prefix + day); });
 }
 
 function agendaReferencePartsForRead_(forceRefresh) {
@@ -1929,6 +1929,8 @@ function clearCodexRuntimeCaches_(referenceParts) {
   codexCacheRemove_('AgendaFormData:v9:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormDataStrict:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormData:v12:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  codexCacheRemove_('AgendaFormDataStrict:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   agendaInvalidateReferenceDataCache_(referenceParts);
   agendaInvalidateParticipantHydrationCache_();
@@ -7365,7 +7367,7 @@ function getDashboardPendencias_(estoque) {
   var i = AGENDA_CFG.idx;
   var vals = getDashboardAgendaDisplayRows_(agenda);
   if (vals.length) {
-    var feriados = getAgendaFeriadosPendenciasMap_(vals, i);
+    var feriados = getAgendaFeriadosPendenciasMap_();
     var agendaPorId = {};
     vals.forEach(function(r) {
       var agendaIdAtual = String(r[i.id] || '').trim();
@@ -7588,12 +7590,14 @@ function prazoHorasPendenciaAgenda_(data, hora, feriados) {
   return Math.round(diff * 10) / 10;
 }
 
-function getAgendaFeriadosPendenciasMap_(rows, idx) {
+function getAgendaFeriadosPendenciasMap_() {
   var out = {};
-  (rows || []).forEach(function(r) {
-    if (!AgendaServerRules_.isType(r[idx.tipo], 'feriado')) return;
-    var d = parseAgendaDateAny_(r[idx.data]);
-    if (d) out[agendaPendenciaDateKey_(d)] = true;
+  // Fresco em cada snapshot, inclusive antes do envio de cobrancas. Nao usar
+  // eventos da Agenda ou cache compartilhado para decidir o horario permitido.
+  getAgendaFeriadosOperacionais_().forEach(function(item) {
+    if (Object.prototype.hasOwnProperty.call(item, 'afetaOperacao') && !CodexCourierRiskRules_.isYes(item.afetaOperacao)) return;
+    var key = CodexCourierRiskRules_.isAnnualHoliday(item) ? '--' + item.dataIso.slice(5) : item.dataIso;
+    out[key] = true;
   });
   return out;
 }
@@ -7609,7 +7613,8 @@ function agendaPendenciaDateKey_(d) {
 function isDiaOperacionalPendencia_(d, feriados) {
   var day = d.getDay();
   if (day === 0 || day === 6) return false;
-  return !feriados[agendaPendenciaDateKey_(d)];
+  var key = agendaPendenciaDateKey_(d);
+  return !feriados[key] && !feriados['--' + key.slice(5)];
 }
 
 function horasOperacionaisAtePendencia_(inicio, fim, feriados) {
@@ -11921,10 +11926,17 @@ function getAgendaLabDestinos_(strict) {
   }
 }
 
-function getAgendaKitsEstoque_(strict) {
+function getAgendaKitsEstoque_(strict, measureStage) {
   try {
     if (CODEX_AGENDA_KITS_ESTOQUE_CACHE_ && !CODEX_CACHE_BYPASS_READS_) return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
-    var itens = getEstoque() || [];
+    var stockMeta = { rowCount: 0 };
+    var loadStock = function() {
+      var stock = getEstoque() || [];
+      stockMeta.rowCount = stock.length;
+      return stock;
+    };
+    var itens = typeof measureStage === 'function' ?
+      measureStage('reference_kits_estoque', stockMeta, loadStock) : loadStock();
     var seen = {};
     CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = itens.filter(function(it) {
       var tipo = normText_(it.tipoItem || it.tipo || '');
@@ -11985,7 +11997,10 @@ function agendaBuildDadosFormularioAgenda_(strict, measureStage, referenceParts)
     if (key && referenceParts.cached[key]) {
       try {
         var entry = JSON.parse(referenceParts.cached[key]);
-        if (entry && entry.version === 1 && Object.prototype.hasOwnProperty.call(entry, 'value')) return entry.value;
+        if (entry && entry.version === 1 && Object.prototype.hasOwnProperty.call(entry, 'value')) {
+          if (typeof measureStage !== 'function') return entry.value;
+          return measureStage('reference_' + stage + '_cache', { rowCount: agendaReferenceTelemetryCount_(entry.value) }, function() { return entry.value; });
+        }
       } catch (e) {}
     }
     var load = callback;
@@ -12037,7 +12052,7 @@ function agendaBuildDadosFormularioAgenda_(strict, measureStage, referenceParts)
     temperaturas: measureReference('temperaturas', function() { return getAgendaTemperaturas_(); }),
     statusCourier: measureReference('status_courier', function() { return getAgendaCourierStatuses_(); }),
     laboratoriosDestino: measureReference('laboratorios_destino', function() { return getAgendaLabDestinos_(strict); }),
-    kitsColeta: measureReference('kits_coleta', function() { return getAgendaKitsEstoque_(strict); }),
+    kitsColeta: measureReference('kits_coleta', function() { return getAgendaKitsEstoque_(strict, measureStage); }),
     tiposEvento: measureReference('tipos_evento', function() { return getAgendaEventTypes_(); }),
     salasMonitoria: measureReference('salas_monitoria', function() { return getAgendaMonitoriaSalas_(); }),
     status: measureReference('status', function() { return getAgendaStatuses_(); }),
@@ -12082,10 +12097,10 @@ function agendaParticipantesFormulario_(ss, strict) {
     .sort(function(a, b) { return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }); });
 }
 
-function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
+function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict, measureStage) {
   var cached = forceRefresh ? null : codexCacheGet_(cacheKey);
   if (cached) return cached;
-  var result = agendaBuildDadosFormularioAgenda_(strict);
+  var result = agendaBuildDadosFormularioAgenda_(strict, measureStage);
   codexCachePut_(cacheKey, result);
   return result;
 }
@@ -12093,7 +12108,7 @@ function agendaGetDadosFormularioAgendaCached_(cacheKey, forceRefresh, strict) {
 function getDadosFormularioAgenda(strictValidation) {
   codexAssertCanRead_();
   var strict = strictValidation === true;
-  var cacheKey = (strict ? 'AgendaFormDataStrict:v5:' : 'AgendaFormData:v11:') +
+  var cacheKey = (strict ? 'AgendaFormDataStrict:v6:' : 'AgendaFormData:v12:') +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
   if (strict) return agendaGetDadosFormularioAgendaCached_(cacheKey, false, true);
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
@@ -14096,7 +14111,6 @@ function atualizarAgendaEventoCompleto(dados) {
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   agendaInvalidateDateIndexCache_();
-  if (AgendaServerRules_.isType(rowAnterior[AGENDA_CFG.idx.tipo], 'feriado') || AgendaServerRules_.isType(rowAtual[AGENDA_CFG.idx.tipo], 'feriado')) agendaInvalidateReferenceDataCache_(['feriados']);
   return {
     ok: true,
     id: dados.id,
@@ -14574,7 +14588,6 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   SpreadsheetApp.flush();
   });
   agendaInvalidateDateIndexCache_();
-  if (AgendaServerRules_.isType(dados.tipo, 'feriado')) agendaInvalidateReferenceDataCache_(['feriados']);
   return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };
 }
 
@@ -16541,7 +16554,7 @@ function agendaGetReferenceData_(forceRefresh, useCanaryCache, measureStage) {
   var cacheKey = agendaReferenceCacheKey_();
   if (useCanaryCache !== true) {
     return agendaValidateReferenceData_(
-      agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true)
+      agendaGetDadosFormularioAgendaCached_(cacheKey, !!forceRefresh, true, measureStage)
     );
   }
   var cached = forceRefresh ? null : codexCacheGet_(cacheKey);
@@ -16582,22 +16595,48 @@ function getAgendaReferenceDataFresh(invalidatedOnly) {
 }
 
 function getAgendaReferenceDataBackgroundRevalidate() {
-  var access = codexGetCurrentUserAccess();
-  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
-  var useCanaryCache = agendaWindowedLoadingV2EnabledForAccess_(access);
-  var revalidateKey = agendaReferenceBackgroundRevalidateKey_();
-  if (codexCacheGet_(revalidateKey)) {
-    return agendaGetReferenceData_(false, useCanaryCache);
-  }
-
+  var startedAt = Date.now();
+  var traceId = 'ref-' + startedAt.toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  var outcome = 'failed';
+  var totalMeta = { traceId: traceId, rowCount: 0 };
+  var operation = 'getAgendaReferenceDataBackgroundRevalidate';
+  var measure = function(stage, metadata, callback) {
+    metadata.traceId = traceId;
+    return codexMeasureReadPerformance_(operation, stage, metadata, callback);
+  };
   var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
-  CODEX_CACHE_BYPASS_READS_ = true;
   try {
-    var data = agendaGetReferenceData_(true, useCanaryCache);
-    codexCachePut_(revalidateKey, { refreshed: true }, AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
-    return data;
+    return measure('total', totalMeta, function() {
+      var access = measure('authorization', {}, function() { return codexGetCurrentUserAccess(); });
+      if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+      var useCanaryCache = agendaWindowedLoadingV2EnabledForAccess_(access);
+      var revalidateKey = agendaReferenceBackgroundRevalidateKey_();
+      var recent = measure('revalidation_cache', {}, function() { return codexCacheGet_(revalidateKey); });
+      CODEX_CACHE_BYPASS_READS_ = recent ? previousCacheBypass : true;
+      var referenceMeta = { rowCount: 0 };
+      var data = measure('reference', referenceMeta, function() {
+        var reference = agendaGetReferenceData_(!recent, useCanaryCache, measure);
+        referenceMeta.rowCount = agendaReferenceRowCount_(reference);
+        return reference;
+      });
+      totalMeta.rowCount = agendaReferenceRowCount_(data);
+      if (recent) outcome = 'recent_revalidation';
+      else {
+        var stored = measure('revalidation_store', {}, function() {
+          return codexCachePut_(revalidateKey, { refreshed: true }, AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
+        });
+        outcome = stored ? 'rebuilt_marked' : 'rebuilt_marker_failed';
+      }
+      return data;
+    });
   } finally {
     CODEX_CACHE_BYPASS_READS_ = previousCacheBypass;
+    try {
+      Logger.log('[CODEX_AGENDA_REFERENCE_REVALIDATE] ' + JSON.stringify({
+        traceId: traceId, startedAtMs: startedAt, durationMs: Date.now() - startedAt,
+        outcome: outcome, ttlSeconds: AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_
+      }));
+    } catch (eLog) {} // Telemetria nao altera o resultado da RPC.
   }
 }
 

@@ -267,7 +267,7 @@ test('ID ausente ou duplicado bloqueia edicao e exclusao antes de qualquer escri
   assert.equal(spreadsheet.getSheetByName('Feriados'), null);
 });
 
-test('cadastro central anual prevalece sobre legado inclusive inativo e sem restricao', () => {
+test('somente cadastro central ativo alimenta feriados operacionais inclusive anuais', () => {
   const agenda = new FakeSheet('Agenda', [['ID', 'Data', 'Hora', 'Tipo'], ['L', '2027-12-25', '', 'Feriado']]);
   for (const ativo of ['Sim', 'Não']) {
     const context = holidayContext(new FakeSpreadsheet({ Agenda: agenda }));
@@ -278,13 +278,17 @@ test('cadastro central anual prevalece sobre legado inclusive inativo e sem rest
   }
 });
 
-test('falha de leitura do legado sinaliza lista incompleta em vez de retornar sucesso parcial', () => {
+test('referencias de feriados nao consultam Agenda mesmo se a aba falhar', () => {
   const agenda = new FakeSheet('Agenda', [['ID', 'Data', 'Hora', 'Tipo'], ['L', '2026-12-25', '', 'Feriado']]);
-  agenda.getRange = () => { throw new Error('Serviço indisponível'); };
+  agenda.getRange = () => { throw new Error('Agenda nao deve ser lida'); };
+  agenda.getLastRow = () => { throw new Error('Metadados da Agenda nao devem ser lidos'); };
   const context = holidayContext(new FakeSpreadsheet({ Agenda: agenda }));
   context.getFeriadosCadastro_ = () => [holiday('2026-11-02')];
-  assert.throws(() => context.getAgendaFeriadosOperacionais_(), /lista operacional pode estar incompleta/);
+  assert.equal(context.getAgendaFeriadosOperacionais_()[0].dataIso, '2026-11-02');
+  context.getFeriadosCadastro_ = () => { throw new Error('Cadastro indisponivel'); };
+  assert.throws(() => context.getAgendaFeriadosOperacionais_(), /Cadastro indisponivel/);
 });
+
 
 test('bootstrap de feriados nega leitura antes de consultar cadastro ou acesso de apresentacao', () => {
   const context = runFiles(['WebApp.gs']);
@@ -337,11 +341,10 @@ test('telemetria registra volumes sem conteudo do cadastro e tolera falha de log
   assert.equal(payloads[0].stage, 'cadastro');
   assert.equal(payloads[0].readCalls, 2);
   assert.equal(payloads[0].cellsRead, 7);
-  assert.equal(payloads[1].stage, 'legacy');
-  assert.equal(payloads[1].cellsRead, 3);
+  assert.equal(payloads.length, 1);
   assert.doesNotMatch(logs.join(''), /SECRET|2026-/);
   context.Logger.log = () => { throw new Error('Log indisponivel'); };
-  assert.equal(context.getAgendaFeriadosOperacionais_().length, 2);
+  assert.equal(context.getAgendaFeriadosOperacionais_().length, 1);
 });
 
 test('risco operacional aproveita cache parcial e recarrega apenas parte ausente ou invalida', () => {
@@ -371,7 +374,7 @@ test('risco operacional aproveita cache parcial e recarrega apenas parte ausente
   }
 });
 
-test('feriados legados usam um bloco sem resolver schema da Agenda e preservam datas e precedencia', () => {
+test('feriados legados sao ignorados sem leituras ou alteracoes na Agenda', () => {
   const agenda = new FakeSheet('Agendamentos', [
     ['ID', 'Data', 'Hora', 'Tipo'],
     ['A1', '2026-10-12', '08:00', 'Feriado'],
@@ -391,11 +394,11 @@ test('feriados legados usam um bloco sem resolver schema da Agenda e preservam d
   assert.equal(items.length, 1);
   assert.equal(items[0].nome, 'Cadastro central');
   assert.equal(items[0].recorrencia, 'Anual');
-  assert.deepEqual(reads, [{ method: 'values', args: [2, 2, 5, 3] }]);
+  assert.deepEqual(reads, []);
   assert.equal(agenda.writes, 0);
 });
 
-test('Agenda grande sem feriados retorna vazio com uma leitura em bloco', () => {
+test('Agenda grande sem cadastro de feriados nao exige nenhuma leitura', () => {
   const agenda = new FakeSheet('Agenda', [
     ['ID', 'Data', 'Hora', 'Tipo'],
     ...Array.from({ length: 1500 }, (_, i) => [String(i), '2026-10-01', '08:00', 'Visita'])
@@ -403,7 +406,7 @@ test('Agenda grande sem feriados retorna vazio com uma leitura em bloco', () => 
   const reads = trackHolidayReads(agenda);
   const context = holidayContext(new FakeSpreadsheet({ Agenda: agenda }));
   assert.deepEqual(plain(context.getAgendaFeriadosOperacionais_()), []);
-  assert.deepEqual(reads, [{ method: 'values', args: [2, 2, 1500, 3] }]);
+  assert.deepEqual(reads, []);
   assert.equal(agenda.writes, 0);
 });
 
@@ -440,15 +443,58 @@ test('cadastro le somente datas brutas e preserva colunas reordenadas e IDs exib
   assert.equal(sheet.writes, 0);
 });
 
-test('feriados permanecem frescos em chamadas consecutivas apos edicao direta da Agenda', () => {
+test('apenas alteracoes no modulo Feriados afetam a lista operacional', () => {
   const agenda = new FakeSheet('Agenda', [['ID', 'Data', 'Hora', 'Tipo'], ['A1', '2026-10-12', '', 'Feriado']]);
   const context = holidayContext(new FakeSpreadsheet({ Agenda: agenda }));
-  assert.equal(context.getAgendaFeriadosOperacionais_()[0].dataIso, '2026-10-12');
+  let cadastro = [];
+  context.getFeriadosCadastro_ = () => cadastro;
+  assert.deepEqual(plain(context.getAgendaFeriadosOperacionais_()), []);
   agenda.rows[1][1] = '2026-11-02';
-  assert.equal(context.getAgendaFeriadosOperacionais_()[0].dataIso, '2026-11-02');
-  agenda.rows[1][3] = 'Visita';
+  assert.deepEqual(plain(context.getAgendaFeriadosOperacionais_()), []);
+  cadastro = [holiday('2026-12-25')];
+  assert.equal(context.getAgendaFeriadosOperacionais_()[0].dataIso, '2026-12-25');
+  cadastro = [];
   assert.deepEqual(plain(context.getAgendaFeriadosOperacionais_()), []);
 });
+
+test('prazos de pendencias e courier usam calendario central fresco sem varrer eventos', () => {
+  const context = runFiles(['CourierServerRules.gs', 'WebApp.gs', 'CourierLembretes.gs'], { Date });
+  let calls = 0;
+  let cadastro = [holiday('2026-12-25', 'Natal', 'Feriado', 'Anual'), holiday('2026-10-13')];
+  context.getAgendaFeriadosOperacionais_ = () => { calls++; return cadastro; };
+  context.getAgendaSheetForRead_ = () => { throw Error('Feriados nao devem ler Agenda'); };
+  const forbiddenRows = new Proxy([], { get() { throw Error('Eventos nao devem ser varridos'); } });
+  const map = context.getAgendaFeriadosPendenciasMap_(forbiddenRows, {});
+  assert.equal(calls, 1);
+  assert.equal(map['--12-25'], true);
+  assert.equal(map['2026-10-13'], true);
+  assert.equal(context.isDiaOperacionalPendencia_(new Date(2026, 9, 13), map), false);
+  assert.equal(context.isDiaOperacionalPendencia_(new Date(2027, 9, 13), map), true);
+  for (const year of [2026, 2028, 2029]) {
+    assert.equal(context.isDiaOperacionalPendencia_(new Date(year, 11, 25), map), false);
+    assert.equal(context.courierLembreteDiaUtil_(new Date(year + '-12-25T10:00:00Z'), map), false);
+  }
+  cadastro = [];
+  const fresh = context.getAgendaFeriadosPendenciasMap_();
+  assert.equal(calls, 2);
+  assert.equal(context.courierLembreteDiaUtil_(new Date('2029-12-25T10:00:00Z'), fresh), true);
+  context.getAgendaFeriadosOperacionais_ = () => { throw Error('Cadastro indisponivel'); };
+  assert.throws(() => context.getAgendaFeriadosPendenciasMap_(), /Cadastro indisponivel/);
+});
+
+test('calendario de prazos respeita restricoes operacionais e aniversario de 29 de fevereiro', () => {
+  const context = runFiles(['CourierServerRules.gs', 'WebApp.gs', 'CourierLembretes.gs'], { Date });
+  context.getAgendaFeriadosOperacionais_ = () => [
+    { ...holiday('2026-10-13'), afetaOperacao: 'Não' },
+    holiday('2028-02-29', 'Anual bissexto', 'Feriado', 'Anual')
+  ];
+  const map = context.getAgendaFeriadosPendenciasMap_();
+  assert.equal(context.isDiaOperacionalPendencia_(new Date(2026, 9, 13), map), true);
+  assert.equal(context.courierLembreteDiaUtil_(new Date('2028-02-29T10:00:00Z'), map), false);
+  assert.equal(context.courierLembreteDiaUtil_(new Date('2027-03-01T10:00:00Z'), map), true);
+  assert.equal(context.courierLembreteHorarioD1_('2028-03-01', '15:00', map).toISOString(), '2028-02-28T15:00:00.000Z');
+});
+
 
 test('Agenda carrega mapa de projeto, regras de courier e feriados e mostra alerta nao bloqueante', () => {
   const server = readProjectFile('WebApp.gs');
