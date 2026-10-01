@@ -1,6 +1,22 @@
   <style>
     /* DASHBOARD */
-    .dash-grid{display:grid;gap:16px}.dash-grid-2{grid-template-columns:1fr 1fr}.dash-grid-4{grid-template-columns:repeat(4,1fr)}.dash-grid-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+    #page-dashboard .dash-spaced{margin-bottom:16px}
+    #page-dashboard .dash-spaced-top{margin-top:16px}
+    #page-dashboard .dash-month-grid{grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:8px}
+    #page-dashboard .dash-month-grid .dash-kpi{padding:10px 8px;text-align:center}
+    #page-dashboard .dash-month-grid .dash-kpi-val{font-size:20px;margin-bottom:3px}
+    #page-dashboard .dash-grid>*{min-width:0}
+    #page-dashboard h2.chart-card-title,#page-dashboard h3.chart-card-title{margin-top:0;line-height:1.5;flex-wrap:wrap}
+    .dash-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+    .dash-chart-data{margin-top:10px;font-size:12px;color:var(--text-muted)}
+    .dash-chart-data summary{cursor:pointer}
+    .dash-chart-data summary:focus-visible,.dash-chart-data button:focus-visible,.dash-period-select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    .dash-chart-data table{width:100%;border-collapse:collapse;margin-top:8px}
+    .dash-chart-data th,.dash-chart-data td{text-align:left;padding:6px;border-bottom:1px solid #e8edf8;overflow-wrap:anywhere}
+    .dash-chart-data button{font:inherit;background:none;border:0;color:var(--primary);text-decoration:underline;cursor:pointer;padding:0}
+    @media(prefers-reduced-motion:reduce){#page-dashboard .dash-kpi-clickable,#page-dashboard .dash-chart-copy{transition:none}#page-dashboard .dash-kpi-clickable:hover{transform:none}}
+
+    .dash-grid{display:grid;gap:16px}.dash-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}.dash-grid-5{grid-template-columns:repeat(5,minmax(0,1fr))}
     .dash-page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
     .dash-page-actions .btn-refresh{margin-bottom:0}
     .dash-print-btn{background:#fff;color:var(--text-muted);border-color:#d7dee8}
@@ -55,7 +71,7 @@
       #page-dashboard .chart-card{padding:9px!important;margin-bottom:8px!important}
       #page-dashboard .chart-card-title{font-size:8px!important;margin-bottom:6px!important;letter-spacing:.6px!important;color:#374151!important}
       #page-dashboard .chart-card-title .material-symbols-outlined{font-size:12px!important}
-      #page-dashboard .dash-chart-copy{display:none!important}
+      #page-dashboard .dash-chart-copy,#page-dashboard .dash-chart-data{display:none!important}
       #page-dashboard .chart-wrap{height:135px!important;min-height:0!important;max-height:150px!important;break-inside:avoid}
       #page-dashboard canvas{max-width:100%!important}
     }

@@ -370,9 +370,12 @@ function getConfigBootstrapData() {
 }
 
 function getCadastrosBootstrapData(page) {
+  var authorizationStarted = Date.now();
+  var authorizedAccess = codexAssertCanRead_();
+  if (String(page || '').trim().toLowerCase() === 'feriados' && typeof feriadoLogPerformance_ === 'function') feriadoLogPerformance_('authorization', authorizationStarted, {}, true);
   page = String(page || '').trim().toLowerCase();
   var out = {
-    access: codexGetCurrentUserAccess(),
+    access: codexAccessPresentation_(authorizedAccess),
     page: page,
     data: null,
     config: null
@@ -741,7 +744,10 @@ function codexNormalizeActive_(value) {
 }
 
 function codexGetCurrentUserAccess() {
-  var access = codexAuthorizeWebAppRequestSafe_();
+  return codexAccessPresentation_(codexAuthorizeWebAppRequestSafe_());
+}
+
+function codexAccessPresentation_(access) {
   var birthday = codexBirthdayParts_(access.birthday || '');
   return {
     ok: !!access.ok,
@@ -5710,6 +5716,7 @@ function salvarDadosProjeto(dados) {
   codexAssertCanWrite_('salvarDadosProjeto', 'Cadastros', dados && dados.id);
   return codexWithDocumentLock_('salvarDadosProjeto', function() {
   dados = dados || {};
+  if (dados.id != null) dados.id = CadastroRules_.normalizeId(dados.id);
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
   var aba = ss.getSheetByName('Projetos');
   if (!aba) throw new Error('Aba "Projetos" não encontrada.');
@@ -5726,7 +5733,7 @@ function salvarDadosProjeto(dados) {
   if (dados.id && rows.length) {
     var courierColsExistentes = projetoCourierColumnMap_(rows[0] || []);
     for (var linhaLegada = 1; linhaLegada < rows.length; linhaLegada++) {
-      if (String(rows[linhaLegada][0]) !== String(dados.id)) continue;
+      if (CadastroRules_.normalizeId(rows[linhaLegada][0]) !== dados.id) continue;
       couriersLegadosPorCampo.courierPrincipalId = courierColsExistentes.principal >= 0 ? String(rows[linhaLegada][courierColsExistentes.principal] || '').trim() : '';
       couriersLegadosPorCampo.courierAdicional1Id = courierColsExistentes.adicional1 >= 0 ? String(rows[linhaLegada][courierColsExistentes.adicional1] || '').trim() : '';
       couriersLegadosPorCampo.courierAdicional2Id = courierColsExistentes.adicional2 >= 0 ? String(rows[linhaLegada][courierColsExistentes.adicional2] || '').trim() : '';
@@ -5739,7 +5746,7 @@ function salvarDadosProjeto(dados) {
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === String(dados.id)) {
+      if (CadastroRules_.normalizeId(rows[i][0]) === dados.id) {
         aba.getRange(i + 1, 2, 1, 16).setValues([[
           dados.nomeAbreviado || '',
           dados.codigo        || '',
@@ -6265,7 +6272,7 @@ function getParticipanteFormConfig() {
 function participanteReferenciaCadastro_(row) {
   row = row || [];
   return {
-    idCadastro: String(row[0] || '').trim(),
+    idCadastro: CadastroRules_.normalizeId(row[0]),
     nome: String(row[1] || '').trim(),
     idParticipante: String(row[4] || '').trim(),
     projeto: String(row[5] || '').trim()
@@ -6392,8 +6399,9 @@ function participantePossuiEventoAgenda_(participante) {
   var agenda = getAgendaSheetForRead_();
   if (!agenda || agenda.getLastRow() < 2) return false;
   var i = AGENDA_CFG.idx;
+  var participantMatcher = CadastroRules_.createAgendaParticipantMatcher(participante);
   return agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues().some(function(row) {
-    return CadastroRules_.agendaEventMatchesParticipant(participante, {
+    return participantMatcher.matches({
       participantCadastroId: i.participanteCadastroId >= 0 ? row[i.participanteCadastroId] : '',
       participante: row[i.participante],
       idParticipante: row[i.idParticipante],
@@ -6405,14 +6413,14 @@ function participantePossuiEventoAgenda_(participante) {
 function participantePessoaIdDaLinha_(row, personIdColumn) {
   return personIdColumn === undefined || personIdColumn < 0
     ? ''
-    : String((row || [])[personIdColumn] || '').trim();
+    : CadastroRules_.normalizeId((row || [])[personIdColumn]);
 }
 
 function participanteLinhaPorCadastroId_(rows, cadastroId) {
-  cadastroId = String(cadastroId || '').trim();
+  cadastroId = CadastroRules_.normalizeId(cadastroId);
   if (!cadastroId) return -1;
   for (var i = 1; i < (rows || []).length; i++) {
-    if (String((rows[i] || [])[0] || '').trim() === cadastroId) return i;
+    if (CadastroRules_.normalizeId((rows[i] || [])[0]) === cadastroId) return i;
   }
   return -1;
 }
@@ -6420,11 +6428,11 @@ function participanteLinhaPorCadastroId_(rows, cadastroId) {
 function participantePessoaIdPorCpf_(rows, cpf, personIdColumn, currentCadastroId) {
   cpf = CadastroRules_.digits(cpf);
   if (!cpf || personIdColumn === undefined || personIdColumn < 0) return '';
-  currentCadastroId = String(currentCadastroId || '').trim();
+  currentCadastroId = CadastroRules_.normalizeId(currentCadastroId);
   var encontrados = {};
   for (var i = 1; i < (rows || []).length; i++) {
     var row = rows[i] || [];
-    if (currentCadastroId && String(row[0] || '').trim() === currentCadastroId) continue;
+    if (currentCadastroId && CadastroRules_.normalizeId(row[0]) === currentCadastroId) continue;
     if (CadastroRules_.digits(row[10]) !== cpf) continue;
     var idPessoa = participantePessoaIdDaLinha_(row, personIdColumn);
     if (idPessoa) encontrados[idPessoa] = true;
@@ -6453,6 +6461,7 @@ function participanteGerarPessoaId_(rows, personIdColumn) {
 function salvarDadosParticipante(d) {
   codexAssertCanWrite_('salvarDadosParticipante', 'Cadastros', d && d.id);
   d = d || {};
+  if (d.id != null) d.id = CadastroRules_.normalizeId(d.id);
   // Somente tempos e contagens: nunca registrar valores identificaveis do cadastro.
   var performanceStartedAt = Date.now();
   var participantRowCount = 0;
@@ -6475,7 +6484,7 @@ function salvarDadosParticipante(d) {
   var existing = null;
   if (d.id) {
     for (var editIdx = 1; editIdx < rows.length; editIdx++) {
-      if (String(rows[editIdx][0]) === String(d.id)) {
+      if (CadastroRules_.normalizeId(rows[editIdx][0]) === d.id) {
         editRowIndex = editIdx;
         break;
       }
@@ -6502,7 +6511,7 @@ function salvarDadosParticipante(d) {
       throw new Error('O CPF não corresponde à pessoa selecionada para a nova participação.');
     }
     d.confirmarNomeDuplicado = true;
-    d.vincularPessoaCadastroId = String(directOrigin[0] || '').trim();
+    d.vincularPessoaCadastroId = CadastroRules_.normalizeId(directOrigin[0]);
   }
   var existingPessoaId = existing ? participantePessoaIdDaLinha_(existing, personIdColumnRead) : '';
   var projeto = String(d.projeto || '').trim();
@@ -6527,15 +6536,16 @@ function salvarDadosParticipante(d) {
       throw new Error('O protocolo e o número de identificação não podem ser alterados porque esta participação já possui eventos na Agenda. Encerre a participação atual e crie uma nova participação para o outro protocolo.');
     }
   }
-  var duplicado = CadastroRules_.findParticipantDuplicate(d, rows);
+  var participantAnalysis = CadastroRules_.analyzeParticipant(d, rows);
+  var duplicado = participantAnalysis.duplicate;
   if (duplicado) {
     throw new Error(duplicado.field === 'cpf'
       ? 'Já existe um participante cadastrado com este CPF.'
       : 'Já existe um participante com este ID vinculado ao mesmo projeto.');
   }
-  var nomeCorrespondencias = CadastroRules_.findParticipantNameMatches(d, rows);
+  var nomeCorrespondencias = participantAnalysis.nameMatches;
   var nomeDuplicado = nomeCorrespondencias.length ? nomeCorrespondencias[0] : null;
-  var cpfCorrespondente = CadastroRules_.findParticipantCpfMatch(d, rows);
+  var cpfCorrespondente = participantAnalysis.cpfMatch;
   var cadastrosCorrespondentes = cpfCorrespondente ? [cpfCorrespondente] : nomeCorrespondencias;
   var cadastroCorrespondente = cpfCorrespondente || nomeDuplicado;
   if (cadastroCorrespondente && !existingPessoaId && d.confirmarNomeDuplicado !== true) {
@@ -6553,7 +6563,7 @@ function salvarDadosParticipante(d) {
     throw new Error('Não é possível criar outra pessoa com o mesmo CPF. Revise o cadastro existente.');
   }
   if (cadastroCorrespondente && !existingPessoaId && d.confirmarNomeDuplicado === true && d.criarPessoaDistinta !== true) {
-    var cadastroVinculoId = String(d.vincularPessoaCadastroId || '').trim();
+    var cadastroVinculoId = CadastroRules_.normalizeId(d.vincularPessoaCadastroId);
     cadastroCorrespondente = null;
     for (var cadastroMatchIndex = 0; cadastroMatchIndex < cadastrosCorrespondentes.length; cadastroMatchIndex++) {
       if (String(cadastrosCorrespondentes[cadastroMatchIndex].id) === cadastroVinculoId) {
@@ -6726,11 +6736,12 @@ function excluirParticipante(id) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
       var participante = participanteReferenciaCadastro_(rows[i]);
+      var participantMatcher = CadastroRules_.createAgendaParticipantMatcher(participante);
       var agenda = getAgendaSheet_();
       if (agenda && agenda.getLastRow() >= 2) {
         var agendaRows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
         var possuiEvento = agendaRows.some(function(row) {
-          return CadastroRules_.agendaEventMatchesParticipant(participante, {
+          return participantMatcher.matches({
             participantCadastroId: AGENDA_CFG.idx.participanteCadastroId >= 0 ? row[AGENDA_CFG.idx.participanteCadastroId] : '',
             participante: row[AGENDA_CFG.idx.participante],
             idParticipante: row[AGENDA_CFG.idx.idParticipante],
@@ -7904,10 +7915,16 @@ function getItensEstoqueColumnMap_(headers) {
 
 function getItensEstoque() {
   codexAssertCanRead_();
+  return getItensEstoqueDados_(true);
+}
+
+function getItensEstoqueDados_(incluirProjetos) {
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var shItens = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
-  var shProj  = ss.getSheetByName('Projetos');
-  var projetosAtivos = getProjetosAtivosEstoque_();
+  // A hidratacao do estoque precisa apenas do catalogo. Listas de projetos
+  // pertencem ao formulario de cadastro e nao devem pesar na carga da Agenda.
+  var shProj  = incluirProjetos ? ss.getSheetByName('Projetos') : null;
+  var projetosAtivos = incluirProjetos ? getProjetosAtivosEstoque_() : [];
 
   var projetos = [];
   if (shProj && shProj.getLastRow() > 1) {
@@ -9864,12 +9881,16 @@ function migrarIdsLotesEstoque() {
 function getEstoqueLinhas_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("Estoque");
-  if (!sh || sh.getLastRow() < 2) return [];
-  var headers = codexReadValuesMeasured_(sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 15)), false)[0];
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (lastRow < 2) return [];
+  // Cabecalho e linhas no mesmo bloco, mantendo o mapeamento por nomes e
+  // os fallbacks dos schemas antigos, sem criar colunas durante a consulta.
+  var values = codexReadValuesMeasured_(sh.getRange(1, 1, lastRow, Math.max(sh.getLastColumn(), 15)), false);
+  var headers = values[0];
   var columns = getEstoqueColumnMap_(headers);
-  var data = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 15)), false);
+  var data = values.slice(1);
   var tz = Session.getScriptTimeZone();
-  var catalogo = getItensEstoque().itens || [];
+  var catalogo = getItensEstoqueDados_(false).itens || [];
   var catalogoPorId = {};
   var catalogoPorDescricao = {};
 
@@ -9974,14 +9995,15 @@ function kitReservaChave_(idItem, idLote, validade, localizacao, accessionNumber
 
 function getKitReservasLinhas_() {
   var sh = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Reservas_Kits', 'Reservas de Kits']);
-  if (!sh || sh.getLastRow() < 2) return [];
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (lastRow < 2) return [];
   var tz = Session.getScriptTimeZone();
   function fmtDate(v) {
     if (!v) return '';
     if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
     return String(v || '');
   }
-  return codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())), false)
+  return codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())), false)
     .filter(function(r) { return String(r[0] || '').trim(); })
     .map(function(r) {
       return {
@@ -12669,6 +12691,9 @@ function getJornadaParticipante(payload) {
   var participanteNorm = normText_(nome);
   var participanteIdNorm = normText_(participanteId);
   var cadastroIdNorm = normText_(idCadastro);
+  var participantMatcher = CadastroRules_.createAgendaParticipantMatcher({
+    id: idCadastro, nome: nome, idParticipante: participanteId, projeto: projeto
+  });
   var agenda = getAgendaSheetForRead_();
   var eventos = [];
   if (agenda && agenda.getLastRow() >= 2) {
@@ -12680,9 +12705,7 @@ function getJornadaParticipante(payload) {
         ? normText_(row[idx.participanteCadastroId])
         : '';
       var mesmoCadastro = !!(cadastroIdNorm && cadastroIdEventoNorm && cadastroIdEventoNorm === cadastroIdNorm);
-      var mesmoParticipante = CadastroRules_.agendaEventMatchesParticipant({
-        id: idCadastro, nome: nome, idParticipante: participanteId, projeto: projeto
-      }, {
+      var mesmoParticipante = participantMatcher.matches({
         participantCadastroId: cadastroIdEventoNorm,
         participante: row[idx.participante],
         idParticipante: row[idx.idParticipante],
@@ -13219,13 +13242,14 @@ function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExclu
     AGENDA_CFG.col.participanteCadastroId || 0
   );
   var encontradas = [];
+  var participantMatcher = CadastroRules_.createAgendaParticipantMatcher(referencia);
   runs.forEach(function(run) {
     var rows = agenda.getRange(run.start, 1, run.count, readWidth).getValues();
     rows.forEach(function(row) {
       if (agendaIdExcluido && String(row[idx.id] || '').trim() === agendaIdExcluido) return;
       if (!AgendaServerRules_.isVisit(row[idx.tipo])) return;
       if (formatarDataIsoAgenda_(row[idx.data]) !== dataIso) return;
-      if (CadastroRules_.agendaEventMatchesParticipant(referencia, {
+      if (participantMatcher.matches({
         participantCadastroId: idx.participanteCadastroId >= 0 ? row[idx.participanteCadastroId] : '',
         participante: row[idx.participante],
         idParticipante: row[idx.idParticipante],
@@ -13280,12 +13304,21 @@ function agendaVisitaIdentidadeAlterada_(rowAnterior, dados) {
   return !!idAnterior && !!idNovo && idAnterior !== idNovo;
 }
 
+function agendaValidarMaterialBioPayload_(dados) {
+  var hasJson = ['courier1', 'courier2', 'courier3', 'backup'].some(function(slot) {
+    var courier = dados && dados[slot];
+    return courier && String(courier.matBioJson || courier.materialJson || '').trim();
+  });
+  if (hasJson) codexMatBioValidateAgendaPayload_(dados);
+}
+
 function salvarNovoEventoCompleto(dados) {
   var operation = 'salvarNovoEventoCompleto';
   return codexMeasurePerformance_(operation, 'total', { rowCount: 1 }, function() {
   codexAssertCanWrite_(operation, 'Agenda', dados && dados.id);
   return codexWithDocumentLock_(operation, function() {
   dados = dados || {};
+  agendaValidarMaterialBioPayload_(dados);
   dados.status = 'Agendado';
   var setup = codexMeasurePerformance_(operation, 'setup', { rowCount: 0 }, function() {
     return { ss: SpreadsheetApp.getActiveSpreadsheet(), agenda: getAgendaSheet_() };
@@ -13363,6 +13396,7 @@ function salvarNovoEventoComFeriado(dados) {
   codexAssertCanWrite_('salvarNovoEventoComFeriado', 'Agenda', dados && dados.id);
   return codexWithDocumentLock_('salvarNovoEventoComFeriado', function() {
   dados = dados || {};
+  agendaValidarMaterialBioPayload_(dados);
   dados.status = 'Agendado';
   var agenda = getAgendaSheet_();
   var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
@@ -13863,6 +13897,7 @@ function atualizarAgendaEventoCompleto(dados) {
   codexAssertCanWrite_('atualizarAgendaEventoCompleto', 'Agenda', dados && dados.id);
   return codexWithDocumentLock_('atualizarAgendaEventoCompleto', function() {
   dados = dados || {};
+  agendaValidarMaterialBioPayload_(dados);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
   var linha = agendaLocalizarLinhaPorId_(agenda, String(dados.id || '').trim(), dados._rowIndex);
@@ -14040,12 +14075,7 @@ function atualizarAgendaEventoCompleto(dados) {
   if (carroSalvo !== dados.carroRequerido) {
     throw new Error('Não foi possível salvar a indicação de carro na Agenda.');
   }
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, dados.courier1);
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, dados.courier2);
-  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
-  agendaSetBackupLinha_(agenda, linha,
-    policy.labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral) ? dados.backup : {});
-  agendaSetTransporteExtraLinha_(agenda, linha, dados);
+  agendaGravarTransportesDoEvento_(agenda, linha, dados, labCentral);
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
   if (deveVerificarNotificacoes) {
     verificarNotificacoes(
@@ -14511,12 +14541,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
     throw new Error('Não foi possível salvar a indicação de carro na Agenda.');
   }
   agendaMeasureSaveStage_(performanceOperation, 'transport_fields', { rowCount: 1 }, function() {
-  agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c1, dados.courier1, { skipBackupAwbSync: true });
-  agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c2, dados.courier2);
-  agendaSetCourierLinha_(agenda, linhaNova, AGENDA_CFG.idx.c3, dados.courier3);
-  agendaSetBackupLinha_(agenda, linhaNova,
-    policy.labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral) ? dados.backup : {});
-  agendaSetTransporteExtraLinha_(agenda, linhaNova, dados);
+  agendaGravarTransportesDoEvento_(agenda, linhaNova, dados, labCentral, true);
   });
   agendaMeasureSaveStage_(performanceOperation, 'format_row', { rowCount: 1 }, function() {
   agenda.getRange(linhaNova, 1, 1, AGENDA_CFG.lastCol)
@@ -14592,6 +14617,17 @@ function agendaFinalizarLoteMonitoria_(agenda, performanceOperation, count) {
     }
   });
   agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: count }, function() { SpreadsheetApp.flush(); });
+}
+
+function agendaGravarTransportesDoEvento_(agenda, linha, dados, labCentral, skipBackupAwbSync) {
+  // Contato telefonico nao cria transporte nem sobrescreve dados de envios historicos.
+  if (AgendaServerRules_.isPhoneContact(dados.tipo)) return;
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, dados.courier1, { skipBackupAwbSync: skipBackupAwbSync === true });
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, dados.courier2);
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
+  agendaSetBackupLinha_(agenda, linha,
+    AgendaServerRules_.formPolicy(dados.tipo).labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral) ? dados.backup : {});
+  agendaSetTransporteExtraLinha_(agenda, linha, dados);
 }
 
 function agendaSetCourierLinha_(agenda, linha, idx, courier, options) {
@@ -14678,10 +14714,9 @@ function codexCourierAwbRule_(courier) {
 
 function codexCourierNormalizeAwb_(awb, courier) {
   var rule = codexCourierAwbRule_(courier);
-  var value = String(awb || '').trim();
+  var value = String(awb == null ? '' : awb).trim();
   if (rule.mode === 'alnum' || rule.mode === 'ocasa') value = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   else if (rule.mode === 'digits') value = value.replace(/\D/g, '');
-  if (rule.len) value = value.slice(0, rule.len);
   return value;
 }
 
@@ -17149,6 +17184,13 @@ function agendaLocalizarLinhaPorId_(sh, id, rowIndex, metadata) {
 
 function getAgendaEventoPorId(id, rowIndex) {
   codexAssertCanRead_();
+  return agendaLerEventoPorId_(id, rowIndex);
+}
+
+// Somente para chamadas internas que ja autorizaram o acesso nesta execucao.
+// Opcoes do recibo nao sao expostas na RPC publica de leitura do evento.
+function agendaLerEventoPorId_(id, rowIndex, options) {
+  options = options || {};
   var totalMeta = { rowCount: 0 };
   return codexMeasurePerformance_('getAgendaEventoPorId', 'total', totalMeta, function() {
     id = String(id || '').trim();
@@ -17177,9 +17219,20 @@ function getAgendaEventoPorId(id, rowIndex) {
       return agendaRowToObject_(values, localizado.row);
     });
     totalMeta.rowCount = 1;
-    codexMeasurePerformance_('getAgendaEventoPorId', 'hydrate', { rowCount: 1 }, function() {
-      agendaHydrateParticipantFields_([item]);
-    });
+    // O recibo consulta o cadastro completo a seguir. Com a identidade inteira
+    // na linha, completar braco pelo indice geral seria uma leitura redundante.
+    // Legados e identidades incompletas conservam a conciliacao anterior.
+    var receiptIdentityComplete = options.receipt === true &&
+      String(item.participanteCadastroId || '').trim() &&
+      String(item.participante || '').trim() && String(item.projeto || '').trim() &&
+      String(item.idParticipante || '').trim();
+    if (receiptIdentityComplete) {
+      codexLogPerformance_('getAgendaEventoPorId', 'hydrate_skipped_receipt', 0, { rowCount: 1 }, true);
+    } else {
+      codexMeasurePerformance_('getAgendaEventoPorId', 'hydrate', { rowCount: 1 }, function() {
+        agendaHydrateParticipantFields_([item]);
+      });
+    }
     return item;
   });
 }
@@ -17285,7 +17338,7 @@ function getAgendaReciboData(id, rowIndex) {
   });
   if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
   var evento = codexMeasurePerformance_('getAgendaReciboData', 'event', {}, function() {
-    return getAgendaEventoPorId(id, rowIndex);
+    return agendaLerEventoPorId_(id, rowIndex, { receipt: true });
   });
   if (!evento) throw new Error('Registro da Agenda nao encontrado.');
   var tipoEvento = AgendaServerRules_.formPolicy(evento).type;
@@ -17567,10 +17620,13 @@ function verificarNotificacoes(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva)
   var sheet = sheetAtiva || getAgendaSheet_();
   var linha = Number(linhaAtiva || 0) || (idAtivo ? encontrarLinhaPorId(sheet, idAtivo) : e.range.getRow());
   if (!linha) return;
-  var gatilho = sheet.getRange(linha, AGENDA_CFG.col.labCentral).getValue();
-  var status = sheet.getRange(linha, AGENDA_CFG.col.status).getValue();
-  var controle = String(sheet.getRange(linha, AGENDA_CFG.col.controle).getValue() || '');
-  var dataAtual = sheet.getRange(linha, AGENDA_CFG.col.data).getValue();
+  // Uma leitura do estado persistido; nao reler a data apos decidir a notificacao.
+  var primeiraColuna = AGENDA_CFG.col.data;
+  var estado = sheet.getRange(linha, primeiraColuna, 1, AGENDA_CFG.col.controle - primeiraColuna + 1).getValues()[0];
+  var gatilho = estado[AGENDA_CFG.col.labCentral - primeiraColuna];
+  var status = estado[AGENDA_CFG.col.status - primeiraColuna];
+  var controle = String(estado[AGENDA_CFG.col.controle - primeiraColuna] || '');
+  var dataAtual = estado[0];
   var mudouData = datasAgendaDiferentes_(dataAnterior, dataAtual);
   var notificationAction = AgendaServerRules_.notificationAction({
     labCentral: gatilho,
@@ -17581,7 +17637,7 @@ function verificarNotificacoes(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva)
   if (notificationAction === 'agendamento') {
     if (agendaEmailEnabled_()) {
       enviarEmailAgendamento_(sheet, linha, e.user);
-      sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Notificado ' + formatarDataSafe(sheet.getRange(linha, AGENDA_CFG.col.data).getValue()));
+      sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Notificado ' + formatarDataSafe(dataAtual));
     } else {
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Pendente notificacao - modo teste');
     }
@@ -18048,11 +18104,12 @@ function excluirConfigAppItem(rowIndex, startCol) {
 function alinharStatusRequisicaoLegadoAgenda_(sh) {
   var cacheKey = 'AgendaLegacyReqAligned:v2';
   if (codexCacheGet_(cacheKey)) return;
-  if (!sh || sh.getLastRow() < 2) {
+  var lastRow = sh ? sh.getLastRow() : 0;
+  if (lastRow < 2) {
     codexCachePut_(cacheKey, true, 21600);
     return;
   }
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+  var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
   var updates = [];
   rows.forEach(function(r, idx) {
     var prestador = String(r[AGENDA_CFG.idx.servTerc] || '').trim();
@@ -18061,9 +18118,11 @@ function alinharStatusRequisicaoLegadoAgenda_(sh) {
       updates.push({ row: idx + 2, value: 'Requisição Enviada' });
     }
   });
-  updates.forEach(function(u) {
-    sh.getRange(u.row, AGENDA_CFG.col.reqStatus).setValue(u.value);
-  });
+  // Mesmo valor em celulas esparsas: escrever somente os alvos, em um lote.
+  // Nao regravar a coluna inteira, preservando status explicitos e formulas alheias.
+  if (updates.length) {
+    sh.getRangeList(updates.map(function(u) { return 'R' + u.row + 'C' + AGENDA_CFG.col.reqStatus; })).setValue('Requisição Enviada');
+  }
   codexCachePut_(cacheKey, true, 21600);
 }
 
@@ -18563,4 +18622,3 @@ function limparCacheCourier_() {
     }
   } catch (e) {}
 }
-

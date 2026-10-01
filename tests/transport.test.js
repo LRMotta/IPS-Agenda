@@ -1119,6 +1119,7 @@ test('data de envio anterior a hoje e rejeitada antes da documentacao', () => {
  test('Gerar docs bloqueia modal e card antes de abrir janela com AWB vazia', () => {
   const source = readProjectFile('IndexAgendaScripts.html');
   const context = vm.createContext({
+    agendaMatBioValidateAll: () => true,
     CodexCourierRules: runHtmlScript('SharedCourierRules.html').CodexCourierRules,
     _agendaEditId: 'EVT',
     coletarAgendaEvento: () => ({ participante: 'Teste', courier1: { nome: 'MARKEN', awb: '' } }),

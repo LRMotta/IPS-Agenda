@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { readProjectFile, runFile } = require('./helpers/load-app-script');
+const { readProjectFile, runFile, runHtmlScript } = require('./helpers/load-app-script');
 
 function fakeAgenda(server, records) {
   const cfg = server.AGENDA_CFG;
@@ -186,7 +186,7 @@ test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', ()
     'pesquisarAgendaHistorico',
     'getAgendaMateriaisAnteriores',
     'getAgendaPeriodoOperacionalPorEventoId',
-    'getAgendaEventoPorId',
+    'agendaLerEventoPorId_',
     'getDashboardPendencias_',
     'getAgendaDashboardResumo_',
     'getUltimasVisitasParticipantesAgendaMap_'
@@ -1907,7 +1907,7 @@ test('lista agrupa monitorias e SIV no topo com local alinhado e acoes reais da 
   assert.match(actionMenuToggle, /firstItem\.focus\(\{ preventScroll: true \}\)/);
   assert.match(compact, /st-cancelado/);
   assert.match(compact, /agendaStatusChipOp\(r\.status, r\.tipo\)/);
-  assert.match(operationalStatus, /agendaStatusClass\(\{status: status\}\)/);
+  assert.match(operationalStatus, /AgendaRules\.statusChipClass\(status\)/);
   assert.match(compact, /agendaTipoLabel\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(compact, /agendaTipoAccentClass\(isSiv \? 'SIV' : 'Monitoria'\)/);
   assert.match(cancelledGroup, /agendaToggleCanceladosDia/);
@@ -2625,12 +2625,13 @@ test('compatibilidade nao altera contratos publicos de Transporte ou documentos'
 });
 
 test('consulta exige medico no cliente e no servidor', () => {
-  const clientRules = readProjectFile('SharedAgendaRules.html');
+  const clientRules = runHtmlScript('SharedAgendaRules.html');
   const serverRules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const client = readProjectFile('IndexAgendaScripts.html');
   const content = readProjectFile('IndexContentAfterDashboard.html');
   const server = readProjectFile('WebApp.gs');
-  assert.match(clientRules, /requiresDoctor: type === 'consulta'/);
+  assert.equal(clientRules.AgendaRules.formPolicy('Consulta').requiresDoctor, true);
+  assert.equal(clientRules.AgendaRules.formPolicy('Visita').requiresDoctor, false);
   assert.equal(serverRules.formPolicy('Consulta').requiresDoctor, true);
   assert.equal(serverRules.formPolicy('Visita').requiresDoctor, false);
   assert.match(content, /id="agMedicoRequired"/);

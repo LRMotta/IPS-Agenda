@@ -28,6 +28,51 @@ async function scenario(run, options = {}) {
   } finally { await page.close(); }
 }
 
+test('Transporte: AWB excedente permanece completa e sinaliza comprimento invalido', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => window.selectCourier('MARKEN'));
+    const input = page.locator('#awb');
+    await input.fill('AB12CD34EF567');
+    assert.equal(await input.inputValue(), 'AB12CD34EF567');
+    assert.equal(await input.evaluate(el => el.checkValidity()), false);
+    await input.fill('ab-12 cd34 ef56');
+    assert.equal(await input.inputValue(), 'AB12CD34EF56');
+    assert.equal(await input.evaluate(el => el.checkValidity()), true);
+  });
+});
+
+test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicita libera a gravacao', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window.renderMatBioEditor([{ key: 'soro', formula: '1x500', unit: 'mL' }, { key: 'fezes', formula: '2x5', unit: 'g' }]);
+      window.selectCourier('DHL');
+    });
+    const first = page.locator('.ag-mat-line').first();
+    assert.equal(await first.locator('.ag-mat-formula').inputValue(), '1x500', 'trocar courier preserva numeros');
+    assert.equal(await first.locator('.ag-mat-total-line').innerText(), 'Conversão pendente');
+    await page.evaluate(() => window.saveData());
+    assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 0);
+    await page.getByRole('button', { name: 'Converter mL para L' }).click();
+    assert.equal(await first.locator('.ag-mat-formula').inputValue(), '1×0,5');
+    const stool = page.locator('.ag-mat-line').filter({ has: page.locator('select option:checked[value="fezes"]') });
+    assert.equal(await stool.locator('.ag-mat-formula').inputValue(), '2x5');
+    await page.evaluate(() => window.saveData());
+    const call = await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte'));
+    assert.ok(call);
+    assert.equal(call.args[0].materiais.find(item => item.material === 'Soro').total, 0.5);
+    assert.equal(call.args[0].materiais.find(item => item.material === 'Fezes').unit, 'g');
+    assert.equal(await page.locator('#stVolume').innerText(), '0,50000 L', 'massa nao e somada ao volume');
+    await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').success({}));
+    await first.locator('.ag-mat-formula').fill('2x5 + 3x');
+    assert.equal(await first.locator('.ag-mat-formula').getAttribute('aria-invalid'), 'true');
+    assert.equal(await first.locator('.ag-mat-total-line').innerText(), 'Inválido');
+    await page.evaluate(() => window.saveData());
+    assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 1);
+    await first.locator('.ag-mat-formula').fill('1000x0,000001');
+    assert.equal(await first.locator('.ag-mat-formula').getAttribute('aria-invalid'), 'false');
+  });
+});
+
 test('Transporte: Outro sempre no final preserva materiais, formulas, ensaios e descricao', async () => {
   for (const width of [1440, 1024, 390]) {
     await scenario(async page => {

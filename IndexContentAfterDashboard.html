@@ -866,21 +866,25 @@
               </button>
             </div>
             <div class="ag-transport-box" id="agBackupWrap">
-              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">inventory</span> Transporte de Amostras Backup <button class="ag-c-doc-btn" id="btnCriarEnvioBackup" type="button" aria-expanded="false" aria-controls="backupAgendaActions" onclick="abrirOpcoesAgendamentoBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Agendar</button></div>
+              <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">inventory</span> Transporte de Amostras Backup</div>
               <div id="backupAgendaRefInfo" class="ag-backup-agenda-info" style="display:none" aria-live="polite"></div>
-              <div id="backupAgendaActions" class="ag-backup-agenda-actions" style="display:none" role="group" aria-label="Opções para agendar o backup">
-                <button class="ag-tb-btn" type="button" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">event</span> Criar novo Envio de Amostras</button>
-                <button class="ag-tb-btn" type="button" onclick="carregarVisitasFuturasBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">event_available</span> Usar visita futura</button>
-              </div>
-              <div id="backupAgendaVisitas" class="ag-backup-agenda-visitas" style="display:none" aria-live="polite"></div>
               <div class="ag-transport-fields backup">
                 <div><label class="field-label" for="agBackupNome">Courier</label><select id="agBackupNome" class="f-input f-select" onchange="onAgendaCourierChange('agBackup')"></select></div>
                 <div><label class="field-label" for="agBackupDestino">Laboratório destino</label><select id="agBackupDestino" class="f-input f-select"></select></div>
-                <div><label class="field-label" for="agBackupTemp">Temperatura</label><select id="agBackupTemp" class="f-input f-select"></select></div>
+                <div><label class="field-label" for="agBackupTemp">Temperatura</label><select id="agBackupTemp" class="f-input f-select" onchange="atualizarEstadoNovoEnvioBackup_()"></select></div>
                 <div><label class="field-label" for="agBackupStatus">Status</label><select id="agBackupStatus" class="f-input f-select" onchange="atualizarEstadoNovoEnvioBackup_()"></select></div>
               </div>
               <div class="field-label" id="agBackupMaterialLabel">Material biológico</div>
               <div id="agBackupMaterial" class="ag-mat-editor" role="group" aria-labelledby="agBackupMaterialLabel"></div>
+              <div id="backupAgendaStep" class="ag-backup-agenda-step" role="group" aria-labelledby="backupAgendaTitle">
+                <div id="backupAgendaTitle" class="ag-backup-agenda-title">Agendar o Backup</div>
+                <p id="backupAgendaHint" class="ag-backup-agenda-hint" role="status" aria-live="polite">Informe a temperatura para liberar as opções de agendamento.</p>
+                <div id="backupAgendaActions" class="ag-backup-agenda-actions">
+                  <button id="btnCriarEnvioBackup" class="ag-backup-agenda-choice" type="button" disabled aria-disabled="true" aria-describedby="backupAgendaHint" onclick="criarEnvioAmostrasDoBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">event</span><span><strong>Criar novo Envio de Amostras</strong><small>Definir uma nova data e horário para o envio.</small></span></button>
+                  <button id="btnUsarVisitaFuturaBackup" class="ag-backup-agenda-choice" type="button" disabled aria-disabled="true" aria-describedby="backupAgendaHint" onclick="carregarVisitasFuturasBackupAgenda()"><span class="material-symbols-outlined" aria-hidden="true">event_available</span><span><strong>Usar visita futura</strong><small>Aproveitar uma visita já cadastrada na Agenda.</small></span></button>
+                </div>
+                <div id="backupAgendaVisitas" class="ag-backup-agenda-visitas" style="display:none" aria-live="polite"></div>
+              </div>
             </div>
           </div>
           <div class="ag-modal-actions">

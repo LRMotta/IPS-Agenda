@@ -2,6 +2,10 @@
 
   // ===================== VISUALIZAÇÃO DO ESTOQUE =====================
   var evItens = [];
+  var _evItemViewCache = new WeakMap();
+  var _evDetalheRows = {};
+  var _evBuscaTimer = null;
+  var _evViewStatus = 'idle';
   var _evParticipantes = [];
   var _evTransferRows = {};
   var _evTransferSelecionado = null;
@@ -117,9 +121,13 @@
   }
 
   function carregarEstoqueView(force) {
+    _evViewStatus = 'loading';
+    clearTimeout(_evBuscaTimer);
+    _evBuscaTimer = null;
     if (force) invalidateEstoqueClientCache();
     document.getElementById('evBody').innerHTML =
       '<tr class="loading-row"><td colspan="10"><div class="spinner"></div>Carregando...</td></tr>';
+    document.getElementById('evBody').setAttribute('aria-busy', 'true');
     estoqueCachedRun('bootstrap:estoque-view', 'getEstoqueBootstrapData', ['estoque-view'],
       function(res) {
         evRender({
@@ -129,13 +137,22 @@
           piloto: (res && res.piloto) || null
         });
       },
-      function(e) { snackErro(e); },
+      function(e) {
+        _evViewStatus = 'error';
+        var body = document.getElementById('evBody');
+        body.setAttribute('aria-busy', 'false');
+        body.innerHTML = '<tr class="empty-row"><td colspan="10"><div role="alert">Não foi possível carregar o estoque: ' + esc(appErrorMessage(e)) + '</div><button type="button" class="btn-new" onclick="carregarEstoqueView(true)">Tentar novamente</button></td></tr>';
+        snackErro(e);
+      },
       !!force);
   }
 
   function evRender(payload) {
+    _evViewStatus = 'ready';
     var pacote = Array.isArray(payload) ? { itens: payload } : (payload || {});
     evItens = pacote.itens || [];
+    _evItemViewCache = new WeakMap();
+    evItens.forEach(evPrepararItemView);
     _evParticipantes = pacote.participantes || [];
     _evAlertas = pacote.alertas || null;
     _evPiloto = pacote.piloto || null;
@@ -711,21 +728,40 @@
     return 'ok';
   }
 
+  function evAgendarBusca() {
+    clearTimeout(_evBuscaTimer);
+    _evBuscaTimer = setTimeout(evFiltrar, 180);
+  }
+
+  function evPrepararItemView(it) {
+    var cached = _evItemViewCache.get(it);
+    if (cached) return cached;
+    var lotesBusca = (it.lotes || []).map(function(lote) {
+      return [lote.validade, lote.localizacao, lote.numeroPedido, lote.responsavel, lote.status, lote.accessionNumber].join(' ');
+    }).join(' ');
+    var reservasBusca = (it.reservasLaboratorio || []).map(function(reserva) {
+      return [reserva.participante, reserva.participanteId, reserva.visitaPrevista, reserva.dataVisita, reserva.agendaId].join(' ');
+    }).join(' ');
+    cached = {
+      search: [it.descricao, it.projeto, evTipoItem(it), it.laboratorio, it.idItem, it.observacoes, it.detalhesVisita,
+        (it.numerosPedidoPendente || []).join(' '), lotesBusca, reservasBusca].join(' ').toLowerCase(),
+      lotes: (it.lotes || []).slice().sort(function(a, b) { return sortValidade(a.validade, b.validade); })
+    };
+    _evItemViewCache.set(it, cached);
+    return cached;
+  }
+
   function evFiltrar() {
+    clearTimeout(_evBuscaTimer);
+    _evBuscaTimer = null;
+    if (_evViewStatus !== 'ready') return;
     var q      = document.getElementById('evSearch').value.toLowerCase().trim();
     var proj   = document.getElementById('evFilterProjeto').value.toLowerCase();
     var tipo   = document.getElementById('evFilterTipo').value.toLowerCase();
     var status = document.getElementById('evFilterStatus').value.toLowerCase();
     var f = evItens.filter(function(it) {
       var tipoItem = evTipoItem(it);
-      var lotesBusca = (it.lotes || []).map(function(lote) {
-        return [lote.validade, lote.localizacao, lote.numeroPedido, lote.responsavel, lote.status, lote.accessionNumber].join(' ');
-      }).join(' ');
-      var reservasBusca = (it.reservasLaboratorio || []).map(function(reserva) {
-        return [reserva.participante, reserva.participanteId, reserva.visitaPrevista, reserva.dataVisita, reserva.agendaId].join(' ');
-      }).join(' ');
-      if (q && !([it.descricao, it.projeto, tipoItem, it.laboratorio, it.idItem, it.observacoes, it.detalhesVisita,
-        (it.numerosPedidoPendente || []).join(' '), lotesBusca, reservasBusca].join(' ').toLowerCase().includes(q))) return false;
+      if (q && !evPrepararItemView(it).search.includes(q)) return false;
       if (proj   && (it.projeto  || '').toLowerCase() !== proj)   return false;
       if (tipo   && tipoItem.toLowerCase() !== tipo)   return false;
       if (status && (it.status   || '').toLowerCase() !== status) return false;
@@ -737,6 +773,8 @@
   function evRenderTabela(lista) {
     var tb = document.getElementById('evBody');
     _evTransferRows = {};
+    _evDetalheRows = {};
+    tb.setAttribute('aria-busy', 'false');
     if (!lista.length) {
       tb.innerHTML = '<tr class="empty-row"><td colspan="10">Nenhum item encontrado.</td></tr>';
       return;
@@ -746,7 +784,7 @@
       var nivel = evNivel(it);
       var qCls  = nivel === 'critico' ? 'color:#b3261e;font-weight:700' :
                   nivel === 'baixo'   ? 'color:#e65100;font-weight:700' : 'color:#137333;font-weight:700';
-      var lotes = (it.lotes || []).slice().sort(function(a, b) { return sortValidade(a.validade, b.validade); });
+      var lotes = evPrepararItemView(it).lotes;
       var validades = lotes.map(function(lote) { return String(lote.validade || '').trim(); }).filter(Boolean);
       var locais = [];
       lotes.forEach(function(lote) {
@@ -772,36 +810,8 @@
         ? '<span class="chip chip-blue">' + esc(String(it.qtdePedidaPendente)) + '</span>'
         : '—';
 
-      var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
-        '<thead><tr><th>Validade</th><th>Localização</th><th>Quantidade</th><th>Comprometido</th><th>Saldo p/ reserva</th><th>Status do lote</th><th>N° Pedido</th><th>Accession Number</th><th>Última alteração</th><th>Responsável</th></tr></thead><tbody>' +
-        lotes.map(function(lote, loteIndex) {
-          if (!_evTransferRows[idx]) _evTransferRows[idx] = {};
-          _evTransferRows[idx][loteIndex] = { item: it, lote: lote };
-          var disponivelLote = Number(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) || 0;
-          var noLaboratorio = evEhLaboratorio(lote.localizacao);
-          var excecaoBtn = lote.idLote && Number(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) > 0
-            ? '<button type="button" class="estoque-lote-transfer" title="Registrar perda, descarte ou vencimento" onclick="event.stopPropagation();evAbrirExcecaoLoteIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">report_problem</span>Exceção</button>'
-            : '';
-          var transferirBtn = evEhKit(it) && lote.idLote && disponivelLote > 0
-            ? '<button type="button" class="estoque-lote-transfer" title="' + (noLaboratorio ? 'Devolver ao Estoque Principal' : 'Reservar para participante') + '" onclick="event.stopPropagation();evAbrirTransferenciaIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">' + (noLaboratorio ? 'undo' : 'assignment_ind') + '</span>' + (noLaboratorio ? 'Devolver' : 'Reservar') + '</button>'
-            : '<span class="estoque-lote-transfer-empty">â€”</span>';
-          return '<tr>' +
-            '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
-            '<td>' + esc(lote.localizacao || '—') + '</td>' +
-            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) + '</td>' +
-            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
-            '<td style="text-align:center;font-weight:700">' + (noLaboratorio ? '—' : esc(disponivelLote)) + '</td>' +
-            '<td>' + evChipStatus(lote.status) + '</td>' +
-            '<td>' + evPedidoLink(lote.numeroPedido) + '<div class="estoque-lote-actions">' + transferirBtn + excecaoBtn + '</div></td>' +
-            '<td>' + esc(lote.accessionNumber || '—') + '</td>' +
-            '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
-            '<td>' + esc(lote.responsavel || '—') + '</td>' +
-          '</tr>';
-        }).join('') + '</tbody></table></div>'
-        : '<div class="estoque-empty-lots"><span class="material-symbols-outlined">inventory_2</span>Item cadastrado sem saldo atual.</div>';
-
       var r1 = '<tr class="par-main" data-pair="' + uid + '">' +
-        '<td><button style="width:28px;height:28px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-faint);border-radius:var(--r-sm);" onclick="evToggle(\'' + uid + '\')">' +
+        '<td><button type="button" aria-expanded="false" aria-controls="evdet-' + uid + '" aria-label="Expandir detalhes de ' + esc(it.descricao || it.idItem || 'item') + '" style="width:28px;height:28px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-faint);border-radius:var(--r-sm);" onclick="evToggle(\'' + uid + '\')">' +
           '<span class="material-symbols-outlined" style="font-size:18px;transition:transform .25s;" id="evarw-' + uid + '">chevron_right</span>' +
         '</button></td>' +
         '<td><span class="chip chip-blue">' + esc(it.projeto || '—') + '</span></td>' +
@@ -815,8 +825,54 @@
         '<td style="text-align:center;">' + pedPend + '</td>' +
       '</tr>';
 
-      var r2 = '<tr class="par-detail" id="evdet-' + uid + '" data-pair="' + uid + '" style="display:none;">' +
-        '<td colspan="10" style="padding:4px 0 12px 0;background:#fafbff;">' +
+      _evDetalheRows[uid] = { item: it, index: idx, lotes: lotes, loaded: false };
+      var r2 = '<tr class="par-detail" id="evdet-' + uid + '" data-pair="' + uid + '" style="display:none;"><td colspan="10"></td></tr>';
+
+      return r1 + r2;
+    }).join('');
+
+    document.querySelectorAll('#page-estoque-view .par-main, #page-estoque-view .par-detail').forEach(function(tr) {
+      var pair = tr.dataset.pair;
+      tr.addEventListener('mouseenter', function() {
+        document.querySelectorAll('[data-pair="' + pair + '"]').forEach(function(el) { el.classList.add('par-hover'); });
+      });
+      tr.addEventListener('mouseleave', function() {
+        document.querySelectorAll('[data-pair="' + pair + '"]').forEach(function(el) { el.classList.remove('par-hover'); });
+      });
+    });
+  }
+
+  function evDetalheHtml(it, idx, lotes) {
+      var lotesHtml = lotes.length ? '<div class="estoque-lotes-wrap"><table class="estoque-lotes-table">' +
+        '<thead><tr><th scope="col">Validade</th><th scope="col">Localização</th><th scope="col">Quantidade</th><th scope="col">Comprometido</th><th scope="col">Saldo p/ reserva</th><th scope="col">Status do lote</th><th scope="col">N° Pedido</th><th scope="col">Accession Number</th><th scope="col">Última alteração</th><th scope="col">Responsável</th><th scope="col" class="estoque-lote-actions-head">Ações</th></tr></thead><tbody>' +
+        lotes.map(function(lote, loteIndex) {
+          if (!_evTransferRows[idx]) _evTransferRows[idx] = {};
+          _evTransferRows[idx][loteIndex] = { item: it, lote: lote };
+          var disponivelLote = Number(lote.qtdeDisponivel !== undefined ? lote.qtdeDisponivel : lote.qtde) || 0;
+          var noLaboratorio = evEhLaboratorio(lote.localizacao);
+          var excecaoBtn = lote.idLote && Number(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) > 0
+            ? '<button type="button" class="estoque-lote-transfer" title="Registrar perda, descarte ou vencimento" onclick="event.stopPropagation();evAbrirExcecaoLoteIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">report_problem</span>Exceção</button>'
+            : '';
+          var transferirBtn = evEhKit(it) && lote.idLote && disponivelLote > 0
+            ? '<button type="button" class="estoque-lote-transfer" title="' + (noLaboratorio ? 'Devolver ao Estoque Principal' : 'Reservar para participante') + '" onclick="event.stopPropagation();evAbrirTransferenciaIndice(' + idx + ',' + loteIndex + ')"><span class="material-symbols-outlined">' + (noLaboratorio ? 'undo' : 'assignment_ind') + '</span>' + (noLaboratorio ? 'Devolver' : 'Reservar') + '</button>'
+            : '<span class="estoque-lote-transfer-empty">—</span>';
+          return '<tr>' +
+            '<td style="' + evValCls(lote.validade) + '">' + esc(estoqueValidadeExibicao(lote.validade) || '—') + '</td>' +
+            '<td>' + esc(lote.localizacao || '—') + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeFisica !== undefined ? lote.qtdeFisica : lote.qtde) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + esc(lote.qtdeReservada || 0) + '</td>' +
+            '<td style="text-align:center;font-weight:700">' + (noLaboratorio ? '—' : esc(disponivelLote)) + '</td>' +
+            '<td>' + evChipStatus(lote.status) + '</td>' +
+            '<td>' + evPedidoLink(lote.numeroPedido) + '</td>' +
+            '<td>' + esc(lote.accessionNumber || '—') + '</td>' +
+            '<td>' + esc(lote.ultimaAlteracao || '—') + '</td>' +
+            '<td>' + esc(lote.responsavel || '—') + '</td>' +
+            '<td class="estoque-lote-actions-cell"><div class="estoque-lote-actions">' + transferirBtn + excecaoBtn + '</div></td>' +
+          '</tr>';
+        }).join('') + '</tbody></table></div>'
+        : '<div class="estoque-empty-lots"><span class="material-symbols-outlined">inventory_2</span>Item cadastrado sem saldo atual.</div>';
+
+    return '<td colspan="10" style="padding:4px 0 12px 0;background:#fafbff;">' +
           '<div style="padding:8px 12px 6px 52px;display:flex;flex-wrap:wrap;gap:6px 28px;">' +
             '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);">' +
               '<span class="material-symbols-outlined" style="font-size:15px;color:#b0b8c8;">tag</span>' +
@@ -830,48 +886,7 @@
           '</div>' +
           lotesHtml +
           estoqueItemNotasDetalheHtml(it) +
-        '</td>' +
-      '</tr>';
-
-      return r1 + r2;
-    }).join('');
-
-    document.querySelectorAll('#page-estoque-view .estoque-lotes-table').forEach(function(table) {
-      var hasAction = !!table.querySelector('.estoque-lote-actions button');
-      table.querySelectorAll('.estoque-lote-actions').forEach(function(wrap) {
-        if (!hasAction || wrap.querySelector('button') === null) wrap.remove();
-      });
-      if (!hasAction) return;
-      var headRow = table.querySelector('thead tr');
-      if (headRow && !headRow.querySelector('.estoque-lote-actions-head')) {
-        var actionHead = document.createElement('th');
-        actionHead.className = 'estoque-lote-actions-head';
-        actionHead.textContent = 'Ação';
-        headRow.appendChild(actionHead);
-      }
-      table.querySelectorAll('tbody tr').forEach(function(row) {
-        var actionWrap = row.querySelector('.estoque-lote-actions');
-        if (row.querySelector('.estoque-lote-actions-cell')) return;
-        var actionCell = document.createElement('td');
-        actionCell.className = 'estoque-lote-actions-cell';
-        var action = actionWrap && actionWrap.querySelector('button');
-        if (action) actionCell.appendChild(action);
-        row.appendChild(actionCell);
-        if (actionWrap) actionWrap.remove();
-      });
-    });
-    document.querySelectorAll('#page-estoque-view .estoque-summary-total').forEach(function(el) {
-      el.textContent = String(el.textContent || '').replace(/^[^:]+:\s*/, '');
-    });
-    document.querySelectorAll('#page-estoque-view .par-main, #page-estoque-view .par-detail').forEach(function(tr) {
-      var pair = tr.dataset.pair;
-      tr.addEventListener('mouseenter', function() {
-        document.querySelectorAll('[data-pair="' + pair + '"]').forEach(function(el) { el.classList.add('par-hover'); });
-      });
-      tr.addEventListener('mouseleave', function() {
-        document.querySelectorAll('[data-pair="' + pair + '"]').forEach(function(el) { el.classList.remove('par-hover'); });
-      });
-    });
+        '</td>';
   }
 
   function evToggle(uid) {
@@ -879,6 +894,14 @@
     var arw = document.getElementById('evarw-' + uid);
     if (!det) return;
     var open = det.style.display === 'table-row';
+    var detail = _evDetalheRows[uid];
+    if (!open && detail && !detail.loaded) {
+      det.innerHTML = evDetalheHtml(detail.item, detail.index, detail.lotes);
+      detail.loaded = true;
+    }
+    document.querySelectorAll('#evBody button[aria-expanded]').forEach(function(button) {
+      button.setAttribute('aria-expanded', String(!open && button.getAttribute('aria-controls') === 'evdet-' + uid));
+    });
     document.querySelectorAll('#evBody .par-detail').forEach(function(row) {
       if (row.id !== 'evdet-' + uid) row.style.display = 'none';
     });

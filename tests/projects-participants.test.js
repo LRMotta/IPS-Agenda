@@ -142,7 +142,8 @@ test('servidor bloqueia exclusao quando encontra evento na Agenda', () => {
   const block = sourceBetween(server, 'function excluirParticipante(', '// ════════════════════════════════\n//  MONITORES');
   assert.match(block, /participanteReferenciaCadastro_\(rows\[i\]\)/);
   assert.match(block, /codexWithDocumentLock_\('excluirParticipante'/);
-  assert.match(block, /CadastroRules_\.agendaEventMatchesParticipant/);
+  assert.match(block, /CadastroRules_\.createAgendaParticipantMatcher\(participante\)/);
+  assert.match(block, /participantMatcher\.matches/);
   assert.match(block, /existe pelo menos um evento registrado para ele na Agenda/);
   assert.ok(block.indexOf('possuiEvento') < block.indexOf('sh.deleteRow'));
 });
@@ -1343,7 +1344,8 @@ test('Jornada usa ID interno e mapa de ultima visita consulta essa chave antes d
   const jornada = sourceBetween(server, 'function getJornadaParticipante(payload)', 'function jornadaReservaPreviaContexto_(payload)');
   const ultimaVisita = sourceBetween(server, 'function agendaUltimaVisitaCadastroKey_(idCadastro)', 'function agendaVisitaCriadaNaMesmaData_(');
 
-  assert.match(jornada, /agendaEventMatchesParticipant\(\{[\s\S]*?id:\s*idCadastro/);
+  assert.match(jornada, /createAgendaParticipantMatcher\(\{[\s\S]*?id:\s*idCadastro/);
+  assert.match(jornada, /participantMatcher\.matches/);
   assert.match(jornada, /participantCadastroId:\s*cadastroIdEventoNorm/);
   assert.match(jornada, /cadastroIdEventoNorm/);
   assert.match(ultimaVisita, /agendaUltimaVisitaCadastroKey_\(idCadastro\)/);

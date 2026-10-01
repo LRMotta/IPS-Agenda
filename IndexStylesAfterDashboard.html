@@ -20,6 +20,16 @@
     .content-stats-row > .stat-corner-right { border-radius: 0 var(--r-lg) 0 0; }
     @media(max-width:700px){.content-stats-row>.stat-corner-right{border-radius:0}}
 
+    /* Rolagem restrita à tabela de médicos, inclusive por teclado. */
+    .medicos-table-scroll { max-width:100%; overflow-x:auto; }
+    .medicos-table-scroll:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+    #tableMedicos { min-width:820px; }
+    #tableMedicos th:first-child, #tableMedicos td:first-child { min-width:240px; }
+    #tableMedicos .row-name { overflow-wrap:anywhere; }
+    .medicos-status { padding:8px 16px; background:var(--surface); border-left:1px solid #e8edf8; border-right:1px solid #e8edf8; font-size:12px; color:var(--text-muted); }
+    .user-chip { font-family:inherit; }
+    @media(max-width:700px){#page-medicos .toolbar-card{flex-wrap:wrap}#page-medicos .search-wrap{flex:1 1 100%;min-width:0}#page-medicos .search-wrap input{min-width:0}}
+
     /* AGENDA OPERACIONAL */
     :root{--ag-line:#e0e6f0;--ag-control-line:#d7dee8;--ag-control-height:32px;--ag-action-size:28px}
     .ag-wrap{width:100%;max-width:none;margin:0 auto}
@@ -275,7 +285,21 @@
     .ag-backup-agenda-info.is-warning{border-color:#f2d18a;background:#fff8e6;color:#725300}
     .ag-backup-agenda-open{margin-left:auto;padding:4px 8px;border:1px solid #c5d5fb;border-radius:5px;background:#fff;color:var(--primary);font:inherit;font-weight:700;white-space:nowrap;cursor:pointer}
     .ag-backup-agenda-open:hover{background:var(--primary-light)}
-    .ag-backup-agenda-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+    .ag-backup-agenda-step{margin-top:16px;padding:14px;border:1px solid #ddd6fe;border-radius:var(--r-sm);background:#faf8ff}
+    .ag-backup-agenda-step.is-ready{border-color:#a78bfa;background:#f5f3ff}
+    .ag-backup-agenda-title{font-size:14px;font-weight:700;color:#5b21b6}
+    .ag-backup-agenda-hint{margin:6px 0 12px;font-size:12px;line-height:1.5;color:#475569}
+    .ag-backup-agenda-step.is-ready .ag-backup-agenda-hint{color:#5b21b6;font-weight:600}
+    .ag-backup-agenda-actions{display:flex;flex-wrap:wrap;gap:10px}
+    .ag-backup-agenda-choice{display:flex;align-items:flex-start;gap:9px;flex:1 1 230px;min-width:0;padding:12px;border:1px solid #8b5cf6;border-radius:var(--r-sm);background:#fff;color:#5b21b6;text-align:left;font:inherit;cursor:pointer}
+    .ag-backup-agenda-choice>span:last-child{min-width:0}
+    .ag-backup-agenda-choice strong{display:block;font-size:13px;line-height:1.4}
+    .ag-backup-agenda-choice small{display:block;margin-top:4px;font-size:12px;line-height:1.4;color:#475569}
+    .ag-backup-agenda-choice:hover:not(:disabled){background:#ede9fe;border-color:#6d28d9}
+    .ag-backup-agenda-choice:focus-visible{outline:3px solid #7c3aed;outline-offset:3px}
+    .ag-backup-agenda-choice:disabled{border-color:#d5d9e2;color:#64748b;background:#f8fafc;cursor:not-allowed}
+    .ag-backup-agenda-choice:disabled small{color:#64748b}
+    .ag-backup-agenda-step .ag-backup-agenda-visitas{margin:12px 0 0}
     .ag-backup-agenda-visitas{display:grid;gap:8px;margin:0 0 12px}
     .ag-backup-candidate{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #dce6f5;border-radius:var(--r-sm);background:#f8fbff}
     .ag-backup-candidate-info{display:grid;gap:3px;min-width:0;color:#334155;font-size:12px}
@@ -483,6 +507,7 @@
       .ag-create-box{width:100%;max-height:100dvh;height:100dvh;border-radius:0;display:flex;flex-direction:column;overscroll-behavior:contain}
       .ag-create-head{position:sticky;top:0;z-index:5;padding:13px 14px;border-radius:0}
       .ag-create-body{padding:14px 12px 118px;overflow-y:auto}
+      .ag-backup-agenda-step{margin-bottom:80px}
       .ag-modal-actions{position:sticky;bottom:0;z-index:5;margin:16px -12px -118px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid #e0e6f0;box-shadow:0 -8px 24px rgba(15,23,42,.12)}
       .ag-modal-actions .status-msg{margin-top:8px;text-align:left;min-height:16px}
       .participant-protocol-fields,.participant-protocol-fields.has-catalog{grid-template-columns:1fr}
@@ -519,4 +544,19 @@
     .stock-project-identification > div { min-width:0; }
     @media(max-width:760px) { .stock-project-identification { grid-template-columns:repeat(2,minmax(0,1fr)); } }
     @media(max-width:480px) { .stock-project-identification { grid-template-columns:1fr; } }
+    /* Visualização do Estoque: rolagem e controles restritos ao módulo. */
+    #page-estoque-view { min-width:0; }
+    #page-estoque-view .estoque-view-toolbar { flex-wrap:wrap; }
+    #page-estoque-view .search-wrap { min-width:0; flex:1 1 260px; }
+    #page-estoque-view .search-wrap input { min-width:0; width:100%; }
+    #page-estoque-view .estoque-view-scroll { max-width:100%; overflow-x:auto; }
+    #page-estoque-view .estoque-view-scroll:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+    #page-estoque-view .estoque-lote-actions-cell .estoque-lote-actions { display:flex; flex-wrap:wrap; gap:6px; }
+    @media(max-width:700px) {
+      #page-estoque-view .stats-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      #page-estoque-view .stat-card { border-radius:0!important; }
+      #page-estoque-view .search-wrap { flex-basis:100%; }
+      #page-estoque-view .estoque-view-toolbar>.f-select { flex:1 1 140px; min-width:0; max-width:100%; }
+      #page-estoque-view .estoque-view-toolbar>.btn-new { flex:1 1 140px; justify-content:center; }
+    }
 </style>
