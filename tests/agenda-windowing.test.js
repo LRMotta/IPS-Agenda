@@ -1771,6 +1771,23 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
   assert.match(functionBody(server, 'ensureAgendaDestinoLabColumns_'), /agendaEnsureParticipanteCadastroColumn_\(sh\)/);
 });
 
+test('edicao operacional dispensa participantes mesmo com identidade legada incompleta', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  server.agendaUseParticipanteCadastroColumn_(server.AGENDA_CFG.lastCol + 1);
+  server.agendaParticipantHydrationIndex_ = () => { throw new Error('consulta de participantes indevida'); };
+  for (const tipo of ['Monitoria', 'SIV', 'Site initiation visit', 'Close-out', 'Closeout', 'Auditoria']) {
+    const row = agendaRow(server, { id: 'LEGADO', tipo, data: '2026-10-01', projeto: 'PA', participante: 'Nome historico', participanteCadastroId: 'CAD-LEGADO', kit: 'Kit historico' });
+    server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, [row]);
+    const actual = server.getAgendaEdicaoContexto('LEGADO', 2, false).evento;
+    assert.equal(actual.participante, 'Nome historico');
+    assert.equal(actual.participanteCadastroId, 'CAD-LEGADO');
+    assert.equal(actual.idParticipante, '');
+    assert.equal(actual.braco, '');
+    assert.equal(actual.kit, 'Kit historico');
+    assert.equal(actual.projeto, 'PA');
+  }
+});
+
 test('hidratacao de evento completo com ID de cadastro nao le participantes nem altera campos', () => {
   const server = agendaServer();
   server.agendaParticipantHydrationIndex_ = () => { throw new Error('leitura redundante de participantes'); };
@@ -2277,6 +2294,7 @@ test('edicao nao abre a versao armazenada em cache quando existe uma linha atual
   const fresh = { id: 'EVT-1', rowIndex: 7, recordVersion: 'servidor-atual' };
   const context = vm.createContext({
     agendaFindEventoLocal_: () => cached,
+    agendaComFormularioPronto_: callback => callback(),
     _agendaPeriodosPorEventoId: {},
     agendaFetchEdicaoContexto_: (id, rowIndex, onSuccess) => {
       calls.push(['fetch', id, rowIndex]);
@@ -2426,12 +2444,69 @@ test('contexto de edicao compartilha autorizacao, schema e linha atual sem mudar
   assert.deepEqual(result.periodo, legado);
   assert.equal(calls.filter(c => c.row === 3 && c.numColumns === server.AGENDA_CFG.lastCol).length, 1);
   assert.equal(calls.some(c => c.numColumns === 1 && c.row === 3), false, 'nao rele o ID');
-  assert.equal(calls.filter(c => c.row === 2 && c.numRows === rows.length).length, 3, 'mantem as faixas estreitas do periodo');
+  assert.equal(calls.filter(c => c.row === 2 && c.numRows === rows.length).length, 4, 'indice fresco e fallback estreito quando a janela cobre todo o historico');
 
   calls.length = 0;
   const completo = server.getAgendaEdicaoContexto('M2', 3, false);
   assert.equal(completo.periodo, null);
   assert.equal(calls.length, 1, 'colecao completa calcula periodo no cliente sem varredura');
+});
+
+test('periodo por datas frescas le detalhes proximos e preserva dias, grupos e legado', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  server.getCodexSheetDataByName_ = () => [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+  const history = Array.from({ length: 400 }, (_, i) => agendaRow(server, { id: 'H' + i, data: '2020-01-01', tipo: 'Visita', projeto: 'Outro' }));
+  const near = [
+    { id: 'M3', data: '2026-10-03' },
+    { id: 'M1', data: '2026-10-01' },
+    { id: 'M2', data: '2026-10-02' },
+    { id: 'M5', data: '2026-10-05' },
+    { id: 'OUTRO', data: '2020-10-04', monitorName: 'Outro' },
+    { id: 'SALA', data: '2026-10-04', salaMonitoria: 'Outra' },
+    { id: 'PROJ', data: '2026-10-04', projeto: 'Outro' }
+  ].map(data => agendaRow(server, { tipo: 'Monitoria', projeto: 'PA', monitorName: 'Monitor historico', salaMonitoria: 'Sala historica', ...data }));
+  const rows = history.concat(near);
+  const calls = [];
+  const sheet = fakeAgendaRows(server, rows, calls);
+  const actual = server.agendaPeriodoOperacionalDaLinha_(sheet, 'M2', 404, near[2], 'test', {});
+  assert.deepEqual(Array.from(actual.ids), ['M1', 'M2', 'M3']);
+  assert.equal(calls.length, 2, 'uma coluna de datas e uma faixa de detalhes');
+  assert.equal(calls[0].column, server.AGENDA_CFG.col.data);
+  assert.equal(calls[0].numColumns, 1);
+  assert.equal(calls[1].numRows, near.length);
+  const legacy = server.agendaPeriodoOperacionalDaLinha_(sheet, 'M2', 404, near[2], 'test', {}, { attempts: 2 });
+  assert.deepEqual(actual, legacy);
+  // A quantidade de linhas permanece igual: uma data editada deve ser visivel
+  // imediatamente, sem a validade aparente de um indice em cache.
+  near[4][server.AGENDA_CFG.idx.monitorName] = 'Monitor historico';
+  rows[404][server.AGENDA_CFG.idx.data] = '2026-10-04';
+  const changed = server.agendaPeriodoOperacionalDaLinha_(sheet, 'M2', 404, near[2], 'test', {});
+  assert.deepEqual(Array.from(changed.ids), ['M1', 'M2', 'M3', 'OUTRO', 'M5']);
+});
+
+test('busca de periodo expande limites e conserva equivalencia com duplicados e registros dispersos', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  server.getCodexSheetDataByName_ = () => [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+  for (const layout of ['longo', 'duplicado', 'disperso', 'siv']) {
+    const history = Array.from({ length: 500 }, (_, i) => agendaRow(server, { id: 'H' + i, data: '2020-01-01', tipo: 'Visita' }));
+    const near = Array.from({ length: 35 }, (_, i) => agendaRow(server, {
+      id: 'M' + i, data: '2026-10-' + String(i + 1).padStart(2, '0'),
+      tipo: layout === 'siv' ? 'SIV' : 'Monitoria', status: layout === 'siv' && i === 9 ? 'Cancelado' : 'Agendado',
+      projeto: 'PA', monitorName: 'Monitor historico', salaMonitoria: 'Sala historica'
+    }));
+    // Datas validas por calendario, incluindo periodo maior que 14 dias.
+    near.forEach((row, i) => { row[server.AGENDA_CFG.idx.data] = new Date(Date.UTC(2026, 9, i + 1)).toISOString().slice(0, 10); });
+    if (layout === 'duplicado') near.splice(8, 0, agendaRow(server, { id: 'DUP', data: '2026-10-08', tipo: 'Monitoria', projeto: 'PA', monitorName: 'Monitor historico', salaMonitoria: 'Sala historica' }));
+    const rows = layout === 'disperso' ? history.flatMap((row, i) => i < near.length ? [row, near[i]] : [row]) : history.concat(near);
+    const ref = near.find(row => row[server.AGENDA_CFG.idx.id] === 'M10');
+    const rowIndex = rows.indexOf(ref) + 2;
+    const calls = [];
+    const sheet = fakeAgendaRows(server, rows, calls);
+    const actual = server.agendaPeriodoOperacionalDaLinha_(sheet, 'M10', rowIndex, ref, 'test', {});
+    if (layout === 'longo') assert.ok(calls.filter(c => c.numColumns > 1).length > 1, 'expande ou recupera leitura completa');
+    const legacy = server.agendaPeriodoOperacionalDaLinha_(sheet, 'M10', rowIndex, ref, 'test', {}, { attempts: 2 });
+    assert.deepEqual(actual, legacy, layout);
+  }
 });
 
 test('contexto de edicao valida linha sugerida obsoleta, ausencia e tipo atual no servidor', () => {
@@ -2510,6 +2585,7 @@ test('edicao multidia recebe evento atual e periodo numa unica consulta e ignora
   const fresh = { id: 'EVT-1', rowIndex: 7, tipo: 'Monitoria', recordVersion: 'servidor-atual' };
   const context = vm.createContext({
     _agendaEditOpenRequestId: 1,
+    agendaComFormularioPronto_: callback => callback(),
     AgendaRules: { isMultiDay: () => true },
     agendaEventosSaoColecaoCompleta_: () => false,
     agendaStoreEventoLocal_: row => { calls.push(['store', row]); return row; },
@@ -2552,7 +2628,7 @@ test('telemetria da abertura de edição mede barreira, RPCs e abertura sem dado
   assert.match(resolvePeriod, /period_resolve_start/);
   assert.match(resolvePeriod, /period_rpc_failure/);
   assert.match(readyOpen, /agendaAbrirEdicaoConcluirPeriodo_/);
-  assert.match(readyRecord, /modal_open/);
+  assert.match(readyRecord, /edit_ready/);
   assert.match(telemetry, /formReadyAtClick/);
   assert.match(telemetry, /formReadyNow/);
   assert.doesNotMatch(telemetry, /participante|agendaId|recordId|\.id\b/);

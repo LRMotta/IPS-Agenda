@@ -11575,16 +11575,29 @@ function getAgendaSheet_() {
   return sh;
 }
 
-function getAgendaSheetForRead_() {
-  var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), AGENDA_CFG.abaNomes);
+function getAgendaSheetForRead_(operation) {
+  // A instrumentacao detalhada e opcional: a edicao precisa distinguir o
+  // acesso a planilha, a busca da aba e a leitura fresca do schema.
+  function measure(stage, callback) {
+    return operation ? codexMeasurePerformance_(operation, stage, {}, callback) : callback();
+  }
+  var ss = measure('sheet_spreadsheet', function() { return getCodexSpreadsheet_(); });
+  var sh = measure('sheet_lookup', function() { return getSheetByPossibleNames_(ss, AGENDA_CFG.abaNomes); });
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
   // Resolva os dois campos opcionais com uma unica leitura do cabecalho. A
   // abertura de edicao e uma RPC curta, portanto duas leituras identicas de
   // schema acabam sendo perceptiveis mesmo quando a linha ja foi indicada.
-  var lastColumn = Number(sh.getLastColumn && sh.getLastColumn()) || 0;
-  var headers = lastColumn ? (sh.getRange(1, 1, 1, lastColumn).getValues()[0] || []) : [];
-  agendaResolveBackupTemperaturaColumnForRead_(sh, headers);
-  agendaResolveParticipanteCadastroColumnForRead_(sh, headers);
+  var lastColumn = measure('sheet_dimensions', function() { return Number(sh.getLastColumn && sh.getLastColumn()) || 0; });
+  var headers = [];
+  if (lastColumn) {
+    headers = operation ? codexMeasureReadPerformance_(operation, 'sheet_headers', { rowCount: 1 }, function() {
+      return codexReadValuesMeasured_(sh.getRange(1, 1, 1, lastColumn))[0] || [];
+    }) : (sh.getRange(1, 1, 1, lastColumn).getValues()[0] || []);
+  }
+  measure('sheet_schema', function() {
+    agendaResolveBackupTemperaturaColumnForRead_(sh, headers);
+    agendaResolveParticipanteCadastroColumnForRead_(sh, headers);
+  });
   return sh;
 }
 
@@ -17162,7 +17175,62 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
 
 // Reutiliza a linha autoritativa ja lida pela consulta de edicao. Nao consulta
 // novamente o ID, o cabecalho ou os dados completos desse mesmo evento.
-function agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMeta) {
+function agendaPeriodoScanProximo_(sh, count, ref, operation, lookup) {
+  var date = parseAgendaDateAny_(ref[AGENDA_CFG.idx.data]);
+  if (!date || isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  if (!lookup.entries) {
+    // Datas frescas: o cache canary nao comprova ausencia de vizinhos quando
+    // alguem altera uma data sem mudar a quantidade de linhas da planilha.
+    lookup.entries = codexMeasurePerformance_(operation, 'period_date_index', { rowCount: count }, function() {
+      return agendaDateIndexEntries_(sh, count + 1, false);
+    });
+  }
+  var inicio = new Date(date.getTime());
+  var fim = new Date(date.getTime());
+  inicio.setDate(inicio.getDate() - lookup.days);
+  fim.setDate(fim.getDate() + lookup.days + 1);
+  lookup.inicio = formatarDataIsoAgenda_(inicio);
+  var lastDay = new Date(fim.getTime());
+  lastDay.setDate(lastDay.getDate() - 1);
+  lookup.fim = formatarDataIsoAgenda_(lastDay);
+  var offsets = lookup.entries.filter(function(entry) {
+    return entry[0] >= inicio.getTime() && entry[0] < fim.getTime();
+  }).map(function(entry) { return entry[1]; }).sort(function(a, b) { return a - b; });
+  var ranges = [];
+  offsets.forEach(function(offset) {
+    var last = ranges[ranges.length - 1];
+    if (last && offset === last.end + 1) last.end = offset;
+    else ranges.push({ start: offset, end: offset });
+  });
+  var columns = Math.max(AGENDA_CFG.col.projeto, AGENDA_CFG.col.monitorName, AGENDA_CFG.col.salaMonitoria);
+  var detailBudget = count * (AGENDA_CFG.col.projeto + 2);
+  var span = offsets.length ? offsets[offsets.length - 1] - offsets[0] + 1 : 0;
+  // Pequenos intervalos fisicos podem conter outras datas intercaladas.
+  // Uma unica faixa evita RPCs por linha; os offsets filtram essas extras.
+  if (span && span * columns <= detailBudget) ranges = [{ start: offsets[0], end: offsets[offsets.length - 1] }];
+  // Muitas faixas dispersas ou muitos dados: a leitura estreita legada custa
+  // menos. A expansao tambem tem limite de tentativas, nunca de dias do periodo.
+  var readCount = ranges.reduce(function(total, range) { return total + range.end - range.start + 1; }, 0);
+  if (ranges.length > 2 || readCount * columns > detailBudget) return null;
+  var selected = {};
+  offsets.forEach(function(offset) { selected[offset] = true; });
+  return codexMeasurePerformance_(operation, 'period_nearby_read', { rowCount: readCount, rangeCount: ranges.length }, function() {
+    var scan = { base: [], monitors: [], rooms: [], rowIndexes: [] };
+    ranges.forEach(function(range) {
+      sh.getRange(range.start + 2, 1, range.end - range.start + 1, columns).getValues().forEach(function(row, offset) {
+        if (!selected[range.start + offset]) return;
+        scan.base.push(row);
+        scan.monitors.push([row[AGENDA_CFG.idx.monitorName]]);
+        scan.rooms.push([row[AGENDA_CFG.idx.salaMonitoria]]);
+        scan.rowIndexes.push(range.start + offset + 2);
+      });
+    });
+    return scan;
+  });
+}
+
+function agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMeta, lookup) {
     var rowIndex = linha;
     var tipo = String(ref[AGENDA_CFG.idx.tipo] || '');
     var dataRef = formatarDataIsoAgenda_(ref[AGENDA_CFG.idx.data]);
@@ -17170,11 +17238,17 @@ function agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMe
       return { eventoId: id, ids: [id], inicio: dataRef, fim: dataRef, tipo: tipo, projetoId: '', rowCount: 1 };
     }
 
-    var lastRow = sh.getLastRow();
+    // lookup vive somente nesta leitura de periodo. As expansoes recursivas
+    // reutilizam as dimensoes ja consultadas, sem cache entre RPCs.
+    lookup = lookup || { days: 7, attempts: 0 };
+    if (lookup.lastRow === undefined) lookup.lastRow = sh.getLastRow();
+    var lastRow = lookup.lastRow;
     var count = Math.max(0, lastRow - 1);
     totalMeta.rowCount = count;
     if (!count) return null;
-    var scan = codexMeasurePerformance_(operation, operation === 'getAgendaPeriodoOperacionalPorEventoId' ? 'scan' : 'period_scan', { rowCount: count }, function() {
+    var scan = lookup.attempts < 2 ? agendaPeriodoScanProximo_(sh, count, ref, operation, lookup) : null;
+    var nearby = !!scan;
+    if (!scan) scan = codexMeasurePerformance_(operation, operation === 'getAgendaPeriodoOperacionalPorEventoId' ? 'scan' : 'period_scan', { rowCount: count }, function() {
       return {
         base: sh.getRange(2, 1, count, AGENDA_CFG.col.projeto).getValues(),
         monitors: sh.getRange(2, AGENDA_CFG.col.monitorName, count, 1).getValues(),
@@ -17196,7 +17270,7 @@ function agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMe
       var eventoId = String(base[AGENDA_CFG.idx.id] || '').trim();
       if (!data || !eventoId) continue;
       data.setHours(0, 0, 0, 0);
-      candidatos.push({ id: eventoId, rowIndex: i + 2, data: data, dataIso: formatarDataIsoAgenda_(data) });
+      candidatos.push({ id: eventoId, rowIndex: scan.rowIndexes ? scan.rowIndexes[i] : i + 2, data: data, dataIso: formatarDataIsoAgenda_(data) });
     }
     candidatos.sort(function(a, b) { return a.data.getTime() - b.data.getTime() || a.rowIndex - b.rowIndex; });
     var pos = candidatos.findIndex(function(item) { return item.id === id && (!rowIndex || item.rowIndex === Number(rowIndex)); });
@@ -17207,6 +17281,11 @@ function agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMe
     while (start > 0 && agendaDatasConsecutivas_(candidatos[start - 1].data, candidatos[start].data)) start--;
     while (end < candidatos.length - 1 && agendaDatasConsecutivas_(candidatos[end].data, candidatos[end + 1].data)) end++;
     var periodo = candidatos.slice(start, end + 1);
+    if (nearby && (periodo[0].dataIso === lookup.inicio || periodo[periodo.length - 1].dataIso === lookup.fim)) {
+      lookup.days *= 2;
+      lookup.attempts++;
+      return agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMeta, lookup);
+    }
     var projeto = agendaProjetoIdentidade_(ref[AGENDA_CFG.idx.projeto]);
     return {
       eventoId: id,
@@ -17240,7 +17319,7 @@ function getAgendaEdicaoContexto(id, rowIndex, incluirPeriodo) {
     codexMeasurePerformance_(operation, 'authorization', {}, function() { codexAssertCanRead_(); });
     id = String(id || '').trim();
     if (!id) return null;
-    var sh = codexMeasurePerformance_(operation, 'sheet', {}, function() { return getAgendaSheetForRead_(); });
+    var sh = codexMeasurePerformance_(operation, 'sheet', {}, function() { return getAgendaSheetForRead_(operation); });
     var readContext = {};
     var evento = agendaLerEventoPorId_(id, rowIndex, { sheet: sh, operation: operation, readContext: readContext });
     if (!evento) return null;
@@ -17309,6 +17388,10 @@ function agendaLerEventoPorId_(id, rowIndex, options) {
       codexLogPerformance_(operation, 'hydrate_skipped_receipt', 0, { rowCount: 1 }, true);
     } else {
       codexMeasurePerformance_(operation, 'hydrate', { rowCount: 1 }, function() {
+        // Estes eventos nao usam o fluxo de participante. Conserve os campos
+        // historicos da linha sem buscar nem inferir complementos na edicao.
+        if (operation === 'getAgendaEdicaoContexto' &&
+            ['monitoria', 'siv', 'closeout', 'auditoria'].indexOf(AgendaServerRules_.typeKey(item)) >= 0) return;
         agendaHydrateParticipantFields_([item]);
       });
     }
