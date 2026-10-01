@@ -43,8 +43,16 @@ test('Dashboard responsivo: títulos, filtros, tabelas acessíveis e navegação
       });
       assert.equal(await page.title(), 'Dashboard — QA local');
       assert.equal(await page.getByRole('heading', { name: 'Dashboard Gerencial' }).count(), 1);
-      assert.equal(await page.locator('#btnDashRefresh #dashTs').count(), 0);
+      assert.equal(await page.locator('#btnDashRefresh #dashTs').count(), 1);
       assert.equal(await page.locator('#dashTs').count(), 1);
+      await page.locator('#dashTs').evaluate(el => { el.textContent = 'Atualizado: 14:35'; });
+      const refreshBounds = await page.locator('#btnDashRefresh').boundingBox();
+      const timestampBounds = await page.locator('#dashTs').boundingBox();
+      assert.ok(timestampBounds.x >= refreshBounds.x && timestampBounds.x + timestampBounds.width <= refreshBounds.x + refreshBounds.width);
+      assert.ok(timestampBounds.y >= refreshBounds.y && timestampBounds.y + timestampBounds.height <= refreshBounds.y + refreshBounds.height);
+      const refreshArtifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(refreshArtifacts, { recursive: true });
+      await page.locator('.dash-page-actions').screenshot({ path: path.join(refreshArtifacts, 'dashboard-refresh-' + width + '.png') });
       assert.ok((await page.locator('#chartPartProjTitle').textContent()).includes('exceto etapa regulatória'));
       assert.ok((await page.locator('#dashEstoqueBlock').textContent()).includes('Registros de estoque'));
       assert.equal(await page.locator('#dashAgendaBlock').evaluate(el => el.nextElementSibling.id), 'dashEstoqueBlock');
@@ -99,7 +107,7 @@ test('Dashboard responsivo: títulos, filtros, tabelas acessíveis e navegação
         carregarDashboard(true);
       });
       assert.equal(await page.locator('#page-dashboard').getAttribute('aria-busy'), 'true');
-      assert.equal(await page.getByRole('button', { name: 'Atualizar dados', exact: true }).isDisabled(), true);
+      assert.equal(await page.locator('#btnDashRefresh').isDisabled(), true);
       assert.ok((await page.locator('#dashLoadStatus').textContent()).includes('Atualizando'));
       await page.evaluate(() => window.dashboardSuccess({}));
       assert.equal(await page.locator('#page-dashboard').getAttribute('aria-busy'), 'false');

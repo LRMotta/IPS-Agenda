@@ -189,13 +189,13 @@ test('manifesto bloqueia AWB, paciente, identificacao e protocolo divergentes', 
 for (const change of ['geracao', 'courier', 'evidencia']) {
   test('monitor descarta resultado quando ' + change + ' muda durante a busca Gmail', () => {
     const book = new FakeSpreadsheet({});
-    const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status'], ['Agendado', 'DHL', 'Pendente']]);
+    const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status', 'ID'], ['Agendado', 'DHL', 'Pendente', 'EVT-1']]);
     const messageDate = new Date(Date.now() + 1000);
     const s = server({
       getCodexSpreadsheet_: () => book,
       SpreadsheetApp: { flush() {} },
       AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
-      AGENDA_CFG: { col: { status: 1 }, idx: { c1: { nome: 1, status: 2 } } },
+      AGENDA_CFG: { col: { status: 1, id: 4 }, idx: { c1: { nome: 1, status: 2 } } },
       getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
       codexWithDocumentLock_: (_label, fn) => {
         const log = book.getSheetByName('Transporte_Operacoes');
@@ -223,8 +223,8 @@ for (const change of ['geracao', 'courier', 'evidencia']) {
 test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slots', () => {
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Evento', 'Courier I', 'Status I', 'Courier II', 'Status II', 'Courier III', 'Status III'],
-    ['Agendado', 'DHL', 'Pendente', 'DHL', 'Pendente', 'DHL', 'Pendente']
+    ['Evento', 'Courier I', 'Status I', 'Courier II', 'Status II', 'Courier III', 'Status III', 'ID'],
+    ['Agendado', 'DHL', 'Pendente', 'DHL', 'Pendente', 'DHL', 'Pendente', 'EVT-1']
   ]);
   let agendaReads = 0;
   let logReads = 0;
@@ -240,7 +240,7 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
   const s = server({
     getCodexSpreadsheet_: () => book, SpreadsheetApp: { flush() {} },
     AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
-    AGENDA_CFG: { col: { status: 1 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
+    AGENDA_CFG: { col: { status: 1, id: 8 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
     getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
     codexWithDocumentLock_: (_label, fn) => fn(),
     GmailApp: { search: () => [{ getMessages: () => [{
@@ -256,6 +256,6 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
   const result = s.transporteMonitorarEnviosPorEmail_();
   assert.equal(result.enviados, 3);
   assert.equal(logReads, 2);
-  assert.equal(agendaReads, 1);
-  assert.deepEqual(agenda.rows[1], ['Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado']);
+  assert.equal(agendaReads, 2);
+  assert.deepEqual(agenda.rows[1], ['Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'EVT-1']);
 });

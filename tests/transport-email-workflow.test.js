@@ -76,8 +76,8 @@ test('monitor da copia com anexo promove somente status pendente para Agendado',
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier'],
-    ['Agendado', 'DHL', 'Pendente']
+    ['Status evento', 'Courier', 'Status courier', 'ID'],
+    ['Agendado', 'DHL', 'Pendente', 'EVT-1']
   ]);
   const audits = [];
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
@@ -85,7 +85,7 @@ test('monitor da copia com anexo promove somente status pendente para Agendado',
     book,
     AgendaServerRules_: rules,
     AGENDA_CFG: {
-      col: { status: 1 },
+      col: { status: 1, id: 4 },
       idx: {
         c1: { nome: 1, status: 2 },
         c2: { nome: 3, status: 4 },
@@ -125,14 +125,14 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier'],
-    ['Agendado', 'OCASA', 'Não Agendado']
+    ['Status evento', 'Courier', 'Status courier', 'ID'],
+    ['Agendado', 'OCASA', 'Não Agendado', 'EVT-2']
   ]);
   const server = transportServer({
     book,
     AgendaServerRules_: rules,
     AGENDA_CFG: {
-      col: { status: 1 },
+      col: { status: 1, id: 4 },
       idx: {
         c1: { nome: 1, status: 2 },
         c2: { nome: 3, status: 4 },
@@ -172,14 +172,14 @@ test('DHL sem anexo confirma o envio, promove para Agendado e sai das pendencias
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier'],
-    ['Agendado', 'DHL', 'Pendente']
+    ['Status evento', 'Courier', 'Status courier', 'ID'],
+    ['Agendado', 'DHL', 'Pendente', 'EVT-DHL']
   ]);
   const server = transportServer({
     book,
     AgendaServerRules_: rules,
     AGENDA_CFG: {
-      col: { status: 1 },
+      col: { status: 1, id: 4 },
       idx: {
         c1: { nome: 1, status: 2 },
         c2: { nome: 3, status: 4 },
@@ -218,15 +218,15 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier'],
-    ['Agendado', 'MARKEN divergente', 'Pendente']
+    ['Status evento', 'Courier', 'Status courier', 'ID'],
+    ['Agendado', 'MARKEN divergente', 'Pendente', 'EVT-3']
   ]);
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
   const server = transportServer({
     book,
     AgendaServerRules_: rules,
     AGENDA_CFG: {
-      col: { status: 1 },
+      col: { status: 1, id: 4 },
       idx: {
         c1: { nome: 1, status: 2 },
         c2: { nome: 3, status: 4 },
@@ -268,8 +268,8 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier'],
-    ['Agendado', 'PINEX divergente', 'Pendente']
+    ['Status evento', 'Courier', 'Status courier', 'ID'],
+    ['Agendado', 'PINEX divergente', 'Pendente', 'EVT-MANUAL']
   ]);
   const audits = [];
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
@@ -278,7 +278,7 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
     book,
     AgendaServerRules_: rules,
     AGENDA_CFG: {
-      col: { status: 1 },
+      col: { status: 1, id: 4 },
       idx: {
         c1: { nome: 1, status: 2 },
         c2: { nome: 3, status: 4 },
@@ -331,15 +331,15 @@ test('monitor recupera operacao antiga concluida antes de promover a Agenda', ()
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier'],
-    ['Agendado', 'MARKEN', 'Pendente']
+    ['Status evento', 'Courier', 'Status courier', 'ID'],
+    ['Agendado', 'MARKEN', 'Pendente', 'EVT-4']
   ]);
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
   const server = transportServer({
     book,
     AgendaServerRules_: rules,
     AGENDA_CFG: {
-      col: { status: 1 },
+      col: { status: 1, id: 4 },
       idx: {
         c1: { nome: 1, status: 2 },
         c2: { nome: 3, status: 4 },
@@ -403,7 +403,7 @@ test('salvar Transporte nao presume envio e o rascunho inclui referencia depois 
 });
 
 function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', draft = false, attachments = [], status = 'Não Agendado' } = {}) {
-  const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status'], ['Agendado', courier, status]]);
+  const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status', 'ID'], ['Agendado', courier, status, 'EVT-TEST']]);
   const logs = [];
   const message = {
     getSubject: () => body, getPlainBody: () => '', isDraft: () => draft,
@@ -411,7 +411,7 @@ function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', d
   };
   const server = transportServer({
     AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
-    AGENDA_CFG: { col: { status: 1 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
+    AGENDA_CFG: { col: { status: 1, id: 4 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
     getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
     codexWithDocumentLock_: (_label, fn) => fn(),
     Logger: { log: text => logs.push(text) },
@@ -420,6 +420,58 @@ function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', d
   server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1', courier, rascunhoOk: true });
   return { server, agenda, message, logs };
 }
+
+test('monitor compartilha IDs por fase e refaz o indice sob lock apos mover linhas', () => {
+  const { server, agenda, message } = monitorFixture();
+  agenda.rows.push(['Agendado', 'DHL', 'Pendente', 'EVT-B']);
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-B', slot: '1', courier: 'DHL', rascunhoOk: true });
+  const old = new Date(Date.now() - 60000);
+  // Duas operações já identificadas passam pela pré-checagem de recuperação.
+  for (const row of [2, 3]) {
+    server.book.getSheetByName('Transporte_Operacoes').getRange(row, 12, 1, 5).setValues([[old, old, 'ANTIGA', 0, old]]);
+  }
+  message.getSubject = () => 'IPS-TRP-EVT-TEST-T1 IPS-TRP-EVT-B-T1';
+  const reads = { before: 0, locked: 0 };
+  let locked = false;
+  const getRange = agenda.getRange.bind(agenda);
+  agenda.getRange = (...args) => {
+    const range = getRange(...args);
+    if (args[0] === 2 && args[1] === 4 && args[3] === 1) {
+      const getValues = range.getValues.bind(range);
+      range.getValues = () => { reads[locked ? 'locked' : 'before']++; return getValues(); };
+    }
+    return range;
+  };
+  server.encontrarLinhaPorId = () => { throw new Error('Busca individual de IDs proibida no monitor'); };
+  server.codexWithDocumentLock_ = (_label, fn) => {
+    // Simula alteração durante a busca Gmail: muda a linha e cancela o outro evento.
+    agenda.rows.splice(1, 0, ['Agendado', 'DHL', 'Pendente', 'OUTRO']);
+    agenda.rows[3][0] = 'Cancelado';
+    locked = true;
+    try { return fn(); } finally { locked = false; }
+  };
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 1);
+  assert.equal(result.naoPromovidos, 1);
+  assert.deepEqual(reads, { before: 1, locked: 1 });
+  assert.equal(agenda.rows[1][2], 'Pendente');
+  assert.equal(agenda.rows[2][2], 'Agendado');
+  assert.equal(agenda.rows[3][2], 'Pendente');
+});
+
+test('indice da Agenda preserva comparacao exata, primeira ocorrencia e IDs especiais', () => {
+  const server = transportServer({ AGENDA_CFG: { col: { id: 1 } } });
+  const agenda = new FakeSheet('Agenda', [['ID'], [123], ['123'], ['00123'], ['__proto__'], ['constructor'], [' EVT ']]);
+  const ids = server.transporteAgendaLinhasPorId_(agenda);
+  assert.equal(ids['123'], 2);
+  assert.equal(ids['00123'], 4);
+  assert.equal(ids.__proto__, 5);
+  assert.equal(ids.constructor, 6);
+  assert.equal(ids[' EVT '], 7);
+  assert.equal(ids.EVT, undefined);
+  assert.equal(ids.AUSENTE, undefined);
+  assert.equal(Object.keys(server.transporteAgendaLinhasPorId_(new FakeSheet('Agenda', [['ID']]))).length, 0);
+});
 
 test('monitor reconhece caixa e espacos, filtra AgendaId e registra contagens', () => {
   const { server, agenda, logs } = monitorFixture();
