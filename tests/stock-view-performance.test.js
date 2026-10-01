@@ -76,7 +76,7 @@ test('falha do bootstrap encerra carregamento e oferece nova tentativa sem injet
   failure(new Error('<script>falha</script>'));
   assert.equal(body.attributes['aria-busy'], 'false');
   assert.match(body.innerHTML, /Tentar novamente/);
-  assert.doesNotMatch(body.innerHTML, /<script>/);
+  assert.doesNotMatch(body.innerHTML, /<script>/i);
   assert.doesNotMatch(body.innerHTML, /Carregando/);
   const errorHtml = body.innerHTML;
   c.evFiltrar();

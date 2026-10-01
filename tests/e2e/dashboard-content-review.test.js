@@ -30,7 +30,7 @@ test('Dashboard responsivo: títulos, filtros, tabelas acessíveis e navegação
         this.config=config;this.data=config.data;this.options=config.options;
         this.updates=0;this.destroy=function(){};this.update=function(){this.updates++};
       };` });
-      await page.addScriptTag({ content: readProjectFile('IndexDashboard.html').replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '') });
+      await page.addScriptTag({ content: readProjectFile('IndexDashboard.html').replace(/^\s*<script\b[^>]*>/i, '').replace(/<\/script\b[^>]*>\s*$/i, '') });
       await page.evaluate(() => {
         document.getElementById('dashAgendaBlock').style.display = '';
         document.getElementById('dashAgendaMesCards').innerHTML = Array.from({ length: 12 }, (_, i) =>
