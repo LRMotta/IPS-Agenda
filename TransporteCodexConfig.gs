@@ -538,8 +538,26 @@ function transporteOperacaoVersion_(item) {
   ]);
 }
 
+function transporteAgendaLinhasPorId_(agenda) {
+  var linhas = Object.create(null);
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return linhas;
+  agenda.getRange(2, AGENDA_CFG.col.id, lastRow - 1, 1).getValues().forEach(function(row, index) {
+    var id = String(row[0]);
+    // Preserva a primeira ocorrência e a comparação exata do resolvedor legado.
+    if (linhas[id] === undefined) linhas[id] = index + 2;
+  });
+  return linhas;
+}
+
 function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   var agendaPrecheck = null;
+  var idsPrecheck = null;
+  function linhaAgendaPrecheck(id) {
+    agendaPrecheck = agendaPrecheck || getAgendaSheet_();
+    idsPrecheck = idsPrecheck || transporteAgendaLinhasPorId_(agendaPrecheck);
+    return id ? (idsPrecheck[String(id)] || 0) : 0;
+  }
   var pendentes = transporteOperacoesRows_().filter(function(item) {
     if (agendaId && item.agendaId !== agendaId) return false;
     if (!item.referencia) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Referência ausente' }); return false; }
@@ -553,8 +571,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       if (identificadoEm && documentacaoAceita) {
         var slotMapManual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
         var idxManual = slotMapManual[item.slot];
-        agendaPrecheck = agendaPrecheck || getAgendaSheet_();
-        var linhaManual = idxManual ? encontrarLinhaPorId(agendaPrecheck, item.agendaId) : 0;
+        var linhaManual = idxManual ? linhaAgendaPrecheck(item.agendaId) : 0;
         if (linhaManual) {
           var statusEventoManual = agendaPrecheck.getRange(linhaManual, AGENDA_CFG.col.status).getValue();
           var statusManual = agendaPrecheck.getRange(linhaManual, idxManual.status + 1).getValue();
@@ -576,8 +593,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
     var idx = slotMap[item.slot];
     if (!idx) return false;
-    agendaPrecheck = agendaPrecheck || getAgendaSheet_();
-    var linha = encontrarLinhaPorId(agendaPrecheck, item.agendaId);
+    var linha = linhaAgendaPrecheck(item.agendaId);
     if (!linha) return false;
     var statusEvento = agendaPrecheck.getRange(linha, AGENDA_CFG.col.status).getValue();
     if (AgendaServerRules_.isCancelled(statusEvento)) return false;
@@ -647,6 +663,8 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     var operacoesAtuais = {};
     transporteOperacoesRows_().forEach(function(item) { operacoesAtuais[item.row] = item; });
     var agenda = agendaPrecheck || getAgendaSheet_();
+    // Recria sob lock: o índice anterior à busca Gmail pode ter ficado obsoleto.
+    var idsAgenda = null;
     var linhasAgenda = {};
     var enviados = [];
     var semAnexo = [];
@@ -674,7 +692,8 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       }
       var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
       var idx = slotMap[item.slot];
-      var linha = idx ? encontrarLinhaPorId(agenda, item.agendaId) : 0;
+      if (idx && !idsAgenda) idsAgenda = transporteAgendaLinhasPorId_(agenda);
+      var linha = idx && item.agendaId ? (idsAgenda[String(item.agendaId)] || 0) : 0;
       if (!idx || !linha) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: !idx ? 'Slot inválido' : 'Agendamento não encontrado' });
         return;
