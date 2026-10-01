@@ -181,7 +181,7 @@ const READ_RPCS = [
   'getEstoque', 'getKitsAgendaReservaStatus', 'getEstoqueVisualizacao', 'getMovimentacoesEstoque', 'getEquipamentosFornecidos',
   'getMedicamentosRecebidos', 'getDadosFormularioAgenda', 'getInfoParticipante', 'getUltimaVisita', 'getJornadaParticipante',
   'getConcilicaoVisitasParticipante', 'getAgendaEventos', 'getAgendaEventosPorPeriodo', 'pesquisarAgendaHistorico',
-  'getAgendaMateriaisAnteriores', 'getAgendaPeriodoOperacionalPorEventoId', 'getAgendaEventoPorId', 'getConfigApp', 'getLabCentral', 'getCouriersCadastro'
+  'getAgendaMateriaisAnteriores', 'getAgendaPeriodoOperacionalPorEventoId', 'getAgendaEventoPorId', 'getAgendaEdicaoContexto', 'getConfigApp', 'getLabCentral', 'getCouriersCadastro'
 ];
 
 test('RPCs de consulta negam acesso revogado antes de ler dados, inclusive caminhos com catch/fallback', () => {

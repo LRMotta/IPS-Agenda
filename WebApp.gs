@@ -17156,6 +17156,14 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
     var linha = agendaLocalizarLinhaPorId_(sh, id, rowIndex);
     if (!linha) return null;
     var ref = sh.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    return agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, 'getAgendaPeriodoOperacionalPorEventoId', totalMeta);
+  });
+}
+
+// Reutiliza a linha autoritativa ja lida pela consulta de edicao. Nao consulta
+// novamente o ID, o cabecalho ou os dados completos desse mesmo evento.
+function agendaPeriodoOperacionalDaLinha_(sh, id, linha, ref, operation, totalMeta) {
+    var rowIndex = linha;
     var tipo = String(ref[AGENDA_CFG.idx.tipo] || '');
     var dataRef = formatarDataIsoAgenda_(ref[AGENDA_CFG.idx.data]);
     if (!AgendaServerRules_.isMultiDay(tipo)) {
@@ -17166,7 +17174,7 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
     var count = Math.max(0, lastRow - 1);
     totalMeta.rowCount = count;
     if (!count) return null;
-    var scan = codexMeasurePerformance_('getAgendaPeriodoOperacionalPorEventoId', 'scan', { rowCount: count }, function() {
+    var scan = codexMeasurePerformance_(operation, operation === 'getAgendaPeriodoOperacionalPorEventoId' ? 'scan' : 'period_scan', { rowCount: count }, function() {
       return {
         base: sh.getRange(2, 1, count, AGENDA_CFG.col.projeto).getValues(),
         monitors: sh.getRange(2, AGENDA_CFG.col.monitorName, count, 1).getValues(),
@@ -17209,7 +17217,6 @@ function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {
       projetoId: projeto ? projeto.id : '',
       rowCount: periodo.length
     };
-  });
 }
 
 function agendaLocalizarLinhaPorId_(sh, id, rowIndex, metadata) {
@@ -17226,17 +17233,46 @@ function getAgendaEventoPorId(id, rowIndex) {
   return agendaLerEventoPorId_(id, rowIndex);
 }
 
+function getAgendaEdicaoContexto(id, rowIndex, incluirPeriodo) {
+  var operation = 'getAgendaEdicaoContexto';
+  var totalMeta = { rowCount: 0 };
+  return codexMeasurePerformance_(operation, 'total', totalMeta, function() {
+    codexMeasurePerformance_(operation, 'authorization', {}, function() { codexAssertCanRead_(); });
+    id = String(id || '').trim();
+    if (!id) return null;
+    var sh = codexMeasurePerformance_(operation, 'sheet', {}, function() { return getAgendaSheetForRead_(); });
+    var readContext = {};
+    var evento = agendaLerEventoPorId_(id, rowIndex, { sheet: sh, operation: operation, readContext: readContext });
+    if (!evento) return null;
+    totalMeta.rowCount = 1;
+    var periodo = null;
+    if (incluirPeriodo !== false && AgendaServerRules_.isMultiDay(evento.tipo)) {
+      try {
+        periodo = codexMeasurePerformance_(operation, 'period', { rowCount: 1 }, function() {
+          return agendaPeriodoOperacionalDaLinha_(sh, id, readContext.row, readContext.values, operation, { rowCount: 0 });
+        });
+      } catch (e) {
+        // A falha de periodo conserva a recuperacao especifica/completa do
+        // cliente, sem perder a leitura atual do evento nem registrar seu ID.
+        codexLogPerformance_(operation, 'period_unavailable', 0, { rowCount: 1 }, false);
+      }
+    }
+    return { evento: evento, periodo: periodo };
+  });
+}
+
 // Somente para chamadas internas que ja autorizaram o acesso nesta execucao.
 // Opcoes do recibo nao sao expostas na RPC publica de leitura do evento.
 function agendaLerEventoPorId_(id, rowIndex, options) {
   options = options || {};
+  var operation = options.operation || 'getAgendaEventoPorId';
   var totalMeta = { rowCount: 0 };
-  return codexMeasurePerformance_('getAgendaEventoPorId', 'total', totalMeta, function() {
+  return codexMeasurePerformance_(operation, options.operation ? 'event_total' : 'total', totalMeta, function() {
     id = String(id || '').trim();
     if (!id) return null;
-    var sh = getAgendaSheetForRead_();
+    var sh = options.sheet || getAgendaSheetForRead_();
     var locateMeta = { rowCount: 0 };
-    var localizado = codexMeasurePerformance_('getAgendaEventoPorId', 'locate', locateMeta, function() {
+    var localizado = codexMeasurePerformance_(operation, 'locate', locateMeta, function() {
       var hintedRow = Number(rowIndex) || 0;
       if (hintedRow >= 2) {
         // A linha sugerida vem do evento que o usuario clicou. Leia a linha
@@ -17253,8 +17289,12 @@ function agendaLerEventoPorId_(id, rowIndex, options) {
       return row ? { row: row, values: null } : null;
     });
     if (!localizado) return null;
-    var item = codexMeasurePerformance_('getAgendaEventoPorId', 'read', { rowCount: 1 }, function() {
+    var item = codexMeasurePerformance_(operation, 'read', { rowCount: 1 }, function() {
       var values = localizado.values || sh.getRange(localizado.row, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+      if (options.readContext) {
+        options.readContext.row = localizado.row;
+        options.readContext.values = values;
+      }
       return agendaRowToObject_(values, localizado.row);
     });
     totalMeta.rowCount = 1;
@@ -17266,9 +17306,9 @@ function agendaLerEventoPorId_(id, rowIndex, options) {
       String(item.participante || '').trim() && String(item.projeto || '').trim() &&
       String(item.idParticipante || '').trim();
     if (receiptIdentityComplete) {
-      codexLogPerformance_('getAgendaEventoPorId', 'hydrate_skipped_receipt', 0, { rowCount: 1 }, true);
+      codexLogPerformance_(operation, 'hydrate_skipped_receipt', 0, { rowCount: 1 }, true);
     } else {
-      codexMeasurePerformance_('getAgendaEventoPorId', 'hydrate', { rowCount: 1 }, function() {
+      codexMeasurePerformance_(operation, 'hydrate', { rowCount: 1 }, function() {
         agendaHydrateParticipantFields_([item]);
       });
     }
@@ -17516,7 +17556,11 @@ function agendaParticipantHydrationIndex_(useCanaryCache) {
 
 function agendaHydrateParticipantFields_(items, options) {
   var precisaComplemento = (items || []).some(function(evento) {
-    return evento && (evento.participanteCadastroId || (evento.participante && (!evento.idParticipante || !evento.braco)));
+    // Com os campos preenchidos, a hidratacao nao teria nada a acrescentar.
+    // Braco vazio continua valido: legados e projetos sem braco mantem a busca.
+    return evento && (evento.participanteCadastroId
+      ? (!evento.participante || !evento.projeto || !evento.idParticipante || !evento.braco)
+      : (evento.participante && (!evento.idParticipante || !evento.braco)));
   });
   if (!precisaComplemento) return items;
   options = options || {};
