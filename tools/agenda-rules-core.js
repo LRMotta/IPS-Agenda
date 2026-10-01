@@ -1,9 +1,8 @@
-// Regras puras da Agenda usadas no servidor. Mantenha a semantica alinhada a SharedAgendaRules.html.
-var AgendaServerRules_ = (function() {
-  'use strict';
+'use strict';
 
-  // BEGIN GENERATED AGENDA RULES — editar tools/agenda-rules-core.js
-
+// Fonte unica das classificacoes, apresentacao e politicas de tipos da Agenda.
+// O gerador copia este corpo para os dois runtimes, sem dependencias em producao.
+function createAgendaRulesCore() {
   var typeDefinitions = Object.freeze([
     { key: 'monitoria', contains: ['monitoria'], singular: 'Monitoria', plural: 'Monitorias', css: 'ag-type-monitoria', icon: 'visibility', operational: true, multiDay: true, hidden: true, monitorAndRoom: true },
     { key: 'siv', exact: ['siv'], contains: ['site initiation'], singular: 'SIV', plural: 'SIV', css: 'ag-type-siv', icon: 'flag', operational: true, multiDay: true, hidden: true, noTime: true, visual: ' type-siv' },
@@ -264,131 +263,20 @@ var AgendaServerRules_ = (function() {
     var status = courierAffirmativeStatus(statusValue);
     return status.indexOf('colet') > -1 || status.indexOf('envi') > -1 || status.indexOf('entreg') > -1;
   }
-  // END GENERATED AGENDA RULES
-
-  function isCancelled(eventOrStatus) {
-    return statusKey(eventOrStatus) === 'cancelado';
-  }
-
-  function isRescheduled(eventOrStatus) {
-    return statusKey(eventOrStatus) === 'reagendado';
-  }
-
-  function isRealized(eventOrStatus) {
-    return statusKey(eventOrStatus) === 'realizado';
-  }
-
-  function isConcluded(eventOrStatus) {
-    return statusKey(eventOrStatus) === 'concluido';
-  }
-
-  function isCompleted(eventOrStatus) {
-    var status = statusKey(eventOrStatus);
-    return status === 'realizado' || status === 'concluido';
-  }
-
-  function isSiv(eventOrType) {
-    return isType(eventOrType, 'siv');
-  }
-
-  function isCloseout(eventOrType) {
-    return isType(eventOrType, 'closeout');
-  }
-
-  function isOperationalPeriod(eventOrType) {
-    return isMonitoring(eventOrType) || isSiv(eventOrType);
-  }
-
-  function isMultiDay(eventOrType) {
-    return isOperationalPeriod(eventOrType) || isType(eventOrType, 'auditoria');
-  }
-
-  function isTerminalStatus(eventOrStatus) {
-    return isCancelled(eventOrStatus) || isCompleted(eventOrStatus);
-  }
-
-  function sameStatus(a, b) {
-    return normalizeText(a) === normalizeText(b);
-  }
-
-  function sameType(a, b) {
-    return normalizeText(a) === normalizeText(b);
-  }
-
-  function isMonitoring(eventOrType) {
-    return typeKey(eventOrType) === 'monitoria';
-  }
-
-  function isVisit(eventOrType) {
-    return typeKey(eventOrType) === 'visita';
-  }
-
-  function isLabCentral(eventOrValue) {
-    var value = eventOrValue && typeof eventOrValue === 'object'
-      ? eventOrValue.labCentral
-      : eventOrValue;
-    return value === true || normalizeText(value) === 'sim';
-  }
-
-  function isPostVisitType(eventOrType) {
-    return isVisit(eventOrType) || isPhoneContact(eventOrType);
-  }
-
-  // A Agenda representa uma equipe em varios locais. Eventos simultaneos sao validos.
-  function allowsConcurrentEvents() {
-    return true;
-  }
-
-  function notificationAction(state) {
-    state = state || {};
-    var labCentral = isLabCentral(state.labCentral);
-    var cancelled = isCancelled(state.status);
-    var control = normalizeText(state.control);
-    var alreadyNotified = control.indexOf('notificado') > -1 || control.indexOf('reagendado') > -1;
-    if (labCentral && !cancelled && !alreadyNotified) return 'agendamento';
-    if (labCentral && !cancelled && state.dateChanged === true && alreadyNotified) return 'reagendamento';
-    if (cancelled && alreadyNotified) return 'cancelamento';
-    return '';
-  }
 
   return Object.freeze({
-    normalizeText: normalizeText,
-    statusKey: statusKey,
-    typeKey: typeKey,
-    isCancelled: isCancelled,
-    isStatus: isStatus,
-    isType: isType,
-    isRescheduled: isRescheduled,
-    isRealized: isRealized,
-    isConcluded: isConcluded,
-    isCompleted: isCompleted,
-    isSiv: isSiv,
-    isCloseout: isCloseout,
-    isOperationalPeriod: isOperationalPeriod,
-    isMultiDay: isMultiDay,
-    isTerminalStatus: isTerminalStatus,
-    sameStatus: sameStatus,
-    sameType: sameType,
-    isMonitoring: isMonitoring,
-    isVisit: isVisit,
-    hasTransportOperation: hasTransportOperation,
-    isLabCentral: isLabCentral,
-    isPhoneContact: isPhoneContact,
-    typeRequiresLabCentral: typeRequiresLabCentral,
-    isPostVisitType: isPostVisitType,
-    formPolicy: formPolicy,
-    requestObservationIndicatesSent: requestObservationIndicatesSent,
-    requestIsSent: requestIsSent,
-    courierStatusKey: courierStatusKey,
-    courierIsNotApplicable: courierIsNotApplicable,
-    courierIsSentNotDelivered: courierIsSentNotDelivered,
-    courierIsDelivered: courierIsDelivered,
-    courierIsDeliveryTerminal: courierIsDeliveryTerminal,
+    normalizeText: normalizeText, typeKey: typeKey, statusKey: statusKey,
+    isStatus: isStatus, isType: isType, isPhoneContact: isPhoneContact,
+    hasTransportOperation: hasTransportOperation, typeRequiresLabCentral: typeRequiresLabCentral,
+    formPolicy: formPolicy, typePluralLabel: typePluralLabel,
+    typeClass: typeClass, typeIcon: typeIcon, typeVisualClass: typeVisualClass,
+    requestObservationIndicatesSent: requestObservationIndicatesSent, requestIsSent: requestIsSent,
+    courierStatusKey: courierStatusKey, courierStatusRequiresEventDate: courierStatusRequiresEventDate,
+    courierIsNotApplicable: courierIsNotApplicable, courierIsSentNotDelivered: courierIsSentNotDelivered,
+    courierIsDelivered: courierIsDelivered, courierIsDeliveryTerminal: courierIsDeliveryTerminal,
     courierIsAwaitingConfirmation: courierIsAwaitingConfirmation,
-    courierCanReceiveConfirmation: courierCanReceiveConfirmation,
-    courierNeedsSchedule: courierNeedsSchedule,
-    courierStatusRequiresEventDate: courierStatusRequiresEventDate,
-    allowsConcurrentEvents: allowsConcurrentEvents,
-    notificationAction: notificationAction
+    courierCanReceiveConfirmation: courierCanReceiveConfirmation, courierNeedsSchedule: courierNeedsSchedule
   });
-})();
+}
+
+module.exports = { createAgendaRulesCore };

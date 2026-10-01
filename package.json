@@ -6,7 +6,9 @@
     "test:ui": "node --test --test-isolation=none tests/e2e/*.test.js",
     "syntax": "node tools/validate-syntax.js",
     "lint": "eslint \"tools/**/*.js\" \"tests/**/*.js\" \"*.gs\" IndexAgendaScripts.html",
-    "verify": "npm run syntax && npm run lint && npm test",
+    "rules:generate": "node tools/generate-agenda-rules.js && node tools/generate-courier-rules.js",
+    "rules:check": "node tools/generate-agenda-rules.js --check && node tools/generate-courier-rules.js --check",
+    "verify": "npm run rules:check && npm run syntax && npm run lint && npm test",
     "push": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/push-clasp.ps1",
     "push:safe": "npm run push"
   },

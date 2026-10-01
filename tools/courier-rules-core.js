@@ -1,7 +1,7 @@
-<script>
-(function(global) {
-  // BEGIN GENERATED COURIER RULES — editar tools/courier-rules-core.js
+'use strict';
 
+// Fonte unica das regras operacionais; indices vivem apenas na avaliacao atual.
+function createCourierRulesCore() {
   function norm(value) {
     return String(value == null ? '' : value).toUpperCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
@@ -116,92 +116,8 @@
       previousHoliday: previousHoliday.length ? previousHoliday : null
     };
   }
-  // END GENERATED COURIER RULES
 
-  function rule(courier) {
-    var n = norm(courier);
-    if (n.indexOf('MARKEN') >= 0) return { len: 12, mode: 'alnum', placeholder: '12 caracteres alfanumericos', label: 'MARKEN' };
-    if (n.indexOf('DHL') >= 0) return { len: 10, mode: 'digits', placeholder: '10 digitos', label: 'DHL' };
-    if (n.indexOf('OCASA') >= 0) return { len: 12, mode: 'ocasa', placeholder: 'A1234567 ou PK2WIZ177555', label: 'OCASA' };
-    if (n.indexOf('PINEX') >= 0) return { mode: 'free', placeholder: 'Codigo PINEX / AWB', label: 'PINEX' };
-    return { mode: 'free', placeholder: 'AWB', label: String(courier || '') };
-  }
+  return { norm, isYes, dryIceTemperatures, parseIso, previousCalendarIso, isAnnualHoliday, createHolidayIndex, holidayItemsForDate, activeHolidayMap, operationalRisk };
+}
 
-  function normalizeAwb(value, courier) {
-    var r = rule(courier);
-    var out = String(value == null ? '' : value).trim();
-    if (r.mode === 'alnum' || r.mode === 'ocasa') out = out.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    else if (r.mode === 'digits') out = out.replace(/\D/g, '');
-    return out;
-  }
-
-  function isValidOcasaAwb(value) {
-    value = normalizeAwb(value, 'OCASA');
-    return /^[A-Z][0-9]{7}$/.test(value) || /^PK2[A-Z0-9]{9}$/.test(value);
-  }
-
-  function requiresAwb(courier) {
-    var r = rule(courier);
-    return r.label === 'MARKEN' || r.label === 'OCASA' || norm(courier) === 'PINEX';
-  }
-
-  function isValidAwb(value, courier, forDocuments) {
-    var r = rule(courier);
-    var normalized = normalizeAwb(value, courier);
-    if (!normalized.trim()) return !forDocuments || !requiresAwb(courier);
-    if (r.mode === 'ocasa') return isValidOcasaAwb(normalized);
-    return !r.len || normalized.length === r.len;
-  }
-
-  function titleForRule(r) {
-    if (r.mode === 'ocasa') return 'OCASA: informe 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
-    if (r.mode === 'free') return r.label === 'PINEX' ? 'Informe o codigo PINEX ou AWB.' : '';
-    if (!r.len) return '';
-    return r.label + ': informe ' + r.len + (r.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
-  }
-
-  function validationMessage(courier) {
-    var r = rule(courier);
-    if (r.mode === 'ocasa') return 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
-    if (!r.len) return '';
-    return 'AWB ' + r.label + ' deve ter ' + r.len + (r.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
-  }
-
-  function applyToInput(input, courier, sanitizeValue) {
-    if (!input) return rule(courier);
-    var r = rule(courier);
-    input.placeholder = r.placeholder || 'AWB';
-    input.title = titleForRule(r);
-    input.inputMode = r.mode === 'digits' ? 'numeric' : 'text';
-    if (r.mode === 'digits' && r.len) input.pattern = '\\d{' + r.len + '}';
-    else if (r.mode === 'ocasa') input.pattern = '([A-Za-z][0-9]{7}|[Pp][Kk]2[A-Za-z0-9]{9})';
-    else if (r.mode === 'alnum' && r.len) input.pattern = '[A-Za-z0-9]{' + r.len + '}';
-    else input.removeAttribute('pattern');
-    // Preservar colagens excedentes para que a validacao possa rejeita-las.
-    input.removeAttribute('maxlength');
-    if (sanitizeValue) input.value = normalizeAwb(input.value, courier);
-    return r;
-  }
-
-  global.CodexCourierRules = {
-    norm: norm,
-    requiresAwb: requiresAwb,
-    awbRule: rule,
-    normalizeAwb: normalizeAwb,
-    isValidAwb: isValidAwb,
-    isValidOcasaAwb: isValidOcasaAwb,
-    titleForRule: titleForRule,
-    validationMessage: validationMessage,
-    applyToInput: applyToInput,
-    isYes: isYes,
-    dryIceTemperatures: dryIceTemperatures,
-    parseIso: parseIso,
-    previousCalendarIso: previousCalendarIso,
-    isAnnualHoliday: isAnnualHoliday,
-    createHolidayIndex: createHolidayIndex,
-    holidayItemsForDate: holidayItemsForDate,
-    activeHolidayMap: activeHolidayMap,
-    operationalRisk: operationalRisk
-  };
-})(window);
-</script>
+module.exports = { createCourierRulesCore };

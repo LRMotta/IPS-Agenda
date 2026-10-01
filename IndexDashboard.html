@@ -15,6 +15,15 @@
   var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
+  function dashboardLoadingState_(busy, message) {
+    var page = document.getElementById('page-dashboard');
+    var status = document.getElementById('dashLoadStatus');
+    var btn = document.getElementById('btnDashRefresh');
+    if (page && page.setAttribute) page.setAttribute('aria-busy', String(busy));
+    if (status) status.textContent = message || '';
+    if (btn) btn.disabled = busy;
+  }
+
   function carregarDashboard(forcar) {
     if (_dashLoading) return;
     if (_dashInited && !forcar && Date.now() - _dashLoadedAt < DASHBOARD_SESSION_CACHE_TTL_MS) return;
@@ -29,24 +38,24 @@
     }
     _dashLoading = true;
     var kpiEl = document.getElementById('dashKpis');
-    var btn   = document.getElementById('btnDashRefresh');
     if (kpiEl) {
       kpiEl.style.opacity = '.45';
       kpiEl.style.pointerEvents = 'none';
     }
-    if (btn) btn.disabled = true;
+    dashboardLoadingState_(true, 'Atualizando dados do Dashboard.');
     google.script.run
       .withSuccessHandler(function(d) {
         _dashLoading = false;
         try {
           if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
-          if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
           _dashInited = renderDashboard(d || {});
           _dashLoadedAt = _dashInited ? Date.now() : 0;
           if (_dashInited) dashboardStoreSessionCache(d || {});
+          dashboardLoadingState_(false, _dashInited ? ((d && d.avisos || []).length ? 'Dados atualizados com avisos.' : 'Dados do Dashboard atualizados.') : 'Não foi possível atualizar os dados.');
         } catch(err) {
           _dashInited = false;
           if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+          dashboardLoadingState_(false, 'Não foi possível atualizar os dados.');
           mostrarErroDashboard(err);
         }
       })
@@ -54,7 +63,7 @@
         _dashLoading = false;
         _dashInited = false;
         if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
-        if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">refresh</span>Atualizar dados<span class="dash-ts" id="dashTs"></span>'; }
+        dashboardLoadingState_(false, 'Não foi possível atualizar os dados.');
         mostrarErroDashboard(e);
       })
       .getDashboardData();
@@ -388,14 +397,84 @@
         cutout: '62%'
       }
     });
+    dashboardChartData_(canvasId, labels, [{ label: 'Projetos', data: data }]);
+  }
+
+  function dashboardChartData_(canvasId, labels, datasets, onRowClick, emptyMessage) {
+    var canvas = document.getElementById(canvasId);
+    var wrap = canvas && canvas.closest ? canvas.closest('.chart-wrap') : null;
+    if (!wrap || !document.createElement) return;
+    var details = document.getElementById(canvasId + 'Data');
+    var signature = JSON.stringify([labels, datasets.map(function(ds) { return [ds.label, ds.data]; }),
+      dashboardPrintChartTitleText(dashboardChartTitleElement(canvas)), emptyMessage || '', Boolean(onRowClick)]);
+    if (details && details._dashboardDataSignature === signature && details._dashboardRowClick === onRowClick) return;
+    if (!details) {
+      details = document.createElement('details');
+      details.id = canvasId + 'Data';
+      details.className = 'dash-chart-data';
+      wrap.insertAdjacentElement('afterend', details);
+    }
+    details._dashboardDataSignature = signature;
+    details._dashboardRowClick = onRowClick;
+    var wasOpen = details.open;
+    details.textContent = '';
+    var summary = document.createElement('summary');
+    summary.textContent = 'Ver dados do gráfico';
+    details.appendChild(summary);
+    if (!labels.length) {
+      var message = document.createElement('p');
+      message.textContent = emptyMessage || 'Sem dados disponíveis';
+      details.appendChild(message);
+      details.open = wasOpen;
+      return;
+    }
+    var table = document.createElement('table');
+    var caption = document.createElement('caption');
+    caption.textContent = dashboardPrintChartTitleText(dashboardChartTitleElement(canvas));
+    table.appendChild(caption);
+    var head = document.createElement('thead');
+    var header = document.createElement('tr');
+    ['Categoria'].concat(datasets.map(function(ds) { return ds.label || 'Quantidade'; })).forEach(function(label) {
+      var th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = label;
+      header.appendChild(th);
+    });
+    head.appendChild(header);
+    table.appendChild(head);
+    var body = document.createElement('tbody');
+    labels.forEach(function(label, idx) {
+      var row = document.createElement('tr');
+      var name = document.createElement('th');
+      name.scope = 'row';
+      if (onRowClick && label !== 'Outros' && label !== 'N/A') {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.setAttribute('aria-label', 'Abrir projetos do coordenador ' + label);
+        button.addEventListener('click', function() { onRowClick(label); });
+        name.appendChild(button);
+      } else name.textContent = label;
+      row.appendChild(name);
+      datasets.forEach(function(ds) {
+        var value = document.createElement('td');
+        value.textContent = String(ds.data[idx] == null ? 0 : ds.data[idx]);
+        row.appendChild(value);
+      });
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    details.appendChild(table);
+    details.open = wasOpen;
   }
 
   function _barH(canvasId, labels, datasets, onBarClick) {
-    _destroyChart(canvasId);
-    var ctx = document.getElementById(canvasId).getContext('2d');
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    var chart = _dashCharts[canvasId];
     var fullLabels = labels.slice();
     var displayLabels = labels.map(_shortDashLabel);
-    _dashCharts[canvasId] = new Chart(ctx, {
+    var config = {
       type: 'bar',
       data: { labels: displayLabels, datasets: datasets },
       options: {
@@ -425,7 +504,16 @@
           y: { ticks: { autoSkip: false, font: { size: 11, family: 'Roboto' } }, grid: { display: false } }
         }
       }
-    });
+    };
+    if (chart && chart.config && chart.config.type === 'bar' && typeof chart.update === 'function') {
+      chart.data = config.data;
+      chart.options = config.options;
+      chart.update('none');
+    } else {
+      _destroyChart(canvasId);
+      _dashCharts[canvasId] = new Chart(canvas.getContext('2d'), config);
+    }
+    dashboardChartData_(canvasId, fullLabels, datasets, onBarClick);
   }
 
   function renderDashboard(d) {
@@ -433,6 +521,9 @@
     if (oldError) oldError.remove();
     Object.keys(_dashCharts).forEach(_destroyChart);
     if (d.erros && d.erros.length) {
+      Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
+        dashboardDrawEmptyChart_(canvas, 'Dados indisponíveis');
+      });
       ['kpiProjetos', 'kpiPart', 'kpiAtivos', 'kpiZeroRecrut'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.textContent = '—';
@@ -445,6 +536,9 @@
       return false;
     }
     if (typeof Chart === 'undefined') {
+      Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
+        dashboardDrawEmptyChart_(canvas, 'Gráfico indisponível');
+      });
       mostrarErroDashboard('Chart.js não carregou. Verifique a conexão com a internet e recarregue a página.');
       return false;
     }
@@ -554,7 +648,6 @@
       _setChartHeight('chartCoord', coordPairs.length, 28, 240, 440);
       _barH('chartCoord', coordPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: coordPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, coordPairs.length), borderRadius: 4 }], dashOpenCoordinator);
     }
-    moverBlocoAgendaDashboard();
     renderDashboardAgenda(d.agendaResumo || {});
     renderDashboardEstoque(est);
     Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
@@ -576,19 +669,10 @@
     Array.prototype.forEach.call(block.querySelectorAll('.dash-kpi-val'), function(el) {
       if (!available) el.textContent = 'Dados indisponíveis';
     });
-    Array.prototype.forEach.call(block.querySelectorAll('.chart-wrap, .dash-grid-2, #dashAgendaMesCards, .dash-period-controls'), function(el) {
+    Array.prototype.forEach.call(block.querySelectorAll('.chart-wrap, .dash-chart-data, .dash-grid-2, #dashAgendaMesCards, #dashAgendaCardsTitle, .dash-period-controls'), function(el) {
       el.style.display = available ? '' : 'none';
     });
     block.style.display = '';
-  }
-
-  function moverBlocoAgendaDashboard() {
-    var agenda = document.getElementById('dashAgendaBlock');
-    var estoque = document.getElementById('dashEstoqueBlock');
-    if (agenda && estoque && agenda.nextElementSibling !== estoque) {
-      estoque.parentNode.insertBefore(agenda, estoque);
-    }
-    if (agenda) agenda.style.display = '';
   }
 
   function dashAgendaMonthNames() {
@@ -656,7 +740,6 @@
   }
 
   function renderDashAgendaPairChart(canvasId, pairs, label, color, maxH) {
-    _destroyChart(canvasId);
     pairs = pairs || [];
     if (!pairs.length) {
       var canvas = document.getElementById(canvasId);
@@ -674,52 +757,77 @@
     }]);
   }
 
-  function renderDashboardAgendaPeriodCharts() {
-    var ag = _dashAgendaResumoAtual || {};
-    if (!_dashAgendaRaw.length) {
-      renderDashAgendaPairChart('chartAgendaProt', ag.visitasPorProtocolo || [], 'Visitas', 'rgba(18,102,241,.72)');
-      renderDashAgendaPairChart('chartAgendaMonProt', ag.monitoriaPorProtocolo || [], 'Dias', 'rgba(91,33,182,.72)');
-      renderDashAgendaPairChart('chartAgendaMedico', ag.visitasPorMedico || [], 'Visitas', 'rgba(46,125,50,.72)');
-      renderDashAgendaPairChart('chartAgendaCancelProt', ag.cancelReagPorProtocolo || [], 'Cancel./Reag.', 'rgba(198,40,40,.72)');
-      renderDashAgendaPairChart('chartAgendaCourierAno', ag.courierUsoAno || [], 'Transportes', 'rgba(18,102,241,.72)');
-      return;
+  // Uma passagem pelos eventos produz os KPIs e todas as séries do recorte.
+  function dashboardAggregateAgendaPeriod_() {
+    var visits = Object.create(null), labs = Object.create(null), participants = Object.create(null);
+    var protocols = Object.create(null), doctors = Object.create(null), monitoringDays = Object.create(null);
+    var monitoring = Object.create(null), cancellations = Object.create(null), couriers = Object.create(null);
+    var days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; });
+    var months = dashAgendaMonthNames();
+    var today = new Date();
+    today.setHours(23, 59, 59, 999);
+    var result = { total: 0, visits: 0, labs: 0 };
+    function add(map, key) { map[key] = (map[key] || 0) + 1; }
+    (_dashAgendaRaw || []).forEach(function(r) {
+      if (_dashAgendaPeriod.tipo !== 'global' && Number(r.ano || 0) !== Number(_dashAgendaPeriod.ano)) return;
+      if (_dashAgendaPeriod.tipo === 'mes' && Number(r.mes || 0) !== Number(_dashAgendaPeriod.mes)) return;
+      result.total++;
+      var date = r.dataIso ? new Date(String(r.dataIso) + 'T12:00:00') : null;
+      var validDate = date && !isNaN(date.getTime());
+      var future = validDate && date.getTime() > today.getTime();
+      var project = r.projeto || 'Sem protocolo';
+      var bucket = _dashAgendaPeriod.tipo === 'global' ? String(r.ano || '-') : months[Number(r.mes || 1) - 1];
+      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_COMPLETED_VISITS) && !future) {
+        result.visits++;
+        add(visits, bucket);
+        add(protocols, project);
+        add(doctors, r.medico || 'Sem medico');
+        var key = String(r.participanteKey || '').trim();
+        if (key) participants[key] = 1;
+        if (validDate) days[date.getDay()].value++;
+      }
+      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_LAB_CENTRAL)) {
+        result.labs++;
+        add(labs, bucket);
+      }
+      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_MONITORING)) {
+        var dayKey = project + '|' + (r.dataIso || '');
+        if (!monitoringDays[dayKey]) { monitoringDays[dayKey] = 1; add(monitoring, project); }
+      }
+      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_CANCELLATIONS_RESCHEDULES)) add(cancellations, project);
+      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_COMPLETED_TRANSPORT) && !future && AgendaRules.isLabCentral(r)) {
+        (r.couriers || []).forEach(function(name) { if (name) add(couriers, name); });
+      }
+    });
+    function buckets(map) {
+      return Object.keys(map).sort(function(a, b) {
+        return _dashAgendaPeriod.tipo === 'global' ? Number(a) - Number(b) : months.indexOf(a) - months.indexOf(b);
+      }).map(function(label) { return { label: label, value: map[label] }; });
     }
-    var rows = dashAgendaRowsPeriodo();
-    var porProt = {};
-    var porMonDia = {};
-    var porMed = {};
-    var cancelReag = {};
-    var courierUso = {};
-    var hoje = new Date();
-    hoje.setHours(23, 59, 59, 999);
-    rows.forEach(function(r) {
-      var dt = r.dataIso ? new Date(String(r.dataIso) + 'T12:00:00') : null;
-      var noFuturo = dt && !isNaN(dt.getTime()) && dt.getTime() > hoje.getTime();
-      var projeto = r.projeto || 'Sem protocolo';
-      var medico = r.medico || 'Sem medico';
-      if (AgendaRules.countsIn(r, 'dashboard-cancelamentos-reagendamentos') && projeto) cancelReag[projeto] = (cancelReag[projeto] || 0) + 1;
-      if (AgendaRules.countsIn(r, 'dashboard-monitorias')) porMonDia[projeto + '|' + (r.dataIso || '')] = projeto;
-      if (AgendaRules.countsIn(r, 'dashboard-visitas-realizadas') && !noFuturo) {
-        porProt[projeto] = (porProt[projeto] || 0) + 1;
-        porMed[medico] = (porMed[medico] || 0) + 1;
-      }
-      if (AgendaRules.countsIn(r, 'dashboard-transportes-realizados') && !noFuturo && AgendaRules.isLabCentral(r)) {
-        (r.couriers || []).forEach(function(nome) {
-          if (!nome) return;
-          courierUso[nome] = (courierUso[nome] || 0) + 1;
-        });
-      }
-    });
-    var monMap = {};
-    Object.keys(porMonDia).forEach(function(k) {
-      var p = porMonDia[k];
-      monMap[p] = (monMap[p] || 0) + 1;
-    });
-    renderDashAgendaPairChart('chartAgendaProt', dashAgendaPairs(porProt, 15), 'Visitas', 'rgba(18,102,241,.72)');
-    renderDashAgendaPairChart('chartAgendaMonProt', dashAgendaPairs(monMap, 15), 'Dias', 'rgba(91,33,182,.72)');
-    renderDashAgendaPairChart('chartAgendaMedico', dashAgendaPairs(porMed, 12), 'Visitas', 'rgba(46,125,50,.72)');
-    renderDashAgendaPairChart('chartAgendaCancelProt', dashAgendaPairs(cancelReag, 15), 'Cancel./Reag.', 'rgba(198,40,40,.72)');
-    renderDashAgendaPairChart('chartAgendaCourierAno', dashAgendaPairs(courierUso, 12), 'Transportes', 'rgba(18,102,241,.72)');
+    result.participants = Object.keys(participants).length;
+    result.monitoringDays = Object.keys(monitoringDays).length;
+    result.visitsBuckets = buckets(visits);
+    result.labBuckets = buckets(labs);
+    result.days = days;
+    result.protocols = dashAgendaPairs(protocols, 15);
+    result.monitoring = dashAgendaPairs(monitoring, 15);
+    result.doctors = dashAgendaPairs(doctors, 12);
+    result.cancellations = dashAgendaPairs(cancellations, 15);
+    result.couriers = dashAgendaPairs(couriers, 12);
+    return result;
+  }
+
+  function renderDashboardAgendaPeriodCharts(aggregate) {
+    var ag = _dashAgendaResumoAtual || {};
+    var data = _dashAgendaRaw.length ? (aggregate || dashboardAggregateAgendaPeriod_()) : {
+      protocols: ag.visitasPorProtocolo || [], monitoring: ag.monitoriaPorProtocolo || [],
+      doctors: ag.visitasPorMedico || [], cancellations: ag.cancelReagPorProtocolo || [], couriers: ag.courierUsoAno || []
+    };
+    renderDashAgendaPairChart('chartAgendaProt', data.protocols, 'Visitas', 'rgba(18,102,241,.72)');
+    renderDashAgendaPairChart('chartAgendaMonProt', data.monitoring, 'Dias', 'rgba(91,33,182,.72)');
+    renderDashAgendaPairChart('chartAgendaMedico', data.doctors, 'Visitas', 'rgba(46,125,50,.72)');
+    renderDashAgendaPairChart('chartAgendaCancelProt', data.cancellations, 'Cancel./Reag.', 'rgba(198,40,40,.72)');
+    renderDashAgendaPairChart('chartAgendaCourierAno', data.couriers, 'Transportes', 'rgba(18,102,241,.72)');
   }
 
   function dashAgendaPeriodoLabel() {
@@ -747,6 +855,7 @@
 
   function dashboardDrawEmptyChart_(canvas, message) {
     if (!canvas) return;
+    _destroyChart(canvas.id);
     var ctx = canvas.getContext('2d');
     var w = canvas.width || canvas.clientWidth || 320;
     var h = canvas.height || canvas.clientHeight || 220;
@@ -755,6 +864,7 @@
     ctx.font = '600 13px Roboto, Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(message, w / 2, h / 2);
+    dashboardChartData_(canvas.id, [], [], null, message);
   }
 
   function dashAgendaParticipantesAtendidos(rows, predicate) {
@@ -769,26 +879,13 @@
 
   function renderDashboardAgendaPeriodoResumo() {
     var ag = _dashAgendaResumoAtual || {};
-    var rows = _dashAgendaRaw.length ? dashAgendaRowsPeriodo() : [];
-    var hoje = new Date();
-    hoje.setHours(23, 59, 59, 999);
-    function noFuturo(r) {
-      var dt = r.dataIso ? new Date(String(r.dataIso) + 'T12:00:00') : null;
-      return dt && !isNaN(dt.getTime()) && dt.getTime() > hoje.getTime();
-    }
-    function realizada(r) { return AgendaRules.countsIn(r, 'dashboard-visitas-realizadas') && !noFuturo(r); }
-    function labCentral(r) { return AgendaRules.countsIn(r, 'dashboard-lab-central'); }
-
-    var monDias = {};
-    rows.forEach(function(r) {
-      if (AgendaRules.countsIn(r, 'dashboard-monitorias')) monDias[(r.projeto || 'Sem protocolo') + '|' + (r.dataIso || '')] = 1;
-    });
+    var aggregate = _dashAgendaRaw.length ? dashboardAggregateAgendaPeriod_() : null;
     var ids = _dashAgendaRaw.length ? {
-      dashAgendaVisitasAno: rows.filter(realizada).length,
-      dashAgendaParticipantesAtendidos: dashAgendaParticipantesAtendidos(rows, realizada),
-      dashAgendaLabAno: rows.filter(labCentral).length,
-      dashAgendaMonAno: Object.keys(monDias).length,
-      dashAgendaTotalAno: rows.length
+      dashAgendaVisitasAno: aggregate.visits,
+      dashAgendaParticipantesAtendidos: aggregate.participants,
+      dashAgendaLabAno: aggregate.labs,
+      dashAgendaMonAno: aggregate.monitoringDays,
+      dashAgendaTotalAno: aggregate.total
     } : {
       dashAgendaVisitasAno: ag.visitasRealizadasAno || 0,
       dashAgendaParticipantesAtendidos: ag.participantesAtendidosAno || 0,
@@ -810,47 +907,38 @@
         (id === 'chartAgendaVisitasMes' ? 'Visitas realizadas' : 'Lab Central') +
         (_dashAgendaPeriod.tipo === 'global' ? ' por ano' : ' por mês');
     });
-    var visitasPeriodo = _dashAgendaRaw.length ? dashAgendaPeriodoBuckets(rows, realizada) : (ag.visitasMes || []);
-    var labPeriodo = _dashAgendaRaw.length ? dashAgendaPeriodoBuckets(rows, labCentral) : (ag.labCentralMes || []);
+    var visitasPeriodo = _dashAgendaRaw.length ? aggregate.visitsBuckets : (ag.visitasMes || []);
+    var labPeriodo = _dashAgendaRaw.length ? aggregate.labBuckets : (ag.labCentralMes || []);
+    var cardsTitle = document.getElementById('dashAgendaCardsTitle');
+    if (cardsTitle) cardsTitle.textContent = 'Visitas realizadas' + (_dashAgendaPeriod.tipo === 'global' ? ' por ano' : ' por mês');
     var mesCards = document.getElementById('dashAgendaMesCards');
     if (mesCards) {
       mesCards.innerHTML = visitasPeriodo.map(function(m) {
-        return '<div class="dash-kpi" style="padding:10px 8px;text-align:center">' +
-          '<div class="dash-kpi-val" style="font-size:20px;margin-bottom:3px">' + (m.value || 0) + '</div>' +
+        return '<div class="dash-kpi">' +
+          '<div class="dash-kpi-val">' + (m.value || 0) + '</div>' +
           '<div class="dash-kpi-lbl">' + esc(m.label || '-') + '</div>' +
         '</div>';
       }).join('');
     }
     function labels(arr) { return (arr || []).map(function(p) { return p.label; }); }
     function values(arr) { return (arr || []).map(function(p) { return p.value || 0; }); }
-    _destroyChart('chartAgendaVisitasMes');
-    _destroyChart('chartAgendaLabMes');
     if (visitasPeriodo.length) {
       _setChartHeight('chartAgendaVisitasMes', visitasPeriodo.length, 20, 220, 320);
       _barH('chartAgendaVisitasMes', labels(visitasPeriodo), [{ label: 'Visitas', data: values(visitasPeriodo), backgroundColor: 'rgba(18,102,241,.72)', borderRadius: 4 }]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartAgendaVisitasMes'), 'Sem dados para o período selecionado');
     if (labPeriodo.length) {
       _setChartHeight('chartAgendaLabMes', labPeriodo.length, 20, 220, 320);
       _barH('chartAgendaLabMes', labels(labPeriodo), [{ label: 'Lab Central', data: values(labPeriodo), backgroundColor: 'rgba(0,121,107,.72)', borderRadius: 4 }]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartAgendaLabMes'), 'Sem dados para o período selecionado');
 
-    var dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(d) { return { label: d, value: 0 }; });
-    if (_dashAgendaRaw.length) {
-      rows.forEach(function(r) {
-        if (!realizada(r) || !r.dataIso) return;
-        var dt = new Date(String(r.dataIso) + 'T12:00:00');
-        if (!isNaN(dt.getTime())) dias[dt.getDay()].value++;
-      });
-    } else {
-      dias = ag.visitasPorDiaSemana || dias;
-    }
-    _destroyChart('chartAgendaDiaSemana');
+    var dias = aggregate ? aggregate.days : (ag.visitasPorDiaSemana ||
+      ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }));
     if (dias.length) {
       _setChartHeight('chartAgendaDiaSemana', dias.length, 28, 220, 320);
       _barH('chartAgendaDiaSemana', labels(dias), [{ label: 'Visitas', data: values(dias), backgroundColor: DASH_CORES.slice(0, 7), borderRadius: 4 }]);
     }
 
-    renderDashboardAgendaPeriodCharts();
+    renderDashboardAgendaPeriodCharts(aggregate);
   }
 
   function renderDashboardAgenda(ag) {
@@ -858,13 +946,7 @@
     _dashAgendaResumoAtual = ag;
     _dashAgendaRaw = ag.eventosPeriodo || [];
     setupDashAgendaPeriodControls();
-    function labels(arr) { return (arr || []).map(function(p) { return p.label; }); }
-    function values(arr) { return (arr || []).map(function(p) { return p.value || 0; }); }
     renderDashboardAgendaPeriodoResumo();
-    if ((ag.antecedenciaMediaPorTipo || []).length) {
-      _setChartHeight('chartAgendaAntecedenciaTipo', ag.antecedenciaMediaPorTipo.length, 26, 240, 430);
-      _barH('chartAgendaAntecedenciaTipo', labels(ag.antecedenciaMediaPorTipo), [{ label: 'Dias', data: values(ag.antecedenciaMediaPorTipo), backgroundColor: 'rgba(230,81,0,.72)', borderRadius: 4 }]);
-    }
   }
 
   function renderDashboardEstoque(est) {

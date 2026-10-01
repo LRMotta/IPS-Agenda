@@ -25,6 +25,131 @@ async function scenario(run, options = {}) {
   } finally { await context.close(); }
 }
 
+test('Agenda: colagem de AWB excedente permanece visivel e invalida em desktop e celular', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        const courier = document.getElementById('agC1Nome');
+        courier.innerHTML = '<option value="MARKEN">MARKEN</option>';
+        courier.value = 'MARKEN';
+        const input = document.getElementById('agC1Awb');
+        for (let el = input; el && el !== document.body; el = el.parentElement) {
+          if (window.getComputedStyle(el).display === 'none') el.style.display = 'block';
+        }
+        window.applyAgendaAwbRule('agC1', true);
+      });
+      const input = page.locator('#agC1Awb');
+      await input.fill('AB12CD34EF567');
+      assert.equal(await input.inputValue(), 'AB12CD34EF567');
+      assert.equal(await input.getAttribute('aria-invalid'), 'true');
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await input.scrollIntoViewIfNeeded();
+      await input.screenshot({ path: path.join(dir, 'courier-awb-excedente-' + width + '.png') });
+      await input.fill('ab-12 cd34 ef56');
+      assert.equal(await input.inputValue(), 'AB12CD34EF56');
+      assert.equal(await input.getAttribute('aria-invalid'), 'false');
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
+test('Backup: opções persistentes, liberação por temperatura e vínculo em desktop e celular', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        const wrap = document.getElementById('agBackupWrap');
+        wrap.dataset.forceOpen = '1';
+        for (let el = wrap; el && el !== document.body; el = el.parentElement) {
+          if (window.getComputedStyle(el).display === 'none') el.style.display = 'block';
+        }
+        document.getElementById('agBackupTemp').innerHTML = '<option value="">Selecione</option><option value="Congelado">Congelado</option>';
+        window._agendaEditRecord = { id: 'A', backup: {} };
+        window.atualizarEstadoNovoEnvioBackup_();
+      });
+      const step = page.locator('#backupAgendaStep');
+      const actions = step.locator('button.ag-backup-agenda-choice');
+      assert.equal(await step.isVisible(), true);
+      assert.equal(await actions.count(), 2);
+      for (const action of await actions.all()) assert.equal(await action.isDisabled(), true);
+      assert.match(await page.locator('#backupAgendaHint').innerText(), /Informe a temperatura/);
+      await page.locator('#agBackupTemp').selectOption('Congelado');
+      for (const action of await actions.all()) assert.equal(await action.isEnabled(), true);
+      assert.match(await page.locator('#backupAgendaHint').innerText(), /Você já pode agendar/);
+      await page.locator('#btnUsarVisitaFuturaBackup').click();
+      assert.equal(await page.locator('#backupAgendaVisitas').isVisible(), true);
+      assert.equal(await page.evaluate(() => window.calls.at(-1).method), 'getAgendaVisitasFuturasParaBackup');
+      await page.locator('#agBackupTemp').selectOption('');
+      await page.evaluate(() => window.calls.at(-1).success({ visitas: [] }));
+      assert.equal(await page.locator('#backupAgendaVisitas').isVisible(), false, 'resposta tardia não reabre opções bloqueadas');
+      await page.locator('#agBackupTemp').selectOption('Congelado');
+      await step.scrollIntoViewIfNeeded();
+      const box = await step.boundingBox();
+      assert.ok(box.x >= 0 && box.x + box.width <= width, 'etapa cabe na tela');
+      if (width === 390) {
+        const save = await page.locator('.ag-modal-actions').boundingBox();
+        assert.ok(box.y + box.height <= save.y, 'barra de salvar não cobre as opções');
+      }
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await step.screenshot({ path: path.join(dir, 'backup-agendamento-' + width + '.png'), animations: 'disabled' });
+      await page.evaluate(() => {
+        window._agendaEditRecord = { id: 'A', backup: { agendamento: { id: 'FUTURA', slot: 'III' } } };
+        window.atualizarEstadoNovoEnvioBackup_();
+      });
+      assert.equal(await step.isVisible(), false);
+      assert.match(await page.locator('#backupAgendaRefInfo').innerText(), /Agendamento vinculado/);
+      await page.evaluate(() => {
+        window._agendaEditRecord = { id: 'OUTRO', backup: {} };
+        document.getElementById('agBackupTemp').value = '';
+        window.atualizarEstadoNovoEnvioBackup_();
+      });
+      assert.equal(await step.isVisible(), true, 'nova edição recupera a etapa');
+      for (const action of await actions.all()) assert.equal(await action.isDisabled(), true);
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
+test('Agenda: Courier fixa bloqueia mistura durante transicao, preserva gramas e valida formula completa', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      const courier = document.getElementById('agC1Nome');
+      courier.innerHTML = '<option value="MARKEN">MARKEN</option><option value="DHL">DHL</option>';
+      courier.value = 'MARKEN';
+      document.getElementById('agTransporteCard').style.display = 'block';
+      window.agendaMatBioSetItems('agC1', [{ key: 'soro', formula: '1x500', unit: 'mL' }, { key: 'fezes', formula: '2x5', unit: 'g' }]);
+      courier.value = 'DHL';
+      window.onAgendaCourierChange('agC1');
+      window.agendaMatBioAddRow('agC1', { key: 'soro', formula: '' });
+    });
+    const soro = page.locator('.ag-mat-line[data-prefix="agC1"]').filter({ has: page.locator('select option:checked[value="soro"]') });
+    await soro.last().locator('.ag-mat-formula').fill('1x0,5');
+    assert.equal(await soro.first().locator('.ag-mat-formula').getAttribute('aria-invalid'), 'true');
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), false);
+    await page.evaluate(() => window.agendaMatBioConvertDhlVolumes('agC1'));
+    assert.equal(await soro.first().locator('.ag-mat-formula').inputValue(), '1×0,5');
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), true);
+    const serialized = await page.evaluate(() => window.agendaMatBioSerialize('agC1'));
+    assert.equal(serialized.items.find(item => item.key === 'soro').total, 1);
+    assert.equal(serialized.items.find(item => item.key === 'fezes').unit, 'g');
+    await soro.last().locator('.ag-mat-formula').fill('-2x5');
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), false);
+    assert.equal(await soro.last().locator('.ag-mat-formula').getAttribute('aria-invalid'), 'true');
+    await soro.last().locator('.ag-mat-formula').fill('2x0,5');
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), true);
+    await page.evaluate(() => { document.getElementById('agC1Nome').value = 'MARKEN'; window.onAgendaCourierChange('agC1'); });
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), false, 'voltar para mL tambem exige revisao');
+  });
+});
+
+test('Agenda: JSON corrompido nao pode ser silenciosamente salvo como material vazio', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => window.agendaMatBioLoad('agC1', { matBioJson: '{', material: 'Resumo legado' }));
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), false);
+    await page.evaluate(() => window.agendaMatBioClear('agC1'));
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), true, 'substituicao explicita libera revisao');
+  });
+});
+
 test('DOM real: kits filtrados por identidade exata em desktop e celular', async () => {
   for (const width of [1280, 390]) {
     await scenario(async (page) => {

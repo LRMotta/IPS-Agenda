@@ -65,24 +65,57 @@ function agendaCourierConfigById_(configs, courierId) {
 // reler tres abas sem transformar o cache em fonte autoritativa: na ausencia de
 // uma entrada valida, a leitura continua vindo diretamente das fontes.
 function agendaOperationalRiskReferences_() {
+  var started = Date.now();
   var cached = null;
   try {
-    if (typeof codexCacheGet_ === 'function' && typeof agendaReferenceCacheKey_ === 'function') {
+    if (!(typeof CODEX_CACHE_BYPASS_READS_ !== 'undefined' && CODEX_CACHE_BYPASS_READS_) && typeof codexCacheGet_ === 'function' && typeof agendaReferenceCacheKey_ === 'function') {
       cached = codexCacheGet_(agendaReferenceCacheKey_());
     }
   } catch (e) {}
   if (cached && cached.projectCourierMap && cached.courierConfig && Array.isArray(cached.feriados)) {
+    if (typeof feriadoLogPerformance_ === 'function') feriadoLogPerformance_('risk_reference_aggregate', started, { cacheHits: 3, cacheMisses: 0 }, true);
     return {
       projectMap: cached.projectCourierMap,
       configs: cached.courierConfig,
       holidays: cached.feriados
     };
   }
-  return {
-    projectMap: getAgendaProjetoCourierMap_(),
-    configs: getAgendaCourierConfigs_(false),
-    holidays: getAgendaFeriadosOperacionais_()
-  };
+  var metrics = { cacheHits: 0, cacheMisses: 0 };
+  var parts = null;
+  if (typeof agendaReferencePartsForRead_ === 'function') parts = agendaReferencePartsForRead_(false);
+  function readPart(name, validate, load) {
+    var key = parts && parts.keys[name];
+    if (key && parts.cached[key]) {
+      try {
+        var entry = JSON.parse(parts.cached[key]);
+        if (entry && entry.version === 1 && validate(entry.value)) {
+          metrics.cacheHits++;
+          return entry.value;
+        }
+      } catch (e) {}
+    }
+    metrics.cacheMisses++;
+    var value = load();
+    if (key && typeof agendaReferenceCacheSerializedBytes_ === 'function') {
+      var serialized = JSON.stringify({ version: 1, value: value });
+      if (agendaReferenceCacheSerializedBytes_(serialized) <= AGENDA_REFERENCE_CACHE_MAX_BYTES_) parts.pending[key] = serialized;
+    }
+    return value;
+  }
+  var success = false;
+  try {
+    var objectValid = function(value) { return !!value && typeof value === 'object' && !Array.isArray(value); };
+    var result = {
+      projectMap: readPart('project_courier_map', objectValid, getAgendaProjetoCourierMap_),
+      configs: readPart('courier_config', objectValid, function() { return getAgendaCourierConfigs_(false); }),
+      holidays: readPart('feriados', Array.isArray, getAgendaFeriadosOperacionais_)
+    };
+    if (parts && typeof agendaReferencePartsStore_ === 'function') agendaReferencePartsStore_(parts);
+    success = true;
+    return result;
+  } finally {
+    if (typeof feriadoLogPerformance_ === 'function') feriadoLogPerformance_('risk_reference_parts', started, metrics, success);
+  }
 }
 
 function agendaOperationalRiskAlerts_(dados, dates) {
@@ -91,7 +124,7 @@ function agendaOperationalRiskAlerts_(dados, dates) {
   var references = agendaOperationalRiskReferences_();
   var projectMap = references.projectMap;
   var project = agendaProjetoCourierRecord_(projectMap, dados.projeto);
-  var holidays = references.holidays;
+  var holidays = CodexCourierRiskRules_.createHolidayIndex(references.holidays);
   var configs = references.configs;
   var dateValues = (dates && dates.length ? dates : [dados.data]).map(function(value) {
     if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');

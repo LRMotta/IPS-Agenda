@@ -482,7 +482,7 @@ test('novo envio do Backup exige temperatura sem alterar o legado', () => {
   assert.match(fluxoBackup, /backup\.temperatura \|\| backup\.temp/);
   assert.match(fluxoBackup, /Informe a Temperatura do Transporte de Amostras Backup/);
   assert.match(client, /function atualizarEstadoNovoEnvioBackup_\(\)/);
-  assert.match(client, /btn\.disabled = !temperaturaInformada/);
+  assert.match(client, /action\.disabled = !temperaturaInformada \|\| !!refValida/);
   assert.match(serverSource, /function salvarNovoEventoCompleto[\s\S]*agendaNovoEnvioBackupTemperaturaErro_\(dados\)/);
   assert.match(serverSource, /function salvarNovoEventoComFeriado[\s\S]*agendaNovoEnvioBackupTemperaturaErro_\(dados\)/);
 
@@ -768,7 +768,8 @@ test('interface oferece os dois caminhos e mantém o modal da Agenda durante a v
 
   assert.match(content, /Criar novo Envio de Amostras/);
   assert.match(content, /Usar visita futura/);
-  assert.match(content, /aria-controls="backupAgendaActions"/);
+  assert.match(content, /aria-describedby="backupAgendaHint"/);
+  assert.ok(content.indexOf('id="backupAgendaStep"') > content.indexOf('id="agBackupMaterial"'), 'as opções seguem o preenchimento do backup');
   assert.match(client, /appHasUnsavedChanges\('agendaCreatePanel'\)/);
   assert.match(client, /getAgendaVisitasFuturasParaBackup\(origemId\)/);
   assert.match(client, /\.aplicarBackupEmVisitaFutura\(/);

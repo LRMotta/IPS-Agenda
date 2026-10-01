@@ -1566,7 +1566,10 @@
 
     function matBioOnFormulaInput(input) {
       var row = input && input.closest ? input.closest('.ag-mat-line') : null;
-      if (row) row.dataset.formulaUnit = matBioDisplayUnit('mL');
+      if (row) {
+        var cfg = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
+        row.dataset.formulaUnit = matBioDisplayUnit((cfg && cfg.unit) || 'mL');
+      }
       matBioRecalc();
     }
 
@@ -1650,8 +1653,9 @@
         row.dataset.volumeUnit = unit;
         if (formula) formula.placeholder = matBioPlaceholder();
         if (tubos) tubos.textContent = calc.tubosText;
-        if (total) total.textContent = calc.totalText;
+        if (total) total.textContent = calc.parsed.segmentos.length && matBioUnitKey(row.dataset.formulaUnit || unit) !== unit ? 'Conversão pendente' : calc.totalText;
       });
+      matBioErrors();
       matBioEnsureTrailingRow();
       updateDhlVolumeActions();
       renderDerived();
@@ -1738,6 +1742,21 @@
       toast(converted ? converted + ' material(is) convertido(s) para L.' : 'Não há volumes em mL para converter.', converted ? 'ok' : 'warn');
     }
 
+    function matBioErrors() {
+      var errors = [];
+      Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
+        var cfg = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
+        if (!cfg) return;
+        var formula = row.querySelector('.ag-mat-formula'), parsed = matBioParseFormula(formula ? formula.value : '');
+        var expected = matBioDisplayUnit(cfg.unit), source = matBioUnitKey(row.dataset.formulaUnit || expected);
+        var error = !parsed.valid ? parsed.error : (parsed.segmentos.length && source !== expected
+          ? 'A fórmula está em ' + source + '. Converta ou revise os volumes para ' + expected + ' antes de salvar.' : '');
+        if (formula) { formula.classList.toggle('invalid', !!error); formula.setCustomValidity(error); formula.setAttribute('aria-invalid', error ? 'true' : 'false'); formula.title = error; }
+        if (error) errors.push(cfg.label + ': ' + error);
+      });
+      return errors;
+    }
+
     function collectMaterials() {
       var items = [];
       Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
@@ -1747,6 +1766,7 @@
         var cfg = matBioTypeConfig(tipoEl && tipoEl.value);
         if (!cfg) return;
         var parsed = matBioParseFormula(formulaEl ? formulaEl.value : '');
+        if (!parsed.valid || (parsed.segmentos.length && matBioUnitKey(row.dataset.formulaUnit || matBioDisplayUnit(cfg.unit)) !== matBioDisplayUnit(cfg.unit))) return;
         var label = cfg.outro ? ((row.querySelector('.ag-mat-other') || {}).value || '').trim() : cfg.label;
         if (!label || (!parsed.segmentos.length && !cfg.outro)) return;
         items.push({
@@ -1765,7 +1785,7 @@
       });
     }
 
-    function collectPayload() {
+    function collectPayload(materials) {
       var registroAtual = (state && state.registro) || {};
       var participanteSelecionado = selectedParticipantInfo();
       return {
@@ -1789,7 +1809,7 @@
         idAgenda: registroAtual.idAgenda || '',
         agendaSlot: registroAtual.agendaSlot || '',
         refInterna: registroAtual.refInterna || '',
-        materiais: collectMaterials()
+        materiais: materials || collectMaterials()
       };
     }
 
@@ -1800,7 +1820,7 @@
       var ativos = materiais.filter(function(m) { return m.ativo; });
       var docs = docsFor(selectedCourier, selectedTemp, document.getElementById('destino').value);
       var tubos = ativos.reduce(function(sum, m) { return sum + (Number(String(m.tubos).replace(',', '.')) || 0); }, 0);
-      var total = ativos.reduce(function(sum, m) { return sum + (Number(String(m.total).replace(',', '.')) || 0); }, 0);
+      var total = ativos.reduce(function(sum, m) { return sum + (matBioUnitKey(m.unit) === 'g' ? 0 : (Number(String(m.total).replace(',', '.')) || 0)); }, 0);
       var volumeUnit = selectedCourier === 'DHL' ? 'L' : 'mL';
       document.getElementById('stMateriais').textContent = ativos.length;
       document.getElementById('stTubos').textContent = tubos || '0';
@@ -1809,8 +1829,8 @@
       document.getElementById('docs').innerHTML = docs.map(function(d) {
         return '<div class="doc"><span class="material-symbols-outlined">description</span><div>' + esc(d) + '</div></div>';
       }).join('');
-      renderIssues();
-      renderMeta(ativos, docs);
+      renderIssues(materiais);
+      renderMeta(ativos, docs, materiais);
       updateTransportActionState();
     }
 
@@ -1825,9 +1845,9 @@
       return ['Folha de Agendamento', 'Declaração de Transporte'];
     }
 
-    function renderIssues() {
-      var p = collectPayload();
-      var issues = [];
+    function renderIssues(materials) {
+      var p = collectPayload(materials);
+      var issues = matBioErrors().map(function(error) { return { type: 'danger', text: error }; });
       if (p.protocolo && state.ceStatus && state.ceStatus.protocolo === p.protocolo) {
         if (state.ceStatus.checked === false) {
           issues.push({ type:'warn', text: state.ceStatus.message || 'Verificando CE do estudo...' });
@@ -1941,8 +1961,8 @@
       }
     }
 
-    function renderMeta(ativos, docs) {
-      var p = collectPayload();
+    function renderMeta(ativos, docs, materials) {
+      var p = collectPayload(materials);
       var destino = (state.options.destinos || []).filter(function(item) { return item.nome === p.destino; })[0] || {};
       var rows = [
         ['Courier', p.courier || '-'],
@@ -1959,7 +1979,7 @@
 
     function blockingIssues() {
       var p = collectPayload();
-      var out = [];
+      var out = matBioErrors();
       if (!String(p.paciente || '').trim()) out.push('Paciente');
       if (String(p.paciente || '').trim() && !String(p.identificacaoParticipante || '').trim()) out.push('Nº de Identificação do paciente');
       if (!String(p.protocolo || '').trim()) out.push('Protocolo');

@@ -121,7 +121,7 @@ test('recibo lê somente o participante e o projeto envolvidos, sem os getters g
   Object.assign(project, { 0: 'PROJ-1', 1: 'Estudo A', 11: 'Coordenação A', 17: 100, 18: 80 });
   const server = runFile('WebApp.gs', { AgendaServerRules_: { formPolicy: () => ({ type: 'visita' }) } });
   server.codexGetCurrentUserAccess = () => ({ ok: true });
-  server.getAgendaEventoPorId = () => ({ id: 'AG-1', participanteCadastroId: 'CAD-1', participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo A', tipo: 'Visita', visita: 'V1', data: '10/09/2026', dataIso: '2026-09-10' });
+  server.agendaLerEventoPorId_ = () => ({ id: 'AG-1', participanteCadastroId: 'CAD-1', participante: 'Pessoa A', idParticipante: 'P-001', projeto: 'Estudo A', tipo: 'Visita', visita: 'V1', data: '10/09/2026', dataIso: '2026-09-10' });
   server.getCodexSpreadsheet_ = () => ({ getSheetByName: (name) => name === 'Participantes' ? sheet(name, [participantHeader, participant]) : sheet(name, [projectHeader, project]) });
   server.getParticipantes = () => { throw new Error('getter global não deve ser chamado'); };
   server.getProjetos = () => { throw new Error('getter global não deve ser chamado'); };
@@ -142,7 +142,7 @@ test('telemetria do servidor separa etapas do recibo sem dados pessoais e regist
   });
   server.Date = { now: () => now };
   server.codexGetCurrentUserAccess = () => { now += 10; return { ok: true }; };
-  server.getAgendaEventoPorId = () => { now += 20; return { id: 'PRIVATE-ID', participante: 'PRIVATE-NAME', projeto: 'PRIVATE-PROJECT' }; };
+  server.agendaLerEventoPorId_ = () => { now += 20; return { id: 'PRIVATE-ID', participante: 'PRIVATE-NAME', projeto: 'PRIVATE-PROJECT' }; };
   server.agendaReciboParticipante_ = () => { now += 30; return { nome: 'PRIVATE-NAME', cpf: 'PRIVATE-CPF', banco: 'PRIVATE-BANK' }; };
   server.agendaReciboProjeto_ = () => { now += 40; return {}; };
   const result = server.getAgendaReciboData('PRIVATE-ID', 2);
@@ -160,6 +160,83 @@ test('telemetria do servidor separa etapas do recibo sem dados pessoais e regist
   server.Logger.log = () => { throw new Error('logger unavailable'); };
   server.agendaReciboParticipante_ = () => ({ nome: 'PRIVATE-NAME' });
   assert.equal(server.getAgendaReciboData('PRIVATE-ID', 2).beneficiarios.length, 1);
+});
+
+function receiptLookupContext() {
+  const calls = [];
+  const logs = [];
+  const server = runFile('WebApp.gs', {
+    Logger: { log: value => logs.push(JSON.parse(value.replace('[CODEX_PERF] ', ''))) },
+    AgendaServerRules_: { formPolicy: () => ({ type: 'visita' }) }
+  });
+  const event = { id: 'AG-1', participanteCadastroId: 'CAD-1', participante: 'Pessoa', projeto: 'Estudo', idParticipante: 'P-1', braco: '' };
+  const rows = [Array(server.AGENDA_CFG.lastCol).fill(''), Array(server.AGENDA_CFG.lastCol).fill('')];
+  rows[0][server.AGENDA_CFG.idx.id] = 'OTHER';
+  rows[1][server.AGENDA_CFG.idx.id] = 'AG-1';
+  server.getAgendaSheetForRead_ = () => {
+    calls.push('sheet');
+    return { getLastRow: () => 3, getRange(row, column, numRows, numColumns) {
+      calls.push(['read', row, column, numRows, numColumns]);
+      return { getValues: () => rows.slice(row - 2, row - 2 + numRows).map(values => values.slice(column - 1, column - 1 + numColumns)) };
+    } };
+  };
+  server.agendaRowToObject_ = (_values, row) => ({ ...event, rowIndex: row });
+  server.encontrarLinhaPorId = (_sheet, id) => {
+    calls.push('locate_fallback');
+    return id === 'AG-1' ? 3 : 0;
+  };
+  server.agendaHydrateParticipantFields_ = items => {
+    calls.push('hydrate');
+    items[0].idParticipante = items[0].idParticipante || 'P-LEGACY';
+    items[0].braco = 'Braço A';
+  };
+  server.codexGetCurrentUserAccess = () => { calls.push('receipt_authorize'); return { ok: true, role: 'readonly' }; };
+  server.codexAssertCanRead_ = () => { calls.push('event_authorize'); return { ok: true, role: 'readonly' }; };
+  server.agendaReciboParticipante_ = () => { calls.push('participant'); return { id: 'CAD-1', nome: 'Pessoa', acompanhantes: [{ id: 'ACO-1', nome: 'Acompanhante' }] }; };
+  server.agendaReciboProjeto_ = () => { calls.push('project'); return {}; };
+  return { server, calls, logs, event };
+}
+
+test('recibo autoriza uma vez, le uma linha da Agenda e dispensa o indice geral com identidade completa', () => {
+  const { server, calls, logs } = receiptLookupContext();
+  const result = server.getAgendaReciboData('AG-1', 3);
+  assert.equal(result.idParticipante, 'P-1');
+  assert.equal(result.beneficiarios.length, 2);
+  assert.deepEqual(calls.filter(call => typeof call === 'string'), ['receipt_authorize', 'sheet', 'participant', 'project']);
+  assert.deepEqual(calls.filter(Array.isArray), [['read', 3, 1, 1, server.AGENDA_CFG.lastCol]]);
+  assert.ok(logs.some(log => log.stage === 'hydrate_skipped_receipt'));
+
+  calls.length = 0;
+  const publicEvent = server.getAgendaEventoPorId('AG-1', 3);
+  assert.equal(publicEvent.braco, 'Braço A');
+  assert.deepEqual(calls.filter(call => typeof call === 'string'), ['event_authorize', 'sheet', 'hydrate']);
+});
+
+test('recibo conserva hidratacao de legados e identidades incompletas', () => {
+  for (const field of ['participanteCadastroId', 'participante', 'projeto', 'idParticipante']) {
+    const { server, event, calls } = receiptLookupContext();
+    event[field] = '';
+    const result = server.agendaLerEventoPorId_('AG-1', 3, { receipt: true });
+    assert.ok(calls.includes('hydrate'), field);
+    if (field === 'idParticipante') assert.equal(result.idParticipante, 'P-LEGACY');
+  }
+});
+
+test('recibo rejeita acesso antes de ler e revalida ID quando a linha sugerida esta desatualizada', () => {
+  const { server, calls } = receiptLookupContext();
+  assert.equal(server.getAgendaReciboData('AG-1', 2).agendaId, 'AG-1');
+  assert.ok(calls.includes('locate_fallback'));
+  assert.deepEqual(calls.filter(Array.isArray).map(call => call[1]), [2, 3]);
+  calls.length = 0;
+  assert.throws(() => server.getAgendaReciboData('MISSING', 2), /nao encontrado/);
+  assert.ok(!calls.includes('participant'));
+  calls.length = 0;
+  server.codexGetCurrentUserAccess = () => ({ ok: false, message: 'Denied' });
+  assert.throws(() => server.getAgendaReciboData('AG-1', 3), /Denied/);
+  assert.deepEqual(calls, []);
+  server.codexAssertCanRead_ = () => { throw new Error('Denied'); };
+  assert.throws(() => server.getAgendaEventoPorId('AG-1', 3), /Denied/);
+  assert.deepEqual(calls, []);
 });
 
 test('telemetria do cliente separa RPC e preenchimento, ignora retornos antigos e tolera logger indisponivel', () => {

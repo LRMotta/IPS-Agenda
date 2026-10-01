@@ -922,141 +922,265 @@ function codexMatBioUnitKey_(unit) {
 }
 
 function codexMatBioFormatNumber_(value, decimals) {
-  var num = Number(value || 0);
-  if (!isFinite(num)) num = 0;
-  return num.toLocaleString('pt-BR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  });
-}
-
-function codexMatBioFormatVolume_(value, decimals) {
-  var num = Number(value || 0);
-  if (!isFinite(num)) num = 0;
-  return num.toLocaleString('pt-BR', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: decimals
-  });
-}
-
-function codexMatBioParseFormula_(text) {
-  var segmentos = [];
-  var tubos = 0;
-  var total = 0;
-  var re = /(\d+(?:[.,]\d+)?)\s*(?:x|X|\u00d7|\*)\s*(\d+(?:[.,]\d+)?)/g;
-  var m;
-  while ((m = re.exec(String(text || ''))) !== null) {
-    var qtd = Number(String(m[1]).replace(',', '.'));
-    var vol = Number(String(m[2]).replace(',', '.'));
-    if (!isFinite(qtd) || !isFinite(vol)) continue;
-    tubos += qtd;
-    total += qtd * vol;
-    segmentos.push({ qtd: qtd, vol: vol });
+    var num = Number(value || 0);
+    if (!isFinite(num)) num = 0;
+    decimals = decimals === undefined ? 2 : decimals;
+    return codexMatBioNumberFormatter_(decimals, decimals, true).format(num);
   }
-  return { tubos: tubos, total: total, segmentos: segmentos };
-}
 
-function codexMatBioFormulaFromSegments_(segments, unit) {
-  var decimals = codexMatBioUnitKey_(unit) === 'L' ? 5 : 2;
-  return (segments || []).map(function(seg) {
-    return codexMatBioFormatNumber_(seg.qtd, 0) + '\u00d7' + codexMatBioFormatVolume_(seg.vol, decimals);
-  }).join('; ');
-}
-
-function codexMatBioParseJson_(json) {
-  try {
-    var obj = JSON.parse(String(json || ''));
-    return Array.isArray(obj.items) ? obj.items : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function codexMatBioPushUnique_(list, value) {
-  value = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!value) return;
-  var n = codexMatBioNorm_(value);
-  var exists = list.some(function(item) { return codexMatBioNorm_(item) === n; });
-  if (!exists) list.push(value);
-}
-
-function codexMatBioNormalizeItem_(item) {
-  item = item || {};
-  var cfg = codexMatBioTypeConfig_(item.key || item.tipo);
-  var key = cfg ? cfg.key : (item.key || 'outro');
-  var tipo = cfg ? cfg.label : String(item.tipo || '').trim();
-  var unit = codexMatBioUnitKey_(item.unit || (cfg && cfg.unit) || 'mL');
-  var sourceSegments = Array.isArray(item.segmentos) ? item.segmentos : [];
-  var formula = sourceSegments.length ? codexMatBioFormulaFromSegments_(sourceSegments, unit) : (item.formula || '');
-  var parsed = codexMatBioParseFormula_(formula);
-  var segmentos = sourceSegments.length ? sourceSegments : parsed.segmentos;
-  return {
-    key: key,
-    tipo: tipo,
-    ensaio: String(item.ensaio || '').trim(),
-    formula: codexMatBioFormulaFromSegments_(segmentos, unit),
-    tubos: segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0),
-    total: segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0),
-    unit: codexMatBioUnitKey_(unit),
-    segmentos: segmentos
-  };
-}
-
-function codexMatBioGroupItems_(items) {
-  var order = [];
-  var groups = {};
-  (items || []).forEach(function(raw) {
-    var item = codexMatBioNormalizeItem_(raw);
-    if (!item.tipo && !item.segmentos.length) return;
-    var groupKey = item.key === 'outro' ? item.key + '|' + codexMatBioNorm_(item.tipo) : item.key;
-    if (!groups[groupKey]) {
-      groups[groupKey] = {
-        key: item.key,
-        tipo: item.tipo,
-        unit: item.unit,
-        segmentos: [],
-        ensaios: []
-      };
-      order.push(groupKey);
+  function codexMatBioFormulaText_(qtd, vol, decimals) {
+    var segmento = codexMatBioValidateSegments_([{ qtd: qtd, vol: vol }])[0];
+    // A formula e relida ao salvar/copiar: nao inserir milhares nem arredondar volumes.
+    var text = String(segmento.vol), parts = text.split(/e/i);
+    if (parts.length === 2) {
+      var digits = parts[0].replace('.', ''), point = parts[0].split('.')[0].length + Number(parts[1]);
+      text = point <= 0 ? '0.' + '0'.repeat(-point) + digits
+        : point >= digits.length ? digits + '0'.repeat(point - digits.length) : digits.slice(0, point) + '.' + digits.slice(point);
     }
-    Array.prototype.push.apply(groups[groupKey].segmentos, item.segmentos);
-    String(item.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
-      codexMatBioPushUnique_(groups[groupKey].ensaios, ensaio);
+    return String(segmento.qtd) + '×' + (text.indexOf('.') < 0 ? text + ',0' : text.replace('.', ','));
+  }
+
+  function codexMatBioValidateSegments_(segmentos) {
+    var tubos = 0, total = 0;
+    return segmentos.map(function(segmento) {
+      if (!segmento || typeof segmento !== 'object') throw new Error('Segmento de material biológico inválido.');
+      function numeric(value) {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string' && /^\d+(?:[.,]\d+)?$/.test(value.trim())) return Number(value.trim().replace(',', '.'));
+        return NaN;
+      }
+      var qtd = numeric(segmento.qtd), vol = numeric(segmento.vol);
+      if (!Number.isSafeInteger(qtd) || qtd <= 0 || !isFinite(vol) || vol < 0) throw new Error('Quantidade ou volume de material biológico inválido.');
+      tubos += qtd; total += qtd * vol;
+      if (!Number.isSafeInteger(tubos) || !isFinite(total)) throw new Error('Quantidade ou volume fora do limite.');
+      return { qtd: qtd, vol: vol };
     });
-  });
-  return order.map(function(key) {
-    var group = groups[key];
-    var tubos = group.segmentos.reduce(function(sum, s) { return sum + Number(s.qtd || 0); }, 0);
-    var total = group.segmentos.reduce(function(sum, s) { return sum + (Number(s.qtd || 0) * Number(s.vol || 0)); }, 0);
+  }
+
+  function codexMatBioFormulaFromSegments_(segmentos, unit) {
+    var decimals = codexMatBioUnitKey_(unit) === 'L' ? 5 : 2;
+    return (segmentos || []).map(function(segmento) {
+      return codexMatBioFormulaText_(segmento.qtd, segmento.vol, decimals);
+    }).join('; ');
+  }
+
+  function codexMatBioCalculationDisplay_(formula, unit) {
+    var parsed = codexMatBioParseFormula_(formula);
+    var key = codexMatBioUnitKey_(unit);
     return {
-      key: group.key,
-      tipo: group.tipo,
-      ensaio: group.ensaios.join('; '),
-      formula: codexMatBioFormulaFromSegments_(group.segmentos, group.unit),
-      tubos: tubos,
-      total: total,
-      unit: codexMatBioUnitKey_(group.unit),
-      segmentos: group.segmentos
+      parsed: parsed,
+      unit: key,
+      tubosText: !parsed.valid ? 'Revise a fórmula' : parsed.tubos ? codexMatBioFormatNumber_(parsed.tubos, 0) : '-',
+      totalText: !parsed.valid ? 'Inválido' : (parsed.total ? codexMatBioFormatNumber_(parsed.total, key === 'L' ? 5 : 2) : '-') + ' ' + key
     };
+  }
+
+  function codexMatBioConvertFormulaUnit_(text, fromUnit, toUnit) {
+    fromUnit = codexMatBioUnitKey_(fromUnit); toUnit = codexMatBioUnitKey_(toUnit);
+    if (fromUnit === toUnit) return String(text || '');
+    if (fromUnit === 'g' || toUnit === 'g') throw new Error('Não é possível converter massa em volume.');
+    var parsed = codexMatBioParseFormula_(text);
+    if (!parsed.valid) throw new Error(parsed.error);
+    if (!parsed.segmentos.length) return String(text || '');
+    var factor = fromUnit === 'mL' ? 1 / 1000 : 1000;
+    return codexMatBioFormulaFromSegments_(parsed.segmentos.map(function(segmento) {
+      return { qtd: segmento.qtd, vol: segmento.vol * factor };
+    }), toUnit);
+  }
+
+  function codexMatBioParseFormula_(text) {
+    var input = String(text == null ? '' : text).trim();
+    var segmentos = [], tubos = 0, total = 0;
+    // A virgula tambem separa segmentos no formato legado: 2 x 0,5, 1 x 1,5.
+    var number = '(?:[1-9]\\d{0,2}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:[.,]\\d+)?)';
+    var re = new RegExp('(' + number + ')\\s*[xX\\u00d7*]\\s*(' + number + ')', 'g');
+    var end = 0, m, error = '';
+    while ((m = re.exec(input)) !== null) {
+      var gap = input.slice(end, m.index);
+      if ((!segmentos.length && gap.trim()) || (segmentos.length && !/^\s*[;, +\n]\s*$/.test(gap))) {
+        error = 'Revise a fórmula completa de tubos e volume.'; break;
+      }
+      var qtd = codexMatBioFormulaNumber_(m[1]), vol = codexMatBioFormulaNumber_(m[2]);
+      if (!Number.isSafeInteger(qtd) || qtd <= 0 || !isFinite(vol) || vol < 0) {
+        error = 'Informe uma quantidade inteira positiva de tubos e um volume válido.'; break;
+      }
+      tubos += qtd; total += qtd * vol;
+      if (!Number.isSafeInteger(tubos) || !isFinite(total)) { error = 'Quantidade ou volume fora do limite.'; break; }
+      segmentos.push({ qtd: qtd, vol: vol }); end = re.lastIndex;
+    }
+    if (!error && (input.slice(end).trim() || (input && !segmentos.length))) error = 'Revise a fórmula completa de tubos e volume.';
+    return error ? { tubos: 0, total: 0, segmentos: [], valid: false, error: error }
+      : { tubos: tubos, total: total, segmentos: segmentos, valid: true, error: '' };
+  }
+
+  function codexMatBioFormulaNumber_(value) {
+    var text = String(value);
+    if (/^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?$/.test(text)) text = text.replace(/\./g, '');
+    return Number(text.replace(',', '.'));
+  }
+
+  var CODEX_MATBIO_NUMBER_FORMATTERS_ = Object.create(null);
+  function codexMatBioNumberFormatter_(min, max, grouping) {
+    var key = min + '|' + max + '|' + grouping;
+    if (!CODEX_MATBIO_NUMBER_FORMATTERS_[key]) CODEX_MATBIO_NUMBER_FORMATTERS_[key] = new Intl.NumberFormat('pt-BR', {
+      minimumFractionDigits: min, maximumFractionDigits: max, useGrouping: grouping
+    });
+    return CODEX_MATBIO_NUMBER_FORMATTERS_[key];
+  }
+
+  function codexMatBioParseJsonResult_(json) {
+    if (!String(json || '').trim()) return { items: [], valid: true, error: '' };
+    try {
+      var obj = JSON.parse(String(json));
+      if (!obj || !Array.isArray(obj.items)) throw new Error('Formato de materiais inválido.');
+      return { items: obj.items, valid: true, error: '' };
+    } catch (e) {
+      return { items: [], valid: false, error: 'Dados estruturados de material biológico inválidos. Revise antes de salvar.' };
+    }
+  }
+
+  function codexMatBioAssertItemsUnit_(items, volumeUnit) {
+    (items || []).forEach(function(raw) {
+      var cfg = codexMatBioTypeConfig_(raw && (raw.key || raw.tipo));
+      var expected = cfg && cfg.unit === 'g' ? 'g' : codexMatBioUnitKey_(volumeUnit);
+      var item = codexMatBioNormalizeItem_(raw && Object.assign({}, raw, { unit: raw.unit || expected }), true);
+      if (item.segmentos.length && item.unit !== expected) throw new Error('Material ' + item.tipo + ': a fórmula está em ' + item.unit + '. Converta ou revise os volumes para ' + expected + ' antes de salvar.');
+    });
+  }
+
+  function codexMatBioPushUnique_(list, value) {
+    value = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!value) return;
+    var n = codexMatBioNorm_(value);
+    var exists = list.some(function(item) { return codexMatBioNorm_(item) === n; });
+    if (!exists) list.push(value);
+  }
+
+  function codexMatBioNormalizeItem_(item, skipFormula) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Material biológico inválido.');
+    var cfg = codexMatBioTypeConfig_(item.key || item.tipo);
+    var key = cfg ? cfg.key : (item.key || 'outro');
+    var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
+    var unit = codexMatBioUnitKey_(item.unit || (cfg && cfg.unit) || 'mL');
+    if (item.segmentos !== undefined && !Array.isArray(item.segmentos)) throw new Error('Segmentos de material biológico inválidos.');
+    var sourceSegments = item.segmentos || [];
+    var parsed = sourceSegments.length ? null : codexMatBioParseFormula_(item.formula || '');
+    if (parsed && !parsed.valid) throw new Error(parsed.error);
+    var segmentos = codexMatBioValidateSegments_(sourceSegments.length ? sourceSegments : parsed.segmentos);
+    var tubos = 0, total = 0;
+    segmentos.forEach(function(segmento) { tubos += segmento.qtd; total += segmento.qtd * segmento.vol; });
+    return { key: key, tipo: tipo, ensaio: String(item.ensaio || '').trim(),
+      formula: skipFormula ? '' : codexMatBioFormulaFromSegments_(segmentos, unit), tubos: tubos, total: total, unit: unit, segmentos: segmentos };
+  }
+
+  function codexMatBioGroupItems_(items) {
+    var order = [];
+    var groups = Object.create(null);
+    (items || []).forEach(function(raw) {
+      var item = codexMatBioNormalizeItem_(raw, true);
+      if (!item.tipo && !item.segmentos.length) return;
+      var groupKey = item.key === 'outro' ? item.key + '|' + codexMatBioNorm_(item.tipo) : item.key;
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          key: item.key,
+          tipo: item.tipo,
+          unit: item.unit,
+          segmentos: [],
+          tubos: 0, total: 0, ensaios: [], ensaiosSeen: Object.create(null)
+        };
+        order.push(groupKey);
+      }
+      groups[groupKey].tubos += item.tubos; groups[groupKey].total += item.total;
+      if (!Number.isSafeInteger(groups[groupKey].tubos) || !isFinite(groups[groupKey].total)) throw new Error('Quantidade ou volume fora do limite.');
+      if (groups[groupKey].unit !== item.unit) throw new Error('Unidades diferentes para o mesmo material. Revise a conversão antes de salvar.');
+      item.segmentos.forEach(function(segmento) { groups[groupKey].segmentos.push(segmento); });
+      String(item.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
+        ensaio = ensaio.replace(/\s+/g, ' ').trim();
+        var normalized = codexMatBioNorm_(ensaio);
+        if (ensaio && !groups[groupKey].ensaiosSeen[normalized]) {
+          groups[groupKey].ensaiosSeen[normalized] = true; groups[groupKey].ensaios.push(ensaio);
+        }
+      });
+    });
+    return order.map(function(key) {
+      var group = groups[key];
+      var tubos = group.tubos, total = group.total;
+      return {
+        key: group.key,
+        tipo: group.tipo,
+        ensaio: group.ensaios.join('; '),
+        formula: codexMatBioFormulaFromSegments_(group.segmentos, group.unit),
+        tubos: tubos,
+        total: total,
+        unit: codexMatBioUnitKey_(group.unit),
+        segmentos: group.segmentos
+      };
+    });
+  }
+
+  function codexMatBioSummaryFromItems_(items) {
+    return (items || []).map(function(item) {
+      var label = item.tipo + (item.ensaio ? ' (' + item.ensaio + ')' : '');
+      if (!item.segmentos || !item.segmentos.length) return label;
+      var unit = codexMatBioUnitKey_(item.unit);
+      return label + ': ' + codexMatBioFormatNumber_(item.tubos, 0) + ' tubo(s), ' + codexMatBioFormatNumber_(item.total, unit === 'L' ? 5 : 2) + ' ' + unit;
+    }).join('; ');
+  }
+
+  function codexMatBioSerializeItems_(items) {
+    var grouped = codexMatBioGroupItems_(items);
+    return {
+      items: grouped,
+      json: grouped.length ? JSON.stringify({ v: 1, items: grouped }) : '',
+      summary: codexMatBioSummaryFromItems_(grouped)
+    };
+  }
+
+
+function codexMatBioParseJson_(json, strict) {
+  var result = codexMatBioParseJsonResult_(json);
+  if (strict && !result.valid) throw new Error(result.error);
+  return result.items;
+}
+
+
+function codexMatBioCourierUnit_(courier) {
+  return codexMatBioNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL';
+}
+
+function codexMatBioValidateAgendaPayload_(dados) {
+  ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(slot) {
+    var courier = dados && dados[slot];
+    if (!courier) return;
+    var json = courier.matBioJson !== undefined ? courier.matBioJson : courier.materialJson;
+    if (json === undefined || !String(json || '').trim()) return;
+    var items = codexMatBioParseJson_(json, true);
+    codexMatBioAssertItemsUnit_(items, codexMatBioCourierUnit_(courier.nome));
+    codexMatBioGroupItems_(items);
   });
 }
 
-function codexMatBioSummaryFromItems_(items) {
-  return (items || []).map(function(item) {
-    var label = item.tipo + (item.ensaio ? ' (' + item.ensaio + ')' : '');
-    if (!item.segmentos || !item.segmentos.length) return label;
-    var unit = codexMatBioUnitKey_(item.unit);
-    return label + ': ' + codexMatBioFormatNumber_(item.tubos, 0) + ' tubo(s), ' + codexMatBioFormatNumber_(item.total, unit === 'L' ? 5 : 2) + ' ' + unit;
-  }).join('; ');
-}
-
-function codexMatBioSerializeItems_(items) {
-  var grouped = codexMatBioGroupItems_(items);
-  return {
-    items: grouped,
-    json: grouped.length ? JSON.stringify({ v: 1, items: grouped }) : '',
-    summary: codexMatBioSummaryFromItems_(grouped)
-  };
+function codexMatBioValidateTransportPayload_(payload) {
+  var materials = payload.materiais || [];
+  if (!Array.isArray(materials)) throw new Error('Materiais de Transporte inválidos.');
+  materials.forEach(function(item) {
+    if (!item || item.ativo !== true) return;
+    var cfg = codexMatBioTypeConfig_(item.material), expected = cfg && cfg.unit === 'g' ? 'g' : codexMatBioCourierUnit_(payload.courier);
+    var unit = codexMatBioUnitKey_(item.unit || expected);
+    var parsed = codexMatBioParseFormula_(item.formula || '');
+    if (!parsed.valid) throw new Error(parsed.error);
+    if (parsed.segmentos.length && unit !== expected) throw new Error('Material ' + item.material + ': revise os volumes para ' + expected + ' antes de salvar.');
+    if (parsed.segmentos.length) {
+      item.tubos = parsed.tubos; item.total = parsed.total;
+      item.formula = codexMatBioFormulaFromSegments_(parsed.segmentos, unit);
+    } else if (item.tubos !== undefined && item.tubos !== '' && item.total !== undefined && item.total !== '') {
+      var numeric = codexMatBioValidateSegments_([{ qtd: item.tubos, vol: item.total }])[0];
+      var tubos = numeric.qtd, total = numeric.vol;
+      codexMatBioValidateSegments_([{ qtd: tubos, vol: total / tubos }]);
+      if (unit !== expected) throw new Error('Revise a unidade do material ' + item.material + ' para ' + expected + '.');
+    }
+    item.unit = unit;
+  });
 }
 
 function transporteFormatNumberPt_(value, decimals) {
@@ -1111,8 +1235,9 @@ function transporteMatBioUnitKey_(unit) {
 }
 
 function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
-  var parsedItems = transporteParseMatBioJson_(matBioJson);
-  var byKey = {};
+  var parsedItems = codexMatBioParseJson_(matBioJson, true);
+  codexMatBioAssertItemsUnit_(parsedItems, codexMatBioCourierUnit_(courier));
+  var byKey = Object.create(null);
   parsedItems.forEach(function(item) {
     item = item || {};
     var key = transporteMaterialKey_(item.key || item.tipo);
@@ -1122,7 +1247,8 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
     var formula = Array.isArray(item.segmentos) && item.segmentos.length
       ? transporteFormulaFromSegments_(item.segmentos, unit)
       : (item.formula || '');
-    var calc = transporteParseFormula_(formula);
+    var normalized = codexMatBioNormalizeItem_({ key: key, tipo: label, formula: formula, unit: unit });
+    var calc = normalized;
     var total = item.total !== undefined && item.total !== null && item.total !== '' ? Number(item.total) : calc.total;
     var tubos = item.tubos !== undefined && item.tubos !== null && item.tubos !== '' ? Number(item.tubos) : calc.tubos;
     if (!byKey[key]) {
@@ -2452,6 +2578,7 @@ function salvarTransporteInterno_(payload, options) {
     payload = transporteAtualizarRegistroPorAgenda_(payload, options.agendaEvento, participanteOptions);
     payload = transporteDerivarDadosParticipante_(payload, participanteOptions);
     if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
+    codexMatBioValidateTransportPayload_(payload);
     payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
   });
 

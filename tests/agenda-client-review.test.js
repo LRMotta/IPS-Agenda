@@ -37,7 +37,7 @@ test('Gerar docs envia linha e versoes, respeita conflito e atualiza a versao ap
   c._agendaEditId = 'A'; c._agendaEditRecordVersion = 'vA'; c._agendaEditEditableVersion = 'eA';
   c.agendaEventoAtualEditado_ = () => ({ id: 'A', rowIndex: 7 });
   c.coletarAgendaEvento = () => ({ participante: 'Pessoa', courier1: { nome: 'Courier', awb: '123' } });
-  for (const name of ['agendaMeaningfulValue', 'agendaCourierMeaningful', 'agendaValidarAwbDocumentos_', 'validateAgendaAwb']) c[name] = () => true;
+  for (const name of ['agendaMeaningfulValue', 'agendaCourierMeaningful', 'agendaValidarAwbDocumentos_', 'validateAgendaAwb', 'agendaMatBioValidateAll']) c[name] = () => true;
   c.transporteAgendaContextFromDados = () => ({}); c.prepararJanelaTransporte = () => ({});
   c.atualizarJanelaTransporteErro = (_window, message) => errors.push(message);
   c.snackErro = () => {}; c.snack = () => {}; c.agendaRecarregarJanelaAtual_ = () => {};

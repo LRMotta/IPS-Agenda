@@ -100,6 +100,107 @@ test('duplicidade de projeto interrompe o fluxo antes de qualquer escrita', () =
   assert.equal(sheet.rows.length, 2);
 });
 
+test('edicao de projeto normaliza o ID sem criar outro registro, inclusive zero numerico', () => {
+  for (const id of ['PROJ-1', 0]) {
+    const sheet = new FakeSheet('Projetos', [
+      ['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador'],
+      [id, 'Novo Estudo', 'NOV-01', 'Oncologia', 'III', 'Investigador Teste']
+    ]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+    assert.equal(context.salvarDadosProjeto({ ...validProject, id: ' ' + id + ' ', fase: 'IV' }), 'Projeto atualizado com sucesso!');
+    assert.equal(sheet.rows.length, 2);
+    assert.equal(sheet.rows[1][0], id);
+    assert.equal(sheet.rows[1][4], 'IV');
+  }
+});
+
+test('edicao de participante normaliza o ID sem criar outra participacao, inclusive zero numerico', () => {
+  for (const id of ['CAD-1', 0]) {
+    const sheet = new FakeSheet('Participantes', [
+      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+      [id, 'Pessoa A', '', '', 'P-1', 'Novo Estudo', '', '', 'Ativo', '', '', '', 'PES-A']
+    ]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+    assert.equal(context.salvarDadosParticipante({
+      id: ' ' + id + ' ', nome: 'Pessoa A', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
+    }), 'Participante atualizado com sucesso');
+    assert.equal(sheet.rows.length, 2);
+    assert.equal(String(sheet.rows[1][0]), String(id));
+    assert.equal(sheet.rows[1][9], '555-0100');
+  }
+});
+
+test('CPF associado a mais de um ID Pessoa bloqueia confirmacao antes de qualquer escrita', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', 'P-1', 'Estudo A', '', '', 'Falha de Triagem', '', '52998224725', '', 'PES-A'],
+    [2, 'Pessoa A', '', '', 'P-2', 'Estudo B', '', '', 'Falha de Triagem', '', '52998224725', '', 'PES-B']
+  ]);
+  const before = JSON.stringify(sheet.rows);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Estudo C' }]);
+  const data = { nome: 'Pessoa A', idParticipante: 'P-3', projeto: 'Estudo C', status: 'Ativo', cpf: '52998224725' };
+  const preview = context.salvarDadosParticipante(data);
+  assert.equal(preview.requiresNameConfirmation, true);
+  assert.throws(() => context.salvarDadosParticipante({
+    ...data, confirmarNomeDuplicado: true, vincularPessoaCadastroId: preview.existing.id
+  }), /mais de um ID Pessoa/);
+  assert.equal(sheet.writes, 0);
+  assert.equal(JSON.stringify(sheet.rows), before);
+});
+
+test('nova participacao reutiliza cadastro e ID Pessoa numericos zero na confirmacao e no fluxo direto', () => {
+  for (const direct of [false, true]) {
+    const sheet = new FakeSheet('Participantes', [
+      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+      [0, 'Pessoa A', '', '', 'P-1', 'Estudo A', '', '', 'Falha de Triagem', '', '52998224725', '', 0]
+    ]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Estudo B' }]);
+    const data = { nome: 'Pessoa A', idParticipante: 'P-2', projeto: 'Estudo B', status: 'Ativo', cpf: '52998224725' };
+    if (!direct) {
+      const preview = context.salvarDadosParticipante(data);
+      assert.equal(preview.existing.id, '0');
+      assert.equal(preview.existing.idPessoa, '0');
+      assert.equal(sheet.writes, 0);
+    }
+    assert.equal(context.salvarDadosParticipante({
+      ...data, confirmarNomeDuplicado: true, vincularPessoaCadastroId: 0, novaParticipacaoDireta: direct
+    }), 'Participante cadastrado com sucesso');
+    assert.equal(sheet.rows.length, 3);
+    assert.equal(sheet.rows[1][0], 0);
+    assert.equal(sheet.rows[1][12], 0);
+    assert.equal(sheet.rows[2][12], '0');
+  }
+});
+
+test('protecao de eventos e exclusao usam ID cadastral mesmo com dados historicos divergentes', () => {
+  for (const linked of [true, false]) {
+    const sheet = new FakeSheet('Participantes', [
+      ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto'],
+      [0, 'Pessoa A', '', '', 'P-1', 'Estudo A']
+    ]);
+    const agenda = new FakeSheet('Agenda', [
+      ['Participante', 'ID Participante', 'Projeto', 'ID Cadastro Participante'],
+      linked ? ['Nome antigo', 'P-9', 'Estudo antigo', '0'] : ['Pessoa A', 'P-1', 'Estudo A', 'OUTRO']
+    ]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet, Agenda: agenda }));
+    vm.runInContext(between(readProjectFile('WebApp.gs'), 'function excluirParticipante(', '// ════════════════════════════════\n//  MONITORES'), context);
+    context.getAgendaSheet_ = () => agenda;
+    context.getAgendaSheetForRead_ = () => agenda;
+    context.AGENDA_CFG = { idx: { participante: 0, idParticipante: 1, projeto: 2, participanteCadastroId: 3 }, lastCol: 4 };
+    const reference = context.participanteReferenciaCadastro_(sheet.rows[1]);
+    assert.equal(reference.idCadastro, '0');
+    assert.equal(context.participantePossuiEventoAgenda_(reference), linked);
+    if (linked) {
+      assert.throws(() => context.excluirParticipante(0), /existe pelo menos um evento/);
+      assert.equal(sheet.rows.length, 2);
+      assert.equal(sheet.writes, 0);
+    } else {
+      assert.equal(context.excluirParticipante(0), 'Participante excluído');
+      assert.equal(sheet.rows.length, 1);
+    }
+  }
+});
+
 test('fluxo completo cria e atualiza participante vinculado', () => {
   const sheet = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],

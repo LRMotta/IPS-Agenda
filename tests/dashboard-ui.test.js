@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { readProjectFile, runFile } = require('./helpers/load-app-script');
+const { readProjectFile, runFile, runHtmlScript } = require('./helpers/load-app-script');
 
 function sourceBetween(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -20,6 +20,134 @@ function dashboardContext(values) {
   vm.runInContext(readProjectFile('IndexDashboard.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, ''), context);
   return context;
 }
+
+test('Dashboard anuncia carregamento, sucesso e falha sem substituir o botão ou timestamp', () => {
+  const attrs = {};
+  const button = { disabled: false, innerHTML: 'Atualizar dados' };
+  const status = { textContent: '' };
+  const timestamp = { textContent: 'Anterior' };
+  const elements = { 'page-dashboard': { setAttribute(key, value) { attrs[key] = value; } },
+    btnDashRefresh: button, dashLoadStatus: status, dashTs: timestamp };
+  let success, failure;
+  const runner = { withSuccessHandler(fn) { success = fn; return this; },
+    withFailureHandler(fn) { failure = fn; return this; }, getDashboardData() {} };
+  const context = dashboardContext({ google: { script: { run: runner } },
+    document: { readyState: 'loading', addEventListener() {}, getElementById: id => elements[id] } });
+  context.dashboardRenderFromSessionCache = () => false;
+  context.dashboardStoreSessionCache = () => {};
+  context.renderDashboard = () => true;
+  context.mostrarErroDashboard = () => {};
+  context.carregarDashboard(true);
+  assert.equal(attrs['aria-busy'], 'true');
+  assert.equal(button.disabled, true);
+  assert.match(status.textContent, /Atualizando/);
+  success({});
+  assert.equal(attrs['aria-busy'], 'false');
+  assert.equal(button.disabled, false);
+  assert.match(status.textContent, /atualizados/);
+  context.carregarDashboard(true);
+  failure(new Error('RPC indisponível'));
+  assert.equal(attrs['aria-busy'], 'false');
+  assert.equal(button.disabled, false);
+  assert.match(status.textContent, /Não foi possível/);
+  context.carregarDashboard(true);
+  context.renderDashboard = () => { throw new Error('Renderização'); };
+  success({});
+  assert.equal(attrs['aria-busy'], 'false');
+  assert.equal(button.disabled, false);
+  assert.equal(button.innerHTML, 'Atualizar dados');
+  assert.equal(elements.dashTs, timestamp);
+});
+
+test('Dashboard reaproveita gráficos e atualiza valores, títulos e callbacks; vazio destrói a instância', () => {
+  let created = 0, destroyed = 0, updates = 0, selected;
+  const canvas = { id: 'chartCoord', getContext: () => ({ clearRect() {}, fillText() {} }) };
+  const context = dashboardContext({ Chart: function(ctx, config) {
+    created++; this.config = config; this.options = config.options; this.data = config.data;
+    this.destroy = () => { destroyed++; };
+    this.update = mode => { assert.equal(mode, 'none'); updates++; };
+  }, document: { readyState: 'loading', addEventListener() {}, getElementById: () => canvas } });
+  context.dashboardChartData_ = () => {};
+  context._barH('chartCoord', ['Ana'], [{ label: 'Projetos', data: [5] }], label => { selected = label; });
+  const chart = context._dashCharts.chartCoord;
+  context._barH('chartCoord', ['Bia'], [{ label: 'Projetos', data: [8] }], label => { selected = label; });
+  assert.equal(context._dashCharts.chartCoord, chart);
+  assert.equal(created, 1);
+  assert.equal(updates, 1);
+  assert.equal(chart.data.datasets[0].data[0], 8);
+  assert.equal(chart.options.plugins.tooltip.callbacks.title([{ dataIndex: 0 }]), 'Bia');
+  chart.options.onClick({}, [{ index: 0 }]);
+  assert.equal(selected, 'Bia');
+  context.dashboardDrawEmptyChart_(canvas, 'Sem dados');
+  assert.equal(destroyed, 1);
+  assert.equal(context._dashCharts.chartCoord, undefined);
+  context._barH('chartCoord', ['Cris'], [{ label: 'Projetos', data: [1] }]);
+  assert.equal(created, 2);
+});
+
+test('agregação única mantém KPIs e séries da Agenda em ano, mês e global', () => {
+  const rules = runHtmlScript('SharedAgendaRules.html').AgendaRules;
+  const calls = new Map();
+  const context = dashboardContext({ AgendaRules: Object.assign({}, rules, {
+    countsIn(row, indicator) {
+      const indicators = calls.get(row) || new Set();
+      assert.ok(!indicators.has(indicator), 'Cada regra deve ser calculada uma vez por evento');
+      indicators.add(indicator);
+      calls.set(row, indicators);
+      return rules.countsIn(row, indicator);
+    }
+  }) });
+  const rows = [
+    { ano: 2025, mes: 1, dataIso: '2025-01-06', tipo: 'Visita', status: 'Realizado', projeto: 'A', medico: 'M', participanteKey: 'p1', labCentral: true, couriers: ['C'] },
+    { ano: 2025, mes: 2, dataIso: '2025-02-03', tipo: 'Visita', status: 'Realizado', projeto: 'A', medico: 'M', participanteKey: 'p1', labCentral: true, couriers: ['C'] },
+    { ano: 2025, mes: 2, dataIso: '2025-02-04', tipo: 'Visita', status: 'Cancelado', projeto: 'B', labCentral: true },
+    { ano: 2025, mes: 2, dataIso: '2025-02-04', tipo: 'Monitoria', status: 'Realizado', projeto: 'B' },
+    { ano: 2025, mes: 2, dataIso: '2025-02-04', tipo: 'Monitoria', status: 'Realizado', projeto: 'B' },
+    { ano: 2024, mes: 12, dataIso: '2024-12-04', tipo: 'Visita', status: 'Realizado', projeto: 'B', participanteKey: 'p2' },
+    { ano: 2099, mes: 1, dataIso: '2099-01-04', tipo: 'Visita', status: 'Realizado', projeto: 'B', participanteKey: 'p3', labCentral: true }
+  ];
+  context._dashAgendaRaw = rows;
+  const plain = value => JSON.parse(JSON.stringify(value));
+  for (const tipo of ['ano', 'mes', 'global']) {
+    context._dashAgendaPeriod = { tipo, ano: 2025, mes: 2 };
+    const filtered = context.dashAgendaRowsPeriodo();
+    const completed = r => rules.countsIn(r, rules.Indicator.DASHBOARD_COMPLETED_VISITS) && r.ano < 2099;
+    const lab = r => rules.countsIn(r, rules.Indicator.DASHBOARD_LAB_CENTRAL);
+    calls.clear();
+    const result = context.dashboardAggregateAgendaPeriod_();
+    assert.equal(calls.size, filtered.length);
+    calls.forEach(indicators => assert.equal(indicators.size, 5));
+    assert.equal(result.total, filtered.length);
+    assert.equal(result.visits, filtered.filter(completed).length);
+    assert.equal(result.labs, filtered.filter(lab).length);
+    assert.equal(result.participants, context.dashAgendaParticipantesAtendidos(filtered, completed));
+    assert.deepEqual(plain(result.visitsBuckets), plain(context.dashAgendaPeriodoBuckets(filtered, completed)));
+    assert.deepEqual(plain(result.labBuckets), plain(context.dashAgendaPeriodoBuckets(filtered, lab)));
+    assert.equal(result.days.reduce((sum, day) => sum + day.value, 0), result.visits);
+    assert.equal(result.monitoringDays, 1);
+    assert.equal(result.protocols.reduce((sum, pair) => sum + pair.value, 0), result.visits);
+    assert.equal(result.doctors.reduce((sum, pair) => sum + pair.value, 0), result.visits);
+    assert.equal(result.monitoring[0].label, 'B');
+    assert.equal(result.cancellations[0].value, 1);
+    assert.equal(result.couriers[0].value, tipo === 'mes' ? 1 : 2);
+  }
+  context._dashAgendaPeriod = { tipo: 'mes', ano: 2025, mes: 3 };
+  calls.clear();
+  assert.equal(context.dashboardAggregateAgendaPeriod_().total, 0);
+});
+
+test('Dashboard ignora série residual sem canvas e posiciona a Agenda no HTML final', () => {
+  const context = dashboardContext();
+  context.setupDashAgendaPeriodControls = () => {};
+  context.renderDashboardAgendaPeriodoResumo = () => {};
+  context._barH = () => { assert.fail('Não deve renderizar gráfico sem canvas'); };
+  context.renderDashboardAgenda({ antecedenciaMediaPorTipo: [{ label: 'Visita', value: 4 }] });
+  const content = readProjectFile('IndexDashboardContent.html');
+  assert.ok(content.indexOf('id="chartCoord"') < content.indexOf('id="dashAgendaBlock"'));
+  assert.ok(content.indexOf('id="dashAgendaBlock"') < content.indexOf('id="dashEstoqueBlock"'));
+  assert.match(content, /Registros de estoque/);
+  assert.match(content, /exceto etapa regulatória/);
+});
 
 test('Dashboard recupera os KPIs após falha e remove gráficos antigos quando a lista fica vazia', () => {
   const elements = Object.fromEntries(['dashKpis', 'kpiProjetos', 'kpiPart', 'kpiAtivos', 'kpiZeroRecrut', 'dashTs']

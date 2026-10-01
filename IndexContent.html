@@ -6,15 +6,15 @@
   </div>
 
   <div class="nav-section">Principal</div>
-  <button type="button" class="nav-item" onclick="irPara('agenda', { goToday: true })">
+  <button type="button" class="nav-item" data-page="agenda" onclick="irPara('agenda', { goToday: true })">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">calendar_today</span></span>
     Agenda
     <span class="nav-badge" id="badgeAgenda" style="display:none;"></span>
   </button>
-  <button type="button" class="nav-item" onclick="irPara('pendencias')">
+  <button type="button" class="nav-item" data-page="pendencias" onclick="irPara('pendencias')">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">pending_actions</span></span> Pendências
   </button>
-  <button type="button" class="nav-item" onclick="irPara('requisicao')">
+  <button type="button" class="nav-item" data-page="requisicao" onclick="irPara('requisicao')">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">assignment</span></span> Req. de Exames
   </button>
   <button type="button" class="nav-item" onclick="abrirTransporteModulo()">
@@ -32,31 +32,31 @@
     <span class="material-symbols-outlined toggle-arrow" aria-hidden="true">chevron_right</span>
   </button>
   <div class="nav-group-body" id="navCadastrosBody">
-    <button type="button" class="nav-item" onclick="irPara('participantes')">
+    <button type="button" class="nav-item" data-page="participantes" onclick="irPara('participantes')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">person</span></span> Participantes
     </button>
-    <button type="button" class="nav-item" onclick="irPara('medicos')">
+    <button type="button" class="nav-item" data-page="medicos" onclick="irPara('medicos')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">medical_services</span></span> Médicos
     </button>
-    <button type="button" class="nav-item" onclick="irPara('projetos')">
+    <button type="button" class="nav-item" data-page="projetos" onclick="irPara('projetos')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></span> Projetos
     </button>
-    <button type="button" class="nav-item" onclick="irPara('monitores')">
+    <button type="button" class="nav-item" data-page="monitores" onclick="irPara('monitores')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">visibility</span></span> Monitores
     </button>
-    <button type="button" class="nav-item" onclick="irPara('prestadores')">
+    <button type="button" class="nav-item" data-page="prestadores" onclick="irPara('prestadores')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">business</span></span> Prestadores
     </button>
-    <button type="button" class="nav-item" onclick="irPara('labcentral')">
+    <button type="button" class="nav-item" data-page="labcentral" onclick="irPara('labcentral')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">biotech</span></span> Lab Central
     </button>
-    <button type="button" class="nav-item" onclick="irPara('couriers')">
+    <button type="button" class="nav-item" data-page="couriers" onclick="irPara('couriers')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span></span> Couriers
     </button>
-    <button type="button" class="nav-item" onclick="irPara('equipamentos')">
+    <button type="button" class="nav-item" data-page="equipamentos" onclick="irPara('equipamentos')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">devices</span></span> Equipamentos Recebidos
     </button>
-    <button type="button" class="nav-item" onclick="irPara('medicamentos')">
+    <button type="button" class="nav-item" data-page="medicamentos" onclick="irPara('medicamentos')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">medication</span></span> Medicamentos Recebidos
     </button>
   </div>
@@ -72,7 +72,7 @@
     <span class="material-symbols-outlined toggle-arrow" aria-hidden="true">chevron_right</span>
   </button>
   <div class="nav-group-body" id="navEstoqueBody">
-    <button type="button" class="nav-item" id="navEstVisualizacao" onclick="abrirModuloEstoque('visualizacao')">
+    <button type="button" class="nav-item" id="navEstVisualizacao" data-page="estoque-view" onclick="abrirModuloEstoque('visualizacao')">
       <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">table_view</span></span>
       Visualizar Estoque
     </button>
@@ -100,25 +100,25 @@
 
   <div class="nav-divider"></div>
   <div class="nav-section">Indicadores</div>
-  <button type="button" class="nav-item" id="navDashboard" onclick="abrirModuloDashboard()">
+  <button type="button" class="nav-item" id="navDashboard" data-page="dashboard" onclick="abrirModuloDashboard()">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">bar_chart</span></span> Dashboard
   </button>
 
   <div class="nav-divider"></div>
   <div class="nav-section">Sistema</div>
-  <button type="button" class="nav-item admin-only" id="navUsersAdmin" onclick="irPara('usuarios')" style="display:none">
+  <button type="button" class="nav-item admin-only" id="navUsersAdmin" data-page="usuarios" onclick="irPara('usuarios')" style="display:none">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span></span> Usuários
   </button>
-  <button type="button" class="nav-item admin-only" id="navAuditLog" onclick="irPara('audit-log')" style="display:none">
+  <button type="button" class="nav-item admin-only" id="navAuditLog" data-page="audit-log" onclick="irPara('audit-log')" style="display:none">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">manage_search</span></span> Trilha de Auditoria
   </button>
-  <button type="button" class="nav-item admin-only" id="navDiagnostico" onclick="irPara('diagnostico')" style="display:none">
-    <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">monitor_heart</span></span> Diagnostico
+  <button type="button" class="nav-item admin-only" id="navDiagnostico" data-page="diagnostico" onclick="irPara('diagnostico')" style="display:none">
+    <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">monitor_heart</span></span> Diagnóstico
   </button>
-  <button type="button" class="nav-item" onclick="irPara('feriados')">
+  <button type="button" class="nav-item" data-page="feriados" onclick="irPara('feriados')">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">event_busy</span></span> Feriados
   </button>
-  <button type="button" class="nav-item" onclick="irPara('configuracoes')">
+  <button type="button" class="nav-item" data-page="configuracoes" onclick="irPara('configuracoes')">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">settings</span></span> Configurações
   </button>
 
@@ -139,11 +139,11 @@
     </h1>
     <div id="topDate"></div>
     <div class="app-version-chip" id="appVersionChip" title="Versao do WebApp">versao...</div>
-    <div class="user-chip" id="userProfileChip" role="button" tabindex="0" aria-label="Abrir meu perfil" title="Abrir meu perfil" onclick="abrirMeuPerfil()" onkeydown="userProfileChipKeydown(event)">
-      <div class="user-avatar" id="userInitial">?</div>
+    <button type="button" class="user-chip" id="userProfileChip" aria-label="Abrir meu perfil" title="Abrir meu perfil" onclick="abrirMeuPerfil()">
+      <span class="user-avatar" id="userInitial">?</span>
       <span class="material-symbols-outlined user-chip-chevron" aria-hidden="true">expand_more</span>
       <span id="userEmail">carregando…</span>
-    </div>
+    </button>
   </div>
 
   <div class="content">
@@ -171,16 +171,17 @@
           <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Médico
         </button>
       </div>
-      <div class="table-card">
-        <table class="data-table">
+      <div id="medicosStatus" class="medicos-status" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="table-card medicos-table-scroll" role="region" aria-label="Tabela de médicos; role horizontalmente para ver todas as colunas" tabindex="0">
+        <table class="data-table" aria-label="Médicos cadastrados" aria-busy="false" id="tableMedicos">
           <thead>
             <tr>
-              <th>Médico</th>
-              <th>Especialidade</th>
-              <th>Documentos</th>
-              <th>Telefone</th>
-              <th>E-mail</th>
-              <th style="text-align:right; padding-right:20px;">Ações</th>
+              <th scope="col">Médico</th>
+              <th scope="col">Especialidade</th>
+              <th scope="col">Documentos</th>
+              <th scope="col">Telefone</th>
+              <th scope="col">E-mail</th>
+              <th scope="col" style="text-align:right; padding-right:20px;">Ações</th>
             </tr>
           </thead>
           <tbody id="bodyMedicos">

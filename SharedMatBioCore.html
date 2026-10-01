@@ -26,42 +26,79 @@
   }
 
   function parseFormula(text) {
-    var segmentos = [];
-    var tubos = 0;
-    var total = 0;
-    var re = /(\d+(?:[.,]\d+)?)\s*(?:x|X|\u00d7|\*)\s*(\d+(?:[.,]\d+)?)/g;
-    var m;
-    while ((m = re.exec(String(text || ''))) !== null) {
-      var qtd = Number(String(m[1]).replace(',', '.'));
-      var vol = Number(String(m[2]).replace(',', '.'));
-      if (!isFinite(qtd) || !isFinite(vol)) continue;
-      tubos += qtd;
-      total += qtd * vol;
-      segmentos.push({ qtd: qtd, vol: vol });
+    var input = String(text == null ? '' : text).trim();
+    var segmentos = [], tubos = 0, total = 0;
+    // A virgula tambem separa segmentos no formato legado: 2 x 0,5, 1 x 1,5.
+    var number = '(?:[1-9]\\d{0,2}(?:\\.\\d{3})+(?:,\\d+)?|\\d+(?:[.,]\\d+)?)';
+    var re = new RegExp('(' + number + ')\\s*[xX\\u00d7*]\\s*(' + number + ')', 'g');
+    var end = 0, m, error = '';
+    while ((m = re.exec(input)) !== null) {
+      var gap = input.slice(end, m.index);
+      if ((!segmentos.length && gap.trim()) || (segmentos.length && !/^\s*[;, +\n]\s*$/.test(gap))) {
+        error = 'Revise a fórmula completa de tubos e volume.'; break;
+      }
+      var qtd = formulaNumber(m[1]), vol = formulaNumber(m[2]);
+      if (!Number.isSafeInteger(qtd) || qtd <= 0 || !isFinite(vol) || vol < 0) {
+        error = 'Informe uma quantidade inteira positiva de tubos e um volume válido.'; break;
+      }
+      tubos += qtd; total += qtd * vol;
+      if (!Number.isSafeInteger(tubos) || !isFinite(total)) { error = 'Quantidade ou volume fora do limite.'; break; }
+      segmentos.push({ qtd: qtd, vol: vol }); end = re.lastIndex;
     }
-    return { tubos: tubos, total: total, segmentos: segmentos };
+    if (!error && (input.slice(end).trim() || (input && !segmentos.length))) error = 'Revise a fórmula completa de tubos e volume.';
+    return error ? { tubos: 0, total: 0, segmentos: [], valid: false, error: error }
+      : { tubos: tubos, total: total, segmentos: segmentos, valid: true, error: '' };
+  }
+
+  function formulaNumber(value) {
+    var text = String(value);
+    if (/^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?$/.test(text)) text = text.replace(/\./g, '');
+    return Number(text.replace(',', '.'));
+  }
+
+  var numberFormatters = Object.create(null);
+  function numberFormatter(min, max, grouping) {
+    var key = min + '|' + max + '|' + grouping;
+    if (!numberFormatters[key]) numberFormatters[key] = new Intl.NumberFormat('pt-BR', {
+      minimumFractionDigits: min, maximumFractionDigits: max, useGrouping: grouping
+    });
+    return numberFormatters[key];
   }
 
   function formatNumber(value, decimals) {
     var num = Number(value || 0);
     if (!isFinite(num)) num = 0;
-    return num.toLocaleString('pt-BR', {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals
-    });
-  }
-
-  function formatVolume(value, decimals) {
-    var num = Number(value || 0);
-    if (!isFinite(num)) num = 0;
-    return num.toLocaleString('pt-BR', {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: decimals
-    });
+    decimals = decimals === undefined ? 2 : decimals;
+    return numberFormatter(decimals, decimals, true).format(num);
   }
 
   function formulaText(qtd, vol, decimals) {
-    return formatNumber(qtd, 0) + '×' + formatVolume(vol, decimals);
+    var segmento = validateSegments([{ qtd: qtd, vol: vol }])[0];
+    // A formula e relida ao salvar/copiar: nao inserir milhares nem arredondar volumes.
+    var text = String(segmento.vol), parts = text.split(/e/i);
+    if (parts.length === 2) {
+      var digits = parts[0].replace('.', ''), point = parts[0].split('.')[0].length + Number(parts[1]);
+      text = point <= 0 ? '0.' + '0'.repeat(-point) + digits
+        : point >= digits.length ? digits + '0'.repeat(point - digits.length) : digits.slice(0, point) + '.' + digits.slice(point);
+    }
+    return String(segmento.qtd) + '×' + (text.indexOf('.') < 0 ? text + ',0' : text.replace('.', ','));
+  }
+
+  function validateSegments(segmentos) {
+    var tubos = 0, total = 0;
+    return segmentos.map(function(segmento) {
+      if (!segmento || typeof segmento !== 'object') throw new Error('Segmento de material biológico inválido.');
+      function numeric(value) {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string' && /^\d+(?:[.,]\d+)?$/.test(value.trim())) return Number(value.trim().replace(',', '.'));
+        return NaN;
+      }
+      var qtd = numeric(segmento.qtd), vol = numeric(segmento.vol);
+      if (!Number.isSafeInteger(qtd) || qtd <= 0 || !isFinite(vol) || vol < 0) throw new Error('Quantidade ou volume de material biológico inválido.');
+      tubos += qtd; total += qtd * vol;
+      if (!Number.isSafeInteger(tubos) || !isFinite(total)) throw new Error('Quantidade ou volume fora do limite.');
+      return { qtd: qtd, vol: vol };
+    });
   }
 
   function formulaFromSegments(segmentos, unit) {
@@ -77,30 +114,42 @@
     return {
       parsed: parsed,
       unit: key,
-      tubosText: parsed.tubos ? formatNumber(parsed.tubos, 0) : '-',
-      totalText: (parsed.total ? formatNumber(parsed.total, key === 'L' ? 5 : 2) : '-') + ' ' + key
+      tubosText: !parsed.valid ? 'Revise a fórmula' : parsed.tubos ? formatNumber(parsed.tubos, 0) : '-',
+      totalText: !parsed.valid ? 'Inválido' : (parsed.total ? formatNumber(parsed.total, key === 'L' ? 5 : 2) : '-') + ' ' + key
     };
   }
 
   function convertFormulaUnit(text, fromUnit, toUnit) {
-    fromUnit = unitKey(fromUnit);
-    toUnit = unitKey(toUnit);
+    fromUnit = unitKey(fromUnit); toUnit = unitKey(toUnit);
     if (fromUnit === toUnit) return String(text || '');
+    if (fromUnit === 'g' || toUnit === 'g') throw new Error('Não é possível converter massa em volume.');
     var parsed = parseFormula(text);
+    if (!parsed.valid) throw new Error(parsed.error);
     if (!parsed.segmentos.length) return String(text || '');
-    var factor = fromUnit === 'mL' && toUnit === 'L' ? 1 / 1000 : (fromUnit === 'L' && toUnit === 'mL' ? 1000 : 1);
-    return parsed.segmentos.map(function(segmento) {
-      return formulaText(segmento.qtd, Number(segmento.vol || 0) * factor, toUnit === 'L' ? 5 : 2);
-    }).join('; ');
+    var factor = fromUnit === 'mL' ? 1 / 1000 : 1000;
+    return formulaFromSegments(parsed.segmentos.map(function(segmento) {
+      return { qtd: segmento.qtd, vol: segmento.vol * factor };
+    }), toUnit);
   }
 
   function parseJson(json) {
+    if (!String(json || '').trim()) return { items: [], valid: true, error: '' };
     try {
-      var obj = JSON.parse(String(json || ''));
-      return { items: Array.isArray(obj.items) ? obj.items : [] };
+      var obj = JSON.parse(String(json));
+      if (!obj || !Array.isArray(obj.items)) throw new Error('Formato de materiais inválido.');
+      return { items: obj.items, valid: true, error: '' };
     } catch (e) {
-      return { items: [] };
+      return { items: [], valid: false, error: 'Dados estruturados de material biológico inválidos. Revise antes de salvar.' };
     }
+  }
+
+  function assertItemsUnit(items, volumeUnit) {
+    (items || []).forEach(function(raw) {
+      var cfg = typeConfig(raw && (raw.key || raw.tipo));
+      var expected = cfg && cfg.unit === 'g' ? 'g' : unitKey(volumeUnit);
+      var item = normalizeItem(raw && Object.assign({}, raw, { unit: raw.unit || expected }), true);
+      if (item.segmentos.length && item.unit !== expected) throw new Error('Material ' + item.tipo + ': a fórmula está em ' + item.unit + '. Converta ou revise os volumes para ' + expected + ' antes de salvar.');
+    });
   }
 
   function pushUnique(list, value) {
@@ -111,33 +160,28 @@
     if (!exists) list.push(value);
   }
 
-  function normalizeItem(item) {
-    item = item || {};
+  function normalizeItem(item, skipFormula) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Material biológico inválido.');
     var cfg = typeConfig(item.key || item.tipo);
     var key = cfg ? cfg.key : (item.key || 'outro');
     var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
     var unit = unitKey(item.unit || (cfg && cfg.unit) || 'mL');
-    var sourceSegments = Array.isArray(item.segmentos) ? item.segmentos : [];
-    var formula = sourceSegments.length ? formulaFromSegments(sourceSegments, unit) : (item.formula || '');
-    var parsed = parseFormula(formula);
-    var segmentos = sourceSegments.length ? sourceSegments : parsed.segmentos;
-    return {
-      key: key,
-      tipo: tipo,
-      ensaio: String(item.ensaio || '').trim(),
-      formula: formulaFromSegments(segmentos, unit),
-      tubos: segmentos.reduce(function(sum, segmento) { return sum + Number(segmento.qtd || 0); }, 0),
-      total: segmentos.reduce(function(sum, segmento) { return sum + (Number(segmento.qtd || 0) * Number(segmento.vol || 0)); }, 0),
-      unit: unitKey(unit),
-      segmentos: segmentos
-    };
+    if (item.segmentos !== undefined && !Array.isArray(item.segmentos)) throw new Error('Segmentos de material biológico inválidos.');
+    var sourceSegments = item.segmentos || [];
+    var parsed = sourceSegments.length ? null : parseFormula(item.formula || '');
+    if (parsed && !parsed.valid) throw new Error(parsed.error);
+    var segmentos = validateSegments(sourceSegments.length ? sourceSegments : parsed.segmentos);
+    var tubos = 0, total = 0;
+    segmentos.forEach(function(segmento) { tubos += segmento.qtd; total += segmento.qtd * segmento.vol; });
+    return { key: key, tipo: tipo, ensaio: String(item.ensaio || '').trim(),
+      formula: skipFormula ? '' : formulaFromSegments(segmentos, unit), tubos: tubos, total: total, unit: unit, segmentos: segmentos };
   }
 
   function groupItems(items) {
     var order = [];
-    var groups = {};
+    var groups = Object.create(null);
     (items || []).forEach(function(raw) {
-      var item = normalizeItem(raw);
+      var item = normalizeItem(raw, true);
       if (!item.tipo && !item.segmentos.length) return;
       var groupKey = item.key === 'outro' ? item.key + '|' + norm(item.tipo) : item.key;
       if (!groups[groupKey]) {
@@ -146,19 +190,25 @@
           tipo: item.tipo,
           unit: item.unit,
           segmentos: [],
-          ensaios: []
+          tubos: 0, total: 0, ensaios: [], ensaiosSeen: Object.create(null)
         };
         order.push(groupKey);
       }
-      Array.prototype.push.apply(groups[groupKey].segmentos, item.segmentos);
+      groups[groupKey].tubos += item.tubos; groups[groupKey].total += item.total;
+      if (!Number.isSafeInteger(groups[groupKey].tubos) || !isFinite(groups[groupKey].total)) throw new Error('Quantidade ou volume fora do limite.');
+      if (groups[groupKey].unit !== item.unit) throw new Error('Unidades diferentes para o mesmo material. Revise a conversão antes de salvar.');
+      item.segmentos.forEach(function(segmento) { groups[groupKey].segmentos.push(segmento); });
       String(item.ensaio || '').split(/\s*;\s*/).forEach(function(ensaio) {
-        pushUnique(groups[groupKey].ensaios, ensaio);
+        ensaio = ensaio.replace(/\s+/g, ' ').trim();
+        var normalized = norm(ensaio);
+        if (ensaio && !groups[groupKey].ensaiosSeen[normalized]) {
+          groups[groupKey].ensaiosSeen[normalized] = true; groups[groupKey].ensaios.push(ensaio);
+        }
       });
     });
     return order.map(function(key) {
       var group = groups[key];
-      var tubos = group.segmentos.reduce(function(sum, segmento) { return sum + Number(segmento.qtd || 0); }, 0);
-      var total = group.segmentos.reduce(function(sum, segmento) { return sum + (Number(segmento.qtd || 0) * Number(segmento.vol || 0)); }, 0);
+      var tubos = group.tubos, total = group.total;
       return {
         key: group.key,
         tipo: group.tipo,
@@ -194,7 +244,7 @@
     options = options || {};
     var order = options.order || ['sangue', 'soro', 'urina', 'plasma', 'tecido', 'saliva', 'fezes', 'vacina'];
     var displayUnit = typeof options.displayUnit === 'function' ? options.displayUnit : function(unit) { return unitKey(unit); };
-    var byKey = {};
+    var byKey = Object.create(null);
     var grouped = groupItems(items);
     grouped.forEach(function(item) {
       if (order.indexOf(item.key) > -1) byKey[item.key] = item;
@@ -236,6 +286,7 @@
   }
 
   global.CodexMatBioCore = {
+    assertItemsUnit: assertItemsUnit,
     unitKey: unitKey,
     parseFormula: parseFormula,
     formatNumber: formatNumber,

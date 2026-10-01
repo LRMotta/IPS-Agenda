@@ -776,7 +776,7 @@
       alert.innerHTML = '';
       return;
     }
-    var holidays = _agendaDados.feriados || [];
+    var holidays = CodexCourierRules.createHolidayIndex(_agendaDados.feriados || []);
     var project = agendaProjectCourierRecord_();
     var lines = [];
     var general = CodexCourierRules.operationalRisk(dateIso, {}, holidays);
@@ -893,7 +893,10 @@
 
   function agendaMatBioOnFormulaInput(input, prefix) {
     var row = input && input.closest ? input.closest('.ag-mat-line') : null;
-    if (row) row.dataset.formulaUnit = agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, 'mL'));
+    if (row) {
+      var cfg = agendaMatBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
+      row.dataset.formulaUnit = agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, (cfg && cfg.unit) || 'mL'));
+    }
     agendaMatBioRecalcPrefix(prefix);
   }
 
@@ -905,7 +908,7 @@
     item = item || {};
     var cfg = agendaMatBioTypeConfig(item.key || item.tipo);
     var baseUnit = agendaMatBioUnitKey((cfg && cfg.unit) || item.unit || 'mL');
-    var sourceUnit = agendaMatBioUnitKey(item.unit || baseUnit);
+    var sourceUnit = agendaMatBioUnitKey(item.unit || agendaMatBioDisplayUnit(prefix, baseUnit));
     var out = Object.assign({}, item);
     if (baseUnit === 'mL' && Array.isArray(item.segmentos) && item.segmentos.length) {
       out.formula = agendaMatBioFormulaFromSegments(item.segmentos, sourceUnit) || item.formula || '';
@@ -990,36 +993,31 @@
         info.style.display = 'none';
       }
     }
-    if (!btn) return;
-    btn.style.display = refValida ? 'none' : '';
+    var step = document.getElementById('backupAgendaStep');
+    if (step) step.style.display = refValida ? 'none' : '';
     var temperaturaInformada = agendaMeaningfulValue(backup.temperatura || backup.temp);
-    btn.disabled = !temperaturaInformada;
-    btn.setAttribute('aria-disabled', temperaturaInformada ? 'false' : 'true');
-    btn.title = temperaturaInformada
-      ? 'Escolha como agendar o Transporte de Amostras Backup'
-      : 'Informe a Temperatura do Transporte de Amostras Backup antes de agendá-lo';
-  }
-
-  function abrirOpcoesAgendamentoBackupAgenda() {
-    var actions = document.getElementById('backupAgendaActions');
-    var visitas = document.getElementById('backupAgendaVisitas');
-    if (!actions) return;
-    var abrir = actions.style.display === 'none' || !actions.style.display;
-    actions.style.display = abrir ? 'flex' : 'none';
-    var toggle = document.getElementById('btnCriarEnvioBackup');
-    if (toggle) toggle.setAttribute('aria-expanded', abrir ? 'true' : 'false');
-    if (visitas) {
-      visitas.style.display = 'none';
-      visitas.innerHTML = '';
+    var hint = document.getElementById('backupAgendaHint');
+    if (hint) hint.textContent = temperaturaInformada
+      ? '✓ Você já pode agendar o Backup. Escolha uma opção abaixo.'
+      : 'Informe a temperatura para liberar as opções de agendamento.';
+    if (step) step.classList.toggle('is-ready', !!temperaturaInformada);
+    [btn, document.getElementById('btnUsarVisitaFuturaBackup')].forEach(function(action) {
+      if (!action) return;
+      action.disabled = !temperaturaInformada || !!refValida;
+      action.setAttribute('aria-disabled', action.disabled ? 'true' : 'false');
+    });
+    if (!temperaturaInformada || refValida) {
+      var visitas = document.getElementById('backupAgendaVisitas');
+      if (visitas) { visitas.style.display = 'none'; visitas.innerHTML = ''; }
     }
   }
 
+  function abrirOpcoesAgendamentoBackupAgenda() {
+    atualizarEstadoNovoEnvioBackup_();
+  }
+
   function agendaFecharOpcoesBackup_() {
-    var actions = document.getElementById('backupAgendaActions');
     var visitas = document.getElementById('backupAgendaVisitas');
-    if (actions) actions.style.display = 'none';
-    var toggle = document.getElementById('btnCriarEnvioBackup');
-    if (toggle) toggle.setAttribute('aria-expanded', 'false');
     if (visitas) {
       visitas.style.display = 'none';
       visitas.innerHTML = '';
@@ -1031,6 +1029,10 @@
     var origemId = String(_agendaEditId || '').trim();
     var editRequestId = _agendaEditOpenRequestId;
     if (!visitasEl) return;
+    if (!agendaMeaningfulValue(agendaCourierFromForm('agBackup').temperatura)) {
+      atualizarEstadoNovoEnvioBackup_();
+      return;
+    }
     if (!origemId) {
       snackErro('Salve o agendamento de origem antes de usar uma visita futura.');
       return;
@@ -1044,10 +1046,12 @@
     google.script.run
       .withSuccessHandler(function(res) {
         if (origemId !== String(_agendaEditId || '').trim() || editRequestId !== _agendaEditOpenRequestId) return;
+        if (!agendaMeaningfulValue(agendaCourierFromForm('agBackup').temperatura)) return;
         agendaBackupVisitasHtml_(visitasEl, res && res.visitas || []);
       })
       .withFailureHandler(function(error) {
         if (origemId !== String(_agendaEditId || '').trim() || editRequestId !== _agendaEditOpenRequestId) return;
+        if (!agendaMeaningfulValue(agendaCourierFromForm('agBackup').temperatura)) return;
         var message = appErrorMessage(error);
         visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(message) + '</div>';
         snackErro(message);
@@ -1190,8 +1194,9 @@
       row.classList.toggle('other-on', !!(cfg && cfg.outro));
       row.dataset.volumeUnit = unit;
       if (tubos) tubos.textContent = calc.tubosText;
-      if (total) total.textContent = calc.totalText;
+      if (total) total.textContent = calc.parsed.segmentos.length && agendaMatBioUnitKey(row.dataset.formulaUnit || unit) !== unit ? 'Conversão pendente' : calc.totalText;
     });
+    agendaMatBioErrors(prefix);
     agendaMatBioUpdateUnitUi(prefix);
     agendaMatBioEnsureTrailingRow(prefix);
     atualizarAgendaTransportesOpcionais();
@@ -1282,6 +1287,7 @@
     var wrap = document.getElementById(prefix + 'MatLines');
     if (!wrap) return;
     wrap.innerHTML = '';
+    delete wrap.dataset.sourceError;
     wrap.dataset.next = '0';
   }
 
@@ -1339,6 +1345,33 @@
     return CodexMatBioCore.parseFormula(text);
   }
 
+  function agendaMatBioErrors(prefix) {
+    var errors = [], wrap = document.getElementById(prefix + 'MatLines');
+    if (wrap && wrap.dataset.sourceError) errors.push(wrap.dataset.sourceError);
+    Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line[data-prefix="' + prefix + '"]'), function(row) {
+      var cfg = agendaMatBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
+      if (!cfg) return;
+      var formula = row.querySelector('.ag-mat-formula'), text = formula ? formula.value : '';
+      var parsed = agendaMatBioParseFormula(text), expected = agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, cfg.unit));
+      var source = agendaMatBioUnitKey(row.dataset.formulaUnit || expected);
+      var error = !parsed.valid ? parsed.error : (parsed.segmentos.length && source !== expected
+        ? 'A fórmula está em ' + source + '. Converta ou revise os volumes para ' + expected + ' antes de salvar.' : '');
+      if (formula) {
+        formula.classList.toggle('invalid', !!error); formula.setCustomValidity(error); formula.setAttribute('aria-invalid', error ? 'true' : 'false'); formula.title = error;
+      }
+      if (error) errors.push(cfg.label + ': ' + error);
+    });
+    return errors;
+  }
+
+  function agendaMatBioValidateAll() {
+    if (!agendaCamposTecnicosAplicaveis()) return true;
+    var errors = [];
+    agendaMatBioPrefixes().forEach(function(prefix) { errors = errors.concat(agendaMatBioErrors(prefix)); });
+    if (errors.length) { snackErro(errors[0]); return false; }
+    return true;
+  }
+
   function agendaMatBioSerialize(prefix) {
     var items = [];
     Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line[data-prefix="' + prefix + '"]'), function(row) {
@@ -1350,7 +1383,9 @@
       if (!t) return;
       var formula = formulaEl.value;
       var parsed = agendaMatBioParseFormula(formula);
+      if (!parsed.valid) return;
       var unit = agendaMatBioUnitKey(row.dataset.formulaUnit || agendaMatBioDisplayUnit(prefix, t.unit));
+      if (parsed.segmentos.length && unit !== agendaMatBioUnitKey(agendaMatBioDisplayUnit(prefix, t.unit))) return;
       var outro = t.outro ? (row.querySelector('.ag-mat-other') || {}).value || '' : '';
       var label = t.outro ? outro.trim() : t.label;
       if (!label || (!parsed.segmentos.length && !t.outro)) return;
@@ -1380,8 +1415,15 @@
     renderAgendaMatBioEditor(prefix);
     agendaMatBioClear(prefix);
     var data = agendaMatBioParseJson(c && c.matBioJson);
+    var wrap = document.getElementById(prefix + 'MatLines');
+    if (!data.valid) { if (wrap) wrap.dataset.sourceError = data.error; snackErro(data.error); return; }
     if (!data.items.length && c && c.material) return;
-    var grouped = agendaMatBioGroupItems(data.items);
+    var grouped;
+    try { grouped = agendaMatBioGroupItems(data.items.map(function(item) {
+      var cfg = agendaMatBioTypeConfig(item && (item.key || item.tipo));
+      return item && Object.assign({}, item, { unit: item.unit || agendaMatBioDisplayUnit(prefix, (cfg && cfg.unit) || 'mL') });
+    })); }
+    catch (error) { if (wrap) wrap.dataset.sourceError = error.message; snackErro(error.message); return; }
     agendaMatBioSetItems(prefix, grouped.map(function(it) {
       return {
         key: it.key || it.tipo,
@@ -1651,7 +1693,9 @@
   function agendaMatBioInterpretPaste(prefix) {
     var el = document.getElementById(prefix + 'MatPaste');
     var text = el ? el.value : '';
-    var items = agendaMatBioGroupItems(agendaMatBioParseFreeText(text));
+    var items;
+    try { items = agendaMatBioGroupItems(agendaMatBioParseFreeText(text)); }
+    catch (error) { snackErro(error.message); return; }
     if (!items.length) {
       snackErro('Não consegui interpretar esse texto. Tente separar os materiais com ponto e vírgula.');
       return;
@@ -2889,6 +2933,7 @@
       return;
     }
     var btn = document.getElementById('btnSalvarAgenda');
+    if (!agendaMatBioValidateAll()) return;
     var payload = coletarAgendaEvento();
     if (_agendaEditId) {
       var eventoEditado = agendaEventoAtualEditado_();
@@ -3047,6 +3092,7 @@
       snackErro('Salve o agendamento antes de gerar a requisição pela Agenda.');
       return;
     }
+    if (!agendaMatBioValidateAll()) return;
     var dados = coletarAgendaEvento();
     dados.id = _agendaEditId || dados.id || '';
     if (!agendaMeaningfulValue(dados.participante)) {
@@ -3090,6 +3136,7 @@
       snackErro('Salve o agendamento antes de gerar a documentação de transporte.');
       return;
     }
+    if (!agendaMatBioValidateAll()) return;
     var dados = coletarAgendaEvento();
     dados.id = _agendaEditId || dados.id || '';
     if (!agendaMeaningfulValue(dados.participante)) {
@@ -3254,6 +3301,7 @@
   }
 
   function criarEnvioAmostrasDoBackupAgenda() {
+    if (!agendaMatBioValidateAll()) return;
     var origem = coletarAgendaEvento();
     var backup = origem.backup || {};
     if (!agendaMeaningfulValue(origem.participante)) {
@@ -5570,7 +5618,7 @@
       return AgendaRules.isVisibleIn(r, AgendaRules.Context.DAILY_HEADER);
     });
     var total = rows.length;
-    var lab = rows.filter(function(r) { return AgendaRules.countsIn(r, 'lab-central'); }).length;
+    var lab = rows.filter(function(r) { return AgendaRules.countsIn(r, AgendaRules.Indicator.LAB_CENTRAL); }).length;
     var ok = rows.filter(AgendaRules.isCompleted).length;
     var pend = rows.filter(function(r) { return !AgendaRules.isCompleted(r) && !AgendaRules.isCancelled(r); }).length;
     var tipoStats = agendaTipoStats(rows);
@@ -6701,9 +6749,9 @@
   }
 
   function agendaStatusChipOp(status, tipo) {
-    var cls = agendaStatusClass({status: status});
+    var cls = AgendaRules.statusChipClass(status);
     var label = status || tipo || '-';
-    return '<span class="ag-st-chip ag-ch-' + cls + '">' + esc(label) + '</span>';
+    return '<span class="ag-st-chip ' + cls + '">' + esc(label) + '</span>';
   }
 
   function agendaStatusClass(r) {

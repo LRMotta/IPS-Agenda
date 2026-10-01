@@ -2,6 +2,270 @@
 (function(global) {
   'use strict';
 
+  // BEGIN GENERATED AGENDA RULES — editar tools/agenda-rules-core.js
+
+  var typeDefinitions = Object.freeze([
+    { key: 'monitoria', contains: ['monitoria'], singular: 'Monitoria', plural: 'Monitorias', css: 'ag-type-monitoria', icon: 'visibility', operational: true, multiDay: true, hidden: true, monitorAndRoom: true },
+    { key: 'siv', exact: ['siv'], contains: ['site initiation'], singular: 'SIV', plural: 'SIV', css: 'ag-type-siv', icon: 'flag', operational: true, multiDay: true, hidden: true, noTime: true, visual: ' type-siv' },
+    { key: 'closeout', contains: ['close-out', 'closeout'], singular: 'Close-out', plural: 'Close-outs', css: 'ag-type-closeout', icon: 'lock', hidden: true },
+    { key: 'visita', contains: ['visita'], singular: 'Visita', plural: 'Visitas', css: 'ag-type-visita', icon: 'event_available', transport: true },
+    { key: 'consulta', contains: ['consulta'], singular: 'Consulta', plural: 'Consultas', css: 'ag-type-consulta', icon: 'event', doctor: true },
+    { key: 'exame-imagem', contains: ['imagem'], singular: 'Exame de imagem', plural: 'Exames de imagem', css: 'ag-type-imagem', icon: 'image_search', hidden: true, thirdParty: true },
+    { key: 'exame-laboratorial', contains: ['laborator'], singular: 'Exame laboratorial', plural: 'Exames laboratoriais', css: 'ag-type-lab', icon: 'biotech', thirdParty: true, noLab: true },
+    { key: 'envio-amostras', contains: ['amostra'], singular: 'Envio de amostras', plural: 'Envios de amostras', css: 'ag-type-amostras', icon: 'local_shipping', transport: true, technicalOnCreate: true },
+    { key: 'feriado', contains: ['feriado'], singular: 'Feriado', plural: 'Feriados', css: 'ag-type-feriado', icon: 'event_busy', hidden: true, general: true },
+    { key: 'reuniao', contains: ['reuniao'], singular: 'Reunião', plural: 'Reuniões', css: 'ag-type-reuniao', icon: 'groups', hidden: true, general: true },
+    { key: 'auditoria', contains: ['auditoria'], singular: 'Auditoria', plural: 'Auditorias', css: 'ag-type-auditoria', icon: 'fact_check', hidden: true, general: true, multiDay: true },
+    { key: 'contato telefonico', contains: ['telefon'], singular: 'Contato telefônico', plural: 'Contatos telefônicos', css: 'ag-type-default', icon: 'call', phone: true }
+  ].map(function(definition) {
+    if (definition.contains) Object.freeze(definition.contains);
+    if (definition.exact) Object.freeze(definition.exact);
+    return Object.freeze(definition);
+  }));
+
+  function normalizeText(value) {
+    return String(value == null ? '' : value).normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  }
+
+  function normalizedType(value) {
+    return normalizeText(value && typeof value === 'object' ? value.tipo : value);
+  }
+
+  function definitionForType(value) {
+    return definitionForNormalizedType(normalizedType(value));
+  }
+
+  function definitionForNormalizedType(text) {
+    for (var i = 0; i < typeDefinitions.length; i++) {
+      var definition = typeDefinitions[i];
+      if (text === definition.key || (definition.exact && definition.exact.indexOf(text) > -1)) return definition;
+      var parts = definition.contains || [];
+      for (var j = 0; j < parts.length; j++) {
+        if (text.indexOf(parts[j]) > -1) return definition;
+      }
+    }
+    return null;
+  }
+
+  function typeKey(value) {
+    var definition = definitionForType(value);
+    return definition ? definition.key : normalizedType(value) || 'evento';
+  }
+
+  function withoutNegatedStatusAssertions(text) {
+    // Nao remover "nao agendado": ele possui uma chave de dominio propria.
+    return text.replace(/\b(?:nao|nunca)\s+(?:(?:foi|foram|esta|estao|sera|serao)\s+)?(?:cancel\w*|envi\w*|entreg\w*|colet\w*|confirm\w*|realiz\w*|concl\w*|reag\w*)/g, '');
+  }
+
+  function recognizedStatus(text) {
+    text = withoutNegatedStatusAssertions(text);
+    if (text.indexOf('cancel') > -1) return 'cancelado';
+    if (/nao[\s-]*agend/.test(text)) return 'naoagendado';
+    if (text.indexOf('confirm') > -1) return 'confirmado';
+    if (text.indexOf('envi') > -1) return 'enviado';
+    if (text.indexOf('entreg') > -1) return 'entregue';
+    if (text.indexOf('realiz') > -1) return 'realizado';
+    if (text.indexOf('concl') > -1) return 'concluido';
+    if (text.indexOf('reag') > -1) return 'reagendado';
+    if (text.indexOf('pend') > -1) return 'pendente';
+    if (text.indexOf('agend') > -1) return 'agendado';
+    return '';
+  }
+
+  function statusKey(value) {
+    var text = normalizeText(value && typeof value === 'object' ? value.status : value);
+    return recognizedStatus(text) || 'agendado';
+  }
+
+  function isStatus(value, expected) {
+    var text = normalizeText(expected).replace(/[\s-]+/g, '');
+    var key = recognizedStatus(text);
+    // A expectativa deve ser uma chave/rotulo conhecido, nao texto livre ou fallback.
+    var known = !!key && (text === key || text === key.replace(/o$/, 'a'));
+    return known && statusKey(value) === key;
+  }
+
+  function isType(value, expected) {
+    return !!normalizedType(expected) && typeKey(value) === typeKey(expected);
+  }
+
+  function isPhoneContact(value) {
+    return normalizedType(value).indexOf('telefon') > -1;
+  }
+
+  function hasTransportOperation(value) {
+    var definition = definitionForType(value);
+    return !!(definition && definition.transport) && !isPhoneContact(value);
+  }
+
+  function typeRequiresLabCentral(value) {
+    return hasTransportOperation(value);
+  }
+
+  function formPolicy(value, isEditing) {
+    // Classificar uma vez: todas as politicas derivam do mesmo tipo normalizado.
+    var text = normalizedType(value);
+    var definition = definitionForNormalizedType(text) || {};
+    var phone = text.indexOf('telefon') > -1;
+    return {
+      type: definition.key || text || 'evento',
+      isMonitoring: !!definition.monitorAndRoom,
+      isSiv: definition.key === 'siv',
+      isOperationalPeriod: !!definition.operational,
+      isMultiDay: !!definition.multiDay,
+      isVisit: definition.key === 'visita',
+      hideGeneralEvent: !!definition.general,
+      hideDetails: !!definition.hidden && definition.key !== 'exame-imagem',
+      technicalFieldsAvailable: (!!isEditing || !!definition.technicalOnCreate) && !definition.hidden && !phone,
+      labChoiceAllowed: !definition.hidden && !definition.noLab && !phone,
+      requiresThirdPartyService: !!definition.thirdParty,
+      requiresLabCentral: !!definition.transport && !phone,
+      usesParticipantWorkflow: !definition.hidden,
+      requiresProject: !!definition.operational,
+      requiresMonitorAndRoom: !!definition.monitorAndRoom,
+      requiresDoctor: !!definition.doctor,
+      requiresTime: !definition.noTime
+    };
+  }
+
+  function typePluralLabel(value, count, fallback) {
+    var singular = Number(count) === 1;
+    var definition = definitionForType(value);
+    if (definition) return singular ? definition.singular : definition.plural;
+    // Tipos personalizados podem fornecer rotulos explicitos sem alterar seu ID/tipo.
+    var labels = fallback && typeof fallback === 'object' ? fallback : value && typeof value === 'object' ? value : {};
+    var rawType = value && typeof value === 'object' ? value.tipo : value;
+    var label = String(labels.singular || (typeof fallback === 'string' && fallback.trim() ? fallback : rawType) || 'Evento').trim() || 'Evento';
+    return singular ? label : String(labels.plural || label + 's');
+  }
+
+  function typeClass(value) {
+    var definition = definitionForType(value);
+    return definition ? definition.css : 'ag-type-default';
+  }
+
+  function typeIcon(value) {
+    var definition = definitionForType(value);
+    return definition ? definition.icon : 'event';
+  }
+
+  function typeVisualClass(value) {
+    var definition = definitionForType(value);
+    return definition && definition.visual || '';
+  }
+
+  function requestSentPattern(requiresLabel) {
+    var label = '(?:a\\s+)?(?:requisicao|requisicoes|req)\\s*[:=-]?\\s*';
+    var assertion = '(?:(?:ja\\s+)?(?:foi|foram)\\s+)?(?:enviad[ao]s?|ok)';
+    var date = '(?:\\s*(?:[-–]\\s*|em\\s+)?\\d{1,2}[/.–-](?:\\d{1,2}|[a-z]{3}\\.?)[/.–-]\\d{2,4}(?:\\s+\\d{1,2}:\\d{2})?)?';
+    return new RegExp('^' + (requiresLabel ? label : '(?:' + label + ')?') + assertion + date + '$');
+  }
+
+  // Sem flag global: reutilizar os padroes nao deixa estado entre chamadas.
+  var requestObservationSentPattern = requestSentPattern(true);
+  var requestStatusSentPattern = requestSentPattern(false);
+
+  function requestSentConfirmation(text, requiresLabel) {
+    return (requiresLabel ? requestObservationSentPattern : requestStatusSentPattern).test(text);
+  }
+
+  function requestObservationIndicatesSent(observation) {
+    // Somente afirmacoes explicitas: texto livre ambiguo nao confirma nem migra envio.
+    var text = normalizeText(observation).replace(/\breq\.(?=\s)/g, 'req');
+    var clauses = text.split(/[;\n]|\.(?=\s|$)/);
+    var confirmed = false;
+    for (var i = 0; i < clauses.length; i++) {
+      var clause = clauses[i].trim();
+      if (!clause) continue;
+      if (/\b(?:requisicao|requisicoes|req)\b/.test(clause)) {
+        if (!requestSentConfirmation(clause, true)) return false;
+        confirmed = true;
+      } else if (/\b(?:nao|nunca|ainda|sera|serao|talvez)\b.*\benviad[ao]s?\b/.test(clause) &&
+        !/^(?:(?:o|a|os|as)\s+)?(?:transportes?|amostras?|couriers?|coletas?)\b/.test(clause)) {
+        // Negacao sem outro sujeito explicito pode se referir a requisicao anterior.
+        return false;
+      }
+    }
+    return confirmed;
+  }
+
+  function requestIsSent(eventOrStatus, observation) {
+    var status = eventOrStatus && typeof eventOrStatus === 'object'
+      ? eventOrStatus.statusRequisicao
+      : eventOrStatus;
+    var obs = eventOrStatus && typeof eventOrStatus === 'object'
+      ? eventOrStatus.obs
+      : observation;
+    var text = normalizeText(status).replace(/\breq\.(?=\s)/g, 'req');
+    // O campo explicito e autoritativo; observacoes sao fallback apenas para legado vazio.
+    return text ? requestSentConfirmation(text, false) : requestObservationIndicatesSent(obs);
+  }
+
+  function courierAffirmativeStatus(statusValue) {
+    // Uma negacao nao comprova envio, entrega, coleta ou confirmacao.
+    // Preservar outras afirmacoes: "Enviado; ainda nao entregue" continua enviado.
+    return withoutNegatedStatusAssertions(normalizeText(statusValue));
+  }
+
+  function recognizedCourierStatus(status) {
+    if (status === 'naoaplicavel' || status === 'nao aplicavel' || status === 'nao se aplica' || status === 'n/a' || status === 'na') return 'naoaplicavel';
+    if (/nao[\s-]*agend/.test(status)) return 'naoagendado';
+    if (status.indexOf('cancel') > -1) return 'cancelado';
+    // Entrega e envio prevalecem sobre estados anteriores em rotulos compostos.
+    if (status.indexOf('entreg') > -1) return 'entregue';
+    if (status.indexOf('envi') > -1) return 'enviado';
+    if (status.indexOf('confirm') > -1) return 'confirmado';
+    if (status.indexOf('colet') > -1) return 'confirmado';
+    if (status.indexOf('agend') > -1) return 'agendado';
+    if (status.indexOf('pend') > -1) return 'pendente';
+    return '';
+  }
+
+  function courierStatusKey(statusValue) {
+    return recognizedCourierStatus(courierAffirmativeStatus(statusValue)) || 'pendente';
+  }
+
+  function courierIsNotApplicable(statusValue) {
+    return courierStatusKey(statusValue) === 'naoaplicavel';
+  }
+
+  function courierIsSentNotDelivered(statusValue) {
+    return courierStatusKey(statusValue) === 'enviado';
+  }
+
+  function courierIsDelivered(statusValue) {
+    return courierStatusKey(statusValue) === 'entregue';
+  }
+
+  function courierIsDeliveryTerminal(statusValue) {
+    var status = courierStatusKey(statusValue);
+    return status === 'entregue' || status === 'cancelado' || status === 'naoagendado';
+  }
+
+  function courierIsAwaitingConfirmation(statusValue) {
+    return recognizedCourierStatus(courierAffirmativeStatus(statusValue)) === 'agendado';
+  }
+
+  function courierCanReceiveConfirmation(statusValue) {
+    if (!normalizeText(statusValue)) return true;
+    // Nao usar o fallback "pendente" para autorizar mutacoes em texto desconhecido.
+    var status = recognizedCourierStatus(courierAffirmativeStatus(statusValue));
+    return ['agendado', 'pendente', 'naoagendado'].indexOf(status) > -1;
+  }
+
+  function courierNeedsSchedule(statusValue, awb) {
+    if (!normalizeText(statusValue)) return !String(awb || '').trim();
+    var status = recognizedCourierStatus(courierAffirmativeStatus(statusValue));
+    return status === 'naoagendado' || status === 'pendente';
+  }
+
+  function courierStatusRequiresEventDate(statusValue) {
+    var status = courierAffirmativeStatus(statusValue);
+    return status.indexOf('colet') > -1 || status.indexOf('envi') > -1 || status.indexOf('entreg') > -1;
+  }
+  // END GENERATED AGENDA RULES
+
   var Context = Object.freeze({
     LIST: 'lista',
     DAILY_HEADER: 'cabecalho-diario',
@@ -18,62 +282,19 @@
     ADD_TO_GOOGLE_CALENDAR: 'adicionar-google-agenda'
   });
 
-  function normalizeText(value) {
-    return String(value == null ? '' : value)
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase();
-  }
-
-  function statusKey(eventOrStatus) {
-    var status = normalizeText(
-      eventOrStatus && typeof eventOrStatus === 'object'
-        ? eventOrStatus.status
-        : eventOrStatus
-    );
-    if (status.indexOf('cancel') > -1) return 'cancelado';
-    if (status.indexOf('nao agend') > -1) return 'naoagendado';
-    if (status.indexOf('confirm') > -1) return 'confirmado';
-    if (status.indexOf('envi') > -1) return 'enviado';
-    if (status.indexOf('entreg') > -1) return 'entregue';
-    if (status.indexOf('realiz') > -1) return 'realizado';
-    if (status.indexOf('concl') > -1) return 'concluido';
-    if (status.indexOf('reag') > -1) return 'reagendado';
-    if (status.indexOf('pend') > -1) return 'pendente';
-    return 'agendado';
-  }
-
-  function typeKey(eventOrType) {
-    var type = normalizeText(
-      eventOrType && typeof eventOrType === 'object'
-        ? eventOrType.tipo
-        : eventOrType
-    );
-    if (type.indexOf('monitoria') > -1) return 'monitoria';
-    if (type === 'siv' || type.indexOf('site initiation') > -1) return 'siv';
-    if (type.indexOf('close-out') > -1 || type.indexOf('closeout') > -1) return 'closeout';
-    if (type.indexOf('visita') > -1) return 'visita';
-    if (type.indexOf('consulta') > -1) return 'consulta';
-    if (type.indexOf('imagem') > -1) return 'exame-imagem';
-    if (type.indexOf('laborator') > -1) return 'exame-laboratorial';
-    if (type.indexOf('amostra') > -1) return 'envio-amostras';
-    if (type.indexOf('feriado') > -1) return 'feriado';
-    if (type.indexOf('reuniao') > -1) return 'reuniao';
-    if (type.indexOf('auditoria') > -1) return 'auditoria';
-    return type || 'evento';
-  }
+  var Indicator = Object.freeze({
+    CANCELLATIONS: 'cancelamentos',
+    DAILY_HEADER: 'cabecalho-diario',
+    DASHBOARD_CANCELLATIONS_RESCHEDULES: 'dashboard-cancelamentos-reagendamentos',
+    DASHBOARD_MONITORING: 'dashboard-monitorias',
+    DASHBOARD_COMPLETED_VISITS: 'dashboard-visitas-realizadas',
+    DASHBOARD_COMPLETED_TRANSPORT: 'dashboard-transportes-realizados',
+    DASHBOARD_LAB_CENTRAL: 'dashboard-lab-central',
+    LAB_CENTRAL: 'lab-central'
+  });
 
   function isCancelled(event) {
     return statusKey(event) === 'cancelado';
-  }
-
-  function isStatus(event, expectedStatus) {
-    return statusKey(event) === String(expectedStatus || '').toLowerCase();
-  }
-
-  function isType(event, expectedType) {
-    return typeKey(event) === String(expectedType || '').toLowerCase();
   }
 
   function isRescheduled(event) {
@@ -121,83 +342,9 @@
     return typeKey(event) === 'visita';
   }
 
-  function hasTransportOperation(event) {
-    var type = typeKey(event);
-    return type === 'visita' || type === 'envio-amostras';
-  }
-
-  function typeRequiresLabCentral(eventOrType) {
-    if (isPhoneContact(eventOrType)) return false;
-    var type = typeKey(eventOrType);
-    return type === 'visita' || type === 'envio-amostras';
-  }
-
-  function formPolicy(eventOrType, isEditing) {
-    var type = typeKey(eventOrType);
-    var monitoring = type === 'monitoria';
-    var siv = type === 'siv';
-    var operationalPeriod = monitoring || siv;
-    var multiDay = operationalPeriod || type === 'auditoria';
-    var generalEvent = ['feriado', 'auditoria', 'reuniao'].indexOf(type) > -1;
-    var operationalWithoutParticipant = ['siv', 'closeout'].indexOf(type) > -1;
-    var technicalHidden = ['monitoria', 'siv', 'closeout', 'reuniao', 'feriado', 'auditoria', 'exame-imagem'].indexOf(type) > -1;
-    var requiresThirdPartyService = type === 'exame-imagem' || type === 'exame-laboratorial';
-    return {
-      type: type,
-      isMonitoring: monitoring,
-      isSiv: siv,
-      isOperationalPeriod: operationalPeriod,
-      isMultiDay: multiDay,
-      isVisit: type === 'visita',
-      hideGeneralEvent: generalEvent,
-      hideDetails: generalEvent || operationalWithoutParticipant || monitoring,
-      technicalFieldsAvailable: (!!isEditing || type === 'envio-amostras') && !technicalHidden,
-      labChoiceAllowed: !technicalHidden && !isPhoneContact(eventOrType) && type !== 'exame-laboratorial',
-      requiresThirdPartyService: requiresThirdPartyService,
-      requiresLabCentral: typeRequiresLabCentral(eventOrType),
-      requiresProject: operationalPeriod,
-      requiresMonitorAndRoom: monitoring,
-      requiresDoctor: type === 'consulta',
-      requiresTime: !operationalPeriod || monitoring
-    };
-  }
-
-  function typePluralLabel(eventOrType, count, fallback) {
-    var type = typeKey(eventOrType);
-    if (type === 'visita') return count === 1 ? 'Visita' : 'Visitas';
-    if (type === 'consulta') return count === 1 ? 'Consulta' : 'Consultas';
-    if (type === 'monitoria') return count === 1 ? 'Monitoria' : 'Monitorias';
-    if (type === 'envio-amostras') return count === 1 ? 'Envio de amostras' : 'Envios de amostras';
-    if (type === 'exame-imagem') return count === 1 ? 'Exame de imagem' : 'Exames de imagem';
-    if (type === 'exame-laboratorial') return count === 1 ? 'Exame laboratorial' : 'Exames laboratoriais';
-    if (isPhoneContact(eventOrType)) return count === 1 ? 'Contato telefônico' : 'Contatos telefônicos';
-    if (type === 'siv') return 'SIV';
-    if (type === 'closeout') return count === 1 ? 'Close-out' : 'Close-outs';
-    if (type === 'reuniao') return count === 1 ? 'Reuniao' : 'Reunioes';
-    if (type === 'auditoria') return count === 1 ? 'Auditoria' : 'Auditorias';
-    fallback = String(fallback || eventOrType || 'Evento');
-    return count === 1 ? fallback : fallback + 's';
-  }
-
   function isLabCentral(event) {
     var value = event && typeof event === 'object' ? event.labCentral : event;
     return value === true || normalizeText(value) === 'sim';
-  }
-
-  function requestObservationIndicatesSent(observation) {
-    var text = normalizeText(observation);
-    return (text.indexOf('requi') > -1 || /\breq\b/.test(text)) &&
-      (text.indexOf('ok') > -1 || text.indexOf('enviad') > -1);
-  }
-
-  function requestIsSent(eventOrStatus, observation) {
-    var status = eventOrStatus && typeof eventOrStatus === 'object'
-      ? eventOrStatus.statusRequisicao
-      : eventOrStatus;
-    var obs = eventOrStatus && typeof eventOrStatus === 'object'
-      ? eventOrStatus.obs
-      : observation;
-    return normalizeText(status).indexOf('enviad') > -1 || requestObservationIndicatesSent(obs);
   }
 
   function visualClass(event) {
@@ -210,92 +357,11 @@
   }
 
   function statusChipClass(eventOrStatus) {
-    var status = normalizeText(
-      eventOrStatus && typeof eventOrStatus === 'object'
-        ? eventOrStatus.status
-        : eventOrStatus
-    );
-    if (status === 'cancelado') return 'chip-red';
-    if (status === 'realizado') return 'chip-green';
-    if (status === 'pendente') return 'chip-yellow';
-    return 'chip-purple';
-  }
-
-  function isPhoneContact(eventOrType) {
-    var type = normalizeText(
-      eventOrType && typeof eventOrType === 'object'
-        ? eventOrType.tipo
-        : eventOrType
-    );
-    return type.indexOf('contato telefonico') > -1 || type.indexOf('telefon') > -1;
+    return 'ag-ch-' + statusKey(eventOrStatus);
   }
 
   function isPostVisitType(eventOrType) {
     return isVisit(eventOrType) || isPhoneContact(eventOrType);
-  }
-
-  function typeClass(eventOrType) {
-    var type = normalizeText(
-      eventOrType && typeof eventOrType === 'object'
-        ? eventOrType.tipo
-        : eventOrType
-    );
-    if (type.indexOf('visita') > -1) return 'ag-type-visita';
-    if (isPhoneContact(type)) return 'ag-type-default';
-    if (type === 'consulta') return 'ag-type-consulta';
-    if (type.indexOf('monitoria') > -1) return 'ag-type-monitoria';
-    if (type.indexOf('amostra') > -1) return 'ag-type-amostras';
-    if (type.indexOf('imagem') > -1) return 'ag-type-imagem';
-    if (type.indexOf('laborator') > -1 || type === 'exames laboratoriais') return 'ag-type-lab';
-    if (type.indexOf('feriado') > -1) return 'ag-type-feriado';
-    if (type === 'siv' || type.indexOf('site initiation') > -1) return 'ag-type-siv';
-    if (type.indexOf('close') > -1) return 'ag-type-closeout';
-    if (type.indexOf('reuniao') > -1) return 'ag-type-reuniao';
-    if (type.indexOf('auditoria') > -1) return 'ag-type-auditoria';
-    return 'ag-type-default';
-  }
-
-  function typeIcon(eventOrType) {
-    var type = normalizeText(
-      eventOrType && typeof eventOrType === 'object'
-        ? eventOrType.tipo
-        : eventOrType
-    );
-    if (type.indexOf('visita') > -1) return 'event_available';
-    if (isPhoneContact(type)) return 'call';
-    if (type.indexOf('monitoria') > -1) return 'visibility';
-    if (type.indexOf('amostra') > -1) return 'local_shipping';
-    if (type.indexOf('imagem') > -1) return 'image_search';
-    if (type.indexOf('laborator') > -1) return 'biotech';
-    if (type.indexOf('feriado') > -1) return 'event_busy';
-    if (type === 'siv' || type.indexOf('site initiation') > -1) return 'flag';
-    if (type.indexOf('close') > -1) return 'lock';
-    if (type.indexOf('reuniao') > -1) return 'groups';
-    if (type.indexOf('auditoria') > -1) return 'fact_check';
-    return 'event';
-  }
-
-  function typeVisualClass(eventOrType) {
-    return typeKey(eventOrType) === 'siv' ? ' type-siv' : '';
-  }
-
-  function courierStatusKey(statusValue) {
-    var status = normalizeText(statusValue);
-    if (status === 'nao aplicavel' || status === 'nao se aplica' || status === 'n/a' || status === 'na') return 'naoaplicavel';
-    if (status.indexOf('nao agend') > -1) return 'naoagendado';
-    if (status.indexOf('cancel') > -1) return 'cancelado';
-    if (status.indexOf('confirm') > -1) return 'confirmado';
-    if (status.indexOf('envi') > -1) return 'enviado';
-    if (status.indexOf('entreg') > -1) return 'entregue';
-    if (status.indexOf('colet') > -1) return 'confirmado';
-    if (status.indexOf('agend') > -1) return 'agendado';
-    if (status.indexOf('pend') > -1) return 'pendente';
-    return 'pendente';
-  }
-
-  function courierStatusRequiresEventDate(statusValue) {
-    var status = normalizeText(statusValue);
-    return status.indexOf('colet') > -1 || status.indexOf('envi') > -1 || status.indexOf('entreg') > -1;
   }
 
   function temperatureClass(value) {
@@ -307,7 +373,7 @@
   }
 
   function isVisibleIn(event, context) {
-    switch (String(context || '').toLowerCase()) {
+    switch (normalizeText(context)) {
       case Context.DAILY_HEADER:
         return !isCancelled(event);
       case Context.LIST:
@@ -321,37 +387,37 @@
       case Context.REQUESTS:
         return !isCancelled(event);
       default:
-        return true;
+        return false;
     }
   }
 
   function canPerform(event, action) {
-    switch (String(action || '').toLowerCase()) {
+    switch (normalizeText(action)) {
       case Action.ADD_TO_GOOGLE_CALENDAR:
         return !isCancelled(event);
       default:
-        return true;
+        return false;
     }
   }
 
   function countsIn(event, indicator) {
-    var key = String(indicator || '').toLowerCase();
-    if (key === 'cancelamentos') return isCancelled(event);
-    if (key === 'cabecalho-diario') return !isCancelled(event);
-    if (key === 'dashboard-cancelamentos-reagendamentos') return isCancelled(event) || isRescheduled(event);
-    if (key === 'dashboard-monitorias') return isMonitoring(event) && !isCancelled(event);
-    if (key === 'dashboard-visitas-realizadas') return isVisit(event) && isCompleted(event) && !isCancelled(event);
-    if (key === 'dashboard-transportes-realizados') return hasTransportOperation(event) && isCompleted(event) && !isCancelled(event);
-    if (key === 'dashboard-lab-central') return isLabCentral(event) && !isCancelled(event);
-    if (key === 'lab-central') {
-      return !isCancelled(event) && isLabCentral(event);
+    switch (normalizeText(indicator)) {
+      case Indicator.CANCELLATIONS: return isCancelled(event);
+      case Indicator.DAILY_HEADER: return !isCancelled(event);
+      case Indicator.DASHBOARD_CANCELLATIONS_RESCHEDULES: return isCancelled(event) || isRescheduled(event);
+      case Indicator.DASHBOARD_MONITORING: return isMonitoring(event) && !isCancelled(event);
+      case Indicator.DASHBOARD_COMPLETED_VISITS: return isVisit(event) && isCompleted(event) && !isCancelled(event);
+      case Indicator.DASHBOARD_COMPLETED_TRANSPORT: return hasTransportOperation(event) && isCompleted(event) && !isCancelled(event);
+      case Indicator.DASHBOARD_LAB_CENTRAL:
+      case Indicator.LAB_CENTRAL: return isLabCentral(event) && !isCancelled(event);
+      default: return false;
     }
-    return !isCancelled(event);
   }
 
   global.AgendaRules = Object.freeze({
     Context: Context,
     Action: Action,
+    Indicator: Indicator,
     normalizeText: normalizeText,
     statusKey: statusKey,
     typeKey: typeKey,
@@ -385,6 +451,13 @@
     typeVisualClass: typeVisualClass,
     courierStatusKey: courierStatusKey,
     courierStatusRequiresEventDate: courierStatusRequiresEventDate,
+    courierIsNotApplicable: courierIsNotApplicable,
+    courierIsSentNotDelivered: courierIsSentNotDelivered,
+    courierIsDelivered: courierIsDelivered,
+    courierIsDeliveryTerminal: courierIsDeliveryTerminal,
+    courierIsAwaitingConfirmation: courierIsAwaitingConfirmation,
+    courierCanReceiveConfirmation: courierCanReceiveConfirmation,
+    courierNeedsSchedule: courierNeedsSchedule,
     temperatureClass: temperatureClass,
     isVisibleIn: isVisibleIn,
     canPerform: canPerform,

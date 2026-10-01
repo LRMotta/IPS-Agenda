@@ -901,8 +901,7 @@ function irPara(pagina, options) {
   document.querySelectorAll('.nav-group-toggle').forEach(function(el) { el.classList.remove('open'); });
   document.querySelectorAll('.nav-group-body').forEach(function(el) { el.classList.remove('open'); });
   document.querySelectorAll('.nav-item').forEach(function(el) {
-    var oc = el.getAttribute('onclick') || '';
-    if (oc.indexOf("'" + pagina + "'") !== -1) el.classList.add('active');
+    if (el.getAttribute('data-page') === pagina) el.classList.add('active');
   });
   var cadastros = ['participantes', 'medicos', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'solicitantes', 'equipamentos', 'medicamentos'];
   if (cadastros.indexOf(pagina) !== -1) {
@@ -1531,12 +1530,6 @@ function profileFormationOptionsHtml(selected) {
 function preencherSelectFormacaoPerfil(selectId, selected) {
   var select = document.getElementById(selectId);
   if (select) select.innerHTML = profileFormationOptionsHtml(selected);
-}
-
-function userProfileChipKeydown(event) {
-  if (!event || (event.key !== 'Enter' && event.key !== ' ')) return;
-  event.preventDefault();
-  abrirMeuPerfil();
 }
 
 function abrirMeuPerfil() {
@@ -4119,6 +4112,8 @@ function confirmarExcluirPart(id, nome) {
 }
 
 function carregarMedicos(force) {
+  document.getElementById('tableMedicos').setAttribute('aria-busy', 'true');
+  document.getElementById('medicosStatus').textContent = 'Carregando médicos…';
   document.getElementById('bodyMedicos').innerHTML =
     '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
   getCadastrosBootstrapCached('medicos',
@@ -4126,7 +4121,13 @@ function carregarMedicos(force) {
       ESPS = ((res && res.config && res.config.especialidades) || []).slice();
       renderMedicos(sortCadastroByField((res && res.data) || [], 'nome'));
     },
-    function(e) { snackErro(e); },
+    function(e) {
+      document.getElementById('tableMedicos').setAttribute('aria-busy', 'false');
+      document.getElementById('medicosStatus').textContent = 'Não foi possível carregar os médicos. Tente novamente.';
+      document.getElementById('bodyMedicos').innerHTML = '<tr class="empty-row"><td colspan="6"><button type="button" class="btn-refresh" id="btnMedicosRetry">Tentar novamente</button></td></tr>';
+      document.getElementById('btnMedicosRetry').onclick = function() { carregarMedicos(true); };
+      snackErro(e);
+    },
     !!force);
 }
 
@@ -4158,6 +4159,8 @@ function filtrarMedicos(forceNow) {
 
 function renderTabela(lista) {
   var tb = document.getElementById('bodyMedicos');
+  document.getElementById('tableMedicos').setAttribute('aria-busy', 'false');
+  document.getElementById('medicosStatus').textContent = lista.length + (lista.length === 1 ? ' médico encontrado.' : ' médicos encontrados.');
   if (!lista.length) {
     tb.innerHTML = '<tr class="empty-row"><td colspan="6">Nenhum médico encontrado.</td></tr>';
     return;
@@ -4165,18 +4168,18 @@ function renderTabela(lista) {
   tb.innerHTML = lista.map(function(m, index) {
     var ini  = (m.nome || '?')[0].toUpperCase();
     return '<tr>'
-      + '<td><div class="name-cell"><div class="row-avatar">' + ini + '</div>'
+      + '<td><div class="name-cell"><div class="row-avatar">' + esc(ini) + '</div>'
       + '<div class="row-name">' + esc(m.nome) + '</div></div></td>'
       + '<td><span class="chip chip-blue">' + esc(m.especialidade || '—') + '</span></td>'
       + '<td><div class="row-name">' + esc(m.cpf || '—') + '</div>'
-      + '<div style="font-size:11px;color:#9aa3b0;margin-top:2px">CREMERS ' + esc(m.cremers || '—') + '</div></td>'
+      + '<div style="font-size:11px;color:var(--text-faint);margin-top:2px">CREMERS ' + esc(m.cremers || '—') + '</div></td>'
       + '<td style="color:#5f6b7c;">' + esc(m.telefone || '—') + '</td>'
       + '<td style="color:#5f6b7c;">' + esc(m.email || '—') + '</td>'
       + '<td><div class="action-btns">'
-      + '<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + index + '">'
-      + '<span class="material-symbols-outlined">edit</span></button>'
-      + '<button class="icon-btn del" title="Excluir" data-record-action="delete" data-record-index="' + index + '">'
-      + '<span class="material-symbols-outlined">delete</span></button>'
+      + '<button type="button" class="icon-btn" title="Editar" aria-label="Editar médico ' + esc(m.nome || 'sem nome') + '" data-record-action="edit" data-record-index="' + index + '">'
+      + '<span class="material-symbols-outlined" aria-hidden="true">edit</span></button>'
+      + '<button type="button" class="icon-btn del" title="Excluir" aria-label="Excluir médico ' + esc(m.nome || 'sem nome') + '" data-record-action="delete" data-record-index="' + index + '">'
+      + '<span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'
       + '</div></td></tr>';
   }).join('');
   bindTableRecordActions(tb, lista, {
