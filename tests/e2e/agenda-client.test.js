@@ -58,6 +58,37 @@ test('Close-out fica junto de Monitorias e SIV com tipo correto e secao recolhiv
   }
 });
 
+test('edicao consulta evento e periodo juntos preservando pulldowns e valores historicos', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      document.getElementById('agendaCreatePanel').classList.remove('open');
+      window._agendaEditId = '';
+      const data = { ...window._agendaDados, courierConfig: {}, projectCourierMap: {}, emailLabAtivo: false };
+      ['tiposEvento', 'status', 'medicos', 'prestadores', 'monitores', 'salasMonitoria', 'couriers', 'temperaturas', 'statusCourier', 'laboratoriosDestino', 'procedimentoChips', 'laboratorios', 'feriados'].forEach(key => { data[key] = []; });
+      Object.assign(data, { tiposEvento: ['Visita', 'Monitoria'], status: ['Agendado', 'Realizado'], medicos: ['Medico A', 'Medico B'], prestadores: ['Prestador A', 'Prestador B'], salasMonitoria: ['Sala 1', 'Sala 2'], couriers: ['Marken', 'Ocasa'], temperaturas: ['Ambiente', 'Congelado'], statusCourier: ['Agendado', 'Enviado'], laboratoriosDestino: ['Lab A', 'Lab B'] });
+      window.applyAgendaFormData(data);
+      window._agendaEventosScope = 'window';
+      window._agendaEventosTruncated = false;
+      window.calls.length = 0;
+      window.abrirAgendaEdicao('M1', 7);
+    });
+    assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), false);
+    assert.deepEqual(await page.evaluate(() => window.calls.map(c => ({ method: c.method, args: c.args }))), [{ method: 'getAgendaEdicaoContexto', args: ['M1', 7, true] }]);
+    await page.evaluate(() => window.calls[0].success({ evento: { id: 'M1', rowIndex: 7, tipo: 'Monitoria', status: 'Agendado', projeto: 'Estudo A', monitorName: 'Monitor historico', salaMonitoria: 'Sala 1', dataIso: '2026-10-05', hora: '08:00', recordVersion: 'atual', editRecordVersion: 'editavel' }, periodo: { eventoId: 'M1', ids: ['M1', 'M2'], inicio: '2026-10-05', fim: '2026-10-06' } }));
+    assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), true);
+    assert.equal(await page.locator('#agData').inputValue(), '2026-10-05');
+    assert.equal(await page.locator('#agDataFim').inputValue(), '2026-10-06');
+    assert.equal(await page.locator('#agMonitor1').inputValue(), 'Monitor historico');
+    assert.equal(await page.locator('#agSalaMonitoria').inputValue(), 'Sala 1');
+    assert.deepEqual(await page.locator('#agMedico option').allTextContents(), ['', 'Medico A', 'Medico B']);
+    assert.deepEqual(await page.locator('#agPrestador option').allTextContents(), ['', 'Prestador A', 'Prestador B']);
+    assert.ok((await page.locator('#agC1Nome option').allTextContents()).includes('Ocasa'));
+    assert.equal(await page.evaluate(() => window.calls.filter(c => ['getAgendaEventoPorId', 'getAgendaPeriodoOperacionalPorEventoId', 'getDadosFormularioAgenda'].includes(c.method)).length), 0);
+    assert.equal(await page.evaluate(() => window._agendaEditRecordVersion), 'atual');
+    assert.equal(await page.evaluate(() => window.agendaFormularioEstaPronto_()), true);
+  });
+});
+
 test('Agenda: colagem de AWB excedente permanece visivel e invalida em desktop e celular', async () => {
   for (const width of [1280, 390]) {
     await scenario(async page => {

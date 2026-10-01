@@ -139,11 +139,12 @@ test('recibo ignora dados e erros de solicitacao anterior', () => {
 test('abertura de edicao e resolucao tardia do periodo nao substituem a ultima tentativa', () => {
   const { context: c } = client(); const callbacks = {}; const opened = [];
   c.agendaEditOpenPerformanceStart_ = () => ({}); c.agendaComFormularioPronto_ = (callback) => callback();
-  c.agendaLogEditOpenPerformance_ = () => {}; c.agendaPreloadPeriodoEdicao_ = () => null;
-  c.agendaFetchEventoPorId_ = (id, _row, callback) => { callbacks[id] = callback; };
-  c.agendaAbrirEdicaoResolvida_ = (record, id, perf) => { opened.push([record.id, perf]); };
+  c.agendaLogEditOpenPerformance_ = () => {}; c.AgendaRules = { isMultiDay: () => false };
+  c.agendaStoreEventoLocal_ = record => record;
+  c.agendaFetchEdicaoContexto_ = (id, _row, callback) => { callbacks[id] = callback; };
+  c.agendaAbrirEdicaoResolverPeriodo_ = (record, id, perf) => { opened.push([record.id, perf]); };
   c.abrirAgendaEdicao('A', 1); c.abrirAgendaEdicao('B', 2);
-  callbacks.B({ id: 'B' }); callbacks.A({ id: 'A' });
+  callbacks.B({ evento: { id: 'B' } }); callbacks.A({ evento: { id: 'A' } });
   assert.equal(opened.length, 1); assert.equal(opened[0][0], 'B');
   let lateOpens = 0; c.abrirAgendaEdicaoComRegistro_ = () => { lateOpens += 1; };
   c.agendaAbrirEdicaoComContexto_({ id: 'A' }, 'A', { requestId: 1 });

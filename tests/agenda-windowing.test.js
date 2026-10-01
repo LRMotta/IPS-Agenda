@@ -1771,6 +1771,32 @@ test('Agenda seleciona e persiste a participacao por ID estavel', () => {
   assert.match(functionBody(server, 'ensureAgendaDestinoLabColumns_'), /agendaEnsureParticipanteCadastroColumn_\(sh\)/);
 });
 
+test('hidratacao de evento completo com ID de cadastro nao le participantes nem altera campos', () => {
+  const server = agendaServer();
+  server.agendaParticipantHydrationIndex_ = () => { throw new Error('leitura redundante de participantes'); };
+  const evento = { participanteCadastroId: 'CAD-1', participante: 'Pessoa', projeto: 'Projeto A', idParticipante: 'P-1', braco: 'A' };
+  const before = { ...evento };
+  server.agendaHydrateParticipantFields_([evento]);
+  assert.deepEqual(evento, before);
+});
+
+test('hidratacao de evento com ID de cadastro ainda completa cada campo ausente sem trocar valores historicos', () => {
+  const server = agendaServer();
+  let reads = 0;
+  server.agendaParticipantHydrationIndex_ = () => {
+    reads++;
+    return { byCadastro: { 'CAD-1': { id: 'CAD-1', nome: 'Pessoa', projeto: 'Projeto A', idParticipante: 'P-1', braco: 'A' } }, byChave: {}, byNome: {} };
+  };
+  ['participante', 'projeto', 'idParticipante', 'braco'].forEach(campo => {
+    const evento = { participanteCadastroId: 'CAD-1', participante: 'Pessoa', projeto: 'Projeto A', idParticipante: 'P-1', braco: 'A' };
+    const esperado = { ...evento };
+    evento[campo] = '';
+    server.agendaHydrateParticipantFields_([evento]);
+    assert.deepEqual(evento, esperado);
+  });
+  assert.equal(reads, 4);
+});
+
 test('Agenda oculta o identificador sintetico de eventos legados no titulo', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const context = {};
@@ -2234,9 +2260,9 @@ test('edicao busca o registro atual por ID antes de abrir e carrega o contexto o
   const contextualOpen = functionBody(client, 'agendaAbrirEdicaoComContexto_');
   assert.match(client, /function abrirAgendaEdicao\(id, rowIndex\)/);
   assert.match(open, /agendaComFormularioPronto_/);
-  assert.match(readyOpen, /agendaFetchEventoPorId_\(id, rowIndex/);
-  assert.match(client, /function agendaAbrirEdicaoResolvida_\(r, id, perf, periodPreload\)/);
-  assert.match(readyOpen, /agendaPreloadPeriodoEdicao_\(id, rowIndex, perf\)/);
+  assert.match(readyOpen, /agendaFetchEdicaoContexto_\(id, rowIndex/);
+  assert.match(readyOpen, /contexto\.periodo/);
+  assert.doesNotMatch(readyOpen, /agendaPreloadPeriodoEdicao_|agendaFetchEventoPorId_/);
   assert.match(client, /agendaLoadPeriodoOperacional_\(r/);
   assert.match(client, /function abrirAgendaEdicaoComRegistro_\(r, perf\)/);
   assert.match(contextualOpen, /abrirAgendaEdicaoComRegistro_\(r, perf\)/);
@@ -2251,13 +2277,15 @@ test('edicao nao abre a versao armazenada em cache quando existe uma linha atual
   const fresh = { id: 'EVT-1', rowIndex: 7, recordVersion: 'servidor-atual' };
   const context = vm.createContext({
     agendaFindEventoLocal_: () => cached,
-    agendaPreloadPeriodoEdicao_: () => null,
-    agendaFetchEventoPorId_: (id, rowIndex, onSuccess) => {
+    _agendaPeriodosPorEventoId: {},
+    agendaFetchEdicaoContexto_: (id, rowIndex, onSuccess) => {
       calls.push(['fetch', id, rowIndex]);
-      onSuccess(fresh);
+      onSuccess({ evento: fresh });
     },
+    AgendaRules: { isMultiDay: () => false },
+    agendaStoreEventoLocal_: row => row,
     agendaLogEditOpenPerformance_: () => {},
-    agendaAbrirEdicaoResolvida_: (row, id) => calls.push(['open', row, id]),
+    agendaAbrirEdicaoResolverPeriodo_: (row, id) => calls.push(['open', row, id]),
     snackErro: (message) => calls.push(['error', message]),
     appErrorMessage: (error) => String(error)
   });
@@ -2373,6 +2401,70 @@ test('periodo operacional por ID preserva dias consecutivos e regra de cancelame
   assert.equal(calls.some((call) => call.row === 2 && call.numRows === rows.length && call.numColumns === server.AGENDA_CFG.lastCol), false);
 });
 
+test('contexto de edicao compartilha autorizacao, schema e linha atual sem mudar o periodo legado', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [
+    agendaRow(server, { id: 'M1', data: '2026-10-01', tipo: 'Monitoria', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M2', data: '2026-10-02', tipo: 'Monitoria', projeto: 'PA', monitorName: 'Monitor A', salaMonitoria: 'Sala 1' }),
+    agendaRow(server, { id: 'M3', data: '2026-10-03', tipo: 'Monitoria', projeto: 'PA', monitorName: 'Outro', salaMonitoria: 'Sala 1' })
+  ];
+  const calls = [];
+  let authorization = 0;
+  let schema = 0;
+  server.codexAssertCanRead_ = () => { authorization++; };
+  server.getAgendaSheetForRead_ = () => { schema++; return fakeAgendaRows(server, rows, calls); };
+  server.getCodexSheetDataByName_ = () => [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+  const legado = server.getAgendaPeriodoOperacionalPorEventoId('M2', 3);
+  calls.length = 0;
+  schema = authorization = 0;
+  const result = server.getAgendaEdicaoContexto('M2', 3);
+  assert.equal(authorization, 1);
+  assert.equal(schema, 1);
+  assert.equal(result.evento.id, 'M2');
+  assert.equal(result.evento.rowIndex, 3);
+  assert.equal(result.evento.recordVersion, server.agendaRecordVersionFromRow_(rows[1]));
+  assert.deepEqual(result.periodo, legado);
+  assert.equal(calls.filter(c => c.row === 3 && c.numColumns === server.AGENDA_CFG.lastCol).length, 1);
+  assert.equal(calls.some(c => c.numColumns === 1 && c.row === 3), false, 'nao rele o ID');
+  assert.equal(calls.filter(c => c.row === 2 && c.numRows === rows.length).length, 3, 'mantem as faixas estreitas do periodo');
+
+  calls.length = 0;
+  const completo = server.getAgendaEdicaoContexto('M2', 3, false);
+  assert.equal(completo.periodo, null);
+  assert.equal(calls.length, 1, 'colecao completa calcula periodo no cliente sem varredura');
+});
+
+test('contexto de edicao valida linha sugerida obsoleta, ausencia e tipo atual no servidor', () => {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  const rows = [
+    agendaRow(server, { id: 'OUTRO', tipo: 'Monitoria' }),
+    agendaRow(server, { id: 'EVT-1', data: '2026-10-01', tipo: 'Consulta', participanteCadastroId: 'CAD-1', participante: 'Pessoa', projeto: 'PA', idParticipante: 'P-1', braco: 'A' })
+  ];
+  const calls = [];
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
+  server.getCodexSheetDataByName_ = () => { throw new Error('nao deve ler participantes nem projetos'); };
+  const response = server.getAgendaEdicaoContexto('EVT-1', 2);
+  assert.equal(response.evento.id, 'EVT-1');
+  assert.equal(response.evento.rowIndex, 3);
+  assert.equal(response.periodo, null);
+  assert.equal(server.getAgendaEdicaoContexto('INEXISTENTE', 2), null);
+});
+
+test('falha ao resolver periodo conserva evento atual para fallback e telemetria nao inclui identidade', () => {
+  const logs = [];
+  const server = agendaServer({ Logger: { log: message => logs.push(message) } });
+  const rows = [agendaRow(server, { id: 'ID-SIGILOSO', tipo: 'Monitoria', projeto: 'SEGREDO' })];
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
+  server.agendaPeriodoOperacionalDaLinha_ = () => { throw new Error('erro sensivel'); };
+  const response = server.getAgendaEdicaoContexto('ID-SIGILOSO', 2);
+  assert.equal(response.evento.id, 'ID-SIGILOSO');
+  assert.equal(response.periodo, null);
+  ['authorization', 'sheet', 'locate', 'read', 'hydrate', 'event_total', 'period', 'period_unavailable', 'total'].forEach(stage => {
+    assert.ok(logs.some(log => log.includes('"stage":"' + stage + '"')), stage);
+  });
+  assert.doesNotMatch(logs.join('\n'), /ID-SIGILOSO|SEGREDO|erro sensivel/);
+});
+
 test('cliente preserva carga completa mas consumidores usam consultas especificas com fallback', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const materialPrevious = functionBody(client, 'agendaMatBioPreviousEvents_');
@@ -2410,32 +2502,37 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.doesNotMatch(client, /_agendaWindowedRange/);
 });
 
-test('edicao multidia antecipa o periodo em paralelo sem substituir a leitura atual do evento', () => {
+test('edicao multidia recebe evento atual e periodo numa unica consulta e ignora respostas obsoletas', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const calls = [];
   let eventSuccess;
-  const preload = { pending: true };
+  const periodo = { inicio: '2026-10-01', fim: '2026-10-02', ids: ['EVT-1', 'EVT-2'] };
   const fresh = { id: 'EVT-1', rowIndex: 7, tipo: 'Monitoria', recordVersion: 'servidor-atual' };
   const context = vm.createContext({
-    agendaPreloadPeriodoEdicao_: (id, rowIndex) => {
-      calls.push(['period-preload', id, rowIndex]);
-      return preload;
-    },
-    agendaFetchEventoPorId_: (id, rowIndex, onSuccess) => {
-      calls.push(['event-fetch', id, rowIndex]);
+    _agendaEditOpenRequestId: 1,
+    AgendaRules: { isMultiDay: () => true },
+    agendaEventosSaoColecaoCompleta_: () => false,
+    agendaStoreEventoLocal_: row => { calls.push(['store', row]); return row; },
+    agendaFetchEdicaoContexto_: (id, rowIndex, onSuccess) => {
+      calls.push(['context-fetch', id, rowIndex]);
       eventSuccess = onSuccess;
     },
     agendaLogEditOpenPerformance_: () => {},
-    agendaAbrirEdicaoResolvida_: (row, id, perf, receivedPreload) => calls.push(['resolve', row, id, receivedPreload]),
+    agendaAbrirEdicaoConcluirPeriodo_: (row, id, perf, receivedPeriod) => calls.push(['resolve', row, id, receivedPeriod]),
+    agendaAbrirEdicaoResolverPeriodo_: () => { throw new Error('consulta duplicada de periodo'); },
     snackErro: () => {},
     appErrorMessage: (error) => String(error)
   });
   vm.runInContext(`function agendaAbrirEdicaoPronta_(id, rowIndex, perf) {${functionBody(client, 'agendaAbrirEdicaoPronta_')}}`, context);
 
-  context.agendaAbrirEdicaoPronta_('EVT-1', 7, {});
-  assert.deepEqual(calls, [['period-preload', 'EVT-1', 7], ['event-fetch', 'EVT-1', 7]]);
-  eventSuccess(fresh);
-  assert.deepEqual(calls[2], ['resolve', fresh, 'EVT-1', preload]);
+  context.agendaAbrirEdicaoPronta_('EVT-1', 7, { requestId: 1 });
+  assert.deepEqual(calls, [['context-fetch', 'EVT-1', 7]]);
+  eventSuccess({ evento: fresh, periodo });
+  assert.deepEqual(calls[2], ['resolve', fresh, 'EVT-1', periodo]);
+  calls.length = 0;
+  context._agendaEditOpenRequestId = 2;
+  eventSuccess({ evento: fresh, periodo });
+  assert.deepEqual(calls, [], 'resposta antiga nao modifica nem o indice local nem o modal');
 });
 
 test('telemetria da abertura de edição mede barreira, RPCs e abertura sem dados do evento', () => {
@@ -2443,7 +2540,6 @@ test('telemetria da abertura de edição mede barreira, RPCs e abertura sem dado
   const telemetry = functionBody(client, 'agendaLogEditOpenPerformance_');
   const open = functionBody(client, 'abrirAgendaEdicao');
   const readyOpen = functionBody(client, 'agendaAbrirEdicaoPronta_');
-  const resolved = functionBody(client, 'agendaAbrirEdicaoResolvida_');
   const resolvePeriod = functionBody(client, 'agendaAbrirEdicaoResolverPeriodo_');
   const readyRecord = functionBody(client, 'agendaAbrirEdicaoComRegistroPronto_');
 
@@ -2452,10 +2548,10 @@ test('telemetria da abertura de edição mede barreira, RPCs e abertura sem dado
   assert.match(readyOpen, /event_rpc_start/);
   assert.match(readyOpen, /event_rpc_complete/);
   assert.match(readyOpen, /event_rpc_failure/);
-  assert.match(readyOpen, /agendaPreloadPeriodoEdicao_/);
+  assert.match(readyOpen, /agendaFetchEdicaoContexto_/);
   assert.match(resolvePeriod, /period_resolve_start/);
   assert.match(resolvePeriod, /period_rpc_failure/);
-  assert.match(resolved, /period_prefetch_reused/);
+  assert.match(readyOpen, /agendaAbrirEdicaoConcluirPeriodo_/);
   assert.match(readyRecord, /modal_open/);
   assert.match(telemetry, /formReadyAtClick/);
   assert.match(telemetry, /formReadyNow/);
