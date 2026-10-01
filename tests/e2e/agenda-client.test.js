@@ -72,20 +72,154 @@ test('edicao consulta evento e periodo juntos preservando pulldowns e valores hi
       window.calls.length = 0;
       window.abrirAgendaEdicao('M1', 7);
     });
-    assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), false);
+    assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), true);
+    assert.equal(await page.locator('#agendaEditLoadingMsg').innerText(), 'Carregando evento…');
+    assert.equal(await page.locator('#agendaCreatePanel .ag-create-body').evaluate(el => el.inert), true);
+    assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+    await page.evaluate(() => window.salvarAgendaEvento());
     assert.deepEqual(await page.evaluate(() => window.calls.map(c => ({ method: c.method, args: c.args }))), [{ method: 'getAgendaEdicaoContexto', args: ['M1', 7, true] }]);
     await page.evaluate(() => window.calls[0].success({ evento: { id: 'M1', rowIndex: 7, tipo: 'Monitoria', status: 'Agendado', projeto: 'Estudo A', monitorName: 'Monitor historico', salaMonitoria: 'Sala 1', dataIso: '2026-10-05', hora: '08:00', recordVersion: 'atual', editRecordVersion: 'editavel' }, periodo: { eventoId: 'M1', ids: ['M1', 'M2'], inicio: '2026-10-05', fim: '2026-10-06' } }));
     assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), true);
+    assert.equal(await page.locator('#agendaEditLoadingMsg').isVisible(), false);
+    assert.equal(await page.locator('#agendaCreatePanel .ag-create-body').evaluate(el => el.inert), false);
     assert.equal(await page.locator('#agData').inputValue(), '2026-10-05');
     assert.equal(await page.locator('#agDataFim').inputValue(), '2026-10-06');
     assert.equal(await page.locator('#agMonitor1').inputValue(), 'Monitor historico');
     assert.equal(await page.locator('#agSalaMonitoria').inputValue(), 'Sala 1');
+    assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), true);
     assert.deepEqual(await page.locator('#agMedico option').allTextContents(), ['', 'Medico A', 'Medico B']);
     assert.deepEqual(await page.locator('#agPrestador option').allTextContents(), ['', 'Prestador A', 'Prestador B']);
     assert.ok((await page.locator('#agC1Nome option').allTextContents()).includes('Ocasa'));
     assert.equal(await page.evaluate(() => window.calls.filter(c => ['getAgendaEventoPorId', 'getAgendaPeriodoOperacionalPorEventoId', 'getDadosFormularioAgenda'].includes(c.method)).length), 0);
     assert.equal(await page.evaluate(() => window._agendaEditRecordVersion), 'atual');
     assert.equal(await page.evaluate(() => window.agendaFormularioEstaPronto_()), true);
+    assert.equal(await page.evaluate(() => window.calls.filter(c => ['getKitsAgendaBaixaStatus', 'getKitsAgendaReservaStatus', 'getAgendaVisitasSoASugeridas', 'getInfoParticipante', 'getAgendaMateriaisAnteriores'].includes(c.method)).length), 0, 'monitoria comum nao consulta complementos clinicos');
+  });
+});
+
+test('SIV, Close-out e Auditoria dispensam consultas clinicas mesmo com campos historicos', async () => {
+  await scenario(async page => {
+    for (const tipo of ['SIV', 'Site initiation visit', 'Close-out', 'Closeout', 'Auditoria']) {
+      await page.evaluate(tipoAtual => {
+        window.calls.length = 0;
+        window.agendaAbrirEdicaoComRegistroPronto_({ id: 'HISTORICO', tipo: tipoAtual, projeto: 'Estudo A', participante: 'Nome historico', participanteCadastroId: 'P', kit: 'Kit historico', dataIso: '2026-10-05', hora: '08:00', recordVersion: 'atual' });
+      }, tipo);
+      assert.equal(await page.evaluate(() => window.calls.filter(c => ['getKitsAgendaBaixaStatus', 'getKitsAgendaReservaStatus', 'getAgendaVisitasSoASugeridas', 'getInfoParticipante', 'getAgendaMateriaisAnteriores'].includes(c.method)).length), 0, tipo);
+      assert.equal(await page.locator('#btnReservarKitsAgenda').isVisible(), false);
+      assert.equal(await page.locator('#btnBaixarKitsAgenda').isVisible(), false);
+      assert.equal(await page.evaluate(() => window._agendaEditRecord.kit), 'Kit historico');
+      assert.equal(await page.evaluate(() => window._agendaEditRecord.participante), 'Nome historico');
+      assert.equal(await page.evaluate(() => window._agendaEditRecordVersion), 'atual');
+    }
+  });
+});
+
+test('modal de edicao abre antes das referencias e permanece bloqueado em falha ou resposta obsoleta', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        document.getElementById('agendaCreatePanel').classList.remove('open');
+        window._agendaEditId = '';
+        window.calls.length = 0;
+        window.agendaComFormularioPronto_ = callback => { window.resumeEdit = callback; };
+        window.abrirAgendaEdicao('A', 2);
+      });
+      assert.equal(await page.locator('#agendaEditLoadingMsg').innerText(), 'Carregando evento…');
+      assert.equal(await page.locator('#agendaCreatePanel .ag-create-body').isVisible(), false);
+      assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+      await page.locator('#agendaCreatePanel .modal-close').click();
+      await page.evaluate(() => window.resumeEdit());
+      assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), false);
+      assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaEdicaoContexto').length), 1, 'consulta ja iniciou durante a espera das referencias');
+      await page.evaluate(() => {
+        window.calls.length = 0;
+        window.agendaComFormularioPronto_ = callback => callback();
+        window.abrirAgendaEdicao('A', 2);
+        window.abrirAgendaEdicao('B', 3);
+        const edits = window.calls.filter(c => c.method === 'getAgendaEdicaoContexto');
+        edits[0].success({ evento: { id: 'A', tipo: 'Consulta', dataIso: '2026-10-01' } });
+        edits[0].failure(new Error('Falha antiga'));
+        edits[1].failure(new Error('Falha atual'));
+        window.salvarAgendaEvento();
+      });
+      assert.ok((await page.locator('#agendaEditLoadingMsg').innerText()).includes('Não foi possível carregar'));
+      assert.equal(await page.locator('#agendaCreatePanel .ag-create-body').evaluate(el => el.inert), true);
+      assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+      assert.equal(await page.evaluate(() => window.calls.filter(c => /salvar|atualizarAgendaEvento/.test(c.method)).length), 0);
+      await page.evaluate(() => {
+        window.agendaLoadPeriodoOperacional_ = (_row, _success, failure) => failure();
+        window.agendaAbrirEdicaoResolverPeriodo_({ id: 'B', tipo: 'Monitoria' }, 'B', { requestId: window._agendaEditOpenRequestId });
+      });
+      assert.ok((await page.locator('#agendaEditLoadingMsg').innerText()).includes('confirmar os dias'));
+      assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+      await page.locator('#agendaCreatePanel .modal-close').click();
+      await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaEdicaoContexto')[1].success({ evento: { id: 'B' } }));
+      assert.equal(await page.locator('#agendaCreatePanel').evaluate(el => el.classList.contains('open')), false);
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await page.evaluate(() => window.abrirAgendaEdicao('C', 4));
+      await page.waitForFunction(() => window.getComputedStyle(document.getElementById('agendaCreatePanel')).opacity === '1');
+      await page.locator('#agendaCreatePanel .ag-create-box').screenshot({ path: path.join(dir, 'agenda-carregando-evento-' + width + '.png') });
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
+test('evento e referencias iniciam juntos e a edicao aguarda ambos em qualquer ordem', async () => {
+  for (const order of ['event-first', 'references-first']) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        const data = { ...window._agendaDados, courierConfig: {}, projectCourierMap: {}, emailLabAtivo: false };
+        ['tiposEvento', 'status', 'medicos', 'prestadores', 'monitores', 'salasMonitoria', 'couriers', 'temperaturas', 'statusCourier', 'laboratoriosDestino', 'procedimentoChips', 'laboratorios', 'feriados'].forEach(key => { data[key] = []; });
+        Object.assign(data, { tiposEvento: ['Visita', 'Monitoria'], status: ['Agendado'], salasMonitoria: ['Sala 1'], medicos: ['Medico A'], prestadores: ['Prestador A'], couriers: ['Marken', 'Ocasa'] });
+        window.referenceFixture = data;
+        window._agendaReferenceDataConfirmed = false;
+        window._agendaEventosScope = 'window';
+        window._agendaEditId = 'ANTIGO';
+        window.calls.length = 0;
+        window.abrirAgendaEdicao('M1', 7);
+      });
+      assert.deepEqual(await page.evaluate(() => window.calls.filter(c => ['getDadosFormularioAgenda', 'getAgendaEdicaoContexto'].includes(c.method)).map(c => c.method)), ['getDadosFormularioAgenda', 'getAgendaEdicaoContexto']);
+      const sendEvent = () => page.evaluate(() => window.calls.find(c => c.method === 'getAgendaEdicaoContexto').success({ evento: { id: 'M1', tipo: 'Monitoria', projeto: 'Estudo A', monitorName: 'Monitor historico', salaMonitoria: 'Sala 1', dataIso: '2026-10-05', hora: '08:00', recordVersion: 'atual' }, periodo: { eventoId: 'M1', ids: ['M1', 'M2'], inicio: '2026-10-05', fim: '2026-10-06' } }));
+      const sendReferences = () => page.evaluate(() => window.calls.find(c => c.method === 'getDadosFormularioAgenda').success(window.referenceFixture));
+      await (order === 'event-first' ? sendEvent() : sendReferences());
+      assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+      assert.equal(await page.locator('#agendaCreatePanel .ag-create-body').evaluate(el => el.inert), true);
+      assert.equal(await page.evaluate(() => window._agendaEditId), 'ANTIGO');
+      await (order === 'event-first' ? sendReferences() : sendEvent());
+      assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), true);
+      assert.equal(await page.locator('#agendaEditLoadingMsg').isVisible(), false);
+      assert.equal(await page.locator('#agDataFim').inputValue(), '2026-10-06');
+      assert.equal(await page.locator('#agMonitor1').inputValue(), 'Monitor historico');
+      assert.deepEqual(await page.locator('#agMedico option').allTextContents(), ['', 'Medico A']);
+      assert.ok((await page.locator('#agC1Nome option').allTextContents()).includes('Ocasa'));
+      assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaEdicaoContexto').length), 1);
+      assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getDadosFormularioAgenda').length), 1);
+    });
+  }
+});
+
+test('kits e SoA continuam disponiveis em visita e materiais anteriores carregam somente ao acessar a lista', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window.calls.length = 0;
+      window.agendaAbrirEdicaoComRegistroPronto_({ id: 'A', tipo: 'Visita', projeto: 'Estudo A', participanteCadastroId: 'P', participante: 'Participante de teste', idParticipante: '001', labCentral: 'Sim', kit: 'Kit A', dataIso: '2026-10-05', visita: 'V1', hora: '08:00' });
+    });
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getKitsAgendaBaixaStatus').length), 1);
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getKitsAgendaReservaStatus').length), 1);
+    assert.ok(await page.evaluate(() => window.calls.some(c => c.method === 'getAgendaVisitasSoASugeridas')));
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 0);
+    await page.locator('#agC1MatCopy').focus();
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
+    await page.evaluate(() => window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores').success({ items: [{ id: 'OLD', data: '01/10/2026', projeto: 'Estudo A', participante: 'Participante de teste', idParticipante: '001', tipo: 'Visita', visita: 'V0', courier1: { material: 'Material legado' } }] }));
+    const copy = page.locator('#agC1MatCopy');
+    const values = await copy.locator('option').evaluateAll(es => es.map(e => e.value));
+    assert.ok(values.some(value => value.startsWith('OLD|')));
+    await copy.selectOption(values.find(value => value.startsWith('OLD|')));
+    await page.evaluate(() => window.agendaMatBioUpdateAllCopyOptions());
+    assert.ok((await copy.inputValue()).startsWith('OLD|'), 'opcao escolhida preservada');
+    await page.evaluate(() => window.agendaMatBioCopyPrevious('agC1'));
+    assert.equal(await page.locator('#agC1MatPaste').inputValue(), 'Material legado');
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
   });
 });
 

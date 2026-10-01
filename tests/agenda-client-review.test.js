@@ -19,7 +19,7 @@ function client() {
   class Clock extends Date { static now() { return now; } }
   const context = vm.createContext({
     Date: Clock, console: { info() {}, warn() {} },
-    window: {}, document: { addEventListener() {}, getElementById: (id) => nodes[id] || null },
+    window: {}, document: { addEventListener() {}, querySelector: () => null, getElementById: (id) => nodes[id] || null },
     CodexMatBioTypes: { list: () => [] },
     google: { script: { run: runner() } },
     esc: (value) => String(value ?? ''), codexNormText: (value) => String(value ?? '').toLowerCase(),
@@ -58,6 +58,7 @@ test('Gerar docs envia linha e versoes, respeita conflito e atualiza a versao ap
 test('resumo na edicao preserva kit, monitor e projeto em resposta imediata, remota e falha', () => {
   const { context: c, nodes, calls } = client();
   nodes.agParticipante = { value: 'P' }; nodes.agProjeto = { value: 'Projeto historico' };
+  c.AgendaRules = { formPolicy: () => ({ usesParticipantWorkflow: true }) };
   nodes.agKit1 = { value: 'KIT-HISTORICO' }; nodes.agMonitor1 = { value: 'MONITOR-HISTORICO' };
   c._agendaDados = { participantes: [{ id: 'P', nome: 'Pessoa', projeto: 'Projeto atual' }] };
   c.atualizarAgendaProjetoLock = () => {}; c.agendaMatBioUpdateAllCopyOptions = () => {};
@@ -115,6 +116,7 @@ test('baixa e reserva ignoram sucesso e falha de modal anterior, inclusive reabe
     ['atualizarEstadoReservaKitsAgenda', 'setAgendaKitsReservaState', { reservado: true }],
   ]) {
     const { context: c, calls } = client();
+    c.agendaConsultaKitsAplicavel_ = () => true;
     const states = []; c[setter] = (...args) => states.push(args);
     c._agendaEditId = 'A'; c._agendaEditOpenRequestId = 1; c[method]('A');
     c._agendaEditId = 'B'; c._agendaEditOpenRequestId = 2; c[method]('B');
@@ -151,6 +153,11 @@ test('abertura de edicao e resolucao tardia do periodo nao substituem a ultima t
   assert.equal(lateOpens, 0);
   c._agendaEditOpenRequestId++;
   c.agendaAbrirEdicaoComContexto_({ id: 'B' }, 'B', opened[0][1]); assert.equal(lateOpens, 0);
+  let stored = 0;
+  c.AgendaRules.isMultiDay = () => true;
+  c.agendaStorePeriodoOperacional_ = () => { stored++; };
+  c.agendaAbrirEdicaoConcluirPeriodo_({ id: 'B' }, 'B', opened[0][1], { inicio: 'antigo' }, 'rpc');
+  assert.equal(stored, 0, 'resposta atrasada nao altera o cache de periodo');
 });
 
 test('cache conserva idade na reutilizacao e expira no TTL sem renovar a validade', () => {
