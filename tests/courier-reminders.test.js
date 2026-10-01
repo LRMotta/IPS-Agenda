@@ -132,6 +132,77 @@ test('nova resposta entre reserva e envio cancela cobranca', () => {
   assert.equal(f.rows[0].estado, 'REVISAO');
 });
 
+test('historico conserva tabela, estilos, links e citacoes HTML mesmo sem assinatura', () => {
+  const f = fixture();
+  const html = '<table style="color:red"><tr><td><b>Coleta</b></td></tr></table><a href="https://example.invalid">Documento</a><blockquote><i>Mensagem anterior</i></blockquote>';
+  f.original.getBody = () => html;
+  f.original.getSubject = () => 'Coleta <teste> & confirmação';
+  f.s.getGmailSignature = () => '';
+  f.config.lembreteTexto = 'Prezados <equipe> & courier';
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 1);
+  assert.ok(f.replyOptions().htmlBody.includes(html));
+  assert.match(f.replyOptions().htmlBody, /Prezados &lt;equipe&gt; &amp; courier/);
+  assert.match(f.replyOptions().htmlBody, /Coleta &lt;teste&gt; &amp; confirmação/);
+  assert.equal(f.replyOptions().inlineImages, undefined);
+  assert.match(f.messages[1].getPlainBody(), /Ref\. IPS: IPS-TRP-EVT-T1/);
+});
+
+test('HTML original e assinatura permanecem separados do fallback em texto simples', () => {
+  const f = fixture();
+  f.original.getBody = () => '<strong>Original formatado</strong>';
+  f.s.courierLembreteExecutar_();
+  assert.match(f.replyOptions().htmlBody, /<div>Minha assinatura<br>Telefone da equipe<\/div>/);
+  assert.match(f.replyOptions().htmlBody, /<strong>Original formatado<\/strong>/);
+  assert.ok(!f.replyOptions().htmlBody.includes('--- Fim do e-mail original ---'));
+});
+
+test('mensagem somente texto conserva historico escapado e anexos', () => {
+  const f = fixture();
+  f.original.getBody = () => '';
+  f.original.getPlainBody = () => 'Ref. IPS: IPS-TRP-EVT-T1\n<texto> & dados';
+  f.s.courierLembreteExecutar_();
+  assert.match(f.replyOptions().htmlBody, /&lt;texto&gt; &amp; dados/);
+  assert.equal(f.replyOptions().attachments[0], 'documento.pdf');
+});
+
+test('imagens inline usam Content-ID MIME mesmo com nomes iguais e partes aninhadas', () => {
+  const s = runFile('CourierLembretes.gs', {
+    Utilities: { base64Decode: value => [...Buffer.from(value, 'base64')], newBlob: (bytes, type) => ({ bytes, type }) }
+  });
+  const raw = [
+    'Content-Type: multipart/related; boundary="outer"', '', '--outer',
+    'Content-Type: multipart/alternative; boundary="inner"', '', '--inner',
+    'Content-Type: text/html', '', '<img src="cid:logo1">', '--inner--', '--outer',
+    'Content-Type: image/png; name="logo.png"', 'Content-ID: <logo2>', 'Content-Transfer-Encoding: base64', '', 'Ag==', '--outer',
+    'Content-Type: image/png;', ' name="logo.png"', 'Content-ID:', ' <logo1>', 'Content-Transfer-Encoding: base64', '', 'AQ==', '--outer--'
+  ].join('\r\n');
+  const result = s.courierLembreteHistoricoHtml_({ getRawContent: () => raw }, '<img src="cid:logo1"><img src="cid:logo2"><img src="cid:logo1">');
+  assert.equal(result.html, '<img src="cid:courierHistorico0"><img src="cid:courierHistorico1"><img src="cid:courierHistorico0">');
+  assert.deepEqual(result.inlineImages.courierHistorico0.bytes, [1]);
+  assert.deepEqual(result.inlineImages.courierHistorico1.bytes, [2]);
+  assert.equal(result.inlineImages.courierHistorico0.type, 'image/png');
+  const original = {
+    getRawContent: () => raw, getBody: () => '<img src="cid:logo1"><img src="cid:logo2">',
+    getPlainBody: () => 'Histórico', getAttachments: () => ['documento.pdf']
+  };
+  const options = s.courierLembreteReplyOptions_(original, 'Cobrança' + s.courierLembreteOriginalTexto_(original));
+  assert.match(options.htmlBody, /src="cid:courierHistorico0"/);
+  assert.deepEqual(options.inlineImages.courierHistorico0.bytes, [1]);
+  assert.equal(options.attachments[0], 'documento.pdf');
+  assert.throws(() => s.courierLembreteHistoricoHtml_({ getRawContent: () => raw.replace('<logo2>', '<logo1>') }, '<img src="cid:logo1">'), /ambígua/);
+  assert.throws(() => s.courierLembreteHistoricoHtml_({ getRawContent: () => raw.replace(/base64/g, 'quoted-printable') }, '<img src="cid:logo1">'), /não suportada/);
+});
+
+test('falha ao recuperar imagem inline impede envio real', () => {
+  const f = fixture();
+  f.original.getBody = () => '<img src="cid:ausente">';
+  f.original.getRawContent = () => '';
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+  assert.notEqual(f.rows[0].estado, 'ENVIADO');
+});
+
 for (const field of ['geradoEm', 'referencia', 'geradoPor', 'courier', 'gmailMessageId', 'emailEnviadoEm']) {
   test('operacao alterada antes da reserva bloqueia envio: ' + field, () => {
     const f = fixture();
@@ -209,7 +280,7 @@ test('Agenda sem candidatos rastreaveis nao e carregada', () => {
   assert.equal(f.sent(), 0);
 });
 
-test('releitura da Agenda usa bloco reduzido e linha atual, preservando IDs unicos e feriados', () => {
+test('releitura da Agenda consulta apenas IDs e linha atual, com feriados centrais frescos', () => {
   const ranges = [];
   const idx = { id: 2, data: 3, tipo: 4, hora: 5, participante: 6, projeto: 7, visita: 8, status: 9, c1: { nome: 10, status: 11, awb: 12 } };
   const rows = [
@@ -226,10 +297,9 @@ test('releitura da Agenda usa bloco reduzido e linha atual, preservando IDs unic
   let feriados = 0;
   const s = runFile('CourierLembretes.gs', {
     getAgendaSheetForRead_: () => sheet, AGENDA_CFG: { idx, lastCol: 13 },
-    getAgendaFeriadosPendenciasMap_: (values, columns) => {
+    getAgendaFeriadosPendenciasMap_: (...args) => {
       feriados++;
-      assert.equal(values[1][columns.tipo], 'Feriado');
-      assert.equal(values[1][columns.data], '07/09/2026');
+      assert.equal(args.length, 0);
       return { '2026-09-07': true };
     }
   });
@@ -244,7 +314,7 @@ test('releitura da Agenda usa bloco reduzido e linha atual, preservando IDs unic
   assert.equal(fresh.base, initial.base);
   assert.equal(fresh.feriados['2026-09-07'], true);
   assert.deepEqual(ranges.slice(1), [
-    { row: 2, col: 3, height: 2, width: 3 },
+    { row: 2, col: 3, height: 2, width: 1 },
     { row: 2, col: 1, height: 1, width: 13 }
   ]);
   rows.push([...rows[0]]);

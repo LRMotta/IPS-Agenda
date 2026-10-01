@@ -59,6 +59,21 @@ function fixture() {
   return { server, estoque, itens, reservas, reads, ss };
 }
 
+test('instrumentacao de kits mede leitura sem mudar opcoes ou adicionar consultas', () => {
+  const f = fixture();
+  const stages = [];
+  const kits = f.server.getAgendaKitsEstoque_(true, (stage, metadata, callback) => {
+    const value = callback();
+    stages.push({ stage, rowCount: metadata.rowCount });
+    return value;
+  });
+  assert.equal(kits.length, 2);
+  assert.equal(stages.length, 1);
+  assert.equal(stages[0].stage, 'reference_kits_estoque');
+  assert.ok(stages[0].rowCount >= kits.length);
+  assert.equal(f.reads.length, 3);
+});
+
 test('kits leem estoque, catalogo e reservas uma vez, sem listas de projetos', () => {
   const f = fixture();
   const kits = f.server.getAgendaKitsEstoque_(true);

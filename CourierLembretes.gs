@@ -61,10 +61,10 @@ function courierLembreteAgendaSnapshot_(somenteIndice) {
   var sh = getAgendaSheetForRead_();
   var idx = AGENDA_CFG.idx;
   var lastRow = sh.getLastRow();
-  // Na releitura, o bloco reduzido mantém unicidade do ID e feriados atuais.
-  // Os demais dados vêm apenas da linha selecionada, sem cache entre execuções.
-  var primeiraCol = somenteIndice ? Math.min(idx.id, idx.tipo, idx.data) : 0;
-  var ultimaCol = somenteIndice ? Math.max(idx.id, idx.tipo, idx.data) : AGENDA_CFG.lastCol - 1;
+  // Na releitura basta a coluna ID para manter unicidade. Feriados vem do
+  // modulo central; os demais dados vem da linha selecionada, sem cache.
+  var primeiraCol = somenteIndice ? idx.id : 0;
+  var ultimaCol = somenteIndice ? idx.id : AGENDA_CFG.lastCol - 1;
   var rows = lastRow < 2 ? [] : sh.getRange(2, primeiraCol + 1, lastRow - 1, ultimaCol - primeiraCol + 1).getDisplayValues().map(function(r) {
     return primeiraCol ? new Array(primeiraCol).concat(r) : r;
   });
@@ -73,7 +73,7 @@ function courierLembreteAgendaSnapshot_(somenteIndice) {
     sheet: sh,
     somenteIndice: !!somenteIndice,
     porId: courierLembreteIndexar_(entries, function(e) { return String(e.values[idx.id]).trim(); }),
-    feriados: getAgendaFeriadosPendenciasMap_(rows, idx)
+    feriados: getAgendaFeriadosPendenciasMap_()
   };
 }
 
@@ -122,7 +122,8 @@ function courierLembreteHoraLocal_(date) {
 }
 
 function courierLembreteDiaUtil_(date, feriados) {
-  return date.getUTCDay() !== 0 && date.getUTCDay() !== 6 && !feriados[date.toISOString().slice(0, 10)];
+  var key = date.toISOString().slice(0, 10);
+  return date.getUTCDay() !== 0 && date.getUTCDay() !== 6 && !feriados[key] && !feriados['--' + key.slice(5)];
 }
 
 function courierLembreteHorarioD1_(coletaIso, limiteTexto, feriados) {
@@ -199,15 +200,19 @@ function courierLembreteTexto_(config, atual, op, original) {
   } else if (!textoCustomizado) {
     texto = texto.replace('\n\nRef. IPS: ' + op.referencia, '\nEquipe IPS\n\nRef. IPS: ' + op.referencia);
   }
-  if (!original || typeof original.getPlainBody !== 'function') return texto;
+  return texto + courierLembreteOriginalTexto_(original);
+}
+
+function courierLembreteOriginalTexto_(original) {
+  if (!original || typeof original.getPlainBody !== 'function') return '';
   var body = String(original.getPlainBody() || '').trim();
-  if (!body) return texto;
+  if (!body) return '';
   var originalHeader = ['--- E-mail original completo ---'];
   if (typeof original.getSubject === 'function') originalHeader.push('Assunto: ' + String(original.getSubject() || '').trim());
   if (typeof original.getFrom === 'function') originalHeader.push('De: ' + String(original.getFrom() || '').trim());
   if (typeof original.getTo === 'function') originalHeader.push('Para: ' + String(original.getTo() || '').trim());
   if (typeof original.getCc === 'function' && String(original.getCc() || '').trim()) originalHeader.push('Cc: ' + String(original.getCc() || '').trim());
-  return texto + '\n\n' + originalHeader.join('\n') + '\n\n' + body + '\n--- Fim do e-mail original ---';
+  return '\n\n' + originalHeader.join('\n') + '\n\n' + body + '\n--- Fim do e-mail original ---';
 }
 
 function courierLembreteReplyOptions_(original, texto) {
@@ -216,17 +221,62 @@ function courierLembreteReplyOptions_(original, texto) {
     var attachments = original.getAttachments({ includeInlineImages: false, includeAttachments: true }) || [];
     if (attachments.length) options.attachments = attachments;
   }
+  // O texto simples continua disponível, mas não é fonte do histórico HTML.
+  var originalTexto = courierLembreteOriginalTexto_(original);
+  var inicioOriginal = originalTexto && texto.slice(-originalTexto.length) === originalTexto ? texto.length - originalTexto.length : -1;
+  var htmlOriginal = original && typeof original.getBody === 'function' ? String(original.getBody() || '').trim() : '';
+  var prefixo = inicioOriginal >= 0 && htmlOriginal ? texto.slice(0, inicioOriginal) : texto;
   var assinaturaHtml = courierLembreteAssinaturaHtml_();
   var assinatura = courierLembreteHtmlToPlain_(assinaturaHtml);
-  if (assinatura && texto) {
-    var pos = texto.indexOf(assinatura);
+  options.htmlBody = courierLembreteEscapeHtml_(prefixo);
+  if (assinatura && prefixo) {
+    var pos = prefixo.indexOf(assinatura);
     if (pos >= 0) {
-      var antes = texto.slice(0, pos);
-      var depois = texto.slice(pos + assinatura.length);
-      options.htmlBody = antes.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') + assinaturaHtml + depois.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+      var antes = prefixo.slice(0, pos);
+      var depois = prefixo.slice(pos + assinatura.length);
+      options.htmlBody = courierLembreteEscapeHtml_(antes) + assinaturaHtml + courierLembreteEscapeHtml_(depois);
     }
   }
+  if (inicioOriginal >= 0 && htmlOriginal) {
+    var fimHeader = texto.indexOf('\n\n', inicioOriginal + 2);
+    var historico = courierLembreteHistoricoHtml_(original, htmlOriginal);
+    options.htmlBody += courierLembreteEscapeHtml_(texto.slice(inicioOriginal, fimHeader + 2)) + '<blockquote class="gmail_quote" style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">' + historico.html + '</blockquote>';
+    if (Object.keys(historico.inlineImages).length) options.inlineImages = historico.inlineImages;
+  }
   return options;
+}
+
+function courierLembreteEscapeHtml_(texto) {
+  return String(texto || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+}
+
+function courierLembreteHistoricoHtml_(original, html) {
+  var imagens = Object.create(null);
+  var ids = [];
+  html.replace(/\bcid:([^"'\s<>]+)/gi, function(_, id) { if (ids.indexOf(id) < 0) ids.push(id); return _; });
+  if (!ids.length) return { html: html, inlineImages: imagens };
+  // Content-ID é a identidade da imagem. Nomes/ordem de anexos não são únicos.
+  // Leia o MIME somente quando houver CID; imagens de e-mail usam base64.
+  if (typeof original.getRawContent !== 'function') throw new Error('Imagens do histórico indisponíveis — revisão necessária');
+  var partes = String(original.getRawContent() || '').split(/(?:^|\r?\n)--[^\r\n]+(?:\r?\n|$)/);
+  var porId = Object.create(null);
+  partes.forEach(function(parte) {
+    var separador = /\r?\n\r?\n/.exec(parte);
+    if (!separador) return;
+    var header = parte.slice(0, separador.index).replace(/\r?\n[ \t]+/g, ' ');
+    var cid = /^Content-ID:\s*<([^>]+)>\s*$/im.exec(header);
+    var tipo = /^Content-Type:\s*(image\/[a-z0-9.+-]+)/im.exec(header);
+    if (!cid || !tipo || ids.indexOf(cid[1]) < 0) return;
+    if (porId[cid[1]] || !/^Content-Transfer-Encoding:\s*base64\s*$/im.test(header)) throw new Error('Imagem do histórico ambígua ou não suportada — revisão necessária');
+    var conteudo = parte.slice(separador.index + separador[0].length).replace(/\s/g, '');
+    if (!conteudo || !/^[A-Za-z0-9+/]+={0,2}$/.test(conteudo)) throw new Error('Imagem do histórico inválida — revisão necessária');
+    porId[cid[1]] = Utilities.newBlob(Utilities.base64Decode(conteudo), tipo[1], 'imagem-historico');
+  });
+  ids.forEach(function(id, n) {
+    if (!porId[id]) throw new Error('Imagem do histórico não recuperada — revisão necessária');
+    imagens['courierHistorico' + n] = porId[id];
+  });
+  return { html: html.replace(/\bcid:([^"'\s<>]+)/gi, function(_, id) { return 'cid:courierHistorico' + ids.indexOf(id); }), inlineImages: imagens };
 }
 
 function monitorarLembretesCourier(event) {

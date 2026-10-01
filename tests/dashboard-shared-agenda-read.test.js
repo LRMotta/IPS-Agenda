@@ -19,6 +19,7 @@ function fixture() {
         String(date.getDate()).padStart(2, '0')].join('-')
     }
   });
+  server.getAgendaFeriadosOperacionais_ = () => [];
   const cfg = server.AGENDA_CFG;
   function row(id, date, type, status) {
     const result = Array(cfg.lastCol).fill('');

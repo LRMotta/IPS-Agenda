@@ -25,6 +25,39 @@ async function scenario(run, options = {}) {
   } finally { await context.close(); }
 }
 
+test('Close-out fica junto de Monitorias e SIV com tipo correto e secao recolhivel', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        document.getElementById('agendaCreatePanel').classList.remove('open');
+        const mount = document.createElement('div');
+        mount.id = 'closeoutTest';
+        document.body.prepend(mount);
+        const rows = [
+          { id: 'M1', rowIndex: 1, tipo: 'Monitoria', status: 'Agendado', projeto: 'Estudo A' },
+          { id: 'S1', rowIndex: 2, tipo: 'SIV', status: 'Agendado', projeto: 'Estudo B' },
+          { id: 'C1', rowIndex: 3, tipo: 'Close-out', status: 'Agendado', projeto: 'ENERGIZE', participante: 'legacy-event:01e12b5a', medico: 'Medico de teste', hora: '08:00' },
+          { id: 'C2', rowIndex: 4, tipo: 'Close-out', status: 'Cancelado', projeto: 'Estudo C' }
+        ];
+        window.renderAgendaLista = () => { mount.innerHTML = window.agendaDayRowsHtml(rows, '2026-10-07'); };
+        window.renderAgendaLista();
+      });
+      const group = page.locator('#closeoutTest .ag-monitorias-group');
+      assert.equal(await group.locator('.ag-monitoria-compact').count(), 3);
+      const closeout = group.locator('#agCard3');
+      assert.equal(await closeout.locator('.ag-appt-name').innerText(), 'ENERGIZE');
+      assert.ok((await closeout.innerText()).includes('Close-out'));
+      assert.ok((await closeout.innerText()).includes('Medico de teste'));
+      assert.ok(!(await closeout.innerText()).includes('legacy-event:'));
+      assert.equal(await page.locator('#closeoutTest .ag-cancelados-items .ag-appt').count(), 1);
+      await group.locator('.ag-monitorias-toggle').click();
+      assert.equal(await group.locator('.ag-monitoria-compact').count(), 0);
+      await group.locator('.ag-monitorias-toggle').click();
+      assert.equal(await group.locator('.ag-monitoria-compact').count(), 3);
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
 test('Agenda: colagem de AWB excedente permanece visivel e invalida em desktop e celular', async () => {
   for (const width of [1280, 390]) {
     await scenario(async page => {

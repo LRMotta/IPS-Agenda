@@ -5411,11 +5411,11 @@
       return !AgendaRules.isCancelled(r) && AgendaRules.isType(r.tipo, 'auditoria');
     });
     return {
-      monitorias: rows.filter(function(r) { return !AgendaRules.isCancelled(r) && AgendaRules.isOperationalPeriod(r); }),
+      monitorias: rows.filter(function(r) { return !AgendaRules.isCancelled(r) && (AgendaRules.isOperationalPeriod(r) || AgendaRules.isCloseout(r)); }),
       auditorias: auditorias,
       cancelados: cancelados,
       demais: rows.filter(function(r) {
-        return !AgendaRules.isCancelled(r) && !AgendaRules.isOperationalPeriod(r) && !AgendaRules.isType(r.tipo, 'auditoria');
+        return !AgendaRules.isCancelled(r) && !AgendaRules.isOperationalPeriod(r) && !AgendaRules.isCloseout(r) && !AgendaRules.isType(r.tipo, 'auditoria');
       })
     };
   }
@@ -5432,10 +5432,10 @@
   function agendaMonitoriasGrupoHtml(monitorias, iso) {
     var expanded = _agendaMonitoriasExpandidasPorDia[iso] !== false;
     var chevron = expanded ? 'expand_less' : 'expand_more';
-    return '<section class="ag-monitorias-group" aria-label="Monitorias e SIV do dia">' +
+    return '<section class="ag-monitorias-group" aria-label="Monitorias, SIV e Close-outs do dia">' +
       '<div class="ag-monitorias-head">' +
-        '<div class="ag-monitorias-title"><strong>Monitorias e SIV</strong></div>' +
-        '<button type="button" class="ag-act-btn ag-monitorias-toggle" onclick="agendaToggleMonitoriasDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-label="' + (expanded ? 'Ocultar monitorias' : 'Exibir monitorias') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
+        '<div class="ag-monitorias-title"><strong>Monitorias, SIV e Close-outs</strong></div>' +
+        '<button type="button" class="ag-act-btn ag-monitorias-toggle" onclick="agendaToggleMonitoriasDia(\'' + esc(iso) + '\')" title="' + (expanded ? 'Ocultar seção' : 'Exibir seção') + '" aria-label="' + (expanded ? 'Ocultar monitorias, SIV e Close-outs' : 'Exibir monitorias, SIV e Close-outs') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"><span class="material-symbols-outlined">' + chevron + '</span></button>' +
       '</div>' +
       (expanded ? '<div class="ag-monitorias-items">' + monitorias.map(function(r, idx) { return agendaMonitoriaCompactaHtml(r, iso + '-monitoria-' + idx); }).join('') + '</div>' : '') +
     '</section>';
@@ -5483,7 +5483,14 @@
   function agendaCanceladoTitulo_(r) {
     if (agendaIsMonitoria(r)) return 'Monitoria';
     if (AgendaRules.isSiv(r)) return 'SIV';
-    return r.participante || r.tipo || 'Evento sem participante';
+    return agendaEventoTitulo_(r, 'Evento sem participante');
+  }
+
+  function agendaEventoTitulo_(r, fallback) {
+    r = r || {};
+    var participante = String(r.participante || '').trim();
+    if (/^legacy-event:/i.test(participante)) return String(r.tipo || '').trim() || 'Evento legado';
+    return participante || String(r.tipo || '').trim() || fallback || 'Evento legado';
   }
 
   function agendaCanceladoContexto_(r) {
@@ -5529,13 +5536,16 @@
     var cardId = agendaCardDomId(r);
     var past = r.dataIso && r.dataIso < agendaHojeIso_();
     var isSiv = AgendaRules.isSiv(r);
-    var statusClass = AgendaRules.isCancelled(r) ? ' st-cancelado' : (isSiv ? ' st-siv' : ' st-monitoria');
-    return '<div class="ag-appt ag-monitoria-compact ' + agendaTipoAccentClass(isSiv ? 'SIV' : 'Monitoria') + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
+    var isCloseout = AgendaRules.isCloseout(r);
+    var tipo = isCloseout ? 'Close-out' : (isSiv ? 'SIV' : 'Monitoria');
+    var statusClass = AgendaRules.isCancelled(r) ? ' st-cancelado' : (isCloseout ? ' st-' + agendaStatusClass(r) : (isSiv ? ' st-siv' : ' st-monitoria'));
+    return '<div class="ag-appt ag-monitoria-compact ' + agendaTipoAccentClass(tipo) + statusClass + (past ? ' past' : '') + '" id="' + cardId + '">' +
       '<div class="ag-monitoria-compact-main" onclick="agendaToggleDetail(\'' + id + '\')">' +
         '<div class="ag-appt-time">' + esc(r.hora || '--:--') + '</div>' +
-        '<div class="ag-monitoria-body"><div class="ag-monitoria-project"><span class="ag-appt-name">' + esc(r.projeto || 'Projeto não informado') + '</span>' + agendaTipoLabel(isSiv ? 'SIV' : 'Monitoria') + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
-        '<div class="ag-monitoria-meta"><div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div>' +
-        '<div class="ag-monitoria-monitor">' + agendaMetaText('person', r.monitorName || 'Monitor não informado') + '</div></div></div>' +
+        '<div class="ag-monitoria-body"><div class="ag-monitoria-project"><span class="ag-appt-name">' + esc(r.projeto || 'Projeto não informado') + '</span>' + agendaTipoLabel(tipo) + agendaStatusChipOp(r.status, r.tipo) + '</div>' +
+        '<div class="ag-monitoria-meta">' + (isCloseout
+          ? agendaMetaText('stethoscope', r.medico)
+          : '<div class="ag-monitoria-location">' + agendaMetaText('meeting_room', r.salaMonitoria || 'Local não informado') + '</div><div class="ag-monitoria-monitor">' + agendaMetaText('person', r.monitorName || 'Monitor não informado') + '</div>') + '</div></div>' +
         agendaActionMenuHtml_(r, id, past) +
       '</div>' +
       '<div class="ag-appt-detail" id="' + id + '">' + agendaDetailHtml(r) + '</div>' +
@@ -5586,7 +5596,7 @@
     var cancelados = grupos.cancelados.slice().sort(agendaSortRows);
     var html = '';
     if (monitorias.length) {
-      html += '<section class="ag-wk-section ag-wk-section-operacional" aria-label="Monitorias e SIV do dia"><div class="ag-wk-section-head"><strong>Monitorias e SIV</strong><span>' + esc(monitorias.length) + '</span></div>' + monitorias.map(agendaWeekCardHtml).join('') + '</section>';
+      html += '<section class="ag-wk-section ag-wk-section-operacional" aria-label="Monitorias, SIV e Close-outs do dia"><div class="ag-wk-section-head"><strong>Monitorias, SIV e Close-outs</strong><span>' + esc(monitorias.length) + '</span></div>' + monitorias.map(agendaWeekCardHtml).join('') + '</section>';
     }
     if (auditorias.length) {
       html += '<section class="ag-wk-section ag-wk-section-auditorias" aria-label="Auditorias do dia"><div class="ag-wk-section-head"><strong>Auditorias</strong><span>' + esc(auditorias.length) + '</span></div>' + auditorias.map(agendaWeekCardHtml).join('') + '</section>';
@@ -5813,7 +5823,7 @@
     var section = function(label, cls, rows) {
       return rows.length ? '<div class="week-section ' + cls + '"><div class="week-section-title"><strong>' + esc(label) + '</strong><span>' + esc(rows.length) + '</span></div>' + rows.slice().sort(agendaSortRows).map(agendaPrintSemanaItemHtml).join('') + '</div>' : '';
     };
-    html += section('Monitorias e SIV', 'week-section-operational', grupos.monitorias);
+    html += section('Monitorias, SIV e Close-outs', 'week-section-operational', grupos.monitorias);
     html += section('Auditorias', 'week-section-auditorias', grupos.auditorias);
     html += section('Visitas e demais eventos', 'week-section-visitas', grupos.demais);
     html += section('Cancelados', 'week-section-cancelados', grupos.cancelados);
@@ -5838,7 +5848,8 @@
   function agendaPrintNome(r) {
     if (agendaIsMonitoria(r)) return 'Monitoria';
     if (AgendaRules.isSiv(r)) return 'SIV';
-    return r.participante || r.tipo || 'Evento';
+    if (AgendaRules.isCloseout(r)) return 'Close-out';
+    return agendaEventoTitulo_(r, 'Evento');
   }
 
   function agendaPrintLogisticaHtml(r) {
@@ -6177,7 +6188,7 @@
     var isPeriodoOperacional = AgendaRules.isOperationalPeriod(r);
     var isAuditoria = AgendaRules.isType(r.tipo, 'auditoria');
     var groupedAudit = isAuditoria && options && options.groupedAudit;
-    var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (isAuditoria ? '' : (r.participante || r.tipo || 'Evento sem participante')));
+    var titulo = isMon ? 'Monitoria' : (isSiv ? 'SIV' : (isAuditoria ? '' : agendaEventoTitulo_(r, 'Evento sem participante')));
     var labSim = AgendaRules.isLabCentral(r);
     var past = r.dataIso && r.dataIso < agendaHojeIso_();
     var tipoLabel = isPeriodoOperacional ? '' : agendaTipoLabel(r.tipo);
@@ -6732,7 +6743,7 @@
     var cancelled = AgendaRules.isCancelled(r);
     var observation = AgendaRules.isType(r.tipo, 'auditoria') && r.obs ? '<div class="ag-wk-obs"><span class="material-symbols-outlined">sticky_note_2</span>' + esc(r.obs) + '</div>' : '';
     return '<div class="ag-wk-appt wa-' + agendaStatusClass(r) + agendaTipoVisualClass(r) + '" onclick="agendaAbrirNaLista(\'' + esc(r.rowIndex || '') + '\', true)">' +
-      '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (r.participante || r.tipo || 'Evento'))) + '</div>' +
+      '<div class="ag-wk-time">' + esc(r.hora || '--:--') + '</div><div class="ag-wk-name">' + esc(isMon ? 'Monitoria' : (isSiv ? 'SIV' : (AgendaRules.isCloseout(r) ? 'Close-out' : agendaEventoTitulo_(r, 'Evento')))) + '</div>' +
       (isPeriodoOperacional ? '' : '<div class="ag-wk-type" style="margin:4px 0">' + agendaTipoLabel(r.tipo) + '</div>') +
       '<div class="ag-wk-proj"><span class="material-symbols-outlined">folder_open</span>' + esc(r.projeto || '-') + '</div>' +
       (r.carroRequerido ? '<div style="margin-top:4px">' + agendaCarroChip() + '</div>' : '') +

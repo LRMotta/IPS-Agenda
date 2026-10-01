@@ -201,7 +201,7 @@ function feriadoValidatePayload_(dados) {
 function feriadoClearCaches_() {
   agendaInvalidateReferenceDataCache_(['feriados']);
   var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
-  ['AgendaFormData:v8:', 'AgendaFormData:v9:', 'AgendaFormDataStrict:v2:', 'AgendaFormDataStrict:v3:', 'AgendaBootstrapReferenceData:v1:', 'AgendaBootstrapReferenceData:v2:'].forEach(function(prefix) {
+  ['AgendaFormData:v8:', 'AgendaFormData:v9:', 'AgendaFormData:v12:', 'AgendaFormDataStrict:v2:', 'AgendaFormDataStrict:v3:', 'AgendaFormDataStrict:v6:', 'AgendaBootstrapReferenceData:v1:', 'AgendaBootstrapReferenceData:v2:'].forEach(function(prefix) {
     codexCacheRemove_(prefix + day);
   });
 }
@@ -247,62 +247,12 @@ function excluirFeriado(id) {
 }
 
 function getAgendaFeriadosOperacionais_() {
-  var byKey = {};
-  var centralDates = {};
-  var centralAnnualDays = {};
-  getFeriadosCadastro_().forEach(function(item) {
-    if (!CodexCourierRiskRules_.parseIso(item.dataIso)) return;
-    // O cadastro central prevalece tambem quando inativo ou sem restricao.
-    if (CodexCourierRiskRules_.isAnnualHoliday(item)) centralAnnualDays[item.dataIso.slice(5)] = true;
-    else centralDates[item.dataIso] = true;
-    if (!CodexCourierRiskRules_.isYes(item.ativo)) return;
-    byKey[item.dataIso + '|' + normText_(item.nome) + '|' + normText_(item.recorrencia)] = item;
-  });
-  var legacyStarted = Date.now();
-  var legacyMetrics = { rowCount: 0, cellsRead: 0, readCalls: 0 };
-  var legacySuccess = false;
-  try {
-    // Data e Tipo sao colunas fixas. Nao resolva o schema dos campos opcionais
-    // de transporte/participante para esta leitura de referencia.
-    var agenda = getSheetByPossibleNames_(getCodexSpreadsheet_(), AGENDA_CFG.abaNomes);
-    var count = agenda ? Math.max(0, agenda.getLastRow() - 1) : 0;
-    if (count) {
-      // Uma unica leitura em bloco substitui as leituras separadas de datas
-      // e tipos. Tipo e textual; a classificacao compartilhada aceita as
-      // grafias legadas. Inclui todas as datas, sem restringir feriados anuais.
-      var firstCol = Math.min(AGENDA_CFG.col.data, AGENDA_CFG.col.tipo);
-      var lastCol = Math.max(AGENDA_CFG.col.data, AGENDA_CFG.col.tipo);
-      var rows = agenda.getRange(2, firstCol, count, lastCol - firstCol + 1).getValues();
-      legacyMetrics.rowCount = count;
-      legacyMetrics.cellsRead = count * (lastCol - firstCol + 1);
-      legacyMetrics.readCalls = 1;
-      for (var i = 0; i < count; i++) {
-        if (!AgendaServerRules_.isType(rows[i][AGENDA_CFG.col.tipo - firstCol], 'feriado')) continue;
-        var dateIso = feriadoDateIso_(rows[i][AGENDA_CFG.col.data - firstCol]);
-        if (!dateIso) continue;
-        if (centralDates[dateIso] || centralAnnualDays[dateIso.slice(5)]) continue;
-        var key = dateIso + '|feriado';
-        if (!byKey[key]) byKey[key] = {
-          id: 'LEGACY-' + dateIso,
-          dataIso: dateIso,
-          data: dateIso,
-          nome: 'Feriado',
-          tipo: 'Feriado',
-          abrangencia: '',
-          afetaOperacao: 'Sim',
-          ativo: 'Sim',
-          observacao: 'Registro legado da Agenda.',
-          recorrencia: 'Data específica',
-          legado: true
-        };
-      }
-    }
-    legacySuccess = true;
-  } catch (e) {
-    Logger.log('[getAgendaFeriadosOperacionais_] Feriados legados indisponíveis: ' + e.message);
-    throw new Error('Não foi possível consultar os feriados legados da Agenda. A lista operacional pode estar incompleta; tente atualizar novamente.', { cause: e });
-  } finally { feriadoLogPerformance_('legacy', legacyStarted, legacyMetrics, legacySuccess); }
-  return Object.keys(byKey).map(function(key) { return byKey[key]; }).sort(function(a, b) {
+  // O modulo Feriados e a unica fonte operacional. Eventos antigos da Agenda
+  // nao complementam, reativam ou substituem este cadastro.
+  return getFeriadosCadastro_().filter(function(item) {
+    return CodexCourierRiskRules_.parseIso(item.dataIso) &&
+      CodexCourierRiskRules_.isYes(item.ativo);
+  }).sort(function(a, b) {
     return a.dataIso.localeCompare(b.dataIso) || a.nome.localeCompare(b.nome, 'pt-BR');
   });
 }

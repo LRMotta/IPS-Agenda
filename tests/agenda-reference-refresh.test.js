@@ -10,6 +10,7 @@ function fixture() {
   const revisions = {};
   const batches = { get: 0, put: 0 };
   const events = [];
+  const logs = [];
   let unavailable = false;
   function value(part, object = false) {
     reads[part] = (reads[part] || 0) + 1;
@@ -31,7 +32,7 @@ function fixture() {
     }
   };
   const server = runFiles(['AgendaServerRules.gs', 'CadastroRules.gs', 'WebApp.gs'], {
-    Logger: { log() {} },
+    Logger: { log(line) { logs.push(line); } },
     Utilities: { formatDate: () => '20260915', newBlob: text => ({ getBytes: () => Buffer.from(text) }) },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
     PropertiesService: { getScriptProperties: () => ({ setProperty() {}, deleteProperty() {} }) },
@@ -53,13 +54,69 @@ function fixture() {
   });
   server.agendaEmailEnabled_ = () => { value('email_enabled'); return true; };
   server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'user' });
+  server.codexCacheMetaKey_ = key => 'meta:' + key;
   server.agendaWindowedLoadingV2EnabledForAccess_ = () => true;
   server.agendaGetEventosPorPeriodo_ = (start, end, limit, fresh) => {
     events.push({ fresh, bypass: server.CODEX_CACHE_BYPASS_READS_ });
     return { items: [{ id: 'EVENTO', recordVersion: String(events.length) }], total: 1, truncated: false };
   };
-  return { server, entries, reads, revisions, batches, events, unavailable: () => { unavailable = true; } };
+  return { server, entries, reads, revisions, batches, events, logs, unavailable: () => { unavailable = true; } };
 }
+
+test('revalidacao mede listas e distingue reconstrucao de marca recente sem dados pessoais', () => {
+  const f = fixture();
+  f.server.getAgendaReferenceDataBackgroundRevalidate();
+  const before = { ...f.reads };
+  f.server.getAgendaReferenceDataBackgroundRevalidate();
+  assert.deepEqual(f.reads, before);
+  const summaries = f.logs.filter(line => line.startsWith('[CODEX_AGENDA_REFERENCE_REVALIDATE] '))
+    .map(line => JSON.parse(line.slice('[CODEX_AGENDA_REFERENCE_REVALIDATE] '.length)));
+  assert.deepEqual(summaries.map(log => log.outcome), ['rebuilt_marked', 'recent_revalidation']);
+  assert.notEqual(summaries[0].traceId, summaries[1].traceId);
+  assert.ok(summaries.every(log => log.startedAtMs > 0 && log.durationMs >= 0));
+  const stages = f.logs.filter(line => line.startsWith('[CODEX_PERF] '))
+    .map(line => JSON.parse(line.slice('[CODEX_PERF] '.length)));
+  for (const stage of ['authorization', 'reference_kits_coleta', 'reference_feriados', 'reference', 'total']) {
+    assert.ok(stages.some(log => log.stage === stage && log.traceId === summaries[0].traceId && log.success), stage);
+  }
+  assert.doesNotMatch(f.logs.join(''), /medicos-1|participantes-1|kits_coleta-1/);
+});
+
+test('revalidacoes sobrepostas antes da marca ficam identificadas como duas reconstrucoes', () => {
+  const f = fixture();
+  const original = f.server.getAgendaKitsEstoque_;
+  let nested = false;
+  f.server.getAgendaKitsEstoque_ = () => {
+    if (!nested) {
+      nested = true;
+      f.server.getAgendaReferenceDataBackgroundRevalidate();
+    }
+    return original();
+  };
+  f.server.getAgendaReferenceDataBackgroundRevalidate();
+  const summaries = f.logs.filter(line => line.startsWith('[CODEX_AGENDA_REFERENCE_REVALIDATE] '))
+    .map(line => JSON.parse(line.slice('[CODEX_AGENDA_REFERENCE_REVALIDATE] '.length)));
+  assert.equal(summaries.length, 2);
+  assert.ok(summaries.every(log => log.outcome === 'rebuilt_marked'));
+  assert.notEqual(summaries[0].traceId, summaries[1].traceId);
+  assert.equal(f.reads.kits_coleta, 2);
+  assert.equal(f.server.CODEX_CACHE_BYPASS_READS_, false);
+});
+
+test('falha de reconstrucao e cache indisponivel preservam bypass, fallback e diagnostico', () => {
+  const f = fixture();
+  f.unavailable();
+  f.server.getAgendaReferenceDataBackgroundRevalidate();
+  assert.ok(f.logs.some(line => line.includes('rebuilt_marker_failed')));
+  f.server.getAgendaKitsEstoque_ = () => { throw Error('falha kits'); };
+  f.server.CODEX_CACHE_BYPASS_READS_ = true;
+  assert.throws(() => f.server.getAgendaReferenceDataBackgroundRevalidate(), /falha kits/);
+  assert.equal(f.server.CODEX_CACHE_BYPASS_READS_, true);
+  assert.ok(f.logs.some(line => line.includes('"outcome":"failed"')));
+  f.server.Logger.log = () => { throw Error('logger'); };
+  f.server.getAgendaKitsEstoque_ = () => [];
+  assert.ok(f.server.getAgendaReferenceDataBackgroundRevalidate());
+});
 
 test('atualizacao automatica, pos-gravacao e explicita leem eventos frescos sem reconstruir listas', () => {
   const f = fixture();
@@ -154,7 +211,7 @@ test('mutacoes de estoque e feriados conectam invalidacao persistente das listas
     assert.match(body(name), /agendaInvalidateKitsReference_\(\)/, name);
   }
   for (const name of ['atualizarAgendaEventoCompleto', '_gravarLinhaEvento']) {
-    assert.match(body(name), /isType\([^\n]+['"]feriado['"]\)[^\n]+agendaInvalidateReferenceDataCache_\(\['feriados'\]\)/);
+    assert.doesNotMatch(body(name), /agendaInvalidateReferenceDataCache_\(\['feriados'\]\)/);
   }
   assert.match(readProjectFile('Feriados.gs'), /function feriadoClearCaches_\(\)\s*\{\s*agendaInvalidateReferenceDataCache_\(\['feriados'\]\)/);
 });
