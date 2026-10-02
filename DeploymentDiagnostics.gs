@@ -676,7 +676,7 @@ function codexCacheMetaKey_(key) {
 }
 
 function codexCacheItemDiagnostics_(key, label, reader) {
-  var meta = {};
+  var meta;
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(codexCacheMetaKey_(key));
     meta = raw ? JSON.parse(raw) : {};

@@ -198,7 +198,7 @@ function getWebAppUrl() {
 var AGENDA_WINDOWED_LOADING_V2 = false;
 
 function agendaWindowedLoadingV2GlobalEnabled_() {
-  var configured = '';
+  var configured;
   try {
     configured = PropertiesService.getScriptProperties().getProperty('AGENDA_WINDOWED_LOADING_V2');
   } catch (e) {
@@ -639,7 +639,7 @@ function codexNormalizeBirthday_(value) {
   var day = 0;
   var isDate = Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime());
   if (isDate) {
-    var dateParts = '';
+    var dateParts;
     try {
       dateParts = Utilities.formatDate(value, Session.getScriptTimeZone(), 'MM-dd');
     } catch (e) {
@@ -672,7 +672,7 @@ function codexNormalizeBirthday_(value) {
 }
 
 function codexBirthdayParts_(value) {
-  var normalized = '';
+  var normalized;
   try { normalized = codexNormalizeBirthday_(value); } catch (e) { normalized = ''; }
   if (!normalized) return { birthday: '', birthdayMonth: '', birthdayDay: '', birthdayLabel: '' };
   var parts = normalized.split('-');
@@ -1706,7 +1706,7 @@ function inativarUsuarioAdmin(rowIndex) {
 function codexIsValidWebAppApiToken_(token) {
   token = String(token || '').trim();
   if (!token) return false;
-  var expected = '';
+  var expected;
   try {
     expected = String(PropertiesService.getScriptProperties().getProperty('CODEX_WEBAPP_API_TOKEN') || '').trim();
   } catch (e) {
@@ -3388,7 +3388,7 @@ function reqExamesAssertGmailDraftAllowed_(requestedByEmail) {
 }
 
 function reqExamesOpenSpreadsheetForWrite_() {
-  var ss = null;
+  var ss;
   try {
     ss = getCodexSpreadsheet_();
   } catch (e) {
@@ -3399,7 +3399,7 @@ function reqExamesOpenSpreadsheetForWrite_() {
 }
 
 function reqExamesAssertSpreadsheetEditAccess_(ss) {
-  var email = '';
+  var email;
   try {
     email = Session.getEffectiveUser().getEmail();
   } catch (e0) {
@@ -3417,7 +3417,7 @@ function reqExamesAssertSpreadsheetEditAccess_(ss) {
 }
 
 function reqExamesSpreadsheetPermissionError_(err, action) {
-  var email = '';
+  var email;
   try {
     email = Session.getEffectiveUser().getEmail();
   } catch (e0) {
@@ -6537,7 +6537,7 @@ function salvarDadosParticipante(d) {
   var validationStartedAt = Date.now();
   codexLogPerformance_('salvarDadosParticipante', 'read_participants', validationStartedAt - lockAcquiredAt, { rowCount: participantRowCount }, true);
   var editRowIndex = -1;
-  var directOriginRowIndex = -1;
+  var directOriginRowIndex;
   var existing = null;
   if (d.id) {
     for (var editIdx = 1; editIdx < rows.length; editIdx++) {
@@ -8177,7 +8177,7 @@ function salvarItemEstoque(payload) {
     ? soaUniqueIds_(payload.visitasAplicaveisIds) : null;
   var bracosAplicaveisIds = Object.prototype.hasOwnProperty.call(payload, 'bracosAplicaveisIds')
     ? soaUniqueIds_(payload.bracosAplicaveisIds) : null;
-  var visitasProjeto = null;
+  var visitasProjeto;
   if (bracosAplicaveisIds && bracosAplicaveisIds.length) {
     if (!estoqueTipoPermiteVinculoSoA_(payload.tipo)) {
       throw new Error('Somente modelos de Kit ou Bulk Supply podem ser específicos por braço.');
@@ -9114,8 +9114,8 @@ function registrarMovimentacaoEstoque(payload) {
   shEstoque.getRange(rowEstoque, 11).setValue(userEmail);
 
   var er = shEstoque.getRange(rowEstoque, 1, 1, Math.max(shEstoque.getLastColumn(), 15)).getValues()[0];
-  var movMetaCols = ensureMovimentacoesAgendaMetadataColumns_(shMov);
-  movMetaCols = ensureMovimentacoesAccessionColumn_(shMov);
+  ensureMovimentacoesAgendaMetadataColumns_(shMov);
+  var movMetaCols = ensureMovimentacoesAccessionColumn_(shMov);
   var movRow = [
     Utilities.getUuid().slice(0, 8), dataBase, tipoMov, idItem,
     payload.descricao || er[2] || '', payload.tipoItem || er[3] || '',
@@ -14162,7 +14162,6 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.procedimentos = '';
     dados.servTerc = '';
     dados.statusRequisicao = '';
-    labCentral = 'Não aplicável';
     return agendaAtualizarPeriodoMonitoria_(agenda, ss, linha, rowAnterior, dados);
   } else if (isSiv) {
     if (!String(dados.projeto || '').trim()) {
@@ -14174,7 +14173,6 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.procedimentos = '';
     dados.servTerc = '';
     dados.statusRequisicao = '';
-    labCentral = 'Não aplicável';
     return agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, 'siv');
   } else if (policy.isMultiDay) {
     dados.monitorName = '';
@@ -18186,7 +18184,7 @@ function gerarListaDestinatarios_(usuario) {
     });
   });
 
-  var user = '';
+  var user;
   try {
     user = usuario && usuario.getEmail ? usuario.getEmail() : '';
   } catch (eUser) {
