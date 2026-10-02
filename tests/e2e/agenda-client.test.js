@@ -198,7 +198,7 @@ test('evento e referencias iniciam juntos e a edicao aguarda ambos em qualquer o
   }
 });
 
-test('kits e SoA continuam disponiveis em visita e materiais anteriores carregam somente ao acessar a lista', async () => {
+test('kits e SoA continuam disponiveis e materiais anteriores carregam antes de acessar a lista', async () => {
   await scenario(async page => {
     await page.evaluate(() => {
       window.calls.length = 0;
@@ -207,7 +207,8 @@ test('kits e SoA continuam disponiveis em visita e materiais anteriores carregam
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getKitsAgendaBaixaStatus').length), 1);
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getKitsAgendaReservaStatus').length), 1);
     assert.ok(await page.evaluate(() => window.calls.some(c => c.method === 'getAgendaVisitasSoASugeridas')));
-    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 0);
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
+    assert.equal(await page.locator('#agC1MatCopy option').first().innerText(), 'Carregando materiais de visitas anteriores...');
     await page.locator('#agC1MatCopy').focus();
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
     await page.evaluate(() => window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores').success({ items: [{ id: 'OLD', data: '01/10/2026', projeto: 'Estudo A', participante: 'Participante de teste', idParticipante: '001', tipo: 'Visita', visita: 'V0', courier1: { material: 'Material legado' } }] }));
@@ -221,6 +222,40 @@ test('kits e SoA continuam disponiveis em visita e materiais anteriores carregam
     assert.equal(await page.locator('#agC1MatPaste').inputValue(), 'Material legado');
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
   });
+});
+
+test('materiais anteriores antecipados ignoram resposta de outra visita e distinguem lista vazia', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        window._agendaEventosScope = 'window';
+        window._agendaDados.participantes = [
+          { id: 'P', nome: 'Pessoa A', numId: '001', projeto: 'Estudo A' },
+          { id: 'Q', nome: 'Pessoa B', numId: '002', projeto: 'Estudo A' }
+        ];
+        window.calls.length = 0;
+        window._agendaEditOpenRequestId++;
+        window.agendaAbrirEdicaoComRegistroPronto_({ id: 'A', tipo: 'Visita', projeto: 'Estudo A', participanteCadastroId: 'P', participante: 'Pessoa A', idParticipante: '001', dataIso: '2026-10-05' });
+        window._agendaEditOpenRequestId++;
+        window.agendaAbrirEdicaoComRegistroPronto_({ id: 'B', tipo: 'Visita', projeto: 'Estudo A', participanteCadastroId: 'Q', participante: 'Pessoa B', idParticipante: '002', dataIso: '2026-10-05' });
+      });
+      assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 2);
+      await page.evaluate(() => {
+        const requests = window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores');
+        requests[0].success({ items: [{ id: 'OLD-A', participante: 'Pessoa A', idParticipante: '001', courier1: { material: 'Soro de A' } }] });
+      });
+      assert.equal(await page.locator('#agC1MatCopy').innerText(), 'Carregando materiais de visitas anteriores...');
+      await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores')[1].success({ items: [] }));
+      assert.equal(await page.locator('#agC1MatCopy').innerText(), 'Nenhum material de visita anterior disponível');
+      await page.locator('#agC1MatCopy').focus();
+      assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 2, 'foco nao repete consulta confirmada');
+      await page.waitForFunction(() => window.getComputedStyle(document.getElementById('agendaCreatePanel')).opacity === '1');
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await page.locator('#agC1Material').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(dir, 'transporte-materiais-vazio-' + width + '.png') });
+    }, { viewport: { width, height: 900 } });
+  }
 });
 
 test('Agenda: colagem de AWB excedente permanece visivel e invalida em desktop e celular', async () => {

@@ -1460,6 +1460,11 @@
   }
 
   function agendaMatBioUpdateAllCopyOptions() {
+    // Inicia depois de preencher o contexto, antes de abrir o select nativo.
+    // A consulta continua unica por contexto e nao bloqueia a abertura do modal.
+    if (agendaCreatePanelJaAberto_() && !_agendaEditLoading && !_agendaEditFilling && agendaCamposTecnicosAplicaveis()) {
+      agendaMatBioLoadPreviousOptions_();
+    }
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
   }
 
@@ -1477,13 +1482,19 @@
       if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
       return agendaMatBioEventOptions(r).length;
     }).slice(-5).reverse();
-    var opts = ['<option value="">Copiar material de visita anterior...</option>'];
+    var context = agendaMatBioCurrentContext_();
+    var labelVazio = 'Copiar material de visita anterior...';
+    if (!eventos.length && context.key && context.key === _agendaMateriaisLoadingKey) labelVazio = 'Carregando materiais de visitas anteriores...';
+    var opts = ['<option value="">' + esc(labelVazio) + '</option>'];
     eventos.forEach(function(r) {
       agendaMatBioEventOptions(r, prefix).forEach(function(opt) {
         var label = [r.data || '', r.visita || r.tipo || '', opt.label, opt.summary].filter(Boolean).join(' ? ');
         opts.push('<option value="' + esc(r.id + '|' + opt.prefix + '|' + opt.mode) + '">' + esc(label) + '</option>');
       });
     });
+    if (opts.length === 1 && context.key && context.key === _agendaMateriaisContextKey) {
+      opts[0] = '<option value="">Nenhum material de visita anterior disponível</option>';
+    }
     sel.innerHTML = opts.join('');
     if (selected && Array.prototype.some.call(sel.options, function(opt) { return opt.value === selected; })) sel.value = selected;
   }
@@ -1633,6 +1644,7 @@
     if (context.key === _agendaMateriaisContextKey || context.key === _agendaMateriaisLoadingKey) return;
     var requestId = ++_agendaMateriaisRequestId;
     _agendaMateriaisLoadingKey = context.key;
+    agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
     google.script.run
       .withSuccessHandler(function(response) {
         if (requestId !== _agendaMateriaisRequestId) return;
@@ -2157,7 +2169,10 @@
       });
     }
     aplicarEstadoTecnico();
-    if (mostrar) atualizarAgendaTransportesOpcionais();
+    if (mostrar) {
+      atualizarAgendaTransportesOpcionais();
+      agendaMatBioUpdateAllCopyOptions();
+    }
     if (!mostrar && !agendaModoEdicao()) {
       ['agC1Nome','agC1Destino','agC1Temp','agC1Status','agC1Awb',
        'agC2Nome','agC2Destino','agC2Temp','agC2Status','agC2Awb',
@@ -5117,6 +5132,7 @@
     if (p) p.classList.add('open');
     _agendaEditFilling = false;
     agendaSetEditLoading_(false);
+    agendaMatBioUpdateAllCopyOptions();
     agendaLogEditOpenPerformance_(perf, 'edit_ready', true);
     agendaOpenEditPresence(r.id, r.recordVersion || '', r.editRecordVersion || '');
     updateAgendaSaveAvailability(false);
