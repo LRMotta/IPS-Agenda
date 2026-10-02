@@ -21,6 +21,59 @@ function dashboardContext(values) {
   return context;
 }
 
+test('agregados de participantes preservam KPIs, séries e atalhos sem registros individuais', t => {
+  const server = runFile('WebApp.gs');
+  const plain = value => JSON.parse(JSON.stringify(value));
+  const norm = value => server.normText_(value);
+  const participantes = Array.from({ length: 1000 }, (_, i) => ({
+    nome: 'Pessoa ' + i, projeto: i % 2 ? 'Aurora' : ' A ',
+    status: i % 3 ? 'Ativo' : 'Em seguimento', cidade: 'Cidade ' + (i % 20), estado: 'rs'
+  }));
+  participantes.push({ nome: 'Sem projeto', status: 'Pré-triagem', cidade: '' });
+  const resumo = plain(server.dashboardAgregarParticipantes_(participantes));
+  const context = dashboardContext({ codexNormText: norm });
+  assert.equal(resumo.total, participantes.length);
+  assert.equal(resumo.ativos, 1000);
+  assert.deepEqual(resumo.porProjeto, plain(context.dashboardParticipantProjectStats(participantes)));
+  assert.deepEqual(plain(context._topDashResults(context._sortDesc(resumo.cidades), resumo.cidades, 15)),
+    plain(context.dashboardParticipantCityPairs(participantes)));
+  const elements = Object.fromEntries(['kpiProjetos', 'kpiPart', 'kpiAtivos', 'kpiZeroRecrut', 'dashTs']
+    .map(id => [id, { textContent: '', style: {} }]));
+  context.document.getElementById = id => elements[id];
+  context.document.querySelectorAll = () => [];
+  context.Chart = function() {};
+  context.projetoEstaAtivo_ = () => true;
+  ['bindDashboardKpiClicks', 'moverBlocoAgendaDashboard', 'renderDashboardAgenda', 'renderDashboardEstoque',
+    'bindDashboardChartCopyButtons', '_setChartHeight', '_doughnut'].forEach(name => { context[name] = () => {}; });
+  let charts = {};
+  context._barH = (id, labels, datasets) => { charts[id] = plain({ labels, datasets }); };
+  const projetos = [{ nomeAbreviado: 'Aurora', codigo: 'A', status: 'Recrutamento aberto' },
+    { nomeAbreviado: 'Sem recrutados', codigo: 'B', status: 'Recrutamento aberto' }];
+  context.renderDashboard({ projetos, participantes });
+  const before = plain(charts), keys = plain(context._dashKpiRecrutZeroKeys);
+  const kpis = Object.values(elements).map(el => el.textContent);
+  charts = {};
+  context.renderDashboard({ projetos, participantesResumo: resumo });
+  assert.deepEqual(charts, before);
+  assert.deepEqual(plain(context._dashKpiRecrutZeroKeys), keys);
+  assert.deepEqual(Object.values(elements).map(el => el.textContent).slice(0, 4), kpis.slice(0, 4));
+  server.codexAssertCanRead_ = () => {};
+  server.Logger = { log() {} };
+  server.getProjetos = () => projetos;
+  server.getParticipantesDashboardResumo_ = () => participantes;
+  server.getEstoque = () => [];
+  server.getAgendaDashboardResumo_ = () => ({});
+  server.getDashboardPendencias_ = () => ({});
+  const payload = plain(server.getDashboardData());
+  assert.equal(payload.participantes, undefined);
+  assert.equal(JSON.stringify(payload).includes('Pessoa '), false);
+  const legacy = { ...payload, participantes };
+  delete legacy.participantesResumo;
+  const currentBytes = Buffer.byteLength(JSON.stringify(payload)), legacyBytes = Buffer.byteLength(JSON.stringify(legacy));
+  assert.ok(currentBytes < legacyBytes / 10, `${currentBytes} vs ${legacyBytes}`);
+  t.diagnostic(`Pacote sintético de 1001 participantes: ${legacyBytes} -> ${currentBytes} bytes (${(100 * (1 - currentBytes / legacyBytes)).toFixed(1)}% menor).`);
+});
+
 test('Dashboard anuncia carregamento, sucesso e falha sem substituir o botão ou timestamp', () => {
   const attrs = {};
   const button = { disabled: false, innerHTML: 'Atualizar dados' };
