@@ -211,17 +211,68 @@ test('kits e SoA continuam disponiveis e materiais anteriores carregam antes de 
     assert.equal(await page.locator('#agC1MatCopy option').first().innerText(), 'Carregando materiais de visitas anteriores...');
     await page.locator('#agC1MatCopy').focus();
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
-    await page.evaluate(() => window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores').success({ items: [{ id: 'OLD', data: '01/10/2026', projeto: 'Estudo A', participante: 'Participante de teste', idParticipante: '001', tipo: 'Visita', visita: 'V0', courier1: { material: 'Material legado' } }] }));
+    await page.evaluate(() => window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores').success({ items: [
+      ...Array.from({ length: 7 }, (_, index) => ({
+        id: 'OLD-' + (index + 1), data: String(index + 1).padStart(2, '0') + '/10/2026', projeto: 'Estudo A',
+        participante: 'Participante de teste', idParticipante: '001', tipo: 'Visita', visita: 'V' + index,
+        courier1: { material: 'Material recente ' + index }
+      })).reverse(),
+      { id: 'OLD-BACKUP', data: '01/09/2026', projeto: 'Estudo A', participante: 'Participante de teste', idParticipante: '001', tipo: 'Visita', visita: 'Backup antigo', backup: { material: 'Backup preservado' } }
+    ] }));
     const copy = page.locator('#agC1MatCopy');
     const values = await copy.locator('option').evaluateAll(es => es.map(e => e.value));
-    assert.ok(values.some(value => value.startsWith('OLD|')));
-    await copy.selectOption(values.find(value => value.startsWith('OLD|')));
+    assert.equal(values.filter(value => value.startsWith('OLD-')).length, 5, 'Transporte I mantém seu próprio limite de cinco');
+    assert.ok(values.some(value => value.startsWith('OLD-7|')));
+    await copy.selectOption(values.find(value => value.startsWith('OLD-7|')));
     await page.evaluate(() => window.agendaMatBioUpdateAllCopyOptions());
-    assert.ok((await copy.inputValue()).startsWith('OLD|'), 'opcao escolhida preservada');
+    assert.ok((await copy.inputValue()).startsWith('OLD-7|'), 'opcao escolhida preservada');
     await page.evaluate(() => window.agendaMatBioCopyPrevious('agC1'));
-    assert.equal(await page.locator('#agC1MatPaste').inputValue(), 'Material legado');
+    assert.equal(await page.locator('#agC1MatPaste').inputValue(), 'Material recente 6');
+    const backupOptions = await page.locator('#agBackupMatCopy option').evaluateAll(es => es.map(e => e.value));
+    assert.ok(backupOptions.some(value => value.startsWith('OLD-BACKUP|')), 'Backup antigo continua disponivel apesar dos transportes recentes');
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
   });
+});
+
+test('novo agendamento disponibiliza e copia Backup anterior antes de salvar, inclusive no fallback', async () => {
+  for (const scope of ['window', 'full']) {
+    await scenario(async page => {
+      await page.evaluate(scope => {
+        const history = [
+          ...Array.from({ length: 7 }, (_, index) => ({
+            id: 'RECENTE-' + (index + 1), dataIso: '2026-10-0' + (index + 1), data: '0' + (index + 1) + '/10/2026',
+            projeto: 'Estudo A', tipo: 'Visita', courier1: { material: 'Material recente ' + index }
+          })).reverse(),
+          { id: 'BACKUP-ANTERIOR', dataIso: '2026-09-01', data: '01/09/2026', projeto: 'Estudo A', tipo: 'Visita', backup: { material: 'Plasma de Backup' } }
+        ];
+        window._agendaEventosScope = scope;
+        window._agendaEventos = scope === 'full' ? history.slice().reverse() : [];
+        window._agendaEditId = '';
+        document.getElementById('agendaCreatePanel').classList.remove('open');
+        window.calls.length = 0;
+        window.agendaAbrirCreatePanelNovoPronto_();
+        window.agendaSetTipoEnvioAmostras();
+        window.onAgendaTipoChange();
+        document.getElementById('agProjeto').value = 'Estudo A';
+        window.onAgendaProjetoChange();
+        document.getElementById('agLabCentral').value = 'Sim';
+        window.onAgendaLabCentralChange();
+        const request = window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores');
+        if (scope === 'full') request.failure(new Error('Consulta especifica indisponivel'));
+        else request.success({ items: history.slice(0, 5).concat(history.slice(-1)) });
+      }, scope);
+      assert.equal(await page.evaluate(() => window._agendaEditId), '', 'continua sendo novo agendamento');
+      await page.locator('#btnMostrarAgBackup').click();
+      assert.equal(await page.locator('#agBackupMatCopy').isVisible(), true);
+      const backup = page.locator('#agBackupMatCopy');
+      assert.ok((await backup.locator('option').allTextContents()).some(text => text.includes('Plasma de Backup')));
+      await backup.selectOption('BACKUP-ANTERIOR|agBackup|legacy');
+      await page.evaluate(() => window.agendaMatBioCopyPrevious('agBackup'));
+      assert.equal(await page.locator('#agBackupMatPaste').inputValue(), 'Plasma de Backup');
+      assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'getAgendaMateriaisAnteriores').length), 1);
+      assert.equal(await page.evaluate(() => window.calls.filter(c => ['salvarNovoEventoCompleto', 'atualizarAgendaEventoCompleto'].includes(c.method)).length), 0);
+    });
+  }
 });
 
 test('materiais anteriores antecipados ignoram resposta de outra visita e distinguem lista vazia', async () => {

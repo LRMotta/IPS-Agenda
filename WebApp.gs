@@ -17207,7 +17207,8 @@ function getAgendaMateriaisAnteriores(criteria) {
     var scanMeta = { rowCount: rowCount };
     var scan = codexMeasurePerformance_('getAgendaMateriaisAnteriores', 'scan', scanMeta, function() {
       return {
-        base: sh.getRange(2, 1, rowCount, AGENDA_CFG.col.visita).getValues(),
+        // Laboratorio Central determina se o Backup e aplicavel na conversao do evento.
+        base: sh.getRange(2, 1, rowCount, Math.max(AGENDA_CFG.col.visita, AGENDA_CFG.idx.labCentral + 1)).getValues(),
         logistics: sh.getRange(2, AGENDA_CFG.idx.c1.material + 1, rowCount, AGENDA_CFG.idx.cb.matBio - AGENDA_CFG.idx.c1.material + 1).getValues()
       };
     });
@@ -17219,7 +17220,13 @@ function getAgendaMateriaisAnteriores(criteria) {
         if (key) projetoAliases[key] = true;
       });
     }
-    var candidatos = [];
+    var slots = [
+      AGENDA_CFG.idx.c1,
+      AGENDA_CFG.idx.c2,
+      AGENDA_CFG.idx.c3,
+      AGENDA_CFG.idx.cb
+    ];
+    var candidatosPorSlot = slots.map(function() { return []; });
     for (var i = 0; i < scan.base.length; i++) {
       var base = scan.base[i];
       var id = String(base[AGENDA_CFG.idx.id] || '').trim();
@@ -17235,15 +17242,27 @@ function getAgendaMateriaisAnteriores(criteria) {
       for (var b = 0; b < base.length; b++) row[b] = base[b];
       var logistics = scan.logistics[i] || [];
       for (var l = 0; l < logistics.length; l++) row[AGENDA_CFG.idx.c1.material + l] = logistics[l];
-      if (!agendaLinhaTemMaterialAnterior_(row)) continue;
-      candidatos.push({ row: row, rowIndex: i + 2 });
+      for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+        if (agendaLinhaTemMaterialAnterior_(row, slots[slotIndex])) {
+          candidatosPorSlot[slotIndex].push({ row: row, rowIndex: i + 2 });
+        }
+      }
     }
-    candidatos.sort(function(a, b) {
+    var compararDataEvento = function(a, b) {
       var aKey = formatarDataIsoAgenda_(a.row[AGENDA_CFG.idx.data]) + ' ' + formatarHoraSafe_(a.row[AGENDA_CFG.idx.hora]);
       var bKey = formatarDataIsoAgenda_(b.row[AGENDA_CFG.idx.data]) + ' ' + formatarHoraSafe_(b.row[AGENDA_CFG.idx.hora]);
       return bKey.localeCompare(aKey) || (a.rowIndex - b.rowIndex);
+    };
+    var selecionadosPorLinha = {};
+    // O limite e por transporte; um evento com varios slots aparece uma unica vez.
+    candidatosPorSlot.forEach(function(candidatos) {
+      candidatos.sort(compararDataEvento).slice(0, limite).forEach(function(item) {
+        selecionadosPorLinha[item.rowIndex] = item;
+      });
     });
-    var selecionados = candidatos.slice(0, limite);
+    var selecionados = Object.keys(selecionadosPorLinha).map(function(rowIndex) {
+      return selecionadosPorLinha[rowIndex];
+    }).sort(compararDataEvento);
     var projetoIdsPorAlias = {};
     getCodexSheetDataByName_('Projetos').slice(1).forEach(function(row) {
       var idProjeto = String(row[0] || '').trim();
@@ -17281,9 +17300,11 @@ function agendaProjetoIdentidade_(reference) {
   return null;
 }
 
-function agendaLinhaTemMaterialAnterior_(row) {
+function agendaLinhaTemMaterialAnterior_(row, slotEspecifico) {
   var i = AGENDA_CFG.idx;
-  return [i.c1, i.c2, i.c3, i.cb].some(function(slot) {
+  return (slotEspecifico ? [slotEspecifico] : [i.c1, i.c2, i.c3, i.cb]).some(function(slot) {
+    if (slot === i.cb && (!AgendaServerRules_.formPolicy(row[i.tipo]).labChoiceAllowed ||
+        !AgendaServerRules_.isLabCentral(row[i.labCentral]))) return false;
     var json = String(row[slot.matBio] || '').trim();
     if (json) {
       if (typeof codexMatBioParseJson_ === 'function') return codexMatBioParseJson_(json).length > 0;

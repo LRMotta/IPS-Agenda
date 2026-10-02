@@ -2336,7 +2336,7 @@ test('versao editavel ignora somente alteracoes auxiliares toleradas pela Agenda
   assert.notEqual(server.agendaEditableRecordVersionFromRow_(base), server.agendaEditableRecordVersionFromRow_(negocio));
 });
 
-test('materiais anteriores usam consulta especifica, IDs estaveis e no maximo cinco visitas', () => {
+test('materiais anteriores usam consulta especifica, IDs estaveis e limitam cinco visitas por transporte', () => {
   const server = agendaServer({ Logger: { log: () => {} } });
   const i = server.AGENDA_CFG.idx;
   const rows = [];
@@ -2372,16 +2372,16 @@ test('materiais anteriores usam consulta especifica, IDs estaveis e no maximo ci
   assert.equal(response.items[0].projetoId, 'PROJ-1');
   assert.equal(response.items[0].courier1.material, 'Material 5');
   assert.equal(calls.some((call) => call.row === 2 && call.numRows === rows.length && call.numColumns === server.AGENDA_CFG.lastCol), false);
-  assert.equal(calls.some((call) => call.column === 1 && call.numColumns === server.AGENDA_CFG.col.visita), true);
+  assert.equal(calls.some((call) => call.column === 1 && call.numColumns === Math.max(server.AGENDA_CFG.col.visita, server.AGENDA_CFG.idx.labCentral + 1)), true);
   assert.equal(calls.some((call) => call.column === i.c1.material + 1 && call.numColumns === i.cb.matBio - i.c1.material + 1), true);
 });
 
 test('materiais anteriores por projeto aceitam nome e codigo sem devolver mais de cinco registros', () => {
   const server = agendaServer({ Logger: { log: () => {} } });
   const rows = [
-    agendaRow(server, { id: 'NOME', data: '2026-07-01', tipo: 'Visita', projeto: 'Projeto Alpha', backupMaterial: 'A' }),
-    agendaRow(server, { id: 'CODIGO', data: '2026-07-02', tipo: 'Visita', projeto: 'PA', backupMaterial: 'B' }),
-    agendaRow(server, { id: 'OUTRO', data: '2026-07-03', tipo: 'Visita', projeto: 'Outro Projeto', backupMaterial: 'C' })
+    agendaRow(server, { id: 'NOME', data: '2026-07-01', tipo: 'Visita', labCentral: 'Sim', projeto: 'Projeto Alpha', backupMaterial: 'A' }),
+    agendaRow(server, { id: 'CODIGO', data: '2026-07-02', tipo: 'Visita', labCentral: 'Sim', projeto: 'PA', backupMaterial: 'B' }),
+    agendaRow(server, { id: 'OUTRO', data: '2026-07-03', tipo: 'Visita', labCentral: 'Sim', projeto: 'Outro Projeto', backupMaterial: 'C' })
   ];
   server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
   server.getCodexSheetDataByName_ = (name) => name === 'Projetos'
@@ -2450,6 +2450,68 @@ test('contexto de edicao compartilha autorizacao, schema e linha atual sem mudar
   const completo = server.getAgendaEdicaoContexto('M2', 3, false);
   assert.equal(completo.periodo, null);
   assert.equal(calls.length, 1, 'colecao completa calcula periodo no cliente sem varredura');
+});
+
+test('materiais anteriores preservam o Backup mesmo quando existe apenas uma visita', () => {
+  const server = agendaServer();
+  const rows = [agendaRow(server, {
+    id: 'BACKUP-UNICO', data: '2026-07-01', tipo: 'Visita', labCentral: 'Sim',
+    idParticipante: 'PART-1', backupMaterial: 'Plasma de Backup'
+  })];
+  const calls = [];
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
+  server.getCodexSheetDataByName_ = () => [[]];
+
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: 'PART-1' });
+  assert.equal(response.items.length, 1);
+  assert.equal(response.items[0].backup.material, 'Plasma de Backup', 'a consulta preserva o campo necessario para aplicar a regra do Backup');
+  assert.equal(calls.length, 2, 'continua usando apenas as duas leituras existentes da Agenda');
+});
+
+test('materiais de Backup inaplicavel nao ocultam historico valido nem consomem o limite', () => {
+  const server = agendaServer();
+  const rows = [agendaRow(server, {
+    id: 'BACKUP-VALIDO', data: '2026-07-01', tipo: 'Visita', labCentral: 'Sim',
+    idParticipante: 'PART-1', backupMaterial: 'Backup valido'
+  })];
+  for (let day = 2; day <= 8; day += 1) {
+    rows.push(agendaRow(server, {
+      id: `BACKUP-INAPLICAVEL-${day}`, data: `2026-07-${String(day).padStart(2, '0')}`,
+      tipo: day % 2 ? 'Visita' : 'SIV', labCentral: day % 2 ? 'Não' : 'Sim',
+      idParticipante: 'PART-1', backupMaterial: 'Campo legado que nao deve aparecer'
+    }));
+  }
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows);
+  server.getCodexSheetDataByName_ = () => [[]];
+
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: 'PART-1' });
+  assert.deepEqual(Array.from(response.items, (item) => item.id), ['BACKUP-VALIDO']);
+  assert.equal(response.items[0].backup.material, 'Backup valido');
+});
+
+test('materiais anteriores preservam Backup antigo apesar de mais de cinco transportes recentes', () => {
+  const server = agendaServer();
+  const rows = [agendaRow(server, {
+    id: 'BACKUP-ANTIGO', data: '2026-07-01', hora: '08:00', tipo: 'Visita', labCentral: 'Sim',
+    participante: 'Paciente Historico', idParticipante: 'PART-1', projeto: 'Projeto Alpha', backupMaterial: 'Backup preservado'
+  })];
+  for (let day = 2; day <= 8; day += 1) {
+    rows.push(agendaRow(server, {
+      id: `TRANSPORTE-${day}`, data: `2026-07-${String(day).padStart(2, '0')}`, hora: '08:00', tipo: 'Visita',
+      participante: 'Paciente Historico', idParticipante: 'PART-1', projeto: 'Projeto Alpha', courier1Material: `Material ${day}`
+    }));
+  }
+  const calls = [];
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows, calls);
+  server.getCodexSheetDataByName_ = () => [['Id', 'Nome', 'Codigo'], ['PROJ-1', 'Projeto Alpha', 'PA']];
+
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: 'PART-1', limite: 5 });
+  assert.equal(response.limit, 5);
+  assert.equal(response.items.length, 6, 'cinco registros de Transporte I mais um evento com Backup');
+  assert.ok(response.items.some((item) => item.id === 'BACKUP-ANTIGO' && item.backup.material === 'Backup preservado'));
+  assert.deepEqual(Array.from(response.items.slice(0, 5), (item) => item.id), [
+    'TRANSPORTE-8', 'TRANSPORTE-7', 'TRANSPORTE-6', 'TRANSPORTE-5', 'TRANSPORTE-4'
+  ]);
 });
 
 test('periodo por datas frescas le detalhes proximos e preserva dias, grupos e legado', () => {
