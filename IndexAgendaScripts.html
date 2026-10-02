@@ -1195,6 +1195,8 @@
       var calc = CodexMatBioCore.calculationDisplay(formula ? formula.value : '', unit);
       row.classList.toggle('other-on', !!(cfg && cfg.outro));
       row.dataset.volumeUnit = unit;
+      // Materiais em massa usam a unidade do tipo, sem converter os numeros digitados.
+      if (cfg && cfg.unit === 'g') row.dataset.formulaUnit = unit;
       if (tubos) tubos.textContent = calc.tubosText;
       if (total) total.textContent = calc.parsed.segmentos.length && agendaMatBioUnitKey(row.dataset.formulaUnit || unit) !== unit ? 'Conversão pendente' : calc.totalText;
     });

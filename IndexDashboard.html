@@ -11,7 +11,7 @@
   var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
   var _dashKpiRecrutZeroKeys = {};
   var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v3';
-  var DASHBOARD_SESSION_CACHE_VERSION = '2026.10.01-participant-summary-v5';
+  var DASHBOARD_SESSION_CACHE_VERSION = '2026.10.02-agenda-period-summary-v6';
   var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
@@ -706,7 +706,9 @@
     var anoEl = document.getElementById('dashAgendaPeriodAno');
     var mesEl = document.getElementById('dashAgendaPeriodMes');
     if (!tipoEl || !anoEl || !mesEl) return;
-    var years = dashAgendaYears(_dashAgendaRaw);
+    var periodos = _dashAgendaResumoAtual && _dashAgendaResumoAtual.periodos;
+    var years = periodos && periodos.version === 1 && periodos.anosDisponiveis.length
+      ? periodos.anosDisponiveis : dashAgendaYears(_dashAgendaRaw);
     if (years.indexOf(Number(_dashAgendaPeriod.ano)) < 0) _dashAgendaPeriod.ano = years[0];
     tipoEl.value = _dashAgendaPeriod.tipo || 'ano';
     anoEl.innerHTML = years.map(function(y) {
@@ -760,8 +762,17 @@
     }]);
   }
 
-  // Uma passagem pelos eventos produz os KPIs e todas as séries do recorte.
+  // O contrato atual já traz o recorte calculado. Eventos são fallback de respostas legadas.
   function dashboardAggregateAgendaPeriod_() {
+    var periodos = _dashAgendaResumoAtual && _dashAgendaResumoAtual.periodos;
+    if (periodos && periodos.version === 1) {
+      if (_dashAgendaPeriod.tipo === 'global') return periodos.global;
+      var key = String(_dashAgendaPeriod.ano);
+      var data = _dashAgendaPeriod.tipo === 'mes' ? periodos.meses[key + '-' + Number(_dashAgendaPeriod.mes)] : periodos.anos[key];
+      return data || { total: 0, visits: 0, labs: 0, participants: 0, monitoringDays: 0, visitsBuckets: [], labBuckets: [],
+        protocols: [], monitoring: [], doctors: [], cancellations: [], couriers: [],
+        days: ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }) };
+    }
     var visits = Object.create(null), labs = Object.create(null), participants = Object.create(null);
     var protocols = Object.create(null), doctors = Object.create(null), monitoringDays = Object.create(null);
     var monitoring = Object.create(null), cancellations = Object.create(null), couriers = Object.create(null);
@@ -789,7 +800,7 @@
         if (key) participants[key] = 1;
         if (validDate) days[date.getDay()].value++;
       }
-      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_LAB_CENTRAL)) {
+      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_LAB_CENTRAL) && !future) {
         result.labs++;
         add(labs, bucket);
       }
@@ -822,10 +833,10 @@
 
   function renderDashboardAgendaPeriodCharts(aggregate) {
     var ag = _dashAgendaResumoAtual || {};
-    var data = _dashAgendaRaw.length ? (aggregate || dashboardAggregateAgendaPeriod_()) : {
+    var data = aggregate || (_dashAgendaRaw.length ? dashboardAggregateAgendaPeriod_() : {
       protocols: ag.visitasPorProtocolo || [], monitoring: ag.monitoriaPorProtocolo || [],
       doctors: ag.visitasPorMedico || [], cancellations: ag.cancelReagPorProtocolo || [], couriers: ag.courierUsoAno || []
-    };
+    });
     renderDashAgendaPairChart('chartAgendaProt', data.protocols, 'Visitas', 'rgba(18,102,241,.72)');
     renderDashAgendaPairChart('chartAgendaMonProt', data.monitoring, 'Dias', 'rgba(91,33,182,.72)');
     renderDashAgendaPairChart('chartAgendaMedico', data.doctors, 'Visitas', 'rgba(46,125,50,.72)');
@@ -882,8 +893,8 @@
 
   function renderDashboardAgendaPeriodoResumo() {
     var ag = _dashAgendaResumoAtual || {};
-    var aggregate = _dashAgendaRaw.length ? dashboardAggregateAgendaPeriod_() : null;
-    var ids = _dashAgendaRaw.length ? {
+    var aggregate = (ag.periodos && ag.periodos.version === 1) || _dashAgendaRaw.length ? dashboardAggregateAgendaPeriod_() : null;
+    var ids = aggregate ? {
       dashAgendaVisitasAno: aggregate.visits,
       dashAgendaParticipantesAtendidos: aggregate.participants,
       dashAgendaLabAno: aggregate.labs,
@@ -910,8 +921,8 @@
         (id === 'chartAgendaVisitasMes' ? 'Visitas realizadas' : 'Lab Central') +
         (_dashAgendaPeriod.tipo === 'global' ? ' por ano' : ' por mês');
     });
-    var visitasPeriodo = _dashAgendaRaw.length ? aggregate.visitsBuckets : (ag.visitasMes || []);
-    var labPeriodo = _dashAgendaRaw.length ? aggregate.labBuckets : (ag.labCentralMes || []);
+    var visitasPeriodo = aggregate ? aggregate.visitsBuckets : (ag.visitasMes || []);
+    var labPeriodo = aggregate ? aggregate.labBuckets : (ag.labCentralMes || []);
     var cardsTitle = document.getElementById('dashAgendaCardsTitle');
     if (cardsTitle) cardsTitle.textContent = 'Visitas realizadas' + (_dashAgendaPeriod.tipo === 'global' ? ' por ano' : ' por mês');
     var mesCards = document.getElementById('dashAgendaMesCards');
