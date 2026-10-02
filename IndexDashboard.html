@@ -11,7 +11,7 @@
   var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
   var _dashKpiRecrutZeroKeys = {};
   var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v3';
-  var DASHBOARD_SESSION_CACHE_VERSION = '2026.09.30-section-status-v4';
+  var DASHBOARD_SESSION_CACHE_VERSION = '2026.10.01-participant-summary-v5';
   var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
@@ -547,11 +547,12 @@
     dashboardSectionAvailability_('dashEstoqueBlock', true);
     var proj = d.projetos || [];
     var part = d.participantes || [];
+    var partResumo = d.participantesResumo;
     var est = d.estoqueResumo || {};
     var projetosAtivos = proj.filter(projetoEstaAtivo_);
     var projetosPart = proj.filter(_isProjetoContaParticipantesDash);
-    var partProjetoStats = dashboardParticipantProjectStats(part);
-    var ativosCount = part.reduce(function(total, p) {
+    var partProjetoStats = partResumo ? partResumo.porProjeto : dashboardParticipantProjectStats(part);
+    var ativosCount = partResumo ? partResumo.ativos : part.reduce(function(total, p) {
       return total + (_isParticipanteAtivoOuSeguimentoDash(p) ? 1 : 0);
     }, 0);
     var recrutAberto = projetosAtivos.filter(function(p) { return _normDash(p.status).indexOf('recrutamento aberto') >= 0; });
@@ -562,7 +563,7 @@
     recrutZero.forEach(function(pr) { _dashStoreProjetoKeys(_dashKpiRecrutZeroKeys, pr); });
     var esps = Object.keys(_agg(projetosAtivos, 'especialidade'));
     document.getElementById('kpiProjetos').textContent = projetosAtivos.length || '0';
-    document.getElementById('kpiPart').textContent     = part.length || '0';
+    document.getElementById('kpiPart').textContent     = (partResumo ? partResumo.total : part.length) || '0';
     document.getElementById('kpiAtivos').textContent   = ativosCount || '0';
     document.getElementById('kpiZeroRecrut').textContent = recrutZero.length || '0';
     bindDashboardKpiClicks();
@@ -617,7 +618,9 @@
         { label: 'Ativos / Em Seguimento', data: projPairs.map(function(p){ return p.ativos; }), backgroundColor: 'rgba(0,121,107,.7)', borderRadius: 4 }
       ]);
     }
-    var cidadePairs = dashboardParticipantCityPairs(part);
+    var cidadePairs = partResumo
+      ? _topDashResults(_sortDesc(partResumo.cidades), partResumo.cidades, 15)
+      : dashboardParticipantCityPairs(part);
     if (cidadePairs.length) {
       _setChartHeight('chartPartCidade', cidadePairs.length, 28, 260, 520);
       _barH('chartPartCidade', cidadePairs.map(function(p){ return p.label; }), [{

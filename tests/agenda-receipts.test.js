@@ -330,8 +330,21 @@ test('recibo de acompanhante mantém identificação na assinatura e sem quebra 
   assert.equal((html.match(/class="receipt receipt-copy"/g) || []).length, 1);
   assert.match(html, /align-items:start/);
   assert.match(html, /font-size:13px/);
-  assert.doesNotMatch(html, /font-size:11px/);
+  assert.match(html, /\.receipt-subtitle\{[^}]*font-size:11px/);
   assert.match(html, /margin:54px auto 0/);
+});
+
+test('recibos exibem o subtítulo do beneficiário abaixo do título nas três vias', () => {
+  const context = receiptPrintContext();
+  for (const [tipo, subtitulo] of [
+    ['Participante', 'Participante de Pesquisa'],
+    ['Acompanhante', 'Acompanhante de Participante de Pesquisa']
+  ]) {
+    const html = context.agendaReciboPrintHtml_({}, { tipo, nome: 'Beneficiário', valor: 80 });
+    const titulo = '<h2>RECIBO DE RESSARCIMENTO</h2><div class="receipt-subtitle">' + subtitulo + '</div>';
+    assert.equal(html.split(titulo).length - 1, 3);
+    assert.match(html, /\.receipt-subtitle\{[^}]*text-transform:uppercase/);
+  }
 });
 
 test('recibo valida CPF do beneficiário e do titular antes de imprimir', () => {

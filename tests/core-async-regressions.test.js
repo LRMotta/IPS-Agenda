@@ -16,6 +16,59 @@ function loadFunctions(context, names) {
   return context;
 }
 
+test('braços descartam respostas obsoletas após trocar participante ou limpar projeto', () => {
+  const requests = [], rendered = [];
+  const fields = { ptProjeto: { value: 'A' }, ptBracoOpcao: {}, ptBraco: { value: '' } };
+  const c = loadFunctions({ _participanteBracosConsulta: null,
+    document: { getElementById: id => fields[id] }, appServerRun: options => requests.push(options),
+    renderBracosParticipante: (...args) => rendered.push(args)
+  }, ['carregarBracosParticipante']);
+  c.carregarBracosParticipante('A', 'Braço antigo');
+  c.carregarBracosParticipante('A', 'Braço novo');
+  requests[0].onSuccess(['Obsoleto']);
+  requests[0].onFailure();
+  assert.equal(rendered.length, 0);
+  requests[1].onSuccess(['Atual']);
+  assert.equal(rendered[0][1], 'Braço novo');
+  fields.ptProjeto.value = '';
+  c.carregarBracosParticipante('', '');
+  requests[1].onSuccess(['Obsoleto']);
+  assert.equal(rendered.length, 2);
+  const edit = source.slice(source.indexOf('function abrirFormPart('), source.indexOf('function abrirFormParticipante('));
+  assert.equal((edit.match(/carregarBracosParticipante\(/g) || []).length, 0);
+  assert.ok(edit.indexOf("document.getElementById('ptBraco').value") < edit.indexOf('preencherProjetosParticipante(p.projeto'));
+});
+
+test('histórico anterior bloqueia duplicação, permite retry e ignora resposta de outra Jornada', () => {
+  const requests = [];
+  const fields = { jornadaHistoricoAnteriorStatus: {} };
+  const c = loadFunctions({ window: { _jornadaParticipanteConsulta: {} },
+    _jornadaParticipanteDados: { participante: { nome: 'A', projeto: 'P' }, eventosAnteriores: [] },
+    document: { getElementById: id => fields[id] }, appServerRun: options => requests.push(options),
+    appErrorMessage: error => error.message,
+    jornadaHistoricoAnteriorHtml_: () => ''
+  }, ['carregarHistoricoAnteriorJornada']);
+  const button = {};
+  c.carregarHistoricoAnteriorJornada(button);
+  c.carregarHistoricoAnteriorJornada(button);
+  assert.equal(requests.length, 1);
+  assert.equal(button.disabled, true);
+  requests[0].onFailure(new Error('Falhou'));
+  assert.equal(button.disabled, false);
+  assert.equal(fields.jornadaHistoricoAnteriorStatus.textContent, 'Falhou');
+  c.carregarHistoricoAnteriorJornada(button);
+  requests[1].onSuccess({ total: 1, eventos: [{ visita: 'V1' }] });
+  c.carregarHistoricoAnteriorJornada(button);
+  assert.equal(requests.length, 2);
+  c._jornadaParticipanteDados = { participante: { nome: 'A', projeto: 'P' } };
+  c.carregarHistoricoAnteriorJornada(button);
+  const current = { participante: { nome: 'B', projeto: 'P' } };
+  c._jornadaParticipanteDados = current;
+  c.window._jornadaParticipanteConsulta = {};
+  requests[2].onSuccess({ total: 51, proximoOffset: null, eventos: [{ visita: 'V2' }] });
+  assert.equal(current.eventosAnteriores, undefined);
+});
+
 function cadastroFixture() {
   const requests = [];
   const context = loadFunctions({

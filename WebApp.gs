@@ -105,6 +105,23 @@ function consultarJornadaParticipante(payload) {
   return getJornadaParticipante(payload);
 }
 
+function consultarHistoricoAnteriorJornada(payload) {
+  codexAssertCanRead_();
+  payload = payload || {};
+  var meta = {};
+  return codexMeasureReadPerformance_('consultarHistoricoAnteriorJornada', 'total', meta, function() {
+    var eventos = jornadaLerEventos_(payload).filter(function(evento) { return !agendaSoAEventoFazParteDoIPS_(evento); });
+    eventos.sort(function(a, b) { return a.data.getTime() - b.data.getTime(); });
+    var result = {
+      total: eventos.length,
+      eventos: eventos.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; })
+    };
+    meta.rowCount = result.eventos.length;
+    meta.responseBytes = codexSerializedByteLength_(JSON.stringify(result));
+    return result;
+  });
+}
+
 function consultarConcilicaoVisitasParticipante(payload) {
   codexAssertCanRead_();
   return getConcilicaoVisitasParticipante(payload);
@@ -381,9 +398,12 @@ function getCadastrosBootstrapData(page) {
     config: null
   };
   if (page === 'participantes') {
-    out.config = getParticipanteFormConfig();
-    out.data = getParticipantes();
-    out.projetos = getProjetosParticipantesOptions_();
+    return codexMeasureReadPerformance_('getCadastrosBootstrapData', 'participants', {}, function() {
+      out.config = getParticipanteFormConfig();
+      out.data = getParticipantes();
+      out.projetos = getProjetosParticipantesOptions_();
+      return out;
+    });
   } else if (page === 'projetos') {
     out.config = getProjetoFormConfig();
     out.data = getProjetos();
@@ -4177,7 +4197,7 @@ function getSoAVisitasProjeto(projeto) {
   if (!projetoNorm) return [];
   var sheet = getSoAVisitasSheet_(false);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  var rows = sheet.getDataRange().getValues();
+  var rows = jornadaLerReferencias_(sheet);
   var map = soaHeaderMap_(rows[0] || []);
   var c = {
     id: soaHeaderIndex_(map, ['ID_SoA'], 0), projeto: soaHeaderIndex_(map, ['Projeto'], 1),
@@ -5198,7 +5218,7 @@ function getBracosProjeto(projeto) {
   if (!projetoNorm) return [];
   var sheet = getProjetoBracosSheet_(false);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  var rows = sheet.getDataRange().getValues();
+  var rows = jornadaLerReferencias_(sheet);
   var headers = rows[0] || [];
   var map = {};
   headers.forEach(function(header, index) { map[normalizeHeader_(header)] = index; });
@@ -5544,7 +5564,7 @@ function projetoCtmsJornadaAtivo_(projeto) {
   var ss = getCodexSpreadsheet_();
   var sheet = ss && ss.getSheetByName('Projetos');
   if (!sheet || sheet.getLastRow() < 2) return false;
-  var rows = sheet.getDataRange().getValues();
+  var rows = jornadaLerReferencias_(sheet);
   var columns = projetoSoAConfigColumnMap_(rows[0] || []);
   if (columns.ctmsJornadaAtivo < 0) return false;
   for (var i = 1; i < rows.length; i++) {
@@ -5560,7 +5580,7 @@ function getProjetoBaseCalculoPadrao_(projeto) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss && ss.getSheetByName('Projetos');
   if (!sheet || sheet.getLastRow() < 2) return '';
-  var rows = sheet.getDataRange().getValues();
+  var rows = jornadaLerReferencias_(sheet);
   if (rows.length < 2) return '';
   var columns = projetoSoAConfigColumnMap_(rows[0] || []);
   if (columns.baseCalculoPadrao < 0) return '';
@@ -7126,7 +7146,7 @@ function getDashboardData() {
   CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = { rows: null };
   try {
   Logger.log('[getDashboardData] Iniciando...');
-  var diag = { erros: [], avisos: [], secoes: { agenda: true, estoque: true }, projetos: [], participantes: [] };
+  var diag = { erros: [], avisos: [], secoes: { agenda: true, estoque: true }, projetos: [], participantesResumo: dashboardAgregarParticipantes_([]) };
 
   function str(v) { return v == null ? '' : String(v); }
 
@@ -7164,15 +7184,7 @@ function getDashboardData() {
   try {
     var partAll = codexMeasureReadPerformance_('getDashboardData', 'participants', {}, function() { return getParticipantesDashboardResumo_() || []; });
     Logger.log('[getDashboardData] Participantes: ' + partAll.length);
-    diag.participantes = partAll.map(function(p) {
-      return {
-        nome:    str(p.nome),
-        projeto: str(p.projeto),
-        status:  str(p.status),
-        cidade:  str(p.cidade),
-        estado:  str(p.estado)
-      };
-    });
+    diag.participantesResumo = dashboardAgregarParticipantes_(partAll);
   } catch(e) {
     Logger.log('[getDashboardData] ERRO getParticipantes: ' + e.message);
     diag.erros.push('getParticipantes: ' + e.message);
@@ -7248,7 +7260,7 @@ function getDashboardData() {
   }
 
   Logger.log('[getDashboardData] Retornando. Erros: ' + JSON.stringify(diag.erros));
-  totalMeta.rowCount = diag.projetos.length + diag.participantes.length;
+  totalMeta.rowCount = diag.projetos.length + diag.participantesResumo.total;
   codexMeasureReadPerformance_('getDashboardData', 'serialize', totalMeta, function() {
     try { totalMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(diag)); } catch (ignored) {}
   });
@@ -7272,6 +7284,31 @@ function getPendenciasOperacionais() {
     access: access,
     pendencias: getDashboardPendencias_(estoque)
   };
+}
+
+function dashboardAgregarParticipantes_(participantes) {
+  var resumo = { total: 0, ativos: 0, porProjeto: Object.create(null), cidades: Object.create(null) };
+  (participantes || []).forEach(function(p) {
+    resumo.total++;
+    var status = normText_(p.status);
+    var ativo = status === 'ativo';
+    var ativoOuSeguimento = ativo || status === 'em seguimento';
+    if (ativoOuSeguimento) resumo.ativos++;
+    var projeto = normText_(p.projeto);
+    if (projeto) {
+      if (!resumo.porProjeto[projeto]) resumo.porProjeto[projeto] = { total: 0, ativos: 0, ativosStrict: 0 };
+      resumo.porProjeto[projeto].total++;
+      if (ativoOuSeguimento) resumo.porProjeto[projeto].ativos++;
+      if (ativo) resumo.porProjeto[projeto].ativosStrict++;
+    }
+    var cidade = String(p.cidade || '').trim();
+    if (ativo && cidade) {
+      var estado = String(p.estado || '').trim().toUpperCase();
+      var label = cidade + (estado ? '/' + estado : '');
+      resumo.cidades[label] = (resumo.cidades[label] || 0) + 1;
+    }
+  });
+  return resumo;
 }
 
 function getParticipantesDashboardResumo_() {
@@ -7924,6 +7961,7 @@ function getItensEstoque() {
 }
 
 function getItensEstoqueDados_(incluirProjetos) {
+  if (CODEX_JORNADA_READ_CONTEXT_) incluirProjetos = false;
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var shItens = getSheetByPossibleNames_(ss, ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
   // A hidratacao do estoque precisa apenas do catalogo. Listas de projetos
@@ -7946,7 +7984,7 @@ function getItensEstoqueDados_(incluirProjetos) {
     return { itens: [], projetos: projetos, projetosAtivos: projetosAtivos };
   }
 
-  var data  = shItens.getDataRange().getValues();
+  var data  = jornadaLerReferencias_(shItens);
   var c = getItensEstoqueColumnMap_(data[0] || []);
 
   var itens = [];
@@ -10008,7 +10046,8 @@ function getKitReservasLinhas_() {
     if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
     return String(v || '');
   }
-  return codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())), false)
+  return (CODEX_JORNADA_READ_CONTEXT_ ? jornadaLerReferencias_(sh).slice(1)
+    : codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, Math.max(KIT_RESERVA_HEADERS_.length, sh.getLastColumn())), false))
     .filter(function(r) { return String(r[0] || '').trim(); })
     .map(function(r) {
       return {
@@ -12707,8 +12746,33 @@ function jornadaReservasModeloVisita_(reservas, modelo, visita) {
   });
 }
 
+var CODEX_JORNADA_READ_CONTEXT_ = null;
+
+function jornadaLerReferencias_(sheet) {
+  if (!CODEX_JORNADA_READ_CONTEXT_) return codexReadValuesMeasured_(sheet.getDataRange(), false);
+  var key = String(sheet.getSheetId());
+  if (!Object.prototype.hasOwnProperty.call(CODEX_JORNADA_READ_CONTEXT_, key)) {
+    CODEX_JORNADA_READ_CONTEXT_[key] = codexReadValuesMeasured_(sheet.getDataRange(), false);
+  }
+  return CODEX_JORNADA_READ_CONTEXT_[key];
+}
+
 function getJornadaParticipante(payload) {
-  codexAssertCanRead_();
+  var previous = CODEX_JORNADA_READ_CONTEXT_;
+  CODEX_JORNADA_READ_CONTEXT_ = Object.create(null);
+  var meta = {};
+  try {
+    return codexMeasureReadPerformance_('getJornadaParticipante', 'total', meta, function() {
+      codexAssertCanRead_();
+      var result = getJornadaParticipanteInterno_(payload);
+      meta.rowCount = result.visitas.length;
+      meta.responseBytes = codexSerializedByteLength_(JSON.stringify(result));
+      return result;
+    });
+  } finally { CODEX_JORNADA_READ_CONTEXT_ = previous; }
+}
+
+function jornadaLerEventos_(payload) {
   payload = payload || {};
   var idCadastro = String(payload.idCadastro || payload.participanteCadastroId || '').trim();
   var nome = String(payload.nome || '').trim();
@@ -12716,8 +12780,6 @@ function getJornadaParticipante(payload) {
   var projeto = String(payload.projeto || '').trim();
   if (!nome || !projeto) throw new Error('Informe o participante e o projeto para consultar a jornada.');
   var projetoNorm = normText_(projeto);
-  var participanteNorm = normText_(nome);
-  var participanteIdNorm = normText_(participanteId);
   var cadastroIdNorm = normText_(idCadastro);
   var participantMatcher = CadastroRules_.createAgendaParticipantMatcher({
     id: idCadastro, nome: nome, idParticipante: participanteId, projeto: projeto
@@ -12725,7 +12787,7 @@ function getJornadaParticipante(payload) {
   var agenda = getAgendaSheetForRead_();
   var eventos = [];
   if (agenda && agenda.getLastRow() >= 2) {
-    var rows = agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol).getValues();
+    var rows = codexReadValuesMeasured_(agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol), false);
     rows.forEach(function(row) {
       var idx = AGENDA_CFG.idx;
       if (!AgendaServerRules_.isVisit(row[idx.tipo])) return;
@@ -12750,6 +12812,21 @@ function getJornadaParticipante(payload) {
       });
     });
   }
+  return eventos;
+}
+
+function getJornadaParticipanteInterno_(payload) {
+  payload = payload || {};
+  var idCadastro = String(payload.idCadastro || payload.participanteCadastroId || '').trim();
+  var nome = String(payload.nome || '').trim();
+  var participanteId = String(payload.idParticipante || '').trim();
+  var projeto = String(payload.projeto || '').trim();
+  if (!nome || !projeto) throw new Error('Informe o participante e o projeto para consultar a jornada.');
+  var projetoNorm = normText_(projeto);
+  var participanteNorm = normText_(nome);
+  var participanteIdNorm = normText_(participanteId);
+  var cadastroIdNorm = normText_(idCadastro);
+  var eventos = jornadaLerEventos_(payload);
   var conciliacoes = getAgendaSoAConciliacoesPorAgendaId_(eventos.map(function(evento) { return evento.id; }));
   eventos.forEach(function(evento) { evento.idSoA = String(conciliacoes[evento.id] || ''); });
   eventos.sort(function(a, b) { return a.data.getTime() - b.data.getTime(); });
@@ -12865,7 +12942,9 @@ function getJornadaParticipante(payload) {
     visitasProntidao: visitasProntidao,
     horizontePrevisao: formatarDataSafe(jornadaLimitePrevisao_(hoje)),
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
-    eventosAnteriores: eventosAnteriores.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
+    eventosAnterioresTotal: eventosAnteriores.length,
+    historicoAnteriorSobDemanda: payload.historicoAnteriorSobDemanda === true,
+    eventosAnteriores: (payload.historicoAnteriorSobDemanda === true ? [] : eventosAnteriores).map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
     conciliacao: conciliacao,
     alertasCtms: previaCtms ? {
       projetoAtivo: ctmsAtivo,
