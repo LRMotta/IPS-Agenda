@@ -188,7 +188,7 @@ function montarContextoTransporteParaTransp_(idAgenda, slot) {
 
 function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) {
   var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda);
-  var participanteInfo = {};
+  var participanteInfo;
   try {
     participanteInfo = agendaInfoParticipanteParaSalvar_({
       participanteCadastroId: evento.participantCadastroId || evento.participanteCadastroId || '',
@@ -298,7 +298,6 @@ function transporteSetAgendaLink_(range, payload) {
   var idAgenda = String(payload.idAgenda || '').trim();
   var refInterna = String(payload.refInterna || '').trim();
   if (!idAgenda) idAgenda = transporteAgendaLinkFromRef_(refInterna, '').idAgenda;
-  if (!refInterna && idAgenda) refInterna = transporteAgendaRefInterna_(idAgenda);
   transporteSetValueIfAllowed_(range, '');
   var cadastroId = String(payload.participanteCadastroId || '').trim();
   var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || '').trim();
@@ -1420,7 +1419,7 @@ function transporteSetAdjacentByLabel_(sheet, labels, value, occurrence) {
 }
 
 function transporteGetDisplayValuesCached_(sheet) {
-  var key = '';
+  var key;
   try {
     key = sheet.getParent().getId() + ':' + sheet.getSheetId() + ':' + sheet.getLastRow() + ':' + sheet.getLastColumn();
   } catch (e) {
@@ -2251,7 +2250,7 @@ function transporteWriteCachedJson_(key, value, seconds) {
 }
 
 function transporteReadParticipantesOptions_() {
-  var participantes = [];
+  var participantes;
   var investigadoresPorProjeto = transporteProjetoInvestigadorMap_();
   try {
       participantes = transporteReadParticipantesDireto_().map(function(p) {
@@ -3647,7 +3646,7 @@ function gerarPdfTransporteInterno_(options, access) {
   if (result && typeof result === 'object') result.manifestoPdfHash = manifestoPdf.hash;
   var courier = result && typeof result === 'object' ? String(result.courier || options.courier || '').trim() : String(options.courier || '').trim();
   var driveAccessWarning = result && typeof result === 'object' ? transporteDriveAccessWarning_(result.driveAccess) : '';
-  var registroMonitor = {};
+  var registroMonitor;
   try {
     registroMonitor = transporteReadRegistro_() || {};
   } catch (registroMonitorError) {
@@ -4554,7 +4553,7 @@ function transporteCodexExpandVisibilityNames_(names) {
 }
 
 function transporteCodexVisibilityNamesByCourier_(courier, temperatura) {
-  var keep = [];
+  var keep;
   if (courier === 'OCASA') {
     keep = ['DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o de AnuÃªncia de ExportaÃ§Ã£o', 'Ficha de EmergÃªncia (OCASA)', 'Telefones Ãšteis (OCASA)'];
     if (String(temperatura || '').indexOf('CONGELADO') === -1) keep.push('Proforma Invoice (OCASA)');
@@ -4990,7 +4989,7 @@ function getTransporteCeStatus(projeto) {
 function transporteCourierEmailRecipients_(courier, temperatura) {
   var cfg = transporteCourierConfig_(courier);
   var tempCourierConfig = String(temperatura || '').trim();
-  var rawCourierConfig = '';
+  var rawCourierConfig;
   if (transporteNormalizeCourierFromCodex_(courier) === 'MARKEN') {
     rawCourierConfig = (tempCourierConfig === 'CONGELADO' || tempCourierConfig === 'AMBIENTE + CONGELADO')
       ? (cfg.emailCongelado || cfg.email || '')
@@ -5126,7 +5125,7 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao) {
 }
 
 function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, solicitarCaixa, saudacao) {
-  var registro = {};
+  var registro;
   try {
     registro = transporteReadRegistro_() || {};
   } catch (e) {
