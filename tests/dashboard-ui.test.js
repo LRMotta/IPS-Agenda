@@ -165,7 +165,7 @@ test('agregação única mantém KPIs e séries da Agenda em ano, mês e global'
     context._dashAgendaPeriod = { tipo, ano: 2025, mes: 2 };
     const filtered = context.dashAgendaRowsPeriodo();
     const completed = r => rules.countsIn(r, rules.Indicator.DASHBOARD_COMPLETED_VISITS) && r.ano < 2099;
-    const lab = r => rules.countsIn(r, rules.Indicator.DASHBOARD_LAB_CENTRAL);
+    const lab = r => rules.countsIn(r, rules.Indicator.DASHBOARD_LAB_CENTRAL) && r.ano < 2099;
     calls.clear();
     const result = context.dashboardAggregateAgendaPeriod_();
     assert.equal(calls.size, filtered.length);

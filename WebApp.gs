@@ -383,7 +383,7 @@ function getCadastrosBootstrapData(page) {
   if (page === 'participantes') {
     return codexMeasureReadPerformance_('getCadastrosBootstrapData', 'participants', {}, function() {
       out.config = getParticipanteFormConfig();
-      out.data = getParticipantes();
+      out.data = getParticipantesListagem_();
       out.projetos = getProjetosParticipantesOptions_();
       return out;
     });
@@ -6209,16 +6209,7 @@ function getParticipantes() {
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
   var header = rows[0] || [];
-  var columns = {};
-  header.forEach(function(value, index) { columns[participanteCampoKey_(value)] = index; });
-  function valueFor(r, aliases) {
-    for (var i = 0; i < aliases.length; i++) {
-      var index = columns[aliases[i]];
-      if (index !== undefined) return r[index] || '';
-    }
-    return '';
-  }
-  var tz  = Session.getScriptTimeZone();
+  var dtoContext = participanteDtoContexto_(header);
   var ultimaVisitaMap = getUltimasVisitasParticipantesAgendaMap_();
 
   return rows.slice(1)
@@ -6226,44 +6217,105 @@ function getParticipantes() {
     .map(function(r) {
       var ultimaVisita = ultimaVisitaMap[agendaUltimaVisitaCadastroKey_(r[0])] ||
         ultimaVisitaMap[normText_(r[1])] || { data: '', visita: '---' };
-      function fmtDate(val) {
-        if (!val) return '';
-        try {
-          var d = (val instanceof Date) ? val : new Date(val);
-          if (isNaN(d.getTime())) return String(val);
-          return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
-        } catch(e) { return String(val); }
-      }
-      return {
-        id:             String(r[0]),
-        nome:           String(r[1] || ''),
-        dataNascimento: fmtDate(r[2]),
-        idade:          String(r[3] || ''),
-        idParticipante: String(r[4] || ''),
-        projeto:        String(r[5] || ''),
-        braco:          String(r[6] || ''),
-        ultimaVisita:   String(ultimaVisita.visita || '---'),
-        ultimaVisitaData: String(ultimaVisita.data || ''),
-        status:         String(r[8] || ''),
-        telefone:       String(r[9] || ''),
-        cpf:            String(r[10] || ''),
-        observacoes:    String(r[11] || ''),
-        rua:            String(valueFor(r, ['rua', 'endereco']) || ''),
-        numero:         String(valueFor(r, ['numero', 'n']) || ''),
-        cidade:         String(valueFor(r, ['cidade']) || ''),
-        estado:         String(valueFor(r, ['estado', 'uf']) || ''),
-        municipioCodigo:String(valueFor(r, ['codigoibgedomunicipio', 'codigoibgemunicipio', 'municipiocodigo']) || ''),
-        cep:            String(valueFor(r, ['cep']) || ''),
-        banco:          String(valueFor(r, ['banco', 'nomedobanco']) || ''),
-        tipoConta:      String(valueFor(r, ['tipoconta', 'tipodeconta']) || ''),
-        agencia:        String(valueFor(r, ['agencia']) || ''),
-        contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
-        titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
-        cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
-        idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || ''),
-        acompanhantes:  participanteLerAcompanhantes_(valueFor(r, ['acompanhantesjson']))
-      };
+  return participanteDadosDaLinha_(r, header, ultimaVisita, false, dtoContext);
     });
+}
+
+function participanteDtoContexto_(header) {
+  var columns = {};
+  (header || []).forEach(function(value, index) { columns[participanteCampoKey_(value)] = index; });
+  return { columns: columns, tz: Session.getScriptTimeZone() };
+}
+
+function participanteDadosDaLinha_(r, header, ultimaVisita, somenteListagem, dtoContext) {
+  dtoContext = dtoContext || participanteDtoContexto_(header);
+  var columns = dtoContext.columns;
+  function valueFor(r, aliases) {
+    for (var i = 0; i < aliases.length; i++) {
+      var index = columns[aliases[i]];
+      if (index !== undefined) return r[index] || '';
+    }
+    return '';
+  }
+  var tz = dtoContext.tz;
+  function fmtDate(val) {
+    if (!val) return '';
+    try {
+      var d = (val instanceof Date) ? val : new Date(val);
+      if (isNaN(d.getTime())) return String(val);
+      return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
+    } catch(e) { return String(val); }
+  }
+  var participante = {
+    id:             String(r[0]),
+    nome:           String(r[1] || ''),
+    dataNascimento: fmtDate(r[2]),
+    idade:          String(r[3] || ''),
+    idParticipante: String(r[4] || ''),
+    projeto:        String(r[5] || ''),
+    braco:          String(r[6] || ''),
+    ultimaVisita:   String(ultimaVisita.visita || '---'),
+    ultimaVisitaData: String(ultimaVisita.data || ''),
+    status:         String(r[8] || ''),
+    telefone:       String(r[9] || ''),
+    cpf:            String(r[10] || ''),
+    observacoes:    String(r[11] || ''),
+    idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || '')
+  };
+  if (!somenteListagem) {
+    var detalhes = {
+      rua:            String(valueFor(r, ['rua', 'endereco']) || ''),
+      numero:         String(valueFor(r, ['numero', 'n']) || ''),
+      cidade:         String(valueFor(r, ['cidade']) || ''),
+      estado:         String(valueFor(r, ['estado', 'uf']) || ''),
+      municipioCodigo:String(valueFor(r, ['codigoibgedomunicipio', 'codigoibgemunicipio', 'municipiocodigo']) || ''),
+      cep:            String(valueFor(r, ['cep']) || ''),
+      banco:          String(valueFor(r, ['banco', 'nomedobanco']) || ''),
+      tipoConta:      String(valueFor(r, ['tipoconta', 'tipodeconta']) || ''),
+      agencia:        String(valueFor(r, ['agencia']) || ''),
+      contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
+      titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
+      cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
+      acompanhantes: participanteLerAcompanhantes_(valueFor(r, ['acompanhantesjson']))
+    };
+    Object.keys(detalhes).forEach(function(key) { participante[key] = detalhes[key]; });
+  }
+  return participante;
+}
+
+function getParticipantesListagem_() {
+  var rows = getCodexSheetDataByName_('Participantes');
+  if (!rows.length) return [];
+  var dtoContext = participanteDtoContexto_(rows[0]);
+  var ultimaVisitaMap = getUltimasVisitasParticipantesAgendaMap_();
+  return rows.slice(1).filter(function(r) { return r[0] !== '' && r[0] !== undefined && r[0] !== null; }).map(function(r) {
+    var visita = ultimaVisitaMap[agendaUltimaVisitaCadastroKey_(r[0])] || ultimaVisitaMap[normText_(r[1])] || { data: '', visita: '---' };
+    return participanteDadosDaLinha_(r, rows[0] || [], visita, true, dtoContext);
+  });
+}
+
+function getParticipanteDetalhes(idCadastro) {
+  codexAssertCanRead_();
+  idCadastro = CadastroRules_.normalizeId(idCadastro);
+  if (!idCadastro) throw new Error('Informe o ID do cadastro do participante.');
+  var meta = {};
+  return codexMeasureReadPerformance_('getParticipanteDetalhes', 'total', meta, function() {
+    var sheet = getCodexSpreadsheet_().getSheetByName('Participantes');
+    var lastRow = sheet ? sheet.getLastRow() : 0;
+    if (lastRow < 2) throw new Error('Participante não encontrado.');
+    var width = sheet.getLastColumn();
+    var header = codexReadValuesMeasured_(sheet.getRange(1, 1, 1, width), false)[0];
+    var ids = codexReadValuesMeasured_(sheet.getRange(2, 1, lastRow - 1, 1), false);
+    var matches = [];
+    ids.forEach(function(row, index) { if (CadastroRules_.normalizeId(row[0]) === idCadastro) matches.push(index + 2); });
+    if (matches.length !== 1) throw new Error(matches.length ? 'ID de cadastro duplicado. Revise os cadastros.' : 'Participante não encontrado.');
+    var row = codexReadValuesMeasured_(sheet.getRange(matches[0], 1, 1, width), false)[0];
+    if (CadastroRules_.normalizeId(row[0]) !== idCadastro) throw new Error('O cadastro mudou durante a consulta. Tente novamente.');
+    var result = participanteDadosDaLinha_(row, header, { data: '', visita: '---' }, false);
+    meta.rowCount = 1;
+    meta.responseBytes = codexSerializedByteLength_(JSON.stringify(result));
+    return result;
+  });
 }
 
 function getParticipanteFormConfig() {
@@ -7697,11 +7749,10 @@ function getAgendaDashboardResumo_() {
     visitasPorDiaSemana: dias.map(function(d) { return { label: d, value: 0 }; }),
     cancelReagPorProtocolo: [],
     courierUsoAno: [],
-    eventosPeriodo: [],
+    periodos: { version: 1, anosDisponiveis: [], global: null, anos: {}, meses: {} },
     antecedenciaMediaPorTipo: []
   };
-  if (lastRow < 2) return resumo;
-  var vals = codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol), false);
+  var vals = lastRow < 2 ? [] : codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol), false);
   var i = AGENDA_CFG.idx;
   var porProt = {};
   var porMonProtDia = {};
@@ -7710,6 +7761,7 @@ function getAgendaDashboardResumo_() {
   var courierUso = {};
   var antecedenciaPorTipo = {};
   var participantesAtendidos = {};
+  var periodos = { global: agendaDashboardPeriodoNovo_(), anos: Object.create(null), meses: Object.create(null) };
   var hoje = new Date();
   hoje.setHours(23, 59, 59, 999);
   vals.forEach(function(r) {
@@ -7724,7 +7776,8 @@ function getAgendaDashboardResumo_() {
       cancelReagProt: cancelReagProt,
       courierUso: courierUso,
       antecedenciaPorTipo: antecedenciaPorTipo,
-      participantesAtendidos: participantesAtendidos
+      participantesAtendidos: participantesAtendidos,
+      periodos: periodos
     });
   });
   var monMap = {};
@@ -7740,6 +7793,10 @@ function getAgendaDashboardResumo_() {
   resumo.cancelReagPorProtocolo = agendaMapToPairs_(cancelReagProt, 15);
   resumo.courierUsoAno = agendaMapToPairs_(courierUso, 12);
   resumo.antecedenciaMediaPorTipo = [];
+  resumo.periodos.global = agendaDashboardPeriodoFinalizar_(periodos.global, true);
+  resumo.periodos.anosDisponiveis = Object.keys(periodos.anos).map(Number).sort(function(a, b) { return b - a; });
+  Object.keys(periodos.anos).forEach(function(key) { resumo.periodos.anos[key] = agendaDashboardPeriodoFinalizar_(periodos.anos[key], false); });
+  Object.keys(periodos.meses).forEach(function(key) { resumo.periodos.meses[key] = agendaDashboardPeriodoFinalizar_(periodos.meses[key], false); });
   return resumo;
 }
 
@@ -7748,14 +7805,64 @@ function agendaDashboardProcessRow_(r, ctx) {
   var data = parseAgendaDateAny_(r[i.data]) || (r[i.data] instanceof Date ? r[i.data] : new Date(r[i.data]));
   if (!data || isNaN(data.getTime())) return;
   var rowInfo = agendaDashboardRowInfo_(r, i, data);
-  ctx.resumo.eventosPeriodo.push(rowInfo.evento);
+  var ano = data.getFullYear(), mes = data.getMonth() + 1, mesKey = ano + '-' + mes;
+  if (!ctx.periodos.anos[ano]) ctx.periodos.anos[ano] = agendaDashboardPeriodoNovo_();
+  if (!ctx.periodos.meses[mesKey]) ctx.periodos.meses[mesKey] = agendaDashboardPeriodoNovo_();
+  agendaDashboardPeriodoContar_(rowInfo, ctx.periodos.global, String(ano), ctx.hoje);
+  agendaDashboardPeriodoContar_(rowInfo, ctx.periodos.anos[ano], String(mes), ctx.hoje);
+  agendaDashboardPeriodoContar_(rowInfo, ctx.periodos.meses[mesKey], String(mes), ctx.hoje);
   if (data.getFullYear() !== ctx.anoAtual) return;
   ctx.resumo.totalAno++;
   agendaDashboardCountStatus_(rowInfo, ctx);
-  agendaDashboardCountLabCentral_(rowInfo, ctx.resumo);
+  agendaDashboardCountLabCentral_(rowInfo, ctx.resumo, ctx.hoje);
   agendaDashboardCountMonitoria_(rowInfo, ctx.porMonProtDia);
   agendaDashboardCountVisita_(r, rowInfo, ctx);
   agendaDashboardCountCourier_(r, rowInfo, ctx);
+}
+
+function agendaDashboardPeriodoNovo_() {
+  return { total: 0, visits: 0, labs: 0, participants: Object.create(null), monitoringDays: Object.create(null),
+    visitsBuckets: Object.create(null), labBuckets: Object.create(null), protocols: Object.create(null),
+    monitoring: Object.create(null), doctors: Object.create(null), cancellations: Object.create(null), couriers: Object.create(null),
+    days: ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }) };
+}
+
+function agendaDashboardPeriodoContar_(info, out, bucket, hoje) {
+  function add(map, key) { map[key] = (map[key] || 0) + 1; }
+  out.total++;
+  var future = info.data.getTime() > hoje.getTime();
+  if (info.isVisita && info.isRealizada && !info.isCancelado && !future) {
+    out.visits++;
+    add(out.visitsBuckets, bucket);
+    add(out.protocols, info.projeto);
+    add(out.doctors, info.medico);
+    if (info.evento.participanteKey) out.participants[info.evento.participanteKey] = 1;
+    out.days[info.data.getDay()].value++;
+  }
+  if (info.lab && !info.isCancelado && !future) { out.labs++; add(out.labBuckets, bucket); }
+  if (info.isMonitoria && !info.isCancelado) {
+    var key = info.projeto + '|' + info.evento.dataIso;
+    if (!out.monitoringDays[key]) { out.monitoringDays[key] = 1; add(out.monitoring, info.projeto); }
+  }
+  if (info.isCancelado || info.isReagendado) add(out.cancellations, info.projeto);
+  if (info.isEventoComTransporte && info.isRealizada && !info.isCancelado && !future && info.lab) {
+    info.evento.couriers.forEach(function(name) { if (name) add(out.couriers, name); });
+  }
+}
+
+function agendaDashboardPeriodoFinalizar_(out, global) {
+  function buckets(map) {
+    var months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return Object.keys(map).sort(function(a, b) { return Number(a) - Number(b); })
+      .map(function(key) { return { label: global ? key : months[Number(key) - 1], value: map[key] }; });
+  }
+  // As identidades ficam apenas nesta execução: únicos anuais/globais não são somas dos meses.
+  return { total: out.total, visits: out.visits, labs: out.labs,
+    participants: Object.keys(out.participants).length, monitoringDays: Object.keys(out.monitoringDays).length,
+    visitsBuckets: buckets(out.visitsBuckets), labBuckets: buckets(out.labBuckets), days: out.days,
+    protocols: agendaMapToPairs_(out.protocols, 15), monitoring: agendaMapToPairs_(out.monitoring, 15),
+    doctors: agendaMapToPairs_(out.doctors, 12), cancellations: agendaMapToPairs_(out.cancellations, 15),
+    couriers: agendaMapToPairs_(out.couriers, 12) };
 }
 
 function agendaDashboardRowInfo_(r, i, data) {
@@ -7827,8 +7934,8 @@ function agendaDashboardCountStatus_(info, ctx) {
   }
 }
 
-function agendaDashboardCountLabCentral_(info, resumo) {
-  if (!info.lab || info.isCancelado) return;
+function agendaDashboardCountLabCentral_(info, resumo, hoje) {
+  if (!info.lab || info.isCancelado || info.data.getTime() > hoje.getTime()) return;
   resumo.labCentralAno++;
   resumo.labCentralMes[info.data.getMonth()].value++;
 }

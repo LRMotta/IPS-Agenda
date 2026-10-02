@@ -339,6 +339,29 @@ test('Agenda: Courier fixa bloqueia mistura durante transicao, preserva gramas e
   });
 });
 
+test('Agenda: Fezes usa gramas ao carregar ou selecionar o tipo depois da formula', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      document.getElementById('agTransporteCard').style.display = 'block';
+      window.agendaMatBioSetItems('agC1', [{ key: 'fezes', formula: '2x1,0', unit: 'mL', ensaio: 'A2+A4 Fecal RNA' }]);
+    });
+    const rows = page.locator('.ag-mat-line[data-prefix="agC1"]');
+    const stool = rows.first();
+    assert.equal(await stool.locator('.ag-mat-total-line').innerText(), '2,00 g');
+    assert.equal(await stool.locator('.ag-mat-formula').inputValue(), '2x1,0');
+    const blank = rows.nth(1);
+    await blank.locator('.ag-mat-formula').fill('1x3');
+    await blank.locator('select').selectOption('fezes');
+    assert.equal(await blank.locator('.ag-mat-total-line').innerText(), '3,00 g');
+    assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), true);
+    const item = await page.evaluate(() => window.agendaMatBioSerialize('agC1').items[0]);
+    assert.equal(item.unit, 'g');
+    assert.equal(item.total, 5);
+    assert.equal(item.tubos, 3);
+    assert.equal(item.ensaio, 'A2+A4 Fecal RNA');
+  });
+});
+
 test('Agenda: JSON corrompido nao pode ser silenciosamente salvo como material vazio', async () => {
   await scenario(async page => {
     await page.evaluate(() => window.agendaMatBioLoad('agC1', { matBioJson: '{', material: 'Resumo legado' }));

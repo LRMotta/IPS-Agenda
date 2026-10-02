@@ -3675,7 +3675,70 @@ function adicionarAcompanhantePart() {
   document.getElementById('ptAco' + (items.length - 1) + '_nome').focus();
 }
 
+var _participanteDetalhesConsulta = null;
+var _participanteDetalhesPendente = false;
+var _participanteDetalhesDisabled = [];
+var _participanteEdicaoAtual = null;
+
+function participanteBloquearDetalhes_(blocked) {
+  var modal = document.getElementById('modalParticipante');
+  if (!modal) return;
+  if (!blocked) {
+    _participanteDetalhesDisabled.forEach(function(item) { item.el.disabled = item.disabled; });
+    _participanteDetalhesDisabled = [];
+    modal.setAttribute('aria-busy', 'false');
+    return;
+  }
+  _participanteDetalhesDisabled = Array.prototype.map.call(modal.querySelectorAll('.modal-body input, .modal-body select, .modal-body textarea, .modal-body button'), function(el) {
+    var state = { el: el, disabled: el.disabled };
+    el.disabled = true;
+    return state;
+  });
+  modal.setAttribute('aria-busy', 'true');
+}
+
 function abrirFormPart(p) {
+  _participanteDetalhesConsulta = null;
+  _participanteDetalhesPendente = false;
+  _participanteEdicaoAtual = null;
+  participanteBloquearDetalhes_(false);
+  if (typeof p === 'string') p = JSON.parse(p);
+  if (!p) { abrirFormPartPreenchido_(null); return; }
+  if (!p.id) { snackErro('Não foi possível identificar o cadastro do participante.'); return; }
+  var consulta = {};
+  _participanteDetalhesConsulta = consulta;
+  _participanteDetalhesPendente = true;
+  abrirFormPartPreenchido_(null);
+  document.getElementById('modalPartTitle').textContent = 'EDITAR PARTICIPANTE';
+  participanteBloquearDetalhes_(true);
+  var status = document.getElementById('statusPart');
+  if (status) status.textContent = 'Carregando cadastro completo…';
+  function fail(error) {
+    if (_participanteDetalhesConsulta !== consulta) return;
+    document.getElementById('modalParticipante').setAttribute('aria-busy', 'false');
+    if (status) {
+      status.textContent = 'Não foi possível carregar o cadastro: ' + appErrorMessage(error) + ' ';
+      var retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'ag-tb-btn';
+      retry.textContent = 'Tentar novamente';
+      retry.onclick = function() { if (_participanteDetalhesConsulta === consulta) abrirFormPart(p); };
+      status.appendChild(retry);
+    }
+  }
+  appServerRun({ method: 'getParticipanteDetalhes', args: [String(p.id)], onSuccess: function(dados) {
+    if (_participanteDetalhesConsulta !== consulta) return;
+    if (!dados || String(dados.id || '').trim() !== String(p.id).trim()) { fail(new Error('O cadastro retornado não corresponde ao participante selecionado.')); return; }
+    participanteBloquearDetalhes_(false);
+    try { abrirFormPartPreenchido_(dados); }
+    catch (error) { participanteBloquearDetalhes_(true); fail(error); return; }
+    _participanteEdicaoAtual = dados;
+    _participanteDetalhesConsulta = null;
+    _participanteDetalhesPendente = false;
+  }, onFailure: fail });
+}
+
+function abrirFormPartPreenchido_(p) {
   var modalPart = document.getElementById('modalParticipante');
   appClearUnsavedChanges('modalParticipante');
   if (modalPart) {
@@ -3896,7 +3959,7 @@ function prepararNovaParticipacaoPessoa_(participante) {
 
 function abrirNovaParticipacaoPessoa() {
   var cadastroId = document.getElementById('editPartId').value || '';
-  var participante = (_participantes || []).filter(function(item) { return String(item.id || '') === String(cadastroId); })[0];
+  var participante = _participanteEdicaoAtual && String(_participanteEdicaoAtual.id || '') === String(cadastroId) ? _participanteEdicaoAtual : null;
   if (!participante) {
     snackErro('Salve o cadastro da pessoa antes de criar outra participação.');
     return;
@@ -3976,6 +4039,7 @@ function abrirConfirmacaoNomeParticipanteDuplicado(result) {
 }
 
 function salvarPartApp(opts) {
+  if (_participanteDetalhesPendente) return;
   opts = opts || {};
   var companionInputs = document.querySelectorAll('#ptAcompanhantes input');
   for (var ci = 0; ci < companionInputs.length; ci++) {
@@ -4511,6 +4575,10 @@ function fecharOverlay(id) {
     fecharOverlay(id);
   })) return false;
   document.getElementById(id).classList.remove('open');
+  if (id === 'modalParticipante') {
+    _participanteDetalhesConsulta = null;
+    _participanteEdicaoAtual = null;
+  }
   if (id === 'modalJornadaParticipante') {
     window._jornadaParticipanteConsulta = null;
     _jornadaParticipanteAtual = null;

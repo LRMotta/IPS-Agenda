@@ -73,6 +73,27 @@ test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicit
   });
 });
 
+test('Transporte: Fezes recupera gramas e salva sem converter os numeros', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => window.renderMatBioEditor([{ key: 'fezes', formula: '2x1,0', unit: 'mL', ensaio: 'A2+A4 Fecal RNA' }]));
+    const rows = page.locator('.ag-mat-line');
+    assert.equal(await rows.first().locator('.ag-mat-total-line').innerText(), '2,00 g');
+    const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+    fs.mkdirSync(dir, { recursive: true });
+    await page.locator('#matBioLines').screenshot({ path: path.join(dir, 'fezes-gramas.png'), animations: 'disabled' });
+    const blank = rows.nth(1);
+    await blank.locator('.ag-mat-formula').fill('1x3');
+    await blank.locator('select').selectOption('fezes');
+    assert.equal(await blank.locator('.ag-mat-total-line').innerText(), '3,00 g');
+    await page.evaluate(() => window.saveData());
+    const item = await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').args[0].materiais.find(material => material.material === 'Fezes'));
+    assert.equal(item.unit, 'g');
+    assert.equal(item.total, 5);
+    assert.equal(item.tubos, 3);
+    assert.equal(item.ensaio, 'A2+A4 Fecal RNA');
+  });
+});
+
 test('Transporte: Outro sempre no final preserva materiais, formulas, ensaios e descricao', async () => {
   for (const width of [1440, 1024, 390]) {
     await scenario(async page => {
