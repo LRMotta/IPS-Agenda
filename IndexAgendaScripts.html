@@ -1480,7 +1480,7 @@
       if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
       if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
       if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
-      return agendaMatBioEventOptions(r).length;
+      return agendaMatBioEventOptions(r, prefix).length;
     }).slice(-5).reverse();
     var context = agendaMatBioCurrentContext_();
     var labelVazio = 'Copiar material de visita anterior...';
@@ -1605,7 +1605,7 @@
   }
 
   function agendaMatBioFallbackEvents_() {
-    return (_agendaEventos || []).filter(function(r) {
+    var eventos = (_agendaEventos || []).filter(function(r) {
       if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
       var participante = normAgenda(agendaParticipanteNomeSelecionado_());
       var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
@@ -1614,7 +1614,18 @@
       if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
       if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
       return agendaMatBioEventOptions(r).length;
-    }).slice(-5);
+    });
+    var idsRecentes = {};
+    agendaMatBioPrefixes().forEach(function(prefix) {
+      var encontrados = 0;
+      for (var i = eventos.length - 1; i >= 0 && encontrados < 5; i--) {
+        if (!agendaMatBioEventOptions(eventos[i], prefix).length) continue;
+        var id = String(eventos[i].id || '');
+        if (id) idsRecentes[id] = true;
+        encontrados++;
+      }
+    });
+    return eventos.filter(function(r) { return !!idsRecentes[String(r.id || '')]; });
   }
 
   function agendaMatBioHistoryEquivalent_(targeted, fallback) {
