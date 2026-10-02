@@ -58,37 +58,6 @@ test('Jornada compartilha Projetos, catálogo e reservas entre cálculo e pronti
   assert.equal(f.reads.Reservas_Kits, 1);
 });
 
-test('histórico sob demanda preserva a Jornada e carrega apenas visitas anteriores da mesma participação', () => {
-  const f = fixture();
-  const cfg = f.server.AGENDA_CFG;
-  cfg.idx.participanteCadastroId = cfg.lastCol++;
-  function row(id, year, overrides = {}) {
-    const values = Array(cfg.lastCol).fill('');
-    const fields = { id, tipo: 'Visita', projeto: 'Aurora', participante: 'Pessoa',
-      participanteCadastroId: 'P', idParticipante: 'PT', visita: 'V1', data: new Date(year, 0, 1), status: 'Realizado', ...overrides };
-    Object.entries(fields).forEach(([key, value]) => { values[cfg.idx[key]] = value; });
-    return values;
-  }
-  const rows = Array.from({ length: 61 }, (_, i) => row('OLD-' + i, 2025));
-  rows.push(row('CURRENT', 2026), row('OTHER', 2025, { participanteCadastroId: 'OUTRO' }), row('NOT-VISIT', 2025, { tipo: 'Consulta' }));
-  f.server.getAgendaSheetForRead_ = () => ({ getLastRow: () => rows.length + 1,
-    getRange: () => ({ getValues: () => rows }) });
-  f.server.formatarDataSafe = date => String(date.getFullYear());
-  const full = f.server.getJornadaParticipante(f.payload);
-  const lazy = f.server.getJornadaParticipante({ ...f.payload, historicoAnteriorSobDemanda: true });
-  assert.equal(full.eventosAnteriores.length, 61);
-  assert.equal(lazy.eventosAnteriores.length, 0);
-  assert.equal(lazy.eventosAnterioresTotal, 61);
-  assert.equal(JSON.stringify(full.visitas), JSON.stringify(lazy.visitas));
-  assert.equal(JSON.stringify(full.eventosLivres), JSON.stringify(lazy.eventosLivres));
-  const historico = f.server.consultarHistoricoAnteriorJornada(f.payload);
-  assert.equal(historico.eventos.length, 61);
-  assert.equal(JSON.stringify(historico.eventos), JSON.stringify(full.eventosAnteriores));
-  f.server.codexAssertCanRead_ = () => { throw new Error('NEGADO'); };
-  f.server.getAgendaSheetForRead_ = () => { throw new Error('Não pode ler'); };
-  assert.throws(() => f.server.consultarHistoricoAnteriorJornada(f.payload), /NEGADO/);
-});
-
 test('snapshot de prontidão pertence à consulta e é relido na próxima Jornada', () => {
   const f = fixture();
   f.server.getJornadaParticipante(f.payload);

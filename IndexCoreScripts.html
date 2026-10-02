@@ -5197,57 +5197,16 @@ function jornadaParticipanteHtml_(dados) {
     var classeStatus = statusNormalizado.indexOf('conclu') >= 0 || statusNormalizado.indexOf('realiz') >= 0 ? 'done' : (statusNormalizado.indexOf('agend') >= 0 ? 'scheduled' : 'neutral');
     return '<div class="jornada-history-row"><div class="jornada-history-marker ' + classeStatus + '"><span class="material-symbols-outlined">' + (classeStatus === 'done' ? 'check' : 'event') + '</span></div><div class="jornada-history-visit"><strong>' + esc(evento.visita || 'Visita livre') + '</strong><span class="jornada-history-date">' + esc(evento.data || '') + '</span></div><div class="jornada-history-state"><span class="jornada-history-status ' + classeStatus + '">' + esc(status) + '</span>' + (evento.idSoA ? '<span class="jornada-history-match"><span class="material-symbols-outlined">link</span>Conciliada</span>' : '') + '</div></div>';
   }).join('');
-  var historicoAnteriorHtml = jornadaHistoricoAnteriorHtml_(dados);
   var conciliarHtml = conciliacao.length ? '<button class="ag-tb-btn" onclick="abrirConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">rule</span> Conciliar ' + conciliacao.length + ' nome(s)</button>' : '';
   var previaCtmsHtml = dados.previaCtms ? '<button class="ag-tb-btn primary" onclick="abrirPreviaCtmsJornada()"><span class="material-symbols-outlined">compare_arrows</span> Prévia CTMS</button>' : '';
   var acoesHtml = previaCtmsHtml || conciliarHtml ? '<div class="jornada-title-actions">' + previaCtmsHtml + conciliarHtml + '</div>' : '';
   var alertasCtms = dados.alertasCtms || {};
   var alertaCtmsHtml = alertasCtms.projetoAtivo && (alertasCtms.pendentes || alertasCtms.obsoletas) ? '<div class="jornada-ctms-alert"><span class="material-symbols-outlined">rule</span><div><strong>Revisão CTMS pendente</strong><span>' + Number(alertasCtms.pendentes || 0) + ' comparação(ões) aguardam aprovação' + (alertasCtms.obsoletas ? ' e ' + Number(alertasCtms.obsoletas) + ' exigem reaprovação' : '') + '. Até lá, Jornada, janelas, alertas e estoque mantêm o cálculo atual.</span></div></div>' : '';
-  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p>' + alertaCtmsHtml + '<div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + historicoAnteriorHtml + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
-}
-
-function jornadaHistoricoAnteriorHtml_(dados) {
-  var eventos = dados.eventosAnteriores || [];
-  var total = dados.eventosAnterioresTotal || eventos.length;
-  if (!total) return '';
-  var pendente = dados.historicoAnteriorSobDemanda && !dados.historicoAnteriorCompleto;
-  return '<details id="jornadaHistoricoAnterior" style="margin-top:14px"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:700">Histórico anterior ao início do IPS em 2026 (' + total + ')</summary><div style="font-size:12px;color:#7b8794;padding:8px 0">Apenas informativo; não influencia a previsão, janelas ou prontidão.</div><div>' + eventos.map(function(evento) {
-    return '<div style="padding:6px 0;border-top:1px solid #edf1f7;font-size:13px;color:#5f6b7c"><strong>' + esc(evento.visita || 'Visita livre') + '</strong> · ' + esc(evento.data || '') + ' · ' + esc(evento.status || '') + '</div>';
-  }).join('') + '</div>' + (pendente ? '<button type="button" class="ag-tb-btn" onclick="carregarHistoricoAnteriorJornada(this)">Carregar histórico</button>' : '') + '<div id="jornadaHistoricoAnteriorStatus" role="status"></div></details>';
+  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p>' + alertaCtmsHtml + '<div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
 }
 
 var _jornadaParticipanteAtual = null;
 var _jornadaParticipanteDados = null;
-
-function carregarHistoricoAnteriorJornada(button) {
-  var dados = _jornadaParticipanteDados;
-  var consulta = window._jornadaParticipanteConsulta;
-  if (!dados || dados._historicoAnteriorLoading || dados.historicoAnteriorCompleto) return;
-  dados._historicoAnteriorLoading = true;
-  if (button) button.disabled = true;
-  var status = document.getElementById('jornadaHistoricoAnteriorStatus');
-  if (status) status.textContent = 'Carregando histórico…';
-  var participante = dados.participante || {};
-  function atual() { return window._jornadaParticipanteConsulta === consulta && _jornadaParticipanteDados === dados; }
-  appServerRun({ method: 'consultarHistoricoAnteriorJornada', args: [{ idCadastro: participante.idCadastro, nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto }], onSuccess: function(result) {
-    if (!atual()) return;
-    dados._historicoAnteriorLoading = false;
-    dados.eventosAnteriores = result.eventos || [];
-    dados.eventosAnterioresTotal = result.total;
-    dados.historicoAnteriorCompleto = true;
-    var details = document.getElementById('jornadaHistoricoAnterior');
-    if (details) {
-      details.outerHTML = jornadaHistoricoAnteriorHtml_(dados);
-      var atualizado = document.getElementById('jornadaHistoricoAnterior');
-      if (atualizado) atualizado.open = true;
-    }
-  }, onFailure: function(error) {
-    if (!atual()) return;
-    dados._historicoAnteriorLoading = false;
-    if (button) button.disabled = false;
-    if (status) status.textContent = appErrorMessage(error);
-  } });
-}
 
 function abrirConcilicaoVisitasParticipante() {
   var content = document.getElementById('jornadaParticipanteConteudo');
@@ -5606,7 +5565,7 @@ function abrirJornadaParticipante(participante) {
   content.innerHTML = '<div style="padding:34px;text-align:center;color:#64748b"><div class="spinner"></div>Carregando jornada…</div>';
   abrirOverlay('modalJornadaParticipante');
   _jornadaParticipanteAtual = participante;
-  appServerRun({ method: 'consultarJornadaParticipante', args: [{ idCadastro: participante.id, nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco, historicoAnteriorSobDemanda: true }], onSuccess: function(dados) {
+  appServerRun({ method: 'consultarJornadaParticipante', args: [{ idCadastro: participante.id, nome: participante.nome, idParticipante: participante.idParticipante, projeto: participante.projeto, braco: participante.braco }], onSuccess: function(dados) {
     if (window._jornadaParticipanteConsulta !== consulta) return;
     _jornadaParticipanteDados = dados || {};
     content.innerHTML = jornadaParticipanteHtml_(dados || {});

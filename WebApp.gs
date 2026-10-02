@@ -105,23 +105,6 @@ function consultarJornadaParticipante(payload) {
   return getJornadaParticipante(payload);
 }
 
-function consultarHistoricoAnteriorJornada(payload) {
-  codexAssertCanRead_();
-  payload = payload || {};
-  var meta = {};
-  return codexMeasureReadPerformance_('consultarHistoricoAnteriorJornada', 'total', meta, function() {
-    var eventos = jornadaLerEventos_(payload).filter(function(evento) { return !agendaSoAEventoFazParteDoIPS_(evento); });
-    eventos.sort(function(a, b) { return a.data.getTime() - b.data.getTime(); });
-    var result = {
-      total: eventos.length,
-      eventos: eventos.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; })
-    };
-    meta.rowCount = result.eventos.length;
-    meta.responseBytes = codexSerializedByteLength_(JSON.stringify(result));
-    return result;
-  });
-}
-
 function consultarConcilicaoVisitasParticipante(payload) {
   codexAssertCanRead_();
   return getConcilicaoVisitasParticipante(payload);
@@ -12830,7 +12813,6 @@ function getJornadaParticipanteInterno_(payload) {
   var conciliacoes = getAgendaSoAConciliacoesPorAgendaId_(eventos.map(function(evento) { return evento.id; }));
   eventos.forEach(function(evento) { evento.idSoA = String(conciliacoes[evento.id] || ''); });
   eventos.sort(function(a, b) { return a.data.getTime() - b.data.getTime(); });
-  var eventosAnteriores = eventos.filter(function(evento) { return !agendaSoAEventoFazParteDoIPS_(evento); });
   eventos = eventos.filter(agendaSoAEventoFazParteDoIPS_);
   var visitas = getSoAVisitasProjeto(projeto);
   var porId = {};
@@ -12942,9 +12924,6 @@ function getJornadaParticipanteInterno_(payload) {
     visitasProntidao: visitasProntidao,
     horizontePrevisao: formatarDataSafe(jornadaLimitePrevisao_(hoje)),
     eventosLivres: historicoLivre.map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status, concluida: evento.concluida, idSoA: evento.idSoA || '' }; }),
-    eventosAnterioresTotal: eventosAnteriores.length,
-    historicoAnteriorSobDemanda: payload.historicoAnteriorSobDemanda === true,
-    eventosAnteriores: (payload.historicoAnteriorSobDemanda === true ? [] : eventosAnteriores).map(function(evento) { return { visita: evento.visita, data: evento.dataLabel, status: evento.status }; }),
     conciliacao: conciliacao,
     alertasCtms: previaCtms ? {
       projetoAtivo: ctmsAtivo,

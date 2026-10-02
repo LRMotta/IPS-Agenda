@@ -60,7 +60,7 @@ test('Dashboard agregado preserva indicadores e atalhos no desktop e celular', a
   } finally { await browser.close(); }
 });
 
-test('histórico anterior carrega sob demanda, mantém conteúdo escapado e não repete consulta', async () => {
+test('Jornada exibe visitas desde 2026 sem seção anterior ou chamada histórica', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -69,31 +69,16 @@ test('histórico anterior carrega sob demanda, mantém conteúdo escapado e não
     await page.route('**/*', r => r.abort());
     await page.setContent('<html><head><title>Jornada — QA local</title></head><body><main id="history"></main></body></html>');
     const source = readProjectFile('IndexCoreScripts.html');
-    const functions = ['jornadaHistoricoAnteriorHtml_', 'carregarHistoricoAnteriorJornada'].map(name => {
-      const match = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}'));
-      assert.ok(match, name);
-      return match[0];
-    }).join('\n');
-    await page.addScriptTag({ content: `var _jornadaParticipanteDados={participante:{nome:'Pessoa',projeto:'Aurora'},eventosAnterioresTotal:2,historicoAnteriorSobDemanda:true};
-      window._jornadaParticipanteConsulta={};window.historyCalls=0;
-      function esc(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-      function appErrorMessage(e){return e.message;}
-      function appServerRun(options){window.historyCalls++;window.historySuccess=options.onSuccess;}
-      ${functions}
-      document.getElementById('history').innerHTML=jornadaHistoricoAnteriorHtml_(_jornadaParticipanteDados);` });
-    await page.locator('summary').click();
-    await page.getByRole('button', { name: 'Carregar histórico' }).click();
-    assert.equal(await page.getByRole('button').isDisabled(), true);
-    await page.evaluate(() => window.historySuccess({ total: 2, eventos: [
-      { visita: '<img src=x>', data: '2025', status: 'Realizado' },
-      { visita: 'V2', data: '2025', status: 'Agendado' }
-    ] }));
-    assert.equal(await page.locator('img').count(), 0);
-    assert.ok((await page.locator('#history').textContent()).includes('<img src=x>'));
-    assert.equal(await page.getByRole('button').count(), 0);
-    await page.locator('summary').click();
-    await page.locator('summary').click();
-    assert.equal(await page.evaluate(() => window.historyCalls), 1);
+    const renderer = source.slice(source.indexOf('function jornadaParticipanteHtml_('), source.indexOf('var _jornadaParticipanteAtual'));
+    await page.addScriptTag({ content: `function esc(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+      function appServerRun(){throw new Error('Consulta extra inesperada');}
+      ${renderer}
+      document.getElementById('history').innerHTML=jornadaParticipanteHtml_({possuiSoA:false,visitas:[],eventosLivres:[{visita:'V1',data:'02/10/2026',status:'Realizado'}],eventosAnteriores:[{visita:'LEGADO',data:'2025'}]});` });
+    assert.equal(await page.getByRole('heading', { name: 'Visitas registradas desde 2026' }).count(), 1);
+    assert.equal(await page.getByText('V1', { exact: true }).count(), 1);
+    assert.equal(await page.getByText('LEGADO', { exact: true }).count(), 0);
+    assert.equal(await page.locator('#jornadaHistoricoAnterior').count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Carregar histórico' }).count(), 0);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 });

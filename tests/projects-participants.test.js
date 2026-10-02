@@ -1176,7 +1176,8 @@ test('jornada concilia em lote nomes históricos desde 2026 sem renomear a Agend
   assert.match(server.agendaSoAEventoFazParteDoIPS_.toString(), /AGENDA_SOA_INICIO_IPS_/);
   assert.match(client, /function abrirConcilicaoVisitasParticipante\(\)/);
   assert.match(client, /method: 'salvarConcilicaoVisitasParticipante'/);
-  assert.match(client, /Histórico anterior ao início do IPS em 2026/);
+  // O app opera desde 2026; não oferece seção nem RPC para histórico anterior.
+  assert.doesNotMatch(client, /Histórico anterior ao início do IPS em 2026|consultarHistoricoAnteriorJornada/);
   assert.match(server.consultarConcilicaoVisitasParticipante.toString(), /getConcilicaoVisitasParticipante/);
   assert.match(server.salvarConcilicaoVisitasParticipante.toString(), /salvarConcilicaoVisitasParticipante_/);
 });
