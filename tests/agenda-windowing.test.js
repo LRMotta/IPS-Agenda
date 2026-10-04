@@ -187,8 +187,7 @@ test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', ()
     'getAgendaMateriaisAnteriores',
     'getAgendaPeriodoOperacionalPorEventoId',
     'agendaLerEventoPorId_',
-    'getDashboardPendencias_',
-    'getAgendaDashboardResumo_',
+    'getDashboardAgendaSheetForRead_',
     'getUltimasVisitasParticipantesAgendaMap_'
   ];
 
@@ -200,6 +199,12 @@ test('consultas da Agenda usam getter sem migracoes ou escritas na planilha', ()
   readFunctions.forEach((name) => {
     assert.match(functionBody(server, name), /getAgendaSheetForRead_\(\)/, `${name} deve usar leitura sem efeitos externos`);
   });
+  ['getDashboardPendencias_', 'getAgendaDashboardResumo_', 'getProjetosSivPorProjeto_'].forEach(name => {
+    const body = functionBody(server, name);
+    assert.match(body, /getDashboardAgendaSheetForRead_\(\)/, `${name} deve reutilizar o getter somente leitura`);
+    assert.doesNotMatch(body, /getAgendaSheet_\(|setValue|insertColumns/);
+  });
+  assert.doesNotMatch(functionBody(server, 'getDashboardAgendaSheetForRead_'), /getAgendaSheet_\(|setValue|insertColumns/);
 });
 
 test('intervalos da agenda aceitam somente datas ISO validas', () => {

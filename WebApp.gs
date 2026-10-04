@@ -3791,15 +3791,15 @@ function classificarProjetoStatus_(status) {
 
 function getProjetos() {
   codexAssertCanRead_();
-  var dados = getCodexSheetDataByName_('Projetos');
+  var dados = measureDashboardProjetos_('sheet', function() { return getCodexSheetDataByName_('Projetos'); });
   if (!dados.length) return [];
   var courierCols = projetoCourierColumnMap_(dados[0] || []);
   var courierTempCols = projetoCourierTemperatureColumnMap_(dados[0] || []);
   var situacaoEnvioCol = projetoSituacaoEnvioColumn_(dados[0] || []);
   var soaConfigCols = projetoSoAConfigColumnMap_(dados[0] || []);
   var ressarcimentoCols = projetoRessarcimentoColumnMap_(dados[0] || []);
-  var statsPorProjeto = getParticipantesStatsPorProjeto_();
-  var sivPorProjeto = getProjetosSivPorProjeto_();
+  var statsPorProjeto = measureDashboardProjetos_('participants_stats', function() { return getParticipantesStatsPorProjeto_(); });
+  var sivPorProjeto = measureDashboardProjetos_('siv', function() { return getProjetosSivPorProjeto_(); });
   var lista = [];
   for (var i = 1; i < dados.length; i++) {
     var r = dados[i];
@@ -5282,6 +5282,22 @@ function excluirBracoProjeto(idBraco) {
 // Ativo somente durante getDashboardData; não reutiliza dados entre RPCs.
 var CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = null;
 
+function measureDashboardProjetos_(stage, callback) {
+  var context = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
+  if (!context) return callback();
+  return codexMeasureReadPerformance_('getDashboardData', 'projects_' + stage,
+    { traceId: context.traceId }, callback);
+}
+
+function getDashboardAgendaSheetForRead_() {
+  var context = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
+  if (context && context.sheet) return context.sheet;
+  // Reutiliza a preparação somente nesta RPC; não memoriza falhas ou ausência.
+  var sheet = getAgendaSheetForRead_();
+  if (context && sheet) context.sheet = sheet;
+  return sheet;
+}
+
 function getDashboardAgendaDisplayRows_(sh) {
   var context = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
   if (context && context.rows !== null) return context.rows;
@@ -5297,7 +5313,7 @@ function getProjetosSivPorProjeto_() {
   var out = {};
   var sh;
   try {
-    sh = getAgendaSheetForRead_();
+    sh = getDashboardAgendaSheetForRead_();
   } catch (e) {
     return out;
   }
@@ -7182,7 +7198,7 @@ function getDashboardData(request) {
   return codexMeasureReadPerformance_('getDashboardData', 'total', totalMeta, function() {
   measure('access', function() { codexAssertCanRead_(); });
   var previousAgendaDisplayContext = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
-  CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = { rows: null };
+  CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = { rows: null, sheet: null, traceId: traceId };
   try {
   Logger.log('[getDashboardData] Iniciando...');
   var diag = { erros: [], avisos: [], secoes: { agenda: true, estoque: true }, projetos: [], participantesResumo: dashboardAgregarParticipantes_([]) };
@@ -7458,7 +7474,7 @@ function getDashboardPendencias_(estoque, perfContext) {
       { traceId: perfContext.traceId, rowCount: rowCount }, callback);
   }
   var out = getDashboardPendenciasVazio_();
-  var agenda = measure('sheet', 0, function() { return getAgendaSheetForRead_(); });
+  var agenda = measure('sheet', 0, function() { return getDashboardAgendaSheetForRead_(); });
   var hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   var posVisitaCorte = parseAgendaDateAny_('2026-05-23');
@@ -7769,7 +7785,7 @@ function diasAteValidadeDashboard_(validade) {
 }
 
 function getAgendaDashboardResumo_() {
-  var sh = getAgendaSheetForRead_();
+  var sh = getDashboardAgendaSheetForRead_();
   var lastRow = sh.getLastRow();
   var anoAtual = new Date().getFullYear();
   var meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];

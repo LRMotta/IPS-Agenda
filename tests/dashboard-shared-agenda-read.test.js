@@ -35,7 +35,7 @@ function fixture() {
   rows[0][cfg.idx.cb.nome] = 'OCASA';
   rows[0][cfg.idx.cb.status] = 'Não Agendado';
   const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), ...rows]);
-  const counts = { display: 0, raw: 0, lastRow: 0, access: 0 };
+  const counts = { display: 0, raw: 0, lastRow: 0, access: 0, sheet: 0 };
   let failDisplay = false;
   const getRange = sheet.getRange.bind(sheet);
   const getLastRow = sheet.getLastRow.bind(sheet);
@@ -56,7 +56,7 @@ function fixture() {
     };
     return range;
   };
-  server.getAgendaSheetForRead_ = () => sheet;
+  server.getAgendaSheetForRead_ = () => { counts.sheet++; return sheet; };
   server.codexAssertCanRead_ = () => { counts.access++; };
   const projects = [['ID', 'Nome', 'Código'], ['P1', 'Projeto A', 'PROTOCOLO-A']];
   server.getCodexSheetDataByName_ = name => { assert.equal(name, 'Projetos'); return projects; };
@@ -81,6 +81,7 @@ test('Dashboard compartilha uma leitura formatada e preserva Projetos, pendênci
   const pending = plain(f.server.getDashboardPendencias_([]));
   const agenda = plain(f.server.getAgendaDashboardResumo_());
   assert.equal(f.counts.display, 2); // Fora do Dashboard, consultas independentes.
+  assert.equal(f.counts.sheet, 3);
   assert.equal(projects[0].dataSivInicio, '10/01/2026');
   assert.equal(projects[0].dataSivFim, '11/01/2026');
   assert.equal(pending.transporteBackupNaoAgendado[0].agendaId, '00123');
@@ -93,6 +94,7 @@ test('Dashboard compartilha uma leitura formatada e preserva Projetos, pendênci
   assert.deepEqual(plain(data.agendaResumo), agenda);
   assert.equal(f.counts.display, 1);
   assert.equal(f.counts.raw, 1);
+  assert.equal(f.counts.sheet, 1); // SIV, resumo e pendências compartilham a preparação.
   assert.equal(f.counts.access, 2); // Dashboard e RPC pública de Projetos mantêm autorização.
   assert.equal(f.sheet.writes, 0);
   assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, null);
@@ -107,10 +109,12 @@ test('cada nova RPC lê novamente e chamadas independentes não herdam a matriz 
   f.sheet.rows[1][f.cfg.idx.id] = 456;
   assert.equal(f.server.getDashboardData().pendencias.transporteBackupNaoAgendado[0].agendaId, '00456');
   assert.equal(f.counts.display, 2);
+  assert.equal(f.counts.sheet, 2); // Uma nova preparação por RPC, sem cache entre consultas.
   f.sheet.rows[1][f.cfg.idx.id] = 789;
   assert.equal(f.server.getDashboardPendencias_([]).transporteBackupNaoAgendado[0].agendaId, '00789');
   f.server.getProjetos();
   assert.equal(f.counts.display, 4);
+  assert.equal(f.counts.sheet, 4);
   assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, null);
 });
 
@@ -160,7 +164,40 @@ test('acesso negado não cria contexto nem lê a Agenda', () => {
   assert.equal(f.counts.display, 0);
   assert.equal(f.counts.raw, 0);
   assert.equal(f.counts.lastRow, 0);
+  assert.equal(f.counts.sheet, 0);
   assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, null);
+});
+
+test('Dashboard repete preparação após falha e conserva o resultado parcial de SIV', () => {
+  const f = fixture();
+  let attempts = 0;
+  f.server.getAgendaSheetForRead_ = () => {
+    attempts++;
+    if (attempts === 1) throw new Error('preparação indisponível');
+    return f.sheet;
+  };
+  const data = f.server.getDashboardData();
+  assert.equal(attempts, 2);
+  assert.equal(data.projetos.length, 1);
+  assert.equal(data.secoes.agenda, true);
+  assert.equal(data.pendencias.counts.transporteBackupNaoAgendado, 1);
+  assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, null);
+});
+
+test('preparação ausente não fica memorizada e contexto aninhado é restaurado', () => {
+  const f = fixture();
+  const outer = { rows: null, sheet: { marker: 'outer' }, traceId: 'outer-trace' };
+  f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = outer;
+  let attempts = 0;
+  f.server.getAgendaSheetForRead_ = () => ++attempts === 1 ? null : f.sheet;
+  const data = f.server.getDashboardData({ traceId: 'inner-trace' });
+  assert.equal(attempts, 2);
+  assert.equal(data.secoes.agenda, true);
+  assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, outer);
+  assert.equal(outer.sheet.marker, 'outer');
+  const stages = f.entries().filter(entry => entry.stage.startsWith('projects_'));
+  assert.deepEqual(stages.map(entry => entry.stage), ['projects_sheet', 'projects_participants_stats', 'projects_siv']);
+  assert.equal(stages.every(entry => entry.traceId === 'inner-trace' && entry.success), true);
 });
 
 test('pendências carrega a matriz quando não há projetos que iniciem a leitura', () => {
