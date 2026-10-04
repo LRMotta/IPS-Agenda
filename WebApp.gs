@@ -318,7 +318,7 @@ function getAppBootstrapData(request) {
         // Reutiliza o acesso validado nesta execução. A RPC pública mantém
         // sua própria validação para chamadas diretas do cliente.
         out.agendaBootstrap = codexMeasureReadPerformance_('getAppBootstrapData', 'agenda_bootstrap', perfMeta({ rowCount: 0 }), function() {
-          return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false, 'app_initial');
+          return agendaGetBootstrapForAccess_(access, agendaRange.start, agendaRange.endExclusive, false, 'app_initial', traceId);
         });
       } catch (e2) {
         out.errors.agendaBootstrap = e2.message || String(e2);
@@ -7173,10 +7173,14 @@ function excluirPrestador(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 //  DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
-function getDashboardData() {
-  var totalMeta = { rowCount: 0, responseBytes: 0 };
+function getDashboardData(request) {
+  var traceId = codexBootstrapTraceId_(request);
+  var totalMeta = { traceId: traceId, rowCount: 0, responseBytes: 0 };
+  function measure(stage, callback) {
+    return codexMeasureReadPerformance_('getDashboardData', stage, { traceId: traceId }, callback);
+  }
   return codexMeasureReadPerformance_('getDashboardData', 'total', totalMeta, function() {
-  codexMeasureReadPerformance_('getDashboardData', 'access', {}, function() { codexAssertCanRead_(); });
+  measure('access', function() { codexAssertCanRead_(); });
   var previousAgendaDisplayContext = CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_;
   CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_ = { rows: null };
   try {
@@ -7186,7 +7190,7 @@ function getDashboardData() {
   function str(v) { return v == null ? '' : String(v); }
 
   try {
-    var projs = codexMeasureReadPerformance_('getDashboardData', 'projects', {}, function() { return getProjetos() || []; });
+    var projs = measure('projects', function() { return getProjetos() || []; });
     Logger.log('[getDashboardData] Projetos: ' + projs.length);
     diag.projetos = projs.map(function(p) {
       return {
@@ -7217,7 +7221,7 @@ function getDashboardData() {
   }
 
   try {
-    var partAll = codexMeasureReadPerformance_('getDashboardData', 'participants', {}, function() { return getParticipantesDashboardResumo_() || []; });
+    var partAll = measure('participants', function() { return getParticipantesDashboardResumo_() || []; });
     Logger.log('[getDashboardData] Participantes: ' + partAll.length);
     diag.participantesResumo = dashboardAgregarParticipantes_(partAll);
   } catch(e) {
@@ -7227,7 +7231,7 @@ function getDashboardData() {
 
   var estoque = [];
   try {
-    estoque = codexMeasureReadPerformance_('getDashboardData', 'stock', {}, function() { return getEstoque() || []; });
+    estoque = measure('stock', function() { return getEstoque() || []; });
     var hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     function diasAte(val) {
@@ -7264,7 +7268,7 @@ function getDashboardData() {
   }
 
   try {
-    diag.agendaResumo = codexMeasureReadPerformance_('getDashboardData', 'agenda', {}, function() { return getAgendaDashboardResumo_(); });
+    diag.agendaResumo = measure('agenda', function() { return getAgendaDashboardResumo_(); });
   } catch(e) {
     Logger.log('[getDashboardData] ERRO agenda: ' + e.message);
     diag.secoes.agenda = false;
@@ -7288,7 +7292,7 @@ function getDashboardData() {
     };
   }
   try {
-    diag.pendencias = codexMeasureReadPerformance_('getDashboardData', 'pending', {}, function() { return getDashboardPendencias_(estoque); });
+    diag.pendencias = measure('pending', function() { return getDashboardPendencias_(estoque, { operation: 'getDashboardData', traceId: traceId }); });
   } catch(e) {
     Logger.log('[getDashboardData] ERRO pendencias: ' + e.message);
     diag.pendencias = getDashboardPendenciasVazio_();
@@ -7306,19 +7310,36 @@ function getDashboardData() {
   });
 }
 
-function getPendenciasOperacionais() {
-  var access = codexGetCurrentUserAccess();
-  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
+function getPendenciasOperacionais(request) {
+  var traceId = codexBootstrapTraceId_(request);
+  var totalMeta = { traceId: traceId, rowCount: 0, responseBytes: 0 };
+  function measure(stage, callback) {
+    return codexMeasureReadPerformance_('getPendenciasOperacionais', stage, { traceId: traceId }, callback);
+  }
+  return codexMeasureReadPerformance_('getPendenciasOperacionais', 'total', totalMeta, function() {
+  var access = measure('access', function() {
+    var current = codexGetCurrentUserAccess();
+    if (!current.ok) throw new Error(current.message || 'Acesso negado.');
+    return current;
+  });
   var estoque = [];
   try {
-    estoque = getEstoqueResumoParaPendencias_() || [];
+    estoque = measure('stock', function() { return getEstoqueResumoParaPendencias_() || []; });
   } catch(e) {
     Logger.log('[getPendenciasOperacionais] ERRO estoque: ' + e.message);
   }
-  return {
+  var result = {
     access: access,
-    pendencias: getDashboardPendencias_(estoque)
+    pendencias: measure('pending', function() { return getDashboardPendencias_(estoque, { operation: 'getPendenciasOperacionais', traceId: traceId }); })
   };
+  totalMeta.rowCount = Object.keys(result.pendencias.counts || {}).reduce(function(sum, key) {
+    return sum + Number(result.pendencias.counts[key] || 0);
+  }, 0);
+  codexMeasureReadPerformance_('getPendenciasOperacionais', 'serialize', totalMeta, function() {
+    try { totalMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(result)); } catch (ignored) {}
+  });
+  return result;
+  });
 }
 
 function dashboardAgregarParticipantes_(participantes) {
@@ -7377,7 +7398,7 @@ function getEstoqueResumoParaPendencias_() {
   var sh = ss.getSheetByName('Estoque');
   if (!sh || sh.getLastRow() < 2) return [];
   var tz = Session.getScriptTimeZone();
-  var data = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  var data = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, 9), false);
   function fmtDate(v) {
     if (!v) return '';
     try {
@@ -7429,18 +7450,25 @@ function getDashboardPendenciasVazio_() {
   };
 }
 
-function getDashboardPendencias_(estoque) {
+function getDashboardPendencias_(estoque, perfContext) {
+  // Contexto efêmero apenas para correlação; nenhuma identidade entra na telemetria.
+  perfContext = perfContext || { operation: 'getDashboardPendencias', traceId: codexBootstrapTraceId_() };
+  function measure(stage, rowCount, callback) {
+    return codexMeasureReadPerformance_(perfContext.operation, 'pending_' + stage,
+      { traceId: perfContext.traceId, rowCount: rowCount }, callback);
+  }
   var out = getDashboardPendenciasVazio_();
-  var agenda = getAgendaSheetForRead_();
+  var agenda = measure('sheet', 0, function() { return getAgendaSheetForRead_(); });
   var hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   var posVisitaCorte = parseAgendaDateAny_('2026-05-23');
   if (posVisitaCorte) posVisitaCorte.setHours(23, 59, 59, 999);
   var i = AGENDA_CFG.idx;
-  var vals = getDashboardAgendaDisplayRows_(agenda);
+  var vals = measure('agenda_read', 0, function() { return getDashboardAgendaDisplayRows_(agenda); });
   if (vals.length) {
-    var feriados = getAgendaFeriadosPendenciasMap_();
+    var feriados = measure('holidays', 0, function() { return getAgendaFeriadosPendenciasMap_(); });
     var agendaPorId = {};
+    measure('classify_agenda', vals.length, function() {
     vals.forEach(function(r) {
       var agendaIdAtual = String(r[i.id] || '').trim();
       if (agendaIdAtual) agendaPorId[agendaIdAtual] = r;
@@ -7558,9 +7586,11 @@ function getDashboardPendencias_(estoque) {
         }
       });
     });
-    var docsPendentes = typeof transporteDocumentosSemEnvioPendencias_ === 'function'
+    });
+    var docsPendentes = measure('transport_documents', 0, function() { return typeof transporteDocumentosSemEnvioPendencias_ === 'function'
       ? transporteDocumentosSemEnvioPendencias_(new Date())
-      : [];
+      : []; });
+    measure('classify_documents', docsPendentes.length, function() {
     docsPendentes.forEach(function(doc) {
       var r = agendaPorId[String(doc.agendaId || '').trim()];
       if (!r || AgendaServerRules_.isCancelled(r[i.status])) return;
@@ -7600,7 +7630,9 @@ function getDashboardPendencias_(estoque) {
         motivo: String(doc.motivo || 'Documentos gerados; envio do e-mail não identificado.')
       }));
     });
+    });
   }
+  measure('classify_stock', (estoque || []).length, function() {
   (estoque || []).forEach(function(it) {
     var tipo = normText_(it.tipoItem || it.tipo || '');
     var desc = normText_(it.descricao || '');
@@ -7620,8 +7652,14 @@ function getDashboardPendencias_(estoque) {
       localizacao: String(it.localizacao || '')
     });
   });
-  ordenarPendenciasAgendaPorUrgencia_(out.courierNaoAgendada);
-  if (typeof courierLembreteAnotarPendencias_ === 'function') courierLembreteAnotarPendencias_(out.courierNaoConfirmada);
+  });
+  measure('sort_unbooked', out.courierNaoAgendada.length, function() {
+    ordenarPendenciasAgendaPorUrgencia_(out.courierNaoAgendada);
+  });
+  measure('reminder_annotations', out.courierNaoConfirmada.length, function() {
+    if (typeof courierLembreteAnotarPendencias_ === 'function') courierLembreteAnotarPendencias_(out.courierNaoConfirmada);
+  });
+  measure('sort', vals.length + (estoque || []).length, function() {
   ordenarPendenciasAgendaPorUrgencia_(out.documentacaoTransporteSemEnvio);
   ordenarPendenciasAgendaPorUrgencia_(out.transporteBackupNaoAgendado);
   ordenarPendenciasAgendaPorUrgencia_(out.courierNaoConfirmada);
@@ -7630,6 +7668,7 @@ function getDashboardPendencias_(estoque) {
   ordenarPendenciasAgendaPorDataHora_(out.posVisitaPoloTrialPendente);
   ordenarPendenciasAgendaPorDataHora_(out.posVisitaEcrfPendente);
   out.kitsVencendo.sort(function(a, b) { return Number(a.dias || 0) - Number(b.dias || 0); });
+  });
   return out;
 }
 
@@ -16845,8 +16884,13 @@ function agendaDeniedBootstrap_(access) {
   };
 }
 
-function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, refreshReason) {
+function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, refreshReason, traceId) {
   if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
+  traceId = codexBootstrapTraceId_({ traceId: traceId });
+  function measure(stage, metadata, callback) {
+    metadata.traceId = traceId;
+    return codexMeasureReadPerformance_('getAgendaBootstrap', stage, metadata, callback);
+  }
   var refreshRequested = forceRefresh === true;
   var previousCacheBypass = CODEX_CACHE_BYPASS_READS_;
   // forceRefresh renova os eventos. As referencias tem invalidacao propria.
@@ -16855,15 +16899,15 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, r
     var referenceMeta = { rowCount: 0 };
     var canaryEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
     agendaLogBootstrapRequest_(access, refreshRequested, refreshReason, canaryEnabled);
-    var referenceData = codexMeasurePerformance_('getAgendaBootstrap', 'reference', referenceMeta, function() {
+    var referenceData = measure('reference', referenceMeta, function() {
       var data = agendaGetReferenceData_(false, canaryEnabled, function(stage, metadata, callback) {
-        return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
+        return measure(stage, metadata, callback);
       });
       referenceMeta.rowCount = agendaReferenceRowCount_(data);
       return data;
     });
     var measureWindow = function(stage, metadata, callback) {
-      return codexMeasurePerformance_('getAgendaBootstrap', stage, metadata, callback);
+      return measure(stage, metadata, callback);
     };
     // Mantem a leitura fresca do indice de datas e da hidratacao dos eventos,
     // inclusive quando a planilha foi editada fora do Web App.
@@ -16876,8 +16920,7 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, r
       measureWindow,
       { useCanaryCache: canaryEnabled, useCanaryDateIndex: canaryEnabled }
     );
-    var revision = codexMeasurePerformance_(
-      'getAgendaBootstrap',
+    var revision = measure(
       'revision',
       { rowCount: windowData.items.length },
       function() {
@@ -16909,16 +16952,17 @@ function agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, r
 }
 
 function getAgendaBootstrap(inicioIso, fimIso, forceRefresh, refreshReason) {
-  var totalMeta = { rowCount: 0 };
-  return codexMeasurePerformance_('getAgendaBootstrap', 'total', totalMeta, function() {
-    var accessMeta = { rowCount: 0 };
-    var access = codexMeasurePerformance_('getAgendaBootstrap', 'access', accessMeta, function() {
+  var traceId = codexBootstrapTraceId_();
+  var totalMeta = { traceId: traceId, rowCount: 0 };
+  return codexMeasureReadPerformance_('getAgendaBootstrap', 'total', totalMeta, function() {
+    var accessMeta = { traceId: traceId, rowCount: 0 };
+    var access = codexMeasureReadPerformance_('getAgendaBootstrap', 'access', accessMeta, function() {
       var currentAccess = codexGetCurrentUserAccess();
       accessMeta.rowCount = currentAccess && currentAccess.ok ? 1 : 0;
       return currentAccess;
     });
     if (!access || !access.ok) return agendaDeniedBootstrap_(access || { ok: false });
-    var result = agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, refreshReason);
+    var result = agendaGetBootstrapForAccess_(access, inicioIso, fimIso, forceRefresh, refreshReason, traceId);
     totalMeta.rowCount = Array.isArray(result.events) ? result.events.length : 0;
     return result;
   });

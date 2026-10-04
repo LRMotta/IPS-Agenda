@@ -367,6 +367,7 @@
       setPendenciasStatus('', '');
       setPendenciasButtonBusy(true, 'Atualizando...');
     }
+    var perf = typeof codexStartClientReadPerformance_ === 'function' ? codexStartClientReadPerformance_('getPendenciasOperacionais', forcar) : null;
     var finished = false;
     var watchdog = setTimeout(function() {
       failPendenciasRefresh({ message: 'Tempo limite ao carregar pendencias.' });
@@ -392,6 +393,7 @@
     function failPendenciasRefresh(e) {
       if (finished) return;
       finished = true;
+      if (perf) { perf.rpc(false); perf.finish(false); }
       if (_pendenciasRefreshQueued) {
         finishPendenciasRefresh();
         return;
@@ -412,22 +414,31 @@
       .withSuccessHandler(function(d) {
         if (finished) return;
         finished = true;
+        if (perf) perf.rpc(true);
         if (_pendenciasRefreshQueued) {
+          if (perf) perf.finish(false);
           finishPendenciasRefresh();
           return;
         }
-        if (!options.silent) setPendenciasButtonBusy(false);
-        _pendenciasCache = (d && d.pendencias) || {};
-        setPendenciasLoadedAtState(new Date());
-        renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
-        atualizarPendenciasTs(false);
-        if (!options.silent) setPendenciasStatus('', '');
-        finishPendenciasRefresh({ ok: true });
+        var applied = false;
+        try {
+          if (!options.silent) setPendenciasButtonBusy(false);
+          _pendenciasCache = (d && d.pendencias) || {};
+          setPendenciasLoadedAtState(new Date());
+          if (perf) perf.measure('render', function() { renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid'); });
+          else renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
+          atualizarPendenciasTs(false);
+          if (!options.silent) setPendenciasStatus('', '');
+          finishPendenciasRefresh({ ok: true });
+          applied = true;
+        } finally {
+          if (perf) perf.finish(applied);
+        }
       })
       .withFailureHandler(function(e) {
         failPendenciasRefresh(e);
       })
-      .getPendenciasOperacionais();
+      .getPendenciasOperacionais(perf ? perf.request : {});
   }
 
   function abrirPendenciaAgenda(agendaId) {

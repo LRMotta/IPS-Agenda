@@ -420,6 +420,39 @@ function codexClientBootstrapTraceId_() {
   return 'bootstrap-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 0x1000000).toString(36);
 }
 
+// Apenas métricas fixas; nunca recebe registros ou mensagens de erro.
+function codexStartClientReadPerformance_(operation, forced) {
+  var traceId = codexClientBootstrapTraceId_();
+  var startedAt = codexClientNow_();
+  var done = false;
+  function log(stage, duration, success) {
+    try {
+      if (window.console && typeof window.console.info === 'function') {
+        window.console.info('[CODEX_PERF_CLIENT] ' + JSON.stringify({
+          operation: operation, traceId: traceId, stage: stage,
+          durationMs: Math.max(0, Math.round(duration)), success: success === true,
+          forceRefresh: forced === true
+        }));
+      }
+    } catch (ignore) {}
+  }
+  return {
+    request: { traceId: traceId },
+    rpc: function(success) { log('rpc', codexClientNow_() - startedAt, success); },
+    measure: function(stage, callback) {
+      var start = codexClientNow_();
+      var success = false;
+      try { var result = callback(); success = true; return result; }
+      finally { log(stage, codexClientNow_() - start, success); }
+    },
+    finish: function(success) {
+      if (done) return;
+      done = true;
+      log('total', codexClientNow_() - startedAt, success);
+    }
+  };
+}
+
 function codexClientBootstrapPayloadBytes_(data) {
   try {
     var serialized = JSON.stringify(data);
