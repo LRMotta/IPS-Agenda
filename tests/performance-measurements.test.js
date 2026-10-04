@@ -31,9 +31,10 @@ function fixture() {
 test('Dashboard mede cada etapa e total sem duplicar leituras ou alterar a resposta', () => {
   const f = fixture();
   f.read(100, 9, 9); // Leituras anteriores na mesma execução não pertencem ao Dashboard.
-  const result = f.server.getDashboardData();
+  const result = f.server.getDashboardData({ traceId: 'dashboard-stage-test' });
   assert.equal(result.projetos[0].nomeAbreviado, 'DADO_PRIVADO');
   const entries = f.entries();
+  assert.equal(entries.every(entry => entry.traceId === 'dashboard-stage-test'), true);
   assert.deepEqual(entries.map(entry => entry.stage), ['access', 'projects', 'participants', 'stock', 'agenda', 'pending', 'serialize', 'total']);
   assert.deepEqual(entries.slice(0, 6).map(entry => entry.durationMs), [5, 10, 20, 30, 40, 50]);
   const total = entries.at(-1);
@@ -97,4 +98,73 @@ test('leitura formatada permanece intacta e falha de telemetria não altera a op
   assert.throws(() => f.server.codexMeasureReadPerformance_('teste', 'total', {}, () => {
     throw failure;
   }), error => error === failure);
+});
+
+test('Pendências mede acesso, estoque, composição e serialização sem alterar resultado', () => {
+  const f = fixture();
+  f.server.codexGetCurrentUserAccess = () => { f.read(5); return { ok: true }; };
+  f.server.getEstoqueResumoParaPendencias_ = () => { f.read(10, 2, 3); return []; };
+  f.server.getDashboardPendencias_ = (_stock, perf) => {
+    assert.equal(perf.traceId, 'pending-stage-test');
+    f.read(20, 3, 4);
+    return { counts: { courier: 2 }, courier: [{ nome: 'DADO_PRIVADO' }] };
+  };
+  const result = f.server.getPendenciasOperacionais({ traceId: 'pending-stage-test' });
+  assert.equal(result.pendencias.courier[0].nome, 'DADO_PRIVADO');
+  const entries = f.entries();
+  assert.deepEqual(entries.map(e => e.stage), ['access', 'stock', 'pending', 'serialize', 'total']);
+  assert.equal(entries.every(e => e.traceId === 'pending-stage-test'), true);
+  assert.equal(entries.at(-1).durationMs, 35);
+  assert.equal(entries.at(-1).instrumentedReadCalls, 3);
+  assert.equal(entries.at(-1).instrumentedCellsRead, 20);
+  assert.equal(entries.at(-1).responseBytes, Buffer.byteLength(JSON.stringify(result)));
+  assert.equal(JSON.stringify(entries).includes('DADO_PRIVADO'), false);
+});
+
+test('Pendências preserva acesso negado e falha de composição com total malsucedido', () => {
+  for (const denied of [true, false]) {
+    const f = fixture();
+    f.server.codexGetCurrentUserAccess = () => ({ ok: !denied, message: 'negado' });
+    f.server.getEstoqueResumoParaPendencias_ = () => [];
+    f.server.getDashboardPendencias_ = () => { throw new Error('DADO_PRIVADO'); };
+    assert.throws(() => f.server.getPendenciasOperacionais(), denied ? /negado/ : /DADO_PRIVADO/);
+    assert.equal(f.entries().at(-1).success, false);
+    assert.equal(f.entries().some(e => e.stage === 'stock'), !denied);
+  }
+});
+
+test('Agenda propaga trace e contadores para referências, janela e revisão', () => {
+  const f = fixture();
+  f.server.agendaWindowedLoadingV2EnabledForAccess_ = () => true;
+  f.server.agendaLogBootstrapRequest_ = () => {};
+  f.server.agendaGetReferenceData_ = (_force, _cache, measure) => measure('reference_test', {}, () => { f.read(5); return {}; });
+  f.server.agendaGetEventosPorPeriodo_ = (_start, _end, _max, _force, measure) =>
+    measure('row_read', {}, () => { f.read(10); return { items: [], total: 0 }; });
+  f.server.agendaBootstrapRevision_ = () => 'revision';
+  const result = f.server.agendaGetBootstrapForAccess_({ ok: true }, '2026-10-01', '2026-10-08', false, 'app_initial', 'agenda-stage-test');
+  assert.equal(result.revision, 'revision');
+  assert.equal(f.entries().every(e => e.traceId === 'agenda-stage-test'), true);
+  assert.equal(f.entries().find(e => e.stage === 'reference_test').instrumentedReadCalls, 1);
+  assert.equal(f.entries().find(e => e.stage === 'row_read').instrumentedReadCalls, 1);
+});
+
+test('subetapas reais de Pendências preservam resultado e ordem de classificação/anotações', () => {
+  const { dashboardAgendaFixture } = require('./helpers/dashboard-agenda-fixture');
+  const f = dashboardAgendaFixture();
+  const logs = [], order = [];
+  f.server.Logger = { log: line => logs.push(line) };
+  f.server.getAgendaFeriadosPendenciasMap_ = () => ({});
+  f.server.transporteDocumentosSemEnvioPendencias_ = () => [];
+  const originalSort = f.server.ordenarPendenciasAgendaPorUrgencia_;
+  f.server.ordenarPendenciasAgendaPorUrgencia_ = values => { order.push('sort'); return originalSort(values); };
+  f.server.courierLembreteAnotarPendencias_ = () => { order.push('reminders'); };
+  const result = f.server.getDashboardPendencias_([], { operation: 'getPendenciasOperacionais', traceId: 'pending-real-test' });
+  const entries = logs.filter(line => line.startsWith('[CODEX_PERF] ')).map(line => JSON.parse(line.slice(13)));
+  assert.deepEqual(entries.map(e => e.stage), ['pending_sheet', 'pending_agenda_read', 'pending_holidays',
+    'pending_classify_agenda', 'pending_transport_documents', 'pending_classify_documents', 'pending_classify_stock',
+    'pending_sort_unbooked', 'pending_reminder_annotations', 'pending_sort']);
+  assert.equal(entries.every(e => e.traceId === 'pending-real-test' && e.success), true);
+  assert.equal(entries.find(e => e.stage === 'pending_agenda_read').instrumentedReadCalls, 1);
+  assert.deepEqual(order.slice(0, 2), ['sort', 'reminders']);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), JSON.parse(JSON.stringify(f.server.getDashboardPendencias_([]))));
 });
