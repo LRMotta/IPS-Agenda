@@ -1292,12 +1292,14 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
 
   var rows = TRANSPORTE_MATERIAL_KEYS.map(function(key) {
     var item = byKey[key];
+    // Sem formula, os zeros da normalizacao indicam ausencia de quantificacao.
+    // Preserve o material/ensaio sem envia-los como uma quantidade invalida.
     return item ? {
       ativo: true,
       material: TRANSPORTE_MATERIAL_ALIASES[key],
-      tubos: item.tubos,
+      tubos: item.formulas.length ? item.tubos : '',
       formula: item.formulas.join(', '),
-      total: item.total,
+      total: item.formulas.length ? item.total : '',
       ensaio: item.ensaios.join('; '),
       unit: item.unit
     } : {
@@ -1314,9 +1316,9 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
     rows.push({
       ativo: true,
       material: byKey.outro.material,
-      tubos: byKey.outro.tubos,
+      tubos: byKey.outro.formulas.length ? byKey.outro.tubos : '',
       formula: byKey.outro.formulas.join(', '),
-      total: byKey.outro.total,
+      total: byKey.outro.formulas.length ? byKey.outro.total : '',
       ensaio: byKey.outro.ensaios.join('; '),
       unit: byKey.outro.unit
     });
