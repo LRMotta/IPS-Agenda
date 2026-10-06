@@ -1526,10 +1526,19 @@
       (rows || []).forEach(function(m) {
         if (!m.ativo && !m.formula && !m.tubos) return;
         var cfg = matBioTypeConfig(m.material);
+        var formula = m.formula || '';
+        if (!formula && ((m.tubos !== undefined && m.tubos !== null && m.tubos !== '')
+            || (m.total !== undefined && m.total !== null && m.total !== ''))) {
+          var qtd = Number(String(m.tubos).replace(',', '.'));
+          var total = m.total !== undefined && m.total !== null && m.total !== '' ? Number(String(m.total).replace(',', '.')) : NaN;
+          formula = Number.isSafeInteger(qtd) && qtd > 0 && isFinite(total) && total >= 0
+            ? CodexMatBioCore.formulaFromSegments([{ qtd: qtd, vol: total / qtd }], m.unit || matBioDisplayUnit(cfg && cfg.unit))
+            : 'Revise a quantidade e o volume';
+        }
         items.push({
           key: cfg ? cfg.key : 'outro',
           tipo: cfg ? cfg.label : m.material,
-          formula: m.formula || '',
+          formula: formula,
           unit: m.unit || '',
           ensaio: m.ensaio || ''
         });
@@ -1770,7 +1779,7 @@
         var parsed = matBioParseFormula(formulaEl ? formulaEl.value : '');
         if (!parsed.valid || (parsed.segmentos.length && matBioUnitKey(row.dataset.formulaUnit || matBioDisplayUnit(cfg.unit)) !== matBioDisplayUnit(cfg.unit))) return;
         var label = cfg.outro ? ((row.querySelector('.ag-mat-other') || {}).value || '').trim() : cfg.label;
-        if (!label || (!parsed.segmentos.length && !cfg.outro)) return;
+        if (!label) return;
         items.push({
           key: cfg.key,
           tipo: label,

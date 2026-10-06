@@ -42,21 +42,22 @@ function formSheet(name) {
   return sheet;
 }
 
-function saveFixture() {
+function saveFixture(withPeticao = false) {
   const folha = formSheet('Folha');
   const declaracao = formSheet('Declaracao');
   const dhl = formSheet('DHL');
+  const peticao = withPeticao ? formSheet('Peticao') : null;
   let reads = 0;
   const s = server({ SpreadsheetApp: { flush() {} }, codexCourierRequiresAwb_: () => false, codexCourierAssertDocumentAwb_() {} });
   s.getTransporteSpreadsheetCodex_ = () => ({});
-  s.transporteGetSheet_ = (_ss, key) => ({ folhaAgendamento: folha, declaracaoTransp: declaracao, folhaDhlPinex: dhl })[key] || null;
+  s.transporteGetSheet_ = (_ss, key) => ({ folhaAgendamento: folha, declaracaoTransp: declaracao, folhaDhlPinex: dhl, peticaoAnuencia: peticao })[key] || null;
   s.transporteReadParticipantesDireto_ = () => { reads++; return [participante]; };
   s.transporteInvestigadorPorProjeto_ = () => 'Investigador';
   s.transporteProjetoDisplay_ = value => value;
   s.transporteLabCentralByDestino_ = () => ({ nome: 'Lab' });
   s.transporteSetTopLeftInBlock_ = (sheet, a1, value) => sheet.getRange(a1.split(':')[0]).setValue(value);
   s.transporteAjustarVolumesDeclaracao_ = () => {};
-  s.transporteSetEnsaiosPeticao_ = () => {};
+  if (!withPeticao) s.transporteSetEnsaiosPeticao_ = () => {};
   s.transporteSincronizarAgenda_ = () => ({ atualizado: false });
   const payload = {
     paciente: 'Pessoa antiga', participanteCadastroId: 'CAD-A', identificacaoParticipante: '999',
@@ -64,8 +65,55 @@ function saveFixture() {
     dataColeta: '2026-09-30', dataEnvio: '2026-09-30', horaEnvio: '08:00 - 12:00',
     courier: 'DHL', destino: 'Lab', agendadoPor: 'Usuario', materiais: []
   };
-  return { s, folha, declaracao, dhl, payload, reads: () => reads };
+  return { s, folha, declaracao, dhl, peticao, payload, reads: () => reads };
 }
+
+test('salvar e reabrir preserva todos os ensaios e materiais personalizados sem alterar notas manuais', () => {
+  const { s, declaracao, peticao, payload } = saveFixture(true);
+  payload.materiais = s.TRANSPORTE_MATERIAIS.map((material, index) => ({
+    ativo: true, material, formula: '1x0', ensaio: 'Ensaio ' + (index + 1), unit: s.codexMatBioUnit_(s.transporteMaterialKey_(material), 'mL') === 'g' ? 'g' : 'L'
+  }));
+  payload.materiais.push({ ativo: true, material: 'Liquor', ensaio: 'PCR A', formula: '2x0,003', unit: 'L' },
+    { ativo: true, material: 'Swab', ensaio: 'PCR B', formula: '', unit: 'L' });
+  delete payload.materiais[6].ensaio;
+  payload.materiais[6].exame = 'Ensaio 7';
+  delete payload.materiais[9].ensaio;
+  payload.materiais[9].nomeExame = 'PCR B';
+  declaracao.getRange('F30').setNote('Nota manual');
+  s.transporteReadSolicitarCaixa_ = () => false;
+  s.transporteDateOut_ = () => '2026-09-30';
+  s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false });
+  const read = s.transporteReadRegistro_().materiais;
+  assert.equal(read.length, 10);
+  for (let i = 0; i < 8; i++) {
+    assert.equal(read[i].ensaio, 'Ensaio ' + (i + 1));
+    assert.equal(read[i].total, 0);
+  }
+  assert.equal(read[8].material, 'Liquor');
+  assert.equal(read[8].ensaio, 'PCR A');
+  assert.equal(read[8].total, 0.006);
+  assert.equal(read[9].material, 'Swab');
+  assert.equal(read[9].ensaio, 'PCR B');
+  assert.ok(declaracao.getRange('F30').getNote().startsWith('Nota manual\n'));
+  s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false });
+  assert.equal((declaracao.getRange('F30').getNote().match(/\[CODEX_TRANSPORTE_MATERIAIS_V1\]/g) || []).length, 1);
+  declaracao.getRange('F30').setValue('Material alterado manualmente');
+  declaracao.getRange('J21').setValue('2x1');
+  peticao.getRange('P31').setValue('Ensaio editado manualmente');
+  const edited = s.transporteReadRegistro_().materiais;
+  assert.equal(edited[8].material, 'Material alterado manualmente');
+  assert.equal(edited[8].formula, '');
+  assert.equal(edited[0].ensaio, 'Ensaio 1', 'mantem a leitura da Peticao apos editar a formula');
+  assert.equal(edited[1].ensaio, 'Ensaio editado manualmente');
+  assert.equal(edited[6].ensaio, 'Ensaio 7');
+});
+
+test('metadados excessivos sao rejeitados antes da primeira escrita', () => {
+  const { s, folha, declaracao, dhl, payload } = saveFixture();
+  payload.materiais = s.transporteMateriaisFromCodex_('DHL', '', 'A'.repeat(46000));
+  assert.throws(() => s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false }), /limite de armazenamento/);
+  assert.equal(folha.writes + declaracao.writes + dhl.writes, 0);
+});
 
 for (const action of ['limparTransporte', 'sincronizarTransporte']) {
   test(action + ' protege todas as escritas e a releitura com o mesmo lock', () => {

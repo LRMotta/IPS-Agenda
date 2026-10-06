@@ -59,6 +59,58 @@ test('MatBio valida segmentos JSON e nao converte dados invalidos em zero ou nul
   }
 });
 
+test('MatBio interpreta ponto decimal no volume sem multiplicar por mil', () => {
+  for (const core of implementations) {
+    for (const [formula, total] of [['2x1.500', 3], ['2x1.234', 2.468], ['2x0.500', 1], ['2x1,5', 3], ['1x1.000.000', 1000000]]) {
+      const parsed = core.parseFormula(formula);
+      assert.equal(parsed.valid, true, formula);
+      assert.equal(parsed.total, total, formula);
+      const serialized = core.serializeItems([{ key: 'soro', unit: 'mL', formula }]);
+      assert.equal(JSON.parse(serialized.json).items[0].total, total);
+    }
+    assert.equal(core.parseFormula(core.convertFormulaUnit('2x1.500', 'mL', 'L')).total, 0.003);
+  }
+});
+
+test('Transporte para Agenda preserva materiais padrao sem quantificacao', () => {
+  const materiais = server.transporteMateriaisFromCodex_('MARKEN', server.codexMatBioSerializeItems_([
+    { key: 'soro', unit: 'mL', ensaio: 'Exame sem volume' },
+    { key: 'fezes', unit: 'g', ensaio: 'Exame fecal' }
+  ]).json, '');
+  server.codexMatBioValidateTransportPayload_({ courier: 'MARKEN', materiais });
+  const roundtrip = JSON.parse(server.transporteMateriaisParaAgenda_(materiais).json).items;
+  assert.equal(roundtrip.length, 2);
+  assert.equal(roundtrip[0].key, 'soro');
+  assert.equal(roundtrip[0].ensaio, 'Exame sem volume');
+  assert.equal(roundtrip[1].key, 'fezes');
+  for (const item of roundtrip) assert.equal(item.segmentos.length, 0);
+});
+
+test('Agenda para Transporte nao funde tipos personalizados distintos', () => {
+  const json = server.codexMatBioSerializeItems_([
+    { key: 'outro', tipo: 'Liquor', formula: '1x2', ensaio: 'PCR A' },
+    { key: 'outro', tipo: 'Swab', formula: '2x3', ensaio: 'PCR B' }
+  ]).json;
+  const materiais = server.transporteMateriaisFromCodex_('MARKEN', json, '');
+  assert.equal(materiais.length, 10);
+  assert.equal(materiais[8].material, 'Liquor');
+  assert.equal(materiais[8].total, 2);
+  assert.equal(materiais[9].material, 'Swab');
+  assert.equal(materiais[9].total, 6);
+  const items = JSON.parse(server.transporteMateriaisParaAgenda_(materiais).json).items;
+  assert.deepEqual(items.map(item => item.tipo), ['Liquor', 'Swab']);
+});
+
+test('Transporte rejeita quantificacao parcial e preserva numeros legados completos', () => {
+  for (const values of [{ tubos: 2 }, { total: 3 }, { tubos: 2, total: null }, { tubos: null, total: 3 }]) {
+    assert.throws(() => server.codexMatBioValidateTransportPayload_({ courier: 'MARKEN', materiais: [{ ativo: true, material: 'Soro', ...values }] }), /quantidade e o volume total/);
+  }
+  const payload = { courier: 'MARKEN', materiais: [{ ativo: true, material: 'Soro', tubos: '2', total: '3,5' }] };
+  server.codexMatBioValidateTransportPayload_(payload);
+  assert.equal(payload.materiais[0].tubos, 2);
+  assert.equal(payload.materiais[0].total, 3.5);
+});
+
 test('MatBio bloqueia unidades mistas e exige unidade da Courier mantendo gramas', () => {
   for (const core of implementations) {
     const ml = { key: 'soro', unit: 'mL', formula: '1x500' };
