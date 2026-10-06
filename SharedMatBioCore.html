@@ -37,7 +37,7 @@
       if ((!segmentos.length && gap.trim()) || (segmentos.length && !/^\s*[;, +\n]\s*$/.test(gap))) {
         error = 'Revise a fórmula completa de tubos e volume.'; break;
       }
-      var qtd = formulaNumber(m[1]), vol = formulaNumber(m[2]);
+      var qtd = formulaNumber(m[1], true), vol = formulaNumber(m[2], false);
       if (!Number.isSafeInteger(qtd) || qtd <= 0 || !isFinite(vol) || vol < 0) {
         error = 'Informe uma quantidade inteira positiva de tubos e um volume válido.'; break;
       }
@@ -50,9 +50,12 @@
       : { tubos: tubos, total: total, segmentos: segmentos, valid: true, error: '' };
   }
 
-  function formulaNumber(value) {
+  function formulaNumber(value, quantity) {
     var text = String(value);
-    if (/^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?$/.test(text)) text = text.replace(/\./g, '');
+    // Tubos aceitam milhares legados; no volume, um ponto isolado e decimal.
+    // Milhares no volume continuam aceitos com virgula decimal ou varios grupos.
+    if ((quantity || text.indexOf(',') >= 0 || text.split('.').length > 2)
+        && /^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?$/.test(text)) text = text.replace(/\./g, '');
     return Number(text.replace(',', '.'));
   }
 

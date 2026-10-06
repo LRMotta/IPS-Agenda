@@ -1018,7 +1018,7 @@ function codexMatBioFormatNumber_(value, decimals) {
       if ((!segmentos.length && gap.trim()) || (segmentos.length && !/^\s*[;, +\n]\s*$/.test(gap))) {
         error = 'Revise a fórmula completa de tubos e volume.'; break;
       }
-      var qtd = codexMatBioFormulaNumber_(m[1]), vol = codexMatBioFormulaNumber_(m[2]);
+      var qtd = codexMatBioFormulaNumber_(m[1], true), vol = codexMatBioFormulaNumber_(m[2], false);
       if (!Number.isSafeInteger(qtd) || qtd <= 0 || !isFinite(vol) || vol < 0) {
         error = 'Informe uma quantidade inteira positiva de tubos e um volume válido.'; break;
       }
@@ -1031,9 +1031,12 @@ function codexMatBioFormatNumber_(value, decimals) {
       : { tubos: tubos, total: total, segmentos: segmentos, valid: true, error: '' };
   }
 
-  function codexMatBioFormulaNumber_(value) {
+  function codexMatBioFormulaNumber_(value, quantity) {
     var text = String(value);
-    if (/^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?$/.test(text)) text = text.replace(/\./g, '');
+    // Tubos aceitam milhares legados; no volume, um ponto isolado e decimal.
+    // Milhares no volume continuam aceitos com virgula decimal ou varios grupos.
+    if ((quantity || text.indexOf(',') >= 0 || text.split('.').length > 2)
+        && /^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?$/.test(text)) text = text.replace(/\./g, '');
     return Number(text.replace(',', '.'));
   }
 
@@ -1183,6 +1186,7 @@ function codexMatBioValidateTransportPayload_(payload) {
   if (!Array.isArray(materials)) throw new Error('Materiais de Transporte inválidos.');
   materials.forEach(function(item) {
     if (!item || item.ativo !== true) return;
+    item.ensaio = String(item.ensaio || item.exame || item.nomeExame || '').trim();
     var cfg = codexMatBioTypeConfig_(item.material), expected = cfg && cfg.unit === 'g' ? 'g' : codexMatBioCourierUnit_(payload.courier);
     var unit = codexMatBioUnitKey_(item.unit || expected);
     var parsed = codexMatBioParseFormula_(item.formula || '');
@@ -1191,11 +1195,17 @@ function codexMatBioValidateTransportPayload_(payload) {
     if (parsed.segmentos.length) {
       item.tubos = parsed.tubos; item.total = parsed.total;
       item.formula = codexMatBioFormulaFromSegments_(parsed.segmentos, unit);
-    } else if (item.tubos !== undefined && item.tubos !== '' && item.total !== undefined && item.total !== '') {
+    } else if ((item.tubos !== undefined && item.tubos !== null && item.tubos !== '')
+        || (item.total !== undefined && item.total !== null && item.total !== '')) {
+      if (item.tubos === undefined || item.tubos === null || item.tubos === ''
+          || item.total === undefined || item.total === null || item.total === '') {
+        throw new Error('Informe a quantidade e o volume total do material ' + item.material + ', ou deixe ambos vazios.');
+      }
       var numeric = codexMatBioValidateSegments_([{ qtd: item.tubos, vol: item.total }])[0];
       var tubos = numeric.qtd, total = numeric.vol;
       codexMatBioValidateSegments_([{ qtd: tubos, vol: total / tubos }]);
       if (unit !== expected) throw new Error('Revise a unidade do material ' + item.material + ' para ' + expected + '.');
+      item.tubos = tubos; item.total = total;
     }
     item.unit = unit;
   });
@@ -1256,10 +1266,12 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
   var parsedItems = codexMatBioParseJson_(matBioJson, true);
   codexMatBioAssertItemsUnit_(parsedItems, codexMatBioCourierUnit_(courier));
   var byKey = Object.create(null);
+  var otherKeys = [];
   parsedItems.forEach(function(item) {
     item = item || {};
     var key = transporteMaterialKey_(item.key || item.tipo);
     var label = key === 'outro' ? String(item.tipo || 'Outro tipo').trim() : TRANSPORTE_MATERIAL_ALIASES[key];
+    var groupKey = key === 'outro' ? key + '|' + codexMatBioNorm_(label) : key;
     var baseUnit = codexMatBioUnit_(key, 'mL');
     var unit = item.unit ? transporteMatBioUnitKey_(item.unit) : (baseUnit === 'g' ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'));
     var formula = Array.isArray(item.segmentos) && item.segmentos.length
@@ -1269,13 +1281,14 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
     var calc = normalized;
     var total = item.total !== undefined && item.total !== null && item.total !== '' ? Number(item.total) : calc.total;
     var tubos = item.tubos !== undefined && item.tubos !== null && item.tubos !== '' ? Number(item.tubos) : calc.tubos;
-    if (!byKey[key]) {
-      byKey[key] = { ativo: true, material: label, tubos: 0, total: 0, formulas: [], ensaios: [], unit: unit };
+    if (!byKey[groupKey]) {
+      byKey[groupKey] = { ativo: true, material: label, tubos: 0, total: 0, formulas: [], ensaios: [], unit: unit };
+      if (key === 'outro') otherKeys.push(groupKey);
     }
-    byKey[key].tubos += tubos || 0;
-    byKey[key].total += total || 0;
-    if (formula) byKey[key].formulas.push(formula);
-    if (item.ensaio) byKey[key].ensaios.push(String(item.ensaio).trim());
+    byKey[groupKey].tubos += tubos || 0;
+    byKey[groupKey].total += total || 0;
+    if (formula) byKey[groupKey].formulas.push(formula);
+    if (item.ensaio) byKey[groupKey].ensaios.push(String(item.ensaio).trim());
   });
 
   if (!parsedItems.length && materialLegacy) {
@@ -1288,6 +1301,7 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
       ensaios: [],
       unit: transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'
     };
+    otherKeys.push('outro');
   }
 
   var rows = TRANSPORTE_MATERIAL_KEYS.map(function(key) {
@@ -1312,17 +1326,18 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
       unit: codexMatBioUnit_(key, 'mL') === 'g' ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL')
     };
   });
-  if (byKey.outro) {
+  otherKeys.forEach(function(key) {
+    var item = byKey[key];
     rows.push({
       ativo: true,
-      material: byKey.outro.material,
-      tubos: byKey.outro.formulas.length ? byKey.outro.tubos : '',
-      formula: byKey.outro.formulas.join(', '),
-      total: byKey.outro.formulas.length ? byKey.outro.total : '',
-      ensaio: byKey.outro.ensaios.join('; '),
-      unit: byKey.outro.unit
+      material: item.material,
+      tubos: item.formulas.length ? item.tubos : '',
+      formula: item.formulas.join(', '),
+      total: item.formulas.length ? item.total : '',
+      ensaio: item.ensaios.join('; '),
+      unit: item.unit
     });
-  }
+  });
   return rows;
 }
 
@@ -2371,6 +2386,65 @@ function transporteReadOptions_(opts) {
   return out;
 }
 
+function transporteMaterialPersistido_(item) {
+  item = item || {};
+  var formula = String(item.formula || '');
+  var parsed = transporteParseFormula_(formula);
+  return {
+    ativo: item.ativo === true,
+    tubos: item.tubos !== undefined && item.tubos !== null && item.tubos !== '' ? item.tubos : (parsed.segmentos.length ? parsed.tubos : ''),
+    formula: formula,
+    total: item.total !== undefined && item.total !== null && item.total !== '' ? item.total : (parsed.segmentos.length ? parsed.total : '')
+  };
+}
+
+function transporteOutrosMateriaisTexto_(materiais) {
+  return (materiais || []).slice(8).filter(function(item) { return item && item.ativo === true; }).map(function(item) {
+    return [item.material, item.ensaio, item.formula].filter(Boolean).join(' - ');
+  }).join('; ');
+}
+
+function transporteMateriaisNote_(oldNote, payload, peticao) {
+  // Metadados preservam o editor completo sem alterar o layout dos documentos.
+  // O texto visivel e os valores das linhas impedem usar dados antigos apos edicao manual.
+  var marker = /\n?\[CODEX_TRANSPORTE_MATERIAIS_V1\]\n[^\n]*\n\[\/CODEX_TRANSPORTE_MATERIAIS_V1\]/g;
+  var original = String(oldNote || '').replace(marker, '');
+  var materiais = payload.materiais || [];
+  var seq = 0;
+  var snapshots = materiais.slice(0, 8).map(function(item) {
+    var snapshot = transporteMaterialPersistido_(item);
+    snapshot.compareEnsaio = !!peticao && snapshot.ativo && seq < 6;
+    if (snapshot.ativo) seq++;
+    snapshot.ensaio = String(item.ensaio || item.exame || item.nomeExame || '').trim();
+    return snapshot;
+  });
+  var meta = { courier: String(payload.courier || ''), outrosTexto: transporteOutrosMateriaisTexto_(materiais), materiais: materiais, snapshots: snapshots };
+  var note = original + (original ? '\n' : '') + '[CODEX_TRANSPORTE_MATERIAIS_V1]\n' + JSON.stringify(meta) + '\n[/CODEX_TRANSPORTE_MATERIAIS_V1]';
+  if (note.length > 45000) throw new Error('Materiais de Transporte excedem o limite de armazenamento. Reduza as descrições.');
+  return note;
+}
+
+function transporteRestaurarMateriaisNote_(materiais, note, courier, outrosTexto) {
+  var match = String(note || '').match(/\[CODEX_TRANSPORTE_MATERIAIS_V1\]\n([^\n]*)\n\[\/CODEX_TRANSPORTE_MATERIAIS_V1\]/);
+  if (!match) return materiais;
+  var meta;
+  try { meta = JSON.parse(match[1]); } catch (e) { return materiais; }
+  if (!meta || meta.courier !== String(courier || '') || !Array.isArray(meta.materiais) || !Array.isArray(meta.snapshots)) return materiais;
+  materiais.slice(0, 8).forEach(function(item, index) {
+    var snapshot = meta.snapshots[index], stored = meta.materiais[index];
+    if (!snapshot || !stored || String(item.material) !== String(stored.material)) return;
+    if ((!snapshot.compareEnsaio || String(item.ensaio || '') === snapshot.ensaio)
+        && ['ativo', 'tubos', 'formula', 'total'].every(function(key) { return String(item[key]) === String(snapshot[key]); })) {
+      item.ensaio = String(stored.ensaio || stored.exame || stored.nomeExame || '');
+      item.unit = stored.unit;
+    }
+  });
+  if (meta.outrosTexto === outrosTexto) {
+    materiais = materiais.slice(0, 8).concat(meta.materiais.slice(8).filter(function(item) { return item && item.ativo === true; }));
+  }
+  return materiais;
+}
+
 function transporteReadRegistro_() {
   var ss = getTransporteSpreadsheetCodex_();
   var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
@@ -2393,7 +2467,7 @@ function transporteReadRegistro_() {
         material: String(r[1] || TRANSPORTE_MATERIAIS[idx] || '').trim(),
         tubos: r[6] || '',
         formula: r[8] || r[9] || r[10] || '',
-        total: r[12] || '',
+        total: r[12] === 0 ? 0 : (r[12] || ''),
         ensaio: ''
       });
     });
@@ -2418,6 +2492,7 @@ function transporteReadRegistro_() {
         ensaio: ''
       });
     }
+    materiais = transporteRestaurarMateriaisNote_(materiais, declaracao.getRange('F30').getNote(), cfg[7], outroMaterial);
   } else {
     TRANSPORTE_MATERIAIS.forEach(function(m, idx) {
       materiais.push({ row: idx + 21, ativo: false, material: m, tubos: '', formula: '', total: '', ensaio: '' });
@@ -2579,6 +2654,7 @@ function salvarTransporteInterno_(payload, options) {
   var declaracao;
   var folhaDhl;
   var peticao;
+  var materiaisNote;
   transporteMeasurePerformance_('salvarTransporte', 'read_prepare', { rowCount: 1 }, function() {
     ss = getTransporteSpreadsheetCodex_();
     folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
@@ -2599,6 +2675,7 @@ function salvarTransporteInterno_(payload, options) {
     payload = transporteDerivarDadosParticipante_(payload, participanteOptions);
     if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
     codexMatBioValidateTransportPayload_(payload);
+    materiaisNote = transporteMateriaisNote_(declaracao.getRange('F30').getNote(), payload, peticao);
     payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
   });
 
@@ -2621,19 +2698,17 @@ function salvarTransporteInterno_(payload, options) {
   }
 
   var materiais = payload.materiais || [];
-  var outrosMateriais = [];
   var ativos = [];
   var tubos = [];
   var formulas = [];
   var totais = [];
   for (var i = 0; i < 8; i++) {
     var item = materiais[i] || {};
-    var formula = item.formula || '';
-    var parsed = transporteParseFormula_(formula);
-    ativos.push([item.ativo === true]);
-    tubos.push([item.tubos || parsed.tubos || '']);
-    formulas.push([formula]);
-    totais.push([item.total || parsed.total || '']);
+    var persisted = transporteMaterialPersistido_(item);
+    ativos.push([persisted.ativo]);
+    tubos.push([persisted.tubos]);
+    formulas.push([persisted.formula]);
+    totais.push([persisted.total]);
   }
   declaracao.getRange('B21:B28').setValues(ativos);
   declaracao.getRange('H21:H28').setValues(tubos);
@@ -2644,18 +2719,13 @@ function salvarTransporteInterno_(payload, options) {
   });
   transporteAjustarVolumesDeclaracao_(declaracao, false);
   declaracao.getRange('N21:N28').setValues(totais);
-  for (var j = 8; j < materiais.length; j++) {
-    if (materiais[j] && materiais[j].ativo) {
-      outrosMateriais.push(
-        [materiais[j].material, materiais[j].ensaio, materiais[j].formula].filter(Boolean).join(' - ')
-      );
-    }
-  }
-  if (outrosMateriais.length) {
-    declaracao.getRange('F30').setValue(outrosMateriais.join('; '));
+  var outrosTexto = transporteOutrosMateriaisTexto_(materiais);
+  if (outrosTexto) {
+    declaracao.getRange('F30').setValue(outrosTexto);
   } else {
     declaracao.getRange('F30').clearContent();
   }
+  declaracao.getRange('F30').setNote(materiaisNote);
     transporteSetEnsaiosPeticao_(peticao, materiais);
   });
 
@@ -3208,7 +3278,7 @@ function transporteMateriaisParaAgenda_(materiais) {
       segmentos = [{ qtd: tubos, vol: total / tubos }];
       formula = transporteFormulaFromSegments_(segmentos, unit);
     }
-    if (!tipo || (!segmentos.length && key !== 'outro')) return;
+    if (!tipo) return;
     items.push({
       key: key,
       tipo: tipo,
