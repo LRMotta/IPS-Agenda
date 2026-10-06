@@ -96,6 +96,26 @@ test('Agenda para Transporte preserva material sem formula como quantidade ausen
   }
 });
 
+test('formulario de Transporte preserva quantificacao ausente e passa na validacao do servidor', () => {
+  const core = clientCore();
+  for (const courier of ['MARKEN', 'DHL']) {
+    const unit = courier === 'DHL' ? 'L' : 'mL';
+    const materiais = core.transportRowsFromItems([
+      { key: 'soro', ensaio: 'Sem volume', unit },
+      { key: 'outro', tipo: 'Lâminas', ensaio: 'Hematologia', unit },
+      { key: 'fezes', formula: '2x0', unit: 'g' }
+    ]);
+    for (const item of materiais.filter(item => item.ativo && item.material !== 'Fezes')) {
+      assert.equal(item.tubos, '');
+      assert.equal(item.total, '');
+      assert.equal(item.formula, '');
+    }
+    assert.equal(materiais.find(item => item.material === 'Fezes').tubos, 2);
+    assert.equal(materiais.find(item => item.material === 'Fezes').total, 0);
+    assert.doesNotThrow(() => server.codexMatBioValidateTransportPayload_({ courier, materiais }));
+  }
+});
+
 test('Agenda para Transporte conserva formulas quantificadas ao agrupar material sem formula', () => {
   const json = server.codexMatBioSerializeItems_([
     { key: 'soro', ensaio: 'Exame A' },

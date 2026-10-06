@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { loadPlaywright } = require('../helpers/playwright-runtime');
 const { transportBrowserFixture, participants } = require('../helpers/transport-browser-fixture');
+const { runFile } = require('../helpers/load-app-script');
 
 let browser;
 before(async () => {
@@ -71,6 +72,30 @@ test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicit
     await first.locator('.ag-mat-formula').fill('1000x0,000001');
     assert.equal(await first.locator('.ag-mat-formula').getAttribute('aria-invalid'), 'false');
   });
+});
+
+test('Transporte: salvar Outro sem formula preserva descricao e passa na validacao real do servidor', async () => {
+  const server = runFile('TransporteCodexConfig.gs');
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => window.renderMatBioEditor([
+        { key: 'soro', formula: '2x5', unit: 'mL', ensaio: 'Exame A' },
+        { key: 'outro', tipo: 'Lâminas', unit: 'mL', ensaio: 'Hematologia' }
+      ]));
+      await page.getByRole('button', { name: 'save Salvar', exact: true }).click();
+      const payload = await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').args[0]);
+      const outro = payload.materiais.find(item => item.material === 'Lâminas');
+      assert.equal(outro.ativo, true);
+      assert.equal(outro.ensaio, 'Hematologia');
+      assert.equal(outro.formula, '');
+      assert.equal(outro.tubos, '');
+      assert.equal(outro.total, '');
+      assert.doesNotThrow(() => server.codexMatBioValidateTransportPayload_(payload));
+      assert.equal(payload.materiais.find(item => item.material === 'Soro').total, 10);
+      await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').success({}));
+      assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), false);
+    }, { viewport: { width, height: 900 } });
+  }
 });
 
 test('Transporte: Fezes recupera gramas e salva sem converter os numeros', async () => {
