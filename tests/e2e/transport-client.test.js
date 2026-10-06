@@ -74,12 +74,13 @@ test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicit
   });
 });
 
-test('Transporte: salvar Outro sem formula preserva descricao e passa na validacao real do servidor', async () => {
+test('Transporte: salvar materiais sem formula preserva descricao e passa na validacao real do servidor', async () => {
   const server = runFile('TransporteCodexConfig.gs');
   for (const width of [1280, 390]) {
     await scenario(async page => {
       await page.evaluate(() => window.renderMatBioEditor([
-        { key: 'soro', formula: '2x5', unit: 'mL', ensaio: 'Exame A' },
+        { key: 'soro', formula: '2x1.500', unit: 'mL', ensaio: 'Exame A' },
+        { key: 'plasma', unit: 'mL', ensaio: 'Exame sem volume' },
         { key: 'outro', tipo: 'Lâminas', unit: 'mL', ensaio: 'Hematologia' }
       ]));
       await page.getByRole('button', { name: 'save Salvar', exact: true }).click();
@@ -90,8 +91,13 @@ test('Transporte: salvar Outro sem formula preserva descricao e passa na validac
       assert.equal(outro.formula, '');
       assert.equal(outro.tubos, '');
       assert.equal(outro.total, '');
+      const plasma = payload.materiais.find(item => item.material === 'Plasma');
+      assert.equal(plasma.ativo, true);
+      assert.equal(plasma.ensaio, 'Exame sem volume');
+      assert.equal(plasma.tubos, '');
+      assert.equal(plasma.total, '');
       assert.doesNotThrow(() => server.codexMatBioValidateTransportPayload_(payload));
-      assert.equal(payload.materiais.find(item => item.material === 'Soro').total, 10);
+      assert.equal(payload.materiais.find(item => item.material === 'Soro').total, 3);
       await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').success({}));
       assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), false);
     }, { viewport: { width, height: 900 } });
@@ -116,6 +122,27 @@ test('Transporte: Fezes recupera gramas e salva sem converter os numeros', async
     assert.equal(item.total, 5);
     assert.equal(item.tubos, 3);
     assert.equal(item.ensaio, 'A2+A4 Fecal RNA');
+  });
+});
+
+test('Transporte: quantificacao legada sem formula sobrevive a reabertura e salvamento', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => window.renderMaterials([
+      { ativo: true, material: 'Soro', tubos: 2, total: 3, formula: '', ensaio: 'Legado', unit: 'mL' },
+      { ativo: true, material: 'Fezes', tubos: 1, total: 0, formula: '', unit: 'g' }
+    ]));
+    await page.getByRole('button', { name: 'save Salvar', exact: true }).click();
+    const payload = await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').args[0]);
+    assert.equal(payload.materiais.find(item => item.material === 'Soro').total, 3);
+    assert.equal(payload.materiais.find(item => item.material === 'Soro').tubos, 2);
+    assert.equal(payload.materiais.find(item => item.material === 'Fezes').total, 0);
+    await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').success({}));
+    await page.evaluate(() => window.renderMaterials([{ ativo: true, material: 'Soro', tubos: 2, total: '', formula: '' }]));
+    await page.evaluate(() => window.saveData());
+    assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 1, 'quantificacao incompleta exige revisao');
+    await page.evaluate(() => window.renderMaterials([{ ativo: true, material: 'Soro', tubos: '', total: 3, formula: '' }]));
+    await page.evaluate(() => window.saveData());
+    assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 1, 'total isolado exige revisao');
   });
 });
 
