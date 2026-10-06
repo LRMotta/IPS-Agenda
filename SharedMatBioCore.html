@@ -252,12 +252,14 @@
     var rows = order.map(function(key) {
       var cfg = typeConfig(key) || { key: key, label: key, unit: 'mL' };
       var item = byKey[key];
+      // Sem segmentos, os zeros calculados representam quantificacao ausente.
+      // O Transporte deve recebe-la vazia, como na importacao da Agenda.
       return item ? {
         ativo: true,
         material: cfg.label,
-        tubos: item.tubos,
+        tubos: item.segmentos.length ? item.tubos : '',
         formula: item.formula,
-        total: item.total,
+        total: item.segmentos.length ? item.total : '',
         ensaio: item.ensaio,
         unit: item.unit
       } : {
@@ -275,9 +277,9 @@
       rows.push({
         ativo: true,
         material: item.tipo,
-        tubos: item.tubos,
+        tubos: item.segmentos.length ? item.tubos : '',
         formula: item.formula,
-        total: item.total,
+        total: item.segmentos.length ? item.total : '',
         ensaio: item.ensaio,
         unit: item.unit
       });

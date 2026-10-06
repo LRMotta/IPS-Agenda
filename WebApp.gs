@@ -11481,6 +11481,13 @@ function getSolicitantesEquipamentos_() {
   }).sort();
 }
 
+function compararRecebimentosPorData_(a, b) {
+  var dataA = a.dataRecebimentoISO || '';
+  var dataB = b.dataRecebimentoISO || '';
+  if (dataA !== dataB) return dataA < dataB ? 1 : -1;
+  return b.rowIndex - a.rowIndex;
+}
+
 function getEquipamentosFornecidos() {
   codexAssertCanRead_();
   var ss = getCodexSpreadsheet_();
@@ -11518,7 +11525,7 @@ function getEquipamentosFornecidos() {
   }
 
   return {
-    equipamentos: equipamentos.reverse(),
+    equipamentos: equipamentos.sort(compararRecebimentosPorData_),
     projetos: getProjetosEquipamentos_(),
     solicitantes: getSolicitantesEquipamentos_(),
     config: getEstoqueConfig()
@@ -11646,7 +11653,7 @@ function getMedicamentosRecebidos() {
   }
 
   return {
-    medicamentos: medicamentos.reverse(),
+    medicamentos: medicamentos.sort(compararRecebimentosPorData_),
     projetos: getProjetosEquipamentos_(),
     solicitantes: getSolicitantesEquipamentos_(),
     config: getEstoqueConfig()
