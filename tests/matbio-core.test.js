@@ -73,6 +73,49 @@ test('MatBio bloqueia unidades mistas e exige unidade da Courier mantendo gramas
   }
 });
 
+test('Agenda para Transporte preserva material sem formula como quantidade ausente', () => {
+  for (const courier of ['MARKEN', 'DHL']) {
+    const unit = courier === 'DHL' ? 'L' : 'mL';
+    const json = server.codexMatBioSerializeItems_([
+      { key: 'soro', ensaio: 'Exame sem volume', unit },
+      { key: 'outro', tipo: 'Lâminas', ensaio: 'Hematologia', unit }
+    ]).json;
+    const materiais = server.transporteMateriaisFromCodex_(courier, json, '');
+    const ativos = materiais.filter(item => item.ativo);
+    assert.equal(ativos.length, 2);
+    for (const item of ativos) {
+      assert.equal(item.formula, '');
+      assert.equal(item.tubos, '');
+      assert.equal(item.total, '');
+      assert.equal(item.unit, unit);
+    }
+    assert.equal(ativos[0].ensaio, 'Exame sem volume');
+    assert.equal(ativos[1].material, 'Lâminas');
+    assert.equal(ativos[1].ensaio, 'Hematologia');
+    assert.doesNotThrow(() => server.codexMatBioValidateTransportPayload_({ courier, materiais }));
+  }
+});
+
+test('Agenda para Transporte conserva formulas quantificadas ao agrupar material sem formula', () => {
+  const json = server.codexMatBioSerializeItems_([
+    { key: 'soro', ensaio: 'Exame A' },
+    { key: 'soro', ensaio: 'Exame B', formula: '2x0' },
+    { key: 'outro', tipo: 'Swab especial', formula: '3x1,5' }
+  ]).json;
+  const materiais = server.transporteMateriaisFromCodex_('MARKEN', json, '');
+  assert.doesNotThrow(() => server.codexMatBioValidateTransportPayload_({ courier: 'MARKEN', materiais }));
+  const soro = materiais.find(item => item.material === 'Soro');
+  assert.equal(soro.tubos, 2);
+  assert.equal(soro.total, 0);
+  assert.equal(soro.ensaio, 'Exame A; Exame B');
+  assert.equal(materiais.find(item => item.material === 'Swab especial').total, 4.5);
+  for (const tubos of [0, -1, 1.5, 'abc']) {
+    assert.throws(() => server.codexMatBioValidateTransportPayload_({
+      courier: 'MARKEN', materiais: [{ ativo: true, material: 'Soro', tubos, total: 1 }]
+    }), /inválido/);
+  }
+});
+
 test('MatBio JSON invalido se distingue de vazio e servidor valida antes das escritas', () => {
   const client = clientCore();
   assert.equal(client.parseJson('').valid, true);
