@@ -138,6 +138,44 @@ test('Dashboard reaproveita gráficos e atualiza valores, títulos e callbacks; 
   assert.equal(created, 2);
 });
 
+test('transportes usam segmentos empilhados e totais iguais no tooltip e tabela', () => {
+  const canvas = { id: 'transport', getContext: () => ({}) };
+  let table;
+  const context = dashboardContext({ Chart: function(ctx, config) {
+    this.config = config; this.options = config.options; this.data = config.data;
+    this.destroy = () => {}; this.update = () => {};
+  }, document: { readyState: 'loading', addEventListener() {}, getElementById: () => canvas } });
+  context._setChartHeight = () => {};
+  context.dashboardChartData_ = (id, labels, datasets) => { table = datasets; };
+  context.renderDashTransportChart_('transport', [{ label: 'Pinex', value: 5, realizados: 2, previstos: 3 }]);
+  const chart = context._dashCharts.transport;
+  assert.equal(chart.options.scales.x.stacked, true);
+  assert.equal(chart.options.scales.y.stacked, true);
+  assert.deepEqual(Array.from(chart.data.datasets, ds => ds.label), ['Realizados', 'Previstos']);
+  assert.notEqual(chart.data.datasets[0].backgroundColor, chart.data.datasets[1].backgroundColor);
+  assert.equal(chart.options.plugins.tooltip.callbacks.footer([{ dataIndex: 0 }]), 'Total: 5');
+  assert.equal(table[2].label, 'Total');
+  assert.equal(table[2].data[0], 5);
+  context.renderDashTransportChart_('transport', [{ label: 'Courier legado', value: 7 }]);
+  assert.equal(context._dashCharts.transport.data.datasets[0].data[0], 0);
+  assert.equal(context._dashCharts.transport.data.datasets[2].label, 'Sem classificação');
+  assert.equal(table[3].data[0], 7);
+});
+
+test('impressão abre detalhes para renderizar todos os gráficos e restaura estado mesmo se falhar', () => {
+  const details = { open: false };
+  const context = dashboardContext({ document: { readyState: 'loading', addEventListener() {}, getElementById: () => details } });
+  let renders = 0;
+  context.renderDashboardAgendaPeriodoResumo = () => { assert.equal(details.open, true); renders++; };
+  context.dashboardPrintHtmlContent_ = () => { assert.equal(details.open, true); return 'impressão completa'; };
+  assert.equal(context.dashboardPrintHtml(), 'impressão completa');
+  assert.equal(details.open, false);
+  assert.equal(renders, 1);
+  context.dashboardPrintHtmlContent_ = () => { throw new Error('falha de impressão'); };
+  assert.throws(() => context.dashboardPrintHtml(), /falha de impressão/);
+  assert.equal(details.open, false);
+});
+
 test('agregação única mantém KPIs e séries da Agenda em ano, mês e global', () => {
   const rules = runHtmlScript('SharedAgendaRules.html').AgendaRules;
   const calls = new Map();
@@ -448,7 +486,7 @@ test('todos os gráficos do dashboard recebem cópia isolada em PNG', () => {
   const dashboard = readProjectFile('IndexDashboard.html');
   const content = readProjectFile('IndexDashboardContent.html');
   const canvasIds = Array.from(content.matchAll(/<canvas id="([^"]+)"/g), (match) => match[1]);
-  assert.equal(canvasIds.length, 17);
+  assert.equal(canvasIds.length, 18);
   assert.equal(new Set(canvasIds).size, canvasIds.length);
   assert.match(dashboard, /function copiarGraficoDashboard\(canvasId, button\)/);
   assert.match(dashboard, /new ClipboardItem\(\{ 'image\/png': blob \}\)/);

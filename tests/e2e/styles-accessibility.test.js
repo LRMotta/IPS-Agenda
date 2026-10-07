@@ -33,7 +33,8 @@ test('CSS real: contraste, foco de teclado e carregamento com movimento reduzido
         '<table class="data-table"><thead><tr><th>Projeto</th></tr></thead></table>' +
         '<p class="field-help">Orientação do formulário</p><div class="table-skeleton-bar"></div>' +
         '<div class="spinner"></div><div class="ac-spin"></div>' +
-        '<div class="app-inline-notice-spinner"></div></div></main></body></html>');
+        '<div class="app-inline-notice app-inline-notice--loading"><span class="app-inline-notice-spinner"></span>' +
+        '<span class="app-inline-notice-copy"><strong>Salvando alterações…</strong></span></div></div></main></body></html>');
       assert.equal(await page.title(), 'IPS — estilos locais');
       assert.ok((await page.locator('body').innerText()).toLowerCase().includes('projeto'));
       const colors = await page.locator('.data-table th').evaluate(element => {
@@ -47,7 +48,16 @@ test('CSS real: contraste, foco de teclado e carregamento com movimento reduzido
       assert.notEqual(await page.locator('.audit-filter-wrap').evaluate(element => getComputedStyle(element).boxShadow), 'none');
       const loaders = '.table-skeleton-bar, .spinner, .ac-spin, .app-inline-notice-spinner';
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      assert.deepEqual(await page.locator(loaders).evaluateAll(elements => elements.map(element => getComputedStyle(element).animationName)), Array(4).fill('none'));
+      assert.deepEqual(await page.locator('.table-skeleton-bar, .spinner, .ac-spin').evaluateAll(elements => elements.map(element => getComputedStyle(element).animationName)), Array(3).fill('none'));
+      // Saving progress must keep rotating even when decorative motion is reduced.
+      for (const reducedMotion of ['reduce', 'no-preference']) {
+        await page.emulateMedia({ reducedMotion });
+        const spinner = page.locator('.app-inline-notice-spinner');
+        assert.equal(await spinner.evaluate(element => getComputedStyle(element).animationName), 'app-inline-notice-spin');
+        const transform = await spinner.evaluate(element => getComputedStyle(element).transform);
+        await page.waitForFunction(previous => getComputedStyle(document.querySelector('.app-inline-notice-spinner')).transform !== previous, transform);
+      }
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       const artifactDir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(artifactDir, { recursive: true });
       await page.screenshot({ path: path.join(artifactDir, 'styles-accessibility-' + width + '.png'), fullPage: true });

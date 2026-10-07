@@ -7308,6 +7308,7 @@ function getDashboardData(request) {
       visitasPorDiaSemana: [],
       cancelReagPorProtocolo: [],
       courierUsoAno: [],
+      transporteLaboratoriosAno: [],
       eventosPeriodo: [],
       antecedenciaMediaPorTipo: []
     };
@@ -7813,6 +7814,7 @@ function getAgendaDashboardResumo_() {
     visitasPorDiaSemana: dias.map(function(d) { return { label: d, value: 0 }; }),
     cancelReagPorProtocolo: [],
     courierUsoAno: [],
+    transporteLaboratoriosAno: [],
     periodos: { version: 1, anosDisponiveis: [], global: null, anos: {}, meses: {} },
     antecedenciaMediaPorTipo: []
   };
@@ -7822,7 +7824,8 @@ function getAgendaDashboardResumo_() {
   var porMonProtDia = {};
   var porMed = {};
   var cancelReagProt = {};
-  var courierUso = {};
+  var courierUso = Object.create(null);
+  var transporteLaboratorios = Object.create(null);
   var antecedenciaPorTipo = {};
   var participantesAtendidos = {};
   var periodos = { global: agendaDashboardPeriodoNovo_(), anos: Object.create(null), meses: Object.create(null) };
@@ -7839,6 +7842,7 @@ function getAgendaDashboardResumo_() {
       porMed: porMed,
       cancelReagProt: cancelReagProt,
       courierUso: courierUso,
+      transporteLaboratorios: transporteLaboratorios,
       antecedenciaPorTipo: antecedenciaPorTipo,
       participantesAtendidos: participantesAtendidos,
       periodos: periodos
@@ -7855,7 +7859,8 @@ function getAgendaDashboardResumo_() {
   resumo.monitoriaPorProtocolo = agendaMapToPairs_(monMap, 15);
   resumo.visitasPorMedico = agendaMapToPairs_(porMed, 12);
   resumo.cancelReagPorProtocolo = agendaMapToPairs_(cancelReagProt, 15);
-  resumo.courierUsoAno = agendaMapToPairs_(courierUso, 12);
+  resumo.courierUsoAno = agendaDashboardTransportPairs_(courierUso, 12);
+  resumo.transporteLaboratoriosAno = agendaDashboardTransportPairs_(transporteLaboratorios, 12);
   resumo.antecedenciaMediaPorTipo = [];
   resumo.periodos.global = agendaDashboardPeriodoFinalizar_(periodos.global, true);
   resumo.periodos.anosDisponiveis = Object.keys(periodos.anos).map(Number).sort(function(a, b) { return b - a; });
@@ -7887,7 +7892,7 @@ function agendaDashboardProcessRow_(r, ctx) {
 function agendaDashboardPeriodoNovo_() {
   return { total: 0, visits: 0, labs: 0, participants: Object.create(null), monitoringDays: Object.create(null),
     visitsBuckets: Object.create(null), labBuckets: Object.create(null), protocols: Object.create(null),
-    monitoring: Object.create(null), doctors: Object.create(null), cancellations: Object.create(null), couriers: Object.create(null),
+    monitoring: Object.create(null), doctors: Object.create(null), cancellations: Object.create(null), couriers: Object.create(null), transportLabs: Object.create(null),
     days: ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }) };
 }
 
@@ -7909,9 +7914,7 @@ function agendaDashboardPeriodoContar_(info, out, bucket, hoje) {
     if (!out.monitoringDays[key]) { out.monitoringDays[key] = 1; add(out.monitoring, info.projeto); }
   }
   if (info.isCancelado || info.isReagendado) add(out.cancellations, info.projeto);
-  if (info.isEventoComTransporte && info.isRealizada && !info.isCancelado && !future && info.lab) {
-    info.evento.couriers.forEach(function(name) { if (name) add(out.couriers, name); });
-  }
+  agendaDashboardCountTransports_(info, out.couriers, out.transportLabs);
 }
 
 function agendaDashboardPeriodoFinalizar_(out, global) {
@@ -7926,7 +7929,7 @@ function agendaDashboardPeriodoFinalizar_(out, global) {
     visitsBuckets: buckets(out.visitsBuckets), labBuckets: buckets(out.labBuckets), days: out.days,
     protocols: agendaMapToPairs_(out.protocols, 15), monitoring: agendaMapToPairs_(out.monitoring, 15),
     doctors: agendaMapToPairs_(out.doctors, 12), cancellations: agendaMapToPairs_(out.cancellations, 15),
-    couriers: agendaMapToPairs_(out.couriers, 12) };
+    couriers: agendaDashboardTransportPairs_(out.couriers, 12), transportLabs: agendaDashboardTransportPairs_(out.transportLabs, 12) };
 }
 
 function agendaDashboardRowInfo_(r, i, data) {
@@ -7967,7 +7970,8 @@ function agendaDashboardRowInfo_(r, i, data) {
     isRealizada: info.isRealizada,
     isEventoComTransporte: info.isEventoComTransporte,
     participanteKey: agendaDashboardParticipantKey_(r, i),
-    couriers: couriersEvento
+    couriers: couriersEvento,
+    transportes: agendaDashboardTransportesEvento_(r, i)
   };
   return info;
 }
@@ -8037,13 +8041,48 @@ function agendaDashboardCountAntecedencia_(r, info, ctx) {
 }
 
 function agendaDashboardCountCourier_(r, info, ctx) {
-  if (!info.isEventoComTransporte || !info.isRealizada || info.isCancelado || info.data.getTime() > ctx.hoje.getTime() || !info.lab) return;
-  [ctx.idx.c1, ctx.idx.c2, ctx.idx.c3].forEach(function(c) {
+  agendaDashboardCountTransports_(info, ctx.courierUso, ctx.transporteLaboratorios);
+}
+
+function agendaDashboardTransportesEvento_(r, i) {
+  var transportes = [];
+  [i.c1, i.c2, i.c3].forEach(function(c) {
     if (!c || c.nome === undefined) return;
-    var nomeCourier = String(r[c.nome] || '').trim();
-    if (!isCourierNomeValidoAgenda_(nomeCourier)) return;
-    ctx.courierUso[nomeCourier] = (ctx.courierUso[nomeCourier] || 0) + 1;
+    var nome = String(r[c.nome] || '').trim();
+    if (!isCourierNomeValidoAgenda_(nome)) return;
+    var status = AgendaServerRules_.courierStatusKey(r[c.status]);
+    if (status === 'cancelado' || status === 'naoaplicavel') return;
+    // Alias de apresentação apenas: o cadastro e o fluxo operacional não mudam.
+    if (normText_(nome) === 'pinex (agendamento)') nome = 'Pinex';
+    var destino = String(r[c.destino] || '').trim() || 'Sem destino informado';
+    transportes.push({ courier: nome, destino: destino, realizado: status === 'enviado' || status === 'entregue' });
   });
+  return transportes;
+}
+
+function agendaDashboardCountTransports_(info, couriers, laboratorios) {
+  if (!info.isEventoComTransporte || info.isCancelado || info.isReagendado || !info.lab) return;
+  function add(map, label, realizado) {
+    if (!map[label]) map[label] = { realizados: 0, previstos: 0 };
+    map[label][realizado ? 'realizados' : 'previstos']++;
+  }
+  info.evento.transportes.forEach(function(transporte) {
+    add(couriers, transporte.courier, transporte.realizado);
+    add(laboratorios, transporte.destino, transporte.realizado);
+  });
+}
+
+function agendaDashboardTransportPairs_(map, limit) {
+  var pairs = Object.keys(map).map(function(label) {
+    return { label: label, value: map[label].realizados + map[label].previstos,
+      realizados: map[label].realizados, previstos: map[label].previstos };
+  }).sort(function(a, b) { return b.value - a.value || a.label.localeCompare(b.label); });
+  if (!limit || pairs.length <= limit) return pairs;
+  var outros = { label: 'Outros', value: 0, realizados: 0, previstos: 0 };
+  pairs.slice(limit - 1).forEach(function(pair) {
+    outros.value += pair.value; outros.realizados += pair.realizados; outros.previstos += pair.previstos;
+  });
+  return pairs.slice(0, limit - 1).concat([outros]);
 }
 
 function isCourierNomeValidoAgenda_(nome) {

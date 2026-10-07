@@ -299,8 +299,8 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.match(client, /getPatientDisplayLogoSrc/);
   assert.match(client, /receipt-copy/);
   assert.match(client, /var viaIps = viaIndex === 1/);
-  assert.match(client, /viaIps \? 'participante nº '/);
-  assert.match(client, /!viaIps && \(recibo\.endereco \|\| recibo\.telefone\)/);
+  assert.match(client, /viaIps && !isAcompanhante \? 'participante nº '/);
+  assert.match(client, /\(!viaIps \|\| isAcompanhante\) && \(recibo\.endereco \|\| recibo\.telefone\)/);
   assert.match(client, /viaIps \? '' : '<div class="bank/);
   assert.match(client, /Autorizo o crédito na conta bancária abaixo/);
   assert.match(client, /Rubrica do\(a\) coordenador\(a\) de estudos/);
@@ -313,7 +313,7 @@ test('recibo permite revisão e gera impressão sem persistir dados', () => {
   assert.match(client, /\.receipt \.signature\{[^']*margin:54px auto 0/);
   assert.match(client, /\.receipt \.signature b\{font-size:13px\}/);
   assert.doesNotMatch(client, /\.receipt \.coordinator-rubric b\{font-size:11px\}/);
-  assert.match(client, /relacionadas à visita[^\n]+<\/b> do projeto/);
+  assert.match(client, /isAcompanhante \? 'ao acompanhamento na visita' : 'à visita'/);
   assert.doesNotMatch(client, /salvarAgendaRecibo|registrarAgendaRecibo/);
 });
 
@@ -325,13 +325,52 @@ test('recibo de acompanhante mantém identificação na assinatura e sem quebra 
   const html = context.agendaReciboPrintHtml_(data, recibo);
 
   assert.doesNotMatch(html, /Acompanhante de participante de pesquisa clínica/);
-  assert.equal((html.match(/<small>Acompanhante<\/small>/g) || []).length, 2);
+  assert.equal((html.match(/<small>Acompanhante de Participante de Pesquisa<\/small>/g) || []).length, 3);
   assert.equal((html.match(/class="receipt receipt-copy receipt-page-break"/g) || []).length, 2);
   assert.equal((html.match(/class="receipt receipt-copy"/g) || []).length, 1);
   assert.match(html, /align-items:start/);
   assert.match(html, /font-size:13px/);
   assert.match(html, /\.receipt-subtitle\{[^}]*font-size:11px/);
   assert.match(html, /margin:54px auto 0/);
+});
+
+test('todas as vias do acompanhante identificam quem recebe e assina, preservando o participante separado', () => {
+  const context = receiptPrintContext();
+  const data = { idParticipante: 'P-001', participante: 'Pessoa do estudo', visita: 'V1', projeto: 'Estudo' };
+  const recibo = { tipo: 'Acompanhante', nome: 'Pessoa acompanhante', cpf: '111', endereco: 'Rua Teste, 10', telefone: '54999990000', banco: 'Banco Teste', valor: 80 };
+  const html = context.agendaReciboPrintHtml_(data, recibo);
+  const vias = html.match(/<section\b[^>]*>[\s\S]*?<\/section>/g);
+  assert.equal(vias.length, 3);
+  vias.forEach((via, index) => {
+    assert.match(via, /Eu, <b>Pessoa acompanhante<\/b>, CPF <b>111<\/b>, na condição de acompanhante do participante de pesquisa identificado abaixo, declaro ter recebido/);
+    assert.match(via, /relacionadas ao acompanhamento na visita <b>V1<\/b>/);
+    assert.match(via, /Endereço do acompanhante:<\/b> Rua Teste, 10/);
+    assert.match(via, /Telefone do acompanhante:<\/b> 54999990000/);
+    assert.match(via, /<b>Pessoa acompanhante<\/b><small>Acompanhante de Participante de Pesquisa<\/small>/);
+    assert.doesNotMatch(via, /Eu, <b>participante nº|<b>Participante nº/);
+    assert.match(via, /Rubrica do\(a\) coordenador\(a\) de estudos/);
+    if (index === 1) {
+      assert.match(via, /Participante do estudo:<\/b> nº P-001/);
+      assert.doesNotMatch(via, /Pessoa do estudo|Dados bancários/);
+    } else {
+      assert.match(via, /Participante do estudo:<\/b> Pessoa do estudo · ID P-001/);
+      assert.match(via, /Dados bancários/);
+    }
+  });
+  assert.match(vias[2], /3ª via — Acompanhante/);
+});
+
+test('recibo do participante mantém texto e identificação por número na via IPS', () => {
+  const context = receiptPrintContext();
+  const html = context.agendaReciboPrintHtml_({ idParticipante: 'P-001' }, { tipo: 'Participante', nome: 'Pessoa do estudo', cpf: '111', endereco: 'Rua Teste', telefone: '54999990000', valor: 80 });
+  const vias = html.match(/<section\b[^>]*>[\s\S]*?<\/section>/g);
+  assert.match(vias[1], /Eu, <b>participante nº P-001<\/b>, declaro ter recebido/);
+  assert.match(vias[1], /<b>Participante nº P-001<\/b><\/div>/);
+  assert.doesNotMatch(vias[1], /CPF|Endereço|Telefone|Dados bancários/);
+  assert.match(vias[0], /Endereço do beneficiário/);
+  assert.match(vias[2], /3ª via — Participante\/Acompanhante/);
+  assert.match(html, /relacionadas à visita/);
+  assert.doesNotMatch(html, /na condição de acompanhante|ao acompanhamento na visita/);
 });
 
 test('recibos exibem o subtítulo do beneficiário abaixo do título nas três vias', () => {
@@ -445,18 +484,18 @@ test('recibo exige escolha explícita com acompanhantes, troca todos os dados e 
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
 });
 
-test('telefone fica no quadro de endereço das duas vias identificadas, sem vazar na via IPS nem executar HTML', () => {
+test('telefone do acompanhante fica nas três vias como texto seguro; participante mantém duas vias identificadas', () => {
   const context = receiptPrintContext();
   context.esc = value => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const html = context.agendaReciboPrintHtml_({ idParticipante: 'P-1' }, {
     tipo: 'Acompanhante', nome: 'Pessoa', endereco: 'Rua Teste', telefone: '<img src=x onerror=alert(1)>', valor: 80
   });
   const copies = html.match(/<section[\s\S]*?<\/section>/g);
-  assert.match(copies[0], /Endereço do beneficiário:[\s\S]*Telefone do beneficiário:/);
-  assert.match(copies[0], /&lt;img/);
-  assert.doesNotMatch(copies[0], /<img src=x/);
-  assert.doesNotMatch(copies[1], /Telefone do beneficiário:|Rua Teste|onerror/);
-  assert.match(copies[2], /Telefone do beneficiário:/);
+  copies.forEach(copy => {
+    assert.match(copy, /Endereço do acompanhante:[\s\S]*Telefone do acompanhante:/);
+    assert.match(copy, /&lt;img/);
+    assert.doesNotMatch(copy, /<img src=x/);
+  });
   const phoneOnly = context.agendaReciboPrintHtml_({}, { telefone: '222', valor: 80 });
   assert.equal((phoneOnly.match(/Telefone do beneficiário:/g) || []).length, 2);
 });
