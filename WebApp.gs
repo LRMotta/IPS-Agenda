@@ -7499,16 +7499,22 @@ function getDashboardPendencias_(estoque, perfContext) {
         dataObj.setHours(0, 0, 0, 0);
         isPastDate = dataObj.getTime() < hoje.getTime();
       }
-      var base = {
-        agendaId: String(r[i.id] || ''),
-        data: String(r[i.data] || ''),
-        hora: String(r[i.hora] || ''),
-        prazoHoras: prazoHorasPendenciaAgenda_(r[i.data], r[i.hora], feriados),
-        participante: String(r[i.participante] || ''),
-        projeto: String(r[i.projeto] || ''),
-        visita: String(r[i.visita] || ''),
-        tipo: String(r[i.tipo] || '')
-      };
+      var base = null;
+      // O prazo percorre dias: calcular apenas se esta linha emitir uma pendência.
+      function baseParaPendencia() {
+        if (base) return base;
+        base = {
+          agendaId: String(r[i.id] || ''),
+          data: String(r[i.data] || ''),
+          hora: String(r[i.hora] || ''),
+          prazoHoras: prazoHorasPendenciaAgenda_(r[i.data], r[i.hora], feriados),
+          participante: String(r[i.participante] || ''),
+          projeto: String(r[i.projeto] || ''),
+          visita: String(r[i.visita] || ''),
+          tipo: String(r[i.tipo] || '')
+        };
+        return base;
+      }
       // O Backup representa uma operação de amostras independente do
       // andamento da visita. Enquanto o seu status estiver Não Agendado,
       // a pendência permanece visível, inclusive para registros históricos.
@@ -7517,7 +7523,7 @@ function getDashboardPendencias_(estoque, perfContext) {
       if (isCourierNomeValidoAgenda_(backupNome) &&
           AgendaServerRules_.courierStatusKey(backupStatus) === 'naoagendado') {
         out.counts.transporteBackupNaoAgendado++;
-        out.transporteBackupNaoAgendado.push(Object.assign({}, base, {
+        out.transporteBackupNaoAgendado.push(Object.assign({}, baseParaPendencia(), {
           slot: 'Transporte de Amostras Backup',
           courier: backupNome,
           temperatura: String(r[i.cb.temp] || '').trim(),
@@ -7536,7 +7542,7 @@ function getDashboardPendencias_(estoque, perfContext) {
         if (!agendaCourierStatusEnviadoNaoEntregue_(st)) return;
         var awb = String(r[slot.cfg.awb] || '').trim();
         out.counts.awbEnviadaNaoEntregue++;
-        out.awbEnviadaNaoEntregue.push(Object.assign({}, base, {
+        out.awbEnviadaNaoEntregue.push(Object.assign({}, baseParaPendencia(), {
           slot: slot.label,
           courier: nome,
           temperatura: String(r[slot.cfg.temp] || '').trim(),
@@ -7572,7 +7578,7 @@ function getDashboardPendencias_(estoque, perfContext) {
       if (isPosVisita || isPastDate) return;
       if (String(r[i.servTerc] || '').trim() && !agendaRequisicaoEnviada_(r[i.reqStatus], r[i.obs])) {
         out.counts.requisicaoExamesPendente++;
-        out.requisicaoExamesPendente.push(Object.assign({}, base, {
+        out.requisicaoExamesPendente.push(Object.assign({}, baseParaPendencia(), {
           prestador: String(r[i.servTerc] || '')
         }));
       }
@@ -7586,17 +7592,20 @@ function getDashboardPendencias_(estoque, perfContext) {
         var st = normText_(r[slot.cfg.status]);
         if (agendaCourierStatusNaoAplicavel_(st)) return;
         var awb = String(r[slot.cfg.awb] || '').trim();
-        var item = Object.assign({}, base, {
+        var precisaAgendar = AgendaServerRules_.courierNeedsSchedule(st, awb);
+        var aguardaConfirmacao = AgendaServerRules_.courierIsAwaitingConfirmation(st);
+        if (!precisaAgendar && !aguardaConfirmacao) return;
+        var item = Object.assign({}, baseParaPendencia(), {
           slot: slot.label,
           courier: nome,
           temperatura: String(r[slot.cfg.temp] || '').trim(),
           statusCourier: String(r[slot.cfg.status] || ''),
           awb: awb
         });
-        if (AgendaServerRules_.courierNeedsSchedule(st, awb)) {
+        if (precisaAgendar) {
           out.counts.courierNaoAgendada++;
           out.courierNaoAgendada.push(item);
-        } else if (AgendaServerRules_.courierIsAwaitingConfirmation(st)) {
+        } else if (aguardaConfirmacao) {
           out.counts.courierNaoConfirmada++;
           out.courierNaoConfirmada.push(item);
         }
