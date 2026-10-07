@@ -165,7 +165,7 @@
         </div>
         </details>
         <h3 class="chart-card-title dash-spaced-top">Transportes de amostras</h3>
-        <p class="dash-transport-note">Realizados: enviados ou entregues. Previstos: transportes ainda não enviados. Cancelados e reagendamentos excluídos. Transporte I, II e III; Backup não incluído.</p>
+        <p class="dash-transport-note">Cada transporte I, II ou III conta uma vez; um agendamento pode ter vários transportes. Realizados: enviados ou entregues. Previstos: ainda não enviados. Total: realizados + previstos. Cancelados e reagendamentos excluídos; Backup não incluído.</p>
         <div class="dash-grid dash-grid-2">
           <div>
             <h3 class="chart-card-title" id="chartAgendaCourierAnoTitle"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span> Uso das couriers</h3>
@@ -173,6 +173,7 @@
           </div>
           <div>
             <h3 class="chart-card-title" id="chartAgendaTransportLabsTitle"><span class="material-symbols-outlined" aria-hidden="true">science</span> Laboratórios de destino dos transportes</h3>
+            <p class="dash-transport-note">Fonte: destino na Agenda; no histórico, descrição do material quando identifica um único laboratório cadastrado. “Destino não identificado na Agenda” não comprova agendamento sem destino.</p>
             <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaTransportLabs" role="img" aria-labelledby="chartAgendaTransportLabsTitle" aria-describedby="chartAgendaTransportLabsData"></canvas></div>
           </div>
         </div>

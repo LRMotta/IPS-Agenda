@@ -192,14 +192,14 @@ test('RPCs de consulta negam acesso revogado antes de ler dados, inclusive camin
   assert.equal(calls, 0);
 });
 
-test('autorização de leitura preserva perfis e bypass restrito ao contexto POST já autenticado', () => {
+test('autorização de leitura preserva perfis e não aceita bypass por contexto POST', () => {
   const server = runFile('WebApp.gs');
   server.codexAuthorizeWebAppRequest_ = () => ({ ok: true, role: 'readonly' });
   assert.equal(server.codexAssertCanRead_().role, 'readonly');
   server.codexAuthorizeWebAppRequest_ = () => ({ ok: false, message: 'Não autorizado' });
   assert.throws(() => server.codexAssertCanRead_(), /Não autorizado/);
   server.CODEX_API_TOKEN_REQUEST_ = true;
-  assert.equal(server.codexAssertCanRead_().userEmail, 'api-token');
+  assert.throws(() => server.codexAssertCanRead_(), /Não autorizado/);
   server.CODEX_API_TOKEN_REQUEST_ = false;
   assert.throws(() => server.codexAssertCanRead_(), /Não autorizado/);
 });

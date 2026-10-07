@@ -118,10 +118,10 @@ function gerarDocumentacaoTransporteCodex(idAgenda, slot) {
     throw new Error('Configure TRANSPORTE_WEBAPP_URL_CODEX com a URL /exec publicada do WebApp TRANSP.');
   }
 
-  var response = UrlFetchApp.fetch(baseUrl + '?action=importarCodex' + codexGetWebAppApiTokenQuery_(), {
+  var response = UrlFetchApp.fetch(baseUrl + '?action=importarCodex', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify(payload),
+    payload: JSON.stringify({ apiToken: codexGetWebAppApiToken_(), payload: payload }),
     muteHttpExceptions: true
   });
 
@@ -160,10 +160,10 @@ function testarUrlWebAppTransporteCodex() {
     followRedirects: true,
     muteHttpExceptions: true
   });
-  var postResponse = UrlFetchApp.fetch(baseUrl + '?action=ping' + codexGetWebAppApiTokenQuery_(), {
+  var postResponse = UrlFetchApp.fetch(baseUrl + '?action=ping', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ ping: true }),
+    payload: JSON.stringify({ apiToken: codexGetWebAppApiToken_(), payload: { ping: true } }),
     followRedirects: true,
     muteHttpExceptions: true
   });
@@ -1223,10 +1223,12 @@ function transporteParseFormula_(text) {
   return codexMatBioParseFormula_(text);
 }
 
-function transporteNumber_(value) {
+function transporteNumber_(value, quantity) {
   if (value === null || value === undefined || value === '') return 0;
   if (typeof value === 'number') return isFinite(value) ? value : 0;
-  var n = Number(String(value).replace(/\./g, '').replace(',', '.'));
+  // Mesma regra das fórmulas: ponto isolado é decimal no volume;
+  // quantidades preservam milhares legados como "1.000".
+  var n = codexMatBioFormulaNumber_(String(value).trim(), quantity === true);
   return isFinite(n) ? n : 0;
 }
 
@@ -1241,7 +1243,7 @@ function transporteTotalMaterial_(item) {
 function transporteTubosMaterial_(item) {
   item = item || {};
   if (item.tubos !== null && item.tubos !== undefined && item.tubos !== '') {
-    return transporteNumber_(item.tubos);
+    return transporteNumber_(item.tubos, true);
   }
   return transporteParseFormula_(item.formula).tubos;
 }
@@ -1632,12 +1634,37 @@ function transporteNormalizeTemperaturaFromCodex_(value) {
   return String(value || '').trim().toUpperCase();
 }
 
+function transporteReadLabCentralDireto_() {
+  // Uso interno de Transporte já autorizado, inclusive importação por credencial.
+  // Não chama getLabCentralSheet_: uma consulta não deve criar/alterar schema.
+  var rows = getCodexSheetDataByName_('LabCentral') || [];
+  return rows.slice(1).filter(function(r) { return r[0] || r[1] || r[2]; }).map(function(r) {
+    return {
+      id: String(r[0] || ''), nomeAbreviado: String(r[1] || ''), nomeCompleto: String(r[2] || ''),
+      endereco: String(r[3] || ''), cidade: String(r[4] || ''), cep: String(r[5] || ''),
+      telefone: String(r[6] || ''), contato: String(r[7] || ''), pais: String(r[8] || ''), cdcPermit: String(r[9] || '')
+    };
+  });
+}
+
+function transporteReadLabCentral_() {
+  if (typeof getLabCentral === 'function') {
+    try {
+      return getLabCentral() || [];
+    } catch (e) {
+      // A integração POST não possui identidade Users; consulta privada restrita ao Transporte.
+      if (typeof getCodexSheetDataByName_ !== 'function') throw e;
+    }
+  }
+  return transporteReadLabCentralDireto_();
+}
+
 function transporteLabCentralByDestino_(destino) {
   destino = String(destino || '').trim();
-  if (!destino || typeof getLabCentral !== 'function') return null;
+  if (!destino) return null;
   var destinoKey = transporteNorm_(destino);
   try {
-    var labs = getLabCentral() || [];
+    var labs = transporteReadLabCentral_();
     for (var i = 0; i < labs.length; i++) {
       var lab = labs[i] || {};
       var curto = String(lab.nomeAbreviado || '').trim();
@@ -1653,9 +1680,8 @@ function transporteLabCentralByDestino_(destino) {
 }
 
 function transporteLabCentralDestinoPadrao_() {
-  if (typeof getLabCentral !== 'function') return '';
   try {
-    var labs = getLabCentral() || [];
+    var labs = transporteReadLabCentral_();
     for (var i = 0; i < labs.length; i++) {
       var nome = String(labs[i].nomeAbreviado || labs[i].nomeCompleto || '').trim();
       if (nome) return nome;
@@ -4391,7 +4417,7 @@ function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volu
 
   for (var i = 0; i < 8; i++) {
     if (!checked[i] || checked[i][0] !== true) continue;
-    var tubos = transporteNumber_(tubosPorMaterial[i] && tubosPorMaterial[i][0]);
+    var tubos = transporteNumber_(tubosPorMaterial[i] && tubosPorMaterial[i][0], true);
     var volume = transporteNumber_(volumes[i] && volumes[i][0]);
     totalTubos += tubos;
     if (unidadesGramas[i]) totalG += volume;
@@ -4402,7 +4428,7 @@ function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volu
   var outrosNorm = transporteNorm_(outros);
   var slideMatch = outros.match(/(\d+)\s*(?:slides?|l[aÃ¢Ã£]?minas?|laminas?)/i);
   var slides = (outrosNorm.indexOf('lamina') >= 0 || outrosNorm.indexOf('slide') >= 0) && slideMatch
-    ? transporteNumber_(slideMatch[1])
+    ? transporteNumber_(slideMatch[1], true)
     : 0;
   function formatEn(value) {
     var number = transporteNumber_(value);

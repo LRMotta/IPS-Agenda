@@ -904,20 +904,14 @@ test('PDF de Transporte usa margens laterais de 0.25 polegada e ajuste a largura
 });
 
 test('PINEX preenche resumo de paciente, tipo, tubos e volume antes do PDF', () => {
-  const source = readProjectFile('TransporteCodexConfig.gs');
-  const summary = sourceBetween(source, 'function transportePinexSampleSummary_(', 'function atualizarCommercialInvoicePinexB34_(');
-  const context = vm.createContext({
-    extrairIniciais_: (value) => String(value || '').split(/\s+/).filter(Boolean).map((part) => part[0] + '.').join('').toUpperCase(),
-    transporteNumber_: (value) => Number(String(value == null || value === '' ? 0 : value).replace(',', '.')) || 0,
-    transporteNorm_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
-  });
-  vm.runInContext(summary, context);
+  const context = runFile('TransporteCodexConfig.gs');
+  context.extrairIniciais_ = (value) => String(value || '').split(/\s+/).filter(Boolean).map((part) => part[0] + '.').join('').toUpperCase();
 
   const result = context.transportePinexSampleSummary_(
     'Maria Silva Souza',
     [[false], [true], [false], [false], [false], [false], [false], [false]],
     [[0], [2], [0], [0], [0], [0], [0], [0]],
-    [[0], [1.6], [0], [0], [0], [0], [0], [0]],
+    [[0], ['1.6'], [0], [0], [0], [0], [0], [0]],
     ''
   );
   assert.equal(result, 'Patient M.S.S. - 2 tube(s) of human bio sample - Total 1.60 mL / 0 slide(s) / 0 g');

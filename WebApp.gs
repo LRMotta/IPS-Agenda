@@ -2,10 +2,7 @@
 // WEBAPP — PONTO DE ENTRADA
 // ======================================================
 var CODEX_ACL_SHEET_NAME_ = 'Users';
-var CODEX_ACL_CACHE_KEY_ = 'UsersAclEmails:v3';
-var CODEX_ACL_CACHE_SECONDS_ = 120;
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
-var CODEX_API_TOKEN_REQUEST_ = false;
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
 // Atualize versão, rótulo e data a cada entrega do WebApp.
 var CODEX_APP_VERSION_ = '2026.07.15-agenda-print-cancelled';
@@ -22,6 +19,15 @@ function codexJsonForScript_(value) {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+function codexInitialPage_(value, estoque) {
+  var page = String(value || '').trim().toLowerCase();
+  if (estoque && page === 'estoque-view') page = 'visualizacao';
+  var allowed = estoque
+    ? ['visualizacao', 'itens', 'pedidos', 'descartes', 'movimentacoes', 'relatorios']
+    : ['agenda', 'medicos', 'participantes', 'projetos', 'monitores', 'prestadores', 'labcentral', 'couriers', 'feriados', 'solicitantes', 'equipamentos', 'medicamentos', 'configuracoes', 'pendencias', 'dashboard', 'requisicao', 'estoque', 'usuarios', 'audit-log', 'diagnostico', 'estoque-view'];
+  return allowed.indexOf(page) !== -1 ? page : (estoque ? 'itens' : 'agenda');
 }
 
 function doGet(e) {
@@ -54,7 +60,7 @@ function doGet(e) {
     tplEstoque.includeDashboard = false;
     tplEstoque.paginaInicial = page === 'pedidos'
       ? 'pedidos'
-      : (page === 'estoque-view' ? 'visualizacao' : (e && e.parameter ? (e.parameter.pagina || 'itens') : 'itens'));
+      : (page === 'estoque-view' ? 'visualizacao' : codexInitialPage_(e && e.parameter && e.parameter.pagina, true));
     tplEstoque.agendaCanaryShell = false;
     tplEstoque.agendaAbrirInicial = '';
     tplEstoque.buscaInicial = e && e.parameter ? (e.parameter.busca || '') : '';
@@ -82,7 +88,7 @@ function doGet(e) {
   var tplIndex = HtmlService.createTemplateFromFile('Index');
   tplIndex.includeEstoque = false;
   tplIndex.includeDashboard = false;
-  tplIndex.paginaInicial = e && e.parameter ? (e.parameter.pagina || 'agenda') : 'agenda';
+  tplIndex.paginaInicial = codexInitialPage_(e && e.parameter && e.parameter.pagina, false);
   tplIndex.agendaAbrirInicial = e && e.parameter ? String(e.parameter.agendaId || '') : '';
   tplIndex.buscaInicial = '';
   tplIndex.dashboardFiltroInicial = e && e.parameter ? (e.parameter.dashFiltro || '') : '';
@@ -128,15 +134,6 @@ function definirAprovacaoCtmsParticipante(payload) {
 
 // Retorna a URL base do webapp (usada para navegação entre páginas)
 function doPost(e) {
-  var access = codexAuthorizeWebAppRequestSafe_(e);
-  if (!access.ok) {
-    return codexJsonResponse_({
-      ok: false,
-      error: access.message || 'Acesso negado.',
-      userEmail: access.userEmail || ''
-    }, 403);
-  }
-
   var action = e && e.parameter ? String(e.parameter.action || '') : '';
   var payload = {};
   try {
@@ -144,20 +141,44 @@ function doPost(e) {
       payload = JSON.parse(e.postData.contents);
     }
   } catch (err) {
-    return codexJsonResponse_({ ok: false, error: 'JSON invalido: ' + err.message }, 400);
+    // Erros do parser podem incluir trechos do corpo com a credencial.
+    return codexJsonResponse_({ ok: false, error: 'JSON invalido.' }, 400);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return codexJsonResponse_({ ok: false, error: 'Corpo JSON deve ser um objeto.' }, 400);
+  }
+  var apiRequest = Object.prototype.hasOwnProperty.call(payload, 'apiToken');
+  var apiToken = apiRequest ? payload.apiToken : '';
+  if (apiRequest) {
+    if ((action !== 'importarCodex' && action !== 'ping') || !codexIsValidWebAppApiToken_(apiToken)) {
+      return codexJsonResponse_({ ok: false, error: 'Acesso negado.' }, 403);
+    }
+    payload = payload.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return codexJsonResponse_({ ok: false, error: 'Payload da integracao deve ser um objeto.' }, 400);
+    }
+  } else {
+    var access = codexAuthorizeWebAppRequestSafe_(e);
+    if (!access.ok) {
+      return codexJsonResponse_({ ok: false, error: access.message || 'Acesso negado.', userEmail: access.userEmail || '' }, 403);
+    }
   }
 
   try {
     if (action === 'importarCodex') {
+      // Credencial de máquina autoriza somente o importador privado de Transporte.
+      // Não concede perfil nem altera a autorização das RPCs durante a execução.
+      if (apiRequest) {
+        return codexJsonResponse_({ ok: true, data: codexWithDocumentLock_('importarCodex', function() {
+          // Revalida após esperar o lock, inclusive se a credencial foi revogada.
+          if (!codexIsValidWebAppApiToken_(apiToken)) throw new Error('Acesso negado.');
+          return importarTransporteCodexInterno_(payload);
+        }) });
+      }
       if (typeof importarTransporteCodex !== 'function') {
         throw new Error('Funcao importarTransporteCodex nao encontrada.');
       }
-      CODEX_API_TOKEN_REQUEST_ = access.userEmail === 'api-token';
-      try {
-        return codexJsonResponse_({ ok: true, data: importarTransporteCodex(payload) });
-      } finally {
-        CODEX_API_TOKEN_REQUEST_ = false;
-      }
+      return codexJsonResponse_({ ok: true, data: importarTransporteCodex(payload) });
     }
 
     if (action === 'ping') {
@@ -183,6 +204,11 @@ function codexAuthorizeWebAppRequestSafe_(e) {
   }
 }
 
+// statusCode é um código da aplicação no JSON, não o status HTTP.
+// ContentService/TextOutput não permite definir o status HTTP: uma resposta
+// JSON entregue normalmente termina em HTTP 200, inclusive com ok:false.
+// Clientes devem validar o transporte, analisar JSON e conferir ok/error/statusCode.
+// Contrato e redirecionamentos: docs/WEBAPP_RESPOSTAS_JSON.md.
 function codexJsonResponse_(body, statusCode) {
   body = body || {};
   if (statusCode) body.statusCode = statusCode;
@@ -371,7 +397,9 @@ function getConfigBootstrapData() {
 
 function getCadastrosBootstrapData(page) {
   var authorizationStarted = Date.now();
-  var authorizedAccess = codexAssertCanRead_();
+  // Snapshot local à composição desta leitura; nunca reutilizado nas mutações.
+  var readSnapshot = {};
+  var authorizedAccess = codexAssertCanRead_(readSnapshot);
   if (String(page || '').trim().toLowerCase() === 'feriados' && typeof feriadoLogPerformance_ === 'function') feriadoLogPerformance_('authorization', authorizationStarted, {}, true);
   page = String(page || '').trim().toLowerCase();
   var out = {
@@ -388,10 +416,10 @@ function getCadastrosBootstrapData(page) {
       return out;
     });
   } else if (page === 'projetos') {
-    out.config = getProjetoFormConfig();
-    out.data = getProjetos();
-    out.medicos = getMedicos();
-    out.solicitantes = getSolicitantes();
+    out.config = getProjetoFormConfigDados_();
+    out.data = getProjetosDadosInterno_(true);
+    out.medicos = getMedicosDados_();
+    out.solicitantes = codexGetExamRequesterUsers_(readSnapshot.users);
     out.couriers = getAgendaCourierRows_();
     out.temperaturas = getAgendaTemperaturas_();
   } else if (page === 'monitores') {
@@ -428,6 +456,7 @@ function getCadastrosBootstrapData(page) {
 
 function getEstoqueBootstrapData(page) {
   page = String(page || 'itens').trim().toLowerCase();
+  if (page === 'visualizacao') page = 'estoque-view';
   var out = {
     access: codexGetCurrentUserAccess(),
     page: page,
@@ -480,11 +509,7 @@ function codexLoggerSummary_(label, payload) {
   Logger.log(parts.join(' | '));
 }
 
-function codexAuthorizeWebAppRequest_(e) {
-  if (e && e.parameter && codexIsValidWebAppApiToken_(e.parameter.token)) {
-    return { ok: true, userEmail: 'api-token', name: 'API', firstName: 'API', role: 'admin', message: '' };
-  }
-
+function codexAuthorizeWebAppRequest_(e, readSnapshot) {
   var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_());
   if (!userEmail) {
     return {
@@ -497,6 +522,8 @@ function codexAuthorizeWebAppRequest_(e) {
   }
 
   var users = codexGetAllowedUsers_();
+  // Parâmetro de saída privado: não aceita uma ACL anterior como autorização.
+  if (readSnapshot) readSnapshot.users = users;
   if (!Object.keys(users).length) {
     return {
       ok: false,
@@ -542,25 +569,10 @@ function codexAuthorizeWebAppRequest_(e) {
 }
 
 function codexGetActiveUserEmail_() {
+  // A identidade do visitante não pode ser substituída pela conta que executa o script.
   try {
-    var active = Session.getActiveUser().getEmail();
-    if (active) return active;
+    return String(Session.getActiveUser().getEmail() || '').trim();
   } catch (e) {}
-  try {
-    var effective = Session.getEffectiveUser().getEmail();
-    if (effective) return effective;
-  } catch (e2) {}
-  try {
-    var response = UrlFetchApp.fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      method: 'get',
-      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true
-    });
-    if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
-      var info = JSON.parse(response.getContentText() || '{}');
-      if (info && info.email) return info.email;
-    }
-  } catch (e3) {}
   return '';
 }
 
@@ -626,7 +638,7 @@ function codexNormalizeEmail_(email) {
 
 function codexNormalizeRole_(role) {
   role = String(role || '').trim().toLowerCase();
-  return CODEX_USER_ROLES_[role] ? role : 'user';
+  return role === 'admin' || role === 'user' || role === 'readonly' ? role : 'readonly';
 }
 
 function codexNormalizeUserName_(name) {
@@ -739,11 +751,10 @@ function codexFirstName_(name, email) {
 
 function codexNormalizeActive_(value) {
   var raw = String(value === null || value === undefined ? '' : value).trim();
-  if (!raw) return true;
   var normalized = raw.toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
-  return ['nao', 'não', 'no', 'false', '0', 'inativo', 'inactive'].indexOf(normalized) === -1;
+  return ['sim', 'yes', 'true', '1', 'ativo', 'active'].indexOf(normalized) !== -1;
 }
 
 function codexGetCurrentUserAccess() {
@@ -764,18 +775,15 @@ function codexAccessPresentation_(access) {
     registroProfissional: access.registroProfissional || '',
     podeSolicitarExames: access.podeSolicitarExames || 'Sim',
     role: access.role || '',
-    canWrite: !!access.ok && access.role !== 'readonly',
+    canWrite: !!access.ok && (access.role === 'admin' || access.role === 'user'),
     message: access.message || ''
   };
 }
 
 function codexAssertCanWrite_(actionName, moduleName, recordId) {
-  if (CODEX_API_TOKEN_REQUEST_) {
-    return { ok: true, userEmail: 'api-token', name: 'API', firstName: 'API', role: 'admin' };
-  }
   var access = codexAuthorizeWebAppRequest_();
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
-  if (access.role === 'readonly') {
+  if (access.role !== 'admin' && access.role !== 'user') {
     codexWriteAuditLog_('ACESSO_NEGADO_READONLY', moduleName || codexInferAuditModule_(actionName || 'readonly'), recordId || '');
     throw new Error('Seu perfil e somente leitura. Esta acao nao esta autorizada.');
   }
@@ -791,15 +799,19 @@ function codexAssertAdmin_() {
   return access;
 }
 
-function codexAssertCanRead_() {
-  if (CODEX_API_TOKEN_REQUEST_) return { ok: true, userEmail: 'api-token', role: 'admin' };
-  var access = codexAuthorizeWebAppRequest_();
+function codexAssertCanRead_(readSnapshot) {
+  var access = codexAuthorizeWebAppRequest_(undefined, readSnapshot);
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
   return access;
 }
 
 function codexNormalizeCanRequestExams_(value) {
-  return codexNormalizeActive_(value) ? 'Sim' : 'Não';
+  // Regra legada de exames: campo opcional vazio continua permitindo solicitação.
+  // Não reutilizar o padrão restritivo de ativação da conta.
+  var normalized = String(value === null || value === undefined ? '' : value).trim().toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return ['nao', 'no', 'false', '0', 'inativo', 'inactive'].indexOf(normalized) === -1 ? 'Sim' : 'Não';
 }
 
 function codexUserProfileFormations_() {
@@ -1144,21 +1156,70 @@ function codexInferAuditModule_(action) {
   return 'Sistema';
 }
 
+function codexLogAuditFailure_(writer, stage, error) {
+  // Mensagens/stack podem conter valores de células ou identificadores pessoais.
+  // Registra apenas contexto técnico fixo, tipo conhecido e categoria do erro.
+  var message = String(error && error.message || '');
+  var errorType = error && /^(Error|TypeError|RangeError|ReferenceError|SyntaxError)$/.test(error.name) ? error.name : 'Error';
+  var reason = /permission|access denied|not authorized|permiss|acesso negado/i.test(message) ? 'permission'
+    : /quota|too many|limit exceeded|cota/i.test(message) ? 'quota'
+    : /timeout|timed out|tempo limite/i.test(message) ? 'timeout' : 'unknown';
+  var diagnostic = '[CODEX_AUDIT_FAILURE] ' + JSON.stringify({ writer: writer, stage: stage, errorType: errorType, reason: reason });
+  try {
+    Logger.log(diagnostic);
+  } catch (loggerError) {
+    // Mantém um segundo destino de diagnóstico se Logger estiver indisponível.
+    console.error(diagnostic);
+  }
+}
+
 function codexWriteAuditLog_(action, moduleName, recordId) {
+  var stage = 'open_sheet';
   try {
     var ss = getCodexSpreadsheet_();
     var sh = ss.getSheetByName('Audit_Log');
-    if (!sh) return;
+    if (!sh) {
+      codexLogAuditFailure_('codexWriteAuditLog_', 'missing_Audit_Log');
+      return;
+    }
+    stage = 'prepare_row';
     var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_()) || 'api-token';
-    sh.appendRow([
+    var row = [
       codexGenerateAuditId_(),
       userEmail,
       String(action || 'ACAO_PROTEGIDA'),
       new Date(),
       String(moduleName || 'Sistema'),
       String(recordId || '')
-    ]);
-  } catch (e) {}
+    ];
+    stage = 'append_row';
+    sh.appendRow(row);
+  } catch (e) {
+    codexLogAuditFailure_('codexWriteAuditLog_', stage, e);
+  }
+}
+
+function codexWriteAuditLogBatch_(entries) {
+  if (!entries || !entries.length) return;
+  var stage = 'open_sheet';
+  try {
+    var sh = getCodexSpreadsheet_().getSheetByName('Audit_Log');
+    if (!sh) {
+      codexLogAuditFailure_('codexWriteAuditLogBatch_', 'missing_Audit_Log');
+      return;
+    }
+    stage = 'prepare_rows';
+    var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_()) || 'api-token';
+    var now = new Date();
+    var rows = entries.map(function(entry) {
+      return [codexGenerateAuditId_(), userEmail, String(entry.action || 'ACAO_PROTEGIDA'), now,
+        String(entry.moduleName || 'Sistema'), String(entry.recordId || '')];
+    });
+    stage = 'write_rows';
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, 6).setValues(rows);
+  } catch (e) {
+    codexLogAuditFailure_('codexWriteAuditLogBatch_', stage, e);
+  }
 }
 
 function codexGetAuditChangesSheet_() {
@@ -1187,6 +1248,7 @@ function codexWriteAuditChanges_(moduleName, action, recordId, changes, note) {
 }
 
 function codexWriteAuditChangesBatch_(entries) {
+  var stage = 'prepare_rows';
   try {
     var now = new Date();
     var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_()) || 'api-token';
@@ -1202,13 +1264,17 @@ function codexWriteAuditChangesBatch_(entries) {
       });
     });
     if (!rows.length) return;
+    stage = 'open_sheet';
     var sh = codexGetAuditChangesSheet_();
+    stage = 'write_rows';
     sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-  } catch (e) {}
+  } catch (e) {
+    codexLogAuditFailure_('codexWriteAuditChangesBatch_', stage, e);
+  }
 }
 
 function codexGenerateAuditId_() {
-  return 'AUD-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Math.floor(Math.random() * 9000 + 1000);
+  return 'AUD-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMddHHmmss') + '-' + Utilities.getUuid();
 }
 
 function codexNormalizeAuditFilterText_(value) {
@@ -1454,132 +1520,145 @@ function codexGetUserProfileByEmail_(email) {
 }
 
 function salvarMeuPerfil(payload) {
-  var access = codexAssertSelfProfileWrite_();
-  payload = payload || {};
-  var name = codexNormalizeUserName_(payload.name);
-  var birthday = codexNormalizeBirthday_(payload.birthday || {
-    month: payload.birthdayMonth,
-    day: payload.birthdayDay
-  });
-  var formacao = codexNormalizeUserFormation_(payload.formacao);
-  var registroProfissional = codexNormalizeProfessionalRegistration_(payload.registroProfissional);
-  if (!name) throw new Error('Informe seu nome completo.');
+  return codexWithDocumentLock_('salvarMeuPerfil', function() {
+    var access = codexAssertSelfProfileWrite_();
+    payload = payload || {};
+    var name = codexNormalizeUserName_(payload.name);
+    var birthday = codexNormalizeBirthday_(payload.birthday || {
+      month: payload.birthdayMonth,
+      day: payload.birthdayDay
+    });
+    var formacao = codexNormalizeUserFormation_(payload.formacao);
+    var registroProfissional = codexNormalizeProfessionalRegistration_(payload.registroProfissional);
+    if (!name) throw new Error('Informe seu nome completo.');
 
-  var ss = getCodexSpreadsheet_();
-  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
-  if (!sh || sh.getLastRow() < 2) throw new Error('Usuário não encontrado.');
-  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
-  var email = codexNormalizeEmail_(access.userEmail);
-  var rowOffset = -1;
-  for (var i = 0; i < rows.length; i++) {
-    if (codexNormalizeEmail_(rows[i][0]) === email) {
-      rowOffset = i;
-      break;
+    var ss = getCodexSpreadsheet_();
+    var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+    if (!sh || sh.getLastRow() < 2) throw new Error('Usuário não encontrado.');
+    var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
+    var email = codexNormalizeEmail_(access.userEmail);
+    var rowOffset = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (codexNormalizeEmail_(rows[i][0]) === email) {
+        rowOffset = i;
+        break;
+      }
     }
-  }
-  if (rowOffset < 0) throw new Error('Usuário não encontrado.');
-  codexEnsureUsersProfileColumns_(sh);
-  var rowIndex = rowOffset + 2;
-  var oldName = rows[rowOffset][1];
-  var oldBirthday = rows[rowOffset][4];
-  var oldFormacao = rows[rowOffset][5];
-  var oldRegistro = rows[rowOffset][6];
-  sh.getRange(rowIndex, 2, 1, 3).setValues([[name, rows[rowOffset][2], rows[rowOffset][3]]]);
-  codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
-  sh.getRange(rowIndex, 6, 1, 2).setValues([[formacao, registroProfissional]]);
-  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
-  codexWriteAuditChanges_('Sistema', 'salvarMeuPerfil', email, [
-    { field: 'Usuário - Nome', oldValue: oldName, newValue: name },
-    { field: 'Usuário - Aniversário', oldValue: oldBirthday, newValue: birthday },
-    { field: 'Usuário - Formação', oldValue: oldFormacao, newValue: formacao },
-    { field: 'Usuário - Registro profissional', oldValue: oldRegistro, newValue: registroProfissional }
-  ], 'Atualização do próprio perfil');
-  var parts = codexBirthdayParts_(birthday);
-  return {
-    ok: true,
-    email: email,
-    name: name,
-    firstName: codexFirstName_(name, email),
-    role: access.role || '',
-    formacao: formacao,
-    registroProfissional: registroProfissional,
-    podeSolicitarExames: codexNormalizeCanRequestExams_(rows[rowOffset][7]),
-    birthday: parts.birthday,
-    birthdayMonth: parts.birthdayMonth,
-    birthdayDay: parts.birthdayDay,
-    teamBirthdays: codexGetTeamBirthdays_()
-  };
+    if (rowOffset < 0) throw new Error('Usuário não encontrado.');
+    codexEnsureUsersProfileColumns_(sh);
+    var rowIndex = rowOffset + 2;
+    var oldName = rows[rowOffset][1];
+    var oldBirthday = rows[rowOffset][4];
+    var oldFormacao = rows[rowOffset][5];
+    var oldRegistro = rows[rowOffset][6];
+    sh.getRange(rowIndex, 2).setValue(name);
+    codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
+    sh.getRange(rowIndex, 6, 1, 2).setValues([[formacao, registroProfissional]]);
+    codexWriteAuditChanges_('Sistema', 'salvarMeuPerfil', email, [
+      { field: 'Usuário - Nome', oldValue: oldName, newValue: name },
+      { field: 'Usuário - Aniversário', oldValue: oldBirthday, newValue: birthday },
+      { field: 'Usuário - Formação', oldValue: oldFormacao, newValue: formacao },
+      { field: 'Usuário - Registro profissional', oldValue: oldRegistro, newValue: registroProfissional }
+    ], 'Atualização do próprio perfil');
+    var parts = codexBirthdayParts_(birthday);
+    return {
+      ok: true,
+      email: email,
+      name: name,
+      firstName: codexFirstName_(name, email),
+      role: access.role || '',
+      formacao: formacao,
+      registroProfissional: registroProfissional,
+      podeSolicitarExames: codexNormalizeCanRequestExams_(rows[rowOffset][7]),
+      birthday: parts.birthday,
+      birthdayMonth: parts.birthdayMonth,
+      birthdayDay: parts.birthdayDay,
+      teamBirthdays: codexGetTeamBirthdays_()
+    };
+  });
 }
 
 function salvarPerfisUsuariosAdmin(payload) {
   codexAssertAdmin_();
-  payload = payload || {};
-  var updates = Array.isArray(payload.users) ? payload.users : [];
-  if (!updates.length) throw new Error('Nenhum perfil foi informado.');
-  if (updates.length > 500) throw new Error('A carga rápida aceita no máximo 500 usuários por vez.');
+  return codexWithDocumentLock_('salvarPerfisUsuariosAdmin', function() {
+    codexAssertAdmin_();
+    payload = payload || {};
+    var updates = Array.isArray(payload.users) ? payload.users : [];
+    if (!updates.length) throw new Error('Nenhum perfil foi informado.');
+    if (updates.length > 500) throw new Error('A carga rápida aceita no máximo 500 usuários por vez.');
 
-  var ss = getCodexSpreadsheet_();
-  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
-  if (!sh || sh.getLastRow() < 2) throw new Error('Aba Users não encontrada.');
-  var lastRow = sh.getLastRow();
-  var rows = sh.getRange(2, 1, lastRow - 1, Math.max(8, sh.getLastColumn())).getValues();
-  var changes = [];
-  var seenRows = {};
+    var ss = getCodexSpreadsheet_();
+    var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+    if (!sh || sh.getLastRow() < 2) throw new Error('Aba Users não encontrada.');
+    var lastRow = sh.getLastRow();
+    var rows = sh.getRange(2, 1, lastRow - 1, Math.max(8, sh.getLastColumn())).getValues();
+    var changes = [];
+    var seenRows = {};
 
-  updates.forEach(function(update) {
-    var rowIndex = Number(update && update.rowIndex || 0);
-    if (rowIndex < 2 || rowIndex > lastRow) throw new Error('Usuário inválido na carga rápida.');
-    if (seenRows[rowIndex]) throw new Error('Usuário duplicado na carga rápida.');
-    seenRows[rowIndex] = true;
-    var offset = rowIndex - 2;
-    var email = codexNormalizeEmail_(rows[offset][0]);
-    var name = codexNormalizeUserName_(update.name);
-    var birthday = codexNormalizeBirthday_(update.birthday || {
-      month: update.birthdayMonth,
-      day: update.birthdayDay
+    updates.forEach(function(update) {
+      var rowIndex = Number(update && update.rowIndex || 0);
+      if (rowIndex < 2 || rowIndex > lastRow) throw new Error('Usuário inválido na carga rápida.');
+      if (seenRows[rowIndex]) throw new Error('Usuário duplicado na carga rápida.');
+      seenRows[rowIndex] = true;
+      var offset = rowIndex - 2;
+      var email = codexNormalizeEmail_(rows[offset][0]);
+      var name = codexNormalizeUserName_(update.name);
+      var birthday = codexNormalizeBirthday_(update.birthday || {
+        month: update.birthdayMonth,
+        day: update.birthdayDay
+      });
+      var formacao = codexNormalizeUserFormation_(update.formacao);
+      var registroProfissional = codexNormalizeProfessionalRegistration_(update.registroProfissional);
+      var podeSolicitarExames = codexNormalizeCanRequestExams_(update.podeSolicitarExames);
+      if (!email) throw new Error('Usuário sem e-mail na linha ' + rowIndex + '.');
+      if (!name) throw new Error('Informe o nome completo de ' + email + '.');
+      changes.push({
+        rowIndex: rowIndex,
+        email: email,
+        oldName: rows[offset][1],
+        oldBirthday: rows[offset][4],
+        oldFormacao: rows[offset][5],
+        oldRegistro: rows[offset][6],
+        oldPodeSolicitar: codexNormalizeCanRequestExams_(rows[offset][7]),
+        name: name,
+        birthday: birthday,
+        formacao: formacao,
+        registroProfissional: registroProfissional,
+        podeSolicitarExames: podeSolicitarExames
+      });
     });
-    var formacao = codexNormalizeUserFormation_(update.formacao);
-    var registroProfissional = codexNormalizeProfessionalRegistration_(update.registroProfissional);
-    var podeSolicitarExames = codexNormalizeCanRequestExams_(update.podeSolicitarExames);
-    if (!email) throw new Error('Usuário sem e-mail na linha ' + rowIndex + '.');
-    if (!name) throw new Error('Informe o nome completo de ' + email + '.');
-    changes.push({
-      rowIndex: rowIndex,
-      email: email,
-      oldName: rows[offset][1],
-      oldBirthday: rows[offset][4],
-      oldFormacao: rows[offset][5],
-      oldRegistro: rows[offset][6],
-      oldPodeSolicitar: codexNormalizeCanRequestExams_(rows[offset][7]),
-      name: name,
-      birthday: birthday,
-      formacao: formacao,
-      registroProfissional: registroProfissional,
-      podeSolicitarExames: podeSolicitarExames
-    });
-    rows[offset][1] = name;
-    rows[offset][4] = birthday;
-    rows[offset][5] = formacao;
-    rows[offset][6] = registroProfissional;
-    rows[offset][7] = podeSolicitarExames;
-  });
 
-  codexEnsureUsersProfileColumns_(sh);
-  sh.getRange(2, 1, rows.length, 4).setValues(rows.map(function(row) { return row.slice(0, 4); }));
-  codexSetUserBirthdaysAsText_(sh, 2, rows.map(function(row) { return row[4]; }));
-  sh.getRange(2, 6, rows.length, 3).setValues(rows.map(function(row) { return row.slice(5, 8); }));
-  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
-  changes.forEach(function(change) {
-    codexWriteAuditLog_('salvarPerfisUsuariosAdmin', 'Sistema', change.email);
-    codexWriteAuditChanges_('Sistema', 'salvarPerfisUsuariosAdmin', change.email, [
-      { field: 'Usuário - Nome', oldValue: change.oldName, newValue: change.name },
-      { field: 'Usuário - Aniversário', oldValue: change.oldBirthday, newValue: change.birthday },
-      { field: 'Usuário - Formação', oldValue: change.oldFormacao, newValue: change.formacao },
-      { field: 'Usuário - Registro profissional', oldValue: change.oldRegistro, newValue: change.registroProfissional },
-      { field: 'Usuário - Pode solicitar exames', oldValue: change.oldPodeSolicitar, newValue: change.podeSolicitarExames }
-    ], 'Carga rápida de perfis');
+    codexEnsureUsersProfileColumns_(sh);
+    // Grave apenas os perfis selecionados, agrupando linhas contíguas em lotes.
+    // E-mail, papel e ativação pertencem à administração de acesso.
+    var sortedChanges = changes.slice().sort(function(a, b) { return a.rowIndex - b.rowIndex; });
+    var start = 0;
+    while (start < sortedChanges.length) {
+      var end = start + 1;
+      while (end < sortedChanges.length && sortedChanges[end].rowIndex === sortedChanges[end - 1].rowIndex + 1) end++;
+      var batch = sortedChanges.slice(start, end);
+      var startRow = batch[0].rowIndex;
+      sh.getRange(startRow, 2, batch.length, 1).setValues(batch.map(function(change) { return [change.name]; }));
+      sh.getRange(startRow, 5, batch.length, 1).setNumberFormat('@');
+      sh.getRange(startRow, 5, batch.length, 4).setValues(batch.map(function(change) {
+        return [change.birthday, change.formacao, change.registroProfissional, change.podeSolicitarExames];
+      }));
+      start = end;
+    }
+    codexWriteAuditLogBatch_(changes.map(function(change) {
+      return { action: 'salvarPerfisUsuariosAdmin', moduleName: 'Sistema', recordId: change.email };
+    }));
+    codexWriteAuditChangesBatch_(changes.map(function(change) {
+      return { moduleName: 'Sistema', action: 'salvarPerfisUsuariosAdmin', recordId: change.email, changes: [
+        { field: 'Usuário - Nome', oldValue: change.oldName, newValue: change.name },
+        { field: 'Usuário - Aniversário', oldValue: change.oldBirthday, newValue: change.birthday },
+        { field: 'Usuário - Formação', oldValue: change.oldFormacao, newValue: change.formacao },
+        { field: 'Usuário - Registro profissional', oldValue: change.oldRegistro, newValue: change.registroProfissional },
+        { field: 'Usuário - Pode solicitar exames', oldValue: change.oldPodeSolicitar, newValue: change.podeSolicitarExames }
+      ], note: 'Carga rápida de perfis' };
+    }));
+    return { ok: true, updated: changes.length, teamBirthdays: codexGetTeamBirthdays_() };
   });
-  return { ok: true, updated: changes.length, teamBirthdays: codexGetTeamBirthdays_() };
 }
 
 function getUsersAdminList() {
@@ -1626,99 +1705,120 @@ function getUsersAdminBootstrap() {
 }
 
 function salvarUsuarioAdmin(payload) {
-  var access = codexAssertAdmin_();
-  payload = payload || {};
-  var email = codexNormalizeEmail_(payload.email);
-  var name = codexNormalizeUserName_(payload.name);
-  var birthday = codexNormalizeBirthday_(payload.birthday || {
-    month: payload.birthdayMonth,
-    day: payload.birthdayDay
-  });
-  var formacao = codexNormalizeUserFormation_(payload.formacao);
-  var registroProfissional = codexNormalizeProfessionalRegistration_(payload.registroProfissional);
-  var podeSolicitarExames = codexNormalizeCanRequestExams_(payload.podeSolicitarExames);
-  var role = codexNormalizeRole_(payload.role);
-  var ativo = codexNormalizeActive_(payload.ativo) ? 'Sim' : 'Não';
-  if (!email) throw new Error('Informe o e-mail do usuário.');
-  if (!name) throw new Error('Informe o nome completo do usuário.');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('E-mail inválido.');
-  if (email === codexNormalizeEmail_(access.userEmail) && (role !== 'admin' || ativo !== 'Sim')) {
-    throw new Error('Você não pode remover seu próprio acesso administrativo.');
-  }
-
-  var ss = getCodexSpreadsheet_();
-  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
-  if (!sh) throw new Error('Aba Users não encontrada.');
-  var rowIndex = Number(payload.rowIndex || 0);
-  var lastRow = sh.getLastRow();
-  var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(8, sh.getLastColumn())).getValues() : [];
-  for (var i = 0; i < rows.length; i++) {
-    var existingEmail = codexNormalizeEmail_(rows[i][0]);
-    var existingRow = i + 2;
-    if (existingEmail === email && existingRow !== rowIndex) {
-      throw new Error('Este e-mail já está cadastrado na aba Users.');
+  codexAssertAdmin_();
+  return codexWithDocumentLock_('salvarUsuarioAdmin', function() {
+    var access = codexAssertAdmin_();
+    payload = payload || {};
+    var email = codexNormalizeEmail_(payload.email);
+    var name = codexNormalizeUserName_(payload.name);
+    var birthday = codexNormalizeBirthday_(payload.birthday || {
+      month: payload.birthdayMonth,
+      day: payload.birthdayDay
+    });
+    var formacao = codexNormalizeUserFormation_(payload.formacao);
+    var registroProfissional = codexNormalizeProfessionalRegistration_(payload.registroProfissional);
+    var podeSolicitarExames = codexNormalizeCanRequestExams_(payload.podeSolicitarExames);
+    var role = codexNormalizeRole_(payload.role);
+    var ativo = codexNormalizeActive_(payload.ativo) ? 'Sim' : 'Não';
+    if (!email) throw new Error('Informe o e-mail do usuário.');
+    if (!name) throw new Error('Informe o nome completo do usuário.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('E-mail inválido.');
+    var ss = getCodexSpreadsheet_();
+    var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+    if (!sh) throw new Error('Aba Users não encontrada.');
+    var rowIndex = Number(payload.rowIndex === undefined || payload.rowIndex === null || payload.rowIndex === '' ? 0 : payload.rowIndex);
+    var lastRow = sh.getLastRow();
+    var rows = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, Math.max(8, sh.getLastColumn())).getValues() : [];
+    if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex === 1 || rowIndex > lastRow) {
+      throw new Error('Linha de usuário inválida. Reabra o cadastro.');
     }
-  }
-  if (!rowIndex || rowIndex < 2) rowIndex = Math.max(2, lastRow + 1);
-  codexEnsureUsersProfileColumns_(sh);
-  var rowAnterior = rowIndex <= lastRow ? sh.getRange(rowIndex, 1, 1, 8).getValues()[0] : ['', '', '', '', '', '', '', ''];
-  sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
-  codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
-  sh.getRange(rowIndex, 6, 1, 3).setValues([[formacao, registroProfissional, podeSolicitarExames]]);
-  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
-  codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
-  codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
-    { field: 'Usuário - E-mail', oldValue: rowAnterior[0], newValue: email },
-    { field: 'Usuário - Nome', oldValue: rowAnterior[1], newValue: name },
-    { field: 'Usuário - Perfil', oldValue: rowAnterior[2], newValue: role },
-    { field: 'Usuário - Ativo', oldValue: rowAnterior[3], newValue: ativo },
-    { field: 'Usuário - Aniversário', oldValue: rowAnterior[4], newValue: birthday },
-    { field: 'Usuário - Formação', oldValue: rowAnterior[5], newValue: formacao },
-    { field: 'Usuário - Registro profissional', oldValue: rowAnterior[6], newValue: registroProfissional },
-    { field: 'Usuário - Pode solicitar exames', oldValue: codexNormalizeCanRequestExams_(rowAnterior[7]), newValue: podeSolicitarExames }
-  ], rowAnterior[0] ? 'Alteração de usuário/permissão' : 'Cadastro de usuário/permissão');
-  return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, formacao: formacao, registroProfissional: registroProfissional, podeSolicitarExames: podeSolicitarExames, teamBirthdays: codexGetTeamBirthdays_() };
+    var rowAnterior = ['', '', '', '', '', '', '', ''];
+    if (rowIndex) {
+      rowAnterior = rows[rowIndex - 2];
+      // Clientes legados sem identidade original só podem manter o e-mail.
+      var originalEmail = codexNormalizeEmail_(payload.originalEmail || email);
+      if (!originalEmail || codexNormalizeEmail_(rowAnterior[0]) !== originalEmail) {
+        throw new Error('O usuário desta linha mudou. Recarregue a lista e reabra o cadastro.');
+      }
+    } else if (codexNormalizeEmail_(payload.originalEmail)) {
+      throw new Error('Linha de usuário inválida. Reabra o cadastro.');
+    }
+    var callerEmail = codexNormalizeEmail_(access.userEmail);
+    if ((email === callerEmail && (role !== 'admin' || ativo !== 'Sim')) ||
+        (codexNormalizeEmail_(rowAnterior[0]) === callerEmail &&
+         (email !== callerEmail || role !== 'admin' || ativo !== 'Sim'))) {
+      throw new Error('Você não pode remover seu próprio acesso administrativo.');
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var existingEmail = codexNormalizeEmail_(rows[i][0]);
+      var existingRow = i + 2;
+      if (existingEmail === email && existingRow !== rowIndex) {
+        throw new Error('Este e-mail já está cadastrado na aba Users.');
+      }
+    }
+    if (!rowIndex) rowIndex = Math.max(2, lastRow + 1);
+    codexEnsureUsersProfileColumns_(sh);
+    sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
+    codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
+    sh.getRange(rowIndex, 6, 1, 3).setValues([[formacao, registroProfissional, podeSolicitarExames]]);
+    codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
+    codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
+      { field: 'Usuário - E-mail', oldValue: rowAnterior[0], newValue: email },
+      { field: 'Usuário - Nome', oldValue: rowAnterior[1], newValue: name },
+      { field: 'Usuário - Perfil', oldValue: rowAnterior[2], newValue: role },
+      { field: 'Usuário - Ativo', oldValue: rowAnterior[3], newValue: ativo },
+      { field: 'Usuário - Aniversário', oldValue: rowAnterior[4], newValue: birthday },
+      { field: 'Usuário - Formação', oldValue: rowAnterior[5], newValue: formacao },
+      { field: 'Usuário - Registro profissional', oldValue: rowAnterior[6], newValue: registroProfissional },
+      { field: 'Usuário - Pode solicitar exames', oldValue: codexNormalizeCanRequestExams_(rowAnterior[7]), newValue: podeSolicitarExames }
+    ], rowAnterior[0] ? 'Alteração de usuário/permissão' : 'Cadastro de usuário/permissão');
+    return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, formacao: formacao, registroProfissional: registroProfissional, podeSolicitarExames: podeSolicitarExames, teamBirthdays: codexGetTeamBirthdays_() };
+  });
 }
 
 function inativarUsuarioAdmin(rowIndex) {
-  var access = codexAssertAdmin_();
-  rowIndex = Number(rowIndex || 0);
-  if (rowIndex < 2) throw new Error('Usuário inválido.');
-  var ss = getCodexSpreadsheet_();
-  var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
-  if (!sh || rowIndex > sh.getLastRow()) throw new Error('Usuário não encontrado.');
-  var email = codexNormalizeEmail_(sh.getRange(rowIndex, 1).getValue());
-  if (email === codexNormalizeEmail_(access.userEmail)) {
-    throw new Error('Você não pode inativar seu próprio usuário administrador.');
-  }
-  var ativoAnterior = sh.getRange(rowIndex, 4).getValue();
-  sh.getRange(rowIndex, 4).setValue('Não');
-  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
-  codexWriteAuditLog_('inativarUsuarioAdmin', 'Sistema', email);
-  codexWriteAuditChanges_('Sistema', 'inativarUsuarioAdmin', email, [{
-    field: 'Usuário - Ativo',
-    oldValue: ativoAnterior,
-    newValue: 'Não'
-  }], 'Inativação de usuário/permissão');
-  return { ok: true, rowIndex: rowIndex, email: email, ativo: 'Não', teamBirthdays: codexGetTeamBirthdays_() };
+  codexAssertAdmin_();
+  return codexWithDocumentLock_('inativarUsuarioAdmin', function() {
+    var access = codexAssertAdmin_();
+    rowIndex = Number(rowIndex || 0);
+    if (rowIndex < 2) throw new Error('Usuário inválido.');
+    var ss = getCodexSpreadsheet_();
+    var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
+    if (!sh || rowIndex > sh.getLastRow()) throw new Error('Usuário não encontrado.');
+    var email = codexNormalizeEmail_(sh.getRange(rowIndex, 1).getValue());
+    if (email === codexNormalizeEmail_(access.userEmail)) {
+      throw new Error('Você não pode inativar seu próprio usuário administrador.');
+    }
+    var ativoAnterior = sh.getRange(rowIndex, 4).getValue();
+    sh.getRange(rowIndex, 4).setValue('Não');
+    codexWriteAuditLog_('inativarUsuarioAdmin', 'Sistema', email);
+    codexWriteAuditChanges_('Sistema', 'inativarUsuarioAdmin', email, [{
+      field: 'Usuário - Ativo',
+      oldValue: ativoAnterior,
+      newValue: 'Não'
+    }], 'Inativação de usuário/permissão');
+    return { ok: true, rowIndex: rowIndex, email: email, ativo: 'Não', teamBirthdays: codexGetTeamBirthdays_() };
+  });
 }
 
 function codexIsValidWebAppApiToken_(token) {
-  token = String(token || '').trim();
-  if (!token) return false;
-  var expected;
-  try {
-    expected = String(PropertiesService.getScriptProperties().getProperty('CODEX_WEBAPP_API_TOKEN') || '').trim();
-  } catch (e) {
-    expected = '';
-  }
-  return !!expected && token === expected;
+  if (typeof token !== 'string' || token.length > 4096) return false;
+  token = token.trim();
+  var expected = codexGetWebAppApiToken_();
+  if (!token || !expected) return false;
+  var actualDigest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token, Utilities.Charset.UTF_8);
+  var expectedDigest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, expected, Utilities.Charset.UTF_8);
+  // Compara todos os 32 bytes, sem saída antecipada por prefixo/tamanho do segredo.
+  // V8 não oferece uma primitiva com garantia formal de tempo constante.
+  var difference = 0;
+  for (var i = 0; i < 32; i++) difference |= actualDigest[i] ^ expectedDigest[i];
+  return difference === 0;
 }
 
-function codexGetWebAppApiTokenQuery_() {
+function codexGetWebAppApiToken_() {
   try {
     var token = String(PropertiesService.getScriptProperties().getProperty('CODEX_WEBAPP_API_TOKEN') || '').trim();
-    return token ? '&token=' + encodeURIComponent(token) : '';
+    return token;
   } catch (e) {
     return '';
   }
@@ -1920,7 +2020,6 @@ function clearCodexRuntimeCaches_(referenceParts) {
   CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
   CODEX_LAB_CENTRAL_CACHE_ = null;
   CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-  codexCacheRemove_(CODEX_ACL_CACHE_KEY_);
   codexCacheRemove_('ConfigAppRows:v2');
   codexCacheRemove_('AgendaFormData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
   codexCacheRemove_('AgendaFormData:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
@@ -2167,45 +2266,58 @@ function agendaTipoContatoTelefonicoServer_(tipo) {
  * A=id | B=nome | C=especialidade | D=CPF | E=CREMERS | F=telefone | G=email
  */
 function salvarDadosMedico(dados) {
-  codexAssertCanWrite_('salvarDadosMedico', 'Cadastros', dados && dados.id);
   dados = dados || {};
-  var especialidade = String(dados.especialidade || '').trim();
-  var especialidadesConfig = getConfigValues_('Médicos', 'Especialidade', []);
-  if (!especialidade || especialidadesConfig.indexOf(especialidade) === -1) {
-    throw new Error('Selecione uma especialidade ativa cadastrada no ConfigApp.');
-  }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('🩺 Médicos');
-  if (!sh) throw new Error("Aba '🩺 Médicos' não encontrada.");
-
-  if (dados.id && dados.id !== '') {
-    var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
-    for (var i = 0; i < ids.length; i++) {
-      if (ids[i][0].toString() === dados.id.toString()) {
-        var linha = i + 2;
-        sh.getRange(linha, 2).setValue(dados.nome          || '');
-        sh.getRange(linha, 3).setValue(especialidade);
-        sh.getRange(linha, 4).setValue(dados.cpf           || '');
-        sh.getRange(linha, 5).setValue(dados.cremers       || '');
-        sh.getRange(linha, 6).setValue(dados.telefone      || '');
-        sh.getRange(linha, 7).setValue(dados.email         || '');
-        clearCodexRuntimeCaches_(['medicos']);
-        return 'Médico atualizado com sucesso.';
-      }
+  return codexWithDocumentLock_('salvarDadosMedico', function() {
+    codexAssertCanWrite_('salvarDadosMedico', 'Cadastros', dados.id);
+    var especialidade = String(dados.especialidade || '').trim();
+    var especialidadesConfig = getConfigValues_('Médicos', 'Especialidade', []);
+    if (!especialidade || especialidadesConfig.indexOf(especialidade) === -1) {
+      throw new Error('Selecione uma especialidade ativa cadastrada no ConfigApp.');
     }
-    throw new Error('Médico com ID "' + dados.id + '" não encontrado.');
-  }
-
-  var novoId = 'MED-' + new Date().getTime();
-  sh.appendRow([novoId, dados.nome || '', especialidade,
-                dados.cpf || '', dados.cremers || '',
-                dados.telefone || '', dados.email || '']);
-  clearCodexRuntimeCaches_(['medicos']);
-  return 'Médico cadastrado com sucesso.';
+    var sh = getCodexSpreadsheet_().getSheetByName('🩺 Médicos');
+    if (!sh) throw new Error("Aba '🩺 Médicos' não encontrada.");
+    var lastRow = sh.getLastRow();
+    var rows = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, 7).getValues() : [];
+    var id = String(dados.id === null || dados.id === undefined ? '' : dados.id);
+    var rowIndex = Math.max(2, lastRow + 1);
+    var previous = [];
+    if (id) {
+      var offset = -1;
+      for (var i = 0; i < rows.length; i++) {
+        if (String(rows[i][0]) === id) { offset = i; break; }
+      }
+      if (offset < 0) throw new Error('Médico com ID "' + id + '" não encontrado.');
+      rowIndex = offset + 2;
+      previous = rows[offset];
+    }
+    function fieldValue(field, column) {
+      var value = dados[field] === undefined ? previous[column - 1] : dados[field];
+      return String(value === null || value === undefined ? '' : value);
+    }
+    var values = [fieldValue('nome', 2), especialidade, fieldValue('cpf', 4),
+      fieldValue('cremers', 5), fieldValue('telefone', 6), fieldValue('email', 7)];
+    // CPF e telefone são identificadores textuais; não reconstruir zeros antigos.
+    sh.getRangeList(['D' + rowIndex, 'F' + rowIndex]).setNumberFormat('@');
+    if (id) {
+      sh.getRange(rowIndex, 2, 1, 6).setValues([values]);
+    } else {
+      var idTimestamp = Date.now();
+      // Mesmo sob lock, cadastros sequenciais podem ocorrer no mesmo milissegundo.
+      while (rows.some(function(row) { return String(row[0]) === 'MED-' + idTimestamp; })) idTimestamp++;
+      sh.getRange(rowIndex, 1, 1, 7).setValues([['MED-' + idTimestamp].concat(values)]);
+    }
+    clearCodexRuntimeCaches_(['medicos']);
+    return id ? 'Médico atualizado com sucesso.' : 'Médico cadastrado com sucesso.';
+  });
 }
 
 function getMedicos() {
   codexAssertCanRead_();
+  return getMedicosDados_();
+}
+
+// Leitura privada, composta apenas depois da autorização do bootstrap/RPC.
+function getMedicosDados_() {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🩺 Médicos');
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues()
@@ -2224,17 +2336,23 @@ function getMedicos() {
 }
 
 function excluirMedico(id) {
-  codexAssertCanWrite_('excluirMedico', 'Cadastros', id);
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🩺 Médicos');
-  var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0] == id) {
-      sh.deleteRow(i + 2);
-      clearCodexRuntimeCaches_(['medicos']);
-      return 'ok';
+  return codexWithDocumentLock_('excluirMedico', function() {
+    codexAssertCanWrite_('excluirMedico', 'Cadastros', id);
+    var sh = getCodexSpreadsheet_().getSheetByName('🩺 Médicos');
+    if (!sh) throw new Error("Aba '🩺 Médicos' não encontrada.");
+    if (sh.getLastRow() < 2) throw new Error('Registro não encontrado.');
+    var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+    var targetId = String(id === null || id === undefined ? '' : id);
+    if (!targetId) throw new Error('Registro não encontrado.');
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === targetId) {
+        sh.deleteRow(i + 2);
+        clearCodexRuntimeCaches_(['medicos']);
+        return 'ok';
+      }
     }
-  }
-  throw new Error('Registro não encontrado.');
+    throw new Error('Registro não encontrado.');
+  });
 }
 
 
@@ -2243,8 +2361,8 @@ function excluirMedico(id) {
 //  SOLICITANTE
 // ══════════════════════════════════════════════════════
 // Contrato mantido para compatibilidade com o formulário de requisição.
-function codexGetExamRequesterUsers_() {
-  var users = codexGetAllowedUsers_();
+function codexGetExamRequesterUsers_(users) {
+  users = users || codexGetAllowedUsers_();
   return Object.keys(users).map(function(email) {
     var user = users[email] || {};
     if (!user.active || codexNormalizeCanRequestExams_(user.podeSolicitarExames) !== 'Sim') return null;
@@ -2271,8 +2389,7 @@ function buscarSolicitantesCompleto() {
 }
 
 /**
- * Retorna todos os solicitantes para o WebApp.
- * A=id | B=nome | C=formacao | D=registro
+ * Retorna usuários ativos autorizados a solicitar exames; id é o e-mail.
  */
 function getSolicitantes() {
   codexAssertCanRead_();
@@ -2280,49 +2397,21 @@ function getSolicitantes() {
 }
 
 /**
- * Cria ou atualiza um solicitante na aba '🙋 Solicitantes'.
+ * RPC legada mantida para clientes antigos, sem mutação de dados.
  */
 function salvarDadosSolicitante(dados) {
-  codexAssertCanWrite_('salvarDadosSolicitante', 'Cadastros', dados && dados.id);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('🙋 Solicitantes');
-  if (!sh) throw new Error("Aba '🙋 Solicitantes' não encontrada.");
-
-  if (dados.id && dados.id !== '') {
-    var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
-    for (var i = 0; i < ids.length; i++) {
-      if (ids[i][0].toString() === dados.id.toString()) {
-        var linha = i + 2;
-        sh.getRange(linha, 2).setValue(dados.nome     || '');
-        sh.getRange(linha, 3).setValue(dados.formacao || '');
-        sh.getRange(linha, 4).setValue(dados.registro || '');
-        sh.getRange(linha, 5).setValue(dados.email || '');
-        return 'Solicitante atualizado com sucesso.';
-      }
-    }
-    throw new Error('Solicitante com ID "' + dados.id + '" não encontrado.');
-  }
-
-  var novoId = 'SOL-' + new Date().getTime();
-  sh.appendRow([novoId, dados.nome || '', dados.formacao || '', dados.registro || '', dados.email || '']);
-  return 'Solicitante cadastrado com sucesso.';
+  dados = dados || {};
+  codexAssertCanWrite_('salvarDadosSolicitante', 'Cadastros', dados.id);
+  throw new Error('O cadastro de solicitantes é gerenciado em Usuários. Solicite a alteração a um administrador.');
 }
 
 /**
- * Exclui o solicitante com o id informado.
+ * RPC legada mantida sem exclusão de dados.
  */
 function excluirSolicitante(id) {
   codexAssertCanWrite_('excluirSolicitante', 'Cadastros', id);
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('🙋 Solicitantes');
-  if (!sh || sh.getLastRow() < 2) throw new Error('Nenhum registro encontrado.');
-  var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0].toString() === id.toString()) {
-      sh.deleteRow(i + 2);
-      return 'ok';
-    }
-  }
-  throw new Error('Solicitante não encontrado.');
+  // Remover um solicitante não pode excluir uma conta nem seu histórico.
+  throw new Error('A permissão de solicitar exames é gerenciada em Usuários. Solicite a alteração a um administrador.');
 }
 
 
@@ -3029,7 +3118,7 @@ function reqExamesLinhasEstimadas_(text) {
 }
 
 /**
- * Versão do exportarPDF sem chamadas a getUi().
+ * Exporta a requisição e cria o rascunho de e-mail no contexto WebApp.
  * Usada internamente por gerarRequisicaoPDF (contexto WebApp).
  * Lança erros em vez de exibir alertas.
  * @param {Sheet} sheet - Aba "Requisição de Exames" já preenchida.
@@ -3509,7 +3598,9 @@ function focarDataHoje() {
   var aba = ss.getSheetByName('Agenda');
   if (!aba) return;
   ss.setActiveSheet(aba);
-  var rangeDatas = aba.getRange(2, 2, aba.getLastRow(), 1).getValues();
+  var lastRow = aba.getLastRow();
+  if (lastRow < 2) return;
+  var rangeDatas = aba.getRange(2, 2, lastRow - 1, 1).getValues();
   var hoje = new Date(); hoje.setHours(0,0,0,0);
   for (var i = 0; i < rangeDatas.length; i++) {
     var dataCelula = rangeDatas[i][0];
@@ -3538,76 +3629,6 @@ function buscarEmailDoLocal(nomeLocal) {
   return null;
 }
 
-/**
- * Exportação via menu da planilha (mantém alertas de UI).
- * NÃO usar no contexto WebApp — use _exportarPDFWebApp() via gerarRequisicaoPDF().
- */
-function exportarPDF() {
-  codexAssertCanWrite_('exportarPDF', 'RequisicaoExames', '');
-  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet       = spreadsheet.getSheetByName('Requisição de Exames');
-  var nomeLocal         = sheet.getRange('E10').getValue();
-  var emailDestinatario = buscarEmailDoLocal(nomeLocal);
-
-  if (!emailDestinatario) {
-    SpreadsheetApp.getUi().alert('E-mail do local "' + nomeLocal + '" não encontrado em "🏢 Prestadores".');
-    return;
-  }
-
-  var dataAgendamento = sheet.getRange('H10').getValue();
-  if (!(dataAgendamento instanceof Date) || isNaN(dataAgendamento.getTime())) {
-    SpreadsheetApp.getUi().alert('Data de agendamento inválida.');
-    return;
-  }
-
-  var dataFormatada   = formatarDataMesCurtoPt_(dataAgendamento);
-  var dataArquivo     = formatarDataMesCurtoPt_(dataAgendamento, '-');
-  var paciente        = sheet.getRange('E8').getValue();
-  var pacienteLimpo   = limparNome(paciente);
-  var dataNascRaw     = sheet.getRange('E9').getValue();
-  var dataNasc        = (dataNascRaw instanceof Date)
-    ? formatarDataMesCurtoPt_(dataNascRaw) : dataNascRaw;
-  var medico          = sheet.getRange('H9').getValue();
-  var nomeArquivo     = 'IPS-UCS - ' + pacienteLimpo + ' - ' + dataArquivo + '.pdf';
-  var pesquisaClinica = sheet.getRange('H8').getDisplayValue();
-  var urgente         = sheet.getRange('I5').getValue();
-  var urgenteTag      = urgente
-    ? '<span style="background:#e53935;color:white;padding:2px 8px;border-radius:4px;font-weight:700;">URGENTE</span>&nbsp;'
-    : '';
-
-  var url = 'https://docs.google.com/spreadsheets/d/' + spreadsheet.getId() + '/export?';
-  var exportOptions =
-    'exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true' +
-    '&sheetnames=false&printtitle=false&pagenumbers=false' +
-    '&gridlines=false&fzr=false&gid=' + sheet.getSheetId() +
-    '&r1=0&c1=0&r2=43&c2=10' +
-    '&top_margin=0.15&bottom_margin=0.15&left_margin=0.15&right_margin=0.15&scale=4';
-  var token    = ScriptApp.getOAuthToken();
-  var response = UrlFetchApp.fetch(url + exportOptions, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-  var pdfBlob = response.getBlob().setName(nomeArquivo);
-
-  var tituloEmail =
-    'IPS/UCS - Agendamento de Exames - Paciente: ' + pacienteLimpo + ' - Data: ' + dataFormatada;
-  var signature = getGmailSignature();
-  var corpoEmail = gerarReqExamesEmailHtml_({
-    paciente: paciente,
-    dataFormatada: dataFormatada,
-    dataNasc: dataNasc,
-    medico: medico,
-    pesquisaClinica: pesquisaClinica,
-    urgenteTag: urgenteTag,
-    signature: signature
-  });
-
-  var ccEmails = getReqExamesCcEmails_();
-
-  var draftOptions = { htmlBody: corpoEmail, attachments: [pdfBlob] };
-  if (ccEmails) draftOptions.cc = ccEmails;
-  GmailApp.createDraft(emailDestinatario, tituloEmail, '', draftOptions);
-  SpreadsheetApp.getUi().alert('✓ Rascunho criado para: ' + emailDestinatario);
-}
 
 function limparNome(nome) {
   if (typeof nome !== 'string') return nome;
@@ -3766,6 +3787,10 @@ function getConfigValues_(grupo, chave, fallback) {
 
 function getProjetoFormConfig() {
   codexAssertCanRead_();
+  return getProjetoFormConfigDados_();
+}
+
+function getProjetoFormConfigDados_() {
   return {
     especialidades: getConfigValues_('Médicos', 'Especialidade', []),
     fases: getConfigValues_('Projetos', 'Fase', []),
@@ -3796,6 +3821,11 @@ function getProjetos() {
 // Dashboard não utiliza datas de SIV; a RPC pública mantém o enriquecimento completo.
 function getProjetosDados_(incluirSiv) {
   codexAssertCanRead_();
+  return getProjetosDadosInterno_(incluirSiv);
+}
+
+// Somente composição interna já autorizada. RPCs públicas mantêm seus guards.
+function getProjetosDadosInterno_(incluirSiv) {
   var dados = measureDashboardProjetos_('sheet', function() { return getCodexSheetDataByName_('Projetos'); });
   if (!dados.length) return [];
   var courierCols = projetoCourierColumnMap_(dados[0] || []);
@@ -6050,17 +6080,44 @@ function participanteCtmsJsonObject_(value) {
 
 function jornadaCtmsLocalizarParticipante_(rows, payload) {
   payload = payload || {};
-  var idCadastro = String(payload.idCadastro || '').trim();
+  var idCadastro = String(payload.idCadastro == null ? '' : payload.idCadastro).trim();
   var idParticipante = normText_(payload.idParticipante);
   var projeto = normText_(payload.projeto);
   var nome = normText_(payload.nome);
+  var match = -1;
   for (var i = 1; i < (rows || []).length; i++) {
     var row = rows[i] || [];
-    if (idCadastro && String(row[0] || '').trim() === idCadastro) return i;
-    if (idParticipante && projeto && normText_(row[4]) === idParticipante && normText_(row[5]) === projeto) return i;
-    if (!idParticipante && nome && projeto && normText_(row[1]) === nome && normText_(row[5]) === projeto) return i;
+    var matches = idCadastro
+      ? String(row[0] == null ? '' : row[0]).trim() === idCadastro
+      : !!projeto && normText_(row[5]) === projeto && (idParticipante
+        ? normText_(row[4]) === idParticipante
+        : !!nome && normText_(row[1]) === nome);
+    if (!matches) continue;
+    if (match >= 1) throw new Error('Identificação ambígua do participante CTMS. Revise o cadastro antes de continuar.');
+    match = i;
   }
-  return -1;
+  return match;
+}
+
+function jornadaCtmsResolverEscritaParticipante_(rows, payload) {
+  if (!String(payload.idCadastro == null ? '' : payload.idCadastro).trim()) throw new Error('Informe o ID do cadastro da participação para gravar dados CTMS.');
+  var rowIndex = jornadaCtmsLocalizarParticipante_(rows, payload);
+  if (rowIndex < 1) throw new Error('Participante não encontrado para gravar dados CTMS.');
+  var row = rows[rowIndex];
+  if (!normText_(payload.projeto) || normText_(row[5]) !== normText_(payload.projeto)) {
+    throw new Error('O participante não pertence ao projeto informado.');
+  }
+  // A prévia e a gravação devem usar a mesma participação, resolvida sob o lock.
+  return {
+    rowIndex: rowIndex,
+    payload: Object.assign({}, payload, {
+      idCadastro: String(row[0] == null ? '' : row[0]).trim(),
+      nome: String(row[1] || ''),
+      idParticipante: String(row[4] || ''),
+      projeto: String(row[5] || ''),
+      braco: String(row[6] || '')
+    })
+  };
 }
 
 function jornadaCtmsLerConfigParticipante_(payload) {
@@ -6159,13 +6216,14 @@ function salvarConfiguracaoCtmsParticipante_(payload) {
   var visitas = getSoAVisitasProjeto(projeto);
   var bracos = getBracosProjeto(projeto);
   var config = jornadaCtmsNormalizarConfigParticipante_(payload, visitas, bracos);
+  var participantePayload;
   codexWithDocumentLock_('salvar configuração CTMS do participante', function() {
     var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
     if (!sh) throw new Error('Aba Participantes não encontrada.');
     var rows = sh.getDataRange().getValues();
-    var rowIndex = jornadaCtmsLocalizarParticipante_(rows, payload);
-    if (rowIndex < 1) throw new Error('Participante não encontrado para salvar a configuração CTMS.');
-    if (normText_(rows[rowIndex][5]) !== normText_(projeto)) throw new Error('O participante não pertence ao projeto informado.');
+    var participante = jornadaCtmsResolverEscritaParticipante_(rows, payload);
+    var rowIndex = participante.rowIndex;
+    participantePayload = participante.payload;
     var columns = participanteCtmsGarantirColumns_(sh);
     var rowNumber = rowIndex + 1;
     sh.getRange(rowNumber, columns.bracoId + 1).setValue(config.bracoId);
@@ -6176,7 +6234,7 @@ function salvarConfiguracaoCtmsParticipante_(payload) {
   return {
     ok: true,
     msg: 'Marcos e escolhas CTMS salvos para o participante.',
-    jornada: getJornadaParticipante({ idCadastro: payload.idCadastro, nome: payload.nome, idParticipante: payload.idParticipante, projeto: projeto, braco: payload.braco })
+    jornada: getJornadaParticipante(participantePayload)
   };
 }
 
@@ -6186,26 +6244,27 @@ function definirAprovacaoCtmsParticipante_(payload) {
   var fingerprint = String(payload.fingerprint || '').trim();
   var aprovar = payload.aprovar === true;
   if (!idSoA) throw new Error('Informe a visita CTMS a revisar.');
+  var participantePayload;
   codexWithDocumentLock_('definir aprovação CTMS do participante', function() {
-    var jornadaAtual = getJornadaParticipante(payload);
+    var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
+    if (!sh) throw new Error('Aba Participantes não encontrada.');
+    var rows = sh.getDataRange().getValues();
+    var participante = jornadaCtmsResolverEscritaParticipante_(rows, payload);
+    var rowIndex = participante.rowIndex;
+    participantePayload = participante.payload;
+    var jornadaAtual = getJornadaParticipante(participantePayload);
     var previa = jornadaAtual && jornadaAtual.previaCtms;
     var row = previa && (previa.linhas || []).filter(function(item) { return String(item.idSoA || '') === idSoA; })[0];
     if (!row) throw new Error('A comparação CTMS não está mais disponível. Reabra a prévia.');
     if (aprovar && (!row.aprovavel || !fingerprint || fingerprint !== row.fingerprint)) {
       throw new Error('A comparação CTMS mudou ou não pode ser aprovada. Reabra a prévia e revise novamente.');
     }
-    var sh = getCodexSpreadsheet_().getSheetByName('Participantes');
-    if (!sh) throw new Error('Aba Participantes não encontrada.');
-    var rows = sh.getDataRange().getValues();
-    var rowIndex = jornadaCtmsLocalizarParticipante_(rows, payload);
-    if (rowIndex < 1) throw new Error('Participante não encontrado para registrar a aprovação CTMS.');
-    if (normText_(rows[rowIndex][5]) !== normText_(payload.projeto)) throw new Error('O participante não pertence ao projeto informado.');
     var columns = participanteCtmsGarantirColumns_(sh);
     var aprovacoes = participanteCtmsJsonObject_(rows[rowIndex][columns.aprovacoesJson]);
     if (aprovar) {
       aprovacoes[idSoA] = {
         fingerprint: row.fingerprint,
-        aprovadoEm: Utilities.formatDate(new Date(), 'America/Sao_Paulo', "yyyy-MM-dd'T'HH:mm:ssXXX"),
+        aprovadoEm: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ssXXX"),
         aprovadoPor: codexGetActiveUserEmail_()
       };
     } else {
@@ -6218,15 +6277,13 @@ function definirAprovacaoCtmsParticipante_(payload) {
   return {
     ok: true,
     msg: aprovar ? 'Comparação CTMS aprovada.' : 'Aprovação CTMS revogada.',
-    jornada: getJornadaParticipante(payload)
+    jornada: getJornadaParticipante(participantePayload)
   };
 }
 
 function getParticipantes() {
-  if (typeof CODEX_API_TOKEN_REQUEST_ === 'undefined' || !CODEX_API_TOKEN_REQUEST_) {
-    var access = codexAuthorizeWebAppRequest_();
-    if (!access.ok) throw new Error(access.message || 'Acesso negado.');
-  }
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access.ok) throw new Error(access.message || 'Acesso negado.');
   var rows = getCodexSheetDataByName_('Participantes');
   if (!rows.length) return [];
   var header = rows[0] || [];
@@ -7831,9 +7888,27 @@ function getAgendaDashboardResumo_() {
   var periodos = { global: agendaDashboardPeriodoNovo_(), anos: Object.create(null), meses: Object.create(null) };
   var hoje = new Date();
   hoje.setHours(23, 59, 59, 999);
+  var laboratoriosDestino;
+  function carregarLaboratoriosDestino() {
+    if (laboratoriosDestino !== undefined) return laboratoriosDestino;
+    // Getter de cadastro existente cria schema; o Dashboard deve apenas ler.
+    var labRows = [];
+    try {
+      var labSheet = getCodexSpreadsheet_().getSheetByName('LabCentral');
+      var lastLabRow = labSheet ? labSheet.getLastRow() : 0;
+      if (lastLabRow > 1) labRows = codexReadValuesMeasured_(labSheet.getRange(2, 1, lastLabRow - 1, 5), false);
+    } catch (e) {
+      Logger.log('Dashboard: cadastro de laboratórios indisponível para resolver destinos históricos.');
+    }
+    laboratoriosDestino = labRows.map(function(row) {
+      return { nomeAbreviado: String(row[1] || '').trim(), cidade: String(row[4] || '').split(',')[0].trim() };
+    }).filter(function(lab) { return lab.nomeAbreviado; });
+    return laboratoriosDestino;
+  }
   vals.forEach(function(r) {
     agendaDashboardProcessRow_(r, {
       idx: i,
+      carregarLaboratoriosDestino: carregarLaboratoriosDestino,
       anoAtual: anoAtual,
       hoje: hoje,
       resumo: resumo,
@@ -7873,7 +7948,7 @@ function agendaDashboardProcessRow_(r, ctx) {
   var i = ctx.idx;
   var data = parseAgendaDateAny_(r[i.data]) || (r[i.data] instanceof Date ? r[i.data] : new Date(r[i.data]));
   if (!data || isNaN(data.getTime())) return;
-  var rowInfo = agendaDashboardRowInfo_(r, i, data);
+  var rowInfo = agendaDashboardRowInfo_(r, i, data, ctx.carregarLaboratoriosDestino);
   var ano = data.getFullYear(), mes = data.getMonth() + 1, mesKey = ano + '-' + mes;
   if (!ctx.periodos.anos[ano]) ctx.periodos.anos[ano] = agendaDashboardPeriodoNovo_();
   if (!ctx.periodos.meses[mesKey]) ctx.periodos.meses[mesKey] = agendaDashboardPeriodoNovo_();
@@ -7932,7 +8007,7 @@ function agendaDashboardPeriodoFinalizar_(out, global) {
     couriers: agendaDashboardTransportPairs_(out.couriers, 12), transportLabs: agendaDashboardTransportPairs_(out.transportLabs, 12) };
 }
 
-function agendaDashboardRowInfo_(r, i, data) {
+function agendaDashboardRowInfo_(r, i, data, carregarLaboratoriosDestino) {
   var tipo = normText_(r[i.tipo]);
   var status = normText_(r[i.status]);
   var projeto = String(r[i.projeto] || 'Sem protocolo').trim() || 'Sem protocolo';
@@ -7971,7 +8046,7 @@ function agendaDashboardRowInfo_(r, i, data) {
     isEventoComTransporte: info.isEventoComTransporte,
     participanteKey: agendaDashboardParticipantKey_(r, i),
     couriers: couriersEvento,
-    transportes: agendaDashboardTransportesEvento_(r, i)
+    transportes: agendaDashboardTransportesEvento_(r, i, carregarLaboratoriosDestino)
   };
   return info;
 }
@@ -8044,7 +8119,31 @@ function agendaDashboardCountCourier_(r, info, ctx) {
   agendaDashboardCountTransports_(info, ctx.courierUso, ctx.transporteLaboratorios);
 }
 
-function agendaDashboardTransportesEvento_(r, i) {
+function agendaDashboardDestinoMaterial_(material, laboratorios) {
+  function normalizar(value) { return normText_(value).replace(/[^a-z0-9]+/g, ' ').trim(); }
+  var texto = ' ' + normalizar(material) + ' ';
+  var grupos = Object.create(null);
+  (laboratorios || []).forEach(function(lab) {
+    // Modificadores institucionais não fazem parte do nome usado no histórico.
+    var marca = normalizar(String(lab.nomeAbreviado || '').split('(')[0])
+      .replace(/\s+(global|central lab|north america)$/, '');
+    if (marca.length < 3) return;
+    if (!grupos[marca]) grupos[marca] = [];
+    grupos[marca].push(lab);
+  });
+  var marcas = Object.keys(grupos).filter(function(marca) { return texto.indexOf(' ' + marca + ' ') !== -1; });
+  if (marcas.length !== 1) return '';
+  var candidatos = grupos[marcas[0]];
+  if (candidatos.length > 1) {
+    candidatos = candidatos.filter(function(lab) {
+      var cidade = normalizar(lab.cidade);
+      return cidade && texto.indexOf(' ' + cidade + ' ') !== -1;
+    });
+  }
+  return candidatos.length === 1 ? candidatos[0].nomeAbreviado : '';
+}
+
+function agendaDashboardTransportesEvento_(r, i, carregarLaboratoriosDestino) {
   var transportes = [];
   [i.c1, i.c2, i.c3].forEach(function(c) {
     if (!c || c.nome === undefined) return;
@@ -8054,7 +8153,13 @@ function agendaDashboardTransportesEvento_(r, i) {
     if (status === 'cancelado' || status === 'naoaplicavel') return;
     // Alias de apresentação apenas: o cadastro e o fluxo operacional não mudam.
     if (normText_(nome) === 'pinex (agendamento)') nome = 'Pinex';
-    var destino = String(r[c.destino] || '').trim() || 'Sem destino informado';
+    var destino = String(r[c.destino] || '').trim();
+    var material = String(r[c.material] || '').trim();
+    if (!destino && material && carregarLaboratoriosDestino) {
+      destino = agendaDashboardDestinoMaterial_(material, carregarLaboratoriosDestino());
+    }
+    // Ausência nas duas fontes não comprova ausência de destino no Transporte.
+    if (!destino) destino = 'Destino não identificado na Agenda';
     transportes.push({ courier: nome, destino: destino, realizado: status === 'enviado' || status === 'entregue' });
   });
   return transportes;
@@ -11518,15 +11623,17 @@ function getProjetosEquipamentos_() {
 }
 
 function getSolicitantesEquipamentos_() {
-  var sh = getSheetByPossibleNames_(getCodexSpreadsheet_(), ['🙋 Solicitantes', 'Solicitantes']);
-  var seen = {};
-  return getCodexSheetDataFromSheet_(sh).slice(1).map(function(r) {
-    return String(r[1] || '').trim();
+  // Receber materiais não exige permissão de solicitar exames.
+  var users = codexGetAllowedUsers_();
+  var seen = Object.create(null);
+  return Object.keys(users).map(function(email) {
+    var user = users[email];
+    return user.active ? String(user.name || '').trim() : '';
   }).filter(function(nome) {
     if (!nome || seen[nome]) return false;
-    seen[nome] = 1;
+    seen[nome] = true;
     return true;
-  }).sort();
+  }).sort(function(a, b) { return codexNormalizeTextForSort_(a).localeCompare(codexNormalizeTextForSort_(b)); });
 }
 
 function compararRecebimentosPorData_(a, b) {
