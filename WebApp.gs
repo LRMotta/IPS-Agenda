@@ -3790,6 +3790,11 @@ function classificarProjetoStatus_(status) {
 }
 
 function getProjetos() {
+  return getProjetosDados_(true);
+}
+
+// Dashboard não utiliza datas de SIV; a RPC pública mantém o enriquecimento completo.
+function getProjetosDados_(incluirSiv) {
   codexAssertCanRead_();
   var dados = measureDashboardProjetos_('sheet', function() { return getCodexSheetDataByName_('Projetos'); });
   if (!dados.length) return [];
@@ -3799,7 +3804,7 @@ function getProjetos() {
   var soaConfigCols = projetoSoAConfigColumnMap_(dados[0] || []);
   var ressarcimentoCols = projetoRessarcimentoColumnMap_(dados[0] || []);
   var statsPorProjeto = measureDashboardProjetos_('participants_stats', function() { return getParticipantesStatsPorProjeto_(); });
-  var sivPorProjeto = measureDashboardProjetos_('siv', function() { return getProjetosSivPorProjeto_(); });
+  var sivPorProjeto = incluirSiv === false ? {} : measureDashboardProjetos_('siv', function() { return getProjetosSivPorProjeto_(); });
   var lista = [];
   for (var i = 1; i < dados.length; i++) {
     var r = dados[i];
@@ -7206,7 +7211,7 @@ function getDashboardData(request) {
   function str(v) { return v == null ? '' : String(v); }
 
   try {
-    var projs = measure('projects', function() { return getProjetos() || []; });
+    var projs = measure('projects', function() { return getProjetosDados_(false) || []; });
     Logger.log('[getDashboardData] Projetos: ' + projs.length);
     diag.projetos = projs.map(function(p) {
       return {
@@ -7307,12 +7312,7 @@ function getDashboardData(request) {
       antecedenciaMediaPorTipo: []
     };
   }
-  try {
-    diag.pendencias = measure('pending', function() { return getDashboardPendencias_(estoque, { operation: 'getDashboardData', traceId: traceId }); });
-  } catch(e) {
-    Logger.log('[getDashboardData] ERRO pendencias: ' + e.message);
-    diag.pendencias = getDashboardPendenciasVazio_();
-  }
+  // Pendências possui RPC própria; seus cálculos não são consumidos pelo Dashboard.
 
   Logger.log('[getDashboardData] Retornando. Erros: ' + JSON.stringify(diag.erros));
   totalMeta.rowCount = diag.projetos.length + diag.participantesResumo.total;
