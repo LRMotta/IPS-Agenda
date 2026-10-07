@@ -4,16 +4,238 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runFile, readProjectFile } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
+const { fakeDocumentLock } = require('./helpers/fake-document-lock');
 
 function profileServer(rows) {
   const users = new FakeSheet('Users', rows);
-  const server = runFile('WebApp.gs');
+  const lock = fakeDocumentLock();
+  const server = runFile('WebApp.gs', { LockService: lock.LockService });
   server.getCodexSpreadsheet_ = () => new FakeSpreadsheet({ Users: users });
   server.codexCacheRemove_ = () => {};
   server.codexWriteAuditLog_ = () => {};
   server.codexWriteAuditChanges_ = () => {};
+  server.codexWriteAuditLogBatch_ = () => {};
+  server.codexWriteAuditChangesBatch_ = () => {};
   server.codexGetTeamBirthdays_ = () => [];
-  return { server, users };
+  return { server, users, lock: lock.state };
+}
+
+const PROFILE_HEADERS = ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames'];
+
+test('perfil próprio não regrava papel e ativação alterados depois da leitura', () => {
+  const { server, users } = profileServer([
+    PROFILE_HEADERS,
+    ['maria@example.invalid', 'Maria', 'admin', 'Sim', '', '', '', 'Sim']
+  ]);
+  server.codexAssertSelfProfileWrite_ = () => ({ userEmail: 'maria@example.invalid', role: 'admin' });
+  const getRange = users.getRange.bind(users);
+  let changed = false;
+  users.getRange = (...args) => {
+    const range = getRange(...args);
+    const getValues = range.getValues.bind(range);
+    range.getValues = () => {
+      const snapshot = getValues();
+      if (!changed && args[0] === 2 && args[1] === 1) {
+        changed = true;
+        users.rows[1][2] = 'readonly';
+        users.rows[1][3] = 'Não';
+      }
+      return snapshot;
+    };
+    return range;
+  };
+  server.salvarMeuPerfil({ name: 'Maria Atualizada' });
+  assert.equal(users.rows[1][1], 'Maria Atualizada');
+  assert.deepEqual(users.rows[1].slice(2, 4), ['readonly', 'Não']);
+});
+
+test('carga rápida grava somente linhas selecionadas e preserva A, C e D', () => {
+  const { server, users } = profileServer([
+    PROFILE_HEADERS,
+    ['maria@example.invalid', 'Maria', 'admin', 'Sim', '', '', '', 'Sim'],
+    ['rafael@example.invalid', 'Rafael', 'user', 'Sim', '', '', '', 'Sim'],
+    ['ana@example.invalid', 'Ana', 'user', 'Sim', '', '', '', 'Sim']
+  ]);
+  server.codexAssertAdmin_ = () => ({ userEmail: 'admin@example.invalid', role: 'admin' });
+  const getRange = users.getRange.bind(users);
+  let changed = false;
+  users.getRange = (...args) => {
+    const range = getRange(...args);
+    const getValues = range.getValues.bind(range);
+    range.getValues = () => {
+      const snapshot = getValues();
+      if (!changed && args[0] === 2 && args[1] === 1) {
+        changed = true;
+        users.rows[1][0] = 'novo@example.invalid';
+        users.rows[1][2] = 'readonly';
+        users.rows[1][3] = 'Não';
+        users.rows[2] = ['rafael@example.invalid', 'Rafael Atualizado', 'readonly', 'Não', '04-01', 'Outra formação', 'Registro atual', 'Não'];
+      }
+      return snapshot;
+    };
+    return range;
+  };
+  const result = server.salvarPerfisUsuariosAdmin({ users: [
+    { rowIndex: 4, name: 'Ana Atualizada', birthday: '05-03' },
+    { rowIndex: 2, name: 'Maria Atualizada', birthday: '09-18' }
+  ] });
+  assert.equal(result.updated, 2);
+  assert.deepEqual(users.rows[1].slice(0, 5), ['novo@example.invalid', 'Maria Atualizada', 'readonly', 'Não', '09-18']);
+  assert.deepEqual(users.rows[2], ['rafael@example.invalid', 'Rafael Atualizado', 'readonly', 'Não', '04-01', 'Outra formação', 'Registro atual', 'Não']);
+  assert.equal(users.rows[3][1], 'Ana Atualizada');
+  assert.equal(users.rows[3][4], '05-03');
+  assert.equal(users.writes, 4);
+});
+
+const PROFILE_MUTATIONS = [
+  ['salvarMeuPerfil', { name: 'Maria Atualizada' }],
+  ['salvarPerfisUsuariosAdmin', { users: [{ rowIndex: 2, name: 'Maria Atualizada' }] }],
+  ['salvarUsuarioAdmin', { rowIndex: 2, email: 'maria@example.invalid', name: 'Maria Atualizada', role: 'user', ativo: 'Sim' }],
+  ['inativarUsuarioAdmin', 2]
+];
+
+function adminIdentityFixture() {
+  const fixture = profileServer([
+    PROFILE_HEADERS,
+    ['maria@example.invalid', 'Maria', 'user', 'Sim', '', '', '', 'Sim'],
+    ['admin@example.invalid', 'Administrador', 'admin', 'Sim', '', '', '', 'Sim']
+  ]);
+  fixture.server.codexAssertAdmin_ = () => ({ userEmail: 'admin@example.invalid', role: 'admin' });
+  return fixture;
+}
+
+test('edição administrativa rejeita identidade divergente e linha inválida antes de escrever', () => {
+  const { server, users } = adminIdentityFixture();
+  const before = users.rows.map(row => row.slice());
+  for (const rowIndex of [1, -1, 2.5, 4, NaN, Infinity, 'inválido']) {
+    assert.throws(() => server.salvarUsuarioAdmin({ rowIndex, originalEmail: 'maria@example.invalid', email: 'novo@example.invalid', name: 'Novo' }), /Linha de usuário inválida/);
+  }
+  for (const rowIndex of [0, 3]) {
+    assert.throws(() => server.salvarUsuarioAdmin({ rowIndex, originalEmail: 'maria@example.invalid', email: 'novo@example.invalid', name: 'Novo' }), /linha mudou|Linha de usuário inválida/);
+  }
+  assert.throws(() => server.salvarUsuarioAdmin({ rowIndex: 3, email: 'novo@example.invalid', name: 'Novo' }), /linha mudou/);
+  assert.equal(users.writes, 0);
+  assert.deepEqual(users.rows, before);
+});
+
+test('identidade original é conferida após esperar pelo lock', () => {
+  const { server, users, lock } = adminIdentityFixture();
+  lock.onAcquire = () => { users.rows[1][0] = 'outra@example.invalid'; };
+  assert.throws(() => server.salvarUsuarioAdmin({ rowIndex: 2, originalEmail: 'maria@example.invalid', email: 'novo@example.invalid', name: 'Novo' }), /linha mudou/);
+  assert.equal(users.writes, 0);
+  assert.equal(users.rows[1][1], 'Maria');
+  assert.equal(lock.released, 1);
+});
+
+test('identidade original permite editar e-mail e mantém clientes legados com e-mail inalterado', () => {
+  const { server, users } = adminIdentityFixture();
+  const result = server.salvarUsuarioAdmin({ rowIndex: '2', originalEmail: ' MARIA@EXAMPLE.INVALID ', email: 'novo@example.invalid', name: 'Maria Atualizada', role: 'user', ativo: 'Sim' });
+  assert.equal(result.rowIndex, 2);
+  assert.equal(users.rows[1][0], 'novo@example.invalid');
+  server.salvarUsuarioAdmin({ rowIndex: 2, email: 'novo@example.invalid', name: 'Maria Legado', role: 'user', ativo: 'Sim' });
+  assert.equal(users.rows[1][1], 'Maria Legado');
+  assert.equal(users.rows[2][0], 'admin@example.invalid');
+});
+
+test('administrador não perde o próprio acesso ao mudar e-mail, papel ou ativação', () => {
+  const { server, users } = adminIdentityFixture();
+  for (const values of [
+    { email: 'novo@example.invalid', role: 'admin', ativo: 'Sim' },
+    { email: 'novo@example.invalid', role: 'user', ativo: 'Não' },
+    { email: 'admin@example.invalid', role: 'user', ativo: 'Sim' },
+    { email: 'admin@example.invalid', role: 'admin', ativo: 'Não' }
+  ]) {
+    assert.throws(() => server.salvarUsuarioAdmin({ rowIndex: 3, originalEmail: 'admin@example.invalid', name: 'Administrador', ...values }), /próprio acesso administrativo/);
+  }
+  assert.equal(users.writes, 0);
+  server.salvarUsuarioAdmin({ rowIndex: 3, originalEmail: 'admin@example.invalid', email: 'admin@example.invalid', name: 'Administrador Atualizado', role: 'admin', ativo: 'Sim' });
+  assert.equal(users.rows[2][1], 'Administrador Atualizado');
+});
+
+test('duplicidade criada durante espera pelo lock bloqueia cadastro e troca de e-mail', () => {
+  for (const editing of [false, true]) {
+    const { server, users, lock } = adminIdentityFixture();
+    lock.onAcquire = () => { users.rows.push(['novo@example.invalid', 'Novo', 'user', 'Sim', '', '', '', 'Sim']); };
+    assert.throws(() => server.salvarUsuarioAdmin({
+      rowIndex: editing ? 2 : 0, originalEmail: editing ? 'maria@example.invalid' : '',
+      email: 'novo@example.invalid', name: 'Novo', role: 'user', ativo: 'Sim'
+    }), /já está cadastrado/);
+    assert.equal(users.writes, 0);
+    assert.equal(users.rows[1][0], 'maria@example.invalid');
+    assert.equal(lock.released, 1);
+  }
+});
+
+for (const [method, payload] of PROFILE_MUTATIONS) {
+  test(method + ' relê e grava Users sob o mesmo lock e o libera', () => {
+    const { server, users, lock } = profileServer([
+      PROFILE_HEADERS,
+      ['maria@example.invalid', 'Maria', 'user', 'Sim', '', '', '', 'Sim']
+    ]);
+    server.codexAssertAdmin_ = () => ({ userEmail: 'admin@example.invalid', role: 'admin' });
+    server.codexAssertSelfProfileWrite_ = () => {
+      assert.equal(lock.held, true);
+      return { userEmail: 'maria@example.invalid', role: 'user' };
+    };
+    const getRange = users.getRange.bind(users);
+    users.getRange = (...args) => {
+      assert.equal(lock.held, true, 'leitura e escrita protegidas');
+      return getRange(...args);
+    };
+    let oldName;
+    server.codexWriteAuditChanges_ = (module, action, email, changes) => {
+      const change = changes.find(item => item.field === 'Usuário - Nome');
+      if (change) oldName = change.oldValue;
+    };
+    server.codexWriteAuditChangesBatch_ = entries => {
+      entries.forEach(entry => server.codexWriteAuditChanges_(entry.moduleName, entry.action, entry.recordId, entry.changes));
+    };
+    lock.onAcquire = () => { users.rows[1][1] = 'Nome atualizado durante a espera'; };
+    server[method](payload);
+    if (method !== 'inativarUsuarioAdmin') assert.equal(oldName, 'Nome atualizado durante a espera');
+    assert.equal(lock.acquired, 1);
+    assert.equal(lock.released, 1);
+    assert.equal(lock.held, false);
+  });
+
+  test(method + ' bloqueia sem lock e revalida autorização após a espera', () => {
+    const { server, users, lock } = profileServer([
+      PROFILE_HEADERS,
+      ['maria@example.invalid', 'Maria', 'user', 'Sim', '', '', '', 'Sim']
+    ]);
+    let authorized = true;
+    const authorize = () => {
+      if (!authorized) throw new Error('Acesso revogado');
+      return { userEmail: 'maria@example.invalid', role: 'admin' };
+    };
+    server.codexAssertAdmin_ = authorize;
+    server.codexAssertSelfProfileWrite_ = authorize;
+    lock.available = false;
+    assert.throws(() => server[method](payload), /Outra operação está gravando/);
+    assert.equal(users.writes, 0);
+    lock.available = true;
+    lock.onAcquire = () => { authorized = false; };
+    assert.throws(() => server[method](payload), /Acesso revogado/);
+    assert.equal(users.writes, 0);
+    assert.equal(lock.released, 1);
+    assert.equal(lock.held, false);
+  });
+
+  test(method + ' respeita inativação do solicitante em Users enquanto espera pelo lock', () => {
+    const { server, users, lock } = profileServer([
+      PROFILE_HEADERS,
+      ['maria@example.invalid', 'Maria', 'user', 'Sim', '', '', '', 'Sim'],
+      ['admin@example.invalid', 'Administrador', 'admin', 'Sim', '', '', '', 'Sim']
+    ]);
+    server.codexGetActiveUserEmail_ = () => 'admin@example.invalid';
+    lock.onAcquire = () => { users.rows[2][3] = 'Não'; };
+    assert.throws(() => server[method](payload), /inativo/);
+    assert.equal(users.writes, 0);
+    assert.equal(users.rows[1][1], 'Maria');
+    assert.equal(users.rows[1][3], 'Sim');
+    assert.equal(lock.released, 1);
+    assert.equal(lock.held, false);
+  });
 }
 
 test('aniversario e normalizado sem ano e valida o calendario', () => {

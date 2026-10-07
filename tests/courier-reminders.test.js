@@ -103,7 +103,8 @@ for (const [name, change] of [
   ['reagendado', f => { f.current.status = 'Reagendado'; }],
   ['regeneracao sem base atual', f => { f.op.geradoEm = new Date(); }],
   ['resposta nao reconhecida', f => { f.messages.push({ getId: () => 'reply', getDate: () => new Date() }); }],
-  ['remetente incorreto', f => { f.original.getFrom = () => 'stranger@example.invalid'; }],
+  ['remetente sem endereco', f => { f.original.getFrom = () => 'Nome sem endereço'; }],
+  ['remetente ambiguo', f => { f.original.getFrom = () => 'one@example.invalid, two@example.invalid'; }],
   ['courier destinataria divergente', f => { f.config.email = 'other@example.invalid'; }],
   ['copia oculta', f => { f.original.getBcc = () => 'hidden@example.invalid'; }],
   ['reply-to divergente', f => { f.original.getReplyTo = () => 'hidden@example.invalid'; }],
@@ -130,6 +131,43 @@ test('nova resposta entre reserva e envio cancela cobranca', () => {
   f.s.courierLembreteExecutar_();
   assert.equal(f.sent(), 0);
   assert.equal(f.rows[0].estado, 'REVISAO');
+});
+
+test('solicitacao de outro integrante recebe cobranca da conta monitorada', () => {
+  const f = fixture();
+  f.original.getFrom = () => 'Melissa <melissa@example.invalid>';
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 1);
+  assert.equal(f.messages[1].getFrom(), f.props.COURIER_LEMBRETES_CONTA);
+  assert.equal(f.rows[0].thread, 'thread');
+});
+
+test('geracao posterior por outro usuario preserva validacao do envio original', () => {
+  const f = fixture();
+  const envioOriginal = f.op.emailEnviadoEm;
+  f.original.getDate = () => envioOriginal;
+  f.original.getFrom = () => 'melissa@example.invalid';
+  f.op.geradoEm = d('2026-09-04T14:00:00');
+  f.rows[0].gerado = f.op.geradoEm;
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 1);
+  assert.equal(f.op.emailEnviadoEm, envioOriginal);
+});
+
+test('gerador ausente nao substitui validacao da mensagem vinculada', () => {
+  const f = fixture();
+  f.original.getFrom = () => 'melissa@example.invalid';
+  f.op.geradoPor = '';
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 1);
+});
+
+test('data divergente da mensagem vinculada continua bloqueando cobranca', () => {
+  const f = fixture();
+  f.original.getDate = () => d('2026-09-04T13:00:00');
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+  assert.equal(f.rows[0].detalhe, 'Data do envio não validada');
 });
 
 test('historico conserva tabela, estilos, links e citacoes HTML mesmo sem assinatura', () => {
