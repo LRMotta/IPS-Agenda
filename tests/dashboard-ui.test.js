@@ -59,7 +59,7 @@ test('agregados de participantes preservam KPIs, séries e atalhos sem registros
   assert.deepEqual(Object.values(elements).map(el => el.textContent).slice(0, 4), kpis.slice(0, 4));
   server.codexAssertCanRead_ = () => {};
   server.Logger = { log() {} };
-  server.getProjetos = () => projetos;
+  server.getProjetosDados_ = () => projetos;
   server.getParticipantesDashboardResumo_ = () => participantes;
   server.getEstoque = () => [];
   server.getAgendaDashboardResumo_ = () => ({});
@@ -313,7 +313,7 @@ test('Dashboard renova dados em memória após o TTL e bloqueia RPCs concorrente
 test('Dashboard informa falhas parciais de Agenda e Estoque e não as guarda no cache', () => {
   const server = runFile('WebApp.gs', { Logger: { log() {} } });
   server.codexAssertCanRead_ = () => {};
-  server.getProjetos = () => [];
+  server.getProjetosDados_ = () => [];
   server.getParticipantesDashboardResumo_ = () => [];
   server.getEstoque = () => { throw new Error('falha estoque'); };
   server.getAgendaDashboardResumo_ = () => { throw new Error('falha agenda'); };

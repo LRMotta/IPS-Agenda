@@ -19,11 +19,11 @@ function fixture() {
     } }, false);
   }
   server.codexAssertCanRead_ = () => { read(5); };
-  server.getProjetos = () => { read(10, 2, 3); return [{ nomeAbreviado: 'DADO_PRIVADO' }]; };
+  server.getProjetosDados_ = () => { read(10, 2, 3); return [{ nomeAbreviado: 'DADO_PRIVADO' }]; };
   server.getParticipantesDashboardResumo_ = () => { read(20, 3, 4); return [{ nome: 'DADO_PRIVADO' }]; };
   server.getEstoque = () => { read(30, 4, 5); return []; };
   server.getAgendaDashboardResumo_ = () => { read(40, 5, 6); return {}; };
-  server.getDashboardPendencias_ = () => { read(50, 6, 7); return {}; };
+  server.getDashboardPendencias_ = () => { throw new Error('Dashboard não deve calcular pendências'); };
   return { server, read, entries: () => logs.filter(line => line.startsWith('[CODEX_PERF] '))
     .map(line => JSON.parse(line.slice('[CODEX_PERF] '.length))) };
 }
@@ -35,12 +35,12 @@ test('Dashboard mede cada etapa e total sem duplicar leituras ou alterar a respo
   assert.equal(result.projetos[0].nomeAbreviado, 'DADO_PRIVADO');
   const entries = f.entries();
   assert.equal(entries.every(entry => entry.traceId === 'dashboard-stage-test'), true);
-  assert.deepEqual(entries.map(entry => entry.stage), ['access', 'projects', 'participants', 'stock', 'agenda', 'pending', 'serialize', 'total']);
-  assert.deepEqual(entries.slice(0, 6).map(entry => entry.durationMs), [5, 10, 20, 30, 40, 50]);
+  assert.deepEqual(entries.map(entry => entry.stage), ['access', 'projects', 'participants', 'stock', 'agenda', 'serialize', 'total']);
+  assert.deepEqual(entries.slice(0, 5).map(entry => entry.durationMs), [5, 10, 20, 30, 40]);
   const total = entries.at(-1);
-  assert.equal(total.durationMs, 155);
-  assert.equal(total.instrumentedReadCalls, 6);
-  assert.equal(total.instrumentedCellsRead, 112);
+  assert.equal(total.durationMs, 105);
+  assert.equal(total.instrumentedReadCalls, 5);
+  assert.equal(total.instrumentedCellsRead, 70);
   assert.equal(total.rowCount, 2);
   assert.equal(total.responseBytes, Buffer.byteLength(JSON.stringify(result)));
   assert.equal(entries.some(entry => JSON.stringify(entry).includes('DADO_PRIVADO')), false);
