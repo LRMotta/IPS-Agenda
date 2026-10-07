@@ -151,7 +151,9 @@ function courierLembreteValidarConversa_(original, op, config, own) {
   var from = courierLembreteEmails_(original.getFrom());
   var to = courierLembreteEmails_(original.getTo() + ',' + original.getCc());
   var couriers = courierLembreteEmails_([config.email, config.emailAmbiente, config.emailCongelado].join(','));
-  if (!ref || !op.geradoPor || from.length !== 1 || from[0] !== String(op.geradoPor).toLowerCase()) return 'Remetente original não validado';
+  // A solicitação pode vir de outro integrante da equipe. Gerado_Por identifica
+  // a geração dos documentos; a conta efetiva do monitor envia a cobrança.
+  if (!ref || from.length !== 1) return 'Remetente original não validado';
   if (!couriers.some(function(email) { return to.indexOf(email) >= 0; })) return 'Destinatário da courier não validado';
   if (!to.concat(from).some(function(email) { return own.indexOf(email) >= 0; })) return 'Conversa fora da conta monitorada';
   if (courierLembreteEmails_(original.getBcc()).length) return 'Conversa com cópia oculta — revisar destinatários';
@@ -159,7 +161,11 @@ function courierLembreteValidarConversa_(original, op, config, own) {
   if (reply.some(function(email) { return from.concat(to).indexOf(email) < 0; })) return 'Endereço de resposta divergente';
   var body = original.getPlainBody();
   if (body.indexOf(ref) < 0 || original.isDraft() || original.isInTrash()) return 'Solicitação original não validada';
-  if (original.getDate() < new Date(op.geradoEm) || Math.abs(+original.getDate() - +new Date(op.emailEnviadoEm)) > 1000) return 'Data do envio não validada';
+  // Regenerar documentos preserva o vínculo de envio já identificado. Valide
+  // a data dessa mensagem, sem compará-la com a geração mais recente do PDF.
+  var enviadoEm = +new Date(op.emailEnviadoEm);
+  var mensagemEm = +original.getDate();
+  if (!isFinite(enviadoEm) || !isFinite(mensagemEm) || Math.abs(mensagemEm - enviadoEm) > 1000) return 'Data do envio não validada';
   var messages = original.getThread().getMessages();
   if (messages.some(function(m) { return m.getId() !== original.getId() && m.getDate() >= original.getDate(); })) return 'Resposta ou nova mensagem recebida — revisar';
   return '';

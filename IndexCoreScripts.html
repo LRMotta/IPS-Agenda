@@ -566,6 +566,7 @@ function abrirPaginaInicialApp() {
     return;
   }
   if (isEmbeddedModuleEnabled('estoque') && typeof irParaEstoqueApp === 'function') {
+    if (pagina === 'estoque-view') pagina = 'visualizacao';
     if (APP_ROUTE.estoquePages.indexOf(pagina) === -1) pagina = 'itens';
     if (pagina === 'visualizacao' && typeof carregarEstoqueView === 'function') {
       irPara('estoque-view', { initial: true });
@@ -906,6 +907,7 @@ window.addEventListener('resize', function() {
 document.addEventListener('DOMContentLoaded', function() { appSyncNavAccessibility(); setMobileNav(false); });
 
 function irPara(pagina, options) {
+  if (pagina === 'solicitantes') return abrirCadastroSolicitantesEmUsuarios();
   options = options || {};
   if (!options.initial) APP_USER_NAVIGATED = true;
   if (!appConfirmNavigationIfDirty(null, function() {
@@ -1615,6 +1617,7 @@ function salvarMeuPerfilApp() {
   appSetStatus('statusMeuPerfil', 'Salvando alterações…');
   google.script.run
     .withSuccessHandler(function(result) {
+      invalidarReferenciasUsuarios();
       btn.disabled = false;
       btn.innerHTML = old;
       result = result || {};
@@ -1644,6 +1647,13 @@ function salvarMeuPerfilApp() {
       formacao: document.getElementById('meuPerfilFormacao').value,
       registroProfissional: document.getElementById('meuPerfilRegistro').value
     });
+}
+
+function invalidarReferenciasUsuarios() {
+  ['solicitantes', 'projetos', 'equipamentos', 'medicamentos'].forEach(function(page) {
+    invalidateCadastroBootstrapCache(page);
+  });
+  if (_reqInited) carregarSolicitantesRequisicao();
 }
 
 function carregarUsersAdmin() {
@@ -1715,6 +1725,7 @@ function abrirFormUsuarioAdmin(rowIndex) {
   var u = rowIndex ? (USERS_ADMIN_ROWS || []).find(function(x) { return Number(x.rowIndex) === Number(rowIndex); }) : null;
   document.getElementById('modalUsuarioAdminTitle').textContent = u ? 'EDITAR USUÁRIO' : 'NOVO USUÁRIO';
   document.getElementById('userAdminRowIndex').value = u ? u.rowIndex : '';
+  document.getElementById('userAdminOriginalEmail').value = u ? u.email : '';
   document.getElementById('userAdminNome').value = u ? (u.name || '') : '';
   preencherSelectsAniversario('userAdminDia', 'userAdminMes', u ? u.birthdayDay : '', u ? u.birthdayMonth : '');
   document.getElementById('userAdminEmail').value = u ? u.email : '';
@@ -1755,6 +1766,7 @@ function salvarUsuarioAdminApp() {
   btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
   google.script.run
     .withSuccessHandler(function(result) {
+      invalidarReferenciasUsuarios();
       btn.disabled = false;
       btn.innerHTML = old;
       fecharOverlay('modalUsuarioAdmin');
@@ -1769,6 +1781,7 @@ function salvarUsuarioAdminApp() {
     })
     .salvarUsuarioAdmin({
       rowIndex: document.getElementById('userAdminRowIndex').value,
+      originalEmail: document.getElementById('userAdminOriginalEmail').value,
       name: name,
       email: email,
       birthdayDay: document.getElementById('userAdminDia').value,
@@ -1843,6 +1856,7 @@ function salvarCargaPerfisAdminApp() {
   btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Salvando...';
   google.script.run
     .withSuccessHandler(function(result) {
+      invalidarReferenciasUsuarios();
       btn.disabled = false;
       btn.innerHTML = old;
       fecharOverlay('modalCargaPerfis');
@@ -1866,6 +1880,7 @@ function confirmarInativarUsuarioAdmin(rowIndex, email) {
     onConfirm: function() {
       google.script.run
         .withSuccessHandler(function(result) {
+          invalidarReferenciasUsuarios();
           snack('Usuário inativado.');
           if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
           carregarUsersAdmin();
@@ -4938,13 +4953,18 @@ var _solicitantes = [];
 var _selFormacao  = '';
 var _acIdxSol     = -1;
 
-function carregarSolicitantes(force) {
-  document.getElementById('bodySolicitantes').innerHTML =
-    '<tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>';
-  getCadastrosBootstrapCached('solicitantes',
-    function(res) { renderSolicitantes(sortCadastroByField((res && res.data) || [], 'nome')); },
-    function(e) { snackErro(e); },
-    !!force);
+function abrirCadastroSolicitantesEmUsuarios() {
+  if (!CURRENT_ACCESS || !CURRENT_ACCESS.ok || CURRENT_ACCESS.role !== 'admin') {
+    snackErro('O cadastro de solicitantes é gerenciado em Usuários. Solicite a alteração a um administrador.');
+    return;
+  }
+  var modal = document.getElementById('modalSolicitante');
+  if (modal && modal.classList.contains('open')) fecharOverlay('modalSolicitante');
+  irPara('usuarios');
+}
+
+function carregarSolicitantes() {
+  return abrirCadastroSolicitantesEmUsuarios();
 }
 
 function renderSolicitantes(lista) {
@@ -4996,63 +5016,12 @@ function renderTabelaSol(lista) {
   });
 }
 
-function abrirFormSolicitante(s) {
-  _selFormacao = '';
-  document.getElementById('editSolId').value = '';
-  ['sNome','sFormacao','sRegistro','sEmail'].forEach(function(id) {
-    document.getElementById(id).value = '';
-    document.getElementById(id).classList.remove('invalid');
-  });
-  document.getElementById('statusSol').innerHTML = '';
-  ['errSNome','errSFormacao'].forEach(function(id) { document.getElementById(id).classList.remove('visible'); });
-  document.getElementById('btnSalvarSol').disabled = false;
-  if (s) {
-    if (typeof s === 'string') s = JSON.parse(s);
-    document.getElementById('modalSolTitle').textContent = 'EDITAR SOLICITANTE';
-    document.getElementById('editSolId').value   = s.id       || '';
-    document.getElementById('sNome').value       = s.nome     || '';
-    document.getElementById('sFormacao').value   = s.formacao || '';
-    document.getElementById('sRegistro').value   = s.registro || '';
-    document.getElementById('sEmail').value      = s.email    || '';
-    _selFormacao = s.formacao || '';
-  } else {
-    document.getElementById('modalSolTitle').textContent = 'CADASTRO DE SOLICITANTE';
-  }
-  abrirOverlay('modalSolicitante');
+function abrirFormSolicitante() {
+  return abrirCadastroSolicitantesEmUsuarios();
 }
 
 function salvarSolicitanteApp() {
-  var nome    = document.getElementById('sNome').value.trim();
-  var formacao = _selFormacao || document.getElementById('sFormacao').value.trim();
-  if (!appRequiredFeedback([
-    { input: 'sNome', error: 'errSNome', label: 'Nome', value: nome },
-    { input: 'sFormacao', error: 'errSFormacao', label: 'Formacao', value: formacao && FORMACOES.includes(formacao) ? formacao : '' }
-  ], { status: 'statusSol' })) return;
-  var btn = document.getElementById('btnSalvarSol');
-  var payload = {
-    id: document.getElementById('editSolId').value,
-    nome: nome,
-    formacao: formacao,
-    registro: document.getElementById('sRegistro').value.trim(),
-    email: document.getElementById('sEmail').value.trim()
-  };
-  appSetButtonBusy(btn, true);
-  appSetStatus('statusSol', '\u23F3 Processando...');
-  appServerRun({
-    method: 'salvarDadosSolicitante',
-    args: [payload],
-    onSuccess: function(r) {
-      appSetButtonBusy(btn, false);
-      appSetStatus('statusSol', '');
-      fecharOverlay('modalSolicitante');
-      snack('\u2705 ' + r);
-      carregarSolicitantes(true);
-    },
-    onFailure: function(e) {
-      appSetButtonBusy(btn, false);
-      appSetStatus('statusSol', '\u26A0 ' + appErrorMessage(e), '#e53935');
-    }
-  });
+  return abrirCadastroSolicitantesEmUsuarios();
 }
 
 function renderAcListSol(q) {
@@ -5103,18 +5072,8 @@ function navAcListSol(e) {
   items.forEach(function(el,i) { el.classList.toggle('active',i===_acIdxSol); });
   if (_acIdxSol>=0) items[_acIdxSol].scrollIntoView({block:'nearest'});
 }
-function confirmarExcluirSol(id, nome) {
-  abrirConfirmacaoDestrutiva({
-    mensagem: 'Deseja excluir "' + nome + '"? Esta acao nao pode ser desfeita.',
-    onConfirm: function() {
-      appServerRun({
-        method: 'excluirSolicitante',
-        args: [id],
-        onSuccess: function() { snack('Solicitante excluido'); carregarSolicitantes(true); },
-        onFailure: function(e) { snackErro(e); }
-      });
-    }
-  });
+function confirmarExcluirSol() {
+  return abrirCadastroSolicitantesEmUsuarios();
 }
 
 // ════════════════════════════════
@@ -7585,6 +7544,44 @@ function requisicaoAgendaOrigemIdAtual() {
   return page && page.dataset ? (page.dataset.agendaId || '') : '';
 }
 
+var _rqSolicitantesRequestId = 0;
+var _rqSolicitantesState = 'idle';
+
+function carregarSolicitantesRequisicao() {
+  var requestId = ++_rqSolicitantesRequestId;
+  _rqSolicitantesState = 'loading';
+  _rqSolicitantesLoaded = false;
+  _rqSolicitantes = [];
+  _rqSolicitantesNomes = [];
+  _rqAcOptionsCache.rqSolicitanteList = null;
+  rebuildRequisicaoLookups();
+  updateRequisicaoGenerateAvailability(false);
+  appServerRun({
+    method: 'buscarSolicitantesCompleto',
+    onSuccess: function(lista) {
+      if (requestId !== _rqSolicitantesRequestId) return;
+      _rqSolicitantes      = lista || [];
+      _rqSolicitantesNomes = _rqSolicitantes.map(function(s){ return s.nome; });
+      _rqAcOptionsCache.rqSolicitanteList = null;
+      rebuildRequisicaoLookups();
+      _rqSolicitantesLoaded = true;
+      _rqSolicitantesState = 'ready';
+      preencherSolicitanteUsuarioAtual();
+      preencherDadosSolicitante();
+      updateRequisicaoGenerateAvailability(false);
+      flushRequisicaoLoadCallbacks();
+    },
+    onFailure: function(e) {
+      if (requestId !== _rqSolicitantesRequestId) return;
+      _rqSolicitantesLoaded = true;
+      _rqSolicitantesState = 'error';
+      updateRequisicaoGenerateAvailability(false);
+      flushRequisicaoLoadCallbacks();
+      snackErro(appErrorMessage(e));
+    }
+  });
+}
+
 function initRequisicao() {
   if (_reqInited) return;
   _reqInited = true;
@@ -7616,19 +7613,7 @@ function initRequisicao() {
     },
     onFailure: function(e) { _rqPrestadoresLoaded = true; flushRequisicaoLoadCallbacks(); snackErro(appErrorMessage(e)); }
   });
-  appServerRun({
-    method: 'buscarSolicitantesCompleto',
-    onSuccess: function(lista) {
-      _rqSolicitantes      = lista || [];
-      _rqSolicitantesNomes = _rqSolicitantes.map(function(s){ return s.nome; });
-      _rqAcOptionsCache.rqSolicitanteList = null;
-      rebuildRequisicaoLookups();
-      _rqSolicitantesLoaded = true;
-      preencherSolicitanteUsuarioAtual();
-      flushRequisicaoLoadCallbacks();
-    },
-    onFailure: function(e) { _rqSolicitantesLoaded = true; flushRequisicaoLoadCallbacks(); snackErro(appErrorMessage(e)); }
-  });
+  carregarSolicitantesRequisicao();
   var listaExames = requisicaoEl('examesLista');
   if (listaExames && !listaExames.children.length) adicionarExame();
   updateRequisicaoGenerateAvailability(false);
@@ -8451,6 +8436,25 @@ function mostrarRequisicaoCamposObrigatorios() {
 function updateRequisicaoGenerateAvailability(showStatus) {
   var btn = requisicaoEl('gerarBtn');
   if (!btn || btn.dataset.busy === '1') return true;
+  if (typeof _rqSolicitantesState !== 'undefined' && (_rqSolicitantesState === 'loading' || _rqSolicitantesState === 'error')) {
+    var referenceMessage = _rqSolicitantesState === 'loading'
+      ? 'Aguarde a atualização dos solicitantes antes de gerar a requisição.'
+      : 'Não foi possível atualizar os solicitantes. Clique em Gerar para tentar novamente.';
+    btn.disabled = false;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.title = referenceMessage;
+    setRequisicaoStatus(referenceMessage, 'validation');
+    return false;
+  }
+  var solicitanteInput = document.getElementById('rqSolicitante');
+  if (typeof _rqSolicitantesState !== 'undefined' && _rqSolicitantesState === 'ready' && solicitanteInput &&
+      solicitanteInput.value.trim() && !_rqLookup.solicitantePorNome[rqLookupKey(solicitanteInput.value)]) {
+    btn.disabled = false;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.title = 'Selecione um solicitante disponível.';
+    setRequisicaoStatus('O solicitante informado não está disponível. Selecione um solicitante da lista atual.', 'validation');
+    return false;
+  }
   var missingChecks = requisicaoMissingRequiredChecks();
   var missing = missingChecks.map(function(item) { return item.label; });
   if (showStatus && missing.length) _rqValidationVisible = true;
@@ -8528,6 +8532,10 @@ function fecharRequisicaoSucessoModal(event) {
 }
 
 function gerarRequisicao() {
+  if (typeof _rqSolicitantesState !== 'undefined' && _rqSolicitantesState === 'error') {
+    carregarSolicitantesRequisicao();
+    return;
+  }
   if (!updateRequisicaoGenerateAvailability(true)) return;
   var dadosValidados = validarRequisicaoAntesDeGerar();
   if (!dadosValidados) return;

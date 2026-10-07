@@ -8,21 +8,30 @@ const os = require('node:os');
 const { loadPlaywright } = require('../helpers/playwright-runtime');
 const { readProjectFile } = require('../helpers/load-app-script');
 const { dashboardAgendaFixture } = require('../helpers/dashboard-agenda-fixture');
+const { FakeSheet } = require('../helpers/fake-spreadsheet');
 
 test('transportes: barras, filtros, detalhes sob demanda e impressão no desktop e celular', async t => {
   const f = dashboardAgendaFixture(), i = f.server.AGENDA_CFG.idx;
+  const labs = new FakeSheet('LabCentral', [['ID', 'Nome', '', '', 'Cidade'],
+    ['a', 'LABCORP (INDIANAPOLIS)', '', '', 'Indianapolis, IN'],
+    ['b', 'LABCORP (TORRANCE)', '', '', 'Torrance, CA']]);
+  f.server.getCodexSpreadsheet_ = () => ({ getSheetByName: () => labs });
   f.sheet.rows.splice(1);
   function add(date, eventStatus, slots) {
     const r = f.row(date, 'Visita', eventStatus);
     [i.c1, i.c2, i.c3].forEach((c, n) => {
       const slot = slots[n] || [];
       r[c.nome] = slot[0] || ''; r[c.status] = slot[1] || ''; r[c.destino] = slot[2] || '';
+      r[c.material] = slot[3] || '';
     });
     f.sheet.rows.push(r);
   }
   add('06/01/2026', 'Realizado', [['Pinex (Agendamento)', 'Enviado', 'Lab A'], ['Pinex', 'Confirmado', 'Lab A'], ['Ocasa', 'Entregue', 'Lab B']]);
   add('06/12/2026', 'Agendado', [['Marken', 'Agendado', 'Lab B'], ['Marken', 'Não Agendado', 'Lab B']]);
   add('07/01/2026', 'Realizado', [['DHL', 'Cancelado', 'Lab C']]);
+  add('08/01/2026', 'Realizado', [['Marken', 'Entregue', '']]);
+  add('09/01/2026', 'Agendado', [['Marken', 'Agendado', '']]);
+  add('10/01/2026', 'Realizado', [['Marken', 'Entregue', '', 'Labcorp Indianápolis - Plasma: 2 x 1 mL']]);
   const summary = JSON.parse(JSON.stringify(f.server.getAgendaDashboardResumo_()));
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   const realChart = process.env.DASHBOARD_CHART_JS_PATH;
@@ -57,6 +66,20 @@ test('transportes: barras, filtros, detalhes sob demanda e impressão no desktop
       await page.locator('#chartAgendaTransportLabsData summary').click();
       assert.equal(await page.locator('#chartAgendaTransportLabsData thead').textContent(), 'CategoriaRealizadosPrevistosTotal');
       assert.ok((await page.locator('#chartAgendaTransportLabsData').innerText()).includes('Lab B'));
+      assert.ok((await page.locator('#chartAgendaTransportLabsData').innerText()).includes('LABCORP (INDIANAPOLIS)'));
+      assert.ok((await page.locator('#chartAgendaTransportLabsData').innerText()).includes('Destino não identificado na Agenda'));
+      assert.ok(!(await page.locator('#chartAgendaTransportLabsData').innerText()).includes('Sem destino informado'));
+      assert.ok((await page.locator('#dashAgendaBlock').innerText()).includes('não comprova agendamento sem destino'));
+      const destinationChart = await page.evaluate(() => {
+        const c = window._dashCharts.chartAgendaTransportLabs;
+        const n = c.data.labels.findIndex(label => String(label).startsWith('Destino não'));
+        return c.data.datasets.map(d => d.data[n]);
+      });
+      assert.deepEqual(destinationChart, [1, 1]);
+      const totals = await page.evaluate(() => ['chartAgendaCourierAno', 'chartAgendaTransportLabs'].map(id =>
+        window._dashCharts[id].data.datasets.map(d => d.data.reduce((sum, value) => sum + value, 0))));
+      assert.deepEqual(totals[0], totals[1]);
+      assert.ok((await page.locator('#dashAgendaBlock').innerText()).includes('um agendamento pode ter vários transportes'));
       await page.locator('#chartAgendaTransportLabsData summary').click();
       const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(artifacts, { recursive: true });
