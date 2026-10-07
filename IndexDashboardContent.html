@@ -123,6 +123,8 @@
             <div class="dash-kpi-lbl">Agendamentos</div>
           </div>
         </div>
+        <details class="dash-agenda-details" id="dashAgendaAtendimentos">
+          <summary>Atendimentos e monitoria — ver gráficos</summary>
         <h3 class="chart-card-title" id="dashAgendaCardsTitle">Visitas realizadas por mês</h3>
         <div class="dash-grid dash-month-grid dash-spaced" id="dashAgendaMesCards" aria-labelledby="dashAgendaCardsTitle"></div>
         <div class="dash-grid dash-grid-2 dash-spaced">
@@ -155,14 +157,23 @@
             <div class="chart-wrap" style="height:260px;"><canvas id="chartAgendaDiaSemana" role="img" aria-labelledby="chartAgendaDiaSemanaTitle" aria-describedby="chartAgendaDiaSemanaData"></canvas></div>
           </div>
         </div>
-        <div class="dash-grid dash-grid-2 dash-spaced-top">
+        <div class="dash-spaced-top">
           <div>
             <h3 class="chart-card-title" id="chartAgendaCancelProtTitle"><span class="material-symbols-outlined" aria-hidden="true">event_busy</span> Cancelamentos / reagendamentos por protocolo</h3>
             <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaCancelProt" role="img" aria-labelledby="chartAgendaCancelProtTitle" aria-describedby="chartAgendaCancelProtData"></canvas></div>
           </div>
+        </div>
+        </details>
+        <h3 class="chart-card-title dash-spaced-top">Transportes de amostras</h3>
+        <p class="dash-transport-note">Realizados: enviados ou entregues. Previstos: transportes ainda não enviados. Cancelados e reagendamentos excluídos. Transporte I, II e III; Backup não incluído.</p>
+        <div class="dash-grid dash-grid-2">
           <div>
             <h3 class="chart-card-title" id="chartAgendaCourierAnoTitle"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span> Uso das couriers</h3>
             <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaCourierAno" role="img" aria-labelledby="chartAgendaCourierAnoTitle" aria-describedby="chartAgendaCourierAnoData"></canvas></div>
+          </div>
+          <div>
+            <h3 class="chart-card-title" id="chartAgendaTransportLabsTitle"><span class="material-symbols-outlined" aria-hidden="true">science</span> Laboratórios de destino dos transportes</h3>
+            <div class="chart-wrap" style="height:280px;"><canvas id="chartAgendaTransportLabs" role="img" aria-labelledby="chartAgendaTransportLabsTitle" aria-describedby="chartAgendaTransportLabsData"></canvas></div>
           </div>
         </div>
       </section>

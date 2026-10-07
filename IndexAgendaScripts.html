@@ -6657,21 +6657,21 @@
     var ecrf = recibo.dataEcrf ? '<div class="meta"><b>eCRF preenchida em:</b> ' + esc(agendaReciboDataBr_(recibo.dataEcrf)) + '</div>' : '';
     var logoHtml = '<img class="agendaPrintReceiptLogo" alt="Instituto de Pesquisas em Saúde" style="display:none">' +
       '<b class="agendaPrintReceiptLogoFallback brand-text">IPS | UCS</b>';
-    var vias = ['1ª via — Financeiro UCS', '2ª via — IPS/UCS', '3ª via — Participante/Acompanhante'];
+    var vias = ['1ª via — Financeiro UCS', '2ª via — IPS/UCS', isAcompanhante ? '3ª via — Acompanhante' : '3ª via — Participante/Acompanhante'];
     var body = vias.map(function(via, viaIndex) {
       var viaIps = viaIndex === 1;
       var classeQuebraPagina = viaIndex < vias.length - 1 ? ' receipt-page-break' : '';
-      var nomeExibido = viaIps ? 'participante nº ' + (dados.idParticipante || 'não informado') : recibo.nome;
-      var identificacao = viaIps ? '' : ', CPF <b>' + esc(recibo.cpf || '________________') + '</b>';
-      var endereco = !viaIps && (recibo.endereco || recibo.telefone) ? '<div class="meta">' +
-        (recibo.endereco ? '<b>Endereço do beneficiário:</b> ' + esc(recibo.endereco) + '<br>' : '') +
-        '<b>Telefone do beneficiário:</b> ' + esc(recibo.telefone || 'Não informado') + '</div>' : '';
+      var nomeExibido = viaIps && !isAcompanhante ? 'participante nº ' + (dados.idParticipante || 'não informado') : recibo.nome;
+      var identificacao = viaIps && !isAcompanhante ? '' : ', CPF <b>' + esc(recibo.cpf || '________________') + '</b>';
+      var endereco = (!viaIps || isAcompanhante) && (recibo.endereco || recibo.telefone) ? '<div class="meta">' +
+        (recibo.endereco ? '<b>Endereço do ' + (isAcompanhante ? 'acompanhante' : 'beneficiário') + ':</b> ' + esc(recibo.endereco) + '<br>' : '') +
+        '<b>Telefone do ' + (isAcompanhante ? 'acompanhante' : 'beneficiário') + ':</b> ' + esc(recibo.telefone || 'Não informado') + '</div>' : '';
       var dadosBancarios = viaIps ? '' : '<div class="bank"><b>Dados bancários</b><br><span>Autorizo o crédito na conta bancária abaixo.</span><br>' + titularContaBancaria + esc(banco || 'Não informado') + '</div>';
-      var assinaturaBeneficiario = viaIps ? '<div class="signature"><span></span><b>Participante nº ' + esc(dados.idParticipante || 'não informado') + '</b></div>' : '<div class="signature"><span></span><b>' + esc(recibo.nome) + '</b><small>' + esc(recibo.tipo) + '</small></div>';
+      var assinaturaBeneficiario = viaIps && !isAcompanhante ? '<div class="signature"><span></span><b>Participante nº ' + esc(dados.idParticipante || 'não informado') + '</b></div>' : '<div class="signature"><span></span><b>' + esc(recibo.nome) + '</b><small>' + esc(isAcompanhante ? subtitulo : recibo.tipo) + '</small></div>';
       var rubricaCoordenador = '<div class="signature coordinator-rubric"><span></span><b>' + esc(recibo.coordenador || 'Coordenador(a) de estudos') + '</b><small>Rubrica do(a) coordenador(a) de estudos</small></div>';
       return '<section class="receipt receipt-copy' + classeQuebraPagina + '"><header class="receipt-head">' + logoHtml + '<b>' + esc(via) + '</b></header>' +
         '<h2>RECIBO DE RESSARCIMENTO</h2><div class="receipt-subtitle">' + esc(subtitulo) + '</div><div class="receipt-value">' + esc(valor) + '</div>' +
-        '<p>Eu, <b>' + esc(nomeExibido) + '</b>' + identificacao + ', declaro ter recebido do Instituto de Pesquisas em Saúde o valor de <b>' + esc(valor) + (valorExtenso ? ' (' + esc(valorExtenso) + ')' : '') + '</b>, referente ao ressarcimento de despesas com alimentação e transporte relacionadas à visita <b>' + esc(dados.visita || '-') + '</b> do projeto <b>' + esc(dados.projeto || '-') + '</b>, realizada em <b>' + esc(agendaReciboDataBr_(recibo.dataVisita)) + '</b>.</p>' +
+        '<p>Eu, <b>' + esc(nomeExibido) + '</b>' + identificacao + (isAcompanhante ? ', na condição de acompanhante do participante de pesquisa identificado abaixo' : '') + ', declaro ter recebido do Instituto de Pesquisas em Saúde o valor de <b>' + esc(valor) + (valorExtenso ? ' (' + esc(valorExtenso) + ')' : '') + '</b>, referente ao ressarcimento de despesas com alimentação e transporte relacionadas ' + (isAcompanhante ? 'ao acompanhamento na visita' : 'à visita') + ' <b>' + esc(dados.visita || '-') + '</b> do projeto <b>' + esc(dados.projeto || '-') + '</b>, realizada em <b>' + esc(agendaReciboDataBr_(recibo.dataVisita)) + '</b>.</p>' +
         '<div class="meta"><b>Participante do estudo:</b> ' + (viaIps ? 'nº ' + esc(dados.idParticipante || 'não informado') : esc(dados.participante || '-') + (dados.idParticipante ? ' · ID ' + esc(dados.idParticipante) : '')) + '</div>' + endereco + ecrf + dadosBancarios +
         '<div class="place">Caxias do Sul, ' + esc(dataEmissaoExtenso) + '.</div><div class="receipt-signatures">' + assinaturaBeneficiario + rubricaCoordenador + '</div></section>';
     }).join('');

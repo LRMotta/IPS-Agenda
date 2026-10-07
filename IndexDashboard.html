@@ -11,7 +11,7 @@
   var _dashAgendaPeriod = { tipo: 'ano', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
   var _dashKpiRecrutZeroKeys = {};
   var DASHBOARD_SESSION_CACHE_KEY = 'codexDashboardData:v3';
-  var DASHBOARD_SESSION_CACHE_VERSION = '2026.10.02-agenda-period-summary-v6';
+  var DASHBOARD_SESSION_CACHE_VERSION = '2026.10.07-transport-status-summary-v7';
   var DASHBOARD_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
   var DASH_CORES  = ['#1266f1','#0d47a1','#1976d2','#00796b','#2e7d32','#6a1b9a','#e65100','#c62828','#f9a825','#37474f','#546e7a','#4a148c','#00838f','#558b2f','#bf360c'];
 
@@ -476,7 +476,7 @@
     details.open = wasOpen;
   }
 
-  function _barH(canvasId, labels, datasets, onBarClick) {
+  function _barH(canvasId, labels, datasets, onBarClick, stacked) {
     var canvas = document.getElementById(canvasId);
     if (!canvas) return;
     var chart = _dashCharts[canvasId];
@@ -486,7 +486,7 @@
       type: 'bar',
       data: { labels: displayLabels, datasets: datasets },
       options: {
-        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
         onClick: onBarClick ? function(event, elements) {
           if (!elements || !elements.length) return;
           onBarClick(fullLabels[elements[0].index] || '');
@@ -499,17 +499,22 @@
           legend: { display: datasets.length > 1,
             labels: { font: { size: 11, family: 'Roboto' }, padding: 10, boxWidth: 12 } },
           tooltip: {
+            mode: stacked ? 'index' : 'nearest', intersect: !stacked,
             callbacks: {
               title: function(items) {
                 var idx = items && items.length ? items[0].dataIndex : 0;
                 return fullLabels[idx] || '';
-              }
+              },
+              footer: stacked ? function(items) {
+                var idx = items && items.length ? items[0].dataIndex : 0;
+                return 'Total: ' + datasets.reduce(function(total, ds) { return total + Number(ds.data[idx] || 0); }, 0);
+              } : undefined
             }
           }
         },
         scales: {
-          x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#f0f4f8' } },
-          y: { ticks: { autoSkip: false, font: { size: 11, family: 'Roboto' } }, grid: { display: false } }
+          x: { stacked: !!stacked, beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#f0f4f8' } },
+          y: { stacked: !!stacked, ticks: { autoSkip: false, font: { size: 11, family: 'Roboto' } }, grid: { display: false } }
         }
       }
     };
@@ -521,7 +526,10 @@
       _destroyChart(canvasId);
       _dashCharts[canvasId] = new Chart(canvas.getContext('2d'), config);
     }
-    dashboardChartData_(canvasId, fullLabels, datasets, onBarClick);
+    var tableDatasets = stacked ? datasets.concat([{ label: 'Total', data: fullLabels.map(function(label, idx) {
+      return datasets.reduce(function(total, ds) { return total + Number(ds.data[idx] || 0); }, 0);
+    }) }]) : datasets;
+    dashboardChartData_(canvasId, fullLabels, tableDatasets, onBarClick);
   }
 
   function renderDashboard(d, perf) {
@@ -659,6 +667,8 @@
       _setChartHeight('chartCoord', coordPairs.length, 28, 240, 440);
       _barH('chartCoord', coordPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: coordPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, coordPairs.length), borderRadius: 4 }], dashOpenCoordinator);
     }
+    var sections = d.secoes || {};
+    dashboardSectionAvailability_('dashAgendaBlock', sections.agenda !== false);
     if (perf) {
       perf.measure('render_agenda', function() { renderDashboardAgenda(d.agendaResumo || {}); });
       perf.measure('render_stock', function() { renderDashboardEstoque(est); });
@@ -667,10 +677,9 @@
       renderDashboardEstoque(est);
     }
     Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
-      if (!_dashCharts[canvas.id]) dashboardDrawEmptyChart_(canvas, 'Sem dados disponíveis');
+      var details = canvas.closest && canvas.closest('#dashAgendaAtendimentos');
+      if ((!details || details.open) && !_dashCharts[canvas.id]) dashboardDrawEmptyChart_(canvas, 'Sem dados disponíveis');
     });
-    var sections = d.secoes || {};
-    dashboardSectionAvailability_('dashAgendaBlock', sections.agenda !== false);
     dashboardSectionAvailability_('dashEstoqueBlock', sections.estoque !== false);
     if (d.avisos && d.avisos.length) mostrarErroDashboard(d.avisos.join('\n'));
     bindDashboardChartCopyButtons();
@@ -775,6 +784,38 @@
     }]);
   }
 
+  function dashAgendaTransportPairs_(map, limit) {
+    var pairs = Object.keys(map).map(function(label) {
+      var counts = map[label];
+      var pair = { label: label, value: counts.realizados + counts.previstos, realizados: counts.realizados, previstos: counts.previstos };
+      if (counts.semClassificacao) { pair.semClassificacao = counts.semClassificacao; pair.value += counts.semClassificacao; }
+      return pair;
+    }).sort(function(a, b) { return b.value - a.value || a.label.localeCompare(b.label); });
+    if (pairs.length <= limit) return pairs;
+    var other = { label: 'Outros', value: 0, realizados: 0, previstos: 0 };
+    pairs.slice(limit - 1).forEach(function(pair) {
+      other.value += pair.value; other.realizados += pair.realizados; other.previstos += pair.previstos;
+      if (pair.semClassificacao) other.semClassificacao = (other.semClassificacao || 0) + pair.semClassificacao;
+    });
+    return pairs.slice(0, limit - 1).concat([other]);
+  }
+
+  function renderDashTransportChart_(canvasId, pairs) {
+    pairs = pairs || [];
+    if (!pairs.length) { dashboardDrawEmptyChart_(document.getElementById(canvasId), 'Sem transportes para o período selecionado'); return; }
+    _setChartHeight(canvasId, pairs.length, 28, 240, 430);
+    var datasets = [
+      { label: 'Realizados', data: pairs.map(function(p) { return p.realizados || 0; }), backgroundColor: '#1266f1', borderRadius: 3 },
+      { label: 'Previstos', data: pairs.map(function(p) { return p.previstos || 0; }), backgroundColor: '#f59e0b', borderRadius: 3 }
+    ];
+    if (pairs.some(function(p) { return p.semClassificacao || (p.realizados === undefined && p.previstos === undefined); })) {
+      datasets.push({ label: 'Sem classificação', data: pairs.map(function(p) {
+        return p.semClassificacao || (p.realizados === undefined && p.previstos === undefined ? p.value || 0 : 0);
+      }), backgroundColor: '#64748b', borderRadius: 3 });
+    }
+    _barH(canvasId, pairs.map(function(p) { return p.label; }), datasets, null, true);
+  }
+
   // O contrato atual já traz o recorte calculado. Eventos são fallback de respostas legadas.
   function dashboardAggregateAgendaPeriod_() {
     var periodos = _dashAgendaResumoAtual && _dashAgendaResumoAtual.periodos;
@@ -783,18 +824,22 @@
       var key = String(_dashAgendaPeriod.ano);
       var data = _dashAgendaPeriod.tipo === 'mes' ? periodos.meses[key + '-' + Number(_dashAgendaPeriod.mes)] : periodos.anos[key];
       return data || { total: 0, visits: 0, labs: 0, participants: 0, monitoringDays: 0, visitsBuckets: [], labBuckets: [],
-        protocols: [], monitoring: [], doctors: [], cancellations: [], couriers: [],
+        protocols: [], monitoring: [], doctors: [], cancellations: [], couriers: [], transportLabs: [],
         days: ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }) };
     }
     var visits = Object.create(null), labs = Object.create(null), participants = Object.create(null);
     var protocols = Object.create(null), doctors = Object.create(null), monitoringDays = Object.create(null);
-    var monitoring = Object.create(null), cancellations = Object.create(null), couriers = Object.create(null);
+    var monitoring = Object.create(null), cancellations = Object.create(null), couriers = Object.create(null), transportLabs = Object.create(null);
     var days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; });
     var months = dashAgendaMonthNames();
     var today = new Date();
     today.setHours(23, 59, 59, 999);
     var result = { total: 0, visits: 0, labs: 0 };
     function add(map, key) { map[key] = (map[key] || 0) + 1; }
+    function addTransport(map, key, kind) {
+      if (!map[key]) map[key] = { realizados: 0, previstos: 0 };
+      map[key][kind] = (map[key][kind] || 0) + 1;
+    }
     (_dashAgendaRaw || []).forEach(function(r) {
       if (_dashAgendaPeriod.tipo !== 'global' && Number(r.ano || 0) !== Number(_dashAgendaPeriod.ano)) return;
       if (_dashAgendaPeriod.tipo === 'mes' && Number(r.mes || 0) !== Number(_dashAgendaPeriod.mes)) return;
@@ -822,8 +867,18 @@
         if (!monitoringDays[dayKey]) { monitoringDays[dayKey] = 1; add(monitoring, project); }
       }
       if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_CANCELLATIONS_RESCHEDULES)) add(cancellations, project);
-      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_COMPLETED_TRANSPORT) && !future && AgendaRules.isLabCentral(r)) {
-        (r.couriers || []).forEach(function(name) { if (name) add(couriers, name); });
+      var legacyTransport = AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_COMPLETED_TRANSPORT) && !future && AgendaRules.isLabCentral(r);
+      if (Array.isArray(r.transportes)) {
+        if (AgendaRules.hasTransportOperation(r) && AgendaRules.isLabCentral(r) && !AgendaRules.isCancelled(r) && !AgendaRules.isRescheduled(r)) {
+          r.transportes.forEach(function(t) {
+            var kind = t.realizado ? 'realizados' : 'previstos';
+            addTransport(couriers, t.courier, kind); addTransport(transportLabs, t.destino, kind);
+          });
+        }
+      } else if (legacyTransport) {
+        (r.couriers || []).forEach(function(name) {
+          if (name) addTransport(couriers, /^pinex\s*\(agendamento\)$/i.test(name.trim()) ? 'Pinex' : name, 'semClassificacao');
+        });
       }
     });
     function buckets(map) {
@@ -840,7 +895,8 @@
     result.monitoring = dashAgendaPairs(monitoring, 15);
     result.doctors = dashAgendaPairs(doctors, 12);
     result.cancellations = dashAgendaPairs(cancellations, 15);
-    result.couriers = dashAgendaPairs(couriers, 12);
+    result.couriers = dashAgendaTransportPairs_(couriers, 12);
+    result.transportLabs = dashAgendaTransportPairs_(transportLabs, 12);
     return result;
   }
 
@@ -848,13 +904,21 @@
     var ag = _dashAgendaResumoAtual || {};
     var data = aggregate || (_dashAgendaRaw.length ? dashboardAggregateAgendaPeriod_() : {
       protocols: ag.visitasPorProtocolo || [], monitoring: ag.monitoriaPorProtocolo || [],
-      doctors: ag.visitasPorMedico || [], cancellations: ag.cancelReagPorProtocolo || [], couriers: ag.courierUsoAno || []
+      doctors: ag.visitasPorMedico || [], cancellations: ag.cancelReagPorProtocolo || [], couriers: ag.courierUsoAno || [], transportLabs: ag.transporteLaboratoriosAno || []
     });
+    if (dashAgendaDetailsOpen_()) {
     renderDashAgendaPairChart('chartAgendaProt', data.protocols, 'Visitas', 'rgba(18,102,241,.72)');
     renderDashAgendaPairChart('chartAgendaMonProt', data.monitoring, 'Dias', 'rgba(91,33,182,.72)');
     renderDashAgendaPairChart('chartAgendaMedico', data.doctors, 'Visitas', 'rgba(46,125,50,.72)');
     renderDashAgendaPairChart('chartAgendaCancelProt', data.cancellations, 'Cancel./Reag.', 'rgba(198,40,40,.72)');
-    renderDashAgendaPairChart('chartAgendaCourierAno', data.couriers, 'Transportes', 'rgba(18,102,241,.72)');
+    }
+    renderDashTransportChart_('chartAgendaCourierAno', data.couriers);
+    renderDashTransportChart_('chartAgendaTransportLabs', data.transportLabs);
+  }
+
+  function dashAgendaDetailsOpen_() {
+    var details = document.getElementById('dashAgendaAtendimentos');
+    return !details || details.open;
   }
 
   function dashAgendaPeriodoLabel() {
@@ -905,6 +969,8 @@
   }
 
   function renderDashboardAgendaPeriodoResumo() {
+    var block = document.getElementById('dashAgendaBlock');
+    if (block && block.getAttribute && block.getAttribute('data-dashboard-available') === '0') return;
     var ag = _dashAgendaResumoAtual || {};
     var aggregate = (ag.periodos && ag.periodos.version === 1) || _dashAgendaRaw.length ? dashboardAggregateAgendaPeriod_() : null;
     var ids = aggregate ? {
@@ -949,6 +1015,7 @@
     }
     function labels(arr) { return (arr || []).map(function(p) { return p.label; }); }
     function values(arr) { return (arr || []).map(function(p) { return p.value || 0; }); }
+    if (dashAgendaDetailsOpen_()) {
     if (visitasPeriodo.length) {
       _setChartHeight('chartAgendaVisitasMes', visitasPeriodo.length, 20, 220, 320);
       _barH('chartAgendaVisitasMes', labels(visitasPeriodo), [{ label: 'Visitas', data: values(visitasPeriodo), backgroundColor: 'rgba(18,102,241,.72)', borderRadius: 4 }]);
@@ -963,6 +1030,7 @@
     if (dias.length) {
       _setChartHeight('chartAgendaDiaSemana', dias.length, 28, 220, 320);
       _barH('chartAgendaDiaSemana', labels(dias), [{ label: 'Visitas', data: values(dias), backgroundColor: DASH_CORES.slice(0, 7), borderRadius: 4 }]);
+    }
     }
 
     renderDashboardAgendaPeriodCharts(aggregate);
@@ -1007,6 +1075,10 @@
         }).observe(pg, { attributes: true, attributeFilter: ['class'] });
       }
       bindDashboardChartCopyButtons();
+      var agendaDetails = document.getElementById('dashAgendaAtendimentos');
+      if (agendaDetails) agendaDetails.addEventListener('toggle', function() {
+        if (agendaDetails.open) renderDashboardAgendaPeriodoResumo();
+      });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _attachDashEvents);
     else _attachDashEvents();
@@ -1027,6 +1099,17 @@
   }
 
   function dashboardPrintHtml() {
+    var details = document.getElementById('dashAgendaAtendimentos');
+    var wasOpen = details && details.open;
+    try {
+      if (details && !wasOpen) { details.open = true; renderDashboardAgendaPeriodoResumo(); }
+      return dashboardPrintHtmlContent_();
+    } finally {
+      if (details && !wasOpen) details.open = false;
+    }
+  }
+
+  function dashboardPrintHtmlContent_() {
     var emitted = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     return '<!doctype html><html><head><meta charset="utf-8"><title>Dashboard Gerencial</title>' +
       '<style>' +
