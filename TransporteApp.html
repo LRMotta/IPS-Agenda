@@ -301,11 +301,10 @@
                 <label for="pacienteSearch">Paciente(s) <span class="required-star">*</span></label>
                 <input id="paciente" type="hidden">
                 <div class="transport-participant-search">
-                  <input id="pacienteSearch" type="text" role="combobox" aria-required="true" aria-autocomplete="list" aria-controls="pacienteSearchList" aria-expanded="false" aria-describedby="pacienteSearchDetail" autocomplete="off" placeholder="Pesquise por nome, estudo ou identificação" onfocus="openTransportParticipantSearch()" oninput="scheduleTransportParticipantSearch()" onkeydown="navigateTransportParticipantSearch(event)" onblur="closeTransportParticipantSearch()">
+                  <input id="pacienteSearch" type="text" role="combobox" aria-required="true" aria-autocomplete="list" aria-controls="pacienteSearchList" aria-expanded="false" autocomplete="off" placeholder="Pesquise por nome, estudo ou identificação" onfocus="openTransportParticipantSearch()" oninput="scheduleTransportParticipantSearch()" onkeydown="navigateTransportParticipantSearch(event)" onblur="closeTransportParticipantSearch()">
                   <button id="pacienteSearchClear" class="transport-participant-clear hidden" type="button" aria-label="Limpar seleção do participante" title="Limpar seleção" onclick="clearTransportParticipantSearch()">&times;</button>
                   <div id="pacienteSearchList" class="transport-participant-list hidden" role="listbox" aria-label="Participações encontradas"></div>
                 </div>
-                <div id="pacienteSearchDetail" class="transport-participant-detail"></div>
               </div>
               <div class="field"><label for="identificacaoParticipante">Nº de Identificação <span class="required-star">*</span></label><input id="identificacaoParticipante" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
               <div class="field"><label for="protocolo">Protocolo <span class="required-star">*</span></label><input id="protocolo" class="auto-fill" placeholder="Preenchido pelo participante" readonly required></div>
@@ -1056,7 +1055,6 @@
       if (!input || input.tagName !== 'INPUT') return;
       var fromAgenda = !!transportAgendaContext().id;
       var select = document.getElementById('paciente');
-      var info = selectedParticipantInfo();
       input.value = selectedParticipantName();
       input.readOnly = fromAgenda;
       input.classList.toggle('auto-fill', fromAgenda);
@@ -1064,8 +1062,6 @@
       select.disabled = fromAgenda;
       document.getElementById('pacienteSearchClear').classList.toggle('hidden', fromAgenda || !select.value);
       input.placeholder = fromAgenda ? 'Preenchido pela Agenda' : 'Pesquise por nome, estudo ou identificação';
-      var details = [projectDisplay(info.projeto) || info.projeto, info.idParticipante || info.numId ? 'ID ' + (info.idParticipante || info.numId) : ''].filter(Boolean).join(' · ');
-      document.getElementById('pacienteSearchDetail').textContent = details + (fromAgenda ? (details ? '. ' : '') + 'Definido na Agenda. Para alterar, use Ver agendamento.' : '');
       input.setAttribute('aria-invalid', select.getAttribute('aria-invalid') || 'false');
       input.classList.toggle('invalid', select.classList.contains('invalid'));
       hideTransportParticipantSearch();
