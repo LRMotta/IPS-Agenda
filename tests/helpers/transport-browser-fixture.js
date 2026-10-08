@@ -20,6 +20,13 @@ async function transportBrowserFixture(page, options = {}) {
   html = html.replace(/JSON\.parse\(<\?= codexJsonForScript_\(initialTransporteArgs \|\| \{\}\) \?>\)/, 'JSON.parse("{}")');
   html = html.replace('<head>', '<head><title>Transporte — teste local</title>');
   const mock = `<script>
+    // setContent usa origem opaca: armazenamento isolado, sem acessar perfil real.
+    window.transportTestStorage = {};
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: {
+      getItem: key => window.transportTestStorage[key] || null,
+      setItem: (key, value) => { window.transportTestStorage[key] = String(value); },
+      removeItem: key => { delete window.transportTestStorage[key]; }
+    } });
     window.calls = [];
     function transportTestRunner(success, failure) {
       return new Proxy({}, { get: function(_target, method) {

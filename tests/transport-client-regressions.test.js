@@ -146,9 +146,10 @@ function participantsFixture() {
     { id: 'B', nome: 'Pessoa B', idParticipante: '456', projeto: 'Estudo B', investigador: 'Investigador B' }
   ];
   fields.paciente.value = 'participante:A';
-  const c = functions(['loadParticipantsOptions', 'participantOptionKey', 'resolveParticipantOption', 'fillParticipantOptions',
+  const c = functions(['loadParticipantsOptions', 'participantOptionKey', 'transportParticipantData', 'resolveParticipantOption', 'fillParticipantOptions',
     'selectedParticipantInfo', 'selectedParticipantName', 'selectedParticipantIdentification', 'applyParticipantSelection'], {
-    ...rpc, transportFormGeneration: 1,
+    ...rpc, transportFormGeneration: 1, transportParticipantSearchTimer: null,
+    transportParticipantIndex: null, transportCollator: new Intl.Collator('pt-BR'),
     state: { registro: { paciente: 'Pessoa A', participanteCadastroId: 'A', protocolo: 'Estudo A' }, options: { participantes: rows } },
     window: {}, document: { getElementById: id => fields[id] },
     norm: value => String(value || '').toLowerCase(), esc: value => String(value || ''), projectDisplay: value => value,
@@ -257,7 +258,8 @@ test('Outro convertido em material comum permanece no lugar e retoma linha vazia
 });
 
 test('busca de participantes diferencia cadastros homonimos e aceita nome sem acento, estudo ou identificacao', () => {
-  const c = functions(['transportParticipantSearchRows', 'participantOptionKey'], {
+  const c = functions(['transportParticipantSearchRows', 'transportParticipantData', 'participantOptionKey'], {
+    transportParticipantIndex: null, transportCollator: new Intl.Collator('pt-BR'),
     state: { options: { participantes: [
       { id: 'A', nome: 'Márcia Silva', projeto: 'Estudo A', idParticipante: '001' },
       { id: 'B', nome: 'Márcia Silva', projeto: 'Estudo B', idParticipante: '002' },
@@ -271,6 +273,34 @@ test('busca de participantes diferencia cadastros homonimos e aceita nome sem ac
   assert.deepEqual(Array.from(c.transportParticipantSearchRows('estudo a'), row => row.key), ['participante:A']);
   assert.deepEqual(Array.from(c.transportParticipantSearchRows('002'), row => row.key), ['participante:B']);
   assert.deepEqual(Array.from(c.transportParticipantSearchRows('joao'), row => row.key), ['participante:C']);
+});
+
+test('indice de participantes normaliza uma vez, invalida catalogos e preserva ambiguidades', () => {
+  let normalizations = 0;
+  const rows = Array.from({ length: 2000 }, (_, id) => ({ id: String(id), nome: 'Pessoa ' + id, projeto: 'Estudo A' }));
+  const c = functions(['transportParticipantSearchRows', 'transportParticipantData', 'participantOptionKey', 'selectedParticipantInfo'], {
+    transportParticipantIndex: null, transportCollator: new Intl.Collator('pt-BR'),
+    state: { registro: {}, options: { participantes: rows, projetos: [] } },
+    document: { getElementById: () => ({ value: 'participante:1999' }) },
+    norm(value) { normalizations++; return String(value || '').toLowerCase().trim(); }, projectDisplay: value => value
+  });
+  c.transportParticipantSearchRows('pessoa');
+  const built = normalizations;
+  for (let i = 0; i < 3; i++) {
+    assert.equal(c.transportParticipantSearchRows('1999').length, 1);
+    assert.equal(c.selectedParticipantInfo(), rows[1999]);
+  }
+  assert.equal(normalizations - built, 3, 'somente consultas sao normalizadas depois de criar o indice');
+  const firstIndex = c.transportParticipantIndex;
+  c.state.options.projetos = [];
+  assert.notEqual(c.transportParticipantData(), firstIndex);
+  c.state.options.participantes = [{ id: '1999', nome: 'Renomeada' }];
+  assert.equal(c.transportParticipantSearchRows('renomeada').length, 1);
+  c.state.options.participantes = [{ id: '1999', nome: 'Outra' }];
+  assert.equal(c.transportParticipantSearchRows('renomeada').length, 0, 'substituicao com mesmo tamanho invalida');
+  c.state.options.participantes.push({ id: '1999', nome: 'Outra' });
+  assert.equal(Object.keys(c.selectedParticipantInfo()).length, 0, 'ID duplicado nao seleciona arbitrariamente');
+  assert.equal(c.transportParticipantData().byName.outra, null);
 });
 
 test('Transporte da Agenda preserva ID, estudo e identificacao sem carregar o catalogo de participantes', () => {

@@ -55,6 +55,6 @@ test('abertura de presenca mede as etapas sem incluir dados do registro na telem
   ]) {
     assert.match(open[0], new RegExp("codexMeasurePerformance_\\('codexOpenEditPresence', '" + stage + "'"));
   }
-  assert.match(open[0], /codexWithDocumentLock_\('codexOpenEditPresence',[\s\S]*\{ operation: 'codexOpenEditPresence' \}/);
+  assert.match(open[0], /codexWithDocumentLock_\('codexOpenEditPresence',[\s\S]*\{ operation: 'codexOpenEditPresence', waitMs: 1000 \}/);
   assert.doesNotMatch(open[0], /codexLogPerformance_\([^\n]*(recordId|sessionId|email)/);
 });

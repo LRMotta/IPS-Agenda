@@ -231,7 +231,9 @@ function courierLembreteReplyOptions_(original, texto) {
   var originalTexto = courierLembreteOriginalTexto_(original);
   var inicioOriginal = originalTexto && texto.slice(-originalTexto.length) === originalTexto ? texto.length - originalTexto.length : -1;
   var htmlOriginal = original && typeof original.getBody === 'function' ? String(original.getBody() || '').trim() : '';
-  var prefixo = inicioOriginal >= 0 && htmlOriginal ? texto.slice(0, inicioOriginal) : texto;
+  var prefixo = inicioOriginal >= 0 ? texto.slice(0, inicioOriginal) : texto;
+  var rodape = prefixo.match(/\n\n(Ref\. IPS: [^\n]*\nCobrança IPS: [^\n]*)$/);
+  if (rodape) prefixo = prefixo.slice(0, rodape.index);
   var assinaturaHtml = courierLembreteAssinaturaHtml_();
   var assinatura = courierLembreteHtmlToPlain_(assinaturaHtml);
   options.htmlBody = courierLembreteEscapeHtml_(prefixo);
@@ -243,11 +245,17 @@ function courierLembreteReplyOptions_(original, texto) {
       options.htmlBody = courierLembreteEscapeHtml_(antes) + assinaturaHtml + courierLembreteEscapeHtml_(depois);
     }
   }
+  if (rodape) {
+    // Mesmo estilo discreto de transporteMonitorRefHtml_ no e-mail de agendamento.
+    options.htmlBody += '<div style="margin-top:14px;font-size:9px;line-height:1.2;color:#9aa0a6">' + courierLembreteEscapeHtml_(rodape[1]) + '</div>';
+  }
   if (inicioOriginal >= 0 && htmlOriginal) {
     var fimHeader = texto.indexOf('\n\n', inicioOriginal + 2);
     var historico = courierLembreteHistoricoHtml_(original, htmlOriginal);
     options.htmlBody += courierLembreteEscapeHtml_(texto.slice(inicioOriginal, fimHeader + 2)) + '<blockquote class="gmail_quote" style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">' + historico.html + '</blockquote>';
     if (Object.keys(historico.inlineImages).length) options.inlineImages = historico.inlineImages;
+  } else if (inicioOriginal >= 0) {
+    options.htmlBody += courierLembreteEscapeHtml_(originalTexto);
   }
   return options;
 }

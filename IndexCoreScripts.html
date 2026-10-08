@@ -1927,8 +1927,8 @@ function carregarAuditLogPaginado() {
   }
   AUDIT_PAGE_SIZE = limitEl ? Number(limitEl.value || 100) : 100;
   AUDIT_FILTER_SIGNATURE = auditFilterSignature();
-  AUDIT_PAGE_OFFSET[AUDIT_VIEW] = 0;
-  AUDIT_PAGE_CACHE[AUDIT_VIEW] = {};
+  auditResetQuery_('log');
+  auditResetQuery_('changes');
   carregarAuditPage(AUDIT_VIEW, 0, false);
 }
 
@@ -1987,16 +1987,27 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
     AUDIT_FILTER_SIGNATURE = signature;
     AUDIT_PAGE_OFFSET = { log: 0, changes: 0 };
     AUDIT_PAGE_CACHE = { log: {}, changes: {} };
+    AUDIT_PAGE_META = { log: {}, changes: {} };
     offset = 0;
   }
   var limit = AUDIT_PAGE_SIZE || 100;
+  var currentMeta = AUDIT_PAGE_META[type] || {};
+  var expired = currentMeta.expiresAt && currentMeta.expiresAt <= Date.now();
+  if (expired || (currentMeta.limit && currentMeta.limit !== limit)) {
+    auditResetQuery_(type);
+    offset = 0;
+    if (expired && typeof snack === 'function') snack('Consulta de auditoria atualizada. Retornando à primeira página.');
+  }
+  var snapshotId = (AUDIT_PAGE_META[type] || {}).snapshotId || '';
   var key = auditCacheKey(limit, offset);
+  var cache = AUDIT_PAGE_CACHE[type];
   var cached = AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key];
   if (!cached && fromCacheOnly) return;
   var requestId = ++AUDIT_PAGE_REQUEST_ID;
   function isCurrentRequest() {
     return requestId === AUDIT_PAGE_REQUEST_ID && type === AUDIT_VIEW &&
-      signature === auditFilterSignature() && limit === AUDIT_PAGE_SIZE;
+      signature === auditFilterSignature() && limit === AUDIT_PAGE_SIZE &&
+      cache === AUDIT_PAGE_CACHE[type] && snapshotId === ((AUDIT_PAGE_META[type] || {}).snapshotId || '');
   }
   if (cached) {
     AUDIT_PAGE_OFFSET[type] = offset;
@@ -2017,31 +2028,53 @@ function carregarAuditPage(type, offset, fromCacheOnly) {
         : ['1fr', '1.8fr', '1.55fr', '1.15fr', '1fr', '.9fr']
     });
   }
-  google.script.run
-    .withSuccessHandler(function(data) {
+  function acceptPage(data) {
       if (!isCurrentRequest()) return;
       data = data || {};
+      if (data.refreshRequired) {
+        if (snapshotId) {
+          auditResetQuery_(type);
+          if (typeof snack === 'function') snack('Consulta de auditoria atualizada. Retornando à primeira página.');
+          carregarAuditPage(type, 0, false);
+        } else rejectPage(new Error('A consulta expirou. Atualize os dados.'));
+        return;
+      }
+      if (data.ok === false) { rejectPage(new Error('Não foi possível carregar a auditoria.')); return; }
       var rows = data.rows || [];
-      var meta = {
-        total: Number(data.total || 0),
-        limit: Number(data.limit || limit),
-        offset: Number(data.offset || offset),
-        hasMore: !!data.hasMore,
-        userCount: Number(data.userCount || 0),
-        moduleCount: Number(data.moduleCount || 0)
-      };
+      var meta = auditPageMeta_(data, limit, offset);
       AUDIT_PAGE_CACHE[type][key] = { rows: rows, meta: meta };
       AUDIT_PAGE_OFFSET[type] = meta.offset;
       AUDIT_PAGE_META[type] = meta;
       setAuditRows(type, rows);
       renderAuditLog();
       prefetchAuditNextPage(type);
-    })
-    .withFailureHandler(function(e) {
+  }
+  function rejectPage(e) {
       if (!isCurrentRequest()) return;
       if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="' + colSpan + '">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
-    })
-    .getAuditPage(type, limit, offset, filters);
+  }
+  var pending = AUDIT_PREFETCHING[type + ':' + key + ':' + snapshotId];
+  if (pending && pending.cache === cache) {
+    pending.waiters.push({ ok: acceptPage, fail: rejectPage });
+    return;
+  }
+  google.script.run.withSuccessHandler(acceptPage).withFailureHandler(rejectPage)
+    .getAuditPage(type, limit, offset, filters, { paginationVersion: 2, snapshotId: snapshotId });
+}
+
+function auditResetQuery_(type) {
+  AUDIT_PAGE_CACHE[type] = {};
+  AUDIT_PAGE_META[type] = {};
+  AUDIT_PAGE_OFFSET[type] = 0;
+}
+
+function auditPageMeta_(data, limit, offset) {
+  return {
+    total: Number(data.total || 0), limit: Number(data.limit || limit),
+    offset: Number(data.offset === undefined ? offset : data.offset), hasMore: !!data.hasMore,
+    userCount: Number(data.userCount || 0), moduleCount: Number(data.moduleCount || 0),
+    snapshotId: String(data.snapshotId || ''), expiresAt: Number(data.expiresAt || 0)
+  };
 }
 
 function prefetchAuditNextPage(type) {
@@ -2053,33 +2086,45 @@ function prefetchAuditNextPage(type) {
   var rows = auditRowsForView(type);
   var nextOffset = (meta.offset || 0) + rows.length;
   var key = auditCacheKey(limit, nextOffset);
-  var prefetchKey = type + ':' + key;
+  var snapshotId = meta.snapshotId || '';
+  if (meta.expiresAt && meta.expiresAt <= Date.now()) return;
+  var prefetchKey = type + ':' + key + ':' + snapshotId;
   var cache = AUDIT_PAGE_CACHE[type];
   var signature = auditFilterSignature();
-  if ((AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key]) || AUDIT_PREFETCHING[prefetchKey]) return;
-  AUDIT_PREFETCHING[prefetchKey] = true;
+  if ((AUDIT_PAGE_CACHE[type] && AUDIT_PAGE_CACHE[type][key]) ||
+      (AUDIT_PREFETCHING[prefetchKey] && AUDIT_PREFETCHING[prefetchKey].cache === cache)) return;
+  var marker = { waiters: [], cache: cache };
+  AUDIT_PREFETCHING[prefetchKey] = marker;
+  function finish() {
+    if (AUDIT_PREFETCHING[prefetchKey] === marker) delete AUDIT_PREFETCHING[prefetchKey];
+  }
+  function isCurrentQuery() {
+    return cache === AUDIT_PAGE_CACHE[type] && signature === auditFilterSignature() && limit === AUDIT_PAGE_SIZE &&
+      snapshotId === ((AUDIT_PAGE_META[type] || {}).snapshotId || '');
+  }
   google.script.run
     .withSuccessHandler(function(data) {
-      delete AUDIT_PREFETCHING[prefetchKey];
-      if (cache !== AUDIT_PAGE_CACHE[type] || signature !== auditFilterSignature() || limit !== AUDIT_PAGE_SIZE) return;
+      finish();
+      if (!isCurrentQuery()) return;
       data = data || {};
+      if (data.refreshRequired || data.ok === false) {
+        marker.waiters.forEach(function(waiter) { waiter.ok(data); });
+        if (!marker.waiters.length && data.refreshRequired) AUDIT_PAGE_META[type].expiresAt = Date.now();
+        return;
+      }
       AUDIT_PAGE_CACHE[type][key] = {
         rows: data.rows || [],
-        meta: {
-          total: Number(data.total || 0),
-          limit: Number(data.limit || limit),
-          offset: Number(data.offset || nextOffset),
-          hasMore: !!data.hasMore,
-          userCount: Number(data.userCount || 0),
-          moduleCount: Number(data.moduleCount || 0)
-        }
+        meta: auditPageMeta_(data, limit, nextOffset)
       };
       renderAuditPager();
+      marker.waiters.forEach(function(waiter) { waiter.ok(data); });
     })
-    .withFailureHandler(function() {
-      delete AUDIT_PREFETCHING[prefetchKey];
+    .withFailureHandler(function(error) {
+      finish();
+      if (!isCurrentQuery()) return;
+      marker.waiters.forEach(function(waiter) { waiter.fail(error); });
     })
-    .getAuditPage(type, limit, nextOffset, filters);
+    .getAuditPage(type, limit, nextOffset, filters, { paginationVersion: 2, snapshotId: snapshotId });
 }
 
 function setAuditView(view) {
@@ -2273,6 +2318,10 @@ function bindTableRecordActions(container, records, actions) {
   });
 }
 
+function configGrupoTransporte_(grupo) {
+  return norm(String(grupo || '').trim()) === 'transporte';
+}
+
 function renderTabelaConfig(lista) {
   var tb = document.getElementById('bodyConfig');
   if (!tb) return;
@@ -2376,6 +2425,37 @@ function salvarConfigApp() {
     { input: 'cfgChave', error: 'errCfgChave', label: 'Chave', value: chave },
     { input: 'cfgValor', error: 'errCfgValor', label: 'Valor', value: valor }
   ], { status: 'statusCfg' })) return;
+  var payload = {
+    rowIndex: document.getElementById('cfgRowIndex').value,
+    startCol: document.getElementById('cfgStartCol').value,
+    bloco: document.getElementById('cfgBloco').value,
+    grupo: grupo,
+    chave: chave,
+    valor: valor,
+    ativo: document.getElementById('cfgAtivo').value,
+    ordem: document.getElementById('cfgOrdem').value,
+    observacao: document.getElementById('cfgObs').value.trim()
+  };
+  var startCol = String(payload.startCol || (payload.bloco === 'Apoio' ? 8 : 1));
+  var original = _configApp.filter(function(item) {
+    return String(item.rowIndex) === String(payload.rowIndex) && String(item.startCol) === startCol;
+  })[0];
+  if (configGrupoTransporte_(grupo) || (original && configGrupoTransporte_(original.grupo))) {
+    abrirConfirmacaoDestrutiva({
+      titulo: 'Confirmar alteração de Transporte',
+      mensagem: 'Deseja salvar a configuração "' + chave + '" com o valor "' + valor + '"? Essa alteração pode afetar a documentação de transporte gerada a partir de agora.',
+      acao: 'Salvar alteração',
+      onConfirm: function() {
+        payload.confirmarAlteracaoTransporte = true;
+        enviarConfigApp_(payload);
+      }
+    });
+    return;
+  }
+  enviarConfigApp_(payload);
+}
+
+function enviarConfigApp_(payload) {
   var btn = document.getElementById('btnSalvarCfg');
   btn.disabled = true;
   appSetStatus('statusCfg', 'Processando…');
@@ -2395,22 +2475,14 @@ function salvarConfigApp() {
       btn.disabled = false;
       appSetStatus('statusCfg', appErrorMessage(e), '#e53935');
     })
-    .salvarConfigAppItem({
-      rowIndex: document.getElementById('cfgRowIndex').value,
-      startCol: document.getElementById('cfgStartCol').value,
-      bloco: document.getElementById('cfgBloco').value,
-      grupo: grupo,
-      chave: chave,
-      valor: valor,
-      ativo: document.getElementById('cfgAtivo').value,
-      ordem: document.getElementById('cfgOrdem').value,
-      observacao: document.getElementById('cfgObs').value.trim()
-    });
+    .salvarConfigAppItem(payload);
 }
 
 function confirmarExcluirConfig(rowIndex, startCol, valor) {
+  var item = _configApp.filter(function(row) { return String(row.rowIndex) === String(rowIndex) && String(row.startCol) === String(startCol); })[0];
   abrirConfirmacaoDestrutiva({
-    mensagem: 'Deseja excluir "' + valor + '"? Configurações padrão serão desativadas para não voltarem automaticamente.',
+    mensagem: 'Deseja excluir "' + valor + '"? Configurações padrão serão desativadas para não voltarem automaticamente.' +
+      (item && configGrupoTransporte_(item.grupo) ? ' Essa alteração pode afetar a documentação de transporte gerada a partir de agora.' : ''),
     onConfirm: function() {
       google.script.run
         .withSuccessHandler(function(r) {
@@ -2422,7 +2494,7 @@ function confirmarExcluirConfig(rowIndex, startCol, valor) {
           carregarConfigApp();
         })
         .withFailureHandler(function(e) { snackErro(e); })
-        .excluirConfigAppItem(rowIndex, startCol);
+        .excluirConfigAppItem(rowIndex, startCol, { confirmarAlteracaoTransporte: true });
     }
   });
 }
@@ -3363,7 +3435,7 @@ function acompanhanteFormatarCpf_(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 11).replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
 }
 
-function participanteCpfValido_(value) {
+function cpfValido(value) {
   var cpf = String(value || '').replace(/\D/g, '');
   if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
   function digito(base, peso) {
@@ -3375,6 +3447,10 @@ function participanteCpfValido_(value) {
   var primeiro = digito(cpf.slice(0, 9), 10);
   var segundo = digito(cpf.slice(0, 9) + primeiro, 11);
   return primeiro === Number(cpf.charAt(9)) && segundo === Number(cpf.charAt(10));
+}
+
+function participanteCpfValido_(value) {
+  return cpfValido(value);
 }
 
 function participanteValidarCpfCampo_(input, label) {

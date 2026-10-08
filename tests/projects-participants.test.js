@@ -41,7 +41,8 @@ test('cadastro de medicos usa somente especialidades do ConfigApp', () => {
   const server = readProjectFile('WebApp.gs');
   const client = readProjectFile('IndexCoreScripts.html');
 
-  assert.match(server, /page === 'medicos'[\s\S]*?out\.config = getMedicoFormConfig\(\);[\s\S]*?out\.data = getMedicos\(\);/);
+  assert.match(server, /page === 'medicos'[\s\S]*?out\.config = getMedicoFormConfigDados_\(\);[\s\S]*?out\.data = getMedicosDados_\(\);/);
+  assert.match(server, /function getMedicoFormConfig\(\)\s*\{\s*codexAssertCanRead_\(\);\s*return getMedicoFormConfigDados_\(\);/);
   assert.match(server, /var especialidadesConfig = getConfigValues_\('Médicos', 'Especialidade', \[\]\);/);
   assert.match(server, /especialidadesConfig\.indexOf\(especialidade\) === -1/);
   assert.match(client, /var ESPS = \[\];/);

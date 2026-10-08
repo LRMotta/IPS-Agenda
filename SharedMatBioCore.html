@@ -18,10 +18,16 @@
     return api.typeConfig ? api.typeConfig(value) : null;
   }
 
-  function unitKey(unit) {
+  // Normaliza rotulos de metadados, sem converter valores numericos.
+  // O fallback tolerante preserva compatibilidade legada; nao permite digitar unidades
+  // no formulario. strict protege fronteiras com dados estruturados externos/legados.
+  function unitKey(unit, strict) {
     var n = norm(unit || 'mL');
     if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
     if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
+    if (strict && ['ml', 'mililitro', 'mililitros', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].indexOf(n) < 0) {
+      throw new Error('Unidade de material biológico não suportada. Revise a unidade antes de preparar os documentos.');
+    }
     return 'mL';
   }
 
@@ -122,6 +128,8 @@
     };
   }
 
+  // Helper numerico mL/L; a interface expoe mL -> L pelo botao de conversao.
+  // Interpretar/normalizar um rotulo de unidade nao equivale a chamar este helper.
   function convertFormulaUnit(text, fromUnit, toUnit) {
     fromUnit = unitKey(fromUnit); toUnit = unitKey(toUnit);
     if (fromUnit === toUnit) return String(text || '');

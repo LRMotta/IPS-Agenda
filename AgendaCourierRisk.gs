@@ -64,7 +64,7 @@ function agendaCourierConfigById_(configs, courierId) {
 // quando Projetos, couriers ou feriados mudam. Reutiliza-las no salvamento evita
 // reler tres abas sem transformar o cache em fonte autoritativa: na ausencia de
 // uma entrada valida, a leitura continua vindo diretamente das fontes.
-function agendaOperationalRiskReferences_() {
+function agendaOperationalRiskReferences_(holidaysOnly) {
   var started = Date.now();
   var cached = null;
   try {
@@ -72,11 +72,11 @@ function agendaOperationalRiskReferences_() {
       cached = codexCacheGet_(agendaReferenceCacheKey_());
     }
   } catch (e) {}
-  if (cached && cached.projectCourierMap && cached.courierConfig && Array.isArray(cached.feriados)) {
-    if (typeof feriadoLogPerformance_ === 'function') feriadoLogPerformance_('risk_reference_aggregate', started, { cacheHits: 3, cacheMisses: 0 }, true);
+  if (cached && (holidaysOnly || (cached.projectCourierMap && cached.courierConfig)) && Array.isArray(cached.feriados)) {
+    if (typeof feriadoLogPerformance_ === 'function') feriadoLogPerformance_('risk_reference_aggregate', started, { cacheHits: holidaysOnly ? 1 : 3, cacheMisses: 0 }, true);
     return {
-      projectMap: cached.projectCourierMap,
-      configs: cached.courierConfig,
+      projectMap: holidaysOnly ? {} : cached.projectCourierMap,
+      configs: holidaysOnly ? {} : cached.courierConfig,
       holidays: cached.feriados
     };
   }
@@ -106,8 +106,8 @@ function agendaOperationalRiskReferences_() {
   try {
     var objectValid = function(value) { return !!value && typeof value === 'object' && !Array.isArray(value); };
     var result = {
-      projectMap: readPart('project_courier_map', objectValid, getAgendaProjetoCourierMap_),
-      configs: readPart('courier_config', objectValid, function() { return getAgendaCourierConfigs_(false); }),
+      projectMap: holidaysOnly ? {} : readPart('project_courier_map', objectValid, getAgendaProjetoCourierMap_),
+      configs: holidaysOnly ? {} : readPart('courier_config', objectValid, function() { return getAgendaCourierConfigs_(false); }),
       holidays: readPart('feriados', Array.isArray, getAgendaFeriadosOperacionais_)
     };
     if (parts && typeof agendaReferencePartsStore_ === 'function') agendaReferencePartsStore_(parts);
@@ -120,8 +120,9 @@ function agendaOperationalRiskReferences_() {
 
 function agendaOperationalRiskAlerts_(dados, dates) {
   dados = dados || {};
-  if (!AgendaServerRules_.isLabCentral(dados.labCentral)) return [];
-  var references = agendaOperationalRiskReferences_();
+  var labCentral = AgendaServerRules_.isLabCentral(dados.labCentral);
+  // O aviso geral precisa apenas de Feriados; sem Lab Central, evitar ler Projetos/couriers.
+  var references = agendaOperationalRiskReferences_(!labCentral);
   var projectMap = references.projectMap;
   var project = agendaProjetoCourierRecord_(projectMap, dados.projeto);
   var holidays = CodexCourierRiskRules_.createHolidayIndex(references.holidays);
@@ -132,10 +133,19 @@ function agendaOperationalRiskAlerts_(dados, dates) {
   }).filter(Boolean);
   var alerts = [];
   dateValues.forEach(function(dateIso) {
+    var generalHolidays = CodexCourierRiskRules_.holidayItemsForDate(dateIso, holidays, false);
+    if (generalHolidays.length) {
+      alerts.push({
+        code: 'HOLIDAY_DATE',
+        dateIso: dateIso,
+        message: 'A data selecionada é feriado: ' + generalHolidays.map(function(item) { return item.nome || item.tipo || 'Feriado'; }).join(', ') + '. O agendamento continua permitido.'
+      });
+    }
+    if (!labCentral) return;
     var generalRisk = CodexCourierRiskRules_.operationalRisk(dateIso, {}, holidays);
     if (generalRisk.holiday) {
       alerts.push({
-        code: 'HOLIDAY_DATE',
+        code: 'HOLIDAY_TRANSPORT_RISK',
         dateIso: dateIso,
         message: 'A data selecionada é feriado ou fechamento operacional. Operação de transporte de amostras sujeita a restrições. Confirme os procedimentos especiais necessários.'
       });

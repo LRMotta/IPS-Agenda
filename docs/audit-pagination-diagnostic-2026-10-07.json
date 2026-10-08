@@ -1,0 +1,2257 @@
+{
+  "generatedAt": "2026-10-07T22:48:38.213Z",
+  "nodeVersion": "v24.18.0",
+  "sourceSha256": "9ed2422912018ea40ff720deb7ca510557accb1f688ff2210940b815555ecf85",
+  "methodology": "Somente dados sintéticos; 3 execuções por combinação; 1 a 3 páginas novas; VM atual vs protótipo offline; tempos não incluem serviços Google, ACL, RPC, cache ou navegador; datas inclusivas geradas no fuso local do processo.",
+  "timezone": "America/Sao_Paulo",
+  "combinations": 80,
+  "equivalenceChecks": 240,
+  "concurrentAppend": {
+    "appended": 2,
+    "repeatedCurrent": 2,
+    "repeatedPlanned": 0
+  },
+  "reorderedIdsDetected": true,
+  "results": [
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 19978,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.19899999999999807
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 19978,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.19519999999999982
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 18000,
+        "evaluated": 3000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20009,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 3.140599999999992
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 6800,
+        "evaluated": 1300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20009,
+        "planBytes": 1210,
+        "total": 1000,
+        "localMedianMs": 2.0686000000000035
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 6000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 2128,
+        "planBytes": 0,
+        "total": 10,
+        "localMedianMs": 0.6112000000000108
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 10406,
+        "evaluated": 1901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 2128,
+        "planBytes": 119,
+        "total": 10,
+        "localMedianMs": 1.0067999999999984
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 1,
+        "cells": 6000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 19972,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 0.6459999999999866
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 10460,
+        "evaluated": 1910,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 19972,
+        "planBytes": 120,
+        "total": 100,
+        "localMedianMs": 0.7506999999999948
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 6000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 0.7008999999999901
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 5000,
+        "evaluated": 1000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 0.6322999999999865
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 2,
+        "cells": 6000,
+        "evaluated": 0,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 99636,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.5686000000000035
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 6000,
+        "evaluated": 0,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 99636,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.6008999999999958
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 2,
+        "cells": 12000,
+        "evaluated": 2000,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 99667,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 2.2554999999999836
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 11000,
+        "evaluated": 2000,
+        "lastRowCalls": 1,
+        "pageCount": 2,
+        "maxResponseBytes": 99667,
+        "planBytes": 242,
+        "total": 1000,
+        "localMedianMs": 1.7883999999999958
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 6000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 2128,
+        "planBytes": 0,
+        "total": 10,
+        "localMedianMs": 0.7130999999999972
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 10406,
+        "evaluated": 1901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 2128,
+        "planBytes": 119,
+        "total": 10,
+        "localMedianMs": 1.1125000000000114
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 1,
+        "cells": 6000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 19972,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 0.6485000000000127
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 10460,
+        "evaluated": 1910,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 19972,
+        "planBytes": 120,
+        "total": 100,
+        "localMedianMs": 0.7536999999999807
+      }
+    },
+    {
+      "type": "log",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 6000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 0.7959999999999923
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 5000,
+        "evaluated": 1000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 0.6648000000000138
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20079,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.19069999999999254
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20079,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.18029999999998836
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 180000,
+        "evaluated": 30000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20110,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 22.87990000000002
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 51800,
+        "evaluated": 10300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20110,
+        "planBytes": 12281,
+        "total": 10000,
+        "localMedianMs": 11.52660000000003
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 60000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 20579,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 4.691699999999969
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 109406,
+        "evaluated": 19901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 20579,
+        "planBytes": 121,
+        "total": 100,
+        "localMedianMs": 8.795200000000023
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 180000,
+        "evaluated": 30000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20094,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 12.353899999999953
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 66380,
+        "evaluated": 12730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20094,
+        "planBytes": 1227,
+        "total": 1000,
+        "localMedianMs": 3.9811999999999443
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 60000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 6.132000000000062
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 50000,
+        "evaluated": 10000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 4.462500000000091
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 9000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100140,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.8320999999999685
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 9000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100140,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.7954999999999472
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 180000,
+        "evaluated": 30000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100171,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 21.31740000000002
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 59000,
+        "evaluated": 11500,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 100171,
+        "planBytes": 2457,
+        "total": 10000,
+        "localMedianMs": 10.513100000000009
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 60000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 20579,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 5.13149999999996
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 109406,
+        "evaluated": 19901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 20579,
+        "planBytes": 121,
+        "total": 100,
+        "localMedianMs": 9.907100000000014
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 2,
+        "cells": 120000,
+        "evaluated": 20000,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 100092,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 9.322400000000016
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 108920,
+        "evaluated": 19820,
+        "lastRowCalls": 1,
+        "pageCount": 2,
+        "maxResponseBytes": 100092,
+        "planBytes": 244,
+        "total": 1000,
+        "localMedianMs": 8.052099999999996
+      }
+    },
+    {
+      "type": "log",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 60000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 5.037799999999947
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 50000,
+        "evaluated": 10000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 4.634300000000053
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20179,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.18909999999993943
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20179,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.19500000000005002
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 900000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20210,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 111.54010000000017
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 251800,
+        "evaluated": 50300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20210,
+        "planBytes": 62281,
+        "total": 50000,
+        "localMedianMs": 42.66370000000006
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 3,
+        "cells": 900000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20692,
+        "planBytes": 0,
+        "total": 500,
+        "localMedianMs": 75.21129999999994
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 428218,
+        "evaluated": 79703,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20692,
+        "planBytes": 621,
+        "total": 500,
+        "localMedianMs": 37.08420000000001
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 900000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20194,
+        "planBytes": 0,
+        "total": 5000,
+        "localMedianMs": 66.77280000000019
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 266380,
+        "evaluated": 52730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20194,
+        "planBytes": 6227,
+        "total": 5000,
+        "localMedianMs": 24.155899999999974
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 300000,
+        "evaluated": 50000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 26.579099999999926
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 250000,
+        "evaluated": 50000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 26.503499999999804
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 9000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100640,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.7994000000003325
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 9000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100640,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.786200000000008
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 900000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100671,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 120.08960000000025
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 259000,
+        "evaluated": 51500,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 100671,
+        "planBytes": 12457,
+        "total": 50000,
+        "localMedianMs": 41.365299999999934
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 300000,
+        "evaluated": 50000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 102979,
+        "planBytes": 0,
+        "total": 500,
+        "localMedianMs": 37.778699999999844
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 549406,
+        "evaluated": 99901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 102979,
+        "planBytes": 122,
+        "total": 500,
+        "localMedianMs": 65.08059999999978
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 900000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100595,
+        "planBytes": 0,
+        "total": 5000,
+        "localMedianMs": 118.67020000000002
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 338380,
+        "evaluated": 64730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 100595,
+        "planBytes": 1244,
+        "total": 5000,
+        "localMedianMs": 45.795500000000175
+      }
+    },
+    {
+      "type": "log",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 300000,
+        "evaluated": 50000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 50.34689999999955
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 250000,
+        "evaluated": 50000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 66.5021999999999
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20180,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 0.27070000000003347
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 1800,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20180,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 0.23480000000017753
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 1800000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20211,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 442.3293999999996
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 501800,
+        "evaluated": 100300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20211,
+        "planBytes": 124782,
+        "total": 100000,
+        "localMedianMs": 145.6927999999998
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 3,
+        "cells": 1800000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20693,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 289.01839999999993
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 678218,
+        "evaluated": 129703,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20693,
+        "planBytes": 1246,
+        "total": 1000,
+        "localMedianMs": 131.1948000000002
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 1800000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 20195,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 215.53070000000025
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 516380,
+        "evaluated": 102730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 20195,
+        "planBytes": 12477,
+        "total": 10000,
+        "localMedianMs": 59.88310000000001
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 600000,
+        "evaluated": 100000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 99.46009999999842
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 100000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 84.02850000000035
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 9000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100641,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 0.9735000000000582
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 9000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100641,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 0.9730999999992491
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 1800000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100672,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 391.4375999999993
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 509000,
+        "evaluated": 101500,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 100672,
+        "planBytes": 24958,
+        "total": 100000,
+        "localMedianMs": 130.00810000000092
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 2,
+        "cells": 1200000,
+        "evaluated": 200000,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 103091,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 171.1348999999991
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 1098812,
+        "evaluated": 199802,
+        "lastRowCalls": 1,
+        "pageCount": 2,
+        "maxResponseBytes": 103091,
+        "planBytes": 247,
+        "total": 1000,
+        "localMedianMs": 159.5679999999993
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 1800000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 100596,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 213.08179999999993
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 588380,
+        "evaluated": 114730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 100596,
+        "planBytes": 2494,
+        "total": 10000,
+        "localMedianMs": 70.25970000000052
+      }
+    },
+    {
+      "type": "log",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 600000,
+        "evaluated": 100000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 83.1216000000004
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 100000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 82.8734000000004
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126478,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.26150000000052387
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126478,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.33029999999962456
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 30000,
+        "evaluated": 3000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126509,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 5.004499999999098
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 8000,
+        "evaluated": 1300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126509,
+        "planBytes": 1210,
+        "total": 1000,
+        "localMedianMs": 3.5384999999987485
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 10000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 12778,
+        "planBytes": 0,
+        "total": 10,
+        "localMedianMs": 1.009200000000419
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 14010,
+        "evaluated": 1901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 12778,
+        "planBytes": 119,
+        "total": 10,
+        "localMedianMs": 1.4353999999984808
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 1,
+        "cells": 10000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 126472,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 1.2533000000003085
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 14100,
+        "evaluated": 1910,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 126472,
+        "planBytes": 120,
+        "total": 100,
+        "localMedianMs": 1.1903000000002066
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 10000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 1.186200000000099
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 5000,
+        "evaluated": 1000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 1.020699999999124
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 2,
+        "cells": 10000,
+        "evaluated": 0,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 632136,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.742499999998472
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 10000,
+        "evaluated": 0,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 632136,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 0.7502999999996973
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 2,
+        "cells": 20000,
+        "evaluated": 2000,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 632167,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 2.924699999999575
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 2000,
+        "lastRowCalls": 1,
+        "pageCount": 2,
+        "maxResponseBytes": 632167,
+        "planBytes": 242,
+        "total": 1000,
+        "localMedianMs": 2.401900000000751
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 10000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 12778,
+        "planBytes": 0,
+        "total": 10,
+        "localMedianMs": 0.8499999999985448
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 14010,
+        "evaluated": 1901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 12778,
+        "planBytes": 119,
+        "total": 10,
+        "localMedianMs": 1.3778999999994994
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 1,
+        "cells": 10000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 126472,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 0.6923999999999069
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 14100,
+        "evaluated": 1910,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 126472,
+        "planBytes": 120,
+        "total": 100,
+        "localMedianMs": 0.7774000000008527
+      }
+    },
+    {
+      "type": "changes",
+      "size": 1000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 10000,
+        "evaluated": 1000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 0.6913999999997031
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 5000,
+        "evaluated": 1000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 0.7906999999995605
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126579,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.2135999999991327
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126579,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.19010000000162108
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 300000,
+        "evaluated": 30000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126610,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 27.52759999999944
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 53000,
+        "evaluated": 10300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126610,
+        "planBytes": 12281,
+        "total": 10000,
+        "localMedianMs": 8.875500000000102
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 100000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 127079,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 7.004899999999907
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 149010,
+        "evaluated": 19901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 127079,
+        "planBytes": 121,
+        "total": 100,
+        "localMedianMs": 8.782100000000355
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 300000,
+        "evaluated": 30000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126594,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 10.945299999999406
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 77300,
+        "evaluated": 12730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126594,
+        "planBytes": 1227,
+        "total": 1000,
+        "localMedianMs": 4.280300000000352
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 100000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 4.996900000000096
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 50000,
+        "evaluated": 10000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 4.532099999998536
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 632640,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.7690000000002328
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 632640,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 0.7573000000011234
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 300000,
+        "evaluated": 30000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 632671,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 23.31540000000132
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 65000,
+        "evaluated": 11500,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 632671,
+        "planBytes": 2457,
+        "total": 10000,
+        "localMedianMs": 8.981100000000879
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 100000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 127079,
+        "planBytes": 0,
+        "total": 100,
+        "localMedianMs": 4.884299999999712
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 149010,
+        "evaluated": 19901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 127079,
+        "planBytes": 121,
+        "total": 100,
+        "localMedianMs": 7.834800000000541
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 2,
+        "cells": 200000,
+        "evaluated": 20000,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 632592,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 8.319200000001729
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 148200,
+        "evaluated": 19820,
+        "lastRowCalls": 1,
+        "pageCount": 2,
+        "maxResponseBytes": 632592,
+        "planBytes": 244,
+        "total": 1000,
+        "localMedianMs": 7.809699999999793
+      }
+    },
+    {
+      "type": "changes",
+      "size": 10000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 100000,
+        "evaluated": 10000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 7.067799999998897
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 50000,
+        "evaluated": 10000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 5.2612000000008265
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126679,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.23279999999977008
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126679,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.20169999999961874
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 1500000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126710,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 132.6266999999989
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 253000,
+        "evaluated": 50300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126710,
+        "planBytes": 62281,
+        "total": 50000,
+        "localMedianMs": 48.15469999999914
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 3,
+        "cells": 1500000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 127192,
+        "planBytes": 0,
+        "total": 500,
+        "localMedianMs": 100.30979999999909
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 547030,
+        "evaluated": 79703,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 127192,
+        "planBytes": 621,
+        "total": 500,
+        "localMedianMs": 45.21769999999924
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 1500000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126694,
+        "planBytes": 0,
+        "total": 5000,
+        "localMedianMs": 91.6275999999998
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 277300,
+        "evaluated": 52730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126694,
+        "planBytes": 6227,
+        "total": 5000,
+        "localMedianMs": 24.372000000001208
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 50000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 49.87239999999838
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 250000,
+        "evaluated": 50000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 31.329399999998714
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633140,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 1.1572999999989406
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633140,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 0.7945999999992637
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 1500000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633171,
+        "planBytes": 0,
+        "total": 50000,
+        "localMedianMs": 159.8032000000003
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 265000,
+        "evaluated": 51500,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 633171,
+        "planBytes": 12457,
+        "total": 50000,
+        "localMedianMs": 57.28060000000005
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 50000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 635479,
+        "planBytes": 0,
+        "total": 500,
+        "localMedianMs": 35.5038999999997
+      },
+      "planned": {
+        "reads": 2,
+        "cells": 749010,
+        "evaluated": 99901,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 635479,
+        "planBytes": 122,
+        "total": 500,
+        "localMedianMs": 62.92399999999907
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 1500000,
+        "evaluated": 150000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633095,
+        "planBytes": 0,
+        "total": 5000,
+        "localMedianMs": 101.18180000000211
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 397300,
+        "evaluated": 64730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 633095,
+        "planBytes": 1244,
+        "total": 5000,
+        "localMedianMs": 42.70100000000093
+      }
+    },
+    {
+      "type": "changes",
+      "size": 50000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 50000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 38.11200000000099
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 250000,
+        "evaluated": 50000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 37.171800000000076
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126680,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 0.234599999999773
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 3000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126680,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 0.19470000000001164
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 3000000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126711,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 319.0108999999975
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 503000,
+        "evaluated": 100300,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126711,
+        "planBytes": 124782,
+        "total": 100000,
+        "localMedianMs": 136.90720000000147
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 3,
+        "cells": 3000000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 127193,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 239.115600000001
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 797030,
+        "evaluated": 129703,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 127193,
+        "planBytes": 1246,
+        "total": 1000,
+        "localMedianMs": 99.26889999999912
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 3000000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 126695,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 202.15060000000085
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 527300,
+        "evaluated": 102730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 126695,
+        "planBytes": 12477,
+        "total": 10000,
+        "localMedianMs": 60.54019999999946
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 100,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 1000000,
+        "evaluated": 100000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 86.89440000000104
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 100000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 81.3737000000001
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "sem_filtro",
+      "current": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633141,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 1.2360000000007858
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 15000,
+        "evaluated": 0,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633141,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 1.2259999999987485
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "todos",
+      "current": {
+        "reads": 3,
+        "cells": 3000000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633172,
+        "planBytes": 0,
+        "total": 100000,
+        "localMedianMs": 352.79119999999966
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 515000,
+        "evaluated": 101500,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 633172,
+        "planBytes": 24958,
+        "total": 100000,
+        "localMedianMs": 129.66809999999896
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "um_por_cento",
+      "current": {
+        "reads": 2,
+        "cells": 2000000,
+        "evaluated": 200000,
+        "lastRowCalls": 4,
+        "pageCount": 2,
+        "maxResponseBytes": 635591,
+        "planBytes": 0,
+        "total": 1000,
+        "localMedianMs": 168.92380000000048
+      },
+      "planned": {
+        "reads": 3,
+        "cells": 1498020,
+        "evaluated": 199802,
+        "lastRowCalls": 1,
+        "pageCount": 2,
+        "maxResponseBytes": 635591,
+        "planBytes": 247,
+        "total": 1000,
+        "localMedianMs": 154.14180000000124
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "dez_por_cento_datas",
+      "current": {
+        "reads": 3,
+        "cells": 3000000,
+        "evaluated": 300000,
+        "lastRowCalls": 6,
+        "pageCount": 3,
+        "maxResponseBytes": 633096,
+        "planBytes": 0,
+        "total": 10000,
+        "localMedianMs": 220.17669999999998
+      },
+      "planned": {
+        "reads": 4,
+        "cells": 647300,
+        "evaluated": 114730,
+        "lastRowCalls": 1,
+        "pageCount": 3,
+        "maxResponseBytes": 633096,
+        "planBytes": 2494,
+        "total": 10000,
+        "localMedianMs": 68.0673999999999
+      }
+    },
+    {
+      "type": "changes",
+      "size": 100000,
+      "limit": 500,
+      "scenario": "nenhum",
+      "current": {
+        "reads": 1,
+        "cells": 1000000,
+        "evaluated": 100000,
+        "lastRowCalls": 2,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 0,
+        "total": 0,
+        "localMedianMs": 93.324099999998
+      },
+      "planned": {
+        "reads": 1,
+        "cells": 500000,
+        "evaluated": 100000,
+        "lastRowCalls": 1,
+        "pageCount": 1,
+        "maxResponseBytes": 90,
+        "planBytes": 2,
+        "total": 0,
+        "localMedianMs": 87.77440000000206
+      }
+    }
+  ]
+}

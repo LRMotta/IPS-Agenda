@@ -1,0 +1,408 @@
+diff --git a/WebApp.gs b/WebApp.gs
+--- a/WebApp.gs
++++ b/WebApp.gs
+@@ -5,8 +5,8 @@
+ var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
+ var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
+ // Atualize versão, rótulo e data a cada entrega do WebApp.
+-var CODEX_APP_VERSION_ = '2026.10.08-transporte-review-local';
+-var CODEX_APP_BUILD_LABEL_ = 'Revisão de integridade e segurança do Transporte';
++var CODEX_APP_VERSION_ = '2026.10.08-transporte-config-confirm-local';
++var CODEX_APP_BUILD_LABEL_ = 'Confirmação de alterações nas configurações de Transporte';
+ var CODEX_APP_BUILD_DATE_ = '2026-10-08';
+ var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
+ 
+@@ -18753,13 +18753,28 @@
+   return sh;
+ }
+ 
++function codexAssertConfigAppConfirmation_(grupo, confirmado) {
++  if (normText_(grupo) === 'transporte' && confirmado !== true) {
++    throw new Error('Confirme a alteração da configuração de Transporte antes de continuar.');
++  }
++}
++
+ function salvarConfigAppItem(payload) {
+   codexAssertCanWrite_('salvarConfigAppItem', 'Sistema', payload && payload.rowIndex);
++  return codexWithDocumentLock_('salvarConfigAppItem', function() {
++    return salvarConfigAppItemInterno_(payload);
++  });
++}
++
++function salvarConfigAppItemInterno_(payload) {
+   payload = payload || {};
+   if (!String(payload.grupo || '').trim()) throw new Error('Informe o grupo.');
+   if (!String(payload.chave || '').trim()) throw new Error('Informe a chave.');
+   if (!String(payload.valor || '').trim()) throw new Error('Informe o valor.');
+ 
++  // Grupo e identificador textual: uma formula nao pode contornar a confirmacao.
++  if (String(payload.grupo).trim().charAt(0) === '=') throw new Error('Informe o grupo como texto, sem fórmula.');
++  codexAssertConfigAppConfirmation_(payload.grupo, payload.confirmarAlteracaoTransporte);
+   var sh = getConfigAppSheet_();
+   var rowIndex = parseInt(payload.rowIndex, 10);
+   var startCol = parseInt(payload.startCol, 10);
+@@ -18775,6 +18790,9 @@
+ 
+   if (rowIndex && rowIndex >= 2) {
+     var rowAnterior = sh.getRange(rowIndex, startCol, 1, 6).getValues()[0];
++    // Trocar Transporte por outro grupo tambem exige confirmacao, considerando
++    // o registro persistido dentro do lock, sem depender do grupo do formulario.
++    codexAssertConfigAppConfirmation_(rowAnterior[0], payload.confirmarAlteracaoTransporte);
+     sh.getRange(rowIndex, startCol, 1, 6).setValues([row]);
+     codexWriteAuditChanges_('Sistema', 'salvarConfigAppItem', row[0] + '/' + row[1], [
+       { field: 'Config_App - Grupo', oldValue: rowAnterior[0], newValue: row[0] },
+@@ -18785,6 +18803,7 @@
+       { field: 'Config_App - Observação', oldValue: rowAnterior[5], newValue: row[5] }
+     ], 'Alteração de configuração');
+     clearConfigAppDefaultsCache_('salvarConfigAppItem');
++    SpreadsheetApp.flush();
+     return 'Configuração atualizada com sucesso.';
+   }
+ 
+@@ -18804,11 +18823,18 @@
+     { field: 'Config_App - Observação', oldValue: '', newValue: row[5] }
+   ], 'Cadastro de configuração');
+   clearConfigAppDefaultsCache_('salvarConfigAppItem');
++  SpreadsheetApp.flush();
+   return 'Configuração cadastrada com sucesso.';
+ }
+ 
+-function excluirConfigAppItem(rowIndex, startCol) {
++function excluirConfigAppItem(rowIndex, startCol, options) {
+   codexAssertCanWrite_('excluirConfigAppItem', 'Sistema', rowIndex);
++  return codexWithDocumentLock_('excluirConfigAppItem', function() {
++    return excluirConfigAppItemInterno_(rowIndex, startCol, options);
++  });
++}
++
++function excluirConfigAppItemInterno_(rowIndex, startCol, options) {
+   var sh = getConfigAppSheet_();
+   var row = parseInt(rowIndex, 10);
+   var col = parseInt(startCol, 10);
+@@ -18816,6 +18842,7 @@
+   if (!row || row < 2 || row > sh.getLastRow()) throw new Error('Configuração não encontrada.');
+ 
+   var values = sh.getRange(row, col, 1, 6).getValues()[0];
++  codexAssertConfigAppConfirmation_(values[0], options && options.confirmarAlteracaoTransporte);
+   sh.getRange(row, col, 1, 6).clearContent();
+   codexWriteAuditChanges_('Sistema', 'excluirConfigAppItem', values[0] + '/' + values[1], [
+     { field: 'Config_App - Grupo', oldValue: values[0], newValue: '' },
+@@ -18826,6 +18853,7 @@
+     { field: 'Config_App - Observação', oldValue: values[5], newValue: '' }
+   ], 'Exclusão de configuração');
+   clearConfigAppDefaultsCache_('excluirConfigAppItem');
++  SpreadsheetApp.flush();
+   return 'Configuração excluída com sucesso.';
+ }
+ 
+diff --git a/IndexCoreScripts.html b/IndexCoreScripts.html
+--- a/IndexCoreScripts.html
++++ b/IndexCoreScripts.html
+@@ -2318,6 +2318,10 @@
+   });
+ }
+ 
++function configGrupoTransporte_(grupo) {
++  return norm(String(grupo || '').trim()) === 'transporte';
++}
++
+ function renderTabelaConfig(lista) {
+   var tb = document.getElementById('bodyConfig');
+   if (!tb) return;
+@@ -2421,6 +2425,37 @@
+     { input: 'cfgChave', error: 'errCfgChave', label: 'Chave', value: chave },
+     { input: 'cfgValor', error: 'errCfgValor', label: 'Valor', value: valor }
+   ], { status: 'statusCfg' })) return;
++  var payload = {
++    rowIndex: document.getElementById('cfgRowIndex').value,
++    startCol: document.getElementById('cfgStartCol').value,
++    bloco: document.getElementById('cfgBloco').value,
++    grupo: grupo,
++    chave: chave,
++    valor: valor,
++    ativo: document.getElementById('cfgAtivo').value,
++    ordem: document.getElementById('cfgOrdem').value,
++    observacao: document.getElementById('cfgObs').value.trim()
++  };
++  var startCol = String(payload.startCol || (payload.bloco === 'Apoio' ? 8 : 1));
++  var original = _configApp.filter(function(item) {
++    return String(item.rowIndex) === String(payload.rowIndex) && String(item.startCol) === startCol;
++  })[0];
++  if (configGrupoTransporte_(grupo) || (original && configGrupoTransporte_(original.grupo))) {
++    abrirConfirmacaoDestrutiva({
++      titulo: 'Confirmar alteração de Transporte',
++      mensagem: 'Deseja salvar a configuração "' + chave + '" com o valor "' + valor + '"? Essa alteração pode afetar a documentação de transporte gerada a partir de agora.',
++      acao: 'Salvar alteração',
++      onConfirm: function() {
++        payload.confirmarAlteracaoTransporte = true;
++        enviarConfigApp_(payload);
++      }
++    });
++    return;
++  }
++  enviarConfigApp_(payload);
++}
++
++function enviarConfigApp_(payload) {
+   var btn = document.getElementById('btnSalvarCfg');
+   btn.disabled = true;
+   appSetStatus('statusCfg', 'Processando…');
+@@ -2440,22 +2475,14 @@
+       btn.disabled = false;
+       appSetStatus('statusCfg', appErrorMessage(e), '#e53935');
+     })
+-    .salvarConfigAppItem({
+-      rowIndex: document.getElementById('cfgRowIndex').value,
+-      startCol: document.getElementById('cfgStartCol').value,
+-      bloco: document.getElementById('cfgBloco').value,
+-      grupo: grupo,
+-      chave: chave,
+-      valor: valor,
+-      ativo: document.getElementById('cfgAtivo').value,
+-      ordem: document.getElementById('cfgOrdem').value,
+-      observacao: document.getElementById('cfgObs').value.trim()
+-    });
++    .salvarConfigAppItem(payload);
+ }
+ 
+ function confirmarExcluirConfig(rowIndex, startCol, valor) {
++  var item = _configApp.filter(function(row) { return String(row.rowIndex) === String(rowIndex) && String(row.startCol) === String(startCol); })[0];
+   abrirConfirmacaoDestrutiva({
+-    mensagem: 'Deseja excluir "' + valor + '"? Configurações padrão serão desativadas para não voltarem automaticamente.',
++    mensagem: 'Deseja excluir "' + valor + '"? Configurações padrão serão desativadas para não voltarem automaticamente.' +
++      (item && configGrupoTransporte_(item.grupo) ? ' Essa alteração pode afetar a documentação de transporte gerada a partir de agora.' : ''),
+     onConfirm: function() {
+       google.script.run
+         .withSuccessHandler(function(r) {
+@@ -2467,7 +2494,7 @@
+           carregarConfigApp();
+         })
+         .withFailureHandler(function(e) { snackErro(e); })
+-        .excluirConfigAppItem(rowIndex, startCol);
++        .excluirConfigAppItem(rowIndex, startCol, { confirmarAlteracaoTransporte: true });
+     }
+   });
+ }
+diff --git a/tests/config-transporte-authorization.test.js b/tests/config-transporte-authorization.test.js
+new file mode 100644
+--- /dev/null
++++ b/tests/config-transporte-authorization.test.js
+@@ -0,0 +1,104 @@
++'use strict';
++
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { runFile } = require('./helpers/load-app-script');
++const { FakeSheet } = require('./helpers/fake-spreadsheet');
++
++function fixture(role = 'user', beforeLock) {
++  const sheet = new FakeSheet('Config_App', [
++    ['Grupo', 'Chave', 'Valor', 'Ativo', 'Ordem', 'Observação', '', 'Grupo', 'Chave', 'Valor', 'Ativo', 'Ordem', 'Observação'],
++    ['Transporte', 'Peso MARKEN ambiente (kg)', '1', 'Sim', '', '', '', 'Transporte', 'Contato de emergência centro', '123', 'Sim', '', ''],
++    ['Agenda', 'Status', 'Agendado', 'Sim', '', '', '', 'Agenda', 'Status', 'Pendente', 'Sim', '', '']
++  ]);
++  let locked = false;
++  let flushes = 0;
++  let sheetReads = 0;
++  const audits = [];
++  const server = runFile('WebApp.gs', {
++    SpreadsheetApp: { flush() { assert.equal(locked, true); flushes++; } }
++  });
++  server.codexAuthorizeWebAppRequest_ = () => ({ ok: true, role });
++  server.codexWriteAuditLog_ = () => {};
++  server.codexWriteAuditChanges_ = (...args) => { assert.equal(locked, true); audits.push(args); };
++  server.clearConfigAppDefaultsCache_ = () => { assert.equal(locked, true); };
++  server.getConfigAppSheet_ = () => { assert.equal(locked, true); sheetReads++; return sheet; };
++  server.codexWithDocumentLock_ = (_name, callback) => {
++    locked = true;
++    try { if (beforeLock) beforeLock(sheet); return callback(); }
++    finally { locked = false; }
++  };
++  return { server, sheet, audits, counters: () => ({ flushes, sheetReads }) };
++}
++
++test('Transporte exige confirmacao antes de criar, editar ou trocar grupo nos dois blocos', () => {
++  const attempts = [
++    { grupo: 'Transporte', chave: 'CNPJ do centro', valor: '12345678901234' },
++    { grupo: '  tRáNsPoRtE  ', chave: 'Contato', valor: 'Teste' },
++    { rowIndex: 2, startCol: 1, grupo: 'Agenda', chave: 'Status', valor: 'Alterado' },
++    { rowIndex: 2, startCol: 8, grupo: 'Agenda', chave: 'Status', valor: 'Alterado' },
++    { rowIndex: 3, startCol: 1, grupo: 'Transporte', chave: 'Peso', valor: '99' },
++    { rowIndex: 2, startCol: 1, grupo: 'Transporte', chave: 'Peso', valor: '99', ativo: 'Não' }
++  ];
++  for (const role of ['user', 'admin']) for (const payload of attempts) {
++    const { server, sheet, audits } = fixture(role);
++    const initial = JSON.stringify(sheet.rows);
++    assert.throws(() => server.salvarConfigAppItem(payload), /Confirme/);
++    assert.equal(sheet.writes, 0);
++    assert.equal(JSON.stringify(sheet.rows), initial);
++    assert.equal(audits.length, 0);
++  }
++});
++
++test('exclusao de Transporte exige confirmacao nos dois blocos; readonly continua bloqueado', () => {
++  for (const startCol of [1, 8]) {
++    const { server, sheet } = fixture();
++    assert.throws(() => server.excluirConfigAppItem(2, startCol), /Confirme/);
++    assert.equal(sheet.writes, 0);
++  }
++  const { server, counters } = fixture('readonly');
++  assert.throws(() => server.salvarConfigAppItem({ grupo: 'Agenda', chave: 'Status', valor: 'A' }), /somente leitura/);
++  assert.throws(() => server.excluirConfigAppItem(2, 1), /somente leitura/);
++  assert.equal(counters().sheetReads, 0);
++});
++
++test('grupo persistido e revalidado dentro do lock depois de uma mudanca concorrente', () => {
++  const { server, sheet } = fixture('user', target => { target.rows[2][0] = 'Transporte'; });
++  assert.throws(() => server.salvarConfigAppItem({ rowIndex: 3, startCol: 1, grupo: 'Agenda', chave: 'Status', valor: 'A' }), /Confirme/);
++  assert.equal(sheet.writes, 0);
++});
++
++test('user e admin confirmados criam, editam, movem e excluem Transporte com auditoria e flush', () => {
++  for (const role of ['user', 'admin']) {
++  const { server, sheet, audits, counters } = fixture(role);
++  assert.match(server.salvarConfigAppItem({ grupo: 'Transporte', chave: 'Peso', valor: '2,5', confirmarAlteracaoTransporte: true }), /cadastrada/);
++  assert.match(server.salvarConfigAppItem({ rowIndex: 2, startCol: 8, grupo: 'Transporte', chave: 'Contato', valor: '999', confirmarAlteracaoTransporte: true }), /atualizada/);
++  assert.equal(sheet.rows[1][9], '999');
++  assert.match(server.salvarConfigAppItem({ rowIndex: 2, startCol: 1, grupo: 'Agenda', chave: 'Status', valor: 'A', confirmarAlteracaoTransporte: true }), /atualizada/);
++  assert.match(server.excluirConfigAppItem(4, 1, { confirmarAlteracaoTransporte: true }), /excluída/);
++  assert.equal(audits.length, 4);
++  assert.equal(counters().flushes, 4);
++  }
++});
++
++test('confirmacao deve ser booleano true e grupo calculado nao contorna a confirmacao', () => {
++  for (const confirmarAlteracaoTransporte of ['true', 1, {}, false]) {
++    const { server, sheet } = fixture();
++    assert.throws(() => server.salvarConfigAppItem({ grupo: 'Transporte', chave: 'Peso', valor: '99', confirmarAlteracaoTransporte }), /Confirme/);
++    assert.equal(sheet.writes, 0);
++  }
++  for (const rowIndex of ['', 3]) {
++    const { server, sheet, counters } = fixture();
++    assert.throws(() => server.salvarConfigAppItem({ rowIndex, startCol: 1, grupo: '="Transporte"', chave: 'Peso', valor: '99' }), /sem fórmula/);
++    assert.equal(sheet.writes, 0);
++    assert.equal(counters().sheetReads, 0);
++  }
++});
++
++test('user conserva edicao e exclusao de outros grupos', () => {
++  const { server, sheet, counters } = fixture('user');
++  assert.match(server.salvarConfigAppItem({ rowIndex: 3, startCol: 1, grupo: 'Agenda', chave: 'Status', valor: 'Pendente' }), /atualizada/);
++  assert.equal(sheet.rows[2][2], 'Pendente');
++  assert.match(server.excluirConfigAppItem(3, 8), /excluída/);
++  assert.equal(counters().flushes, 2);
++});
+diff --git a/tests/e2e/config-transporte-authorization.test.js b/tests/e2e/config-transporte-authorization.test.js
+new file mode 100644
+--- /dev/null
++++ b/tests/e2e/config-transporte-authorization.test.js
+@@ -0,0 +1,109 @@
++'use strict';
++/* global window, document */
++
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { loadPlaywright } = require('../helpers/playwright-runtime');
++const { readProjectFile } = require('../helpers/load-app-script');
++const { contentAccessibilitySource } = require('../helpers/content-accessibility-source');
++
++const source = contentAccessibilitySource([
++  'configGrupoTransporte_', 'renderTabelaConfig', 'bindTableRecordActions', 'configValoresUnicos',
++  'preencherSelectConfig', 'onConfigBlocoChange', 'onConfigGrupoChange', 'abrirFormConfig',
++  'salvarConfigApp', 'enviarConfigApp_', 'confirmarExcluirConfig', 'abrirConfirmacaoDestrutiva', 'fecharModalSeClicouFora', 'norm'
++]);
++const stock = readProjectFile('IndexContentAfterStock.html');
++const modal = stock.slice(stock.indexOf('<div class="modal-overlay" id="modalConfig"'), stock.indexOf('<div class="modal-overlay" id="modalConfigAjuda"'));
++const confirmation = stock.slice(stock.indexOf('<div class="modal-overlay" id="confirmDel"'), stock.indexOf('<div class="modal-overlay" id="confirmPartDuplicate"'));
++
++for (const width of [1280, 390]) test('ConfigApp Transporte: confirmar/cancelar preserva permissoes em ' + width + 'px', async () => {
++  // Browser plugin indisponivel: HTML/CSS reais, RPCs simuladas e rede bloqueada.
++  const browser = await loadPlaywright().chromium.launch({ headless: true });
++  try {
++    const page = await browser.newPage({ viewport: { width, height: 900 } });
++    const errors = [];
++    page.on('pageerror', error => errors.push(error.message));
++    page.on('console', message => { if (['warning', 'error'].includes(message.type())) errors.push(message.text()); });
++    await page.route('**/*', route => route.abort());
++    await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS — ConfigApp local</title>' +
++      readProjectFile('IndexStyles.html') + readProjectFile('IndexStylesAfterDashboard.html') +
++      '</head><body><h1>Configurações</h1><table><tbody id="bodyConfig"></tbody></table>' + modal + confirmation + '</body></html>');
++    await page.addScriptTag({ content: `
++      var CURRENT_ACCESS = {}, requests = [];
++      var CONFIG_APP_CHAVES_DISPONIVEIS = {};
++      var _configApp = [
++        { rowIndex: 2, startCol: 1, bloco: 'Principal', grupo: 'Transporte', chave: 'Peso', valor: '1', ativo: 'Sim' },
++        { rowIndex: 3, startCol: 1, bloco: 'Principal', grupo: 'Agenda', chave: 'Status', valor: 'Pendente', ativo: 'Sim' }
++      ];
++      function esc(value) { var el = document.createElement('div'); el.textContent = String(value || ''); return el.innerHTML; }
++      function simNaoChip(value) { return esc(value); }
++      function appSetStatus(id, text) { document.getElementById(id).textContent = text; }
++      function appRequiredFeedback() { return true; }
++      function appErrorMessage(error) { return error.message; }
++      function limparErro() {}
++      function abrirOverlay(id) { var el = document.getElementById(id); el.removeAttribute('inert'); el.classList.add('open'); }
++      function fecharOverlay(id) { var el = document.getElementById(id); el.classList.remove('open'); el.setAttribute('inert', ''); }
++      function runner() { return new Proxy({}, { get: function(_target, method) {
++        if (method === 'withSuccessHandler' || method === 'withFailureHandler') return function() { return runner(); };
++        return function() { requests.push({ method: method, args: Array.prototype.slice.call(arguments) }); };
++      } }); }
++      var google = { script: { run: runner() } };
++      ${source}
++    ` });
++    assert.equal(await page.title(), 'IPS — ConfigApp local');
++    assert.ok((await page.locator('body').innerText()).includes('Configurações'));
++    for (const role of ['user', 'admin']) {
++      await page.evaluate(role => {
++        window.CURRENT_ACCESS = { ok: true, role, canWrite: true };
++        window.requests = [];
++        window.fecharOverlay('modalConfig'); window.fecharOverlay('confirmDel');
++        window.renderTabelaConfig(window._configApp);
++      }, role);
++      await page.locator('#bodyConfig tr').first().getByTitle('Editar', { exact: true }).click();
++      await page.locator('#cfgValor').fill('2,5');
++      await page.locator('#btnSalvarCfg').click();
++      assert.match(await page.locator('#confirmDelTitle').innerText(), /Confirmar alteração/);
++      assert.match(await page.locator('#confirmDelMsg').innerText(), /2,5.*documentação de transporte/);
++      assert.equal(await page.evaluate(() => window.requests.length), 0);
++      await page.locator('#confirmDel').getByRole('button', { name: 'Cancelar', exact: true }).click();
++      assert.equal(await page.evaluate(() => window.requests.length), 0);
++      assert.equal(await page.locator('#cfgValor').inputValue(), '2,5');
++      await page.locator('#btnSalvarCfg').click();
++      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
++      fs.mkdirSync(dir, { recursive: true });
++      await page.screenshot({ path: path.join(dir, 'config-transporte-confirmacao-' + width + '.png') });
++      await page.evaluate(() => { document.getElementById('cfgValor').value = '999'; });
++      await page.locator('#btnConfirmDel').click();
++      const save = await page.evaluate(() => window.requests[0]);
++      assert.equal(save.method, 'salvarConfigAppItem');
++      assert.equal(save.args[0].valor, '2,5', 'envia o valor revisado na confirmacao');
++      assert.equal(save.args[0].confirmarAlteracaoTransporte, true);
++
++      await page.evaluate(() => { window.requests = []; window.fecharOverlay('modalConfig'); });
++      await page.locator('#bodyConfig tr').first().getByTitle('Excluir', { exact: true }).click();
++      assert.match(await page.locator('#confirmDelMsg').innerText(), /documentação de transporte/);
++      assert.equal(await page.evaluate(() => window.requests.length), 0);
++      await page.locator('#confirmDel').getByRole('button', { name: 'Cancelar', exact: true }).click();
++      assert.equal(await page.evaluate(() => window.requests.length), 0);
++      await page.locator('#bodyConfig tr').first().getByTitle('Excluir', { exact: true }).click();
++      await page.locator('#btnConfirmDel').click();
++      const removal = await page.evaluate(() => window.requests[0]);
++      assert.equal(removal.method, 'excluirConfigAppItem');
++      assert.deepEqual(removal.args, [2, 1, { confirmarAlteracaoTransporte: true }]);
++
++      await page.evaluate(() => { window.requests = []; window.abrirFormConfig(window._configApp[0]); });
++      await page.locator('#cfgGrupo').selectOption('Agenda');
++      await page.locator('#cfgChave').selectOption('Status');
++      await page.locator('#btnSalvarCfg').click();
++      assert.equal(await page.evaluate(() => window.requests.length), 0, 'trocar o grupo original tambem pede confirmacao');
++      await page.locator('#confirmDel').getByRole('button', { name: 'Cancelar', exact: true }).click();
++      await page.evaluate(() => window.abrirFormConfig(window._configApp[1]));
++      await page.locator('#btnSalvarCfg').click();
++      assert.equal(await page.evaluate(() => window.requests.length), 1, 'outro grupo mantem o fluxo existente');
++    }
++    assert.deepEqual(errors, []);
++  } finally { await browser.close(); }
++});

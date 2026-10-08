@@ -14,6 +14,7 @@ function transportServer(extra = {}) {
   return runFile('TransporteCodexConfig.gs', {
     getCodexSpreadsheet_: () => book,
     SpreadsheetApp: { getActiveSpreadsheet: () => book, flush() {} },
+    codexGetAllowedUsers_: () => ({ 'operador@example.invalid': { active: true } }),
     normText_: norm,
     ...extra,
     book
@@ -42,12 +43,12 @@ test('referencia discreta identifica Agenda e slot e a pendencia nasce apos uma 
   assert.match(pendentes[0].motivo, /mais de 1 hora/);
 });
 
-test('regenerar documentos preserva a evidencia de e-mail do mesmo transporte', () => {
+test('regenerar documentos preserva a evidencia somente com o mesmo hash', () => {
   const book = new FakeSpreadsheet({});
   const server = transportServer({ book });
   const primeiro = server.transporteRegistrarDocumentacaoGerada_({
     agendaId: 'EVT-REGERAR', slot: '3', courier: 'MARKEN',
-    pdfId: 'PDF-ANTIGO', pdfNome: 'antigo.pdf', rascunhoOk: true
+    pdfId: 'PDF-ANTIGO', pdfNome: 'antigo.pdf', rascunhoOk: true, pdfHash: 'HASH-IGUAL'
   });
   const identificadoEm = new Date('2026-09-11T16:48:00-03:00');
   const enviadoEm = new Date('2026-09-11T16:49:00-03:00');
@@ -58,7 +59,7 @@ test('regenerar documentos preserva a evidencia de e-mail do mesmo transporte', 
 
   server.transporteRegistrarDocumentacaoGerada_({
     agendaId: 'EVT-REGERAR', slot: 'III', courier: 'MARKEN',
-    pdfId: 'PDF-NOVO', pdfNome: 'novo.pdf', rascunhoOk: true
+    pdfId: 'PDF-NOVO', pdfNome: 'novo.pdf', rascunhoOk: true, pdfHash: 'HASH-IGUAL'
   });
 
   const operacao = server.transporteOperacoesRows_()[0];
@@ -99,7 +100,7 @@ test('monitor da copia com anexo promove somente status pendente para Agendado',
     GmailApp: {
       search: () => [{
         getMessages: () => [{
-          getSubject: () => 'Agendamento de coleta',
+          getFrom: () => 'operador@example.invalid', getSubject: () => 'Agendamento de coleta',
           getPlainBody: () => 'Documentos anexos. Ref. IPS: IPS-TRP-EVT-1-T1',
           getDate: () => messageDate,
           getId: () => 'MSG-1',
@@ -145,7 +146,7 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
     GmailApp: {
       search: () => [{
         getMessages: () => [{
-          getSubject: () => 'Agendamento',
+          getFrom: () => 'operador@example.invalid', getSubject: () => 'Agendamento',
           getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-2-T1',
           getDate: () => new Date(Date.now() + 60 * 1000),
           getId: () => 'MSG-2',
@@ -192,7 +193,7 @@ test('DHL sem anexo confirma o envio, promove para Agendado e sai das pendencias
     GmailApp: {
       search: () => [{
         getMessages: () => [{
-          getSubject: () => 'Agendamento DHL',
+          getFrom: () => 'operador@example.invalid', getSubject: () => 'Agendamento DHL',
           getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-DHL-T1',
           getDate: () => new Date(Date.now() + 60 * 1000),
           getId: () => 'MSG-DHL',
@@ -239,7 +240,7 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
     GmailApp: {
       search: () => [{
         getMessages: () => [{
-          getSubject: () => 'Agendamento de coleta',
+          getFrom: () => 'operador@example.invalid', getSubject: () => 'Agendamento de coleta',
           getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-3-T1',
           getDate: () => messageDate,
           getId: () => 'MSG-3',
@@ -294,7 +295,7 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
         gmailSearches += 1;
         return gmailSearches === 1 ? [{
           getMessages: () => [{
-            getSubject: () => 'Agendamento de coleta',
+            getFrom: () => 'operador@example.invalid', getSubject: () => 'Agendamento de coleta',
             getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-MANUAL-T1',
             getDate: () => messageDate,
             getId: () => 'MSG-MANUAL',
@@ -352,7 +353,7 @@ test('monitor recupera operacao antiga concluida antes de promover a Agenda', ()
     GmailApp: {
       search: () => [{
         getMessages: () => [{
-          getSubject: () => 'Agendamento de coleta',
+          getFrom: () => 'operador@example.invalid', getSubject: () => 'Agendamento de coleta',
           getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-4-T1',
           getDate: () => messageDate,
           getId: () => 'MSG-4',
@@ -398,7 +399,7 @@ test('salvar Transporte nao presume envio e o rascunho inclui referencia depois 
   const source = readProjectFile('TransporteCodexConfig.gs');
   assert.match(source, /var statusNovo = String\(payload\.statusCourier \|\| payload\.status \|\| ''\)/);
   assert.doesNotMatch(source, /payload\.statusCourier \|\| payload\.status \|\| 'Agendado'/);
-  assert.match(source, /getGmailSignature\(\) \+ transporteMonitorRefHtml_\(refInterna\)/);
+  assert.match(source, /getGmailSignature\(\) \+ transporteMonitorRefHtml_\(refInterna, options\.pdfHash\)/);
   assert.match(source, /in:anywhere -in:drafts newer_than:30d/);
 });
 
@@ -406,7 +407,7 @@ function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', d
   const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status', 'ID'], ['Agendado', courier, status, 'EVT-TEST']]);
   const logs = [];
   const message = {
-    getSubject: () => body, getPlainBody: () => '', isDraft: () => draft,
+    getFrom: () => 'operador@example.invalid', getSubject: () => body, getPlainBody: () => '', isDraft: () => draft,
     getDate: () => new Date(Date.now() + 60000), getId: () => 'MSG-TEST', getAttachments: () => attachments
   };
   const server = transportServer({
@@ -436,7 +437,7 @@ test('monitor compartilha IDs por fase e refaz o indice sob lock apos mover linh
   const getRange = agenda.getRange.bind(agenda);
   agenda.getRange = (...args) => {
     const range = getRange(...args);
-    if (args[0] === 2 && args[1] === 4 && args[3] === 1) {
+    if (args[0] === 2 && args[1] === 1 && args[3] === agenda.getLastColumn()) {
       const getValues = range.getValues.bind(range);
       range.getValues = () => { reads[locked ? 'locked' : 'before']++; return getValues(); };
     }
@@ -562,4 +563,126 @@ test('diagnostico manual exige administrador e restringe a execucao ao AgendaId'
   server.Logger = { log() {} };
   const result = server.testarMonitorConfirmacaoManual('EVT-TEST');
   assert.match(result.avisos[0].motivo, /Backup/);
+});
+
+test('monitor recusa respostas de courier, usuarios inativos e remetentes ambiguos', () => {
+  for (const from of ['courier@example.invalid', 'inativo@example.invalid', 'Nome sem endereço', 'operador@example.invalid, courier@example.invalid']) {
+    const { server, agenda, message } = monitorFixture();
+    server.codexGetAllowedUsers_ = () => ({ 'operador@example.invalid': { active: true }, 'inativo@example.invalid': { active: false } });
+    message.getFrom = () => from;
+    const result = server.transporteMonitorarEnviosPorEmail_();
+    assert.equal(result.enviados, 0, from);
+    assert.equal(result.diagnostico.remetentesRecusados, 1);
+    assert.equal(agenda.rows[1][2], 'Não Agendado');
+    assert.equal(server.transporteOperacoesRows_()[0].gmailMessageId, '');
+  }
+});
+
+test('monitor aceita usuario ativo de outra conta e a conta executora, preservando a revalidacao de ACL', () => {
+  for (const executor of [false, true]) {
+    const { server, message } = monitorFixture();
+    server.Session = { getEffectiveUser: () => ({ getEmail: () => 'executor@example.invalid' }) };
+    message.getFrom = () => executor ? 'Executor <executor@example.invalid>' : 'Operador <operador@example.invalid>';
+    assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 1);
+  }
+  const { server, message, agenda } = monitorFixture();
+  let active = true;
+  server.codexGetAllowedUsers_ = () => ({ 'operador@example.invalid': { active } });
+  server.codexWithDocumentLock_ = (_label, fn) => { active = false; return fn(); };
+  message.getFrom = () => 'operador@example.invalid';
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 0);
+  assert.match(result.diagnostico.recusas[0].motivo, /deixou de ser elegível/);
+  assert.equal(agenda.rows[1][2], 'Não Agendado');
+});
+
+test('monitor revalida exigencia de anexo dentro do lock e confirma flush/cache/auditoria em lote', () => {
+  const first = monitorFixture();
+  let requires = false;
+  first.server.transporteCourierExigeAnexoEnvio_ = () => requires;
+  first.server.codexWithDocumentLock_ = (_label, fn) => { requires = true; return fn(); };
+  assert.equal(first.server.transporteMonitorarEnviosPorEmail_().semAnexo, 1);
+  assert.equal(first.agenda.rows[1][2], 'Não Agendado');
+
+  const { server, agenda } = monitorFixture();
+  let locked = false;
+  const events = [];
+  server.codexWithDocumentLock_ = (_label, fn) => { locked = true; try { return fn(); } finally { locked = false; } };
+  server.agendaInvalidateDateIndexCache_ = () => { assert.equal(locked, true); events.push('invalidate'); };
+  server.codexWriteAuditChangesBatch_ = entries => { assert.equal(locked, true); assert.equal(entries.length, 1); events.push('audit'); };
+  server.codexWriteAuditChanges_ = () => { throw new Error('auditoria individual proibida quando existe lote'); };
+  server.SpreadsheetApp.flush = () => { assert.equal(locked, true); assert.equal(agenda.rows[1][2], 'Agendado'); assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm); events.push('flush'); };
+  assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 1);
+  assert.deepEqual(events, ['invalidate', 'audit', 'flush']);
+});
+
+test('regeneracao com hash alterado ou legado sem hash invalida toda evidencia de envio', () => {
+  for (const oldHash of ['ANTIGO', '']) {
+    const server = transportServer();
+    server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', courier: 'DHL', pdfId: 'P1', pdfHash: oldHash, rascunhoOk: true });
+    const log = server.book.getSheetByName('Transporte_Operacoes');
+    const date = new Date();
+    log.getRange(2, 12, 1, 5).setValues([[date, date, 'MSG-ANTIGA', 2, date]]);
+    server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', courier: 'DHL', pdfId: 'P2', pdfHash: 'NOVO', rascunhoOk: true });
+    const operation = server.transporteOperacoesRows_()[0];
+    assert.equal(operation.pdfHash, 'NOVO');
+    assert.equal(operation.emailEnviadoEm, '');
+    assert.equal(operation.emailIdentificadoEm, '');
+    assert.equal(operation.gmailMessageId, '');
+    assert.equal(operation.anexos, '');
+  }
+});
+
+test('hash novo impede mensagem da revisao anterior dentro da antiga tolerancia de cinco minutos', () => {
+  const { server, message, agenda } = monitorFixture();
+  server.book.getSheetByName('Transporte_Operacoes').getRange(2, 17).setValue('HASH-NOVO');
+  message.getDate = () => new Date(Date.now() - 120000);
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 0);
+  assert.ok(result.diagnostico.recusas.some(item => /anterior/.test(item.motivo)));
+  assert.equal(agenda.rows[1][2], 'Não Agendado');
+});
+
+test('rascunho antigo enviado depois da regeneracao nao comprova o documento atual', () => {
+  for (const marker of ['', 'HASH-ANTIGO', 'HASH-NOVO-extra', 'HASH-NOVO']) {
+    const { server, message, agenda } = monitorFixture();
+    server.book.getSheetByName('Transporte_Operacoes').getRange(2, 17).setValue('HASH-NOVO');
+    message.getDate = () => new Date(Date.now() + 60000);
+    message.getPlainBody = () => 'Ref. IPS: IPS-TRP-EVT-TEST-T1\nDoc. IPS: ' + marker;
+    const result = server.transporteMonitorarEnviosPorEmail_();
+    assert.equal(result.enviados, marker === 'HASH-NOVO' ? 1 : 0, marker);
+    assert.equal(agenda.rows[1][2], marker === 'HASH-NOVO' ? 'Agendado' : 'Não Agendado');
+    if (marker !== 'HASH-NOVO') assert.ok(result.diagnostico.recusas.some(item => /Marcador do documento/.test(item.motivo)));
+  }
+  const { server } = monitorFixture();
+  assert.match(server.transporteMonitorRefHtml_('IPS-TRP-EVT-TEST-T1', 'HASH-NOVO'), /Doc\. IPS: HASH-NOVO/);
+  assert.doesNotMatch(server.transporteMonitorRefHtml_('IPS-TRP-EVT-TEST-T1'), /Doc\. IPS/);
+});
+
+test('schema legado e lido sem migrar e escrita so anexa hash a coluna desocupada', () => {
+  const initial = transportServer();
+  const legacyHeaders = Array.from(initial.TRANSPORTE_OPERACOES_HEADERS_).slice(0, 16);
+  const row = ['A', '1', 'IPS-TRP-A-T1', 'DHL', new Date(), '', 'PDF'];
+  const sheet = new FakeSheet('Transporte_Operacoes', [legacyHeaders, row]);
+  const book = new FakeSpreadsheet({ Transporte_Operacoes: sheet });
+  const server = transportServer({ book });
+  assert.equal(server.transporteOperacoesRows_()[0].pdfHash, '');
+  assert.equal(sheet.writes, 0);
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', pdfHash: 'HASH', rascunhoOk: true });
+  assert.deepEqual(sheet.rows[0].slice(0, 16), legacyHeaders);
+  assert.equal(sheet.rows[0][16], 'PDF_Hash');
+
+  const occupied = new FakeSheet('Transporte_Operacoes', [legacyHeaders, row.concat(Array(9).fill(''), ['DADO LEGADO'])]);
+  occupied.rows[1][16] = 'DADO LEGADO';
+  const rejected = transportServer({ book: new FakeSpreadsheet({ Transporte_Operacoes: occupied }) });
+  assert.throws(() => rejected.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', pdfHash: 'HASH' }), /contém dados sem cabeçalho/);
+  assert.equal(occupied.writes, 0);
+  assert.equal(occupied.rows[1][16], 'DADO LEGADO');
+});
+
+test('pendencia antiga informa limite da busca sem aumentar as consultas Gmail', () => {
+  const server = transportServer();
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', rascunhoOk: true });
+  server.book.getSheetByName('Transporte_Operacoes').getRange(2, 5).setValue(new Date(Date.now() - 31 * 86400000));
+  assert.match(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].motivo, /fora da janela de busca automática/);
 });

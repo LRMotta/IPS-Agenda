@@ -132,3 +132,129 @@ test('timeout libera fila, ignora resposta tardia e permite nova tentativa', () 
   requests[1].success({ pendencias: {} });
   assert.equal(context._pendenciasRefreshing, false);
 });
+
+test('falhas no renderer e na recuperacao preservam cache/carimbo e liberam fila', () => {
+  for (const cached of [false, true]) {
+    const { context, requests, button, timers } = fixture();
+    const cache = cached ? { kitsVencendo: [] } : null;
+    context._pendenciasCache = cache;
+    context.setPendenciasLoadedAtState(1234);
+    const renderer = context.renderDashboardPendencias;
+    context.renderDashboardPendencias = () => { throw new Error('render indisponivel'); };
+    let result;
+    context.carregarPendencias(true, { onComplete: value => { result = value; } });
+    requests[0].success({ pendencias: { kitsVencendo: [] } });
+    timers[0]();
+    assert.equal(result.ok, false);
+    assert.equal(context._pendenciasRefreshing, false);
+    assert.equal(button.disabled, false);
+    assert.equal(context._pendenciasCache, cache);
+    assert.equal(context.pendenciasLoadedAtTime(), 1234);
+    context.renderDashboardPendencias = renderer;
+    context.carregarPendencias(true);
+    requests[1].success({ pendencias: {} });
+    assert.equal(context._pendenciasRefreshing, false);
+    assert.notEqual(context.pendenciasLoadedAtTime(), 1234);
+  }
+});
+
+test('respostas invalidas nao substituem cache nem carimbo e permitem retentativa', () => {
+  for (const response of [null, {}, { erro: 'falha' }, { ok: false }, { pendencias: [] }, { pendencias: { kitsVencendo: [null] } }]) {
+    const { context, requests } = fixture();
+    const cache = { kitsVencendo: [] };
+    context._pendenciasCache = cache;
+    context.setPendenciasLoadedAtState(1234);
+    let result;
+    context.carregarPendencias(true, { onComplete: value => { result = value; } });
+    requests[0].success(response);
+    assert.equal(result.ok, false);
+    assert.equal(context._pendenciasCache, cache);
+    assert.equal(context.pendenciasLoadedAtTime(), 1234);
+    assert.equal(context._pendenciasRefreshing, false);
+  }
+});
+
+test('resultado parcial mostra kits indisponiveis e continua mostrando outras pendencias', () => {
+  const { context, requests, grid, status } = fixture();
+  let result;
+  context.carregarPendencias(true, { silent: true, onComplete: value => { result = value; } });
+  requests[0].success({ pendencias: { unavailable: { kitsVencendo: 'Estoque indisponível' }, courierNaoAgendada: [{ participante: 'Pessoa A' }] } });
+  assert.equal(result.ok, true);
+  assert.equal(result.partial, true);
+  assert.match(grid.innerHTML, /Estoque indisponível/);
+  assert.match(grid.innerHTML, /Pessoa A/);
+  assert.match(status.innerHTML, /Estoque indisponível/);
+  assert.equal(context.pendenciasEstaoDesatualizadas(), true);
+});
+
+test('falha ao aplicar refresh silencioso restaura a tela do cache anterior', () => {
+  const { context, requests, grid } = fixture();
+  context._pendenciasCache = { kitsVencendo: [{ descricao: 'Kit anterior' }] };
+  const render = context.renderDashboardPendencias;
+  render(context._pendenciasCache);
+  const previousHtml = grid.innerHTML;
+  let calls = 0;
+  context.renderDashboardPendencias = data => {
+    if (++calls === 1) { grid.innerHTML = 'DOM incompleto'; throw new Error('falha apos DOM'); }
+    render(data);
+  };
+  context.carregarPendencias(true, { silent: true });
+  requests[0].success({ pendencias: { kitsVencendo: [] } });
+  assert.equal(grid.innerHTML, previousHtml);
+  assert.equal(context._pendenciasRefreshing, false);
+});
+
+test('recuperacao silenciosa limpa somente aviso parcial que ainda pertence a consulta', () => {
+  for (const confirmed of [false, true]) {
+    const { context, requests, status } = fixture();
+    context.carregarPendencias(true, { silent: true });
+    requests[0].success({ pendencias: { unavailable: { kitsVencendo: 'Estoque indisponível' } } });
+    if (confirmed) context.setPendenciasStatus('Entrega confirmada', 'ok');
+    context.carregarPendencias(true, { silent: true });
+    requests[1].success({ pendencias: {} });
+    if (confirmed) assert.match(status.innerHTML, /Entrega confirmada/);
+    else assert.equal(status.innerHTML, '');
+    assert.equal(context.pendenciasEstaoDesatualizadas(), false);
+  }
+});
+
+test('retorno de confirmacao A nao altera modal nem botao da entrega B', () => {
+  for (const outcome of ['success', 'conflict', 'failure']) {
+    const { context } = fixture();
+    const btn = { disabled: false, innerHTML: '' };
+    const get = context.document.getElementById;
+    context.document.getElementById = id => id === 'btnConfirmarEntregaPendencia' ? btn : get(id);
+    context.appErrorMessage = e => e.message;
+    let closes = 0;
+    context.fecharOverlay = () => { closes++; };
+    context._pendenciaEntregaPendente = { agendaId: 'A', slot: 'Transporte I' };
+    context.executarConfirmarEntregaPendencia_();
+    const request = context.mutation;
+    context.fecharConfirmacaoEntregaPendencia();
+    const b = { agendaId: 'B', slot: 'Transporte II' };
+    context._pendenciaEntregaPendente = b;
+    btn.disabled = true;
+    btn.innerHTML = 'Confirmando B';
+    if (outcome === 'failure') request.onFailure(new Error('rede'));
+    else request.onSuccess(outcome === 'conflict' ? { conflito: true } : { ok: true });
+    assert.equal(context._pendenciaEntregaPendente, b);
+    assert.equal(closes, 1);
+    assert.equal(btn.disabled, true);
+    assert.equal(btn.innerHTML, 'Confirmando B');
+  }
+});
+
+test('falha da confirmacao atual restaura rotulo e habilita nova tentativa', () => {
+  const { context } = fixture();
+  const btn = { disabled: false, innerHTML: '' };
+  const get = context.document.getElementById;
+  context.document.getElementById = id => id === 'btnConfirmarEntregaPendencia' ? btn : get(id);
+  context.appErrorMessage = e => e.message;
+  const pending = { agendaId: 'A', slot: 'Transporte I' };
+  context._pendenciaEntregaPendente = pending;
+  context.executarConfirmarEntregaPendencia_();
+  context.mutation.onFailure(new Error('rede'));
+  assert.equal(btn.disabled, false);
+  assert.match(btn.innerHTML, /Confirmar entrega/);
+  assert.equal(context._pendenciaEntregaPendente, pending);
+});

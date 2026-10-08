@@ -32,6 +32,14 @@ test('toda funcao publica potencialmente mutavel possui autorizacao explicita', 
     topLevelFunctions(readProjectFile(fileName))
       .filter((fn) => !fn.name.endsWith('_') && MUTATION_PREFIX.test(fn.name))
       .forEach((fn) => {
+        // Download e leitura: sua RPC deve autorizar antes do Drive, sem
+        // exigir escrita. Nao estender essa excecao a outras operacoes.
+        if (fileName === 'TransporteCodexConfig.gs' && fn.name === 'baixarPdfTransporte') {
+          const readGuard = /\bcodexAssertCanRead_\s*\(/.exec(fn.source);
+          assert.ok(readGuard && readGuard.index < 200, 'download autoriza leitura antes de consultar o Drive');
+          assert.doesNotMatch(fn.source, /\b(setValue|setValues|createFile|makeCopy|setTrashed|createDraft)\s*\(/, 'download nao deve mutar servicos');
+          return;
+        }
         const guard = AUTHORIZATION_GUARD.exec(fn.source);
         if (guard) {
           assert.ok(guard.index < 400, `${fileName}: ${fn.name} autoriza somente depois de iniciar a operacao`);

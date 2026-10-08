@@ -140,6 +140,61 @@ test('alertas operacionais reutilizam referencias do cache do bootstrap quando d
   assert.equal(directReads, 0);
 });
 
+test('aviso geral de feriado independe de Lab Central e de restricao de transporte', () => {
+  for (const labCentral of ['', 'Nao', 'Sim']) {
+    for (const afetaOperacao of ['Sim', 'Não']) {
+      const item = { ...holiday('2026-10-12', 'Nossa Senhora Aparecida'), afetaOperacao };
+      let holidayReads = 0;
+      let transportReads = 0;
+      const context = runFiles(['CourierServerRules.gs', 'AgendaServerRules.gs', 'AgendaCourierRisk.gs'], {
+        feriadoDateIso_: value => value,
+        getAgendaFeriadosOperacionais_: () => { holidayReads++; return [item]; },
+        getAgendaCourierConfigs_: () => { transportReads++; return {}; }
+      });
+      context.getAgendaProjetoCourierMap_ = () => { transportReads++; return {}; };
+      const alerts = plain(context.agendaOperationalRiskAlerts_({ data: '2026-10-12', labCentral }));
+      assert.deepEqual(alerts.map(alert => alert.code), labCentral === 'Sim' && afetaOperacao === 'Sim'
+        ? ['HOLIDAY_DATE', 'HOLIDAY_TRANSPORT_RISK'] : ['HOLIDAY_DATE']);
+      assert.match(alerts[0].message, /Nossa Senhora Aparecida.*agendamento continua permitido/);
+      assert.doesNotMatch(alerts[0].message, /transporte|courier/);
+      assert.equal(holidayReads, 1);
+      assert.equal(transportReads, labCentral === 'Sim' ? 2 : 0);
+    }
+  }
+});
+
+test('aviso geral respeita recorrencia e inativos em todas as datas de um periodo', () => {
+  const context = runFiles(['CourierServerRules.gs', 'AgendaServerRules.gs', 'AgendaCourierRisk.gs'], {
+    feriadoDateIso_: value => value,
+    getAgendaFeriadosOperacionais_: () => [
+      holiday('2025-10-12', 'Anual', 'Feriado', 'Anual'),
+      { ...holiday('2026-10-13', 'Inativo'), ativo: 'Não' },
+      holiday('2025-10-14', 'Outro ano')
+    ]
+  });
+  const alerts = plain(context.agendaOperationalRiskAlerts_({ labCentral: 'Nao' }, ['2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14']));
+  assert.deepEqual(alerts.map(alert => [alert.code, alert.dateIso]), [['HOLIDAY_DATE', '2026-10-12']]);
+});
+
+test('sem Lab Central aviso geral reutiliza cache agregado e parcial somente de feriados', () => {
+  for (const mode of ['aggregate', 'partial', 'bypass']) {
+    let reads = 0;
+    const item = holiday('2026-10-12');
+    const context = runFiles(['CourierServerRules.gs', 'AgendaServerRules.gs', 'AgendaCourierRisk.gs'], {
+      CODEX_CACHE_BYPASS_READS_: mode === 'bypass',
+      feriadoDateIso_: value => value,
+      agendaReferenceCacheKey_: () => 'refs',
+      codexCacheGet_: () => mode === 'aggregate' ? { feriados: [item] } : null,
+      agendaReferencePartsForRead_: () => ({ keys: { feriados: 'f' }, cached: mode === 'bypass' ? {} : { f: JSON.stringify({ version: 1, value: [item] }) }, pending: {} }),
+      getAgendaFeriadosOperacionais_: () => { reads++; return [item]; },
+      getAgendaProjetoCourierMap_: () => { throw new Error('Nao deve ler projetos'); },
+      getAgendaCourierConfigs_: () => { throw new Error('Nao deve ler couriers'); }
+    });
+    assert.equal(context.agendaOperationalRiskAlerts_({ data: '2026-10-12', labCentral: 'Nao' }).length, 1);
+    assert.equal(reads, mode === 'bypass' ? 1 : 0);
+  }
+});
+
 test('feriado de sexta nao cria risco pos-feriado na segunda', () => {
   const rules = runHtmlScript('SharedCourierRules.html').CodexCourierRules;
   const holidays = [holiday('2026-05-01', 'Dia do Trabalho')];

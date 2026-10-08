@@ -19,6 +19,7 @@ function fixture() {
     } }, false);
   }
   server.codexAssertCanRead_ = () => { read(5); };
+  server.codexShouldMeasureBootstrapBytes_ = () => true;
   server.getProjetosDados_ = () => { read(10, 2, 3); return [{ nomeAbreviado: 'DADO_PRIVADO' }]; };
   server.getParticipantesDashboardResumo_ = () => { read(20, 3, 4); return [{ nome: 'DADO_PRIVADO' }]; };
   server.getEstoque = () => { read(30, 4, 5); return []; };
@@ -85,6 +86,17 @@ test('bootstrap mede leituras por etapa e bytes UTF-8 mantendo o trace e contrat
   assert.equal(entries.at(-1).instrumentedReadCalls, 3);
   assert.equal(entries.at(-1).instrumentedCellsRead, 12);
   assert.equal(entries.at(-1).responseBytes, Buffer.byteLength(JSON.stringify(result)));
+  assert.equal(entries.at(-1).responseBytesMeasured, true);
+  f.server.codexShouldMeasureBootstrapBytes_ = () => false;
+  f.server.getDadosFormularioAgenda = () => ({ toJSON() { throw new Error('não serializar fora da amostra'); } });
+  const unsampled = f.server.getAppBootstrapData({ traceId: 'bootstrap-unsampled' });
+  assert.ok(unsampled.agendaFormData);
+  const unmeasured = f.entries().filter(entry => entry.traceId === 'bootstrap-unsampled');
+  for (const stage of ['serialize', 'total']) {
+    const entry = unmeasured.find(value => value.stage === stage);
+    assert.equal(entry.responseBytesMeasured, false);
+    assert.equal(Object.hasOwn(entry, 'responseBytes'), false);
+  }
 });
 
 test('leitura formatada permanece intacta e falha de telemetria não altera a operação', () => {
@@ -119,6 +131,21 @@ test('Pendências mede acesso, estoque, composição e serialização sem altera
   assert.equal(entries.at(-1).instrumentedCellsRead, 20);
   assert.equal(entries.at(-1).responseBytes, Buffer.byteLength(JSON.stringify(result)));
   assert.equal(JSON.stringify(entries).includes('DADO_PRIVADO'), false);
+});
+
+test('falha de Estoque retorna pendencias da Agenda com kits indisponiveis', () => {
+  const f = fixture();
+  f.server.codexGetCurrentUserAccess = () => ({ ok: true });
+  f.server.getEstoqueResumoParaPendencias_ = () => { throw new Error('falha de leitura'); };
+  f.server.getDashboardPendencias_ = stock => {
+    assert.equal(stock.length, 0);
+    return { counts: { courierNaoAgendada: 1, kitsVencendo: 0 }, courierNaoAgendada: [{ agendaId: 'A' }], kitsVencendo: [] };
+  };
+  const result = f.server.getPendenciasOperacionais();
+  assert.match(result.pendencias.unavailable.kitsVencendo, /Não foi possível consultar o Estoque/);
+  assert.equal(result.pendencias.courierNaoAgendada[0].agendaId, 'A');
+  f.server.getEstoqueResumoParaPendencias_ = () => [];
+  assert.equal(f.server.getPendenciasOperacionais().pendencias.unavailable, undefined, 'estoque vazio consultado com sucesso nao e indisponivel');
 });
 
 test('Pendências preserva acesso negado e falha de composição com total malsucedido', () => {

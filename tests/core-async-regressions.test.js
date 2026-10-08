@@ -237,10 +237,10 @@ function auditFixture() {
     esc: String, appErrorMessage: err => err.message,
     google: { script: { run: { withSuccessHandler(ok) {
       return { withFailureHandler(fail) {
-        return { getAuditPage(type, limit, offset, filters) { requests.push({ ok, fail, type, limit, offset, filters }); } };
+        return { getAuditPage(type, limit, offset, filters, query) { requests.push({ ok, fail, type, limit, offset, filters, query }); } };
       } };
     } } } }
-  }, ['auditCacheKey', 'setAuditRows', 'auditRowsForView', 'carregarAuditPage', 'prefetchAuditNextPage']);
+  }, ['auditCacheKey', 'setAuditRows', 'auditRowsForView', 'auditResetQuery_', 'auditPageMeta_', 'carregarAuditPage', 'prefetchAuditNextPage']);
   return { c, requests, body, setUser: value => { user = value; } };
 }
 
@@ -306,4 +306,59 @@ test('auditoria aceita prefetch e falhas da consulta atual', () => {
   c.carregarAuditPage('log', 1, false);
   assert.equal(c.AUDIT_LOG_ROWS[0].id, 'prefetch');
   assert.equal(requests.length, 3);
+});
+
+test('auditoria usa o mesmo recorte e reaproveita prefetch quando a pessoa avança', () => {
+  const { c, requests } = auditFixture();
+  c.carregarAuditPage('log', 0, false);
+  requests[0].ok({ rows: Array.from({ length: 100 }, (_, i) => ({ id: i })), total: 250,
+    limit: 100, hasMore: true, snapshotId: 'recorte-1', expiresAt: Date.now() + 300000 });
+  assert.equal(requests[1].query.snapshotId, 'recorte-1');
+  assert.equal(requests[1].query.paginationVersion, 2);
+  c.carregarAuditPage('log', 100, false);
+  assert.equal(requests.length, 2, 'avanço aguarda o prefetch sem duplicar RPC');
+  requests[1].ok({ rows: [{ id: 'segunda' }], offset: 100, total: 250,
+    snapshotId: 'recorte-1', expiresAt: Date.now() + 300000, hasMore: false });
+  assert.equal(c.AUDIT_PAGE_OFFSET.log, 100);
+  assert.equal(c.AUDIT_LOG_ROWS[0].id, 'segunda');
+});
+
+test('expiração durante prefetch aguardado renova recorte e descarta cache antigo', () => {
+  const { c, requests } = auditFixture();
+  c.carregarAuditPage('log', 0, false);
+  requests[0].ok({ rows: [{ id: 'antiga' }], hasMore: true, snapshotId: 'old', expiresAt: Date.now() + 300000 });
+  c.carregarAuditPage('log', 1, false);
+  requests[1].ok({ ok: false, refreshRequired: true, reason: 'expired' });
+  assert.equal(requests.length, 3);
+  assert.equal(requests[2].offset, 0);
+  assert.equal(requests[2].query.snapshotId, '');
+  requests[2].ok({ rows: [{ id: 'nova' }], snapshotId: 'new' });
+  assert.equal(c.AUDIT_LOG_ROWS[0].id, 'nova');
+  assert.equal(c.AUDIT_PAGE_CACHE.log['A:100:1'], undefined);
+});
+
+test('refresh não se associa a prefetch antigo nem sua resposta apaga operação nova', () => {
+  const { c, requests } = auditFixture();
+  c.AUDIT_PAGE_META.log = { hasMore: true, offset: 0 };
+  c.AUDIT_LOG_ROWS = [{ id: 'old' }];
+  c.prefetchAuditNextPage('log');
+  c.auditResetQuery_('log');
+  c.carregarAuditPage('log', 1, false);
+  assert.equal(requests.length, 2);
+  requests[0].ok({ rows: [{ id: 'obsolete' }] });
+  requests[1].ok({ rows: [{ id: 'current' }], hasMore: false });
+  assert.equal(c.AUDIT_LOG_ROWS[0].id, 'current');
+});
+
+test('cache vencido ou limite alterado inicia consulta nova na primeira página', () => {
+  const { c, requests } = auditFixture();
+  c.AUDIT_PAGE_META.log = { snapshotId: 'expired', expiresAt: Date.now() - 1, limit: 100 };
+  c.carregarAuditPage('log', 100, false);
+  assert.equal(requests[0].offset, 0);
+  assert.equal(requests[0].query.snapshotId, '');
+  requests[0].ok({ rows: [], snapshotId: 'new', limit: 100 });
+  c.AUDIT_PAGE_SIZE = 200;
+  c.carregarAuditPage('log', 200, false);
+  assert.equal(requests[1].offset, 0);
+  assert.equal(requests[1].query.snapshotId, '');
 });
