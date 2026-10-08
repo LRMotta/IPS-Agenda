@@ -418,7 +418,7 @@ test('Transporte manual: busca por nome, estudo e ID preserva participacoes homo
     await scenario(async page => {
       const search = page.locator('#pacienteSearch');
       assert.equal(await search.inputValue(), 'Márcia Silva');
-      assert.ok((await page.locator('#pacienteSearchDetail').innerText()).includes('Estudo A · ID 123'));
+      assert.equal(await page.locator('#pacienteSearchDetail').count(), 0);
       await search.fill('marcia');
       await page.waitForFunction(() => window.transportParticipantSearchTimer === null);
       assert.equal(await page.locator('#pacienteSearchList [role="option"]').count(), 2);
@@ -467,7 +467,7 @@ test('Transporte da Agenda: participante pronto, somente leitura e sem carregar 
     const search = page.locator('#pacienteSearch');
     assert.equal(await search.inputValue(), 'Pessoa A');
     assert.equal(await search.evaluate(el => el.readOnly), true);
-    assert.ok((await page.locator('#pacienteSearchDetail').innerText()).includes('Definido na Agenda'));
+    assert.equal(await page.locator('#pacienteSearchDetail').count(), 0);
     assert.equal(await page.locator('#agendaContext').isVisible(), true);
     await search.click();
     await search.press('KeyX');
