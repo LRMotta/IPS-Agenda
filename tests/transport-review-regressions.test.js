@@ -9,7 +9,8 @@ const norm = value => String(value || '').toLowerCase().normalize('NFD').replace
 const participante = { id: 'CAD-A', nome: 'Pessoa A', idParticipante: '123', projeto: 'Projeto A' };
 
 function server(extra = {}) {
-  return runFile('TransporteCodexConfig.gs', { Logger: { log() {} }, normText_: norm, ...extra });
+  return runFile('TransporteCodexConfig.gs', { Logger: { log() {} }, normText_: norm,
+    codexGetAllowedUsers_: () => ({ 'operador@example.invalid': { active: true } }), ...extra });
 }
 
 function formSheet(name) {
@@ -255,7 +256,7 @@ for (const change of ['geracao', 'courier', 'evidencia']) {
         return fn();
       },
       GmailApp: { search: () => [{ getMessages: () => [{
-        getSubject: () => '', getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-1-T1',
+        getFrom: () => 'operador@example.invalid', getSubject: () => '', getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-1-T1',
         getDate: () => messageDate, getId: () => 'MENSAGEM-ANTIGA', getAttachments: () => []
       }] }] }
     });
@@ -292,7 +293,7 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
     getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
     codexWithDocumentLock_: (_label, fn) => fn(),
     GmailApp: { search: () => [{ getMessages: () => [{
-      getSubject: () => '', getPlainBody: () => 'IPS-TRP-EVT-1-T1 IPS-TRP-EVT-1-T2 IPS-TRP-EVT-1-T3',
+      getFrom: () => 'operador@example.invalid', getSubject: () => '', getPlainBody: () => 'IPS-TRP-EVT-1-T1 IPS-TRP-EVT-1-T2 IPS-TRP-EVT-1-T3',
       getDate: () => new Date(Date.now() + 1000), getId: () => 'MSG', getAttachments: () => []
     }] }] }
   });
@@ -304,6 +305,6 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
   const result = s.transporteMonitorarEnviosPorEmail_();
   assert.equal(result.enviados, 3);
   assert.equal(logReads, 2);
-  assert.equal(agendaReads, 2);
+  assert.equal(agendaReads, 1, 'IDs e valores dos tres slots vêm do mesmo snapshot sob lock');
   assert.deepEqual(agenda.rows[1], ['Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'EVT-1']);
 });

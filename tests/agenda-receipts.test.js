@@ -74,7 +74,7 @@ test('recibo fica no menu de ações e sai dos detalhes, preservando elegibilida
     for (const past of [false, true]) {
       const row = { id: 'AG-123', rowIndex: 42, tipo, participante: 'Pessoa', status: 'Agendado' };
       const menu = context.agendaActionMenuHtml_(row, 'test', past);
-      assert.match(menu, /role="menuitem"[^>]*agendaCloseActionMenus\(\);abrirAgendaRecibo\('AG-123',42\)/);
+      assert.match(menu, /role="menuitem"[^>]*data-agenda-id="AG-123"[^>]*data-row-index="42"[^>]*agendaCloseActionMenus\(\);abrirAgendaRecibo\(this\.dataset\.agendaId,Number\(this\.dataset\.rowIndex\)\)/);
       assert.match(menu, /receipt_long.*Gerar recibo/);
       assert.ok(menu.indexOf('Gerar recibo') > menu.indexOf('Gerar Display'));
       assert.doesNotMatch(context.agendaDetailHtml(row), /Gerar recibo|abrirAgendaRecibo/);
@@ -429,6 +429,8 @@ function receiptFormContext() {
     formatarTelefoneBrasileiro: value => String(value), agendaIsoFromBr: () => '2026-09-30',
     agendaAbrirJanelaImpressao: () => { throw new Error('Não deveria imprimir sem escolha'); }
   });
+  const core = readProjectFile('IndexCoreScripts.html');
+  vm.runInContext(core.slice(core.indexOf('function cpfValido('), core.indexOf('function participanteCpfValido_(')), context);
   vm.runInContext(source.slice(source.indexOf('var _agendaReciboData ='), source.indexOf('function agendaReciboDataBr_')), context);
   context.agendaHojeIso_ = () => '2026-09-30';
   return { context, elements };

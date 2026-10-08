@@ -12,6 +12,56 @@ var PASTA_COMUNICADOS_ESPECIAIS_ID = typeof PASTA_COMUNICADOS_ESPECIAIS_ID !== '
   ? PASTA_COMUNICADOS_ESPECIAIS_ID
   : '1em1j316UiWg5HQTYtPRHpXzeynqL-i11';
 var TRANSPORTE_ADJACENT_LABEL_CACHE_ = {};
+// Handle apenas da execucao atual; nao armazena dados nem autorizacao.
+var TRANSPORTE_SPREADSHEET_HANDLE_ = null;
+var TRANSPORTE_SPREADSHEET_HANDLE_ID_ = '';
+var TRANSPORTE_CONFIG_EXECUTION_ = Object.create(null);
+var TRANSPORTE_GENERATION_WARNINGS_ = null;
+
+function transporteRegistrarAviso_(code) {
+  if (!TRANSPORTE_GENERATION_WARNINGS_) return;
+  if (TRANSPORTE_GENERATION_WARNINGS_.some(function(item) { return item.code === code; })) return;
+  var descriptions = {
+    verificarEAtualizarG33Declaracao_: 'O peso do gelo seco não foi atualizado.',
+    atualizarMarkenVolumes_: 'Os volumes e pesos MARKEN não foram atualizados.',
+    atualizarInvoiceMarkenAmostras_: 'Os materiais da invoice MARKEN não foram atualizados.',
+    atualizarFormularioPinex_: 'O formulário PINEX não foi atualizado.',
+    atualizarCommercialInvoicePinexB34_: 'O resumo de materiais PINEX não foi atualizado.',
+    LIMPEZA_COPIA_TEMPORARIA: 'A cópia temporária não pôde ser movida para a lixeira.',
+    CONFIG_TRANSPORTE: 'A configuração de Transporte não pôde ser consultada.',
+    CONFIG_NUMERO_TRANSPORTE: 'Um peso configurado é inválido; foi mantido o valor padrão.',
+    CONFIG_CNPJ_TRANSPORTE: 'O CNPJ configurado é inválido; foi mantido o valor padrão.',
+    CONFIG_PASTA_CE: 'A pasta de Comunicado Especial configurada é inválida; foi mantida a pasta padrão.'
+  };
+  TRANSPORTE_GENERATION_WARNINGS_.push({ code: code, message: (descriptions[code] || 'Uma etapa do preenchimento automático não foi concluída.') + ' Confira a documentação antes do envio.' });
+}
+
+function transporteConfigValue_(key, fallback) {
+  if (!Object.prototype.hasOwnProperty.call(TRANSPORTE_CONFIG_EXECUTION_, key)) {
+    var values = [];
+    try {
+      if (typeof getConfigAppValuesByKeys_ === 'function') values = getConfigAppValuesByKeys_(['Transporte'], [key], []);
+    } catch (configError) { transporteRegistrarAviso_('CONFIG_TRANSPORTE'); }
+    TRANSPORTE_CONFIG_EXECUTION_[key] = values && values.length ? String(values[0] || '').trim() : '';
+  }
+  return TRANSPORTE_CONFIG_EXECUTION_[key] || fallback;
+}
+
+function transporteConfigNumber_(key, fallback) {
+  var raw = transporteConfigValue_(key, String(fallback));
+  var value = /^\d+(?:[.,]\d+)?$/.test(raw) ? Number(raw.replace(',', '.')) : NaN;
+  if (isFinite(value) && value > 0) return value;
+  transporteRegistrarAviso_('CONFIG_NUMERO_TRANSPORTE');
+  return fallback;
+}
+
+function transporteCnpjTexto_() {
+  var fallback = '88.648.761/0001-03';
+  var value = transporteConfigValue_('CNPJ do centro', fallback);
+  if (/^\d{14}$/.test(value.replace(/[.\/-]/g, ''))) return value;
+  transporteRegistrarAviso_('CONFIG_CNPJ_TRANSPORTE');
+  return fallback;
+}
 
 function transporteMeasurePerformance_(operation, stage, metadata, callback) {
   if (typeof codexMeasurePerformance_ === 'function') {
@@ -44,6 +94,10 @@ function configurarPlanilhaTransporteCodex(urlOuId) {
   var id = extrairIdPlanilhaTransporteCodex_(urlOuId);
   if (!id) throw new Error('Informe a URL ou o ID da planilha de transporte.');
   PropertiesService.getScriptProperties().setProperty('TRANSPORTE_SPREADSHEET_ID_CODEX', id);
+  TRANSPORTE_SPREADSHEET_HANDLE_ = null;
+  TRANSPORTE_SPREADSHEET_HANDLE_ID_ = '';
+  TRANSPORTE_SHEET_LOOKUP_CACHE_ = null;
+  transporteClearAdjacentLabelCache_();
   return { ok: true, id: id };
 }
 
@@ -68,7 +122,11 @@ function getTransporteSpreadsheetCodex_() {
   if (!id) {
     throw new Error('Configure TRANSPORTE_SPREADSHEET_ID_CODEX com o ID ou URL da planilha de transporte.');
   }
-  return SpreadsheetApp.openById(id);
+  if (TRANSPORTE_SPREADSHEET_HANDLE_ && TRANSPORTE_SPREADSHEET_HANDLE_ID_ === id) return TRANSPORTE_SPREADSHEET_HANDLE_;
+  var spreadsheet = SpreadsheetApp.openById(id);
+  TRANSPORTE_SPREADSHEET_HANDLE_ = spreadsheet;
+  TRANSPORTE_SPREADSHEET_HANDLE_ID_ = id;
+  return spreadsheet;
 }
 
 function extrairIdPlanilhaTransporteCodex_(urlOuId) {
@@ -94,7 +152,7 @@ function extrairIdPlanilhaTransporteCodex_(urlOuId) {
  * Properties ou Config_App com a URL /exec publicada do WebApp TRANSP.
  */
 
-var TRANSPORTE_WEBAPP_URL_CODEX = '';
+var TRANSPORTE_WEBAPP_URL_CODEX = typeof TRANSPORTE_WEBAPP_URL_CODEX !== 'undefined' ? TRANSPORTE_WEBAPP_URL_CODEX : '';
 
 function configurarUrlWebAppTransporteCodex(url) {
   if (typeof codexAssertAdmin_ === 'function') codexAssertAdmin_();
@@ -179,6 +237,7 @@ function testarUrlWebAppTransporteCodex() {
 }
 
 function montarContextoTransporteParaTransp_(idAgenda, slot) {
+  slot = normalizarSlotTransporteCodex_(slot, true);
   var evento = buscarAgendaEventoPorIdTransp_(idAgenda);
   return {
     evento: evento,
@@ -187,6 +246,7 @@ function montarContextoTransporteParaTransp_(idAgenda, slot) {
 }
 
 function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) {
+  slot = normalizarSlotTransporteCodex_(slot, true);
   var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda);
   var participanteInfo;
   try {
@@ -199,7 +259,7 @@ function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) 
   } catch (e) {
     participanteInfo = {};
   }
-  var slotNormalizado = normalizarSlotTransporteCodex_(slot);
+  var slotNormalizado = normalizarSlotTransporteCodex_(slot, true);
   var courier = transporteAgendaCourierFromEvento_(evento, slotNormalizado);
   var courierNome = transporteNormalizeCourierFromCodex_(courier.nome || courier.courier || '');
 
@@ -226,13 +286,14 @@ function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) 
 
 function transporteAgendaCourierFromEvento_(evento, slot) {
   evento = evento || {};
+  slot = normalizarSlotTransporteCodex_(slot, true);
   var map = {
     '1': 'courier1',
     '2': 'courier2',
     '3': 'courier3',
     backup: 'backup'
   };
-  var courier = evento[map[slot] || 'courier1'] || {};
+  var courier = evento[map[slot]] || {};
   if (slot === 'backup' && courier && !courier.temperatura && !courier.temp) {
     var fallbackTemp = (evento.courier1 && (evento.courier1.temperatura || evento.courier1.temp)) ||
       (evento.courier2 && (evento.courier2.temperatura || evento.courier2.temp)) ||
@@ -298,14 +359,15 @@ function transporteSetAgendaLink_(range, payload) {
   var idAgenda = String(payload.idAgenda || '').trim();
   var refInterna = String(payload.refInterna || '').trim();
   if (!idAgenda) idAgenda = transporteAgendaLinkFromRef_(refInterna, '').idAgenda;
+  var slot = String(payload.agendaSlot || payload.slot || '').trim();
+  var slotNormalizado = idAgenda && slot ? normalizarSlotTransporteCodex_(slot, true) : '';
   transporteSetValueIfAllowed_(range, '');
   var cadastroId = String(payload.participanteCadastroId || '').trim();
   var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || '').trim();
   if (idAgenda || cadastroId || identificacao) {
-    var slot = String(payload.agendaSlot || payload.slot || '').trim();
     range.setNote(JSON.stringify({
       idAgenda: idAgenda,
-      agendaSlot: idAgenda && slot ? normalizarSlotTransporteCodex_(slot) : '',
+      agendaSlot: slotNormalizado,
       participanteCadastroId: cadastroId,
       identificacaoParticipante: identificacao
     }));
@@ -338,12 +400,15 @@ function buscarAgendaEventoPorIdTransp_(idAgenda) {
   throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
 }
 
-function normalizarSlotTransporteCodex_(slot) {
+function normalizarSlotTransporteCodex_(slot, strict) {
   var s = normText_(slot || '1');
+  if (s === '1' || s === '2' || s === '3') return s;
   if (s === 'i' || s === 'transporte i') return '1';
   if (s === 'ii' || s === 'transporte ii') return '2';
   if (s === 'iii' || s === 'transporte iii') return '3';
   if (s === 'b' || s === 'backup') return 'backup';
+  if (strict) throw new Error('Slot de transporte inválido. Reabra a documentação pela Agenda.');
+  // Leitura de notas antigas conserva o valor para revisao, sem escolher I.
   return String(slot || '1');
 }
 
@@ -352,9 +417,10 @@ var TRANSPORTE_OPERACOES_HEADERS_ = [
   'Agenda_ID', 'Slot', 'Referencia', 'Courier', 'Gerado_Em', 'Gerado_Por',
   'PDF_ID', 'PDF_Nome', 'Rascunho_ID', 'Rascunho_Status', 'Rascunho_Erro',
   'Email_Identificado_Em', 'Email_Enviado_Em', 'Gmail_Message_ID', 'Anexos',
-  'Ultima_Verificacao'
+  'Ultima_Verificacao', 'PDF_Hash'
 ];
 var TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_ = 60 * 60 * 1000;
+var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 30;
 
 function transporteMonitorReferencia_(agendaId, slot) {
   agendaId = String(agendaId || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
@@ -363,10 +429,11 @@ function transporteMonitorReferencia_(agendaId, slot) {
   return 'IPS-TRP-' + agendaId + '-T' + slot;
 }
 
-function transporteMonitorRefHtml_(referencia) {
+function transporteMonitorRefHtml_(referencia, pdfHash) {
   referencia = String(referencia || '').trim();
   if (!referencia) return '';
-  return '<div style="margin-top:14px;font-size:9px;line-height:1.2;color:#9aa0a6">Ref. IPS: ' + referencia + '</div>';
+  var documento = String(pdfHash || '').replace(/[^A-Za-z0-9_-]/g, '');
+  return '<div style="margin-top:14px;font-size:9px;line-height:1.2;color:#9aa0a6">Ref. IPS: ' + referencia + (documento ? '<br>Doc. IPS: ' + documento : '') + '</div>';
 }
 
 function transporteOperacoesSheet_(createIfMissing) {
@@ -379,6 +446,20 @@ function transporteOperacoesSheet_(createIfMissing) {
     sh.getRange(1, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues([TRANSPORTE_OPERACOES_HEADERS_]);
     if (sh.setFrozenRows) sh.setFrozenRows(1);
     if (sh.hideSheet) sh.hideSheet();
+  } else if (sh && createIfMissing) {
+    // Migra somente na escrita, mantendo as primeiras 16 colunas intactas.
+    var headers = sh.getRange(1, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length - 1).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i] !== TRANSPORTE_OPERACOES_HEADERS_[i]) throw new Error('Cabeçalhos de Transporte_Operacoes incompatíveis. Revise a aba antes de registrar documentos.');
+    }
+    var hashColumn = TRANSPORTE_OPERACOES_HEADERS_.indexOf('PDF_Hash') + 1;
+    var existingHashHeader = sh.getLastColumn() >= hashColumn ? sh.getRange(1, hashColumn).getValue() : '';
+    if (existingHashHeader && existingHashHeader !== 'PDF_Hash') throw new Error('A coluna reservada ao hash do PDF já está ocupada. Revise a aba Transporte_Operacoes.');
+    if (!existingHashHeader) {
+      if (sh.getLastColumn() >= hashColumn) throw new Error('A coluna reservada ao hash contém dados sem cabeçalho. Revise Transporte_Operacoes antes de registrar documentos.');
+      if (sh.getMaxColumns && sh.getMaxColumns() < hashColumn) sh.insertColumnsAfter(sh.getMaxColumns(), hashColumn - sh.getMaxColumns());
+      sh.getRange(1, hashColumn).setValue('PDF_Hash');
+    }
   }
   return sh;
 }
@@ -393,7 +474,7 @@ function transporteOperacaoDate_(value) {
 function transporteOperacoesRows_() {
   var sh = transporteOperacoesSheet_(false);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, TRANSPORTE_OPERACOES_HEADERS_.length).getValues().map(function(row, index) {
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.min(sh.getLastColumn(), TRANSPORTE_OPERACOES_HEADERS_.length)).getValues().map(function(row, index) {
     return {
       row: index + 2,
       agendaId: String(row[0] || '').trim(),
@@ -411,7 +492,8 @@ function transporteOperacoesRows_() {
       emailEnviadoEm: row[12],
       gmailMessageId: String(row[13] || '').trim(),
       anexos: row[14],
-      ultimaVerificacao: row[15]
+      ultimaVerificacao: row[15],
+      pdfHash: String(row[16] || '').trim()
     };
   });
 }
@@ -432,11 +514,11 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     }
   }
   var now = new Date();
-  // Regenerar PDFs ou rascunhos nao invalida uma evidencia de envio ja
-  // registrada para o mesmo agendamento e slot. Sem isso, uma nova geracao
-  // apaga a mensagem/anexos validados e obriga o monitor a encontrar um
-  // e-mail posterior, mesmo quando a documentacao ja foi enviada.
-  var evidenciaEnvio = existente
+  var pdfHash = String(info.pdfHash || '').trim();
+  // Preserva envio somente quando o conteudo logico do documento e igual.
+  // Hash ausente no legado nao comprova equivalencia com o novo documento.
+  var mesmoDocumento = existente && pdfHash && existente.pdfHash === pdfHash;
+  var evidenciaEnvio = mesmoDocumento
     ? [
       existente.emailIdentificadoEm,
       existente.emailEnviadoEm,
@@ -461,7 +543,8 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     evidenciaEnvio[1],
     evidenciaEnvio[2],
     evidenciaEnvio[3],
-    evidenciaEnvio[4]
+    evidenciaEnvio[4],
+    pdfHash
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
   sh.getRange(rowNumber, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues(values);
@@ -492,6 +575,9 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
         : (identificado && anexos > 0
           ? 'E-mail com documentação identificado; atualização da Agenda aguardando nova tentativa.'
           : 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.'));
+    if (!identificado && agora.getTime() - transporteOperacaoDate_(item.geradoEm).getTime() > TRANSPORTE_MONITOR_BUSCA_DIAS_ * 24 * 60 * 60 * 1000) {
+      motivo += ' Documentação gerada há mais de 30 dias; mensagens antigas ficam fora da janela de busca automática. Verifique o envio manualmente.';
+    }
     return {
       agendaId: item.agendaId,
       slot: item.slot,
@@ -520,11 +606,66 @@ function transporteMonitorarEnviosPorEmail_(agendaId) {
 }
 
 function transporteMonitorContemReferencia_(texto, referencia) {
+  var re = transporteMonitorReferenciaRegex_(referencia);
+  return !!re && re.test(String(texto || ''));
+}
+
+function transporteMonitorReferenciaRegex_(referencia) {
   // Tolera espaços junto aos separadores, sem aceitar ID parcial ou outro slot.
   var ref = String(referencia || '').trim();
-  if (!/^IPS-TRP-[A-Z0-9_-]+-T[123]$/i.test(ref)) return false;
+  if (!/^IPS-TRP-[A-Z0-9_-]+-T[123]$/i.test(ref)) return null;
   var escaped = ref.split('-').join('\\s*-\\s*');
-  return !!escaped && new RegExp('(^|[^A-Z0-9_-])' + escaped + '(?![A-Z0-9_-])', 'i').test(String(texto || ''));
+  return new RegExp('(^|[^A-Z0-9_-])' + escaped + '(?![A-Z0-9_-])', 'i');
+}
+
+function transporteMonitorRemetentes_() {
+  var allowed = Object.create(null);
+  // Users e lido uma vez nesta execucao; nenhum cache concede acesso.
+  var users = typeof codexGetAllowedUsers_ === 'function' ? codexGetAllowedUsers_() : {};
+  Object.keys(users || {}).forEach(function(email) {
+    if (users[email] && users[email].active === true) allowed[transporteNormalizeEmail_(email)] = true;
+  });
+  var executor = transporteNormalizeEmail_(transporteEffectiveUserEmail_());
+  if (executor) allowed[executor] = true;
+  return allowed;
+}
+
+function transporteMonitorRemetenteElegivel_(message, allowed) {
+  var from = typeof message === 'string' ? message.trim() : (message.getFrom ? String(message.getFrom() || '').trim() : '');
+  var match = from.match(/^(?:[^<>]*<([^<>]+)>|([^<>\s]+))$/);
+  var email = match ? transporteNormalizeEmail_(match[1] || match[2]) : '';
+  return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email) && allowed[email] === true;
+}
+
+function transporteAgendaSnapshotMonitor_(agenda) {
+  var snapshot = { ids: Object.create(null), rows: Object.create(null) };
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return snapshot;
+  agenda.getRange(2, 1, lastRow - 1, agenda.getLastColumn()).getValues().forEach(function(values, index) {
+    var row = index + 2;
+    var id = String(values[AGENDA_CFG.col.id - 1]);
+    if (snapshot.ids[id] === undefined) snapshot.ids[id] = row;
+    snapshot.rows[row] = values;
+  });
+  return snapshot;
+}
+
+function transporteMonitorColunaA1_(column) {
+  var name = '';
+  while (column > 0) { column--; name = String.fromCharCode(65 + column % 26) + name; column = Math.floor(column / 26); }
+  return name;
+}
+
+function transporteMonitorGravarEvidencias_(sheet, updates) {
+  updates.sort(function(a, b) { return a.row - b.row; });
+  var column = TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Identificado_Em') + 1;
+  for (var i = 0; i < updates.length;) {
+    var first = updates[i].row;
+    var values = [updates[i].values];
+    i++;
+    while (i < updates.length && updates[i].row === first + values.length) { values.push(updates[i].values); i++; }
+    sheet.getRange(first, column, values.length, 5).setValues(values);
+  }
 }
 
 function transporteOperacaoVersion_(item) {
@@ -533,7 +674,7 @@ function transporteOperacaoVersion_(item) {
     transporteOperacaoDate_(item.geradoEm), item.geradoPor, item.pdfId, item.pdfNome,
     item.rascunhoId, item.rascunhoStatus, item.rascunhoErro,
     transporteOperacaoDate_(item.emailIdentificadoEm), transporteOperacaoDate_(item.emailEnviadoEm),
-    item.gmailMessageId, item.anexos, transporteOperacaoDate_(item.ultimaVerificacao)
+    item.gmailMessageId, item.anexos, transporteOperacaoDate_(item.ultimaVerificacao), item.pdfHash
   ]);
 }
 
@@ -551,11 +692,17 @@ function transporteAgendaLinhasPorId_(agenda) {
 
 function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   var agendaPrecheck = null;
-  var idsPrecheck = null;
+  var snapshotPrecheck = null;
+  var exigeAnexoCache = Object.create(null);
+  function exigeAnexo(courier) {
+    var key = transporteNorm_(courier);
+    if (exigeAnexoCache[key] === undefined) exigeAnexoCache[key] = transporteCourierExigeAnexoEnvio_(courier);
+    return exigeAnexoCache[key];
+  }
   function linhaAgendaPrecheck(id) {
     agendaPrecheck = agendaPrecheck || getAgendaSheet_();
-    idsPrecheck = idsPrecheck || transporteAgendaLinhasPorId_(agendaPrecheck);
-    return id ? (idsPrecheck[String(id)] || 0) : 0;
+    snapshotPrecheck = snapshotPrecheck || transporteAgendaSnapshotMonitor_(agendaPrecheck);
+    return id ? (snapshotPrecheck.ids[String(id)] || 0) : 0;
   }
   var pendentes = transporteOperacoesRows_().filter(function(item) {
     if (agendaId && item.agendaId !== agendaId) return false;
@@ -566,14 +713,14 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       // devolver novamente a mesma mensagem entre os 100 resultados recentes.
       var identificadoEm = transporteOperacaoDate_(item.emailIdentificadoEm);
       var anexosIdentificados = Math.max(0, Math.floor(Number(item.anexos || 0) || 0));
-      var documentacaoAceita = anexosIdentificados > 0 || !transporteCourierExigeAnexoEnvio_(item.courier);
+      var documentacaoAceita = anexosIdentificados > 0 || !exigeAnexo(item.courier);
       if (identificadoEm && documentacaoAceita) {
         var slotMapManual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
         var idxManual = slotMapManual[item.slot];
         var linhaManual = idxManual ? linhaAgendaPrecheck(item.agendaId) : 0;
         if (linhaManual) {
-          var statusEventoManual = agendaPrecheck.getRange(linhaManual, AGENDA_CFG.col.status).getValue();
-          var statusManual = agendaPrecheck.getRange(linhaManual, idxManual.status + 1).getValue();
+          var statusEventoManual = snapshotPrecheck.rows[linhaManual][AGENDA_CFG.col.status - 1];
+          var statusManual = snapshotPrecheck.rows[linhaManual][idxManual.status];
           if (!AgendaServerRules_.isCancelled(statusEventoManual) && AgendaServerRules_.courierStatusKey(statusManual) === 'agendado') {
             item.confirmacaoManual = {
               date: identificadoEm,
@@ -588,31 +735,38 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     // Recupera operações que versões anteriores concluíram antes de conseguir
     // promover a Agenda. Depois que o status chega a Agendado, elas deixam de
     // entrar naturalmente nas próximas execuções.
-    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || (Number(item.anexos || 0) < 1 && transporteCourierExigeAnexoEnvio_(item.courier))) return false;
+    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || (Number(item.anexos || 0) < 1 && exigeAnexo(item.courier))) return false;
     var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
     var idx = slotMap[item.slot];
     if (!idx) return false;
     var linha = linhaAgendaPrecheck(item.agendaId);
     if (!linha) return false;
-    var statusEvento = agendaPrecheck.getRange(linha, AGENDA_CFG.col.status).getValue();
+    var statusEvento = snapshotPrecheck.rows[linha][AGENDA_CFG.col.status - 1];
     if (AgendaServerRules_.isCancelled(statusEvento)) return false;
-    var statusAtual = agendaPrecheck.getRange(linha, idx.status + 1).getValue();
+    var statusAtual = snapshotPrecheck.rows[linha][idx.status];
     var precisaReprocessar = ['naoagendado', 'pendente'].indexOf(AgendaServerRules_.courierStatusKey(statusAtual)) !== -1;
     if (precisaReprocessar) item.reprocessar = true;
     return precisaReprocessar;
   });
   if (!pendentes.length) return { ok: true, verificados: 0, enviados: 0, semAnexo: 0 };
   var referencias = {};
+  var referenciaRegex = {};
+  var documentoRegex = {};
   var encontrados = {};
   pendentes.forEach(function(item) {
     var ref = item.referencia.toUpperCase();
     if (item.confirmacaoManual) encontrados[ref] = item.confirmacaoManual;
-    else referencias[ref] = item;
+    else {
+      referencias[ref] = item;
+      referenciaRegex[ref] = transporteMonitorReferenciaRegex_(ref);
+      if (item.pdfHash) documentoRegex[ref] = new RegExp('Doc\\.\\s*IPS:\\s*' + String(item.pdfHash).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_-])', 'i');
+    }
   });
   // Excluir rascunhos e essencial quando a propria conta monitora e agenda.
   // Uma confirmacao manual baseada em e-mail ja identificado nao precisa
   // consultar o Gmail outra vez.
   var threads = [];
+  var remetentes = Object.keys(referencias).length ? transporteMonitorRemetentes_() : {};
   if (Object.keys(referencias).length) {
     // Lotes limitados evitam uma consulta por operação e expõem truncamento.
     for (var offset = 0; offset < 500; offset += 100) {
@@ -626,24 +780,37 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   threads.forEach(function(thread) {
     thread.getMessages().forEach(function(message) {
       if (message.isDraft && message.isDraft()) return;
+      var from = message.getFrom ? String(message.getFrom() || '') : '';
+      if (!transporteMonitorRemetenteElegivel_(from, remetentes)) {
+        diagnostico.remetentesRecusados = (diagnostico.remetentesRecusados || 0) + 1;
+        return;
+      }
       var corpo = [message.getSubject(), message.getPlainBody()].join('\n');
       var temReferencia = false;
       var messageDate = message.getDate ? message.getDate() : new Date();
       Object.keys(referencias).forEach(function(ref) {
-        if (!transporteMonitorContemReferencia_(corpo, ref)) return;
+        if (!referenciaRegex[ref] || !referenciaRegex[ref].test(corpo)) return;
         if (!temReferencia) { diagnostico.mensagensComReferencia++; temReferencia = true; }
         var item = referencias[ref];
         var geradoEm = transporteOperacaoDate_(item.geradoEm);
-        if (geradoEm && messageDate.getTime() < geradoEm.getTime() - 5 * 60 * 1000) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Mensagem anterior à geração' }); return; }
+        // Documentos com hash nunca reutilizam a tolerancia legada de 5 min:
+        // um envio da revisao anterior nao comprova o documento novo.
+        var inicioElegivel = geradoEm ? (item.pdfHash ? Math.floor(geradoEm.getTime() / 1000) * 1000 : geradoEm.getTime() - 5 * 60 * 1000) : 0;
+        if (geradoEm && messageDate.getTime() < inicioElegivel) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Mensagem anterior à geração' }); return; }
+        if (item.pdfHash && !documentoRegex[ref].test(corpo)) {
+          diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Marcador do documento atual ausente ou divergente; revise o envio manualmente' });
+          return;
+        }
         var anexos = transporteMensagemAnexos_(message);
         var atual = encontrados[ref];
-        var exigeAnexo = transporteCourierExigeAnexoEnvio_(item.courier);
-        var aceita = anexos.length > 0 || !exigeAnexo;
-        var atualAceita = atual && (atual.anexos.length > 0 || !exigeAnexo);
+        var exigeDocumentacao = exigeAnexo(item.courier);
+        var aceita = anexos.length > 0 || !exigeDocumentacao;
+        var atualAceita = atual && (atual.anexos.length > 0 || !exigeDocumentacao);
         if (!atual || (aceita && !atualAceita) || (aceita === atualAceita && messageDate.getTime() > atual.date.getTime())) {
           encontrados[ref] = {
             date: messageDate,
             messageId: message.getId(),
+            remetente: from,
             anexos: anexos
           };
         }
@@ -657,63 +824,70 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     return { ok: true, verificados: pendentes.length, enviados: 0, semAnexo: 0 };
   }
   return codexWithDocumentLock_('transporteMonitorarEnviosPorEmail', function() {
+    // Configuracao pode mudar durante a busca Gmail; revalida por fase.
+    exigeAnexoCache = Object.create(null);
+    if (typeof CODEX_AGENDA_COURIER_ROWS_CACHE_ !== 'undefined') CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
+    var remetentesAtuais = Object.keys(referencias).length ? transporteMonitorRemetentes_() : {};
     var sh = transporteOperacoesSheet_(false);
     // Uma leitura do log sob lock revalida todos os candidatos do lote.
     var operacoesAtuais = {};
     transporteOperacoesRows_().forEach(function(item) { operacoesAtuais[item.row] = item; });
     var agenda = agendaPrecheck || getAgendaSheet_();
     // Recria sob lock: o índice anterior à busca Gmail pode ter ficado obsoleto.
-    var idsAgenda = null;
-    var linhasAgenda = {};
+    var snapshotAgenda = null;
+    var statusCells = [];
+    var audits = [];
+    var evidenciaUpdates = [];
     var enviados = [];
     var semAnexo = [];
     var naoPromovidos = [];
     pendentes.forEach(function(item) {
       var match = encontrados[item.referencia.toUpperCase()];
       if (!match || !sh) return;
+      if (match.remetente && !transporteMonitorRemetenteElegivel_(match.remetente, remetentesAtuais)) {
+        diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Remetente deixou de ser elegível durante a busca' });
+        return;
+      }
       var atual = operacoesAtuais[item.row];
       if (!atual || transporteOperacaoVersion_(atual) !== transporteOperacaoVersion_(item) || (transporteOperacaoDate_(atual.emailEnviadoEm) && !item.reprocessar)) {
         diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Operação alterada ou concluída durante a busca' });
         return;
       }
       var attachmentCount = match.anexos.length;
-      var exigeAnexoEnvio = transporteCourierExigeAnexoEnvio_(item.courier);
-      sh.getRange(item.row, 12, 1, 5).setValues([[
+      var exigeAnexoEnvio = exigeAnexo(item.courier);
+      var evidencia = [
         match.date,
         '',
         match.messageId,
         attachmentCount,
         new Date()
-      ]]);
+      ];
+      evidenciaUpdates.push({ row: item.row, values: evidencia });
       if (attachmentCount < 1 && exigeAnexoEnvio) {
         semAnexo.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId });
         return;
       }
       var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
       var idx = slotMap[item.slot];
-      if (idx && !idsAgenda) idsAgenda = transporteAgendaLinhasPorId_(agenda);
-      var linha = idx && item.agendaId ? (idsAgenda[String(item.agendaId)] || 0) : 0;
+      if (idx && !snapshotAgenda) snapshotAgenda = transporteAgendaSnapshotMonitor_(agenda);
+      var linha = idx && item.agendaId ? (snapshotAgenda.ids[String(item.agendaId)] || 0) : 0;
       if (!idx || !linha) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: !idx ? 'Slot inválido' : 'Agendamento não encontrado' });
         return;
       }
-      if (!linhasAgenda[linha]) {
-        linhasAgenda[linha] = agenda.getRange(linha, 1, 1, agenda.getLastColumn()).getValues()[0];
-      }
-      var valoresAgenda = linhasAgenda[linha];
+      var valoresAgenda = snapshotAgenda.rows[linha];
       var statusEvento = valoresAgenda[AGENDA_CFG.col.status - 1];
       if (AgendaServerRules_.isCancelled(statusEvento)) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Agendamento cancelado' });
         return;
       }
-      var statusRange = agenda.getRange(linha, idx.status + 1);
       var statusAnterior = String(valoresAgenda[idx.status] || '').trim();
       var statusKey = AgendaServerRules_.courierStatusKey(statusAnterior);
       // Uma confirmação manual na Agenda é autoritativa para encerrar a
       // pendência. O courier histórico só precisa coincidir quando o monitor
       // ainda vai promover automaticamente o status.
       if (statusKey === 'agendado') {
-        sh.getRange(item.row, 13).setValue(match.date);
+        evidencia[TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Enviado_Em') - TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Identificado_Em')] = match.date;
         enviados.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, anexos: attachmentCount });
         return;
       }
@@ -726,22 +900,31 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Status atual não permite promoção automática: ' + (statusAnterior || 'vazio') });
         return;
       }
-      statusRange.setValue('Agendado');
+      statusCells.push(transporteMonitorColunaA1_(idx.status + 1) + linha);
       valoresAgenda[idx.status] = 'Agendado';
-      if (typeof codexWriteAuditChanges_ === 'function') {
-        codexWriteAuditChanges_('Agenda', 'transporteMonitorarEnviosPorEmail', item.agendaId, [{
+      audits.push({ moduleName: 'Agenda', action: 'transporteMonitorarEnviosPorEmail', recordId: item.agendaId, changes: [{
           field: 'Transporte ' + item.slot + ' - Status',
           oldValue: statusAnterior,
           newValue: 'Agendado'
-        }], 'Envio identificado no Gmail | Ref. ' + item.referencia + ' | Gmail message ' + match.messageId);
-      }
+        }], note: 'Envio identificado no Gmail | Ref. ' + item.referencia + ' | Gmail message ' + match.messageId });
       // Somente conclui a operação depois que o vínculo com a Agenda foi
       // validado. Assim, uma divergência transitória continua elegível para
       // nova tentativa no próximo ciclo do monitor.
-      sh.getRange(item.row, 13).setValue(match.date);
+      evidencia[TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Enviado_Em') - TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Identificado_Em')] = match.date;
       enviados.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, anexos: attachmentCount });
     });
     diagnostico.recusas = diagnostico.recusas.concat(naoPromovidos, semAnexo.map(function(item) { return Object.assign({}, item, { motivo: 'Anexos ausentes; courier exige documentação' }); }));
+    if (statusCells.length) {
+      agenda.getRangeList(statusCells).setValue('Agendado');
+      if (typeof agendaInvalidateDateIndexCache_ === 'function') agendaInvalidateDateIndexCache_();
+    }
+    if (audits.length && typeof codexWriteAuditChangesBatch_ === 'function') codexWriteAuditChangesBatch_(audits);
+    else if (typeof codexWriteAuditChanges_ === 'function') audits.forEach(function(entry) {
+      codexWriteAuditChanges_(entry.moduleName, entry.action, entry.recordId, entry.changes, entry.note);
+    });
+    transporteMonitorGravarEvidencias_(sh, evidenciaUpdates);
+    // Agenda e evidencias devem estar visiveis antes da proxima consulta.
+    if (statusCells.length || evidenciaUpdates.length) SpreadsheetApp.flush();
     return {
       ok: true,
       verificados: pendentes.length,
@@ -824,12 +1007,13 @@ function codexMatBioTypeConfig_(value) {
 function codexMatBioKey_(value) {
   var cfg = codexMatBioTypeConfig_(value);
   if (cfg) return cfg.key;
-  var n = codexMatBioNorm_(value);
+  var n = ' ' + codexMatBioNorm_(value).replace(/[^a-z0-9]+/g, ' ') + ' ';
   var types = codexMatBioTypes_();
   for (var i = 0; i < types.length; i++) {
     var aliases = types[i].aliases || [];
     for (var j = 0; j < aliases.length; j++) {
-      if (n.indexOf(codexMatBioNorm_(aliases[j])) >= 0) return types[i].key;
+      var term = ' ' + codexMatBioNorm_(aliases[j]).replace(/[^a-z0-9]+/g, ' ') + ' ';
+      if (term.trim() && n.indexOf(term) >= 0) return types[i].key;
     }
   }
   return 'outro';
@@ -932,10 +1116,15 @@ function transporteMaterialKey_(value) {
   return codexMatBioKey_(value);
 }
 
-function codexMatBioUnitKey_(unit) {
+// Normaliza metadados, sem converter numeros. A UI fixa a unidade por tipo/courier;
+// strict protege dados estruturados externos/legados, nao um campo livre de unidade.
+function codexMatBioUnitKey_(unit, strict) {
   var n = codexMatBioNorm_(unit || 'mL');
   if (n === 'l' || n === 'lt' || n === 'litro' || n === 'litros' || n === 'liter' || n === 'liters') return 'L';
   if (n === 'g' || n === 'grama' || n === 'gramas' || n === 'gram' || n === 'grams') return 'g';
+  if (strict && ['ml', 'mililitro', 'mililitros', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].indexOf(n) < 0) {
+    throw new Error('Unidade de material biológico não suportada. Revise a unidade antes de preparar os documentos.');
+  }
   return 'mL';
 }
 
@@ -1188,7 +1377,7 @@ function codexMatBioValidateTransportPayload_(payload) {
     if (!item || item.ativo !== true) return;
     item.ensaio = String(item.ensaio || item.exame || item.nomeExame || '').trim();
     var cfg = codexMatBioTypeConfig_(item.material), expected = cfg && cfg.unit === 'g' ? 'g' : codexMatBioCourierUnit_(payload.courier);
-    var unit = codexMatBioUnitKey_(item.unit || expected);
+    var unit = codexMatBioUnitKey_(item.unit || expected, true);
     var parsed = codexMatBioParseFormula_(item.formula || '');
     if (!parsed.valid) throw new Error(parsed.error);
     if (parsed.segmentos.length && unit !== expected) throw new Error('Material ' + item.material + ': revise os volumes para ' + expected + ' antes de salvar.');
@@ -1266,6 +1455,9 @@ function transporteMatBioUnitKey_(unit) {
 
 function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
   var parsedItems = codexMatBioParseJson_(matBioJson, true);
+  parsedItems.forEach(function(item) {
+    if (item && item.unit) codexMatBioUnitKey_(item.unit, true);
+  });
   codexMatBioAssertItemsUnit_(parsedItems, codexMatBioCourierUnit_(courier));
   var byKey = Object.create(null);
   var otherKeys = [];
@@ -1430,7 +1622,7 @@ function transporteSetAdjacentByLabel_(sheet, labels, value, occurrence) {
       if (found !== occurrence) continue;
       if (c + 1 >= values[r].length) return false;
       var target = sheet.getRange(r + 1, c + 2);
-      transporteSetRichTextOrValue_(target, transporteSanitizeForCell_(value));
+      transporteSetRichTextOrValue_(target, value);
       return true;
     }
   }
@@ -1456,11 +1648,17 @@ function transporteClearAdjacentLabelCache_() {
 
 function transporteSetRichTextOrValue_(range, value) {
   if (!range || value === null || value === undefined) return false;
-  var safe = transporteSanitizeForCell_(value);
-  var rich = transporteHtmlToRichText_(safe);
+  // O parser RichText decodifica cada token uma unica vez.
+  var rich = transporteHtmlToRichText_(value);
   if (rich) range.setRichTextValue(rich);
-  else range.setValue(safe);
+  else range.setValue(transporteTextoLiteralParaCelula_(transporteSanitizeForCell_(value)));
   return true;
+}
+
+function transporteTextoLiteralParaCelula_(value) {
+  // Range.setValue/setValues interpreta '=' como formula. Numeros, datas,
+  // booleanos, placeholders e calculos internos conservam seus tipos.
+  return typeof value === 'string' && value.charAt(0) === '=' ? "'" + value : value;
 }
 
 function transporteSanitizeForCell_(value) {
@@ -1511,16 +1709,12 @@ function transporteHtmlDecode_(text) {
     'ordm':  '\u00ba', 'sup1':  '\u00b9',
     'sup2':  '\u00b2', 'sup3':  '\u00b3'
   };
-  return String(text == null ? '' : text)
-    .replace(/&([a-zA-Z]+);/g, function(m, entity) {
-      return map[entity] !== undefined ? map[entity] : m;
-    })
-    .replace(/&#(\d+);/g, function(m, code) {
-      return String.fromCharCode(Number(code));
-    })
-    .replace(/&#x([0-9a-fA-F]+);/g, function(m, hex) {
-      return String.fromCharCode(parseInt(hex, 16));
-    });
+  return String(text == null ? '' : text).replace(/&(?:([a-zA-Z]+)|#(\d+)|#x([0-9a-fA-F]+));/g, function(m, entity, code, hex) {
+    if (entity) return map[entity] !== undefined ? map[entity] : m;
+    var point = hex ? parseInt(hex, 16) : Number(code);
+    if (!isFinite(point) || point < 0 || point > 0x10FFFF || (point >= 0xD800 && point <= 0xDFFF)) return m;
+    return String.fromCodePoint(point);
+  });
 }
 
 function transporteHtmlToRichText_(html) {
@@ -1622,7 +1816,7 @@ function transporteSetTopLeftInBlock_(sheet, a1, value) {
   var range = sheet.getRange(a1);
   range.clearContent();
   value = String(transporteSanitizeForCell_(value) || '').trim();
-  if (value) range.getCell(1, 1).setValue(value);
+  if (value) range.getCell(1, 1).setValue(transporteTextoLiteralParaCelula_(value));
 }
 
 function transporteNormalizeTemperaturaFromCodex_(value) {
@@ -2699,6 +2893,9 @@ function salvarTransporteInterno_(payload, options) {
     }
     payload = transporteAtualizarRegistroPorAgenda_(payload, options.agendaEvento, participanteOptions);
     payload = transporteDerivarDadosParticipante_(payload, participanteOptions);
+    if (payload.idAgenda && String(payload.agendaSlot || payload.slot || '').trim()) {
+      normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
+    }
     if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
     codexMatBioValidateTransportPayload_(payload);
     materiaisNote = transporteMateriaisNote_(declaracao.getRange('F30').getNote(), payload, peticao);
@@ -2747,7 +2944,7 @@ function salvarTransporteInterno_(payload, options) {
   declaracao.getRange('N21:N28').setValues(totais);
   var outrosTexto = transporteOutrosMateriaisTexto_(materiais);
   if (outrosTexto) {
-    declaracao.getRange('F30').setValue(outrosTexto);
+    declaracao.getRange('F30').setValue(transporteTextoLiteralParaCelula_(outrosTexto));
   } else {
     declaracao.getRange('F30').clearContent();
   }
@@ -2797,7 +2994,7 @@ function transporteSetEnsaiosPeticao_(peticao, materiais) {
     if (ensaios.length < 6) ensaios.push([ensaio]);
   });
   while (ensaios.length < 6) ensaios.push(['']);
-  peticao.getRange('P30:P35').setValues(ensaios);
+  peticao.getRange('P30:P35').setValues(ensaios.map(function(row) { return [transporteTextoLiteralParaCelula_(row[0])]; }));
 }
 
 function transporteDefaultSolicitarCaixa_(courier) {
@@ -2850,7 +3047,7 @@ function aplicarSolicitacaoCaixaTransporte_(ss, payload) {
   if (courier === 'PINEX (Agendamento)') {
     var formulario = transporteGetSheet_(ss, 'formularioPinex', false);
     if (formulario) {
-      formulario.getRange('D32').setValue(String(payload.responsavelEntrega || '').trim());
+      formulario.getRange('D32').setValue(transporteTextoLiteralParaCelula_(String(payload.responsavelEntrega || '').trim()));
       var inversa = transporteInvertSimNao_(resposta);
       if (temperatura === 'AMBIENTE') {
         formulario.getRange('D35').setValue(inversa);
@@ -2949,7 +3146,7 @@ function transporteSetValuesBlock_(range, values) {
   // Mesma remocao de validacoes usada pelo formulario, sem alterar formatos.
   // Falhas de escrita em lote interrompem o fluxo; nao reportar sucesso parcial.
   range.clearDataValidations();
-  range.setValues(values);
+  range.setValues(values.map(function(row) { return row.map(transporteTextoLiteralParaCelula_); }));
 }
 
 function preencherDhlWebApp_(ss, payload) {
@@ -3161,7 +3358,8 @@ function atualizarInvoiceMarkenAmostras_(ss) {
     invoice.getRange('P27:P31').setValues(dataP);
     invoice.getRange('T27:T31').setValues(dataT);
   } catch (error) {
-    Logger.log('ERRO em atualizarInvoiceMarkenAmostras_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarInvoiceMarkenAmostras_');
+    Logger.log('Falha de preenchimento em atualizarInvoiceMarkenAmostras_.');
   }
 }
 
@@ -3236,7 +3434,7 @@ function transporteAplicarAutomacoesTemperatura_(ss, payload) {
 function montarPayloadTransporteCodex(codexPayload) {
   codexPayload = codexPayload || {};
   var agenda = codexPayload.agenda || codexPayload.evento || codexPayload;
-  var slot = String(codexPayload.slot || codexPayload.transporte || '1').toLowerCase();
+  var slot = normalizarSlotTransporteCodex_(codexPayload.slot || codexPayload.transporte || '1', true);
   var slotMap = {
     '1': 'courier1',
     i: 'courier1',
@@ -3250,7 +3448,7 @@ function montarPayloadTransporteCodex(codexPayload) {
     backup: 'backup',
     b: 'backup'
   };
-  var courierKey = slotMap[slot] || 'courier1';
+  var courierKey = slotMap[slot];
   var courier = Object.assign({}, agenda[courierKey] || {}, codexPayload.courier || {});
   var courierNome = transporteNormalizeCourierFromCodex_(courier.nome || courier.courier);
   var temperatura = transporteNormalizeTemperaturaFromCodex_(courier.temperatura || courier.temp);
@@ -3649,6 +3847,31 @@ function transportePdfManifestoHash_(manifesto) {
   return Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, '');
 }
 
+function transportePdfDocumentoHash_(manifesto, registro) {
+  registro = registro || {};
+  // O manifesto compara os rotulos impressos; o hash de envio tambem guarda
+  // precisao, quantidades, datas e textos que podem mudar o documento.
+  return transportePdfManifestoHash_({
+    versao: 1,
+    manifesto: manifesto,
+    dataColeta: transporteDateOut_(registro.dataColeta),
+    dataEnvio: transporteDateOut_(registro.dataEnvio),
+    horaEnvio: String(registro.horaEnvio || '').trim(),
+    investigador: String(registro.investigador || '').trim(),
+    agendadoPor: String(registro.agendadoPor || '').trim(),
+    observacoes: String(registro.observacoes || '').trim(),
+    solicitarCaixa: registro.solicitarCaixa,
+    responsavelEntrega: String(registro.responsavelEntrega || '').trim(),
+    pinexAwb: String(registro.pinexAwb || '').trim(),
+    pinexColeta: String(registro.pinexColeta || '').trim(),
+    pinexAgendadoPor: String(registro.pinexAgendadoPor || '').trim(),
+    materiais: (registro.materiais || []).filter(function(item) { return item && item.ativo === true; }).map(function(item) {
+      return [String(item.material || ''), String(item.unit || ''), String(item.formula || ''),
+        item.tubos, item.total, String(item.ensaio || item.exame || item.nomeExame || '')];
+    })
+  });
+}
+
 function transportePdfMaterialRowsPlanilha_(ss) {
   var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
   if (!peticao) return [];
@@ -3673,7 +3896,7 @@ function transporteValidarManifestoPdf_(options) {
         'Reabra a documentacao pela Agenda e tente novamente. Nenhum PDF foi gerado.'
       );
     }
-    return { hash: transportePdfManifestoHash_(manifestoAtual), manifesto: manifestoAtual, modo: 'manual' };
+    return { hash: transportePdfDocumentoHash_(manifestoAtual, registroAtual), manifesto: manifestoAtual, modo: 'manual' };
   }
 
   var linkPayload = transporteAgendaLinkFromRef_(payload.refInterna || '', '');
@@ -3700,20 +3923,136 @@ function transporteValidarManifestoPdf_(options) {
     );
   }
   return {
-    hash: transportePdfManifestoHash_(manifestoEsperado),
+    hash: transportePdfDocumentoHash_(manifestoEsperado, registroAtual),
     manifesto: manifestoEsperado,
     modo: manifestoEsperado.agendaId ? 'agenda' : 'manual'
   };
 }
 
+// Estado duravel por executor. Nunca usar cache para decidir recriacao de artefatos.
+var TRANSPORTE_GENERATION_REQUEST_ = null;
+
+function transporteGenerationCanonical_(value) {
+  if (Array.isArray(value)) return value.map(transporteGenerationCanonical_);
+  if (value && typeof value === 'object') {
+    var result = {};
+    Object.keys(value).sort().forEach(function(key) { result[key] = transporteGenerationCanonical_(value[key]); });
+    return result;
+  }
+  return value;
+}
+
+function transporteGenerationPersist_(context, changes) {
+  var next = Object.assign({}, context.record, changes, { updatedAt: Date.now() });
+  var text = JSON.stringify(next);
+  // Reserva margem abaixo dos 9 KB por propriedade, incluindo texto UTF-8.
+  if (Utilities.newBlob(text).getBytes().length > 8000) throw new Error('Resultado de geração excedeu o limite de recuperação. Confira os artefatos antes de gerar novamente.');
+  context.props.setProperty(context.key, text);
+  context.record = next; // Somente avanca apos persistencia confirmada.
+}
+
+function transporteGenerationCheckpoint_(changes) {
+  if (TRANSPORTE_GENERATION_REQUEST_) transporteGenerationPersist_(TRANSPORTE_GENERATION_REQUEST_, changes);
+}
+
+function transporteGenerationBegin_(options) {
+  var token = String(options.generationRequestId || '');
+  if (!/^[a-f0-9]{32}$/.test(token)) throw new Error('Identificador de geração inválido. Reabra o Transporte.');
+  if (!options.payload || typeof options.payload !== 'object') throw new Error('A recuperação da geração exige os dados do Transporte.');
+  var props = PropertiesService.getUserProperties();
+  var key = 'TRP_GEN_V1:' + token;
+  var hash = transportePdfManifestoHash_(transporteGenerationCanonical_({ payload: options.payload, criarRascunho: options.criarRascunho !== false, courier: options.courier || '', marker: options.marker || '', requestedByEmail: options.requestedByEmail || '' }));
+  var raw = props.getProperty(key);
+  var record = raw ? JSON.parse(raw) : null;
+  if (record && ['READY', 'PDF_INTENT', 'PDF_READY', 'DRAFT_INTENT', 'DRAFT_READY', 'COMPLETE', 'RETIRED'].indexOf(record.phase) < 0) throw new Error('Registro de recuperação inválido. Confira os artefatos antes de uma nova geração.');
+  if (record && record.hash !== hash) throw new Error('Esta solicitação de geração pertence a outros dados. Inicie uma nova geração.');
+  if (!record) {
+    var all = props.getProperties();
+    var keys = Object.keys(all).filter(function(k) { return k.indexOf('TRP_GEN_V1:') === 0; });
+    if (keys.length >= 1000) throw new Error('Histórico de recuperação cheio. Solicite revisão do armazenamento antes de gerar novos documentos.');
+    // Mantem marcadores para impedir que tokens antigos voltem a criar arquivos.
+    var completed = keys.map(function(k) { return { key: k, record: JSON.parse(all[k]) }; }).filter(function(item) { return item.record.phase === 'COMPLETE'; }).sort(function(a, b) { return a.record.updatedAt - b.record.updatedAt; });
+    completed.slice(0, Math.max(0, completed.length - 19)).forEach(function(item) {
+      props.setProperty(item.key, JSON.stringify({ hash: item.record.hash, phase: 'RETIRED', updatedAt: item.record.updatedAt }));
+    });
+    record = { hash: hash, phase: 'READY', updatedAt: Date.now() };
+    var context = { props: props, key: key, record: record };
+    transporteGenerationPersist_(context, {});
+    return context;
+  }
+  return { props: props, key: key, record: record };
+}
+
+function transporteGenerationSourceHash_(ss, names) {
+  return transportePdfManifestoHash_(names.map(function(name) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) throw new Error('Modelo de documentação não localizado durante a recuperação.');
+    return { name: name, values: sheet.getDataRange().getDisplayValues() };
+  }));
+}
+
+function transporteGenerationMergeWarnings_(previous, current) {
+  var seen = {};
+  return (previous || []).concat(current || []).filter(function(item) {
+    var key = item.code || item.message;
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+}
+
+function transporteGenerationReplay_(record) {
+  if (record.phase === 'RETIRED') throw new Error('O resultado antigo saiu do histórico de recuperação. Confira os documentos e use Nova geração se precisar recriá-los.');
+  if (record.phase === 'PDF_INTENT') throw new Error('A geração anterior pode ter criado o PDF, mas não confirmou seu ID. Confira o Drive antes de iniciar Nova geração.');
+  if (record.phase === 'DRAFT_INTENT') {
+    var result = Object.assign({}, record.pdf, { draftOk: false, draftErrorCode: 'GENERATION_UNCERTAIN', draftError: 'O rascunho pode ter sido criado. Confira o Gmail antes de iniciar Nova geração.', recovered: true });
+    result.message = 'PDF recuperado. ' + result.draftError;
+    return result;
+  }
+  if (record.phase === 'COMPLETE') return Object.assign({}, record.result, { recovered: true });
+  return null;
+}
+
 function gerarPdfTransporte(options) {
   return codexWithDocumentLock_('gerarPdfTransporte', function() {
-    return transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
+    TRANSPORTE_GENERATION_WARNINGS_ = [];
+    try {
+      var result = transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
       var access = typeof codexAssertCanWrite_ === 'function'
         ? codexAssertCanWrite_('gerarPdfTransporte', 'Transporte', options && options.id)
         : null;
+      options = options || {};
+      if (options.generationRequestId) {
+        if (!access) throw new Error('Não foi possível autorizar a recuperação da geração.');
+        TRANSPORTE_GENERATION_REQUEST_ = transporteGenerationBegin_(options);
+        var replay = transporteGenerationReplay_(TRANSPORTE_GENERATION_REQUEST_.record);
+        if (replay) return replay;
+      }
       return gerarPdfTransporteInterno_(options, access);
-    });
+      });
+      if (result && typeof result === 'object') {
+        if (!result.recovered) {
+          result.warnings = transporteGenerationMergeWarnings_(result.warnings, TRANSPORTE_GENERATION_WARNINGS_);
+        }
+        if (!result.recovered && result.warnings.length) result.message = (result.message || 'PDF gerado.') + ' ' + result.warnings.map(function(item) { return item.message; }).join(' ');
+      }
+      if (TRANSPORTE_GENERATION_REQUEST_ && !result.recovered) {
+        if (TRANSPORTE_GENERATION_REQUEST_.record.phase === 'DRAFT_INTENT') {
+          result.draftOk = false;
+          result.draftErrorCode = 'GENERATION_UNCERTAIN';
+          result.draftError = 'O rascunho pode ter sido criado. Confira o Gmail antes de iniciar Nova geração.';
+          result.message = 'PDF gerado. ' + result.draftError;
+        } else if (result.draftOk !== false || result.draftId) {
+          transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: result, pdf: null, draft: null });
+        }
+      }
+      return result;
+    } finally {
+      TRANSPORTE_GENERATION_REQUEST_ = null;
+      TRANSPORTE_GENERATION_WARNINGS_ = null;
+      // Sincronizacao e registro dependem destas escritas antes de outro RPC.
+      SpreadsheetApp.flush();
+    }
   });
 }
 
@@ -3727,8 +4066,9 @@ function gerarPdfTransporteInterno_(options, access) {
   // A planilha de Transporte e compartilhada entre as telas. Reaplicar o
   // payload dentro do mesmo lock da exportacao impede que outra aba troque o
   // slot/courier entre o salvamento do formulario e a geracao do PDF.
+  var savedTransport;
   if (options.payload) {
-    salvarTransporteInterno_(options.payload, {
+    savedTransport = salvarTransporteInterno_(options.payload, {
       returnBootstrap: false,
       preencherDocumentos: true
     });
@@ -3737,11 +4077,25 @@ function gerarPdfTransporteInterno_(options, access) {
   var manifestoPdf = transporteMeasurePerformance_('gerarPdfTransporte', 'manifest_validate', { rowCount: 1 }, function() {
     return transporteValidarManifestoPdf_(options);
   });
-  var result = transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
+  var request = TRANSPORTE_GENERATION_REQUEST_;
+  if (request && request.record.manifestHash && request.record.manifestHash !== manifestoPdf.hash) throw new Error('Os dados ou modelos mudaram desde o PDF recuperado. Confira o PDF e inicie Nova geração.');
+  if (request && request.record.pdf && !request.record.draft) {
+    if (!request.record.sourceHash || !request.record.sourceSheets || transporteGenerationSourceHash_(getTransporteSpreadsheetCodex_(), request.record.sourceSheets) !== request.record.sourceHash) {
+      return Object.assign({}, request.record.pdf, { recovered: true, draftOk: false, draftErrorCode: 'RECOVERY_REVIEW_REQUIRED',
+        draftError: 'O PDF foi recuperado, mas os modelos não puderam ser confirmados. Confira a documentação antes de uma nova geração.',
+        message: 'PDF recuperado. A criação do rascunho não foi retomada porque os modelos não puderam ser confirmados.' });
+    }
+  }
+  transporteGenerationCheckpoint_({ manifestHash: manifestoPdf.hash });
+  var result = request && request.record.pdf ? Object.assign({}, request.record.pdf) : transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
     return imprimirTodasAbas(options);
   });
-  if (String(result || '').indexOf('Erro') === 0) return result;
-  if (result && typeof result === 'object') result.manifestoPdfHash = manifestoPdf.hash;
+  // O exportador legado retorna texto; a RPC deve sinalizar falha ao cliente.
+  if (typeof result === 'string' && /^Erro\b/i.test(result)) throw new Error(result);
+  if (result && typeof result === 'object' && savedTransport) result.agendaSync = savedTransport.agendaSync;
+  if (result && typeof result === 'object') result.manifestoPdfHash = result.conteudoPdfHash
+    ? transportePdfManifestoHash_({ dados: manifestoPdf.hash, conteudo: result.conteudoPdfHash }) : manifestoPdf.hash;
+  if (request) transporteGenerationCheckpoint_({ pdf: Object.assign({}, result, { warnings: transporteGenerationMergeWarnings_(result.warnings, TRANSPORTE_GENERATION_WARNINGS_) }) });
   var courier = result && typeof result === 'object' ? String(result.courier || options.courier || '').trim() : String(options.courier || '').trim();
   var driveAccessWarning = result && typeof result === 'object' ? transporteDriveAccessWarning_(result.driveAccess) : '';
   var registroMonitor;
@@ -3763,11 +4117,13 @@ function gerarPdfTransporteInterno_(options, access) {
   if (courier === 'PINEX') options.criarRascunho = false;
   if (options.criarRascunho) {
     var draft = transporteMeasurePerformance_('gerarPdfTransporte', 'draft', { rowCount: 1 }, function() {
+      if (request && request.record.draft) return request.record.draft;
       return criarRascunhoTransporte_(result && typeof result === 'object' ? {
         pdfFileId: result.fileId,
         requestedByEmail: options.requestedByEmail || '',
         agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
-        monitorRef: monitorRef
+        monitorRef: monitorRef,
+        pdfHash: result.manifestoPdfHash
       } : {
         requestedByEmail: options.requestedByEmail || '',
         agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
@@ -3779,6 +4135,7 @@ function gerarPdfTransporteInterno_(options, access) {
       result.draftOk = draftStatus.ok;
       result.draftMessage = draftStatus.message;
       result.draftError = draftStatus.ok ? '' : draftStatus.message;
+      result.draftErrorCode = draftStatus.errorCode || '';
       result.draftAuthUrl = draftStatus.authUrl || '';
       result.draftId = draftStatus.draftId || '';
       result.draftUserEmail = draftStatus.userEmail || '';
@@ -3794,6 +4151,7 @@ function gerarPdfTransporteInterno_(options, access) {
             geradoPor: options.requestedByEmail || draftStatus.requestedByEmail || '',
             pdfId: result.fileId,
             pdfNome: result.fileName,
+            pdfHash: result.manifestoPdfHash,
             rascunhoId: draftStatus.draftId,
             rascunhoOk: draftStatus.ok,
             rascunhoErro: draftStatus.message
@@ -3804,7 +4162,7 @@ function gerarPdfTransporteInterno_(options, access) {
       }
       result.message = (result.message || 'PDF gerado.') + (draftStatus.ok
         ? ' Rascunho: ' + draftStatus.message
-        : ' ATENCAO: o PDF foi gerado, mas o rascunho de e-mail nao foi criado. ' + draftStatus.message);
+        : (draftStatus.draftId ? ' ATENCAO: o rascunho criado requer revisão. ' : ' ATENCAO: o PDF foi gerado, mas o rascunho de e-mail nao foi criado. ') + draftStatus.message);
       if (driveAccessWarning) result.message += ' ' + driveAccessWarning;
       return result;
     }
@@ -3828,14 +4186,17 @@ function transporteDraftStatus_(draft) {
     var draftUserEmail = String(draft.userEmail || '');
     var activeUserEmail = String(draft.activeUserEmail || draft.requestedByEmail || transporteActiveUserEmail_() || '');
     var requestedByEmail = String(draft.requestedByEmail || activeUserEmail || '');
-    var ok = draft.ok !== false && String(draft.message || '').indexOf('Erro') !== 0;
+    var ok = typeof draft.ok === 'boolean' ? draft.ok : String(draft.message || '').indexOf('Erro') !== 0;
+    var errorCode = String(draft.error || '');
     var message = String(draft.message || draft.error || '');
     if (ok && draftUserEmail && requestedByEmail && draftUserEmail.toLowerCase() !== requestedByEmail.toLowerCase()) {
       ok = false;
+      errorCode = 'DRAFT_CREATED_IN_OTHER_ACCOUNT';
       message = 'Rascunho criado na conta efetiva ' + draftUserEmail + ', nao na conta solicitante ' + requestedByEmail + '. Verifique se o deploy publicado esta como USER_ACCESSING.';
     }
     return {
       ok: ok,
+      errorCode: ok ? '' : errorCode,
       message: message,
       authUrl: String(draft.authUrl || ''),
       draftId: String(draft.draftId || ''),
@@ -3847,6 +4208,7 @@ function transporteDraftStatus_(draft) {
   var msg = String(draft || '');
   return {
     ok: msg.indexOf('Erro') !== 0,
+    errorCode: msg.indexOf('Erro') === 0 ? 'LEGACY_DRAFT_ERROR' : '',
     message: msg,
     authUrl: '',
     draftId: '',
@@ -3856,10 +4218,12 @@ function transporteDraftStatus_(draft) {
 }
 
 function baixarPdfTransporte(fileId) {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('baixarPdfTransporte', 'Transporte', fileId);
+  if (typeof codexAssertCanRead_ === 'function') codexAssertCanRead_();
   fileId = String(fileId || '').trim();
   if (!fileId) throw new Error('ID do PDF nao informado.');
   var file = DriveApp.getFileById(fileId);
+  if (file.getMimeType() !== 'application/pdf') throw new Error('O arquivo informado não é um PDF de Transporte.');
+  if (!transportePdfDownloadPermitido_(file)) throw new Error('PDF não registrado no módulo Transporte nem localizado na pasta de documentação.');
   var blob = file.getBlob();
   var bytes = blob.getBytes();
   if (!bytes || !bytes.length) throw new Error('PDF vazio ou indisponivel para download.');
@@ -3873,6 +4237,30 @@ function baixarPdfTransporte(fileId) {
     mimeType: blob.getContentType() || 'application/pdf',
     base64: Utilities.base64Encode(bytes)
   };
+}
+
+function transportePdfDownloadPermitido_(file) {
+  var fileId = file.getId();
+  if (transporteOperacoesRows_().some(function(item) { return item.pdfId === fileId; })) return true;
+  // Descobre a pasta sem cria-la. PINEX/Backup/manual usam subpastas por protocolo.
+  var roots = Object.create(null);
+  var folders = DriveApp.getRootFolder().getFoldersByName('Documentação para Transporte de Amostras');
+  while (folders.hasNext()) roots[folders.next().getId()] = true;
+  if (!Object.keys(roots).length) return false;
+  var pending = [{ item: file, depth: 0 }];
+  var visited = Object.create(null);
+  while (pending.length) {
+    var current = pending.shift();
+    if (current.depth >= 20) continue;
+    var parents = current.item.getParents();
+    while (parents.hasNext()) {
+      var parent = parents.next();
+      var id = parent.getId();
+      if (roots[id]) return true;
+      if (!visited[id]) { visited[id] = true; pending.push({ item: parent, depth: current.depth + 1 }); }
+    }
+  }
+  return false;
 }
 
 function criarRascunhoTransporte_(options) {
@@ -3933,7 +4321,8 @@ function atualizarOcasaProformaTipoAmostra_(ss) {
     proformaOcasaSheet.getRange('B27:P27').clearContent();
     proformaOcasaSheet.getRange('B27').setValue(checkedSamples.join(', '));
   } catch (error) {
-    Logger.log('ERRO em atualizarOcasaProformaTipoAmostra_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarOcasaProformaTipoAmostra_');
+    Logger.log('Falha de preenchimento em atualizarOcasaProformaTipoAmostra_.');
   }
 }
 
@@ -4006,7 +4395,12 @@ function transporteCodexSheetAliases_(keyOrNames, names) {
     peticaoPinex: ['PetiÃ§Ã£o de AnuÃªncia de ExportaÃ§Ã£o (PINEX)', 'Peticao de Anuencia de Exportacao (PINEX)'],
     fichaEmergenciaPinex: ['Ficha de EmergÃªncia (PINEX)', 'Ficha de Emergencia (PINEX)']
   }[key] || [];
-  return extra.concat(names || []);
+  var seen = Object.create(null);
+  return extra.concat(names || []).filter(function(name) {
+    if (seen[name]) return false;
+    seen[name] = true;
+    return true;
+  });
 }
 
 function getSheetRobust(ss, keyOrName, required) {
@@ -4023,7 +4417,8 @@ function getCellValueSafe(sheet, cell) {
   try {
     return sheet ? sheet.getRange(cell).getValue() : '';
   } catch (error) {
-    Logger.log('Erro ao ler ' + cell + ': ' + error.toString());
+    transporteRegistrarAviso_('LEITURA_CAMPO_DOCUMENTO');
+    Logger.log('Falha ao ler campo do documento.');
     return '';
   }
 }
@@ -4069,6 +4464,7 @@ function transporteCodexEmailText_(value) {
 
 function transporteCodexFixMojibakeText_(value) {
   var text = value == null ? '' : String(value);
+  if (!/[\u00c2\u00c3\u00e2]/.test(text)) return text;
   var pairs = [
     ['\u00c3\u0192\u00c2\u00a1', '\u00e1'],
     ['\u00c3\u0192\u00c2\u00a0', '\u00e0'],
@@ -4193,7 +4589,8 @@ function calcularTotalTubos(row) {
     if (String(texto || '').trim()) sheet.getRange('H' + row).setValue(parsed.tubos || 0);
     else sheet.getRange('H' + row).clearContent();
   } catch (error) {
-    Logger.log('ERRO em calcularTotalTubos: ' + error.toString());
+    transporteRegistrarAviso_('calcularTotalTubos');
+    Logger.log('Falha de preenchimento em calcularTotalTubos.');
   }
 }
 
@@ -4206,7 +4603,8 @@ function calcularExpressaoLinha(row) {
     if (String(texto || '').trim()) sheet.getRange('N' + row).setValue(parsed.total || 0);
     else sheet.getRange('N' + row).clearContent();
   } catch (error) {
-    Logger.log('ERRO em calcularExpressaoLinha: ' + error.toString());
+    transporteRegistrarAviso_('calcularExpressaoLinha');
+    Logger.log('Falha de preenchimento em calcularExpressaoLinha.');
   }
 }
 
@@ -4223,13 +4621,15 @@ function verificarEAtualizarG33Declaracao_(ss) {
     if (courier === 'MARKEN' &&
         (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') &&
         laboratorio === 'EUROFINS (LANCASTER)') {
-      valor = 10.0;
+      valor = transporteConfigNumber_('Gelo MARKEN EUROFINS (kg)', 10);
     } else if (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') {
-      valor = (courier === 'PINEX' || courier === 'PINEX (Agendamento)') ? 2 : 4;
+      valor = (courier === 'PINEX' || courier === 'PINEX (Agendamento)')
+        ? transporteConfigNumber_('Gelo PINEX (kg)', 2) : transporteConfigNumber_('Gelo padrão (kg)', 4);
     }
     declaracao.getRange('G33').setValue(valor);
   } catch (error) {
-    Logger.log('ERRO em verificarEAtualizarG33Declaracao_: ' + error.toString());
+    transporteRegistrarAviso_('verificarEAtualizarG33Declaracao_');
+    Logger.log('Falha de preenchimento em verificarEAtualizarG33Declaracao_.');
   }
 }
 
@@ -4244,14 +4644,15 @@ function atualizarMarkenVolumes_(ss) {
     var peso = '';
     if (temperatura === 'AMBIENTE' || temperatura === 'CONGELADO' || temperatura === 'REFRIGERADO') volumes = 1;
     if (temperatura === 'AMBIENTE + CONGELADO' || temperatura === 'AMBIENTE + REFRIGERADO') volumes = 2;
-    if (temperatura === 'AMBIENTE') peso = '1 Kg';
-    else if (temperatura === 'CONGELADO' || temperatura === 'REFRIGERADO') peso = '5 Kg';
-    else if (temperatura === 'AMBIENTE + CONGELADO' || temperatura === 'AMBIENTE + REFRIGERADO') peso = '6 Kg';
+    if (temperatura === 'AMBIENTE') peso = transporteConfigNumber_('Peso MARKEN ambiente (kg)', 1) + ' Kg';
+    else if (temperatura === 'CONGELADO' || temperatura === 'REFRIGERADO') peso = transporteConfigNumber_('Peso MARKEN refrigerado/congelado (kg)', 5) + ' Kg';
+    else if (temperatura === 'AMBIENTE + CONGELADO' || temperatura === 'AMBIENTE + REFRIGERADO') peso = transporteConfigNumber_('Peso MARKEN misto (kg)', 6) + ' Kg';
     invoice.getRange('O12').setValue(volumes);
     invoice.getRange('T39').setValue(volumes);
     invoice.getRange('T41').setValue(peso);
   } catch (error) {
-    Logger.log('ERRO em atualizarMarkenVolumes_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarMarkenVolumes_');
+    Logger.log('Falha de preenchimento em atualizarMarkenVolumes_.');
   }
 }
 
@@ -4299,7 +4700,8 @@ function atualizarPeticaoAnuencia_(ss) {
       invoiceMarken.getRange('M28').setValue(todasLinhas.filter(Boolean).join('; '));
     }
   } catch (error) {
-    Logger.log('ERRO em atualizarPeticaoAnuencia_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarPeticaoAnuencia_');
+    Logger.log('Falha de preenchimento em atualizarPeticaoAnuencia_.');
   }
 }
 
@@ -4352,7 +4754,8 @@ function atualizarFormularioPinex_(ss) {
     formulario.getRange('A42:E61').setValues(values.slice(0, 20));
     processarHorarioColeta_(ss, folha, getCellValueSafe(folha, 'C9'));
   } catch (error) {
-    Logger.log('ERRO em atualizarFormularioPinex_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarFormularioPinex_');
+    Logger.log('Falha de preenchimento em atualizarFormularioPinex_.');
   }
 }
 
@@ -4364,7 +4767,8 @@ function processarHorarioColeta_(ss, folhaSheet, value) {
     formulario.getRange('D21').setValue(match ? match[1] : '');
     formulario.getRange('D22').setValue(match ? match[2] : '');
   } catch (error) {
-    Logger.log('ERRO em processarHorarioColeta_: ' + error.toString());
+    transporteRegistrarAviso_('processarHorarioColeta_');
+    Logger.log('Falha de preenchimento em processarHorarioColeta_.');
   }
 }
 
@@ -4385,7 +4789,8 @@ function atualizarCommercialInvoicePinex_(ss) {
     seguinte.setHours(14, 0, 0, 0);
     invoice.getRange('E9').setValue(Utilities.formatDate(seguinte, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
   } catch (error) {
-    Logger.log('ERRO em atualizarCommercialInvoicePinex_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarCommercialInvoicePinex_');
+    Logger.log('Falha de preenchimento em atualizarCommercialInvoicePinex_.');
   }
 }
 
@@ -4403,7 +4808,8 @@ function atualizarCommercialInvoicePinexB33_(ss) {
     var outros = String(getCellValueSafe(declaracao, 'F30') || '');
     invoice.getRange('B33').setValue(transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volumes, outros));
   } catch (error) {
-    Logger.log('ERRO em atualizarCommercialInvoicePinexB33_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarCommercialInvoicePinexB33_');
+    Logger.log('Falha de preenchimento em atualizarCommercialInvoicePinexB33_.');
   }
 }
 
@@ -4465,7 +4871,8 @@ function atualizarCommercialInvoicePinexB34_(ss) {
       conselho
     ));
   } catch (error) {
-    Logger.log('ERRO em atualizarCommercialInvoicePinexB34_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarCommercialInvoicePinexB34_');
+    Logger.log('Falha de preenchimento em atualizarCommercialInvoicePinexB34_.');
   }
 }
 
@@ -4497,7 +4904,8 @@ function atualizarCommercialInvoicePinexTemperatura_(ss) {
     invoice.getRange('E44').setValue(texto);
     invoice.getRange('E46').setValue(volumes);
   } catch (error) {
-    Logger.log('ERRO em atualizarCommercialInvoicePinexTemperatura_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarCommercialInvoicePinexTemperatura_');
+    Logger.log('Falha de preenchimento em atualizarCommercialInvoicePinexTemperatura_.');
   }
 }
 
@@ -4511,7 +4919,8 @@ function atualizarPinexColNumero_(ss) {
     if (courier === 'PINEX' || courier === 'PINEX (Agendamento)') return;
     folhaDhl.getRange('C13').setValue('---');
   } catch (error) {
-    Logger.log('ERRO em atualizarPinexColNumero_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarPinexColNumero_');
+    Logger.log('Falha de preenchimento em atualizarPinexColNumero_.');
   }
 }
 
@@ -4529,31 +4938,13 @@ function atualizarPeticaoPinexTemperatura_(ss) {
     if (temperatura === 'AMBIENTE + CONGELADO') peticao.getRangeList(['G31', 'L31']).setValue(true);
     if (temperatura === 'AMBIENTE + REFRIGERADO') peticao.getRangeList(['G31', 'O31']).setValue(true);
   } catch (error) {
-    Logger.log('ERRO em atualizarPeticaoPinexTemperatura_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarPeticaoPinexTemperatura_');
+    Logger.log('Falha de preenchimento em atualizarPeticaoPinexTemperatura_.');
   }
 }
 
 function atualizarPesoGeloDeclaracao_(ss) {
-  try {
-    ss = ss || getTransporteSpreadsheetCodex_();
-    var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
-    var declaracao = transporteCodexGetSheet_(ss, 'declaracaoTransp', false);
-    if (!folha || !declaracao) return;
-    var courier = String(getCellValueSafe(folha, 'C10') || '').trim();
-    var temperatura = String(getCellValueSafe(folha, 'C6') || '').trim();
-    var laboratorio = String(getCellValueSafe(folha, 'C11') || '').trim();
-    var gelo = '---';
-    if (courier === 'MARKEN' &&
-        (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') &&
-        laboratorio === 'EUROFINS (LANCASTER)') {
-      gelo = 10.0;
-    } else if (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') {
-      gelo = (courier === 'PINEX' || courier === 'PINEX (Agendamento)') ? 2 : 4;
-    }
-    declaracao.getRange('G33').setValue(gelo);
-  } catch (error) {
-    Logger.log('ERRO em atualizarPesoGeloDeclaracao_: ' + error.toString());
-  }
+  return verificarEAtualizarG33Declaracao_(ss);
 }
 
 function atualizarCommercialInvoicePinexE48_(ss) {
@@ -4565,10 +4956,12 @@ function atualizarCommercialInvoicePinexE48_(ss) {
     if (!folha || !invoice) return;
     var courier = folhaDhl ? String(getCellValueSafe(folhaDhl, 'C10') || '').trim() : String(getCellValueSafe(folha, 'C10') || '').trim();
     var temperatura = String(getCellValueSafe(folha, 'C6') || '').trim();
-    var valor = courier === 'PINEX' && (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') ? 4 : 1;
+    var valor = courier === 'PINEX' && (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO')
+      ? transporteConfigNumber_('Peso PINEX congelado (kg)', 4) : transporteConfigNumber_('Peso PINEX padrão (kg)', 1);
     invoice.getRange('E48').setValue(valor);
   } catch (error) {
-    Logger.log('ERRO em atualizarCommercialInvoicePinexE48_: ' + error.toString());
+    transporteRegistrarAviso_('atualizarCommercialInvoicePinexE48_');
+    Logger.log('Falha de preenchimento em atualizarCommercialInvoicePinexE48_.');
   }
 }
 
@@ -4621,7 +5014,8 @@ function transporteCodexManageVisibility_(ss) {
     });
     return true;
   } catch (error) {
-    Logger.log('ERRO em manageSheetVisibilityUnified_: ' + error.toString());
+    transporteRegistrarAviso_('manageSheetVisibilityUnified_');
+    Logger.log('Falha de preenchimento em manageSheetVisibilityUnified_.');
     return false;
   }
 }
@@ -4772,7 +5166,7 @@ function criarRascunhoEmail_(options) {
     var html = '';
     if (courier === 'PINEX (Agendamento)') {
       destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
-      html = '<p>Prezados,</p><p>' + saudacao + ',</p><p>Seguem anexos os dados para agendamento de coleta (CNPJ : 88.648.761/0001-03).</p>';
+      html = '<p>Prezados,</p><p>' + saudacao + ',</p><p>Seguem anexos os dados para agendamento de coleta (CNPJ : ' + transporteCodexEmailEsc_(transporteCnpjTexto_()) + ').</p>';
     } else if (courier === 'OCASA') {
       destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = transporteCodexEmailHtml_(ss, 'emailOcasa', 'OCASA', saudacao);
@@ -4811,18 +5205,23 @@ function criarRascunhoEmail_(options) {
         Logger.log('PDF PINEX nao anexado ao rascunho: ' + pdfAttachError.toString());
       }
     }
-    var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature() + transporteMonitorRefHtml_(refInterna));
+    var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature() + transporteMonitorRefHtml_(refInterna, options.pdfHash));
     var draftOptions = {
       htmlBody: htmlBody,
       attachments: attachments
     };
     if (cc.length) draftOptions.cc = cc.join(', ');
+    transporteGenerationCheckpoint_({ phase: 'DRAFT_INTENT' });
     var draft = GmailApp.createDraft(destinatarios.join(', '), assunto, '', draftOptions);
     var draftId = '';
     try {
       draftId = draft && draft.getId ? String(draft.getId() || '') : '';
     } catch (draftIdError) {
       draftId = '';
+    }
+    if (TRANSPORTE_GENERATION_REQUEST_) {
+      if (!draftId) throw new Error('Rascunho criado sem confirmação do ID. Confira o Gmail.');
+      transporteGenerationCheckpoint_({ phase: 'DRAFT_READY', draft: { ok: true, draftId: draftId, message: 'Rascunho recuperado.', userEmail: effectiveEmail, activeUserEmail: activeEmail, requestedByEmail: requestedByEmail } });
     }
     return {
       ok: true,
@@ -4906,10 +5305,10 @@ function transporteAssertGmailDraftAllowed_(options) {
       requestedByEmail: ''
     };
   }
-  if (effectiveEmail && requestedByEmail !== effectiveEmail) {
+  if (activeEmail && effectiveEmail && activeEmail !== effectiveEmail) {
     return {
       ok: false,
-      message: 'O rascunho nao foi criado porque o WebApp esta executando como ' + effectiveEmail + ', mas o responsavel pelo agendamento e ' + requestedByEmail + '. Publique a implantacao como USER_ACCESSING para criar o rascunho no Gmail do usuario.',
+      message: 'O rascunho nao foi criado porque a conta executora difere do usuário conectado. Confira a implantação USER_ACCESSING e autorize novamente o WebApp.',
       error: 'EXECUTION_USER_MISMATCH',
       authUrl: '',
       userEmail: effectiveEmail,
@@ -4917,11 +5316,11 @@ function transporteAssertGmailDraftAllowed_(options) {
       requestedByEmail: requestedByEmail
     };
   }
-  if (activeEmail && effectiveEmail && activeEmail !== effectiveEmail) {
+  if (effectiveEmail && requestedByEmail !== effectiveEmail) {
     return {
       ok: false,
-      message: 'O rascunho nao foi criado porque o WebApp esta executando como ' + effectiveEmail + ', mas o usuario ativo e ' + activeEmail + '. Publique a implantacao como USER_ACCESSING para criar o rascunho no Gmail do usuario.',
-      error: 'EXECUTION_USER_MISMATCH',
+      message: responsavelEmail ? 'O rascunho não foi criado porque "Agendado por" corresponde a outro usuário. O responsável deve abrir o Transporte na própria conta para criar o rascunho no seu Gmail.' : 'O rascunho não foi criado porque a conta solicitante difere da conta executora. Reabra o Transporte na conta solicitante.',
+      error: responsavelEmail ? 'DRAFT_RESPONSIBLE_MISMATCH' : 'DRAFT_REQUESTER_MISMATCH',
       authUrl: '',
       userEmail: effectiveEmail,
       activeUserEmail: activeEmail,
@@ -5120,8 +5519,10 @@ function transporteCodexFindComunicadoEspecial_(ss, projeto) {
       break;
     }
   }
-  if (typeof PASTA_COMUNICADOS_ESPECIAIS_ID !== 'undefined' && PASTA_COMUNICADOS_ESPECIAIS_ID) {
-    var folder = DriveApp.getFolderById(PASTA_COMUNICADOS_ESPECIAIS_ID);
+  var pastaCeId = transporteConfigValue_('Pasta de Comunicados Especiais ID', PASTA_COMUNICADOS_ESPECIAIS_ID);
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(pastaCeId)) { pastaCeId = PASTA_COMUNICADOS_ESPECIAIS_ID; transporteRegistrarAviso_('CONFIG_PASTA_CE'); }
+  if (pastaCeId) {
+    var folder = DriveApp.getFolderById(pastaCeId);
     for (var a = 0; a < aliases.length; a++) {
       var files = folder.getFilesByName(aliases[a] + '_CE.pdf');
       if (files.hasNext()) return files.next();
@@ -5156,9 +5557,9 @@ function transporteFindComunicadoEspecialInFolder_(folder, wanted, aliasKeys, de
 function transporteComunicadoEspecialFileMatches_(fileKey, aliasKeys) {
   fileKey = String(fileKey || '');
   if (!fileKey) return false;
-  var hasCeMarker = fileKey.indexOf('ce') >= 0 ||
+  var hasCeMarker = /(^|[^a-z0-9])ce([^a-z0-9]|$)/.test(fileKey) ||
     fileKey.indexOf('comunicadoespecial') >= 0 ||
-    fileKey.indexOf('comunicado') >= 0;
+    /(^|[^a-z0-9])comunicado([^a-z0-9]|$)/.test(fileKey);
   if (!hasCeMarker) return false;
   for (var i = 0; i < (aliasKeys || []).length; i++) {
     var aliasKey = String(aliasKeys[i] || '');
@@ -5188,7 +5589,7 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao) {
   var fontColors = range.getFontColors();
   var fontWeights = range.getFontWeights();
   var hAlign = range.getHorizontalAlignments();
-  var cnpjTexto = tipo === 'MARKEN' ? ' (CNPJ : 88.648.761/0001-03)' : '';
+  var cnpjTexto = tipo === 'MARKEN' ? ' (CNPJ : ' + transporteCodexEmailEsc_(transporteCnpjTexto_()) + ')' : '';
   var html = '<p>Prezados,</p><p>' + transporteCodexEmailEsc_(saudacao || transporteCodexSaudacao_()) + ',</p><p>Seguem dados para agendamento de coleta' + cnpjTexto + ':</p><table style="border-collapse:collapse;font-size:12px;border:1px solid #000;">';
   dados.forEach(function(row, r) {
     html += '<tr>';
@@ -5241,7 +5642,7 @@ function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvi
     ['Solicitar Caixa de Transporte', transporteNormalizeSimNao_(solicitarCaixa, 'Sim')]
   ];
   if (refInterna) rows.push(['Ref. interna', refInterna]);
-  var html = '<p>Prezados,</p><p>' + transporteCodexEmailEsc_(saudacao || transporteCodexSaudacao_()) + ',</p><p>Seguem dados para agendamento de coleta (CNPJ : 88.648.761/0001-03):</p><table style="border-collapse:collapse;font-size:12px;border:1px solid #000;">';
+  var html = '<p>Prezados,</p><p>' + transporteCodexEmailEsc_(saudacao || transporteCodexSaudacao_()) + ',</p><p>Seguem dados para agendamento de coleta (CNPJ : ' + transporteCodexEmailEsc_(transporteCnpjTexto_()) + '):</p><table style="border-collapse:collapse;font-size:12px;border:1px solid #000;">';
   rows.forEach(function(row) {
     html += '<tr><td style="border:1px solid #000;padding:3px;font-weight:bold;line-height:1.45;">' + transporteCodexEmailEsc_(row[0]) + '</td><td style="border:1px solid #000;padding:3px;line-height:1.45;">' + transporteCodexEmailEsc_(row[1]) + '</td></tr>';
   });
@@ -5250,6 +5651,10 @@ function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvi
 
 function transportePdfOcultarMetadadosInternos_(ss) {
   if (!ss) return;
+  // Somente na copia temporaria: notas internas nao podem virar paginas de
+  // impressao, inclusive nas vias duplicadas da Declaracao de Transporte.
+  // Falha na limpeza deve interromper a exportacao, sem ocultar o erro.
+  ss.getSheets().forEach(function(sheet) { sheet.clearNotes(); });
   var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
   if (!folha) return;
   try {
@@ -5267,7 +5672,7 @@ function transporteCodexEmailFallbackHtml_(projeto, dataEnvio, laboratorio, awb,
     ['Laborat\u00f3rio destino', laboratorio || '-'],
     ['AWB / C\u00f3digo', awb || '-']
   ];
-  var cnpjTexto = courier === 'MARKEN' ? ' (CNPJ : 88.648.761/0001-03)' : '';
+  var cnpjTexto = courier === 'MARKEN' ? ' (CNPJ : ' + transporteCodexEmailEsc_(transporteCnpjTexto_()) + ')' : '';
   var html = '<p>Prezados,</p><p>' + transporteCodexEmailEsc_(saudacao || transporteCodexSaudacao_()) + ',</p><p>Seguem dados para agendamento de coleta' + cnpjTexto + ':</p><table border="1" style="border-collapse:collapse;font-size:12px">';
   rows.forEach(function(row) {
     html += '<tr><td style="padding:3px;font-weight:bold;line-height:1.45;">' + transporteCodexEmailEsc_(row[0]) + '</td><td style="padding:3px;line-height:1.45;">' + transporteCodexEmailEsc_(row[1]) + '</td></tr>';
@@ -5280,8 +5685,8 @@ var TRANSPORTE_CONTATO_EMERGENCIA_CENTRO_ = 'Telefone de Emerg\u00eancia (24H): 
 
 function transporteContatoEmergenciaTexto_(courier) {
   return transporteNormalizeCourierFromCodex_(courier) === 'PINEX'
-    ? TRANSPORTE_CONTATO_EMERGENCIA_PINEX_
-    : TRANSPORTE_CONTATO_EMERGENCIA_CENTRO_;
+    ? transporteConfigValue_('Contato de emergência PINEX', TRANSPORTE_CONTATO_EMERGENCIA_PINEX_)
+    : transporteConfigValue_('Contato de emergência centro', TRANSPORTE_CONTATO_EMERGENCIA_CENTRO_);
 }
 
 function transporteAplicarContatoEmergenciaPdf_(ss, courier, spec) {
@@ -5303,13 +5708,14 @@ function transporteAplicarContatoEmergenciaPdf_(ss, courier, spec) {
     for (var row = 0; row < values.length; row++) {
       for (var col = 0; col < values[row].length; col++) {
         var digits = String(values[row][col] || '').replace(/\D/g, '');
-        if (digits.indexOf('970953241') === -1 && digits.indexOf('999091656') === -1) continue;
+        var marker = String(values[row][col] || '').indexOf('{{TRANSPORTE_CONTATO_EMERGENCIA}}') >= 0;
+        if (!marker && digits.indexOf('970953241') === -1 && digits.indexOf('999091656') === -1) continue;
         var cell = dataRange.getCell(row + 1, col + 1);
         if (cell.isPartOfMerge()) {
           var merged = cell.getMergedRanges();
           if (merged.length) cell = merged[0].getCell(1, 1);
         }
-        cell.setValue(contato);
+        cell.setValue(transporteTextoLiteralParaCelula_(contato));
         atualizadas++;
       }
     }
@@ -5403,13 +5809,23 @@ function imprimirTodasAbas(options) {
     var token = ScriptApp.getOAuthToken();
     var nomeArquivo = transportePdfFileName_(awb, dataEnvio, temperatura, courier, marker);
     var pastaDestino = transportePdfDestinationFolder_(protocolo);
-    workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy(nomeArquivo + ' - TEMP_PDF', pastaDestino);
-    var workingSS = transportePdfOpenWorkingCopy_(workingCopyFile.getId());
+    // A copia com dados internos fica no Meu Drive do executor, fora da pasta
+    // de saida compartilhada, com nome opaco e compartilhamento privado.
+    workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy('IPS-TEMP-PDF-' + Utilities.getUuid(), DriveApp.getRootFolder());
+    workingCopyFile.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    transportePdfVerificarCopiaPrivada_(workingCopyFile);
+    var workingSS = transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_open', { rowCount: 0 }, function() {
+      return transportePdfOpenWorkingCopy_(workingCopyFile.getId());
+    });
     transporteAplicarContatoEmergenciaPdf_(workingSS, courier, spec);
     transportePdfAnonimizarParticipante_(workingSS, payloadFallback, ss);
     transportePdfOcultarMetadadosInternos_(workingSS);
-    transportePdfPruneDuplicateAndOrder_(workingSS, spec);
+    transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_prepare', { rowCount: spec.ordem.length }, function() {
+      transportePdfPruneDuplicateAndOrder_(workingSS, spec);
+    });
     SpreadsheetApp.flush();
+    var conteudoPdf = transportePdfVerificarAnonimizacao_(workingSS, [paciente, payloadFallback.paciente, payloadFallback.participante]);
+    var conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
     Utilities.sleep(700);
 
     var url = 'https://docs.google.com/spreadsheets/d/' + workingCopyFile.getId() + '/export?' + [
@@ -5428,9 +5844,11 @@ function imprimirTodasAbas(options) {
       'gridlines=false',
       'fzr=false'
     ].join('&');
-    var response = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
+    var response = transporteMeasurePerformance_('gerarPdfTransporte', 'pdf_fetch', { rowCount: 0 }, function() {
+      return UrlFetchApp.fetch(url, {
+        headers: { Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true
+      });
     });
     var code = response.getResponseCode();
     var headers = response.getAllHeaders ? response.getAllHeaders() : {};
@@ -5443,7 +5861,21 @@ function imprimirTodasAbas(options) {
       throw new Error('Exportacao retornou conteudo inesperado: ' + contentType + ' (' + blob.getBytes().length + ' bytes)');
     }
     blob.setName(nomeArquivo + '.pdf');
+    if (TRANSPORTE_GENERATION_REQUEST_) {
+      var sourceSheets = ss.getSheets().map(function(sheet) { return sheet.getName(); }).filter(function(name) { return spec.ordem.indexOf(name) >= 0 || /email/i.test(name); }).sort();
+      if (!sourceSheets.length) throw new Error('Não foi possível confirmar os modelos para recuperação da geração.');
+      transporteGenerationCheckpoint_({ sourceSheets: sourceSheets, sourceHash: transporteGenerationSourceHash_(ss, sourceSheets) });
+    }
+    transporteGenerationCheckpoint_({ phase: 'PDF_INTENT' });
     var pdfFile = pastaDestino.createFile(blob);
+    var pdfId = pdfFile.getId();
+    transporteGenerationCheckpoint_({ phase: 'PDF_READY', pdf: {
+      ok: true, type: 'pdf', fileId: pdfId, fileName: blob.getName(), courier: courier, conteudoPdfHash: conteudoPdfHash,
+      fileUrl: 'https://drive.google.com/file/d/' + encodeURIComponent(pdfId) + '/view',
+      downloadUrl: 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(pdfId),
+      message: 'PDF recuperado. Confira o acesso ao arquivo no Drive.',
+      warnings: [{ code: 'PDF_RECOVERY_PARTIAL', message: 'PDF recuperado após interrupção. Confira o compartilhamento no Drive e a CE antes do envio.' }]
+    } });
     var driveAccess = transporteShareGeneratedPdfWithActiveUser_(pdfFile, pastaDestino);
     var downloadUrl = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(pdfFile.getId());
     var printUrl = 'https://drive.google.com/file/d/' + encodeURIComponent(pdfFile.getId()) + '/view';
@@ -5455,6 +5887,7 @@ function imprimirTodasAbas(options) {
     return {
       ok: true,
       type: 'pdf',
+      conteudoPdfHash: conteudoPdfHash,
       message: 'PDF gerado no Drive: ' + blob.getName(),
       fileName: blob.getName(),
       courier: courier,
@@ -5476,6 +5909,7 @@ function imprimirTodasAbas(options) {
       try {
         workingCopyFile.setTrashed(true);
       } catch (trashError) {
+        transporteRegistrarAviso_('LIMPEZA_COPIA_TEMPORARIA');
         Logger.log('Erro ao mover copia temporaria para lixeira: ' + trashError.toString());
       }
     }
@@ -5697,6 +6131,15 @@ function transportePdfOpenWorkingCopy_(fileId) {
   throw lastError || new Error('Copia temporaria do PDF nao abriu.');
 }
 
+function transportePdfVerificarCopiaPrivada_(file) {
+  var owner = file.getOwner();
+  var ownerEmail = owner && owner.getEmail ? transporteNormalizeEmail_(owner.getEmail()) : '';
+  var users = file.getEditors().concat(file.getViewers());
+  if (!ownerEmail || file.getSharingAccess() !== DriveApp.Access.PRIVATE || users.some(function(user) {
+    return transporteNormalizeEmail_(user.getEmail()) !== ownerEmail;
+  })) throw new Error('A cópia temporária não pôde ser confirmada como privada. Nenhum PDF foi exportado.');
+}
+
 function transportePdfAnonimizarParticipante_(workingSS, payloadFallback, sourceSS) {
   var paciente = String((payloadFallback && (payloadFallback.paciente || payloadFallback.participante)) || '').trim();
   var folhas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(key) {
@@ -5708,6 +6151,26 @@ function transportePdfAnonimizarParticipante_(workingSS, payloadFallback, source
     var atual = String(getCellValueSafe(sh, 'C3') || paciente || '').trim();
     sh.getRange('C3').setValue(extrairIniciais_(atual) || atual);
   });
+}
+
+function transportePdfVerificarAnonimizacao_(workingSS, nomes) {
+  var names = (nomes || []).map(transportePdfManifestText_).filter(function(value) { return !!value; });
+  var conteudo = [];
+  workingSS.getSheets().forEach(function(sheet) {
+    if (sheet.isSheetHidden()) return;
+    var rows = sheet.getDataRange().getDisplayValues();
+    conteudo.push({ aba: sheet.getName(), valores: rows });
+    rows.forEach(function(row) {
+      row.forEach(function(value) {
+        var text = transportePdfManifestText_(value);
+        if (names.some(function(name) { return text.indexOf(name) >= 0; })) {
+          // Nunca incluir nome, aba, celula ou conteudo no erro/log.
+          throw new Error('PDF bloqueado: identificação nominal ainda presente em uma aba exportada. Revise o modelo de documentação.');
+        }
+      });
+    });
+  });
+  return conteudo;
 }
 
 function transportePdfPruneDuplicateAndOrder_(workingSS, spec) {

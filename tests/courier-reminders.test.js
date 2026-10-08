@@ -195,6 +195,39 @@ test('HTML original e assinatura permanecem separados do fallback em texto simpl
   assert.ok(!f.replyOptions().htmlBody.includes('--- Fim do e-mail original ---'));
 });
 
+for (const assinatura of [true, false]) {
+  for (const historicoHtml of [true, false]) {
+    test('codigos da cobranca usam o estilo do agendamento: assinatura=' + assinatura + ', historico HTML=' + historicoHtml, () => {
+      const f = fixture();
+      if (!assinatura) f.s.getGmailSignature = () => '';
+      if (historicoHtml) f.original.getBody = () => '<strong>Original formatado</strong>';
+      const texto = f.s.courierLembreteTexto_(f.config, f.current, f.op, f.original);
+      const html = f.s.courierLembreteReplyOptions_(f.original, texto).htmlBody;
+      const agendamento = runFile('TransporteCodexConfig.gs').transporteMonitorRefHtml_(f.op.referencia);
+      const estilo = agendamento.match(/style="([^"]+)"/)[1];
+      const rodape = '<div style="' + estilo + '">Ref. IPS: IPS-TRP-EVT-T1<br>Cobrança IPS: evt:1</div>';
+      assert.ok(html.includes(rodape));
+      if (assinatura) assert.ok(html.indexOf('Telefone da equipe</div>') < html.indexOf(rodape));
+      assert.ok(html.indexOf(rodape) < html.indexOf('--- E-mail original completo ---'));
+      assert.match(texto, /Ref\. IPS: IPS-TRP-EVT-T1\nCobrança IPS: evt:1/);
+      assert.match(html, historicoHtml ? /<strong>Original formatado<\/strong>/ : /--- Fim do e-mail original ---/);
+    });
+  }
+}
+
+test('rodape da cobranca escapa os codigos sem estilizar o texto personalizado ou o historico', () => {
+  const f = fixture();
+  f.config.lembreteTexto = 'Ref. IPS: exemplo\nCobrança IPS: exemplo';
+  f.op.referencia = '<referencia> & teste';
+  f.op.agendaId = '<agenda>&';
+  const texto = f.s.courierLembreteTexto_(f.config, f.current, f.op, f.original);
+  const html = f.s.courierLembreteReplyOptions_(f.original, texto).htmlBody;
+  assert.ok(html.startsWith('Ref. IPS: exemplo<br>Cobrança IPS: exemplo'));
+  assert.match(html, />Ref\. IPS: &lt;referencia&gt; &amp; teste<br>Cobrança IPS: &lt;agenda&gt;&amp;:1<\/div>/);
+  assert.equal((html.match(/font-size:9px/g) || []).length, 1);
+  assert.match(html, /--- E-mail original completo ---<br>Assunto:/);
+});
+
 test('mensagem somente texto conserva historico escapado e anexos', () => {
   const f = fixture();
   f.original.getBody = () => '';

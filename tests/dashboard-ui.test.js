@@ -163,17 +163,39 @@ test('transportes usam segmentos empilhados e totais iguais no tooltip e tabela'
 });
 
 test('impressão abre detalhes para renderizar todos os gráficos e restaura estado mesmo se falhar', () => {
-  const details = { open: false };
-  const context = dashboardContext({ document: { readyState: 'loading', addEventListener() {}, getElementById: () => details } });
-  let renders = 0;
-  context.renderDashboardAgendaPeriodoResumo = () => { assert.equal(details.open, true); renders++; };
-  context.dashboardPrintHtmlContent_ = () => { assert.equal(details.open, true); return 'impressão completa'; };
-  assert.equal(context.dashboardPrintHtml(), 'impressão completa');
-  assert.equal(details.open, false);
-  assert.equal(renders, 1);
-  context.dashboardPrintHtmlContent_ = () => { throw new Error('falha de impressão'); };
-  assert.throws(() => context.dashboardPrintHtml(), /falha de impressão/);
-  assert.equal(details.open, false);
+  for (const agendaOpen of [false, true]) for (const transportOpen of [false, true]) {
+    const agenda = { open: agendaOpen }, transport = { open: transportOpen };
+    const context = dashboardContext({ document: { readyState: 'loading', addEventListener() {},
+      getElementById: id => id === 'dashAgendaAtendimentos' ? agenda : transport } });
+    let renders = 0;
+    context.renderDashboardAgendaPeriodoResumo = () => { assert.equal(agenda.open && transport.open, true); renders++; };
+    context.dashboardPrintHtmlContent_ = () => { assert.equal(agenda.open && transport.open, true); return 'impressão completa'; };
+    assert.equal(context.dashboardPrintHtml(), 'impressão completa');
+    assert.equal(agenda.open, agendaOpen);
+    assert.equal(transport.open, transportOpen);
+    assert.equal(renders, agendaOpen && transportOpen ? 0 : 1);
+    context.dashboardPrintHtmlContent_ = () => { throw new Error('falha de impressão'); };
+    assert.throws(() => context.dashboardPrintHtml(), /falha de impressão/);
+    assert.equal(agenda.open, agendaOpen);
+    assert.equal(transport.open, transportOpen);
+  }
+});
+
+test('Transportes adia a renderização enquanto fechado e usa o agregado atual ao expandir', () => {
+  const transport = { open: false }, agenda = { open: false };
+  const context = dashboardContext({ document: { readyState: 'loading', addEventListener() {},
+    getElementById: id => id === 'dashAgendaTransportes' ? transport : agenda } });
+  const calls = [];
+  context.renderDashTransportChart_ = (id, rows) => calls.push([id, rows]);
+  context.renderDashAgendaPairChart = () => { throw new Error('Atendimentos fechado'); };
+  const aggregate = { couriers: [{ label: 'Marken', value: 2 }], transportLabs: [{ label: 'Lab A', value: 2 }] };
+  context.renderDashboardAgendaPeriodCharts(aggregate);
+  assert.equal(calls.length, 0);
+  transport.open = true;
+  context.renderDashboardAgendaPeriodCharts(aggregate);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][1], aggregate.couriers);
+  assert.equal(calls[1][1], aggregate.transportLabs);
 });
 
 test('agregação única mantém KPIs e séries da Agenda em ano, mês e global', () => {

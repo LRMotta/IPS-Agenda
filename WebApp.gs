@@ -5,9 +5,9 @@ var CODEX_ACL_SHEET_NAME_ = 'Users';
 var CODEX_USER_ROLES_ = { admin: true, user: true, readonly: true };
 var CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = 0;
 // Atualize versão, rótulo e data a cada entrega do WebApp.
-var CODEX_APP_VERSION_ = '2026.07.15-agenda-print-cancelled';
-var CODEX_APP_BUILD_LABEL_ = 'Eventos cancelados destacados nos impressos';
-var CODEX_APP_BUILD_DATE_ = '2026-07-15';
+var CODEX_APP_VERSION_ = '2026.10.08-transporte-config-confirm-local';
+var CODEX_APP_BUILD_LABEL_ = 'Confirmação de alterações nas configurações de Transporte';
+var CODEX_APP_BUILD_DATE_ = '2026-10-08';
 var CODEX_APP_EXPECTED_EXECUTE_AS_ = 'USER_ACCESSING';
 
 function codexJsonForScript_(value) {
@@ -302,7 +302,7 @@ function getAppBootstrapData(request) {
     extra.traceId = traceId;
     return extra;
   };
-  var totalMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
+  var totalMeta = perfMeta({ rowCount: 0, responseBytesMeasured: false });
   return codexMeasureReadPerformance_('getAppBootstrapData', 'total', totalMeta, function() {
     var access = codexMeasureReadPerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
       return codexGetCurrentUserAccess();
@@ -362,12 +362,15 @@ function getAppBootstrapData(request) {
     } catch (e3) {
       out.errors.teamBirthdays = e3.message || String(e3);
     }
-    var serializationMeta = perfMeta({ rowCount: 0, responseBytes: 0 });
+    var serializationMeta = perfMeta({ rowCount: 0, responseBytesMeasured: codexShouldMeasureBootstrapBytes_() });
     codexMeasureReadPerformance_('getAppBootstrapData', 'serialize', serializationMeta, function() {
-      serializationMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(out));
+      if (serializationMeta.responseBytesMeasured) {
+        serializationMeta.responseBytes = codexSerializedByteLength_(JSON.stringify(out));
+      }
     });
     totalMeta.rowCount = out.agendaBootstrap && Array.isArray(out.agendaBootstrap.events) ? out.agendaBootstrap.events.length : 0;
     totalMeta.responseBytes = serializationMeta.responseBytes;
+    totalMeta.responseBytesMeasured = serializationMeta.responseBytesMeasured;
     return out;
   });
 }
@@ -430,10 +433,11 @@ function getCadastrosBootstrapData(page) {
   } else if (page === 'medicamentos') {
     out.data = getMedicamentosRecebidos();
   } else if (page === 'medicos') {
-    out.config = getMedicoFormConfig();
-    out.data = getMedicos();
+    out.config = getMedicoFormConfigDados_();
+    // Composição já autorizada acima; a RPC pública mantém sua própria guarda.
+    out.data = getMedicosDados_();
   } else if (page === 'solicitantes') {
-    out.data = getSolicitantes();
+    out.data = codexGetExamRequesterUsers_(readSnapshot.users);
   } else if (page === 'prestadores') {
     out.config = {
       tiposServico: getPrestadorTipoServicoOptions_()
@@ -876,7 +880,9 @@ function codexWithDocumentLock_(label, fn, performance) {
   var acquired = false;
   try {
     var lockStartedAt = Date.now();
-    acquired = lock.tryLock(30000);
+    // Presença é consultiva: espera curta; gravações mantêm os 30 s padrão.
+    var waitMs = performance && performance.waitMs !== undefined ? performance.waitMs : 30000;
+    acquired = lock.tryLock(waitMs);
     if (performance && performance.operation) {
       codexLogPerformance_(performance.operation, 'document_lock', Date.now() - lockStartedAt, { rowCount: 0 }, acquired);
     }
@@ -1069,19 +1075,20 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
           cleanupMeta.rowCount = active.length;
           return active;
         });
+        var agendaRow = null;
         var version = codexMeasurePerformance_('codexOpenEditPresence', 'record_version', { rowCount: 1 }, function() {
-          return codexGetRecordVersion_(moduleName, recordId);
-        });
-        var editVersion = codexMeasurePerformance_('codexOpenEditPresence', 'editable_version', { rowCount: 1 }, function() {
-          var result = '';
           if (normText_(moduleName) === 'agenda') {
             var agenda = getAgendaSheetForRead_();
             var linhaAgenda = encontrarLinhaPorId(agenda, recordId);
             if (linhaAgenda) {
-              result = agendaEditableRecordVersionFromRow_(agenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0]);
+              agendaRow = agenda.getRange(linhaAgenda, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
             }
+            return agendaRow ? agendaRecordVersionFromRow_(agendaRow) : '';
           }
-          return result;
+          return codexGetRecordVersion_(moduleName, recordId);
+        });
+        var editVersion = codexMeasurePerformance_('codexOpenEditPresence', 'editable_version', { rowCount: 1 }, function() {
+          return agendaRow ? agendaEditableRecordVersionFromRow_(agendaRow) : '';
         });
         var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
         var name = access.name || access.firstName || email;
@@ -1112,7 +1119,7 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
           else sh.appendRow(row);
         });
         return { ok: true, module: moduleName, recordId: recordId, sessionId: sessionId, version: version, editVersion: editVersion, editors: editors, ttlSeconds: ttlSeconds };
-      }, { operation: 'codexOpenEditPresence' });
+      }, { operation: 'codexOpenEditPresence', waitMs: 1000 });
     } catch (e) {
       if (codexIsDocumentLockBusyError_(e)) {
         return { ok: false, lockBusy: true, editors: [], version: '', message: e.message || String(e) };
@@ -1129,21 +1136,28 @@ function codexReleaseEditPresence(moduleName, recordId, sessionId) {
   recordId = String(recordId || '').trim();
   sessionId = String(sessionId || '').trim();
   if (!moduleName || !recordId || !sessionId) return { ok: true };
-  return codexWithDocumentLock_('codexReleaseEditPresence', function() {
-    var sh = codexGetEditPresenceSheet_();
-    var vals = codexCleanupEditPresence_(sh, new Date());
-    var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
-    var remaining = vals.filter(function(r) {
-      return !(String(r[0] || '') === moduleName &&
-          String(r[1] || '') === recordId &&
-          codexNormalizeEmail_(r[2]) === email &&
-          String(r[4] || '') === sessionId);
-    });
-    if (remaining.length !== vals.length) {
-      codexReplaceEditPresenceRows_(sh, remaining);
+  try {
+    return codexWithDocumentLock_('codexReleaseEditPresence', function() {
+      var sh = codexGetEditPresenceSheet_();
+      var vals = codexCleanupEditPresence_(sh, new Date());
+      var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
+      var remaining = vals.filter(function(r) {
+        return !(String(r[0] || '') === moduleName &&
+            String(r[1] || '') === recordId &&
+            codexNormalizeEmail_(r[2]) === email &&
+            String(r[4] || '') === sessionId);
+      });
+      if (remaining.length !== vals.length) {
+        codexReplaceEditPresenceRows_(sh, remaining);
+      }
+      return { ok: true };
+    }, { operation: 'codexReleaseEditPresence', waitMs: 1000 });
+  } catch (e) {
+    if (codexIsDocumentLockBusyError_(e)) {
+      return { ok: false, lockBusy: true, message: e.message || String(e) };
     }
-    return { ok: true };
-  });
+    throw e;
+  }
 }
 
 function codexInferAuditModule_(action) {
@@ -1312,15 +1326,25 @@ function codexAuditRowDate_(value) {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function codexAuditRowMatchesFilters_(row, filters, indexes) {
+function codexPrepareAuditFilters_(filters) {
   filters = filters || {};
+  return {
+    user: codexNormalizeAuditFilterText_(filters.user),
+    action: codexNormalizeAuditFilterText_(filters.action),
+    startDate: codexParseAuditFilterDate_(filters.startDate, false),
+    endDate: codexParseAuditFilterDate_(filters.endDate, true)
+  };
+}
+
+function codexAuditRowMatchesFilters_(row, filters, indexes, prepared) {
+  prepared = prepared || codexPrepareAuditFilters_(filters);
   indexes = indexes || {};
-  var user = codexNormalizeAuditFilterText_(filters.user);
-  var action = codexNormalizeAuditFilterText_(filters.action);
+  var user = prepared.user;
+  var action = prepared.action;
   if (user && codexNormalizeAuditFilterText_(row[indexes.userCol] || '').indexOf(user) === -1) return false;
   if (action && codexNormalizeAuditFilterText_(row[indexes.actionCol] || '').indexOf(action) === -1) return false;
-  var startDate = codexParseAuditFilterDate_(filters.startDate, false);
-  var endDate = codexParseAuditFilterDate_(filters.endDate, true);
+  var startDate = prepared.startDate;
+  var endDate = prepared.endDate;
   if (startDate || endDate) {
     var rowDate = codexAuditRowDate_(row[indexes.dateCol]);
     if (!rowDate) return false;
@@ -1341,10 +1365,11 @@ function getAuditRowsPage_(sheetName, colCount, limit, offset, mapper, filters, 
   var lastRow = sh.getLastRow();
   var total = lastRow - 1;
   if (codexHasAuditFilters_(filters)) {
+    var prepared = codexPrepareAuditFilters_(filters);
     var allRows = sh.getRange(2, 1, total, colCount).getValues();
     allRows.reverse();
     allRows = allRows.filter(function(row) {
-      return codexAuditRowMatchesFilters_(row, filters, indexes);
+      return codexAuditRowMatchesFilters_(row, filters, indexes, prepared);
     });
     var users = {};
     var modules = {};
@@ -1395,9 +1420,7 @@ function getAuditLog(limit) {
   return getAuditLogPage(limit, 0).rows;
 }
 
-function getAuditLogPage(limit, offset, filters) {
-  codexAssertAdmin_();
-  return getAuditRowsPage_('Audit_Log', 6, limit, offset, function(r) {
+function codexAuditLogRowDto_(r) {
     return {
       id: String(r[0] || ''),
       email: String(r[1] || ''),
@@ -1406,7 +1429,12 @@ function getAuditLogPage(limit, offset, filters) {
       module: String(r[4] || ''),
       recordId: String(r[5] || '')
     };
-  }, filters, { userCol: 1, actionCol: 2, dateCol: 3, moduleCol: 4 });
+}
+
+function getAuditLogPage(limit, offset, filters) {
+  codexAssertAdmin_();
+  return getAuditRowsPage_('Audit_Log', 6, limit, offset, codexAuditLogRowDto_, filters,
+    { userCol: 1, actionCol: 2, dateCol: 3, moduleCol: 4 });
 }
 
 function getAuditChanges(limit) {
@@ -1414,9 +1442,7 @@ function getAuditChanges(limit) {
   return getAuditChangesPage(limit, 0).rows;
 }
 
-function getAuditChangesPage(limit, offset, filters) {
-  codexAssertAdmin_();
-  return getAuditRowsPage_('Audit_Changes', 10, limit, offset, function(r) {
+function codexAuditChangesRowDto_(r) {
     return {
       id: String(r[0] || ''),
       timestamp: r[1] instanceof Date ? Utilities.formatDate(r[1], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') : String(r[1] || ''),
@@ -1429,10 +1455,18 @@ function getAuditChangesPage(limit, offset, filters) {
       newValue: String(r[8] || ''),
       note: String(r[9] || '')
     };
-  }, filters, { userCol: 2, actionCol: 4, dateCol: 1, moduleCol: 3 });
 }
 
-function getAuditPage(type, limit, offset, filters) {
+function getAuditChangesPage(limit, offset, filters) {
+  codexAssertAdmin_();
+  return getAuditRowsPage_('Audit_Changes', 10, limit, offset, codexAuditChangesRowDto_, filters,
+    { userCol: 2, actionCol: 4, dateCol: 1, moduleCol: 3 });
+}
+
+function getAuditPage(type, limit, offset, filters, query) {
+  if (query && query.paginationVersion === 2) {
+    return codexGetAuditSnapshotPage_(codexAssertAdmin_(), type, limit, offset, filters, query);
+  }
   codexAssertCanRead_();
   type = String(type || 'log') === 'changes' ? 'changes' : 'log';
   var page = type === 'changes' ? getAuditChangesPage(limit, offset, filters) : getAuditLogPage(limit, offset, filters);
@@ -1908,6 +1942,7 @@ var CODEX_LAB_CENTRAL_CACHE_ = null;
 var CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
 var CODEX_CACHE_BYPASS_READS_ = false;
 var CODEX_CACHE_TTL_SECONDS_ = 300;
+var CODEX_CACHE_MAX_BYTES_ = 100 * 1024;
 // Referencias da Agenda mudam por mutacoes que ja invalidam esta chave. Um TTL
 // maior evita reconstruir o formulario completo a cada abertura da janela.
 var AGENDA_REFERENCE_CACHE_TTL_SECONDS_ = 1800;
@@ -1948,13 +1983,11 @@ function agendaReferencePartKeys_() {
 }
 
 function agendaInvalidateReferenceDataCache_(parts) {
-  codexCacheRemove_(agendaReferenceCacheKey_());
-  codexCacheRemove_(agendaReferenceBackgroundRevalidateKey_());
   var keys = agendaReferencePartKeys_();
   var selected = Array.isArray(parts) ? parts : AGENDA_REFERENCE_PARTS_;
-  try {
-    CacheService.getScriptCache().removeAll(selected.filter(function(part) { return !!keys[part]; }).map(function(part) { return keys[part]; }));
-  } catch (e) {}
+  var removeKeys = [agendaReferenceCacheKey_(), agendaReferenceBackgroundRevalidateKey_()];
+  selected.forEach(function(part) { if (keys[part]) removeKeys.push(keys[part]); });
+  codexCacheRemoveAll_(removeKeys);
 }
 
 function agendaInvalidateKitsReference_() {
@@ -1962,7 +1995,7 @@ function agendaInvalidateKitsReference_() {
   agendaInvalidateReferenceDataCache_(['kits_coleta']);
   // Consumidores legados continuam recebendo o formulario completo atualizado.
   var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
-  ['AgendaFormData:v9:', 'AgendaFormDataStrict:v3:', 'AgendaFormData:v12:', 'AgendaFormDataStrict:v6:'].forEach(function(prefix) { codexCacheRemove_(prefix + day); });
+  codexCacheRemoveAll_(['AgendaFormData:v9:', 'AgendaFormDataStrict:v3:', 'AgendaFormData:v12:', 'AgendaFormDataStrict:v6:'].map(function(prefix) { return prefix + day; }));
 }
 
 function agendaReferencePartsForRead_(forceRefresh) {
@@ -1990,9 +2023,11 @@ function agendaParticipantHydrationRowsCacheKey_() {
 }
 
 function agendaInvalidateParticipantHydrationCache_() {
-  codexCacheRemove_('AgendaParticipantHydration:v1');
-  codexCacheRemove_(agendaParticipantHydrationCacheKey_());
-  codexCacheRemove_(agendaParticipantHydrationRowsCacheKey_());
+  codexCacheRemoveAll_([
+    'AgendaParticipantHydration:v1',
+    agendaParticipantHydrationCacheKey_(),
+    agendaParticipantHydrationRowsCacheKey_()
+  ]);
 }
 
 function agendaDateIndexCacheKey_() {
@@ -2000,8 +2035,7 @@ function agendaDateIndexCacheKey_() {
 }
 
 function agendaInvalidateDateIndexCache_() {
-  codexCacheRemove_('AgendaDateIndex:v1');
-  codexCacheRemove_(agendaDateIndexCacheKey_());
+  codexCacheRemoveAll_(['AgendaDateIndex:v1', agendaDateIndexCacheKey_()]);
   // Eventos em cache dependem do mesmo conjunto de linhas e precisam ficar
   // inacessíveis após qualquer escrita que invalide o índice de datas.
   agendaInvalidateWindowCache_();
@@ -2020,20 +2054,23 @@ function clearCodexRuntimeCaches_(referenceParts) {
   CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
   CODEX_LAB_CENTRAL_CACHE_ = null;
   CODEX_AGENDA_KITS_ESTOQUE_CACHE_ = null;
-  codexCacheRemove_('ConfigAppRows:v2');
-  codexCacheRemove_('AgendaFormData:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v4:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v5:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v7:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v8:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v9:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormDataStrict:v2:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormDataStrict:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormData:v12:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaFormDataStrict:v6:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
-  codexCacheRemove_('AgendaBootstrapReferenceData:v1:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd'));
+  var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  codexCacheRemoveAll_([
+    'ConfigAppRows:v2',
+    'AgendaFormData:v2:' + day,
+    'AgendaFormData:v3:' + day,
+    'AgendaFormData:v4:' + day,
+    'AgendaFormData:v5:' + day,
+    'AgendaFormData:v6:' + day,
+    'AgendaFormData:v7:' + day,
+    'AgendaFormData:v8:' + day,
+    'AgendaFormData:v9:' + day,
+    'AgendaFormDataStrict:v2:' + day,
+    'AgendaFormDataStrict:v3:' + day,
+    'AgendaFormData:v12:' + day,
+    'AgendaFormDataStrict:v6:' + day,
+    'AgendaBootstrapReferenceData:v1:' + day
+  ]);
   agendaInvalidateReferenceDataCache_(referenceParts);
   agendaInvalidateParticipantHydrationCache_();
   agendaInvalidateDateIndexCache_();
@@ -2050,9 +2087,89 @@ function codexCacheGet_(key) {
 }
 
 function codexCachePut_(key, value, seconds) {
+  var raw;
+  var byteLength;
   try {
+    raw = JSON.stringify(value);
+    if (typeof raw !== 'string') throw new Error('Valor nao serializavel para cache.');
+    byteLength = codexUtf8ByteLength_(raw);
+    if (byteLength > CODEX_CACHE_MAX_BYTES_) {
+      codexLogCacheFailure_('put_too_large', byteLength);
+      return false;
+    }
     var ttl = seconds || CODEX_CACHE_TTL_SECONDS_;
-    CacheService.getScriptCache().put(key, JSON.stringify(value), ttl);
+    CacheService.getScriptCache().put(key, raw, ttl);
+  } catch (e) {
+    codexLogCacheFailure_('put', byteLength, e);
+    return false;
+  }
+  // Persistencia de metadados somente para os itens exibidos no diagnostico.
+  if (codexCacheShouldPersistMetadata_(key)) codexWriteCacheMetadata_(key, seconds || CODEX_CACHE_TTL_SECONDS_);
+  return true;
+}
+
+function codexCacheRemove_(key) {
+  codexCacheRemoveAll_([key]);
+}
+
+function codexCacheRemoveAll_(keys) {
+  keys = (Array.isArray(keys) ? keys : []).filter(function(key, index, all) {
+    return key !== null && key !== undefined && all.indexOf(key) === index;
+  });
+  if (!keys.length) return;
+  var cache;
+  try {
+    cache = CacheService.getScriptCache();
+    cache.removeAll(keys);
+  } catch (e) {
+    codexLogCacheFailure_('remove_all', null, e);
+    // Mantem compatibilidade e invalida mesmo quando um mock/servico nao oferece removeAll.
+    keys.forEach(function(key) {
+      try {
+        cache = cache || CacheService.getScriptCache();
+        cache.remove(key);
+      }
+      catch (fallbackError) { codexLogCacheFailure_('remove', null, fallbackError); }
+    });
+  }
+  codexRemoveCacheMetadata_(keys);
+}
+
+function codexRemoveCacheMetadata_(keys) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    // Uma leitura por lote: remove os metadados legados das chaves invalidadas
+    // e recolhe entradas expiradas, sem tocar nas demais propriedades do app.
+    var properties = props.getProperties();
+    var now = Date.now();
+    // A limpeza historica avanca aos poucos para nao alongar uma mutacao comum.
+    var cleanupRemaining = 10;
+    Object.keys(properties).forEach(function(propertyKey) {
+      if (propertyKey.indexOf('CODEX_CACHE_META_') !== 0) return;
+      var metadata;
+      try { metadata = JSON.parse(properties[propertyKey]); } catch (e) { metadata = null; }
+      var expiresAtMs = Number(metadata && metadata.expiresAtMs || 0);
+      var affected = metadata && keys.indexOf(metadata.key) !== -1;
+      var stale = !metadata || !metadata.key || (expiresAtMs > 0 && expiresAtMs <= now);
+      if (!affected) {
+        if (!stale || cleanupRemaining <= 0) return;
+        cleanupRemaining--;
+      }
+      try { props.deleteProperty(propertyKey); }
+      catch (deleteError) { codexLogCacheFailure_('metadata_remove', null, deleteError); }
+    });
+  } catch (e) {
+    codexLogCacheFailure_('metadata_remove', null, e);
+  }
+}
+
+function codexCacheShouldPersistMetadata_(key) {
+  key = String(key || '');
+  return key === 'ConfigAppRows:v2' || /^(AgendaFormData:v12|AgendaFormDataStrict:v6|AgendaBootstrapReferenceData:v3):\d{8}$/.test(key);
+}
+
+function codexWriteCacheMetadata_(key, ttl) {
+  try {
     var now = new Date();
     var expires = new Date(now.getTime() + ttl * 1000);
     PropertiesService.getScriptProperties().setProperty(codexCacheMetaKey_(key), JSON.stringify({
@@ -2063,16 +2180,32 @@ function codexCachePut_(key, value, seconds) {
       expiresAtMs: expires.getTime(),
       ttlSeconds: ttl
     }));
-    return true;
   } catch (e) {
-    return false;
+    // O valor já está no CacheService; falha de telemetria não invalida o put.
+    codexLogCacheFailure_('metadata_put', null, e);
   }
 }
 
-function codexCacheRemove_(key) {
+function codexUtf8ByteLength_(value) {
+  var length = 0;
+  for (var i = 0; i < value.length; i++) {
+    var code = value.charCodeAt(i);
+    if (code < 0x80) length++;
+    else if (code < 0x800) length += 2;
+    else if (code >= 0xD800 && code <= 0xDBFF && i + 1 < value.length && value.charCodeAt(i + 1) >= 0xDC00 && value.charCodeAt(i + 1) <= 0xDFFF) {
+      length += 4;
+      i++;
+    } else length += 3;
+  }
+  return length;
+}
+
+function codexLogCacheFailure_(operation, byteLength, error) {
   try {
-    CacheService.getScriptCache().remove(key);
-    PropertiesService.getScriptProperties().deleteProperty(codexCacheMetaKey_(key));
+    var parts = ['[CODEX_CACHE]', operation];
+    if (byteLength !== null && byteLength !== undefined) parts.push('bytes=' + byteLength);
+    if (error) parts.push('error=' + String(error.message || error).slice(0, 160));
+    Logger.log(parts.join(' '));
   } catch (e) {}
 }
 
@@ -2141,10 +2274,11 @@ function readConfigAppRows_() {
     return CODEX_CONFIG_APP_ROWS_CACHE_;
   }
 
+  var allValues = sh.getRange(2, 1, lastRow - 1, 13).getValues();
   function readBlock(startCol, bloco) {
     var out = [];
-    var values = sh.getRange(2, startCol, Math.max(0, lastRow - 1), 6).getValues();
-    values.forEach(function(r, idx) {
+    allValues.forEach(function(row, idx) {
+      var r = row.slice(startCol - 1, startCol + 5);
       if (!String(r[0] || r[1] || r[2] || '').trim()) return;
       out.push({
         rowIndex: idx + 2,
@@ -3344,17 +3478,26 @@ function reqExamesLogoUrl_() {
 }
 
 function reqExamesLogoSrc_() {
+  var url = reqExamesLogoUrl_();
+  var cacheKey = 'ReqExamesLogo:v1:' + url;
+  var cached = codexCacheGet_(cacheKey);
+  if (typeof cached === 'string' && /^data:image\//i.test(cached)) return cached;
   try {
-    var response = UrlFetchApp.fetch(reqExamesLogoUrl_(), { muteHttpExceptions: true });
+    var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     var code = response.getResponseCode();
     if (code >= 200 && code < 300) {
       var blob = response.getBlob();
-      return 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(blob.getBytes());
+      var contentType = blob.getContentType() || 'image/png';
+      if (!/^image\//i.test(contentType)) return url;
+      var src = 'data:' + contentType + ';base64,' + Utilities.base64Encode(blob.getBytes());
+      // O helper verifica o limite após base64/JSON; falhas mantêm o PDF funcional.
+      codexCachePut_(cacheKey, src, 21600);
+      return src;
     }
   } catch (e) {
     Logger.log('ReqExames PDF: logo externo nao incorporado: ' + (e && e.message ? e.message : String(e)));
   }
-  return reqExamesLogoUrl_();
+  return url;
 }
 
 function reqExamesRodapeInstitucionalHtml_() {
@@ -3802,6 +3945,10 @@ function getProjetoFormConfigDados_() {
 
 function getMedicoFormConfig() {
   codexAssertCanRead_();
+  return getMedicoFormConfigDados_();
+}
+
+function getMedicoFormConfigDados_() {
   return {
     especialidades: getConfigValues_('Médicos', 'Especialidade', [])
   };
@@ -7397,15 +7544,20 @@ function getPendenciasOperacionais(request) {
     return current;
   });
   var estoque = [];
+  var estoqueUnavailable = false;
   try {
     estoque = measure('stock', function() { return getEstoqueResumoParaPendencias_() || []; });
   } catch(e) {
+    estoqueUnavailable = true;
     Logger.log('[getPendenciasOperacionais] ERRO estoque: ' + e.message);
   }
   var result = {
     access: access,
     pendencias: measure('pending', function() { return getDashboardPendencias_(estoque, { operation: 'getPendenciasOperacionais', traceId: traceId }); })
   };
+  if (estoqueUnavailable) {
+    result.pendencias.unavailable = { kitsVencendo: 'Não foi possível consultar o Estoque. Atualize para tentar novamente.' };
+  }
   totalMeta.rowCount = Object.keys(result.pendencias.counts || {}).reduce(function(sum, key) {
     return sum + Number(result.pendencias.counts[key] || 0);
   }, 0);
@@ -14039,7 +14191,7 @@ function agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, ti
   });
   for (var j = atuais.length; j < datas.length; j++) {
     var clone = agendaCloneDados_(dados);
-    var res = _gravarLinhaEvento(agenda, agendaDateWithHora_(datas[j], dados.hora), clone, ss);
+    var res = _gravarLinhaEvento(agenda, agendaDateWithHora_(datas[j], dados.hora), clone, ss, null, { deferFinalize: true });
     if (res && res.id) ids.push(res.id);
   }
   if (agenda.getLastRow() > 2) {
@@ -16513,6 +16665,10 @@ function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
       responseBytes: Math.max(0, Number(metadata.responseBytes) || 0),
       success: success === true
     };
+    if (metadata.responseBytesMeasured !== undefined) {
+      payload.responseBytesMeasured = metadata.responseBytesMeasured === true;
+      if (!payload.responseBytesMeasured) delete payload.responseBytes;
+    }
     var traceId = String(metadata.traceId || '').trim();
     ['instrumentedReadCalls', 'instrumentedCellsRead'].forEach(function(key) {
       if (metadata[key] !== undefined) payload[key] = Math.max(0, Number(metadata[key]) || 0);
@@ -16522,6 +16678,11 @@ function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
   } catch (eLog) {
     // A telemetria nunca pode alterar o resultado da operacao observada.
   }
+}
+
+function codexShouldMeasureBootstrapBytes_() {
+  // Amostra de 5% sem serializar a resposta nas demais aberturas.
+  return Math.random() < 0.05;
 }
 
 function codexSerializedByteLength_(serialized) {
@@ -18597,13 +18758,28 @@ function getConfigAppSheet_() {
   return sh;
 }
 
+function codexAssertConfigAppConfirmation_(grupo, confirmado) {
+  if (normText_(grupo) === 'transporte' && confirmado !== true) {
+    throw new Error('Confirme a alteração da configuração de Transporte antes de continuar.');
+  }
+}
+
 function salvarConfigAppItem(payload) {
   codexAssertCanWrite_('salvarConfigAppItem', 'Sistema', payload && payload.rowIndex);
+  return codexWithDocumentLock_('salvarConfigAppItem', function() {
+    return salvarConfigAppItemInterno_(payload);
+  });
+}
+
+function salvarConfigAppItemInterno_(payload) {
   payload = payload || {};
   if (!String(payload.grupo || '').trim()) throw new Error('Informe o grupo.');
   if (!String(payload.chave || '').trim()) throw new Error('Informe a chave.');
   if (!String(payload.valor || '').trim()) throw new Error('Informe o valor.');
 
+  // Grupo e identificador textual: uma formula nao pode contornar a confirmacao.
+  if (String(payload.grupo).trim().charAt(0) === '=') throw new Error('Informe o grupo como texto, sem fórmula.');
+  codexAssertConfigAppConfirmation_(payload.grupo, payload.confirmarAlteracaoTransporte);
   var sh = getConfigAppSheet_();
   var rowIndex = parseInt(payload.rowIndex, 10);
   var startCol = parseInt(payload.startCol, 10);
@@ -18619,6 +18795,9 @@ function salvarConfigAppItem(payload) {
 
   if (rowIndex && rowIndex >= 2) {
     var rowAnterior = sh.getRange(rowIndex, startCol, 1, 6).getValues()[0];
+    // Trocar Transporte por outro grupo tambem exige confirmacao, considerando
+    // o registro persistido dentro do lock, sem depender do grupo do formulario.
+    codexAssertConfigAppConfirmation_(rowAnterior[0], payload.confirmarAlteracaoTransporte);
     sh.getRange(rowIndex, startCol, 1, 6).setValues([row]);
     codexWriteAuditChanges_('Sistema', 'salvarConfigAppItem', row[0] + '/' + row[1], [
       { field: 'Config_App - Grupo', oldValue: rowAnterior[0], newValue: row[0] },
@@ -18629,6 +18808,7 @@ function salvarConfigAppItem(payload) {
       { field: 'Config_App - Observação', oldValue: rowAnterior[5], newValue: row[5] }
     ], 'Alteração de configuração');
     clearConfigAppDefaultsCache_('salvarConfigAppItem');
+    SpreadsheetApp.flush();
     return 'Configuração atualizada com sucesso.';
   }
 
@@ -18648,11 +18828,18 @@ function salvarConfigAppItem(payload) {
     { field: 'Config_App - Observação', oldValue: '', newValue: row[5] }
   ], 'Cadastro de configuração');
   clearConfigAppDefaultsCache_('salvarConfigAppItem');
+  SpreadsheetApp.flush();
   return 'Configuração cadastrada com sucesso.';
 }
 
-function excluirConfigAppItem(rowIndex, startCol) {
+function excluirConfigAppItem(rowIndex, startCol, options) {
   codexAssertCanWrite_('excluirConfigAppItem', 'Sistema', rowIndex);
+  return codexWithDocumentLock_('excluirConfigAppItem', function() {
+    return excluirConfigAppItemInterno_(rowIndex, startCol, options);
+  });
+}
+
+function excluirConfigAppItemInterno_(rowIndex, startCol, options) {
   var sh = getConfigAppSheet_();
   var row = parseInt(rowIndex, 10);
   var col = parseInt(startCol, 10);
@@ -18660,6 +18847,7 @@ function excluirConfigAppItem(rowIndex, startCol) {
   if (!row || row < 2 || row > sh.getLastRow()) throw new Error('Configuração não encontrada.');
 
   var values = sh.getRange(row, col, 1, 6).getValues()[0];
+  codexAssertConfigAppConfirmation_(values[0], options && options.confirmarAlteracaoTransporte);
   sh.getRange(row, col, 1, 6).clearContent();
   codexWriteAuditChanges_('Sistema', 'excluirConfigAppItem', values[0] + '/' + values[1], [
     { field: 'Config_App - Grupo', oldValue: values[0], newValue: '' },
@@ -18670,6 +18858,7 @@ function excluirConfigAppItem(rowIndex, startCol) {
     { field: 'Config_App - Observação', oldValue: values[5], newValue: '' }
   ], 'Exclusão de configuração');
   clearConfigAppDefaultsCache_('excluirConfigAppItem');
+  SpreadsheetApp.flush();
   return 'Configuração excluída com sucesso.';
 }
 

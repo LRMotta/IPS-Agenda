@@ -33,6 +33,19 @@ test('MatBio cliente e servidor rejeitam formulas parciais, sinais e tubos fraci
   }
 });
 
+test('MatBio formula recebe somente numeros, sem rotulos de unidade no cliente e servidor', () => {
+  for (const core of implementations) {
+    assert.equal(core.parseFormula('1x500').valid, true);
+    for (const unit of ['mL', 'L', 'g', 'uL', 'µL', 'mg']) {
+      const formula = '1x500 ' + unit;
+      const parsed = core.parseFormula(formula);
+      assert.equal(parsed.valid, false, formula);
+      assert.equal(parsed.segmentos.length, 0);
+      assert.throws(() => core.serializeItems([{ key: 'soro', formula }]), /fórmula/);
+    }
+  }
+});
+
 test('MatBio formulas preservam milhares legados e decimais pequenos ao reler e converter', () => {
   for (const core of implementations) {
     const formula = core.formulaFromSegments([{ qtd: 1000, vol: 1000 }, { qtd: 1, vol: 0.001 }], 'mL');

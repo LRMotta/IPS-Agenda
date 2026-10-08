@@ -648,7 +648,9 @@ function codexGetCacheDiagnostics_() {
     var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
     var keys = [
       { key: 'ConfigAppRows:v2', label: 'Config_App' },
-      { key: 'AgendaFormData:v6:' + today, label: 'Agenda bootstrap hoje' },
+      { key: 'AgendaFormData:v12:' + today, label: 'Agenda formulario hoje' },
+      { key: 'AgendaFormDataStrict:v6:' + today, label: 'Agenda formulario validado hoje' },
+      { key: agendaReferenceCacheKey_(), label: 'Agenda referencias por janela hoje' },
       { key: 'TRANSPORTE_OPTIONS_BASE_V6', label: 'Transporte options', reader: 'transporte' },
       { key: 'TRANSPORTE_PARTICIPANTES_OPTIONS_V1', label: 'Transporte participantes', reader: 'transporte' }
     ];
@@ -656,9 +658,9 @@ function codexGetCacheDiagnostics_() {
       return codexCacheItemDiagnostics_(item.key, item.label, item.reader);
     });
     out.configRowsCachePresent = !!out.items[0].present;
-    out.agendaBootstrapCachePresent = !!out.items[1].present;
-    out.transporteOptionsCachePresent = !!out.items[2].present;
-    out.transporteOptionsCacheStatus = out.items[2].statusLabel || (out.items[2].present ? 'Disponivel' : 'Nao carregado');
+    out.agendaBootstrapCachePresent = out.items.slice(1, 4).some(function(item) { return item.present; });
+    out.transporteOptionsCachePresent = !!out.items[4].present;
+    out.transporteOptionsCacheStatus = out.items[4].statusLabel || (out.items[4].present ? 'Disponivel' : 'Nao carregado');
     var props = PropertiesService.getScriptProperties();
     out.lastConfigInvalidationAt = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_AT') || '');
     out.lastConfigInvalidationBy = String(props.getProperty('CODEX_CONFIG_CACHE_INVALIDATED_BY') || '');
@@ -672,7 +674,10 @@ function codexGetCacheDiagnostics_() {
 }
 
 function codexCacheMetaKey_(key) {
-  return 'CODEX_CACHE_META_' + Utilities.base64EncodeWebSafe(String(key || '')).replace(/=+$/g, '');
+  key = String(key || '');
+  // O bootstrap e versionado por dia; um unico metadado evita acumulo diario.
+  key = key.replace(/^(AgendaFormData:v12|AgendaFormDataStrict:v6|AgendaBootstrapReferenceData:v3):\d{8}$/, '$1:daily');
+  return 'CODEX_CACHE_META_' + Utilities.base64EncodeWebSafe(key).replace(/=+$/g, '');
 }
 
 function codexCacheItemDiagnostics_(key, label, reader) {
@@ -680,6 +685,8 @@ function codexCacheItemDiagnostics_(key, label, reader) {
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(codexCacheMetaKey_(key));
     meta = raw ? JSON.parse(raw) : {};
+    // Uma familia diaria pode conter a ultima escrita de outro dia.
+    if (meta.key && meta.key !== key) meta = {};
   } catch (e) {
     meta = { error: e.message || String(e) };
   }

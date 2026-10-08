@@ -554,7 +554,9 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
     'access', 'auth', 'version', 'web_app_url', 'agenda_bootstrap', 'team_birthdays', 'serialize', 'total'
   ]);
   assert.equal(entries.every((entry) => entry.traceId === 'bootstrap-test-001'), true);
-  assert.ok(entries.find((entry) => entry.stage === 'serialize').responseBytes > 0);
+  const serialization = entries.find((entry) => entry.stage === 'serialize');
+  if (serialization.responseBytesMeasured) assert.ok(serialization.responseBytes > 0);
+  else assert.equal(Object.hasOwn(serialization, 'responseBytes'), false);
   assert.equal(entries.find((entry) => entry.stage === 'total').responseBytes, entries.find((entry) => entry.stage === 'serialize').responseBytes);
   assert.equal(server.agendaBootstrapRequestRange_({ page: 'agenda', agendaRange: { start: 'inválida', endExclusive: '2026-09-28' } }), null);
 });
@@ -1034,6 +1036,7 @@ test('servidor invalida todos os caches de referencias e oferece leitura fresca 
     Utilities: { formatDate: () => '20260817' },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
   });
+  server.codexCacheRemoveAll_ = (keys) => removed.push(...keys);
   server.codexCacheRemove_ = (key) => removed.push(key);
   server.clearCodexRuntimeCaches_();
   assert.ok(removed.includes('AgendaFormDataStrict:v3:20260817'));
@@ -1333,6 +1336,7 @@ test('índice de datas é cacheado na carga por período e é invalidado após e
     cache.set(key, value);
     return true;
   };
+  server.codexCacheRemoveAll_ = (keys) => keys.forEach((key) => cache.delete(key));
   server.codexCacheRemove_ = (key) => cache.delete(key);
 
   server.agendaGetEventosPorPeriodo_('2026-07-14', '2026-07-21', 5000, true, null, { useCanaryDateIndex: true });

@@ -393,6 +393,39 @@ test('Backup: opções persistentes, liberação por temperatura e vínculo em d
   }
 });
 
+test('Agenda: formulario fixa unidade e rejeita rotulos digitados na formula', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        const courier = document.getElementById('agC1Nome');
+        courier.innerHTML = '<option value="MARKEN">MARKEN</option>';
+        courier.value = 'MARKEN';
+        document.getElementById('agTransporteCard').style.display = 'block';
+        window.agendaMatBioClear('agC1');
+        window.agendaMatBioAddRow('agC1');
+      });
+      const row = page.locator('.ag-mat-line[data-prefix="agC1"]').first();
+      assert.equal(await row.locator('select').count(), 1);
+      assert.equal(await row.locator('input').count(), 3);
+      await row.locator('.ag-mat-type-select').selectOption('soro');
+      const formula = row.locator('.ag-mat-formula');
+      await formula.fill('1x500');
+      assert.equal(await row.getAttribute('data-formula-unit'), 'mL');
+      for (const unit of ['mL', 'L', 'g', 'uL', 'µL', 'mg']) {
+        await formula.fill('1x500 ' + unit);
+        assert.equal(await formula.getAttribute('aria-invalid'), 'true', unit);
+        assert.equal(await row.getAttribute('data-formula-unit'), 'mL', 'texto nao escolhe unidade');
+        assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), false);
+        assert.equal(await page.evaluate(() => window.agendaMatBioSerialize('agC1').items.length), 0);
+      }
+      await formula.fill('1x500');
+      const items = await page.evaluate(() => window.agendaMatBioSerialize('agC1').items);
+      assert.equal(items[0].unit, 'mL');
+      assert.equal(items[0].total, 500);
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
 test('Agenda: Courier fixa bloqueia mistura durante transicao, preserva gramas e valida formula completa', async () => {
   await scenario(async page => {
     await page.evaluate(() => {
@@ -409,8 +442,12 @@ test('Agenda: Courier fixa bloqueia mistura durante transicao, preserva gramas e
     await soro.last().locator('.ag-mat-formula').fill('1x0,5');
     assert.equal(await soro.first().locator('.ag-mat-formula').getAttribute('aria-invalid'), 'true');
     assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), false);
-    await page.evaluate(() => window.agendaMatBioConvertDhlVolumes('agC1'));
+    assert.equal(await soro.first().locator('.ag-mat-formula').inputValue(), '1x500', 'trocar courier nao converte numeros');
+    assert.equal(await soro.first().getAttribute('data-formula-unit'), 'mL');
+    await page.locator('#agC1MatConvertDhl').click();
     assert.equal(await soro.first().locator('.ag-mat-formula').inputValue(), '1×0,5');
+    assert.equal(await soro.first().getAttribute('data-formula-unit'), 'L');
+    assert.equal(await page.locator('#agC1MatConvertDhl').isDisabled(), true, 'impede segunda conversao');
     assert.equal(await page.evaluate(() => window.agendaMatBioValidateAll()), true);
     const serialized = await page.evaluate(() => window.agendaMatBioSerialize('agC1'));
     assert.equal(serialized.items.find(item => item.key === 'soro').total, 1);

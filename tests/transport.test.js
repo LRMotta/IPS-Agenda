@@ -461,7 +461,7 @@ test('laboratorio permanece editavel no Transporte manual e bloqueia quando vem 
 
 test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () => {
   const source = readProjectFile('TransporteApp.html');
-  const block = sourceBetween(source, 'function sortRowsByText(', 'function fillSelectRows(');
+  const block = sourceBetween(source, 'var transportCollator =', 'function fillSelectRows(');
   const context = vm.createContext({});
   vm.runInContext(block, context);
 
@@ -476,13 +476,13 @@ test('participantes do Transporte sao exibidos em ordem alfabetica pt-BR', () =>
 
   assert.deepEqual(Array.from(ordenados), ['Álvaro', 'ana', 'Bruno 2', 'Bruno 10', 'Zelia']);
   assert.deepEqual(original.map((item) => item.nome), ['Zelia', 'ana', 'Álvaro', 'Bruno 10', 'Bruno 2']);
-  assert.match(source, /fillParticipantOptions\(sortRowsByText\(state\.options\.participantes, 'nome'\)/);
-  assert.match(source, /fillParticipantOptions\(sortRowsByText\(o\.participantes \|\| \[\], 'nome'\)/);
+  assert.match(source, /fillParticipantOptions\(state\.options\.participantes, reference/);
+  assert.match(source, /fillParticipantOptions\(o\.participantes \|\| \[\], r/);
 });
 
 test('Transporte mantém participações com o mesmo nome separadas pelo ID interno e projeto', () => {
   const client = readProjectFile('TransporteApp.html');
-  const optionBlock = sourceBetween(client, 'function sortRowsByText(', 'function fillSelectRows(');
+  const optionBlock = sourceBetween(client, 'var transportCollator =', 'function fillSelectRows(');
   const selectionBlock = sourceBetween(client, 'function selectedParticipantInfo(', 'function projectDisplay(');
   const paciente = { tagName: 'SELECT', value: '', innerHTML: '' };
   const participantes = [
@@ -504,10 +504,12 @@ test('Transporte mantém participações com o mesmo nome separadas pelo ID inte
     protocolo: 'KANDELA-302'
   });
 
-  assert.match(paciente.innerHTML, /value="participante:cad-bgb"/);
-  assert.match(paciente.innerHTML, /value="participante:cad-kandela"/);
-  assert.match(paciente.innerHTML, /Ivone Nunes Veruch — BGB-43395-101 · ID 055018-001/);
-  assert.match(paciente.innerHTML, /Ivone Nunes Veruch — KANDELA-302 · ID 055018-001/);
+  assert.equal(paciente.innerHTML, '', 'sem construir opcoes ocultas');
+  const matches = context.transportParticipantSearchRows('Ivone');
+  assert.equal(matches.length, 2);
+  assert.equal(matches[0].key, 'participante:cad-bgb');
+  assert.equal(matches[1].key, 'participante:cad-kandela');
+  assert.equal(matches[1].project, 'KANDELA-302');
   assert.equal(paciente.value, 'participante:cad-kandela');
   assert.equal(context.selectedParticipantInfo().projeto, 'KANDELA-302');
 });
@@ -558,7 +560,7 @@ test('Transporte exige e exibe o numero de identificacao vindo da coluna E de Pa
 
 test('campo de identificacao usa o ID do participante selecionado sem confundir nomes divergentes', () => {
   const client = readProjectFile('TransporteApp.html');
-  const optionBlock = sourceBetween(client, 'function sortRowsByText(', 'function fillSelectRows(');
+  const optionBlock = sourceBetween(client, 'var transportCollator =', 'function fillSelectRows(');
   const block = optionBlock + '\n' + sourceBetween(client, 'function selectedParticipantInfo(', 'function projectDisplay(');
   const patientField = { value: 'Filipe Muneron da Silva' };
   const idField = { value: '' };
@@ -795,6 +797,7 @@ test('bloqueio do PDF rejeita ensaio de outro slot antes da exportacao', () => {
     transporteNormalizeTemperaturaFromCodex_: (value) => String(value || '').trim().toUpperCase(),
     normalizarSlotTransporteCodex_: (value) => String(value || ''),
     transporteAgendaLinkFromRef_: () => ({ idAgenda: '', agendaSlot: '' }),
+    transporteDateOut_: value => String(value || ''),
     transportePeticaoMaterialRows_: (materiais) => {
       const rows = materiais.map((item) => [item.material, item.ensaio]);
       while (rows.length < 6) rows.push(['', '']);
@@ -982,6 +985,8 @@ test('contato de emergencia da PINEX nao vaza para as demais couriers', () => {
   const context = vm.createContext({
     Logger: { log: () => {} },
     transporteCodexGetSheet_: () => contactSheet,
+    transporteConfigValue_: (_key, fallback) => fallback,
+    transporteTextoLiteralParaCelula_: value => value,
     transporteNormalizeCourierFromCodex_: (courier) => String(courier || '').trim().toUpperCase()
   });
   vm.runInContext(block, context);

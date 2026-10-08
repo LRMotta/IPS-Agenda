@@ -67,6 +67,19 @@ test('bootstrap de Projetos lê Users uma vez e preserva DTO das RPCs autorizada
   assert.deepEqual(result.solicitantes, plain(direct.getSolicitantes()));
 });
 
+test('bootstrap de Médicos e Solicitantes não repete a leitura da ACL', () => {
+  const medicos = fixture();
+  const medicosResult = plain(medicos.server.getCadastrosBootstrapData('medicos'));
+  assert.equal(medicos.counts.users, 1);
+  assert.equal(medicosResult.data[0].cpf, '0123');
+  assert.deepEqual(medicosResult.config.especialidades, ['Opção simulada']);
+
+  const solicitantes = fixture();
+  const solicitantesResult = plain(solicitantes.server.getCadastrosBootstrapData('solicitantes'));
+  assert.equal(solicitantes.counts.users, 1);
+  assert.deepEqual(solicitantesResult.data.map(user => user.id), ['reader@example.invalid']);
+});
+
 test('RPCs diretas e autorização de escrita/administração não herdam snapshot do bootstrap', () => {
   const f = fixture();
   f.server.getCadastrosBootstrapData('projetos');

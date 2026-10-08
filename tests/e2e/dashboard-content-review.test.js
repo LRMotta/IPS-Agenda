@@ -64,7 +64,7 @@ test('Dashboard responsivo: títulos, filtros, tabelas acessíveis e navegação
         section.contains(document.getElementById(section.getAttribute('aria-labelledby'))))), Array(11).fill(true));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
       const stockCols = await page.locator('#dashEstoqueBlock .dash-grid').evaluate(el => window.getComputedStyle(el).gridTemplateColumns.split(' ').length);
-      assert.equal(stockCols, width === 390 ? 1 : 5);
+      assert.equal(stockCols, width === 390 ? 2 : 5);
       const details = page.locator('#chartCoordData');
       await details.locator('summary').click();
       // Repeating an unchanged table preserves the DOM and keyboard focus.

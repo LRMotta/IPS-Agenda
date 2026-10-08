@@ -9,6 +9,68 @@ const path = require('node:path');
 const { loadPlaywright } = require('../helpers/playwright-runtime');
 const { readProjectFile } = require('../helpers/load-app-script');
 
+test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM real', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    for (const width of [1280, 390]) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      const errors = [];
+      page.on('pageerror', e => errors.push(e.message));
+      await page.route('**/*', route => route.abort());
+      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '</head><body><h1>Pendências</h1><button id="btnPendenciasRefresh"><span class="btn-label">Atualizar</span></button><div id="pendenciasStatus"></div><div id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
+      await page.evaluate(() => {
+        window.requests = []; window.mutations = [];
+        window.esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+        window.snack = window.snackErro = () => {};
+        window.appErrorMessage = e => e.message;
+        window.abrirOverlay = id => document.getElementById(id).classList.add('open');
+        window.fecharOverlay = id => document.getElementById(id).classList.remove('open');
+        window.appServerRun = opts => window.mutations.push(opts);
+        function runner(success, failure) {
+          return { withSuccessHandler(fn) { return runner(fn, failure); }, withFailureHandler(fn) { return runner(success, fn); }, getPendenciasOperacionais() { window.requests.push({ success, failure }); } };
+        }
+        window.google = { script: { run: runner() } };
+      });
+      await page.addScriptTag({ content: readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, '') });
+      await page.evaluate(() => {
+        window.carregarPendencias(true);
+        window.requests[0].success({ pendencias: { unavailable: { kitsVencendo: 'Estoque indisponível' }, awbEnviadaNaoEntregue: [{ agendaId: 'A', slot: 'Transporte I', participante: 'Pessoa A' }] } });
+      });
+      const kit = page.locator('[data-pendencia-card="pendenciasGrid:kitsVencendo"]');
+      assert.match(await kit.innerText(), /Estoque indisponível/);
+      assert.doesNotMatch(await kit.innerText(), /Sem pendências/);
+      assert.equal(await kit.locator('.dash-pend-count').innerText(), '—');
+      await page.evaluate(() => {
+        window.confirmarEntregaPendencia(null, 'A', 'Transporte I', '123', 'Pessoa A');
+        window.executarConfirmarEntregaPendencia_();
+        window.fecharConfirmacaoEntregaPendencia();
+        window.confirmarEntregaPendencia(null, 'B', 'Transporte II', '456', 'Pessoa B');
+        window.mutations[0].onSuccess({ ok: true });
+      });
+      assert.equal(await page.locator('#modalConfirmarEntregaPendencia').evaluate(el => el.classList.contains('open')), true);
+      assert.equal(await page.locator('#pendenciaEntregaParticipante').textContent(), 'Pessoa B');
+      await page.evaluate(() => {
+        window.executarConfirmarEntregaPendencia_();
+        window.mutations[1].onFailure(new Error('rede'));
+      });
+      assert.equal(await page.locator('#btnConfirmarEntregaPendencia').isDisabled(), false);
+      assert.match(await page.locator('#btnConfirmarEntregaPendencia').innerText(), /Confirmar entrega/i);
+      await page.evaluate(() => {
+        const render = window.renderDashboardPendencias;
+        window.renderDashboardPendencias = () => { throw new Error('falha renderer'); };
+        window.requests[1].success({ pendencias: {} });
+        window.renderDashboardPendencias = render;
+        window.carregarPendencias(true);
+        window.requests[2].success({ pendencias: { kitsVencendo: [] } });
+      });
+      assert.match(await kit.innerText(), /Sem pendências/);
+      assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), false);
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
+  } finally { await browser.close(); }
+});
+
 test('Pendencias: dados literais, teclado, rastreio, modal e expansao em desktop e celular', async () => {
   // Browser plugin not available: reutiliza o runtime Playwright local; nenhuma rede ou RPC real.
   const browser = await loadPlaywright().chromium.launch({ headless: true });
@@ -64,6 +126,11 @@ test('Pendencias: dados literais, teclado, rastreio, modal e expansao em desktop
       await page.keyboard.press('Enter');
       assert.equal(await more.getAttribute('aria-expanded'), 'true');
       assert.equal(await page.locator('.dash-pend-overflow').isVisible(), true);
+      await page.evaluate(() => renderDashboardPendencias(window._pendenciasCache || {
+        kitsVencendo: Array.from({ length: 11 }, (_, index) => ({ descricao: 'Kit ' + index, dias: 3 }))
+      }));
+      assert.equal(await more.getAttribute('aria-expanded'), 'true', 'refresh conserva expansao');
+      assert.equal(await more.locator('.dash-pend-more-label').textContent(), 'Mostrar menos');
       await more.click();
       assert.equal(await page.locator('.dash-pend-overflow').isVisible(), false);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);

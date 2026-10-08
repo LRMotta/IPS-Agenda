@@ -48,11 +48,12 @@
   function key(value) {
     var cfg = typeConfig(value);
     if (cfg) return cfg.key;
-    var n = norm(value);
+    var n = ' ' + norm(value).replace(/[^a-z0-9]+/g, ' ') + ' ';
     for (var i = 0; i < TYPES.length; i++) {
       var aliases = TYPES[i].aliases || [];
       for (var j = 0; j < aliases.length; j++) {
-        if (n.indexOf(norm(aliases[j])) >= 0) return TYPES[i].key;
+        var term = ' ' + norm(aliases[j]).replace(/[^a-z0-9]+/g, ' ') + ' ';
+        if (term.trim() && n.indexOf(term) >= 0) return TYPES[i].key;
       }
     }
     return 'outro';

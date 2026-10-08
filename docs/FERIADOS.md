@@ -12,6 +12,8 @@ Benefício adicional: o Dashboard deixa de percorrer a matriz de eventos para de
 
 O bootstrap público de cadastros exige autorização de leitura no servidor, incluindo Feriados. Edição e exclusão mantêm autorização de escrita e lock de documento.
 
+O formulário da Agenda exibe um aviso geral para qualquer feriado ativo na data ou no período informado, inclusive recorrências anuais. Esse aviso independe de Laboratório Central e de `afetaOperacao`, informa nome/observação e permite continuar o agendamento. Os alertas específicos de transporte/courier permanecem separados: exigem Laboratório Central, respeitam `afetaOperacao` e preservam o filtro de temperaturas congeladas para as restrições de courier. O servidor retorna o aviso geral como `HOLIDAY_DATE` e a restrição de transporte na própria data como `HOLIDAY_TRANSPORT_RISK`; sem Laboratório Central, consulta apenas a referência de Feriados, reaproveitando o cache existente.
+
 ## Desempenho e diagnóstico
 
 Os logs `[CODEX_FERIADOS_PERF]` registram `stage`, `durationMs`, `success` e contagens disponíveis, sem nomes, IDs, datas de feriados ou conteúdo das linhas. Etapas: `authorization`, `cadastro`, `save_locked`, `risk_reference_aggregate` e `risk_reference_parts`. `readCalls` e `cellsRead` contam as leituras de valores, não todas as chamadas de metadados ao Sheets. `save_locked` mede a gravação bem-sucedida já dentro do lock, sem incluir a espera para adquiri-lo.

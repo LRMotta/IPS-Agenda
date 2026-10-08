@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base target="_top">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0&display=block" rel="stylesheet">
   <style>
     :root {
       --primary:#1266f1; --primary-dark:#0d47a1; --primary-light:#e8f0fe; --border:#e0e6f0;
@@ -274,6 +274,7 @@
       <div class="actions-top">
         <div class="action-status" id="actionStatus" role="status" aria-live="polite">Pronto.</div>
         <button class="btn" id="btnSaveTransport" onclick="saveData()" title="Gravar dados na planilha de transporte"><span class="material-symbols-outlined">save</span><span class="btn-label">Salvar</span></button>
+        <button class="btn secondary" type="button" onclick="newTransportGeneration()">Nova geração</button>
         <button class="btn" id="btnPdfTransport" onclick="runPdf()"><span class="material-symbols-outlined">picture_as_pdf</span><span class="btn-label">Gerar PDF</span></button>
         <button class="btn danger" onclick="clearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
       </div>
@@ -298,9 +299,9 @@
             <div class="form-grid study-grid">
               <div class="field">
                 <label for="pacienteSearch">Paciente(s) <span class="required-star">*</span></label>
-                <select id="paciente" class="hidden" required aria-hidden="true" tabindex="-1"></select>
+                <input id="paciente" type="hidden">
                 <div class="transport-participant-search">
-                  <input id="pacienteSearch" type="text" role="combobox" aria-required="true" aria-autocomplete="list" aria-controls="pacienteSearchList" aria-expanded="false" aria-describedby="pacienteSearchDetail" autocomplete="off" placeholder="Pesquise por nome, estudo ou identificação" onfocus="openTransportParticipantSearch()" oninput="renderTransportParticipantSearch()" onkeydown="navigateTransportParticipantSearch(event)" onblur="closeTransportParticipantSearch()">
+                  <input id="pacienteSearch" type="text" role="combobox" aria-required="true" aria-autocomplete="list" aria-controls="pacienteSearchList" aria-expanded="false" aria-describedby="pacienteSearchDetail" autocomplete="off" placeholder="Pesquise por nome, estudo ou identificação" onfocus="openTransportParticipantSearch()" oninput="scheduleTransportParticipantSearch()" onkeydown="navigateTransportParticipantSearch(event)" onblur="closeTransportParticipantSearch()">
                   <button id="pacienteSearchClear" class="transport-participant-clear hidden" type="button" aria-label="Limpar seleção do participante" title="Limpar seleção" onclick="clearTransportParticipantSearch()">&times;</button>
                   <div id="pacienteSearchList" class="transport-participant-list hidden" role="listbox" aria-label="Participações encontradas"></div>
                 </div>
@@ -425,14 +426,16 @@
         <button class="modal-close" type="button" onclick="closePdfModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="modal-body">
-        <div>O arquivo foi gerado com a quantidade correta de c&oacute;pias e est&aacute; pronto para download ou impress&atilde;o.</div>
+        <div>O arquivo foi gerado. Revise a documenta&ccedil;&atilde;o e os avisos antes de imprimir ou enviar.</div>
         <div class="modal-file" id="pdfModalFile"></div>
         <div class="modal-warning" id="pdfDraftWarning"></div>
+        <div class="modal-warning" id="pdfGenerationWarnings"></div>
         <div class="modal-actions">
           <button class="btn" id="pdfDownloadLink" type="button" onclick="downloadGeneratedPdf()"><span class="material-symbols-outlined">download</span>Baixar PDF</button>
           <a class="btn secondary" id="pdfPrintLink" href="#" target="_blank" rel="noopener"><span class="material-symbols-outlined">print</span>Imprimir</a>
           <a class="btn secondary disabled" id="cePrintLink" href="#" target="_blank" rel="noopener" aria-disabled="true" title="CE não localizada"><span class="material-symbols-outlined">print</span>Imprimir CE</a>
           <a class="btn secondary" id="pdfDriveLink" href="#" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span>Abrir no Drive</a>
+          <button class="btn secondary" type="button" onclick="newTransportGeneration()">Nova geração</button>
           <button class="btn secondary" type="button" onclick="closePdfModal()"><span class="material-symbols-outlined">check</span>Concluir</button>
         </div>
       </div>
@@ -475,14 +478,15 @@
       return !!(target && target.id !== 'pacienteSearch' && target.matches && target.matches('input, textarea, select, [contenteditable="true"]'));
     }
 
-    function transportMarkUnsaved() {
+    function transportMarkUnsaved(defer) {
       transportHasUnsavedChanges = true;
       transportAllowLeaveOnce = false;
       var hadPdf = !!state.lastPdfResult;
       state.lastPdfResult = null;
-      if (hadPdf) renderIssues();
+      if (hadPdf && !defer) renderIssues();
       setButtonLabel('btnSaveTransport', 'Salvar alteracoes');
-      updateTransportActionState();
+      if (defer) { setButtonState('btnSaveTransport', true, 'Atualizando materiais...'); setButtonState('btnPdfTransport', true, 'Atualizando materiais...'); }
+      else updateTransportActionState();
       var el = document.getElementById('actionStatus');
       var currentType = el ? String(el.dataset.statusType || '') : '';
       if (!currentType || currentType === 'ok' || el.dataset.dirtyStatus === '1') {
@@ -563,21 +567,15 @@
     });
 
     document.addEventListener('input', function(e) {
-      if (transportIsEditable(e.target)) transportMarkUnsaved();
+      if (transportIsEditable(e.target)) transportMarkUnsaved(e.target.classList && e.target.classList.contains('ag-mat-formula'));
     }, true);
 
     document.addEventListener('change', function(e) {
       if (transportIsEditable(e.target)) transportMarkUnsaved();
     }, true);
 
-    document.addEventListener('paste', function(e) {
-      if (!transportIsEditable(e.target)) return;
-      transportMarkUnsaved();
-      e.stopPropagation();
-    }, true);
-
     window.addEventListener('beforeunload', function(e) {
-      if (!transportHasUnsavedChanges) return;
+      if (!transportHasUnsavedChanges && !transportBusy) return;
       e.preventDefault();
       e.returnValue = '';
     });
@@ -617,8 +615,8 @@
       if (label) label.textContent = text;
     }
 
-    function updateTransportActionState() {
-      var missing = blockingIssues();
+    function updateTransportActionState(context) {
+      var missing = blockingIssues(context);
       var blocked = transportBusy || missing.length > 0;
       var title = transportBusy ? 'Processando transporte...' : missing.length
         ? 'Preencha para continuar: ' + missing.join(', ')
@@ -645,14 +643,9 @@
         friendly = 'Este transporte foi alterado depois que voce abriu a tela. Atualize os dados antes de tentar salvar novamente.';
       } else if (normText.indexOf('alterado por outro usuario') >= 0 || normText.indexOf('desatualiz') >= 0 || normText.indexOf('stale') >= 0 || normText.indexOf('recordversion') >= 0 || normText.indexOf('conflito') >= 0) {
         friendly = 'Os dados deste transporte podem estar desatualizados. Atualize a tela e revise a versao mais recente antes de salvar.';
-      } else if (normText.indexOf('acesso negado') >= 0 || normText.indexOf('permiss') >= 0 || normText.indexOf('permission') >= 0 || normText.indexOf('autoriz') >= 0) {
-        friendly = 'Sua conta nao tem permissao ou autorizacao suficiente para esta acao de Transporte. Verifique o acesso ao WebApp e tente novamente.';
-      } else if (normText.indexOf('lock') >= 0 || normText.indexOf('bloque') >= 0 || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+      } else if (normText.indexOf('nao foi possivel obter o bloqueio') >= 0 || normText.indexOf('lock timeout') >= 0) {
         friendly = 'Outra operacao de Transporte parece estar em andamento. Aguarde alguns instantes, atualize os dados e tente novamente.';
-      } else if (normText.indexOf('nao encontrado') >= 0 || normText.indexOf('não encontrado') >= 0 || normText.indexOf('not found') >= 0) {
-        friendly = 'Nao encontrei o registro ou arquivo esperado para este transporte. Atualize os dados e confirme se ele ainda existe.';
       }
-      if (!friendly && typeof appErrorMessage === 'function') return appErrorMessage(error, fallback);
       if (!friendly) return text;
       return friendly;
     }
@@ -768,11 +761,25 @@
         .getWebAppUrl();
     }
 
+    function transportGenerationWarnings(data) {
+      return (data && Array.isArray(data.warnings) ? data.warnings : []).map(function(item) {
+        return typeof item === 'string' ? item : String(item && item.message || '');
+      }).filter(function(message) { return message.trim(); });
+    }
+
+    function transportLegacyFailure(res) {
+      return typeof res === 'string' && /^\s*Erro\b/i.test(res);
+    }
+
     function showPdfModal(data) {
       if (!data || (!data.fileId && !data.downloadUrl)) return;
       window._lastGeneratedPdf = data;
       state.lastPdfResult = data;
       renderIssues();
+      var warnings = transportGenerationWarnings(data);
+      var warningBox = document.getElementById('pdfGenerationWarnings');
+      warningBox.innerHTML = warnings.map(function(message) { return '<div>' + esc(message) + '</div>'; }).join('');
+      warningBox.classList.toggle('show', warnings.length > 0);
       document.getElementById('pdfModalFile').textContent = data.fileName || 'documentacao-transporte.pdf';
       var draftWarning = document.getElementById('pdfDraftWarning');
       if (draftWarning) {
@@ -780,7 +787,8 @@
           var authLink = data.draftAuthUrl
             ? ' <a href="' + esc(data.draftAuthUrl) + '" target="_blank" rel="noopener">Autorizar Gmail</a>'
             : '';
-          draftWarning.innerHTML = '<strong>Atenção:</strong> o PDF foi gerado, mas o rascunho de e-mail não foi criado. ' + esc(data.draftError || data.draftMessage || '') + authLink;
+          var draftPrefix = data.draftErrorCode === 'GENERATION_UNCERTAIN' ? 'o PDF foi gerado, mas não foi possível confirmar o rascunho. ' : 'o PDF foi gerado, mas o rascunho de e-mail não foi criado. ';
+          draftWarning.innerHTML = '<strong>Atenção:</strong> ' + draftPrefix + esc(data.draftError || data.draftMessage || '') + authLink;
           draftWarning.classList.add('show');
         } else {
           draftWarning.textContent = '';
@@ -823,12 +831,27 @@
             setActionStatus('Falha ao preparar download.', 'danger');
             return;
           }
-          var a = document.createElement('a');
-          a.href = 'data:' + (res.mimeType || 'application/pdf') + ';base64,' + res.base64;
-          a.download = res.fileName || data.fileName || 'documentacao-transporte.pdf';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
+          var objectUrl;
+          try {
+            var binary = atob(res.base64);
+            var bytes = new Uint8Array(binary.length);
+            for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            var blob = new Blob([bytes], { type: res.mimeType || 'application/pdf' });
+            objectUrl = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = res.fileName || data.fileName || 'documentacao-transporte.pdf';
+            document.body.appendChild(a);
+            try { a.click(); } finally { a.remove(); }
+            // Permite ao navegador iniciar o download antes de liberar a URL.
+            setTimeout(function() { URL.revokeObjectURL(objectUrl); }, 60000);
+          } catch (error) {
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            var msg = transportErrorMessage(error, 'Falha ao preparar download.');
+            toast(msg, 'danger');
+            setActionStatus(msg, 'danger');
+            return;
+          }
           setActionStatus('Download preparado.', 'ok');
         })
         .withFailureHandler(function(e) {
@@ -849,6 +872,12 @@
       var runner = google.script.run
         .withSuccessHandler(function(res) {
           setBusy(false);
+          if (transportLegacyFailure(res)) {
+            var errorMsg = transportErrorMessage(res);
+            setActionStatus(errorMsg, 'danger');
+            toast(errorMsg, 'danger');
+            return;
+          }
           var msg = typeof res === 'string' ? res : (typeof okMsg === 'function' ? okMsg(res) : okMsg);
           var msgType = agendaSyncMessageType(res);
           if (msg) {
@@ -892,11 +921,16 @@
         }).join('');
     }
 
+    var transportCollator = new Intl.Collator('pt-BR', { sensitivity: 'base', numeric: true });
+    var transportParticipantIndex = null;
+    var transportParticipantSearchTimer = null;
+    var transportMatBioTimer = null;
+
     function sortRowsByText(rows, valueKey) {
       return (rows || []).slice().sort(function(a, b) {
         var aValue = String(valueKey ? (a && a[valueKey]) : a || '').trim();
         var bValue = String(valueKey ? (b && b[valueKey]) : b || '').trim();
-        return aValue.localeCompare(bValue, 'pt-BR', { sensitivity: 'base', numeric: true });
+        return transportCollator.compare(aValue, bValue);
       });
     }
 
@@ -904,7 +938,7 @@
       participant = participant || {};
       var cadastroId = String(participant.participanteCadastroId || participant.idCadastro || participant.id || '').trim();
       if (cadastroId) return 'participante:' + cadastroId;
-      return 'participante:legado:' + [participant.nome || participant.participante, participant.idParticipante || participant.numId, participant.projeto, index].map(norm).join('|');
+      return 'participante:legado:' + [participant.nome || participant.participante, participant.idParticipante || participant.numId, participant.projeto].map(norm).join('|');
     }
 
     function participantProjectAliases(value) {
@@ -968,68 +1002,53 @@
       return null;
     }
 
+    function transportParticipantData() {
+      var rows = (state.options && state.options.participantes) || [];
+      var projects = state.options && state.options.projetos;
+      if (transportParticipantIndex && transportParticipantIndex.source === rows && transportParticipantIndex.length === rows.length && transportParticipantIndex.projects === projects) return transportParticipantIndex;
+      var byKey = Object.create(null), byName = Object.create(null);
+      var search = rows.map(function(participant, index) {
+        var key = participantOptionKey(participant, index);
+        var name = String(participant.nome || participant.participante || '');
+        var nameKey = norm(name), project = projectDisplay(participant.projeto) || String(participant.projeto || '');
+        var identification = String(participant.idParticipante || participant.numId || '');
+        if (Object.prototype.hasOwnProperty.call(byKey, key)) byKey[key] = null;
+        else byKey[key] = participant;
+        if (Object.prototype.hasOwnProperty.call(byName, nameKey)) byName[nameKey] = null;
+        else byName[nameKey] = participant;
+        var text = norm([name, project, participant.projeto, identification].join(' '));
+        return { key: key, name: name, project: project, identification: identification, search: text, tokens: text.split(/[^a-z0-9]+/) };
+      }).sort(function(x, y) { return transportCollator.compare(x.name, y.name); });
+      transportParticipantIndex = { source: rows, length: rows.length, projects: projects, byKey: byKey, byName: byName, search: search };
+      return transportParticipantIndex;
+    }
+
     function fillParticipantOptions(rows, reference) {
       rows = rows || [];
       reference = reference || {};
       var current = document.getElementById('paciente');
-      if (current && current.tagName !== 'SELECT') {
-        var select = document.createElement('select');
-        select.id = current.id;
-        select.required = current.required;
-        select.className = current.className;
-        current.parentNode.replaceChild(select, current);
-        current = select;
-      }
       if (!current) return;
-
-      var currentValue = String(current.value || '');
-      var currentParticipant = rows.filter(function(p, index) { return participantOptionKey(p, index) === currentValue; })[0];
-      var selected = resolveParticipantOption(rows, reference) || currentParticipant;
-      var selectedKey = selected ? participantOptionKey(selected, rows.indexOf(selected)) : '';
-      var referenceName = String(reference.paciente || reference.participante || '').trim();
-      if (!selected && referenceName) selectedKey = 'legado:' + referenceName;
-
-      var nameCounts = {};
-      rows.forEach(function(p) {
-        var nameKey = norm(p && (p.nome || p.participante) || '');
-        if (nameKey) nameCounts[nameKey] = (nameCounts[nameKey] || 0) + 1;
-      });
-      var options = rows.map(function(p, index) {
-        p = p || {};
-        var name = String(p.nome || p.participante || '').trim();
-        var key = participantOptionKey(p, index);
-        var label = name;
-        if (nameCounts[norm(name)] > 1) {
-          var details = [projectDisplay(p.projeto) || p.projeto, p.idParticipante || p.numId ? 'ID ' + (p.idParticipante || p.numId) : ''];
-          if (!details[0] && !details[1]) details.push('Cadastro ' + (p.participanteCadastroId || p.idCadastro || p.id || ''));
-          label += ' — ' + details.filter(Boolean).join(' · ');
-        }
-        return '<option value="' + esc(key) + '"' + (key === selectedKey ? ' selected' : '') + '>' + esc(label) + '</option>';
-      });
-      if (selectedKey && !selected) {
-        options.unshift('<option value="' + esc(selectedKey) + '" selected>' + esc(referenceName) + '</option>');
-      }
-      current.innerHTML = '<option value="">Selecione o paciente</option>' + options.join('');
-      current.value = selectedKey;
+      var value = current.value;
+      var selected = resolveParticipantOption(rows, reference) || transportParticipantData().byKey[value];
+      current.value = selected ? participantOptionKey(selected) : reference.paciente || reference.participante ? 'legado:' + (reference.paciente || reference.participante) : '';
       syncTransportParticipantSearch();
     }
 
     function transportParticipantSearchRows(query) {
       var parts = norm(query).split(/\s+/).filter(Boolean);
-      return ((state.options && state.options.participantes) || []).map(function(participant, index) {
-        var name = String(participant.nome || participant.participante || '');
-        var project = projectDisplay(participant.projeto) || String(participant.projeto || '');
-        var identification = String(participant.idParticipante || participant.numId || '');
-        var search = norm([name, project, participant.projeto, identification].join(' '));
-        return { key: participantOptionKey(participant, index), name: name, project: project, identification: identification, search: search };
-      }).filter(function(row) {
-        return parts.every(function(part) {
-          // Em "estudo A", a letra isolada deve corresponder ao codigo, nao a uma letra do nome.
-          return part.length === 1 && parts.length > 1
-            ? row.search.split(/[^a-z0-9]+/).indexOf(part) >= 0
-            : row.search.indexOf(part) >= 0;
-        });
-      }).sort(function(a, b) { return a.name.localeCompare(b.name, 'pt-BR', { sensitivity:'base', numeric:true }); });
+      return transportParticipantData().search.filter(function(row) {
+        return parts.every(function(part) { return part.length === 1 && parts.length > 1 ? row.tokens.indexOf(part) >= 0 : row.search.indexOf(part) >= 0; });
+      });
+    }
+
+    function scheduleTransportParticipantSearch() {
+      hideTransportParticipantSearch();
+      transportParticipantMatches = [];
+      var input = document.getElementById('pacienteSearch'), query = input.value, generation = transportFormGeneration;
+      transportParticipantSearchTimer = setTimeout(function() {
+        transportParticipantSearchTimer = null;
+        if (generation === transportFormGeneration && document.activeElement === input && input.value === query) renderTransportParticipantSearch(query);
+      }, 120);
     }
 
     function syncTransportParticipantSearch() {
@@ -1056,6 +1075,8 @@
       var input = document.getElementById('pacienteSearch');
       var list = document.getElementById('pacienteSearchList');
       if (!input || !list) return;
+      clearTimeout(transportParticipantSearchTimer);
+      transportParticipantSearchTimer = null;
       list.classList.add('hidden');
       input.setAttribute('aria-expanded', 'false');
       input.removeAttribute('aria-activedescendant');
@@ -1078,13 +1099,17 @@
       var input = document.getElementById('pacienteSearch');
       var list = document.getElementById('pacienteSearchList');
       if (!input || !list || transportAgendaContext().id || transportBusy) return;
-      transportParticipantMatches = transportParticipantSearchRows(typeof query === 'string' ? query : input.value);
+      clearTimeout(transportParticipantSearchTimer);
+      transportParticipantSearchTimer = null;
+      var matches = transportParticipantSearchRows(typeof query === 'string' ? query : input.value);
+      transportParticipantMatches = matches.slice(0, 50);
       transportParticipantActiveIndex = -1;
       var selected = document.getElementById('paciente').value;
       list.innerHTML = transportParticipantMatches.map(function(row, index) {
         var detail = [row.project, row.identification ? 'ID ' + row.identification : ''].filter(Boolean).join(' · ');
         return '<div class="transport-participant-option" role="option" id="pacienteSearchOption' + index + '" aria-selected="' + (row.key === selected ? 'true' : 'false') + '" onpointerdown="event.preventDefault(); selectTransportParticipantSearch(' + index + ')"><strong>' + esc(row.name) + '</strong><span>' + esc(detail) + '</span></div>';
       }).join('');
+      if (matches.length > 50) list.innerHTML += '<div class="transport-participant-empty">Mostrando 50 resultados. Refine a busca.</div>';
       if (!transportParticipantMatches.length) {
         list.innerHTML = '<div class="transport-participant-empty">' + (state.options && state.options.participantesLoading ? 'Carregando participantes...' : 'Nenhuma participação encontrada.') + '</div>';
       }
@@ -1117,8 +1142,9 @@
     function navigateTransportParticipantSearch(event) {
       if (transportAgendaContext().id || transportBusy) return;
       var list = document.getElementById('pacienteSearchList');
+      if (transportParticipantSearchTimer && ['Enter','ArrowDown','ArrowUp'].indexOf(event.key) >= 0) renderTransportParticipantSearch(document.getElementById('pacienteSearch').value);
       if (event.key === 'Escape') {
-        if (list.classList.contains('hidden')) return;
+        if (list.classList.contains('hidden') && !transportParticipantSearchTimer) return;
         event.preventDefault();
         event.stopPropagation();
         syncTransportParticipantSearch();
@@ -1201,7 +1227,7 @@
       segmented('couriers', state.options.couriers, selectedCourier, 'selectCourier');
       setTransportFieldInvalid('Courier', false);
       state.lastPdfResult = null;
-      applyAwbRule(true);
+      applyAwbRule(false);
       applySolicitarCaixaDefault(true);
       updateResponsavelEntregaField();
       matBioRecalc();
@@ -1294,7 +1320,7 @@
         .withSuccessHandler(function(rows) {
           if (generation !== transportFormGeneration || registro !== state.registro) return;
           var searchInput = document.getElementById('pacienteSearch');
-          var searchQuery = searchInput && document.activeElement === searchInput && searchInput.getAttribute('aria-expanded') === 'true' ? searchInput.value : null;
+          var searchQuery = searchInput && document.activeElement === searchInput && (searchInput.getAttribute('aria-expanded') === 'true' || transportParticipantSearchTimer) ? searchInput.value : null;
           var currentValue = document.getElementById('paciente').value;
           var currentParticipant = selectedParticipantInfo();
           var reference = currentValue === selectedAtRequest ? registro : {
@@ -1309,7 +1335,7 @@
           state.options.participantesLoaded = true;
           state.options.participantesLoading = false;
           window._transporteParticipantes = rows;
-          fillParticipantOptions(sortRowsByText(state.options.participantes, 'nome'), reference || {});
+          fillParticipantOptions(state.options.participantes, reference || {});
           if (!currentValue) document.getElementById('paciente').value = '';
           applyParticipantSelection({ loadCe: false });
           loadCeStatus(false);
@@ -1378,7 +1404,7 @@
       }
       selectedTemp = r.temperatura || (o.temperaturas || [])[0] || '';
       selectedCourier = canonicalCourier(r.courier || (o.couriers || [])[0] || '');
-      fillParticipantOptions(sortRowsByText(o.participantes || [], 'nome'), r);
+      fillParticipantOptions(o.participantes || [], r);
       fillSelectRows('destino', o.destinos || [], 'nome', r.destino || '', 'Selecione o laboratório');
       ['protocolo','investigador','dataColeta','dataEnvio','awb','pinexColeta','observacoes'].forEach(function(id) {
         document.getElementById(id).value = r[id] || '';
@@ -1393,7 +1419,7 @@
       segmented('temperaturas', o.temperaturas || [], selectedTemp, 'selectTemp');
       segmented('couriers', o.couriers || [], selectedCourier, 'selectCourier');
       renderAgendaContext();
-      applyAwbRule(true);
+      applyAwbRule(false);
       applyParticipantSelection({ loadCe: false });
       syncTransportParticipantSearch();
       renderMaterials(r.materiais || []);
@@ -1439,25 +1465,20 @@
       }
       var selectedKey = String(document.getElementById('paciente').value || '');
       if (!selectedKey || selectedKey.indexOf('legado:') === 0) return {};
-      var participantes = (state.options && state.options.participantes) || [];
-      var byKey = participantes.filter(function(p, index) {
-        return participantOptionKey(p, index) === selectedKey;
-      });
-      if (byKey.length === 1) return byKey[0];
-      var byName = participantes.filter(function(p) { return norm(p.nome || p.participante) === norm(selectedKey); });
-      return byName.length === 1 ? byName[0] : {};
+      var index = transportParticipantData();
+      return index.byKey[selectedKey] || (selectedKey.indexOf('participante:') === 0 ? {} : index.byName[norm(selectedKey)] || {});
     }
 
-    function selectedParticipantName() {
-      var info = selectedParticipantInfo();
+    function selectedParticipantName(info) {
+      info = info || selectedParticipantInfo();
       if (info.nome) return String(info.nome).trim();
       var selectedKey = String(document.getElementById('paciente').value || '');
       if (selectedKey.indexOf('legado:') === 0) return String((state.registro || {}).paciente || selectedKey.slice(7)).trim();
       return '';
     }
 
-    function selectedParticipantIdentification() {
-      var info = selectedParticipantInfo();
+    function selectedParticipantIdentification(info) {
+      info = info || selectedParticipantInfo();
       var idCadastro = String(info.idParticipante || info.numId || '').trim();
       if (state.options && state.options.participantesLoaded) return idCadastro;
       var registro = (state && state.registro) || {};
@@ -1525,23 +1546,15 @@
       var items = [];
       (rows || []).forEach(function(m) {
         if (!m.ativo && !m.formula && !m.tubos) return;
-        var cfg = matBioTypeConfig(m.material);
-        var formula = m.formula || '';
-        if (!formula && ((m.tubos !== undefined && m.tubos !== null && m.tubos !== '')
-            || (m.total !== undefined && m.total !== null && m.total !== ''))) {
+        var cfg = matBioTypeConfig(m.material), formula = m.formula || '', legacyQuant = null;
+        if (!formula && ((m.tubos !== undefined && m.tubos !== null && m.tubos !== '') || (m.total !== undefined && m.total !== null && m.total !== ''))) {
           var qtd = Number(String(m.tubos).replace(',', '.'));
           var total = m.total !== undefined && m.total !== null && m.total !== '' ? Number(String(m.total).replace(',', '.')) : NaN;
-          formula = Number.isSafeInteger(qtd) && qtd > 0 && isFinite(total) && total >= 0
-            ? CodexMatBioCore.formulaFromSegments([{ qtd: qtd, vol: total / qtd }], m.unit || matBioDisplayUnit(cfg && cfg.unit))
-            : 'Revise a quantidade e o volume';
+          if (Number.isSafeInteger(qtd) && qtd > 0 && isFinite(total) && total >= 0) legacyQuant = { tubos: qtd, total: total };
+          else formula = 'Revise a quantidade e o volume';
         }
-        items.push({
-          key: cfg ? cfg.key : 'outro',
-          tipo: cfg ? cfg.label : m.material,
-          formula: formula,
-          unit: m.unit || '',
-          ensaio: m.ensaio || ''
-        });
+        items.push({ key: cfg ? cfg.key : 'outro', tipo: cfg ? cfg.label : m.material, formula: formula,
+          legacyQuant: legacyQuant, unit: m.unit || '', ensaio: m.ensaio || '' });
       });
       renderMatBioEditor(items);
     }
@@ -1550,10 +1563,12 @@
       return String(selectedCourier || '').toLowerCase().indexOf('dhl') >= 0 ? 'L' : 'mL';
     }
 
-    function matBioUnitKey(unit) {
-      return CodexMatBioCore.unitKey(unit);
+    function matBioUnitKey(unit, strict) {
+      return CodexMatBioCore.unitKey(unit, strict);
     }
 
+    // Contrato: unidade fixa pelo tipo (massa em g) e pela courier (volume em mL/L).
+    // O formulario recebe apenas numeros na formula; nao possui campo de unidade.
     function matBioDisplayUnit(baseUnit) {
       var unit = matBioUnitKey(baseUnit || 'mL');
       return unit === 'mL' ? matBioCourierUnit() : unit;
@@ -1573,16 +1588,31 @@
       return matBioCourierUnit() === 'L' ? 'Ex: 2 x 0,0005' : 'Ex: 2 x 0,5';
     }
 
+    // formulaUnit e metadado interno da unidade dos numeros atuais, nao entrada do usuario.
+    // Redigitar a formula usa a unidade vigente; trocar courier preserva numeros/metadado
+    // e pode exigir conversao. Dados estruturados carregados podem trazer unidade anterior.
     function matBioOnFormulaInput(input) {
       var row = input && input.closest ? input.closest('.ag-mat-line') : null;
       if (row) {
+        row._legacyQuant = null;
         var cfg = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
         row.dataset.formulaUnit = matBioDisplayUnit((cfg && cfg.unit) || 'mL');
+        var parsed = matBioParseFormula(input.value);
+        input.classList.toggle('invalid', !parsed.valid);
+        input.setAttribute('aria-invalid', parsed.valid ? 'false' : 'true');
+        input.setCustomValidity(parsed.valid ? '' : parsed.error);
       }
-      matBioRecalc();
+      clearTimeout(transportMatBioTimer);
+      transportMatBioTimer = setTimeout(function() { matBioRecalc(); }, 120);
+    }
+
+    function flushTransportMatBio() {
+      if (transportMatBioTimer !== null) matBioRecalc();
     }
 
     function renderMatBioEditor(items) {
+      clearTimeout(transportMatBioTimer);
+      transportMatBioTimer = null;
       var box = document.getElementById('materials');
       box.innerHTML =
         '<div class="ag-mat-head"><span>Tipo</span><span id="matBioVolumeHead">Tubos x volume (' + esc(matBioCourierUnit()) + ')</span><span>Tubos</span><span>Total</span><span>Ensaio</span><span></span></div>' +
@@ -1617,6 +1647,10 @@
           '<input class="ag-mat-ensaio" type="text" aria-label="Ensaio" value="' + esc(item.ensaio || '') + '" placeholder="Nome do exame" oninput="matBioRecalc()">' +
           '<button type="button" class="ag-mat-remove" aria-label="Remover material" title="Remover" onclick="matBioRemoveRow(this)"><span class="material-symbols-outlined">close</span></button>' +
         '</div>');
+      if (item.legacyQuant) {
+        wrap.lastElementChild._legacyQuant = item.legacyQuant;
+        wrap.lastElementChild._legacyType = key;
+      }
       if (wrap.dataset.loading !== '1') {
         var added = wrap.lastElementChild;
         var firstOther = Array.prototype.find.call(wrap.querySelectorAll('.ag-mat-line'), function(row) {
@@ -1648,6 +1682,8 @@
     }
 
     function matBioRecalc() {
+      clearTimeout(transportMatBioTimer);
+      transportMatBioTimer = null;
       var unitHead = document.getElementById('matBioVolumeHead');
       if (unitHead) unitHead.textContent = 'Tubos x volume (' + matBioCourierUnit() + ')';
       Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
@@ -1661,12 +1697,20 @@
         row.classList.toggle('other-on', !!(cfg && cfg.outro));
         row.dataset.volumeUnit = unit;
         // Materiais em massa usam a unidade do tipo, sem converter os numeros digitados.
-        if (cfg && cfg.unit === 'g') row.dataset.formulaUnit = unit;
-        if (formula) formula.placeholder = matBioPlaceholder();
+        if (cfg && cfg.unit === 'g' && !row._legacyQuant) {
+          // Preserva a recuperação legada de massa; unidade desconhecida exige revisão.
+          try { matBioUnitKey(row.dataset.formulaUnit || unit, true); row.dataset.formulaUnit = unit; }
+          catch (unitFailure) { /* matBioErrors apresenta a unidade desconhecida. */ }
+        }
+        // Quantidades legadas seguem preservadas; mudança de unidade exige revisão.
+        if (row._legacyQuant) {
+          calc.tubosText = fmtNumber(row._legacyQuant.tubos, 0);
+          calc.totalText = fmtNumber(row._legacyQuant.total, unit === 'L' ? 5 : 2) + ' ' + unit;
+        }
+        if (formula) { formula.placeholder = row._legacyQuant ? 'Quantidade e total legados preservados' : matBioPlaceholder(); formula.title = row._legacyQuant ? 'Quantidade e total preservados. Digite uma fórmula somente para substituí-los.' : ''; }
         if (tubos) tubos.textContent = calc.tubosText;
         if (total) total.textContent = calc.parsed.segmentos.length && matBioUnitKey(row.dataset.formulaUnit || unit) !== unit ? 'Conversão pendente' : calc.totalText;
       });
-      matBioErrors();
       matBioEnsureTrailingRow();
       updateDhlVolumeActions();
       renderDerived();
@@ -1714,7 +1758,7 @@
         var cfg = matBioTypeConfig(tipo && tipo.value);
         var formula = row.querySelector('.ag-mat-formula');
         var formulaUnit = matBioUnitKey(row.dataset.formulaUnit || 'mL');
-        return !!(cfg && String(cfg.unit).toLowerCase() === 'ml' && formulaUnit === 'mL' && formula && matBioParseFormula(formula.value).segmentos.length);
+        return !!(cfg && String(cfg.unit).toLowerCase() === 'ml' && formulaUnit === 'mL' && formula && (matBioParseFormula(formula.value).segmentos.length || row._legacyQuant));
       });
     }
 
@@ -1733,6 +1777,8 @@
         : 'Não há volumes em mL pendentes para converter.';
     }
 
+    // Acao explicita do botao: divide volumes em mL por 1.000 e registra L.
+    // A troca de courier sozinha nao converte; materiais de massa nao participam.
     function convertDhlVolumesToLiters() {
       if (selectedCourier !== 'DHL') return;
       var converted = 0;
@@ -1742,6 +1788,12 @@
         if (!cfg || String(cfg.unit).toLowerCase() !== 'ml') return;
         var formula = row.querySelector('.ag-mat-formula');
         var currentUnit = matBioUnitKey(row.dataset.formulaUnit || 'mL');
+        if (row._legacyQuant && currentUnit === 'mL') {
+          row._legacyQuant.total = row._legacyQuant.total / 1000;
+          row.dataset.formulaUnit = 'L';
+          converted++;
+          return;
+        }
         if (!formula || currentUnit !== 'mL' || !matBioParseFormula(formula.value).segmentos.length) return;
         formula.value = convertFormulaUnit(formula.value, 'mL', 'L');
         row.dataset.formulaUnit = 'L';
@@ -1754,22 +1806,28 @@
     }
 
     function matBioErrors() {
-      var errors = [];
+      var errors = [], materialRows = {};
       Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
         var cfg = matBioTypeConfig((row.querySelector('.ag-mat-type-select') || {}).value);
         if (!cfg) return;
         var formula = row.querySelector('.ag-mat-formula'), parsed = matBioParseFormula(formula ? formula.value : '');
-        var expected = matBioDisplayUnit(cfg.unit), source = matBioUnitKey(row.dataset.formulaUnit || expected);
-        var error = !parsed.valid ? parsed.error : (parsed.segmentos.length && source !== expected
-          ? 'A fórmula está em ' + source + '. Converta ou revise os volumes para ' + expected + ' antes de salvar.' : '');
+        var expected = matBioDisplayUnit(cfg.unit), source = '', unitError = '';
+        try { source = matBioUnitKey(row.dataset.formulaUnit || expected, true); }
+        catch (unitFailure) { unitError = unitFailure.message; }
+        var error = unitError || (!parsed.valid ? parsed.error : ((parsed.segmentos.length || row._legacyQuant) && source !== expected
+          ? 'A fórmula está em ' + source + '. Converta ou revise os volumes para ' + expected + ' antes de salvar.' : ''));
         if (formula) { formula.classList.toggle('invalid', !!error); formula.setCustomValidity(error); formula.setAttribute('aria-invalid', error ? 'true' : 'false'); formula.title = error; }
         if (error) errors.push(cfg.label + ': ' + error);
+        var label = cfg.outro ? String((row.querySelector('.ag-mat-other') || {}).value || '') : cfg.label;
+        var key = norm(label), previous = materialRows[key];
+        if (previous && (previous.legacy || row._legacyQuant)) errors.push(label + ': revise a quantidade legada antes de combinar linhas do mesmo material.');
+        materialRows[key] = { legacy: !!row._legacyQuant || previous && previous.legacy };
       });
       return errors;
     }
 
     function collectMaterials() {
-      var items = [];
+      var items = [], legacy = [];
       Array.prototype.forEach.call(document.querySelectorAll('.ag-mat-line'), function(row) {
         var tipoEl = row.querySelector('.ag-mat-type-select');
         var formulaEl = row.querySelector('.ag-mat-formula');
@@ -1780,6 +1838,10 @@
         if (!parsed.valid || (parsed.segmentos.length && matBioUnitKey(row.dataset.formulaUnit || matBioDisplayUnit(cfg.unit)) !== matBioDisplayUnit(cfg.unit))) return;
         var label = cfg.outro ? ((row.querySelector('.ag-mat-other') || {}).value || '').trim() : cfg.label;
         if (!label) return;
+        if (row._legacyQuant && !parsed.segmentos.length) {
+          legacy.push({ ativo: true, material: label, tubos: row._legacyQuant.tubos, total: row._legacyQuant.total, formula: '', ensaio: ensaioEl ? ensaioEl.value.trim() : '', unit: row.dataset.formulaUnit });
+          return;
+        }
         items.push({
           key: cfg.key,
           tipo: label,
@@ -1791,23 +1853,27 @@
           segmentos: parsed.segmentos
         });
       });
-      return CodexMatBioCore.transportRowsFromItems(items, {
-        displayUnit: matBioDisplayUnit
+      var rows = CodexMatBioCore.transportRowsFromItems(items, { displayUnit: matBioDisplayUnit });
+      legacy.forEach(function(item) {
+        var existing = rows.findIndex(function(row) { return norm(row.material) === norm(item.material); });
+        if (existing >= 0 && !rows[existing].ativo) rows[existing] = item;
+        else rows.push(item);
       });
+      return rows;
     }
 
     function collectPayload(materials) {
       var registroAtual = (state && state.registro) || {};
       var participanteSelecionado = selectedParticipantInfo();
       return {
-        paciente: selectedParticipantName(),
+        paciente: selectedParticipantName(participanteSelecionado),
         participanteCadastroId: String(participanteSelecionado.participanteCadastroId || participanteSelecionado.idCadastro || participanteSelecionado.id || '').trim(),
         protocolo: document.getElementById('protocolo').value,
         investigador: document.getElementById('investigador').value,
         temperatura: selectedTemp,
         dataColeta: document.getElementById('dataColeta').value,
         dataEnvio: document.getElementById('dataEnvio').value,
-        identificacaoParticipante: selectedParticipantIdentification(),
+        identificacaoParticipante: selectedParticipantIdentification(participanteSelecionado),
         horaEnvio: document.getElementById('horaEnvio').value,
         courier: selectedCourier,
         destino: document.getElementById('destino').value,
@@ -1840,9 +1906,10 @@
       document.getElementById('docs').innerHTML = docs.map(function(d) {
         return '<div class="doc"><span class="material-symbols-outlined">description</span><div>' + esc(d) + '</div></div>';
       }).join('');
-      renderIssues(materiais);
-      renderMeta(ativos, docs, materiais);
-      updateTransportActionState();
+      var context = { payload: collectPayload(materiais), errors: matBioErrors() };
+      renderIssues(materiais, context);
+      renderMeta(ativos, docs, materiais, context);
+      updateTransportActionState(context);
     }
 
     function docsFor(courier, temp, destino) {
@@ -1856,9 +1923,9 @@
       return ['Folha de Agendamento', 'Declaração de Transporte'];
     }
 
-    function renderIssues(materials) {
-      var p = collectPayload(materials);
-      var issues = matBioErrors().map(function(error) { return { type: 'danger', text: error }; });
+    function renderIssues(materials, context) {
+      var p = context ? context.payload : collectPayload(materials);
+      var issues = (context ? context.errors : matBioErrors()).map(function(error) { return { type: 'danger', text: error }; });
       if (p.protocolo && state.ceStatus && state.ceStatus.protocolo === p.protocolo) {
         if (state.ceStatus.checked === false) {
           issues.push({ type:'warn', text: state.ceStatus.message || 'Verificando CE do estudo...' });
@@ -1894,15 +1961,17 @@
       if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) {
         issues.push({ type:'danger', text:'AWB / código obrigatório para ' + p.courier + '.' });
       }
+      if (p.awb && String(p.awb) !== awbCheck) issues.push({ type:'warn', text:'AWB incompatível com a courier selecionada. Revise o código; o valor foi preservado.' });
       if (awbCheck && !CodexCourierRules.isValidAwb(awbCheck, p.courier)) issues.push({ type:'warn', text:CodexCourierRules.validationMessage(p.courier) });
       if (p.courier === 'PINEX' && !String(p.pinexColeta || '').match(/^\d{6}$/)) issues.push({ type:'warn', text:'PINEX COL. N° deve conter 6 dígitos.' });
       if (!p.materiais.some(function(m) { return m.ativo; })) issues.push({ type:'warn', text:'Nenhum material biológico marcado na declaração.' });
       if (!issues.length) issues.push({ type:'ok', text:'Dados principais prontos para sincronização.' });
       var pdf = state.lastPdfResult;
       if (pdf && pdf.type === 'pdf') {
+        transportGenerationWarnings(pdf).forEach(function(message) { issues.push({ type: 'warn', text: message }); });
         issues.push({ type:'ok', text:'PDF gerado no Drive: ' + (pdf.fileName || 'documentacao-transporte.pdf') });
         if (pdf.draftOk === false) {
-          issues.push({ type:'warn', text:'Rascunho no Gmail nao criado: ' + (pdf.draftError || pdf.draftMessage || 'verifique autorizacao e conta executora.') });
+          issues.push({ type:'warn', text:(pdf.draftErrorCode === 'GENERATION_UNCERTAIN' ? 'Rascunho no Gmail nao confirmado: ' : 'Rascunho no Gmail nao criado: ') + (pdf.draftError || pdf.draftMessage || 'verifique autorizacao e conta executora.') });
         } else if (pdf.draftOk === true || pdf.draftId) {
           issues.push({ type:'ok', text:'Rascunho no Gmail criado.' });
         }
@@ -1972,8 +2041,8 @@
       }
     }
 
-    function renderMeta(ativos, docs, materials) {
-      var p = collectPayload(materials);
+    function renderMeta(ativos, docs, materials, context) {
+      var p = context ? context.payload : collectPayload(materials);
       var destino = (state.options.destinos || []).filter(function(item) { return item.nome === p.destino; })[0] || {};
       var rows = [
         ['Courier', p.courier || '-'],
@@ -1988,9 +2057,9 @@
       }).join('');
     }
 
-    function blockingIssues() {
-      var p = collectPayload();
-      var out = matBioErrors();
+    function blockingIssues(context) {
+      var p = context ? context.payload : collectPayload();
+      var out = context ? context.errors.slice() : matBioErrors();
       if (!String(p.paciente || '').trim()) out.push('Paciente');
       if (String(p.paciente || '').trim() && !String(p.identificacaoParticipante || '').trim()) out.push('Nº de Identificação do paciente');
       if (!String(p.protocolo || '').trim()) out.push('Protocolo');
@@ -2002,6 +2071,7 @@
       if (!String(p.horaEnvio || '').trim()) out.push('Janela de envio');
       if (!String(p.agendadoPor || '').trim()) out.push('Agendado por');
       if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) out.push('AWB / código');
+      if (p.awb && String(p.awb) !== normalizeAwbForCourier(p.awb, p.courier)) out.push('AWB / código incompatível com a courier');
       if (p.courier === 'PINEX (Agendamento)' && !String(p.responsavelEntrega || '').trim()) out.push('Responsável pela Entrega das Amostras');
       return out;
     }
@@ -2057,6 +2127,7 @@
     }
 
     function ensureRequiredTransportFields() {
+      flushTransportMatBio();
       renderIssues();
       var missing = blockingIssues();
       clearTransportValidation();
@@ -2103,54 +2174,78 @@
       }, 'Salvando...');
     }
 
+    function transportGenerationStorageKey(payload) {
+      // Somente uma impressão numérica local, nunca os dados pessoais do formulário.
+      var value = JSON.stringify(payload), hash = 2166136261;
+      for (var i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+      var owner = state && state.access ? state.access.email || '' : '';
+      return 'ips-transport-generation-v1:' + owner + ':' + (hash >>> 0).toString(16) + ':' + value.length;
+    }
+
+    function transportGenerationRequest(payload) {
+      var key = transportGenerationStorageKey(payload);
+      var token = window.localStorage.getItem(key);
+      if (!/^[a-f0-9]{32}$/.test(token || '')) {
+        var bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        token = Array.prototype.map.call(bytes, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+        window.localStorage.setItem(key, token);
+      }
+      return token;
+    }
+
+    function newTransportGeneration() {
+      if (transportBusy) return;
+      if (!window.confirm('Criar novos documentos? Confira antes o Drive e o Gmail: esta ação pode criar outro PDF e outro rascunho.')) return;
+      try { window.localStorage.removeItem(transportGenerationStorageKey(collectPayload())); }
+      catch (error) { toast('Não foi possível preparar uma nova geração. Verifique o armazenamento do navegador.', 'danger'); return; }
+      closePdfModal();
+      runPdf();
+    }
+
     function saveAndRun(actionName, okMsg) {
       if (!ensureRequiredTransportFields()) return;
       var payload = collectPayload();
       var requestedByEmail = state && state.access ? state.access.email : '';
-      var actionLabel = 'Gerando PDF e rascunho...';
+      var generationRequestId;
+      try { generationRequestId = transportGenerationRequest(payload); }
+      catch (storageError) {
+        var storageMsg = 'Não foi possível guardar a solicitação. Habilite o armazenamento do navegador antes de gerar documentos.';
+        setActionStatus(storageMsg, 'danger');
+        toast(storageMsg, 'danger');
+        return;
+      }
       setButtonLabel('btnPdfTransport', 'Gerando...');
-      setBusy(true, 'Salvando... ' + actionLabel);
+      setBusy(true, 'Salvando e gerando PDF e rascunho...');
       google.script.run
-        .withSuccessHandler(function(data) {
-          var syncMsg = agendaSyncMessage(data, '');
-          if (syncMsg && agendaSyncMessageType(data) === 'warn') toast(syncMsg, 'warn');
-          refreshAgendaInOpener();
-          if (data && data.registro && data.options) {
-            state = data;
-            renderAll({ skipCe: true });
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          setButtonLabel('btnPdfTransport', 'Gerar PDF');
+          if (transportLegacyFailure(res)) {
+            var errorMsg = transportErrorMessage(res);
+            setActionStatus(errorMsg, 'danger');
+            toast(errorMsg, 'danger');
+            return;
           }
           transportClearUnsaved();
-          setActionStatus(actionLabel, '');
-          google.script.run
-            .withSuccessHandler(function(res) {
-              setBusy(false);
-              var msg = res && typeof res === 'object' ? (res.message || okMsg) : (res || okMsg);
-              var hasDriveWarning = res && typeof res === 'object' && res.driveAccess && (res.driveAccess.fileShareError || res.driveAccess.folderShareError);
-              var msgType = res && typeof res === 'object' && (res.draftOk === false || hasDriveWarning) ? 'warn' : 'ok';
-              setActionStatus(msg, msgType);
-              toast(msg, msgType);
-              if (res && typeof res === 'object' && res.type === 'pdf') showPdfModal(res);
-              setButtonLabel('btnPdfTransport', 'Gerar PDF');
-            })
-            .withFailureHandler(function(e) {
-              setBusy(false);
-              var msg = transportErrorMessage(e);
-              setActionStatus(msg, 'danger');
-              toast(msg, 'danger');
-              setButtonLabel('btnPdfTransport', 'Gerar PDF');
-            })[actionName]({
-              payload: payload,
-              requestedByEmail: requestedByEmail
-            });
+          refreshAgendaInOpener();
+          var msg = res && typeof res === 'object' ? (res.message || okMsg) : (res || okMsg);
+          var syncMsg = agendaSyncMessage(res, '');
+          if (syncMsg) msg += ' ' + syncMsg;
+          var hasDriveWarning = res && res.driveAccess && (res.driveAccess.fileShareError || res.driveAccess.folderShareError);
+          var msgType = res && typeof res === 'object' && (res.draftOk === false || hasDriveWarning || (res.warnings && res.warnings.length) || agendaSyncMessageType(res) === 'warn') ? 'warn' : 'ok';
+          setActionStatus(msg, msgType);
+          toast(msg, msgType);
+          if (res && typeof res === 'object' && res.type === 'pdf') showPdfModal(res);
         })
         .withFailureHandler(function(e) {
           setBusy(false);
+          refreshAgendaInOpener();
           var msg = transportErrorMessage(e);
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
           setButtonLabel('btnPdfTransport', 'Gerar PDF');
-        })
-        .salvarTransporte(payload, { returnBootstrap: false, preencherDocumentos: false });
+        })[actionName]({ payload: payload, requestedByEmail: requestedByEmail, generationRequestId: generationRequestId });
     }
 
     function syncData() {

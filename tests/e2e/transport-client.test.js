@@ -29,6 +29,53 @@ async function scenario(run, options = {}) {
   } finally { await page.close(); }
 }
 
+test('Transporte: busca limita DOM, cancela Escape pendente e teclado resolve debounce', async () => {
+  const catalog = Array.from({ length: 2000 }, (_, i) => ({ id: 'CAD-' + i, nome: 'Pessoa ' + i, projeto: 'Estudo A', idParticipante: String(i) }));
+  await scenario(async page => {
+    const search = page.locator('#pacienteSearch');
+    assert.equal(await page.locator('#paciente').getAttribute('type'), 'hidden');
+    assert.equal(await page.locator('#paciente option').count(), 0);
+    await search.click();
+    assert.equal(await page.locator('#pacienteSearchList [role="option"]').count(), 50);
+    assert.match(await page.locator('#pacienteSearchList').innerText(), /Refine a busca/);
+    await search.fill('pessoa 1999');
+    await search.press('Escape');
+    await page.waitForTimeout(180);
+    assert.equal(await page.locator('#pacienteSearchList').isVisible(), false);
+    assert.equal(await page.evaluate(() => window.transportParticipantSearchTimer), null);
+    await search.fill('pessoa 1999');
+    await search.press('Enter');
+    assert.equal(await page.locator('#paciente').inputValue(), 'participante:CAD-1999');
+  }, { participants: catalog });
+});
+
+test('Transporte: ciclo derivado coleta uma vez e salvar descarrega formula pendente', async () => {
+  await scenario(async page => {
+    const counts = await page.evaluate(() => {
+      const payload = window.collectPayload, materials = window.collectMaterials;
+      let p = 0, m = 0;
+      window.collectPayload = function(...args) { p++; return payload(...args); };
+      window.collectMaterials = function(...args) { m++; return materials(...args); };
+      window.renderDerived();
+      window.collectPayload = payload; window.collectMaterials = materials;
+      return { p, m };
+    });
+    assert.deepEqual(counts, { p: 1, m: 1 });
+    await page.evaluate(() => {
+      window.renderMatBioEditor([{ key: 'soro', formula: '1x5', unit: 'mL' }]);
+      window.transportClearUnsaved();
+      const input = document.querySelector('.ag-mat-formula');
+      input.value = '2x7';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      if (!window.transportHasUnsavedChanges || window.transportMatBioTimer === null) throw new Error('edicao deve marcar imediatamente e agendar recalculo');
+      window.saveData();
+    });
+    const call = await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte'));
+    assert.equal(call.args[0].materiais.find(item => item.material === 'Soro').total, 14);
+    assert.equal(await page.evaluate(() => window.transportMatBioTimer), null);
+  });
+});
+
 test('Transporte: AWB excedente permanece completa e sinaliza comprimento invalido', async () => {
   await scenario(async page => {
     await page.evaluate(() => window.selectCourier('MARKEN'));
@@ -42,6 +89,36 @@ test('Transporte: AWB excedente permanece completa e sinaliza comprimento invali
   });
 });
 
+test('Transporte: formulario fixa unidade e rejeita rotulos digitados na formula', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        window.selectCourier('MARKEN');
+        window.renderMatBioEditor([]);
+      });
+      const row = page.locator('.ag-mat-line').first();
+      // O unico select da linha escolhe material; inputs sao descricao, formula e ensaio.
+      assert.equal(await row.locator('select').count(), 1);
+      assert.equal(await row.locator('input').count(), 3);
+      await row.locator('.ag-mat-type-select').selectOption('soro');
+      const formula = row.locator('.ag-mat-formula');
+      await formula.fill('1x500');
+      assert.equal(await row.getAttribute('data-formula-unit'), 'mL');
+      for (const unit of ['mL', 'L', 'g', 'uL', 'µL', 'mg']) {
+        await formula.fill('1x500 ' + unit);
+        assert.equal(await formula.getAttribute('aria-invalid'), 'true', unit);
+        assert.equal(await row.getAttribute('data-formula-unit'), 'mL', 'texto nao escolhe unidade');
+        await page.evaluate(() => window.saveData());
+      }
+      assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 0);
+      await formula.fill('1x500');
+      assert.equal(await formula.getAttribute('aria-invalid'), 'false');
+      await page.waitForFunction(() => window.transportMatBioTimer === null);
+      assert.equal(await row.locator('.ag-mat-total-line').innerText(), '500,00 mL');
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
 test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicita libera a gravacao', async () => {
   await scenario(async page => {
     await page.evaluate(() => {
@@ -50,11 +127,14 @@ test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicit
     });
     const first = page.locator('.ag-mat-line').first();
     assert.equal(await first.locator('.ag-mat-formula').inputValue(), '1x500', 'trocar courier preserva numeros');
+    assert.equal(await first.getAttribute('data-formula-unit'), 'mL', 'trocar courier preserva unidade dos numeros anteriores');
     assert.equal(await first.locator('.ag-mat-total-line').innerText(), 'Conversão pendente');
     await page.evaluate(() => window.saveData());
     assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 0);
     await page.getByRole('button', { name: 'Converter mL para L' }).click();
     assert.equal(await first.locator('.ag-mat-formula').inputValue(), '1×0,5');
+    assert.equal(await first.getAttribute('data-formula-unit'), 'L');
+    assert.equal(await page.getByRole('button', { name: 'Converter mL para L' }).isDisabled(), true, 'impede segunda conversao');
     const stool = page.locator('.ag-mat-line').filter({ has: page.locator('select option:checked[value="fezes"]') });
     assert.equal(await stool.locator('.ag-mat-formula').inputValue(), '2x5');
     await page.evaluate(() => window.saveData());
@@ -66,6 +146,7 @@ test('Transporte: troca para DHL bloqueia volumes pendentes e conversao explicit
     await page.evaluate(() => window.calls.find(call => call.method === 'salvarTransporte').success({}));
     await first.locator('.ag-mat-formula').fill('2x5 + 3x');
     assert.equal(await first.locator('.ag-mat-formula').getAttribute('aria-invalid'), 'true');
+    await page.waitForFunction(() => window.transportMatBioTimer === null);
     assert.equal(await first.locator('.ag-mat-total-line').innerText(), 'Inválido');
     await page.evaluate(() => window.saveData());
     assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'salvarTransporte').length), 1);
@@ -123,6 +204,42 @@ test('Transporte: Fezes recupera gramas e salva sem converter os numeros', async
     assert.equal(item.tubos, 3);
     assert.equal(item.ensaio, 'A2+A4 Fecal RNA');
   });
+});
+
+// JSON artificial carregado na fixture; nao representa unidade digitada pelo usuario.
+test('Transporte: dados externos/legados com unidade desconhecida bloqueiam a gravacao', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => window.renderMatBioEditor([{ key: 'fezes', formula: '2x1', unit: 'uL' }]));
+      assert.equal(await page.locator('.ag-mat-line').first().getAttribute('data-formula-unit'), 'uL');
+      await page.evaluate(() => window.saveData());
+      assert.equal(await page.evaluate(() => window.calls.some(call => call.method === 'salvarTransporte')), false);
+      assert.match(await page.locator('#toast').innerText(), /unidade/i);
+      assert.equal(await page.locator('.ag-mat-formula').first().inputValue(), '2x1');
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
+test('Transporte: avisos de geracao aparecem em desktop e celular', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.locator('#btnPdfTransport').click();
+      await page.evaluate(() => window.calls.find(call => call.method === 'gerarPdfTransporte').success({
+        type: 'pdf', fileId: 'PDF-TEST', fileName: 'teste.pdf', fileUrl: 'https://example.invalid/pdf',
+        message: 'PDF gerado.', draftOk: true, warnings: [{ code: 'PESO', message: 'Revise o peso do gelo. <teste>' }]
+      }));
+      assert.match(await page.locator('#pdfGenerationWarnings').innerText(), /Revise o peso do gelo\. <teste>/);
+      assert.equal(await page.locator('#pdfGenerationWarnings teste').count(), 0);
+      assert.match(await page.locator('#issues').innerText(), /Revise o peso do gelo/);
+      assert.doesNotMatch(await page.locator('#pdfModal').innerText(), /quantidade correta/);
+      assert.match(await page.locator('#toast').getAttribute('class'), /warn/);
+      assert.equal(await page.locator('#btnPdfTransport').isDisabled(), false);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await page.screenshot({ path: path.join(dir, 'transport-review-warning-' + width + '.png'), fullPage: true });
+    }, { viewport: { width, height: 900 } });
+  }
 });
 
 test('Transporte: quantificacao legada sem formula sobrevive a reabertura e salvamento', async () => {
@@ -303,6 +420,7 @@ test('Transporte manual: busca por nome, estudo e ID preserva participacoes homo
       assert.equal(await search.inputValue(), 'Márcia Silva');
       assert.ok((await page.locator('#pacienteSearchDetail').innerText()).includes('Estudo A · ID 123'));
       await search.fill('marcia');
+      await page.waitForFunction(() => window.transportParticipantSearchTimer === null);
       assert.equal(await page.locator('#pacienteSearchList [role="option"]').count(), 2);
       assert.ok((await page.locator('#pacienteSearchList').innerText()).includes('Estudo B'));
       assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), false, 'digitar busca nao altera dados');
@@ -318,20 +436,24 @@ test('Transporte manual: busca por nome, estudo e ID preserva participacoes homo
       assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), true);
       await page.evaluate(() => window.transportClearUnsaved());
       await search.fill('estudo a');
+      await page.waitForFunction(() => window.transportParticipantSearchTimer === null);
       assert.equal(await page.locator('#pacienteSearchList [role="option"]').count(), 1);
       await search.press('Escape');
       assert.equal(await search.inputValue(), 'Márcia Silva');
       assert.equal(await page.locator('#paciente').inputValue(), 'participante:CAD-B');
       await search.fill('456');
+      await page.waitForFunction(() => window.transportParticipantSearchTimer === null);
       assert.equal(await page.locator('#pacienteSearchList [role="option"]').count(), 1);
       await search.press('Enter');
       assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), false, 'reconfirmar mesma participacao nao marca alteracao');
       await search.fill('inexistente');
+      await page.waitForFunction(() => window.transportParticipantSearchTimer === null);
       assert.ok((await page.locator('#pacienteSearchList').innerText()).includes('Nenhuma participação'));
       await search.press('Tab');
       assert.equal(await search.inputValue(), 'Márcia Silva');
       assert.equal(await page.evaluate(() => window.collectPayload().participanteCadastroId), 'CAD-B');
       await search.fill('marcia');
+      await page.waitForFunction(() => window.transportParticipantSearchTimer === null);
       const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(dir, { recursive: true });
       await page.locator('.study-grid').screenshot({ path: path.join(dir, 'transport-participant-search-' + width + '.png') });
@@ -401,4 +523,206 @@ test('Transporte manual: limpar selecao esvazia identificacao e impede salvar te
     assert.equal(await page.evaluate(() => window.collectPayload().participanteCadastroId), '');
     assert.equal(await page.locator('#btnSaveTransport').isDisabled(), true);
   });
+});
+
+
+test('Transporte: falha legada nao abre modal nem apresenta sucesso', async () => {
+  await scenario(async page => {
+    await page.locator('#btnPdfTransport').click();
+    await page.evaluate(() => window.calls.find(call => call.method === 'gerarPdfTransporte').success('Erro ao gerar PDF: identificação nominal presente'));
+    assert.match(await page.locator('#toast').getAttribute('class'), /danger/);
+    assert.match(await page.locator('#actionStatus').innerText(), /identificação nominal/);
+    assert.equal(await page.locator('#pdfModal').isVisible(), false);
+    assert.equal(await page.locator('#btnPdfTransport').isDisabled(), false);
+    await page.evaluate(() => window.serverCall('sincronizarTransporte', [], 'Sucesso', () => { window.unexpectedAfter = true; }));
+    await page.evaluate(() => window.calls.find(call => call.method === 'sincronizarTransporte').success('Erro ao sincronizar'));
+    assert.match(await page.locator('#toast').getAttribute('class'), /danger/);
+    assert.equal(await page.evaluate(() => !!window.unexpectedAfter), false);
+  });
+});
+
+test('Transporte: mensagens especificas de seguranca e Gmail sao preservadas', async () => {
+  await scenario(async page => {
+    for (const message of ['PDF bloqueado: identificação nominal ainda presente. Revise o modelo.', 'Autorizacao do Gmail pendente. Abra o link de autorizacao.']) {
+      assert.equal(await page.evaluate(message => window.transportErrorMessage({ message }), message), message);
+    }
+    await page.evaluate(() => window.showPdfModal({ type: 'pdf', fileId: 'PDF', fileUrl: 'https://example.invalid/pdf', draftOk: false,
+      draftErrorCode: 'GMAIL_AUTH', draftError: 'Autorize o Gmail.', draftAuthUrl: 'https://example.invalid/auth', warnings: [{ message: 'Revise o volume MARKEN.' }] }));
+    assert.match(await page.locator('#pdfDraftWarning').innerText(), /Autorize o Gmail/);
+    assert.equal(await page.locator('#pdfDraftWarning a').getAttribute('href'), 'https://example.invalid/auth');
+    assert.match(await page.locator('#pdfGenerationWarnings').innerText(), /volume MARKEN/);
+    await page.evaluate(() => window.showPdfModal({ type: 'pdf', fileId: 'PDF2', fileUrl: 'https://example.invalid/pdf2', draftOk: true, warnings: [] }));
+    assert.equal(await page.locator('#pdfGenerationWarnings').innerText(), '');
+    assert.equal(await page.locator('#pdfDraftWarning').innerText(), '');
+  });
+});
+
+
+test('Transporte: colagem chega ao campo e somente input marca alteracao', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        window.selectCourier('MARKEN');
+        window.transportClearUnsaved();
+        const input = document.getElementById('awb');
+        window.transportPasteReached = false;
+        input.addEventListener('paste', () => { window.transportPasteReached = true; });
+        input.dispatchEvent(new window.ClipboardEvent('paste', { bubbles: true, cancelable: true }));
+      });
+      assert.equal(await page.evaluate(() => window.transportPasteReached), true);
+      assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), false, 'paste sem mudanca nao marca alteracao');
+      // Evento sintetico nao insere texto: simula separadamente a insercao nativa e seu input.
+      await page.evaluate(() => {
+        const input = document.getElementById('awb');
+        input.value = 'ab-12 cd34 ef56';
+        input.dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: 'ab-12 cd34 ef56' }));
+      });
+      assert.equal(await page.locator('#awb').inputValue(), 'AB12CD34EF56');
+      assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), true);
+      assert.match(await page.locator('#actionStatus').innerText(), /nao salvas/);
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
+
+test('Transporte: geracao usa uma RPC, preserva aviso da Agenda e alerta durante processamento', async () => {
+  await scenario(async page => {
+    await page.locator('#btnPdfTransport').click();
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'salvarTransporte').length), 0);
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte').length), 1);
+    const blocked = await page.evaluate(() => {
+      window.transportClearUnsaved();
+      const event = new window.Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    assert.equal(blocked, true);
+    await page.evaluate(() => window.calls.find(c => c.method === 'gerarPdfTransporte').success({ type: 'pdf', fileId: 'PDF', fileUrl: 'https://example.invalid/pdf',
+      message: 'PDF gerado.', agendaSync: { warnings: ['Agenda possui AWB diferente.'] } }));
+    assert.match(await page.locator('#actionStatus').innerText(), /AWB diferente/);
+    assert.match(await page.locator('#toast').getAttribute('class'), /warn/);
+    assert.equal(await page.evaluate(() => {
+      const event = new window.Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented;
+    }), false);
+  });
+});
+
+test('Transporte: download usa Blob com bytes corretos e libera URL', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window._lastGeneratedPdf = { fileId: 'PDF', fileName: 'teste.pdf' };
+      window.URL.createObjectURL = blob => { window.downloadBlob = blob; return 'blob:teste'; };
+      window.URL.revokeObjectURL = url => { window.revokedDownload = url; };
+      window.HTMLAnchorElement.prototype.click = function() { window.downloadHref = this.getAttribute('href'); };
+      const originalTimeout = window.setTimeout;
+      window.setTimeout = (fn, delay) => delay === 60000 ? (window.downloadCleanup = fn, 0) : originalTimeout(fn, delay);
+      window.downloadGeneratedPdf();
+      window.calls.find(c => c.method === 'baixarPdfTransporte').success({ base64: 'JVBERi0=', mimeType: 'application/pdf' });
+    });
+    assert.equal(await page.evaluate(() => window.downloadHref), 'blob:teste');
+    assert.equal(await page.evaluate(() => window.downloadBlob.text()), '%PDF-');
+    assert.equal(await page.evaluate(() => window.downloadBlob.type), 'application/pdf');
+    await page.evaluate(() => window.downloadCleanup());
+    assert.equal(await page.evaluate(() => window.revokedDownload), 'blob:teste');
+    assert.equal(await page.locator('#pdfDownloadLink').isDisabled(), false);
+  });
+});
+
+
+test('Transporte: retentativas conservam token, armazenamento guarda somente identificador', async () => {
+  await scenario(async page => {
+    await page.locator('#btnPdfTransport').click();
+    const first = await page.evaluate(() => window.calls.find(c => c.method === 'gerarPdfTransporte').args[0].generationRequestId);
+    assert.match(first, /^[a-f0-9]{32}$/);
+    await page.evaluate(() => window.calls.find(c => c.method === 'gerarPdfTransporte').failure(new Error('Resposta perdida')));
+    await page.locator('#btnPdfTransport').click();
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte')[1].args[0].generationRequestId), first);
+    const stored = await page.evaluate(() => JSON.stringify(window.transportTestStorage));
+    assert.doesNotMatch(stored, /Pessoa A|Estudo A|materiais|paciente/);
+    await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte')[1].success({ type: 'pdf', fileId: 'PDF', fileUrl: 'https://example.invalid/pdf', message: 'PDF recuperado.' }));
+    await page.evaluate(() => { window.confirm = () => false; window.newTransportGeneration(); });
+    assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte').length), 2);
+    await page.evaluate(() => { window.confirm = () => true; window.newTransportGeneration(); });
+    const third = await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte')[2].args[0].generationRequestId);
+    assert.notEqual(third, first);
+  });
+});
+
+test('Transporte: falha de armazenamento bloqueia RPC e mudanca de payload usa outro token', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => { window.localStorage.setItem = () => { throw new Error('storage'); }; });
+    await page.locator('#btnPdfTransport').click();
+    assert.equal(await page.evaluate(() => window.calls.some(c => c.method === 'gerarPdfTransporte')), false);
+    assert.match(await page.locator('#actionStatus').innerText(), /armazenamento/);
+  });
+  await scenario(async page => {
+    const first = await page.evaluate(() => window.transportGenerationRequest(window.collectPayload()));
+    await page.locator('#awb').fill('AB12CD34EF56');
+    const second = await page.evaluate(() => window.transportGenerationRequest(window.collectPayload()));
+    assert.notEqual(second, first);
+  });
+});
+
+
+test('Transporte: recuperacao incerta nao afirma que draft deixou de ser criado', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => window.showPdfModal({ type: 'pdf', fileId: 'PDF', fileUrl: 'https://example.invalid/pdf',
+      draftOk: false, draftErrorCode: 'GENERATION_UNCERTAIN', draftError: 'O rascunho pode ter sido criado. Confira o Gmail.' }));
+    const warning = await page.locator('#pdfDraftWarning').innerText();
+    assert.match(warning, /não foi possível confirmar/);
+    assert.doesNotMatch(warning, /não foi criado/);
+    assert.match(await page.locator('#issues').innerText(), /nao confirmado/);
+  });
+});
+
+
+test('Transporte: trocar courier preserva AWB e exige revisao antes de salvar codigo incompatível', async () => {
+  await scenario(async page => {
+    await page.locator('#awb').fill('AB12CD34EF56');
+    await page.evaluate(() => window.selectCourier('DHL'));
+    assert.equal(await page.locator('#awb').inputValue(), 'AB12CD34EF56');
+    await page.evaluate(() => window.saveData());
+    assert.equal(await page.evaluate(() => window.calls.some(c => c.method === 'salvarTransporte')), false);
+    await page.evaluate(() => window.selectCourier('MARKEN'));
+    assert.equal(await page.locator('#awb').inputValue(), 'AB12CD34EF56');
+  });
+});
+
+test('Transporte: participante sem ID conserva chave na ordenacao e recusa duplicatas ambiguas', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window.state.options.participantes = [{ nome: 'Zoe', projeto: 'Estudo B', idParticipante: '9' }, { nome: 'Ana', projeto: 'Estudo A', idParticipante: '7' }];
+      window.fillParticipantOptions(window.sortRowsByText(window.state.options.participantes, 'nome'), {});
+      document.getElementById('paciente').value = window.participantOptionKey(window.state.options.participantes[1], 1);
+    });
+    assert.equal(await page.evaluate(() => window.selectedParticipantInfo().nome), 'Ana');
+    assert.equal(await page.evaluate(() => window.transportParticipantSearchRows().find(r => r.name === 'Ana').key), await page.locator('#paciente').inputValue());
+    await page.evaluate(() => window.state.options.participantes.push({ nome: 'Ana', projeto: 'Estudo A', idParticipante: '7' }));
+    assert.deepEqual(await page.evaluate(() => window.selectedParticipantInfo()), {});
+  });
+});
+
+test('Transporte: total legado fracionario permanece exato sem inferir segmentos', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => window.renderMaterials([{ ativo: true, material: 'Soro', tubos: 7, total: 0.03, formula: '', unit: 'mL', ensaio: 'Original' }]));
+      const row = page.locator('.ag-mat-line').first();
+      assert.equal(await row.locator('.ag-mat-formula').inputValue(), '');
+      assert.equal(await row.locator('.ag-mat-tubos').innerText(), '7');
+      assert.equal(await row.locator('.ag-mat-total-line').innerText(), '0,03 mL');
+      await row.locator('.ag-mat-ensaio').fill('Revisado');
+      const material = await page.evaluate(() => window.collectPayload().materiais.find(m => m.material === 'Soro'));
+      assert.equal(material.tubos, 7); assert.equal(material.total, 0.03); assert.equal(material.formula, '');
+      const server = runFile('TransporteCodexConfig.gs');
+      server.codexMatBioValidateTransportPayload_({ courier: 'MARKEN', materiais: [material] });
+      assert.equal(material.total, 0.03);
+      await page.evaluate(() => window.selectCourier('DHL'));
+      assert.equal(await page.evaluate(() => window.dhlVolumeConversionPending()), true);
+      await page.locator('#btnConvertDhlVolumes').click();
+      const converted = await page.evaluate(() => window.collectPayload().materiais.find(m => m.material === 'Soro'));
+      assert.equal(converted.total, 0.03 / 1000); assert.equal(converted.tubos, 7); assert.equal(converted.formula, '');
+      await row.locator('.ag-mat-formula').fill('2x0,5');
+      assert.equal(await page.evaluate(() => window.collectPayload().materiais.find(m => m.material === 'Soro').total), 1);
+    }, { viewport: { width, height: 900 } });
+  }
 });
