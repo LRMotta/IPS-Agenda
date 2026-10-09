@@ -7003,6 +7003,7 @@
     return ({
       naoagendado: 'não agendado',
       pendente: 'pendente',
+      docsgerados: 'docs gerados',
       agendado: 'agendado',
       confirmado: 'confirmado',
       enviado: 'enviado',
@@ -7012,7 +7013,7 @@
   }
 
   function agendaLogisticaResumoData_(entries) {
-    var order = ['naoagendado', 'pendente', 'agendado', 'confirmado', 'enviado', 'entregue', 'cancelado'];
+    var order = ['naoagendado', 'pendente', 'docsgerados', 'agendado', 'confirmado', 'enviado', 'entregue', 'cancelado'];
     var counts = {};
     entries.forEach(function(entry) {
       counts[entry.statusKey] = (counts[entry.statusKey] || 0) + 1;

@@ -26,6 +26,28 @@ test('aliases de courier mantem pendencia e elegibilidade sem promover status de
   });
 });
 
+test('docs gerados identifica documentacao sem agendar nem confirmar courier', () => {
+  allRules().forEach((rules) => {
+    ['Docs gerados', 'docsgerados', 'Documentos gerados'].forEach((status) => {
+      assert.equal(rules.courierStatusKey(status), 'docsgerados');
+      assert.equal(rules.courierNeedsSchedule(status, 'AWB123'), false);
+      assert.equal(rules.courierIsAwaitingConfirmation(status), false);
+      assert.equal(rules.courierCanReceiveConfirmation(status), false);
+      assert.equal(rules.courierStatusRequiresEventDate(status), false);
+    });
+    assert.equal(rules.courierStatusKey('Docs gerados; Enviado'), 'enviado');
+    assert.equal(rules.courierStatusKey('Docs gerados; Entregue'), 'entregue');
+  });
+});
+
+test('opcoes de courier incluem Docs gerados mesmo com configuracao legada', () => {
+  const server = runFile('WebApp.gs');
+  server.getConfigAppValuesByKeys_ = () => ['Não Agendado', 'Agendado', 'Confirmado'];
+  assert.deepEqual(Array.from(server.getAgendaCourierStatuses_()), ['Não Agendado', 'Docs gerados', 'Agendado', 'Confirmado']);
+  server.getConfigAppValuesByKeys_ = () => ['Não Agendado', 'Docs gerados', 'Agendado'];
+  assert.equal(server.getAgendaCourierStatuses_().filter((value) => value === 'Docs gerados').length, 1);
+});
+
 test('entrega afirmada prevalece sobre envio e confirmacao e respeita negacoes', () => {
   allRules().forEach((rules) => {
     ['Enviado e entregue', 'Confirmado / Entregue', 'Entregue'].forEach((status) => {

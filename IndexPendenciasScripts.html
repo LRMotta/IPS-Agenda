@@ -65,6 +65,33 @@
     return function() { abrirPendenciaAgendaRegistro(it && it.agendaId); };
   }
 
+  function pendenciaTransporteAction(it) {
+    return function() {
+      var slot = ({ 'Transporte I': '1', 'Transporte II': '2', 'Transporte III': '3', 'Backup': 'backup' })[it && it.slot];
+      if (!it || !it.agendaId || !slot) {
+        snackErro('Transporte da pendência não encontrado.');
+        return;
+      }
+      var context = { agendaId: it.agendaId, slot: slot, paciente: it.participante, protocolo: it.projeto, visita: it.visita };
+      var transportWindow = prepararJanelaTransporte(context);
+      if (transportWindow) _pendenciasTransportWindows.push(transportWindow);
+      abrirTransporteModulo(transportWindow, context);
+    };
+  }
+
+  var _pendenciasTransportWindows = [];
+  if (typeof window.addEventListener === 'function') window.addEventListener('message', function(event) {
+    if (!event.data || event.data.type !== 'ips-transporte-atualizado') return;
+    if (_pendenciasTransportWindows.indexOf(event.source) < 0) return;
+    window.revalidarPendenciasAposTransporte();
+  });
+
+  window.revalidarPendenciasAposTransporte = function() {
+    STATE.pendencias.loadedAt = 0;
+    _pendenciasLoadedAt = null;
+    if (pendenciasEstaAtiva()) carregarPendencias(true, { silent: true });
+  };
+
   function pendenciaAwbAction(it) {
     return function() { abrirPendenciaAwb(it && it.agendaId); };
   }
@@ -131,7 +158,7 @@
         tone: '#856404',
         bg: '#fff3cd',
         priority: true,
-        action: pendenciaAgendaRegistroAction,
+        action: pendenciaTransporteAction,
         items: p.courierNaoAgendada || [],
         render: function(it) {
           return {

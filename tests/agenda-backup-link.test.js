@@ -317,7 +317,7 @@ test('pendencias exibem documentacao de transporte sem envio identificado', () =
   row[cfg.idx.visita] = 'V1';
   row[cfg.idx.c1.nome] = 'Marken';
   row[cfg.idx.c1.temp] = 'Ambiente';
-  row[cfg.idx.c1.status] = 'Pendente';
+  row[cfg.idx.c1.status] = 'Docs gerados';
   row[cfg.idx.c1.awb] = '620X37130758';
   server.getAgendaSheetForRead_ = () => new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), row]);
   server.getAgendaFeriadosPendenciasMap_ = () => ({});

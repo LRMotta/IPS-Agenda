@@ -58,6 +58,20 @@ function fixture() {
   return { context, grid, buttons, requests, timers, status, button, ts };
 }
 
+test('courier nao agendada abre Transporte com slot correto e transicao, sem exigir AWB na Agenda', () => {
+  const { context } = fixture();
+  const calls = [];
+  const targetWindow = {};
+  context.prepararJanelaTransporte = args => { calls.push(['transition', args]); return targetWindow; };
+  context.abrirTransporteModulo = (target, args) => calls.push(['open', target, args]);
+  context.pendenciaTransporteAction({ agendaId: 'EVT-1', slot: 'Transporte II', participante: 'Teste', projeto: 'P' })();
+  assert.equal(calls[0][0], 'transition');
+  assert.equal(calls[1][1], targetWindow);
+  assert.equal(calls[1][2].agendaId, 'EVT-1');
+  assert.equal(calls[1][2].slot, '2');
+  assert.equal(context._pendenciasTransportWindows[0], targetWindow);
+});
+
 test('cache vencido aparece durante entrada e refresh forcado sem reconstruir lista existente', () => {
   for (const forced of [false, true]) {
     for (const empty of [false, true]) {
