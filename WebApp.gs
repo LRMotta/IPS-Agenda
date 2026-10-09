@@ -2048,7 +2048,7 @@ function getCodexSpreadsheet_() {
   return CODEX_ACTIVE_SPREADSHEET_CACHE_;
 }
 
-function clearCodexRuntimeCaches_(referenceParts) {
+function clearCodexRuntimeCaches_(referenceParts, eventScope) {
   CODEX_CONFIG_APP_ROWS_CACHE_ = null;
   CODEX_SHEET_DATA_CACHE_ = {};
   CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
@@ -2072,8 +2072,11 @@ function clearCodexRuntimeCaches_(referenceParts) {
     'AgendaBootstrapReferenceData:v1:' + day
   ]);
   agendaInvalidateReferenceDataCache_(referenceParts);
-  agendaInvalidateParticipantHydrationCache_();
-  agendaInvalidateDateIndexCache_();
+  // Chamadas legadas sem escopo mantêm a limpeza completa.
+  if (eventScope === undefined) eventScope = 'all';
+  if (eventScope === 'all' || eventScope === 'participants') agendaInvalidateParticipantHydrationCache_();
+  if (eventScope === 'all') agendaInvalidateDateIndexCache_();
+  else if (eventScope === 'participants') agendaInvalidateWindowCache_();
 }
 
 function codexCacheGet_(key) {
@@ -2440,7 +2443,7 @@ function salvarDadosMedico(dados) {
       while (rows.some(function(row) { return String(row[0]) === 'MED-' + idTimestamp; })) idTimestamp++;
       sh.getRange(rowIndex, 1, 1, 7).setValues([['MED-' + idTimestamp].concat(values)]);
     }
-    clearCodexRuntimeCaches_(['medicos']);
+    clearCodexRuntimeCaches_(['medicos'], 'references');
     return id ? 'Médico atualizado com sucesso.' : 'Médico cadastrado com sucesso.';
   });
 }
@@ -2481,7 +2484,7 @@ function excluirMedico(id) {
     for (var i = 0; i < ids.length; i++) {
       if (String(ids[i][0]) === targetId) {
         sh.deleteRow(i + 2);
-        clearCodexRuntimeCaches_(['medicos']);
+        clearCodexRuntimeCaches_(['medicos'], 'references');
         return 'ok';
       }
     }
@@ -5974,7 +5977,7 @@ function salvarDadosProjeto(dados) {
         // Persistir o cadastro antes de liberar o lock e invalidar referências.
         SpreadsheetApp.flush();
         clearTransporteOptionsCache_();
-        clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta']);
+        clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta'], 'references');
         return 'Projeto atualizado com sucesso!';
       }
     }
@@ -6006,7 +6009,7 @@ function salvarDadosProjeto(dados) {
     // Persistir as alterações enquanto o lock ainda é exclusivo.
     SpreadsheetApp.flush();
     clearTransporteOptionsCache_();
-    clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta']);
+    clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta'], 'references');
     return 'Projeto cadastrado com sucesso!';
   }
   });
@@ -6025,7 +6028,7 @@ function excluirProjeto(id) {
       // Persistir as alterações enquanto o lock ainda é exclusivo.
       SpreadsheetApp.flush();
       clearTransporteOptionsCache_();
-      clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta']);
+      clearCodexRuntimeCaches_(['projetos', 'project_courier_map', 'participantes', 'monitores', 'kits_coleta'], 'references');
       return 'Excluído com sucesso.';
     }
   }
@@ -6376,7 +6379,7 @@ function salvarConfiguracaoCtmsParticipante_(payload) {
     sh.getRange(rowNumber, columns.bracoId + 1).setValue(config.bracoId);
     sh.getRange(rowNumber, columns.marcosJson + 1).setValue(Object.keys(config.marcos).length ? JSON.stringify(config.marcos) : '');
     sh.getRange(rowNumber, columns.escolhasJson + 1).setValue(Object.keys(config.escolhasReferencias).length ? JSON.stringify(config.escolhasReferencias) : '');
-    clearCodexRuntimeCaches_(['participantes']);
+    clearCodexRuntimeCaches_(['participantes'], 'participants');
   });
   return {
     ok: true,
@@ -6418,7 +6421,7 @@ function definirAprovacaoCtmsParticipante_(payload) {
       delete aprovacoes[idSoA];
     }
     sh.getRange(rowIndex + 1, columns.aprovacoesJson + 1).setValue(Object.keys(aprovacoes).length ? JSON.stringify(aprovacoes) : '');
-    clearCodexRuntimeCaches_(['participantes']);
+    clearCodexRuntimeCaches_(['participantes'], 'participants');
   });
   codexWriteAuditLog_('definirAprovacaoCtmsParticipante', 'Cadastros', idSoA + ':' + (aprovar ? 'aprovada' : 'revogada'));
   return {
@@ -6969,7 +6972,7 @@ function salvarDadosParticipante(d) {
         { field: 'ID Pessoa', oldValue: existingPessoaId, newValue: idPessoa }
       ], 'Cadastro de participação atualizado');
     }
-    clearCodexRuntimeCaches_(['participantes']);
+    clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return concluirSalvarParticipante_('Participante atualizado com sucesso');
   } else {
@@ -6984,7 +6987,7 @@ function salvarDadosParticipante(d) {
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
     gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns);
     if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('criarParticipacaoParticipante', 'Cadastros', rowStart[0]);
-    clearCodexRuntimeCaches_(['participantes']);
+    clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return concluirSalvarParticipante_('Participante cadastrado com sucesso');
   }
@@ -7035,7 +7038,7 @@ function excluirParticipante(id) {
         }
       }
       sh.deleteRow(i + 1);
-      clearCodexRuntimeCaches_(['participantes']);
+      clearCodexRuntimeCaches_(['participantes'], 'participants');
       if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
       return 'Participante excluído';
     }
@@ -7224,7 +7227,7 @@ function salvarDadosMonitor(d) {
       for (var i = 1; i < rows.length; i++) {
         if (String(rows[i][0]) === String(d.id)) {
           sh.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
-          clearCodexRuntimeCaches_(['monitores']);
+          clearCodexRuntimeCaches_(['monitores'], 'references');
           return 'Monitor atualizado com sucesso.';
         }
       }
@@ -7233,7 +7236,7 @@ function salvarDadosMonitor(d) {
 
     rowData[0] = 'MON-' + Date.now();
     sh.appendRow(rowData);
-    clearCodexRuntimeCaches_(['monitores']);
+    clearCodexRuntimeCaches_(['monitores'], 'references');
     return 'Monitor cadastrado com sucesso.';
   });
 }
@@ -7246,7 +7249,7 @@ function excluirMonitor(id) {
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(id)) {
       sh.deleteRow(i + 1);
-      clearCodexRuntimeCaches_(['monitores']);
+      clearCodexRuntimeCaches_(['monitores'], 'references');
       return 'Monitor excluído.';
     }
   }
@@ -7368,7 +7371,7 @@ function salvarDadosPrestador(dados) {
         sh.getRange(ln, 4).setValue(dados.email    || '');
         sh.getRange(ln, tipoCol).setValue(dados.tipoServico || '');
         sh.getRange(ln, telefoneCol).setValue(dados.telefone || '');
-        clearCodexRuntimeCaches_(['prestadores']);
+        clearCodexRuntimeCaches_(['prestadores'], 'references');
         return 'Prestador atualizado com sucesso.';
       }
     }
@@ -7380,7 +7383,7 @@ function salvarDadosPrestador(dados) {
   while (row.length < telefoneCol) row.push('');
   row[telefoneCol - 1] = dados.telefone || '';
   sh.appendRow(row);
-  clearCodexRuntimeCaches_(['prestadores']);
+  clearCodexRuntimeCaches_(['prestadores'], 'references');
   return 'Prestador cadastrado com sucesso.';
 }
 
@@ -7390,7 +7393,7 @@ function excluirPrestador(id) {
   if (!sh || sh.getLastRow() < 2) throw new Error('Nenhum registro encontrado.');
   var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(id)) { sh.deleteRow(i + 2); clearCodexRuntimeCaches_(['prestadores']); return 'ok'; }
+    if (String(ids[i][0]) === String(id)) { sh.deleteRow(i + 2); clearCodexRuntimeCaches_(['prestadores'], 'references'); return 'ok'; }
   }
   throw new Error('Prestador não encontrado.');
 }
@@ -9904,6 +9907,7 @@ function getKitsAgendaBaixaStatus(agendaId) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var shMov = getMovimentacoesSheet_(ss);
   var saldo = {};
+  var baixasPendentes = {};
   var origemBase = 'Agenda kit ' + agendaId;
   var origemDev = 'Agenda kit devolucao ' + agendaId;
   var movMetaCols = movimentacoesHeaderInfo_(shMov).map || {};
@@ -9915,6 +9919,24 @@ function getKitsAgendaBaixaStatus(agendaId) {
       var rowAgendaId = movMetaCols.agendaid !== undefined ? String(r[movMetaCols.agendaid] || '').trim() : '';
       var rowAgendaKitAcao = movMetaCols.agendakitacao !== undefined ? normalizeHeader_(r[movMetaCols.agendakitacao]) : '';
       if (!idItem) return;
+      var acao = rowAgendaId ? (rowAgendaId === agendaId ? rowAgendaKitAcao : '') :
+        (origem.indexOf(origemDev) === 0 ? 'devolucao' : (origem.indexOf(origemBase) === 0 ? 'baixa' : ''));
+      var quantidade = Number(r[7] || 0);
+      if (acao === 'baixa' && quantidade > 0) {
+        (baixasPendentes[idItem] || (baixasPendentes[idItem] = [])).push({
+          idItem: idItem, qtde: quantidade, idLote: String(r[10] || '').trim(),
+          accessionNumber: movMetaCols.accessionnumber !== undefined ? String(r[movMetaCols.accessionnumber] || '').trim() : '',
+          validade: r[8] || '', localizacao: String(r[9] || '').trim()
+        });
+      } else if (acao === 'devolucao' && quantidade > 0) {
+        // Devolucoes legadas podem conter o lote errado; consumir as baixas
+        // anteriores do item para nao reutilizar sua identidade em um novo ciclo.
+        (baixasPendentes[idItem] || []).forEach(function(item) {
+          var abatido = Math.min(item.qtde, quantidade);
+          item.qtde -= abatido;
+          quantidade -= abatido;
+        });
+      }
       if (rowAgendaId) {
         if (rowAgendaId === agendaId && rowAgendaKitAcao === 'baixa') saldo[idItem] = (saldo[idItem] || 0) + Number(r[7] || 0);
         if (rowAgendaId === agendaId && rowAgendaKitAcao === 'devolucao') saldo[idItem] = (saldo[idItem] || 0) - Number(r[7] || 0);
@@ -9925,7 +9947,11 @@ function getKitsAgendaBaixaStatus(agendaId) {
     });
   }
   var ids = Object.keys(saldo).filter(function(id) { return saldo[id] > 0; });
-  return { baixados: ids.length > 0, ids: ids };
+  var itens = [];
+  ids.forEach(function(id) {
+    (baixasPendentes[id] || []).forEach(function(item) { if (item.qtde > 0) itens.push(item); });
+  });
+  return { baixados: ids.length > 0, ids: ids, itens: itens };
 }
 
 function devolverKitsAgendaEvento(payload) {
@@ -9938,12 +9964,16 @@ function devolverKitsAgendaEvento(payload) {
   if (!status.baixados) throw new Error('Nao ha kits baixados para devolver.');
   var origemDev = 'Agenda kit devolucao ' + agendaId;
   var devolvidos = 0;
-  status.ids.forEach(function(id) {
+  status.itens.forEach(function(item) {
+    var id = item.idItem;
     registrarMovimentacaoEstoque({
       idItem: id,
-      qtde: 1,
-      idLote: '',
-      lote: '',
+      qtde: item.qtde,
+      idLote: item.idLote,
+      lote: item.idLote,
+      accessionNumber: item.accessionNumber,
+      validade: item.idLote || item.accessionNumber ? item.validade : '',
+      localizacao: item.idLote || item.accessionNumber ? item.localizacao : '',
       tipoMovimento: 'Entrada - Devolucao de kit da Agenda',
       projeto: payload.projeto || '',
       participante: payload.participante || '',
@@ -9954,8 +9984,8 @@ function devolverKitsAgendaEvento(payload) {
       agendaKitAcao: 'devolucao',
       observacao: 'Devolucao de kit baixado pela Agenda'
     });
-    atualizarStatusReservasAgendaItens_(agendaId, [{ idItem: id, qtde: 1 }], 'Devolvido', 'Baixado');
-    devolvidos++;
+    atualizarStatusReservasAgendaItens_(agendaId, [item], 'Devolvido', 'Baixado');
+    devolvidos += item.qtde;
   });
   return { ok: true, devolvidos: devolvidos, msg: devolvidos + ' kit(s) devolvido(s) ao estoque.' };
   });
@@ -13709,44 +13739,67 @@ function getUltimaVisitaParticipanteAgenda_(nome, idCadastro) {
   }
 }
 
-function getUltimasVisitasParticipantesAgendaMap_() {
+function getUltimasVisitasParticipantesAgendaMap_(forceRefresh) {
+  var metadata = { cacheHit: false, cacheMiss: false };
+  return codexMeasureReadPerformance_('Participantes', 'ultima_visita', metadata, function() {
+    try {
+      var agenda = getAgendaSheetForRead_();
+      var generation = agendaWindowCacheGeneration_(true);
+      // O recorte até hoje muda sem escrita: inclua o dia de negócio.
+      var day = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyyMMdd');
+      var key = generation ? ['AgendaLastVisits', 'v1', generation, agenda.getLastRow(), day].join(':') : null;
+      var bypass = forceRefresh === true || CODEX_CACHE_BYPASS_READS_;
+      var cached = !bypass && key ? agendaWindowCacheGet_(key) : null;
+      if (cached && cached.map && typeof cached.map === 'object') {
+        metadata.cacheHit = true;
+        return cached.map;
+      }
+      metadata.cacheMiss = true;
+      var result = agendaBuildUltimasVisitasParticipantesMap_(day);
+      // Segmentação e checagem de geração impedem repovoamento obsoleto.
+      if (key) agendaWindowCachePut_(key, { map: result });
+      return result;
+    } catch (e) {
+      // Falhas preservam o fallback, sem armazenar mapa vazio.
+      return {};
+    }
+  });
+}
+
+function agendaBuildUltimasVisitasParticipantesMap_(businessDay) {
   var out = {};
-  try {
-    var agenda = getAgendaSheetForRead_();
-    var lastRow = agenda.getLastRow();
-    if (lastRow < 2) return out;
-    var vals = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
-    var idx = AGENDA_CFG.idx;
-    var hoje = new Date();
-    hoje.setHours(23, 59, 59, 999);
-    vals.forEach(function(r) {
-      var participante = normText_(r[idx.participante]);
-      var cadastroId = idx.participanteCadastroId >= 0 ? r[idx.participanteCadastroId] : '';
-      if (!participante && !normText_(cadastroId)) return;
-      if (!AgendaServerRules_.isVisit(r[idx.tipo])) return;
-      var status = normText_(r[idx.status]);
-      if (!AgendaServerRules_.isCompleted(status)) return;
-      var dt = agendaDateFromValue_(r[idx.data]);
-      if (!dt || dt.getTime() > hoje.getTime()) return;
-      var ultimaVisita = {
-        dataObj: dt, data: formatarDataSafe(r[idx.data]),
-        dataIso: formatarDataIsoAgenda_(dt), visita: String(r[idx.visita] || '---')
-      };
-      if (participante && (!out[participante] || dt.getTime() > out[participante].dataObj.getTime())) {
-        out[participante] = ultimaVisita;
-      }
-      var chaveCadastro = agendaUltimaVisitaCadastroKey_(cadastroId);
-      if (chaveCadastro && (!out[chaveCadastro] || dt.getTime() > out[chaveCadastro].dataObj.getTime())) {
-        out[chaveCadastro] = ultimaVisita;
-      }
-    });
-    Object.keys(out).forEach(function(k) {
-      out[k] = { data: out[k].data, dataIso: out[k].dataIso, visita: out[k].visita };
-    });
-    return out;
-  } catch(e) {
-    return out;
-  }
+  var agenda = getAgendaSheetForRead_();
+  var lastRow = agenda.getLastRow();
+  if (lastRow < 2) return out;
+  var vals = codexReadValuesMeasured_(agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol), false);
+  var idx = AGENDA_CFG.idx;
+  var hoje = new Date();
+  hoje.setHours(23, 59, 59, 999);
+  vals.forEach(function(r) {
+    var participante = normText_(r[idx.participante]);
+    var cadastroId = idx.participanteCadastroId >= 0 ? r[idx.participanteCadastroId] : '';
+    if (!participante && !normText_(cadastroId)) return;
+    if (!AgendaServerRules_.isVisit(r[idx.tipo])) return;
+    var status = normText_(r[idx.status]);
+    if (!AgendaServerRules_.isCompleted(status)) return;
+    var dt = agendaDateFromValue_(r[idx.data]);
+    if (!dt || (businessDay ? Utilities.formatDate(dt, 'America/Sao_Paulo', 'yyyyMMdd') > businessDay : dt.getTime() > hoje.getTime())) return;
+    var ultimaVisita = {
+      dataObj: dt, data: formatarDataSafe(r[idx.data]),
+      dataIso: formatarDataIsoAgenda_(dt), visita: String(r[idx.visita] || '---')
+    };
+    if (participante && (!out[participante] || dt.getTime() > out[participante].dataObj.getTime())) {
+      out[participante] = ultimaVisita;
+    }
+    var chaveCadastro = agendaUltimaVisitaCadastroKey_(cadastroId);
+    if (chaveCadastro && (!out[chaveCadastro] || dt.getTime() > out[chaveCadastro].dataObj.getTime())) {
+      out[chaveCadastro] = ultimaVisita;
+    }
+  });
+  Object.keys(out).forEach(function(k) {
+    out[k] = { data: out[k].data, dataIso: out[k].dataIso, visita: out[k].visita };
+  });
+  return out;
 }
 
 function agendaVisitaCriadaNaMesmaData_(agenda, dados, dataEvento, agendaIdExcluido) {
@@ -16669,6 +16722,9 @@ function codexLogPerformance_(operation, stage, durationMs, metadata, success) {
       payload.responseBytesMeasured = metadata.responseBytesMeasured === true;
       if (!payload.responseBytesMeasured) delete payload.responseBytes;
     }
+    ['cacheHit', 'cacheMiss'].forEach(function(key) {
+      if (metadata[key] !== undefined) payload[key] = metadata[key] === true;
+    });
     var traceId = String(metadata.traceId || '').trim();
     ['instrumentedReadCalls', 'instrumentedCellsRead'].forEach(function(key) {
       if (metadata[key] !== undefined) payload[key] = Math.max(0, Number(metadata[key]) || 0);
@@ -18703,7 +18759,7 @@ function isAgendaLabDestinoConfig_(row) {
 
 function clearConfigAppDefaultsCache_(source) {
   codexAssertCanWrite_('clearConfigAppDefaultsCache', 'Sistema', '');
-  clearCodexRuntimeCaches_();
+  clearCodexRuntimeCaches_(undefined, 'references');
   clearTransporteOptionsCache_();
   codexMarkConfigCacheInvalidated_(source || 'Config_App');
 }
@@ -19367,7 +19423,7 @@ function excluirCourier(id) {
 }
 
 function limparCacheCourier_() {
-  clearCodexRuntimeCaches_(['couriers', 'courier_config', 'project_courier_map']);
+  clearCodexRuntimeCaches_(['couriers', 'courier_config', 'project_courier_map'], 'references');
   try {
     var cache = CacheService.getScriptCache();
     cache.remove('TRANSPORTE_OPTIONS_BASE_V3');

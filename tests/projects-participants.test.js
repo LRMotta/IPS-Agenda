@@ -1284,6 +1284,11 @@ test('mapa de ultima visita indexa eventos concluidos pelo ID interno mesmo sem 
   row[10] = 'C27D1';
   row[11] = 'CAD-1';
   const serverContext = vm.createContext({
+    codexMeasureReadPerformance_: (_op, _stage, _meta, fn) => fn(),
+    codexReadValuesMeasured_: range => range.getValues(),
+    agendaWindowCacheGeneration_: () => null,
+    Utilities: { formatDate: () => '20261008' },
+    CODEX_CACHE_BYPASS_READS_: false,
     AGENDA_CFG: { lastCol: row.length, idx: { participante: 5, tipo: 3, status: 4, data: 1, visita: 10, participanteCadastroId: 11 } },
     AgendaServerRules_: { isVisit: (value) => value === 'Visita', isCompleted: (value) => value === 'concluído' },
     getAgendaSheetForRead_: () => ({ getLastRow: () => 2, getRange: () => ({ getValues: () => [row] }) }),

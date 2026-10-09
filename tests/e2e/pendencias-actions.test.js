@@ -17,7 +17,7 @@ test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM rea
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.abort());
-      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '</head><body><h1>Pendências</h1><button id="btnPendenciasRefresh"><span class="btn-label">Atualizar</span></button><div id="pendenciasStatus"></div><div id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
+      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '</head><body><h1>Pendências</h1><button id="btnPendenciasRefresh"><span class="btn-label">Atualizar</span></button><span id="pendenciasTs"></span><div id="pendenciasStatus"></div><div id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
       await page.evaluate(() => {
         window.requests = []; window.mutations = [];
         window.esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -65,6 +65,20 @@ test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM rea
       });
       assert.match(await kit.innerText(), /Sem pendências/);
       assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), false);
+      await page.evaluate(() => {
+        window.setPendenciasLoadedAtState(Date.now() - 240000);
+        window.cardBeforeRefresh = document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]');
+        window.carregarPendencias(false);
+      });
+      assert.equal(await page.evaluate(() => window.cardBeforeRefresh === document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]')), true);
+      assert.match(await kit.innerText(), /Sem pendências/);
+      assert.match(await page.locator('#pendenciasTs').innerText(), /^Em memória: /);
+      assert.match(await page.locator('#pendenciasStatus').innerText(), /Atualizando/);
+      assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), true);
+      await page.evaluate(() => window.requests[3].failure(new Error('rede indisponível')));
+      assert.match(await kit.innerText(), /Sem pendências/);
+      assert.match(await page.locator('#pendenciasStatus').innerText(), /mantendo a ultima lista/);
+      assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), false);
       assert.deepEqual(errors, []);
       await page.close();
     }
@@ -97,18 +111,29 @@ test('Pendencias: dados literais, teclado, rastreio, modal e expansao em desktop
       });
       await page.addScriptTag({ content: readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, '') });
       const literal = 'Kit "especial" &quot; </button><img src=x onerror=alert(1)>';
-      await page.evaluate(value => renderDashboardPendencias({
+      await page.evaluate(value => {
+        window.pendingData = {
         kitsVencendo: Array.from({ length: 11 }, (_, index) => ({ descricao: index === 0 ? value : 'Kit ' + index, dias: 3 })),
         awbEnviadaNaoEntregue: [{ agendaId: 'A"&quot;', slot: 'Transporte I', awb: '123', participante: 'Participante de teste', courier: 'DHL', temperatura: 'Ambiente', trackingUrl: 'https://example.org/?a="&b=1' }]
-      }), literal);
+        };
+        renderDashboardPendencias(window.pendingData);
+      }, literal);
       assert.equal(page.url(), 'about:blank');
       assert.equal(await page.title(), 'Pendências — teste local');
       assert.equal(await page.locator('.dash-pend-card').count(), 9);
+      assert.equal(await page.locator('[data-pendencia-card="pendenciasGrid:kitsVencendo"] .dash-pend-item').count(), 10);
+      assert.equal(await page.locator('.dash-pend-overflow').count(), 0, 'excedentes só entram no DOM ao expandir');
       assert.equal(await page.locator('#pendenciasGrid img, #pendenciasGrid [onclick], #pendenciasGrid [onerror]').count(), 0);
       const kit = page.locator('.dash-pend-open').filter({ hasText: literal });
       assert.equal(await kit.locator('.dash-pend-main').textContent(), literal);
       await kit.focus();
       assert.notEqual(await kit.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
+      assert.equal(await page.evaluate(() => {
+        const focused = document.activeElement;
+        const card = focused.closest('.dash-pend-card');
+        renderDashboardPendencias(JSON.parse(JSON.stringify(window.pendingData)));
+        return focused === document.activeElement && card === focused.closest('.dash-pend-card') && card.isConnected;
+      }), true, 'refresh identico conserva o elemento e o foco');
       await page.keyboard.press('Enter');
       assert.deepEqual(await page.evaluate(() => window.calls), [['estoque', literal]]);
       const awb = page.locator('.dash-pend-card').filter({ has: page.locator('.dash-pend-confirm') });
@@ -126,6 +151,16 @@ test('Pendencias: dados literais, teclado, rastreio, modal e expansao em desktop
       await page.keyboard.press('Enter');
       assert.equal(await more.getAttribute('aria-expanded'), 'true');
       assert.equal(await page.locator('.dash-pend-overflow').isVisible(), true);
+      await page.locator('.dash-pend-overflow .dash-pend-open').click();
+      assert.deepEqual(await page.evaluate(() => window.calls.slice(-1)), [['estoque', 'Kit 10']]);
+      assert.equal(await page.evaluate(() => {
+        const card = document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]');
+        const list = card.querySelector('.dash-pend-list');
+        list.scrollTop = 30;
+        const scroll = list.scrollTop;
+        renderDashboardPendencias(JSON.parse(JSON.stringify(window.pendingData)));
+        return card === document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]') && list.scrollTop === scroll;
+      }), true, 'refresh identico conserva expansao, itens montados e rolagem');
       await page.evaluate(() => renderDashboardPendencias(window._pendenciasCache || {
         kitsVencendo: Array.from({ length: 11 }, (_, index) => ({ descricao: 'Kit ' + index, dias: 3 }))
       }));

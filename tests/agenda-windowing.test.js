@@ -912,7 +912,7 @@ test('barreira do formulario valida todos os datasets antes de alterar selects',
   const applyInitial = functionBody(client, 'agendaAplicarBootstrapInicial_');
   assert.ok(apply.indexOf('agendaReferenceDataValidation_(d)') < apply.indexOf('agendaCurrentValues'));
   assert.ok(apply.indexOf('if (!validation.ok) return false') < apply.indexOf('setAgendaFormDataState'));
-  assert.ok(apply.indexOf('_agendaReferenceDataConfirmed = false') < apply.indexOf('agendaFormDataAplicacaoBloqueadaPorEdicao'));
+  assert.ok(apply.indexOf('agendaFormDataAplicacaoBloqueadaPorEdicao') < apply.indexOf('setAgendaFormDataState'));
   assert.ok(apply.lastIndexOf('_agendaReferenceDataConfirmed = true') > apply.indexOf("preencherAgendaSelect('agParticipante'"));
   assert.ok(update.indexOf('if (!validation.ok) return false') < update.indexOf('setAgendaFormDataState'));
   assert.ok(update.lastIndexOf('_agendaReferenceDataConfirmed = true') > update.indexOf("preencherAgendaSelect('agParticipante'"));
@@ -2644,7 +2644,7 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   assert.match(periodLoad, /agendaFindEventoLocal_\(id, r\.rowIndex\) \|\| r/);
   assert.match(periodLoad, /if \(!periodo\) \{[\s\S]*recuperarConsultaEspecifica\(new Error/);
   assert.match(periodLoad, /\.withFailureHandler\(function\(error\) \{[\s\S]*recuperarConsultaEspecifica\(error\)/);
-  assert.match(fullLoad, /agendaAplicarEventos_\(rows, 'full', null, false\)/);
+  assert.match(fullLoad, /agendaAplicarEventos_\(rows, 'full', null, Array\.isArray\(rows\) && rows\.length >= 5000\)/);
   assert.doesNotMatch(client, /_agendaWindowedRange/);
 });
 

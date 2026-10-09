@@ -140,13 +140,19 @@ test('revalidacao de referencias atualiza o aviso e escapa texto cadastrado', as
       window.atualizarAgendaFormDataOpcoes({ ...window._agendaDados, feriados: [] }, { preservarValoresAtuais: true });
     });
     assert.equal(await general.isVisible(), false);
-    // Referencias recebidas pelo bootstrap durante uma edicao atualizam apenas os avisos.
+    // Referencias do bootstrap ficam pendentes durante a edicao, inclusive avisos.
     await page.locator('#agProcedimentos').fill('Texto em edição');
     assert.equal(await page.evaluate(() => window.applyAgendaFormData({ ...window._agendaDados, feriados: [
       { dataIso: '2026-10-12', nome: 'Feriado atualizado', ativo: 'Sim', afetaOperacao: 'Não' }
     ] })), true);
-    assert.match(await general.innerText(), /Feriado atualizado/);
+    assert.equal(await general.isVisible(), false);
     assert.equal(await page.locator('#agProcedimentos').inputValue(), 'Texto em edição');
+    await page.evaluate(() => {
+      document.getElementById('agendaCreatePanel').classList.remove('open');
+      window.APP_UNSAVED_SCOPES = {};
+      window.agendaExecutarRefreshFormDataPendente();
+    });
+    assert.match(await general.innerText(), /Feriado atualizado/);
     await page.evaluate(() => window.applyAgendaFormData({ ...window._agendaDados, feriados: [] }));
     assert.equal(await general.isVisible(), false);
     assert.equal(await page.locator('#agProcedimentos').inputValue(), 'Texto em edição');
