@@ -632,7 +632,7 @@ test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', 
   assert.equal(calls.filter((call) => call.numColumns === 51).length, 0);
 });
 
-test('bootstrap vindo da Agenda importa e rele o mesmo slot sob um unico lock', () => {
+test('bootstrap vindo da Agenda reutiliza o registro preparado do mesmo slot sob unico lock', () => {
   const server = runFile('TransporteCodexConfig.gs', {
     ...serverCourierContext(),
     Logger: { log: () => {} },
@@ -663,22 +663,26 @@ test('bootstrap vindo da Agenda importa e rele o mesmo slot sob um unico lock', 
     assert.equal(received, evento);
     return { idAgenda: id, slot, courier: { nome: 'DHL', awb: '' }, refInterna: `AGD-${id}` };
   };
-  server.importarTransporteCodexInterno_ = (payload, context) => {
+  const registro = { paciente: 'Participante', materiais: [] };
+  server.importarTransporteCodexInterno_ = (payload, context, options) => {
     assert.equal(lockDepth, 1);
     assert.equal(context.evento, evento);
+    assert.equal(options.preencherDocumentos, false);
+    assert.equal(options.returnPreparedRecord, true);
     steps.push('import');
-    return { rascunho: true };
+    return { rascunho: true, registro };
   };
-  server.transporteBuildBootstrap_ = (received) => {
+  server.transporteBuildBootstrap_ = (received, prepared) => {
     assert.equal(lockDepth, 1);
     assert.equal(received, evento);
-    steps.push('read');
-    return { registro: {} };
+    assert.equal(prepared, registro);
+    steps.push('reuse');
+    return { registro: prepared };
   };
 
   const data = server.getTransporteBootstrapFromAgenda('EVT-1', '2');
   assert.equal(agendaReads, 1);
-  assert.deepEqual(steps, ['import', 'flush', 'read']);
+  assert.deepEqual(steps, ['import', 'reuse']);
   assert.equal(lockDepth, 0);
   assert.equal(data.registro.idAgenda, 'EVT-1');
   assert.equal(data.registro.agendaSlot, '2');

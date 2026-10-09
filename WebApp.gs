@@ -18466,7 +18466,7 @@ function aplicarLogicaCancelamento_(sheet, linha, status) {
 function enviarEmailAgendamento_(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
-  var webAppUrl = ScriptApp.getService().getUrl();
+  var webAppUrl = ScriptApp.getService().getUrl() + '?pagina=agenda&agendaId=' + encodeURIComponent(String(dados[i.id] || '').trim());
   var assunto = '[AGENDAMENTO] ' + (dados[i.projeto] || '') + ' - Visita com Envio ao Lab Central';
   var body = gerarHtmlCabecalhoEmail_('Agendamento - Envio de Amostras ao Lab Central', '#2c3e50') +
     '<p>Foi realizado um novo agendamento de visita clínica que requer envio ao laboratório:</p>' +
@@ -18474,7 +18474,7 @@ function enviarEmailAgendamento_(sheet, linha, usuario) {
     (agendaTemLogisticaEmail_(dados)
       ? gerarHtmlCouriers_(dados)
       : '<p>As informações de courier e transporte serão atualizadas na Agenda assim que estiverem disponíveis.</p>') +
-    '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
+    '<p><a href="' + escHtmlServer_(webAppUrl) + '">Abrir Agendamento</a></p>' +
     gerarRodapeEmailAgenda_('Responsável', usuario) + '</div>';
   CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios_(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
@@ -18482,13 +18482,13 @@ function enviarEmailAgendamento_(sheet, linha, usuario) {
 function enviarEmailCancelamento_(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
-  var webAppUrl = ScriptApp.getService().getUrl();
+  var webAppUrl = ScriptApp.getService().getUrl() + '?pagina=agenda&agendaId=' + encodeURIComponent(String(dados[i.id] || '').trim());
   var assunto = '[CANCELAMENTO] ' + (dados[i.projeto] || '') + ' - Visita com Envio ao Lab Central';
   var body = gerarHtmlCabecalhoEmail_('CANCELAMENTO DE VISITA / ENVIO', '#c0392b') +
     '<p>A seguinte visita foi <b>REMOVIDA</b> do fluxo de envio ao Lab Central:</p>' +
     agendaCancelamentoMotivoHtml_(dados[i.obs]) +
     gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers_(dados) +
-    '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
+    '<p><a href="' + escHtmlServer_(webAppUrl) + '">Abrir Agendamento</a></p>' +
     gerarRodapeEmailAgenda_('Cancelado por', usuario) + '</div>';
   CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios_(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }
@@ -18496,7 +18496,7 @@ function enviarEmailCancelamento_(sheet, linha, usuario) {
 function enviarEmailReagendamento_(sheet, linha, usuario, dataAnteriorRaw) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
-  var webAppUrl = ScriptApp.getService().getUrl();
+  var webAppUrl = ScriptApp.getService().getUrl() + '?pagina=agenda&agendaId=' + encodeURIComponent(String(dados[i.id] || '').trim());
   var dataV = formatarDataSafe(dados[i.data]);
   var textoDataAnterior = dataAnteriorRaw
     ? '<p style="margin:0 0 8px 0;"><b>Data anterior:</b> ' + escHtmlServer_(formatarDataSafe(dataAnteriorRaw)) + '</p>'
@@ -18509,7 +18509,7 @@ function enviarEmailReagendamento_(sheet, linha, usuario, dataAnteriorRaw) {
     '</div>' +
     '<p>Verifique a necessidade de ajustar o agendamento dos transportes de amostras já existentes:</p>' +
     gerarTabelaAgendaEmail_(dados, true) + gerarHtmlCouriers_(dados) +
-    '<p><a href="' + webAppUrl + '">Abrir Agenda</a></p>' +
+    '<p><a href="' + escHtmlServer_(webAppUrl) + '">Abrir Agendamento</a></p>' +
     gerarRodapeEmailAgenda_('Alterado por', usuario) + '</div>';
   CodexExternalEffects_.sendEmail({ to: gerarListaDestinatarios_(usuario), subject: assunto, htmlBody: body, name: 'Agendamento de Visitas' });
 }

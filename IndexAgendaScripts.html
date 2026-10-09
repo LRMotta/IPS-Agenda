@@ -4250,7 +4250,13 @@
     if (agendaFindEventoLocal_(id)) {
       abrirAgendaEdicao(id);
     } else {
-      snackErro('Registro da agenda não encontrado na carga atual.');
+      agendaFetchEventoPorId_(id, 0, function(row) {
+        if (!row) {
+          snackErro('Registro da agenda nao encontrado.');
+          return;
+        }
+        abrirAgendaEdicao(id);
+      }, function(e) { snackErro(appErrorMessage(e)); });
     }
   }
 
