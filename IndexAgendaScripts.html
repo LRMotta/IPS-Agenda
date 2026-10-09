@@ -1091,7 +1091,7 @@
       return;
     }
     visitasEl.style.display = 'grid';
-    visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">Buscando visitas futuras…</div>';
+    visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">Buscando agendamentos futuros…</div>';
     google.script.run
       .withSuccessHandler(function(res) {
         if (origemId !== String(_agendaEditId || '').trim() || editRequestId !== _agendaEditOpenRequestId) return;
@@ -1111,7 +1111,7 @@
   function agendaBackupVisitasHtml_(container, visitas) {
     visitas = Array.isArray(visitas) ? visitas : [];
     if (!visitas.length) {
-      container.innerHTML = '<div class="ag-backup-candidate-empty">Não há visitas futuras elegíveis com Transporte II ou III disponível para este participante e projeto.</div>';
+      container.innerHTML = '<div class="ag-backup-candidate-empty">Não há agendamentos futuros de Visita ou Envio de amostras elegíveis com Transporte II ou III disponível para este participante e projeto.</div>';
       return;
     }
     container.innerHTML = visitas.map(function(visita) {
@@ -1126,7 +1126,7 @@
       }
       return '<div class="ag-backup-candidate"><div class="ag-backup-candidate-info"><strong>' +
         esc([visita.data, visita.hora].filter(Boolean).join(' às ') || 'Data/horário não informado') + '</strong><span>' +
-        esc(visita.visita || 'Visita') + '</span></div><div class="ag-backup-candidate-slots">' +
+        esc([visita.tipo || 'Visita', visita.visita].filter(Boolean).join(' · ')) + '</span></div><div class="ag-backup-candidate-slots">' +
         slotButton('II', visita.transporteII) + slotButton('III', visita.transporteIII) + '</div></div>';
     }).join('');
   }

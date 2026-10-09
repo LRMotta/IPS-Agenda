@@ -149,7 +149,7 @@ test('participacao ambigua e identificacao ausente no cadastro bloqueiam a valid
   s.transporteReadParticipantesDireto_ = () => [participante, { ...participante, id: 'CAD-B' }];
   assert.throws(() => s.transporteDerivarDadosParticipante_({ paciente: 'Pessoa A', protocolo: 'Projeto A' }, { obrigatorio: true }), /inequívoca/);
   s.transporteReadParticipantesDireto_ = () => [{ ...participante, idParticipante: '' }];
-  assert.throws(() => s.transporteDerivarDadosParticipante_({ participanteCadastroId: 'CAD-A', identificacaoParticipante: '999' }, { obrigatorio: true }), /coluna E/);
+  assert.throws(() => s.transporteDerivarDadosParticipante_({ participanteCadastroId: 'CAD-A', identificacaoParticipante: '999' }, { obrigatorio: true }), /Falta preencher o Nº de Identificação deste participante\. Acesse Participantes, complete esse campo no cadastro e tente gerar os documentos novamente\./);
 });
 
 test('vinculo da Agenda nao resolvido impede reutilizar a participacao antiga do formulario', () => {

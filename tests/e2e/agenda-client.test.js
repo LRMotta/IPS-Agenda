@@ -373,6 +373,30 @@ test('Backup: opções persistentes, liberação por temperatura e vínculo em d
         const save = await page.locator('.ag-modal-actions').boundingBox();
         assert.ok(box.y + box.height <= save.y, 'barra de salvar não cobre as opções');
       }
+      await page.locator('#btnUsarVisitaFuturaBackup').click();
+      await page.evaluate(() => window.calls.at(-1).success({ visitas: [
+        { id: 'VISITA-FUTURA', recordVersion: 'v1', data: '23/11/2026', hora: '08:00', tipo: 'Visita', visita: 'Week 12', transporteII: { disponivel: true }, transporteIII: { disponivel: false } },
+        { id: 'ENVIO-FUTURO', recordVersion: 'v2', data: '24/11/2026', hora: '13:00', tipo: 'Envio de amostras', visita: 'Wk12', transporteII: { disponivel: true }, transporteIII: { disponivel: true } }
+      ] }));
+      const candidates = page.locator('#backupAgendaVisitas .ag-backup-candidate');
+      assert.equal(await candidates.count(), 2);
+      assert.match(await candidates.nth(0).innerText(), /Visita · Week 12/);
+      assert.match(await candidates.nth(1).innerText(), /Envio de amostras · Wk12/);
+      assert.match(await candidates.nth(1).innerText(), /24\/11\/2026 às 13:00/);
+      assert.equal(await candidates.nth(0).locator('[data-slot="III"]').isDisabled(), true);
+      assert.equal(await candidates.nth(1).locator('[data-slot="II"]').isEnabled(), true);
+      await page.evaluate(() => {
+        window.backupSelection = null;
+        window.aplicarBackupEmVisitaFuturaAgenda = (id, version, slot) => { window.backupSelection = { id, version, slot }; };
+      });
+      await candidates.nth(1).locator('[data-slot="II"]').click();
+      assert.deepEqual(await page.evaluate(() => window.backupSelection), { id: 'ENVIO-FUTURO', version: 'v2', slot: 'II' });
+      await candidates.nth(1).evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      if (width === 390) {
+        const candidate = await candidates.nth(1).boundingBox();
+        const save = await page.locator('.ag-modal-actions').boundingBox();
+        assert.ok(candidate.y + candidate.height <= save.y, 'destino e botões ficam acessíveis acima da barra de salvar após rolagem');
+      }
       const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(dir, { recursive: true });
       await step.screenshot({ path: path.join(dir, 'backup-agendamento-' + width + '.png'), animations: 'disabled' });

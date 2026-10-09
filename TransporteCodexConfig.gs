@@ -2398,7 +2398,7 @@ function transporteDerivarDadosParticipante_(payload, options) {
       return payload;
     }
     if (options.obrigatorio && !String(participante.idParticipante || participante.numId || '').trim()) {
-      throw new Error('Numero de Identificacao ausente na coluna E da aba Participantes. Atualize o cadastro antes de gerar documentos.');
+      throw new Error('Falta preencher o Nº de Identificação deste participante. Acesse Participantes, complete esse campo no cadastro e tente gerar os documentos novamente.');
     }
     var projeto = String(participante.projeto || '').trim();
     var investigador = String(transporteInvestigadorPayload_(projeto, options) || participante.investigador || payload.investigador || '').trim();
@@ -3103,7 +3103,7 @@ function transporteValidarObrigatoriosWebApp_(payload) {
   var missing = [];
   if (!String(payload.paciente || '').trim()) missing.push('Paciente');
   if (String(payload.paciente || '').trim() && !String(payload.identificacaoParticipante || payload.idParticipante || '').trim()) {
-    missing.push('Numero de Identificacao do paciente na coluna E da aba Participantes');
+    missing.push('Nº de Identificação do participante (preencha no cadastro em Participantes)');
   }
   if (!String(payload.protocolo || '').trim()) missing.push('Protocolo');
   if (!String(payload.investigador || '').trim()) missing.push('Investigador');
