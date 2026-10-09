@@ -2326,6 +2326,14 @@ function transporteDestinoAgenda_(evento, slot) {
   return String(courier.destino || courier.laboratorioDestino || '').trim();
 }
 
+function transporteInvestigadorPayload_(projeto, options) {
+  // Reuso somente dentro desta derivação; nunca entre usuários ou execuções.
+  var cache = options.investigadoresLidos || (options.investigadoresLidos = Object.create(null));
+  var key = String(projeto || '').trim();
+  if (!Object.prototype.hasOwnProperty.call(cache, key)) cache[key] = transporteInvestigadorPorProjeto_(projeto);
+  return cache[key];
+}
+
 function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, options) {
   registro = registro || {};
   options = options || {};
@@ -2346,14 +2354,14 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
     }
     var projeto = String(evento.projeto || (participante && participante.projeto) || registro.protocolo || '').trim();
     var investigador = String(
-      transporteInvestigadorPorProjeto_(projeto) ||
+      transporteInvestigadorPayload_(projeto, options) ||
       evento.medico ||
       (participante && (participante.investigador || participante.medico)) ||
       registro.investigador || ''
     ).trim();
     var destinoAgenda = transporteDestinoAgenda_(evento, registro.agendaSlot || registro.slot);
 
-    registro.protocolo = transporteProjetoDisplay_(projeto) || registro.protocolo || '';
+    registro.protocolo = (options.adiarProjetoDisplay ? projeto : transporteProjetoDisplay_(projeto)) || registro.protocolo || '';
     registro.investigador = investigador || registro.investigador || '';
     if (destinoAgenda) registro.destino = destinoAgenda;
     registro.identificacaoParticipante = String(
@@ -2393,7 +2401,7 @@ function transporteDerivarDadosParticipante_(payload, options) {
       throw new Error('Numero de Identificacao ausente na coluna E da aba Participantes. Atualize o cadastro antes de gerar documentos.');
     }
     var projeto = String(participante.projeto || '').trim();
-    var investigador = String(transporteInvestigadorPorProjeto_(projeto) || participante.investigador || payload.investigador || '').trim();
+    var investigador = String(transporteInvestigadorPayload_(projeto, options) || participante.investigador || payload.investigador || '').trim();
     payload.protocolo = projeto || payload.protocolo || '';
     payload.investigador = investigador || payload.investigador || '';
     payload.identificacaoParticipante = String(participante.idParticipante || participante.numId || payload.identificacaoParticipante || '').trim();
@@ -2776,13 +2784,32 @@ function transporteIsValidOcasaAwb_(awb) {
   return codexCourierIsValidOcasaAwb_(awb);
 }
 
-function transporteBuildBootstrap_(eventoPrecarregado) {
+function transporteRegistroPreparado_(payload) {
+  var registro = Object.assign({}, payload);
+  registro.dataColeta = transporteDateOut_(transporteParseDate_(payload.dataColeta));
+  registro.dataEnvio = transporteDateOut_(transporteParseDate_(payload.dataEnvio));
+  registro.solicitarCaixa = transporteNormalizeSimNao_(payload.solicitarCaixa, transporteDefaultSolicitarCaixa_(payload.courier));
+  registro.pinexAwb = payload.pinexAwb || payload.awb || '';
+  registro.pinexColeta = payload.courier === 'PINEX' ? (payload.pinexColeta || '') : '';
+  registro.pinexAgendadoPor = payload.pinexAgendadoPor || payload.agendadoPor || '';
+  registro.responsavelEntrega = payload.courier === 'PINEX (Agendamento)' ? (payload.responsavelEntrega || '') : '';
+  registro.materiais = (payload.materiais || []).map(function(item, idx) {
+    return Object.assign({}, item, transporteMaterialPersistido_(item), {
+      row: idx < 8 ? idx + 21 : 30,
+      material: String(item.material || TRANSPORTE_MATERIAIS[idx] || '').trim(),
+      ensaio: String(item.ensaio || item.exame || item.nomeExame || '').trim()
+    });
+  }).filter(function(item, idx) { return idx < 8 || item.ativo; });
+  return registro;
+}
+
+function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
   return transporteMeasurePerformance_('getTransporteBootstrap', 'total', { rowCount: 1 }, function() {
     var registro = transporteMeasurePerformance_('getTransporteBootstrap', 'record', { rowCount: 1 }, function() {
-      return transporteReadRegistro_();
+      return registroPrecarregado || transporteReadRegistro_();
     });
     registro = transporteMeasurePerformance_('getTransporteBootstrap', 'agenda_update', { rowCount: eventoPrecarregado ? 0 : 1 }, function() {
-      return transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado);
+      return registroPrecarregado ? registro : transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado);
     });
     var options = transporteMeasurePerformance_('getTransporteBootstrap', 'options', { rowCount: 0 }, function() {
       return transporteReadOptions_({ includeParticipants: false });
@@ -2828,21 +2855,19 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       var payload = contexto.payload;
       // Pré-preenchimento permite informar a AWB no módulo; salvar/gerar continuam validando.
       var importResult = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'import_prepare', { rowCount: 1 }, function() {
-        return importarTransporteCodexInterno_(payload, contexto);
+        return importarTransporteCodexInterno_(payload, contexto, { preencherDocumentos: false, returnPreparedRecord: true });
       });
-      // A planilha de Transporte e compartilhada. A releitura precisa ocorrer
-      // no mesmo lock da importacao para nao combinar materiais de um slot com
-      // ensaios que outra aba gravou logo depois.
-      SpreadsheetApp.flush();
+      // O registro normalizado pertence a este slot e ao mesmo lock da importação.
+      // As abas dos documentos serão preparadas somente na geração.
       var data = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'bootstrap', { rowCount: 1 }, function() {
-        return transporteBuildBootstrap_(contexto.evento);
+        return transporteBuildBootstrap_(contexto.evento, importResult.registro);
       });
       data.registro = Object.assign({}, data.registro || {}, {
         idAgenda: payload.idAgenda || idAgenda,
         agendaSlot: normalizarSlotTransporteCodex_(payload.slot || slot || ''),
         refInterna: payload.refInterna || transporteAgendaRefInterna_(idAgenda)
       });
-      data.importResult = importResult;
+      data.importResult = { rascunho: true, mensagem: importResult.mensagem };
       return data;
     });
   });
@@ -2884,7 +2909,7 @@ function salvarTransporteInterno_(payload, options) {
     payload = payload || {};
     options = options || {};
     transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
-    var participanteOptions = { obrigatorio: !options.rascunho, participantes: [] };
+    var participanteOptions = { obrigatorio: !options.rascunho, participantes: [], adiarProjetoDisplay: true };
     try {
       participanteOptions.participantes = transporteReadParticipantesDireto_();
     } catch (participanteReadError) {
@@ -2952,9 +2977,8 @@ function salvarTransporteInterno_(payload, options) {
     transporteSetEnsaiosPeticao_(peticao, materiais);
   });
 
-  // O pre-agendamento vindo da Agenda tambem precisa preparar as abas da
-  // courier. "rascunho" apenas impede a escrita de volta na Agenda abaixo;
-  // nao deve impedir o preenchimento da documentacao na planilha Transporte.
+  // A abertura pela Agenda adia os templates; a geracao do PDF os prepara
+  // integralmente. Os demais fluxos mantem a preparacao existente.
   transporteMeasurePerformance_('salvarTransporte', 'prepare_documents', { rowCount: 1 }, function() {
     if (options.preencherDocumentos !== false) {
       transporteAplicarAutomacoesTemperatura_(ss, payload);
@@ -2969,7 +2993,15 @@ function salvarTransporteInterno_(payload, options) {
       preencherDhlWebApp_(ss, payload);
     }
   });
+  if (options.preencherDocumentos === false && options.returnPreparedRecord === true) {
+    transporteMeasurePerformance_('salvarTransporte', 'write_operational_fields', { rowCount: 1 }, function() {
+      // Caixa e responsavel tambem sao campos do formulario: persistir para
+      // uma recarga antes do PDF nao recuperar valores de outro transporte.
+      aplicarSolicitacaoCaixaTransporte_(ss, payload);
+    });
+  }
   transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
+    // Confirmar as escritas na planilha compartilhada antes de liberar o document lock.
     SpreadsheetApp.flush();
   });
   var agendaSync = options.rascunho
@@ -2979,6 +3011,9 @@ function salvarTransporteInterno_(payload, options) {
     });
   if (options.returnBootstrap === false) {
     return { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync };
+  }
+  if (options.rascunho && options.returnPreparedRecord === true) {
+    return { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.', registro: transporteRegistroPreparado_(payload) };
   }
   return options.rascunho
     ? { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.' }
@@ -3616,10 +3651,13 @@ function importarTransporteCodex(codexPayload, contextoInterno) {
   });
 }
 
-function importarTransporteCodexInterno_(codexPayload, contextoInterno) {
+function importarTransporteCodexInterno_(codexPayload, contextoInterno, options) {
   var payload = montarPayloadTransporteCodex(codexPayload);
+  options = options || {};
   return salvarTransporteInterno_(payload, {
     rascunho: true,
+    preencherDocumentos: options.preencherDocumentos,
+    returnPreparedRecord: options.returnPreparedRecord === true,
     agendaEvento: contextoInterno && contextoInterno.evento ? contextoInterno.evento : null
   });
 }

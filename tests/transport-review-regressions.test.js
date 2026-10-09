@@ -185,6 +185,87 @@ test('pre-preenchimento incompleto permanece disponivel para revisao', () => {
   assert.ok(folha.writes > 0);
 });
 
+test('abertura reutiliza cadastro e registro sem documentos ou releitura e confirma escritas uma vez', () => {
+  const { s, payload, reads } = saveFixture();
+  let investigators = 0, displays = 0, flushes = 0;
+  payload.idAgenda = 'EVT-A'; payload.agendaSlot = '2';
+  payload.materiais = [{ ativo: true, material: 'Sangue', formula: '2x0,003', unit: 'L', ensaio: 'PCR' }];
+  s.transporteInvestigadorPorProjeto_ = () => { investigators++; return 'Investigador'; };
+  s.transporteProjetoDisplay_ = value => { displays++; return value + ' (COD)'; };
+  s.transporteDateOut_ = value => value ? value.toISOString().slice(0, 10) : '';
+  s.SpreadsheetApp.flush = () => { flushes++; };
+  s.transporteAplicarAutomacoesTemperatura_ = () => { throw new Error('Nao preparar documentos ao abrir'); };
+  const result = s.salvarTransporteInterno_(payload, {
+    rascunho: true, preencherDocumentos: false, returnPreparedRecord: true,
+    agendaEvento: { id: 'EVT-A', participantCadastroId: 'CAD-A', participante: 'Pessoa A', projeto: 'Projeto A', idParticipante: '123' }
+  });
+  assert.equal(reads(), 1);
+  assert.equal(investigators, 1);
+  assert.equal(displays, 1);
+  assert.equal(flushes, 1);
+  assert.equal(result.registro.dataColeta, '2026-09-30');
+  assert.equal(result.registro.protocolo, 'Projeto A (COD)');
+  assert.equal(result.registro.materiais[0].tubos, 2);
+  assert.equal(result.registro.materiais[0].total, 0.006);
+  assert.equal(result.registro.materiais[0].unit, 'L');
+  assert.equal(result.registro.materiais[0].ensaio, 'PCR');
+  s.transporteReadRegistro_ = () => { throw new Error('Nao reler planilha'); };
+  s.transporteAtualizarRegistroPorAgenda_ = () => { throw new Error('Nao rederivar cadastro'); };
+  s.transporteReadOptions_ = () => ({});
+  s.transporteExecutionContext_ = () => ({});
+  s.transporteGmailOAuthStatus_ = () => ({});
+  s.transporteDocumentosPorCourier_ = () => [];
+  s.codexCourierNormalizeAwb_ = value => String(value || '');
+  const bootstrap = s.transporteBuildBootstrap_(null, result.registro);
+  assert.equal(bootstrap.registro, result.registro);
+  assert.equal(bootstrap.resumo.totalTubos, 2);
+  assert.equal(bootstrap.resumo.totalVolume, 0.006);
+});
+
+test('abertura persiste caixa e responsavel para recarga antes da geracao dos documentos', () => {
+  for (const courier of ['MARKEN', 'PINEX (Agendamento)']) {
+    const { s, payload } = saveFixture();
+    const email = formSheet('emailMarken');
+    const pinex = formSheet('formularioPinex');
+    email.getRange('B8').setValue('Sim');
+    pinex.getRange('D32').setValue('Responsavel anterior');
+    pinex.getRange('D34').setValue('Nao');
+    pinex.getRange('D35').setValue('Nao');
+    const getSheet = s.transporteGetSheet_;
+    s.transporteGetSheet_ = (ss, key) => ({ emailMarken: email, formularioPinex: pinex })[key] || getSheet(ss, key);
+    payload.courier = courier;
+    payload.solicitarCaixa = 'Não';
+    payload.responsavelEntrega = 'Operador atual';
+    s.transporteDateOut_ = () => '2026-09-30';
+    s.transporteAplicarAutomacoesTemperatura_ = () => { throw new Error('Nao preparar templates'); };
+    s.salvarTransporteInterno_(payload, { rascunho: true, preencherDocumentos: false, returnPreparedRecord: true });
+    const registro = s.transporteReadRegistro_();
+    assert.equal(registro.solicitarCaixa, 'Não');
+    assert.equal(registro.responsavelEntrega, courier === 'MARKEN' ? '' : 'Operador atual');
+    if (courier === 'PINEX (Agendamento)') assert.equal(pinex.getRange('D34').getValue(), '');
+  }
+});
+
+test('registro preparado preserva materiais extras, zeros e campos de caixa/PINEX do payload', () => {
+  const s = server();
+  s.transporteDateOut_ = value => value && typeof value.toISOString === 'function' ? value.toISOString().slice(0, 10) : String(value || '');
+  const materiais = Array.from({ length: 8 }, (_, i) => ({ ativo: true, material: 'Material ' + i, total: 0, tubos: 1, ensaio: 'Ensaio ' + i }));
+  materiais.push({ ativo: true, material: 'Swab', nomeExame: 'PCR', unit: 'mL' }, { ativo: false, material: 'Descartado' });
+  const registro = s.transporteRegistroPreparado_({ courier: 'PINEX', dataColeta: '2026-09-30', dataEnvio: '30/09/2026', solicitarCaixa: 'Não', awb: '123', agendadoPor: 'Operador', pinexColeta: '654321', materiais });
+  assert.equal(registro.solicitarCaixa, 'Não');
+  assert.equal(registro.pinexAwb, '123');
+  assert.equal(registro.pinexColeta, '654321');
+  assert.equal(registro.pinexAgendadoPor, 'Operador');
+  assert.equal(registro.materiais.length, 9);
+  assert.equal(registro.materiais[0].total, 0);
+  assert.equal(registro.materiais[8].ensaio, 'PCR');
+  assert.equal(registro.materiais[8].unit, 'mL');
+  assert.equal(registro.dataEnvio, '30/09/2026', 'preserva texto legado como a leitura anterior');
+  const manual = s.transporteRegistroPreparado_({ courier: 'PINEX (Agendamento)', responsavelEntrega: 'Operador', pinexColeta: 'ANTIGO', materiais: [] });
+  assert.equal(manual.responsavelEntrega, 'Operador');
+  assert.equal(manual.pinexColeta, '');
+});
+
 test('salvamento deriva cadastro atual uma vez e grava os campos em blocos mantendo datas e metadados', () => {
   const { s, folha, dhl, payload, reads } = saveFixture();
   s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false });
