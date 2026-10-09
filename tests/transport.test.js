@@ -1139,15 +1139,20 @@ test('data de envio anterior a hoje e rejeitada antes da documentacao', () => {
   context.gerarTransporteAgendaCard('EVT', '1', 'btn');
  });
 
-test('servidor bloqueia AWB obrigatoria antes de importar transporte da Agenda', () => {
+test('bootstrap da Agenda permite informar a AWB no Transporte sem gerar documentos', () => {
   const server = runFile('TransporteCodexConfig.gs', {
     ...serverCourierContext(),
     codexAssertCanWrite_: () => {}, codexWithDocumentLock_: (_key, fn) => fn(),
-    Logger: { log() {} }
+    Logger: { log() {} }, SpreadsheetApp: { flush() {} }, normText_: value => String(value || '').toLowerCase()
   });
   server.montarContextoTransporteParaTransp_ = () => ({ payload: { courier: { nome: 'MARKEN', awb: '' } } });
-  server.importarTransporteCodexInterno_ = () => { throw new Error('Importação não pode ocorrer'); };
-  assert.throws(() => server.getTransporteBootstrapFromAgenda('EVT', '1'), /Informe a AWB/);
+  let imported = false;
+  server.importarTransporteCodexInterno_ = () => { imported = true; return { rascunho: true }; };
+  server.transporteBuildBootstrap_ = () => ({ registro: { awb: '' } });
+  const data = server.getTransporteBootstrapFromAgenda('EVT', '1');
+  assert.equal(imported, true);
+  assert.equal(data.registro.awb, '');
+  assert.equal(data.registro.agendaSlot, '1');
 });
 
 test('salvamento do modal valida documentos antes da primeira escrita', () => {
