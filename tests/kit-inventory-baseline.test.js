@@ -1087,3 +1087,48 @@ test('fase 6: visita histórica sem ID recebe identificador interno ao vincular 
   assert.equal(agenda.rows[1][0], 'AG-HIST-1');
   assert.equal(reservas.rows[1][2], 'AG-HIST-1');
 });
+
+test('devolucao preserva lote e accession da baixa aberta apos novo ciclo', () => {
+  const estoque = new FakeSheet('Estoque', [
+    ['ID_Item', 'Projeto', 'Descrição', 'Tipo', 'Validade', 'Localização', 'Qtde', 'EstoqueMin', 'Status', 'UltimaAlteracao', 'Responsavel', 'Qtde_pedida_pendente', 'N_Pedido', 'ID_Lote', 'Accession Number'],
+    ['KIT-1', 'A', 'Kit', 'Kit', '', 'Principal', 3, 0, 'OK', '', '', '', '', 'L-A', 'ACC-A'],
+    ['KIT-1', 'A', 'Kit', 'Kit', '', 'Principal', 3, 0, 'OK', '', '', '', '', 'L-B', 'ACC-B']
+  ]);
+  const mov = new FakeSheet('Movimentações', [
+    ['ID_Mov', 'Data/Hora', 'Tipo de Movimento', 'ID_Item', 'Descrição', 'Tipo de Item', 'Projeto', 'Qtde', 'Validade', 'Localização', 'Lote', 'ID Participante', 'Participante', 'ID Visita', 'Responsável', 'Origem', 'Observação']
+  ]);
+  const spreadsheet = new FakeSpreadsheet({ Estoque: estoque, Movimentações: mov });
+  const server = runFile('WebApp.gs', {
+    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush: () => {} },
+    Session: { getActiveUser: () => ({ getEmail: () => 'teste@ucs.br' }) },
+    Utilities: { getUuid: () => 'MOV-1', formatDate: value => String(value) }
+  });
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+  const reservas = [];
+  server.atualizarStatusReservasAgendaItens_ = (_id, itens) => reservas.push(itens);
+  const baixar = (lote, acc) => server.baixarKitsAgendaEvento({ agendaId: 'EVT-1', kits: [{ idItem: 'KIT-1', idLote: lote, accessionNumber: acc }] });
+  baixar('L-A', 'ACC-A');
+  server.devolverKitsAgendaEvento({ agendaId: 'EVT-1' });
+  baixar('L-B', 'ACC-B');
+  assert.equal(server.getKitsAgendaBaixaStatus('EVT-1').itens[0].idLote, 'L-B');
+  server.devolverKitsAgendaEvento({ agendaId: 'EVT-1' });
+  assert.equal(estoque.rows[1][6], 3);
+  assert.equal(estoque.rows[2][6], 3);
+  assert.equal(reservas.at(-1)[0].accessionNumber, 'ACC-B');
+  assert.equal(server.getKitsAgendaBaixaStatus('EVT-1').baixados, false);
+  assert.throws(() => server.devolverKitsAgendaEvento({ agendaId: 'EVT-1' }), /Nao ha kits/);
+});
+
+test('devolucao legada sem identidade mantem fallback sem inventar lote', () => {
+  const server = runFile('WebApp.gs');
+  server.codexAssertCanWrite_ = () => {};
+  server.codexWithDocumentLock_ = (_action, callback) => callback();
+  server.getKitsAgendaBaixaStatus = () => ({ baixados: true, ids: ['K'], itens: [{ idItem: 'K', qtde: 1, idLote: '', accessionNumber: '', validade: 'legada', localizacao: 'legada' }] });
+  let recebido;
+  server.registrarMovimentacaoEstoque = p => { recebido = p; };
+  server.atualizarStatusReservasAgendaItens_ = () => {};
+  server.devolverKitsAgendaEvento({ agendaId: 'A' });
+  assert.equal(recebido.idLote, ''); assert.equal(recebido.accessionNumber, '');
+  assert.equal(recebido.validade, ''); assert.equal(recebido.localizacao, '');
+});

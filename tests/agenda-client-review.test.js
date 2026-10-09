@@ -259,3 +259,46 @@ test('reserva, baixa e devolucao capturam origem e ignoram respostas de outra ed
     assert.equal(calls.length, 1, 'confirmacao antiga nao pode enviar uma mutacao');
   }
 });
+
+test('carga legada no limite nao e considerada colecao completa', () => {
+  const { context: c, calls } = client();
+  c.agendaWindowedLoadingAtivo_ = () => false;
+  c.agendaUpdatePeriod = () => {}; c.agendaRenderAposCarga_ = () => {};
+  c.agendaMatBioUpdateAllCopyOptions = () => {};
+  c.agendaStoreEventoLocal_ = () => {};
+  c.carregarAgendaEventos(true);
+  calls[0].success(Array.from({ length: 5000 }, (_, i) => ({ id: String(i) })));
+  assert.equal(c.agendaEventosSaoColecaoCompleta_(), false);
+  c.carregarAgendaEventos(true);
+  calls[1].success([{ id: 'A' }]);
+  assert.equal(c.agendaEventosSaoColecaoCompleta_(), true);
+});
+
+test('referencias recebidas durante edicao preservam dados confirmados e aplicam ao fechar', () => {
+  const { context: c } = client();
+  const anterior = { id: 'anterior' }; const novo = { id: 'novo' };
+  c._agendaDados = anterior; c._agendaReferenceDataConfirmed = true;
+  c.agendaReferenceDataValidation_ = () => ({ ok: true });
+  c.agendaFormDataAplicacaoBloqueadaPorEdicao = () => true;
+  assert.equal(c.applyAgendaFormData(novo), true);
+  assert.equal(c._agendaDados, anterior);
+  assert.equal(c._agendaReferenceDataConfirmed, true);
+  let aplicado;
+  c.agendaFormDataRefreshBloqueadoPorEdicao = () => false;
+  c.applyAgendaFormData = (d) => { aplicado = d; return true; };
+  c.agendaExecutarRefreshFormDataPendente();
+  assert.equal(aplicado, novo);
+  assert.equal(c._agendaFormDataPayloadPending, null);
+});
+
+test('falha de consulta de periodo nao retorna periodo reduzido apos carga truncada', () => {
+  const { context: c, calls } = client();
+  c.AgendaRules = { isMultiDay: () => true };
+  c.agendaEventosSaoColecaoCompleta_ = () => false;
+  c.agendaFallbackCargaCompleta_ = (cb) => cb();
+  let sucesso = false; let erro;
+  c.agendaLoadPeriodoOperacional_({ id: 'A' }, () => { sucesso = true; }, e => { erro = e; });
+  const failure = new Error('RPC indisponivel');
+  calls[0].failure(failure);
+  assert.equal(sucesso, false); assert.equal(erro, failure);
+});

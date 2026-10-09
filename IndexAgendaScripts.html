@@ -15,6 +15,7 @@
   var _agendaFormDataLoadedAt = 0;
   var _agendaFormDataRefreshing = false;
   var _agendaFormDataRefreshPending = false;
+  var _agendaFormDataPayloadPending = null;
   var _agendaEventosTruncated = false;
   var _agendaEventosScope = 'full';
   var _agendaEventosRange = null;
@@ -356,6 +357,12 @@
   function agendaExecutarRefreshFormDataPendente() {
     if (!_agendaFormDataRefreshPending || agendaFormDataRefreshBloqueadoPorEdicao()) return;
     _agendaFormDataRefreshPending = false;
+    if (_agendaFormDataPayloadPending) {
+      var payload = _agendaFormDataPayloadPending;
+      _agendaFormDataPayloadPending = null;
+      applyAgendaFormData(payload);
+      return;
+    }
     agendaRevalidarFormDataEmBackground(true);
   }
 
@@ -494,14 +501,15 @@
   function applyAgendaFormData(d) {
     var validation = agendaReferenceDataValidation_(d);
     if (!validation.ok) return false;
+    if (agendaFormDataAplicacaoBloqueadaPorEdicao()) {
+      _agendaFormDataPayloadPending = d;
+      _agendaFormDataRefreshPending = true;
+      return true;
+    }
+    _agendaFormDataPayloadPending = null;
     var atuais = agendaCurrentValues(agendaFormDataSelectIds());
     setAgendaFormDataState(d);
     _agendaReferenceDataConfirmed = false;
-    if (agendaFormDataAplicacaoBloqueadaPorEdicao()) {
-      _agendaFormDataRefreshPending = true;
-      agendaAtualizarRiscoCourier_();
-      return true;
-    }
     if (Array.isArray(_agendaDados.procedimentoChips)) {
       AGENDA_PROCEDIMENTO_CHIPS = _agendaDados.procedimentoChips;
     }
@@ -4526,7 +4534,7 @@
     google.script.run
       .withSuccessHandler(function(rows) {
         if (requestId !== _agendaEventosRequestId) { finalizarTentativa(); return; }
-        agendaAplicarEventos_(rows, 'full', null, false);
+        agendaAplicarEventos_(rows, 'full', null, Array.isArray(rows) && rows.length >= 5000);
         agendaRenderAposCarga_();
         finalizarSucesso();
       })
@@ -4755,6 +4763,10 @@
         var fallbackSucceeded = false;
         agendaFallbackCargaCompleta_(function() {
           fallbackSucceeded = true;
+          if (!agendaEventosSaoColecaoCompleta_()) {
+            if (typeof onFailure === 'function') onFailure(error);
+            return;
+          }
           var fullRow = agendaFindEventoLocal_(id, r.rowIndex) || r;
           var fallback = agendaStorePeriodoOperacional_(fullRow, agendaPeriodoFallbackLocal_(fullRow));
           if (typeof onSuccess === 'function') onSuccess(fallback, 'local_after_full_load');

@@ -104,6 +104,10 @@
   function togglePendenciasCard(btn) {
     var card = btn && btn.closest ? btn.closest('.dash-pend-card') : null;
     if (!card) return;
+    if (!card.classList.contains('expanded') && card._pendenciasMountRemaining) {
+      card._pendenciasMountRemaining();
+      card._pendenciasMountRemaining = null;
+    }
     var expanded = card.classList.toggle('expanded');
     STATE.pendencias.expanded[card.getAttribute('data-pendencia-card')] = expanded;
     var label = btn.querySelector('.dash-pend-more-label');
@@ -264,19 +268,25 @@
         }
       }
     ];
-    var handlers = [];
-    function bindAction(handler) {
-      return ' data-pendencia-action="' + (handlers.push(handler) - 1) + '"';
-    }
-    grid.innerHTML = cards.map(function(card) {
+    var plans = cards.map(function(card) {
+      var handlers = [];
+      function bindAction(handler) {
+        return ' data-pendencia-action="' + (handlers.push(handler) - 1) + '"';
+      }
       var unavailable = p.unavailable && p.unavailable[card.key];
       var cardKey = (gridId || 'pendenciasGrid') + ':' + card.key;
       var expanded = !!STATE.pendencias.expanded[cardKey];
       var total = counts[card.key] || (card.items || []).length || 0;
+      // Inclui contagem e indisponibilidade: itens iguais não garantem card igual.
+      var signature = JSON.stringify([card.items, total, unavailable || '']);
+      var previous = grid.querySelector ? grid.querySelector('[data-pendencia-card="' + cardKey + '"]') : null;
+      if (previous && previous._pendenciasSignature === signature) return { previous: previous };
       var urgentTotal = card.priority ? (card.items || []).filter(pendenciaUrgente24h).length : 0;
       var cardItems = card.items || [];
       var remaining = Math.max(0, cardItems.length - PENDENCIAS_VISIBLE_LIMIT);
-      var rows = cardItems.map(function(it, itemIndex) {
+      function renderRows(items, offset) {
+        return items.map(function(it, index) {
+        var itemIndex = offset + index;
         var r = card.render(it);
         var action = typeof card.action === 'function' ? card.action(it) : card.action;
         var urgent = card.priority && pendenciaUrgente24h(it);
@@ -296,14 +306,16 @@
             '<span class="dash-pend-meta">' + esc(r.meta || '-') + '</span>' +
           '</button>' + tracking + confirmDelivery + '</div>' +
         '</div>';
-      }).join('');
+        }).join('');
+      }
+      var rows = unavailable ? '' : renderRows(expanded ? cardItems : cardItems.slice(0, PENDENCIAS_VISIBLE_LIMIT), 0);
       if (unavailable) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">warning</span>' + esc(unavailable) + '</div>';
       else if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>Sem pendências</div>';
-      var expandButton = remaining && !unavailable ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"' + bindAction(function(event) { togglePendenciasCard(event.currentTarget); }) + '>' +
+      var expandButton = remaining && !unavailable ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"' + bindAction(function(event, button) { togglePendenciasCard(button || event.currentTarget); }) + '>' +
         '<span class="dash-pend-more-label">' + (expanded ? 'Mostrar menos' : 'Mostrar mais (' + remaining + ')') + '</span>' +
         '<span class="material-symbols-outlined">' + (expanded ? 'expand_less' : 'expand_more') + '</span>' +
       '</button>' : '';
-      return '<div data-pendencia-card="' + esc(cardKey) + '" class="dash-pend-card' + (card.priority ? ' priority' : '') + (expanded ? ' expanded' : '') + '" style="--tone:' + card.tone + ';--tone-bg:' + card.bg + '">' +
+      var html = '<div data-pendencia-card="' + esc(cardKey) + '" class="dash-pend-card' + (card.priority ? ' priority' : '') + (expanded ? ' expanded' : '') + '" style="--tone:' + card.tone + ';--tone-bg:' + card.bg + '">' +
         '<div class="dash-pend-head">' +
           '<div class="dash-pend-icon"><span class="material-symbols-outlined">' + card.icon + '</span></div>' +
           '<div class="dash-pend-title">' + esc(card.title) + '</div>' +
@@ -312,10 +324,43 @@
         '</div>' +
         '<div class="dash-pend-list">' + rows + '</div>' + expandButton +
       '</div>';
-    }).join('');
-    grid.querySelectorAll('[data-pendencia-action]').forEach(function(button) {
-      button.addEventListener('click', handlers[Number(button.getAttribute('data-pendencia-action'))]);
+      return { previous: previous, html: html, signature: signature, handlers: handlers,
+        mountRemaining: remaining && !expanded && !unavailable ? function(element) {
+          element.querySelector('.dash-pend-list').insertAdjacentHTML('beforeend', renderRows(cardItems.slice(PENDENCIAS_VISIBLE_LIMIT), PENDENCIAS_VISIBLE_LIMIT));
+        } : null };
     });
+    // Prepara todos os cards antes de alterar o DOM; falha de serialização/render
+    // não deixa a tela aplicada pela metade. Cada card mantém seus próprios handlers.
+    var prepared = plans.map(function(plan) {
+      if (!plan.html) return plan.previous;
+      var holder = document.createElement('div');
+      holder.innerHTML = plan.html;
+      var element = holder.firstElementChild;
+      element._pendenciasSignature = plan.signature;
+      element._pendenciasHandlers = plan.handlers;
+      element._pendenciasMountRemaining = plan.mountRemaining ? function() { plan.mountRemaining(element); } : null;
+      return element;
+    });
+    plans.forEach(function(plan, index) {
+      var element = prepared[index];
+      if (!plan.html) return;
+      if (plan.previous) plan.previous.replaceWith(element);
+      else grid.appendChild(element);
+    });
+    // Descarta placeholders de loading/erro, preservando os cards reaproveitados.
+    Array.from(grid.children).forEach(function(element) {
+      if (prepared.indexOf(element) === -1) element.remove();
+    });
+    if (!grid._pendenciasClickBound) {
+      grid.addEventListener('click', function(event) {
+        var button = event.target.closest ? event.target.closest('[data-pendencia-action]') : null;
+        if (!button || !grid.contains(button)) return;
+        var card = button.closest('[data-pendencia-card]');
+        var handler = card && card._pendenciasHandlers && card._pendenciasHandlers[Number(button.getAttribute('data-pendencia-action'))];
+        if (typeof handler === 'function') handler(event, button);
+      });
+      grid._pendenciasClickBound = true;
+    }
   }
 
   function atualizarPendenciasTs(fromCache) {
@@ -365,23 +410,30 @@
       }
     }
     if (typeof options.onComplete === 'function') _pendenciasRefreshWaiters.push(options.onComplete);
+    if (_pendenciasCache) {
+      try {
+        // Mantém o DOM já exibido; recompõe a lista só quando o grid está vazio.
+        if (grid && !grid.innerHTML.trim()) renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
+        atualizarPendenciasTs(true);
+      } catch (cacheDisplayFailure) { /* A consulta abaixo recupera a apresentação. */ }
+    }
     if (!options.silent) _pendenciasRefreshVisible = true;
     if (_pendenciasRefreshing) {
       // Uma mutacao exige uma consulta iniciada depois dela; a resposta atual pode estar obsoleta.
       if (forcar) _pendenciasRefreshQueued = true;
       if (grid && !_pendenciasCache && !grid.innerHTML.trim()) grid.innerHTML = loadingHtml;
       if (!options.silent) {
-        setPendenciasStatus('', '');
+        setPendenciasStatus(['Atualizando...', pendenciasWarning(_pendenciasCache)].filter(Boolean).join(' '), '');
         setPendenciasButtonBusy(true, 'Atualizando...');
       }
       return;
     }
     _pendenciasRefreshing = true;
-    if (grid && (!options.silent || !_pendenciasCache)) {
+    if (grid && (!_pendenciasCache || !grid.innerHTML.trim())) {
       grid.innerHTML = loadingHtml;
     }
     if (!options.silent) {
-      setPendenciasStatus('', '');
+      setPendenciasStatus(['Atualizando...', pendenciasWarning(_pendenciasCache)].filter(Boolean).join(' '), '');
       setPendenciasButtonBusy(true, 'Atualizando...');
     }
     var perf = typeof codexStartClientReadPerformance_ === 'function' ? codexStartClientReadPerformance_('getPendenciasOperacionais', forcar) : null;

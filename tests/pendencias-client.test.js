@@ -8,19 +8,43 @@ const { readProjectFile } = require('./helpers/load-app-script');
 function fixture() {
   const requests = [], timers = [], buttons = [];
   const grid = {
-    innerHTML: '',
+    children: [], placeholder: '',
+    get innerHTML() { return this.children.length ? this.children.map(card => card.html).join('') : this.placeholder; },
+    set innerHTML(html) { this.children = []; this.placeholder = html; },
+    querySelector(selector) { return this.children.find(card => selector.includes('"' + card.key + '"')) || null; },
+    appendChild(card) { this.children.push(card); card.parent = this; syncButtons(); },
+    contains(button) { return this.children.includes(button.card); },
+    addEventListener(_name, fn) { this.click = fn; },
     querySelectorAll() {
-      buttons.length = 0;
-      for (const match of this.innerHTML.matchAll(/data-pendencia-action="(\d+)"/g)) {
-        buttons.push({ index: match[1], getAttribute() { return this.index; }, addEventListener(_name, fn) { this.click = fn; } });
-      }
       return buttons;
     }
   };
+  function syncButtons() {
+    buttons.length = 0;
+    for (const card of grid.children) {
+      for (const match of card.html.matchAll(/data-pendencia-action="(\d+)"/g)) {
+        const button = { card, index: match[1], getAttribute() { return this.index; }, closest(selector) { return selector === '[data-pendencia-action]' ? this : card; } };
+        button.click = (event = {}) => grid.click({ ...event, target: button });
+        buttons.push(button);
+      }
+    }
+  }
+  function createElement() {
+    return {
+      set innerHTML(html) {
+        this.firstElementChild = {
+          html, key: html.match(/data-pendencia-card="([^"]+)"/)[1],
+          replaceWith(card) { const parent = this.parent; parent.children[parent.children.indexOf(this)] = card; card.parent = parent; syncButtons(); },
+          remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); syncButtons(); }
+        };
+      }
+    };
+  }
+  const ts = { textContent: '' };
   const status = { innerHTML: '' }, button = { disabled: false, querySelector() { return null; } };
   const context = vm.createContext({
     window: { STATE: {}, addEventListener() {} },
-    document: { addEventListener() {}, getElementById(id) { return { pendenciasGrid: grid, pendenciasStatus: status, btnPendenciasRefresh: button }[id] || null; } },
+    document: { createElement, addEventListener() {}, getElementById(id) { return { pendenciasGrid: grid, pendenciasStatus: status, btnPendenciasRefresh: button, pendenciasTs: ts }[id] || null; } },
     setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {},
     esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); },
     snack() {}, snackErro() {}, fecharOverlay() {}
@@ -31,8 +55,34 @@ function fixture() {
   }
   context.google = { script: { run: runner() } };
   vm.runInContext(readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, ''), context);
-  return { context, grid, buttons, requests, timers, status, button };
+  return { context, grid, buttons, requests, timers, status, button, ts };
 }
+
+test('cache vencido aparece durante entrada e refresh forcado sem reconstruir lista existente', () => {
+  for (const forced of [false, true]) {
+    for (const empty of [false, true]) {
+      const { context, grid, requests, button, ts, status } = fixture();
+      context._pendenciasCache = { kitsVencendo: [{ descricao: 'Kit anterior' }] };
+      context.setPendenciasLoadedAtState(Date.now() - 240000);
+      if (!empty) grid.innerHTML = '<div>DOM anterior preservado</div>';
+      const before = grid.innerHTML;
+      const loadedAt = context.pendenciasLoadedAtTime();
+      context.carregarPendencias(forced);
+      assert.equal(requests.length, 1);
+      assert.equal(button.disabled, true);
+      assert.match(status.innerHTML, /Atualizando/);
+      assert.match(ts.textContent, /^Em memória: /);
+      assert.equal(context.pendenciasLoadedAtTime(), loadedAt);
+      if (empty) assert.match(grid.innerHTML, /Kit anterior/);
+      else assert.equal(grid.innerHTML, before);
+      assert.doesNotMatch(grid.innerHTML, /Carregando pendências/);
+      requests[0].success({ pendencias: { kitsVencendo: [{ descricao: 'Kit novo' }] } });
+      assert.match(grid.innerHTML, /Kit novo/);
+      assert.match(ts.textContent, /^Atualizado: /);
+      assert.equal(button.disabled, false);
+    }
+  }
+});
 
 test('acoes preservam aspas, entidades e HTML como dados, sem eventos inline', () => {
   const { context, grid, buttons } = fixture();
@@ -61,6 +111,29 @@ test('renderizar AWB nao altera o item e cada botao abre sua propria acao', () =
   assert.equal(calls[1], item.trackingUrl);
   assert.equal(calls[2][0], item.agendaId);
   assert.equal(calls[2][4], 'DHL');
+});
+
+test('refresh incremental preserva cards iguais e atualiza contagens, avisos e handlers do card alterado', () => {
+  const { context, grid, buttons } = fixture();
+  let opened;
+  context.abrirPendenciaEstoque = q => { opened = q; };
+  const data = { kitsVencendo: [{ descricao: 'Kit A' }], courierNaoAgendada: [{ agendaId: 'A' }] };
+  context.renderDashboardPendencias(data);
+  const kit = grid.children[6], courier = grid.children[0];
+  context.renderDashboardPendencias(JSON.parse(JSON.stringify(data)));
+  assert.equal(grid.children[6], kit);
+  assert.equal(grid.children[0], courier);
+  context.renderDashboardPendencias({ ...data, counts: { kitsVencendo: 20 } });
+  assert.notEqual(grid.children[6], kit);
+  assert.equal(grid.children[0], courier);
+  assert.match(grid.children[6].html, /dash-pend-count">20</);
+  context.renderDashboardPendencias({ ...data, unavailable: { kitsVencendo: 'Indisponível' } });
+  assert.match(grid.children[6].html, /Indisponível/);
+  assert.equal(grid.children[0], courier);
+  context.renderDashboardPendencias({ ...data, kitsVencendo: [{ descricao: 'Kit B' }] });
+  buttons.find(button => button.card === grid.children[6]).click();
+  assert.equal(opened, 'Kit B');
+  assert.equal(grid.children[0], courier);
 });
 
 test('onComplete aguarda a consulta compartilhada e recebe sucesso', () => {

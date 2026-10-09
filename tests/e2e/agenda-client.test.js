@@ -611,3 +611,30 @@ test('recibo real descarta resposta antiga e usa a data de Sao Paulo em outro fu
     assert.equal(await page.evaluate(() => window.agendaIso(window.agendaWeekStartForOffset_(0))), '2026-09-28');
   });
 });
+
+test('referencias pendentes preservam selects durante edicao e aplicam apos fechar', async () => {
+  await scenario(async page => {
+    const result = await page.evaluate(() => {
+      document.getElementById('agendaCreatePanel').classList.remove('open');
+      const data = { ...window._agendaDados, courierConfig: {}, projectCourierMap: {}, emailLabAtivo: false };
+      ['participantes', 'projetos', 'tiposEvento', 'status', 'medicos', 'prestadores', 'monitores', 'salasMonitoria', 'couriers', 'temperaturas', 'statusCourier', 'laboratoriosDestino', 'kitsColeta', 'procedimentoChips', 'laboratorios', 'feriados'].forEach(key => { data[key] = []; });
+      window.applyAgendaFormData(data);
+      const anterior = window._agendaDados;
+      const novo = { ...anterior, status: [...anterior.status, 'Status novo teste'] };
+      window._agendaEditId = 'EVT-TESTE';
+      window._agendaEditLoading = false;
+      const panel = document.getElementById('agendaCreatePanel');
+      panel.classList.add('open');
+      const antes = document.getElementById('agStatus').innerHTML;
+      const confirmado = window._agendaReferenceDataConfirmed;
+      const aceito = window.applyAgendaFormData(novo);
+      const preservou = window._agendaDados === anterior && document.getElementById('agStatus').innerHTML === antes && window._agendaReferenceDataConfirmed === confirmado;
+      panel.classList.remove('open');
+      window.APP_UNSAVED_SCOPES = {};
+      window.agendaExecutarRefreshFormDataPendente();
+      return { aceito, preservou, aplicado: window._agendaDados === novo, confirmado: window._agendaReferenceDataConfirmed,
+        opcao: Array.from(document.getElementById('agStatus').options).some(o => o.value === 'Status novo teste') };
+    });
+    assert.deepEqual(result, { aceito: true, preservou: true, aplicado: true, confirmado: true, opcao: true });
+  });
+});
