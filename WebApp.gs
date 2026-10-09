@@ -16345,7 +16345,8 @@ function agendaBackupVisitaElegivel_(origem, destino, agora) {
   var participanteId = String(origem[idx.participanteCadastroId] || '').trim();
   if (!participanteId || participanteId !== String(destino[idx.participanteCadastroId] || '').trim()) return false;
   if (String(origem[idx.projeto] || '').trim() !== String(destino[idx.projeto] || '').trim()) return false;
-  if (!AgendaServerRules_.isVisit(destino[idx.tipo]) ||
+  var tipoDestino = AgendaServerRules_.typeKey(destino[idx.tipo]);
+  if ((tipoDestino !== 'visita' && tipoDestino !== 'envio-amostras') ||
       AgendaServerRules_.isCancelled(destino[idx.status]) || AgendaServerRules_.isConcluded(destino[idx.status]) ||
       !AgendaServerRules_.isLabCentral(destino[idx.labCentral])) return false;
   var limite = agora.getTime();
@@ -16389,6 +16390,7 @@ function getAgendaVisitasFuturasParaBackup(origemId) {
       dataIso: formatarDataIsoAgenda_(row[AGENDA_CFG.idx.data]),
       hora: formatAgendaHora_(dataHora),
       visita: String(row[AGENDA_CFG.idx.visita] || ''),
+      tipo: AgendaServerRules_.isVisit(row[AGENDA_CFG.idx.tipo]) ? 'Visita' : 'Envio de amostras',
       transporteII: { disponivel: agendaBackupCourierSlotVazio_(row, ii) },
       transporteIII: { disponivel: agendaBackupCourierSlotVazio_(row, iii) }
     };

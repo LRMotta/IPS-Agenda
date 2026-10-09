@@ -4747,6 +4747,7 @@ function appErrorRawText(error, fallback) {
 function appErrorMessage(error, fallback, opts) {
   opts = opts || {};
   var text = appErrorRawText(error, fallback);
+  if (/^(?:Error:\s*)?Falta preencher o Nº de Identificação deste participante\./.test(text)) return text.replace(/^Error:\s*/, '');
   var normText = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   var friendly = '';
   if (error && (error.conflito || error.conflict)) {

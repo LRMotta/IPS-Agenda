@@ -555,7 +555,7 @@ test('Transporte exige e exibe o numero de identificacao vindo da coluna E de Pa
   assert.match(client, /@media \(max-width:680px\)[\s\S]*\.form-grid\.study-grid\s*\{\s*grid-template-columns:1fr/);
   assert.match(client, /info\.idParticipante \|\| info\.numId/);
   assert.match(client, /out\.push\('Nº de Identificação do paciente'\)/);
-  assert.match(server, /missing\.push\('Numero de Identificacao do paciente na coluna E da aba Participantes'\)/);
+  assert.match(server, /missing\.push\('Nº de Identificação do participante \(preencha no cadastro em Participantes\)'\)/);
 });
 
 test('campo de identificacao usa o ID do participante selecionado sem confundir nomes divergentes', () => {
@@ -1047,7 +1047,7 @@ test('salvamento definitivo exige os dados criticos de Transporte', () => {
     horaEnvio: '08:00-12:00',
     agendadoPor: 'Usuario Teste',
     dataEnvio: '2026-07-20'
-  }), /Numero de Identificacao do paciente na coluna E da aba Participantes/);
+  }), /Nº de Identificação do participante \(preencha no cadastro em Participantes\)/);
   assert.doesNotThrow(() => context.transporteValidarObrigatoriosWebApp_({
     paciente: 'Participante Teste',
     identificacaoParticipante: 'P-001',

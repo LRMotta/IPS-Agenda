@@ -521,7 +521,9 @@ test('consulta de backup lista somente visitas futuras do participante e projeto
   const passada = backupTestRow(server, 'PASSADA', { data: backupTestDate(-1) });
   const semLaboratorio = backupTestRow(server, 'SEM-LAB', { labCentral: 'Não' });
   const vazia = backupTestRow(server, 'VISITA-VAZIA');
-  const sheet = new FakeSheet('Agenda', [Array(server.AGENDA_CFG.lastCol).fill(''), origem, iiOcupado, ambosOcupados, outraIdentidade, outroProjeto, cancelada, concluida, passada, semLaboratorio, vazia]);
+  const envio = backupTestRow(server, 'ENVIO-FUTURO', { tipo: 'Envio de amostras', hora: '13:00' });
+  const telefonico = backupTestRow(server, 'TELEFONICO', { tipo: 'Contato telefônico' });
+  const sheet = new FakeSheet('Agenda', [Array(server.AGENDA_CFG.lastCol).fill(''), origem, iiOcupado, ambosOcupados, outraIdentidade, outroProjeto, cancelada, concluida, passada, semLaboratorio, vazia, envio, telefonico]);
   server.codexAuthorizeWebAppRequest_ = () => ({ ok: true, role: 'readonly' });
   server.getAgendaSheetForRead_ = () => sheet;
   server.formatarDataSafe = (value) => value instanceof Date ? `${value.getDate()}/${value.getMonth() + 1}/${value.getFullYear()}` : String(value);
@@ -541,7 +543,8 @@ test('consulta de backup lista somente visitas futuras do participante e projeto
   assert.equal(server.agendaBackupVisitaElegivel_(origem, iiOcupado, new Date()), true);
 
   const result = server.getAgendaVisitasFuturasParaBackup('ORIGEM-CONSULTA');
-  assert.deepEqual(Array.from(result.visitas, (item) => item.id), ['VISITA-II-OCUPADO', 'VISITA-VAZIA']);
+  assert.deepEqual(Array.from(result.visitas, (item) => item.id), ['VISITA-II-OCUPADO', 'VISITA-VAZIA', 'ENVIO-FUTURO']);
+  assert.deepEqual(Array.from(result.visitas, (item) => item.tipo), ['Visita', 'Visita', 'Envio de amostras']);
   assert.equal(result.visitas[0].transporteII.disponivel, false);
   assert.equal(result.visitas[0].transporteIII.disponivel, true);
   assert.equal(result.visitas[1].transporteII.disponivel, true);
@@ -555,6 +558,22 @@ test('consulta de visitas futuras rejeita sessoes sem autorizacao', () => {
   server.getAgendaSheetForRead_ = () => { throw new Error('a planilha nao deve ser consultada'); };
 
   assert.throws(() => server.getAgendaVisitasFuturasParaBackup('ORIGEM-NEGADA'), /Acesso negado/);
+});
+
+test('envio futuro para backup preserva filtros de identidade, projeto, status, laboratorio e data', () => {
+  const context = backupTestServer(new FakeSheet('Agenda', []));
+  const origem = backupTestRow(context, 'ORIGEM', { data: backupTestDate(5), backup: {} });
+  for (const values of [
+    { participanteId: 'outra-pessoa' }, { projeto: 'Outro' },
+    { status: 'Cancelado' }, { status: 'Concluído' }, { labCentral: 'Não' },
+    { data: backupTestDate(4) }, { data: backupTestDate(-1) },
+    { data: origem[context.AGENDA_CFG.idx.data], hora: '12:00' }
+  ]) {
+    const destino = backupTestRow(context, 'DESTINO', { tipo: 'Envio de amostras', data: backupTestDate(6), ...values });
+    assert.equal(context.agendaBackupVisitaElegivel_(origem, destino, new Date()), false, JSON.stringify(values));
+  }
+  const destino = backupTestRow(context, 'DESTINO', { tipo: 'Envio de amostras', data: backupTestDate(6) });
+  assert.equal(context.agendaBackupVisitaElegivel_(origem, destino, new Date()), true);
 });
 
 test('visita destino deve ocorrer depois do agendamento de origem quando ele tambem e futuro', () => {
@@ -613,6 +632,58 @@ test('vincular backup transfere dados apenas ao slot escolhido e atualiza a refe
   assert.equal(sheet.rows[2][idx.c3.nome], 'DHL');
   assert.equal(sheet.rows[2][idx.c3.awb], 'AWB-III');
   assert.equal(result.destino.courier2.nome, 'MARKEN');
+});
+
+test('vincular backup a envio de amostras transfere apenas o slot escolhido e permite repeticao idempotente', () => {
+  const server = agendaServer();
+  server.AGENDA_CFG.idx.participanteCadastroId = 52;
+  server.AGENDA_CFG.col.participanteCadastroId = 53;
+  server.AGENDA_CFG.lastCol = 53;
+  const idx = server.AGENDA_CFG.idx;
+  const origem = backupTestRow(server, 'ORIGEM-TRANSFERENCIA', {
+    data: backupTestDate(-1),
+    backup: { nome: 'MARKEN', temperatura: 'CONGELADO', destino: 'Lab Central', material: 'Soro', matBioJson: '[{"key":"soro","quantidade":2}]' }
+  });
+  const destino = backupTestRow(server, 'DESTINO-TRANSFERENCIA', {
+    tipo: 'Envio de amostras',
+    courier3: { nome: 'DHL', temperatura: 'AMBIENTE', status: 'Agendado', awb: 'AWB-III', material: 'Plasma', destino: 'Outro Lab', matBioJson: '[{"key":"plasma"}]' }
+  });
+  const sheet = new FakeSheet('Agenda', [Array(server.AGENDA_CFG.lastCol).fill(''), origem, destino]);
+  const context = backupTestServer(sheet);
+  const sourceBefore = sheet.getRange(2, 1, 1, context.AGENDA_CFG.lastCol).getValues()[0];
+  const targetBefore = sheet.getRange(3, 1, 1, context.AGENDA_CFG.lastCol).getValues()[0];
+  const result = context.aplicarBackupEmVisitaFutura({
+    origemId: 'ORIGEM-TRANSFERENCIA',
+    destinoId: 'DESTINO-TRANSFERENCIA',
+    slot: 'II',
+    origemVersion: context.agendaRecordVersionFromRow_(sourceBefore),
+    destinoVersion: context.agendaRecordVersionFromRow_(targetBefore)
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.origem.backup.status, 'Adicionado à Agenda');
+  assert.equal(result.origem.backup.agendamento.id, 'DESTINO-TRANSFERENCIA');
+  assert.equal(result.origem.backup.agendamento.slot, 'II');
+  assert.equal(sheet.rows[1][idx.cb.nome], 'MARKEN');
+  assert.equal(sheet.rows[1][idx.cb.destino], 'Lab Central');
+  assert.equal(sheet.rows[1][idx.cb.temp], 'CONGELADO');
+  assert.equal(sheet.rows[2][idx.c2.nome], 'MARKEN');
+  assert.equal(sheet.rows[2][idx.c2.temp], 'CONGELADO');
+  assert.equal(sheet.rows[2][idx.c2.status], 'Não Agendado');
+  assert.equal(sheet.rows[2][idx.c2.destino], 'Lab Central');
+  assert.equal(sheet.rows[2][idx.c2.material], 'Soro');
+  assert.equal(sheet.rows[2][idx.c2.matBio], '[{"key":"soro","quantidade":2}]');
+  assert.equal(sheet.rows[2][idx.c2.awb], '');
+  assert.equal(sheet.rows[2][idx.c3.nome], 'DHL');
+  assert.equal(sheet.rows[2][idx.c3.awb], 'AWB-III');
+  assert.equal(result.destino.courier2.nome, 'MARKEN');
+  assert.equal(sheet.rows[2][idx.tipo], 'Envio de amostras');
+  const repeat = context.aplicarBackupEmVisitaFutura({
+    origemId: 'ORIGEM-TRANSFERENCIA', destinoId: 'DESTINO-TRANSFERENCIA', slot: 'II',
+    origemVersion: context.agendaRecordVersionFromRow_(sourceBefore),
+    destinoVersion: context.agendaRecordVersionFromRow_(targetBefore)
+  });
+  assert.equal(repeat.jaVinculado, true, JSON.stringify(repeat));
 });
 
 test('vincular backup bloqueia slot ocupado, identidade divergente e versoes obsoletas sem gravar', () => {
@@ -767,7 +838,7 @@ test('interface oferece os dois caminhos e mantém o modal da Agenda durante a v
   const server = readProjectFile('WebApp.gs');
 
   assert.match(content, /Criar novo Envio de Amostras/);
-  assert.match(content, /Usar visita futura/);
+  assert.match(content, /Usar agendamento futuro/);
   assert.match(content, /aria-describedby="backupAgendaHint"/);
   assert.ok(content.indexOf('id="backupAgendaStep"') > content.indexOf('id="agBackupMaterial"'), 'as opções seguem o preenchimento do backup');
   assert.match(client, /appHasUnsavedChanges\('agendaCreatePanel'\)/);

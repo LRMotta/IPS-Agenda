@@ -636,6 +636,7 @@
     function transportErrorMessage(error, fallback) {
       var raw = (error && (error.message || error.toString && error.toString())) || fallback || 'Erro inesperado.';
       var text = String(raw || '');
+      if (/^(?:Error:\s*)?Falta preencher o Nº de Identificação deste participante\./.test(text)) return text.replace(/^Error:\s*/, '');
       var normText = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       var friendly = '';
       if (error && (error.conflito || error.conflict)) {
@@ -1943,7 +1944,7 @@
         }
       }
       if (!p.paciente) issues.push({ type:'danger', text:'Paciente não informado.' });
-      if (p.paciente && !String(p.identificacaoParticipante || '').trim()) issues.push({ type:'danger', text:'Nº de Identificação não localizado na coluna E da aba Participantes para o paciente selecionado.' });
+      if (p.paciente && !String(p.identificacaoParticipante || '').trim()) issues.push({ type:'danger', text:'Falta preencher o Nº de Identificação deste participante. Acesse Participantes, complete esse campo no cadastro e tente gerar os documentos novamente.' });
       if (!p.protocolo) issues.push({ type:'danger', text:'Protocolo não informado.' });
       if (!p.investigador) issues.push({ type:'danger', text:'Investigador não informado.' });
       if (!p.destino) issues.push({ type:'danger', text:'Laboratório de destino não informado.' });
