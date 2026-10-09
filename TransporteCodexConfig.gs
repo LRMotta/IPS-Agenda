@@ -2826,7 +2826,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
         return montarContextoTransporteParaTransp_(idAgenda, slot);
       });
       var payload = contexto.payload;
-      codexCourierAssertDocumentAwb_(payload.courier.awb, payload.courier.nome);
+      // Pré-preenchimento permite informar a AWB no módulo; salvar/gerar continuam validando.
       var importResult = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'import_prepare', { rowCount: 1 }, function() {
         return importarTransporteCodexInterno_(payload, contexto);
       });
