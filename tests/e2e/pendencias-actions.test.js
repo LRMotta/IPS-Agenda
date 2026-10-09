@@ -17,7 +17,7 @@ test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM rea
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.abort());
-      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '</head><body><h1>Pendências</h1><button id="btnPendenciasRefresh"><span class="btn-label">Atualizar</span></button><span id="pendenciasTs"></span><div id="pendenciasStatus"></div><div id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
+      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '</head><body><h1>Pendências</h1><button class="btn-refresh" id="btnPendenciasRefresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span><span class="btn-label">Atualizar</span></button><span id="pendenciasTs"></span><div id="pendenciasStatus"></div><div id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
       await page.evaluate(() => {
         window.requests = []; window.mutations = [];
         window.esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -73,11 +73,39 @@ test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM rea
       assert.equal(await page.evaluate(() => window.cardBeforeRefresh === document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]')), true);
       assert.match(await kit.innerText(), /Sem pendências/);
       assert.match(await page.locator('#pendenciasTs').innerText(), /^Em memória: /);
-      assert.match(await page.locator('#pendenciasStatus').innerText(), /Atualizando/);
+      assert.equal(await page.locator('#pendenciasStatus').innerText(), '');
+      assert.match(await page.locator('#btnPendenciasRefresh .btn-label').innerText(), /Atualizando/);
+      assert.equal(await page.locator('#btnPendenciasRefresh .material-symbols-outlined').evaluate(el => getComputedStyle(el).animationName), 'spin');
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      assert.equal(await page.locator('#btnPendenciasRefresh .material-symbols-outlined').evaluate(el => getComputedStyle(el).animationName), 'none');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
       assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), true);
       await page.evaluate(() => window.requests[3].failure(new Error('rede indisponível')));
       assert.match(await kit.innerText(), /Sem pendências/);
       assert.match(await page.locator('#pendenciasStatus').innerText(), /mantendo a ultima lista/);
+      assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), false);
+      assert.equal(await page.locator('#btnPendenciasRefresh .material-symbols-outlined').evaluate(el => getComputedStyle(el).animationName), 'none');
+      // Browser plugin not available: fixture Playwright isolada, sem rede.
+      // Refresh forçado deve conservar DOM expandido e rolagem até a resposta.
+      await page.evaluate(() => {
+        window.renderDashboardPendencias({ kitsVencendo: Array.from({ length: 24 }, (_, i) => ({ descricao: 'Kit simulado ' + i })) }, 'pendenciasGrid');
+        window._pendenciasCache = { kitsVencendo: Array.from({ length: 24 }, (_, i) => ({ descricao: 'Kit simulado ' + i })) };
+      });
+      await kit.getByRole('button', { name: /Mostrar mais/ }).click();
+      await page.evaluate(() => {
+        window.cardBeforeRefresh = document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]');
+        window.scrollTo(0, 300);
+        window.scrollBeforeRefresh = window.scrollY;
+        window.carregarPendencias(true);
+      });
+      assert.equal(await page.evaluate(() => window.cardBeforeRefresh === document.querySelector('[data-pendencia-card="pendenciasGrid:kitsVencendo"]')), true);
+      assert.equal(await kit.evaluate(el => el.classList.contains('expanded')), true);
+      assert.equal(await kit.locator('.dash-pend-row').count(), 24);
+      assert.equal(await page.evaluate(() => window.scrollY === window.scrollBeforeRefresh), true);
+      assert.doesNotMatch(await page.locator('#pendenciasGrid').innerText(), /Carregando pendências/);
+      assert.equal(await page.locator('#pendenciasStatus').innerText(), '');
+      await page.evaluate(() => window.requests[4].success({ pendencias: window._pendenciasCache }));
+      assert.equal(await kit.evaluate(el => el.classList.contains('expanded')), true);
       assert.equal(await page.locator('#btnPendenciasRefresh').isDisabled(), false);
       assert.deepEqual(errors, []);
       await page.close();
