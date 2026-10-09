@@ -69,7 +69,7 @@ test('courier nao agendada abre Transporte com slot correto e transicao, sem exi
   assert.equal(calls[1][1], targetWindow);
   assert.equal(calls[1][2].agendaId, 'EVT-1');
   assert.equal(calls[1][2].slot, '2');
-  assert.equal(context._pendenciasTransportWindows[0], targetWindow);
+  assert.equal(context.pendenciasEstaoDesatualizadas(), true);
 });
 
 test('cache vencido aparece durante entrada e refresh forcado sem reconstruir lista existente', () => {

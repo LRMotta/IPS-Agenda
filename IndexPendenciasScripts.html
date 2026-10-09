@@ -74,23 +74,12 @@
       }
       var context = { agendaId: it.agendaId, slot: slot, paciente: it.participante, protocolo: it.projeto, visita: it.visita };
       var transportWindow = prepararJanelaTransporte(context);
-      if (transportWindow) _pendenciasTransportWindows.push(transportWindow);
+      // HtmlService roda em iframe: o retorno por foco não pode depender de window.opener.
+      _pendenciasLoadedAt = null;
+      STATE.pendencias.loadedAt = 0;
       abrirTransporteModulo(transportWindow, context);
     };
   }
-
-  var _pendenciasTransportWindows = [];
-  if (typeof window.addEventListener === 'function') window.addEventListener('message', function(event) {
-    if (!event.data || event.data.type !== 'ips-transporte-atualizado') return;
-    if (_pendenciasTransportWindows.indexOf(event.source) < 0) return;
-    window.revalidarPendenciasAposTransporte();
-  });
-
-  window.revalidarPendenciasAposTransporte = function() {
-    STATE.pendencias.loadedAt = 0;
-    _pendenciasLoadedAt = null;
-    if (pendenciasEstaAtiva()) carregarPendencias(true, { silent: true });
-  };
 
   function pendenciaAwbAction(it) {
     return function() { abrirPendenciaAwb(it && it.agendaId); };
