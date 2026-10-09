@@ -7837,7 +7837,7 @@ function getDashboardPendencias_(estoque, perfContext) {
       if (!slotCfg) return;
       var statusCourier = String(r[slotCfg.status] || '').trim();
       var statusKey = AgendaServerRules_.courierStatusKey(statusCourier);
-      if (['naoagendado', 'pendente', 'agendado'].indexOf(statusKey) === -1) return;
+      if (['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(statusKey) === -1) return;
       var base = {
         agendaId: String(r[i.id] || ''),
         data: String(r[i.data] || ''),
@@ -12420,11 +12420,16 @@ function getAgendaTemperaturas_() {
 }
 
 function getAgendaCourierStatuses_() {
-  return getConfigAppValuesByKeys_(
+  var statuses = getConfigAppValuesByKeys_(
     ['Agenda', 'Logistica', 'Log\u00EDstica'],
     ['Status courier', 'Status do courier', 'Courier status'],
-    ['N\u00E3o Agendado', 'Pendente', 'Agendado', 'Adicionado \u00E0 Agenda', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado']
+    ['N\u00E3o Agendado', 'Pendente', 'Docs gerados', 'Agendado', 'Adicionado \u00E0 Agenda', 'Confirmado', 'Coletado', 'Enviado', 'Entregue', 'Cancelado']
   );
+  if (!statuses.some(function(status) { return normText_(status) === 'docs gerados'; })) {
+    var agendadoIndex = statuses.findIndex(function(status) { return normText_(status) === 'agendado'; });
+    statuses.splice(agendadoIndex < 0 ? statuses.length : agendadoIndex, 0, 'Docs gerados');
+  }
+  return statuses;
 }
 
 function getAgendaProcedimentoChips_() {
@@ -16230,7 +16235,7 @@ function agendaSetBackupLinha_(agenda, linha, backup) {
   agenda.getRange(linha, AGENDA_CFG.col.backupTemperatura).setValue(backup.temperatura || backup.temp || '');
   var statusBackup = normText_(backup.status);
   var statusMantemReferencia = [
-    'Adicionado à Agenda', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue'
+    'Adicionado à Agenda', 'Docs gerados', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue'
   ].some(function(status) { return statusBackup === normText_(status); });
   if (!statusMantemReferencia) {
     agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).clearContent();

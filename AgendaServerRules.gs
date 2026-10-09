@@ -217,6 +217,7 @@ var AgendaServerRules_ = (function() {
     if (status.indexOf('envi') > -1) return 'enviado';
     if (status.indexOf('confirm') > -1) return 'confirmado';
     if (status.indexOf('colet') > -1) return 'confirmado';
+    if (status === 'docsgerados' || /^docs?\s+gerad/.test(status) || /^documentos?\s+gerad/.test(status)) return 'docsgerados';
     if (status.indexOf('agend') > -1) return 'agendado';
     if (status.indexOf('pend') > -1) return 'pendente';
     return '';

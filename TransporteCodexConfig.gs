@@ -744,7 +744,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     var statusEvento = snapshotPrecheck.rows[linha][AGENDA_CFG.col.status - 1];
     if (AgendaServerRules_.isCancelled(statusEvento)) return false;
     var statusAtual = snapshotPrecheck.rows[linha][idx.status];
-    var precisaReprocessar = ['naoagendado', 'pendente'].indexOf(AgendaServerRules_.courierStatusKey(statusAtual)) !== -1;
+    var precisaReprocessar = ['naoagendado', 'pendente', 'docsgerados'].indexOf(AgendaServerRules_.courierStatusKey(statusAtual)) !== -1;
     if (precisaReprocessar) item.reprocessar = true;
     return precisaReprocessar;
   });
@@ -896,7 +896,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Courier da Agenda diverge da documentação gerada' });
         return;
       }
-      if (['naoagendado', 'pendente'].indexOf(statusKey) === -1) {
+      if (['naoagendado', 'pendente', 'docsgerados'].indexOf(statusKey) === -1) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Status atual não permite promoção automática: ' + (statusAnterior || 'vazio') });
         return;
       }
@@ -4013,6 +4013,33 @@ function transporteGenerationReplay_(record) {
   return null;
 }
 
+// Executado sob o lock da geração; o ID do PDF confirma a criação no Drive.
+function transporteMarcarDocsGeradosAgenda_(payload, result) {
+  if (!result || result.type !== 'pdf' || !String(result.fileId || '').trim()) return null;
+  payload = payload || {};
+  var idAgenda = String(payload.idAgenda || '').trim();
+  var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot || '');
+  if (!idAgenda || !slot || typeof getAgendaSheet_ !== 'function') return null;
+  var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, backup: AGENDA_CFG.idx.cb }[slot];
+  if (!idx) return null;
+  var agenda = getAgendaSheet_();
+  var linha = encontrarLinhaPorId(agenda, idAgenda);
+  if (!linha) throw new Error('PDF gerado, mas o agendamento vinculado não foi encontrado.');
+  var values = agenda.getRange(linha, 1, 1, agenda.getLastColumn()).getDisplayValues()[0];
+  if (AgendaServerRules_.isCancelled(values[AGENDA_CFG.col.status - 1])) return null;
+  var statusAnterior = String(values[idx.status] || '').trim();
+  var statusKey = AgendaServerRules_.courierStatusKey(statusAnterior);
+  if (['', 'naoagendado', 'pendente'].indexOf(statusKey) === -1) return null;
+  var awb = normalizarAwbCourier_(payload.awb);
+  if (!awb || awb !== normalizarAwbCourier_(values[idx.awb])) return null;
+  if (normText_(payload.courier) !== normText_(values[idx.nome])) return null;
+  agenda.getRange(linha, idx.status + 1).setValue('Docs gerados');
+  if (typeof agendaInvalidateDateIndexCache_ === 'function') agendaInvalidateDateIndexCache_();
+  if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Agenda', 'gerarPdfTransporte', idAgenda,
+    [{ field: 'Transporte ' + slot + ' - Status', oldValue: statusAnterior, newValue: 'Docs gerados' }], 'PDF confirmado no Drive');
+  return { atualizado: true, idAgenda: idAgenda, slot: slot, awb: payload.awb, campos: ['Transporte ' + slot + ' - Status'] };
+}
+
 function gerarPdfTransporte(options) {
   return codexWithDocumentLock_('gerarPdfTransporte', function() {
     TRANSPORTE_GENERATION_WARNINGS_ = [];
@@ -4030,6 +4057,8 @@ function gerarPdfTransporte(options) {
       }
       return gerarPdfTransporteInterno_(options, access);
       });
+      var docsSync = result && result.recovered ? transporteMarcarDocsGeradosAgenda_(options && options.payload, result) : null;
+      if (docsSync) result.agendaSync = Object.assign({}, result.agendaSync || {}, docsSync);
       if (result && typeof result === 'object') {
         if (!result.recovered) {
           result.warnings = transporteGenerationMergeWarnings_(result.warnings, TRANSPORTE_GENERATION_WARNINGS_);
@@ -4093,6 +4122,9 @@ function gerarPdfTransporteInterno_(options, access) {
   // O exportador legado retorna texto; a RPC deve sinalizar falha ao cliente.
   if (typeof result === 'string' && /^Erro\b/i.test(result)) throw new Error(result);
   if (result && typeof result === 'object' && savedTransport) result.agendaSync = savedTransport.agendaSync;
+  // O PDF já foi confirmado; falha posterior no Gmail não desfaz esta etapa.
+  var docsSync = transporteMarcarDocsGeradosAgenda_(options.payload, result);
+  if (docsSync) result.agendaSync = Object.assign({}, result.agendaSync || {}, docsSync);
   if (result && typeof result === 'object') result.manifestoPdfHash = result.conteudoPdfHash
     ? transportePdfManifestoHash_({ dados: manifestoPdf.hash, conteudo: result.conteudoPdfHash }) : manifestoPdf.hash;
   if (request) transporteGenerationCheckpoint_({ pdf: Object.assign({}, result, { warnings: transporteGenerationMergeWarnings_(result.warnings, TRANSPORTE_GENERATION_WARNINGS_) }) });

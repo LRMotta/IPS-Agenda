@@ -63,6 +63,23 @@ test('PDF conhecido e rascunho conhecido retomam sem duplicar efeitos', () => {
   }
 });
 
+test('PDF confirmado marca a etapa antes da falha Gmail; replay pode reparar a etapa sem recriar PDF', () => {
+  const f = fixture();
+  let marked = 0;
+  f.s.transporteMarcarDocsGeradosAgenda_ = (_payload, result) => {
+    assert.equal(result.fileId, 'PDF-1');
+    marked++;
+    return { atualizado: true, idAgenda: 'EVENT', slot: '1' };
+  };
+  f.setFault('draft-unknown');
+  assert.throws(f.request, /interrupcao/);
+  assert.equal(marked, 1);
+  f.setFault('');
+  assert.equal(f.request().agendaSync.atualizado, true);
+  assert.equal(marked, 2);
+  assert.equal(f.counts.pdf, 1);
+});
+
 test('criacao incerta de PDF ou draft bloqueia recriacao automatica', () => {
   const f = fixture(); f.setFault('pdf-unknown'); assert.throws(f.request, /interrupcao/);
   f.setFault(''); assert.throws(f.request, /pode ter criado o PDF/); assert.equal(f.counts.pdf, 1);

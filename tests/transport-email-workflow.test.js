@@ -73,12 +73,13 @@ test('regenerar documentos preserva a evidencia somente com o mesmo hash', () =>
   assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date('2026-09-14T12:00:00-03:00')).length, 0);
 });
 
-test('monitor da copia com anexo promove somente status pendente para Agendado', () => {
+test('monitor da copia com anexo promove Pendente e Docs gerados para Agendado', () => {
+  for (const status of ['Pendente', 'Docs gerados']) {
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
     ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'DHL', 'Pendente', 'EVT-1']
+    ['Agendado', 'DHL', status, 'EVT-1']
   ]);
   const audits = [];
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
@@ -120,6 +121,7 @@ test('monitor da copia com anexo promove somente status pendente para Agendado',
   assert.equal(agenda.rows[1][2], 'Agendado');
   assert.equal(audits.length, 1);
   assert.ok(server.transporteOperacoesRows_()[0].emailEnviadoEm instanceof Date);
+  }
 });
 
 test('email identificado sem anexo continua pendente e nao muda o status', () => {
