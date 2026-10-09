@@ -423,7 +423,7 @@
       if (forcar) _pendenciasRefreshQueued = true;
       if (grid && !_pendenciasCache && !grid.innerHTML.trim()) grid.innerHTML = loadingHtml;
       if (!options.silent) {
-        setPendenciasStatus(['Atualizando...', pendenciasWarning(_pendenciasCache)].filter(Boolean).join(' '), '');
+        setPendenciasStatus(pendenciasWarning(_pendenciasCache), 'warn');
         setPendenciasButtonBusy(true, 'Atualizando...');
       }
       return;
@@ -433,7 +433,7 @@
       grid.innerHTML = loadingHtml;
     }
     if (!options.silent) {
-      setPendenciasStatus(['Atualizando...', pendenciasWarning(_pendenciasCache)].filter(Boolean).join(' '), '');
+      setPendenciasStatus(pendenciasWarning(_pendenciasCache), 'warn');
       setPendenciasButtonBusy(true, 'Atualizando...');
     }
     var perf = typeof codexStartClientReadPerformance_ === 'function' ? codexStartClientReadPerformance_('getPendenciasOperacionais', forcar) : null;

@@ -70,7 +70,7 @@ test('cache vencido aparece durante entrada e refresh forcado sem reconstruir li
       context.carregarPendencias(forced);
       assert.equal(requests.length, 1);
       assert.equal(button.disabled, true);
-      assert.match(status.innerHTML, /Atualizando/);
+      assert.equal(status.innerHTML, '');
       assert.match(ts.textContent, /^Em memória: /);
       assert.equal(context.pendenciasLoadedAtTime(), loadedAt);
       if (empty) assert.match(grid.innerHTML, /Kit anterior/);
