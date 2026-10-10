@@ -991,8 +991,7 @@ function irPara(pagina, options) {
     }
   }
   if (pagina === 'requisicao') {
-    _rqAgendaOrigemId = '';
-    _rqOrigemContext = null;
+    limparRequisicaoOrigem();
     initRequisicao();
   }
   if (pagina === 'estoque-view') carregarEstoqueView();
@@ -7553,6 +7552,7 @@ var _rqSolicitantesLoaded = false;
 var _rqLoadCallbacks = [];
 var _rqAgendaOrigemId = '';
 var _rqOrigemContext = null;
+var _rqOrigemRequestId = 0;
 var _rqPreloadLastKey = '';
 var _rqPreloadPromptKey = '';
 var _rqPendingPreloadData = null;
@@ -7610,6 +7610,34 @@ function requisicaoEl(key) {
     if (el) return el;
   }
   return null;
+}
+
+// Contexto visual da visita: não é acrescentado ao payload do PDF/e-mail.
+function atualizarRequisicaoLembreteVisita() {
+  var origem = _rqOrigemContext;
+  var paciente = document.getElementById('rqPaciente');
+  if (origem && origem.tipo === 'agenda' && paciente &&
+      String(origem.participante || '').trim() !== paciente.value.trim()) {
+    limparRequisicaoOrigem();
+    return;
+  }
+  var reminder = document.getElementById('rqVisitReminder');
+  if (!reminder) return;
+  var visible = !!(origem && origem.tipo === 'agenda');
+  reminder.hidden = !visible;
+  var braco = document.getElementById('rqReminderBraco');
+  var visita = document.getElementById('rqReminderVisita');
+  if (braco) braco.textContent = visible ? (String(origem.braco || '').trim() || 'Não informado') : '';
+  if (visita) visita.textContent = visible ? (String(origem.visita || '').trim() || 'Não informada') : '';
+}
+
+function limparRequisicaoOrigem() {
+  _rqOrigemRequestId++;
+  _rqAgendaOrigemId = '';
+  _rqOrigemContext = null;
+  var page = document.getElementById('page-requisicao');
+  if (page && page.dataset) page.dataset.agendaId = '';
+  atualizarRequisicaoLembreteVisita();
 }
 
 function requisicaoAgendaOrigemIdAtual() {
@@ -7832,6 +7860,7 @@ function navReqAC(e, inputId, listId, opts, selVarName) {
 
 // ── Auto-preenchimento ────────────────────────────────────────────────────
 function preencherDadosPaciente() {
+  atualizarRequisicaoLembreteVisita();
   var nome = document.getElementById('rqPaciente').value.trim();
   var p = _rqLookup.participantePorNome[rqLookupKey(nome)] || null;
   if (p) {
@@ -8227,10 +8256,7 @@ function limparRequisicaoForm(options) {
   _rqSelPaciente = null;
   _rqSelLocal = null;
   _rqSelSolicitante = null;
-  _rqAgendaOrigemId = '';
-  _rqOrigemContext = null;
-  var page = document.getElementById('page-requisicao');
-  if (page && page.dataset) page.dataset.agendaId = '';
+  limparRequisicaoOrigem();
   _rqPreloadLastKey = '';
   _rqPreloadPromptKey = '';
   _rqPendingPreloadData = null;
@@ -8654,6 +8680,10 @@ function gerarRequisicao() {
 function onRequisicaoRequiredInput(event) {
   if (!event || !event.target || !event.target.closest || !event.target.closest('#page-requisicao')) return;
   if (['rqPaciente','rqPrestador','rqLocalExame','rqData','rqSolicitante'].indexOf(String(event.target.id || '')) === -1) return;
+  if (event.target.id === 'rqPaciente') {
+    _rqOrigemRequestId++;
+    atualizarRequisicaoLembreteVisita();
+  }
   setRequisicaoFieldInvalid(event.target.id, false);
   updateRequisicaoGenerateAvailability(false);
 }

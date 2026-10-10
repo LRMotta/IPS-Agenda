@@ -3986,9 +3986,15 @@
   }
 
   function aplicarAgendaNaRequisicao(dados, tentativa) {
+    limparRequisicaoOrigem();
+    var requestId = _rqOrigemRequestId;
     ensureRequisicaoDataLoaded(function() {
+      if (requestId !== _rqOrigemRequestId) return;
       _rqAgendaOrigemId = dados.id || _agendaEditId || '';
-      _rqOrigemContext = { tipo: 'agenda', agendaId: _rqAgendaOrigemId };
+      _rqOrigemContext = {
+        tipo: 'agenda', agendaId: _rqAgendaOrigemId,
+        participante: dados.participante || '', braco: dados.braco || '', visita: dados.visita || ''
+      };
       var reqPage = document.getElementById('page-requisicao');
       if (reqPage && reqPage.dataset) reqPage.dataset.agendaId = _rqAgendaOrigemId;
       preencherSolicitanteUsuarioAtual();
@@ -4012,7 +4018,10 @@
   }
 
   function aplicarParticipanteNaRequisicao(participante) {
+    limparRequisicaoOrigem();
+    var requestId = _rqOrigemRequestId;
     ensureRequisicaoDataLoaded(function() {
+      if (requestId !== _rqOrigemRequestId) return;
       participante = participante || {};
       _rqAgendaOrigemId = '';
       _rqOrigemContext = { tipo: 'participante', participante: participante };
