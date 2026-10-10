@@ -260,8 +260,7 @@ function applyAppBootstrapData(data) {
   var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.name || email;
   document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
   document.getElementById('userInitial').textContent = String(displayName || email || '?')[0].toUpperCase();
-  window.APP_TEAM_BIRTHDAYS = Array.isArray(window.APP_BOOTSTRAP_DATA.teamBirthdays) ? window.APP_BOOTSTRAP_DATA.teamBirthdays : [];
-  if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays(window.APP_TEAM_BIRTHDAYS);
+  if (Array.isArray(window.APP_BOOTSTRAP_DATA.teamBirthdays)) appApplyTeamBirthdays_(window.APP_BOOTSTRAP_DATA.teamBirthdays);
   document.querySelectorAll('.admin-only').forEach(function(el) {
     var moduleName = String(el.id || '') === 'navUsersAdmin' ? 'usuarios'
       : (String(el.id || '') === 'navAuditLog' ? 'audit-log'
@@ -275,6 +274,33 @@ function applyAppBootstrapData(data) {
     snack(CURRENT_ACCESS.message);
   }
   handleUserOAuthStatus(window.APP_BOOTSTRAP_DATA.auth);
+  // A navegação para Agenda pode ocorrer antes de o perfil chegar.
+  if (getCurrentPage() === 'agenda') carregarAniversariosAgenda_();
+}
+
+function appApplyTeamBirthdays_(birthdays) {
+  window.APP_TEAM_BIRTHDAYS_REQUEST_ID = Number(window.APP_TEAM_BIRTHDAYS_REQUEST_ID || 0) + 1;
+  window.APP_TEAM_BIRTHDAYS_LOADING = false;
+  window.APP_TEAM_BIRTHDAYS_LOADED = true;
+  window.APP_TEAM_BIRTHDAYS = Array.isArray(birthdays) ? birthdays : [];
+  if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays(window.APP_TEAM_BIRTHDAYS);
+}
+
+function carregarAniversariosAgenda_() {
+  if (!CURRENT_ACCESS.ok || window.APP_TEAM_BIRTHDAYS_LOADED || window.APP_TEAM_BIRTHDAYS_LOADING) return;
+  window.APP_TEAM_BIRTHDAYS_LOADING = true;
+  var requestId = Number(window.APP_TEAM_BIRTHDAYS_REQUEST_ID || 0) + 1;
+  window.APP_TEAM_BIRTHDAYS_REQUEST_ID = requestId;
+  google.script.run
+    .withSuccessHandler(function(birthdays) {
+      if (requestId !== window.APP_TEAM_BIRTHDAYS_REQUEST_ID) return;
+      window.APP_TEAM_BIRTHDAYS_LOADING = false;
+      if (Array.isArray(birthdays)) appApplyTeamBirthdays_(birthdays);
+    })
+    .withFailureHandler(function() {
+      if (requestId === window.APP_TEAM_BIRTHDAYS_REQUEST_ID) window.APP_TEAM_BIRTHDAYS_LOADING = false;
+    })
+    .getAniversariosEquipe();
 }
 
 function renderAppVersion(appVersion) {
@@ -526,13 +552,15 @@ function startCodexAppOnce() {
       });
     })
     .getAppBootstrapData(bootstrapRequest);
+  abrirShellInicialPendencias_();
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);
 
 function appInitialBootstrapRequest_() {
-  if (String(window.INDEX_INITIAL_PAGE || 'agenda') !== 'agenda' ||
-      isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque')) return { page: '' };
+  var page = String(window.INDEX_INITIAL_PAGE || 'agenda');
+  if (isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque')) return { page: '' };
+  if (page !== 'agenda') return { page: page };
   // Deve reproduzir a janela inicial da Agenda: semana atual, anterior e
   // posterior. O servidor valida ambas as datas antes de ler a planilha.
   var today = new Date();
@@ -547,6 +575,16 @@ function appInitialBootstrapRequest_() {
     return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2);
   }
   return { page: 'agenda', agendaRange: { start: iso(start), endExclusive: iso(endExclusive) } };
+}
+
+function abrirShellInicialPendencias_() {
+  if (String(window.INDEX_INITIAL_PAGE || 'agenda') !== 'pendencias' ||
+      isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque') ||
+      typeof carregarPendencias !== 'function') return;
+  // A consulta tem sua própria autorização no servidor. A estrutura não
+  // depende do perfil e não oferece ações sobre dados antes da resposta.
+  irPara('pendencias', { initial: true, shellOnly: true });
+  carregarPendencias(false);
 }
 
 function abrirShellInicialAgendaCanario_() {
@@ -996,6 +1034,7 @@ function irPara(pagina, options) {
   }
   if (pagina === 'estoque-view') carregarEstoqueView();
   if (pagina === 'agenda') {
+    carregarAniversariosAgenda_();
     if (options.goToday && typeof agendaEntrarNoHoje_ === 'function') agendaEntrarNoHoje_();
     initAgendaV1();
   }
@@ -1628,7 +1667,7 @@ function salvarMeuPerfilApp() {
       var displayName = CURRENT_ACCESS.firstName || CURRENT_ACCESS.email || 'usuário';
       document.getElementById('userEmail').textContent = displayName + (CURRENT_ACCESS.role ? ' · ' + CURRENT_ACCESS.role : '');
       document.getElementById('userInitial').textContent = displayName[0].toUpperCase();
-      if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays(result.teamBirthdays || []);
+      appApplyTeamBirthdays_(result.teamBirthdays || []);
       appSetStatus('statusMeuPerfil', '');
       fecharOverlay('modalMeuPerfil');
       snack('Perfil atualizado com sucesso.');
@@ -1770,7 +1809,7 @@ function salvarUsuarioAdminApp() {
       btn.innerHTML = old;
       fecharOverlay('modalUsuarioAdmin');
       snack('Usuário salvo com sucesso.');
-      if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
+      appApplyTeamBirthdays_((result && result.teamBirthdays) || []);
       carregarUsersAdmin();
     })
     .withFailureHandler(function(e) {
@@ -1859,7 +1898,7 @@ function salvarCargaPerfisAdminApp() {
       btn.disabled = false;
       btn.innerHTML = old;
       fecharOverlay('modalCargaPerfis');
-      if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
+      appApplyTeamBirthdays_((result && result.teamBirthdays) || []);
       snack((result && result.updated || payload.length) + ' perfil(is) atualizado(s).');
       carregarUsersAdmin();
     })
@@ -1881,7 +1920,7 @@ function confirmarInativarUsuarioAdmin(rowIndex, email) {
         .withSuccessHandler(function(result) {
           invalidarReferenciasUsuarios();
           snack('Usuário inativado.');
-          if (typeof agendaSetTeamBirthdays === 'function') agendaSetTeamBirthdays((result && result.teamBirthdays) || []);
+          appApplyTeamBirthdays_((result && result.teamBirthdays) || []);
           carregarUsersAdmin();
         })
         .withFailureHandler(function(e) { snackErro(e); })

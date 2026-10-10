@@ -22,8 +22,10 @@ function configurarMonitorLembretesCourier(ativo) {
 
 function courierLembreteRows_() {
   var sh = getCodexSpreadsheet_().getSheetByName(COURIER_LEMBRETES_SHEET_);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues().map(function(r, n) {
+  if (!sh) return [];
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  return sh.getRange(2, 1, lastRow - 1, 10).getValues().map(function(r, n) {
     return { row: n + 2, key: String(r[0]), agendaId: String(r[1]), slot: String(r[2]), gerado: r[3], base: String(r[4]), estado: String(r[5]), atualizado: r[6], thread: String(r[7]), message: String(r[8]), detalhe: String(r[9]) };
   });
 }
@@ -405,6 +407,7 @@ function courierLembreteExecutar_() {
 }
 
 function courierLembreteAnotarPendencias_(pendencias) {
+  if (!pendencias || !pendencias.length) return;
   var rows = courierLembreteRows_();
   (pendencias || []).forEach(function(p) {
     var slot = { 'Transporte I': '1', 'Transporte II': '2', 'Transporte III': '3' }[p.slot];
