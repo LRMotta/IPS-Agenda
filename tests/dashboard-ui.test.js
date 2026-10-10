@@ -59,9 +59,9 @@ test('agregados de participantes preservam KPIs, séries e atalhos sem registros
   assert.deepEqual(Object.values(elements).map(el => el.textContent).slice(0, 4), kpis.slice(0, 4));
   server.codexAssertCanRead_ = () => {};
   server.Logger = { log() {} };
-  server.getProjetosDados_ = () => projetos;
+  server.getProjetosDadosInterno_ = () => projetos;
   server.getParticipantesDashboardResumo_ = () => participantes;
-  server.getEstoque = () => [];
+  server.getEstoqueLinhas_ = () => [];
   server.getAgendaDashboardResumo_ = () => ({});
   server.getDashboardPendencias_ = () => ({});
   const payload = plain(server.getDashboardData());
@@ -347,7 +347,7 @@ test('impressão do Dashboard identifica o recorte da Agenda e a indisponibilida
   assert.match(context.dashboardPrintAgendaKpis(), /Dados indisponíveis/);
 });
 
-test('Dashboard renova dados em memória após o TTL e bloqueia RPCs concorrentes', () => {
+test('Dashboard renova dados após o TTL e enfileira atualização forçada sem RPC concorrente', () => {
   let requests = 0;
   let success;
   const runner = { withSuccessHandler(callback) { success = callback; return this; },
@@ -366,6 +366,11 @@ test('Dashboard renova dados em memória após o TTL e bloqueia RPCs concorrente
   context.carregarDashboard(true);
   assert.equal(requests, 1);
   success({});
+  // Atualizar durante a consulta não pode ser perdido: inicia uma nova leitura
+  // depois da anterior, sem aplicar sua resposta potencialmente obsoleta.
+  assert.equal(requests, 2);
+  assert.equal(context._dashLoading, true);
+  success({});
   assert.equal(context._dashLoading, false);
   assert.ok(context._dashLoadedAt > Date.now() - 1000);
 });
@@ -373,9 +378,9 @@ test('Dashboard renova dados em memória após o TTL e bloqueia RPCs concorrente
 test('Dashboard informa falhas parciais de Agenda e Estoque e não as guarda no cache', () => {
   const server = runFile('WebApp.gs', { Logger: { log() {} } });
   server.codexAssertCanRead_ = () => {};
-  server.getProjetosDados_ = () => [];
+  server.getProjetosDadosInterno_ = () => [];
   server.getParticipantesDashboardResumo_ = () => [];
-  server.getEstoque = () => { throw new Error('falha estoque'); };
+  server.getEstoqueLinhas_ = () => { throw new Error('falha estoque'); };
   server.getAgendaDashboardResumo_ = () => { throw new Error('falha agenda'); };
   server.getDashboardPendencias_ = () => ({});
   const data = server.getDashboardData();
@@ -390,7 +395,7 @@ test('Dashboard informa falhas parciais de Agenda e Estoque e não as guarda no 
   context.dashboardStoreSessionCache(data);
   assert.equal(stored, 0);
   assert.equal(removed, 1);
-  server.getEstoque = () => [];
+  server.getEstoqueLinhas_ = () => [];
   server.getAgendaDashboardResumo_ = () => ({});
   const recovered = server.getDashboardData();
   assert.equal(recovered.secoes.agenda, true);

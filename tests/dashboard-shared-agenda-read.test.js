@@ -62,12 +62,12 @@ function fixture() {
   server.getCodexSheetDataByName_ = name => { assert.equal(name, 'Projetos'); return projects; };
   server.getParticipantesStatsPorProjeto_ = () => ({});
   server.getParticipantesDashboardResumo_ = () => [];
-  server.getEstoque = () => [];
+  server.getEstoqueLinhas_ = () => [];
   // Isola relógio e serviços auxiliares; classificações e vínculos continuam reais.
   server.prazoHorasPendenciaAgenda_ = () => 12;
-  const getProjetos = server.getProjetosDados_;
+  const getProjetos = server.getProjetosDadosInterno_;
   let lastProjects;
-  server.getProjetosDados_ = incluirSiv => { lastProjects = getProjetos(incluirSiv); return lastProjects; };
+  server.getProjetosDadosInterno_ = incluirSiv => { lastProjects = getProjetos(incluirSiv); return lastProjects; };
   function reset() { Object.keys(counts).forEach(key => { counts[key] = 0; }); logs.length = 0; }
   return { server, sheet, cfg, counts, projects, reset, failNextDisplay: () => { failDisplay = true; },
     lastProjects: () => lastProjects,
@@ -95,7 +95,7 @@ test('Dashboard elimina SIV e pendências sem alterar os campos consumidos pelos
   assert.equal(f.counts.display, 0);
   assert.equal(f.counts.raw, 1);
   assert.equal(f.counts.sheet, 1);
-  assert.equal(f.counts.access, 2);
+  assert.equal(f.counts.access, 1);
   assert.equal(f.sheet.writes, 0);
   assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, null);
   assert.equal(f.entries().some(entry => ['pending', 'projects_siv'].includes(entry.stage)), false);
@@ -128,6 +128,7 @@ test('cada Dashboard consulta novamente a Agenda e restaura contexto externo', (
   assert.equal(f.counts.raw, 1);
   assert.equal(f.counts.display, 0);
   assert.equal(f.counts.lastRow, 2);
+  assert.equal(f.counts.access, 2); // Uma autorização fresca por RPC.
   assert.equal(f.server.CODEX_DASHBOARD_AGENDA_DISPLAY_CONTEXT_, outer);
   assert.equal(outer.sheet.marker, 'outer');
   const stages = f.entries().filter(entry => entry.stage.startsWith('projects_') && entry.traceId === 'inner-trace');
