@@ -617,7 +617,7 @@ test('projetos disponibiliza impressao da lista exibida', () => {
 
 test('impressao de Projetos separa os indicadores de recrutamento por linha', () => {
   const core = readProjectFile('IndexCoreScripts.html');
-  const formatter = sourceBetween(core, 'function recrutamentoProjetoImpressaoHtml_(', '\n\nvar FASE_COLORS');
+  const formatter = sourceBetween(core.replace(/\r\n/g, '\n'), 'function recrutamentoProjetoImpressaoHtml_(', '\n\nvar FASE_COLORS');
   const context = vm.createContext({ esc: (value) => String(value) });
   vm.runInContext(formatter, context);
 
