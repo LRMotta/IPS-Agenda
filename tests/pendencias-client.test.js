@@ -58,6 +58,20 @@ function fixture() {
   return { context, grid, buttons, requests, timers, status, button, ts };
 }
 
+test('primeira carga mostra nove categorias sem contagens falsas nem acoes antes da resposta', () => {
+  const { context, grid, requests, buttons } = fixture();
+  context.carregarPendencias(false);
+  assert.equal(requests.length, 1);
+  assert.equal(grid.children.length, 9);
+  assert.equal(buttons.length, 0);
+  assert.doesNotMatch(grid.innerHTML, /Sem pendências|dash-pend-count">0/);
+  assert.equal(grid.children.every(card => card.html.includes('aria-busy="true"') && card.html.includes('Carregando...')), true);
+  requests[0].success({ pendencias: { kitsVencendo: [{ descricao: 'Kit recebido' }] } });
+  assert.equal(grid.children.length, 9);
+  assert.doesNotMatch(grid.innerHTML, /aria-busy="true"|dash-pend-skeleton/);
+  assert.match(grid.innerHTML, /Kit recebido/);
+});
+
 test('courier nao agendada abre Transporte com slot correto e transicao, sem exigir AWB na Agenda', () => {
   const { context } = fixture();
   const calls = [];

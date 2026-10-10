@@ -424,6 +424,54 @@ function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', d
   return { server, agenda, message, logs };
 }
 
+test('ID convertido em numero e recuperado pela referencia sem escrita durante leitura', () => {
+  const server = transportServer();
+  const registro = server.transporteRegistrarDocumentacaoGerada_({ agendaId: '1417e053', slot: '1', courier: 'OCASA', rascunhoOk: true });
+  const sheet = server.book.getSheetByName('Transporte_Operacoes');
+  assert.ok(sheet.numberFormats.some(format => format.row === registro.row && format.column === 1 && format.format === '@'));
+  sheet.getRange(registro.row, 1).setValue(1.417e56);
+  sheet.getRange(registro.row, 5).setValue(new Date(Date.now() - 2 * 3600000));
+  const writes = sheet.writes;
+  assert.equal(server.transporteOperacoesRows_()[0].agendaId, '1417e053');
+  assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].agendaId, '1417e053');
+  assert.equal(sheet.writes, writes);
+  assert.equal(sheet.rows[registro.row - 1][0], 1.417e56);
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: '1417e053', slot: '1', courier: 'OCASA', rascunhoOk: true });
+  assert.equal(sheet.getLastRow(), 2, 'regenerar reutiliza o registro legado');
+  assert.equal(sheet.rows[registro.row - 1][0], '1417e053');
+});
+
+test('recuperacao numerica exige referencia valida, mesmo slot e valor equivalente; IDs textuais permanecem exatos', () => {
+  const server = transportServer();
+  for (const [value, ref, slot, expected] of [
+    [1.417e56, 'IPS-TRP-1417E053-T1', '1', '1417e053'],
+    [12345, 'IPS-TRP-00012345-T2', '2', '00012345'],
+    [1.417e56, 'IPS-TRP-1417E053-T2', '1', String(1.417e56)],
+    [1.417e56, 'IPS-TRP-1418E053-T1', '1', String(1.417e56)],
+    [1.417e56, '', '1', String(1.417e56)],
+    ['1417E053', 'IPS-TRP-1417E053-T1', '1', '1417E053'],
+    ['evt-123', 'IPS-TRP-EVT-123-T1', '1', 'evt-123']
+  ]) {
+    assert.equal(server.transporteOperacaoAgendaId_(value, ref, slot), expected);
+  }
+});
+
+test('monitor encontra a Agenda com ID numerico legado e conclui o envio com anexos', () => {
+  const { server, agenda, message } = monitorFixture({ courier: 'OCASA', status: 'Docs gerados', attachments: [{ getName: () => 'assinado.pdf' }] });
+  agenda.rows[1][3] = '1417e053';
+  const sheet = server.book.getSheetByName('Transporte_Operacoes');
+  sheet.getRange(2, 1, 1, 3).setValues([[1.417e56, '1', 'IPS-TRP-1417E053-T1']]);
+  message.getSubject = () => 'Ref. IPS: IPS-TRP-1417E053-T1';
+  const result = server.transporteMonitorarEnviosPorEmail_();
+  assert.equal(result.enviados, 1);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+  const operacao = server.transporteOperacoesRows_()[0];
+  assert.equal(operacao.agendaId, '1417e053');
+  assert.equal(operacao.gmailMessageId, 'MSG-TEST');
+  assert.equal(operacao.anexos, 1);
+  assert.ok(operacao.emailEnviadoEm instanceof Date);
+});
+
 test('monitor compartilha IDs por fase e refaz o indice sob lock apos mover linhas', () => {
   const { server, agenda, message } = monitorFixture();
   agenda.rows.push(['Agendado', 'DHL', 'Pendente', 'EVT-B']);

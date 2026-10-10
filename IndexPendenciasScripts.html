@@ -134,7 +134,7 @@
     if (icon) icon.textContent = expanded ? 'expand_less' : 'expand_more';
   }
 
-  function renderDashboardPendencias(p, gridId) {
+  function renderDashboardPendencias(p, gridId, loading) {
     p = p || {};
     var counts = p.counts || {};
     var grid = document.getElementById(gridId || 'pendenciasGrid');
@@ -294,7 +294,7 @@
       var expanded = !!STATE.pendencias.expanded[cardKey];
       var total = counts[card.key] || (card.items || []).length || 0;
       // Inclui contagem e indisponibilidade: itens iguais não garantem card igual.
-      var signature = JSON.stringify([card.items, total, unavailable || '']);
+      var signature = JSON.stringify([card.items, total, unavailable || '', !!loading]);
       var previous = grid.querySelector ? grid.querySelector('[data-pendencia-card="' + cardKey + '"]') : null;
       if (previous && previous._pendenciasSignature === signature) return { previous: previous };
       var urgentTotal = card.priority ? (card.items || []).filter(pendenciaUrgente24h).length : 0;
@@ -325,18 +325,19 @@
         }).join('');
       }
       var rows = unavailable ? '' : renderRows(expanded ? cardItems : cardItems.slice(0, PENDENCIAS_VISIBLE_LIMIT), 0);
-      if (unavailable) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">warning</span>' + esc(unavailable) + '</div>';
+      if (loading) rows = '<div class="dash-pend-loading" role="status"><span>Carregando...</span><div class="dash-pend-skeleton" aria-hidden="true"></div><div class="dash-pend-skeleton short" aria-hidden="true"></div></div>';
+      else if (unavailable) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">warning</span>' + esc(unavailable) + '</div>';
       else if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>Sem pendências</div>';
       var expandButton = remaining && !unavailable ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"' + bindAction(function(event, button) { togglePendenciasCard(button || event.currentTarget); }) + '>' +
         '<span class="dash-pend-more-label">' + (expanded ? 'Mostrar menos' : 'Mostrar mais (' + remaining + ')') + '</span>' +
         '<span class="material-symbols-outlined">' + (expanded ? 'expand_less' : 'expand_more') + '</span>' +
       '</button>' : '';
-      var html = '<div data-pendencia-card="' + esc(cardKey) + '" class="dash-pend-card' + (card.priority ? ' priority' : '') + (expanded ? ' expanded' : '') + '" style="--tone:' + card.tone + ';--tone-bg:' + card.bg + '">' +
+      var html = '<div data-pendencia-card="' + esc(cardKey) + '" aria-busy="' + (!!loading) + '" class="dash-pend-card' + (card.priority ? ' priority' : '') + (expanded ? ' expanded' : '') + '" style="--tone:' + card.tone + ';--tone-bg:' + card.bg + '">' +
         '<div class="dash-pend-head">' +
           '<div class="dash-pend-icon"><span class="material-symbols-outlined">' + card.icon + '</span></div>' +
           '<div class="dash-pend-title">' + esc(card.title) + '</div>' +
           (urgentTotal ? '<div class="dash-pend-urgent-count">' + esc(urgentTotal) + ' urgentes</div>' : '') +
-          '<div class="dash-pend-count">' + (unavailable ? '—' : esc(total)) + '</div>' +
+          '<div class="dash-pend-count"' + (loading ? ' aria-label="Contagem em carregamento"' : '') + '>' + (loading || unavailable ? '—' : esc(total)) + '</div>' +
         '</div>' +
         '<div class="dash-pend-list">' + rows + '</div>' + expandButton +
       '</div>';
@@ -413,7 +414,6 @@
     options = options || {};
     setupPendenciasAutoRefreshListeners();
     var grid = document.getElementById('pendenciasGrid');
-    var loadingHtml = '<div class="dash-pend-empty"><span class="material-symbols-outlined">hourglass_empty</span>Carregando pendências...</div>';
     if (!_pendenciasRefreshing && !forcar && _pendenciasCache && !pendenciasEstaoDesatualizadas()) {
       try {
         renderDashboardPendencias(_pendenciasCache, 'pendenciasGrid');
@@ -437,7 +437,6 @@
     if (_pendenciasRefreshing) {
       // Uma mutacao exige uma consulta iniciada depois dela; a resposta atual pode estar obsoleta.
       if (forcar) _pendenciasRefreshQueued = true;
-      if (grid && !_pendenciasCache && !grid.innerHTML.trim()) grid.innerHTML = loadingHtml;
       if (!options.silent) {
         setPendenciasStatus(pendenciasWarning(_pendenciasCache), 'warn');
         setPendenciasButtonBusy(true, 'Atualizando...');
@@ -445,14 +444,20 @@
       return;
     }
     _pendenciasRefreshing = true;
-    if (grid && (!_pendenciasCache || !grid.innerHTML.trim())) {
-      grid.innerHTML = loadingHtml;
+    var perf = typeof codexStartClientReadPerformance_ === 'function' ? codexStartClientReadPerformance_('getPendenciasOperacionais', forcar) : null;
+    if (grid && !_pendenciasCache) {
+      try {
+        if (perf) perf.measure('shell_render', function() { renderDashboardPendencias({}, 'pendenciasGrid', true); });
+        else renderDashboardPendencias({}, 'pendenciasGrid', true);
+      } catch (shellFailure) {
+        // A apresentação inicial não pode impedir a consulta nem prender a fila.
+        grid.textContent = 'Carregando pendências...';
+      }
     }
     if (!options.silent) {
       setPendenciasStatus(pendenciasWarning(_pendenciasCache), 'warn');
       setPendenciasButtonBusy(true, 'Atualizando...');
     }
-    var perf = typeof codexStartClientReadPerformance_ === 'function' ? codexStartClientReadPerformance_('getPendenciasOperacionais', forcar) : null;
     var finished = false;
     var watchdog = setTimeout(function() {
       failPendenciasRefresh({ message: 'Tempo limite ao carregar pendencias.' });

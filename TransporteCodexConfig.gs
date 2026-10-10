@@ -471,13 +471,26 @@ function transporteOperacaoDate_(value) {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function transporteOperacaoAgendaId_(value, referencia, slot) {
+  var id = String(value === null || value === undefined ? '' : value).trim();
+  if (typeof value !== 'number' || !isFinite(value)) return id;
+  // IDs da Agenda sao os oito caracteres iniciais do UUID. Sheets pode
+  // interpretar 1417e053 como notacao cientifica ou remover zeros iniciais.
+  // Recupera apenas pela referencia persistida, com slot e valor equivalentes;
+  // leituras nao reescrevem dados nem normalizam IDs que ja sao texto.
+  var match = /^IPS-TRP-([0-9A-F]{8})-T([123])$/.exec(String(referencia || '').trim());
+  if (!match || match[2] !== String(slot || '').trim()) return id;
+  var original = match[1].toLowerCase();
+  return Number(original) === value ? original : id;
+}
+
 function transporteOperacoesRows_() {
   var sh = transporteOperacoesSheet_(false);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, Math.min(sh.getLastColumn(), TRANSPORTE_OPERACOES_HEADERS_.length)).getValues().map(function(row, index) {
     return {
       row: index + 2,
-      agendaId: String(row[0] || '').trim(),
+      agendaId: transporteOperacaoAgendaId_(row[0], row[2], row[1]),
       slot: String(row[1] || '').trim(),
       referencia: String(row[2] || '').trim(),
       courier: String(row[3] || '').trim(),
@@ -547,6 +560,8 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     pdfHash
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
+  // Definir texto antes da escrita impede conversao de IDs em numeros.
+  sh.getRange(rowNumber, 1).setNumberFormat('@');
   sh.getRange(rowNumber, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues(values);
   try {
     if (typeof courierLembreteRegistrarBase_ === 'function') courierLembreteRegistrarBase_(agendaId, slot, now);
