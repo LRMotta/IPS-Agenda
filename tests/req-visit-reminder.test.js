@@ -80,3 +80,22 @@ test('lembrete fica antes dos exames, sem campos de envio e oculto na impressão
   assert.doesNotMatch(reminder, /<input|<textarea|name=/);
   assert.match(readProjectFile('IndexStyles.html'), /@media print \{ \.req-visit-reminder \{ display:none!important; \} \}/);
 });
+
+test('atalho completo da Agenda repassa o braço carregado somente para o participante selecionado', () => {
+  const source = readProjectFile('IndexAgendaScripts.html').match(/  function abrirReqExamesDaAgenda\([^]*?\n  \}/)[0];
+  let received;
+  const context = vm.createContext({
+    _agendaEditId: 'A', _agendaParticipanteInfo: { nome: 'Pessoa', braco: 'B (Cetuxi + FOLFOX)' },
+    agendaMatBioValidateAll: () => true, coletarAgendaEvento: () => ({ participante: 'Pessoa', servTerc: 'Prestador', data: '2026-10-14', visita: 'C14D15' }),
+    agendaMeaningfulValue: Boolean, agendaIsPastDate: () => false, fecharAgendaModal: fn => fn(),
+    irPara() {}, setTimeout: (fn, delay) => { if (delay === 250) fn(); },
+    aplicarAgendaNaRequisicao: data => { received = data; }, snackErro() {},
+  });
+  vm.runInContext(source, context);
+  context.abrirReqExamesDaAgenda();
+  assert.equal(received.braco, 'B (Cetuxi + FOLFOX)');
+  assert.equal(received.visita, 'C14D15');
+  context._agendaParticipanteInfo = { nome: 'Outra pessoa', braco: 'A' };
+  context.abrirReqExamesDaAgenda();
+  assert.equal(received.braco, '');
+});
