@@ -486,8 +486,10 @@ function transporteOperacaoAgendaId_(value, referencia, slot) {
 
 function transporteOperacoesRows_() {
   var sh = transporteOperacoesSheet_(false);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.min(sh.getLastColumn(), TRANSPORTE_OPERACOES_HEADERS_.length)).getValues().map(function(row, index) {
+  if (!sh) return [];
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  return sh.getRange(2, 1, lastRow - 1, Math.min(sh.getLastColumn(), TRANSPORTE_OPERACOES_HEADERS_.length)).getValues().map(function(row, index) {
     return {
       row: index + 2,
       agendaId: transporteOperacaoAgendaId_(row[0], row[2], row[1]),

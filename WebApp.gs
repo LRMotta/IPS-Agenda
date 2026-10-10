@@ -191,9 +191,9 @@ function doPost(e) {
   }
 }
 
-function codexAuthorizeWebAppRequestSafe_(e) {
+function codexAuthorizeWebAppRequestSafe_(e, readSnapshot) {
   try {
-    return codexAuthorizeWebAppRequest_(e);
+    return codexAuthorizeWebAppRequest_(e, readSnapshot);
   } catch (err) {
     return {
       ok: false,
@@ -296,6 +296,8 @@ function codexBootstrapTraceId_(request) {
 }
 
 function getAppBootstrapData(request) {
+  var initialPage = String(request && request.page !== undefined ? request.page : 'agenda');
+  var accessSnapshot = {};
   var traceId = codexBootstrapTraceId_(request);
   var perfMeta = function(extra) {
     extra = extra || {};
@@ -305,7 +307,7 @@ function getAppBootstrapData(request) {
   var totalMeta = perfMeta({ rowCount: 0, responseBytesMeasured: false });
   return codexMeasureReadPerformance_('getAppBootstrapData', 'total', totalMeta, function() {
     var access = codexMeasureReadPerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
-      return codexGetCurrentUserAccess();
+      return codexGetCurrentUserAccess(accessSnapshot);
     });
     var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
     var agendaRange = agendaBootstrapRequestRange_(request);
@@ -320,7 +322,6 @@ function getAppBootstrapData(request) {
       }),
       webAppUrl: '',
       agendaFormData: null,
-      teamBirthdays: [],
       errors: {}
     };
     if (agendaWindowedLoadingEnabled) out.features = { agendaWindowedLoadingV2: true };
@@ -331,7 +332,7 @@ function getAppBootstrapData(request) {
     } catch (e1) {
       out.errors.webAppUrl = e1.message || String(e1);
     }
-    if (!agendaWindowedLoadingEnabled) {
+    if (initialPage !== 'pendencias' && !agendaWindowedLoadingEnabled) {
       try {
         out.agendaFormData = codexMeasureReadPerformance_('getAppBootstrapData', 'agenda_form_data', perfMeta({ rowCount: 0 }), function() {
           return getDadosFormularioAgenda(true);
@@ -351,10 +352,10 @@ function getAppBootstrapData(request) {
       }
     }
     try {
-      if (out.access && out.access.ok) {
+      if (initialPage === 'agenda' && out.access && out.access.ok) {
         var birthdaysMeta = perfMeta({ rowCount: 0 });
         out.teamBirthdays = codexMeasureReadPerformance_('getAppBootstrapData', 'team_birthdays', birthdaysMeta, function() {
-          var birthdays = codexGetTeamBirthdays_();
+          var birthdays = codexGetTeamBirthdays_(accessSnapshot.users);
           birthdaysMeta.rowCount = Array.isArray(birthdays) ? birthdays.length : 0;
           return birthdays;
         });
@@ -761,8 +762,8 @@ function codexNormalizeActive_(value) {
   return ['sim', 'yes', 'true', '1', 'ativo', 'active'].indexOf(normalized) !== -1;
 }
 
-function codexGetCurrentUserAccess() {
-  return codexAccessPresentation_(codexAuthorizeWebAppRequestSafe_());
+function codexGetCurrentUserAccess(readSnapshot) {
+  return codexAccessPresentation_(codexAuthorizeWebAppRequestSafe_(undefined, readSnapshot));
 }
 
 function codexAccessPresentation_(access) {
@@ -1482,8 +1483,8 @@ function getAuditData(limit) {
   };
 }
 
-function codexGetTeamBirthdays_() {
-  var users = codexGetAllowedUsers_();
+function codexGetTeamBirthdays_(usersSnapshot) {
+  var users = usersSnapshot || codexGetAllowedUsers_();
   return Object.keys(users || {}).map(function(email) {
     var user = users[email] || {};
     var birthday = codexBirthdayParts_(user.birthday || '');
@@ -1502,9 +1503,10 @@ function codexGetTeamBirthdays_() {
 }
 
 function getAniversariosEquipe() {
-  var access = codexAuthorizeWebAppRequest_();
+  var readSnapshot = {};
+  var access = codexAuthorizeWebAppRequest_(undefined, readSnapshot);
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
-  return codexGetTeamBirthdays_();
+  return codexGetTeamBirthdays_(readSnapshot.users);
 }
 
 function getMeuPerfil() {
@@ -7623,11 +7625,13 @@ function getParticipantesDashboardResumo_() {
 }
 
 function getEstoqueResumoParaPendencias_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName('Estoque');
-  if (!sh || sh.getLastRow() < 2) return [];
+  if (!sh) return [];
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
   var tz = Session.getScriptTimeZone();
-  var data = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, 9), false);
+  var data = codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, 9), false);
   function fmtDate(v) {
     if (!v) return '';
     try {
