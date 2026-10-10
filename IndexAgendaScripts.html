@@ -3194,6 +3194,8 @@
     }
     if (!agendaMatBioValidateAll()) return;
     var dados = coletarAgendaEvento();
+    dados.braco = _agendaParticipanteInfo && String(_agendaParticipanteInfo.nome || '').trim() === String(dados.participante || '').trim()
+      ? (_agendaParticipanteInfo.braco || '') : '';
     dados.id = _agendaEditId || dados.id || '';
     if (!agendaMeaningfulValue(dados.participante)) {
       snackErro('Selecione o participante antes de abrir a requisicao.');
