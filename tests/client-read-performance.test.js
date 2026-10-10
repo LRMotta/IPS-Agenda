@@ -64,6 +64,31 @@ test('Dashboard envia trace e mede RPC, render e escrita de cache preservando su
   assert.equal(JSON.stringify(f.entries).includes('PRIVADO'), false);
 });
 
+test('Pendências mede estrutura inicial separada do preenchimento e não repete skeleton no refresh', () => {
+  const f = fixture('IndexPendenciasScripts.html');
+  const requests = [], renders = [];
+  const grid = { innerHTML: '' };
+  f.context.document.getElementById = id => id === 'pendenciasGrid' ? grid : null;
+  f.context.window.addEventListener = () => {};
+  f.context.google = { script: { run: {
+    withSuccessHandler(fn) { this.success = fn; return this; },
+    withFailureHandler(fn) { this.failure = fn; return this; },
+    getPendenciasOperacionais(request) { requests.push({ success: this.success, request }); }
+  } } };
+  f.context.renderDashboardPendencias = (_data, _id, loading) => {
+    renders.push(!!loading); grid.innerHTML = 'cards'; f.advance(loading ? 2 : 4);
+  };
+  f.context.carregarPendencias(false);
+  f.advance(100);
+  requests[0].success({ pendencias: {} });
+  assert.deepEqual(f.entries.map(e => [e.stage, e.durationMs]), [['shell_render', 2], ['rpc', 102], ['render', 4], ['total', 106]]);
+  assert.equal(f.entries.every(e => e.traceId === requests[0].request.traceId), true);
+  f.context.carregarPendencias(true);
+  assert.deepEqual(renders, [true, false]);
+  requests[1].success({ pendencias: {} });
+  assert.equal(f.entries.filter(e => e.stage === 'shell_render').length, 1);
+});
+
 test('Pendências descarta resposta anterior sem medir render e não duplica total', () => {
   const f = fixture('IndexPendenciasScripts.html');
   const requests = [];

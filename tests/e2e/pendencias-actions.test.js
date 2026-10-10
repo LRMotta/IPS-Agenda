@@ -17,7 +17,7 @@ test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM rea
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.abort());
-      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '</head><body><h1>Pendências</h1><button class="btn-refresh" id="btnPendenciasRefresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span><span class="btn-label">Atualizar</span></button><span id="pendenciasTs"></span><div id="pendenciasStatus"></div><div id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
+      await page.setContent('<html><head><title>Pendências — falhas locais</title>' + readProjectFile('IndexStyles.html') + '<style>body{display:block;padding:16px}.dash-pend-icon .material-symbols-outlined{font-size:0}</style></head><body><h1>Pendências</h1><button class="btn-refresh" id="btnPendenciasRefresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span><span class="btn-label">Atualizar</span></button><span id="pendenciasTs"></span><div id="pendenciasStatus"></div><div class="dash-pend-grid" id="pendenciasGrid"></div>' + readProjectFile('IndexExtraModals.html') + '</body></html>');
       await page.evaluate(() => {
         window.requests = []; window.mutations = [];
         window.esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -32,10 +32,20 @@ test('Pendencias: falha parcial, recuperacao e retorno de outro modal no DOM rea
         window.google = { script: { run: runner() } };
       });
       await page.addScriptTag({ content: readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, '') });
+      await page.evaluate(() => window.carregarPendencias(false));
+      assert.equal(await page.locator('#pendenciasGrid .dash-pend-card').count(), 9);
+      assert.equal(await page.locator('#pendenciasGrid [aria-busy="true"]').count(), 9);
+      assert.equal(await page.locator('#pendenciasGrid button').count(), 0);
+      assert.doesNotMatch(await page.locator('#pendenciasGrid').innerText(), /Sem pendências/);
+      assert.deepEqual(await page.locator('#pendenciasGrid .dash-pend-count').allTextContents(), Array(9).fill('—'));
+      const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(artifacts, { recursive: true });
+      await page.screenshot({ path: path.join(artifacts, 'pendencias-primeira-carga-' + width + '.png'), fullPage: true });
       await page.evaluate(() => {
-        window.carregarPendencias(true);
         window.requests[0].success({ pendencias: { unavailable: { kitsVencendo: 'Estoque indisponível' }, awbEnviadaNaoEntregue: [{ agendaId: 'A', slot: 'Transporte I', participante: 'Pessoa A' }] } });
       });
+      assert.equal(await page.locator('#pendenciasGrid [aria-busy="true"]').count(), 0);
+      assert.equal(await page.locator('#pendenciasGrid .dash-pend-skeleton').count(), 0);
       const kit = page.locator('[data-pendencia-card="pendenciasGrid:kitsVencendo"]');
       assert.match(await kit.innerText(), /Estoque indisponível/);
       assert.doesNotMatch(await kit.innerText(), /Sem pendências/);
