@@ -553,6 +553,8 @@ function startCodexAppOnce() {
     })
     .getAppBootstrapData(bootstrapRequest);
   abrirShellInicialPendencias_();
+  abrirShellInicialDashboard_();
+  precarregarCadastroInicial_();
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);
@@ -594,6 +596,30 @@ function abrirShellInicialAgendaCanario_() {
   // Não inicia RPCs nem ações enquanto perfil, permissões e dados do bootstrap
   // ainda não foram aplicados; revela somente a estrutura visual da página.
   irPara('agenda', { initial: true, shellOnly: true });
+}
+
+function abrirShellInicialDashboard_() {
+  if (!isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque') ||
+      typeof carregarDashboard !== 'function') return;
+  // O cache da sessão só será exibido após aplicar o perfil do bootstrap.
+  // Quando existe uma entrada, mantém o caminho normal de validação do cache.
+  try {
+    if (window.sessionStorage && window.sessionStorage.getItem(DASHBOARD_SESSION_CACHE_KEY)) return;
+  } catch (ignoreCache) { /* A RPC autorizada continua disponível sem storage. */ }
+  irPara('dashboard', { initial: true, shellOnly: true });
+  carregarDashboard(false);
+}
+
+function precarregarCadastroInicial_() {
+  if (isEmbeddedModuleEnabled('dashboard') || isEmbeddedModuleEnabled('estoque')) return;
+  var page = String(window.INDEX_INITIAL_PAGE || 'agenda');
+  // Os demais cadastros ainda podem migrar cabeçalhos ou criar abas na leitura;
+  // preserva sua abertura após o bootstrap, sem antecipar esses efeitos.
+  var pages = ['participantes', 'projetos', 'medicos', 'monitores', 'feriados'];
+  if (pages.indexOf(page) === -1) return;
+  // Só antecipa a consulta da página solicitada. A autorização permanece na
+  // RPC; os loaders existentes reaproveitam a resposta ou a consulta em voo.
+  getCadastrosBootstrapCached(page);
 }
 
 function abrirPaginaInicialApp() {

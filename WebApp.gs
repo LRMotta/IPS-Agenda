@@ -332,7 +332,7 @@ function getAppBootstrapData(request) {
     } catch (e1) {
       out.errors.webAppUrl = e1.message || String(e1);
     }
-    if (initialPage !== 'pendencias' && !agendaWindowedLoadingEnabled) {
+    if (initialPage === 'agenda' && !agendaWindowedLoadingEnabled) {
       try {
         out.agendaFormData = codexMeasureReadPerformance_('getAppBootstrapData', 'agenda_form_data', perfMeta({ rowCount: 0 }), function() {
           return getDadosFormularioAgenda(true);
@@ -340,7 +340,7 @@ function getAppBootstrapData(request) {
       } catch (e2) {
         out.errors.agendaFormData = e2.message || String(e2);
       }
-    } else if (agendaRange) {
+    } else if (initialPage === 'agenda' && agendaRange) {
       try {
         // Reutiliza o acesso validado nesta execução. A RPC pública mantém
         // sua própria validação para chamadas diretas do cliente.
@@ -7420,7 +7420,9 @@ function getDashboardData(request) {
   function str(v) { return v == null ? '' : String(v); }
 
   try {
-    var projs = measure('projects', function() { return getProjetosDados_(false) || []; });
+    // A autorização foi validada nesta RPC; chamadas públicas de Projetos
+    // continuam usando suas próprias guardas de acesso.
+    var projs = measure('projects', function() { return getProjetosDadosInterno_(false) || []; });
     Logger.log('[getDashboardData] Projetos: ' + projs.length);
     diag.projetos = projs.map(function(p) {
       return {
@@ -7459,37 +7461,8 @@ function getDashboardData(request) {
     diag.erros.push('getParticipantes: ' + e.message);
   }
 
-  var estoque = [];
   try {
-    estoque = measure('stock', function() { return getEstoque() || []; });
-    var hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    function diasAte(val) {
-      if (!val) return 999999;
-      var s = String(val).trim();
-      var p = s.split('/');
-      var d;
-      if (p.length === 3) d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
-      else {
-        p = s.split('-');
-        if (p.length === 3) d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-      }
-      if (!d || isNaN(d.getTime())) return 999999;
-      d.setHours(0, 0, 0, 0);
-      return Math.floor((d - hoje) / 86400000);
-    }
-    diag.estoqueResumo = {
-      lotes: estoque.length,
-      ok: estoque.filter(function(i) { return String(i.status || '').toLowerCase() === 'ok'; }).length,
-      baixo: estoque.filter(function(i) { return String(i.status || '').toLowerCase().indexOf('baixo') >= 0; }).length,
-      vencidos: estoque.filter(function(i) {
-        return diasAte(i.validade) < 0 || String(i.status || '').toLowerCase().indexOf('vencido') >= 0;
-      }).length,
-      proximosValidade: estoque.filter(function(i) {
-        var d = diasAte(i.validade);
-        return d >= 0 && d <= 90;
-      }).length
-    };
+    diag.estoqueResumo = measure('stock', function() { return getEstoqueDashboardResumo_(); });
   } catch(e) {
     Logger.log('[getDashboardData] ERRO estoque: ' + e.message);
     diag.secoes.estoque = false;
@@ -10486,6 +10459,41 @@ function getEstoque() {
     item.qtdeDisponivel = Math.max(0, item.qtdeFisica - reservado);
   });
   return itens;
+}
+
+// Composição interna do Dashboard, já autorizada por getDashboardData.
+// Mantém a leitura e o agrupamento do Estoque; seus indicadores não usam
+// quantidades reservadas/disponíveis, portanto não consulta Reservas_Kits.
+function getEstoqueDashboardResumo_() {
+  var estoque = agruparEstoquePorItemValidade_(getEstoqueLinhas_());
+  var hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  function diasAte(val) {
+    if (!val) return 999999;
+    var s = String(val).trim();
+    var p = s.split('/');
+    var d;
+    if (p.length === 3) d = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+    else {
+      p = s.split('-');
+      if (p.length === 3) d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    }
+    if (!d || isNaN(d.getTime())) return 999999;
+    d.setHours(0, 0, 0, 0);
+    return Math.floor((d - hoje) / 86400000);
+  }
+  return {
+    lotes: estoque.length,
+    ok: estoque.filter(function(i) { return String(i.status || '').toLowerCase() === 'ok'; }).length,
+    baixo: estoque.filter(function(i) { return String(i.status || '').toLowerCase().indexOf('baixo') >= 0; }).length,
+    vencidos: estoque.filter(function(i) {
+      return diasAte(i.validade) < 0 || String(i.status || '').toLowerCase().indexOf('vencido') >= 0;
+    }).length,
+    proximosValidade: estoque.filter(function(i) {
+      var d = diasAte(i.validade);
+      return d >= 0 && d <= 90;
+    }).length
+  };
 }
 
 var KIT_RESERVA_HEADERS_ = [

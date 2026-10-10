@@ -20,9 +20,9 @@ function fixture() {
   }
   server.codexAssertCanRead_ = () => { read(5); };
   server.codexShouldMeasureBootstrapBytes_ = () => true;
-  server.getProjetosDados_ = () => { read(10, 2, 3); return [{ nomeAbreviado: 'DADO_PRIVADO' }]; };
+  server.getProjetosDadosInterno_ = () => { read(10, 2, 3); return [{ nomeAbreviado: 'DADO_PRIVADO' }]; };
   server.getParticipantesDashboardResumo_ = () => { read(20, 3, 4); return [{ nome: 'DADO_PRIVADO' }]; };
-  server.getEstoque = () => { read(30, 4, 5); return []; };
+  server.getEstoqueLinhas_ = () => { read(30, 4, 5); return []; };
   server.getAgendaDashboardResumo_ = () => { read(40, 5, 6); return {}; };
   server.getDashboardPendencias_ = () => { throw new Error('Dashboard não deve calcular pendências'); };
   return { server, read, entries: () => logs.filter(line => line.startsWith('[CODEX_PERF] '))
@@ -49,7 +49,7 @@ test('Dashboard mede cada etapa e total sem duplicar leituras ou alterar a respo
 
 test('falha parcial do Dashboard é marcada na etapa e conserva os fallbacks', () => {
   const f = fixture();
-  f.server.getEstoque = () => { f.read(30); throw new Error('DADO_PRIVADO'); };
+  f.server.getEstoqueLinhas_ = () => { f.read(30); throw new Error('DADO_PRIVADO'); };
   const result = f.server.getDashboardData();
   assert.equal(result.secoes.estoque, false);
   assert.equal(result.estoqueResumo.lotes, 0);

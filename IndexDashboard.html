@@ -4,7 +4,10 @@
   // ═══════════════════════════════════════════════════════════════
   var _dashInited = false;
   var _dashLoading = false;
+  var _dashRefreshQueued = false;
+  var _dashAutoRefreshListenersStarted = false;
   var _dashLoadedAt = 0;
+  var _dashLastData = null;
   var _dashCharts = {};
   var _dashAgendaRaw = [];
   var _dashAgendaResumoAtual = {};
@@ -24,8 +27,32 @@
     if (btn) btn.disabled = busy;
   }
 
-  function carregarDashboard(forcar) {
-    if (_dashLoading) return;
+  function dashboardRevalidarEmBackground_() {
+    if (document.hidden || !_dashInited || !_dashLoadedAt ||
+        Date.now() - _dashLoadedAt < DASHBOARD_SESSION_CACHE_TTL_MS) return;
+    var active = typeof getCurrentPage === 'function' ? getCurrentPage() === 'dashboard' :
+      !!(document.getElementById('page-dashboard') && document.getElementById('page-dashboard').classList.contains('active'));
+    if (active) carregarDashboard(false, { silent: true });
+  }
+
+  function setupDashboardAutoRefreshListeners_() {
+    if (_dashAutoRefreshListenersStarted) return;
+    _dashAutoRefreshListenersStarted = true;
+    document.addEventListener('visibilitychange', dashboardRevalidarEmBackground_);
+    if (typeof window.addEventListener === 'function') window.addEventListener('focus', dashboardRevalidarEmBackground_);
+  }
+
+  function carregarDashboard(forcar, options) {
+    options = options || {};
+    setupDashboardAutoRefreshListeners_();
+    if (_dashLoading) {
+      // O clique em Atualizar exige uma consulta iniciada depois do clique.
+      if (forcar) {
+        _dashRefreshQueued = true;
+        dashboardLoadingState_(true, 'Atualizando dados do Dashboard.');
+      }
+      return;
+    }
     if (_dashInited && !forcar && Date.now() - _dashLoadedAt < DASHBOARD_SESSION_CACHE_TTL_MS) return;
     if (forcar) {
       try {
@@ -37,42 +64,75 @@
       return;
     }
     _dashLoading = true;
+    var silent = _dashInited && (!forcar || options.silent === true);
+    var previousLoadedAt = _dashLoadedAt;
+    var previousData = _dashLastData;
+    var renderAttempted = false;
     var kpiEl = document.getElementById('dashKpis');
-    if (kpiEl) {
+    if (kpiEl && !silent) {
       kpiEl.style.opacity = '.45';
       kpiEl.style.pointerEvents = 'none';
     }
-    dashboardLoadingState_(true, 'Atualizando dados do Dashboard.');
+    if (!silent) dashboardLoadingState_(true, 'Atualizando dados do Dashboard.');
     var perf = typeof codexStartClientReadPerformance_ === 'function' ? codexStartClientReadPerformance_('getDashboardData', forcar) : null;
+    function finishRefresh() {
+      _dashLoading = false;
+      if (_dashRefreshQueued) {
+        _dashRefreshQueued = false;
+        carregarDashboard(true);
+      }
+    }
+    function refreshFailure(error) {
+      var preserved = silent;
+      if (silent && renderAttempted && previousData) {
+        try { preserved = !!renderDashboard(previousData); }
+        catch (restoreFailure) { preserved = false; }
+      }
+      _dashInited = preserved;
+      _dashLoadedAt = preserved ? previousLoadedAt : 0;
+      if (preserved) _dashLastData = previousData;
+      if (kpiEl && !silent) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+      dashboardLoadingState_(false, preserved ? 'Não foi possível atualizar. Os dados anteriores continuam disponíveis.' : 'Não foi possível atualizar os dados.');
+      if (!silent) mostrarErroDashboard(error);
+    }
     google.script.run
       .withSuccessHandler(function(d) {
         if (perf) perf.rpc(true);
-        _dashLoading = false;
+        var applied = false;
         try {
-          if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+          if (_dashRefreshQueued) return;
+          // Uma resposta parcial não deve substituir o painel completo exibido.
+          if (silent && (!d || typeof d !== 'object' || Array.isArray(d) || d.erro || d.ok === false || (d.erros && d.erros.length) ||
+              (d.secoes && Object.keys(d.secoes).some(function(key) { return d.secoes[key] === false; })))) {
+            throw new Error('Atualização incompleta do Dashboard.');
+          }
+          if (kpiEl && !silent) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
+          renderAttempted = true;
           _dashInited = perf ? perf.measure('render', function() { return renderDashboard(d || {}, perf); }) : renderDashboard(d || {});
+          if (silent && !_dashInited) throw new Error('Não foi possível exibir a atualização do Dashboard.');
           _dashLoadedAt = _dashInited ? Date.now() : 0;
           if (_dashInited) {
+            _dashLastData = d || {};
+            // Mantém a idade dos dados também quando sessionStorage não estiver
+            // disponível, inclusive ao restaurar após falha de renderização.
+            _dashLastData._dashboardCachedAt = _dashLoadedAt;
             if (perf) perf.measure('session_cache_write', function() { dashboardStoreSessionCache(d || {}); });
             else dashboardStoreSessionCache(d || {});
           }
           dashboardLoadingState_(false, _dashInited ? ((d && d.avisos || []).length ? 'Dados atualizados com avisos.' : 'Dados do Dashboard atualizados.') : 'Não foi possível atualizar os dados.');
+          applied = !!_dashInited;
         } catch(err) {
-          _dashInited = false;
-          if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
-          dashboardLoadingState_(false, 'Não foi possível atualizar os dados.');
-          mostrarErroDashboard(err);
+          refreshFailure(err);
         } finally {
-          if (perf) perf.finish(_dashInited);
+          if (perf) perf.finish(applied);
+          finishRefresh();
         }
       })
       .withFailureHandler(function(e) {
         if (perf) { perf.rpc(false); perf.finish(false); }
-        _dashLoading = false;
-        _dashInited = false;
-        if (kpiEl) { kpiEl.style.opacity = '1'; kpiEl.style.pointerEvents = ''; }
-        dashboardLoadingState_(false, 'Não foi possível atualizar os dados.');
-        mostrarErroDashboard(e);
+        try {
+          if (!_dashRefreshQueued) refreshFailure(e);
+        } finally { finishRefresh(); }
       })
       .getDashboardData(perf ? perf.request : {});
   }
@@ -93,7 +153,10 @@
       }
       cached.data._dashboardCachedAt = cached.cachedAt || Date.now();
       var rendered = renderDashboard(cached.data);
-      if (rendered) _dashLoadedAt = cachedAt;
+      if (rendered) {
+        _dashLoadedAt = cachedAt;
+        _dashLastData = cached.data;
+      }
       return rendered;
     } catch (e) {
       try { sessionStorage.removeItem(DASHBOARD_SESSION_CACHE_KEY); } catch (ignore) {}
@@ -381,15 +444,40 @@
     if (_dashCharts[id]) { _dashCharts[id].destroy(); delete _dashCharts[id]; }
   }
 
+  function dashboardApplyChart_(canvas, config, fullLabels, onBarClick) {
+    var chart = _dashCharts[canvas.id];
+    // Inclui rótulos completos e estilos; funções geradas usam esses mesmos
+    // dados. A identidade do callback externo também precisa permanecer igual.
+    var signature = JSON.stringify([config, fullLabels]);
+    if (chart && chart.config && chart.config.type === config.type &&
+        (!chart.canvas || chart.canvas === canvas) && typeof chart.update === 'function' &&
+        (config.type !== 'doughnut' || chart._dashboardFullLabels === JSON.stringify(fullLabels))) {
+      // Uma expansão ou mudança de tamanho pode exigir layout, mesmo sem
+      // mudança nos dados (inclusive antes de copiar ou imprimir o canvas).
+      if (typeof chart.resize === 'function' && canvas.clientWidth && canvas.clientHeight &&
+          (chart.width !== canvas.clientWidth || chart.height !== canvas.clientHeight)) chart.resize();
+      if (chart._dashboardSignature === signature && chart._dashboardClickHandler === onBarClick) return;
+      chart.data = config.data;
+      chart.options = config.options;
+      chart.update('none');
+    } else {
+      _destroyChart(canvas.id);
+      chart = _dashCharts[canvas.id] = new Chart(canvas.getContext('2d'), config);
+    }
+    chart._dashboardSignature = signature;
+    chart._dashboardFullLabels = JSON.stringify(fullLabels);
+    chart._dashboardClickHandler = onBarClick;
+  }
+
   function _doughnut(canvasId, labels, data) {
-    _destroyChart(canvasId);
-    var ctx = document.getElementById(canvasId).getContext('2d');
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
     var total = data.reduce(function(sum, v) { return sum + Number(v || 0); }, 0);
     var displayLabels = labels.map(function(label, idx) {
       var pct = total ? (Number(data[idx] || 0) * 100 / total).toFixed(1).replace('.', ',') : '0,0';
       return label + ': ' + data[idx] + ' (' + pct + '%)';
     });
-    _dashCharts[canvasId] = new Chart(ctx, {
+    dashboardApplyChart_(canvas, {
       type: 'doughnut',
       data: {
         labels: displayLabels,
@@ -404,7 +492,7 @@
         },
         cutout: '62%'
       }
-    });
+    }, labels);
     dashboardChartData_(canvasId, labels, [{ label: 'Projetos', data: data }]);
   }
 
@@ -479,7 +567,6 @@
   function _barH(canvasId, labels, datasets, onBarClick, stacked) {
     var canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    var chart = _dashCharts[canvasId];
     var fullLabels = labels.slice();
     var displayLabels = labels.map(_shortDashLabel);
     var config = {
@@ -518,14 +605,7 @@
         }
       }
     };
-    if (chart && chart.config && chart.config.type === 'bar' && typeof chart.update === 'function') {
-      chart.data = config.data;
-      chart.options = config.options;
-      chart.update('none');
-    } else {
-      _destroyChart(canvasId);
-      _dashCharts[canvasId] = new Chart(canvas.getContext('2d'), config);
-    }
+    dashboardApplyChart_(canvas, config, fullLabels, onBarClick);
     var tableDatasets = stacked ? datasets.concat([{ label: 'Total', data: fullLabels.map(function(label, idx) {
       return datasets.reduce(function(total, ds) { return total + Number(ds.data[idx] || 0); }, 0);
     }) }]) : datasets;
@@ -535,8 +615,11 @@
   function renderDashboard(d, perf) {
     var oldError = document.getElementById('dashErrorBox');
     if (oldError) oldError.remove();
-    Object.keys(_dashCharts).forEach(_destroyChart);
+    Object.keys(_dashCharts).forEach(function(id) {
+      if (!document.getElementById(id)) _destroyChart(id);
+    });
     if (d.erros && d.erros.length) {
+      Object.keys(_dashCharts).forEach(_destroyChart);
       Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
         dashboardDrawEmptyChart_(canvas, 'Dados indisponíveis');
       });
@@ -552,6 +635,7 @@
       return false;
     }
     if (typeof Chart === 'undefined') {
+      Object.keys(_dashCharts).forEach(_destroyChart);
       Array.prototype.forEach.call(document.querySelectorAll('#page-dashboard canvas[id]'), function(canvas) {
         dashboardDrawEmptyChart_(canvas, 'Gráfico indisponível');
       });
@@ -589,12 +673,15 @@
     var faseMap  = _agg(projetosAtivos, 'fase');
     var faseKeys = _sortDesc(faseMap);
     if (faseKeys.length) _doughnut('chartFase', faseKeys, faseKeys.map(function(k){ return faseMap[k]; }));
+    else dashboardDrawEmptyChart_(document.getElementById('chartFase'), 'Sem dados disponíveis');
     var espMap  = _agg(projetosAtivos, 'especialidade');
     var espKeys = _sortDesc(espMap);
     if (espKeys.length) _doughnut('chartEsp', espKeys, espKeys.map(function(k){ return espMap[k]; }));
+    else dashboardDrawEmptyChart_(document.getElementById('chartEsp'), 'Sem dados disponíveis');
     var statusMap = _agg(projetosAtivos, 'status');
     var statusKeys = _sortDesc(statusMap);
     if (statusKeys.length) _doughnut('chartProjStatus', statusKeys, statusKeys.map(function(k){ return statusMap[k]; }));
+    else dashboardDrawEmptyChart_(document.getElementById('chartProjStatus'), 'Sem dados disponíveis');
     var croMap = _agg(projetosAtivos, 'cro');
     var croKeys = _sortDesc(croMap);
     var croNaoKeys = croKeys.filter(function(k) {
@@ -612,7 +699,7 @@
     if (croPairs.length) {
       _setChartHeight('chartCRO', croPairs.length, 28, 220, 380);
       _barH('chartCRO', croPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: croPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, croPairs.length), borderRadius: 4 }]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartCRO'), 'Sem dados disponíveis');
     var projPairs = projetosPart.map(function(pr) {
       return {
         label: pr.nomeAbreviado || pr.codigo || 'S/N',
@@ -633,7 +720,7 @@
         { label: 'Total', data: projPairs.map(function(p){ return p.total; }), backgroundColor: 'rgba(18,102,241,.7)', borderRadius: 4 },
         { label: 'Ativos / Em Seguimento', data: projPairs.map(function(p){ return p.ativos; }), backgroundColor: 'rgba(0,121,107,.7)', borderRadius: 4 }
       ]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartPartProj'), 'Sem dados disponíveis');
     var cidadePairs = partResumo
       ? _topDashResults(_sortDesc(partResumo.cidades), partResumo.cidades, 15)
       : dashboardParticipantCityPairs(part);
@@ -645,28 +732,28 @@
         backgroundColor: cidadePairs.map(function(p, idx){ return p.label === 'Outros' ? '#90a4ae' : DASH_CORES[idx % DASH_CORES.length]; }),
         borderRadius: 4
       }]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartPartCidade'), 'Sem dados disponíveis');
     var patMap  = _agg(projetosAtivos, 'patrocinador');
     var patKeys = _sortDesc(patMap);
     var patPairs = _topDashResults(patKeys, patMap, 15);
     if (patPairs.length) {
       _setChartHeight('chartPat', patPairs.length, 28, 220, 520);
       _barH('chartPat', patPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: patPairs.map(function(p){ return p.value; }), backgroundColor: patPairs.map(function(p, idx){ return p.label === 'Outros' ? '#90a4ae' : DASH_CORES[idx % DASH_CORES.length]; }), borderRadius: 4 }]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartPat'), 'Sem dados disponíveis');
     var ipMap  = _agg(projetosAtivos, 'investigador');
     var ipKeys = _sortDesc(ipMap);
     var ipPairs = _topDashResults(ipKeys, ipMap, 15);
     if (ipPairs.length) {
       _setChartHeight('chartIP', ipPairs.length, 28, 220, 520);
       _barH('chartIP', ipPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: ipPairs.map(function(p){ return p.value; }), backgroundColor: ipPairs.map(function(p, idx){ return p.label === 'Outros' ? '#90a4ae' : DASH_CORES[idx % DASH_CORES.length]; }), borderRadius: 4 }]);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartIP'), 'Sem dados disponíveis');
     var coordMap  = _agg(projetosAtivos, 'coordenador');
     var coordKeys = _sortDesc(coordMap);
     var coordPairs = _topDashPairs(coordKeys, coordMap, 12);
     if (coordPairs.length) {
       _setChartHeight('chartCoord', coordPairs.length, 28, 240, 440);
       _barH('chartCoord', coordPairs.map(function(p){ return p.label; }), [{ label: 'Projetos', data: coordPairs.map(function(p){ return p.value; }), backgroundColor: DASH_CORES.slice(0, coordPairs.length), borderRadius: 4 }], dashOpenCoordinator);
-    }
+    } else dashboardDrawEmptyChart_(document.getElementById('chartCoord'), 'Sem dados disponíveis');
     var sections = d.secoes || {};
     dashboardSectionAvailability_('dashAgendaBlock', sections.agenda !== false);
     if (perf) {
@@ -1070,7 +1157,7 @@
   (function() {
     function _attachDashEvents() {
       var btn = document.getElementById('btnDashRefresh');
-      if (btn) { btn.addEventListener('click', function() { _dashInited = false; carregarDashboard(true); }); }
+      if (btn) { btn.addEventListener('click', function() { carregarDashboard(true); }); }
       var printBtn = document.getElementById('btnDashPrint');
       if (printBtn) { printBtn.addEventListener('click', imprimirDashboard); }
       var pg = document.getElementById('page-dashboard');

@@ -60,6 +60,56 @@ test('Agenda reutiliza Users da autorizacao apenas na mesma RPC e mantem anivers
   assert.equal(f.reads(), 4);
 });
 
+test('bootstrap de outros módulos não carrega dados da Agenda em nenhum modo', () => {
+  for (const windowed of [true, false]) {
+    for (const page of ['', 'dashboard', 'estoque-view', 'participantes', 'projetos', 'medicos', 'monitores', 'feriados', 'couriers']) {
+      const f = serverFixture();
+      let agendaCalls = 0;
+      f.server.agendaWindowedLoadingV2EnabledForAccess_ = () => windowed;
+      f.server.getDadosFormularioAgenda = f.server.agendaGetBootstrapForAccess_ = f.server.codexGetTeamBirthdays_ = () => { agendaCalls++; throw new Error('Consulta indevida'); };
+      const result = f.server.getAppBootstrapData({ page, agendaRange: { start: '2026-10-05', endExclusive: '2026-10-26' } });
+      assert.equal(result.access.ok, true);
+      assert.equal(result.agendaFormData, null);
+      assert.equal(result.agendaBootstrap, undefined);
+      assert.equal(result.teamBirthdays, undefined);
+      assert.equal(agendaCalls, 0, page);
+      assert.deepEqual(Object.keys(result.errors), []);
+    }
+  }
+  const f = serverFixture();
+  assert.equal(f.server.getAppBootstrapData().agendaFormData.simulated, true);
+});
+
+test('entrada posterior na Agenda sem formulário no bootstrap mantém a carga sob demanda', () => {
+  const source = readProjectFile('IndexAgendaScripts.html');
+  for (const windowed of [true, false]) {
+    const requests = [];
+    let events = 0;
+    const context = vm.createContext({
+      window: { APP_BOOTSTRAP_DATA: { agendaFormData: null, features: { agendaWindowedLoadingV2: windowed } } },
+      document: { getElementById: () => ({}) },
+      _agendaDados: null, _agendaInitStarted: false, _agendaAbrirAposCarga: '',
+      _agendaReferenceDataDirty: false, _agendaReferenceDataRefreshInFlight: false,
+      _agendaFormDataLegacyLoading: false, _agendaWindowedLoadingDisabledForSession: false,
+      setupAgendaPastDateAlertListeners() {}, setupAgendaAutoRefreshListeners() {},
+      setAgendaInitStartedState: started => { context._agendaInitStarted = started; },
+      agendaAplicarBootstrapInicial_: () => false, agendaAbrirPendenteAposCarga() {},
+      carregarAgendaEventos: (_force, _callback, options) => { assert.equal(options.initialLoad, true); events++; },
+    });
+    function runner(success, failure) {
+      return { withSuccessHandler: fn => runner(fn, failure), withFailureHandler: fn => runner(success, fn),
+        getDadosFormularioAgenda: strict => requests.push({ strict, success }) };
+    }
+    context.google = { script: { run: runner() } };
+    vm.runInContext(source.slice(source.indexOf('function initAgendaV1('), source.indexOf('function applyAgendaFormData(')), context);
+    vm.runInContext(source.slice(source.indexOf('function agendaWindowedLoadingAtivo_('), source.indexOf('function agendaWindowMemoryCacheKey_(')), context);
+    context.initAgendaV1();
+    assert.equal(events, 1);
+    assert.equal(requests.length, windowed ? 0 : 1);
+    if (!windowed) assert.equal(requests[0].strict, true);
+  }
+});
+
 function clientFixture(page = 'pendencias') {
   const requests = [], renders = [], routes = [];
   const grid = { innerHTML: '' };
