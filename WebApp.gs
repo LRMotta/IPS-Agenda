@@ -12672,7 +12672,7 @@ function getDadosFormularioAgenda(strictValidation) {
   return agendaGetDadosFormularioAgendaCached_(cacheKey, false, false);
 }
 
-function agendaParticipantePorReferencia_(referencia) {
+function agendaParticipantePorReferencia_(referencia, leituraParticipantes) {
   referencia = referencia || {};
   if (typeof referencia !== 'object') referencia = { nome: String(referencia || '') };
   var idCadastro = String(referencia.idCadastro || referencia.participanteCadastroId || referencia.id || '').trim();
@@ -12680,10 +12680,16 @@ function agendaParticipantePorReferencia_(referencia) {
   var idParticipante = String(referencia.idParticipante || referencia.participanteId || '').trim();
   var projeto = String(referencia.projeto || '').trim();
   if (!idCadastro && !nome && !idParticipante) return null;
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('Participantes');
-  if (!sh || sh.getLastRow() < 2) return null;
-  var dados = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(7, sh.getLastColumn())).getValues();
+  var dados;
+  if (leituraParticipantes && Array.isArray(leituraParticipantes.rows)) {
+    dados = leituraParticipantes.rows;
+  } else {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName('Participantes');
+    if (!sh || sh.getLastRow() < 2) return null;
+    dados = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(7, sh.getLastColumn())).getValues();
+    if (leituraParticipantes) leituraParticipantes.rows = dados;
+  }
   var candidatosIdParticipante = [];
   var candidatosNome = [];
   for (var i = 0; i < dados.length; i++) {
@@ -12704,8 +12710,8 @@ function agendaParticipantePorReferencia_(referencia) {
 // O salvamento precisa do cadastro atual para validar o vinculo, mas nao usa o
 // historico de ultima visita. Evitar essa varredura integral da Agenda reduz o
 // tempo critico de gravacao sem flexibilizar status ou projeto do participante.
-function agendaInfoParticipanteParaSalvar_(referencia) {
-  var encontrado = agendaParticipantePorReferencia_(referencia);
+function agendaInfoParticipanteParaSalvar_(referencia, leituraParticipantes) {
+  var encontrado = agendaParticipantePorReferencia_(referencia, leituraParticipantes);
   if (!encontrado) return null;
   var row = encontrado.row || [];
   var nascRaw = row[2];
