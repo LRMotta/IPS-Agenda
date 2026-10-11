@@ -726,3 +726,21 @@ test('Transporte: total legado fracionario permanece exato sem inferir segmentos
     }, { viewport: { width, height: 900 } });
   }
 });
+
+
+test('Transporte: Fezes com quantificacao legada completa usa g tambem com DHL', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window.selectCourier('DHL');
+      window.renderMatBioEditor([{ key: 'fezes', formula: '', legacyQuant: { tubos: 2, total: 3 }, unit: 'L', ensaio: 'Fecal RNA' }]);
+    });
+    const row = page.locator('.ag-mat-line').first();
+    assert.equal(await row.getAttribute('data-formula-unit'), 'g');
+    assert.equal(await row.locator('.ag-mat-total-line').innerText(), '3,00 g');
+    const materiais = await page.evaluate(() => window.collectPayload().materiais.filter(m => m.material === 'Fezes'));
+    assert.equal(materiais[0].unit, 'g');
+    assert.equal(materiais[0].total, 3);
+    assert.equal(materiais[0].tubos, 2);
+    assert.equal(await page.locator('#stVolume').innerText(), '0 L');
+  });
+});

@@ -957,7 +957,8 @@
     item = item || {};
     var cfg = agendaMatBioTypeConfig(item.key || item.tipo);
     var baseUnit = agendaMatBioUnitKey((cfg && cfg.unit) || item.unit || 'mL');
-    var sourceUnit = agendaMatBioUnitKey(item.unit || agendaMatBioDisplayUnit(prefix, baseUnit));
+    var sourceUnit = agendaMatBioUnitKey(item.unit || agendaMatBioDisplayUnit(prefix, baseUnit), true);
+    if (cfg && cfg.key === 'fezes') sourceUnit = 'g';
     var out = Object.assign({}, item);
     if (baseUnit === 'mL' && Array.isArray(item.segmentos) && item.segmentos.length) {
       out.formula = agendaMatBioFormulaFromSegments(item.segmentos, sourceUnit) || item.formula || '';

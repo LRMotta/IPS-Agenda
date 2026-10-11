@@ -66,21 +66,23 @@ test('DHL grava litros e tubos corretos com strings decimais e milhares legados'
     courier: 'DHL', temperatura: 'AMBIENTE', materiais: [
       { ativo: true, material: 'Soro', tubos: '1.000', total: '0.5', unit: 'mL' },
       { ativo: true, material: 'Urina', tubos: '2', total: '2.5', unit: 'L' },
+      { ativo: true, material: 'Fezes', tubos: '2', total: '3', unit: 'g' },
       { ativo: false, material: 'Saliva', tubos: '1', total: '99.9', unit: 'L' }
     ]
   });
-  assert.equal(writes['invoice:J30'], 1002);
+  assert.equal(writes['invoice:J30'], 1004);
   assert.equal(writes['declaracao:F18'], 0.0005);
   assert.equal(writes['declaracao:F19'], 2.5);
   assert.equal(writes['declaracao:F20'], '');
+  assert.equal(writes['declaracao:F21'], '', 'Fezes nao entra nos litros de outros materiais');
 });
 
 test('PINEX usa parser real para volumes decimais textuais e quantidade agrupada', () => {
   const server = runFile('TransporteCodexConfig.gs');
   server.extrairIniciais_ = () => 'P.T.';
-  const checked = Array.from({ length: 8 }, (_, i) => [i === 1 || i === 4]);
-  const tubos = Array.from({ length: 8 }, (_, i) => [i === 1 ? '1.000' : '0']);
-  const volumes = Array.from({ length: 8 }, (_, i) => [i === 1 ? '0.5' : i === 4 ? '2.5' : '0']);
+  const checked = Array.from({ length: 8 }, (_, i) => [i === 1 || i === 4 || i === 6]);
+  const tubos = Array.from({ length: 8 }, (_, i) => [i === 1 ? '1.000' : i === 6 ? '2' : '0']);
+  const volumes = Array.from({ length: 8 }, (_, i) => [i === 1 ? '0.5' : i === 4 ? '2.5' : i === 6 ? '3' : '0']);
   assert.equal(server.transportePinexSampleSummary_('Pessoa Teste', checked, tubos, volumes, '2 slides'),
-    'Patient P.T. - 1000 tube(s) of human bio sample - Total 0.50 mL / 2 slide(s) / 2.50 g');
+    'Patient P.T. - 1002 tube(s) of human bio sample - Total 0.50 mL / 2 slide(s) / 5.50 g');
 });

@@ -1286,12 +1286,23 @@ function codexMatBioFormatNumber_(value, decimals) {
     if (!exists) list.push(value);
   }
 
+  // Fezes e sempre massa; mL/L legados sao rotulos incorretos, nao conversoes.
+  function codexMatBioItemUnit_(item, cfg) {
+    cfg = cfg || codexMatBioTypeConfig_(item && (item.key || item.tipo || item.material));
+    var unit = item && item.unit;
+    if (cfg && cfg.key === 'fezes') {
+      if (unit) codexMatBioUnitKey_(unit, true);
+      return 'g';
+    }
+    return codexMatBioUnitKey_(unit || (cfg && cfg.unit) || 'mL');
+  }
+
   function codexMatBioNormalizeItem_(item, skipFormula) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Material biológico inválido.');
     var cfg = codexMatBioTypeConfig_(item.key || item.tipo);
     var key = cfg ? cfg.key : (item.key || 'outro');
     var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
-    var unit = codexMatBioUnitKey_(item.unit || (cfg && cfg.unit) || 'mL');
+    var unit = codexMatBioItemUnit_(item, cfg);
     if (item.segmentos !== undefined && !Array.isArray(item.segmentos)) throw new Error('Segmentos de material biológico inválidos.');
     var sourceSegments = item.segmentos || [];
     var parsed = sourceSegments.length ? null : codexMatBioParseFormula_(item.formula || '');
@@ -1387,6 +1398,21 @@ function codexMatBioValidateAgendaPayload_(dados) {
     var items = codexMatBioParseJson_(json, true);
     codexMatBioAssertItemsUnit_(items, codexMatBioCourierUnit_(courier.nome));
     codexMatBioGroupItems_(items);
+    var changed = false;
+    items.forEach(function(item) {
+      var cfg = codexMatBioTypeConfig_(item && (item.key || item.tipo));
+      if (cfg && cfg.key === 'fezes' && item.unit !== 'g') {
+        item.unit = codexMatBioItemUnit_(item, cfg);
+        changed = true;
+      }
+    });
+    if (changed) {
+      var structured = JSON.parse(String(json));
+      structured.items = items;
+      var canonicalJson = JSON.stringify(structured);
+      if (courier.matBioJson !== undefined) courier.matBioJson = canonicalJson;
+      else courier.materialJson = canonicalJson;
+    }
   });
 }
 
@@ -1398,6 +1424,7 @@ function codexMatBioValidateTransportPayload_(payload) {
     item.ensaio = String(item.ensaio || item.exame || item.nomeExame || '').trim();
     var cfg = codexMatBioTypeConfig_(item.material), expected = cfg && cfg.unit === 'g' ? 'g' : codexMatBioCourierUnit_(payload.courier);
     var unit = codexMatBioUnitKey_(item.unit || expected, true);
+    if (cfg && cfg.key === 'fezes') unit = 'g';
     var parsed = codexMatBioParseFormula_(item.formula || '');
     if (!parsed.valid) throw new Error(parsed.error);
     if (parsed.segmentos.length && unit !== expected) throw new Error('Material ' + item.material + ': revise os volumes para ' + expected + ' antes de salvar.');
@@ -1459,6 +1486,7 @@ function transporteTubosMaterial_(item) {
 
 function transporteTotalEmLitros_(item) {
   var total = transporteTotalMaterial_(item);
+  if (transporteMaterialKey_(item && item.material) === 'fezes') return 0;
   var unit = transporteNorm_(item && item.unit);
   if (unit === 'l') return total;
   if (unit === 'ml') return total / 1000;
@@ -1487,7 +1515,7 @@ function transporteMateriaisFromCodex_(courier, matBioJson, materialLegacy) {
     var label = key === 'outro' ? String(item.tipo || 'Outro tipo').trim() : TRANSPORTE_MATERIAL_ALIASES[key];
     var groupKey = key === 'outro' ? key + '|' + codexMatBioNorm_(label) : key;
     var baseUnit = codexMatBioUnit_(key, 'mL');
-    var unit = item.unit ? transporteMatBioUnitKey_(item.unit) : (baseUnit === 'g' ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL'));
+    var unit = key === 'fezes' ? codexMatBioItemUnit_(item) : (item.unit ? transporteMatBioUnitKey_(item.unit) : (baseUnit === 'g' ? 'g' : (transporteNorm_(courier).indexOf('dhl') >= 0 ? 'L' : 'mL')));
     var formula = Array.isArray(item.segmentos) && item.segmentos.length
       ? transporteFormulaFromSegments_(item.segmentos, unit)
       : (item.formula || '');
@@ -2695,6 +2723,9 @@ function transporteRestaurarMateriaisNote_(materiais, note, courier, outrosTexto
   if (meta.outrosTexto === outrosTexto) {
     materiais = materiais.slice(0, 8).concat(meta.materiais.slice(8).filter(function(item) { return item && item.ativo === true; }));
   }
+  materiais.forEach(function(item) {
+    if (transporteMaterialKey_(item && item.material) === 'fezes') item.unit = codexMatBioItemUnit_(item);
+  });
   return materiais;
 }
 
@@ -2752,6 +2783,9 @@ function transporteReadRegistro_() {
     });
   }
 
+  materiais.forEach(function(item) {
+    if (transporteMaterialKey_(item && item.material) === 'fezes') item.unit = codexMatBioItemUnit_(item);
+  });
   return {
     paciente: cfg[0] || '',
     participanteCadastroId: agendaLink.participanteCadastroId || '',
@@ -3279,7 +3313,7 @@ function transportePeticaoMaterialRows_(materiais) {
       return;
     }
     if (rows.length >= 6) return;
-    var unit = item.unit || codexMatBioUnit_(transporteMaterialKey_(item.material), 'mL');
+    var unit = transporteMaterialKey_(item.material) === 'fezes' ? codexMatBioItemUnit_(item) : (item.unit || codexMatBioUnit_(transporteMaterialKey_(item.material), 'mL'));
     var decimals = unit === 'L' ? 5 : (unit === 'g' ? 2 : 2);
     var total = item.total !== '' && item.total !== null && item.total !== undefined
       ? item.total
@@ -3552,7 +3586,7 @@ function transporteMateriaisParaAgenda_(materiais) {
     var tipo = key === 'outro'
       ? String(item.material || 'Outro tipo').trim()
       : String(TRANSPORTE_MATERIAL_ALIASES[key] || item.material || '').trim();
-    var unit = transporteMatBioUnitKey_(item.unit || codexMatBioUnit_(key, 'mL'));
+    var unit = key === 'fezes' ? codexMatBioItemUnit_(item) : transporteMatBioUnitKey_(item.unit || codexMatBioUnit_(key, 'mL'));
     var formula = String(item.formula || '').trim();
     var calc = transporteParseFormula_(formula);
     var tubos = transporteTubosMaterial_(item);
