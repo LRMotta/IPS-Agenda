@@ -239,13 +239,16 @@ function testarUrlWebAppTransporteCodex() {
 function montarContextoTransporteParaTransp_(idAgenda, slot) {
   slot = normalizarSlotTransporteCodex_(slot, true);
   var evento = buscarAgendaEventoPorIdTransp_(idAgenda);
+  // Leitura privada desta abertura; nao reutilizar entre requisicoes.
+  var leituraParticipantes = {};
   return {
     evento: evento,
-    payload: montarPayloadTransporteParaTransp_(idAgenda, slot, evento)
+    payload: montarPayloadTransporteParaTransp_(idAgenda, slot, evento, leituraParticipantes),
+    leituraParticipantes: leituraParticipantes
   };
 }
 
-function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) {
+function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado, leituraParticipantes) {
   slot = normalizarSlotTransporteCodex_(slot, true);
   var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda);
   var participanteInfo;
@@ -255,7 +258,7 @@ function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado) 
       nome: evento.participante,
       idParticipante: evento.idParticipante,
       projeto: evento.projeto
-    }) || {};
+    }, leituraParticipantes) || {};
   } catch (e) {
     participanteInfo = {};
   }
@@ -2194,10 +2197,15 @@ function transporteParticipanteCadastroId_(participante) {
   return String(participante.participanteCadastroId || participante.idCadastro || participante.id || '').trim();
 }
 
-function transporteReadParticipantesDireto_() {
-  if (typeof getCodexSheetDataByName_ === 'function') {
-    var rows = getCodexSheetDataByName_('Participantes') || [];
-    return rows.slice(1).filter(function(r) {
+function transporteReadParticipantesDireto_(leituraParticipantes) {
+  var rows;
+  if (leituraParticipantes && Array.isArray(leituraParticipantes.rows)) {
+    rows = leituraParticipantes.rows;
+  } else if (typeof getCodexSheetDataByName_ === 'function') {
+    rows = (getCodexSheetDataByName_('Participantes') || []).slice(1);
+  }
+  if (rows) {
+    return rows.filter(function(r) {
       return r[0] !== '' && r[0] !== undefined && r[0] !== null;
     }).map(function(r) {
       return {
@@ -2910,7 +2918,7 @@ function salvarTransporte(payload, options) {
   });
 }
 
-function salvarTransporteInterno_(payload, options) {
+function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   var ss;
   var folha;
   var declaracao;
@@ -2928,7 +2936,7 @@ function salvarTransporteInterno_(payload, options) {
     transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
     var participanteOptions = { obrigatorio: !options.rascunho, participantes: [], adiarProjetoDisplay: true };
     try {
-      participanteOptions.participantes = transporteReadParticipantesDireto_();
+      participanteOptions.participantes = transporteReadParticipantesDireto_(leituraParticipantes);
     } catch (participanteReadError) {
       if (participanteOptions.obrigatorio) throw participanteReadError;
       Logger.log('Cadastro indisponivel durante pre-preenchimento do Transporte: ' + participanteReadError.message);
@@ -3676,7 +3684,7 @@ function importarTransporteCodexInterno_(codexPayload, contextoInterno, options)
     preencherDocumentos: options.preencherDocumentos,
     returnPreparedRecord: options.returnPreparedRecord === true,
     agendaEvento: contextoInterno && contextoInterno.evento ? contextoInterno.evento : null
-  });
+  }, contextoInterno && contextoInterno.leituraParticipantes);
 }
 
 function transporteSincronizarDependencias_(options) {

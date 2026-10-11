@@ -389,3 +389,33 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
   assert.equal(agendaReads, 1, 'IDs e valores dos tres slots vêm do mesmo snapshot sob lock');
   assert.deepEqual(agenda.rows[1], ['Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'EVT-1']);
 });
+
+
+test('preenchimento interno reutiliza linhas compartilhadas sem consultar Participantes novamente', () => {
+  const { s, payload } = saveFixture();
+  s.transporteDateOut_ = () => '2026-09-30';
+  s.transporteReadParticipantesDireto_ = server().transporteReadParticipantesDireto_;
+  const leitura = { rows: [['CAD-A', 'Pessoa A', '', '', '123', 'Projeto A', '', '', 'Inativo']] };
+  const result = s.salvarTransporteInterno_(payload, {
+    rascunho: true, preencherDocumentos: false, returnPreparedRecord: true
+  }, leitura);
+  assert.equal(result.registro.participanteCadastroId, 'CAD-A');
+  assert.equal(result.registro.paciente, 'Pessoa A');
+  assert.equal(result.registro.identificacaoParticipante, '123');
+  assert.equal(result.registro.protocolo, 'Projeto A');
+});
+
+test('salvamento publico ignora tentativa de fornecer cadastro compartilhado pelo cliente', () => {
+  const { s, payload, reads } = saveFixture();
+  s.transporteDateOut_ = () => '2026-09-30';
+  s.codexAssertCanWrite_ = () => {};
+  s.codexWithDocumentLock_ = (_name, callback) => callback();
+  const result = s.salvarTransporte(payload, {
+    rascunho: true, preencherDocumentos: false, returnPreparedRecord: true,
+    leituraParticipantes: { rows: [['CAD-A', 'Nome adulterado', '', '', '9999', 'Projeto adulterado']] }
+  });
+  assert.equal(reads(), 1);
+  assert.equal(result.registro.paciente, 'Pessoa A');
+  assert.equal(result.registro.identificacaoParticipante, '123');
+  assert.equal(result.registro.protocolo, 'Projeto A');
+});
