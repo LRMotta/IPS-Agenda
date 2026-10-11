@@ -1694,7 +1694,7 @@
         row.classList.toggle('other-on', !!(cfg && cfg.outro));
         row.dataset.volumeUnit = unit;
         // Materiais em massa usam a unidade do tipo, sem converter os numeros digitados.
-        if (cfg && cfg.unit === 'g' && !row._legacyQuant) {
+        if (cfg && cfg.unit === 'g' && (!row._legacyQuant || cfg.key === 'fezes')) {
           // Preserva a recuperação legada de massa; unidade desconhecida exige revisão.
           try { matBioUnitKey(row.dataset.formulaUnit || unit, true); row.dataset.formulaUnit = unit; }
           catch (unitFailure) { /* matBioErrors apresenta a unidade desconhecida. */ }

@@ -176,7 +176,9 @@
     var cfg = typeConfig(item.key || item.tipo);
     var key = cfg ? cfg.key : (item.key || 'outro');
     var tipo = cfg && !cfg.outro ? cfg.label : String(item.tipo || (cfg && cfg.label) || '').trim();
-    var unit = unitKey(item.unit || (cfg && cfg.unit) || 'mL');
+    // Fezes tem unidade fixa; corrige metadados legados sem converter quantidades.
+    if (cfg && cfg.key === 'fezes' && item.unit) unitKey(item.unit, true);
+    var unit = cfg && cfg.key === 'fezes' ? 'g' : unitKey(item.unit || (cfg && cfg.unit) || 'mL');
     if (item.segmentos !== undefined && !Array.isArray(item.segmentos)) throw new Error('Segmentos de material biológico inválidos.');
     var sourceSegments = item.segmentos || [];
     var parsed = sourceSegments.length ? null : parseFormula(item.formula || '');

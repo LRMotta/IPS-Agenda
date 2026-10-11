@@ -245,3 +245,83 @@ test('MatBio evita formatar e reanalisar segmentos antes de normalizar e reutili
   assert.equal(grouped[0].ensaio, 'Hemograma; PCR');
   assert.equal(items[0].segmentos[0].vol, 0.5, 'dados da origem permanecem intactos');
 });
+
+
+test('Fezes normaliza metadados legados em todas as operacoes sem converter numeros', () => {
+  for (const core of implementations) {
+    for (const unit of ['mL', 'L', 'g', undefined]) {
+      for (const key of ['fezes', 'stool']) {
+        const source = { key, unit, formula: '2x1,5', ensaio: 'Fecal RNA' };
+        const normalized = core.normalizeItem(source);
+        assert.equal(normalized.unit, 'g');
+        assert.equal(normalized.total, 3);
+        assert.equal(normalized.tubos, 2);
+        assert.equal(source.unit, unit, 'leitura nao altera objeto original');
+        assert.equal(core.groupItems([source])[0].unit, 'g');
+        for (const courierUnit of ['mL', 'L']) assert.doesNotThrow(() => core.assertItemsUnit([source], courierUnit));
+        const stored = JSON.parse(core.serializeItems([source]).json).items[0];
+        assert.equal(stored.unit, 'g');
+        assert.equal(stored.total, 3);
+        assert.equal(stored.ensaio, 'Fecal RNA');
+      }
+    }
+  }
+});
+
+test('Agenda grava Fezes em g nos quatro slots preservando metadados e numeros', () => {
+  for (const slot of ['courier1', 'courier2', 'courier3', 'backup']) {
+    for (const nome of ['MARKEN', 'OCASA', 'DHL', 'PINEX', 'PINEX (Agendamento)']) {
+      for (const prop of ['matBioJson', 'materialJson']) {
+        const raw = { version: 1, extra: 'preservar', items: [{ key: 'fezes', unit: 'mL', formula: '2x1,5', ensaio: 'Fecal RNA' }] };
+        const dados = { [slot]: { nome, [prop]: JSON.stringify(raw) } };
+        server.codexMatBioValidateAgendaPayload_(dados);
+        const result = JSON.parse(dados[slot][prop]);
+        assert.equal(result.items[0].unit, 'g');
+        assert.equal(result.items[0].formula, raw.items[0].formula);
+        assert.equal(result.items[0].ensaio, 'Fecal RNA');
+        assert.equal(result.extra, 'preservar');
+        assert.equal(result.version, 1);
+      }
+    }
+  }
+});
+
+test('Pendencias para Transporte, retorno para Agenda e Peticao mantem Fezes em g', () => {
+  for (const courier of ['MARKEN', 'OCASA', 'DHL', 'PINEX', 'PINEX (Agendamento)']) {
+    for (const unit of ['mL', 'L', 'g']) {
+      const json = JSON.stringify({ items: [{ key: 'fezes', unit, formula: '2x1,5', ensaio: 'Fecal RNA' }] });
+      const materiais = server.transporteMateriaisFromCodex_(courier, json, '');
+      const fezes = materiais.find(item => item.material === 'Fezes');
+      assert.equal(fezes.unit, 'g');
+      assert.equal(fezes.total, 3);
+      server.codexMatBioValidateTransportPayload_({ courier, materiais });
+      const roundtrip = JSON.parse(server.transporteMateriaisParaAgenda_(materiais).json).items[0];
+      assert.equal(roundtrip.unit, 'g');
+      assert.equal(roundtrip.total, 3);
+      const peticao = server.transportePeticaoMaterialRows_(materiais);
+      assert.equal(peticao[0][0], 'Fezes: 3,00 g');
+      assert.equal(peticao[0][1], 'Fecal RNA');
+      assert.equal(server.transporteTotalEmLitros_({ ...fezes, unit }), 0, 'massa nao e somada aos litros no documento DHL');
+    }
+  }
+});
+
+test('salvamento de Transporte normaliza Fezes com formula ou quantidade legada completa', () => {
+  for (const courier of ['OCASA', 'DHL']) {
+    for (const values of [{ formula: '2x1,5' }, { formula: '', tubos: 2, total: 3 }]) {
+      const payload = { courier, materiais: [{ ativo: true, material: 'Fezes', unit: 'L', ...values }] };
+      server.codexMatBioValidateTransportPayload_(payload);
+      assert.equal(payload.materiais[0].unit, 'g');
+      assert.equal(payload.materiais[0].total, 3);
+      assert.equal(payload.materiais[0].tubos, 2);
+    }
+  }
+});
+
+test('Fezes nao mascara unidade desconhecida, formula invalida ou quantidade parcial', () => {
+  for (const core of implementations) {
+    assert.throws(() => core.normalizeItem({ key: 'fezes', unit: 'uL', formula: '2x1' }), /Unidade/);
+    assert.throws(() => core.normalizeItem({ key: 'fezes', unit: 'mL', formula: '2x' }), /fórmula/);
+  }
+  assert.throws(() => server.codexMatBioValidateTransportPayload_({ materiais: [{ ativo: true, material: 'Fezes', unit: 'mL', tubos: 2 }] }), /quantidade e o volume total/);
+});
