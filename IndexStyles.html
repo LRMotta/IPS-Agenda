@@ -1113,4 +1113,25 @@
       /* Keep operation progress visible while saving; reduce decorative loading motion. */
       .table-skeleton-bar, .spinner, .ac-spin, #btnPendenciasRefresh:disabled .material-symbols-outlined { animation: none; }
     }
-  </style>
+  .soa-planning-details { margin:12px 0; padding:12px; border:1px solid #dce4eb; border-radius:8px; }
+.soa-planning-details summary { cursor:pointer; font-weight:600; }
+.soa-planning-details pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+.soa-planning-rule { padding:12px 0; border-bottom:1px solid #dce4eb; overflow-wrap:anywhere; }
+.soa-planning-rule dl { display:grid; grid-template-columns:110px minmax(0,1fr); gap:6px 12px; font-size:13px; }
+.soa-planning-rule dt { font-weight:600; }
+.soa-planning-rule dd { margin:0; }
+.soa-draft-controls { margin-bottom:14px; }
+#soaImportRevisaoBox[hidden] { display:none; }
+#modalSoAImport .soa-modal-actions { flex-wrap:wrap; }
+#modalSoAImport .soa-import-preview { max-height:none; overflow:visible; }
+.participant-milestones-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.participant-milestones-section .participant-form-guidance { margin-bottom:14px; }
+@media(max-width:600px) { .participant-milestones-grid { grid-template-columns:1fr; } }
+@media(max-width:600px) {
+  #modalSoAImport .soa-modal-actions { flex-direction:column; align-items:stretch; }
+  #modalSoAImport .soa-modal-actions > button { width:100%; min-width:0; margin:0; justify-content:center; }
+  #modalSoAImport .soa-planning-rule dl { grid-template-columns:1fr; }
+  #modalSoAImport .soa-import-row { flex-direction:column; gap:4px; overflow-wrap:anywhere; }
+  #modalSoAImport .soa-import-row > span:last-child { text-align:left; }
+}
+</style>

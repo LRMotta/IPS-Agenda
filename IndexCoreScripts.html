@@ -3926,6 +3926,28 @@ function abrirFormPart(p) {
   }, onFailure: fail });
 }
 
+function preencherMarcosParticipacao_(participante) {
+  var marcos = (participante && participante.marcosParticipacao) || {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-participacao-marco]'), function(input) {
+    var key = input.getAttribute('data-participacao-marco');
+    input.value = String(marcos[key] || '');
+    input.setAttribute('data-marco-inicial', String(marcos[key] || ''));
+    input.setAttribute('data-marco-exibido', input.value);
+  });
+}
+
+function lerMarcosParticipacao_() {
+  var marcos = {}, base = {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-participacao-marco]'), function(input) {
+    var previous = input.getAttribute('data-marco-inicial') || '';
+    if (input.value === (input.getAttribute('data-marco-exibido') || '')) return;
+    var key = input.getAttribute('data-participacao-marco');
+    marcos[key] = input.value;
+    base[key] = previous;
+  });
+  return Object.keys(marcos).length ? { marcos: marcos, base: base } : null;
+}
+
 function abrirFormPartPreenchido_(p) {
   var modalPart = document.getElementById('modalParticipante');
   appClearUnsavedChanges('modalParticipante');
@@ -3996,6 +4018,7 @@ function abrirFormPartPreenchido_(p) {
     document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
   }
   renderAcompanhantesPart_((p && p.acompanhantes) || []);
+  preencherMarcosParticipacao_(p);
   document.getElementById('modalPartSub').textContent='Dados da pessoa e de sua participação no protocolo';
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">save</span> SALVAR CADASTRO';
   renderParticipacoesPessoa_(p || null, false);
@@ -4283,6 +4306,11 @@ function salvarPartApp(opts) {
     criarPessoaDistinta: opts.criarPessoaDistinta === true
   };
   participantePreservarIdentidadeOriginal_(payload);
+  var marcosPatch = lerMarcosParticipacao_();
+  if (marcosPatch) {
+    payload.marcosParticipacao = marcosPatch.marcos;
+    payload.marcosParticipacaoBase = marcosPatch.base;
+  }
   appSetButtonBusy(btn, true);
   appSetStatus('statusPart', 'Processando...');
   appServerRun({
@@ -5534,7 +5562,7 @@ function definirAprovacaoCtmsJornada(button) {
 }
 
 function jornadaCtmsReferenciaLabel_(value) {
-  var labels = { RANDOMIZACAO: 'Randomização', INCLUSAO: 'Inclusão', ULTIMA_DOSE: 'Última dose', FIM_TRATAMENTO: 'Fim do tratamento', PROGRESSAO_DOENCA: 'Progressão da doença', OUTRA: 'Outra data de referência' };
+  var labels = { RANDOMIZACAO: 'Randomização', INCLUSAO: 'Inclusão', ULTIMA_DOSE: 'Última dose', FIM_TRATAMENTO: 'Fim do tratamento', DECISAO_INTERRUPCAO_TRATAMENTO: 'Decisão de interromper definitivamente o tratamento', PROGRESSAO_DOENCA: 'Progressão da doença', OUTRA: 'Outra data de referência' };
   return labels[value] || value || 'Referência';
 }
 
@@ -5567,7 +5595,7 @@ function salvarConfiguracaoCtmsJornada() {
   var participante = _jornadaParticipanteAtual || {};
   var dados = _jornadaParticipanteDados || {};
   var marcos = {};
-  Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-marco]'), function(input) { if (input.value) marcos[input.getAttribute('data-ctms-marco')] = input.value; });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-marco]'), function(input) { marcos[input.getAttribute('data-ctms-marco')] = input.value; });
   var escolhas = {};
   Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-escolha]'), function(select) { if (select.value) escolhas[select.getAttribute('data-ctms-escolha')] = select.value; });
   var btn = document.getElementById('btnSalvarConfigCtms');
@@ -5582,6 +5610,7 @@ function salvarConfiguracaoCtmsJornada() {
     braco: participante.braco,
     bracoId: (document.getElementById('jornadaCtmsBraco') || {}).value || '',
     marcos: marcos,
+    marcosAtualizacaoParcial: true,
     escolhasReferencias: escolhas
   }], onSuccess: function(result) {
     if (window._jornadaParticipanteConsulta !== consulta) return;
@@ -6262,6 +6291,7 @@ function soaReferenciaLabel_(referencia) {
   };
   labels.ULTIMA_DOSE = 'Última dose';
   labels.FIM_TRATAMENTO = 'fim de tratamento';
+  labels.DECISAO_INTERRUPCAO_TRATAMENTO = 'decisão de interromper definitivamente o tratamento';
   labels.PROGRESSAO_DOENCA = 'progressão da doença';
   labels.OUTRA = 'referência especial';
   if (labels[value]) return labels[value];
@@ -6303,7 +6333,7 @@ function soaPopulateReferenciaSelect_(selectId, selected, emptyLabel) {
     { value: 'RANDOMIZACAO', label: 'Randomização' },
     { value: 'INCLUSAO', label: 'Inclusão' }
   ];
-  options.push({ value: 'ULTIMA_DOSE', label: 'Última dose' }, { value: 'FIM_TRATAMENTO', label: 'Fim do tratamento' }, { value: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' }, { value: 'OUTRA', label: 'Outra referência especial' });
+  options.push({ value: 'ULTIMA_DOSE', label: 'Última dose' }, { value: 'FIM_TRATAMENTO', label: 'Fim do tratamento' }, { value: 'DECISAO_INTERRUPCAO_TRATAMENTO', label: 'Decisão de interromper definitivamente o tratamento' }, { value: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' }, { value: 'OUTRA', label: 'Outra referência especial' });
   (_soaVisitasAtual || []).forEach(function(item) {
     if (!item || !item.idSoA || String(item.idSoA) === String(document.getElementById('soaEditId').value || '')) return;
     options.push({ value: item.idSoA, label: (item.codigo ? item.codigo + ' · ' : '') + item.nome });
@@ -6797,9 +6827,19 @@ var _soaImportDadosAtual = null;
 var _soaImportFingerprintAtual = '';
 var _soaImportRevisao = 0;
 var _soaImportEmAndamento = false;
+var _soaImportResultadoAtual = null;
+var _soaDraftRequest = 0;
+var _soaDraftSaving = false;
 
 function invalidarPreviaImportacaoSoA_() {
   _soaImportRevisao++;
+  _soaImportResultadoAtual = null;
+  var review = document.getElementById('soaImportRevisado');
+  if (review) review.checked = false;
+  var reviewBox = document.getElementById('soaImportRevisaoBox');
+  if (reviewBox) reviewBox.hidden = true;
+  var save = document.getElementById('btnSalvarPlanejamentoSoA');
+  if (save) save.disabled = true;
   _soaImportDadosAtual = null;
   _soaImportFingerprintAtual = '';
   document.getElementById('btnImportarSoAConfirm').disabled = true;
@@ -6815,15 +6855,18 @@ function abrirSoAImportForm() {
   document.getElementById('soaImportArquivo').value = '';
   document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div>';
   document.getElementById('soaImportCriarBracos').checked = true;
+  document.getElementById('soaImportModo').value = 'adicionar';
   document.getElementById('btnImportarSoAConfirm').disabled = true;
   appSetStatus('statusSoAImport', '');
   abrirOverlay('modalSoAImport');
+  listarPlanejamentosSoAApp();
 }
 
 function lerSoAArquivoApp(event) {
   invalidarPreviaImportacaoSoA_();
   var file = event && event.target && event.target.files && event.target.files[0];
   if (!file) return;
+  if (file.size > 300000) { appSetStatus('statusSoAImport', 'O arquivo deve ter até 300 KB.', '#e53935'); return; }
   var revisao = _soaImportRevisao;
   var reader = new FileReader();
   reader.onload = function() {
@@ -6841,6 +6884,7 @@ function lerSoAArquivoApp(event) {
 function soaImportTextoPayload_() {
   var texto = document.getElementById('soaImportTexto').value.trim();
   if (!texto) throw new Error('Cole ou selecione um arquivo JSON.');
+  if (texto.length > 300000) throw new Error('O conteúdo deve ter até 300 mil caracteres.');
   var dados;
   try { dados = JSON.parse(texto); } catch (e) { throw new Error('O JSON é inválido. Verifique a codificação UTF-8 e a estrutura do arquivo.'); }
   return { projeto: _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo, dados: dados, modo: document.getElementById('soaImportModo').value, criarBracos: document.getElementById('soaImportCriarBracos').checked };
@@ -6850,23 +6894,31 @@ function renderSoAImportPreview_(result) {
   var preview = document.getElementById('soaImportPreview');
   var confirm = document.getElementById('btnImportarSoAConfirm');
   if (!preview || !confirm) return;
-  confirm.disabled = !result || result.ok !== true || !result.visitas || !result.visitas.length;
+  confirm.disabled = !result || result.ok !== true || result.podeImportar === false || !result.visitas || !result.visitas.length || !!result.planejamento;
   if (!result) { preview.innerHTML = '<div class="soa-visita-empty">Nenhuma prévia disponível.</div>'; return; }
   var html = '<div class="soa-import-summary"><strong>' + (result.totalVisitas || 0) + '</strong> visitas encontradas · <strong>' + (result.novasVisitas || 0) + '</strong> novas · <strong>' + (result.ignoradas || 0) + '</strong> sem duplicar · <strong>' + ((result.missingBracos || []).length) + '</strong> braços a criar</div>';
+  if (result.planejamento) html = renderPlanejamentoSoA_(result.planejamento, result.visitas) + html;
+  var reviewBox = document.getElementById('soaImportRevisaoBox');
+  if (reviewBox) reviewBox.hidden = !result.planejamento || result.podeImportar !== true;
+  var save = document.getElementById('btnSalvarPlanejamentoSoA');
+  if (save) save.disabled = result.ok !== true || !result.planejamento || _soaDraftSaving;
   if (result.erros && result.erros.length) html += '<div class="soa-import-error"><strong>Corrija antes de importar:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
   if (result.missingBracos && result.missingBracos.length) html += '<div class="soa-import-warning"><strong>Braços novos:</strong> ' + result.missingBracos.map(esc).join(', ') + '</div>';
-  if (result.alertas && result.alertas.length) html += '<div class="soa-import-warning"><strong>Alertas do documento:</strong><ul>' + result.alertas.slice(0, 8).map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + (result.alertas.length > 8 ? '<li>+' + (result.alertas.length - 8) + ' alertas adicionais</li>' : '') + '</ul></div>';
+  if (!result.planejamento && result.alertas && result.alertas.length) html += '<div class="soa-import-warning"><strong>Alertas do documento:</strong><ul>' + result.alertas.slice(0, 8).map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + (result.alertas.length > 8 ? '<li>+' + (result.alertas.length - 8) + ' alertas adicionais</li>' : '') + '</ul></div>';
   if (result.revisaoNecessaria && result.revisaoNecessaria.length) html += '<div class="soa-import-warning"><strong>Revisão necessária:</strong> ' + result.revisaoNecessaria.length + ' item(ns) serão importados com a pendência registrada nas observações.</div>';
   if (result.ambiguidadesOrdem && result.ambiguidadesOrdem.length) html += '<div class="soa-import-warning"><strong>Ordem de execução:</strong> ' + result.ambiguidadesOrdem.length + ' ' + (result.ambiguidadesOrdem.length === 1 ? 'ambiguidade destacada' : 'ambiguidades destacadas') + '. A ordem recebida foi mantida onde faltou critério determinístico.</div>';
   if (result.visitas && result.visitas.length) {
-    var previewRows = result.visitas.slice(0, 12).map(function (visita) {
+    var previewRows = result.visitas.map(function (visita) {
       var scope = visita.bracoNomes && visita.bracoNomes.length ? visita.bracoNomes.join(', ') : 'Todos os braços';
-      var status = visita.acao === 'atualizar' ? 'Atualiza' : (visita.acao === 'ignorar' ? 'Já existe' : 'Novo');
+      var status = visita.acao === 'atualizar' || (visita.existente && result.modo === 'atualizar') ? 'Atualiza' : (visita.acao === 'ignorar' || visita.existente ? 'Já existe' : 'Novo');
       var ambiguousClass = visita.ordemAmbigua ? ' soa-order-ambiguous' : '';
       var reason = visita.ordemAmbigua && visita.motivosOrdem && visita.motivosOrdem.length ? '<span class="soa-order-reason">' + esc(visita.motivosOrdem[0]) + '</span>' : '';
-      return '<div class="soa-import-row' + ambiguousClass + '"><span><strong>' + esc(visita.codigo || '') + '</strong> · ' + esc(visita.nome || '') + (visita.ordemAmbigua ? '<span class="soa-order-review-badge">revisar</span>' : '') + reason + '</span><span>' + esc(scope) + ' · ' + esc(status) + '<span class="soa-order-comparison">Recebida <strong>' + esc(soaOrdemLabel_(visita.ordemRecebida)) + '</strong> → sugerida <strong>' + esc(soaOrdemLabel_(visita.ordemSugerida)) + '</strong></span></span></div>';
+      var referenceVisit = result.planejamento && result.visitas.filter(function(item) { return item.idSoA === visita.referencia; })[0];
+      var referenceLabel = referenceVisit ? referenceVisit.codigo + ' · ' + referenceVisit.nome : visita.referencia;
+      var timingLabel = result.planejamento ? '<span class="soa-order-comparison">' + esc(String(visita.intervaloDias == null ? 'Não informado' : visita.intervaloDias)) + ' dias · referência: ' + soaPlanningValue_(referenceLabel) + ' · janela −' + esc(String(visita.janelaDiasMenos == null ? '?' : visita.janelaDiasMenos)) + '/+' + esc(String(visita.janelaDiasMais == null ? '?' : visita.janelaDiasMais)) + ' dias</span>' : '<span class="soa-order-comparison">Recebida <strong>' + esc(soaOrdemLabel_(visita.ordemRecebida)) + '</strong> → sugerida <strong>' + esc(soaOrdemLabel_(visita.ordemSugerida)) + '</strong></span>';
+      return '<div class="soa-import-row' + ambiguousClass + '"><span><strong>' + esc(visita.codigo || '') + '</strong> · ' + esc(visita.nome || '') + (visita.ordemAmbigua ? '<span class="soa-order-review-badge">revisar</span>' : '') + reason + '</span><span>' + esc(scope) + ' · ' + esc(status) + timingLabel + '</span></div>';
     }).join('');
-    html += '<div class="soa-import-preview-list">' + previewRows + (result.visitas.length > 12 ? '<div class="soa-import-note">Mais ' + (result.visitas.length - 12) + ' visita(s) na importação.</div>' : '') + '</div>';
+    html += '<div class="soa-import-preview-list">' + previewRows + '</div>';
   }
   preview.innerHTML = html;
 }
@@ -6885,12 +6937,13 @@ function previsualizarSoAJsonApp() {
     var atual;
     try { atual = soaImportTextoPayload_(); } catch (e) { invalidarPreviaImportacaoSoA_(); return; }
     if (JSON.stringify(atual) !== JSON.stringify(payload)) { invalidarPreviaImportacaoSoA_(); return; }
-    if (result && result.ok === true && result.visitas && result.visitas.length) {
+    _soaImportResultadoAtual = result;
+    if (result && result.ok === true && (result.planejamento || (result.visitas && result.visitas.length))) {
       _soaImportDadosAtual = payload;
       _soaImportFingerprintAtual = JSON.stringify(payload);
     }
     renderSoAImportPreview_(result);
-    appSetStatus('statusSoAImport', result && result.ok ? 'Prévia pronta. Revise os alertas antes de importar.' : 'Há pendências que impedem a importação.', result && result.ok ? '' : '#e53935');
+    appSetStatus('statusSoAImport', result && result.ok ? (result.podeImportar === false ? 'Rascunho recebido. Confira as pendências abaixo; você pode salvar para continuar depois.' : 'Prévia pronta. Revise os alertas antes de importar.') : 'Há pendências que impedem a importação.', result && result.ok ? '' : '#e53935');
   }, onFailure: function(e) {
     if (revisao !== _soaImportRevisao) return;
     appSetButtonBusy(btn, false);
@@ -6909,8 +6962,13 @@ function confirmarImportacaoSoAApp() {
     appSetStatus('statusSoAImport', 'O conteúdo mudou. Pré-visualize novamente antes de importar.', '#e53935');
     return;
   }
+  var planningResult = _soaImportResultadoAtual;
+  if (planningResult && (planningResult.podeImportar === false || (planningResult.planejamento && (!document.getElementById('soaImportRevisado').checked || !planningResult.fingerprint)))) {
+    appSetStatus('statusSoAImport', 'Resolva as pendências e confirme a revisão antes de importar.', '#e53935'); return;
+  }
   // Enviar exatamente o snapshot revisado, mesmo se o formulário mudar durante a RPC.
   var payload = JSON.parse(_soaImportFingerprintAtual);
+  if (planningResult && planningResult.planejamento) { payload.confirmarRevisaoPlanejamento = true; payload.fingerprintPlanejamento = planningResult.fingerprint; }
   var projeto = _soaProjetoAtual;
   var revisao = _soaImportRevisao;
   var btn = document.getElementById('btnImportarSoAConfirm');
@@ -6926,6 +6984,96 @@ function confirmarImportacaoSoAApp() {
     if (revisao !== _soaImportRevisao) return;
     appSetButtonBusy(btn, false);
     appSetStatus('statusSoAImport', '⚠ ' + appErrorMessage(e), '#e53935');
+  } });
+}
+
+
+function atualizarRevisaoPlanejamentoSoAApp() {
+  var result = _soaImportResultadoAtual;
+  document.getElementById('btnImportarSoAConfirm').disabled = !result || result.ok !== true || result.podeImportar !== true || !result.fingerprint || !document.getElementById('soaImportRevisado').checked || _soaImportEmAndamento;
+}
+
+function soaPlanningValue_(value) {
+  if (value === undefined || value === null) return 'Não informado';
+  var labels = { anchor:'Referência', anchor_visit_id:'Visita de referência', basis:'Base das datas', offset_days:'Intervalo em dias', window_before_days:'Dias antes', window_after_days:'Dias depois', alvo_dias:'Alvo em dias', inicio_dias:'Início em dias', fim_dias:'Fim em dias', recorrencia_semanas:'A cada (semanas)', file:'Documento', printed_page:'Página impressa', section:'Seção', planned:'Data prevista', performed:'Data realizada', randomization_date:'Randomização', scheduled_visit_date:'Data prevista da visita', last_dose:'Última dose', RANDOMIZACAO:'Randomização', INCLUSAO:'Inclusão', ASSINATURA_TCLE:'Assinatura do TCLE', decision_to_permanently_discontinue:'Decisão de interromper o tratamento', visit_timing:'Prazo de visita', requires_definition:'Referência a definir', extracted:'Extraído do documento', pending_human_review:'Pendente de revisão', requires_review:'Requer revisão' };
+  if (Array.isArray(value)) return value.map(soaPlanningValue_).join(', ') || 'Nenhum';
+  if (typeof value === 'object') return Object.keys(value).filter(function(key) { return value[key] !== undefined; }).map(function(key) { return esc(labels[key] || key) + ': ' + soaPlanningValue_(value[key]); }).join(' · ') || 'Não informado';
+  return esc(labels[String(value)] || String(value));
+}
+
+function renderPlanejamentoSoA_(planning, normalizedVisits) {
+  var study = planning.study || {};
+  var html = '<div class="soa-import-summary"><strong>Extração do protocolo ' + soaPlanningValue_(study.protocol_id) + '</strong> · versão ' + soaPlanningValue_(study.protocol_version) + '</div>';
+  if (planning.draftOnly) html += '<div class="soa-import-warning">Recebido como rascunho. O calendário ainda não pode ser aplicado.</div>';
+  if (planning.issues && planning.issues.length) html += '<div class="soa-import-warning"><strong>Pontos que precisam de atenção</strong><ul>' + planning.issues.map(function(issue) { issue = issue || {}; return '<li>' + soaPlanningValue_(issue.message) + (issue.blocking ? ' <strong>— impede aplicar</strong>' : '') + '</li>'; }).join('') + '</ul></div>';
+  var rules = Array.isArray(planning.rules) ? planning.rules : [];
+  html += '<details class="soa-planning-details"><summary>Regras extraídas (' + rules.length + ')</summary>';
+  html += rules.map(function(rule) {
+    if (!rule || typeof rule !== 'object') return '<p>Regra inválida: ' + soaPlanningValue_(rule) + '</p>';
+    var timing = rule.timing || rule;
+    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(rule.id) + '</strong><dl>' +
+      [['Aplicação',rule.scope || rule.kind],['Referência',timing.anchor],['Prazo e janela',rule.timing || { alvo_dias:rule.target_days, inicio_dias:rule.earliest_days, fim_dias:rule.latest_days, recorrencia_semanas:rule.recurrence_weeks }],['Fonte',rule.source],['Revisão',rule.status],['Observação',rule.note]].map(function(pair) { return '<dt>' + pair[0] + '</dt><dd>' + soaPlanningValue_(pair[1]) + '</dd>'; }).join('') + '</dl></article>';
+  }).join('') + '</details>';
+  if (normalizedVisits && normalizedVisits.length) html += '<details class="soa-planning-details"><summary>Fontes e detalhes das visitas</summary>' + normalizedVisits.map(function(visit) {
+    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(visit.codigo) + ' · ' + soaPlanningValue_(visit.nome) + '</strong><p>Braços: ' + soaPlanningValue_(visit.bracoNomes && visit.bracoNomes.length ? visit.bracoNomes : 'Todos os braços') + '</p><p>Base das datas: ' + soaPlanningValue_(visit.baseCalculo === 'RECALCULAR_VISITA_REALIZADA' ? 'Data realizada' : 'Data prevista') + '</p><p>Fonte: ' + soaPlanningValue_(visit.source) + '</p><p>Observação: ' + soaPlanningValue_(visit.observacoes || 'Nenhuma') + '</p></article>';
+  }).join('') + '</details>';
+  return html;
+}
+
+function listarPlanejamentosSoAApp() {
+  var select = document.getElementById('soaPlanejamentoSalvo');
+  if (!select) return;
+  var projeto = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
+  var request = ++_soaDraftRequest;
+  select.innerHTML = '<option value="">Carregando rascunhos...</option>';
+  appServerRun({ method: 'listarPlanejamentosSoA', args: [projeto], onSuccess: function(items) {
+    if (request !== _soaDraftRequest || projeto !== (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) return;
+    select.innerHTML = '<option value="">Selecione um rascunho salvo</option>' + (items || []).map(function(item) {
+      var date = new Date(item.created_at);
+      var label = isNaN(date.getTime()) ? (item.label || item.protocol_id || item.id) : 'Rascunho de ' + date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      return '<option value="' + esc(item.id) + '">' + esc(label) + '</option>';
+    }).join('');
+  }, onFailure: function() { if (request === _soaDraftRequest) select.innerHTML = '<option value="">Não foi possível listar os rascunhos</option>'; } });
+}
+
+function carregarPlanejamentoSoAApp() {
+  var id = document.getElementById('soaPlanejamentoSalvo').value;
+  if (!id || _soaImportEmAndamento) return;
+  invalidarPreviaImportacaoSoA_();
+  var revisao = _soaImportRevisao;
+  var texto = document.getElementById('soaImportTexto').value;
+  var projeto = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
+  appSetStatus('statusSoAImport', 'Carregando rascunho...');
+  appServerRun({ method: 'carregarPlanejamentoSoA', args: [projeto, id], onSuccess: function(result) {
+    if (revisao !== _soaImportRevisao || texto !== document.getElementById('soaImportTexto').value || projeto !== (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo) || !document.getElementById('modalSoAImport').classList.contains('open')) return;
+    document.getElementById('soaImportTexto').value = JSON.stringify(result.dados, null, 2);
+    previsualizarSoAJsonApp();
+  }, onFailure: function(e) { if (revisao === _soaImportRevisao) appSetStatus('statusSoAImport', appErrorMessage(e), '#e53935'); } });
+}
+
+function salvarPlanejamentoSoAApp() {
+  if (_soaDraftSaving || !_soaImportDadosAtual || !_soaImportResultadoAtual || !_soaImportResultadoAtual.planejamento || !_soaImportResultadoAtual.ok) return;
+  var atual;
+  try { atual = soaImportTextoPayload_(); } catch (e) { invalidarPreviaImportacaoSoA_(); return; }
+  if (JSON.stringify(atual) !== _soaImportFingerprintAtual) { invalidarPreviaImportacaoSoA_(); return; }
+  var snapshot = JSON.parse(_soaImportFingerprintAtual);
+  var revisao = _soaImportRevisao;
+  var btn = document.getElementById('btnSalvarPlanejamentoSoA');
+  _soaDraftSaving = true;
+  appSetButtonBusy(btn, true);
+  appSetStatus('statusSoAImport', 'Salvando rascunho...');
+  appServerRun({ method: 'salvarPlanejamentoSoA', args: [snapshot], onSuccess: function() {
+    _soaDraftSaving = false;
+    appSetButtonBusy(btn, false);
+    btn.disabled = !_soaImportResultadoAtual || !_soaImportResultadoAtual.ok || !_soaImportResultadoAtual.planejamento;
+    if (revisao !== _soaImportRevisao || !document.getElementById('modalSoAImport').classList.contains('open')) return;
+    appSetStatus('statusSoAImport', 'Rascunho salvo. Nenhuma visita foi criada.');
+    listarPlanejamentosSoAApp();
+  }, onFailure: function(e) {
+    _soaDraftSaving = false;
+    appSetButtonBusy(btn, false);
+    btn.disabled = !_soaImportResultadoAtual || !_soaImportResultadoAtual.ok || !_soaImportResultadoAtual.planejamento;
+    if (revisao === _soaImportRevisao) appSetStatus('statusSoAImport', appErrorMessage(e), '#e53935');
   } });
 }
 

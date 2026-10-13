@@ -4159,7 +4159,7 @@ function soaSugerirOrdemExecucao_(visitas, options) {
   (options.referenciasConhecidas || []).forEach(function(id) { referenciasConhecidas[String(id || '').trim()] = true; });
   var especiais = {
     INCLUSAO: 'inicio', RANDOMIZACAO: 'inicio',
-    ULTIMA_DOSE: 'terminal', FIM_TRATAMENTO: 'terminal', PROGRESSAO_DOENCA: 'terminal',
+    ULTIMA_DOSE: 'terminal', FIM_TRATAMENTO: 'terminal', DECISAO_INTERRUPCAO_TRATAMENTO: 'terminal', PROGRESSAO_DOENCA: 'terminal',
     OUTRA: 'outra'
   };
   var ambiguidades = [];
@@ -4275,14 +4275,14 @@ function soaSugerirOrdemExecucao_(visitas, options) {
   nodes.forEach(function(node) {
     var root = specialRoot(node, {});
     if (root === 'INCLUSAO' || root === 'RANDOMIZACAO') inicio.push(node);
-    if (root === 'ULTIMA_DOSE' || root === 'FIM_TRATAMENTO' || root === 'PROGRESSAO_DOENCA') {
+    if (root === 'ULTIMA_DOSE' || root === 'FIM_TRATAMENTO' || root === 'DECISAO_INTERRUPCAO_TRATAMENTO' || root === 'PROGRESSAO_DOENCA') {
       terminal.push(node);
       if (!terminaisPorRaiz[root]) terminaisPorRaiz[root] = [];
       terminaisPorRaiz[root].push(node);
     }
   });
   inicio.forEach(function(from) { terminal.forEach(function(to) { addEdge(from, to); }); });
-  var gruposTerminais = ['ULTIMA_DOSE', 'FIM_TRATAMENTO', 'PROGRESSAO_DOENCA'].filter(function(key) { return terminaisPorRaiz[key]; });
+  var gruposTerminais = ['ULTIMA_DOSE', 'FIM_TRATAMENTO', 'DECISAO_INTERRUPCAO_TRATAMENTO', 'PROGRESSAO_DOENCA'].filter(function(key) { return terminaisPorRaiz[key]; });
   if (gruposTerminais.length > 1) {
     addAmbiguidade('FASES_TERMINAIS', 'Há marcos terminais alternativos; a sequência entre esses grupos precisa de revisão.', gruposTerminais.reduce(function(all, key) { return all.concat(terminaisPorRaiz[key]); }, []));
   }
@@ -5260,6 +5260,8 @@ function soaImportPrepare_(payload) {
 
 function validarImportacaoSoA(payload) {
   codexAssertCanRead_();
+  var parsed = soaImportParsePayload_(payload);
+  if (Object.prototype.hasOwnProperty.call(parsed.dados, 'schema')) return soaPlanningPrepare_(payload);
   return soaImportPrepare_(payload);
 }
 
@@ -5327,6 +5329,7 @@ function importarSoAJson(payload) {
   codexAssertCanWrite_('importarSoAJson', 'Cadastros', payload.projeto || 'SoA');
   return codexWithDocumentLock_('importarSoAJson', function() {
     var parsed = soaImportParsePayload_(payload);
+    if (Object.prototype.hasOwnProperty.call(parsed.dados, 'schema')) return soaPlanningApply_(payload);
     var prepared = soaImportPrepare_(payload);
     if (!prepared.ok) throw new Error('Importação SoA inválida: ' + prepared.erros.join(' '));
     var createdArms = soaCreateImportArms_(parsed.projeto, prepared.missingBracos);
@@ -6082,7 +6085,28 @@ function participanteColumnMap_(sh, createMissing) {
   return map;
 }
 
-function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
+function participantePrepararMarcos_(dados, existing, headers) {
+  if (!Object.prototype.hasOwnProperty.call(dados, 'marcosParticipacao')) return null;
+  var patch = dados.marcosParticipacao;
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Informe os marcos da participação como datas identificadas.');
+  var columns = participanteCtmsColumnMapFromHeaders_(headers);
+  var previous = existing && columns.marcosJson >= 0 ? participanteCtmsJsonObject_(existing[columns.marcosJson]) : {};
+  var next = Object.assign({}, previous);
+  var changes = [];
+  Object.keys(patch).forEach(function(key) {
+    if (!jornadaCtmsReferenciaEspecial_(key)) throw new Error('Marco da participação não reconhecido.');
+    var label = JORNADA_CTMS_MARCOS_.filter(function(item) { return item.chave === key; })[0].label;
+    if (typeof patch[key] !== 'string') throw new Error('Informe uma data válida para ' + label + '.');
+    var value = patch[key].trim();
+    if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || jornadaCtmsDateIso_(value) !== value)) throw new Error('A data de ' + label + ' é inválida.');
+    if (existing && (!dados.marcosParticipacaoBase || typeof dados.marcosParticipacaoBase[key] !== 'string' || String(previous[key] || '') !== dados.marcosParticipacaoBase[key])) throw new Error('Os marcos desta participação mudaram. Reabra o cadastro antes de salvar.');
+    if (String(previous[key] || '') !== value) changes.push({ field: label, oldValue: previous[key] || '', newValue: value });
+    if (value) next[key] = value; else delete next[key];
+  });
+  return changes.length ? { marcos: next, changes: changes } : null;
+}
+
+function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns, marcosPreparados) {
   var values = {
     rua: d.rua || '', numero: d.numero || '', cidade: d.cidade || '', estado: d.estado || '', municipioCodigo: d.municipioCodigo || '', cep: d.cep || '',
     banco: d.banco || '', agencia: d.agencia || '', contaCorrente: d.contaCorrente || '',
@@ -6116,6 +6140,16 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns) {
     block.values.push(cell.value);
   });
   flushBlock();
+  if (marcosPreparados) {
+    var ctmsColumns = participanteCtmsColumnMapFromHeaders_(sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0] || []);
+    var column = ctmsColumns.marcosJson;
+    if (column < 0) {
+      column = sh.getLastColumn();
+      sh.getRange(1, column + 1).setValue('CTMS Marcos (JSON)');
+    }
+    sh.getRange(rowNumber, column + 1).setValue(Object.keys(marcosPreparados.marcos).length ? JSON.stringify(marcosPreparados.marcos) : '');
+    if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Cadastros', 'atualizarMarcosParticipacao', d.id || sh.getRange(rowNumber, 1).getValue(), marcosPreparados.changes, 'Marcos documentados da participação');
+  }
 }
 
 function participanteLerAcompanhantes_(value) {
@@ -6292,6 +6326,7 @@ var JORNADA_CTMS_MARCOS_ = [
   { chave: 'INCLUSAO', label: 'Inclusão' },
   { chave: 'ULTIMA_DOSE', label: 'Última dose' },
   { chave: 'FIM_TRATAMENTO', label: 'Fim do tratamento' },
+  { chave: 'DECISAO_INTERRUPCAO_TRATAMENTO', label: 'Decisão de interromper definitivamente o tratamento' },
   { chave: 'PROGRESSAO_DOENCA', label: 'Progressão da doença' },
   { chave: 'OUTRA', label: 'Outra data de referência' }
 ];
@@ -6376,6 +6411,16 @@ function salvarConfiguracaoCtmsParticipante_(payload) {
     var participante = jornadaCtmsResolverEscritaParticipante_(rows, payload);
     var rowIndex = participante.rowIndex;
     participantePayload = participante.payload;
+    if (payload.marcosAtualizacaoParcial === true) {
+      var columnsRead = participanteCtmsColumnMapFromHeaders_(rows[0] || []);
+      var currentMarcos = columnsRead.marcosJson >= 0 ? participanteCtmsJsonObject_(rows[rowIndex][columnsRead.marcosJson]) : {};
+      var patchMarcos = config.marcos;
+      config.marcos = Object.assign({}, currentMarcos);
+      Object.keys(payload.marcos || {}).forEach(function(key) {
+        if (!jornadaCtmsReferenciaEspecial_(key)) throw new Error('Marco da participação não reconhecido.');
+        if (patchMarcos[key]) config.marcos[key] = patchMarcos[key]; else delete config.marcos[key];
+      });
+    }
     var columns = participanteCtmsGarantirColumns_(sh);
     var rowNumber = rowIndex + 1;
     sh.getRange(rowNumber, columns.bracoId + 1).setValue(config.bracoId);
@@ -6508,6 +6553,8 @@ function participanteDadosDaLinha_(r, header, ultimaVisita, somenteListagem, dto
       cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
       acompanhantes: participanteLerAcompanhantes_(valueFor(r, ['acompanhantesjson']))
     };
+    var ctmsColumns = participanteCtmsColumnMapFromHeaders_(header);
+    detalhes.marcosParticipacao = ctmsColumns.marcosJson >= 0 ? participanteCtmsJsonObject_(r[ctmsColumns.marcosJson]) : {};
     Object.keys(detalhes).forEach(function(key) { participante[key] = detalhes[key]; });
   }
   return participante;
@@ -6814,6 +6861,11 @@ function salvarDadosParticipante(d) {
   if (existing) {
     var alterouProjeto = normText_(existing[5]) !== normText_(projeto);
     var alterouIdParticipante = normText_(existing[4]) !== normText_(d.idParticipante);
+    if (alterouProjeto) {
+      var marcosColumnsRead = participanteCtmsColumnMapFromHeaders_(rows[0] || []);
+      var marcosAnteriores = marcosColumnsRead.marcosJson >= 0 ? participanteCtmsJsonObject_(existing[marcosColumnsRead.marcosJson]) : {};
+      if (Object.keys(marcosAnteriores).length) throw new Error('Esta participação já possui marcos documentados no estudo. Crie uma nova participação para o outro protocolo.');
+    }
     // A Pré-Triagem pode ser agendada antes da atribuição do número definitivo.
     // Depois que há evento, preservar o protocolo e um número já atribuído, mas
     // permitir o primeiro preenchimento (vazio -> número), que será sincronizado
@@ -6916,6 +6968,7 @@ function salvarDadosParticipante(d) {
       ? participanteLerAcompanhantes_(rows[editRowIndex][participantColumnsRead.acompanhantesJson]) : [];
     d.acompanhantes = participanteValidarAcompanhantes_(d.acompanhantes, acompanhantesAnteriores);
   }
+  var marcosParticipacaoPreparados = participantePrepararMarcos_(d, existing, rows[0] || []);
   var participantColumns = participanteColumnMap_(sh, true);
   var personIdColumn = participantColumns.idPessoa;
   var persistStartedAt = Date.now();
@@ -6953,7 +7006,7 @@ function salvarDadosParticipante(d) {
     var referenciaAnterior = participanteReferenciaCadastro_(rows[editRowIndex]);
     sh.getRange(editRowIndex + 1, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(editRowIndex + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
-    gravarParticipanteCamposNovos_(sh, editRowIndex + 1, d, participantColumns);
+    gravarParticipanteCamposNovos_(sh, editRowIndex + 1, d, participantColumns, marcosParticipacaoPreparados);
     if (editRowIndex + 1 > 2) sh.getRange(editRowIndex + 1, 4).clearContent();
     var referenciaAtual = participanteReferenciaCadastro_([
       d.id, d.nome, parseDate(d.dataNascimento), '', d.idParticipante,
@@ -6987,7 +7040,7 @@ function salvarDadosParticipante(d) {
     var targetRow = sh.getLastRow() + 1;
     sh.getRange(targetRow, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
-    gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns);
+    gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns, marcosParticipacaoPreparados);
     if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('criarParticipacaoParticipante', 'Cadastros', rowStart[0]);
     clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
@@ -12885,7 +12938,7 @@ function jornadaCtmsEventoParaVisita_(visita, eventos) {
 }
 
 function jornadaCtmsReferenciaEspecial_(value) {
-  return ['RANDOMIZACAO', 'INCLUSAO', 'ULTIMA_DOSE', 'FIM_TRATAMENTO', 'PROGRESSAO_DOENCA', 'OUTRA']
+  return ['RANDOMIZACAO', 'INCLUSAO', 'ULTIMA_DOSE', 'FIM_TRATAMENTO', 'DECISAO_INTERRUPCAO_TRATAMENTO', 'PROGRESSAO_DOENCA', 'OUTRA']
     .indexOf(String(value || '').trim()) >= 0;
 }
 

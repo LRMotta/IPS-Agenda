@@ -39,7 +39,7 @@ for (const width of [1280, 390]) {
         var _acIdxProj = {}, ESPS_PROJ = ['Oncologia', 'Cardiologia'];
         var _medicosProj = [], _solicitantesProj = [], PATS_PROJ = [], CROS_PROJ = [];
         var _soaProjetoAtual = { nomeAbreviado: 'Projeto local' };
-        var _soaImportDadosAtual = null, _soaImportFingerprintAtual = '', _soaImportRevisao = 0, _soaImportEmAndamento = false;
+        var _soaImportDadosAtual = null, _soaImportFingerprintAtual = '', _soaImportRevisao = 0, _soaImportEmAndamento = false, _soaImportResultadoAtual = null, _soaDraftRequest = 0, _soaDraftSaving = false;
         var testRequests = [];
         function norm(value) { return String(value || '').toLowerCase(); }
         function appSetStatus(id, message) { document.getElementById(id).textContent = message; }

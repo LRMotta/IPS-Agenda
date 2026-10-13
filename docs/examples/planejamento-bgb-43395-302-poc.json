@@ -1,0 +1,122 @@
+{
+  "schema": "ips-agenda-study-planning-poc",
+  "schema_version": "0.1.0",
+  "import_mode": "preview_only",
+  "approved_for_clinical_scheduling": false,
+  "study": {
+    "protocol_id": "BGB-43395-302",
+    "protocol_version": "2.0",
+    "sponsor": "BeOne Medicines",
+    "budget_version": "Protocol Amendment 2.0 20MAR2026"
+  },
+  "rules": [
+    {
+      "id": "routine_pm3",
+      "scope": "scheduled_visits_unless_otherwise_noted",
+      "anchor": "scheduled_visit_date",
+      "earliest_days": -3,
+      "latest_days": 3,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 100,
+        "section": "8.12"
+      },
+      "status": "pending_human_review"
+    },
+    {
+      "id": "first_dose_after_randomization",
+      "scope": "C1D1_first_dose",
+      "anchor": "randomization_date",
+      "earliest_days": 0,
+      "latest_days": 2,
+      "note": "Protocol states within 2 days; lower bound 0 inferred from after randomization, confirm locally",
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 101,
+        "section": "8.12"
+      },
+      "status": "requires_review"
+    },
+    {
+      "id": "tumor_imaging_early",
+      "scope": "tumor_imaging_first_72_weeks",
+      "anchor": "randomization_date",
+      "recurrence_weeks": 8,
+      "earliest_days": -7,
+      "latest_days": 7,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 34,
+        "section": "1.3.1.1 footnote 7"
+      },
+      "status": "pending_human_review"
+    },
+    {
+      "id": "tumor_imaging_late",
+      "scope": "tumor_imaging_after_week_72",
+      "anchor": "randomization_date",
+      "recurrence_weeks": 12,
+      "earliest_days": -7,
+      "latest_days": 7,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 34,
+        "section": "1.3.1.1 footnote 7"
+      },
+      "status": "pending_human_review"
+    },
+    {
+      "id": "survival_followup_early",
+      "scope": "survival_followup_first_2_years",
+      "anchor": "requires_definition",
+      "recurrence_weeks": 8,
+      "earliest_days": -14,
+      "latest_days": 14,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 34,
+        "section": "1.3.1.1 footnote 4"
+      },
+      "status": "requires_review"
+    },
+    {
+      "id": "survival_followup_late",
+      "scope": "survival_followup_after_2_years",
+      "anchor": "requires_definition",
+      "recurrence_weeks": 12,
+      "earliest_days": -14,
+      "latest_days": 14,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 34,
+        "section": "1.3.1.1 footnote 4"
+      },
+      "status": "requires_review"
+    },
+    {
+      "id": "eot",
+      "scope": "end_of_treatment",
+      "anchor": "decision_to_permanently_discontinue",
+      "earliest_days": 0,
+      "latest_days": 7,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 34,
+        "section": "1.3.1.1 footnote 1"
+      },
+      "status": "requires_review"
+    },
+    {
+      "id": "safety_followup",
+      "scope": "safety_followup",
+      "anchor": "last_dose",
+      "target_days": 30,
+      "source": {
+        "file": "protocol_pdf",
+        "printed_page": 34,
+        "section": "1.3.1.1 footnote 2"
+      },
+      "status": "requires_review"
+    }
+  ]
+}
