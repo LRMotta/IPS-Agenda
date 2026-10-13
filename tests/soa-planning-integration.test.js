@@ -44,7 +44,7 @@ test('o exemplo real de oito regras fica somente em rascunho e conserva todas as
 });
 
 test('instruções para IA disponíveis na interface correspondem ao contrato documentado', () => {
-  const script = readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/, '').replace(/<\/script>\s*$/, '');
+  const script = readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/i, '').replace(/<\/script>\s*$/i, '');
   const context = vm.createContext({});
   vm.runInContext(script, context);
   assert.equal(context.soaGuiaExtracaoTexto_().trim(), readProjectFile('docs/INSTRUCOES_EXTRACAO_IA.txt').trim());

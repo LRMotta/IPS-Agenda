@@ -48,7 +48,7 @@ for (const width of [1280, 390]) {
         ${importer}
         abrirSoAImportForm();
       ` });
-      await page.addScriptTag({ content: readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/,'').replace(/<\/script>\s*$/,'') });
+      await page.addScriptTag({ content: readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/i,'').replace(/<\/script>\s*$/i,'') });
       assert.equal(page.url(), 'about:blank');
       assert.equal(await page.title(), 'IPS — planejamento local');
       assert.ok((await page.locator('#modalSoAImport').innerText()).includes('IMPORTAR CALENDÁRIO'));
