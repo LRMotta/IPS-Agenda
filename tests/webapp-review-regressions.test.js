@@ -50,6 +50,18 @@ function assertUnchanged(f, callback, pattern) {
   assert.equal(f.ped.writes + f.pi.writes, 0);
 }
 
+test('exclusão de pedido com cinquenta itens usa um bloco e preserva os itens de outro pedido', () => {
+  const items = Array.from({ length: 50 }, (_, i) => ['PED-A', 'N1', 'Projeto A', 'Kit', 'Kit', 'KIT-' + i, 1, 0, 'Pendente']);
+  const neighbor = ['PED-B', 'N2', 'Projeto B', 'Outro', 'Kit', 'OUTRO', 1, 0, 'Pendente'];
+  const f = fixture([PEDIDO], [neighbor, ...items, neighbor]);
+  const blocks = [];
+  const remove = f.pi.deleteRows.bind(f.pi);
+  f.pi.deleteRows = (row, count) => { blocks.push([row, count]); remove(row, count); };
+  f.server.excluirPedidoEstoque(2, 'PED-A');
+  assert.deepEqual(blocks, [[3, 50]]);
+  assert.deepEqual(f.pi.rows.slice(1), [neighbor, neighbor]);
+});
+
 test('editar pedido parcial preserva recebimento, movimentação e colunas extras em lote', () => {
   const second = ['PED-A', 'N1', 'Projeto A', 'Kit B', 'Kit', 'KIT-B', 2, 2, 'Recebido', 'MOV-B', 'Extra'];
   const f = fixture([PEDIDO], [ITEM, second, ['PED-B', 'N2', 'Projeto B', 'Outro', 'Kit', 'KIT-C', 1, 0, 'Pendente']]);

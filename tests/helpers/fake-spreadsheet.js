@@ -117,6 +117,7 @@ class FakeSheet {
   }
   getName() { return this.name; }
   deleteRow(row) { this.rows.splice(row - 1, 1); this.writes++; }
+  deleteRows(row, count) { this.rows.splice(row - 1, count); this.writes++; }
   setFrozenRows() { return this; }
   hideColumns() { return this; }
 }

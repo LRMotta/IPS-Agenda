@@ -125,7 +125,7 @@ test('salvamento envia a linha aberta e o servidor revalida ID e rowIndex', () =
 
 test('monitores externos consultam Gmail e DHL antes de adquirir o bloqueio de escrita', () => {
   const source = readProjectFile('WebApp.gs');
-  const dhl = functionBody(source, 'monitorarEntregasDhlAgendadas_');
+  const dhl = functionBody(source, 'monitorarEntregasDhlLote_');
   const courier = functionBody(source, 'monitorarConfirmacoesCourierAgendadas_');
 
   assert.ok(dhl.indexOf('consultarEntregaDhl_') < dhl.indexOf("codexWithDocumentLock_('monitorarEntregasDhlAgendadas'"));
