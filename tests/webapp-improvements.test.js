@@ -34,9 +34,15 @@ function measure(sheet) {
 
 function context(ss) {
   const locks = { held: false, acquired: 0, released: 0, flushes: 0 };
+  const properties = new Map();
   let uuid = 0;
   const server = runFiles(['AgendaServerRules.gs', 'CadastroRules.gs', 'WebApp.gs'], {
     Date,
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: key => properties.get(key) || null,
+      setProperty: (key, value) => properties.set(key, value),
+      deleteProperty: key => properties.delete(key)
+    }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => { assert.equal(locks.held, true); locks.flushes++; } },
     Session: { getActiveUser: () => ({ getEmail: () => 'teste@example.invalid' }), getScriptTimeZone: () => 'America/Sao_Paulo' },
     Logger: { log: () => {} },

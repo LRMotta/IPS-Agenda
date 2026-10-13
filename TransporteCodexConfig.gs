@@ -3698,6 +3698,7 @@ function transporteSincronizarAgenda_(payload) {
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {
     codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
   }
+  // Persistir a Agenda sob lock antes de devolver o bootstrap sincronizado.
   SpreadsheetApp.flush();
   return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: slot, awb: awb, campos: changes.map(function(c) { return c.field; }), warnings: warnings };
 }
@@ -4199,6 +4200,7 @@ function gerarPdfTransporteInterno_(options, access) {
       preencherDocumentos: true
     });
   }
+  // Persistir o preenchimento antes de validar o manifesto e gerar os documentos.
   SpreadsheetApp.flush();
   var manifestoPdf = transporteMeasurePerformance_('gerarPdfTransporte', 'manifest_validate', { rowCount: 1 }, function() {
     return transporteValidarManifestoPdf_(options);
@@ -5258,6 +5260,7 @@ function performContentDeletion_() {
     erro = true;
     Logger.log('Erro limpando abas secundarias: ' + e3.toString());
   }
+  // Persistir as limpezas antes de recalcular dependências e reler as abas.
   SpreadsheetApp.flush();
   return erro ? 'WARN_SOME_ERRORS' : 'OK';
 }
@@ -5934,6 +5937,7 @@ function imprimirTodasAbas(options) {
     preencherDhlWebApp_(ss, payloadFallback);
     transporteAjustarVolumesDeclaracao_(transporteCodexGetSheet_(ss, 'declaracaoTransp', false), true);
 
+    // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
     SpreadsheetApp.flush();
     var token = ScriptApp.getOAuthToken();
     var nomeArquivo = transportePdfFileName_(awb, dataEnvio, temperatura, courier, marker);
@@ -5952,6 +5956,7 @@ function imprimirTodasAbas(options) {
     transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_prepare', { rowCount: spec.ordem.length }, function() {
       transportePdfPruneDuplicateAndOrder_(workingSS, spec);
     });
+    // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
     SpreadsheetApp.flush();
     var conteudoPdf = transportePdfVerificarAnonimizacao_(workingSS, [paciente, payloadFallback.paciente, payloadFallback.participante]);
     var conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
@@ -6247,6 +6252,7 @@ function transportePdfOpenWorkingCopy_(fileId) {
       var workingSS = SpreadsheetApp.openById(fileId);
       try {
         workingSS.setSpreadsheetLocale('pt_BR');
+        // Persistir o locale da cópia antes de conferir formatos e conteúdo dos documentos.
         SpreadsheetApp.flush();
       } catch (localeError) {
         Logger.log('Locale pt_BR nao aplicado na copia temporaria do PDF: ' + localeError.message);
@@ -6325,8 +6331,6 @@ function transportePdfPruneDuplicateAndOrder_(workingSS, spec) {
       sheet.hideSheet();
     }
   });
-  SpreadsheetApp.flush();
-
   spec.ordem.forEach(function(name) {
     var sheet = transporteFindSheetByNames_(workingSS, [name]);
     var count = spec.copias[name] || 1;
@@ -6339,8 +6343,6 @@ function transportePdfPruneDuplicateAndOrder_(workingSS, spec) {
       copy.showSheet();
     }
   });
-  SpreadsheetApp.flush();
-
   var pos = 1;
   spec.ordem.forEach(function(name) {
     var count = spec.copias[name] || 1;

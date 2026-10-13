@@ -3109,6 +3109,7 @@ function gerarRequisicaoPDF(dados) {
   sheet.getRange('H41').setValue(dados.solicitante || '');
   sheet.getRange('H42').setValue(dados.solFormacao || '');
   sheet.getRange('H43').setValue(dados.solRegistro || '');
+  // Confirmar o preenchimento antes de conferir as células exibidas e gerar o PDF.
   SpreadsheetApp.flush();
 
   var examesGravados = slotsExames
@@ -3384,17 +3385,31 @@ function reqExamesExportPdfBlob_(url, nomeArquivo, options) {
   }
 }
 
-function reqExamesFetchPdfBlob_(url, nomeArquivo) {
+function reqExamesPdfRetryOnlyPilot_() {
+  try {
+    return PropertiesService.getScriptProperties().getProperty('REQ_EXAMES_PDF_RETRY_ONLY_PILOT_V1') === 'true';
+  } catch (e) {
+    // Falha de configuração mantém as esperas do exportador atual.
+    return false;
+  }
+}
+
+function reqExamesFetchPdfBlob_(url, nomeArquivo, options) {
+  options = options || {};
+  // Piloto opt-in: a cópia temporária sempre conserva a espera de consistência.
+  var waitInitially = options.conservarEsperaInicial === true || !reqExamesPdfRetryOnlyPilot_();
   var token = ScriptApp.getOAuthToken();
   var lastStatus = 0;
   var lastMessage = '';
   var transientCodes = { 429: true, 500: true, 502: true, 503: true, 504: true };
 
   for (var attempt = 1; attempt <= 5; attempt++) {
-    if (attempt === 1) Utilities.sleep(900);
-    var response = UrlFetchApp.fetch(url, {
-      headers: { 'Authorization': 'Bearer ' + token },
-      muteHttpExceptions: true
+    if (attempt === 1 && waitInitially) codexMeasurePerformance_('reqExamesPdf', 'initial_wait', {}, function() { Utilities.sleep(900); });
+    var response = codexMeasurePerformance_('reqExamesPdf', 'fetch_' + attempt, { rowCount: 1 }, function() {
+      return UrlFetchApp.fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + token },
+        muteHttpExceptions: true
+      });
     });
     lastStatus = response.getResponseCode();
     var blob = response.getBlob();
@@ -3407,7 +3422,7 @@ function reqExamesFetchPdfBlob_(url, nomeArquivo) {
 
     lastMessage = reqExamesExportErrorSnippet_(response);
     if (!transientCodes[lastStatus] || attempt === 5) break;
-    Utilities.sleep(900 * attempt);
+    codexMeasurePerformance_('reqExamesPdf', 'retry_wait_' + attempt, {}, function() { Utilities.sleep(900 * attempt); });
   }
 
   throw new Error(
@@ -3421,6 +3436,7 @@ function reqExamesFetchPdfBlob_(url, nomeArquivo) {
 function reqExamesExportPdfBlobViaWorkingCopy_(sheet, nomeArquivo) {
   var workingCopyFile = null;
   try {
+    // Persistir os dados antes da cópia ou da exportação HTTP, fora do buffer do Sheets.
     SpreadsheetApp.flush();
     Utilities.sleep(900);
     var workingSS = SpreadsheetApp.create(nomeArquivo + ' - TEMP_REQ_PDF');
@@ -3431,11 +3447,12 @@ function reqExamesExportPdfBlobViaWorkingCopy_(sheet, nomeArquivo) {
     workingSS.getSheets().forEach(function(tempSheet) {
       if (tempSheet.getSheetId() !== workingSheet.getSheetId()) workingSS.deleteSheet(tempSheet);
     });
+    // Persistir os dados antes da cópia ou da exportação HTTP, fora do buffer do Sheets.
     SpreadsheetApp.flush();
     Utilities.sleep(1200);
     var url = 'https://docs.google.com/spreadsheets/d/' + workingSS.getId() + '/export?' +
       reqExamesPdfExportOptions_(workingSheet.getSheetId());
-    return reqExamesFetchPdfBlob_(url, nomeArquivo);
+    return reqExamesFetchPdfBlob_(url, nomeArquivo, { conservarEsperaInicial: true });
   } finally {
     if (workingCopyFile) {
       try {
@@ -9239,10 +9256,31 @@ function salvarPedidoEstoque(payload) {
       }
     });
     if (block) shPedIt.getRange(block.start, 1, block.rows.length, block.width).setValues(block.rows);
-    removals.sort(function(a, b) { return b.row - a.row; }).forEach(function(item) { shPedIt.deleteRow(item.row); });
+    codexDeleteRowBlocks_(shPedIt, removals.map(function(item) { return item.row; }));
     if (additions.length) shPedIt.getRange(shPedIt.getLastRow() + 1, 1, additions.length, 10).setValues(additions);
     return (editing ? 'Pedido atualizado' : 'Pedido cadastrado') + ' com sucesso!';
   });
+}
+
+// Excluir de baixo para cima preserva as posições dos blocos ainda pendentes.
+function codexDeleteRowBlocks_(sheet, rowNumbers, onDeleted) {
+  var rows = Array.from(new Set(rowNumbers || [])).sort(function(a, b) { return b - a; });
+  if (rows.some(function(row) { return !Number.isInteger(row) || row < 2; })) throw new Error('Linha inválida para exclusão.');
+  var start = 0, count = 0;
+  rows.forEach(function(row) {
+    if (count && row === start - 1) { start = row; count++; }
+    else {
+      if (count) {
+        sheet.deleteRows(start, count);
+        if (onDeleted) onDeleted(start, count);
+      }
+      start = row; count = 1;
+    }
+  });
+  if (count) {
+    sheet.deleteRows(start, count);
+    if (onDeleted) onDeleted(start, count);
+  }
 }
 
 function excluirPedidoEstoque(rowIndex, idPedido) {
@@ -9259,7 +9297,7 @@ function excluirPedidoEstoque(rowIndex, idPedido) {
       if (String(rows[i][0] || '').trim() === String(idPedido).trim()) toDel.push(i + 1);
     }
     // IDs duplicados/ausentes e hints inválidos já foram rejeitados sem excluir dados.
-    for (var d = toDel.length - 1; d >= 0; d--) shPedIt.deleteRow(toDel[d]);
+    codexDeleteRowBlocks_(shPedIt, toDel);
     shPed.deleteRow(row);
     return 'Pedido excluído com sucesso.';
   });
@@ -9525,6 +9563,7 @@ function registrarMovimentacaoEstoque(payload) {
   var lr = shMov.getLastRow();
   shMov.getRange(lr, 2).setNumberFormat('dd/MM/yyyy HH:mm');
   if (er[4]) shMov.getRange(lr, 9).setNumberFormat('dd/MM/yyyy');
+  // Persistir saldo e movimentação sob lock antes de invalidar as referências de kits.
   SpreadsheetApp.flush();
   agendaInvalidateKitsReference_();
   return 'Movimentação registrada com sucesso.';
@@ -9692,6 +9731,7 @@ function transferirKitEstoque(payload) {
       ];
       shReservas.getRange(shReservas.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([reservaRow]);
     }
+    // Persistir transferência e reserva sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return {
@@ -9763,6 +9803,7 @@ function conciliarReservaKitLaboratorio(payload) {
       String(payload.accessionNumber || lote[map.accessionNumber] || '')
     ];
     shReservas.getRange(shReservas.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([reservaRow]);
+    // Persistir a reserva conciliada sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return { ok: true, quantidade: quantidade, msg: 'Reserva conciliada no Laboratório.' };
@@ -9865,6 +9906,7 @@ function vincularReservaKitAgenda(payload) {
     if (!validade || validade < validadeMinima) throw new Error('A validade do lote não cobre a data real da visita com a margem de 10 dias.');
     shReservas.getRange(linhaReserva, 3).setValue(agendaId);
     shReservas.getRange(linhaReserva, 13).setValue(dataAgenda);
+    // Persistir o vínculo da reserva sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return { ok: true, agendaId: agendaId, dataVisita: formatarDataMesCurtoPt_(dataAgenda), msg: 'Reserva vinculada à visita da Agenda.' };
@@ -10425,6 +10467,7 @@ function migrarIdsLotesEstoque() {
         preenchidos++;
       });
     }
+    // Persistir schema e IDs de lotes sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return { ok: true, preenchidos: preenchidos, existentes: existentes, coluna: map.idLote + 1 };
@@ -10764,6 +10807,7 @@ function registrarConferenciaLaboratorio(payload) {
     ]];
     if (linha > 1) sheet.getRange(linha, 1, 1, KIT_CONFERENCIA_HEADERS_.length).setValues(values);
     else sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_CONFERENCIA_HEADERS_.length).setValues(values);
+    // Persistir a conferência antes de liberar o lock para outro escritor.
     SpreadsheetApp.flush();
     return { ok: true, status: status, divergencia: divergencia, msg: status === 'Conferido' ? 'Conferência registrada.' : 'Conferência registrada com divergência.' };
   });
@@ -10835,6 +10879,7 @@ function importarReservasOperacionais(payload) {
       reservasAtivas.push({ idItem: lote.idItem, idLote: lote.idLote, accessionNumber: item.accessionNumber || lote.accessionNumber || '', participante: item.participante, visitaPrevista: item.visitaPrevista, qtde: item.qtde });
     });
     if (linhas.length) reservasSheet.getRange(reservasSheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
+    // Persistir schema e reservas importadas sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return { ok: true, importados: linhas.length, ignorados: ignorados, erros: erros, avisos: avisos, msg: linhas.length + ' reserva(s) importada(s).' };
@@ -10961,6 +11006,7 @@ function cancelarReservaKitAgenda(payload) {
       if (normText_(rows[i][11] || '') !== 'reservado') throw new Error('Somente reservas ativas podem ser canceladas.');
       sheet.getRange(i + 2, 12).setValue('Cancelada');
       sheet.getRange(i + 2, 15).setValue(String(rows[i][14] || '') + ' · Cancelamento: ' + justificativa);
+      // Persistir o cancelamento sob lock antes de invalidar os caches e eventualmente reler a Jornada.
       SpreadsheetApp.flush();
       agendaInvalidateKitsReference_();
       var resultado = { ok: true, idReserva: idReserva, status: 'Cancelada', msg: 'Reserva cancelada. Se o kit estiver no Laboratório, faça a devolução física separadamente.' };
@@ -11016,6 +11062,7 @@ function ajustarReservaKitAgenda(payload) {
     historico[11] = 'Ajustada';
     historico[14] = 'Quantidade anterior: ' + quantidadeAnterior + ' · Nova quantidade: ' + novaQuantidade + ' · ' + justificativa;
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([historico]);
+    // Persistir quantidade e histórico sob lock antes de invalidar os caches e eventualmente reler a Jornada.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     var resultado = { ok: true, idReserva: idReserva, quantidadeAnterior: quantidadeAnterior, quantidade: novaQuantidade, msg: 'Quantidade da reserva ajustada.' };
@@ -11094,6 +11141,7 @@ function substituirReservaKitAgenda(payload) {
       String(novo.accessionNumber || '')
     ];
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, KIT_RESERVA_HEADERS_.length).setValues([novaLinha]);
+    // Persistir substituição e histórico sob lock antes de invalidar os caches e eventualmente reler a Jornada.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     var resultado = { ok: true, antiga: idReserva, nova: novaLinha[0], msg: 'Lote substituído e nova reserva criada.' };
@@ -11144,6 +11192,7 @@ function registrarExcecaoKitEstoque(payload) {
     });
     if (quantidade >= saldo && map.status >= 0) sheet.getRange(rowIndex, map.status + 1).setValue(tipos[tipo].status);
     var reservasAtualizadas = atualizarReservasPorLote_({ idItem: idItem, idLote: idLote, accessionNumber: row[map.accessionNumber], localizacao: row[map.localizacao], qtde: quantidade, novoStatus: tipos[tipo].status, observacao: tipos[tipo].status + ' · ' + String(payload.motivo || 'Exceção operacional') });
+    // Persistir saldo e reservas afetadas antes de liberar o lock para outro escritor.
     SpreadsheetApp.flush();
     return { ok: true, tipo: tipo, quantidade: quantidade, reservasAtualizadas: reservasAtualizadas, msg: 'Exceção registrada: ' + tipos[tipo].status + '.' };
   });
@@ -11220,6 +11269,7 @@ function reservarKitsAgendaEvento(payload) {
       ]);
     });
     if (linhas.length) sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
+    // Persistir as reservas sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return { ok: true, reservados: linhas.length, msg: linhas.length + ' kit(s) reservado(s) para a visita.' };
@@ -13613,6 +13663,7 @@ function reservarKitsPrevisaoJornada(payload) {
     });
     var sheet = getKitReservasSheet_();
     sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, KIT_RESERVA_HEADERS_.length).setValues(linhas);
+    // Persistir as reservas da previsão sob lock antes de invalidar as referências de kits.
     SpreadsheetApp.flush();
     agendaInvalidateKitsReference_();
     return {
@@ -14303,20 +14354,31 @@ function agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, ti
     var item = atuais[i];
     var antes = item.row;
     agendaWritePeriodoRow_(agenda, item.rowIndex, datas[i], dados, antes, tipoPeriodo || dados.tipo);
-    var depois = agenda.getRange(item.rowIndex, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  }
+  // As datas podem estar intercaladas com outros eventos. Ler o intervalo completo
+  // depois das escritas e antes de excluir/ordenar conserva a posição de cada registro.
+  var atualizados = atuais.slice(0, atualizar);
+  var firstRow = atualizados.length ? Math.min.apply(null, atualizados.map(function(entry) { return entry.rowIndex; })) : 0;
+  var lastRow = atualizados.length ? Math.max.apply(null, atualizados.map(function(entry) { return entry.rowIndex; })) : 0;
+  var persisted = atualizar ? agenda.getRange(firstRow, 1, lastRow - firstRow + 1, AGENDA_CFG.lastCol).getValues() : [];
+  atualizados.forEach(function(item) {
+    var antes = item.row;
+    var depois = persisted[item.rowIndex - firstRow];
     var idAtual = String(depois[AGENDA_CFG.idx.id] || antes[AGENDA_CFG.idx.id] || '').trim();
     if (idAtual) ids.push(idAtual);
     codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idAtual || dados.id, agendaAuditChangesFromRows_(antes, depois), 'Alteração de período de ' + label);
-  }
+  });
   var remover = atuais.slice(datas.length).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
-  remover.forEach(function(item) {
-    var idRemovido = String(item.row[AGENDA_CFG.idx.id] || '').trim();
-    agenda.deleteRow(item.rowIndex);
-    codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idRemovido || dados.id, [{
-      field: label,
-      oldValue: formatarDataSafe(item.row[AGENDA_CFG.idx.data]),
-      newValue: ''
-    }], 'Data removida do período de ' + label);
+  codexDeleteRowBlocks_(agenda, remover.map(function(item) { return item.rowIndex; }), function(start, count) {
+    // Cada bloco concluído recebe sua auditoria antes da próxima exclusão.
+    remover.filter(function(item) { return item.rowIndex >= start && item.rowIndex < start + count; }).forEach(function(item) {
+      var idRemovido = String(item.row[AGENDA_CFG.idx.id] || '').trim();
+      codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', idRemovido || dados.id, [{
+        field: label,
+        oldValue: formatarDataSafe(item.row[AGENDA_CFG.idx.data]),
+        newValue: ''
+      }], 'Data removida do período de ' + label);
+    });
   });
   for (var j = atuais.length; j < datas.length; j++) {
     var clone = agendaCloneDados_(dados);
@@ -14327,6 +14389,7 @@ function agendaAtualizarPeriodoEvento_(agenda, ss, linha, rowAnterior, dados, ti
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
+  // Persistir o período e a ordenação sob lock antes de invalidar o índice de datas.
   SpreadsheetApp.flush();
   agendaInvalidateDateIndexCache_();
   return { ok: true, id: ids[0] || dados.id, ids: ids, count: datas.length, tipo: label, atualizado: true, emailLabAtivo: agendaEmailEnabled_() };
@@ -14759,6 +14822,7 @@ function atualizarAgendaEventoCompleto(dados) {
   if (AGENDA_CFG.col.participanteCadastroId) {
     agenda.getRange(linha, AGENDA_CFG.col.participanteCadastroId).setValue(dados.participanteCadastroId || '');
   }
+  // Persistir as escritas sob lock antes de conferir carro/registro e reler após a ordenação.
   SpreadsheetApp.flush();
   var carroSalvo = agendaBooleanValue_(agenda.getRange(linha, AGENDA_CFG.col.carroRequerido).getValue());
   if (carroSalvo !== dados.carroRequerido) {
@@ -14781,6 +14845,7 @@ function atualizarAgendaEventoCompleto(dados) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
+  // Persistir as escritas sob lock antes de conferir carro/registro e reler após a ordenação.
   SpreadsheetApp.flush();
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
@@ -14825,6 +14890,7 @@ function cancelarAgendaEvento(id, cancelamento) {
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var reservasCanceladas = typeof cancelarReservasKitsAgenda_ === 'function' ? cancelarReservasKitsAgenda_(id, obsComCancelamento || 'Cancelamento da visita na Agenda') : 0;
   codexWriteAuditChanges_('Agenda', 'cancelarAgendaEvento', id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Cancelamento de agendamento');
+  // Persistir o cancelamento e as reservas antes de liberar o lock para outro escritor.
   SpreadsheetApp.flush();
   return { ok: true, id: id, status: 'Cancelado', reservasCanceladas: reservasCanceladas };
   });
@@ -14845,6 +14911,7 @@ function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
       oldValue: statusAnterior,
       newValue: ''
     }], 'Prestador terceirizado removido');
+    // Persistir o status sob lock antes de reler as versões devolvidas ao cliente.
     SpreadsheetApp.flush();
     var rowSemPrestador = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
     return { ok: true, id: agendaId, statusRequisicao: '', semPrestador: true, recordVersion: agendaRecordVersionFromRow_(rowSemPrestador), editRecordVersion: agendaEditableRecordVersionFromRow_(rowSemPrestador) };
@@ -14859,6 +14926,7 @@ function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
     oldValue: statusAnterior,
     newValue: valor
   }], 'Atualização de status da requisição');
+  // Persistir o status sob lock antes de reler as versões devolvidas ao cliente.
   SpreadsheetApp.flush();
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   return { ok: true, id: agendaId, statusRequisicao: valor, recordVersion: agendaRecordVersionFromRow_(rowAtual), editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual) };
@@ -14896,6 +14964,7 @@ function atualizarStatusBackupAgenda(agendaId, status, recordVersion) {
       newValue: status
     }], 'Backup marcado como convertido em novo agendamento');
   }
+  // Persistir o status sob lock antes de reler as versões devolvidas ao cliente.
   SpreadsheetApp.flush();
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   return {
@@ -14971,6 +15040,7 @@ function confirmarEntregaTransportePendencia(agendaId, slot, awb) {
       oldValue: statusAnterior,
       newValue: 'Entregue'
     }], 'Entrega confirmada manualmente nas Pendencias' + (awbAtual ? ' | AWB ' + awbAtual : ''));
+    // Persistir a entrega sob lock antes de reler as versões devolvidas ao cliente.
     SpreadsheetApp.flush();
     var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
     return {
@@ -15086,6 +15156,7 @@ function concluirPendenciasPoloTrialEcrfAntigas(dataCorteIso, dryRun) {
     updates.forEach(function(u) {
       agenda.getRange(u.row, u.col).setValue(agora);
     });
+    // Persistir o lote antes de reler os registros e auditar as diferenças.
     SpreadsheetApp.flush();
   }
 
@@ -15222,6 +15293,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
     agendaWriteInitialEventRow_(agenda, linhaNova, id, d, dados, tipo, status, labCentral);
   });
   var carroSalvo = agendaMeasureSaveStage_(performanceOperation, 'initial_flush_verify', { rowCount: 1 }, function() {
+  // Persistir sob lock para conferir o carro ou finalizar o registro antes de invalidar os caches.
   SpreadsheetApp.flush();
   return agendaBooleanValue_(agenda.getRange(linhaNova, AGENDA_CFG.col.carroRequerido).getValue());
   });
@@ -15259,6 +15331,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   }
   });
   if (!saveOptions.deferFinalize) agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: 1 }, function() {
+  // Persistir sob lock para conferir o carro ou finalizar o registro antes de invalidar os caches.
   SpreadsheetApp.flush();
   });
   agendaInvalidateDateIndexCache_();
@@ -15303,6 +15376,7 @@ function agendaFinalizarLoteMonitoria_(agenda, performanceOperation, count) {
         .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
     }
   });
+  // Persistir o lote ordenado antes de devolver os IDs e liberar o lock.
   agendaMeasureSaveStage_(performanceOperation, 'final_flush', { rowCount: count }, function() { SpreadsheetApp.flush(); });
 }
 
@@ -15480,6 +15554,39 @@ function agendaIsPinexCourier_(courier) {
 var DHL_TRACKING_API_URL_ = 'https://api-eu.dhl.com/track/shipments';
 var DHL_TRACKING_API_KEY_PROPERTY_ = 'DHL_TRACKING_API_KEY';
 var DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_ = 45;
+var DHL_TRACKING_BUDGET_MS_ = 240000;
+var DHL_TRACKING_FETCH_RESERVE_MS_ = 60000;
+var DHL_TRACKING_RUN_PROPERTY_ = 'DHL_TRACKING_RUN_V1';
+var DHL_TRACKING_CURSOR_PROPERTY_ = 'DHL_TRACKING_CURSOR_V1';
+
+function dhlTrackingClaimRun_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return null;
+  try {
+    var properties = PropertiesService.getScriptProperties();
+    var raw = properties.getProperty(DHL_TRACKING_RUN_PROPERTY_);
+    var active = raw ? JSON.parse(raw) : null;
+    if (active && Number(active.expiresAt) > Date.now()) return null;
+    var run = { token: Utilities.getUuid(), startedAt: Date.now(), expiresAt: Date.now() + 420000,
+      cursor: properties.getProperty(DHL_TRACKING_CURSOR_PROPERTY_) || '' };
+    properties.setProperty(DHL_TRACKING_RUN_PROPERTY_, JSON.stringify(run));
+    return run;
+  } finally { lock.releaseLock(); }
+}
+
+function dhlTrackingReleaseRun_(run, completed) {
+  var lock = LockService.getScriptLock();
+  // Se outro escritor estiver ocupado, a reserva expira sem bloqueá-lo.
+  if (!lock.tryLock(1000)) return;
+  try {
+    var properties = PropertiesService.getScriptProperties();
+    var raw = properties.getProperty(DHL_TRACKING_RUN_PROPERTY_);
+    var active = raw ? JSON.parse(raw) : null;
+    if (!active || active.token !== run.token) return;
+    if (completed && run.lastAwb) properties.setProperty(DHL_TRACKING_CURSOR_PROPERTY_, run.lastAwb);
+    properties.deleteProperty(DHL_TRACKING_RUN_PROPERTY_);
+  } finally { lock.releaseLock(); }
+}
 
 function configurarDhlTrackingApiKey(apiKey) {
   codexAssertAdmin_();
@@ -15530,6 +15637,22 @@ function agendaWriteAutomationStatuses_(sheet, changes) {
 }
 
 function monitorarEntregasDhlAgendadas_(options) {
+  var run = dhlTrackingClaimRun_();
+  if (!run) return { ok: true, ignorado: true, verificados: 0, entregues: 0, mensagem: 'O monitor DHL já está em execução ou aguardando outro escritor.' };
+  var completed = false;
+  try {
+    var metadata = {};
+    var result = codexMeasurePerformance_('monitorarEntregasDhlAgendadas', 'bounded_batch', metadata, function() {
+      var batch = monitorarEntregasDhlLote_(options, run);
+      metadata.rowCount = batch.verificados;
+      return batch;
+    });
+    completed = true;
+    return result;
+  } finally { dhlTrackingReleaseRun_(run, completed); }
+}
+
+function monitorarEntregasDhlLote_(options, run) {
   options = options || {};
   var apiKey = getDhlTrackingApiKey_();
   if (!apiKey) {
@@ -15549,28 +15672,37 @@ function monitorarEntregasDhlAgendadas_(options) {
   var values = range.getValues();
   var display = range.getDisplayValues();
   var pendentes = getAgendaDhlAwbsPendentesEntrega_(values, display);
-  var awbs = Object.keys(pendentes);
+  var awbs = Object.keys(pendentes).sort();
   if (!awbs.length) {
     return { ok: true, verificados: 0, entregues: 0, mensagem: 'Nenhuma AWB DHL pendente de entrega.' };
   }
 
   var limiteSolicitado = Number(options.maxConsultas || DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_);
   if (!isFinite(limiteSolicitado) || limiteSolicitado < 1) limiteSolicitado = DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_;
-  var maxConsultas = Math.max(1, Math.min(limiteSolicitado, awbs.length));
+  // Cursor estável dá vez às AWBs além do primeiro lote, inclusive após falhas HTTP.
+  var afterCursor = awbs.filter(function(awb) { return awb > run.cursor; });
+  awbs = afterCursor.concat(awbs.filter(function(awb) { return awb <= run.cursor; }));
+  var maxConsultas = Math.max(1, Math.min(Math.floor(limiteSolicitado), DHL_TRACKING_MAX_CONSULTAS_POR_EXECUCAO_, awbs.length));
   var detectadas = [];
   var erros = [];
+  var consultadas = 0;
   for (var i = 0; i < maxConsultas; i++) {
+    // Reserva para uma consulta HTTP e para a persistência final; não esperar perto do limite.
+    if (Date.now() - run.startedAt + DHL_TRACKING_FETCH_RESERVE_MS_ > DHL_TRACKING_BUDGET_MS_) break;
     var awb = awbs[i];
-    var resposta;
+    var resposta = null;
+    consultadas++;
+    run.lastAwb = awb;
     try {
       resposta = consultarEntregaDhl_(awb, apiKey);
     } catch (e) {
       erros.push({ awb: awb, erro: e.message });
-      if (i < maxConsultas - 1) Utilities.sleep(5200);
-      continue;
     }
-    if (i < maxConsultas - 1) Utilities.sleep(5200);
-    if (resposta.entregue) detectadas.push({ awb: awb, resposta: resposta, itens: pendentes[awb] || [] });
+    if (resposta && resposta.entregue) detectadas.push({ awb: awb, resposta: resposta, itens: pendentes[awb] || [] });
+    if (i < maxConsultas - 1) {
+      if (Date.now() - run.startedAt + 5200 + DHL_TRACKING_FETCH_RESERVE_MS_ > DHL_TRACKING_BUDGET_MS_) break;
+      Utilities.sleep(5200);
+    }
   }
 
   var entregues = [];
@@ -15624,7 +15756,9 @@ function monitorarEntregasDhlAgendadas_(options) {
   }
   return {
     ok: true,
-    verificados: maxConsultas,
+    verificados: consultadas,
+    interrompidoPorTempo: consultadas < maxConsultas,
+    restantes: Math.max(0, awbs.length - consultadas),
     pendentes: awbs.length,
     entregues: entregues.length,
     itens: entregues,
@@ -16686,6 +16820,7 @@ function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHor
     { field: 'Backup - Status', oldValue: statusAnterior, newValue: 'Adicionado à Agenda' },
     { field: 'Backup - Agendamento', oldValue: refAnterior, newValue: refJson }
   ], 'Backup vinculado ao novo agendamento ' + destinoId);
+  // Persistir o vínculo antes de outra etapa/RPC reler o agendamento de destino.
   SpreadsheetApp.flush();
   return ref;
 }
@@ -18942,6 +19077,7 @@ function salvarConfigAppItemInterno_(payload) {
       { field: 'Config_App - Observação', oldValue: rowAnterior[5], newValue: row[5] }
     ], 'Alteração de configuração');
     clearConfigAppDefaultsCache_('salvarConfigAppItem');
+    // Persistir a configuração antes de liberar o lock para outro escritor.
     SpreadsheetApp.flush();
     return 'Configuração atualizada com sucesso.';
   }
@@ -18962,6 +19098,7 @@ function salvarConfigAppItemInterno_(payload) {
     { field: 'Config_App - Observação', oldValue: '', newValue: row[5] }
   ], 'Cadastro de configuração');
   clearConfigAppDefaultsCache_('salvarConfigAppItem');
+  // Persistir a configuração antes de liberar o lock para outro escritor.
   SpreadsheetApp.flush();
   return 'Configuração cadastrada com sucesso.';
 }
@@ -18992,6 +19129,7 @@ function excluirConfigAppItemInterno_(rowIndex, startCol, options) {
     { field: 'Config_App - Observação', oldValue: values[5], newValue: '' }
   ], 'Exclusão de configuração');
   clearConfigAppDefaultsCache_('excluirConfigAppItem');
+  // Persistir a exclusão antes de liberar o lock para outro escritor.
   SpreadsheetApp.flush();
   return 'Configuração excluída com sucesso.';
 }
