@@ -1,0 +1,66 @@
+{
+  "schema": "ips-agenda-study-planning",
+  "schema_version": "1.0.0",
+  "import_mode": "review",
+  "approved_for_clinical_scheduling": false,
+  "study": {
+    "protocol_id": "EXEMPLO-NAO-CLINICO",
+    "protocol_version": "1.0"
+  },
+  "arms": [
+    {
+      "id": "arm_a",
+      "name": "Braço A — exemplo"
+    }
+  ],
+  "rules": [],
+  "visits": [
+    {
+      "id": "v1",
+      "code": "V1",
+      "name": "Visita inicial — exemplo",
+      "arm_ids": [
+        "arm_a"
+      ],
+      "order": 1,
+      "aliases": [],
+      "timing": {
+        "anchor": "randomization_date",
+        "basis": "planned",
+        "offset_days": 0,
+        "window_before_days": 0,
+        "window_after_days": 0
+      },
+      "source": {
+        "file": "exemplo-ficticio.pdf",
+        "printed_page": 1,
+        "section": "Exemplo ilustrativo"
+      },
+      "status": "extracted"
+    },
+    {
+      "id": "v2",
+      "code": "V2",
+      "name": "Visita seguinte — exemplo",
+      "arm_ids": [
+        "arm_a"
+      ],
+      "order": 2,
+      "aliases": [],
+      "timing": {
+        "anchor": "visit",
+        "anchor_visit_id": "v1",
+        "basis": "performed",
+        "offset_days": 7,
+        "window_before_days": 1,
+        "window_after_days": 2
+      },
+      "source": {
+        "file": "exemplo-ficticio.pdf",
+        "printed_page": 1,
+        "section": "Exemplo ilustrativo"
+      },
+      "status": "extracted"
+    }
+  ]
+}

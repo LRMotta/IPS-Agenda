@@ -300,13 +300,16 @@
       <button class="modal-close" onclick="fecharOverlay('modalSoAImport')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
-      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Como funciona</strong><span>O JSON é validado, referências por código são ligadas às visitas e braços ausentes podem ser criados. A baseCalculo aceita MANTER_DATAS_PREVISTAS ou RECALCULAR_VISITA_REALIZADA; papelCronograma e referências alternativas também são opcionais. O cadastro manual continua disponível.</span></div></div>
-      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportArquivo">Arquivo JSON (opcional)</label><input type="file" id="soaImportArquivo" class="f-input" accept=".json,application/json" onchange="lerSoAArquivoApp(event)"></div>
+      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Como funciona</strong><span>Use as instruções padronizadas na IA com o protocolo, depois cole ou selecione o JSON. Revise as pendências e salve um rascunho ou aplique as visitas prontas. O formato anterior continua aceito.</span></div></div>
+      <div class="field" style="margin-bottom:14px;"><button type="button" class="btn-txt" onclick="baixarGuiaExtracaoSoAApp()">Baixar instruções para IA</button></div>
+      <div class="field soa-draft-controls"><label class="field-label" for="soaPlanejamentoSalvo">Continuar um rascunho</label><select id="soaPlanejamentoSalvo" class="f-input"><option value="">Selecione um rascunho salvo</option></select><button type="button" class="btn-txt" onclick="carregarPlanejamentoSoAApp()">Abrir rascunho</button></div>
+      <div class="field"><label class="field-label" for="soaImportArquivo">Arquivo JSON (opcional)</label><input type="file" id="soaImportArquivo" class="f-input" accept=".json,application/json" onchange="lerSoAArquivoApp(event)"></div>
       <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" oninput="invalidarPreviaImportacaoSoA_()" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
       <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" onchange="invalidarPreviaImportacaoSoA_()" checked> Criar braços ausentes no catálogo</label></div>
       <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
+      <label id="soaImportRevisaoBox" class="soa-import-check" hidden><input type="checkbox" id="soaImportRevisado" onchange="atualizarRevisaoPlanejamentoSoAApp()"> Conferi as visitas, os braços, as referências e as janelas desta prévia.</label>
       <div class="status-msg" id="statusSoAImport" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar calendário</button></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-txt" id="btnSalvarPlanejamentoSoA" onclick="salvarPlanejamentoSoAApp()" disabled>Salvar rascunho</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar calendário</button></div>
     </div>
   </div>
 </div>
@@ -321,6 +324,7 @@
     </div>
     <div class="modal-body">
       <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">verified_user</span><div><strong>Cópia segura e revisável</strong><span>Códigos, nomes e referências são remapeados. Braços, janelas e intervalos são preservados. Os vínculos de Kit e Bulk Supply da visita-modelo são copiados para as novas visitas. Visitas já existentes não serão alteradas.</span></div></div>
+      <div class="field-help">Para continuar ciclos além do quadro inicial, use a regra de continuidade documentada e gere um lote definido de ciclos. A quantidade prevista no orçamento não determina sozinha o fim do tratamento.</div>
       <div class="field-row cols-2 soa-cycle-controls" style="margin-bottom:14px;">
         <div><label class="field-label" for="soaCycleModelo">Ciclo-modelo</label><select id="soaCycleModelo" class="f-input" onchange="invalidarPreviaReplicacaoCiclosSoA_()"></select></div>
         <div><label class="field-label" for="soaCycleDestinos">Ciclos de destino</label><input type="text" id="soaCycleDestinos" class="f-input" placeholder="Ex: 2–12" inputmode="numeric" oninput="invalidarPreviaReplicacaoCiclosSoA_()"><div class="field-help">Aceita intervalos e listas, como 2–12, 15, 18.</div></div>
@@ -487,6 +491,19 @@
           </button>
         </div>
         <div class="participant-participations-list" id="ptParticipacoesList"></div>
+      </div>
+      <div class="form-section participant-milestones-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">event</span> Marcos desta participação no estudo</div>
+        <p class="participant-form-guidance">Datas opcionais, próprias desta participação. Informe apenas datas documentadas. Sem a referência necessária, a previsão fica pendente; os agendamentos existentes são preservados.</p>
+        <div class="field-row participant-milestones-grid">
+          <div><label class="field-label" for="ptMarcoRANDOMIZACAO">Data da randomização</label><input type="date" id="ptMarcoRANDOMIZACAO" class="f-input" data-participacao-marco="RANDOMIZACAO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoINCLUSAO">Data da inclusão</label><input type="date" id="ptMarcoINCLUSAO" class="f-input" data-participacao-marco="INCLUSAO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoULTIMA_DOSE">Data da última dose</label><input type="date" id="ptMarcoULTIMA_DOSE" class="f-input" data-participacao-marco="ULTIMA_DOSE" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoFIM_TRATAMENTO">Data do fim do tratamento</label><input type="date" id="ptMarcoFIM_TRATAMENTO" class="f-input" data-participacao-marco="FIM_TRATAMENTO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoDECISAO_INTERRUPCAO_TRATAMENTO">Data da decisão de interrupção definitiva</label><input type="date" id="ptMarcoDECISAO_INTERRUPCAO_TRATAMENTO" class="f-input" data-participacao-marco="DECISAO_INTERRUPCAO_TRATAMENTO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoPROGRESSAO_DOENCA">Data da progressão da doença</label><input type="date" id="ptMarcoPROGRESSAO_DOENCA" class="f-input" data-participacao-marco="PROGRESSAO_DOENCA" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoOUTRA">Outra data de referência</label><input type="date" id="ptMarcoOUTRA" class="f-input" data-participacao-marco="OUTRA" data-marco-inicial=""></div>
+        </div>
       </div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">location_on</span> Endereço</div>
