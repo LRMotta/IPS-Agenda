@@ -485,8 +485,8 @@
     .item-soa-link .material-symbols-outlined { font-size:14px; }
     .soa-arm-option input { accent-color:var(--primary); }
     .soa-arm-empty { color:var(--text-faint); font-size:11px; }
-    .soa-import-modal-box { width:min(760px, calc(100vw - 32px)); max-width:760px!important; }
-    .soa-import-textarea { min-height:180px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11px; line-height:1.45; }
+    .soa-import-modal-box { width:min(1120px, calc(100vw - 32px)); max-width:1120px!important; display:flex; flex-direction:column; overflow:hidden; max-height:92vh; max-height:92dvh; }
+    .soa-import-textarea { min-height:120px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11px; line-height:1.45; }
     .soa-import-note { display:flex; gap:9px; align-items:flex-start; padding:10px 12px; margin-bottom:14px; border:1px solid #d9e5fb; border-radius:8px; background:#f6f9ff; color:var(--text-muted); font-size:11px; line-height:1.45; }
     .soa-import-note .material-symbols-outlined { color:var(--primary); font-size:18px; }
     .soa-import-note strong, .soa-import-note span { display:block; }
@@ -1122,13 +1122,40 @@
 .soa-planning-rule dd { margin:0; }
 .soa-draft-controls { margin-bottom:14px; }
 #soaImportRevisaoBox[hidden] { display:none; }
+#modalSoAImport .modal-header { flex-shrink:0; }
+#modalSoAImport .modal-header-icon, #modalSoAImport .modal-close { flex-shrink:0; }
+#modalSoAImport .modal-header > div:nth-child(2) { min-width:0; }
+#modalSoAImport .material-symbols-outlined { width:1em; overflow:hidden; }
+#modalSoAImport .soa-modal-actions .btn-txt { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+#modalSoAImport .soa-modal-actions .btn-save { padding:0 14px; letter-spacing:.3px; }
+#modalSoAImport .modal-body { overflow-y:auto; min-height:0; overscroll-behavior:contain; }
+#modalSoAImport .soa-import-footer { flex-shrink:0; padding:14px 22px; border-top:1px solid var(--primary-border); background:var(--surface); }
+#modalSoAImport .soa-import-footer .status-msg { margin:6px 0; }
 #modalSoAImport .soa-modal-actions { flex-wrap:wrap; }
+#modalSoAImport .soa-import-next-step { padding:10px 2px; color:var(--text-muted); font-size:12px; line-height:1.5; }
+#modalSoAImport .soa-planning-issues { background:var(--surface); }
+#modalSoAImport .soa-planning-issues > p, #modalSoAImport .soa-planning-technical { font-size:12px; color:var(--text-muted); line-height:1.5; }
+#modalSoAImport .soa-planning-technical { margin-top:6px; }
+#modalSoAImport .soa-import-row { overflow-wrap:anywhere; }
+#modalSoAImport .soa-import-row .soa-order-comparison { white-space:normal; }
+#modalSoAImport .soa-import-row > span { min-width:0; }
+#modalSoAImport .soa-import-row > span:first-child { flex:1; }
+#modalSoAImport .soa-import-row > span:last-child { flex:1; }
+#modalSoAImport .soa-draft-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px 12px; }
+#modalSoAImport .soa-draft-controls .field-label { grid-column:1/-1; }
 #modalSoAImport .soa-import-preview { max-height:none; overflow:visible; }
 .participant-milestones-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .participant-milestones-section .participant-form-guidance { margin-bottom:14px; }
 @media(max-width:600px) { .participant-milestones-grid { grid-template-columns:1fr; } }
 @media(max-width:600px) {
-  #modalSoAImport .soa-modal-actions { flex-direction:column; align-items:stretch; }
+  #modalSoAImport .soa-import-footer { padding:10px 14px; }
+  #modalSoAImport .modal-header { padding:14px; gap:8px; }
+  #modalSoAImport .modal-header-title { font-size:13px; }
+  #modalSoAImport .soa-modal-actions .btn-save { font-size:11px; padding:0 6px; }
+  #modalSoAImport .modal-body { padding:14px; }
+  #modalSoAImport .soa-modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  #modalSoAImport .soa-import-check { font-size:11px; }
+  #modalSoAImport .soa-draft-controls { grid-template-columns:1fr; }
   #modalSoAImport .soa-modal-actions > button { width:100%; min-width:0; margin:0; justify-content:center; }
   #modalSoAImport .soa-planning-rule dl { grid-template-columns:1fr; }
   #modalSoAImport .soa-import-row { flex-direction:column; gap:4px; overflow-wrap:anywhere; }

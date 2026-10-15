@@ -2934,7 +2934,8 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   const patientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'patient', false);
   assert.match(patientActions, /Gerar Display/);
   assert.match(patientActions, /abrirDisplayPaciente/);
-  assert.equal((patientActions.match(/role="menuitem"/g) || []).length, 4);
+  assert.equal((patientActions.match(/role="menuitem"/g) || []).length, 5);
+  assert.match(patientActions, /Histórico do agendamento/);
   const pastPatientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'past-patient', true);
   assert.doesNotMatch(pastPatientActions, /cancelarAgendaEvento/);
   const siv = context.agendaMonitoriaCompactaHtml({ ...row, tipo: 'SIV' }, 'test');

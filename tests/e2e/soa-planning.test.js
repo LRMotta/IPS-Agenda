@@ -11,7 +11,7 @@ const { readProjectFile } = require('../helpers/load-app-script');
 const { contentAccessibilitySource } = require('../helpers/content-accessibility-source');
 const { planningIntegration } = require('../helpers/soa-planning-integration');
 
-for (const width of [1280, 390]) {
+for (const width of [2560, 1280, 390]) {
   test('planejamento IA: prévia, rascunho e aplicação revisada em ' + width + 'px', async () => {
     // Browser plugin not available. Real local handlers and server with simulated Sheets only.
     const browser = await loadPlaywright().chromium.launch({ headless: true });
@@ -56,12 +56,20 @@ for (const width of [1280, 390]) {
       const downloadPromise = page.waitForEvent('download');
       await page.getByRole('button', { name: 'Baixar instruções para IA' }).click();
       const download = await downloadPromise;
-      assert.equal(download.suggestedFilename(), 'ips-agenda-instrucoes-extracao-1.0.0.txt');
+      assert.equal(download.suggestedFilename(), 'ips-agenda-instrucoes-extracao-1.1.0.txt');
       assert.equal(fs.readFileSync(await download.path(), 'utf8').trim(), readProjectFile('docs/INSTRUCOES_EXTRACAO_IA.txt').trim());
       await page.locator('#soaImportTexto').fill(JSON.stringify(poc));
       await page.locator('#btnPreviewSoA').click();
       await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Rascunho recebido'));
       assert.equal(await page.locator('#btnImportarSoAConfirm').isDisabled(), true);
+      const modalBox = await page.locator('#modalSoAImport .modal-box').boundingBox();
+      if (width === 2560) assert.ok(modalBox.width > 1000);
+      await page.locator('#modalSoAImport .modal-body').evaluate(el => { el.scrollTop = el.scrollHeight; });
+      for (const selector of ['.modal-header', '.soa-import-footer']) {
+        const box = await page.locator('#modalSoAImport ' + selector).boundingBox();
+        assert.ok(box.y >= 0 && box.y + box.height <= 961);
+      }
+      assert.equal(await page.locator('#modalSoAImport .modal-box').evaluate(el => el.scrollHeight > el.clientHeight), false);
       await page.getByText('Regras extraídas (8)', { exact: true }).click();
       assert.ok((await page.locator('#soaImportPreview').innerText()).includes('Página impressa: 100'));
       await page.locator('#btnSalvarPlanejamentoSoA').click();
@@ -78,6 +86,9 @@ for (const width of [1280, 390]) {
       fs.mkdirSync(artifacts,{recursive:true});
       await page.locator('#soaImportPreview').scrollIntoViewIfNeeded();
       await page.screenshot({path:path.join(artifacts,'soa-planning-draft-' + width + '.png')});
+      assert.equal(await page.locator('#modalSoAImport .modal-body').evaluate(el => el.scrollWidth > el.clientWidth), false);
+
+      await page.evaluate(() => window.renderSoAImportPreview_({ok:true,podeImportar:false,totalVisitas:1,visitas:[{codigo:'V1',nome:'Visita condicional',schedulingMode:'manual',manualReason:'Conferir condições do protocolo antes de agendar. '.repeat(50)}],planejamento:{study:{},issues:[],rules:[]}}));
       assert.equal(await page.locator('#modalSoAImport .modal-body').evaluate(el => el.scrollWidth > el.clientWidth), false);
 
       await page.evaluate(() => { window._soaProjetoAtual = { nomeAbreviado: 'Estudo local' }; window.abrirSoAImportForm(); });

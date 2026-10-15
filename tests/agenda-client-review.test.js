@@ -302,3 +302,30 @@ test('falha de consulta de periodo nao retorna periodo reduzido apos carga trunc
   calls[0].failure(failure);
   assert.equal(sucesso, false); assert.equal(erro, failure);
 });
+
+test('Gerar docs sincroniza registro combinado; edicao durante RPC conserva referencia anterior', () => {
+  for (const changed of [false, true]) {
+    const { context: c, calls } = client();
+    c._agendaEditId = 'A'; c._agendaEditRecordVersion = 'vA'; c._agendaEditEditableVersion = 'eA'; c._agendaEditMergeToken = 'token-original';
+    c.agendaEventoAtualEditado_ = () => ({ id: 'A', rowIndex: 7 });
+    let observation = 'Original';
+    c.coletarAgendaEvento = () => ({ obs: observation, participante: 'Pessoa', courier1: { nome: 'Courier', awb: '123' } });
+    for (const name of ['agendaMeaningfulValue', 'agendaCourierMeaningful', 'agendaValidarAwbDocumentos_', 'validateAgendaAwb', 'agendaMatBioValidateAll']) c[name] = () => true;
+    c.transporteAgendaContextFromDados = () => ({}); c.prepararJanelaTransporte = () => ({});
+    c.snack = c.snackErro = c.agendaRecarregarJanelaAtual_ = c.abrirTransporteModulo = () => {};
+    let reopened, cleared = 0, opened = 0;
+    c.abrirTransporteModulo = () => { opened++; };
+    c.atualizarJanelaTransporteErro = () => {};
+    c.abrirAgendaEdicaoComRegistro_ = record => { reopened = record; };
+    c.appClearUnsavedChanges = () => { cleared++; };
+    c.gerarTransporteAgenda('1', 'button');
+    assert.equal(calls[0].args[0]._editMergeToken, 'token-original');
+    if (changed) observation = 'Digitado durante a RPC';
+    calls[0].success({ merged: true, recordVersion: 'vB', editRecordVersion: 'eB', editMergeToken: 'token-novo', mergedEvent: { id: 'A', courier1: { status: 'Agendado' } } });
+    assert.equal(c._agendaEditMergeToken, changed ? 'token-original' : 'token-novo');
+    assert.equal(c._agendaEditRecordVersion, changed ? 'vA' : 'vB');
+    assert.equal(cleared, changed ? 0 : 1);
+    assert.equal(!!reopened, !changed);
+    assert.equal(opened, changed ? 0 : 1);
+  }
+});

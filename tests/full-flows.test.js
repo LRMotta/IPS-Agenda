@@ -970,3 +970,27 @@ test('fluxo completo sincroniza Transporte sem sobrescrever AWB existente', () =
   assert.equal(sheet.rows[1][2], 'Agendado');
   assert.equal(sheet.rows[1][6], 'Lab Teste');
 });
+
+test('histórico só registra atualização concluída depois da persistência e ignora gravação falha', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],
+    [1, 'Pessoa A', '', '', 'P-1', 'Estudo A', '', '', 'Ativo', '', '', '', 'PES-A']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Estudo A' }]);
+  const events = [];
+  context.codexWriteAuditLog_ = (action, module, id) => {
+    assert.equal(sheet.rows[1][9], '54999999999');
+    events.push([action, module, id]);
+  };
+  const data = { id: '1', nome: 'Pessoa A', idParticipante: 'P-1', projeto: 'Estudo A', status: 'Ativo', telefone: '54999999999' };
+  assert.equal(context.salvarDadosParticipante(data), 'Participante atualizado com sucesso');
+  assert.deepEqual(events, [['atualizarCadastroParticipanteConcluido', 'Cadastros', '1']]);
+  const getRange = sheet.getRange.bind(sheet);
+  sheet.getRange = (...args) => {
+    const range = getRange(...args);
+    range.setValues = () => { throw new Error('Falha de gravação simulada'); };
+    return range;
+  };
+  assert.throws(() => context.salvarDadosParticipante(data), /Falha de gravação simulada/);
+  assert.equal(events.length, 1);
+});

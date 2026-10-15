@@ -59,6 +59,16 @@
     .ag-create-head .material-symbols-outlined{font-size:20px}
     .ag-create-body{padding:20px 22px}
     .ag-modal-actions{margin-top:12px}
+    .participant-audit{margin-bottom:22px;padding:16px 18px;background:var(--surface-2,#f5f7fa);border:1px solid var(--border,#dce2e9);border-radius:12px;}
+    .participant-audit[hidden]{display:none;}
+    .participant-audit summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary,#596575);}
+    .participant-audit summary:focus-visible{outline:2px solid var(--primary,#1764cc);outline-offset:4px;border-radius:3px;}
+    .participant-audit[open] summary{margin-bottom:16px;}
+    .participant-audit-grid{display:grid;grid-template-columns:1fr 1.35fr 1fr;gap:16px;margin:0;}
+    .participant-audit-grid dt{font-size:12px;color:var(--text-secondary,#596575);margin-bottom:5px;}
+    .participant-audit-grid dd{margin:0;font-size:13px;font-weight:600;overflow-wrap:anywhere;}
+    .participant-audit-note{margin:12px 0 0;font-size:11px;line-height:1.5;color:var(--text-secondary,#596575);}
+    @media(max-width:640px){.participant-audit-grid{grid-template-columns:1fr;gap:12px;}}
     .participant-modal-box{width:min(1100px,calc(100vw - 48px));max-width:1100px;}
     .participant-protocol-fields{grid-template-columns:repeat(2,minmax(0,1fr));}
     .participant-protocol-fields.has-catalog{grid-template-columns:repeat(3,minmax(0,1fr));}
@@ -563,4 +573,15 @@
       #page-estoque-view .estoque-view-toolbar>.f-select { flex:1 1 140px; min-width:0; max-width:100%; }
       #page-estoque-view .estoque-view-toolbar>.btn-new { flex:1 1 140px; justify-content:center; }
     }
+    .agenda-history-box{width:min(720px,calc(100vw - 32px));max-width:720px;}
+    .agenda-history-help{font-size:12px;color:var(--text-secondary,#596575);line-height:1.5;margin:0 0 20px;}
+    .agenda-history-list{list-style:none;padding:0;margin:0;}
+    .agenda-history-list li{border-left:3px solid var(--primary,#1764cc);padding:4px 0 8px 14px;margin:0 0 18px;overflow-wrap:anywhere;}
+    .agenda-history-list strong{font-size:13px;}
+    .agenda-history-list p{font-size:14px;margin:7px 0;white-space:pre-wrap;}
+    .agenda-history-list small{color:var(--text-secondary,#596575);font-size:12px;}
+    #agendaHistoricoMais[hidden]{display:none;}
+    #agendaHistoricoStatus{font-size:13px;line-height:1.5;}
+    .status-conflict.ag-conflict-draft{grid-template-columns:minmax(0,1fr);align-items:start;overflow-wrap:anywhere;}
+    .ag-conflict-draft .status-conflict-btn{grid-column:1;width:100%;height:auto;min-height:34px;white-space:normal;}
 </style>

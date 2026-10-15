@@ -24,13 +24,24 @@ function soaPlanningDocument_(payload) {
   parsed.raw = raw;
   return parsed;
 }
+function soaPlanningObservation_(note, scheduling) {
+  if (!scheduling) return note;
+  var suffix = '\nProgramação: ' + (scheduling.mode === 'milestone' ? 'marco pela própria visita realizada. ' : 'manual, sem previsão automática. ') + scheduling.reason;
+  return String(note || '').split('\n').indexOf(suffix.trim()) >= 0 ? note : String(note || '') + suffix;
+}
+function soaPlanningSourceValid_(source) {
+  return soaPlanningObject_(source) && typeof source.file === 'string' && !!source.file.trim() &&
+    Number.isSafeInteger(source.printed_page) && source.printed_page > 0 && typeof source.section === 'string' && !!source.section.trim();
+}
 function soaPlanningPrepare_(payload) {
   var p = soaPlanningDocument_(payload), d = p.dados, issues = [], errors = [];
+  var catalog = d.schema === 'ips-agenda-study-planning' && d.schema_version === '1.1.0';
   function issue(id, message, structural) { issues.push({ id: id, message: message, blocking: true }); if (structural) errors.push(message); }
+  function notice(id, message) { issues.push({ id: id, message: message, blocking: false }); }
   function keys(obj, allowed, path) { Object.keys(obj).forEach(function(k) { if (allowed.indexOf(k) < 0) issue(path + '.' + k, 'Campo não suportado: ' + path + '.' + k + '. Preservado no rascunho.'); }); }
   var poc = d.schema === 'ips-agenda-study-planning-poc';
   if (!poc && d.schema !== 'ips-agenda-study-planning') issue('schema', 'Formato de planejamento não suportado.', true);
-  if (d.schema_version !== (poc ? '0.1.0' : '1.0.0')) issue('version', 'Versão de planejamento não suportada.', true);
+  if (!catalog && d.schema_version !== (poc ? '0.1.0' : '1.0.0')) issue('version', 'Versão de planejamento não suportada.', true);
   if (!soaPlanningObject_(d.study) || typeof d.study.protocol_id !== 'string' || !d.study.protocol_id.trim() || typeof d.study.protocol_version !== 'string' || !d.study.protocol_version.trim()) issue('study', 'Informe identificação e versão do protocolo.', true);
   if (soaPlanningObject_(d.study)) keys(d.study, ['protocol_id','protocol_version','sponsor','budget_version','metadata'], 'study');
   if (d.import_mode !== undefined && ['preview_only', 'review'].indexOf(d.import_mode) < 0) issue('mode', 'Modo de importação inválido.', true);
@@ -38,10 +49,30 @@ function soaPlanningPrepare_(payload) {
   if (poc || d.import_mode === 'preview_only') issue('draft', 'Este documento permite somente prévia e rascunho.');
   if (!Array.isArray(d.rules)) issue('rules', 'Informe rules como lista, mesmo quando vazia.', true);
   var rules = Array.isArray(d.rules) ? d.rules : [];
-  var timingRules = Object.create(null);
+  var timingRules = Object.create(null), ruleIds = Object.create(null);
   var anchorReferences = { randomization_date: 'RANDOMIZACAO', inclusion_date: 'INCLUSAO', last_dose: 'ULTIMA_DOSE', end_of_treatment_date: 'FIM_TRATAMENTO', decision_to_permanently_discontinue: 'DECISAO_INTERRUPCAO_TRATAMENTO', progression_date: 'PROGRESSAO_DOENCA' };
   rules.forEach(function(r, i) {
-    if (!soaPlanningObject_(r)) return;
+    if (!soaPlanningObject_(r)) { issue('rule-object-' + i, 'Regra inválida.', true); return; }
+    if (ruleIds[r.id]) issue('rule-duplicate-' + i, 'Regra duplicada.', true);
+    ruleIds[r.id] = true;
+    if (catalog && r.handling === 'manual') {
+      keys(r, ['id','kind','source','status','description','name','note','metadata','handling','reason','visit_ids','scope'], 'rules.' + i);
+      var linked = Array.isArray(r.visit_ids) && r.visit_ids.length && r.visit_ids.every(function(id) {
+        return (Array.isArray(d.visits) ? d.visits : []).some(function(v) {
+          return v && v.id === id && v.scheduling && ['manual','milestone'].indexOf(v.scheduling.mode) >= 0;
+        });
+      });
+      // Dose checks are not scheduling instructions: the SoA engine never administers treatment.
+      var administration = r.scope === 'administration' && r.kind === 'minimum_interval' &&
+        Array.isArray(r.visit_ids) && r.visit_ids.length && r.visit_ids.every(function(id) {
+          return (Array.isArray(d.visits) ? d.visits : []).some(function(v) { return v && v.id === id; });
+        });
+      if (!soaPlanningSourceValid_(r.source) || typeof r.description !== 'string' || !r.description.trim() ||
+          typeof r.reason !== 'string' || !r.reason.trim() || r.status !== 'requires_review' || (!linked && !administration)) {
+        issue('manual-rule-' + i, 'A regra manual exige fonte, explicação e visitas por decisão manual: ' + (r.name || r.id || i) + '.');
+      } else notice('manual-rule-' + i, 'Conferência manual preservada: ' + (r.name || r.id) + '. ' + r.reason);
+      return;
+    }
     if (r.kind !== 'visit_timing' || r.status !== 'extracted' || !soaPlanningObject_(r.timing) || !soaPlanningObject_(r.source)) { issue('rules-review-' + i, 'Regra exige revisão: ' + (r.id || i) + '. Recorrências e condições permanecem no rascunho.'); return; }
     keys(r, ['id','kind','timing','source','status','note','metadata'], 'rules.' + i);
     if (timingRules[r.id]) issue('rule-duplicate-' + i, 'Regra duplicada.', true);
@@ -89,17 +120,37 @@ function soaPlanningPrepare_(payload) {
   var normalized = [];
   visits.forEach(function(v, i) {
     if (!soaPlanningObject_(v)) { issue('visit-' + i, 'Visita inválida.', true); return; }
-    keys(v, ['id','code','name','arm_ids','order','aliases','timing','source','status','note','rule_ids','metadata'], 'visits.' + i);
+    keys(v, ['id','code','name','arm_ids','order','aliases','timing','source','status','note','rule_ids','metadata'].concat(catalog ? ['scheduling'] : []), 'visits.' + i);
     ['id','code','name'].forEach(function(k) { if (typeof v[k] !== 'string' || !v[k].trim()) issue('visit-' + i + k, 'Visita exige ' + k + '.', true); });
     if (ids[v.id]) issue('duplicate-' + i, 'ID de visita duplicado.', true);
     if (!Array.isArray(v.arm_ids) || v.arm_ids.some(function(id) { return typeof id !== 'string' || !armMap[id]; }) || new Set(Array.isArray(v.arm_ids) ? v.arm_ids : []).size !== (Array.isArray(v.arm_ids) ? v.arm_ids : []).length) issue('scope-' + i, 'Braços da visita ausentes, duplicados ou desconhecidos.', true);
     var t = soaPlanningObject_(v.timing) ? v.timing : {};
+    if (catalog && v.timing !== undefined && !soaPlanningObject_(v.timing)) issue('timing-object-' + i, 'Informe os dados de prazo como objeto.', true);
+    var scheduling = catalog && soaPlanningObject_(v.scheduling) ? v.scheduling : {};
+    var schedulingMode = scheduling.mode === undefined ? 'calculated' : scheduling.mode;
+    var manual = catalog && ['manual','milestone'].indexOf(schedulingMode) >= 0;
+    if (catalog) {
+      if (v.scheduling !== undefined && !soaPlanningObject_(v.scheduling)) issue('scheduling-' + i, 'Modo de programação inválido.', true);
+      keys(scheduling, ['mode','reason'], 'scheduling.' + i);
+      if (['manual','milestone','calculated'].indexOf(schedulingMode) < 0) issue('scheduling-mode-' + i, 'Modo de programação não suportado.');
+      if (manual && (typeof scheduling.reason !== 'string' || !scheduling.reason.trim())) issue('scheduling-reason-' + i, 'Explique como programar a visita ' + (v.code || i) + ' manualmente.');
+      if (manual && (v.rule_ids || []).length) issue('manual-timing-rule-' + i, 'Uma visita manual não pode executar regra temporal compartilhada.');
+      if (manual && v.status !== 'extracted' && v.status !== 'requires_review') issue('manual-status-' + i, 'Estado de revisão inválido para ' + (v.code || i) + '.');
+      if (schedulingMode === 'milestone' && Object.keys(t).length) issue('milestone-timing-' + i, 'O marco usa a própria data realizada, sem deslocamento ou tolerância presumidos.');
+    }
     keys(t, ['anchor','anchor_visit_id','offset_days','window_before_days','window_after_days','basis'], 'timing.' + i);
+    if (!manual) {
     ['offset_days','window_before_days','window_after_days'].forEach(function(k) { if (typeof t[k] !== 'number' || !Number.isSafeInteger(t[k]) || t[k] < 0) issue('timing-' + i + k, 'Visita exige ' + k + ' inteiro não negativo.', t[k] !== undefined && t[k] !== null); });
     if (['planned','performed'].indexOf(t.basis) < 0) issue('basis-' + i, 'Informe se a referência usa a data prevista ou realizada.');
     if (t.anchor !== 'visit' && !Object.prototype.hasOwnProperty.call(anchorReferences, t.anchor)) issue('anchor-' + i, 'Referência temporal ausente ou não suportada.');
     if (t.anchor !== 'visit' && t.anchor_visit_id !== undefined) issue('extra-anchor-' + i, 'Referência de visita incompatível com o marco.');
     if (v.status !== 'extracted') issue('review-' + i, 'Visita exige revisão: ' + (v.name || i));
+    } else {
+      ['offset_days','window_before_days','window_after_days'].forEach(function(k) {
+        if (t[k] !== undefined && t[k] !== null && (typeof t[k] !== 'number' || !Number.isSafeInteger(t[k]) || t[k] < 0)) issue('manual-timing-' + i + k, 'Valor documental inválido em ' + (v.code || i) + '.', true);
+      });
+      notice('manual-visit-' + i, (schedulingMode === 'milestone' ? 'Marco inicial: ' : 'Programação manual: ') + (v.code || i) + '. ' + scheduling.reason);
+    }
     if (!soaPlanningObject_(v.source) || typeof v.source.file !== 'string' || !v.source.file.trim() || typeof v.source.printed_page !== 'number' || !isFinite(v.source.printed_page) || v.source.printed_page < 1 || Math.floor(v.source.printed_page) !== v.source.printed_page || typeof v.source.section !== 'string' || !v.source.section.trim()) issue('source-' + i, 'Visita exige documento, página e seção da fonte.');
     if (typeof v.order !== 'number' || !isFinite(v.order) || v.order < 0 || Math.floor(v.order) !== v.order) issue('order-' + i, 'Ordem da visita inválida.', v.order !== undefined);
     if (v.aliases !== undefined && (!Array.isArray(v.aliases) || v.aliases.some(function(x) { return typeof x !== 'string'; }))) issue('aliases-' + i, 'Aliases devem ser uma lista de textos.', true);
@@ -116,28 +167,30 @@ function soaPlanningPrepare_(payload) {
     var previous = matches[0] || {};
     normalized.push({
       idSoA: id, projeto: p.projeto, codigo: v.code || '', nome: v.name || '', ordem: v.order,
-      intervaloDias: t.offset_days, janelaDiasMenos: t.window_before_days, janelaDiasMais: t.window_after_days,
+      intervaloDias: manual ? '' : t.offset_days, janelaDiasMenos: manual ? '' : t.window_before_days, janelaDiasMais: manual ? '' : t.window_after_days,
       bracoIds: bracoIds,
       bracoNomes: arms.filter(function(a) { return a && (Array.isArray(v.arm_ids) ? v.arm_ids : []).indexOf(a.id) >= 0; }).map(function(a) { return a.name; }),
       aliases: v.aliases === undefined ? soaDelimitedIds_(previous.aliases) : (Array.isArray(v.aliases) ? v.aliases : []),
-      observacoes: v.note === undefined ? String(previous.observacoes || '') : v.note,
+      observacoes: soaPlanningObservation_(v.note === undefined ? String(previous.observacoes || '') : v.note, manual ? scheduling : null),
       source: v.source, repeticao: previous.repeticao || '', ativo: previous.ativo !== false,
-      referencia: anchorReferences[t.anchor] || '',
-      baseCalculo: t.basis === 'performed' ? 'RECALCULAR_VISITA_REALIZADA' : 'MANTER_DATAS_PREVISTAS',
-      papelCronograma: 'VISITA_CALCULADA', referenciaAlternativa: previous.referenciaAlternativa || '',
+      referencia: manual ? '' : (anchorReferences[t.anchor] || ''),
+      baseCalculo: manual || !t.basis ? '' : (t.basis === 'performed' ? 'RECALCULAR_VISITA_REALIZADA' : 'MANTER_DATAS_PREVISTAS'),
+      schedulingMode: manual ? schedulingMode : 'calculated', manualReason: manual ? scheduling.reason : '',
+      papelCronograma: manual ? (schedulingMode === 'milestone' ? 'MARCO_CALCULO' : 'NAO_PARTICIPA_CALCULO') : 'VISITA_CALCULADA', referenciaAlternativa: previous.referenciaAlternativa || '',
       criterioReferencias: previous.criterioReferencias || '', existente: !!matches.length, ordemManual: !!previous.ordemManual
     });
   });
   visits.forEach(function(v, i) {
-    if (!soaPlanningObject_(v) || !v.timing || v.timing.anchor !== 'visit') return;
+    if (!soaPlanningObject_(v) || (catalog && v.scheduling && v.scheduling.mode === 'manual') || !v.timing || v.timing.anchor !== 'visit') return;
     var target = visits.filter(function(x) { return x && x.id === v.timing.anchor_visit_id; })[0];
     if (!target || target === v || !Array.isArray(target.arm_ids) || !Array.isArray(v.arm_ids) || (target.arm_ids.length && (!v.arm_ids.length || v.arm_ids.some(function(a) { return target.arm_ids.indexOf(a) < 0; })))) issue('reference-' + i, 'Referência de visita ausente, circular ou incompatível com os braços.');
     if (normalized[i]) normalized[i].referencia = ids[v.timing.anchor_visit_id] || '';
+    if (catalog && target && target.scheduling && target.scheduling.mode === 'manual') issue('manual-reference-' + i, 'Use um marco de cálculo, e não uma visita manual, como referência de ' + (v.code || i) + '.');
     var seen = Object.create(null), cursor = v;
     while (cursor && cursor.timing && cursor.timing.anchor === 'visit') { if (seen[cursor.id]) { issue('cycle-' + i, 'Há um ciclo nas referências de visitas.'); break; } seen[cursor.id] = true; cursor = visits.filter(function(x) { return x && x.id === cursor.timing.anchor_visit_id; })[0]; }
   });
   var fingerprint = soaPlanningHash_(JSON.stringify([p.raw,p.projeto,p.modo,p.criarBracos,selected,existingArms,existingVisits]));
-  return {ok:!errors.length,projeto:p.projeto,modo:p.modo,criarBracos:p.criarBracos,missingBracos:missing,bracosExistentes:existingArms,erros:errors,alertas:issues.map(function(x) { return x.message; }),revisaoNecessaria:[],visitas:normalized,totalVisitas:visits.length,novasVisitas:normalized.filter(function(x) { return !x.existente; }).length,atualizacoes:p.modo === 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ignoradas:p.modo !== 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ordensManuaisPreservadas:normalized.filter(function(x) { return x.ordemManual; }).length,podeImportar:!issues.length,fingerprint:fingerprint,planejamento:{schema:d.schema,version:d.schema_version,study:d.study || {},rules:rules,issues:issues,draftOnly:!!(poc || d.import_mode === 'preview_only')}};
+  return {ok:!errors.length,projeto:p.projeto,modo:p.modo,criarBracos:p.criarBracos,missingBracos:missing,bracosExistentes:existingArms,erros:errors,alertas:issues.map(function(x) { return x.message; }),revisaoNecessaria:[],visitas:normalized,totalVisitas:visits.length,novasVisitas:normalized.filter(function(x) { return !x.existente; }).length,atualizacoes:p.modo === 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ignoradas:p.modo !== 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ordensManuaisPreservadas:normalized.filter(function(x) { return x.ordemManual; }).length,podeImportar:!issues.some(function(x) { return x.blocking; }),fingerprint:fingerprint,planejamento:{schema:d.schema,version:d.schema_version,study:d.study || {},rules:rules,issues:issues,draftOnly:!!(poc || d.import_mode === 'preview_only')}};
 }
 function soaPlanningSheet_(create) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName(SOA_PLANNING_SHEET_);

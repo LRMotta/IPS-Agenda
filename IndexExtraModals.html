@@ -464,3 +464,23 @@
 </div>
 
 
+
+<!-- Histórico independente: não amplia o formulário de edição da visita. -->
+<div class="modal-overlay" id="modalAgendaHistorico" data-accessible-dialog data-extra-dialog inert onclick="fecharModalSeClicouFora(event,'modalAgendaHistorico')">
+  <div class="modal-box agenda-history-box" role="dialog" aria-labelledby="agendaHistoricoTitle" tabindex="-1">
+    <div class="modal-header">
+      <div>
+        <div class="modal-header-title" id="agendaHistoricoTitle">Histórico do agendamento</div>
+        <div class="modal-header-sub" id="agendaHistoricoContexto"></div>
+      </div>
+      <button class="modal-close" type="button" onclick="fecharOverlay('modalAgendaHistorico')" aria-label="Fechar histórico">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="agenda-history-help">Alterações registradas na Auditoria, em ordem de registro, das mais recentes às antigas. Horário de Brasília. O histórico antigo pode estar incompleto; a ausência de registro não comprova ausência de alteração.</p>
+      <ol id="agendaHistoricoLista" class="agenda-history-list" aria-label="Alterações registradas"></ol>
+      <p id="agendaHistoricoStatus" role="status" aria-live="polite"></p>
+      <button id="agendaHistoricoMais" type="button" class="ag-tb-btn" onclick="carregarAgendaHistorico()" hidden>Buscar registros anteriores</button>
+    </div>
+  </div>
+</div>
+

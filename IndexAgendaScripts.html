@@ -1173,6 +1173,8 @@
         setAgendaSelectValue('agBackupStatus', res.origem.backup && res.origem.backup.status);
         _agendaEditRecordVersion = res.origem.recordVersion || '';
         _agendaEditEditableVersion = res.origem.editRecordVersion || '';
+        _agendaEditFieldVersions = res.origem.editFieldVersions || null;
+        _agendaEditMergeToken = res.origem.editMergeToken || '';
         _agendaEditFormValues = agendaEditValuesFromRecord_(res.origem);
         _agendaEditTransportValues = agendaEditTransportValuesFromRecord_(res.origem);
         atualizarEstadoNovoEnvioBackup_();
@@ -3036,12 +3038,15 @@
     var btn = document.getElementById('btnSalvarAgenda');
     if (!agendaMatBioValidateAll()) return;
     var payload = coletarAgendaEvento();
+    var formAtSend = JSON.stringify(payload);
     if (_agendaEditId) {
       var eventoEditado = agendaEventoAtualEditado_();
       payload.id = _agendaEditId;
       payload._rowIndex = Number(eventoEditado && eventoEditado.rowIndex || 0) || 0;
       payload._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
       payload._editRecordVersion = _agendaEditEditableVersion || (eventoEditado && eventoEditado.editRecordVersion) || '';
+      payload._editFieldVersions = _agendaEditFieldVersions;
+      payload._editMergeToken = _agendaEditMergeToken;
     }
     if (agendaCancelamentoSemMotivo_(payload) && !opts.cancelamentoConfirmado) {
       var statusAnteriorOperacional = (agendaEventoAtualEditado_() || {}).status || 'Agendado';
@@ -3086,15 +3091,8 @@
         }
         setAgendaButtonState(btn, false);
         if (res && res.conflito) {
-          var conflitoMsg = res.erro || 'Este agendamento foi alterado desde que voce abriu.';
-          document.getElementById('agendaStatusMsg').innerHTML =
-            '<div class="status-conflict">' +
-              '<span class="material-symbols-outlined">sync_problem</span>' +
-              '<div><strong>Conflito de edicao</strong><br>' + esc(conflitoMsg) + ' Feche esta edicao e abra o registro atualizado antes de salvar novamente.</div>' +
-              '<button type="button" class="status-conflict-btn" onclick="fecharAgendaModal(function(){ carregarAgendaEventos(true); })">Atualizar agenda</button>' +
-            '</div>';
-          snackErro('Conflito de edicao. Atualize a Agenda antes de salvar novamente.');
-          carregarAgendaEventos(true);
+          agendaPreservarConflito_(res);
+          snackErro('Salvamento bloqueado. Seu preenchimento permanece nesta tela.');
           return;
         }
         if (res && res.visitaMesmaData) {
@@ -3106,6 +3104,18 @@
           setAgendaStatus('Erro: ' + res.erro, 'danger');
           return;
         }
+        if (res && res.merged && JSON.stringify(coletarAgendaEvento()) !== formAtSend) {
+          // O retorno confirma somente o preenchimento enviado. Novas edicoes
+          // permanecem na tela, com referencia anterior para nova comparacao.
+          if (typeof appMarkUnsavedChanges === 'function') appMarkUnsavedChanges('agendaCreatePanel');
+          _agendaConflictDraftActive = String(_agendaEditId);
+          agendaConflictDraftSave_();
+          var pendingMsg = 'A parte enviada foi salva e as atualizações simultâneas foram preservadas. Há novas alterações nesta tela que ainda precisam ser salvas.';
+          setAgendaStatus(pendingMsg, '');
+          snack(pendingMsg);
+          agendaRecarregarJanelaAtual_();
+          return;
+        }
         var periodoLabel = res && res.tipo ? res.tipo : 'Evento';
         var msgOk = res && res.count > 1
           ? 'Salvo. ' + periodoLabel + ' salvo em ' + res.count + ' dias. Primeiro ID: ' + (res.id || '')
@@ -3113,7 +3123,10 @@
         if (res && Array.isArray(res.operationalAlerts) && res.operationalAlerts.length) {
           msgOk += ' Atenção: há aviso de feriado ou orientação operacional para a data; o agendamento foi mantido.';
         }
+        if (res && res.merged) msgOk += ' Atualizações feitas em outros campos foram preservadas.';
+        snack(msgOk);
         setAgendaStatus(msgOk, 'ok');
+        agendaConflictDraftClear_(_agendaEditId);
         if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
         if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
         if (res && res.editRecordVersion) _agendaEditEditableVersion = res.editRecordVersion;
@@ -3241,6 +3254,7 @@
     }
     if (!agendaMatBioValidateAll()) return;
     var dados = coletarAgendaEvento();
+    var formAtSend = JSON.stringify(dados);
     dados.id = _agendaEditId || dados.id || '';
     if (!agendaMeaningfulValue(dados.participante)) {
       snackErro('Selecione o participante antes de gerar o transporte.');
@@ -3265,6 +3279,8 @@
     dados._rowIndex = Number(eventoEditado && eventoEditado.rowIndex || 0) || 0;
     dados._recordVersion = _agendaEditRecordVersion || (eventoEditado && eventoEditado.recordVersion) || '';
     dados._editRecordVersion = _agendaEditEditableVersion || (eventoEditado && eventoEditado.editRecordVersion) || '';
+    dados._editFieldVersions = _agendaEditFieldVersions;
+    dados._editMergeToken = _agendaEditMergeToken;
     var editRequestId = _agendaEditOpenRequestId;
     var transporteContext = transporteAgendaContextFromDados(dados, slot, _agendaEditId);
     var transporteWindow = prepararJanelaTransporte(transporteContext);
@@ -3285,14 +3301,35 @@
       .withSuccessHandler(function(res) {
         resetBtn();
         if (res && (res.erro || res.conflito)) {
+          if (dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId && res.conflito) agendaPreservarConflito_(res);
           atualizarJanelaTransporteErro(transporteWindow, res.erro);
           snackErro(res.erro);
           return;
         }
+        if (res && res.merged && dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId &&
+            JSON.stringify(coletarAgendaEvento()) !== formAtSend) {
+          // A parte enviada ja foi salva. Manter novas edicoes e a referencia
+          // antiga para uma nova comparacao; nao limpar o dirty ao abrir outra tela.
+          if (typeof appMarkUnsavedChanges === 'function') appMarkUnsavedChanges('agendaCreatePanel');
+          _agendaConflictDraftActive = String(_agendaEditId);
+          agendaConflictDraftSave_();
+          var pendingMsg = 'O agendamento foi salvo com as atualizações simultâneas. Você fez novas alterações nesta tela; salve-as antes de abrir o Transporte.';
+          atualizarJanelaTransporteErro(transporteWindow, pendingMsg);
+          snack(pendingMsg);
+          agendaRecarregarJanelaAtual_();
+          return;
+        }
         snack('Abrindo Transporte e sincronizando dados da Agenda...');
-        if (dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId) {
+        if (dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId &&
+            (!res || !res.merged || JSON.stringify(coletarAgendaEvento()) === formAtSend)) {
+          if (res && res.mergedEvent) abrirAgendaEdicaoComRegistro_(res.mergedEvent);
+          agendaConflictDraftClear_(dados.id);
+          _agendaEditMergeToken = res && res.editMergeToken || '';
           if (res && res.recordVersion) _agendaEditRecordVersion = res.recordVersion;
-          if (res && res.editRecordVersion) _agendaEditEditableVersion = res.editRecordVersion;
+          if (res && res.editRecordVersion) {
+            _agendaEditEditableVersion = res.editRecordVersion;
+            _agendaEditFieldVersions = res.editFieldVersions || null;
+          }
           if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
         }
         agendaRecarregarJanelaAtual_();
@@ -4045,6 +4082,7 @@
   }
 
   function limparAgendaForm() {
+    _agendaConflictDraftActive = '';
     _agendaBackupOrigemId = '';
     agendaFecharOpcoesBackup_();
     ['agTipo','agParticipante','agProjeto','agMedico','agPrestador','agLabCentral'].forEach(function(id) {
@@ -4120,6 +4158,8 @@
     applyAgendaAwbRulesAll();
     _agendaEditRecordVersion = '';
     _agendaEditEditableVersion = '';
+    _agendaEditFieldVersions = null;
+    _agendaEditMergeToken = '';
     _agendaEditFormValues = null;
     _agendaEditTransportValues = null;
     setAgendaButtonState(document.getElementById('btnSalvarAgenda'), false);
@@ -4175,8 +4215,175 @@
   var _agendaEditPresenceTimer = null;
   var _agendaEditRecordVersion = '';
   var _agendaEditEditableVersion = '';
+  var _agendaEditMergeToken = '';
+  var _agendaEditFieldVersions = null;
   var _agendaEditFormValues = null;
   var _agendaEditTransportValues = null;
+
+  var _agendaConflictDrafts = Object.create(null);
+  var _agendaConflictDraftActive = '';
+  var _agendaConflictDraftRestoring = false;
+
+  function agendaConflictDraftKey_(id) {
+    var email = typeof CURRENT_ACCESS !== 'undefined' && CURRENT_ACCESS.ok ? String(CURRENT_ACCESS.email || '').toLowerCase() : '';
+    return email ? 'ips:agenda:conflict:v1:' + email + ':' + String(id) : '';
+  }
+
+  function agendaConflictDraftRead_(id) {
+    var key = agendaConflictDraftKey_(id);
+    var cached = _agendaConflictDrafts[key || id];
+    if (cached && cached.savedAt > Date.now() - 24 * 60 * 60 * 1000) return cached;
+    delete _agendaConflictDrafts[key || id];
+    if (!key) return null;
+    try {
+      var draft = JSON.parse(window.sessionStorage.getItem(key) || 'null');
+      if (draft && draft.id === String(id) && draft.record && String(draft.record.id) === String(id) &&
+          Array.isArray(draft.controls) && draft.controls.length <= 1000 &&
+          draft.controls.every(function(control) { return control && typeof control.id === 'string' && typeof control.value === 'string'; }) &&
+          draft.materials && agendaMatBioPrefixes().every(function(prefix) {
+            var material = draft.materials[prefix];
+            return material && Array.isArray(material.rows) && material.rows.length <= 1000 &&
+              material.rows.every(function(row) { return row && ['key', 'formula', 'ensaio', 'other', 'unit'].every(function(key) { return typeof row[key] === 'string'; }); });
+          }) && typeof draft.version === 'string' && typeof draft.editVersion === 'string' &&
+          draft.savedAt > Date.now() - 24 * 60 * 60 * 1000) {
+        _agendaConflictDrafts[key] = draft;
+        return draft;
+      }
+      window.sessionStorage.removeItem(key);
+    } catch (error) { /* O formulario permanece em memoria se o armazenamento estiver indisponivel. */ }
+    return null;
+  }
+
+  function agendaConflictDraftSave_() {
+    if (!_agendaEditId || _agendaConflictDraftActive !== String(_agendaEditId) || _agendaEditFilling || _agendaConflictDraftRestoring) return false;
+    var panel = document.getElementById('agendaCreatePanel');
+    if (!panel) return false;
+    var controls = Array.prototype.map.call(panel.querySelectorAll('input[id],select[id],textarea[id]'), function(el) {
+      return { id: el.id, value: el.value, checked: !!el.checked, data: Object.assign({}, el.dataset) };
+    });
+    var materials = {};
+    agendaMatBioPrefixes().forEach(function(prefix) {
+      var wrap = document.getElementById(prefix + 'MatLines');
+      materials[prefix] = { sourceError: wrap && wrap.dataset.sourceError || '', rows:
+        Array.prototype.map.call(document.querySelectorAll('.ag-mat-line[data-prefix="' + prefix + '"]'), function(row) {
+          function value(selector) { return (row.querySelector(selector) || {}).value || ''; }
+          return { key: value('.ag-mat-type-select'), formula: value('.ag-mat-formula'),
+            ensaio: value('.ag-mat-ensaio'), other: value('.ag-mat-other'), unit: row.dataset.formulaUnit || '' };
+        }) };
+    });
+    var draft = { id: String(_agendaEditId), savedAt: Date.now(), controls: controls, materials: materials,
+      record: _agendaEditRecord, participant: _agendaParticipanteInfo,
+      version: _agendaEditRecordVersion, editVersion: _agendaEditEditableVersion, fieldVersions: _agendaEditFieldVersions, mergeToken: _agendaEditMergeToken };
+    var key = agendaConflictDraftKey_(_agendaEditId);
+    _agendaConflictDrafts[key || _agendaEditId] = JSON.parse(JSON.stringify(draft));
+    try {
+      if (key) { window.sessionStorage.setItem(key, JSON.stringify(draft)); return true; }
+    } catch (error) { /* Fallback em memoria, sem alterar o agendamento. */ }
+    return false;
+  }
+
+  function agendaConflictDraftClear_(id) {
+    var key = agendaConflictDraftKey_(id);
+    delete _agendaConflictDrafts[key || id];
+    try { if (key) window.sessionStorage.removeItem(key); } catch (error) {}
+    if (_agendaConflictDraftActive === String(id)) _agendaConflictDraftActive = '';
+  }
+
+  function agendaPreservarConflito_(res) {
+    if (typeof appMarkUnsavedChanges === 'function') appMarkUnsavedChanges('agendaCreatePanel');
+    _agendaConflictDraftActive = String(_agendaEditId);
+    var persisted = agendaConflictDraftSave_();
+    var fields = res && res.diagnostic && Array.isArray(res.diagnostic.fields) ? res.diagnostic.fields : [];
+    var overlaps = res && res.diagnostic && res.diagnostic.overlappingFields;
+    var detail = overlaps && overlaps.length ? ' Alterações incompatíveis: ' + overlaps.join('; ') + '.' :
+      fields.length ? ' Campos divergentes da referência aberta: ' + fields.join('; ') + '.' :
+      ' O motivo detalhado precisa ser conferido no diagnóstico do bloqueio.';
+    var status = document.getElementById('agendaStatusMsg');
+    if (status) status.innerHTML = '<div class="status-conflict ag-conflict-draft" role="alert">' +
+      '<div><strong>Preenchimento preservado</strong><br>' +
+      'O salvamento foi bloqueado porque a versão do agendamento mudou.' + esc(detail) +
+      ' Seus materiais e os demais campos continuam preenchidos. ' +
+      (persisted ? 'Um rascunho está guardado nesta aba. Ao reabrir este agendamento, use Restaurar preenchimento.' :
+        'O rascunho está disponível enquanto esta página permanecer aberta. Não recarregue a página: o armazenamento da aba não está disponível.') +
+      ' O rascunho não altera o agendamento.</div></div>';
+  }
+
+  function agendaConflictDraftOffer_() {
+    if (_agendaConflictDraftRestoring || !agendaConflictDraftRead_(_agendaEditId)) return;
+    var status = document.getElementById('agendaStatusMsg');
+    if (status) status.innerHTML = '<div class="status-conflict ag-conflict-draft" role="alert"><div><strong>Há um preenchimento não salvo deste agendamento</strong><br>' +
+      'Você pode recuperar os materiais e os demais campos. A restauração mantém a referência original e não sobrescreve alterações mais recentes.</div>' +
+      '<button type="button" class="status-conflict-btn" onclick="agendaRestaurarPreenchimento_()">Restaurar preenchimento</button>' +
+      '<button type="button" class="status-conflict-btn" onclick="agendaDescartarRascunho_()">Descartar rascunho</button></div>';
+  }
+
+  function agendaDescartarRascunho_() {
+    agendaConflictDraftClear_(_agendaEditId);
+    setAgendaStatus('Rascunho descartado. Os campos desta tela foram mantidos.', '');
+  }
+
+  function agendaRestaurarPreenchimento_() {
+    var draft = agendaConflictDraftRead_(_agendaEditId);
+    if (!draft) return;
+    function restore() {
+      if (String(_agendaEditId) !== draft.id) return;
+      _agendaConflictDraftRestoring = true;
+      try {
+        // Reabre a referencia original, nunca adota silenciosamente a versao atual.
+        var perf = agendaEditOpenPerformanceStart_();
+        perf.requestId = ++_agendaEditOpenRequestId;
+        agendaAbrirEdicaoComRegistroPronto_(draft.record, perf);
+        _agendaParticipanteInfo = draft.participant;
+        function controls() {
+          draft.controls.forEach(function(saved) {
+            var el = document.getElementById(saved.id);
+            if (!el || !el.closest('#agendaCreatePanel')) return;
+            if (el.tagName === 'SELECT') setAgendaSelectValue(saved.id, saved.value);
+            else el.value = saved.value;
+            if (el.type === 'checkbox' || el.type === 'radio') el.checked = saved.checked;
+            Object.keys(saved.data || {}).forEach(function(key) { el.dataset[key] = saved.data[key]; });
+          });
+        }
+        controls();
+        atualizarAgendaTipoVisibilidade(); onAgendaLabCentralChange();
+        controls();
+        agendaMatBioPrefixes().forEach(function(prefix) {
+          var material = draft.materials[prefix];
+          if (!material) return;
+          renderAgendaMatBioEditor(prefix);
+          var wrap = document.getElementById(prefix + 'MatLines');
+          if (!wrap) return;
+          agendaMatBioClearRows(prefix); wrap.dataset.loading = '1';
+          material.rows.forEach(function(saved) {
+            agendaMatBioAddRow(prefix);
+            var row = wrap.lastElementChild;
+            row.querySelector('.ag-mat-type-select').value = saved.key;
+            row.querySelector('.ag-mat-formula').value = saved.formula;
+            row.querySelector('.ag-mat-ensaio').value = saved.ensaio;
+            row.querySelector('.ag-mat-other').value = saved.other;
+            row.dataset.formulaUnit = saved.unit;
+          });
+          if (material.sourceError) wrap.dataset.sourceError = material.sourceError;
+          delete wrap.dataset.loading; agendaMatBioRecalcPrefix(prefix);
+        });
+        _agendaEditRecordVersion = draft.version;
+        _agendaEditEditableVersion = draft.editVersion;
+        _agendaEditFieldVersions = draft.fieldVersions;
+        _agendaEditMergeToken = draft.mergeToken || '';
+        Object.keys(_agendaEditFormValues || {}).forEach(function(id) {
+          var el = document.getElementById(id); if (el) _agendaEditFormValues[id] = el.value;
+        });
+        atualizarAgendaTransportesOpcionais(); agendaMatBioUpdateAllCopyOptions();
+      } finally { _agendaConflictDraftRestoring = false; }
+      agendaPreservarConflito_({});
+    }
+    if (typeof appConfirmNavigationIfDirty === 'function' && !appConfirmNavigationIfDirty('agendaCreatePanel', restore)) return;
+    restore();
+  }
+
+  function agendaConflictDraftInput_(event) {
+    if (event && event.target && event.target.closest && event.target.closest('#agendaCreatePanel')) agendaConflictDraftSave_();
+  }
 
   function agendaEditPresenceSessionId() {
     if (_agendaEditSessionId) return _agendaEditSessionId;
@@ -4217,7 +4424,7 @@
     var msg = agendaPresenceMessage(res);
     if (!msg) return;
     var status = document.getElementById('agendaStatusMsg');
-    if (status) status.innerHTML = '<span style="color:#7a5c00">' + esc(msg) + '</span>';
+    if (status && !agendaConflictDraftRead_(_agendaEditId)) status.innerHTML = '<span style="color:#7a5c00">' + esc(msg) + '</span>';
     if (typeof snackErro === 'function') snackErro(msg);
   }
 
@@ -5141,6 +5348,8 @@
     _agendaEditRecord = agendaStoreEventoLocal_(r);
     _agendaEditRecordVersion = r.recordVersion || '';
     _agendaEditEditableVersion = r.editRecordVersion || '';
+    _agendaEditFieldVersions = r.editFieldVersions || null;
+    _agendaEditMergeToken = r.editMergeToken || '';
     _agendaEditFormValues = agendaEditValuesFromRecord_(r);
     _agendaEditTransportValues = agendaEditTransportValuesFromRecord_(r);
     var periodoAgenda = agendaPeriodoFromRow(r);
@@ -5220,6 +5429,7 @@
     agendaLogEditOpenPerformance_(perf, 'edit_ready', true);
     agendaOpenEditPresence(r.id, r.recordVersion || '', r.editRecordVersion || '');
     updateAgendaSaveAvailability(false);
+    agendaConflictDraftOffer_();
   }
 
   function setAgendaFieldValue(id, value) {
@@ -5313,6 +5523,7 @@
   }
 
   function fecharAgendaModal(onClosed) {
+    agendaConflictDraftSave_();
     if (typeof appConfirmNavigationIfDirty === 'function' && !appConfirmNavigationIfDirty('agendaCreatePanel', function() {
       if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
       fecharAgendaModal(onClosed);
@@ -6178,6 +6389,7 @@
     var menuId = 'agActionMenu' + String(id || '').replace(/\W/g, '');
     var editButton = '<button class="ag-act-btn" type="button" data-arg1="' + esc(r.id) + '" onclick="event.stopPropagation();abrirAgendaEdicao(this.dataset.arg1,' + Number(r.rowIndex || 0) + ')" title="Editar" aria-label="Editar"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>';
     var items = [];
+    if (String(r.id || '').trim()) items.push({ icon: 'history', label: 'Histórico do agendamento', action: 'abrirAgendaHistorico(this.dataset.agendaId)' });
 
     if (AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR)) {
       items.push({
@@ -6375,6 +6587,63 @@
       (r.obs ? '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">sticky_note_2</span>Observacoes</div><div class="ag-obs-block"><span class="material-symbols-outlined">info</span><span>' + esc(r.obs) + '</span></div></div>' : '') +
       '<div class="ag-det-section"><div class="ag-det-label"><span class="material-symbols-outlined">local_shipping</span>Transporte de Amostras</div>' +
       (couriers || '<div class="ag-empty" style="padding:0">Sem dados logisticos preenchidos nesta linha.</div>') + '</div>';
+  }
+
+  var _agendaHistoricoConsulta = null;
+
+  function abrirAgendaHistorico(id) {
+    if (!String(id || '').trim()) { snackErro('Este agendamento não possui identificação para consultar o histórico.'); return; }
+    _agendaHistoricoConsulta = { id: String(id), before: null, busy: false };
+    document.getElementById('agendaHistoricoLista').replaceChildren();
+    var evento = agendaFindEventoLocal_(id);
+    document.getElementById('agendaHistoricoContexto').textContent = evento ? [evento.participante || evento.tipo, evento.projeto, evento.data].filter(Boolean).join(' · ') : 'Alterações registradas deste agendamento';
+    abrirOverlay('modalAgendaHistorico');
+    carregarAgendaHistorico();
+  }
+
+  function carregarAgendaHistorico() {
+    var consulta = _agendaHistoricoConsulta;
+    if (!consulta || consulta.busy) return;
+    consulta.busy = true;
+    var status = document.getElementById('agendaHistoricoStatus');
+    var button = document.getElementById('agendaHistoricoMais');
+    status.textContent = 'Consultando alterações registradas…';
+    button.hidden = false;
+    button.disabled = true;
+    button.textContent = 'Carregando…';
+    function atual() {
+      return _agendaHistoricoConsulta === consulta && document.getElementById('modalAgendaHistorico').classList.contains('open');
+    }
+    appServerRun({ method: 'getAgendaHistorico', args: [consulta.id, consulta.before], onSuccess: function(data) {
+      if (!atual()) return;
+      consulta.busy = false;
+      if (!data || data.agendaId !== consulta.id || !Array.isArray(data.rows)) { falha(new Error('O histórico retornado não corresponde ao agendamento.')); return; }
+      var list = document.getElementById('agendaHistoricoLista');
+      data.rows.forEach(function(item) {
+        var entry = document.createElement('li');
+        var title = document.createElement('strong');
+        title.textContent = item.field + ' · ' + item.action;
+        var change = document.createElement('p');
+        change.textContent = item.field === 'Agendamento' || item.field === 'Vínculo do participante'
+          ? item.newValue : (item.oldValue || 'Não informado') + ' → ' + (item.newValue || 'Não informado');
+        var author = document.createElement('small');
+        author.textContent = item.timestamp + ' · ' + (item.email || 'Responsável não disponível');
+        entry.appendChild(title); entry.appendChild(change); entry.appendChild(author); list.appendChild(entry);
+      });
+      consulta.before = data.nextBefore;
+      button.hidden = !data.hasMore;
+      button.disabled = false;
+      button.textContent = 'Buscar registros anteriores';
+      status.textContent = data.hasMore
+        ? (data.rows.length ? 'Há registros mais antigos para consultar.' : 'Nenhuma alteração encontrada neste trecho. Continue a busca nos registros anteriores.')
+        : (list.children.length ? 'Consulta concluída nos registros disponíveis.' : 'Nenhuma alteração registrada encontrada para este agendamento.');
+    }, onFailure: falha });
+    function falha(error) {
+      if (!atual()) return;
+      consulta.busy = false;
+      status.textContent = appErrorMessage(error, 'Não foi possível consultar o histórico.');
+      button.hidden = false; button.disabled = false; button.textContent = 'Tentar novamente';
+    }
   }
 
   var _agendaReciboData = null;
@@ -7191,6 +7460,9 @@
   document.addEventListener('change', onAgendaTransporteOpcionalInput);
   document.addEventListener('input', onAgendaRequiredInput);
   document.addEventListener('change', onAgendaRequiredInput);
+  document.addEventListener('input', agendaConflictDraftInput_);
+  document.addEventListener('change', agendaConflictDraftInput_);
+  if (typeof window.addEventListener === 'function') window.addEventListener('beforeunload', agendaConflictDraftSave_);
 
   document.addEventListener('DOMContentLoaded', function() {
     setTimeout(function() {

@@ -1,5 +1,5 @@
 'use strict';
-/* global window, abrirFormPart, salvarPartApp, abrirNovaParticipacaoPessoa */
+/* global window, abrirFormPart, salvarPartApp, abrirNovaParticipacaoPessoa, participanteRenderHistorico_ */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -20,7 +20,7 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       const modal = content.slice(content.indexOf('<div class="modal-overlay" id="modalParticipante"'), content.indexOf('<div class="modal-overlay" id="modalMedico"'));
       await page.setContent('<html><head><title>IPS — cadastro local</title>' + readProjectFile('IndexStyles.html') + readProjectFile('IndexStylesAfterDashboard.html') + '</head><body>' + modal + '</body></html>');
       const source = readProjectFile('IndexCoreScripts.html');
-      const names = ['participanteBloquearDetalhes_', 'abrirFormPart', 'abrirFormPartPreenchido_', 'participanteDefinirPessoaSomenteLeitura_',
+      const names = ['participanteRenderHistorico_', 'participanteBloquearDetalhes_', 'abrirFormPart', 'abrirFormPartPreenchido_', 'participanteDefinirPessoaSomenteLeitura_',
         'participanteMonitorarIdentidadeDoModal_', 'participantePreservarIdentidadeOriginal_', 'renderAcompanhantesPart_', 'lerAcompanhantesPart_',
         'salvarPartApp', 'fecharOverlay', 'abrirNovaParticipacaoPessoa', 'prepararNovaParticipacaoPessoa_', 'preencherMarcosParticipacao_', 'lerMarcosParticipacao_'];
       const functions = names.map(name => { const m = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}')); assert.ok(m, name); return m[0]; }).join('\n');
@@ -49,6 +49,7 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       const detail = { id: '1', idPessoa: 'PES-1', nome: 'Pessoa', idParticipante: 'PT-1', projeto: 'Aurora', status: 'Descontinuado',
         rua: 'Rua preservada', numero: '20', cidade: 'Caxias', estado: 'RS', municipioCodigo: '4305108', banco: 'Banco preservado',
         tipoConta: 'Conta corrente', agencia: '001', contaCorrente: '1234', titularConta: 'Pessoa',
+        historicoCadastro: { cadastro: { dataHora: '01/10/2026 09:20', responsavel: 'cadastro@exemplo.org' }, ultimaAtualizacao: { dataHora: '15/10/2026 11:40' } },
         marcosParticipacao: { RANDOMIZACAO: '2026-09-01', ULTIMA_DOSE: '2026-10-01' },
         acompanhantes: [{ id: 'AC-1', nome: 'Acompanhante', banco: 'Banco preservado', contaCorrente: '9876', estado: 'RS', cidade: 'Caxias' }] };
       await page.evaluate(() => abrirFormPart({ id: '1', nome: 'Resumo' }));
@@ -56,6 +57,19 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       await page.evaluate(() => salvarPartApp());
       assert.equal(await page.evaluate(() => window.requests.length), 1);
       await page.evaluate(d => window.requests[0].onSuccess(d), detail);
+      assert.equal(await page.locator('#ptHistoricoCadastro').getAttribute('open'), null);
+      assert.equal(await page.locator('#ptCadastroData').isVisible(), false);
+      assert.equal(await page.locator('#ptHistoricoCadastro').evaluate(el => el.previousElementSibling.textContent.includes('Contato e Notas')), true);
+      await page.locator('#ptHistoricoCadastro summary').click();
+      assert.equal(await page.locator('#ptCadastroData').isVisible(), true);
+      assert.equal(await page.locator('#ptCadastroData').textContent(), '01/10/2026 09:20');
+      assert.equal(await page.locator('#ptCadastroResponsavel').textContent(), 'cadastro@exemplo.org');
+      assert.equal(await page.locator('#ptAtualizacaoData').textContent(), '15/10/2026 11:40');
+      assert.equal(await page.locator('#ptHistoricoCadastro').evaluate(el => el.scrollWidth > el.clientWidth), false);
+      const auditArtifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(auditArtifacts, { recursive: true });
+      await page.locator('#modalParticipante').evaluate(async el => { await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)); });
+      await page.screenshot({ path: path.join(auditArtifacts, 'participant-audit-' + width + '.png') });
       assert.equal(await page.locator('#ptRua').inputValue(), detail.rua);
       assert.equal(await page.locator('#ptBanco').inputValue(), detail.banco);
       assert.equal(await page.locator('#ptAco0_contaCorrente').inputValue(), '9876');
@@ -79,6 +93,7 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       assert.deepEqual(payload.marcosParticipacao, { DECISAO_INTERRUPCAO_TRATAMENTO: '2026-10-03' });
       assert.deepEqual(payload.marcosParticipacaoBase, { DECISAO_INTERRUPCAO_TRATAMENTO: '' });
       await page.evaluate(() => abrirNovaParticipacaoPessoa());
+      assert.equal(await page.locator('#ptHistoricoCadastro').isVisible(), false);
       assert.equal(await page.locator('#ptPessoaBaseCadastroId').inputValue(), '1');
       assert.equal(await page.locator('#ptBanco').inputValue(), detail.banco);
       assert.equal(await page.locator('#ptRua').inputValue(), detail.rua);
@@ -91,7 +106,16 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       await page.getByRole('button', { name: 'Tentar novamente' }).click();
       await page.evaluate(d => window.requests[3].onSuccess(d), detail);
       assert.equal(await page.locator('#btnSalvarPart').isDisabled(), false);
+      assert.equal(await page.locator('#ptHistoricoCadastro').getAttribute('open'), null);
       assert.equal(await page.locator('#ptBanco').inputValue(), detail.banco);
+      await page.evaluate(() => participanteRenderHistorico_({ id: '1' }));
+      assert.equal(await page.locator('#ptCadastroData').textContent(), 'Não disponível');
+      assert.equal(await page.locator('#ptAtualizacaoData').textContent(), 'Não disponível');
+      await page.evaluate(() => participanteRenderHistorico_({ id: '1', historicoCadastro: { indisponivel: true } }));
+      assert.match(await page.locator('#ptHistoricoNota').textContent(), /Não foi possível consultar/);
+      await page.evaluate(() => participanteRenderHistorico_({ id: '1', historicoCadastro: { cadastro: { responsavel: '<img src=x onerror=alert(1)>' } } }));
+      assert.equal(await page.locator('#ptCadastroResponsavel img').count(), 0);
+      assert.match(await page.locator('#ptCadastroResponsavel').textContent(), /<img/);
       assert.deepEqual(errors, []);
       await page.close();
     }
