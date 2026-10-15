@@ -3948,6 +3948,22 @@ function lerMarcosParticipacao_() {
   return Object.keys(marcos).length ? { marcos: marcos, base: base } : null;
 }
 
+function participanteRenderHistorico_(p) {
+  var section = document.getElementById('ptHistoricoCadastro');
+  if (!section) return;
+  section.hidden = !(p && p.id);
+  section.open = false;
+  var history = p && p.historicoCadastro || {};
+  var cadastro = history.cadastro || {};
+  var atualizacao = history.ultimaAtualizacao || {};
+  document.getElementById('ptCadastroData').textContent = cadastro.dataHora || 'Não disponível';
+  document.getElementById('ptCadastroResponsavel').textContent = cadastro.responsavel || 'Não disponível';
+  document.getElementById('ptAtualizacaoData').textContent = atualizacao.dataHora || 'Não disponível';
+  document.getElementById('ptHistoricoNota').textContent = history.indisponivel
+    ? 'Não foi possível consultar o histórico. Reabra a ficha para tentar novamente.'
+    : 'Fonte: Auditoria · Horário de Brasília. Informações ausentes no histórico são exibidas como não disponíveis.';
+}
+
 function abrirFormPartPreenchido_(p) {
   var modalPart = document.getElementById('modalParticipante');
   appClearUnsavedChanges('modalParticipante');
@@ -4017,6 +4033,7 @@ function abrirFormPartPreenchido_(p) {
   } else {
     document.getElementById('modalPartTitle').textContent='CADASTRO DE PARTICIPANTE';
   }
+  participanteRenderHistorico_(p);
   renderAcompanhantesPart_((p && p.acompanhantes) || []);
   preencherMarcosParticipacao_(p);
   document.getElementById('modalPartSub').textContent='Dados da pessoa e de sua participação no protocolo';
@@ -6897,12 +6914,12 @@ function renderSoAImportPreview_(result) {
   confirm.disabled = !result || result.ok !== true || result.podeImportar === false || !result.visitas || !result.visitas.length || !!result.planejamento;
   if (!result) { preview.innerHTML = '<div class="soa-visita-empty">Nenhuma prévia disponível.</div>'; return; }
   var html = '<div class="soa-import-summary"><strong>' + (result.totalVisitas || 0) + '</strong> visitas encontradas · <strong>' + (result.novasVisitas || 0) + '</strong> novas · <strong>' + (result.ignoradas || 0) + '</strong> sem duplicar · <strong>' + ((result.missingBracos || []).length) + '</strong> braços a criar</div>';
-  if (result.planejamento) html = renderPlanejamentoSoA_(result.planejamento, result.visitas) + html;
+  if (result.planejamento) html += '<div class="soa-import-next-step">' + (result.podeImportar === true ? 'Prévia pronta para importar. Confira as visitas abaixo e marque a confirmação de revisão para habilitar Importar calendário.' : 'Importação indisponível. Consulte os impedimentos abaixo, corrija o documento de origem e pré-visualize novamente. Você também pode salvar um rascunho para continuar depois.') + '</div>';
   var reviewBox = document.getElementById('soaImportRevisaoBox');
   if (reviewBox) reviewBox.hidden = !result.planejamento || result.podeImportar !== true;
   var save = document.getElementById('btnSalvarPlanejamentoSoA');
   if (save) save.disabled = result.ok !== true || !result.planejamento || _soaDraftSaving;
-  if (result.erros && result.erros.length) html += '<div class="soa-import-error"><strong>Corrija antes de importar:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
+  if (!result.planejamento && result.erros && result.erros.length) html += '<div class="soa-import-error"><strong>Corrija antes de importar:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
   if (result.missingBracos && result.missingBracos.length) html += '<div class="soa-import-warning"><strong>Braços novos:</strong> ' + result.missingBracos.map(esc).join(', ') + '</div>';
   if (!result.planejamento && result.alertas && result.alertas.length) html += '<div class="soa-import-warning"><strong>Alertas do documento:</strong><ul>' + result.alertas.slice(0, 8).map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + (result.alertas.length > 8 ? '<li>+' + (result.alertas.length - 8) + ' alertas adicionais</li>' : '') + '</ul></div>';
   if (result.revisaoNecessaria && result.revisaoNecessaria.length) html += '<div class="soa-import-warning"><strong>Revisão necessária:</strong> ' + result.revisaoNecessaria.length + ' item(ns) serão importados com a pendência registrada nas observações.</div>';
@@ -6916,10 +6933,13 @@ function renderSoAImportPreview_(result) {
       var referenceVisit = result.planejamento && result.visitas.filter(function(item) { return item.idSoA === visita.referencia; })[0];
       var referenceLabel = referenceVisit ? referenceVisit.codigo + ' · ' + referenceVisit.nome : visita.referencia;
       var timingLabel = result.planejamento ? '<span class="soa-order-comparison">' + esc(String(visita.intervaloDias == null ? 'Não informado' : visita.intervaloDias)) + ' dias · referência: ' + soaPlanningValue_(referenceLabel) + ' · janela −' + esc(String(visita.janelaDiasMenos == null ? '?' : visita.janelaDiasMenos)) + '/+' + esc(String(visita.janelaDiasMais == null ? '?' : visita.janelaDiasMais)) + ' dias</span>' : '<span class="soa-order-comparison">Recebida <strong>' + esc(soaOrdemLabel_(visita.ordemRecebida)) + '</strong> → sugerida <strong>' + esc(soaOrdemLabel_(visita.ordemSugerida)) + '</strong></span>';
+      if (result.planejamento && visita.schedulingMode === 'manual') timingLabel = '<span class="soa-order-comparison">Agendamento manual · ' + esc(visita.manualReason || 'Conferir as condições do protocolo antes de agendar.') + '</span>';
+      if (result.planejamento && visita.schedulingMode === 'milestone') timingLabel = '<span class="soa-order-comparison">Marco do cronograma · data definida pela realização da visita</span>';
       return '<div class="soa-import-row' + ambiguousClass + '"><span><strong>' + esc(visita.codigo || '') + '</strong> · ' + esc(visita.nome || '') + (visita.ordemAmbigua ? '<span class="soa-order-review-badge">revisar</span>' : '') + reason + '</span><span>' + esc(scope) + ' · ' + esc(status) + timingLabel + '</span></div>';
     }).join('');
     html += '<div class="soa-import-preview-list">' + previewRows + '</div>';
   }
+  if (result.planejamento) html += renderPlanejamentoSoA_(result.planejamento, result.visitas);
   preview.innerHTML = html;
 }
 
@@ -6995,7 +7015,7 @@ function atualizarRevisaoPlanejamentoSoAApp() {
 
 function soaPlanningValue_(value) {
   if (value === undefined || value === null) return 'Não informado';
-  var labels = { anchor:'Referência', anchor_visit_id:'Visita de referência', basis:'Base das datas', offset_days:'Intervalo em dias', window_before_days:'Dias antes', window_after_days:'Dias depois', alvo_dias:'Alvo em dias', inicio_dias:'Início em dias', fim_dias:'Fim em dias', recorrencia_semanas:'A cada (semanas)', file:'Documento', printed_page:'Página impressa', section:'Seção', planned:'Data prevista', performed:'Data realizada', randomization_date:'Randomização', scheduled_visit_date:'Data prevista da visita', last_dose:'Última dose', RANDOMIZACAO:'Randomização', INCLUSAO:'Inclusão', ASSINATURA_TCLE:'Assinatura do TCLE', decision_to_permanently_discontinue:'Decisão de interromper o tratamento', visit_timing:'Prazo de visita', requires_definition:'Referência a definir', extracted:'Extraído do documento', pending_human_review:'Pendente de revisão', requires_review:'Requer revisão' };
+  var labels = { anchor:'Referência', anchor_visit_id:'Visita de referência', basis:'Base das datas', offset_days:'Intervalo em dias', window_before_days:'Dias antes', window_after_days:'Dias depois', alvo_dias:'Alvo em dias', inicio_dias:'Início em dias', fim_dias:'Fim em dias', recorrencia_semanas:'A cada (semanas)', file:'Documento', printed_page:'Página impressa', section:'Seção', planned:'Data prevista', performed:'Data realizada', randomization_date:'Randomização', scheduled_visit_date:'Data prevista da visita', last_dose:'Última dose', RANDOMIZACAO:'Randomização', INCLUSAO:'Inclusão', ASSINATURA_TCLE:'Assinatura do TCLE', decision_to_permanently_discontinue:'Decisão de interromper o tratamento', visit_timing:'Prazo de visita', requires_definition:'Referência a definir', extracted:'Extraído do documento', pending_human_review:'Pendente de revisão', requires_review:'Requer revisão', administration:'Administração do tratamento', manual:'Agendamento manual', milestone:'Marco do cronograma', calculated:'Data calculada', conditional:'Condicional', reason:'Motivo', visit_ids:'Visitas envolvidas', description:'Descrição' };
   if (Array.isArray(value)) return value.map(soaPlanningValue_).join(', ') || 'Nenhum';
   if (typeof value === 'object') return Object.keys(value).filter(function(key) { return value[key] !== undefined; }).map(function(key) { return esc(labels[key] || key) + ': ' + soaPlanningValue_(value[key]); }).join(' · ') || 'Não informado';
   return esc(labels[String(value)] || String(value));
@@ -7004,18 +7024,37 @@ function soaPlanningValue_(value) {
 function renderPlanejamentoSoA_(planning, normalizedVisits) {
   var study = planning.study || {};
   var html = '<div class="soa-import-summary"><strong>Extração do protocolo ' + soaPlanningValue_(study.protocol_id) + '</strong> · versão ' + soaPlanningValue_(study.protocol_version) + '</div>';
-  if (planning.draftOnly) html += '<div class="soa-import-warning">Recebido como rascunho. O calendário ainda não pode ser aplicado.</div>';
-  if (planning.issues && planning.issues.length) html += '<div class="soa-import-warning"><strong>Pontos que precisam de atenção</strong><ul>' + planning.issues.map(function(issue) { issue = issue || {}; return '<li>' + soaPlanningValue_(issue.message) + (issue.blocking ? ' <strong>— impede aplicar</strong>' : '') + '</li>'; }).join('') + '</ul></div>';
+  var issues = Array.isArray(planning.issues) ? planning.issues : [];
+  var groups = [];
+  issues.forEach(function(issue) {
+    issue = issue || {};
+    var message = String(issue.message || 'Confira o documento de origem.');
+    var group = groups.filter(function(item) { return item.message === message && item.blocking === !!issue.blocking; })[0];
+    if (!group) { group = { message:message, blocking:!!issue.blocking, items:[] }; groups.push(group); }
+    group.items.push(issue);
+  });
+  var blocking = issues.filter(function(issue) { return issue && issue.blocking; }).length;
+  if (planning.draftOnly) html += '<div class="soa-import-warning">Este documento permite somente prévia e rascunho. Para importar, gere um documento revisável conforme as instruções para IA.</div>';
+  if (groups.length) {
+    html += '<details class="soa-planning-details soa-planning-issues"><summary>Pontos de atenção · ' + blocking + ' impedimento(s) · ' + (issues.length - blocking) + ' orientação(ões)</summary><p>As mensagens iguais foram agrupadas. As orientações não impedem a importação.</p>';
+    html += groups.map(function(group) {
+      var labels = { offset_days:'intervalo em dias', window_before_days:'janela em dias antes', window_after_days:'janela em dias depois', anchor_visit_id:'visita de referência', basis:'base das datas', rule_ids:'regras vinculadas' };
+      var message = group.message.replace(/offset_days|window_before_days|window_after_days|anchor_visit_id|rule_ids|basis/g, function(key) { return labels[key]; });
+      return '<div class="' + (group.blocking ? 'soa-import-error' : 'soa-import-warning') + '"><strong>' + (group.blocking ? 'Impede aplicar' : 'Orientação') + '</strong> · ' + esc(message) + (group.items.length > 1 ? ' <strong>(' + group.items.length + ' ocorrências)</strong>' : '') + '<details class="soa-planning-technical"><summary>Identificar no documento</summary><ul>' + group.items.map(function(issue) { return '<li>' + soaPlanningValue_(issue.visitCode || issue.visitId || issue.id) + ': ' + soaPlanningValue_(issue.message) + '</li>'; }).join('') + '</ul></details></div>';
+    }).join('') + '</details>';
+  }
   var rules = Array.isArray(planning.rules) ? planning.rules : [];
   html += '<details class="soa-planning-details"><summary>Regras extraídas (' + rules.length + ')</summary>';
   html += rules.map(function(rule) {
     if (!rule || typeof rule !== 'object') return '<p>Regra inválida: ' + soaPlanningValue_(rule) + '</p>';
     var timing = rule.timing || rule;
-    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(rule.id) + '</strong><dl>' +
-      [['Aplicação',rule.scope || rule.kind],['Referência',timing.anchor],['Prazo e janela',rule.timing || { alvo_dias:rule.target_days, inicio_dias:rule.earliest_days, fim_dias:rule.latest_days, recorrencia_semanas:rule.recurrence_weeks }],['Fonte',rule.source],['Revisão',rule.status],['Observação',rule.note]].map(function(pair) { return '<dt>' + pair[0] + '</dt><dd>' + soaPlanningValue_(pair[1]) + '</dd>'; }).join('') + '</dl></article>';
+    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(rule.name || rule.title || rule.id) + '</strong><dl>' +
+      [['Descrição',rule.description || rule.note],['Aplicação',rule.scope || rule.kind],['Referência',timing.anchor],['Prazo e janela',rule.timing || { alvo_dias:rule.target_days, inicio_dias:rule.earliest_days, fim_dias:rule.latest_days, recorrencia_semanas:rule.recurrence_weeks }],['Fonte',rule.source],['Revisão',rule.status],['Tratamento',rule.handling === 'manual' ? 'Conferência manual antes de agendar' : rule.handling],['Observação',rule.note || rule.description],['Motivo',rule.reason]].filter(function(pair) { return pair[1] !== undefined && pair[1] !== null && pair[1] !== ''; }).map(function(pair) { return '<dt>' + pair[0] + '</dt><dd>' + soaPlanningValue_(pair[1]) + '</dd>'; }).join('') + '</dl></article>';
   }).join('') + '</details>';
   if (normalizedVisits && normalizedVisits.length) html += '<details class="soa-planning-details"><summary>Fontes e detalhes das visitas</summary>' + normalizedVisits.map(function(visit) {
-    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(visit.codigo) + ' · ' + soaPlanningValue_(visit.nome) + '</strong><p>Braços: ' + soaPlanningValue_(visit.bracoNomes && visit.bracoNomes.length ? visit.bracoNomes : 'Todos os braços') + '</p><p>Base das datas: ' + soaPlanningValue_(visit.baseCalculo === 'RECALCULAR_VISITA_REALIZADA' ? 'Data realizada' : 'Data prevista') + '</p><p>Fonte: ' + soaPlanningValue_(visit.source) + '</p><p>Observação: ' + soaPlanningValue_(visit.observacoes || 'Nenhuma') + '</p></article>';
+    var basis = visit.baseCalculo === 'RECALCULAR_VISITA_REALIZADA' ? 'Data realizada' : (visit.baseCalculo === 'MANTER_DATAS_PREVISTAS' ? 'Data prevista' : 'Não informada');
+    if (visit.schedulingMode === 'manual' || visit.schedulingMode === 'milestone') basis = 'Não se aplica ao agendamento automático';
+    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(visit.codigo) + ' · ' + soaPlanningValue_(visit.nome) + '</strong><p>Braços: ' + soaPlanningValue_(visit.bracoNomes && visit.bracoNomes.length ? visit.bracoNomes : 'Todos os braços') + '</p><p>Base das datas: ' + esc(basis) + '</p><p>Fonte: ' + soaPlanningValue_(visit.source) + '</p><p>Observação: ' + soaPlanningValue_(visit.observacoes || 'Nenhuma') + '</p></article>';
   }).join('') + '</details>';
   return html;
 }

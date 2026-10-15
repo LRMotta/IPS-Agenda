@@ -9,7 +9,8 @@ const { contentAccessibilitySource } = require('./helpers/content-accessibility-
 test('modais extras participam da pilha acessível e identificam os controles visíveis', () => {
   const html = readProjectFile('IndexExtraModals.html');
   const overlays = html.match(/<div class="modal-overlay"[^>]+>/g);
-  assert.equal(overlays.length, 10);
+  assert.equal(overlays.length, 11);
+  assert.match(html, /id="modalAgendaHistorico"/);
   for (const overlay of overlays) {
     assert.match(overlay, /data-accessible-dialog/);
     assert.match(overlay, /data-extra-dialog/);
@@ -17,7 +18,7 @@ test('modais extras participam da pilha acessível e identificam os controles vi
   }
   for (const button of html.match(/<button class="modal-close"[^>]+>/g)) {
     assert.match(button, /type="button"/);
-    assert.match(button, /aria-label="Fechar janela"/);
+    assert.match(button, /aria-label="Fechar (janela|histórico)"/);
   }
   assert.match(html, /id="prestEmailEntry"[^>]*aria-describedby="errPrestEmail"/);
   assert.match(html, /id="courierConteudoEditor"[^>]*role="textbox"[^>]*aria-multiline="true"[^>]*aria-labelledby="courierConteudoLabel"/);

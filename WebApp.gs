@@ -996,6 +996,55 @@ function agendaEditableRecordVersionFromRow_(row) {
   return codexRecordVersionFromValues_(agendaEditableRecordVersionValuesFromRow_(row));
 }
 
+// Fingerprints servem somente ao diagnostico; nunca autorizam a gravacao.
+function agendaEditFieldVersionsFromRow_(row) {
+  var labels = ['ID do agendamento', 'Data', 'Horário', 'Tipo de evento', 'Status',
+    'Participante', 'Data de nascimento', 'Número de identificação', 'Protocolo', 'Braço',
+    'Visita', 'Médico', 'Procedimentos', 'Serviço terceirizado', 'Observações', 'Laboratório Central', 'Kit'];
+  ['Transporte I', 'Transporte II', 'Transporte III', 'Backup'].forEach(function(slot) {
+    ['Courier', 'Temperatura', 'Status', 'AWB', 'Material', 'Destino', 'Material estruturado'].forEach(function(field) {
+      labels.push(slot + ' - ' + field);
+    });
+  });
+  labels = labels.concat(['Monitor', 'Polo Trial concluído', 'eCRF concluída', 'Sala/local',
+    'Carro requerido', 'Backup - Agendamento', 'ID Cadastro Participante']);
+  var values = agendaEditableRecordVersionValuesFromRow_(row);
+  var fields = {};
+  labels.forEach(function(label, index) { fields[label] = codexRecordVersionFromValues_([values[index]]); });
+  return { version: agendaEditableRecordVersionFromRow_(row), fields: fields };
+}
+
+function agendaRegisterEditConflict_(dados, row, currentVersion, currentEditVersion, mergeResult) {
+  var current = agendaEditFieldVersionsFromRow_(row);
+  var baseline = dados._editFieldVersions;
+  var labels = Object.keys(current.fields);
+  var valid = baseline && baseline.version === String(dados._editRecordVersion || '') &&
+    baseline.fields && typeof baseline.fields === 'object' && !Array.isArray(baseline.fields) &&
+    labels.every(function(label) { return /^[a-z0-9]{1,8}-[a-z0-9]{1,8}$/.test(String(baseline.fields[label] || '')); });
+  var changed = valid ? labels.filter(function(label) { return baseline.fields[label] !== current.fields[label]; }) : [];
+  var reason = !String(dados._editRecordVersion || '').trim() ? 'SEM_VERSAO_EDITAVEL' :
+    !valid ? 'SEM_REFERENCIA_DE_CAMPOS' : changed.length ? 'CAMPOS_DIVERGENTES' : 'REFERENCIA_INCONSISTENTE';
+  var slot = String(dados.transporteDocumentosSlot || '');
+  var source = ['1', '2', '3', 'backup'].indexOf(slot) >= 0 ? 'gerar_documentos:' + slot : 'salvar_agendamento';
+  var changes = [
+    { field: 'Versão do registro', oldValue: String(dados._recordVersion || '').slice(0, 80), newValue: currentVersion },
+    { field: 'Versão dos campos editáveis', oldValue: String(dados._editRecordVersion || '').slice(0, 80), newValue: currentEditVersion }
+  ];
+  changed.forEach(function(label) { changes.push({ field: label, oldValue: baseline.fields[label], newValue: current.fields[label] }); });
+  try {
+    // Valores clinicos nao sao copiados. A referencia enviada pelo cliente e
+    // consultiva: campos divergentes nao identificam quem ou o que os alterou.
+    codexWriteAuditChanges_('Agenda', 'bloquearEdicaoAgenda', dados.id, changes,
+      'Salvamento bloqueado; motivo=' + reason + '; origem=' + source +
+      '; referência de campos enviada pelo cliente; sem atribuição de autoria; schema=' +
+      AGENDA_CFG.lastCol + '/' + AGENDA_CFG.idx.cb.temp + '/' + AGENDA_CFG.idx.participanteCadastroId +
+      (mergeResult ? '; combinação=' + mergeResult.reason + '; campos incompatíveis=' + mergeResult.fields.join('; ') : ''));
+  } catch (error) {
+    codexLogAuditFailure_('agendaRegisterEditConflict_', 'write_diagnostic', error);
+  }
+  return { reason: reason, fields: changed };
+}
+
 function codexGetEditPresenceSheet_() {
   var ss = getCodexSpreadsheet_();
   var name = 'Edit_Presence';
@@ -6588,6 +6637,48 @@ function getParticipantesListagem_() {
   });
 }
 
+// Somente eventos posteriores à persistência comprovam criação/atualização.
+// Não reutilizar salvarDadosParticipante: a guarda registra a tentativa antes da escrita.
+function participanteHistoricoCadastro_(idCadastro) {
+  var historico = { cadastro: null, ultimaAtualizacao: null, indisponivel: false };
+  var criado = null, atualizado = null;
+  try {
+    var ss = getCodexSpreadsheet_();
+    ['Audit_Log', 'Audit_Changes'].forEach(function(name) {
+      var sh = ss.getSheetByName(name);
+      var count = sh ? sh.getLastRow() - 1 : 0;
+      if (count < 1) return;
+      // Ler apenas metadados: nunca trazer valores anteriores/novos da auditoria.
+      sh.getRange(2, 1, count, 6).getValues().forEach(function(row) {
+        if (CadastroRules_.normalizeId(row[5]) !== idCadastro) return;
+        var log = name === 'Audit_Log';
+        if (String(row[log ? 4 : 3] || '') !== 'Cadastros') return;
+        var action = String(row[log ? 2 : 4] || '');
+        var criacao = log && action === 'criarParticipacaoParticipante';
+        var edicao = log ? action === 'atualizarCadastroParticipanteConcluido'
+          : ['atualizarParticipacaoParticipante', 'atualizarMarcosParticipacao', 'vincularIdPessoaParticipante'].indexOf(action) >= 0;
+        if (!criacao && !edicao) return;
+        var value = row[log ? 3 : 1];
+        // Sheets fornece Date; aceitar ISO com fuso explícito, sem inferir datas legadas ambíguas.
+        var date = value instanceof Date ? value : (/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(String(value)) ? new Date(value) : null);
+        if (!date || isNaN(date.getTime())) return;
+        var event = { time: date.getTime(), date: date, responsavel: String(row[log ? 1 : 2] || '') };
+        if (criacao && (!criado || event.time < criado.time)) criado = event;
+        if (edicao && (!atualizado || event.time > atualizado.time)) atualizado = event;
+      });
+    });
+    function dto(event) {
+      return event ? { dataHora: Utilities.formatDate(event.date, 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm'), responsavel: event.responsavel } : null;
+    }
+    historico.cadastro = dto(criado);
+    historico.ultimaAtualizacao = dto(atualizado);
+  } catch (error) {
+    historico.indisponivel = true;
+    codexLogAuditFailure_('participanteHistoricoCadastro_', 'read_metadata', error);
+  }
+  return historico;
+}
+
 function getParticipanteDetalhes(idCadastro) {
   codexAssertCanRead_();
   idCadastro = CadastroRules_.normalizeId(idCadastro);
@@ -6606,6 +6697,7 @@ function getParticipanteDetalhes(idCadastro) {
     var row = codexReadValuesMeasured_(sheet.getRange(matches[0], 1, 1, width), false)[0];
     if (CadastroRules_.normalizeId(row[0]) !== idCadastro) throw new Error('O cadastro mudou durante a consulta. Tente novamente.');
     var result = participanteDadosDaLinha_(row, header, { data: '', visita: '---' }, false);
+    result.historicoCadastro = participanteHistoricoCadastro_(idCadastro);
     meta.rowCount = 1;
     meta.responseBytes = codexSerializedByteLength_(JSON.stringify(result));
     return result;
@@ -7044,6 +7136,7 @@ function salvarDadosParticipante(d) {
         { field: 'ID Pessoa', oldValue: existingPessoaId, newValue: idPessoa }
       ], 'Cadastro de participação atualizado');
     }
+    if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('atualizarCadastroParticipanteConcluido', 'Cadastros', d.id);
     clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     return concluirSalvarParticipante_('Participante atualizado com sucesso');
@@ -12923,6 +13016,17 @@ function jornadaCalcularJanelaVisita_(dataIdeal, janelaDiasMenos, janelaDiasMais
   return { inicio: inicio, fim: fim };
 }
 
+// A self-dated milestone is anchored only by its own completed event.
+function jornadaMarcoPelaPropriaRealizacao_(visita) {
+  return !!visita && visita.papelCronograma === 'MARCO_CALCULO' && !visita.referencia && !visita.baseCalculo;
+}
+function jornadaCalcularJanelaSoA_(visita, data) {
+  function absent(value) { return value === '' || value === null || value === undefined; }
+  if ((visita.papelCronograma === 'NAO_PARTICIPA_CALCULO' || jornadaMarcoPelaPropriaRealizacao_(visita)) &&
+      absent(visita.janelaDiasMenos) && absent(visita.janelaDiasMais)) return { inicio: null, fim: null };
+  return jornadaCalcularJanelaVisita_(data, visita.janelaDiasMenos, visita.janelaDiasMais);
+}
+
 // Primeira etapa do motor CTMS: cálculo puro e comparativo, sem substituir a
 // Jornada operacional. O piloto fica restrito aos dois protocolos revisados.
 var JORNADA_CTMS_PREVIEW_PROJECTS_ = ['monumental3', 'confirmationhf'];
@@ -13159,7 +13263,12 @@ function jornadaCtmsCalcularPreviaPura_(input) {
     var origemBase = '';
     var provisoria = false;
 
-    if (!baseCalculo) {
+    if (visita.papelCronograma === 'NAO_PARTICIPA_CALCULO') {
+      rowWarnings.push('Visita por programação manual; sem previsão automática.');
+    } else if (visita.papelCronograma === 'MARCO_CALCULO' && !visita.referencia && dataRealizada) {
+      prevista = dataRealizada;
+      origemBase = 'PRÓPRIA VISITA REALIZADA';
+    } else if (!baseCalculo) {
       rowWarnings.push('Visita sem regra CTMS; o cálculo atual permanece como referência.');
     } else if (!visita.referencia) {
       if (visita.papelCronograma === 'MARCO_CALCULO' && dataRealizada) {
@@ -13183,7 +13292,7 @@ function jornadaCtmsCalcularPreviaPura_(input) {
       if (baseDate) prevista = jornadaCtmsAddDays_(baseDate, visita.intervaloDias);
       else rowWarnings.push('A base escolhida não possui data utilizável.');
     }
-    var janela = jornadaCalcularJanelaVisita_(prevista, visita.janelaDiasMenos, visita.janelaDiasMais);
+    var janela = jornadaCalcularJanelaSoA_(visita, prevista);
     resultados[id] = {
       idSoA: id,
       codigo: String(visita.codigo || ''),
@@ -13204,7 +13313,7 @@ function jornadaCtmsCalcularPreviaPura_(input) {
       dataRealizada: jornadaCtmsDateLabel_(dataRealizada),
       janelaInicio: jornadaCtmsDateLabel_(janela.inicio),
       janelaFim: jornadaCtmsDateLabel_(janela.fim),
-      statusCalculo: !baseCalculo ? 'SEM_REGRA' : (prevista ? (provisoria ? 'PROVISORIA' : 'CALCULADA') : 'PENDENTE'),
+      statusCalculo: prevista ? (provisoria ? 'PROVISORIA' : 'CALCULADA') : (!baseCalculo ? 'SEM_REGRA' : 'PENDENTE'),
       avisos: rowWarnings,
       _dataPrevista: prevista,
       _dataRealizada: dataRealizada
@@ -13459,11 +13568,14 @@ function getJornadaParticipanteInterno_(payload) {
   visitas.forEach(function(visita) {
     var evento = eventoParaVisita(visita);
     var dataAlvo = evento && !evento.cancelada ? new Date(evento.data.getTime()) : null;
-    if (!dataAlvo && visita.referencia && porId[visita.referencia] && jornadaPorId[visita.referencia] && jornadaPorId[visita.referencia].dataAlvoObj) {
+    var referenciaVisita = porId[visita.referencia];
+    var eventoReferencia = referenciaVisita && jornadaMarcoPelaPropriaRealizacao_(referenciaVisita) ? eventoParaVisita(referenciaVisita) : null;
+    var referenciaDisponivel = !jornadaMarcoPelaPropriaRealizacao_(referenciaVisita) || !!(eventoReferencia && eventoReferencia.concluida && !eventoReferencia.cancelada);
+    if (!dataAlvo && referenciaDisponivel && visita.referencia && referenciaVisita && jornadaPorId[visita.referencia] && jornadaPorId[visita.referencia].dataAlvoObj) {
       dataAlvo = new Date(jornadaPorId[visita.referencia].dataAlvoObj.getTime());
       dataAlvo.setDate(dataAlvo.getDate() + (Number(visita.intervaloDias) || 0));
     }
-    var janela = jornadaCalcularJanelaVisita_(dataAlvo, visita.janelaDiasMenos, visita.janelaDiasMais);
+    var janela = jornadaCalcularJanelaSoA_(visita, dataAlvo);
     var janelaInicio = janela.inicio, janelaFim = janela.fim;
     var estado = evento && evento.concluida ? 'REALIZADA' : evento && !evento.cancelada ? 'AGENDADA' : dataAlvo ? 'PREVISTA' : 'A_PROGRAMAR';
     jornadaPorId[visita.idSoA] = {
@@ -14669,10 +14781,29 @@ function atualizarAgendaEventoCompleto(dados) {
   var versaoEditavelEsperada = String(dados._editRecordVersion || '').trim();
   var conflitoApenasAuxiliar = versaoEsperada && versaoEsperada !== versaoAtual &&
     versaoEditavelEsperada && versaoEditavelEsperada === versaoEditavelAtual;
-  if (versaoEsperada && versaoEsperada !== versaoAtual && !conflitoApenasAuxiliar) {
+  var mergeResult = null;
+  if (versaoEsperada && versaoEsperada !== versaoAtual && typeof agendaTryMergeEdit_ === 'function' && dados._editMergeToken) {
+    mergeResult = agendaTryMergeEdit_(dados, rowAnterior);
+    if (mergeResult.ok) {
+      dados = mergeResult.dados;
+      agendaValidarMaterialBioPayload_(dados);
+      if (dados.transporteDocumentosSlot) {
+        var mergedCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, backup: dados.backup })[dados.transporteDocumentosSlot];
+        codexCourierAssertDocumentAwb_(mergedCourier && mergedCourier.awb, mergedCourier && mergedCourier.nome);
+      }
+    }
+  }
+  if (versaoEsperada && versaoEsperada !== versaoAtual && !(mergeResult && mergeResult.ok) &&
+      (!conflitoApenasAuxiliar || (mergeResult && !mergeResult.ok))) {
+    var diagnostic = agendaRegisterEditConflict_(dados, rowAnterior, versaoAtual, versaoEditavelAtual, mergeResult);
+    if (mergeResult) {
+      diagnostic.mergeReason = mergeResult.reason;
+      diagnostic.overlappingFields = mergeResult.fields;
+    }
     return {
+      diagnostic: diagnostic,
       conflito: true,
-      erro: 'Este agendamento foi alterado desde que voce abriu. Atualize a Agenda antes de salvar para evitar sobrescrever informacoes.',
+      erro: 'A versão atual do agendamento difere da versão aberta. O salvamento foi bloqueado para evitar sobrescrever informações.',
       id: dados.id,
       currentVersion: versaoAtual,
       currentEditVersion: versaoEditavelAtual
@@ -14812,7 +14943,7 @@ function atualizarAgendaEventoCompleto(dados) {
     dados.kit || ''
   ]]);
   agenda.getRange(linha, AGENDA_CFG.col.reqStatus, 1, 6).setValues([[
-    conflitoApenasAuxiliar ? (rowAnterior[AGENDA_CFG.idx.reqStatus] || '') : (dados.statusRequisicao || ''),
+    conflitoApenasAuxiliar && !(mergeResult && mergeResult.ok) ? (rowAnterior[AGENDA_CFG.idx.reqStatus] || '') : (dados.statusRequisicao || ''),
     dados.monitorName || '',
     poloTrialValor,
     ecrfValor,
@@ -14840,7 +14971,8 @@ function atualizarAgendaEventoCompleto(dados) {
     );
   }
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
-  codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', dados.id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Alteração de agendamento');
+  codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', dados.id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Alteração de agendamento' +
+    (mergeResult && mergeResult.ok ? '; alterações simultâneas preservadas: ' + mergeResult.preserved.join('; ') : ''));
   if (deveOrdenarAgenda && agenda.getLastRow() > 2) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
@@ -14850,14 +14982,23 @@ function atualizarAgendaEventoCompleto(dados) {
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   agendaInvalidateDateIndexCache_();
+  var savedEvent = agendaRowToObject_(rowAtual, linhaAtualizada);
+  var savedMergeToken = typeof agendaIssueMergeToken_ === 'function' ? agendaIssueMergeToken_(rowAtual, savedEvent) : '';
+  savedEvent.editMergeToken = savedMergeToken;
+  savedEvent.editFieldVersions = agendaEditFieldVersionsFromRow_(rowAtual);
   return {
+    merged: !!(mergeResult && mergeResult.ok),
+    preservedFields: mergeResult && mergeResult.ok ? mergeResult.preserved : [],
+    mergedEvent: mergeResult && mergeResult.ok && dados.transporteDocumentosSlot ? savedEvent : null,
+    editMergeToken: savedMergeToken,
     ok: true,
     id: dados.id,
     atualizado: true,
     carroRequerido: carroSalvo,
     operationalAlerts: operationalAlerts,
     recordVersion: agendaRecordVersionFromRow_(rowAtual),
-    editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual)
+    editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual),
+    editFieldVersions: agendaEditFieldVersionsFromRow_(rowAtual)
   };
   });
 }
@@ -15334,6 +15475,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   // Persistir sob lock para conferir o carro ou finalizar o registro antes de invalidar os caches.
   SpreadsheetApp.flush();
   });
+  if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Agenda', 'criarAgendaEventoConcluido', id, [{ field: 'Agendamento', oldValue: '', newValue: 'Criado' }], 'Criação registrada após a gravação');
   agendaInvalidateDateIndexCache_();
   return { ok: true, id: id, emailLabAtivo: agendaEmailEnabled_(), carroRequerido: carroSalvo };
 }
@@ -18182,6 +18324,7 @@ function agendaLerEventoPorId_(id, rowIndex, options) {
   options = options || {};
   var operation = options.operation || 'getAgendaEventoPorId';
   var totalMeta = { rowCount: 0 };
+  var mergeSnapshotValues = null;
   return codexMeasurePerformance_(operation, options.operation ? 'event_total' : 'total', totalMeta, function() {
     id = String(id || '').trim();
     if (!id) return null;
@@ -18210,7 +18353,10 @@ function agendaLerEventoPorId_(id, rowIndex, options) {
         options.readContext.row = localizado.row;
         options.readContext.values = values;
       }
-      return agendaRowToObject_(values, localizado.row);
+      mergeSnapshotValues = values;
+      var event = agendaRowToObject_(values, localizado.row);
+      if (!options.receipt) event.editFieldVersions = agendaEditFieldVersionsFromRow_(values);
+      return event;
     });
     totalMeta.rowCount = 1;
     // O recibo consulta o cadastro completo a seguir. Com a identidade inteira
@@ -18231,6 +18377,7 @@ function agendaLerEventoPorId_(id, rowIndex, options) {
         agendaHydrateParticipantFields_([item]);
       });
     }
+    if (!options.receipt && typeof agendaIssueMergeToken_ === 'function') item.editMergeToken = agendaIssueMergeToken_(mergeSnapshotValues, item);
     return item;
   });
 }

@@ -307,7 +307,9 @@
       <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" oninput="invalidarPreviaImportacaoSoA_()" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
       <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" onchange="invalidarPreviaImportacaoSoA_()" checked> Criar braços ausentes no catálogo</label></div>
       <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
-      <label id="soaImportRevisaoBox" class="soa-import-check" hidden><input type="checkbox" id="soaImportRevisado" onchange="atualizarRevisaoPlanejamentoSoAApp()"> Conferi as visitas, os braços, as referências e as janelas desta prévia.</label>
+    </div>
+    <div class="soa-import-footer">
+      <label id="soaImportRevisaoBox" class="soa-import-check" hidden><input type="checkbox" id="soaImportRevisado" onchange="atualizarRevisaoPlanejamentoSoAApp()"> Conferi as visitas, os braços, as referências, as janelas e os agendamentos manuais desta prévia.</label>
       <div class="status-msg" id="statusSoAImport" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-txt" id="btnSalvarPlanejamentoSoA" onclick="salvarPlanejamentoSoAApp()" disabled>Salvar rascunho</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar calendário</button></div>
     </div>
@@ -592,6 +594,15 @@
           <textarea id="ptObs" class="f-input" placeholder="Informações adicionais relevantes…"></textarea>
         </div>
       </div>
+      <details id="ptHistoricoCadastro" class="participant-audit" hidden>
+        <summary>Histórico do cadastro</summary>
+        <dl class="participant-audit-grid">
+          <div><dt>Cadastrado em</dt><dd id="ptCadastroData"></dd></div>
+          <div><dt>Responsável pelo cadastro</dt><dd id="ptCadastroResponsavel"></dd></div>
+          <div><dt>Última atualização registrada</dt><dd id="ptAtualizacaoData"></dd></div>
+        </dl>
+        <p id="ptHistoricoNota" class="participant-audit-note"></p>
+      </details>
       <div class="status-msg" id="statusPart" role="status" aria-live="polite" aria-atomic="true"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()" style="flex:1 1 220px;">

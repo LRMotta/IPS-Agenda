@@ -67,7 +67,7 @@ for (const width of [1280, 390]) {
       assert.equal(await page.locator('nextjs-portal, vite-error-overlay').count(), 0);
 
       const ids = await page.locator('[data-extra-dialog]').evaluateAll(elements => elements.map(el => el.id));
-      assert.equal(ids.length, 10);
+      assert.equal(ids.length, 11);
       for (const id of ids) {
 
         await page.locator('#opener').focus();
