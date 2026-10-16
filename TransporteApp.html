@@ -343,6 +343,7 @@
               </div>
               <div class="field"><label for="awb">AWB / c&oacute;digo</label><input id="awb"></div>
               <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
+              <div class="field full hidden" id="caixaEspecialField"><label for="caixaEspecial">Caixa de transporte do projeto</label><input id="caixaEspecial" readonly><div class="material-unit-help" id="caixaEspecialResumo" role="status"></div></div>
               <div class="field hidden" id="responsavelEntregaField"><label for="responsavelEntrega">Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
               <div class="field hidden" id="pinexColetaField"><label for="pinexColeta">PINEX COL. N&deg;</label><input id="pinexColeta" placeholder="000000" disabled></div>
               <div class="field full"><label for="observacoes">Observa&ccedil;&otilde;es</label><textarea id="observacoes"></textarea></div>
@@ -1269,6 +1270,45 @@
       return courier === 'MARKEN' ? 'Não' : 'Sim';
     }
 
+    function transportCaixaPreview(payload) {
+      var contexto = [payload.idAgenda || '', payload.agendaSlot || '', payload.participanteCadastroId || '',
+        payload.paciente || '', payload.protocolo || '', payload.courier || '', payload.temperatura || '', payload.destino || ''].map(norm);
+      var snapshot = (state.registro || {}).caixaTransporte;
+      if (snapshot && snapshot.confirmado === true && JSON.stringify(snapshot.contexto) === JSON.stringify(contexto)) return snapshot;
+      var rules = (state.options || {}).caixasTransporteRegras || [];
+      var matches = rules.filter(function(rule) {
+        var nome = rule.nomeAbreviado, codigo = rule.codigo;
+        var aliases = [rule.projetoId, nome, codigo, nome && codigo ? nome + ' (' + codigo + ')' : '', nome && codigo ? codigo + ' (' + nome + ')' : ''];
+        return aliases.some(function(alias) { return alias && norm(alias) === norm(payload.protocolo); }) &&
+          (rule.erro || (rule.courier === payload.courier && rule.temperatura === payload.temperatura && norm(rule.destino) === norm(payload.destino)));
+      });
+      var error = matches.filter(function(rule) { return rule.erro; })[0];
+      return error || (matches.length === 1 ? matches[0] : (matches.length > 1 ? { erro: 'Mais de uma regra de caixa atende este transporte. Revise o cadastro do projeto.' } : null));
+    }
+
+    function renderTransportCaixa(payload) {
+      var caixa = transportCaixaPreview(payload);
+      var tipo = caixa && caixa.tipoCaixa;
+      var bio = tipo === 'BIOSYSTEM' && payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
+      var sep = tipo === 'SEPIO' && payload.courier === 'OCASA' && payload.temperatura === 'AMBIENTE';
+      document.getElementById('caixaEspecialField').classList.toggle('hidden', !bio && !sep);
+      document.getElementById('caixaEspecial').value = bio ? 'BioSystem' : (sep ? 'Sepio' : '');
+      document.getElementById('caixaEspecialResumo').textContent = bio
+        ? 'E-mail: operacoes.cs@marken.com · Invoice: 2 kg · Fornecer caixa: Sim.'
+        : (sep ? 'Caixa Sepio. Mantidos o e-mail e o preenchimento dos documentos da Ocasa.' : '');
+      var input = document.getElementById('solicitarCaixa');
+      if (bio) {
+        if (!input.disabled) input.dataset.valorAntesBioSystem = input.value;
+        input.value = 'Sim';
+      } else if (input.disabled) {
+        input.value = courierUsesTransportBox(payload.courier)
+          ? (payload.courier === 'MARKEN' ? (input.dataset.valorAntesBioSystem || defaultSolicitarCaixa(payload.courier)) : defaultSolicitarCaixa(payload.courier)) : '';
+        delete input.dataset.valorAntesBioSystem;
+      }
+      input.disabled = bio;
+      payload.solicitarCaixa = input.value;
+    }
+
     function applySolicitarCaixaDefault(force) {
       var field = document.getElementById('solicitarCaixaField');
       var input = document.getElementById('solicitarCaixa');
@@ -1393,6 +1433,8 @@
       opts = opts || {};
       var r = state.registro || {};
       var o = state.options || {};
+      document.getElementById('solicitarCaixa').disabled = false;
+      delete document.getElementById('solicitarCaixa').dataset.valorAntesBioSystem;
       o.participantesLoading = false;
       if (state.ceStatus && state.ceStatus.checked === false) state.ceStatus = null;
       if ((!o.participantes || !o.participantes.length) && window._transporteParticipantes && window._transporteParticipantes.length) {
@@ -1904,6 +1946,9 @@
         return '<div class="doc"><span class="material-symbols-outlined">description</span><div>' + esc(d) + '</div></div>';
       }).join('');
       var context = { payload: collectPayload(materiais), errors: matBioErrors() };
+      renderTransportCaixa(context.payload);
+      var caixa = transportCaixaPreview(context.payload);
+      if (caixa && caixa.erro) context.errors.push(caixa.erro);
       renderIssues(materiais, context);
       renderMeta(ativos, docs, materiais, context);
       updateTransportActionState(context);

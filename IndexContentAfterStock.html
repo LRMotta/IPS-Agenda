@@ -235,6 +235,14 @@
         <div class="field-error" id="errPCouriers">Use couriers diferentes. Projetos sem envio não podem ter courier ou temperatura vinculada.</div>
       </div>
 
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span> Caixas especiais de transporte</div>
+        <div class="field-help" style="margin-bottom:14px">Regras deste projeto por courier, temperatura e laboratório. BioSystem: Marken, Ambiente, e-mail operacoes.cs@marken.com, Invoice 2 kg e fornecer caixa Sim. Sepio: Ocasa, Ambiente, sem alteração no e-mail ou nos documentos.</div>
+        <div id="pCaixasTransporteList"></div>
+        <button type="button" class="btn-txt" onclick="adicionarProjetoCaixaTransporte()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar regra de caixa</button>
+        <div class="field-error" id="errPCaixasTransporte" role="alert"></div>
+      </div>
+
       <div class="form-section soa-project-section">
         <div class="section-label">
           <span class="material-symbols-outlined" aria-hidden="true">event_note</span> Calendário SoA
