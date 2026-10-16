@@ -1296,15 +1296,16 @@
         ? 'E-mail: operacoes.cs@marken.com · Invoice: 2 kg · Fornecer caixa: Sim.'
         : (sep ? 'Caixa Sepio. Mantidos o e-mail e o preenchimento dos documentos da Ocasa.' : '');
       var input = document.getElementById('solicitarCaixa');
+      var markenAmbiente = payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
       if (bio) {
-        if (!input.disabled) input.dataset.valorAntesBioSystem = input.value;
         input.value = 'Sim';
+      } else if (markenAmbiente) {
+        input.value = 'Não';
       } else if (input.disabled) {
         input.value = courierUsesTransportBox(payload.courier)
-          ? (payload.courier === 'MARKEN' ? (input.dataset.valorAntesBioSystem || defaultSolicitarCaixa(payload.courier)) : defaultSolicitarCaixa(payload.courier)) : '';
-        delete input.dataset.valorAntesBioSystem;
+          ? defaultSolicitarCaixa(payload.courier) : '';
       }
-      input.disabled = bio;
+      input.disabled = markenAmbiente;
       payload.solicitarCaixa = input.value;
     }
 
@@ -1433,7 +1434,6 @@
       var r = state.registro || {};
       var o = state.options || {};
       document.getElementById('solicitarCaixa').disabled = false;
-      delete document.getElementById('solicitarCaixa').dataset.valorAntesBioSystem;
       o.participantesLoading = false;
       if (state.ceStatus && state.ceStatus.checked === false) state.ceStatus = null;
       if ((!o.participantes || !o.participantes.length) && window._transporteParticipantes && window._transporteParticipantes.length) {

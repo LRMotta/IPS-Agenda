@@ -11,8 +11,12 @@ cadastros; a resolução dos rótulos do Transporte exige combinação inequívo
 | Sepio | Ocasa | Ambiente | Identificação da caixa na tela de Transporte, mantendo e-mail e documentos existentes. |
 
 Não há inferência para temperaturas mistas nem substituição do comportamento de
-transportes sem regra correspondente. A solicitação da caixa BioSystem fica
-bloqueada em Sim na interface e é imposta novamente no servidor.
+transportes sem regra correspondente. Para Marken em temperatura Ambiente, o
+campo de envio da caixa é automático: Sim para BioSystem e Não para a caixa
+convencional, inclusive após trocar a combinação de um transporte já salvo.
+O servidor revalida esse valor. No e-mail, somente o valor do campo original
+"Enviar Caixa de Transporte" é preenchido, preservando rótulo, linhas e estilos
+do modelo da courier. Não são acrescentadas linhas de caixa ao modelo.
 
 ## Persistência e histórico
 

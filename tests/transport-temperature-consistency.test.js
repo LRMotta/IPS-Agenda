@@ -19,7 +19,7 @@ function fixture(extra = {}) {
   });
 }
 
-function table(s, rows = [['Coleta', ''], ['Temperatura:', 'REFRIGERADO'], ['AWB', 'TESTE']]) {
+function table(s, rows = [['Coleta', ''], ['Temperatura:', 'REFRIGERADO'], ['AWB', 'TESTE'], ['Enviar Caixa de Transporte', 'Não']]) {
   const matrix = value => rows.map(() => [value, value]);
   const range = {
     getDisplayValues: () => rows.map(row => row.slice()),
