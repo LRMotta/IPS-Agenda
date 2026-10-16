@@ -44,6 +44,7 @@ test('merge usa a mesma requisição legada exibida no formulário e conserva en
 
 test('AWB sem URL mantém zeros iniciais como texto', () => {
   const c = runFiles(['WebApp.gs']);
+  c.agendaAwbReservarCelula_ = () => {}; // Este caso isola o formato da celula; unicidade possui regressao propria.
   for (const awb of ['012345', '000000']) {
     let format = '', value = '';
     const range = {

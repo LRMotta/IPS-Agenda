@@ -5303,6 +5303,7 @@ var STATUS_PROJ = [];
 var COURIERS_PROJ = [];
 var LABORATORIOS_TRANSPORTE_PROJ = [];
 var _projetoCaixasTransporte = [];
+var _projetoCaixasTransporteSalvas = [];
 var _projetoCaixasTransporteErro = '';
 var TEMPERATURAS_PROJ = [];
 
@@ -5877,25 +5878,46 @@ function carregarProjetoCaixasTransporte_(value) {
     _projetoCaixasTransporte = [];
     _projetoCaixasTransporteErro = 'Não foi possível ler as regras de caixas deste projeto. Reabra o cadastro antes de salvar.';
   }
+  _projetoCaixasTransporteSalvas = JSON.parse(JSON.stringify(_projetoCaixasTransporte));
   renderProjetoCaixasTransporte_();
 }
 
 function renderProjetoCaixasTransporte_() {
   var list = document.getElementById('pCaixasTransporteList');
   if (!list) return;
+  var focusedId = list.contains(document.activeElement) ? document.activeElement.id : '';
+  function ruleKey(regra) { return [regra.courierId, regra.temperatura, regra.laboratorioId, regra.tipoCaixa].join('|'); }
   function options(items, selected, label) {
     var html = '<option value="">— Selecione —</option>' + items.map(function(item) { return '<option value="' + esc(item.id) + '"' + (item.id === selected ? ' selected' : '') + '>' + esc(item[label]) + '</option>'; }).join('');
     if (selected && !items.some(function(item) { return item.id === selected; })) html += '<option value="' + esc(selected) + '" selected>Cadastro indisponível (' + esc(selected) + ')</option>';
     return html;
   }
   var couriers = COURIERS_PROJ.filter(function(c) { return c.disponivelProjetos !== false && ['marken', 'ocasa'].indexOf(normSelectValue(c.nome)) >= 0; });
+  var occurrences = Object.create(null);
   list.innerHTML = _projetoCaixasTransporte.map(function(regra, index) {
     var courier = couriers.filter(function(c) { return c.id === regra.courierId; })[0];
     var tipo = courier ? (normSelectValue(courier.nome) === 'marken' ? 'BioSystem' : 'Sepio') : 'Selecione a courier';
-    return '<div class="form-section" style="padding:14px;margin-bottom:12px"><div class="field-row cols-2"><div><label class="field-label" for="pCaixaCourier' + index + '">Courier</label><select id="pCaixaCourier' + index + '" class="f-input f-select" onchange="alterarProjetoCaixaTransporte(' + index + ',\'courierId\',this.value)">' + options(couriers, regra.courierId, 'nome') + '</select></div><div><label class="field-label" for="pCaixaTemp' + index + '">Temperatura</label><select id="pCaixaTemp' + index + '" class="f-input f-select" disabled><option>Ambiente</option></select></div><div><label class="field-label" for="pCaixaLab' + index + '">Laboratório</label><select id="pCaixaLab' + index + '" class="f-input f-select" onchange="alterarProjetoCaixaTransporte(' + index + ',\'laboratorioId\',this.value)">' + options(LABORATORIOS_TRANSPORTE_PROJ, regra.laboratorioId, 'nome') + '</select></div><div><label class="field-label">Caixa especial</label><div class="field-help">' + esc(tipo) + '</div><button type="button" class="btn-txt" onclick="removerProjetoCaixaTransporte(' + index + ')">Remover regra</button></div></div></div>';
+    var complete = courier && regra.temperatura === 'AMBIENTE' && regra.tipoCaixa === (normSelectValue(courier.nome) === 'marken' ? 'BIOSYSTEM' : 'SEPIO') && LABORATORIOS_TRANSPORTE_PROJ.some(function(lab) { return lab.id === regra.laboratorioId; });
+    var key = ruleKey(regra);
+    occurrences[key] = (occurrences[key] || 0) + 1;
+    var saved = complete && occurrences[key] <= _projetoCaixasTransporteSalvas.filter(function(item) { return ruleKey(item) === key; }).length;
+    var status = saved ? 'Regra ativa · salva' : (complete ? 'Alterações pendentes' : 'Complete a regra');
+    var effects = !courier ? 'Selecione a courier e o laboratório para definir a caixa.' : (regra.tipoCaixa === 'BIOSYSTEM'
+      ? 'E-mail: operacoes.cs@marken.com · Invoice: 2 kg · Fornecer caixa: Sim.'
+      : 'Caixa Sepio. Mantidos o e-mail e o preenchimento dos documentos da Ocasa.');
+    return '<div class="project-box-rule"><div class="project-box-rule-header"><strong>' + esc(tipo) + '</strong><span class="project-box-rule-status ' + (saved ? 'is-saved' : 'is-pending') + '">' + status + '</span></div>' +
+      '<div class="field-row cols-2"><div><label class="field-label" for="pCaixaCourier' + index + '">Courier</label><select id="pCaixaCourier' + index + '" class="f-input f-select" onchange="alterarProjetoCaixaTransporte(' + index + ',\'courierId\',this.value)">' + options(couriers, regra.courierId, 'nome') + '</select></div>' +
+      '<div><label class="field-label" for="pCaixaTemp' + index + '">Temperatura</label><input id="pCaixaTemp' + index + '" class="f-input" value="Ambiente" readonly></div>' +
+      '<div style="grid-column:1/-1"><label class="field-label" for="pCaixaLab' + index + '">Laboratório</label><select id="pCaixaLab' + index + '" class="f-input f-select" onchange="alterarProjetoCaixaTransporte(' + index + ',\'laboratorioId\',this.value)">' + options(LABORATORIOS_TRANSPORTE_PROJ, regra.laboratorioId, 'nome') + '</select></div></div>' +
+      '<div class="project-box-rule-effects">' + esc(effects) + '</div><button type="button" class="btn-txt project-box-rule-remove" onclick="removerProjetoCaixaTransporte(' + index + ')"><span class="material-symbols-outlined" aria-hidden="true">delete_outline</span> Remover regra</button></div>';
   }).join('') || '<div class="field-help" style="margin-bottom:14px">Nenhuma caixa especial configurada.</div>';
   var error = document.getElementById('errPCaixasTransporte');
   if (error) { error.textContent = _projetoCaixasTransporteErro; error.classList.toggle('visible', !!_projetoCaixasTransporteErro); }
+  var state = document.getElementById('pCaixasTransporteEstado');
+  if (state) state.textContent = JSON.stringify(_projetoCaixasTransporte) !== JSON.stringify(_projetoCaixasTransporteSalvas)
+    ? 'Alterações pendentes. Salve o cadastro para aplicar as inclusões, alterações ou remoções de regras.'
+    : (_projetoCaixasTransporte.length ? 'Regras salvas. Aplicação automática somente nos transportes com a combinação correspondente.' : 'Nenhuma regra ativa neste projeto.');
+  if (focusedId && document.getElementById(focusedId)) document.getElementById(focusedId).focus();
 }
 
 function adicionarProjetoCaixaTransporte() {
@@ -5915,8 +5937,8 @@ function alterarProjetoCaixaTransporte(index, field, value) {
   if (field === 'courierId') {
     var courier = COURIERS_PROJ.filter(function(c) { return c.id === value; })[0];
     regra.tipoCaixa = courier ? (normSelectValue(courier.nome) === 'marken' ? 'BIOSYSTEM' : 'SEPIO') : '';
-    renderProjetoCaixasTransporte_();
   }
+  renderProjetoCaixasTransporte_();
 }
 
 function validarProjetoCaixasTransporte_() {

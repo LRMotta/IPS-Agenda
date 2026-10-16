@@ -336,6 +336,7 @@ function transporteAgendaLinkFromRef_(refInterna, note) {
   try {
     var meta = note ? JSON.parse(note) : null;
     if (meta) {
+      out.envioId = String(meta.envioId || '').trim();
       out.idAgenda = String(meta.idAgenda || '').trim();
       out.participanteCadastroId = String(meta.participanteCadastroId || '').trim();
       out.identificacaoParticipante = String(meta.identificacaoParticipante || '').trim();
@@ -367,8 +368,9 @@ function transporteSetAgendaLink_(range, payload) {
   transporteSetValueIfAllowed_(range, '');
   var cadastroId = String(payload.participanteCadastroId || '').trim();
   var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || '').trim();
-  if (idAgenda || cadastroId || identificacao || payload.caixaTransporte) {
+  if (idAgenda || cadastroId || identificacao || payload.caixaTransporte || payload.envioId) {
     range.setNote(JSON.stringify({
+      envioId: idAgenda ? '' : String(payload.envioId || ''),
       idAgenda: idAgenda,
       agendaSlot: slotNormalizado,
       participanteCadastroId: cadastroId,
@@ -386,6 +388,7 @@ function transportePreservarVinculoAgendaPayload_(payload, range) {
   if (!range) return payload;
   var refAtual = String(payload.refInterna || range.getDisplayValue() || range.getValue() || '').trim();
   var link = transporteAgendaLinkFromRef_(refAtual, range.getNote());
+  if (!payload.idAgenda && !link.idAgenda && !payload.envioId && link.envioId) payload.envioId = link.envioId;
   if (!payload.idAgenda && link.idAgenda) payload.idAgenda = link.idAgenda;
   if (!payload.agendaSlot && !payload.slot && link.agendaSlot) payload.agendaSlot = link.agendaSlot;
   if (!payload.refInterna && payload.idAgenda) payload.refInterna = transporteAgendaRefInterna_(payload.idAgenda);
@@ -2822,6 +2825,7 @@ function transporteReadRegistro_() {
     observacoes: cfg[11] || '',
     refInterna: cfg[12] || '',
     idAgenda: agendaLink.idAgenda,
+    envioId: agendaLink.envioId || '',
     agendaSlot: agendaLink.agendaSlot,
     solicitarCaixa: transporteReadSolicitarCaixa_(ss, cfg[7], cfg[3]),
     responsavelEntrega: formularioPinex ? String(formularioPinex.getRange('D32').getValue() || '').trim() : '',
@@ -2862,6 +2866,60 @@ function transporteNormalizeOcasaAwb_(awb) {
 
 function transporteIsValidOcasaAwb_(awb) {
   return codexCourierIsValidOcasaAwb_(awb);
+}
+
+function transporteAwbRegistro_(registro) {
+  var id = String(registro.idAgenda || '').trim();
+  var slot = String(registro.agendaSlot || registro.slot || '').trim();
+  slot = slot ? normalizarSlotTransporteCodex_(slot, true) : '';
+  return {
+    awb: String(registro.awb || '').trim(), owner: id ? agendaAwbOwner_(id, slot || 'LEGADO') : 'MANUAL:' + String(registro.envioId || ''),
+    id: id, slot: slot, courier: String(registro.courier || ''), temperatura: String(registro.temperatura || ''),
+    participante: String(registro.paciente || ''), projeto: String(registro.protocolo || ''), data: registro.dataEnvio || '', status: ''
+  };
+}
+
+function transporteAwbAviso_(registro) {
+  if (!String(registro.awb || '').trim()) return null;
+  var context = agendaAwbContexto_(getAgendaSheetForRead_());
+  var entry = transporteAwbRegistro_(registro);
+  var other = agendaAwbConflito_(context, entry);
+  return other ? { awb: entry.awb, text: agendaAwbMensagem_(entry.awb, other) } : null;
+}
+
+function transporteAwbReservar_(payload, strict) {
+  if (!String(payload.awb || '').trim()) {
+    var previousContext = transporteAwbPreservarFormulario_(payload);
+    if (previousContext) agendaAwbReservar_(previousContext, [], false);
+    return;
+  }
+  if (!payload.idAgenda) {
+    if (!payload.envioId) payload.envioId = Utilities.getUuid().replace(/-/g, '');
+    if (!/^[a-f0-9]{32}$/i.test(payload.envioId)) throw new Error('Identificação do envio inválida. Reabra o Transporte.');
+  }
+  var context = agendaAwbContexto_(getAgendaSheetForRead_());
+  transporteAwbPreservarFormulario_(payload, context);
+  var entry = transporteAwbRegistro_(payload);
+  agendaAwbReservar_(context, [entry], strict);
+}
+
+function transporteAwbPreservarFormulario_(payload, context) {
+  payload = payload || {};
+  // Preserva tambem o formulario manual legado antes que o proximo envio o substitua.
+  var folha = transporteGetSheet_(getTransporteSpreadsheetCodex_(), 'folhaAgendamento', true);
+  var values = folha.getRange('C3:C15').getValues().map(function(row) { return row[0]; });
+  var link = transporteAgendaLinkFromRef_(values[12], folha.getRange('C15').getNote());
+  if (!link.idAgenda && String(values[9] || '').trim()) {
+    context = context || agendaAwbContexto_(getAgendaSheetForRead_());
+    var previous = transporteAwbRegistro_({
+      envioId: link.envioId || (!payload.idAgenda && payload.envioId) || Utilities.getUuid().replace(/-/g, ''),
+      awb: values[9], paciente: values[0], protocolo: values[1], temperatura: values[3], dataEnvio: values[5], courier: values[7]
+    });
+    context.entries.push(previous);
+    context.current[previous.owner] = previous;
+    return context;
+  }
+  return null;
 }
 
 function transporteRegistroPreparado_(payload) {
@@ -2912,6 +2970,7 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
         options: options,
         auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
         issues: transporteValidate_(registro),
+        awbIssue: transporteAwbAviso_(registro),
         resumo: {
           materiaisAtivos: ativos.length,
           totalTubos: totalTubos,
@@ -3017,6 +3076,11 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
     if (!options.rascunho) payload.caixaTransporte.confirmado = true;
     if (transporteCaixaBioSystem_(payload)) payload.solicitarCaixa = 'Sim';
+    if (!options.rascunho) transporteAwbReservar_(payload, options.awbExigirUnica === true);
+    else {
+      var previousAwbContext = transporteAwbPreservarFormulario_(payload);
+      if (previousAwbContext) agendaAwbReservar_(previousAwbContext, [], false);
+    }
   });
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
@@ -3102,7 +3166,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
       return transporteSincronizarAgenda_(payload);
     });
   if (options.returnBootstrap === false) {
-    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync };
+    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync, awbIssue: options.rascunho ? null : transporteAwbAviso_(payload) };
     if (options.returnPreparedRecord === true) response.registro = transporteRegistroPreparado_(payload);
     return response;
   }
@@ -3812,6 +3876,8 @@ function sincronizarTransporte() {
 function limparTransporte() {
   if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('limparTransporte', 'Transporte', '');
   return codexWithDocumentLock_('limparTransporte', function() {
+    var context = transporteAwbPreservarFormulario_({});
+    if (context) agendaAwbReservar_(context, [], false);
     var result = typeof performContentDeletion_ === 'function' ? performContentDeletion_() : 'WARN_SOME_ERRORS';
     transporteSincronizarDependencias_({ visibilidade: false });
     // Persistir as dependencias recalculadas antes de reler o formulario.
@@ -4145,10 +4211,10 @@ function transporteGenerationMergeWarnings_(previous, current) {
 }
 
 function transporteGenerationReplay_(record) {
-  if (record.phase === 'RETIRED') throw new Error('O resultado antigo saiu do histórico de recuperação. Confira os documentos e use Nova geração se precisar recriá-los.');
-  if (record.phase === 'PDF_INTENT') throw new Error('A geração anterior pode ter criado o PDF, mas não confirmou seu ID. Confira o Drive antes de iniciar Nova geração.');
+  if (record.phase === 'RETIRED') throw new Error('O resultado antigo saiu do histórico de recuperação. Confira os documentos e use Gerar novamente se precisar recriá-los.');
+  if (record.phase === 'PDF_INTENT') throw new Error('A geração anterior pode ter criado o PDF, mas não confirmou seu ID. Confira o Drive antes de usar Gerar novamente.');
   if (record.phase === 'DRAFT_INTENT') {
-    var result = Object.assign({}, record.pdf, { draftOk: false, draftErrorCode: 'GENERATION_UNCERTAIN', draftError: 'O rascunho pode ter sido criado. Confira o Gmail antes de iniciar Nova geração.', recovered: true });
+    var result = Object.assign({}, record.pdf, { draftOk: false, draftErrorCode: 'GENERATION_UNCERTAIN', draftError: 'O rascunho pode ter sido criado. Confira o Gmail antes de usar Gerar novamente.', recovered: true });
     result.message = 'PDF recuperado. ' + result.draftError;
     return result;
   }
@@ -4214,7 +4280,7 @@ function gerarPdfTransporte(options) {
         if (TRANSPORTE_GENERATION_REQUEST_.record.phase === 'DRAFT_INTENT') {
           result.draftOk = false;
           result.draftErrorCode = 'GENERATION_UNCERTAIN';
-          result.draftError = 'O rascunho pode ter sido criado. Confira o Gmail antes de iniciar Nova geração.';
+          result.draftError = 'O rascunho pode ter sido criado. Confira o Gmail antes de usar Gerar novamente.';
           result.message = 'PDF gerado. ' + result.draftError;
         } else if (result.draftOk !== false || result.draftId) {
           transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: result, pdf: null, draft: null });
@@ -4247,7 +4313,8 @@ function gerarPdfTransporteInterno_(options, access) {
     savedTransport = salvarTransporteInterno_(options.payload, {
       returnBootstrap: false,
       returnPreparedRecord: true,
-      preencherDocumentos: true
+      preencherDocumentos: true,
+      awbExigirUnica: true
     });
     if (savedTransport && savedTransport.registro) options.payload = savedTransport.registro;
     if (savedTransport && savedTransport.registro && typeof options.onRegistroPersistido_ === 'function') options.onRegistroPersistido_(savedTransport.registro);
@@ -4257,8 +4324,9 @@ function gerarPdfTransporteInterno_(options, access) {
   var manifestoPdf = transporteMeasurePerformance_('gerarPdfTransporte', 'manifest_validate', { rowCount: 1 }, function() {
     return transporteValidarManifestoPdf_(options);
   });
+  if (!options.payload && manifestoPdf.manifesto && String(manifestoPdf.manifesto.awb || '').trim()) transporteAwbReservar_(transporteReadRegistro_(), true);
   var request = TRANSPORTE_GENERATION_REQUEST_;
-  if (request && request.record.manifestHash && request.record.manifestHash !== manifestoPdf.hash) throw new Error('Os dados ou modelos mudaram desde o PDF recuperado. Confira o PDF e inicie Nova geração.');
+  if (request && request.record.manifestHash && request.record.manifestHash !== manifestoPdf.hash) throw new Error('Os dados ou modelos mudaram desde o PDF recuperado. Confira o PDF e use Gerar novamente.');
   if (request && request.record.pdf && !request.record.draft) {
     if (!request.record.sourceHash || !request.record.sourceSheets || transporteGenerationSourceHash_(getTransporteSpreadsheetCodex_(), request.record.sourceSheets) !== request.record.sourceHash) {
       return Object.assign({}, request.record.pdf, { recovered: true, draftOk: false, draftErrorCode: 'RECOVERY_REVIEW_REQUIRED',
@@ -4313,7 +4381,7 @@ function gerarPdfTransporteInterno_(options, access) {
         // Um rascunho anterior ja existe: nao validar seu corpo por inferencia nem duplicar.
         if (courier === 'MARKEN' && (!recordedDraft.temperaturaPdf || transporteNormalizeTemperaturaFromCodex_(recordedDraft.temperaturaPdf) !== temperaturaPdf)) {
           return Object.assign({}, recordedDraft, { ok: false, error: 'RECOVERY_REVIEW_REQUIRED',
-            message: 'O PDF e o rascunho existentes foram recuperados, mas a temperatura do rascunho não pôde ser confirmada. Confira o e-mail antes de enviar ou iniciar Nova geração.' });
+            message: 'O PDF e o rascunho existentes foram recuperados, mas a temperatura do rascunho não pôde ser confirmada. Confira o e-mail antes de enviar ou usar Gerar novamente.' });
         }
         return recordedDraft;
       }
@@ -5818,6 +5886,7 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
   }
   var range = sheet.getRange(tipo === 'OCASA' ? 'A1:B10' : 'A1:B9');
   var dados = range.getDisplayValues();
+  var incluirLinhaCaixa = false;
   if (tipo === 'MARKEN') {
     var temperatura = transporteValidarTemperaturaGeracao_(temperaturaGeracao, temperaturaGeracao);
     var linhasTemperatura = dados.map(function(row, index) {
@@ -5830,8 +5899,13 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
       var linhasCaixa = dados.map(function(row, index) {
         return /^(fornecer|solicitar).*caixa/.test(transporteNorm_(row[0])) ? index : -1;
       }).filter(function(index) { return index >= 0; });
-      if (linhasCaixa.length !== 1) throw new Error('Não foi possível confirmar Fornecer caixa no e-mail BioSystem. Revise o modelo MARKEN.');
-      dados[linhasCaixa[0]][1] = 'Sim';
+      if (!linhasCaixa.length) {
+        // Modelos MARKEN legados podem nao ter a linha da caixa BioSystem.
+        // Acrescenta a informacao no corpo gerado sem alterar a planilha-modelo.
+        incluirLinhaCaixa = true;
+      } else {
+        linhasCaixa.forEach(function(index) { dados[index][1] = 'Sim'; });
+      }
     }
   }
   var backgrounds = range.getBackgrounds();
@@ -5869,6 +5943,10 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
     });
     html += '</tr>';
   });
+  if (incluirLinhaCaixa) {
+    html += '<tr><td style="border:1px solid #000;padding:3px;background:#ffffff;color:#000000;font-weight:normal;text-align:left;line-height:1.45">Fornecer caixa</td>' +
+      '<td style="border:1px solid #000;padding:3px;background:#ffffff;color:#000000;font-weight:normal;text-align:left;line-height:1.45">Sim</td></tr>';
+  }
   return html + '</table><p style="margin:22px 0 22px 0;line-height:1.75;">Os documentos necess\u00e1rios para o agendamento est\u00e3o anexados a este e-mail.</p>';
 }
 

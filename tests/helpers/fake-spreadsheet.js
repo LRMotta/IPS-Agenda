@@ -22,6 +22,9 @@ class FakeRange {
   }
 
   getValue() { return this.getValues()[0][0]; }
+  getRow() { return this.row; }
+  getColumn() { return this.column; }
+  getSheet() { return this.sheet; }
   getDisplayValue() { return String(this.getValue() ?? ''); }
   getDisplayValues() { return this.getValues().map((row) => row.map((value) => String(value ?? ''))); }
 

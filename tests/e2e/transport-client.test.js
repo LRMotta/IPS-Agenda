@@ -640,11 +640,35 @@ test('Transporte: retentativas conservam token, armazenamento guarda somente ide
     const stored = await page.evaluate(() => JSON.stringify(window.transportTestStorage));
     assert.doesNotMatch(stored, /Pessoa A|Estudo A|materiais|paciente/);
     await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte')[1].success({ type: 'pdf', fileId: 'PDF', fileUrl: 'https://example.invalid/pdf', message: 'PDF recuperado.' }));
+    assert.equal(await page.locator('#pdfModal button').filter({ hasText: /Nova geração|Gerar novamente/ }).count(), 0);
+    const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+    fs.mkdirSync(dir, { recursive: true });
+    await page.screenshot({ path: path.join(dir, 'transport-pdf-concluir.png') });
+    await page.locator('#pdfModal button').filter({ hasText: 'Concluir' }).click();
+    assert.equal(await page.locator('#pdfModal').isVisible(), false);
+    assert.equal(await page.locator('.actions-top button').filter({ hasText: 'Gerar novamente' }).count(), 1);
+    assert.equal(await page.locator('#paciente').inputValue(), 'participante:CAD-A');
+    await page.screenshot({ path: path.join(dir, 'transport-gerar-novamente.png') });
     await page.evaluate(() => { window.confirm = () => false; window.newTransportGeneration(); });
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte').length), 2);
     await page.evaluate(() => { window.confirm = () => true; window.newTransportGeneration(); });
     const third = await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte')[2].args[0].generationRequestId);
     assert.notEqual(third, first);
+  });
+});
+
+test('Transporte: aviso de AWB duplicada aponta o campo e desaparece ao corrigir o numero', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window.state.awbIssue = { awb: window.collectPayload().awb, text: 'A AWB já foi utilizada em outro envio: Transporte III · Pessoa B.' };
+      window.renderIssues();
+    });
+    const issue = page.locator('#issues button').filter({ hasText: 'AWB já foi utilizada' });
+    await issue.click();
+    await page.waitForFunction(() => document.activeElement === document.getElementById('awb'));
+    assert.equal(await page.locator('#awb').evaluate(el => el === document.activeElement), true);
+    await page.locator('#awb').fill('620X42074401');
+    assert.equal(await page.locator('#issues').getByText(/AWB já foi utilizada/).count(), 0);
   });
 });
 

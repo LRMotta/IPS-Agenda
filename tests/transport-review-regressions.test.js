@@ -126,6 +126,7 @@ for (const action of ['limparTransporte', 'sincronizarTransporte']) {
       SpreadsheetApp: { flush() { assert.equal(locked, true); } }
     });
     s.performContentDeletion_ = () => { assert.equal(locked, true); calls++; return 'OK'; };
+    s.transporteAwbPreservarFormulario_ = () => { assert.equal(locked, true); return null; };
     s.transporteSincronizarDependencias_ = () => { assert.equal(locked, true); calls++; };
     s.getTransporteBootstrap = () => { assert.equal(locked, true); return { registro: {} }; };
     s[action]();

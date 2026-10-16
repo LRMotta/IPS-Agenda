@@ -3124,6 +3124,7 @@
           msgOk += ' Atenção: há aviso de feriado ou orientação operacional para a data; o agendamento foi mantido.';
         }
         if (res && res.merged) msgOk += ' Atualizações feitas em outros campos foram preservadas.';
+        if (res && res.awbWarnings && res.awbWarnings.length) msgOk += ' Atenção: ' + res.awbWarnings[0];
         snack(msgOk);
         setAgendaStatus(msgOk, 'ok');
         agendaConflictDraftClear_(_agendaEditId);
