@@ -49,18 +49,22 @@ test('prévia conserva caixa histórica confirmada, troca de participante e reca
     const errors = await transportBrowserFixture(page);
     await page.evaluate(() => {
       const p = window.collectPayload();
+      window.state.registro.solicitarCaixa = 'Sim';
       window.state.registro.caixaTransporte = { confirmado: true, tipoCaixa: 'BIOSYSTEM', contexto: [p.idAgenda, p.agendaSlot, p.participanteCadastroId, p.paciente, p.protocolo, p.courier, p.temperatura, p.destino].map(window.norm) };
       window.state.options.caixasTransporteRegras = [];
+      window.renderAll({ skipCe: true });
       window.renderDerived();
     });
     assert.equal(await page.locator('#caixaEspecial').inputValue(), 'BioSystem');
+    await page.evaluate(() => { document.getElementById('destino').value = ''; window.renderDerived(); });
+    assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Não');
     await page.evaluate(() => {
       window.state.registro = { ...window.state.registro, caixaTransporte: null, solicitarCaixa: 'Não' };
       window.renderAll({ skipCe: true });
       window.renderDerived();
     });
     assert.equal(await page.locator('#caixaEspecialField').isVisible(), false);
-    assert.equal(await page.locator('#solicitarCaixa').isDisabled(), false);
+    assert.equal(await page.locator('#solicitarCaixa').isDisabled(), true);
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Não');
     const dimensions = await page.locator('body').evaluate(e => ({ client: e.clientWidth, scroll: e.scrollWidth }));
     assert.ok(dimensions.scroll <= dimensions.client + 1);

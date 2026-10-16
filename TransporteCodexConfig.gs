@@ -3075,7 +3075,9 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
     payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
     if (!options.rascunho) payload.caixaTransporte.confirmado = true;
-    if (transporteCaixaBioSystem_(payload)) payload.solicitarCaixa = 'Sim';
+    if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' && transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') {
+      payload.solicitarCaixa = transporteCaixaBioSystem_(payload) ? 'Sim' : 'Não';
+    }
     if (!options.rascunho) transporteAwbReservar_(payload, options.awbExigirUnica === true);
     else {
       var previousAwbContext = transporteAwbPreservarFormulario_(payload);
@@ -3232,6 +3234,7 @@ function aplicarSolicitacaoCaixaTransporte_(ss, payload) {
   var temperatura = transporteNormalizeTemperaturaFromCodex_(payload.temperatura);
   var resposta = transporteNormalizeSimNao_(payload.solicitarCaixa, transporteDefaultSolicitarCaixa_(courier));
   if (transporteCaixaBioSystem_(payload)) resposta = 'Sim';
+  else if (courier === 'MARKEN' && temperatura === 'AMBIENTE' && payload.caixaTransporte) resposta = 'Não';
 
   if (courier === 'MARKEN') {
     var emailMarken = transporteGetSheet_(ss, 'emailMarken', false);
@@ -5886,7 +5889,6 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
   }
   var range = sheet.getRange(tipo === 'OCASA' ? 'A1:B10' : 'A1:B9');
   var dados = range.getDisplayValues();
-  var incluirLinhaCaixa = false;
   if (tipo === 'MARKEN') {
     var temperatura = transporteValidarTemperaturaGeracao_(temperaturaGeracao, temperaturaGeracao);
     var linhasTemperatura = dados.map(function(row, index) {
@@ -5895,17 +5897,14 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
     if (linhasTemperatura.length !== 1) throw transporteErroTemperatura_('Não foi possível identificar uma única linha de temperatura no modelo do e-mail MARKEN. O rascunho não foi criado.');
     // Somente a matriz em memoria recebe o snapshot; formulas e estilos ficam intactos.
     dados[linhasTemperatura[0]][1] = temperatura;
-    if (bioSystem) {
+    if (bioSystem || (bioSystem === false && temperatura === 'AMBIENTE')) {
       var linhasCaixa = dados.map(function(row, index) {
-        return /^(fornecer|solicitar).*caixa/.test(transporteNorm_(row[0])) ? index : -1;
+        var label = transporteNorm_(row[0]).replace(/[:\s]+$/g, '');
+        return index > 0 && /^(enviar|fornecer|solicitar) caixa( de transporte)?$/.test(label) ? index : -1;
       }).filter(function(index) { return index >= 0; });
-      if (!linhasCaixa.length) {
-        // Modelos MARKEN legados podem nao ter a linha da caixa BioSystem.
-        // Acrescenta a informacao no corpo gerado sem alterar a planilha-modelo.
-        incluirLinhaCaixa = true;
-      } else {
-        linhasCaixa.forEach(function(index) { dados[index][1] = 'Sim'; });
-      }
+      if (linhasCaixa.length !== 1) throw new Error('Não foi possível identificar um único campo de envio de caixa no modelo MARKEN. Confira o modelo da courier antes de gerar o rascunho.');
+      // Preencher apenas o valor do campo original; preservar rotulo, linhas e estilos da courier.
+      dados[linhasCaixa[0]][1] = bioSystem ? 'Sim' : 'Não';
     }
   }
   var backgrounds = range.getBackgrounds();
@@ -5943,10 +5942,6 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
     });
     html += '</tr>';
   });
-  if (incluirLinhaCaixa) {
-    html += '<tr><td style="border:1px solid #000;padding:3px;background:#ffffff;color:#000000;font-weight:normal;text-align:left;line-height:1.45">Fornecer caixa</td>' +
-      '<td style="border:1px solid #000;padding:3px;background:#ffffff;color:#000000;font-weight:normal;text-align:left;line-height:1.45">Sim</td></tr>';
-  }
   return html + '</table><p style="margin:22px 0 22px 0;line-height:1.75;">Os documentos necess\u00e1rios para o agendamento est\u00e3o anexados a este e-mail.</p>';
 }
 

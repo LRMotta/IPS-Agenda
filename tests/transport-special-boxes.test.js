@@ -128,24 +128,42 @@ test('JSON inválido alheio não bloqueia o envio, mas o projeto afetado e ambig
   assert.throws(() => s.transporteCaixaResolver_({}, payload), /Mais de uma regra/);
 });
 
-test('BioSystem corrige tabela do e-mail e inclui a caixa quando o modelo MARKEN legado não tem essa linha', () => {
+test('BioSystem preenche somente o campo original de caixa e preserva a tabela da courier', () => {
   const { s } = fixture();
-  let rows = [['Coleta', ''], ['Temperatura:', 'Antiga'], ['', ''], ['', ''], ['', ''], ['', ''], ['', ''], ['Fornecer caixa:', 'Não']];
+  let rows = [['Agendamento', ''], ['Nº HAWB', 'TESTE'], ['PI', 'Investigador'], ['Data da Coleta', '20/10/2026'], ['Horário', '13:00 - 15:00'], ['Quantidade de volumes', '1'], ['Temperatura:', 'Antiga'], ['Enviar Caixa de Transporte', 'Não'], ['Cidade', 'Caxias do Sul']];
   const matrix = value => rows.map(() => [value, value]);
   s.transporteCodexGetSheet_ = () => ({ getRange: () => ({ getDisplayValues: () => rows.map(row => row.slice()), getBackgrounds: () => matrix('#fff'), getFontColors: () => matrix('#000'), getFontWeights: () => matrix('normal'), getHorizontalAlignments: () => matrix('left') }) });
   const html = s.transporteCodexEmailHtml_({}, '', 'MARKEN', 'Bom dia', 'AMBIENTE', true);
   assert.match(html, />Sim<\/td>/);
   assert.match(html, />AMBIENTE<\/td>/);
-  assert.match(html, />Fornecer caixa:<\/td><td[^>]*>Sim<\/td>/);
+  assert.match(html, />Enviar Caixa de Transporte<\/td><td[^>]*>Sim<\/td>/);
+  assert.doesNotMatch(html, /Fornecer caixa/);
+  assert.equal((html.match(/<tr>/g) || []).length, rows.length);
   assert.equal(rows[7][1], 'Não');
-  rows = rows.slice(0, 2);
-  const htmlSemLinhaNoModelo = s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true);
-  assert.match(htmlSemLinhaNoModelo, />Fornecer caixa<\/td><td[^>]*>Sim<\/td>/);
+  rows[7][1] = 'Sim';
+  const convencional = s.transporteCodexEmailHtml_({}, '', 'MARKEN', 'Bom dia', 'AMBIENTE', false);
+  assert.match(convencional, />Enviar Caixa de Transporte<\/td><td[^>]*>Não<\/td>/);
+  assert.equal((convencional.match(/<tr>/g) || []).length, 9);
+  rows = [['Agendamento', ''], ['Temperatura', 'AMBIENTE']];
+  assert.throws(() => s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true), /campo de envio de caixa/);
   assert.equal(rows.length, 2);
   rows = [['Coleta', ''], ['Temperatura', ''], ['Fornecer caixa', 'Não'], ['Solicitar caixa', 'Não']];
-  const htmlComRotulosDuplicados = s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true);
-  assert.match(htmlComRotulosDuplicados, />Fornecer caixa<\/td><td[^>]*>Sim<\/td>/);
-  assert.match(htmlComRotulosDuplicados, />Solicitar caixa<\/td><td[^>]*>Sim<\/td>/);
+  assert.throws(() => s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true), /campo de envio de caixa/);
+});
+
+test('trocar BioSystem por convencional restaura Não no servidor, mesmo com Sim antigo no payload', () => {
+  const { s, payload, save, email, invoice } = fixture();
+  assert.equal(save().solicitarCaixa, 'Sim');
+  s.atualizarMarkenVolumes_({});
+  assert.equal(invoice.getRange('T41').getValue(), '2 Kg');
+  payload.destino = 'Outro Lab';
+  payload.solicitarCaixa = 'Sim';
+  const convencional = save();
+  assert.equal(convencional.caixaTransporte.tipoCaixa, '');
+  assert.equal(convencional.solicitarCaixa, 'Não');
+  assert.equal(email.getRange('B8').getValue(), 'Não');
+  s.atualizarMarkenVolumes_({});
+  assert.equal(invoice.getRange('T41').getValue(), '1 Kg');
 });
 
 test('hash documental muda com a caixa e nota inválida não é inferida', () => {
