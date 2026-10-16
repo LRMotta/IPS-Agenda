@@ -121,7 +121,8 @@ test('itens inválidos e IDs duplicados não deixam gravação parcial nem migra
 });
 
 test('salvamento e exclusão usam o ID autoritativo apesar de uma linha antiga da tela', () => {
-  const f = fixture([['PED-B', 'N2', '', 'Projeto B', 'Lab B'], PEDIDO], [ITEM, ['PED-B', 'N2']]);
+  const pending = [...ITEM]; pending[7] = 0; pending[9] = '';
+  const f = fixture([['PED-B', 'N2', '', 'Projeto B', 'Lab B'], PEDIDO], [pending, ['PED-B', 'N2']]);
   f.server.salvarPedidoEstoque(edit());
   assert.equal(f.ped.rows[1][1], 'N2');
   assert.equal(f.ped.rows[2][7], 'Depois');
@@ -130,6 +131,15 @@ test('salvamento e exclusão usam o ID autoritativo apesar de uma linha antiga d
   assert.equal(f.ped.rows[1][0], 'PED-B');
   assert.equal(f.pi.rows[1][0], 'PED-B');
   assert.deepEqual([f.locks.acquired, f.locks.released], [2, 2]);
+});
+
+test('exclusão de pedido com recebimento parcial, total ou movimentação preserva todo o histórico', () => {
+  for (const [received, movement] of [[5, 'MOV-A'], [10, 'MOV-A'], [0, 'MOV-A']]) {
+    const item = [...ITEM]; item[7] = received; item[9] = movement;
+    const f = fixture([PEDIDO], [['PED-A', 'N1', 'Projeto A', 'Outro', 'Kit', 'KIT-B', 1, 0], item]);
+    assertUnchanged(f, () => f.server.excluirPedidoEstoque(2, 'PED-A'), /recebimento ou movimentação/);
+    assert.deepEqual([f.locks.acquired, f.locks.released], [1, 1]);
+  }
 });
 
 test('exclusão rejeita linha inválida, ID ausente/inexistente/duplicado antes de apagar itens', () => {

@@ -24,7 +24,7 @@ function fixture() {
   s.getTransporteSpreadsheetCodex_ = () => ({});
   s.transporteGenerationSourceHash_ = () => 'SOURCE-1';
   s.transporteMonitorReferencia_ = () => '';
-  s.imprimirTodasAbas = () => {
+  s.imprimirTodasAbas_ = () => {
     s.transporteGenerationCheckpoint_({ phase: 'PDF_INTENT', sourceHash: 'SOURCE-1', sourceSheets: ['Modelo'] }); counts.pdf++;
     if (fault === 'pdf-unknown') throw new Error('interrupcao');
     const pdf = { type: 'pdf', fileId: 'PDF-1', courier: 'DHL', fileUrl: 'https://example.invalid/pdf', message: 'PDF gerado.' };
@@ -168,4 +168,22 @@ test('snapshot dos modelos compara conteudo exibido e merge preserva avisos ante
   assert.notEqual(s.transporteGenerationSourceHash_(ss, ['Modelo']), first);
   const merged = s.transporteGenerationMergeWarnings_([{ code: 'OLD', message: 'Aviso antigo' }], [{ code: 'OLD', message: 'Repetido' }, { code: 'NEW', message: 'Novo' }]);
   assert.equal(merged.length, 2); assert.equal(merged[0].message, 'Aviso antigo');
+});
+
+test('registro normalizado do PDF retorna ao cliente sem ocupar checkpoints duráveis', () => {
+  const f = fixture();
+  const normalized = { courier: 'DHL', observacoes: 'MARCADOR-REGISTRO-' + 'x'.repeat(16000) };
+  f.s.salvarTransporteInterno_ = (_payload, options) => {
+    assert.equal(options.returnPreparedRecord, true);
+    f.counts.save++;
+    return { registro: normalized, agendaSync: {} };
+  };
+  const first = f.request();
+  assert.equal(first.registro, normalized);
+  assert.equal(JSON.stringify(f.values).includes('MARCADOR-REGISTRO'), false);
+  f.s.transporteReadRegistro_ = () => { throw new Error('Replay não pode ler outro transporte'); };
+  const second = f.request();
+  assert.equal(second.recovered, true);
+  assert.equal(second.registro, undefined);
+  assert.equal(f.counts.save, 1);
 });

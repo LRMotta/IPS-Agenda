@@ -744,3 +744,27 @@ test('Transporte: Fezes com quantificacao legada completa usa g tambem com DHL',
     assert.equal(await page.locator('#stVolume').innerText(), '0 L');
   });
 });
+
+for (const method of ['salvarTransporte', 'gerarPdfTransporte']) {
+  test('Transporte: ' + method + ' atualiza baseline normalizado e descarte preserva o que foi salvo', async () => {
+    await scenario(async page => {
+      await page.locator('#observacoes').fill('Nota submetida');
+      await page.locator(method === 'salvarTransporte' ? '#btnSaveTransport' : '#btnPdfTransport').click();
+      await page.evaluate(method => {
+        const call = window.calls.find(c => c.method === method);
+        const payload = method === 'salvarTransporte' ? call.args[0] : call.args[0].payload;
+        call.success({ ok: true, type: method === 'gerarPdfTransporte' ? 'pdf' : undefined,
+          fileId: 'PDF', fileUrl: 'https://example.invalid/pdf', message: 'Salvo.',
+          registro: { ...payload, observacoes: 'Nota persistida e normalizada' } });
+      }, method);
+      assert.equal(await page.locator('#observacoes').inputValue(), 'Nota persistida e normalizada');
+      assert.equal(await page.evaluate(() => window.state.registro.observacoes), 'Nota persistida e normalizada');
+      assert.equal(await page.evaluate(() => window.transportHasUnsavedChanges), false);
+      await page.evaluate(() => window.closePdfModal());
+      await page.locator('#observacoes').fill('Outra alteração não salva');
+      await page.evaluate(() => window.transportConfirmLeaveDirty());
+      await page.locator('#confirmTransportUnsavedModal .btn.danger').click();
+      assert.equal(await page.locator('#observacoes').inputValue(), 'Nota persistida e normalizada');
+    });
+  });
+}

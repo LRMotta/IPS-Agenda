@@ -25,6 +25,34 @@ function apply(s, p) {
   return s.importarSoAJson({ ...p, confirmarRevisaoPlanejamento: true, fingerprintPlanejamento: before.fingerprint });
 }
 
+test('visitas aceitam vínculos documentais manuais sem executar suas regras', () => {
+  const { server: s, p, d } = fixture();
+  d.visits[2].rule_ids = ['by_occurrence'];
+  let preview = s.validarImportacaoSoA(p);
+  assert.equal(preview.podeImportar, true, JSON.stringify(preview.alertas));
+  assert.equal(preview.visitas[2].referencia, '');
+  assert.equal(preview.visitas[2].intervaloDias, '');
+  d.rules.push({ ...d.rules[0], id: 'administration', kind: 'minimum_interval', scope: 'administration', visit_ids: [d.visits[1].id] });
+  d.visits[1].rule_ids = ['administration'];
+  preview = s.validarImportacaoSoA(p);
+  assert.equal(preview.podeImportar, true, JSON.stringify(preview.alertas));
+  assert.equal(preview.visitas[1].intervaloDias, 14);
+  d.visits[0].rule_ids = ['by_occurrence'];
+  assert.equal(s.validarImportacaoSoA(p).podeImportar, false, 'vínculo fora das visitas declaradas é rejeitado');
+});
+
+test('item inválido não desloca referências das visitas válidas na prévia', () => {
+  const { server: s, p, d } = fixture();
+  d.visits.unshift(null);
+  const preview = s.validarImportacaoSoA(p);
+  assert.equal(preview.ok, false);
+  const first = preview.visitas.find(v => v.codigo === d.visits[1].code);
+  const next = preview.visitas.find(v => v.codigo === d.visits[2].code);
+  const manual = preview.visitas.find(v => v.codigo === 'VNP');
+  assert.equal(next.referencia, first.idSoA);
+  assert.equal(manual.referencia, '');
+});
+
 test('catálogo 1.1 importa marco, cálculo e ocorrência sem zeros presumidos e arquiva fontes/regras', () => {
   const { server: s, spreadsheet, d, p } = fixture();
   const preview = s.validarImportacaoSoA(p);

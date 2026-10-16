@@ -60,7 +60,7 @@ function agendaMergePayloadFromRow_(row) {
   var p = agendaMergePayloadFromEvent_(agendaRowToObject_(row, 0));
   var i = AGENDA_CFG.idx;
   // Preservar inclusive dados historicos ocultos na interface e campos auxiliares.
-  p.statusRequisicao = String(row[i.reqStatus] || '');
+  p.statusRequisicao = agendaStatusRequisicaoDisplay_(row[i.reqStatus], row[i.obs]);
   p._backupLink = String(row[i.backupAgendaRef] || '');
   p.backup = { nome: String(row[i.cb.nome] || ''), temperatura: String(row[i.cb.temp] || ''),
     status: String(row[i.cb.status] || ''), material: String(row[i.cb.material] || ''),
@@ -178,7 +178,9 @@ function agendaTryMergeEdit_(dados, row) {
   states.forEach(function(state) {
     var field = state.field;
     if (field.readOnly) return;
-    var chosen = state.local ? incoming : current;
+    // Sem alteracao na identidade da linha, conservar os complementos hidratados
+    // da referencia assinada, inclusive em eventos legados com campos vazios.
+    var chosen = state.local || (field.context && !state.remote) ? incoming : current;
     field.keys.forEach(function(key) {
       if (field.slot) merged[field.slot][key] = (chosen[field.slot] || {})[key];
       else merged[key] = chosen[key];

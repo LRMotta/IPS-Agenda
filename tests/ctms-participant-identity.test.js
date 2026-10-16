@@ -81,6 +81,8 @@ function writerFixture(rows = participantRows()) {
   };
   server.clearCodexRuntimeCaches_ = () => {};
   server.codexWriteAuditLog_ = () => { audits++; };
+  server.codexWriteAuditChanges_ = () => { audits++; };
+  server.SpreadsheetApp = { flush: () => assert.equal(locked, true) };
   server.codexGetActiveUserEmail_ = () => 'tester@example.invalid';
   server.Utilities = { formatDate: () => '2026-10-07T10:00:00-03:00' };
   server.Session = { getScriptTimeZone: () => 'America/Sao_Paulo' };
@@ -106,7 +108,7 @@ test('aprovação CTMS formata timestamp no fuso configurado do script', () => {
 });
 
 const actions = [
-  { method: 'salvarConfiguracaoCtmsParticipante_', extra: { marcos: { RANDOMIZACAO: '2026-10-01' } } },
+  { method: 'salvarConfiguracaoCtmsParticipante_', extra: { marcos: { RANDOMIZACAO: '2026-10-01' }, marcosParticipacaoBase: { RANDOMIZACAO: '' } } },
   { method: 'definirAprovacaoCtmsParticipante_', extra: { idSoA: 'V-1', fingerprint: 'atual', aprovar: true } },
   { method: 'definirAprovacaoCtmsParticipante_', extra: { idSoA: 'V-1', aprovar: false } }
 ];

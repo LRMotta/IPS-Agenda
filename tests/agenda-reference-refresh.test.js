@@ -207,9 +207,10 @@ test('mutacoes de estoque e feriados conectam invalidacao persistente das listas
     const end = source.indexOf('\nfunction ', start + 1);
     return source.slice(start, end < 0 ? undefined : end);
   }
-  for (const name of ['salvarItemEstoque', 'excluirItemEstoque', 'receberPedidoEstoque', 'registrarMovimentacaoEstoque', 'transferirKitEstoque', 'reservarKitsAgendaEvento', 'reservarKitsPrevisaoJornada', 'cancelarReservaKitAgenda', 'ajustarReservaKitAgenda', 'substituirReservaKitAgenda', 'cancelarReservasKitsAgenda_', 'atualizarStatusReservasAgendaItens_', 'atualizarReservasPorLote_']) {
+  for (const name of ['salvarItemEstoque', 'excluirItemEstoque', 'receberPedidoEstoque', 'comLoteMovimentacoesEstoque_', 'transferirKitEstoque', 'reservarKitsAgendaEvento', 'reservarKitsPrevisaoJornada', 'cancelarReservaKitAgenda', 'ajustarReservaKitAgenda', 'substituirReservaKitAgenda', 'cancelarReservasKitsAgenda_', 'atualizarStatusReservasAgendaItens_', 'atualizarReservasPorLote_']) {
     assert.match(body(name), /agendaInvalidateKitsReference_\(\)/, name);
   }
+  assert.match(body('registrarMovimentacaoEstoque'), /comLoteMovimentacoesEstoque_/);
   for (const name of ['atualizarAgendaEventoCompleto', '_gravarLinhaEvento']) {
     assert.doesNotMatch(body(name), /agendaInvalidateReferenceDataCache_\(\['feriados'\]\)/);
   }

@@ -832,6 +832,48 @@ test('sincronizacao AWB respeita o slot do vinculo e mantem legado como Transpor
   assert.equal(JSON.parse(sheet.rows[2][cfg.idx.backupAgendaRef]).awb, 'AWB-I');
 });
 
+for (const [slot, roman, courierKey] of [['1', 'I', 'c1'], ['2', 'II', 'c2'], ['3', 'III', 'c3']]) {
+  for (const existingAwb of ['', 'AWB-AGENDA']) {
+    test('tela Transporte sincroniza Backup no slot ' + roman + (existingAwb ? ' preservando AWB existente' : ' ao preencher AWB'), () => {
+      const server = agendaServer();
+      const cfg = server.AGENDA_CFG;
+      const origin = Array(cfg.lastCol).fill('');
+      origin[cfg.idx.id] = 'origem';
+      const refs = [{ id: 'destino' }, { id: 'destino', slot: 'II' }, { id: 'destino', slot: 'III' }, { id: 'outro', slot: roman }];
+      refs.forEach((ref) => Object.assign(ref, { data: '20/10/2026', dataIso: '2026-10-20', hora: '12:00' }));
+      origin[cfg.idx.backupAgendaRef] = JSON.stringify(refs);
+      const destination = Array(cfg.lastCol).fill('');
+      destination[cfg.idx.id] = 'destino';
+      destination[cfg.idx[courierKey].awb] = existingAwb;
+      const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), origin, destination]);
+      server.codexWriteAuditChanges_ = () => {};
+      const transport = runFile('TransporteCodexConfig.gs', {
+        AGENDA_CFG: cfg,
+        getAgendaSheet_: () => sheet,
+        encontrarLinhaPorId: () => 3,
+        normText_: server.normText_,
+        normalizarAwbCourier_: (value) => String(value || '').trim(),
+        agendaSetAwbValue_: (range, value) => range.setValue(value),
+        agendaAtualizarBackupAwbVinculado_: server.agendaAtualizarBackupAwbVinculado_,
+        agendaInvalidateWindowCache_: server.agendaInvalidateWindowCache_,
+        SpreadsheetApp: { flush() {} }
+      });
+      transport.transporteMateriaisParaAgenda_ = () => ({ summary: '', json: '' });
+
+      const result = transport.transporteSincronizarAgenda_({ idAgenda: 'destino', agendaSlot: slot, awb: 'AWB-NOVA' });
+
+      const expectedAwb = existingAwb || 'AWB-NOVA';
+      assert.equal(sheet.rows[2][cfg.idx[courierKey].awb], expectedAwb);
+      const updated = JSON.parse(sheet.rows[1][cfg.idx.backupAgendaRef]);
+      refs.forEach((ref, index) => {
+        assert.deepEqual(updated[index], ref.id === 'destino' && (ref.slot || 'I') === roman
+          ? Object.assign({}, ref, { awb: expectedAwb }) : ref);
+      });
+      assert.equal(result.warnings.length, existingAwb ? 1 : 0);
+    });
+  }
+}
+
 test('interface oferece os dois caminhos e mantém o modal da Agenda durante a vinculação', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const content = readProjectFile('IndexContentAfterDashboard.html');

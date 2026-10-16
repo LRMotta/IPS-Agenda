@@ -420,7 +420,7 @@ var TRANSPORTE_OPERACOES_HEADERS_ = [
   'Agenda_ID', 'Slot', 'Referencia', 'Courier', 'Gerado_Em', 'Gerado_Por',
   'PDF_ID', 'PDF_Nome', 'Rascunho_ID', 'Rascunho_Status', 'Rascunho_Erro',
   'Email_Identificado_Em', 'Email_Enviado_Em', 'Gmail_Message_ID', 'Anexos',
-  'Ultima_Verificacao', 'PDF_Hash'
+  'Ultima_Verificacao', 'PDF_Hash', 'Temperatura_Geracao', 'Geracao_ID'
 ];
 var TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_ = 60 * 60 * 1000;
 var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 30;
@@ -450,18 +450,24 @@ function transporteOperacoesSheet_(createIfMissing) {
     if (sh.setFrozenRows) sh.setFrozenRows(1);
     if (sh.hideSheet) sh.hideSheet();
   } else if (sh && createIfMissing) {
-    // Migra somente na escrita, mantendo as primeiras 16 colunas intactas.
-    var headers = sh.getRange(1, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length - 1).getValues()[0];
-    for (var i = 0; i < headers.length; i++) {
+    // Migra somente na escrita. Valida toda a cauda antes da primeira alteracao.
+    var lastColumn = sh.getLastColumn();
+    var headers = sh.getRange(1, 1, 1, Math.min(lastColumn, TRANSPORTE_OPERACOES_HEADERS_.length)).getValues()[0];
+    for (var i = 0; i < 16; i++) {
       if (headers[i] !== TRANSPORTE_OPERACOES_HEADERS_[i]) throw new Error('Cabeçalhos de Transporte_Operacoes incompatíveis. Revise a aba antes de registrar documentos.');
     }
-    var hashColumn = TRANSPORTE_OPERACOES_HEADERS_.indexOf('PDF_Hash') + 1;
-    var existingHashHeader = sh.getLastColumn() >= hashColumn ? sh.getRange(1, hashColumn).getValue() : '';
-    if (existingHashHeader && existingHashHeader !== 'PDF_Hash') throw new Error('A coluna reservada ao hash do PDF já está ocupada. Revise a aba Transporte_Operacoes.');
-    if (!existingHashHeader) {
-      if (sh.getLastColumn() >= hashColumn) throw new Error('A coluna reservada ao hash contém dados sem cabeçalho. Revise Transporte_Operacoes antes de registrar documentos.');
-      if (sh.getMaxColumns && sh.getMaxColumns() < hashColumn) sh.insertColumnsAfter(sh.getMaxColumns(), hashColumn - sh.getMaxColumns());
-      sh.getRange(1, hashColumn).setValue('PDF_Hash');
+    var missingHeaders = false;
+    for (var column = 17; column <= TRANSPORTE_OPERACOES_HEADERS_.length; column++) {
+      var existingHeader = headers[column - 1];
+      if (existingHeader && existingHeader !== TRANSPORTE_OPERACOES_HEADERS_[column - 1]) throw new Error('A coluna reservada ao acompanhamento já está ocupada. Revise a aba Transporte_Operacoes.');
+      if (!existingHeader) {
+        if (lastColumn >= column) throw new Error('A coluna reservada ao acompanhamento contém dados sem cabeçalho. Revise Transporte_Operacoes antes de registrar documentos.');
+        missingHeaders = true;
+      }
+    }
+    if (missingHeaders) {
+      if (sh.getMaxColumns && sh.getMaxColumns() < TRANSPORTE_OPERACOES_HEADERS_.length) sh.insertColumnsAfter(sh.getMaxColumns(), TRANSPORTE_OPERACOES_HEADERS_.length - sh.getMaxColumns());
+      sh.getRange(1, 17, 1, TRANSPORTE_OPERACOES_HEADERS_.length - 16).setValues([TRANSPORTE_OPERACOES_HEADERS_.slice(16)]);
     }
   }
   return sh;
@@ -492,7 +498,12 @@ function transporteOperacoesRows_() {
   if (!sh) return [];
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
-  return sh.getRange(2, 1, lastRow - 1, Math.min(sh.getLastColumn(), TRANSPORTE_OPERACOES_HEADERS_.length)).getValues().map(function(row, index) {
+  // O legado conserva a leitura original; metadados exigem cabecalhos no mesmo bloco.
+  var width = Math.min(sh.getLastColumn(), TRANSPORTE_OPERACOES_HEADERS_.length);
+  var withMetadataHeaders = width > 17;
+  var values = sh.getRange(withMetadataHeaders ? 1 : 2, 1, lastRow - (withMetadataHeaders ? 0 : 1), width).getValues();
+  var headers = withMetadataHeaders ? values[0] : [];
+  return (withMetadataHeaders ? values.slice(1) : values).map(function(row, index) {
     return {
       row: index + 2,
       agendaId: transporteOperacaoAgendaId_(row[0], row[2], row[1]),
@@ -511,7 +522,9 @@ function transporteOperacoesRows_() {
       gmailMessageId: String(row[13] || '').trim(),
       anexos: row[14],
       ultimaVerificacao: row[15],
-      pdfHash: String(row[16] || '').trim()
+      pdfHash: String(row[16] || '').trim(),
+      temperaturaPdf: headers[17] === 'Temperatura_Geracao' ? String(row[17] || '').trim() : '',
+      generationRequestId: headers[18] === 'Geracao_ID' ? String(row[18] || '').trim() : ''
     };
   });
 }
@@ -562,7 +575,9 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     evidenciaEnvio[2],
     evidenciaEnvio[3],
     evidenciaEnvio[4],
-    pdfHash
+    pdfHash,
+    String(info.temperaturaPdf || '').trim(),
+    String(info.generationRequestId || '').trim()
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
   // Definir texto antes da escrita impede conversao de IDs em numeros.
@@ -694,7 +709,8 @@ function transporteOperacaoVersion_(item) {
     transporteOperacaoDate_(item.geradoEm), item.geradoPor, item.pdfId, item.pdfNome,
     item.rascunhoId, item.rascunhoStatus, item.rascunhoErro,
     transporteOperacaoDate_(item.emailIdentificadoEm), transporteOperacaoDate_(item.emailEnviadoEm),
-    item.gmailMessageId, item.anexos, transporteOperacaoDate_(item.ultimaVerificacao), item.pdfHash
+    item.gmailMessageId, item.anexos, transporteOperacaoDate_(item.ultimaVerificacao), item.pdfHash,
+    item.temperaturaPdf, item.generationRequestId
   ]);
 }
 
@@ -1871,6 +1887,7 @@ function transporteNormalizeTemperaturaFromCodex_(value) {
   var n = transporteNorm_(value);
   if (n.indexOf('congel') >= 0 && n.indexOf('ambient') >= 0) return 'AMBIENTE + CONGELADO';
   if (n.indexOf('congel') >= 0) return 'CONGELADO';
+  if (n.indexOf('refrig') >= 0 && n.indexOf('ambient') >= 0) return 'AMBIENTE + REFRIGERADO';
   if (n.indexOf('refrig') >= 0) return 'REFRIGERADO';
   if (n.indexOf('ambient') >= 0) return 'AMBIENTE';
   return String(value || '').trim().toUpperCase();
@@ -2570,6 +2587,7 @@ function transporteReadParticipantesOptions_() {
 }
 
 function getTransporteParticipantesOptions() {
+  codexAssertCanRead_();
   return transporteReadParticipantesOptions_();
 }
 
@@ -2873,6 +2891,10 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
     var options = transporteMeasurePerformance_('getTransporteBootstrap', 'options', { rowCount: 0 }, function() {
       return transporteReadOptions_({ includeParticipants: false });
     });
+    // Exibir a temperatura mista ja registrada sem ampliar as opcoes dos demais transportes.
+    if (registro.temperatura === 'AMBIENTE + REFRIGERADO' && options.temperaturas.indexOf(registro.temperatura) < 0) {
+      options.temperaturas = options.temperaturas.concat([registro.temperatura]);
+    }
     var ativos = registro.materiais.filter(function(m) { return m.ativo; });
     var totalTubos = ativos.reduce(function(sum, m) { return sum + (Number(m.tubos) || 0); }, 0);
     var totalVolume = ativos.reduce(function(sum, m) { return sum + (Number(m.total) || 0); }, 0);
@@ -2897,7 +2919,10 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
 }
 
 function getTransporteBootstrap() {
+  codexAssertCanRead_();
   return codexWithDocumentLock_('getTransporteBootstrap', function() {
+    // O acesso pode ter sido revogado enquanto aguardava outra gravacao.
+    codexAssertCanRead_();
     return transporteBuildBootstrap_();
   });
 }
@@ -3069,7 +3094,9 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
       return transporteSincronizarAgenda_(payload);
     });
   if (options.returnBootstrap === false) {
-    return { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync };
+    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync };
+    if (options.returnPreparedRecord === true) response.registro = transporteRegistroPreparado_(payload);
+    return response;
   }
   if (options.rascunho && options.returnPreparedRecord === true) {
     return { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.', registro: transporteRegistroPreparado_(payload) };
@@ -3690,16 +3717,18 @@ function transporteSincronizarAgenda_(payload) {
       warnings.push('Agenda ja possui AWB diferente para o transporte ' + slot + ' (' + awbAnterior + '). A AWB do Transporte (' + awb + ') nao foi sobrescrita automaticamente.');
     }
   }
-  if (slot === '1' && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
+  var slotRoman = { '1': 'I', '2': 'II', '3': 'III' }[slot];
+  if (slotRoman && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
     var awbAtualRange = agenda.getRange(linha, idx.awb + 1);
     var awbAtual = String(awbAtualRange.getDisplayValue() || awbAtualRange.getValue() || '').trim();
-    agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual);
+    agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual, slotRoman);
   }
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {
     codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
   }
   // Persistir a Agenda sob lock antes de devolver o bootstrap sincronizado.
   SpreadsheetApp.flush();
+  agendaInvalidateWindowCache_();
   return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: slot, awb: awb, campos: changes.map(function(c) { return c.field; }), warnings: warnings };
 }
 
@@ -3798,7 +3827,11 @@ function executarSandboxTransporteCodex(options) {
         item.pdf = gerarPdfTransporte({ marker: marker, courier: courier, criarRascunho: options.criarRascunhos, payload: payload });
         if (options.criarRascunhos) item.rascunho = 'Gerado automaticamente apos PDF.';
       } else if (options.criarRascunhos) {
-        item.rascunho = criarRascunhoTransporte_();
+        item.rascunho = codexWithDocumentLock_('sandboxRascunhoTransporte', function() {
+          // O diagnostico sem PDF valida o mesmo snapshot da documentacao preparada.
+          var manifesto = transporteValidarManifestoPdf_({ payload: payload });
+          return criarRascunhoTransporte_({ temperaturaPdf: manifesto.manifesto.temperatura });
+        });
       }
       if (String(item.pdf || '').indexOf('Erro') === 0 || String(item.rascunho || '').indexOf('Erro') === 0) {
         item.error = [item.pdf, item.rascunho].filter(function(v) {
@@ -4140,6 +4173,7 @@ function transporteMarcarDocsGeradosAgenda_(payload, result) {
 
 function gerarPdfTransporte(options) {
   return codexWithDocumentLock_('gerarPdfTransporte', function() {
+    var registroPersistido = null;
     TRANSPORTE_GENERATION_WARNINGS_ = [];
     try {
       var result = transporteMeasurePerformance_('gerarPdfTransporte', 'total', { rowCount: 1 }, function() {
@@ -4153,6 +4187,7 @@ function gerarPdfTransporte(options) {
         var replay = transporteGenerationReplay_(TRANSPORTE_GENERATION_REQUEST_.record);
         if (replay) return replay;
       }
+      options = Object.assign({}, options, { onRegistroPersistido_: function(registro) { registroPersistido = registro; } });
       return gerarPdfTransporteInterno_(options, access);
       });
       var docsSync = result && result.recovered ? transporteMarcarDocsGeradosAgenda_(options && options.payload, result) : null;
@@ -4173,6 +4208,8 @@ function gerarPdfTransporte(options) {
           transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: result, pdf: null, draft: null });
         }
       }
+      // O snapshot vai somente à resposta: não ocupa o registro durável de idempotência.
+      if (registroPersistido && result && typeof result === 'object') result.registro = registroPersistido;
       return result;
     } finally {
       TRANSPORTE_GENERATION_REQUEST_ = null;
@@ -4185,7 +4222,7 @@ function gerarPdfTransporte(options) {
 
 function gerarPdfTransporteInterno_(options, access) {
   transporteMeasurePerformance_('gerarPdfTransporte', 'prepare', { rowCount: 1 }, function() {
-    if (typeof imprimirTodasAbas !== 'function') throw new Error('FunÃƒÂ§ÃƒÂ£o imprimirTodasAbas nÃƒÂ£o encontrada.');
+    if (typeof imprimirTodasAbas_ !== 'function') throw new Error('FunÃƒÂ§ÃƒÂ£o imprimirTodasAbas_ nÃƒÂ£o encontrada.');
   });
   options = options || {};
   if (!options.requestedByEmail && access && access.userEmail) options.requestedByEmail = access.userEmail;
@@ -4197,8 +4234,10 @@ function gerarPdfTransporteInterno_(options, access) {
   if (options.payload) {
     savedTransport = salvarTransporteInterno_(options.payload, {
       returnBootstrap: false,
+      returnPreparedRecord: true,
       preencherDocumentos: true
     });
+    if (savedTransport && savedTransport.registro && typeof options.onRegistroPersistido_ === 'function') options.onRegistroPersistido_(savedTransport.registro);
   }
   // Persistir o preenchimento antes de validar o manifesto e gerar os documentos.
   SpreadsheetApp.flush();
@@ -4214,13 +4253,21 @@ function gerarPdfTransporteInterno_(options, access) {
         message: 'PDF recuperado. A criação do rascunho não foi retomada porque os modelos não puderam ser confirmados.' });
     }
   }
-  transporteGenerationCheckpoint_({ manifestHash: manifestoPdf.hash });
+  // Snapshot validado no servidor, compartilhado pelo exportador e pelo rascunho.
+  var temperaturaPdf = transporteNormalizeTemperaturaFromCodex_(manifestoPdf.manifesto && manifestoPdf.manifesto.temperatura);
+  options = Object.assign({}, options, { temperaturaPdf: temperaturaPdf });
+  if (request && request.record.pdf && request.record.pdf.temperaturaPdf) transporteValidarTemperaturaGeracao_(temperaturaPdf, request.record.pdf.temperaturaPdf);
+  transporteGenerationCheckpoint_({ manifestHash: manifestoPdf.hash, temperaturaPdf: temperaturaPdf, generationRequestId: options.generationRequestId || '' });
   var result = request && request.record.pdf ? Object.assign({}, request.record.pdf) : transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
-    return imprimirTodasAbas(options);
+    return imprimirTodasAbas_(options);
   });
   // O exportador legado retorna texto; a RPC deve sinalizar falha ao cliente.
   if (typeof result === 'string' && /^Erro\b/i.test(result)) throw new Error(result);
-  if (result && typeof result === 'object' && savedTransport) result.agendaSync = savedTransport.agendaSync;
+  if (result && typeof result === 'object') {
+    result.temperaturaPdf = temperaturaPdf;
+    result.generationRequestId = options.generationRequestId || '';
+    if (savedTransport) result.agendaSync = savedTransport.agendaSync;
+  }
   // O PDF já foi confirmado; falha posterior no Gmail não desfaz esta etapa.
   var docsSync = transporteMarcarDocsGeradosAgenda_(options.payload, result);
   if (docsSync) result.agendaSync = Object.assign({}, result.agendaSync || {}, docsSync);
@@ -4248,17 +4295,27 @@ function gerarPdfTransporteInterno_(options, access) {
   if (courier === 'PINEX') options.criarRascunho = false;
   if (options.criarRascunho) {
     var draft = transporteMeasurePerformance_('gerarPdfTransporte', 'draft', { rowCount: 1 }, function() {
-      if (request && request.record.draft) return request.record.draft;
+      if (request && request.record.draft) {
+        var recordedDraft = request.record.draft;
+        // Um rascunho anterior ja existe: nao validar seu corpo por inferencia nem duplicar.
+        if (courier === 'MARKEN' && (!recordedDraft.temperaturaPdf || transporteNormalizeTemperaturaFromCodex_(recordedDraft.temperaturaPdf) !== temperaturaPdf)) {
+          return Object.assign({}, recordedDraft, { ok: false, error: 'RECOVERY_REVIEW_REQUIRED',
+            message: 'O PDF e o rascunho existentes foram recuperados, mas a temperatura do rascunho não pôde ser confirmada. Confira o e-mail antes de enviar ou iniciar Nova geração.' });
+        }
+        return recordedDraft;
+      }
       return criarRascunhoTransporte_(result && typeof result === 'object' ? {
         pdfFileId: result.fileId,
         requestedByEmail: options.requestedByEmail || '',
         agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
         monitorRef: monitorRef,
-        pdfHash: result.manifestoPdfHash
+        pdfHash: result.manifestoPdfHash,
+        temperaturaPdf: temperaturaPdf
       } : {
         requestedByEmail: options.requestedByEmail || '',
         agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
-        monitorRef: monitorRef
+        monitorRef: monitorRef,
+        temperaturaPdf: temperaturaPdf
       });
     });
     var draftStatus = transporteDraftStatus_(draft);
@@ -4283,6 +4340,8 @@ function gerarPdfTransporteInterno_(options, access) {
             pdfId: result.fileId,
             pdfNome: result.fileName,
             pdfHash: result.manifestoPdfHash,
+            temperaturaPdf: temperaturaPdf,
+            generationRequestId: options.generationRequestId || '',
             rascunhoId: draftStatus.draftId,
             rascunhoOk: draftStatus.ok,
             rascunhoErro: draftStatus.message
@@ -4711,7 +4770,7 @@ function transporteAjustarVolumesDeclaracao_(declaracao, failOnOverflow) {
   return overflowRows;
 }
 
-function calcularTotalTubos(row) {
+function calcularTotalTubos_(row) {
   try {
     var ss = getTransporteSpreadsheetCodex_();
     var sheet = transporteCodexGetSheet_(ss, 'declaracaoTransp', true);
@@ -4725,7 +4784,7 @@ function calcularTotalTubos(row) {
   }
 }
 
-function calcularExpressaoLinha(row) {
+function calcularExpressaoLinha_(row) {
   try {
     var ss = getTransporteSpreadsheetCodex_();
     var sheet = transporteCodexGetSheet_(ss, 'declaracaoTransp', true);
@@ -5278,6 +5337,11 @@ function criarRascunhoEmail_(options) {
     var dataEnvio = cfg[4][0];
     var janelaEnvio = cfg[5][0];
     var courier = cfg[6][0];
+    var temperaturaConfirmada;
+    if (courier === 'MARKEN' || options.temperaturaPdf) {
+      temperaturaConfirmada = transporteValidarTemperaturaGeracao_(options.temperaturaPdf, temperatura);
+      temperatura = temperaturaConfirmada;
+    }
     var laboratorio = cfg[7][0];
     var awb = cfg[8][0];
     var agendadoPor = String(options.agendadoPor || folha.getRange('C13').getDisplayValue() || '').trim();
@@ -5304,7 +5368,7 @@ function criarRascunhoEmail_(options) {
       html = transporteCodexEmailHtml_(ss, 'emailOcasa', 'OCASA', saudacao);
     } else if (courier === 'MARKEN') {
       destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
-      html = transporteCodexEmailHtml_(ss, 'emailMarken', 'MARKEN', saudacao) || transporteCodexEmailFallbackHtml_(projeto, dataEnvio, laboratorio, awb, courier, saudacao);
+      html = transporteCodexEmailHtml_(ss, 'emailMarken', 'MARKEN', saudacao, temperaturaConfirmada);
     } else if (transporteIsDhl_(courier)) {
       destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, transporteReadSolicitarCaixa_(ss, courier, temperatura), saudacao);
@@ -5343,6 +5407,8 @@ function criarRascunhoEmail_(options) {
       attachments: attachments
     };
     if (cc.length) draftOptions.cc = cc.join(', ');
+    // Revalidar apos montar corpo e anexos, imediatamente antes do efeito Gmail.
+    if (temperaturaConfirmada) transporteValidarTemperaturaGeracao_(temperaturaConfirmada, folha.getRange('C6').getDisplayValue());
     transporteGenerationCheckpoint_({ phase: 'DRAFT_INTENT' });
     var draft = GmailApp.createDraft(destinatarios.join(', '), assunto, '', draftOptions);
     var draftId = '';
@@ -5353,12 +5419,13 @@ function criarRascunhoEmail_(options) {
     }
     if (TRANSPORTE_GENERATION_REQUEST_) {
       if (!draftId) throw new Error('Rascunho criado sem confirmação do ID. Confira o Gmail.');
-      transporteGenerationCheckpoint_({ phase: 'DRAFT_READY', draft: { ok: true, draftId: draftId, message: 'Rascunho recuperado.', userEmail: effectiveEmail, activeUserEmail: activeEmail, requestedByEmail: requestedByEmail } });
+      transporteGenerationCheckpoint_({ phase: 'DRAFT_READY', draft: { ok: true, draftId: draftId, temperaturaPdf: temperaturaConfirmada, message: 'Rascunho recuperado.', userEmail: effectiveEmail, activeUserEmail: activeEmail, requestedByEmail: requestedByEmail } });
     }
     return {
       ok: true,
       message: 'Rascunho criado com sucesso! Preserve a referência IPS-TRP no corpo ao enviar.',
       draftId: draftId,
+      temperaturaPdf: temperaturaConfirmada,
       monitorRef: refInterna,
       subject: assunto,
       recipients: destinatarios.join(', '),
@@ -5371,8 +5438,8 @@ function criarRascunhoEmail_(options) {
     return {
       ok: false,
       message: 'Erro ao criar rascunho: ' + error.toString(),
-      error: error.toString(),
-      authUrl: transporteGmailAuthorizationUrl_(),
+      error: error.code || error.toString(),
+      authUrl: error.code ? '' : transporteGmailAuthorizationUrl_(),
       userEmail: transporteEffectiveUserEmail_(),
       activeUserEmail: transporteActiveUserEmail_(),
       requestedByEmail: options && options.requestedByEmail ? transporteNormalizeEmail_(options.requestedByEmail) : ''
@@ -5612,6 +5679,7 @@ function transporteCeStatus_(projeto) {
 }
 
 function getTransporteCeStatus(projeto) {
+  codexAssertCanRead_();
   return transporteCeStatus_(projeto);
 }
 
@@ -5712,11 +5780,37 @@ function transporteCodexSaudacao_() {
   return hora < 12 ? 'Bom dia' : (hora < 18 ? 'Boa tarde' : 'Boa noite');
 }
 
-function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao) {
+function transporteErroTemperatura_(message) {
+  var error = new Error(message);
+  error.code = 'TRANSPORT_TEMPERATURE_MISMATCH';
+  return error;
+}
+
+function transporteValidarTemperaturaGeracao_(esperada, atual) {
+  var temperatura = transporteNormalizeTemperaturaFromCodex_(esperada);
+  if (!temperatura || temperatura !== transporteNormalizeTemperaturaFromCodex_(atual)) {
+    throw transporteErroTemperatura_('Não foi possível confirmar a mesma temperatura do PDF. Confira o Transporte e gere a documentação novamente. O rascunho não foi criado.');
+  }
+  return temperatura;
+}
+
+function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGeracao) {
   var sheet = transporteCodexGetSheet_(ss, sheetKey, false);
-  if (!sheet) return '';
+  if (!sheet) {
+    if (tipo === 'MARKEN') throw transporteErroTemperatura_('Modelo do e-mail MARKEN não encontrado. O rascunho não foi criado.');
+    return '';
+  }
   var range = sheet.getRange(tipo === 'OCASA' ? 'A1:B10' : 'A1:B9');
   var dados = range.getDisplayValues();
+  if (tipo === 'MARKEN') {
+    var temperatura = transporteValidarTemperaturaGeracao_(temperaturaGeracao, temperaturaGeracao);
+    var linhasTemperatura = dados.map(function(row, index) {
+      return index > 0 && transporteNorm_(row[0]).replace(/[:\s]+$/g, '') === 'temperatura' ? index : -1;
+    }).filter(function(index) { return index >= 0; });
+    if (linhasTemperatura.length !== 1) throw transporteErroTemperatura_('Não foi possível identificar uma única linha de temperatura no modelo do e-mail MARKEN. O rascunho não foi criado.');
+    // Somente a matriz em memoria recebe o snapshot; formulas e estilos ficam intactos.
+    dados[linhasTemperatura[0]][1] = temperatura;
+  }
   var backgrounds = range.getBackgrounds();
   var fontColors = range.getFontColors();
   var fontWeights = range.getFontWeights();
@@ -5860,6 +5954,15 @@ function transporteAplicarContatoEmergenciaPdf_(ss, courier, spec) {
 }
 
 function imprimirTodasAbas(options) {
+  codexAssertCanWrite_('imprimirTodasAbas', 'Transporte', '');
+  return codexWithDocumentLock_('imprimirTodasAbas', function() {
+    // Revalidar dentro do lock antes de preencher modelos ou criar arquivos.
+    codexAssertCanWrite_('imprimirTodasAbas', 'Transporte', '');
+    return imprimirTodasAbas_(options);
+  });
+}
+
+function imprimirTodasAbas_(options) {
   var workingCopyFile = null;
   try {
     options = options || {};
@@ -5873,6 +5976,7 @@ function imprimirTodasAbas(options) {
     var protocolo = String(cfg[1] || payloadFallback.protocolo || '').trim() || 'PASTA_PADRAO';
     var investigador = cfg[2] || payloadFallback.investigador;
     var temperatura = String(cfg[3] || payloadFallback.temperatura || '').trim();
+    if (options.temperaturaPdf) temperatura = transporteValidarTemperaturaGeracao_(options.temperaturaPdf, temperatura);
     var dataColeta = cfg[4] || transporteParseDate_(payloadFallback.dataColeta);
     var dataEnvio = cfg[5] || transporteParseDate_(payloadFallback.dataEnvio);
     var horaEnvio = String(cfg[6] || payloadFallback.horaEnvio || '').trim();
@@ -6005,6 +6109,7 @@ function imprimirTodasAbas(options) {
     var pdfId = pdfFile.getId();
     transporteGenerationCheckpoint_({ phase: 'PDF_READY', pdf: {
       ok: true, type: 'pdf', fileId: pdfId, fileName: blob.getName(), courier: courier, conteudoPdfHash: conteudoPdfHash,
+      temperaturaPdf: temperatura, generationRequestId: options.generationRequestId || '',
       fileUrl: 'https://drive.google.com/file/d/' + encodeURIComponent(pdfId) + '/view',
       downloadUrl: 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(pdfId),
       message: 'PDF recuperado. Confira o acesso ao arquivo no Drive.',
@@ -6025,6 +6130,8 @@ function imprimirTodasAbas(options) {
       message: 'PDF gerado no Drive: ' + blob.getName(),
       fileName: blob.getName(),
       courier: courier,
+      temperaturaPdf: temperatura,
+      generationRequestId: options.generationRequestId || '',
       fileId: pdfFile.getId(),
       fileUrl: pdfFile.getUrl(),
       downloadUrl: downloadUrl,

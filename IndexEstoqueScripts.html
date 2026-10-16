@@ -1510,6 +1510,7 @@
   var _pedidoInlineItens = [];
   var _pedidoInlineEdit = null;
   var _itemInlineEditId = '';
+  var _itemInlineEditStableId = '';
   var _itemInlineVisitasRequest = 0;
   var _itemInlineVinculosState = null;
   var _pedidoFiltroInicial = '';
@@ -1841,7 +1842,7 @@
         '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + (i.ordem === '' || i.ordem === undefined ? '<span style="color:#9aa3b0">—</span>' : esc(i.ordem)) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
         '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" ' + estoqueActionAttrs('item-editar', [encodeURIComponent(JSON.stringify(i))]) + '><span class="material-symbols-outlined">edit</span></button>' +
-        '<button class="icon-btn del" title="Excluir" ' + estoqueActionAttrs('item-excluir', [i.id, i.descricao]) + '><span class="material-symbols-outlined">delete</span></button>' +
+        '<button class="icon-btn del" title="Excluir" ' + estoqueActionAttrs('item-excluir', [i.idItem, i.descricao]) + '><span class="material-symbols-outlined">delete</span></button>' +
         '</div></td></tr>';
     }).join('') : '<tr><td colspan="9" style="text-align:center;color:#9aa3b0;padding:20px">Nenhum item encontrado.</td></tr>';
   }
@@ -2241,6 +2242,7 @@
     var projetos = {};
     ((_descarteData || {}).estoque || []).forEach(function(it) { if (it.projeto && Number(it.qtde || 0) > 0) projetos[it.projeto] = 1; });
     sel.innerHTML = '<option value="">— Selecione —</option>' + Object.keys(projetos).sort().map(function(p) { return '<option value="' + esc(p) + '">' + esc(p) + '</option>'; }).join('');
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('desProjeto');
   }
 
   function renderDescarteSolicitantes() {
@@ -2336,6 +2338,7 @@
     sel.innerHTML = '<option value="">— Selecione —</option>' + projetos.map(function(p) {
       return '<option value="' + esc(p.nome) + '">' + esc(p.nome) + '</option>';
     }).join('');
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('planProjeto');
   }
 
   function renderPlanejamentoSolicitantes() {
@@ -2939,6 +2942,7 @@
   function montarFormItemInline(item, dados, projetos) {
     _itemInlineVinculosState = null;
     _itemInlineEditId = item ? (item.id || '') : '';
+    _itemInlineEditStableId = item ? (item.idItem || '') : '';
     ['iiDescricao','iiOrdem','iiLocalizacao','iiEstoqueMin','iiObs'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
@@ -2958,6 +2962,8 @@
     document.getElementById('btnSalvarItemInline').disabled = false;
     var projSel = document.getElementById('iiProjeto');
     projSel.innerHTML = '<option value="">— Selecione —</option>';
+    projetos = (projetos || []).slice();
+    if (item && item.projeto && projetos.indexOf(item.projeto) < 0) projetos.push(item.projeto);
     projetos.forEach(function(proj) {
       projSel.insertAdjacentHTML('beforeend', '<option value="' + esc(proj) + '">' + esc(proj) + '</option>');
     });
@@ -2987,6 +2993,7 @@
       document.getElementById('iiEstoqueMin').value = item.estoqueMin || '';
       document.getElementById('iiObs').value = item.observacoes || '';
     }
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('iiProjeto');
     atualizarVisitasItemInline(item ? (item.visitasAplicaveisIds || []) : [], item ? (item.bracosAplicaveisIds || []) : []);
     abrirOverlay('modalItemInline');
   }
@@ -3125,6 +3132,7 @@
       })
       .salvarItemEstoque({
         id: _itemInlineEditId,
+        idItem: _itemInlineEditStableId,
         projeto: projeto,
         tipo: tipo,
         descricao: descricao,
@@ -3149,7 +3157,7 @@
             carregarEstoqueInline(true);
           })
           .withFailureHandler(function(e) { snackErro(e); })
-          .excluirItemEstoque(id);
+          .excluirItemEstoque({ idItem: id });
       }
     });
   }
@@ -3180,6 +3188,7 @@
     var projSel = document.getElementById('piProjeto');
     projSel.innerHTML = '<option value="">— Selecione —</option>';
     var projetosPedido = (dados.projetos && dados.projetos.length) ? dados.projetos.slice() : Object.keys(projLabs);
+    if (pedido && pedido.projeto && projetosPedido.indexOf(pedido.projeto) < 0) projetosPedido.push(pedido.projeto);
     projetosPedido.sort().forEach(function(proj) {
       projSel.insertAdjacentHTML('beforeend', '<option value="' + esc(proj) + '">' + esc(proj) + '</option>');
     });
@@ -3215,6 +3224,7 @@
         };
       });
     }
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('piProjeto');
     renderPedidoInlineItensForm();
     abrirOverlay('modalPedidoInline');
   }

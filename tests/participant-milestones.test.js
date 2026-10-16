@@ -12,7 +12,7 @@ function fixture() {
   const sheet = new FakeSheet('Participantes',[headers,row,other]);
   const book = new FakeSpreadsheet({ Participantes:sheet });
   const server = runFiles(['CadastroRules.gs','WebApp.gs'], {
-    Date, SpreadsheetApp:{getActiveSpreadsheet:()=>book}, Session:{getScriptTimeZone:()=> 'America/Sao_Paulo'},
+    Date, SpreadsheetApp:{getActiveSpreadsheet:()=>book, flush() {}}, Session:{getScriptTimeZone:()=> 'America/Sao_Paulo'},
     Utilities:{getUuid:()=> 'unique-test-id',formatDate:d=> [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
   });
   server.codexAssertCanWrite_ = () => {};
@@ -68,10 +68,40 @@ test('omissão dos marcos mantém datas; atualização parcial da Jornada conser
   const {server:s,payload:p,read} = fixture();
   s.salvarDadosParticipante(p);
   assert.equal(read().ULTIMA_DOSE,'2026-10-01');
-  s.salvarConfiguracaoCtmsParticipante_({idCadastro:'1',projeto:'Estudo',marcos:{RANDOMIZACAO:'2026-09-02'},marcosAtualizacaoParcial:true});
+  s.salvarConfiguracaoCtmsParticipante_({idCadastro:'1',projeto:'Estudo',marcos:{RANDOMIZACAO:'2026-09-02'},marcosParticipacaoBase:{RANDOMIZACAO:'2026-09-01'},marcosAtualizacaoParcial:true});
   assert.equal(read().RANDOMIZACAO,'2026-09-02');
   assert.equal(read().ULTIMA_DOSE,'2026-10-01');
   assert.equal(read().OUTRA,'2026-08-01');
+});
+
+test('configuração CTMS rejeita base obsoleta ou ausente antes de qualquer escrita', () => {
+  for (const base of [undefined, {}, { RANDOMIZACAO: '2026-08-01' }]) {
+    const {server:s,sheet} = fixture();
+    const before = JSON.stringify(sheet.rows);
+    assert.throws(() => s.salvarConfiguracaoCtmsParticipante_({ idCadastro:'1', projeto:'Estudo', marcos:{RANDOMIZACAO:'2026-09-02'}, marcosParticipacaoBase:base, marcosAtualizacaoParcial:true }), /mudaram/);
+    assert.equal(sheet.writes, 0);
+    assert.equal(JSON.stringify(sheet.rows), before);
+  }
+});
+
+test('CTMS lê regras sob lock, detecta concorrência e audita datas e escolhas efetivas', () => {
+  const {server:s,sheet,read} = fixture();
+  let locked = false;
+  const audits = [];
+  s.codexWithDocumentLock_ = (_, action) => { locked = true; try { return action(); } finally { locked = false; } };
+  s.getSoAVisitasProjeto = () => { assert.equal(locked, true); return [{ idSoA:'V1', criterioReferencias:'SELECAO_MANUAL', referencia:'RANDOMIZACAO', referenciaAlternativa:'ULTIMA_DOSE' }]; };
+  s.getBracosProjeto = () => { assert.equal(locked, true); return [{idBraco:'BR1'}]; };
+  s.SpreadsheetApp.flush = () => assert.equal(locked, true);
+  s.codexWriteAuditChanges_ = (...args) => { assert.equal(locked, true); audits.push(args); };
+  s.salvarConfiguracaoCtmsParticipante_({idCadastro:'1', projeto:'Estudo', bracoId:'BR1', escolhasReferencias:{V1:'ULTIMA_DOSE'}, marcos:{RANDOMIZACAO:'2026-09-02', ULTIMA_DOSE:''}, marcosParticipacaoBase:{RANDOMIZACAO:'2026-09-01', ULTIMA_DOSE:'2026-10-01'}, marcosAtualizacaoParcial:true});
+  assert.equal(read().RANDOMIZACAO, '2026-09-02');
+  assert.equal(read().ULTIMA_DOSE, undefined);
+  assert.equal(read().OUTRA, '2026-08-01');
+  assert.equal(audits[0][2], '1');
+  assert.equal(audits[0][3].length, 4);
+  const before = JSON.stringify(sheet.rows);
+  assert.throws(() => s.salvarConfiguracaoCtmsParticipante_({idCadastro:'1', projeto:'Estudo', marcos:{RANDOMIZACAO:'2026-09-03'}, marcosParticipacaoBase:{RANDOMIZACAO:'2026-09-01'}, marcosAtualizacaoParcial:true}), /mudaram/);
+  assert.equal(JSON.stringify(sheet.rows), before);
 });
 
 test('referência ausente fica pendente; decisão documentada calcula EOT sem usar a última dose', () => {

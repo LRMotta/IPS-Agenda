@@ -49,7 +49,7 @@ function soaPlanningPrepare_(payload) {
   if (poc || d.import_mode === 'preview_only') issue('draft', 'Este documento permite somente prévia e rascunho.');
   if (!Array.isArray(d.rules)) issue('rules', 'Informe rules como lista, mesmo quando vazia.', true);
   var rules = Array.isArray(d.rules) ? d.rules : [];
-  var timingRules = Object.create(null), ruleIds = Object.create(null);
+  var timingRules = Object.create(null), manualRules = Object.create(null), ruleIds = Object.create(null);
   var anchorReferences = { randomization_date: 'RANDOMIZACAO', inclusion_date: 'INCLUSAO', last_dose: 'ULTIMA_DOSE', end_of_treatment_date: 'FIM_TRATAMENTO', decision_to_permanently_discontinue: 'DECISAO_INTERRUPCAO_TRATAMENTO', progression_date: 'PROGRESSAO_DOENCA' };
   rules.forEach(function(r, i) {
     if (!soaPlanningObject_(r)) { issue('rule-object-' + i, 'Regra inválida.', true); return; }
@@ -70,7 +70,10 @@ function soaPlanningPrepare_(payload) {
       if (!soaPlanningSourceValid_(r.source) || typeof r.description !== 'string' || !r.description.trim() ||
           typeof r.reason !== 'string' || !r.reason.trim() || r.status !== 'requires_review' || (!linked && !administration)) {
         issue('manual-rule-' + i, 'A regra manual exige fonte, explicação e visitas por decisão manual: ' + (r.name || r.id || i) + '.');
-      } else notice('manual-rule-' + i, 'Conferência manual preservada: ' + (r.name || r.id) + '. ' + r.reason);
+      } else {
+        manualRules[r.id] = r;
+        notice('manual-rule-' + i, 'Conferência manual preservada: ' + (r.name || r.id) + '. ' + r.reason);
+      }
       return;
     }
     if (r.kind !== 'visit_timing' || r.status !== 'extracted' || !soaPlanningObject_(r.timing) || !soaPlanningObject_(r.source)) { issue('rules-review-' + i, 'Regra exige revisão: ' + (r.id || i) + '. Recorrências e condições permanecem no rascunho.'); return; }
@@ -106,9 +109,12 @@ function soaPlanningPrepare_(payload) {
     if (!soaPlanningObject_(original)) return original;
     var v = JSON.parse(JSON.stringify(original));
     if (v.rule_ids !== undefined) {
-      if (!Array.isArray(v.rule_ids) || v.rule_ids.length > 1 || v.rule_ids.some(function(id) { return typeof id !== 'string' || !timingRules[id]; })) issue('rule-link-' + v.id, 'Informe no máximo uma regra temporal suportada por visita.');
-      else if (v.rule_ids.length) {
-        var rule = timingRules[v.rule_ids[0]];
+      var timingIds = Array.isArray(v.rule_ids) ? v.rule_ids.filter(function(id) { return typeof id === 'string' && timingRules[id]; }) : [];
+      if (!Array.isArray(v.rule_ids) || timingIds.length > 1 || v.rule_ids.some(function(id) {
+        return typeof id !== 'string' || (!timingRules[id] && !(manualRules[id] && manualRules[id].visit_ids.indexOf(v.id) >= 0));
+      })) issue('rule-link-' + v.id, 'Informe regras válidas e no máximo uma regra temporal suportada por visita.');
+      else if (timingIds.length) {
+        var rule = timingRules[timingIds[0]];
         if (v.timing && !soaPlanningTimingEqual_(v.timing, rule.timing)) issue('rule-conflict-' + v.id, 'A regra e a visita apresentam tempos diferentes.');
         v.timing = v.timing || rule.timing;
         v.source = v.source || rule.source;
@@ -117,7 +123,7 @@ function soaPlanningPrepare_(payload) {
     return v;
   });
   rules.forEach(function(r,i) { if (r && timingRules[r.id] && !visits.some(function(v) { return v && Array.isArray(v.rule_ids) && v.rule_ids.indexOf(r.id) >= 0; })) issue('unused-rule-' + i, 'Regra temporal sem visita vinculada.'); });
-  var normalized = [];
+  var normalized = [], normalizedByIndex = [];
   visits.forEach(function(v, i) {
     if (!soaPlanningObject_(v)) { issue('visit-' + i, 'Visita inválida.', true); return; }
     keys(v, ['id','code','name','arm_ids','order','aliases','timing','source','status','note','rule_ids','metadata'].concat(catalog ? ['scheduling'] : []), 'visits.' + i);
@@ -134,7 +140,7 @@ function soaPlanningPrepare_(payload) {
       keys(scheduling, ['mode','reason'], 'scheduling.' + i);
       if (['manual','milestone','calculated'].indexOf(schedulingMode) < 0) issue('scheduling-mode-' + i, 'Modo de programação não suportado.');
       if (manual && (typeof scheduling.reason !== 'string' || !scheduling.reason.trim())) issue('scheduling-reason-' + i, 'Explique como programar a visita ' + (v.code || i) + ' manualmente.');
-      if (manual && (v.rule_ids || []).length) issue('manual-timing-rule-' + i, 'Uma visita manual não pode executar regra temporal compartilhada.');
+      if (manual && Array.isArray(v.rule_ids) && v.rule_ids.some(function(id) { return timingRules[id]; })) issue('manual-timing-rule-' + i, 'Uma visita manual não pode executar regra temporal compartilhada.');
       if (manual && v.status !== 'extracted' && v.status !== 'requires_review') issue('manual-status-' + i, 'Estado de revisão inválido para ' + (v.code || i) + '.');
       if (schedulingMode === 'milestone' && Object.keys(t).length) issue('milestone-timing-' + i, 'O marco usa a própria data realizada, sem deslocamento ou tolerância presumidos.');
     }
@@ -179,12 +185,13 @@ function soaPlanningPrepare_(payload) {
       papelCronograma: manual ? (schedulingMode === 'milestone' ? 'MARCO_CALCULO' : 'NAO_PARTICIPA_CALCULO') : 'VISITA_CALCULADA', referenciaAlternativa: previous.referenciaAlternativa || '',
       criterioReferencias: previous.criterioReferencias || '', existente: !!matches.length, ordemManual: !!previous.ordemManual
     });
+    normalizedByIndex[i] = normalized[normalized.length - 1];
   });
   visits.forEach(function(v, i) {
     if (!soaPlanningObject_(v) || (catalog && v.scheduling && v.scheduling.mode === 'manual') || !v.timing || v.timing.anchor !== 'visit') return;
     var target = visits.filter(function(x) { return x && x.id === v.timing.anchor_visit_id; })[0];
     if (!target || target === v || !Array.isArray(target.arm_ids) || !Array.isArray(v.arm_ids) || (target.arm_ids.length && (!v.arm_ids.length || v.arm_ids.some(function(a) { return target.arm_ids.indexOf(a) < 0; })))) issue('reference-' + i, 'Referência de visita ausente, circular ou incompatível com os braços.');
-    if (normalized[i]) normalized[i].referencia = ids[v.timing.anchor_visit_id] || '';
+    if (normalizedByIndex[i]) normalizedByIndex[i].referencia = ids[v.timing.anchor_visit_id] || '';
     if (catalog && target && target.scheduling && target.scheduling.mode === 'manual') issue('manual-reference-' + i, 'Use um marco de cálculo, e não uma visita manual, como referência de ' + (v.code || i) + '.');
     var seen = Object.create(null), cursor = v;
     while (cursor && cursor.timing && cursor.timing.anchor === 'visit') { if (seen[cursor.id]) { issue('cycle-' + i, 'Há um ciclo nas referências de visitas.'); break; } seen[cursor.id] = true; cursor = visits.filter(function(x) { return x && x.id === cursor.timing.anchor_visit_id; })[0]; }

@@ -104,14 +104,14 @@ function itemFixture() {
     return elements[id];
   }
   const c = loadFunctions({
-    _itemInlineEditId: '', _itemInlineVisitasRequest: 0, _itemInlineVinculosState: null,
+    _itemInlineEditId: '', _itemInlineEditStableId: '', _itemInlineVisitasRequest: 0, _itemInlineVinculosState: null,
     ESTOQUE_CONFIG: { laboratorios: ['Lab'], localizacoes: ['Principal'], tiposItem: ['Kit', 'Material'] },
     document: { getElementById: element, querySelectorAll: selector => element(selector.split(' ')[0].slice(1)).checks.filter(i => i.checked) },
     google: { script: { run: fakeRunner(requests) } }, esc: v => String(v),
     appSetStatus() {}, appErrorMessage: e => e.message, abrirOverlay() {}, fecharOverlay() {}, snack() {}, carregarEstoqueInline() {}
   }, ['montarFormItemInline', 'itemInlinePermiteVinculoSoA', 'visitasSelecionadasItemInline',
     'bracosSelecionadosItemInline', 'ordenarVisitasSoAItemInline', 'atualizarVisitasItemInline', 'validarCampoItemInline', 'salvarItemInline']);
-  c.montarFormItemInline({ id: '2', projeto: 'A', tipo: 'Kit', descricao: 'Kit', laboratorio: 'Lab', visitasAplicaveisIds: ['V1'], bracosAplicaveisIds: ['B1'] }, {}, ['A', 'B']);
+  c.montarFormItemInline({ id: '2', idItem: '0001', projeto: 'A', tipo: 'Kit', descricao: 'Kit', laboratorio: 'Lab', visitasAplicaveisIds: ['V1'], bracosAplicaveisIds: ['B1'] }, {}, ['A', 'B']);
   return { c, requests, element };
 }
 

@@ -296,7 +296,7 @@ test('PDF interrompe antes de acessar Drive quando a participacao nao pode ser r
   let driveCalls = 0;
   const s = server({ DriveApp: { getFileById() { driveCalls++; throw new Error('Drive proibido'); } } });
   s.transporteReadParticipantesDireto_ = () => [];
-  assert.match(s.imprimirTodasAbas({ payload: { paciente: 'Pessoa A', participanteCadastroId: 'INEXISTENTE' } }), /Erro ao gerar PDF:.*inequívoca/);
+  assert.match(s.imprimirTodasAbas_({ payload: { paciente: 'Pessoa A', participanteCadastroId: 'INEXISTENTE' } }), /Erro ao gerar PDF:.*inequívoca/);
   assert.equal(driveCalls, 0);
 });
 
@@ -418,4 +418,16 @@ test('salvamento publico ignora tentativa de fornecer cadastro compartilhado pel
   assert.equal(result.registro.paciente, 'Pessoa A');
   assert.equal(result.registro.identificacaoParticipante, '123');
   assert.equal(result.registro.protocolo, 'Projeto A');
+});
+
+test('salvamento leve devolve registro normalizado quando solicitado pelo cliente', () => {
+  const { s, payload } = saveFixture();
+  payload.courier = 'dhl';
+  payload.materiais = [{ ativo: true, material: 'Sangue', formula: '2x0,003', unit: 'L', ensaio: 'PCR' }];
+  s.transporteDateOut_ = value => value ? value.toISOString().slice(0, 10) : '';
+  const response = s.salvarTransporteInterno_(payload, { returnBootstrap: false, returnPreparedRecord: true, preencherDocumentos: false });
+  assert.equal(response.registro.courier, payload.courier);
+  assert.equal(response.registro.materiais[0].tubos, 2);
+  assert.equal(response.registro.materiais[0].total, 0.006);
+  assert.equal(response.registro.materiais[0].ensaio, 'PCR');
 });

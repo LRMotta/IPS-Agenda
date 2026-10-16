@@ -67,6 +67,7 @@ class FakeSheet {
     this.name = name;
     this.rows = (rows || []).map((row) => row.slice());
     this.maxColumns = this.rows.reduce((max, row) => Math.max(max, row.length), 0);
+    this.maxRows = Math.max(1000, this.rows.length);
     this.writes = 0;
     this.numberFormats = [];
   }
@@ -106,6 +107,8 @@ class FakeSheet {
 
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows.reduce((max, row) => Math.max(max, row.length), 0); }
+  getMaxRows() { return Math.max(this.maxRows, this.rows.length); }
+  insertRowsAfter(afterPosition, howMany) { this.maxRows = Math.max(this.maxRows, afterPosition + howMany); return this; }
   getMaxColumns() { return Math.max(this.maxColumns, this.getLastColumn()); }
   insertColumnsAfter(afterPosition, howMany) {
     const targetColumns = afterPosition + howMany;

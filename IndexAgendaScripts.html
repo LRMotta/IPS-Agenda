@@ -4558,6 +4558,13 @@
     return agendaWindowMemoryCacheCloneResponse_(cached);
   }
 
+  function invalidarAgendaEventosCliente_() {
+    setAgendaEventosLoadedAtState(0);
+    agendaWindowMemoryCacheClear_();
+    _agendaEventosRequestId++;
+    _agendaBootstrapInFlightRequestId = 0;
+  }
+
   function agendaWindowMemoryCacheClear_() {
     _agendaWindowMemoryCache = {};
     _agendaWindowMemoryCacheOrder = [];
