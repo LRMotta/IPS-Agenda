@@ -426,6 +426,7 @@ function getCadastrosBootstrapData(page) {
     out.solicitantes = codexGetExamRequesterUsers_(readSnapshot.users);
     out.couriers = getAgendaCourierRows_();
     out.temperaturas = getAgendaTemperaturas_();
+    out.laboratoriosTransporte = getProjetoCaixasLaboratorios_();
   } else if (page === 'monitores') {
     out.data = getMonitores();
     out.projetos = getProjetosMonitoria_();
@@ -4049,6 +4050,7 @@ function getProjetosDadosInterno_(incluirSiv) {
   var courierCols = projetoCourierColumnMap_(dados[0] || []);
   var courierTempCols = projetoCourierTemperatureColumnMap_(dados[0] || []);
   var situacaoEnvioCol = projetoSituacaoEnvioColumn_(dados[0] || []);
+  var caixasTransporteCol = projetoCaixasTransporteColumn_(dados[0] || []);
   var soaConfigCols = projetoSoAConfigColumnMap_(dados[0] || []);
   var ressarcimentoCols = projetoRessarcimentoColumnMap_(dados[0] || []);
   var statsPorProjeto = measureDashboardProjetos_('participants_stats', function() { return getParticipantesStatsPorProjeto_(); });
@@ -4100,6 +4102,7 @@ function getProjetosDadosInterno_(incluirSiv) {
       courierAdicional1Temperaturas: courierTempCols.adicional1 >= 0 ? String(r[courierTempCols.adicional1] || '').trim() : '',
       courierAdicional2Temperaturas: courierTempCols.adicional2 >= 0 ? String(r[courierTempCols.adicional2] || '').trim() : '',
       situacaoEnvioAmostras: situacaoEnvioCol >= 0 ? String(r[situacaoEnvioCol] || '').trim() : '',
+      caixasTransporteJson: caixasTransporteCol >= 0 ? String(r[caixasTransporteCol] || '').trim() : '',
       soaBaseCalculoPadrao: soaConfigCols.baseCalculoPadrao >= 0 ? soaNormalizarBaseCalculo_(r[soaConfigCols.baseCalculoPadrao]) : '',
       ctmsJornadaAtivo: soaConfigCols.ctmsJornadaAtivo >= 0 && ['sim', 'true', '1'].indexOf(normText_(r[soaConfigCols.ctmsJornadaAtivo])) >= 0,
       ressarcimentoPadraoParticipante: ressarcimentoCols.participante >= 0 ? r[ressarcimentoCols.participante] : '',
@@ -6019,6 +6022,64 @@ function gravarProjetoCourierIds_(aba, rowNumber, dados) {
   });
 }
 
+function projetoCaixasTransporteColumn_(headers) {
+  return (headers || []).map(function(header) { return normText_(header); }).indexOf(normText_('Caixas especiais transporte (JSON)'));
+}
+
+// Leitura de catálogo não cria a aba nem completa cabeçalhos legados.
+function getProjetoCaixasLaboratorios_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('LabCentral');
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return sheet.getDataRange().getValues().slice(1).filter(function(row) { return row[0] && row[1]; }).map(function(row) {
+    return { id: String(row[0]), nome: String(row[1]), nomeAbreviado: String(row[1]), nomeCompleto: String(row[2] || '') };
+  });
+}
+
+function normalizarProjetoCaixasTransporte_(value) {
+  var regras = value;
+  if (!value) return '[]';
+  if (typeof value === 'string') {
+    if (value.length > 20000) throw new Error('Há muitas regras de caixas especiais.');
+    try { regras = JSON.parse(value); } catch { throw new Error('As regras de caixas especiais são inválidas.'); }
+  }
+  if (!Array.isArray(regras) || regras.length > 100) throw new Error('As regras de caixas especiais são inválidas.');
+  if (!regras.length) return '[]';
+  var couriers = Object.create(null);
+  getAgendaCourierRows_().forEach(function(c) { couriers[String(c.id || '')] = c; });
+  var labs = Object.create(null);
+  getProjetoCaixasLaboratorios_().forEach(function(lab) { labs[lab.id] = true; });
+  var usadas = Object.create(null);
+  return JSON.stringify(regras.map(function(regra) {
+    regra = regra || {};
+    var courierId = String(regra.courierId || '').trim();
+    var laboratorioId = String(regra.laboratorioId || '').trim();
+    var tipoCaixa = String(regra.tipoCaixa || '').trim().toUpperCase();
+    var temperatura = String(regra.temperatura || '').trim().toUpperCase();
+    var courier = couriers[courierId];
+    if (!courier || courier.disponivelProjetos === false) throw new Error('Selecione uma courier disponível para a caixa especial.');
+    var nome = normText_(courier.nome || courier.courier || '');
+    if (temperatura !== 'AMBIENTE' || !((tipoCaixa === 'BIOSYSTEM' && nome === 'marken') || (tipoCaixa === 'SEPIO' && nome === 'ocasa'))) {
+      throw new Error('Use BioSystem para Marken ou Sepio para Ocasa, sempre em temperatura Ambiente.');
+    }
+    if (!labs[laboratorioId]) throw new Error('Selecione um laboratório cadastrado para a caixa especial.');
+    var key = courierId + '|' + temperatura + '|' + laboratorioId;
+    if (usadas[key]) throw new Error('Já existe uma regra de caixa especial para essa courier, temperatura e laboratório.');
+    usadas[key] = true;
+    return { courierId: courierId, temperatura: temperatura, laboratorioId: laboratorioId, tipoCaixa: tipoCaixa };
+  }));
+}
+
+function gravarProjetoCaixasTransporte_(aba, rowNumber, dados) {
+  if (!Object.prototype.hasOwnProperty.call(dados, 'caixasTransporteJson')) return;
+  var headers = aba.getRange(1, 1, 1, Math.max(aba.getLastColumn(), 1)).getDisplayValues()[0];
+  var col = projetoCaixasTransporteColumn_(headers);
+  if (col < 0) {
+    col = headers.length;
+    aba.getRange(1, col + 1).setValue('Caixas especiais transporte (JSON)');
+  }
+  aba.getRange(rowNumber, col + 1).setValue(dados.caixasTransporteJson);
+}
+
 function salvarDadosProjeto(dados) {
   codexAssertCanWrite_('salvarDadosProjeto', 'Cadastros', dados && dados.id);
   return codexWithDocumentLock_('salvarDadosProjeto', function() {
@@ -6050,6 +6111,10 @@ function salvarDadosProjeto(dados) {
   if (projetoCourierPayloadPresente_(dados)) validarProjetoCourierIds_(dados, { legadosPorCampo: couriersLegadosPorCampo });
   if (projetoSoAConfigPayloadPresente_(dados)) validarProjetoSoAConfig_(dados);
   var ressarcimentos = validarProjetoRessarcimentos_(dados);
+  if (Object.prototype.hasOwnProperty.call(dados, 'caixasTransporteJson')) {
+    dados.caixasTransporteJson = normalizarProjetoCaixasTransporte_(dados.caixasTransporteJson);
+    if (dados.situacaoEnvioAmostras === 'Não' && dados.caixasTransporteJson !== '[]') throw new Error('Um projeto sem envio de amostras não pode ter caixa especial configurada.');
+  }
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
@@ -6073,6 +6138,7 @@ function salvarDadosProjeto(dados) {
           dados.tituloCompleto || ''
         ]]);
         gravarProjetoCourierIds_(aba, i + 1, dados);
+        gravarProjetoCaixasTransporte_(aba, i + 1, dados);
         gravarProjetoSoAConfig_(aba, i + 1, dados);
         if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, i + 1, ressarcimentos);
         // Persistir o cadastro antes de liberar o lock e invalidar referências.
@@ -6105,6 +6171,7 @@ function salvarDadosProjeto(dados) {
       dados.tituloCompleto || ''
     ]);
     gravarProjetoCourierIds_(aba, aba.getLastRow(), dados);
+    gravarProjetoCaixasTransporte_(aba, aba.getLastRow(), dados);
     gravarProjetoSoAConfig_(aba, aba.getLastRow(), dados);
     if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, aba.getLastRow(), ressarcimentos);
     // Persistir as alterações enquanto o lock ainda é exclusivo.

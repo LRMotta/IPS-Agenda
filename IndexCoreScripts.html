@@ -5301,6 +5301,9 @@ var PATS_PROJ = [];
 var CROS_PROJ = [];
 var STATUS_PROJ = [];
 var COURIERS_PROJ = [];
+var LABORATORIOS_TRANSPORTE_PROJ = [];
+var _projetoCaixasTransporte = [];
+var _projetoCaixasTransporteErro = '';
 var TEMPERATURAS_PROJ = [];
 
 var _projetos         = [];
@@ -5383,6 +5386,7 @@ function carregarProjetos(force) {
       CROS_PROJ = cfg.cros || [];
       STATUS_PROJ = cfg.status || [];
       COURIERS_PROJ = ((res && res.couriers) || []).slice();
+      LABORATORIOS_TRANSPORTE_PROJ = ((res && res.laboratoriosTransporte) || []).slice();
       TEMPERATURAS_PROJ = ((res && res.temperaturas) || []).slice();
       preencherSelectProjeto('pFase', cfg.fases || [], '', '--');
       preencherSelectProjeto('pStatus', STATUS_PROJ, '', '— Selecione —');
@@ -5861,6 +5865,73 @@ function abrirJornadaParticipante(participante) {
 
 function projetoCourierSelectIds_() {
   return ['pCourierPrincipal', 'pCourierAdicional1', 'pCourierAdicional2'];
+}
+
+function carregarProjetoCaixasTransporte_(value) {
+  _projetoCaixasTransporteErro = '';
+  try {
+    var regras = value ? JSON.parse(value) : [];
+    if (!Array.isArray(regras) || regras.some(function(regra) { return !regra || typeof regra !== 'object' || Array.isArray(regra); })) throw new Error('invalid');
+    _projetoCaixasTransporte = regras;
+  } catch (e) {
+    _projetoCaixasTransporte = [];
+    _projetoCaixasTransporteErro = 'Não foi possível ler as regras de caixas deste projeto. Reabra o cadastro antes de salvar.';
+  }
+  renderProjetoCaixasTransporte_();
+}
+
+function renderProjetoCaixasTransporte_() {
+  var list = document.getElementById('pCaixasTransporteList');
+  if (!list) return;
+  function options(items, selected, label) {
+    var html = '<option value="">— Selecione —</option>' + items.map(function(item) { return '<option value="' + esc(item.id) + '"' + (item.id === selected ? ' selected' : '') + '>' + esc(item[label]) + '</option>'; }).join('');
+    if (selected && !items.some(function(item) { return item.id === selected; })) html += '<option value="' + esc(selected) + '" selected>Cadastro indisponível (' + esc(selected) + ')</option>';
+    return html;
+  }
+  var couriers = COURIERS_PROJ.filter(function(c) { return c.disponivelProjetos !== false && ['marken', 'ocasa'].indexOf(normSelectValue(c.nome)) >= 0; });
+  list.innerHTML = _projetoCaixasTransporte.map(function(regra, index) {
+    var courier = couriers.filter(function(c) { return c.id === regra.courierId; })[0];
+    var tipo = courier ? (normSelectValue(courier.nome) === 'marken' ? 'BioSystem' : 'Sepio') : 'Selecione a courier';
+    return '<div class="form-section" style="padding:14px;margin-bottom:12px"><div class="field-row cols-2"><div><label class="field-label" for="pCaixaCourier' + index + '">Courier</label><select id="pCaixaCourier' + index + '" class="f-input f-select" onchange="alterarProjetoCaixaTransporte(' + index + ',\'courierId\',this.value)">' + options(couriers, regra.courierId, 'nome') + '</select></div><div><label class="field-label" for="pCaixaTemp' + index + '">Temperatura</label><select id="pCaixaTemp' + index + '" class="f-input f-select" disabled><option>Ambiente</option></select></div><div><label class="field-label" for="pCaixaLab' + index + '">Laboratório</label><select id="pCaixaLab' + index + '" class="f-input f-select" onchange="alterarProjetoCaixaTransporte(' + index + ',\'laboratorioId\',this.value)">' + options(LABORATORIOS_TRANSPORTE_PROJ, regra.laboratorioId, 'nome') + '</select></div><div><label class="field-label">Caixa especial</label><div class="field-help">' + esc(tipo) + '</div><button type="button" class="btn-txt" onclick="removerProjetoCaixaTransporte(' + index + ')">Remover regra</button></div></div></div>';
+  }).join('') || '<div class="field-help" style="margin-bottom:14px">Nenhuma caixa especial configurada.</div>';
+  var error = document.getElementById('errPCaixasTransporte');
+  if (error) { error.textContent = _projetoCaixasTransporteErro; error.classList.toggle('visible', !!_projetoCaixasTransporteErro); }
+}
+
+function adicionarProjetoCaixaTransporte() {
+  _projetoCaixasTransporte.push({ courierId: '', temperatura: 'AMBIENTE', laboratorioId: '', tipoCaixa: '' });
+  renderProjetoCaixasTransporte_();
+}
+
+function removerProjetoCaixaTransporte(index) {
+  _projetoCaixasTransporte.splice(index, 1);
+  renderProjetoCaixasTransporte_();
+}
+
+function alterarProjetoCaixaTransporte(index, field, value) {
+  var regra = _projetoCaixasTransporte[index];
+  if (!regra) return;
+  regra[field] = value;
+  if (field === 'courierId') {
+    var courier = COURIERS_PROJ.filter(function(c) { return c.id === value; })[0];
+    regra.tipoCaixa = courier ? (normSelectValue(courier.nome) === 'marken' ? 'BIOSYSTEM' : 'SEPIO') : '';
+    renderProjetoCaixasTransporte_();
+  }
+}
+
+function validarProjetoCaixasTransporte_() {
+  var usadas = {};
+  var erro = _projetoCaixasTransporteErro;
+  _projetoCaixasTransporte.forEach(function(regra) {
+    var key = regra.courierId + '|' + regra.temperatura + '|' + regra.laboratorioId;
+    if (!regra.courierId || !regra.laboratorioId || !regra.tipoCaixa) erro = 'Selecione courier e laboratório em cada regra de caixa.';
+    if (usadas[key]) erro = 'Use apenas uma regra para cada combinação de courier, temperatura e laboratório.';
+    usadas[key] = true;
+  });
+  if (_projetoCaixasTransporte.length && document.getElementById('pSituacaoEnvioAmostras').value === 'Não') erro = 'Um projeto sem envio de amostras não pode ter caixa especial configurada.';
+  var el = document.getElementById('errPCaixasTransporte');
+  if (el) { el.textContent = erro; el.classList.toggle('visible', !!erro); }
+  return !erro;
 }
 
 function projetoCourierTemperaturaIds_() {
@@ -7292,6 +7363,7 @@ function abrirFormProjeto(projeto) {
   if (typeof projeto === 'string') {
     try { projeto = JSON.parse(projeto); } catch (e) { projeto = null; }
   }
+  carregarProjetoCaixasTransporte_(projeto && projeto.caixasTransporteJson);
   var campos = ['pNome', 'pCodigo', 'pMeta', 'pEsp', 'pIP', 'pSub1', 'pSub2', 'pCoord', 'pPat', 'pCRO', 'pCentro', 'pNumeroCE', 'pExpedienteCE', 'pTituloCompleto', 'pRessarcimentoParticipante', 'pRessarcimentoAcompanhante'];
   campos.forEach(function(id) {
     var input = document.getElementById(id);
@@ -7382,6 +7454,7 @@ function formatarRessarcimentoProjetoInput(input) {
 function salvarProjetoApp() {
   var btn = document.getElementById('btnSalvarProj');
   var nome = document.getElementById('pNome').value.trim();
+  if (!validarProjetoCaixasTransporte_()) return;
   if (!validarProjetoCouriers_(true)) {
     appSetStatus('statusProj', '⚠ Selecione couriers diferentes e associe temperatura somente a uma courier.', '#e53935');
     return;
@@ -7395,6 +7468,7 @@ function salvarProjetoApp() {
   ], { status: 'statusProj' })) return;
   var payload = {
     id: document.getElementById('editProjId').value,
+    caixasTransporteJson: JSON.stringify(_projetoCaixasTransporte),
     nomeAbreviado: nome,
     codigo: document.getElementById('pCodigo').value.trim(),
     fase: document.getElementById('pFase').value,

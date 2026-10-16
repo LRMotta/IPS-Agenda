@@ -33,7 +33,7 @@ test('hash do documento detecta quantidade, precisao, datas, observacao e respon
 
 function automation(s, values) {
   const writes = {};
-  const folha = {};
+  const folha = { getRange: () => ({ getNote: () => '' }) };
   const document = { getRange: address => ({ setValue: value => { writes[address] = value; } }) };
   s.transporteCodexGetSheet_ = (_ss, key) => key === 'folhaAgendamento' ? folha : document;
   s.getCellValueSafe = (_sheet, cell) => values[cell] || '';
