@@ -6,7 +6,7 @@
 
 <!-- ══ MODAL PROJETO ══ -->
 <div class="modal-overlay" id="modalProjeto" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalProjeto')">
-  <div class="modal-box" style="max-width:900px;" role="dialog" aria-labelledby="modalProjTitle" tabindex="-1">
+  <div class="modal-box project-workflow-box" role="dialog" aria-labelledby="modalProjTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
       <div>
@@ -235,11 +235,12 @@
         <div class="field-error" id="errPCouriers">Use couriers diferentes. Projetos sem envio não podem ter courier ou temperatura vinculada.</div>
       </div>
 
-      <div class="form-section">
+      <div class="form-section" id="projetoCaixasSection">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span> Caixas especiais de transporte</div>
-        <div class="field-help" style="margin-bottom:14px">Regras deste projeto por courier, temperatura e laboratório. BioSystem: Marken, Ambiente, e-mail operacoes.cs@marken.com, Invoice 2 kg e fornecer caixa Sim. Sepio: Ocasa, Ambiente, sem alteração no e-mail ou nos documentos.</div>
+        <div class="field-help" style="margin-bottom:14px">A caixa é aplicada automaticamente quando o transporte deste projeto corresponde à courier, à temperatura e ao laboratório da regra.</div>
         <div id="pCaixasTransporteList"></div>
         <button type="button" class="btn-txt" onclick="adicionarProjetoCaixaTransporte()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar regra de caixa</button>
+        <p class="project-box-rules-note" id="pCaixasTransporteEstado" role="status" aria-live="polite"></p>
         <div class="field-error" id="errPCaixasTransporte" role="alert"></div>
       </div>
 
@@ -270,9 +271,12 @@
         <div class="soa-visita-list" id="pBracosProjetoList"><div class="soa-visita-empty">Nenhum braço cadastrado.</div></div>
       </div>
 
+    </div>
+    <div class="project-modal-footer">
       <div class="status-msg" id="statusProj" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button type="button" class="btn-txt" onclick="fecharOverlay('modalProjeto')">Cancelar</button>
       <button class="btn-save" id="btnSalvarProj" onclick="salvarProjetoApp()">
-        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CADASTRO
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar cadastro
       </button>
     </div>
   </div>
@@ -280,7 +284,7 @@
 
 <!-- MODAL BRAÇO DO PROJETO -->
 <div class="modal-overlay" id="modalBracoProjeto" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalBracoProjeto')">
-  <div class="modal-box" style="max-width:520px;" role="dialog" aria-labelledby="modalBracoProjetoTitle" tabindex="-1">
+  <div class="modal-box project-workflow-box" style="max-width:520px;" role="dialog" aria-labelledby="modalBracoProjetoTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">call_split</span></div>
       <div><div class="modal-header-title" id="modalBracoProjetoTitle">ADICIONAR BRAÇO</div><div class="modal-header-sub" id="modalBracoProjetoSub">Catálogo opcional do protocolo</div></div>
@@ -293,6 +297,8 @@
         <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="bracoProjetoOrdem">Ordem</label><input type="number" id="bracoProjetoOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div><div style="display:flex;align-items:flex-end;padding-bottom:8px;"><label class="soa-active-toggle"><input type="checkbox" id="bracoProjetoAtivo" checked> Braço ativo</label></div></div>
         <div class="field"><label class="field-label" for="bracoProjetoObs">Observações</label><textarea id="bracoProjetoObs" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Notas sobre randomização ou nomenclatura"></textarea></div>
       </div>
+    </div>
+    <div class="project-modal-footer">
       <div class="status-msg" id="statusBracoProjeto" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalBracoProjeto')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarBracoProjeto" onclick="salvarBracoProjetoApp()"><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar braço</button></div>
     </div>
@@ -301,7 +307,7 @@
 
 <!-- MODAL IMPORTAÇÃO SoA -->
 <div class="modal-overlay" id="modalSoAImport" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAImport')">
-  <div class="modal-box soa-import-modal-box" role="dialog" aria-labelledby="modalSoAImportAccessibleTitle" tabindex="-1">
+  <div class="modal-box soa-import-modal-box project-workflow-box" role="dialog" aria-labelledby="modalSoAImportAccessibleTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span></div>
       <div><div class="modal-header-title" id="modalSoAImportAccessibleTitle">IMPORTAR CALENDÁRIO SoA</div><div class="modal-header-sub" id="soaImportSubtitle">Prévia segura antes de gravar</div></div>
@@ -316,7 +322,7 @@
       <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" onchange="invalidarPreviaImportacaoSoA_()" checked> Criar braços ausentes no catálogo</label></div>
       <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
     </div>
-    <div class="soa-import-footer">
+    <div class="soa-import-footer project-modal-footer">
       <label id="soaImportRevisaoBox" class="soa-import-check" hidden><input type="checkbox" id="soaImportRevisado" onchange="atualizarRevisaoPlanejamentoSoAApp()"> Conferi as visitas, os braços, as referências, as janelas e os agendamentos manuais desta prévia.</label>
       <div class="status-msg" id="statusSoAImport" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-txt" id="btnSalvarPlanejamentoSoA" onclick="salvarPlanejamentoSoAApp()" disabled>Salvar rascunho</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar calendário</button></div>
@@ -326,7 +332,7 @@
 
 <!-- MODAL REPLICAÇÃO DE CICLOS SoA -->
 <div class="modal-overlay" id="modalSoAReplicarCiclo" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAReplicarCiclo')">
-  <div class="modal-box soa-cycle-modal-box" role="dialog" aria-labelledby="modalSoAReplicarCicloAccessibleTitle" tabindex="-1">
+  <div class="modal-box soa-cycle-modal-box project-workflow-box" role="dialog" aria-labelledby="modalSoAReplicarCicloAccessibleTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></div>
       <div><div class="modal-header-title" id="modalSoAReplicarCicloAccessibleTitle">REPLICAR CICLO</div><div class="modal-header-sub" id="soaCycleSubtitle">Gerar visitas a partir de um ciclo-modelo</div></div>
@@ -340,6 +346,8 @@
         <div><label class="field-label" for="soaCycleDestinos">Ciclos de destino</label><input type="text" id="soaCycleDestinos" class="f-input" placeholder="Ex: 2–12" inputmode="numeric" oninput="invalidarPreviaReplicacaoCiclosSoA_()"><div class="field-help">Aceita intervalos e listas, como 2–12, 15, 18.</div></div>
       </div>
       <div id="soaCyclePreview" class="soa-cycle-preview"><div class="soa-visita-empty">Escolha o modelo e os destinos, depois clique em Pré-visualizar.</div></div>
+    </div>
+    <div class="project-modal-footer">
       <div class="status-msg" id="statusSoAReplicarCiclo" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAReplicarCiclo')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewCiclosSoA" onclick="previsualizarReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnConfirmarCiclosSoA" onclick="confirmarReplicacaoCiclosSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">add_task</span> Criar visitas</button></div>
     </div>
@@ -348,7 +356,7 @@
 
 <!-- MODAL SUGESTÃO DE ORDEM SoA -->
 <div class="modal-overlay" id="modalSoAOrdem" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAOrdem')">
-  <div class="modal-box soa-order-modal-box" role="dialog" aria-labelledby="modalSoAOrdemAccessibleTitle" tabindex="-1">
+  <div class="modal-box soa-order-modal-box project-workflow-box" role="dialog" aria-labelledby="modalSoAOrdemAccessibleTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span></div>
       <div><div class="modal-header-title" id="modalSoAOrdemAccessibleTitle">SUGERIR ORDEM DE EXECUÇÃO</div><div class="modal-header-sub">Referências, intervalos e fases especiais</div></div>
@@ -359,6 +367,8 @@
       <div id="soaOrderSuggestionSummary" class="soa-import-summary"></div>
       <div id="soaOrderSuggestionWarnings"></div>
       <div id="soaOrderSuggestionList" class="soa-order-preview-list"></div>
+    </div>
+    <div class="project-modal-footer">
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAOrdem')">Cancelar</button><button type="button" class="btn-save" id="btnAplicarSugestaoOrdemSoA" onclick="aplicarSugestaoOrdemSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">done_all</span> Aplicar à lista</button></div>
     </div>
   </div>
@@ -366,7 +376,7 @@
 
 <!-- MODAL VISITA SoA -->
 <div class="modal-overlay" id="modalSoAVisita" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalSoAVisita')">
-  <div class="modal-box" style="max-width:620px;" role="dialog" aria-labelledby="modalSoATitle" tabindex="-1">
+  <div class="modal-box project-workflow-box" role="dialog" aria-labelledby="modalSoATitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">event_note</span></div>
       <div><div class="modal-header-title" id="modalSoATitle">ADICIONAR VISITA SoA</div><div class="modal-header-sub" id="modalSoASubtitle">Calendário do protocolo</div></div>
@@ -375,34 +385,46 @@
     <div class="modal-body">
       <input type="hidden" id="soaEditId"><input type="hidden" id="soaProjeto">
       <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">label</span> Identificação da visita</div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
           <div><label class="field-label" for="soaCodigo">Código da visita</label><input type="text" id="soaCodigo" class="f-input" placeholder="Ex: V1, T-2, FU-03"></div>
           <div><label class="field-label" for="soaOrdem">Ordem de exibição</label><input type="number" id="soaOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"></div>
         </div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaNome">Nome padrão da visita <span class="required-star">*</span></label><input type="text" id="soaNome" class="f-input large" placeholder="Ex: T-2 Subsequentes" aria-describedby="errSoANome" aria-invalid="false" aria-required="true"><div class="field-error" id="errSoANome">Informe o nome padrão da visita.</div></div>
+        </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span> Referências e cálculo</div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
-          <div><label class="field-label" for="soaReferencia">Referência (após)</label><select id="soaReferencia" class="f-input"><option value="">Sem referência (legado)</option></select><div class="field-help">Escolha a visita/evento que inicia a contagem.</div></div>
-          <div><label class="field-label" for="soaReferenciaAlternativa">Referência alternativa</label><select id="soaReferenciaAlternativa" class="f-input" onchange="soaReferenciaAlternativaChange_()"><option value="">Nenhuma</option></select><div class="field-help">Use quando o protocolo admitir outro marco, como fim do tratamento ou progressão.</div></div>
+          <div><label class="field-label" for="soaReferencia">Referência (após)</label><select id="soaReferencia" class="f-input f-select"><option value="">Sem referência (legado)</option></select><div class="field-help">Escolha a visita/evento que inicia a contagem.</div></div>
+          <div><label class="field-label" for="soaReferenciaAlternativa">Referência alternativa</label><select id="soaReferenciaAlternativa" class="f-input f-select" onchange="soaReferenciaAlternativaChange_()"><option value="">Nenhuma</option></select><div class="field-help">Use quando o protocolo admitir outro marco, como fim do tratamento ou progressão.</div></div>
         </div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
-          <div><label class="field-label" for="soaBaseCalculo">Base para o cálculo</label><select id="soaBaseCalculo" class="f-input"><option value="">Usar a regra do protocolo</option><option value="MANTER_DATAS_PREVISTAS">Manter datas previstas</option><option value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada</option></select><div class="field-help" id="soaBaseCalculoHelp">Define se a realização da referência desloca ou não as próximas datas.</div></div>
-          <div><label class="field-label" for="soaCriterioReferencias">Critério entre referências</label><select id="soaCriterioReferencias" class="f-input"><option value="">Não se aplica</option><option value="SELECAO_MANUAL">Seleção manual</option><option value="PRIMEIRO_OCORRER">O primeiro que ocorrer</option><option value="ULTIMO_OCORRER">O último que ocorrer</option></select><div class="field-help">Obrigatório somente quando houver referência alternativa.</div></div>
+          <div><label class="field-label" for="soaBaseCalculo">Base para o cálculo</label><select id="soaBaseCalculo" class="f-input f-select"><option value="">Usar a regra do protocolo</option><option value="MANTER_DATAS_PREVISTAS">Manter datas previstas</option><option value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada</option></select><div class="field-help" id="soaBaseCalculoHelp">Define se a realização da referência desloca ou não as próximas datas.</div></div>
+          <div><label class="field-label" for="soaCriterioReferencias">Critério entre referências</label><select id="soaCriterioReferencias" class="f-input f-select"><option value="">Não se aplica</option><option value="SELECAO_MANUAL">Seleção manual</option><option value="PRIMEIRO_OCORRER">O primeiro que ocorrer</option><option value="ULTIMO_OCORRER">O último que ocorrer</option></select><div class="field-help">Obrigatório somente quando houver referência alternativa.</div></div>
         </div>
         <label class="soa-arm-option" style="margin:0 0 14px"><input type="checkbox" id="soaAplicarBaseEquivalentes"> Aplicar esta base às visitas equivalentes dos demais ciclos</label>
         <div class="field-row cols-2" style="margin-bottom:14px;">
-          <div><label class="field-label" for="soaPapelCronograma">Papel no cronograma</label><select id="soaPapelCronograma" class="f-input"><option value="">Não classificado (legado)</option><option value="NAO_PARTICIPA_CALCULO">Não participa do cálculo</option><option value="MARCO_CALCULO">Marco de cálculo</option><option value="VISITA_CALCULADA">Visita calculada</option></select><div class="field-help">Pré-triagem e triagem podem ficar fora do cálculo; tratamento e follow-up podem ter marcos próprios.</div></div>
+          <div><label class="field-label" for="soaPapelCronograma">Papel no cronograma</label><select id="soaPapelCronograma" class="f-input f-select"><option value="">Não classificado (legado)</option><option value="NAO_PARTICIPA_CALCULO">Não participa do cálculo</option><option value="MARCO_CALCULO">Marco de cálculo</option><option value="VISITA_CALCULADA">Visita calculada</option></select><div class="field-help">Pré-triagem e triagem podem ficar fora do cálculo; tratamento e follow-up podem ter marcos próprios.</div></div>
           <div><label class="field-label" for="soaIntervalo">Dias após a referência</label><input type="number" id="soaIntervalo" class="f-input" min="0" step="1" placeholder="Ex: 28"><div class="field-help">Intervalo previsto até esta visita.</div></div>
         </div>
+        </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">date_range</span> Janela da visita</div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
           <div><label class="field-label" for="soaJanelaMenos">Janela dias menos</label><input type="number" id="soaJanelaMenos" class="f-input" min="0" step="1" placeholder="Ex: 3"><div class="field-help">Quantos dias antes da data prevista.</div></div>
           <div><label class="field-label" for="soaJanelaMais">Janela dias mais</label><input type="number" id="soaJanelaMais" class="f-input" min="0" step="1" placeholder="Ex: 5"><div class="field-help">Quantos dias depois da data prevista.</div></div>
         </div>
+        </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">tune</span> Aplicação e observações</div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label">Braços aplicáveis</label><div id="soaBracosOpcoes" class="soa-arm-options"></div><div class="field-help">Deixe todos desmarcados para uma visita comum a todos os braços.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaRepeticao">Repetição / ciclo</label><input type="text" id="soaRepeticao" class="f-input" placeholder="Ex: mensal, a cada 6 meses"><div class="field-help">Opcional; descreve ciclos repetidos sem substituir a referência e a janela.</div></div>
-        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaAliases">Aliases / nomes históricos</label><input type="text" id="soaAliases" class="f-input" placeholder="Separe por ponto e vírgula: FU 3; Follow-up 3"><div class="field-help">Usados como referência para conciliar nomes antigos da Agenda.</div></div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaAliases">Nomes históricos</label><input type="text" id="soaAliases" class="f-input" placeholder="Separe por ponto e vírgula: FU 3; Follow-up 3"><div class="field-help">Usados como referência para conciliar nomes antigos da Agenda.</div></div>
         <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaObservacoes">Observações</label><textarea id="soaObservacoes" class="f-input" style="height:68px;padding-top:10px;resize:vertical" placeholder="Janela, requisitos ou notas da visita"></textarea></div>
         <label class="soa-active-toggle"><input type="checkbox" id="soaAtivo" checked> Visita ativa no protocolo</label>
       </div>
+    </div>
+    <div class="project-modal-footer">
       <div class="status-msg" id="statusSoA" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAVisita')">Cancelar</button><button type="button" class="btn-save" id="btnSalvarSoA" onclick="salvarSoAVisitaApp()"><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar visita</button></div>
     </div>

@@ -274,9 +274,9 @@
       <div class="actions-top">
         <div class="action-status" id="actionStatus" role="status" aria-live="polite">Pronto.</div>
         <button class="btn" id="btnSaveTransport" onclick="saveData()" title="Gravar dados na planilha de transporte"><span class="material-symbols-outlined">save</span><span class="btn-label">Salvar</span></button>
-        <button class="btn secondary" type="button" onclick="newTransportGeneration()">Nova geração</button>
+        <button class="btn secondary" type="button" onclick="newTransportGeneration()" title="Criar outro PDF e outro rascunho com os dados atuais, após conferir os documentos existentes">Gerar novamente</button>
         <button class="btn" id="btnPdfTransport" onclick="runPdf()"><span class="material-symbols-outlined">picture_as_pdf</span><span class="btn-label">Gerar PDF</span></button>
-        <button class="btn danger" onclick="clearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
+        <button class="btn danger" onclick="clearData()" title="Limpar o formulário para iniciar outro envio"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
       </div>
     </div>
 
@@ -394,7 +394,7 @@
         <button class="modal-close" type="button" onclick="closeClearModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="modal-body">
-        <div>Limpar os campos transitórios da documentação?</div>
+        <div>Limpar o formulário para iniciar outro envio? Os PDFs e rascunhos já criados serão mantidos.</div>
         <div class="modal-actions">
           <button class="btn danger" type="button" onclick="confirmClearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
           <button class="btn secondary" type="button" onclick="closeClearModal()"><span class="material-symbols-outlined">close</span>Cancelar</button>
@@ -435,7 +435,6 @@
           <a class="btn secondary" id="pdfPrintLink" href="#" target="_blank" rel="noopener"><span class="material-symbols-outlined">print</span>Imprimir</a>
           <a class="btn secondary disabled" id="cePrintLink" href="#" target="_blank" rel="noopener" aria-disabled="true" title="CE não localizada"><span class="material-symbols-outlined">print</span>Imprimir CE</a>
           <a class="btn secondary" id="pdfDriveLink" href="#" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span>Abrir no Drive</a>
-          <button class="btn secondary" type="button" onclick="newTransportGeneration()">Nova geração</button>
           <button class="btn secondary" type="button" onclick="closePdfModal()"><span class="material-symbols-outlined">check</span>Concluir</button>
         </div>
       </div>
@@ -1903,6 +1902,10 @@
 
     function collectPayload(materials) {
       var registroAtual = (state && state.registro) || {};
+      if (!registroAtual.idAgenda && !registroAtual.envioId) {
+        registroAtual.envioId = transportRandomId();
+        state.registro = registroAtual;
+      }
       var participanteSelecionado = selectedParticipantInfo();
       return {
         paciente: selectedParticipantName(participanteSelecionado),
@@ -1923,6 +1926,7 @@
         responsavelEntrega: selectedCourier === 'PINEX (Agendamento)' ? document.getElementById('responsavelEntrega').value : '',
         observacoes: document.getElementById('observacoes').value,
         idAgenda: registroAtual.idAgenda || '',
+        envioId: registroAtual.idAgenda ? '' : registroAtual.envioId,
         agendaSlot: registroAtual.agendaSlot || '',
         refInterna: registroAtual.refInterna || '',
         materiais: materials || collectMaterials()
@@ -2000,6 +2004,9 @@
       if (!p.agendadoPor) issues.push({ type:'danger', text:'Responsável pelo agendamento não informado.' });
       if (p.courier === 'PINEX (Agendamento)' && !p.responsavelEntrega) issues.push({ type:'danger', text:'Responsável pela entrega das amostras não informado.' });
       var awbCheck = normalizeAwbForCourier(p.awb, p.courier);
+      if (state.awbIssue && String(state.awbIssue.awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === String(p.awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '')) {
+        issues.push({ type:'warn', field:'awb', text:state.awbIssue.text });
+      }
       if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) {
         issues.push({ type:'danger', text:'AWB / código obrigatório para ' + p.courier + '.' });
       }
@@ -2040,6 +2047,7 @@
 
     function transportChecklistTarget(issue) {
       if (!issue || issue.type === 'ok') return '';
+      if (issue.field === 'awb') return 'awb';
       var text = norm(issue.text || '');
       if (!text) return '';
       if (text.indexOf('paciente') >= 0) return 'paciente';
@@ -2203,6 +2211,7 @@
     function transportApplySavedRegistro(payload, response) {
       if (!state) return;
       state.registro = Object.assign({}, state.registro || {}, payload, response && response.registro || {});
+      state.awbIssue = response && response.awbIssue || null;
     }
 
     function saveData() {
@@ -2229,13 +2238,17 @@
       return 'ips-transport-generation-v1:' + owner + ':' + (hash >>> 0).toString(16) + ':' + value.length;
     }
 
+    function transportRandomId() {
+      var bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      return Array.prototype.map.call(bytes, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    }
+
     function transportGenerationRequest(payload) {
       var key = transportGenerationStorageKey(payload);
       var token = window.localStorage.getItem(key);
       if (!/^[a-f0-9]{32}$/.test(token || '')) {
-        var bytes = new Uint8Array(16);
-        window.crypto.getRandomValues(bytes);
-        token = Array.prototype.map.call(bytes, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+        token = transportRandomId();
         window.localStorage.setItem(key, token);
       }
       return token;
@@ -2243,7 +2256,7 @@
 
     function newTransportGeneration() {
       if (transportBusy) return;
-      if (!window.confirm('Criar novos documentos? Confira antes o Drive e o Gmail: esta ação pode criar outro PDF e outro rascunho.')) return;
+      if (!window.confirm('Gerar os documentos novamente com os dados atuais? Confira antes o Drive e o Gmail: esta ação pode criar outro PDF e outro rascunho. Os campos do formulário serão mantidos.')) return;
       try { window.localStorage.removeItem(transportGenerationStorageKey(collectPayload())); }
       catch (error) { toast('Não foi possível preparar uma nova geração. Verifique o armazenamento do navegador.', 'danger'); return; }
       closePdfModal();

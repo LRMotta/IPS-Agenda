@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { runFiles } = require('./load-app-script');
-const { FakeSheet } = require('./fake-spreadsheet');
+const { FakeSheet, FakeSpreadsheet } = require('./fake-spreadsheet');
 
 function fixture() {
   let email = 'editor@exemplo.invalid';
@@ -41,7 +41,9 @@ function fixture() {
   const sheet = new FakeSheet('Agenda', [Array(row.length).fill(''), row]);
   const audits = [], validations = [];
   c.getAgendaSheet_ = () => sheet;
-  c.getCodexSpreadsheet_ = () => ({ getId: () => spreadsheetId });
+  const ss = new FakeSpreadsheet({ Agenda: sheet });
+  ss.getId = () => spreadsheetId;
+  c.getCodexSpreadsheet_ = () => ss;
   c.codexGetActiveUserEmail_ = () => email;
   c.codexAssertCanWrite_ = () => {};
   c.codexWithDocumentLock_ = (_name, fn) => { const previous = locked; locked = true; try { return fn(); } finally { locked = previous; } };

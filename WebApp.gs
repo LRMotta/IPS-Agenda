@@ -892,8 +892,10 @@ function codexWithDocumentLock_(label, fn, performance) {
       throw new Error('Outra operação está gravando no sistema. Aguarde alguns segundos e tente novamente.');
     }
     CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_++;
+    CODEX_AWB_CONTEXT_ = null;
     return fn();
   } finally {
+    if (acquired) CODEX_AWB_CONTEXT_ = null;
     if (acquired) CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = Math.max(0, CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ - 1);
     if (acquired) lock.releaseLock();
   }
@@ -15127,6 +15129,7 @@ function atualizarAgendaEventoCompleto(dados) {
     AgendaServerRules_.isLabCentral(rowAnterior[AGENDA_CFG.idx.labCentral]) !== AgendaServerRules_.isLabCentral(labCentral) ||
     !AgendaServerRules_.sameStatus(rowAnterior[AGENDA_CFG.idx.status], status);
   var postVisitConcluidoPorStatus = agendaPostVisitConcluidoPorStatus_(status, tipo);
+  var awbWarnings = agendaAwbValidarPayload_(agenda, dados, dados.id, rowAnterior);
   var dataConclusaoPostVisit = new Date();
   var poloTrialValor = postVisitConcluidoPorStatus
     ? (rowAnterior[AGENDA_CFG.idx.poloTrial] || dataConclusaoPostVisit)
@@ -15220,6 +15223,7 @@ function atualizarAgendaEventoCompleto(dados) {
     atualizado: true,
     carroRequerido: carroSalvo,
     operationalAlerts: operationalAlerts,
+    awbWarnings: awbWarnings,
     recordVersion: agendaRecordVersionFromRow_(rowAtual),
     editRecordVersion: agendaEditableRecordVersionFromRow_(rowAtual),
     editFieldVersions: agendaEditFieldVersionsFromRow_(rowAtual)
@@ -15667,6 +15671,7 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
 
   var linhaNova = agenda.getLastRow() + 1;
   var id = Utilities.getUuid().slice(0, 8);
+  agendaAwbValidarPayload_(agenda, dados, id, null, true);
   agendaMeasureSaveStage_(performanceOperation, 'initial_row_write', { rowCount: 1 }, function() {
     agendaWriteInitialEventRow_(agenda, linhaNova, id, d, dados, tipo, status, labCentral);
   });
@@ -15818,6 +15823,7 @@ function agendaMaterialSummaryFromJson_(matBioJson, fallback) {
 
 function agendaSetAwbValue_(range, awb, courier) {
   awb = String(awb || '').trim();
+  agendaAwbReservarCelula_(range, awb, courier);
   if (!awb) {
     range.clearContent();
     return;
@@ -16754,6 +16760,188 @@ function normalizarAwbCourier_(awb) {
   return String(awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+// Historico permanente: cancelar, limpar ou substituir a AWB nao libera seu uso.
+// O contexto vive somente durante o document lock; nunca usa CacheService.
+var CODEX_AWB_CONTEXT_ = null;
+var CODEX_AWB_HEADERS_ = ['AWB', 'Envio_ID', 'Agenda_ID', 'Transporte', 'Courier', 'Temperatura', 'Participante', 'Projeto', 'Data', 'Status', 'Registrado_Em'];
+
+function agendaAwbOwner_(id, slot) {
+  return 'AGD:' + String(id || '').trim().toUpperCase() + ':' + String(slot);
+}
+
+function agendaAwbRegistro_(row, slot) {
+  var i = AGENDA_CFG.idx, c = [i.c1, i.c2, i.c3][slot - 1];
+  return {
+    awb: String(row[c.awb] || '').trim(), owner: agendaAwbOwner_(row[i.id], slot),
+    id: String(row[i.id] || '').trim(), slot: String(slot), courier: String(row[c.nome] || ''),
+    temperatura: String(row[c.temp] || ''), participante: String(row[i.participante] || ''),
+    projeto: String(row[i.projeto] || ''), data: row[i.data] || '', status: String(row[i.status] || '')
+  };
+}
+
+function agendaAwbContexto_(agenda) {
+  if (CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0 && CODEX_AWB_CONTEXT_ && CODEX_AWB_CONTEXT_.agenda.getName() === agenda.getName()) return CODEX_AWB_CONTEXT_;
+  var context = { agenda: agenda, entries: [], current: Object.create(null), persisted: Object.create(null), backups: Object.create(null), sheet: null };
+  var backupEntries = [];
+  var n = agenda.getLastRow() - 1;
+  var width = Math.min(agenda.getLastColumn(), Math.max(AGENDA_CFG.idx.c3.awb + 1, AGENDA_CFG.idx.backupAgendaRef + 1, AGENDA_CFG.idx.cb.temp + 1));
+  var rows = n > 0 ? agenda.getRange(2, 1, n, width).getValues() : [];
+  rows.forEach(function(row) {
+    if (!String(row[AGENDA_CFG.idx.id] || '').trim()) return;
+    [1, 2, 3].forEach(function(slot) {
+      var entry = agendaAwbRegistro_(row, slot);
+      context.current[entry.owner] = entry;
+      if (normalizarAwbCourier_(entry.awb)) context.entries.push(entry);
+    });
+    var refs = agendaBackupAgendaRefsFromCell_(row[AGENDA_CFG.idx.backupAgendaRef]);
+    context.backups[agendaAwbOwner_(row[AGENDA_CFG.idx.id], 'backup')] = refs;
+    refs.forEach(function(ref) {
+      if (!normalizarAwbCourier_(ref.awb)) return;
+      var slot = { I: '1', II: '2', III: '3' }[String(ref.slot || 'I').toUpperCase()] || String(ref.slot || '1');
+      var entry = Object.assign({}, agendaAwbRegistro_(row, 1), {
+        awb: String(ref.awb), owner: agendaAwbOwner_(ref.id, slot), id: ref.id, slot: slot, data: ref.data || ref.dataIso || '',
+        courier: String(row[AGENDA_CFG.idx.cb.nome] || ''), temperatura: String(row[AGENDA_CFG.idx.cb.temp] || ''), status: String(row[AGENDA_CFG.idx.cb.status] || '')
+      });
+      backupEntries.push(entry); // Espelho do mesmo envio, nunca uma segunda remessa.
+    });
+  });
+  context.entries = context.entries.concat(backupEntries); // Dados do envio de destino prevalecem sobre o espelho.
+  var ss = getCodexSpreadsheet_();
+  context.sheet = ss.getSheetByName('AWB_Utilizadas');
+  if (context.sheet) {
+    var values = context.sheet.getDataRange().getValues();
+    if (!CODEX_AWB_HEADERS_.every(function(header, index) { return values[0] && values[0][index] === header; })) {
+      throw new Error('Não foi possível validar o histórico de AWBs. Solicite a revisão do cadastro de AWBs utilizadas.');
+    }
+    values.slice(1).forEach(function(row) {
+      var entry = { awb: String(row[0] || ''), owner: String(row[1] || ''), id: String(row[2] || ''), slot: String(row[3] || ''), courier: String(row[4] || ''), temperatura: String(row[5] || ''), participante: String(row[6] || ''), projeto: String(row[7] || ''), data: row[8] || '', status: String(row[9] || '') };
+      if (!normalizarAwbCourier_(entry.awb) || !entry.owner) throw new Error('Há um registro inválido no histórico de AWBs. Solicite a revisão antes de salvar o envio.');
+      context.persisted[normalizarAwbCourier_(entry.awb) + '|' + entry.owner] = true;
+      context.entries.push(entry);
+    });
+  }
+  if (CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0) CODEX_AWB_CONTEXT_ = context;
+  return context;
+}
+
+function agendaAwbMensagem_(awb, other) {
+  var slot = { '1': 'Transporte I', '2': 'Transporte II', '3': 'Transporte III', backup: 'Backup' }[other.slot] || 'Envio de amostras';
+  var data = other.data instanceof Date ? Utilities.formatDate(other.data, 'America/Sao_Paulo', 'dd/MM/yyyy') : String(other.data || '');
+  var detalhes = [slot, other.courier, other.temperatura, other.participante, other.projeto, data, other.status, other.id ? 'Agendamento ' + other.id : 'Envio manual'].filter(Boolean).join(' · ');
+  return 'A AWB "' + awb + '" já foi utilizada em outro envio: ' + detalhes + '. Informe uma AWB diferente. Cancelar o envio anterior não libera esse número.';
+}
+
+function agendaAwbConflito_(context, entry, candidates) {
+  var key = normalizarAwbCourier_(entry.awb);
+  if (!key) return null;
+  return context.entries.concat(candidates || []).find(function(other) {
+    return agendaAwbOwnerEfetivo_(context, other) !== agendaAwbOwnerEfetivo_(context, entry) && normalizarAwbCourier_(other.awb) === key;
+  }) || null;
+}
+
+function agendaAwbOwnerEfetivo_(context, entry) {
+  var refs = context.backups[entry.owner] || [];
+  var key = normalizarAwbCourier_(entry.awb);
+  var matching = refs.filter(function(ref) { return normalizarAwbCourier_(ref.awb) === key; });
+  var ref = matching.length === 1 ? matching[0] : refs.length === 1 ? refs[0] : null;
+  if (!ref) return entry.owner;
+  var slot = { I: '1', II: '2', III: '3' }[String(ref.slot || 'I').toUpperCase()] || String(ref.slot || '1');
+  return agendaAwbOwner_(ref.id, slot);
+}
+
+function agendaAwbReservar_(context, candidates, strict, previewOnly) {
+  candidates = candidates.map(function(entry) {
+    var owner = agendaAwbOwnerEfetivo_(context, entry);
+    if (owner === entry.owner) return entry;
+    var target = /^AGD:(.+):([123])$/.exec(owner);
+    return target ? Object.assign({}, entry, { owner: owner, id: target[1], slot: target[2] }) : entry;
+  });
+  var warnings = [];
+  // Conferir o lote inteiro antes de criar/alterar o historico ou o agendamento.
+  candidates.forEach(function(entry) {
+    var other = agendaAwbConflito_(context, entry, candidates);
+    if (!other) return;
+    var current = context.current[entry.owner];
+    var unchanged = current && normalizarAwbCourier_(current.awb) === normalizarAwbCourier_(entry.awb);
+    var message = agendaAwbMensagem_(entry.awb, other);
+    if (strict || !unchanged) throw new Error(message);
+    // Legado duplicado pode receber outras correcoes; gerar novos documentos exige resolver a AWB.
+    warnings.push(message);
+  });
+  if (previewOnly) return warnings;
+  var added = [], pending = Object.create(null);
+  context.entries.concat(candidates).forEach(function(entry) {
+    var key = normalizarAwbCourier_(entry.awb);
+    if (!key) return;
+    var pair = key + '|' + entry.owner;
+    if (context.persisted[pair] || pending[pair]) return;
+    pending[pair] = true;
+    added.push(entry);
+  });
+  if (added.length) {
+    var sh = context.sheet;
+    if (!sh) {
+      sh = getCodexSpreadsheet_().insertSheet('AWB_Utilizadas');
+      if (sh.getMaxColumns() < CODEX_AWB_HEADERS_.length) sh.insertColumnsAfter(sh.getMaxColumns(), CODEX_AWB_HEADERS_.length - sh.getMaxColumns());
+      sh.getRange(1, 1, 1, CODEX_AWB_HEADERS_.length).setValues([CODEX_AWB_HEADERS_]);
+      sh.setFrozenRows(1);
+      if (sh.hideSheet) sh.hideSheet();
+      context.sheet = sh;
+    }
+    var first = sh.getLastRow() + 1;
+    if (sh.getMaxRows() < first + added.length - 1) sh.insertRowsAfter(sh.getMaxRows(), first + added.length - 1 - sh.getMaxRows());
+    var now = new Date();
+    var values = added.map(function(entry) {
+      return [entry.awb, entry.owner, entry.id, entry.slot, entry.courier, entry.temperatura, entry.participante, entry.projeto, entry.data, entry.status, now].map(function(value) {
+        // Dados de cadastro nao podem ser interpretados como formulas.
+        return typeof value === 'string' && /^[=+@-]/.test(value) ? "'" + value : value;
+      });
+    });
+    sh.getRange(first, 1, added.length, 8).setNumberFormat('@');
+    sh.getRange(first, 1, added.length, CODEX_AWB_HEADERS_.length).setValues(values);
+    Object.keys(pending).forEach(function(pair) { context.persisted[pair] = true; });
+  }
+  candidates.forEach(function(entry) {
+    context.current[entry.owner] = entry;
+    if (normalizarAwbCourier_(entry.awb)) context.entries.push(entry);
+  });
+  return warnings;
+}
+
+function agendaAwbValidarPayload_(agenda, dados, id, rowAnterior, previewOnly) {
+  var slots = [AGENDA_CFG.idx.c1, AGENDA_CFG.idx.c2, AGENDA_CFG.idx.c3];
+  var hasAwb = slots.some(function(c, index) {
+    var courier = dados['courier' + (index + 1)] || {};
+    return String(courier.awb || '').trim() || (rowAnterior && String(rowAnterior[c.awb] || '').trim());
+  });
+  if (!hasAwb && rowAnterior) hasAwb = agendaBackupAgendaRefsFromCell_(rowAnterior[AGENDA_CFG.idx.backupAgendaRef]).some(function(ref) { return normalizarAwbCourier_(ref.awb); });
+  if (!hasAwb) return [];
+  var context = agendaAwbContexto_(agenda);
+  var candidates = slots.map(function(c, index) {
+    var slot = index + 1, courier = dados['courier' + slot] || {};
+    var entry = Object.assign({}, context.current[agendaAwbOwner_(id, slot)] || agendaAwbRegistro_(rowAnterior || [], slot));
+    var hasTouched = Object.prototype.hasOwnProperty.call(courier, 'awbTouched');
+    if (Object.prototype.hasOwnProperty.call(courier, 'awb') && (hasTouched ? courier.awbTouched === true : String(courier.awb || '').trim() !== '')) entry.awb = String(courier.awb || '').trim();
+    return Object.assign(entry, { owner: agendaAwbOwner_(id, slot), id: String(id), slot: String(slot), courier: courier.nome || courier.courier || entry.courier, temperatura: courier.temperatura || courier.temp || entry.temperatura, participante: dados.participante || entry.participante, projeto: dados.projeto || entry.projeto, data: dados.data || entry.data, status: dados.status || entry.status });
+  });
+  return agendaAwbReservar_(context, candidates, false, previewOnly);
+}
+
+function agendaAwbReservarCelula_(range, awb, courier) {
+  var columns = [AGENDA_CFG.idx.c1.awb, AGENDA_CFG.idx.c2.awb, AGENDA_CFG.idx.c3.awb];
+  var slot = columns.indexOf(range.getColumn() - 1) + 1;
+  if (!slot) return;
+  var before = String(range.getDisplayValue() || '').trim();
+  if (!before && !normalizarAwbCourier_(awb)) return;
+  var agenda = range.getSheet();
+  var row = agenda.getRange(range.getRow(), 1, 1, Math.min(agenda.getLastColumn(), AGENDA_CFG.idx.c3.awb + 1)).getValues()[0];
+  var entry = agendaAwbRegistro_(row, slot);
+  if (!entry.id) throw new Error('Não foi possível identificar o envio para validar a AWB. Reabra o agendamento.');
+  entry.awb = awb;
+  entry.courier = courier || entry.courier;
+  agendaAwbReservar_(agendaAwbContexto_(agenda), [entry], false);
+}
+
 function normalizarTextoMonitorCourier_(texto) {
   return normalizarAwbCourier_(texto).toLowerCase();
 }
@@ -16825,6 +17013,8 @@ function agendaSetBackupLinha_(agenda, linha, backup) {
     'Adicionado à Agenda', 'Docs gerados', 'Agendado', 'Confirmado', 'Coletado', 'Enviado', 'Entregue'
   ].some(function(status) { return statusBackup === normText_(status); });
   if (!statusMantemReferencia) {
+    var oldRefs = agendaBackupAgendaRefsFromCell_(agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).getValue());
+    if (oldRefs.some(function(ref) { return normalizarAwbCourier_(ref.awb); })) agendaAwbReservar_(agendaAwbContexto_(agenda), [], false);
     agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).clearContent();
   }
 }

@@ -128,17 +128,24 @@ test('JSON inválido alheio não bloqueia o envio, mas o projeto afetado e ambig
   assert.throws(() => s.transporteCaixaResolver_({}, payload), /Mais de uma regra/);
 });
 
-test('BioSystem corrige tabela do e-mail em memória e bloqueia modelo sem Fornecer caixa', () => {
+test('BioSystem corrige tabela do e-mail e inclui a caixa quando o modelo MARKEN legado não tem essa linha', () => {
   const { s } = fixture();
-  let rows = [['Coleta', ''], ['Temperatura:', 'Antiga'], ['Fornecer caixa:', 'Não']];
+  let rows = [['Coleta', ''], ['Temperatura:', 'Antiga'], ['', ''], ['', ''], ['', ''], ['', ''], ['', ''], ['Fornecer caixa:', 'Não']];
   const matrix = value => rows.map(() => [value, value]);
   s.transporteCodexGetSheet_ = () => ({ getRange: () => ({ getDisplayValues: () => rows.map(row => row.slice()), getBackgrounds: () => matrix('#fff'), getFontColors: () => matrix('#000'), getFontWeights: () => matrix('normal'), getHorizontalAlignments: () => matrix('left') }) });
   const html = s.transporteCodexEmailHtml_({}, '', 'MARKEN', 'Bom dia', 'AMBIENTE', true);
   assert.match(html, />Sim<\/td>/);
   assert.match(html, />AMBIENTE<\/td>/);
-  assert.equal(rows[2][1], 'Não');
+  assert.match(html, />Fornecer caixa:<\/td><td[^>]*>Sim<\/td>/);
+  assert.equal(rows[7][1], 'Não');
   rows = rows.slice(0, 2);
-  assert.throws(() => s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true), /Fornecer caixa/);
+  const htmlSemLinhaNoModelo = s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true);
+  assert.match(htmlSemLinhaNoModelo, />Fornecer caixa<\/td><td[^>]*>Sim<\/td>/);
+  assert.equal(rows.length, 2);
+  rows = [['Coleta', ''], ['Temperatura', ''], ['Fornecer caixa', 'Não'], ['Solicitar caixa', 'Não']];
+  const htmlComRotulosDuplicados = s.transporteCodexEmailHtml_({}, '', 'MARKEN', '', 'AMBIENTE', true);
+  assert.match(htmlComRotulosDuplicados, />Fornecer caixa<\/td><td[^>]*>Sim<\/td>/);
+  assert.match(htmlComRotulosDuplicados, />Solicitar caixa<\/td><td[^>]*>Sim<\/td>/);
 });
 
 test('hash documental muda com a caixa e nota inválida não é inferida', () => {

@@ -371,7 +371,8 @@ test('modal de projeto amplia a area e posiciona o titulo na identificacao do pr
   const codigo = block.indexOf('id="pCodigo"');
   const regulatorio = block.indexOf('Dados Regulat');
 
-  assert.match(block, /class="modal-box" style="max-width:900px;"/);
+  // A largura agora pertence ao shell compartilhado; o E2E confere os 900 px renderizados.
+  assert.match(block, /class="modal-box project-workflow-box"/);
   assert.ok(identificacao < titulo && titulo < codigo);
   assert.ok(regulatorio > titulo);
   assert.equal(block.match(/id="pTituloCompleto"/g).length, 1);
