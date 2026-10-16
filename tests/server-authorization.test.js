@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readProjectFile } = require('./helpers/load-app-script');
 
-const MUTATION_PREFIX = /^(salvar|excluir|atualizar|configurar|instalar|remover|limpar|criar|gerar|importar|sincronizar|executar|registrar|receber|baixar|cancelar|marcar|concluir|aplicar|enviar|exportar|organizar|focar|resetar|corrigir|monitorar|manage|perform|processar|verificarEAtualizar)/;
+const MUTATION_PREFIX = /^(imprimir|calcular|rastrear|verificarNotificacoes|salvar|excluir|atualizar|configurar|instalar|remover|limpar|criar|gerar|importar|sincronizar|executar|registrar|receber|baixar|cancelar|marcar|concluir|aplicar|enviar|exportar|organizar|focar|resetar|corrigir|monitorar|manage|perform|processar|verificarEAtualizar)/;
 const AUTHORIZATION_GUARD = /\b(codexAssertAdmin_|codexAssertCanWrite_|codexAssertAdminOrInstalledTrigger_|codexAssertSelfProfileWrite_)\s*\(/;
 
 function topLevelFunctions(source) {
@@ -59,7 +59,9 @@ test('helpers destrutivos e de e-mail do Transporte nao fazem parte da superfici
     'criarRascunhoTransporte_',
     'atualizarAbasDependentesDeclaracao_',
     'atualizarOcasaProformaTipoAmostra_',
-    'manageSheetVisibilityUnified_'
+    'manageSheetVisibilityUnified_',
+    'calcularTotalTubos_',
+    'calcularExpressaoLinha_'
   ];
 
   privateHelpers.forEach((name) => {

@@ -2876,7 +2876,7 @@ test('compatibilidade nao altera contratos publicos de Transporte ou documentos'
   assert.match(server, /function importarTransporteCodex\(codexPayload, contextoInterno\)/);
   assert.match(server, /function salvarTransporte\(payload, options\)/);
   assert.match(server, /function gerarPdfTransporte\(options\)/);
-  assert.match(transport, /serverCall\('salvarTransporte', \[payload, \{ returnBootstrap: false, preencherDocumentos: false \}\]/);
+  assert.match(transport, /serverCall\('salvarTransporte', \[payload, \{ returnBootstrap: false, returnPreparedRecord: true, preencherDocumentos: false \}\]/);
   assert.match(transport, /serverCall\('sincronizarTransporte', \[\]/);
 });
 

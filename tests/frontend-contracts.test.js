@@ -141,7 +141,8 @@ test('nomes privatizados nao permanecem referenciados pela interface', () => {
     'atualizarAbasDependentesDeclaracao', 'atualizarOcasaProformaTipoAmostra',
     'manageSheetVisibilityUnified', 'aplicarLogicaCancelamento',
     'enviarEmailAgendamento', 'enviarEmailCancelamento', 'enviarEmailReagendamento',
-    'gerarHtmlCouriers', 'gerarListaDestinatarios'
+    'gerarHtmlCouriers', 'gerarListaDestinatarios',
+    'verificarNotificacoes', 'rastrearEMoverFoco', 'calcularTotalTubos', 'calcularExpressaoLinha'
   ];
 
   internalNames.forEach((name) => {

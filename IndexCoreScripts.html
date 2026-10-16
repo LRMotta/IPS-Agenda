@@ -2636,7 +2636,7 @@ function renderTabelaEquipamentos(lista) {
   bindTableRecordActions(tb, lista, {
     duplicate: function(item) { abrirDuplicacaoEquipamento(item); },
     edit: function(item) { abrirFormEquipamento(item); },
-    delete: function(item) { confirmarExcluirEquipamento(item.rowIndex, item.descricao || 'equipamento'); }
+    delete: function(item) { confirmarExcluirEquipamento(item.rowIndex, item.descricao || 'equipamento', item.idEquipamentoRec); }
   });
 }
 
@@ -2839,6 +2839,7 @@ function abrirFormEquipamento(e) {
   e = e || {};
   document.getElementById('modalEqTitle').textContent = e._duplicando ? 'DUPLICAR EQUIPAMENTO' : (e.rowIndex ? 'EDITAR EQUIPAMENTO' : 'NOVO EQUIPAMENTO');
   document.getElementById('eqRowIndex').value = e.rowIndex || '';
+  document.getElementById('eqRowIndex').setAttribute('data-record-id', e.idEquipamentoRec || '');
   fillSelectOptions('eqProjeto', _equipProjetos, e.projeto, '— Selecione —');
   fillSelectOptions('eqResponsavelReceb', _equipSolicitantes, e.responsavelRecebimento, '— Selecione —');
   fillSelectOptions('eqLocalizacao', ESTOQUE_CONFIG.localizacoes || [], e.localizacao, '— Selecione —');
@@ -2866,6 +2867,7 @@ function abrirDuplicacaoEquipamento(e) {
   e = Object.assign({}, e || {}, {
     _duplicando: true,
     rowIndex: '',
+    idEquipamentoRec: '',
     dataRecebimentoISO: new Date().toISOString().split('T')[0],
     quantidade: 1,
     numeroSerie: '',
@@ -2887,6 +2889,7 @@ function salvarEquipamentoApp() {
   var btn = document.getElementById('btnSalvarEq');
   var payload = {
     rowIndex: document.getElementById('eqRowIndex').value,
+    idEquipamentoRec: document.getElementById('eqRowIndex').getAttribute('data-record-id') || '',
     dataRecebimento: document.getElementById('eqDataReceb').value,
     projeto: projeto,
     cadastroUcs: document.getElementById('eqCadastroUcs').value,
@@ -2922,13 +2925,13 @@ function salvarEquipamentoApp() {
   });
 }
 
-function confirmarExcluirEquipamento(rowIndex, descricao) {
+function confirmarExcluirEquipamento(rowIndex, descricao, idEquipamentoRec) {
   abrirConfirmacaoDestrutiva({
     mensagem: 'Deseja excluir "' + descricao + '"? Esta acao nao pode ser desfeita.',
     onConfirm: function() {
       appServerRun({
         method: 'excluirEquipamentoFornecido',
-        args: [rowIndex],
+        args: [rowIndex, idEquipamentoRec],
         onSuccess: function(r) { snack(r || 'Equipamento excluido.'); carregarEquipamentos(true); },
         onFailure: function(e) { snackErro(e); }
       });
@@ -3010,7 +3013,7 @@ function renderTabelaMedicamentos(lista) {
   bindTableRecordActions(tb, lista, {
     duplicate: function(item) { abrirDuplicacaoMedicamento(item); },
     edit: function(item) { abrirFormMedicamento(item); },
-    delete: function(item) { confirmarExcluirMedicamento(item.rowIndex, item.descricao || 'medicamento'); }
+    delete: function(item) { confirmarExcluirMedicamento(item.rowIndex, item.descricao || 'medicamento', item.idMedicamentoRec); }
   });
 }
 
@@ -3071,6 +3074,7 @@ function abrirFormMedicamento(m) {
   m = m || {};
   document.getElementById('modalMedRecTitle').textContent = m._duplicando ? 'DUPLICAR MEDICAMENTO' : (m.rowIndex ? 'EDITAR MEDICAMENTO' : 'NOVO MEDICAMENTO');
   document.getElementById('medRowIndex').value = m.rowIndex || '';
+  document.getElementById('medRowIndex').setAttribute('data-record-id', m.idMedicamentoRec || '');
   fillSelectOptions('medProjeto', _medProjetos, m.projeto, '— Selecione —');
   fillSelectOptions('medResponsavelReceb', _medSolicitantes, m.responsavelRecebimento, '— Selecione —');
   fillSelectOptions('medLocalizacao', ESTOQUE_CONFIG.localizacoes || [], m.localizacao, '— Selecione —');
@@ -3096,6 +3100,7 @@ function abrirDuplicacaoMedicamento(m) {
   m = Object.assign({}, m || {}, {
     _duplicando: true,
     rowIndex: '',
+    idMedicamentoRec: '',
     dataRecebimentoISO: new Date().toISOString().split('T')[0],
     quantidade: 1,
     lote: '',
@@ -3117,6 +3122,7 @@ function salvarMedicamentoApp() {
   var btn = document.getElementById('btnSalvarMedRec');
   var payload = {
     rowIndex: document.getElementById('medRowIndex').value,
+    idMedicamentoRec: document.getElementById('medRowIndex').getAttribute('data-record-id') || '',
     dataRecebimento: document.getElementById('medDataReceb').value,
     projeto: projeto,
     registroRm: document.getElementById('medRegistroRm').value,
@@ -3150,13 +3156,13 @@ function salvarMedicamentoApp() {
   });
 }
 
-function confirmarExcluirMedicamento(rowIndex, descricao) {
+function confirmarExcluirMedicamento(rowIndex, descricao, idMedicamentoRec) {
   abrirConfirmacaoDestrutiva({
     mensagem: 'Deseja excluir "' + descricao + '"? Esta acao nao pode ser desfeita.',
     onConfirm: function() {
       appServerRun({
         method: 'excluirMedicamentoRecebido',
-        args: [rowIndex],
+        args: [rowIndex, idMedicamentoRec],
         onSuccess: function(r) { snack(r || 'Medicamento excluido.'); carregarMedicamentos(true); },
         onFailure: function(e) { snackErro(e); }
       });
@@ -3555,6 +3561,7 @@ var ESTADOS_BRASIL_PARTICIPANTE_ = [
 var _municipiosBrasilParticipanteCache_ = {};
 var _municipiosBrasilParticipanteEspera_ = {};
 var _municipioBrasilAutocompleteAtivo_ = {};
+var _participanteLocalidadeRevision_ = 0;
 
 function participantePreencherEstadosBrasilElemento_(select, selected) {
   if (!select) return;
@@ -3620,16 +3627,29 @@ function participanteInicializarLocalidade_(inputId, estado, cidade, municipioCo
   participantePreencherEstadosBrasilElemento_(els.uf, estado);
   els.input.value = cidade || '';
   els.input.dataset.municipioCodigo = municipioCodigo || '';
+  var revision = String(++_participanteLocalidadeRevision_);
+  els.input.dataset.localidadeRevision = revision;
+  var uf = els.uf.value;
+  var cidadeInicial = String(cidade || '');
+  els.input.dataset.localidadeLegada = uf && cidadeInicial && !municipioCodigo ? JSON.stringify([uf, cidadeInicial]) : '';
   els.input.disabled = !els.uf.value || els.uf.disabled;
   els.input.placeholder = els.uf.value ? 'Pesquise o município…' : 'Selecione primeiro a UF';
   els.input.setCustomValidity('');
   els.input.classList.remove('invalid');
   if (els.lista) els.lista.classList.remove('open');
+  if (uf && cidadeInicial && !municipioCodigo) participanteCarregarMunicipios_(uf, function(municipios) {
+    if (document.getElementById(inputId) !== els.input || els.input.dataset.localidadeRevision !== revision ||
+        els.uf.value !== uf || els.input.value !== cidadeInicial || els.input.dataset.municipioCodigo) return;
+    var matches = municipios.filter(function(item) { return normSelectValue(item.nome) === normSelectValue(cidadeInicial); });
+    if (matches.length === 1 && matches[0].codigo) participanteSelecionarMunicipio_(inputId, matches[0], true);
+  });
 }
 
 function participanteEstadoMunicipioAlterado_(inputId) {
   var els = participanteMunicipioElementos_(inputId);
   if (!els.input || !els.uf) return;
+  els.input.dataset.localidadeRevision = String(++_participanteLocalidadeRevision_);
+  els.input.dataset.localidadeLegada = '';
   els.input.value = '';
   els.input.dataset.municipioCodigo = '';
   els.input.disabled = !els.uf.value || els.uf.disabled;
@@ -3643,6 +3663,8 @@ function participanteEstadoMunicipioAlterado_(inputId) {
 function participanteMunicipioDigitado_(inputId) {
   var els = participanteMunicipioElementos_(inputId);
   if (!els.input) return;
+  els.input.dataset.localidadeRevision = String(++_participanteLocalidadeRevision_);
+  els.input.dataset.localidadeLegada = '';
   els.input.dataset.municipioCodigo = '';
   els.input.setCustomValidity('Selecione um município da lista.');
   els.input.classList.add('invalid');
@@ -3657,8 +3679,9 @@ function participanteRenderMunicipios_(inputId) {
   loading.className = 'ac-empty'; loading.textContent = 'Carregando municípios…';
   els.lista.appendChild(loading); els.lista.classList.add('open');
   var requestedUf = els.uf.value;
+  var requestedRevision = els.input.dataset.localidadeRevision || '';
   participanteCarregarMunicipios_(requestedUf, function(municipios, error) {
-    if (els.uf.value !== requestedUf) return;
+    if (document.getElementById(inputId) !== els.input || els.uf.value !== requestedUf || (els.input.dataset.localidadeRevision || '') !== requestedRevision) return;
     els.lista.replaceChildren();
     if (error) {
       var failed = document.createElement('div'); failed.className = 'ac-empty';
@@ -3685,7 +3708,7 @@ function participanteRenderMunicipios_(inputId) {
   });
 }
 
-function participanteSelecionarMunicipio_(inputId, option) {
+function participanteSelecionarMunicipio_(inputId, option, silent) {
   var els = participanteMunicipioElementos_(inputId);
   if (!els.input || !option) return;
   var codigo = String(option.codigo || '');
@@ -3695,12 +3718,19 @@ function participanteSelecionarMunicipio_(inputId, option) {
   els.input.classList.remove('invalid');
   els.input.setAttribute('aria-expanded', 'false');
   if (els.lista) els.lista.classList.remove('open');
-  els.input.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!silent) els.input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function participanteFixarMunicipio_(inputId) {
   var els = participanteMunicipioElementos_(inputId);
   if (!els.input || !els.uf) return true;
+  var legadoInalterado = !els.input.dataset.municipioCodigo && els.input.dataset.localidadeLegada === JSON.stringify([els.uf.value, els.input.value]);
+  // O servidor confirma a localidade legada contra a participação de origem.
+  if (els.input.disabled || els.input.readOnly || els.uf.disabled || legadoInalterado) {
+    els.input.setCustomValidity(''); els.input.classList.remove('invalid');
+    if (els.lista) els.lista.classList.remove('open');
+    return true;
+  }
   if (!els.uf.value && !els.input.value) {
     els.input.setCustomValidity(''); els.input.classList.remove('invalid');
     return true;
@@ -5612,7 +5642,13 @@ function salvarConfiguracaoCtmsJornada() {
   var participante = _jornadaParticipanteAtual || {};
   var dados = _jornadaParticipanteDados || {};
   var marcos = {};
-  Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-marco]'), function(input) { marcos[input.getAttribute('data-ctms-marco')] = input.value; });
+  var marcosBase = {};
+  var config = (dados.previaCtms || {}).configuracao || {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-marco]'), function(input) {
+    var key = input.getAttribute('data-ctms-marco');
+    marcos[key] = input.value;
+    marcosBase[key] = String((config.marcos || {})[key] || '');
+  });
   var escolhas = {};
   Array.prototype.forEach.call(document.querySelectorAll('[data-ctms-escolha]'), function(select) { if (select.value) escolhas[select.getAttribute('data-ctms-escolha')] = select.value; });
   var btn = document.getElementById('btnSalvarConfigCtms');
@@ -5627,6 +5663,7 @@ function salvarConfiguracaoCtmsJornada() {
     braco: participante.braco,
     bracoId: (document.getElementById('jornadaCtmsBraco') || {}).value || '',
     marcos: marcos,
+    marcosParticipacaoBase: marcosBase,
     marcosAtualizacaoParcial: true,
     escolhasReferencias: escolhas
   }], onSuccess: function(result) {
@@ -6297,6 +6334,10 @@ var _soaOrdemAlterada = false;
 var _soaDragId = '';
 var _soaSugestaoOrdemAtual = [];
 var _soaCyclePreviewAtual = null;
+var _soaCyclePreviewRequest = 0;
+var _soaCyclePreviewPayload = '';
+var _soaVisitasRequest = 0;
+var _bracosProjetoRequest = 0;
 
 function soaReferenciaLabel_(referencia) {
   var value = String(referencia || '').trim();
@@ -6645,7 +6686,11 @@ function soaCiclosDisponiveis_() {
 }
 
 function invalidarPreviaReplicacaoCiclosSoA_() {
+  _soaCyclePreviewRequest++;
+  _soaCyclePreviewPayload = '';
   _soaCyclePreviewAtual = null;
+  var btn = document.getElementById('btnPreviewCiclosSoA');
+  if (btn) appSetButtonBusy(btn, false);
   var confirm = document.getElementById('btnConfirmarCiclosSoA');
   if (confirm) confirm.disabled = true;
   var preview = document.getElementById('soaCyclePreview');
@@ -6654,6 +6699,7 @@ function invalidarPreviaReplicacaoCiclosSoA_() {
 }
 
 function abrirReplicacaoCiclosSoAApp() {
+  invalidarPreviaReplicacaoCiclosSoA_();
   if (_soaOrdemAlterada) { snack('Salve ou descarte a ordem pendente antes de replicar ciclos.'); return; }
   var cycles = soaCiclosDisponiveis_();
   if (!cycles.length) { snack('Nenhum ciclo foi reconhecido nos códigos ou nomes das visitas.'); return; }
@@ -6716,17 +6762,23 @@ function renderReplicacaoCiclosSoAPreview_(result) {
 
 function previsualizarReplicacaoCiclosSoAApp() {
   var payload = soaCyclePayload_();
+  var request = ++_soaCyclePreviewRequest;
+  var signature = JSON.stringify(payload);
+  function atual() { return request === _soaCyclePreviewRequest && signature === JSON.stringify(soaCyclePayload_()); }
   var btn = document.getElementById('btnPreviewCiclosSoA');
   _soaCyclePreviewAtual = null;
   document.getElementById('btnConfirmarCiclosSoA').disabled = true;
   appSetButtonBusy(btn, true);
   appSetStatus('statusSoAReplicarCiclo', '⏳ Analisando ciclos e visitas existentes...');
   appServerRun({ method: 'validarReplicacaoCiclosSoA', args: [payload], onSuccess: function(result) {
+    if (!atual()) return;
+    _soaCyclePreviewPayload = signature;
     appSetButtonBusy(btn, false);
     _soaCyclePreviewAtual = result;
     renderReplicacaoCiclosSoAPreview_(result);
     appSetStatus('statusSoAReplicarCiclo', result.podeGravar ? 'Prévia pronta. Revise todas as diferenças antes de criar.' : 'Não há visitas seguras para gravar.', result.ok ? '' : '#e53935');
   }, onFailure: function(e) {
+    if (!atual()) return;
     appSetButtonBusy(btn, false);
     renderReplicacaoCiclosSoAPreview_({ ok: false, podeGravar: false, visitas: [], erros: [appErrorMessage(e)] });
     appSetStatus('statusSoAReplicarCiclo', '⚠ ' + appErrorMessage(e), '#e53935');
@@ -6734,8 +6786,8 @@ function previsualizarReplicacaoCiclosSoAApp() {
 }
 
 function confirmarReplicacaoCiclosSoAApp() {
-  if (!_soaCyclePreviewAtual || !_soaCyclePreviewAtual.podeGravar) { previsualizarReplicacaoCiclosSoAApp(); return; }
   var payload = soaCyclePayload_();
+  if (!_soaCyclePreviewAtual || !_soaCyclePreviewAtual.podeGravar || _soaCyclePreviewPayload !== JSON.stringify(payload)) { previsualizarReplicacaoCiclosSoAApp(); return; }
   payload.assinaturaPrevia = _soaCyclePreviewAtual.assinaturaPrevia;
   var btn = document.getElementById('btnConfirmarCiclosSoA');
   appSetButtonBusy(btn, true);
@@ -6759,22 +6811,27 @@ function abrirSoAVisitaFormPorId(idSoA) {
 }
 
 function carregarSoAVisitasProjeto(projeto) {
+  var request = ++_soaVisitasRequest;
+  invalidarPreviaReplicacaoCiclosSoA_();
   _soaProjetoAtual = projeto || null;
   var list = document.getElementById('pSoAList');
   var note = document.getElementById('soaProjetoNaoSalvo');
   var salvo = !!(_soaProjetoAtual && (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo));
   if (note) note.style.display = salvo ? 'none' : '';
   if (!salvo) { renderSoAVisitas([]); return; }
+  renderSoAVisitas([]);
   soaAtualizarAcoesOrdem_();
   if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando calendário SoA...</div>';
   var projetoNome = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
   appServerRun({ method: 'getSoAVisitasProjeto', args: [projetoNome], onSuccess: function(visitas) {
+    if (request !== _soaVisitasRequest || soaProjetoNomeAtual_() !== projetoNome) return;
     renderSoAVisitas(visitas);
     appServerRun({ method: 'getModelosEstoqueSoAPorProjeto', args: [projetoNome], onSuccess: function(modelos) {
-      if (soaProjetoNomeAtual_() !== projetoNome) return;
+      if (request !== _soaVisitasRequest || soaProjetoNomeAtual_() !== projetoNome) return;
       aplicarModelosEstoqueNasVisitasSoA_(modelos);
     }, onFailure: function() {} });
   }, onFailure: function(e) {
+    if (request !== _soaVisitasRequest || soaProjetoNomeAtual_() !== projetoNome) return;
     if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar o calendário SoA.')) + '</div>';
   }});
 }
@@ -7135,6 +7192,7 @@ function renderBracosProjeto(lista) {
 }
 
 function carregarBracosProjeto(projeto) {
+  var request = ++_bracosProjetoRequest;
   var atual = projeto || null;
   var list = document.getElementById('pBracosProjetoList');
   var add = document.getElementById('btnAdicionarBracoProjeto');
@@ -7143,8 +7201,15 @@ function carregarBracosProjeto(projeto) {
   if (add) add.disabled = !salvo;
   if (note) note.style.display = salvo ? 'none' : '';
   if (!salvo) { renderBracosProjeto([]); return; }
+  renderBracosProjeto([]);
   if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando catálogo de braços...</div>';
-  appServerRun({ method: 'getBracosProjeto', args: [atual.nomeAbreviado || atual.codigo], onSuccess: renderBracosProjeto, onFailure: function(e) { if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar os braços.')) + '</div>'; } });
+  var projetoNome = atual.nomeAbreviado || atual.codigo;
+  function vigente() { return request === _bracosProjetoRequest && soaProjetoNomeAtual_() === projetoNome; }
+  appServerRun({ method: 'getBracosProjeto', args: [projetoNome], onSuccess: function(rows) {
+    if (vigente()) renderBracosProjeto(rows);
+  }, onFailure: function(e) {
+    if (vigente() && list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar os braços.')) + '</div>';
+  } });
 }
 
 function abrirBracoProjetoFormPorId(idBraco) {
@@ -9677,11 +9742,24 @@ function _renderTabelaCouriers(lista) {
       '<section class="courier-detail-section"><h3>Regras operacionais</h3><p>' + esc(regras) + '</p></section>' +
       '<section class="courier-detail-section"><h3>E-mails e confirmação</h3><p>' + emails + '</p></section>' +
       '<section class="courier-detail-section"><h3>Declaração de transporte</h3><p>' + esc(stripHtmlSimple(c.conteudoDeclaracao) || 'Não informada.') + '</p></section>' +
-      '<section class="courier-detail-section courier-detail-actions"><div class="action-btns"><button class="icon-btn" title="Editar" aria-label="Editar ' + esc(c.nome || 'courier') + '" onclick="event.preventDefault();event.stopPropagation()" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button><button class="icon-btn del" title="Excluir" aria-label="Excluir ' + esc(c.nome || 'courier') + '" onclick="event.preventDefault();event.stopPropagation()" data-record-action="delete" data-record-index="' + index + '"><span class="material-symbols-outlined">delete</span></button></div></section></div></details>';
+      '<section class="courier-detail-section courier-detail-actions"><div class="action-btns">' + (c.id ? '<button class="icon-btn" title="Editar" aria-label="Editar ' + esc(c.nome || 'courier') + '" onclick="event.preventDefault();event.stopPropagation()" data-record-action="edit" data-record-index="' + index + '"><span class="material-symbols-outlined">edit</span></button><button class="icon-btn del" title="Excluir" aria-label="Excluir ' + esc(c.nome || 'courier') + '" onclick="event.preventDefault();event.stopPropagation()" data-record-action="delete" data-record-index="' + index + '"><span class="material-symbols-outlined">delete</span></button>' : '<button class="btn-new" data-record-action="regularize" data-record-index="' + index + '">Regularizar cadastro</button>') + '</div></section></div></details>';
   }).join('');
   bindTableRecordActions(tb, lista, {
-    edit: function(item) { abrirFormCourier(item.id); },
-    delete: function(item) { confirmarExcluirCourier(item.id); }
+    edit: function(item) { if (item.id) abrirFormCourier(item.id); else regularizarIdsCouriersFront_(); },
+    delete: function(item) { if (item.id) confirmarExcluirCourier(item.id); else regularizarIdsCouriersFront_(); },
+    regularize: function() { regularizarIdsCouriersFront_(); }
+  });
+}
+
+function regularizarIdsCouriersFront_() {
+  appServerRun({
+    method: 'regularizarIdsCouriers', args: [],
+    onSuccess: function(message) {
+      invalidateCadastroBootstrapCache('couriers');
+      carregarCouriers(true);
+      snack(message);
+    },
+    onFailure: function(error) { snackErro(error); }
   });
 }
 

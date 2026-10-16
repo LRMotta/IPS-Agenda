@@ -52,7 +52,7 @@ function fixture() {
   c.agendaCourierStatusFuturoErro_ = c.agendaRealizadoFuturoErro_ = () => '';
   c.agendaOperationalRiskAlerts_ = () => [];
   c.agendaDateIsBeforeToday_ = () => false;
-  c.agendaInvalidateDateIndexCache_ = c.verificarNotificacoes = c.agendaAtualizarBackupAwbVinculado_ = () => {};
+  c.agendaInvalidateDateIndexCache_ = c.verificarNotificacoes_ = c.agendaAtualizarBackupAwbVinculado_ = () => {};
   c.agendaSetAwbValue_ = (range, value) => range.setValue(value);
   c.codexWriteAuditChanges_ = (...args) => audits.push(args);
   c.codexCourierAssertDocumentAwb_ = () => {};

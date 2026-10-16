@@ -668,6 +668,7 @@
           carregarPendencias(true);
           return;
         }
+        if (typeof invalidarAgendaEventosCliente_ === 'function') invalidarAgendaEventosCliente_();
         if (_pendenciasCache && Array.isArray(_pendenciasCache.awbEnviadaNaoEntregue)) {
           _pendenciasCache.awbEnviadaNaoEntregue = _pendenciasCache.awbEnviadaNaoEntregue.filter(function(item) {
             return !(String(item.agendaId || '') === p.agendaId && String(item.slot || '') === p.slot);

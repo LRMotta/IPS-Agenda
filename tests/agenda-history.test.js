@@ -98,7 +98,7 @@ test('criação registra o ID definitivo depois da escrita e não registra cria�
     SpreadsheetApp:{flush(){}},
     Session:{getActiveUser:()=>({})},
     agendaWriteInitialEventRow_:(_sheet,_line,id)=>{if(fail)throw Error('Falha simulada');sheet.rows.push([id]);},
-    agendaBooleanValue_:()=>false,agendaGravarTransportesDoEvento_(){},verificarNotificacoes(){},
+    agendaBooleanValue_:()=>false,agendaGravarTransportesDoEvento_(){},verificarNotificacoes_(){},
     AGENDA_CFG:{col:{carroRequerido:1,data:1,projeto:1,labCentral:1},lastCol:1},
     codexWriteAuditChanges_:(module,action,id,changes)=>{
       assert.equal(sheet.rows[1][0],id);

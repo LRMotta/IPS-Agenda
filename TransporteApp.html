@@ -2155,14 +2155,19 @@
       return false;
     }
 
+    function transportApplySavedRegistro(payload, response) {
+      if (!state) return;
+      state.registro = Object.assign({}, state.registro || {}, payload, response && response.registro || {});
+    }
+
     function saveData() {
       if (!ensureRequiredTransportFields()) return;
       var payload = collectPayload();
       setButtonLabel('btnSaveTransport', 'Salvando...');
-      serverCall('salvarTransporte', [payload, { returnBootstrap: false, preencherDocumentos: false }], function(data) {
+      serverCall('salvarTransporte', [payload, { returnBootstrap: false, returnPreparedRecord: true, preencherDocumentos: false }], function(data) {
         return agendaSyncMessage(data, 'Salvo. Dados salvos na planilha de transporte.');
       }, function(data) {
-        if (state) state.registro = Object.assign({}, state.registro || {}, payload);
+        transportApplySavedRegistro(payload, data);
         transportClearUnsaved();
         renderAll();
         refreshAgendaInOpener();
@@ -2224,6 +2229,8 @@
             toast(errorMsg, 'danger');
             return;
           }
+          transportApplySavedRegistro(payload, res);
+          renderAll();
           transportClearUnsaved();
           refreshAgendaInOpener();
           var msg = res && typeof res === 'object' ? (res.message || okMsg) : (res || okMsg);

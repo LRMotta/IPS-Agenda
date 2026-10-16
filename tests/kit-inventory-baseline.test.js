@@ -65,7 +65,7 @@ test('contrato legado: baixa da Agenda registra uma unidade por kit e evita IDs 
   });
   const chamadas = [];
   server.getKitsAgendaBaixaStatus = () => ({ ids: ['KIT-JA'], baixados: true });
-  server.registrarMovimentacaoEstoque = payload => chamadas.push(payload);
+  server.comLoteMovimentacoesEstoque_ = callback => callback(payload => chamadas.push(payload));
   server.codexAssertCanWrite_ = () => {};
   server.codexWithDocumentLock_ = (_acao, callback) => callback();
 
@@ -715,7 +715,7 @@ test('fase 2: salvar item adiciona a coluna de ordem sem deslocar o layout legad
   server.codexWithDocumentLock_ = (_acao, callback) => callback();
 
   server.salvarItemEstoque({
-    id: '2', projeto: 'Estudo A', descricao: 'Kit coleta', tipo: 'Kit',
+    id: '2', idItem: '0001', projeto: 'Estudo A', descricao: 'Kit coleta', tipo: 'Kit',
     localizacao: 'Estoque Principal', estoqueMin: 0, observacoes: '',
     laboratorio: 'Lab A', status: 'Ativo', ordem: 10
   });
@@ -1126,7 +1126,7 @@ test('devolucao legada sem identidade mantem fallback sem inventar lote', () => 
   server.codexWithDocumentLock_ = (_action, callback) => callback();
   server.getKitsAgendaBaixaStatus = () => ({ baixados: true, ids: ['K'], itens: [{ idItem: 'K', qtde: 1, idLote: '', accessionNumber: '', validade: 'legada', localizacao: 'legada' }] });
   let recebido;
-  server.registrarMovimentacaoEstoque = p => { recebido = p; };
+  server.comLoteMovimentacoesEstoque_ = callback => callback(p => { recebido = p; });
   server.atualizarStatusReservasAgendaItens_ = () => {};
   server.devolverKitsAgendaEvento({ agendaId: 'A' });
   assert.equal(recebido.idLote, ''); assert.equal(recebido.accessionNumber, '');

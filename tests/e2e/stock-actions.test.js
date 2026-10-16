@@ -43,7 +43,7 @@ test('Estoque local: editar e excluir preservam textos com aspas e HTML sem exec
         function imprimirRelatorioDescarte() {} function efetivarDescarteInline() {} function atualizarDescarteQtd() {}
         ${functions}
       ` });
-      const item = { id: 'I"1', descricao: 'Kit "Especial" \\ <img src=x onerror="window.injected=true">',
+      const item = { id: 'I"1', idItem: 'KIT"1', descricao: 'Kit "Especial" \\ <img src=x onerror="window.injected=true">',
         projeto: 'Estudo A', tipo: 'Kit', ordem: '', status: 'Ativo', localizacao: 'Laboratório', laboratorio: 'Lab A', estoqueMin: 1 };
       await page.evaluate(data => {
         window._estoqueInlineDados = { itens: [data] };
@@ -57,7 +57,7 @@ test('Estoque local: editar e excluir preservam textos com aspas e HTML sem exec
       await page.locator('[data-estoque-action="item-excluir"] span').click();
       await page.locator('[data-estoque-action="pedido-abrir"]').click();
       const calls = await page.evaluate(() => window.calls);
-      assert.deepEqual(calls, [['editar', item], ['excluir', item.id, item.descricao], ['pedido', 'Pedido "A"']]);
+      assert.deepEqual(calls, [['editar', item], ['excluir', item.idItem, item.descricao], ['pedido', 'Pedido "A"']]);
       await page.evaluate(() => window.renderItensInline());
       await page.locator('[data-estoque-action="item-excluir"]').click();
       assert.equal(await page.evaluate(() => window.calls.length), 4);

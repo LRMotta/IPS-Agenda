@@ -191,7 +191,7 @@ test('DHL nao converte volumes ao trocar a courier e oferece conversao explicita
 
 test('protecao de layout reduz a fonte e bloqueia volume ainda maior antes do PDF', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
-  const helpers = sourceBetween(source, 'function transporteVolumeFormulaFontSize_(', 'function calcularTotalTubos(');
+  const helpers = sourceBetween(source, 'function transporteVolumeFormulaFontSize_(', 'function calcularTotalTubos_(');
   const pdf = sourceBetween(source, 'function imprimirTodasAbas(', 'function transportePdfSpec_(');
   const formulas = {
     21: '1 x 0,50, 1 x 1,00, 1 x 1,75, 2 x 0,25',
@@ -690,6 +690,7 @@ test('bootstrap vindo da Agenda reutiliza o registro preparado do mesmo slot sob
 
 test('bootstrap comum nao le a planilha durante outra gravacao de Transporte', () => {
   const server = runFile('TransporteCodexConfig.gs', {
+    codexAssertCanRead_() {},
     Logger: { log: () => {} }
   });
   let lockDepth = 0;

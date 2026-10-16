@@ -144,7 +144,7 @@ function pdfFixture({ nominal = false, extraViewer = false, notesFailure = false
 test('PDF usa copia privada opaca, verifica conteudo antes de fetch e limpa em sucesso ou bloqueio', () => {
   for (const options of [{}, { nominal: true }, { extraViewer: true }, { notesFailure: true }]) {
     const { s, events } = pdfFixture(options);
-    const result = s.imprimirTodasAbas({ payload: {} });
+    const result = s.imprimirTodasAbas_({ payload: {} });
     if (options.nominal || options.extraViewer || options.notesFailure) {
       assert.match(result, /Erro ao gerar PDF/);
       assert.equal(events.includes('fetch'), false);
@@ -161,15 +161,15 @@ test('PDF usa copia privada opaca, verifica conteudo antes de fetch e limpa em s
 });
 
 test('hash do conteudo impresso muda com template e permanece igual para copia identica', () => {
-  const first = pdfFixture().s.imprimirTodasAbas({ payload: {} }).conteudoPdfHash;
-  assert.equal(pdfFixture().s.imprimirTodasAbas({ payload: {} }).conteudoPdfHash, first);
-  assert.notEqual(pdfFixture({ content: 'Peso atualizado no modelo' }).s.imprimirTodasAbas({ payload: {} }).conteudoPdfHash, first);
+  const first = pdfFixture().s.imprimirTodasAbas_({ payload: {} }).conteudoPdfHash;
+  assert.equal(pdfFixture().s.imprimirTodasAbas_({ payload: {} }).conteudoPdfHash, first);
+  assert.notEqual(pdfFixture({ content: 'Peso atualizado no modelo' }).s.imprimirTodasAbas_({ payload: {} }).conteudoPdfHash, first);
 });
 
 test('geracao entrega ao rascunho e ao monitor o mesmo hash do documento exportado', () => {
   const s = server({ SpreadsheetApp: { flush() {} } });
   s.transporteValidarManifestoPdf_ = () => ({ hash: 'DADOS' });
-  s.imprimirTodasAbas = () => ({ ok: true, courier: 'DHL', fileId: 'PDF', conteudoPdfHash: 'CONTEUDO' });
+  s.imprimirTodasAbas_ = () => ({ ok: true, courier: 'DHL', fileId: 'PDF', conteudoPdfHash: 'CONTEUDO' });
   s.transporteReadRegistro_ = () => ({ idAgenda: 'EVT', agendaSlot: '1' });
   let draftHash;
   let monitorHash;
@@ -185,7 +185,7 @@ test('geracao entrega ao rascunho e ao monitor o mesmo hash do documento exporta
 test('RPC de PDF converte erro legado do exportador em falha', () => {
   const s = server({ SpreadsheetApp: { flush() {} } });
   s.transporteValidarManifestoPdf_ = () => ({ hash: 'hash' });
-  s.imprimirTodasAbas = () => 'Erro ao gerar PDF: PDF bloqueado: identificação nominal ainda presente';
+  s.imprimirTodasAbas_ = () => 'Erro ao gerar PDF: PDF bloqueado: identificação nominal ainda presente';
   assert.throws(() => s.gerarPdfTransporteInterno_({}), /PDF bloqueado: identificação nominal/);
 });
 
@@ -195,7 +195,7 @@ test('geracao salva uma vez e devolve avisos de sincronizacao da Agenda', () => 
   let saves = 0;
   s.salvarTransporteInterno_ = () => { saves++; return { agendaSync: { warnings: ['AWB diferente'] } }; };
   s.transporteValidarManifestoPdf_ = () => ({ hash: 'hash' });
-  s.imprimirTodasAbas = () => ({ type: 'pdf', courier: 'PINEX', fileId: 'PDF' });
+  s.imprimirTodasAbas_ = () => ({ type: 'pdf', courier: 'PINEX', fileId: 'PDF' });
   s.transporteReadRegistro_ = () => ({});
   s.transporteMonitorReferencia_ = () => '';
   const result = s.gerarPdfTransporteInterno_({ payload: {} });
@@ -209,10 +209,30 @@ test('exportador confirma ID antes de compartilhamento e conserva intencao quand
   const phases = [];
   s.transporteGenerationCheckpoint_ = changes => { phases.push(changes.phase); };
   s.transporteShareGeneratedPdfWithActiveUser_ = () => { assert.deepEqual(phases, ['PDF_INTENT', 'PDF_READY']); throw new Error('share-failure'); };
-  assert.match(s.imprimirTodasAbas({ payload: {} }), /share-failure/);
+  assert.match(s.imprimirTodasAbas_({ payload: {} }), /share-failure/);
   const broken = pdfFixture().s;
   const persisted = [];
   broken.transporteGenerationCheckpoint_ = changes => { if (changes.phase === 'PDF_READY') throw new Error('quota'); persisted.push(changes.phase); };
-  assert.match(broken.imprimirTodasAbas({ payload: {} }), /quota/);
+  assert.match(broken.imprimirTodasAbas_({ payload: {} }), /quota/);
   assert.deepEqual(persisted, ['PDF_INTENT']);
+});
+
+
+test('exportador confirma temperatura antes de criar PDF e a persiste no primeiro checkpoint com ID', () => {
+  const { s, events } = pdfFixture();
+  const checkpoints = [];
+  s.transporteGenerationCheckpoint_ = changes => checkpoints.push(changes);
+  const result = s.imprimirTodasAbas_({ payload: {}, temperaturaPdf: 'AMBIENTE', generationRequestId: 'c'.repeat(32) });
+  assert.equal(result.ok, true);
+  assert.equal(result.temperaturaPdf, 'AMBIENTE');
+  assert.match(result.fileName, /AMBIENTE/);
+  const ready = checkpoints.find(value => value.phase === 'PDF_READY');
+  assert.equal(ready.pdf.fileId, 'PDF-ID');
+  assert.equal(ready.pdf.temperaturaPdf, 'AMBIENTE');
+  assert.equal(ready.pdf.generationRequestId, 'c'.repeat(32));
+  assert.ok(events.includes('fetch'));
+  const blocked = pdfFixture();
+  assert.match(blocked.s.imprimirTodasAbas_({ payload: {}, temperaturaPdf: 'REFRIGERADO' }), /mesma temperatura/);
+  assert.equal(blocked.events.includes('copy'), false);
+  assert.equal(blocked.events.includes('fetch'), false);
 });

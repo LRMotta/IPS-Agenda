@@ -53,6 +53,7 @@ function courierContext(sheet) {
   const source = between(web, 'var COURIER_HEADERS_', 'function codexSanitizeCourierHtml_');
   const context = vm.createContext({
     codexAssertCanWrite_: () => ({ ok: true }),
+    codexWithDocumentLock_: (_name, callback) => callback(),
     codexSanitizeCourierHtml_: (value) => String(value || ''),
     limparCacheCourier_: () => {},
     normText_: (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
@@ -891,7 +892,9 @@ function agendaCancellationContext(sheet) {
     getAgendaSheet_: () => sheet,
     encontrarLinhaPorId: (_sheet, id) => id === 'EVT-1' ? 2 : 0,
     aplicarLogicaCancelamento_: () => {},
-    verificarNotificacoes: () => { calls.notifications++; },
+    agendaInvalidateDateIndexCache_: () => {},
+    agendaInvalidateWindowCache_: () => {},
+    verificarNotificacoes_: () => { calls.notifications++; },
     codexWriteAuditChanges_: () => { calls.audits++; },
     agendaAuditChangesFromRows_: () => [{ field: 'Status' }],
     Session: { getActiveUser: () => ({ getEmail: () => 'teste@example.invalid' }) }
@@ -946,6 +949,7 @@ function transportSyncContext(sheet) {
     normText_: (value) => String(value || '').trim().toLowerCase(),
     agendaSetAwbValue_: (range, value) => range.setValue(value),
     codexWriteAuditChanges_: () => {},
+    agendaInvalidateWindowCache_: () => {},
     SpreadsheetApp: { flush: () => {} }
   });
   vm.runInContext(sync, context);

@@ -107,7 +107,7 @@ test('notificacao le um bloco por evento e reutiliza a data depois do envio', ()
     server.enviarEmailAgendamento_ = () => sent.push('agendamento');
     server.enviarEmailReagendamento_ = () => sent.push('reagendamento');
     server.enviarEmailCancelamento_ = () => sent.push('cancelamento');
-    server.verificarNotificacoes({ user: {} }, 'ID', null, sheet, 2);
+    server.verificarNotificacoes_({ user: {} }, 'ID', null, sheet, 2);
     assert.deepEqual(reads, [{ line: 2, col: cfg.col.data, count: 1, width: cfg.col.controle - cfg.col.data + 1 }]);
     assert.deepEqual(sent, action === 'nenhuma' ? [] : [action]);
     assert.equal(writes.length, action === 'nenhuma' ? 0 : 1);
