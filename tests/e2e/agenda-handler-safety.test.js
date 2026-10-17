@@ -43,8 +43,8 @@ test('handlers da Agenda preservam dados com aspas sem interpretar codigo no DOM
     await page.getByRole('button', { name: 'Editar', exact: true }).dispatchEvent('click');
     const actions = [
       ['Adicionar ao Google Agenda', 'abrirEventoNoGoogleCalendar', [value]],
-      ['Cancelar', 'cancelarAgendaEvento', [value]],
-      ['Gerar Display', 'abrirDisplayPaciente', [await page.evaluate(() => window.expectedDisplay)]],
+      ['Cancelar agendamento', 'cancelarAgendaEvento', [value]],
+      ['Gerar display', 'abrirDisplayPaciente', [await page.evaluate(() => window.expectedDisplay)]],
       ['Gerar recibo', 'abrirAgendaRecibo', [value, 42]]
     ];
     for (const [label, name, args] of actions) {
@@ -66,7 +66,7 @@ test('handlers da Agenda preservam dados com aspas sem interpretar codigo no DOM
       document.getElementById('agendaViewLista').innerHTML = window.agendaCardHtml(row, 'operational-safety');
     }, value);
     await page.getByRole('button', { name: 'Mais ações', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Gerar Display', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Gerar display', exact: true }).click();
     assert.deepEqual(await page.evaluate(() => window.handlerCalls.at(-1)), { name: 'abrirDisplayMonitoriaAgendaCard', args: [value, 43] });
     assert.equal(await page.evaluate(() => window.parentClicks), 0);
     assert.equal(await page.evaluate(() => window.__injected), false);

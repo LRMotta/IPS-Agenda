@@ -2772,7 +2772,7 @@ test('display de Close-Out segue o fluxo institucional sem exigir participante',
   assert.match(cardActions, /var showDisplay = usaDisplayOperacional \? r\.projeto : r\.participante/);
   assert.match(cardActions, /abrirDisplayMonitoriaAgendaCard/);
   assert.match(cardActions, /abrirDisplayPaciente/);
-  assert.doesNotMatch(details, /Gerar Display|picture_in_picture/);
+  assert.doesNotMatch(details, /Gerar display|picture_in_picture/);
 });
 
 test('compatibilidades da janela usam fontes autoritativas fora do periodo visivel', () => {
@@ -2932,7 +2932,7 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   assert.doesNotMatch(monitoria, /expand_more|title="Detalhes"/);
   context.agendaDisplayPayload = event => ({ participante: event.participante });
   const patientActions = context.agendaActionMenuHtml_({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'patient', false);
-  assert.match(patientActions, /Gerar Display/);
+  assert.match(patientActions, /Gerar display/);
   assert.match(patientActions, /abrirDisplayPaciente/);
   assert.equal((patientActions.match(/role="menuitem"/g) || []).length, 5);
   assert.match(patientActions, /Histórico do agendamento/);

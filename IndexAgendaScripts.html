@@ -6397,31 +6397,13 @@
     var menuId = 'agActionMenu' + String(id || '').replace(/\W/g, '');
     var editButton = '<button class="ag-act-btn" type="button" data-arg1="' + esc(r.id) + '" onclick="event.stopPropagation();abrirAgendaEdicao(this.dataset.arg1,' + Number(r.rowIndex || 0) + ')" title="Editar" aria-label="Editar"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>';
     var items = [];
-    if (String(r.id || '').trim()) items.push({ icon: 'history', label: 'Histórico do agendamento', action: 'abrirAgendaHistorico(this.dataset.agendaId)' });
-
-    if (AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR)) {
-      items.push({
-        icon: 'calendar_add_on',
-        label: 'Adicionar ao Google Agenda',
-        action: 'abrirEventoNoGoogleCalendar(this.dataset.agendaId)'
-      });
-    }
-    if (!past && !options.hideCancel) {
-      items.push({
-        icon: 'event_busy',
-        label: 'Cancelar',
-        action: 'cancelarAgendaEvento(this.dataset.agendaId)',
-        danger: true
-      });
-    }
-
     var usaDisplayOperacional = agendaUsaDisplayOperacional_(r);
     var showDisplay = usaDisplayOperacional ? r.projeto : r.participante;
     if (showDisplay) {
       var displayAction = usaDisplayOperacional
         ? 'abrirDisplayMonitoriaAgendaCard(this.dataset.agendaId,Number(this.dataset.rowIndex))'
         : 'abrirDisplayPaciente(this.dataset.displayPayload)';
-      items.push({icon: 'picture_in_picture', label: 'Gerar Display', action: displayAction});
+      items.push({icon: 'picture_in_picture', label: 'Gerar display', action: displayAction});
     }
 
     var reciboTipo = AgendaRules.formPolicy(r).type;
@@ -6433,10 +6415,28 @@
       });
     }
 
+    if (AgendaRules.canPerform(r, AgendaRules.Action.ADD_TO_GOOGLE_CALENDAR)) {
+      items.push({
+        icon: 'calendar_add_on',
+        label: 'Adicionar ao Google Agenda',
+        action: 'abrirEventoNoGoogleCalendar(this.dataset.agendaId)'
+      });
+    }
+    if (String(r.id || '').trim()) items.push({ icon: 'history', label: 'Histórico do agendamento', action: 'abrirAgendaHistorico(this.dataset.agendaId)' });
+    if (!past && !options.hideCancel) {
+      items.push({
+        icon: 'event_busy',
+        label: 'Cancelar agendamento',
+        action: 'cancelarAgendaEvento(this.dataset.agendaId)',
+        danger: true
+      });
+    }
+
     if (!items.length) return '<div class="ag-appt-actions">' + editButton + '</div>';
 
-    var menuItems = items.map(function(item) {
-      return '<button class="ag-action-menu-item' + (item.danger ? ' danger' : '') + '" type="button" role="menuitem" data-agenda-id="' + esc(r.id) + '" data-row-index="' + Number(r.rowIndex || 0) + '" data-display-payload="' + esc(encodeURIComponent(JSON.stringify(agendaDisplayPayload(r)))) + '" onclick="event.stopPropagation();agendaCloseActionMenus();' + item.action + '">' +
+    var menuItems = items.map(function(item, index) {
+      var separator = item.danger && index > 0 ? '<div class="ag-action-menu-separator" role="separator"></div>' : '';
+      return separator + '<button class="ag-action-menu-item' + (item.danger ? ' danger' : '') + '" type="button" role="menuitem" data-agenda-id="' + esc(r.id) + '" data-row-index="' + Number(r.rowIndex || 0) + '" data-display-payload="' + esc(encodeURIComponent(JSON.stringify(agendaDisplayPayload(r)))) + '" onclick="event.stopPropagation();agendaCloseActionMenus();' + item.action + '">' +
         '<span class="material-symbols-outlined" aria-hidden="true">' + item.icon + '</span><span>' + esc(item.label) + '</span></button>';
     }).join('');
 
@@ -6632,8 +6632,8 @@
         var title = document.createElement('strong');
         title.textContent = item.field + ' · ' + item.action;
         var change = document.createElement('p');
-        change.textContent = item.field === 'Agendamento' || item.field === 'Vínculo do participante'
-          ? item.newValue : (item.oldValue || 'Não informado') + ' → ' + (item.newValue || 'Não informado');
+        change.textContent = item.summary || (item.field === 'Agendamento' || item.field === 'Vínculo do participante'
+          ? item.newValue : (item.oldValue || 'Não informado') + ' → ' + (item.newValue || 'Não informado'));
         var author = document.createElement('small');
         author.textContent = item.timestamp + ' · ' + (item.email || 'Responsável não disponível');
         entry.appendChild(title); entry.appendChild(change); entry.appendChild(author); list.appendChild(entry);
@@ -6641,9 +6641,9 @@
       consulta.before = data.nextBefore;
       button.hidden = !data.hasMore;
       button.disabled = false;
-      button.textContent = 'Buscar registros anteriores';
+      button.textContent = 'Ver mais alterações';
       status.textContent = data.hasMore
-        ? (data.rows.length ? 'Há registros mais antigos para consultar.' : 'Nenhuma alteração encontrada neste trecho. Continue a busca nos registros anteriores.')
+        ? 'Há mais alterações deste agendamento para consultar.'
         : (list.children.length ? 'Consulta concluída nos registros disponíveis.' : 'Nenhuma alteração registrada encontrada para este agendamento.');
     }, onFailure: falha });
     function falha(error) {
