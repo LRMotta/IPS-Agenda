@@ -76,7 +76,7 @@ test('recibo fica no menu de ações e sai dos detalhes, preservando elegibilida
       const menu = context.agendaActionMenuHtml_(row, 'test', past);
       assert.match(menu, /role="menuitem"[^>]*data-agenda-id="AG-123"[^>]*data-row-index="42"[^>]*agendaCloseActionMenus\(\);abrirAgendaRecibo\(this\.dataset\.agendaId,Number\(this\.dataset\.rowIndex\)\)/);
       assert.match(menu, /receipt_long.*Gerar recibo/);
-      assert.ok(menu.indexOf('Gerar recibo') > menu.indexOf('Gerar Display'));
+      assert.ok(menu.indexOf('Gerar recibo') > menu.indexOf('Gerar display'));
       assert.doesNotMatch(context.agendaDetailHtml(row), /Gerar recibo|abrirAgendaRecibo/);
     }
   }

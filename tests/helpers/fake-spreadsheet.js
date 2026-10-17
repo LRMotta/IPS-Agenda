@@ -21,6 +21,33 @@ class FakeRange {
     return values;
   }
 
+  createTextFinder(searchText) {
+    const range = this;
+    const options = { entire: false, caseSensitive: false, regex: false };
+    const finder = {
+      matchEntireCell(value) { options.entire = value; return finder; },
+      matchCase(value) { options.caseSensitive = value; return finder; },
+      useRegularExpression(value) { options.regex = value; return finder; },
+      findAll() {
+        const expression = options.regex ? new RegExp(searchText, options.caseSensitive ? '' : 'i') : null;
+        const result = [];
+        for (let r = range.row; r < range.row + range.numRows; r++) {
+          for (let c = range.column; c < range.column + range.numColumns; c++) {
+            const text = String((range.sheet.rows[r - 1] || [])[c - 1] ?? '');
+            const value = options.caseSensitive ? text : text.toLowerCase();
+            const needle = options.caseSensitive ? String(searchText) : String(searchText).toLowerCase();
+            const match = expression ? expression.exec(text) : null;
+            const found = expression ? !!match && (!options.entire || match[0] === text)
+              : options.entire ? value === needle : value.includes(needle);
+            if (found) result.push(new FakeRange(range.sheet, r, c));
+          }
+        }
+        return result;
+      }
+    };
+    return finder;
+  }
+
   getValue() { return this.getValues()[0][0]; }
   getRow() { return this.row; }
   getColumn() { return this.column; }

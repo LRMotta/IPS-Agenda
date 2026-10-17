@@ -26,7 +26,10 @@ test('menu de ações abre recibo do evento sem precisar expandir detalhes, em d
       await page.getByRole('button', { name: 'Mais ações', exact: true }).click();
       const menu = page.getByRole('menu', { name: 'Ações do agendamento' });
       assert.equal(await menu.isVisible(), true);
-      assert.equal(await menu.getByRole('menuitem', { name: 'Gerar Display' }).isVisible(), true);
+      assert.deepEqual(await menu.getByRole('menuitem').allTextContents().then(labels => labels.map(label => label.replace(/^(picture_in_picture|receipt_long|calendar_add_on|history|event_busy)/, '').trim())), ['Gerar display', 'Gerar recibo', 'Adicionar ao Google Agenda', 'Histórico do agendamento', 'Cancelar agendamento']);
+      assert.equal(await menu.getByRole('separator').count(), 1);
+      assert.equal(await menu.getByRole('menuitem').last().getAttribute('class'), 'ag-action-menu-item danger');
+      assert.equal(await menu.getByRole('menuitem', { name: 'Gerar display' }).isVisible(), true);
       assert.equal(await menu.getByRole('menuitem', { name: 'Adicionar ao Google Agenda' }).isVisible(), true);
       const box = await menu.boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width);

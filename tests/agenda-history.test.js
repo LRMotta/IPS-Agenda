@@ -8,15 +8,21 @@ function row(id='A',field='Data',old='20/10/2026',value='22/10/2026',action='atu
 }
 function fixture(rows) {
   const sheet=new FakeSheet('Audit_Changes',[Array(10).fill('header'),...rows]);
-  const reads=[];
+  const reads=[],searches=[];
   const c=runFiles(['AgendaHistory.gs'],{Date,
     Utilities:{formatDate:(date,zone)=>{assert.equal(zone,'America/Sao_Paulo');return date.toISOString();}}
   });
   c.codexAssertCanRead_=()=>({ok:true});
   c.getCodexSpreadsheet_=()=>new FakeSpreadsheet({Audit_Changes:sheet});
   c.codexMeasureReadPerformance_=(_o,_s,_m,fn)=>fn();
-  c.codexReadValuesMeasured_=(range)=>{reads.push({rows:range.numRows,cells:range.numRows*range.numColumns});return range.getValues();};
-  return {c,sheet,reads};
+  c.codexReadValuesMeasured_=(range)=>{reads.push({start:range.row,rows:range.numRows,cells:range.numRows*range.numColumns});return range.getValues();};
+  const getRange=sheet.getRange.bind(sheet);
+  sheet.getRange=(...args)=>{
+    const range=getRange(...args),create=range.createTextFinder.bind(range);
+    range.createTextFinder=(search)=>{searches.push({column:range.column,rows:range.numRows,columns:range.numColumns,search});return create(search);};
+    return range;
+  };
+  return {c,sheet,reads,searches};
 }
 
 test('histórico autoriza antes de acessar a fonte, rejeita IDs/cursor e não cria abas',()=>{
@@ -32,21 +38,55 @@ test('histórico autoriza antes de acessar a fonte, rejeita IDs/cursor e não cr
   assert.equal(sheet.writes,0);
 });
 
-test('retorna somente alterações permitidas do ID exato, oculta identidade anterior e notas',()=>{
-  const rows=[row('A','Data de nascimento','NASCIMENTO_PRIVADO'),row('A','Participante','NOME_PRIVADO','OUTRO_PRIVADO'),row('AA'),row('A','Backup JSON'),row('A','Data','','','salvarNovoEventoCompleto'),row()];
-  rows.push([...row()].map((v,i)=>i===3?'Cadastros':v));
-  const f=fixture(rows), result=f.c.getAgendaHistorico('A');
-  assert.equal(result.rows.length,2);
-  assert.equal(result.rows[0].field,'Data');
-  assert.equal(result.rows[1].field,'Vínculo do participante');
-  assert.equal(result.rows[1].newValue,'Alterado');
-  assert.doesNotMatch(JSON.stringify(result),/PRIVADO|Nota técnica|NOME_|NASCIMENTO/);
+test('busca ID literal completo, preserva espaços legados e não mistura módulos, prefixos ou caixa',()=>{
+  const f=fixture([row(' A.+ '),row('A.+'),row('a.+'),row('A.++'),row('Axx'),row('A.+')]);
+  f.sheet.rows[6][3]='Cadastros';
+  const data=f.c.getAgendaHistorico('A.+');
+  assert.equal(data.rows.length,2);
+  assert.equal(f.searches.length,1);
+  assert.equal(f.searches[0].column,6);
+  assert.equal(f.searches[0].columns,1);
   assert.equal(f.sheet.writes,0);
 });
 
-test('pagina até quarenta mudanças sem perder linhas; append não duplica páginas',()=>{
-  const f=fixture(Array.from({length:95},(_,i)=>row('A','Visita',String(i),String(i+1))));
-  const first=f.c.getAgendaHistorico('A');
+test('amplia ações/campos operacionais, normaliza slots legados e protege dados pessoais/JSON/notas',()=>{
+  const rows=[
+    row('A','Data de nascimento','NASCIMENTO_PRIVADO'),
+    row('A','Participante','NOME_PRIVADO','OUTRO_PRIVADO'),
+    row('A','Backup JSON'),row('A','Data','','','salvarNovoEventoCompleto'),
+    row('A','Kit'),row('A','Controle Lab Central'),row('A','Polo Trial concluído'),row('A','eCRF concluída'),
+    row('A','Status Requisição','Pendente','Enviada','atualizarStatusRequisicaoAgenda'),
+    row('A','Transporte II - Status','Agendado','Confirmado','monitorarConfirmacoesCourierAgendadas'),
+    row('A','Transporte 1 - AWB','123','456','salvarTransporte'),
+    row('A','Transporte 2 - Status','','Docs gerados','gerarPdfTransporte'),
+    row('A','Backup - Agendamento','JSON_PRIVADO','{"id":"ID_PRIVADO"}','vincularBackupAoAgendamento'),
+    row('A','Backup - Status','Agendado','Adicionado','atualizarStatusBackupAgenda'),
+    row('A','Transporte I - Status','Confirmado','Entregue','confirmarEntregaTransportePendencia'),
+    row('A','Transporte I - Status','','Entregue','monitorarEntregasDhlAgendadas'),
+    row('A','Transporte I - Status','','Enviado','transporteMonitorarEnviosPorEmail'),
+    row('A','Backup - AWB do agendamento vinculado','123','456','sincronizarBackupAwb'),
+    row('A','Transporte I - Material','["JSON_PRIVADO"]','{"PII_PRIVADO":"x"}'),
+    row('A','Transporte I - Destino','Local A','Local B','vincularBackupAVisitaFutura'),
+    row('A','Transporte I - Material','Sangue','Soro'),
+    row('A','Status','','Tentativa','bloquearEdicaoAgenda')
+  ];
+  const data=fixture(rows).c.getAgendaHistorico('A');
+  assert.equal(data.rows.length,18);
+  assert.ok(data.rows.some(r=>r.field==='Transporte I - AWB'&&r.newValue==='456'));
+  assert.ok(data.rows.some(r=>r.field==='Vínculo do participante'&&r.summary));
+  assert.ok(data.rows.some(r=>r.field==='Agendamento de destino · Transporte I - Destino'));
+  assert.ok(data.rows.some(r=>r.field==='Transporte I - Material'&&r.newValue==='Soro'));
+  assert.doesNotMatch(JSON.stringify(data),/PRIVADO|Nota técnica|NOME_|NASCIMENTO|bloquearEdicao/);
+});
+
+test('pagina quarenta itens do próprio evento, pula campos excluídos e preserva lookahead/append',()=>{
+  const rows=[];
+  for(let i=0;i<95;i++) {
+    rows.push(row('A','Visita',String(i),String(i+1)));
+    rows.push(row('A','Data de nascimento','PRIVADO'));
+    rows.push(...Array.from({length:15},()=>row('OUTRO')));
+  }
+  const f=fixture(rows),first=f.c.getAgendaHistorico('A');
   assert.equal(first.rows.length,40);
   f.sheet.rows.push(row('A','Visita','nova','nova'));
   const second=f.c.getAgendaHistorico('A',first.nextBefore);
@@ -55,26 +95,72 @@ test('pagina até quarenta mudanças sem perder linhas; append não duplica pág
   assert.equal(all.length,95);
   assert.equal(new Set(all).size,95);
   assert.equal(third.hasMore,false);
+  assert.equal(third.nextBefore,null);
+  assert.ok(f.reads.every(r=>r.rows<=160));
 });
 
-test('lote vazio permite continuar e não promete ausência de histórico; fonte encurtada exige reabrir',()=>{
+test('quarenta itens exatos não anunciam página vazia, e filtros restantes não criam mais páginas',()=>{
+  const f=fixture([row('A','Data de nascimento','PRIVADO'),...Array.from({length:40},(_,i)=>row('A','Visita',String(i),'Nova'))]);
+  const page=f.c.getAgendaHistorico('A');
+  assert.equal(page.rows.length,40);
+  assert.equal(page.hasMore,false);
+  assert.equal(page.nextBefore,null);
+});
+
+test('encontra o evento antigo logo na primeira consulta e detecta fonte encurtada ou movida',()=>{
   const f=fixture([row(),...Array.from({length:600},()=>row('OUTRO'))]);
   const first=f.c.getAgendaHistorico('A');
-  assert.equal(first.rows.length,0);
-  assert.equal(first.hasMore,true);
-  assert.equal(f.c.getAgendaHistorico('A',first.nextBefore).rows.length,1);
+  assert.equal(first.rows.length,1);
+  assert.equal(first.hasMore,false);
+  assert.equal(f.reads.length,1);
+  assert.equal(f.reads[0].cells,10);
   f.sheet.rows.length=3;
-  assert.throws(()=>f.c.getAgendaHistorico('A',first.nextBefore),/histórico mudou/);
+  assert.throws(()=>f.c.getAgendaHistorico('A',502),/histórico mudou/);
+  const g=fixture([row()]);
+  g.c.codexReadValuesMeasured_=()=>[row('MOVIDO')];
+  assert.throws(()=>g.c.getAgendaHistorico('A'),/histórico mudou/);
 });
 
-test('orçamento integrado fica em uma leitura e 5 mil células por chamada em fontes grandes',t=>{
+test('desempenho: 100 mil linhas alheias não são transferidas; ausência não lê valores',t=>{
   for(const total of [1000,10000,100000]) {
-    const f=fixture(Array.from({length:total},()=>row('OUTRO')));
-    f.c.getAgendaHistorico('A');
-    assert.deepEqual(f.reads,[{rows:500,cells:5000}]);
+    const rows=Array.from({length:total},()=>row('OUTRO'));
+    rows[4]=row('A');
+    const f=fixture(rows);
+    assert.equal(f.c.getAgendaHistorico('A').rows.length,1);
+    assert.equal(f.searches.length,1);
+    assert.equal(f.reads.length,1);
+    assert.equal(f.reads[0].cells,10);
     assert.equal(f.sheet.writes,0);
-    t.diagnostic(JSON.stringify({sourceRows:total,valueReads:1,cellsRead:5000,fullScanCells:total*10}));
+    t.diagnostic(JSON.stringify({sourceRows:total,nativeIdSearches:1,valueReads:1,cellsTransferred:10}));
   }
+  const f=fixture([row('OUTRO')]);
+  assert.equal(f.c.getAgendaHistorico('SEM').rows.length,0);
+  assert.equal(f.reads.length,0);
+});
+
+test('inclui aliases do Transporte backup, materiais e remoção de dia de Auditoria',()=>{
+  const f=fixture([
+    row('A','Transporte backup - Status','Pendente','Agendado','salvarTransporte'),
+    row('A','Transporte backup - AWB','123','456','salvarTransporte'),
+    row('A','Transporte 1 - Materiais','Sangue','Soro','salvarTransporte'),
+    row('A','Transporte backup - Materiais estruturados','{"PII_PRIVADO":1}','Resumo','salvarTransporte'),
+    row('A','Auditoria','17/10/2026','','atualizarAgendaEventoCompleto')
+  ]);
+  const data=f.c.getAgendaHistorico('A');
+  assert.equal(data.rows.length,5);
+  assert.ok(data.rows.some(r=>r.field==='Backup - Status'&&r.newValue==='Agendado'));
+  assert.ok(data.rows.some(r=>r.field==='Backup - AWB'&&r.newValue==='456'));
+  assert.ok(data.rows.some(r=>r.field==='Transporte I - Material'&&r.newValue==='Soro'));
+  assert.ok(data.rows.some(r=>r.field==='Backup - Detalhes dos materiais'&&r.summary));
+  assert.ok(data.rows.some(r=>r.field==='Auditoria'&&r.oldValue==='17/10/2026'));
+  assert.doesNotMatch(JSON.stringify(data),/PII_PRIVADO/);
+});
+
+test('datas textuais legadas preservam o valor registrado sem inventar horário',()=>{
+  const f=fixture([]);
+  assert.equal(f.c.agendaHistoricoData_('17/10/2026'),'17/10/2026');
+  assert.equal(f.c.agendaHistoricoData_('17/10/2026 14:20'),'17/10/2026 14:20');
+  assert.equal(f.c.agendaHistoricoData_('inválida'),'Data não disponível');
 });
 
 test('criação registra o ID definitivo depois da escrita e não registra criação se a escrita falhar',()=>{
