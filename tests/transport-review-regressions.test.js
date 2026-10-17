@@ -351,7 +351,7 @@ for (const change of ['geracao', 'courier', 'evidencia']) {
   });
 }
 
-test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slots', () => {
+test('monitor valida cabecalhos, le o log em dois blocos e a Agenda uma vez para tres slots', () => {
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
     ['Evento', 'Courier I', 'Status I', 'Courier II', 'Status II', 'Courier III', 'Status III', 'ID'],
@@ -370,6 +370,8 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
   };
   const s = server({
     getCodexSpreadsheet_: () => book, SpreadsheetApp: { flush() {} },
+    normalizarAwbCourier_: value => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''),
+    codexCourierRequiresAwb_: () => false,
     AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
     AGENDA_CFG: { col: { status: 1, id: 8 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
     getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
@@ -386,7 +388,7 @@ test('monitor le o log em dois blocos e a linha da Agenda uma vez para tres slot
   countReads(agenda, () => agendaReads++);
   const result = s.transporteMonitorarEnviosPorEmail_();
   assert.equal(result.enviados, 3);
-  assert.equal(logReads, 2);
+  assert.equal(logReads, 3, 'uma validacao de cabecalhos e dois snapshots do log, independente do numero de slots');
   assert.equal(agendaReads, 1, 'IDs e valores dos tres slots vêm do mesmo snapshot sob lock');
   assert.deepEqual(agenda.rows[1], ['Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'EVT-1']);
 });

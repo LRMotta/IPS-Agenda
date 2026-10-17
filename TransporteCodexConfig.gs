@@ -424,7 +424,7 @@ var TRANSPORTE_OPERACOES_HEADERS_ = [
   'Agenda_ID', 'Slot', 'Referencia', 'Courier', 'Gerado_Em', 'Gerado_Por',
   'PDF_ID', 'PDF_Nome', 'Rascunho_ID', 'Rascunho_Status', 'Rascunho_Erro',
   'Email_Identificado_Em', 'Email_Enviado_Em', 'Gmail_Message_ID', 'Anexos',
-  'Ultima_Verificacao', 'PDF_Hash', 'Temperatura_Geracao', 'Geracao_ID'
+  'Ultima_Verificacao', 'PDF_Hash', 'Temperatura_Geracao', 'Geracao_ID', 'AWB_Documento', 'Pendencia_Envio'
 ];
 var TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_ = 60 * 60 * 1000;
 var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 30;
@@ -528,7 +528,9 @@ function transporteOperacoesRows_() {
       ultimaVerificacao: row[15],
       pdfHash: String(row[16] || '').trim(),
       temperaturaPdf: headers[17] === 'Temperatura_Geracao' ? String(row[17] || '').trim() : '',
-      generationRequestId: headers[18] === 'Geracao_ID' ? String(row[18] || '').trim() : ''
+      generationRequestId: headers[18] === 'Geracao_ID' ? String(row[18] || '').trim() : '',
+      awbDocumento: headers[19] === 'AWB_Documento' ? String(row[19] || '').trim() : '',
+      pendenciaEnvio: headers[20] === 'Pendencia_Envio' ? String(row[20] || '').trim() : ''
     };
   });
 }
@@ -581,7 +583,9 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     evidenciaEnvio[4],
     pdfHash,
     String(info.temperaturaPdf || '').trim(),
-    String(info.generationRequestId || '').trim()
+    String(info.generationRequestId || '').trim(),
+    String(info.awbDocumento || '').trim(),
+    mesmoDocumento ? String(existente.pendenciaEnvio || '') : ''
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
   // Definir texto antes da escrita impede conversao de IDs em numeros.
@@ -600,10 +604,10 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
   agora = transporteOperacaoDate_(agora) || new Date();
   return transporteOperacoesRows_().filter(function(item) {
     var geradoEm = transporteOperacaoDate_(item.geradoEm);
-    var identificadoSemAnexoAceito = transporteOperacaoDate_(item.emailIdentificadoEm) &&
+    var identificadoSemAnexoAceito = !item.pendenciaEnvio && transporteOperacaoDate_(item.emailIdentificadoEm) &&
       Number(item.anexos || 0) < 1 && !transporteCourierExigeAnexoEnvio_(item.courier);
     return geradoEm && !transporteOperacaoDate_(item.emailEnviadoEm) && !identificadoSemAnexoAceito &&
-      agora.getTime() - geradoEm.getTime() >= TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_;
+      (item.pendenciaEnvio || agora.getTime() - geradoEm.getTime() >= TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_);
   }).map(function(item) {
     var identificado = transporteOperacaoDate_(item.emailIdentificadoEm);
     var anexos = Number(item.anexos || 0);
@@ -614,6 +618,7 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
         : (identificado && anexos > 0
           ? 'E-mail com documentação identificado; atualização da Agenda aguardando nova tentativa.'
           : 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.'));
+    if (item.pendenciaEnvio) motivo = item.pendenciaEnvio;
     if (!identificado && agora.getTime() - transporteOperacaoDate_(item.geradoEm).getTime() > TRANSPORTE_MONITOR_BUSCA_DIAS_ * 24 * 60 * 60 * 1000) {
       motivo += ' Documentação gerada há mais de 30 dias; mensagens antigas ficam fora da janela de busca automática. Verifique o envio manualmente.';
     }
@@ -695,15 +700,15 @@ function transporteMonitorColunaA1_(column) {
   return name;
 }
 
-function transporteMonitorGravarEvidencias_(sheet, updates) {
+function transporteMonitorGravarEvidencias_(sheet, updates, targetColumn) {
   updates.sort(function(a, b) { return a.row - b.row; });
-  var column = TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Identificado_Em') + 1;
+  var column = targetColumn || TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Identificado_Em') + 1;
   for (var i = 0; i < updates.length;) {
     var first = updates[i].row;
     var values = [updates[i].values];
     i++;
     while (i < updates.length && updates[i].row === first + values.length) { values.push(updates[i].values); i++; }
-    sheet.getRange(first, column, values.length, 5).setValues(values);
+    sheet.getRange(first, column, values.length, values[0].length).setValues(values);
   }
 }
 
@@ -714,8 +719,26 @@ function transporteOperacaoVersion_(item) {
     item.rascunhoId, item.rascunhoStatus, item.rascunhoErro,
     transporteOperacaoDate_(item.emailIdentificadoEm), transporteOperacaoDate_(item.emailEnviadoEm),
     item.gmailMessageId, item.anexos, transporteOperacaoDate_(item.ultimaVerificacao), item.pdfHash,
-    item.temperaturaPdf, item.generationRequestId
+    item.temperaturaPdf, item.generationRequestId, item.awbDocumento, item.pendenciaEnvio
   ]);
+}
+
+function transporteMonitorAwbDocumento_(item) {
+  if (item.awbDocumento) return normalizarAwbCourier_(item.awbDocumento);
+  // Compatibilidade com nomes produzidos pelo exportador antes do snapshot.
+  // Nomes arbitrarios ou de teste nao comprovam a AWB do documento.
+  var legacy = /^([A-Z0-9 -]+)_\d{2}(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\d{4}_(?:AMBIENTE(?:_CONGELADO|_REFRIGERADO)?|CONGELADO|REFRIGERADO)(?:\.pdf)?$/i.exec(item.pdfNome || '');
+  return legacy ? normalizarAwbCourier_(legacy[1]) : '';
+}
+
+function transporteMonitorConferirAwb_(item, valoresAgenda, idx) {
+  var documento = transporteMonitorAwbDocumento_(item);
+  var agenda = normalizarAwbCourier_(valoresAgenda[idx.awb]);
+  if (!documento && !agenda && !codexCourierRequiresAwb_(item.courier)) return '';
+  if (!documento) return 'AWB da documentação não comprovada. Confira o documento e gere novamente para habilitar a confirmação automática.';
+  if (!agenda) return 'AWB ausente na Agenda. Confira a documentação antes de confirmar o agendamento.';
+  if (agenda !== documento) return 'AWB da Agenda (' + agenda + ') diverge da documentação (' + documento + '). Confira e corrija o cadastro antes de confirmar o agendamento.';
+  return '';
 }
 
 function transporteAgendaLinhasPorId_(agenda) {
@@ -868,7 +891,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     exigeAnexoCache = Object.create(null);
     if (typeof CODEX_AGENDA_COURIER_ROWS_CACHE_ !== 'undefined') CODEX_AGENDA_COURIER_ROWS_CACHE_ = null;
     var remetentesAtuais = Object.keys(referencias).length ? transporteMonitorRemetentes_() : {};
-    var sh = transporteOperacoesSheet_(false);
+    var sh = transporteOperacoesSheet_(true);
     // Uma leitura do log sob lock revalida todos os candidatos do lote.
     var operacoesAtuais = {};
     transporteOperacoesRows_().forEach(function(item) { operacoesAtuais[item.row] = item; });
@@ -878,6 +901,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     var statusCells = [];
     var audits = [];
     var evidenciaUpdates = [];
+    var pendenciaUpdates = [];
     var enviados = [];
     var semAnexo = [];
     var naoPromovidos = [];
@@ -916,6 +940,12 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         return;
       }
       var valoresAgenda = snapshotAgenda.rows[linha];
+      var pendenciaAwb = transporteMonitorConferirAwb_(item, valoresAgenda, idx);
+      pendenciaUpdates.push({ row: item.row, values: [pendenciaAwb] });
+      if (pendenciaAwb) {
+        naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: pendenciaAwb });
+        return;
+      }
       var statusEvento = valoresAgenda[AGENDA_CFG.col.status - 1];
       if (AgendaServerRules_.isCancelled(statusEvento)) {
         naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Agendamento cancelado' });
@@ -963,6 +993,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       codexWriteAuditChanges_(entry.moduleName, entry.action, entry.recordId, entry.changes, entry.note);
     });
     transporteMonitorGravarEvidencias_(sh, evidenciaUpdates);
+    transporteMonitorGravarEvidencias_(sh, pendenciaUpdates, TRANSPORTE_OPERACOES_HEADERS_.indexOf('Pendencia_Envio') + 1);
     // Agenda e evidencias devem estar visiveis antes da proxima consulta.
     if (statusCells.length || evidenciaUpdates.length) SpreadsheetApp.flush();
     return {
@@ -4424,6 +4455,7 @@ function gerarPdfTransporteInterno_(options, access) {
             pdfId: result.fileId,
             pdfNome: result.fileName,
             pdfHash: result.manifestoPdfHash,
+            awbDocumento: manifestoPdf.manifesto && manifestoPdf.manifesto.awb,
             temperaturaPdf: temperaturaPdf,
             generationRequestId: options.generationRequestId || '',
             rascunhoId: draftStatus.draftId,
