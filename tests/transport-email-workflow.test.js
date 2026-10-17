@@ -16,6 +16,8 @@ function transportServer(extra = {}) {
     SpreadsheetApp: { getActiveSpreadsheet: () => book, flush() {} },
     codexGetAllowedUsers_: () => ({ 'operador@example.invalid': { active: true } }),
     normText_: norm,
+    normalizarAwbCourier_: value => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''),
+    codexCourierRequiresAwb_: courier => ['marken', 'ocasa', 'pinex'].includes(norm(courier)),
     ...extra,
     book
   });
@@ -32,7 +34,7 @@ test('referencia discreta identifica Agenda e slot e a pendencia nasce apos uma 
     pdfId: 'PDF-1',
     pdfNome: 'docs.pdf',
     rascunhoId: 'DRAFT-1',
-    rascunhoOk: true
+    awbDocumento: '620X41337652', rascunhoOk: true
   });
 
   assert.equal(registro.referencia, 'IPS-TRP-EVT-123-T2');
@@ -48,7 +50,7 @@ test('regenerar documentos preserva a evidencia somente com o mesmo hash', () =>
   const server = transportServer({ book });
   const primeiro = server.transporteRegistrarDocumentacaoGerada_({
     agendaId: 'EVT-REGERAR', slot: '3', courier: 'MARKEN',
-    pdfId: 'PDF-ANTIGO', pdfNome: 'antigo.pdf', rascunhoOk: true, pdfHash: 'HASH-IGUAL'
+    pdfId: 'PDF-ANTIGO', pdfNome: 'antigo.pdf', awbDocumento: '620X41337652', rascunhoOk: true, pdfHash: 'HASH-IGUAL'
   });
   const identificadoEm = new Date('2026-09-11T16:48:00-03:00');
   const enviadoEm = new Date('2026-09-11T16:49:00-03:00');
@@ -59,7 +61,7 @@ test('regenerar documentos preserva a evidencia somente com o mesmo hash', () =>
 
   server.transporteRegistrarDocumentacaoGerada_({
     agendaId: 'EVT-REGERAR', slot: 'III', courier: 'MARKEN',
-    pdfId: 'PDF-NOVO', pdfNome: 'novo.pdf', rascunhoOk: true, pdfHash: 'HASH-IGUAL'
+    pdfId: 'PDF-NOVO', pdfNome: 'novo.pdf', awbDocumento: '620X41337652', rascunhoOk: true, pdfHash: 'HASH-IGUAL'
   });
 
   const operacao = server.transporteOperacoesRows_()[0];
@@ -78,8 +80,8 @@ test('monitor da copia com anexo promove Pendente e Docs gerados para Agendado',
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'DHL', status, 'EVT-1']
+    ['Status evento', 'Courier', 'Status courier', 'ID', 'AWB'],
+    ['Agendado', 'DHL', status, 'EVT-1', '620X41337652']
   ]);
   const audits = [];
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
@@ -89,7 +91,7 @@ test('monitor da copia com anexo promove Pendente e Docs gerados para Agendado',
     AGENDA_CFG: {
       col: { status: 1, id: 4 },
       idx: {
-        c1: { nome: 1, status: 2 },
+        c1: { nome: 1, status: 2, awb: 4 },
         c2: { nome: 3, status: 4 },
         c3: { nome: 5, status: 6 }
       }
@@ -111,7 +113,7 @@ test('monitor da copia com anexo promove Pendente e Docs gerados para Agendado',
     }
   });
   server.transporteRegistrarDocumentacaoGerada_({
-    agendaId: 'EVT-1', slot: '1', courier: 'DHL', rascunhoOk: true
+    agendaId: 'EVT-1', slot: '1', courier: 'DHL', awbDocumento: '620X41337652', rascunhoOk: true
   });
 
   const result = server.transporteMonitorarEnviosPorEmail_();
@@ -128,8 +130,8 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'OCASA', 'Não Agendado', 'EVT-2']
+    ['Status evento', 'Courier', 'Status courier', 'ID', 'AWB'],
+    ['Agendado', 'OCASA', 'Não Agendado', 'EVT-2', '620X41337652']
   ]);
   const server = transportServer({
     book,
@@ -137,7 +139,7 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
     AGENDA_CFG: {
       col: { status: 1, id: 4 },
       idx: {
-        c1: { nome: 1, status: 2 },
+        c1: { nome: 1, status: 2, awb: 4 },
         c2: { nome: 3, status: 4 },
         c3: { nome: 5, status: 6 }
       }
@@ -158,7 +160,7 @@ test('email identificado sem anexo continua pendente e nao muda o status', () =>
     }
   });
   server.transporteRegistrarDocumentacaoGerada_({
-    agendaId: 'EVT-2', slot: '1', courier: 'OCASA', rascunhoOk: true
+    agendaId: 'EVT-2', slot: '1', courier: 'OCASA', awbDocumento: '620X41337652', rascunhoOk: true
   });
 
   const result = server.transporteMonitorarEnviosPorEmail_();
@@ -175,8 +177,8 @@ test('DHL sem anexo confirma o envio, promove para Agendado e sai das pendencias
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'DHL', 'Pendente', 'EVT-DHL']
+    ['Status evento', 'Courier', 'Status courier', 'ID', 'AWB'],
+    ['Agendado', 'DHL', 'Pendente', 'EVT-DHL', '620X41337652']
   ]);
   const server = transportServer({
     book,
@@ -184,7 +186,7 @@ test('DHL sem anexo confirma o envio, promove para Agendado e sai das pendencias
     AGENDA_CFG: {
       col: { status: 1, id: 4 },
       idx: {
-        c1: { nome: 1, status: 2 },
+        c1: { nome: 1, status: 2, awb: 4 },
         c2: { nome: 3, status: 4 },
         c3: { nome: 5, status: 6 }
       }
@@ -205,7 +207,7 @@ test('DHL sem anexo confirma o envio, promove para Agendado e sai das pendencias
     }
   });
   server.transporteRegistrarDocumentacaoGerada_({
-    agendaId: 'EVT-DHL', slot: '1', courier: 'DHL', rascunhoOk: true
+    agendaId: 'EVT-DHL', slot: '1', courier: 'DHL', awbDocumento: '620X41337652', rascunhoOk: true
   });
 
   const result = server.transporteMonitorarEnviosPorEmail_();
@@ -221,8 +223,8 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'MARKEN divergente', 'Pendente', 'EVT-3']
+    ['Status evento', 'Courier', 'Status courier', 'ID', 'AWB'],
+    ['Agendado', 'MARKEN divergente', 'Pendente', 'EVT-3', '620X41337652']
   ]);
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
   const server = transportServer({
@@ -231,7 +233,7 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
     AGENDA_CFG: {
       col: { status: 1, id: 4 },
       idx: {
-        c1: { nome: 1, status: 2 },
+        c1: { nome: 1, status: 2, awb: 4 },
         c2: { nome: 3, status: 4 },
         c3: { nome: 5, status: 6 }
       }
@@ -252,7 +254,7 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
     }
   });
   server.transporteRegistrarDocumentacaoGerada_({
-    agendaId: 'EVT-3', slot: '1', courier: 'MARKEN', rascunhoOk: true
+    agendaId: 'EVT-3', slot: '1', courier: 'MARKEN', awbDocumento: '620X41337652', rascunhoOk: true
   });
 
   const primeira = server.transporteMonitorarEnviosPorEmail_();
@@ -271,8 +273,8 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'PINEX divergente', 'Pendente', 'EVT-MANUAL']
+    ['Status evento', 'Courier', 'Status courier', 'ID', 'AWB'],
+    ['Agendado', 'PINEX divergente', 'Pendente', 'EVT-MANUAL', '620X41337652']
   ]);
   const audits = [];
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
@@ -283,7 +285,7 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
     AGENDA_CFG: {
       col: { status: 1, id: 4 },
       idx: {
-        c1: { nome: 1, status: 2 },
+        c1: { nome: 1, status: 2, awb: 4 },
         c2: { nome: 3, status: 4 },
         c3: { nome: 5, status: 6 }
       }
@@ -308,7 +310,7 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
     }
   });
   server.transporteRegistrarDocumentacaoGerada_({
-    agendaId: 'EVT-MANUAL', slot: '1', courier: 'PINEX', rascunhoOk: true
+    agendaId: 'EVT-MANUAL', slot: '1', courier: 'PINEX', awbDocumento: '620X41337652', rascunhoOk: true
   });
 
   const primeira = server.transporteMonitorarEnviosPorEmail_();
@@ -334,8 +336,8 @@ test('monitor recupera operacao antiga concluida antes de promover a Agenda', ()
   const rules = runFile('AgendaServerRules.gs').AgendaServerRules_;
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
-    ['Status evento', 'Courier', 'Status courier', 'ID'],
-    ['Agendado', 'MARKEN', 'Pendente', 'EVT-4']
+    ['Status evento', 'Courier', 'Status courier', 'ID', 'AWB'],
+    ['Agendado', 'MARKEN', 'Pendente', 'EVT-4', '620X41337652']
   ]);
   const messageDate = new Date(Date.now() + 2 * 60 * 1000);
   const server = transportServer({
@@ -344,7 +346,7 @@ test('monitor recupera operacao antiga concluida antes de promover a Agenda', ()
     AGENDA_CFG: {
       col: { status: 1, id: 4 },
       idx: {
-        c1: { nome: 1, status: 2 },
+        c1: { nome: 1, status: 2, awb: 4 },
         c2: { nome: 3, status: 4 },
         c3: { nome: 5, status: 6 }
       }
@@ -365,7 +367,7 @@ test('monitor recupera operacao antiga concluida antes de promover a Agenda', ()
     }
   });
   const registro = server.transporteRegistrarDocumentacaoGerada_({
-    agendaId: 'EVT-4', slot: '1', courier: 'MARKEN', rascunhoOk: true
+    agendaId: 'EVT-4', slot: '1', courier: 'MARKEN', awbDocumento: '620X41337652', rascunhoOk: true
   });
   const operacoes = book.getSheetByName('Transporte_Operacoes');
   operacoes.getRange(registro.row, 12, 1, 5).setValues([[
@@ -406,7 +408,7 @@ test('salvar Transporte nao presume envio e o rascunho inclui referencia depois 
 });
 
 function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', draft = false, attachments = [], status = 'Não Agendado' } = {}) {
-  const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status', 'ID'], ['Agendado', courier, status, 'EVT-TEST']]);
+  const agenda = new FakeSheet('Agenda', [['Evento', 'Courier', 'Status', 'ID', 'AWB'], ['Agendado', courier, status, 'EVT-TEST', '620X41337652']]);
   const logs = [];
   const message = {
     getFrom: () => 'operador@example.invalid', getSubject: () => body, getPlainBody: () => '', isDraft: () => draft,
@@ -414,19 +416,84 @@ function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', d
   };
   const server = transportServer({
     AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
-    AGENDA_CFG: { col: { status: 1, id: 4 }, idx: { c1: { nome: 1, status: 2 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
+    AGENDA_CFG: { col: { status: 1, id: 4 }, idx: { c1: { nome: 1, status: 2, awb: 4 }, c2: { nome: 3, status: 4 }, c3: { nome: 5, status: 6 } } },
     getAgendaSheet_: () => agenda, encontrarLinhaPorId: () => 2,
     codexWithDocumentLock_: (_label, fn) => fn(),
     Logger: { log: text => logs.push(text) },
     GmailApp: { search: () => [{ getMessages: () => [message] }] }
   });
-  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1', courier, rascunhoOk: true });
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1', courier, awbDocumento: '620X41337652', rascunhoOk: true });
   return { server, agenda, message, logs };
 }
 
+test('AWB divergente preserva email identificado, impede conclusao e gera pendencia imediata', () => {
+  for (const status of ['Docs gerados', 'Agendado']) {
+    const { server, agenda } = monitorFixture({ status });
+    agenda.rows[1][4] = '620X41337653';
+    const result = server.transporteMonitorarEnviosPorEmail_();
+    assert.equal(result.enviados, 0);
+    assert.equal(result.naoPromovidos, 1);
+    assert.equal(agenda.rows[1][2], status);
+    const operation = server.transporteOperacoesRows_()[0];
+    assert.equal(operation.gmailMessageId, 'MSG-TEST');
+    assert.equal(operation.emailEnviadoEm, '');
+    assert.match(operation.pendenciaEnvio, /620X41337653.*620X41337652/);
+    assert.match(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].motivo, /diverge/);
+    agenda.rows[1][4] = '620X41337652';
+    assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 1);
+    assert.equal(server.transporteOperacoesRows_()[0].pendenciaEnvio, '');
+    assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date()).length, 0);
+  }
+});
+
+test('AWB e revalidada sob lock depois da busca Gmail', () => {
+  const { server, agenda } = monitorFixture({ status: 'Docs gerados' });
+  server.codexWithDocumentLock_ = (_name, fn) => {
+    agenda.rows[1][4] = '620X41337653';
+    return fn();
+  };
+  assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 0);
+  assert.equal(agenda.rows[1][2], 'Docs gerados');
+});
+
+test('documentacao legada usa somente nome reconhecido e leitura nao migra colunas', () => {
+  for (const [name, expected] of [['620X41337652_20OUT2026_AMBIENTE.pdf', 1], ['620X41337652_20OUT2026_AMBIENTE_CONGELADO.pdf', 1], ['620X41337652_20OUT2026_AMBIENTE_REFRIGERADO.pdf', 1], ['docs.pdf', 0]]) {
+    const { server, agenda } = monitorFixture({ courier: 'MARKEN', attachments: [{}] });
+    const sheet = server.book.getSheetByName('Transporte_Operacoes');
+    sheet.rows = sheet.rows.map(row => row.slice(0, 19));
+    sheet.rows[1][7] = name;
+    const writes = sheet.writes;
+    assert.equal(server.transporteOperacoesRows_()[0].awbDocumento, '');
+    assert.equal(sheet.writes, writes);
+    assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, expected);
+    assert.equal(agenda.rows[1][2], expected ? 'Agendado' : 'Não Agendado');
+  }
+});
+
+test('AWB ausente bloqueia courier obrigatorio e preserva DHL sem AWB nos dois lados', () => {
+  for (const courier of ['MARKEN', 'DHL']) {
+    const { server, agenda } = monitorFixture({ courier, attachments: [{}] });
+    agenda.rows[1][4] = '';
+    const sheet = server.book.getSheetByName('Transporte_Operacoes');
+    sheet.getRange(2, 20).setValue('');
+    assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, courier === 'DHL' ? 1 : 0);
+  }
+});
+
+test('migracao nao sobrescreve coluna reservada a AWB ocupada', () => {
+  const { server } = monitorFixture();
+  const sheet = server.book.getSheetByName('Transporte_Operacoes');
+  sheet.rows[0] = sheet.rows[0].slice(0, 19);
+  sheet.rows[1][19] = 'DADO LEGADO';
+  const writes = sheet.writes;
+  assert.throws(() => server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1' }), /dados sem cabeçalho/);
+  assert.equal(sheet.writes, writes);
+  assert.equal(sheet.rows[1][19], 'DADO LEGADO');
+});
+
 test('ID convertido em numero e recuperado pela referencia sem escrita durante leitura', () => {
   const server = transportServer();
-  const registro = server.transporteRegistrarDocumentacaoGerada_({ agendaId: '1417e053', slot: '1', courier: 'OCASA', rascunhoOk: true });
+  const registro = server.transporteRegistrarDocumentacaoGerada_({ agendaId: '1417e053', slot: '1', courier: 'OCASA', awbDocumento: '620X41337652', rascunhoOk: true });
   const sheet = server.book.getSheetByName('Transporte_Operacoes');
   assert.ok(sheet.numberFormats.some(format => format.row === registro.row && format.column === 1 && format.format === '@'));
   sheet.getRange(registro.row, 1).setValue(1.417e56);
@@ -436,7 +503,7 @@ test('ID convertido em numero e recuperado pela referencia sem escrita durante l
   assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].agendaId, '1417e053');
   assert.equal(sheet.writes, writes);
   assert.equal(sheet.rows[registro.row - 1][0], 1.417e56);
-  server.transporteRegistrarDocumentacaoGerada_({ agendaId: '1417e053', slot: '1', courier: 'OCASA', rascunhoOk: true });
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: '1417e053', slot: '1', courier: 'OCASA', awbDocumento: '620X41337652', rascunhoOk: true });
   assert.equal(sheet.getLastRow(), 2, 'regenerar reutiliza o registro legado');
   assert.equal(sheet.rows[registro.row - 1][0], '1417e053');
 });
@@ -474,8 +541,8 @@ test('monitor encontra a Agenda com ID numerico legado e conclui o envio com ane
 
 test('monitor compartilha IDs por fase e refaz o indice sob lock apos mover linhas', () => {
   const { server, agenda, message } = monitorFixture();
-  agenda.rows.push(['Agendado', 'DHL', 'Pendente', 'EVT-B']);
-  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-B', slot: '1', courier: 'DHL', rascunhoOk: true });
+  agenda.rows.push(['Agendado', 'DHL', 'Pendente', 'EVT-B', '620X41337652']);
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-B', slot: '1', courier: 'DHL', awbDocumento: '620X41337652', rascunhoOk: true });
   const old = new Date(Date.now() - 60000);
   // Duas operações já identificadas passam pela pré-checagem de recuperação.
   for (const row of [2, 3]) {
@@ -496,7 +563,7 @@ test('monitor compartilha IDs por fase e refaz o indice sob lock apos mover linh
   server.encontrarLinhaPorId = () => { throw new Error('Busca individual de IDs proibida no monitor'); };
   server.codexWithDocumentLock_ = (_label, fn) => {
     // Simula alteração durante a busca Gmail: muda a linha e cancela o outro evento.
-    agenda.rows.splice(1, 0, ['Agendado', 'DHL', 'Pendente', 'OUTRO']);
+    agenda.rows.splice(1, 0, ['Agendado', 'DHL', 'Pendente', 'OUTRO', '620X41337652']);
     agenda.rows[3][0] = 'Cancelado';
     locked = true;
     try { return fn(); } finally { locked = false; }
@@ -669,11 +736,11 @@ test('monitor revalida exigencia de anexo dentro do lock e confirma flush/cache/
 test('regeneracao com hash alterado ou legado sem hash invalida toda evidencia de envio', () => {
   for (const oldHash of ['ANTIGO', '']) {
     const server = transportServer();
-    server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', courier: 'DHL', pdfId: 'P1', pdfHash: oldHash, rascunhoOk: true });
+    server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', courier: 'DHL', pdfId: 'P1', pdfHash: oldHash, awbDocumento: '620X41337652', rascunhoOk: true });
     const log = server.book.getSheetByName('Transporte_Operacoes');
     const date = new Date();
     log.getRange(2, 12, 1, 5).setValues([[date, date, 'MSG-ANTIGA', 2, date]]);
-    server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', courier: 'DHL', pdfId: 'P2', pdfHash: 'NOVO', rascunhoOk: true });
+    server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', courier: 'DHL', pdfId: 'P2', pdfHash: 'NOVO', awbDocumento: '620X41337652', rascunhoOk: true });
     const operation = server.transporteOperacoesRows_()[0];
     assert.equal(operation.pdfHash, 'NOVO');
     assert.equal(operation.emailEnviadoEm, '');
@@ -718,7 +785,7 @@ test('schema legado e lido sem migrar e escrita so anexa hash a coluna desocupad
   const server = transportServer({ book });
   assert.equal(server.transporteOperacoesRows_()[0].pdfHash, '');
   assert.equal(sheet.writes, 0);
-  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', pdfHash: 'HASH', rascunhoOk: true });
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', pdfHash: 'HASH', awbDocumento: '620X41337652', rascunhoOk: true });
   assert.deepEqual(sheet.rows[0].slice(0, 16), legacyHeaders);
   assert.equal(sheet.rows[0][16], 'PDF_Hash');
 
@@ -732,7 +799,7 @@ test('schema legado e lido sem migrar e escrita so anexa hash a coluna desocupad
 
 test('pendencia antiga informa limite da busca sem aumentar as consultas Gmail', () => {
   const server = transportServer();
-  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', rascunhoOk: true });
+  server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', awbDocumento: '620X41337652', rascunhoOk: true });
   server.book.getSheetByName('Transporte_Operacoes').getRange(2, 5).setValue(new Date(Date.now() - 31 * 86400000));
   assert.match(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].motivo, /fora da janela de busca automática/);
 });
