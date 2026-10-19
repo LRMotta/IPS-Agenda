@@ -1987,6 +1987,10 @@
 
   function setAgendaSelectValue(id, value, fallbackLabel) {
     var el = document.getElementById(id);
+    if (el && id === 'agMedico' && AgendaRules.formPolicy((document.getElementById('agTipo') || {}).value || '').doctorAllowed === false) {
+      el.value = '';
+      return;
+    }
     value = String(value || '').trim();
     if (!el || !value) return;
     var match = '';
@@ -2281,6 +2285,14 @@
     var isPeriodo = policy.isMultiDay;
     var isOperacional = policy.isOperationalPeriod;
     var isVisita = policy.isVisit;
+    var visitaRequired = document.getElementById('agVisitaRequired');
+    if (visitaRequired) visitaRequired.style.display = isVisita ? '' : 'none';
+    var visita = document.getElementById('agVisita');
+    if (visita) {
+      visita.required = isVisita;
+      visita.setAttribute('aria-required', isVisita ? 'true' : 'false');
+    }
+    if (!isVisita) validarAgendaCampo('agVisita', 'errAgVisita', true);
     var projetoRequired = document.getElementById('agProjetoRequired');
     if (projetoRequired) projetoRequired.style.display = policy.requiresProject ? '' : 'none';
     var monitorRequired = document.getElementById('agMonitorRequired');
@@ -2289,6 +2301,15 @@
     if (salaRequired) salaRequired.style.display = isMonitoria ? '' : 'none';
     var medicoRequired = document.getElementById('agMedicoRequired');
     if (medicoRequired) medicoRequired.style.display = policy.requiresDoctor ? '' : 'none';
+    var medico = document.getElementById('agMedico');
+    if (medico) {
+      medico.disabled = policy.doctorAllowed === false;
+      medico.setAttribute('aria-disabled', medico.disabled ? 'true' : 'false');
+      if (medico.disabled) {
+        medico.value = '';
+        validarAgendaCampo('agMedico', 'errAgMedico', true);
+      }
+    }
     var ocultarEventoGeral = policy.hideGeneralEvent;
     var ocultarDetalhes = policy.hideDetails;
 
@@ -2535,6 +2556,7 @@
       { id: 'agData', err: 'errAgData', label: isPeriodo ? 'data de inicio' : 'data', required: true },
       { id: 'agHora', err: 'errAgHora', label: 'horario de inicio', required: policy.requiresTime },
       { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
+      { id: 'agVisita', err: 'errAgVisita', label: 'visita', required: policy.isVisit },
       { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isPeriodo },
       { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: policy.requiresProject },
       { id: 'agMonitor1', err: 'errAgMonitor1', label: 'monitor 1', required: isMonitoria },
@@ -3183,7 +3205,7 @@
       nascimento: nascimento,
       projeto: proj,
       visita: v('agVisita'),
-      medico: v('agMedico'),
+      medico: AgendaRules.formPolicy(v('agTipo')).doctorAllowed === false ? '' : v('agMedico'),
       monitorName: v('agMonitorNome'),
       salaMonitoria: v('agSalaMonitoria'),
       procedimentos: v('agProcedimentos'),
@@ -3488,7 +3510,6 @@
       setAgendaSelectValue('agProjeto', origem.projeto);
       onAgendaProjetoChange();
       setAgendaFieldValue('agVisita', origem.visita);
-      setAgendaSelectValue('agMedico', origem.medico);
       setAgendaSelectValue('agLabCentral', 'Sim');
       onAgendaLabCentralChange();
 
@@ -4140,11 +4161,11 @@
     if (poloBox) poloBox.checked = false;
     if (ecrfBox) ecrfBox.checked = false;
     if (carroBox) carroBox.checked = false;
-    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgPrestador','errAgLabCentral'].forEach(function(id) {
+    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgVisita','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgPrestador','errAgLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.classList.remove('visible');
     });
-    ['agData','agDataFim','agHora','agTipo','agProjeto','agMonitor1','agSalaMonitoria','agPrestador','agLabCentral'].forEach(function(id) {
+    ['agData','agDataFim','agHora','agTipo','agVisita','agProjeto','agMonitor1','agSalaMonitoria','agPrestador','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) {
         el.classList.remove('invalid');
@@ -6608,6 +6629,8 @@
   function abrirAgendaHistorico(id) {
     if (!String(id || '').trim()) { snackErro('Este agendamento não possui identificação para consultar o histórico.'); return; }
     _agendaHistoricoConsulta = { id: String(id), before: null, busy: false };
+    document.getElementById('agendaHistoricoCriacaoStatus').textContent = 'Consultando registro de criação…';
+    document.getElementById('agendaHistoricoCriacaoDetalhes').textContent = '';
     document.getElementById('agendaHistoricoLista').replaceChildren();
     var evento = agendaFindEventoLocal_(id);
     document.getElementById('agendaHistoricoContexto').textContent = evento ? [evento.participante || evento.tipo, evento.projeto, evento.data].filter(Boolean).join(' · ') : 'Alterações registradas deste agendamento';
@@ -6621,6 +6644,7 @@
     consulta.busy = true;
     var status = document.getElementById('agendaHistoricoStatus');
     var button = document.getElementById('agendaHistoricoMais');
+    var initialPage = consulta.before == null;
     status.textContent = 'Consultando alterações registradas…';
     button.hidden = false;
     button.disabled = true;
@@ -6632,6 +6656,7 @@
       if (!atual()) return;
       consulta.busy = false;
       if (!data || data.agendaId !== consulta.id || !Array.isArray(data.rows)) { falha(new Error('O histórico retornado não corresponde ao agendamento.')); return; }
+      if (initialPage) renderAgendaHistoricoCriacao_(data.creation);
       var list = document.getElementById('agendaHistoricoLista');
       data.rows.forEach(function(item) {
         var entry = document.createElement('li');
@@ -6655,8 +6680,27 @@
     function falha(error) {
       if (!atual()) return;
       consulta.busy = false;
+      if (initialPage) {
+        document.getElementById('agendaHistoricoCriacaoStatus').textContent = 'Não foi possível consultar o registro de criação.';
+        document.getElementById('agendaHistoricoCriacaoDetalhes').textContent = '';
+      }
       status.textContent = appErrorMessage(error, 'Não foi possível consultar o histórico.');
       button.hidden = false; button.disabled = false; button.textContent = 'Tentar novamente';
+    }
+  }
+
+  function renderAgendaHistoricoCriacao_(creation) {
+    var status = document.getElementById('agendaHistoricoCriacaoStatus');
+    var details = document.getElementById('agendaHistoricoCriacaoDetalhes');
+    if (creation && creation.found === true) {
+      status.textContent = 'Data: ' + (creation.timestamp || 'Data não disponível');
+      details.textContent = 'Responsável: ' + (creation.actorLabel || 'Responsável não disponível');
+    } else if (creation && creation.found === false) {
+      status.textContent = 'Criação não registrada';
+      details.textContent = 'Data e responsável não disponíveis na auditoria consultada.';
+    } else {
+      status.textContent = 'Dados de criação não disponíveis nesta consulta.';
+      details.textContent = '';
     }
   }
 
@@ -7463,7 +7507,7 @@
     var panel = document.getElementById('agendaCreatePanel');
     if (!panel || !panel.classList.contains('open')) return;
     if (!event || !event.target || !event.target.closest || !event.target.closest('#agendaCreatePanel')) return;
-    if (!/^ag(Data|DataFim|Hora|Tipo|Projeto|Monitor1|SalaMonitoria|Prestador|LabCentral)$/.test(String(event.target.id || ''))) return;
+    if (!/^ag(Data|DataFim|Hora|Tipo|Visita|Projeto|Monitor1|SalaMonitoria|Prestador|LabCentral)$/.test(String(event.target.id || ''))) return;
     if (event.target.id === 'agData') atualizarAgendaCourierStatusData_();
     updateAgendaSaveAvailability(false);
   }

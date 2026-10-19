@@ -12,7 +12,7 @@ function getAgendaHistorico(id, before) {
     var last = sheet ? sheet.getLastRow() : 0;
     if (before && before > last + 1) throw new Error('O histórico mudou. Reabra a janela para atualizar.');
     var end = before ? before - 1 : last;
-    var result = { agendaId: id, rows: [], nextBefore: null, hasMore: false };
+    var result = { agendaId: id, rows: [], nextBefore: null, hasMore: false, creation: before ? null : { found: false } };
     if (end < 2) return result;
     // Busca nativa apenas na coluna Record ID. Não transfere a coluna inteira nem
     // cria um índice persistido. O custo da busca no Sheets ainda depende da fonte.
@@ -25,6 +25,9 @@ function getAgendaHistorico(id, before) {
       .sort(function(a, b) { return b - a; });
     meta.searchRows = end - 1;
     meta.matchCount = positions.length;
+    // Historicos curtos reaproveitam a leitura abaixo. Nos longos, localizar a
+    // criacao separadamente evita carregar todas as alteracoes para mostrar o autor.
+    if (!before && positions.length > 40) result.creation = agendaHistoricoBuscarCriacao_(sheet, id, positions, meta);
     var lastReturned = null;
     for (var offset = 0; offset < positions.length;) {
       var high = positions[offset];
@@ -48,6 +51,10 @@ function getAgendaHistorico(id, before) {
           throw new Error('O histórico mudou. Reabra a janela para atualizar.');
         }
         if (String(row[3] || '').trim() !== 'Agenda') continue;
+        if (!before && positions.length <= 40) {
+          var creation = agendaHistoricoCriacaoItem_(row);
+          if (creation) result.creation = creation;
+        }
         var item = agendaHistoricoItem_(row);
         if (!item) continue;
         // Lookahead elegível: o cursor exclui só a última linha DEVOLVIDA.
@@ -64,6 +71,42 @@ function getAgendaHistorico(id, before) {
     }
     return result;
   });
+}
+
+function agendaHistoricoCriacaoItem_(row) {
+  // Somente conclusao de criacao pelo ID definitivo comprova a origem. Tentativas
+  // de salvar e a primeira alteracao disponivel nao identificam quem criou.
+  if (String(row[3] || '').trim() !== 'Agenda' ||
+      String(row[4] || '').trim() !== 'criarAgendaEventoConcluido' ||
+      String(row[6] || '').trim() !== 'Agendamento') return null;
+  var item = agendaHistoricoItem_(row);
+  return { found: true, timestamp: item.timestamp, actorLabel: item.actorLabel };
+}
+
+function agendaHistoricoBuscarCriacao_(sheet, id, positions, meta) {
+  var low = positions[positions.length - 1];
+  var high = positions[0];
+  var matchingRows = new Set(positions);
+  var candidates = sheet.getRange(low, 5, high - low + 1, 1)
+    .createTextFinder('^\\s*criarAgendaEventoConcluido\\s*$')
+    .matchEntireCell(true).matchCase(true).useRegularExpression(true).findAll()
+    .map(function(range) { return range.getRow(); })
+    .filter(function(rowNumber) { return matchingRows.has(rowNumber); })
+    .sort(function(a, b) { return a - b; });
+  meta.searchRows += high - low + 1;
+  for (var i = 0; i < candidates.length; i++) {
+    var row = codexReadValuesMeasured_(sheet.getRange(candidates[i], 1, 1, 10), false)[0];
+    meta.rowCount++;
+    meta.cellCount += 10;
+    meta.readCalls++;
+    if (!row || String(row[5] == null ? '' : row[5]).trim() !== id ||
+        String(row[4] || '').trim() !== 'criarAgendaEventoConcluido') {
+      throw new Error('O histórico mudou. Reabra a janela para atualizar.');
+    }
+    var creation = agendaHistoricoCriacaoItem_(row);
+    if (creation) return creation;
+  }
+  return { found: false };
 }
 
 function agendaHistoricoItem_(row) {

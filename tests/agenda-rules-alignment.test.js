@@ -68,6 +68,22 @@ test('status e courier preservam suas chaves canonicas em normalizacoes repetida
   });
 });
 
+test('Envio de amostras desabilita medico em ambos os runtimes sem alterar consulta ou visita', () => {
+  const { server, client } = rules();
+  [server, client].forEach(rule => {
+    for (const tipo of ['Envio de Amostras', ' envio de amostras ', 'envio-amostras']) {
+      assert.equal(rule.formPolicy(tipo).doctorAllowed, false);
+      assert.equal(rule.formPolicy(tipo, true).doctorAllowed, false);
+      assert.equal(rule.formPolicy(tipo).requiresDoctor, false);
+    }
+    assert.equal(rule.formPolicy('Consulta').doctorAllowed, true);
+    assert.equal(rule.formPolicy('Consulta').requiresDoctor, true);
+    assert.equal(rule.formPolicy('Visita').doctorAllowed, true);
+    assert.equal(rule.formPolicy('Visita').requiresDoctor, false);
+    assert.equal(rule.formPolicy('Exames laboratoriais').doctorAllowed, true);
+  });
+});
+
 test('chips de status compartilham a chave e os estilos da Agenda', () => {
   const { client } = rules();
   const css = readProjectFile('IndexStylesAfterDashboard.html');

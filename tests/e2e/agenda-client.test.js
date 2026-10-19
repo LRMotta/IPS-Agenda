@@ -25,6 +25,131 @@ async function scenario(run, options = {}) {
   } finally { await context.close(); }
 }
 
+test('Visita exige campo Visita na criacao e edicao, inclusive sem SoA ou Lab Central', async () => {
+  for (const width of [1280, 390]) {
+    for (const editing of [false, true]) {
+      await scenario(async page => {
+        await page.evaluate(editing => {
+          document.getElementById('agendaCreatePanel').classList.remove('open');
+          window._agendaEditId = '';
+          const data = { ...window._agendaDados, tiposEvento: ['Visita', 'Envio de amostras'], status: ['Agendado'], courierConfig: {}, projectCourierMap: {}, emailLabAtivo: false };
+          ['medicos', 'prestadores', 'monitores', 'salasMonitoria', 'couriers', 'temperaturas', 'statusCourier', 'laboratoriosDestino', 'procedimentoChips', 'laboratorios', 'feriados'].forEach(key => { data[key] = []; });
+          window.applyAgendaFormData(data);
+          if (editing) {
+            window.agendaAbrirEdicaoComRegistroPronto_({ id: 'A', tipo: 'Visita', status: 'Agendado', dataIso: '2026-10-06', hora: '08:00', projeto: 'Estudo A', labCentral: 'Nao', visita: '' });
+          } else {
+            window.agendaAbrirCreatePanelNovoPronto_();
+            window.setAgendaSelectValue('agTipo', 'Visita');
+            document.getElementById('agData').value = '2026-10-06';
+            document.getElementById('agHora').value = '08:00';
+            window.setAgendaSelectValue('agProjeto', 'Estudo A');
+            document.getElementById('agLabCentral').value = 'Nao';
+            window.onAgendaTipoChange();
+          }
+          window.setAgendaSelectValue('agProjeto', 'Estudo A');
+          window.atualizarAgendaVisitasSoA();
+          window.calls.filter(c => c.method === 'getAgendaVisitasSoASugeridas').at(-1).success({ visitas: [] });
+          window.updateAgendaSaveAvailability(false);
+          window.calls.length = 0;
+        }, editing);
+        assert.equal(await page.locator('#agVisitaRequired').isVisible(), true);
+        assert.equal(await page.locator('#agVisita').evaluate(el => el.required), true);
+        assert.equal(await page.locator('#agVisita').getAttribute('aria-required'), 'true');
+        assert.match(await page.locator('#agVisitaSoAHint').innerText(), /não possui calendário SoA/);
+        assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+        await page.locator('#agVisita').fill('   ');
+        await page.evaluate(() => window.salvarAgendaEvento());
+        assert.equal(await page.locator('#agVisita').getAttribute('aria-invalid'), 'true');
+        assert.equal(await page.locator('#errAgVisita').isVisible(), true);
+        assert.equal(await page.evaluate(() => window.calls.some(c => /salvarNovoEvento|atualizarAgendaEventoCompleto/.test(c.method))), false);
+        if (editing) {
+          await page.locator('#agVisitaWrap').scrollIntoViewIfNeeded();
+          const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+          fs.mkdirSync(dir, { recursive: true });
+          await page.screenshot({ path: path.join(dir, 'visita-obrigatoria-' + width + '.png') });
+          await page.locator('#agVisitaWrap').screenshot({ path: path.join(dir, 'visita-obrigatoria-campo-' + width + '.png') });
+        }
+        await page.locator('#agTipo').selectOption('Envio de amostras');
+        assert.equal(await page.locator('#agVisitaRequired').isVisible(), false);
+        assert.equal(await page.locator('#agVisita').evaluate(el => el.required), false);
+        assert.equal(await page.locator('#errAgVisita').isVisible(), false);
+        assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), true, JSON.stringify(await page.evaluate(() => window.agendaMissingRequiredChecks())));
+        await page.locator('#agTipo').selectOption('Visita');
+        assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+        await page.locator('#agVisita').fill('Triagem livre');
+        assert.equal(await page.locator('#agVisita').getAttribute('aria-invalid'), 'false');
+        assert.equal(await page.locator('#errAgVisita').isVisible(), false);
+        assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), true);
+        await page.locator('#btnSalvarAgenda').click();
+        const method = editing ? 'atualizarAgendaEventoCompleto' : 'salvarNovoEventoCompleto';
+        const payload = await page.evaluate(method => window.calls.find(c => c.method === method)?.args[0], method);
+        assert.equal(payload?.visita, 'Triagem livre');
+      }, { viewport: { width, height: 900 } });
+    }
+  }
+});
+
+test('Envio de amostras mantem medico vazio e inativo na criacao, edicao, referencias e Backup', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        document.getElementById('agendaCreatePanel').classList.remove('open');
+        window._agendaEditId = '';
+        const data = { ...window._agendaDados, tiposEvento: ['Visita', 'Consulta', 'Envio de amostras'], status: ['Agendado'], courierConfig: {}, projectCourierMap: {}, emailLabAtivo: false };
+        ['prestadores', 'monitores', 'salasMonitoria', 'statusCourier', 'laboratoriosDestino', 'procedimentoChips', 'laboratorios', 'feriados'].forEach(key => { data[key] = []; });
+        Object.assign(data, { medicos: ['Médico A'], couriers: ['Marken'], temperaturas: ['Congelado'] });
+        window.doctorTestData = data;
+        window.applyAgendaFormData(data);
+        window.agendaAbrirCreatePanelNovoPronto_();
+        window.setAgendaSelectValue('agTipo', 'Visita');
+        window.onAgendaTipoChange();
+      });
+      const doctor = page.locator('#agMedico');
+      await doctor.selectOption('Médico A');
+      await page.locator('#agTipo').selectOption('Envio de amostras');
+      assert.equal(await doctor.isDisabled(), true);
+      assert.equal(await doctor.inputValue(), '');
+      assert.equal(await doctor.getAttribute('aria-disabled'), 'true');
+      assert.equal(await doctor.evaluate(el => window.getComputedStyle(el).backgroundColor), 'rgb(242, 245, 250)');
+      assert.equal(await page.evaluate(() => window.coletarAgendaEvento().medico), '');
+      await page.locator('#agTipo').selectOption('Consulta');
+      assert.equal(await doctor.isEnabled(), true);
+      assert.equal(await page.locator('#agMedicoRequired').isVisible(), true);
+      await doctor.selectOption('Médico A');
+      await page.evaluate(() => {
+        window.agendaAbrirEdicaoComRegistroPronto_({ id: 'ENVIO-LEGADO', tipo: 'Envio de amostras', status: 'Agendado', dataIso: '2026-10-06', hora: '08:00', participante: 'Participante de teste', participanteCadastroId: 'P', projeto: 'Estudo AB', medico: 'Médico A', visita: 'V1', labCentral: 'Sim' });
+        window.agendaRestoreEditRecordValues_(true);
+        window.atualizarAgendaFormDataOpcoes(window.doctorTestData, { preservarValoresAtuais: true });
+        window.setAgendaSelectValue('agMedico', 'Médico A');
+      });
+      assert.equal(await doctor.isDisabled(), true);
+      assert.equal(await doctor.inputValue(), '', 'edicao legada e respostas de referencias nao preenchem medico');
+      assert.equal(await page.evaluate(() => window.coletarAgendaEvento().medico), '');
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await doctor.scrollIntoViewIfNeeded();
+      await page.locator('#agMedicoWrap').screenshot({ path: path.join(dir, 'envio-medico-inativo-' + width + '.png') });
+      await page.evaluate(() => { document.getElementById('agMedico').value = 'Médico A'; });
+      assert.equal(await page.evaluate(() => window.coletarAgendaEvento().medico), '', 'payload desconsidera valor injetado no controle inativo');
+      await page.locator('#agTipo').selectOption('Visita');
+      assert.equal(await doctor.isEnabled(), true);
+      await doctor.selectOption('Médico A');
+      await page.evaluate(() => {
+        window.setAgendaSelectValue('agLabCentral', 'Sim');
+        window.onAgendaLabCentralChange();
+        window.setAgendaSelectValue('agBackupNome', 'Marken');
+        window.setAgendaSelectValue('agBackupTemp', 'Congelado');
+        window.criarEnvioAmostrasDoBackupAgenda();
+      });
+      assert.equal(await page.locator('#agTipo').inputValue(), 'Envio de amostras');
+      assert.equal(await page.evaluate(() => window._agendaBackupOrigemId), 'ENVIO-LEGADO');
+      assert.equal(await doctor.isDisabled(), true);
+      assert.equal(await doctor.inputValue(), '', 'Backup nao herda o medico da visita');
+      assert.equal(await page.evaluate(() => window.coletarAgendaEvento().medico), '');
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
 test('Close-out fica junto de Monitorias e SIV com tipo correto e secao recolhivel', async () => {
   for (const width of [1280, 390]) {
     await scenario(async page => {

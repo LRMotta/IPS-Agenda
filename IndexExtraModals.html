@@ -476,6 +476,11 @@
       <button class="modal-close" type="button" onclick="fecharOverlay('modalAgendaHistorico')" aria-label="Fechar histórico">×</button>
     </div>
     <div class="modal-body">
+      <section class="agenda-history-creation" aria-labelledby="agendaHistoricoCriacaoTitle">
+        <strong id="agendaHistoricoCriacaoTitle">Criação do agendamento</strong>
+        <p id="agendaHistoricoCriacaoStatus" role="status" aria-live="polite">Consultando registro de criação…</p>
+        <small id="agendaHistoricoCriacaoDetalhes"></small>
+      </section>
       <p class="agenda-history-help">Alterações registradas na Auditoria, em ordem de registro, das mais recentes às antigas. Horário de Brasília. O histórico antigo pode estar incompleto; a ausência de registro não comprova ausência de alteração.</p>
       <ol id="agendaHistoricoLista" class="agenda-history-list" aria-label="Alterações registradas"></ol>
       <p id="agendaHistoricoStatus" role="status" aria-live="polite"></p>

@@ -457,7 +457,7 @@ test('interface vincula somente depois de salvar e abre o agendamento pelo chip'
   assert.match(server, /Backup_Agendamento_Ref/);
 });
 
-test('novo envio criado do backup preserva o medico do agendamento de origem', () => {
+test('novo envio criado do backup nao herda medico e preserva a temperatura de origem', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda()');
   const fim = client.indexOf('function gerarTransporteAgendaCard(', inicio);
@@ -465,7 +465,7 @@ test('novo envio criado do backup preserva o medico do agendamento de origem', (
 
   assert.notEqual(inicio, -1);
   assert.notEqual(fim, -1);
-  assert.match(fluxoBackup, /setAgendaSelectValue\('agMedico', origem\.medico\)/);
+  assert.doesNotMatch(fluxoBackup, /setAgendaSelectValue\('agMedico', origem\.medico\)/, 'novo envio de amostras nao herda medico da visita');
   assert.match(fluxoBackup, /setAgendaSelectValue\('agC1Temp', agendaBackupTemperaturaOrigem\(origem, backup\)\)/);
   assert.match(client, /agBackupTemp/);
   assert.match(client, /temperatura: v\('agBackupTemp'\)/);

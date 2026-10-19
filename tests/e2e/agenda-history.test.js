@@ -11,8 +11,9 @@ const {contentAccessibilitySource}=require('../helpers/content-accessibility-sou
 const {runFiles}=require('../helpers/load-app-script');
 const {FakeSheet,FakeSpreadsheet}=require('../helpers/fake-spreadsheet');
 
-function backendFixture() {
+function backendFixture(withCreation=false) {
   const rows=[Array(10).fill('header')];
+  if(withCreation)rows.push(['CRIACAO',new Date('2026-10-15T12:00:00Z'),'criador@exemplo.org','Agenda','criarAgendaEventoConcluido','AG-123','Agendamento','','Criado','Nota privada']);
   const changes=[
     ['Data','20/10/2026','22/10/2026','atualizarAgendaEventoCompleto'],
     ['Kit','Kit A','Kit B','atualizarAgendaEventoCompleto'],
@@ -65,6 +66,8 @@ test('histórico só consulta ao clicar, pagina, trata erro e descarta resposta 
       const data=backend(null);
       assert.equal(data.rows.length,40);
       await page.evaluate(d=>window.calls.find(c=>c.method==='getAgendaHistorico').success(d),data);
+      assert.equal(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),'Criação não registrada');
+      assert.match(await page.locator('#agendaHistoricoCriacaoDetalhes').innerText(),/Data e responsável não disponíveis/);
       assert.equal(await page.locator('#agendaHistoricoLista li').count(),40);
       const automaticAuthors=await page.locator('#agendaHistoricoLista li').filter({hasText:'Confirmação automática do transporte'}).locator('small').allTextContents();
       assert.ok(automaticAuthors.length>0);
@@ -102,6 +105,65 @@ test('histórico só consulta ao clicar, pagina, trata erro e descarta resposta 
       await page.getByRole('button',{name:'Fechar histórico'}).click();
       await page.evaluate(()=>window.calls.filter(c=>c.method==='getAgendaHistorico')[6].success({agendaId:'C',rows:[{field:'Fechado'}],hasMore:false}));
       assert.equal(await page.locator('#agendaHistoricoLista li').count(),0);
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  }finally{await browser.close();}
+});
+
+test('criacao fica no inicio, preserva autor na paginacao e limpa estados em troca, erro e resposta antiga',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for(const width of [1280,390]) {
+      const page=await browser.newPage({viewport:{width,height:900}});
+      const errors=await agendaBrowserFixture(page);
+      await page.addScriptTag({content:contentAccessibilitySource(['fecharModalSeClicouFora'])});
+      await page.evaluate(()=>{
+        document.getElementById('agendaCreatePanel').classList.remove('open');
+        window.abrirAgendaHistorico('AG-123');
+      });
+      assert.equal(await page.title(),'Agenda — teste local');
+      assert.equal(page.url(),'about:blank');
+      assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(),0);
+      assert.match(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),/Consultando/);
+      const backend=backendFixture(true);
+      const data=backend(null);
+      assert.equal(data.rows.some(r=>r.action==='Criação do agendamento'),false,'criacao fora da primeira pagina');
+      await page.evaluate(d=>window.calls.find(c=>c.method==='getAgendaHistorico').success(d),data);
+      assert.equal(await page.locator('#agendaHistoricoCriacaoDetalhes').innerText(),'Responsável: criador@exemplo.org');
+      assert.match(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),/17\/10\/2026 09:20:00/);
+      assert.equal(await page.locator('.agenda-history-creation').evaluate(el=>el.scrollWidth>el.clientWidth),false);
+      const dir=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright');
+      fs.mkdirSync(dir,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(dir,'agenda-history-creation-'+width+'.png')});
+      await page.getByRole('button',{name:'Ver mais alterações'}).click();
+      await page.evaluate(d=>window.calls.filter(c=>c.method==='getAgendaHistorico').at(-1).success(d),backend(data.nextBefore));
+      assert.equal(await page.locator('#agendaHistoricoCriacaoDetalhes').innerText(),'Responsável: criador@exemplo.org');
+      await page.evaluate(()=>window.abrirAgendaHistorico('VAZIO'));
+      assert.equal(await page.locator('#agendaHistoricoCriacaoDetalhes').innerText(),'');
+      await page.evaluate(()=>window.calls.filter(c=>c.method==='getAgendaHistorico').at(-1).failure(new Error('Falha simulada')));
+      assert.match(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),/Não foi possível consultar/);
+      assert.doesNotMatch(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),/Criação não registrada/);
+      await page.getByRole('button',{name:'Tentar novamente'}).click();
+      await page.evaluate(()=>window.calls.filter(c=>c.method==='getAgendaHistorico').at(-1).success({agendaId:'VAZIO',creation:{found:false},rows:[],hasMore:false,nextBefore:null}));
+      assert.equal(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),'Criação não registrada');
+      await page.screenshot({animations:'disabled',path:path.join(dir,'agenda-history-missing-creation-'+width+'.png')});
+      await page.evaluate(()=>{
+        window.abrirAgendaHistorico('ANTIGO');
+        window.abrirAgendaHistorico('ATUAL');
+        const calls=window.calls.filter(c=>c.method==='getAgendaHistorico');
+        calls.at(-2).success({agendaId:'ANTIGO',creation:{found:true,timestamp:'ONTEM',actorLabel:'AUTOR OBSOLETO'},rows:[],hasMore:false});
+      });
+      assert.match(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),/Consultando/);
+      assert.equal(await page.locator('#agendaHistoricoCriacaoDetalhes').innerText(),'');
+      await page.evaluate(()=>window.calls.filter(c=>c.method==='getAgendaHistorico').at(-1).success({agendaId:'ATUAL',creation:{found:true,timestamp:'<img src=x onerror=alert(1)>',actorLabel:'<img src=x onerror=alert(1)>'},rows:[],hasMore:false}));
+      assert.equal(await page.locator('.agenda-history-creation img').count(),0);
+      assert.match(await page.locator('#agendaHistoricoCriacaoDetalhes').innerText(),/<img/);
+      await page.evaluate(()=>{
+        window.abrirAgendaHistorico('LEGADO');
+        window.calls.filter(c=>c.method==='getAgendaHistorico').at(-1).success({agendaId:'LEGADO',rows:[],hasMore:false});
+      });
+      assert.equal(await page.locator('#agendaHistoricoCriacaoStatus').innerText(),'Dados de criação não disponíveis nesta consulta.');
       assert.deepEqual(errors,[]);
       await page.close();
     }
