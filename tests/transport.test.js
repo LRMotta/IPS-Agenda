@@ -1027,7 +1027,7 @@ test('automacao PINEX atualiza os dados completos da Commercial Invoice', () => 
 
 test('salvamento definitivo exige os dados criticos de Transporte', () => {
   const source = readProjectFile('TransporteCodexConfig.gs');
-  const block = sourceBetween(source, 'function transporteValidarObrigatoriosWebApp_(', 'function transporteValidarDataEnvioMinima_(');
+  const block = sourceBetween(source, 'function transporteValidarEntradaAwbOcasa_(', 'function transporteValidarDataEnvioMinima_(');
   const context = vm.createContext({
     ...serverCourierContext(),
     transporteLabCentralByDestino_: (destino) => destino === 'Lab Central Teste' ? { nome: destino } : null,

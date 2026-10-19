@@ -38,7 +38,7 @@ test('bootstrap de participantes preserva tabela e busca, omite detalhes e mant�
   f.server.participanteLerAcompanhantes_ = () => { throw new Error('Detalhe fora da listagem'); };
   const slim = plain(f.server.getCadastrosBootstrapData('participantes').data);
   assert.equal(f.tzCalls() - beforeTz, 1);
-  const fields = ['id', 'idPessoa', 'nome', 'idParticipante', 'dataNascimento', 'idade', 'cpf', 'projeto', 'braco', 'status', 'telefone', 'observacoes', 'ultimaVisita', 'ultimaVisitaData'];
+  const fields = ['id', 'idPessoa', 'nome', 'idParticipante', 'dataNascimento', 'sexoNascimento', 'idade', 'cpf', 'projeto', 'braco', 'status', 'telefone', 'observacoes', 'ultimaVisita', 'ultimaVisitaData'];
   assert.deepEqual(Object.keys(slim[0]).sort(), fields.sort());
   fields.forEach(key => assert.equal(slim[0][key], full[0][key], key));
   f.server.participanteLerAcompanhantes_ = parseCompanions;
@@ -84,11 +84,12 @@ function clientFixture() {
     appServerRun: opts => requests.push(opts), appErrorMessage: e => e.message, snackErro() {},
     participanteBloquearDetalhes_: busy => disabled.push(busy),
     abrirFormPartPreenchido_: p => rendered.push(p), appConfirmNavigationIfDirty: () => true,
-    appClearUnsavedChanges() {}, participanteStatusEncerrado_: () => true,
+    appClearUnsavedChanges() {}, participacoesDaPessoa_: p => [p],
+    normSelectValue: value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(),
     prepararNovaParticipacaoPessoa_: p => { c.newParticipation = p; }
   });
   const source = readProjectFile('IndexCoreScripts.html');
-  for (const name of ['abrirFormPart', 'abrirNovaParticipacaoPessoa', 'salvarPartApp', 'fecharOverlay']) {
+  for (const name of ['participantePodeNovaParticipacao_', 'abrirFormPart', 'abrirNovaParticipacaoPessoa', 'salvarPartApp', 'fecharOverlay']) {
     const match = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}'));
     assert.ok(match, name);
     vm.runInContext(match[0], c);
@@ -130,4 +131,23 @@ test('falha ou ID divergente bloqueia salvar e oferece retry; nova participaçã
   fields.editPartId.value = '1';
   c.abrirNovaParticipacaoPessoa();
   assert.equal(c.newParticipation, detail);
+});
+
+
+test('sexo no nascimento chega à listagem, detalhe e Agenda sem migrar o schema nas leituras', () => {
+  const f = fixture();
+  assert.equal(f.server.getParticipantes()[0].sexoNascimento, '');
+  assert.equal(f.sheet.writes, 0);
+  f.sheet.rows[0].push('Sexo no nascimento');
+  f.sheet.rows[1].push('Feminino');
+  f.server.getCodexSheetDataByName_ = () => f.sheet.rows;
+  f.server.SpreadsheetApp = { getActiveSpreadsheet: () => new FakeSpreadsheet({ Participantes:f.sheet }) };
+  f.server.getSheetByPossibleNames_ = () => f.sheet;
+  f.server.formatarDataSafe = () => '';
+  f.server.getUltimaVisitaParticipanteAgenda_ = () => ({});
+  assert.equal(f.server.getParticipantesListagem_()[0].sexoNascimento, 'Feminino');
+  assert.equal(f.server.getParticipanteDetalhes('1').sexoNascimento, 'Feminino');
+  assert.equal(f.server.agendaParticipantesFormulario_({}, true)[0].sexoNascimento, 'Feminino');
+  assert.equal(f.server.getInfoParticipante({ idCadastro:'1' }).sexoNascimento, 'Feminino');
+  assert.equal(f.sheet.writes, 0);
 });

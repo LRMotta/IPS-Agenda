@@ -76,6 +76,16 @@ var CadastroRules_ = (function() {
     ].indexOf(value) === -1;
   }
 
+  // Agendar no estudo anterior e iniciar outra participação são decisões distintas.
+  function participantAllowsNewParticipation(status) {
+    return [
+      'falha de pre-triagem',
+      'falha de triagem',
+      'descontinuado',
+      'em acompanhamento de seguranca'
+    ].indexOf(normalizeText(status)) >= 0;
+  }
+
   function requiredParticipantFields(data) {
     data = data || {};
     var missing = [];
@@ -225,6 +235,7 @@ var CadastroRules_ = (function() {
     findProjectDuplicate: findProjectDuplicate,
     participantIdOptional: participantIdOptional,
     participantAvailableForNewAgenda: participantAvailableForNewAgenda,
+    participantAllowsNewParticipation: participantAllowsNewParticipation,
     requiredParticipantFields: requiredParticipantFields,
     projectExists: projectExists,
     findParticipantDuplicate: findParticipantDuplicate,

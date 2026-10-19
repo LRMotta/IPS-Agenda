@@ -43,21 +43,29 @@ test('Dashboard conserva gráficos idênticos, atualiza alterações e limpa gr�
         window.esc = value => String(value || '');
         window.payload = { projetos: [{ id: 'P1', nomeAbreviado: 'Estudo', status: 'Ativo', fase: 'III', especialidade: 'Clínica',
           cro: 'ORPC', patrocinador: 'Patrocinador', investigador: 'Investigador', coordenador: 'Coordenador' }],
-          participantesResumo: { total: 1, ativos: 1, porProjeto: { estudo: { total: 1, ativos: 1, ativosStrict: 1 } }, cidades: { Cidade: 1 } } };
+          participantesResumo: { total: 1, ativos: 1, porProjeto: { estudo: { total: 1, ativos: 1, ativosStrict: 1 } }, cidades: { Cidade: 1 }, faixasEtarias: { total: 23, semNascimentoValido: 2, faixas: ['10–19', '20–29', '30–39', '40–49', '50–59', '60–69', '70–79', '80–89', '90–99'].map((label, i) => ({ label, value: [1, 2, 5, 6, 4, 3, 2, 0, 0][i] })) } } };
       });
       await page.addScriptTag({ content: readProjectFile('IndexDashboard.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, '') });
       await page.evaluate(() => { window.renderDashboard(window.payload); window.firstCharts = { ...window._dashCharts }; });
       assert.equal(await page.title(), 'Dashboard — gráficos locais');
       assert.equal(await page.locator('#kpiProjetos').textContent(), '1');
       await page.evaluate(() => window.renderDashboard(JSON.parse(JSON.stringify(window.payload))));
-      assert.deepEqual(await page.evaluate(() => window.chartCounts), { created: 9, destroyed: 0, updated: 0 });
+      assert.deepEqual(await page.evaluate(() => window.chartCounts), { created: 10, destroyed: 0, updated: 0 });
       assert.equal(await page.evaluate(() => Object.keys(window.firstCharts).every(id => window.firstCharts[id] === window._dashCharts[id])), true);
       await page.evaluate(() => {
         window.payload.participantesResumo.cidades.Cidade = 2;
         window.renderDashboard(window.payload);
       });
-      assert.deepEqual(await page.evaluate(() => window.chartCounts), { created: 9, destroyed: 0, updated: 1 });
+      assert.deepEqual(await page.evaluate(() => window.chartCounts), { created: 10, destroyed: 0, updated: 1 });
       assert.match(await page.locator('#chartPartCidadeData').textContent(), /2/);
+      await page.locator('#chartPartIdadeData summary').click();
+      assert.match(await page.locator('#chartPartIdadeData').textContent(), /30–39/);
+      assert.match(await page.locator('#chartPartIdadeNote').textContent(), /Sem nascimento válido: 2/);
+      assert.equal(await page.locator('#chartPartIdade').evaluate(el => el.getBoundingClientRect().right <= window.innerWidth), true);
+      const ageArtifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(ageArtifacts, { recursive: true });
+      await page.locator('[aria-labelledby="chartPartIdadeTitle"].chart-card').screenshot({ path: path.join(ageArtifacts, 'dashboard-idade-' + width + '.png') });
+      await page.locator('#chartPartIdadeData summary').click();
       await page.setViewportSize({ width: width === 390 ? 420 : 1100, height: 900 });
       await page.evaluate(() => window.renderDashboard(window.payload));
       assert.equal(await page.evaluate(() => window._dashCharts.chartFase.canvas.width > 0), true);
@@ -67,10 +75,10 @@ test('Dashboard conserva gráficos idênticos, atualiza alterações e limpa gr�
       // A impressão prepara gráficos de seções recolhidas. Eles são atualizados
       // ao expandir; todos os gráficos principais devem ser limpos agora.
       assert.equal(await page.evaluate(() => Object.keys(window.firstCharts).filter(id => window._dashCharts[id]).length), 0);
-      assert.equal(await page.evaluate(() => window.chartCounts.destroyed), 9);
+      assert.equal(await page.evaluate(() => window.chartCounts.destroyed), 10);
       assert.match(await page.locator('#chartFaseData').textContent(), /Sem dados/);
       await page.evaluate(() => window.renderDashboard(window.payload));
-      assert.equal(await page.evaluate(() => window.chartCounts.created), createdAfterPrint + 9);
+      assert.equal(await page.evaluate(() => window.chartCounts.created), createdAfterPrint + 10);
       assert.deepEqual(errors, []);
       const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(artifacts, { recursive: true });

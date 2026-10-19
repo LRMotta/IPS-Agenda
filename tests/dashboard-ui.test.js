@@ -513,7 +513,7 @@ test('todos os gráficos do dashboard recebem cópia isolada em PNG', () => {
   const dashboard = readProjectFile('IndexDashboard.html');
   const content = readProjectFile('IndexDashboardContent.html');
   const canvasIds = Array.from(content.matchAll(/<canvas id="([^"]+)"/g), (match) => match[1]);
-  assert.equal(canvasIds.length, 18);
+  assert.equal(canvasIds.length, 19);
   assert.equal(new Set(canvasIds).size, canvasIds.length);
   assert.match(dashboard, /function copiarGraficoDashboard\(canvasId, button\)/);
   assert.match(dashboard, /new ClipboardItem\(\{ 'image\/png': blob \}\)/);
@@ -539,8 +539,8 @@ test('Dashboard agrega a cidade e UF dos participantes com status Ativo', () => 
     ['2', 'Pessoa B', '', '', '', 'Estudo A', '', '', 'Em seguimento', '', '', '', '', '', 'Caxias do Sul', 'RS']
   ];
   assert.deepEqual(JSON.parse(JSON.stringify(server.getParticipantesDashboardResumo_())), [
-    { nome: 'Pessoa A', projeto: 'Estudo A', status: 'Ativo', cidade: 'Caxias do Sul', estado: 'RS' },
-    { nome: 'Pessoa B', projeto: 'Estudo A', status: 'Em seguimento', cidade: 'Caxias do Sul', estado: 'RS' }
+    { nome: 'Pessoa A', nascimento: '', projeto: 'Estudo A', status: 'Ativo', cidade: 'Caxias do Sul', estado: 'RS' },
+    { nome: 'Pessoa B', nascimento: '', projeto: 'Estudo A', status: 'Em seguimento', cidade: 'Caxias do Sul', estado: 'RS' }
   ]);
 
   const dashboard = readProjectFile('IndexDashboard.html');

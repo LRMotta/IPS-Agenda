@@ -123,7 +123,7 @@ test('edicao de participante normaliza o ID sem criar outra participacao, inclus
     ]);
     const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
     assert.equal(context.salvarDadosParticipante({
-      id: ' ' + id + ' ', nome: 'Pessoa A', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
+      id: ' ' + id + ' ', sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
     }), 'Participante atualizado com sucesso');
     assert.equal(sheet.rows.length, 2);
     assert.equal(String(sheet.rows[1][0]), String(id));
@@ -139,7 +139,7 @@ test('CPF associado a mais de um ID Pessoa bloqueia confirmacao antes de qualque
   ]);
   const before = JSON.stringify(sheet.rows);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Estudo C' }]);
-  const data = { nome: 'Pessoa A', idParticipante: 'P-3', projeto: 'Estudo C', status: 'Ativo', cpf: '52998224725' };
+  const data = { sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-3', projeto: 'Estudo C', status: 'Ativo', cpf: '52998224725' };
   const preview = context.salvarDadosParticipante(data);
   assert.equal(preview.requiresNameConfirmation, true);
   assert.throws(() => context.salvarDadosParticipante({
@@ -156,7 +156,7 @@ test('nova participacao reutiliza cadastro e ID Pessoa numericos zero na confirm
       [0, 'Pessoa A', '', '', 'P-1', 'Estudo A', '', '', 'Falha de Triagem', '', '52998224725', '', 0]
     ]);
     const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Estudo B' }]);
-    const data = { nome: 'Pessoa A', idParticipante: 'P-2', projeto: 'Estudo B', status: 'Ativo', cpf: '52998224725' };
+    const data = { sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-2', projeto: 'Estudo B', status: 'Ativo', cpf: '52998224725' };
     if (!direct) {
       const preview = context.salvarDadosParticipante(data);
       assert.equal(preview.existing.id, '0');
@@ -210,7 +210,7 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   const options = [{ nome: 'Novo Estudo', codigo: 'NOV-01' }];
   const { context, counters } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), options);
   const participant = {
-    nome: 'Pessoa Nova', dataNascimento: '1990-05-10', idParticipante: 'P-005',
+    sexoNascimento: 'Não informado', nome: 'Pessoa Nova', dataNascimento: '1990-05-10', idParticipante: 'P-005',
     projeto: 'Novo Estudo', status: 'Ativo', cpf: '52998224725'
   };
 
@@ -241,12 +241,12 @@ test('edicao sem mudar identidade do participante nao varre referencias externas
   const { context } = cadastroContext(spreadsheet, [{ nome: 'Novo Estudo' }]);
 
   assert.equal(context.salvarDadosParticipante({
-    id: 5, nome: 'Pessoa A', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
+    id: 5, sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
   }), 'Participante atualizado com sucesso');
   assert.equal(agenda.writes, 0);
 
   assert.equal(context.salvarDadosParticipante({
-    id: 5, nome: 'Pessoa A Atualizada', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
+    id: 5, sexoNascimento: 'Não informado', nome: 'Pessoa A Atualizada', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo', telefone: '555-0100'
   }), 'Participante atualizado com sucesso');
   assert.equal(agenda.rows[1][0], 'Pessoa A Atualizada');
   assert.ok(agenda.writes > 0);
@@ -266,7 +266,7 @@ test('CPF e dados bancarios podem ser incluídos em participação com eventos s
   context.getAgendaSheetForRead_ = () => agenda;
 
   assert.equal(context.salvarDadosParticipante({
-    id: 52, nome: 'Pessoa com Agenda', idParticipante: 'ID-EXISTENTE', projeto: 'Estudo Existente', status: 'Ativo',
+    id: 52, sexoNascimento: 'Não informado', nome: 'Pessoa com Agenda', idParticipante: 'ID-EXISTENTE', projeto: 'Estudo Existente', status: 'Ativo',
     cpf: '52998224725', banco: 'Banco de Teste', tipoConta: 'Conta corrente', agencia: '0001', contaCorrente: '12345-6',
     titularConta: 'Pessoa com Agenda', cpfTitular: '52998224725'
   }), 'Participante atualizado com sucesso');
@@ -284,7 +284,7 @@ test('acompanhantes persistem por participante com bancos proprios, IDs estaveis
     [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Ativo', '', '', '']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
-  const payload = { id: 1, nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', tipoConta: 'Conta poupança', acompanhantes: [
+  const payload = { id: 1, sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-001', projeto: 'Novo Estudo', status: 'Ativo', banco: 'Banco Participante', tipoConta: 'Conta poupança', acompanhantes: [
     { nome: 'Maria Teste', cpf: '52998224725', telefone: '(54) 99999-0202', banco: 'Banco A', tipoConta: 'corrente', agencia: '0001', contaCorrente: '000023-4', cpfTitular: '93541134780', numero: '001', cep: '95000000', cidade: 'Caxias do Sul', municipioCodigo: '4305108', estado: 'rs' },
     { nome: 'João Teste', banco: 'Banco B' }
   ] };
@@ -343,7 +343,7 @@ test('acompanhantes invalidos bloqueiam toda escrita, inclusive criacao de colun
   ]) {
     const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
     const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
-    assert.throws(() => context.salvarDadosParticipante({ nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', acompanhantes }));
+    assert.throws(() => context.salvarDadosParticipante({ sexoNascimento: 'Não informado', nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', acompanhantes }));
     assert.equal(sheet.writes, 0);
   }
 });
@@ -351,7 +351,7 @@ test('acompanhantes invalidos bloqueiam toda escrita, inclusive criacao de colun
 test('participante e acompanhante exigem município IBGE correspondente à UF', () => {
   const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
-  const base = { nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo' };
+  const base = { sexoNascimento: 'Não informado', nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo' };
   assert.throws(() => context.salvarDadosParticipante({ ...base, estado: 'RS', cidade: 'Caxias do Sul' }), /Selecione um município da lista/);
   assert.throws(() => context.salvarDadosParticipante({ ...base, estado: 'SC', cidade: 'Caxias do Sul', municipioCodigo: '4305108' }), /não corresponde à UF/);
   assert.throws(() => context.salvarDadosParticipante({ ...base, acompanhantes: [{ nome: 'Maria', estado: 'RS', cidade: 'Florianópolis', municipioCodigo: '4205407' }] }), /não corresponde à UF/);
@@ -363,7 +363,7 @@ test('tipo de conta invalido do participante bloqueia escrita', () => {
   const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
   assert.throws(() => context.salvarDadosParticipante({
-    nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', tipoConta: 'Conta salário'
+    sexoNascimento: 'Não informado', nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', tipoConta: 'Conta salário'
   }), /Tipo de conta inválido do participante/);
   assert.equal(sheet.writes, 0);
 });
@@ -377,7 +377,7 @@ test('CPF inválido do participante ou titular bloqueia toda escrita', () => {
     const sheet = new FakeSheet('Participantes', [['ID', 'Nome']]);
     const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
     assert.throws(() => context.salvarDadosParticipante({
-      nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', ...data
+      sexoNascimento: 'Não informado', nome: 'Pessoa Nova', idParticipante: 'P-1', projeto: 'Novo Estudo', status: 'Ativo', ...data
     }), /CPF inválido/);
     assert.equal(sheet.writes, 0);
   }
@@ -615,7 +615,7 @@ test('participante persiste endereco e dados bancarios opcionais sem deslocar o 
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
   const payload = {
-    nome: 'Pessoa Nova', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo',
+    sexoNascimento: 'Não informado', nome: 'Pessoa Nova', idParticipante: 'P-005', projeto: 'Novo Estudo', status: 'Ativo',
     rua: 'Rua das Flores', numero: '123', cidade: 'Caxias do Sul', estado: 'RS', municipioCodigo: '4305108', cep: '95000-000',
     banco: 'Banco de Teste', tipoConta: 'Conta corrente', agencia: '001', contaCorrente: '12345-6',
     titularConta: 'Pessoa Nova', cpfTitular: '529.982.247-25'
@@ -676,7 +676,7 @@ test('alteracao de nome propaga pelas referencias usando o ID da coluna A', () =
 
   assert.equal(context.salvarDadosParticipante({
     id: 81231558,
-    nome: 'Filipe Muneron da Silva',
+    sexoNascimento: 'Não informado', nome: 'Filipe Muneron da Silva',
     idParticipante: '2011250001',
     projeto: 'SKYLINE-UC',
     status: 'Ativo'
@@ -704,7 +704,7 @@ test('primeira identificacao apos TC agendada atualiza a mesma participacao e a 
 
   assert.equal(context.salvarDadosParticipante({
     id: 81231558,
-    nome: 'Paciente Kandela',
+    sexoNascimento: 'Não informado', nome: 'Paciente Kandela',
     idParticipante: 'KAN-001',
     projeto: 'KANDELA-302',
     status: 'Triagem'
@@ -724,7 +724,7 @@ test('edicao preserva projeto, status e identificacao quando o formulario nao os
 
   assert.equal(context.salvarDadosParticipante({
     id: 81231558,
-    nome: 'Filipe Muneron da Silva'
+    sexoNascimento: 'Não informado', nome: 'Filipe Muneron da Silva'
   }), 'Participante atualizado com sucesso');
   assert.equal(participantes.rows[1][4], '2011250001');
   assert.equal(participantes.rows[1][5], 'SKYLINE-UC');
@@ -751,7 +751,7 @@ test('nome repetido exige confirmacao antes de permitir novo cadastro legitimo',
     [1, 'Pessoa A', '', '', 'P-001', 'Novo Estudo', '', '', 'Falha de Triagem']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Novo Estudo' }, { nome: 'Outro Estudo' }]);
-  const payload = { nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Outro Estudo', status: 'Ativo' };
+  const payload = { sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Outro Estudo', status: 'Ativo' };
 
   const warning = context.salvarDadosParticipante(payload);
   assert.equal(warning.requiresNameConfirmation, true);
@@ -774,7 +774,7 @@ test('CPF igual em outro protocolo reutiliza automaticamente o ID Pessoa confirm
     [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Falha de Triagem', '', '52998224725', '', 'PES-EXISTENTE']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
-  const payload = { nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Estudo B', status: 'Ativo', cpf: '529.982.247-25' };
+  const payload = { sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-900', projeto: 'Estudo B', status: 'Ativo', cpf: '529.982.247-25' };
 
   const warning = context.salvarDadosParticipante(payload);
   assert.equal(warning.matchType, 'cpf');
@@ -794,7 +794,7 @@ test('homonimo sem CPF pode ser confirmado como outra pessoa', () => {
     [1, 'Pessoa A', '', '', 'P-001', 'Estudo A', '', '', 'Ativo', '', '', '', 'PES-ANTERIOR']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
-  const payload = { nome: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Ativo' };
+  const payload = { sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Ativo' };
 
   const warning = context.salvarDadosParticipante(payload);
   assert.equal(warning.allowDistinctPerson, true);
@@ -815,7 +815,7 @@ test('nome ambiguo exige escolha explicita da participação que identifica a pe
     [2, 'Pessoa A', '', '', 'P-002', 'Estudo B', '', '', 'Falha de Triagem', '', '', '', 'PES-DOIS']
   ]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }, { nome: 'Estudo C' }]);
-  const payload = { nome: 'Pessoa A', idParticipante: 'P-003', projeto: 'Estudo C', status: 'Ativo' };
+  const payload = { sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-003', projeto: 'Estudo C', status: 'Ativo' };
 
   const warning = context.salvarDadosParticipante(payload);
   assert.equal(warning.matches.length, 2);
@@ -851,7 +851,7 @@ test('nova participação direta parte do cadastro encerrado e preserva o víncu
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'AHEAD-MERIT' }, { nome: 'SUNSCAPE' }]);
 
   assert.equal(context.salvarDadosParticipante({
-    nome: 'Pessoa A', idParticipante: 'SUN-001', projeto: 'SUNSCAPE', status: 'Pré-Triagem', cpf: '52998224725',
+    sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'SUN-001', projeto: 'SUNSCAPE', status: 'Pré-Triagem', cpf: '52998224725',
     novaParticipacaoDireta: true, vincularPessoaCadastroId: '1'
   }), 'Participante cadastrado com sucesso');
 
@@ -871,7 +871,7 @@ test('nova participação é bloqueada enquanto a pessoa possui participação a
   const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes }), [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
 
   assert.throws(() => context.salvarDadosParticipante({
-    nome: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Pré-Triagem', cpf: '52998224725',
+    sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-002', projeto: 'Estudo B', status: 'Pré-Triagem', cpf: '52998224725',
     novaParticipacaoDireta: true, vincularPessoaCadastroId: '1'
   }), /Encerre a participação atual/);
   assert.equal(participantes.rows.length, 2);
@@ -986,7 +986,7 @@ test('histórico só registra atualização concluída depois da persistência e
     assert.equal(sheet.rows[1][9], '54999999999');
     events.push([action, module, id]);
   };
-  const data = { id: '1', nome: 'Pessoa A', idParticipante: 'P-1', projeto: 'Estudo A', status: 'Ativo', telefone: '54999999999' };
+  const data = { id: '1', sexoNascimento: 'Não informado', nome: 'Pessoa A', idParticipante: 'P-1', projeto: 'Estudo A', status: 'Ativo', telefone: '54999999999' };
   assert.equal(context.salvarDadosParticipante(data), 'Participante atualizado com sucesso');
   assert.deepEqual(events, [['atualizarCadastroParticipanteConcluido', 'Cadastros', '1']]);
   const getRange = sheet.getRange.bind(sheet);
@@ -997,4 +997,29 @@ test('histórico só registra atualização concluída depois da persistência e
   };
   assert.throws(() => context.salvarDadosParticipante(data), /Falha de gravação simulada/);
   assert.equal(events.length, 1);
+});
+
+
+test('sexo no nascimento é obrigatório antes de escrever, aceita as três opções e preserva omissão legada', () => {
+  for (const sexo of [undefined, '', 'Outro', 'masculino', '<img src=x>']) {
+    const sheet = new FakeSheet('Participantes', [['ID','Nome','Nascimento','Idade','ID Participante','Projeto','Braço','Última visita','Status','Telefone','CPF','Obs']]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), ['Estudo']);
+    assert.throws(() => context.salvarDadosParticipante({ nome:'Pessoa', projeto:'Estudo', status:'Ativo', idParticipante:'P1', sexoNascimento:sexo }), /sexo no nascimento/);
+    assert.equal(sheet.writes, 0);
+  }
+  for (const sexo of ['Masculino','Feminino','Não informado']) {
+    const sheet = new FakeSheet('Participantes', [['ID','Nome','Nascimento','Idade','ID Participante','Projeto','Braço','Última visita','Status','Telefone','CPF','Obs']]);
+    const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), ['Estudo']);
+    const payload = { nome:'Pessoa', projeto:'Estudo', status:'Ativo', idParticipante:'P1', sexoNascimento:sexo };
+    assert.match(context.salvarDadosParticipante(payload), /cadastrado/);
+    const column = sheet.rows[0].indexOf('Sexo no nascimento');
+    assert.equal(sheet.rows[1][column], sexo);
+    delete payload.sexoNascimento;
+    payload.id = '1';
+    assert.match(context.salvarDadosParticipante(payload), /atualizado/);
+    assert.equal(sheet.rows[1][column], sexo);
+    const before = sheet.writes;
+    assert.throws(() => context.salvarDadosParticipante({ ...payload, sexoNascimento:'' }), /sexo no nascimento/);
+    assert.equal(sheet.writes, before);
+  }
 });

@@ -6223,7 +6223,7 @@ function participanteColumnMap_(sh, createMissing) {
     ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['municipioCodigo', 'Código IBGE do Município'], ['cep', 'CEP'],
     ['banco', 'Banco'], ['tipoConta', 'Tipo de conta'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
     ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular'],
-    ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)']
+    ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)'], ['sexoNascimento', 'Sexo no nascimento']
   ];
   var aliases = {
     rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], municipioCodigo: ['codigoibgedomunicipio', 'codigoibgemunicipio', 'municipiocodigo'], cep: ['cep'],
@@ -6278,6 +6278,7 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns, marcosPrepara
     titularConta: d.titularConta || '', cpfTitular: d.cpfTitular || '', idPessoa: d.idPessoa || ''
   };
   if (d.tipoConta !== undefined) values.tipoConta = d.tipoConta || '';
+  if (d.sexoNascimento !== undefined) values.sexoNascimento = d.sexoNascimento;
   // Clientes antigos que omitem a coleção não apagam acompanhantes existentes.
   if (d.acompanhantes !== undefined) values.acompanhantesJson = JSON.stringify(d.acompanhantes);
   var cells = Object.keys(values).filter(function(key) {
@@ -6702,6 +6703,7 @@ function participanteDadosDaLinha_(r, header, ultimaVisita, somenteListagem, dto
     id:             String(r[0]),
     nome:           String(r[1] || ''),
     dataNascimento: fmtDate(r[2]),
+    sexoNascimento: String(valueFor(r, ['sexononascimento']) || ''),
     idade:          String(r[3] || ''),
     idParticipante: String(r[4] || ''),
     projeto:        String(r[5] || ''),
@@ -6817,8 +6819,12 @@ function getParticipanteDetalhes(idCadastro) {
 
 function getParticipanteFormConfig() {
   codexAssertCanRead_();
+  var status = getConfigValues_('Participantes', 'Status', []).slice();
+  if (!status.some(function(value) { return normText_(value) === 'em acompanhamento de seguranca'; })) {
+    status.push('Em acompanhamento de segurança');
+  }
   return {
-    status: getConfigValues_('Participantes', 'Status', []),
+    status: status,
     bancos: getConfigValues_('Participantes', 'Bancos', [])
   };
 }
@@ -7066,7 +7072,10 @@ function salvarDadosParticipante(d) {
     directOriginRowIndex = participanteLinhaPorCadastroId_(rows, d.vincularPessoaCadastroId);
     if (directOriginRowIndex < 1) throw new Error('A participação de origem não foi encontrada. Reabra o cadastro e tente novamente.');
     var directOrigin = rows[directOriginRowIndex] || [];
-    if (CadastroRules_.participantAvailableForNewAgenda(directOrigin[8])) {
+    if (normText_(directOrigin[8]) === 'obito') {
+      throw new Error('Não é possível criar nova participação para pessoa com registro de óbito.');
+    }
+    if (!CadastroRules_.participantAllowsNewParticipation(directOrigin[8])) {
       throw new Error('Encerre a participação atual antes de criar outra participação para esta pessoa.');
     }
     if (normText_(directOrigin[1]) !== normText_(d.nome)) {
@@ -7190,7 +7199,10 @@ function salvarDadosParticipante(d) {
       var mesmaPessoaPorCpf = cpfNovaParticipacao && CadastroRules_.digits(pessoaRow[10]) === cpfNovaParticipacao;
       var linhaVinculada = vinculoRowIndex === pessoaRowIndex;
       if (!(mesmaPessoaPorId || mesmaPessoaPorCpf || linhaVinculada)) continue;
-      if (CadastroRules_.participantAvailableForNewAgenda(pessoaRow[8])) {
+      if (normText_(pessoaRow[8]) === 'obito') {
+        throw new Error('Não é possível criar nova participação para pessoa com registro de óbito.');
+      }
+      if (!CadastroRules_.participantAllowsNewParticipation(pessoaRow[8])) {
         throw new Error('Esta pessoa já possui uma participação ativa em ' + String(pessoaRow[5] || 'outro protocolo') + '. Encerre-a antes de criar uma nova participação.');
       }
     }
@@ -7201,6 +7213,14 @@ function salvarDadosParticipante(d) {
     var acompanhantesAnteriores = editRowIndex > 0 && participantColumnsRead.acompanhantesJson !== undefined
       ? participanteLerAcompanhantes_(rows[editRowIndex][participantColumnsRead.acompanhantesJson]) : [];
     d.acompanhantes = participanteValidarAcompanhantes_(d.acompanhantes, acompanhantesAnteriores);
+  }
+  // Omissão por cliente antigo preserva um valor já documentado; vazio exige seleção.
+  var sexoOrigem = existing || (d.novaParticipacaoDireta === true ? directOrigin : null);
+  if (d.sexoNascimento === undefined && sexoOrigem && participantColumnsRead.sexoNascimento !== undefined) {
+    d.sexoNascimento = sexoOrigem[participantColumnsRead.sexoNascimento];
+  }
+  if (['Masculino', 'Feminino', 'Não informado'].indexOf(d.sexoNascimento) < 0) {
+    throw new Error('Selecione o sexo no nascimento: Masculino, Feminino ou Não informado.');
   }
   var marcosParticipacaoPreparados = participantePrepararMarcos_(d, existing, rows[0] || []);
   var participantColumns = participanteColumnMap_(sh, true);
@@ -7254,6 +7274,7 @@ function salvarDadosParticipante(d) {
     if (typeof codexWriteAuditChanges_ === 'function') {
       codexWriteAuditChanges_('Cadastros', 'atualizarParticipacaoParticipante', d.id, [
         { field: 'Nome', oldValue: existing[1], newValue: d.nome },
+        { field: 'Sexo no nascimento', oldValue: participantColumnsRead.sexoNascimento === undefined ? '' : existing[participantColumnsRead.sexoNascimento], newValue: d.sexoNascimento },
         { field: 'Número de identificação', oldValue: existing[4], newValue: d.idParticipante },
         { field: 'Protocolo', oldValue: existing[5], newValue: projeto },
         { field: 'Braço', oldValue: existing[6], newValue: d.braco || '' },
@@ -7860,14 +7881,50 @@ function getPendenciasOperacionais(request) {
   });
 }
 
-function dashboardAgregarParticipantes_(participantes) {
+// Datas civis no fuso de negócio; rejeita datas impossíveis e futuras.
+function dashboardIdadeParticipante_(valor, referencia) {
+  function civil(value) {
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null;
+      return Utilities.formatDate(value, 'America/Sao_Paulo', 'yyyy-MM-dd').split('-').map(Number);
+    }
+    var text = String(value || '').trim();
+    var m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+    m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    return m ? [Number(m[3]), Number(m[2]), Number(m[1])] : null;
+  }
+  var nasc = civil(valor);
+  if (!nasc) return null;
+  var hoje = civil(referencia || new Date());
+  if (!hoje) return null;
+  var valid = new Date(Date.UTC(nasc[0], nasc[1] - 1, nasc[2]));
+  if (valid.getUTCFullYear() !== nasc[0] || valid.getUTCMonth() !== nasc[1] - 1 || valid.getUTCDate() !== nasc[2]) return null;
+  var idade = hoje[0] - nasc[0] - (hoje[1] < nasc[1] || (hoje[1] === nasc[1] && hoje[2] < nasc[2]) ? 1 : 0);
+  return idade >= 0 ? idade : null;
+}
+
+function dashboardAgregarParticipantes_(participantes, referencia) {
   var resumo = { total: 0, ativos: 0, porProjeto: Object.create(null), cidades: Object.create(null) };
+  resumo.faixasEtarias = { faixas: [], semNascimentoValido: 0, total: 0 };
+  var idades = Object.create(null), maiorFaixa = 90;
+  referencia = referencia || new Date();
   (participantes || []).forEach(function(p) {
     resumo.total++;
     var status = normText_(p.status);
     var ativo = status === 'ativo';
     var ativoOuSeguimento = ativo || status === 'em seguimento';
     if (ativoOuSeguimento) resumo.ativos++;
+    if (ativo) {
+      var idade = dashboardIdadeParticipante_(p.nascimento, referencia);
+      if (idade === null) resumo.faixasEtarias.semNascimentoValido++;
+      else {
+        var inicio = Math.floor(idade / 10) * 10;
+        idades[inicio] = (idades[inicio] || 0) + 1;
+        maiorFaixa = Math.max(maiorFaixa, inicio);
+        resumo.faixasEtarias.total++;
+      }
+    }
     var projeto = normText_(p.projeto);
     if (projeto) {
       if (!resumo.porProjeto[projeto]) resumo.porProjeto[projeto] = { total: 0, ativos: 0, ativosStrict: 0 };
@@ -7882,6 +7939,9 @@ function dashboardAgregarParticipantes_(participantes) {
       resumo.cidades[label] = (resumo.cidades[label] || 0) + 1;
     }
   });
+  for (var faixa = idades[0] ? 0 : 10; faixa <= maiorFaixa; faixa += 10) {
+    resumo.faixasEtarias.faixas.push({ label: faixa + '–' + (faixa + 9), value: idades[faixa] || 0 });
+  }
   return resumo;
 }
 
@@ -7892,6 +7952,7 @@ function getParticipantesDashboardResumo_() {
   var columns = {};
   headers.forEach(function(header, index) {
     var key = participanteCampoKey_(header);
+    if (columns.nascimento === undefined && (key === 'datadenascimento' || key === 'nascimento')) columns.nascimento = index;
     if (columns.cidade === undefined && key === 'cidade') columns.cidade = index;
     if (columns.estado === undefined && (key === 'estado' || key === 'uf')) columns.estado = index;
   });
@@ -7903,6 +7964,7 @@ function getParticipantesDashboardResumo_() {
     .map(function(r) {
       return {
         nome: String(r[1] || ''),
+        nascimento: r[columns.nascimento === undefined ? 2 : columns.nascimento] || '',
         projeto: String(r[5] || ''),
         status: String(r[8] || ''),
         cidade: String(r[cidadeColumn] || ''),
@@ -13046,6 +13108,7 @@ function agendaParticipantesFormulario_(ss, strict) {
     return [];
   }
   if (lastRow < 2) return [];
+  var columns = participanteColumnMap_(sh, false);
   return sh.getRange(2, 1, lastRow - 1, Math.max(7, sh.getLastColumn())).getValues()
     .filter(function(row) { return agendaParticipanteDisponivelFormulario_(row[8]); })
     .map(function(row) {
@@ -13054,6 +13117,7 @@ function agendaParticipantesFormulario_(ss, strict) {
         id: String(row[0] || '').trim(),
         nome: String(row[1] || '').trim(),
         nascimento: formatarDataSafe(nascimento),
+        sexoNascimento: columns.sexoNascimento === undefined ? '' : String(row[columns.sexoNascimento] || ''),
         idade: calcularIdadeAgenda_(nascimento),
         numId: String(row[4] || '').trim(),
         projeto: String(row[5] || '').trim(),
@@ -13146,9 +13210,11 @@ function getInfoParticipante(referencia) {
   var nome = String(row[1] || '').trim();
   var nascRaw = row[2];
   var ultima = getUltimaVisitaParticipanteAgenda_(nome, row[0]);
+  var columns = participanteColumnMap_(SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Participantes'), false);
   return {
     id: String(row[0] || '').trim(),
     nome: nome,
+    sexoNascimento: columns.sexoNascimento === undefined ? '' : String(row[columns.sexoNascimento] || ''),
     nascimento: formatarDataSafe(nascRaw),
     idade: calcularIdadeAgenda_(nascRaw),
     numId: String(row[4] || ''),
@@ -15874,6 +15940,14 @@ function codexCourierIsValidOcasaAwb_(awb) {
   return /^[A-Z][0-9]{7}$/.test(awb) || /^PK2[A-Z0-9]{9}$/.test(awb);
 }
 
+function codexCourierIsValidAwbEntry_(awb, courier, previous) {
+  if (codexCourierAwbRule_(courier).mode !== 'ocasa') return true;
+  var value = codexCourierNormalizeAwb_(awb, courier);
+  if (!value || /^PK2[A-Z0-9]{9}$/.test(value)) return true;
+  return !!(previous && codexCourierAwbRule_(previous.nome || previous.courier).mode === 'ocasa' &&
+    /^[A-Z][0-9]{7}$/.test(value) && value === codexCourierNormalizeAwb_(previous.awb, courier));
+}
+
 function codexCourierRequiresAwb_(courier) {
   return ['marken', 'ocasa', 'pinex'].indexOf(codexCourierAwbRule_(courier).key) >= 0;
 }
@@ -15896,7 +15970,7 @@ function codexCourierIsValidAwb_(awb, courier, forDocuments) {
 
 function codexCourierAwbValidationMessage_(courier) {
   var rule = codexCourierAwbRule_(courier);
-  if (rule.mode === 'ocasa') return 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
+  if (rule.mode === 'ocasa') return 'Novas AWBs OCASA devem usar o formato digital PK2 + 9 caracteres alfanumericos (ex.: PK2OZB276947).';
   if (!rule.len) return '';
   return 'AWB ' + rule.label + ' deve ter ' + rule.len + (rule.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
 }
@@ -16922,6 +16996,10 @@ function agendaAwbValidarPayload_(agenda, dados, id, rowAnterior, previewOnly) {
     var entry = Object.assign({}, context.current[agendaAwbOwner_(id, slot)] || agendaAwbRegistro_(rowAnterior || [], slot));
     var hasTouched = Object.prototype.hasOwnProperty.call(courier, 'awbTouched');
     if (Object.prototype.hasOwnProperty.call(courier, 'awb') && (hasTouched ? courier.awbTouched === true : String(courier.awb || '').trim() !== '')) entry.awb = String(courier.awb || '').trim();
+    if (!codexCourierIsValidAwbEntry_(entry.awb, courier.nome || courier.courier || entry.courier,
+      rowAnterior ? { nome: rowAnterior[c.nome], awb: rowAnterior[c.awb] } : null)) {
+      throw new Error(codexCourierAwbValidationMessage_('OCASA'));
+    }
     return Object.assign(entry, { owner: agendaAwbOwner_(id, slot), id: String(id), slot: String(slot), courier: courier.nome || courier.courier || entry.courier, temperatura: courier.temperatura || courier.temp || entry.temperatura, participante: dados.participante || entry.participante, projeto: dados.projeto || entry.projeto, data: dados.data || entry.data, status: dados.status || entry.status });
   });
   return agendaAwbReservar_(context, candidates, false, previewOnly);
@@ -16937,6 +17015,9 @@ function agendaAwbReservarCelula_(range, awb, courier) {
   var row = agenda.getRange(range.getRow(), 1, 1, Math.min(agenda.getLastColumn(), AGENDA_CFG.idx.c3.awb + 1)).getValues()[0];
   var entry = agendaAwbRegistro_(row, slot);
   if (!entry.id) throw new Error('Não foi possível identificar o envio para validar a AWB. Reabra o agendamento.');
+  if (!codexCourierIsValidAwbEntry_(awb, courier || entry.courier, { courier: entry.courier, awb: entry.awb })) {
+    throw new Error(codexCourierAwbValidationMessage_('OCASA'));
+  }
   entry.awb = awb;
   entry.courier = courier || entry.courier;
   agendaAwbReservar_(agendaAwbContexto_(agenda), [entry], false);

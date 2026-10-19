@@ -9,7 +9,8 @@ const norm = value => String(value || '').toLowerCase().normalize('NFD').replace
 const participante = { id: 'CAD-A', nome: 'Pessoa A', idParticipante: '123', projeto: 'Projeto A' };
 
 function server(extra = {}) {
-  return runFile('TransporteCodexConfig.gs', { Logger: { log() {} }, normText_: norm,
+  return runFile('TransporteCodexConfig.gs', {
+    codexCourierIsValidAwbEntry_: runFile('WebApp.gs').codexCourierIsValidAwbEntry_, Logger: { log() {} }, normText_: norm,
     codexGetAllowedUsers_: () => ({ 'operador@example.invalid': { active: true } }), ...extra });
 }
 

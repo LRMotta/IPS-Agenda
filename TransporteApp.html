@@ -1258,7 +1258,7 @@
     function applyAwbRule(sanitizeValue) {
       var input = document.getElementById('awb');
       if (!input) return;
-      CodexCourierRules.applyToInput(input, selectedCourier, sanitizeValue);
+      CodexCourierRules.applyToInput(input, selectedCourier, sanitizeValue, state.registro);
     }
 
     function courierUsesTransportBox(courier) {
@@ -2011,7 +2011,7 @@
         issues.push({ type:'danger', text:'AWB / código obrigatório para ' + p.courier + '.' });
       }
       if (p.awb && String(p.awb) !== awbCheck) issues.push({ type:'warn', text:'AWB incompatível com a courier selecionada. Revise o código; o valor foi preservado.' });
-      if (awbCheck && !CodexCourierRules.isValidAwb(awbCheck, p.courier)) issues.push({ type:'warn', text:CodexCourierRules.validationMessage(p.courier) });
+      if (awbCheck && (!CodexCourierRules.isValidAwb(awbCheck, p.courier) || !CodexCourierRules.isValidAwbEntry(awbCheck, p.courier, state.registro))) issues.push({ type:CodexCourierRules.isValidAwbEntry(awbCheck, p.courier, state.registro) ? 'warn' : 'danger', text:CodexCourierRules.validationMessage(p.courier) });
       if (p.courier === 'PINEX' && !String(p.pinexColeta || '').match(/^\d{6}$/)) issues.push({ type:'warn', text:'PINEX COL. N° deve conter 6 dígitos.' });
       if (!p.materiais.some(function(m) { return m.ativo; })) issues.push({ type:'warn', text:'Nenhum material biológico marcado na declaração.' });
       if (!issues.length) issues.push({ type:'ok', text:'Dados principais prontos para sincronização.' });

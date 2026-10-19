@@ -3297,6 +3297,7 @@ function chipStatus(s) {
     'falha de triagem':'chip-falhatriagem','falha de pre-triagem':'chip-falhatriagem','ativo':'chip-ativo',
     'em seguimento':'chip-emseguimento','concluido':'chip-concluido',
     'retirou consentimento':'chip-retirou','descontinuado':'chip-descontinuado',
+    'em acompanhamento de seguranca':'chip-ativo',
     'perda de seguimento':'chip-perdaseguimento','obito':'chip-obito'
   };
   var cls = m[norm] || 'chip-status-dynamic ' + participanteStatusDynamicClass(s);
@@ -4007,7 +4008,7 @@ function abrirFormPartPreenchido_(p) {
     delete modalPart.dataset.participacaoProjetoOriginal;
   }
   participanteDefinirPessoaSomenteLeitura_(false);
-  ['ptNome','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptTipoConta','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular']
+  ['ptNome','ptSexoNascimento','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptTipoConta','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular']
     .forEach(function(id){ document.getElementById(id).value=''; });
   participanteInicializarLocalidade_('ptCidade', '', '', '');
   fillSelectOptions('ptBanco', BANCOS_PART, '', '— Selecione —');
@@ -4018,10 +4019,10 @@ function abrirFormPartPreenchido_(p) {
     fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
   }
   preencherProjetosParticipante('');
-  ['errPtNome','errPtId','errPtProjeto','errPtStatus'].forEach(function(id){
+  ['errPtNome','errPtSexoNascimento','errPtId','errPtProjeto','errPtStatus'].forEach(function(id){
     document.getElementById(id).classList.remove('visible');
   });
-  ['ptNome','ptId','ptProjeto','ptStatus'].forEach(function(id){
+  ['ptNome','ptSexoNascimento','ptId','ptProjeto','ptStatus'].forEach(function(id){
     document.getElementById(id).classList.remove('invalid');
   });
   document.getElementById('statusPart').innerHTML='';
@@ -4034,6 +4035,7 @@ function abrirFormPartPreenchido_(p) {
     document.getElementById('modalPartTitle').textContent='EDITAR PARTICIPANTE';
     document.getElementById('editPartId').value       = p.id||'';
     document.getElementById('ptNome').value           = p.nome||'';
+    document.getElementById('ptSexoNascimento').value = p.sexoNascimento||'';
     document.getElementById('ptId').value             = p.idParticipante||'';
     document.getElementById('ptNasc').value           = dateToInputValue(p.dataNascimento)||'';
     document.getElementById('ptCpf').value            = p.cpf||'';
@@ -4119,6 +4121,10 @@ function participanteStatusEncerrado_(status) {
   return ['falha de pre-triagem','falha de triagem','descontinuado','obito'].indexOf(st) >= 0;
 }
 
+function participantePodeNovaParticipacao_(status) {
+  return ['falha de pre-triagem','falha de triagem','descontinuado','em acompanhamento de seguranca'].indexOf(normSelectValue(status || '')) >= 0;
+}
+
 function participacoesDaPessoa_(participante) {
   if (!participante) return [];
   var vinculadas = (_participantes || []).filter(function(item) {
@@ -4142,14 +4148,24 @@ function renderParticipacoesPessoa_(participante, criandoNova) {
   var participacoes = participacoesDaPessoa_(participante);
   section.style.display = '';
   button.style.display = criandoNova ? 'none' : '';
-  var possuiAtiva = participacoes.some(function(item) { return !participanteStatusEncerrado_(item.status); });
+  var possuiAtiva = participacoes.some(function(item) { return !participantePodeNovaParticipacao_(item.status); });
+  var possuiObito = participacoes.some(function(item) { return normSelectValue(item.status || '') === 'obito'; });
+  var acompanhamentos = participacoes.filter(function(item) {
+    return normSelectValue(item.status || '') === 'em acompanhamento de seguranca';
+  }).map(function(item) { return item.projeto || 'protocolo não informado'; });
   button.disabled = possuiAtiva;
-  button.title = possuiAtiva ? 'Encerre a participação ativa antes de criar outra.' : 'Criar participação em outro protocolo';
+  button.title = possuiObito ? 'Pessoa com registro de óbito.' : (possuiAtiva ? 'Encerre a participação ativa antes de criar outra.' : 'Criar participação em outro protocolo');
   hint.textContent = criandoNova
     ? 'A nova participação será vinculada à mesma pessoa. Preencha somente os dados do novo protocolo.'
     : (possuiAtiva
       ? 'Existe uma participação ativa. Encerre-a antes de iniciar outra pesquisa.'
       : 'As participações anteriores permanecem preservadas. Você já pode iniciar outro protocolo.');
+  if (possuiObito) {
+    hint.textContent = 'Não é possível criar nova participação para pessoa com registro de óbito.';
+  } else if (acompanhamentos.length) {
+    hint.textContent = 'Esta pessoa possui acompanhamento de segurança em: ' + acompanhamentos.join(', ') + '. As visitas desses protocolos continuam disponíveis na Agenda. '
+      + (possuiAtiva ? 'Existe outra participação ativa que impede iniciar uma nova pesquisa.' : 'A nova participação mantém identificação e histórico próprios. Confirme com a equipe responsável a possibilidade de iniciar o novo screening.');
+  }
   list.innerHTML = participacoes.map(function(item) {
     var atual = String(item.id || '') === String(participante.id || '');
     var titulo = esc(item.projeto || 'Protocolo não informado');
@@ -4169,6 +4185,8 @@ function participanteDefinirPessoaSomenteLeitura_(locked) {
     el.readOnly = !!locked;
     el.classList.toggle('participant-person-locked', !!locked);
   });
+  var sexoNascimento = document.getElementById('ptSexoNascimento');
+  if (sexoNascimento) sexoNascimento.disabled = !!locked && !!sexoNascimento.value;
   var banco = document.getElementById('ptBanco');
   if (banco) {
     banco.disabled = !!locked;
@@ -4196,6 +4214,7 @@ function prepararNovaParticipacaoPessoa_(participante) {
   document.getElementById('ptPessoaBaseCadastroId').value=participante.id||'';
   document.getElementById('ptPessoaId').value=participante.idPessoa||'';
   document.getElementById('ptNome').value=participante.nome||'';
+  document.getElementById('ptSexoNascimento').value=participante.sexoNascimento||'';
   document.getElementById('ptNasc').value=dateToInputValue(participante.dataNascimento)||'';
   document.getElementById('ptCpf').value=participante.cpf||'';
   document.getElementById('ptTelefone').value=formatarTelefoneBrasileiro(participante.telefone);
@@ -4222,7 +4241,12 @@ function abrirNovaParticipacaoPessoa() {
     snackErro('Salve o cadastro da pessoa antes de criar outra participação.');
     return;
   }
-  if (!participanteStatusEncerrado_(participante.status)) {
+  var participacoes = participacoesDaPessoa_(participante);
+  if (participacoes.some(function(item) { return normSelectValue(item.status || '') === 'obito'; })) {
+    snackErro('Não é possível criar nova participação para pessoa com registro de óbito.');
+    return;
+  }
+  if (participacoes.some(function(item) { return !participantePodeNovaParticipacao_(item.status); })) {
     snackErro('Encerre a participação atual antes de criar outra participação.');
     return;
   }
@@ -4318,6 +4342,7 @@ function salvarPartApp(opts) {
   }
   if (!appRequiredFeedback([
     { input: 'ptNome', error: 'errPtNome', label: 'Nome', value: nome },
+    { input: 'ptSexoNascimento', error: 'errPtSexoNascimento', label: 'Sexo no nascimento', value: ['Masculino','Feminino','Não informado'].indexOf(document.getElementById('ptSexoNascimento').value) >= 0 ? 'ok' : '' },
     { input: 'ptId', error: 'errPtId', label: 'ID do participante', value: idObrigatorio ? idPart : 'ok' },
     { input: 'ptProjeto', error: 'errPtProjeto', label: 'Projeto', value: participanteProjetoCadastrado(projeto) ? 'ok' : '' },
     { input: 'ptStatus', error: 'errPtStatus', label: 'Status', value: status }
@@ -4328,6 +4353,7 @@ function salvarPartApp(opts) {
     nome: nome,
     idParticipante: idPart,
     dataNascimento: document.getElementById('ptNasc').value,
+    sexoNascimento: document.getElementById('ptSexoNascimento').value,
     cpf: document.getElementById('ptCpf').value.trim(),
     projeto: projeto,
     braco: document.getElementById('ptBraco').value.trim(),

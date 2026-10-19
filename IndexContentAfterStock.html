@@ -458,10 +458,20 @@
             <div class="field-error" id="errPtNome">Campo obrigatório.</div>
           </div>
         </div>
-        <div class="field-row cols-2">
+        <div class="field-row cols-3">
           <div>
             <label class="field-label" for="ptNasc">Data de Nascimento</label>
             <input type="date" id="ptNasc" class="f-input">
+          </div>
+          <div>
+            <label class="field-label" for="ptSexoNascimento">Sexo no nascimento <span class="required-star">*</span></label>
+            <select id="ptSexoNascimento" class="f-input f-select" required aria-required="true" aria-invalid="false" aria-describedby="errPtSexoNascimento" onchange="limparErro('ptSexoNascimento','errPtSexoNascimento')">
+              <option value="">-- Selecione --</option>
+              <option value="Masculino">Masculino</option>
+              <option value="Feminino">Feminino</option>
+              <option value="Não informado">Não informado</option>
+            </select>
+            <div class="field-error" id="errPtSexoNascimento">Selecione o sexo no nascimento.</div>
           </div>
           <div>
             <label class="field-label" for="ptCpf">CPF</label>
@@ -510,7 +520,7 @@
             <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
           </div>
         </div>
-        <div class="participant-form-guidance">Se esta pessoa iniciar outro protocolo, encerre a participação atual e crie uma nova participação. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
+        <div class="participant-form-guidance">Para iniciar outro protocolo, encerre a participação atual ou, quando corresponder à situação confirmada pela equipe, use “Em acompanhamento de segurança”. Depois, crie uma nova participação. O acompanhamento continua disponível na Agenda. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
       </div>
       <div class="form-section participant-participations-section" id="ptParticipacoesSection" style="display:none;">
         <div class="participant-participations-heading">

@@ -3100,6 +3100,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     if (payload.idAgenda && String(payload.agendaSlot || payload.slot || '').trim()) {
       normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
     }
+    if (options.rascunho) transporteValidarEntradaAwbOcasa_(payload);
     if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
     codexMatBioValidateTransportPayload_(payload);
     materiaisNote = transporteMateriaisNote_(declaracao.getRange('F30').getNote(), payload, peticao);
@@ -3291,7 +3292,27 @@ function aplicarSolicitacaoCaixaTransporte_(ss, payload) {
   }
 }
 
+function transporteValidarEntradaAwbOcasa_(payload) {
+  payload = payload || {};
+  if (codexCourierIsValidAwbEntry_(payload.awb, payload.courier, null)) return;
+  var previous = null;
+  if (payload.idAgenda && (payload.agendaSlot || payload.slot)) {
+    var evento = buscarAgendaEventoPorIdTransp_(payload.idAgenda);
+    var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
+    previous = evento[({ '1': 'courier1', '2': 'courier2', '3': 'courier3', backup: 'backup' })[slot]];
+  } else if (payload.envioId) {
+    var folha = transporteGetSheet_(getTransporteSpreadsheetCodex_(), 'folhaAgendamento', true);
+    var values = folha.getRange('C3:C15').getValues().map(function(row) { return row[0]; });
+    var link = transporteAgendaLinkFromRef_(values[12], folha.getRange('C15').getNote());
+    if (!link.idAgenda && link.envioId === payload.envioId) previous = { courier: values[7], awb: values[9] };
+  }
+  if (!codexCourierIsValidAwbEntry_(payload.awb, payload.courier, previous)) {
+    throw new Error(codexCourierAwbValidationMessage_('OCASA'));
+  }
+}
+
 function transporteValidarObrigatoriosWebApp_(payload) {
+  transporteValidarEntradaAwbOcasa_(payload);
   payload = payload || {};
   var missing = [];
   if (!String(payload.paciente || '').trim()) missing.push('Paciente');
@@ -3972,7 +3993,7 @@ function transporteSandboxPayload_(marker, courier) {
   var destinoPadrao = transporteLabCentralDestinoPadrao_();
   var awbMap = {
     MARKEN: '123456789012',
-    OCASA: 'T1234567',
+    OCASA: 'PK2OZB276947',
     DHL: '1234567890',
     PINEX: '12345678',
     'PINEX (Agendamento)': ''
@@ -6116,6 +6137,7 @@ function imprimirTodasAbas_(options) {
     var formPinex = transporteCodexGetSheet_(ss, 'formularioPinex', false);
     var responsavelEntrega = String((formPinex ? getCellValueSafe(formPinex, 'D32') : '') || payloadFallback.responsavelEntrega || '').trim();
     transporteValidarObrigatoriosWebApp_({
+      idAgenda: payloadFallback.idAgenda, agendaSlot: payloadFallback.agendaSlot || payloadFallback.slot, envioId: payloadFallback.envioId,
       paciente: paciente,
       identificacaoParticipante: payloadFallback.identificacaoParticipante || payloadFallback.idParticipante || '',
       protocolo: protocolo,

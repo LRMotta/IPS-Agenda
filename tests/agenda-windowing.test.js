@@ -2947,6 +2947,12 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   assert.match(grouped, /Agendado/);
   assert.match(context.agendaCardHtml(audit, 'test'), /ag-event-type/);
   assert.match(context.agendaCardHtml({ ...audit, obs: '' }, 'test', { groupedAudit: true }), /ag-appt-name">Auditoria/);
+  for (const dados of [{ nascimento: '27/jan/1962', idade: '64' }, { idade: '64' }, { idParticipante: 'P-001' }, {}]) {
+    const html = context.agendaCardHtml({ ...row, ...dados, tipo: 'Visita', medico: 'Medico Teste' }, 'separador');
+    const linha = html.match(/<div class="ag-l3">([\s\S]*?)<\/div>/)[1];
+    assert.equal((linha.match(/class="sep"/g) || []).length, Object.keys(dados).length ? 1 : 0);
+    assert.match(linha, /stethoscope/);
+  }
   const visitaComIndicadores = context.agendaCardHtml({ ...row, tipo: 'Visita', participante: 'Pessoa A', carroRequerido: true, servTerc: 'Prestador', statusRequisicao: 'Enviada' }, 'visita');
   assert.match(visitaComIndicadores, /ag-context-identity ag-context-has-project[^>]*>[\s\S]*?&lt;Projeto&gt;[\s\S]*?ag-event-type[^>]*>[\s\S]*?Visita[\s\S]*?<\/span><\/span><span class="ag-context-signals ag-context-after-identity"[^>]*>[\s\S]*?Carro requerido[\s\S]*?Req\. enviada/);
   assert.doesNotMatch(context.agendaCardHtml({ ...row, tipo: 'Visita', participante: 'Pessoa A' }, 'sem-indicadores'), /ag-context-signals/);
