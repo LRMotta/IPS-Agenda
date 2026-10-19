@@ -397,6 +397,12 @@ function courierLembreteExecutar_() {
           enviados++;
         } else courierLembreteSalvar_(item, 'INCERTO', 'Envio a verificar — não repetir automaticamente', threadId);
       } catch (e) {
+        // A disputa de lock antes da reserva é transitória: nenhum envio foi
+        // iniciado, então deixe o item elegível para o próximo ciclo do gatilho.
+        if (item.estado !== 'TENTATIVA' && typeof codexIsDocumentLockBusyError_ === 'function' && codexIsDocumentLockBusyError_(e)) {
+          Logger.log('Cobrança courier ' + item.key + ': bloqueio temporário antes da reserva; será reavaliada no próximo ciclo.');
+          continue;
+        }
         // Timeout pode ocorrer após Gmail aceitar a mensagem. Nunca reenvia a tentativa.
         courierLembreteSalvar_(item, item.estado === 'TENTATIVA' ? 'INCERTO' : 'REVISAO', 'Falha na verificação ou envio — revisão necessária');
         Logger.log('Cobrança courier ' + item.key + ': ' + String(e.message || e));

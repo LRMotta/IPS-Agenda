@@ -61,6 +61,81 @@ test('unicidade global inclui outro courier, registros antigos e cancelados', ()
   }, 'B')), /Transporte II.*CONGELADO.*Pessoa A.*Cancelado.*Agendamento A/);
 });
 
+test('cancelamento de DHL Ambiente libera a AWB nos tres slots, inclusive no historico', () => {
+  for (const slot of [1, 2, 3]) {
+    for (const cancelamento of ['evento', 'transporte']) {
+      const f = fixture();
+      const r = f.row('A', '3539829812', slot, 'Realizado');
+      const cfg = [f.i.c1, f.i.c2, f.i.c3][slot - 1];
+      r[cfg.nome] = 'DHL'; r[cfg.temp] = 'Ambiente'; r[cfg.status] = 'Agendado';
+      f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, {}, 'A', r));
+      const ledger = f.ss.getSheetByName('AWB_Utilizadas');
+      assert.equal(ledger.rows[1][9], 'Realizado');
+      r[cancelamento === 'evento' ? f.i.status : cfg.status] = 'Cancelado';
+      const payload = { idAgenda: 'B', agendaSlot: '1', awb: '3539829812', courier: 'DHL', temperatura: 'AMBIENTE' };
+      assert.equal(f.c.transporteAwbAviso_(payload), null);
+      assert.doesNotThrow(() => f.lockedCall(() => f.c.transporteAwbReservar_(payload, true)));
+      assert.equal(ledger.rows.length, 3, 'conserva o historico anterior e registra o novo envio');
+      assert.throws(() => f.lockedCall(() => f.c.transporteAwbReservar_({ ...payload, idAgenda: 'C' }, true)), /Agendamento B/);
+    }
+  }
+});
+
+test('DHL Ambiente ativo bloqueia reuso e informa a possibilidade de cancelamento', () => {
+  const f = fixture();
+  const r = f.row('A', '3539829812');
+  r[f.i.c1.nome] = 'DHL'; r[f.i.c1.temp] = 'Ambiente';
+  assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, { courier1: { awb: '3539829812' } }, 'B')),
+    /cancele o envio DHL Ambiente anterior para liberar/);
+  assert.equal(f.ss.getSheetByName('AWB_Utilizadas'), null);
+});
+
+test('cancelamento dos demais couriers ou temperaturas DHL continua sem liberar a AWB', () => {
+  for (const [courier, temperatura] of [['DHL', 'CONGELADO'], ['DHL', 'REFRIGERADO'], ['DHL', ''], ['MARKEN', 'AMBIENTE'], ['OCASA', 'AMBIENTE'], ['PINEX', 'AMBIENTE']]) {
+    const f = fixture();
+    const r = f.row('A', '3539829812', 1, 'Cancelado');
+    r[f.i.c1.nome] = courier; r[f.i.c1.temp] = temperatura; r[f.i.c1.status] = 'Cancelado';
+    assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, { courier1: { awb: '3539829812' } }, 'B')),
+      /Cancelar o envio anterior não libera/);
+  }
+});
+
+test('limpar ou substituir AWB DHL Ambiente sem cancelar conserva a reserva historica', () => {
+  for (const awb of ['', 'NOVA']) {
+    const f = fixture();
+    const r = f.row('A', '3539829812');
+    r[f.i.c1.nome] = 'DHL'; r[f.i.c1.temp] = 'AMBIENTE';
+    f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, { courier1: { awb, awbTouched: true } }, 'A', r));
+    r[f.i.c1.awb] = awb;
+    assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, { courier1: { awb: '3539829812' } }, 'B')), /já foi utilizada/);
+  }
+});
+
+test('reativar envio DHL Ambiente apos reutilizacao da AWB e bloqueado antes de escrever', () => {
+  const f = fixture();
+  const r = f.row('A', '3539829812', 1, 'Cancelado');
+  r[f.i.c1.nome] = 'DHL'; r[f.i.c1.temp] = 'AMBIENTE'; r[f.i.c1.status] = 'Cancelado';
+  f.row('B', '3539829812');
+  const before = JSON.stringify(f.agenda.rows);
+  assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda,
+    { status: 'Agendado', courier1: { awb: '3539829812', status: 'Agendado' } }, 'A', r, true)), /Agendamento B/);
+  assert.equal(JSON.stringify(f.agenda.rows), before);
+  assert.equal(f.ss.getSheetByName('AWB_Utilizadas'), null);
+});
+
+test('Backup com status antigo nao mantem AWB de destino DHL Ambiente cancelado ocupada', () => {
+  const f = fixture();
+  const origin = f.row('ORIGEM');
+  origin[f.i.backupAgendaRef] = JSON.stringify({ id: 'DESTINO', slot: 'II', awb: '3539829812' });
+  origin[f.i.cb.nome] = 'DHL'; origin[f.i.cb.temp] = 'AMBIENTE'; origin[f.i.cb.status] = 'Adicionado à Agenda';
+  const target = f.row('DESTINO', '3539829812', 2);
+  target[f.i.c2.nome] = 'DHL'; target[f.i.c2.temp] = 'AMBIENTE'; target[f.i.c2.status] = 'Cancelado';
+  assert.doesNotThrow(() => f.lockedCall(() => f.c.transporteAwbReservar_({ idAgenda: 'NOVO', agendaSlot: '1', awb: '3539829812' }, true)));
+  f.agenda.rows.splice(2, 1);
+  assert.throws(() => f.lockedCall(() => f.c.transporteAwbReservar_({ idAgenda: 'OUTRO', agendaSlot: '1', awb: '3539829812' }, true)), /Agendamento DESTINO/,
+    'origem ausente nao comprova cancelamento');
+});
+
 test('editar e reagendar o mesmo envio conserva a AWB, limpeza nao libera o historico', () => {
   const f = fixture();
   const r = f.row('A', '0012345678');
