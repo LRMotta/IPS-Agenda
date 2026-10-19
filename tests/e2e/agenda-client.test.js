@@ -662,3 +662,24 @@ test('referencias pendentes preservam selects durante edicao e aplicam apos fech
     assert.deepEqual(result, { aceito: true, preservou: true, aplicado: true, confirmado: true, opcao: true });
   });
 });
+
+test('OCASA: novas AWBs digitais e preservacao da AWB legada no formulario', async () => {
+  await scenario(async page => {
+    const result = await page.evaluate(() => {
+      const courier = document.getElementById('agC1Nome');
+      courier.innerHTML = '<option value="OCASA">OCASA</option>'; courier.value = 'OCASA';
+      const input = document.getElementById('agC1Awb');
+      input.value = 'A1234567';
+      const novoLegado = window.validateAgendaAwb('agC1', false);
+      input.value = 'PK2OZB276947';
+      const novoDigital = window.validateAgendaAwb('agC1', false);
+      window._agendaEditId = 'old'; window._agendaEditRecord = { courier1: { nome: 'OCASA', awb: 'A1234567' } };
+      input.value = 'A1234567';
+      const antigo = window.applyAgendaAwbRule('agC1', false);
+      const htmlAntigo = input.checkValidity();
+      input.value = 'B1234567';
+      return { novoLegado, novoDigital, antigo, htmlAntigo, substituicao: window.validateAgendaAwb('agC1', false) };
+    });
+    assert.deepEqual(result, { novoLegado: false, novoDigital: true, antigo: true, htmlAntigo: true, substituicao: false });
+  });
+});

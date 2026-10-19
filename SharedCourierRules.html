@@ -122,7 +122,7 @@
     var n = norm(courier);
     if (n.indexOf('MARKEN') >= 0) return { len: 12, mode: 'alnum', placeholder: '12 caracteres alfanumericos', label: 'MARKEN' };
     if (n.indexOf('DHL') >= 0) return { len: 10, mode: 'digits', placeholder: '10 digitos', label: 'DHL' };
-    if (n.indexOf('OCASA') >= 0) return { len: 12, mode: 'ocasa', placeholder: 'A1234567 ou PK2WIZ177555', label: 'OCASA' };
+    if (n.indexOf('OCASA') >= 0) return { len: 12, mode: 'ocasa', placeholder: 'PK2OZB276947', label: 'OCASA' };
     if (n.indexOf('PINEX') >= 0) return { mode: 'free', placeholder: 'Codigo PINEX / AWB', label: 'PINEX' };
     return { mode: 'free', placeholder: 'AWB', label: String(courier || '') };
   }
@@ -140,6 +140,15 @@
     return /^[A-Z][0-9]{7}$/.test(value) || /^PK2[A-Z0-9]{9}$/.test(value);
   }
 
+  // A excecao legada exige o mesmo valor e courier do transporte persistido.
+  function isValidAwbEntry(value, courier, previous) {
+    if (rule(courier).mode !== 'ocasa') return true;
+    var awb = normalizeAwb(value, courier);
+    if (!awb || /^PK2[A-Z0-9]{9}$/.test(awb)) return true;
+    return !!(previous && rule(previous.nome || previous.courier).mode === 'ocasa' &&
+      /^[A-Z][0-9]{7}$/.test(awb) && awb === normalizeAwb(previous.awb, courier));
+  }
+
   function requiresAwb(courier) {
     var r = rule(courier);
     return r.label === 'MARKEN' || r.label === 'OCASA' || norm(courier) === 'PINEX';
@@ -154,7 +163,7 @@
   }
 
   function titleForRule(r) {
-    if (r.mode === 'ocasa') return 'OCASA: informe 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
+    if (r.mode === 'ocasa') return 'Novas AWBs OCASA devem usar o formato digital PK2 + 9 caracteres alfanumericos (ex.: PK2OZB276947).';
     if (r.mode === 'free') return r.label === 'PINEX' ? 'Informe o codigo PINEX ou AWB.' : '';
     if (!r.len) return '';
     return r.label + ': informe ' + r.len + (r.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
@@ -162,19 +171,20 @@
 
   function validationMessage(courier) {
     var r = rule(courier);
-    if (r.mode === 'ocasa') return 'AWB OCASA deve ter 1 letra + 7 digitos ou PK2 + 9 caracteres alfanumericos.';
+    if (r.mode === 'ocasa') return 'Novas AWBs OCASA devem usar o formato digital PK2 + 9 caracteres alfanumericos (ex.: PK2OZB276947).';
     if (!r.len) return '';
     return 'AWB ' + r.label + ' deve ter ' + r.len + (r.mode === 'alnum' ? ' caracteres alfanumericos.' : ' digitos.');
   }
 
-  function applyToInput(input, courier, sanitizeValue) {
+  function applyToInput(input, courier, sanitizeValue, previous) {
     if (!input) return rule(courier);
     var r = rule(courier);
     input.placeholder = r.placeholder || 'AWB';
     input.title = titleForRule(r);
     input.inputMode = r.mode === 'digits' ? 'numeric' : 'text';
     if (r.mode === 'digits' && r.len) input.pattern = '\\d{' + r.len + '}';
-    else if (r.mode === 'ocasa') input.pattern = '([A-Za-z][0-9]{7}|[Pp][Kk]2[A-Za-z0-9]{9})';
+    else if (r.mode === 'ocasa') input.pattern = previous && isValidAwbEntry(previous.awb, courier, previous) && /^[A-Z][0-9]{7}$/.test(normalizeAwb(previous.awb, courier))
+      ? '([Pp][Kk]2[A-Za-z0-9]{9}|' + normalizeAwb(previous.awb, courier) + ')' : '[Pp][Kk]2[A-Za-z0-9]{9}';
     else if (r.mode === 'alnum' && r.len) input.pattern = '[A-Za-z0-9]{' + r.len + '}';
     else input.removeAttribute('pattern');
     // Preservar colagens excedentes para que a validacao possa rejeita-las.
@@ -189,6 +199,7 @@
     awbRule: rule,
     normalizeAwb: normalizeAwb,
     isValidAwb: isValidAwb,
+    isValidAwbEntry: isValidAwbEntry,
     isValidOcasaAwb: isValidOcasaAwb,
     titleForRule: titleForRule,
     validationMessage: validationMessage,

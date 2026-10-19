@@ -59,9 +59,9 @@ test('Dashboard responsivo: títulos, filtros, tabelas acessíveis e navegação
       for (const label of ['Período', 'Ano']) assert.equal(await page.getByRole('combobox', { name: label, exact: true }).count(), 1);
       assert.equal(await page.locator('#dashAgendaPeriodMes').getAttribute('aria-label'), 'Mês');
       assert.deepEqual(await page.locator('canvas').evaluateAll(canvases => canvases.map(canvas =>
-        Boolean(document.getElementById(canvas.getAttribute('aria-labelledby'))))), Array(18).fill(true));
+        Boolean(document.getElementById(canvas.getAttribute('aria-labelledby'))))), Array(19).fill(true));
       assert.deepEqual(await page.locator('section').evaluateAll(sections => sections.map(section =>
-        section.contains(document.getElementById(section.getAttribute('aria-labelledby'))))), Array(11).fill(true));
+        section.contains(document.getElementById(section.getAttribute('aria-labelledby'))))), Array(12).fill(true));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
       const stockCols = await page.locator('#dashEstoqueBlock .dash-grid').evaluate(el => window.getComputedStyle(el).gridTemplateColumns.split(' ').length);
       assert.equal(stockCols, width === 390 ? 2 : 5);
@@ -95,7 +95,7 @@ test('Dashboard responsivo: títulos, filtros, tabelas acessíveis e navegação
       await page.getByRole('combobox', { name: 'Período', exact: true }).selectOption('global');
       assert.equal(await page.locator('#dashAgendaCardsTitle').textContent(), 'Visitas realizadas por ano');
       assert.equal(await page.locator('#chartAgendaVisitasMesTitle .dash-chart-title-text').textContent(), 'Visitas realizadas por ano');
-      assert.equal(await page.locator('.dash-chart-copy').count(), 18);
+      assert.equal(await page.locator('.dash-chart-copy').count(), 19);
       await page.evaluate(() => {
         window.savedDashboardRender = window.renderDashboard;
         window.renderDashboard = () => true;

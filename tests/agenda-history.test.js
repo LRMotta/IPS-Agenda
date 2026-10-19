@@ -156,6 +156,32 @@ test('inclui aliases do Transporte backup, materiais e remoção de dia de Audit
   assert.doesNotMatch(JSON.stringify(data),/PII_PRIVADO/);
 });
 
+
+test('rotinas automáticas mostram Sistema e preservam conta técnica sem inferir iniciador',()=>{
+  const actions=['monitorarEntregasDhlAgendadas','monitorarConfirmacoesCourierAgendadas',
+    'transporteMonitorarEnviosPorEmail','sincronizarBackupAwb'];
+  const registros=actions.map(action=>row('A','Transporte I - Status','Agendado','Confirmado',action));
+  registros.push(row('A','Status','Agendado','Confirmado'));
+  const f=fixture(registros),data=f.c.getAgendaHistorico('A');
+  const manual=data.rows[0];
+  assert.equal(manual.origin,'usuario');
+  assert.equal(manual.actorLabel,'equipe@exemplo.org');
+  data.rows.slice(1).forEach(item=>{
+    assert.equal(item.origin,'automatico');
+    assert.equal(item.actorLabel,'Sistema');
+    assert.equal(item.email,'equipe@exemplo.org');
+    assert.equal(item.initiatedBy,undefined);
+  });
+  assert.equal(f.sheet.writes,0);
+  assert.equal(f.sheet.rows[1][2],'equipe@exemplo.org');
+  for(const email of ['', 'api-token','legado sem conta']) {
+    const actor=f.c.agendaHistoricoResponsavel_('atualizarAgendaEventoCompleto',email);
+    assert.equal(actor.origin,'nao_identificada');
+    assert.equal(actor.label,'Responsável não disponível');
+    assert.equal(f.c.agendaHistoricoResponsavel_('monitorarEntregasDhlAgendadas',email).label,'Sistema');
+  }
+});
+
 test('datas textuais legadas preservam o valor registrado sem inventar horário',()=>{
   const f=fixture([]);
   assert.equal(f.c.agendaHistoricoData_('17/10/2026'),'17/10/2026');

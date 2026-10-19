@@ -29,6 +29,7 @@ function fixture() {
   const projects = [['ID', 'Nome', 'Codigo', 'Caixas especiais transporte (JSON)'], ['P1', 'Estudo', 'ABC-1', JSON.stringify([rule])]];
   const payload = { paciente: 'Pessoa', participanteCadastroId: 'CAD1', identificacaoParticipante: '123', protocolo: 'Estudo (ABC-1)', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'Lab', materiais: [], agendadoPor: 'Equipe', horaEnvio: '13:00 - 15:00' };
   const s = runFile('TransporteCodexConfig.gs', {
+    codexCourierIsValidAwbEntry_: runFile('WebApp.gs').codexCourierIsValidAwbEntry_,
     Logger: { log() {} }, normText_: v => String(v || '').toLowerCase().trim(), SpreadsheetApp: { flush() {} },
     getCodexSheetDataByName_: () => projects,
     getAgendaCourierRows_: () => [{ id: 'M1', nome: 'MARKEN' }, { id: 'O1', nome: 'OCASA' }],

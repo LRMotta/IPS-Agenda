@@ -29,7 +29,7 @@ function fixture() {
   server.getSoAVisitasProjeto = () => [];
   server.getBracosProjeto = () => [];
   server.getJornadaParticipante = () => ({});
-  const payload = {id:'1',nome:'Pessoa',idParticipante:'P1',projeto:'Estudo',braco:'A',status:'Ativo',cpf:''};
+  const payload = {sexoNascimento:'Não informado',id:'1',nome:'Pessoa',idParticipante:'P1',projeto:'Estudo',braco:'A',status:'Ativo',cpf:''};
   const read = () => server.participanteCtmsJsonObject_(sheet.rows[1][server.participanteCtmsColumnMapFromHeaders_(sheet.rows[0]).marcosJson]);
   return { server, sheet, payload, read };
 }

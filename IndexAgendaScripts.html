@@ -875,11 +875,16 @@
     return CodexCourierRules.normalizeAwb(value, courier);
   }
 
+  function agendaPreviousCourierAwb_(prefix) {
+    var record = _agendaEditId ? (_agendaEditRecord || agendaFindEventoLocal_(_agendaEditId)) : null;
+    return record && record[({ agC1: 'courier1', agC2: 'courier2', agC3: 'courier3', agBackup: 'backup' })[prefix]];
+  }
+
   function applyAgendaAwbRule(prefix, sanitizeValue) {
     var awb = document.getElementById(prefix + 'Awb');
     if (!awb) return true;
     var courierEl = document.getElementById(prefix + 'Nome');
-    CodexCourierRules.applyToInput(awb, courierEl ? courierEl.value : '', sanitizeValue);
+    CodexCourierRules.applyToInput(awb, courierEl ? courierEl.value : '', sanitizeValue, agendaPreviousCourierAwb_(prefix));
     return validateAgendaAwb(prefix, false);
   }
 
@@ -890,7 +895,7 @@
     var courier = courierEl ? courierEl.value : '';
     var value = normalizeAgendaAwbForCourier(awb.value, courier);
     if (awb.value !== value) awb.value = value;
-    var ok = CodexCourierRules.isValidAwb(value, courier);
+    var ok = CodexCourierRules.isValidAwb(value, courier) && CodexCourierRules.isValidAwbEntry(value, courier, agendaPreviousCourierAwb_(prefix));
     awb.classList.toggle('invalid', !ok);
     awb.setAttribute('aria-invalid', ok ? 'false' : 'true');
     if (!ok && showMessage) snackErro(CodexCourierRules.validationMessage(courier));
@@ -3391,6 +3396,7 @@
     var nascimento = String(info.nascimento || '').trim();
     var idade = String(info.idade || '').trim();
     if (nascimento || idade) item('cake', 'Nascimento', nascimento + (idade ? ' · ' + idade + ' anos' : ''));
+    item('person', 'Sexo no nascimento', info.sexoNascimento || 'Pendente de preenchimento');
     item('badge', 'ID', info.numId || '-');
     item('call_split', 'Braço', info.braco || '-');
     if (info.ultimaVisitaData || info._ultimaVisitaPendente) {
@@ -6575,7 +6581,7 @@
           (r.visita || r.braco ? '<div class="ag-l2">' + agendaMetaText('flag', r.visita ? 'Visita ' + r.visita : '') + agendaMetaText('call_split', r.braco ? 'Braço ' + r.braco : '') + '</div>' : '') +
           (isPeriodoOperacional
             ? (r.monitorName ? '<div class="ag-l3">' + agendaLineItem('visibility', r.monitorName) + '</div>' : '')
-            : (!isAuditoria ? '<div class="ag-l3">' + agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '') + '</div>' : '')) +
+            : (!isAuditoria ? '<div class="ag-l3">' + agendaBirthAgeHtml(r.nascimento, r.idade) + agendaSep(r.nascimento, r.idParticipante) + agendaLineItem('badge', r.idParticipante) + agendaSep(r.idParticipante || r.nascimento || r.idade, r.medico) + agendaLineItem('stethoscope', r.medico) + (r.servTerc ? agendaSep(r.medico, r.servTerc) + agendaLineItem('business', r.servTerc) : '') + '</div>' : '')) +
           (r.procedimentos ? '<div class="ag-proc-preview">' + esc(r.procedimentos) + '</div>' : '') +
           (isAuditoria && !groupedAudit && r.obs ? '<div class="ag-obs-preview"><span class="material-symbols-outlined">sticky_note_2</span><span>' + esc(r.obs) + '</span></div>' : '') +
         '</div>' +
@@ -6635,7 +6641,7 @@
         change.textContent = item.summary || (item.field === 'Agendamento' || item.field === 'Vínculo do participante'
           ? item.newValue : (item.oldValue || 'Não informado') + ' → ' + (item.newValue || 'Não informado'));
         var author = document.createElement('small');
-        author.textContent = item.timestamp + ' · ' + (item.email || 'Responsável não disponível');
+        author.textContent = item.timestamp + ' · ' + (item.actorLabel || item.email || 'Responsável não disponível');
         entry.appendChild(title); entry.appendChild(change); entry.appendChild(author); list.appendChild(entry);
       });
       consulta.before = data.nextBefore;

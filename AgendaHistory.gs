@@ -116,7 +116,22 @@ function agendaHistoricoItem_(row) {
     item.field = 'Agendamento de destino · ' + field;
   }
   item.field = item.field.replace(/Materiais estruturados$/, 'Detalhes dos materiais');
+  var actor = agendaHistoricoResponsavel_(action, item.email);
+  item.origin = actor.origin;
+  item.actorLabel = actor.label;
   return item;
+}
+
+// Conta de execução não é autoria humana. Ações compartilhadas por botão/gatilho
+// não permitem inferir quem iniciou a rotina a partir do e-mail registrado.
+function agendaHistoricoResponsavel_(action, email) {
+  var automaticas = ['monitorarEntregasDhlAgendadas', 'monitorarConfirmacoesCourierAgendadas',
+    'transporteMonitorarEnviosPorEmail', 'sincronizarBackupAwb'];
+  if (automaticas.indexOf(action) >= 0) return { origin: 'automatico', label: 'Sistema' };
+  var conta = String(email || '').trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(conta)) return { origin: 'usuario', label: conta };
+  // Não converter conta técnica/ausência de autor em ação de uma pessoa.
+  return { origin: 'nao_identificada', label: 'Responsável não disponível' };
 }
 
 function agendaHistoricoData_(value) {

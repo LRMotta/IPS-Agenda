@@ -612,6 +612,33 @@
     dashboardChartData_(canvasId, fullLabels, tableDatasets, onBarClick);
   }
 
+  function renderDashboardFaixasEtarias_(resumo) {
+    var canvas = document.getElementById('chartPartIdade');
+    if (!canvas) return;
+    var note = document.getElementById('chartPartIdadeNote');
+    if (note) note.textContent = 'Idade atual em anos completos • status Ativo' +
+      (resumo ? ' • Sem nascimento válido: ' + resumo.semNascimentoValido : '');
+    if (!resumo || !resumo.total) {
+      dashboardDrawEmptyChart_(canvas, resumo && resumo.semNascimentoValido ? 'Sem datas de nascimento válidas' : 'Sem participantes ativos com idade disponível');
+      return;
+    }
+    var labels = resumo.faixas.map(function(f) { return f.label; });
+    var datasets = [{ label: 'Participantes ativos', data: resumo.faixas.map(function(f) { return f.value; }),
+      backgroundColor: 'rgba(0,121,107,.72)', categoryPercentage: 1, barPercentage: 1, borderWidth: 1, borderColor: '#fff' }];
+    dashboardApplyChart_(canvas, {
+      type: 'bar', data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { title: { display: true, text: 'Faixa etária (anos)' }, grid: { display: false }, ticks: { maxRotation: 45, autoSkip: false, font: { size: 10 } } },
+          y: { beginAtZero: true, title: { display: true, text: 'Participantes' }, ticks: { precision: 0 }, grid: { color: '#f0f4f8' } }
+        }
+      }
+    }, labels);
+    dashboardChartData_('chartPartIdade', labels, datasets);
+  }
+
   function renderDashboard(d, perf) {
     var oldError = document.getElementById('dashErrorBox');
     if (oldError) oldError.remove();
@@ -733,6 +760,7 @@
         borderRadius: 4
       }]);
     } else dashboardDrawEmptyChart_(document.getElementById('chartPartCidade'), 'Sem dados disponíveis');
+    renderDashboardFaixasEtarias_(partResumo && partResumo.faixasEtarias);
     var patMap  = _agg(projetosAtivos, 'patrocinador');
     var patKeys = _sortDesc(patMap);
     var patPairs = _topDashResults(patKeys, patMap, 15);
