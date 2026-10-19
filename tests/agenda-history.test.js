@@ -49,6 +49,68 @@ test('busca ID literal completo, preserva espaços legados e não mistura módul
   assert.equal(f.sheet.writes,0);
 });
 
+test('criacao retorna data e responsavel sem inferir autoria pela primeira alteracao',()=>{
+  const creation=row('A','Agendamento','','Criado','criarAgendaEventoConcluido');
+  creation[2]='criador@exemplo.org';
+  const f=fixture([creation,row('A')]);
+  const data=f.c.getAgendaHistorico('A');
+  assert.equal(data.creation.found,true);
+  assert.equal(data.creation.actorLabel,'criador@exemplo.org');
+  assert.equal(data.creation.timestamp,'2026-10-15T12:00:00.000Z');
+  assert.equal(f.searches.length,1,'historico curto reutiliza a consulta por ID');
+  assert.equal(f.reads.length,1,'historico curto reutiliza a leitura da pagina');
+  assert.equal(f.sheet.writes,0);
+  for(const rows of [[],[row('A')],[row('A','Agendamento','','Tentativa','salvarNovoEventoCompleto')]]) {
+    assert.equal(fixture(rows).c.getAgendaHistorico('A').creation.found,false);
+  }
+  const otherModule=creation.slice();otherModule[3]='Cadastros';
+  assert.equal(fixture([otherModule]).c.getAgendaHistorico('A').creation.found,false);
+  const technical=creation.slice();technical[2]='api-token';
+  assert.equal(fixture([technical]).c.getAgendaHistorico('A').creation.actorLabel,'Responsável não disponível');
+});
+
+test('criacao antiga aparece na primeira pagina de historico longo sem transferir todas as alteracoes',()=>{
+  const creation=row(' A.+ ','Agendamento','','Criado',' criarAgendaEventoConcluido ');
+  creation[2]='criador@exemplo.org';
+  const f=fixture([creation,...Array.from({length:100000},()=>row('A.+'))]);
+  const page=f.c.getAgendaHistorico('A.+');
+  assert.equal(page.rows.length,40);
+  assert.equal(page.hasMore,true);
+  assert.equal(page.rows.some(r=>r.action==='Criação do agendamento'),false);
+  assert.equal(page.creation.actorLabel,'criador@exemplo.org');
+  assert.equal(f.searches.length,2,'buscas nativas por ID e acao de criacao');
+  assert.equal(f.searches[1].column,5);
+  assert.ok(f.reads.reduce((total,r)=>total+r.cells,0)<=1610,'somente criacao e faixa da primeira pagina sao transferidas');
+  const searches=f.searches.length;
+  assert.equal(f.c.getAgendaHistorico('A.+',page.nextBefore).creation,null);
+  assert.equal(f.searches.length,searches+1,'paginas seguintes nao repetem a busca de criacao');
+  assert.equal(f.sheet.writes,0);
+});
+
+test('historico longo nao usa criacao de outro ID, modulo, tentativa ou campo',()=>{
+  const candidates=[
+    row('OUTRO','Agendamento','','Criado','criarAgendaEventoConcluido'),
+    row('A','Agendamento','','Tentativa','salvarNovoEventoCompleto'),
+    row('A','Data','','Criado','criarAgendaEventoConcluido'),
+    row('A','Agendamento','','Criado','criarAgendaEventoConcluido')
+  ];
+  candidates[3][3]='Cadastros';
+  const f=fixture([...candidates,...Array.from({length:45},()=>row('A'))]);
+  assert.equal(f.c.getAgendaHistorico('A').creation.found,false);
+  const valid=row('A','Agendamento','','Criado','criarAgendaEventoConcluido');
+  valid[2]='criador@exemplo.org';
+  f.sheet.rows.splice(2,0,valid);
+  assert.equal(f.c.getAgendaHistorico('A').creation.actorLabel,'criador@exemplo.org');
+  assert.equal(f.sheet.writes,0);
+});
+
+test('criacao localizada revalida ID antes de devolver metadados em historico longo',()=>{
+  const f=fixture([row('A','Agendamento','','Criado','criarAgendaEventoConcluido'),...Array.from({length:45},()=>row('A'))]);
+  f.c.codexReadValuesMeasured_=()=>[row('MOVIDO','Agendamento','','Criado','criarAgendaEventoConcluido')];
+  assert.throws(()=>f.c.getAgendaHistorico('A'),/histórico mudou/);
+  assert.equal(f.sheet.writes,0);
+});
+
 test('amplia ações/campos operacionais, normaliza slots legados e protege dados pessoais/JSON/notas',()=>{
   const rows=[
     row('A','Data de nascimento','NASCIMENTO_PRIVADO'),

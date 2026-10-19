@@ -15093,10 +15093,14 @@ function atualizarAgendaEventoCompleto(dados) {
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
   var policy = AgendaServerRules_.formPolicy(tipo);
+  if (policy.doctorAllowed === false) dados.medico = '';
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isMultiDay;
   var visitaIdentidadeAlterada = agendaVisitaIdentidadeAlterada_(rowAnterior, dados);
+  if (policy.isVisit && !String(dados.visita || '').trim()) {
+    return { erro: 'Informe a visita para eventos do tipo Visita.' };
+  }
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
@@ -15668,9 +15672,13 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   var status = String(dados.status || 'Agendado').trim();
   var labCentral = String(dados.labCentral || '').trim();
   var policy = AgendaServerRules_.formPolicy(tipo);
+  if (policy.doctorAllowed === false) dados.medico = '';
   var isMonitoria = policy.isMonitoring;
   var isSiv = policy.isSiv;
   var isPeriodo = policy.isMultiDay;
+  if (policy.isVisit && !String(dados.visita || '').trim()) {
+    return { erro: 'Informe a visita para eventos do tipo Visita.' };
+  }
   var projetoParticipanteErro = agendaMeasureSaveStage_(performanceOperation, 'participant_sync', { rowCount: 1 }, function() {
     return agendaSincronizarProjetoDoParticipante_(dados, policy);
   });

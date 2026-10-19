@@ -11,7 +11,7 @@ function createAgendaRulesCore() {
     { key: 'consulta', contains: ['consulta'], singular: 'Consulta', plural: 'Consultas', css: 'ag-type-consulta', icon: 'event', doctor: true },
     { key: 'exame-imagem', contains: ['imagem'], singular: 'Exame de imagem', plural: 'Exames de imagem', css: 'ag-type-imagem', icon: 'image_search', hidden: true, thirdParty: true },
     { key: 'exame-laboratorial', contains: ['laborator'], singular: 'Exame laboratorial', plural: 'Exames laboratoriais', css: 'ag-type-lab', icon: 'biotech', thirdParty: true, noLab: true },
-    { key: 'envio-amostras', contains: ['amostra'], singular: 'Envio de amostras', plural: 'Envios de amostras', css: 'ag-type-amostras', icon: 'local_shipping', transport: true, technicalOnCreate: true },
+    { key: 'envio-amostras', contains: ['amostra'], singular: 'Envio de amostras', plural: 'Envios de amostras', css: 'ag-type-amostras', icon: 'local_shipping', transport: true, technicalOnCreate: true, noDoctor: true },
     { key: 'feriado', contains: ['feriado'], singular: 'Feriado', plural: 'Feriados', css: 'ag-type-feriado', icon: 'event_busy', hidden: true, general: true },
     { key: 'reuniao', contains: ['reuniao'], singular: 'Reunião', plural: 'Reuniões', css: 'ag-type-reuniao', icon: 'groups', hidden: true, general: true },
     { key: 'auditoria', contains: ['auditoria'], singular: 'Auditoria', plural: 'Auditorias', css: 'ag-type-auditoria', icon: 'fact_check', hidden: true, general: true, multiDay: true },
@@ -124,6 +124,7 @@ function createAgendaRulesCore() {
       requiresProject: !!definition.operational,
       requiresMonitorAndRoom: !!definition.monitorAndRoom,
       requiresDoctor: !!definition.doctor,
+      doctorAllowed: !definition.noDoctor,
       requiresTime: !definition.noTime
     };
   }
