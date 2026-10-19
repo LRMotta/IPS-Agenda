@@ -6,7 +6,12 @@ Backup e envios manuais do modulo Transporte.
 
 - A comparacao usa maiusculas e caracteres alfanumericos, preservando zeros iniciais.
 - Editar ou reagendar o mesmo envio permite conservar sua AWB.
-- Cancelar, limpar ou substituir a AWB nao libera o numero para outro envio.
+- Cancelar o envio DHL Ambiente libera sua AWB para outro envio. O cancelamento
+  pode ser do Transporte I, II ou III ou do agendamento inteiro e deve estar
+  registrado no envio de origem na Agenda, inclusive para reservas historicas
+  e espelhos de Backup. O historico permanece preservado.
+- Nos demais couriers e temperaturas, cancelar nao libera o numero. Limpar ou
+  substituir a AWB tambem nao libera o numero, inclusive em DHL Ambiente.
 - Backup vinculado a outro agendamento/slot e o espelho da mesma remessa. A referencia
   nao conta como um segundo uso; referencia legada sem slot continua sendo Transporte I.
 - Duplicidades preexistentes permitem outras correcoes e exibem aviso. Gerar novos

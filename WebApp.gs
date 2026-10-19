@@ -16834,7 +16834,7 @@ function normalizarAwbCourier_(awb) {
   return String(awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-// Historico permanente: cancelar, limpar ou substituir a AWB nao libera seu uso.
+// Historico permanente: somente o cancelamento de DHL Ambiente libera a AWB.
 // O contexto vive somente durante o document lock; nunca usa CacheService.
 var CODEX_AWB_CONTEXT_ = null;
 var CODEX_AWB_HEADERS_ = ['AWB', 'Envio_ID', 'Agenda_ID', 'Transporte', 'Courier', 'Temperatura', 'Participante', 'Projeto', 'Data', 'Status', 'Registrado_Em'];
@@ -16849,7 +16849,8 @@ function agendaAwbRegistro_(row, slot) {
     awb: String(row[c.awb] || '').trim(), owner: agendaAwbOwner_(row[i.id], slot),
     id: String(row[i.id] || '').trim(), slot: String(slot), courier: String(row[c.nome] || ''),
     temperatura: String(row[c.temp] || ''), participante: String(row[i.participante] || ''),
-    projeto: String(row[i.projeto] || ''), data: row[i.data] || '', status: String(row[i.status] || '')
+    projeto: String(row[i.projeto] || ''), data: row[i.data] || '', status: String(row[i.status] || ''),
+    statusTransporte: String(row[c.status] || '')
   };
 }
 
@@ -16902,14 +16903,36 @@ function agendaAwbMensagem_(awb, other) {
   var slot = { '1': 'Transporte I', '2': 'Transporte II', '3': 'Transporte III', backup: 'Backup' }[other.slot] || 'Envio de amostras';
   var data = other.data instanceof Date ? Utilities.formatDate(other.data, 'America/Sao_Paulo', 'dd/MM/yyyy') : String(other.data || '');
   var detalhes = [slot, other.courier, other.temperatura, other.participante, other.projeto, data, other.status, other.id ? 'Agendamento ' + other.id : 'Envio manual'].filter(Boolean).join(' · ');
-  return 'A AWB "' + awb + '" já foi utilizada em outro envio: ' + detalhes + '. Informe uma AWB diferente. Cancelar o envio anterior não libera esse número.';
+  var orientacao = agendaAwbDhlAmbiente_(other)
+    ? 'Informe uma AWB diferente ou cancele o envio DHL Ambiente anterior para liberar esse número.'
+    : 'Informe uma AWB diferente. Cancelar o envio anterior não libera esse número.';
+  return 'A AWB "' + awb + '" já foi utilizada em outro envio: ' + detalhes + '. ' + orientacao;
+}
+
+function agendaAwbDhlAmbiente_(entry) {
+  return /\bdhl\b/.test(normText_(entry.courier)) && normText_(entry.temperatura) === 'ambiente';
+}
+
+function agendaAwbLiberadaPorCancelamento_(context, entry, candidates) {
+  if (!agendaAwbDhlAmbiente_(entry)) return false;
+  var owner = agendaAwbOwnerEfetivo_(context, entry);
+  // O historico e os espelhos podem ter status antigos. Exigir o envio atual
+  // identificado na Agenda; ausencia de origem nao comprova cancelamento.
+  var current = context.current[owner];
+  if (!current) return false;
+  var proposed = (candidates || []).find(function(candidate) {
+    return candidate.owner === owner && Object.prototype.hasOwnProperty.call(candidate, 'statusTransporte');
+  });
+  current = proposed || current;
+  return AgendaServerRules_.isCancelled(current.status) || AgendaServerRules_.courierStatusKey(current.statusTransporte) === 'cancelado';
 }
 
 function agendaAwbConflito_(context, entry, candidates) {
   var key = normalizarAwbCourier_(entry.awb);
   if (!key) return null;
   return context.entries.concat(candidates || []).find(function(other) {
-    return agendaAwbOwnerEfetivo_(context, other) !== agendaAwbOwnerEfetivo_(context, entry) && normalizarAwbCourier_(other.awb) === key;
+    return agendaAwbOwnerEfetivo_(context, other) !== agendaAwbOwnerEfetivo_(context, entry) &&
+      normalizarAwbCourier_(other.awb) === key && !agendaAwbLiberadaPorCancelamento_(context, other, candidates);
   }) || null;
 }
 
@@ -16937,8 +16960,10 @@ function agendaAwbReservar_(context, candidates, strict, previewOnly) {
     if (!other) return;
     var current = context.current[entry.owner];
     var unchanged = current && normalizarAwbCourier_(current.awb) === normalizarAwbCourier_(entry.awb);
+    var reactivating = current && agendaAwbLiberadaPorCancelamento_(context, current) &&
+      !agendaAwbLiberadaPorCancelamento_(context, entry, candidates);
     var message = agendaAwbMensagem_(entry.awb, other);
-    if (strict || !unchanged) throw new Error(message);
+    if (strict || !unchanged || reactivating) throw new Error(message);
     // Legado duplicado pode receber outras correcoes; gerar novos documentos exige resolver a AWB.
     warnings.push(message);
   });
@@ -17000,7 +17025,8 @@ function agendaAwbValidarPayload_(agenda, dados, id, rowAnterior, previewOnly) {
       rowAnterior ? { nome: rowAnterior[c.nome], awb: rowAnterior[c.awb] } : null)) {
       throw new Error(codexCourierAwbValidationMessage_('OCASA'));
     }
-    return Object.assign(entry, { owner: agendaAwbOwner_(id, slot), id: String(id), slot: String(slot), courier: courier.nome || courier.courier || entry.courier, temperatura: courier.temperatura || courier.temp || entry.temperatura, participante: dados.participante || entry.participante, projeto: dados.projeto || entry.projeto, data: dados.data || entry.data, status: dados.status || entry.status });
+    return Object.assign(entry, { owner: agendaAwbOwner_(id, slot), id: String(id), slot: String(slot), courier: courier.nome || courier.courier || entry.courier, temperatura: courier.temperatura || courier.temp || entry.temperatura, participante: dados.participante || entry.participante, projeto: dados.projeto || entry.projeto, data: dados.data || entry.data, status: dados.status || entry.status,
+      statusTransporte: Object.prototype.hasOwnProperty.call(courier, 'status') ? String(courier.status || '') : entry.statusTransporte });
   });
   return agendaAwbReservar_(context, candidates, false, previewOnly);
 }
