@@ -542,6 +542,91 @@ test('Backup: opções persistentes, liberação por temperatura e vínculo em d
   }
 });
 
+test('Backup II: opções persistentes, liberação por temperatura e vínculo em desktop e celular', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      await page.evaluate(() => {
+        const wrap = document.getElementById('agBackup2Wrap');
+        window.atualizarAgendaTransportesOpcionais();
+        if (wrap.style.display !== 'none') throw new Error('Backup II vazio deve iniciar recolhido');
+        window.mostrarAgendaTransporteOpcional('agBackup2');
+        if (wrap.style.display === 'none') throw new Error('Botao deve revelar Backup II');
+        for (let el = wrap; el && el !== document.body; el = el.parentElement) {
+          if (window.getComputedStyle(el).display === 'none') el.style.display = 'block';
+        }
+        document.getElementById('agBackup2Temp').innerHTML = '<option value="">Selecione</option><option value="Congelado">Congelado</option>';
+        window._agendaEditRecord = { id: 'A', backup2: {} };
+        window.atualizarEstadoNovoEnvioBackup_('backup2');
+      });
+      const step = page.locator('#backup2AgendaStep');
+      const actions = step.locator('button.ag-backup-agenda-choice');
+      assert.equal(await step.isVisible(), true);
+      assert.equal(await actions.count(), 2);
+      for (const action of await actions.all()) assert.equal(await action.isDisabled(), true);
+      assert.match(await page.locator('#backup2AgendaHint').innerText(), /Informe a temperatura/);
+      await page.locator('#agBackup2Temp').selectOption('Congelado');
+      for (const action of await actions.all()) assert.equal(await action.isEnabled(), true);
+      assert.match(await page.locator('#backup2AgendaHint').innerText(), /Você já pode agendar/);
+      await page.locator('#btnUsarVisitaFuturaBackup2').click();
+      assert.equal(await page.locator('#backup2AgendaVisitas').isVisible(), true);
+      assert.equal(await page.evaluate(() => window.calls.at(-1).method), 'getAgendaVisitasFuturasParaBackup');
+      assert.equal(await page.evaluate(() => window.calls.at(-1).args[1]), 'backup2');
+      await page.locator('#agBackup2Temp').selectOption('');
+      await page.evaluate(() => window.calls.at(-1).success({ visitas: [] }));
+      assert.equal(await page.locator('#backup2AgendaVisitas').isVisible(), false, 'resposta tardia não reabre opções bloqueadas');
+      await page.locator('#agBackup2Temp').selectOption('Congelado');
+      await step.scrollIntoViewIfNeeded();
+      const box = await step.boundingBox();
+      assert.ok(box.x >= 0 && box.x + box.width <= width, 'etapa cabe na tela');
+      if (width === 390) {
+        const save = await page.locator('.ag-modal-actions').boundingBox();
+        assert.ok(box.y + box.height <= save.y, 'barra de salvar não cobre as opções');
+      }
+      await page.locator('#btnUsarVisitaFuturaBackup2').click();
+      await page.evaluate(() => window.calls.at(-1).success({ visitas: [
+        { id: 'VISITA-FUTURA', recordVersion: 'v1', data: '23/11/2026', hora: '08:00', tipo: 'Visita', visita: 'Week 12', transporteII: { disponivel: true }, transporteIII: { disponivel: false } },
+        { id: 'ENVIO-FUTURO', recordVersion: 'v2', data: '24/11/2026', hora: '13:00', tipo: 'Envio de amostras', visita: 'Wk12', transporteII: { disponivel: true }, transporteIII: { disponivel: true } }
+      ] }));
+      const candidates = page.locator('#backup2AgendaVisitas .ag-backup-candidate');
+      assert.equal(await candidates.count(), 2);
+      assert.match(await candidates.nth(0).innerText(), /Visita · Week 12/);
+      assert.match(await candidates.nth(1).innerText(), /Envio de amostras · Wk12/);
+      assert.match(await candidates.nth(1).innerText(), /24\/11\/2026 às 13:00/);
+      assert.equal(await candidates.nth(0).locator('[data-slot="III"]').isDisabled(), true);
+      assert.equal(await candidates.nth(1).locator('[data-slot="II"]').isEnabled(), true);
+      await page.evaluate(() => {
+        window.backupSelection = null;
+        window.aplicarBackupEmVisitaFuturaAgenda = (id, version, slot, backupSlot) => { window.backupSelection = { id, version, slot, backupSlot }; };
+      });
+      await candidates.nth(1).locator('[data-slot="II"]').click();
+      assert.deepEqual(await page.evaluate(() => window.backupSelection), { id: 'ENVIO-FUTURO', version: 'v2', slot: 'II', backupSlot: 'backup2' });
+      await candidates.nth(1).evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      if (width === 390) {
+        const candidate = await candidates.nth(1).boundingBox();
+        const save = await page.locator('.ag-modal-actions').boundingBox();
+        assert.ok(candidate.y + candidate.height <= save.y, 'destino e botões ficam acessíveis acima da barra de salvar após rolagem');
+      }
+      const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(dir, { recursive: true });
+      await step.screenshot({ path: path.join(dir, 'backup2-agendamento-' + width + '.png'), animations: 'disabled' });
+      await page.locator('#agBackup2Wrap').screenshot({ path: path.join(dir, 'backup2-bloco-' + width + '.png'), animations: 'disabled' });
+      await page.evaluate(() => {
+        window._agendaEditRecord = { id: 'A', backup2: { agendamento: { id: 'FUTURA', slot: 'III' } } };
+        window.atualizarEstadoNovoEnvioBackup_('backup2');
+      });
+      assert.equal(await step.isVisible(), false);
+      assert.match(await page.locator('#backup2AgendaRefInfo').innerText(), /Agendamento vinculado/);
+      await page.evaluate(() => {
+        window._agendaEditRecord = { id: 'OUTRO', backup2: {} };
+        document.getElementById('agBackup2Temp').value = '';
+        window.atualizarEstadoNovoEnvioBackup_('backup2');
+      });
+      assert.equal(await step.isVisible(), true, 'nova edição recupera a etapa');
+      for (const action of await actions.all()) assert.equal(await action.isDisabled(), true);
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
 test('Agenda: formulario fixa unidade e rejeita rotulos digitados na formula', async () => {
   for (const width of [1280, 390]) {
     await scenario(async page => {
@@ -807,4 +892,136 @@ test('OCASA: novas AWBs digitais e preservacao da AWB legada no formulario', asy
     });
     assert.deepEqual(result, { novoLegado: false, novoDigital: true, antigo: true, htmlAntigo: true, substituicao: false });
   });
+});
+
+test('Backup II preserva campos independentes e inicia novo envio com origem correta', async () => {
+  await scenario(async page => {
+    const collected = await page.evaluate(() => {
+      window.initAgendaMatBioForms();
+      window.setAgendaSelectValue('agTipo', 'Visita');
+      window.setAgendaSelectValue('agLabCentral', 'Sim');
+      window.setAgendaFieldValue('agVisita', 'Week 12');
+      window._agendaEditRecord = { id: 'A', backup: {}, backup2: {} };
+      for (const [prefix, temp, destination] of [['agBackup', 'Refrigerado', 'Lab R'], ['agBackup2', 'Congelado', 'Lab C']]) {
+        window.setAgendaSelectValue(prefix + 'Nome', 'Marken');
+        window.setAgendaSelectValue(prefix + 'Temp', temp);
+        window.setAgendaSelectValue(prefix + 'Destino', destination);
+      }
+      const data = window.coletarAgendaEvento();
+      window._agendaEditFormValues = window.agendaEditValuesFromRecord_(data);
+      window._agendaEditTransportValues = window.agendaEditTransportValuesFromRecord_(data);
+      window.setAgendaSelectValue('agBackup2Temp', 'Refrigerado');
+      window.agendaRestoreEditRecordValues_(true);
+      return { backup: data.backup, backup2: data.backup2, restored: document.getElementById('agBackup2Temp').value };
+    });
+    assert.equal(collected.backup.temperatura, 'Refrigerado');
+    assert.equal(collected.backup2.temperatura, 'Congelado');
+    assert.equal(collected.backup.destino, 'Lab R');
+    assert.equal(collected.backup2.destino, 'Lab C');
+    assert.equal(collected.restored, 'Congelado');
+    await page.evaluate(() => window.criarEnvioAmostrasDoBackupAgenda('backup2'));
+    assert.match(await page.locator('#agTipo').inputValue(), /^Envio de amostras$/i);
+    assert.equal(await page.locator('#agC1Temp').inputValue(), 'Congelado');
+    assert.equal(await page.locator('#agC1Destino').inputValue(), 'Lab C');
+    const payload = await page.evaluate(() => window.coletarAgendaEvento());
+    assert.equal(payload.backupOrigemAgendaId, 'A');
+    assert.equal(payload.origemBackupSlot, 'backup2');
+    assert.equal(payload.backup.temperatura, '');
+    assert.equal(payload.backup2.temperatura, '');
+    await page.evaluate(() => window.limparAgendaForm());
+    assert.equal(await page.evaluate(() => window.coletarAgendaEvento().origemBackupSlot), 'backup');
+    assert.equal(await page.locator('#agBackup2Wrap').isVisible(), false);
+  });
+});
+
+test('Backup II descarta visitas futuras de consulta antiga ou de dados alterados', async () => {
+  await scenario(async page => {
+    const results = await page.evaluate(() => {
+      window.initAgendaMatBioForms();
+      window.setAgendaSelectValue('agBackup2Temp', 'Congelado');
+      window.carregarVisitasFuturasBackupAgenda('backup2');
+      const oldRequest = window.calls.at(-1);
+      window.carregarVisitasFuturasBackupAgenda('backup2');
+      const currentRequest = window.calls.at(-1);
+      const visits = id => ({ visitas: [{ id, transporteII: { disponivel: true }, transporteIII: {} }] });
+      currentRequest.success(visits('CURRENT'));
+      oldRequest.success(visits('OLD'));
+      const container = document.getElementById('backup2AgendaVisitas');
+      const selectedId = container.querySelector('[data-visita-id]').dataset.visitaId;
+      window.carregarVisitasFuturasBackupAgenda('backup2');
+      const changedRequest = window.calls.at(-1);
+      window.setAgendaSelectValue('agBackup2Temp', 'Refrigerado');
+      changedRequest.success(visits('CHANGED'));
+      return { selectedId, changed: !!container.querySelector('[data-visita-id="CHANGED"]') };
+    });
+    assert.equal(results.selectedId, 'CURRENT');
+    assert.equal(results.changed, false);
+  });
+});
+
+test('vinculo do Backup I preserva edicoes do Backup II feitas durante a RPC', async () => {
+  await scenario(async page => {
+    const result = await page.evaluate(() => {
+      window.initAgendaMatBioForms();
+      window.setAgendaSelectValue('agBackupTemp', 'Refrigerado');
+      window.setAgendaSelectValue('agBackup2Temp', 'Congelado');
+      window._agendaEditRecord = { id: 'A', recordVersion: 'old', backup: { temperatura: 'Refrigerado' }, backup2: { temperatura: 'Congelado' } };
+      window._agendaEditRecordVersion = 'old';
+      window._agendaEditTransportValues = window.agendaEditTransportValuesFromRecord_(window._agendaEditRecord);
+      const baseline = JSON.stringify(window._agendaEditTransportValues);
+      const refreshes = window.refreshes;
+      window.aplicarBackupEmVisitaFuturaAgenda('DEST', 'dest-old', 'II');
+      const request = window.calls.at(-1);
+      window.setAgendaSelectValue('agBackup2Temp', 'Ambiente');
+      request.success({ ok: true, origem: { id: 'A', recordVersion: 'new', backup: { temperatura: 'Refrigerado', status: 'Agendado', agendamento: { id: 'DEST' } }, backup2: { temperatura: 'Congelado' } }, destino: { id: 'DEST', recordVersion: 'dest-new' } });
+      return {
+        temperature: document.getElementById('agBackup2Temp').value,
+        version: window._agendaEditRecordVersion,
+        sameBaseline: baseline === JSON.stringify(window._agendaEditTransportValues),
+        originCached: window._agendaEventosPorId.A.recordVersion,
+        destinationCached: window.agendaFindEventoLocal_('DEST').recordVersion,
+        refreshed: window.refreshes > refreshes,
+        message: window.notifications.at(-1)
+      };
+    });
+    assert.equal(result.temperature, 'Ambiente');
+    assert.equal(result.version, 'old');
+    assert.equal(result.sameBaseline, true);
+    assert.equal(result.originCached, 'new');
+    assert.equal(result.destinationCached, 'dest-new');
+    assert.equal(result.refreshed, true);
+    assert.match(result.message, /alterações.*preservadas/);
+  });
+});
+
+test('conflito ao vincular backup nao reabre formulario com edicoes novas durante a RPC ou fetch', async () => {
+  for (const changeDuringFetch of [false, true]) {
+    await scenario(async page => {
+      const result = await page.evaluate(changeDuringFetch => {
+        window.initAgendaMatBioForms();
+        window.setAgendaSelectValue('agBackup2Temp', 'Congelado');
+        window._agendaEditRecord = { id: 'A', recordVersion: 'old', backup: {}, backup2: {} };
+        window._agendaEditRecordVersion = 'old';
+        let fetched = null;
+        let opened = false;
+        window.agendaFetchEventoPorId_ = (_id, _retry, success) => { fetched = success; };
+        window.abrirAgendaEdicaoComRegistro_ = () => { opened = true; };
+        window.aplicarBackupEmVisitaFuturaAgenda('DEST', 'dest-old', 'II');
+        const request = window.calls.at(-1);
+        if (changeDuringFetch) {
+          request.success({ conflito: true, erro: 'Conflito' });
+          window.setAgendaSelectValue('agBackup2Temp', 'Refrigerado');
+          fetched({ id: 'A', recordVersion: 'new' });
+        } else {
+          window.setAgendaSelectValue('agBackup2Temp', 'Refrigerado');
+          request.success({ conflito: true, erro: 'Conflito' });
+        }
+        return { opened, fetched: !!fetched, temperature: document.getElementById('agBackup2Temp').value, version: window._agendaEditRecordVersion };
+      }, changeDuringFetch);
+      assert.equal(result.opened, false);
+      assert.equal(result.fetched, changeDuringFetch);
+      assert.equal(result.temperature, 'Refrigerado');
+      assert.equal(result.version, 'old');
+    });
+  }
 });

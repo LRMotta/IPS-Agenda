@@ -170,6 +170,7 @@ test('gravacao de telefone nao altera transporte historico e visita comum mantem
   const calls = [];
   server.agendaSetCourierLinha_ = (sheet, row, slot, courier, options) => calls.push({ slot, courier, skip: options && options.skipBackupAwbSync });
   server.agendaSetBackupLinha_ = (sheet, row, backup) => calls.push({ backup });
+  server.agendaBackup2Write_ = (sheet, row, backup2) => calls.push({ backup2 });
   server.agendaSetTransporteExtraLinha_ = (sheet, row, data) => calls.push({ extra: data });
   const sheet = { getRange() { throw new Error('Nao deve acessar planilha real'); } };
   const data = { tipo: 'Visita — contato telefônico', courier1: { awb: 'historico', nome: 'Courier' }, backup: { nome: 'Backup' } };
@@ -189,6 +190,7 @@ test('gravacao de telefone nao altera transporte historico e visita comum mantem
   server.agendaGravarTransportesDoEvento_(sheet, 2, data, 'Não');
   assert.equal(calls[0].skip, false);
   assert.deepEqual(JSON.parse(JSON.stringify(calls[3].backup)), {});
+  assert.equal(calls[4].backup2.nome, '', 'laboratorio nao aplicavel limpa tambem o Backup II');
 });
 
 test('blocos gerados correspondem a fonte unica e detectam edicao manual divergente', () => {

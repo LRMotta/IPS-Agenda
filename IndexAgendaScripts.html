@@ -8,6 +8,8 @@
   var _agendaEditFilling = false;
   var _agendaBusinessDateFormatter = null;
   var _agendaBackupOrigemId = '';
+  var _agendaBackupOrigemSlot = 'backup';
+  var _agendaBackupFutureRequests = { backup: 0, backup2: 0 };
   var _agendaInitStarted = false;
   var _agendaEventosLoadedAt = 0;
   var _agendaEventosRefreshing = false;
@@ -279,10 +281,10 @@
   function agendaFormDataSelectIds() {
     return [
       'agTipo','agStatus','agParticipante','agProjeto','agSalaMonitoria','agMedico','agPrestador',
-      'agC1Nome','agC2Nome','agC3Nome','agBackupNome',
-      'agC1Temp','agC2Temp','agC3Temp','agBackupTemp',
-      'agC1Status','agC2Status','agC3Status','agBackupStatus',
-      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino',
+      'agC1Nome','agC2Nome','agC3Nome','agBackupNome','agBackup2Nome',
+      'agC1Temp','agC2Temp','agC3Temp','agBackupTemp','agBackup2Temp',
+      'agC1Status','agC2Status','agC3Status','agBackupStatus','agBackup2Status',
+      'agC1Destino','agC2Destino','agC3Destino','agBackupDestino','agBackup2Destino',
       'agMonitor1','agMonitor2'
     ].concat(agendaKitIds());
   }
@@ -522,16 +524,16 @@
     preencherAgendaSelect('agMedico', _agendaDados.medicos || [], '');
     preencherAgendaSelect('agPrestador', _agendaDados.prestadores || [], '');
     preencherAgendaMonitoresSelects();
-    ['agC1Nome','agC2Nome','agC3Nome','agBackupNome'].forEach(function(id) {
+    ['agC1Nome','agC2Nome','agC3Nome','agBackupNome','agBackup2Nome'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.couriers || [], '');
     });
-    ['agC1Temp','agC2Temp','agC3Temp','agBackupTemp'].forEach(function(id) {
+    ['agC1Temp','agC2Temp','agC3Temp','agBackupTemp','agBackup2Temp'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.temperaturas || [], '');
     });
-    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus','agBackup2Status'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.statusCourier || [], '');
     });
-    ['agC1Destino','agC2Destino','agC3Destino','agBackupDestino'].forEach(function(id) {
+    ['agC1Destino','agC2Destino','agC3Destino','agBackupDestino','agBackup2Destino'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.laboratoriosDestino || [], '');
     });
     initAgendaMatBioForms();
@@ -589,7 +591,8 @@
       courier1: r.courier1 || {},
       courier2: r.courier2 || {},
       courier3: r.courier3 || {},
-      backup: r.backup || {}
+      backup: r.backup || {},
+      backup2: r.backup2 || {}
     };
   }
 
@@ -612,6 +615,13 @@
       setAgendaFieldValue('agBackupAwb', _agendaEditTransportValues.backup.awb);
       agendaMatBioLoad('agBackup', _agendaEditTransportValues.backup);
       onAgendaCourierChange('agBackup');
+      setAgendaSelectValue('agBackup2Nome', _agendaEditTransportValues.backup2.nome);
+      setAgendaSelectValue('agBackup2Destino', _agendaEditTransportValues.backup2.destino);
+      setAgendaSelectValue('agBackup2Temp', _agendaEditTransportValues.backup2.temperatura || _agendaEditTransportValues.backup2.temp);
+      setAgendaSelectValue('agBackup2Status', _agendaEditTransportValues.backup2.status);
+      setAgendaFieldValue('agBackup2Awb', _agendaEditTransportValues.backup2.awb);
+      agendaMatBioLoad('agBackup2', _agendaEditTransportValues.backup2);
+      onAgendaCourierChange('agBackup2');
     }
     if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('agProjeto');
   }
@@ -634,16 +644,16 @@
     preencherAgendaSelect('agSalaMonitoria', _agendaDados.salasMonitoria || [], '');
     preencherAgendaSelect('agMedico', _agendaDados.medicos || [], '');
     preencherAgendaSelect('agPrestador', _agendaDados.prestadores || [], '');
-    ['agC1Nome','agC2Nome','agC3Nome','agBackupNome'].forEach(function(id) {
+    ['agC1Nome','agC2Nome','agC3Nome','agBackupNome','agBackup2Nome'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.couriers || [], '');
     });
-    ['agC1Temp','agC2Temp','agC3Temp','agBackupTemp'].forEach(function(id) {
+    ['agC1Temp','agC2Temp','agC3Temp','agBackupTemp','agBackup2Temp'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.temperaturas || [], '');
     });
-    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus','agBackup2Status'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.statusCourier || [], '');
     });
-    ['agC1Destino','agC2Destino','agC3Destino','agBackupDestino'].forEach(function(id) {
+    ['agC1Destino','agC2Destino','agC3Destino','agBackupDestino','agBackup2Destino'].forEach(function(id) {
       preencherAgendaSelect(id, _agendaDados.laboratoriosDestino || [], '');
     });
     agendaRestoreValues(atuais);
@@ -738,7 +748,7 @@
   var AGENDA_MATBIO_TIPOS = CodexMatBioTypes.list();
 
   function agendaMatBioPrefixes() {
-    return ['agC1','agC2','agC3','agBackup'];
+    return ['agC1','agC2','agC3','agBackup','agBackup2'];
   }
 
   function agendaCourierConfig(nome) {
@@ -877,7 +887,7 @@
 
   function agendaPreviousCourierAwb_(prefix) {
     var record = _agendaEditId ? (_agendaEditRecord || agendaFindEventoLocal_(_agendaEditId)) : null;
-    return record && record[({ agC1: 'courier1', agC2: 'courier2', agC3: 'courier3', agBackup: 'backup' })[prefix]];
+    return record && record[({ agC1: 'courier1', agC2: 'courier2', agC3: 'courier3', agBackup: 'backup', agBackup2: 'backup2' })[prefix]];
   }
 
   function applyAgendaAwbRule(prefix, sanitizeValue) {
@@ -999,9 +1009,9 @@
   }
 
   function agendaSetOptionalTransportVisible(prefix, visible) {
-    var wrap = document.getElementById(prefix === 'agBackup' ? 'agBackupWrap' : prefix + 'Wrap');
+    var wrap = document.getElementById(prefix + 'Wrap');
     if (wrap) wrap.style.display = visible ? '' : 'none';
-    var btn = document.getElementById(prefix === 'agBackup' ? 'btnMostrarAgBackup' : 'btnMostrarAgC3');
+    var btn = document.getElementById('btnMostrar' + prefix.charAt(0).toUpperCase() + prefix.slice(1));
     if (btn) btn.style.display = visible ? 'none' : 'inline-flex';
   }
 
@@ -1013,20 +1023,33 @@
     var backupForced = document.getElementById('agBackupWrap') && document.getElementById('agBackupWrap').dataset.forceOpen === '1';
     agendaSetOptionalTransportVisible('agC3', c3Forced || agendaCourierMeaningful(c2) || agendaCourierMeaningful(c3));
     agendaSetOptionalTransportVisible('agBackup', backupForced || agendaCourierMeaningful(backup));
+    var backup2Wrap = document.getElementById('agBackup2Wrap');
+    agendaSetOptionalTransportVisible('agBackup2', (backup2Wrap && backup2Wrap.dataset.forceOpen === '1') || agendaCourierMeaningful(agendaCourierFromForm('agBackup2')));
     atualizarEstadoNovoEnvioBackup_();
+    atualizarEstadoNovoEnvioBackup_('backup2');
   }
 
-  function atualizarEstadoNovoEnvioBackup_() {
-    var btn = document.getElementById('btnCriarEnvioBackup');
-    var backup = agendaCourierFromForm('agBackup');
+  function agendaBackupConfig_(slot) {
+    var second = slot === 'backup2';
+    var ids = {};
+    ['backupAgendaRefInfo','backupAgendaStep','backupAgendaHint','backupAgendaVisitas','btnCriarEnvioBackup','btnUsarVisitaFuturaBackup'].forEach(function(id) {
+      ids[id] = second ? id.replace('backupAgenda', 'backup2Agenda').replace(/Backup$/, 'Backup2') : id;
+    });
+    return { label: second ? 'Backup II' : 'Backup I', slot: second ? 'backup2' : 'backup', prefix: second ? 'agBackup2' : 'agBackup', ids: ids };
+  }
+
+  function atualizarEstadoNovoEnvioBackup_(backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
+    var btn = document.getElementById(config.ids.btnCriarEnvioBackup);
+    var backup = agendaCourierFromForm(config.prefix);
     var status = normAgenda(backup.status);
     var statusIndicaAgendamento = status === normAgenda('Agendado') ||
       status === normAgenda('Adicionado à Agenda') ||
       status === normAgenda('Confirmado');
     var eventoAtual = agendaEventoAtualEditado_();
-    var ref = eventoAtual && eventoAtual.backup && eventoAtual.backup.agendamento;
+    var ref = eventoAtual && eventoAtual[config.slot] && eventoAtual[config.slot].agendamento;
     var refValida = ref && ref.id;
-    var info = document.getElementById('backupAgendaRefInfo');
+    var info = document.getElementById(config.ids.backupAgendaRefInfo);
     if (info) {
       if (refValida) {
         var dataRef = ref.data || (ref.dataIso ? formatDateBr(ref.dataIso) : '');
@@ -1048,44 +1071,47 @@
         info.style.display = 'none';
       }
     }
-    var step = document.getElementById('backupAgendaStep');
+    var step = document.getElementById(config.ids.backupAgendaStep);
     if (step) step.style.display = refValida ? 'none' : '';
     var temperaturaInformada = agendaMeaningfulValue(backup.temperatura || backup.temp);
-    var hint = document.getElementById('backupAgendaHint');
+    var hint = document.getElementById(config.ids.backupAgendaHint);
     if (hint) hint.textContent = temperaturaInformada
-      ? '✓ Você já pode agendar o Backup. Escolha uma opção abaixo.'
+      ? '✓ Você já pode agendar o ' + config.label + '. Escolha uma opção abaixo.'
       : 'Informe a temperatura para liberar as opções de agendamento.';
     if (step) step.classList.toggle('is-ready', !!temperaturaInformada);
-    [btn, document.getElementById('btnUsarVisitaFuturaBackup')].forEach(function(action) {
+    [btn, document.getElementById(config.ids.btnUsarVisitaFuturaBackup)].forEach(function(action) {
       if (!action) return;
       action.disabled = !temperaturaInformada || !!refValida;
       action.setAttribute('aria-disabled', action.disabled ? 'true' : 'false');
     });
     if (!temperaturaInformada || refValida) {
-      var visitas = document.getElementById('backupAgendaVisitas');
+      var visitas = document.getElementById(config.ids.backupAgendaVisitas);
       if (visitas) { visitas.style.display = 'none'; visitas.innerHTML = ''; }
     }
   }
 
-  function abrirOpcoesAgendamentoBackupAgenda() {
-    atualizarEstadoNovoEnvioBackup_();
+  function abrirOpcoesAgendamentoBackupAgenda(backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
+    atualizarEstadoNovoEnvioBackup_(config.slot);
   }
 
-  function agendaFecharOpcoesBackup_() {
-    var visitas = document.getElementById('backupAgendaVisitas');
+  function agendaFecharOpcoesBackup_(backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
+    var visitas = document.getElementById(config.ids.backupAgendaVisitas);
     if (visitas) {
       visitas.style.display = 'none';
       visitas.innerHTML = '';
     }
   }
 
-  function carregarVisitasFuturasBackupAgenda() {
-    var visitasEl = document.getElementById('backupAgendaVisitas');
+  function carregarVisitasFuturasBackupAgenda(backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
+    var visitasEl = document.getElementById(config.ids.backupAgendaVisitas);
     var origemId = String(_agendaEditId || '').trim();
     var editRequestId = _agendaEditOpenRequestId;
     if (!visitasEl) return;
-    if (!agendaMeaningfulValue(agendaCourierFromForm('agBackup').temperatura)) {
-      atualizarEstadoNovoEnvioBackup_();
+    if (!agendaMeaningfulValue(agendaCourierFromForm(config.prefix).temperatura)) {
+      atualizarEstadoNovoEnvioBackup_(config.slot);
       return;
     }
     if (!origemId) {
@@ -1096,25 +1122,32 @@
       snackErro('Salve as alterações do agendamento de origem antes de vincular o backup.');
       return;
     }
+    var requestId = ++_agendaBackupFutureRequests[config.slot];
+    var backupSnapshot = JSON.stringify(agendaCourierFromForm(config.prefix));
+    function respostaAtual() {
+      return origemId === String(_agendaEditId || '').trim() && editRequestId === _agendaEditOpenRequestId &&
+        requestId === _agendaBackupFutureRequests[config.slot] && backupSnapshot === JSON.stringify(agendaCourierFromForm(config.prefix));
+    }
     visitasEl.style.display = 'grid';
     visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">Buscando agendamentos futuros…</div>';
     google.script.run
       .withSuccessHandler(function(res) {
-        if (origemId !== String(_agendaEditId || '').trim() || editRequestId !== _agendaEditOpenRequestId) return;
-        if (!agendaMeaningfulValue(agendaCourierFromForm('agBackup').temperatura)) return;
-        agendaBackupVisitasHtml_(visitasEl, res && res.visitas || []);
+        if (!respostaAtual()) return;
+        if (!agendaMeaningfulValue(agendaCourierFromForm(config.prefix).temperatura)) return;
+        agendaBackupVisitasHtml_(visitasEl, res && res.visitas || [], config.slot);
       })
       .withFailureHandler(function(error) {
-        if (origemId !== String(_agendaEditId || '').trim() || editRequestId !== _agendaEditOpenRequestId) return;
-        if (!agendaMeaningfulValue(agendaCourierFromForm('agBackup').temperatura)) return;
+        if (!respostaAtual()) return;
+        if (!agendaMeaningfulValue(agendaCourierFromForm(config.prefix).temperatura)) return;
         var message = appErrorMessage(error);
         visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(message) + '</div>';
         snackErro(message);
       })
-      .getAgendaVisitasFuturasParaBackup(origemId);
+      .getAgendaVisitasFuturasParaBackup(origemId, config.slot);
   }
 
-  function agendaBackupVisitasHtml_(container, visitas) {
+  function agendaBackupVisitasHtml_(container, visitas, backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
     visitas = Array.isArray(visitas) ? visitas : [];
     if (!visitas.length) {
       container.innerHTML = '<div class="ag-backup-candidate-empty">Não há agendamentos futuros de Visita ou Envio de amostras elegíveis com Transporte II ou III disponível para este participante e projeto.</div>';
@@ -1126,8 +1159,8 @@
         var available = dados.disponivel === true;
         var label = 'Usar Transporte ' + slot;
         return '<button class="ag-backup-candidate-slot" type="button" ' + (available ? '' : 'disabled ') +
-          'data-visita-id="' + esc(visita.id) + '" data-visita-version="' + esc(visita.recordVersion) + '" data-slot="' + slot + '" ' +
-          (available ? 'onclick="aplicarBackupEmVisitaFuturaAgenda(this.dataset.visitaId,this.dataset.visitaVersion,this.dataset.slot)"' : 'aria-label="Transporte ' + slot + ' ocupado"') + '>' +
+          'data-backup-slot="' + config.slot + '" data-visita-id="' + esc(visita.id) + '" data-visita-version="' + esc(visita.recordVersion) + '" data-slot="' + slot + '" ' +
+          (available ? 'onclick="aplicarBackupEmVisitaFuturaAgenda(this.dataset.visitaId,this.dataset.visitaVersion,this.dataset.slot,this.dataset.backupSlot)"' : 'aria-label="Transporte ' + slot + ' ocupado"') + '>' +
           esc(available ? label : 'Transporte ' + slot + ' ocupado') + '</button>';
       }
       return '<div class="ag-backup-candidate"><div class="ag-backup-candidate-info"><strong>' +
@@ -1137,8 +1170,9 @@
     }).join('');
   }
 
-  function aplicarBackupEmVisitaFuturaAgenda(destinoId, destinoVersion, slot) {
-    var visitasEl = document.getElementById('backupAgendaVisitas');
+  function aplicarBackupEmVisitaFuturaAgenda(destinoId, destinoVersion, slot, backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
+    var visitasEl = document.getElementById(config.ids.backupAgendaVisitas);
     var origem = agendaEventoAtualEditado_();
     if (!visitasEl || !_agendaEditId || !origem) {
       snackErro('Abra novamente o agendamento de origem antes de vincular o backup.');
@@ -1151,19 +1185,39 @@
     var origemVersion = _agendaEditRecordVersion || origem.recordVersion || '';
     var origemId = _agendaEditId;
     var editRequestId = _agendaEditOpenRequestId;
+    var formAtSend = JSON.stringify(coletarAgendaEvento());
+    function formularioAtual() {
+      return origemId === _agendaEditId && editRequestId === _agendaEditOpenRequestId &&
+        JSON.stringify(coletarAgendaEvento()) === formAtSend;
+    }
     visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">Vinculando o backup ao Transporte ' + esc(slot) + '…</div>';
     google.script.run
       .withSuccessHandler(function(res) {
+        var origemSalva = null;
+        if (res && res.ok && !res.erro && !res.conflito && res.origem && res.destino) {
+          origemSalva = agendaStoreEventoLocal_(res.origem);
+          agendaStoreEventoLocal_(res.destino);
+          agendaRecarregarJanelaAtual_();
+        }
         if (origemId !== _agendaEditId || editRequestId !== _agendaEditOpenRequestId) return;
+        if (!formularioAtual()) {
+          if (typeof appMarkUnsavedChanges === 'function') appMarkUnsavedChanges('agendaCreatePanel');
+          visitasEl.innerHTML = '';
+          visitasEl.style.display = 'none';
+          snack(origemSalva
+            ? 'Backup vinculado. As novas alterações nesta tela foram preservadas; salve-as para atualizar o agendamento.'
+            : 'As novas alterações nesta tela foram preservadas. Salve-as ou atualize o agendamento antes de tentar vincular o backup novamente.');
+          return;
+        }
         if (res && res.conflito) {
           var conflito = res.erro || 'Um dos agendamentos foi alterado. Atualize os dados.';
           visitasEl.innerHTML = '<div class="ag-backup-candidate-empty">' + esc(conflito) + '</div>';
           snackErro(conflito);
           agendaFetchEventoPorId_(_agendaEditId, 0, function(registroAtualizado) {
-            if (origemId !== _agendaEditId || editRequestId !== _agendaEditOpenRequestId) return;
+            if (!formularioAtual()) return;
             if (!registroAtualizado) return;
             abrirAgendaEdicaoComRegistro_(registroAtualizado);
-            setTimeout(carregarVisitasFuturasBackupAgenda, 250);
+            setTimeout(function() { carregarVisitasFuturasBackupAgenda(config.slot); }, 250);
           }, function(error) { snackErro(appErrorMessage(error)); });
           return;
         }
@@ -1173,18 +1227,16 @@
           snackErro(erro);
           return;
         }
-        _agendaEditRecord = agendaStoreEventoLocal_(res.origem);
-        agendaStoreEventoLocal_(res.destino);
-        setAgendaSelectValue('agBackupStatus', res.origem.backup && res.origem.backup.status);
+        _agendaEditRecord = origemSalva;
+        setAgendaSelectValue(config.prefix + 'Status', res.origem[config.slot] && res.origem[config.slot].status);
         _agendaEditRecordVersion = res.origem.recordVersion || '';
         _agendaEditEditableVersion = res.origem.editRecordVersion || '';
         _agendaEditFieldVersions = res.origem.editFieldVersions || null;
         _agendaEditMergeToken = res.origem.editMergeToken || '';
         _agendaEditFormValues = agendaEditValuesFromRecord_(res.origem);
         _agendaEditTransportValues = agendaEditTransportValuesFromRecord_(res.origem);
-        atualizarEstadoNovoEnvioBackup_();
-        agendaFecharOpcoesBackup_();
-        agendaRecarregarJanelaAtual_();
+        atualizarEstadoNovoEnvioBackup_(config.slot);
+        agendaFecharOpcoesBackup_(config.slot);
         snack(res.jaVinculado ? 'Este backup já estava vinculado a esta visita.' : 'Backup vinculado ao Transporte ' + slot + '.');
       })
       .withFailureHandler(function(error) {
@@ -1195,6 +1247,7 @@
       })
       .aplicarBackupEmVisitaFutura({
         origemId: _agendaEditId,
+        backupSlot: config.slot,
         destinoId: destinoId,
         slot: slot,
         origemVersion: origemVersion,
@@ -1203,7 +1256,7 @@
   }
 
   function mostrarAgendaTransporteOpcional(prefix) {
-    var wrap = document.getElementById(prefix === 'agBackup' ? 'agBackupWrap' : prefix + 'Wrap');
+    var wrap = document.getElementById(prefix + 'Wrap');
     if (wrap) wrap.dataset.forceOpen = '1';
     agendaSetOptionalTransportVisible(prefix, true);
     var first = document.getElementById(prefix + 'Nome');
@@ -1561,7 +1614,8 @@
       { prefix: 'agC1', label: 'Transporte I', data: r && r.courier1 },
       { prefix: 'agC2', label: 'Transporte II', data: r && r.courier2 },
       { prefix: 'agC3', label: 'Transporte III', data: r && r.courier3 },
-      { prefix: 'agBackup', label: 'Backup', data: r && r.backup }
+      { prefix: 'agBackup', label: 'Backup I', data: r && r.backup },
+      { prefix: 'agBackup2', label: 'Backup II', data: r && r.backup2 }
     ].filter(function(x) { return !onlyPrefix || x.prefix === onlyPrefix; });
     var structured = map.map(function(x) {
       var parsed = agendaMatBioParseJson(x.data && x.data.matBioJson);
@@ -2249,7 +2303,7 @@
       ['agC1Nome','agC1Destino','agC1Temp','agC1Status','agC1Awb',
        'agC2Nome','agC2Destino','agC2Temp','agC2Status','agC2Awb',
        'agC3Nome','agC3Destino','agC3Temp','agC3Status','agC3Awb',
-       'agBackupNome','agBackupDestino','agBackupTemp','agBackupStatus'].forEach(function(id) {
+       'agBackupNome','agBackup2Nome','agBackupDestino','agBackup2Destino','agBackupTemp','agBackup2Temp','agBackupStatus','agBackup2Status'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -2446,7 +2500,7 @@
       agC1Status: 'courier1',
       agC2Status: 'courier2',
       agC3Status: 'courier3',
-      agBackupStatus: 'backup'
+      agBackupStatus: 'backup', agBackup2Status: 'backup2'
     };
     var item = _agendaEditTransportValues[map[id]] || {};
     return String(item.status || '').trim();
@@ -2454,7 +2508,7 @@
 
   function atualizarAgendaCourierStatusData_() {
     var futuro = agendaIsFutureDate((document.getElementById('agData') || {}).value || '');
-    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus','agBackup2Status'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       var anterior = agendaCourierStatusAnterior_(id);
@@ -2471,7 +2525,7 @@
   function validarAgendaCourierStatusData_() {
     var futuro = agendaIsFutureDate((document.getElementById('agData') || {}).value || '');
     var valido = true;
-    ['agC1Status','agC2Status','agC3Status','agBackupStatus'].forEach(function(id) {
+    ['agC1Status','agC2Status','agC3Status','agBackupStatus','agBackup2Status'].forEach(function(id) {
       var el = document.getElementById(id);
       if (!el) return;
       var incompativel = futuro && AgendaRules.courierStatusRequiresEventDate(el.value) &&
@@ -3182,6 +3236,7 @@
     var mat2 = agendaMatBioSerialize('agC2');
     var mat3 = agendaMatBioSerialize('agC3');
     var matB = agendaMatBioSerialize('agBackup');
+    var matB2 = agendaMatBioSerialize('agBackup2');
     var eventoAtual = agendaEventoAtualEditado_();
     function v(id) {
       var el = document.getElementById(id);
@@ -3194,6 +3249,7 @@
     }
     return {
       backupOrigemAgendaId: _agendaBackupOrigemId || '',
+      origemBackupSlot: _agendaBackupOrigemSlot || 'backup',
       data: v('agData'),
       dataFim: v('agDataFim'),
       hora: v('agHora'),
@@ -3225,7 +3281,8 @@
       courier1: salvarDadosTecnicos ? agendaCourierFromForm('agC1', mat1) : {},
       courier2: salvarDadosTecnicos ? agendaCourierFromForm('agC2', mat2) : {},
       courier3: salvarDadosTecnicos ? agendaCourierFromForm('agC3', mat3) : {},
-      backup: salvarDadosTecnicos ? { nome: v('agBackupNome'), destino: v('agBackupDestino'), temperatura: v('agBackupTemp'), status: v('agBackupStatus'), material: matB.summary, matBioJson: matB.json } : {}
+      backup: salvarDadosTecnicos ? { nome: v('agBackupNome'), destino: v('agBackupDestino'), temperatura: v('agBackupTemp'), status: v('agBackupStatus'), material: matB.summary, matBioJson: matB.json } : {},
+      backup2: salvarDadosTecnicos ? { nome: v('agBackup2Nome'), destino: v('agBackup2Destino'), temperatura: v('agBackup2Temp'), status: v('agBackup2Status'), material: matB2.summary, matBioJson: matB2.json } : {}
     };
   }
 
@@ -3292,7 +3349,8 @@
       '1': dados.courier1,
       '2': dados.courier2,
       '3': dados.courier3,
-      backup: dados.backup
+      backup: dados.backup,
+      backup2: dados.backup2
     };
     var courier = slotMap[slot] || {};
     if (!agendaCourierMeaningful(courier)) {
@@ -3469,10 +3527,11 @@
     return '';
   }
 
-  function criarEnvioAmostrasDoBackupAgenda() {
+  function criarEnvioAmostrasDoBackupAgenda(backupSlot) {
+    var config = agendaBackupConfig_(backupSlot);
     if (!agendaMatBioValidateAll()) return;
     var origem = coletarAgendaEvento();
-    var backup = origem.backup || {};
+    var backup = origem[config.slot] || {};
     if (!agendaMeaningfulValue(origem.participante)) {
       snackErro('Selecione o participante antes de criar o envio do backup.');
       return;
@@ -3495,12 +3554,13 @@
     }
 
     function iniciarNovoEnvio() {
-      agendaFecharOpcoesBackup_();
+      agendaFecharOpcoesBackup_(config.slot);
       var participanteInfo = agendaParticipanteInfoFromPayload(origem);
       var origemId = _agendaEditId || origem.id || '';
       if (_agendaEditId) agendaReleaseEditPresence(_agendaEditId);
       limparAgendaForm();
       _agendaBackupOrigemId = origemId;
+      _agendaBackupOrigemSlot = config.slot;
 
       agendaSetTipoEnvioAmostras();
       onAgendaTipoChange();
@@ -3526,8 +3586,8 @@
       var titulo = document.querySelector('#agendaCreatePanel .modal-header-title');
       if (titulo) titulo.textContent = 'NOVO ENVIO DE AMOSTRAS';
       var sec = document.querySelector('#agendaCreatePanel .section-label');
-      if (sec) sec.innerHTML = '<span class="material-symbols-outlined">event_upcoming</span> Envio de amostras do backup';
-      var obs = origemId ? 'Envio criado a partir do backup do agendamento ' + origemId + '.' : 'Envio criado a partir do backup de outro agendamento.';
+      if (sec) sec.innerHTML = '<span class="material-symbols-outlined">event_upcoming</span> Envio de amostras do ' + config.label;
+      var obs = origemId ? 'Envio criado a partir do ' + config.label + ' do agendamento ' + origemId + '.' : 'Envio criado a partir do ' + config.label + ' de outro agendamento.';
       setAgendaFieldValue('agObs', obs);
       if (typeof appMarkUnsavedChanges === 'function') appMarkUnsavedChanges('agendaCreatePanel');
       updateAgendaSaveAvailability(false);
@@ -3547,7 +3607,7 @@
       return;
     }
     var evento = agendaFindEventoLocal_(agendaId) || {};
-    var courier = ({ '1': evento.courier1, '2': evento.courier2, '3': evento.courier3, backup: evento.backup })[slot];
+    var courier = ({ '1': evento.courier1, '2': evento.courier2, '3': evento.courier3, backup: evento.backup, backup2: evento.backup2 })[slot];
     if (!courier) { snackErro('Atualize a Agenda para carregar este transporte.'); return; }
     if (!agendaValidarAwbDocumentos_(courier)) return;
     var transporteContext = transporteAgendaContextFromDados(evento, slot, agendaId);
@@ -4112,7 +4172,9 @@
   function limparAgendaForm() {
     _agendaConflictDraftActive = '';
     _agendaBackupOrigemId = '';
+    _agendaBackupOrigemSlot = 'backup';
     agendaFecharOpcoesBackup_();
+    agendaFecharOpcoesBackup_('backup2');
     ['agTipo','agParticipante','agProjeto','agMedico','agPrestador','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
@@ -4121,7 +4183,7 @@
      'agC1Nome','agC1Destino','agC1Temp','agC1Status','agC1Awb','agC1Material',
      'agC2Nome','agC2Destino','agC2Temp','agC2Status','agC2Awb','agC2Material',
      'agC3Nome','agC3Destino','agC3Temp','agC3Status','agC3Awb','agC3Material',
-     'agBackupNome','agBackupDestino','agBackupTemp','agBackupStatus','agBackupMaterial','agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].concat(agendaKitIds()).forEach(function(id) {
+     'agBackupNome','agBackup2Nome','agBackupDestino','agBackup2Destino','agBackupTemp','agBackup2Temp','agBackupStatus','agBackup2Status','agBackupMaterial','agBackup2Material','agMonitor1','agMonitor2','agMonitorNome','agSalaMonitoria'].concat(agendaKitIds()).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -4178,7 +4240,7 @@
     atualizarAgendaProjetoLock();
     atualizarAgendaTipoVisibilidade();
     preencherAgendaMonitoresSelects();
-    ['agC3Wrap','agBackupWrap'].forEach(function(id) {
+    ['agC3Wrap','agBackupWrap','agBackup2Wrap'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) delete el.dataset.forceOpen;
     });
@@ -4895,7 +4957,7 @@
       r.braco, r.visita, r.medico, r.procedimentos, r.servTerc, r.monitorName, r.salaMonitoria, r.obs, r.labCentral,
       r.controle, r.kit, r.statusRequisicao, r.poloTrialData, r.ecrfData,
       agendaCourierSearch(r.courier1), agendaCourierSearch(r.courier2),
-      agendaCourierSearch(r.courier3), agendaCourierSearch(r.backup)
+      agendaCourierSearch(r.courier3), agendaCourierSearch(r.backup), agendaCourierSearch(r.backup2)
     ].join(' ');
     return r;
   }
@@ -5436,6 +5498,11 @@
     setAgendaSelectValue('agBackupTemp', r.backup && (r.backup.temperatura || r.backup.temp));
     setAgendaSelectValue('agBackupStatus', r.backup && r.backup.status);
     agendaMatBioLoad('agBackup', r.backup);
+    setAgendaSelectValue('agBackup2Nome', r.backup2 && r.backup2.nome);
+    setAgendaSelectValue('agBackup2Destino', r.backup2 && r.backup2.destino);
+    setAgendaSelectValue('agBackup2Temp', r.backup2 && (r.backup2.temperatura || r.backup2.temp));
+    setAgendaSelectValue('agBackup2Status', r.backup2 && r.backup2.status);
+    agendaMatBioLoad('agBackup2', r.backup2);
     atualizarAgendaCourierStatusData_();
     applyAgendaAwbRulesAll();
     agendaMatBioUpdateAllCopyOptions();
@@ -6083,7 +6150,7 @@
   }
 
   function agendaCourierNaoAgendadoCount(r) {
-    return [r.courier1, r.courier2, r.courier3, r.backup].filter(function(c) {
+    return [r.courier1, r.courier2, r.courier3, r.backup, r.backup2].filter(function(c) {
       return c && !agendaCourierStatusNaoAplicavel(c.status) && agendaMeaningfulValue(c.status) && agendaCourierStatusClass(c.status) === 'naoagendado';
     }).length;
   }
@@ -7074,7 +7141,8 @@
       agendaCourierCard(r.courier1, 'I', false, r.id, '1'),
       agendaCourierCard(r.courier2, 'II', false, r.id, '2'),
       agendaCourierCard(r.courier3, 'III', false, r.id, '3'),
-      agendaCourierCard(r.backup, 'B', true, r.id, 'backup')
+      agendaCourierCard(r.backup, 'B I', true, r.id, 'backup'),
+      agendaCourierCard(r.backup2, 'B II', true, r.id, 'backup2')
     ].filter(Boolean).join('');
     return cards ? '<div class="ag-courier-stack">' + cards + '</div>' : '';
   }
@@ -7310,7 +7378,7 @@
 
   function agendaLogisticaLinhaHtml_(entry) {
     var courier = (entry && entry.courier) || {};
-    var status = agendaCourierStatusHtml(courier, entry.slot === 'B', false, ['coletado', 'enviado', 'entregue', 'confirmado'].indexOf(entry.statusKey) > -1);
+    var status = agendaCourierStatusHtml(courier, (entry.slot === 'B' || entry.slot === 'B2'), false, ['coletado', 'enviado', 'entregue', 'confirmado'].indexOf(entry.statusKey) > -1);
     return '<div class="ag-log-row">' +
       '<div class="ag-log-row-slot"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span><span class="ag-log-slot">' + esc(entry.label) + '</span></div>' +
       '<div class="ag-log-row-detail">' +
@@ -7328,7 +7396,8 @@
       { slot: 'I', label: 'Transporte I', courier: r.courier1 },
       { slot: 'II', label: 'Transporte II', courier: r.courier2 },
       { slot: 'III', label: 'Transporte III', courier: r.courier3 },
-      { slot: 'B', label: 'Backup', courier: r.backup }
+      { slot: 'B', label: 'Backup I', courier: r.backup },
+      { slot: 'B2', label: 'Backup II', courier: r.backup2 }
     ].filter(function(item) {
       return agendaCourierMeaningful(item.courier) && !agendaCourierStatusNaoAplicavel(item.courier && item.courier.status);
     }).map(function(item) {
@@ -7390,7 +7459,7 @@
   }
 
   function agendaCourierList(r) {
-    return [r.courier1, r.courier2, r.courier3, r.backup].filter(function(c) {
+    return [r.courier1, r.courier2, r.courier3, r.backup, r.backup2].filter(function(c) {
       return agendaCourierMeaningful(c) && !agendaCourierStatusNaoAplicavel(c.status);
     });
   }
@@ -7499,7 +7568,7 @@
 
   function onAgendaTransporteOpcionalInput(event) {
     var id = event && event.target && event.target.id;
-    if (!/^(agC2|agC3|agBackup)(Nome|Destino|Temp|Status|Awb)$/.test(String(id || ''))) return;
+    if (!/^(agC2|agC3|agBackup|agBackup2)(Nome|Destino|Temp|Status|Awb)$/.test(String(id || ''))) return;
     atualizarAgendaTransportesOpcionais();
   }
 

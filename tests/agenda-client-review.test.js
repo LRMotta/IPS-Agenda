@@ -77,6 +77,7 @@ test('resumo na edicao preserva kit, monitor e projeto em resposta imediata, rem
 test('conflito do backup reabre a origem pela funcao existente', () => {
   const { context: c, nodes, calls } = client();
   nodes.backupAgendaVisitas = {}; c._agendaEditId = 'A';
+  c.coletarAgendaEvento = () => ({ id: 'A' });
   c.agendaEventoAtualEditado_ = () => ({ recordVersion: 'vA' }); c.snackErro = () => {};
   let reopened;
   c.agendaFetchEventoPorId_ = (_id, _row, callback) => callback({ id: 'A' });
@@ -89,6 +90,7 @@ test('conflito do backup reabre a origem pela funcao existente', () => {
 test('resposta e recuperacao tardias do backup nao reabrem outro modal', () => {
   const { context: c, nodes, calls } = client();
   nodes.backupAgendaVisitas = {}; c._agendaEditId = 'A';
+  c.coletarAgendaEvento = () => ({ id: 'A' });
   c.agendaEventoAtualEditado_ = () => ({ recordVersion: 'vA' }); c.snackErro = () => {};
   let recover; let reopened = 0;
   c.agendaFetchEventoPorId_ = (_id, _row, callback) => { recover = callback; };

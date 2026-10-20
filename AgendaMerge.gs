@@ -30,13 +30,14 @@ function agendaMergeFields_() {
     { label: 'eCRF concluída', keys: ['ecrfConcluida'], boolean: true },
     { label: 'Carro requerido', keys: ['carroRequerido'], boolean: true }
   ];
-  ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(slot, index) {
-    var label = ['Transporte I', 'Transporte II', 'Transporte III', 'Backup'][index];
+  ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].forEach(function(slot, index) {
+    var label = ['Transporte I', 'Transporte II', 'Transporte III', 'Backup', 'Backup II'][index];
     fields.push({ label: label + ' - Dados do envio', slot: slot, config: true, keys: ['nome', 'temperatura', 'awb', 'destino'] });
     fields.push({ label: label + ' - Status', slot: slot, keys: ['status'] });
     fields.push({ label: label + ' - Material biológico', slot: slot, material: true, keys: ['material', 'matBioJson'] });
   });
   fields.push({ label: 'Backup - Agendamento vinculado', keys: ['_backupLink'], readOnly: true, slotLink: 'backup' });
+  fields.push({ label: 'Backup II - Agendamento vinculado', keys: ['_backup2Link'], readOnly: true, slotLink: 'backup2' });
   return fields;
 }
 
@@ -65,6 +66,8 @@ function agendaMergePayloadFromRow_(row) {
   p.backup = { nome: String(row[i.cb.nome] || ''), temperatura: String(row[i.cb.temp] || ''),
     status: String(row[i.cb.status] || ''), material: String(row[i.cb.material] || ''),
     destino: String(row[i.cb.destino] || ''), matBioJson: String(row[i.cb.matBio] || ''), awb: '' };
+  p.backup2 = agendaBackup2FromRow_(row);
+  p._backup2Link = JSON.stringify(p.backup2.agendamentos || (p.backup2.agendamento ? [p.backup2.agendamento] : []));
   return p;
 }
 
@@ -102,7 +105,7 @@ function agendaMergeFieldKey_(payload, field) {
     var value = values[key];
     if (field.boolean) return agendaBooleanValue_(value);
     if (key === 'nascimento' || key === 'data') return formatarDataIsoAgenda_(value) || String(value || '').trim();
-    if (key === '_backupLink') return agendaCanonicalJsonForVersion_(value);
+    if (key === '_backupLink' || key === '_backup2Link') return agendaCanonicalJsonForVersion_(value);
     return String(value == null ? '' : value).trim();
   }));
 }
@@ -112,9 +115,10 @@ function agendaIssueMergeToken_(row, event) {
     var raw = agendaMergePayloadFromRow_(row);
     var form = agendaMergePayloadFromEvent_(event);
     form._backupLink = raw._backupLink;
+    form._backup2Link = raw._backup2Link;
     var envelope = { v: 1, id: String(event.id), email: codexNormalizeEmail_(codexGetActiveUserEmail_()),
       spreadsheet: getCodexSpreadsheet_().getId(), expires: Date.now() + 24 * 60 * 60 * 1000,
-      schema: [AGENDA_CFG.lastCol, AGENDA_CFG.idx.cb.temp, AGENDA_CFG.idx.participanteCadastroId],
+      schema: [AGENDA_CFG.lastCol, AGENDA_CFG.idx.cb.temp, AGENDA_CFG.idx.participanteCadastroId, AGENDA_CFG.idx.backup2Dados],
       version: agendaRecordVersionFromRow_(row), editVersion: agendaEditableRecordVersionFromRow_(row), raw: raw, form: form };
     if (!envelope.email) return '';
     var text = Utilities.base64EncodeWebSafe(JSON.stringify(envelope));
@@ -133,7 +137,7 @@ function agendaReadMergeToken_(dados) {
     if (base.v !== 1 || base.id !== String(dados.id) || base.version !== String(dados._recordVersion || '') ||
         base.editVersion !== String(dados._editRecordVersion || '') || base.expires < Date.now() ||
         base.email !== codexNormalizeEmail_(codexGetActiveUserEmail_()) || base.spreadsheet !== getCodexSpreadsheet_().getId() ||
-        JSON.stringify(base.schema) !== JSON.stringify([AGENDA_CFG.lastCol, AGENDA_CFG.idx.cb.temp, AGENDA_CFG.idx.participanteCadastroId]) || !base.raw || !base.form) return null;
+        JSON.stringify(base.schema) !== JSON.stringify([AGENDA_CFG.lastCol, AGENDA_CFG.idx.cb.temp, AGENDA_CFG.idx.participanteCadastroId, AGENDA_CFG.idx.backup2Dados]) || !base.raw || !base.form) return null;
     return base;
   } catch (error) { return null; }
 }
@@ -144,7 +148,7 @@ function agendaTryMergeEdit_(dados, row) {
   var current = agendaMergePayloadFromRow_(row);
   var incoming = Object.assign({}, base.form, dados);
   if (Object.prototype.hasOwnProperty.call(dados, 'idParticipante')) incoming.participanteId = dados.idParticipante;
-  ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(slot) {
+  ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].forEach(function(slot) {
     incoming[slot] = Object.assign({}, base.form[slot] || {}, dados[slot] || {});
     var courier = dados[slot] || {};
     if (courier.temp !== undefined && courier.temperatura === undefined) incoming[slot].temperatura = courier.temp;
@@ -174,7 +178,10 @@ function agendaTryMergeEdit_(dados, row) {
   });
   if (conflicts.length) return { ok: false, reason: 'ALTERACOES_SOBREPOSTAS_OU_DEPENDENTES', fields: conflicts };
   var merged = Object.assign({}, dados);
-  ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(slot) { merged[slot] = Object.assign({}, incoming[slot]); });
+  ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].forEach(function(slot) { merged[slot] = Object.assign({}, incoming[slot]); });
+  // Vinculos sao dados do servidor; nao aceitar referencias injetadas no payload.
+  delete merged.backup2.agendamento;
+  delete merged.backup2.agendamentos;
   states.forEach(function(state) {
     var field = state.field;
     if (field.readOnly) return;
