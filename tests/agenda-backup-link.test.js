@@ -453,13 +453,13 @@ test('interface vincula somente depois de salvar e abre o agendamento pelo chip'
   assert.match(client, /agendaCourierStatusHtml\(c, backup, naoAplicavel, ok\)/);
   assert.match(client, /agendaAbrirAgendamentoVinculado/);
   assert.match(client, /abrirAgendaRegistroPorId\(agendaId\)/);
-  assert.match(server, /agendaVincularBackupAoAgendamento_\(agenda, backupOrigemId, resultado\.id, d\)/);
+  assert.match(server, /agendaVincularBackupAoAgendamento_\(agenda, backupOrigemId, resultado\.id, d, dados\.origemBackupSlot\)/);
   assert.match(server, /Backup_Agendamento_Ref/);
 });
 
 test('novo envio criado do backup nao herda medico e preserva a temperatura de origem', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
-  const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda()');
+  const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda(backupSlot)');
   const fim = client.indexOf('function gerarTransporteAgendaCard(', inicio);
   const fluxoBackup = client.slice(inicio, fim);
 
@@ -475,13 +475,13 @@ test('novo envio do Backup exige temperatura sem alterar o legado', () => {
   const client = readProjectFile('IndexAgendaScripts.html');
   const serverSource = readProjectFile('WebApp.gs');
   const server = agendaServer();
-  const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda()');
+  const inicio = client.indexOf('function criarEnvioAmostrasDoBackupAgenda(backupSlot)');
   const fim = client.indexOf('function gerarTransporteAgendaCard(', inicio);
   const fluxoBackup = client.slice(inicio, fim);
 
   assert.match(fluxoBackup, /backup\.temperatura \|\| backup\.temp/);
   assert.match(fluxoBackup, /Informe a Temperatura do Transporte de Amostras Backup/);
-  assert.match(client, /function atualizarEstadoNovoEnvioBackup_\(\)/);
+  assert.match(client, /function atualizarEstadoNovoEnvioBackup_\(backupSlot\)/);
   assert.match(client, /action\.disabled = !temperaturaInformada \|\| !!refValida/);
   assert.match(serverSource, /function salvarNovoEventoCompleto[\s\S]*agendaNovoEnvioBackupTemperaturaErro_\(dados\)/);
   assert.match(serverSource, /function salvarNovoEventoComFeriado[\s\S]*agendaNovoEnvioBackupTemperaturaErro_\(dados\)/);
@@ -884,10 +884,12 @@ test('interface oferece os dois caminhos e mantém o modal da Agenda durante a v
   assert.match(content, /aria-describedby="backupAgendaHint"/);
   assert.ok(content.indexOf('id="backupAgendaStep"') > content.indexOf('id="agBackupMaterial"'), 'as opções seguem o preenchimento do backup');
   assert.match(client, /appHasUnsavedChanges\('agendaCreatePanel'\)/);
-  assert.match(client, /getAgendaVisitasFuturasParaBackup\(origemId\)/);
+  assert.match(client, /getAgendaVisitasFuturasParaBackup\(origemId, config\.slot\)/);
   assert.match(client, /\.aplicarBackupEmVisitaFutura\(/);
-  assert.match(client, /_agendaEditRecord\s*=\s*agendaStoreEventoLocal_\(res\.origem\)/);
-  assert.match(client, /setAgendaSelectValue\('agBackupStatus', res\.origem\.backup && res\.origem\.backup\.status\)/);
-  assert.match(server, /function getAgendaVisitasFuturasParaBackup\(origemId\)/);
+  assert.match(client, /origemSalva\s*=\s*agendaStoreEventoLocal_\(res\.origem\)/);
+  assert.match(client, /_agendaEditRecord\s*=\s*origemSalva/);
+  assert.match(client, /JSON\.stringify\(coletarAgendaEvento\(\)\) === formAtSend/);
+  assert.match(client, /setAgendaSelectValue\(config\.prefix \+ 'Status', res\.origem\[config\.slot\] && res\.origem\[config\.slot\]\.status\)/);
+  assert.match(server, /function getAgendaVisitasFuturasParaBackup\(origemId, backupSlot\)/);
   assert.match(server, /function aplicarBackupEmVisitaFutura\(payload\)/);
 });

@@ -294,7 +294,8 @@ function transporteAgendaCourierFromEvento_(evento, slot) {
     '1': 'courier1',
     '2': 'courier2',
     '3': 'courier3',
-    backup: 'backup'
+    backup: 'backup',
+    backup2: 'backup2'
   };
   var courier = evento[map[slot]] || {};
   if (slot === 'backup' && courier && !courier.temperatura && !courier.temp) {
@@ -414,6 +415,7 @@ function normalizarSlotTransporteCodex_(slot, strict) {
   if (s === 'ii' || s === 'transporte ii') return '2';
   if (s === 'iii' || s === 'transporte iii') return '3';
   if (s === 'b' || s === 'backup') return 'backup';
+  if (s === 'b2' || s === 'backup2' || s === 'backup ii') return 'backup2';
   if (strict) throw new Error('Slot de transporte inválido. Reabra a documentação pela Agenda.');
   // Leitura de notas antigas conserva o valor para revisao, sem escolher I.
   return String(slot || '1');
@@ -1441,7 +1443,7 @@ function codexMatBioCourierUnit_(courier) {
 }
 
 function codexMatBioValidateAgendaPayload_(dados) {
-  ['courier1', 'courier2', 'courier3', 'backup'].forEach(function(slot) {
+  ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].forEach(function(slot) {
     var courier = dados && dados[slot];
     if (!courier) return;
     var json = courier.matBioJson !== undefined ? courier.matBioJson : courier.materialJson;
@@ -2423,7 +2425,10 @@ function transporteDestinoAgenda_(evento, slot) {
     iii: 'courier3',
     'transporte iii': 'courier3',
     backup: 'backup',
-    b: 'backup'
+    b: 'backup',
+    backup2: 'backup2',
+    b2: 'backup2',
+    'backup ii': 'backup2'
   };
   var courierKey = slotMap[slotKey];
   if (!courierKey) return '';
@@ -3299,7 +3304,7 @@ function transporteValidarEntradaAwbOcasa_(payload) {
   if (payload.idAgenda && (payload.agendaSlot || payload.slot)) {
     var evento = buscarAgendaEventoPorIdTransp_(payload.idAgenda);
     var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
-    previous = evento[({ '1': 'courier1', '2': 'courier2', '3': 'courier3', backup: 'backup' })[slot]];
+    previous = evento[({ '1': 'courier1', '2': 'courier2', '3': 'courier3', backup: 'backup', backup2: 'backup2' })[slot]];
   } else if (payload.envioId) {
     var folha = transporteGetSheet_(getTransporteSpreadsheetCodex_(), 'folhaAgendamento', true);
     var values = folha.getRange('C3:C15').getValues().map(function(row) { return row[0]; });
@@ -3695,7 +3700,10 @@ function montarPayloadTransporteCodex(codexPayload) {
     iii: 'courier3',
     'transporte iii': 'courier3',
     backup: 'backup',
-    b: 'backup'
+    b: 'backup',
+    backup2: 'backup2',
+    b2: 'backup2',
+    'backup ii': 'backup2'
   };
   var courierKey = slotMap[slot];
   var courier = Object.assign({}, agenda[courierKey] || {}, codexPayload.courier || {});
@@ -3770,6 +3778,46 @@ function transporteMateriaisParaAgenda_(materiais) {
   };
 }
 
+// Backup II compartilha a linha da Agenda, mas persiste um envelope independente.
+function transporteSincronizarBackup2Agenda_(payload, idAgenda) {
+  var agenda = getAgendaSheet_();
+  var linha = encontrarLinhaPorId(agenda, idAgenda);
+  if (!linha) throw new Error('Os dados foram salvos no Transporte, mas o agendamento ' + idAgenda + ' não foi encontrado.');
+  var row = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var backup = agendaBackup2FromRow_(row);
+  var changes = [], warnings = [];
+  function preencher(key, label, value) {
+    value = String(value || '').trim();
+    if (!value || String(backup[key] || '').trim()) return;
+    backup[key] = value;
+    changes.push({ field: 'Backup II - ' + label, oldValue: '', newValue: value });
+  }
+  preencher('destino', 'Destino', payload.destino);
+  preencher('temperatura', 'Temperatura', payload.temperatura);
+  var statusNovo = String(payload.statusCourier || payload.status || '').trim();
+  var statusAnterior = String(backup.status || '').trim();
+  if (statusNovo && (!statusAnterior || normText_(statusAnterior) === 'nao agendado')) {
+    backup.status = statusNovo;
+    changes.push({ field: 'Backup II - Status', oldValue: statusAnterior, newValue: statusNovo });
+  }
+  var materiais = transporteMateriaisParaAgenda_(payload.materiais || []);
+  preencher('material', 'Materiais', materiais.summary);
+  preencher('matBioJson', 'Materiais estruturados', materiais.json);
+  var awb = String(payload.awb || '').trim();
+  if (awb && backup.awb && normalizarAwbCourier_(backup.awb) !== normalizarAwbCourier_(awb)) {
+    warnings.push('Agenda ja possui AWB diferente para o Backup II (' + backup.awb + '). A AWB do Transporte (' + awb + ') nao foi sobrescrita automaticamente.');
+  } else preencher('awb', 'AWB', awb);
+  if (changes.length) {
+    agendaBackup2Write_(agenda, linha, backup);
+    if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
+  }
+  if (payload.caixaTransporte) transporteCaixaPersistirAgenda_(payload);
+  // O bootstrap seguinte depende da persistencia da linha sincronizada.
+  SpreadsheetApp.flush();
+  agendaInvalidateWindowCache_();
+  return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: 'backup2', awb: awb, campos: changes.map(function(change) { return change.field; }), warnings: warnings };
+}
+
 function transporteSincronizarAgenda_(payload) {
   payload = payload || {};
   var awb = String(payload.awb || '').trim();
@@ -3782,6 +3830,7 @@ function transporteSincronizarAgenda_(payload) {
   if (typeof getAgendaSheet_ !== 'function' || typeof encontrarLinhaPorId !== 'function') {
     return { atualizado: false, motivo: 'Agenda indisponível neste projeto' };
   }
+  if (slot === 'backup2') return transporteSincronizarBackup2Agenda_(payload, idAgenda);
   var slotMap = {
     '1': AGENDA_CFG.idx.c1,
     '2': AGENDA_CFG.idx.c2,
@@ -4284,6 +4333,7 @@ function transporteMarcarDocsGeradosAgenda_(payload, result) {
   var idAgenda = String(payload.idAgenda || '').trim();
   var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot || '');
   if (!idAgenda || !slot || typeof getAgendaSheet_ !== 'function') return null;
+  if (slot === 'backup2') return transporteMarcarDocsGeradosBackup2_(payload, idAgenda);
   var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, backup: AGENDA_CFG.idx.cb }[slot];
   if (!idx) return null;
   var agenda = getAgendaSheet_();
@@ -4302,6 +4352,25 @@ function transporteMarcarDocsGeradosAgenda_(payload, result) {
   if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Agenda', 'gerarPdfTransporte', idAgenda,
     [{ field: 'Transporte ' + slot + ' - Status', oldValue: statusAnterior, newValue: 'Docs gerados' }], 'PDF confirmado no Drive');
   return { atualizado: true, idAgenda: idAgenda, slot: slot, awb: payload.awb, campos: ['Transporte ' + slot + ' - Status'] };
+}
+
+function transporteMarcarDocsGeradosBackup2_(payload, idAgenda) {
+  var agenda = getAgendaSheet_();
+  var linha = encontrarLinhaPorId(agenda, idAgenda);
+  if (!linha) throw new Error('PDF gerado, mas o agendamento vinculado não foi encontrado.');
+  var values = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  if (AgendaServerRules_.isCancelled(values[AGENDA_CFG.col.status - 1])) return null;
+  var backup = agendaBackup2FromRow_(values);
+  var statusAnterior = String(backup.status || '').trim();
+  if (['', 'naoagendado', 'pendente'].indexOf(AgendaServerRules_.courierStatusKey(statusAnterior)) === -1) return null;
+  var awb = normalizarAwbCourier_(payload.awb);
+  if (!awb || awb !== normalizarAwbCourier_(backup.awb) || normText_(payload.courier) !== normText_(backup.nome)) return null;
+  backup.status = 'Docs gerados';
+  agendaBackup2Write_(agenda, linha, backup);
+  if (typeof agendaInvalidateDateIndexCache_ === 'function') agendaInvalidateDateIndexCache_();
+  if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Agenda', 'gerarPdfTransporte', idAgenda,
+    [{ field: 'Backup II - Status', oldValue: statusAnterior, newValue: backup.status }], 'PDF confirmado no Drive');
+  return { atualizado: true, idAgenda: idAgenda, slot: 'backup2', awb: payload.awb, campos: ['Backup II - Status'] };
 }
 
 function gerarPdfTransporte(options) {
@@ -4420,7 +4489,7 @@ function gerarPdfTransporteInterno_(options, access) {
   }
   var monitorRef = transporteMonitorReferencia_(registroMonitor.idAgenda, registroMonitor.agendaSlot);
   if (driveAccessWarning && result && typeof result === 'object') result.driveAccessWarning = driveAccessWarning;
-  if (courier === 'PINEX' || normalizarSlotTransporteCodex_(registroMonitor.agendaSlot) === 'backup') {
+  if (courier === 'PINEX' || ['backup', 'backup2'].indexOf(normalizarSlotTransporteCodex_(registroMonitor.agendaSlot)) !== -1) {
     var avisoManual = 'PINEX ou Backup: o envio não promove automaticamente o status. Atualize o transporte manualmente na Agenda.';
     Logger.log(avisoManual);
     if (result && typeof result === 'object') {
@@ -6659,6 +6728,10 @@ function transporteCaixaAgendaRange_(payload) {
   var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, backup: AGENDA_CFG.idx.cb }[slot];
   var sheet = getAgendaSheet_();
   var row = encontrarLinhaPorId(sheet, payload.idAgenda);
+  if (slot === 'backup2') {
+    if (!row || !(AGENDA_CFG.idx.backup2Dados >= 0)) throw new Error('Não foi possível localizar o Backup II para registrar a caixa.');
+    return sheet.getRange(row, AGENDA_CFG.idx.backup2Dados + 1);
+  }
   if (!row || !idx || idx.temp === undefined) throw new Error('Não foi possível localizar o transporte para registrar a caixa.');
   return sheet.getRange(row, idx.temp + 1);
 }
