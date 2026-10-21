@@ -80,7 +80,7 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
     for (const width of [1440,390]) {
       const {page,errors}=await fixture(browser,width);
       assert.equal(await page.locator('#page-farmacia h1, #page-farmacia h2, #page-farmacia h3').filter({hasText:'Farmácia'}).count(),0);
-      assert.equal(await page.locator('#navFarmaciaSection .nav-section').count(),0);
+      assert.equal(await page.locator('#navFarmaciaSection .nav-section').innerText(),'FARMÁCIA');
       await openStock(page,stockData({configured:false,locationsConfigured:false,products:[],positions:[],storageUnits:[],locationsCanManage:true}));
       assert.equal(await page.locator('#farmaciaInventoryResults table').count(),0);
       assert.match(await page.locator('#farmaciaInventoryResults').innerText(),/Estoque ainda não configurado/);
@@ -121,6 +121,57 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
       assert.deepEqual(errors,[]); await page.close();
     }
+  } finally {await browser.close();}
+});
+
+test('catálogo sem seleção descarta respostas após sair da área ou revalidar acesso e permite retomar leitura', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await chooseView(page,'equipment');
+    assert.equal(await page.locator('#farmaciaNoSelection').isVisible(),false);
+    await chooseView(page,'products');
+    await page.evaluate(result=>window.pending[0].success(result),stockData({locationsCanManage:true}));
+    assert.equal(await page.locator('#farmaciaNoSelection').isVisible(),true);
+    assert.equal(await page.evaluate(()=>window.FARMACIA_CATALOG.data),null);
+    await chooseView(page,'probes');
+    await page.evaluate(()=>window.farmaciaEstoqueReset());
+    await page.evaluate(result=>window.pending[1].success(result),stockData({locationsCanManage:true}));
+    assert.equal(await page.evaluate(()=>window.FARMACIA_CATALOG.data),null);
+    await page.locator('[aria-label="Atualizar estoque"]').click();
+    await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada do catálogo'}));
+    assert.match(await page.locator('#farmaciaStockStatus').innerText(),/Falha simulada/);
+    assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),false);
+    await page.locator('[aria-label="Atualizar estoque"]').click();
+    await page.evaluate(result=>window.pending.at(-1).success(result),stockData({locationsCanManage:true}));
+    assert.equal(await page.locator('#farmaciaStockSelector').isVisible(),false);
+    assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),true);
+    assert.deepEqual(errors,[]);
+  } finally {await browser.close();}
+});
+
+test('seleção de projeto atrasada não apaga cadastro do catálogo e estoque retoma sua seleção', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await page.locator('#farmaciaStudy').selectOption('P1');
+    await chooseView(page,'equipment');
+    await page.evaluate(result=>window.pending[1].success(result),stockData({locationsCanManage:true}));
+    await openForm(page,'equipment');
+    await page.locator('#farmaciaLocationCode').fill('EM-PREENCHIMENTO');
+    await page.evaluate(()=>window.pending[0].success({study:{id:'P1',nome:'Estudo atrasado'},farmaciaAccess:'manage',restrictedAllowed:true}));
+    assert.equal(await page.locator('#farmaciaModal-location').isVisible(),true);
+    assert.equal(await page.locator('#farmaciaLocationCode').inputValue(),'EM-PREENCHIMENTO');
+    assert.equal(await page.evaluate(()=>window.pending.length),2);
+    await page.evaluate(()=>window.farmaciaCloseDialogs());
+    await chooseView(page,'stock');
+    assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaEstudo');
+    await page.evaluate(()=>window.pending.at(-1).success({study:{id:'P1',nome:'Estudo A'},farmaciaAccess:'manage',restrictedAllowed:true}));
+    await page.evaluate(result=>window.pending.at(-1).success(result),stockData());
+    assert.equal(await page.locator('#farmaciaStockSelector').isVisible(),true);
+    assert.equal(await page.locator('#farmaciaStudy').inputValue(),'P1');
+    assert.equal(await page.locator('#farmaciaInventoryResults table').isVisible(),true);
+    assert.deepEqual(errors,[]);
   } finally {await browser.close();}
 });
 
@@ -209,13 +260,19 @@ async function openForm(page,view) {
   await page.locator('#farmaciaPrimaryAction').click();
 }
 
-test('setup cadastra equipamento sem faixas presumidas, sonda e calibração com revisão em desktop/celular', async () => {
+test('setup vazio cadastra primeiro equipamento sem estoque configurado, sonda e calibração em desktop/celular', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try {
     for(const width of [1280,390]) {
       const {page,errors}=await fixture(browser,width);
       const data=stockData({locationsCanManage:true});
-      await openStock(page,data);
+      await chooseView(page,'equipment');
+      assert.equal(await page.locator('#farmaciaStudy').inputValue(),'');
+      assert.equal(await page.locator('#farmaciaStockSelector').isVisible(),false);
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
+      await page.evaluate(()=>window.pending.at(-1).success({locationsConfigured:true,locationsCanManage:true,storageUnits:[]}));
+      assert.match(await page.locator('#farmaciaLocationsResults').innerText(),/Nenhum equipamento cadastrado/);
+      assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),true);
       await openForm(page,'equipment');
       await page.locator('#farmaciaLocationCode').fill('IPS AF-02');
       await page.locator('#farmaciaLocationModel').fill('phcbi MPR-721R-PA');
@@ -228,12 +285,16 @@ test('setup cadastra equipamento sem faixas presumidas, sonda e calibração com
       await page.locator('#farmaciaLocationForm').getByRole('button',{name:'Cadastrar equipamento',exact:true}).click();
       const location=await page.evaluate(()=>window.pending.at(-1));
       assert.equal(location.method,'cadastrarLocalFarmacia'); assert.equal(location.args[0].data.min,null);
+      assert.equal(Object.hasOwn(location.args[0],'studyId'),false);
+      assert.equal(Object.hasOwn(location.args[0],'restricted'),false);
       assert.deepEqual(location.args[0].data.positions,['Prateleira 1','Prateleira 2']);
       await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
       assert.equal(await page.locator('#farmaciaLocationCode').inputValue(),'IPS AF-02');
       await page.locator('#farmaciaLocationForm').getByRole('button',{name:'Cadastrar equipamento',exact:true}).click();
       assert.equal(await page.evaluate(()=>window.pending.at(-1).args[0].requestId),location.args[0].requestId);
       await page.evaluate(()=>window.pending.at(-1).success({ok:true}));
+      data.storageUnits[0]={...location.args[0].data,id:'UNIT-1',revision:1,probes:[]};
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
       await page.evaluate(result=>window.pending.at(-1).success(result),data);
       await openForm(page,'probes');
       await page.locator('#farmaciaProbeUnit').selectOption('UNIT-1');
@@ -248,6 +309,7 @@ test('setup cadastra equipamento sem faixas presumidas, sonda e calibração com
       await page.locator('#farmaciaProbeForm').getByRole('button',{name:'Cadastrar sonda',exact:true}).click();
       const saved=await page.evaluate(()=>window.pending.at(-1));
       assert.equal(saved.method,'cadastrarSondaFarmacia'); assert.equal(saved.args[0].data.serial,'SERIE-01');
+      assert.equal(Object.hasOwn(saved.args[0],'studyId'),false);
       await page.evaluate(()=>window.pending.at(-1).success({ok:true}));
       data.storageUnits[0].probes=[{...saved.args[0].data,id:'PROBE-1',revision:1,calibrationStatus:'expired'}];
       await page.evaluate(result=>window.pending.at(-1).success(result),data);

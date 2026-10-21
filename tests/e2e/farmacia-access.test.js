@@ -114,6 +114,8 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
       assert.equal(await page.locator('#navFarmaciaSection #navFarmacia').count(), 1);
       assert.equal(await page.locator('#navFarmaciaSection').evaluate(el => el.style.display), '');
       if (width < 900) await page.locator('#mobileMenuBtn').click();
+      assert.equal(await page.locator('#navFarmaciaSection .nav-section').innerText(), 'FARMÁCIA');
+      assert.equal(await page.locator('#navFarmaciaSection .nav-section').isVisible(), true);
       await page.locator('#navFarmacia').click();
       await page.locator('[data-farmacia-view="stock"]').click();
       assert.equal(await page.locator('#page-farmacia').isVisible(), true);

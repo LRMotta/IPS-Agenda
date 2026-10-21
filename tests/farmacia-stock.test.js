@@ -30,7 +30,7 @@ function fixture(realLocations = false) {
     data:{name:'Produto A',presentation:'Frasco de teste',unit:'frasco',control:'quantity',storage:{min:null,max:null,instructions:'Conferir documento fictício',source:'Rótulo fictício',version:'1'},...overrides.data} });
   const initial = (productId, overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'initial-request-0001', data:{ productId, lot:'L1', expiry:'2027-01-31', location:'Armário 1 → Prateleira 1', locationRef:{unitId:'UNIT-1',position:'Prateleira 1'}, kit:'', physical:10, blocked:2, countedOn:'2026-10-21', confirmed:true, note:'Contagem física' }, ...overrides });
   const sheet = (restricted = false) => stores[restricted ? RESTRICTED : STANDARD].getSheetByName(server.FARMACIA_LEDGER_SHEET_);
-  return { server, users, stores, state, lock:lock.state, product, initial, sheet };
+  return { server, app, users, stores, state, lock:lock.state, product, initial, sheet };
 }
 
 const LOCATIONS = 'farmacia-locations-0000000001';
@@ -46,7 +46,7 @@ function locationFixture() {
   return f;
 }
 
-test('catálogo compartilhado exige arquivo exclusivo; leitura sem configuração não cria schema', () => {
+test('catálogo dedicado preserva exclusividade; sem configuração usa o app sem criar schema na leitura', () => {
   const f = locationFixture();
   assert.equal(f.server.getFarmaciaEstoque('P1',false).storageUnits.length,0);
   assert.equal(f.catalogSheet(),null);
@@ -60,8 +60,33 @@ test('catálogo compartilhado exige arquivo exclusivo; leitura sem configuraçã
   assert.equal(f.users.writes,writes);
   const missing=fixture(true);
   const stock=missing.server.getFarmaciaEstoque('P1',false);
-  assert.equal(stock.locationsConfigured,false);
+  assert.equal(stock.locationsConfigured,true);
   assert.equal(stock.storageUnits.length,0);
+  assert.equal(missing.app.getSheetByName(missing.server.FARMACIA_LOCATIONS_SHEET_),null);
+});
+
+test('primeiro equipamento cria aba e cabeçalhos no app, preserva outras abas e recarrega sem duplicar', () => {
+  const f=locationFixture();
+  f.state.config='';
+  const users=JSON.stringify(f.users.rows), projects=JSON.stringify(f.app.getSheetByName('Projetos').rows);
+  const name=f.server.FARMACIA_LOCATIONS_SHEET_;
+  assert.equal(f.server.farmaciaReadLocations_().configured,true);
+  assert.equal(f.app.getSheetByName(name),null);
+  const invalid=f.location(); invalid.data.positions=[];
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(invalid),/posições/);
+  assert.equal(f.app.getSheetByName(name),null);
+  const request=f.location(), created=f.server.cadastrarLocalFarmacia(request);
+  const sheet=f.app.getSheetByName(name);
+  assert.deepEqual(Array.from(sheet.rows[0]),Array.from(f.server.FARMACIA_LOCATIONS_HEADERS_));
+  const writes=sheet.writes;
+  assert.equal(f.server.cadastrarLocalFarmacia(request).repeated,true);
+  assert.equal(sheet.writes,writes);
+  const units=f.server.farmaciaReadLocations_().units;
+  assert.equal(units.length,1); assert.equal(units[0].id,created.id); assert.equal(units[0].code,request.data.code);
+  assert.equal(JSON.stringify(f.users.rows),users);
+  assert.equal(JSON.stringify(f.app.getSheetByName('Projetos').rows),projects);
+  assert.equal(f.catalogSheet(),null);
+  assert.deepEqual(f.state.opened,[]);
 });
 
 test('somente responsável comum administra locais; estudo/manage e Admin não substituem concessão', () => {
@@ -76,6 +101,38 @@ test('somente responsável comum administra locais; estudo/manage e Admin não s
   assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/permissão/);
   assert.equal(f.catalogSheet(),null);
   assert.throws(()=>f.server.codexNormalizeFarmaciaStudies_([{studyId:'@IPS_LOCATIONS',restricted:false}]),/inválida/);
+});
+
+test('catálogo no app mantém ACL e recusa schema alheio sem sobrescrever dados', () => {
+  const f=locationFixture();
+  f.state.config='';
+  f.users.rows[1][10]='read';
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/permissão/);
+  const name=f.server.FARMACIA_LOCATIONS_SHEET_;
+  assert.equal(f.app.getSheetByName(name),null);
+  f.users.rows[1][10]='manage';
+  const sheet=f.app.insertSheet(name);
+  sheet.getRange(1,1,1,2).setValues([['Dados antigos','Preservar']]);
+  const before=JSON.stringify(sheet.rows), writes=sheet.writes;
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/Estrutura.*divergente/);
+  assert.equal(sheet.writes,writes);
+  assert.equal(JSON.stringify(sheet.rows),before);
+});
+
+test('catálogo pode ser consultado sem projeto ou estoque autorizado e não expõe produtos/saldos', () => {
+  const f=locationFixture();
+  f.server.cadastrarLocalFarmacia(f.location());
+  f.users.rows[1][9]='[]'; f.users.rows[1][8]='none'; f.users.rows[1][10]='read';
+  f.state.opened=[];
+  const result=f.server.getFarmaciaCatalogo();
+  assert.equal(result.storageUnits.length,1); assert.equal(result.locationsCanManage,false);
+  assert.deepEqual(Object.keys(result).sort(),['locationsCanManage','locationsConfigured','storageUnits']);
+  assert.deepEqual(f.state.opened,[LOCATIONS]);
+  f.users.rows[1][10]='none'; f.users.rows[1][8]='read';
+  assert.equal(f.server.getFarmaciaCatalogo().storageUnits.length,1);
+  f.users.rows[1][8]='none'; f.state.opened=[];
+  assert.throws(()=>f.server.getFarmaciaCatalogo(),/permissão/);
+  assert.deepEqual(f.state.opened,[]);
 });
 
 test('equipamento tem código único e posições estáveis; cadastro e situação são idempotentes e auditados', () => {
