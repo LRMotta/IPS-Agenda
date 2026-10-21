@@ -1,4 +1,23 @@
   <style>
+    .farmacia-stock-panel { margin-top:18px; }
+    .farmacia-stock-toolbar { gap:12px; flex-wrap:wrap; }
+    .farmacia-stock-status { padding:12px 0; line-height:1.6; }
+    .farmacia-stock-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:18px; margin-bottom:14px; }
+    .farmacia-stock-card summary { cursor:pointer; font-size:14px; font-weight:600; }
+    .farmacia-stock-card p { line-height:1.6; margin:10px 0; }
+    .farmacia-stock-card fieldset { border:0; padding:12px 0 0; min-width:0; }
+    .farmacia-stock-card .field-label { margin-top:12px; }
+    .farmacia-stock-card button { margin-top:16px; }
+    .farmacia-stock-forms { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:16px; align-items:start; }
+    .farmacia-stock-forms[hidden], .farmacia-stock-panel[hidden] { display:none; }
+    .farmacia-stock-scroll { overflow-x:auto; margin-bottom:16px; }
+    .farmacia-stock-scroll table { min-width:850px; }
+    .farmacia-stock-scroll td { white-space:normal; overflow-wrap:anywhere; }
+    .farmacia-confirm { display:flex; align-items:flex-start; gap:10px; line-height:1.6; margin-top:14px; }
+    @media(max-width:700px) { .farmacia-stock-forms { grid-template-columns:1fr; } }
+    .farmacia-study-grant { display:flex; flex-direction:column; gap:8px; padding:12px 0; border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
+    .farmacia-study-grant label { display:flex; align-items:center; gap:8px; line-height:1.5; }
+    .farmacia-study-grant input { flex-shrink:0; }
     /* Cartões de resumo do conteúdo após o Dashboard. */
     .content-stats-row { border-radius: var(--r-lg) var(--r-lg) 0 0; border-top: 1px solid #e8edf8; }
     .content-stats-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
