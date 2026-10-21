@@ -2,28 +2,34 @@
 var FARMACIA_STOCK = { epoch:0, readId:0, studyId:'', restricted:false, restrictedAllowed:false, data:null, saving:false, productToken:'', initialToken:'', locationToken:'', statusToken:'', probeToken:'' };
 
 function farmaciaEstoqueReset() {
+  farmaciaCloseDialogs();
   FARMACIA_STOCK.epoch++;
   FARMACIA_STOCK.readId++;
   FARMACIA_STOCK.studyId = '';
   FARMACIA_STOCK.data = null;
   FARMACIA_STOCK.saving = false;
+  FARMACIA_STOCK.restoreFocus = null;
   FARMACIA_STOCK.productToken = FARMACIA_STOCK.initialToken = '';
   FARMACIA_STOCK.locationToken = FARMACIA_STOCK.statusToken = '';
   FARMACIA_STOCK.probeToken = '';
   FARMACIA_STOCK.calibrationToken = '';
-  document.getElementById('farmaciaProbeSetup').hidden = true;
   document.getElementById('farmaciaProbeForm').reset();
   document.getElementById('farmaciaLocationsResults').textContent = '';
-  document.getElementById('farmaciaLocationSetup').hidden = true;
   document.getElementById('farmaciaLocationForm').reset();
   document.getElementById('farmaciaInitialStorageStatus').textContent = '';
   document.getElementById('farmaciaStockPanel').hidden = true;
-  document.getElementById('farmaciaStockResults').textContent = '';
+  ['farmaciaProductsResults','farmaciaInventoryResults','farmaciaLocationsResults','farmaciaProbesResults'].forEach(function(id) { document.getElementById(id).textContent = ''; });
   document.getElementById('farmaciaStockStatus').textContent = '';
   document.getElementById('farmaciaProductForm').reset();
   farmaciaProductControlChanged();
   document.getElementById('farmaciaInitialForm').reset();
-  document.getElementById('farmaciaStockForms').hidden = true;
+  document.getElementById('farmaciaInitialProduct').innerHTML = '<option value="">Selecione o produto</option>';
+  ['farmaciaProductFields','farmaciaInitialFields','farmaciaLocationFields','farmaciaProbeFields'].forEach(function(id) { document.getElementById(id).disabled = true; });
+  document.getElementById('farmaciaUnitDetail').textContent = '';
+  document.getElementById('farmaciaProbeDetail').textContent = '';
+  document.getElementById('farmaciaSearch').value = '';
+  document.getElementById('farmaciaNoSelection').hidden = false;
+  farmaciaSetView();
 }
 
 function farmaciaStockCurrent(epoch, studyId, restricted) {
@@ -39,21 +45,26 @@ function carregarFarmaciaEstoque(studyId, restrictedAllowed, restricted) {
   var epoch = FARMACIA_STOCK.epoch, readId = ++FARMACIA_STOCK.readId;
   FARMACIA_STOCK.data = null;
   document.getElementById('farmaciaStockPanel').hidden = false;
+  document.getElementById('farmaciaNoSelection').hidden = true;
+  farmaciaUpdateSummary();
   document.getElementById('farmaciaRestrictedLabel').hidden = !restrictedAllowed;
   document.getElementById('farmaciaStockRestricted').checked = restricted;
-  document.getElementById('farmaciaStockResults').textContent = '';
+  ['farmaciaProductsResults','farmaciaInventoryResults','farmaciaLocationsResults','farmaciaProbesResults'].forEach(function(id) { document.getElementById(id).textContent = ''; });
   document.getElementById('farmaciaLocationsResults').textContent = '';
-  document.getElementById('farmaciaLocationSetup').hidden = true;
-  document.getElementById('farmaciaProbeSetup').hidden = true;
-  document.getElementById('farmaciaStockForms').hidden = true;
   document.getElementById('farmaciaStockStatus').textContent = 'Carregando estoque…';
   google.script.run.withSuccessHandler(function(result) {
     if (!farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
     FARMACIA_STOCK.data = result;
     renderFarmaciaEstoque(result);
+    farmaciaRestoreFocus();
   }).withFailureHandler(function(error) {
     if (!farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
+    farmaciaUpdateSummary();
     document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error);
+    if (FARMACIA_STOCK.restoreFocus) {
+      FARMACIA_STOCK.restoreFocus = null;
+      document.querySelector('[aria-label="Atualizar estoque"]').focus();
+    }
   }).getFarmaciaEstoque(studyId, restricted);
 }
 
@@ -74,42 +85,23 @@ function farmaciaStockDate(value, includeTime) {
 }
 
 function renderFarmaciaEstoque(data) {
-  var products = data.products || [], positions = data.positions || [];
-  document.getElementById('farmaciaStockStatus').textContent = data.configured
-    ? products.length + ' produto(s) · ' + positions.length + ' posição(ões) inventariada(s). Quantidades exibidas por unidade de controle.'
-    : (FARMACIA_STOCK.studyId === '@IPS_COMMON' ? 'O armazenamento do estoque comum' : 'O armazenamento deste estudo e classe') + ' ainda precisa ser configurado pelo administrador. Nenhum dado foi importado.';
-  var productRows = products.map(function(product) {
-    return '<tr><td>' + esc(product.name) + '</td><td>' + esc(product.presentation) + '</td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td>' + farmaciaConservationHtml(product.storage) + '</td></tr>';
-  }).join('');
-  var positionRows = positions.map(function(position) {
-    var product = products.find(function(item) { return item.id === position.productId; }) || {};
-    return '<tr><td>' + esc(product.name) + '<br><small>' + esc(product.presentation) + '</small></td>' +
-      '<td>' + esc(position.lot) + (position.kit ? '<br>Kit ' + esc(position.kit) : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) +
-      '<br>' + esc(position.location) + (position.expired ? '<br><strong>Vencido</strong>' : '') + '<br><small>' + esc((position.storageCheck || {}).message || 'Conservação pendente de conferência.') + '</small></td>' +
-      '<td>' + farmaciaStockNumber(position.physical) + ' ' + esc(product.unit) + '</td>' +
-      '<td>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</td>' +
-      '<td>' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</td>' +
-      '<td>' + esc(farmaciaStockDate(position.countedOn)) + '<br>' + esc(position.author) + '<br><small>Registro: ' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
-  }).join('');
-  document.getElementById('farmaciaStockResults').innerHTML =
-    '<div class="farmacia-stock-card"><h3>Produtos</h3><div class="farmacia-stock-scroll" role="region" aria-label="Produtos da Farmácia" tabindex="0"><table class="data-table"><thead><tr><th>Produto</th><th>Apresentação</th><th>Unidade</th><th>Controle</th><th>Conservação / Referência</th></tr></thead><tbody>' +
-    (productRows || '<tr><td colspan="5">Nenhum produto cadastrado.</td></tr>') + '</tbody></table></div></div>' +
-    '<div class="farmacia-stock-card"><h3>Inventário inicial</h3><div class="farmacia-stock-scroll" role="region" aria-label="Inventário inicial da Farmácia" tabindex="0"><table class="data-table"><thead><tr><th>Produto</th><th>Lote / Kit</th><th>Validade / Local</th><th>Físico</th><th>Disponível</th><th>Bloqueado</th><th>Conferência / Autoria</th></tr></thead><tbody>' +
-    (positionRows || '<tr><td colspan="7">Nenhuma posição inventariada.</td></tr>') + '</tbody></table></div></div>';
+  var products = data.products || [], units = data.storageUnits || [];
+  document.getElementById('farmaciaStockStatus').textContent = '';
+  document.getElementById('farmaciaNoSelection').hidden = true;
   var canManage = data.configured && data.farmaciaAccess === 'manage';
-  document.getElementById('farmaciaStockForms').hidden = !canManage;
   document.getElementById('farmaciaProductFields').disabled = !canManage || FARMACIA_STOCK.saving;
-  document.getElementById('farmaciaInitialFields').disabled = !canManage || !products.length || !data.locationsConfigured || !(data.storageUnits || []).length || FARMACIA_STOCK.saving;
-  renderFarmaciaLocations(data);
-  var productSelect = document.getElementById('farmaciaInitialProduct'), selected = productSelect.value;
-  productSelect.innerHTML = '<option value="">Selecione o produto</option>' + products.map(function(product) {
+  document.getElementById('farmaciaInitialFields').disabled = !canManage || !products.length || !data.locationsConfigured || !units.length || FARMACIA_STOCK.saving;
+  document.getElementById('farmaciaLocationFields').disabled = !data.locationsCanManage || !data.locationsConfigured || FARMACIA_STOCK.saving;
+  document.getElementById('farmaciaProbeFields').disabled = !data.locationsCanManage || !data.locationsConfigured || !units.length || FARMACIA_STOCK.saving;
+  var select = document.getElementById('farmaciaInitialProduct'), selected = select.value;
+  select.innerHTML = '<option value="">Selecione o produto</option>' + products.map(function(product) {
     return '<option value="' + esc(product.id) + '">' + esc(product.name + ' · ' + product.presentation + ' · ' + product.unit) + '</option>';
   }).join('');
-  if (products.some(function(product) { return product.id === selected; })) productSelect.value = selected;
-  if (!document.getElementById('farmaciaInitialCountedOn').value) {
-    document.getElementById('farmaciaInitialCountedOn').value = new Intl.DateTimeFormat('en-CA', { timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
-  }
+  if (products.some(function(product) { return product.id === selected; })) select.value = selected;
+  if (!document.getElementById('farmaciaInitialCountedOn').value) document.getElementById('farmaciaInitialCountedOn').value = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  farmaciaRenderTables(data);
   farmaciaInitialProductChanged();
+  farmaciaSetView();
 }
 
 function farmaciaRangeLabel(value) {
@@ -120,45 +112,19 @@ function farmaciaConservationHtml(storage) {
   return storage ? esc(farmaciaRangeLabel(storage)) + '<br>' + esc(storage.instructions) + '<br><small>' + esc(storage.source + ' · ' + storage.version) + '</small>' : 'Conservação não cadastrada (registro anterior).';
 }
 
-function renderFarmaciaLocations(data) {
-  var units = data.storageUnits || [], canManage = data.locationsCanManage === true && data.locationsConfigured;
-  var labels = { active:'Ativo', maintenance:'Em manutenção', unavailable:'Indisponível' };
-  document.getElementById('farmaciaLocationSetup').hidden = !canManage;
-  document.getElementById('farmaciaLocationFields').disabled = !canManage || FARMACIA_STOCK.saving;
-  document.getElementById('farmaciaProbeSetup').hidden = !canManage || !units.length;
-  document.getElementById('farmaciaProbeFields').disabled = !canManage || !units.length || FARMACIA_STOCK.saving;
-  document.getElementById('farmaciaLocationsResults').innerHTML = '<div class="farmacia-stock-card"><h3>Equipamentos e posições</h3><p class="profile-helper">Catálogo físico compartilhado, sem ocupação de outros estudos. Comparar faixas não comprova temperatura medida nem altera os saldos.</p>' +
-    (!data.locationsConfigured ? '<p>Catálogo de locais ainda não configurado pelo administrador. Novos inventários precisam de equipamento e posição cadastrados.</p>' : !units.length ? '<p>Nenhum equipamento cadastrado.</p>' :
-      units.map(function(unit) {
-        var id = esc(unit.id);
-        return '<details class="farmacia-stock-card"><summary>' + esc(unit.code) + ' · ' + esc(labels[unit.status] || unit.status) + '</summary><p>' +
-          esc(unit.model) + ' · ' + esc(unit.room) + '<br>' + esc(farmaciaRangeLabel(unit)) + '<br>' + esc(unit.source + ' · ' + unit.version) +
-          (unit.sensor ? '<br>Identificador anterior de sensor: ' + esc(unit.sensor) : '') + '<br>Posições: ' + esc(unit.positions.join('; ')) + '</p>' +
-          '<p><strong>Sondas: ' + (unit.probes || []).length + ' cadastrada(s)</strong></p>' +
-          ((unit.probes || []).map(function(probe) { return farmaciaProbeHtml(unit, probe, canManage); }).join('') || '<p>Nenhuma sonda individual cadastrada.</p>') +
-          (canManage ? '<form data-farmacia-unit="' + id + '" onsubmit="return salvarSituacaoLocalFarmaciaApp(event,this)"><fieldset class="farmacia-location-status-fields"' + (FARMACIA_STOCK.saving ? ' disabled' : '') + '><label class="field-label" for="status-' + id + '">Nova situação</label><select class="f-input" name="status" id="status-' + id + '">' + Object.keys(labels).map(function(status) { return '<option value="' + status + '"' + (status === unit.status ? ' selected' : '') + '>' + labels[status] + '</option>'; }).join('') + '</select><label class="field-label" for="reason-' + id + '">Motivo</label><input class="f-input" name="reason" id="reason-' + id + '" maxlength="250" required><button class="btn-new" type="submit">Atualizar situação</button></fieldset></form>' : '') + '</details>';
-      }).join('')) + '</div>';
-  var select = document.getElementById('farmaciaInitialUnit'), selected = select.value;
-  select.innerHTML = '<option value="">Selecione o equipamento</option>' + units.map(function(unit) { return '<option value="' + esc(unit.id) + '">' + esc(unit.code + ' · ' + labels[unit.status]) + '</option>'; }).join('');
-  if (units.some(function(unit) { return unit.id === selected; })) select.value = selected;
-  var probeSelect = document.getElementById('farmaciaProbeUnit'), probeSelected = probeSelect.value;
-  probeSelect.innerHTML = select.innerHTML;
-  if (units.some(function(unit) { return unit.id === probeSelected; })) probeSelect.value = probeSelected;
-  farmaciaInitialUnitChanged();
-}
+
 
 function farmaciaProbeHtml(unit, probe, canManage) {
   var calibration = probe.calibration || {status:'pending',calibratedOn:'',validUntil:'',certificate:'',note:''};
-  var labels = {current:'Em dia',pending:'Pendente / não informada',expired:'Vencida',out_of_service:'Fora de uso'};
-  var prefix = 'calibration-' + probe.id;
-  var html = '<details class="farmacia-stock-card"><summary>Sonda ' + esc(probe.code) + ' · Calibração: ' + esc(labels[probe.calibrationStatus || 'pending']) + '</summary><p>Série: ' + esc(probe.serial) + '<br>Modelo: ' + esc(probe.model) + '<br>Ponto: ' + esc(probe.point || 'Não informado') + '<br>Calibrada em: ' + esc(calibration.calibratedOn ? farmaciaStockDate(calibration.calibratedOn) : 'Não informado') + '<br>Válida até: ' + esc(calibration.validUntil ? farmaciaStockDate(calibration.validUntil) : 'Não informado') + '<br>Certificado: ' + esc(calibration.certificate || 'Não informado') + '<br>' + esc(calibration.note || '') + '</p>';
-  if (canManage) html += '<form data-farmacia-probe="' + esc(probe.id) + '" data-farmacia-unit="' + esc(unit.id) + '" onsubmit="return salvarCalibracaoSondaFarmaciaApp(event,this)"><fieldset class="farmacia-location-status-fields"' + (FARMACIA_STOCK.saving ? ' disabled' : '') + '>' +
-    '<label class="field-label" for="' + esc(prefix) + '-status">Nova situação da calibração</label><select class="f-input" id="' + esc(prefix) + '-status" name="calibrationStatus">' + ['pending','current','out_of_service'].map(function(status) { return '<option value="' + status + '"' + (status === calibration.status ? ' selected' : '') + '>' + (status === 'current' ? 'Calibrada — conforme certificado' : labels[status]) + '</option>'; }).join('') + '</select>' +
-    '<label class="field-label" for="' + esc(prefix) + '-date">Data da calibração</label><input class="f-input" id="' + esc(prefix) + '-date" name="calibratedOn" type="date" value="' + esc(calibration.calibratedOn) + '">' +
-    '<label class="field-label" for="' + esc(prefix) + '-due">Válida até (conforme documento)</label><input class="f-input" id="' + esc(prefix) + '-due" name="validUntil" type="date" value="' + esc(calibration.validUntil) + '">' +
-    '<label class="field-label" for="' + esc(prefix) + '-certificate">Referência do certificado</label><input class="f-input" id="' + esc(prefix) + '-certificate" name="certificate" maxlength="250" value="' + esc(calibration.certificate) + '">' +
-    '<label class="field-label" for="' + esc(prefix) + '-note">Observação</label><textarea class="f-input" id="' + esc(prefix) + '-note" name="note" maxlength="500">' + esc(calibration.note) + '</textarea><button class="btn-new" type="submit">Atualizar calibração</button></fieldset></form>';
-  return html + '</details>';
+  var html = '<div class="form-section"><div class="section-label">' + esc(probe.code) + ' · ' + esc(unit.code) + '</div><dl class="farmacia-detail-grid">' +
+    '<div><dt>Número de série</dt><dd>' + esc(probe.serial) + '</dd></div><div><dt>Fabricante / Modelo</dt><dd>' + esc(probe.model) + '</dd></div><div><dt>Ponto de instalação</dt><dd>' + esc(probe.point || 'Não informado') + '</dd></div><div><dt>Calibração</dt><dd>' + farmaciaCalibrationBadge(probe.calibrationStatus) + '</dd></div><div><dt>Calibrada em</dt><dd>' + esc(calibration.calibratedOn ? farmaciaStockDate(calibration.calibratedOn) : 'Não informada') + '</dd></div><div><dt>Válida até</dt><dd>' + esc(calibration.validUntil ? farmaciaStockDate(calibration.validUntil) : 'Não informada') + '</dd></div><div class="full"><dt>Certificado</dt><dd>' + esc(calibration.certificate || 'Não informado') + '</dd></div><div class="full"><dt>Observação</dt><dd>' + esc(calibration.note || 'Não informada') + '</dd></div></dl></div>';
+  if (canManage) html += '<form data-farmacia-probe="' + esc(probe.id) + '" data-farmacia-unit="' + esc(unit.id) + '" onsubmit="return salvarCalibracaoSondaFarmaciaApp(event,this)"><div class="form-section"><div class="section-label">Atualizar calibração</div><fieldset class="form-grid farmacia-location-status-fields">' +
+    '<div class="field full"><label class="field-label" for="farmaciaCalibrationStatus">Situação</label><select class="f-input" id="farmaciaCalibrationStatus" name="calibrationStatus">' + ['pending','current','out_of_service'].map(function(status) { return '<option value="' + status + '"' + (status === calibration.status ? ' selected' : '') + '>' + ({pending:'Pendente / não informada',current:'Calibrada — conforme certificado',out_of_service:'Fora de uso'})[status] + '</option>'; }).join('') + '</select></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaCalibrationDate">Data da calibração</label><input class="f-input" id="farmaciaCalibrationDate" name="calibratedOn" type="date" value="' + esc(calibration.calibratedOn) + '"></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaCalibrationDue">Válida até (conforme documento)</label><input class="f-input" id="farmaciaCalibrationDue" name="validUntil" type="date" value="' + esc(calibration.validUntil) + '"></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaCalibrationCertificate">Referência do certificado</label><input class="f-input" id="farmaciaCalibrationCertificate" name="certificate" maxlength="250" value="' + esc(calibration.certificate) + '"></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaCalibrationNote">Observação</label><textarea class="f-input" id="farmaciaCalibrationNote" name="note" maxlength="500">' + esc(calibration.note) + '</textarea></div></fieldset></div><div class="farmacia-dialog-actions"><button class="btn-save" type="submit">Atualizar calibração</button></div></form>';
+  return html;
 }
 
 function farmaciaInitialUnitChanged() {
@@ -218,22 +184,33 @@ function farmaciaStockSave(type, data) {
   document.getElementById('farmaciaProbeFields').disabled = true;
   document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = true; });
   document.getElementById('farmaciaStockStatus').textContent = 'Salvando…';
+  var modal = document.getElementById(farmaciaDialogId(type));
+  modal.dataset.extraSaving = '1';
+  appSetStatus(modal.querySelector('.farmacia-dialog-status'), 'Salvando…', '#5f6b7c');
+  farmaciaUpdateSummary();
   var runner = google.script.run.withSuccessHandler(function() {
     if (!farmaciaStockCurrent(epoch, studyId, restricted)) return;
     FARMACIA_STOCK.saving = false;
     FARMACIA_STOCK[tokenKey] = '';
+    FARMACIA_STOCK.restoreFocus = {view:FARMACIA_VIEW,type:type,unitId:data.unitId,probeId:data.probeId};
+    modal.dataset.extraSaving = '0';
+    if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
+    fecharOverlay(modal.id);
     if (type !== 'status' && type !== 'calibration') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
     farmaciaStockRefresh();
   }).withFailureHandler(function(error) {
     if (!farmaciaStockCurrent(epoch, studyId, restricted)) return;
     FARMACIA_STOCK.saving = false;
+    modal.dataset.extraSaving = '0';
+    appSetStatus(modal.querySelector('.farmacia-dialog-status'), appErrorMessage(error) + ' Os dados foram preservados para conferência ou nova tentativa.', '#b3261e');
     var current = FARMACIA_STOCK.data;
     document.getElementById('farmaciaProductFields').disabled = !current.configured || current.farmaciaAccess !== 'manage';
     document.getElementById('farmaciaInitialFields').disabled = !current.configured || current.farmaciaAccess !== 'manage' || !current.locationsConfigured || !(current.storageUnits || []).length || !(current.products || []).length;
     document.getElementById('farmaciaLocationFields').disabled = !current.locationsConfigured || !current.locationsCanManage;
     document.getElementById('farmaciaProbeFields').disabled = !current.locationsConfigured || !current.locationsCanManage || !(current.storageUnits || []).length;
     document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = !current.locationsCanManage; });
+    farmaciaUpdateSummary();
     document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error) + ' O formulário e o identificador da operação foram preservados para conferência ou nova tentativa.';
   });
   var payload = { studyId:studyId, restricted:restricted, requestId:FARMACIA_STOCK[tokenKey], data:data };

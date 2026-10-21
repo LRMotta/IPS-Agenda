@@ -56,7 +56,7 @@ async function fixture(browser, width) {
       return payload=>pending.push({method,payload,success,failure});
     }}); }
     var google={script:{run:runner()}};
-    ${contentAccessibilitySource(['farmaciaAccessLabel', 'applyFarmaciaAccess', 'carregarFarmacia', 'renderFarmaciaStudies', 'selecionarFarmaciaStudy',
+    ${contentAccessibilitySource(['appSyncNavAccessibility', 'toggleNavFarmacia', 'abrirFarmaciaView', 'farmaciaAccessLabel', 'applyFarmaciaAccess', 'carregarFarmacia', 'renderFarmaciaStudies', 'selecionarFarmaciaStudy',
       'renderUserFarmaciaStudies', 'collectUserFarmaciaStudies', 'farmaciaStudySelectionChanged', 'irPara',
       'profileDayOptionsHtml', 'profileMonthOptionsHtml', 'preencherSelectsAniversario', 'validarAniversarioCliente',
       'profileFormationOptionsHtml', 'preencherSelectFormacaoPerfil', 'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}
@@ -110,13 +110,14 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
       assert.equal(await page.evaluate(() => window.CURRENT_PAGE), 'agenda');
       assert.equal(await page.evaluate(() => window.pending.length), 0);
       await page.evaluate(() => { window.CURRENT_ACCESS.farmaciaAccess = 'read'; window.applyFarmaciaAccess(); });
-      assert.equal(await page.locator('#navFarmaciaSection .nav-section').textContent(), 'Farmácia');
+      assert.equal(await page.locator('#navFarmaciaSection').getByRole('button',{name:'Farmácia',exact:true}).count(), 1);
       assert.equal(await page.locator('#navFarmaciaSection #navFarmacia').count(), 1);
       assert.equal(await page.locator('#navFarmaciaSection').evaluate(el => el.style.display), '');
       if (width < 900) await page.locator('#mobileMenuBtn').click();
       await page.locator('#navFarmacia').click();
+      await page.locator('[data-farmacia-view="stock"]').click();
       assert.equal(await page.locator('#page-farmacia').isVisible(), true);
-      assert.match(await page.locator('#page-farmacia').innerText(), /Estoque comum e estoque por estudo/);
+      assert.match(await page.locator('#page-farmacia').innerText(), /Lotes, localização e saldos/);
       await page.evaluate(() => window.pending[0].success({ farmaciaAccess: 'read' }));
       assert.equal(await page.locator('#farmaciaStatus').innerText(), 'Estudos: Consulta. Estoque comum: Sem acesso.');
       await page.getByRole('button', { name: 'Revalidar acesso' }).click();

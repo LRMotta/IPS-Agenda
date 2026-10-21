@@ -6,6 +6,18 @@ integração com Tasy/IRT, dispensação, preparo, prescrição ou movimentaçã
 
 ## Uso
 
+A Farmácia usa submenu lateral próprio: **Estoque**, **Produtos**, **Equipamentos**
+e **Sondas e calibração**. Cada área tem tabela, busca local e ação de cadastro em
+modal, conforme os componentes do app. Trocar de área preserva o estoque selecionado
+e não consulta outros estudos. O seletor de estoque fica no topo; o título Farmácia
+permanece apenas no cabeçalho principal, sem cartão de título repetido.
+
+Formulários usam confirmação de descarte, foco de teclado e bloqueio de fechamento
+enquanto a gravação está em andamento. Em falha, preservam dados e requestId para
+nova tentativa; sucesso fecha o modal e atualiza a tabela. Revogar acesso ou trocar
+o estoque limpa os dados anteriores. Configuração ausente é exibida em um único
+estado vazio; não há contagens de zero apresentadas como se fossem dados conhecidos.
+
 Selecionar um estoque autorizado na Farmácia: um estudo ou **Estoque comum do IPS**.
 O comum atende materiais compartilhados, como equipos e seringas, e tem saldo próprio.
 O mesmo produto exclusivo de um protocolo deve ser cadastrado no estoque do estudo.

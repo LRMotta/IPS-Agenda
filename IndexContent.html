@@ -100,10 +100,16 @@
 
   <div id="navFarmaciaSection" style="display:none">
     <div class="nav-divider"></div>
-    <div class="nav-section">Farmácia</div>
-    <button type="button" class="nav-item" id="navFarmacia" data-page="farmacia" onclick="irPara('farmacia')" style="display:none">
-      <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">local_pharmacy</span></span> Farmácia
+    <button type="button" class="nav-group-toggle" id="navFarmacia" aria-controls="navFarmaciaBody" aria-expanded="false" onclick="toggleNavFarmacia()" style="display:none">
+      <span class="toggle-left"><span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">local_pharmacy</span></span> Farmácia</span>
+      <span class="material-symbols-outlined toggle-arrow" aria-hidden="true">chevron_right</span>
     </button>
+    <div class="nav-group-body" id="navFarmaciaBody" inert>
+      <button type="button" class="nav-item" data-farmacia-view="stock" onclick="abrirFarmaciaView('stock')"><span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></span> Estoque</button>
+      <button type="button" class="nav-item" data-farmacia-view="products" onclick="abrirFarmaciaView('products')"><span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">medication</span></span> Produtos</button>
+      <button type="button" class="nav-item" data-farmacia-view="equipment" onclick="abrirFarmaciaView('equipment')"><span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">kitchen</span></span> Equipamentos</button>
+      <button type="button" class="nav-item" data-farmacia-view="probes" onclick="abrirFarmaciaView('probes')"><span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">device_thermostat</span></span> Sondas e calibração</button>
+    </div>
   </div>
 
   <div class="nav-divider"></div>
