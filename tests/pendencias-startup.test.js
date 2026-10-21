@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { runFiles, readProjectFile } = require('./helpers/load-app-script');
+const { runFiles, runHtmlScript, readProjectFile } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 
 function serverFixture() {
@@ -212,6 +212,7 @@ test('resposta de aniversarios anterior a edicao de perfil nao substitui os dado
 
 test('Agenda aberta durante bootstrap busca aniversarios assim que o perfil e validado', () => {
   const f = clientFixture();
+  f.context.CodexAccessRules = runHtmlScript('SharedAccessRules.html').CodexAccessRules;
   const core = readProjectFile('IndexCoreScripts.html');
   vm.runInContext(core.slice(core.indexOf('function applyAppBootstrapData('), core.indexOf('function appApplyTeamBirthdays_(')), f.context);
   f.context.CURRENT_ACCESS = { ok: false };

@@ -1,4 +1,16 @@
 
+    <div class="page" id="page-farmacia">
+      <div class="toolbar-card"><h2 style="font-size:16px">Farmácia da pesquisa clínica</h2></div>
+      <div class="table-card">
+        <div style="padding:24px">
+          <h3 style="font-size:15px;margin-bottom:12px">Área em preparação</h3>
+          <p style="line-height:1.6;margin-bottom:12px">Esta primeira etapa habilita o controle de acesso. Estoque, dispensações e dados de participantes ainda não estão disponíveis.</p>
+          <p style="line-height:1.6;margin-bottom:12px">O acesso por estudo e as permissões para informações de estudos cegos serão definidos antes da inclusão de dados.</p>
+          <p id="farmaciaStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-bottom:16px"></p>
+          <button type="button" class="btn-new" onclick="carregarFarmacia()">Revalidar acesso</button>
+        </div>
+      </div>
+    </div>
   </div><!-- fim .content -->
 </div><!-- fim .main -->
 
@@ -1198,6 +1210,16 @@
           <option value="Sim">Sim</option>
           <option value="Não">Não</option>
         </select>
+      </div>
+      <div style="margin-top:14px">
+        <label class="field-label" for="userAdminFarmaciaAccess">Acesso à Farmácia</label>
+        <select id="userAdminFarmaciaAccess" class="f-input f-select" aria-describedby="userAdminFarmaciaHelp">
+          <option value="none">Sem acesso</option>
+          <option value="read">Consulta</option>
+          <option value="operate">Operação</option>
+          <option value="manage">Responsável pela Farmácia</option>
+        </select>
+        <p class="profile-helper" id="userAdminFarmaciaHelp">Independente do perfil geral. Nesta etapa, permite apenas acessar a área inicial, sem dados por estudo.</p>
       </div>
       <div class="status-msg" id="statusUsuarioAdmin" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
