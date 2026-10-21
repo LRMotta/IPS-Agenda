@@ -124,6 +124,76 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
   } finally {await browser.close();}
 });
 
+test('catálogo aberto a usuários sem concessão de Farmácia usa título e ícone da seção sem texto extra', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) for (const role of ['user','readonly']) {
+      const {page,errors}=await fixture(browser,width);
+      await page.addScriptTag({content:readProjectFile('SharedAccessRules.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
+      await page.addScriptTag({content:`
+        var CURRENT_ACCESS={ok:true,email:'teste@example.invalid',role:'${role}',farmaciaAccess:'none',farmaciaCommonAccess:'none'};
+        function snack() {}
+        ${contentAccessibilitySource(['applyFarmaciaAccess','carregarFarmacia'])}
+        applyFarmaciaAccess(); carregarFarmacia();
+      `});
+      assert.equal(await page.locator('#navFarmaciaSection').evaluate(el=>el.style.display),'');
+      assert.equal(await page.locator('[data-farmacia-view="stock"]').evaluate(el=>el.hidden),true);
+      assert.equal(await page.locator('[data-farmacia-view="products"]').evaluate(el=>el.hidden),true);
+      await page.evaluate(()=>window.pending.at(-1).success({farmaciaAccess:'none',farmaciaCommonAccess:'none',studies:[]}));
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
+      await page.evaluate(canManage=>window.pending.at(-1).success({locationsConfigured:true,locationsCanManage:canManage,storageUnits:[]}),role==='user');
+      assert.equal(await page.locator('#topTitle').innerText(),'Equipamentos');
+      assert.equal(await page.locator('#topIcon').textContent(),'kitchen');
+      assert.equal(await page.locator('#farmaciaContext').isVisible(),false);
+      assert.equal(await page.getByText('Equipamentos e sondas compartilhados entre todos os projetos.',{exact:true}).count(),0);
+      assert.equal(await page.locator('#farmaciaPrimaryAction').isVisible(),role==='user');
+      assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),role==='user');
+      await chooseView(page,'probes');
+      assert.equal(await page.locator('#topTitle').innerText(),'Sondas e calibração');
+      assert.equal(await page.locator('#topIcon').textContent(),'device_thermostat');
+      assert.equal(await page.locator('#farmaciaViewTitle').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaStockSelector').isVisible(),false);
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-catalogo-aberto-'+role+'-'+width+'.png')});
+      assert.equal(await page.evaluate(()=>window.pending.some(item=>item.method==='getFarmaciaEstoque'||item.method==='getFarmaciaEstudo')),false);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test('bootstrap atrasado preserva formulário e acompanhamento do salvamento do catálogo', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await page.addScriptTag({content:readProjectFile('SharedAccessRules.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
+    await page.addScriptTag({content:`
+      var CURRENT_ACCESS={ok:true,email:'teste@example.invalid',role:'user',farmaciaAccess:'none',farmaciaCommonAccess:'none'};
+      function snack() {}
+      ${contentAccessibilitySource(['applyFarmaciaAccess','carregarFarmacia'])}
+      applyFarmaciaAccess(); carregarFarmacia();
+    `});
+    await chooseView(page,'equipment');
+    await page.evaluate(()=>window.pending[1].success({locationsConfigured:true,locationsCanManage:true,storageUnits:[]}));
+    await openForm(page,'equipment');
+    await page.locator('#farmaciaLocationCode').fill('PRESERVAR');
+    await page.evaluate(()=>window.farmaciaStockSave('location',{code:'PRESERVAR'}));
+    const epoch=await page.evaluate(()=>window.FARMACIA_STOCK.epoch);
+    await page.evaluate(()=>window.pending[0].success({farmaciaAccess:'none',farmaciaCommonAccess:'none',studies:[]}));
+    assert.equal(await page.locator('#farmaciaLocationCode').inputValue(),'PRESERVAR');
+    assert.equal(await page.locator('#farmaciaModal-location').isVisible(),true);
+    assert.equal(await page.evaluate(()=>window.FARMACIA_STOCK.epoch),epoch);
+    assert.equal(await page.evaluate(()=>window.FARMACIA_STOCK.saving),true);
+    assert.equal(await page.evaluate(()=>window.pending[2].method),'cadastrarLocalFarmacia');
+    await page.evaluate(()=>window.pending[2].success({ok:true}));
+    assert.equal(await page.evaluate(()=>window.FARMACIA_STOCK.saving),false);
+    assert.equal(await page.locator('#farmaciaModal-location').evaluate(el=>el.classList.contains('open')),false);
+    assert.equal(await page.locator('#farmaciaModal-location').getAttribute('inert'),'');
+    assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
+    assert.deepEqual(errors,[]);
+  } finally {await browser.close();}
+});
+
 test('catálogo sem seleção descarta respostas após sair da área ou revalidar acesso e permite retomar leitura', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try {

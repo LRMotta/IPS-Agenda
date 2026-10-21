@@ -1,8 +1,7 @@
 
     <div class="page" id="page-farmacia">
-      <div class="farmacia-context">
+      <div id="farmaciaContext" class="farmacia-context">
         <div id="farmaciaStockSelector" class="farmacia-context-select"><label class="field-label" for="farmaciaStudy">Estoque</label><select id="farmaciaStudy" class="f-input f-select" onchange="selecionarFarmaciaStudy()" disabled><option value="">Nenhum estoque autorizado</option></select></div>
-        <p id="farmaciaCatalogContext" hidden>Equipamentos e sondas compartilhados entre todos os projetos.</p>
         <label id="farmaciaRestrictedLabel" hidden class="farmacia-restricted"><input type="checkbox" id="farmaciaStockRestricted" onchange="farmaciaStockChangeClass()"> Informações restritas</label>
         <button class="icon-btn" type="button" onclick="carregarFarmacia()" aria-label="Revalidar acesso" title="Revalidar acesso"><span class="material-symbols-outlined" aria-hidden="true">verified_user</span></button>
         <p id="farmaciaStudyDetail" class="sr-only" role="status" aria-live="polite"></p><p id="farmaciaStatus" class="sr-only" role="status" aria-live="polite"></p>

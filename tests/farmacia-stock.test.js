@@ -24,6 +24,7 @@ function fixture(realLocations = false) {
   });
   server.getCodexSpreadsheet_ = () => app;
   server.codexGetActiveUserEmail_ = () => 'farm@example.invalid';
+  server.codexWriteAuditLog_ = () => {};
   server.farmaciaToday_ = () => state.today;
   if (!realLocations) server.farmaciaReadLocations_ = () => ({ configured:true, units:[{id:'UNIT-1',code:'Armário 1',positions:['Prateleira 1'],min:null,max:null,status:'active'}] });
   const product = (overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'product-request-0001', ...overrides,
@@ -36,6 +37,7 @@ function fixture(realLocations = false) {
 const LOCATIONS = 'farmacia-locations-0000000001';
 function locationFixture() {
   const f = fixture(true);
+  f.users.rows[1][2]='user';
   f.state.config = JSON.stringify({...JSON.parse(f.state.config),locations:LOCATIONS});
   f.stores[LOCATIONS] = new FakeSpreadsheet({});
   f.users.rows[0][10] = 'Acesso ao estoque comum da Farmácia'; f.users.rows[1][10] = 'manage';
@@ -89,16 +91,29 @@ test('primeiro equipamento cria aba e cabeçalhos no app, preserva outras abas e
   assert.deepEqual(f.state.opened,[]);
 });
 
-test('somente responsável comum administra locais; estudo/manage e Admin não substituem concessão', () => {
-  const f=locationFixture();
-  for(const role of ['admin','user','readonly']) for(const level of ['none','read','operate']) {
-    f.users.rows[1][2]=role; f.users.rows[1][10]=level; f.state.opened=[];
-    assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/permissão/);
-    assert.deepEqual(f.state.opened,[]);
+test('admin e user cadastram catálogo sem concessão de estoque; readonly não grava e lock revalida perfil', () => {
+  for(const role of ['admin','user']) {
+    const allowed=locationFixture();
+    allowed.users.rows[1][2]=role; allowed.users.rows[1][8]='none'; allowed.users.rows[1][9]='[]'; allowed.users.rows[1][10]='none';
+    assert.equal(allowed.server.getFarmaciaCatalogo().locationsCanManage,true);
+    assert.equal(allowed.server.cadastrarLocalFarmacia(allowed.location()).ok,true);
+    assert.throws(()=>allowed.server.getFarmaciaEstoque('P1',false),/permissão/);
   }
-  f.users.rows[1][10]='manage';
-  f.lock.onAcquire=()=>{f.users.rows[1][10]='none';};
-  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/permissão/);
+  const f=locationFixture();
+  f.users.rows[1][2]='readonly';
+  assert.equal(f.server.getFarmaciaCatalogo().locationsCanManage,false);
+  f.state.opened=[];
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/somente leitura/);
+  assert.deepEqual(f.state.opened,[]);
+  f.users.rows[1][2]='user';
+  f.lock.onAcquire=()=>{f.users.rows[1][2]='readonly';};
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/somente leitura/);
+  assert.equal(f.catalogSheet(),null);
+  f.users.rows[1][2]='user';
+  f.lock.onAcquire=()=>{f.users.rows[1][3]='Não';};
+  f.state.opened=[];
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/inativo/);
+  assert.deepEqual(f.state.opened,[]);
   assert.equal(f.catalogSheet(),null);
   assert.throws(()=>f.server.codexNormalizeFarmaciaStudies_([{studyId:'@IPS_LOCATIONS',restricted:false}]),/inválida/);
 });
@@ -106,11 +121,11 @@ test('somente responsável comum administra locais; estudo/manage e Admin não s
 test('catálogo no app mantém ACL e recusa schema alheio sem sobrescrever dados', () => {
   const f=locationFixture();
   f.state.config='';
-  f.users.rows[1][10]='read';
-  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/permissão/);
+  f.users.rows[1][2]='readonly';
+  assert.throws(()=>f.server.cadastrarLocalFarmacia(f.location()),/somente leitura/);
   const name=f.server.FARMACIA_LOCATIONS_SHEET_;
   assert.equal(f.app.getSheetByName(name),null);
-  f.users.rows[1][10]='manage';
+  f.users.rows[1][2]='user';
   const sheet=f.app.insertSheet(name);
   sheet.getRange(1,1,1,2).setValues([['Dados antigos','Preservar']]);
   const before=JSON.stringify(sheet.rows), writes=sheet.writes;
@@ -122,7 +137,7 @@ test('catálogo no app mantém ACL e recusa schema alheio sem sobrescrever dados
 test('catálogo pode ser consultado sem projeto ou estoque autorizado e não expõe produtos/saldos', () => {
   const f=locationFixture();
   f.server.cadastrarLocalFarmacia(f.location());
-  f.users.rows[1][9]='[]'; f.users.rows[1][8]='none'; f.users.rows[1][10]='read';
+  f.users.rows[1][9]='[]'; f.users.rows[1][8]='none'; f.users.rows[1][10]='none'; f.users.rows[1][2]='readonly';
   f.state.opened=[];
   const result=f.server.getFarmaciaCatalogo();
   assert.equal(result.storageUnits.length,1); assert.equal(result.locationsCanManage,false);
@@ -130,8 +145,8 @@ test('catálogo pode ser consultado sem projeto ou estoque autorizado e não exp
   assert.deepEqual(f.state.opened,[LOCATIONS]);
   f.users.rows[1][10]='none'; f.users.rows[1][8]='read';
   assert.equal(f.server.getFarmaciaCatalogo().storageUnits.length,1);
-  f.users.rows[1][8]='none'; f.state.opened=[];
-  assert.throws(()=>f.server.getFarmaciaCatalogo(),/permissão/);
+  f.users.rows[1][3]='Não'; f.state.opened=[];
+  assert.throws(()=>f.server.getFarmaciaCatalogo(),/inativo/);
   assert.deepEqual(f.state.opened,[]);
 });
 
@@ -221,7 +236,7 @@ test('catálogo não revela ocupação restrita e registros corrompidos impedem 
   f.users.rows[1][9]='[{"studyId":"P1","restricted":false}]'; f.users.rows[1][10]='none';
   const standard=f.server.getFarmaciaEstoque('P1',false);
   assert.doesNotMatch(JSON.stringify(standard),/SEGREDO RESTRITO/);
-  assert.equal(standard.locationsCanManage,false); assert.equal(standard.positions.length,0);
+  assert.equal(standard.locationsCanManage,true); assert.equal(standard.positions.length,0);
   f.catalogSheet().rows[1][5]='{}';
   assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/catálogo de locais inconsistentes/);
   f.users.rows[1][10]='manage';
@@ -243,8 +258,8 @@ test('sondas individuais têm série/número interno exclusivos, equipamento vá
   assert.throws(()=>f.server.cadastrarSondaFarmacia({...second,requestId:'probe-duplicate-0002',data:{...second.data,code:'S03',serial:'serie-01'}}),/já cadastrado/);
   assert.throws(()=>f.server.cadastrarSondaFarmacia({...first,requestId:'probe-unknown-unit-0001',data:{...first.data,unitId:'OUTRO'}}),/não encontrado/);
   const writes=f.catalogSheet().writes;
-  f.users.rows[1][10]='read';
-  assert.throws(()=>f.server.cadastrarSondaFarmacia(probe('S03','SERIE-03')),/permissão/);
+  f.users.rows[1][2]='readonly';
+  assert.throws(()=>f.server.cadastrarSondaFarmacia(probe('S03','SERIE-03')),/somente leitura/);
   assert.equal(f.catalogSheet().writes,writes);
 });
 

@@ -294,6 +294,10 @@ function applyFarmaciaAccess() {
   if (nav) nav.style.display = visible ? '' : 'none';
   var section = document.getElementById('navFarmaciaSection');
   if (section) section.style.display = visible ? '' : 'none';
+  var stockVisible = ['read','operate','manage'].indexOf(CURRENT_ACCESS.farmaciaAccess) !== -1 ||
+    ['read','operate','manage'].indexOf(CURRENT_ACCESS.farmaciaCommonAccess) !== -1;
+  document.querySelectorAll('[data-farmacia-view="stock"], [data-farmacia-view="products"]').forEach(function(button) { button.hidden = !stockVisible; });
+  if (!stockVisible && typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW !== 'equipment' && FARMACIA_VIEW !== 'probes') FARMACIA_VIEW = 'equipment';
   FARMACIA_REQUEST_ID++;
   FARMACIA_STUDY_REQUEST_ID++;
   var status = document.getElementById('farmaciaStatus');
@@ -316,6 +320,10 @@ function carregarFarmacia() {
     if (!isCurrent()) return;
     CURRENT_ACCESS.farmaciaAccess = result.farmaciaAccess;
     CURRENT_ACCESS.farmaciaCommonAccess = result.farmaciaCommonAccess || 'none';
+    document.querySelectorAll('[data-farmacia-view="stock"], [data-farmacia-view="products"]').forEach(function(button) {
+      button.hidden = ['read','operate','manage'].indexOf(result.farmaciaAccess) === -1 && ['read','operate','manage'].indexOf(result.farmaciaCommonAccess) === -1;
+    });
+    if (result.farmaciaAccess === 'none' && (result.farmaciaCommonAccess || 'none') === 'none' && typeof FARMACIA_VIEW !== 'undefined' && !farmaciaIsCatalogView()) FARMACIA_VIEW = 'equipment';
     if (!CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
       applyFarmaciaAccess();
       return;
@@ -323,7 +331,9 @@ function carregarFarmacia() {
     status.textContent = 'Estudos: ' + farmaciaAccessLabel(result.farmaciaAccess) + '. Estoque comum: ' + farmaciaAccessLabel(result.farmaciaCommonAccess) + '.';
     var stocks = (result.studies || []).slice();
     if (['read', 'operate', 'manage'].indexOf(result.farmaciaCommonAccess) !== -1) stocks.unshift({ id:'@IPS_COMMON', nome:'Estoque comum do IPS' });
-    renderFarmaciaStudies(stocks);
+    // O reset já ocorreu ao iniciar a revalidação. Não apagar um cadastro do
+    // catálogo aberto enquanto o bootstrap estava em voo.
+    renderFarmaciaStudies(stocks, true);
     if (typeof farmaciaIsCatalogView === 'function' && farmaciaIsCatalogView()) carregarFarmaciaCatalogo(false);
   }).withFailureHandler(function(error) {
     if (!isCurrent()) return;
@@ -334,8 +344,8 @@ function carregarFarmacia() {
   }).getFarmaciaBootstrap();
 }
 
-function renderFarmaciaStudies(studies) {
-  if (typeof farmaciaEstoqueReset === 'function') farmaciaEstoqueReset();
+function renderFarmaciaStudies(studies, preserveCatalog) {
+  if (!preserveCatalog && typeof farmaciaEstoqueReset === 'function') farmaciaEstoqueReset();
   var select = document.getElementById('farmaciaStudy');
   var detail = document.getElementById('farmaciaStudyDetail');
   if (detail) detail.textContent = '';
