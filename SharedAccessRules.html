@@ -17,6 +17,10 @@
       ? accessOrRole.role
       : accessOrRole);
     var moduleKey = normalize(moduleName);
+    if (moduleKey === 'farmacia') {
+      return !!(accessOrRole && accessOrRole.ok) &&
+        ['read', 'operate', 'manage'].indexOf(normalize(accessOrRole.farmaciaAccess)) !== -1;
+    }
     return !ADMIN_ONLY_MODULES[moduleKey] || role === 'admin';
   }
 
