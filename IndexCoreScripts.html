@@ -17,6 +17,7 @@ var TITULOS = {
   dashboard:     { label:'Dashboard Gerencial',  icon:'bar_chart' },
   requisicao:    { label:'Requisição de Exames', icon:'assignment' },
   estoque:       { label:'Estoque',              icon:'inventory_2' },
+  farmacia:      { label:'Farmácia',             icon:'local_pharmacy' },
   usuarios:      { label:'Usuários',             icon:'admin_panel_settings' },
   'audit-log':   { label:'Trilha de Auditoria',  icon:'manage_search' },
   diagnostico:   { label:'Diagnostico de Implantacao', icon:'monitor_heart' },
@@ -251,6 +252,7 @@ var ESPS = [];
 function applyAppBootstrapData(data) {
   window.APP_BOOTSTRAP_DATA = data || {};
   CURRENT_ACCESS = window.APP_BOOTSTRAP_DATA.access || CURRENT_ACCESS || {};
+  applyFarmaciaAccess();
   var email = CURRENT_ACCESS.email || 'usuário';
   renderAppVersion(window.APP_BOOTSTRAP_DATA.appVersion);
   APP_LOADED_VERSION = window.APP_BOOTSTRAP_DATA.appVersion && window.APP_BOOTSTRAP_DATA.appVersion.version
@@ -276,6 +278,46 @@ function applyAppBootstrapData(data) {
   handleUserOAuthStatus(window.APP_BOOTSTRAP_DATA.auth);
   // A navegação para Agenda pode ocorrer antes de o perfil chegar.
   if (getCurrentPage() === 'agenda') carregarAniversariosAgenda_();
+}
+
+var FARMACIA_REQUEST_ID = 0;
+
+function farmaciaAccessLabel(level) {
+  return ({ none: 'Sem acesso', read: 'Consulta', operate: 'Operação', manage: 'Responsável pela Farmácia' })[level] || 'Sem acesso';
+}
+
+function applyFarmaciaAccess() {
+  var visible = CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia');
+  var nav = document.getElementById('navFarmacia');
+  if (nav) nav.style.display = visible ? '' : 'none';
+  FARMACIA_REQUEST_ID++;
+  var status = document.getElementById('farmaciaStatus');
+  if (status) status.textContent = '';
+  if (!visible && getCurrentPage() === 'farmacia') irPara('agenda');
+}
+
+function carregarFarmacia() {
+  var status = document.getElementById('farmaciaStatus');
+  var requestId = ++FARMACIA_REQUEST_ID;
+  var email = CURRENT_ACCESS.email;
+  status.textContent = 'Validando acesso à Farmácia…';
+  function isCurrent() {
+    return requestId === FARMACIA_REQUEST_ID && email === CURRENT_ACCESS.email && getCurrentPage() === 'farmacia';
+  }
+  google.script.run.withSuccessHandler(function(result) {
+    if (!isCurrent()) return;
+    CURRENT_ACCESS.farmaciaAccess = result.farmaciaAccess;
+    if (!CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
+      applyFarmaciaAccess();
+      return;
+    }
+    status.textContent = 'Seu acesso: ' + farmaciaAccessLabel(result.farmaciaAccess) + '.';
+  }).withFailureHandler(function(error) {
+    if (!isCurrent()) return;
+    CURRENT_ACCESS.farmaciaAccess = 'none';
+    applyFarmaciaAccess();
+    snack(appErrorMessage(error));
+  }).getFarmaciaBootstrap();
 }
 
 function appApplyTeamBirthdays_(birthdays) {
@@ -971,6 +1013,11 @@ window.addEventListener('resize', function() {
 document.addEventListener('DOMContentLoaded', function() { appSyncNavAccessibility(); setMobileNav(false); });
 
 function irPara(pagina, options) {
+  if (pagina === 'farmacia' && !CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
+    snack('Seu usuário não tem acesso à Farmácia.');
+    if (options && options.initial) pagina = 'agenda';
+    else return;
+  }
   if (pagina === 'solicitantes') return abrirCadastroSolicitantesEmUsuarios();
   options = options || {};
   if (!options.initial) APP_USER_NAVIGATED = true;
@@ -1043,6 +1090,7 @@ function irPara(pagina, options) {
   if (pagina === 'configuracoes') carregarConfigApp();
   if (pagina === 'pendencias') carregarPendencias(false);
   if (pagina === 'usuarios') carregarUsersAdmin();
+  if (pagina === 'farmacia') carregarFarmacia();
   if (pagina === 'audit-log') carregarAuditLog();
   if (pagina === 'diagnostico') carregarDiagnosticoImplantacao(false);
   if (pagina === 'dashboard') {
@@ -1747,7 +1795,7 @@ function renderUsersAdmin(forceNow) {
   var qEl = document.getElementById('searchUsersAdmin');
   var q = norm(qEl ? qEl.value : '');
   var filtered = rows.filter(function(u) {
-    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.formacao, u.registroProfissional, u.podeSolicitarExames, u.role, u.ativo].join(' ')).indexOf(q) >= 0;
+    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.formacao, u.registroProfissional, u.podeSolicitarExames, u.role, u.ativo, farmaciaAccessLabel(u.farmaciaAccess)].join(' ')).indexOf(q) >= 0;
   });
   var total = rows.length;
   var ativos = rows.filter(function(u) { return u.ativo === 'Sim'; }).length;
@@ -1775,7 +1823,7 @@ function renderUsersAdmin(forceNow) {
       '<td>' + esc(u.formacao || '—') + '<br><small style="color:#5f6b7c">' + esc(u.registroProfissional || '') + '</small></td>' +
       '<td><span class="chip ' + (u.birthdayLabel ? 'chip-purple' : '') + '">' + esc(u.birthdayLabel || '—') + '</span></td>' +
       '<td><span class="chip ' + (u.podeSolicitarExames === 'Sim' ? 'chip-green' : 'chip-red') + '">' + esc(u.podeSolicitarExames || 'Não') + '</span></td>' +
-      '<td><span class="chip ' + roleCls + '">' + esc(u.role) + '</span></td>' +
+      '<td><span class="chip ' + roleCls + '">' + esc(u.role) + '</span><br><small>Farmácia: ' + esc(farmaciaAccessLabel(u.farmaciaAccess)) + '</small></td>' +
       '<td><span class="chip ' + (ativo ? 'chip-green' : 'chip-red') + '">' + (ativo ? 'Ativo' : 'Inativo') + '</span></td>' +
       '<td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" onclick="abrirFormUsuarioAdmin(' + Number(u.rowIndex || 0) + ')"><span class="material-symbols-outlined">edit</span></button>' +
@@ -1794,6 +1842,7 @@ function abrirFormUsuarioAdmin(rowIndex) {
   preencherSelectsAniversario('userAdminDia', 'userAdminMes', u ? u.birthdayDay : '', u ? u.birthdayMonth : '');
   document.getElementById('userAdminEmail').value = u ? u.email : '';
   document.getElementById('userAdminRole').value = u ? u.role : 'user';
+  document.getElementById('userAdminFarmaciaAccess').value = u ? (u.farmaciaAccess || 'none') : 'none';
   document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';
   preencherSelectFormacaoPerfil('userAdminFormacao', u ? u.formacao : '');
   document.getElementById('userAdminRegistro').value = u ? (u.registroProfissional || '') : '';
@@ -1831,6 +1880,10 @@ function salvarUsuarioAdminApp() {
   google.script.run
     .withSuccessHandler(function(result) {
       invalidarReferenciasUsuarios();
+      if (result && result.email === CURRENT_ACCESS.email) {
+        CURRENT_ACCESS.farmaciaAccess = result.farmaciaAccess || 'none';
+        applyFarmaciaAccess();
+      }
       btn.disabled = false;
       btn.innerHTML = old;
       fecharOverlay('modalUsuarioAdmin');
@@ -1851,6 +1904,7 @@ function salvarUsuarioAdminApp() {
       birthdayDay: document.getElementById('userAdminDia').value,
       birthdayMonth: document.getElementById('userAdminMes').value,
       role: document.getElementById('userAdminRole').value,
+      farmaciaAccess: document.getElementById('userAdminFarmaciaAccess').value,
       ativo: document.getElementById('userAdminAtivo').value,
       formacao: document.getElementById('userAdminFormacao').value,
       registroProfissional: document.getElementById('userAdminRegistro').value,

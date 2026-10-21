@@ -54,6 +54,7 @@ test('entrada Pendencias paralela ao bootstrap e aniversarios sob demanda na Age
           window.google = { script: { run: runner() } };
         });
         const core = readProjectFile('IndexCoreScripts.html');
+        await page.addScriptTag({ content: readProjectFile('SharedAccessRules.html').replace(/<\/?script>/g, '') });
         await page.addScriptTag({ content: core.slice(core.indexOf('function applyAppBootstrapData('), core.indexOf('function renderAppVersion(')) });
         await page.addScriptTag({ content: core.slice(core.indexOf('function startCodexAppOnce('), core.indexOf('function navegarParaRotaWebApp(')) });
         await page.addScriptTag({ content: core.slice(core.indexOf('function irPara('), core.indexOf('function transporteLoadingHtml(')) });
