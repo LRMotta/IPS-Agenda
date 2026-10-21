@@ -2,6 +2,17 @@
 var FARMACIA_LOCATIONS_SHEET_ = 'Farmacia_Locais_v1';
 var FARMACIA_LOCATIONS_HEADERS_ = ['ID', 'Tipo', 'Request_ID', 'Registrado_em_JSON', 'Autor_JSON', 'Dados_JSON'];
 
+function getFarmaciaCatalogo() {
+  var access = codexAssertCanRead_();
+  if (codexNormalizeFarmaciaAccess_(access.farmaciaAccess) === 'none' &&
+      codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess) === 'none') {
+    throw new Error('Seu usuário não tem permissão para consultar o catálogo da Farmácia.');
+  }
+  var catalog = farmaciaReadLocations_();
+  return { locationsConfigured: catalog.configured, locationsCanManage: access.farmaciaCommonAccess === 'manage',
+    storageUnits: catalog.units };
+}
+
 function farmaciaTemperatureRange_(min, max) {
   if (min === null && max === null) return { min: null, max: null };
   if (typeof min !== 'number' || typeof max !== 'number' || !Number.isFinite(min) || !Number.isFinite(max) ||
@@ -77,7 +88,10 @@ function farmaciaProbeDuplicate_(units, data) {
 }
 
 function farmaciaReadLocations_() {
-  var ss = farmaciaStorage_('@IPS_LOCATIONS', false);
+  // Metadados físicos não contêm informações de estudos. Sem arquivo dedicado,
+  // usa a planilha do app; a aba e os cabeçalhos só são criados ao salvar sob lock.
+  // Configuração inválida continua falhando antes do fallback.
+  var ss = farmaciaStorage_('@IPS_LOCATIONS', false) || getCodexSpreadsheet_();
   var sheet = ss && ss.getSheetByName(FARMACIA_LOCATIONS_SHEET_);
   var result = { configured: !!ss, ss: ss, sheet: sheet, units: [], records: [] };
   if (!sheet || !sheet.getLastRow()) return result;

@@ -6,10 +6,14 @@ integração com Tasy/IRT, dispensação, preparo, prescrição ou movimentaçã
 
 ## Uso
 
-A Farmácia usa submenu lateral próprio: **Estoque**, **Produtos**, **Equipamentos**
+A Farmácia mantém o título de seção **FARMÁCIA** acima do grupo expansível e usa
+submenu lateral próprio: **Estoque**, **Produtos**, **Equipamentos**
 e **Sondas e calibração**. Cada área tem tabela, busca local e ação de cadastro em
 modal, conforme os componentes do app. Trocar de área preserva o estoque selecionado
-e não consulta outros estudos. O seletor de estoque fica no topo; o título Farmácia
+e não consulta outros estudos. O seletor de estoque aparece somente em Estoque e
+Produtos. Equipamentos e Sondas são um catálogo compartilhado, consultado pela RPC
+`getFarmaciaCatalogo()` sem ID de projeto, classe restrita ou seleção de estoque.
+O título Farmácia
 permanece apenas no cabeçalho principal, sem cartão de título repetido.
 
 Formulários usam confirmação de descarte, foco de teclado e bloqueio de fechamento
@@ -57,7 +61,9 @@ e formulários anteriores e descarta respostas obsoletas.
 
 ## Armazenamento e configuração futura
 
-As novas RPCs não usam a planilha principal como fallback. A propriedade de script
+Produtos e inventário não usam a planilha principal como fallback. O catálogo de
+equipamentos e sondas usa a planilha principal quando não há arquivo dedicado.
+A propriedade de script
 `FARMACIA_STORAGE_V1` associa IDs estáveis de Projetos a arquivos dedicados:
 
 ```json
@@ -83,7 +89,7 @@ Pode-se configurar somente o comum usando `studies: []`. Arquivos contendo
 abas preenchidas de outros módulos são recusados. Não apontar para a planilha
 histórica da Farmácia, ainda pendente de saneamento e validação.
 
-Sem configuração, a consulta retorna `configured: false` e listas vazias, sem
+Sem configuração de estoque, a consulta retorna `configured: false` e listas vazias, sem
 criar nada. A interface informa a pendência e não libera formulários de escrita.
 Não foi criada configuração nem alterada permissão ou planilha real nesta entrega.
 
@@ -106,12 +112,24 @@ principal, evitando expor nomes/lotes restritos a quem só administra o app.
 
 ## Equipamentos, posições e conservação
 
-`locations` é opcional no mapa, mas necessário para novos inventários. Aponta a um
-arquivo dedicado com a aba `Farmacia_Locais_v1`; leituras não criam abas ou registros.
-O catálogo só é lido após autorizar o estoque solicitado. Seus metadados físicos são
+`locations` é opcional no mapa. Quando informado, continua apontando para um arquivo
+dedicado. Quando ausente ou vazio (inclusive sem `FARMACIA_STORAGE_V1`), o catálogo
+usa a planilha principal do app. Configuração inválida não aciona esse fallback.
+A aba `Farmacia_Locais_v1` e seus cabeçalhos são criados automaticamente no primeiro
+cadastro válido, após autorização e validação sob lock; leituras não criam abas ou
+registros. Não é necessário fornecer uma relação prévia de equipamentos.
+As colunas são `ID`, `Tipo`, `Request_ID`, `Registrado_em_JSON`, `Autor_JSON` e
+`Dados_JSON`; os campos do equipamento, posições, sondas e calibrações ficam no
+payload JSON, preservando o histórico e evitando interpretação de texto como fórmula.
+Abas existentes com estrutura divergente são recusadas, sem sobrescrever dados.
+O catálogo pode ser lido por usuários com acesso à Farmácia, sem escolher ou possuir
+concessão a um projeto específico. Alterações continuam exigindo `manage` do comum.
+Seus metadados físicos são
 compartilhados com quem tem acesso à Farmácia, sem ocupação, estudos, produtos,
 tratamentos ou saldos de outros escopos. O Drive deve permitir leitura do catálogo
-a esses usuários e edição apenas aos responsáveis pelo estoque comum (`manage`).
+a esses usuários e edição aos responsáveis pelo estoque comum (`manage`). Quando
+o catálogo usa a planilha principal, seus editores também têm acesso direto a essa
+aba; as RPCs mantêm a concessão `manage` comum para cadastrar e alterar o catálogo.
 Admin ou `manage` em um estudo não substituem a concessão de administração comum.
 `@IPS_LOCATIONS` é reservado internamente e não pode ser cadastrado como estudo.
 

@@ -324,6 +324,7 @@ function carregarFarmacia() {
     var stocks = (result.studies || []).slice();
     if (['read', 'operate', 'manage'].indexOf(result.farmaciaCommonAccess) !== -1) stocks.unshift({ id:'@IPS_COMMON', nome:'Estoque comum do IPS' });
     renderFarmaciaStudies(stocks);
+    if (typeof farmaciaIsCatalogView === 'function' && farmaciaIsCatalogView()) carregarFarmaciaCatalogo(false);
   }).withFailureHandler(function(error) {
     if (!isCurrent()) return;
     CURRENT_ACCESS.farmaciaAccess = 'none';
@@ -1045,6 +1046,7 @@ function toggleNavFarmacia() {
 }
 
 function abrirFarmaciaView(view) {
+  if (typeof FARMACIA_STOCK !== 'undefined' && FARMACIA_STOCK.saving) return;
   if (getCurrentPage() !== 'farmacia') {
     if (typeof FARMACIA_VIEW !== 'undefined') FARMACIA_VIEW = view;
     irPara('farmacia');

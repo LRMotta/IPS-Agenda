@@ -10,6 +10,21 @@ var FARMACIA_VIEWS = {
 function farmaciaSetView(view) {
   if (view && Object.prototype.hasOwnProperty.call(FARMACIA_VIEWS, view)) FARMACIA_VIEW = view;
   var config = FARMACIA_VIEWS[FARMACIA_VIEW];
+  var catalogView = farmaciaIsCatalogView();
+  if (view && catalogView) {
+    // Uma seleção anterior não pode fechar/resetar o catálogo ao responder depois.
+    FARMACIA_STUDY_REQUEST_ID++;
+    FARMACIA_STOCK.readId++;
+  }
+  if (view && !catalogView) {
+    FARMACIA_CATALOG.readId++;
+    FARMACIA_CATALOG.loading = false;
+  }
+  document.getElementById('farmaciaStockSelector').hidden = catalogView;
+  document.getElementById('farmaciaCatalogContext').hidden = !catalogView;
+  document.getElementById('farmaciaRestrictedLabel').hidden = catalogView || !FARMACIA_STOCK.restrictedAllowed;
+  document.getElementById('farmaciaNoSelection').hidden = catalogView || !!FARMACIA_STOCK.studyId;
+  document.getElementById('farmaciaStockPanel').hidden = !catalogView && !FARMACIA_STOCK.studyId;
   document.getElementById('farmaciaViewTitle').textContent = config.title;
   document.getElementById('farmaciaViewDescription').textContent = config.description;
   document.getElementById('farmaciaPrimaryLabel').textContent = config.action;
@@ -32,10 +47,13 @@ function farmaciaSetView(view) {
   if (typeof appSyncNavAccessibility === 'function') appSyncNavAccessibility();
   farmaciaUpdateSummary();
   farmaciaApplySearch();
+  if (view && catalogView) carregarFarmaciaCatalogo(false);
+  else if (view && FARMACIA_STOCK.data) renderFarmaciaEstoque(FARMACIA_STOCK.data);
+  else if (view && document.getElementById('farmaciaStudy').value) selecionarFarmaciaStudy();
 }
 
 function farmaciaUpdateSummary() {
-  var data = FARMACIA_STOCK.data, config = FARMACIA_VIEWS[FARMACIA_VIEW];
+  var data = farmaciaCurrentData(), config = FARMACIA_VIEWS[FARMACIA_VIEW];
   var equipmentView = FARMACIA_VIEW === 'equipment' || FARMACIA_VIEW === 'probes';
   var known = !!data && (equipmentView ? data.locationsConfigured : data.configured);
   var products = data && data.products || [], positions = data && data.positions || [], units = data && data.storageUnits || [];
@@ -151,7 +169,7 @@ function farmaciaOpenPrimary() {
 }
 
 function farmaciaOpenUnit(id) {
-  var data = FARMACIA_STOCK.data;
+  var data = farmaciaCurrentData();
   var unit = data && (data.storageUnits || []).find(function(item) { return item.id === id; });
   if (!unit) return;
   var statuses = {active:'Ativo',maintenance:'Em manutenção',unavailable:'Indisponível'};
@@ -163,7 +181,7 @@ function farmaciaOpenUnit(id) {
 }
 
 function farmaciaOpenProbe(unitId, probeId) {
-  var data = FARMACIA_STOCK.data;
+  var data = farmaciaCurrentData();
   var unit = data && (data.storageUnits || []).find(function(item) { return item.id === unitId; });
   var probe = unit && (unit.probes || []).find(function(item) { return item.id === probeId; });
   if (!probe) return;
