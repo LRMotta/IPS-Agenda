@@ -98,6 +98,14 @@
     </button>
   </div>
 
+  <div id="navFarmaciaSection" style="display:none">
+    <div class="nav-divider"></div>
+    <div class="nav-section">Farmácia</div>
+    <button type="button" class="nav-item" id="navFarmacia" data-page="farmacia" onclick="irPara('farmacia')" style="display:none">
+      <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">local_pharmacy</span></span> Farmácia
+    </button>
+  </div>
+
   <div class="nav-divider"></div>
   <div class="nav-section">Indicadores</div>
   <button type="button" class="nav-item" id="navDashboard" data-page="dashboard" onclick="abrirModuloDashboard()">
@@ -106,9 +114,6 @@
 
   <div class="nav-divider"></div>
   <div class="nav-section">Sistema</div>
-  <button type="button" class="nav-item" id="navFarmacia" data-page="farmacia" onclick="irPara('farmacia')" style="display:none">
-    <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">local_pharmacy</span></span> Farmácia
-  </button>
   <button type="button" class="nav-item admin-only" id="navUsersAdmin" data-page="usuarios" onclick="irPara('usuarios')" style="display:none">
     <span class="nav-icon"><span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span></span> Usuários
   </button>

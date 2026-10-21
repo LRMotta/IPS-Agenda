@@ -1,8 +1,10 @@
-# Farmácia: primeira etapa de acesso
+# Farmácia: acesso geral, estudos e informações restritas
 
-Implementação local da base de permissões, independente de `admin`, `user` e
-`readonly`. Não importa a planilha da Farmácia nem habilita estoque, dispensação,
-prescrição, dados por estudo ou informações unblinded.
+Base de permissões independente de `admin`, `user` e `readonly`, com concessões
+explícitas por estudo e autorização adicional para informações restritas.
+O cadastro de produtos e inventário inicial está descrito em
+[FARMACIA_ESTOQUE.md](FARMACIA_ESTOQUE.md). Não há importação automática da planilha
+existente, dispensação, prescrição ou conteúdo de alocação de tratamento.
 
 ## Administração
 
@@ -10,17 +12,33 @@ Em Usuários, editar **Acesso à Farmácia**:
 
 | Valor persistido | Rótulo | Finalidade futura |
 | --- | --- | --- |
-| `none` | Sem acesso | Não abre a área |
+| `none` | Sem acesso | Não abre estoques de estudos; acesso comum é independente |
 | `read` | Consulta | Consultar dados autorizados |
 | `operate` | Operação | Também registrar recebimentos, dispensações e devoluções |
 | `manage` | Responsável pela Farmácia | Também liberar estoque, ajustar e reconciliar |
 
-Nesta etapa os três níveis autorizados abrem somente a página inicial, sem dados.
+Os três níveis autorizados abrem o índice com os estudos concedidos ao usuário.
+O nível geral aplica-se apenas nesses estudos. `none` bloqueia toda a Farmácia,
+preservando a seleção para evitar perda acidental. Nenhum estudo é concedido por padrão.
 Ser Admin não concede permissão farmacêutica automaticamente. Um usuário readonly
 pode receber uma permissão de Farmácia independente, sem ganhar escrita nos outros
 módulos. Apenas Admin altera essa concessão; perfil próprio e carga rápida não a
 alteram. A auditoria registra autor, instante e valores anteriores/novos pelo fluxo
 existente de administração de usuários.
+
+## Concessão por estudo
+
+Em **Usuários > Editar > Estudos autorizados na Farmácia**, selecionar cada estudo
+e, somente quando houver definição da equipe responsável, marcar **Informações
+restritas**. Selecionar um estudo não marca essa opção automaticamente. Nem Admin
+nem Responsável pela Farmácia têm acesso implícito a outros estudos ou a conteúdo
+restrito. A opção não executa quebra de cegamento e não substitui a definição de
+delegação e procedimentos do estudo pela equipe.
+
+O usuário autorizado pode selecionar um estudo e consultar seu próprio nível,
+a existência da autorização adicional e o estoque da classe escolhida, quando o
+armazenamento dedicado estiver configurado. Não são retornados dados de
+participantes, braço ou alocação de tratamento.
 
 ## Compatibilidade e armazenamento
 
@@ -34,25 +52,57 @@ existente de administração de usuários.
 - Clientes legados que omitam o campo preservam a permissão atual; contas novas
   sem concessão ficam sem acesso. Nenhum lote migra permissões existentes.
 - O salvamento revalida Admin sob document lock e registra a mudança na auditoria.
+- Coluna opcional J de `Users`, com cabeçalho `Estudos da Farmácia (JSON)`. Contém
+  somente IDs e flags de autorização: `[{"studyId":"ID_ESTAVEL","restricted":false}]`.
+  Não contém informações clínicas. Até 200 estudos e 40.000 caracteres por célula.
+- JSON inválido, IDs vazios/coringas/duplicados, flags que não sejam booleanos ou
+  cabeçalho alheio negam a lista inteira. A escrita explícita rejeita payload inválido.
+- Campo omitido preserva J byte a byte. `[]` revoga os vínculos. Perfil próprio e
+  carga rápida não podem alterar J. Cabeçalhos E:J são validados antes das escritas.
+- O formulário envia o valor original de J. Se outra edição o alterou enquanto o
+  Admin preenchia ou aguardava o lock, o servidor exige reabrir o cadastro.
+- Vínculos com estudos removidos são apresentados como indisponíveis, preservados
+  e revogáveis. Não concedem dados nem podem receber elevação de autorização.
+- O catálogo lê apenas Projetos A:C, usa ID exato e exclui IDs duplicados. Não faz
+  associação por nome, título de aba, código, posição da linha ou aproximação.
 
 ## Fronteira do servidor
 
 `getFarmaciaBootstrap` revalida o usuário ativo e sua permissão em cada consulta.
-Retorna apenas nível, etapa e lista vazia de estudos. Não usa permissões do cliente
-nem cache como autoridade. O menu e a rota também verificam a apresentação do
-acesso. Respostas obsoletas são ignoradas ao reabrir, navegar ou trocar acesso.
+Retorna apenas nível e identidade/rótulos dos estudos autorizados. O catálogo
+completo é retornado somente ao Admin pelo bootstrap administrativo. Não usa
+permissões do cliente nem cache como autoridade. Menu e rota também verificam
+o acesso. Respostas obsoletas são ignoradas ao reabrir, navegar, trocar estudo,
+revalidar o índice ou alterar acesso.
 
 `codexAssertFarmaciaAccess_` é privado e distingue `read`, `operate` e `manage`.
-Qualquer solicitação com estudo é recusada nesta etapa, inclusive ID vazio ou `*`.
-Não há atribuição automática de estudos, inferência de vínculo ou acesso unblinded.
+Com ID de estudo, exige concessão explícita e existência do ID no catálogo atual.
+Com terceiro argumento `true`, também exige `restricted: true` nesse vínculo.
+`getFarmaciaEstudo(studyId)` usa a guarda e retorna somente o contexto mínimo
+da própria autorização. ID ausente, vazio, coringa ou não concedido é recusado.
 
-Antes de criar RPCs com dados, implementar vínculo por ID estável de estudo e
-política de cegamento no servidor e no armazenamento. Toda consulta de dados deve
-exigir esse vínculo; toda mutação deve revalidar nível e vínculo sob lock. A guarda
-sem estudo serve somente à área inicial, não autoriza consulta global de dados.
+Antes do uso real, definir a política de cegamento e configurar os arquivos e suas
+permissões conforme FARMACIA_ESTOQUE.md. As concessões ficam na ACL `Users`, como os perfis atuais; esconder
+informações na interface não protege conteúdo que possa ser aberto diretamente
+em uma planilha compartilhada. Não colocar conteúdo restrito nesse armazenamento
+sem resolver suas permissões de acesso direto.
+
+Toda consulta de dados futura deve exigir ID de estudo; conteúdo restrito deve
+usar também a autorização adicional. Mutações revalidam nível e vínculo sob lock.
+A guarda sem estudo serve somente ao índice, não autoriza consulta global de dados.
 
 ## Validação local
 
 `npm.cmd run verify` e `npm.cmd run test:ui`. Os testes de Farmácia usam Users e RPCs
 simulados, rede bloqueada e dados fictícios. Não substituem validação de um futuro
 módulo farmacêutico com a equipe responsável. Publicação não faz parte desta etapa.
+
+## Estoque comum
+
+O estoque comum tem concessão independente em Users K, **Acesso ao estoque comum
+da Farmácia**, com `none`, `read`, `operate` e `manage`. Não concede estudos nem
+informações restritas. Um usuário com somente esta concessão pode abrir Farmácia.
+Admin configura o nível no formulário de usuário; campos omitidos são preservados,
+cabeçalho conflitante bloqueia gravação e alteração concorrente exige reabrir o formulário.
+O armazenamento e as permissões de arquivo são separados dos estudos; consulte
+[FARMACIA_ESTOQUE.md](FARMACIA_ESTOQUE.md). Alterações locais, sem migração real.

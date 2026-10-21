@@ -26,7 +26,7 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
       readProjectFile('IndexContentAfterStock.html') + '</body></html>');
     await page.addScriptTag({ content: `
       var USERS_ADMIN_ROWS = [{rowIndex:2,email:'maria@example.invalid',name:'Maria',role:'user',ativo:'Sim',podeSolicitarExames:'Sim'}];
-      var USER_PROFILE_FORMACOES = [], PROFILE_MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+      var USER_ADMIN_FARMACIA_CATALOG = [], USER_PROFILE_FORMACOES = [], PROFILE_MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
       function esc(value) { return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
       function abrirOverlay(id) { document.getElementById(id).removeAttribute('inert'); document.getElementById(id).classList.add('open'); }
       function fecharOverlay(id) { document.getElementById(id).classList.remove('open'); document.getElementById(id).setAttribute('inert',''); }
@@ -40,7 +40,7 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
       var google = {script:{run:rpc}};
       ${contentAccessibilitySource(['profileDayOptionsHtml', 'profileMonthOptionsHtml', 'preencherSelectsAniversario',
         'validarAniversarioCliente', 'profileFormationOptionsHtml', 'preencherSelectFormacaoPerfil',
-        'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}
+        'renderUserFarmaciaStudies', 'collectUserFarmaciaStudies', 'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}
     ` });
     assert.equal(page.url(), 'about:blank');
     assert.equal(await page.title(), 'IPS — identidade do usuário');
@@ -48,6 +48,8 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
     await page.locator('#edit').click();
     assert.equal(await page.locator('#userAdminOriginalEmail').inputValue(), 'maria@example.invalid');
     assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'none');
+    assert.equal(await page.locator('#userAdminFarmaciaCommonAccess').inputValue(), 'none');
+    await page.locator('#userAdminFarmaciaCommonAccess').selectOption('read');
     await page.locator('#userAdminFarmaciaAccess').selectOption('manage');
     await page.locator('#userAdminEmail').fill('novo@example.invalid');
     await page.locator('#btnSalvarUsuarioAdmin').click();
@@ -56,6 +58,8 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
     assert.equal(payload.email, 'novo@example.invalid');
     assert.equal(payload.rowIndex, '2');
     assert.equal(payload.farmaciaAccess, 'manage');
+    assert.equal(payload.farmaciaCommonAccess, 'read');
+    assert.equal(payload.farmaciaCommonOriginal, '');
     assert.ok((await page.locator('#statusUsuarioAdmin').innerText()).includes('linha mudou'));
     assert.equal(await page.locator('#btnSalvarUsuarioAdmin').isEnabled(), true);
     assert.equal(await page.locator('#modalUsuarioAdmin').evaluate(el => el.classList.contains('open')), true);
@@ -68,6 +72,7 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
     assert.equal(await page.locator('#userAdminRowIndex').inputValue(), '');
     assert.equal(await page.locator('#userAdminEmail').inputValue(), '');
     assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'none');
+    assert.equal(await page.locator('#userAdminFarmaciaCommonAccess').inputValue(), 'none');
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

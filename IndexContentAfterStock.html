@@ -3,13 +3,95 @@
       <div class="toolbar-card"><h2 style="font-size:16px">Farmácia da pesquisa clínica</h2></div>
       <div class="table-card">
         <div style="padding:24px">
-          <h3 style="font-size:15px;margin-bottom:12px">Área em preparação</h3>
-          <p style="line-height:1.6;margin-bottom:12px">Esta primeira etapa habilita o controle de acesso. Estoque, dispensações e dados de participantes ainda não estão disponíveis.</p>
-          <p style="line-height:1.6;margin-bottom:12px">O acesso por estudo e as permissões para informações de estudos cegos serão definidos antes da inclusão de dados.</p>
+          <h3 style="font-size:15px;margin-bottom:12px">Estoque comum e estoque por estudo</h3>
+          <p style="line-height:1.6;margin-bottom:12px">Cadastros e inventário inicial da Farmácia. O estoque comum reúne materiais compartilhados do IPS; materiais exclusivos ficam no estudo. Os saldos são separados.</p>
+          <label class="field-label" for="farmaciaStudy">Estoque</label>
+          <select id="farmaciaStudy" class="f-input f-select" onchange="selecionarFarmaciaStudy()" disabled><option value="">Nenhum estudo autorizado</option></select>
+          <p id="farmaciaStudyDetail" role="status" aria-live="polite" style="line-height:1.6;margin:12px 0"></p>
           <p id="farmaciaStatus" role="status" aria-live="polite" aria-atomic="true" style="margin-bottom:16px"></p>
           <button type="button" class="btn-new" onclick="carregarFarmacia()">Revalidar acesso</button>
         </div>
       </div>
+      <section id="farmaciaStockPanel" class="farmacia-stock-panel" hidden aria-label="Estoque da Farmácia">
+        <div class="toolbar-card farmacia-stock-toolbar">
+          <label id="farmaciaRestrictedLabel" hidden><input type="checkbox" id="farmaciaStockRestricted" onchange="farmaciaStockChangeClass()"> Informações restritas</label>
+          <button class="btn-new" type="button" onclick="farmaciaStockRefresh()">Atualizar estoque</button>
+        </div>
+        <p id="farmaciaStockStatus" role="status" aria-live="polite" class="farmacia-stock-status"></p>
+        <div id="farmaciaStockResults"></div>
+        <div id="farmaciaLocationsResults"></div>
+        <details id="farmaciaLocationSetup" class="farmacia-stock-card" hidden><summary>Cadastrar equipamento e posições</summary>
+          <p class="profile-helper">Catálogo físico compartilhado. Não informe nomes de estudos, produtos ou tratamentos. Use o código interno/patrimonial, não apenas o modelo. Nenhuma faixa é preenchida automaticamente.</p>
+          <form id="farmaciaLocationForm" onsubmit="return salvarLocalFarmaciaApp(event)"><fieldset id="farmaciaLocationFields" disabled>
+            <label class="field-label" for="farmaciaLocationCode">Código interno/patrimonial</label><input id="farmaciaLocationCode" class="f-input" maxlength="60" placeholder="Ex.: IPS AF-01" required>
+            <label class="field-label" for="farmaciaLocationType">Tipo</label><select id="farmaciaLocationType" class="f-input f-select"><option value="cabinet">Armário</option><option value="refrigerator">Refrigerador</option><option value="freezer">Freezer</option><option value="other">Outro</option></select>
+            <label class="field-label" for="farmaciaLocationModel">Fabricante e modelo (opcional)</label><input id="farmaciaLocationModel" class="f-input" maxlength="160" list="farmaciaLocationModels"><datalist id="farmaciaLocationModels"><option value="phcbi MPR-721R-PA"><option value="phcbi MPR-722R-PA"><option value="phcbi SF-L6111W-PA"></datalist>
+            <label class="field-label" for="farmaciaLocationRoom">Sala</label><input id="farmaciaLocationRoom" class="f-input" maxlength="120" required>
+            <label class="field-label" for="farmaciaLocationMin">Faixa operacional mínima (°C, opcional)</label><input id="farmaciaLocationMin" class="f-input" type="number" min="-200" max="100" step="0.1">
+            <label class="field-label" for="farmaciaLocationMax">Faixa operacional máxima (°C, opcional)</label><input id="farmaciaLocationMax" class="f-input" type="number" min="-200" max="100" step="0.1">
+            <label class="field-label" for="farmaciaLocationSource">Referência da faixa operacional ou da pendência</label><input id="farmaciaLocationSource" class="f-input" maxlength="250" placeholder="Documento de qualificação ou registro da pendência" required>
+            <label class="field-label" for="farmaciaLocationVersion">Versão/data da referência</label><input id="farmaciaLocationVersion" class="f-input" maxlength="100" required>
+            <p class="profile-helper">As sondas são cadastradas individualmente após salvar o equipamento.</p>
+            <label class="field-label" for="farmaciaLocationStatus">Situação</label><select id="farmaciaLocationStatus" class="f-input f-select"><option value="active">Ativo</option><option value="maintenance">Em manutenção</option><option value="unavailable">Indisponível</option></select>
+            <label class="field-label" for="farmaciaLocationPositions">Posições — uma por linha</label><textarea id="farmaciaLocationPositions" class="f-input" maxlength="8100" placeholder="Prateleira 1 → Caixa A&#10;Prateleira 2 → Caixa B" required></textarea>
+            <button class="btn-new" type="submit">Cadastrar equipamento</button>
+          </fieldset></form>
+        </details>
+        <details id="farmaciaProbeSetup" class="farmacia-stock-card" hidden><summary>Cadastrar sonda de temperatura</summary>
+          <p class="profile-helper">Registre cada uma das duas sondas do equipamento separadamente. Número interno e número de série são exclusivos no catálogo. A calibração depende do certificado informado; não há importação de leituras.</p>
+          <form id="farmaciaProbeForm" onsubmit="return salvarSondaFarmaciaApp(event)"><fieldset id="farmaciaProbeFields" disabled>
+            <label class="field-label" for="farmaciaProbeUnit">Equipamento</label><select id="farmaciaProbeUnit" class="f-input f-select" required><option value="">Selecione</option></select>
+            <label class="field-label" for="farmaciaProbeCode">Número interno da sonda</label><input id="farmaciaProbeCode" class="f-input" maxlength="80" required>
+            <label class="field-label" for="farmaciaProbeSerial">Número de série</label><input id="farmaciaProbeSerial" class="f-input" maxlength="120" required>
+            <label class="field-label" for="farmaciaProbeModel">Fabricante e modelo</label><input id="farmaciaProbeModel" class="f-input" maxlength="160" required>
+            <label class="field-label" for="farmaciaProbePoint">Ponto de instalação (opcional)</label><input id="farmaciaProbePoint" class="f-input" maxlength="120" placeholder="Ex.: ponto superior / ponto inferior">
+            <label class="field-label" for="farmaciaProbeCalibrationStatus">Calibração</label><select id="farmaciaProbeCalibrationStatus" class="f-input f-select"><option value="pending">Pendente / não informada</option><option value="current">Calibrada — conforme certificado</option><option value="out_of_service">Fora de uso</option></select>
+            <label class="field-label" for="farmaciaProbeCalibratedOn">Data da calibração</label><input id="farmaciaProbeCalibratedOn" class="f-input" type="date">
+            <label class="field-label" for="farmaciaProbeValidUntil">Válida até (conforme documento)</label><input id="farmaciaProbeValidUntil" class="f-input" type="date">
+            <label class="field-label" for="farmaciaProbeCertificate">Referência do certificado</label><input id="farmaciaProbeCertificate" class="f-input" maxlength="250">
+            <label class="field-label" for="farmaciaProbeCalibrationNote">Observação da calibração (opcional)</label><textarea id="farmaciaProbeCalibrationNote" class="f-input" maxlength="500"></textarea>
+            <button class="btn-new" type="submit">Cadastrar sonda</button>
+          </fieldset></form>
+        </details>
+        <div id="farmaciaStockForms" class="farmacia-stock-forms" hidden>
+          <details class="farmacia-stock-card"><summary>Cadastrar produto</summary>
+            <form id="farmaciaProductForm" onsubmit="return salvarProdutoFarmaciaApp(event)">
+              <fieldset id="farmaciaProductFields" disabled>
+                <label class="field-label" for="farmaciaProductName">Nome ou rótulo autorizado do produto</label><input id="farmaciaProductName" class="f-input" maxlength="160" required>
+                <label class="field-label" for="farmaciaProductPresentation">Apresentação</label><input id="farmaciaProductPresentation" class="f-input" maxlength="160" placeholder="Ex.: frasco com 30 comprimidos" required>
+                <label class="field-label" for="farmaciaProductControl">Controle</label><select id="farmaciaProductControl" class="f-input f-select" onchange="farmaciaProductControlChanged()"><option value="quantity">Por quantidade</option><option value="kit">Kit individualizado</option></select>
+                <label class="field-label" for="farmaciaProductUnit">Unidade de controle</label><select id="farmaciaProductUnit" class="f-input f-select"><option>unidade</option><option>comprimido</option><option>cápsula</option><option>frasco</option><option>ampola</option><option>seringa</option><option>kit</option><option>mL</option><option>g</option></select>
+                <label class="field-label" for="farmaciaProductMin">Conservação mínima (°C, opcional)</label><input id="farmaciaProductMin" class="f-input" type="number" min="-200" max="100" step="0.1">
+                <label class="field-label" for="farmaciaProductMax">Conservação máxima (°C, opcional)</label><input id="farmaciaProductMax" class="f-input" type="number" min="-200" max="100" step="0.1">
+                <label class="field-label" for="farmaciaProductInstructions">Instruções de conservação</label><textarea id="farmaciaProductInstructions" class="f-input" maxlength="500" placeholder="Proteção da luz, não congelar ou instrução documental. Obrigatório se a faixa não estiver definida."></textarea>
+                <label class="field-label" for="farmaciaProductSource">Referência documental</label><input id="farmaciaProductSource" class="f-input" maxlength="250" placeholder="Rótulo, manual de farmácia ou documento do patrocinador" required>
+                <label class="field-label" for="farmaciaProductVersion">Versão/data da referência</label><input id="farmaciaProductVersion" class="f-input" maxlength="100" required>
+                <button type="submit" class="btn-new">Cadastrar produto</button>
+              </fieldset>
+            </form>
+          </details>
+          <details class="farmacia-stock-card"><summary>Registrar inventário inicial</summary>
+            <p class="profile-helper">Uma conferência inicial por produto, lote e local. Este formulário não registra recebimentos posteriores nem ajusta saldos já conferidos.</p>
+            <form id="farmaciaInitialForm" onsubmit="return salvarInventarioFarmaciaApp(event)">
+              <fieldset id="farmaciaInitialFields" disabled>
+                <label class="field-label" for="farmaciaInitialProduct">Produto</label><select id="farmaciaInitialProduct" class="f-input f-select" required onchange="farmaciaInitialProductChanged()"><option value="">Selecione</option></select>
+                <label class="field-label" for="farmaciaInitialLot">Lote</label><input id="farmaciaInitialLot" class="f-input" maxlength="100" required>
+                <label class="field-label" for="farmaciaInitialExpiry">Validade</label><input id="farmaciaInitialExpiry" class="f-input" type="date" required>
+                <label class="field-label" for="farmaciaInitialUnit">Equipamento</label><select id="farmaciaInitialUnit" class="f-input f-select" required onchange="farmaciaInitialUnitChanged()"><option value="">Selecione</option></select>
+                <label class="field-label" for="farmaciaInitialLocation">Posição</label><select id="farmaciaInitialLocation" class="f-input f-select" required onchange="farmaciaInitialStorageCheck()"><option value="">Selecione o equipamento</option></select>
+                <p id="farmaciaInitialStorageStatus" class="profile-helper" role="status" aria-live="polite"></p>
+                <div id="farmaciaKitField" hidden><label class="field-label" for="farmaciaInitialKit">Número do kit</label><input id="farmaciaInitialKit" class="f-input" maxlength="100"></div>
+                <label class="field-label" for="farmaciaInitialPhysical">Quantidade física</label><input id="farmaciaInitialPhysical" class="f-input" type="number" min="0.001" max="1000000000" step="0.001" required>
+                <label class="field-label" for="farmaciaInitialBlocked">Quantidade bloqueada</label><input id="farmaciaInitialBlocked" class="f-input" type="number" min="0" max="1000000000" step="0.001" value="0" required>
+                <label class="field-label" for="farmaciaInitialCountedOn">Data da conferência física</label><input id="farmaciaInitialCountedOn" class="f-input" type="date" required>
+                <label class="field-label" for="farmaciaInitialNote">Observação (opcional)</label><textarea id="farmaciaInitialNote" class="f-input" maxlength="500"></textarea>
+                <label class="farmacia-confirm"><input id="farmaciaInitialConfirmed" type="checkbox" required> Conferi fisicamente este saldo e confirmo que é o inventário inicial desta posição.</label>
+                <button type="submit" class="btn-new">Registrar inventário inicial</button>
+              </fieldset>
+            </form>
+          </details>
+        </div>
+      </section>
     </div>
   </div><!-- fim .content -->
 </div><!-- fim .main -->
@@ -1219,7 +1301,22 @@
           <option value="operate">Operação</option>
           <option value="manage">Responsável pela Farmácia</option>
         </select>
-        <p class="profile-helper" id="userAdminFarmaciaHelp">Independente do perfil geral. Nesta etapa, permite apenas acessar a área inicial, sem dados por estudo.</p>
+        <p class="profile-helper" id="userAdminFarmaciaHelp">O nível vale apenas nos estudos selecionados abaixo. Sem acesso bloqueia todos os estudos, preservando a seleção.</p>
+      </div>
+      <div class="form-section" style="margin-top:14px">
+        <div class="section-label">Estudos autorizados na Farmácia</div>
+        <p class="profile-helper">Somente Admin altera estas concessões. Informações restritas exigem autorização adicional em cada estudo. Isso não executa quebra de cegamento.</p>
+        <input type="hidden" id="userAdminFarmaciaStudiesOriginal">
+        <div id="userAdminFarmaciaStudies"></div>
+      </div>
+      <div style="margin-top:14px">
+        <label class="field-label" for="userAdminFarmaciaCommonAccess">Estoque comum da Farmácia</label>
+        <select id="userAdminFarmaciaCommonAccess" class="f-input f-select" aria-describedby="userAdminFarmaciaCommonHelp">
+          <option value="none">Sem acesso</option><option value="read">Consulta</option>
+          <option value="operate">Operação</option><option value="manage">Responsável pelo estoque comum</option>
+        </select>
+        <input type="hidden" id="userAdminFarmaciaCommonOriginal">
+        <p class="profile-helper" id="userAdminFarmaciaCommonHelp">Concessão independente dos estudos. Não libera medicamentos ou informações restritas dos protocolos. Nesta etapa, Operação permite consulta; cadastros e inventário inicial exigem Responsável.</p>
       </div>
       <div class="status-msg" id="statusUsuarioAdmin" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
