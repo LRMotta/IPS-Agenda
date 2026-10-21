@@ -195,7 +195,7 @@ function appConfirmNavigationIfDirty(scopeId, onConfirm, onCancel) {
 function appEditableDirtyScope(target) {
   if (!target || !target.closest) return '';
   if (!target.matches('input, textarea, select, [contenteditable="true"]')) return '';
-  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante, #modalPrestador, #modalLabCentral, #modalFeriado, #modalCourier');
+  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante, #modalPrestador, #modalLabCentral, #modalFeriado, #modalCourier, .farmacia-dialog');
   if (scope && scope.id === 'modalParticipante' && scope.dataset.editing !== '1') return '';
   return scope ? scope.id : '';
 }
@@ -1012,6 +1012,8 @@ function toggleNavCadastros() {
   var willOpen = !body.classList.contains('open');
   document.getElementById('navEstoqueToggle').classList.remove('open');
   document.getElementById('navEstoqueBody').classList.remove('open');
+  document.getElementById('navFarmacia').classList.remove('open');
+  document.getElementById('navFarmaciaBody').classList.remove('open');
   toggle.classList.toggle('open', willOpen);
   body.classList.toggle('open', willOpen);
   appSyncNavAccessibility();
@@ -1023,9 +1025,31 @@ function toggleNavEstoque() {
   var willOpen = !body.classList.contains('open');
   document.getElementById('navCadastrosToggle').classList.remove('open');
   document.getElementById('navCadastrosBody').classList.remove('open');
+  document.getElementById('navFarmacia').classList.remove('open');
+  document.getElementById('navFarmaciaBody').classList.remove('open');
   toggle.classList.toggle('open', willOpen);
   body.classList.toggle('open', willOpen);
   appSyncNavAccessibility();
+}
+
+function toggleNavFarmacia() {
+  var toggle = document.getElementById('navFarmacia');
+  var body = document.getElementById('navFarmaciaBody');
+  var open = !body.classList.contains('open');
+  ['navCadastrosToggle', 'navEstoqueToggle', 'navCadastrosBody', 'navEstoqueBody'].forEach(function(id) {
+    document.getElementById(id).classList.remove('open');
+  });
+  toggle.classList.toggle('open', open);
+  body.classList.toggle('open', open);
+  appSyncNavAccessibility();
+}
+
+function abrirFarmaciaView(view) {
+  if (getCurrentPage() !== 'farmacia') {
+    if (typeof FARMACIA_VIEW !== 'undefined') FARMACIA_VIEW = view;
+    irPara('farmacia');
+  } else if (typeof farmaciaSetView === 'function') farmaciaSetView(view);
+  closeMobileNav();
 }
 
 function setMobileNav(open) {
@@ -1171,7 +1195,10 @@ function irPara(pagina, options) {
   if (pagina === 'configuracoes') carregarConfigApp();
   if (pagina === 'pendencias') carregarPendencias(false);
   if (pagina === 'usuarios') carregarUsersAdmin();
-  if (pagina === 'farmacia') carregarFarmacia();
+  if (pagina === 'farmacia') {
+    if (typeof farmaciaSetView === 'function') farmaciaSetView();
+    carregarFarmacia();
+  }
   if (pagina === 'audit-log') carregarAuditLog();
   if (pagina === 'diagnostico') carregarDiagnosticoImplantacao(false);
   if (pagina === 'dashboard') {
