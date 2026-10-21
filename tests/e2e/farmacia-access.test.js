@@ -91,7 +91,7 @@ test('acesso somente comum mantém menu, oferece somente estoque comum e reflete
     assert.equal(await page.evaluate(() => window.CURRENT_ACCESS.farmaciaCommonAccess),'manage');
     assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display),'');
     await page.evaluate(() => {window.CURRENT_ACCESS.farmaciaCommonAccess='none'; window.applyFarmaciaAccess();});
-    assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display),'none');
+    assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display),'');
     assert.deepEqual(errors,[]);
   } finally {await browser.close();}
 });
@@ -101,6 +101,7 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
   try {
     for (const width of [1280, 390]) {
       const { page, errors } = await fixture(browser, width);
+      await page.evaluate(() => { window.CURRENT_ACCESS.ok=false; window.applyFarmaciaAccess(); });
       assert.equal(page.url(), 'about:blank');
       assert.equal(await page.title(), 'IPS | UCS — Farmácia local');
       assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(), 0);
@@ -109,7 +110,7 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
       await page.evaluate(() => window.irPara('farmacia', { initial: true }));
       assert.equal(await page.evaluate(() => window.CURRENT_PAGE), 'agenda');
       assert.equal(await page.evaluate(() => window.pending.length), 0);
-      await page.evaluate(() => { window.CURRENT_ACCESS.farmaciaAccess = 'read'; window.applyFarmaciaAccess(); });
+      await page.evaluate(() => { window.CURRENT_ACCESS.ok=true; window.CURRENT_ACCESS.farmaciaAccess = 'read'; window.applyFarmaciaAccess(); });
       assert.equal(await page.locator('#navFarmaciaSection').getByRole('button',{name:'Farmácia',exact:true}).count(), 1);
       assert.equal(await page.locator('#navFarmaciaSection #navFarmacia').count(), 1);
       assert.equal(await page.locator('#navFarmaciaSection').evaluate(el => el.style.display), '');
@@ -132,9 +133,9 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
       await page.getByRole('button', { name: 'Revalidar acesso' }).click();
       await page.evaluate(() => window.pending[3].failure({ message: 'Sem permissão' }));
-      assert.equal(await page.locator('#navFarmaciaSection').isVisible(), false);
-      assert.equal(await page.locator('#page-farmacia').isVisible(), false);
-      assert.equal(await page.evaluate(() => window.CURRENT_PAGE), 'agenda');
+      assert.equal(await page.locator('#navFarmaciaSection').evaluate(el=>el.style.display), '');
+      assert.equal(await page.locator('#page-farmacia').isVisible(), true);
+      assert.equal(await page.evaluate(() => window.CURRENT_PAGE), 'farmacia');
       assert.equal(await page.locator('#farmaciaStatus').innerText(), '');
       await page.evaluate(() => window.pending[2].success({ farmaciaAccess: 'manage' }));
       assert.equal(await page.evaluate(() => window.CURRENT_ACCESS.farmaciaAccess), 'none');
@@ -144,7 +145,7 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
   } finally { await browser.close(); }
 });
 
-test('Admin edita concessão de Farmácia, salva e revoga o próprio menu', async () => {
+test('Admin revoga concessão própria de estoque e mantém acesso ao catálogo geral', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     const { page, errors } = await fixture(browser, 390);
@@ -163,7 +164,7 @@ test('Admin edita concessão de Farmácia, salva e revoga o próprio menu', asyn
     await page.locator('#userAdminFarmaciaAccess').selectOption('none');
     await page.locator('#btnSalvarUsuarioAdmin').click();
     await page.evaluate(() => window.pending[1].success({ email: 'admin@example.invalid', farmaciaAccess: 'none' }));
-    assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display), 'none');
+    assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display), '');
     await page.evaluate(() => window.abrirFormUsuarioAdmin());
     assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'none');
     assert.deepEqual(errors, []);

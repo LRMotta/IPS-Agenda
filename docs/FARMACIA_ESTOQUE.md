@@ -13,8 +13,9 @@ modal, conforme os componentes do app. Trocar de área preserva o estoque seleci
 e não consulta outros estudos. O seletor de estoque aparece somente em Estoque e
 Produtos. Equipamentos e Sondas são um catálogo compartilhado, consultado pela RPC
 `getFarmaciaCatalogo()` sem ID de projeto, classe restrita ou seleção de estoque.
-O título Farmácia
-permanece apenas no cabeçalho principal, sem cartão de título repetido.
+As áreas de catálogo exibem **Equipamentos** (`kitchen`) ou **Sondas e calibração**
+(`device_thermostat`) no cabeçalho azul, sem repetir o título na barra da tabela.
+Não exibem seletor de estoque, linha de contexto ou texto sobre compartilhamento.
 
 Formulários usam confirmação de descarte, foco de teclado e bloqueio de fechamento
 enquanto a gravação está em andamento. Em falha, preservam dados e requestId para
@@ -122,15 +123,15 @@ As colunas são `ID`, `Tipo`, `Request_ID`, `Registrado_em_JSON`, `Autor_JSON` e
 `Dados_JSON`; os campos do equipamento, posições, sondas e calibrações ficam no
 payload JSON, preservando o histórico e evitando interpretação de texto como fórmula.
 Abas existentes com estrutura divergente são recusadas, sem sobrescrever dados.
-O catálogo pode ser lido por usuários com acesso à Farmácia, sem escolher ou possuir
-concessão a um projeto específico. Alterações continuam exigindo `manage` do comum.
-Seus metadados físicos são
-compartilhados com quem tem acesso à Farmácia, sem ocupação, estudos, produtos,
-tratamentos ou saldos de outros escopos. O Drive deve permitir leitura do catálogo
-a esses usuários e edição aos responsáveis pelo estoque comum (`manage`). Quando
-o catálogo usa a planilha principal, seus editores também têm acesso direto a essa
-aba; as RPCs mantêm a concessão `manage` comum para cadastrar e alterar o catálogo.
-Admin ou `manage` em um estudo não substituem a concessão de administração comum.
+O catálogo pode ser lido por todos os usuários ativos autenticados do app, mesmo
+sem concessão de Farmácia ou projeto. O menu de Farmácia permanece disponível para
+eles; Estoque e Produtos aparecem somente com suas concessões específicas.
+As alterações no catálogo seguem o perfil geral: `admin` e `user` cadastram e
+atualizam, `readonly` apenas consulta. Perfil e ativação são revalidados sob lock.
+Essas permissões não concedem produtos, saldos, acesso a estudos ou classe restrita.
+O catálogo contém metadados físicos, sem ocupação, estudos, produtos ou tratamentos.
+O Drive também deve permitir leitura/edição de acordo com esses perfis: o app
+executa como usuário e não altera automaticamente o compartilhamento dos arquivos.
 `@IPS_LOCATIONS` é reservado internamente e não pode ser cadastrado como estudo.
 
 O equipamento tem código interno/patrimonial exclusivo, tipo, fabricante/modelo,

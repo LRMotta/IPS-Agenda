@@ -4,12 +4,8 @@ var FARMACIA_LOCATIONS_HEADERS_ = ['ID', 'Tipo', 'Request_ID', 'Registrado_em_JS
 
 function getFarmaciaCatalogo() {
   var access = codexAssertCanRead_();
-  if (codexNormalizeFarmaciaAccess_(access.farmaciaAccess) === 'none' &&
-      codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess) === 'none') {
-    throw new Error('Seu usuário não tem permissão para consultar o catálogo da Farmácia.');
-  }
   var catalog = farmaciaReadLocations_();
-  return { locationsConfigured: catalog.configured, locationsCanManage: access.farmaciaCommonAccess === 'manage',
+  return { locationsConfigured: catalog.configured, locationsCanManage: access.role === 'admin' || access.role === 'user',
     storageUnits: catalog.units };
 }
 
@@ -145,7 +141,7 @@ function farmaciaReadLocations_() {
 function farmaciaWriteLocation_(payload, type) {
   payload = payload || {};
   return codexWithDocumentLock_('farmacia-location-' + type, function() {
-    var access = codexAssertFarmaciaCommonAccess_('manage');
+    var access = codexAssertCanWrite_('farmacia-location-' + type, 'Farmacia_Locais');
     var catalog = farmaciaReadLocations_();
     if (!catalog.configured) throw new Error('Catálogo de locais ainda não configurado.');
     var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);

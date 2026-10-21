@@ -3,8 +3,8 @@ var FARMACIA_VIEW = 'stock';
 var FARMACIA_VIEWS = {
   stock: { title:'Estoque', description:'Lotes, localização e saldos do estoque selecionado.', action:'Registrar inventário', form:'initial', target:'farmaciaInventoryResults', search:'Buscar produto, lote ou localização...' },
   products: { title:'Produtos', description:'Apresentação, unidade de controle e condições de conservação.', action:'Novo produto', form:'product', target:'farmaciaProductsResults', search:'Buscar produto ou apresentação...' },
-  equipment: { title:'Equipamentos', description:'Equipamentos e posições do catálogo físico compartilhado da Farmácia.', action:'Novo equipamento', form:'location', target:'farmaciaLocationsResults', search:'Buscar equipamento, modelo ou sala...' },
-  probes: { title:'Sondas e calibração', description:'Sondas por equipamento, certificados e validade das calibrações.', action:'Nova sonda', form:'probe', target:'farmaciaProbesResults', search:'Buscar sonda, série ou equipamento...' }
+  equipment: { title:'Equipamentos', icon:'kitchen', description:'Equipamentos e posições do catálogo físico compartilhado da Farmácia.', action:'Novo equipamento', form:'location', target:'farmaciaLocationsResults', search:'Buscar equipamento, modelo ou sala...' },
+  probes: { title:'Sondas e calibração', icon:'device_thermostat', description:'Sondas por equipamento, certificados e validade das calibrações.', action:'Nova sonda', form:'probe', target:'farmaciaProbesResults', search:'Buscar sonda, série ou equipamento...' }
 };
 
 function farmaciaSetView(view) {
@@ -21,11 +21,16 @@ function farmaciaSetView(view) {
     FARMACIA_CATALOG.loading = false;
   }
   document.getElementById('farmaciaStockSelector').hidden = catalogView;
-  document.getElementById('farmaciaCatalogContext').hidden = !catalogView;
+  document.getElementById('farmaciaContext').hidden = catalogView;
   document.getElementById('farmaciaRestrictedLabel').hidden = catalogView || !FARMACIA_STOCK.restrictedAllowed;
   document.getElementById('farmaciaNoSelection').hidden = catalogView || !!FARMACIA_STOCK.studyId;
   document.getElementById('farmaciaStockPanel').hidden = !catalogView && !FARMACIA_STOCK.studyId;
   document.getElementById('farmaciaViewTitle').textContent = config.title;
+  document.getElementById('farmaciaViewTitle').hidden = catalogView;
+  if (getCurrentPage() === 'farmacia') {
+    document.getElementById('topTitle').textContent = catalogView ? config.title : 'Farmácia';
+    document.getElementById('topIcon').textContent = catalogView ? config.icon : 'local_pharmacy';
+  }
   document.getElementById('farmaciaViewDescription').textContent = config.description;
   document.getElementById('farmaciaPrimaryLabel').textContent = config.action;
   var search = document.getElementById('farmaciaSearch');

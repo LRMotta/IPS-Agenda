@@ -902,9 +902,6 @@ function codexAssertFarmaciaAccess_(permission, studyId, restricted) {
 
 function getFarmaciaBootstrap() {
   var access = codexAssertCanRead_();
-  if (codexNormalizeFarmaciaAccess_(access.farmaciaAccess) === 'none' && codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess) === 'none') {
-    throw new Error('Seu usuário não tem permissão para esta ação na Farmácia.');
-  }
   var grants = access.farmaciaStudies || [];
   var studies = grants.length && codexNormalizeFarmaciaAccess_(access.farmaciaAccess) !== 'none' ? codexFarmaciaStudyCatalog_().filter(function(study) {
     return grants.some(function(grant) { return grant.studyId === study.id; });

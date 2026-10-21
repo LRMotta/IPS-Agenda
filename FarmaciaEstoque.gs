@@ -186,7 +186,7 @@ function getFarmaciaEstoque(studyId, restricted) {
   var locations = farmaciaReadLocations_();
   return { study: context.access.farmaciaStudy, restricted: restricted, configured: !!context.ss,
     locationsConfigured: locations.configured, storageUnits: locations.units,
-    locationsCanManage: context.access.farmaciaCommonAccess === 'manage',
+    locationsCanManage: context.access.role === 'admin' || context.access.role === 'user',
     farmaciaAccess: context.access.farmaciaAccess, products: data.products.map(function(record) {
       return Object.assign({ id: record.id, registeredAt: record.registeredAt, author: record.author }, record.data);
     }), positions: data.initial.map(function(record) {

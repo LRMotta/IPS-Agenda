@@ -35,7 +35,7 @@ test('estoque comum tem concessão independente, inclusive sem estudos ou perfil
       const {server, users} = commonFixture(level, role);
       const allowed = ['read', 'operate', 'manage'].includes(level);
       const access = server.codexGetCurrentUserAccess();
-      assert.equal(rules.isModuleVisible(access, 'farmacia'), allowed);
+      assert.equal(rules.isModuleVisible(access, 'farmacia'), true);
       if (allowed) {
         assert.equal(server.getFarmaciaBootstrap().farmaciaCommonAccess, level);
         assert.equal(server.getFarmaciaBootstrap().studies.length, 0);
@@ -97,21 +97,25 @@ test('concessão comum concorrente é revalidada sob lock e namespace reservado 
   assert.throws(() => f.server.codexNormalizeFarmaciaStudies_([{studyId:'@IPS_COMMON',restricted:false}]), /inválida/);
 });
 
-test('Farmácia exige concessão explícita independente do perfil geral e não abre estudos sem vínculo', () => {
+test('Farmácia abre catálogo geral para usuário ativo, mas exige concessão explícita para estudos', () => {
   const rules = runHtmlScript('SharedAccessRules.html').CodexAccessRules;
   for (const role of ['admin', 'user', 'readonly']) {
     for (const level of ['none', 'read', 'operate', 'manage', '', 'constructor', '__proto__', 'outro']) {
       const { server, users } = fixture(level, role);
       const allowed = ['read', 'operate', 'manage'].includes(level);
       const access = server.codexGetCurrentUserAccess();
-      assert.equal(rules.isModuleVisible(access, 'farmacia'), allowed);
+      assert.equal(rules.isModuleVisible(access, 'farmacia'), true);
       if (allowed) {
         const result = server.getFarmaciaBootstrap();
         assert.equal(result.stage, 'study-access');
         assert.equal(result.studies.length, 0);
         assert.equal(result.farmaciaAccess, level);
         for (const study of ['', 'P1', '*']) assert.throws(() => server.codexAssertFarmaciaAccess_('read', study), /por estudo/);
-      } else assert.throws(() => server.getFarmaciaBootstrap(), /permissão/);
+      } else {
+        const result=server.getFarmaciaBootstrap();
+        assert.equal(result.farmaciaAccess,'none');
+        assert.equal(result.studies.length,0);
+      }
       for (const permission of ['read', 'operate', 'manage', 'invalid']) {
         if (['none', 'read', 'operate', 'manage'].indexOf(level) >= ['none', 'read', 'operate', 'manage'].indexOf(permission) && permission !== 'invalid' && level !== 'none') {
           assert.equal(server.codexAssertFarmaciaAccess_(permission).role, role);
@@ -269,17 +273,17 @@ test('J é criada só em salvamento explícito e payload inválido é recusado a
 test('coluna ausente ou alheia não concede acesso nem é migrada na leitura; revogação é imediata', () => {
   for (const header of ['', 'Observações', 'Outro acesso a farmacia']) {
     const { server, users } = fixture('manage', 'admin', header);
-    assert.throws(() => server.getFarmaciaBootstrap(), /permissão/);
+    assert.equal(server.getFarmaciaBootstrap().farmaciaAccess,'none');
     assert.equal(server.getUsersAdminList()[0].farmaciaAccess, 'none');
     assert.equal(users.writes, 0);
   }
   const { server, users } = fixture('read', 'admin');
   assert.equal(server.getFarmaciaBootstrap().farmaciaAccess, 'read');
   users.rows[1][8] = 'none';
-  assert.throws(() => server.getFarmaciaBootstrap(), /permissão/);
+  assert.equal(server.getFarmaciaBootstrap().farmaciaAccess,'none');
   users.rows[0] = headers.slice();
   users.rows[1] = users.rows[1].slice(0, 8);
-  assert.throws(() => server.getFarmaciaBootstrap(), /permissão/);
+  assert.equal(server.getFarmaciaBootstrap().farmaciaAccess,'none');
   assert.equal(users.writes, 0);
 });
 
