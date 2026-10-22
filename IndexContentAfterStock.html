@@ -12,14 +12,14 @@
         <div class="stat-card stat-accent-orange stat-corner-right"><div class="stat-value" id="farmaciaMetric2">—</div><div class="stat-label" id="farmaciaMetricLabel2">Entradas com pendência / bloqueio</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">shield</span></div></div>
       </div>
       <div class="toolbar-card farmacia-view-toolbar">
-        <h2 id="farmaciaViewTitle">Estoque</h2>
+        <h2 id="farmaciaViewTitle" hidden></h2>
         <div class="search-wrap"><span class="material-symbols-outlined" aria-hidden="true">search</span><input id="farmaciaSearch" placeholder="Buscar produto, lote ou localização..." aria-label="Buscar na Farmácia" oninput="farmaciaApplySearch()"></div>
-        <button class="btn-txt" type="button" onclick="farmaciaStockRefresh()" aria-label="Atualizar estoque"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Atualizar</button>
+        <button id="farmaciaRefreshAction" class="btn-txt" type="button" onclick="farmaciaStockRefresh()" aria-label="Atualizar estoque"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Atualizar</button>
         <button id="farmaciaReceiptAction" class="btn-txt" type="button" hidden onclick="farmaciaOpenReceipt()"><span class="material-symbols-outlined" aria-hidden="true">move_to_inbox</span> Registrar recebimento</button>
         <button id="farmaciaPrimaryAction" class="btn-new" type="button" hidden onclick="farmaciaOpenPrimary()"><span class="material-symbols-outlined" aria-hidden="true">add</span><span id="farmaciaPrimaryLabel">Registrar inventário</span></button>
       </div>
       <div class="table-card farmacia-workspace">
-        <p id="farmaciaViewDescription" class="farmacia-view-description">Lotes, localização e saldos do estoque selecionado.</p>
+        <p id="farmaciaViewDescription" class="farmacia-view-description" hidden></p>
         <p id="farmaciaStockStatus" role="status" aria-live="polite" class="farmacia-stock-status"></p>
         <div id="farmaciaNoSelection" class="farmacia-empty"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span><h3>Selecione um estoque</h3><p>Escolha o estoque comum do IPS ou um estudo autorizado para começar.</p></div>
         <section id="farmaciaStockPanel" hidden aria-label="Estoque da Farmácia">
@@ -72,8 +72,6 @@
             <div class="field"><label class="field-label" for="farmaciaLocationRoom">Sala</label><input id="farmaciaLocationRoom" class="f-input" maxlength="120" required></div>
             <div class="field"><label class="field-label" for="farmaciaLocationMin">Faixa operacional mínima (°C, opcional)</label><input id="farmaciaLocationMin" class="f-input" type="number" min="-200" max="100" step="0.1"></div>
             <div class="field"><label class="field-label" for="farmaciaLocationMax">Faixa operacional máxima (°C, opcional)</label><input id="farmaciaLocationMax" class="f-input" type="number" min="-200" max="100" step="0.1"></div>
-            <div class="field"><label class="field-label" for="farmaciaLocationSource">Referência da faixa operacional ou da pendência</label><input id="farmaciaLocationSource" class="f-input" maxlength="250" placeholder="Documento de qualificação ou registro da pendência" required></div>
-            <div class="field"><label class="field-label" for="farmaciaLocationVersion">Versão/data da referência</label><input id="farmaciaLocationVersion" class="f-input" maxlength="100" required></div>
             <p class="profile-helper">As sondas são cadastradas individualmente após salvar o equipamento.</p>
             <div class="field"><label class="field-label" for="farmaciaLocationStatus">Situação</label><select id="farmaciaLocationStatus" class="f-input f-select"><option value="active">Ativo</option><option value="maintenance">Em manutenção</option><option value="unavailable">Indisponível</option></select></div>
             <div class="field"><label class="field-label" for="farmaciaLocationPositions">Posições — uma por linha</label><textarea id="farmaciaLocationPositions" class="f-input" maxlength="8100" placeholder="Prateleira 1 → Caixa A&#10;Prateleira 2 → Caixa B" required></textarea></div>

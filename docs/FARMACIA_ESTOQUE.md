@@ -14,12 +14,17 @@ modal, conforme os componentes do app. Trocar de área preserva o estoque seleci
 e não consulta outros estudos. O seletor de estoque aparece somente em Estoque e
 Produtos. Equipamentos e Sondas são um catálogo compartilhado, consultado pela RPC
 `getFarmaciaCatalogo()` sem ID de projeto, classe restrita ou seleção de estoque.
-As áreas de catálogo exibem **Equipamentos** (`kitchen`) ou **Sondas e calibração**
-(`device_thermostat`) no cabeçalho azul, sem repetir o título na barra da tabela.
+O cabeçalho azul mantém o ícone de Farmácia (`local_pharmacy`) e o caminho
+**Farmácia › Estoque**, **Farmácia › Produtos**, **Farmácia › Equipamentos** ou
+**Farmácia › Sondas e calibração**, conforme a subseção atual. O chevron é decorativo.
+Não há título repetido na barra da tabela ou parágrafos descritivos.
 Não exibem seletor de estoque, linha de contexto ou texto sobre compartilhamento.
 O catálogo segue a apresentação de Cadastros: indicadores, barra de busca/ações e
 tabela, sem parágrafos descritivos. Carregamento usa a linha com spinner da tabela;
 listas vazias mantêm as colunas e uma única mensagem, sem painel de instruções.
+Equipamentos e Sondas não exibem botão Atualizar. A consulta é carregada ao abrir
+o catálogo e os dados são atualizados após salvar; em falha, reabrir a área permite
+nova tentativa. Estoque e Produtos mantêm sua ação de atualização manual.
 
 Formulários usam confirmação de descarte, foco de teclado e bloqueio de fechamento
 enquanto a gravação está em andamento. Em falha, preservam dados e requestId para
@@ -189,10 +194,14 @@ executa como usuário e não altera automaticamente o compartilhamento dos arqui
 `@IPS_LOCATIONS` é reservado internamente e não pode ser cadastrado como estudo.
 
 O equipamento tem código interno/patrimonial exclusivo, tipo, fabricante/modelo,
-sala, faixa operacional documentada (ou pendente), referência/versão, situação e
+sala, faixa operacional informada (ou pendente), situação e
 de 1 a 100 posições internas. Códigos e posições são estáveis nesta entrega; não há
 renomeação, exclusão nem transferência. Situação pode mudar entre ativo, manutenção
 e indisponível, com motivo e revisão concorrente, sem sobrescrever o histórico.
+O formulário de equipamentos não solicita referência documental nem versão/data
+da faixa. Esses campos não são exigidos pelo servidor. A faixa informada não
+comprova qualificação ou medição; referências de conservação dos produtos e
+certificados de calibração das sondas continuam com suas regras próprias.
 
 O armário IPS AF-01 e os modelos phcbi MPR-721R-PA, MPR-722R-PA e SF-L6111W-PA
 informados pelo usuário servem de referência de preenchimento. Nenhum código de

@@ -86,6 +86,11 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
   try {
     for (const width of [1440,390]) {
       const {page,errors}=await fixture(browser,width);
+      assert.equal(await page.locator('#topTitle').textContent(),'Farmácia › Estoque');
+      assert.equal(await page.locator('#farmaciaRefreshAction').isVisible(),true);
+      assert.equal(await page.locator('#topIcon').innerText(),'local_pharmacy');
+      assert.equal(await page.locator('#farmaciaViewTitle').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaViewDescription').isVisible(),false);
       assert.equal(await page.locator('#page-farmacia h1, #page-farmacia h2, #page-farmacia h3').filter({hasText:'Farmácia'}).count(),0);
       assert.equal(await page.locator('#navFarmaciaSection .nav-section').innerText(),'FARMÁCIA');
       await openStock(page,stockData({configured:false,locationsConfigured:false,products:[],positions:[],storageUnits:[],locationsCanManage:true}));
@@ -102,6 +107,10 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
       await page.evaluate(result=>window.pending.at(-1).success(result),data);
       const count=await page.evaluate(()=>window.pending.length);
       await chooseView(page,'products');
+      assert.equal(await page.locator('#topTitle').textContent(),'Farmácia › Produtos');
+      assert.equal(await page.locator('#topIcon').innerText(),'local_pharmacy');
+      assert.equal(await page.locator('#farmaciaViewTitle').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaViewDescription').isVisible(),false);
       assert.equal(await page.locator('#farmaciaProductsResults').isVisible(),true);
       assert.equal(await page.locator('#farmaciaInventoryResults').isVisible(),false);
       await page.locator('#farmaciaSearch').fill('seringa');
@@ -109,6 +118,7 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
       await page.locator('#farmaciaSearch').fill('inexistente');
       assert.equal(await page.locator('#farmaciaSearchEmpty').isVisible(),true);
       await chooseView(page,'probes');
+      assert.equal(await page.locator('#farmaciaRefreshAction').isVisible(),false);
       assert.equal(await page.locator('#farmaciaStudy').inputValue(),'P1');
       assert.equal(await page.locator('#farmaciaSearch').inputValue(),'');
       assert.equal(await page.locator('[data-farmacia-view="probes"]').getAttribute('aria-current'),'page');
@@ -117,6 +127,7 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
       assert.match(await page.locator('#farmaciaProbesResults').innerText(),/Vencida/);
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-redesign-sondas-'+width+'.png')});
       await chooseView(page,'equipment');
+      assert.equal(await page.locator('#farmaciaRefreshAction').isVisible(),false);
       assert.equal(await page.locator('#farmaciaMetric0').innerText(),'1');
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-redesign-equipamentos-'+width+'.png')});
       await page.getByRole('button',{name:'Ver equipamento IPS AF-01'}).click();
@@ -156,7 +167,7 @@ test('Farmácia e catálogo aparecem no shell antes do perfil e a carga retoma a
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-menu-inicial-'+width+'.png')});
       await page.locator('[data-farmacia-view="equipment"]').click();
       assert.equal(await page.evaluate(()=>window.pending.length),0,'menu funciona antes do perfil; consultas aguardam sua validação');
-      assert.equal(await page.locator('#topTitle').innerText(),'Equipamentos');
+      assert.equal(await page.locator('#topTitle').textContent(),'Farmácia › Equipamentos');
       assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),false);
       await page.evaluate(()=>window.applyAppBootstrapData({access:{ok:true,email:'teste@example.invalid',role:'user',farmaciaAccess:'none',farmaciaCommonAccess:'none'}}));
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaBootstrap');
@@ -201,15 +212,15 @@ test('catálogo aberto a usuários sem concessão de Farmácia usa título e íc
       assert.equal(await page.locator('#farmaciaLocationsResults .farmacia-empty').count(),0);
       assert.equal(await page.locator('#farmaciaLocationsResults .loading-row').count(),0);
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-catalogo-equipamentos-'+role+'-'+width+'.png')});
-      assert.equal(await page.locator('#topTitle').innerText(),'Equipamentos');
-      assert.equal(await page.locator('#topIcon').textContent(),'kitchen');
+      assert.equal(await page.locator('#topTitle').textContent(),'Farmácia › Equipamentos');
+      assert.equal(await page.locator('#topIcon').textContent(),'local_pharmacy');
       assert.equal(await page.locator('#farmaciaContext').isVisible(),false);
       assert.equal(await page.getByText('Equipamentos e sondas compartilhados entre todos os projetos.',{exact:true}).count(),0);
       assert.equal(await page.locator('#farmaciaPrimaryAction').isVisible(),role==='user');
       assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),role==='user');
       await chooseView(page,'probes');
-      assert.equal(await page.locator('#topTitle').innerText(),'Sondas e calibração');
-      assert.equal(await page.locator('#topIcon').textContent(),'device_thermostat');
+      assert.equal(await page.locator('#topTitle').textContent(),'Farmácia › Sondas e calibração');
+      assert.equal(await page.locator('#topIcon').textContent(),'local_pharmacy');
       assert.equal(await page.locator('#farmaciaViewTitle').isVisible(),false);
       assert.equal(await page.locator('#farmaciaViewDescription').isVisible(),false);
       assert.equal(await page.locator('#farmaciaProbesResults .empty-row').innerText(),'Nenhuma sonda cadastrada');
@@ -269,11 +280,11 @@ test('catálogo sem seleção descarta respostas após sair da área ou revalida
     await page.evaluate(()=>window.farmaciaEstoqueReset());
     await page.evaluate(result=>window.pending[1].success(result),stockData({locationsCanManage:true}));
     assert.equal(await page.evaluate(()=>window.FARMACIA_CATALOG.data),null);
-    await page.locator('[aria-label="Atualizar estoque"]').click();
+    await chooseView(page,'probes');
     await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada do catálogo'}));
     assert.match(await page.locator('#farmaciaStockStatus').innerText(),/Falha simulada/);
     assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),false);
-    await page.locator('[aria-label="Atualizar estoque"]').click();
+    await chooseView(page,'equipment');
     await page.evaluate(result=>window.pending.at(-1).success(result),stockData({locationsCanManage:true}));
     assert.equal(await page.locator('#farmaciaStockSelector').isVisible(),false);
     assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),true);
@@ -413,8 +424,7 @@ test('setup vazio cadastra primeiro equipamento sem estoque configurado, sonda e
       await page.locator('#farmaciaLocationCode').fill('IPS AF-02');
       await page.locator('#farmaciaLocationModel').fill('phcbi MPR-721R-PA');
       await page.locator('#farmaciaLocationRoom').fill('Farmácia fictícia');
-      await page.locator('#farmaciaLocationSource').fill('Qualificação fictícia pendente');
-      await page.locator('#farmaciaLocationVersion').fill('2026-10-21');
+      assert.equal(await page.locator('#farmaciaLocationSource, #farmaciaLocationVersion').count(),0);
       await page.locator('#farmaciaLocationPositions').fill('Prateleira 1\nPrateleira 2');
       assert.equal(await page.locator('#farmaciaLocationMin').inputValue(),'');
       assert.equal(await page.locator('#farmaciaLocationMax').inputValue(),'');

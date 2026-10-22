@@ -1,8 +1,8 @@
 <script>
 var FARMACIA_VIEW = 'stock';
 var FARMACIA_VIEWS = {
-  stock: { title:'Estoque', description:'Lotes, localização e saldos do estoque selecionado.', action:'Registrar inventário', form:'initial', target:'farmaciaInventoryResults', search:'Buscar produto, lote ou localização...' },
-  products: { title:'Produtos', description:'Apresentação, unidade de controle e condições de conservação.', action:'Novo produto', form:'product', target:'farmaciaProductsResults', search:'Buscar produto ou apresentação...' },
+  stock: { title:'Estoque', icon:'inventory_2', description:'', action:'Registrar inventário', form:'initial', target:'farmaciaInventoryResults', search:'Buscar produto, lote ou localização...' },
+  products: { title:'Produtos', icon:'medication', description:'', action:'Novo produto', form:'product', target:'farmaciaProductsResults', search:'Buscar produto ou apresentação...' },
   equipment: { title:'Equipamentos', icon:'kitchen', description:'', action:'Novo equipamento', form:'location', target:'farmaciaLocationsResults', search:'Buscar equipamento, modelo ou sala...' },
   probes: { title:'Sondas e calibração', icon:'device_thermostat', description:'', action:'Nova sonda', form:'probe', target:'farmaciaProbesResults', search:'Buscar sonda, série ou equipamento...' }
 };
@@ -23,14 +23,23 @@ function farmaciaSetView(view) {
   }
   document.getElementById('farmaciaStockSelector').hidden = catalogView;
   document.getElementById('farmaciaContext').hidden = catalogView;
+  document.getElementById('farmaciaRefreshAction').hidden = catalogView;
   document.getElementById('farmaciaRestrictedLabel').hidden = catalogView || !FARMACIA_STOCK.restrictedAllowed;
   document.getElementById('farmaciaNoSelection').hidden = catalogView || !!FARMACIA_STOCK.studyId;
   document.getElementById('farmaciaStockPanel').hidden = !catalogView && !FARMACIA_STOCK.studyId;
   document.getElementById('farmaciaViewTitle').textContent = config.title;
-  document.getElementById('farmaciaViewTitle').hidden = catalogView;
+  document.getElementById('farmaciaViewTitle').hidden = true;
   if (getCurrentPage() === 'farmacia') {
-    document.getElementById('topTitle').textContent = catalogView ? config.title : 'Farmácia';
-    document.getElementById('topIcon').textContent = catalogView ? config.icon : 'local_pharmacy';
+    var heading = document.getElementById('topTitle');
+    var separator = document.createElement('span');
+    separator.className = 'farmacia-heading-separator';
+    separator.setAttribute('aria-hidden', 'true');
+    separator.textContent = '›';
+    var subsection = document.createElement('span');
+    subsection.className = 'farmacia-heading-section';
+    subsection.textContent = config.title;
+    heading.replaceChildren(document.createTextNode('Farmácia '), separator, document.createTextNode(' '), subsection);
+    document.getElementById('topIcon').textContent = 'local_pharmacy';
   }
   document.getElementById('farmaciaViewDescription').textContent = config.description;
   document.getElementById('farmaciaViewDescription').hidden = !config.description;
@@ -196,7 +205,7 @@ function farmaciaOpenUnit(id) {
   var unit = data && (data.storageUnits || []).find(function(item) { return item.id === id; });
   if (!unit) return;
   var statuses = {active:'Ativo',maintenance:'Em manutenção',unavailable:'Indisponível'};
-  var html = '<div class="form-section"><div class="section-label">' + esc(unit.code) + '</div><dl class="farmacia-detail-grid"><div><dt>Fabricante / Modelo</dt><dd>' + esc(unit.model || 'Não informado') + '</dd></div><div><dt>Sala</dt><dd>' + esc(unit.room) + '</dd></div><div><dt>Faixa operacional</dt><dd>' + esc(farmaciaRangeLabel(unit)) + '</dd></div><div><dt>Situação</dt><dd>' + esc(statuses[unit.status]) + '</dd></div><div class="full"><dt>Referência</dt><dd>' + esc(unit.source + ' · ' + unit.version) + '</dd></div>' + (unit.sensor ? '<div class="full"><dt>Identificador anterior de sensor</dt><dd>' + esc(unit.sensor) + '</dd></div>' : '') + '<div class="full"><dt>Posições</dt><dd>' + unit.positions.map(function(position) { return '<span class="chip">' + esc(position) + '</span>'; }).join(' ') + '</dd></div></dl></div>';
+  var html = '<div class="form-section"><div class="section-label">' + esc(unit.code) + '</div><dl class="farmacia-detail-grid"><div><dt>Fabricante / Modelo</dt><dd>' + esc(unit.model || 'Não informado') + '</dd></div><div><dt>Sala</dt><dd>' + esc(unit.room) + '</dd></div><div><dt>Faixa operacional</dt><dd>' + esc(farmaciaRangeLabel(unit)) + '</dd></div><div><dt>Situação</dt><dd>' + esc(statuses[unit.status]) + '</dd></div>' + ((unit.source || unit.version) ? '<div class="full"><dt>Referência</dt><dd>' + esc([unit.source, unit.version].filter(Boolean).join(' · ')) + '</dd></div>' : '') + (unit.sensor ? '<div class="full"><dt>Identificador anterior de sensor</dt><dd>' + esc(unit.sensor) + '</dd></div>' : '') + '<div class="full"><dt>Posições</dt><dd>' + unit.positions.map(function(position) { return '<span class="chip">' + esc(position) + '</span>'; }).join(' ') + '</dd></div></dl></div>';
   if (data.locationsCanManage) html += '<form data-farmacia-unit="' + esc(unit.id) + '" onsubmit="return salvarSituacaoLocalFarmaciaApp(event,this)"><div class="form-section"><div class="section-label">Alterar situação</div><fieldset class="form-grid farmacia-location-status-fields"><div class="field"><label class="field-label" for="farmaciaUnitStatus">Situação</label><select class="f-input" name="status" id="farmaciaUnitStatus">' + Object.keys(statuses).map(function(status) { return '<option value="' + status + '"' + (status === unit.status ? ' selected' : '') + '>' + statuses[status] + '</option>'; }).join('') + '</select></div><div class="field"><label class="field-label" for="farmaciaUnitReason">Motivo</label><input class="f-input" name="reason" id="farmaciaUnitReason" maxlength="250" required></div></fieldset></div><div class="farmacia-dialog-actions"><button class="btn-save" type="submit">Atualizar situação</button></div></form>';
   document.getElementById('farmaciaUnitDetail').innerHTML = html;
   document.getElementById('farmaciaModal-unitDetail').querySelector('.farmacia-dialog-status').textContent = '';

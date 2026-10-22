@@ -37,8 +37,8 @@ function farmaciaLocationData_(value) {
   var range = farmaciaTemperatureRange_(value.min, value.max);
   return { code: farmaciaText_(value.code, 'o código interno do equipamento', 60), type: value.type,
     model: farmaciaText_(value.model, 'o fabricante e modelo', 160, true), room: farmaciaText_(value.room, 'a sala', 120),
-    min: range.min, max: range.max, source: farmaciaText_(value.source, 'a referência da faixa operacional', 250),
-    version: farmaciaText_(value.version, 'a versão ou data da referência', 100),
+    min: range.min, max: range.max, source: farmaciaText_(value.source, 'a referência da faixa operacional', 250, true),
+    version: farmaciaText_(value.version, 'a versão ou data da referência', 100, true),
     sensor: farmaciaText_(value.sensor, 'o identificador do sensor', 100, true), status: value.status, positions: positions };
 }
 
