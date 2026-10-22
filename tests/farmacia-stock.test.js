@@ -28,7 +28,7 @@ function fixture(realLocations = false) {
   server.farmaciaToday_ = () => state.today;
   if (!realLocations) server.farmaciaReadLocations_ = () => ({ configured:true, units:[{id:'UNIT-1',code:'Armário 1',positions:['Prateleira 1'],min:null,max:null,status:'active'}] });
   const product = (overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'product-request-0001', ...overrides,
-    data:{name:'Produto A',presentation:'Frasco de teste',unit:'frasco',control:'quantity',storage:{min:null,max:null,instructions:'Conferir documento fictício',source:'Rótulo fictício',version:'1'},...overrides.data} });
+    data:{name:'Produto A',presentation:'Frasco de teste',unit:'frasco',control:'quantity',storage:{min:null,max:null,instructions:'Conferir documento fictício',source:'Rótulo fictício',version:'1'},supplySource:'site',...overrides.data} });
   const initial = (productId, overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'initial-request-0001', data:{ productId, lot:'L1', expiry:'2027-01-31', location:'Armário 1 → Prateleira 1', locationRef:{unitId:'UNIT-1',position:'Prateleira 1'}, kit:'', physical:10, blocked:2, countedOn:'2026-10-21', confirmed:true, note:'Contagem física' }, ...overrides });
   const sheet = (restricted = false) => stores[restricted ? RESTRICTED : STANDARD].getSheetByName(server.FARMACIA_LEDGER_SHEET_);
   return { server, app, users, stores, state, lock:lock.state, product, initial, sheet };
@@ -517,4 +517,186 @@ test('campos textuais são persistidos em JSON seguro contra fórmulas e unidade
   f.server.registrarInventarioInicialFarmacia({ ...base, data:{ ...base.data, lot:'=LOTE', location:'+LOCAL', physical:0.125, blocked:0.025 } });
   assert.equal(f.server.getFarmaciaEstoque('P1', false).positions[0].available, 0.1);
   assert.ok(f.sheet().rows.slice(1).every(row => row[7].startsWith('{') && row[6].startsWith('"') && row[2].startsWith('"')));
+});
+
+function lifecycleFixture(data = {}) {
+  const f = fixture();
+  f.productId = f.server.cadastrarProdutoFarmacia(f.product({data:{supplySource:'sponsor',...data}})).id;
+  f.stock = () => f.server.getFarmaciaEstoque('P1',false);
+  f.receipt = (overrides = {}) => ({studyId:'P1',restricted:false,requestId:'receipt-request-0001',data:{productId:f.productId,
+    lot:'L2',expiry:'2027-01-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Prateleira 1'},kit:'',physical:10,
+    receivedOn:'2026-10-21',document:'REMESSA-001',note:'Conferência do recebimento',...overrides}});
+  f.move = (position, overrides = {}) => ({studyId:'P1',restricted:false,requestId:'movement-request-'+(++f.state.uuid),
+    data:{positionId:position.id,revision:position.revision,action:'release',quantity:2,from:'pending',reason:'Avaliação registrada',document:'DOC-001',...overrides}});
+  return f;
+}
+
+test('origem do fornecimento é explícita em novos produtos; histórico permanece sem origem presumida', () => {
+  const f=fixture(), request=f.product(); delete request.data.supplySource;
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(request),/origem/);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({data:{supplySource:'inferida'}})),/origem/);
+  assert.equal(f.sheet(),null);
+  const id=f.server.cadastrarProdutoFarmacia(f.product()).id;
+  const row=f.sheet().rows[1], data=JSON.parse(row[7]); delete data.supplySource; row[7]=JSON.stringify(data);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].supplySource,undefined);
+  assert.equal(f.server.cadastrarProdutoFarmacia(request).id,id);
+  const receipt=lifecycleFixture().receipt(); receipt.data.productId=id;
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia(receipt),/exclusivos/);
+  const common='farmacia-common-000000000001';
+  f.users.rows[0][10]='Acesso ao estoque comum da Farmácia'; f.users.rows[1][10]='manage';
+  f.state.config=JSON.stringify({...JSON.parse(f.state.config),common}); f.stores[common]=new FakeSpreadsheet({});
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON',requestId:'sponsored-common-product',data:{supplySource:'sponsor'}})),/estoque do estudo/);
+  assert.equal(f.stores[common].getSheets().length,0);
+});
+
+test('saldo inicial do patrocinador não presume liberação; recebimento mantém origem e autoria distintas', () => {
+  const f=lifecycleFixture();
+  const initial=f.server.registrarInventarioInicialFarmacia(f.initial(f.productId));
+  const receipt=f.server.registrarRecebimentoFarmacia(f.receipt());
+  const stock=f.stock(), position=stock.positions.find(item=>item.id===initial.id), received=stock.positions.find(item=>item.id===receipt.id);
+  assert.equal(position.available,0); assert.equal(position.pending,8); assert.equal(position.blocked,2);
+  assert.equal(position.origin,'initial'); assert.equal(position.revision,initial.id);
+  assert.equal(received.origin,'receipt'); assert.equal(received.pending,10); assert.equal(received.blocked,0);
+  assert.equal(received.document,'REMESSA-001'); assert.equal(received.location,'Armário 1 → Prateleira 1');
+  assert.equal(stock.movements.length,2); assert.equal(stock.movements[1].type,'RECEIPT');
+  assert.equal(stock.movements[1].author,'farm@example.invalid');
+  assert.match(stock.movements[1].registeredAt,/^\d{4}-\d{2}-\d{2}T/);
+  const tampered=f.initial(f.productId); tampered.requestId='initial-pending-tamper'; tampered.data.pending=0;
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia(tampered),/aguarda avaliação/);
+});
+
+test('liberação e bloqueio parciais preservam físico e histórico; revisão obsoleta e excesso não gravam', () => {
+  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+  const original=f.stock().positions[0], release=f.move(original);
+  const released=f.server.registrarMovimentacaoFarmacia(release), writes=f.sheet().writes;
+  let position=f.stock().positions[0];
+  assert.equal(position.physical,10); assert.equal(position.available,2); assert.equal(position.pending,8);
+  assert.equal(position.revision,released.id);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia({...release,requestId:'stale-movement-request'}),/saldo mudou/);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(position,{quantity:9})),/excede/);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(position,{action:'block',from:'blocked',quantity:1})),/situação/);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(position,{action:'release',from:'available',quantity:1})),/situação/);
+  assert.equal(f.sheet().writes,writes);
+  f.server.registrarMovimentacaoFarmacia(f.move(position,{action:'block',from:'available',quantity:1}));
+  position=f.stock().positions[0]; assert.equal(position.available,1); assert.equal(position.blocked,1);
+  f.server.registrarMovimentacaoFarmacia(f.move(position,{action:'block',from:'pending',quantity:3}));
+  position=f.stock().positions[0]; assert.equal(position.pending,5); assert.equal(position.blocked,4);
+  f.server.registrarMovimentacaoFarmacia(f.move(position,{from:'blocked',quantity:2}));
+  position=f.stock().positions[0]; assert.equal(position.available,3); assert.equal(position.blocked,2); assert.equal(position.pending,5);
+  assert.equal(f.stock().movements.length,5);
+  assert.equal(f.stock().movements[0].data.physical,10);
+});
+
+test('movimentações exigem motivo, documento, unidade válida e registro do mesmo escopo antes de gravar', () => {
+  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+  const position=f.stock().positions[0], writes=f.sheet().writes;
+  for(const data of [{reason:''},{document:''},{quantity:0},{quantity:NaN},{quantity:Infinity},{quantity:1.5},{positionId:'FIN-OUTRO'},
+    {action:'dispense'},{from:'available'},{quantity:-1},{revision:''}]) {
+    assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(position,data)));
+  }
+  assert.equal(f.sheet().writes,writes);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia({...f.move(position),restricted:true}),/exclusivas/);
+  assert.equal(f.stores[RESTRICTED].getSheets().length,0);
+});
+
+test('recebimento valida data, documento, produto, kit e localização antes de criar entrada', () => {
+  const f=lifecycleFixture(), writes=f.sheet().writes;
+  for(const data of [{receivedOn:'2026-10-22'},{receivedOn:'2026-02-30'},{document:''},{physical:0},{physical:1.5},
+    {kit:'INDEVIDO'},{productId:'OUTRO'},{locationRef:{unitId:'OUTRO',position:'Prateleira 1'}}]) {
+    assert.throws(()=>f.server.registrarRecebimentoFarmacia(f.receipt(data)));
+  }
+  assert.equal(f.sheet().writes,writes);
+  f.server.registrarRecebimentoFarmacia(f.receipt());
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt(),requestId:'receipt-request-newid'}),/já foi registrado/);
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia({...f.initial(f.productId),data:{...f.initial(f.productId).data,lot:'L2'}}),/já possui/);
+  assert.equal(f.stock().positions.length,1);
+});
+
+test('kit recebido é único entre recebimentos e inventário e produto local não recebe ciclo do patrocinador', () => {
+  const f=lifecycleFixture({unit:'kit',control:'kit'});
+  f.server.registrarRecebimentoFarmacia(f.receipt({physical:1,kit:'KIT-01'}));
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt({physical:1,kit:'KIT-01',document:'OUTRA'}),requestId:'receipt-kit-duplicate'}),/já possui/);
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia({...f.initial(f.productId),data:{...f.initial(f.productId).data,physical:1,blocked:0,kit:'KIT-01'}}),/já possui/);
+  const local=fixture(), product=local.server.cadastrarProdutoFarmacia(local.product()).id;
+  local.server.registrarInventarioInicialFarmacia(local.initial(product));
+  assert.throws(()=>local.server.registrarMovimentacaoFarmacia(f.move(local.server.getFarmaciaEstoque('P1',false).positions[0],{from:'blocked',quantity:1})),/exclusivas/);
+});
+
+test('vencimento bloqueia DTO e liberação sem reescrever histórico; retry anterior continua idempotente', () => {
+  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+  const request=f.move(f.stock().positions[0]); f.server.registrarMovimentacaoFarmacia(request);
+  const writes=f.sheet().writes; f.state.today='2027-02-01';
+  const position=f.stock().positions[0];
+  assert.equal(position.blocked,10); assert.equal(position.available,0); assert.equal(position.pending,0);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(position)),/vencido/);
+  assert.equal(f.server.registrarMovimentacaoFarmacia(request).repeated,true);
+  assert.equal(f.server.registrarRecebimentoFarmacia(f.receipt()).repeated,true);
+  assert.equal(f.sheet().writes,writes);
+  const expired=lifecycleFixture(); expired.server.registrarRecebimentoFarmacia(expired.receipt({expiry:'2026-10-20'}));
+  assert.equal(expired.stock().positions[0].blocked,10);
+});
+
+test('transferência integral altera localização atual e preserva origem, situações e documentos no histórico', () => {
+  const f=lifecycleFixture(); f.server.farmaciaReadLocations_=()=>({configured:true,units:[{id:'UNIT-1',code:'Armário 1',positions:['Prateleira 1','Prateleira 2'],min:null,max:null,status:'active'}]});
+  f.server.registrarRecebimentoFarmacia(f.receipt());
+  const position=f.stock().positions[0], request=f.move(position,{action:'transfer',quantity:10,location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Prateleira 2'}});
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia({...request,data:{...request.data,quantity:5}}),/todo o saldo/);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia({...request,data:{...request.data,locationRef:{unitId:'UNIT-1',position:'Prateleira 1'}}}),/diferente/);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia({...request,data:{...request.data,locationRef:{unitId:'UNIT-1',position:'Ausente'}}}),/posição cadastrados/);
+  const result=f.server.registrarMovimentacaoFarmacia(request), writes=f.sheet().writes;
+  const stock=f.stock(), transferred=stock.positions[0];
+  assert.equal(transferred.location,'Armário 1 → Prateleira 2'); assert.equal(transferred.pending,10); assert.equal(transferred.physical,10);
+  assert.equal(transferred.revision,result.id); assert.equal(stock.movements[0].data.location,'Armário 1 → Prateleira 1');
+  assert.equal(stock.movements[1].data.location,'Armário 1 → Prateleira 2');
+  assert.equal(f.server.registrarMovimentacaoFarmacia(request).repeated,true); assert.equal(f.sheet().writes,writes);
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia({...request,data:{...request.data,reason:'Outro'}}),/outros dados/);
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia({...f.initial(f.productId),data:{...f.initial(f.productId).data,lot:'L2',locationRef:{unitId:'UNIT-1',position:'Prateleira 2'}}}),/já possui/);
+});
+
+test('movimentações e recebimentos revalidam ACL sob lock sem substituir permissões por perfil geral', () => {
+  for(const method of ['registrarRecebimentoFarmacia','registrarMovimentacaoFarmacia']) {
+    const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+    const payload=method==='registrarRecebimentoFarmacia'?{...f.receipt({document:'OUTRA'}),requestId:'receipt-permission-check'}:f.move(f.stock().positions[0]);
+    const writes=f.sheet().writes; f.users.rows[1][8]='operate';
+    assert.throws(()=>f.server[method](payload),/permissão/);
+    f.users.rows[1][2]='admin'; assert.throws(()=>f.server[method](payload),/permissão/);
+    f.users.rows[1][8]='manage'; f.lock.onAcquire=()=>{f.users.rows[1][8]='read';};
+    assert.throws(()=>f.server[method](payload),/permissão/);
+    assert.equal(f.sheet().writes,writes); assert.equal(f.lock.held,false);
+  }
+});
+
+test('resposta perdida após movimento não duplica saldo; retentativa usa payload e revisão originais', () => {
+  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+  const request=f.move(f.stock().positions[0]), sheet=f.sheet(), getRange=sheet.getRange.bind(sheet);
+  let fail=true;
+  sheet.getRange=(...args)=>{
+    const range=getRange(...args), setValues=range.setValues.bind(range);
+    range.setValues=values=>{const result=setValues(values); if(fail){fail=false;throw new Error('Resposta perdida');}return result;};
+    return range;
+  };
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(request),/Resposta perdida/);
+  const writes=sheet.writes; assert.equal(f.server.registrarMovimentacaoFarmacia(request).repeated,true);
+  assert.equal(sheet.writes,writes); assert.equal(f.stock().positions[0].available,2);
+  assert.equal(f.stock().movements.length,2);
+});
+
+test('replay do ledger recusa movimento corrompido sem corrigir saldos nem gravar', () => {
+  for(const changes of [{quantity:99},{revision:'FMV-ausente'},{positionId:'FIN-ausente'},{from:'available'},{reason:''}]) {
+    const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+    f.server.registrarMovimentacaoFarmacia(f.move(f.stock().positions[0]));
+    const row=f.sheet().rows.at(-1); row[7]=JSON.stringify({...JSON.parse(row[7]),...changes});
+    const writes=f.sheet().writes;
+    assert.throws(()=>f.stock(),/inconsistentes/);
+    assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt({document:'OUTRA'}),requestId:'receipt-after-corrupt'}),/inconsistentes/);
+    assert.equal(f.sheet().writes,writes);
+  }
+});
+
+test('liberação fracionária mantém precisão e texto documental permanece em JSON seguro', () => {
+  const f=lifecycleFixture({unit:'mL'}); f.server.registrarRecebimentoFarmacia(f.receipt({physical:0.125,document:'=REMESSA'}));
+  f.server.registrarMovimentacaoFarmacia(f.move(f.stock().positions[0],{quantity:0.025,reason:'=Motivo',document:'@DOCUMENTO'}));
+  const stock=f.stock(); assert.equal(stock.positions[0].available,0.025); assert.equal(stock.positions[0].pending,0.1);
+  assert.equal(stock.movements[1].data.reason,'=Motivo');
+  assert.ok(f.sheet().rows.slice(1).every(row=>row[7].startsWith('{')&&row[6].startsWith('"')));
 });

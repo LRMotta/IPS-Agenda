@@ -278,6 +278,9 @@ function applyAppBootstrapData(data) {
   handleUserOAuthStatus(window.APP_BOOTSTRAP_DATA.auth);
   // A navegação para Agenda pode ocorrer antes de o perfil chegar.
   if (getCurrentPage() === 'agenda') carregarAniversariosAgenda_();
+  // Uma entrada no catálogo antes de o perfil chegar precisa retomar a carga
+  // após invalidar as respostas vinculadas à identidade ainda desconhecida.
+  if (getCurrentPage() === 'farmacia' && CURRENT_ACCESS.ok) carregarFarmacia();
 }
 
 var FARMACIA_REQUEST_ID = 0;
@@ -313,6 +316,7 @@ function carregarFarmacia() {
   renderFarmaciaStudies([]);
   var email = CURRENT_ACCESS.email;
   status.textContent = 'Validando acesso à Farmácia…';
+  if (!CURRENT_ACCESS.ok) return;
   function isCurrent() {
     return requestId === FARMACIA_REQUEST_ID && email === CURRENT_ACCESS.email && getCurrentPage() === 'farmacia';
   }

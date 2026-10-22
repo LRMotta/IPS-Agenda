@@ -105,10 +105,8 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
       assert.equal(page.url(), 'about:blank');
       assert.equal(await page.title(), 'IPS | UCS — Farmácia local');
       assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(), 0);
-      assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display), 'none');
-      assert.equal(await page.locator('#navFarmaciaSection').isVisible(), false);
-      await page.evaluate(() => window.irPara('farmacia', { initial: true }));
-      assert.equal(await page.evaluate(() => window.CURRENT_PAGE), 'agenda');
+      assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display), '');
+      assert.equal(await page.locator('#navFarmaciaSection').evaluate(el=>el.style.display), '');
       assert.equal(await page.evaluate(() => window.pending.length), 0);
       await page.evaluate(() => { window.CURRENT_ACCESS.ok=true; window.CURRENT_ACCESS.farmaciaAccess = 'read'; window.applyFarmaciaAccess(); });
       assert.equal(await page.locator('#navFarmaciaSection').getByRole('button',{name:'Farmácia',exact:true}).count(), 1);
