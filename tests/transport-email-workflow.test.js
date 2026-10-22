@@ -403,7 +403,7 @@ test('salvar Transporte nao presume envio e o rascunho inclui referencia depois 
   const source = readProjectFile('TransporteCodexConfig.gs');
   assert.match(source, /var statusNovo = String\(payload\.statusCourier \|\| payload\.status \|\| ''\)/);
   assert.doesNotMatch(source, /payload\.statusCourier \|\| payload\.status \|\| 'Agendado'/);
-  assert.match(source, /getGmailSignature\(\) \+ transporteMonitorRefHtml_\(refInterna, options\.pdfHash\)/);
+  assert.match(source, /getGmailSignature\(\) \+ transporteMonitorRefHtml_\(refInterna, options\.pdfHash, options\.generationRequestId\)/);
   assert.match(source, /in:anywhere -in:drafts newer_than:30d/);
 });
 
@@ -425,6 +425,53 @@ function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', d
   server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1', courier, awbDocumento: '620X41337652', rascunhoOk: true });
   return { server, agenda, message, logs };
 }
+
+test('slot removido e recusado antes do Gmail e revalidado sob lock', () => {
+  for (const duringSearch of [false, true]) {
+    const { server, agenda } = monitorFixture();
+    const operations = server.book.getSheetByName('Transporte_Operacoes');
+    const before = JSON.stringify(operations.rows);
+    const remove = () => { agenda.rows[1][1] = ''; agenda.rows[1][2] = ''; agenda.rows[1][4] = ''; };
+    if (duringSearch) server.codexWithDocumentLock_ = (_name, fn) => { remove(); return fn(); };
+    else {
+      remove();
+      server.GmailApp.search = () => assert.fail('Slot inexistente nao deve consultar Gmail');
+    }
+    assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 0);
+    assert.equal(agenda.rows[1][2], '');
+    assert.equal(JSON.stringify(operations.rows), before);
+  }
+});
+
+test('inativacao durante a busca impede envio mesmo se o slot foi recriado', () => {
+  const { server } = monitorFixture();
+  server.codexWithDocumentLock_ = (_name, fn) => {
+    server.book.getSheetByName('Transporte_Operacoes').getRange(2, 22).setValue('INATIVA');
+    return fn();
+  };
+  assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 0);
+  assert.equal(server.transporteOperacoesRows_()[0].emailIdentificadoEm, '');
+  assert.equal(server.transporteDocumentosSemEnvioPendencias_(new Date(Date.now() + 7200000)).length, 0);
+});
+
+test('reuso do slot preserva historico e exige geracao nova mesmo com hash identico', () => {
+  const { server, agenda, message } = monitorFixture();
+  const operations = server.book.getSheetByName('Transporte_Operacoes');
+  operations.getRange(2, 7).setValue('PDF-HISTORICO');
+  operations.getRange(2, 22, 1, 3).setValues([['INATIVA', 'Transporte removido da Agenda', new Date()]]);
+  const old = JSON.stringify(operations.rows[1]);
+  const result = server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'EVT-TEST', slot: '1', courier: 'DHL',
+    awbDocumento: '620X41337652', rascunhoOk: true, pdfHash: 'MESMO-HASH', generationRequestId: 'GERACAO-NOVA', pdfId: 'PDF-NOVO' });
+  assert.equal(result.row, 3);
+  assert.equal(JSON.stringify(operations.rows[1]), old);
+  message.getPlainBody = () => 'Doc. IPS: MESMO-HASH\nGer. IPS: GERACAO-ANTIGA';
+  assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 0);
+  message.getPlainBody = () => 'Doc. IPS: MESMO-HASH\nGer. IPS: GERACAO-NOVA';
+  assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 1);
+  assert.equal(agenda.rows[1][2], 'Agendado');
+  assert.equal(JSON.stringify(operations.rows[1]), old);
+  assert.match(server.transporteMonitorRefHtml_(result.referencia, 'MESMO-HASH', 'GERACAO-NOVA'), /Ger\. IPS: GERACAO-NOVA/);
+});
 
 test('AWB divergente preserva email identificado, impede conclusao e gera pendencia imediata', () => {
   for (const status of ['Docs gerados', 'Agendado']) {

@@ -25,7 +25,7 @@ function farmaciaApplyCatalogChange_(units, data, type, author, at) {
     } else {
       if (data.values.status !== item.status) throw new Error('Use a alteração de situação com motivo.');
       if (units.some(function(owner) { return owner.id !== unit.id && owner.code.toLowerCase() === data.values.code.toLowerCase(); })) throw new Error('Código já cadastrado.');
-      if (JSON.stringify(item.positions) !== JSON.stringify(data.values.positions)) throw new Error('Preserve as posições para manter os vínculos de estoque.');
+      if (item.positions.some(function(position) { return data.values.positions.indexOf(position) === -1; })) throw new Error('Preserve as posições existentes, sem renomear ou excluir, para manter os vínculos de estoque.');
     }
     Object.assign(item,data.values);
   }

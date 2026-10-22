@@ -76,6 +76,32 @@ test('envia uma unica cobranca na conversa original e confirma ID da mensagem en
   assert.equal(f.sent(), 1);
 });
 
+test('historico inativo nao impede lembrete da operacao ativa', () => {
+  const f = fixture();
+  const old = { ...f.op, estado: 'INATIVA', gmailMessageId: 'historico' };
+  f.s.transporteOperacoesRows_ = () => [old, f.op];
+  assert.equal(f.s.courierLembreteExecutar_().enviados, 1);
+  assert.equal(f.sent(), 1);
+});
+
+test('novo vinculo cria base propria sem resetar cobranca anterior incerta', () => {
+  const f = fixture();
+  f.rows[0].estado = 'INCERTO';
+  const old = JSON.stringify(f.rows[0]);
+  f.s.courierLembreteSalvar_ = (item, estado) => {
+    item.estado = estado;
+    if (!f.rows.includes(item)) f.rows.push(item);
+  };
+  const now = new Date();
+  f.s.courierLembreteRegistrarBase_('evt', '1', now, now);
+  assert.equal(JSON.stringify(f.rows[0]), old);
+  assert.equal(f.rows.length, 2);
+  assert.equal(f.rows[1].estado, 'BASE');
+  assert.notEqual(f.rows[1].key, f.rows[0].key);
+  f.s.courierLembreteRegistrarBase_('evt', '1', now, now);
+  assert.equal(f.rows.length, 2, 'mesmo vinculo reutiliza a base');
+});
+
 test('timeout depois de aceitar envio nunca resulta em segunda tentativa', () => {
   const f = fixture(); f.failSend();
   f.s.courierLembreteExecutar_();

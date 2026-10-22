@@ -195,8 +195,11 @@ executa como usuário e não altera automaticamente o compartilhamento dos arqui
 
 O equipamento tem código interno/patrimonial exclusivo, tipo, fabricante/modelo,
 sala, faixa operacional informada (ou pendente), situação e
-de 1 a 100 posições internas. Códigos e posições são estáveis nesta entrega; não há
-renomeação, exclusão nem transferência. Situação pode mudar entre ativo, manutenção
+de 1 a 100 posições internas. Na ação Editar equipamento, o campo Posições permite
+acrescentar gavetas ou outras posições, uma por linha, preservando os nomes exatos
+de todas as posições existentes. Renomear ou excluir posições continua bloqueado
+no servidor para preservar os vínculos históricos de estoque. A edição usa revisão
+concorrente e registro de histórico. Situação pode mudar entre ativo, manutenção
 e indisponível, com motivo e revisão concorrente, sem sobrescrever o histórico.
 O formulário de equipamentos não solicita referência documental nem versão/data
 da faixa. Esses campos não são exigidos pelo servidor. A faixa informada não

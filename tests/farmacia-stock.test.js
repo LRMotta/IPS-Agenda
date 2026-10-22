@@ -741,6 +741,29 @@ test('correções e exclusões do catálogo preservam calibrações, IDs e conco
 });
 
 
+test('edição acrescenta posições com histórico, idempotência e vínculos de estoque preservados', () => {
+  const f=locationFixture(), created=f.server.cadastrarLocalFarmacia(f.location()); f.unitId=created.id;
+  const product=f.server.cadastrarProdutoFarmacia(f.product()).id;
+  f.server.registrarInventarioInicialFarmacia(f.inventory(product));
+  const before=JSON.stringify(f.catalogSheet().rows), original=created.catalog.storageUnits[0];
+  const payload={requestId:'unit-add-position-0001',data:{kind:'unit',unitId:created.id,revision:1,values:{...original,positions:[...original.positions,'Gaveta 39']}}};
+  const saved=f.server.editarRegistroCatalogoFarmacia(payload);
+  assert.deepEqual(Array.from(saved.catalog.storageUnits[0].positions),['Prateleira 1','Prateleira 2','Gaveta 39']);
+  assert.equal(saved.catalog.storageUnits[0].id,created.id);
+  assert.equal(saved.catalog.storageUnits[0].revision,2);
+  assert.equal(JSON.stringify(f.catalogSheet().rows.slice(0,-1)),before);
+  assert.equal(f.server.editarRegistroCatalogoFarmacia(payload).repeated,true);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).positions[0].locationRef.position,'Prateleira 1');
+  const writes=f.catalogSheet().writes;
+  assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...payload,requestId:'unit-add-stale-0001'}),/mudou/);
+  for (const positions of [['Prateleira 1','Gaveta 39'],['prateleira 1','Prateleira 2','Gaveta 39'],['Prateleira 1','Prateleira 2','Gaveta 39','gaveta 39'],Array.from({length:101},(_,i)=>'Gaveta '+i)]) {
+    assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...payload,requestId:'unit-invalid-0001',data:{...payload.data,revision:2,values:{...original,positions}}}),/Preserve|duplicadas|1 a 100/);
+  }
+  f.users.rows[1][2]='readonly';
+  assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...payload,requestId:'unit-forbidden-0001',data:{...payload.data,revision:2}}),/somente leitura/);
+  assert.equal(f.catalogSheet().writes,writes);
+});
+
 test('equipamento excluído não recebe novas entradas e edição não contorna motivo de situação', () => {
   const f=locationFixture();
   const unit=f.server.cadastrarLocalFarmacia(f.location());f.unitId=unit.id;
