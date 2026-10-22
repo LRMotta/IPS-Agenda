@@ -80,7 +80,7 @@ function clientFixture() {
   const client = vm.createContext({window:{},google:{script:{run:runner}},document:{getElementById:element,querySelectorAll:() => []},
     getCurrentPage:() => 'farmacia', FARMACIA_VIEW:'probes', farmaciaDialogId:() => 'modal',appSetStatus() {},fecharOverlay() {},
     farmaciaUpdateSummary() {},farmaciaCatalogTable:() => '',farmaciaProductControlChanged() {},farmaciaRestoreFocus() {},renderFarmaciaEstoque() {}});
-  vm.runInContext(readProjectFile('IndexFarmaciaScripts.html').replace(/<\/?script>/g,''), client);
+  vm.runInContext(readProjectFile('IndexFarmaciaScripts.html').replace(/<\/?script>/gi,''), client);
   client.renderFarmaciaEstoque = () => {};
   client.farmaciaProductControlChanged = () => {};
   client.farmaciaOperationId = () => 'performance-client-0001';
