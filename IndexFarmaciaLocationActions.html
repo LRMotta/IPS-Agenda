@@ -1,0 +1,80 @@
+<script>
+function farmaciaCatalogActions(unit, probe, canManage) {
+  var label = probe ? 'sonda ' + probe.code : 'equipamento ' + unit.code;
+  var attrs = ' data-unit-id="' + esc(unit.id) + '"' + (probe ? ' data-probe-id="' + esc(probe.id) + '"' : '');
+  var call = probe ? 'farmaciaOpenProbe(this.dataset.unitId,this.dataset.probeId)' : 'farmaciaOpenUnit(this.dataset.unitId)';
+  return '<div class="action-btns"><button type="button" class="icon-btn"' + attrs + ' aria-label="Ver ' + esc(label) + '" title="Visualizar" onclick="' + call + '"><span class="material-symbols-outlined" aria-hidden="true">visibility</span></button>' + (canManage ? ['edit','delete'].map(function(action) {
+    return '<button type="button" class="icon-btn' + (action === 'delete' ? ' del' : '') + '"' + attrs + ' aria-label="' + (action === 'edit' ? 'Editar ' : 'Excluir ') + esc(label) + '" title="' + (action === 'edit' ? 'Editar' : 'Excluir') + '" onclick="farmaciaOpenCatalogChange(this.dataset.unitId,this.dataset.probeId,\'' + action + '\')"><span class="material-symbols-outlined" aria-hidden="true">' + action + '</span></button>';
+  }).join('') : '') + '</div>';
+}
+
+function farmaciaOpenCatalogChange(unitId, probeId, action) {
+  var data = farmaciaCurrentData();
+  if (!data || !data.locationsCanManage || FARMACIA_STOCK.saving) return;
+  var unit = data.storageUnits.find(function(item) { return item.id === unitId; });
+  var item = probeId ? unit && unit.probes.find(function(probe) { return probe.id === probeId; }) : unit;
+  if (!item || item.deleted) return;
+  var modal = document.getElementById('farmaciaModal-unitDetail');
+  document.getElementById('farmaciaModal-unitDetailTitle').textContent = (action === 'delete' ? 'Excluir ' : 'Editar ') + (probeId ? 'sonda' : 'equipamento');
+  var fields = probeId ? [['code','Número interno'],['serial','Número de série'],['model','Fabricante / Modelo']] : [['code','Código interno/patrimonial'],['model','Fabricante / Modelo'],['room','Sala'],['min','Temperatura mínima (°C)'],['max','Temperatura máxima (°C)'],['source','Referência documental'],['version','Versão da referência']];
+  document.getElementById('farmaciaUnitDetail').innerHTML = '<form onsubmit="return farmaciaSaveCatalogChange(event,this)"><div class="form-section"><div class="section-label">' + (action === 'delete' ? 'Excluir ' : 'Editar ') + esc(item.code) + '</div>' + (action === 'delete' ? '<p>Confirmar a exclusão deste cadastro? Os registros anteriores e vínculos históricos serão preservados.</p>' : '<fieldset class="form-grid farmacia-location-status-fields">' + fields.map(function(field) {
+    return '<div class="field"><label class="field-label" for="farmaciaEdit-' + field[0] + '">' + field[1] + '</label><input class="f-input" id="farmaciaEdit-' + field[0] + '" name="' + field[0] + '" value="' + esc(item[field[0]] == null ? '' : item[field[0]]) + '" maxlength="250"' + (['min','max'].indexOf(field[0]) >= 0 ? ' type="number" min="-200" max="100" step="0.1"' : '') + (field[0] === 'code' || field[0] === 'room' || probeId ? ' required' : '') + '></div>';
+  }).join('') + '</fieldset>') + '</div><div class="farmacia-dialog-actions"><button class="btn-save" type="submit">' + (action === 'delete' ? 'Confirmar exclusão' : 'Salvar alterações') + '</button></div></form>';
+  modal.querySelector('.farmacia-dialog-status').textContent = '';
+  var form = modal.querySelector('form');
+  form._catalogChange = {kind:probeId ? 'probe' : 'unit',unitId:unitId,probeId:probeId || '',revision:item.revision};
+  form._catalogValues = Object.assign({},item);
+  form._catalogAction = action;
+  form._catalogRequestId = farmaciaOperationId();
+  if (action === 'edit') {
+    var button = document.createElement('button');
+    button.type = 'button'; button.className = 'btn-txt';
+    button.textContent = probeId ? 'Atualizar calibração' : 'Alterar situação';
+    button.onclick = function() {
+      if (FARMACIA_STOCK.saving) return;
+      function navigate() {
+        if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
+        fecharOverlay(modal.id);
+        if (probeId) farmaciaOpenProbe(unitId,probeId,true);
+        else farmaciaOpenUnit(unitId,true);
+      }
+      if (typeof appConfirmNavigationIfDirty === 'function' && !appConfirmNavigationIfDirty(modal.id,navigate)) return;
+      navigate();
+    };
+    form.prepend(button);
+  }
+  abrirOverlay(modal.id);
+}
+
+function farmaciaSaveCatalogChange(event, form) {
+  event.preventDefault();
+  if (FARMACIA_STOCK.saving) return false;
+  var data = Object.assign({},form._catalogChange), epoch = FARMACIA_STOCK.epoch;
+  if (form._catalogAction === 'edit') {
+    data.values = Object.assign({},form._catalogValues);
+    Array.from(form.querySelectorAll('input[name]')).forEach(function(input) { data.values[input.name] = ['min','max'].indexOf(input.name) >= 0 ? input.value === '' ? null : input.valueAsNumber : input.value; });
+  }
+  var modal = document.getElementById('farmaciaModal-unitDetail');
+  FARMACIA_STOCK.saving = true; modal.dataset.extraSaving = '1';
+  form.querySelectorAll('fieldset,button').forEach(function(control) { control.disabled = true; });
+  appSetStatus(modal.querySelector('.farmacia-dialog-status'),'Salvando…','#5f6b7c');
+  var runner = google.script.run.withSuccessHandler(function() {
+    if (epoch !== FARMACIA_STOCK.epoch) return;
+    FARMACIA_STOCK.saving = false; modal.dataset.extraSaving = '0';
+    if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
+    fecharOverlay(modal.id);
+    FARMACIA_CATALOG.data = null;
+    if (FARMACIA_STOCK.data) FARMACIA_STOCK.data = null;
+    farmaciaStockRefresh();
+  }).withFailureHandler(function(error) {
+    if (epoch !== FARMACIA_STOCK.epoch) return;
+    FARMACIA_STOCK.saving = false; modal.dataset.extraSaving = '0';
+    form.querySelectorAll('fieldset,button').forEach(function(control) { control.disabled = false; });
+    appSetStatus(modal.querySelector('.farmacia-dialog-status'),appErrorMessage(error),'#b3261e');
+  });
+  var payload = {requestId:form._catalogRequestId,data:data};
+  if (form._catalogAction === 'delete') runner.excluirRegistroCatalogoFarmacia(payload);
+  else runner.editarRegistroCatalogoFarmacia(payload);
+  return false;
+}
+</script>

@@ -217,13 +217,13 @@ function farmaciaReadLedger_(context) {
   if (rows[0].length !== FARMACIA_LEDGER_HEADERS_.length || FARMACIA_LEDGER_HEADERS_.some(function(header, i) { return rows[0][i] !== header; })) {
     throw new Error('Estrutura do estoque da Farmácia divergente. Revise o arquivo antes de prosseguir.');
   }
-  var records = [], products = [], initial = [], ids = [], requests = [], productKeys = [], positions = [], kits = [], receipts = [], movements = [];
+  var records = [], products = [], initial = [], ids = [], requests = [], positions = [], kits = [], receipts = [], movements = [];
   try {
     rows.slice(1).forEach(function(row) {
       if (row.every(function(cell) { return cell === ''; })) return;
       var scope = JSON.parse(row[2]), registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
-      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-' };
-      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV)-[A-Za-z0-9_-]+$/.test(row[0]) ||
+      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
+      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA)-[A-Za-z0-9_-]+$/.test(row[0]) ||
           !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
           typeof row[4] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[4]) ||
           typeof registeredAt !== 'string' || isNaN(Date.parse(registeredAt)) || new Date(registeredAt).toISOString() !== registeredAt ||
@@ -233,9 +233,9 @@ function farmaciaReadLedger_(context) {
       var record = { id: row[0], type: row[1], requestId: row[4], registeredAt: registeredAt, author: author, data: data, dataJson: row[7] };
       records.push(record);
       if (record.type === 'PRODUCT') {
-        if (JSON.stringify(farmaciaProductData_(data)) !== row[7] || productKeys.indexOf(farmaciaProductKey_(data)) !== -1 ||
+        if (JSON.stringify(farmaciaProductData_(data)) !== row[7] || products.some(function(item) { return farmaciaProductKey_(item.data) === farmaciaProductKey_(data); }) ||
             (context.studyId === FARMACIA_COMMON_SCOPE_ && data.supplySource === 'sponsor')) throw new Error('Produto duplicado ou inválido.');
-        productKeys.push(farmaciaProductKey_(data)); products.push(record);
+        products.push(record);
       } else if (record.type === 'INITIAL' || record.type === 'RECEIPT') {
         var product = products.find(function(item) { return item.id === data.productId; });
         var normalized = record.type === 'INITIAL' ? farmaciaInitialData_(data, product, true) : farmaciaReceiptData_(data, product);
@@ -248,6 +248,10 @@ function farmaciaReadLedger_(context) {
         if (record.type === 'INITIAL') initial.push(record);
         else receipts.push(farmaciaReceiptKey_(data));
         positions.push(farmaciaEntryState_(record)); movements.push(record);
+      } else if (record.type !== 'MOVEMENT') {
+        if (JSON.stringify(farmaciaCatalogActionData_(record.type, data)) !== record.dataJson ||
+            (record.type === 'PRODUCT_EDIT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.data.supplySource === 'sponsor')) throw new Error('Correção inválida.');
+        farmaciaApplyCatalogAction_({ records: records, products: products, positions: positions, movements: movements }, record);
       } else {
         if (JSON.stringify(farmaciaMovementData_(data)) !== record.dataJson) throw new Error('Movimentação inválida.');
         var position = positions.find(function(item) { return item.id === data.positionId; });
@@ -272,7 +276,7 @@ function getFarmaciaEstoque(studyId, restricted) {
     locationsConfigured: locations.configured, storageUnits: locations.units,
     locationsCanManage: context.access.role === 'admin' || context.access.role === 'user',
     farmaciaAccess: context.access.farmaciaAccess, products: data.products.map(function(record) {
-      return Object.assign({ id: record.id, registeredAt: record.registeredAt, author: record.author }, record.data);
+      return Object.assign({ id: record.id, revision: record.revision || record.id, registeredAt: record.registeredAt, author: record.author }, record.data);
     }), movements: data.movements.map(function(record) {
       return { id: record.id, type: record.type, registeredAt: record.registeredAt, author: record.author, data: record.data };
     }), positions: data.positions.map(function(position) {
@@ -314,7 +318,7 @@ function farmaciaWrite_(payload, type) {
       var locations = farmaciaReadLocations_();
       var ref = data.locationRef;
       var unit = ref && locations.units.find(function(item) { return item.id === ref.unitId; });
-      if (!unit || unit.positions.indexOf(ref.position) === -1) throw new Error('Selecione um equipamento e uma posição cadastrados.');
+      if (!unit || unit.deleted || unit.positions.indexOf(ref.position) === -1) throw new Error('Selecione um equipamento e uma posição cadastrados.');
       // O rótulo é derivado do catálogo, nunca de texto enviado pelo cliente.
       data.location = unit.code + ' → ' + ref.position;
       dataJson = JSON.stringify(data);

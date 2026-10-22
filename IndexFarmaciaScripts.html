@@ -146,7 +146,7 @@ function farmaciaStockDate(value, includeTime) {
 
 function renderFarmaciaEstoque(data) {
   if (!data) { farmaciaSetView(); return; }
-  var products = data.products || [], units = data.storageUnits || [];
+  var products = data.products || [], units = (data.storageUnits || []).filter(function(unit) { return !unit.deleted; });
   document.getElementById('farmaciaStockStatus').textContent = '';
   document.getElementById('farmaciaNoSelection').hidden = true;
   var canManage = data.configured && data.farmaciaAccess === 'manage';
@@ -179,7 +179,11 @@ function farmaciaConservationHtml(storage) {
 function farmaciaProbeHtml(unit, probe, canManage) {
   var calibration = probe.calibration || {status:'pending',calibratedOn:'',validUntil:'',certificate:'',note:''};
   var html = '<div class="form-section"><div class="section-label">' + esc(probe.code) + ' · ' + esc(unit.code) + '</div><dl class="farmacia-detail-grid">' +
-    '<div><dt>Número de série</dt><dd>' + esc(probe.serial) + '</dd></div><div><dt>Fabricante / Modelo</dt><dd>' + esc(probe.model) + '</dd></div><div><dt>Ponto de instalação</dt><dd>' + esc(probe.point || 'Não informado') + '</dd></div><div><dt>Calibração</dt><dd>' + farmaciaCalibrationBadge(probe.calibrationStatus) + '</dd></div><div><dt>Calibrada em</dt><dd>' + esc(calibration.calibratedOn ? farmaciaStockDate(calibration.calibratedOn) : 'Não informada') + '</dd></div><div><dt>Válida até</dt><dd>' + esc(calibration.validUntil ? farmaciaStockDate(calibration.validUntil) : 'Não informada') + '</dd></div><div class="full"><dt>Certificado</dt><dd>' + esc(calibration.certificate || 'Não informado') + '</dd></div><div class="full"><dt>Observação</dt><dd>' + esc(calibration.note || 'Não informada') + '</dd></div></dl></div>';
+    '<div><dt>Número de série</dt><dd>' + esc(probe.serial) + '</dd></div><div><dt>Fabricante / Modelo</dt><dd>' + esc(probe.model) + '</dd></div><div><dt>Calibração</dt><dd>' + farmaciaCalibrationBadge(probe.calibrationStatus) + '</dd></div><div><dt>Calibrada em</dt><dd>' + esc(calibration.calibratedOn ? farmaciaStockDate(calibration.calibratedOn) : 'Não informada') + '</dd></div><div><dt>Válida até</dt><dd>' + esc(calibration.validUntil ? farmaciaStockDate(calibration.validUntil) : 'Não informada') + '</dd></div><div class="full"><dt>Certificado</dt><dd>' + esc(calibration.certificate || 'Não informado') + '</dd></div><div class="full"><dt>Observação</dt><dd>' + esc(calibration.note || 'Não informada') + '</dd></div></dl></div>';
+  html += '<div class="form-section participant-participations-section"><div class="section-label">Calibrações anteriores</div><div class="participant-participations-list">' + ((probe.calibrationHistory || []).map(function(entry) {
+    var c = entry.calibration;
+    return '<div class="participant-participation-row"><div><div class="participant-participation-title">' + esc(c.certificate || 'Sem certificado informado') + '</div><div class="participant-participation-meta">' + esc(c.calibratedOn ? farmaciaStockDate(c.calibratedOn) : 'Data não informada') + ' · Validade: ' + esc(c.validUntil ? farmaciaStockDate(c.validUntil) : 'Não informada') + '</div><div class="participant-participation-meta">' + esc(entry.author) + ' · ' + esc(farmaciaStockDate(entry.registeredAt,true)) + '</div><div>' + esc(c.note || '') + '</div></div><div>' + farmaciaCalibrationBadge(c.status,true) + '</div></div>';
+  }).join('') || '<p class="participant-participation-meta">Nenhuma calibração anterior.</p>') + '</div></div>';
   if (canManage) html += '<form data-farmacia-probe="' + esc(probe.id) + '" data-farmacia-unit="' + esc(unit.id) + '" onsubmit="return salvarCalibracaoSondaFarmaciaApp(event,this)"><div class="form-section"><div class="section-label">Atualizar calibração</div><fieldset class="form-grid farmacia-location-status-fields">' +
     '<div class="field full"><label class="field-label" for="farmaciaCalibrationStatus">Situação</label><select class="f-input" id="farmaciaCalibrationStatus" name="calibrationStatus">' + ['pending','current','out_of_service'].map(function(status) { return '<option value="' + status + '"' + (status === calibration.status ? ' selected' : '') + '>' + ({pending:'Pendente / não informada',current:'Calibrada — conforme certificado',out_of_service:'Fora de uso'})[status] + '</option>'; }).join('') + '</select></div>' +
     '<div class="field"><label class="field-label" for="farmaciaCalibrationDate">Data da calibração</label><input class="f-input" id="farmaciaCalibrationDate" name="calibratedOn" type="date" value="' + esc(calibration.calibratedOn) + '"></div>' +
@@ -258,7 +262,7 @@ function farmaciaStockSave(type, data) {
   modal.dataset.extraSaving = '1';
   appSetStatus(modal.querySelector('.farmacia-dialog-status'), 'Salvando…', '#5f6b7c');
   farmaciaUpdateSummary();
-  var runner = google.script.run.withSuccessHandler(function() {
+  var runner = google.script.run.withSuccessHandler(function(result) {
     if (!isCurrentSave()) return;
     FARMACIA_STOCK.saving = false;
     FARMACIA_STOCK[tokenKey] = '';
@@ -268,7 +272,18 @@ function farmaciaStockSave(type, data) {
     fecharOverlay(modal.id);
     if (type !== 'status' && type !== 'calibration' && type !== 'movement') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
-    farmaciaStockRefresh();
+    if (catalogAction && result && result.catalog && Array.isArray(result.catalog.storageUnits)) {
+      // The authorized snapshot was built under the write lock; pending reads must not replace it.
+      FARMACIA_CATALOG.readId++;
+      FARMACIA_STOCK.readId++;
+      FARMACIA_CATALOG.loading = false;
+      FARMACIA_CATALOG.data = result.catalog;
+      if (FARMACIA_STOCK.data) Object.assign(FARMACIA_STOCK.data, result.catalog);
+      if (farmaciaIsCatalogView()) {
+        renderFarmaciaEstoque(farmaciaCurrentData());
+        farmaciaRestoreFocus();
+      } else farmaciaStockRefresh();
+    } else farmaciaStockRefresh();
   }).withFailureHandler(function(error) {
     if (!isCurrentSave()) return;
     FARMACIA_STOCK.saving = false;
@@ -276,9 +291,9 @@ function farmaciaStockSave(type, data) {
     appSetStatus(modal.querySelector('.farmacia-dialog-status'), appErrorMessage(error) + ' Os dados foram preservados para conferência ou nova tentativa.', '#b3261e');
     var current = farmaciaCurrentData();
     document.getElementById('farmaciaProductFields').disabled = !current.configured || current.farmaciaAccess !== 'manage';
-    document.getElementById('farmaciaInitialFields').disabled = !current.configured || current.farmaciaAccess !== 'manage' || !current.locationsConfigured || !(current.storageUnits || []).length || !(current.products || []).length;
+    document.getElementById('farmaciaInitialFields').disabled = !current.configured || current.farmaciaAccess !== 'manage' || !current.locationsConfigured || !(current.storageUnits || []).some(function(unit) { return !unit.deleted; }) || !(current.products || []).length;
     document.getElementById('farmaciaLocationFields').disabled = !current.locationsConfigured || !current.locationsCanManage;
-    document.getElementById('farmaciaProbeFields').disabled = !current.locationsConfigured || !current.locationsCanManage || !(current.storageUnits || []).length;
+    document.getElementById('farmaciaProbeFields').disabled = !current.locationsConfigured || !current.locationsCanManage || !(current.storageUnits || []).some(function(unit) { return !unit.deleted; });
     document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = !current.locationsCanManage; });
     farmaciaRenderReceiptOptions(current);
     document.querySelectorAll('.farmacia-movement-fields').forEach(function(fields) { fields.disabled = current.farmaciaAccess !== 'manage'; });
@@ -331,12 +346,12 @@ function farmaciaRenderReceiptOptions(data) {
   farmaciaUnitOptions('farmaciaReceiptUnit');
   farmaciaReceiptUnitChanged();
   farmaciaReceiptProductChanged();
-  document.getElementById('farmaciaReceiptFields').disabled = FARMACIA_STOCK.saving || !data.configured || data.farmaciaAccess !== 'manage' || !products.length || !(data.storageUnits || []).length;
+  document.getElementById('farmaciaReceiptFields').disabled = FARMACIA_STOCK.saving || !data.configured || data.farmaciaAccess !== 'manage' || !products.length || !(data.storageUnits || []).some(function(unit) { return !unit.deleted; });
 }
 
 function farmaciaUnitOptions(id) {
   var select = document.getElementById(id), selected = select.value;
-  select.innerHTML = '<option value="">Selecione o equipamento</option>' + ((FARMACIA_STOCK.data || {}).storageUnits || []).map(function(unit) {
+  select.innerHTML = '<option value="">Selecione o equipamento</option>' + ((FARMACIA_STOCK.data || {}).storageUnits || []).filter(function(unit) { return !unit.deleted; }).map(function(unit) {
     return '<option value="' + esc(unit.id) + '">' + esc(unit.code + (unit.status !== 'active' ? ' · Revisar situação' : '')) + '</option>';
   }).join('');
   select.value = selected;
@@ -497,7 +512,7 @@ function salvarSituacaoLocalFarmaciaApp(event, form) {
 function salvarSondaFarmaciaApp(event) {
   event.preventDefault();
   farmaciaStockSave('probe', {unitId:document.getElementById('farmaciaProbeUnit').value,code:document.getElementById('farmaciaProbeCode').value,
-    serial:document.getElementById('farmaciaProbeSerial').value,model:document.getElementById('farmaciaProbeModel').value,point:document.getElementById('farmaciaProbePoint').value,
+    serial:document.getElementById('farmaciaProbeSerial').value,model:document.getElementById('farmaciaProbeModel').value,
     calibration:{status:document.getElementById('farmaciaProbeCalibrationStatus').value,calibratedOn:document.getElementById('farmaciaProbeCalibratedOn').value,
       validUntil:document.getElementById('farmaciaProbeValidUntil').value,certificate:document.getElementById('farmaciaProbeCertificate').value,note:document.getElementById('farmaciaProbeCalibrationNote').value}});
   return false;
