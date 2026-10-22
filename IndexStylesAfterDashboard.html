@@ -20,7 +20,9 @@
     #farmaciaInventoryResults table { min-width:1340px; }
     .farmacia-stock-scroll td button { white-space:nowrap; }
     #farmaciaPositionDetail table { min-width:680px; }
-    .farmacia-stock-scroll td { white-space:normal; vertical-align:top; overflow-wrap:anywhere; }
+    .farmacia-stock-scroll td { white-space:normal; vertical-align:middle; overflow-wrap:anywhere; }
+    .farmacia-stock-scroll td:last-child:has(.action-btns), .farmacia-stock-scroll th:last-child { text-align:right; }
+    .farmacia-stock-scroll .action-btns { white-space:nowrap; min-width:105px; }
     .farmacia-stock-scroll td strong { font-size:13px; font-weight:600; }
     .farmacia-stock-scroll td small { display:block; color:var(--text-muted); font-size:11px; line-height:1.5; margin-top:4px; }
     .farmacia-stock-scroll td .chip { display:inline-flex; white-space:nowrap; }

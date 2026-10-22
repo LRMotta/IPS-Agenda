@@ -16,7 +16,7 @@ function fixture(realLocations = false) {
   const stores = { [STANDARD]:new FakeSpreadsheet({}), [RESTRICTED]:new FakeSpreadsheet({}) };
   const lock = fakeDocumentLock();
   const state = { config:JSON.stringify({ version:1, studies:[{ studyId:'P1', standard:STANDARD, restricted:RESTRICTED }] }), opened:[], today:'2026-10-21', uuid:0 };
-  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs'], {
+  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs', 'FarmaciaLocationActions.gs'], {
     LockService:lock.LockService,
     PropertiesService:{ getScriptProperties:() => ({ getProperty:() => state.config }) },
     SpreadsheetApp:{ openById:id => { state.opened.push(id); if (!stores[id]) throw new Error('Arquivo desconhecido'); return stores[id]; } },
@@ -715,4 +715,39 @@ test('liberação fracionária mantém precisão e texto documental permanece em
   const stock=f.stock(); assert.equal(stock.positions[0].available,0.025); assert.equal(stock.positions[0].pending,0.1);
   assert.equal(stock.movements[1].data.reason,'=Motivo');
   assert.ok(f.sheet().rows.slice(1).every(row=>row[7].startsWith('{')&&row[6].startsWith('"')));
+});
+
+
+test('correções e exclusões do catálogo preservam calibrações, IDs e concorrência', () => {
+  const f=locationFixture();
+  f.unitId=f.server.cadastrarLocalFarmacia(f.location()).id;
+  const created=f.server.cadastrarSondaFarmacia({requestId:'probe-actions-0001',data:{unitId:f.unitId,code:'S1',serial:'SER1',model:'M1',calibration:{status:'current',calibratedOn:'2026-10-01',validUntil:'2027-10-01',certificate:'CERT-1',note:'Primeira'}}});
+  const change={requestId:'probe-edit-actions-0001',data:{kind:'probe',unitId:f.unitId,probeId:created.id,revision:1,values:{...created.catalog.storageUnits[0].probes[0],model:'M2'}}};
+  const edited=f.server.editarRegistroCatalogoFarmacia(change);
+  assert.equal(edited.catalog.storageUnits[0].probes[0].model,'M2');
+  assert.equal(f.server.editarRegistroCatalogoFarmacia(change).repeated,true);
+  assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...change,requestId:'stale-edit-actions-0001'}),/mudou/);
+  f.server.atualizarCalibracaoSondaFarmacia({requestId:'calibration-actions-0001',data:{unitId:f.unitId,probeId:created.id,revision:2,calibration:{status:'current',calibratedOn:'2026-10-21',validUntil:'2027-10-21',certificate:'CERT-2',note:'Segunda'}}});
+  const probe=f.server.getFarmaciaCatalogo().storageUnits[0].probes[0];
+  assert.equal(probe.calibrationHistory.length,1);
+  assert.equal(probe.calibrationHistory[0].calibration.certificate,'CERT-1');
+  assert.equal(probe.calibrationHistory[0].calibration.note,'Primeira');
+  assert.throws(()=>f.server.excluirRegistroCatalogoFarmacia({requestId:'delete-unit-actions-0001',data:{kind:'unit',unitId:f.unitId,revision:1}}),/sondas vinculadas/);
+  const deleted=f.server.excluirRegistroCatalogoFarmacia({requestId:'delete-probe-actions-0001',data:{kind:'probe',unitId:f.unitId,probeId:created.id,revision:3}});
+  assert.equal(deleted.catalog.storageUnits[0].probes[0].deleted,true);
+  assert.equal(deleted.catalog.storageUnits[0].probes[0].calibrationHistory[0].calibration.certificate,'CERT-1');
+  f.users.rows[1][2]='readonly';
+  assert.throws(()=>f.server.excluirRegistroCatalogoFarmacia({requestId:'forbidden-unit-actions-0001',data:{kind:'unit',unitId:f.unitId,revision:1}}),/somente leitura/);
+});
+
+
+test('equipamento excluído não recebe novas entradas e edição não contorna motivo de situação', () => {
+  const f=locationFixture();
+  const unit=f.server.cadastrarLocalFarmacia(f.location());f.unitId=unit.id;
+  const values={...unit.catalog.storageUnits[0],status:'maintenance'};
+  assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({requestId:'unit-status-bypass-0001',data:{kind:'unit',unitId:unit.id,revision:1,values}}),/situação com motivo/);
+  const product=f.server.cadastrarProdutoFarmacia(f.product()).id;
+  f.server.excluirRegistroCatalogoFarmacia({requestId:'unit-delete-guard-0001',data:{kind:'unit',unitId:unit.id,revision:1}});
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia(f.inventory(product)),/equipamento.*posição/);
+  assert.equal(f.server.getFarmaciaCatalogo().storageUnits[0].deleted,true);
 });

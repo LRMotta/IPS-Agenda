@@ -61,6 +61,8 @@ async function fixture(browser, width) {
   ` });
   await page.addScriptTag({ content:readProjectFile('IndexFarmaciaScripts.html').replace(/^\s*<script>\s*/i, '').replace(/\s*<\/script>\s*$/i, '') });
   await page.addScriptTag({content:readProjectFile('IndexFarmaciaViewScripts.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
+  await page.addScriptTag({content:readProjectFile('IndexFarmaciaLocationActions.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
+  await page.addScriptTag({content:readProjectFile('IndexFarmaciaActions.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
   await page.evaluate(() => {
     document.getElementById('page-farmacia').classList.add('active');
     document.getElementById('navFarmaciaSection').style.display='';
@@ -447,7 +449,6 @@ test('setup vazio cadastra primeiro equipamento sem estoque configurado, sonda e
       await page.locator('#farmaciaProbeCode').fill('SONDA-01');
       await page.locator('#farmaciaProbeSerial').fill('SERIE-01');
       await page.locator('#farmaciaProbeModel').fill('Modelo fictício');
-      await page.locator('#farmaciaProbePoint').fill('Ponto superior');
       await page.locator('#farmaciaProbeCalibrationStatus').selectOption('current');
       await page.locator('#farmaciaProbeCalibratedOn').fill('2026-01-01');
       await page.locator('#farmaciaProbeValidUntil').fill('2026-10-20');
@@ -460,7 +461,8 @@ test('setup vazio cadastra primeiro equipamento sem estoque configurado, sonda e
       data.storageUnits[0].probes=[{...saved.args[0].data,id:'PROBE-1',revision:1,calibrationStatus:'expired'}];
       await page.evaluate(result=>window.pending.at(-1).success(result),data);
       assert.match(await page.locator('#farmaciaProbesResults').innerText(),/Vencida/);
-      await page.getByRole('button',{name:'Ver sonda SONDA-01',exact:true}).click();
+      await page.getByRole('button',{name:'Editar sonda SONDA-01',exact:true}).click();
+      await page.getByRole('button',{name:'Atualizar calibração',exact:true}).click();
       const probe=page.locator('#farmaciaModal-probeDetail');
       const calibration=probe.locator('form');
       await calibration.locator('[name=validUntil]').fill('2027-04-15');
@@ -814,5 +816,56 @@ test('ciclo de vida: troca de escopo elimina histórico/formulários e ignora re
     assert.equal(await page.locator('#farmaciaInventoryResults').textContent(),'');
     assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),false);
     assert.deepEqual(errors,[]);
+  } finally {await browser.close();}
+});
+
+
+test('tabelas usam ações por perfil; sonda mostra histórico, edita e confirma exclusão em desktop/celular', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+  try {
+    for (const width of [1440,390]) {
+      const {page,errors}=await fixture(browser,width);
+      const data=stockData({locationsCanManage:true});
+      data.storageUnits[0].probes=[{id:'PROBE-1',unitId:'UNIT-1',code:'SONDA-01',serial:'SERIE-01',model:'Modelo teste',revision:2,calibrationStatus:'current',calibration:{status:'current',calibratedOn:'2026-10-01',validUntil:'2027-10-01',certificate:'CERT-02',note:''},calibrationHistory:[{calibration:{status:'current',calibratedOn:'2025-10-01',validUntil:'2026-10-01',certificate:'CERT-01',note:'Anterior'},author:'admin@example.invalid',registeredAt:'2025-10-01T15:00:00.000Z'}]}];
+      await openStock(page,data);
+      await page.evaluate(()=>window.farmaciaSetView('products'));
+      assert.equal(await page.getByRole('button',{name:'Editar Produto fictício',exact:true}).count(),1);
+      await page.getByRole('button',{name:'Visualizar Produto fictício',exact:true}).click();
+      assert.match(await page.locator('#farmaciaModal-recordAction').innerText(),/Frasco de teste/);
+      await page.locator('#farmaciaModal-recordAction').getByRole('button',{name:'Fechar',exact:true}).last().click();
+      await page.evaluate(()=>window.farmaciaSetView('probes'));
+      assert.equal(await page.getByRole('button',{name:'Editar sonda SONDA-01',exact:true}).count(),1);
+      assert.equal(await page.locator('#farmaciaProbePoint').count(),0);
+      assert.equal(await page.locator('#farmaciaProbesResults').getByText('Ponto não informado').count(),0);
+      assert.match(await page.title(),/Farmácia/);
+      assert.equal(await page.locator('#farmaciaProbesResults tbody tr').count(),1);
+      assert.equal(page.url(),'about:blank');
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-acoes-'+width+'.png')});
+      await page.getByRole('button',{name:'Ver sonda SONDA-01',exact:true}).click();
+      assert.equal(await page.locator('#farmaciaProbeDetail form').count(),0);
+      assert.match(await page.locator('#farmaciaProbeDetail').innerText(),/CERT-01/);
+      assert.equal(await page.locator('#farmaciaProbeDetail .participant-participation-row').count(),1);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-calibracoes-historico-'+width+'.png')});
+      await page.locator('#farmaciaModal-probeDetail').getByRole('button',{name:'Fechar janela'}).click();
+      await page.getByRole('button',{name:'Editar sonda SONDA-01',exact:true}).click();
+      await page.locator('#farmaciaEdit-model').fill('Modelo corrigido');
+      await page.locator('#farmaciaModal-unitDetail').getByRole('button',{name:'Salvar alterações',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'editarRegistroCatalogoFarmacia');
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).args[0].data.values.model),'Modelo corrigido');
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'O registro mudou'}));
+      assert.equal(await page.locator('#farmaciaEdit-model').inputValue(),'Modelo corrigido');
+      await page.evaluate(()=>{window.appClearUnsavedChanges('farmaciaModal-unitDetail');window.fecharOverlay('farmaciaModal-unitDetail');});
+      await page.getByRole('button',{name:'Excluir sonda SONDA-01',exact:true}).click();
+      await page.getByRole('button',{name:'Confirmar exclusão',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'excluirRegistroCatalogoFarmacia');
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Sem permissão'}));
+      await page.evaluate(()=>{window.appClearUnsavedChanges('farmaciaModal-unitDetail');window.fecharOverlay('farmaciaModal-unitDetail');window.FARMACIA_CATALOG.data={...window.FARMACIA_STOCK.data,locationsCanManage:false};window.renderFarmaciaEstoque(window.FARMACIA_CATALOG.data);});
+      assert.equal(await page.getByRole('button',{name:'Editar sonda SONDA-01',exact:true}).count(),0);
+      assert.equal(await page.getByRole('button',{name:'Excluir sonda SONDA-01',exact:true}).count(),0);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
   } finally {await browser.close();}
 });

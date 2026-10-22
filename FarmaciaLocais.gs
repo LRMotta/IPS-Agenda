@@ -5,6 +5,10 @@ var FARMACIA_LOCATIONS_HEADERS_ = ['ID', 'Tipo', 'Request_ID', 'Registrado_em_JS
 function getFarmaciaCatalogo() {
   var access = codexAssertCanRead_();
   var catalog = farmaciaReadLocations_();
+  return farmaciaCatalogSnapshot_(catalog, access);
+}
+
+function farmaciaCatalogSnapshot_(catalog, access) {
   return { locationsConfigured: catalog.configured, locationsCanManage: access.role === 'admin' || access.role === 'user',
     storageUnits: catalog.units };
 }
@@ -89,9 +93,15 @@ function farmaciaReadLocations_() {
   // Configuração inválida continua falhando antes do fallback.
   var ss = farmaciaStorage_('@IPS_LOCATIONS', false) || getCodexSpreadsheet_();
   var sheet = ss && ss.getSheetByName(FARMACIA_LOCATIONS_SHEET_);
-  var result = { configured: !!ss, ss: ss, sheet: sheet, units: [], records: [] };
+  var result = { configured: !!ss, ss: ss, sheet: sheet, units: [], records: [], rows: [] };
   if (!sheet || !sheet.getLastRow()) return result;
   var rows = sheet.getDataRange().getValues();
+  return farmaciaParseLocationRows_(result, rows);
+}
+
+// Replaying validated rows in memory also prepares the post-write response without another Sheets read.
+function farmaciaParseLocationRows_(result, rows) {
+  result.rows = rows;
   if (rows[0].length !== FARMACIA_LOCATIONS_HEADERS_.length || FARMACIA_LOCATIONS_HEADERS_.some(function(header, i) { return rows[0][i] !== header; })) throw new Error('Estrutura do catálogo de locais divergente.');
   var ids = [], requests = [];
   try {
@@ -110,17 +120,22 @@ function farmaciaReadLocations_() {
         if (JSON.stringify(farmaciaProbeData_(data)) !== row[5] || farmaciaProbeDuplicate_(result.units, data)) throw new Error('Sonda inválida ou duplicada.');
         var equipment = result.units.find(function(item) { return item.id === data.unitId; });
         if (!equipment) throw new Error('Equipamento da sonda não encontrado.');
-        equipment.probes.push(Object.assign({id:row[0],revision:1,author:author,registeredAt:at},data));
+        equipment.probes.push(Object.assign({id:row[0],revision:1,author:author,registeredAt:at,calibrationAuthor:author,calibrationRegisteredAt:at,calibrationHistory:[]},data));
       } else if (row[1] === 'CALIBRATION') {
         if (JSON.stringify(farmaciaCalibrationUpdateData_(data)) !== row[5]) throw new Error('Calibração inválida.');
         var owner = result.units.find(function(item) { return item.id === data.unitId; });
         var probe = owner && owner.probes.find(function(item) { return item.id === data.probeId; });
-        if (!probe || probe.revision !== data.revision) throw new Error('Revisão da sonda inválida.');
+        if (!probe || probe.deleted || probe.revision !== data.revision) throw new Error('Revisão da sonda inválida.');
+        if (probe.calibration) probe.calibrationHistory.unshift({calibration:probe.calibration,author:probe.calibrationAuthor || probe.author,registeredAt:probe.calibrationRegisteredAt || probe.registeredAt});
+        probe.calibrationAuthor = author; probe.calibrationRegisteredAt = at;
         probe.calibration = data.calibration; probe.revision++; probe.author = author; probe.registeredAt = at;
+      } else if (row[1] === 'CATALOG_EDIT' || row[1] === 'CATALOG_DELETE') {
+        if (JSON.stringify(farmaciaCatalogChangeData_(data,row[1])) !== row[5]) throw new Error('Alteração inválida.');
+        farmaciaApplyCatalogChange_(result.units,data,row[1],author,at);
       } else if (row[1] === 'STATUS') {
         if (JSON.stringify(farmaciaLocationStatusData_(data)) !== row[5]) throw new Error('Situação inválida.');
         var unit = result.units.find(function(item) { return item.id === data.unitId; });
-        if (!unit || unit.revision !== data.revision) throw new Error('Revisão inválida.');
+        if (!unit || unit.deleted || unit.revision !== data.revision) throw new Error('Revisão inválida.');
         unit.status = data.status; unit.revision++; unit.author = author; unit.registeredAt = at;
       } else throw new Error('Tipo inválido.');
       result.records.push({ id: row[0], type: row[1], requestId: row[2], dataJson: row[5] });
@@ -140,23 +155,28 @@ function farmaciaReadLocations_() {
 
 function farmaciaWriteLocation_(payload, type) {
   payload = payload || {};
-  return codexWithDocumentLock_('farmacia-location-' + type, function() {
+  var operation = 'farmacia-location-' + type, startedAt = Date.now(), success = false, rowCount = 0;
+  try {
+  var result = codexWithDocumentLock_(operation, function() {
     var access = codexAssertCanWrite_('farmacia-location-' + type, 'Farmacia_Locais');
+    var readStartedAt = Date.now();
     var catalog = farmaciaReadLocations_();
+    rowCount = catalog.records.length;
+    codexLogPerformance_(operation, 'read_catalog', Date.now() - readStartedAt, { rowCount: rowCount }, true);
     if (!catalog.configured) throw new Error('Catálogo de locais ainda não configurado.');
     var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);
     if (!/^[A-Za-z0-9_-]{12,100}$/.test(requestId)) throw new Error('Identificador da operação inválido.');
-    var data = type === 'UNIT' ? farmaciaLocationData_(payload.data) : type === 'PROBE' ? farmaciaProbeData_(payload.data) : type === 'CALIBRATION' ? farmaciaCalibrationUpdateData_(payload.data) : farmaciaLocationStatusData_(payload.data);
+    var data = type === 'CATALOG_EDIT' || type === 'CATALOG_DELETE' ? farmaciaCatalogChangeData_(payload.data,type) : type === 'UNIT' ? farmaciaLocationData_(payload.data) : type === 'PROBE' ? farmaciaProbeData_(payload.data) : type === 'CALIBRATION' ? farmaciaCalibrationUpdateData_(payload.data) : farmaciaLocationStatusData_(payload.data);
     var dataJson = JSON.stringify(data);
     var previous = catalog.records.find(function(record) { return record.requestId === requestId; });
     if (previous) {
       if (previous.type !== type || previous.dataJson !== dataJson) throw new Error('Esta operação já foi usada com outros dados.');
-      return { ok: true, id: previous.id, repeated: true };
+      return { ok: true, id: previous.id, repeated: true, catalog: farmaciaCatalogSnapshot_(catalog, access) };
     }
     if (type === 'UNIT' && catalog.units.some(function(unit) { return unit.code.toLowerCase() === data.code.toLowerCase(); })) throw new Error('Código de equipamento já cadastrado.');
     if (type === 'PROBE') {
       if (!data.calibration) throw new Error('Informe a situação de calibração da sonda.');
-      if (!catalog.units.some(function(unit) { return unit.id === data.unitId; })) throw new Error('Equipamento da sonda não encontrado.');
+      if (!catalog.units.some(function(unit) { return unit.id === data.unitId && !unit.deleted; })) throw new Error('Equipamento da sonda não encontrado.');
       if (farmaciaProbeDuplicate_(catalog.units, data)) throw new Error('Número interno ou número de série da sonda já cadastrado em um equipamento.');
     }
     if (type === 'CALIBRATION') {
@@ -168,14 +188,26 @@ function farmaciaWriteLocation_(payload, type) {
       var unit = catalog.units.find(function(item) { return item.id === data.unitId; });
       if (!unit || unit.revision !== data.revision) throw new Error('O equipamento mudou. Atualize o estoque antes de alterar sua situação.');
     }
+    if (type === 'CATALOG_EDIT' || type === 'CATALOG_DELETE') farmaciaApplyCatalogChange_(catalog.units,data,type,access.userEmail,new Date().toISOString());
     var id = 'FLR-' + Utilities.getUuid();
     if (catalog.records.some(function(record) { return record.id === id; })) throw new Error('Identificador não exclusivo. Tente novamente.');
     var row = [id, type, requestId, JSON.stringify(new Date().toISOString()), JSON.stringify(access.userEmail), dataJson];
+    var rows = catalog.rows.length ? catalog.rows.concat([row]) : [FARMACIA_LOCATIONS_HEADERS_.slice(), row];
+    var updated = farmaciaParseLocationRows_({ configured: true, units: [], records: [] }, rows);
+    var snapshot = farmaciaCatalogSnapshot_(updated, access);
+    var persistStartedAt = Date.now();
     var sheet = catalog.sheet || catalog.ss.insertSheet(FARMACIA_LOCATIONS_SHEET_);
-    if (!sheet.getLastRow()) sheet.getRange(1, 1, 2, row.length).setValues([FARMACIA_LOCATIONS_HEADERS_.slice(), row]);
-    else sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
-    return { ok: true, id: id, repeated: false };
-  });
+    var lastRow = catalog.rows.length;
+    if (!lastRow) sheet.getRange(1, 1, 2, row.length).setValues([FARMACIA_LOCATIONS_HEADERS_.slice(), row]);
+    else sheet.getRange(lastRow + 1, 1, 1, row.length).setValues([row]);
+    codexLogPerformance_(operation, 'persist', Date.now() - persistStartedAt, { rowCount: rowCount + 1 }, true);
+    return { ok: true, id: id, repeated: false, catalog: snapshot };
+  }, { operation: operation });
+  success = true;
+  return result;
+  } finally {
+    codexLogPerformance_(operation, 'total', Date.now() - startedAt, { rowCount: rowCount }, success);
+  }
 }
 
 function cadastrarLocalFarmacia(payload) {
