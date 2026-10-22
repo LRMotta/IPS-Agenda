@@ -3,14 +3,15 @@ var FARMACIA_VIEW = 'stock';
 var FARMACIA_VIEWS = {
   stock: { title:'Estoque', description:'Lotes, localização e saldos do estoque selecionado.', action:'Registrar inventário', form:'initial', target:'farmaciaInventoryResults', search:'Buscar produto, lote ou localização...' },
   products: { title:'Produtos', description:'Apresentação, unidade de controle e condições de conservação.', action:'Novo produto', form:'product', target:'farmaciaProductsResults', search:'Buscar produto ou apresentação...' },
-  equipment: { title:'Equipamentos', icon:'kitchen', description:'Equipamentos e posições do catálogo físico compartilhado da Farmácia.', action:'Novo equipamento', form:'location', target:'farmaciaLocationsResults', search:'Buscar equipamento, modelo ou sala...' },
-  probes: { title:'Sondas e calibração', icon:'device_thermostat', description:'Sondas por equipamento, certificados e validade das calibrações.', action:'Nova sonda', form:'probe', target:'farmaciaProbesResults', search:'Buscar sonda, série ou equipamento...' }
+  equipment: { title:'Equipamentos', icon:'kitchen', description:'', action:'Novo equipamento', form:'location', target:'farmaciaLocationsResults', search:'Buscar equipamento, modelo ou sala...' },
+  probes: { title:'Sondas e calibração', icon:'device_thermostat', description:'', action:'Nova sonda', form:'probe', target:'farmaciaProbesResults', search:'Buscar sonda, série ou equipamento...' }
 };
 
 function farmaciaSetView(view) {
   if (view && Object.prototype.hasOwnProperty.call(FARMACIA_VIEWS, view)) FARMACIA_VIEW = view;
   var config = FARMACIA_VIEWS[FARMACIA_VIEW];
   var catalogView = farmaciaIsCatalogView();
+  document.getElementById('page-farmacia').classList.toggle('farmacia-catalog', catalogView);
   if (view && catalogView) {
     // Uma seleção anterior não pode fechar/resetar o catálogo ao responder depois.
     FARMACIA_STUDY_REQUEST_ID++;
@@ -32,6 +33,7 @@ function farmaciaSetView(view) {
     document.getElementById('topIcon').textContent = catalogView ? config.icon : 'local_pharmacy';
   }
   document.getElementById('farmaciaViewDescription').textContent = config.description;
+  document.getElementById('farmaciaViewDescription').hidden = !config.description;
   document.getElementById('farmaciaPrimaryLabel').textContent = config.action;
   var search = document.getElementById('farmaciaSearch');
   search.placeholder = config.search;
@@ -63,8 +65,8 @@ function farmaciaUpdateSummary() {
   var known = !!data && (equipmentView ? data.locationsConfigured : data.configured);
   var products = data && data.products || [], positions = data && data.positions || [], units = data && data.storageUnits || [];
   var probes = units.reduce(function(all, unit) { return all.concat(unit.probes || []); }, []);
-  var labels = ['Produtos', 'Posições inventariadas', 'Posições com bloqueio'];
-  var values = [products.length, positions.length, positions.filter(function(item) { return item.blocked > 0; }).length];
+  var labels = ['Produtos', 'Entradas de estoque', 'Entradas com pendência / bloqueio'];
+  var values = [products.length, positions.length, positions.filter(function(item) { return item.blocked > 0 || item.pending > 0; }).length];
   if (FARMACIA_VIEW === 'equipment') {
     labels = ['Equipamentos', 'Posições cadastradas', 'Equipamentos indisponíveis'];
     values = [units.length, units.reduce(function(sum, unit) { return sum + unit.positions.length; }, 0), units.filter(function(unit) { return unit.status !== 'active'; }).length];
@@ -76,35 +78,47 @@ function farmaciaUpdateSummary() {
     document.getElementById('farmaciaMetricLabel' + i).textContent = label;
     document.getElementById('farmaciaMetric' + i).textContent = known ? String(values[i]) : '—';
   });
+  var icons = FARMACIA_VIEW === 'equipment' ? ['kitchen','inventory_2','shield'] : FARMACIA_VIEW === 'probes' ? ['device_thermostat','verified_user','event_busy'] : ['medication','inventory_2','shield'];
+  document.querySelectorAll('#farmaciaSummary .stat-icon .material-symbols-outlined').forEach(function(icon, i) { icon.textContent = icons[i]; });
   var canManage = !!data && (equipmentView ? data.locationsCanManage : data.farmaciaAccess === 'manage');
   var action = document.getElementById('farmaciaPrimaryAction');
   action.hidden = !canManage;
   action.disabled = !known || FARMACIA_STOCK.saving || document.getElementById('farmacia' + ({initial:'Initial', product:'Product', location:'Location', probe:'Probe'})[config.form] + 'Fields').disabled;
   action.title = action.disabled ? 'Conclua a configuração e os cadastros necessários antes de continuar.' : config.action;
+  var receipt = document.getElementById('farmaciaReceiptAction');
+  receipt.hidden = FARMACIA_VIEW !== 'stock' || !canManage || !products.some(function(product) { return product.supplySource === 'sponsor'; });
+  receipt.disabled = !known || FARMACIA_STOCK.saving || !data || !data.locationsConfigured || !units.length;
 }
 
 function farmaciaEmpty(title, copy, icon) {
   return '<div class="farmacia-empty"><span class="material-symbols-outlined" aria-hidden="true">' + icon + '</span><h3>' + esc(title) + '</h3><p>' + esc(copy) + '</p></div>';
 }
 
-function farmaciaTable(headers, rows, label) {
-  return '<div class="farmacia-stock-scroll" role="region" aria-label="' + esc(label) + '" tabindex="0"><table class="data-table"><thead><tr>' + headers.map(function(header) { return '<th>' + header + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+function farmaciaTable(headers, rows, label, state) {
+  return '<div class="farmacia-stock-scroll" role="region" aria-label="' + esc(label) + '" tabindex="0"><table class="data-table' + (state ? ' farmacia-catalog-state' : '') + '"><thead><tr>' + headers.map(function(header) { return '<th>' + header + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function farmaciaCatalogTable(view, rows, loading) {
+  var headers = view === 'equipment' ? ['Equipamento', 'Fabricante / Modelo', 'Sala', 'Faixa operacional', 'Situação', 'Posições', 'Ações'] : ['Sonda / Série', 'Equipamento', 'Modelo / Ponto', 'Calibração', 'Válida até', 'Ações'];
+  var empty = view === 'equipment' ? 'Nenhum equipamento cadastrado' : 'Nenhuma sonda cadastrada';
+  var state = '<tr class="' + (loading ? 'loading-row' : 'empty-row') + '"><td colspan="' + headers.length + '"' + (loading ? ' role="status"' : '') + '>' + (loading ? '<div class="spinner"></div>Carregando…' : empty) + '</td></tr>';
+  return farmaciaTable(headers, rows || state, view === 'equipment' ? 'Equipamentos e posições' : 'Sondas e calibração', !rows);
 }
 
 function farmaciaRenderTables(data) {
   var products = data.products || [], positions = data.positions || [];
   var productRows = products.map(function(product) {
-    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong></td><td>' + esc(product.presentation) + '</td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td></tr>';
+    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.presentation) + '</td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td></tr>';
   }).join('');
   var positionRows = positions.map(function(position) {
     var product = products.find(function(item) { return item.id === position.productId; }) || {};
     return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + esc(product.presentation) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + (position.expired ? '<small class="chip chip-red">Vencido</small>' : '') + '</td><td class="farmacia-cell-detail">' + esc(position.location) + '<small>' + esc((position.storageCheck || {}).message || 'Conservação pendente de conferência.') + '</small></td>' +
-      ['physical', 'available', 'blocked'].map(function(key) { return '<td class="farmacia-quantity">' + farmaciaStockNumber(position[key]) + ' ' + esc(product.unit) + '</td>'; }).join('') +
-      '<td>' + esc(farmaciaStockDate(position.countedOn)) + '<small>' + esc(position.author) + '</small><small>Registro: ' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
+      ['physical', 'available', 'pending', 'blocked'].map(function(key) { return '<td class="farmacia-quantity">' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</td>'; }).join('') +
+      '<td>' + (position.origin === 'receipt' ? 'Recebimento' : 'Saldo inicial') + '<small>' + esc(farmaciaStockDate(position.receivedOn || position.countedOn)) + '</small><small>' + esc(position.author) + '</small></td><td><button class="btn-txt" type="button" data-position-id="' + esc(position.id) + '" onclick="farmaciaOpenPosition(this.dataset.positionId)" aria-label="Ver histórico do lote ' + esc(position.lot) + '">Histórico</button></td></tr>';
   }).join('');
   var missing = farmaciaEmpty('Estoque ainda não configurado', 'O administrador precisa vincular o arquivo deste estoque antes do primeiro cadastro.', 'settings');
   document.getElementById('farmaciaProductsResults').innerHTML = !data.configured ? missing : productRows ? farmaciaTable(['Produto', 'Apresentação', 'Unidade', 'Controle', 'Conservação / Referência'], productRows, 'Produtos da Farmácia') : farmaciaEmpty('Nenhum produto cadastrado', 'Os produtos e suas condições de conservação aparecerão aqui.', 'medication');
-  document.getElementById('farmaciaInventoryResults').innerHTML = !data.configured ? missing : positionRows ? farmaciaTable(['Produto', 'Lote / Kit', 'Validade', 'Localização', 'Físico', 'Disponível', 'Bloqueado', 'Conferência / Autoria'], positionRows, 'Inventário inicial da Farmácia') : farmaciaEmpty('Nenhuma posição inventariada', 'Cadastre os produtos e os locais para registrar a contagem física inicial.', 'inventory_2');
+  document.getElementById('farmaciaInventoryResults').innerHTML = !data.configured ? missing : positionRows ? farmaciaTable(['Produto', 'Lote / Kit', 'Validade', 'Localização', 'Físico', 'Disponível', 'Aguardando avaliação', 'Bloqueado', 'Origem / Autoria', 'Ações'], positionRows, 'Estoque da Farmácia') : farmaciaEmpty('Nenhuma entrada de estoque', 'Registre o saldo inicial ou um recebimento do patrocinador.', 'inventory_2');
   farmaciaRenderCatalog(data);
 }
 
@@ -119,8 +133,8 @@ function farmaciaRenderCatalog(data) {
     }).join('');
   }).join('');
   var missing = farmaciaEmpty('Catálogo de equipamentos ainda não configurado', 'O administrador precisa vincular o arquivo do catálogo físico antes dos cadastros.', 'settings');
-  document.getElementById('farmaciaLocationsResults').innerHTML = !data.locationsConfigured ? missing : equipment ? farmaciaTable(['Equipamento', 'Fabricante / Modelo', 'Sala', 'Faixa operacional', 'Situação', 'Posições', 'Ações'], equipment, 'Equipamentos e posições') : farmaciaEmpty('Nenhum equipamento cadastrado', 'Cadastre o armário, os refrigeradores e o freezer com suas posições de armazenamento.', 'kitchen');
-  document.getElementById('farmaciaProbesResults').innerHTML = !data.locationsConfigured ? missing : probes ? farmaciaTable(['Sonda / Série', 'Equipamento', 'Modelo / Ponto', 'Calibração', 'Válida até', 'Ações'], probes, 'Sondas e calibração') : farmaciaEmpty('Nenhuma sonda cadastrada', 'Registre cada sonda e sua calibração no equipamento correspondente.', 'device_thermostat');
+  document.getElementById('farmaciaLocationsResults').innerHTML = !data.locationsConfigured ? missing : farmaciaCatalogTable('equipment', equipment, false);
+  document.getElementById('farmaciaProbesResults').innerHTML = !data.locationsConfigured ? missing : farmaciaCatalogTable('probes', probes, false);
   var options = '<option value="">Selecione o equipamento</option>' + units.map(function(unit) { return '<option value="' + esc(unit.id) + '">' + esc(unit.code + ' · ' + statuses[unit.status]) + '</option>'; }).join('');
   ['farmaciaInitialUnit', 'farmaciaProbeUnit'].forEach(function(id) {
     var select = document.getElementById(id), selected = select.value;
@@ -144,7 +158,7 @@ function farmaciaApplySearch() {
 }
 
 function farmaciaDialogId(type) {
-  return 'farmaciaModal-' + (type === 'status' ? 'unitDetail' : type === 'calibration' ? 'probeDetail' : type);
+  return 'farmaciaModal-' + (type === 'status' ? 'unitDetail' : type === 'calibration' ? 'probeDetail' : type === 'movement' ? 'positionDetail' : type);
 }
 
 function farmaciaCloseDialogs() {
@@ -168,7 +182,11 @@ function farmaciaOpenPrimary() {
     farmaciaInitialUnitChanged();
     farmaciaInitialProductChanged();
   }
-  if (type === 'product') farmaciaProductControlChanged();
+  if (type === 'product') {
+    farmaciaProductControlChanged();
+    var supply = document.getElementById('farmaciaProductSupply');
+    supply.querySelector('[value="sponsor"]').disabled = FARMACIA_STOCK.studyId === '@IPS_COMMON';
+  }
   document.getElementById(id).querySelector('.farmacia-dialog-status').textContent = '';
   abrirOverlay(id);
 }
@@ -202,6 +220,8 @@ function farmaciaRestoreFocus() {
   var active = document.activeElement;
   if (active && active !== document.body && !active.closest('.farmacia-dialog') && active.getClientRects().length) return;
   var button = document.getElementById('farmaciaPrimaryAction');
+  if (pending.type === 'receipt') button = document.getElementById('farmaciaReceiptAction');
+  if (pending.type === 'movement') button = Array.from(document.querySelectorAll('#farmaciaInventoryResults [data-position-id]')).find(function(item) { return item.dataset.positionId === pending.positionId; });
   if (pending.type === 'status' || pending.type === 'calibration') {
     button = Array.from(document.querySelectorAll('#' + FARMACIA_VIEWS[FARMACIA_VIEW].target + ' button[data-unit-id]')).find(function(item) {
       return item.dataset.unitId === pending.unitId && (pending.type !== 'calibration' || item.dataset.probeId === pending.probeId);

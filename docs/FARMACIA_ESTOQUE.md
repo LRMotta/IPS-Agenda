@@ -1,8 +1,9 @@
-# Farmácia: produtos e inventário inicial por estudo e estoque comum
+# Farmácia: produtos, estoque e base do ciclo de vida
 
-Segunda entrega local, sobre a base de permissões por estudo, ampliada com estoque
-comum do IPS a pedido do usuário. Não há importação da planilha anterior,
-integração com Tasy/IRT, dispensação, preparo, prescrição ou movimentação posterior.
+Base local com permissões por estudo, estoque comum e ciclo inicial de produtos
+fornecidos pelo patrocinador. Há inventário inicial, recebimentos, bloqueio/liberação
+e transferência de localização, com histórico. Não há importação da planilha anterior,
+integração com Tasy/IRT, dispensação, preparo, prescrição, devoluções ou destruição.
 
 ## Uso
 
@@ -16,6 +17,9 @@ Produtos. Equipamentos e Sondas são um catálogo compartilhado, consultado pela
 As áreas de catálogo exibem **Equipamentos** (`kitchen`) ou **Sondas e calibração**
 (`device_thermostat`) no cabeçalho azul, sem repetir o título na barra da tabela.
 Não exibem seletor de estoque, linha de contexto ou texto sobre compartilhamento.
+O catálogo segue a apresentação de Cadastros: indicadores, barra de busca/ações e
+tabela, sem parágrafos descritivos. Carregamento usa a linha com spinner da tabela;
+listas vazias mantêm as colunas e uma única mensagem, sem painel de instruções.
 
 Formulários usam confirmação de descarte, foco de teclado e bloqueio de fechamento
 enquanto a gravação está em andamento. Em falha, preservam dados e requestId para
@@ -33,7 +37,7 @@ no estudo e tem armazenamento físico separado; trocar estudo/classe limpa dados
 e formulários anteriores e descarta respostas obsoletas.
 
 - `read` e `operate` consultam. Nesta entrega, só `manage` cadastra produtos e
-  confirma inventário inicial. Admin não substitui essas concessões.
+  confirma inventário inicial e registra recebimentos/movimentações. Admin não substitui essas concessões.
 - O comum usa concessão própria em Users K, **Acesso ao estoque comum da Farmácia**:
   `none/read/operate/manage`. Não depende de I/J nem concede estudos, e não tem
   classe restrita. Campo ausente/inválido ou cabeçalho alheio nega acesso. Só Admin
@@ -58,7 +62,51 @@ e formulários anteriores e descarta respostas obsoletas.
 - Uma posição nova é produto + lote + equipamento/posição cadastrados + kit, comparados exatamente após
   remoção de espaços nas extremidades. Alterar a validade não cria nova posição.
   Não há correção por nova contagem inicial, exclusão ou edição das entradas nesta
-  entrega; ajustes e recebimentos posteriores pertencem à etapa de movimentações.
+  entrega. Recebimentos do patrocinador são entradas distintas, nunca novas contagens iniciais.
+
+## Base do ciclo de vida do patrocinador
+
+Produtos novos exigem `supplySource`: `sponsor` (fornecido pelo patrocinador) ou
+`site` (próprio do IPS). O estoque comum não aceita produtos do patrocinador.
+Registros anteriores sem origem continuam legíveis, sem classificação inferida e
+sem habilitar recebimentos/movimentações. Não recriar um produto histórico para
+migrar seu saldo: a classificação/migração histórica exige procedimento posterior.
+
+O saldo inicial representa apenas a contagem física. Para produtos do patrocinador,
+a parte não bloqueada entra automaticamente como **Aguardando avaliação**. O
+recebimento registra data, documento/remessa e item, produto, lote/kit, validade,
+quantidade e equipamento/posição; sua quantidade também aguarda avaliação.
+Vencidos não ficam disponíveis. A referência documental deve identificar o item
+da remessa: mesma referência + produto + lote + kit não pode ser recebida duas vezes.
+Kits individuais permanecem únicos no estudo/classe, inclusive entre tipos de entrada.
+
+O físico se divide em disponível, aguardando avaliação e bloqueado, sem somar
+unidades distintas. Vencimento zera disponível e pendente na consulta e apresenta
+todo o físico como bloqueado, preservando os eventos originalmente registrados.
+
+No histórico da entrada, `manage` pode bloquear uma quantidade disponível/pendente
+ou liberar uma quantidade pendente/bloqueada. Toda ação exige motivo e referência
+documental; liberar é uma declaração explícita do usuário autorizado, baseada nos
+documentos do estudo, sem aprovação automática por conservação ou contagem.
+Material vencido não pode ser liberado. Não há prescrição, cálculo de dose nem IRT.
+
+A transferência move o **saldo integral da entrada** para outra posição cadastrada;
+preserva situações e quantidades, produto, lote/kit e estudo/classe. Não há
+transferência entre estudos/classes nem fracionamento da entrada nesta etapa.
+Equipamentos continuam compartilhados; o catálogo não expõe sua ocupação clínica.
+
+As RPCs `registrarRecebimentoFarmacia` e `registrarMovimentacaoFarmacia` revalidam
+`manage`, configuração, schema e saldo sob lock. Movimentações exigem a revisão atual
+da entrada; resposta perdida aceita repetição idêntica do requestId mesmo depois de
+outras movimentações, sem duplicar o efeito. O cliente preserva formulário/chave em
+falhas e descarta respostas após mudança de estudo/classe ou identidade.
+
+Todos os eventos ficam na mesma aba segregada `Farmacia_Registros_v1`, com novos
+tipos `RECEIPT` e `MOVEMENT`, além de `PRODUCT` e `INITIAL`. Cada linha registra
+autor autenticado, instante, motivo/referência e payload JSON. Leituras reconstroem
+o saldo e validam a sequência sem escrever ou migrar schema. O botão **Histórico**
+permite consulta aos perfis autorizados, mantendo as restrições do estudo/classe.
+Arquivos e ACLs reais continuam exigindo configuração administrativa antes do uso.
 
 ## Armazenamento e configuração futura
 
@@ -105,7 +153,7 @@ decisão e validação da Farmácia antes de qualquer cadastro real.
 ## Integridade, concorrência e auditoria
 
 Arquivo usa uma única aba `Farmacia_Registros_v1`, com cabeçalho fixo. Cada linha
-é um produto ou uma contagem inicial e inclui ID, estudo, classe, identificador da
+é um produto, contagem inicial, recebimento ou movimentação e inclui ID, estudo, classe, identificador da
 operação, instante, autor e payload JSON. Texto livre permanece em JSON, evitando
 interpretação como fórmula de planilha. Datas são armazenadas em ISO; exibição usa
 português e America/Sao_Paulo. Não há cópia detalhada em Audit_Log da planilha
@@ -126,6 +174,12 @@ Abas existentes com estrutura divergente são recusadas, sem sobrescrever dados.
 O catálogo pode ser lido por todos os usuários ativos autenticados do app, mesmo
 sem concessão de Farmácia ou projeto. O menu de Farmácia permanece disponível para
 eles; Estoque e Produtos aparecem somente com suas concessões específicas.
+Farmácia, Equipamentos e Sondas já estão presentes no HTML inicial, antes do retorno
+do perfil; o grupo lateral segue o mesmo comportamento expansível dos demais menus.
+Estoque e Produtos começam ocultos. A visibilidade da navegação não autoriza RPCs:
+o servidor continua validando usuário e perfil em cada consulta ou alteração.
+Entrar no catálogo durante a carga do perfil retoma a consulta com a identidade
+validada, descartando respostas vinculadas ao estado anterior.
 As alterações no catálogo seguem o perfil geral: `admin` e `user` cadastram e
 atualizam, `readonly` apenas consulta. Perfil e ativação são revalidados sob lock.
 Essas permissões não concedem produtos, saldos, acesso a estudos ou classe restrita.

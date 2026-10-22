@@ -39,6 +39,10 @@ function farmaciaProductData_(value) {
   var result = { name: name, presentation: presentation, unit: unit, control: value.control };
   // Ausência preserva o JSON histórico; nunca presume uma condição de conservação.
   if (Object.prototype.hasOwnProperty.call(value, 'storage')) result.storage = farmaciaConservationData_(value.storage);
+  if (Object.prototype.hasOwnProperty.call(value, 'supplySource')) {
+    if (['sponsor', 'site'].indexOf(value.supplySource) === -1) throw new Error('Selecione a origem do fornecimento do produto.');
+    result.supplySource = value.supplySource;
+  }
   return result;
 }
 
@@ -64,6 +68,10 @@ function farmaciaInitialData_(value, product, historical) {
   if (Object.prototype.hasOwnProperty.call(value, 'locationRef')) {
     var ref = value.locationRef || {};
     result.locationRef = { unitId: farmaciaText_(ref.unitId, 'o equipamento', 100), position: farmaciaText_(ref.position, 'a posição', 80) };
+  }
+  if (product.data.supplySource === 'sponsor') {
+    result.pending = Math.round((physical - blocked) * 1000) / 1000;
+    if (value.pending !== undefined && value.pending !== result.pending) throw new Error('O saldo inicial do patrocinador aguarda avaliação; não presume liberação.');
   }
   return result;
 }
@@ -138,20 +146,85 @@ function farmaciaSamePosition_(a, b) {
     (a.productId === b.productId && a.lot === b.lot && a.kit === b.kit && a.location === b.location);
 }
 
+function farmaciaReceiptData_(value, product) {
+  value = value || {};
+  if (!product || product.data.supplySource !== 'sponsor') throw new Error('Recebimentos são exclusivos de produtos do patrocinador identificados neste estudo.');
+  var receivedOn = farmaciaDate_(value.receivedOn, 'a data do recebimento');
+  if (receivedOn > farmaciaToday_()) throw new Error('A data do recebimento não pode ser futura.');
+  var initial = farmaciaInitialData_(Object.assign({}, value, { blocked: 0, countedOn: receivedOn, confirmed: true }), product, true);
+  var result = { productId: initial.productId, lot: initial.lot, expiry: initial.expiry, location: initial.location,
+    kit: initial.kit, physical: initial.physical, receivedOn: receivedOn,
+    document: farmaciaText_(value.document, 'a referência documental do recebimento', 200), note: initial.note };
+  if (initial.locationRef) result.locationRef = initial.locationRef;
+  return result;
+}
+
+function farmaciaMovementData_(value) {
+  value = value || {};
+  if (['block', 'release', 'transfer'].indexOf(value.action) === -1) throw new Error('Selecione uma movimentação válida.');
+  var from = value.action === 'transfer' ? '' : value.from;
+  if ((value.action === 'block' && ['available', 'pending'].indexOf(from) === -1) ||
+      (value.action === 'release' && ['blocked', 'pending'].indexOf(from) === -1)) throw new Error('Selecione a situação de origem da quantidade.');
+  var result = { positionId: farmaciaText_(value.positionId, 'o registro de estoque', 100),
+    revision: farmaciaText_(value.revision, 'a revisão do saldo', 100), action: value.action,
+    quantity: farmaciaQuantity_(value.quantity, true), from: from,
+    reason: farmaciaText_(value.reason, 'o motivo da movimentação', 500),
+    document: farmaciaText_(value.document, 'a referência documental da movimentação', 200) };
+  if (!result.quantity) throw new Error('A quantidade deve ser positiva.');
+  if (value.action === 'transfer') {
+    var ref = value.locationRef || {};
+    result.locationRef = { unitId: farmaciaText_(ref.unitId, 'o equipamento de destino', 100), position: farmaciaText_(ref.position, 'a posição de destino', 80) };
+    result.location = farmaciaText_(value.location, 'a localização de destino', 200);
+  }
+  return result;
+}
+
+function farmaciaEntryState_(record) {
+  var data = record.data, receipt = record.type === 'RECEIPT';
+  var blocked = receipt ? (data.expiry < data.receivedOn ? data.physical : 0) : data.blocked;
+  var pending = receipt ? data.physical - blocked : data.pending || 0;
+  return Object.assign({}, data, { id: record.id, revision: record.id, registeredAt: record.registeredAt,
+    author: record.author, origin: receipt ? 'receipt' : 'initial', initialBlocked: blocked, blocked: blocked, pending: pending,
+    available: Math.round((data.physical - blocked - pending) * 1000) / 1000 });
+}
+
+function farmaciaApplyMovement_(position, movement, product, id) {
+  if (!position || !product || product.data.supplySource !== 'sponsor') throw new Error('Movimentações são exclusivas de produtos do patrocinador deste estudo.');
+  if (movement.revision !== position.revision) throw new Error('O saldo mudou. Atualize o estoque antes de movimentar.');
+  var quantity = farmaciaQuantity_(movement.quantity, ['mL', 'g'].indexOf(product.data.unit) !== -1);
+  if (movement.action === 'transfer') {
+    if (quantity !== position.physical) throw new Error('A transferência deve abranger todo o saldo deste registro.');
+    if ((position.locationRef && position.locationRef.unitId === movement.locationRef.unitId && position.locationRef.position === movement.locationRef.position) || position.location === movement.location) throw new Error('Selecione uma localização de destino diferente da atual.');
+    position.locationRef = movement.locationRef;
+    position.location = movement.location;
+  } else {
+    if (quantity > position[movement.from]) throw new Error('A quantidade excede o saldo na situação selecionada.');
+    position[movement.from] = Math.round((position[movement.from] - quantity) * 1000) / 1000;
+    var target = movement.action === 'block' ? 'blocked' : 'available';
+    position[target] = Math.round((position[target] + quantity) * 1000) / 1000;
+  }
+  position.revision = id;
+}
+
+function farmaciaReceiptKey_(data) {
+  return JSON.stringify([data.document, data.productId, data.lot, data.kit]);
+}
+
 function farmaciaReadLedger_(context) {
   var sheet = context.ss.getSheetByName(FARMACIA_LEDGER_SHEET_);
-  if (!sheet || !sheet.getLastRow()) return { sheet: sheet, records: [], products: [], initial: [] };
+  if (!sheet || !sheet.getLastRow()) return { sheet: sheet, records: [], products: [], initial: [], positions: [], movements: [] };
   var rows = sheet.getDataRange().getValues();
   if (rows[0].length !== FARMACIA_LEDGER_HEADERS_.length || FARMACIA_LEDGER_HEADERS_.some(function(header, i) { return rows[0][i] !== header; })) {
     throw new Error('Estrutura do estoque da Farmácia divergente. Revise o arquivo antes de prosseguir.');
   }
-  var records = [], products = [], initial = [], ids = [], requests = [], productKeys = [], positions = [], kits = [];
+  var records = [], products = [], initial = [], ids = [], requests = [], productKeys = [], positions = [], kits = [], receipts = [], movements = [];
   try {
     rows.slice(1).forEach(function(row) {
       if (row.every(function(cell) { return cell === ''; })) return;
       var scope = JSON.parse(row[2]), registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
-      if (typeof row[0] !== 'string' || !/^F(?:PR|IN)-[A-Za-z0-9_-]+$/.test(row[0]) ||
-          ['PRODUCT', 'INITIAL'].indexOf(row[1]) === -1 || row[0].indexOf(row[1] === 'PRODUCT' ? 'FPR-' : 'FIN-') !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
+      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-' };
+      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV)-[A-Za-z0-9_-]+$/.test(row[0]) ||
+          !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
           typeof row[4] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[4]) ||
           typeof registeredAt !== 'string' || isNaN(Date.parse(registeredAt)) || new Date(registeredAt).toISOString() !== registeredAt ||
           typeof author !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(author) ||
@@ -160,28 +233,39 @@ function farmaciaReadLedger_(context) {
       var record = { id: row[0], type: row[1], requestId: row[4], registeredAt: registeredAt, author: author, data: data, dataJson: row[7] };
       records.push(record);
       if (record.type === 'PRODUCT') {
-        if (JSON.stringify(farmaciaProductData_(data)) !== row[7] || productKeys.indexOf(farmaciaProductKey_(data)) !== -1) throw new Error('Produto duplicado ou inválido.');
+        if (JSON.stringify(farmaciaProductData_(data)) !== row[7] || productKeys.indexOf(farmaciaProductKey_(data)) !== -1 ||
+            (context.studyId === FARMACIA_COMMON_SCOPE_ && data.supplySource === 'sponsor')) throw new Error('Produto duplicado ou inválido.');
         productKeys.push(farmaciaProductKey_(data)); products.push(record);
+      } else if (record.type === 'INITIAL' || record.type === 'RECEIPT') {
+        var product = products.find(function(item) { return item.id === data.productId; });
+        var normalized = record.type === 'INITIAL' ? farmaciaInitialData_(data, product, true) : farmaciaReceiptData_(data, product);
+        if (JSON.stringify(normalized) !== record.dataJson || (data.kit && kits.indexOf(data.kit) !== -1) ||
+            (record.type === 'INITIAL' && (positions.some(function(item) { return farmaciaSamePosition_(item, data); }) || records.slice(0, -1).some(function(item) {
+              return (item.type === 'INITIAL' || item.type === 'RECEIPT') && farmaciaSamePosition_(item.data, data);
+            }))) ||
+            (record.type === 'RECEIPT' && (context.studyId === FARMACIA_COMMON_SCOPE_ || receipts.indexOf(farmaciaReceiptKey_(data)) !== -1))) throw new Error('Entrada duplicada ou inválida.');
+        if (data.kit) kits.push(data.kit);
+        if (record.type === 'INITIAL') initial.push(record);
+        else receipts.push(farmaciaReceiptKey_(data));
+        positions.push(farmaciaEntryState_(record)); movements.push(record);
+      } else {
+        if (JSON.stringify(farmaciaMovementData_(data)) !== record.dataJson) throw new Error('Movimentação inválida.');
+        var position = positions.find(function(item) { return item.id === data.positionId; });
+        var source = position && products.find(function(item) { return item.id === position.productId; });
+        farmaciaApplyMovement_(position, data, source, record.id);
+        movements.push(record);
       }
-    });
-    records.filter(function(record) { return record.type === 'INITIAL'; }).forEach(function(record) {
-      var data = record.data, product = products.find(function(item) { return item.id === data.productId; });
-      var normalized = farmaciaInitialData_(data, product, true);
-      if (JSON.stringify(normalized) !== record.dataJson || positions.indexOf(farmaciaPositionKey_(data)) !== -1 || initial.some(function(item) { return farmaciaSamePosition_(item.data, data); }) ||
-          (data.kit && kits.indexOf(data.kit) !== -1)) throw new Error('Posição ou kit duplicado.');
-      positions.push(farmaciaPositionKey_(data)); if (data.kit) kits.push(data.kit);
-      initial.push(record);
     });
   } catch (error) {
     // eslint-disable-next-line preserve-caught-error -- Não propagar dados brutos ou identificadores de registros inconsistentes ao cliente.
     throw new Error('Registros do estoque da Farmácia inconsistentes. Nenhum saldo foi alterado.');
   }
-  return { sheet: sheet, records: records, products: products, initial: initial };
+  return { sheet: sheet, records: records, products: products, initial: initial, positions: positions, movements: movements };
 }
 
 function getFarmaciaEstoque(studyId, restricted) {
   var context = farmaciaContext_(studyId, restricted, 'read');
-  var data = context.ss ? farmaciaReadLedger_(context) : { products: [], initial: [] };
+  var data = context.ss ? farmaciaReadLedger_(context) : { products: [], positions: [], movements: [] };
   var today = farmaciaToday_();
   var locations = farmaciaReadLocations_();
   return { study: context.access.farmaciaStudy, restricted: restricted, configured: !!context.ss,
@@ -189,12 +273,14 @@ function getFarmaciaEstoque(studyId, restricted) {
     locationsCanManage: context.access.role === 'admin' || context.access.role === 'user',
     farmaciaAccess: context.access.farmaciaAccess, products: data.products.map(function(record) {
       return Object.assign({ id: record.id, registeredAt: record.registeredAt, author: record.author }, record.data);
-    }), positions: data.initial.map(function(record) {
-      var expired = record.data.expiry < today;
-      return Object.assign({ id: record.id, registeredAt: record.registeredAt, author: record.author }, record.data, {
-        storageCheck: farmaciaStorageCheck_(data.products.find(function(item) { return item.id === record.data.productId; }).data, record.data, locations.units),
-        expired: expired, available: expired ? 0 : Math.round((record.data.physical - record.data.blocked) * 1000) / 1000,
-        blocked: expired ? record.data.physical : record.data.blocked, initialBlocked: record.data.blocked
+    }), movements: data.movements.map(function(record) {
+      return { id: record.id, type: record.type, registeredAt: record.registeredAt, author: record.author, data: record.data };
+    }), positions: data.positions.map(function(position) {
+      var expired = position.expiry < today;
+      return Object.assign({}, position, {
+        storageCheck: farmaciaStorageCheck_(data.products.find(function(item) { return item.id === position.productId; }).data, position, locations.units),
+        expired: expired, available: expired ? 0 : position.available,
+        pending: expired ? 0 : position.pending, blocked: expired ? position.physical : position.blocked
       });
     }) };
 }
@@ -208,12 +294,13 @@ function farmaciaWrite_(payload, type) {
     var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);
     if (!/^[A-Za-z0-9_-]{12,100}$/.test(requestId)) throw new Error('Identificador da operação inválido.');
     var ledger = farmaciaReadLedger_(context);
-    var data = type === 'PRODUCT' ? farmaciaProductData_(payload.data) : farmaciaInitialData_(payload.data,
-      ledger.products.find(function(record) { return record.id === (payload.data || {}).productId; }), true);
+    var product = ledger.products.find(function(record) { return record.id === (payload.data || {}).productId; });
+    var data = type === 'PRODUCT' ? farmaciaProductData_(payload.data) : type === 'MOVEMENT' ? farmaciaMovementData_(payload.data) :
+      type === 'RECEIPT' ? farmaciaReceiptData_(payload.data, product) : farmaciaInitialData_(payload.data, product, true);
     var dataJson = JSON.stringify(data);
     var previous = ledger.records.find(function(record) { return record.requestId === requestId; });
     if (previous) {
-      if (type === 'INITIAL' && data.locationRef) {
+      if ((type === 'INITIAL' || type === 'RECEIPT' || (type === 'MOVEMENT' && data.action === 'transfer')) && data.locationRef) {
         data.location = previous.data.location;
         dataJson = JSON.stringify(data);
       }
@@ -221,7 +308,9 @@ function farmaciaWrite_(payload, type) {
       return { ok: true, id: previous.id, repeated: true };
     }
     if (type === 'PRODUCT' && !data.storage) throw new Error('Informe as condições de conservação, referência documental e versão do produto.');
-    if (type === 'INITIAL') {
+    if (type === 'PRODUCT' && !data.supplySource) throw new Error('Selecione a origem do fornecimento do produto.');
+    if (type === 'PRODUCT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.supplySource === 'sponsor') throw new Error('Produtos do patrocinador devem pertencer ao estoque do estudo.');
+    if (type === 'INITIAL' || type === 'RECEIPT' || (type === 'MOVEMENT' && data.action === 'transfer')) {
       var locations = farmaciaReadLocations_();
       var ref = data.locationRef;
       var unit = ref && locations.units.find(function(item) { return item.id === ref.unitId; });
@@ -230,15 +319,26 @@ function farmaciaWrite_(payload, type) {
       data.location = unit.code + ' → ' + ref.position;
       dataJson = JSON.stringify(data);
     }
-    if (type === 'INITIAL') farmaciaInitialData_(data, ledger.products.find(function(record) { return record.id === data.productId; }));
+    if (type === 'INITIAL') farmaciaInitialData_(data, product);
     if (type === 'PRODUCT' && ledger.products.some(function(record) { return farmaciaProductKey_(record.data) === farmaciaProductKey_(data); })) {
       throw new Error('Este produto já está cadastrado.');
     }
-    if (type === 'INITIAL' && ledger.initial.some(function(record) {
-      return farmaciaSamePosition_(record.data, data) || (data.kit && record.data.kit === data.kit);
+    if ((type === 'INITIAL' || type === 'RECEIPT') && ledger.records.some(function(record) {
+      return (record.type === 'INITIAL' || record.type === 'RECEIPT') &&
+        ((type === 'INITIAL' && farmaciaSamePosition_(record.data, data)) || (data.kit && record.data.kit === data.kit));
     })) throw new Error('Esta posição ou kit já possui inventário inicial. Não repita a contagem como nova entrada.');
-    var id = (type === 'PRODUCT' ? 'FPR-' : 'FIN-') + Utilities.getUuid();
+    if (type === 'INITIAL' && ledger.positions.some(function(position) { return farmaciaSamePosition_(position, data); })) throw new Error('Esta posição já possui saldo. Não repita a contagem como nova entrada.');
+    if (type === 'RECEIPT' && (context.studyId === FARMACIA_COMMON_SCOPE_ || ledger.records.some(function(record) {
+      return record.type === 'RECEIPT' && farmaciaReceiptKey_(record.data) === farmaciaReceiptKey_(data);
+    }))) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
+    var id = ({ PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-' })[type] + Utilities.getUuid();
     if (ledger.records.some(function(record) { return record.id === id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
+    if (type === 'MOVEMENT') {
+      var position = ledger.positions.find(function(item) { return item.id === data.positionId; });
+      var movementProduct = position && ledger.products.find(function(item) { return item.id === position.productId; });
+      if (position && position.expiry < farmaciaToday_() && data.action !== 'transfer') throw new Error('Material vencido permanece bloqueado e não pode ser liberado.');
+      farmaciaApplyMovement_(position, data, movementProduct, id);
+    }
     var row = [id, type, JSON.stringify(context.studyId), context.restricted, requestId, JSON.stringify(new Date().toISOString()), JSON.stringify(context.access.userEmail), dataJson];
     var sheet = ledger.sheet || context.ss.insertSheet(FARMACIA_LEDGER_SHEET_);
     // Uma gravação para cabeçalho + primeiro registro, ou uma linha append-only.
@@ -255,4 +355,12 @@ function cadastrarProdutoFarmacia(payload) {
 
 function registrarInventarioInicialFarmacia(payload) {
   return farmaciaWrite_(payload, 'INITIAL');
+}
+
+function registrarRecebimentoFarmacia(payload) {
+  return farmaciaWrite_(payload, 'RECEIPT');
+}
+
+function registrarMovimentacaoFarmacia(payload) {
+  return farmaciaWrite_(payload, 'MOVEMENT');
 }

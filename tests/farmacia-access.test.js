@@ -123,10 +123,10 @@ test('Farmácia abre catálogo geral para usuário ativo, mas exige concessão e
       }
       users.rows[1][3] = 'Não';
       assert.throws(() => server.getFarmaciaBootstrap(), /inativo/);
-      assert.equal(rules.isModuleVisible(server.codexGetCurrentUserAccess(), 'farmacia'), false);
+      assert.equal(rules.isModuleVisible(server.codexGetCurrentUserAccess(), 'farmacia'), true, 'menu não substitui autorização do servidor');
       assert.equal(users.writes, 0);
     }
-    assert.equal(rules.isModuleVisible(role, 'farmacia'), false);
+    assert.equal(rules.isModuleVisible(role, 'farmacia'), true);
   }
 });
 

@@ -32,6 +32,12 @@ async function fixture(browser, width) {
   await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS | Farmácia — estoque local</title>' + readProjectFile('IndexStyles.html') +
     readProjectFile('IndexStylesAfterDashboard.html') + iconStyle + '</head><body>' + html +
     readProjectFile('IndexContentAfterDashboard.html') + readProjectFile('IndexContentAfterStock.html') + '</body></html>');
+  const initialNavigation=await page.evaluate(()=>({sectionDisplay:window.getComputedStyle(document.getElementById('navFarmaciaSection')).display,
+    toggleDisplay:window.getComputedStyle(document.getElementById('navFarmacia')).display,
+    equipmentHidden:document.querySelector('[data-farmacia-view="equipment"]').hidden,
+    probesHidden:document.querySelector('[data-farmacia-view="probes"]').hidden,
+    stockHidden:document.querySelector('[data-farmacia-view="stock"]').hidden,
+    productsHidden:document.querySelector('[data-farmacia-view="products"]').hidden}));
   await page.addScriptTag({ content:`
     var FARMACIA_STUDY_REQUEST_ID=0, FARMACIA_REQUEST_ID=1, pending=[], currentPage='farmacia';
     function getCurrentPage(){return currentPage;}
@@ -60,12 +66,13 @@ async function fixture(browser, width) {
     document.getElementById('navFarmaciaSection').style.display='';
     document.getElementById('navFarmacia').style.display='';
     document.getElementById('topTitle').textContent='Farmácia';
+    document.querySelectorAll('[data-farmacia-view="stock"],[data-farmacia-view="products"]').forEach(button=>button.hidden=false);
     window.farmaciaSetView('stock');
     const select=document.getElementById('farmaciaStudy');
     select.disabled=false; select.innerHTML='<option value="">Selecione</option><option value="P1">Estudo A</option><option value="P2">Estudo B</option>';
   });
   if (iconFont) await page.evaluate(()=>document.fonts.ready);
-  return { page, errors };
+  return { page, errors, initialNavigation };
 }
 
 async function openStock(page, data, id = 'P1') {
@@ -124,6 +131,46 @@ test('Farmácia navega por área, mantém estoque, filtra tabelas e apresenta co
   } finally {await browser.close();}
 });
 
+test('Farmácia e catálogo aparecem no shell antes do perfil e a carga retoma após a validação', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors,initialNavigation}=await fixture(browser,width);
+      assert.notEqual(initialNavigation.sectionDisplay,'none'); assert.notEqual(initialNavigation.toggleDisplay,'none');
+      assert.equal(initialNavigation.equipmentHidden,false); assert.equal(initialNavigation.probesHidden,false);
+      assert.equal(initialNavigation.stockHidden,true); assert.equal(initialNavigation.productsHidden,true);
+      await page.addScriptTag({content:readProjectFile('SharedAccessRules.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
+      await page.addScriptTag({content:`
+        var CURRENT_ACCESS={ok:false,email:'',role:'',farmaciaAccess:'none',farmaciaCommonAccess:'none'};
+        function snack() {} function renderAppVersion() {} function startAppVersionWatcher() {}
+        function updateFloatingAddButton() {} function handleUserOAuthStatus() {} function appApplyTeamBirthdays_() {}
+        ${contentAccessibilitySource(['applyAppBootstrapData','applyFarmaciaAccess','carregarFarmacia'])}
+        applyFarmaciaAccess();
+      `});
+      if (width<900) await page.locator('#mobileMenuBtn').click();
+      assert.equal(await page.locator('#navFarmacia').isVisible(),true);
+      assert.equal(await page.locator('[data-farmacia-view="equipment"]').isVisible(),true);
+      assert.equal(await page.locator('[data-farmacia-view="probes"]').isVisible(),true);
+      assert.equal(await page.evaluate(()=>window.pending.length),0);
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-menu-inicial-'+width+'.png')});
+      await page.locator('[data-farmacia-view="equipment"]').click();
+      assert.equal(await page.evaluate(()=>window.pending.length),0,'menu funciona antes do perfil; consultas aguardam sua validação');
+      assert.equal(await page.locator('#topTitle').innerText(),'Equipamentos');
+      assert.equal(await page.locator('#farmaciaPrimaryAction').isEnabled(),false);
+      await page.evaluate(()=>window.applyAppBootstrapData({access:{ok:true,email:'teste@example.invalid',role:'user',farmaciaAccess:'none',farmaciaCommonAccess:'none'}}));
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaBootstrap');
+      assert.equal(await page.evaluate(()=>window.FARMACIA_CATALOG.data),null);
+      await page.evaluate(()=>window.pending.at(-1).success({farmaciaAccess:'none',farmaciaCommonAccess:'none',studies:[]}));
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
+      await page.evaluate(()=>window.pending.at(-1).success({locationsConfigured:true,locationsCanManage:true,storageUnits:[]}));
+      assert.equal(await page.locator('#farmaciaLocationsResults .empty-row').innerText(),'Nenhum equipamento cadastrado');
+      assert.equal(await page.locator('[data-farmacia-view="stock"]').evaluate(el=>el.hidden),true);
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
 test('catálogo aberto a usuários sem concessão de Farmácia usa título e ícone da seção sem texto extra', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try {
@@ -141,7 +188,19 @@ test('catálogo aberto a usuários sem concessão de Farmácia usa título e íc
       assert.equal(await page.locator('[data-farmacia-view="products"]').evaluate(el=>el.hidden),true);
       await page.evaluate(()=>window.pending.at(-1).success({farmaciaAccess:'none',farmaciaCommonAccess:'none',studies:[]}));
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
+      assert.equal(await page.locator('#farmaciaViewDescription').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaLocationsResults .loading-row .spinner').isVisible(),true);
+      assert.match(await page.locator('#farmaciaLocationsResults thead').innerText(),/equipamento/i);
+      assert.equal(await page.locator('#farmaciaLocationsResults thead').isVisible(),width>700);
+      if (width<700) assert.equal(await page.locator('#farmaciaLocationsResults table').evaluate(el=>el.getBoundingClientRect().width<=window.innerWidth),true);
+      assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'');
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-catalogo-carregando-'+role+'-'+width+'.png')});
       await page.evaluate(canManage=>window.pending.at(-1).success({locationsConfigured:true,locationsCanManage:canManage,storageUnits:[]}),role==='user');
+      assert.equal(await page.locator('#farmaciaLocationsResults .empty-row').innerText(),'Nenhum equipamento cadastrado');
+      assert.equal(await page.locator('#farmaciaLocationsResults .farmacia-empty').count(),0);
+      assert.equal(await page.locator('#farmaciaLocationsResults .loading-row').count(),0);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-catalogo-equipamentos-'+role+'-'+width+'.png')});
       assert.equal(await page.locator('#topTitle').innerText(),'Equipamentos');
       assert.equal(await page.locator('#topIcon').textContent(),'kitchen');
       assert.equal(await page.locator('#farmaciaContext').isVisible(),false);
@@ -152,8 +211,10 @@ test('catálogo aberto a usuários sem concessão de Farmácia usa título e íc
       assert.equal(await page.locator('#topTitle').innerText(),'Sondas e calibração');
       assert.equal(await page.locator('#topIcon').textContent(),'device_thermostat');
       assert.equal(await page.locator('#farmaciaViewTitle').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaViewDescription').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaProbesResults .empty-row').innerText(),'Nenhuma sonda cadastrada');
+      assert.equal(await page.locator('#farmaciaProbesResults .farmacia-empty').count(),0);
       assert.equal(await page.locator('#farmaciaStockSelector').isVisible(),false);
-      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-catalogo-aberto-'+role+'-'+width+'.png')});
       assert.equal(await page.evaluate(()=>window.pending.some(item=>item.method==='getFarmaciaEstoque'||item.method==='getFarmaciaEstudo')),false);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
@@ -265,6 +326,11 @@ test('modal da Farmácia usa foco/dirty reais, bloqueia fechamento em voo e pres
     await page.locator('#farmaciaProductInstructions').fill('Instrução fictícia');
     await page.locator('#farmaciaProductSource').fill('Rótulo fictício');
     await page.locator('#farmaciaProductVersion').fill('1');
+    assert.equal(await page.locator('#farmaciaProductSupply').inputValue(),'');
+    const requestsBeforeSupply=await page.evaluate(()=>window.pending.length);
+    await page.locator('#farmaciaProductForm button[type=submit]').click();
+    assert.equal(await page.evaluate(()=>window.pending.length),requestsBeforeSupply,'fornecimento precisa ser declarado');
+    await page.locator('#farmaciaProductSupply').selectOption('site');
     await page.locator('#farmaciaProductForm button[type=submit]').click();
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#farmaciaModal-product').evaluate(el=>el.classList.contains('open')),true);
@@ -450,6 +516,8 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       await page.evaluate(() => {document.querySelector('.content').scrollTop=0;});
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-common-'+width+'.png')});
       await openForm(page,'products');
+      assert.equal(await page.locator('#farmaciaProductSupply option[value=sponsor]').isDisabled(),true);
+      await page.locator('#farmaciaProductSupply').selectOption('site');
       await page.locator('#farmaciaProductName').fill('Seringa fictícia');
       await page.locator('#farmaciaProductPresentation').fill('10 mL');
       await page.locator('#farmaciaProductInstructions').fill('Instrução fictícia');
@@ -484,6 +552,7 @@ test('estoque exibe saldos por unidade, cadastra produto e preserva token após 
       assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(),0);
       assert.match(await page.locator('#farmaciaStockResults').innerText(),/10 frasco.*8 frasco.*2 frasco/s);
       await openForm(page,'products');
+      await page.locator('#farmaciaProductSupply').selectOption('sponsor');
       await page.locator('#farmaciaProductName').fill('Kit fictício');
       await page.locator('#farmaciaProductPresentation').fill('Caixa de teste');
       await page.locator('#farmaciaProductInstructions').fill('Conferir manual fictício');
@@ -495,6 +564,7 @@ test('estoque exibe saldos por unidade, cadastra produto e preserva token após 
       await page.locator('#farmaciaProductForm').getByRole('button',{name:'Cadastrar produto'}).click();
       const first=await page.evaluate(()=>window.pending.at(-1).args[0]);
       assert.equal(first.studyId,'P1'); assert.equal(first.restricted,false); assert.equal(first.data.control,'kit');
+      assert.equal(first.data.supplySource,'sponsor');
       await page.evaluate(()=>window.pending.at(-1).failure({message:'Resposta não recebida'}));
       assert.equal(await page.locator('#farmaciaProductName').inputValue(),'Kit fictício');
       await page.locator('#farmaciaProductForm').getByRole('button',{name:'Cadastrar produto'}).click();
@@ -561,4 +631,178 @@ test('troca de estudo/classe elimina dados anteriores, ignora resposta antiga e 
     assert.equal(await page.locator('#farmaciaPrimaryAction').isDisabled(),true);
     assert.deepEqual(errors,[]);
   }finally{await browser.close();}
+});
+
+function lifecycleData(overrides = {}) {
+  const data=stockData();
+  data.products[0].supplySource='sponsor';
+  data.storageUnits[0].positions.push('Prateleira 2');
+  Object.assign(data.positions[0],{revision:'IN1',origin:'initial',pending:8,available:0,
+    location:'IPS AF-01 → Prateleira 1',locationRef:{unitId:'UNIT-1',position:'Prateleira 1'}});
+  data.movements=[{id:'IN1',type:'INITIAL',registeredAt:data.positions[0].registeredAt,author:data.positions[0].author,
+    data:{...data.positions[0],confirmed:true,note:'Contagem inicial fictícia'}}];
+  return {...data,...overrides};
+}
+
+async function fillReceipt(page) {
+  await page.locator('#farmaciaReceiptProduct').selectOption('PR1');
+  await page.locator('#farmaciaReceiptLot').fill('L-REMESSA');
+  await page.locator('#farmaciaReceiptExpiry').fill('2027-10-31');
+  await page.locator('#farmaciaReceiptUnit').selectOption('UNIT-1');
+  await page.locator('#farmaciaReceiptLocation').selectOption('Prateleira 1');
+  await page.locator('#farmaciaReceiptPhysical').fill('4');
+  await page.locator('#farmaciaReceiptReceivedOn').fill('2026-10-21');
+  await page.locator('#farmaciaReceiptDocument').fill('REMESSA-FICTICIA-001');
+  await page.locator('#farmaciaReceiptNote').fill('Conferência fictícia do transporte');
+}
+
+test('ciclo de vida: recebimento preserva formulário e operação após falha em desktop/celular', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors}=await fixture(browser,width);
+      await openStock(page,lifecycleData());
+      assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),true);
+      assert.match(await page.locator('#farmaciaInventoryResults').innerText(),/Aguardando avaliação/i);
+      await page.locator('#farmaciaReceiptAction').click();
+      assert.equal(await page.locator('#farmaciaModal-receipt').getAttribute('inert'),null);
+      await fillReceipt(page);
+      await page.locator('#farmaciaReceiptForm button[type=submit]').click();
+      const first=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
+      assert.equal(first.method,'registrarRecebimentoFarmacia');
+      assert.equal(first.payload.studyId,'P1');
+      assert.equal(first.payload.data.physical,4);
+      assert.equal(first.payload.data.document,'REMESSA-FICTICIA-001');
+      assert.deepEqual(first.payload.data.locationRef,{unitId:'UNIT-1',position:'Prateleira 1'});
+      assert.equal(await page.locator('#farmaciaReceiptFields').evaluate(el=>el.disabled),true);
+      assert.equal(await page.locator('#farmaciaReceiptDocument').isDisabled(),true);
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#farmaciaModal-receipt').evaluate(el=>el.classList.contains('open')),true);
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Resposta perdida simulada'}));
+      assert.equal(await page.locator('#farmaciaReceiptPhysical').inputValue(),'4');
+      assert.equal(await page.locator('#farmaciaReceiptDocument').inputValue(),'REMESSA-FICTICIA-001');
+      assert.match(await page.locator('#farmaciaModal-receipt .status-msg').innerText(),/Resposta perdida/);
+      await page.locator('#farmaciaReceiptForm button[type=submit]').click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).args[0].requestId),first.payload.requestId);
+      await page.evaluate(()=>window.pending.at(-1).success({ok:true,id:'RC1'}));
+      assert.equal(await page.locator('.farmacia-dialog.open').count(),0);
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaEstoque');
+      const refreshed=lifecycleData();
+      refreshed.positions.push({...refreshed.positions[0],id:'RC1',revision:'RC1',origin:'receipt',lot:'L-REMESSA',physical:4,blocked:0,pending:4,available:0,receivedOn:'2026-10-21'});
+      await page.evaluate(result=>window.pending.at(-1).success(result),refreshed);
+      assert.match(await page.locator('#farmaciaInventoryResults').innerText(),/L-REMESSA/);
+      assert.equal(await page.locator('#farmaciaInventoryResults [data-position-id]').count(),2);
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-ciclo-estoque-'+width+'.png')});
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test('ciclo de vida: histórico permite liberação parcial documentada e preserva revisão do saldo', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors}=await fixture(browser,width);
+      await openStock(page,lifecycleData());
+      await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
+      assert.match(await page.locator('#farmaciaPositionDetail').innerText(),/farmacia@example.invalid/);
+      assert.match(await page.locator('#farmaciaPositionDetail').innerText(),/Contagem inicial fictícia/);
+      await page.locator('#farmaciaMovementAction').selectOption('release');
+      await page.locator('#farmaciaMovementFrom').selectOption('pending');
+      await page.locator('#farmaciaMovementQuantity').fill('3');
+      await page.locator('#farmaciaMovementReason').fill('Conferência documental fictícia');
+      const count=await page.evaluate(()=>window.pending.length);
+      await page.locator('#farmaciaMovementForm button[type=submit]').click();
+      assert.equal(await page.evaluate(()=>window.pending.length),count,'documento obrigatório impede envio');
+      await page.locator('#farmaciaMovementDocument').fill('LIBERACAO-FICTICIA-001');
+      // Uma atualização do mesmo escopo não autoriza o formulário antigo a usar
+      // revisão/saldo que o responsável ainda não conferiu no modal aberto.
+      await page.evaluate(()=>{
+        window.FARMACIA_STOCK.data.positions[0].revision='MV-new';
+        window.FARMACIA_STOCK.data.positions[0].pending=2;
+      });
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-ciclo-liberacao-'+width+'.png')});
+      await page.locator('#farmaciaMovementForm button[type=submit]').click();
+      const sent=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
+      assert.equal(sent.method,'registrarMovimentacaoFarmacia');
+      assert.equal(sent.payload.data.positionId,'IN1');
+      assert.equal(sent.payload.data.revision,'IN1');
+      assert.equal(sent.payload.data.action,'release');
+      assert.equal(sent.payload.data.from,'pending');
+      assert.equal(sent.payload.data.quantity,3);
+      assert.equal(sent.payload.data.document,'LIBERACAO-FICTICIA-001');
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Saldo mudou. Atualize o estoque.'}));
+      assert.match(await page.locator('#farmaciaModal-positionDetail .status-msg').innerText(),/Saldo mudou/);
+      assert.equal(await page.locator('#farmaciaMovementQuantity').inputValue(),'3');
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test('ciclo de vida: transferência envia o saldo físico integral para uma posição cadastrada', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await openStock(page,lifecycleData());
+    await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
+    await page.locator('#farmaciaMovementAction').selectOption('transfer');
+    assert.equal(await page.locator('#farmaciaMovementQuantity').inputValue(),'10');
+    assert.equal(await page.locator('#farmaciaMovementQuantity').getAttribute('readonly'),'');
+    await page.locator('#farmaciaMovementUnit').selectOption('UNIT-1');
+    await page.locator('#farmaciaMovementLocation').selectOption('Prateleira 2');
+    await page.locator('#farmaciaMovementReason').fill('Mudança de posição fictícia');
+    await page.locator('#farmaciaMovementDocument').fill('REGISTRO-FICTICIO-TRANSFERENCIA');
+    await page.locator('#farmaciaMovementForm button[type=submit]').click();
+    const payload=await page.evaluate(()=>window.pending.at(-1).args[0]);
+    assert.equal(payload.data.action,'transfer');
+    assert.equal(payload.data.quantity,10);
+    assert.deepEqual(payload.data.locationRef,{unitId:'UNIT-1',position:'Prateleira 2'});
+    await page.evaluate(()=>window.pending.at(-1).success({ok:true,id:'MV1'}));
+    const refreshed=lifecycleData();
+    Object.assign(refreshed.positions[0],{revision:'MV1',location:'IPS AF-01 → Prateleira 2',locationRef:{unitId:'UNIT-1',position:'Prateleira 2'}});
+    await page.evaluate(result=>window.pending.at(-1).success(result),refreshed);
+    assert.match(await page.locator('#farmaciaInventoryResults').innerText(),/Prateleira 2/);
+    assert.deepEqual(errors,[]);
+  } finally {await browser.close();}
+});
+
+test('ciclo de vida: consulta de histórico não concede escrita e produto histórico não ganha origem presumida', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const source of ['sponsor',undefined]) {
+      const {page,errors}=await fixture(browser,1280);
+      const data=lifecycleData({farmaciaAccess:source?'read':'manage'});
+      if (!source) delete data.products[0].supplySource;
+      await openStock(page,data);
+      assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),false);
+      await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
+      assert.match(await page.locator('#farmaciaPositionDetail').innerText(),/Contagem inicial fictícia/);
+      assert.equal(await page.locator('#farmaciaMovementForm').count(),0);
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test('ciclo de vida: troca de escopo elimina histórico/formulários e ignora resposta de recebimento antiga', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await openStock(page,lifecycleData());
+    await page.locator('#farmaciaReceiptAction').click();
+    await fillReceipt(page);
+    await page.locator('#farmaciaReceiptForm button[type=submit]').click();
+    const oldIndex=await page.evaluate(()=>window.pending.length-1);
+    await page.evaluate(()=>window.farmaciaEstoqueReset());
+    assert.equal(await page.locator('.farmacia-dialog.open').count(),0);
+    assert.equal(await page.locator('#farmaciaReceiptDocument').inputValue(),'');
+    assert.equal(await page.locator('#farmaciaPositionDetail').textContent(),'');
+    await page.evaluate(index=>window.pending[index].success({ok:true}),oldIndex);
+    assert.equal(await page.evaluate(()=>window.pending.length-1),oldIndex,'resposta obsoleta não recarrega estoque anterior');
+    assert.equal(await page.locator('#farmaciaInventoryResults').textContent(),'');
+    assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),false);
+    assert.deepEqual(errors,[]);
+  } finally {await browser.close();}
 });

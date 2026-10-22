@@ -8,13 +8,14 @@
       </div>
       <div class="stats-row content-stats-row content-stats-cols-3" id="farmaciaSummary">
         <div class="stat-card stat-accent-blue stat-corner-left"><div class="stat-value" id="farmaciaMetric0">—</div><div class="stat-label" id="farmaciaMetricLabel0">Produtos</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">medication</span></div></div>
-        <div class="stat-card stat-accent-teal"><div class="stat-value" id="farmaciaMetric1">—</div><div class="stat-label" id="farmaciaMetricLabel1">Posições inventariadas</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div></div>
-        <div class="stat-card stat-accent-orange stat-corner-right"><div class="stat-value" id="farmaciaMetric2">—</div><div class="stat-label" id="farmaciaMetricLabel2">Posições com bloqueio</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">shield</span></div></div>
+        <div class="stat-card stat-accent-teal"><div class="stat-value" id="farmaciaMetric1">—</div><div class="stat-label" id="farmaciaMetricLabel1">Entradas de estoque</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div></div>
+        <div class="stat-card stat-accent-orange stat-corner-right"><div class="stat-value" id="farmaciaMetric2">—</div><div class="stat-label" id="farmaciaMetricLabel2">Entradas com pendência / bloqueio</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">shield</span></div></div>
       </div>
       <div class="toolbar-card farmacia-view-toolbar">
         <h2 id="farmaciaViewTitle">Estoque</h2>
         <div class="search-wrap"><span class="material-symbols-outlined" aria-hidden="true">search</span><input id="farmaciaSearch" placeholder="Buscar produto, lote ou localização..." aria-label="Buscar na Farmácia" oninput="farmaciaApplySearch()"></div>
         <button class="btn-txt" type="button" onclick="farmaciaStockRefresh()" aria-label="Atualizar estoque"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Atualizar</button>
+        <button id="farmaciaReceiptAction" class="btn-txt" type="button" hidden onclick="farmaciaOpenReceipt()"><span class="material-symbols-outlined" aria-hidden="true">move_to_inbox</span> Registrar recebimento</button>
         <button id="farmaciaPrimaryAction" class="btn-new" type="button" hidden onclick="farmaciaOpenPrimary()"><span class="material-symbols-outlined" aria-hidden="true">add</span><span id="farmaciaPrimaryLabel">Registrar inventário</span></button>
       </div>
       <div class="table-card farmacia-workspace">
@@ -37,6 +38,7 @@
               <div class="form-section"><div class="section-label">Identificação e conservação</div><fieldset id="farmaciaProductFields" class="form-grid" disabled>
                 <div class="field"><label class="field-label" for="farmaciaProductName">Nome ou rótulo autorizado do produto</label><input id="farmaciaProductName" class="f-input" maxlength="160" required></div>
                 <div class="field"><label class="field-label" for="farmaciaProductPresentation">Apresentação</label><input id="farmaciaProductPresentation" class="f-input" maxlength="160" placeholder="Ex.: frasco com 30 comprimidos" required></div>
+                <div class="field full"><label class="field-label" for="farmaciaProductSupply">Fornecimento</label><select id="farmaciaProductSupply" class="f-input f-select" required><option value="">Selecione o fornecimento</option><option value="site">Próprio do IPS</option><option value="sponsor">Fornecido pelo patrocinador</option></select></div>
                 <div class="field"><label class="field-label" for="farmaciaProductControl">Controle</label><select id="farmaciaProductControl" class="f-input f-select" onchange="farmaciaProductControlChanged()"><option value="quantity">Por quantidade</option><option value="kit">Kit individualizado</option></select></div>
                 <div class="field"><label class="field-label" for="farmaciaProductUnit">Unidade de controle</label><select id="farmaciaProductUnit" class="f-input f-select"><option>unidade</option><option>comprimido</option><option>cápsula</option><option>frasco</option><option>ampola</option><option>seringa</option><option>kit</option><option>mL</option><option>g</option></select></div>
                 <div class="field"><label class="field-label" for="farmaciaProductMin">Conservação mínima (°C, opcional)</label><input id="farmaciaProductMin" class="f-input" type="number" min="-200" max="100" step="0.1"></div>
@@ -59,6 +61,7 @@
                 <div class="field"><label class="field-label" for="farmaciaInitialBlocked">Quantidade bloqueada</label><input id="farmaciaInitialBlocked" class="f-input" type="number" min="0" max="1000000000" step="0.001" value="0" required></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialCountedOn">Data da conferência física</label><input id="farmaciaInitialCountedOn" class="f-input" type="date" required></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialNote">Observação (opcional)</label><textarea id="farmaciaInitialNote" class="f-input" maxlength="500"></textarea></div>
+                <p id="farmaciaInitialLifecycleStatus" class="profile-helper" hidden>O saldo do patrocinador que não estiver bloqueado ficará aguardando avaliação. A contagem física não registra recebimento nem liberação para uso.</p>
                 <label class="farmacia-confirm"><input id="farmaciaInitialConfirmed" type="checkbox" required> Conferi fisicamente este saldo e confirmo que é o inventário inicial desta posição.</label>
                 </fieldset></div><div class="farmacia-dialog-actions"><button class="btn-txt" type="button" onclick="fecharOverlay('farmaciaModal-initial')">Cancelar</button><button type="submit" class="btn-save">Registrar inventário inicial</button></div>
             </form><p class="status-msg farmacia-dialog-status" role="status" aria-live="polite"></p></div></div></div>
@@ -1503,4 +1506,20 @@
     </div>
   </div>
 </div>
+
+
+<div class="modal-overlay farmacia-dialog" data-extra-dialog id="farmaciaModal-receipt" data-accessible-dialog inert onclick="fecharModalSeClicouFora(event,'farmaciaModal-receipt')"><div class="modal-box farmacia-modal-box" role="dialog" aria-labelledby="farmaciaModal-receiptTitle" tabindex="-1"><div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">move_to_inbox</span></div><div><div class="modal-header-title" id="farmaciaModal-receiptTitle">Registrar recebimento</div></div><button class="modal-close" type="button" aria-label="Fechar janela" onclick="fecharOverlay('farmaciaModal-receipt')"><span class="material-symbols-outlined" aria-hidden="true">close</span></button></div><div class="modal-body"><form id="farmaciaReceiptForm" onsubmit="return salvarRecebimentoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Novo recebimento do patrocinador</div><fieldset id="farmaciaReceiptFields" class="form-grid" disabled>
+<div class="field"><label class="field-label" for="farmaciaReceiptProduct">Produto</label><select id="farmaciaReceiptProduct" class="f-input f-select" required onchange="farmaciaReceiptProductChanged()"><option value="">Selecione</option></select></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptLot">Lote</label><input id="farmaciaReceiptLot" class="f-input" maxlength="100" required></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptExpiry">Validade</label><input id="farmaciaReceiptExpiry" class="f-input" type="date" required></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptReceivedOn">Data do recebimento</label><input id="farmaciaReceiptReceivedOn" class="f-input" type="date" required></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptUnit">Equipamento</label><select id="farmaciaReceiptUnit" class="f-input f-select" required onchange="farmaciaReceiptUnitChanged()"><option value="">Selecione</option></select></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptLocation">Posição</label><select id="farmaciaReceiptLocation" class="f-input f-select" required><option value="">Selecione</option></select></div>
+<div class="field" id="farmaciaReceiptKitField" hidden><label class="field-label" for="farmaciaReceiptKit">Número do kit</label><input id="farmaciaReceiptKit" class="f-input" maxlength="100"></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptPhysical">Quantidade recebida</label><input id="farmaciaReceiptPhysical" class="f-input" type="number" min="0.001" max="1000000000" step="1" required></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptDocument">Documento / remessa (referência e item)</label><input id="farmaciaReceiptDocument" class="f-input" maxlength="200" required></div>
+<div class="field"><label class="field-label" for="farmaciaReceiptNote">Observação (opcional)</label><textarea id="farmaciaReceiptNote" class="f-input" maxlength="500"></textarea></div>
+<p class="profile-helper">O recebimento ficará aguardando avaliação. Material vencido entra bloqueado. Registre a conferência e suas evidências na referência documental.</p>
+</fieldset></div><div class="farmacia-dialog-actions"><button class="btn-txt" type="button" onclick="fecharOverlay('farmaciaModal-receipt')">Cancelar</button><button class="btn-save" type="submit">Registrar recebimento</button></div></form><p class="status-msg farmacia-dialog-status" role="status" aria-live="polite"></p></div></div></div>
+<div class="modal-overlay farmacia-dialog" data-extra-dialog id="farmaciaModal-positionDetail" data-accessible-dialog inert onclick="fecharModalSeClicouFora(event,'farmaciaModal-positionDetail')"><div class="modal-box farmacia-modal-box" role="dialog" aria-labelledby="farmaciaModal-positionDetailTitle" tabindex="-1"><div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">history</span></div><div><div class="modal-header-title" id="farmaciaModal-positionDetailTitle">Histórico do estoque</div></div><button class="modal-close" type="button" aria-label="Fechar janela" onclick="fecharOverlay('farmaciaModal-positionDetail')"><span class="material-symbols-outlined" aria-hidden="true">close</span></button></div><div class="modal-body"><div id="farmaciaPositionDetail"></div><p class="status-msg farmacia-dialog-status" role="status" aria-live="polite"></p></div></div></div>
 

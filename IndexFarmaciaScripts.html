@@ -12,6 +12,11 @@ function farmaciaCurrentData() {
 
 function carregarFarmaciaCatalogo(force) {
   if (FARMACIA_STOCK.saving || !farmaciaIsCatalogView()) return;
+  if (typeof CURRENT_ACCESS !== 'undefined' && !CURRENT_ACCESS.ok) {
+    document.getElementById('farmaciaStockStatus').textContent = 'Validando acesso…';
+    document.getElementById('farmaciaPrimaryAction').disabled = true;
+    return;
+  }
   if (!force && farmaciaCurrentData()) {
     renderFarmaciaEstoque(farmaciaCurrentData());
     return;
@@ -20,8 +25,9 @@ function carregarFarmaciaCatalogo(force) {
   var readId = ++FARMACIA_CATALOG.readId, epoch = FARMACIA_STOCK.epoch;
   FARMACIA_CATALOG.loading = true;
   FARMACIA_CATALOG.data = null;
-  ['farmaciaLocationsResults','farmaciaProbesResults'].forEach(function(id) { document.getElementById(id).textContent = ''; });
-  document.getElementById('farmaciaStockStatus').textContent = 'Carregando equipamentos e sondas…';
+  document.getElementById('farmaciaLocationsResults').innerHTML = farmaciaCatalogTable('equipment', '', true);
+  document.getElementById('farmaciaProbesResults').innerHTML = farmaciaCatalogTable('probes', '', true);
+  document.getElementById('farmaciaStockStatus').textContent = '';
   ['farmaciaLocationFields','farmaciaProbeFields'].forEach(function(id) { document.getElementById(id).disabled = true; });
   document.getElementById('farmaciaPrimaryAction').disabled = true;
   function current() {
@@ -38,6 +44,7 @@ function carregarFarmaciaCatalogo(force) {
     if (!current()) return;
     FARMACIA_CATALOG.loading = false;
     if (farmaciaIsCatalogView()) {
+      ['farmaciaLocationsResults','farmaciaProbesResults'].forEach(function(id) { document.getElementById(id).textContent = ''; });
       document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error);
       farmaciaUpdateSummary();
       document.getElementById('farmaciaPrimaryAction').disabled = true;
@@ -57,6 +64,11 @@ function farmaciaEstoqueReset() {
   FARMACIA_STOCK.saving = false;
   FARMACIA_STOCK.restoreFocus = null;
   FARMACIA_STOCK.productToken = FARMACIA_STOCK.initialToken = '';
+  FARMACIA_STOCK.receiptToken = FARMACIA_STOCK.movementToken = '';
+  FARMACIA_STOCK.positionId = '';
+  FARMACIA_STOCK.positionSnapshot = null;
+  document.getElementById('farmaciaReceiptForm').reset();
+  document.getElementById('farmaciaPositionDetail').textContent = '';
   FARMACIA_STOCK.locationToken = FARMACIA_STOCK.statusToken = '';
   FARMACIA_STOCK.probeToken = '';
   FARMACIA_STOCK.calibrationToken = '';
@@ -149,6 +161,7 @@ function renderFarmaciaEstoque(data) {
   if (products.some(function(product) { return product.id === selected; })) select.value = selected;
   if (!document.getElementById('farmaciaInitialCountedOn').value) document.getElementById('farmaciaInitialCountedOn').value = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   farmaciaRenderTables(data);
+  farmaciaRenderReceiptOptions(data);
   farmaciaInitialProductChanged();
   farmaciaSetView();
 }
@@ -211,9 +224,11 @@ function farmaciaInitialProductChanged() {
   document.getElementById('farmaciaInitialKit').required = kit;
   document.getElementById('farmaciaInitialPhysical').readOnly = kit;
   document.getElementById('farmaciaInitialPhysical').step = product && ['mL', 'g'].indexOf(product.unit) !== -1 ? '0.001' : '1';
+  document.getElementById('farmaciaInitialPhysical').min = document.getElementById('farmaciaInitialPhysical').step;
   document.getElementById('farmaciaInitialBlocked').step = document.getElementById('farmaciaInitialPhysical').step;
   if (kit) document.getElementById('farmaciaInitialPhysical').value = '1';
   else document.getElementById('farmaciaInitialKit').value = '';
+  document.getElementById('farmaciaInitialLifecycleStatus').hidden = !product || product.supplySource !== 'sponsor';
   farmaciaInitialStorageCheck();
 }
 
@@ -235,6 +250,8 @@ function farmaciaStockSave(type, data) {
   document.getElementById('farmaciaProductFields').disabled = document.getElementById('farmaciaInitialFields').disabled = true;
   document.getElementById('farmaciaLocationFields').disabled = true;
   document.getElementById('farmaciaProbeFields').disabled = true;
+  document.getElementById('farmaciaReceiptFields').disabled = true;
+  document.querySelectorAll('.farmacia-movement-fields').forEach(function(fields) { fields.disabled = true; });
   document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = true; });
   document.getElementById('farmaciaStockStatus').textContent = 'Salvando…';
   var modal = document.getElementById(farmaciaDialogId(type));
@@ -245,11 +262,11 @@ function farmaciaStockSave(type, data) {
     if (!isCurrentSave()) return;
     FARMACIA_STOCK.saving = false;
     FARMACIA_STOCK[tokenKey] = '';
-    FARMACIA_STOCK.restoreFocus = {view:FARMACIA_VIEW,type:type,unitId:data.unitId,probeId:data.probeId};
+    FARMACIA_STOCK.restoreFocus = {view:FARMACIA_VIEW,type:type,unitId:data.unitId,probeId:data.probeId,positionId:data.positionId};
     modal.dataset.extraSaving = '0';
     if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
     fecharOverlay(modal.id);
-    if (type !== 'status' && type !== 'calibration') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : 'farmaciaInitialForm').reset();
+    if (type !== 'status' && type !== 'calibration' && type !== 'movement') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
     farmaciaStockRefresh();
   }).withFailureHandler(function(error) {
@@ -263,6 +280,8 @@ function farmaciaStockSave(type, data) {
     document.getElementById('farmaciaLocationFields').disabled = !current.locationsConfigured || !current.locationsCanManage;
     document.getElementById('farmaciaProbeFields').disabled = !current.locationsConfigured || !current.locationsCanManage || !(current.storageUnits || []).length;
     document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = !current.locationsCanManage; });
+    farmaciaRenderReceiptOptions(current);
+    document.querySelectorAll('.farmacia-movement-fields').forEach(function(fields) { fields.disabled = current.farmaciaAccess !== 'manage'; });
     farmaciaUpdateSummary();
     document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error) + ' O formulário e o identificador da operação foram preservados para conferência ou nova tentativa.';
   });
@@ -273,13 +292,15 @@ function farmaciaStockSave(type, data) {
   else if (type === 'status') runner.atualizarSituacaoLocalFarmacia(payload);
   else if (type === 'probe') runner.cadastrarSondaFarmacia(payload);
   else if (type === 'calibration') runner.atualizarCalibracaoSondaFarmacia(payload);
+  else if (type === 'receipt') runner.registrarRecebimentoFarmacia(payload);
+  else if (type === 'movement') runner.registrarMovimentacaoFarmacia(payload);
   else runner.registrarInventarioInicialFarmacia(payload);
 }
 
 function salvarProdutoFarmaciaApp(event) {
   event.preventDefault();
   farmaciaStockSave('product', { name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
-    unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value,
+    unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value, supplySource:document.getElementById('farmaciaProductSupply').value,
     storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value,
       source:document.getElementById('farmaciaProductSource').value, version:document.getElementById('farmaciaProductVersion').value } });
   return false;
@@ -293,6 +314,161 @@ function salvarInventarioFarmaciaApp(event) {
     physical:document.getElementById('farmaciaInitialPhysical').valueAsNumber, blocked:document.getElementById('farmaciaInitialBlocked').valueAsNumber,
     countedOn:document.getElementById('farmaciaInitialCountedOn').value, note:document.getElementById('farmaciaInitialNote').value,
     confirmed:document.getElementById('farmaciaInitialConfirmed').checked });
+  return false;
+}
+
+function farmaciaSupplyLabel(product) {
+  return product.supplySource === 'sponsor' ? 'Patrocinador' : product.supplySource === 'site' ? 'Próprio do IPS' : 'Origem não informada (registro anterior)';
+}
+
+function farmaciaRenderReceiptOptions(data) {
+  var select = document.getElementById('farmaciaReceiptProduct'), selected = select.value;
+  var products = (data.products || []).filter(function(product) { return product.supplySource === 'sponsor'; });
+  select.innerHTML = '<option value="">Selecione o produto</option>' + products.map(function(product) {
+    return '<option value="' + esc(product.id) + '">' + esc(product.name + ' · ' + product.presentation) + '</option>';
+  }).join('');
+  if (products.some(function(product) { return product.id === selected; })) select.value = selected;
+  farmaciaUnitOptions('farmaciaReceiptUnit');
+  farmaciaReceiptUnitChanged();
+  farmaciaReceiptProductChanged();
+  document.getElementById('farmaciaReceiptFields').disabled = FARMACIA_STOCK.saving || !data.configured || data.farmaciaAccess !== 'manage' || !products.length || !(data.storageUnits || []).length;
+}
+
+function farmaciaUnitOptions(id) {
+  var select = document.getElementById(id), selected = select.value;
+  select.innerHTML = '<option value="">Selecione o equipamento</option>' + ((FARMACIA_STOCK.data || {}).storageUnits || []).map(function(unit) {
+    return '<option value="' + esc(unit.id) + '">' + esc(unit.code + (unit.status !== 'active' ? ' · Revisar situação' : '')) + '</option>';
+  }).join('');
+  select.value = selected;
+}
+
+function farmaciaPositionOptions(unitId, locationId) {
+  var select = document.getElementById(locationId), selected = select.value;
+  var unit = ((FARMACIA_STOCK.data || {}).storageUnits || []).find(function(item) { return item.id === document.getElementById(unitId).value; });
+  select.innerHTML = '<option value="">Selecione a posição</option>' + (unit ? unit.positions : []).map(function(position) {
+    return '<option value="' + esc(position) + '">' + esc(position) + '</option>';
+  }).join('');
+  if (unit && unit.positions.indexOf(selected) !== -1) select.value = selected;
+}
+
+function farmaciaReceiptUnitChanged() {
+  farmaciaPositionOptions('farmaciaReceiptUnit', 'farmaciaReceiptLocation');
+}
+
+function farmaciaReceiptProductChanged() {
+  var product = ((FARMACIA_STOCK.data || {}).products || []).find(function(item) { return item.id === document.getElementById('farmaciaReceiptProduct').value; });
+  var kit = !!product && product.control === 'kit', input = document.getElementById('farmaciaReceiptPhysical');
+  document.getElementById('farmaciaReceiptKitField').hidden = !kit;
+  document.getElementById('farmaciaReceiptKit').required = kit;
+  input.readOnly = kit;
+  input.step = product && ['mL', 'g'].indexOf(product.unit) !== -1 ? '0.001' : '1';
+  input.min = input.step;
+  if (kit) input.value = '1';
+  else document.getElementById('farmaciaReceiptKit').value = '';
+}
+
+function farmaciaOpenReceipt() {
+  var button = document.getElementById('farmaciaReceiptAction');
+  if (button.hidden || button.disabled) return;
+  var form = document.getElementById('farmaciaReceiptForm');
+  form.reset();
+  FARMACIA_STOCK.receiptToken = '';
+  farmaciaRenderReceiptOptions(FARMACIA_STOCK.data);
+  document.getElementById('farmaciaReceiptReceivedOn').value = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  document.querySelector('#farmaciaModal-receipt .farmacia-dialog-status').textContent = '';
+  if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('farmaciaModal-receipt');
+  abrirOverlay('farmaciaModal-receipt');
+}
+
+function salvarRecebimentoFarmaciaApp(event) {
+  event.preventDefault();
+  farmaciaStockSave('receipt', {productId:document.getElementById('farmaciaReceiptProduct').value,
+    lot:document.getElementById('farmaciaReceiptLot').value, expiry:document.getElementById('farmaciaReceiptExpiry').value,
+    location:'Catálogo', locationRef:{unitId:document.getElementById('farmaciaReceiptUnit').value,position:document.getElementById('farmaciaReceiptLocation').value},
+    kit:document.getElementById('farmaciaReceiptKit').value, physical:document.getElementById('farmaciaReceiptPhysical').valueAsNumber,
+    receivedOn:document.getElementById('farmaciaReceiptReceivedOn').value, document:document.getElementById('farmaciaReceiptDocument').value, note:document.getElementById('farmaciaReceiptNote').value});
+  return false;
+}
+
+function farmaciaOpenPosition(id) {
+  var data = FARMACIA_STOCK.data;
+  var position = data && (data.positions || []).find(function(item) { return item.id === id; });
+  if (!position || FARMACIA_STOCK.saving) return;
+  var product = (data.products || []).find(function(item) { return item.id === position.productId; });
+  if (!product) return;
+  FARMACIA_STOCK.positionId = id;
+  FARMACIA_STOCK.positionSnapshot = Object.assign({}, position);
+  FARMACIA_STOCK.movementToken = '';
+  var labels = {INITIAL:'Saldo inicial',RECEIPT:'Recebimento',block:'Bloqueio',release:'Liberação',transfer:'Transferência'};
+  var history = (data.movements || []).filter(function(record) { return record.id === id || record.data.positionId === id; });
+  var rows = history.map(function(record) {
+    var event = record.data;
+    return '<tr><td>' + esc(labels[event.action] || labels[record.type] || record.type) + '<small>' + esc(event.reason || event.note || '') + '</small></td><td>' + farmaciaStockNumber(event.quantity === undefined ? event.physical : event.quantity) + ' ' + esc(product.unit) + '<small>' + esc(event.location || '') + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(record.registeredAt, true)) + '<small>' + esc(record.author) + '</small></td></tr>';
+  }).join('');
+  if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + farmaciaStockNumber(position.physical) + ' ' + esc(product.unit) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
+  var html = '<div class="form-section"><div class="section-label">' + esc(product.name) + ' · Lote ' + esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '') + '</div><dl class="farmacia-detail-grid"><div class="full"><dt>Localização atual</dt><dd>' + esc(position.location) + '</dd></div><div><dt>Disponível</dt><dd>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</dd></div><div><dt>Aguardando avaliação / Bloqueado</dt><dd>' + farmaciaStockNumber(position.pending || 0) + ' / ' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</dd></div></dl></div>';
+  html += farmaciaTable(['Evento / Motivo','Quantidade / Localização','Referência documental','Data / Responsável'], rows, 'Histórico do lote');
+  if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage') html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
+    '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()"><option value="block">Bloquear</option>' + (position.expired ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
+    '<div class="field" id="farmaciaMovementFromField"><label class="field-label" for="farmaciaMovementFrom">Retirar da situação</label><select class="f-input" id="farmaciaMovementFrom" onchange="farmaciaMovementQuantityChanged()"></select></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaMovementQuantity">Quantidade (' + esc(product.unit) + ')</label><input class="f-input" id="farmaciaMovementQuantity" type="number" min="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" step="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" required></div>' +
+    '<div class="field" id="farmaciaMovementUnitField" hidden><label class="field-label" for="farmaciaMovementUnit">Equipamento de destino</label><select class="f-input" id="farmaciaMovementUnit" onchange="farmaciaMovementUnitChanged()"></select></div>' +
+    '<div class="field" id="farmaciaMovementLocationField" hidden><label class="field-label" for="farmaciaMovementLocation">Posição de destino</label><select class="f-input" id="farmaciaMovementLocation"></select></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaMovementReason">Motivo</label><input class="f-input" id="farmaciaMovementReason" maxlength="500" required></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaMovementDocument">Referência documental (versão/data)</label><input class="f-input" id="farmaciaMovementDocument" maxlength="200" required></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar movimentação</button></div></form>';
+  document.getElementById('farmaciaPositionDetail').innerHTML = html;
+  if (document.getElementById('farmaciaMovementForm')) {
+    farmaciaUnitOptions('farmaciaMovementUnit');
+    farmaciaMovementUnitChanged();
+    farmaciaMovementChanged();
+  }
+  document.querySelector('#farmaciaModal-positionDetail .farmacia-dialog-status').textContent = '';
+  if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('farmaciaModal-positionDetail');
+  abrirOverlay('farmaciaModal-positionDetail');
+}
+
+function farmaciaMovementUnitChanged() {
+  farmaciaPositionOptions('farmaciaMovementUnit', 'farmaciaMovementLocation');
+}
+
+function farmaciaMovementChanged() {
+  var action = document.getElementById('farmaciaMovementAction').value, transfer = action === 'transfer';
+  var from = document.getElementById('farmaciaMovementFrom');
+  from.innerHTML = (action === 'release' ? ['pending','blocked'] : ['available','pending']).map(function(key) {
+    return '<option value="' + key + '">' + ({pending:'Aguardando avaliação',blocked:'Bloqueado',available:'Disponível'})[key] + '</option>';
+  }).join('');
+  document.getElementById('farmaciaMovementFromField').hidden = transfer;
+  ['Unit','Location'].forEach(function(key) {
+    document.getElementById('farmaciaMovement' + key + 'Field').hidden = !transfer;
+    document.getElementById('farmaciaMovement' + key).required = transfer;
+  });
+  farmaciaMovementQuantityChanged();
+}
+
+function farmaciaMovementQuantityChanged() {
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return;
+  var transfer = document.getElementById('farmaciaMovementAction').value === 'transfer';
+  var input = document.getElementById('farmaciaMovementQuantity');
+  input.readOnly = transfer;
+  input.max = String(transfer ? position.physical : position[document.getElementById('farmaciaMovementFrom').value] || 0);
+  input.value = transfer ? String(position.physical) : '';
+}
+
+function salvarMovimentacaoFarmaciaApp(event) {
+  event.preventDefault();
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return false;
+  var action = document.getElementById('farmaciaMovementAction').value;
+  var data = {positionId:position.id,revision:position.revision,action:action,
+    quantity:document.getElementById('farmaciaMovementQuantity').valueAsNumber,
+    from:action === 'transfer' ? '' : document.getElementById('farmaciaMovementFrom').value,
+    reason:document.getElementById('farmaciaMovementReason').value,document:document.getElementById('farmaciaMovementDocument').value};
+  if (action === 'transfer') {
+    data.location = 'Catálogo';
+    data.locationRef = {unitId:document.getElementById('farmaciaMovementUnit').value,position:document.getElementById('farmaciaMovementLocation').value};
+  }
+  farmaciaStockSave('movement', data);
   return false;
 }
 

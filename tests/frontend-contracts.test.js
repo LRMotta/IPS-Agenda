@@ -149,3 +149,12 @@ test('nomes privatizados nao permanecem referenciados pela interface', () => {
     assert.doesNotMatch(html, new RegExp(`\\b${name}_?\\s*\\(`), name);
   });
 });
+
+test('recebimentos e movimentações da Farmácia mantêm RPCs públicas usadas pelo cliente', () => {
+  const publicFunctions = publicServerFunctionNames();
+  const source = readProjectFile('IndexFarmaciaScripts.html');
+  for (const name of ['registrarRecebimentoFarmacia', 'registrarMovimentacaoFarmacia']) {
+    assert.ok(publicFunctions.has(name), name);
+    assert.ok(source.includes('runner.' + name + '(payload)'), name);
+  }
+});
