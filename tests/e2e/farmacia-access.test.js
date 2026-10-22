@@ -118,7 +118,7 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
       await page.locator('#navFarmacia').click();
       await page.locator('[data-farmacia-view="stock"]').click();
       assert.equal(await page.locator('#page-farmacia').isVisible(), true);
-      assert.match(await page.locator('#page-farmacia').innerText(), /Lotes, localização e saldos/);
+      assert.equal(await page.locator('#farmaciaViewDescription').isVisible(), false);
       await page.evaluate(() => window.pending[0].success({ farmaciaAccess: 'read' }));
       assert.equal(await page.locator('#farmaciaStatus').innerText(), 'Estudos: Consulta. Estoque comum: Sem acesso.');
       await page.getByRole('button', { name: 'Revalidar acesso' }).click();

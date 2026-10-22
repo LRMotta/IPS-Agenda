@@ -482,7 +482,6 @@ function salvarLocalFarmaciaApp(event) {
   farmaciaStockSave('location', {code:document.getElementById('farmaciaLocationCode').value, type:document.getElementById('farmaciaLocationType').value,
     model:document.getElementById('farmaciaLocationModel').value, room:document.getElementById('farmaciaLocationRoom').value,
     min:farmaciaInputTemperature('farmaciaLocationMin'), max:farmaciaInputTemperature('farmaciaLocationMax'),
-    source:document.getElementById('farmaciaLocationSource').value, version:document.getElementById('farmaciaLocationVersion').value,
     sensor:'', status:document.getElementById('farmaciaLocationStatus').value,
     positions:document.getElementById('farmaciaLocationPositions').value.split(/\r?\n/).map(function(value) { return value.trim(); }).filter(Boolean) });
   return false;

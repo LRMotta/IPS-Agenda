@@ -169,7 +169,7 @@ test('equipamento tem código único e posições estáveis; cadastro e situaç�
 
 test('posições e temperaturas inválidas são rejeitadas antes da primeira escrita; faixas não são inferidas', () => {
   for(const changes of [{min:30,max:15},{min:null,max:8},{min:NaN},{max:Infinity},{min:'2'}, {positions:[]},
-    {positions:['A','a']},{positions:[' A ','A']},{status:'unknown'},{source:''},{version:''}]) {
+    {positions:['A','a']},{positions:[' A ','A']},{status:'unknown'}]) {
     const f=locationFixture(),payload=f.location();
     assert.throws(()=>f.server.cadastrarLocalFarmacia({...payload,data:{...payload.data,...changes}}));
     assert.equal(f.catalogSheet(),null);
@@ -178,6 +178,22 @@ test('posições e temperaturas inválidas são rejeitadas antes da primeira esc
   f.server.cadastrarLocalFarmacia({...payload,data:{...payload.data,min:null,max:null,model:'phcbi MPR-721R-PA'}});
   const unit=f.server.getFarmaciaEstoque('P1',false).storageUnits[0];
   assert.equal(unit.min,null); assert.equal(unit.max,null);
+});
+
+test('equipamento é cadastrado sem referência documental ou versão, com retentativa idempotente', () => {
+  const f=locationFixture(), payload=f.location();
+  delete payload.data.source;
+  delete payload.data.version;
+  const created=f.server.cadastrarLocalFarmacia(payload);
+  const writes=f.catalogSheet().writes;
+  const unit=f.server.getFarmaciaCatalogo().storageUnits[0];
+  assert.equal(unit.id,created.id);
+  assert.equal(unit.min,15);
+  assert.equal(unit.max,30);
+  assert.equal(unit.source,'');
+  assert.equal(unit.version,'');
+  assert.equal(f.server.cadastrarLocalFarmacia(payload).repeated,true);
+  assert.equal(f.catalogSheet().writes,writes);
 });
 
 test('inventário exige referências válidas, deriva rótulo no servidor e compara faixas sem alterar saldos', () => {
