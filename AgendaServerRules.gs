@@ -349,7 +349,8 @@ var AgendaServerRules_ = (function() {
     var alreadyNotified = control.indexOf('notificado') > -1 || control.indexOf('reagendado') > -1;
     if (labCentral && !cancelled && !alreadyNotified) return 'agendamento';
     if (labCentral && !cancelled && state.dateChanged === true && alreadyNotified) return 'reagendamento';
-    if (cancelled && alreadyNotified) return 'cancelamento';
+    // Retirar do Lab Central encerra o envio previamente notificado, mesmo com a visita ativa.
+    if ((cancelled || !labCentral) && alreadyNotified) return 'cancelamento';
     return '';
   }
 

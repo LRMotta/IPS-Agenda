@@ -24,6 +24,13 @@ function farmaciaOpenCatalogChange(unitId, probeId, action) {
   var form = modal.querySelector('form');
   form._catalogChange = {kind:probeId ? 'probe' : 'unit',unitId:unitId,probeId:probeId || '',revision:item.revision};
   form._catalogValues = Object.assign({},item);
+  if (action === 'edit' && !probeId) {
+    var field = document.createElement('div');
+    field.className = 'field full';
+    field.innerHTML = '<label class="field-label" for="farmaciaEdit-positions">Posições (uma por linha)</label><textarea class="f-input" id="farmaciaEdit-positions" name="positions" rows="6" required aria-describedby="farmaciaEdit-positionsHint"></textarea><small id="farmaciaEdit-positionsHint">Acrescente novas gavetas ou posições, até 100 no total. Mantenha os nomes das posições existentes, sem renomear ou excluir.</small>';
+    field.querySelector('textarea').value = item.positions.join('\n');
+    form.querySelector('fieldset').appendChild(field);
+  }
   form._catalogAction = action;
   form._catalogRequestId = farmaciaOperationId();
   if (action === 'edit') {
@@ -53,6 +60,7 @@ function farmaciaSaveCatalogChange(event, form) {
   if (form._catalogAction === 'edit') {
     data.values = Object.assign({},form._catalogValues);
     Array.from(form.querySelectorAll('input[name]')).forEach(function(input) { data.values[input.name] = ['min','max'].indexOf(input.name) >= 0 ? input.value === '' ? null : input.valueAsNumber : input.value; });
+    if (data.kind === 'unit') data.values.positions = form.elements.positions.value.split(/\r?\n/).map(function(position) { return position.trim(); }).filter(Boolean);
   }
   var modal = document.getElementById('farmaciaModal-unitDetail');
   FARMACIA_STOCK.saving = true; modal.dataset.extraSaving = '1';

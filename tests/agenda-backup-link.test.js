@@ -340,6 +340,12 @@ test('pendencias exibem documentacao de transporte sem envio identificado', () =
   assert.equal(pendencias.documentacaoTransporteSemEnvio[0].awb, '620X37130758');
   assert.equal(pendencias.documentacaoTransporteSemEnvio[0].projeto, 'STARSCAPE-1');
   assert.match(pendencias.documentacaoTransporteSemEnvio[0].motivo, /1 hora/);
+  // Documento historico nao recria um slot vazio nem sentinelas legadas.
+  for (const nome of ['', 'Não aplicável', '---']) {
+    row[cfg.idx.c1.nome] = nome;
+    row[cfg.idx.c1.status] = '';
+    assert.equal(server.getDashboardPendencias_([]).counts.documentacaoTransporteSemEnvio, 0);
+  }
   const pendenciasSource = readProjectFile('IndexPendenciasScripts.html');
   assert.match(pendenciasSource, /key: 'documentacaoTransporteSemEnvio'/);
   assert.match(pendenciasSource, /meta: \[it\.slot, pendenciaCourierComTemperatura\(it\), it\.awb \? 'AWB ' \+ it\.awb : '', it\.motivo, it\.projeto\]/);

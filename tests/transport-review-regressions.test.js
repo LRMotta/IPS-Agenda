@@ -352,7 +352,7 @@ for (const change of ['geracao', 'courier', 'evidencia']) {
   });
 }
 
-test('monitor valida cabecalhos, le o log em dois blocos e a Agenda uma vez para tres slots', () => {
+test('monitor valida cabecalhos e compartilha snapshots antes do Gmail e sob lock para tres slots', () => {
   const book = new FakeSpreadsheet({});
   const agenda = new FakeSheet('Agenda', [
     ['Evento', 'Courier I', 'Status I', 'Courier II', 'Status II', 'Courier III', 'Status III', 'ID'],
@@ -390,7 +390,7 @@ test('monitor valida cabecalhos, le o log em dois blocos e a Agenda uma vez para
   const result = s.transporteMonitorarEnviosPorEmail_();
   assert.equal(result.enviados, 3);
   assert.equal(logReads, 3, 'uma validacao de cabecalhos e dois snapshots do log, independente do numero de slots');
-  assert.equal(agendaReads, 1, 'IDs e valores dos tres slots vêm do mesmo snapshot sob lock');
+  assert.equal(agendaReads, 2, 'um snapshot recusa slots removidos antes do Gmail; outro revalida os tres slots sob lock');
   assert.deepEqual(agenda.rows[1], ['Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'DHL', 'Agendado', 'EVT-1']);
 });
 

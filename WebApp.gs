@@ -8378,6 +8378,9 @@ function getDashboardPendencias_(estoque, perfContext) {
       var slotKey = String(doc.slot || '').trim();
       var slotCfg = slotKey === '1' ? i.c1 : (slotKey === '2' ? i.c2 : (slotKey === '3' ? i.c3 : null));
       if (!slotCfg) return;
+      // Um historico de PDF/rascunho nao recria um transporte removido.
+      var nomeCourierAtual = normText_(r[slotCfg.nome]);
+      if (!nomeCourierAtual || ['nao aplicavel', 'nao se aplica', 'n/a', 'na', '-', '--', '---', 'nenhum'].indexOf(nomeCourierAtual) >= 0) return;
       var statusCourier = String(r[slotCfg.status] || '').trim();
       var statusKey = AgendaServerRules_.courierStatusKey(statusCourier);
       if (['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(statusKey) === -1) return;
@@ -15396,6 +15399,8 @@ function atualizarAgendaEventoCompleto(dados) {
     !AgendaServerRules_.sameStatus(rowAnterior[AGENDA_CFG.idx.status], status);
   var postVisitConcluidoPorStatus = agendaPostVisitConcluidoPorStatus_(status, tipo);
   var awbWarnings = agendaAwbValidarPayload_(agenda, dados, dados.id, rowAnterior);
+  // Validar a cauda do acompanhamento antes da primeira escrita na Agenda.
+  if (typeof transporteOperacoesSheet_ === 'function') transporteOperacoesSheet_(true, true);
   var dataConclusaoPostVisit = new Date();
   var poloTrialValor = postVisitConcluidoPorStatus
     ? (rowAnterior[AGENDA_CFG.idx.poloTrial] || dataConclusaoPostVisit)
@@ -15447,6 +15452,7 @@ function atualizarAgendaEventoCompleto(dados) {
     reservasCanceladas = cancelarReservasKitsAgenda_(rowAnterior[AGENDA_CFG.idx.id], dados.obs || 'Cancelamento da visita na Agenda');
   }
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  if (typeof transporteReconciliarOperacoesAgenda_ === 'function') transporteReconciliarOperacoesAgenda_(rowAtual);
   codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', dados.id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Alteração de agendamento' +
     (mergeResult && mergeResult.ok ? '; alterações simultâneas preservadas: ' + mergeResult.preserved.join('; ') : ''));
   if (deveOrdenarAgenda && agenda.getLastRow() > 2) {
@@ -19665,8 +19671,10 @@ function verificarNotificacoes_(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva
     if (agendaEmailEnabled_()) enviarEmailReagendamento_(sheet, linha, e.user, dataAnterior);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Reagendado ' + formatarDataSafe(dataAtual));
   } else if (notificationAction === 'cancelamento') {
-    if (agendaEmailEnabled_()) enviarEmailCancelamento_(sheet, linha, e.user);
-    sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Cancelado');
+    if (agendaEmailEnabled_()) {
+      enviarEmailCancelamento_(sheet, linha, e.user);
+      sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Cancelado');
+    }
   }
 }
 
@@ -19708,11 +19716,14 @@ function enviarEmailAgendamento_(sheet, linha, usuario) {
 function enviarEmailCancelamento_(sheet, linha, usuario) {
   var dados = sheet.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var i = AGENDA_CFG.idx;
+  var somenteEnvio = !AgendaServerRules_.isCancelled(dados[i.status]) && !AgendaServerRules_.isLabCentral(dados[i.labCentral]);
   var webAppUrl = ScriptApp.getService().getUrl() + '?pagina=agenda&agendaId=' + encodeURIComponent(String(dados[i.id] || '').trim());
-  var assunto = '[CANCELAMENTO] ' + (dados[i.projeto] || '') + ' - Visita com Envio ao Lab Central';
-  var body = gerarHtmlCabecalhoEmail_('CANCELAMENTO DE VISITA / ENVIO', '#c0392b') +
-    '<p>A seguinte visita foi <b>REMOVIDA</b> do fluxo de envio ao Lab Central:</p>' +
-    agendaCancelamentoMotivoHtml_(dados[i.obs]) +
+  var assunto = '[CANCELAMENTO] ' + (dados[i.projeto] || '') + (somenteEnvio ? ' - Envio ao Lab Central' : ' - Visita com Envio ao Lab Central');
+  var body = gerarHtmlCabecalhoEmail_(somenteEnvio ? 'CANCELAMENTO DE ENVIO AO LAB CENTRAL' : 'CANCELAMENTO DE VISITA / ENVIO', '#c0392b') +
+    (somenteEnvio
+      ? '<p>O envio ao Laboratório Central foi <b>CANCELADO</b> porque a opção Laboratório Central foi alterada para Não. <b>O agendamento da visita foi mantido.</b></p>'
+      : '<p>A seguinte visita foi <b>REMOVIDA</b> do fluxo de envio ao Lab Central:</p>') +
+    (somenteEnvio ? '' : agendaCancelamentoMotivoHtml_(dados[i.obs])) +
     gerarTabelaAgendaEmail_(dados, true, 'Data Original') + gerarHtmlCouriers_(dados) +
     '<p><a href="' + escHtmlServer_(webAppUrl) + '">Abrir Agendamento</a></p>' +
     gerarRodapeEmailAgenda_('Cancelado por', usuario) + '</div>';
@@ -19751,16 +19762,38 @@ function gerarHtmlCabecalhoEmail_(titulo, cor) {
     '<h2 style="color:' + (cor || '#2c3e50') + ';">' + escHtmlServer_(titulo) + '</h2>';
 }
 
+function agendaDiaSemanaEmail_(valor) {
+  // Datas do Sheets representam instantes; textos legados representam datas civis.
+  var data = valor instanceof Date && !isNaN(valor.getTime())
+    ? new Date(Utilities.formatDate(valor, 'America/Sao_Paulo', 'yyyy-MM-dd') + 'T12:00:00Z')
+    : parseAgendaDateAny_(valor);
+  if (!data || isNaN(data.getTime())) return 'Não informado';
+  var dia = valor instanceof Date ? data.getUTCDay() : data.getDay();
+  return ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'][dia];
+}
+
 function gerarTabelaAgendaEmail_(dados, incluirDataNascimento, rotuloData) {
   var i = AGENDA_CFG.idx;
-  var nascimento = incluirDataNascimento ? (formatarDataSafe(dados[i.nasc]) || agendaNascimentoFromDados_({
-    participante: dados[i.participante]
-  })) : '';
+  var participante = agendaParticipantePorReferencia_({
+    idCadastro: i.participanteCadastroId >= 0 ? dados[i.participanteCadastroId] : '',
+    nome: dados[i.participante],
+    idParticipante: dados[i.idParticipante],
+    projeto: dados[i.projeto]
+  });
+  var sexo = '';
+  if (participante) {
+    var columns = participanteColumnMap_(SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Participantes'), false);
+    sexo = columns.sexoNascimento === undefined ? '' : String(participante.row[columns.sexoNascimento] || '').trim();
+  }
+  var nascimento = incluirDataNascimento
+    ? (formatarDataSafe(dados[i.nasc]) || (participante ? formatarDataSafe(participante.row[2]) : '')) : '';
   var rows = [
     [rotuloData || 'Data', formatarDataSafe(dados[i.data])],
+    ['Dia da Semana', agendaDiaSemanaEmail_(dados[i.data])],
     ['Tipo de Evento', dados[i.tipo] || ''],
     ['Protocolo', dados[i.projeto] || ''],
-    ['Participante', (dados[i.participante] || '') + ' (' + extrairIniciais_(dados[i.participante]) + ')']
+    ['Participante', (dados[i.participante] || '') + ' (' + extrairIniciais_(dados[i.participante]) + ')'],
+    ['Sexo', sexo || 'Não informado']
   ];
   if (incluirDataNascimento) rows.push(['Data de Nascimento', nascimento]);
   rows.push(

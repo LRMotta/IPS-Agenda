@@ -8,6 +8,7 @@ for (const name of ['enviarEmailAgendamento_', 'enviarEmailReagendamento_', 'env
   test(name + ' inclui link direto com ID codificada e HTML seguro', () => {
     const sent = [];
     const server = runFile('WebApp.gs', {
+      AgendaServerRules_: runFile('AgendaServerRules.gs').AgendaServerRules_,
       AGENDA_CFG: { lastCol: 3, idx: { id: 0, projeto: 1, data: 2 } },
       ScriptApp: { getService: () => ({ getUrl: () => 'https://example.invalid/exec' }) },
       CodexExternalEffects_: { sendEmail: message => sent.push(message) }

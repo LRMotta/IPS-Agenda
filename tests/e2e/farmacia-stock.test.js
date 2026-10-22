@@ -77,6 +77,41 @@ async function fixture(browser, width) {
   return { page, errors, initialNavigation };
 }
 
+test('edição de equipamento acrescenta gaveta e mantém posições ao salvar em desktop/celular', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1440,390]) {
+      const {page,errors}=await fixture(browser,width);
+      const data=stockData({locationsCanManage:true});
+      await openStock(page,data);
+      await chooseView(page,'equipment');
+      await page.getByRole('button',{name:'Editar equipamento IPS AF-01',exact:true}).click();
+      const field=page.getByLabel('Posições (uma por linha)',{exact:true});
+      assert.equal(await field.inputValue(),'Prateleira 1');
+      await field.fill('Prateleira 1\nGaveta 39');
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-editar-posicoes-'+width+'.png')});
+      await page.locator('#farmaciaModal-unitDetail').getByRole('button',{name:'Salvar alterações',exact:true}).click();
+      const request=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
+      assert.equal(request.method,'editarRegistroCatalogoFarmacia');
+      assert.equal(request.payload.data.revision,1);
+      assert.deepEqual(request.payload.data.values.positions,['Prateleira 1','Gaveta 39']);
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'O registro mudou. Atualize o catálogo.'}));
+      assert.match(await page.locator('#farmaciaModal-unitDetail .farmacia-dialog-status').innerText(),/registro mudou/);
+      assert.equal(await field.inputValue(),'Prateleira 1\nGaveta 39');
+      await page.locator('#farmaciaModal-unitDetail').getByRole('button',{name:'Salvar alterações',exact:true}).click();
+      await page.evaluate(()=>window.pending.at(-1).success({ok:true}));
+      data.storageUnits[0].positions.push('Gaveta 39'); data.storageUnits[0].revision=2;
+      await page.evaluate(result=>window.pending.at(-1).success(result),data);
+      await page.getByRole('button',{name:'Ver equipamento IPS AF-01',exact:true}).click();
+      assert.match(await page.locator('#farmaciaUnitDetail').innerText(),/Gaveta 39/);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
 async function openStock(page, data, id = 'P1') {
   await page.locator('#farmaciaStudy').selectOption(id);
   await page.evaluate(studyId => window.pending.at(-1).success({ study:{ id:studyId, nome:'Estudo fictício' }, farmaciaAccess:'manage', restrictedAllowed:true }), id);

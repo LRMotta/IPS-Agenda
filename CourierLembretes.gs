@@ -100,15 +100,16 @@ function courierLembreteOperacaoBase_(op) {
 }
 
 function courierLembreteOperacaoAtual_(item, op) {
-  var matches = transporteOperacoesRows_().filter(function(o) { return o.agendaId === item.agendaId && o.slot === item.slot; });
+  var matches = transporteOperacoesRows_().filter(function(o) { return o.estado !== 'INATIVA' && o.agendaId === item.agendaId && o.slot === item.slot; });
   return matches.length === 1 && courierLembreteOperacaoBase_(matches[0]) === courierLembreteOperacaoBase_(op);
 }
 
-function courierLembreteRegistrarBase_(agendaId, slot, gerado) {
+function courierLembreteRegistrarBase_(agendaId, slot, gerado, vinculoIniciadoEm) {
   // Chamado somente durante geração nova. Nunca preenche vínculos do histórico.
   var atual = courierLembreteAgenda_(agendaId, slot);
   if (!atual) return;
-  var key = agendaId + ':' + slot;
+  // Novo vinculo possui base propria; cobrancas antigas, inclusive incertas, permanecem intactas.
+  var key = agendaId + ':' + slot + (vinculoIniciadoEm ? ':V' + new Date(vinculoIniciadoEm).getTime() : '');
   var item = courierLembreteRows_().filter(function(r) { return r.key === key; })[0];
   if (item && ['TENTATIVA', 'ENVIADO', 'INCERTO'].indexOf(item.estado) >= 0) return;
   item = item || { key: key, agendaId: agendaId, slot: slot };
@@ -310,7 +311,7 @@ function courierLembreteExecutar_() {
   try {
     var own = [conta].concat(GmailApp.getAliases().map(function(s) { return s.toLowerCase(); }));
     var configs = getAgendaCourierRows_();
-    var ops = transporteOperacoesRows_();
+    var ops = transporteOperacoesRows_().filter(function(op) { return op.estado !== 'INATIVA'; });
     var itens = courierLembreteRows_();
     var opsPorChave = courierLembreteIndexar_(ops, function(o) { return JSON.stringify([o.agendaId, o.slot]); });
     var configsPorNome = courierLembreteIndexar_(configs, function(c) { return normText_(c.nome); });

@@ -426,7 +426,8 @@ var TRANSPORTE_OPERACOES_HEADERS_ = [
   'Agenda_ID', 'Slot', 'Referencia', 'Courier', 'Gerado_Em', 'Gerado_Por',
   'PDF_ID', 'PDF_Nome', 'Rascunho_ID', 'Rascunho_Status', 'Rascunho_Erro',
   'Email_Identificado_Em', 'Email_Enviado_Em', 'Gmail_Message_ID', 'Anexos',
-  'Ultima_Verificacao', 'PDF_Hash', 'Temperatura_Geracao', 'Geracao_ID', 'AWB_Documento', 'Pendencia_Envio'
+  'Ultima_Verificacao', 'PDF_Hash', 'Temperatura_Geracao', 'Geracao_ID', 'AWB_Documento', 'Pendencia_Envio',
+  'Operacao_Estado', 'Inativacao_Motivo', 'Inativada_Em', 'Vinculo_Iniciado_Em'
 ];
 var TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_ = 60 * 60 * 1000;
 var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 30;
@@ -438,19 +439,20 @@ function transporteMonitorReferencia_(agendaId, slot) {
   return 'IPS-TRP-' + agendaId + '-T' + slot;
 }
 
-function transporteMonitorRefHtml_(referencia, pdfHash) {
+function transporteMonitorRefHtml_(referencia, pdfHash, generationRequestId) {
   referencia = String(referencia || '').trim();
   if (!referencia) return '';
   var documento = String(pdfHash || '').replace(/[^A-Za-z0-9_-]/g, '');
-  return '<div style="margin-top:14px;font-size:9px;line-height:1.2;color:#9aa0a6">Ref. IPS: ' + referencia + (documento ? '<br>Doc. IPS: ' + documento : '') + '</div>';
+  var geracao = String(generationRequestId || '').replace(/[^A-Za-z0-9_-]/g, '');
+  return '<div style="margin-top:14px;font-size:9px;line-height:1.2;color:#9aa0a6">Ref. IPS: ' + referencia + (documento ? '<br>Doc. IPS: ' + documento : '') + (geracao ? '<br>Ger. IPS: ' + geracao : '') + '</div>';
 }
 
-function transporteOperacoesSheet_(createIfMissing) {
+function transporteOperacoesSheet_(createIfMissing, validateOnly) {
   var ss = typeof getCodexSpreadsheet_ === 'function'
     ? getCodexSpreadsheet_()
     : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(TRANSPORTE_OPERACOES_SHEET_);
-  if (!sh && createIfMissing) {
+  if (!sh && createIfMissing && !validateOnly) {
     sh = ss.insertSheet(TRANSPORTE_OPERACOES_SHEET_);
     sh.getRange(1, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues([TRANSPORTE_OPERACOES_HEADERS_]);
     if (sh.setFrozenRows) sh.setFrozenRows(1);
@@ -471,7 +473,7 @@ function transporteOperacoesSheet_(createIfMissing) {
         missingHeaders = true;
       }
     }
-    if (missingHeaders) {
+    if (missingHeaders && !validateOnly) {
       if (sh.getMaxColumns && sh.getMaxColumns() < TRANSPORTE_OPERACOES_HEADERS_.length) sh.insertColumnsAfter(sh.getMaxColumns(), TRANSPORTE_OPERACOES_HEADERS_.length - sh.getMaxColumns());
       sh.getRange(1, 17, 1, TRANSPORTE_OPERACOES_HEADERS_.length - 16).setValues([TRANSPORTE_OPERACOES_HEADERS_.slice(16)]);
     }
@@ -532,7 +534,11 @@ function transporteOperacoesRows_() {
       temperaturaPdf: headers[17] === 'Temperatura_Geracao' ? String(row[17] || '').trim() : '',
       generationRequestId: headers[18] === 'Geracao_ID' ? String(row[18] || '').trim() : '',
       awbDocumento: headers[19] === 'AWB_Documento' ? String(row[19] || '').trim() : '',
-      pendenciaEnvio: headers[20] === 'Pendencia_Envio' ? String(row[20] || '').trim() : ''
+      pendenciaEnvio: headers[20] === 'Pendencia_Envio' ? String(row[20] || '').trim() : '',
+      estado: headers[21] === 'Operacao_Estado' ? String(row[21] || '').trim() : '',
+      inativacaoMotivo: headers[22] === 'Inativacao_Motivo' ? String(row[22] || '').trim() : '',
+      inativadaEm: headers[23] === 'Inativada_Em' ? row[23] : '',
+      vinculoIniciadoEm: headers[24] === 'Vinculo_Iniciado_Em' ? row[24] : ''
     };
   });
 }
@@ -547,7 +553,7 @@ function transporteRegistrarDocumentacaoGerada_(info) {
   var rows = transporteOperacoesRows_();
   var existente = null;
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i].agendaId === agendaId && rows[i].slot === slot) {
+    if (rows[i].agendaId === agendaId && rows[i].slot === slot && rows[i].estado !== 'INATIVA') {
       existente = rows[i];
       break;
     }
@@ -587,14 +593,16 @@ function transporteRegistrarDocumentacaoGerada_(info) {
     String(info.temperaturaPdf || '').trim(),
     String(info.generationRequestId || '').trim(),
     String(info.awbDocumento || '').trim(),
-    mesmoDocumento ? String(existente.pendenciaEnvio || '') : ''
+    mesmoDocumento ? String(existente.pendenciaEnvio || '') : '',
+    'ATIVA', '', '', existente ? existente.vinculoIniciadoEm :
+      (rows.some(function(item) { return item.agendaId === agendaId && item.slot === slot && item.estado === 'INATIVA'; }) ? now : '')
   ]];
   var rowNumber = existente ? existente.row : sh.getLastRow() + 1;
   // Definir texto antes da escrita impede conversao de IDs em numeros.
   sh.getRange(rowNumber, 1).setNumberFormat('@');
   sh.getRange(rowNumber, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues(values);
   try {
-    if (typeof courierLembreteRegistrarBase_ === 'function') courierLembreteRegistrarBase_(agendaId, slot, now);
+    if (typeof courierLembreteRegistrarBase_ === 'function') courierLembreteRegistrarBase_(agendaId, slot, now, values[0][24]);
   } catch (lembreteError) {
     // Sem base persistida, a cobrança permanece manual; documentos já gerados continuam válidos.
     Logger.log('Base de cobrança não registrada: ' + String(lembreteError.message || lembreteError));
@@ -602,9 +610,44 @@ function transporteRegistrarDocumentacaoGerada_(info) {
   return { registrado: true, agendaId: agendaId, slot: slot, referencia: referencia, row: rowNumber };
 }
 
+// Nome ausente ou sentinela legada nao representa um transporte ativo.
+function transporteSlotExiste_(row, idx) {
+  if (!row || !idx) return false;
+  var nome = normText_(row[idx.nome]);
+  return !!nome && ['nao aplicavel', 'nao se aplica', 'n/a', 'na', '-', '--', '---', 'nenhum'].indexOf(nome) < 0;
+}
+
+// Chamado pela mutacao da Agenda sob o mesmo lock; leituras nao migram nem inativam.
+function transporteReconciliarOperacoesAgenda_(row) {
+  var id = String(row[AGENDA_CFG.idx.id] || '').trim();
+  var slots = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+  var updates = [];
+  transporteOperacoesRows_().forEach(function(item) {
+    if (item.agendaId !== id || item.estado === 'INATIVA') return;
+    var idx = slots[item.slot];
+    var motivo = !transporteSlotExiste_(row, idx) ? 'Transporte removido da Agenda' :
+      (item.courier && normText_(item.courier) !== normText_(row[idx.nome]) ? 'Courier alterado na Agenda' :
+        (item.temperaturaPdf && normText_(item.temperaturaPdf) !== normText_(row[idx.temp]) ? 'Temperatura alterada na Agenda' : ''));
+    if (motivo) updates.push({ item: item, motivo: motivo });
+  });
+  if (!updates.length) return 0;
+  var sheet = transporteOperacoesSheet_(true);
+  var now = new Date();
+  transporteMonitorGravarEvidencias_(sheet, updates.map(function(update) {
+    return { row: update.item.row, values: ['INATIVA', update.motivo, now] };
+  }), 22);
+  codexWriteAuditChangesBatch_(updates.map(function(update) {
+    return { moduleName: 'Agenda', action: 'transporteReconciliarOperacoesAgenda', recordId: id,
+      changes: [{ field: 'Transporte ' + update.item.slot + ' - Operação', oldValue: update.item.estado || 'ATIVA (legado)', newValue: 'INATIVA' }],
+      note: update.motivo + ' | Ref. ' + update.item.referencia + ' | Documento ' + update.item.pdfId };
+  }));
+  return updates.length;
+}
+
 function transporteDocumentosSemEnvioPendencias_(agora) {
   agora = transporteOperacaoDate_(agora) || new Date();
   return transporteOperacoesRows_().filter(function(item) {
+    if (item.estado === 'INATIVA') return false;
     var geradoEm = transporteOperacaoDate_(item.geradoEm);
     var identificadoSemAnexoAceito = !item.pendenciaEnvio && transporteOperacaoDate_(item.emailIdentificadoEm) &&
       Number(item.anexos || 0) < 1 && !transporteCourierExigeAnexoEnvio_(item.courier);
@@ -721,7 +764,8 @@ function transporteOperacaoVersion_(item) {
     item.rascunhoId, item.rascunhoStatus, item.rascunhoErro,
     transporteOperacaoDate_(item.emailIdentificadoEm), transporteOperacaoDate_(item.emailEnviadoEm),
     item.gmailMessageId, item.anexos, transporteOperacaoDate_(item.ultimaVerificacao), item.pdfHash,
-    item.temperaturaPdf, item.generationRequestId, item.awbDocumento, item.pendenciaEnvio
+    item.temperaturaPdf, item.generationRequestId, item.awbDocumento, item.pendenciaEnvio,
+    item.estado, item.inativacaoMotivo, transporteOperacaoDate_(item.inativadaEm), transporteOperacaoDate_(item.vinculoIniciadoEm)
   ]);
 }
 
@@ -770,7 +814,14 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     return id ? (snapshotPrecheck.ids[String(id)] || 0) : 0;
   }
   var pendentes = transporteOperacoesRows_().filter(function(item) {
+    if (item.estado === 'INATIVA') return false;
     if (agendaId && item.agendaId !== agendaId) return false;
+    var slotAtual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 }[item.slot];
+    var linhaAtual = slotAtual ? linhaAgendaPrecheck(item.agendaId) : 0;
+    if (!linhaAtual || !transporteSlotExiste_(snapshotPrecheck.rows[linhaAtual], slotAtual)) {
+      diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Transporte removido ou inexistente na Agenda' });
+      return false;
+    }
     if (!item.referencia) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Referência ausente' }); return false; }
     if (!transporteOperacaoDate_(item.emailEnviadoEm)) {
       // Se o e-mail ja foi identificado em uma execucao anterior, a confirmacao
@@ -861,7 +912,13 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         // Documentos com hash nunca reutilizam a tolerancia legada de 5 min:
         // um envio da revisao anterior nao comprova o documento novo.
         var inicioElegivel = geradoEm ? (item.pdfHash ? Math.floor(geradoEm.getTime() / 1000) * 1000 : geradoEm.getTime() - 5 * 60 * 1000) : 0;
+        var vinculoIniciadoEm = transporteOperacaoDate_(item.vinculoIniciadoEm);
+        if (vinculoIniciadoEm) inicioElegivel = Math.max(inicioElegivel, vinculoIniciadoEm.getTime());
         if (geradoEm && messageDate.getTime() < inicioElegivel) { diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Mensagem anterior à geração' }); return; }
+        if (vinculoIniciadoEm && (!item.generationRequestId || !new RegExp('Ger\\.\\s*IPS:\\s*' + String(item.generationRequestId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_-])', 'i').test(corpo))) {
+          diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Geração do novo vínculo ausente ou divergente; revise o envio manualmente' });
+          return;
+        }
         if (item.pdfHash && !documentoRegex[ref].test(corpo)) {
           diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Marcador do documento atual ausente ou divergente; revise o envio manualmente' });
           return;
@@ -915,8 +972,15 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         return;
       }
       var atual = operacoesAtuais[item.row];
-      if (!atual || transporteOperacaoVersion_(atual) !== transporteOperacaoVersion_(item) || (transporteOperacaoDate_(atual.emailEnviadoEm) && !item.reprocessar)) {
+      if (!atual || atual.estado === 'INATIVA' || transporteOperacaoVersion_(atual) !== transporteOperacaoVersion_(item) || (transporteOperacaoDate_(atual.emailEnviadoEm) && !item.reprocessar)) {
         diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Operação alterada ou concluída durante a busca' });
+        return;
+      }
+      var slotIdx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 }[item.slot];
+      if (slotIdx && !snapshotAgenda) snapshotAgenda = transporteAgendaSnapshotMonitor_(agenda);
+      var slotLinha = slotIdx && item.agendaId ? (snapshotAgenda.ids[String(item.agendaId)] || 0) : 0;
+      if (!slotLinha || !transporteSlotExiste_(snapshotAgenda.rows[slotLinha], slotIdx)) {
+        naoPromovidos.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, motivo: 'Transporte removido ou inexistente na Agenda' });
         return;
       }
       var attachmentCount = match.anexos.length;
@@ -4515,11 +4579,13 @@ function gerarPdfTransporteInterno_(options, access) {
         agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
         monitorRef: monitorRef,
         pdfHash: result.manifestoPdfHash,
+        generationRequestId: options.generationRequestId || '',
         temperaturaPdf: temperaturaPdf
       } : {
         requestedByEmail: options.requestedByEmail || '',
         agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
         monitorRef: monitorRef,
+        generationRequestId: options.generationRequestId || '',
         temperaturaPdf: temperaturaPdf
       });
     });
@@ -5610,7 +5676,7 @@ function criarRascunhoEmail_(options) {
         Logger.log('PDF PINEX nao anexado ao rascunho: ' + pdfAttachError.toString());
       }
     }
-    var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature() + transporteMonitorRefHtml_(refInterna, options.pdfHash));
+    var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature() + transporteMonitorRefHtml_(refInterna, options.pdfHash, options.generationRequestId));
     var draftOptions = {
       htmlBody: htmlBody,
       attachments: attachments
