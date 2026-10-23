@@ -103,6 +103,7 @@ function carregarFarmaciaEstoque(studyId, restrictedAllowed, restricted) {
   FARMACIA_STOCK.restricted = restricted;
   FARMACIA_STOCK.restrictedAllowed = restrictedAllowed;
   var epoch = FARMACIA_STOCK.epoch, readId = ++FARMACIA_STOCK.readId;
+  var productsOnly = FARMACIA_VIEW === 'products';
   FARMACIA_STOCK.data = null;
   document.getElementById('farmaciaStockPanel').hidden = false;
   document.getElementById('farmaciaNoSelection').hidden = true;
@@ -112,20 +113,22 @@ function carregarFarmaciaEstoque(studyId, restrictedAllowed, restricted) {
   ['farmaciaProductsResults','farmaciaInventoryResults','farmaciaLocationsResults','farmaciaProbesResults'].forEach(function(id) { document.getElementById(id).textContent = ''; });
   document.getElementById('farmaciaLocationsResults').textContent = '';
   document.getElementById('farmaciaStockStatus').textContent = 'Carregando estoque…';
-  google.script.run.withSuccessHandler(function(result) {
-    if (!farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
+  var request = google.script.run.withSuccessHandler(function(result) {
+    if (productsOnly !== (FARMACIA_VIEW === 'products') || !farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
     FARMACIA_STOCK.data = result;
     renderFarmaciaEstoque(farmaciaCurrentData());
     farmaciaRestoreFocus();
   }).withFailureHandler(function(error) {
-    if (!farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
+    if (productsOnly !== (FARMACIA_VIEW === 'products') || !farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
     farmaciaUpdateSummary();
     document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error);
     if (FARMACIA_STOCK.restoreFocus) {
       FARMACIA_STOCK.restoreFocus = null;
       document.querySelector('[aria-label="Atualizar estoque"]').focus();
     }
-  }).getFarmaciaEstoque(studyId, restricted);
+  });
+  if (productsOnly) request.getFarmaciaProdutos(studyId, restricted);
+  else request.getFarmaciaEstoque(studyId, restricted);
 }
 
 function farmaciaStockRefresh() {

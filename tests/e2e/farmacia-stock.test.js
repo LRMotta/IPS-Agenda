@@ -189,7 +189,7 @@ test('seleção mostra validação e erro de acesso, permite tentar novamente e 
       await page.getByRole('button',{name:'Atualizar estoque',exact:true}).click();
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaEstudo');
       await page.evaluate(()=>window.pending.at(-1).success({study:{id:'P1',nome:'Estudo autorizado'},farmaciaAccess:'manage',restrictedAllowed:false}));
-      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaEstoque');
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaProdutos');
       await page.evaluate(result=>window.pending.at(-1).success(result),stockData());
       assert.equal(await page.locator('#farmaciaStockPanel').isVisible(),true);
       assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'');
@@ -327,7 +327,7 @@ test('catálogo aberto a usuários sem concessão de Farmácia usa título e íc
       `});
       assert.equal(await page.locator('#navFarmaciaSection').evaluate(el=>el.style.display),'');
       assert.equal(await page.locator('[data-farmacia-view="stock"]').evaluate(el=>el.hidden),true);
-      assert.equal(await page.locator('[data-farmacia-view="products"]').evaluate(el=>el.hidden),true);
+      assert.equal(await page.locator('[data-farmacia-view="products"]').evaluate(el=>el.hidden),false);
       await page.evaluate(()=>window.pending.at(-1).success({farmaciaAccess:'none',farmaciaCommonAccess:'none',studies:[]}));
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaCatalogo');
       assert.equal(await page.locator('#farmaciaViewDescription').isVisible(),false);
@@ -531,6 +531,44 @@ async function chooseView(page,view) {
   if (await page.locator('#navFarmacia').getAttribute('aria-expanded') !== 'true') await page.locator('#navFarmacia').click();
   await page.locator('[data-farmacia-view="'+view+'"]').click();
 }
+
+test('equipe consulta produtos por projeto sem estoque, edição ou respostas de outra área', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) for (const role of ['user','readonly']) {
+      const {page,errors}=await fixture(browser,width);
+      await page.addScriptTag({content:readProjectFile('SharedAccessRules.html').replace(/^\s*<script>\s*/i,'').replace(/\s*<\/script>\s*$/i,'')});
+      await page.addScriptTag({content:`
+        var CURRENT_ACCESS={ok:true,email:'teste@example.invalid',role:'${role}',farmaciaAccess:'none',farmaciaCommonAccess:'none'};
+        function snack() {}
+        ${contentAccessibilitySource(['applyFarmaciaAccess','carregarFarmacia'])}
+        applyFarmaciaAccess(); carregarFarmacia();
+      `});
+      await page.evaluate(()=>window.pending.at(-1).success({farmaciaAccess:'none',studies:[],productStudies:[{id:'P2',nome:'Estudo B'}]}));
+      await chooseView(page,'products');
+      await page.locator('#farmaciaStudy').selectOption('P2');
+      assert.deepEqual(await page.evaluate(()=>window.pending.at(-1).args),['P2',true]);
+      await page.evaluate(()=>window.pending.at(-1).success({study:{id:'P2',nome:'Estudo B'},farmaciaAccess:'read',restrictedAllowed:false}));
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaProdutos');
+      const result=stockData({farmaciaAccess:'read',productsOnly:true,positions:[],movements:[],storageUnits:[],locationsConfigured:false});
+      await page.evaluate(data=>window.pending.at(-1).success(data),result);
+      assert.match(await page.locator('#farmaciaProductsResults').innerText(),/Produto fictício/);
+      assert.equal(await page.locator('#farmaciaPrimaryAction').isVisible(),false);
+      assert.equal(await page.locator('[data-farmacia-view="stock"]').evaluate(el=>el.hidden),true);
+      assert.equal(await page.locator('#farmaciaMetric1').isVisible(),false);
+      assert.equal(await page.locator('#farmaciaProductsResults [data-action="edit"]').count(),0);
+      assert.equal(await page.locator('#farmaciaRestrictedLabel').isVisible(),false);
+      await page.evaluate(()=>window.farmaciaStockRefresh());
+      const old=await page.evaluate(()=>window.pending.length-1);
+      await chooseView(page,'equipment');
+      await page.evaluate(({index,data})=>window.pending[index].success(data),{index:old,data:result});
+      assert.equal(await page.locator('#farmaciaProductsResults').isVisible(),false);
+      assert.equal(await page.evaluate(()=>window.pending.some(item=>item.method==='getFarmaciaEstoque')),false);
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  } finally { await browser.close(); }
+});
 
 async function openForm(page,view) {
   await chooseView(page,view);

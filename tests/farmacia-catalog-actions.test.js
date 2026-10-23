@@ -24,8 +24,19 @@ function fixture() {
   return {server,state,ss,product,ledger,action,initial};
 }
 
+test('consulta geral de produtos reflete correção e exclusão sem devolver histórico operacional', () => {
+  const f=fixture();
+  f.server.codexAssertCanRead_=()=>({farmaciaAccess:'none',farmaciaStudies:[]});
+  f.server.codexFarmaciaStudyCatalog_=()=>[{id:'P1',nome:'Protocolo'}];
+  f.server.getCodexSpreadsheet_=()=>f.ss;
+  const edit=f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,f.product.id,{name:'Nome corrigido',presentation:'Frasco',category:'medicine',unit:'frasco',control:'quantity'}));
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].name,'Nome corrigido');
+  f.server.alterarRegistroFarmacia(f.action('PRODUCT_DELETE',f.product.id,edit.id,null,'delete-product-00001'));
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products.length,0);
+});
+
 test('correções de produto são append-only, idempotentes e preservam campos omitidos', () => {
-  const f = fixture(), original = JSON.stringify(f.ss.getSheetByName(f.server.FARMACIA_LEDGER_SHEET_).rows[1]);
+  const f = fixture(), original = JSON.stringify(f.ss.getSheetByName(f.server.farmaciaLedgerSheetName_('P1')).rows[1]);
   const data = {name:'Corrigido',category:'medicine',presentation:'Frasco',unit:'frasco',control:'quantity'};
   const payload = f.action('PRODUCT_EDIT',f.product.id,f.product.id,data);
   const saved = f.server.alterarRegistroFarmacia(payload);
@@ -33,7 +44,7 @@ test('correções de produto são append-only, idempotentes e preservam campos o
   const product = f.ledger().products[0];
   assert.equal(product.data.name,'Corrigido'); assert.equal(product.data.supplySource,'site'); assert.ok(product.data.storage);
   assert.equal(product.revision,saved.id);
-  assert.equal(JSON.stringify(f.ss.getSheetByName(f.server.FARMACIA_LEDGER_SHEET_).rows[1]),original);
+  assert.equal(JSON.stringify(f.ss.getSheetByName(f.server.farmaciaLedgerSheetName_('P1')).rows[1]),original);
   assert.throws(() => f.server.alterarRegistroFarmacia({...payload,requestId:'action-request-00002'}),/mudou/);
   assert.throws(() => f.server.alterarRegistroFarmacia({...payload,data:{...payload.data,reason:'Outro motivo'}}),/outros dados/);
 });
