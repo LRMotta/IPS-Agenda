@@ -38,6 +38,21 @@ test('correções de produto são append-only, idempotentes e preservam campos o
   assert.throws(() => f.server.alterarRegistroFarmacia({...payload,data:{...payload.data,reason:'Outro motivo'}}),/outros dados/);
 });
 
+test('edição de produto preserva características omitidas e permite correção explícita com revisão', () => {
+  const f=fixture(), data={...f.ledger().products[0].data,productCode:'IMP-001',dosageForm:'Comprimido',strength:'10 mg',route:'Oral'};
+  const first=f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,f.product.id,data));
+  f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,first.id,{name:'Rótulo autorizado',presentation:data.presentation,unit:data.unit,control:data.control},'product-edit-omit-0001'));
+  let current=f.ledger().products[0];
+  for (const key of ['productCode','dosageForm','strength','route']) assert.equal(current.data[key],data[key]);
+  const payload=f.action('PRODUCT_EDIT',f.product.id,current.revision,{...current.data,strength:'20 mg',route:''},'product-edit-clear-0001');
+  f.server.alterarRegistroFarmacia(payload);
+  assert.equal(f.server.alterarRegistroFarmacia(payload).repeated,true);
+  current=f.ledger().products[0];
+  assert.equal(current.data.strength,'20 mg'); assert.equal(current.data.route,'');
+  assert.equal(f.ledger().records[1].data.data.strength,'10 mg');
+  assert.throws(()=>f.server.alterarRegistroFarmacia({...payload,requestId:'stale-product-0001'}),/mudou/);
+});
+
 test('produto sem estoque pode ser excluído; histórico impede exclusão e mudança de unidade', () => {
   const f = fixture();
   f.server.alterarRegistroFarmacia(f.action('PRODUCT_DELETE',f.product.id,f.product.id));

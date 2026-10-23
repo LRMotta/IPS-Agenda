@@ -195,14 +195,21 @@ executa como usuário e não altera automaticamente o compartilhamento dos arqui
 
 O equipamento tem código interno/patrimonial exclusivo, tipo, fabricante/modelo,
 sala, faixa operacional informada (ou pendente), situação e
-de 1 a 100 posições internas. Na ação Editar equipamento, o campo Posições permite
-acrescentar gavetas ou outras posições, uma por linha, preservando os nomes exatos
+de 1 a 100 posições internas. Na criação e edição, Gavetas numeradas permite informar
+colunas e gavetas por coluna: 3 × 13 gera posições de 1 a 39; 1 × 5 gera de 1 a 5.
+O objeto opcional `layout: {columns, drawersPerColumn}` guarda as dimensões para
+representação futura, sem inferir a disposição física de registros antigos. O total
+deve corresponder às posições (até 100). Posições personalizadas mantém a entrada
+de uma por linha. A edição acrescenta posições, preservando os nomes exatos
 de todas as posições existentes. Renomear ou excluir posições continua bloqueado
 no servidor para preservar os vínculos históricos de estoque. A edição usa revisão
 concorrente e registro de histórico. Situação pode mudar entre ativo, manutenção
 e indisponível, com motivo e revisão concorrente, sem sobrescrever o histórico.
 O formulário de equipamentos não solicita referência documental nem versão/data
-da faixa. Esses campos não são exigidos pelo servidor. A faixa informada não
+da faixa. Esses campos foram removidos do cadastro e dos novos dados persistidos.
+Os modais de editar equipamento e sonda usam campos e ações no padrão do app,
+com Alterar situação / Atualizar calibração no rodapé, Cancelar e Salvar alterações.
+A faixa informada não
 comprova qualificação ou medição; referências de conservação dos produtos e
 certificados de calibração das sondas continuam com suas regras próprias.
 
@@ -228,6 +235,25 @@ indisponível. O cliente antecipa os avisos na seleção. Uma faixa do equipamen
 compatível se estiver integralmente dentro da faixa do produto. Isso não representa
 medição nem verifica condições adicionais (luz, umidade etc.). Esses avisos não
 alteram físico, disponível ou bloqueado e não realizam liberação/quarentena clínica.
+
+## Características do produto
+
+Cadastro, edição e visualização incluem código do produto no estudo (`productCode`,
+até 80 caracteres), forma farmacêutica (`dosageForm`, até 80), dosagem/concentração
+(`strength`, até 120) e via de administração (`route`, até 80). São textos opcionais,
+preenchidos conforme rótulo/documento autorizado; não representam dose administrada
+ao participante nem revelam características ocultas pelo cegamento. Não há preenchimento
+automático de registros anteriores. Apresentação/embalagem continua separada.
+
+Os novos campos aparecem nas tabelas, busca, seleção de produto para inventário e
+recebimento e no histórico do lote. Entram na distinção entre cadastros para permitir,
+por exemplo, o mesmo nome/embalagem com concentrações diferentes, mantendo o ID como
+vínculo estável. Edição documentada preserva valores omitidos; um texto vazio explícito
+limpa o campo. O ledger mantém os valores anteriores, revisão, autoria e idempotência.
+
+O modal de cadastro separa identificação/apresentação, controle do estoque e conservação.
+Edição e visualização usam cabeçalho, campos e ações do padrão do app, com rodapé acessível
+durante a rolagem. Lotes, kits e validade permanecem nos fluxos de inventário/recebimento.
 
 ## Sondas e calibração
 

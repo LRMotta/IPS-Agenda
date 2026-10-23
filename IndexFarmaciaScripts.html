@@ -156,7 +156,7 @@ function renderFarmaciaEstoque(data) {
   document.getElementById('farmaciaProbeFields').disabled = !data.locationsCanManage || !data.locationsConfigured || !units.length || FARMACIA_STOCK.saving;
   var select = document.getElementById('farmaciaInitialProduct'), selected = select.value;
   select.innerHTML = '<option value="">Selecione o produto</option>' + products.map(function(product) {
-    return '<option value="' + esc(product.id) + '">' + esc(product.name + ' · ' + product.presentation + ' · ' + product.unit) + '</option>';
+    return '<option value="' + esc(product.id) + '">' + esc(farmaciaProductLabel(product) + ' · ' + product.unit) + '</option>';
   }).join('');
   if (products.some(function(product) { return product.id === selected; })) select.value = selected;
   if (!document.getElementById('farmaciaInitialCountedOn').value) document.getElementById('farmaciaInitialCountedOn').value = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -315,6 +315,8 @@ function farmaciaStockSave(type, data) {
 function salvarProdutoFarmaciaApp(event) {
   event.preventDefault();
   farmaciaStockSave('product', { name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
+    productCode:document.getElementById('farmaciaProductCode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
+    strength:document.getElementById('farmaciaProductStrength').value, route:document.getElementById('farmaciaProductRoute').value,
     unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value, supplySource:document.getElementById('farmaciaProductSupply').value,
     storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value,
       source:document.getElementById('farmaciaProductSource').value, version:document.getElementById('farmaciaProductVersion').value } });
@@ -340,7 +342,7 @@ function farmaciaRenderReceiptOptions(data) {
   var select = document.getElementById('farmaciaReceiptProduct'), selected = select.value;
   var products = (data.products || []).filter(function(product) { return product.supplySource === 'sponsor'; });
   select.innerHTML = '<option value="">Selecione o produto</option>' + products.map(function(product) {
-    return '<option value="' + esc(product.id) + '">' + esc(product.name + ' · ' + product.presentation) + '</option>';
+    return '<option value="' + esc(product.id) + '">' + esc(farmaciaProductLabel(product)) + '</option>';
   }).join('');
   if (products.some(function(product) { return product.id === selected; })) select.value = selected;
   farmaciaUnitOptions('farmaciaReceiptUnit');
@@ -421,7 +423,7 @@ function farmaciaOpenPosition(id) {
     return '<tr><td>' + esc(labels[event.action] || labels[record.type] || record.type) + '<small>' + esc(event.reason || event.note || '') + '</small></td><td>' + farmaciaStockNumber(event.quantity === undefined ? event.physical : event.quantity) + ' ' + esc(product.unit) + '<small>' + esc(event.location || '') + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(record.registeredAt, true)) + '<small>' + esc(record.author) + '</small></td></tr>';
   }).join('');
   if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + farmaciaStockNumber(position.physical) + ' ' + esc(product.unit) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
-  var html = '<div class="form-section"><div class="section-label">' + esc(product.name) + ' · Lote ' + esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '') + '</div><dl class="farmacia-detail-grid"><div class="full"><dt>Localização atual</dt><dd>' + esc(position.location) + '</dd></div><div><dt>Disponível</dt><dd>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</dd></div><div><dt>Aguardando avaliação / Bloqueado</dt><dd>' + farmaciaStockNumber(position.pending || 0) + ' / ' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</dd></div></dl></div>';
+  var html = '<div class="form-section"><div class="section-label">' + esc(farmaciaProductLabel(product)) + ' · Lote ' + esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '') + '</div><dl class="farmacia-detail-grid"><div class="full"><dt>Localização atual</dt><dd>' + esc(position.location) + '</dd></div><div><dt>Disponível</dt><dd>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</dd></div><div><dt>Aguardando avaliação / Bloqueado</dt><dd>' + farmaciaStockNumber(position.pending || 0) + ' / ' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</dd></div></dl></div>';
   html += farmaciaTable(['Evento / Motivo','Quantidade / Localização','Referência documental','Data / Responsável'], rows, 'Histórico do lote');
   if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage') html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
     '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()"><option value="block">Bloquear</option>' + (position.expired ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
@@ -494,11 +496,13 @@ function farmaciaInputTemperature(id) {
 
 function salvarLocalFarmaciaApp(event) {
   event.preventDefault();
+  var positions = farmaciaPositionsData(document.getElementById('farmaciaLocationForm'));
+  if (!positions) return false;
   farmaciaStockSave('location', {code:document.getElementById('farmaciaLocationCode').value, type:document.getElementById('farmaciaLocationType').value,
     model:document.getElementById('farmaciaLocationModel').value, room:document.getElementById('farmaciaLocationRoom').value,
     min:farmaciaInputTemperature('farmaciaLocationMin'), max:farmaciaInputTemperature('farmaciaLocationMax'),
     sensor:'', status:document.getElementById('farmaciaLocationStatus').value,
-    positions:document.getElementById('farmaciaLocationPositions').value.split(/\r?\n/).map(function(value) { return value.trim(); }).filter(Boolean) });
+    positions:positions.positions, layout:positions.layout });
   return false;
 }
 

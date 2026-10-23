@@ -1,4 +1,58 @@
 <script>
+function farmaciaSetupPositions(container, item, prefix) {
+  var positions = item && item.positions || [];
+  var positionPrefix = positions.length && positions.every(function(position,i) { return position === 'Gaveta ' + (i+1); }) ? 'Gaveta ' : '';
+  var numbered = !item || positions.every(function(position,i) { return position === positionPrefix + (i+1); });
+  var layout = item && item.layout;
+  container.innerHTML = '<div class="section-label">Gavetas e posições</div><fieldset class="form-grid farmacia-location-status-fields" data-position-fields>' +
+    '<div class="field full"><label class="field-label" for="' + prefix + 'mode">Organização</label><select class="f-input f-select" id="' + prefix + 'mode" data-position-mode><option value="numbered">Gavetas numeradas</option><option value="custom">Posições personalizadas</option></select></div>' +
+    '<div class="field" data-numbered><label class="field-label" for="' + prefix + 'columns">Colunas</label><input class="f-input" id="' + prefix + 'columns" data-columns type="number" min="1" max="100" step="1" required></div>' +
+    '<div class="field" data-numbered><label class="field-label" for="' + prefix + 'drawers">Gavetas por coluna</label><input class="f-input" id="' + prefix + 'drawers" data-drawers type="number" min="1" max="100" step="1" required></div>' +
+    '<p class="profile-helper" data-position-summary aria-live="polite"></p>' +
+    '<div class="field full" data-custom><label class="field-label" for="' + prefix + 'positions">Posições (uma por linha)</label><textarea class="f-input" id="' + prefix + 'positions" data-positions rows="4" maxlength="8100" required></textarea></div>' +
+    '<p class="profile-helper">Até 100 posições. Na edição, mantenha os nomes das posições existentes para preservar os vínculos de estoque.</p></fieldset>';
+  var fields = container.querySelector('[data-position-fields]');
+  fields._originalPositions = positions;
+  fields._positionPrefix = positionPrefix;
+  fields.querySelector('[data-position-mode]').value = numbered ? 'numbered' : 'custom';
+  fields.querySelector('[data-columns]').value = layout ? layout.columns : 1;
+  fields.querySelector('[data-drawers]').value = layout ? layout.drawersPerColumn : positions.length || '';
+  fields.querySelector('[data-positions]').value = positions.join('\n');
+  fields.addEventListener('input',function() { farmaciaUpdatePositions(fields); });
+  fields.addEventListener('change',function() { farmaciaUpdatePositions(fields); });
+  farmaciaUpdatePositions(fields);
+}
+
+function farmaciaUpdatePositions(fields) {
+  var numbered = fields.querySelector('[data-position-mode]').value === 'numbered';
+  fields.querySelectorAll('[data-numbered]').forEach(function(field) {
+    if (field.hidden !== !numbered) field.hidden = !numbered;
+    var input = field.querySelector('input');
+    if (input.disabled !== !numbered) input.disabled = !numbered;
+  });
+  var custom = fields.querySelector('[data-custom]'), textarea = fields.querySelector('[data-positions]');
+  if (custom.hidden !== numbered) custom.hidden = numbered;
+  if (textarea.disabled !== numbered) textarea.disabled = numbered;
+  var columns = fields.querySelector('[data-columns]'), drawers = fields.querySelector('[data-drawers]');
+  var total = columns.valueAsNumber * drawers.valueAsNumber;
+  var positions = numbered && Number.isInteger(total) && total > 0 && total <= 100 ? Array.from({length:total},function(_,i) { return fields._positionPrefix + (i+1); }) : [];
+  var missing = numbered && fields._originalPositions.some(function(position) { return positions.indexOf(position) < 0; });
+  drawers.setCustomValidity(numbered && total > 100 ? 'O total não pode ultrapassar 100 gavetas.' : missing ? 'Mantenha as posições existentes. A redução ou renumeração pode romper vínculos de estoque.' : '');
+  var summary = fields.querySelector('[data-position-summary]');
+  var message = numbered ? positions.length ? 'Total: ' + total + ' gavetas · Numeração contínua de 1 a ' + total + '.' : 'Informe as colunas e a quantidade de gavetas por coluna.' : 'Use os nomes das posições cadastradas no equipamento.';
+  // Não recriar texto no blur: o scroll anchoring pode deslocar o botão durante o clique.
+  if (summary.textContent !== message) summary.textContent = message;
+}
+
+function farmaciaPositionsData(form) {
+  var fields = form.querySelector('[data-position-fields]');
+  farmaciaUpdatePositions(fields);
+  if (!form.reportValidity()) return null;
+  if (fields.querySelector('[data-position-mode]').value === 'custom') return {positions:fields.querySelector('[data-positions]').value.split(/\r?\n/).map(function(position) { return position.trim(); }).filter(Boolean),layout:null};
+  var columns = fields.querySelector('[data-columns]').valueAsNumber, drawers = fields.querySelector('[data-drawers]').valueAsNumber;
+  return {positions:Array.from({length:columns*drawers},function(_,i) { return fields._positionPrefix + (i+1); }),layout:{columns:columns,drawersPerColumn:drawers}};
+}
+
 function farmaciaCatalogActions(unit, probe, canManage) {
   var label = probe ? 'sonda ' + probe.code : 'equipamento ' + unit.code;
   var attrs = ' data-unit-id="' + esc(unit.id) + '"' + (probe ? ' data-probe-id="' + esc(probe.id) + '"' : '');
@@ -15,27 +69,27 @@ function farmaciaOpenCatalogChange(unitId, probeId, action) {
   var item = probeId ? unit && unit.probes.find(function(probe) { return probe.id === probeId; }) : unit;
   if (!item || item.deleted) return;
   var modal = document.getElementById('farmaciaModal-unitDetail');
+  modal.querySelector('.modal-header-icon .material-symbols-outlined').textContent = probeId ? 'device_thermostat' : 'kitchen';
   document.getElementById('farmaciaModal-unitDetailTitle').textContent = (action === 'delete' ? 'Excluir ' : 'Editar ') + (probeId ? 'sonda' : 'equipamento');
-  var fields = probeId ? [['code','Número interno'],['serial','Número de série'],['model','Fabricante / Modelo']] : [['code','Código interno/patrimonial'],['model','Fabricante / Modelo'],['room','Sala'],['min','Temperatura mínima (°C)'],['max','Temperatura máxima (°C)'],['source','Referência documental'],['version','Versão da referência']];
-  document.getElementById('farmaciaUnitDetail').innerHTML = '<form onsubmit="return farmaciaSaveCatalogChange(event,this)"><div class="form-section"><div class="section-label">' + (action === 'delete' ? 'Excluir ' : 'Editar ') + esc(item.code) + '</div>' + (action === 'delete' ? '<p>Confirmar a exclusão deste cadastro? Os registros anteriores e vínculos históricos serão preservados.</p>' : '<fieldset class="form-grid farmacia-location-status-fields">' + fields.map(function(field) {
-    return '<div class="field"><label class="field-label" for="farmaciaEdit-' + field[0] + '">' + field[1] + '</label><input class="f-input" id="farmaciaEdit-' + field[0] + '" name="' + field[0] + '" value="' + esc(item[field[0]] == null ? '' : item[field[0]]) + '" maxlength="250"' + (['min','max'].indexOf(field[0]) >= 0 ? ' type="number" min="-200" max="100" step="0.1"' : '') + (field[0] === 'code' || field[0] === 'room' || probeId ? ' required' : '') + '></div>';
-  }).join('') + '</fieldset>') + '</div><div class="farmacia-dialog-actions"><button class="btn-save" type="submit">' + (action === 'delete' ? 'Confirmar exclusão' : 'Salvar alterações') + '</button></div></form>';
+  var fields = probeId ? [['code','Número interno',80],['serial','Número de série',120],['model','Fabricante / Modelo',160]] : [['code','Código interno/patrimonial',60],['room','Sala',120],['model','Fabricante / Modelo (opcional)',160],['min','Temperatura mínima (°C, opcional)'],['max','Temperatura máxima (°C, opcional)']];
+  document.getElementById('farmaciaUnitDetail').innerHTML = '<form onsubmit="return farmaciaSaveCatalogChange(event,this)"><div class="form-section"><div class="section-label">' + (action === 'delete' ? 'Excluir ' + esc(item.code) : probeId ? 'Identificação da sonda' : 'Identificação e armazenamento') + '</div>' + (action === 'delete' ? '<p>Confirmar a exclusão deste cadastro? Os registros anteriores e vínculos históricos serão preservados.</p>' : '<fieldset class="form-grid farmacia-location-status-fields">' + fields.map(function(field) {
+    return '<div class="field' + (field[0] === 'model' ? ' full' : '') + '"><label class="field-label" for="farmaciaEdit-' + field[0] + '">' + field[1] + '</label><input class="f-input" id="farmaciaEdit-' + field[0] + '" name="' + field[0] + '" value="' + esc(item[field[0]] == null ? '' : item[field[0]]) + '"' + (field[2] ? ' maxlength="' + field[2] + '"' : '') + (['min','max'].indexOf(field[0]) >= 0 ? ' type="number" min="-200" max="100" step="0.1"' : '') + (field[0] === 'code' || field[0] === 'room' || probeId ? ' required' : '') + '></div>';
+  }).join('') + '</fieldset>') + '</div><div class="farmacia-dialog-actions"><button class="btn-txt" type="button" onclick="fecharOverlay(\'farmaciaModal-unitDetail\')">Cancelar</button><button class="btn-save" type="submit">' + (action === 'delete' ? 'Confirmar exclusão' : 'Salvar alterações') + '</button></div></form>';
   modal.querySelector('.farmacia-dialog-status').textContent = '';
   var form = modal.querySelector('form');
   form._catalogChange = {kind:probeId ? 'probe' : 'unit',unitId:unitId,probeId:probeId || '',revision:item.revision};
   form._catalogValues = Object.assign({},item);
   if (action === 'edit' && !probeId) {
     var field = document.createElement('div');
-    field.className = 'field full';
-    field.innerHTML = '<label class="field-label" for="farmaciaEdit-positions">Posições (uma por linha)</label><textarea class="f-input" id="farmaciaEdit-positions" name="positions" rows="6" required aria-describedby="farmaciaEdit-positionsHint"></textarea><small id="farmaciaEdit-positionsHint">Acrescente novas gavetas ou posições, até 100 no total. Mantenha os nomes das posições existentes, sem renomear ou excluir.</small>';
-    field.querySelector('textarea').value = item.positions.join('\n');
-    form.querySelector('fieldset').appendChild(field);
+    field.className = 'form-section';
+    form.insertBefore(field,form.querySelector('.farmacia-dialog-actions'));
+    farmaciaSetupPositions(field,item,'farmaciaEdit-');
   }
   form._catalogAction = action;
   form._catalogRequestId = farmaciaOperationId();
   if (action === 'edit') {
     var button = document.createElement('button');
-    button.type = 'button'; button.className = 'btn-txt';
+    button.type = 'button'; button.className = 'btn-txt farmacia-catalog-secondary';
     button.textContent = probeId ? 'Atualizar calibração' : 'Alterar situação';
     button.onclick = function() {
       if (FARMACIA_STOCK.saving) return;
@@ -48,7 +102,7 @@ function farmaciaOpenCatalogChange(unitId, probeId, action) {
       if (typeof appConfirmNavigationIfDirty === 'function' && !appConfirmNavigationIfDirty(modal.id,navigate)) return;
       navigate();
     };
-    form.prepend(button);
+    form.querySelector('.farmacia-dialog-actions').prepend(button);
   }
   abrirOverlay(modal.id);
 }
@@ -60,7 +114,12 @@ function farmaciaSaveCatalogChange(event, form) {
   if (form._catalogAction === 'edit') {
     data.values = Object.assign({},form._catalogValues);
     Array.from(form.querySelectorAll('input[name]')).forEach(function(input) { data.values[input.name] = ['min','max'].indexOf(input.name) >= 0 ? input.value === '' ? null : input.valueAsNumber : input.value; });
-    if (data.kind === 'unit') data.values.positions = form.elements.positions.value.split(/\r?\n/).map(function(position) { return position.trim(); }).filter(Boolean);
+    if (data.kind === 'unit') {
+      delete data.values.source; delete data.values.version;
+      var positions = farmaciaPositionsData(form);
+      if (!positions) return false;
+      Object.assign(data.values,positions);
+    }
   }
   var modal = document.getElementById('farmaciaModal-unitDetail');
   FARMACIA_STOCK.saving = true; modal.dataset.extraSaving = '1';

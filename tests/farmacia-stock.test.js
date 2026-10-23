@@ -190,8 +190,8 @@ test('equipamento é cadastrado sem referência documental ou versão, com reten
   assert.equal(unit.id,created.id);
   assert.equal(unit.min,15);
   assert.equal(unit.max,30);
-  assert.equal(unit.source,'');
-  assert.equal(unit.version,'');
+  assert.equal(Object.hasOwn(unit,'source'),false);
+  assert.equal(Object.hasOwn(unit,'version'),false);
   assert.equal(f.server.cadastrarLocalFarmacia(payload).repeated,true);
   assert.equal(f.catalogSheet().writes,writes);
 });
@@ -762,6 +762,51 @@ test('edição acrescenta posições com histórico, idempotência e vínculos d
   f.users.rows[1][2]='readonly';
   assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...payload,requestId:'unit-forbidden-0001',data:{...payload.data,revision:2}}),/somente leitura/);
   assert.equal(f.catalogSheet().writes,writes);
+});
+
+test('equipamento grava colunas e gavetas, edita e reconstrói layout sem alterar posições antigas', () => {
+  const f=locationFixture(), request=f.location();
+  request.data.positions=Array.from({length:5},(_,i)=>String(i+1));
+  request.data.layout={columns:1,drawersPerColumn:5};
+  const created=f.server.cadastrarLocalFarmacia(request), unit=created.catalog.storageUnits[0];
+  assert.deepEqual({...unit.layout},{columns:1,drawersPerColumn:5});
+  assert.equal(Object.hasOwn(unit,'source'),false); assert.equal(Object.hasOwn(unit,'version'),false);
+  const original=JSON.stringify(f.catalogSheet().rows);
+  const payload={requestId:'layout-edit-request-0001',data:{kind:'unit',unitId:unit.id,revision:1,values:{...unit,positions:Array.from({length:39},(_,i)=>String(i+1)),layout:{columns:3,drawersPerColumn:13}}}};
+  const saved=f.server.editarRegistroCatalogoFarmacia(payload);
+  assert.equal(saved.catalog.storageUnits[0].positions.length,39);
+  assert.equal(f.server.editarRegistroCatalogoFarmacia(payload).repeated,true);
+  assert.deepEqual({...f.server.getFarmaciaCatalogo().storageUnits[0].layout},{columns:3,drawersPerColumn:13});
+  assert.equal(JSON.stringify(f.catalogSheet().rows.slice(0,-1)),original);
+  const writes=f.catalogSheet().writes;
+  for (const layout of [{columns:0,drawersPerColumn:39},{columns:3,drawersPerColumn:12},{columns:1.5,drawersPerColumn:26},{columns:'3',drawersPerColumn:13}]) {
+    assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...payload,requestId:'invalid-layout-request',data:{...payload.data,revision:2,values:{...payload.data.values,layout}}}),/colunas/);
+  }
+  const values={...payload.data.values,positions:[...payload.data.values.positions,'40']}; delete values.layout;
+  assert.throws(()=>f.server.editarRegistroCatalogoFarmacia({...payload,requestId:'missing-layout-request',data:{...payload.data,revision:2,values}}),/colunas/);
+  assert.equal(f.catalogSheet().writes,writes);
+});
+
+test('características do produto persistem, distinguem dosagens e preservam replay legado sem inferências', () => {
+  const f=fixture(), characteristics={productCode:'IMP-001',dosageForm:'Comprimido',strength:'10 mg',route:'Oral'};
+  const request=f.product({data:characteristics});
+  const created=f.server.cadastrarProdutoFarmacia(request);
+  assert.equal(f.server.cadastrarProdutoFarmacia(request).repeated,true);
+  const listed=f.server.getFarmaciaEstoque('P1',false).products.find(item=>item.id===created.id);
+  for (const key of Object.keys(characteristics)) assert.equal(listed[key],characteristics[key]);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia({...request,requestId:'duplicate-strength-0001'}),/já.*cadastrado/);
+  f.server.cadastrarProdutoFarmacia(f.product({requestId:'second-strength-0001',data:{...characteristics,strength:'20 mg'}}));
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products.length,2);
+  const sheet=f.sheet(), writes=sheet.writes;
+  for (const [key,max] of [['productCode',80],['dosageForm',80],['strength',120],['route',80]]) {
+    assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'invalid-strength-0001',data:{...characteristics,[key]:'x'.repeat(max+1)}})));
+    assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'invalid-strength-0001',data:{...characteristics,[key]:{text:'inválido'}}})));
+  }
+  assert.equal(sheet.writes,writes);
+  const legacy=fixture(), old=legacy.server.cadastrarProdutoFarmacia(legacy.product());
+  assert.equal(legacy.server.cadastrarProdutoFarmacia(legacy.product()).repeated,true);
+  const product=legacy.server.getFarmaciaEstoque('P1',false).products.find(item=>item.id===old.id);
+  for (const key of Object.keys(characteristics)) assert.equal(Object.hasOwn(product,key),false);
 });
 
 test('equipamento excluído não recebe novas entradas e edição não contorna motivo de situação', () => {

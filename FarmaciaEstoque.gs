@@ -37,6 +37,10 @@ function farmaciaProductData_(value) {
     throw new Error('Selecione unidade e tipo de controle válidos. Kits individualizados usam a unidade kit.');
   }
   var result = { name: name, presentation: presentation, unit: unit, control: value.control };
+  // Opcionais: rótulos cegos e registros legados não revelam nem presumem características.
+  [['productCode',80],['dosageForm',80],['strength',120],['route',80]].forEach(function(field) {
+    if (Object.prototype.hasOwnProperty.call(value,field[0])) result[field[0]] = farmaciaText_(value[field[0]],'a característica do produto',field[1],true);
+  });
   // Ausência preserva o JSON histórico; nunca presume uma condição de conservação.
   if (Object.prototype.hasOwnProperty.call(value, 'storage')) result.storage = farmaciaConservationData_(value.storage);
   if (Object.prototype.hasOwnProperty.call(value, 'supplySource')) {
@@ -134,7 +138,8 @@ function farmaciaContext_(studyId, restricted, permission) {
 }
 
 function farmaciaProductKey_(data) {
-  return JSON.stringify([data.name.toLowerCase(), data.presentation.toLowerCase(), data.unit, data.control]);
+  return JSON.stringify([data.name.toLowerCase(), data.presentation.toLowerCase(), data.unit, data.control].concat(
+    ['productCode','dosageForm','strength','route'].map(function(key) { return (data[key] || '').toLowerCase(); })));
 }
 
 function farmaciaPositionKey_(data) {

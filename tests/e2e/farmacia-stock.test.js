@@ -112,6 +112,60 @@ test('edição de equipamento acrescenta gaveta e mantém posições ao salvar e
   } finally {await browser.close();}
 });
 
+test('gavetas numeradas criam 1 × 5 e editam 3 × 13 com total contínuo e ações no rodapé', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+  try {
+    for (const width of [1440,390]) {
+      const {page,errors}=await fixture(browser,width), data=stockData({locationsCanManage:true});
+      data.storageUnits[0].positions=['1','2','3','4','5'];
+      data.storageUnits[0].layout={columns:1,drawersPerColumn:5};
+      await openStock(page,data);
+      await openForm(page,'equipment');
+      await page.locator('#farmaciaLocationCode').fill('REF-01');
+      await page.locator('#farmaciaLocationType').selectOption('refrigerator');
+      await page.locator('#farmaciaLocationRoom').fill('Farmácia');
+      await page.getByLabel('Colunas',{exact:true}).fill('1');
+      await page.getByLabel('Gavetas por coluna',{exact:true}).fill('5');
+      await page.getByRole('button',{name:'Cadastrar equipamento',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'cadastrarLocalFarmacia');
+      const created=await page.evaluate(()=>window.pending.at(-1).args[0].data);
+      assert.equal(await page.getByLabel('Colunas',{exact:true}).isDisabled(),true);
+      assert.equal(await page.getByLabel('Gavetas por coluna',{exact:true}).isDisabled(),true);
+      assert.deepEqual(created.layout,{columns:1,drawersPerColumn:5});
+      assert.deepEqual(created.positions,['1','2','3','4','5']);
+      await page.evaluate(()=>window.pending.at(-1).success({ok:true}));
+      await page.evaluate(result=>window.pending.at(-1).success(result),data);
+      await page.getByRole('button',{name:'Editar equipamento IPS AF-01',exact:true}).click();
+      const modal=page.locator('#farmaciaModal-unitDetail');
+      assert.equal(await modal.getByLabel('Colunas',{exact:true}).inputValue(),'1');
+      assert.equal(await modal.locator('form > button').count(),0);
+      assert.equal(await modal.getByText('Referência documental',{exact:true}).count(),0);
+      assert.equal(await modal.getByText('Versão da referência',{exact:true}).count(),0);
+      assert.equal(await modal.locator('.farmacia-dialog-actions').getByRole('button',{name:'Alterar situação',exact:true}).count(),1);
+      await modal.getByLabel('Colunas',{exact:true}).fill('3');
+      await modal.getByLabel('Gavetas por coluna',{exact:true}).fill('13');
+      assert.match(await modal.locator('[data-position-summary]').innerText(),/39 gavetas.*1 a 39/);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-editar-gavetas-'+width+'.png')});
+      await modal.getByLabel('Gavetas por coluna',{exact:true}).fill('40');
+      const count=await page.evaluate(()=>window.pending.length);
+      await modal.getByRole('button',{name:'Salvar alterações',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.pending.length),count);
+      await modal.getByLabel('Gavetas por coluna',{exact:true}).fill('13');
+      await modal.getByRole('button',{name:'Salvar alterações',exact:true}).click();
+      const saved=await page.evaluate(()=>window.pending.at(-1).args[0].data.values);
+      assert.deepEqual(saved.layout,{columns:3,drawersPerColumn:13});
+      assert.deepEqual(saved.positions,Array.from({length:39},(_,i)=>String(i+1)));
+      assert.equal(Object.hasOwn(saved,'source'),false); assert.equal(Object.hasOwn(saved,'version'),false);
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
+      assert.equal(await modal.getByLabel('Colunas',{exact:true}).inputValue(),'3');
+      assert.equal(await modal.getByLabel('Gavetas por coluna',{exact:true}).inputValue(),'13');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
 async function openStock(page, data, id = 'P1') {
   await page.locator('#farmaciaStudy').selectOption(id);
   await page.evaluate(studyId => window.pending.at(-1).success({ study:{ id:studyId, nome:'Estudo fictício' }, farmaciaAccess:'manage', restrictedAllowed:true }), id);
@@ -462,7 +516,8 @@ test('setup vazio cadastra primeiro equipamento sem estoque configurado, sonda e
       await page.locator('#farmaciaLocationModel').fill('phcbi MPR-721R-PA');
       await page.locator('#farmaciaLocationRoom').fill('Farmácia fictícia');
       assert.equal(await page.locator('#farmaciaLocationSource, #farmaciaLocationVersion').count(),0);
-      await page.locator('#farmaciaLocationPositions').fill('Prateleira 1\nPrateleira 2');
+      await page.getByLabel('Organização',{exact:true}).selectOption('custom');
+      await page.getByLabel('Posições (uma por linha)',{exact:true}).fill('Prateleira 1\nPrateleira 2');
       assert.equal(await page.locator('#farmaciaLocationMin').inputValue(),'');
       assert.equal(await page.locator('#farmaciaLocationMax').inputValue(),'');
       await page.locator('#farmaciaLocationForm').getByRole('button',{name:'Cadastrar equipamento',exact:true}).click();
@@ -584,6 +639,79 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth<=window.innerWidth),true);
       assert.deepEqual(errors,[]);
       await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test('produto cadastra e corrige código, forma, dosagem e via; modais e seletores distinguem apresentações', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+  try {
+    for (const width of [1440,390]) {
+      const {page,errors}=await fixture(browser,width), data=stockData();
+      await openStock(page,data);
+      await openForm(page,'products');
+      const modal=page.locator('#farmaciaModal-product');
+      await page.locator('#farmaciaProductName').fill('Produto de demonstração');
+      await page.locator('#farmaciaProductCode').fill('IMP-001');
+      await page.locator('#farmaciaProductDosageForm').fill('Comprimido');
+      await page.locator('#farmaciaProductStrength').fill('10 mg');
+      await page.locator('#farmaciaProductRoute').fill('Oral');
+      await page.locator('#farmaciaProductPresentation').fill('Frasco com 30 comprimidos');
+      await page.locator('#farmaciaProductSupply').selectOption('sponsor');
+      await page.locator('#farmaciaProductInstructions').fill('Conforme rótulo autorizado');
+      await page.locator('#farmaciaProductSource').fill('Manual fictício');
+      await page.locator('#farmaciaProductVersion').fill('1');
+      await modal.locator('.modal-header').scrollIntoViewIfNeeded();
+      assert.equal(await modal.locator('.section-label').count(),3);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-produto-novo-'+width+'.png')});
+      await modal.getByRole('button',{name:'Cadastrar produto',exact:true}).click();
+      const first=await page.evaluate(()=>window.pending.at(-1).args[0]);
+      assert.equal(first.data.strength,'10 mg'); assert.equal(first.data.dosageForm,'Comprimido');
+      assert.equal(first.data.productCode,'IMP-001'); assert.equal(first.data.route,'Oral');
+      assert.equal(await page.locator('#farmaciaProductStrength').isDisabled(),true);
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
+      assert.equal(await page.locator('#farmaciaProductStrength').inputValue(),'10 mg');
+      await modal.getByRole('button',{name:'Cadastrar produto',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).args[0].requestId),first.requestId);
+      await page.evaluate(()=>window.pending.at(-1).success({ok:true,id:'PR2'}));
+      data.products.push({...first.data,id:'PR2'});
+      await page.evaluate(result=>window.pending.at(-1).success(result),data);
+      assert.match(await page.locator('#farmaciaProductsResults').innerText(),/IMP-001.*10 mg.*Comprimido.*Oral/);
+      await page.locator('#farmaciaSearch').fill('10 mg');
+      assert.equal(await page.locator('#farmaciaProductsResults [data-farmacia-row]:visible').count(),1);
+      await page.locator('#farmaciaSearch').fill('');
+      await page.locator('#farmaciaProductsResults button[data-record-id="PR2"][data-action="edit"]').click();
+      const edit=page.locator('#farmaciaModal-recordAction');
+      assert.equal(await edit.locator('.modal-header-title').innerText(),'Editar produto');
+      assert.equal(await page.locator('#farmaciaAction-strength').inputValue(),'10 mg');
+      await page.locator('#farmaciaAction-strength').fill('20 mg');
+      await page.locator('#farmaciaAction-reason').fill('Correção conforme documento autorizado');
+      await edit.locator('.modal-header').scrollIntoViewIfNeeded();
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-produto-editar-'+width+'.png')});
+      await edit.getByRole('button',{name:'Salvar correção',exact:true}).click();
+      const correction=await page.evaluate(()=>window.pending.at(-1).args[0]);
+      assert.equal(correction.type,'PRODUCT_EDIT'); assert.equal(correction.data.data.strength,'20 mg');
+      assert.equal(correction.data.data.route,'Oral');
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
+      assert.equal(await page.locator('#farmaciaAction-strength').inputValue(),'20 mg');
+      await edit.getByRole('button',{name:'Salvar correção',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).args[0].requestId),correction.requestId);
+      await page.evaluate(()=>window.pending.at(-1).success({ok:true}));
+      Object.assign(data.products[1],correction.data.data);
+      data.products.push({...data.products[1],id:'PR3',strength:'10 mg'});
+      await page.evaluate(result=>window.pending.at(-1).success(result),data);
+      await page.locator('#farmaciaProductsResults button[data-record-id="PR2"][data-action="view"]').click();
+      assert.match(await edit.innerText(),/20 mg/); assert.match(await edit.innerText(),/IMP-001/);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-produto-visualizar-'+width+'.png')});
+      await edit.getByRole('button',{name:'Fechar',exact:true}).last().click();
+      await page.evaluate(()=>window.farmaciaSetView('stock'));
+      assert.match(await page.locator('#farmaciaInitialProduct option[value="PR2"]').innerText(),/IMP-001.*20 mg.*Comprimido.*Oral/);
+      assert.match(await page.locator('#farmaciaInitialProduct option[value="PR3"]').innerText(),/IMP-001.*10 mg.*Comprimido.*Oral/);
+      assert.match(await page.locator('#farmaciaReceiptProduct option[value="PR2"]').innerText(),/IMP-001.*20 mg/);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+      assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(),0);
+      assert.deepEqual(errors,[]); await page.close();
     }
   } finally {await browser.close();}
 });
@@ -884,6 +1012,10 @@ test('tabelas usam ações por perfil; sonda mostra histórico, edita e confirma
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-calibracoes-historico-'+width+'.png')});
       await page.locator('#farmaciaModal-probeDetail').getByRole('button',{name:'Fechar janela'}).click();
       await page.getByRole('button',{name:'Editar sonda SONDA-01',exact:true}).click();
+      assert.equal(await page.locator('#farmaciaModal-unitDetail form > button').count(),0);
+      assert.equal(await page.locator('#farmaciaModal-unitDetail .farmacia-dialog-actions').getByRole('button',{name:'Atualizar calibração',exact:true}).count(),1);
+      assert.equal(await page.locator('#farmaciaModal-unitDetail .farmacia-dialog-actions').getByRole('button',{name:'Cancelar',exact:true}).count(),1);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-editar-sonda-'+width+'.png')});
       await page.locator('#farmaciaEdit-model').fill('Modelo corrigido');
       await page.locator('#farmaciaModal-unitDetail').getByRole('button',{name:'Salvar alterações',exact:true}).click();
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'editarRegistroCatalogoFarmacia');
