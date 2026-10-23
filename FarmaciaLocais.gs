@@ -39,11 +39,23 @@ function farmaciaLocationData_(value) {
   var positions = value.positions.map(function(position) { return farmaciaText_(position, 'a posição', 80); });
   if (new Set(positions.map(function(position) { return position.toLowerCase(); })).size !== positions.length) throw new Error('Há posições duplicadas.');
   var range = farmaciaTemperatureRange_(value.min, value.max);
-  return { code: farmaciaText_(value.code, 'o código interno do equipamento', 60), type: value.type,
+  var result = { code: farmaciaText_(value.code, 'o código interno do equipamento', 60), type: value.type,
     model: farmaciaText_(value.model, 'o fabricante e modelo', 160, true), room: farmaciaText_(value.room, 'a sala', 120),
-    min: range.min, max: range.max, source: farmaciaText_(value.source, 'a referência da faixa operacional', 250, true),
-    version: farmaciaText_(value.version, 'a versão ou data da referência', 100, true),
+    min: range.min, max: range.max,
     sensor: farmaciaText_(value.sensor, 'o identificador do sensor', 100, true), status: value.status, positions: positions };
+  // Opcional para preservar o JSON canônico dos registros anteriores no replay.
+  if (Object.prototype.hasOwnProperty.call(value, 'layout')) {
+    if (value.layout === null) result.layout = null;
+    else {
+      var layout = value.layout;
+      if (!layout || !Number.isInteger(layout.columns) || !Number.isInteger(layout.drawersPerColumn) ||
+          layout.columns < 1 || layout.drawersPerColumn < 1 || layout.columns * layout.drawersPerColumn !== positions.length) {
+        throw new Error('Confira as colunas e gavetas por coluna: o total deve corresponder às posições cadastradas (até 100).');
+      }
+      result.layout = { columns: layout.columns, drawersPerColumn: layout.drawersPerColumn };
+    }
+  }
+  return result;
 }
 
 function farmaciaLocationStatusData_(value) {
@@ -108,13 +120,16 @@ function farmaciaParseLocationRows_(result, rows) {
     rows.slice(1).forEach(function(row) {
       if (row.every(function(cell) { return cell === ''; })) return;
       var data = JSON.parse(row[5]), author = JSON.parse(row[4]), at = JSON.parse(row[3]);
+      // Descontinuados no equipamento; aceita também registros antigos com campos vazios.
+      var equipmentData = row[1] === 'UNIT' ? data : row[1] === 'CATALOG_EDIT' && data.kind === 'unit' ? data.values : null;
+      if (equipmentData) { delete equipmentData.source; delete equipmentData.version; }
       if (typeof row[0] !== 'string' || !/^FLR-[A-Za-z0-9_-]+$/.test(row[0]) || ids.indexOf(row[0]) !== -1 ||
           typeof row[2] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[2]) || requests.indexOf(row[2]) !== -1 ||
           typeof at !== 'string' || isNaN(Date.parse(at)) || new Date(at).toISOString() !== at ||
           typeof author !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(author)) throw new Error('Registro inválido.');
       ids.push(row[0]); requests.push(row[2]);
       if (row[1] === 'UNIT') {
-        if (JSON.stringify(farmaciaLocationData_(data)) !== row[5] || result.units.some(function(unit) { return unit.code.toLowerCase() === data.code.toLowerCase(); })) throw new Error('Equipamento inválido.');
+        if (JSON.stringify(farmaciaLocationData_(data)) !== JSON.stringify(data) || result.units.some(function(unit) { return unit.code.toLowerCase() === data.code.toLowerCase(); })) throw new Error('Equipamento inválido.');
         result.units.push(Object.assign({ id: row[0], revision: 1, author: author, registeredAt: at, probes: [] }, data));
       } else if (row[1] === 'PROBE') {
         if (JSON.stringify(farmaciaProbeData_(data)) !== row[5] || farmaciaProbeDuplicate_(result.units, data)) throw new Error('Sonda inválida ou duplicada.');
@@ -130,7 +145,7 @@ function farmaciaParseLocationRows_(result, rows) {
         probe.calibrationAuthor = author; probe.calibrationRegisteredAt = at;
         probe.calibration = data.calibration; probe.revision++; probe.author = author; probe.registeredAt = at;
       } else if (row[1] === 'CATALOG_EDIT' || row[1] === 'CATALOG_DELETE') {
-        if (JSON.stringify(farmaciaCatalogChangeData_(data,row[1])) !== row[5]) throw new Error('Alteração inválida.');
+        if (JSON.stringify(farmaciaCatalogChangeData_(data,row[1])) !== JSON.stringify(data)) throw new Error('Alteração inválida.');
         farmaciaApplyCatalogChange_(result.units,data,row[1],author,at);
       } else if (row[1] === 'STATUS') {
         if (JSON.stringify(farmaciaLocationStatusData_(data)) !== row[5]) throw new Error('Situação inválida.');

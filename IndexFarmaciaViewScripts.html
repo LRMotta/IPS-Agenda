@@ -114,14 +114,22 @@ function farmaciaCatalogTable(view, rows, loading) {
   return farmaciaTable(headers, rows || state, view === 'equipment' ? 'Equipamentos e posições' : 'Sondas e calibração', !rows);
 }
 
+function farmaciaProductCharacteristics(product) {
+  return ['productCode','strength','dosageForm','route'].map(function(key) { return product[key]; }).filter(Boolean).join(' · ');
+}
+
+function farmaciaProductLabel(product) {
+  return [product.name,farmaciaProductCharacteristics(product),product.presentation].filter(Boolean).join(' · ');
+}
+
 function farmaciaRenderTables(data) {
   var products = data.products || [], positions = data.positions || [];
   var productRows = products.map(function(product) {
-    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.presentation) + '</td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td><td>' + farmaciaRecordActions('product',product,data) + '</td></tr>';
+    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + esc(farmaciaProductCharacteristics(product)) + '</small><small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.presentation) + '</td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td><td>' + farmaciaRecordActions('product',product,data) + '</td></tr>';
   }).join('');
   var positionRows = positions.map(function(position) {
     var product = products.find(function(item) { return item.id === position.productId; }) || {};
-    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + esc(product.presentation) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + (position.expired ? '<small class="chip chip-red">Vencido</small>' : '') + '</td><td class="farmacia-cell-detail">' + esc(position.location) + '<small>' + esc((position.storageCheck || {}).message || 'Conservação pendente de conferência.') + '</small></td>' +
+    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + esc([farmaciaProductCharacteristics(product),product.presentation].filter(Boolean).join(' · ')) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + (position.expired ? '<small class="chip chip-red">Vencido</small>' : '') + '</td><td class="farmacia-cell-detail">' + esc(position.location) + '<small>' + esc((position.storageCheck || {}).message || 'Conservação pendente de conferência.') + '</small></td>' +
       ['physical', 'available', 'pending', 'blocked'].map(function(key) { return '<td class="farmacia-quantity">' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</td>'; }).join('') +
       '<td>' + (position.origin === 'receipt' ? 'Recebimento' : 'Saldo inicial') + '<small>' + esc(farmaciaStockDate(position.receivedOn || position.countedOn)) + '</small><small>' + esc(position.author) + '</small></td><td>' + farmaciaRecordActions('position',position,data) + '</td></tr>';
   }).join('');
@@ -186,6 +194,7 @@ function farmaciaOpenPrimary() {
   modal.querySelector('form').reset();
   FARMACIA_STOCK[type + 'Token'] = '';
   if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(id);
+  if (type === 'location') farmaciaSetupPositions(document.getElementById('farmaciaLocationPositionsFields'),null,'farmaciaLocation-');
   if (type === 'initial') {
     document.getElementById('farmaciaInitialCountedOn').value = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     farmaciaInitialUnitChanged();
@@ -201,12 +210,13 @@ function farmaciaOpenPrimary() {
 }
 
 function farmaciaOpenUnit(id, editing) {
+  document.querySelector('#farmaciaModal-unitDetail .modal-header-icon .material-symbols-outlined').textContent = 'kitchen';
   document.getElementById('farmaciaModal-unitDetailTitle').textContent = 'Equipamento e posições';
   var data = farmaciaCurrentData();
   var unit = data && (data.storageUnits || []).find(function(item) { return item.id === id; });
   if (!unit) return;
   var statuses = {active:'Ativo',maintenance:'Em manutenção',unavailable:'Indisponível'};
-  var html = '<div class="form-section"><div class="section-label">' + esc(unit.code) + '</div><dl class="farmacia-detail-grid"><div><dt>Fabricante / Modelo</dt><dd>' + esc(unit.model || 'Não informado') + '</dd></div><div><dt>Sala</dt><dd>' + esc(unit.room) + '</dd></div><div><dt>Faixa operacional</dt><dd>' + esc(farmaciaRangeLabel(unit)) + '</dd></div><div><dt>Situação</dt><dd>' + esc(statuses[unit.status]) + '</dd></div>' + ((unit.source || unit.version) ? '<div class="full"><dt>Referência</dt><dd>' + esc([unit.source, unit.version].filter(Boolean).join(' · ')) + '</dd></div>' : '') + (unit.sensor ? '<div class="full"><dt>Identificador anterior de sensor</dt><dd>' + esc(unit.sensor) + '</dd></div>' : '') + '<div class="full"><dt>Posições</dt><dd>' + unit.positions.map(function(position) { return '<span class="chip">' + esc(position) + '</span>'; }).join(' ') + '</dd></div></dl></div>';
+  var html = '<div class="form-section"><div class="section-label">' + esc(unit.code) + '</div><dl class="farmacia-detail-grid"><div><dt>Fabricante / Modelo</dt><dd>' + esc(unit.model || 'Não informado') + '</dd></div><div><dt>Sala</dt><dd>' + esc(unit.room) + '</dd></div><div><dt>Faixa operacional</dt><dd>' + esc(farmaciaRangeLabel(unit)) + '</dd></div><div><dt>Situação</dt><dd>' + esc(statuses[unit.status]) + '</dd></div>' + (unit.layout ? '<div class="full"><dt>Organização das gavetas</dt><dd>' + unit.layout.columns + ' colunas × ' + unit.layout.drawersPerColumn + ' gavetas = ' + unit.positions.length + ' posições</dd></div>' : '') + (unit.sensor ? '<div class="full"><dt>Identificador anterior de sensor</dt><dd>' + esc(unit.sensor) + '</dd></div>' : '') + '<div class="full"><dt>Posições</dt><dd>' + unit.positions.map(function(position) { return '<span class="chip">' + esc(position) + '</span>'; }).join(' ') + '</dd></div></dl></div>';
   if (data.locationsCanManage && editing) html += '<form data-farmacia-unit="' + esc(unit.id) + '" onsubmit="return salvarSituacaoLocalFarmaciaApp(event,this)"><div class="form-section"><div class="section-label">Alterar situação</div><fieldset class="form-grid farmacia-location-status-fields"><div class="field"><label class="field-label" for="farmaciaUnitStatus">Situação</label><select class="f-input" name="status" id="farmaciaUnitStatus">' + Object.keys(statuses).map(function(status) { return '<option value="' + status + '"' + (status === unit.status ? ' selected' : '') + '>' + statuses[status] + '</option>'; }).join('') + '</select></div><div class="field"><label class="field-label" for="farmaciaUnitReason">Motivo</label><input class="f-input" name="reason" id="farmaciaUnitReason" maxlength="250" required></div></fieldset></div><div class="farmacia-dialog-actions"><button class="btn-save" type="submit">Atualizar situação</button></div></form>';
   document.getElementById('farmaciaUnitDetail').innerHTML = html;
   document.getElementById('farmaciaModal-unitDetail').querySelector('.farmacia-dialog-status').textContent = '';

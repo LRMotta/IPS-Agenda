@@ -41,7 +41,9 @@
     .farmacia-modal-box .f-input { width:100%; }
     .farmacia-modal-box fieldset > p, .farmacia-modal-box fieldset > label.farmacia-confirm, #farmaciaKitField { grid-column:1 / -1; }
     .farmacia-confirm { display:flex; align-items:flex-start; gap:10px; line-height:1.6; font-size:12px; }
-    .farmacia-dialog-actions { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-top:18px; }
+    .farmacia-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:12px; margin-top:18px; }
+    .farmacia-dialog-actions .farmacia-catalog-secondary { margin-right:auto; }
+    #farmaciaModal-unitDetail .farmacia-dialog-actions, #farmaciaModal-product .farmacia-dialog-actions, #farmaciaModal-recordAction .farmacia-dialog-actions { position:sticky; bottom:0; background:var(--surface); padding:12px 0; z-index:1; }
     .farmacia-dialog-actions .btn-save { width:auto; margin:0; padding:10px 18px; text-transform:none; letter-spacing:0; }
     .farmacia-dialog-status { margin:12px 0 0; line-height:1.6; }
     .farmacia-dialog-status:empty { display:none; }
