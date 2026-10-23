@@ -378,6 +378,11 @@ function selecionarFarmaciaStudy() {
   var requestId = ++FARMACIA_STUDY_REQUEST_ID;
   var bootstrapId = FARMACIA_REQUEST_ID;
   if (!id) { detail.textContent = ''; return; }
+  if (productsOnly) {
+    detail.textContent = '';
+    carregarFarmaciaEstoque(id, false, false);
+    return;
+  }
   detail.textContent = 'Carregando estoque…';
   document.getElementById('farmaciaNoSelection').hidden = true;
   document.getElementById('farmaciaStockStatus').textContent = 'Validando acesso ao estoque…';

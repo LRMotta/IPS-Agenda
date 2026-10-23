@@ -45,7 +45,7 @@ function farmaciaProductData_(value, allowLegacyCategory) {
   var hasCategory = Object.prototype.hasOwnProperty.call(value, 'category');
   var category = hasCategory ? farmaciaText_(value.category, 'a categoria do produto', 30) : '';
   if ((!hasCategory && !allowLegacyCategory) || (hasCategory && ['medicine', 'material'].indexOf(category) === -1) ||
-      ['unidade', 'comprimido', 'cápsula', 'frasco', 'ampola', 'seringa', 'equipo', 'kit', 'mL', 'g'].indexOf(unit) === -1 ||
+      ['unidade', 'caixa', 'comprimido', 'cápsula', 'frasco', 'ampola', 'seringa', 'equipo', 'kit', 'mL', 'g'].indexOf(unit) === -1 ||
       ['quantity', 'kit'].indexOf(value.control) === -1 || (value.control === 'kit' && unit !== 'kit')) {
     throw new Error('Selecione categoria, unidade e tipo de controle válidos. Kits individualizados usam a unidade kit.');
   }
@@ -284,7 +284,7 @@ function getFarmaciaProdutos(studyId, restricted) {
     });
     products = farmaciaParseLedgerRows_({ studyId: studyId, restricted: restricted }, sheet, [rows[0]].concat(selected)).products;
   }
-  return { study: access.farmaciaStudy, productsOnly: true, configured: true, restricted: restricted,
+  return { study: access.farmaciaStudy, productsOnly: true, configured: true, restricted: restricted, restrictedAllowed: access.farmaciaRestricted === true,
     farmaciaAccess: access.farmaciaAccess, locationsConfigured: false, locationsCanManage: false,
     positions: [], movements: [], storageUnits: [], products: products.map(function(record) {
       var result = { id: record.id, revision: record.revision || record.id };

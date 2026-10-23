@@ -39,6 +39,7 @@ function dashboardAgendaFixture() {
   const getRange = sheet.getRange.bind(sheet);
   sheet.getRange = (...args) => { reads++; return getRange(...args); };
   server.getAgendaSheetForRead_ = () => sheet;
+  server.getCodexSpreadsheet_ = () => ({ getSheetByName: () => null });
   return { server, sheet, rows, row, reads: () => reads, Date: DashboardDate };
 }
 module.exports = { dashboardAgendaFixture };

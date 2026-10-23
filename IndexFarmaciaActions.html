@@ -31,7 +31,7 @@ function farmaciaOpenRecordAction(kind, id, action) {
   }
   if (viewing && kind === 'product') {
     var detailFields = [['name','Produto',record.name],['category','Tipo de produto',farmaciaProductCategoryLabel(record.category)],
-      ['productCode','Código do produto no estudo',record.productCode],['barcode','Código de barras do produto',record.barcode],
+      ['barcode','Código de barras do produto',record.barcode],
       ['dosageForm','Forma farmacêutica',record.dosageForm],['strength','Dosagem / concentração',record.strength],
       ['route','Via de administração',record.route],['presentation','Apresentação / embalagem',record.presentation]];
     fields = '<dl class="farmacia-detail-grid full">' + detailFields.filter(function(field) {
@@ -46,7 +46,7 @@ function farmaciaOpenRecordAction(kind, id, action) {
     var dosageFormField = '<div class="field" data-farmacia-medication-field><label class="field-label" for="farmaciaAction-dosageForm">Forma farmacêutica (opcional)</label><select class="f-input f-select" id="farmaciaAction-dosageForm" name="dosageForm">' + farmaciaProductDosageFormOptionsHtml(record.dosageForm) + '</select></div>';
     var strengthField = '<div class="field" data-farmacia-medication-field><label class="field-label" for="farmaciaAction-strength">Dosagem / concentração (opcional)</label><input class="f-input" id="farmaciaAction-strength" name="strength" value="' + esc(record.strength || '') + '" maxlength="120"></div>';
     var routeField = '<div class="field" data-farmacia-medication-field><label class="field-label" for="farmaciaAction-route">Via de administração (opcional)</label><input class="f-input" id="farmaciaAction-route" name="route" value="' + esc(record.route || '') + '" maxlength="80"></div>';
-    fields = categoryField + input('name','Nome ou descrição do produto',record.name) + input('productCode','Código do produto no estudo (opcional)',record.productCode,'text',80,true) + barcodeField + dosageFormField + strengthField + routeField + input('presentation','Apresentação / embalagem',record.presentation) + '<p class="profile-helper full">Informe o que identifica o produto e a embalagem controlada no estoque.</p>';
+    fields = categoryField + input('name','Nome ou descrição do produto',record.name) + barcodeField + dosageFormField + strengthField + routeField + input('presentation','Apresentação / embalagem',record.presentation) + '<p class="profile-helper full">Informe o que identifica o produto e a embalagem controlada no estoque.</p>';
   } else if (!deleting) fields = input('lot', 'Lote', record.lot, 'text', 100) + input('expiry', 'Validade', record.expiry, 'date') + '<div class="field full"><label class="field-label" for="farmaciaAction-note">Observação</label><textarea class="f-input" id="farmaciaAction-note" name="note" maxlength="500">' + esc(record.note || '') + '</textarea></div>';
   if (!viewing) fields += '<div class="field full"><label class="field-label" for="farmaciaAction-reason">Motivo da ' + (deleting ? 'exclusão' : 'correção') + '</label><textarea class="f-input" id="farmaciaAction-reason" name="reason" maxlength="500" required></textarea></div>';
   if (deleting) fields += '<label class="field full"><input type="checkbox" name="confirmed" required> Confirmo a exclusão deste cadastro incorreto. O histórico será preservado.</label>';
@@ -65,7 +65,7 @@ function farmaciaSaveRecordAction(event, form) {
   if (deleting && !form.elements.confirmed.checked) return false;
   var data = {entityId:snapshot.record.id,revision:snapshot.record.revision || snapshot.record.id,reason:form.elements.reason.value};
   if (!deleting) data.data = product ? Object.assign({}, snapshot.record, {category:form.elements.category.value,name:form.elements.name.value,presentation:form.elements.presentation.value}) : {lot:form.elements.lot.value,expiry:form.elements.expiry.value,note:form.elements.note.value};
-  if (!deleting && product) ['productCode','barcode','dosageForm','strength','route'].forEach(function(key) { data.data[key] = form.elements[key].value; });
+  if (!deleting && product) ['barcode','dosageForm','strength','route'].forEach(function(key) { data.data[key] = form.elements[key].value; });
   var payload = {studyId:snapshot.studyId,restricted:snapshot.restricted,requestId:snapshot.requestId,
     type:(product ? 'PRODUCT_' : 'INITIAL_') + (deleting ? 'DELETE' : 'EDIT'),data:data};
   function current() { return farmaciaStockCurrent(snapshot.epoch, snapshot.studyId, snapshot.restricted) && modal.farmaciaSnapshot === snapshot; }

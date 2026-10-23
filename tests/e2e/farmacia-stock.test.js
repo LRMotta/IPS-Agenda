@@ -172,7 +172,7 @@ async function openStock(page, data, id = 'P1') {
   await page.evaluate(result => window.pending.at(-1).success(result), data);
 }
 
-test('seleção mostra validação e erro de acesso, permite tentar novamente e descarta falha obsoleta', async () => {
+test('seleção de produtos consulta direto, mostra erro de leitura, permite tentar novamente e descarta falha obsoleta', async () => {
   const browser = await loadPlaywright().chromium.launch({headless:true});
   try {
     for (const width of [1440,390]) {
@@ -180,15 +180,13 @@ test('seleção mostra validação e erro de acesso, permite tentar novamente e 
       await chooseView(page,'products');
       await page.locator('#farmaciaStudy').selectOption('P1');
       assert.equal(await page.locator('#farmaciaNoSelection').isVisible(),false);
-      assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'Validando acesso ao estoque…');
+      assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'Carregando produtos…');
       await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha temporária ao validar o acesso.'}));
       assert.equal(await page.locator('#farmaciaStockStatus').isVisible(),true);
       assert.match(await page.locator('#farmaciaStockStatus').innerText(),/Falha temporária/);
       assert.equal(await page.locator('#farmaciaStudy').inputValue(),'P1');
       assert.equal(await page.locator('#farmaciaPrimaryAction').isVisible(),false);
       await page.getByRole('button',{name:'Atualizar estoque',exact:true}).click();
-      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaEstudo');
-      await page.evaluate(()=>window.pending.at(-1).success({study:{id:'P1',nome:'Estudo autorizado'},farmaciaAccess:'manage',restrictedAllowed:false}));
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaProdutos');
       await page.evaluate(result=>window.pending.at(-1).success(result),stockData());
       assert.equal(await page.locator('#farmaciaStockPanel').isVisible(),true);
@@ -202,7 +200,7 @@ test('seleção mostra validação e erro de acesso, permite tentar novamente e 
       const oldRequest=await page.evaluate(()=>window.pending.length-1);
       await page.locator('#farmaciaStudy').selectOption('P1');
       await page.evaluate(index=>window.pending[index].failure({message:'Erro de outra seleção'}),oldRequest);
-      assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'Validando acesso ao estoque…');
+      assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'Carregando produtos…');
       await page.locator('#farmaciaStudy').selectOption('');
       assert.equal(await page.locator('#farmaciaStockStatus').innerText(),'');
       assert.equal(await page.locator('#farmaciaNoSelection').isVisible(),true);
@@ -547,8 +545,7 @@ test('equipe consulta produtos por projeto sem estoque, edição ou respostas de
       await page.evaluate(()=>window.pending.at(-1).success({farmaciaAccess:'none',studies:[],productStudies:[{id:'P2',nome:'Estudo B'}]}));
       await chooseView(page,'products');
       await page.locator('#farmaciaStudy').selectOption('P2');
-      assert.deepEqual(await page.evaluate(()=>window.pending.at(-1).args),['P2',true]);
-      await page.evaluate(()=>window.pending.at(-1).success({study:{id:'P2',nome:'Estudo B'},farmaciaAccess:'read',restrictedAllowed:false}));
+      assert.deepEqual(await page.evaluate(()=>window.pending.at(-1).args),['P2',false]);
       assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaProdutos');
       const result=stockData({farmaciaAccess:'read',productsOnly:true,positions:[],movements:[],storageUnits:[],locationsConfigured:false});
       await page.evaluate(data=>window.pending.at(-1).success(data),result);
@@ -775,7 +772,7 @@ test('visualização de produto legado sem categoria mantém características j�
   } finally {await browser.close();}
 });
 
-test('produto cadastra e corrige código, forma, dosagem e via; modais e seletores distinguem apresentações', async () => {
+test('produto cadastra Caixa sem código de estudo e corrige forma, dosagem e via; modais e seletores distinguem apresentações', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
   try {
@@ -787,7 +784,8 @@ test('produto cadastra e corrige código, forma, dosagem e via; modais e seletor
       const modal=page.locator('#farmaciaModal-product');
       await page.locator('#farmaciaProductCategory').selectOption('medicine');
       await page.locator('#farmaciaProductName').fill('Produto de demonstração');
-      await page.locator('#farmaciaProductCode').fill('IMP-001');
+      assert.equal(await page.locator('#farmaciaProductCode').count(),0);
+      await page.locator('#farmaciaProductUnit').selectOption('caixa');
       await page.locator('#farmaciaProductBarcode').fill('7891234567890');
       await page.locator('#farmaciaProductDosageForm').selectOption('Comprimido');
       await page.locator('#farmaciaProductStrength').fill('10 mg');
@@ -809,7 +807,7 @@ test('produto cadastra e corrige código, forma, dosagem e via; modais e seletor
       await modal.getByRole('button',{name:'Cadastrar produto',exact:true}).click();
       const first=await page.evaluate(()=>window.pending.at(-1).args[0]);
       assert.equal(first.data.category,'medicine'); assert.equal(first.data.strength,'10 mg'); assert.equal(first.data.dosageForm,'Comprimido');
-      assert.equal(first.data.productCode,'IMP-001'); assert.equal(first.data.barcode,'7891234567890'); assert.equal(first.data.route,'Oral');
+      assert.equal(Object.hasOwn(first.data,'productCode'),false); assert.equal(first.data.unit,'caixa'); assert.equal(first.data.barcode,'7891234567890'); assert.equal(first.data.route,'Oral');
       assert.equal(Object.hasOwn(first.data.storage,'source'),false); assert.equal(Object.hasOwn(first.data.storage,'version'),false);
       assert.equal(await page.locator('#farmaciaProductStrength').isDisabled(),true);
       await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
@@ -819,7 +817,9 @@ test('produto cadastra e corrige código, forma, dosagem e via; modais e seletor
       await page.evaluate(()=>window.pending.at(-1).success({ok:true,id:'PR2'}));
       data.products.push({...first.data,id:'PR2'});
       await page.evaluate(result=>window.pending.at(-1).success(result),data);
-      assert.match(await page.locator('#farmaciaProductsResults').innerText(),/Medicamento.*IMP-001.*GTIN 7891234567890.*10 mg.*Comprimido.*Oral/);
+      assert.match(await page.locator('#farmaciaProductsResults').innerText(),/Medicamento/);
+      assert.equal(await page.locator('#farmaciaProductsResults .farmacia-product-heading .chip-blue').count(),2);
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-produtos-tabela-'+width+'.png')});
       await page.locator('#farmaciaSearch').fill('7891234567890');
       assert.equal(await page.locator('#farmaciaProductsResults [data-farmacia-row]:visible').count(),1);
       await page.locator('#farmaciaSearch').fill('10 mg');
@@ -848,13 +848,13 @@ test('produto cadastra e corrige código, forma, dosagem e via; modais e seletor
       data.products.push({...data.products[1],id:'PR3',strength:'10 mg'});
       await page.evaluate(result=>window.pending.at(-1).success(result),data);
       await page.locator('#farmaciaProductsResults button[data-record-id="PR2"][data-action="view"]').click();
-      assert.match(await edit.innerText(),/20 mg/); assert.match(await edit.innerText(),/IMP-001/); assert.match(await edit.innerText(),/7891234567890/);
+      assert.match(await edit.innerText(),/20 mg/); assert.doesNotMatch(await edit.innerText(),/Código do produto no estudo/); assert.match(await edit.innerText(),/7891234567890/);
       await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-produto-visualizar-'+width+'.png')});
       await edit.getByRole('button',{name:'Fechar',exact:true}).last().click();
       await page.evaluate(()=>window.farmaciaSetView('stock'));
-      assert.match(await page.locator('#farmaciaInitialProduct option[value="PR2"]').innerText(),/IMP-001.*20 mg.*Comprimido.*Oral/);
-      assert.match(await page.locator('#farmaciaInitialProduct option[value="PR3"]').innerText(),/IMP-001.*10 mg.*Comprimido.*Oral/);
-      assert.match(await page.locator('#farmaciaReceiptProduct option[value="PR2"]').innerText(),/IMP-001.*20 mg/);
+      assert.match(await page.locator('#farmaciaInitialProduct option[value="PR2"]').innerText(),/20 mg.*Comprimido.*Oral/);
+      assert.match(await page.locator('#farmaciaInitialProduct option[value="PR3"]').innerText(),/10 mg.*Comprimido.*Oral/);
+      assert.match(await page.locator('#farmaciaReceiptProduct option[value="PR2"]').innerText(),/20 mg/);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
       assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(),0);
       assert.deepEqual(errors,[]); await page.close();
@@ -1179,5 +1179,24 @@ test('tabelas usam ações por perfil; sonda mostra histórico, edita e confirma
       assert.deepEqual(errors,[]);
       await page.close();
     }
+  } finally {await browser.close();}
+});
+
+
+test('Produtos obtém autorização restrita na própria leitura sem RPC anterior de estoque', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1440);
+    await chooseView(page,'products');
+    await page.locator('#farmaciaStudy').selectOption('P1');
+    assert.deepEqual(await page.evaluate(()=>window.pending.map(item=>item.method)),['getFarmaciaProdutos']);
+    await page.evaluate(data=>window.pending.at(-1).success(data),stockData({productsOnly:true,restrictedAllowed:true}));
+    assert.equal(await page.locator('#farmaciaRestrictedLabel').isVisible(),true);
+    await page.locator('#farmaciaStockRestricted').check();
+    assert.deepEqual(await page.evaluate(()=>window.pending.at(-1).args),['P1',true]);
+    await page.evaluate(data=>window.pending.at(-1).success(data),stockData({productsOnly:true,restricted:true,restrictedAllowed:true}));
+    assert.equal(await page.locator('#farmaciaStockRestricted').isChecked(),true);
+    assert.deepEqual(errors,[]);
+    await page.close();
   } finally {await browser.close();}
 });

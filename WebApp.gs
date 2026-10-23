@@ -8603,7 +8603,8 @@ function getAgendaDashboardResumo_() {
       Logger.log('Dashboard: cadastro de laboratórios indisponível para resolver destinos históricos.');
     }
     laboratoriosDestino = labRows.map(function(row) {
-      return { nomeAbreviado: String(row[1] || '').trim(), cidade: String(row[4] || '').split(',')[0].trim() };
+      return { id: String(row[0] || '').trim(), nomeAbreviado: String(row[1] || '').trim(),
+        nomeCompleto: String(row[2] || '').trim(), cidade: String(row[4] || '').split(',')[0].trim() };
     }).filter(function(lab) { return lab.nomeAbreviado; });
     return laboratoriosDestino;
   }
@@ -8847,41 +8848,72 @@ function agendaDashboardDestinoMaterial_(material, laboratorios) {
 
 function agendaDashboardTransportesEvento_(r, i, carregarLaboratoriosDestino) {
   var transportes = [];
-  [i.c1, i.c2, i.c3].forEach(function(c) {
-    if (!c || c.nome === undefined) return;
-    var nome = String(r[c.nome] || '').trim();
+  var slots = [i.c1, i.c2, i.c3].filter(Boolean).map(function(c) {
+    var slot = agendaCourierToObject_(r, c);
+    // O resumo estruturado pode omitir o laboratório descrito no texto legado.
+    slot.material = String(r[c.material] || slot.material || '');
+    return slot;
+  });
+  // Backup vinculado é espelho do envio I/II/III, na data do destino.
+  // O legado "Adicionado à Agenda" pode não ter a referência estruturada.
+  ['backup', 'backup2'].forEach(function(key) {
+    var backup = agendaBackupFromRow_(r, key);
+    var materialOriginal = key === 'backup' ? r[i.cb.material]
+      : i.backup2Dados >= 0 && r[i.backup2Dados] ? JSON.parse(String(r[i.backup2Dados])).material : '';
+    backup.material = String(materialOriginal || backup.material || '');
+    if (!backup.agendamentos.length && normText_(backup.status) !== 'adicionado a agenda') slots.push(backup);
+  });
+  slots.forEach(function(c) {
+    var nome = String(c.nome || '').trim();
     if (!isCourierNomeValidoAgenda_(nome)) return;
-    var status = AgendaServerRules_.courierStatusKey(r[c.status]);
+    var status = AgendaServerRules_.courierStatusKey(c.status);
     if (status === 'cancelado' || status === 'naoaplicavel') return;
     // Alias de apresentação apenas: o cadastro e o fluxo operacional não mudam.
     if (normText_(nome) === 'pinex (agendamento)') nome = 'Pinex';
-    var destino = String(r[c.destino] || '').trim();
-    var material = String(r[c.material] || '').trim();
+    var destino = String(c.destino || '').trim();
+    var material = String(c.material || '').trim();
+    var laboratorios = carregarLaboratoriosDestino ? carregarLaboratoriosDestino() : [];
     if (!destino && material && carregarLaboratoriosDestino) {
-      destino = agendaDashboardDestinoMaterial_(material, carregarLaboratoriosDestino());
+      destino = agendaDashboardDestinoMaterial_(material, laboratorios);
     }
+    var laboratorio = agendaDashboardLaboratorio_(destino, laboratorios);
+    if (laboratorio) destino = laboratorio.nomeAbreviado;
     // Ausência nas duas fontes não comprova ausência de destino no Transporte.
     if (!destino) destino = 'Destino não identificado na Agenda';
-    transportes.push({ courier: nome, destino: destino, realizado: status === 'enviado' || status === 'entregue' });
+    transportes.push({ courier: nome, destino: destino,
+      laboratorioId: laboratorio ? laboratorio.id : '', realizado: status === 'enviado' || status === 'entregue' });
   });
   return transportes;
 }
 
+function agendaDashboardLaboratorio_(destino, laboratorios) {
+  var key = normText_(destino);
+  if (!key) return null;
+  var porId = (laboratorios || []).filter(function(lab) { return lab.id && lab.id === String(destino).trim(); });
+  if (porId.length === 1) return porId[0];
+  // Agenda legada persiste texto. Não fundir marcas/cidades por aproximação.
+  var candidatos = (laboratorios || []).filter(function(lab) {
+    return key === normText_(lab.nomeAbreviado) || key === normText_(lab.nomeCompleto);
+  });
+  return candidatos.length === 1 ? candidatos[0] : null;
+}
+
 function agendaDashboardCountTransports_(info, couriers, laboratorios) {
   if (!info.isEventoComTransporte || info.isCancelado || info.isReagendado || !info.lab) return;
-  function add(map, label, realizado) {
-    if (!map[label]) map[label] = { realizados: 0, previstos: 0 };
-    map[label][realizado ? 'realizados' : 'previstos']++;
+  function add(map, key, label, realizado) {
+    if (!map[key]) map[key] = { label: label, realizados: 0, previstos: 0 };
+    map[key][realizado ? 'realizados' : 'previstos']++;
   }
   info.evento.transportes.forEach(function(transporte) {
-    add(couriers, transporte.courier, transporte.realizado);
-    add(laboratorios, transporte.destino, transporte.realizado);
+    add(couriers, transporte.courier, transporte.courier, transporte.realizado);
+    add(laboratorios, transporte.laboratorioId ? 'id:' + transporte.laboratorioId : 'legado:' + transporte.destino,
+      transporte.destino, transporte.realizado);
   });
 }
 
 function agendaDashboardTransportPairs_(map, limit) {
   var pairs = Object.keys(map).map(function(label) {
-    return { label: label, value: map[label].realizados + map[label].previstos,
+    return { label: map[label].label || label, value: map[label].realizados + map[label].previstos,
       realizados: map[label].realizados, previstos: map[label].previstos };
   }).sort(function(a, b) { return b.value - a.value || a.label.localeCompare(b.label); });
   if (!limit || pairs.length <= limit) return pairs;
