@@ -37,7 +37,7 @@ delegação e procedimentos do estudo pela equipe.
 
 O usuário autorizado pode selecionar um estudo e consultar seu próprio nível,
 a existência da autorização adicional e o estoque da classe escolhida, quando o
-armazenamento dedicado estiver configurado. Não são retornados dados de
+armazenamento no arquivo principal estiver disponível. Não são retornados dados de
 participantes, braço ou alocação de tratamento.
 
 ## Compatibilidade e armazenamento
@@ -104,5 +104,6 @@ da Farmácia**, com `none`, `read`, `operate` e `manage`. Não concede estudos n
 informações restritas. Um usuário com somente esta concessão pode abrir Farmácia.
 Admin configura o nível no formulário de usuário; campos omitidos são preservados,
 cabeçalho conflitante bloqueia gravação e alteração concorrente exige reabrir o formulário.
-O armazenamento e as permissões de arquivo são separados dos estudos; consulte
+O armazenamento é compartilhado com os estudos no arquivo principal, mantendo
+a autorização independente no WebApp; consulte
 [FARMACIA_ESTOQUE.md](FARMACIA_ESTOQUE.md). Alterações locais, sem migração real.

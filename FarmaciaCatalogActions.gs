@@ -4,7 +4,7 @@ function farmaciaCatalogActionData_(type, value) {
   var result = { entityId: farmaciaText_(value.entityId, 'o registro', 100),
     revision: farmaciaText_(value.revision, 'a revisão do registro', 100),
     reason: farmaciaText_(value.reason, 'o motivo da correção', 500) };
-  if (type === 'PRODUCT_EDIT') result.data = farmaciaProductData_(value.data);
+  if (type === 'PRODUCT_EDIT') result.data = farmaciaProductData_(value.data, true);
   else if (type === 'INITIAL_EDIT') {
     var data = value.data || {};
     if (Object.keys(data).some(function(key) { return ['lot', 'expiry', 'note'].indexOf(key) === -1; })) throw new Error('A correção não pode alterar quantidades, produto, kit ou localização.');
@@ -26,9 +26,11 @@ function farmaciaApplyCatalogAction_(ledger, record) {
     if (deleting && used) throw new Error('Este produto possui histórico de estoque e não pode ser excluído.');
     if (!deleting) {
       var next = Object.assign({}, data.data);
-      ['storage', 'supplySource', 'productCode', 'dosageForm', 'strength', 'route'].forEach(function(key) {
+      ['category', 'storage', 'supplySource', 'productCode', 'barcode', 'dosageForm', 'strength', 'route'].forEach(function(key) {
         if (!Object.prototype.hasOwnProperty.call(next, key) && Object.prototype.hasOwnProperty.call(current.data, key)) next[key] = current.data[key];
       });
+      // A categoria deve ser coerente com o estado completo, inclusive campos preservados na correção.
+      next = farmaciaProductData_(next, !Object.prototype.hasOwnProperty.call(next, 'category'));
       if (used && ['unit', 'control', 'supplySource'].some(function(key) { return next[key] !== current.data[key]; })) throw new Error('Produtos com histórico devem preservar unidade, controle e origem do fornecimento.');
       if (ledger.products.some(function(item) { return item.id !== current.id && farmaciaProductKey_(item.data) === farmaciaProductKey_(next); })) throw new Error('Este produto já está cadastrado.');
       list[index] = Object.assign({}, current, { data: next, revision: record.id });

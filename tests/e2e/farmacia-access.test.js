@@ -56,7 +56,7 @@ async function fixture(browser, width) {
       return payload=>pending.push({method,payload,success,failure});
     }}); }
     var google={script:{run:runner()}};
-    ${contentAccessibilitySource(['appSyncNavAccessibility', 'toggleNavFarmacia', 'abrirFarmaciaView', 'farmaciaAccessLabel', 'applyFarmaciaAccess', 'carregarFarmacia', 'renderFarmaciaStudies', 'selecionarFarmaciaStudy',
+    ${contentAccessibilitySource(['appSyncNavAccessibility', 'toggleNavFarmacia', 'abrirFarmaciaView', 'farmaciaAccessLabel', 'applyFarmaciaAccess', 'carregarFarmacia', 'renderFarmaciaStudies', 'farmaciaStudyLabel', 'selecionarFarmaciaStudy',
       'renderUserFarmaciaStudies', 'collectUserFarmaciaStudies', 'farmaciaStudySelectionChanged', 'irPara',
       'profileDayOptionsHtml', 'profileMonthOptionsHtml', 'preencherSelectsAniversario', 'validarAniversarioCliente',
       'profileFormationOptionsHtml', 'preencherSelectFormacaoPerfil', 'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}

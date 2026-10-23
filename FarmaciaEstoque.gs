@@ -1,6 +1,7 @@
-// Estoque próprio da pesquisa. Arquivos separados por estudo/classe e estoque comum.
+// Estoque próprio da pesquisa no arquivo principal, segregado por estudo e classe no servidor.
 var FARMACIA_LEDGER_SHEET_ = 'Farmacia_Registros_v1';
 var FARMACIA_LEDGER_HEADERS_ = ['ID', 'Tipo', 'Estudo_JSON', 'Restrito', 'Request_ID', 'Registrado_em_JSON', 'Autor_JSON', 'Dados_JSON'];
+var FARMACIA_PRODUCT_DOSAGE_FORMS_ = ['Comprimido', 'Cápsula', 'Solução oral', 'Suspensão oral', 'Solução injetável', 'Suspensão injetável', 'Pó para solução injetável', 'Creme', 'Pomada', 'Gel', 'Colírio', 'Solução oftálmica', 'Spray nasal', 'Solução inalatória', 'Aerossol', 'Supositório', 'Adesivo transdérmico', 'Outro'];
 
 function farmaciaToday_() {
   return Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
@@ -27,22 +28,34 @@ function farmaciaQuantity_(value, fractional) {
   return Math.round(value * 1000) / 1000;
 }
 
-function farmaciaProductData_(value) {
+function farmaciaProductData_(value, allowLegacyCategory) {
   value = value || {};
+  allowLegacyCategory = allowLegacyCategory === true;
   var name = farmaciaText_(value.name, 'o nome do produto', 160);
   var presentation = farmaciaText_(value.presentation, 'a apresentação', 160);
   var unit = farmaciaText_(value.unit, 'a unidade', 30);
-  if (['unidade', 'comprimido', 'cápsula', 'frasco', 'ampola', 'seringa', 'kit', 'mL', 'g'].indexOf(unit) === -1 ||
+  var hasCategory = Object.prototype.hasOwnProperty.call(value, 'category');
+  var category = hasCategory ? farmaciaText_(value.category, 'a categoria do produto', 30) : '';
+  if ((!hasCategory && !allowLegacyCategory) || (hasCategory && ['medicine', 'material'].indexOf(category) === -1) ||
+      ['unidade', 'comprimido', 'cápsula', 'frasco', 'ampola', 'seringa', 'equipo', 'kit', 'mL', 'g'].indexOf(unit) === -1 ||
       ['quantity', 'kit'].indexOf(value.control) === -1 || (value.control === 'kit' && unit !== 'kit')) {
-    throw new Error('Selecione unidade e tipo de controle válidos. Kits individualizados usam a unidade kit.');
+    throw new Error('Selecione categoria, unidade e tipo de controle válidos. Kits individualizados usam a unidade kit.');
   }
-  var result = { name: name, presentation: presentation, unit: unit, control: value.control };
-  // Opcionais: rótulos cegos e registros legados não revelam nem presumem características.
-  [['productCode',80],['dosageForm',80],['strength',120],['route',80]].forEach(function(field) {
-    if (Object.prototype.hasOwnProperty.call(value,field[0])) result[field[0]] = farmaciaText_(value[field[0]],'a característica do produto',field[1],true);
-  });
-  // Ausência preserva o JSON histórico; nunca presume uma condição de conservação.
-  if (Object.prototype.hasOwnProperty.call(value, 'storage')) result.storage = farmaciaConservationData_(value.storage);
+  var result = { name: name, presentation: presentation };
+  if (hasCategory) result.category = category;
+  result.unit = unit;
+  result.control = value.control;
+  // Opcionais omitidos em uma correção preservam o valor atual; string vazia permite limpar explicitamente.
+  [['productCode',80,'o código do produto no estudo'],['barcode',80,'o código de barras do produto'],
+    ['dosageForm',80,'a forma farmacêutica'],['strength',120,'a dosagem ou concentração'],['route',80,'a via de administração']]
+    .forEach(function(field) {
+      if (Object.prototype.hasOwnProperty.call(value, field[0])) result[field[0]] = farmaciaText_(value[field[0]], field[2], field[1], true);
+    });
+  if ((category === 'medicine' && result.dosageForm && FARMACIA_PRODUCT_DOSAGE_FORMS_.indexOf(result.dosageForm) === -1) ||
+      (category === 'material' && (result.dosageForm || result.strength || result.route))) {
+    throw new Error('Revise os campos farmacêuticos conforme a categoria do produto.');
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'storage')) result.storage = farmaciaConservationData_(value.storage, !hasCategory);
   if (Object.prototype.hasOwnProperty.call(value, 'supplySource')) {
     if (['sponsor', 'site'].indexOf(value.supplySource) === -1) throw new Error('Selecione a origem do fornecimento do produto.');
     result.supplySource = value.supplySource;
@@ -80,66 +93,35 @@ function farmaciaInitialData_(value, product, historical) {
   return result;
 }
 
-function farmaciaStorage_(studyId, restricted) {
+function farmaciaStorage_() {
+  var ss = getCodexSpreadsheet_();
   var raw = PropertiesService.getScriptProperties().getProperty('FARMACIA_STORAGE_V1');
-  if (!raw) return null;
-  if (raw.length > 50000) throw new Error('Configuração de armazenamento da Farmácia inválida.');
-  var config;
-  try { config = JSON.parse(raw); } catch (error) {
-    // eslint-disable-next-line preserve-caught-error -- A resposta pública não deve expor o conteúdo bruto da configuração.
-    throw new Error('Configuração de armazenamento da Farmácia inválida.');
-  }
-  if (!config || config.version !== 1 || !Array.isArray(config.studies) || config.studies.length > 200) {
-    throw new Error('Configuração de armazenamento da Farmácia inválida.');
-  }
-  var primary = getCodexSpreadsheet_().getId();
-  var seenStudies = [], seenFiles = [], selected = '';
-  if (config.locations !== undefined && config.locations !== '') {
-    if (typeof config.locations !== 'string' || !/^[A-Za-z0-9_-]{20,120}$/.test(config.locations) || config.locations === primary) throw new Error('Configuração do catálogo de locais inválida.');
-    seenFiles.push(config.locations);
-    if (studyId === '@IPS_LOCATIONS' && restricted === false) selected = config.locations;
-  }
-  if (config.common !== undefined && config.common !== '') {
-    if (typeof config.common !== 'string' || !/^[A-Za-z0-9_-]{20,120}$/.test(config.common) || config.common === primary) {
-      throw new Error('Configuração do arquivo exclusivo do estoque comum inválida.');
+  if (raw) {
+    var config;
+    try { config = JSON.parse(raw); } catch (error) {
+      // eslint-disable-next-line preserve-caught-error -- Não expor configuração bruta.
+      throw new Error('Configuração de armazenamento da Farmácia inválida.');
     }
-    if (seenFiles.indexOf(config.common) !== -1) throw new Error('Os arquivos da Farmácia devem ser exclusivos por estudo, classe e catálogo de locais.');
-    seenFiles.push(config.common);
-    if (studyId === FARMACIA_COMMON_SCOPE_ && restricted === false) selected = config.common;
-  }
-  config.studies.forEach(function(entry) {
-    if (!entry || typeof entry.studyId !== 'string' || !entry.studyId || entry.studyId !== entry.studyId.trim() ||
-        entry.studyId === '*' || entry.studyId === '@IPS_LOCATIONS' || entry.studyId === FARMACIA_COMMON_SCOPE_ || seenStudies.indexOf(entry.studyId) !== -1) throw new Error('Configuração de armazenamento da Farmácia inválida.');
-    seenStudies.push(entry.studyId);
-    ['standard', 'restricted'].forEach(function(kind) {
-      var id = entry[kind];
-      if (id === undefined || id === '') return;
-      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{20,120}$/.test(id) || id === primary || seenFiles.indexOf(id) !== -1) {
-        throw new Error('Os arquivos da Farmácia devem ser exclusivos por estudo e classe, separados da planilha principal.');
+    if (!config || (config.version !== 1 && config.version !== 2)) throw new Error('Configuração de armazenamento da Farmácia inválida.');
+    if (config.version === 1) {
+      if (!Array.isArray(config.studies) || config.studies.length || config.common || config.locations) {
+        throw new Error('Migração da Farmácia pendente. O administrador precisa consolidar os arquivos antigos no arquivo principal.');
       }
-      seenFiles.push(id);
-      if (entry.studyId === studyId && kind === (restricted ? 'restricted' : 'standard')) selected = id;
-    });
-  });
-  if (!selected) return null;
-  var storage = SpreadsheetApp.openById(selected);
-  var allowedSheet = studyId === '@IPS_LOCATIONS' ? FARMACIA_LOCATIONS_SHEET_ : FARMACIA_LEDGER_SHEET_;
-  if (storage.getSheets().some(function(sheet) { return sheet.getName() !== allowedSheet && sheet.getLastRow() > 0; })) {
-    throw new Error('O armazenamento da Farmácia deve usar um arquivo dedicado, sem dados de outros módulos.');
+    } else if (config.spreadsheetId !== ss.getId()) throw new Error('Arquivo principal da Farmácia divergente.');
   }
-  return storage;
+  return ss;
 }
 
 function farmaciaContext_(studyId, restricted, permission) {
   if (typeof restricted !== 'boolean') throw new Error('Selecione uma classe de acesso válida.');
   if (studyId === FARMACIA_COMMON_SCOPE_ && restricted) throw new Error('O estoque comum não possui classe restrita.');
   var access = studyId === FARMACIA_COMMON_SCOPE_ ? codexAssertFarmaciaCommonAccess_(permission) : codexAssertFarmaciaAccess_(permission, studyId, restricted);
-  return { access: access, studyId: studyId, restricted: restricted, ss: farmaciaStorage_(studyId, restricted) };
+  return { access: access, studyId: studyId, restricted: restricted, ss: farmaciaStorage_() };
 }
 
 function farmaciaProductKey_(data) {
-  return JSON.stringify([data.name.toLowerCase(), data.presentation.toLowerCase(), data.unit, data.control].concat(
-    ['productCode','dosageForm','strength','route'].map(function(key) { return (data[key] || '').toLowerCase(); })));
+  return JSON.stringify([data.name.toLowerCase(), data.presentation.toLowerCase(), data.category, data.unit, data.control].concat(
+    ['productCode','barcode','dosageForm','strength','route'].map(function(key) { return (data[key] || '').toLowerCase(); })));
 }
 
 function farmaciaPositionKey_(data) {
@@ -219,6 +201,10 @@ function farmaciaReadLedger_(context) {
   var sheet = context.ss.getSheetByName(FARMACIA_LEDGER_SHEET_);
   if (!sheet || !sheet.getLastRow()) return { sheet: sheet, records: [], products: [], initial: [], positions: [], movements: [] };
   var rows = sheet.getDataRange().getValues();
+  return farmaciaParseLedgerRows_(context, sheet, rows);
+}
+
+function farmaciaParseLedgerRows_(context, sheet, rows) {
   if (rows[0].length !== FARMACIA_LEDGER_HEADERS_.length || FARMACIA_LEDGER_HEADERS_.some(function(header, i) { return rows[0][i] !== header; })) {
     throw new Error('Estrutura do estoque da Farmácia divergente. Revise o arquivo antes de prosseguir.');
   }
@@ -226,7 +212,12 @@ function farmaciaReadLedger_(context) {
   try {
     rows.slice(1).forEach(function(row) {
       if (row.every(function(cell) { return cell === ''; })) return;
-      var scope = JSON.parse(row[2]), registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
+      var scope = JSON.parse(row[2]);
+      if (typeof scope !== 'string' || !scope || scope !== scope.trim() || scope === '*' || scope === '@IPS_LOCATIONS' ||
+          typeof row[3] !== 'boolean' || (scope === FARMACIA_COMMON_SCOPE_ && row[3])) throw new Error('Contexto inválido.');
+      // Nunca desserializar payloads de outros estudos/classes na consulta autorizada.
+      if (scope !== context.studyId || row[3] !== context.restricted) return;
+      var registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
       var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
       if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA)-[A-Za-z0-9_-]+$/.test(row[0]) ||
           !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
@@ -238,7 +229,7 @@ function farmaciaReadLedger_(context) {
       var record = { id: row[0], type: row[1], requestId: row[4], registeredAt: registeredAt, author: author, data: data, dataJson: row[7] };
       records.push(record);
       if (record.type === 'PRODUCT') {
-        if (JSON.stringify(farmaciaProductData_(data)) !== row[7] || products.some(function(item) { return farmaciaProductKey_(item.data) === farmaciaProductKey_(data); }) ||
+        if (JSON.stringify(farmaciaProductData_(data, true)) !== row[7] || products.some(function(item) { return farmaciaProductKey_(item.data) === farmaciaProductKey_(data); }) ||
             (context.studyId === FARMACIA_COMMON_SCOPE_ && data.supplySource === 'sponsor')) throw new Error('Produto duplicado ou inválido.');
         products.push(record);
       } else if (record.type === 'INITIAL' || record.type === 'RECEIPT') {
@@ -316,7 +307,7 @@ function farmaciaWrite_(payload, type) {
       if (previous.type !== type || previous.dataJson !== dataJson) throw new Error('Esta operação já foi usada com outros dados.');
       return { ok: true, id: previous.id, repeated: true };
     }
-    if (type === 'PRODUCT' && !data.storage) throw new Error('Informe as condições de conservação, referência documental e versão do produto.');
+    if (type === 'PRODUCT' && !data.storage) throw new Error('Informe as condições de conservação do produto.');
     if (type === 'PRODUCT' && !data.supplySource) throw new Error('Selecione a origem do fornecimento do produto.');
     if (type === 'PRODUCT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.supplySource === 'sponsor') throw new Error('Produtos do patrocinador devem pertencer ao estoque do estudo.');
     if (type === 'INITIAL' || type === 'RECEIPT' || (type === 'MOVEMENT' && data.action === 'transfer')) {
@@ -353,7 +344,7 @@ function farmaciaWrite_(payload, type) {
     // Uma gravação para cabeçalho + primeiro registro, ou uma linha append-only.
     if (!sheet.getLastRow()) sheet.getRange(1, 1, 2, row.length).setValues([FARMACIA_LEDGER_HEADERS_.slice(), row]);
     else sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
-    // Auditoria detalhada permanece no arquivo segregado: autor, instante e payload imutável.
+    // Histórico no arquivo principal: autor, instante, estudo/classe e payload imutável.
     return { ok: true, id: id, repeated: false };
   });
 }

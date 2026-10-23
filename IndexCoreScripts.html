@@ -355,8 +355,15 @@ function renderFarmaciaStudies(studies, preserveCatalog) {
   if (detail) detail.textContent = '';
   if (!select) return;
   select.innerHTML = '<option value="">' + (studies.length ? 'Selecione um estoque' : 'Nenhum estoque autorizado') + '</option>' +
-    studies.map(function(study) { return '<option value="' + esc(study.id) + '">' + esc(study.nome || study.codigo || study.id) + '</option>'; }).join('');
+    studies.map(function(study) { return '<option value="' + esc(study.id) + '">' + esc(farmaciaStudyLabel(study)) + '</option>'; }).join('');
   select.disabled = !studies.length;
+}
+
+function farmaciaStudyLabel(study) {
+  if (!study) return '';
+  var name = study.nome || study.nomeAbreviado || study.codigo || study.id || '';
+  var code = study.codigo && study.codigo !== name ? study.codigo : '';
+  return [name, code].filter(Boolean).join(' — ');
 }
 
 function selecionarFarmaciaStudy() {
@@ -367,18 +374,21 @@ function selecionarFarmaciaStudy() {
   var bootstrapId = FARMACIA_REQUEST_ID;
   if (!id) { detail.textContent = ''; return; }
   detail.textContent = 'Carregando estoque…';
+  document.getElementById('farmaciaNoSelection').hidden = true;
+  document.getElementById('farmaciaStockStatus').textContent = 'Validando acesso ao estoque…';
   function current() {
     return requestId === FARMACIA_STUDY_REQUEST_ID && bootstrapId === FARMACIA_REQUEST_ID &&
       getCurrentPage() === 'farmacia' && document.getElementById('farmaciaStudy').value === id;
   }
   google.script.run.withSuccessHandler(function(result) {
     if (!current()) return;
-    detail.textContent = (result.study.nome || result.study.id) + ' — ' + farmaciaAccessLabel(result.farmaciaAccess) +
+    detail.textContent = farmaciaStudyLabel(result.study) + ' — ' + farmaciaAccessLabel(result.farmaciaAccess) +
       (id === '@IPS_COMMON' ? '. Materiais compartilhados, com saldo independente dos estudos.' : '. Informações restritas: ' + (result.restrictedAllowed ? 'autorizadas' : 'não autorizadas') + '.');
     if (typeof carregarFarmaciaEstoque === 'function') carregarFarmaciaEstoque(id, result.restrictedAllowed === true, false);
   }).withFailureHandler(function(error) {
     if (!current()) return;
     detail.textContent = appErrorMessage(error);
+    document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error);
   }).getFarmaciaEstudo(id);
 }
 

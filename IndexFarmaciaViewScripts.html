@@ -1,8 +1,13 @@
 <script>
 var FARMACIA_VIEW = 'stock';
+var FARMACIA_PRODUCT_CATEGORY_OPTIONS = [
+  { value:'medicine', label:'Medicamento' },
+  { value:'material', label:'Material ou dispositivo (equipo, seringa etc.)' }
+];
+var FARMACIA_PRODUCT_DOSAGE_FORM_OPTIONS = ['Comprimido', 'Cápsula', 'Solução oral', 'Suspensão oral', 'Solução injetável', 'Suspensão injetável', 'Pó para solução injetável', 'Creme', 'Pomada', 'Gel', 'Colírio', 'Solução oftálmica', 'Spray nasal', 'Solução inalatória', 'Aerossol', 'Supositório', 'Adesivo transdérmico', 'Outro'];
 var FARMACIA_VIEWS = {
   stock: { title:'Estoque', icon:'inventory_2', description:'', action:'Registrar inventário', form:'initial', target:'farmaciaInventoryResults', search:'Buscar produto, lote ou localização...' },
-  products: { title:'Produtos', icon:'medication', description:'', action:'Novo produto', form:'product', target:'farmaciaProductsResults', search:'Buscar produto ou apresentação...' },
+  products: { title:'Produtos', icon:'medication', description:'', action:'Novo produto', form:'product', target:'farmaciaProductsResults', search:'Buscar produto, código ou código de barras...' },
   equipment: { title:'Equipamentos', icon:'kitchen', description:'', action:'Novo equipamento', form:'location', target:'farmaciaLocationsResults', search:'Buscar equipamento, modelo ou sala...' },
   probes: { title:'Sondas e calibração', icon:'device_thermostat', description:'', action:'Nova sonda', form:'probe', target:'farmaciaProbesResults', search:'Buscar sonda, série ou equipamento...' }
 };
@@ -114,8 +119,31 @@ function farmaciaCatalogTable(view, rows, loading) {
   return farmaciaTable(headers, rows || state, view === 'equipment' ? 'Equipamentos e posições' : 'Sondas e calibração', !rows);
 }
 
+function farmaciaProductCategoryLabel(category) {
+  return category === 'medicine' ? 'Medicamento' : category === 'material' ? 'Material / dispositivo' : 'Tipo não informado';
+}
+
+function farmaciaProductCategoryOptionsHtml(selected) {
+  return '<option value="">Selecione o tipo</option>' + FARMACIA_PRODUCT_CATEGORY_OPTIONS.map(function(item) {
+    return '<option value="' + esc(item.value) + '"' + (item.value === selected ? ' selected' : '') + '>' + esc(item.label) + '</option>';
+  }).join('');
+}
+
+function farmaciaProductDosageFormOptionsHtml(selected) {
+  return '<option value="">Selecione</option>' + FARMACIA_PRODUCT_DOSAGE_FORM_OPTIONS.map(function(item) {
+    return '<option value="' + esc(item) + '"' + (item === selected ? ' selected' : '') + '>' + esc(item) + '</option>';
+  }).join('');
+}
+
+function farmaciaCurrentStudyLabel() {
+  var data = farmaciaCurrentData(), label = farmaciaStudyLabel(data && data.study);
+  if (label) return label;
+  var select = document.getElementById('farmaciaStudy');
+  return select && select.selectedOptions.length ? select.selectedOptions[0].textContent : '';
+}
+
 function farmaciaProductCharacteristics(product) {
-  return ['productCode','strength','dosageForm','route'].map(function(key) { return product[key]; }).filter(Boolean).join(' · ');
+  return [farmaciaProductCategoryLabel(product.category), product.productCode, product.barcode ? 'GTIN ' + product.barcode : '', product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ');
 }
 
 function farmaciaProductLabel(product) {
@@ -134,7 +162,7 @@ function farmaciaRenderTables(data) {
       '<td>' + (position.origin === 'receipt' ? 'Recebimento' : 'Saldo inicial') + '<small>' + esc(farmaciaStockDate(position.receivedOn || position.countedOn)) + '</small><small>' + esc(position.author) + '</small></td><td>' + farmaciaRecordActions('position',position,data) + '</td></tr>';
   }).join('');
   var missing = farmaciaEmpty('Estoque ainda não configurado', 'O administrador precisa vincular o arquivo deste estoque antes do primeiro cadastro.', 'settings');
-  document.getElementById('farmaciaProductsResults').innerHTML = !data.configured ? missing : productRows ? farmaciaTable(['Produto', 'Apresentação', 'Unidade', 'Controle', 'Conservação / Referência', 'Ações'], productRows, 'Produtos da Farmácia') : farmaciaEmpty('Nenhum produto cadastrado', 'Os produtos e suas condições de conservação aparecerão aqui.', 'medication');
+  document.getElementById('farmaciaProductsResults').innerHTML = !data.configured ? missing : productRows ? farmaciaTable(['Produto / tipo', 'Apresentação', 'Unidade', 'Controle', 'Conservação', 'Ações'], productRows, 'Produtos da Farmácia') : farmaciaEmpty('Nenhum produto cadastrado', 'Medicamentos, equipos, seringas e outros itens aparecerão aqui.', 'inventory_2');
   document.getElementById('farmaciaInventoryResults').innerHTML = !data.configured ? missing : positionRows ? farmaciaTable(['Produto', 'Lote / Kit', 'Validade', 'Localização', 'Físico', 'Disponível', 'Aguardando avaliação', 'Bloqueado', 'Origem / Autoria', 'Ações'], positionRows, 'Estoque da Farmácia') : farmaciaEmpty('Nenhuma entrada de estoque', 'Registre o saldo inicial ou um recebimento do patrocinador.', 'inventory_2');
   farmaciaRenderCatalog(data);
 }
@@ -201,6 +229,8 @@ function farmaciaOpenPrimary() {
     farmaciaInitialProductChanged();
   }
   if (type === 'product') {
+    farmaciaProductCategoryChanged();
+    document.getElementById('farmaciaProductStudyLabel').textContent = farmaciaCurrentStudyLabel();
     farmaciaProductControlChanged();
     var supply = document.getElementById('farmaciaProductSupply');
     supply.querySelector('[value="sponsor"]').disabled = FARMACIA_STOCK.studyId === '@IPS_COMMON';

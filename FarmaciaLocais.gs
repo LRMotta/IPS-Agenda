@@ -22,13 +22,17 @@ function farmaciaTemperatureRange_(min, max) {
   return { min: min, max: max };
 }
 
-function farmaciaConservationData_(value) {
-  if (!value || typeof value !== 'object') throw new Error('Informe as condições de conservação e sua referência.');
+function farmaciaConservationData_(value, preserveLegacyReferences) {
+  if (!value || typeof value !== 'object') throw new Error('Informe as condições de conservação.');
   var range = farmaciaTemperatureRange_(value.min, value.max);
-  return { min: range.min, max: range.max,
-    instructions: farmaciaText_(value.instructions, 'as instruções de conservação', 500, range.min !== null),
-    source: farmaciaText_(value.source, 'a referência documental', 250),
-    version: farmaciaText_(value.version, 'a versão ou data da referência', 100) };
+  var result = { min: range.min, max: range.max,
+    instructions: farmaciaText_(value.instructions, 'as instruções de conservação', 500, range.min !== null) };
+  if (preserveLegacyReferences) {
+    ['source', 'version'].forEach(function(key) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) result[key] = farmaciaText_(value[key], key === 'source' ? 'a referência documental' : 'a versão da referência', key === 'source' ? 250 : 100);
+    });
+  }
+  return result;
 }
 
 function farmaciaLocationData_(value) {
@@ -100,10 +104,8 @@ function farmaciaProbeDuplicate_(units, data) {
 }
 
 function farmaciaReadLocations_() {
-  // Metadados físicos não contêm informações de estudos. Sem arquivo dedicado,
-  // usa a planilha do app; a aba e os cabeçalhos só são criados ao salvar sob lock.
-  // Configuração inválida continua falhando antes do fallback.
-  var ss = farmaciaStorage_('@IPS_LOCATIONS', false) || getCodexSpreadsheet_();
+  // Catálogo compartilhado no mesmo arquivo. Leituras não criam schema.
+  var ss = farmaciaStorage_();
   var sheet = ss && ss.getSheetByName(FARMACIA_LOCATIONS_SHEET_);
   var result = { configured: !!ss, ss: ss, sheet: sheet, units: [], records: [], rows: [] };
   if (!sheet || !sheet.getLastRow()) return result;
@@ -247,7 +249,7 @@ function farmaciaStorageCheck_(product, position, units) {
   if (!unit || unit.positions.indexOf(ref.position) === -1) return { status: 'pending', message: 'Localização histórica ou sem vínculo com o catálogo. Conferir.' };
   if (unit.status !== 'active') return { status: 'unavailable', message: 'Equipamento em manutenção ou indisponível. Revisar armazenamento.' };
   var storage = product.storage;
-  if (!storage || storage.min === null || unit.min === null) return { status: 'pending', message: 'Faixa documental pendente. Conferir condições de conservação.' };
+  if (!storage || storage.min === null || unit.min === null) return { status: 'pending', message: 'Faixa de temperatura não definida. Conferir condições de conservação.' };
   if (unit.min < storage.min || unit.max > storage.max) return { status: 'incompatible', message: 'Faixa do equipamento incompatível com a faixa do produto. Revisar armazenamento.' };
   return { status: 'compatible', message: 'Faixas cadastradas compatíveis. Não comprova temperatura medida nem outras condições.' };
 }
