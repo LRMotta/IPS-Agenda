@@ -1,5 +1,13 @@
 // Estoque próprio da pesquisa no arquivo principal, segregado por estudo e classe no servidor.
-var FARMACIA_LEDGER_SHEET_ = 'Farmacia_Registros_v1';
+// O ID estável evita renomear a aba quando nome/código do projeto mudam.
+function farmaciaLedgerSheetName_(studyId) {
+  if (studyId === FARMACIA_COMMON_SCOPE_) return 'Farmacia_Comum_v1';
+  studyId = farmaciaText_(studyId, 'o projeto', 120);
+  // Hexadecimal distingue IDs que diferem apenas por maiúsculas no Sheets.
+  if (/^[A-Za-z0-9_-]{1,40}$/.test(studyId)) return 'Farmacia_ID_' + studyId.split('').map(function(character) { return ('0' + character.charCodeAt(0).toString(16)).slice(-2); }).join('');
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, studyId, Utilities.Charset.UTF_8);
+  return 'Farmacia_SHA256_' + digest.map(function(byte) { return ('0' + ((byte + 256) % 256).toString(16)).slice(-2); }).join('');
+}
 var FARMACIA_LEDGER_HEADERS_ = ['ID', 'Tipo', 'Estudo_JSON', 'Restrito', 'Request_ID', 'Registrado_em_JSON', 'Autor_JSON', 'Dados_JSON'];
 var FARMACIA_PRODUCT_DOSAGE_FORMS_ = ['Comprimido', 'Cápsula', 'Solução oral', 'Suspensão oral', 'Solução injetável', 'Suspensão injetável', 'Pó para solução injetável', 'Creme', 'Pomada', 'Gel', 'Colírio', 'Solução oftálmica', 'Spray nasal', 'Solução inalatória', 'Aerossol', 'Supositório', 'Adesivo transdérmico', 'Outro'];
 
@@ -94,22 +102,8 @@ function farmaciaInitialData_(value, product, historical) {
 }
 
 function farmaciaStorage_() {
-  var ss = getCodexSpreadsheet_();
-  var raw = PropertiesService.getScriptProperties().getProperty('FARMACIA_STORAGE_V1');
-  if (raw) {
-    var config;
-    try { config = JSON.parse(raw); } catch (error) {
-      // eslint-disable-next-line preserve-caught-error -- Não expor configuração bruta.
-      throw new Error('Configuração de armazenamento da Farmácia inválida.');
-    }
-    if (!config || (config.version !== 1 && config.version !== 2)) throw new Error('Configuração de armazenamento da Farmácia inválida.');
-    if (config.version === 1) {
-      if (!Array.isArray(config.studies) || config.studies.length || config.common || config.locations) {
-        throw new Error('Migração da Farmácia pendente. O administrador precisa consolidar os arquivos antigos no arquivo principal.');
-      }
-    } else if (config.spreadsheetId !== ss.getId()) throw new Error('Arquivo principal da Farmácia divergente.');
-  }
-  return ss;
+  // Instalação nova: a configuração de arquivos externos não é usada.
+  return getCodexSpreadsheet_();
 }
 
 function farmaciaContext_(studyId, restricted, permission) {
@@ -198,7 +192,7 @@ function farmaciaReceiptKey_(data) {
 }
 
 function farmaciaReadLedger_(context) {
-  var sheet = context.ss.getSheetByName(FARMACIA_LEDGER_SHEET_);
+  var sheet = context.ss.getSheetByName(farmaciaLedgerSheetName_(context.studyId));
   if (!sheet || !sheet.getLastRow()) return { sheet: sheet, records: [], products: [], initial: [], positions: [], movements: [] };
   var rows = sheet.getDataRange().getValues();
   return farmaciaParseLedgerRows_(context, sheet, rows);
@@ -261,6 +255,44 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
     throw new Error('Registros do estoque da Farmácia inconsistentes. Nenhum saldo foi alterado.');
   }
   return { sheet: sheet, records: records, products: products, initial: initial, positions: positions, movements: movements };
+}
+
+function codexAssertFarmaciaProductsAccess_(studyId, restricted) {
+  if (typeof restricted !== 'boolean') throw new Error('Selecione uma classe de acesso válida.');
+  if (restricted) return codexAssertFarmaciaAccess_('read', studyId, true);
+  var access = codexAssertCanRead_();
+  var common = studyId === FARMACIA_COMMON_SCOPE_;
+  var study = common ? { id: FARMACIA_COMMON_SCOPE_, nome: 'Estoque comum do IPS', codigo: '' } : codexFarmaciaStudyCatalog_().find(function(item) { return item.id === studyId; });
+  if (!study) throw new Error('Estudo indisponível para a Farmácia.');
+  var grant = (access.farmaciaStudies || []).find(function(item) { return item.studyId === studyId; });
+  access.farmaciaStudy = study;
+  access.farmaciaRestricted = !common && !!grant && grant.restricted === true && codexNormalizeFarmaciaAccess_(access.farmaciaAccess) !== 'none';
+  access.farmaciaAccess = (common ? access.farmaciaCommonAccess === 'manage' : !!grant && access.farmaciaAccess === 'manage') ? 'manage' : 'read';
+  return access;
+}
+
+// Catálogo geral: não interpreta inventários, kits, lotes nem movimentações.
+function getFarmaciaProdutos(studyId, restricted) {
+  var access = codexAssertFarmaciaProductsAccess_(studyId, restricted);
+  var ss = farmaciaStorage_();
+  var sheet = ss.getSheetByName(farmaciaLedgerSheetName_(studyId));
+  var products = [];
+  if (sheet && sheet.getLastRow()) {
+    var rows = sheet.getDataRange().getValues();
+    var selected = rows.slice(1).filter(function(row) {
+      return row[2] === JSON.stringify(studyId) && row[3] === restricted && ['PRODUCT', 'PRODUCT_EDIT', 'PRODUCT_DELETE'].indexOf(row[1]) !== -1;
+    });
+    products = farmaciaParseLedgerRows_({ studyId: studyId, restricted: restricted }, sheet, [rows[0]].concat(selected)).products;
+  }
+  return { study: access.farmaciaStudy, productsOnly: true, configured: true, restricted: restricted,
+    farmaciaAccess: access.farmaciaAccess, locationsConfigured: false, locationsCanManage: false,
+    positions: [], movements: [], storageUnits: [], products: products.map(function(record) {
+      var result = { id: record.id, revision: record.revision || record.id };
+      ['name','presentation','category','unit','control','productCode','barcode','dosageForm','strength','route','storage','supplySource'].forEach(function(key) {
+        if (record.data[key] !== undefined) result[key] = record.data[key];
+      });
+      return result;
+    }) };
 }
 
 function getFarmaciaEstoque(studyId, restricted) {
@@ -340,7 +372,7 @@ function farmaciaWrite_(payload, type) {
       farmaciaApplyMovement_(position, data, movementProduct, id);
     }
     var row = [id, type, JSON.stringify(context.studyId), context.restricted, requestId, JSON.stringify(new Date().toISOString()), JSON.stringify(context.access.userEmail), dataJson];
-    var sheet = ledger.sheet || context.ss.insertSheet(FARMACIA_LEDGER_SHEET_);
+    var sheet = ledger.sheet || context.ss.insertSheet(farmaciaLedgerSheetName_(context.studyId));
     // Uma gravação para cabeçalho + primeiro registro, ou uma linha append-only.
     if (!sheet.getLastRow()) sheet.getRange(1, 1, 2, row.length).setValues([FARMACIA_LEDGER_HEADERS_.slice(), row]);
     else sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);

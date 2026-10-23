@@ -13,7 +13,15 @@ var FARMACIA_VIEWS = {
 };
 
 function farmaciaSetView(view) {
+  var previousView = FARMACIA_VIEW;
   if (view && Object.prototype.hasOwnProperty.call(FARMACIA_VIEWS, view)) FARMACIA_VIEW = view;
+  if (view && previousView !== FARMACIA_VIEW && (previousView === 'products' || FARMACIA_VIEW === 'products') && typeof CURRENT_ACCESS !== 'undefined' && CURRENT_ACCESS.farmaciaStockStudies) {
+    var selectedStudy = document.getElementById('farmaciaStudy').value;
+    var studies = FARMACIA_VIEW === 'products' ? CURRENT_ACCESS.farmaciaProductStudies : CURRENT_ACCESS.farmaciaStockStudies;
+    renderFarmaciaStudies(studies || []);
+    if ((studies || []).some(function(item) { return item.id === selectedStudy; })) document.getElementById('farmaciaStudy').value = selectedStudy;
+    if (typeof sincronizarAutocompleteProjeto === 'function') sincronizarAutocompleteProjeto('farmaciaStudy');
+  }
   var config = FARMACIA_VIEWS[FARMACIA_VIEW];
   var catalogView = farmaciaIsCatalogView();
   document.getElementById('page-farmacia').classList.toggle('farmacia-catalog', catalogView);
@@ -91,6 +99,7 @@ function farmaciaUpdateSummary() {
   labels.forEach(function(label, i) {
     document.getElementById('farmaciaMetricLabel' + i).textContent = label;
     document.getElementById('farmaciaMetric' + i).textContent = known ? String(values[i]) : '—';
+    document.getElementById('farmaciaMetric' + i).closest('.stat-card').hidden = FARMACIA_VIEW === 'products' && i > 0;
   });
   var icons = FARMACIA_VIEW === 'equipment' ? ['kitchen','inventory_2','shield'] : FARMACIA_VIEW === 'probes' ? ['device_thermostat','verified_user','event_busy'] : ['medication','inventory_2','shield'];
   document.querySelectorAll('#farmaciaSummary .stat-icon .material-symbols-outlined').forEach(function(icon, i) { icon.textContent = icons[i]; });

@@ -299,8 +299,9 @@ function applyFarmaciaAccess() {
   if (section) section.style.display = visible ? '' : 'none';
   var stockVisible = ['read','operate','manage'].indexOf(CURRENT_ACCESS.farmaciaAccess) !== -1 ||
     ['read','operate','manage'].indexOf(CURRENT_ACCESS.farmaciaCommonAccess) !== -1;
-  document.querySelectorAll('[data-farmacia-view="stock"], [data-farmacia-view="products"]').forEach(function(button) { button.hidden = !stockVisible; });
-  if (!stockVisible && typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW !== 'equipment' && FARMACIA_VIEW !== 'probes') FARMACIA_VIEW = 'equipment';
+  document.querySelectorAll('[data-farmacia-view="stock"]').forEach(function(button) { button.hidden = !stockVisible; });
+  document.querySelectorAll('[data-farmacia-view="products"]').forEach(function(button) { button.hidden = !visible; });
+  if (!stockVisible && typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'stock') FARMACIA_VIEW = 'equipment';
   FARMACIA_REQUEST_ID++;
   FARMACIA_STUDY_REQUEST_ID++;
   var status = document.getElementById('farmaciaStatus');
@@ -324,10 +325,10 @@ function carregarFarmacia() {
     if (!isCurrent()) return;
     CURRENT_ACCESS.farmaciaAccess = result.farmaciaAccess;
     CURRENT_ACCESS.farmaciaCommonAccess = result.farmaciaCommonAccess || 'none';
-    document.querySelectorAll('[data-farmacia-view="stock"], [data-farmacia-view="products"]').forEach(function(button) {
+    document.querySelectorAll('[data-farmacia-view="stock"]').forEach(function(button) {
       button.hidden = ['read','operate','manage'].indexOf(result.farmaciaAccess) === -1 && ['read','operate','manage'].indexOf(result.farmaciaCommonAccess) === -1;
     });
-    if (result.farmaciaAccess === 'none' && (result.farmaciaCommonAccess || 'none') === 'none' && typeof FARMACIA_VIEW !== 'undefined' && !farmaciaIsCatalogView()) FARMACIA_VIEW = 'equipment';
+    if (result.farmaciaAccess === 'none' && (result.farmaciaCommonAccess || 'none') === 'none' && typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'stock') FARMACIA_VIEW = 'equipment';
     if (!CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
       applyFarmaciaAccess();
       return;
@@ -337,7 +338,9 @@ function carregarFarmacia() {
     if (['read', 'operate', 'manage'].indexOf(result.farmaciaCommonAccess) !== -1) stocks.unshift({ id:'@IPS_COMMON', nome:'Estoque comum do IPS' });
     // O reset já ocorreu ao iniciar a revalidação. Não apagar um cadastro do
     // catálogo aberto enquanto o bootstrap estava em voo.
-    renderFarmaciaStudies(stocks, true);
+    CURRENT_ACCESS.farmaciaStockStudies = stocks;
+    CURRENT_ACCESS.farmaciaProductStudies = result.productStudies || stocks;
+    renderFarmaciaStudies(typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'products' ? CURRENT_ACCESS.farmaciaProductStudies : stocks, true);
     if (typeof farmaciaIsCatalogView === 'function' && farmaciaIsCatalogView()) carregarFarmaciaCatalogo(false);
   }).withFailureHandler(function(error) {
     if (!isCurrent()) return;
@@ -357,6 +360,7 @@ function renderFarmaciaStudies(studies, preserveCatalog) {
   select.innerHTML = '<option value="">' + (studies.length ? 'Selecione um estoque' : 'Nenhum estoque autorizado') + '</option>' +
     studies.map(function(study) { return '<option value="' + esc(study.id) + '">' + esc(farmaciaStudyLabel(study)) + '</option>'; }).join('');
   select.disabled = !studies.length;
+  if (typeof ativarAutocompleteProjeto === 'function') ativarAutocompleteProjeto('farmaciaStudy');
 }
 
 function farmaciaStudyLabel(study) {
@@ -369,6 +373,7 @@ function farmaciaStudyLabel(study) {
 function selecionarFarmaciaStudy() {
   if (typeof farmaciaEstoqueReset === 'function') farmaciaEstoqueReset();
   var id = document.getElementById('farmaciaStudy').value;
+  var productsOnly = typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'products';
   var detail = document.getElementById('farmaciaStudyDetail');
   var requestId = ++FARMACIA_STUDY_REQUEST_ID;
   var bootstrapId = FARMACIA_REQUEST_ID;
@@ -377,7 +382,7 @@ function selecionarFarmaciaStudy() {
   document.getElementById('farmaciaNoSelection').hidden = true;
   document.getElementById('farmaciaStockStatus').textContent = 'Validando acesso ao estoque…';
   function current() {
-    return requestId === FARMACIA_STUDY_REQUEST_ID && bootstrapId === FARMACIA_REQUEST_ID &&
+    return productsOnly === (typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'products') && requestId === FARMACIA_STUDY_REQUEST_ID && bootstrapId === FARMACIA_REQUEST_ID &&
       getCurrentPage() === 'farmacia' && document.getElementById('farmaciaStudy').value === id;
   }
   google.script.run.withSuccessHandler(function(result) {
@@ -389,7 +394,7 @@ function selecionarFarmaciaStudy() {
     if (!current()) return;
     detail.textContent = appErrorMessage(error);
     document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error);
-  }).getFarmaciaEstudo(id);
+  }).getFarmaciaEstudo(id, productsOnly);
 }
 
 function renderUserFarmaciaStudies(user) {
@@ -7883,7 +7888,7 @@ function navegarAutocompleteProjeto(event, selectId) {
 }
 
 function ativarAutocompletesProjetoDinamicos(root) {
-  var selector = 'select[id="agProjeto"],select[id="eqProjeto"],select[id="medProjeto"],select[id^="monProjeto"],select[id="iiProjeto"],select[id="piProjeto"],select[id="miProjeto"],select[id="planProjeto"],select[id="desProjeto"]';
+  var selector = 'select[id="agProjeto"],select[id="eqProjeto"],select[id="medProjeto"],select[id^="monProjeto"],select[id="iiProjeto"],select[id="piProjeto"],select[id="miProjeto"],select[id="planProjeto"],select[id="desProjeto"],select[id="farmaciaStudy"]';
   Array.prototype.forEach.call((root || document).querySelectorAll(selector), function(select) { ativarAutocompleteProjeto(select.id); });
 }
 

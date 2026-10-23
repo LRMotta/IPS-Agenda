@@ -17,6 +17,38 @@ const localities = contentAccessibilitySource(['participanteMunicipioElementos_'
   'participanteInicializarLocalidade_', 'participanteSelecionarMunicipio_', 'participanteFixarMunicipio_', 'participanteMunicipioDigitado_',
   'participanteValidarLocalidadesFormulario_', 'participanteDefinirPessoaSomenteLeitura_', 'prepararNovaParticipacaoPessoa_']);
 
+test('Farmácia: busca estoque por código, preserva ID e sincroniza revalidação', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route('**/*', route => route.abort());
+    await page.setContent('<select id="farmaciaStudy"></select>');
+    await page.addScriptTag({ content: `
+      var _autocompleteProjetoAtivo={}, changes=[];
+      function esc(v){return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+      function normSelectValue(v){return String(v).toLowerCase();}
+      ${contentAccessibilitySource(['ativarAutocompleteProjeto','sincronizarAutocompleteProjeto','opcoesAutocompleteProjeto','renderAutocompleteProjeto','selecionarAutocompleteProjeto','navegarAutocompleteProjeto','renderFarmaciaStudies','farmaciaStudyLabel'])}
+      document.getElementById('farmaciaStudy').addEventListener('change',function(){changes.push(this.value);});
+      renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Estoque comum do IPS'},{id:'P1',nome:'KANDELA-302',codigo:'BGB-43395-302'}]);
+    ` });
+    const input = page.locator('#farmaciaStudyAutocompleteInput');
+    await input.fill('BGB-43395');
+    assert.equal(await page.locator('.ac-item').count(), 1);
+    assert.equal(await page.locator('.ac-item-meta').textContent(), 'BGB-43395-302');
+    await input.press('ArrowDown');
+    await input.press('Enter');
+    assert.equal(await page.locator('#farmaciaStudy').inputValue(), 'P1');
+    assert.deepEqual(await page.evaluate(() => window.changes), ['P1']);
+    await input.fill('comum');
+    await page.locator('.ac-item').click();
+    assert.equal(await page.locator('#farmaciaStudy').inputValue(), '@IPS_COMMON');
+    await page.evaluate(() => window.renderFarmaciaStudies([]));
+    assert.equal(await input.isDisabled(), true);
+    assert.equal(await input.inputValue(), '');
+    assert.equal(await page.locator('#farmaciaStudyAutocomplete').count(), 1);
+  } finally { await browser.close(); }
+});
+
 for (const width of [1280, 390]) {
   test('Estoque: projetos de edição e histórico aparecem sem depender do observer em ' + width + 'px', async () => {
     // Browser plugin not available: Playwright existente, rede/RPCs isoladas.

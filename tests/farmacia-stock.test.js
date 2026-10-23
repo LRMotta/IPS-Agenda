@@ -30,11 +30,75 @@ function fixture(realLocations = false) {
   const product = (overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'product-request-0001', ...overrides,
     data:{name:'Produto A',presentation:'Frasco de teste',category:'medicine',productCode:'',barcode:'',dosageForm:'',strength:'',route:'',unit:'frasco',control:'quantity',storage:{min:null,max:null,instructions:'Conferir condição de conservação'},supplySource:'site',...overrides.data} });
   const initial = (productId, overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'initial-request-0001', data:{ productId, lot:'L1', expiry:'2027-01-31', location:'Armário 1 → Prateleira 1', locationRef:{unitId:'UNIT-1',position:'Prateleira 1'}, kit:'', physical:10, blocked:2, countedOn:'2026-10-21', confirmed:true, note:'Contagem física' }, ...overrides });
-  const sheet = () => app.getSheetByName(server.FARMACIA_LEDGER_SHEET_);
+  const sheet = () => app.getSheetByName(server.farmaciaLedgerSheetName_('P1'));
   return { server, app, users, stores, state, lock:lock.state, product, initial, sheet };
 }
 
 const LOCATIONS = 'farmacia-locations-0000000001';
+
+test('equipe consulta produtos gerais sem concessão de estoque e sem receber dados operacionais', () => {
+  const f=fixture();
+  f.server.cadastrarProdutoFarmacia(f.product());
+  f.server.cadastrarProdutoFarmacia(f.product({restricted:true,data:{name:'Produto secreto'}}));
+  // A consulta de catálogo não interpreta payloads de estoque nem da classe restrita.
+  f.sheet().rows.push(['FIN-segredo','INITIAL',JSON.stringify('P1'),false,'estoque-secret',JSON.stringify('2026-10-23'),'autor','payload operacional']);
+  f.users.rows[1][8]='none'; f.users.rows[1][9]='[]';
+  const writes=f.sheet().writes;
+  const catalog=f.server.getFarmaciaProdutos('P1',false);
+  assert.equal(catalog.products.length,1);
+  assert.equal(catalog.products[0].name,'Produto A');
+  assert.equal(catalog.farmaciaAccess,'read');
+  assert.equal(catalog.positions.length,0); assert.equal(catalog.movements.length,0);
+  assert.equal(catalog.storageUnits.length,0);
+  assert.equal(JSON.stringify(catalog).includes('segredo'),false);
+  assert.equal(Object.hasOwn(catalog.products[0],'author'),false);
+  assert.equal(f.server.getFarmaciaEstudo('P1',true).restrictedAllowed,false);
+  assert.equal(f.server.getFarmaciaBootstrap().productStudies.length,3);
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaProdutos('P1',true),/permissão/);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product()),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaProdutos('inexistente',false),/indisponível/);
+  assert.equal(f.server.getFarmaciaProdutos('P2',false).products.length,0);
+  assert.equal(f.sheet().writes,writes);
+  assert.equal(f.app.getSheetByName(f.server.farmaciaLedgerSheetName_('P2')),null);
+  f.users.rows[1][3]='Não';
+  assert.throws(()=>f.server.getFarmaciaProdutos('P1',false),/inativo/);
+});
+
+test('cada projeto cria sua aba apenas na escrita e mantém classes e operações isoladas', () => {
+  const f=fixture();
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":true},{"studyId":"P2","restricted":true}]';
+  f.server.getFarmaciaEstoque('P1',false);
+  f.server.getFarmaciaEstoque('P2',false);
+  assert.equal(f.sheet(),null);
+  assert.equal(f.app.getSheetByName(f.server.farmaciaLedgerSheetName_('P2')),null);
+  f.server.cadastrarProdutoFarmacia(f.product());
+  f.server.cadastrarProdutoFarmacia(f.product({studyId:'P2',data:{name:'Outro projeto'}}));
+  f.server.cadastrarProdutoFarmacia(f.product({restricted:true,data:{name:'Restrito'}}));
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].name,'Produto A');
+  assert.equal(f.server.getFarmaciaEstoque('P2',false).products[0].name,'Outro projeto');
+  assert.equal(f.server.getFarmaciaEstoque('P1',true).products[0].name,'Restrito');
+  assert.equal(f.sheet().rows.length,3);
+  assert.equal(f.app.getSheetByName(f.server.farmaciaLedgerSheetName_('P2')).rows.length,2);
+  f.app.getSheetByName('Projetos').rows[1][1]='Nome alterado';
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products.length,1);
+  assert.notEqual(f.server.farmaciaLedgerSheetName_('@IPS_COMMON'),f.server.farmaciaLedgerSheetName_('IPS_COMMON'));
+  assert.deepEqual(f.state.opened,[]);
+});
+
+test('nomes de aba aceitam IDs longos e caracteres especiais sem colidir com IDs simples', () => {
+  const f=fixture();
+  f.server.Utilities.DigestAlgorithm={SHA_256:'sha256'};
+  f.server.Utilities.Charset={UTF_8:'utf8'};
+  f.server.Utilities.computeDigest=(algorithm,value)=>Array.from(require('node:crypto').createHash(algorithm).update(value).digest());
+  const first=f.server.farmaciaLedgerSheetName_('Projeto/1');
+  assert.equal(first,f.server.farmaciaLedgerSheetName_('Projeto/1'));
+  assert.notEqual(first,f.server.farmaciaLedgerSheetName_('Projeto:1'));
+  assert.notEqual(f.server.farmaciaLedgerSheetName_('P1'),f.server.farmaciaLedgerSheetName_('p1'));
+  assert.notEqual(first,f.server.farmaciaLedgerSheetName_(first.replace('Farmacia_','')));
+  assert.ok(f.server.farmaciaLedgerSheetName_('x'.repeat(120)).length<=100);
+  assert.doesNotMatch(first,/[\[\]*?:/\\]/);
+});
 test('responsável user com estudo padrão concedido acessa sem estoque comum nem informações restritas', () => {
   const f=fixture();
   f.users.rows[1][2]='user';
@@ -373,16 +437,17 @@ test('sem configuração, mapa vazio e versão 2 usam principal sem criar schema
   }
 });
 
-test('mapa legado bloqueia acesso até migração explícita sem abrir arquivos externos', () => {
+test('mapa legado não bloqueia instalação nova nem abre arquivos externos', () => {
   for(const config of [
     {version:1,studies:[{studyId:'P1',standard:STANDARD,restricted:RESTRICTED}]},
     {version:1,studies:[],common:STANDARD},
     {version:1,studies:[],locations:LOCATIONS}
   ]) {
     const f=fixture(); f.state.config=JSON.stringify(config);
-    assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/migração.*pendente/i);
-    assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product()),/migração.*pendente/i);
+    assert.equal(f.server.getFarmaciaEstoque('P1',false).products.length,0);
     assert.equal(f.sheet(),null);
+    assert.equal(f.server.cadastrarProdutoFarmacia(f.product()).ok,true);
+    assert.ok(f.sheet());
     assert.deepEqual(f.state.opened,[]);
   }
 });
@@ -509,7 +574,7 @@ test('classes compartilham arquivo e leitura padrão não expõe conteúdo restr
   assert.equal(f.server.getFarmaciaEstoque('P1', true).products[0].name, 'Restrito');
 });
 
-test('ledger único isola estudos, classes e comum preservando requestId por contexto', () => {
+test('abas por projeto e comum isolam registros preservando requestId por classe', () => {
   const f=fixture();
   f.users.rows[1][9]='[{"studyId":"P1","restricted":true},{"studyId":"P2","restricted":true}]';
   f.users.rows[0].push('Acesso ao estoque comum da Farmácia'); f.users.rows[1].push('manage');
@@ -521,7 +586,9 @@ test('ledger único isola estudos, classes e comum preservando requestId por con
     return result.id;
   });
   assert.equal(new Set(created).size,5);
-  assert.equal(f.sheet().rows.length,6);
+  assert.equal(f.sheet().rows.length,3);
+  assert.equal(f.app.getSheetByName(f.server.farmaciaLedgerSheetName_('P2')).rows.length,3);
+  assert.equal(f.app.getSheetByName(f.server.farmaciaLedgerSheetName_('@IPS_COMMON')).rows.length,2);
   scopes.forEach(([studyId,restricted],index)=>{
     const stock=f.server.getFarmaciaEstoque(studyId,restricted);
     assert.equal(stock.products.length,1);

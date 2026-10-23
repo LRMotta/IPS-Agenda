@@ -106,7 +106,7 @@ da entrada; resposta perdida aceita repetição idêntica do requestId mesmo dep
 outras movimentações, sem duplicar o efeito. O cliente preserva formulário/chave em
 falhas e descarta respostas após mudança de estudo/classe ou identidade.
 
-Todos os eventos ficam na mesma aba segregada `Farmacia_Registros_v1`, com novos
+Os eventos ficam na aba do respectivo projeto (ou do estoque comum), com os
 tipos `RECEIPT` e `MOVEMENT`, além de `PRODUCT` e `INITIAL`. Cada linha registra
 autor autenticado, instante, motivo/referência e payload JSON. Leituras reconstroem
 o saldo e validam a sequência sem escrever ou migrar schema. O botão **Histórico**
@@ -118,20 +118,22 @@ As concessões do WebApp continuam exigindo configuração administrativa antes 
 Todos os projetos continuam na aba Projetos do arquivo principal. A Farmácia usa
 esse mesmo arquivo, sem arquivos externos por estudo ou classe:
 
-- Farmacia_Registros_v1: produtos, inventários, recebimentos, movimentações e correções;
+- Farmacia_ID_<ID estável em hexadecimal>: produtos, inventários, recebimentos, movimentações e correções de cada projeto;
+- Farmacia_Comum_v1: registros do estoque comum do IPS;
 - Farmacia_Locais_v1: equipamentos, posições, sondas, calibrações e histórico.
 
 Cada registro mantém ID, estudo (Estudo_JSON), classe (Restrito), requestId,
 instante, autor e payload JSON. A autorização precede a leitura. O replay filtra
 estudo e classe antes de interpretar payloads; vínculos a outro contexto são
-recusados. RequestId é idempotente por estudo/classe. O comum usa o mesmo ledger,
+recusados. RequestId é idempotente por estudo/classe. O comum usa uma aba independente,
 com identidade @IPS_COMMON e concessão própria, sem classe restrita.
 Leituras não criam abas nem cabeçalhos; a primeira escrita válida cria o schema
 sob lock, preservando outras abas.
 
-Sem FARMACIA_STORAGE_V1, o principal já recebe novos cadastros. A versão 2 dessa
-propriedade contém version: 2 e spreadsheetId do principal, sem mapa por estudo.
-Consultas e gravações normais nunca abrem arquivos externos da Farmácia.
+O ID do projeto determina o nome da aba, preservado quando seu nome/código muda.
+IDs longos ou com caracteres especiais usam SHA-256 para gerar um nome válido.
+FARMACIA_STORAGE_V1 não participa do armazenamento. A instalação começa vazia,
+conforme a regra solicitada: sem migração nem leitura de arquivos externos.
 
 As concessões por estudo e classe permanecem no servidor. O app executa com a
 conta de quem acessa, que precisa do acesso adequado apenas ao arquivo principal.
@@ -139,37 +141,12 @@ O compartilhamento direto do arquivo permite ler suas abas, inclusive registros
 restritos: o Sheets não oferece sigilo de leitura por aba. Proteção de edição não
 substitui segregação de leitura.
 
-## Consolidação dos arquivos antigos
+## Instalação nova
 
-Uma configuração v1 com arquivos antigos bloqueia consultas e escritas com aviso
-de migração pendente. Não há fallback silencioso para base vazia nem cópia em
-consultas. A consolidação exige ação explícita de Admin:
-
-1. Executar getFarmaciaMigracaoPreview() e revisar as contagens e fingerprint.
-2. Executar migrarFarmaciaParaArquivoPrincipal({fingerprint: PREVIA.fingerprint,
-   confirm: true}) com a prévia atual.
-3. Conferir a base principal antes de arquivar as origens.
-
-As duas RPCs administrativas podem ser chamadas por google.script.run em sessão
-Admin autenticada. A prévia é somente leitura e devolve contagens, sem payloads.
-A execução reautoriza sob lock e relê configuração, fontes e destino. Alterações
-após a prévia exigem nova revisão. Todos os schemas e históricos são validados
-antes da primeira escrita, inclusive estudo/classe de cada origem, IDs, operações,
-vínculos, revisões e colisões.
-
-Os eventos preservam IDs, ordem, autoria e datas. Somente eventos ausentes são
-acrescentados; cópias idênticas não são duplicadas e colisões incompatíveis bloqueiam
-a migração sem sobrescrever dados. O catálogo existente no principal é combinado
-com o dedicado somente quando o replay final for válido. Após ambas as escritas,
-a configuração passa para versão 2. Falhas intermediárias permitem nova prévia e
-retentativa, reconhecendo eventos já copiados. Nenhuma origem ou permissão é
-alterada ou excluída. O administrador que migra precisa ler os arquivos antigos.
-Volumes grandes podem atingir a cota de execução na prévia antes de gravar;
-não remova o mapa antigo manualmente para contornar uma falha.
-
-A rotina trata apenas os arquivos v1 do próprio módulo, sem importar a planilha
-histórica anterior, ainda sujeita a saneamento e revisão. Nenhuma migração real
-foi executada nesta entrega local.
+A seleção de um projeto sem aba retorna estoque vazio. O primeiro salvamento
+válido cria sua aba e cabeçalho sob lock. Equipamentos e sondas permanecem no
+catálogo físico compartilhado. As rotinas de migração foram removidas porque
+não há dados a migrar nesta instalação. Nenhuma aba real é criada por testes.
 
 ## Integridade, concorrência e auditoria
 
@@ -315,3 +292,20 @@ retentativas após gravação, duplicidade de kits e troca de estudo/classe.
 Antes de operação real: configurar e conferir arquivos/ACLs, definir permissões
 nominais e política de cegamento e validar um inventário físico de um estudo com a
 equipe. Publicação exige solicitação explícita e o fluxo de PUBLICACAO_SEGURA.md.
+
+## Consulta geral de produtos
+
+Usuários ativos da equipe (incluindo somente leitura) podem consultar Produtos
+de todos os projetos e do estoque comum, sem concessão de estoque. A RPC
+getFarmaciaProdutos autoriza no servidor e retorna apenas identidade e campos
+gerais do catálogo: apresentação, categoria, unidade, códigos gerais do produto,
+forma farmacêutica, concentração, via, conservação e origem do fornecimento.
+Não retorna autoria, datas de cadastro, lotes, kits, participantes, saldos,
+localizações ou movimentações. Somente eventos de produto da classe autorizada
+são interpretados, incluindo correções e exclusões lógicas.
+
+A classe restrita continua exigindo concessão específica. Cadastro e edição
+continuam exigindo manage por estudo/classe, revalidado sob lock. A tela de
+Produtos usa a RPC própria e não consulta estoque; o seletor de Estoque continua
+mostrando somente os projetos autorizados. Respostas atrasadas de outra área
+não substituem a tela atual.

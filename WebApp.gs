@@ -903,15 +903,16 @@ function codexAssertFarmaciaAccess_(permission, studyId, restricted) {
 function getFarmaciaBootstrap() {
   var access = codexAssertCanRead_();
   var grants = access.farmaciaStudies || [];
-  var studies = grants.length && codexNormalizeFarmaciaAccess_(access.farmaciaAccess) !== 'none' ? codexFarmaciaStudyCatalog_().filter(function(study) {
+  var catalog = codexFarmaciaStudyCatalog_();
+  var studies = grants.length && codexNormalizeFarmaciaAccess_(access.farmaciaAccess) !== 'none' ? catalog.filter(function(study) {
     return grants.some(function(grant) { return grant.studyId === study.id; });
   }) : [];
   return { ok: true, farmaciaAccess: codexNormalizeFarmaciaAccess_(access.farmaciaAccess),
-    farmaciaCommonAccess: codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess), studies: studies, stage: 'study-access' };
+    farmaciaCommonAccess: codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess), studies: studies, productStudies: [{ id: FARMACIA_COMMON_SCOPE_, nome: 'Estoque comum do IPS' }].concat(catalog), stage: 'study-access' };
 }
 
-function getFarmaciaEstudo(studyId) {
-  var access = studyId === FARMACIA_COMMON_SCOPE_ ? codexAssertFarmaciaCommonAccess_('read') : codexAssertFarmaciaAccess_('read', studyId);
+function getFarmaciaEstudo(studyId, productsOnly) {
+  var access = productsOnly === true ? codexAssertFarmaciaProductsAccess_(studyId, false) : studyId === FARMACIA_COMMON_SCOPE_ ? codexAssertFarmaciaCommonAccess_('read') : codexAssertFarmaciaAccess_('read', studyId);
   return { study: access.farmaciaStudy, farmaciaAccess: access.farmaciaAccess, restrictedAllowed: access.farmaciaRestricted };
 }
 
