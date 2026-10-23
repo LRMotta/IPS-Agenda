@@ -42,12 +42,15 @@ test('equipe consulta produtos gerais sem concessão de estoque e sem receber da
   f.server.cadastrarProdutoFarmacia(f.product({restricted:true,data:{name:'Produto secreto'}}));
   // A consulta de catálogo não interpreta payloads de estoque nem da classe restrita.
   f.sheet().rows.push(['FIN-segredo','INITIAL',JSON.stringify('P1'),false,'estoque-secret',JSON.stringify('2026-10-23'),'autor','payload operacional']);
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).restrictedAllowed,true);
+  assert.equal(f.server.getFarmaciaProdutos('P1',true).products[0].name,'Produto secreto');
   f.users.rows[1][8]='none'; f.users.rows[1][9]='[]';
   const writes=f.sheet().writes;
   const catalog=f.server.getFarmaciaProdutos('P1',false);
   assert.equal(catalog.products.length,1);
   assert.equal(catalog.products[0].name,'Produto A');
   assert.equal(catalog.farmaciaAccess,'read');
+  assert.equal(catalog.restrictedAllowed,false);
   assert.equal(catalog.positions.length,0); assert.equal(catalog.movements.length,0);
   assert.equal(catalog.storageUnits.length,0);
   assert.equal(JSON.stringify(catalog).includes('segredo'),false);
@@ -935,4 +938,12 @@ test('equipamento excluído não recebe novas entradas e edição não contorna 
   f.server.excluirRegistroCatalogoFarmacia({requestId:'unit-delete-guard-0001',data:{kind:'unit',unitId:unit.id,revision:1}});
   assert.throws(()=>f.server.registrarInventarioInicialFarmacia(f.inventory(product)),/equipamento.*posição/);
   assert.equal(f.server.getFarmaciaCatalogo().storageUnits[0].deleted,true);
+});
+
+
+test('produto aceita unidade caixa e rejeita quantidade fracionária nessa unidade', () => {
+  const f=fixture();
+  const created=f.server.cadastrarProdutoFarmacia(f.product({data:{unit:'caixa'}}));
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].unit,'caixa');
+  assert.throws(()=>f.server.farmaciaInitialData_({physical:1.5,blocked:0}, {id:created.id,data:{unit:'caixa',control:'quantity'}}, false),/Quantidade/);
 });

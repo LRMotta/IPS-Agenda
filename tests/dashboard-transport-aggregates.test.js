@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { dashboardAgendaFixture } = require('./helpers/dashboard-agenda-fixture');
 const { FakeSheet } = require('./helpers/fake-spreadsheet');
+const { runFiles } = require('./helpers/load-app-script');
 const plain = value => JSON.parse(JSON.stringify(value));
 
 function fixture() {
@@ -210,4 +211,93 @@ test('Agenda vazia entrega ambos rankings vazios em todos os contratos', () => {
   assert.deepEqual(summary.periodos.global.couriers, []);
   assert.deepEqual(summary.periodos.global.transportLabs, []);
   assert.equal(f.reads(), 0);
+});
+
+test('destinos usam ID estável, resolvem nome completo legado e refletem renomeação do cadastro', () => {
+  const f = fixture();
+  const labs = new FakeSheet('LabCentral', [['ID', 'Nome', 'Completo', '', 'Cidade'],
+    ['LAB-AMOY', 'AMOYDX (BUFFALO)', 'AmoyDx (North America)', '', 'Buffalo, NY']]);
+  f.server.getCodexSpreadsheet_ = () => ({ getSheetByName: () => labs });
+  for (const destino of ['LAB-AMOY', 'AmoyDx (North America)', 'AMOYDX (BUFFALO)']) {
+    f.event('06/01/2026', 'Realizado', [{ nome: 'Marken', status: 'Entregue', destino }]);
+  }
+  let summary = f.summary();
+  assert.deepEqual(summary.transporteLaboratoriosAno, [
+    { label: 'AMOYDX (BUFFALO)', value: 3, realizados: 3, previstos: 0 }
+  ]);
+  const transports = f.server.agendaDashboardTransportesEvento_(f.rows[0], f.server.AGENDA_CFG.idx,
+    () => [{ id: 'LAB-AMOY', nomeAbreviado: 'Nome atual', nomeCompleto: 'AmoyDx (North America)' }]);
+  assert.equal(transports[0].laboratorioId, 'LAB-AMOY');
+  labs.rows[1][1] = 'Nome atual';
+  summary = f.summary();
+  assert.equal(summary.transporteLaboratoriosAno.find(x => x.label === 'Nome atual').value, 2);
+  // Sem ID persistido, um nome abreviado antigo não permite reconstruir uma renomeação arbitrária.
+  assert.equal(summary.transporteLaboratoriosAno.find(x => x.label === 'AMOYDX (BUFFALO)').value, 1);
+  assert.equal(labs.writes, 0);
+  assert.equal(f.sheet.writes, 0);
+});
+
+test('IDs distintos não se fundem por nome; nome completo ambíguo não escolhe um laboratório', () => {
+  const f = fixture();
+  const labs = [
+    { id: 'a', nomeAbreviado: 'Lab', nomeCompleto: 'Rede' },
+    { id: 'b', nomeAbreviado: 'Lab', nomeCompleto: 'Rede' }
+  ];
+  assert.equal(f.server.agendaDashboardLaboratorio_('Rede', labs), null);
+  assert.equal(f.server.agendaDashboardLaboratorio_('Lab', labs), null);
+  const couriers = Object.create(null), destinos = Object.create(null);
+  f.server.agendaDashboardCountTransports_({ isEventoComTransporte: true, lab: true,
+    evento: { transportes: labs.map(lab => ({ courier: 'Marken', destino: lab.nomeAbreviado, laboratorioId: lab.id, realizado: true })) }
+  }, couriers, destinos);
+  assert.deepEqual(Object.keys(destinos), ['id:a', 'id:b']);
+});
+
+test('JSON estruturado não apaga o laboratório descrito no material legado dos transportes e backups', () => {
+  const f = fixture(), i = f.server.AGENDA_CFG.idx;
+  const materialHelpers = runFiles(['TransporteCodexConfig.gs']);
+  f.server.codexMatBioParseJson_ = materialHelpers.codexMatBioParseJson_;
+  f.server.codexMatBioSerializeItems_ = materialHelpers.codexMatBioSerializeItems_;
+  i.backup2Dados = f.server.AGENDA_CFG.lastCol++;
+  const labs = new FakeSheet('LabCentral', [['ID', 'Nome', '', '', 'Cidade'],
+    ['c', 'LABCORP (INDIANAPOLIS)', '', '', 'Indianapolis, IN']]);
+  f.server.getCodexSpreadsheet_ = () => ({ getSheetByName: () => labs });
+  const material = 'Labcorp Indianapolis - Serum: 2 x 1 mL';
+  const matBioJson = JSON.stringify({ v: 1, items: [{ key: 'soro', tipo: 'Soro', formula: '2*1', unit: 'mL' }] });
+  const row = f.event('06/01/2026', 'Realizado', [{ nome: 'Marken', status: 'Entregue', material }]);
+  row[i.c1.matBio] = matBioJson;
+  row[i.cb.nome] = 'Marken'; row[i.cb.status] = 'Enviado';
+  row[i.cb.material] = material; row[i.cb.matBio] = matBioJson;
+  row[i.backup2Dados] = JSON.stringify({ nome: 'Marken', status: 'Enviado', material, matBioJson });
+  assert.equal(f.server.agendaCourierToObject_(row, i.c1).material.includes('Labcorp'), false);
+  assert.deepEqual(f.summary().transporteLaboratoriosAno,
+    [{ label: 'LABCORP (INDIANAPOLIS)', value: 3, realizados: 3, previstos: 0 }]);
+});
+
+test('backup I e II diretos entram nos dois gráficos, espelhos vinculados e legados não duplicam envio', () => {
+  const f = fixture(), cfg = f.server.AGENDA_CFG, i = cfg.idx;
+  i.backup2Dados = cfg.lastCol++;
+  const first = f.event('06/01/2026', 'Realizado', []);
+  first[i.cb.nome] = 'Marken'; first[i.cb.status] = 'Enviado'; first[i.cb.destino] = 'Lab A';
+  first[i.backup2Dados] = JSON.stringify({ nome: 'Ocasa', status: 'Agendado', destino: 'Lab B' });
+  const mirror = f.event('07/01/2026', 'Realizado', []);
+  mirror[i.cb.nome] = 'Marken'; mirror[i.cb.status] = 'Enviado'; mirror[i.cb.destino] = 'Lab A';
+  mirror[i.backupAgendaRef] = JSON.stringify([{ id: 'destino', slot: 'II' }]);
+  mirror[i.backup2Dados] = JSON.stringify({ nome: 'Ocasa', status: 'Adicionado à Agenda', destino: 'Lab B' });
+  const legacy = f.event('08/01/2026', 'Realizado', []);
+  legacy[i.cb.nome] = 'Marken'; legacy[i.cb.status] = 'Adicionado à agenda';
+  f.event('09/02/2026', 'Realizado', [{}, { nome: 'Marken', status: 'Entregue', destino: 'Lab A' }], { id: 'destino' });
+  const summary = f.summary();
+  assert.deepEqual(summary.courierUsoAno, [
+    { label: 'Marken', value: 2, realizados: 2, previstos: 0 },
+    { label: 'Ocasa', value: 1, realizados: 0, previstos: 1 }
+  ]);
+  assert.deepEqual(summary.transporteLaboratoriosAno, [
+    { label: 'Lab A', value: 2, realizados: 2, previstos: 0 },
+    { label: 'Lab B', value: 1, realizados: 0, previstos: 1 }
+  ]);
+  assert.equal(summary.periodos.meses['2026-1'].couriers.reduce((n, x) => n + x.value, 0), 2);
+  assert.equal(summary.periodos.meses['2026-2'].couriers[0].realizados, 1);
+  f.rows.at(-1)[i.status] = 'Cancelado';
+  assert.equal(f.summary().courierUsoAno[0].value, 1, 'cancelamento do destino não ressuscita o espelho');
+  assert.equal(f.sheet.writes, 0);
 });

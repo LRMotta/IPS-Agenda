@@ -227,8 +227,7 @@ alteram físico, disponível ou bloqueado e não realizam liberação/quarentena
 
 ## Características do produto
 
-Cadastro, edição e visualização incluem código do produto no estudo (`productCode`,
-até 80 caracteres), forma farmacêutica (`dosageForm`, até 80), dosagem/concentração
+Cadastro, edição e visualização incluem forma farmacêutica (`dosageForm`, até 80), dosagem/concentração
 (`strength`, até 120) e via de administração (`route`, até 80). São textos opcionais,
 preenchidos conforme rótulo/documento autorizado; não representam dose administrada
 ao participante nem revelam características ocultas pelo cegamento. Não há preenchimento
@@ -309,3 +308,12 @@ continuam exigindo manage por estudo/classe, revalidado sob lock. A tela de
 Produtos usa a RPC própria e não consulta estoque; o seletor de Estoque continua
 mostrando somente os projetos autorizados. Respostas atrasadas de outra área
 não substituem a tela atual.
+
+
+A consulta de Produtos carrega diretamente o catálogo geral, sem a etapa de autorização
+do estoque. Criação, edição e exclusão continuam condicionadas a `manage`, com
+revalidação no servidor. A unidade de controle inclui Caixa (`caixa`), com contagem
+inteira. O código do produto no estudo foi removido dos formulários e da exibição;
+o leitor de eventos antigos continua tolerando esse atributo, sem migração de dados.
+Na tabela, o tipo aparece em chip, as características farmacêuticas ficam abaixo
+do nome e a origem do fornecimento acompanha a apresentação.

@@ -112,10 +112,14 @@ function carregarFarmaciaEstoque(studyId, restrictedAllowed, restricted) {
   document.getElementById('farmaciaStockRestricted').checked = restricted;
   ['farmaciaProductsResults','farmaciaInventoryResults','farmaciaLocationsResults','farmaciaProbesResults'].forEach(function(id) { document.getElementById(id).textContent = ''; });
   document.getElementById('farmaciaLocationsResults').textContent = '';
-  document.getElementById('farmaciaStockStatus').textContent = 'Carregando estoque…';
+  document.getElementById('farmaciaStockStatus').textContent = productsOnly ? 'Carregando produtos…' : 'Carregando estoque…';
   var request = google.script.run.withSuccessHandler(function(result) {
     if (productsOnly !== (FARMACIA_VIEW === 'products') || !farmaciaStockCurrent(epoch, studyId, restricted) || readId !== FARMACIA_STOCK.readId) return;
     FARMACIA_STOCK.data = result;
+    if (productsOnly) {
+      FARMACIA_STOCK.restrictedAllowed = result.restrictedAllowed === true;
+      document.getElementById('farmaciaRestrictedLabel').hidden = !FARMACIA_STOCK.restrictedAllowed;
+    }
     renderFarmaciaEstoque(farmaciaCurrentData());
     farmaciaRestoreFocus();
   }).withFailureHandler(function(error) {
@@ -336,7 +340,7 @@ function farmaciaStockSave(type, data) {
 function salvarProdutoFarmaciaApp(event) {
   event.preventDefault();
   farmaciaStockSave('product', { category:document.getElementById('farmaciaProductCategory').value, name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
-    productCode:document.getElementById('farmaciaProductCode').value, barcode:document.getElementById('farmaciaProductBarcode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
+    barcode:document.getElementById('farmaciaProductBarcode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
     strength:document.getElementById('farmaciaProductStrength').value, route:document.getElementById('farmaciaProductRoute').value,
     unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value, supplySource:document.getElementById('farmaciaProductSupply').value,
     storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value } });
