@@ -15,7 +15,7 @@ function fixture(realLocations = false) {
   app.getId = () => MAIN;
   const stores = { [STANDARD]:new FakeSpreadsheet({}), [RESTRICTED]:new FakeSpreadsheet({}) };
   const lock = fakeDocumentLock();
-  const state = { config:JSON.stringify({ version:1, studies:[{ studyId:'P1', standard:STANDARD, restricted:RESTRICTED }] }), opened:[], today:'2026-10-21', uuid:0 };
+  const state = { config:'', opened:[], today:'2026-10-21', uuid:0 };
   const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs', 'FarmaciaLocationActions.gs'], {
     LockService:lock.LockService,
     PropertiesService:{ getScriptProperties:() => ({ getProperty:() => state.config }) },
@@ -28,43 +28,45 @@ function fixture(realLocations = false) {
   server.farmaciaToday_ = () => state.today;
   if (!realLocations) server.farmaciaReadLocations_ = () => ({ configured:true, units:[{id:'UNIT-1',code:'Armário 1',positions:['Prateleira 1'],min:null,max:null,status:'active'}] });
   const product = (overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'product-request-0001', ...overrides,
-    data:{name:'Produto A',presentation:'Frasco de teste',unit:'frasco',control:'quantity',storage:{min:null,max:null,instructions:'Conferir documento fictício',source:'Rótulo fictício',version:'1'},supplySource:'site',...overrides.data} });
+    data:{name:'Produto A',presentation:'Frasco de teste',category:'medicine',productCode:'',barcode:'',dosageForm:'',strength:'',route:'',unit:'frasco',control:'quantity',storage:{min:null,max:null,instructions:'Conferir condição de conservação'},supplySource:'site',...overrides.data} });
   const initial = (productId, overrides = {}) => ({ studyId:'P1', restricted:false, requestId:'initial-request-0001', data:{ productId, lot:'L1', expiry:'2027-01-31', location:'Armário 1 → Prateleira 1', locationRef:{unitId:'UNIT-1',position:'Prateleira 1'}, kit:'', physical:10, blocked:2, countedOn:'2026-10-21', confirmed:true, note:'Contagem física' }, ...overrides });
-  const sheet = (restricted = false) => stores[restricted ? RESTRICTED : STANDARD].getSheetByName(server.FARMACIA_LEDGER_SHEET_);
+  const sheet = () => app.getSheetByName(server.FARMACIA_LEDGER_SHEET_);
   return { server, app, users, stores, state, lock:lock.state, product, initial, sheet };
 }
 
 const LOCATIONS = 'farmacia-locations-0000000001';
+test('responsável user com estudo padrão concedido acessa sem estoque comum nem informações restritas', () => {
+  const f=fixture();
+  f.users.rows[1][2]='user';
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":false}]';
+  assert.equal(f.server.getFarmaciaBootstrap().studies[0].id,'P1');
+  assert.equal(f.server.getFarmaciaEstudo('P1').restrictedAllowed,false);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).farmaciaAccess,'manage');
+  assert.deepEqual(f.state.opened,[]);
+  assert.throws(()=>f.server.getFarmaciaEstudo('@IPS_COMMON'),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/não autorizado/);
+  assert.equal(f.users.writes,0);
+});
+
 function locationFixture() {
   const f = fixture(true);
   f.users.rows[1][2]='user';
-  f.state.config = JSON.stringify({...JSON.parse(f.state.config),locations:LOCATIONS});
   f.stores[LOCATIONS] = new FakeSpreadsheet({});
   f.users.rows[0][10] = 'Acesso ao estoque comum da Farmácia'; f.users.rows[1][10] = 'manage';
   f.location = (overrides = {}) => ({requestId:'location-request-0001',data:{code:'IPS AF-01',type:'cabinet',model:'Armário',room:'Farmácia',
     min:15,max:30,source:'Qualificação fictícia',version:'1',sensor:'SENSOR-01',status:'active',positions:['Prateleira 1','Prateleira 2']},...overrides});
-  f.catalogSheet = () => f.stores[LOCATIONS].getSheetByName(f.server.FARMACIA_LOCATIONS_SHEET_);
+  f.catalogSheet = () => f.app.getSheetByName(f.server.FARMACIA_LOCATIONS_SHEET_);
   f.inventory = id => {const request=f.initial(id); request.data.location='Catálogo'; request.data.locationRef={unitId:f.unitId,position:'Prateleira 1'}; return request;};
   return f;
 }
 
-test('catálogo dedicado preserva exclusividade; sem configuração usa o app sem criar schema na leitura', () => {
+test('catálogo usa o app sem configurar arquivos e leituras não criam schema', () => {
   const f = locationFixture();
   assert.equal(f.server.getFarmaciaEstoque('P1',false).storageUnits.length,0);
   assert.equal(f.catalogSheet(),null);
-  const writes=f.users.writes;
-  for (const id of [MAIN,STANDARD,RESTRICTED,'https://example.invalid/file']) {
-    f.state.config=JSON.stringify({version:1,locations:id,studies:[{studyId:'P1',standard:STANDARD,restricted:RESTRICTED}]});
-    f.state.opened=[];
-    assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/inválida|exclusivos/);
-    assert.deepEqual(f.state.opened,[]);
-  }
-  assert.equal(f.users.writes,writes);
-  const missing=fixture(true);
-  const stock=missing.server.getFarmaciaEstoque('P1',false);
-  assert.equal(stock.locationsConfigured,true);
-  assert.equal(stock.storageUnits.length,0);
-  assert.equal(missing.app.getSheetByName(missing.server.FARMACIA_LOCATIONS_SHEET_),null);
+  assert.equal(f.server.farmaciaReadLocations_().configured,true);
+  assert.deepEqual(f.state.opened,[]);
+  assert.equal(f.users.writes,0);
 });
 
 test('primeiro equipamento cria aba e cabeçalhos no app, preserva outras abas e recarrega sem duplicar', () => {
@@ -87,7 +89,7 @@ test('primeiro equipamento cria aba e cabeçalhos no app, preserva outras abas e
   assert.equal(units.length,1); assert.equal(units[0].id,created.id); assert.equal(units[0].code,request.data.code);
   assert.equal(JSON.stringify(f.users.rows),users);
   assert.equal(JSON.stringify(f.app.getSheetByName('Projetos').rows),projects);
-  assert.equal(f.catalogSheet(),null);
+  assert.equal(f.catalogSheet(),sheet);
   assert.deepEqual(f.state.opened,[]);
 });
 
@@ -142,7 +144,7 @@ test('catálogo pode ser consultado sem projeto ou estoque autorizado e não exp
   const result=f.server.getFarmaciaCatalogo();
   assert.equal(result.storageUnits.length,1); assert.equal(result.locationsCanManage,false);
   assert.deepEqual(Object.keys(result).sort(),['locationsCanManage','locationsConfigured','storageUnits']);
-  assert.deepEqual(f.state.opened,[LOCATIONS]);
+  assert.deepEqual(f.state.opened,[]);
   f.users.rows[1][10]='none'; f.users.rows[1][8]='read';
   assert.equal(f.server.getFarmaciaCatalogo().storageUnits.length,1);
   f.users.rows[1][3]='Não'; f.state.opened=[];
@@ -198,7 +200,7 @@ test('equipamento é cadastrado sem referência documental ou versão, com reten
 
 test('inventário exige referências válidas, deriva rótulo no servidor e compara faixas sem alterar saldos', () => {
   const f=locationFixture(); f.unitId=f.server.cadastrarLocalFarmacia(f.location()).id;
-  const storage={min:15,max:25,instructions:'Proteger da luz',source:'Manual fictício',version:'2'};
+  const storage={min:15,max:25,instructions:'Proteger da luz'};
   const product=f.server.cadastrarProdutoFarmacia(f.product({data:{...f.product().data,storage}})).id;
   const request=f.inventory(product);
   const missing={...request,data:{...request.data}}; delete missing.data.locationRef;
@@ -216,14 +218,15 @@ test('inventário exige referências válidas, deriva rótulo no servidor e comp
   assert.equal(after.storageCheck.status,'unavailable'); assert.equal(after.available,8);
 });
 
-test('conservação documentada valida fonte/versão e falta de faixa permanece pendente', () => {
+test('conservação valida faixas e instruções sem referência documental', () => {
   const f=locationFixture(); f.unitId=f.server.cadastrarLocalFarmacia(f.location()).id;
-  const storage={min:15,max:30,instructions:'Não congelar',source:'Rótulo fictício',version:'1'};
-  for(const changes of [{min:null},{min:31},{min:'15'},{source:''},{version:''}]) {
+  const storage={min:15,max:30,instructions:'Não congelar'};
+  for(const changes of [{min:null},{min:31},{min:'15'}]) {
     assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({data:{...f.product().data,storage:{...storage,...changes}}})));
     assert.equal(f.sheet(),null);
   }
-  const id=f.server.cadastrarProdutoFarmacia(f.product({data:{...f.product().data,storage}})).id;
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({data:{...f.product().data,name:'Produto sem faixa',storage:{min:null,max:null,instructions:''}}})),/instruções de conservação/);
+  const id=f.server.cadastrarProdutoFarmacia(f.product({data:{...f.product().data,storage:{...storage,instructions:''}}})).id;
   f.server.registrarInventarioInicialFarmacia(f.inventory(id));
   const writes=f.sheet().writes;
   assert.equal(f.server.getFarmaciaEstoque('P1',false).positions[0].storageCheck.status,'compatible');
@@ -313,10 +316,8 @@ test('produto novo exige conservação no servidor, mas registros antigos e repl
   assert.equal(f.server.cadastrarProdutoFarmacia(request).id,id);
 });
 
-test('estoque comum persiste em arquivo próprio sem conceder estudos nem misturar posições', () => {
-  const f = fixture(), common = 'farmacia-common-000000000001';
-  f.stores[common] = new FakeSpreadsheet({});
-  f.state.config = JSON.stringify({version:1,common,studies:[{studyId:'P1',standard:STANDARD,restricted:RESTRICTED}]});
+test('estoque comum persiste no arquivo principal sem conceder estudos nem misturar posições', () => {
+  const f = fixture();
   f.users.rows[0].push('Acesso ao estoque comum da Farmácia');
   f.users.rows[1].push('manage');
   const studyProduct = f.server.cadastrarProdutoFarmacia(f.product()).id;
@@ -339,19 +340,15 @@ test('estoque comum persiste em arquivo próprio sem conceder estudos nem mistur
   }
 });
 
-test('estoque comum sem configuração não usa arquivos de estudo e rejeita aliases no mapa inteiro', () => {
+test('estoque comum sem configuração usa a mesma base e mantém autorização própria', () => {
   const f = fixture();
   f.users.rows[0].push('Acesso ao estoque comum da Farmácia'); f.users.rows[1].push('manage');
-  assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).configured,false);
+  assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).configured,true);
+  assert.equal(f.sheet(),null);
+  const created=f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON'}));
+  assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).products[0].id,created.id);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products.length,0);
   assert.deepEqual(f.state.opened,[]);
-  assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON'})), /não configurado/);
-  for (const common of [MAIN,STANDARD,RESTRICTED,'https://invalid.test/file',null]) {
-    f.state.config = JSON.stringify({version:1,common,studies:[{studyId:'P1',standard:STANDARD,restricted:RESTRICTED}]});
-    assert.throws(() => f.server.getFarmaciaEstoque('P1',false), /inválida|exclusivos/);
-    assert.deepEqual(f.state.opened,[]);
-  }
-  f.state.config = JSON.stringify({version:1,studies:[{studyId:'@IPS_COMMON',standard:STANDARD}]});
-  assert.throws(() => f.server.getFarmaciaEstoque('@IPS_COMMON',false), /inválida/);
 });
 
 test('revogação do estoque comum ao adquirir lock impede gravação e acesso a arquivos', () => {
@@ -362,30 +359,31 @@ test('revogação do estoque comum ao adquirir lock impede gravação e acesso a
   assert.deepEqual(f.state.opened,[]);
 });
 
-test('leituras não criam arquivos/abas e ausência de configuração nunca usa a planilha principal', () => {
-  const f = fixture();
-  assert.equal(f.server.getFarmaciaEstoque('P1', false).configured, true);
-  assert.equal(f.sheet(), null);
-  f.state.config = '';
-  const result = f.server.getFarmaciaEstoque('P1', false);
-  assert.equal(result.configured, false);
-  assert.equal(result.products.length, 0);
-  assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product()), /não configurado/);
-  assert.equal(f.sheet(), null);
-  assert.equal(f.users.writes, 0);
+test('sem configuração, mapa vazio e versão 2 usam principal sem criar schema na leitura', () => {
+  for(const config of ['',JSON.stringify({version:1,studies:[]}),JSON.stringify({version:2,spreadsheetId:MAIN})]) {
+    const f=fixture(); f.state.config=config;
+    const result=f.server.getFarmaciaEstoque('P1',false);
+    assert.equal(result.configured,true);
+    assert.equal(result.products.length,0);
+    assert.equal(f.sheet(),null);
+    assert.equal(f.users.writes,0);
+    assert.deepEqual(f.state.opened,[]);
+    assert.equal(f.server.cadastrarProdutoFarmacia(f.product()).ok,true);
+    assert.ok(f.sheet());
+  }
 });
 
-test('configuração rejeita arquivo principal, aliases e mistura de estudos/classes antes de abrir arquivos', () => {
-  for (const studies of [
-    [{ studyId:'P1', standard:MAIN }], [{ studyId:'P1', standard:STANDARD, restricted:STANDARD }],
-    [{ studyId:'P1', standard:STANDARD }, { studyId:'P2', standard:STANDARD }],
-    [{ studyId:'P1', standard:'https://docs.google.com/spreadsheets/d/' + STANDARD }],
-    [{ studyId:'P1', standard:STANDARD }, { studyId:'P1', restricted:RESTRICTED }]
+test('mapa legado bloqueia acesso até migração explícita sem abrir arquivos externos', () => {
+  for(const config of [
+    {version:1,studies:[{studyId:'P1',standard:STANDARD,restricted:RESTRICTED}]},
+    {version:1,studies:[],common:STANDARD},
+    {version:1,studies:[],locations:LOCATIONS}
   ]) {
-    const f = fixture();
-    f.state.config = JSON.stringify({ version:1, studies });
-    assert.throws(() => f.server.getFarmaciaEstoque('P1', false), /inválida|exclusivos/);
-    assert.deepEqual(f.state.opened, []);
+    const f=fixture(); f.state.config=JSON.stringify(config);
+    assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/migração.*pendente/i);
+    assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product()),/migração.*pendente/i);
+    assert.equal(f.sheet(),null);
+    assert.deepEqual(f.state.opened,[]);
   }
 });
 
@@ -448,10 +446,11 @@ test('resposta perdida após gravação não duplica inventário no retry', () =
   assert.equal(f.server.getFarmaciaEstoque('P1', false).positions.length, 1);
 });
 
-test('arquivo com dados alheios é recusado e corrupção de inventário não é corrigida na leitura', () => {
+test('principal preserva outras abas e corrupção de inventário não é corrigida na leitura', () => {
   const occupied = fixture();
-  occupied.stores[STANDARD].insertSheet('Estoque legado').appendRow(['Dado existente']);
-  assert.throws(() => occupied.server.getFarmaciaEstoque('P1', false), /arquivo dedicado/);
+  const legacy=occupied.app.insertSheet('Estoque legado'); legacy.appendRow(['Dado existente']);
+  assert.equal(occupied.server.getFarmaciaEstoque('P1',false).configured,true);
+  assert.deepEqual(legacy.rows,[['Dado existente']]);
   for (const changes of [{ productId:'PRODUTO-AUSENTE' }, { blocked:99 }]) {
     const f = fixture(), productId = f.server.cadastrarProdutoFarmacia(f.product()).id;
     f.server.registrarInventarioInicialFarmacia(f.initial(productId));
@@ -500,20 +499,62 @@ test('vencimento posterior zera disponível sem alterar o registro e replay orig
   assert.equal(f.sheet().writes, writes);
 });
 
-test('classes são arquivos distintos; leitura padrão não abre nem conta conteúdo restrito', () => {
+test('classes compartilham arquivo e leitura padrão não expõe conteúdo restrito', () => {
   const f = fixture();
   f.server.cadastrarProdutoFarmacia(f.product({ restricted:true, data:{ ...f.product().data, name:'Restrito' } }));
   f.state.opened = [];
   const standard = f.server.getFarmaciaEstoque('P1', false);
   assert.equal(standard.products.length, 0);
-  assert.deepEqual(f.state.opened, [STANDARD]);
+  assert.deepEqual(f.state.opened, []);
   assert.equal(f.server.getFarmaciaEstoque('P1', true).products[0].name, 'Restrito');
+});
+
+test('ledger único isola estudos, classes e comum preservando requestId por contexto', () => {
+  const f=fixture();
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":true},{"studyId":"P2","restricted":true}]';
+  f.users.rows[0].push('Acesso ao estoque comum da Farmácia'); f.users.rows[1].push('manage');
+  const scopes=[['P1',false],['P1',true],['P2',false],['P2',true],['@IPS_COMMON',false]];
+  const created=scopes.map(([studyId,restricted],index)=>{
+    const request=f.product({studyId,restricted,data:{name:'Produto '+index}});
+    const result=f.server.cadastrarProdutoFarmacia(request);
+    assert.equal(f.server.cadastrarProdutoFarmacia(request).id,result.id);
+    return result.id;
+  });
+  assert.equal(new Set(created).size,5);
+  assert.equal(f.sheet().rows.length,6);
+  scopes.forEach(([studyId,restricted],index)=>{
+    const stock=f.server.getFarmaciaEstoque(studyId,restricted);
+    assert.equal(stock.products.length,1);
+    assert.equal(stock.products[0].id,created[index]);
+    assert.equal(stock.products[0].name,'Produto '+index);
+  });
+  const writes=f.sheet().writes;
+  for(const [studyId,restricted] of scopes.slice(1)) {
+    assert.throws(()=>f.server.registrarInventarioInicialFarmacia(f.initial(created[0],{studyId,restricted})),/Produto não encontrado/);
+  }
+  assert.equal(f.sheet().writes,writes);
+  assert.deepEqual(f.state.opened,[]);
+});
+
+test('payload restrito inválido não é interpretado nem exposto na leitura padrão', () => {
+  const f=fixture();
+  const standard=f.server.cadastrarProdutoFarmacia(f.product()).id;
+  f.server.cadastrarProdutoFarmacia(f.product({restricted:true,data:{name:'Produto restrito'}}));
+  f.sheet().rows[2][7]='{payload-restrito-inválido';
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":false}]';
+  const stock=f.server.getFarmaciaEstoque('P1',false);
+  assert.equal(stock.products.length,1);
+  assert.equal(stock.products[0].id,standard);
+  assert.equal(JSON.stringify(stock).includes('payload-restrito'),false);
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/não autorizado/);
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":true}]';
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/inconsistentes/);
 });
 
 test('schema e registros inconsistentes bloqueiam leitura e escrita sem normalizar saldo', () => {
   for (const corrupt of [
     sheet => { sheet.rows[0][0] = 'Outra coluna'; },
-    sheet => { sheet.rows[1][2] = '"P2"'; },
+    sheet => { sheet.rows[1][2] = 'null'; },
     sheet => { sheet.rows[1][7] = '{}'; },
     sheet => { sheet.rows.push(sheet.rows[1].slice()); }
   ]) {
@@ -558,11 +599,10 @@ test('origem do fornecimento é explícita em novos produtos; histórico permane
   assert.equal(f.server.cadastrarProdutoFarmacia(request).id,id);
   const receipt=lifecycleFixture().receipt(); receipt.data.productId=id;
   assert.throws(()=>f.server.registrarRecebimentoFarmacia(receipt),/exclusivos/);
-  const common='farmacia-common-000000000001';
   f.users.rows[0][10]='Acesso ao estoque comum da Farmácia'; f.users.rows[1][10]='manage';
-  f.state.config=JSON.stringify({...JSON.parse(f.state.config),common}); f.stores[common]=new FakeSpreadsheet({});
+  const writes=f.sheet().writes;
   assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON',requestId:'sponsored-common-product',data:{supplySource:'sponsor'}})),/estoque do estudo/);
-  assert.equal(f.stores[common].getSheets().length,0);
+  assert.equal(f.sheet().writes,writes);
 });
 
 test('saldo inicial do patrocinador não presume liberação; recebimento mantém origem e autoria distintas', () => {
@@ -787,8 +827,8 @@ test('equipamento grava colunas e gavetas, edita e reconstrói layout sem altera
   assert.equal(f.catalogSheet().writes,writes);
 });
 
-test('características do produto persistem, distinguem dosagens e preservam replay legado sem inferências', () => {
-  const f=fixture(), characteristics={productCode:'IMP-001',dosageForm:'Comprimido',strength:'10 mg',route:'Oral'};
+test('categoria, código de barras e características farmacêuticas persistem no produto geral', () => {
+  const f=fixture(), characteristics={category:'medicine',productCode:'IMP-001',barcode:'7891234567890',dosageForm:'Comprimido',strength:'10 mg',route:'Oral'};
   const request=f.product({data:characteristics});
   const created=f.server.cadastrarProdutoFarmacia(request);
   assert.equal(f.server.cadastrarProdutoFarmacia(request).repeated,true);
@@ -798,15 +838,25 @@ test('características do produto persistem, distinguem dosagens e preservam rep
   f.server.cadastrarProdutoFarmacia(f.product({requestId:'second-strength-0001',data:{...characteristics,strength:'20 mg'}}));
   assert.equal(f.server.getFarmaciaEstoque('P1',false).products.length,2);
   const sheet=f.sheet(), writes=sheet.writes;
-  for (const [key,max] of [['productCode',80],['dosageForm',80],['strength',120],['route',80]]) {
+  for (const [key,max] of [['productCode',80],['barcode',80],['dosageForm',80],['strength',120],['route',80]]) {
     assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'invalid-strength-0001',data:{...characteristics,[key]:'x'.repeat(max+1)}})));
     assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'invalid-strength-0001',data:{...characteristics,[key]:{text:'inválido'}}})));
   }
   assert.equal(sheet.writes,writes);
-  const legacy=fixture(), old=legacy.server.cadastrarProdutoFarmacia(legacy.product());
-  assert.equal(legacy.server.cadastrarProdutoFarmacia(legacy.product()).repeated,true);
-  const product=legacy.server.getFarmaciaEstoque('P1',false).products.find(item=>item.id===old.id);
-  for (const key of Object.keys(characteristics)) assert.equal(Object.hasOwn(product,key),false);
+  const material=fixture(), equipo=material.product({data:{category:'material',name:'Equipo macrogotas',presentation:'Unidade',unit:'equipo',barcode:'07891234567890'}});
+  const materialId=material.server.cadastrarProdutoFarmacia(equipo).id;
+  const listedMaterial=material.server.getFarmaciaEstoque('P1',false).products.find(item=>item.id===materialId);
+  assert.equal(listedMaterial.category,'material'); assert.equal(listedMaterial.unit,'equipo');
+  assert.equal(listedMaterial.barcode,'07891234567890'); assert.equal(listedMaterial.dosageForm,'');
+  const kitId=material.server.cadastrarProdutoFarmacia(material.product({requestId:'kit-product-request-0001',data:{category:'material',name:'Kit de material',presentation:'Kit individualizado',unit:'kit',control:'kit',barcode:'7891111111111'}})).id;
+  const kitInitial=material.initial(kitId,{requestId:'kit-initial-request-0001',data:{...material.initial(kitId).data,kit:'KIT-INDIVIDUAL-001',physical:1,blocked:0}});
+  material.server.registrarInventarioInicialFarmacia(kitInitial);
+  const individual=material.server.getFarmaciaEstoque('P1',false).positions.find(item=>item.productId===kitId);
+  assert.equal(individual.kit,'KIT-INDIVIDUAL-001');
+  assert.equal(Object.hasOwn(individual,'barcode'),false);
+  for (const data of [{category:'material',dosageForm:'Comprimido'},{category:'medicine',dosageForm:'forma não padronizada'},{category:'tipo-inválido'}]) {
+    assert.throws(()=>material.server.cadastrarProdutoFarmacia(material.product({requestId:'invalid-category-0001',data:{...material.product().data,...data}})),/categoria|farmacêuticos|forma farmacêutica/i);
+  }
 });
 
 test('equipamento excluído não recebe novas entradas e edição não contorna motivo de situação', () => {

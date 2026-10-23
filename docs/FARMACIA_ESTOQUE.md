@@ -38,7 +38,7 @@ O mesmo produto exclusivo de um protocolo deve ser cadastrado no estoque do estu
 Não há transferência automática, retirada nem rateio de custos por estudo nesta fase.
 A classe padrão é aberta inicialmente nos estudos.
 A classe **Informações restritas** só pode ser consultada com a concessão adicional
-no estudo e tem armazenamento físico separado; trocar estudo/classe limpa dados
+no estudo e tem registros separados por estudo e classe na mesma base; trocar estudo/classe limpa dados
 e formulários anteriores e descarta respostas obsoletas.
 
 - `read` e `operate` consultam. Nesta entrega, só `manage` cadastra produtos e
@@ -111,64 +111,76 @@ tipos `RECEIPT` e `MOVEMENT`, além de `PRODUCT` e `INITIAL`. Cada linha registr
 autor autenticado, instante, motivo/referência e payload JSON. Leituras reconstroem
 o saldo e validam a sequência sem escrever ou migrar schema. O botão **Histórico**
 permite consulta aos perfis autorizados, mantendo as restrições do estudo/classe.
-Arquivos e ACLs reais continuam exigindo configuração administrativa antes do uso.
+As concessões do WebApp continuam exigindo configuração administrativa antes do uso.
 
-## Armazenamento e configuração futura
+## Armazenamento no arquivo principal
 
-Produtos e inventário não usam a planilha principal como fallback. O catálogo de
-equipamentos e sondas usa a planilha principal quando não há arquivo dedicado.
-A propriedade de script
-`FARMACIA_STORAGE_V1` associa IDs estáveis de Projetos a arquivos dedicados:
+Todos os projetos continuam na aba Projetos do arquivo principal. A Farmácia usa
+esse mesmo arquivo, sem arquivos externos por estudo ou classe:
 
-```json
-{
-  "version": 1,
-  "common": "ID_DO_ARQUIVO_EXCLUSIVO_DO_ESTOQUE_COMUM",
-  "locations": "ID_DO_ARQUIVO_EXCLUSIVO_DO_CATALOGO_FISICO",
-  "studies": [
-    {
-      "studyId": "PROJ-EXEMPLO",
-      "standard": "ID_DO_ARQUIVO_PADRAO_DO_ESTUDO",
-      "restricted": "ID_DO_ARQUIVO_RESTRITO_DO_ESTUDO"
-    }
-  ]
-}
-```
+- Farmacia_Registros_v1: produtos, inventários, recebimentos, movimentações e correções;
+- Farmacia_Locais_v1: equipamentos, posições, sondas, calibrações e histórico.
 
-Os IDs de arquivos são IDs puros, não URLs. O arquivo restrito é opcional; sua
-ausência não redireciona à classe padrão. Todo o mapa é validado: arquivo não pode
-ser o principal nem ser compartilhado entre estudos/classes, comum ou catálogo físico.
-`common` é opcional: ausente não redireciona para estudos nem para o arquivo principal.
-Pode-se configurar somente o comum usando `studies: []`. Arquivos contendo
-abas preenchidas de outros módulos são recusados. Não apontar para a planilha
-histórica da Farmácia, ainda pendente de saneamento e validação.
+Cada registro mantém ID, estudo (Estudo_JSON), classe (Restrito), requestId,
+instante, autor e payload JSON. A autorização precede a leitura. O replay filtra
+estudo e classe antes de interpretar payloads; vínculos a outro contexto são
+recusados. RequestId é idempotente por estudo/classe. O comum usa o mesmo ledger,
+com identidade @IPS_COMMON e concessão própria, sem classe restrita.
+Leituras não criam abas nem cabeçalhos; a primeira escrita válida cria o schema
+sob lock, preservando outras abas.
 
-Sem configuração de estoque, a consulta retorna `configured: false` e listas vazias, sem
-criar nada. A interface informa a pendência e não libera formulários de escrita.
-Não foi criada configuração nem alterada permissão ou planilha real nesta entrega.
+Sem FARMACIA_STORAGE_V1, o principal já recebe novos cadastros. A versão 2 dessa
+propriedade contém version: 2 e spreadsheetId do principal, sem mapa por estudo.
+Consultas e gravações normais nunca abrem arquivos externos da Farmácia.
 
-O web app executa como usuário que acessa. Portanto, antes do uso real, cada arquivo
-precisa ser compartilhado somente com as pessoas autorizadas para aquele estudo e
-classe, ou para o comum: leitura para consulta e edição para os responsáveis por gravações. Revogar
-uma concessão no app não revoga automaticamente permissões no Drive; as duas
-camadas precisam ser administradas conjuntamente. Esta entrega não altera ACLs do
-Drive nem comprova suas permissões. Conteúdo que revele tratamento/alocação exige
-decisão e validação da Farmácia antes de qualquer cadastro real.
+As concessões por estudo e classe permanecem no servidor. O app executa com a
+conta de quem acessa, que precisa do acesso adequado apenas ao arquivo principal.
+O compartilhamento direto do arquivo permite ler suas abas, inclusive registros
+restritos: o Sheets não oferece sigilo de leitura por aba. Proteção de edição não
+substitui segregação de leitura.
+
+## Consolidação dos arquivos antigos
+
+Uma configuração v1 com arquivos antigos bloqueia consultas e escritas com aviso
+de migração pendente. Não há fallback silencioso para base vazia nem cópia em
+consultas. A consolidação exige ação explícita de Admin:
+
+1. Executar getFarmaciaMigracaoPreview() e revisar as contagens e fingerprint.
+2. Executar migrarFarmaciaParaArquivoPrincipal({fingerprint: PREVIA.fingerprint,
+   confirm: true}) com a prévia atual.
+3. Conferir a base principal antes de arquivar as origens.
+
+As duas RPCs administrativas podem ser chamadas por google.script.run em sessão
+Admin autenticada. A prévia é somente leitura e devolve contagens, sem payloads.
+A execução reautoriza sob lock e relê configuração, fontes e destino. Alterações
+após a prévia exigem nova revisão. Todos os schemas e históricos são validados
+antes da primeira escrita, inclusive estudo/classe de cada origem, IDs, operações,
+vínculos, revisões e colisões.
+
+Os eventos preservam IDs, ordem, autoria e datas. Somente eventos ausentes são
+acrescentados; cópias idênticas não são duplicadas e colisões incompatíveis bloqueiam
+a migração sem sobrescrever dados. O catálogo existente no principal é combinado
+com o dedicado somente quando o replay final for válido. Após ambas as escritas,
+a configuração passa para versão 2. Falhas intermediárias permitem nova prévia e
+retentativa, reconhecendo eventos já copiados. Nenhuma origem ou permissão é
+alterada ou excluída. O administrador que migra precisa ler os arquivos antigos.
+Volumes grandes podem atingir a cota de execução na prévia antes de gravar;
+não remova o mapa antigo manualmente para contornar uma falha.
+
+A rotina trata apenas os arquivos v1 do próprio módulo, sem importar a planilha
+histórica anterior, ainda sujeita a saneamento e revisão. Nenhuma migração real
+foi executada nesta entrega local.
 
 ## Integridade, concorrência e auditoria
 
-Arquivo usa uma única aba `Farmacia_Registros_v1`, com cabeçalho fixo. Cada linha
-é um produto, contagem inicial, recebimento ou movimentação e inclui ID, estudo, classe, identificador da
-operação, instante, autor e payload JSON. Texto livre permanece em JSON, evitando
-interpretação como fórmula de planilha. Datas são armazenadas em ISO; exibição usa
-português e America/Sao_Paulo. Não há cópia detalhada em Audit_Log da planilha
-principal, evitando expor nomes/lotes restritos a quem só administra o app.
+O ledger é append-only no principal. Correções e exclusões lógicas preservam o
+histórico. Texto livre fica em JSON, evitando fórmulas. Datas são ISO e a exibição
+usa português e America/Sao_Paulo. A auditoria detalhada fica no ledger e não é
+duplicada em Audit_Log.
 
 ## Equipamentos, posições e conservação
 
-`locations` é opcional no mapa. Quando informado, continua apontando para um arquivo
-dedicado. Quando ausente ou vazio (inclusive sem `FARMACIA_STORAGE_V1`), o catálogo
-usa a planilha principal do app. Configuração inválida não aciona esse fallback.
+O catálogo físico também usa o arquivo principal, sem configuração de arquivo externo.
 A aba `Farmacia_Locais_v1` e seus cabeçalhos são criados automaticamente no primeiro
 cadastro válido, após autorização e validação sob lock; leituras não criam abas ou
 registros. Não é necessário fornecer uma relação prévia de equipamentos.

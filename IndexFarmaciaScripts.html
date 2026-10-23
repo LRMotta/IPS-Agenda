@@ -81,6 +81,7 @@ function farmaciaEstoqueReset() {
   document.getElementById('farmaciaStockStatus').textContent = '';
   document.getElementById('farmaciaProductForm').reset();
   farmaciaProductControlChanged();
+  farmaciaProductCategoryChanged();
   document.getElementById('farmaciaInitialForm').reset();
   document.getElementById('farmaciaInitialProduct').innerHTML = '<option value="">Selecione o produto</option>';
   ['farmaciaProductFields','farmaciaInitialFields','farmaciaLocationFields','farmaciaProbeFields'].forEach(function(id) { document.getElementById(id).disabled = true; });
@@ -130,6 +131,7 @@ function carregarFarmaciaEstoque(studyId, restrictedAllowed, restricted) {
 function farmaciaStockRefresh() {
   if (farmaciaIsCatalogView()) { carregarFarmaciaCatalogo(true); return; }
   if (FARMACIA_STOCK.studyId && !FARMACIA_STOCK.saving) carregarFarmaciaEstoque(FARMACIA_STOCK.studyId, FARMACIA_STOCK.restrictedAllowed, FARMACIA_STOCK.restricted);
+  else if (!FARMACIA_STOCK.saving && document.getElementById('farmaciaStudy').value) selecionarFarmaciaStudy();
 }
 
 function farmaciaStockChangeClass() {
@@ -171,7 +173,7 @@ function farmaciaRangeLabel(value) {
 }
 
 function farmaciaConservationHtml(storage) {
-  return storage ? esc(farmaciaRangeLabel(storage)) + '<br>' + esc(storage.instructions) + '<br><small>' + esc(storage.source + ' · ' + storage.version) + '</small>' : 'Conservação não cadastrada (registro anterior).';
+  return storage ? esc(farmaciaRangeLabel(storage)) + (storage.instructions ? '<br>' + esc(storage.instructions) : '') : 'Conservação não cadastrada.';
 }
 
 
@@ -208,7 +210,7 @@ function farmaciaInitialStorageCheck() {
   var storage = product && product.storage, message = 'Selecione produto, equipamento e posição. Condições adicionais exigem conferência.';
   if (unit && product) {
     if (unit.status !== 'active') message = 'Equipamento em manutenção ou indisponível. Revisar armazenamento.';
-    else if (!storage || storage.min === null || unit.min === null) message = 'Faixa documental pendente. Conferir condições de conservação.';
+    else if (!storage || storage.min === null || unit.min === null) message = 'Faixa de temperatura não definida. Conferir condições de conservação.';
     else if (unit.min < storage.min || unit.max > storage.max) message = 'Faixa do equipamento incompatível com a faixa do produto. Revisar armazenamento.';
     else message = 'Faixas cadastradas compatíveis. Não comprova temperatura medida nem outras condições.';
   }
@@ -219,6 +221,21 @@ function farmaciaProductControlChanged() {
   var kit = document.getElementById('farmaciaProductControl').value === 'kit';
   document.getElementById('farmaciaProductUnit').disabled = kit;
   if (kit) document.getElementById('farmaciaProductUnit').value = 'kit';
+}
+
+function farmaciaProductCategoryChanged(form) {
+  var currentForm = form || document.getElementById('farmaciaProductForm');
+  if (!currentForm || !currentForm.elements) return;
+  var categoryField = currentForm.elements.category;
+  if (!categoryField) return;
+  var category = categoryField.value;
+  currentForm.querySelectorAll('[data-farmacia-medication-field]').forEach(function(field) {
+    field.hidden = category !== 'medicine';
+    if (category !== 'medicine') {
+      var input = field.querySelector('input, select');
+      if (input) input.value = '';
+    }
+  });
 }
 
 function farmaciaInitialProductChanged() {
@@ -272,6 +289,7 @@ function farmaciaStockSave(type, data) {
     fecharOverlay(modal.id);
     if (type !== 'status' && type !== 'calibration' && type !== 'movement') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
+    farmaciaProductCategoryChanged();
     if (catalogAction && result && result.catalog && Array.isArray(result.catalog.storageUnits)) {
       // The authorized snapshot was built under the write lock; pending reads must not replace it.
       FARMACIA_CATALOG.readId++;
@@ -314,12 +332,11 @@ function farmaciaStockSave(type, data) {
 
 function salvarProdutoFarmaciaApp(event) {
   event.preventDefault();
-  farmaciaStockSave('product', { name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
-    productCode:document.getElementById('farmaciaProductCode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
+  farmaciaStockSave('product', { category:document.getElementById('farmaciaProductCategory').value, name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
+    productCode:document.getElementById('farmaciaProductCode').value, barcode:document.getElementById('farmaciaProductBarcode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
     strength:document.getElementById('farmaciaProductStrength').value, route:document.getElementById('farmaciaProductRoute').value,
     unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value, supplySource:document.getElementById('farmaciaProductSupply').value,
-    storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value,
-      source:document.getElementById('farmaciaProductSource').value, version:document.getElementById('farmaciaProductVersion').value } });
+    storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value } });
   return false;
 }
 
