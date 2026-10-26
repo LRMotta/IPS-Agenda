@@ -4,6 +4,14 @@ const { readProjectFile } = require('./load-app-script');
 const { contentAccessibilitySource } = require('./content-accessibility-source');
 const fs = require('node:fs');
 
+function extractTagBody(markup,tagName) {
+  const source=String(markup),tag=String(tagName).toLowerCase(),lower=source.toLowerCase();
+  const openStart=lower.indexOf('<'+tag),openEnd=lower.indexOf('>',openStart+tag.length+1);
+  const closeStart=lower.indexOf('</'+tag,openEnd+1),closeEnd=lower.indexOf('>',closeStart+tag.length+2);
+  if(openStart<0||openEnd<0||closeStart<0||closeEnd<0)throw new Error(`Tag ${tagName} ausente no fixture`);
+  return source.slice(openEnd+1,closeStart);
+}
+
 function cycleData(overrides={}) {
   const product={id:'PR1',name:'Medicamento fictício',category:'medicine',presentation:'Comprimidos de demonstração',unit:'comprimido',control:'quantity',supplySource:'sponsor',storage:{min:15,max:25,instructions:'Conforme documento fictício'}};
   const position={id:'IN1',revision:'OP-BLOCK',productId:'PR1',lot:'DEMO-001',expiry:'2027-08-31',location:'IPS AF-01 → Gaveta 12',locationRef:{unitId:'UNIT-1',position:'Gaveta 12'},physical:110,available:100,pending:0,blocked:10,origin:'initial',countedOn:'2026-10-12',registeredAt:'2026-10-12T16:10:00.000Z',author:'farm@example.invalid'};
@@ -22,7 +30,7 @@ async function cycleFixture(browser,width=1536) {
   const iconFont=process.env.FARMACIA_TEST_ICON_FONT;
   const fonts=iconFont?'<style>@font-face{font-family:"Material Symbols Outlined";src:url(data:font/woff2;base64,'+fs.readFileSync(iconFont).toString('base64')+')} .material-symbols-outlined{font-family:"Material Symbols Outlined";font-weight:normal;font-style:normal;letter-spacing:normal;text-transform:none;white-space:nowrap;font-feature-settings:"liga"}</style>':'<style>.material-symbols-outlined{font-size:0!important}</style>';
   const cycle=readProjectFile('IndexFarmaciaCiclo.html');
-  await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS | Farmácia — ciclo local</title>'+readProjectFile('IndexStyles.html')+readProjectFile('IndexStylesAfterDashboard.html')+cycle.match(/<style\b[^>]*>[\s\S]*?<\/style\s*>/i)[0]+fonts+'</head><body>'+readProjectFile('IndexContent.html')+readProjectFile('IndexContentAfterDashboard.html')+readProjectFile('IndexContentAfterStock.html')+'</body></html>');
+  await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS | Farmácia — ciclo local</title>'+readProjectFile('IndexStyles.html')+readProjectFile('IndexStylesAfterDashboard.html')+'<style>'+extractTagBody(cycle,'style')+'</style>'+fonts+'</head><body>'+readProjectFile('IndexContent.html')+readProjectFile('IndexContentAfterDashboard.html')+readProjectFile('IndexContentAfterStock.html')+'</body></html>');
   await page.addScriptTag({content:`
     var FARMACIA_STUDY_REQUEST_ID=0,FARMACIA_REQUEST_ID=1,pending=[],currentPage='farmacia';
     function getCurrentPage(){return currentPage;} function irPara(page){currentPage=page;}
@@ -43,7 +51,7 @@ async function cycleFixture(browser,width=1536) {
     appInitContentAccessibility();
   `});
   for(const file of ['IndexFarmaciaScripts.html','IndexFarmaciaViewScripts.html','IndexFarmaciaLocationActions.html','IndexFarmaciaActions.html','IndexFarmaciaCiclo.html']){
-    const source=readProjectFile(file).match(/<script\b[^>]*>[\s\S]*?<\/script\s*>/i)[0].replace(/^<script\b[^>]*>/i,'').replace(/<\/script\s*>$/i,'');await page.addScriptTag({content:source});
+    const source=extractTagBody(readProjectFile(file),'script');await page.addScriptTag({content:source});
   }
   await page.evaluate(data=>{
     document.getElementById('page-farmacia').classList.add('active');document.getElementById('navFarmaciaSection').style.display='';document.getElementById('navFarmacia').style.display='';
