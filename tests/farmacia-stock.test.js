@@ -40,9 +40,10 @@ test('equipe consulta produtos gerais sem concessão de estoque e sem receber da
   const f=fixture();
   f.server.cadastrarProdutoFarmacia(f.product());
   f.server.cadastrarProdutoFarmacia(f.product({restricted:true,data:{name:'Produto secreto'}}));
-  // A consulta de catálogo não interpreta payloads de estoque nem da classe restrita.
+  // Payload operacional ilegível não impede consulta; gestores mantêm a unidade bloqueada.
   f.sheet().rows.push(['FIN-segredo','INITIAL',JSON.stringify('P1'),false,'estoque-secret',JSON.stringify('2026-10-23'),'autor','payload operacional']);
   assert.equal(f.server.getFarmaciaProdutos('P1',false).restrictedAllowed,true);
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,true);
   assert.equal(f.server.getFarmaciaProdutos('P1',true).products[0].name,'Produto secreto');
   f.users.rows[1][8]='none'; f.users.rows[1][9]='[]';
   const writes=f.sheet().writes;

@@ -1,0 +1,314 @@
+<style>
+  #farmaciaSummary[hidden],#farmaciaLifecycleSummary[hidden],#farmaciaCycleNav[hidden],#farmaciaCyclePane[hidden]{display:none!important}
+  .farmacia-has-cycle #farmaciaInventoryResults table{min-width:1120px}.farmacia-has-cycle #farmaciaInventoryResults th,.farmacia-has-cycle #farmaciaInventoryResults td{padding-left:12px;padding-right:12px}.farmacia-has-cycle #farmaciaInventoryResults th:nth-child(3),.farmacia-has-cycle #farmaciaInventoryResults td:nth-child(3){white-space:nowrap;min-width:90px}
+  .farmacia-has-cycle #farmaciaInventoryResults .farmacia-cycle-product{min-width:170px}.farmacia-has-cycle #farmaciaInventoryResults .farmacia-cell-detail{min-width:155px;max-width:190px}.farmacia-has-cycle #farmaciaInventoryResults .farmacia-quantity{min-width:80px}
+  .farmacia-life-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:12px}
+  .farmacia-life-card{font-family:inherit;padding:18px 8px;background:#fff;border:1px solid #d4deef;border-radius:10px;color:var(--text);cursor:pointer;text-align:center}
+  .farmacia-life-card[aria-pressed="true"]{border-color:var(--primary);background:#f4f8ff;box-shadow:inset 0 -3px var(--primary)}
+  .farmacia-life-card:hover{background:#f6f9ff}.farmacia-life-icon{width:40px;height:40px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
+  .farmacia-life-card strong,.farmacia-life-card b{display:block}.farmacia-life-card strong{font-size:12px;margin-bottom:7px;font-weight:500}.farmacia-life-card b{font-size:17px;color:var(--primary)}
+  .farmacia-life-card.amber .farmacia-life-icon{color:#a56300;background:#fff0d5}.farmacia-life-card.amber b{color:#a56300}.farmacia-life-card.teal .farmacia-life-icon{background:#dff3ee;color:#00796b}.farmacia-life-card.teal b{color:#00796b}
+  .farmacia-life-note{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px;color:var(--text-muted);margin-bottom:16px;line-height:1.6;flex-wrap:wrap}
+  #farmaciaCycleNav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px;padding-bottom:10px;border-bottom:1px solid #dce4f2}
+  #farmaciaCycleNav button{font-family:inherit;border:1px solid #d5dfef;background:#fff;color:var(--text-muted);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer}
+  #farmaciaCycleNav button[aria-current="page"]{color:var(--primary);border-color:#9bbfff;background:var(--primary-light);font-weight:600}
+  .farmacia-cycle-mode .farmacia-view-toolbar{display:none}.farmacia-cycle-mode .farmacia-workspace{background:transparent;border:0;overflow:visible}
+  .farmacia-cycle-mode #farmaciaStockResults,.farmacia-cycle-mode #farmaciaSearchEmpty{display:none!important}
+  .farmacia-cycle-mode #farmaciaStockStatus{background:#fff;border-radius:8px}
+  .farmacia-cycle-heading{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:0 0 20px;flex-wrap:wrap}.farmacia-cycle-heading h2{font-size:22px;margin:0}.farmacia-cycle-heading p{font-size:12px;color:var(--text-muted);margin-top:7px;line-height:1.6}
+  .farmacia-cycle-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.farmacia-cycle-link{white-space:nowrap;padding:5px 0;font-size:12px}
+  .farmacia-cycle-panel{border:1px solid #e0e6f0;border-radius:10px;background:#fff;overflow:hidden;min-width:0}.farmacia-cycle-panel h3{font-size:16px;margin:0}.farmacia-cycle-panel-head{padding:18px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .farmacia-cycle-body{padding:20px}.farmacia-cycle-body fieldset{border:0;padding:0;margin:0;min-width:0}.farmacia-cycle-body .field{min-width:0}.farmacia-cycle-body .f-input{width:100%}.farmacia-cycle-body .field-label{margin-bottom:7px}
+  .farmacia-cycle-columns{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:20px;align-items:start}
+  .farmacia-cycle-balances{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#fff;border:1px solid #e0e6f0;border-radius:10px;margin-bottom:20px}.farmacia-cycle-balance{padding:18px 20px;border-right:1px solid #edf1f7}.farmacia-cycle-balance:last-child{border-right:0}.farmacia-cycle-balance span{display:block;font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:.6px}.farmacia-cycle-balance strong{font-size:28px;font-weight:500;display:block;margin:10px 0 5px}.farmacia-cycle-balance small{font-size:11px;color:var(--text-muted)}
+  .farmacia-cycle-tabs{display:flex;gap:22px;padding:0 20px;border-bottom:1px solid #e5eaf3}.farmacia-cycle-tabs button{font-family:inherit;border:0;background:none;padding:17px 0 12px;border-bottom:3px solid transparent;font-size:12px;color:var(--text-muted);cursor:pointer}.farmacia-cycle-tabs button[aria-selected="true"]{color:var(--primary);border-color:var(--primary);font-weight:600}
+  .farmacia-cycle-timeline{padding:24px}.farmacia-cycle-event{display:grid;grid-template-columns:32px 1fr;gap:14px;padding-bottom:25px;position:relative}.farmacia-cycle-event:before{content:'';position:absolute;left:15px;top:31px;bottom:0;width:2px;background:#e6edf7}.farmacia-cycle-event:last-child:before{display:none}.farmacia-cycle-dot{width:32px;height:32px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;z-index:1}.farmacia-cycle-dot.amber{background:#fff0d5;color:#a56300}.farmacia-cycle-event-top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:7px}.farmacia-cycle-event-top strong{font-size:13px}.farmacia-cycle-event-top time{color:var(--text-muted);font-size:10px}.farmacia-cycle-event p{font-size:12px;line-height:1.6;color:var(--text-muted)}.farmacia-cycle-event small{display:block;margin-top:6px;font-size:11px;color:var(--text-muted)}
+  .farmacia-cycle-kv{display:flex;justify-content:space-between;gap:16px;font-size:12px;line-height:1.5;padding:13px 0;border-bottom:1px solid #edf1f7}.farmacia-cycle-kv:last-child{border:0}.farmacia-cycle-kv span{color:var(--text-muted)}.farmacia-cycle-kv b{font-weight:500;text-align:right;overflow-wrap:anywhere}
+  .farmacia-cycle-notice{display:flex;align-items:flex-start;gap:12px;padding:15px 16px;border:1px solid #d3e3fd;background:#f3f7ff;border-radius:8px;color:#21549c;font-size:12px;line-height:1.6}.farmacia-cycle-notice.amber{color:#8a5a10;background:#fffbf1;border-color:#f1d49b}.farmacia-cycle-notice p{margin-top:4px}.farmacia-cycle-below{margin-top:18px}
+  .farmacia-cycle-footer{display:flex;justify-content:flex-end;gap:12px;align-items:center;padding:17px 20px;border-top:1px solid #edf1f7}.farmacia-cycle-status{font-size:12px;line-height:1.6;color:#b3261e;margin-top:12px}.farmacia-cycle-status:empty{display:none}
+  .farmacia-cycle-result{background:#edf8f4;border:1px solid #cee9de;border-radius:8px;padding:20px;color:#167465;margin-top:18px}.farmacia-cycle-result strong{display:block;font-size:34px;margin:8px 0}.farmacia-cycle-result p{font-size:12px;line-height:1.6}.farmacia-cycle-help{font-size:11px;color:var(--text-muted);line-height:1.7;margin-top:14px}
+  .farmacia-cycle-form .section-label:not(:first-child){margin-top:24px}.farmacia-cycle-form .farmacia-confirm{margin-top:15px}.farmacia-cycle-form .farmacia-confirm input{flex-shrink:0;margin-top:3px}.farmacia-cycle-form input[type=checkbox]{accent-color:var(--primary)}
+  .farmacia-cycle-panel .farmacia-stock-scroll{margin:0}.farmacia-cycle-panel .farmacia-stock-scroll table{min-width:650px}.farmacia-cycle-empty{padding:32px;text-align:center;color:var(--text-muted);font-size:13px;line-height:1.7}
+  @media(max-width:1100px){.farmacia-life-grid{gap:8px}.farmacia-life-card strong{font-size:11px}.farmacia-cycle-columns{grid-template-columns:1.3fr 1fr}.farmacia-cycle-balance{padding:16px 12px}.farmacia-cycle-balance strong{font-size:25px}}
+  @media(max-width:760px){.farmacia-life-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.farmacia-life-card{padding:14px 5px}.farmacia-life-card strong{font-size:10px}.farmacia-life-card b{font-size:14px}.farmacia-life-icon{width:33px;height:33px}.farmacia-cycle-columns{grid-template-columns:1fr}.farmacia-cycle-balances{grid-template-columns:1fr 1fr}.farmacia-cycle-balance:nth-child(2){border-right:0}.farmacia-cycle-balance:nth-child(-n+2){border-bottom:1px solid #edf1f7}.farmacia-cycle-heading h2{font-size:19px}.farmacia-cycle-body{padding:17px}.farmacia-cycle-event-top{align-items:flex-start;flex-direction:column;gap:5px}.farmacia-cycle-timeline{padding:20px 16px}.farmacia-cycle-tabs{gap:16px;padding:0 16px}#farmaciaCycleNav button{padding:9px 10px;font-size:11px}.farmacia-cycle-kv{font-size:11px}.farmacia-cycle-form .form-grid{grid-template-columns:1fr}.farmacia-cycle-form .full{grid-column:1/-1}}
+</style>
+<script>
+var FARMACIA_CYCLE = { pane:'overview',filter:'all',positionId:'',tab:'events',form:null,participants:null,participantRead:0,renderData:null };
+var FARMACIA_CYCLE_LABELS = {dispense:'Dispensação',return:'Retorno do participante',transport_departure:'Saída para transporte',transport_arrival:'Chegada do transporte',destination:'Destinação final',block:'Bloqueio',release:'Liberação',transfer:'Transferência',INITIAL:'Saldo inicial',RECEIPT:'Recebimento'};
+
+function farmaciaCycleIcon(name) { return '<span class="material-symbols-outlined" aria-hidden="true">' + name + '</span>'; }
+function farmaciaLifecycleReset() {
+  FARMACIA_CYCLE.participantRead++;
+  FARMACIA_CYCLE.pane='overview'; FARMACIA_CYCLE.filter='all'; FARMACIA_CYCLE.positionId=''; FARMACIA_CYCLE.form=null;
+  FARMACIA_CYCLE.participants=null; FARMACIA_CYCLE.renderData=null;
+  if (typeof appClearUnsavedChanges==='function') appClearUnsavedChanges('farmaciaCyclePane');
+  ['farmaciaLifecycleSummary','farmaciaCycleNav','farmaciaCyclePane'].forEach(function(id){ var node=document.getElementById(id); if(node){node.hidden=true;node.textContent='';} });
+  document.getElementById('page-farmacia').classList.remove('farmacia-cycle-mode');
+}
+function farmaciaCycleRecords(action) {
+  return ((FARMACIA_STOCK.data||{}).movements||[]).filter(function(r){return r.type==='LIFECYCLE'&&(!action||r.data.action===action);});
+}
+function farmaciaCyclePosition(id) {return ((FARMACIA_STOCK.data||{}).positions||[]).find(function(p){return p.id===id;});}
+function farmaciaCycleProduct(position) {return ((FARMACIA_STOCK.data||{}).products||[]).find(function(p){return position&&p.id===position.productId;});}
+function farmaciaCycleLotPositions(position) {return ((FARMACIA_STOCK.data||{}).positions||[]).filter(function(p){return position&&p.productId===position.productId&&p.lot===position.lot&&p.kit===position.kit;});}
+function farmaciaCycleCanOperate() {var d=FARMACIA_STOCK.data;return !!d&&d.configured&&d.farmaciaAccess==='manage'&&FARMACIA_STOCK.studyId!=='@IPS_COMMON';}
+function farmaciaCycleEligible(position) {var p=farmaciaCycleProduct(position);return !!p&&p.category==='medicine'&&p.supplySource==='sponsor';}
+function farmaciaCycleNavigate(pane,positionId,confirmed) {
+  if(FARMACIA_STOCK.saving)return;
+  if(!confirmed&&typeof appConfirmNavigationIfDirty==='function'&&!appConfirmNavigationIfDirty('farmaciaCyclePane',function(){farmaciaCycleNavigate(pane,positionId,true);}))return;
+  if(typeof appClearUnsavedChanges==='function')appClearUnsavedChanges('farmaciaCyclePane');
+  FARMACIA_CYCLE.form=null; FARMACIA_CYCLE.pane=pane;
+  if(positionId) FARMACIA_CYCLE.positionId=positionId;
+  farmaciaLifecycleRender();
+}
+function farmaciaCycleOpen(id) {farmaciaCycleNavigate('cycle',id);}
+function farmaciaCycleSectionGuard(view) {
+  if(!FARMACIA_CYCLE.form||view===FARMACIA_VIEW)return true;
+  if(typeof appHasUnsavedChanges==='function'&&appHasUnsavedChanges('farmaciaCyclePane')){
+    appConfirmNavigationIfDirty('farmaciaCyclePane',function(){
+      appClearUnsavedChanges('farmaciaCyclePane');FARMACIA_CYCLE.form=null;abrirFarmaciaView(view,true);
+    });return false;
+  }
+  FARMACIA_CYCLE.form=null;return true;
+}
+function farmaciaCycleScopeGuard(kind) {
+  if(!FARMACIA_CYCLE.form)return true;
+  var study=kind==='study',input=document.getElementById(study?'farmaciaStudy':'farmaciaStockRestricted');
+  var next=study?input.value:input.checked,previous=study?FARMACIA_STOCK.studyId:FARMACIA_STOCK.restricted;
+  function assign(value){if(study)input.value=value;else input.checked=value;}
+  if(FARMACIA_STOCK.saving){assign(previous);return false;}
+  if(typeof appHasUnsavedChanges==='function'&&appHasUnsavedChanges('farmaciaCyclePane')){
+    assign(previous);
+    appConfirmNavigationIfDirty('farmaciaCyclePane',function(){
+      appClearUnsavedChanges('farmaciaCyclePane');FARMACIA_CYCLE.form=null;assign(next);
+      if(study)selecionarFarmaciaStudy(true);else farmaciaStockChangeClass(true);
+    });
+    return false;
+  }
+  return true;
+}
+function farmaciaCycleRefreshGuard() {
+  if(FARMACIA_STOCK.saving)return false;
+  if(!FARMACIA_CYCLE.form)return true;
+  var dirty=typeof appHasUnsavedChanges==='function'&&appHasUnsavedChanges('farmaciaCyclePane');
+  if(dirty&&typeof appConfirmNavigationIfDirty==='function'){
+    appConfirmNavigationIfDirty('farmaciaCyclePane',function(){farmaciaCycleNavigate(FARMACIA_CYCLE.pane,null,true);farmaciaStockRefresh(true);});
+    return false;
+  }
+  FARMACIA_CYCLE.form=null;return true;
+}
+function farmaciaLifecycleMatches(row) {
+  if(FARMACIA_VIEW!=='stock'||!row.dataset.farmaciaPosition)return true;
+  var p=farmaciaCyclePosition(row.dataset.farmaciaPosition),filter=FARMACIA_CYCLE.filter;
+  return !p||filter==='all'||(filter==='available'&&p.available>0)||(filter==='blocked'&&p.blocked>0)||(filter==='pending'&&p.pending>0)||(filter==='destination'&&(p.expired||p.returned)&&p.physical>0);
+}
+function farmaciaLifecycleFilter(filter) {
+  if(FARMACIA_STOCK.saving)return;
+  if(filter==='dispense'||filter==='return'){farmaciaCycleNavigate(filter);return;}
+  FARMACIA_CYCLE.filter=filter;farmaciaCycleNavigate('overview');farmaciaApplySearch();
+}
+function farmaciaLifecycleRender() {
+  var d=FARMACIA_STOCK.data,active=FARMACIA_VIEW==='stock'&&!!d&&!!d.configured;
+  var summary=document.getElementById('farmaciaLifecycleSummary'),nav=document.getElementById('farmaciaCycleNav'),pane=document.getElementById('farmaciaCyclePane');
+  if(!summary||!nav||!pane)return;
+  summary.hidden=!active||FARMACIA_CYCLE.pane!=='overview';nav.hidden=!active;pane.hidden=!active||FARMACIA_CYCLE.pane==='overview';
+  document.getElementById('farmaciaSummary').hidden=active;
+  document.getElementById('page-farmacia').classList.toggle('farmacia-cycle-mode',active&&FARMACIA_CYCLE.pane!=='overview');
+  document.getElementById('page-farmacia').classList.toggle('farmacia-has-cycle',active);
+  if(!active)return;
+  var positions=d.positions||[];
+  function lots(test){var keys={};positions.filter(test).forEach(function(p){keys[JSON.stringify([p.productId,p.lot,p.kit])]=true;});return Object.keys(keys).length;}
+  var cards=[['available','inventory_2','Disponível',lots(function(p){return p.available>0;}),'lotes / kits',''],['blocked','pause_circle','Quarentena / bloqueio',lots(function(p){return p.blocked>0;}),'lotes / kits','amber'],['dispense','medication','Dispensações',farmaciaCycleRecords('dispense').length,'registros',''],['return','assignment_return','Retornos',farmaciaCycleRecords('return').length,'registros','teal'],['destination','outbox','Aguardando destinação',lots(function(p){return (p.expired||p.returned)&&p.physical>0;}),'lotes / kits','amber'],['all','format_list_bulleted','Todos os lotes',lots(function(){return true;}),'lotes / kits','']];
+  summary.innerHTML='<div class="farmacia-life-grid">'+cards.map(function(c){return '<button type="button" class="farmacia-life-card '+c[5]+'" data-filter="'+c[0]+'" onclick="farmaciaLifecycleFilter(this.dataset.filter)" aria-pressed="'+(FARMACIA_CYCLE.pane==='overview'&&FARMACIA_CYCLE.filter===c[0])+'"><span class="farmacia-life-icon">'+farmaciaCycleIcon(c[1])+'</span><strong>'+c[2]+'</strong><b>'+c[3]+' '+(c[3]===1?(c[4]==='registros'?'registro':'lote / kit'):c[4])+'</b></button>';}).join('')+'</div><div class="farmacia-life-note"><span>Um lote pode ter saldos em mais de uma situação. Quantidades na unidade de cada produto.</span><button type="button" class="btn-txt" onclick="farmaciaLifecycleFilter(\'pending\')">Aguardando avaliação: '+positions.filter(function(p){return p.pending>0;}).length+' registros</button></div>';
+  nav.innerHTML=[['overview','space_dashboard','Estoque'],['cycle','route','Ciclo do lote'],['dispense','medication','Dispensações'],['return','assignment_return','Retornos e adesão'],['transport','local_shipping','Transporte']].map(function(c){return '<button type="button" data-pane="'+c[0]+'" onclick="farmaciaCycleNavigate(this.dataset.pane)"'+(FARMACIA_CYCLE.pane===c[0]?' aria-current="page"':'')+'>'+farmaciaCycleIcon(c[1])+c[2]+'</button>';}).join('');
+  if(FARMACIA_CYCLE.pane==='overview'){farmaciaApplySearch();return;}
+  if(FARMACIA_CYCLE.form&&FARMACIA_CYCLE.renderData===d&&pane.querySelector('form'))return;
+  FARMACIA_CYCLE.renderData=d;
+  if(FARMACIA_CYCLE.form){pane.innerHTML=farmaciaCycleFormHtml(FARMACIA_CYCLE.form);farmaciaCycleBindForm();return;}
+  pane.innerHTML=FARMACIA_CYCLE.pane==='cycle'?farmaciaCycleDetailHtml():farmaciaCycleListHtml(FARMACIA_CYCLE.pane);
+}
+function farmaciaCycleHeading(title,subtitle,actions) {return '<div class="farmacia-cycle-heading"><div><h2>'+esc(title)+'</h2><p>'+esc(subtitle||'')+'</p></div><div class="farmacia-cycle-actions">'+(actions||'')+'</div></div>';}
+function farmaciaCycleButton(action,label,icon) {return '<button type="button" class="btn-new" data-cycle-action="'+action+'" onclick="farmaciaCycleStart(this.dataset.cycleAction)">'+farmaciaCycleIcon(icon||'add')+esc(label)+'</button>';}
+function farmaciaCycleLotSelect(selected,eligible) {
+  return '<div class="field"><label class="field-label" for="farmaciaCyclePosition">Lote / kit / posição</label><select class="f-input" id="farmaciaCyclePosition" name="positionId" onchange="farmaciaCycleSelectionChanged(this)" required><option value="">Selecione um registro de estoque</option>'+((FARMACIA_STOCK.data||{}).positions||[]).filter(function(p){return !eligible||farmaciaCycleEligible(p);}).map(function(p){var product=farmaciaCycleProduct(p)||{};return '<option value="'+esc(p.id)+'"'+(p.id===selected?' selected':'')+'>'+esc([product.name,p.lot,p.kit?'Kit '+p.kit:'',p.location].filter(Boolean).join(' · '))+'</option>';}).join('')+'</select></div>';
+}
+function farmaciaCycleDetailHtml() {
+  var p=farmaciaCyclePosition(FARMACIA_CYCLE.positionId),product=farmaciaCycleProduct(p);
+  var select=farmaciaCycleLotSelect(p&&p.id,false);
+  if(!p||!product)return farmaciaCycleHeading('Ciclo do lote','Selecione um lote ou kit para consultar saldos, eventos e documentos.')+'<div class="farmacia-cycle-panel farmacia-cycle-body">'+select+'</div>';
+  var unit=product.unit,group=farmaciaCycleLotPositions(p),ids=group.map(function(item){return item.id;}),total={physical:0,available:0,pending:0,blocked:0,inTransit:0};
+  group.forEach(function(item){Object.keys(total).forEach(function(key){total[key]=Math.round((total[key]+(item[key]||0))*1000)/1000;});});
+  var history=((FARMACIA_STOCK.data||{}).movements||[]).filter(function(r){return ids.indexOf(r.id)!==-1||ids.indexOf(r.data.positionId)!==-1;});
+  var controls='<button type="button" class="btn-txt" data-position-id="'+esc(p.id)+'" onclick="farmaciaOpenPosition(this.dataset.positionId)">'+farmaciaCycleIcon('history')+'Histórico e movimentação</button>';
+  if(farmaciaCycleCanOperate()&&farmaciaCycleEligible(p)){
+    if(p.available>0&&!p.returned&&!p.expired)controls+=farmaciaCycleButton('dispense','Dispensar','medication');
+    if(p.blocked+p.pending>0)controls+=farmaciaCycleButton('destination','Registrar destinação','outbox');
+  }
+  var expiry=group.every(function(item){return item.expiry===p.expiry;})?farmaciaStockDate(p.expiry):'Validades por posição';
+  var html=farmaciaCycleHeading(product.name,'Lote '+p.lot+(p.kit?' · Kit '+p.kit:'')+' · '+expiry+' · Saldo consolidado nas posições do lote',controls);
+  html+='<div class="farmacia-cycle-balances">'+[['physical','Físico no IPS'],['available','Disponível'],['pending','Aguardando avaliação'],['blocked','Quarentena / bloqueio']].map(function(c){return '<div class="farmacia-cycle-balance"><span>'+c[1]+'</span><strong>'+farmaciaStockNumber(total[c[0]]||0)+'</strong><small>'+esc(unit)+'</small></div>';}).join('')+'</div>';
+  if(total.inTransit)html+='<div class="farmacia-cycle-notice farmacia-cycle-below">'+farmaciaCycleIcon('local_shipping')+'<div>Em transporte: '+farmaciaStockNumber(total.inTransit)+' '+esc(unit)+'. Quantidade reservada e indisponível para nova dispensação.</div></div>';
+  html+='<div class="farmacia-cycle-columns farmacia-cycle-below"><section class="farmacia-cycle-panel"><div class="farmacia-cycle-tabs" role="tablist" aria-label="Detalhes do ciclo">'+[['events','Linha do tempo'],['account','Contabilidade'],['docs','Documentos']].map(function(c){return '<button type="button" role="tab" aria-selected="'+(FARMACIA_CYCLE.tab===c[0])+'" data-tab="'+c[0]+'" onclick="farmaciaCycleTab(this.dataset.tab)">'+c[1]+'</button>';}).join('')+'</div>'+farmaciaCycleHistoryHtml(history,p,product)+'</section><aside><div class="farmacia-cycle-panel"><div class="farmacia-cycle-panel-head"><h3>Localização e conservação</h3></div><div class="farmacia-cycle-body" style="padding-top:0">'+farmaciaCycleKv('Localização atual',p.location)+farmaciaCycleKv('Conservação',farmaciaRangeLabel(product.storage))+farmaciaCycleKv('Origem',p.returned?'Retornado pelo participante':p.origin==='transport'?'Chegada de transporte':p.origin==='receipt'?'Recebimento':'Saldo inicial')+'</div></div><div class="farmacia-cycle-panel farmacia-cycle-below"><div class="farmacia-cycle-body">'+select+'</div></div><div class="farmacia-cycle-notice amber farmacia-cycle-below">'+farmaciaCycleIcon('info')+'<div>'+(p.returned?'Material retornado segregado do estoque ativo. Destinação exige referência documental.':p.expired?'Produto vencido: uso indisponível, aguardando destinação documentada.':'Liberação, bloqueio e transferência preservam motivo, responsável e referência documental.')+'</div></div></aside></div>';
+  return html;
+}
+function farmaciaCycleKv(label,value) {return '<div class="farmacia-cycle-kv"><span>'+esc(label)+'</span><b>'+esc(value===undefined||value===null?'Não informado':String(value))+'</b></div>';}
+function farmaciaCycleTab(tab) {FARMACIA_CYCLE.tab=tab;farmaciaLifecycleRender();}
+function farmaciaCycleHistoryHtml(history,p,product) {
+  if(FARMACIA_CYCLE.tab==='events')return '<div class="farmacia-cycle-timeline">'+history.slice().reverse().map(function(r){var e=r.data,action=e.action||r.type;return '<article class="farmacia-cycle-event"><div class="farmacia-cycle-dot '+(['block','return'].indexOf(action)!==-1?'amber':'')+'">'+farmaciaCycleIcon(({dispense:'medication',return:'assignment_return',block:'pause_circle',release:'verified',transfer:'swap_horiz',transport_departure:'local_shipping',transport_arrival:'task_alt',destination:'outbox'})[action]||'inventory_2')+'</div><div><div class="farmacia-cycle-event-top"><strong>'+esc(FARMACIA_CYCLE_LABELS[action]||action)+'</strong><time>'+esc(farmaciaStockDate(r.registeredAt,true))+'</time></div><p>'+esc(e.reason||e.note||'')+'</p><p>'+esc(e.quantity===undefined?e.physical===undefined?'':farmaciaStockNumber(e.physical)+' '+product.unit:farmaciaStockNumber(e.quantity)+' '+product.unit)+(e.occurredOn?' · '+esc(farmaciaStockDate(e.occurredOn)):'')+'</p><small>'+esc(r.author)+' · '+esc(e.document||e.prescription||'Registro de inventário')+'</small></div></article>';}).join('')+'</div>';
+  if(FARMACIA_CYCLE.tab==='docs')return '<div class="farmacia-cycle-body">'+history.map(function(r){var e=r.data,refs=[e.document,e.prescription,e.platformReference,e.authorization].filter(Boolean);return refs.length?'<div class="farmacia-cycle-kv"><span>'+esc(FARMACIA_CYCLE_LABELS[e.action||r.type]||r.type)+'</span><b>'+refs.map(esc).join('<br>')+'</b></div>':'';}).join('')+'<p class="farmacia-cycle-help">Referências documentais registradas. Os originais permanecem no arquivo do estudo.</p></div>';
+  var saldo=0,rows=history.map(function(r){var e=r.data,delta=r.type==='INITIAL'||r.type==='RECEIPT'?e.physical:e.action==='return'?e.quantity:e.action==='dispense'||e.action==='destination'?-e.quantity:0;saldo=Math.round((saldo+delta)*1000)/1000;return '<tr><td>'+esc(farmaciaStockDate(e.occurredOn||e.receivedOn||e.countedOn||r.registeredAt.slice(0,10)))+'</td><td>'+esc(FARMACIA_CYCLE_LABELS[e.action||r.type]||r.type)+'</td><td>'+esc(delta>0?farmaciaStockNumber(delta):'—')+'</td><td>'+esc(delta<0?farmaciaStockNumber(-delta):'—')+'</td><td>'+farmaciaStockNumber(saldo)+' '+esc(product.unit)+'</td></tr>';}).join('');
+  return farmaciaTable(['Data','Evento','Entrada','Saída','Saldo físico do lote'],rows,'Contabilidade do lote em todas as posições');
+}
+function farmaciaCycleListHtml(pane) {
+  var transport=pane==='transport',actions=transport?['transport_departure','transport_arrival']:[pane==='return'?'return':'dispense'];
+  var records=farmaciaCycleRecords().filter(function(r){return actions.indexOf(r.data.action)!==-1;}),button='';
+  if(farmaciaCycleCanOperate())button=farmaciaCycleButton(transport?'transport_departure':pane,transport?'Registrar saída':pane==='return'?'Registrar retorno':'Registrar dispensação',transport?'local_shipping':'add');
+  var title=transport?'Transporte de medicamentos':pane==='return'?'Retornos e adesão':'Dispensações';
+  var rows=records.slice().reverse().map(function(r){var e=r.data,p=farmaciaCyclePosition(e.positionId),product=farmaciaCycleProduct(p)||{},arrival=transport&&e.action==='transport_departure'&&!farmaciaCycleRecords('transport_arrival').some(function(a){return a.data.departureId===r.id;});return '<tr><td>'+esc(FARMACIA_CYCLE_LABELS[e.action])+'<small>'+esc(farmaciaStockDate(e.occurredOn))+'</small></td><td>'+esc(product.name||'Produto histórico')+'<small>'+esc(p?p.lot:'')+'</small></td><td>'+esc(e.participantLabel||e.participantId||e.dispenseId||e.departureId||'—')+'</td><td>'+esc(e.quantity===undefined?'—':farmaciaStockNumber(e.quantity)+' '+(product.unit||''))+(r.adherenceResult?'<small>Adesão: '+farmaciaStockNumber(r.adherenceResult.percent)+'%</small>':'')+(r.excursion?'<small class="chip chip-orange">Excursão documentada</small>':'')+'</td><td>'+esc(r.author)+'</td><td>'+(arrival&&farmaciaCycleCanOperate()?'<button type="button" class="btn-txt" data-reference="'+esc(r.id)+'" onclick="farmaciaCycleStart(\'transport_arrival\',this.dataset.reference)">Registrar chegada</button>':'')+'</td></tr>';}).join('');
+  return farmaciaCycleHeading(title,'Registros do estoque e da classe de acesso selecionados.',button)+'<div class="farmacia-cycle-panel">'+(rows?farmaciaTable(['Evento / Data','Produto / Lote','Vínculo','Quantidade / Situação','Responsável','Ações'],rows,title):'<p class="farmacia-cycle-empty">Nenhum registro nesta área.</p>')+'</div>';
+}
+function farmaciaCycleField(name,label,value,type,optional,attrs) {
+  return '<div class="field"><label class="field-label" for="farmaciaCycle-'+name+'">'+esc(label)+'</label><input class="f-input" id="farmaciaCycle-'+name+'" name="'+name+'" type="'+(type||'text')+'" value="'+esc(value===undefined?'':String(value))+'"'+(optional?'':' required')+' '+(attrs||'maxlength="200"')+'></div>';
+}
+function farmaciaCycleSelect(name,label,options,optional,change) {
+  return '<div class="field"><label class="field-label" for="farmaciaCycle-'+name+'">'+esc(label)+'</label><select class="f-input" id="farmaciaCycle-'+name+'" name="'+name+'"'+(optional?'':' required')+(change?' onchange="'+change+'"':'')+'>'+options+'</select></div>';
+}
+function farmaciaCycleToday() {return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+function farmaciaCycleStart(action,reference,confirmed) {
+  if(!farmaciaCycleCanOperate()||FARMACIA_STOCK.saving)return;
+  if(!confirmed&&typeof appConfirmNavigationIfDirty==='function'&&!appConfirmNavigationIfDirty('farmaciaCyclePane',function(){farmaciaCycleStart(action,reference,true);}))return;
+  if(typeof appClearUnsavedChanges==='function')appClearUnsavedChanges('farmaciaCyclePane');
+  var ref=farmaciaCycleRecords().find(function(r){return r.id===reference;}),p=farmaciaCyclePosition(ref?ref.data.positionId:FARMACIA_CYCLE.positionId);
+  FARMACIA_CYCLE.form={action:action,reference:reference||'',positionId:p?p.id:'',revision:p?p.revision:'',requestId:farmaciaOperationId(),epoch:FARMACIA_STOCK.epoch,studyId:FARMACIA_STOCK.studyId,restricted:FARMACIA_STOCK.restricted};
+  FARMACIA_CYCLE.pane=action==='dispense'?'dispense':action==='return'?'return':action==='destination'?'cycle':'transport';
+  FARMACIA_CYCLE.renderData=null;farmaciaLifecycleRender();
+}
+function farmaciaCycleSelectionChanged(select) {
+  var p=farmaciaCyclePosition(select.value);
+  if(!FARMACIA_CYCLE.form){FARMACIA_CYCLE.positionId=select.value;farmaciaLifecycleRender();return;}
+  var form=FARMACIA_CYCLE.form;form.positionId=select.value;form.revision=p?p.revision:'';
+  var formEl=document.getElementById('farmaciaCycleForm');
+  farmaciaCycleUpdateSide();
+  if(formEl&&formEl.elements.quantity){var prod=farmaciaCycleProduct(p)||{};formEl.elements.quantity.max=String(form.action==='destination'?(p?p.blocked+p.pending:0):(p?p.available:0));formEl.elements.quantity.step=['mL','g'].indexOf(prod.unit)!==-1?'0.001':'1';formEl.elements.quantity.min=formEl.elements.quantity.step;}
+  if(formEl&&form.action==='transport_departure'){var storage=(farmaciaCycleProduct(p)||{}).storage||{};formEl.elements.min.value=storage.min===null||storage.min===undefined?'':storage.min;formEl.elements.max.value=storage.max===null||storage.max===undefined?'':storage.max;}
+}
+function farmaciaCycleLocationFields(destination) {
+  var units=((FARMACIA_STOCK.data||{}).storageUnits||[]).filter(function(u){return !u.deleted&&u.status==='active';});
+  return farmaciaCycleSelect('unitId',destination?'Equipamento de destino':'Equipamento de quarentena / segregação','<option value="">Selecione</option>'+units.map(function(u){return '<option value="'+esc(u.id)+'">'+esc(u.code)+'</option>';}).join(''),false,'farmaciaCycleLocationChanged()')+farmaciaCycleSelect('position',destination?'Posição de destino':'Posição segregada','<option value="">Selecione o equipamento</option>');
+}
+function farmaciaCycleLocationChanged(){var f=document.getElementById('farmaciaCycleForm'),u=((FARMACIA_STOCK.data||{}).storageUnits||[]).find(function(x){return x.id===f.elements.unitId.value;});f.elements.position.innerHTML='<option value="">Selecione</option>'+(u?u.positions:[]).map(function(p){return '<option value="'+esc(p)+'">'+esc(p)+'</option>';}).join('');}
+function farmaciaCycleFormHtml(snapshot) {
+  var a=snapshot.action,p=farmaciaCyclePosition(snapshot.positionId),product=farmaciaCycleProduct(p)||{},today=farmaciaCycleToday(),reference=farmaciaCycleRecords().find(function(r){return r.id===snapshot.reference;}),fields='';
+  var title=({dispense:'Registrar dispensação',return:'Retorno e adesão',transport_departure:'Registrar saída para transporte',transport_arrival:'Registrar chegada',destination:'Registrar destinação final'})[a];
+  if(a==='dispense') fields='<div class="section-label">Participante e produto</div><div class="form-grid">'+farmaciaCycleSelect('participantId','Participante no estudo','<option value="">Carregando participantes…</option>')+farmaciaCycleField('visit','Visita / ciclo informado','','text')+farmaciaCycleLotSelect(snapshot.positionId,true)+farmaciaCycleField('quantity','Quantidade ('+(product.unit||'unidade do produto')+')','','number',false,'min="0.001" step="0.001"')+farmaciaCycleField('occurredOn','Data da dispensação',today,'date')+farmaciaCycleField('validThrough','Último dia previsto de uso','','date')+farmaciaCycleField('prescription','Prescrição / Documento Fonte','','text')+farmaciaCycleField('platformReference','Referência na plataforma do estudo','','text')+'</div><label class="farmacia-confirm"><input name="confirmed" type="checkbox" required>Conferi a prescrição, participante, visita, item físico e plataforma do estudo; verifiquei a validade para o período de uso e as orientações aplicáveis.</label>';
+  if(a==='return') fields='<div class="section-label">Dispensação vinculada</div><div class="form-grid">'+farmaciaCycleSelect('dispenseId','Dispensação de origem','<option value="">Selecione</option>'+farmaciaCycleRecords('dispense').map(function(r){var pos=farmaciaCyclePosition(r.data.positionId),pr=farmaciaCycleProduct(pos)||{};return '<option value="'+esc(r.id)+'">'+esc([r.data.participantLabel||r.data.participantId,pr.name,pos?pos.lot:'',farmaciaStockDate(r.data.occurredOn)].join(' · '))+'</option>';}).join(''),false,'farmaciaCycleDispenseChanged()')+farmaciaCycleField('quantity','Quantidade retornada','','number',false,'min="0.001" step="0.001"')+farmaciaCycleField('occurredOn','Data do retorno',today,'date')+farmaciaCycleLocationFields()+'</div><div class="section-label">Adesão ao tratamento · opcional</div><label class="farmacia-confirm"><input name="calculateAdherence" type="checkbox" onchange="farmaciaCycleAdherenceChanged()">Avaliar adesão: comprimidos/cápsulas com dose diária fixa, sem pausas ou alterações no período informado.</label><fieldset id="farmaciaCycleAdherenceFields" class="form-grid farmacia-cycle-below" disabled>'+farmaciaCycleField('dailyDose','Comprimidos / cápsulas por dia','','number',true,'min="0.001" step="0.001"')+farmaciaCycleField('firstDose','Primeira dose','','date',true)+farmaciaCycleField('lastDose','Última dose','','date',true)+'</fieldset><label class="farmacia-confirm"><input name="confirmed" type="checkbox" required>Conferi a contagem e a segregação do material retornado.</label>';
+  if(a==='transport_departure') fields='<div class="section-label">Identificação e condições na saída</div><div class="form-grid">'+farmaciaCycleLotSelect(snapshot.positionId,true)+farmaciaCycleSelect('dispenseId','Dispensação vinculada (se aplicável)','<option value="">Transporte de estoque para armazenamento</option>'+farmaciaCycleRecords('dispense').map(function(r){return '<option value="'+esc(r.id)+'">'+esc(r.data.participantId+' · '+farmaciaStockDate(r.data.occurredOn))+'</option>';}).join(''),true)+farmaciaCycleField('quantity','Quantidade','','number',false,'min="0.001" step="0.001"')+farmaciaCycleField('occurredOn','Data da saída',today,'date')+farmaciaCycleField('departureTime','Hora da saída','','time')+farmaciaCycleField('origin','Origem','','text')+farmaciaCycleField('destination','Destino','','text')+farmaciaCycleSelect('operation','Operação','<option value="storage">Armazenamento</option><option value="preparation">Preparo / manipulação</option><option value="administration">Administração</option>')+farmaciaCycleField('thermometer','Termômetro','','text')+farmaciaCycleField('min','Faixa mínima documentada · °C',product.storage&&product.storage.min!==null?product.storage.min:'','number',false,'step="0.1" readonly')+farmaciaCycleField('max','Faixa máxima documentada · °C',product.storage&&product.storage.max!==null?product.storage.max:'','number',false,'step="0.1" readonly')+farmaciaCycleField('departureTemperature','Temperatura de saída · °C','','number',false,'step="0.1"')+'</div>';
+  if(a==='transport_arrival') fields='<div class="section-label">Registro de saída vinculado</div><div class="farmacia-cycle-notice">'+farmaciaCycleIcon('local_shipping')+'<div>'+esc(reference?reference.data.origin+' → '+reference.data.destination+' · '+farmaciaStockDate(reference.data.occurredOn)+' '+reference.data.departureTime:'Saída não encontrada')+'</div></div><div class="section-label">Condições na chegada</div><div class="form-grid">'+farmaciaCycleField('occurredOn','Data da chegada',today,'date')+farmaciaCycleField('arrivalTime','Hora da chegada','','time')+farmaciaCycleField('currentTemperature','Temperatura atual · °C','','number',false,'step="0.1"')+farmaciaCycleField('minTemperature','Temperatura mínima · °C','','number',false,'step="0.1"')+farmaciaCycleField('maxTemperature','Temperatura máxima · °C','','number',false,'step="0.1"')+'</div><label class="farmacia-confirm"><input name="confirmed" type="checkbox" required>Conferi a chegada, as leituras de temperatura e as ocorrências registradas.</label>';
+  if(a==='destination') fields='<div class="section-label">Material e destinação documentada</div><div class="form-grid">'+farmaciaCycleLotSelect(snapshot.positionId,true)+farmaciaCycleField('quantity','Quantidade a retirar do IPS','','number',false,'min="0.001" step="0.001"')+farmaciaCycleSelect('from','Situação de origem','<option value="blocked">Quarentena / bloqueado</option><option value="pending">Aguardando avaliação</option>')+farmaciaCycleSelect('destination','Destino','<option value="sponsor">Devolução ao patrocinador / ORPC</option><option value="disposal">Descarte documentado</option>')+farmaciaCycleField('occurredOn','Data da saída / descarte',today,'date')+farmaciaCycleField('authorization','Referência da autorização','','text')+'</div><p class="farmacia-cycle-help">Registre a destinação efetivamente realizada, com os comprovantes pertinentes. A separação para descarte não comprova destruição.</p>';
+  fields+='<div class="section-label">Rastreabilidade</div><div class="form-grid">'+farmaciaCycleField('document','Referência documental (versão / data)','','text')+farmaciaCycleField('reason','Motivo / observação','','text',a!=='destination')+'</div>';
+  return farmaciaCycleHeading(title,'Estoque: '+farmaciaCurrentStudyLabel())+'<div class="farmacia-cycle-columns"><form id="farmaciaCycleForm" class="farmacia-cycle-form farmacia-cycle-panel" onsubmit="return farmaciaCycleSave(event,this)"><div class="farmacia-cycle-body"><fieldset id="farmaciaCycleFields">'+fields+'</fieldset><p id="farmaciaCycleSaveStatus" class="farmacia-cycle-status" role="status" aria-live="polite"></p></div><div class="farmacia-cycle-footer"><button type="button" class="btn-txt" onclick="farmaciaCycleNavigate(FARMACIA_CYCLE.pane)">Cancelar</button><button class="btn-save" type="submit">Registrar</button></div></form><aside><div class="farmacia-cycle-panel"><div class="farmacia-cycle-panel-head"><h3>Contexto da operação</h3></div><div id="farmaciaCycleContext" class="farmacia-cycle-body" style="padding-top:0"></div></div><div id="farmaciaCycleCalculation"></div><div class="farmacia-cycle-notice amber farmacia-cycle-below">'+farmaciaCycleIcon('info')+'<div>'+(a==='return'?'Retornos entram em posição segregada, integralmente bloqueados. Não aumentam o saldo disponível.':a==='dispense'?'A operação acompanha a prescrição e a plataforma do estudo. Preparo e administração exigem seus registros próprios.':a==='transport_departure'?'Transporte de estoque reserva a quantidade até a chegada. Informe a operação e as condições efetivamente verificadas.':a==='transport_arrival'?'Excursão exige orientação documentada. Temperatura dentro da faixa não substitui a avaliação da equipe.':'Toda destinação preserva autorização, referência documental e responsável.')+'</div></div></aside></div>';
+}
+function farmaciaCycleBindForm() {
+  var form=document.getElementById('farmaciaCycleForm');if(!form)return;
+  var binding=FARMACIA_CYCLE.form;
+  if(FARMACIA_CYCLE.form.action==='transport_departure'){
+    var group=document.createElement('div');group.id='farmaciaCycleDestination';group.className='form-grid farmacia-cycle-below';group.innerHTML=farmaciaCycleLocationFields(true);
+    document.getElementById('farmaciaCycleFields').appendChild(group);
+    form.elements.operation.addEventListener('change',farmaciaCycleTransportMode);
+    form.elements.dispenseId.addEventListener('change',function(){if(form.elements.dispenseId.value&&form.elements.operation.value==='storage')form.elements.operation.value='administration';farmaciaCycleTransportMode();});
+    farmaciaCycleTransportMode();
+  }
+  function dirty(){
+    // O blur de um campo removido pode disparar change depois de trocar a operação.
+    if(FARMACIA_CYCLE.form!==binding||!form.isConnected)return false;
+    if(typeof appMarkUnsavedChanges==='function')appMarkUnsavedChanges('farmaciaCyclePane');return true;
+  }
+  form.addEventListener('input',function(){if(dirty())farmaciaCycleCalculate();});
+  form.addEventListener('change',dirty);
+  farmaciaCycleUpdateSide();
+  if(form.elements.positionId)farmaciaCycleSelectionChanged(form.elements.positionId);
+  if(FARMACIA_CYCLE.form.action==='transport_departure')farmaciaCycleTransportMode();
+  if(FARMACIA_CYCLE.form.action==='dispense')farmaciaCycleLoadParticipants();
+}
+function farmaciaCycleUpdateSide() {
+  var p=farmaciaCyclePosition(FARMACIA_CYCLE.form.positionId),pr=farmaciaCycleProduct(p),node=document.getElementById('farmaciaCycleContext');if(!node)return;
+  node.innerHTML=p&&pr?farmaciaCycleKv('Produto',pr.name)+farmaciaCycleKv('Lote / kit',p.lot+(p.kit?' · '+p.kit:''))+farmaciaCycleKv('Validade',farmaciaStockDate(p.expiry))+farmaciaCycleKv('Disponível',farmaciaStockNumber(p.available)+' '+pr.unit)+farmaciaCycleKv('Quarentena / bloqueio',farmaciaStockNumber(p.blocked)+' '+pr.unit)+farmaciaCycleKv('Localização',p.location):'<p class="farmacia-cycle-help">Selecione o lote ou a dispensação de origem.</p>';
+}
+function farmaciaCycleLoadParticipants() {
+  var snapshot=FARMACIA_CYCLE.form,readId=++FARMACIA_CYCLE.participantRead;
+  function fill(list){if(FARMACIA_CYCLE.form!==snapshot||readId!==FARMACIA_CYCLE.participantRead||!farmaciaStockCurrent(snapshot.epoch,snapshot.studyId,snapshot.restricted))return;var input=document.getElementById('farmaciaCycle-participantId');if(input)input.innerHTML='<option value="">Selecione o participante</option>'+list.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.label)+'</option>';}).join('');}
+  if(FARMACIA_CYCLE.participants){fill(FARMACIA_CYCLE.participants);return;}
+  google.script.run.withSuccessHandler(function(result){if(FARMACIA_CYCLE.form!==snapshot||readId!==FARMACIA_CYCLE.participantRead||!farmaciaStockCurrent(snapshot.epoch,snapshot.studyId,snapshot.restricted))return;FARMACIA_CYCLE.participants=result.participants||[];fill(FARMACIA_CYCLE.participants);}).withFailureHandler(function(error){if(FARMACIA_CYCLE.form!==snapshot||readId!==FARMACIA_CYCLE.participantRead||!farmaciaStockCurrent(snapshot.epoch,snapshot.studyId,snapshot.restricted))return;document.getElementById('farmaciaCycleSaveStatus').textContent=appErrorMessage(error)+' Reabra a operação para tentar novamente.';}).getFarmaciaParticipantes(snapshot.studyId,snapshot.restricted);
+}
+function farmaciaCycleDispenseChanged() {
+  var f=document.getElementById('farmaciaCycleForm'),record=farmaciaCycleRecords('dispense').find(function(r){return r.id===f.elements.dispenseId.value;}),snapshot=FARMACIA_CYCLE.form;
+  snapshot.reference=record?record.id:'';snapshot.positionId=record?record.data.positionId:'';var p=farmaciaCyclePosition(snapshot.positionId);snapshot.revision=p?p.revision:'';
+  var product=farmaciaCycleProduct(p)||{},allowed=product.control==='quantity'&&['comprimido','cápsula'].indexOf(product.unit)!==-1;
+  f.elements.calculateAdherence.disabled=!allowed;
+  if(!allowed){f.elements.calculateAdherence.checked=false;farmaciaCycleAdherenceChanged();}
+  var alreadyReturned=farmaciaCycleRecords('return').reduce(function(total,r){return total+(r.data.dispenseId===snapshot.reference?r.data.quantity:0);},0);
+  f.elements.quantity.max=String(record?Math.max(0,record.data.quantity-alreadyReturned):0);
+  f.elements.quantity.step=['mL','g'].indexOf(product.unit)!==-1?'0.001':'1';
+  f.elements.quantity.min=f.elements.quantity.step;
+  farmaciaCycleUpdateSide();farmaciaCycleCalculate();
+}
+function farmaciaCycleAdherenceChanged(){var f=document.getElementById('farmaciaCycleForm'),enabled=f.elements.calculateAdherence.checked;document.getElementById('farmaciaCycleAdherenceFields').disabled=!enabled;['dailyDose','firstDose','lastDose'].forEach(function(key){f.elements[key].required=enabled;});farmaciaCycleCalculate();}
+function farmaciaCycleTransportMode(){
+  var f=document.getElementById('farmaciaCycleForm'),storage=f.elements.operation.value==='storage';
+  document.getElementById('farmaciaCycleDestination').hidden=!storage;
+  ['unitId','position'].forEach(function(key){f.elements[key].required=storage;f.elements[key].disabled=!storage;});
+  f.elements.dispenseId.required=!storage;
+  if(storage)f.elements.dispenseId.value='';
+  else if(f.elements.dispenseId.value){
+    var record=farmaciaCycleRecords('dispense').find(function(r){return r.id===f.elements.dispenseId.value;});
+    if(record){
+      f.elements.positionId.value=record.data.positionId;farmaciaCycleSelectionChanged(f.elements.positionId);
+      f.elements.quantity.max=String(farmaciaCycleOutstanding(record.id));
+    }
+  }
+}
+function farmaciaCycleOutstanding(id){
+  var record=farmaciaCycleRecords('dispense').find(function(r){return r.id===id;});if(!record)return 0;
+  var arrived={};farmaciaCycleRecords('transport_arrival').forEach(function(r){arrived[r.data.departureId]=true;});
+  return Math.max(0,Math.round(farmaciaCycleRecords().reduce(function(left,r){return left-(r.data.dispenseId===id&&(r.data.action==='return'||r.data.action==='transport_departure'&&!arrived[r.id])?r.data.quantity:0);},record.data.quantity)*1000)/1000);
+}
+function farmaciaCycleCalculate() {
+  var f=document.getElementById('farmaciaCycleForm'),snapshot=FARMACIA_CYCLE.form,box=document.getElementById('farmaciaCycleCalculation');if(!f||!snapshot||!box)return;
+  if(snapshot.action==='return'&&f.elements.calculateAdherence.checked){
+    var r=farmaciaCycleRecords('dispense').find(function(x){return x.id===f.elements.dispenseId.value;}),daily=f.elements.dailyDose.valueAsNumber,q=f.elements.quantity.valueAsNumber;
+    var prior=farmaciaCycleRecords('return').reduce(function(total,item){return total+(r&&item.data.dispenseId===r.id?item.data.quantity:0);},0);
+    var days=Math.round((Date.parse(f.elements.lastDose.value)-Date.parse(f.elements.firstDose.value))/86400000)+1;
+    var valid=r&&Number.isFinite(q)&&q>=0&&q+prior<=r.data.quantity&&Number.isFinite(daily)&&daily>0&&days>0&&f.elements.firstDose.value>=r.data.occurredOn&&f.elements.lastDose.value<=f.elements.occurredOn.value;
+    var pct=valid?(r.data.quantity-prior-q)/(daily*days)*100:null;
+    box.innerHTML='<div class="farmacia-cycle-result"><p>Adesão estimada pela contagem · FG 174</p><strong>'+(pct===null?'—':pct.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%')+'</strong><p>'+(valid?days+' dias · Consumo estimado: '+farmaciaStockNumber(r.data.quantity-prior-q):'Informe a dispensação, o retorno, a dose fixa e o período compatível. Retornos anteriores entram na contagem acumulada.')+'</p></div>';
+  }else if(snapshot.action==='transport_departure'){
+    var departureTemp=f.elements.departureTemperature.valueAsNumber,rangeLow=f.elements.min.valueAsNumber,rangeHigh=f.elements.max.valueAsNumber;
+    var departureOutside=Number.isFinite(departureTemp)&&Number.isFinite(rangeLow)&&Number.isFinite(rangeHigh)&&(departureTemp<rangeLow||departureTemp>rangeHigh);
+    box.innerHTML=departureOutside?'<div class="farmacia-cycle-notice amber farmacia-cycle-below">'+farmaciaCycleIcon('warning')+'<div>Saída fora da faixa documentada. Estoque ativo exige avaliação antes de transportar. Para produto já dispensado, registre a ocorrência e siga a orientação documentada.</div></div>':'';
+  }else if(snapshot.action==='transport_arrival'){var departure=farmaciaCycleRecords('transport_departure').find(function(r){return r.id===snapshot.reference;}),min=f.elements.minTemperature.valueAsNumber,max=f.elements.maxTemperature.valueAsNumber,current=f.elements.currentTemperature.valueAsNumber,temperatureValid=Number.isFinite(min)&&Number.isFinite(max)&&Number.isFinite(current)&&min<=current&&current<=max,outside=temperatureValid&&departure&&(min<departure.data.min||max>departure.data.max||departure.data.departureTemperature<departure.data.min||departure.data.departureTemperature>departure.data.max);box.innerHTML='<div class="farmacia-cycle-notice '+(outside?'amber':'')+' farmacia-cycle-below">'+farmaciaCycleIcon(outside?'warning':'thermostat')+'<div>'+(temperatureValid?outside?'Excursão identificada. Será registrada ocorrência; não há liberação automática.':'Leituras dentro da faixa informada. Conferência final pela equipe.':'Informe leituras coerentes: mínima ≤ atual ≤ máxima.')+'</div></div>';
+  }else box.textContent='';
+}
+function farmaciaCyclePayload(form,snapshot) {
+  var data={action:snapshot.action,positionId:snapshot.positionId,revision:snapshot.revision,document:form.elements.document.value,reason:form.elements.reason.value};
+  ['occurredOn','participantId','visit','prescription','platformReference','validThrough','departureTime','origin','destination','operation','thermometer','arrivalTime','authorization','from'].forEach(function(key){if(form.elements[key])data[key]=form.elements[key].value;});
+  ['quantity','min','max','departureTemperature','currentTemperature','minTemperature','maxTemperature'].forEach(function(key){if(form.elements[key])data[key]=form.elements[key].valueAsNumber;});
+  if(form.elements.confirmed)data.confirmed=form.elements.confirmed.checked;
+  if(form.elements.dispenseId&&form.elements.dispenseId.value)data.dispenseId=form.elements.dispenseId.value;
+  if(snapshot.action==='transport_arrival')data.departureId=snapshot.reference;
+  if(snapshot.action==='return'){
+    data.locationRef={unitId:form.elements.unitId.value,position:form.elements.position.value};
+    if(form.elements.calculateAdherence.checked)data.adherence={dailyDose:form.elements.dailyDose.valueAsNumber,firstDose:form.elements.firstDose.value,lastDose:form.elements.lastDose.value,confirmedFixedDose:true};
+  }
+  if(snapshot.action==='transport_departure'&&data.operation==='storage')data.locationRef={unitId:form.elements.unitId.value,position:form.elements.position.value};
+  return {studyId:snapshot.studyId,restricted:snapshot.restricted,requestId:snapshot.requestId,data:data};
+}
+function farmaciaCycleSave(event,form) {
+  event.preventDefault();var snapshot=FARMACIA_CYCLE.form;
+  if(!snapshot||!farmaciaCycleCanOperate()||FARMACIA_STOCK.saving||!farmaciaStockCurrent(snapshot.epoch,snapshot.studyId,snapshot.restricted))return false;
+  var payload=farmaciaCyclePayload(form,snapshot),fields=document.getElementById('farmaciaCycleFields'),submit=form.querySelector('[type="submit"]'),status=document.getElementById('farmaciaCycleSaveStatus');
+  function current(){return FARMACIA_CYCLE.form===snapshot&&farmaciaStockCurrent(snapshot.epoch,snapshot.studyId,snapshot.restricted);}
+  FARMACIA_STOCK.saving=true;fields.disabled=true;submit.disabled=true;status.textContent='Salvando…';
+  google.script.run.withSuccessHandler(function(){if(!current())return;FARMACIA_STOCK.saving=false;FARMACIA_CYCLE.form=null;FARMACIA_CYCLE.renderData=null;farmaciaLifecycleRender();if(typeof appClearUnsavedChanges==='function')appClearUnsavedChanges('farmaciaCyclePane');farmaciaStockRefresh();}).withFailureHandler(function(error){if(!current())return;FARMACIA_STOCK.saving=false;fields.disabled=false;submit.disabled=false;status.textContent=appErrorMessage(error)+' Os dados e o identificador da operação foram preservados para conferência ou nova tentativa.';}).registrarCicloFarmacia(payload);
+  return false;
+}
+</script>

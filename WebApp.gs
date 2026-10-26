@@ -4213,6 +4213,7 @@ function getMedicoFormConfigDados_() {
 
 function classificarProjetoStatus_(status) {
   var normalizado = normText_(status);
+  if (normalizado === 'nao selecionado') return 'nao_selecionado';
   if (normalizado.indexOf('concluid') >= 0) return 'concluido';
   if (normalizado.indexOf('cancelad') >= 0) return 'cancelado';
   return 'ativo';

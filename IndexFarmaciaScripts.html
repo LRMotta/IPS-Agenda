@@ -53,6 +53,7 @@ function carregarFarmaciaCatalogo(force) {
 }
 
 function farmaciaEstoqueReset() {
+  if (typeof farmaciaLifecycleReset === 'function') farmaciaLifecycleReset();
   FARMACIA_CATALOG.readId++;
   FARMACIA_CATALOG.data = null;
   FARMACIA_CATALOG.loading = false;
@@ -135,13 +136,15 @@ function carregarFarmaciaEstoque(studyId, restrictedAllowed, restricted) {
   else request.getFarmaciaEstoque(studyId, restricted);
 }
 
-function farmaciaStockRefresh() {
+function farmaciaStockRefresh(confirmed) {
+  if (!confirmed && typeof farmaciaCycleRefreshGuard === 'function' && !farmaciaCycleRefreshGuard()) return;
   if (farmaciaIsCatalogView()) { carregarFarmaciaCatalogo(true); return; }
   if (FARMACIA_STOCK.studyId && !FARMACIA_STOCK.saving) carregarFarmaciaEstoque(FARMACIA_STOCK.studyId, FARMACIA_STOCK.restrictedAllowed, FARMACIA_STOCK.restricted);
   else if (!FARMACIA_STOCK.saving && document.getElementById('farmaciaStudy').value) selecionarFarmaciaStudy();
 }
 
-function farmaciaStockChangeClass() {
+function farmaciaStockChangeClass(confirmed) {
+  if (!confirmed && typeof farmaciaCycleScopeGuard === 'function' && !farmaciaCycleScopeGuard('class')) return;
   if (FARMACIA_STOCK.studyId) carregarFarmaciaEstoque(FARMACIA_STOCK.studyId, FARMACIA_STOCK.restrictedAllowed, document.getElementById('farmaciaStockRestricted').checked);
 }
 
@@ -440,17 +443,23 @@ function farmaciaOpenPosition(id) {
   FARMACIA_STOCK.positionId = id;
   FARMACIA_STOCK.positionSnapshot = Object.assign({}, position);
   FARMACIA_STOCK.movementToken = '';
-  var labels = {INITIAL:'Saldo inicial',RECEIPT:'Recebimento',block:'Bloqueio',release:'Liberação',transfer:'Transferência'};
+  var labels = {INITIAL:'Saldo inicial',RECEIPT:'Recebimento',block:'Bloqueio',release:'Liberação',transfer:'Transferência',dispense:'Dispensação',return:'Retorno do participante',transport_departure:'Saída para transporte',transport_arrival:'Chegada do transporte',destination:'Destinação final'};
   var history = (data.movements || []).filter(function(record) { return record.id === id || record.data.positionId === id; });
   var rows = history.map(function(record) {
     var event = record.data;
-    return '<tr><td>' + esc(labels[event.action] || labels[record.type] || record.type) + '<small>' + esc(event.reason || event.note || '') + '</small></td><td>' + farmaciaStockNumber(event.quantity === undefined ? event.physical : event.quantity) + ' ' + esc(product.unit) + '<small>' + esc(event.location || '') + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(record.registeredAt, true)) + '<small>' + esc(record.author) + '</small></td></tr>';
+    var quantity = event.quantity === undefined ? event.physical : event.quantity;
+    if (event.action === 'transport_arrival') {
+      var departure = (data.movements || []).find(function(item) { return item.id === event.departureId; });
+      quantity = departure ? departure.data.quantity : undefined;
+    }
+    return '<tr><td>' + esc(labels[event.action] || labels[record.type] || record.type) + '<small>' + esc(event.reason || event.note || '') + '</small></td><td>' + (quantity === undefined ? '—' : farmaciaStockNumber(quantity) + ' ' + esc(product.unit)) + '<small>' + esc(event.location || '') + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(record.registeredAt, true)) + '<small>' + esc(record.author) + '</small></td></tr>';
   }).join('');
   if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + farmaciaStockNumber(position.physical) + ' ' + esc(product.unit) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
   var html = '<div class="form-section"><div class="section-label">' + esc(farmaciaProductLabel(product)) + ' · Lote ' + esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '') + '</div><dl class="farmacia-detail-grid"><div class="full"><dt>Localização atual</dt><dd>' + esc(position.location) + '</dd></div><div><dt>Disponível</dt><dd>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</dd></div><div><dt>Aguardando avaliação / Bloqueado</dt><dd>' + farmaciaStockNumber(position.pending || 0) + ' / ' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</dd></div></dl></div>';
   html += farmaciaTable(['Evento / Motivo','Quantidade / Localização','Referência documental','Data / Responsável'], rows, 'Histórico do lote');
-  if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage') html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
-    '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()"><option value="block">Bloquear</option>' + (position.expired ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
+  if (position.inTransit) html += '<p class="farmacia-cycle-help">Conclua o transporte em andamento antes de movimentar esta entrada.</p>';
+  if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
+    '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()">' + (position.returned ? '' : '<option value="block">Bloquear</option>') + (position.expired || position.returned ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
     '<div class="field" id="farmaciaMovementFromField"><label class="field-label" for="farmaciaMovementFrom">Retirar da situação</label><select class="f-input" id="farmaciaMovementFrom" onchange="farmaciaMovementQuantityChanged()"></select></div>' +
     '<div class="field"><label class="field-label" for="farmaciaMovementQuantity">Quantidade (' + esc(product.unit) + ')</label><input class="f-input" id="farmaciaMovementQuantity" type="number" min="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" step="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" required></div>' +
     '<div class="field" id="farmaciaMovementUnitField" hidden><label class="field-label" for="farmaciaMovementUnit">Equipamento de destino</label><select class="f-input" id="farmaciaMovementUnit" onchange="farmaciaMovementUnitChanged()"></select></div>' +

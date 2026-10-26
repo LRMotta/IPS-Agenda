@@ -2,11 +2,101 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile } = require('./helpers/load-app-script');
+const { runFile, runFiles } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 
 const norm = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const participante = { id: 'CAD-A', nome: 'Pessoa A', idParticipante: '123', projeto: 'Projeto A' };
+
+function backupCollectionFixture(backupSlot, slot) {
+  const s = runFiles(['WebApp.gs', 'TransporteCodexConfig.gs']);
+  const cfg = s.AGENDA_CFG;
+  const idx = cfg.idx;
+  idx.participanteCadastroId = 52;
+  idx.backup2Dados = 53;
+  cfg.lastCol = 54;
+  const origem = Array(cfg.lastCol).fill('');
+  const destino = Array(cfg.lastCol).fill('');
+  for (const row of [origem, destino]) {
+    row[idx.participanteCadastroId] = 'CAD-A';
+    row[idx.projeto] = 'Projeto A';
+  }
+  origem[idx.id] = 'ORIGEM';
+  origem[idx.data] = '20/out./2026';
+  destino[idx.id] = 'ENVIO';
+  destino[idx.data] = '26/out./2026';
+  const courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3 }[slot];
+  destino[courierIdx.nome] = 'DHL';
+  destino[courierIdx.temp] = 'CONGELADO';
+  destino[courierIdx.destino] = 'Lab';
+  destino[courierIdx.awb] = '1234567890';
+  const ref = { id: 'ENVIO', awb: '1234567890', dataIso: '2026-10-26' };
+  if (slot !== '1') ref.slot = { '2': 'II', '3': 'III' }[slot];
+  if (backupSlot === 'backup2') {
+    origem[idx.backup2Dados] = JSON.stringify({ nome: 'DHL', temperatura: 'CONGELADO', destino: 'Lab', agendamentos: [ref] });
+  } else {
+    origem[idx.cb.nome] = 'DHL';
+    origem[idx.cb.temp] = 'CONGELADO';
+    origem[idx.cb.destino] = 'Lab';
+    origem[idx.backupAgendaRef] = JSON.stringify(ref);
+  }
+  return { s, origem, destino, idx, courierIdx };
+}
+
+test('Backup I e II mantem coleta original no novo envio e nos slots II/III de visita futura', () => {
+  for (const backupSlot of ['backup', 'backup2']) {
+    for (const slot of ['1', '2', '3']) {
+      const { s, origem, destino } = backupCollectionFixture(backupSlot, slot);
+      const sheet = new FakeSheet('Agenda', [[], origem, destino]);
+      s.getAgendaSheet_ = () => sheet;
+      s.agendaRowToObject_ = row => ({ id: row[s.AGENDA_CFG.idx.id], dataIso: '2026-10-26', participantCadastroId: 'CAD-A', projeto: 'Projeto A', participante: 'Pessoa A' });
+      s.transporteProjetoDisplay_ = value => value;
+      s.transporteAgendadorPadrao_ = () => 'Equipe';
+      const evento = s.buscarAgendaEventoPorIdTransp_('ENVIO', slot);
+      const payload = s.montarPayloadTransporteCodex({ slot, agenda: evento });
+      assert.equal(payload.dataColeta, '2026-10-20');
+      assert.equal(payload.dataEnvio, '2026-10-26');
+      assert.equal(evento.transporteDatasColeta.backup, '2026-10-26');
+      assert.equal(evento.transporteDatasColeta.backup2, '2026-10-26');
+
+      const f = saveFixture();
+      f.s.buscarAgendaEventoPorIdTransp_ = () => evento;
+      f.payload.idAgenda = 'ENVIO';
+      f.payload.agendaSlot = slot;
+      f.payload.dataColeta = '2026-10-26'; // formulário antigo ou edição manual
+      f.payload.dataEnvio = '2026-10-28';
+      f.s.salvarTransporteInterno_(f.payload, { returnBootstrap: false, preencherDocumentos: false });
+      for (const folha of [f.folha, f.dhl]) {
+        const data = folha.getRange('C7').getValue();
+        assert.equal(data.getFullYear(), 2026);
+        assert.equal(data.getMonth(), 9);
+        assert.equal(data.getDate(), 20);
+      }
+      assert.equal(f.folha.getRange('C8').getValue().getDate(), 28);
+    }
+  }
+});
+
+test('coleta ignora outro participante, projeto, slot e vinculo historico com AWB divergente', () => {
+  for (const change of ['participante', 'projeto', 'awb', 'courier', 'slot']) {
+    const { s, origem, destino, idx, courierIdx } = backupCollectionFixture('backup', '2');
+    if (change === 'participante') { origem[idx.participanteCadastroId] = 'OUTRO'; origem[idx.backup2Dados] = '{invalido'; }
+    if (change === 'projeto') origem[idx.projeto] = 'Outro projeto';
+    if (change === 'awb') destino[courierIdx.awb] = '9999999999';
+    if (change === 'courier') destino[courierIdx.nome] = 'MARKEN';
+    if (change === 'slot') origem[idx.backupAgendaRef] = JSON.stringify({ id: 'ENVIO', slot: 'III' });
+    assert.equal(s.transporteDatasColetaAgenda_([origem, destino], destino)['2'], undefined, change);
+  }
+});
+
+test('coleta exige revisao quando a origem e ambigua ou tem data invalida', () => {
+  const { s, origem, destino, idx } = backupCollectionFixture('backup2', '1');
+  const outraOrigem = origem.slice();
+  outraOrigem[idx.id] = 'OUTRA-ORIGEM';
+  assert.throws(() => s.transporteDatasColetaAgenda_([origem, outraOrigem, destino], destino), /mais de uma origem/);
+  origem[idx.data] = 'invalida';
+  assert.throws(() => s.transporteDatasColetaAgenda_([origem, destino], destino), /data.*inválida/);
+});
 
 function server(extra = {}) {
   return runFile('TransporteCodexConfig.gs', {
@@ -278,7 +368,8 @@ test('salvamento deriva cadastro atual uma vez e grava os campos em blocos mante
   assert.equal(Object.prototype.toString.call(folha.getRange('C7').getValue()), '[object Date]');
   assert.equal(folha.blocks.filter(a1 => a1 === 'C3:C14').length, 1);
   assert.deepEqual(folha.validationClears, ['C3:C14', 'C15']);
-  assert.deepEqual(dhl.blocks, ['C12:C14']);
+  assert.deepEqual(dhl.blocks, ['C7', 'C12:C14']);
+  assert.equal(dhl.getRange('C7').getValue().getTime(), folha.getRange('C7').getValue().getTime());
   const meta = s.transporteAgendaLinkFromRef_('', folha.getRange('C15').getNote());
   assert.equal(meta.idAgenda, '');
   assert.equal(meta.participanteCadastroId, 'CAD-A');

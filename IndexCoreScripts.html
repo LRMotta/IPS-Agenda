@@ -370,7 +370,8 @@ function farmaciaStudyLabel(study) {
   return [name, code].filter(Boolean).join(' — ');
 }
 
-function selecionarFarmaciaStudy() {
+function selecionarFarmaciaStudy(confirmed) {
+  if (!confirmed && typeof farmaciaCycleScopeGuard === 'function' && !farmaciaCycleScopeGuard('study')) return;
   if (typeof farmaciaEstoqueReset === 'function') farmaciaEstoqueReset();
   var id = document.getElementById('farmaciaStudy').value;
   var productsOnly = typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'products';
@@ -1079,8 +1080,9 @@ function toggleNavFarmacia() {
   appSyncNavAccessibility();
 }
 
-function abrirFarmaciaView(view) {
+function abrirFarmaciaView(view, confirmed) {
   if (typeof FARMACIA_STOCK !== 'undefined' && FARMACIA_STOCK.saving) return;
+  if (!confirmed && typeof farmaciaCycleSectionGuard === 'function' && !farmaciaCycleSectionGuard(view)) return;
   if (getCurrentPage() !== 'farmacia') {
     if (typeof FARMACIA_VIEW !== 'undefined') FARMACIA_VIEW = view;
     irPara('farmacia');
@@ -6444,7 +6446,8 @@ function projetoStatusChip(projeto) {
   var s = (projeto && projeto.status) || '—';
   var n = String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   var classificacao = projetoClassificacaoStatus_(projeto);
-  var color = classificacao === 'concluido' ? '#137333:#e6f4ea' :
+  var color = classificacao === 'nao_selecionado' ? '#5f6368:#f1f3f4' :
+    classificacao === 'concluido' ? '#137333:#e6f4ea' :
     n.indexOf('acompanhamento') >= 0 ? '#276a7b:#d7eef5' :
     n.indexOf('recrutamento') >= 0 ? '#0b8043:#d7f5cf' :
     n.indexOf('regulatoria') >= 0 ? '#9a4b16:#ffd8bd' :

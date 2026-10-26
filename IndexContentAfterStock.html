@@ -11,6 +11,8 @@
         <div class="stat-card stat-accent-teal"><div class="stat-value" id="farmaciaMetric1">—</div><div class="stat-label" id="farmaciaMetricLabel1">Entradas de estoque</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div></div>
         <div class="stat-card stat-accent-orange stat-corner-right"><div class="stat-value" id="farmaciaMetric2">—</div><div class="stat-label" id="farmaciaMetricLabel2">Entradas com pendência / bloqueio</div><div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">shield</span></div></div>
       </div>
+      <div id="farmaciaLifecycleSummary" hidden></div>
+      <nav id="farmaciaCycleNav" hidden aria-label="Ciclo de vida dos medicamentos"></nav>
       <div class="toolbar-card farmacia-view-toolbar">
         <h2 id="farmaciaViewTitle" hidden></h2>
         <div class="search-wrap"><span class="material-symbols-outlined" aria-hidden="true">search</span><input id="farmaciaSearch" placeholder="Buscar produto, lote ou localização..." aria-label="Buscar na Farmácia" oninput="farmaciaApplySearch()"></div>
@@ -24,6 +26,7 @@
         <div id="farmaciaNoSelection" class="farmacia-empty"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span><h3>Selecione um estoque</h3><p>Escolha o estoque comum do IPS ou um estudo autorizado para começar.</p></div>
         <section id="farmaciaStockPanel" hidden aria-label="Estoque da Farmácia">
           <div id="farmaciaStockResults"><div id="farmaciaProductsResults" hidden></div><div id="farmaciaInventoryResults"></div></div>
+          <section id="farmaciaCyclePane" hidden aria-label="Ciclo de vida do medicamento"></section>
           <div id="farmaciaLocationsResults" hidden></div><div id="farmaciaProbesResults" hidden></div>
           <p id="farmaciaSearchEmpty" class="farmacia-empty" hidden>Nenhum registro corresponde à busca.</p>
         </section>

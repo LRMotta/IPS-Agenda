@@ -530,6 +530,61 @@ async function chooseView(page,view) {
   await page.locator('[data-farmacia-view="'+view+'"]').click();
 }
 
+test('edição de unidade permite Caixa sem histórico e bloqueia histórico e kit no desktop e celular', async () => {
+  const browser = await loadPlaywright().chromium.launch({headless:true});
+  const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(),'ips-agenda-playwright');
+  fs.mkdirSync(artifacts,{recursive:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors} = await fixture(browser,width), data = stockData({positions:[]});
+      Object.assign(data.products[0],{dosageForm:'Comprimido',unit:'comprimido',hasStockHistory:false});
+      await openStock(page,data);
+      await chooseView(page,'products');
+      await page.evaluate(result => window.pending.at(-1).success(result),{...data,productsOnly:true});
+      await page.locator('#farmaciaProductsResults button[data-action="edit"]').click();
+      const modal = page.locator('#farmaciaModal-recordAction'), unit = modal.getByLabel('Unidade de controle',{exact:true});
+      assert.equal(await unit.inputValue(),'comprimido');
+      assert.equal(await unit.isEnabled(),true);
+      await unit.selectOption('caixa');
+      await modal.getByLabel('Motivo da correção').fill('Controle por embalagem conforme conferência');
+      await modal.locator('.modal-box').screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-editar-unidade-'+width+'.png')});
+      await modal.getByRole('button',{name:'Salvar correção',exact:true}).click();
+      const payload = await page.evaluate(() => window.pending.at(-1).args[0]);
+      assert.equal(payload.data.data.unit,'caixa');
+      assert.equal(payload.data.data.dosageForm,'Comprimido');
+      await page.evaluate(() => window.pending.at(-1).failure({message:'Falha simulada'}));
+      assert.equal(await unit.inputValue(),'caixa');
+      assert.equal(await unit.isEnabled(),true);
+      await modal.getByRole('button',{name:'Salvar correção',exact:true}).click();
+      assert.equal(await page.evaluate(() => window.pending.at(-1).args[0].requestId),payload.requestId);
+      await page.evaluate(() => window.pending.at(-1).success({ok:true}));
+      data.products[0].unit = 'caixa'; data.products[0].hasStockHistory = true;
+      await page.evaluate(result => window.pending.at(-1).success(result),{...data,productsOnly:true});
+      await page.locator('#farmaciaProductsResults button[data-action="edit"]').click();
+      assert.equal(await unit.isDisabled(),true);
+      assert.equal(await unit.inputValue(),'caixa');
+      assert.match(await modal.innerText(),/possui histórico de estoque/);
+      await modal.getByLabel('Motivo da correção').fill('Correção de outros dados');
+      await modal.getByRole('button',{name:'Salvar correção',exact:true}).click();
+      await page.evaluate(() => window.pending.at(-1).failure({message:'Falha simulada'}));
+      assert.equal(await unit.isDisabled(),true);
+      await modal.getByRole('button',{name:'Cancelar',exact:true}).click();
+      await page.locator('#confirmUnsaved').getByRole('button',{name:'Sair sem salvar',exact:true}).click();
+      await page.evaluate(() => { Object.assign(window.FARMACIA_STOCK.data.products[0],{control:'kit',unit:'kit',hasStockHistory:false}); });
+      await page.locator('#farmaciaProductsResults button[data-action="edit"]').click();
+      assert.equal(await unit.isDisabled(),true);
+      assert.equal(await unit.inputValue(),'kit');
+      assert.match(await modal.innerText(),/Kits individualizados usam a unidade kit/);
+      assert.equal(await page.title(),'IPS | Farmácia — estoque local');
+      assert.equal(page.url(),'about:blank');
+      assert.equal(await page.locator('nextjs-portal,vite-error-overlay').count(),0);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),true);
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  } finally { await browser.close(); }
+});
+
 test('equipe consulta produtos por projeto sem estoque, edição ou respostas de outra área', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try {
