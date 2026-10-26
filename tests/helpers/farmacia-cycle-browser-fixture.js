@@ -22,7 +22,7 @@ async function cycleFixture(browser,width=1536) {
   const iconFont=process.env.FARMACIA_TEST_ICON_FONT;
   const fonts=iconFont?'<style>@font-face{font-family:"Material Symbols Outlined";src:url(data:font/woff2;base64,'+fs.readFileSync(iconFont).toString('base64')+')} .material-symbols-outlined{font-family:"Material Symbols Outlined";font-weight:normal;font-style:normal;letter-spacing:normal;text-transform:none;white-space:nowrap;font-feature-settings:"liga"}</style>':'<style>.material-symbols-outlined{font-size:0!important}</style>';
   const cycle=readProjectFile('IndexFarmaciaCiclo.html');
-  await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS | Farmácia — ciclo local</title>'+readProjectFile('IndexStyles.html')+readProjectFile('IndexStylesAfterDashboard.html')+cycle.match(/<style\b[^>]*>[\s\S]*?<\/style>/i)[0]+fonts+'</head><body>'+readProjectFile('IndexContent.html')+readProjectFile('IndexContentAfterDashboard.html')+readProjectFile('IndexContentAfterStock.html')+'</body></html>');
+  await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS | Farmácia — ciclo local</title>'+readProjectFile('IndexStyles.html')+readProjectFile('IndexStylesAfterDashboard.html')+cycle.match(/<style\b[^>]*>[\s\S]*?<\/style\s*>/i)[0]+fonts+'</head><body>'+readProjectFile('IndexContent.html')+readProjectFile('IndexContentAfterDashboard.html')+readProjectFile('IndexContentAfterStock.html')+'</body></html>');
   await page.addScriptTag({content:`
     var FARMACIA_STUDY_REQUEST_ID=0,FARMACIA_REQUEST_ID=1,pending=[],currentPage='farmacia';
     function getCurrentPage(){return currentPage;} function irPara(page){currentPage=page;}
@@ -43,7 +43,7 @@ async function cycleFixture(browser,width=1536) {
     appInitContentAccessibility();
   `});
   for(const file of ['IndexFarmaciaScripts.html','IndexFarmaciaViewScripts.html','IndexFarmaciaLocationActions.html','IndexFarmaciaActions.html','IndexFarmaciaCiclo.html']){
-    const source=readProjectFile(file).match(/<script\b[^>]*>[\s\S]*?<\/script>/i)[0].replace(/^<script\b[^>]*>/i,'').replace(/<\/script>$/i,'');await page.addScriptTag({content:source});
+    const source=readProjectFile(file).match(/<script\b[^>]*>[\s\S]*?<\/script\s*>/i)[0].replace(/^<script\b[^>]*>/i,'').replace(/<\/script\s*>$/i,'');await page.addScriptTag({content:source});
   }
   await page.evaluate(data=>{
     document.getElementById('page-farmacia').classList.add('active');document.getElementById('navFarmaciaSection').style.display='';document.getElementById('navFarmacia').style.display='';
