@@ -43,7 +43,7 @@ async function cycleFixture(browser,width=1536) {
     appInitContentAccessibility();
   `});
   for(const file of ['IndexFarmaciaScripts.html','IndexFarmaciaViewScripts.html','IndexFarmaciaLocationActions.html','IndexFarmaciaActions.html','IndexFarmaciaCiclo.html']){
-    const source=readProjectFile(file).match(/<script>([\s\S]*?)<\/script>/)[1];await page.addScriptTag({content:source});
+    const source=readProjectFile(file).match(/<script\b[^>]*>[\s\S]*?<\/script>/i)[0].replace(/^<script\b[^>]*>/i,'').replace(/<\/script>$/i,'');await page.addScriptTag({content:source});
   }
   await page.evaluate(data=>{
     document.getElementById('page-farmacia').classList.add('active');document.getElementById('navFarmaciaSection').style.display='';document.getElementById('navFarmacia').style.display='';
