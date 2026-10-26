@@ -76,6 +76,7 @@ function farmaciaSetView(view) {
   if (typeof appSyncNavAccessibility === 'function') appSyncNavAccessibility();
   farmaciaUpdateSummary();
   farmaciaApplySearch();
+  if (typeof farmaciaLifecycleRender === 'function') farmaciaLifecycleRender();
   if (view && catalogView) carregarFarmaciaCatalogo(false);
   else if (view && FARMACIA_STOCK.data) renderFarmaciaEstoque(FARMACIA_STOCK.data);
   else if (view && document.getElementById('farmaciaStudy').value) selecionarFarmaciaStudy();
@@ -161,18 +162,19 @@ function farmaciaProductLabel(product) {
 
 function farmaciaRenderTables(data) {
   var products = data.products || [], positions = data.positions || [];
+  var lifecycle = typeof farmaciaCycleOpen === 'function';
   var productRows = products.map(function(product) {
     return '<tr data-farmacia-row><td><div class="farmacia-product-heading"><strong>' + esc(product.name) + '</strong><span class="chip ' + (product.category === 'medicine' ? 'chip-blue' : product.category === 'material' ? 'chip-green' : 'chip-gray') + '">' + esc(farmaciaProductCategoryLabel(product.category)) + '</span></div><small>' + esc([product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ')) + '</small><small>' + esc(product.barcode ? 'GTIN ' + product.barcode : '') + '</small></td><td>' + esc(product.presentation) + '<small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td><td>' + farmaciaRecordActions('product',product,data) + '</td></tr>';
   }).join('');
   var positionRows = positions.map(function(position) {
     var product = products.find(function(item) { return item.id === position.productId; }) || {};
-    return '<tr data-farmacia-row><td><strong>' + esc(product.name) + '</strong><small>' + esc([farmaciaProductCharacteristics(product),product.presentation].filter(Boolean).join(' · ')) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + (position.expired ? '<small class="chip chip-red">Vencido</small>' : '') + '</td><td class="farmacia-cell-detail">' + esc(position.location) + '<small>' + esc((position.storageCheck || {}).message || 'Conservação pendente de conferência.') + '</small></td>' +
+    return '<tr data-farmacia-row data-farmacia-position="' + esc(position.id) + '"><td class="farmacia-cycle-product"><strong>' + esc(product.name) + '</strong><small>' + esc([farmaciaProductCharacteristics(product),product.presentation].filter(Boolean).join(' · ')) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + (position.expired ? '<small class="chip chip-red">Vencido</small>' : '') + '</td><td class="farmacia-cell-detail">' + esc(position.location) + '<small>' + esc((position.storageCheck || {}).message || 'Conservação pendente de conferência.') + '</small></td>' +
       ['physical', 'available', 'pending', 'blocked'].map(function(key) { return '<td class="farmacia-quantity">' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</td>'; }).join('') +
-      '<td>' + (position.origin === 'receipt' ? 'Recebimento' : 'Saldo inicial') + '<small>' + esc(farmaciaStockDate(position.receivedOn || position.countedOn)) + '</small><small>' + esc(position.author) + '</small></td><td>' + farmaciaRecordActions('position',position,data) + '</td></tr>';
+      (lifecycle ? '' : '<td>' + (position.origin === 'return' ? 'Retorno do participante' : position.origin === 'transport' ? 'Chegada de transporte' : position.origin === 'receipt' ? 'Recebimento' : 'Saldo inicial') + '<small>' + esc(farmaciaStockDate(position.receivedOn || position.countedOn || position.occurredOn)) + '</small><small>' + esc(position.author) + '</small></td>') + '<td>' + (typeof farmaciaCycleOpen === 'function' ? '<button type="button" class="btn-txt farmacia-cycle-link" data-position-id="' + esc(position.id) + '" onclick="farmaciaCycleOpen(this.dataset.positionId)">Ver ciclo</button>' : '') + farmaciaRecordActions('position',position,data) + '</td></tr>';
   }).join('');
   var missing = farmaciaEmpty('Estoque ainda não configurado', 'O administrador precisa vincular o arquivo deste estoque antes do primeiro cadastro.', 'settings');
   document.getElementById('farmaciaProductsResults').innerHTML = !data.configured ? missing : productRows ? farmaciaTable(['Produto / tipo', 'Apresentação', 'Unidade', 'Controle', 'Conservação', 'Ações'], productRows, 'Produtos da Farmácia') : farmaciaEmpty('Nenhum produto cadastrado', 'Medicamentos, equipos, seringas e outros itens aparecerão aqui.', 'inventory_2');
-  document.getElementById('farmaciaInventoryResults').innerHTML = !data.configured ? missing : positionRows ? farmaciaTable(['Produto', 'Lote / Kit', 'Validade', 'Localização', 'Físico', 'Disponível', 'Aguardando avaliação', 'Bloqueado', 'Origem / Autoria', 'Ações'], positionRows, 'Estoque da Farmácia') : farmaciaEmpty('Nenhuma entrada de estoque', 'Registre o saldo inicial ou um recebimento do patrocinador.', 'inventory_2');
+  document.getElementById('farmaciaInventoryResults').innerHTML = !data.configured ? missing : positionRows ? farmaciaTable(['Produto', 'Lote / Kit', 'Validade', 'Localização', 'Físico', 'Disponível', 'Aguardando avaliação', 'Bloqueado'].concat(lifecycle ? ['Ações'] : ['Origem / Autoria', 'Ações']), positionRows, 'Estoque da Farmácia') : farmaciaEmpty('Nenhuma entrada de estoque', 'Registre o saldo inicial ou um recebimento do patrocinador.', 'inventory_2');
   farmaciaRenderCatalog(data);
 }
 
@@ -207,7 +209,7 @@ function farmaciaApplySearch() {
   var input = document.getElementById('farmaciaSearch');
   function normalized(value) { return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
   var query = normalized(input.value.trim()), rows = document.getElementById(FARMACIA_VIEWS[FARMACIA_VIEW].target).querySelectorAll('[data-farmacia-row]'), visible = 0;
-  rows.forEach(function(row) { row.hidden = !!query && normalized(row.textContent).indexOf(query) === -1; if (!row.hidden) visible++; });
+  rows.forEach(function(row) { row.hidden = (!!query && normalized(row.textContent).indexOf(query) === -1) || (typeof farmaciaLifecycleMatches === 'function' && !farmaciaLifecycleMatches(row)); if (!row.hidden) visible++; });
   document.getElementById('farmaciaSearchEmpty').hidden = !query || !rows.length || !!visible;
 }
 

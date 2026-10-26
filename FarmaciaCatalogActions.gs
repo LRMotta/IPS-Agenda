@@ -36,7 +36,7 @@ function farmaciaApplyCatalogAction_(ledger, record) {
       list[index] = Object.assign({}, current, { data: next, revision: record.id });
     }
   } else {
-    if (current.origin !== 'initial' || ledger.movements.some(function(item) { return item.type === 'MOVEMENT' && item.data.positionId === current.id; })) throw new Error('Recebimentos e registros com movimentações preservam seu histórico. Use uma movimentação documentada.');
+    if (current.origin !== 'initial' || ledger.movements.some(function(item) { return (item.type === 'MOVEMENT' || item.type === 'LIFECYCLE') && item.data.positionId === current.id; })) throw new Error('Recebimentos e registros com movimentações preservam seu histórico. Use uma movimentação documentada.');
     if (!deleting) {
       var corrected = Object.assign({}, current, data.data);
       if (ledger.positions.some(function(item) { return item.id !== current.id && farmaciaSamePosition_(item, corrected); })) throw new Error('Esta posição já possui saldo.');

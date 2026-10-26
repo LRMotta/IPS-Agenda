@@ -2,8 +2,11 @@
 
 Base local com permissões por estudo, estoque comum e ciclo inicial de produtos
 fornecidos pelo patrocinador. Há inventário inicial, recebimentos, bloqueio/liberação
-e transferência de localização, com histórico. Não há importação da planilha anterior,
-integração com Tasy/IRT, dispensação, preparo, prescrição, devoluções ou destruição.
+e transferência de localização, com histórico. O ciclo visual inclui dispensação,
+retorno segregado, adesão para dose diária fixa, transporte e destinação documentada.
+Consulte [Ciclo do medicamento](FARMACIA_CICLO.md) para contratos e limites.
+Não há importação da planilha anterior, integração com Tasy/IRT, prescrição,
+preparo ou administração clínica automatizados.
 
 ## Uso
 

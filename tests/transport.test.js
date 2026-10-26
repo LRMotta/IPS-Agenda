@@ -597,7 +597,7 @@ test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', (
   assert.match(block, /participanteCadastroId: transporteParticipanteCadastroId_\(p\)/);
 });
 
-test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', () => {
+test('Transporte resolve evento e origens de backup com uma unica leitura em bloco da Agenda', () => {
   const calls = [];
   const rows = [
     ['EVT-1', 'primeiro'],
@@ -615,7 +615,9 @@ test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', 
   const server = runFile('TransporteCodexConfig.gs', {
     Logger: { log: () => {} },
     AGENDA_CFG: { lastCol: 51, idx: { id: 0 }, col: { id: 1 } },
+    normText_: value => String(value || '').trim().toLowerCase(),
     getAgendaSheet_: () => sheet,
+    formatarDataIsoAgenda_: () => '',
     encontrarLinhaPorId: (agenda, id) => {
       const ids = agenda.getRange(2, 1, agenda.getLastRow() - 1, 1).getValues();
       const offset = ids.findIndex((row) => String(row[0]) === String(id));
@@ -624,12 +626,11 @@ test('Transporte busca ID na coluna e le somente uma linha completa da Agenda', 
     agendaRowToObject_: (row, rowIndex) => ({ id: row[0], rowIndex })
   });
 
-  assert.equal(server.buscarAgendaEventoPorIdTransp_('EVT-2').id, 'EVT-2');
-  assert.equal(calls.filter((call) => call.numColumns === 1 && call.numRows === 2).length, 1);
-  assert.equal(calls.filter((call) => call.numColumns === 51 && call.numRows === 1).length, 1);
+  assert.equal(server.buscarAgendaEventoPorIdTransp_('EVT-2', '1').id, 'EVT-2');
+  assert.deepEqual(calls, [{ row: 2, column: 1, numRows: 2, numColumns: 51 }]);
   calls.length = 0;
-  assert.throws(() => server.buscarAgendaEventoPorIdTransp_('INEXISTENTE'), /nao encontrado/);
-  assert.equal(calls.filter((call) => call.numColumns === 51).length, 0);
+  assert.throws(() => server.buscarAgendaEventoPorIdTransp_('INEXISTENTE', '1'), /nao encontrado/);
+  assert.deepEqual(calls, [{ row: 2, column: 1, numRows: 2, numColumns: 51 }]);
 });
 
 test('bootstrap vindo da Agenda reutiliza o registro preparado do mesmo slot sob unico lock', () => {

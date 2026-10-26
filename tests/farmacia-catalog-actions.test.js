@@ -84,6 +84,24 @@ test('troca para material revalida campos herdados antes de gravar e aceita limp
   assert.deepEqual(current.storage,medicine.storage);
 });
 
+test('unidade pode ser corrigida antes do estoque e catalogo sinaliza historico mesmo apos excluir inventario', () => {
+  const f = fixture();
+  f.server.codexAssertFarmaciaProductsAccess_ = () => ({ farmaciaAccess:'manage', farmaciaStudy:{id:'P1'} });
+  f.server.getCodexSpreadsheet_ = () => f.ss;
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,false);
+  const edited = f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,f.product.id,{...f.ledger().products[0].data,unit:'caixa'}));
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].unit,'caixa');
+  const initial = f.initial();
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,true);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].hasStockHistory,true);
+  f.server.alterarRegistroFarmacia(f.action('INITIAL_DELETE',initial.id,initial.id,null,'delete-initial-00001'));
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).positions.length,0);
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,true);
+  const before = JSON.stringify(f.ledger().sheet.rows);
+  assert.throws(() => f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,edited.id,{...f.ledger().products[0].data,unit:'comprimido'},'edit-used-unit-00001')),/preservar/);
+  assert.equal(JSON.stringify(f.ledger().sheet.rows),before);
+});
+
 test('produto sem estoque pode ser excluído; histórico impede exclusão e mudança de unidade', () => {
   const f = fixture();
   f.server.alterarRegistroFarmacia(f.action('PRODUCT_DELETE',f.product.id,f.product.id));

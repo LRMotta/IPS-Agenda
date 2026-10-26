@@ -407,6 +407,8 @@ test('Dashboard informa falhas parciais de Agenda e Estoque e não as guarda no 
 test('servidor classifica status de projeto uma unica vez com normalizacao', () => {
   const server = runFile('WebApp.gs');
   const casos = [
+    ['Não selecionado', 'nao_selecionado'],
+    ['  NAO SELECIONADO  ', 'nao_selecionado'],
     ['Cancelado', 'cancelado'],
     ['  CANCELADA  ', 'cancelado'],
     ['Projeto cancelado', 'cancelado'],
@@ -430,7 +432,8 @@ test('projetos, Dashboard e Estoque consomem a classificacao canonica do servido
     ['ID', 'Nome', 'Código', '', '', '', '', '', '', '', '', '', '', 'Status'],
     ['1', 'Ativo', '', '', '', '', '', '', '', '', '', '', '', 'Em Acompanhamento'],
     ['2', 'Cancelado', '', '', '', '', '', '', '', '', '', '', '', 'Cancelada'],
-    ['3', 'Concluído', '', '', '', '', '', '', '', '', '', '', '', 'Concluída']
+    ['3', 'Concluído', '', '', '', '', '', '', '', '', '', '', '', 'Concluída'],
+    ['4', 'Não selecionado', '', '', '', '', '', '', '', '', '', '', '', 'Não selecionado']
   ];
   server.getCodexSheetDataByName_ = () => rows;
   server.getParticipantesStatsPorProjeto_ = () => ({});
@@ -440,7 +443,7 @@ test('projetos, Dashboard e Estoque consomem a classificacao canonica do servido
   server.projetoSituacaoEnvioColumn_ = () => -1;
 
   const projetos = Array.from(server.getProjetos());
-  assert.deepEqual(projetos.map((p) => p.classificacaoStatus), ['ativo', 'cancelado', 'concluido']);
+  assert.deepEqual(projetos.map((p) => p.classificacaoStatus), ['ativo', 'cancelado', 'concluido', 'nao_selecionado']);
   assert.deepEqual(Array.from(server.getProjetosAtivosEstoque_()), ['Ativo']);
 
   const dashboard = readProjectFile('IndexDashboard.html');
@@ -455,7 +458,17 @@ test('projetos, Dashboard e Estoque consomem a classificacao canonica do servido
   assert.doesNotMatch(core, /function dashboardProjetoAtivo_/);
 });
 
-test('resumo de Projetos exclui cancelados de todos os indicadores ativos', () => {
+test('status Nao selecionado usa chip cinza e preserva o rotulo', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const context = vm.createContext({ esc: String });
+  vm.runInContext(sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(') +
+    sourceBetween(core, 'function projetoStatusChip(', 'function recrutamentoProjetoHtml('), context);
+  const html = context.projetoStatusChip({ status: 'Não selecionado', classificacaoStatus: 'nao_selecionado' });
+  assert.match(html, /background:#f1f3f4;color:#5f6368/);
+  assert.match(html, />Não selecionado<\/span>/);
+});
+
+test('resumo de Projetos exclui cancelados e nao selecionados dos indicadores ativos', () => {
   const core = readProjectFile('IndexCoreScripts.html');
   const rulesBlock = sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(');
   const renderBlock = sourceBetween(core, 'function renderProjetos(', 'function filtrarProjetos(');
@@ -474,10 +487,11 @@ test('resumo de Projetos exclui cancelados de todos os indicadores ativos', () =
     { classificacaoStatus: 'ativo', especialidade: 'Oncologia', participantesAtivos: 2, metaRecrutamento: 5, totalParticipantes: 3, falhasTriagem: 1 },
     { classificacaoStatus: 'ativo', especialidade: 'Cardiologia', participantesAtivos: 1, metaRecrutamento: 4, totalParticipantes: 2, falhasTriagem: 0 },
     { classificacaoStatus: 'cancelado', especialidade: 'Nefrologia', participantesAtivos: 50, metaRecrutamento: 60, totalParticipantes: 70, falhasTriagem: 8 },
-    { classificacaoStatus: 'concluido', especialidade: 'Hematologia', participantesAtivos: 40, metaRecrutamento: 50, totalParticipantes: 60, falhasTriagem: 7 }
+    { classificacaoStatus: 'concluido', especialidade: 'Hematologia', participantesAtivos: 40, metaRecrutamento: 50, totalParticipantes: 60, falhasTriagem: 7 },
+    { classificacaoStatus: 'nao_selecionado', especialidade: 'Pneumologia', participantesAtivos: 30, metaRecrutamento: 40, totalParticipantes: 50, falhasTriagem: 6 }
   ]);
 
-  assert.equal(elements.projTotal.textContent, 4);
+  assert.equal(elements.projTotal.textContent, 5);
   assert.equal(elements.projFases.textContent, 2);
   assert.equal(elements.projConcluidos.textContent, 1);
   assert.equal(elements.projRecrutamento.textContent, '3 pacientes ativo(s)');

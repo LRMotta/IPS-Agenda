@@ -238,7 +238,7 @@ function testarUrlWebAppTransporteCodex() {
 
 function montarContextoTransporteParaTransp_(idAgenda, slot) {
   slot = normalizarSlotTransporteCodex_(slot, true);
-  var evento = buscarAgendaEventoPorIdTransp_(idAgenda);
+  var evento = buscarAgendaEventoPorIdTransp_(idAgenda, slot);
   // Leitura privada desta abertura; nao reutilizar entre requisicoes.
   var leituraParticipantes = {};
   return {
@@ -250,7 +250,7 @@ function montarContextoTransporteParaTransp_(idAgenda, slot) {
 
 function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado, leituraParticipantes) {
   slot = normalizarSlotTransporteCodex_(slot, true);
-  var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda);
+  var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda, slot);
   var participanteInfo;
   try {
     participanteInfo = agendaInfoParticipanteParaSalvar_({
@@ -396,16 +396,65 @@ function transportePreservarVinculoAgendaPayload_(payload, range) {
   return payload;
 }
 
-function buscarAgendaEventoPorIdTransp_(idAgenda) {
+function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   if (!idAgenda) throw new Error('ID da Agenda nao informado.');
   var sh = getAgendaSheet_();
   var lastRow = sh.getLastRow();
   if (lastRow < 2) throw new Error('Agenda sem registros.');
-  var row = encontrarLinhaPorId(sh, idAgenda);
-  if (row) {
-    return agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
+  if (!slot) {
+    var row = encontrarLinhaPorId(sh, idAgenda);
+    if (row) return agendaRowToObject_(sh.getRange(row, 1, 1, AGENDA_CFG.lastCol).getValues()[0], row);
+    throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
+  }
+  slot = normalizarSlotTransporteCodex_(slot, true);
+  // A mesma leitura resolve o evento e os vínculos de Backup I/II, sem leituras por linha.
+  var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][AGENDA_CFG.idx.id] || '').trim() !== String(idAgenda).trim()) continue;
+    var evento = agendaRowToObject_(rows[i], i + 2);
+    evento.transporteDatasColeta = transporteDatasColetaAgenda_(rows, rows[i], slot);
+    return evento;
   }
   throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
+}
+
+function transporteDatasColetaAgenda_(rows, destino, slotSolicitado) {
+  var idx = AGENDA_CFG.idx;
+  var dataOriginal = formatarDataIsoAgenda_(destino[idx.data]);
+  var datas = { backup: dataOriginal, backup2: dataOriginal };
+  if (slotSolicitado === 'backup' || slotSolicitado === 'backup2') return datas;
+  var origens = {};
+  var destinoId = String(destino[idx.id] || '').trim();
+  rows.forEach(function(origem) {
+    if (String(origem[idx.id] || '').trim() === destinoId) return;
+    if (!String(origem[idx.participanteCadastroId] || '').trim() ||
+        String(origem[idx.participanteCadastroId]) !== String(destino[idx.participanteCadastroId]) ||
+        String(origem[idx.projeto] || '').trim() !== String(destino[idx.projeto] || '').trim()) return;
+    ['backup', 'backup2'].forEach(function(backupSlot) {
+      var backup = agendaBackupFromRow_(origem, backupSlot);
+      backup.agendamentos.forEach(function(ref) {
+        if (ref.id !== destinoId) return;
+        var slot = normalizarSlotTransporteCodex_(ref.slot || 'I', true);
+        if (slotSolicitado && slot !== slotSolicitado) return;
+        var courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3 }[slot];
+        if (!courierIdx) return;
+        // Referências históricas não podem atribuir coleta a outro participante ou slot reutilizado.
+        if (normText_(backup.nome) !== normText_(destino[courierIdx.nome]) ||
+            normText_(backup.temperatura) !== normText_(destino[courierIdx.temp]) ||
+            normText_(backup.destino) !== normText_(destino[courierIdx.destino])) return;
+        if (ref.awb && String(ref.awb).replace(/\W/g, '') !== String(destino[courierIdx.awb] || '').replace(/\W/g, '')) return;
+        var origemKey = String(origem[idx.id]) + ':' + backupSlot;
+        if (origens[slot] && origens[slot] !== origemKey) {
+          throw new Error('Há mais de uma origem de backup para este transporte. Revise o vínculo antes de gerar os documentos.');
+        }
+        var data = formatarDataIsoAgenda_(origem[idx.data]);
+        if (!data) throw new Error('A data do agendamento original do backup está inválida. Revise antes de gerar os documentos.');
+        origens[slot] = origemKey;
+        datas[slot] = data;
+      });
+    });
+  });
+  return datas;
 }
 
 function normalizarSlotTransporteCodex_(slot, strict) {
@@ -2514,7 +2563,7 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
   var idAgenda = String(registro.idAgenda || '').trim();
   if (!idAgenda) return registro;
   try {
-    var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda) || {};
+    var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda, registro.agendaSlot || registro.slot) || {};
     var referencia = {
       participanteCadastroId: evento.participantCadastroId || evento.participanteCadastroId || '',
       identificacaoParticipante: evento.idParticipante || registro.identificacaoParticipante || registro.idParticipante || '',
@@ -2534,6 +2583,8 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
       registro.investigador || ''
     ).trim();
     var destinoAgenda = transporteDestinoAgenda_(evento, registro.agendaSlot || registro.slot);
+    var dataColetaAgenda = evento.transporteDatasColeta && evento.transporteDatasColeta[normalizarSlotTransporteCodex_(registro.agendaSlot || registro.slot)];
+    if (dataColetaAgenda) registro.dataColeta = dataColetaAgenda;
 
     registro.protocolo = (options.adiarProjetoDisplay ? projeto : transporteProjetoDisplay_(projeto)) || registro.protocolo || '';
     registro.investigador = investigador || registro.investigador || '';
@@ -3197,6 +3248,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   transporteSetAgendaLink_(folha.getRange('C15'), payload);
 
   if (folhaDhl) {
+    transporteSetValueIfAllowed_(folhaDhl.getRange('C7'), transporteParseDate_(payload.dataColeta));
     transporteSetValuesBlock_(folhaDhl.getRange('C12:C14'), [
       [payload.pinexAwb || payload.awb || ''],
       [payload.courier === 'PINEX' ? (payload.pinexColeta || '') : ''],
@@ -3787,7 +3839,7 @@ function montarPayloadTransporteCodex(codexPayload) {
     protocolo: transporteProjetoDisplay_(agenda.projeto || codexPayload.projeto || ''),
     investigador: agenda.medico || codexPayload.medico || '',
     temperatura: temperatura,
-    dataColeta: dataIso,
+    dataColeta: (agenda.transporteDatasColeta && agenda.transporteDatasColeta[slot]) || dataIso,
     dataEnvio: dataIso,
     horaEnvio: codexPayload.horaEnvio || '',
     courier: courierNome,

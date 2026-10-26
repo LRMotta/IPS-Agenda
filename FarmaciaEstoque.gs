@@ -172,6 +172,8 @@ function farmaciaEntryState_(record) {
 function farmaciaApplyMovement_(position, movement, product, id) {
   if (!position || !product || product.data.supplySource !== 'sponsor') throw new Error('Movimentações são exclusivas de produtos do patrocinador deste estudo.');
   if (movement.revision !== position.revision) throw new Error('O saldo mudou. Atualize o estoque antes de movimentar.');
+  if (position.transportReserved) throw new Error('Conclua o transporte em andamento antes de movimentar esta entrada.');
+  if (position.returned && movement.action === 'release') throw new Error('Produtos retornados pelo participante permanecem em quarentena até a destinação documentada.');
   var quantity = farmaciaQuantity_(movement.quantity, ['mL', 'g'].indexOf(product.data.unit) !== -1);
   if (movement.action === 'transfer') {
     if (quantity !== position.physical) throw new Error('A transferência deve abranger todo o saldo deste registro.');
@@ -212,8 +214,8 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       // Nunca desserializar payloads de outros estudos/classes na consulta autorizada.
       if (scope !== context.studyId || row[3] !== context.restricted) return;
       var registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
-      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
-      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA)-[A-Za-z0-9_-]+$/.test(row[0]) ||
+      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
+      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC)-[A-Za-z0-9_-]+$/.test(row[0]) ||
           !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
           typeof row[4] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[4]) ||
           typeof registeredAt !== 'string' || isNaN(Date.parse(registeredAt)) || new Date(registeredAt).toISOString() !== registeredAt ||
@@ -238,6 +240,9 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
         if (record.type === 'INITIAL') initial.push(record);
         else receipts.push(farmaciaReceiptKey_(data));
         positions.push(farmaciaEntryState_(record)); movements.push(record);
+      } else if (record.type === 'LIFECYCLE') {
+        if (context.studyId === FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
+        farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements }, record);
       } else if (record.type !== 'MOVEMENT') {
         if (JSON.stringify(farmaciaCatalogActionData_(record.type, data)) !== record.dataJson ||
             (record.type === 'PRODUCT_EDIT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.data.supplySource === 'sponsor')) throw new Error('Correção inválida.');
@@ -271,14 +276,27 @@ function codexAssertFarmaciaProductsAccess_(studyId, restricted) {
   return access;
 }
 
-// Catálogo geral: não interpreta inventários, kits, lotes nem movimentações.
+// Catálogo geral: não devolve dados operacionais. Gestores recebem apenas o bloqueio de unidade por histórico.
 function getFarmaciaProdutos(studyId, restricted) {
   var access = codexAssertFarmaciaProductsAccess_(studyId, restricted);
   var ss = farmaciaStorage_();
   var sheet = ss.getSheetByName(farmaciaLedgerSheetName_(studyId));
   var products = [];
+  var productsWithStockHistory = {};
+  var stockHistoryUnknown = false;
   if (sheet && sheet.getLastRow()) {
     var rows = sheet.getDataRange().getValues();
+    rows.slice(1).forEach(function(row) {
+      if (access.farmaciaAccess !== 'manage' || row[2] !== JSON.stringify(studyId) || row[3] !== restricted || ['INITIAL', 'RECEIPT'].indexOf(row[1]) === -1) return;
+      try {
+        var stockData = JSON.parse(row[7]);
+        if (!stockData || !stockData.productId) stockHistoryUnknown = true;
+        else productsWithStockHistory[stockData.productId] = true;
+      } catch (error) {
+        // O catálogo continua consultável; histórico ilegível nunca libera mudança de unidade.
+        stockHistoryUnknown = true;
+      }
+    });
     var selected = rows.slice(1).filter(function(row) {
       return row[2] === JSON.stringify(studyId) && row[3] === restricted && ['PRODUCT', 'PRODUCT_EDIT', 'PRODUCT_DELETE'].indexOf(row[1]) !== -1;
     });
@@ -287,7 +305,7 @@ function getFarmaciaProdutos(studyId, restricted) {
   return { study: access.farmaciaStudy, productsOnly: true, configured: true, restricted: restricted, restrictedAllowed: access.farmaciaRestricted === true,
     farmaciaAccess: access.farmaciaAccess, locationsConfigured: false, locationsCanManage: false,
     positions: [], movements: [], storageUnits: [], products: products.map(function(record) {
-      var result = { id: record.id, revision: record.revision || record.id };
+      var result = { id: record.id, revision: record.revision || record.id, hasStockHistory: stockHistoryUnknown || productsWithStockHistory[record.id] === true };
       ['name','presentation','category','unit','control','productCode','barcode','dosageForm','strength','route','storage','supplySource'].forEach(function(key) {
         if (record.data[key] !== undefined) result[key] = record.data[key];
       });
@@ -300,19 +318,29 @@ function getFarmaciaEstoque(studyId, restricted) {
   var data = context.ss ? farmaciaReadLedger_(context) : { products: [], positions: [], movements: [] };
   var today = farmaciaToday_();
   var locations = farmaciaReadLocations_();
+  var productsWithStockHistory = {};
+  (data.records || []).forEach(function(record) {
+    if (['INITIAL', 'RECEIPT'].indexOf(record.type) !== -1) productsWithStockHistory[record.data.productId] = true;
+  });
   return { study: context.access.farmaciaStudy, restricted: restricted, configured: !!context.ss,
     locationsConfigured: locations.configured, storageUnits: locations.units,
     locationsCanManage: context.access.role === 'admin' || context.access.role === 'user',
     farmaciaAccess: context.access.farmaciaAccess, products: data.products.map(function(record) {
-      return Object.assign({ id: record.id, revision: record.revision || record.id, registeredAt: record.registeredAt, author: record.author }, record.data);
+      return Object.assign({ id: record.id, revision: record.revision || record.id, registeredAt: record.registeredAt, author: record.author }, record.data,
+        { hasStockHistory: productsWithStockHistory[record.id] === true });
     }), movements: data.movements.map(function(record) {
-      return { id: record.id, type: record.type, registeredAt: record.registeredAt, author: record.author, data: record.data };
+      var event = { id: record.id, type: record.type, registeredAt: record.registeredAt, author: record.author, data: record.data };
+      if (record.adherenceResult) event.adherenceResult = record.adherenceResult;
+      if (record.excursion !== undefined) event.excursion = record.excursion;
+      return event;
     }), positions: data.positions.map(function(position) {
       var expired = position.expiry < today;
       return Object.assign({}, position, {
         storageCheck: farmaciaStorageCheck_(data.products.find(function(item) { return item.id === position.productId; }).data, position, locations.units),
-        expired: expired, available: expired ? 0 : position.available,
-        pending: expired ? 0 : position.pending, blocked: expired ? position.physical : position.blocked
+        expired: expired, available: expired ? 0 : Math.round((position.available - (position.transportReserved || 0)) * 1000) / 1000,
+        inTransit: position.transportReserved || 0,
+        pending: expired ? 0 : position.pending,
+        blocked: expired ? Math.round((position.physical - (position.transportReserved || 0)) * 1000) / 1000 : position.blocked
       });
     }) };
 }
