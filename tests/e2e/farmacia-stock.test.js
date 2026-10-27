@@ -733,10 +733,10 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
   try {
     for (const width of [1280,390]) {
       const {page,errors} = await fixture(browser,width);
-      await page.evaluate(() => window.renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Estoque comum do IPS'},{id:'P1',nome:'Estudo A'}]));
+      await page.evaluate(() => window.renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},{id:'P1',nome:'Estudo A'}]));
       await page.locator('#farmaciaStudy').selectOption('@IPS_COMMON');
       assert.equal(await page.evaluate(() => window.pending.at(-1).args[0]),'@IPS_COMMON');
-      await page.evaluate(() => window.pending.at(-1).success({study:{id:'@IPS_COMMON',nome:'Estoque comum do IPS'},farmaciaAccess:'manage',restrictedAllowed:false}));
+      await page.evaluate(() => window.pending.at(-1).success({study:{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},farmaciaAccess:'manage',restrictedAllowed:false}));
       assert.deepEqual(await page.evaluate(() => window.pending.at(-1).args),['@IPS_COMMON',false]);
       const oldIndex = await page.evaluate(() => window.pending.length-1);
       const data = stockData({products:[{id:'PR1',name:'Equipo fictício',presentation:'Equipo de teste',unit:'unidade',control:'quantity'}]});
@@ -751,11 +751,12 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       await page.locator('#farmaciaProductSupply').selectOption('site');
       await page.locator('#farmaciaProductCategory').selectOption('material');
       await page.locator('#farmaciaProductName').fill('Seringa fictícia');
+      await page.locator('#farmaciaProductBrand').fill('Marca de material');
       await page.locator('#farmaciaProductBarcode').fill('07891234567890');
       await page.locator('#farmaciaProductPresentation').fill('10 mL');
       await page.locator('#farmaciaProductInstructions').fill('Instrução fictícia');
       assert.equal(await page.locator('#farmaciaModal-product [data-farmacia-medication-field]:visible').count(),0);
-      assert.equal(await page.locator('#farmaciaProductStudyLabel').innerText(),'Estoque comum do IPS');
+      assert.equal(await page.locator('#farmaciaProductStudyLabel').innerText(),'Geral (Farmácia)');
       if (width === 1280) {
         await page.setViewportSize({width,height:1600});
         await page.locator('#farmaciaModal-product .modal-box').screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-produto-material-preview.png')});
@@ -765,6 +766,7 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       const commonProduct=await page.evaluate(() => window.pending.at(-1).args[0]);
       assert.equal(commonProduct.studyId,'@IPS_COMMON');
       assert.equal(commonProduct.data.category,'material');
+      assert.equal(commonProduct.data.brand,'Marca de material');
       assert.equal(commonProduct.data.barcode,'07891234567890');
       assert.equal(Object.hasOwn(commonProduct.data.storage,'source'),false);
       assert.equal(Object.hasOwn(commonProduct.data.storage,'version'),false);
@@ -839,6 +841,7 @@ test('produto cadastra Caixa sem código de estudo e corrige forma, dosagem e vi
       const modal=page.locator('#farmaciaModal-product');
       await page.locator('#farmaciaProductCategory').selectOption('medicine');
       await page.locator('#farmaciaProductName').fill('Produto de demonstração');
+      await page.locator('#farmaciaProductBrand').fill('Marca de demonstração');
       assert.equal(await page.locator('#farmaciaProductCode').count(),0);
       await page.locator('#farmaciaProductUnit').selectOption('caixa');
       await page.locator('#farmaciaProductBarcode').fill('7891234567890');
@@ -862,6 +865,7 @@ test('produto cadastra Caixa sem código de estudo e corrige forma, dosagem e vi
       await modal.getByRole('button',{name:'Cadastrar produto',exact:true}).click();
       const first=await page.evaluate(()=>window.pending.at(-1).args[0]);
       assert.equal(first.data.category,'medicine'); assert.equal(first.data.strength,'10 mg'); assert.equal(first.data.dosageForm,'Comprimido');
+      assert.equal(first.data.brand,'Marca de demonstração');
       assert.equal(Object.hasOwn(first.data,'productCode'),false); assert.equal(first.data.unit,'caixa'); assert.equal(first.data.barcode,'7891234567890'); assert.equal(first.data.route,'Oral');
       assert.equal(Object.hasOwn(first.data.storage,'source'),false); assert.equal(Object.hasOwn(first.data.storage,'version'),false);
       assert.equal(await page.locator('#farmaciaProductStrength').isDisabled(),true);
@@ -879,12 +883,20 @@ test('produto cadastra Caixa sem código de estudo e corrige forma, dosagem e vi
       assert.equal(await page.locator('#farmaciaProductsResults [data-farmacia-row]:visible').count(),1);
       await page.locator('#farmaciaSearch').fill('10 mg');
       assert.equal(await page.locator('#farmaciaProductsResults [data-farmacia-row]:visible').count(),1);
+      await page.locator('#farmaciaSearch').fill('Marca de demonstração');
+      assert.equal(await page.locator('#farmaciaProductsResults [data-farmacia-row]:visible').count(),1);
       await page.locator('#farmaciaSearch').fill('');
+      await page.locator('#farmaciaProductsResults button[data-record-id="PR2"][data-action="view"]').click();
+      assert.match(await page.locator('#farmaciaModal-recordAction').innerText(),/Marca do produto/i);
+      assert.match(await page.locator('#farmaciaModal-recordAction').innerText(),/Marca de demonstração/);
+      await page.locator('#farmaciaModal-recordAction .modal-close').click();
       await page.locator('#farmaciaProductsResults button[data-record-id="PR2"][data-action="edit"]').click();
       const edit=page.locator('#farmaciaModal-recordAction');
       assert.equal(await edit.locator('.modal-header-title').innerText(),'Editar produto');
       assert.equal(await edit.locator('.modal-header-sub').innerText(),'KANDELA-302 — BGB-43395-302');
       assert.equal(await page.locator('#farmaciaAction-strength').inputValue(),'10 mg');
+      assert.equal(await page.locator('#farmaciaAction-brand').inputValue(),'Marca de demonstração');
+      await page.locator('#farmaciaAction-brand').fill('Marca corrigida');
       await page.locator('#farmaciaAction-strength').fill('20 mg');
       await page.locator('#farmaciaAction-reason').fill('Correção conforme documento autorizado');
       await edit.locator('.modal-header').scrollIntoViewIfNeeded();
@@ -893,6 +905,7 @@ test('produto cadastra Caixa sem código de estudo e corrige forma, dosagem e vi
       const correction=await page.evaluate(()=>window.pending.at(-1).args[0]);
       assert.equal(correction.type,'PRODUCT_EDIT'); assert.equal(correction.data.data.strength,'20 mg');
       assert.equal(correction.data.data.barcode,'7891234567890');
+      assert.equal(correction.data.data.brand,'Marca corrigida');
       assert.equal(correction.data.data.route,'Oral');
       await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
       assert.equal(await page.locator('#farmaciaAction-strength').inputValue(),'20 mg');
@@ -1085,7 +1098,21 @@ test('ciclo de vida: histórico permite liberação parcial documentada e preser
       assert.match(await page.locator('#farmaciaPositionDetail').innerText(),/farmacia@example.invalid/);
       assert.match(await page.locator('#farmaciaPositionDetail').innerText(),/Contagem inicial fictícia/);
       await page.locator('#farmaciaMovementAction').selectOption('release');
+      assert.equal(await page.getByRole('button',{name:'Confirmar liberação',exact:true}).isVisible(),true);
+      assert.equal(await page.getByLabel('Situação atual do saldo',{exact:true}).isVisible(),true);
+      assert.match(await page.locator('#farmaciaMovementFrom').innerText(),/Aguardando avaliação — 8 frasco/);
+      assert.match(await page.locator('#farmaciaMovementHelp').innerText(),/liberar até 8 frasco.*disponível para uso/);
+      const helpStyle=await page.locator('#farmaciaMovementHelp').evaluate(el=>{
+        const actual=window.getComputedStyle(el), standard=window.getComputedStyle(document.getElementById('farmaciaMovementDocumentHelp'));
+        return {className:el.className,actual:[actual.fontFamily,actual.fontSize,actual.color,actual.lineHeight],standard:[standard.fontFamily,standard.fontSize,standard.color,standard.lineHeight]};
+      });
+      assert.equal(helpStyle.className,'field-help');
+      assert.deepEqual(helpStyle.actual,helpStyle.standard);
+      await page.locator('#farmaciaMovementFrom').selectOption('blocked');
+      assert.match(await page.locator('#farmaciaMovementHelp').innerText(),/até 2 frasco/);
+      assert.equal(await page.locator('#farmaciaMovementQuantity').getAttribute('max'),'2');
       await page.locator('#farmaciaMovementFrom').selectOption('pending');
+      assert.equal(await page.getByLabel('Quantidade a liberar (frasco)',{exact:true}).isVisible(),true);
       await page.locator('#farmaciaMovementQuantity').fill('3');
       await page.locator('#farmaciaMovementReason').fill('Conferência documental fictícia');
       const count=await page.evaluate(()=>window.pending.length);
@@ -1124,6 +1151,8 @@ test('ciclo de vida: transferência envia o saldo físico integral para uma posi
     await openStock(page,lifecycleData());
     await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
     await page.locator('#farmaciaMovementAction').selectOption('transfer');
+    assert.equal(await page.getByRole('button',{name:'Confirmar transferência',exact:true}).isVisible(),true);
+    assert.match(await page.locator('#farmaciaMovementHelp').innerText(),/Todo o saldo físico \(10 frasco\)/);
     assert.equal(await page.locator('#farmaciaMovementQuantity').inputValue(),'10');
     assert.equal(await page.locator('#farmaciaMovementQuantity').getAttribute('readonly'),'');
     await page.locator('#farmaciaMovementUnit').selectOption('UNIT-1');

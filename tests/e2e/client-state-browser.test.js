@@ -29,7 +29,7 @@ test('Farmácia: busca estoque por código, preserva ID e sincroniza revalidaç�
       function normSelectValue(v){return String(v).toLowerCase();}
       ${contentAccessibilitySource(['ativarAutocompleteProjeto','sincronizarAutocompleteProjeto','opcoesAutocompleteProjeto','renderAutocompleteProjeto','selecionarAutocompleteProjeto','navegarAutocompleteProjeto','renderFarmaciaStudies','farmaciaStudyLabel'])}
       document.getElementById('farmaciaStudy').addEventListener('change',function(){changes.push(this.value);});
-      renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Estoque comum do IPS'},{id:'P1',nome:'KANDELA-302',codigo:'BGB-43395-302'}]);
+      renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},{id:'P1',nome:'KANDELA-302',codigo:'BGB-43395-302'}]);
     ` });
     const input = page.locator('#farmaciaStudyAutocompleteInput');
     await input.fill('BGB-43395');
@@ -39,7 +39,7 @@ test('Farmácia: busca estoque por código, preserva ID e sincroniza revalidaç�
     await input.press('Enter');
     assert.equal(await page.locator('#farmaciaStudy').inputValue(), 'P1');
     assert.deepEqual(await page.evaluate(() => window.changes), ['P1']);
-    await input.fill('comum');
+    await input.fill('Geral (Farmácia)');
     await page.locator('.ac-item').click();
     assert.equal(await page.locator('#farmaciaStudy').inputValue(), '@IPS_COMMON');
     await page.evaluate(() => window.renderFarmaciaStudies([]));

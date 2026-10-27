@@ -29,6 +29,7 @@ function fixture() {
   const projects = [['ID', 'Nome', 'Codigo', 'Caixas especiais transporte (JSON)'], ['P1', 'Estudo', 'ABC-1', JSON.stringify([rule])]];
   const payload = { paciente: 'Pessoa', participanteCadastroId: 'CAD1', identificacaoParticipante: '123', protocolo: 'Estudo (ABC-1)', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'Lab', materiais: [], agendadoPor: 'Equipe', horaEnvio: '13:00 - 15:00' };
   const s = runFile('TransporteCodexConfig.gs', {
+    extrairIniciais_: runFile('WebApp.gs').extrairIniciais_,
     codexCourierIsValidAwbEntry_: runFile('WebApp.gs').codexCourierIsValidAwbEntry_,
     Logger: { log() {} }, normText_: v => String(v || '').toLowerCase().trim(), SpreadsheetApp: { flush() {} },
     getCodexSheetDataByName_: () => projects,
@@ -74,7 +75,10 @@ test('salvar força caixa BioSystem e reabrir preserva snapshot confirmado após
   assert.equal(registro.caixaTransporte.confirmado, true);
   projects[1][3] = '[]';
   const read = s.transporteReadRegistro_();
+  assert.equal(folha.getRange('C3').getValue(), 'P. | ID: 123');
+  assert.equal(read.paciente, 'Pessoa');
   assert.equal(read.caixaTransporte.tipoCaixa, 'BIOSYSTEM');
+  assert.equal(s.transporteCaixaDoModelo_({}).caixaTransporte.tipoCaixa, 'BIOSYSTEM');
   assert.equal(save().caixaTransporte.tipoCaixa, 'BIOSYSTEM');
   assert.ok(folha.getRange('C15').getNote().includes('BIOSYSTEM'));
 });

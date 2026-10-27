@@ -341,6 +341,7 @@ function transporteAgendaLinkFromRef_(refInterna, note) {
       out.idAgenda = String(meta.idAgenda || '').trim();
       out.participanteCadastroId = String(meta.participanteCadastroId || '').trim();
       out.identificacaoParticipante = String(meta.identificacaoParticipante || '').trim();
+      out.participanteNome = String(meta.participanteNome || '').trim();
       var slotMeta = String(meta.agendaSlot || meta.slot || '').trim();
       out.agendaSlot = slotMeta ? normalizarSlotTransporteCodex_(slotMeta) : '';
     }
@@ -355,6 +356,7 @@ function transporteAgendaLinkFromRef_(refInterna, note) {
     out.agendaSlot = '';
     out.participanteCadastroId = '';
     out.identificacaoParticipante = '';
+    out.participanteNome = '';
   }
   return out;
 }
@@ -376,6 +378,7 @@ function transporteSetAgendaLink_(range, payload) {
       agendaSlot: slotNormalizado,
       participanteCadastroId: cadastroId,
       identificacaoParticipante: identificacao,
+      participanteNome: String(payload.paciente || payload.participante || '').trim(),
       caixaTransporte: payload.caixaTransporte || null
     }));
   } else {
@@ -2902,6 +2905,21 @@ function transporteRestaurarMateriaisNote_(materiais, note, courier, outrosTexto
   return materiais;
 }
 
+// O rótulo de impressão nunca substitui o nome canônico nem a identidade cadastral.
+// Reconhecer o próprio formato evita reextrair iniciais das letras/números do ID.
+function transporteParticipanteDocumento_(payload) {
+  payload = payload || {};
+  var nome = String(payload.paciente || payload.participante || payload.iniciais || '').trim();
+  var rotulo = nome.match(/^((?:[A-Za-z\u00C0-\u00FF]\.)+)\s+\|\s+ID:\s*([\s\S]*)$/);
+  var iniciais = extrairIniciais_(rotulo ? rotulo[1] : nome);
+  var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || (rotulo && rotulo[2]) || '').trim();
+  return {
+    iniciais: iniciais,
+    identificacao: identificacao,
+    texto: iniciais + (iniciais && identificacao ? ' | ID: ' + identificacao : '')
+  };
+}
+
 function transporteReadRegistro_() {
   var ss = getTransporteSpreadsheetCodex_();
   var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
@@ -2960,7 +2978,7 @@ function transporteReadRegistro_() {
     if (transporteMaterialKey_(item && item.material) === 'fezes') item.unit = codexMatBioItemUnit_(item);
   });
   var registro = {
-    paciente: cfg[0] || '',
+    paciente: agendaLink.participanteNome || cfg[0] || '',
     participanteCadastroId: agendaLink.participanteCadastroId || '',
     identificacaoParticipante: agendaLink.identificacaoParticipante || '',
     protocolo: cfg[1] || '',
@@ -3064,7 +3082,7 @@ function transporteAwbPreservarFormulario_(payload, context) {
     context = context || agendaAwbContexto_(getAgendaSheetForRead_());
     var previous = transporteAwbRegistro_({
       envioId: link.envioId || (!payload.idAgenda && payload.envioId) || Utilities.getUuid().replace(/-/g, ''),
-      awb: values[9], paciente: values[0], protocolo: values[1], temperatura: values[3], dataEnvio: values[5], courier: values[7]
+      awb: values[9], paciente: link.participanteNome || values[0], protocolo: values[1], temperatura: values[3], dataEnvio: values[5], courier: values[7]
     });
     context.entries.push(previous);
     context.current[previous.owner] = previous;
@@ -3239,7 +3257,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
     transporteSetValuesBlock_(folha.getRange('C3:C14'), [
-      payload.paciente || '', payload.protocolo || '',
+      transporteParticipanteDocumento_(payload).texto, payload.protocolo || '',
       payload.investigador || '', payload.temperatura || '',
       transporteParseDate_(payload.dataColeta), transporteParseDate_(payload.dataEnvio),
       payload.horaEnvio || '', payload.courier || '', payload.destino || '',
@@ -3248,6 +3266,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   transporteSetAgendaLink_(folha.getRange('C15'), payload);
 
   if (folhaDhl) {
+    transporteSetValueIfAllowed_(folhaDhl.getRange('C3'), transporteParticipanteDocumento_(payload).texto);
     transporteSetValueIfAllowed_(folhaDhl.getRange('C7'), transporteParseDate_(payload.dataColeta));
     transporteSetValuesBlock_(folhaDhl.getRange('C12:C14'), [
       [payload.pinexAwb || payload.awb || ''],
@@ -3622,6 +3641,11 @@ function transportePeticaoMaterialRows_(materiais) {
 
 function preencherPeticaoAnuenciaWebApp_(ss, payload) {
   payload = payload || {};
+  var participanteDocumento = transporteParticipanteDocumento_(payload);
+  var iniciais = participanteDocumento.iniciais;
+  var peticaoPinex = transporteGetSheet_(ss, 'peticaoPinex', false);
+  // Este campo exige somente iniciais, mesmo quando C3 inclui o ID.
+  if (peticaoPinex) peticaoPinex.getRange('B33').setValue(iniciais);
   var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
   if (!peticao) return;
 
@@ -3631,8 +3655,7 @@ function preencherPeticaoAnuenciaWebApp_(ss, payload) {
   if (temperatura === 'CONGELADO' || temperatura === 'AMBIENTE + CONGELADO') peticao.getRange('K28').setValue(true);
   if (temperatura === 'REFRIGERADO') peticao.getRange('N28').setValue(true);
 
-  var iniciais = String(payload.iniciais || '').trim() || extrairIniciais_(payload.paciente || payload.participante);
-  var identificacao = String(payload.identificacaoParticipante || payload.idParticipante || payload.numeroIdentificacao || '').trim();
+  var identificacao = String(participanteDocumento.identificacao || payload.numeroIdentificacao || '').trim();
   if (!identificacao && typeof getInfoParticipante === 'function') {
     try {
       var participanteInfo = getInfoParticipante(payload.paciente || payload.participante);
@@ -5229,7 +5252,7 @@ function atualizarFormularioPinex_(ss) {
     var formulario = transporteCodexGetSheet_(ss, 'formularioPinex', false);
     if (!folha || !declaracao || !formulario) return;
 
-    var iniciais = extrairIniciais_(getCellValueSafe(folha, 'C3'));
+    var iniciais = transporteParticipanteDocumento_({ paciente: getCellValueSafe(folha, 'C3') }).iniciais;
     var temperatura = getCellValueSafe(folha, 'C6');
     var checked = declaracao.getRange('B21:B28').getValues();
     var formulas = declaracao.getRange('J21:L28').getValues().map(function(row) {
@@ -5330,7 +5353,7 @@ function atualizarCommercialInvoicePinexB33_(ss) {
 }
 
 function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volumes, outros) {
-  var iniciais = extrairIniciais_(paciente) || String(paciente || '').trim();
+  var iniciais = transporteParticipanteDocumento_({ paciente: paciente }).iniciais;
   var pacienteResumo = iniciais ? 'Patient ' + iniciais : 'Patient';
   var unidadesGramas = { 4: true, 6: true };
   var totalTubos = 0;
@@ -6308,7 +6331,8 @@ function imprimirTodasAbas_(options) {
     var marker = String(options.marker || '').trim();
     if (!folha) throw new Error('Aba Folha de Agendamento nao encontrada.');
     var cfg = folha.getRange('C3:C14').getValues().map(function(r) { return r[0]; });
-    var paciente = cfg[0] || payloadFallback.paciente;
+    // C3 é um rótulo documental seguro; a verificação nominal usa o nome canônico.
+    var paciente = payloadFallback.paciente || payloadFallback.participante || '';
     var protocolo = String(cfg[1] || payloadFallback.protocolo || '').trim() || 'PASTA_PADRAO';
     var investigador = cfg[2] || payloadFallback.investigador;
     var temperatura = String(cfg[3] || payloadFallback.temperatura || '').trim();
@@ -6716,15 +6740,14 @@ function transportePdfVerificarCopiaPrivada_(file) {
 }
 
 function transportePdfAnonimizarParticipante_(workingSS, payloadFallback, sourceSS) {
-  var paciente = String((payloadFallback && (payloadFallback.paciente || payloadFallback.participante)) || '').trim();
+  var identificacao = transporteParticipanteDocumento_(payloadFallback || {}).texto;
   var folhas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(key) {
     return transportePdfActualSheetName_(key, sourceSS);
   }).filter(Boolean);
   folhas.forEach(function(name) {
     var sh = transporteFindSheetByNames_(workingSS, [name]);
     if (!sh) return;
-    var atual = String(getCellValueSafe(sh, 'C3') || paciente || '').trim();
-    sh.getRange('C3').setValue(extrairIniciais_(atual) || atual);
+    sh.getRange('C3').setValue(identificacao);
   });
 }
 
@@ -6872,7 +6895,7 @@ function transporteCaixaDoModelo_(ss) {
   try { meta = JSON.parse(typeof range.getNote === 'function' ? (range.getNote() || '{}') : '{}'); } catch (error) { return null; }
   if (!meta.caixaTransporte) return null;
   var cfg = folha.getRange('C3:C15').getValues().map(function(row) { return row[0]; });
-  var payload = { paciente: cfg[0], protocolo: cfg[1], courier: cfg[7], temperatura: cfg[3], destino: cfg[8],
+  var payload = { paciente: meta.participanteNome || cfg[0], protocolo: cfg[1], courier: cfg[7], temperatura: cfg[3], destino: cfg[8],
     idAgenda: meta.idAgenda, agendaSlot: meta.agendaSlot, participanteCadastroId: meta.participanteCadastroId };
   payload.caixaTransporte = transporteCaixaCompativel_(meta.caixaTransporte, payload) ? meta.caixaTransporte : null;
   return payload;

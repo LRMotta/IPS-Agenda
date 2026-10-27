@@ -55,7 +55,7 @@ function farmaciaProductData_(value, allowLegacyCategory) {
   result.control = value.control;
   // Opcionais omitidos em uma correção preservam o valor atual; string vazia permite limpar explicitamente.
   [['productCode',80,'o código do produto no estudo'],['barcode',80,'o código de barras do produto'],
-    ['dosageForm',80,'a forma farmacêutica'],['strength',120,'a dosagem ou concentração'],['route',80,'a via de administração']]
+    ['dosageForm',80,'a forma farmacêutica'],['strength',120,'a dosagem ou concentração'],['route',80,'a via de administração'],['brand',120,'a marca do produto']]
     .forEach(function(field) {
       if (Object.prototype.hasOwnProperty.call(value, field[0])) result[field[0]] = farmaciaText_(value[field[0]], field[2], field[1], true);
     });
@@ -115,7 +115,7 @@ function farmaciaContext_(studyId, restricted, permission) {
 
 function farmaciaProductKey_(data) {
   return JSON.stringify([data.name.toLowerCase(), data.presentation.toLowerCase(), data.category, data.unit, data.control].concat(
-    ['productCode','barcode','dosageForm','strength','route'].map(function(key) { return (data[key] || '').toLowerCase(); })));
+    ['productCode','barcode','dosageForm','strength','route','brand'].map(function(key) { return (data[key] || '').toLowerCase(); })));
 }
 
 function farmaciaPositionKey_(data) {
@@ -267,7 +267,7 @@ function codexAssertFarmaciaProductsAccess_(studyId, restricted) {
   if (restricted) return codexAssertFarmaciaAccess_('read', studyId, true);
   var access = codexAssertCanRead_();
   var common = studyId === FARMACIA_COMMON_SCOPE_;
-  var study = common ? { id: FARMACIA_COMMON_SCOPE_, nome: 'Estoque comum do IPS', codigo: '' } : codexFarmaciaStudyCatalog_().find(function(item) { return item.id === studyId; });
+  var study = common ? { id: FARMACIA_COMMON_SCOPE_, nome: 'Geral (Farmácia)', codigo: '' } : codexFarmaciaStudyCatalog_().find(function(item) { return item.id === studyId; });
   if (!study) throw new Error('Estudo indisponível para a Farmácia.');
   var grant = (access.farmaciaStudies || []).find(function(item) { return item.studyId === studyId; });
   access.farmaciaStudy = study;
@@ -306,7 +306,7 @@ function getFarmaciaProdutos(studyId, restricted) {
     farmaciaAccess: access.farmaciaAccess, locationsConfigured: false, locationsCanManage: false,
     positions: [], movements: [], storageUnits: [], products: products.map(function(record) {
       var result = { id: record.id, revision: record.revision || record.id, hasStockHistory: stockHistoryUnknown || productsWithStockHistory[record.id] === true };
-      ['name','presentation','category','unit','control','productCode','barcode','dosageForm','strength','route','storage','supplySource'].forEach(function(key) {
+      ['name','presentation','category','unit','control','productCode','barcode','dosageForm','strength','route','brand','storage','supplySource'].forEach(function(key) {
         if (record.data[key] !== undefined) result[key] = record.data[key];
       });
       return result;

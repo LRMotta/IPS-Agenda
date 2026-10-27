@@ -715,7 +715,7 @@ test('bootstrap comum nao le a planilha durante outra gravacao de Transporte', (
 });
 
 test('peticao identifica apenas linhas com material e limpa identificacao do envio anterior', () => {
-  const server = runFile('TransporteCodexConfig.gs', { Logger: { log: () => {} } });
+  const server = runFile('TransporteCodexConfig.gs', { Logger: { log: () => {} }, extrairIniciais_: runFile('WebApp.gs').extrairIniciais_ });
   const cells = {};
   const peticao = {
     getRangeList: () => ({ setValue() {} }),

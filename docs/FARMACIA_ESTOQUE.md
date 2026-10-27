@@ -35,7 +35,8 @@ nova tentativa; sucesso fecha o modal e atualiza a tabela. Revogar acesso ou tro
 o estoque limpa os dados anteriores. Configuração ausente é exibida em um único
 estado vazio; não há contagens de zero apresentadas como se fossem dados conhecidos.
 
-Selecionar um estoque autorizado na Farmácia: um estudo ou **Estoque comum do IPS**.
+Selecionar um estoque autorizado na Farmácia: um estudo ou **Geral (Farmácia)**.
+Esse estoque é exclusivo do módulo Farmácia; sua identidade interna continua `@IPS_COMMON`.
 O comum atende materiais compartilhados, como equipos e seringas, e tem saldo próprio.
 O mesmo produto exclusivo de um protocolo deve ser cadastrado no estoque do estudo.
 Não há transferência automática, retirada nem rateio de custos por estudo nesta fase.
@@ -55,10 +56,13 @@ e formulários anteriores e descarta respostas obsoletas.
   um ID válido de Projetos ou de concessão por estudo. Os endpoints continuam
   `getFarmaciaEstudo`, `getFarmaciaEstoque`, `cadastrarProdutoFarmacia` e
   `registrarInventarioInicialFarmacia`, todos com autorização do escopo no servidor.
-- Produto: ID estável gerado no servidor, nome/rótulo autorizado, apresentação,
+- Produto: ID estável gerado no servidor, nome/rótulo autorizado, marca opcional independente, apresentação,
   unidade e controle por quantidade ou por kit individualizado, condições de
   conservação e referência documental com versão/data. Produtos iguais
-  em nome/apresentação/unidade/controle não são cadastrados duas vezes.
+  em nome/marca/apresentação/unidade/controle e demais características não são cadastrados duas vezes.
+  A marca vale para medicamentos e materiais, aparece na busca e consulta e não é
+  inferida do nome. Registros anteriores sem esse campo permanecem sem marca;
+  omiti-lo em uma correção preserva o valor, e texto vazio permite limpá-lo.
 - Inventário: produto, lote, validade civil, localização, kit quando aplicável,
   quantidade física positiva, quantidade bloqueada, data e confirmação da contagem,
   observação opcional, autor autenticado e instante do registro.
@@ -122,7 +126,7 @@ Todos os projetos continuam na aba Projetos do arquivo principal. A Farmácia us
 esse mesmo arquivo, sem arquivos externos por estudo ou classe:
 
 - Farmacia_ID_<ID estável em hexadecimal>: produtos, inventários, recebimentos, movimentações e correções de cada projeto;
-- Farmacia_Comum_v1: registros do estoque comum do IPS;
+- Farmacia_Comum_v1: registros do estoque comum da Farmácia;
 - Farmacia_Locais_v1: equipamentos, posições, sondas, calibrações e histórico.
 
 Cada registro mantém ID, estudo (Estudo_JSON), classe (Restrito), requestId,

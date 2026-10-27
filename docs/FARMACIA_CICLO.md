@@ -130,3 +130,26 @@ usam escape HTML e atributos, sem interpolar entrada em manipuladores JavaScript
 
 Todos os testes usam simuladores; não enviam e-mails, alteram prontuários, calendários,
 planilhas ou arquivos reais. A entrega local não implica publicação do Apps Script.
+
+## Documentos para impressão
+
+Ações de impressão nas listas, linha do tempo e aba Documentos abrem uma prévia
+com botão Imprimir / Salvar em PDF. Há registros de dispensação, retorno/adesão,
+transporte (saída e chegada vinculadas), destinação e ficha consolidada do lote/kit.
+Todos incluem campos de assinatura manual, nome legível e data. O autor do
+lançamento é identificado separadamente da assinatura. Não seguem numeração FG.
+
+A emissão usa exclusivamente a consulta autorizada já carregada, sem RPC, gravação
+ou alteração de saldo. Atualize a consulta antes de emitir para incluir operações
+recentes. Retornos acumulados e adesão respeitam o ponto do evento no ledger;
+saldos da ficha são os da consulta, com localização e validade por posição.
+Catálogo atual é identificado como tal. Não há arquivo imutável das emissões nem
+assinatura eletrônica: preserve o PDF ou exemplar assinado. Reimpressões podem
+refletir atualizações. As versões anteriores de formulários não são alteradas.
+
+O cabeçalho segue a impressão da Agenda: logo, título e dados de emissão lado a
+lado, com linha azul. O nome completo de CURRENT_ACCESS.name preenche o nome
+legível da primeira assinatura, sem usar primeiro nome, e-mail ou autor histórico
+como substituto. Sem nome cadastrado, o campo fica em branco. No transporte,
+a assinatura de emissão é separada das assinaturas de entrega e recebimento.
+Assinatura e data continuam manuais.

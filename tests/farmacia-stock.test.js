@@ -898,6 +898,23 @@ test('equipamento grava colunas e gavetas, edita e reconstrói layout sem altera
   assert.equal(f.catalogSheet().writes,writes);
 });
 
+test('marca é opcional, independente da descrição e distingue produtos de marcas diferentes', () => {
+  const f=fixture(), request=f.product({data:{brand:'  Marca A  '}});
+  const first=f.server.cadastrarProdutoFarmacia(request);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].id,first.id);
+  assert.equal(f.server.cadastrarProdutoFarmacia(request).repeated,true);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].brand,'Marca A');
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].brand,'Marca A');
+  f.server.cadastrarProdutoFarmacia(f.product({requestId:'second-brand-request',data:{brand:'Marca B'}}));
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products.length,2);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'duplicate-brand-request',data:{brand:'marca a'}})),/já está cadastrado/);
+  const writes=f.sheet().writes;
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'invalid-brand-request',data:{brand:'x'.repeat(121)}})),/marca/);
+  assert.equal(f.sheet().writes,writes);
+  const legacy=fixture();legacy.server.cadastrarProdutoFarmacia(legacy.product());
+  assert.equal(Object.hasOwn(legacy.server.getFarmaciaEstoque('P1',false).products[0],'brand'),false);
+});
+
 test('categoria, código de barras e características farmacêuticas persistem no produto geral', () => {
   const f=fixture(), characteristics={category:'medicine',productCode:'IMP-001',barcode:'7891234567890',dosageForm:'Comprimido',strength:'10 mg',route:'Oral'};
   const request=f.product({data:characteristics});

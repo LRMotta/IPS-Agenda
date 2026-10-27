@@ -23,7 +23,7 @@
       <div class="table-card farmacia-workspace">
         <p id="farmaciaViewDescription" class="farmacia-view-description" hidden></p>
         <p id="farmaciaStockStatus" role="status" aria-live="polite" class="farmacia-stock-status"></p>
-        <div id="farmaciaNoSelection" class="farmacia-empty"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span><h3>Selecione um estoque</h3><p>Escolha o estoque comum do IPS ou um estudo autorizado para começar.</p></div>
+        <div id="farmaciaNoSelection" class="farmacia-empty"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span><h3>Selecione um estoque</h3><p>Escolha Geral (Farmácia) ou um estudo autorizado para começar.</p></div>
         <section id="farmaciaStockPanel" hidden aria-label="Estoque da Farmácia">
           <div id="farmaciaStockResults"><div id="farmaciaProductsResults" hidden></div><div id="farmaciaInventoryResults"></div></div>
           <section id="farmaciaCyclePane" hidden aria-label="Ciclo de vida do medicamento"></section>
@@ -41,6 +41,7 @@
               <fieldset id="farmaciaProductFields" disabled><div class="form-section"><div class="section-label">Identificação e apresentação</div><div class="form-grid">
                 <div class="field"><label class="field-label" for="farmaciaProductCategory">Tipo de produto</label><select id="farmaciaProductCategory" name="category" class="f-input f-select" required onchange="farmaciaProductCategoryChanged()"><option value="">Selecione o tipo</option><option value="medicine">Medicamento</option><option value="material">Material ou dispositivo (equipo, seringa etc.)</option></select></div>
                 <div class="field full"><label class="field-label" for="farmaciaProductName">Nome ou descrição do produto</label><input id="farmaciaProductName" class="f-input" maxlength="160" required></div>
+                <div class="field full"><label class="field-label" for="farmaciaProductBrand">Marca do produto (opcional)</label><input id="farmaciaProductBrand" class="f-input" maxlength="120"></div>
                 <div class="field full"><label class="field-label" for="farmaciaProductBarcode">Código de barras do produto (opcional)</label><input class="f-input" id="farmaciaProductBarcode" maxlength="80" inputmode="numeric" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')event.preventDefault()" aria-describedby="farmaciaProductBarcodeHelp"><div class="field-help" id="farmaciaProductBarcodeHelp">Código geral da embalagem do produto; não use o número de um kit individualizado.</div></div>
                 <div class="field farmacia-medication-field" data-farmacia-medication-field><label class="field-label" for="farmaciaProductDosageForm">Forma farmacêutica (opcional)</label><select class="f-input f-select" id="farmaciaProductDosageForm"><option value="">Selecione</option><option>Comprimido</option><option>Cápsula</option><option>Solução oral</option><option>Suspensão oral</option><option>Solução injetável</option><option>Suspensão injetável</option><option>Pó para solução injetável</option><option>Creme</option><option>Pomada</option><option>Gel</option><option>Colírio</option><option>Solução oftálmica</option><option>Spray nasal</option><option>Solução inalatória</option><option>Aerossol</option><option>Supositório</option><option>Adesivo transdérmico</option><option>Outro</option></select></div>
                 <div class="field farmacia-medication-field" data-farmacia-medication-field><label class="field-label" for="farmaciaProductStrength">Dosagem / concentração (opcional)</label><input class="f-input" id="farmaciaProductStrength" maxlength="120" placeholder="Ex.: 10 mg; 20 mg/mL; 100 mg/5 mL"></div>
@@ -1307,7 +1308,7 @@
         <div id="userAdminFarmaciaStudies"></div>
       </div>
       <div style="margin-top:14px">
-        <label class="field-label" for="userAdminFarmaciaCommonAccess">Estoque comum da Farmácia</label>
+        <label class="field-label" for="userAdminFarmaciaCommonAccess">Geral (Farmácia)</label>
         <select id="userAdminFarmaciaCommonAccess" class="f-input f-select" aria-describedby="userAdminFarmaciaCommonHelp">
           <option value="none">Sem acesso</option><option value="read">Consulta</option>
           <option value="operate">Operação</option><option value="manage">Responsável pelo estoque comum</option>

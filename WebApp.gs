@@ -832,7 +832,7 @@ function codexAssertFarmaciaCommonAccess_(permission) {
     throw new Error('Seu usuário não tem permissão para esta ação no estoque comum da Farmácia.');
   }
   access.farmaciaAccess = codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess);
-  access.farmaciaStudy = { id: FARMACIA_COMMON_SCOPE_, nome: 'Estoque comum do IPS', codigo: '' };
+  access.farmaciaStudy = { id: FARMACIA_COMMON_SCOPE_, nome: 'Geral (Farmácia)', codigo: '' };
   access.farmaciaRestricted = false;
   return access;
 }
@@ -908,7 +908,7 @@ function getFarmaciaBootstrap() {
     return grants.some(function(grant) { return grant.studyId === study.id; });
   }) : [];
   return { ok: true, farmaciaAccess: codexNormalizeFarmaciaAccess_(access.farmaciaAccess),
-    farmaciaCommonAccess: codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess), studies: studies, productStudies: [{ id: FARMACIA_COMMON_SCOPE_, nome: 'Estoque comum do IPS' }].concat(catalog), stage: 'study-access' };
+    farmaciaCommonAccess: codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess), studies: studies, productStudies: [{ id: FARMACIA_COMMON_SCOPE_, nome: 'Geral (Farmácia)' }].concat(catalog), stage: 'study-access' };
 }
 
 function getFarmaciaEstudo(studyId, productsOnly) {
