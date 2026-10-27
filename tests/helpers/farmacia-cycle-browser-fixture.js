@@ -50,7 +50,7 @@ async function cycleFixture(browser,width=1536) {
     document.addEventListener('change',event=>{const id=appEditableDirtyScope(event.target);if(id)appMarkUnsavedChanges(id);},true);
     appInitContentAccessibility();
   `});
-  for(const file of ['IndexFarmaciaScripts.html','IndexFarmaciaViewScripts.html','IndexFarmaciaLocationActions.html','IndexFarmaciaActions.html','IndexFarmaciaCiclo.html']){
+  for(const file of ['IndexFarmaciaScripts.html','IndexFarmaciaViewScripts.html','IndexFarmaciaLocationActions.html','IndexFarmaciaActions.html','IndexFarmaciaCiclo.html','IndexFarmaciaDocumentos.html']){
     const source=extractTagBody(readProjectFile(file),'script');await page.addScriptTag({content:source});
   }
   await page.evaluate(data=>{

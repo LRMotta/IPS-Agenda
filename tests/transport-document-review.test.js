@@ -126,7 +126,7 @@ function pdfFixture({ nominal = false, extraViewer = false, notesFailure = false
   s.Utilities.getUuid = () => 'OPAQUE';
   s.Utilities.sleep = () => {};
   const payload = { paciente: 'Pessoa Teste da Silva', identificacaoParticipante: 'ID', protocolo: 'Estudo', courier: 'DHL' };
-  const folha = { getRange: () => ({ getValues: () => [[payload.paciente], ['Estudo'], ['Investigador'], ['AMBIENTE'], [''], [''], [''], ['DHL'], ['Lab'], ['AWB'], ['Equipe'], ['']] }) };
+  const folha = { getRange: () => ({ getValues: () => [['P.T.S. | ID: ID'], ['Estudo'], ['Investigador'], ['AMBIENTE'], [''], [''], [''], ['DHL'], ['Lab'], ['AWB'], ['Equipe'], ['']] }) };
   s.transporteDerivarDadosParticipante_ = () => payload;
   s.getTransporteSpreadsheetCodex_ = () => ({ getId: () => 'SOURCE' });
   s.transporteCodexGetSheet_ = (ss, key) => ss !== copy && key === 'folhaAgendamento' ? folha : null;

@@ -24,6 +24,21 @@ function fixture() {
   return {server,state,ss,product,ledger,action,initial};
 }
 
+test('marca pode ser corrigida com histórico e omissão preserva o valor registrado', () => {
+  const f=fixture(),data={name:'Produto',presentation:'Frasco',category:'medicine',unit:'frasco',control:'quantity',brand:'Marca A'};
+  const first=f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,f.product.id,data));
+  f.initial();
+  const next={...data};delete next.brand;
+  const second=f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,first.id,next,'omit-brand-request'));
+  assert.equal(f.ledger().products[0].data.brand,'Marca A');
+  const third=f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,second.id,{...data,brand:'Marca corrigida'},'correct-brand-request'));
+  assert.equal(f.ledger().products[0].id,f.product.id);
+  assert.equal(f.ledger().positions[0].physical,10);
+  assert.equal(f.ledger().products[0].data.brand,'Marca corrigida');
+  f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,third.id,{...data,brand:''},'clear-brand-request'));
+  assert.equal(f.ledger().products[0].data.brand,'');
+});
+
 test('consulta geral de produtos reflete correção e exclusão sem devolver histórico operacional', () => {
   const f=fixture();
   f.server.codexAssertCanRead_=()=>({farmaciaAccess:'none',farmaciaStudies:[]});

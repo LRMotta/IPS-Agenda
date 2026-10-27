@@ -26,7 +26,7 @@ function farmaciaApplyCatalogAction_(ledger, record) {
     if (deleting && used) throw new Error('Este produto possui histórico de estoque e não pode ser excluído.');
     if (!deleting) {
       var next = Object.assign({}, data.data);
-      ['category', 'storage', 'supplySource', 'productCode', 'barcode', 'dosageForm', 'strength', 'route'].forEach(function(key) {
+      ['category', 'storage', 'supplySource', 'productCode', 'barcode', 'dosageForm', 'strength', 'route', 'brand'].forEach(function(key) {
         if (!Object.prototype.hasOwnProperty.call(next, key) && Object.prototype.hasOwnProperty.call(current.data, key)) next[key] = current.data[key];
       });
       // A categoria deve ser coerente com o estado completo, inclusive campos preservados na correção.

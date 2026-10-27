@@ -468,6 +468,21 @@ test('status Nao selecionado usa chip cinza e preserva o rotulo', () => {
   assert.match(html, />Não selecionado<\/span>/);
 });
 
+test('projeto nao selecionado nao exibe estatisticas de recrutamento, inclusive na impressao', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const context = vm.createContext({ esc: String });
+  vm.runInContext(sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(') +
+    sourceBetween(core, 'function recrutamentoProjetoHtml(', 'function projetoDetailValue(') +
+    sourceBetween(core, 'function recrutamentoProjetoImpressaoHtml_(', 'var FASE_COLORS'), context);
+  for (const count of [0, 12]) {
+    const html = context.recrutamentoProjetoHtml({classificacaoStatus:'nao_selecionado',participantesAtivos:count,totalParticipantes:count,metaRecrutamento:20,falhasTriagem:2});
+    assert.equal(html,'');
+    assert.equal(context.recrutamentoProjetoImpressaoHtml_(html),'');
+  }
+  assert.match(context.recrutamentoProjetoHtml({classificacaoStatus:'ativo',participantesAtivos:3,metaRecrutamento:10}),/3 pacientes ativo\(s\)/);
+  assert.match(context.recrutamentoProjetoHtml({classificacaoStatus:'concluido',totalParticipantes:5}),/Projeto concluído/);
+});
+
 test('resumo de Projetos exclui cancelados e nao selecionados dos indicadores ativos', () => {
   const core = readProjectFile('IndexCoreScripts.html');
   const rulesBlock = sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(');

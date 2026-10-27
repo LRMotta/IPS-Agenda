@@ -335,7 +335,7 @@ function carregarFarmacia() {
     }
     status.textContent = 'Estudos: ' + farmaciaAccessLabel(result.farmaciaAccess) + '. Estoque comum: ' + farmaciaAccessLabel(result.farmaciaCommonAccess) + '.';
     var stocks = (result.studies || []).slice();
-    if (['read', 'operate', 'manage'].indexOf(result.farmaciaCommonAccess) !== -1) stocks.unshift({ id:'@IPS_COMMON', nome:'Estoque comum do IPS' });
+    if (['read', 'operate', 'manage'].indexOf(result.farmaciaCommonAccess) !== -1) stocks.unshift({ id:'@IPS_COMMON', nome:'Geral (Farmácia)' });
     // O reset já ocorreu ao iniciar a revalidação. Não apagar um cadastro do
     // catálogo aberto enquanto o bootstrap estava em voo.
     CURRENT_ACCESS.farmaciaStockStudies = stocks;
@@ -6458,6 +6458,7 @@ function projetoStatusChip(projeto) {
 }
 
 function recrutamentoProjetoHtml(p) {
+  if (projetoClassificacaoStatus_(p) === 'nao_selecionado') return '';
   var concluido = projetoEstaConcluido_(p);
   var ativos = Number(p.participantesAtivos || 0);
   var falhas = Number(p.falhasTriagem || 0);

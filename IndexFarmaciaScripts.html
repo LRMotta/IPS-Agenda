@@ -343,6 +343,7 @@ function farmaciaStockSave(type, data) {
 function salvarProdutoFarmaciaApp(event) {
   event.preventDefault();
   farmaciaStockSave('product', { category:document.getElementById('farmaciaProductCategory').value, name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
+    brand:document.getElementById('farmaciaProductBrand').value,
     barcode:document.getElementById('farmaciaProductBarcode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
     strength:document.getElementById('farmaciaProductStrength').value, route:document.getElementById('farmaciaProductRoute').value,
     unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value, supplySource:document.getElementById('farmaciaProductSupply').value,
@@ -460,12 +461,12 @@ function farmaciaOpenPosition(id) {
   if (position.inTransit) html += '<p class="farmacia-cycle-help">Conclua o transporte em andamento antes de movimentar esta entrada.</p>';
   if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
     '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()">' + (position.returned ? '' : '<option value="block">Bloquear</option>') + (position.expired || position.returned ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
-    '<div class="field" id="farmaciaMovementFromField"><label class="field-label" for="farmaciaMovementFrom">Retirar da situação</label><select class="f-input" id="farmaciaMovementFrom" onchange="farmaciaMovementQuantityChanged()"></select></div>' +
-    '<div class="field"><label class="field-label" for="farmaciaMovementQuantity">Quantidade (' + esc(product.unit) + ')</label><input class="f-input" id="farmaciaMovementQuantity" type="number" min="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" step="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" required></div>' +
+    '<div class="field" id="farmaciaMovementFromField"><label class="field-label" for="farmaciaMovementFrom">Situação atual do saldo</label><select class="f-input" id="farmaciaMovementFrom" onchange="farmaciaMovementQuantityChanged()"></select></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaMovementQuantity">Quantidade (' + esc(product.unit) + ')</label><input class="f-input" id="farmaciaMovementQuantity" type="number" min="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" step="' + (['mL','g'].indexOf(product.unit) !== -1 ? '0.001' : '1') + '" required><div class="field-help" id="farmaciaMovementHelp" aria-live="polite"></div></div>' +
     '<div class="field" id="farmaciaMovementUnitField" hidden><label class="field-label" for="farmaciaMovementUnit">Equipamento de destino</label><select class="f-input" id="farmaciaMovementUnit" onchange="farmaciaMovementUnitChanged()"></select></div>' +
     '<div class="field" id="farmaciaMovementLocationField" hidden><label class="field-label" for="farmaciaMovementLocation">Posição de destino</label><select class="f-input" id="farmaciaMovementLocation"></select></div>' +
-    '<div class="field full"><label class="field-label" for="farmaciaMovementReason">Motivo</label><input class="f-input" id="farmaciaMovementReason" maxlength="500" required></div>' +
-    '<div class="field full"><label class="field-label" for="farmaciaMovementDocument">Referência documental (versão/data)</label><input class="f-input" id="farmaciaMovementDocument" maxlength="200" required></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar movimentação</button></div></form>';
+    '<div class="field full"><label class="field-label" for="farmaciaMovementReason">Motivo (obrigatório)</label><input class="f-input" id="farmaciaMovementReason" maxlength="500" required></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaMovementDocument">Documento de suporte (obrigatório)</label><input class="f-input" id="farmaciaMovementDocument" maxlength="200" required aria-describedby="farmaciaMovementDocumentHelp"><div class="field-help" id="farmaciaMovementDocumentHelp">Qual documento autoriza esta ação? Informe o nome ou número e a versão ou data. Ex.: e-mail do patrocinador de 26/10/2026.</div></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar movimentação</button></div></form>';
   document.getElementById('farmaciaPositionDetail').innerHTML = html;
   if (document.getElementById('farmaciaMovementForm')) {
     farmaciaUnitOptions('farmaciaMovementUnit');
@@ -484,9 +485,14 @@ function farmaciaMovementUnitChanged() {
 function farmaciaMovementChanged() {
   var action = document.getElementById('farmaciaMovementAction').value, transfer = action === 'transfer';
   var from = document.getElementById('farmaciaMovementFrom');
+  var position = FARMACIA_STOCK.positionSnapshot;
+  var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; });
   from.innerHTML = (action === 'release' ? ['pending','blocked'] : ['available','pending']).map(function(key) {
-    return '<option value="' + key + '">' + ({pending:'Aguardando avaliação',blocked:'Bloqueado',available:'Disponível'})[key] + '</option>';
+    return '<option value="' + key + '">' + ({pending:'Aguardando avaliação',blocked:'Bloqueado',available:'Disponível'})[key] + ' — ' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</option>';
   }).join('');
+  document.querySelector('#farmaciaMovementForm .section-label').textContent = action === 'release' ? 'Liberar saldo para uso' : 'Registrar movimentação';
+  document.querySelector('#farmaciaMovementForm button[type=submit]').textContent = ({release:'Confirmar liberação',block:'Confirmar bloqueio',transfer:'Confirmar transferência'})[action];
+  document.getElementById('farmaciaMovementReason').placeholder = action === 'release' ? 'Ex.: liberação autorizada pelo patrocinador' : 'Descreva o motivo da movimentação';
   document.getElementById('farmaciaMovementFromField').hidden = transfer;
   ['Unit','Location'].forEach(function(key) {
     document.getElementById('farmaciaMovement' + key + 'Field').hidden = !transfer;
@@ -498,11 +504,17 @@ function farmaciaMovementChanged() {
 function farmaciaMovementQuantityChanged() {
   var position = FARMACIA_STOCK.positionSnapshot;
   if (!position) return;
-  var transfer = document.getElementById('farmaciaMovementAction').value === 'transfer';
+  var action = document.getElementById('farmaciaMovementAction').value, transfer = action === 'transfer';
   var input = document.getElementById('farmaciaMovementQuantity');
   input.readOnly = transfer;
   input.max = String(transfer ? position.physical : position[document.getElementById('farmaciaMovementFrom').value] || 0);
   input.value = transfer ? String(position.physical) : '';
+  var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; });
+  var balance = farmaciaStockNumber(Number(input.max)) + ' ' + product.unit;
+  document.querySelector('label[for="farmaciaMovementQuantity"]').textContent = (action === 'release' ? 'Quantidade a liberar' : transfer ? 'Quantidade a transferir' : 'Quantidade a bloquear') + ' (' + product.unit + ')';
+  var help = document.getElementById('farmaciaMovementHelp');
+  input.setAttribute('aria-describedby', 'farmaciaMovementHelp');
+  help.textContent = action === 'release' ? 'Você pode liberar até ' + balance + ' desta situação. Após confirmar, essa quantidade ficará disponível para uso.' : transfer ? 'Todo o saldo físico (' + balance + ') será levado para o local escolhido abaixo.' : 'Você pode bloquear até ' + balance + ' desta situação. Após confirmar, essa quantidade ficará bloqueada para uso.';
 }
 
 function salvarMovimentacaoFarmaciaApp(event) {

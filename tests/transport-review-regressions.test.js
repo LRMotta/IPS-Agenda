@@ -100,6 +100,7 @@ test('coleta exige revisao quando a origem e ambigua ou tem data invalida', () =
 
 function server(extra = {}) {
   return runFile('TransporteCodexConfig.gs', {
+    extrairIniciais_: runFile('WebApp.gs').extrairIniciais_,
     codexCourierIsValidAwbEntry_: runFile('WebApp.gs').codexCourierIsValidAwbEntry_, Logger: { log() {} }, normText_: norm,
     codexGetAllowedUsers_: () => ({ 'operador@example.invalid': { active: true } }), ...extra });
 }
@@ -362,18 +363,20 @@ test('salvamento deriva cadastro atual uma vez e grava os campos em blocos mante
   const { s, folha, dhl, payload, reads } = saveFixture();
   s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false });
   assert.equal(reads(), 1);
-  assert.equal(folha.getRange('C3').getValue(), 'Pessoa A');
+  assert.equal(folha.getRange('C3').getValue(), 'P.A. | ID: 123');
+  assert.equal(dhl.getRange('C3').getValue(), 'P.A. | ID: 123');
   assert.equal(folha.getRange('C4').getValue(), 'Projeto A');
   assert.equal(folha.getRange('C9').getValue(), '08:00 - 12:00');
   assert.equal(Object.prototype.toString.call(folha.getRange('C7').getValue()), '[object Date]');
   assert.equal(folha.blocks.filter(a1 => a1 === 'C3:C14').length, 1);
   assert.deepEqual(folha.validationClears, ['C3:C14', 'C15']);
-  assert.deepEqual(dhl.blocks, ['C7', 'C12:C14']);
+  assert.deepEqual(dhl.blocks, ['C3', 'C7', 'C12:C14']);
   assert.equal(dhl.getRange('C7').getValue().getTime(), folha.getRange('C7').getValue().getTime());
   const meta = s.transporteAgendaLinkFromRef_('', folha.getRange('C15').getNote());
   assert.equal(meta.idAgenda, '');
   assert.equal(meta.participanteCadastroId, 'CAD-A');
   assert.equal(meta.identificacaoParticipante, '123');
+  assert.equal(meta.participanteNome, 'Pessoa A');
 });
 
 test('legado sem ID interno continua resolvendo por identificacao e projeto', () => {
@@ -383,6 +386,84 @@ test('legado sem ID interno continua resolvendo por identificacao e projeto', ()
   const payload = s.transporteDerivarDadosParticipante_({ paciente: 'Nome historico', identificacaoParticipante: '123', protocolo: 'Projeto A' }, { obrigatorio: true });
   assert.equal(payload.participanteCadastroId, 'CAD-A');
   assert.equal(payload.paciente, 'Pessoa A');
+});
+
+test('rotulo documental preserva ID literal e nao extrai iniciais das letras do identificador', () => {
+  const s = server();
+  const rotulo = s.transporteParticipanteDocumento_({ paciente: 'Maria da Silva e Souza', identificacaoParticipante: '001-AB/02', iniciais: 'Nome errado' });
+  assert.equal(rotulo.texto, 'M.S.S. | ID: 001-AB/02');
+  assert.equal(rotulo.iniciais, 'M.S.S.');
+  assert.equal(s.transporteParticipanteDocumento_({ paciente: rotulo.texto }).texto, rotulo.texto);
+  assert.equal(s.transporteParticipanteDocumento_({ paciente: rotulo.texto, identificacaoParticipante: '00003' }).texto, 'M.S.S. | ID: 00003');
+  assert.equal(s.transporteParticipanteDocumento_({ paciente: 'Joao dos Santos' }).texto, 'J.S.');
+});
+
+test('salvar e reler transporte manual preserva nome interno e ID separado sem depender da C3 nominal', () => {
+  const { s, folha, dhl, payload } = saveFixture();
+  s.transporteDateOut_ = value => value && typeof value.toISOString === 'function' ? value.toISOString().slice(0, 10) : String(value || '');
+  s.transporteReadParticipantesDireto_ = () => [{ ...participante, idParticipante: '001-AB/02' }];
+  s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false });
+  assert.equal(folha.getRange('C3').getValue(), 'P.A. | ID: 001-AB/02');
+  assert.equal(dhl.getRange('C3').getValue(), 'P.A. | ID: 001-AB/02');
+  const read = s.transporteReadRegistro_();
+  assert.equal(read.paciente, 'Pessoa A');
+  assert.equal(read.identificacaoParticipante, '001-AB/02');
+  assert.equal(read.participanteCadastroId, 'CAD-A');
+  folha.getRange('C15').clearNote();
+  folha.getRange('C3').setValue('Pessoa Legada');
+  assert.equal(s.transporteReadRegistro_().paciente, 'Pessoa Legada', 'leitura legada nao altera planilha');
+  assert.equal(folha.getRange('C3').getValue(), 'Pessoa Legada');
+});
+
+test('copia PDF aplica iniciais e ID nas duas folhas e scanner continua rejeitando nome completo', () => {
+  const s = server();
+  const sheets = [formSheet('Folha de Agendamento'), formSheet('Folha de Agendamento (DHL/PINEX)')];
+  sheets[0].getRange('C3').setValue('Pessoa A');
+  sheets[1].getRange('C3').setValue('P.A. | ID: antigo');
+  s.transportePdfActualSheetName_ = key => key === 'folhaAgendamento' ? sheets[0].getName() : sheets[1].getName();
+  s.transporteFindSheetByNames_ = (_ss, names) => sheets.find(sheet => names.includes(sheet.getName()));
+  s.transportePdfAnonimizarParticipante_({}, { paciente: 'Pessoa A', identificacaoParticipante: '001-AB/02' }, {});
+  for (const sheet of sheets) assert.equal(sheet.getRange('C3').getValue(), 'P.A. | ID: 001-AB/02');
+  const copy = { getSheets: () => sheets.map(sheet => ({ getName: () => sheet.getName(), isSheetHidden: () => false,
+    getDataRange: () => ({ getDisplayValues: () => [[sheet.getRange('C3').getValue(), sheet.getRange('C4').getValue()]] }) })) };
+  assert.doesNotThrow(() => s.transportePdfVerificarAnonimizacao_(copy, ['Pessoa A']));
+  sheets[1].getRange('C4').setValue('Pessoa A');
+  assert.throws(() => s.transportePdfVerificarAnonimizacao_(copy, ['Pessoa A']), /PDF bloqueado/);
+});
+
+test('campos PINEX que exigem apenas iniciais nao incorporam ID nem suas letras', () => {
+  const { s, folha, declaracao, payload } = saveFixture();
+  s.salvarTransporteInterno_(payload, { returnBootstrap: false, preencherDocumentos: false });
+  const formulario = formSheet('Formulario PINEX');
+  s.transporteCodexGetSheet_ = (_ss, key) => ({ folhaAgendamento: folha, declaracaoTransp: declaracao, formularioPinex: formulario })[key] || null;
+  s.getCellValueSafe = (sheet, a1) => sheet.getRange(a1).getValue();
+  s.processarHorarioColeta_ = () => {};
+  declaracao.getRange('B21').setValue(true);
+  declaracao.getRange('J21').setValue('2x1');
+  s.atualizarFormularioPinex_({});
+  assert.equal(formulario.getRange('A42').getValue(), 'P.A.');
+  const resumo = s.transportePinexSampleSummary_('M.S.S. | ID: 001-AB/02', [], [], [], '');
+  assert.match(resumo, /^Patient M\.S\.S\. - /);
+  assert.doesNotMatch(resumo, /001|AB|ID:/);
+});
+
+test('Peticao B30:B35 e Peticao PINEX B33 recebem apenas iniciais, com ID em campo separado', () => {
+  const s = server();
+  const peticao = formSheet('Peticao');
+  const pinex = formSheet('Peticao PINEX');
+  for (const paciente of ['Maria da Silva e Souza', 'M.S.S. | ID: 001-AB/02']) {
+    for (const apenasPinex of [false, true]) {
+      s.transporteGetSheet_ = (_ss, key) => ({ peticaoAnuencia: apenasPinex ? null : peticao, peticaoPinex: pinex })[key] || null;
+      pinex.getRange('B33').setValue('valor anterior');
+      s.preencherPeticaoAnuenciaWebApp_({}, { paciente, identificacaoParticipante: '001-AB/02', temperatura: 'AMBIENTE',
+        iniciais: 'campo obsoleto', materiais: [{ ativo: true, material: 'Soro', formula: '1x1', total: 1, ensaio: 'Exame' }] });
+      assert.equal(pinex.getRange('B33').getValue(), 'M.S.S.');
+      assert.deepEqual(peticao.getRange('B30:B35').getValues(), [['M.S.S.'], [''], [''], [''], [''], ['']]);
+      assert.equal(peticao.getRange('G30').getValue(), '001-AB/02');
+    }
+  }
+  s.preencherPeticaoAnuenciaWebApp_({}, { materiais: [] });
+  assert.equal(pinex.getRange('B33').getValue(), '', 'limpa iniciais do participante anterior');
 });
 
 test('PDF interrompe antes de acessar Drive quando a participacao nao pode ser resolvida', () => {
