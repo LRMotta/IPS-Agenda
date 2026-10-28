@@ -58,11 +58,11 @@ test('dados externos/legados: Transporte rejeita unidade raw desconhecida antes 
 
 test('slots validos selecionam seu courier e slots invalidos nunca caem no Transporte I', () => {
   const s = server();
-  const evento = { courier1: { nome: 'MARKEN' }, courier2: { nome: 'DHL' }, courier3: { nome: 'OCASA' }, backup: { nome: 'PINEX' } };
-  for (const [slot, expected] of [['1', 'MARKEN'], [' I ', 'MARKEN'], [' 2 ', 'DHL'], ['Transporte II', 'DHL'], ['III', 'OCASA'], ['b', 'PINEX']]) {
+  const evento = { courier1: { nome: 'MARKEN' }, courier2: { nome: 'DHL' }, courier3: { nome: 'OCASA' }, courier4: { nome: 'MARKEN IV' }, backup: { nome: 'PINEX' } };
+  for (const [slot, expected] of [['1', 'MARKEN'], [' I ', 'MARKEN'], [' 2 ', 'DHL'], ['Transporte II', 'DHL'], ['III', 'OCASA'], ['4', 'MARKEN IV'], ['Transporte IV', 'MARKEN IV'], ['b', 'PINEX']]) {
     assert.equal(s.transporteAgendaCourierFromEvento_(evento, slot).nome, expected);
   }
-  for (const slot of ['4', 'x']) {
+  for (const slot of ['5', 'x']) {
     assert.equal(s.normalizarSlotTransporteCodex_(slot), slot, 'leitura conserva o valor legado para revisao');
     assert.throws(() => s.transporteAgendaCourierFromEvento_(evento, slot), /Slot.*inválido/);
     assert.throws(() => s.montarPayloadTransporteCodex({ slot, agenda: evento }), /Slot.*inválido/);
@@ -74,7 +74,7 @@ test('vinculo Agenda com slot invalido nao limpa valor nem grava nota', () => {
   let writes = 0;
   const range = { setNote() { writes++; }, clearNote() { writes++; } };
   s.transporteSetValueIfAllowed_ = () => { writes++; };
-  for (const slot of ['4', 'x']) {
+  for (const slot of ['5', 'x']) {
     assert.throws(() => s.transporteSetAgendaLink_(range, { idAgenda: 'AG-1', agendaSlot: slot }), /Slot.*inválido/);
     assert.equal(writes, 0);
   }
@@ -89,7 +89,7 @@ test('Bridge nao faz HTTP nem importa dados quando o slot da solicitacao e inval
   s.codexAssertCanWrite_ = () => {};
   s.buscarAgendaEventoPorIdTransp_ = () => ({ courier1: { nome: 'MARKEN' } });
   s.importarTransporteCodex = () => { imports++; };
-  for (const slot of ['4', 'x']) {
+  for (const slot of ['5', 'x']) {
     assert.throws(() => s.gerarDocumentacaoTransporteCodex('AG-1', slot), /Slot.*inválido/);
   }
   assert.equal(fetches, 0);

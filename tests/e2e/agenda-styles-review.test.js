@@ -46,6 +46,8 @@ test('CSS da Agenda: resumos, cancelados e foco cabem no shell desktop e mobile'
       assert.ok(measurements.statsScroll <= measurements.statsWidth + 1, JSON.stringify(measurements));
       assert.ok(measurements.gridScroll <= measurements.gridWidth + 1, JSON.stringify(measurements));
       if (width <= 1100) assert.equal(measurements.columns, 2);
+      // No celular a busca fica recolhida atras do botao de busca da barra compacta.
+      if (width <= 700) await page.locator('#agendaBtnBuscaToggle').click();
       await page.locator('#agendaBusca').focus();
       assert.notEqual(await page.locator('.ag-search').evaluate(el => getComputedStyle(el).boxShadow), 'none');
       await page.locator('.ag-action-menu-trigger').click();
@@ -84,7 +86,7 @@ test('menu da Agenda abre acima perto do rodapé e acompanha reabertura e resize
     const errors = await agendaBrowserFixture(page);
     await page.evaluate(() => {
       document.getElementById('agendaCreatePanel').classList.remove('open');
-      document.getElementById('agendaViewLista').innerHTML = '<div class="ag-appt" style="position:fixed;bottom:14px;right:14px"><div class="ag-action-menu-wrap">' +
+      document.getElementById('agendaViewLista').innerHTML = '<div class="ag-appt" style="position:fixed;bottom:14px;left:14px"><div class="ag-action-menu-wrap">' +
         '<button class="ag-act-btn ag-action-menu-trigger" onclick="agendaToggleActionMenu(\'reviewMenu\',this)" aria-expanded="false">...</button>' +
         '<div class="ag-action-menu" id="reviewMenu">' + Array(8).fill('<button class="ag-action-menu-item" role="menuitem">Ação de teste</button>').join('') + '</div></div></div>';
     });

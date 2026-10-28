@@ -6,7 +6,7 @@ function farmaciaLifecycleData_(value) {
   var result = { action: value.action, positionId: farmaciaText_(value.positionId, 'a entrada de estoque', 100),
     revision: farmaciaText_(value.revision, 'a revisão do estoque', 100),
     occurredOn: farmaciaDate_(value.occurredOn, 'a data da operação'),
-    document: farmaciaText_(value.document, 'a referência documental', 200),
+    document: farmaciaText_(value.document, 'a referência documental', 200, value.action === 'dispense'),
     reason: farmaciaText_(value.reason, 'a observação', 500, value.action !== 'destination') };
   if (value.action !== 'transport_arrival') {
     result.quantity = farmaciaQuantity_(value.quantity, true);

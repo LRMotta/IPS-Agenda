@@ -30,8 +30,8 @@ function agendaMergeFields_() {
     { label: 'eCRF concluída', keys: ['ecrfConcluida'], boolean: true },
     { label: 'Carro requerido', keys: ['carroRequerido'], boolean: true }
   ];
-  ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].forEach(function(slot, index) {
-    var label = ['Transporte I', 'Transporte II', 'Transporte III', 'Backup', 'Backup II'][index];
+  ['courier1', 'courier2', 'courier3', 'courier4', 'backup', 'backup2'].forEach(function(slot, index) {
+    var label = ['Transporte I', 'Transporte II', 'Transporte III', 'Transporte IV', 'Backup', 'Backup II'][index];
     fields.push({ label: label + ' - Dados do envio', slot: slot, config: true, keys: ['nome', 'temperatura', 'awb', 'destino'] });
     fields.push({ label: label + ' - Status', slot: slot, keys: ['status'] });
     fields.push({ label: label + ' - Material biológico', slot: slot, material: true, keys: ['material', 'matBioJson'] });

@@ -681,10 +681,11 @@
           <span class="ag-sep"></span>
           <button class="ag-tb-btn active" id="agendaBtnLista" onclick="agendaSetView('lista')"><span class="material-symbols-outlined" aria-hidden="true">view_agenda</span> Lista</button>
           <button class="ag-tb-btn" id="agendaBtnSemana" onclick="agendaSetView('semana')"><span class="material-symbols-outlined" aria-hidden="true">calendar_view_week</span> Semana</button>
-          <button class="ag-tb-btn" id="agendaBtnPrintWeek" title="Imprimir semana" onclick="imprimirAgendaSemana()" style="display:none"><span class="material-symbols-outlined" aria-hidden="true">print</span> Imprimir semana</button>
-          <div class="ag-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="text" id="agendaBusca" placeholder="Buscar no histórico: participante, projeto, visita, courier..." oninput="agendaOnSearchInput()" aria-label="Buscar no histórico da Agenda"></div>
+          <button class="ag-tb-btn" id="agendaBtnPrintWeek" title="Imprimir semana" onclick="imprimirAgendaSemana()" style="display:none"><span class="material-symbols-outlined" aria-hidden="true">print</span><span class="ag-tb-label">Imprimir semana</span></button>
+          <button class="ag-tb-btn icon ag-search-toggle" id="agendaBtnBuscaToggle" type="button" title="Buscar no histórico" aria-label="Buscar no histórico" aria-expanded="false" aria-controls="agendaBuscaWrap" onclick="agendaToggleBusca()"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+          <div class="ag-search" id="agendaBuscaWrap"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="text" id="agendaBusca" placeholder="Buscar no histórico: participante, projeto, visita, courier..." oninput="agendaOnSearchInput()" aria-label="Buscar no histórico da Agenda"></div>
           <button class="ag-tb-btn" id="agendaBtnAtualizar" title="Atualizar" onclick="carregarAgendaEventos(true)"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
-          <button class="ag-tb-btn primary" id="agendaBtnNovo" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Agendamento</button>
+          <button class="ag-tb-btn primary" id="agendaBtnNovo" aria-label="Novo Agendamento" onclick="toggleAgendaCreate()"><span class="material-symbols-outlined" aria-hidden="true">add</span><span class="ag-tb-label">Novo Agendamento</span></button>
         </div>
         <div class="ag-create-panel" id="agendaCreatePanel" onclick="fecharAgendaModalSeFora(event)" data-accessible-dialog data-dialog-close="fecharAgendaModal">
           <div class="ag-create-box" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="agendaCreateTitle" tabindex="-1">
@@ -858,10 +859,25 @@
                 <div class="field-label" id="agC3MaterialLabel">Material biológico</div>
                 <div id="agC3Material" class="ag-mat-editor" role="group" aria-labelledby="agC3MaterialLabel"></div>
               </div>
+              <div id="agC4Wrap">
+                <div class="ag-log-title" style="margin-bottom:8px;color:#5b21b6"><span class="material-symbols-outlined" aria-hidden="true">counter_4</span> Transporte de Amostras IV <button class="ag-c-doc-btn" title="Informe a AWB quando exigida pela courier antes de gerar documentos." id="btnGerarTransp4" type="button" onclick="gerarTransporteAgenda('4','btnGerarTransp4')"><span class="material-symbols-outlined" aria-hidden="true">description</span> Gerar docs</button></div>
+                <div class="ag-transport-fields">
+                  <div><label class="field-label" for="agC4Nome">Courier</label><select id="agC4Nome" class="f-input f-select" onchange="onAgendaCourierChange('agC4')"></select></div>
+                  <div><label class="field-label" for="agC4Destino">Laboratório destino</label><select id="agC4Destino" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC4Temp">Temperatura</label><select id="agC4Temp" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC4Status">Status</label><select id="agC4Status" class="f-input f-select"></select></div>
+                  <div><label class="field-label" for="agC4Awb">AWB</label><input type="text" id="agC4Awb" class="f-input" placeholder="AWB"></div>
+                </div>
+                <div class="field-label" id="agC4MaterialLabel">Material biológico</div>
+                <div id="agC4Material" class="ag-mat-editor" role="group" aria-labelledby="agC4MaterialLabel"></div>
+              </div>
             </div>
             <div class="ag-transport-actions">
               <button class="ag-tb-btn" id="btnMostrarAgC3" type="button" onclick="mostrarAgendaTransporteOpcional('agC3')">
                 <span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar Transporte III
+              </button>
+              <button class="ag-tb-btn" id="btnMostrarAgC4" type="button" onclick="mostrarAgendaTransporteOpcional('agC4')">
+                <span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar Transporte IV
               </button>
               <button class="ag-tb-btn" id="btnMostrarAgBackup" type="button" onclick="mostrarAgendaTransporteOpcional('agBackup')">
                 <span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar Backup I

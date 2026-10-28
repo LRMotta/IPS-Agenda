@@ -1121,7 +1121,9 @@ function agendaEditableRecordVersionValuesFromRow_(row) {
       text(i.monitorName), row[i.poloTrial] ? '1' : '', row[i.ecrf] ? '1' : '',
       text(i.salaMonitoria), agendaBooleanValue_(row[i.carroRequerido]) ? '1' : '',
       text(i.backupAgendaRef), text(i.participanteCadastroId), agendaCanonicalJsonForVersion_(text(i.backup2Dados))
-    ]
+    ],
+    // Sem as colunas do Transporte IV a versao permanece identica a dos registros legados.
+    i.c4.nome >= 0 ? courier(i.c4) : []
   );
 }
 
@@ -1141,6 +1143,11 @@ function agendaEditFieldVersionsFromRow_(row) {
   });
   labels = labels.concat(['Monitor', 'Polo Trial concluído', 'eCRF concluída', 'Sala/local',
     'Carro requerido', 'Backup - Agendamento', 'ID Cadastro Participante', 'Backup II - Dados']);
+  if (AGENDA_CFG.idx.c4.nome >= 0) {
+    ['Courier', 'Temperatura', 'Status', 'AWB', 'Material', 'Destino', 'Material estruturado'].forEach(function(field) {
+      labels.push('Transporte IV - ' + field);
+    });
+  }
   var values = agendaEditableRecordVersionValuesFromRow_(row);
   var fields = {};
   labels.forEach(function(label, index) { fields[label] = codexRecordVersionFromValues_([values[index]]); });
@@ -1158,7 +1165,7 @@ function agendaRegisterEditConflict_(dados, row, currentVersion, currentEditVers
   var reason = !String(dados._editRecordVersion || '').trim() ? 'SEM_VERSAO_EDITAVEL' :
     !valid ? 'SEM_REFERENCIA_DE_CAMPOS' : changed.length ? 'CAMPOS_DIVERGENTES' : 'REFERENCIA_INCONSISTENTE';
   var slot = String(dados.transporteDocumentosSlot || '');
-  var source = ['1', '2', '3', 'backup', 'backup2'].indexOf(slot) >= 0 ? 'gerar_documentos:' + slot : 'salvar_agendamento';
+  var source = ['1', '2', '3', '4', 'backup', 'backup2'].indexOf(slot) >= 0 ? 'gerar_documentos:' + slot : 'salvar_agendamento';
   var changes = [
     { field: 'Versão do registro', oldValue: String(dados._recordVersion || '').slice(0, 80), newValue: currentVersion },
     { field: 'Versão dos campos editáveis', oldValue: String(dados._editRecordVersion || '').slice(0, 80), newValue: currentEditVersion }
@@ -8291,7 +8298,8 @@ function getDashboardPendencias_(estoque, perfContext) {
       [
         { label: 'Transporte I', cfg: i.c1 },
         { label: 'Transporte II', cfg: i.c2 },
-        { label: 'Transporte III', cfg: i.c3 }
+        { label: 'Transporte III', cfg: i.c3 },
+        { label: 'Transporte IV', cfg: i.c4 }
       ].forEach(function(slot) {
         var nome = String(r[slot.cfg.nome] || '').trim();
         if (!isCourierNomeValidoAgenda_(nome)) return;
@@ -8343,7 +8351,8 @@ function getDashboardPendencias_(estoque, perfContext) {
       [
         { label: 'Transporte I', cfg: i.c1 },
         { label: 'Transporte II', cfg: i.c2 },
-        { label: 'Transporte III', cfg: i.c3 }
+        { label: 'Transporte III', cfg: i.c3 },
+        { label: 'Transporte IV', cfg: i.c4 }
       ].forEach(function(slot) {
         var nome = String(r[slot.cfg.nome] || '').trim();
         if (!isCourierNomeValidoAgenda_(nome)) return;
@@ -8378,7 +8387,7 @@ function getDashboardPendencias_(estoque, perfContext) {
       var r = agendaPorId[String(doc.agendaId || '').trim()];
       if (!r || AgendaServerRules_.isCancelled(r[i.status])) return;
       var slotKey = String(doc.slot || '').trim();
-      var slotCfg = slotKey === '1' ? i.c1 : (slotKey === '2' ? i.c2 : (slotKey === '3' ? i.c3 : null));
+      var slotCfg = { '1': i.c1, '2': i.c2, '3': i.c3, '4': i.c4 }[slotKey] || null;
       if (!slotCfg) return;
       // Um historico de PDF/rascunho nao recria um transporte removido.
       var nomeCourierAtual = normText_(r[slotCfg.nome]);
@@ -8396,7 +8405,7 @@ function getDashboardPendencias_(estoque, perfContext) {
         visita: String(r[i.visita] || ''),
         tipo: String(r[i.tipo] || '')
       };
-      var slotLabel = 'Transporte ' + (slotKey === '1' ? 'I' : (slotKey === '2' ? 'II' : 'III'));
+      var slotLabel = 'Transporte ' + { '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[slotKey];
       ['courierNaoAgendada', 'courierNaoConfirmada'].forEach(function(key) {
         var antes = out[key].length;
         out[key] = out[key].filter(function(item) {
@@ -8767,7 +8776,7 @@ function agendaDashboardParticipantKey_(r, i) {
 
 function agendaDashboardCouriersEvento_(r, i) {
   var couriersEvento = [];
-  [i.c1, i.c2, i.c3].forEach(function(c) {
+  [i.c1, i.c2, i.c3, i.c4].forEach(function(c) {
     if (!c || c.nome === undefined) return;
     var nomeCourier = String(r[c.nome] || '').trim();
     if (isCourierNomeValidoAgenda_(nomeCourier)) couriersEvento.push(nomeCourier);
@@ -8849,7 +8858,7 @@ function agendaDashboardDestinoMaterial_(material, laboratorios) {
 
 function agendaDashboardTransportesEvento_(r, i, carregarLaboratoriosDestino) {
   var transportes = [];
-  var slots = [i.c1, i.c2, i.c3].filter(Boolean).map(function(c) {
+  var slots = [i.c1, i.c2, i.c3, i.c4].filter(Boolean).map(function(c) {
     var slot = agendaCourierToObject_(r, c);
     // O resumo estruturado pode omitir o laboratório descrito no texto legado.
     slot.material = String(r[c.material] || slot.material || '');
@@ -12770,7 +12779,8 @@ var AGENDA_CFG = {
     medico: 12, procedimentos: 13, servTerc: 14, obs: 15,
     labCentral: 16, controle: 17, kit: 18, reqStatus: 45, monitorName: 46,
     poloTrial: 47, ecrf: 48, salaMonitoria: 49, carroRequerido: 50,
-    backupAgendaRef: 51, backupTemperatura: 52, participanteCadastroId: 0, backup2Dados: 0
+    backupAgendaRef: 51, backupTemperatura: 52, participanteCadastroId: 0, backup2Dados: 0,
+    c4: { nome: 0, temp: 0, status: 0, awb: 0, material: 0, destino: 0, matBio: 0 }
   },
   idx: {
     id: 0, data: 1, hora: 2, tipo: 3, status: 4, participante: 5,
@@ -12782,7 +12792,9 @@ var AGENDA_CFG = {
     c3: { nome: 28, temp: 29, status: 30, awb: 31, material: 32, destino: 38, matBio: 42 },
     cb: { nome: 33, status: 34, material: 35, destino: 39, matBio: 43, temp: 51 },
     reqStatus: 44, monitorName: 45, poloTrial: 46, ecrf: 47, salaMonitoria: 48, carroRequerido: 49,
-    backupAgendaRef: 50, participanteCadastroId: -1, backup2Dados: -1
+    backupAgendaRef: 50, participanteCadastroId: -1, backup2Dados: -1,
+    // Transporte IV e opcional: as colunas sao resolvidas pelo cabecalho (-1 = ausente).
+    c4: { nome: -1, temp: -1, status: -1, awb: -1, material: -1, destino: -1, matBio: -1 }
   }
 };
 
@@ -12837,6 +12849,7 @@ function getAgendaSheetForRead_(operation) {
     agendaResolveBackupTemperaturaColumnForRead_(sh, headers);
     agendaResolveParticipanteCadastroColumnForRead_(sh, headers);
     agendaResolveBackup2Column_(sh, headers, false);
+    agendaResolveTransporte4Columns_(sh, headers, false);
   });
   return sh;
 }
@@ -12859,7 +12872,7 @@ function agendaUseBackupTemperaturaColumn_(column) {
   column = Math.max(0, Number(column) || 0);
   AGENDA_CFG.col.backupTemperatura = column;
   AGENDA_CFG.idx.cb.temp = column ? column - 1 : -1;
-  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, column, AGENDA_CFG.col.participanteCadastroId || 0, AGENDA_CFG.col.backup2Dados || 0);
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, column, AGENDA_CFG.col.participanteCadastroId || 0, AGENDA_CFG.col.backup2Dados || 0, agendaTransporte4LastCol_());
   CFG.lastCol = AGENDA_CFG.lastCol;
   return column;
 }
@@ -12880,7 +12893,7 @@ function agendaUseParticipanteCadastroColumn_(column) {
   column = Math.max(0, Number(column) || 0);
   AGENDA_CFG.col.participanteCadastroId = column;
   AGENDA_CFG.idx.participanteCadastroId = column ? column - 1 : -1;
-  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, AGENDA_CFG.col.backupTemperatura || 0, column, AGENDA_CFG.col.backup2Dados || 0);
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, AGENDA_CFG.col.backupTemperatura || 0, column, AGENDA_CFG.col.backup2Dados || 0, agendaTransporte4LastCol_());
   CFG.lastCol = AGENDA_CFG.lastCol;
   return column;
 }
@@ -12924,7 +12937,8 @@ function ensureAgendaDestinoLabColumns_(sh) {
   var backupTemperaturaCol = agendaEnsureBackupTemperaturaColumn_(sh);
   var participanteCadastroCol = agendaEnsureParticipanteCadastroColumn_(sh);
   var backup2Col = agendaResolveBackup2Column_(sh, null, true);
-  var schemaCacheKey = 'AgendaSchemaEnsured:v8:' + backupTemperaturaCol + ':' + participanteCadastroCol + ':' + backup2Col;
+  var transporte4Col = agendaResolveTransporte4Columns_(sh, null, true);
+  var schemaCacheKey = 'AgendaSchemaEnsured:v9:' + backupTemperaturaCol + ':' + participanteCadastroCol + ':' + backup2Col + ':' + transporte4Col;
   if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
     sh.insertColumnsAfter(sh.getMaxColumns(), AGENDA_CFG.lastCol - sh.getMaxColumns());
@@ -14456,6 +14470,7 @@ function agendaCourierStatusFuturoErro_(dados, dataEvento, rowAnterior) {
     { label: 'Transporte I', value: dados.courier1, oldIdx: idx.c1.status },
     { label: 'Transporte II', value: dados.courier2, oldIdx: idx.c2.status },
     { label: 'Transporte III', value: dados.courier3, oldIdx: idx.c3.status },
+    { label: 'Transporte IV', value: dados.courier4, oldIdx: idx.c4.status },
     { label: 'Transporte Backup', value: dados.backup, oldIdx: idx.cb.status },
     { label: 'Transporte Backup II', value: dados.backup2, oldValue: rowAnterior ? agendaBackup2FromRow_(rowAnterior).status : '' }
   ];
@@ -14669,7 +14684,7 @@ function agendaVisitaIdentidadeAlterada_(rowAnterior, dados) {
 }
 
 function agendaValidarMaterialBioPayload_(dados) {
-  var hasJson = ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].some(function(slot) {
+  var hasJson = ['courier1', 'courier2', 'courier3', 'courier4', 'backup', 'backup2'].some(function(slot) {
     var courier = dados && dados[slot];
     return courier && String(courier.matBioJson || courier.materialJson || '').trim();
   });
@@ -14959,8 +14974,9 @@ function agendaWritePeriodoRow_(agenda, linha, dataDia, dados, rowAnterior, tipo
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, { awb: '', awbTouched: true });
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, { awb: '', awbTouched: true });
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, { awb: '', awbTouched: true });
+  agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c4, { awb: '', awbTouched: true });
   agendaSetBackupLinha_(agenda, linha, {});
-  agendaSetTransporteExtraLinha_(agenda, linha, {});
+  agendaSetTransporteExtraLinha_(agenda, linha, { courier4: {} });
   if (AgendaServerRules_.isCancelled(status)) aplicarLogicaCancelamento_(agenda, linha, status);
 }
 
@@ -15055,6 +15071,12 @@ function agendaAuditFields_() {
     { field: 'Transporte III - AWB', idx: i.c3.awb },
     { field: 'Transporte III - Material', idx: i.c3.material },
     { field: 'Transporte III - Destino', idx: i.c3.destino },
+    { field: 'Transporte IV - Courier', idx: i.c4.nome },
+    { field: 'Transporte IV - Temperatura', idx: i.c4.temp },
+    { field: 'Transporte IV - Status', idx: i.c4.status },
+    { field: 'Transporte IV - AWB', idx: i.c4.awb },
+    { field: 'Transporte IV - Material', idx: i.c4.material },
+    { field: 'Transporte IV - Destino', idx: i.c4.destino },
     { field: 'Backup - Courier', idx: i.cb.nome },
     { field: 'Backup - Temperatura', idx: i.cb.temp },
     { field: 'Backup - Status', idx: i.cb.status },
@@ -15283,7 +15305,7 @@ function atualizarAgendaEventoCompleto(dados) {
   if (!linha) throw new Error('Agendamento nao encontrado para edicao.');
   // Agendamento preliminar pode anteceder a AWB; Gerar docs exige validação.
   if (dados.transporteDocumentosSlot) {
-    var docCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, backup: dados.backup, backup2: dados.backup2 })[dados.transporteDocumentosSlot];
+    var docCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, '4': dados.courier4, backup: dados.backup, backup2: dados.backup2 })[dados.transporteDocumentosSlot];
     if (!docCourier) throw new Error('Transporte não informado para gerar documentos.');
     codexCourierAssertDocumentAwb_(docCourier.awb, docCourier.nome);
   }
@@ -15301,7 +15323,7 @@ function atualizarAgendaEventoCompleto(dados) {
       dados = mergeResult.dados;
       agendaValidarMaterialBioPayload_(dados);
       if (dados.transporteDocumentosSlot) {
-        var mergedCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, backup: dados.backup, backup2: dados.backup2 })[dados.transporteDocumentosSlot];
+        var mergedCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, '4': dados.courier4, backup: dados.backup, backup2: dados.backup2 })[dados.transporteDocumentosSlot];
         codexCourierAssertDocumentAwb_(mergedCourier && mergedCourier.awb, mergedCourier && mergedCourier.nome);
       }
     }
@@ -15680,10 +15702,12 @@ function confirmarEntregaTransportePendencia(agendaId, slot, awb) {
       '2': AGENDA_CFG.idx.c2,
       'transporte ii': AGENDA_CFG.idx.c2,
       '3': AGENDA_CFG.idx.c3,
-      'transporte iii': AGENDA_CFG.idx.c3
+      'transporte iii': AGENDA_CFG.idx.c3,
+      '4': AGENDA_CFG.idx.c4,
+      'transporte iv': AGENDA_CFG.idx.c4
     };
     var transporte = slotMap[slotKey];
-    if (!transporte) return { erro: 'Transporte invalido para confirmar entrega.' };
+    if (!transporte || transporte.status < 0) return { erro: 'Transporte invalido para confirmar entrega.' };
 
     var agenda = getAgendaSheet_();
     var linha = encontrarLinhaPorId(agenda, agendaId);
@@ -16083,6 +16107,8 @@ function agendaGravarTransportesDoEvento_(agenda, linha, dados, labCentral, skip
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c1, dados.courier1, { skipBackupAwbSync: skipBackupAwbSync === true });
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c2, dados.courier2);
   agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c3, dados.courier3);
+  // Payload legado que omite courier4 preserva o Transporte IV existente.
+  if (dados.courier4) agendaSetCourierLinha_(agenda, linha, AGENDA_CFG.idx.c4, dados.courier4);
   var backupPermitido = AgendaServerRules_.formPolicy(dados.tipo).labChoiceAllowed && AgendaServerRules_.isLabCentral(labCentral);
   var backup = backupPermitido ? dados.backup : {};
   agendaSetBackupLinha_(agenda, linha, backup);
@@ -16098,6 +16124,8 @@ function agendaGravarTransportesDoEvento_(agenda, linha, dados, labCentral, skip
 
 function agendaSetCourierLinha_(agenda, linha, idx, courier, options) {
   options = options || {};
+  // Transporte IV sem as colunas na planilha: nada a gravar.
+  if (!idx || idx.nome < 0) return;
   courier = courier || {};
   var courierNome = courier.nome || courier.courier || '';
   var materialSummary = agendaMaterialSummaryFromJson_(courier.matBioJson || courier.materialJson, courier.material);
@@ -16120,9 +16148,9 @@ function agendaSetCourierLinha_(agenda, linha, idx, courier, options) {
     var awbRange = agenda.getRange(linha, idx.awb + 1);
     agendaSetAwbValue_(awbRange, courier.awb || '', courierNome);
     var idxTransportes = typeof AGENDA_CFG !== 'undefined' && AGENDA_CFG.idx
-      ? [AGENDA_CFG.idx.c1, AGENDA_CFG.idx.c2, AGENDA_CFG.idx.c3]
+      ? [AGENDA_CFG.idx.c1, AGENDA_CFG.idx.c2, AGENDA_CFG.idx.c3, AGENDA_CFG.idx.c4]
       : [];
-    var slotBackupSync = idxTransportes.indexOf(idx) >= 0 ? ['I', 'II', 'III'][idxTransportes.indexOf(idx)] : '';
+    var slotBackupSync = idxTransportes.indexOf(idx) >= 0 ? ['I', 'II', 'III', 'IV'][idxTransportes.indexOf(idx)] : '';
     if (!options.skipBackupAwbSync && slotBackupSync) {
       var awbSalva = String(awbRange.getDisplayValue() || awbRange.getValue() || '').trim();
       agendaAtualizarBackupAwbVinculado_(agenda, linha, awbSalva, slotBackupSync);
@@ -16521,7 +16549,8 @@ function getAgendaDhlAwbsPendentesEntrega_(values, display) {
   var slots = [
     { key: 'c1', label: 'Transporte I', cfg: idx.c1 },
     { key: 'c2', label: 'Transporte II', cfg: idx.c2 },
-    { key: 'c3', label: 'Transporte III', cfg: idx.c3 }
+    { key: 'c3', label: 'Transporte III', cfg: idx.c3 },
+    { key: 'c4', label: 'Transporte IV', cfg: idx.c4 }
   ];
   values.forEach(function(row, i) {
     slots.forEach(function(slot) {
@@ -16762,7 +16791,7 @@ function testarMonitorConfirmacaoManual(agendaId) {
   if (!linha) throw new Error('Agendamento não encontrado: ' + agendaId);
   var row = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   var avisos = [];
-  ['c1', 'c2', 'c3', 'cb'].forEach(function(key) {
+  ['c1', 'c2', 'c3', 'c4', 'cb'].forEach(function(key) {
     var idx = AGENDA_CFG.idx[key];
     var courier = String(row[idx.nome] || '').trim();
     if (courier && (key === 'cb' || codexCourierAwbRule_(courier).key === 'pinex')) {
@@ -16831,7 +16860,8 @@ function getAgendaCourierAwbsPendentesConfirmacao_(values, display, regras) {
   var slots = [
     { key: 'c1', label: 'Transporte I', cfg: idx.c1 },
     { key: 'c2', label: 'Transporte II', cfg: idx.c2 },
-    { key: 'c3', label: 'Transporte III', cfg: idx.c3 }
+    { key: 'c3', label: 'Transporte III', cfg: idx.c3 },
+    { key: 'c4', label: 'Transporte IV', cfg: idx.c4 }
   ];
   values.forEach(function(row, i) {
     slots.forEach(function(slot) {
@@ -16866,7 +16896,8 @@ function getAgendaCourierRefsPendentesConfirmacao_(values, display, regras) {
   var slots = [
     { key: 'c1', label: 'Transporte I', cfg: idx.c1 },
     { key: 'c2', label: 'Transporte II', cfg: idx.c2 },
-    { key: 'c3', label: 'Transporte III', cfg: idx.c3 }
+    { key: 'c3', label: 'Transporte III', cfg: idx.c3 },
+    { key: 'c4', label: 'Transporte IV', cfg: idx.c4 }
   ];
   values.forEach(function(row, i) {
     var agendaId = String(row[idx.id] || '').trim();
@@ -17097,7 +17128,7 @@ function agendaAwbOwner_(id, slot) {
 }
 
 function agendaAwbRegistro_(row, slot) {
-  var i = AGENDA_CFG.idx, c = [i.c1, i.c2, i.c3][slot - 1];
+  var i = AGENDA_CFG.idx, c = [i.c1, i.c2, i.c3, i.c4][slot - 1];
   return {
     awb: String(row[c.awb] || '').trim(), owner: agendaAwbOwner_(row[i.id], slot),
     id: String(row[i.id] || '').trim(), slot: String(slot), courier: String(row[c.nome] || ''),
@@ -17112,11 +17143,11 @@ function agendaAwbContexto_(agenda) {
   var context = { agenda: agenda, entries: [], current: Object.create(null), persisted: Object.create(null), backups: Object.create(null), sheet: null };
   var backupEntries = [];
   var n = agenda.getLastRow() - 1;
-  var width = Math.min(agenda.getLastColumn(), Math.max(AGENDA_CFG.idx.c3.awb + 1, AGENDA_CFG.idx.backupAgendaRef + 1, AGENDA_CFG.idx.cb.temp + 1, AGENDA_CFG.idx.backup2Dados + 1));
+  var width = Math.min(agenda.getLastColumn(), Math.max(AGENDA_CFG.idx.c3.awb + 1, AGENDA_CFG.idx.c4.awb + 1, AGENDA_CFG.idx.backupAgendaRef + 1, AGENDA_CFG.idx.cb.temp + 1, AGENDA_CFG.idx.backup2Dados + 1));
   var rows = n > 0 ? agenda.getRange(2, 1, n, width).getValues() : [];
   rows.forEach(function(row) {
     if (!String(row[AGENDA_CFG.idx.id] || '').trim()) return;
-    [1, 2, 3].forEach(function(slot) {
+    [1, 2, 3, 4].forEach(function(slot) {
       var entry = agendaAwbRegistro_(row, slot);
       context.current[entry.owner] = entry;
       if (normalizarAwbCourier_(entry.awb)) context.entries.push(entry);
@@ -17125,7 +17156,7 @@ function agendaAwbContexto_(agenda) {
     context.backups[agendaAwbOwner_(row[AGENDA_CFG.idx.id], 'backup')] = refs;
     refs.forEach(function(ref) {
       if (!normalizarAwbCourier_(ref.awb)) return;
-      var slot = { I: '1', II: '2', III: '3' }[String(ref.slot || 'I').toUpperCase()] || String(ref.slot || '1');
+      var slot = { I: '1', II: '2', III: '3', IV: '4' }[String(ref.slot || 'I').toUpperCase()] || String(ref.slot || '1');
       var entry = Object.assign({}, agendaAwbRegistro_(row, 1), {
         awb: String(ref.awb), owner: agendaAwbOwner_(ref.id, slot), id: ref.id, slot: slot, data: ref.data || ref.dataIso || '',
         courier: String(row[AGENDA_CFG.idx.cb.nome] || ''), temperatura: String(row[AGENDA_CFG.idx.cb.temp] || ''), status: String(row[AGENDA_CFG.idx.cb.status] || '')
@@ -17143,7 +17174,7 @@ function agendaAwbContexto_(agenda) {
     if (normalizarAwbCourier_(backup2.awb) && !backup2.agendamentos.some(function(ref) { return normalizarAwbCourier_(ref.awb) === normalizarAwbCourier_(backup2.awb); })) backupEntries.push(backupEntry);
     backup2.agendamentos.forEach(function(ref) {
       if (!normalizarAwbCourier_(ref.awb)) return;
-      var targetSlot = { I: '1', II: '2', III: '3' }[String(ref.slot || 'I').toUpperCase()];
+      var targetSlot = { I: '1', II: '2', III: '3', IV: '4' }[String(ref.slot || 'I').toUpperCase()];
       if (targetSlot) backupEntries.push(Object.assign({}, backupEntry, { owner: agendaAwbOwner_(ref.id, targetSlot), id: ref.id, slot: targetSlot, awb: ref.awb }));
     });
   });
@@ -17167,7 +17198,7 @@ function agendaAwbContexto_(agenda) {
 }
 
 function agendaAwbMensagem_(awb, other) {
-  var slot = { '1': 'Transporte I', '2': 'Transporte II', '3': 'Transporte III', backup: 'Backup', backup2: 'Backup II' }[other.slot] || 'Envio de amostras';
+  var slot = { '1': 'Transporte I', '2': 'Transporte II', '3': 'Transporte III', '4': 'Transporte IV', backup: 'Backup', backup2: 'Backup II' }[other.slot] || 'Envio de amostras';
   var data = other.data instanceof Date ? Utilities.formatDate(other.data, 'America/Sao_Paulo', 'dd/MM/yyyy') : String(other.data || '');
   var detalhes = [slot, other.courier, other.temperatura, other.participante, other.projeto, data, other.status, other.id ? 'Agendamento ' + other.id : 'Envio manual'].filter(Boolean).join(' · ');
   var orientacao = agendaAwbDhlAmbiente_(other)
@@ -17209,7 +17240,7 @@ function agendaAwbOwnerEfetivo_(context, entry) {
   var matching = refs.filter(function(ref) { return normalizarAwbCourier_(ref.awb) === key; });
   var ref = matching.length === 1 ? matching[0] : refs.length === 1 ? refs[0] : null;
   if (!ref) return entry.owner;
-  var slot = { I: '1', II: '2', III: '3' }[String(ref.slot || 'I').toUpperCase()] || String(ref.slot || '1');
+  var slot = { I: '1', II: '2', III: '3', IV: '4' }[String(ref.slot || 'I').toUpperCase()] || String(ref.slot || '1');
   return agendaAwbOwner_(ref.id, slot);
 }
 
@@ -17217,7 +17248,7 @@ function agendaAwbReservar_(context, candidates, strict, previewOnly) {
   candidates = candidates.map(function(entry) {
     var owner = agendaAwbOwnerEfetivo_(context, entry);
     if (owner === entry.owner) return entry;
-    var target = /^AGD:(.+):([123])$/.exec(owner);
+    var target = /^AGD:(.+):([1234])$/.exec(owner);
     return target ? Object.assign({}, entry, { owner: owner, id: target[1], slot: target[2] }) : entry;
   });
   var warnings = [];
@@ -17275,7 +17306,7 @@ function agendaAwbReservar_(context, candidates, strict, previewOnly) {
 }
 
 function agendaAwbValidarPayload_(agenda, dados, id, rowAnterior, previewOnly) {
-  var slots = [AGENDA_CFG.idx.c1, AGENDA_CFG.idx.c2, AGENDA_CFG.idx.c3];
+  var slots = [AGENDA_CFG.idx.c1, AGENDA_CFG.idx.c2, AGENDA_CFG.idx.c3, AGENDA_CFG.idx.c4];
   var hasAwb = slots.some(function(c, index) {
     var courier = dados['courier' + (index + 1)] || {};
     return String(courier.awb || '').trim() || (rowAnterior && String(rowAnterior[c.awb] || '').trim());
@@ -17303,13 +17334,13 @@ function agendaAwbValidarPayload_(agenda, dados, id, rowAnterior, previewOnly) {
 }
 
 function agendaAwbReservarCelula_(range, awb, courier) {
-  var columns = [AGENDA_CFG.idx.c1.awb, AGENDA_CFG.idx.c2.awb, AGENDA_CFG.idx.c3.awb];
+  var columns = [AGENDA_CFG.idx.c1.awb, AGENDA_CFG.idx.c2.awb, AGENDA_CFG.idx.c3.awb, AGENDA_CFG.idx.c4.awb];
   var slot = columns.indexOf(range.getColumn() - 1) + 1;
   if (!slot) return;
   var before = String(range.getDisplayValue() || '').trim();
   if (!before && !normalizarAwbCourier_(awb)) return;
   var agenda = range.getSheet();
-  var row = agenda.getRange(range.getRow(), 1, 1, Math.min(agenda.getLastColumn(), AGENDA_CFG.idx.c3.awb + 1)).getValues()[0];
+  var row = agenda.getRange(range.getRow(), 1, 1, Math.min(agenda.getLastColumn(), Math.max(AGENDA_CFG.idx.c3.awb, AGENDA_CFG.idx.c4.awb) + 1)).getValues()[0];
   var entry = agendaAwbRegistro_(row, slot);
   if (!entry.id) throw new Error('Não foi possível identificar o envio para validar a AWB. Reabra o agendamento.');
   if (!codexCourierIsValidAwbEntry_(awb, courier || entry.courier, { courier: entry.courier, awb: entry.awb })) {
@@ -17393,9 +17424,56 @@ function agendaResolveBackup2Column_(sh, headers, ensure) {
   }
   AGENDA_CFG.col.backup2Dados = column;
   AGENDA_CFG.idx.backup2Dados = column ? column - 1 : -1;
-  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, AGENDA_CFG.col.backupTemperatura || 0, AGENDA_CFG.col.participanteCadastroId || 0, column);
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, AGENDA_CFG.col.backupTemperatura || 0, AGENDA_CFG.col.participanteCadastroId || 0, column, agendaTransporte4LastCol_());
   CFG.lastCol = AGENDA_CFG.lastCol;
   return column;
+}
+
+// Transporte IV: sete colunas opcionais identificadas pelo cabecalho, criadas
+// somente pelo caminho de escrita. Leituras sem elas veem um slot vazio.
+var AGENDA_TRANSPORTE4_COLUNAS_ = [
+  { key: 'nome', label: 'Transporte IV - Courier' },
+  { key: 'temp', label: 'Transporte IV - Temperatura' },
+  { key: 'status', label: 'Transporte IV - Status' },
+  { key: 'awb', label: 'Transporte IV - AWB' },
+  { key: 'material', label: 'Transporte IV - Material' },
+  { key: 'destino', label: 'Transporte IV - Destino' },
+  { key: 'matBio', label: 'Transporte IV - Material estruturado' }
+];
+
+function agendaTransporte4LastCol_() {
+  var cols = AGENDA_CFG.col.c4;
+  return Math.max.apply(null, AGENDA_TRANSPORTE4_COLUNAS_.map(function(def) { return cols[def.key] || 0; }));
+}
+
+function agendaTransporte4Disponivel_() {
+  return AGENDA_CFG.idx.c4.nome >= 0;
+}
+
+function agendaResolveTransporte4Columns_(sh, headers, ensure) {
+  var width = Array.isArray(headers) ? headers.length : Number(sh.getLastColumn && sh.getLastColumn()) || 0;
+  headers = Array.isArray(headers) ? headers : (width ? sh.getRange(1, 1, 1, width).getValues()[0] : []);
+  var normalized = headers.map(function(value) { return normText_(value); });
+  var found = AGENDA_TRANSPORTE4_COLUNAS_.map(function(def) { return normalized.indexOf(normText_(def.label)) + 1; });
+  if (ensure && found.some(function(column) { return !column; })) {
+    // Completa somente as colunas ausentes, preservando as ja existentes.
+    var next = Math.max(width, AGENDA_CFG.lastCol);
+    found = found.map(function(column) { return column || ++next; });
+    if (sh.getMaxColumns() < next) sh.insertColumnsAfter(sh.getMaxColumns(), next - sh.getMaxColumns());
+    AGENDA_TRANSPORTE4_COLUNAS_.forEach(function(def, index) {
+      if (normalized.indexOf(normText_(def.label)) < 0) sh.getRange(1, found[index]).setValue(def.label);
+    });
+  }
+  // Slot parcial (cabecalhos incompletos em leitura) permanece indisponivel.
+  var complete = found.every(function(column) { return column > 0; });
+  AGENDA_TRANSPORTE4_COLUNAS_.forEach(function(def, index) {
+    var column = complete ? found[index] : 0;
+    AGENDA_CFG.col.c4[def.key] = column;
+    AGENDA_CFG.idx.c4[def.key] = column ? column - 1 : -1;
+  });
+  AGENDA_CFG.lastCol = Math.max(AGENDA_CFG.col.backupAgendaRef, AGENDA_CFG.col.backupTemperatura || 0, AGENDA_CFG.col.participanteCadastroId || 0, AGENDA_CFG.col.backup2Dados || 0, agendaTransporte4LastCol_());
+  CFG.lastCol = AGENDA_CFG.lastCol;
+  return complete ? found[0] : 0;
 }
 
 function agendaBackupSlotKey_(value) {
@@ -17532,12 +17610,15 @@ function agendaBackupCourierSlot_(slot) {
   slot = String(slot || '').trim().toUpperCase();
   if (slot === 'II') return { key: 'II', idx: AGENDA_CFG.idx.c2, label: 'Transporte II' };
   if (slot === 'III') return { key: 'III', idx: AGENDA_CFG.idx.c3, label: 'Transporte III' };
+  if (slot === 'IV') return { key: 'IV', idx: AGENDA_CFG.idx.c4, label: 'Transporte IV' };
   return null;
 }
 
 function agendaBackupCourierSlotVazio_(row, slotCfg) {
   if (!row || !slotCfg || !slotCfg.idx) return false;
   var idx = slotCfg.idx;
+  // Sem as colunas do Transporte IV o slot nao existe e nao pode receber o backup.
+  if (idx.nome < 0) return false;
   return ![idx.nome, idx.temp, idx.status, idx.awb, idx.material, idx.destino, idx.matBio].some(function(column) {
     return column >= 0 && String(row[column] == null ? '' : row[column]).trim() !== '';
   });
@@ -17609,10 +17690,12 @@ function getAgendaVisitasFuturasParaBackup(origemId, backupSlot) {
   var visitas = rows.filter(function(row) {
     return agendaBackupVisitaElegivel_(origem, row, agora) &&
       (agendaBackupCourierSlotVazio_(row, agendaBackupCourierSlot_('II')) ||
-       agendaBackupCourierSlotVazio_(row, agendaBackupCourierSlot_('III')));
+       agendaBackupCourierSlotVazio_(row, agendaBackupCourierSlot_('III')) ||
+       agendaBackupCourierSlotVazio_(row, agendaBackupCourierSlot_('IV')));
   }).map(function(row) {
     var ii = agendaBackupCourierSlot_('II');
     var iii = agendaBackupCourierSlot_('III');
+    var iv = agendaBackupCourierSlot_('IV');
     var dataHora = _parseDateHora(row[AGENDA_CFG.idx.data], formatarHoraSafe_(row[AGENDA_CFG.idx.hora]));
     return {
       id: String(row[AGENDA_CFG.idx.id] || '').trim(),
@@ -17623,7 +17706,8 @@ function getAgendaVisitasFuturasParaBackup(origemId, backupSlot) {
       visita: String(row[AGENDA_CFG.idx.visita] || ''),
       tipo: AgendaServerRules_.isVisit(row[AGENDA_CFG.idx.tipo]) ? 'Visita' : 'Envio de amostras',
       transporteII: { disponivel: agendaBackupCourierSlotVazio_(row, ii) },
-      transporteIII: { disponivel: agendaBackupCourierSlotVazio_(row, iii) }
+      transporteIII: { disponivel: agendaBackupCourierSlotVazio_(row, iii) },
+      transporteIV: { disponivel: agendaBackupCourierSlotVazio_(row, iv) }
     };
   }).sort(function(a, b) {
     return String(a.dataIso + ' ' + a.hora).localeCompare(String(b.dataIso + ' ' + b.hora));
@@ -17650,7 +17734,7 @@ function aplicarBackupEmVisitaFutura(payload) {
     var origemId = String(payload.origemId || '').trim();
     var destinoId = String(payload.destinoId || '').trim();
     var slotCfg = agendaBackupCourierSlot_(payload.slot);
-    if (!origemId || !destinoId || !slotCfg) return { erro: 'Selecione uma visita e um slot II ou III válidos.' };
+    if (!origemId || !destinoId || !slotCfg) return { erro: 'Selecione uma visita e um slot II, III ou IV válidos.' };
     if (origemId === destinoId) return { erro: 'O agendamento de origem não pode ser usado como destino.' };
 
     var agenda = getAgendaSheet_();
@@ -17769,7 +17853,7 @@ function aplicarBackupEmVisitaFutura(payload) {
 function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb, slot) {
   if (!agenda || agenda.getLastRow() < 2) return { atualizado: 0 };
   slot = String(slot || 'I').replace(/^Transporte\s+/i, '').toUpperCase();
-  if (slot !== 'II' && slot !== 'III') slot = 'I';
+  if (slot !== 'II' && slot !== 'III' && slot !== 'IV') slot = 'I';
   linhaAgendamento = Number(linhaAgendamento || 0);
   if (linhaAgendamento < 2) return { atualizado: 0 };
   var agendamentoId = String(agenda.getRange(linhaAgendamento, AGENDA_CFG.col.id).getValue() || '').trim();
@@ -17885,6 +17969,13 @@ function agendaSetTransporteExtraLinha_(agenda, linha, dados) {
   agenda.getRange(linha, startCol, 1, row.length).setValues([row.map(function(value) {
     return String(value || '');
   })]);
+  // Payload legado que omite courier4 preserva destino e material do Transporte IV.
+  if (dados.courier4 && agendaTransporte4Disponivel_()) {
+    var c4 = dados.courier4;
+    var i4 = AGENDA_CFG.idx.c4;
+    agenda.getRange(linha, i4.destino + 1).setValue(String(c4.destino || c4.laboratorioDestino || ''));
+    agenda.getRange(linha, i4.matBio + 1).setValue(String(c4.matBioJson || c4.materialJson || ''));
+  }
 }
 
 function columnToLetter_(col) {
@@ -18900,7 +18991,10 @@ function getAgendaMateriaisAnteriores(criteria) {
         // Laboratorio Central determina se o Backup e aplicavel na conversao do evento.
         base: sh.getRange(2, 1, rowCount, Math.max(AGENDA_CFG.col.visita, AGENDA_CFG.idx.labCentral + 1)).getValues(),
         logistics: sh.getRange(2, AGENDA_CFG.idx.c1.material + 1, rowCount, AGENDA_CFG.idx.cb.matBio - AGENDA_CFG.idx.c1.material + 1).getValues(),
-        backup2: AGENDA_CFG.col.backup2Dados > 0 ? sh.getRange(2, AGENDA_CFG.col.backup2Dados, rowCount, 1).getValues() : []
+        backup2: AGENDA_CFG.col.backup2Dados > 0 ? sh.getRange(2, AGENDA_CFG.col.backup2Dados, rowCount, 1).getValues() : [],
+        transporte4: agendaTransporte4Disponivel_()
+          ? sh.getRange(2, AGENDA_CFG.idx.c4.material + 1, rowCount, AGENDA_CFG.idx.c4.matBio - AGENDA_CFG.idx.c4.material + 1).getValues()
+          : []
       };
     });
 
@@ -18915,6 +19009,7 @@ function getAgendaMateriaisAnteriores(criteria) {
       AGENDA_CFG.idx.c1,
       AGENDA_CFG.idx.c2,
       AGENDA_CFG.idx.c3,
+      AGENDA_CFG.idx.c4,
       AGENDA_CFG.idx.cb,
       'backup2'
     ];
@@ -18935,6 +19030,8 @@ function getAgendaMateriaisAnteriores(criteria) {
       var logistics = scan.logistics[i] || [];
       for (var l = 0; l < logistics.length; l++) row[AGENDA_CFG.idx.c1.material + l] = logistics[l];
       if (AGENDA_CFG.idx.backup2Dados >= 0) row[AGENDA_CFG.idx.backup2Dados] = scan.backup2[i] && scan.backup2[i][0] || '';
+      var logistics4 = scan.transporte4[i] || [];
+      for (var l4 = 0; l4 < logistics4.length; l4++) row[AGENDA_CFG.idx.c4.material + l4] = logistics4[l4];
       for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
         if (agendaLinhaTemMaterialAnterior_(row, slots[slotIndex])) {
           candidatosPorSlot[slotIndex].push({ row: row, rowIndex: i + 2 });
@@ -19003,7 +19100,7 @@ function agendaLinhaTemMaterialAnterior_(row, slotEspecifico) {
     return agendaLinhaTemMaterialAnterior_(backup2Row, i.cb);
   }
   if (!slotEspecifico && agendaLinhaTemMaterialAnterior_(row, 'backup2')) return true;
-  return (slotEspecifico ? [slotEspecifico] : [i.c1, i.c2, i.c3, i.cb]).some(function(slot) {
+  return (slotEspecifico ? [slotEspecifico] : [i.c1, i.c2, i.c3, i.c4, i.cb]).some(function(slot) {
     if (slot === i.cb && (!AgendaServerRules_.formPolicy(row[i.tipo]).labChoiceAllowed ||
         !AgendaServerRules_.isLabCentral(row[i.labCentral]))) return false;
     var json = String(row[slot.matBio] || '').trim();
@@ -19042,6 +19139,7 @@ function agendaMaterialAnteriorFromRow_(row, rowIndex, participanteId, projetoId
     courier1: material(evento.courier1),
     courier2: material(evento.courier2),
     courier3: material(evento.courier3),
+    courier4: material(evento.courier4),
     backup: material(evento.backup),
     backup2: material(evento.backup2)
   };
@@ -19634,6 +19732,7 @@ function agendaRowToObject_(r, rowIndex) {
     courier1: agendaCourierToObject_(r, i.c1),
     courier2: agendaCourierToObject_(r, i.c2),
     courier3: agendaCourierToObject_(r, i.c3),
+    courier4: agendaCourierToObject_(r, i.c4),
     backup2: backupAplicavel ? agendaBackup2FromRow_(r) : {},
     backup: {
       nome: backupAplicavel ? String(r[i.cb.nome] || '') : '',
@@ -19848,7 +19947,7 @@ function agendaTemLogisticaEmail_(dados) {
     var nome = String(dados[c.nome] || '').trim();
     return !!nome && ['---', 'Nao aplicavel', 'Não aplicável'].indexOf(nome) === -1;
   }
-  return nomeValido(i.c1) || nomeValido(i.c2) || nomeValido(i.c3) || nomeValido(i.cb) || isCourierNomeValidoAgenda_(agendaBackup2FromRow_(dados).nome);
+  return nomeValido(i.c1) || nomeValido(i.c2) || nomeValido(i.c3) || nomeValido(i.c4) || nomeValido(i.cb) || isCourierNomeValidoAgenda_(agendaBackup2FromRow_(dados).nome);
 }
 
 function gerarHtmlCouriers_(dados) {
@@ -19865,7 +19964,7 @@ function gerarHtmlCouriers_(dados) {
       ' | <b>AWB:</b> ' + escHtmlServer_(dados[c.awb] || 'Pendente') +
       ' | <b>Material:</b> ' + escHtmlServer_(material) + '</p>';
   }
-  html += addC(1, i.c1) + addC(2, i.c2) + addC(3, i.c3);
+  html += addC(1, i.c1) + addC(2, i.c2) + addC(3, i.c3) + addC(4, i.c4);
   if (dados[i.cb.nome] && String(dados[i.cb.nome]) !== 'N\u00E3o aplic\u00E1vel') {
     var backupMaterial = agendaMaterialSummaryFromJson_(dados[i.cb.matBio], dados[i.cb.material]);
     html += '<p style="margin:5px 0;border-top:1px solid #ccc;padding-top:5px"><b>Amostra Backup:</b> ' +

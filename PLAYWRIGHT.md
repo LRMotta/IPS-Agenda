@@ -32,3 +32,15 @@ desktop/celular ficam em `$env:TEMP\ips-agenda-playwright`; defina
 
 `npm.cmd run verify` permanece a verificacao completa de sintaxe, lint e
 regressao Node. Execute tambem `npm.cmd run test:ui` ao alterar a Agenda.
+
+## Fonte de icones (opcional)
+
+A fixture bloqueia a rede, entao a Material Symbols do Google Fonts nao carrega e os
+nomes dos icones aparecem como texto. Testes de layout podem usar
+`tests/helpers/material-icons.js` (`installMaterialIcons(page)`) para medir larguras e
+quebras como no app. O helper e opt-in e nao altera os demais testes.
+
+A fonte fica fora do repositorio, em
+`$env:USERPROFILE\Documents\IPS-Testes-Playwright\fonts\MaterialSymbolsOutlined.ttf`
+(ou no caminho de `PLAYWRIGHT_ICON_FONT_PATH`). Sem o arquivo, o helper usa uma
+aproximacao por CSS (glifo de 1em) e os testes continuam passando.
