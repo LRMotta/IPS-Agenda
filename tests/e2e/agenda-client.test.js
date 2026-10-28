@@ -934,6 +934,54 @@ test('Backup II preserva campos independentes e inicia novo envio com origem cor
   });
 });
 
+test('Transporte IV: bloco recolhido, payload courier4, restauracao na edicao e vinculo do Backup', async () => {
+  for (const width of [1280, 390]) {
+    await scenario(async page => {
+      const collected = await page.evaluate(() => {
+        window.initAgendaMatBioForms();
+        window.setAgendaSelectValue('agTipo', 'Visita');
+        window.setAgendaSelectValue('agLabCentral', 'Sim');
+        const wrap = document.getElementById('agC4Wrap');
+        window.atualizarAgendaTransportesOpcionais();
+        const iniciaRecolhido = wrap.style.display === 'none';
+        window.mostrarAgendaTransporteOpcional('agC4');
+        const aposBotao = wrap.style.display !== 'none' && document.getElementById('btnMostrarAgC4').style.display === 'none';
+        window.setAgendaSelectValue('agC4Nome', 'Marken');
+        window.setAgendaSelectValue('agC4Temp', 'Congelado');
+        window.setAgendaSelectValue('agC4Destino', 'Lab C');
+        window.setAgendaFieldValue('agC4Awb', '123456789012');
+        const data = window.coletarAgendaEvento();
+        window._agendaEditFormValues = window.agendaEditValuesFromRecord_(data);
+        window._agendaEditTransportValues = window.agendaEditTransportValuesFromRecord_(data);
+        window.setAgendaSelectValue('agC4Temp', 'Refrigerado');
+        window.agendaRestoreEditRecordValues_(true);
+        return { iniciaRecolhido, aposBotao, courier4: data.courier4, courier3: data.courier3, restored: document.getElementById('agC4Temp').value };
+      });
+      assert.equal(collected.iniciaRecolhido, true, 'Transporte IV vazio inicia recolhido');
+      assert.equal(collected.aposBotao, true, 'botao revela o bloco e some');
+      assert.equal(collected.courier4.nome, 'Marken');
+      assert.equal(collected.courier4.temperatura, 'Congelado');
+      assert.equal(collected.courier4.destino, 'Lab C');
+      assert.equal(collected.courier3.nome, '', 'III permanece independente do IV');
+      assert.equal(collected.restored, 'Congelado', 'edicao restaura o Transporte IV salvo');
+      assert.match(await page.locator('#agC4Wrap').innerText(), /Transporte de Amostras IV/i);
+      assert.equal(await page.locator('#agC4Wrap .ag-c-doc-btn').getAttribute('onclick'), "gerarTransporteAgenda('4','btnGerarTransp4')");
+      const box = await page.locator('#agC4Wrap').boundingBox();
+      assert.ok(box.x >= 0 && box.x + box.width <= width, 'bloco cabe na tela');
+      await page.evaluate(() => {
+        window.agendaBackupVisitasHtml_(document.getElementById('backupAgendaVisitas'), [
+          { id: 'FUTURA', recordVersion: 'v1', data: '23/11/2026', hora: '08:00', tipo: 'Visita', visita: 'Week 12',
+            transporteII: { disponivel: false }, transporteIII: { disponivel: false }, transporteIV: { disponivel: true } }
+        ], 'backup');
+      });
+      const slotIV = page.locator('#backupAgendaVisitas [data-slot="IV"]');
+      assert.equal(await slotIV.isEnabled(), true);
+      assert.match(await slotIV.innerText(), /Usar Transporte IV/);
+      assert.equal(await page.locator('#backupAgendaVisitas [data-slot="III"]').isDisabled(), true);
+    }, { viewport: { width, height: 900 } });
+  }
+});
+
 test('Backup II descarta visitas futuras de consulta antiga ou de dados alterados', async () => {
   await scenario(async page => {
     const results = await page.evaluate(() => {

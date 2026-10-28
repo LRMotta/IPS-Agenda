@@ -294,6 +294,7 @@ function transporteAgendaCourierFromEvento_(evento, slot) {
     '1': 'courier1',
     '2': 'courier2',
     '3': 'courier3',
+    '4': 'courier4',
     backup: 'backup',
     backup2: 'backup2'
   };
@@ -439,7 +440,7 @@ function transporteDatasColetaAgenda_(rows, destino, slotSolicitado) {
         if (ref.id !== destinoId) return;
         var slot = normalizarSlotTransporteCodex_(ref.slot || 'I', true);
         if (slotSolicitado && slot !== slotSolicitado) return;
-        var courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3 }[slot];
+        var courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3, '4': idx.c4 }[slot];
         if (!courierIdx) return;
         // Referências históricas não podem atribuir coleta a outro participante ou slot reutilizado.
         if (normText_(backup.nome) !== normText_(destino[courierIdx.nome]) ||
@@ -462,10 +463,11 @@ function transporteDatasColetaAgenda_(rows, destino, slotSolicitado) {
 
 function normalizarSlotTransporteCodex_(slot, strict) {
   var s = normText_(slot || '1');
-  if (s === '1' || s === '2' || s === '3') return s;
+  if (s === '1' || s === '2' || s === '3' || s === '4') return s;
   if (s === 'i' || s === 'transporte i') return '1';
   if (s === 'ii' || s === 'transporte ii') return '2';
   if (s === 'iii' || s === 'transporte iii') return '3';
+  if (s === 'iv' || s === 'transporte iv') return '4';
   if (s === 'b' || s === 'backup') return 'backup';
   if (s === 'b2' || s === 'backup2' || s === 'backup ii') return 'backup2';
   if (strict) throw new Error('Slot de transporte inválido. Reabra a documentação pela Agenda.');
@@ -487,7 +489,7 @@ var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 30;
 function transporteMonitorReferencia_(agendaId, slot) {
   agendaId = String(agendaId || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   slot = normalizarSlotTransporteCodex_(slot);
-  if (!agendaId || ['1', '2', '3'].indexOf(slot) === -1) return '';
+  if (!agendaId || ['1', '2', '3', '4'].indexOf(slot) === -1) return '';
   return 'IPS-TRP-' + agendaId + '-T' + slot;
 }
 
@@ -547,7 +549,7 @@ function transporteOperacaoAgendaId_(value, referencia, slot) {
   // interpretar 1417e053 como notacao cientifica ou remover zeros iniciais.
   // Recupera apenas pela referencia persistida, com slot e valor equivalentes;
   // leituras nao reescrevem dados nem normalizam IDs que ja sao texto.
-  var match = /^IPS-TRP-([0-9A-F]{8})-T([123])$/.exec(String(referencia || '').trim());
+  var match = /^IPS-TRP-([0-9A-F]{8})-T([1234])$/.exec(String(referencia || '').trim());
   if (!match || match[2] !== String(slot || '').trim()) return id;
   var original = match[1].toLowerCase();
   return Number(original) === value ? original : id;
@@ -672,7 +674,7 @@ function transporteSlotExiste_(row, idx) {
 // Chamado pela mutacao da Agenda sob o mesmo lock; leituras nao migram nem inativam.
 function transporteReconciliarOperacoesAgenda_(row) {
   var id = String(row[AGENDA_CFG.idx.id] || '').trim();
-  var slots = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+  var slots = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 };
   var updates = [];
   transporteOperacoesRows_().forEach(function(item) {
     if (item.agendaId !== id || item.estado === 'INATIVA') return;
@@ -754,7 +756,7 @@ function transporteMonitorContemReferencia_(texto, referencia) {
 function transporteMonitorReferenciaRegex_(referencia) {
   // Tolera espaços junto aos separadores, sem aceitar ID parcial ou outro slot.
   var ref = String(referencia || '').trim();
-  if (!/^IPS-TRP-[A-Z0-9_-]+-T[123]$/i.test(ref)) return null;
+  if (!/^IPS-TRP-[A-Z0-9_-]+-T[1234]$/i.test(ref)) return null;
   var escaped = ref.split('-').join('\\s*-\\s*');
   return new RegExp('(^|[^A-Z0-9_-])' + escaped + '(?![A-Z0-9_-])', 'i');
 }
@@ -868,7 +870,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   var pendentes = transporteOperacoesRows_().filter(function(item) {
     if (item.estado === 'INATIVA') return false;
     if (agendaId && item.agendaId !== agendaId) return false;
-    var slotAtual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 }[item.slot];
+    var slotAtual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 }[item.slot];
     var linhaAtual = slotAtual ? linhaAgendaPrecheck(item.agendaId) : 0;
     if (!linhaAtual || !transporteSlotExiste_(snapshotPrecheck.rows[linhaAtual], slotAtual)) {
       diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Transporte removido ou inexistente na Agenda' });
@@ -883,7 +885,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       var anexosIdentificados = Math.max(0, Math.floor(Number(item.anexos || 0) || 0));
       var documentacaoAceita = anexosIdentificados > 0 || !exigeAnexo(item.courier);
       if (identificadoEm && documentacaoAceita) {
-        var slotMapManual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+        var slotMapManual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 };
         var idxManual = slotMapManual[item.slot];
         var linhaManual = idxManual ? linhaAgendaPrecheck(item.agendaId) : 0;
         if (linhaManual) {
@@ -904,7 +906,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     // promover a Agenda. Depois que o status chega a Agendado, elas deixam de
     // entrar naturalmente nas próximas execuções.
     if (!transporteOperacaoDate_(item.emailIdentificadoEm) || (Number(item.anexos || 0) < 1 && exigeAnexo(item.courier))) return false;
-    var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+    var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 };
     var idx = slotMap[item.slot];
     if (!idx) return false;
     var linha = linhaAgendaPrecheck(item.agendaId);
@@ -1028,7 +1030,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Operação alterada ou concluída durante a busca' });
         return;
       }
-      var slotIdx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 }[item.slot];
+      var slotIdx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 }[item.slot];
       if (slotIdx && !snapshotAgenda) snapshotAgenda = transporteAgendaSnapshotMonitor_(agenda);
       var slotLinha = slotIdx && item.agendaId ? (snapshotAgenda.ids[String(item.agendaId)] || 0) : 0;
       if (!slotLinha || !transporteSlotExiste_(snapshotAgenda.rows[slotLinha], slotIdx)) {
@@ -1049,7 +1051,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         semAnexo.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId });
         return;
       }
-      var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3 };
+      var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 };
       var idx = slotMap[item.slot];
       if (idx && !snapshotAgenda) snapshotAgenda = transporteAgendaSnapshotMonitor_(agenda);
       var linha = idx && item.agendaId ? (snapshotAgenda.ids[String(item.agendaId)] || 0) : 0;
@@ -1559,7 +1561,7 @@ function codexMatBioCourierUnit_(courier) {
 }
 
 function codexMatBioValidateAgendaPayload_(dados) {
-  ['courier1', 'courier2', 'courier3', 'backup', 'backup2'].forEach(function(slot) {
+  ['courier1', 'courier2', 'courier3', 'courier4', 'backup', 'backup2'].forEach(function(slot) {
     var courier = dados && dados[slot];
     if (!courier) return;
     var json = courier.matBioJson !== undefined ? courier.matBioJson : courier.materialJson;
@@ -2540,6 +2542,9 @@ function transporteDestinoAgenda_(evento, slot) {
     '3': 'courier3',
     iii: 'courier3',
     'transporte iii': 'courier3',
+    '4': 'courier4',
+    iv: 'courier4',
+    'transporte iv': 'courier4',
     backup: 'backup',
     b: 'backup',
     backup2: 'backup2',
@@ -3439,7 +3444,7 @@ function transporteValidarEntradaAwbOcasa_(payload) {
   if (payload.idAgenda && (payload.agendaSlot || payload.slot)) {
     var evento = buscarAgendaEventoPorIdTransp_(payload.idAgenda);
     var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
-    previous = evento[({ '1': 'courier1', '2': 'courier2', '3': 'courier3', backup: 'backup', backup2: 'backup2' })[slot]];
+    previous = evento[({ '1': 'courier1', '2': 'courier2', '3': 'courier3', '4': 'courier4', backup: 'backup', backup2: 'backup2' })[slot]];
   } else if (payload.envioId) {
     var folha = transporteGetSheet_(getTransporteSpreadsheetCodex_(), 'folhaAgendamento', true);
     var values = folha.getRange('C3:C15').getValues().map(function(row) { return row[0]; });
@@ -3838,6 +3843,9 @@ function montarPayloadTransporteCodex(codexPayload) {
     '3': 'courier3',
     iii: 'courier3',
     'transporte iii': 'courier3',
+    '4': 'courier4',
+    iv: 'courier4',
+    'transporte iv': 'courier4',
     backup: 'backup',
     b: 'backup',
     backup2: 'backup2',
@@ -3973,7 +3981,7 @@ function transporteSincronizarAgenda_(payload) {
   var slotMap = {
     '1': AGENDA_CFG.idx.c1,
     '2': AGENDA_CFG.idx.c2,
-    '3': AGENDA_CFG.idx.c3,
+    '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4,
     backup: AGENDA_CFG.idx.cb
   };
   var idx = slotMap[slot];
@@ -4033,7 +4041,7 @@ function transporteSincronizarAgenda_(payload) {
       warnings.push('Agenda ja possui AWB diferente para o transporte ' + slot + ' (' + awbAnterior + '). A AWB do Transporte (' + awb + ') nao foi sobrescrita automaticamente.');
     }
   }
-  var slotRoman = { '1': 'I', '2': 'II', '3': 'III' }[slot];
+  var slotRoman = { '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[slot];
   if (slotRoman && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
     var awbAtualRange = agenda.getRange(linha, idx.awb + 1);
     var awbAtual = String(awbAtualRange.getDisplayValue() || awbAtualRange.getValue() || '').trim();
@@ -4473,7 +4481,7 @@ function transporteMarcarDocsGeradosAgenda_(payload, result) {
   var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot || '');
   if (!idAgenda || !slot || typeof getAgendaSheet_ !== 'function') return null;
   if (slot === 'backup2') return transporteMarcarDocsGeradosBackup2_(payload, idAgenda);
-  var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, backup: AGENDA_CFG.idx.cb }[slot];
+  var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4, backup: AGENDA_CFG.idx.cb }[slot];
   if (!idx) return null;
   var agenda = getAgendaSheet_();
   var linha = encontrarLinhaPorId(agenda, idAgenda);
@@ -6866,7 +6874,7 @@ function transporteCaixaCompativel_(snapshot, payload) {
 function transporteCaixaAgendaRange_(payload) {
   if (!payload.idAgenda || !(payload.agendaSlot || payload.slot) || typeof getAgendaSheet_ !== 'function') return null;
   var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
-  var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, backup: AGENDA_CFG.idx.cb }[slot];
+  var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4, backup: AGENDA_CFG.idx.cb }[slot];
   var sheet = getAgendaSheet_();
   var row = encontrarLinhaPorId(sheet, payload.idAgenda);
   if (slot === 'backup2') {

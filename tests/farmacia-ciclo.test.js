@@ -57,6 +57,13 @@ test('dispensação baixa apenas disponível, valida participante e preserva rep
   assert.doesNotMatch(JSON.stringify(participants),/Nome nunca/);
 });
 
+test('dispensação aceita referência documental e motivo vazios, mas retorno continua exigindo o documento',()=>{
+  const f=fixture(),record=f.write({document:'',reason:''});
+  assert.equal(f.stock().movements.find(r=>r.id===record.id).data.document,'');
+  const dispenseId=record.id;
+  assert.throws(()=>f.write({action:'return',dispenseId,quantity:5,document:'',confirmed:true,locationRef:{unitId:'UNIT-1',position:'Quarentena'}}),/referência documental/);
+});
+
 test('retorno exige confirmação da contagem antes de gravar',()=>{
   const f=fixture(),dispenseId=f.write({quantity:30}).id,writes=f.sheet().writes;
   assert.throws(()=>f.write({action:'return',dispenseId,quantity:5,confirmed:false,locationRef:{unitId:'UNIT-1',position:'Quarentena'}}),/Confirme a contagem/);

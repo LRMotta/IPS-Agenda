@@ -199,7 +199,7 @@ function courierLembreteAssinaturaHtml_() {
 function courierLembreteTexto_(config, atual, op, original) {
   var textoCustomizado = String(config.lembreteTexto || '').trim();
   var template = textoCustomizado || 'Prezados,\n\nAté o momento, não identificamos a confirmação da coleta prevista para {data} (AWB: {awb}). Poderiam, por gentileza, confirmar o agendamento?\n\nPara mantermos o histórico centralizado e evitarmos desencontro de informações, pedimos que qualquer confirmação, alteração ou cancelamento seja informada como resposta a este mesmo e-mail.\n\nAtenciosamente,';
-  var vars = { data: atual.data, transporte: 'Transporte ' + ({ '1': 'I', '2': 'II', '3': 'III' }[op.slot]), referencia: op.referencia, awb: atual.awb || 'não informada' };
+  var vars = { data: atual.data, transporte: 'Transporte ' + ({ '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[op.slot]), referencia: op.referencia, awb: atual.awb || 'não informada' };
   var texto = template.replace(/\{(data|transporte|referencia|awb)\}/g, function(_, k) { return vars[k]; }) + '\n\nRef. IPS: ' + op.referencia + '\nCobrança IPS: ' + op.agendaId + ':' + op.slot;
   var assinaturaHtml = courierLembreteAssinaturaHtml_();
   var assinatura = courierLembreteHtmlToPlain_(assinaturaHtml);
@@ -417,7 +417,7 @@ function courierLembreteAnotarPendencias_(pendencias) {
   if (!pendencias || !pendencias.length) return;
   var rows = courierLembreteRows_();
   (pendencias || []).forEach(function(p) {
-    var slot = { 'Transporte I': '1', 'Transporte II': '2', 'Transporte III': '3' }[p.slot];
+    var slot = { 'Transporte I': '1', 'Transporte II': '2', 'Transporte III': '3', 'Transporte IV': '4' }[p.slot];
     var item = rows.filter(function(r) { return r.agendaId === p.agendaId && r.slot === slot; })[0];
     p.lembreteStatus = !item ? 'Cobrança manual — sem vínculo rastreável' : 'Aguardando confirmação';
     if (!item) return;

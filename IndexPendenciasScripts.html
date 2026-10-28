@@ -67,7 +67,7 @@
 
   function pendenciaTransporteAction(it) {
     return function() {
-      var slot = ({ 'Transporte I': '1', 'Transporte II': '2', 'Transporte III': '3', 'Backup': 'backup' })[it && it.slot];
+      var slot = ({ 'Transporte I': '1', 'Transporte II': '2', 'Transporte III': '3', 'Transporte IV': '4', 'Backup': 'backup' })[it && it.slot];
       if (!it || !it.agendaId || !slot) {
         snackErro('Transporte da pendência não encontrado.');
         return;
