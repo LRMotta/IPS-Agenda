@@ -14,8 +14,16 @@ Em Usuários, editar **Acesso à Farmácia**:
 | --- | --- | --- |
 | `none` | Sem acesso | Não abre estoques de estudos; acesso comum é independente |
 | `read` | Consulta | Consultar dados autorizados |
-| `operate` | Operação | Também registrar recebimentos, dispensações e devoluções |
-| `manage` | Responsável pela Farmácia | Também liberar estoque, ajustar e reconciliar |
+| `operate` | Operação | Também registrar recebimentos, dispensações, retornos/adesão e transportes (saída e chegada) |
+| `manage` | Responsável pela Farmácia | Também cadastrar produtos e inventário inicial, liberar/bloquear/transferir, destinação final e correções |
+
+`operate` herda a consulta e a impressão dos documentos do ciclo. Destinação final,
+movimentações de situação do saldo (liberar, bloquear, transferir), cadastro de produto,
+inventário inicial e correções/exclusões lógicas continuam exclusivos de `manage`; a
+verificação ocorre no servidor, sob lock, para cada operação. O mesmo vale para o
+estoque comum, com sua concessão própria. Quem já tinha `operate` gravado passa a ter
+essas permissões de rotina assim que a versão com esta regra for publicada: confira os
+usuários nesse nível antes da publicação.
 
 Os três níveis autorizados abrem o índice com os estudos concedidos ao usuário.
 O nível geral aplica-se apenas nesses estudos. `none` bloqueia toda a Farmácia,

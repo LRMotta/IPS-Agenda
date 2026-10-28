@@ -45,8 +45,9 @@ A classe **Informações restritas** só pode ser consultada com a concessão ad
 no estudo e tem registros separados por estudo e classe na mesma base; trocar estudo/classe limpa dados
 e formulários anteriores e descarta respostas obsoletas.
 
-- `read` e `operate` consultam. Nesta entrega, só `manage` cadastra produtos e
-  confirma inventário inicial e registra recebimentos/movimentações. Admin não substitui essas concessões.
+- `read` consulta. `operate` também registra recebimentos e as operações de rotina do ciclo
+  (FARMACIA_CICLO.md). Só `manage` cadastra produtos, confirma inventário inicial, libera, bloqueia
+  ou transfere saldo, faz destinação final e correções. Admin não substitui essas concessões.
 - O comum usa concessão própria em Users K, **Acesso ao estoque comum da Farmácia**:
   `none/read/operate/manage`. Não depende de I/J nem concede estudos, e não tem
   classe restrita. Campo ausente/inválido ou cabeçalho alheio nega acesso. Só Admin
@@ -107,8 +108,8 @@ preserva situações e quantidades, produto, lote/kit e estudo/classe. Não há
 transferência entre estudos/classes nem fracionamento da entrada nesta etapa.
 Equipamentos continuam compartilhados; o catálogo não expõe sua ocupação clínica.
 
-As RPCs `registrarRecebimentoFarmacia` e `registrarMovimentacaoFarmacia` revalidam
-`manage`, configuração, schema e saldo sob lock. Movimentações exigem a revisão atual
+As RPCs `registrarRecebimentoFarmacia` (`operate`) e `registrarMovimentacaoFarmacia` (`manage`)
+revalidam o nível, configuração, schema e saldo sob lock. Movimentações exigem a revisão atual
 da entrada; resposta perdida aceita repetição idêntica do requestId mesmo depois de
 outras movimentações, sem duplicar o efeito. O cliente preserva formulário/chave em
 falhas e descarta respostas após mudança de estudo/classe ou identidade.
@@ -267,7 +268,7 @@ no arquivo. Datas opcionais em registros pendentes também são validadas.
 
 A calibração pode ser atualizada com revisão do registro, referência e observação;
 o valor anterior permanece no ledger. Cadastro, situação e calibração usam o mesmo
-document lock, autorização comum `manage` e requestId persistido para idempotência.
+document lock, a autorização do perfil geral (`admin` e `user`; `readonly` só consulta, independentemente do nível de Farmácia) e requestId persistido para idempotência.
 Cada linha inclui autor e instante. Arquivo é append-only pela aplicação, sem garantir
 imutabilidade contra edição direta. Não há importação de leituras, certificado PDF,
 integração com sondas, alarmes automáticos ou bloqueio de estoque por calibração.
@@ -324,3 +325,12 @@ inteira. O código do produto no estudo foi removido dos formulários e da exibi
 o leitor de eventos antigos continua tolerando esse atributo, sem migração de dados.
 Na tabela, o tipo aparece em chip, as características farmacêuticas ficam abaixo
 do nome e a origem do fornecimento acompanha a apresentação.
+
+## Regras de integridade das gravações
+
+- **Replay antes de gravar:** toda linha nova do ledger é validada pelo mesmo replay das consultas antes do `setValues`; se o replay a recusar, nada é gravado.
+- **Identificador da operação:** precisa ter 12 a 100 caracteres `A-Za-z0-9_-` e **não pode ser numérico** (o Sheets converteria o texto em número e o ledger ficaria ilegível). O cliente usa UUID.
+- **Destinação de material vencido:** se a destinação for lançada depois da validade (dia do registro, apurado no ledger), usa o saldo apresentado como bloqueado, mesmo com data até a validade. Datas posteriores à validade seguem a regra anterior.
+- **Bloqueio de material vencido:** recebe mensagem própria ("já está integralmente bloqueado"); a liberação continua proibida.
+- **Retorno e transporte para armazenamento:** o equipamento de destino precisa estar ativo (a tela já só o oferece).
+- **Transporte para armazenamento:** origem e destino são derivados do cadastro; o formulário não os solicita.

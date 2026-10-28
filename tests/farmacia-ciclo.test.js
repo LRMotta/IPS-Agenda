@@ -19,13 +19,16 @@ function fixture(overrides = {}) {
     getCodexSpreadsheet_:()=>app,
     codexFarmaciaStudyCatalog_:()=>[{id:'P1',nome:'Estudo A'},{id:'P2',nome:'Estudo B'}],
     codexAssertFarmaciaAccess_:(permission,studyId,restricted)=>{
-      if (studyId!=='P1'||(restricted&&!state.restricted)||state.permission==='none'||permission==='manage'&&state.permission!=='manage') throw new Error('Sem permissão');
+      // Hierarquia real dos níveis: um nível só concede o que está igual ou abaixo dele.
+      const levels=['none','read','operate','manage'];
+      if (studyId!=='P1'||(restricted&&!state.restricted)||levels.indexOf(state.permission)<Math.max(1,levels.indexOf(permission))) throw new Error('Sem permissão');
       return {userEmail:'farm@example.invalid',farmaciaAccess:state.permission,role:'user',farmaciaStudy:{id:'P1',nome:'Estudo A'}};
     },
     codexAssertFarmaciaCommonAccess_:()=>{throw new Error('Sem permissão');},
     codexWithDocumentLock_:(name,fn)=>{const held=lock.LockService.getDocumentLock();if(!held.tryLock())throw new Error('Lock indisponível');try{return fn();}finally{held.releaseLock();}}
   });
   server.farmaciaToday_=()=>state.today;
+  server.farmaciaRegisteredDay_=()=>state.today;
   server.farmaciaReadLocations_=()=>({configured:true,units:state.location?[{id:'UNIT-1',code:'IPS AF-01',positions:['Gaveta 1','Quarentena'],min:15,max:25,status:'active'}]:[]});
   const scope = {studyId:'P1',restricted:false};
   const product=server.cadastrarProdutoFarmacia({...scope,requestId:'product-request-0001',data:{category:'medicine',name:'Produto A',presentation:'Comprimidos',unit:'comprimido',control:'quantity',supplySource:'sponsor',storage:{min:15,max:25,instructions:''},...overrides}}).id;
@@ -177,6 +180,46 @@ test('destinação só baixa saldo segregado com motivo e autorização; vencime
   p=f.stock().positions[0];assert.equal(p.physical,0);assert.equal(p.blocked,0);assert.equal(p.available,0);
 });
 
+test('destinação de material vencido com data até a validade usa o saldo apresentado como bloqueado',()=>{
+  const f=fixture();
+  f.state.today='2028-01-01';
+  const shown=f.stock().positions[0];assert.equal(shown.expired,true);assert.equal(shown.blocked,140);
+  // Antes: "excede o saldo segregado", pois o bucket real de bloqueio era 0.
+  f.write({action:'destination',occurredOn:'2027-08-31',quantity:100,from:'blocked',destination:'disposal',authorization:'AUT-1',reason:'Descarte documentado'});
+  let p=f.stock().positions[0];assert.equal(p.physical,40);assert.equal(p.blocked,40);
+  assert.throws(()=>f.write({action:'destination',occurredOn:'2027-08-31',quantity:41,from:'blocked',destination:'disposal',authorization:'AUT-2',reason:'x'}),/vencido deve sair/);
+  // Bloqueio de material vencido recebe mensagem própria (não fala em "liberar").
+  assert.throws(()=>f.movement({action:'block',from:'available',quantity:1}),/já está integralmente bloqueado/);
+  assert.throws(()=>f.movement({action:'release',from:'blocked',quantity:1}),/não pode ser liberado/);
+});
+
+test('identificador numérico é recusado antes de gravar (o Sheets o converteria em número e inutilizaria o replay)',()=>{
+  const f=fixture();const writes=f.sheet().writes;
+  assert.throws(()=>f.write({},'123456789012'),/Identificador da operação inválido/);
+  assert.throws(()=>f.write({},'1e12345678901'),/Identificador da operação inválido/);
+  assert.equal(f.sheet().writes,writes);
+  f.write({},'a23456789012');
+  assert.equal(f.stock().movements.length>0,true);
+});
+
+test('equipamento em manutenção ou indisponível não recebe retorno nem transporte para armazenamento',()=>{
+  const f=fixture();const writes=f.sheet().writes;
+  ['maintenance','unavailable'].forEach(status=>{
+    f.server.farmaciaReadLocations_=()=>({configured:true,units:[{id:'UNIT-1',code:'IPS AF-01',positions:['Gaveta 1','Quarentena'],min:15,max:25,status}]});
+    assert.throws(()=>departure(f),/manutenção ou indisponível/);
+  });
+  assert.equal(f.sheet().writes,writes);
+  f.server.farmaciaReadLocations_=()=>({configured:true,units:[{id:'UNIT-1',code:'IPS AF-01',positions:['Gaveta 1','Quarentena'],min:15,max:25,status:'active'}]});
+  departure(f);
+});
+
+test('transporte para armazenamento não exige origem e destino do cliente; os demais continuam exigindo',()=>{
+  const f=fixture();
+  f.write({action:'transport_departure',quantity:5,departureTime:'10:00',operation:'storage',locationRef:{unitId:'UNIT-1',position:'Quarentena'},thermometer:'TERM-1',min:15,max:25,departureTemperature:21});
+  const event=f.stock().movements.at(-1);assert.equal(event.data.origin,'IPS AF-01 → Gaveta 1');assert.equal(event.data.destination,'IPS AF-01 → Quarentena');
+  assert.throws(()=>f.write({action:'transport_departure',quantity:5,departureTime:'10:00',operation:'preparation',thermometer:'TERM-1',min:15,max:25,departureTemperature:21}),/origem/);
+});
+
 test('correção/exclusão de inventário com ciclo preserva os registros originais',()=>{
   const f=fixture();f.write({quantity:5});const p=f.stock().positions[0];
   assert.throws(()=>f.server.alterarRegistroFarmacia({studyId:'P1',restricted:false,type:'INITIAL_DELETE',requestId:'delete-request-0001',data:{entityId:p.id,revision:p.revision,reason:'Excluir'}}),/preservam seu histórico/);
@@ -226,4 +269,80 @@ test('transporte de kit mantém uma única unidade física no destino e repete s
   arrival(f,id);const positions=f.stock().positions;
   assert.equal(positions[0].physical,0);assert.equal(positions[1].physical,1);assert.equal(positions[1].kit,'KIT-1');
   assert.equal(positions.filter(item=>item.kit==='KIT-1'&&item.physical>0).length,1);
+});
+
+test('código de participante acima do limite do ledger é recusado antes de gravar e não inutiliza o estoque',()=>{
+  const f=fixture();
+  f.app.getSheetByName('Participantes').rows[1][4]='P'.repeat(121);
+  const writes=f.sheet().writes;
+  assert.throws(()=>f.write({}),/código do participante no cadastro excede 120 caracteres/);
+  assert.equal(f.sheet().writes,writes);
+  assert.equal(f.stock().positions[0].physical,140);
+});
+
+test('rótulo derivado que o replay recusaria não é gravado no ledger do estudo',()=>{
+  const f=fixture(),dispenseId=f.write({}).id;
+  // Catálogo simulado fora dos limites do cadastro real: o rótulo derivado excede o aceito pelo replay.
+  f.server.farmaciaReadLocations_=()=>({configured:true,units:[{id:'UNIT-1',code:'X'.repeat(190),positions:['Gaveta 1','Quarentena'],min:15,max:25,status:'active'}]});
+  const writes=f.sheet().writes;
+  // Retorno: rótulo derivado depois da normalização, protegido pelo replay antes da gravação.
+  assert.throws(()=>f.write({action:'return',dispenseId,quantity:5,locationRef:{unitId:'UNIT-1',position:'Quarentena'}}),/Nenhum dado foi gravado/);
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'initial-request-long',data:{productId:f.product,lot:'L2',expiry:'2027-08-31',location:'x',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical:10,blocked:0,countedOn:'2026-10-12',confirmed:true,note:''}}),/localização válido/);
+  assert.equal(f.sheet().writes,writes);
+  assert.equal(f.stock().positions[0].physical,110);
+});
+
+test('nível Operação registra dispensação, retorno e transporte, mas não destinação final nem liberação',()=>{
+  const f=fixture();f.state.permission='operate';
+  const dispenseId=f.write({quantity:30}).id;
+  f.write({action:'return',dispenseId,quantity:5,locationRef:{unitId:'UNIT-1',position:'Quarentena'}});
+  arrival(f,departure(f).id);
+  const writes=f.sheet().writes;
+  assert.throws(()=>f.write({action:'destination',quantity:5,from:'blocked',destination:'sponsor',authorization:'AUT-1',reason:'Devolução'}),/permissão/);
+  assert.throws(()=>f.write({action:'inexistente'}),/permissão/);
+  assert.throws(()=>f.movement({action:'block',from:'available',quantity:1}),/permissão/);
+  assert.equal(f.sheet().writes,writes);
+  f.state.permission='read';
+  assert.throws(()=>f.write({quantity:1}),/permissão/);
+  assert.equal(f.lock.acquired,f.lock.released);
+});
+
+test('retorno não depende da revisão da origem, mas continua protegido pela dispensação e pelo acumulado',()=>{
+  const f=fixture(),dispenseId=f.write({quantity:30}).id,stale=f.stock().positions[0].revision;
+  f.write({quantity:5,platformReference:'IRT-depois'});
+  assert.notEqual(f.stock().positions[0].revision,stale);
+  const location={unitId:'UNIT-1',position:'Quarentena'};
+  const returned=f.payload({action:'return',dispenseId,quantity:10,locationRef:location});returned.data.revision=stale;
+  f.server.registrarCicloFarmacia(returned);
+  assert.equal(f.stock().positions.at(-1).origin,'return');
+  const excess=f.payload({action:'return',dispenseId,quantity:21,locationRef:location});excess.data.revision=stale;
+  assert.throws(()=>f.server.registrarCicloFarmacia(excess),/acumulada/);
+  const dispense=f.payload({quantity:1,platformReference:'IRT-nova'});dispense.data.revision=stale;
+  assert.throws(()=>f.server.registrarCicloFarmacia(dispense),/saldo mudou/);
+  assert.equal(f.stock().positions[0].physical,105);
+});
+
+test('retorno e chegada aceitam data anterior à última operação com motivo; demais operações permanecem cronológicas',()=>{
+  const f=fixture(),location={unitId:'UNIT-1',position:'Quarentena'};
+  const dispenseId=f.write({occurredOn:'2026-10-14',quantity:30}).id;
+  const departureId=departure(f,{occurredOn:'2026-10-16'}).id;
+  f.write({occurredOn:'2026-10-20',quantity:5,platformReference:'IRT-b'});
+  const writes=f.sheet().writes;
+  const late={action:'return',dispenseId,quantity:10,occurredOn:'2026-10-17',locationRef:location};
+  assert.throws(()=>f.write(late),/retroativo/);
+  assert.throws(()=>arrival(f,departureId,{occurredOn:'2026-10-17'}),/retroativo/);
+  assert.equal(f.sheet().writes,writes);
+  f.write({...late,reason:'Retorno trazido pelo participante em 17/10 e lançado depois'});
+  assert.equal(f.stock().movements.at(-1).retroactive,true);
+  arrival(f,departureId,{occurredOn:'2026-10-17',reason:'Chegada conferida em 17/10 e lançada depois'});
+  assert.equal(f.stock().movements.at(-1).retroactive,true);
+  // Dispensação e saída não reduzem o disponível retroativamente: seguem em ordem.
+  assert.throws(()=>f.write({occurredOn:'2026-10-18',quantity:1,platformReference:'IRT-c',reason:'x'}),/anteceder a última/);
+  assert.throws(()=>departure(f,{occurredOn:'2026-10-18',reason:'x'}),/anteceder a última/);
+  assert.throws(()=>f.write({...late,occurredOn:'2026-10-13',reason:'x'}),/dispensação e a data/);
+  // Sem antecedência não há sinalização; o histórico continua legível ao reexecutar o ledger.
+  f.write({action:'return',dispenseId,quantity:1,occurredOn:'2026-10-21',locationRef:location});
+  assert.equal(f.stock().movements.at(-1).retroactive,undefined);
+  // 140 iniciais − 35 dispensados + 11 retornados; a transferência por transporte não altera o físico.
+  assert.equal(f.stock().positions.reduce((sum,p)=>sum+p.physical,0),116);
 });

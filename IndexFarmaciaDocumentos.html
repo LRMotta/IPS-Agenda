@@ -24,12 +24,13 @@ function farmaciaDocumentEvent(record,records,unit) {
   if(a==='transport_arrival')rows.push(['Saída vinculada',e.departureId],['Hora da chegada',e.arrivalTime],['Temperatura atual (°C)',e.currentTemperature],['Temperatura mínima (°C)',e.minTemperature],['Temperatura máxima (°C)',e.maxTemperature],['Conferência da chegada registrada',e.confirmed===true?'Sim':'Não informada']);
   if(a==='transport_departure'||a==='transport_arrival')rows.push(['Excursão de temperatura',record.excursion===undefined?'Não informada':record.excursion?'Identificada — requer avaliação documentada':'Não identificada no registro']);
   if(a==='destination')rows.push(['Destinação',({sponsor:'Devolução ao patrocinador / ORPC',disposal:'Descarte documentado'})[e.destination]],['Situação de origem',({blocked:'Quarentena / bloqueado',pending:'Aguardando avaliação'})[e.from]],['Referência da autorização',e.authorization]);
+  if(record.retroactive)rows.push(['Lançamento retroativo','Sim — data anterior à última operação registrada para a entrada. Conferir o motivo informado.']);
   rows.push(['Referência documental',e.document],['Motivo / observação',e.reason||e.note]);
   return '<section><h2>'+esc(FARMACIA_CYCLE_LABELS[a||record.type]||record.type)+'</h2>'+farmaciaDocumentFields(rows)+'</section>';
 }
 function farmaciaDocumentHtml(id,lot) {
   var data=FARMACIA_STOCK.data;
-  if(!data||!data.configured||['read','manage'].indexOf(data.farmaciaAccess)===-1)return '';
+  if(!data||!data.configured||['read','operate','manage'].indexOf(data.farmaciaAccess)===-1)return '';
   var records=data.movements||[],record=lot?null:records.find(function(r){return r.id===id&&r.type==='LIFECYCLE';});
   if(!lot&&!record)return '';
   var p=farmaciaCyclePosition(lot?id:record.data.positionId),product=farmaciaCycleProduct(p);

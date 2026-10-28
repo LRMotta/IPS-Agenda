@@ -270,7 +270,7 @@ function farmaciaOperationId() {
 function farmaciaStockSave(type, data) {
   var catalogAction = type === 'location' || type === 'status' || type === 'probe' || type === 'calibration';
   var currentData = farmaciaCurrentData();
-  if (FARMACIA_STOCK.saving || !currentData || (catalogAction ? !currentData.locationsConfigured || !currentData.locationsCanManage : !currentData.configured || currentData.farmaciaAccess !== 'manage')) return;
+  if (FARMACIA_STOCK.saving || !currentData || (catalogAction ? !currentData.locationsConfigured || !currentData.locationsCanManage : !currentData.configured || (type === 'receipt' ? ['operate', 'manage'] : ['manage']).indexOf(currentData.farmaciaAccess) === -1)) return;
   var epoch = FARMACIA_STOCK.epoch, studyId = FARMACIA_STOCK.studyId, restricted = FARMACIA_STOCK.restricted;
   function isCurrentSave() {
     return catalogAction ? epoch === FARMACIA_STOCK.epoch && getCurrentPage() === 'farmacia' : farmaciaStockCurrent(epoch, studyId, restricted);
@@ -376,7 +376,7 @@ function farmaciaRenderReceiptOptions(data) {
   farmaciaUnitOptions('farmaciaReceiptUnit');
   farmaciaReceiptUnitChanged();
   farmaciaReceiptProductChanged();
-  document.getElementById('farmaciaReceiptFields').disabled = FARMACIA_STOCK.saving || !data.configured || data.farmaciaAccess !== 'manage' || !products.length || !(data.storageUnits || []).some(function(unit) { return !unit.deleted; });
+  document.getElementById('farmaciaReceiptFields').disabled = FARMACIA_STOCK.saving || !data.configured || ['operate', 'manage'].indexOf(data.farmaciaAccess) === -1 || !products.length || !(data.storageUnits || []).some(function(unit) { return !unit.deleted; });
 }
 
 function farmaciaUnitOptions(id) {

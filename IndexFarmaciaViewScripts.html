@@ -110,7 +110,7 @@ function farmaciaUpdateSummary() {
   action.disabled = !known || FARMACIA_STOCK.saving || document.getElementById('farmacia' + ({initial:'Initial', product:'Product', location:'Location', probe:'Probe'})[config.form] + 'Fields').disabled;
   action.title = action.disabled ? 'Conclua a configuração e os cadastros necessários antes de continuar.' : config.action;
   var receipt = document.getElementById('farmaciaReceiptAction');
-  receipt.hidden = FARMACIA_VIEW !== 'stock' || !canManage || !products.some(function(product) { return product.supplySource === 'sponsor'; });
+  receipt.hidden = FARMACIA_VIEW !== 'stock' || !data || ['operate', 'manage'].indexOf(data.farmaciaAccess) === -1 || !products.some(function(product) { return product.supplySource === 'sponsor'; });
   receipt.disabled = !known || FARMACIA_STOCK.saving || !data || !data.locationsConfigured || !units.length;
 }
 

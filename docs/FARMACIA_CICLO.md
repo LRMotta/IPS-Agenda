@@ -20,7 +20,8 @@ classificação mantêm seus contratos anteriores. Nenhum vínculo clínico, cro
 origem ou autorização é inferido a partir de nomes ou de saldos.
 
 Permissões de consulta e gestão continuam as existentes: leitura no estudo/classe
-autorizados; escrita apenas `manage`. A permissão do app não substitui delegação,
+autorizados. Dispensação, retorno/adesão e transporte (saída e chegada) exigem `operate`
+ou `manage`; destinação final exige `manage`. A permissão do app não substitui delegação,
 treinamento ou a documentação exigida pelo estudo.
 
 ## Situações e navegação
@@ -111,9 +112,25 @@ do histórico, com ID do evento que as criou. Correção/exclusão de inventári
 histórico operacional é impedida.
 
 `registrarCicloFarmacia()` autoriza o escopo sob lock, lê estado fresco, normaliza e
-valida tudo antes da primeira escrita. Revisão obsoleta é recusada. Repetição idêntica
+valida tudo antes da primeira escrita. Revisão obsoleta é recusada, exceto no retorno,
+que é validado pela dispensação vinculada (mesmo escopo, acumulado e trânsito) e não pela
+revisão da entrada de origem, pois não altera o saldo dela. A revisão da origem continua
+avançando a cada retorno, para que o histórico gravado permaneça legível. A linha nova é
+conferida contra a mesma releitura das consultas antes de ser gravada; se fosse recusada,
+nada é gravado. Repetição idêntica
 de `requestId` retorna o evento existente mesmo após novas movimentações, sem
 duplicação. Reuso do identificador com outros dados falha.
+
+### Lançamento retroativo
+
+As operações seguem a ordem cronológica da entrada: nenhuma pode ter data anterior à
+última operação já registrada nela. Retorno e chegada de transporte são a exceção, porque
+não reduzem o disponível da origem e costumam ser lançados depois do fato. Eles aceitam a
+data real, desde que o motivo seja informado, mesmo anterior à última operação. O registro e o documento de impressão
+ficam sinalizados como **Lançamento retroativo**. O critério é apenas a data anterior
+à última operação da entrada; um lançamento tardio que não a anteceda não exige motivo.
+Retorno ainda não pode anteceder a dispensação, nem a chegada a saída; nada anterior à
+entrada do produto é aceito.
 
 O cliente preserva campos e identificador em falha. Navegação, atualização, troca de
 estudo/classe e subseção pedem descarte de rascunho quando necessário. Respostas

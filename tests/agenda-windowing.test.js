@@ -2910,6 +2910,7 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
     AgendaRules: runFile('AgendaServerRules.gs').AgendaServerRules_,
     Date,
     esc: value => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    codexNormText: value => String(value || '').toLowerCase(),
     normAgenda: value => String(value || '').toLowerCase()
   });
   context.window = context;

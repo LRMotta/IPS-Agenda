@@ -54,7 +54,7 @@ function alterarRegistroFarmacia(payload) {
     var type = payload.type;
     var data = farmaciaCatalogActionData_(type, payload.data);
     var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);
-    if (!/^[A-Za-z0-9_-]{12,100}$/.test(requestId)) throw new Error('Identificador da operação inválido.');
+    farmaciaAssertRequestId_(requestId);
     var ledger = farmaciaReadLedger_(context), dataJson = JSON.stringify(data);
     var previous = ledger.records.find(function(item) { return item.requestId === requestId; });
     if (previous) {
@@ -71,6 +71,7 @@ function alterarRegistroFarmacia(payload) {
     farmaciaApplyCatalogAction_(ledger, record);
     var row = [record.id, type, JSON.stringify(context.studyId), context.restricted, requestId,
       JSON.stringify(new Date().toISOString()), JSON.stringify(context.access.userEmail), dataJson];
+    farmaciaAssertLedgerRowReplayable_(context, ledger, row);
     ledger.sheet.getRange(ledger.sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
     return { ok: true, id: record.id, repeated: false };
   });
