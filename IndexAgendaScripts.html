@@ -7294,6 +7294,8 @@
   function agendaStatusChipOp(status, tipo) {
     var cls = AgendaRules.statusChipClass(status);
     var label = status || tipo || '-';
+    // O estado padrao (Agendado) nao ganha badge visivel em nenhum card; o texto segue disponivel a leitores de tela.
+    if (normAgenda(status) === normAgenda('Agendado')) return '<span class="sr-only">' + esc(label) + '</span>';
     return '<span class="ag-st-chip ' + cls + '">' + esc(label) + '</span>';
   }
 
@@ -7311,9 +7313,18 @@
       var quando = [dataRef, ref.hora ? 'às ' + ref.hora : ''].filter(Boolean).join(' ');
       var title = 'Abrir agendamento' + (quando ? ' de ' + quando : '');
       var slot = ref.slot ? 'Transporte ' + ref.slot : '';
-      return '<button class="' + cls + ' ag-c-status-link" type="button" title="' + esc(title) + '" aria-label="' + esc(title) + '" data-agenda-id="' + esc(ref.id) + '" onclick="event.stopPropagation();agendaAbrirAgendamentoVinculado(this.dataset.agendaId)">' +
-        '<span class="material-symbols-outlined">event_available</span><span class="ag-c-status-copy"><span>' + esc(c.status || 'Adicionado à Agenda') + '</span>' +
-        (quando ? '<strong>' + esc(quando) + '</strong>' : '') + (slot ? '<strong>' + esc(slot) + '</strong>' : '') + '</span><span class="material-symbols-outlined ag-c-status-open">open_in_new</span></button>';
+      // Estado padrao ("Adicionado à Agenda") vira chip de uma linha com data curta; o titulo mantem o texto completo.
+      var padrao = !c.status || normAgenda(c.status) === normAgenda('Adicionado à Agenda');
+      var isoRef = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ref.dataIso || ''));
+      var dataPadrao = isoRef ? agendaFmtShort(new Date(Number(isoRef[1]), Number(isoRef[2]) - 1, Number(isoRef[3]))) : dataRef;
+      var textoStatus = padrao ? '' : '<span>' + esc(c.status) + '</span>';
+      var textoQuando = padrao
+        ? (dataPadrao ? '<strong>' + esc(dataPadrao) + '</strong>' : '') + (ref.hora ? '<strong>' + esc(ref.hora) + '</strong>' : '')
+        : (quando ? '<strong>' + esc(quando) + '</strong>' : '');
+      if (padrao && !textoQuando) textoQuando = '<strong>Agenda</strong>';
+      return '<button class="' + cls + ' ag-c-status-link' + (padrao ? ' ag-c-status-compact' : '') + '" type="button" title="' + esc(title) + '" aria-label="' + esc(title) + '" data-agenda-id="' + esc(ref.id) + '" onclick="event.stopPropagation();agendaAbrirAgendamentoVinculado(this.dataset.agendaId)">' +
+        '<span class="material-symbols-outlined">event_available</span><span class="ag-c-status-copy">' + textoStatus +
+        textoQuando + (slot ? '<strong>' + esc(slot) + '</strong>' : '') + '</span><span class="material-symbols-outlined ag-c-status-open">open_in_new</span></button>';
     }
     return '<span class="' + cls + '"><span class="material-symbols-outlined">' + icon + '</span>' + esc(c.status || 'Pendente') + '</span>';
   }

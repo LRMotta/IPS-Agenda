@@ -1,5 +1,5 @@
 'use strict';
-/* global document, window, FARMACIA_STOCK, FARMACIA_CYCLE, farmaciaEstoqueReset, farmaciaLifecycleRender, renderFarmaciaEstoque, farmaciaCycleNavigate, appClearUnsavedChanges */
+/* global document, window, FARMACIA_STOCK, FARMACIA_CYCLE, farmaciaEstoqueReset, farmaciaLifecycleRender, renderFarmaciaEstoque, farmaciaCycleNavigate, farmaciaCycleDispenseOptions, farmaciaCycleOutstanding, appClearUnsavedChanges */
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -106,6 +106,71 @@ test('formulário sujo pede confirmação ao trocar estudo, classe, subseção o
     await page.locator('[data-farmacia-view="products"]').click();assert.equal(await page.locator('#confirmUnsaved').evaluate(node=>node.classList.contains('open')),true);await page.getByRole('button',{name:'Continuar editando',exact:true}).click();assert.equal(await page.locator('[name="visit"]').inputValue(),'C2D1');
     await page.evaluate(()=>window.farmaciaStockRefresh());assert.equal(await page.locator('#confirmUnsaved').evaluate(node=>node.classList.contains('open')),true);await page.getByRole('button',{name:'Continuar editando',exact:true}).click();
     await page.locator('#farmaciaStudy').selectOption('P2');await page.locator('#btnConfirmUnsaved').click();assert.equal(await page.locator('#farmaciaCycleForm').count(),0);assert.equal(await page.locator('#farmaciaStudy').inputValue(),'P2');
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});
+
+test('nível Operação vê as ações de rotina e o recebimento, mas não a destinação final',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);
+    const render=level=>page.evaluate(data=>{FARMACIA_STOCK.studyId='P1';document.getElementById('farmaciaStudy').value='P1';FARMACIA_STOCK.data=data;renderFarmaciaEstoque(data);},cycleData({farmaciaAccess:level}));
+    await render('operate');
+    assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),true);
+    assert.equal(await page.locator('#farmaciaPrimaryAction').isVisible(),false);
+    for(const [pane,button] of [['dispense','Registrar dispensação'],['return','Registrar retorno'],['transport','Registrar saída']]){
+      await page.locator('[data-pane="'+pane+'"]').click();assert.equal(await page.getByRole('button',{name:button,exact:true}).count(),1);
+    }
+    await page.locator('[data-pane="overview"]').click();await page.locator('[data-farmacia-position="IN1"] .farmacia-cycle-link').click();
+    assert.equal(await page.getByRole('button',{name:'Dispensar',exact:true}).count(),1);
+    assert.equal(await page.getByRole('button',{name:'Registrar destinação',exact:true}).count(),0);
+    await render('manage');await page.locator('[data-pane="cycle"]').click();
+    assert.equal(await page.getByRole('button',{name:'Registrar destinação',exact:true}).count(),1);
+    await render('read');
+    assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),false);
+    await page.locator('[data-pane="dispense"]').click();assert.equal(await page.getByRole('button',{name:'Registrar dispensação',exact:true}).count(),0);
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});
+
+test('retorno com data anterior à última operação exige motivo na tela e avisa o lançamento retroativo',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);
+    await page.locator('[data-pane="return"]').click();await page.getByRole('button',{name:'Registrar retorno',exact:true}).click();
+    await page.locator('[name="dispenseId"]').selectOption('DISP1');
+    const last=await page.evaluate(()=>FARMACIA_STOCK.data.movements.filter(r=>r.type==='LIFECYCLE'&&r.data.positionId==='IN1').reduce((max,r)=>r.data.occurredOn>max?r.data.occurredOn:max,''));
+    const before=await page.evaluate(date=>new Date(Date.parse(date+'T12:00:00Z')-86400000).toISOString().slice(0,10),last);
+    const notice=page.locator('#farmaciaCycleRetroNotice'),reason=page.locator('#farmaciaCycleForm [name="reason"]');
+    assert.equal(await notice.isVisible(),false);
+    await page.locator('[name="occurredOn"]').fill(before);
+    assert.equal(await notice.isVisible(),true);assert.match(await notice.textContent(),/Lançamento retroativo/);
+    assert.equal(await reason.evaluate(node=>node.required),true);
+    await page.locator('[name="occurredOn"]').fill(last);
+    assert.equal(await notice.isVisible(),false);assert.equal(await reason.evaluate(node=>node.required),false);
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});
+
+test('formulários ocultam o que não se aplica: origem/destino no armazenamento e dispensações já devolvidas',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);
+    await page.locator('[data-pane="transport"]').click();await page.getByRole('button',{name:'Registrar saída',exact:true}).click();
+    await page.locator('[name="operation"]').selectOption('storage');
+    assert.equal(await page.locator('[name="origin"]').isVisible(),false);assert.equal(await page.locator('[name="destination"]').isVisible(),false);
+    await page.locator('[name="operation"]').selectOption('administration');
+    assert.equal(await page.locator('[name="origin"]').isVisible(),true);assert.equal(await page.locator('[name="destination"]').isVisible(),true);
+    assert.equal(await page.locator('[name="origin"]').getAttribute('maxlength'),'200');
+    // O texto livre usa o mesmo limite do servidor.
+    await page.getByRole('button',{name:'Cancelar'}).first().click().catch(()=>{});
+    const before=await page.evaluate(()=>farmaciaCycleDispenseOptions('').match(/<option/g).length);
+    assert.equal(before>=1,true);
+    // Dispensação totalmente devolvida deixa de ser oferecida para retorno e transporte.
+    const left=await page.evaluate(()=>{const d=FARMACIA_STOCK.data.movements.find(function(r){return r.type==='LIFECYCLE'&&r.data.action==='dispense';});
+      FARMACIA_STOCK.data.movements.push({id:'RET-ALL',type:'LIFECYCLE',data:{action:'return',dispenseId:d.id,quantity:farmaciaCycleOutstanding(d.id),positionId:d.data.positionId,occurredOn:'2026-10-26'}});
+      return {id:d.id,html:farmaciaCycleDispenseOptions('')};});
+    assert.equal(left.html.indexOf('value="'+left.id+'"'),-1);
     assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });

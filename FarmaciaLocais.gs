@@ -182,7 +182,7 @@ function farmaciaWriteLocation_(payload, type) {
     codexLogPerformance_(operation, 'read_catalog', Date.now() - readStartedAt, { rowCount: rowCount }, true);
     if (!catalog.configured) throw new Error('Catálogo de locais ainda não configurado.');
     var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);
-    if (!/^[A-Za-z0-9_-]{12,100}$/.test(requestId)) throw new Error('Identificador da operação inválido.');
+    farmaciaAssertRequestId_(requestId);
     var data = type === 'CATALOG_EDIT' || type === 'CATALOG_DELETE' ? farmaciaCatalogChangeData_(payload.data,type) : type === 'UNIT' ? farmaciaLocationData_(payload.data) : type === 'PROBE' ? farmaciaProbeData_(payload.data) : type === 'CALIBRATION' ? farmaciaCalibrationUpdateData_(payload.data) : farmaciaLocationStatusData_(payload.data);
     var dataJson = JSON.stringify(data);
     var previous = catalog.records.find(function(record) { return record.requestId === requestId; });

@@ -784,13 +784,27 @@ test('movimentações e recebimentos revalidam ACL sob lock sem substituir permi
   for(const method of ['registrarRecebimentoFarmacia','registrarMovimentacaoFarmacia']) {
     const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
     const payload=method==='registrarRecebimentoFarmacia'?{...f.receipt({document:'OUTRA'}),requestId:'receipt-permission-check'}:f.move(f.stock().positions[0]);
-    const writes=f.sheet().writes; f.users.rows[1][8]='operate';
+    // Recebimento é do nível Operação; movimentação exige o Responsável. Cada um é negado um nível abaixo.
+    const writes=f.sheet().writes; f.users.rows[1][8]=method==='registrarRecebimentoFarmacia'?'read':'operate';
     assert.throws(()=>f.server[method](payload),/permissão/);
     f.users.rows[1][2]='admin'; assert.throws(()=>f.server[method](payload),/permissão/);
     f.users.rows[1][8]='manage'; f.lock.onAcquire=()=>{f.users.rows[1][8]='read';};
     assert.throws(()=>f.server[method](payload),/permissão/);
     assert.equal(f.sheet().writes,writes); assert.equal(f.lock.held,false);
   }
+});
+
+test('nível Operação registra recebimento, mas produto, inventário inicial e movimentação exigem o Responsável', () => {
+  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+  f.users.rows[1][8]='operate';
+  const received=f.server.registrarRecebimentoFarmacia({...f.receipt({document:'OUTRA'}),requestId:'receipt-operate-0001'});
+  assert.equal(received.repeated,false);
+  assert.equal(f.stock().farmaciaAccess,'operate');
+  const writes=f.sheet().writes;
+  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(f.stock().positions[0])),/permissão/);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'product-operate-0001',data:{name:'Outro produto'}})),/permissão/);
+  assert.throws(()=>f.server.registrarInventarioInicialFarmacia({...f.initial(f.productId),requestId:'initial-operate-0001'}),/permissão/);
+  assert.equal(f.sheet().writes,writes);
 });
 
 test('resposta perdida após movimento não duplica saldo; retentativa usa payload e revisão originais', () => {
