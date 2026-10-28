@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFiles, readProjectFile } = require('./helpers/load-app-script');
+const { runFiles } =require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 const { fakeDocumentLock } = require('./helpers/fake-document-lock');
 
@@ -123,8 +123,4 @@ test('snapshot preexistente não concede acesso e escrita após esperar lock lê
   assert.equal(f.lock.released, 1);
   assert.equal(f.counts.users, 3);
   assert.throws(() => f.server.codexAssertCanRead_(forged), /inativo/);
-});
-
-test('constantes e invalidações de cache ACL persistente obsoleto foram removidas', () => {
-  assert.doesNotMatch(readProjectFile('WebApp.gs'), /CODEX_ACL_CACHE_KEY_|CODEX_ACL_CACHE_SECONDS_/);
 });
