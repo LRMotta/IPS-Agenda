@@ -24,6 +24,14 @@ test('publicacao gera versao com data e commit', () => {
   assert.match(source, /CODEX_APP_BUILD_DATE_/);
 });
 
+test('rotulo da versao le o titulo do commit em UTF-8 para preservar acentos', () => {
+  const source = readProjectFile('tools/push-clasp.ps1');
+  const encodingIndex = source.indexOf('[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)');
+  const labelIndex = source.indexOf('git log -1 --pretty=%s');
+  assert.ok(encodingIndex >= 0, 'o publicador define a saida nativa como UTF-8');
+  assert.ok(labelIndex > encodingIndex, 'a codificacao e definida antes de ler o titulo do commit');
+});
+
 test('testes acontecem depois da versao e antes do clasp push', () => {
   const source = readProjectFile('tools/push-clasp.ps1');
   const versionIndex = source.indexOf('WriteAllText');

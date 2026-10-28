@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
+# Saida dos comandos nativos (git log) vem em UTF-8; o console do Windows PowerShell 5.1 usa OEM (ibm850) e corromperia acentos no rotulo da versao.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $webAppPath = Join-Path $projectRoot 'WebApp.gs'
 $clasp = Join-Path $env:APPDATA 'npm\clasp.cmd'
