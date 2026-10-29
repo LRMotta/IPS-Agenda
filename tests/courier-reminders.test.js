@@ -419,6 +419,19 @@ test('releitura da Agenda consulta apenas IDs e linha atual, com feriados centra
   assert.equal(ranges.length, 4); // ID duplicado dispensa leitura da linha inteira.
 });
 
+test('Transporte IV tem base de cobranca; sem as colunas o slot nao existe', () => {
+  const row = ['', '', 'evt', '08/09/2026', 'Visita', '10:00', 'P', 'Proj', 'V1', 'Agendado', '', '', '', 'DHL', 'Aguardando', '1234567890'];
+  const snapshot = { porId: { evt: [{ row: 2, values: row }] }, somenteIndice: false, feriados: {} };
+  const base = { id: 2, data: 3, tipo: 4, hora: 5, participante: 6, projeto: 7, visita: 8, status: 9, c1: { nome: 10, status: 11, awb: 12 } };
+  const comColunas = runFile('CourierLembretes.gs', { AGENDA_CFG: { idx: { ...base, c4: { nome: 13, status: 14, awb: 15 } } } });
+  const atual = comColunas.courierLembreteAgenda_('evt', '4', snapshot);
+  assert.equal(atual.courier, 'DHL');
+  assert.equal(atual.courierStatus, 'Aguardando');
+  assert.equal(atual.awb, '1234567890');
+  const semColunas = runFile('CourierLembretes.gs', { AGENDA_CFG: { idx: { ...base, c4: { nome: -1, status: -1, awb: -1 } } } });
+  assert.equal(semColunas.courierLembreteAgenda_('evt', '4', snapshot), null);
+});
+
 test('flush ocorre somente na reserva duravel anterior ao efeito externo', () => {
   const calls = [];
   const sheet = { getRange: () => ({ setValues: () => calls.push('write') }) };

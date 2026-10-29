@@ -3017,9 +3017,9 @@ function transporteValidate_(registro) {
   var courier = transporteNormalizeCourierFromCodex_(registro.courier);
   var awb = String(registro.awb || '').trim();
 
-  if (!registro.agendadoPor) issues.push({ type: 'danger', text: 'ResponsÃƒÂ¡vel pelo agendamento nÃƒÂ£o informado.' });
-  if (!registro.protocolo) issues.push({ type: 'danger', text: 'Protocolo nÃƒÂ£o informado.' });
-  if (!registro.destino) issues.push({ type: 'warn', text: 'Destino/laboratÃƒÂ³rio ainda nÃƒÂ£o selecionado.' });
+  if (!registro.agendadoPor) issues.push({ type: 'danger', text: 'Responsável pelo agendamento não informado.' });
+  if (!registro.protocolo) issues.push({ type: 'danger', text: 'Protocolo não informado.' });
+  if (!registro.destino) issues.push({ type: 'warn', text: 'Destino/laboratório ainda não selecionado.' });
   if (!registro.horaEnvio) issues.push({ type: 'danger', text: 'Janela de envio nao informada.' });
   var awbCheck = codexCourierNormalizeAwb_(awb, courier);
   if (awbCheck && !codexCourierIsValidAwb_(awbCheck, courier)) {
@@ -3029,7 +3029,7 @@ function transporteValidate_(registro) {
     issues.push({ type: 'warn', text: 'PINEX COL. NÂ° deve conter 6 digitos para envio PINEX.' });
   }
   if (!registro.materiais.some(function(m) { return m.ativo; })) {
-    issues.push({ type: 'warn', text: 'Nenhum material biolÃƒÂ³gico marcado na declaraÃƒÂ§ÃƒÂ£o.' });
+    issues.push({ type: 'warn', text: 'Nenhum material biológico marcado na declaração.' });
   }
   return issues;
 }
@@ -3197,13 +3197,13 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
 
 function transporteDocumentosPorCourier_(courier, temperatura, destino) {
   var c = String(courier || '');
-  if (c === 'OCASA' && transporteOcasaNeedsProforma_(destino)) return ['Folha de Agendamento', 'DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o ANVISA', 'Proforma OCASA', 'Ficha de EmergÃªncia OCASA', 'Telefones Ãšteis OCASA'];
-  if (c === 'OCASA') return ['Folha de Agendamento', 'DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o ANVISA', 'Ficha de EmergÃªncia OCASA', 'Telefones Ãšteis OCASA'];
-  if (c === 'MARKEN') return ['Folha de Agendamento', 'DeclaraÃ§Ã£o de Transporte', 'PetiÃ§Ã£o ANVISA', 'Invoice MARKEN', 'Ficha de EmergÃªncia MARKEN'];
-  if (c === 'PINEX (Agendamento)') return ['FormulÃƒÂ¡rio PINEX'];
-  if (c === 'PINEX') return ['Folha DHL/PINEX', 'Commercial Invoice PINEX', 'PetiÃƒÂ§ÃƒÂ£o PINEX', 'USDA Statement', 'Ficha de EmergÃƒÂªncia PINEX', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte'];
-  if (transporteIsDhl_(c)) return ['Folha DHL/PINEX', 'DeclaraÃƒÂ§ÃƒÂ£o DHL', 'Invoice DHL', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte DHL'];
-  return ['Folha de Agendamento', 'DeclaraÃƒÂ§ÃƒÂ£o de Transporte'];
+  if (c === 'OCASA' && transporteOcasaNeedsProforma_(destino)) return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Proforma OCASA', 'Ficha de Emergência OCASA', 'Telefones Úteis OCASA'];
+  if (c === 'OCASA') return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Ficha de Emergência OCASA', 'Telefones Úteis OCASA'];
+  if (c === 'MARKEN') return ['Folha de Agendamento', 'Declaração de Transporte', 'Petição ANVISA', 'Invoice MARKEN', 'Ficha de Emergência MARKEN'];
+  if (c === 'PINEX (Agendamento)') return ['Formulário PINEX'];
+  if (c === 'PINEX') return ['Folha DHL/PINEX', 'Commercial Invoice PINEX', 'Petição PINEX', 'USDA Statement', 'Ficha de Emergência PINEX', 'Declaração de Transporte'];
+  if (transporteIsDhl_(c)) return ['Folha DHL/PINEX', 'Declaração DHL', 'Invoice DHL', 'Declaração de Transporte DHL'];
+  return ['Folha de Agendamento', 'Declaração de Transporte'];
 }
 
 function salvarTransporte(payload, options) {
@@ -3606,9 +3606,9 @@ function transportePeticaoMaterialRows_(materiais) {
     if (transporteMaterialKey_(materialRaw) === 'outro' &&
         materialNorm.indexOf('lamina') >= 0 &&
         materialNorm.indexOf('hematologia') >= 0) {
-      var matchLaminas = outroTexto.match(/(\d+)\s*(?:l[aÃ¢Ã£]mina|lamina|slide)/i);
+      var matchLaminas = outroTexto.match(/(\d+)\s*(?:l[aâã]mina|lamina|slide)/i);
       laminasHematologia = matchLaminas && matchLaminas[1]
-        ? matchLaminas[1] + ' lÃ¢mina' + (Number(matchLaminas[1]) === 1 ? '' : 's')
+        ? matchLaminas[1] + ' lâmina' + (Number(matchLaminas[1]) === 1 ? '' : 's')
         : outroTexto;
       return;
     }
@@ -4415,6 +4415,51 @@ function transporteGenerationCheckpoint_(changes) {
   if (TRANSPORTE_GENERATION_REQUEST_) transporteGenerationPersist_(TRANSPORTE_GENERATION_REQUEST_, changes);
 }
 
+var TRANSPORTE_GENERATION_FULL_KEEP_ = 19;
+var TRANSPORTE_GENERATION_FULL_MAX_AGE_MS_ = 30 * 24 * 60 * 60 * 1000;
+var TRANSPORTE_GENERATION_STUB_MAX_AGE_MS_ = 365 * 24 * 60 * 60 * 1000;
+
+// Mantem o armazenamento de recuperacao (cota de ~500 KB por usuario) limitado.
+// Registros completos (ate 8 KB) viram marcadores RETIRED, que impedem tokens
+// antigos de voltar a criar arquivos. Marcadores e registros READY (sem arquivos
+// criados) expiram por idade. Devolve as chaves que permanecem.
+function transporteGenerationPrune_(props, now) {
+  var all = props.getProperties();
+  var items = [];
+  Object.keys(all).forEach(function(key) {
+    if (key.indexOf('TRP_GEN_V1:') !== 0) return;
+    var record;
+    try { record = JSON.parse(all[key]); } catch (parseError) { record = null; }
+    items.push({ key: key, record: record });
+  });
+  var kept = [];
+  var complete = [];
+  var open = [];
+  items.forEach(function(item) {
+    var record = item.record;
+    var age = record && Number(record.updatedAt) ? now - Number(record.updatedAt) : 0;
+    if (!record) kept.push(item.key); // Valor ilegivel exige revisao manual; nunca e apagado.
+    else if (record.phase === 'RETIRED' && age > TRANSPORTE_GENERATION_STUB_MAX_AGE_MS_) props.deleteProperty(item.key);
+    else if (record.phase === 'READY' && age > TRANSPORTE_GENERATION_FULL_MAX_AGE_MS_) props.deleteProperty(item.key);
+    else if (record.phase === 'READY' || record.phase === 'RETIRED') kept.push(item.key);
+    else (record.phase === 'COMPLETE' ? complete : open).push(item);
+  });
+  // Etapas abertas (PDF/rascunho incertos ou sem rascunho) tambem ocupam ate 8 KB cada.
+  [complete, open].forEach(function(group) {
+    // Ordem crescente estavel: em empate de relogio, o inserido primeiro e retirado primeiro.
+    group.sort(function(a, b) { return Number(a.record.updatedAt || 0) - Number(b.record.updatedAt || 0); });
+    var excess = Math.max(0, group.length - TRANSPORTE_GENERATION_FULL_KEEP_);
+    group.forEach(function(item, index) {
+      var age = Number(item.record.updatedAt) ? now - Number(item.record.updatedAt) : 0;
+      if (index < excess || age > TRANSPORTE_GENERATION_FULL_MAX_AGE_MS_) {
+        props.setProperty(item.key, JSON.stringify({ hash: item.record.hash, phase: 'RETIRED', updatedAt: item.record.updatedAt }));
+      }
+      kept.push(item.key);
+    });
+  });
+  return kept;
+}
+
 function transporteGenerationBegin_(options) {
   var token = String(options.generationRequestId || '');
   if (!/^[a-f0-9]{32}$/.test(token)) throw new Error('Identificador de geração inválido. Reabra o Transporte.');
@@ -4427,14 +4472,8 @@ function transporteGenerationBegin_(options) {
   if (record && ['READY', 'PDF_INTENT', 'PDF_READY', 'DRAFT_INTENT', 'DRAFT_READY', 'COMPLETE', 'RETIRED'].indexOf(record.phase) < 0) throw new Error('Registro de recuperação inválido. Confira os artefatos antes de uma nova geração.');
   if (record && record.hash !== hash) throw new Error('Esta solicitação de geração pertence a outros dados. Inicie uma nova geração.');
   if (!record) {
-    var all = props.getProperties();
-    var keys = Object.keys(all).filter(function(k) { return k.indexOf('TRP_GEN_V1:') === 0; });
+    var keys = transporteGenerationPrune_(props, Date.now());
     if (keys.length >= 1000) throw new Error('Histórico de recuperação cheio. Solicite revisão do armazenamento antes de gerar novos documentos.');
-    // Mantem marcadores para impedir que tokens antigos voltem a criar arquivos.
-    var completed = keys.map(function(k) { return { key: k, record: JSON.parse(all[k]) }; }).filter(function(item) { return item.record.phase === 'COMPLETE'; }).sort(function(a, b) { return a.record.updatedAt - b.record.updatedAt; });
-    completed.slice(0, Math.max(0, completed.length - 19)).forEach(function(item) {
-      props.setProperty(item.key, JSON.stringify({ hash: item.record.hash, phase: 'RETIRED', updatedAt: item.record.updatedAt }));
-    });
     record = { hash: hash, phase: 'READY', updatedAt: Date.now() };
     var context = { props: props, key: key, record: record };
     transporteGenerationPersist_(context, {});
@@ -4571,7 +4610,7 @@ function gerarPdfTransporte(options) {
 
 function gerarPdfTransporteInterno_(options, access) {
   transporteMeasurePerformance_('gerarPdfTransporte', 'prepare', { rowCount: 1 }, function() {
-    if (typeof imprimirTodasAbas_ !== 'function') throw new Error('FunÃƒÂ§ÃƒÂ£o imprimirTodasAbas_ nÃƒÂ£o encontrada.');
+    if (typeof imprimirTodasAbas_ !== 'function') throw new Error('Função imprimirTodasAbas_ não encontrada.');
   });
   options = options || {};
   if (!options.requestedByEmail && access && access.userEmail) options.requestedByEmail = access.userEmail;
@@ -4809,7 +4848,7 @@ function transportePdfDownloadPermitido_(file) {
 }
 
 function criarRascunhoTransporte_(options) {
-  if (typeof criarRascunhoEmail_ !== 'function') throw new Error('FunÃƒÂ§ÃƒÂ£o criarRascunhoEmail nÃƒÂ£o encontrada.');
+  if (typeof criarRascunhoEmail_ !== 'function') throw new Error('Função criarRascunhoEmail não encontrada.');
   return criarRascunhoEmail_(options || {});
 }
 
@@ -4823,7 +4862,7 @@ function criarRascunhoTransporte_(options) {
  * Atualizacoes locais do TRANSP quando o modulo roda acoplado ao CODEX.
  *
  * Esta versao cobre a Proforma Invoice (OCASA) sem exigir a copia completa do
- * arquivo legado AutomaÃƒÂ§oes.gs.
+ * arquivo legado Automaçoes.gs.
  */
 
 function atualizarAbasDependentesDeclaracao_(ss) {
@@ -5290,9 +5329,9 @@ function atualizarFormularioPinex_(ss) {
 
     var outros = String(getCellValueSafe(declaracao, 'F30') || '').trim();
     if (outros) {
-      var matchLaminas = outros.match(/(\d+)\s*(?:l[aÃ¢Ã£]mina|lamina|slide)/i);
+      var matchLaminas = outros.match(/(\d+)\s*(?:l[aâã]mina|lamina|slide)/i);
       if (transporteNorm_(outros).indexOf('lamina') >= 0 && matchLaminas) {
-        values.push([iniciais || '', temperatura || '', 'LÃ¢mina', Number(matchLaminas[1]) || matchLaminas[1], '---']);
+        values.push([iniciais || '', temperatura || '', 'Lâmina', Number(matchLaminas[1]) || matchLaminas[1], '---']);
       } else {
         values.push([iniciais || '', temperatura || '', outros, '', '---']);
       }
@@ -5379,7 +5418,7 @@ function transportePinexSampleSummary_(paciente, checked, tubosPorMaterial, volu
 
   outros = String(outros || '');
   var outrosNorm = transporteNorm_(outros);
-  var slideMatch = outros.match(/(\d+)\s*(?:slides?|l[aÃ¢Ã£]?minas?|laminas?)/i);
+  var slideMatch = outros.match(/(\d+)\s*(?:slides?|l[aâã]?minas?|laminas?)/i);
   var slides = (outrosNorm.indexOf('lamina') >= 0 || outrosNorm.indexOf('slide') >= 0) && slideMatch
     ? transporteNumber_(slideMatch[1], true)
     : 0;
@@ -5644,7 +5683,7 @@ function performContentDeletion_() {
     }
   } catch (e1) {
     erro = true;
-    Logger.log('Erro limpando DeclaraÃƒÂ§ÃƒÂ£o: ' + e1.toString());
+    Logger.log('Erro limpando Declaração: ' + e1.toString());
   }
   try {
     var peticao = transporteCodexGetSheet_(ss, 'peticaoAnuencia', false);
@@ -5654,7 +5693,7 @@ function performContentDeletion_() {
     }
   } catch (e2) {
     erro = true;
-    Logger.log('Erro limpando PetiÃƒÂ§ÃƒÂ£o: ' + e2.toString());
+    Logger.log('Erro limpando Petição: ' + e2.toString());
   }
   try {
     var proforma = transporteCodexGetSheet_(ss, 'proformaOcasa', false);
