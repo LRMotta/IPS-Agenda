@@ -41,9 +41,12 @@ prevalecer sobre `allow`. Não use bypass de permissões para resolver bloqueios
 
 Para o gate de navegador na CLI, configure a extensão oficial Claude in Chrome
 no Google Chrome e inicie `claude --chrome`; confira a conexão com `/chrome`.
-O Chrome deve estar autenticado na conta Google que acessa o Apps Script.
-Essa integração depende de configuração e login do usuário; não foi validada
-durante a criação destes arquivos.
+No app desktop, a mesma extensão fornece as ferramentas `mcp__claude-in-chrome__*`
+(carregue-as com `ToolSearch` antes de usar). O Chrome deve estar autenticado na
+conta Google que acessa o Apps Script. O navegador embutido do app não substitui
+o gate: ele não usa a sessão autenticada do Chrome do usuário. As orientações
+práticas do gate estão em `PUBLICACAO_SEGURA.md`; o gate já foi executado com
+sucesso nesta configuração.
 
 Referências oficiais:
 

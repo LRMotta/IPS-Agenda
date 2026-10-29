@@ -110,7 +110,7 @@ test('instrucoes exigem conferir arquivo remoto, implantacao ativa e exec no Chr
   const publication = readProjectFile('PUBLICACAO_SEGURA.md');
 
   for (const source of [agents, publication]) {
-    assert.match(source, /@Chrome/);
+    assert.match(source, /Chrome autenticado/);
     assert.match(source, /WebApp\.gs/);
     assert.match(source, /CODEX_APP_VERSION_/);
     assert.match(source, /trecho funcional exclusivo/);
