@@ -19026,13 +19026,19 @@ function getAgendaMateriaisAnteriores(criteria) {
   var totalMeta = { rowCount: 0 };
   return codexMeasurePerformance_('getAgendaMateriaisAnteriores', 'total', totalMeta, function() {
     var participanteId = String(criteria.participanteId || '').trim();
+    // O nome so identifica o participante quando ele ainda nao tem ID.
+    var participanteNome = participanteId ? '' : normText_(criteria.participanteNome);
     var projetoId = String(criteria.projetoId || '').trim();
     var excluirEventoId = String(criteria.excluirEventoId || '').trim();
     var limite = Math.max(1, Math.min(Number(criteria.limite || 5), 5));
     if (!participanteId && !projetoId) return { items: [], limit: limite };
 
     var projeto = projetoId ? agendaProjetoIdentidade_(projetoId) : null;
-    if (projetoId && (!projeto || !projeto.id)) return { items: [], limit: limite };
+    if (projetoId && (!projeto || !projeto.id)) {
+      // Estudo desconhecido: sem participante nao ha escopo; com ele, mantem o historico do participante.
+      if (!participanteId) return { items: [], limit: limite };
+      projeto = null;
+    }
 
     var sh = getAgendaSheetForRead_();
     var lastRow = sh.getLastRow();
@@ -19072,11 +19078,13 @@ function getAgendaMateriaisAnteriores(criteria) {
       var base = scan.base[i];
       var id = String(base[AGENDA_CFG.idx.id] || '').trim();
       if (!id || (excluirEventoId && id === excluirEventoId)) continue;
-      if (participanteId) {
-        var idLinha = String(base[AGENDA_CFG.idx.idParticipante] || '').trim();
-        var participanteCompativel = normText_(idLinha) === normText_(participanteId);
-        if (!participanteCompativel) continue;
-      } else if (!projetoAliases[normText_(base[AGENDA_CFG.idx.projeto])]) {
+      var mesmoParticipante = participanteId
+        ? normText_(base[AGENDA_CFG.idx.idParticipante]) === normText_(participanteId)
+        : !!participanteNome && normText_(base[AGENDA_CFG.idx.participante]) === participanteNome;
+      if (projeto) {
+        // Escopo do estudo: o mesmo ID de participante pode existir em outro projeto.
+        if (!projetoAliases[normText_(base[AGENDA_CFG.idx.projeto])]) continue;
+      } else if (!mesmoParticipante) {
         continue;
       }
       var row = Array(AGENDA_CFG.lastCol).fill('');
@@ -19088,7 +19096,12 @@ function getAgendaMateriaisAnteriores(criteria) {
       for (var l4 = 0; l4 < logistics4.length; l4++) row[AGENDA_CFG.idx.c4.material + l4] = logistics4[l4];
       for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
         if (agendaLinhaTemMaterialAnterior_(row, slots[slotIndex])) {
-          candidatosPorSlot[slotIndex].push({ row: row, rowIndex: i + 2 });
+          candidatosPorSlot[slotIndex].push({
+            row: row,
+            rowIndex: i + 2,
+            chave: agendaMaterialConteudoChave_(row, slots[slotIndex]),
+            mesmoParticipante: mesmoParticipante
+          });
         }
       }
     }
@@ -19098,11 +19111,35 @@ function getAgendaMateriaisAnteriores(criteria) {
       return bKey.localeCompare(aKey) || (a.rowIndex - b.rowIndex);
     };
     var selecionadosPorLinha = {};
-    // O limite e por transporte; um evento com varios slots aparece uma unica vez.
-    candidatosPorSlot.forEach(function(candidatos) {
-      candidatos.sort(compararDataEvento).slice(0, limite).forEach(function(item) {
-        selecionadosPorLinha[item.rowIndex] = item;
+    // Por transporte, materiais iguais viram um unico grupo representado pelo
+    // evento mais recente. Os do participante vem separados dos demais do estudo.
+    // Um evento com varios slots aparece uma unica vez.
+    candidatosPorSlot.forEach(function(candidatos, slotIndex) {
+      var gruposParticipante = {};
+      var gruposEstudo = {};
+      candidatos.sort(compararDataEvento).forEach(function(item) {
+        var grupos = item.mesmoParticipante ? gruposParticipante : gruposEstudo;
+        if (!grupos[item.chave]) grupos[item.chave] = { representante: item, usos: 0, visitas: [], ordem: Object.keys(grupos).length };
+        var grupo = grupos[item.chave];
+        grupo.usos++;
+        // Visita e braco de todos os usos permitem priorizar o material da mesma visita no cliente.
+        var visitaBraco = [String(item.row[AGENDA_CFG.idx.visita] || ''), String(item.row[AGENDA_CFG.idx.braco] || '')];
+        if (grupo.visitas.length < 10 && !grupo.visitas.some(function(v) { return v[0] === visitaBraco[0] && v[1] === visitaBraco[1]; })) grupo.visitas.push(visitaBraco);
       });
+      function selecionar(grupos, max) {
+        Object.keys(grupos).map(function(chave) { return grupos[chave]; })
+          .sort(function(a, b) { return a.ordem - b.ordem; })
+          .slice(0, max)
+          .forEach(function(grupo) {
+            var linha = grupo.representante.rowIndex;
+            if (!selecionadosPorLinha[linha]) selecionadosPorLinha[linha] = { row: grupo.representante.row, rowIndex: linha, mesmoParticipante: grupo.representante.mesmoParticipante, slots: {} };
+            selecionadosPorLinha[linha].slots[slotIndex] = { usos: grupo.usos, visitas: grupo.visitas };
+          });
+      }
+      selecionar(gruposParticipante, limite);
+      // Uma mesma folha de material ja listada para o participante nao se repete no estudo.
+      Object.keys(gruposParticipante).forEach(function(chave) { delete gruposEstudo[chave]; });
+      selecionar(gruposEstudo, AGENDA_MATERIAIS_ESTUDO_LIMITE_);
     });
     var selecionados = Object.keys(selecionadosPorLinha).map(function(rowIndex) {
       return selecionadosPorLinha[rowIndex];
@@ -19120,7 +19157,7 @@ function getAgendaMateriaisAnteriores(criteria) {
       return {
         items: selecionados.map(function(item) {
           var projetoResolvidoId = (projeto && projeto.id) || projetoIdsPorAlias[normText_(item.row[AGENDA_CFG.idx.projeto])] || '';
-          return agendaMaterialAnteriorFromRow_(item.row, item.rowIndex, participanteId, projetoResolvidoId);
+          return agendaMaterialAnteriorFromRow_(item.row, item.rowIndex, participanteId, projetoResolvidoId, item);
         }),
         limit: limite
       };
@@ -19172,31 +19209,64 @@ function agendaLinhaTemMaterialAnterior_(row, slotEspecifico) {
   });
 }
 
-function agendaMaterialAnteriorFromRow_(row, rowIndex, participanteId, projetoId) {
+var AGENDA_MATERIAIS_ESTUDO_LIMITE_ = 20;
+
+// Identifica o conteudo de material de um transporte para agrupar visitas iguais.
+// A chave precisa coincidir com a calculada no cliente (agendaMatBioEventOptions).
+function agendaMaterialConteudoChave_(row, slot) {
+  var json;
+  var texto;
+  if (slot === 'backup2') {
+    var backup2 = agendaBackup2FromRow_(row);
+    json = backup2.matBioJson;
+    texto = backup2.material;
+  } else {
+    json = row[slot.matBio];
+    texto = row[slot.material];
+  }
+  json = String(json || '').trim();
+  if (json && (typeof codexMatBioParseJson_ !== 'function' || codexMatBioParseJson_(json).length > 0)) return 'J:' + json;
+  return 'T:' + normText_(texto);
+}
+
+// slots: { indice do transporte: usos do material }. Somente os transportes
+// selecionados seguem no retorno; os demais ficam vazios.
+function agendaMaterialAnteriorFromRow_(row, rowIndex, participanteId, projetoId, selecao) {
   var evento = agendaRowToObject_(row, rowIndex);
-  function material(slot) {
-    slot = slot || {};
+  var campos = ['courier1', 'courier2', 'courier3', 'courier4', 'backup', 'backup2'];
+  var slots = selecao && selecao.slots;
+  var mesmoParticipante = selecao ? !!selecao.mesmoParticipante : true;
+  var materialUsos = {};
+  var materialVisitas = {};
+  function material(campo, slotIndex) {
+    var slot = evento[campo] || {};
+    if (slots && slots[slotIndex] === undefined) return { material: '', matBioJson: '' };
+    if (slots) {
+      materialUsos[campo] = slots[slotIndex].usos;
+      materialVisitas[campo] = slots[slotIndex].visitas;
+    }
     return { material: String(slot.material || ''), matBioJson: String(slot.matBioJson || '') };
   }
-  return {
+  var resultado = {
     id: evento.id,
     rowIndex: evento.rowIndex,
-    participante: evento.participante,
-    idParticipante: evento.idParticipante || String(participanteId || ''),
+    // Outros participantes do estudo nao tem nome nem ID expostos: so o material importa.
+    participante: mesmoParticipante ? evento.participante : '',
+    idParticipante: mesmoParticipante ? (evento.idParticipante || String(participanteId || '')) : '',
+    mesmoParticipante: mesmoParticipante,
     projeto: evento.projeto,
     projetoId: String(projetoId || ''),
+    braco: evento.braco,
     data: evento.data,
     dataIso: evento.dataIso,
     hora: evento.hora,
     tipo: evento.tipo,
-    visita: evento.visita,
-    courier1: material(evento.courier1),
-    courier2: material(evento.courier2),
-    courier3: material(evento.courier3),
-    courier4: material(evento.courier4),
-    backup: material(evento.backup),
-    backup2: material(evento.backup2)
+    visita: evento.visita
   };
+  campos.forEach(function(campo, slotIndex) { resultado[campo] = material(campo, slotIndex); });
+  resultado.materialUsos = materialUsos;
+  resultado.materialVisitas = materialVisitas;
+  return resultado;
 }
 
 function getAgendaPeriodoOperacionalPorEventoId(id, rowIndex) {

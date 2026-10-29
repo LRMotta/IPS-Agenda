@@ -400,6 +400,44 @@ test('novo agendamento disponibiliza e copia Backup anterior antes de salvar, in
   }
 });
 
+test('materiais anteriores do estudo separam o participante, priorizam a mesma visita e protegem a cópia', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window._agendaDados.projetos = [{ id: 'PROJ-A', nome: 'Estudo A' }];
+      window.calls.length = 0;
+      window.agendaAbrirEdicaoComRegistroPronto_({ id: 'A', tipo: 'Visita', projeto: 'Estudo A', participanteCadastroId: 'P', participante: 'Participante de teste', idParticipante: '001', dataIso: '2026-10-05', visita: 'V2', hora: '08:00' });
+    });
+    const request = await page.evaluate(() => window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores').args[0]);
+    assert.equal(request.projetoId, 'PROJ-A', 'o escopo da consulta e o estudo');
+    assert.equal(request.participanteNome, 'Participante de teste', 'sem ID carregado, o nome identifica o grupo proprio');
+    const invalido = JSON.stringify({ v: 1, items: [{ key: 'soro', tipo: 'Soro', unit: 'mL', segmentos: [{ qtd: 0, vol: -1 }] }] });
+    await page.evaluate(invalido => window.calls.find(c => c.method === 'getAgendaMateriaisAnteriores').success({ items: [
+      { id: 'MEU', mesmoParticipante: true, idParticipante: '001', projeto: 'Estudo A', data: '01/09/2026', dataIso: '2026-09-01', visita: 'V1', courier1: { material: 'Meu kit' }, materialUsos: { courier1: 1 } },
+      { id: 'E-V1', mesmoParticipante: false, projeto: 'Estudo A', data: '10/09/2026', dataIso: '2026-09-10', visita: 'V1', courier1: { material: 'Kit da V1' }, materialUsos: { courier1: 3 }, materialVisitas: { courier1: [['V1', '']] } },
+      { id: 'E-V2', mesmoParticipante: false, projeto: 'Estudo A', data: '05/09/2026', dataIso: '2026-09-05', visita: 'V2', courier1: { material: 'Kit da V2' }, materialUsos: { courier1: 2 }, materialVisitas: { courier1: [['V2', '']] } },
+      { id: 'E-RUIM', mesmoParticipante: false, projeto: 'Estudo A', data: '01/08/2026', dataIso: '2026-08-01', visita: 'V9', courier1: { matBioJson: invalido }, materialUsos: { courier1: 1 }, materialVisitas: { courier1: [['V9', '']] } }
+    ] }), invalido);
+    const copy = page.locator('#agC1MatCopy');
+    const grupos = await copy.locator('optgroup').evaluateAll(es => es.map(g => ({ label: g.label, values: Array.from(g.querySelectorAll('option')).map(o => o.value.split('|')[0]), texts: Array.from(g.querySelectorAll('option')).map(o => o.textContent) })));
+    assert.deepEqual(grupos.map(g => g.label), ['Este participante', 'Outros participantes do estudo']);
+    assert.deepEqual(grupos[0].values, ['MEU']);
+    assert.deepEqual(grupos[1].values, ['E-V2', 'E-V1', 'E-RUIM'], 'a mesma visita do agendamento vem primeiro; depois a mais recente');
+    assert.match(grupos[1].texts[0], /05\/09\/2026 · V2 · Transporte I texto · Kit da V2 · usado em 2 visitas/);
+    assert.doesNotMatch(grupos[0].texts[0], /usado em/);
+    assert.equal(grupos.flatMap(g => g.texts).some(t => t.includes('?')), false, 'separador legivel');
+
+    await page.evaluate(() => window.agendaMatBioSetItems('agC1', [{ key: 'sangue', formula: '1x4' }]));
+    const antes = await page.evaluate(() => window.agendaMatBioSerialize('agC1').items);
+    await copy.selectOption('E-RUIM|agC1|structured');
+    await page.evaluate(() => window.agendaMatBioCopyPrevious('agC1'));
+    assert.deepEqual(await page.evaluate(() => window.agendaMatBioSerialize('agC1').items), antes, 'material invalido nao apaga o que ja foi preenchido');
+
+    await copy.selectOption('E-V2|agC1|legacy');
+    await page.evaluate(() => window.agendaMatBioCopyPrevious('agC1'));
+    assert.equal(await page.locator('#agC1MatPaste').inputValue(), 'Kit da V2');
+  });
+});
+
 test('materiais anteriores antecipados ignoram resposta de outra visita e distinguem lista vazia', async () => {
   for (const width of [1280, 390]) {
     await scenario(async page => {
