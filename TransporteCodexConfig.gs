@@ -89,6 +89,29 @@ function transporteMeasurePerformance_(operation, stage, metadata, callback) {
   }
 }
 
+// Marcas de tempo entre trechos consecutivos de uma operacao, sem reestruturar o
+// fluxo. Registra somente nome da etapa e duracao (sem dados pessoais ou clinicos).
+// reset() descarta o intervalo corrente, p. ex. apos uma etapa ja medida.
+function transporteLapStart_(operation) {
+  var last = Date.now();
+  var lap = function(stage, rowCount) {
+    var now = Date.now();
+    var elapsed = Math.max(0, now - last);
+    last = now;
+    try {
+      if (typeof codexLogPerformance_ === 'function') {
+        codexLogPerformance_(operation, stage, elapsed, { rowCount: rowCount || 0 }, true);
+      } else {
+        Logger.log('[CODEX_PERF] ' + JSON.stringify({ operation: String(operation || ''), stage: String(stage || ''), durationMs: elapsed, rowCount: Math.max(0, Number(rowCount) || 0), success: true }));
+      }
+    } catch (eLap) {
+      // A telemetria nunca altera o resultado da operacao observada.
+    }
+  };
+  lap.reset = function() { last = Date.now(); };
+  return lap;
+}
+
 function configurarPlanilhaTransporteCodex(urlOuId) {
   if (typeof codexAssertAdmin_ === 'function') codexAssertAdmin_();
   var id = extrairIdPlanilhaTransporteCodex_(urlOuId);
@@ -3223,6 +3246,8 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   var peticao;
   var materiaisNote;
   transporteMeasurePerformance_('salvarTransporte', 'read_prepare', { rowCount: 1 }, function() {
+    // Subetapas de read_prepare: localizam o gargalo sem alterar o fluxo.
+    var lap = transporteLapStart_('salvarTransporte');
     ss = getTransporteSpreadsheetCodex_();
     folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
     declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
@@ -3231,6 +3256,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     payload = payload || {};
     options = options || {};
     transportePreservarVinculoAgendaPayload_(payload, folha.getRange('C15'));
+    lap('rp_sheets');
     var participanteOptions = { obrigatorio: !options.rascunho, participantes: [], adiarProjetoDisplay: true };
     try {
       participanteOptions.participantes = transporteReadParticipantesDireto_(leituraParticipantes);
@@ -3238,26 +3264,34 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
       if (participanteOptions.obrigatorio) throw participanteReadError;
       Logger.log('Cadastro indisponivel durante pre-preenchimento do Transporte: ' + participanteReadError.message);
     }
+    lap('rp_participantes', participanteOptions.participantes.length);
     payload = transporteAtualizarRegistroPorAgenda_(payload, options.agendaEvento, participanteOptions);
+    lap('rp_agenda_registro');
     payload = transporteDerivarDadosParticipante_(payload, participanteOptions);
     if (payload.idAgenda && String(payload.agendaSlot || payload.slot || '').trim()) {
       normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
     }
+    lap('rp_derivar');
     if (options.rascunho) transporteValidarEntradaAwbOcasa_(payload);
     if (!options.rascunho) transporteValidarObrigatoriosWebApp_(payload);
+    lap('rp_validar');
     codexMatBioValidateTransportPayload_(payload);
+    lap('rp_matbio');
     materiaisNote = transporteMateriaisNote_(declaracao.getRange('F30').getNote(), payload, peticao);
     payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
+    lap('rp_materiais_note');
     payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
     if (!options.rascunho) payload.caixaTransporte.confirmado = true;
     if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' && transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') {
       payload.solicitarCaixa = transporteCaixaBioSystem_(payload) ? 'Sim' : 'Não';
     }
+    lap('rp_caixa');
     if (!options.rascunho) transporteAwbReservar_(payload, options.awbExigirUnica === true);
     else {
       var previousAwbContext = transporteAwbPreservarFormulario_(payload);
       if (previousAwbContext) agendaAwbReservar_(previousAwbContext, [], false);
     }
+    lap('rp_awb');
   });
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
@@ -3986,8 +4020,11 @@ function transporteSincronizarAgenda_(payload) {
   };
   var idx = slotMap[slot];
   if (!idx) throw new Error('Slot de transporte inválido para sincronizar a AWB: ' + slot + '.');
+  // Subetapas de agenda_sync: localizam o gargalo sem alterar o fluxo.
+  var lap = transporteLapStart_('salvarTransporte');
   var agenda = getAgendaSheet_();
   var linha = encontrarLinhaPorId(agenda, idAgenda);
+  lap('as_lookup');
   if (!linha) throw new Error('Os dados foram salvos no Transporte, mas o agendamento ' + idAgenda + ' não foi encontrado.');
   var changes = [];
   var warnings = [];
@@ -4047,13 +4084,18 @@ function transporteSincronizarAgenda_(payload) {
     var awbAtual = String(awbAtualRange.getDisplayValue() || awbAtualRange.getValue() || '').trim();
     agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual, slotRoman);
   }
+  lap('as_campos', changes.length);
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {
     codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
   }
+  lap('as_auditoria', changes.length);
   if (payload.caixaTransporte) transporteCaixaPersistirAgenda_(payload);
+  lap('as_caixa');
   // Persistir a Agenda sob lock antes de devolver o bootstrap sincronizado.
   SpreadsheetApp.flush();
+  lap('as_flush');
   agendaInvalidateWindowCache_();
+  lap('as_cache');
   return { atualizado: changes.length > 0, idAgenda: idAgenda, slot: slot, awb: awb, campos: changes.map(function(c) { return c.field; }), warnings: warnings };
 }
 
@@ -4660,7 +4702,9 @@ function gerarPdfTransporteInterno_(options, access) {
     if (savedTransport) result.agendaSync = savedTransport.agendaSync;
   }
   // O PDF já foi confirmado; falha posterior no Gmail não desfaz esta etapa.
-  var docsSync = transporteMarcarDocsGeradosAgenda_(options.payload, result);
+  var docsSync = transporteMeasurePerformance_('gerarPdfTransporte', 'post_pdf_agenda_sync', { rowCount: 1 }, function() {
+    return transporteMarcarDocsGeradosAgenda_(options.payload, result);
+  });
   if (docsSync) result.agendaSync = Object.assign({}, result.agendaSync || {}, docsSync);
   if (result && typeof result === 'object') result.manifestoPdfHash = result.conteudoPdfHash
     ? transportePdfManifestoHash_({ dados: manifestoPdf.hash, conteudo: result.conteudoPdfHash }) : manifestoPdf.hash;
@@ -4725,7 +4769,8 @@ function gerarPdfTransporteInterno_(options, access) {
       result.monitorRef = monitorRef;
       if (monitorRef && courier !== 'PINEX') {
         try {
-          result.monitorRegistro = transporteRegistrarDocumentacaoGerada_({
+          result.monitorRegistro = transporteMeasurePerformance_('gerarPdfTransporte', 'post_draft_monitor', { rowCount: 1 }, function() {
+            return transporteRegistrarDocumentacaoGerada_({
             agendaId: registroMonitor.idAgenda,
             slot: registroMonitor.agendaSlot,
             courier: courier,
@@ -4739,6 +4784,7 @@ function gerarPdfTransporteInterno_(options, access) {
             rascunhoId: draftStatus.draftId,
             rascunhoOk: draftStatus.ok,
             rascunhoErro: draftStatus.message
+            });
           });
         } catch (monitorError) {
           result.monitorWarning = 'Não foi possível registrar o acompanhamento do envio: ' + monitorError.message;
@@ -6372,6 +6418,8 @@ function imprimirTodasAbas_(options) {
   var workingCopyFile = null;
   try {
     options = options || {};
+    // Subetapas de copy_export_drive: localizam o gargalo sem alterar o fluxo.
+    var lap = transporteLapStart_('gerarPdfTransporte');
     var payloadFallback = transporteDerivarDadosParticipante_(options.payload || transporteReadRegistro_(), { obrigatorio: true });
     var ss = getTransporteSpreadsheetCodex_();
     var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
@@ -6410,6 +6458,7 @@ function imprimirTodasAbas_(options) {
       awb: awb
     });
     transporteValidarDataEnvioMinima_(dataEnvio);
+    lap('ia_config');
 
     var spec = transportePdfSpec_(courier, temperatura, destino, ss);
     if (!spec.ordem.length) throw new Error('Courier sem configuracao de PDF: ' + courier);
@@ -6444,31 +6493,44 @@ function imprimirTodasAbas_(options) {
     }
     preencherDhlWebApp_(ss, payloadFallback);
     transporteAjustarVolumesDeclaracao_(transporteCodexGetSheet_(ss, 'declaracaoTransp', false), true);
+    lap('ia_prefill');
 
     // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
     SpreadsheetApp.flush();
+    lap('ia_flush_fonte');
     var token = ScriptApp.getOAuthToken();
     var nomeArquivo = transportePdfFileName_(awb, dataEnvio, temperatura, courier, marker);
     var pastaDestino = transportePdfDestinationFolder_(protocolo);
+    lap('ia_pasta_destino');
     // A copia com dados internos fica no Meu Drive do executor, fora da pasta
     // de saida compartilhada, com nome opaco e compartilhamento privado.
     workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy('IPS-TEMP-PDF-' + Utilities.getUuid(), DriveApp.getRootFolder());
+    lap('ia_make_copy');
     workingCopyFile.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
     transportePdfVerificarCopiaPrivada_(workingCopyFile);
+    lap('ia_copia_privada');
     var workingSS = transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_open', { rowCount: 0 }, function() {
       return transportePdfOpenWorkingCopy_(workingCopyFile.getId());
     });
+    lap.reset();
     transporteAplicarContatoEmergenciaPdf_(workingSS, courier, spec);
+    lap('ia_contato_emergencia');
     transportePdfAnonimizarParticipante_(workingSS, payloadFallback, ss);
     transportePdfOcultarMetadadosInternos_(workingSS);
+    lap('ia_anonimizar_notas');
     transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_prepare', { rowCount: spec.ordem.length }, function() {
       transportePdfPruneDuplicateAndOrder_(workingSS, spec);
     });
+    lap.reset();
     // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
     SpreadsheetApp.flush();
+    lap('ia_flush_copia');
     var conteudoPdf = transportePdfVerificarAnonimizacao_(workingSS, [paciente, payloadFallback.paciente, payloadFallback.participante]);
+    lap('ia_verificar_anonimizacao', conteudoPdf.length);
     var conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
+    lap('ia_hash');
     Utilities.sleep(700);
+    lap.reset();
 
     var url = 'https://docs.google.com/spreadsheets/d/' + workingCopyFile.getId() + '/export?' + [
       'format=pdf',
@@ -6492,6 +6554,7 @@ function imprimirTodasAbas_(options) {
         muteHttpExceptions: true
       });
     });
+    lap.reset();
     var code = response.getResponseCode();
     var headers = response.getAllHeaders ? response.getAllHeaders() : {};
     var contentType = String(headers['Content-Type'] || headers['content-type'] || '');
@@ -6509,8 +6572,10 @@ function imprimirTodasAbas_(options) {
       transporteGenerationCheckpoint_({ sourceSheets: sourceSheets, sourceHash: transporteGenerationSourceHash_(ss, sourceSheets) });
     }
     transporteGenerationCheckpoint_({ phase: 'PDF_INTENT' });
+    lap('ia_checkpoint_fonte');
     var pdfFile = pastaDestino.createFile(blob);
     var pdfId = pdfFile.getId();
+    lap('ia_create_file');
     transporteGenerationCheckpoint_({ phase: 'PDF_READY', pdf: {
       ok: true, type: 'pdf', fileId: pdfId, fileName: blob.getName(), courier: courier, conteudoPdfHash: conteudoPdfHash,
       temperaturaPdf: temperatura, generationRequestId: options.generationRequestId || '',
@@ -6519,10 +6584,13 @@ function imprimirTodasAbas_(options) {
       message: 'PDF recuperado. Confira o acesso ao arquivo no Drive.',
       warnings: [{ code: 'PDF_RECOVERY_PARTIAL', message: 'PDF recuperado após interrupção. Confira o compartilhamento no Drive e a CE antes do envio.' }]
     } });
+    lap('ia_checkpoint_pdf');
     var driveAccess = transporteShareGeneratedPdfWithActiveUser_(pdfFile, pastaDestino);
+    lap('ia_compartilhar');
     var downloadUrl = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(pdfFile.getId());
     var printUrl = 'https://drive.google.com/file/d/' + encodeURIComponent(pdfFile.getId()) + '/view';
     var ceStatus = transporteCeStatus_(protocolo);
+    lap('ia_ce_status');
     var ceFileId = ceStatus && ceStatus.url ? transporteCodexDriveIdFromUrl_(ceStatus.url) : '';
     var cePrintUrl = ceFileId
       ? 'https://drive.google.com/file/d/' + encodeURIComponent(ceFileId) + '/preview'

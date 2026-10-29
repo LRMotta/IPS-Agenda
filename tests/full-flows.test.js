@@ -941,6 +941,7 @@ function transportSyncContext(sheet) {
       cb: { nome: 21, temp: 22, status: 23, awb: 24, material: 25, matBio: 26, destino: 27 }
     } },
     transporteAgendaLinkFromRef_: () => ({ idAgenda: '', agendaSlot: '' }),
+    transporteLapStart_: () => Object.assign(() => {}, { reset() {} }),
     normalizarSlotTransporteCodex_: (slot) => String(slot),
     getAgendaSheet_: () => sheet,
     encontrarLinhaPorId: () => 2,
