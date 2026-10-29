@@ -2401,6 +2401,80 @@ test('materiais anteriores por projeto aceitam nome e codigo sem devolver mais d
   assert.equal(response.items.every((item) => item.projetoId === 'PROJ-1'), true);
 });
 
+function materiaisEstudoServer(rows, projetos) {
+  const server = agendaServer({ Logger: { log: () => {} } });
+  server.getAgendaSheetForRead_ = () => fakeAgendaRows(server, rows(server));
+  server.getCodexSheetDataByName_ = (name) => name === 'Projetos'
+    ? [['Id', 'Nome', 'Codigo']].concat(projetos || [['PROJ-1', 'Projeto Alpha', 'PA'], ['PROJ-2', 'Outro Projeto', 'OP']])
+    : [[]];
+  return server;
+}
+
+test('materiais anteriores do estudo separam o participante e agrupam materiais iguais', () => {
+  const server = materiaisEstudoServer((s) => [
+    agendaRow(s, { id: 'P-ANTIGO', data: '2026-07-01', tipo: 'Visita', projeto: 'Projeto Alpha', idParticipante: '001', visita: 'V1', courier1Material: 'Kit proprio' }),
+    agendaRow(s, { id: 'P-IGUAL', data: '2026-07-05', tipo: 'Visita', projeto: 'PA', idParticipante: '001', visita: 'V2', courier1Material: 'Kit compartilhado' }),
+    agendaRow(s, { id: 'O-1', data: '2026-07-02', tipo: 'Visita', projeto: 'Projeto Alpha', participante: 'Outra Pessoa', idParticipante: '002', visita: 'V1', courier1Material: 'Kit compartilhado' }),
+    agendaRow(s, { id: 'O-2', data: '2026-07-08', tipo: 'Visita', projeto: 'Projeto Alpha', participante: 'Terceira Pessoa', idParticipante: '003', visita: 'V3', courier1Material: 'Kit de outros' }),
+    agendaRow(s, { id: 'O-3', data: '2026-07-09', tipo: 'Visita', projeto: 'Projeto Alpha', participante: 'Quarta Pessoa', idParticipante: '004', visita: 'V4', courier1Material: 'Kit de outros' }),
+    agendaRow(s, { id: 'OUTRO-ESTUDO', data: '2026-07-10', tipo: 'Visita', projeto: 'Outro Projeto', idParticipante: '001', courier1Material: 'Nao deve aparecer' })
+  ]);
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: '001', projetoId: 'PROJ-1' });
+  assert.deepEqual(Array.from(response.items, (item) => item.id), ['O-3', 'P-IGUAL', 'P-ANTIGO'],
+    'material ja listado para o participante nao se repete; o igual de outros vira um unico grupo no evento mais recente');
+  const porId = Object.fromEntries(response.items.map((item) => [item.id, item]));
+  assert.equal(porId['O-3'].mesmoParticipante, false);
+  assert.equal(porId['O-3'].materialUsos.courier1, 2, 'dois participantes usaram o mesmo material');
+  assert.equal(porId['O-3'].courier1.material, 'Kit de outros');
+  assert.equal(porId['P-IGUAL'].mesmoParticipante, true);
+  assert.equal(porId['P-IGUAL'].idParticipante, '001');
+  assert.equal(porId['P-IGUAL'].materialUsos.courier1, 1, 'uso por outro participante nao entra na contagem do grupo do participante');
+  assert.deepEqual(JSON.parse(JSON.stringify(porId['O-3'].materialVisitas.courier1)), [['V4', ''], ['V3', '']]);
+  assert.equal(response.items.every((item) => item.projetoId === 'PROJ-1'), true);
+});
+
+test('materiais anteriores do estudo nao expoem nome nem ID de outros participantes e mantem cancelados', () => {
+  const server = materiaisEstudoServer((s) => [
+    agendaRow(s, { id: 'CANCELADO', data: '2026-07-03', tipo: 'Visita', status: 'Cancelado', projeto: 'Projeto Alpha', participante: 'Pessoa Sigilosa', idParticipante: '777', courier1Material: 'Material de cancelado' })
+  ]);
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: '001', projetoId: 'PROJ-1' });
+  assert.deepEqual(Array.from(response.items, (item) => item.id), ['CANCELADO'], 'evento cancelado continua sendo origem valida');
+  assert.equal(response.items[0].participante, '');
+  assert.equal(response.items[0].idParticipante, '');
+  assert.doesNotMatch(JSON.stringify(response), /Pessoa Sigilosa|777/);
+});
+
+test('materiais anteriores limitam grupos do participante a cinco e do estudo a vinte por transporte', () => {
+  const server = materiaisEstudoServer((s) => {
+    const rows = [];
+    for (let n = 1; n <= 7; n += 1) rows.push(agendaRow(s, { id: 'P' + n, data: '2026-06-0' + n, tipo: 'Visita', projeto: 'Projeto Alpha', idParticipante: '001', courier1Material: 'Proprio ' + n }));
+    for (let n = 1; n <= 25; n += 1) rows.push(agendaRow(s, { id: 'O' + n, data: '2026-07-' + String(n).padStart(2, '0'), tipo: 'Visita', projeto: 'Projeto Alpha', idParticipante: '9' + n, courier1Material: 'Estudo ' + n }));
+    return rows;
+  });
+  const response = server.getAgendaMateriaisAnteriores({ participanteId: '001', projetoId: 'PROJ-1' });
+  const ids = Array.from(response.items, (item) => item.id);
+  assert.equal(ids.filter((id) => id[0] === 'P').length, 5);
+  assert.equal(ids.filter((id) => id[0] === 'O').length, 20);
+  assert.ok(ids.includes('P7') && !ids.includes('P1'));
+  assert.ok(ids.includes('O25') && !ids.includes('O1'));
+});
+
+test('materiais anteriores com estudo desconhecido mantem o historico do participante e sem ID usam o nome', () => {
+  const server = materiaisEstudoServer((s) => [
+    agendaRow(s, { id: 'MEU', data: '2026-07-01', tipo: 'Visita', projeto: 'Projeto Alpha', participante: 'Pessoa Sem ID', idParticipante: '', courier1Material: 'Meu kit' }),
+    agendaRow(s, { id: 'OUTRO', data: '2026-07-02', tipo: 'Visita', projeto: 'Projeto Alpha', participante: 'Outra', idParticipante: '', courier1Material: 'Kit alheio' }),
+    agendaRow(s, { id: 'COM-ID', data: '2026-07-03', tipo: 'Visita', projeto: 'Projeto Alpha', idParticipante: '001', courier1Material: 'Kit com ID' })
+  ]);
+  const porNome = server.getAgendaMateriaisAnteriores({ participanteNome: 'Pessoa Sem ID', projetoId: 'PROJ-1' });
+  const meu = porNome.items.find((item) => item.id === 'MEU');
+  assert.equal(meu.mesmoParticipante, true);
+  assert.equal(meu.participante, 'Pessoa Sem ID');
+  assert.equal(porNome.items.find((item) => item.id === 'OUTRO').mesmoParticipante, false);
+  const desconhecido = server.getAgendaMateriaisAnteriores({ participanteId: '001', projetoId: 'PROJ-INEXISTENTE' });
+  assert.deepEqual(Array.from(desconhecido.items, (item) => item.id), ['COM-ID']);
+  assert.equal(server.getAgendaMateriaisAnteriores({ projetoId: 'PROJ-INEXISTENTE' }).items.length, 0);
+});
+
 test('periodo operacional por ID preserva dias consecutivos e regra de cancelamento de SIV', () => {
   const server = agendaServer({ Logger: { log: () => {} } });
   const rows = [
@@ -2623,7 +2697,8 @@ test('cliente preserva carga completa mas consumidores usam consultas especifica
   const fullLoad = functionBody(client, 'carregarAgendaEventos');
   assert.match(client, /\.getAgendaEventos\(5000\)/);
   assert.match(client, /\.getAgendaMateriaisAnteriores\([\s\S]*limite: 5/);
-  assert.match(client, /\.slice\(-5\)\.reverse\(\)/);
+  assert.match(functionBody(client, 'agendaMatBioGroups_'), /ordenar\(mesmo, 5\)[\s\S]*ordenar\(estudo, 20\)/);
+  assert.match(materialLoad, /projetoId: context\.projetoId/);
   assert.doesNotMatch(client, /\.slice\(-80\)\.reverse\(\)/);
   assert.match(client, /function agendaMatBioFindPreviousEvent_\(id\)/);
   assert.match(client, /function agendaLoadPeriodoOperacional_\(r, onSuccess, onFailure\)/);

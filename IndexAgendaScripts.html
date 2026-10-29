@@ -1280,7 +1280,7 @@
     box.dataset.ready = '1';
     box.innerHTML =
       '<div class="ag-mat-tools">' +
-      '<select id="' + esc(prefix) + 'MatCopy" onfocus="agendaMatBioLoadPreviousOptions_()" onpointerdown="agendaMatBioLoadPreviousOptions_()"></select>' +
+      '<select id="' + esc(prefix) + 'MatCopy" data-arg1="' + esc(prefix) + '" onfocus="agendaMatBioOnCopyOpen_(this.dataset.arg1)" onpointerdown="agendaMatBioOnCopyOpen_(this.dataset.arg1)"></select>' +
       '<button type="button" class="ag-mat-mini-btn" data-arg1="' + esc(prefix) + '" onclick="agendaMatBioCopyPrevious(this.dataset.arg1)"><span class="material-symbols-outlined">content_copy</span>Copiar</button>' +
       '<button type="button" class="ag-mat-mini-btn" id="' + esc(prefix) + 'MatConvertDhl" style="display:none" data-arg1="' + esc(prefix) + '" onclick="agendaMatBioConvertDhlVolumes(this.dataset.arg1)" title="Divide os volumes em mL por 1.000 e converte para L"><span class="material-symbols-outlined">swap_vert</span>Converter mL para L</button>' +
       '<textarea id="' + esc(prefix) + 'MatPaste" placeholder="Cole aqui uma descrição anterior. Ex: Soro (Chemistry): 1 tubo(s), 1,25 mL; Sangue (Hematology): 1 tubo(s), 2,00 mL; 2 lâminas de hematologia"></textarea>' +
@@ -1583,32 +1583,118 @@
     agendaMatBioPrefixes().forEach(agendaMatBioUpdateCopyOptions);
   }
 
+  function agendaMatBioOnCopyOpen_(prefix) {
+    agendaMatBioLoadPreviousOptions_();
+    // Visita e braco podem ter mudado desde a ultima montagem; reordena antes de abrir a lista.
+    agendaMatBioUpdateCopyOptions(prefix);
+  }
+
+  function agendaMatBioCampoEvento_(prefix) {
+    return { agC1: 'courier1', agC2: 'courier2', agC3: 'courier3', agC4: 'courier4', agBackup: 'backup', agBackup2: 'backup2' }[prefix] || '';
+  }
+
+  function agendaMatBioEventoDoParticipante_(r, context) {
+    // A consulta especifica ja informa o vinculo e omite a identidade dos demais participantes.
+    if (typeof r.mesmoParticipante === 'boolean') return r.mesmoParticipante;
+    if (context.participanteId) return normAgenda(r.idParticipante) === normAgenda(context.participanteId);
+    return !!context.participanteNome && normAgenda(r.participante) === normAgenda(context.participanteNome);
+  }
+
+  function agendaMatBioMaisRecente_(a, b) {
+    var aKey = String(a.dataIso || '') + ' ' + String(a.hora || '');
+    var bKey = String(b.dataIso || '') + ' ' + String(b.hora || '');
+    if (aKey !== bKey) return aKey > bKey;
+    return Number(a.rowIndex || 0) < Number(b.rowIndex || 0);
+  }
+
+  // Agrupa visitas com o mesmo material de um transporte. O evento mais recente representa o grupo.
+  // Materiais usados pelo participante ficam separados e nao se repetem entre os demais do estudo.
+  function agendaMatBioGroups_(eventos, prefix, context) {
+    var campo = agendaMatBioCampoEvento_(prefix);
+    var mesmo = Object.create(null);
+    var estudo = Object.create(null);
+    (eventos || []).forEach(function(r) {
+      if (context.excluirEventoId && String(r.id || '') === context.excluirEventoId) return;
+      var opt = agendaMatBioEventOptions(r, prefix)[0];
+      if (!opt) return;
+      var grupos = agendaMatBioEventoDoParticipante_(r, context) ? mesmo : estudo;
+      var grupo = grupos[opt.key];
+      if (!grupo) grupo = grupos[opt.key] = { key: opt.key, event: r, option: opt, usos: 0, visitas: [] };
+      grupo.usos += Number(r.materialUsos && r.materialUsos[campo]) || 1;
+      var visitas = r.materialVisitas && r.materialVisitas[campo];
+      (visitas || [[r.visita, r.braco]]).forEach(function(par) {
+        if (grupo.visitas.length < 10) grupo.visitas.push([normAgenda(par[0]), normAgenda(par[1])]);
+      });
+      if (agendaMatBioMaisRecente_(r, grupo.event)) {
+        grupo.event = r;
+        grupo.option = opt;
+      }
+    });
+    function ordenar(grupos, max) {
+      return Object.keys(grupos).map(function(key) { return grupos[key]; }).sort(function(a, b) {
+        return a.event === b.event ? 0 : (agendaMatBioMaisRecente_(a.event, b.event) ? -1 : 1);
+      }).slice(0, max);
+    }
+    var doParticipante = ordenar(mesmo, 5);
+    Object.keys(mesmo).forEach(function(key) { delete estudo[key]; });
+    return { participante: doParticipante, estudo: ordenar(estudo, 20) };
+  }
+
+  function agendaMatBioHistoryEquivalent_(targeted, fallback, context) {
+    context = context || agendaMatBioCurrentContext_();
+    function ids(grupos) {
+      function lista(itens) { return itens.map(function(g) { return String(g.event.id || ''); }).join(','); }
+      return lista(grupos.participante) + '|' + lista(grupos.estudo);
+    }
+    return agendaMatBioPrefixes().every(function(prefix) {
+      return ids(agendaMatBioGroups_(targeted, prefix, context)) === ids(agendaMatBioGroups_(fallback, prefix, context));
+    });
+  }
+
+  // Mesma visita (e braco) do agendamento em curso primeiro; depois a mais recente.
+  function agendaMatBioRelevancia_(grupo) {
+    var visita = normAgenda((document.getElementById('agVisita') || {}).value || '');
+    var braco = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.braco) || '');
+    if (!visita) return 0;
+    var pontos = 0;
+    grupo.visitas.forEach(function(par) {
+      if (par[0] !== visita) return;
+      pontos = Math.max(pontos, braco && par[1] === braco ? 2 : 1);
+    });
+    return pontos;
+  }
+
+  function agendaMatBioOptionHtml_(grupo, mostrarBraco) {
+    var r = grupo.event;
+    var opt = grupo.option;
+    var label = [r.data || '', r.visita || r.tipo || '', mostrarBraco && r.braco ? 'Braço ' + r.braco : '', opt.label, opt.summary].filter(Boolean).join(' · ');
+    if (grupo.usos > 1) label += ' · usado em ' + grupo.usos + ' visitas';
+    return '<option value="' + esc(r.id + '|' + opt.prefix + '|' + opt.mode) + '">' + esc(label) + '</option>';
+  }
+
   function agendaMatBioUpdateCopyOptions(prefix) {
     var sel = document.getElementById(prefix + 'MatCopy');
     if (!sel) return;
     var selected = sel.value;
-    var participante = normAgenda(agendaParticipanteNomeSelecionado_());
-    var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
-    var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
-    var eventos = agendaMatBioPreviousEvents_().filter(function(r) {
-      if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
-      if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
-      if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
-      if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
-      return agendaMatBioEventOptions(r, prefix).length;
-    }).slice(-5).reverse();
     var context = agendaMatBioCurrentContext_();
+    var grupos = agendaMatBioGroups_(agendaMatBioPreviousEvents_(), prefix, context);
+    var estudo = grupos.estudo.map(function(grupo, index) {
+      return { grupo: grupo, relevancia: agendaMatBioRelevancia_(grupo), index: index };
+    }).sort(function(a, b) { return b.relevancia - a.relevancia || a.index - b.index; }).slice(0, 10);
+    var total = grupos.participante.length + estudo.length;
     var labelVazio = 'Copiar material de visita anterior...';
-    if (!eventos.length && context.key && context.key === _agendaMateriaisLoadingKey) labelVazio = 'Carregando materiais de visitas anteriores...';
+    if (!total && context.key && context.key === _agendaMateriaisLoadingKey) labelVazio = 'Carregando materiais de visitas anteriores...';
+    if (!total && context.key && context.key === _agendaMateriaisContextKey) labelVazio = 'Nenhum material de visita anterior disponível';
     var opts = ['<option value="">' + esc(labelVazio) + '</option>'];
-    eventos.forEach(function(r) {
-      agendaMatBioEventOptions(r, prefix).forEach(function(opt) {
-        var label = [r.data || '', r.visita || r.tipo || '', opt.label, opt.summary].filter(Boolean).join(' ? ');
-        opts.push('<option value="' + esc(r.id + '|' + opt.prefix + '|' + opt.mode) + '">' + esc(label) + '</option>');
-      });
-    });
-    if (opts.length === 1 && context.key && context.key === _agendaMateriaisContextKey) {
-      opts[0] = '<option value="">Nenhum material de visita anterior disponível</option>';
+    if (grupos.participante.length) {
+      opts.push('<optgroup label="Este participante">' + grupos.participante.map(function(grupo) {
+        return agendaMatBioOptionHtml_(grupo, false);
+      }).join('') + '</optgroup>');
+    }
+    if (estudo.length) {
+      opts.push('<optgroup label="Outros participantes do estudo">' + estudo.map(function(item) {
+        return agendaMatBioOptionHtml_(item.grupo, true);
+      }).join('') + '</optgroup>');
     }
     sel.innerHTML = opts.join('');
     if (selected && Array.prototype.some.call(sel.options, function(opt) { return opt.value === selected; })) sel.value = selected;
@@ -1630,6 +1716,7 @@
         prefix: x.prefix,
         label: x.label,
         mode: 'structured',
+        key: 'J:' + String(x.data.matBioJson).trim(),
         items: parsed.items,
         summary: parsed.items.map(function(it) { return it.tipo; }).join(', ') || (x.data && x.data.material) || ''
       };
@@ -1643,6 +1730,7 @@
         prefix: x.prefix,
         label: x.label + ' texto',
         mode: 'legacy',
+        key: 'T:' + normAgenda(txt),
         pasteText: txt,
         summary: txt
       };
@@ -1675,15 +1763,23 @@
       snack('Texto anterior copiado para a caixa de interpretação.');
       return;
     }
-    agendaMatBioSetItems(prefix, opt.items.map(function(it) {
-      return {
-        key: it.key || (agendaMatBioTypeConfig(it.tipo || '') || {}).key,
-        tipo: it.tipo || '',
-        ensaio: it.ensaio || '',
-        unit: it.unit || '',
-        formula: agendaMatBioFormulaFromSegments(it.segmentos, it.unit) || it.formula || ''
-      };
-    }));
+    var itens;
+    try {
+      // Montar tudo antes de limpar o editor: dados antigos invalidos nao podem apagar o que ja foi digitado.
+      itens = opt.items.map(function(it) {
+        return {
+          key: it.key || (agendaMatBioTypeConfig(it.tipo || '') || {}).key,
+          tipo: it.tipo || '',
+          ensaio: it.ensaio || '',
+          unit: it.unit || '',
+          formula: agendaMatBioFormulaFromSegments(it.segmentos, it.unit) || it.formula || ''
+        };
+      });
+    } catch (error) {
+      snackErro('Não foi possível copiar: o material dessa visita está inválido. Escolha outra visita ou preencha manualmente.');
+      return;
+    }
+    agendaMatBioSetItems(prefix, itens);
     snack('Material copiado para este transporte.');
   }
 
@@ -1703,13 +1799,18 @@
 
   function agendaMatBioCurrentContext_() {
     var participanteId = String((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '').trim();
+    // Sem ID, o nome identifica o participante dentro do estudo.
+    var participanteNome = participanteId ? '' : String(agendaParticipanteNomeSelecionado_() || '').trim();
     var projetoValor = String((document.getElementById('agProjeto') || {}).value || '').trim();
-    var projetoId = participanteId ? '' : agendaProjetoIdPorValor_(projetoValor);
+    // O escopo e o estudo; o participante apenas decide o grupo "Este participante".
+    var projetoId = agendaProjetoIdPorValor_(projetoValor);
     var excluirEventoId = String(_agendaEditId || '').trim();
-    var key = [participanteId ? 'P:' + participanteId : 'J:' + projetoId, excluirEventoId].join('|');
+    var key = ['P:' + participanteId, 'N:' + participanteNome, 'J:' + projetoId, excluirEventoId].join('|');
     return {
       participanteId: participanteId,
+      participanteNome: participanteNome,
       projetoId: projetoId,
+      projetoValor: projetoValor,
       excluirEventoId: excluirEventoId,
       key: participanteId || projetoId ? key : ''
     };
@@ -1722,41 +1823,24 @@
   }
 
   function agendaMatBioFallbackEvents_() {
-    var eventos = (_agendaEventos || []).filter(function(r) {
-      if (_agendaEditId && String(r.id || '') === String(_agendaEditId)) return false;
-      var participante = normAgenda(agendaParticipanteNomeSelecionado_());
-      var participanteId = normAgenda((_agendaParticipanteInfo && _agendaParticipanteInfo.numId) || '');
-      var projeto = normAgenda((document.getElementById('agProjeto') || {}).value || '');
-      if (participanteId && normAgenda(r.idParticipante) !== participanteId) return false;
-      if (!participanteId && participante && normAgenda(r.participante) !== participante) return false;
-      if (!participante && projeto && normAgenda(r.projeto) !== projeto) return false;
+    var context = agendaMatBioCurrentContext_();
+    var projeto = (((_agendaDados && _agendaDados.projetos) || []).find(function(p) {
+      return p && typeof p === 'object' && String(p.id || '').trim() === context.projetoId;
+    })) || {};
+    var aliases = {};
+    [context.projetoValor, projeto.nome, projeto.nomeAbreviado, projeto.codigo].forEach(function(value) {
+      var key = normAgenda(value);
+      if (key) aliases[key] = true;
+    });
+    // Escopo do estudo; sem projeto resolvido, o historico do proprio participante.
+    return (_agendaEventos || []).filter(function(r) {
+      if (context.excluirEventoId && String(r.id || '') === context.excluirEventoId) return false;
+      if (context.projetoId ? !aliases[normAgenda(r.projeto)] : !agendaMatBioEventoDoParticipante_(r, context)) return false;
       return agendaMatBioEventOptions(r).length;
     });
-    var idsRecentes = {};
-    agendaMatBioPrefixes().forEach(function(prefix) {
-      var encontrados = 0;
-      for (var i = eventos.length - 1; i >= 0 && encontrados < 5; i--) {
-        if (!agendaMatBioEventOptions(eventos[i], prefix).length) continue;
-        var id = String(eventos[i].id || '');
-        if (id) idsRecentes[id] = true;
-        encontrados++;
-      }
-    });
-    return eventos.filter(function(r) { return !!idsRecentes[String(r.id || '')]; });
   }
 
-  function agendaMatBioHistoryEquivalent_(targeted, fallback) {
-    targeted = targeted || [];
-    fallback = fallback || [];
-    if (targeted.length !== fallback.length) return false;
-    for (var i = 0; i < targeted.length; i++) {
-      if (String(targeted[i].id || '') !== String(fallback[i].id || '')) return false;
-      if (agendaMatBioEventOptions(targeted[i]).length !== agendaMatBioEventOptions(fallback[i]).length) return false;
-    }
-    return true;
-  }
-
-  function agendaMatBioFindPreviousEvent_(id) {
+    function agendaMatBioFindPreviousEvent_(id) {
     id = String(id || '');
     return (_agendaMateriaisAnteriores || []).find(function(r) { return String(r.id || '') === id; }) || agendaFindEventoLocal_(id);
   }
@@ -1783,15 +1867,11 @@
           agendaMatBioRecoverFromSpecificFailure_(context, requestId, 'invalid_payload');
           return;
         }
-        var targeted = response.items.map(function(item) {
-          item = agendaNormalizeRow(item);
-          if (!item.idParticipante && context.participanteId) item.idParticipante = context.participanteId;
-          return item;
-        }).filter(function(item) {
+        var targeted = response.items.map(agendaNormalizeRow).filter(function(item) {
           return !!String(item.id || '').trim();
-        }).reverse();
+        });
         var fallback = agendaMatBioFallbackEvents_();
-        if (agendaEventosSaoColecaoCompleta_() && (_agendaEventos || []).length && !agendaMatBioHistoryEquivalent_(targeted, fallback)) {
+        if (agendaEventosSaoColecaoCompleta_() && (_agendaEventos || []).length && !agendaMatBioHistoryEquivalent_(targeted, fallback, context)) {
           _agendaMateriaisContextKey = '';
           _agendaMateriaisAnteriores = [];
           if (window.console && console.warn) console.warn('[Agenda] Consulta especifica de materiais divergente; fallback completo preservado.');
@@ -1809,6 +1889,7 @@
       })
       .getAgendaMateriaisAnteriores({
         participanteId: context.participanteId,
+        participanteNome: context.participanteNome,
         projetoId: context.projetoId,
         excluirEventoId: context.excluirEventoId,
         limite: 5
