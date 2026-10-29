@@ -13,7 +13,7 @@ Este arquivo vale para todo o repositorio e para qualquer modelo usado pelo agen
 
 ## Orquestracao multi-agent
 
-O agente principal Codex coordena o trabalho e permanece responsavel pelo resultado final, pelo estado do repositorio e pelo diff integrado.
+O agente principal (Codex, Claude Code ou outro) coordena o trabalho e permanece responsavel pelo resultado final, pelo estado do repositorio e pelo diff integrado.
 
 ### Comportamento padrao
 
@@ -177,6 +177,6 @@ npm run test:ui        # testes locais de interface; separado de verify
 
 - Publique somente quando solicitado, usando `npm run push` ou `npm run push:safe`. Nunca execute variantes de `clasp push` diretamente.
 - Siga integralmente `PUBLICACAO_SEGURA.md`: `main` limpa, verificacoes, PR/checks/merge e sincronizacao. Nao contorne checks, protecao de branch, restauracao do arquivo versionado ou verificacoes do pipeline.
-- A publicacao so termina apos o gate obrigatorio no `@Chrome` autenticado: codigo e versao remotos conferidos, implantacao ativa atualizada, badge `/exec` correto, smoke test somente leitura e console verificado, conforme o procedimento detalhado naquele documento.
+- A publicacao so termina apos o gate obrigatorio no Chrome autenticado (extensao Claude in Chrome no Claude Code; `@Chrome` no Codex): codigo e versao remotos conferidos, implantacao ativa atualizada, badge `/exec` correto, smoke test somente leitura e console verificado, conforme o procedimento detalhado naquele documento.
 - Recarregue o editor remoto e confira em `WebApp.gs` os valores exatos de `CODEX_APP_VERSION_`, `CODEX_APP_BUILD_LABEL_` e `CODEX_APP_BUILD_DATE_` informados pelo publicador. Se a entrega alterou esse arquivo, confira tambem ao menos um trecho funcional exclusivo da mudanca; somente o cabecalho nao comprova a atualizacao.
 - O `WebApp.gs` local e restaurado pelo publicador e nao comprova a versao enviada. Se qualquer gate estiver indisponivel, divergente ou nao comprovado, informe **publicacao pendente** e identifique o passo restante.

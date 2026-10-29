@@ -421,7 +421,8 @@ function getCadastrosBootstrapData(page) {
     });
   } else if (page === 'projetos') {
     out.config = getProjetoFormConfigDados_();
-    out.data = getProjetosDadosInterno_(true);
+    // SIV exige ler a Agenda inteira: o cliente carrega depois via getProjetosSivDatas.
+    out.data = getProjetosDadosInterno_(false);
     out.medicos = getMedicosDados_();
     out.solicitantes = codexGetExamRequesterUsers_(readSnapshot.users);
     out.couriers = getAgendaCourierRows_();
@@ -4230,6 +4231,32 @@ function getProjetos() {
   return getProjetosDados_(true);
 }
 
+function projetoSivEscolher_(sivNome, sivCodigo) {
+  return !sivNome.dataObj ? sivCodigo : (!sivCodigo.dataObj ? sivNome : (sivNome.dataObj >= sivCodigo.dataObj ? sivNome : sivCodigo));
+}
+
+// Datas de SIV por ID de projeto. Separada do bootstrap de Cadastro de Projetos
+// porque exige ler a Agenda inteira; o cliente a chama depois de exibir a tabela.
+function getProjetosSivDatas() {
+  codexAssertCanRead_();
+  var dados = getCodexSheetDataByName_('Projetos');
+  var out = {};
+  if (dados.length < 2) return out;
+  var sivPorProjeto = getProjetosSivPorProjeto_();
+  for (var i = 1; i < dados.length; i++) {
+    var r = dados[i];
+    if (!r[0]) continue;
+    var nomeNorm = normText_(String(r[1] || ''));
+    var codigoNorm = normText_(r[2]);
+    var sivNome = sivPorProjeto[nomeNorm] || {};
+    var sivCodigo = codigoNorm && codigoNorm !== nomeNorm ? (sivPorProjeto[codigoNorm] || {}) : {};
+    var siv = projetoSivEscolher_(sivNome, sivCodigo);
+    if (!siv.data) continue;
+    out[String(r[0])] = { dataSiv: siv.data || '', dataSivInicio: siv.inicio || siv.data || '', dataSivFim: siv.fim || siv.data || '' };
+  }
+  return out;
+}
+
 // Dashboard não utiliza datas de SIV; a RPC pública mantém o enriquecimento completo.
 function getProjetosDados_(incluirSiv) {
   codexAssertCanRead_();
@@ -4259,7 +4286,7 @@ function getProjetosDadosInterno_(incluirSiv) {
     var statsCodigo = codigoNorm && codigoNorm !== nomeNorm ? (statsPorProjeto[codigoNorm] || {}) : {};
     var sivNome = sivPorProjeto[nomeNorm] || {};
     var sivCodigo = codigoNorm && codigoNorm !== nomeNorm ? (sivPorProjeto[codigoNorm] || {}) : {};
-    var siv = !sivNome.dataObj ? sivCodigo : (!sivCodigo.dataObj ? sivNome : (sivNome.dataObj >= sivCodigo.dataObj ? sivNome : sivCodigo));
+    var siv = projetoSivEscolher_(sivNome, sivCodigo);
     var ativos = (statsNome.ativos || 0) + (statsCodigo.ativos || 0);
     var falhasTriagem = (statsNome.falhasTriagem || 0) + (statsCodigo.falhasTriagem || 0);
     var totalParticipantes = (statsNome.total || 0) + (statsCodigo.total || 0);
@@ -7001,11 +7028,18 @@ function getParticipanteDetalhes(idCadastro) {
     var row = codexReadValuesMeasured_(sheet.getRange(matches[0], 1, 1, width), false)[0];
     if (CadastroRules_.normalizeId(row[0]) !== idCadastro) throw new Error('O cadastro mudou durante a consulta. Tente novamente.');
     var result = participanteDadosDaLinha_(row, header, { data: '', visita: '---' }, false);
-    result.historicoCadastro = participanteHistoricoCadastro_(idCadastro);
     meta.rowCount = 1;
     meta.responseBytes = codexSerializedByteLength_(JSON.stringify(result));
     return result;
   });
+}
+
+// Separado de getParticipanteDetalhes: varre as abas de auditoria e não deve atrasar a abertura da ficha.
+function getParticipanteHistoricoCadastro(idCadastro) {
+  codexAssertCanRead_();
+  idCadastro = CadastroRules_.normalizeId(idCadastro);
+  if (!idCadastro) throw new Error('Informe o ID do cadastro do participante.');
+  return participanteHistoricoCadastro_(idCadastro);
 }
 
 function getParticipanteFormConfig() {
@@ -8017,8 +8051,7 @@ function getDashboardData(request) {
       cancelReagPorProtocolo: [],
       courierUsoAno: [],
       transporteLaboratoriosAno: [],
-      eventosPeriodo: [],
-      antecedenciaMediaPorTipo: []
+      eventosPeriodo: []
     };
   }
   // Pendências possui RPC própria; seus cálculos não são consumidos pelo Dashboard.
@@ -8103,10 +8136,10 @@ function dashboardAgregarParticipantes_(participantes, referencia) {
   (participantes || []).forEach(function(p) {
     resumo.total++;
     var status = normText_(p.status);
-    var ativo = status === 'ativo';
-    var ativoOuSeguimento = ativo || status === 'em seguimento';
-    if (ativoOuSeguimento) resumo.ativos++;
+    // Em seguimento ainda integra a pesquisa: "ativo" vale igual em todos os indicadores.
+    var ativo = status === 'ativo' || status === 'em seguimento';
     if (ativo) {
+      resumo.ativos++;
       var idade = dashboardIdadeParticipante_(p.nascimento, referencia);
       if (idade === null) resumo.faixasEtarias.semNascimentoValido++;
       else {
@@ -8118,10 +8151,9 @@ function dashboardAgregarParticipantes_(participantes, referencia) {
     }
     var projeto = normText_(p.projeto);
     if (projeto) {
-      if (!resumo.porProjeto[projeto]) resumo.porProjeto[projeto] = { total: 0, ativos: 0, ativosStrict: 0 };
+      if (!resumo.porProjeto[projeto]) resumo.porProjeto[projeto] = { total: 0, ativos: 0 };
       resumo.porProjeto[projeto].total++;
-      if (ativoOuSeguimento) resumo.porProjeto[projeto].ativos++;
-      if (ativo) resumo.porProjeto[projeto].ativosStrict++;
+      if (ativo) resumo.porProjeto[projeto].ativos++;
     }
     var cidade = String(p.cidade || '').trim();
     if (ativo && cidade) {
@@ -8585,7 +8617,7 @@ function getAgendaDashboardResumo_() {
     courierUsoAno: [],
     transporteLaboratoriosAno: [],
     periodos: { version: 1, anosDisponiveis: [], global: null, anos: {}, meses: {} },
-    antecedenciaMediaPorTipo: []
+    qualidade: { semDataValida: 0 }
   };
   var vals = lastRow < 2 ? [] : codexReadValuesMeasured_(sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol), false);
   var i = AGENDA_CFG.idx;
@@ -8595,7 +8627,6 @@ function getAgendaDashboardResumo_() {
   var cancelReagProt = {};
   var courierUso = Object.create(null);
   var transporteLaboratorios = Object.create(null);
-  var antecedenciaPorTipo = {};
   var participantesAtendidos = {};
   var periodos = { global: agendaDashboardPeriodoNovo_(), anos: Object.create(null), meses: Object.create(null) };
   var hoje = new Date();
@@ -8631,7 +8662,6 @@ function getAgendaDashboardResumo_() {
       cancelReagProt: cancelReagProt,
       courierUso: courierUso,
       transporteLaboratorios: transporteLaboratorios,
-      antecedenciaPorTipo: antecedenciaPorTipo,
       participantesAtendidos: participantesAtendidos,
       periodos: periodos
     });
@@ -8649,7 +8679,6 @@ function getAgendaDashboardResumo_() {
   resumo.cancelReagPorProtocolo = agendaMapToPairs_(cancelReagProt, 15);
   resumo.courierUsoAno = agendaDashboardTransportPairs_(courierUso, 12);
   resumo.transporteLaboratoriosAno = agendaDashboardTransportPairs_(transporteLaboratorios, 12);
-  resumo.antecedenciaMediaPorTipo = [];
   resumo.periodos.global = agendaDashboardPeriodoFinalizar_(periodos.global, true);
   resumo.periodos.anosDisponiveis = Object.keys(periodos.anos).map(Number).sort(function(a, b) { return b - a; });
   Object.keys(periodos.anos).forEach(function(key) { resumo.periodos.anos[key] = agendaDashboardPeriodoFinalizar_(periodos.anos[key], false); });
@@ -8660,7 +8689,11 @@ function getAgendaDashboardResumo_() {
 function agendaDashboardProcessRow_(r, ctx) {
   var i = ctx.idx;
   var data = parseAgendaDateAny_(r[i.data]) || (r[i.data] instanceof Date ? r[i.data] : new Date(r[i.data]));
-  if (!data || isNaN(data.getTime())) return;
+  if (!data || isNaN(data.getTime())) {
+    // Linha com conteúdo e sem data válida fica fora de todos os indicadores.
+    if (String(r[i.tipo] || '').trim() || String(r[i.projeto] || '').trim()) ctx.resumo.qualidade.semDataValida++;
+    return;
+  }
   var rowInfo = agendaDashboardRowInfo_(r, i, data, ctx.carregarLaboratoriosDestino);
   var ano = data.getFullYear(), mes = data.getMonth() + 1, mesKey = ano + '-' + mes;
   if (!ctx.periodos.anos[ano]) ctx.periodos.anos[ano] = agendaDashboardPeriodoNovo_();
@@ -8678,9 +8711,9 @@ function agendaDashboardProcessRow_(r, ctx) {
 }
 
 function agendaDashboardPeriodoNovo_() {
-  return { total: 0, visits: 0, labs: 0, participants: Object.create(null), monitoringDays: Object.create(null),
-    visitsBuckets: Object.create(null), labBuckets: Object.create(null), protocols: Object.create(null),
-    monitoring: Object.create(null), doctors: Object.create(null), cancellations: Object.create(null), couriers: Object.create(null), transportLabs: Object.create(null),
+  return { total: 0, visits: 0, semProtocolo: 0, semMedico: 0, labs: 0, labsPrevistos: 0, participants: Object.create(null), monitoringDays: Object.create(null),
+    visitsBuckets: Object.create(null), labBuckets: Object.create(null), labPrevBuckets: Object.create(null), protocols: Object.create(null),
+    monitoring: Object.create(null), monitoringPrev: Object.create(null), doctors: Object.create(null), cancellations: Object.create(null), couriers: Object.create(null), transportLabs: Object.create(null),
     days: ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }) };
 }
 
@@ -8690,19 +8723,36 @@ function agendaDashboardPeriodoContar_(info, out, bucket, hoje) {
   var future = info.data.getTime() > hoje.getTime();
   if (info.isVisita && info.isRealizada && !info.isCancelado && !future) {
     out.visits++;
+    if (info.semProtocolo) out.semProtocolo++;
+    if (info.semMedico) out.semMedico++;
     add(out.visitsBuckets, bucket);
     add(out.protocols, info.projeto);
     add(out.doctors, info.medico);
     if (info.evento.participanteKey) out.participants[info.evento.participanteKey] = 1;
     out.days[info.data.getDay()].value++;
   }
-  if (info.lab && !info.isCancelado && !future) { out.labs++; add(out.labBuckets, bucket); }
+  var labClasse = agendaDashboardLabClasse_(info, future);
+  if (labClasse === 'realizado') { out.labs++; add(out.labBuckets, bucket); }
+  else if (labClasse === 'previsto') { out.labsPrevistos++; add(out.labPrevBuckets, bucket); }
   if (info.isMonitoria && !info.isCancelado) {
     var key = info.projeto + '|' + info.evento.dataIso;
-    if (!out.monitoringDays[key]) { out.monitoringDays[key] = 1; add(out.monitoring, info.projeto); }
+    if (!out.monitoringDays[key]) {
+      // Dia de monitoria futuro é previsto; os demais são realizados.
+      out.monitoringDays[key] = future ? 'previsto' : 'realizado';
+      add(future ? out.monitoringPrev : out.monitoring, info.projeto);
+    }
   }
   if (info.isCancelado || info.isReagendado) add(out.cancellations, info.projeto);
   agendaDashboardCountTransports_(info, out.couriers, out.transportLabs);
+}
+
+// Lab Central reúne transportes realizados (enviado/entregue) e previstos. Evento
+// cancelado ou reagendado fica fora: o reagendamento é contado na nova data.
+function agendaDashboardLabClasse_(info, future) {
+  if (!info.lab || info.isCancelado || info.isReagendado) return '';
+  var transportes = info.evento.transportes || [];
+  if (transportes.length) return transportes.some(function(t) { return t.realizado; }) ? 'realizado' : 'previsto';
+  return info.isRealizada && !future ? 'realizado' : 'previsto';
 }
 
 function agendaDashboardPeriodoFinalizar_(out, global) {
@@ -8711,11 +8761,31 @@ function agendaDashboardPeriodoFinalizar_(out, global) {
     return Object.keys(map).sort(function(a, b) { return Number(a) - Number(b); })
       .map(function(key) { return { label: global ? key : months[Number(key) - 1], value: map[key] }; });
   }
+  function splitBuckets(realizados, previstos) {
+    var keys = Object.keys(realizados).concat(Object.keys(previstos).filter(function(key) { return !(key in realizados); }));
+    var months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return keys.sort(function(a, b) { return Number(a) - Number(b); }).map(function(key) {
+      var r = realizados[key] || 0, p = previstos[key] || 0;
+      return { label: global ? key : months[Number(key) - 1], value: r + p, realizados: r, previstos: p };
+    });
+  }
+  function splitPairs(realizados, previstos, limit) {
+    var map = Object.create(null);
+    Object.keys(realizados).forEach(function(label) { map[label] = { label: label, realizados: realizados[label], previstos: 0 }; });
+    Object.keys(previstos).forEach(function(label) {
+      if (!map[label]) map[label] = { label: label, realizados: 0, previstos: 0 };
+      map[label].previstos = previstos[label];
+    });
+    return agendaDashboardTransportPairs_(map, limit);
+  }
+  var diasMonitoria = Object.keys(out.monitoringDays);
+  var monitoringPrevistos = diasMonitoria.filter(function(key) { return out.monitoringDays[key] === 'previsto'; }).length;
   // As identidades ficam apenas nesta execução: únicos anuais/globais não são somas dos meses.
-  return { total: out.total, visits: out.visits, labs: out.labs,
-    participants: Object.keys(out.participants).length, monitoringDays: Object.keys(out.monitoringDays).length,
-    visitsBuckets: buckets(out.visitsBuckets), labBuckets: buckets(out.labBuckets), days: out.days,
-    protocols: agendaMapToPairs_(out.protocols, 15), monitoring: agendaMapToPairs_(out.monitoring, 15),
+  return { total: out.total, visits: out.visits, semProtocolo: out.semProtocolo, semMedico: out.semMedico, labs: out.labs, labsPrevistos: out.labsPrevistos,
+    participants: Object.keys(out.participants).length, monitoringDays: diasMonitoria.length - monitoringPrevistos,
+    monitoringDaysPrevistos: monitoringPrevistos,
+    visitsBuckets: buckets(out.visitsBuckets), labBuckets: splitBuckets(out.labBuckets, out.labPrevBuckets), days: out.days,
+    protocols: agendaMapToPairs_(out.protocols, 15), monitoring: splitPairs(out.monitoring, out.monitoringPrev, 15),
     doctors: agendaMapToPairs_(out.doctors, 12), cancellations: agendaMapToPairs_(out.cancellations, 15),
     couriers: agendaDashboardTransportPairs_(out.couriers, 12), transportLabs: agendaDashboardTransportPairs_(out.transportLabs, 12) };
 }
@@ -8723,8 +8793,10 @@ function agendaDashboardPeriodoFinalizar_(out, global) {
 function agendaDashboardRowInfo_(r, i, data, carregarLaboratoriosDestino) {
   var tipo = normText_(r[i.tipo]);
   var status = normText_(r[i.status]);
-  var projeto = String(r[i.projeto] || 'Sem protocolo').trim() || 'Sem protocolo';
-  var medico = String(r[i.medico] || 'Sem medico').trim() || 'Sem medico';
+  var semProtocolo = !String(r[i.projeto] || '').trim();
+  var semMedico = !String(r[i.medico] || '').trim();
+  var projeto = semProtocolo ? 'Sem protocolo' : String(r[i.projeto]).trim();
+  var medico = semMedico ? 'Sem médico' : String(r[i.medico]).trim();
   var lab = AgendaServerRules_.isLabCentral(r[i.labCentral]);
   var isVisita = AgendaServerRules_.isVisit(tipo);
   var couriersEvento = agendaDashboardCouriersEvento_(r, i);
@@ -8734,6 +8806,8 @@ function agendaDashboardRowInfo_(r, i, data, carregarLaboratoriosDestino) {
     status: status,
     projeto: projeto,
     medico: medico,
+    semProtocolo: semProtocolo,
+    semMedico: semMedico,
     lab: lab,
     isCancelado: AgendaServerRules_.isCancelled(status),
     isReagendado: AgendaServerRules_.isRescheduled(status),
@@ -8791,7 +8865,7 @@ function agendaDashboardCountStatus_(info, ctx) {
 }
 
 function agendaDashboardCountLabCentral_(info, resumo, hoje) {
-  if (!info.lab || info.isCancelado || info.data.getTime() > hoje.getTime()) return;
+  if (agendaDashboardLabClasse_(info, info.data.getTime() > hoje.getTime()) !== 'realizado') return;
   resumo.labCentralAno++;
   resumo.labCentralMes[info.data.getMonth()].value++;
 }
@@ -8811,21 +8885,6 @@ function agendaDashboardCountVisita_(r, info, ctx) {
   ctx.resumo.visitasPorDiaSemana[info.data.getDay()].value++;
   ctx.porProt[info.projeto] = (ctx.porProt[info.projeto] || 0) + 1;
   ctx.porMed[info.medico] = (ctx.porMed[info.medico] || 0) + 1;
-  agendaDashboardCountAntecedencia_(r, info, ctx);
-}
-
-function agendaDashboardCountAntecedencia_(r, info, ctx) {
-  var base = agendaDataRegistroFromControle_(r[ctx.idx.controle]);
-  if (!base) return;
-  base.setHours(0, 0, 0, 0);
-  var visita = new Date(info.data);
-  visita.setHours(0, 0, 0, 0);
-  var diasAnt = Math.round((visita - base) / 86400000);
-  if (diasAnt < 0 || diasAnt >= 730) return;
-  var tipoLabel = String(r[ctx.idx.tipo] || 'Visita').trim() || 'Visita';
-  if (!ctx.antecedenciaPorTipo[tipoLabel]) ctx.antecedenciaPorTipo[tipoLabel] = { soma: 0, n: 0 };
-  ctx.antecedenciaPorTipo[tipoLabel].soma += diasAnt;
-  ctx.antecedenciaPorTipo[tipoLabel].n++;
 }
 
 function agendaDashboardCountCourier_(r, info, ctx) {
@@ -8938,14 +8997,6 @@ function isCourierNomeValidoAgenda_(nome) {
   var n = normText_(nome);
   if (!n) return false;
   return ['nao aplicavel', 'n/a', '-', '--', '---', 'nao se aplica'].indexOf(n) === -1;
-}
-
-function agendaDataRegistroFromControle_(controle) {
-  var s = String(controle || '');
-  var m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (!m) return null;
-  var d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-  return isNaN(d.getTime()) ? null : d;
 }
 
 function agendaMapToPairs_(map, limit) {
@@ -11170,18 +11221,21 @@ function getEstoqueDashboardResumo_() {
     d.setHours(0, 0, 0, 0);
     return Math.floor((d - hoje) / 86400000);
   }
-  return {
-    lotes: estoque.length,
-    ok: estoque.filter(function(i) { return String(i.status || '').toLowerCase() === 'ok'; }).length,
-    baixo: estoque.filter(function(i) { return String(i.status || '').toLowerCase().indexOf('baixo') >= 0; }).length,
-    vencidos: estoque.filter(function(i) {
-      return diasAte(i.validade) < 0 || String(i.status || '').toLowerCase().indexOf('vencido') >= 0;
-    }).length,
-    proximosValidade: estoque.filter(function(i) {
-      var d = diasAte(i.validade);
-      return d >= 0 && d <= 90;
-    }).length
-  };
+  // Cada lote cai em uma só categoria (vencido > baixo > ok); "próximos da validade"
+  // é um alerta sobre lotes ainda válidos e pode coincidir com ok ou baixo.
+  var resumo = { lotes: estoque.length, ok: 0, baixo: 0, vencidos: 0, outros: 0, proximosValidade: 0 };
+  estoque.forEach(function(i) {
+    var status = String(i.status || '').toLowerCase();
+    var dias = diasAte(i.validade);
+    if (dias < 0 || status.indexOf('vencido') >= 0) resumo.vencidos++;
+    else {
+      if (status.indexOf('baixo') >= 0) resumo.baixo++;
+      else if (status === 'ok') resumo.ok++;
+      else resumo.outros++;
+      if (dias <= 90) resumo.proximosValidade++;
+    }
+  });
+  return resumo;
 }
 
 var KIT_RESERVA_HEADERS_ = [

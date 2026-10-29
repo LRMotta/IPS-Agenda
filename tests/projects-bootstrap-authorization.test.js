@@ -67,6 +67,25 @@ test('bootstrap de Projetos lê Users uma vez e preserva DTO das RPCs autorizada
   assert.deepEqual(result.solicitantes, plain(direct.getSolicitantes()));
 });
 
+test('bootstrap de Projetos não lê a Agenda para SIV; getProjetosSivDatas entrega as datas por ID', () => {
+  const f = fixture();
+  let sivCalls = 0;
+  f.server.getProjetosSivPorProjeto_ = () => {
+    sivCalls++;
+    return { 'protocolo-simulado': { data: '12/01/2026', inicio: '10/01/2026', fim: '12/01/2026', dataObj: new Date(2026, 0, 12) } };
+  };
+  const result = plain(f.server.getCadastrosBootstrapData('projetos'));
+  assert.equal(sivCalls, 0);
+  assert.equal(result.data[0].dataSiv, '');
+  assert.deepEqual(plain(f.server.getProjetosSivDatas()), {
+    P1: { dataSiv: '12/01/2026', dataSivInicio: '10/01/2026', dataSivFim: '12/01/2026' }
+  });
+  assert.equal(sivCalls, 1);
+  assert.equal(plain(f.server.getProjetos())[0].dataSivFim, '12/01/2026');
+  f.users.rows[1][3] = 'Não';
+  assert.throws(() => f.server.getProjetosSivDatas(), /inativo/);
+});
+
 test('bootstrap de Médicos e Solicitantes não repete a leitura da ACL', () => {
   const medicos = fixture();
   const medicosResult = plain(medicos.server.getCadastrosBootstrapData('medicos'));

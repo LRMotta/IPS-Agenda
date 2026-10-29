@@ -193,7 +193,7 @@ Mantem o GitHub sincronizado com a publicacao do Apps Script sem remover a exige
   if ($LASTEXITCODE -ne 0) { throw 'clasp push falhou.' }
   Write-Host "Envio de codigo concluido com a versao $version. O commit foi aprovado e o projeto fonte Apps Script recebeu a entrega."
   Write-Host 'PUBLICACAO PENDENTE: VERIFICACAO CHROME OBRIGATORIA.' -ForegroundColor Yellow
-  Write-Host "1. No @Chrome, recarregue o editor Apps Script e confirme no WebApp.gs remoto: $version e, quando alterado, um trecho funcional exclusivo da entrega."
+  Write-Host "1. No Chrome autenticado (Claude in Chrome), recarregue o editor Apps Script e confirme no WebApp.gs remoto: $version e, quando alterado, um trecho funcional exclusivo da entrega."
   Write-Host '2. Edite a implantacao ativa, selecione Nova versao e implante.'
   Write-Host '3. Recarregue /exec, confirme o badge exato e execute o smoke test somente leitura com o console aberto.'
   Write-Host 'Nao informe publicacao concluida antes de comprovar os tres passos.'
