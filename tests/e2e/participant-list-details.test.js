@@ -20,7 +20,7 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       const modal = content.slice(content.indexOf('<div class="modal-overlay" id="modalParticipante"'), content.indexOf('<div class="modal-overlay" id="modalMedico"'));
       await page.setContent('<html><head><title>IPS — cadastro local</title>' + readProjectFile('IndexStyles.html') + readProjectFile('IndexStylesAfterDashboard.html') + '</head><body>' + modal + '</body></html>');
       const source = readProjectFile('IndexCoreScripts.html');
-      const names = ['limparErro', 'participanteRenderHistorico_', 'participanteBloquearDetalhes_', 'abrirFormPart', 'abrirFormPartPreenchido_', 'participanteDefinirPessoaSomenteLeitura_',
+      const names = ['limparErro', 'participanteRenderHistorico_', 'participanteBloquearDetalhes_', 'participanteAvisoCarregando_', 'abrirFormPart', 'abrirFormPartPreenchido_', 'participanteDefinirPessoaSomenteLeitura_',
         'participanteMonitorarIdentidadeDoModal_', 'participantePreservarIdentidadeOriginal_', 'renderAcompanhantesPart_', 'lerAcompanhantesPart_',
         'participantePodeNovaParticipacao_', 'salvarPartApp', 'fecharOverlay', 'abrirNovaParticipacaoPessoa', 'prepararNovaParticipacaoPessoa_', 'preencherMarcosParticipacao_', 'lerMarcosParticipacao_'];
       const functions = names.map(name => { const m = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}')); assert.ok(m, name); return m[0]; }).join('\n');
@@ -51,14 +51,18 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       const detail = { sexoNascimento: 'Feminino', id: '1', idPessoa: 'PES-1', nome: 'Pessoa', idParticipante: 'PT-1', projeto: 'Aurora', status: participantStatus,
         rua: 'Rua preservada', numero: '20', cidade: 'Caxias', estado: 'RS', municipioCodigo: '4305108', banco: 'Banco preservado',
         tipoConta: 'Conta corrente', agencia: '001', contaCorrente: '1234', titularConta: 'Pessoa',
-        historicoCadastro: { cadastro: { dataHora: '01/10/2026 09:20', responsavel: 'cadastro@exemplo.org' }, ultimaAtualizacao: { dataHora: '15/10/2026 11:40' } },
         marcosParticipacao: { RANDOMIZACAO: '2026-09-01', ULTIMA_DOSE: '2026-10-01' },
         acompanhantes: [{ id: 'AC-1', nome: 'Acompanhante', banco: 'Banco preservado', contaCorrente: '9876', estado: 'RS', cidade: 'Caxias' }] };
+      const historico = { cadastro: { dataHora: '01/10/2026 09:20', responsavel: 'cadastro@exemplo.org' }, ultimaAtualizacao: { dataHora: '15/10/2026 11:40' } };
       await page.evaluate(() => abrirFormPart({ id: '1', nome: 'Resumo' }));
       assert.equal(await page.locator('#btnSalvarPart').isDisabled(), true);
       await page.evaluate(() => salvarPartApp());
       assert.equal(await page.evaluate(() => window.requests.length), 1);
+      assert.equal(await page.locator('#ptCarregandoAviso').isVisible(), true);
       await page.evaluate(d => window.requests[0].onSuccess(d), detail);
+      assert.equal(await page.locator('#ptCarregandoAviso').isVisible(), false);
+      assert.equal(await page.evaluate(() => window.requests[1].method), 'getParticipanteHistoricoCadastro');
+      await page.evaluate(h => window.requests[1].onSuccess(h), historico);
       const sexArtifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(sexArtifacts, { recursive: true });
       await page.locator('#ptSexoNascimento').locator('xpath=../..').screenshot({ path: path.join(sexArtifacts, 'participant-identification-' + width + '.png') });
@@ -91,10 +95,10 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       await page.screenshot({ path: path.join(artifacts, 'participant-milestones-' + width + '.png') });
       await page.locator('#ptSexoNascimento').selectOption('');
       await page.locator('#btnSalvarPart').click();
-      assert.equal(await page.evaluate(() => window.requests.length), 1);
+      assert.equal(await page.evaluate(() => window.requests.length), 2);
       await page.locator('#ptSexoNascimento').selectOption('Feminino');
       await page.locator('#btnSalvarPart').click();
-      const payload = await page.evaluate(() => window.requests[1].args[0]);
+      const payload = await page.evaluate(() => window.requests[2].args[0]);
       assert.equal(payload.sexoNascimento, 'Feminino');
       assert.equal(payload.id, '1');
       assert.equal(payload.projeto, 'Aurora');
@@ -113,10 +117,10 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       assert.equal(await page.locator('#ptMarcoRANDOMIZACAO').inputValue(), '');
       assert.equal(await page.locator('#ptMarcoULTIMA_DOSE').inputValue(), '');
       await page.evaluate(() => abrirFormPart({ id: '1' }));
-      await page.evaluate(() => window.requests[2].onFailure(new Error('Falha simulada')));
+      await page.evaluate(() => window.requests[3].onFailure(new Error('Falha simulada')));
       assert.equal(await page.locator('#btnSalvarPart').isDisabled(), true);
       await page.getByRole('button', { name: 'Tentar novamente' }).click();
-      await page.evaluate(d => window.requests[3].onSuccess(d), detail);
+      await page.evaluate(d => window.requests[4].onSuccess(d), detail);
       assert.equal(await page.locator('#btnSalvarPart').isDisabled(), false);
       assert.equal(await page.locator('#ptHistoricoCadastro').getAttribute('open'), null);
       assert.equal(await page.locator('#ptBanco').inputValue(), detail.banco);

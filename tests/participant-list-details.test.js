@@ -77,7 +77,8 @@ function clientFixture() {
   const requests = [], rendered = [], disabled = [];
   const modal = { dataset: {}, setAttribute() {}, classList: { remove() {} } };
   const status = { textContent: '', appendChild(el) { this.retry = el; } };
-  const fields = { modalParticipante: modal, modalPartTitle: {}, statusPart: status, editPartId: { value: '1' } };
+  const aviso = { hidden: true };
+  const fields = { ptCarregandoAviso: aviso, modalParticipante: modal, modalPartTitle: {}, statusPart: status, editPartId: { value: '1' } };
   const c = vm.createContext({
     _participanteDetalhesConsulta: null, _participanteDetalhesPendente: false, _participanteEdicaoAtual: null,
     document: { getElementById: id => fields[id], createElement: () => ({}) },
@@ -89,12 +90,12 @@ function clientFixture() {
     prepararNovaParticipacaoPessoa_: p => { c.newParticipation = p; }
   });
   const source = readProjectFile('IndexCoreScripts.html');
-  for (const name of ['participantePodeNovaParticipacao_', 'abrirFormPart', 'abrirNovaParticipacaoPessoa', 'salvarPartApp', 'fecharOverlay']) {
+  for (const name of ['participantePodeNovaParticipacao_', 'participanteAvisoCarregando_', 'abrirFormPart', 'abrirNovaParticipacaoPessoa', 'salvarPartApp', 'fecharOverlay']) {
     const match = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}'));
     assert.ok(match, name);
     vm.runInContext(match[0], c);
   }
-  return { c, requests, rendered, disabled, fields, status };
+  return { c, requests, rendered, disabled, fields, status, aviso };
 }
 
 test('edição só aplica detalhe atual; trocar, fechar ou abrir novo descarta respostas anteriores', () => {
@@ -103,24 +104,25 @@ test('edição só aplica detalhe atual; trocar, fechar ou abrir novo descarta r
   c.abrirFormPart({ id: '2' });
   requests[0].onSuccess({ id: '1', banco: 'Obsoleto' });
   requests[0].onFailure(new Error('Obsoleto'));
-  assert.equal(rendered.filter(Boolean).length, 0);
+  assert.equal(rendered.some(item => item && item.banco === 'Obsoleto'), false);
   requests[1].onSuccess({ id: '2', banco: 'Atual' });
   assert.equal(c._participanteEdicaoAtual.banco, 'Atual');
   c.abrirFormPart({ id: '1' });
   c.fecharOverlay('modalParticipante');
-  requests[2].onSuccess({ id: '1' });
-  assert.equal(rendered.filter(Boolean).length, 1);
+  requests[3].onSuccess({ id: '1', banco: 'Fechado' });
   c.abrirFormPart({ id: '1' });
   c.abrirFormPart(null);
-  requests[3].onSuccess({ id: '1' });
+  requests[4].onSuccess({ id: '1', banco: 'Substituído' });
   assert.equal(c._participanteEdicaoAtual, null);
-  assert.equal(rendered.filter(Boolean).length, 1);
+  assert.deepEqual(rendered.filter(item => item && item.banco).map(item => item.banco), ['Atual']);
 });
 
 test('falha ou ID divergente bloqueia salvar e oferece retry; nova participação usa o detalhe completo', () => {
-  const { c, requests, status, fields } = clientFixture();
+  const { c, requests, status, fields, aviso } = clientFixture();
   c.abrirFormPart({ id: '1' });
+  assert.equal(aviso.hidden, false);
   requests[0].onSuccess({ id: '2', banco: 'Outro' });
+  assert.equal(aviso.hidden, true);
   assert.equal(c._participanteDetalhesPendente, true);
   assert.equal(c._participanteEdicaoAtual, null);
   c.salvarPartApp(); // Deve retornar antes de acessar campos vazios ou enviar mutação.
@@ -131,6 +133,32 @@ test('falha ou ID divergente bloqueia salvar e oferece retry; nova participaçã
   fields.editPartId.value = '1';
   c.abrirNovaParticipacaoPessoa();
   assert.equal(c.newParticipation, detail);
+});
+
+test('abertura exibe os dados da listagem com aviso de carregando e lê o histórico à parte', () => {
+  const { c, requests, rendered, aviso } = clientFixture();
+  const lista = { id: '1', nome: 'Maria' };
+  c.abrirFormPart(lista);
+  assert.equal(rendered[0], lista);
+  assert.equal(aviso.hidden, false);
+  assert.equal(requests[0].method, 'getParticipanteDetalhes');
+  const detail = { id: '1', banco: 'Banco' };
+  requests[0].onSuccess(detail);
+  assert.equal(aviso.hidden, true);
+  assert.equal(detail.historicoPendente, true);
+  assert.equal(requests[1].method, 'getParticipanteHistoricoCadastro');
+});
+
+test('histórico lido à parte: RPC autoriza antes de ler e exige ID', () => {
+  const f = fixture();
+  const calls = [];
+  f.server.participanteHistoricoCadastro_ = id => { calls.push(id); return { cadastro: null }; };
+  assert.deepEqual(plain(f.server.getParticipanteHistoricoCadastro('1')), { cadastro: null });
+  assert.deepEqual(calls, ['1']);
+  assert.throws(() => f.server.getParticipanteHistoricoCadastro(''), /Informe/);
+  assert.equal(f.server.getParticipanteDetalhes('1').historicoCadastro, undefined);
+  f.server.codexAssertCanRead_ = () => { throw new Error('NEGADO'); };
+  assert.throws(() => f.server.getParticipanteHistoricoCadastro('1'), /NEGADO/);
 });
 
 

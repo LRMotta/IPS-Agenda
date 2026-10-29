@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runFile } = require('./helpers/load-app-script');
 
-test('faixas etárias usam anos completos, status Ativo e preservam intervalos vazios', () => {
+test('faixas etárias usam anos completos, status Ativo ou Em seguimento e preservam intervalos vazios', () => {
   const server = runFile('WebApp.gs');
   const rows = [
     ['19/10/2016', 'Ativo'], ['20/10/2016', 'Ativo'],
@@ -13,15 +13,15 @@ test('faixas etárias usam anos completos, status Ativo e preservam intervalos v
     ['', 'Ativo'], ['31/02/2000', 'Ativo'], ['2027-01-01', 'Ativo'], ['texto', 'Ativo']
   ].map(([nascimento, status]) => ({ nascimento, status }));
   const result = JSON.parse(JSON.stringify(server.dashboardAgregarParticipantes_(rows, '2026-10-19').faixasEtarias));
-  assert.equal(result.total, 6);
+  assert.equal(result.total, 7);
   assert.equal(result.semNascimentoValido, 4);
   assert.deepEqual(result.faixas.slice(0, 4), [
     { label: '0–9', value: 1 }, { label: '10–19', value: 2 },
-    { label: '20–29', value: 1 }, { label: '30–39', value: 1 }
+    { label: '20–29', value: 2 }, { label: '30–39', value: 1 }
   ]);
   assert.deepEqual(result.faixas.at(-1), { label: '100–109', value: 1 });
   assert.equal(result.faixas.find(f => f.label === '40–49').value, 0);
-  assert.equal(result.faixas.reduce((sum, f) => sum + f.value, 0) + result.semNascimentoValido, 10);
+  assert.equal(result.faixas.reduce((sum, f) => sum + f.value, 0) + result.semNascimentoValido, 11);
   assert.equal(server.dashboardIdadeParticipante_('29/02/2000', '2026-02-28'), 25);
   assert.equal(server.dashboardIdadeParticipante_('29/02/2000', '2026-03-01'), 26);
   assert.equal(server.dashboardIdadeParticipante_('29/02/2001', '2026-03-01'), null);

@@ -252,7 +252,7 @@
   }
 
   function _isParticipanteAtivoDash(p) {
-    return _normDash(p && p.status) === 'ativo';
+    return _isParticipanteAtivoOuSeguimentoDash(p);
   }
 
   function _isParticipanteAtivoOuSeguimentoDash(p) {
@@ -265,10 +265,9 @@
     (participantes || []).forEach(function(p) {
       var key = _normDash(p && p.projeto);
       if (!key) return;
-      if (!stats[key]) stats[key] = { total: 0, ativos: 0, ativosStrict: 0 };
+      if (!stats[key]) stats[key] = { total: 0, ativos: 0 };
       stats[key].total++;
-      if (_isParticipanteAtivoOuSeguimentoDash(p)) stats[key].ativos++;
-      if (_isParticipanteAtivoDash(p)) stats[key].ativosStrict++;
+      if (_isParticipanteAtivoDash(p)) stats[key].ativos++;
     });
     return stats;
   }
@@ -684,7 +683,7 @@
     }, 0);
     var recrutAberto = projetosAtivos.filter(function(p) { return _normDash(p.status).indexOf('recrutamento aberto') >= 0; });
     var recrutZero = recrutAberto.filter(function(pr) {
-      return dashboardProjectStat(partProjetoStats, pr, 'ativosStrict') === 0;
+      return dashboardProjectStat(partProjetoStats, pr, 'ativos') === 0;
     });
     _dashKpiRecrutZeroKeys = {};
     recrutZero.forEach(function(pr) { _dashStoreProjetoKeys(_dashKpiRecrutZeroKeys, pr); });
@@ -915,9 +914,9 @@
     return pairs.slice(0, limit - 1).concat([other]);
   }
 
-  function renderDashTransportChart_(canvasId, pairs) {
+  function renderDashTransportChart_(canvasId, pairs, emptyMessage) {
     pairs = pairs || [];
-    if (!pairs.length) { dashboardDrawEmptyChart_(document.getElementById(canvasId), 'Sem transportes para o período selecionado'); return; }
+    if (!pairs.length) { dashboardDrawEmptyChart_(document.getElementById(canvasId), emptyMessage || 'Sem transportes para o período selecionado'); return; }
     _setChartHeight(canvasId, pairs.length, 28, 240, 430);
     var datasets = [
       { label: 'Realizados', data: pairs.map(function(p) { return p.realizados || 0; }), backgroundColor: '#1266f1', borderRadius: 3 },
@@ -931,6 +930,14 @@
     _barH(canvasId, pairs.map(function(p) { return p.label; }), datasets, null, true);
   }
 
+  // Espelha agendaDashboardLabClasse_ (WebApp.gs): realizado/previsto, sem cancelados e reagendados.
+  function dashAgendaLabClasse_(r, future) {
+    if (!AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_LAB_CENTRAL) || AgendaRules.isRescheduled(r)) return '';
+    var transportes = Array.isArray(r.transportes) ? r.transportes : [];
+    if (transportes.length) return transportes.some(function(t) { return t.realizado; }) ? 'realizado' : 'previsto';
+    return AgendaRules.isCompleted(r) && !future ? 'realizado' : 'previsto';
+  }
+
   // O contrato atual já traz o recorte calculado. Eventos são fallback de respostas legadas.
   function dashboardAggregateAgendaPeriod_() {
     var periodos = _dashAgendaResumoAtual && _dashAgendaResumoAtual.periodos;
@@ -938,18 +945,18 @@
       if (_dashAgendaPeriod.tipo === 'global') return periodos.global;
       var key = String(_dashAgendaPeriod.ano);
       var data = _dashAgendaPeriod.tipo === 'mes' ? periodos.meses[key + '-' + Number(_dashAgendaPeriod.mes)] : periodos.anos[key];
-      return data || { total: 0, visits: 0, labs: 0, participants: 0, monitoringDays: 0, visitsBuckets: [], labBuckets: [],
+      return data || { total: 0, visits: 0, semProtocolo: 0, semMedico: 0, labs: 0, labsPrevistos: 0, participants: 0, monitoringDays: 0, monitoringDaysPrevistos: 0, visitsBuckets: [], labBuckets: [],
         protocols: [], monitoring: [], doctors: [], cancellations: [], couriers: [], transportLabs: [],
         days: ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; }) };
     }
-    var visits = Object.create(null), labs = Object.create(null), participants = Object.create(null);
+    var visits = Object.create(null), labs = Object.create(null), labsPrev = Object.create(null), participants = Object.create(null);
     var protocols = Object.create(null), doctors = Object.create(null), monitoringDays = Object.create(null);
     var monitoring = Object.create(null), cancellations = Object.create(null), couriers = Object.create(null), transportLabs = Object.create(null);
     var days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'].map(function(label) { return { label: label, value: 0 }; });
     var months = dashAgendaMonthNames();
     var today = new Date();
     today.setHours(23, 59, 59, 999);
-    var result = { total: 0, visits: 0, labs: 0 };
+    var result = { total: 0, visits: 0, semProtocolo: 0, semMedico: 0, labs: 0, labsPrevistos: 0 };
     function add(map, key) { map[key] = (map[key] || 0) + 1; }
     function addTransport(map, key, kind) {
       if (!map[key]) map[key] = { realizados: 0, previstos: 0 };
@@ -968,18 +975,23 @@
         result.visits++;
         add(visits, bucket);
         add(protocols, project);
-        add(doctors, r.medico || 'Sem medico');
+        add(doctors, r.medico || 'Sem médico');
+        // Eventos legados já trazem o rótulo genérico no lugar do valor ausente.
+        if (!r.projeto || r.projeto === 'Sem protocolo') result.semProtocolo++;
+        if (!r.medico || r.medico === 'Sem médico' || r.medico === 'Sem medico') result.semMedico++;
         var key = String(r.participanteKey || '').trim();
         if (key) participants[key] = 1;
         if (validDate) days[date.getDay()].value++;
       }
-      if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_LAB_CENTRAL) && !future) {
-        result.labs++;
-        add(labs, bucket);
-      }
+      var labClasse = dashAgendaLabClasse_(r, future);
+      if (labClasse === 'realizado') { result.labs++; add(labs, bucket); }
+      else if (labClasse === 'previsto') { result.labsPrevistos++; add(labsPrev, bucket); }
       if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_MONITORING)) {
         var dayKey = project + '|' + (r.dataIso || '');
-        if (!monitoringDays[dayKey]) { monitoringDays[dayKey] = 1; add(monitoring, project); }
+        if (!monitoringDays[dayKey]) {
+          monitoringDays[dayKey] = future ? 'previsto' : 'realizado';
+          addTransport(monitoring, project, future ? 'previstos' : 'realizados');
+        }
       }
       if (AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_CANCELLATIONS_RESCHEDULES)) add(cancellations, project);
       var legacyTransport = AgendaRules.countsIn(r, AgendaRules.Indicator.DASHBOARD_COMPLETED_TRANSPORT) && !future && AgendaRules.isLabCentral(r);
@@ -1002,12 +1014,18 @@
       }).map(function(label) { return { label: label, value: map[label] }; });
     }
     result.participants = Object.keys(participants).length;
-    result.monitoringDays = Object.keys(monitoringDays).length;
+    result.monitoringDaysPrevistos = Object.keys(monitoringDays).filter(function(key) { return monitoringDays[key] === 'previsto'; }).length;
+    result.monitoringDays = Object.keys(monitoringDays).length - result.monitoringDaysPrevistos;
     result.visitsBuckets = buckets(visits);
-    result.labBuckets = buckets(labs);
+    result.labBuckets = buckets(Object.keys(labs).concat(Object.keys(labsPrev).filter(function(k) { return !(k in labs); })).reduce(function(acc, k) {
+      acc[k] = 1; return acc;
+    }, Object.create(null))).map(function(item) {
+      var r = labs[item.label] || 0, p = labsPrev[item.label] || 0;
+      return { label: item.label, value: r + p, realizados: r, previstos: p };
+    });
     result.days = days;
     result.protocols = dashAgendaPairs(protocols, 15);
-    result.monitoring = dashAgendaPairs(monitoring, 15);
+    result.monitoring = dashAgendaTransportPairs_(monitoring, 15);
     result.doctors = dashAgendaPairs(doctors, 12);
     result.cancellations = dashAgendaPairs(cancellations, 15);
     result.couriers = dashAgendaTransportPairs_(couriers, 12);
@@ -1023,7 +1041,7 @@
     });
     if (dashAgendaDetailsOpen_()) {
     renderDashAgendaPairChart('chartAgendaProt', data.protocols, 'Visitas', 'rgba(18,102,241,.72)');
-    renderDashAgendaPairChart('chartAgendaMonProt', data.monitoring, 'Dias', 'rgba(91,33,182,.72)');
+    renderDashTransportChart_('chartAgendaMonProt', data.monitoring, 'Sem dados para o período selecionado');
     renderDashAgendaPairChart('chartAgendaMedico', data.doctors, 'Visitas', 'rgba(46,125,50,.72)');
     renderDashAgendaPairChart('chartAgendaCancelProt', data.cancellations, 'Cancel./Reag.', 'rgba(198,40,40,.72)');
     }
@@ -1112,6 +1130,12 @@
       var el = document.getElementById(id);
       if (el) el.textContent = ids[id];
     });
+    [['dashAgendaLabPrev', aggregate && aggregate.labsPrevistos], ['dashAgendaMonPrev', aggregate && aggregate.monitoringDaysPrevistos]].forEach(function(item) {
+      var el = document.getElementById(item[0]);
+      if (el) el.textContent = item[1] === undefined || item[1] === null ? '' : item[1] + ' previstos';
+    });
+
+    renderDashboardAgendaQualidade_(aggregate, ag.qualidade);
 
     var labelEl = document.getElementById('dashAgendaPeriodoAtual');
     if (labelEl) labelEl.textContent = dashAgendaPeriodoLabel();
@@ -1144,7 +1168,10 @@
     } else dashboardDrawEmptyChart_(document.getElementById('chartAgendaVisitasMes'), 'Sem dados para o período selecionado');
     if (labPeriodo.length) {
       _setChartHeight('chartAgendaLabMes', labPeriodo.length, 20, 220, 320);
-      _barH('chartAgendaLabMes', labels(labPeriodo), [{ label: 'Lab Central', data: values(labPeriodo), backgroundColor: 'rgba(0,121,107,.72)', borderRadius: 4 }]);
+      _barH('chartAgendaLabMes', labels(labPeriodo), [
+        { label: 'Realizados', data: labPeriodo.map(function(p) { return p.realizados === undefined ? p.value || 0 : p.realizados; }), backgroundColor: '#1266f1', borderRadius: 3 },
+        { label: 'Previstos', data: labPeriodo.map(function(p) { return p.previstos || 0; }), backgroundColor: '#f59e0b', borderRadius: 3 }
+      ], null, true);
     } else dashboardDrawEmptyChart_(document.getElementById('chartAgendaLabMes'), 'Sem dados para o período selecionado');
 
     var dias = aggregate ? aggregate.days : (ag.visitasPorDiaSemana ||
@@ -1156,6 +1183,20 @@
     }
 
     renderDashboardAgendaPeriodCharts(aggregate);
+  }
+
+  // Avisa o que ficou fora ou genérico nos rankings; omitido quando não há ocorrências.
+  function renderDashboardAgendaQualidade_(aggregate, qualidade) {
+    var el = document.getElementById('dashAgendaQualidade');
+    if (!el) return;
+    function plural(n, singular, pluralText) { return n + ' ' + (n === 1 ? singular : pluralText); }
+    var avisos = [];
+    if (aggregate && aggregate.semProtocolo) avisos.push(plural(aggregate.semProtocolo, 'visita sem protocolo', 'visitas sem protocolo'));
+    if (aggregate && aggregate.semMedico) avisos.push(plural(aggregate.semMedico, 'visita sem médico', 'visitas sem médico'));
+    var semData = qualidade && Number(qualidade.semDataValida) || 0;
+    if (semData) avisos.push(plural(semData, 'agendamento sem data válida (fora de todos os indicadores)', 'agendamentos sem data válida (fora de todos os indicadores)'));
+    el.hidden = !avisos.length;
+    el.textContent = avisos.length ? 'Qualidade dos dados: ' + avisos.join('; ') + '.' : '';
   }
 
   function renderDashboardAgenda(ag) {

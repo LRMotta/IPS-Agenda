@@ -4125,25 +4125,35 @@ function participanteBloquearDetalhes_(blocked) {
   modal.setAttribute('aria-busy', 'true');
 }
 
+function participanteAvisoCarregando_(show) {
+  var aviso = document.getElementById('ptCarregandoAviso');
+  if (aviso) aviso.hidden = !show;
+}
+
 function abrirFormPart(p) {
   _participanteDetalhesConsulta = null;
   _participanteDetalhesPendente = false;
   _participanteEdicaoAtual = null;
   participanteBloquearDetalhes_(false);
+  participanteAvisoCarregando_(false);
   if (typeof p === 'string') p = JSON.parse(p);
   if (!p) { abrirFormPartPreenchido_(null); return; }
   if (!p.id) { snackErro('Não foi possível identificar o cadastro do participante.'); return; }
   var consulta = {};
   _participanteDetalhesConsulta = consulta;
   _participanteDetalhesPendente = true;
-  abrirFormPartPreenchido_(null);
+  // Os dados da listagem já cobrem identificação, status e contato: exibe-os de imediato
+  // (somente leitura) enquanto o restante do cadastro é consultado.
+  abrirFormPartPreenchido_(p);
   document.getElementById('modalPartTitle').textContent = 'EDITAR PARTICIPANTE';
   participanteBloquearDetalhes_(true);
+  participanteAvisoCarregando_(true);
   var status = document.getElementById('statusPart');
-  if (status) status.textContent = 'Carregando cadastro completo…';
+  if (status) status.textContent = '';
   function fail(error) {
     if (_participanteDetalhesConsulta !== consulta) return;
     document.getElementById('modalParticipante').setAttribute('aria-busy', 'false');
+    participanteAvisoCarregando_(false);
     if (status) {
       status.textContent = 'Não foi possível carregar o cadastro: ' + appErrorMessage(error) + ' ';
       var retry = document.createElement('button');
@@ -4158,11 +4168,23 @@ function abrirFormPart(p) {
     if (_participanteDetalhesConsulta !== consulta) return;
     if (!dados || String(dados.id || '').trim() !== String(p.id).trim()) { fail(new Error('O cadastro retornado não corresponde ao participante selecionado.')); return; }
     participanteBloquearDetalhes_(false);
+    // O histórico (Auditoria) é lido à parte para não atrasar a liberação do formulário.
+    dados.historicoPendente = true;
     try { abrirFormPartPreenchido_(dados); }
     catch (error) { participanteBloquearDetalhes_(true); fail(error); return; }
+    participanteAvisoCarregando_(false);
     _participanteEdicaoAtual = dados;
     _participanteDetalhesConsulta = null;
     _participanteDetalhesPendente = false;
+    function historicoRecebido(historico) {
+      if (_participanteEdicaoAtual !== dados) return;
+      dados.historicoPendente = false;
+      dados.historicoCadastro = historico || { indisponivel: true };
+      participanteRenderHistorico_(dados);
+    }
+    appServerRun({ method: 'getParticipanteHistoricoCadastro', args: [String(p.id)],
+      onSuccess: historicoRecebido,
+      onFailure: function() { historicoRecebido({ indisponivel: true }); } });
   }, onFailure: fail });
 }
 
@@ -4196,9 +4218,10 @@ function participanteRenderHistorico_(p) {
   var history = p && p.historicoCadastro || {};
   var cadastro = history.cadastro || {};
   var atualizacao = history.ultimaAtualizacao || {};
-  document.getElementById('ptCadastroData').textContent = cadastro.dataHora || 'Não disponível';
-  document.getElementById('ptCadastroResponsavel').textContent = cadastro.responsavel || 'Não disponível';
-  document.getElementById('ptAtualizacaoData').textContent = atualizacao.dataHora || 'Não disponível';
+  var ausente = p && p.historicoPendente ? 'Carregando…' : 'Não disponível';
+  document.getElementById('ptCadastroData').textContent = cadastro.dataHora || ausente;
+  document.getElementById('ptCadastroResponsavel').textContent = cadastro.responsavel || ausente;
+  document.getElementById('ptAtualizacaoData').textContent = atualizacao.dataHora || ausente;
   document.getElementById('ptHistoricoNota').textContent = history.indisponivel
     ? 'Não foi possível consultar o histórico. Reabra a ficha para tentar novamente.'
     : 'Fonte: Auditoria · Horário de Brasília. Informações ausentes no histórico são exibidas como não disponíveis.';
@@ -5630,9 +5653,47 @@ function carregarProjetos(force) {
       _medicosProj = ((res && res.medicos) || []).map(function(m){ return m.nome || m; });
       _solicitantesProj = ((res && res.solicitantes) || []).map(function(s){ return s.nome || s; });
       renderProjetos(sortCadastroByField((res && res.data) || [], 'nomeAbreviado', 'codigo'));
+      carregarProjetosSiv_(!!force);
     },
     function(e){ snackErro(e); },
     !!force);
+}
+
+// O bootstrap não traz datas de SIV (exigem ler a Agenda inteira no servidor).
+// Elas chegam depois da tabela e são aplicadas aos projetos exibidos.
+var PROJ_SIV_CACHE = null, PROJ_SIV_REQUEST = 0;
+
+function aplicarProjetosSiv_(mapa) {
+  var alterou = false;
+  (_projetos || []).forEach(function(p) {
+    var siv = mapa && mapa[p.id];
+    if (!siv || p.dataSiv === siv.dataSiv && p.dataSivInicio === siv.dataSivInicio && p.dataSivFim === siv.dataSivFim) return;
+    p.dataSiv = siv.dataSiv;
+    p.dataSivInicio = siv.dataSivInicio;
+    p.dataSivFim = siv.dataSivFim;
+    alterou = true;
+  });
+  if (alterou) filtrarProjetos(true);
+}
+
+function carregarProjetosSiv_(force) {
+  var requestId = ++PROJ_SIV_REQUEST;
+  if (!force && PROJ_SIV_CACHE && cadastroBootstrapCacheValid({ data: PROJ_SIV_CACHE.data, loadedAt: PROJ_SIV_CACHE.loadedAt })) {
+    aplicarProjetosSiv_(PROJ_SIV_CACHE.data);
+    return;
+  }
+  appServerRun({
+    method: 'getProjetosSivDatas',
+    onSuccess: function(mapa) {
+      // Resposta de uma carga anterior não pode sobrepor a carga atual.
+      if (requestId !== PROJ_SIV_REQUEST) return;
+      PROJ_SIV_CACHE = { data: mapa || {}, loadedAt: Date.now() };
+      aplicarProjetosSiv_(PROJ_SIV_CACHE.data);
+    },
+    onFailure: function() {
+      // Datas de SIV são complementares; a tabela já está utilizável.
+    }
+  });
 }
 
 function preencherSelectProjeto(id, valores, selected, placeholder) {

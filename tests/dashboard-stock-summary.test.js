@@ -27,11 +27,11 @@ function fixture() {
   return { server, calls, rows };
 }
 
-test('Dashboard preserva agrupamentos, estados e limites de validade sem consultar reservas', () => {
+test('Dashboard preserva agrupamentos, categoria única por lote e limites de validade sem consultar reservas', () => {
   const f = fixture();
   const original = JSON.stringify(f.rows);
   const result = f.server.getDashboardData();
-  assert.deepEqual(JSON.parse(JSON.stringify(result.estoqueResumo)), { lotes: 7, ok: 4, baixo: 1, vencidos: 2, proximosValidade: 2 });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.estoqueResumo)), { lotes: 7, ok: 3, baixo: 1, vencidos: 2, outros: 1, proximosValidade: 2 });
   assert.equal(f.calls.stock, 1);
   assert.equal(f.calls.reservations, 0);
   assert.equal(JSON.stringify(f.rows), original);

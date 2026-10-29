@@ -235,7 +235,10 @@ test('agregação única mantém KPIs e séries da Agenda em ano, mês e global'
     assert.equal(result.labs, filtered.filter(lab).length);
     assert.equal(result.participants, context.dashAgendaParticipantesAtendidos(filtered, completed));
     assert.deepEqual(plain(result.visitsBuckets), plain(context.dashAgendaPeriodoBuckets(filtered, completed)));
-    assert.deepEqual(plain(result.labBuckets), plain(context.dashAgendaPeriodoBuckets(filtered, lab)));
+    assert.deepEqual(plain(result.labBuckets.filter(b => b.realizados).map(b => ({ label: b.label, value: b.realizados }))),
+      plain(context.dashAgendaPeriodoBuckets(filtered, lab)));
+    // Lab Central futuro entra como previsto, não some do indicador.
+    assert.equal(result.labsPrevistos, tipo === 'global' ? 1 : 0);
     assert.equal(result.days.reduce((sum, day) => sum + day.value, 0), result.visits);
     assert.equal(result.monitoringDays, 1);
     assert.equal(result.protocols.reduce((sum, pair) => sum + pair.value, 0), result.visits);
@@ -254,7 +257,7 @@ test('Dashboard ignora série residual sem canvas e posiciona a Agenda no HTML f
   context.setupDashAgendaPeriodControls = () => {};
   context.renderDashboardAgendaPeriodoResumo = () => {};
   context._barH = () => { assert.fail('Não deve renderizar gráfico sem canvas'); };
-  context.renderDashboardAgenda({ antecedenciaMediaPorTipo: [{ label: 'Visita', value: 4 }] });
+  context.renderDashboardAgenda({ visitasPorProtocolo: [{ label: 'Visita', value: 4 }] });
   const content = readProjectFile('IndexDashboardContent.html');
   assert.ok(content.indexOf('id="chartCoord"') < content.indexOf('id="dashAgendaBlock"'));
   assert.ok(content.indexOf('id="dashAgendaBlock"') < content.indexOf('id="dashEstoqueBlock"'));

@@ -41,7 +41,11 @@ test('agregados de Agenda preservam todos os recortes, regras e identidades sem 
   assert.equal(summary.periodos.meses['2026-1'].participants, 1);
   assert.equal(summary.periodos.meses['2026-2'].participants, 3);
   assert.equal(summary.periodos.meses['2026-10'].visits, 1); // Hoje conta; amanhã não.
-  assert.equal(summary.periodos.meses['2026-10'].labs, 1);
+  // Courier sem status é transporte previsto, mesmo com a visita já realizada.
+  assert.equal(summary.periodos.meses['2026-10'].labs, 0);
+  assert.equal(summary.periodos.meses['2026-10'].labsPrevistos, 3);
+  assert.equal(summary.periodos.meses['2026-10'].monitoringDays, 0);
+  assert.equal(summary.periodos.meses['2026-10'].monitoringDaysPrevistos, 1);
   assert.equal(summary.periodos.anos['2027'].labs, 0);
   assert.ok(!JSON.stringify(summary).includes('cadastro:p1'));
 });
@@ -82,4 +86,33 @@ test('rankings mantêm Outros e payload cresce por recorte, não por evento', t 
   const before = Buffer.byteLength(JSON.stringify(c._dashAgendaRaw)), after = Buffer.byteLength(JSON.stringify(summary));
   assert.ok(after < before / 10);
   t.diagnostic(`1000 eventos sintéticos: ${before} bytes de eventos -> ${after} bytes de resumo completo.`);
+});
+test('Lab Central separa transportes realizados e previstos e ignora reagendados', () => {
+  const f = dashboardAgendaFixture();
+  const { cfg = f.server.AGENDA_CFG } = {};
+  const enviado = f.row('06/01/2026', 'Visita', 'Realizado', { }), reag = f.row('07/01/2026', 'Visita', 'Reagendado');
+  enviado[cfg.idx.c1.status] = 'Enviado';
+  f.sheet.rows.splice(1, f.sheet.rows.length - 1, enviado, reag, f.row('08/01/2026', 'Visita', 'Realizado'));
+  const jan = plain(f.server.getAgendaDashboardResumo_()).periodos.meses['2026-1'];
+  assert.equal(jan.labs, 1);
+  assert.equal(jan.labsPrevistos, 1);
+  assert.deepEqual(jan.labBuckets, [{ label: 'Jan', value: 2, realizados: 1, previstos: 1 }]);
+});
+test('qualidade dos dados conta visitas sem protocolo ou médico e linhas sem data válida', () => {
+  const f = dashboardAgendaFixture(), c = client(f);
+  f.rows.splice(0, f.rows.length,
+    f.row('06/01/2026', 'Visita', 'Realizado', { projeto: '', medico: '' }),
+    f.row('07/01/2026', 'Visita', 'Realizado', { medico: ' ' }),
+    f.row('08/01/2026', 'Visita', 'Agendado', { medico: '' }),
+    f.row('inválida', 'Visita', 'Realizado'), f.row('', '', '', { projeto: '' }));
+  f.sheet.rows.splice(1, f.sheet.rows.length - 1, ...f.rows);
+  const summary = plain(f.server.getAgendaDashboardResumo_());
+  const ano = summary.periodos.anos['2026'];
+  assert.equal(ano.semProtocolo, 1);
+  assert.equal(ano.semMedico, 2); // Só visitas realizadas entram nos rankings.
+  assert.equal(summary.qualidade.semDataValida, 1); // Linha totalmente vazia não conta.
+  assert.deepEqual(ano.doctors.map(d => d.label), ['Sem médico']);
+  c._dashAgendaRaw = legacyEvents(f);
+  c._dashAgendaPeriod = { tipo: 'ano', ano: 2026, mes: 1 };
+  assert.deepEqual(ano, plain(c.dashboardAggregateAgendaPeriod_()));
 });
