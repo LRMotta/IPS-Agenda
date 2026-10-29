@@ -83,8 +83,9 @@ function courierLembreteAgenda_(id, slot, snapshot) {
   snapshot = snapshot || courierLembreteAgendaSnapshot_(true);
   var idx = AGENDA_CFG.idx;
   var matches = snapshot.porId[id] || [];
-  var cfg = { '1': idx.c1, '2': idx.c2, '3': idx.c3 }[slot];
-  if (matches.length !== 1 || !cfg) return null;
+  var cfg = { '1': idx.c1, '2': idx.c2, '3': idx.c3, '4': idx.c4 }[slot];
+  // Sem as colunas do Transporte IV o slot nao existe e nao tem base de cobranca.
+  if (matches.length !== 1 || !cfg || cfg.nome < 0) return null;
   var row = snapshot.somenteIndice
     ? snapshot.sheet.getRange(matches[0].row, 1, 1, AGENDA_CFG.lastCol).getDisplayValues()[0]
     : matches[0].values;
