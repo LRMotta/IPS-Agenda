@@ -169,12 +169,13 @@ function diagnosticoGrade(options = {}) {
     codexAssertAdmin_: () => { if (options.negar) throw new Error('Acesso permitido apenas para administradores.'); },
     getTransporteSpreadsheetCodex_: () => ss,
     SpreadsheetApp: { ValueType: { IMAGE: 'IMAGE' } },
-    transportePdfSpec_: courier => {
+    transportePdfSpec_: (courier, temperatura, destino) => {
       calls.courier = courier;
+      calls.spec = [courier, temperatura, destino];
       return { ordem, copias: { [ordem[0]]: 1, [ordem[1]]: 4 } };
     },
     transportePdfActualSheetName_: chave => ({ folhaAgendamento: ordem[0], declaracaoTransp: ordem[1] })[chave] || '',
-    transporteReadRegistro_: () => ({ paciente: 'Pessoa Participante' }),
+    transporteReadRegistro_: () => Object.assign({ paciente: 'Pessoa Participante' }, options.registro || {}),
     transporteDerivarDadosParticipante_: (payload, opts) => {
       calls.derivar = opts;
       return Object.assign({ identificacaoParticipante: '007' }, payload);
@@ -272,6 +273,30 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
   ['frioMs', 'quenteMs', 'htmlMs', 'conversaoMs', 'driveMs', 'totalMs'].forEach(k => assert.equal(typeof r.tempos[k], 'number', k));
   assert.equal(calls.logs.length, 1);
   assert.doesNotMatch(calls.logs[0], /Pessoa|Participante|Dr\(a\)|token|@|base64/);
+});
+
+test('diagnostico OCASA usa o spec da courier com temperatura e destino do registro e a mesma folha', () => {
+  const { ctx, calls } = diagnosticoGrade({ registro: { temperatura: 'AMBIENTE', destino: 'Laboratório Exemplo', solicitarCaixa: 'Sim' } });
+  const r = ctx.diagnosticarGradeTransporteHtmlOcasa();
+  assert.deepEqual(calls.spec, ['OCASA', 'AMBIENTE', 'Laboratório Exemplo']);
+  assert.equal(r.courier, 'OCASA');
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls.files, ['diagnostico-grade-ocasa-20261105-120000.pdf']);
+  const html = calls.html[0];
+  assert.match(html, /Folha de Agendamento de Envio/);
+  assert.match(html, /<div class="grande">OCASA<\/div><div class="nota">Caixa de transporte: <b>Sim<\/b>/);
+  assert.match(html, /Dr\(a\)\. Exemplo/);
+  assert.doesNotMatch(html, /Pessoa Participante/);
+});
+
+test('diagnostico aceita so MARKEN e OCASA e trata o evento do editor como MARKEN', () => {
+  const editor = diagnosticoGrade();
+  assert.equal(editor.ctx.diagnosticarGradeTransporteHtml({ authMode: 'FULL' }).courier, 'MARKEN');
+  assert.equal(editor.calls.courier, 'MARKEN');
+  const dhl = diagnosticoGrade();
+  assert.throws(() => dhl.ctx.diagnosticarGradeTransporteHtml('DHL'), /somente para MARKEN e OCASA/);
+  assert.equal(dhl.calls.fetch.length, 0);
+  assert.equal(dhl.calls.files.length, 0);
 });
 
 test('cache incompleto ou ilegivel e relido da planilha', () => {

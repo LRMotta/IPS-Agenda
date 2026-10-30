@@ -451,7 +451,8 @@ var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
 
 // Courier -> abas (chaves) em que o contato de emergencia do modelo e trocado pelo
 // da courier. A MARKEN pediu a troca somente na Ficha de Emergencia; nas demais
-// abas e couriers o texto do modelo e mantido.
+// abas e couriers o texto do modelo e mantido (a Ficha OCASA traz os telefones 24 h da
+// propria OCASA).
 var TRANSPORTE_DOCS_GRADE_CONTATO_ABAS_ = {
   MARKEN: ['fichaEmergenciaMarken']
 };
@@ -1020,22 +1021,37 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
 }
 
 /* ===== Diagnostico: leitura da grade real no Apps Script =====
- * Executar manualmente no editor (somente administradores). Le as abas MARKEN da
- * planilha de Transporte sem alterar nada, duas vezes: a frio (relendo o layout e
- * gravando o cache) e a quente (layout do cache + valores). Monta o HTML da leitura
- * a quente e converte em PDF salvo na pasta privada de diagnostico. Antes do HTML
- * aplica as mesmas protecoes da copia temporaria do PDF atual
+ * Executar manualmente no editor (somente administradores). Le as abas da courier
+ * (MARKEN por padrao; OCASA por diagnosticarGradeTransporteHtmlOcasa) na planilha de
+ * Transporte sem alterar nada, duas vezes: a frio (relendo o layout e gravando o
+ * cache) e a quente (layout do cache + valores). Monta o HTML da leitura a quente e
+ * converte em PDF salvo na pasta privada de diagnostico. Antes do HTML aplica as
+ * mesmas protecoes da copia temporaria do PDF atual
  * (transporteDocsGradeProtegerConteudo_), com o participante do registro atual.
+ * As abas e copias vem de transportePdfSpec_ com a temperatura e o destino do
+ * registro (a Proforma OCASA so entra com destino fora do Brasil). A Folha de
+ * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN.
  * O log contem somente contagens, tamanhos, tempos e o hash do conteudo.
  */
-function diagnosticarGradeTransporteHtml() {
+var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA'];
+
+function diagnosticarGradeTransporteHtmlOcasa() {
+  return diagnosticarGradeTransporteHtml('OCASA');
+}
+
+function diagnosticarGradeTransporteHtml(courier) {
   codexAssertAdmin_();
+  // No editor, Executar passa um objeto de evento: so um nome de courier conta.
+  courier = typeof courier === 'string' && courier ? transporteNormalizeCourierFromCodex_(courier) : 'MARKEN';
+  if (TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.indexOf(courier) < 0) {
+    throw new Error('Diagnóstico da grade disponível somente para ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.join(' e ') + '.');
+  }
   var tempos = {};
   var inicio = Date.now();
   var ss = getTransporteSpreadsheetCodex_();
-  var spec = transportePdfSpec_('MARKEN', '', '', ss);
   var payload = transporteDerivarDadosParticipante_(transporteReadRegistro_(), { obrigatorio: true });
-  var contexto = transporteDocsGradeContextoProtecao_(ss, 'MARKEN', payload);
+  var spec = transportePdfSpec_(courier, payload.temperatura || '', payload.destino || '', ss);
+  var contexto = transporteDocsGradeContextoProtecao_(ss, courier, payload);
 
   var marca = Date.now();
   var frio = transporteDocsGradeCarregar_(ss, spec.ordem, { ignorarCache: true });
@@ -1051,7 +1067,7 @@ function diagnosticarGradeTransporteHtml() {
   marca = Date.now();
   // A Folha de Agendamento deste fluxo e o modelo HTML proprio, nao a aba da planilha.
   tempos.folhaEtapas = {};
-  var folha = transporteFolhaHtmlParaGrade_(ss, Object.assign({}, payload, { courier: 'MARKEN' }), spec, {
+  var folha = transporteFolhaHtmlParaGrade_(ss, Object.assign({}, payload, { courier: courier }), spec, {
     tempos: tempos.folhaEtapas
   });
   tempos.folhaMs = Date.now() - marca;
@@ -1063,7 +1079,7 @@ function diagnosticarGradeTransporteHtml() {
   marca = Date.now();
   var stamp = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyyMMdd-HHmmss');
   var blob = HtmlService.createHtmlOutput(html).getBlob().getAs(MimeType.PDF)
-    .setName('diagnostico-grade-marken-' + stamp + '.pdf');
+    .setName('diagnostico-grade-' + courier.toLowerCase() + '-' + stamp + '.pdf');
   tempos.conversaoMs = Date.now() - marca;
   var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
   var paginasEsperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
@@ -1081,6 +1097,7 @@ function diagnosticarGradeTransporteHtml() {
   if (quente.info.imagensOmitidas) avisos.push('IMAGEM_NAO_INCORPORADA');
   var resultado = {
     ok: paginas === paginasEsperadas && quente.info.layoutsDoCache === spec.ordem.length && !avisos.length,
+    courier: courier,
     paginas: paginas,
     paginasEsperadas: paginasEsperadas,
     avisos: avisos,
