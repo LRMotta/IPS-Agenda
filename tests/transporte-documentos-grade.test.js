@@ -165,7 +165,7 @@ function diagnosticoGrade(options = {}) {
   const pdfBlob = { name: '', setName(n) { this.name = n; return this; }, getDataAsString: () => pdfText, getBytes: () => [1, 2, 3] };
   const folder = { createFile(blob) { calls.files.push(blob.name); return { getName: () => blob.name, getUrl: () => 'https://drive.example/f' }; } };
   const cache = options.cache || cacheSimulado();
-  const ctx = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
+  const ctx = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs', 'TransporteFolhaAgendamentoHtml.gs'], {
     codexAssertAdmin_: () => { if (options.negar) throw new Error('Acesso permitido apenas para administradores.'); },
     getTransporteSpreadsheetCodex_: () => ss,
     SpreadsheetApp: { ValueType: { IMAGE: 'IMAGE' } },
@@ -179,7 +179,9 @@ function diagnosticoGrade(options = {}) {
       calls.derivar = opts;
       return Object.assign({ identificacaoParticipante: '007' }, payload);
     },
-    transporteParticipanteDocumento_: payload => ({ texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
+    transporteParticipanteDocumento_: payload => ({ iniciais: 'P.P.', identificacao: payload.identificacaoParticipante, texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
+    transporteNormalizeTemperaturaFromCodex_: v => String(v || '').toUpperCase(),
+    transporteLabCentralByDestino_: () => null,
     transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier, transporteNormalizeCourierFromCodex_: courier => String(courier).toUpperCase(),
     transportePdfManifestText_: v => String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(),
     transportePdfManifestoHash_: m => 'hash:' + JSON.stringify(m).length,
@@ -250,7 +252,9 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
   assert.match(html, /src="data:image\/png;base64,QQ=="/);
   assert.match(html, /Dr\(a\)\. Exemplo/);
   assert.doesNotMatch(html, /Pessoa Participante/);
-  assert.match(html, /P\.P\. \| ID: 007/);
+  // A Folha de Agendamento deste fluxo e o modelo HTML proprio (iniciais e ID em linhas separadas).
+  assert.match(html, /Folha de Agendamento de Envio/);
+  assert.match(html, />Participante<\/td><td class="v mono">P\.P\.<\/td><\/tr><tr><td class="k">ID<\/td><td class="v mono">007</);
   assert.equal(r.ok, true);
   assert.deepEqual([...r.avisos], []);
   assert.match(r.conteudoHash, /^hash:/);
@@ -476,7 +480,14 @@ test('imagens flutuantes sao posicionadas pela ancora e deslocamento, na escala 
   const sheet = aba([[celula('a'), {}, celula('b')], [{}, {}, {}]], { larguras: [100, 100, 100] });
   sheet.imagensFlutuantes = [{ r: 1, c: 1, x: 10, y: 4, w: 120, h: 40, url: 'https://lh3.googleusercontent.com/logo' }];
   const html = app.transporteDocsGradeHtml_(sheet, { imagemSrc: url => url + '#src' });
-  assert.match(html, /^<div style="position:relative"><table[\s\S]*<\/table><img src="https:\/\/lh3\.googleusercontent\.com\/logo#src" alt="" style="position:absolute;left:110\.0px;top:24\.3px;width:120\.0px;height:38\.8px"><\/div>$/);
+  // A imagem vai numa linha de altura zero logo antes da linha da ancora (linha 2),
+  // deslocada so dentro dela: o crescimento das linhas acima no HTML nao a desloca.
+  assert.match(html, /^<table[\s\S]*<\/tr><tr style="height:0"><td colspan="3" style="padding:0;border:0;height:0;line-height:0"><div style="position:relative;height:0"><img src="https:\/\/lh3\.googleusercontent\.com\/logo#src" alt="" style="position:absolute;left:110\.0px;top:3\.9px;width:120\.0px;height:38\.8px"><\/div><\/td><\/tr><tr style="height:[^"]*">(<td[^>]*>[^<]*<\/td>)+<\/tr><\/table>$/);
+  // Ancora em linha oculta: vai para a primeira linha visivel depois dela.
+  const oculta = aba([[celula('a')], [celula('b')], [celula('c')]], { larguras: [100] });
+  oculta.data[0].rowMetadata[1].hiddenByUser = true;
+  oculta.imagensFlutuantes = [{ r: 1, c: 0, x: 0, y: 0, w: 10, h: 10, url: 'u' }];
+  assert.match(app.transporteDocsGradeHtml_(oculta), /<\/tr><tr style="height:0">[\s\S]*<\/tr><tr style="height:[^"]*"><td[^>]*>c<\/td><\/tr><\/table>$/);
   // Sem imagens flutuantes o HTML continua so a tabela.
   assert.match(app.transporteDocsGradeHtml_(aba([[celula('a')]])), /^<table/);
 });

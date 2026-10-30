@@ -1,5 +1,5 @@
 param(
-  [string]$Path = ".\Estoque_de_Kits_Coleta.xlsx"
+  [string]$Path = ".\docs\Estoque_de_Kits_Coleta.xlsx"
 )
 
 Set-StrictMode -Version Latest
