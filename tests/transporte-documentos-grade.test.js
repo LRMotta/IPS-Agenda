@@ -501,23 +501,27 @@ test('leitura a frio incorpora imagens flutuantes com origem, conta as demais e 
   assert.match(ctx.transporteDocsGradeMontar_(r.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {}), /position:absolute/);
 });
 
-test('imagem flutuante sem origem recebe o substituto do codigo na mesma posicao, inclusive vinda do cache', () => {
+test('imagem flutuante sem origem usa o rodape (imagem de celula mais abaixo) da aba de origem, na mesma posicao', () => {
   const { ctx, ss } = diagnosticoGrade();
   const original = ss.getSheetByName;
   const semOrigem = { getUrl: () => '', getAnchorCell: () => ({ getRow: () => 2, getColumn: () => 1 }), getAnchorCellXOffset: () => 0, getAnchorCellYOffset: () => 0, getWidth: () => 200, getHeight: () => 60 };
   ss.getSheetByName = nome => Object.assign(original(nome), { getImages: () => nome === 'Folha de Agendamento' ? [semOrigem] : [] });
-  const opcoes = { imagensCodigo: { 'Folha de Agendamento': 'rodapeCampusSede' } };
-  const r = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], opcoes);
+  const opcoes = { imagensCodigo: { 'Folha de Agendamento': "Declaração d'Exemplo" } };
+  // So a Folha e lida: a imagem da aba de origem vem da propria planilha.
+  const r = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento'], opcoes);
   assert.equal(r.info.imagensOmitidas, 0);
-  const quente = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], opcoes);
-  assert.equal(quente.info.layoutsDoCache, 2);
-  const html = ctx.transporteDocsGradeMontar_(quente.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {});
-  assert.match(html, /position:absolute;[^"]*display:table"><div style="display:table-cell;vertical-align:bottom"><div class="rodape"><b>CAMPUS SEDE<\/b>/);
+  const img = r.abas['Folha de Agendamento'].imagensFlutuantes;
+  assert.deepEqual(JSON.parse(JSON.stringify(img)), [{ r: 1, c: 0, x: 0, y: 0, w: 200, h: 60, url: 'data:image/png;base64,QQ==' }]);
+  const quente = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento'], opcoes);
+  assert.equal(quente.info.layoutsDoCache, 1);
+  assert.match(ctx.transporteDocsGradeMontar_(quente.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {}),
+    /<img src="data:image\/png;base64,QQ==" alt="" style="position:absolute;left:0\.0px;/);
   // Duas imagens sem origem na mesma aba: nenhuma e substituida e ambas ficam sinalizadas.
   ss.getSheetByName = nome => Object.assign(original(nome), { getImages: () => nome === 'Folha de Agendamento' ? [semOrigem, semOrigem] : [] });
-  const duas = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], Object.assign({ ignorarCache: true }, opcoes));
+  const duas = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento'], Object.assign({ ignorarCache: true }, opcoes));
   assert.equal(duas.info.imagensOmitidas, 2);
-  assert.doesNotMatch(ctx.transporteDocsGradeMontar_(duas.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {}), /CAMPUS SEDE/);
+  assert.equal(duas.abas['Folha de Agendamento'].imagensFlutuantes.length, 0);
+  assert.equal(ctx.transporteDocsGradeImagemRodape_([{ r: 0, url: 'logo' }, { r: 52, url: 'rodape' }, { r: 3, url: 'x' }]), 'rodape');
 });
 
 test('texto quebrado que faz a linha crescer alem da pagina bloqueia mesmo com alturas nominais que cabem', () => {

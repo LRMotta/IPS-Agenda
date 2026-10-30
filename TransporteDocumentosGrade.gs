@@ -277,10 +277,6 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     for (var ir = 0; ir < img.r; ir++) if (!linhaOculta(ir)) y += altura(ir);
     var posicao = 'position:absolute;left:' + (x * escala).toFixed(1) + 'px;top:' + (y * escalaV).toFixed(1) +
       'px;width:' + (img.w * escala).toFixed(1) + 'px;height:' + (img.h * escalaV).toFixed(1) + 'px';
-    if (img.html) {
-      return '<div style="' + posicao + ';display:table"><div style="display:table-cell;vertical-align:bottom">' +
-        transporteDocsGradeSubstitutoHtml_(img.html) + '</div></div>';
-    }
     return '<img src="' + transporteDocsHtmlEscape_(srcImagem(img.url)) + '" alt="" style="' + posicao + '">';
   });
   if (!flutuantes.length) return html.join('');
@@ -418,7 +414,7 @@ function transporteDocsGradeMontar_(abas, documentos, opcoes) {
  * Alterou o modelo? Execute limparCacheLayoutTransporteHtml(): a revisao do layout
  * muda para todas as abas e couriers (sem isso o cache expira em 6 h).
  */
-var TRANSPORTE_DOCS_GRADE_CACHE_VERSAO_ = 'tdg3';
+var TRANSPORTE_DOCS_GRADE_CACHE_VERSAO_ = 'tdg4';
 var TRANSPORTE_DOCS_GRADE_CACHE_TTL_S_ = 21600;
 var TRANSPORTE_DOCS_GRADE_CACHE_PEDACO_ = 90000;
 var TRANSPORTE_DOCS_GRADE_REVISAO_PROP_ = 'TRANSPORTE_DOCS_GRADE_LAYOUT_REV';
@@ -429,12 +425,13 @@ var TRANSPORTE_DOCS_GRADE_FORMATOS_CODIGO_ = {
   declaracaoTransp: ['J21:L28']
 };
 
-// Chave da aba -> conteudo do codigo no lugar da imagem flutuante enviada por upload
-// (sem origem legivel), na mesma posicao e tamanho. So vale quando a aba tem
-// exatamente uma imagem assim; as demais continuam sinalizadas como omitidas.
-// invoiceMarken: rodape "CAMPUS SEDE" (transporteDocsHtmlRodape_).
+// Chave da aba -> chave da aba de origem da imagem flutuante enviada por upload (sem
+// origem legivel). A imagem usada e a de celula mais abaixo na aba de origem (o
+// rodape), na posicao e no tamanho da flutuante. So vale quando a aba tem exatamente
+// uma imagem assim; as demais continuam sinalizadas como omitidas.
+// invoiceMarken: o rodape "CAMPUS SEDE" e a mesma imagem de B53 da Declaracao.
 var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
-  invoiceMarken: 'rodapeCampusSede'
+  invoiceMarken: 'declaracaoTransp'
 };
 
 // Courier -> abas (chaves) em que o contato de emergencia do modelo e trocado pelo
@@ -559,10 +556,6 @@ function transporteDocsGradeLayout_(sheet, imagens) {
   var flutuantes = [];
   var omitidas = Number(sheet.imagensFlutuantesSemOrigem) || 0;
   (sheet.imagensFlutuantes || []).forEach(function(img) {
-    if (img.html) {
-      flutuantes.push({ r: img.r, c: img.c, x: img.x, y: img.y, w: img.w, h: img.h, html: img.html });
-      return;
-    }
     var src = imagens && imagens[img.url];
     if (src) flutuantes.push({ r: img.r, c: img.c, x: img.x, y: img.y, w: img.w, h: img.h, url: src });
     else omitidas++;
@@ -690,7 +683,7 @@ function transporteDocsGradeUrlsImagens_(sheets) {
         if (img) urls[img.imageProperties.contentUrl] = true;
       });
     });
-    (sheet.imagensFlutuantes || []).forEach(function(img) { if (img.url) urls[img.url] = true; });
+    (sheet.imagensFlutuantes || []).forEach(function(img) { urls[img.url] = true; });
   });
   return Object.keys(urls);
 }
@@ -699,7 +692,7 @@ function transporteDocsGradeUrlsImagens_(sheets) {
  * Imagens sobre a grade (OverGridImage): ancora, deslocamento e tamanho em pixels do
  * Sheets. getUrl so existe para imagens inseridas por URL; as enviadas por upload
  * nao tem origem legivel: sao contadas (semOrigem) e a posicao fica em
- * posicoesSemOrigem, para um substituto do codigo (TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_).
+ * posicoesSemOrigem, para a imagem de origem de TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_.
  */
 function transporteDocsGradeImagensFlutuantes_(sh) {
   var out = { imagens: [], semOrigem: 0, posicoesSemOrigem: [] };
@@ -735,19 +728,23 @@ function transporteDocsGradePosicaoImagem_(img) {
   }
 }
 
-function transporteDocsGradeSubstitutoHtml_(chave) {
-  return chave === 'rodapeCampusSede' ? transporteDocsHtmlRodape_() : '';
-}
-
-// Titulo real da aba -> substituto de TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_.
+// Titulo real da aba -> titulo real da aba de origem (TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_).
 function transporteDocsGradeImagensCodigo_(ss) {
   var out = {};
   if (typeof transportePdfActualSheetName_ !== 'function') return out;
   Object.keys(TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_).forEach(function(chave) {
     var titulo = transportePdfActualSheetName_(chave, ss);
-    if (titulo) out[titulo] = TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_[chave];
+    var origem = transportePdfActualSheetName_(TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_[chave], ss);
+    if (titulo && origem) out[titulo] = origem;
   });
   return out;
+}
+
+// URL da imagem de celula mais abaixo (o rodape) entre as encontradas na aba.
+function transporteDocsGradeImagemRodape_(celulas) {
+  var rodape = null;
+  (celulas || []).forEach(function(img) { if (!rodape || img.r > rodape.r) rodape = img; });
+  return rodape ? rodape.url : '';
 }
 
 // O token do usuario so acompanha downloads de hosts do Google.
@@ -832,17 +829,35 @@ function transporteDocsGradeCarregar_(ss, titulos, opcoes) {
     var sheets = leitura.dados.sheets || [];
 
     marca = Date.now();
+    var celulasPorAba = {};
+    var celulasDaAba = function(titulo) {
+      if (!celulasPorAba[titulo]) {
+        var sh = ss.getSheetByName(titulo);
+        celulasPorAba[titulo] = sh ? transporteDocsGradeImagensCelulas_(sh) : [];
+      }
+      return celulasPorAba[titulo];
+    };
+    var flutuantesPorAba = {};
     sheets.forEach(function(sheet) {
-      var sh = ss.getSheetByName(sheet.properties.title);
+      var titulo = sheet.properties.title;
+      var sh = ss.getSheetByName(titulo);
       if (!sh) return;
-      transporteDocsGradeImagensCelulas_(sh).forEach(function(img) {
+      celulasDaAba(titulo).forEach(function(img) {
         transporteDocsGradeMarcarImagem_(sheet, img.r, img.c, img.url);
       });
-      var flutuantes = transporteDocsGradeImagensFlutuantes_(sh);
-      var substituto = imagensCodigo[sheet.properties.title];
-      if (substituto && flutuantes.semOrigem === 1 && flutuantes.posicoesSemOrigem.length === 1) {
-        flutuantes.imagens.push(Object.assign({ html: substituto }, flutuantes.posicoesSemOrigem[0]));
-        flutuantes.semOrigem = 0;
+      flutuantesPorAba[titulo] = transporteDocsGradeImagensFlutuantes_(sh);
+    });
+    sheets.forEach(function(sheet) {
+      var titulo = sheet.properties.title;
+      var flutuantes = flutuantesPorAba[titulo];
+      if (!flutuantes) return;
+      var origem = imagensCodigo[titulo];
+      if (origem && flutuantes.semOrigem === 1 && flutuantes.posicoesSemOrigem.length === 1) {
+        var url = transporteDocsGradeImagemRodape_(celulasDaAba(origem));
+        if (url) {
+          flutuantes.imagens.push(Object.assign({ url: url }, flutuantes.posicoesSemOrigem[0]));
+          flutuantes.semOrigem = 0;
+        }
       }
       sheet.imagensFlutuantes = flutuantes.imagens;
       sheet.imagensFlutuantesSemOrigem = flutuantes.semOrigem;
