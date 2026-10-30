@@ -425,11 +425,18 @@ function transporteDocsHtmlMontar_(dados, documentos, opcoes) {
     for (var i = 0; i < Math.max(1, Number(doc.copias) || 1); i++) paginas.push(pagina);
   });
   if (!paginas.length) throw new Error('Nenhum documento informado para a documentação HTML.');
+  return transporteDocsHtmlDocumento_(paginas);
+}
+
+// Envolve paginas ja renderizadas (uma por copia) no documento A4 comum.
+// pagina: { larguraPx, margem } (padrao: prototipo com colunas A e final recortadas).
+function transporteDocsHtmlDocumento_(paginas, pagina) {
+  pagina = pagina || { larguraPx: TRANSPORTE_DOCS_HTML_LARGURA_PX_, margem: '12.7mm 12.2mm 2.5mm 12.2mm' };
   return '<!doctype html><html><head><meta charset="utf-8"><style>' +
-    '@page{size:A4;margin:12.7mm 12.2mm 2.5mm 12.2mm}' +
+    '@page{size:A4;margin:' + pagina.margem + '}' +
     'html,body{margin:0;padding:0;background:#fff}' +
     'body{font-family:Arial,Helvetica,sans-serif;color:#000}' +
-    '.pagina{width:' + TRANSPORTE_DOCS_HTML_LARGURA_PX_ + 'px;height:' + TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_ + 'px;overflow:hidden;page-break-after:always;break-after:page}' +
+    '.pagina{width:' + pagina.larguraPx + 'px;height:' + TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_ + 'px;overflow:hidden;page-break-after:always;break-after:page}' +
     '.pagina:last-child{page-break-after:auto;break-after:auto}' +
     '.grade{border-collapse:collapse;table-layout:fixed}' +
     '.grade td{padding:0 2px;white-space:nowrap;overflow:visible;font-size:7.8pt;line-height:1.15;vertical-align:bottom}' +
@@ -438,7 +445,7 @@ function transporteDocsHtmlMontar_(dados, documentos, opcoes) {
     '.cb{display:inline-block;width:9px;height:9px;border:1px solid #000;border-radius:1px;font-size:8pt;line-height:9px;text-align:center;font-weight:bold;color:#000}' +
     '.rodape{font-size:5.6pt;line-height:1.3;text-align:center;white-space:normal}' +
     '</style></head><body>' +
-    paginas.map(function(pagina) { return '<div class="pagina">' + pagina + '</div>'; }).join('') +
+    paginas.map(function(html) { return '<div class="pagina">' + html + '</div>'; }).join('') +
     '</body></html>';
 }
 
