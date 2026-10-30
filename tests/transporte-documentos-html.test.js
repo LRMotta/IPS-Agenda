@@ -179,3 +179,15 @@ test('caixas marcadas nao dependem de cor de fundo, que o conversor HtmlService 
   assert.deepEqual([...new Set(html.match(/background:[^;}]+/g))], ['background:#fff']);
   assert.equal((html.match(/<span class="cb">&#10003;<\/span>/g) || []).length, 2);
 });
+
+test('volumes sao compactados como em transporteAjustarVolumesDeclaracao_ antes do limite de 42 caracteres', () => {
+  const { runFiles } = require('./helpers/load-app-script');
+  const comRegras = runFiles(['TransporteCodexConfig.gs', 'TransporteDocumentosHtml.gs']);
+  const formula = '2 x 4.0 + 2 x 4.0 + 2 x 4.0 + 2 x 4.0 + 2 x 4.0';
+  assert.ok(formula.length > 42);
+  const linha = comRegras.transporteDocsHtmlMateriais_({ materiais: [{ tipo: 'soro', tubos: 10, formula, total: 40 }] })[1];
+  assert.equal(linha.formula, '2×4,0; 2×4,0; 2×4,0; 2×4,0; 2×4,0');
+  assert.equal(linha.fonte, 10);
+  // Sem as regras de volume carregadas, o texto segue como informado.
+  assert.throws(() => app.transporteDocsHtmlMateriais_({ materiais: [{ tipo: 'soro', tubos: 10, formula, total: 40 }] }), /linha\(s\) 22/);
+});

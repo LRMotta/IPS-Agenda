@@ -135,19 +135,32 @@ function somenteValores(sheet) {
 
 function diagnosticoGrade(options = {}) {
   const calls = { fetch: [], fetchAll: [], html: [], files: [], logs: [], avancado: [], getValues: [] };
+  const propriedades = options.propriedades || new Map();
   const ordem = ['Folha de Agendamento', "Declaração d'Exemplo"];
   const folha = aba([[celula('x'), {}, {}], [{}, {}, {}], [celula('Rótulo'), {}, celula('Pessoa Participante')]], { titulo: ordem[0], larguras: [100, 100, 100] });
   // A API publica nao devolve imagens de celula: o logo (A1) vem como CellImage do SpreadsheetApp.
   const declaracao = aba([[{ effectiveFormat: { borders: { bottom: SOLID } } }, celula('Dr(a). Exemplo')]], { titulo: ordem[1] });
-  const celulaImagem = { valueType: 'IMAGE', getContentUrl: () => 'https://img.example/a?key=1' };
+  const celulaImagem = { valueType: 'IMAGE', getContentUrl: () => 'https://lh3.googleusercontent.com/a?key=1' };
   const ss = {
     getId: () => 'planilha-id',
+    getSpreadsheetLocale: () => options.locale || 'pt_BR',
     getSheetByName: nome => ({ getDataRange: () => ({ getValues: () => {
       calls.getValues.push(nome);
       return nome === ordem[1] ? [[celulaImagem, 'Dr(a). Exemplo']] : [['x', '', ''], ['', '', ''], ['Rótulo', '', 'Pessoa Participante']];
     } }) })
   };
-  const responder = url => (url.includes('startRow') ? { sheets: [somenteValores(folha), somenteValores(declaracao)] } : { sheets: [folha, declaracao] });
+  const formatosDeclaracao = { properties: { title: ordem[1] }, data: [{ startRow: 20, startColumn: 9, rowData: [{ values: [{ effectiveFormat: { textFormat: { fontSize: 9 } } }] }] }] };
+  const responder = url => {
+    if (url.includes('effectiveFormat') && url.includes('startRow')) return { sheets: [formatosDeclaracao] };
+    return url.includes('startRow') ? { sheets: [somenteValores(folha), somenteValores(declaracao)] } : { sheets: [folha, declaracao] };
+  };
+  const respostaPlanilha = (url, opts) => {
+    calls.fetch.push({ url, opts });
+    const corpo = options.http
+      ? JSON.stringify({ error: { code: options.http, status: 'PERMISSION_DENIED', message: 'texto livre', details: [{ reason: 'SERVICE_DISABLED' }] } })
+      : JSON.stringify(responder(url));
+    return { getResponseCode: () => options.http || 200, getContentText: () => corpo };
+  };
   const pdfText = Array.from({ length: options.paginas || 5 }, () => '<< /Type /Page >>').join('') + '<< /Type /Pages >>';
   const pdfBlob = { name: '', setName(n) { this.name = n; return this; }, getDataAsString: () => pdfText, getBytes: () => [1, 2, 3] };
   const folder = { createFile(blob) { calls.files.push(blob.name); return { getName: () => blob.name, getUrl: () => 'https://drive.example/f' }; } };
@@ -160,19 +173,30 @@ function diagnosticoGrade(options = {}) {
       calls.courier = courier;
       return { ordem, copias: { [ordem[0]]: 1, [ordem[1]]: 4 } };
     },
+    transportePdfActualSheetName_: chave => ({ folhaAgendamento: ordem[0], declaracaoTransp: ordem[1] })[chave] || '',
+    transporteReadRegistro_: () => ({ paciente: 'Pessoa Participante' }),
+    transporteDerivarDadosParticipante_: (payload, opts) => {
+      calls.derivar = opts;
+      return Object.assign({ identificacaoParticipante: '007' }, payload);
+    },
+    transporteParticipanteDocumento_: payload => ({ texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
+    transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier,
+    transportePdfManifestText_: v => String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(),
+    transportePdfManifestoHash_: m => 'hash:' + JSON.stringify(m).length,
     ScriptApp: { getOAuthToken: () => 'token-teste' },
     CacheService: { getScriptCache: () => cache },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: k => (propriedades.has(k) ? propriedades.get(k) : null),
+      setProperty: (k, v) => propriedades.set(k, v)
+    }) },
     UrlFetchApp: {
-      fetch: (url, opts) => {
-        calls.fetch.push({ url, opts });
-        const corpo = options.http
-          ? JSON.stringify({ error: { code: options.http, status: 'PERMISSION_DENIED', message: 'texto livre', details: [{ reason: 'SERVICE_DISABLED' }] } })
-          : JSON.stringify(responder(url));
-        return { getResponseCode: () => options.http || 200, getContentText: () => corpo };
-      },
+      fetch: respostaPlanilha,
       fetchAll: reqs => {
-        calls.fetchAll.push([...reqs].map(r => r.url + ' ' + r.headers.Authorization));
-        return reqs.map(() => ({ getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/png', getBytes: () => [65] }) }));
+        const imagens = [...reqs].filter(r => !r.url.startsWith('https://sheets.googleapis.com/'));
+        if (imagens.length) calls.fetchAll.push(imagens.map(r => r.url + ' ' + (r.headers ? r.headers.Authorization : 'sem-token')));
+        return reqs.map(r => (r.url.startsWith('https://sheets.googleapis.com/')
+          ? respostaPlanilha(r.url, r)
+          : { getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/png', getBytes: () => [65] }) }));
       }
     },
     Utilities: utilitiesReais(),
@@ -184,24 +208,30 @@ function diagnosticoGrade(options = {}) {
       Sheets: { Spreadsheets: { get: (id, params) => { calls.avancado.push({ id, params }); return { sheets: [folha, declaracao] }; } } }
     } : {})
   });
-  return { ctx, calls, cache, ss };
+  return { ctx, calls, cache, ss, propriedades };
 }
 
 test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda leitura busca so os valores', () => {
   const { ctx, calls, cache } = diagnosticoGrade();
   const r = ctx.diagnosticarGradeTransporteHtml();
   assert.equal(calls.courier, 'MARKEN');
-  // Layout a frio + valores a frio + valores a quente.
-  assert.equal(calls.fetch.length, 3);
-  const [layout, valoresFrio, valoresQuente] = calls.fetch.map(f => f.url);
+  // Layout a frio + (valores + formatos dinamicos) a frio e a quente.
+  assert.equal(calls.fetch.length, 5);
+  const [layout, valoresFrio, formatosFrio, valoresQuente, formatosQuente] = calls.fetch.map(f => f.url);
   assert.match(layout, /^https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/planilha-id\?includeGridData=true&fields=sheets\(properties\(title\)%2Cmerges/);
   assert.match(layout, /&ranges='Folha%20de%20Agendamento'&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'$/);
   assert.match(valoresQuente, /startRow/);
   assert.doesNotMatch(valoresQuente, /effectiveFormat|merges/);
   assert.match(valoresQuente, /&ranges='Folha%20de%20Agendamento'!A1%3AC3&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'!A1%3AB1$/);
   assert.equal(valoresFrio, valoresQuente);
+  // Faixa formatada por codigo (volumes da Declaracao) relida a cada geracao, so com formatos.
+  assert.equal(formatosFrio, formatosQuente);
+  assert.match(formatosQuente, /effectiveFormat/);
+  assert.doesNotMatch(formatosQuente, /formattedValue/);
+  assert.match(formatosQuente, /&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'!J21%3AL28$/);
+  assert.equal(calls.derivar.obrigatorio, true);
   calls.fetch.forEach(f => assert.equal(f.opts.headers.Authorization, 'Bearer token-teste'));
-  assert.deepEqual(calls.fetchAll, [['https://img.example/a?key=1 Bearer token-teste']]);
+  assert.deepEqual(calls.fetchAll, [['https://lh3.googleusercontent.com/a?key=1 Bearer token-teste']]);
   // SpreadsheetApp so e consultado para montar o layout (leitura a frio).
   assert.deepEqual(calls.getValues, ['Folha de Agendamento', "Declaração d'Exemplo"]);
 
@@ -212,7 +242,7 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
     const texto = Array.from({ length: n }, (_, i) => cache.itens.get(chave + ':' + i)).join('');
     const layoutGuardado = require('node:zlib').gunzipSync(Buffer.from(texto, 'base64')).toString('utf8');
     assert.match(layoutGuardado, /effectiveFormat|columnMetadata/);
-    assert.doesNotMatch(layoutGuardado, /Pessoa|Dr\(a\)|Rótulo|formattedValue|img\.example/);
+    assert.doesNotMatch(layoutGuardado, /Pessoa|Dr\(a\)|Rótulo|formattedValue|googleusercontent/);
   });
 
   const html = calls.html[0];
@@ -220,8 +250,11 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
   assert.match(html, /src="data:image\/png;base64,QQ=="/);
   assert.match(html, /Dr\(a\)\. Exemplo/);
   assert.doesNotMatch(html, /Pessoa Participante/);
-  assert.match(html, /\[participante\]/);
+  assert.match(html, /P\.P\. \| ID: 007/);
   assert.equal(r.ok, true);
+  assert.deepEqual([...r.avisos], []);
+  assert.match(r.conteudoHash, /^hash:/);
+  assert.equal(r.quente.info.faixasFormatoDinamico, 1);
   assert.equal(r.abasMontadas, 2);
   assert.equal(r.frio.info.layoutsDoCache, 0);
   assert.equal(r.frio.info.viaLayout, 'rest');
@@ -246,13 +279,21 @@ test('cache incompleto ou ilegivel e relido da planilha', () => {
   assert.equal(Object.keys(r.abas).length, 2);
 });
 
-test('limpar cache remove o contador e os pedacos de cada aba MARKEN', () => {
-  const { ctx, cache, ss } = diagnosticoGrade();
-  ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {});
-  assert.ok(cache.itens.size > 0);
+test('limpar cache muda a revisao do layout e a proxima leitura rele o modelo de todas as abas', () => {
+  const { ctx, calls, ss, propriedades } = diagnosticoGrade();
+  const titulos = ['Folha de Agendamento', "Declaração d'Exemplo"];
+  const leiturasLayout = () => calls.fetch.filter(f => !f.url.includes('startRow')).length;
+  ctx.transporteDocsGradeCarregar_(ss, titulos, {});
+  assert.equal(ctx.transporteDocsGradeCarregar_(ss, titulos, {}).info.layoutsDoCache, 2);
+  assert.equal(leiturasLayout(), 1);
   const r = ctx.limparCacheLayoutTransporteHtml();
-  assert.equal(cache.itens.size, 0);
-  assert.equal(r.chavesRemovidas, 4);
+  assert.equal(r.ok, true);
+  assert.equal(propriedades.get('TRANSPORTE_DOCS_GRADE_LAYOUT_REV'), r.revisao);
+  assert.equal(ctx.transporteDocsGradeCarregar_(ss, titulos, {}).info.layoutsDoCache, 0);
+  assert.equal(leiturasLayout(), 2);
+  const negado = diagnosticoGrade({ negar: true });
+  assert.throws(() => negado.ctx.limparCacheLayoutTransporteHtml(), /administradores/);
+  assert.equal(negado.propriedades.size, 0);
 });
 
 test('diagnostico exige administrador e para em erro HTTP sem servico avancado, sem gerar arquivo', () => {
@@ -272,7 +313,7 @@ test('REST recusada recorre ao servico avancado Sheets com os mesmos intervalos 
   assert.equal(calls.avancado[0].id, 'planilha-id');
   assert.deepEqual([...calls.avancado[0].params.ranges], ["'Folha de Agendamento'", "'Declaração d''Exemplo'"]);
   assert.equal(calls.avancado[0].params.includeGridData, true);
-  assert.match(calls.avancado[0].params.fields, /^sheets\(properties\(title\),merges,data\(/);
+  assert.match(calls.avancado[0].params.fields, /^sheets\(properties\(title\),merges,conditionalFormats\(ranges\),data\(/);
   assert.match(calls.avancado[1].params.fields, /startRow/);
   assert.equal(r.frio.info.viaLayout, 'avancado (REST HTTP 403: PERMISSION_DENIED / SERVICE_DISABLED)');
   assert.equal(r.paginas, 5);
@@ -307,4 +348,170 @@ test('layout com valores aplicados reproduz o HTML da grade completa', () => {
   assert.doesNotMatch(JSON.stringify(layout), /Titulo|formattedValue|effectiveValue/);
   const reconstruido = app.transporteDocsGradeHtml_(app.transporteDocsGradeAplicarValores_(JSON.parse(JSON.stringify(layout)), somenteValores(sheet)));
   assert.equal(reconstruido, completo);
+});
+
+test('formato relido na geracao substitui o do layout em cache (fonte dos volumes e formatacao condicional)', () => {
+  const sheet = aba([[celula('Volumes', { effectiveFormat: { textFormat: { fontSize: 11 } } }), celula('fim')]]);
+  sheet.conditionalFormats = [{ ranges: [{ sheetId: 1, startRowIndex: 0, endRowIndex: 99, startColumnIndex: 1 }] }];
+  const layout = app.transporteDocsGradeLayout_(JSON.parse(JSON.stringify(sheet)), {});
+  assert.deepEqual(JSON.parse(JSON.stringify(layout.formatosCondicionais)), [{ r0: 0, r1: 1, c0: 1, c1: 2 }]);
+  assert.deepEqual([...app.transporteDocsGradeFaixasDinamicas_(layout, ['J21:L28'])], ["'Modelo'!B1:B1", "'Modelo'!J21:L28"]);
+
+  app.transporteDocsGradeAplicarValores_(layout, somenteValores(sheet));
+  const emCache = app.transporteDocsGradeHtml_(JSON.parse(JSON.stringify(layout)));
+  assert.match(emCache, /font-size:10\.67pt[^>]*>Volumes</);
+  app.transporteDocsGradeAplicarFormatos_(layout, { data: [{ startRow: 0, startColumn: 0, rowData: [{ values: [{ effectiveFormat: { textFormat: { fontSize: 9, bold: true } } }] }] }] });
+  const relido = app.transporteDocsGradeHtml_(layout);
+  assert.match(relido, /font-weight:bold;font-size:8\.73pt[^>]*>Volumes</);
+});
+
+test('aba mais alta que uma pagina A4 bloqueia em vez de ser cortada sem aviso', () => {
+  const linhas = Array.from({ length: 40 }, () => [celula('x')]);
+  const alta = aba(linhas, { titulo: 'Invoice longa', larguras: [100] });
+  assert.ok(app.transporteDocsGradeHtml_(JSON.parse(JSON.stringify(alta))).length > 0);
+  alta.data[0].rowMetadata[0].pixelSize = 21 * 40;
+  assert.throws(() => app.transporteDocsGradeHtml_(alta), /"Invoice longa" excede a altura de uma página A4 no HTML \(\d+ px de 1040 px\)/);
+  // Linhas ocultas nao contam, como no exportador.
+  alta.data[0].rowMetadata[0].hiddenByUser = true;
+  assert.ok(app.transporteDocsGradeHtml_(alta).length > 0);
+});
+
+function abasParaProtecao() {
+  const folha = aba([
+    [celula('Folha')], [celula('')], [{}, {}, celula('Maria Exemplo')],
+    ...Array.from({ length: 11 }, () => [celula('')]),
+    [{}, {}, celula('{"caixaTransporte":{}}')]
+  ], { titulo: 'Folha', larguras: [100, 100, 100] });
+  const declaracao = aba([[celula('Telefone de Emergência (24H): +55 54 99909-1656')], [celula('{{TRANSPORTE_CONTATO_EMERGENCIA}}')], [celula('Dr(a). Exemplo')]], { titulo: 'Declaração' });
+  return { Folha: folha, 'Declaração': declaracao };
+}
+
+const appProtecao = runFiles(['TransporteCodexConfig.gs', 'TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs']);
+
+test('protecao em memoria reproduz a copia temporaria: C3 documental, C15 vazio e contato da courier', () => {
+  const abas = abasParaProtecao();
+  const conteudo = appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
+    folhas: ['Folha', 'Folha DHL ausente'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12',
+    contatoEmergencia: 'Telefone de Emergência (24H): 55 11 0000-0000', nomes: ['Maria Exemplo', '']
+  });
+  const folha = abas.Folha.data[0].rowData;
+  assert.equal(folha[2].values[2].formattedValue, 'M.E. | ID: 12');
+  assert.equal(folha[14].values[2].formattedValue, '');
+  const declaracao = abas['Declaração'].data[0].rowData;
+  assert.equal(declaracao[0].values[0].formattedValue, 'Telefone de Emergência (24H): 55 11 0000-0000');
+  assert.equal(declaracao[1].values[0].formattedValue, 'Telefone de Emergência (24H): 55 11 0000-0000');
+  assert.equal(declaracao[2].values[0].formattedValue, 'Dr(a). Exemplo');
+  assert.deepEqual([...conteudo.map(c => c.aba)], ['Folha', 'Declaração']);
+  assert.equal(conteudo[0].valores[2][2], 'M.E. | ID: 12');
+  const html = appProtecao.transporteDocsGradeMontar_(abas, [{ aba: 'Folha', copias: 1 }, { aba: 'Declaração', copias: 1 }], {});
+  assert.doesNotMatch(html, /Maria Exemplo|caixaTransporte|99909/);
+});
+
+test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {
+  const abas = abasParaProtecao();
+  abas['Declaração'].data[0].rowData[2].values[0].formattedValue = 'Participante: MARIA  exemplo';
+  assert.throws(() => appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
+    folhas: ['Folha'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12', contatoEmergencia: '', nomes: ['Maria Exemplo']
+  }), err => /^PDF bloqueado: identificação nominal/.test(err.message) && !/maria/i.test(err.message));
+});
+
+test('locale diferente de pt_BR e sinalizado no diagnostico', () => {
+  const { ctx } = diagnosticoGrade({ locale: 'en_US' });
+  const r = ctx.diagnosticarGradeTransporteHtml();
+  assert.equal(r.ok, false);
+  assert.deepEqual([...r.avisos], ['LOCALE_DIFERENTE_DE_PT_BR']);
+});
+
+test('texto a direita invade so as vazias necessarias a esquerda; centralizado invade os dois lados mantendo o centro', () => {
+  const longo = 'Texto longo alinhado';
+  const direita = app.transporteDocsGradeHtml_(aba([[
+    celula('a'), {}, {}, celula(longo, { effectiveFormat: { textFormat: { fontSize: 10 }, horizontalAlignment: 'RIGHT' } })
+  ]], { larguras: [50, 60, 80, 60] }));
+  // 'Texto longo alinhado' (~125 px) cabe em C + D: a coluna B continua livre e o
+  // texto 'a', alinhado a esquerda, a ocupa como antes.
+  assert.match(direita, /<td colspan="2" style="[^"]*text-align:left[^"]*">a<\/td><td colspan="2" style="[^"]*text-align:right[^"]*overflow:hidden[^"]*">Texto longo alinhado<\/td>/);
+
+  const centro = app.transporteDocsGradeHtml_(aba([[
+    {}, {}, celula(longo, { effectiveFormat: { textFormat: { fontSize: 10 }, horizontalAlignment: 'CENTER' } }), {}, celula('fim')
+  ]], { larguras: [40, 30, 50, 60, 40] }));
+  // Um lado de cada vez: B e D; D e 30 px mais larga, entao a direita recebe o recuo extra.
+  assert.match(centro, /<td style="[^"]*"><\/td><td colspan="3" style="[^"]*text-align:center[^"]*padding:[\d.]+px 32\.0px [\d.]+px 2px[^"]*">Texto longo alinhado<\/td><td style="[^"]*">fim<\/td>/);
+
+  // Sem espaco livre dos dois lados, o centralizado nao invade (o Sheets corta).
+  const bloqueado = app.transporteDocsGradeHtml_(aba([[
+    celula('x'), celula(longo, { effectiveFormat: { textFormat: { fontSize: 10 }, horizontalAlignment: 'CENTER' } }), {}, celula('y')
+  ]], { larguras: [40, 50, 60, 40] }));
+  assert.doesNotMatch(bloqueado, /colspan/);
+
+  // Texto curto a direita nao absorve nada; o alinhado a esquerda segue como antes.
+  const curto = app.transporteDocsGradeHtml_(aba([[{}, celula('12', { effectiveValue: { numberValue: 12 } })]], { larguras: [50, 60] }));
+  assert.doesNotMatch(curto, /colspan/);
+});
+
+test('mesclagem com origem em linha ou coluna oculta aparece na primeira linha/coluna visivel', () => {
+  const linhas = [[celula('Titulo mesclado'), {}, celula('fim')], [{}, {}, {}], [{}, {}, {}]];
+  const sheet = aba(linhas, { larguras: [80, 80, 80], merges: [{ startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 2 }] });
+  sheet.data[0].rowMetadata[0].hiddenByUser = true;
+  const html = app.transporteDocsGradeHtml_(sheet);
+  assert.match(html, /<tr[^>]*><td colspan="2" rowspan="2"[^>]*>Titulo mesclado<\/td><td[^>]*><\/td><\/tr><tr[^>]*><td[^>]*><\/td><\/tr><\/table>/);
+
+  const porColuna = aba(linhas.map(l => l.slice()), { larguras: [80, 80, 80], ocultas: [0], merges: [{ startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 2 }] });
+  assert.match(app.transporteDocsGradeHtml_(porColuna), /<tr[^>]*><td style="[^"]*">Titulo mesclado<\/td><td style="[^"]*">fim<\/td><\/tr>/);
+});
+
+test('imagens flutuantes sao posicionadas pela ancora e deslocamento, na escala da pagina', () => {
+  const sheet = aba([[celula('a'), {}, celula('b')], [{}, {}, {}]], { larguras: [100, 100, 100] });
+  sheet.imagensFlutuantes = [{ r: 1, c: 1, x: 10, y: 4, w: 120, h: 40, url: 'https://lh3.googleusercontent.com/logo' }];
+  const html = app.transporteDocsGradeHtml_(sheet, { imagemSrc: url => url + '#src' });
+  assert.match(html, /^<div style="position:relative"><table[\s\S]*<\/table><img src="https:\/\/lh3\.googleusercontent\.com\/logo#src" alt="" style="position:absolute;left:110\.0px;top:24\.3px;width:120\.0px;height:38\.8px"><\/div>$/);
+  // Sem imagens flutuantes o HTML continua so a tabela.
+  assert.match(app.transporteDocsGradeHtml_(aba([[celula('a')]])), /^<table/);
+});
+
+test('leitura a frio incorpora imagens flutuantes com origem, conta as demais e so envia o token a hosts Google', () => {
+  const { ctx, calls, ss } = diagnosticoGrade();
+  const original = ss.getSheetByName;
+  ss.getSheetByName = nome => Object.assign(original(nome), nome !== 'Folha de Agendamento' ? {} : {
+    getImages: () => [
+      { getUrl: () => 'https://exemplo.org/logo.png', getAnchorCell: () => ({ getRow: () => 1, getColumn: () => 2 }), getAnchorCellXOffset: () => 3, getAnchorCellYOffset: () => 0, getWidth: () => 50, getHeight: () => 20 },
+      { getUrl: () => null, getAnchorCell: () => ({ getRow: () => 1, getColumn: () => 1 }) }
+    ]
+  });
+  const r = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  assert.deepEqual(calls.fetchAll.flat().sort(), ['https://exemplo.org/logo.png sem-token', 'https://lh3.googleusercontent.com/a?key=1 Bearer token-teste']);
+  const folha = r.abas['Folha de Agendamento'];
+  assert.equal(folha.imagensFlutuantes.length, 1);
+  assert.equal(folha.imagensFlutuantes[0].url, 'data:image/png;base64,QQ==');
+  assert.equal(r.info.imagensOmitidas, 1);
+  // A contagem vem do layout: a leitura a quente (cache) continua sinalizando.
+  assert.equal(ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {}).info.imagensOmitidas, 1);
+  assert.match(ctx.transporteDocsGradeMontar_(r.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {}), /position:absolute/);
+});
+
+test('texto quebrado que faz a linha crescer alem da pagina bloqueia mesmo com alturas nominais que cabem', () => {
+  const paragrafo = 'Texto de declaracao que ocupa varias linhas quando quebrado na largura da coluna. '.repeat(30);
+  const linhas = Array.from({ length: 40 }, () => [celula('x')]);
+  const cabe = aba(linhas, { titulo: 'Declaracao', larguras: [300] });
+  assert.ok(app.transporteDocsGradeHtml_(JSON.parse(JSON.stringify(cabe))).length > 0);
+  linhas[0] = [celula(paragrafo, { effectiveFormat: { textFormat: { fontSize: 10 }, wrapStrategy: 'WRAP' } })];
+  assert.throws(() => app.transporteDocsGradeHtml_(aba(linhas, { titulo: 'Declaracao', larguras: [300] })), /"Declaracao" excede a altura/);
+  // O mesmo texto sem quebra fica numa linha so e nao cresce.
+  linhas[0] = [celula(paragrafo, { effectiveFormat: { textFormat: { fontSize: 10 }, wrapStrategy: 'CLIP' } })];
+  assert.ok(app.transporteDocsGradeHtml_(aba(linhas, { titulo: 'Declaracao', larguras: [300] })).length > 0);
+});
+
+test('estimativa de texto da Arial distingue largura de caracteres e conta linhas explicitas', () => {
+  assert.ok(app.transporteDocsHtmlLarguraTextoPx_('MMMM', 10) > app.transporteDocsHtmlLarguraTextoPx_('iiii', 10) * 2);
+  assert.ok(app.transporteDocsHtmlLarguraTextoPx_('abc', 10, true) > app.transporteDocsHtmlLarguraTextoPx_('abc', 10));
+  assert.equal(app.transporteDocsHtmlAlturaTextoPx_('a\nb\nc', 1000, 12, false, false), 3 * 12 * 96 / 72 * 1.15);
+  assert.equal(app.transporteDocsHtmlAlturaTextoPx_('palavra '.repeat(20), 100, 10, false, true) > 4 * 10 * 96 / 72 * 1.15, true);
+});
+
+test('diagnostico sinaliza imagem que nao pode ser incorporada', () => {
+  const { ctx, ss } = diagnosticoGrade();
+  const original = ss.getSheetByName;
+  ss.getSheetByName = nome => Object.assign(original(nome), { getImages: () => [{ getUrl: () => '', getAnchorCell: () => ({}) }] });
+  const r = ctx.diagnosticarGradeTransporteHtml();
+  assert.equal(r.ok, false);
+  assert.deepEqual([...r.avisos], ['IMAGEM_NAO_INCORPORADA']);
 });
