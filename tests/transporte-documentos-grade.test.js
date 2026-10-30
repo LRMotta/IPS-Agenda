@@ -480,7 +480,14 @@ test('imagens flutuantes sao posicionadas pela ancora e deslocamento, na escala 
   const sheet = aba([[celula('a'), {}, celula('b')], [{}, {}, {}]], { larguras: [100, 100, 100] });
   sheet.imagensFlutuantes = [{ r: 1, c: 1, x: 10, y: 4, w: 120, h: 40, url: 'https://lh3.googleusercontent.com/logo' }];
   const html = app.transporteDocsGradeHtml_(sheet, { imagemSrc: url => url + '#src' });
-  assert.match(html, /^<div style="position:relative"><table[\s\S]*<\/table><img src="https:\/\/lh3\.googleusercontent\.com\/logo#src" alt="" style="position:absolute;left:110\.0px;top:24\.3px;width:120\.0px;height:38\.8px"><\/div>$/);
+  // A imagem vai numa linha de altura zero logo antes da linha da ancora (linha 2),
+  // deslocada so dentro dela: o crescimento das linhas acima no HTML nao a desloca.
+  assert.match(html, /^<table[\s\S]*<\/tr><tr style="height:0"><td colspan="3" style="padding:0;border:0;height:0;line-height:0"><div style="position:relative;height:0"><img src="https:\/\/lh3\.googleusercontent\.com\/logo#src" alt="" style="position:absolute;left:110\.0px;top:3\.9px;width:120\.0px;height:38\.8px"><\/div><\/td><\/tr><tr style="height:[^"]*">(<td[^>]*>[^<]*<\/td>)+<\/tr><\/table>$/);
+  // Ancora em linha oculta: vai para a primeira linha visivel depois dela.
+  const oculta = aba([[celula('a')], [celula('b')], [celula('c')]], { larguras: [100] });
+  oculta.data[0].rowMetadata[1].hiddenByUser = true;
+  oculta.imagensFlutuantes = [{ r: 1, c: 0, x: 0, y: 0, w: 10, h: 10, url: 'u' }];
+  assert.match(app.transporteDocsGradeHtml_(oculta), /<\/tr><tr style="height:0">[\s\S]*<\/tr><tr style="height:[^"]*"><td[^>]*>c<\/td><\/tr><\/table>$/);
   // Sem imagens flutuantes o HTML continua so a tabela.
   assert.match(app.transporteDocsGradeHtml_(aba([[celula('a')]])), /^<table/);
 });

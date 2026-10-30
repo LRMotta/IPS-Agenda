@@ -252,9 +252,32 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
   var html = ['<table class="grade" style="width:' + (larguraFonte * escala).toFixed(1) + 'px"><colgroup>'];
   colunas.forEach(function(c) { html.push('<col style="width:' + (largura(c) * escala).toFixed(2) + 'px">'); });
   html.push('</colgroup>');
+
+  // Imagens sobre a grade: cada uma vai numa linha de altura zero logo antes da linha
+  // da ancora (ou da primeira visivel depois dela), posicionada pelo deslocamento na
+  // celula. Ancorar na linha, e nao no topo da tabela, evita que o crescimento das
+  // linhas de texto acima no HTML desloque a imagem.
+  var flutuantesPorLinha = {};
+  (sheet.imagensFlutuantes || []).forEach(function(img) {
+    var linha = img.r;
+    while (linha <= rFim && linhaOculta(linha)) linha++;
+    var x = img.x || 0;
+    for (var ic = c0; ic < img.c; ic++) x += largura(ic);
+    var posicao = 'position:absolute;left:' + (x * escala).toFixed(1) + 'px;top:' + ((img.y || 0) * escalaV).toFixed(1) +
+      'px;width:' + (img.w * escala).toFixed(1) + 'px;height:' + (img.h * escalaV).toFixed(1) + 'px';
+    (flutuantesPorLinha[linha] = flutuantesPorLinha[linha] || []).push(
+      '<img src="' + transporteDocsHtmlEscape_(srcImagem(img.url)) + '" alt="" style="' + posicao + '">');
+  });
+  function linhaFlutuantes(linha) {
+    if (!flutuantesPorLinha[linha]) return;
+    html.push('<tr style="height:0"><td colspan="' + colunas.length + '" style="padding:0;border:0;height:0;line-height:0">' +
+      '<div style="position:relative;height:0">' + flutuantesPorLinha[linha].join('') + '</div></td></tr>');
+  }
+
   for (var lr = 0; lr <= rFim; lr++) {
     if (linhaOculta(lr)) continue;
     prepararTransbordo(lr);
+    linhaFlutuantes(lr);
     html.push('<tr style="height:' + (altura(lr) * escalaV).toFixed(2) + 'px">');
     for (var lc = c0; lc <= c1; lc++) {
       if (colOculta(lc)) continue;
@@ -265,23 +288,14 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     }
     html.push('</tr>');
   }
+  linhaFlutuantes(rFim + 1);
   html.push('</table>');
 
   var alturaTotal = 0;
   for (var ar = 0; ar <= rFim; ar++) if (!linhaOculta(ar)) alturaTotal += (altura(ar) + (excessoLinha[ar] || 0)) * escalaV;
   transporteDocsHtmlValidarAltura_(alturaTotal, (sheet.properties || {}).title);
 
-  var flutuantes = (sheet.imagensFlutuantes || []).map(function(img) {
-    var x = img.x || 0, y = img.y || 0;
-    for (var ic = c0; ic < img.c; ic++) x += largura(ic);
-    for (var ir = 0; ir < img.r; ir++) if (!linhaOculta(ir)) y += altura(ir);
-    var posicao = 'position:absolute;left:' + (x * escala).toFixed(1) + 'px;top:' + (y * escalaV).toFixed(1) +
-      'px;width:' + (img.w * escala).toFixed(1) + 'px;height:' + (img.h * escalaV).toFixed(1) + 'px';
-    return '<img src="' + transporteDocsHtmlEscape_(srcImagem(img.url)) + '" alt="" style="' + posicao + '">';
-  });
-  if (!flutuantes.length) return html.join('');
-  // Imagens sobre a grade ficam posicionadas em relacao ao canto da tabela.
-  return '<div style="position:relative">' + html.join('') + flutuantes.join('') + '</div>';
+  return html.join('');
 
   // rExib: linha em que a celula e emitida (difere de r quando a origem da mesclagem esta oculta).
   function transporteDocsGradeCelulaHtml_(r, c, rExib) {
