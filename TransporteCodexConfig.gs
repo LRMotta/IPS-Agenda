@@ -439,13 +439,17 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i][AGENDA_CFG.idx.id] || '').trim() !== String(idAgenda).trim()) continue;
     var evento = agendaRowToObject_(rows[i], i + 2);
-    evento.transporteDatasColeta = transporteDatasColetaAgenda_(rows, rows[i], slot);
+    // Origem do Backup (Folha de Agendamento HTML) vem desta mesma leitura.
+    evento.transporteOrigens = {};
+    evento.transporteDatasColeta = transporteDatasColetaAgenda_(rows, rows[i], slot, evento.transporteOrigens);
     return evento;
   }
   throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
 }
 
-function transporteDatasColetaAgenda_(rows, destino, slotSolicitado) {
+// origensDetalhe (opcional) recebe, por slot, o agendamento de origem do Backup
+// ja validado: { slot: 'backup'|'backup2', data, protocolo, iniciais, visita }.
+function transporteDatasColetaAgenda_(rows, destino, slotSolicitado, origensDetalhe) {
   var idx = AGENDA_CFG.idx;
   var dataOriginal = formatarDataIsoAgenda_(destino[idx.data]);
   var datas = { backup: dataOriginal, backup2: dataOriginal };
@@ -478,6 +482,15 @@ function transporteDatasColetaAgenda_(rows, destino, slotSolicitado) {
         if (!data) throw new Error('A data do agendamento original do backup está inválida. Revise antes de gerar os documentos.');
         origens[slot] = origemKey;
         datas[slot] = data;
+        if (origensDetalhe) {
+          origensDetalhe[slot] = {
+            slot: backupSlot,
+            data: data,
+            protocolo: String(origem[idx.projeto] || '').trim(),
+            iniciais: extrairIniciais_(origem[idx.participante]),
+            visita: String(origem[idx.visita] || '').trim()
+          };
+        }
       });
     });
   });
@@ -2616,6 +2629,14 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
     var destinoAgenda = transporteDestinoAgenda_(evento, registro.agendaSlot || registro.slot);
     var dataColetaAgenda = evento.transporteDatasColeta && evento.transporteDatasColeta[normalizarSlotTransporteCodex_(registro.agendaSlot || registro.slot)];
     if (dataColetaAgenda) registro.dataColeta = dataColetaAgenda;
+    // Visita e origem do Backup para a Folha de Agendamento HTML, da mesma leitura da Agenda.
+    // Nao sao gravadas na planilha; so existem quando o evento foi lido com o slot.
+    if (evento.transporteOrigens) {
+      registro.folhaAgenda = {
+        visita: String(evento.visita || '').trim(),
+        origem: evento.transporteOrigens[normalizarSlotTransporteCodex_(registro.agendaSlot || registro.slot)] || null
+      };
+    }
 
     registro.protocolo = (options.adiarProjetoDisplay ? projeto : transporteProjetoDisplay_(projeto)) || registro.protocolo || '';
     registro.investigador = investigador || registro.investigador || '';

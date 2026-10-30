@@ -15,6 +15,11 @@ function backupCollectionFixture(backupSlot, slot) {
   idx.participanteCadastroId = 52;
   idx.backup2Dados = 53;
   cfg.lastCol = 54;
+  if (slot === '4') {
+    // Transporte IV so existe quando as colunas estao configuradas na Agenda.
+    idx.c4 = { nome: 54, temp: 55, status: 56, awb: 57, material: 58, destino: 59, matBio: 60 };
+    cfg.lastCol = 61;
+  }
   const origem = Array(cfg.lastCol).fill('');
   const destino = Array(cfg.lastCol).fill('');
   for (const row of [origem, destino]) {
@@ -25,13 +30,13 @@ function backupCollectionFixture(backupSlot, slot) {
   origem[idx.data] = '20/out./2026';
   destino[idx.id] = 'ENVIO';
   destino[idx.data] = '26/out./2026';
-  const courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3 }[slot];
+  const courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3, '4': idx.c4 }[slot];
   destino[courierIdx.nome] = 'DHL';
   destino[courierIdx.temp] = 'CONGELADO';
   destino[courierIdx.destino] = 'Lab';
   destino[courierIdx.awb] = '1234567890';
   const ref = { id: 'ENVIO', awb: '1234567890', dataIso: '2026-10-26' };
-  if (slot !== '1') ref.slot = { '2': 'II', '3': 'III' }[slot];
+  if (slot !== '1') ref.slot = { '2': 'II', '3': 'III', '4': 'IV' }[slot];
   if (backupSlot === 'backup2') {
     origem[idx.backup2Dados] = JSON.stringify({ nome: 'DHL', temperatura: 'CONGELADO', destino: 'Lab', agendamentos: [ref] });
   } else {
@@ -75,6 +80,43 @@ test('Backup I e II mantem coleta original no novo envio e nos slots II/III de v
       assert.equal(f.folha.getRange('C8').getValue().getDate(), 28);
     }
   }
+});
+
+test('a mesma leitura da Agenda entrega visita e origem do Backup para a Folha de Agendamento HTML', () => {
+  for (const backupSlot of ['backup', 'backup2']) {
+    for (const slot of ['1', '2', '3', '4']) {
+      const { s, origem, destino, idx } = backupCollectionFixture(backupSlot, slot);
+      origem[idx.participante] = 'Fulana de Tal Exemplo';
+      origem[idx.visita] = 'Ciclo 3 Dia 1';
+      const detalhes = {};
+      const datas = s.transporteDatasColetaAgenda_([origem, destino], destino, slot, detalhes);
+      assert.equal(datas[slot], '2026-10-20', backupSlot + ' -> ' + slot);
+      // So o slot vinculado recebe a origem.
+      assert.deepEqual(Object.keys(detalhes), [slot]);
+      assert.deepEqual(JSON.parse(JSON.stringify(detalhes[slot])), {
+        slot: backupSlot, data: '2026-10-20', protocolo: 'Projeto A', iniciais: 'F.T.E.', visita: 'Ciclo 3 Dia 1'
+      });
+
+      const evento = { visita: 'Envio C3D1', projeto: 'Projeto A', transporteOrigens: detalhes, transporteDatasColeta: datas };
+      s.transporteEncontrarParticipante_ = () => null;
+      s.transporteInvestigadorPayload_ = () => '';
+      s.transporteProjetoDisplay_ = value => value;
+      const registro = s.transporteAtualizarRegistroPorAgenda_({ idAgenda: 'ENVIO', agendaSlot: slot }, evento, { participantes: [] });
+      assert.equal(registro.folhaAgenda.visita, 'Envio C3D1');
+      assert.equal(registro.folhaAgenda.origem.slot, backupSlot);
+      assert.equal(registro.folhaAgenda.origem.data, '2026-10-20');
+    }
+  }
+  // Sem vinculo valido nao ha origem; evento lido sem slot nao traz o contexto da folha.
+  const { s, origem, destino, idx } = backupCollectionFixture('backup', '1');
+  origem[idx.projeto] = 'Outro projeto';
+  const detalhes = {};
+  s.transporteDatasColetaAgenda_([origem, destino], destino, '1', detalhes);
+  assert.deepEqual(Object.keys(detalhes), []);
+  s.transporteEncontrarParticipante_ = () => null;
+  s.transporteInvestigadorPayload_ = () => '';
+  s.transporteProjetoDisplay_ = value => value;
+  assert.equal(s.transporteAtualizarRegistroPorAgenda_({ idAgenda: 'ENVIO', agendaSlot: '1' }, { visita: 'V' }, { participantes: [] }).folhaAgenda, undefined);
 });
 
 test('coleta ignora outro participante, projeto, slot e vinculo historico com AWB divergente', () => {

@@ -75,7 +75,7 @@ test('dados da folha reunem registro, Agenda, LabCentral e copias do PDF', () =>
   assert.equal(dados.caixa, 'Sim');
   assert.equal(dados.temperatura, 'CONGELADO');
   assert.equal(dados.visita, 'Ciclo 3 · Dia 1');
-  assert.equal(dados.cidade, 'Indianapolis, IN 46200');
+  assert.equal(dados.cidade, 'Indianapolis, IN');
   assert.equal(dados.assinaturaCourier, false);
   assert.deepEqual(JSON.parse(JSON.stringify(dados.origem)), { backup: 'Backup I', data: '28/10/2026', dia: 'Quarta', protocolo: 'MK-0000-021', iniciais: 'A.B.C.', visita: 'Ciclo 3 · Dia 1' });
   assert.deepEqual(JSON.parse(JSON.stringify(dados.documentos)), [
@@ -233,36 +233,24 @@ test('contexto da Agenda usa uma unica busca de texto e confirma ID e vinculo do
   assert.deepEqual(JSON.parse(JSON.stringify(app.transporteFolhaHtmlAgendaContexto_(''))), { visita: '', origem: null });
 });
 
-test('folha da grade reaproveita logo da aba da folha e destino da Declaracao ja carregados', () => {
-  let leituras = 0;
+test('folha usa visita e origem do registro da geracao, logo pela URL e destino do LabCentral, sem a planilha', () => {
+  let leiturasAgenda = 0;
   const app = carregar({
-    transporteLabCentralByDestino_: () => { leituras++; return { nomeCompleto: 'Lab do cadastro', endereco: 'Rua X', cidade: 'Y', cep: '1', pais: 'Z' }; },
-    reqExamesLogoSrc_: () => { leituras++; return 'https://logo.example/url'; }
+    getAgendaSheetForRead_: () => { leiturasAgenda++; throw new Error('nao deveria ler a Agenda'); },
+    transporteLabCentralByDestino_: () => ({ nomeCompleto: 'Labcorp Central Lab', endereco: '8211 Scicor Drive', cidade: 'Indianapolis, IN', cep: '46214', pais: 'USA' }),
+    reqExamesLogoSrc_: () => 'data:image/png;base64,TE9HTw=='
   });
-  const celulaTexto = v => ({ formattedValue: v });
-  const linhasDeclaracao = Array.from({ length: 39 }, () => ({ values: [] }));
-  linhasDeclaracao[37].values[3] = celulaTexto('Labcorp Central Lab');
-  linhasDeclaracao[38].values[3] = celulaTexto('8211 Scicor Drive');
-  linhasDeclaracao[38].values[13] = celulaTexto('Indianapolis, IN, USA');
-  const abasGrade = {
-    'Folha de Agendamento': { data: [{ rowData: [{ values: [{}, { userEnteredValue: { imageValue: { imageProperties: { contentUrl: 'data:image/png;base64,TE9HTw==' } } } }] }] }] },
-    'Declaração de Transporte': { data: [{ rowData: linhasDeclaracao }] }
-  };
   const spec = { ordem: ['Folha de Agendamento', 'Declaração de Transporte'], copias: { 'Folha de Agendamento': 1, 'Declaração de Transporte': 4 } };
+  const registro = registroBase({ folhaAgenda: { visita: 'wk12', origem: { slot: 'backup2', data: '2026-10-28', protocolo: 'MK-0000-021', iniciais: 'A.B.C.', visita: 'Ciclo 3' } } });
   const tempos = {};
-  const r = app.transporteFolhaHtmlParaGrade_({}, registroBase(), spec, { agendaContexto: ORIGEM, tempos }, abasGrade);
-  assert.equal(leituras, 0);
-  assert.equal(tempos.logoDaGrade, true);
-  assert.equal(tempos.destinoDaGrade, true);
+  const r = app.transporteFolhaHtmlParaGrade_({}, registro, spec, { tempos });
+  assert.equal(leiturasAgenda, 0);
+  assert.equal(tempos.agendaDoRegistro, true);
   assert.match(r.html, /<img class="logo" src="data:image\/png;base64,TE9HTw=="/);
-  assert.match(r.html, />Labcorp Central Lab<\/td>/);
-  assert.match(r.html, />8211 Scicor Drive<br>Indianapolis, IN, USA<\/td>/);
-  assert.doesNotMatch(r.html, />País</);
-
-  // Sem as abas carregadas (ou Declaracao vazia) volta ao LabCentral e ao logo pela URL.
-  const sem = app.transporteFolhaHtmlParaGrade_({}, registroBase(), spec, { agendaContexto: ORIGEM }, {});
-  assert.equal(leituras, 2);
-  assert.match(sem.html, /src="https:\/\/logo\.example\/url"/);
-  assert.match(sem.html, />Lab do cadastro<\/td>/);
-  assert.match(sem.html, />País<\/td><td class="v">Z</);
+  assert.match(r.html, />Visita<\/td><td class="v">wk12</);
+  assert.match(r.html, /Criado a partir do <b>Backup II<\/b> do agendamento de <b>28\/10\/2026 \(qua\)<\/b>/);
+  // Endereco do LabCentral sem CEP, com o pais em linha propria.
+  assert.match(r.html, />8211 Scicor Drive<br>Indianapolis, IN<\/td>/);
+  assert.match(r.html, />País<\/td><td class="v">USA</);
+  assert.doesNotMatch(r.html, /46214/);
 });
