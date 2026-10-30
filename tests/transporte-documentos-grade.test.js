@@ -111,7 +111,9 @@ function diagnosticoGrade(options = {}) {
     UrlFetchApp: {
       fetch: (url, opts) => {
         calls.fetch.push({ url, opts });
-        const corpo = JSON.stringify({ sheets: [folha, declaracao] });
+        const corpo = options.http
+          ? JSON.stringify({ error: { code: options.http, status: 'PERMISSION_DENIED', message: 'texto livre', details: [{ reason: 'SERVICE_DISABLED' }] } })
+          : JSON.stringify({ sheets: [folha, declaracao] });
         return { getResponseCode: () => options.http || 200, getContentText: () => corpo };
       },
       fetchAll: reqs => {
@@ -123,7 +125,10 @@ function diagnosticoGrade(options = {}) {
     HtmlService: { createHtmlOutput: html => { calls.html.push(html); return { getBlob: () => ({ getAs: () => pdfBlob }) }; } },
     MimeType: { PDF: 'application/pdf' },
     DriveApp: { getRootFolder: () => ({ getFoldersByName: () => ({ hasNext: () => true, next: () => folder }) }) },
-    Logger: { log: line => calls.logs.push(line) }
+    Logger: { log: line => calls.logs.push(line) },
+    ...(options.servicoAvancado ? {
+      Sheets: { Spreadsheets: { get: (id, params) => { calls.avancado = { id, params }; return { sheets: [folha, declaracao] }; } } }
+    } : {})
   });
   return { ctx, calls };
 }
@@ -159,7 +164,7 @@ test('diagnostico da grade exige administrador e para em erro HTTP sem gerar arq
   assert.equal(negado.calls.fetch.length, 0);
 
   const falha = diagnosticoGrade({ http: 403 });
-  assert.throws(() => falha.ctx.diagnosticarGradeTransporteHtml(), /HTTP 403/);
+  assert.throws(() => falha.ctx.diagnosticarGradeTransporteHtml(), /^Error: Leitura da grade falhou \(HTTP 403: PERMISSION_DENIED \/ SERVICE_DISABLED\)\.$/);
   assert.equal(falha.calls.files.length, 0);
   assert.equal(falha.calls.logs.length, 0);
 });
@@ -169,4 +174,18 @@ test('diagnostico da grade sinaliza quebra de pagina divergente', () => {
   const r = ctx.diagnosticarGradeTransporteHtml();
   assert.equal(r.ok, false);
   assert.equal(r.paginasEsperadas, 5);
+});
+
+test('diagnostico da grade usa o servico avancado Sheets quando habilitado, com os mesmos intervalos e campos', () => {
+  const { ctx, calls } = diagnosticoGrade({ servicoAvancado: true });
+  const r = ctx.diagnosticarGradeTransporteHtml();
+  assert.equal(calls.fetch.length, 0);
+  assert.equal(calls.avancado.id, 'planilha-id');
+  assert.deepEqual([...calls.avancado.params.ranges], ["'Folha de Agendamento'", "'Declaração d''Exemplo'"]);
+  assert.equal(calls.avancado.params.includeGridData, true);
+  assert.match(calls.avancado.params.fields, /^sheets\(properties\(title\),merges,data\(/);
+  assert.equal(r.ok, true);
+  assert.equal(r.abasLidas, 2);
+  assert.ok(r.bytesGrade > 0);
+  assert.doesNotMatch(calls.html[0], /Pessoa Participante/);
 });

@@ -288,17 +288,42 @@ var TRANSPORTE_DOCS_GRADE_CAMPOS_ = 'sheets(properties(title),merges,data(column
   'effectiveFormat(textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,padding,borders),' +
   'textFormatRuns,dataValidation(condition(type)),userEnteredValue))))';
 
+// Status/motivo do erro da API (ex.: PERMISSION_DENIED / SERVICE_DISABLED), sem o texto livre.
+function transporteDocsGradeMotivoErro_(texto) {
+  try {
+    var erro = JSON.parse(texto).error || {};
+    var motivo = ((erro.details || []).filter(function(d) { return d && d.reason; })[0] || {}).reason;
+    return [erro.status, motivo].filter(Boolean).join(' / ');
+  } catch (e) {
+    return '';
+  }
+}
+
+// Preferencia pelo servico avancado Sheets (habilita a API no projeto do script e
+// usa o escopo spreadsheets ja declarado); a chamada REST fica como alternativa.
 function transporteDocsGradeLer_(spreadsheetId, titulos, token) {
-  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) +
-    '?includeGridData=true&fields=' + encodeURIComponent(TRANSPORTE_DOCS_GRADE_CAMPOS_) +
-    titulos.map(function(t) { return '&ranges=' + encodeURIComponent("'" + String(t).replace(/'/g, "''") + "'"); }).join('');
-  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
-  var codigo = resp.getResponseCode();
-  if (codigo !== 200) throw new Error('Leitura da grade falhou (HTTP ' + codigo + ').');
-  var texto = resp.getContentText();
+  var ranges = titulos.map(function(t) { return "'" + String(t).replace(/'/g, "''") + "'"; });
+  var dados, bytes;
+  if (typeof Sheets !== 'undefined' && Sheets && Sheets.Spreadsheets) {
+    dados = Sheets.Spreadsheets.get(spreadsheetId, { ranges: ranges, includeGridData: true, fields: TRANSPORTE_DOCS_GRADE_CAMPOS_ });
+    bytes = JSON.stringify(dados).length;
+  } else {
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) +
+      '?includeGridData=true&fields=' + encodeURIComponent(TRANSPORTE_DOCS_GRADE_CAMPOS_) +
+      ranges.map(function(r) { return '&ranges=' + encodeURIComponent(r); }).join('');
+    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    var codigo = resp.getResponseCode();
+    var texto = resp.getContentText();
+    if (codigo !== 200) {
+      var motivo = transporteDocsGradeMotivoErro_(texto);
+      throw new Error('Leitura da grade falhou (HTTP ' + codigo + (motivo ? ': ' + motivo : '') + ').');
+    }
+    dados = JSON.parse(texto);
+    bytes = texto.length;
+  }
   var abas = {};
-  (JSON.parse(texto).sheets || []).forEach(function(sheet) { abas[sheet.properties.title] = sheet; });
-  return { abas: abas, bytes: texto.length };
+  (dados.sheets || []).forEach(function(sheet) { abas[sheet.properties.title] = sheet; });
+  return { abas: abas, bytes: bytes };
 }
 
 function transporteDocsGradeUrlsImagens_(abas) {
