@@ -278,7 +278,7 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     var posicao = 'position:absolute;left:' + (x * escala).toFixed(1) + 'px;top:' + (y * escalaV).toFixed(1) +
       'px;width:' + (img.w * escala).toFixed(1) + 'px;height:' + (img.h * escalaV).toFixed(1) + 'px';
     if (img.html) {
-      return '<div style="' + posicao + ';display:table"><div style="display:table-cell;vertical-align:middle">' +
+      return '<div style="' + posicao + ';display:table"><div style="display:table-cell;vertical-align:bottom">' +
         transporteDocsGradeSubstitutoHtml_(img.html) + '</div></div>';
     }
     return '<img src="' + transporteDocsHtmlEscape_(srcImagem(img.url)) + '" alt="" style="' + posicao + '">';
