@@ -100,24 +100,17 @@ function transporteDocsGradeConteudo_(cell, escala) {
 }
 
 /**
- * sheet: objeto de spreadsheets.get (properties, merges, data[0]).
- * opcoes.imagemSrc(url): converte a URL da imagem (ex.: data URI em cache).
- * Devolve o HTML de uma pagina (tabela), pronto para transporteDocsHtmlDocumento_.
+ * Mesclagens e area impressa (exportador do Sheets): sempre a partir de A1 ate a
+ * ultima coluna/linha com texto, borda, caixa ou imagem, incluindo mesclagens.
+ * Devolve { mesclas, cobertas, c1, rFim } com indices de base 0 (c1/rFim = -1 se vazia).
  */
-function transporteDocsGradeHtml_(sheet, opcoes) {
-  opcoes = opcoes || {};
+function transporteDocsGradeArea_(sheet) {
   var data = (sheet.data || [])[0] || {};
   var linhasDados = data.rowData || [];
-  var colMeta = data.columnMetadata || [];
-  var rowMeta = data.rowMetadata || [];
-  var nLinhas = Math.max(linhasDados.length, rowMeta.length);
-  var nColunas = colMeta.length;
+  var nLinhas = Math.max(linhasDados.length, (data.rowMetadata || []).length);
+  var nColunas = (data.columnMetadata || []).length;
   linhasDados.forEach(function(row) { nColunas = Math.max(nColunas, (row.values || []).length); });
   function cel(r, c) { var row = linhasDados[r]; return (row && row.values && row.values[c]) || {}; }
-  function colOculta(c) { return !!(colMeta[c] && colMeta[c].hiddenByUser); }
-  function linhaOculta(r) { return !!(rowMeta[r] && rowMeta[r].hiddenByUser); }
-  function largura(c) { return colOculta(c) ? 0 : ((colMeta[c] && colMeta[c].pixelSize) || 100); }
-  function altura(r) { return (rowMeta[r] && rowMeta[r].pixelSize) || 21; }
 
   var mesclas = {};
   var cobertas = {};
@@ -129,9 +122,7 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     }
   });
 
-  // Area impressa (exportador do Sheets): sempre a partir de A1 ate a ultima
-  // coluna/linha com texto, borda, caixa ou imagem, incluindo mesclagens.
-  var c0 = 0, c1 = -1, rFim = -1;
+  var c1 = -1, rFim = -1;
   for (var r = 0; r < nLinhas; r++) {
     for (var c = 0; c < nColunas; c++) {
       if (cobertas[r + ':' + c]) continue;
@@ -145,6 +136,29 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
       rFim = Math.max(rFim, r + (m ? m.rs : 1) - 1);
     }
   }
+  return { mesclas: mesclas, cobertas: cobertas, c1: c1, rFim: rFim };
+}
+
+/**
+ * sheet: objeto de spreadsheets.get (properties, merges, data[0]).
+ * opcoes.imagemSrc(url): converte a URL da imagem (ex.: data URI em cache).
+ * Devolve o HTML de uma pagina (tabela), pronto para transporteDocsHtmlDocumento_.
+ */
+function transporteDocsGradeHtml_(sheet, opcoes) {
+  opcoes = opcoes || {};
+  var data = (sheet.data || [])[0] || {};
+  var linhasDados = data.rowData || [];
+  var colMeta = data.columnMetadata || [];
+  var rowMeta = data.rowMetadata || [];
+  function cel(r, c) { var row = linhasDados[r]; return (row && row.values && row.values[c]) || {}; }
+  function colOculta(c) { return !!(colMeta[c] && colMeta[c].hiddenByUser); }
+  function linhaOculta(r) { return !!(rowMeta[r] && rowMeta[r].hiddenByUser); }
+  function largura(c) { return colOculta(c) ? 0 : ((colMeta[c] && colMeta[c].pixelSize) || 100); }
+  function altura(r) { return (rowMeta[r] && rowMeta[r].pixelSize) || 21; }
+
+  var area = transporteDocsGradeArea_(sheet);
+  var mesclas = area.mesclas, cobertas = area.cobertas;
+  var c0 = 0, c1 = area.c1, rFim = area.rFim;
   if (c1 < 0) throw new Error('Aba sem conteúdo imprimível: ' + ((sheet.properties || {}).title || ''));
 
   var colunas = [];
@@ -274,19 +288,25 @@ function transporteDocsGradeMontar_(abas, documentos, opcoes) {
   return transporteDocsHtmlDocumento_(paginas, TRANSPORTE_DOCS_GRADE_PAGINA_);
 }
 
-/* ===== Diagnostico: leitura da grade real no Apps Script =====
- * Executar manualmente no editor (somente administradores). Le as abas MARKEN da
- * planilha de Transporte pela API do Sheets, sem alterar nada, monta o HTML com o
- * renderizador generico e converte em PDF salvo na pasta privada de diagnostico.
- * Mede leitura, imagens, montagem, conversao e Drive, e conta as imagens
- * flutuantes de cada aba (a API nao as devolve). A identificacao do participante
- * (C3 da Folha) e mascarada, como a anonimizacao do PDF atual faz.
- * O log contem somente nomes de abas, contagens e tempos.
+/* ===== Leitura da grade: layout em cache + valores a cada geracao =====
+ * O layout das abas-modelo (larguras, alturas, mesclagens, formatos, caixas e
+ * imagens) quase nunca muda, mas e a parte pesada da leitura. Ele e lido uma vez,
+ * recortado a area impressa, sem nenhum texto ou valor, compactado (gzip) e
+ * guardado no cache do script em pedacos. A cada geracao so os valores da area
+ * impressa sao lidos e aplicados sobre o layout.
+ * Alterou o modelo? Execute limparCacheLayoutTransporteHtml() (ou aguarde 6 h).
  */
+var TRANSPORTE_DOCS_GRADE_CACHE_VERSAO_ = 'tdg1';
+var TRANSPORTE_DOCS_GRADE_CACHE_TTL_S_ = 21600;
+var TRANSPORTE_DOCS_GRADE_CACHE_PEDACO_ = 90000;
+
 var TRANSPORTE_DOCS_GRADE_CAMPOS_ = 'sheets(properties(title),merges,data(columnMetadata(pixelSize,hiddenByUser),' +
   'rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,effectiveValue(numberValue,boolValue),' +
   'effectiveFormat(textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,padding,borders),' +
   'textFormatRuns,dataValidation(condition(type)),userEnteredValue))))';
+
+var TRANSPORTE_DOCS_GRADE_CAMPOS_VALORES_ = 'sheets(properties(title),data(startRow,startColumn,' +
+  'rowData(values(formattedValue,effectiveValue(numberValue,boolValue),textFormatRuns))))';
 
 // Status/motivo do erro da API (ex.: PERMISSION_DENIED / SERVICE_DISABLED), sem o texto livre.
 function transporteDocsGradeMotivoErro_(texto) {
@@ -299,37 +319,129 @@ function transporteDocsGradeMotivoErro_(texto) {
   }
 }
 
-// Preferencia pelo servico avancado Sheets (habilita a API no projeto do script e
-// usa o escopo spreadsheets ja declarado); a chamada REST fica como alternativa.
-function transporteDocsGradeLer_(spreadsheetId, titulos, token) {
-  var ranges = titulos.map(function(t) { return "'" + String(t).replace(/'/g, "''") + "'"; });
-  var dados, bytes;
-  if (typeof Sheets !== 'undefined' && Sheets && Sheets.Spreadsheets) {
-    dados = Sheets.Spreadsheets.get(spreadsheetId, { ranges: ranges, includeGridData: true, fields: TRANSPORTE_DOCS_GRADE_CAMPOS_ });
-    bytes = JSON.stringify(dados).length;
-  } else {
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) +
-      '?includeGridData=true&fields=' + encodeURIComponent(TRANSPORTE_DOCS_GRADE_CAMPOS_) +
-      ranges.map(function(r) { return '&ranges=' + encodeURIComponent(r); }).join('');
-    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
-    var codigo = resp.getResponseCode();
-    var texto = resp.getContentText();
-    if (codigo !== 200) {
-      var motivo = transporteDocsGradeMotivoErro_(texto);
-      throw new Error('Leitura da grade falhou (HTTP ' + codigo + (motivo ? ': ' + motivo : '') + ').');
-    }
-    dados = JSON.parse(texto);
-    bytes = texto.length;
-  }
-  var abas = {};
-  (dados.sheets || []).forEach(function(sheet) { abas[sheet.properties.title] = sheet; });
-  return { abas: abas, bytes: bytes };
+function transporteDocsGradeLetraColuna_(n) {
+  var s = '';
+  for (; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
+  return s;
 }
 
-function transporteDocsGradeUrlsImagens_(abas) {
+// 'Aba' inteira, ou 'Aba'!A1:<coluna><linha> quando colunas/linhas sao informadas.
+function transporteDocsGradeIntervaloAba_(titulo, colunas, linhas) {
+  var aba = "'" + String(titulo).replace(/'/g, "''") + "'";
+  return colunas && linhas ? aba + '!A1:' + transporteDocsGradeLetraColuna_(colunas) + linhas : aba;
+}
+
+/**
+ * spreadsheets.get com grade. A chamada REST devolve as imagens das celulas
+ * (imageValue), que o servico avancado Sheets descarta; o servico avancado fica
+ * como alternativa quando a REST e recusada. Devolve { dados, bytes, via }.
+ */
+function transporteDocsGradeLer_(spreadsheetId, ranges, campos, token) {
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) +
+    '?includeGridData=true&fields=' + encodeURIComponent(campos) +
+    ranges.map(function(r) { return '&ranges=' + encodeURIComponent(r); }).join('');
+  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+  var codigo = resp.getResponseCode();
+  var texto = resp.getContentText();
+  if (codigo === 200) return { dados: JSON.parse(texto), bytes: texto.length, via: 'rest' };
+  var motivo = transporteDocsGradeMotivoErro_(texto);
+  var erro = 'HTTP ' + codigo + (motivo ? ': ' + motivo : '');
+  if (typeof Sheets !== 'undefined' && Sheets && Sheets.Spreadsheets) {
+    var dados = Sheets.Spreadsheets.get(spreadsheetId, { ranges: ranges, includeGridData: true, fields: campos });
+    return { dados: dados, bytes: JSON.stringify(dados).length, via: 'avancado (REST ' + erro + ')' };
+  }
+  throw new Error('Leitura da grade falhou (' + erro + ').');
+}
+
+/**
+ * Layout da aba sem texto nem valores: recortado a area impressa atual e com as
+ * imagens das celulas convertidas em data URI (imagens que falharem sao omitidas).
+ */
+function transporteDocsGradeLayout_(sheet, imagens) {
+  var area = transporteDocsGradeArea_(sheet);
+  if (area.c1 < 0) throw new Error('Aba sem conteúdo imprimível: ' + ((sheet.properties || {}).title || ''));
+  var colunas = area.c1 + 1, linhas = area.rFim + 1;
+  var data = (sheet.data || [])[0] || {};
+  var rowData = (data.rowData || []).slice(0, linhas).map(function(row) {
+    return { values: (row.values || []).slice(0, colunas).map(function(cell) {
+      var out = {};
+      if (cell.effectiveFormat) out.effectiveFormat = cell.effectiveFormat;
+      if (cell.dataValidation) out.dataValidation = cell.dataValidation;
+      var img = transporteDocsGradeImagem_(cell);
+      var src = img && imagens && imagens[img.imageProperties.contentUrl];
+      if (src) out.userEnteredValue = { imageValue: { imageProperties: { contentUrl: src } } };
+      return out;
+    }) };
+  });
+  return {
+    properties: { title: (sheet.properties || {}).title },
+    merges: sheet.merges || [],
+    area: { colunas: colunas, linhas: linhas },
+    data: [{
+      columnMetadata: (data.columnMetadata || []).slice(0, colunas),
+      rowMetadata: (data.rowMetadata || []).slice(0, linhas),
+      rowData: rowData
+    }]
+  };
+}
+
+// Aplica texto, valores e formatacao mista lidos a cada geracao sobre o layout (modifica o layout).
+function transporteDocsGradeAplicarValores_(layout, valores) {
+  var dados = (valores.data || [])[0] || {};
+  var r0 = dados.startRow || 0, c0 = dados.startColumn || 0;
+  var rows = layout.data[0].rowData;
+  (dados.rowData || []).forEach(function(row, i) {
+    (row.values || []).forEach(function(v, j) {
+      if (!v || (v.formattedValue === undefined && !v.effectiveValue)) return;
+      var r = r0 + i, c = c0 + j;
+      while (rows.length <= r) rows.push({ values: [] });
+      var celulas = rows[r].values || (rows[r].values = []);
+      while (celulas.length <= c) celulas.push({});
+      var cell = celulas[c] || (celulas[c] = {});
+      if (v.formattedValue !== undefined) cell.formattedValue = v.formattedValue;
+      if (v.effectiveValue) cell.effectiveValue = v.effectiveValue;
+      if (v.textFormatRuns) cell.textFormatRuns = v.textFormatRuns;
+    });
+  });
+  return layout;
+}
+
+function transporteDocsGradeCacheChave_(spreadsheetId, titulo) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, spreadsheetId + '|' + titulo, Utilities.Charset.UTF_8);
+  return TRANSPORTE_DOCS_GRADE_CACHE_VERSAO_ + ':' + digest.map(function(b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+
+// Grava o layout compactado em pedacos (limite de 100 KB por item do CacheService).
+function transporteDocsGradeCacheSalvar_(cache, chave, layout) {
+  var texto = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(layout), 'application/json')).getBytes());
+  var itens = {};
+  var n = Math.ceil(texto.length / TRANSPORTE_DOCS_GRADE_CACHE_PEDACO_);
+  for (var i = 0; i < n; i++) itens[chave + ':' + i] = texto.substr(i * TRANSPORTE_DOCS_GRADE_CACHE_PEDACO_, TRANSPORTE_DOCS_GRADE_CACHE_PEDACO_);
+  itens[chave] = String(n);
+  cache.putAll(itens, TRANSPORTE_DOCS_GRADE_CACHE_TTL_S_);
+  return texto.length;
+}
+
+// Devolve o layout ou null quando ausente, incompleto ou ilegivel.
+function transporteDocsGradeCacheLer_(cache, chave) {
+  var n = Number(cache.get(chave));
+  if (!n) return null;
+  var chaves = [];
+  for (var i = 0; i < n; i++) chaves.push(chave + ':' + i);
+  var pedacos = cache.getAll(chaves);
+  if (chaves.some(function(k) { return !pedacos[k]; })) return null;
+  try {
+    var blob = Utilities.newBlob(Utilities.base64Decode(chaves.map(function(k) { return pedacos[k]; }).join('')), 'application/x-gzip');
+    return JSON.parse(Utilities.ungzip(blob).getDataAsString('UTF-8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function transporteDocsGradeUrlsImagens_(sheets) {
   var urls = {};
-  Object.keys(abas).forEach(function(titulo) {
-    var linhas = ((abas[titulo].data || [])[0] || {}).rowData || [];
+  sheets.forEach(function(sheet) {
+    var linhas = ((sheet.data || [])[0] || {}).rowData || [];
     linhas.forEach(function(row) {
       (row.values || []).forEach(function(cell) {
         var img = transporteDocsGradeImagem_(cell);
@@ -353,6 +465,90 @@ function transporteDocsGradeImagensDataUri_(urls) {
   return mapa;
 }
 
+/**
+ * Carrega as abas prontas para transporteDocsGradeMontar_ (mapa titulo -> sheet).
+ * opcoes.cache (padrao: cache do script); opcoes.ignorarCache rele o layout.
+ * Devolve { abas, tempos, info }; info tem so contagens, tamanhos e a via usada.
+ */
+function transporteDocsGradeCarregar_(spreadsheetId, titulos, opcoes) {
+  opcoes = opcoes || {};
+  var cache = opcoes.cache || CacheService.getScriptCache();
+  var token = ScriptApp.getOAuthToken();
+  var tempos = {};
+  var info = { layoutsDoCache: 0 };
+  var marca = Date.now();
+  var layouts = {};
+  var faltando = [];
+  titulos.forEach(function(titulo) {
+    var layout = opcoes.ignorarCache ? null : transporteDocsGradeCacheLer_(cache, transporteDocsGradeCacheChave_(spreadsheetId, titulo));
+    if (layout) layouts[titulo] = layout; else faltando.push(titulo);
+  });
+  info.layoutsDoCache = titulos.length - faltando.length;
+  tempos.cacheLerMs = Date.now() - marca;
+
+  if (faltando.length) {
+    marca = Date.now();
+    var leitura = transporteDocsGradeLer_(spreadsheetId, faltando.map(function(t) { return transporteDocsGradeIntervaloAba_(t); }),
+      TRANSPORTE_DOCS_GRADE_CAMPOS_, token);
+    tempos.layoutLerMs = Date.now() - marca;
+    info.bytesLayoutLido = leitura.bytes;
+    info.viaLayout = leitura.via;
+    var sheets = leitura.dados.sheets || [];
+
+    marca = Date.now();
+    var urls = transporteDocsGradeUrlsImagens_(sheets);
+    var imagens = transporteDocsGradeImagensDataUri_(urls);
+    info.imagens = urls.length;
+    info.imagensIncorporadas = Object.keys(imagens).length;
+    tempos.imagensMs = Date.now() - marca;
+
+    marca = Date.now();
+    info.bytesCache = 0;
+    sheets.forEach(function(sheet) {
+      var titulo = sheet.properties.title;
+      layouts[titulo] = transporteDocsGradeLayout_(sheet, imagens);
+      info.bytesCache += transporteDocsGradeCacheSalvar_(cache, transporteDocsGradeCacheChave_(spreadsheetId, titulo), layouts[titulo]);
+    });
+    tempos.cacheGravarMs = Date.now() - marca;
+  }
+
+  marca = Date.now();
+  var ranges = titulos.map(function(titulo) {
+    var layout = layouts[titulo];
+    if (!layout) throw new Error('Aba necessária não encontrada: ' + titulo);
+    return transporteDocsGradeIntervaloAba_(titulo, layout.area.colunas, layout.area.linhas);
+  });
+  var valores = transporteDocsGradeLer_(spreadsheetId, ranges, TRANSPORTE_DOCS_GRADE_CAMPOS_VALORES_, token);
+  tempos.valoresLerMs = Date.now() - marca;
+  info.bytesValores = valores.bytes;
+  info.viaValores = valores.via;
+
+  var abas = {};
+  (valores.dados.sheets || []).forEach(function(sheet) {
+    var titulo = sheet.properties.title;
+    if (layouts[titulo]) abas[titulo] = transporteDocsGradeAplicarValores_(layouts[titulo], sheet);
+  });
+  return { abas: abas, tempos: tempos, info: info };
+}
+
+// Para administradores: descarta o layout em cache das abas MARKEN apos alterar o modelo.
+function limparCacheLayoutTransporteHtml() {
+  codexAssertAdmin_();
+  var ss = getTransporteSpreadsheetCodex_();
+  var cache = CacheService.getScriptCache();
+  var chaves = [];
+  transportePdfSpec_('MARKEN', '', '', ss).ordem.forEach(function(titulo) {
+    var chave = transporteDocsGradeCacheChave_(ss.getId(), titulo);
+    var n = Number(cache.get(chave)) || 0;
+    chaves.push(chave);
+    for (var i = 0; i < n; i++) chaves.push(chave + ':' + i);
+  });
+  cache.removeAll(chaves);
+  var resultado = { ok: true, chavesRemovidas: chaves.length };
+  Logger.log(JSON.stringify(resultado));
+  return resultado;
+}
+
 function transporteDocsGradeMascararCelula_(sheet, linha, coluna, texto) {
   var row = (((sheet.data || [])[0] || {}).rowData || [])[linha];
   var cell = row && row.values && row.values[coluna];
@@ -362,36 +558,35 @@ function transporteDocsGradeMascararCelula_(sheet, linha, coluna, texto) {
   }
 }
 
+/* ===== Diagnostico: leitura da grade real no Apps Script =====
+ * Executar manualmente no editor (somente administradores). Le as abas MARKEN da
+ * planilha de Transporte sem alterar nada, duas vezes: a frio (relendo o layout e
+ * gravando o cache) e a quente (layout do cache + valores). Monta o HTML da leitura
+ * a quente e converte em PDF salvo na pasta privada de diagnostico. A
+ * identificacao do participante (C3 da Folha) e mascarada, como a anonimizacao
+ * do PDF atual faz. O log contem somente contagens, tamanhos e tempos.
+ */
 function diagnosticarGradeTransporteHtml() {
   codexAssertAdmin_();
   var tempos = {};
   var inicio = Date.now();
-  var marca = inicio;
   var ss = getTransporteSpreadsheetCodex_();
   var spec = transportePdfSpec_('MARKEN', '', '', ss);
-  var flutuantes = {};
-  spec.ordem.forEach(function(titulo) {
-    var sh = ss.getSheetByName(titulo);
-    flutuantes[titulo] = sh ? sh.getImages().length : null;
-  });
-  tempos.abasMs = Date.now() - marca;
 
+  var marca = Date.now();
+  var frio = transporteDocsGradeCarregar_(ss.getId(), spec.ordem, { ignorarCache: true });
+  tempos.frioMs = Date.now() - marca;
   marca = Date.now();
-  var leitura = transporteDocsGradeLer_(ss.getId(), spec.ordem, ScriptApp.getOAuthToken());
-  tempos.leituraMs = Date.now() - marca;
+  var quente = transporteDocsGradeCarregar_(ss.getId(), spec.ordem, {});
+  tempos.quenteMs = Date.now() - marca;
 
-  var folha = leitura.abas[spec.ordem[0]];
+  var folha = quente.abas[spec.ordem[0]];
   if (folha) transporteDocsGradeMascararCelula_(folha, 2, 2, '[participante]');
 
   marca = Date.now();
-  var urls = transporteDocsGradeUrlsImagens_(leitura.abas);
-  var imagens = transporteDocsGradeImagensDataUri_(urls);
-  tempos.imagensMs = Date.now() - marca;
-
-  marca = Date.now();
-  var html = transporteDocsGradeMontar_(leitura.abas, spec.ordem.map(function(titulo) {
+  var html = transporteDocsGradeMontar_(quente.abas, spec.ordem.map(function(titulo) {
     return { aba: titulo, copias: spec.copias[titulo] };
-  }), { imagemSrc: function(url) { return imagens[url] || ''; } });
+  }), {});
   tempos.htmlMs = Date.now() - marca;
 
   marca = Date.now();
@@ -411,16 +606,14 @@ function diagnosticarGradeTransporteHtml() {
   tempos.totalMs = Date.now() - inicio;
 
   var resultado = {
-    ok: paginas === paginasEsperadas,
+    ok: paginas === paginasEsperadas && quente.info.layoutsDoCache === spec.ordem.length,
     paginas: paginas,
     paginasEsperadas: paginasEsperadas,
-    abasLidas: Object.keys(leitura.abas).length,
-    bytesGrade: leitura.bytes,
+    abasMontadas: Object.keys(quente.abas).length,
+    frio: { tempos: frio.tempos, info: frio.info },
+    quente: { tempos: quente.tempos, info: quente.info },
     bytesHtml: html.length,
     bytesPdf: blob.getBytes().length,
-    imagens: urls.length,
-    imagensIncorporadas: Object.keys(imagens).length,
-    imagensFlutuantes: flutuantes,
     tempos: tempos,
     fileName: arquivo.getName(),
     fileUrl: arquivo.getUrl()
