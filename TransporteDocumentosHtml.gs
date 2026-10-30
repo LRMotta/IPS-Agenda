@@ -112,6 +112,14 @@ function transporteDocsHtmlFonteVolume_(texto) {
   return 0;
 }
 
+// Mesma compactacao de transporteAjustarVolumesDeclaracao_ antes de medir o texto
+// (inclusive a unidade 'mL' usada la para todas as linhas).
+function transporteDocsHtmlFormulaCompacta_(texto) {
+  if (!texto || typeof transporteParseFormula_ !== 'function') return texto;
+  var parsed = transporteParseFormula_(texto);
+  return parsed.segmentos && parsed.segmentos.length ? transporteFormulaFromSegments_(parsed.segmentos, 'mL') : texto;
+}
+
 function transporteDocsHtmlMateriais_(dados) {
   var porChave = {};
   (dados.materiais || []).forEach(function(item) {
@@ -121,7 +129,7 @@ function transporteDocsHtmlMateriais_(dados) {
   var excedidas = [];
   var linhas = TRANSPORTE_DOCS_HTML_MATERIAIS_.map(function(def, index) {
     var item = porChave[def.chave];
-    var formula = item ? String(item.formula || '').trim() : '';
+    var formula = transporteDocsHtmlFormulaCompacta_(item ? String(item.formula || '').trim() : '');
     var fonte = transporteDocsHtmlFonteVolume_(formula);
     if (!fonte) excedidas.push(21 + index);
     return {
@@ -164,11 +172,61 @@ function transporteDocsHtmlItensInvoice_(materiais, outroTipo) {
  * Como no PDF atual, a primeira e a ultima coluna (vazias) ficam fora da area
  * impressa e o restante ocupa toda a largura util.
  */
+// Larguras medias de caractere da Arial (em) para estimar o espaco do texto sem
+// renderizar: serve para transbordo entre celulas e altura de texto quebrado.
+function transporteDocsHtmlLarguraTextoPx_(texto, fontePt, negrito) {
+  var px = Number(fontePt || 10) * 96 / 72 * (negrito ? 1.08 : 1);
+  return String(texto == null ? '' : texto).split(/\r?\n/).reduce(function(maior, linha) {
+    var em = 0;
+    for (var i = 0; i < linha.length; i++) {
+      var ch = linha.charAt(i);
+      if (ch === ' ') em += 0.278;
+      else if (/[ilIjtf.,;:'|!()[\]]/.test(ch)) em += 0.3;
+      else if (/[mwMW@%]/.test(ch)) em += 0.85;
+      else if (/[A-ZÀ-Ý]/.test(ch)) em += 0.68;
+      else em += 0.53;
+    }
+    return Math.max(maior, em * px);
+  }, 0);
+}
+
+// Altura estimada (px) do texto numa largura util; sem quebra conta so as linhas explicitas.
+function transporteDocsHtmlAlturaTextoPx_(texto, larguraUtilPx, fontePt, negrito, quebra) {
+  var alturaLinha = Number(fontePt || 10) * 96 / 72 * 1.15;
+  var linhas = String(texto == null ? '' : texto).split(/\r?\n/).reduce(function(acc, linha) {
+    if (!quebra || larguraUtilPx <= 0) return acc + 1;
+    return acc + Math.max(1, Math.ceil(transporteDocsHtmlLarguraTextoPx_(linha, fontePt, negrito) / larguraUtilPx));
+  }, 0);
+  return linhas * alturaLinha;
+}
+
+// A pagina tem altura fixa e corta o que passar dela (overflow:hidden), o que a
+// contagem de paginas do PDF nao detecta. Conteudo que nao cabe bloqueia a geracao.
+// A altura inclui o crescimento estimado das linhas cujo texto nao cabe nelas.
+function transporteDocsHtmlValidarAltura_(alturaPx, titulo) {
+  if (alturaPx <= TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_) return;
+  throw new Error('O documento ' + (titulo ? '"' + titulo + '" ' : '') + 'excede a altura de uma página A4 no HTML (' +
+    Math.round(alturaPx) + ' px de ' + TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_ + ' px); o PDF cortaria conteúdo.');
+}
+
 function transporteDocsHtmlGrade_(colunasPx, linhas) {
   var colunas = colunasPx.slice(1, -1);
   // 2 px de folga para a borda direita colapsada nao ser cortada pela pagina.
   var largura = TRANSPORTE_DOCS_HTML_LARGURA_PX_ - 2;
   var escala = largura / colunas.reduce(function(a, b) { return a + b; }, 0);
+  // Texto quebrado que nao cabe na altura da linha (mesclagens verticais nao contam).
+  var excesso = linhas.map(function(linha) {
+    return (linha.cells || []).reduce(function(maior, cell) {
+      if (!cell.html || (cell.rs || 1) > 1 || /<(img|span class="cb"|div)/.test(cell.html)) return maior;
+      var largura = 0;
+      for (var k = Math.max(cell.col - 1, 0); k < Math.min(cell.col - 1 + (cell.cs || 1), colunas.length); k++) largura += colunas[k];
+      var texto = cell.html.replace(/<br>/g, '\n').replace(/<[^>]*>/g, '')
+        .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, 'x');
+      var necessaria = transporteDocsHtmlAlturaTextoPx_(texto, (largura - 4 / escala), cell.fs || 7.8, cell.b, !!cell.wrap) + 4 / escala;
+      return Math.max(maior, necessaria - linha.h);
+    }, 0);
+  });
+  transporteDocsHtmlValidarAltura_(linhas.reduce(function(acc, linha, i) { return acc + (linha.h + excesso[i]) * escala * 0.97; }, 0));
   var ocupadas = {};
   var html = ['<table class="grade" style="width:' + largura + 'px"><colgroup>'];
   colunas.forEach(function(w) { html.push('<col style="width:' + (w * escala).toFixed(2) + 'px">'); });
