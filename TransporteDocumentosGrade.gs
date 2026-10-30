@@ -1050,8 +1050,10 @@ function diagnosticarGradeTransporteHtml() {
 
   marca = Date.now();
   // A Folha de Agendamento deste fluxo e o modelo HTML proprio, nao a aba da planilha.
+  var logoSrc = typeof reqExamesLogoSrc_ === 'function' ? reqExamesLogoSrc_() : '';
+  tempos.folhaEtapas = { logoMs: Date.now() - marca };
   var folha = transporteFolhaHtmlParaGrade_(ss, Object.assign({}, payload, { courier: 'MARKEN' }), spec, {
-    logoSrc: typeof reqExamesLogoSrc_ === 'function' ? reqExamesLogoSrc_() : ''
+    logoSrc: logoSrc, tempos: tempos.folhaEtapas
   });
   tempos.folhaMs = Date.now() - marca;
   var html = transporteDocsGradeMontar_(quente.abas, spec.ordem.map(function(titulo) {

@@ -170,10 +170,11 @@ test('montagem da grade usa o HTML da folha no lugar da aba, com as copias', () 
   assert.throws(() => app.transporteDocsGradeMontar_({}, [{ aba: 'Outra', copias: 1 }], {}), /Aba necessária não encontrada: Outra/);
 });
 
-test('contexto da Agenda confirma a origem pelo vinculo do Backup, nao so pelo texto', () => {
+test('contexto da Agenda usa uma unica busca de texto e confirma ID e vinculo do Backup', () => {
   // Colunas (1-based): 1 id, 2 data, 6 participante, 9 projeto, 11 visita, 12 backup ref, 13 backup II.
   const linhas = [
     ['ag-origem-falsa', '2026-10-20', 'Outra Pessoa', 'P-1', 'V1', '{"id":"ag-destino-2"}', ''],
+    ['ag-destino-2', '03/11/2026', 'Outra Pessoa', 'P-1', 'Outra visita', '', ''],
     ['ag-origem', '28/10/2026', 'Fulana de Tal Exemplo', 'MK-0000-021', 'Ciclo 3 · Dia 1', '{"id":"ag-destino"}', ''],
     ['ag-destino', '03/11/2026', 'Fulana de Tal Exemplo', 'MK-0000-021', 'Envio C3D1', '', '']
   ].map(([id, data, part, proj, vis, ref, b2]) => {
@@ -181,15 +182,26 @@ test('contexto da Agenda confirma a origem pelo vinculo do Backup, nao so pelo t
     row[0] = id; row[1] = data; row[5] = part; row[8] = proj; row[10] = vis; row[11] = ref; row[12] = b2;
     return row;
   });
+  const chamadas = { buscas: 0, leituras: [] };
   const sheet = {
     getLastRow: () => linhas.length + 1,
     getRange(r, c, nr, nc) {
+      nr = nr || 1; nc = nc || 1;
       return {
-        getDisplayValue: () => linhas[r - 2][c - 1],
-        getValues: () => linhas.slice(r - 2, r - 2 + (nr || 1)).map(l => l.slice(c - 1, c - 1 + (nc || 1))),
+        getValues: () => {
+          chamadas.leituras.push(nr);
+          return linhas.slice(r - 2, r - 2 + nr).map(l => l.slice(c - 1, c - 1 + nc));
+        },
         createTextFinder: texto => ({
           matchCase() { return this; },
-          findAll: () => linhas.map((l, i) => ({ row: i + 2, v: String(l[c - 1]) })).filter(x => x.v.includes(texto)).map(x => ({ getRow: () => x.row }))
+          findAll: () => {
+            chamadas.buscas++;
+            const out = [];
+            linhas.slice(r - 2, r - 2 + nr).forEach((l, i) => l.slice(c - 1, c - 1 + nc).forEach((v, j) => {
+              if (String(v).includes(texto)) out.push({ getRow: () => r + i, getColumn: () => c + j });
+            }));
+            return out;
+          }
         })
       };
     }
@@ -198,17 +210,25 @@ test('contexto da Agenda confirma a origem pelo vinculo do Backup, nao so pelo t
     AGENDA_CFG: {
       lastCol: 13,
       col: { id: 1, visita: 11, backupAgendaRef: 12, backup2Dados: 13 },
-      idx: { data: 1, participante: 5, projeto: 8, visita: 10 }
+      idx: { id: 0, data: 1, participante: 5, projeto: 8, visita: 10 }
     },
     getAgendaSheetForRead_: () => sheet,
-    agendaRowNumberById_: (_s, id) => linhas.findIndex(l => l[0] === id) + 2,
     agendaBackupFromRow_: (row, slot) => ({ agendamentos: slot === 'backup' && row[11] ? [JSON.parse(row[11])] : [] }),
     extrairIniciais_: nome => String(nome).split(/\s+/).filter(p => !['de', 'da', 'do'].includes(p.toLowerCase())).map(p => p[0].toUpperCase() + '.').join('')
   });
-  const ctx = app.transporteFolhaHtmlAgendaContexto_('ag-destino');
+  const tempos = {};
+  const ctx = app.transporteFolhaHtmlAgendaContexto_('ag-destino', tempos);
+  // "ag-destino" tambem aparece em "ag-destino-2" (ID e vinculo de outra linha): so o ID exato e o vinculo valido contam.
   assert.equal(ctx.visita, 'Envio C3D1');
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.origem)), { slot: 'backup', data: '28/10/2026', protocolo: 'MK-0000-021', iniciais: 'F.T.E.', visita: 'Ciclo 3 · Dia 1' });
+  // Uma busca; leituras so de linhas inteiras individuais, sem ler a coluna de IDs.
+  assert.equal(chamadas.buscas, 1);
+  assert.ok(chamadas.leituras.every(n => n === 1));
+  assert.ok(chamadas.leituras.length <= 4);
+  assert.ok(['abrirMs', 'buscaMs', 'linhasMs', 'linhasLidas'].every(k => typeof tempos[k] === 'number'));
+
   assert.equal(app.transporteFolhaHtmlDataAgenda_('28/10/2026').texto, '28/10/2026');
   assert.equal(app.transporteFolhaHtmlAgendaContexto_('ag-origem').origem, null);
+  assert.equal(app.transporteFolhaHtmlAgendaContexto_('inexistente').visita, '');
   assert.deepEqual(JSON.parse(JSON.stringify(app.transporteFolhaHtmlAgendaContexto_(''))), { visita: '', origem: null });
 });

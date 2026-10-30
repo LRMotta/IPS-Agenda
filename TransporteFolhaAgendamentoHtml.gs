@@ -129,42 +129,70 @@ function transporteFolhaHtmlMateriais_(materiais) {
 /**
  * Contexto da Agenda: visita do agendamento e, para envio criado a partir de um
  * Backup, o agendamento de origem. O vinculo estruturado fica no agendamento de
- * origem (Backup_Agendamento_Ref / Backup II); a busca por texto localiza so as
- * linhas candidatas e o vinculo e confirmado pelo JSON. Somente leitura.
+ * origem (Backup_Agendamento_Ref / Backup II). Uma unica busca de texto pelo ID
+ * localiza a linha do envio (coluna ID) e as linhas que o citam nas colunas de
+ * Backup; so essas linhas sao lidas e o vinculo e confirmado pelo JSON.
+ * tempos (opcional) recebe abrirMs, buscaMs e linhasMs. Somente leitura.
  */
-function transporteFolhaHtmlAgendaContexto_(idAgenda) {
+function transporteFolhaHtmlAgendaContexto_(idAgenda, tempos) {
+  tempos = tempos || {};
   var out = { visita: '', origem: null };
   idAgenda = String(idAgenda || '').trim();
   if (!idAgenda) return out;
+  var marca = Date.now();
   var agenda = getAgendaSheetForRead_();
-  var linha = agendaRowNumberById_(agenda, idAgenda);
-  if (!linha) return out;
-  var largura = AGENDA_CFG.lastCol;
-  out.visita = String(agenda.getRange(linha, AGENDA_CFG.col.visita).getDisplayValue() || '').trim();
-
-  var colunas = [{ col: AGENDA_CFG.col.backupAgendaRef, slot: 'backup' }];
-  if (AGENDA_CFG.col.backup2Dados) colunas.push({ col: AGENDA_CFG.col.backup2Dados, slot: 'backup2' });
   var ultima = agenda.getLastRow();
-  for (var i = 0; i < colunas.length && !out.origem; i++) {
-    var candidatas = agenda.getRange(2, colunas[i].col, ultima - 1, 1).createTextFinder(idAgenda)
-      .matchCase(true).findAll().map(function(range) { return range.getRow(); });
-    for (var j = 0; j < candidatas.length; j++) {
-      if (candidatas[j] === linha) continue;
-      var row = agenda.getRange(candidatas[j], 1, 1, largura).getValues()[0];
-      var backup;
-      try { backup = agendaBackupFromRow_(row, colunas[i].slot); } catch (e) { continue; }
-      var vinculado = (backup.agendamentos || []).some(function(ref) { return ref && ref.id === idAgenda; });
-      if (!vinculado) continue;
-      out.origem = {
-        slot: colunas[i].slot,
-        data: row[AGENDA_CFG.idx.data],
-        protocolo: String(row[AGENDA_CFG.idx.projeto] || '').trim(),
-        iniciais: extrairIniciais_(row[AGENDA_CFG.idx.participante]),
-        visita: String(row[AGENDA_CFG.idx.visita] || '').trim()
-      };
-      break;
-    }
+  tempos.abrirMs = Date.now() - marca;
+  if (ultima < 2) return out;
+  var largura = AGENDA_CFG.lastCol;
+  var colunasBackup = {};
+  colunasBackup[AGENDA_CFG.col.backupAgendaRef] = 'backup';
+  if (AGENDA_CFG.col.backup2Dados) colunasBackup[AGENDA_CFG.col.backup2Dados] = 'backup2';
+
+  marca = Date.now();
+  var encontrados = agenda.getRange(2, 1, ultima - 1, largura).createTextFinder(idAgenda).matchCase(true).findAll()
+    .map(function(range) { return { linha: range.getRow(), coluna: range.getColumn() }; });
+  tempos.buscaMs = Date.now() - marca;
+
+  marca = Date.now();
+  var linhasLidas = {};
+  function linhaValores(n) {
+    if (!linhasLidas[n]) linhasLidas[n] = agenda.getRange(n, 1, 1, largura).getValues()[0];
+    return linhasLidas[n];
   }
+  var linha = 0;
+  encontrados.some(function(item) {
+    if (item.coluna !== AGENDA_CFG.col.id) return false;
+    // A busca e por trecho: confirma o ID exato antes de aceitar a linha.
+    if (String(linhaValores(item.linha)[AGENDA_CFG.idx.id] || '').trim() !== idAgenda) return false;
+    linha = item.linha;
+    return true;
+  });
+  if (!linha) {
+    tempos.linhasMs = Date.now() - marca;
+    return out;
+  }
+  out.visita = String(linhaValores(linha)[AGENDA_CFG.idx.visita] || '').trim();
+
+  encontrados.some(function(item) {
+    var slot = colunasBackup[item.coluna];
+    if (!slot || item.linha === linha) return false;
+    var row = linhaValores(item.linha);
+    var backup;
+    try { backup = agendaBackupFromRow_(row, slot); } catch (e) { return false; }
+    var vinculado = (backup.agendamentos || []).some(function(ref) { return ref && ref.id === idAgenda; });
+    if (!vinculado) return false;
+    out.origem = {
+      slot: slot,
+      data: row[AGENDA_CFG.idx.data],
+      protocolo: String(row[AGENDA_CFG.idx.projeto] || '').trim(),
+      iniciais: extrairIniciais_(row[AGENDA_CFG.idx.participante]),
+      visita: String(row[AGENDA_CFG.idx.visita] || '').trim()
+    };
+    return true;
+  });
+  tempos.linhasMs = Date.now() - marca;
+  tempos.linhasLidas = Object.keys(linhasLidas).length;
   return out;
 }
 
@@ -180,7 +208,8 @@ function transporteFolhaHtmlDataAgenda_(value) {
 /**
  * Reune os dados da folha. registro: transporteReadRegistro_ ja derivado
  * (transporteDerivarDadosParticipante_). spec: transportePdfSpec_ do envio.
- * opcoes.agendaContexto / opcoes.labCentral / opcoes.agora permitem testes sem servicos.
+ * opcoes.agendaContexto / opcoes.labCentral / opcoes.agora permitem testes sem servicos;
+ * opcoes.tempos (opcional) recebe a duracao de cada leitura para o diagnostico.
  */
 function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
   opcoes = opcoes || {};
@@ -190,8 +219,14 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
   var titulosFolha = ['folhaAgendamento', 'folhaDhlPinex'].map(function(chave) {
     return ss ? transportePdfActualSheetName_(chave, ss) : '';
   }).filter(Boolean);
-  var agendaCtx = opcoes.agendaContexto || transporteFolhaHtmlAgendaContexto_(registro.idAgenda);
+  var tempos = opcoes.tempos || {};
+  var marca = Date.now();
+  tempos.agenda = {};
+  var agendaCtx = opcoes.agendaContexto || transporteFolhaHtmlAgendaContexto_(registro.idAgenda, tempos.agenda);
+  tempos.agendaMs = Date.now() - marca;
+  marca = Date.now();
   var lab = opcoes.labCentral !== undefined ? opcoes.labCentral : transporteLabCentralByDestino_(registro.destino);
+  tempos.labMs = Date.now() - marca;
   var participante = transporteParticipanteDocumento_(registro);
   var envio = transporteFolhaHtmlData_(registro.dataEnvio);
   var origem = null;
@@ -374,7 +409,9 @@ function transporteFolhaHtmlValidarSemNome_(html, nomes) {
 function transporteFolhaHtmlParaGrade_(ss, registro, spec, opcoes) {
   opcoes = opcoes || {};
   var dados = transporteFolhaHtmlDados_(ss, registro, spec, opcoes);
+  var marca = Date.now();
   var html = transporteFolhaHtmlPagina_(dados, opcoes);
+  if (opcoes.tempos) opcoes.tempos.paginaMs = Date.now() - marca;
   transporteFolhaHtmlValidarSemNome_(html, [registro.paciente, registro.participante]);
   var abas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(chave) {
     return transportePdfActualSheetName_(chave, ss);
