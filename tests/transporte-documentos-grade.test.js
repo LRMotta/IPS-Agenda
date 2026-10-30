@@ -134,10 +134,19 @@ function somenteValores(sheet) {
 }
 
 function diagnosticoGrade(options = {}) {
-  const calls = { fetch: [], fetchAll: [], html: [], files: [], logs: [], avancado: [] };
+  const calls = { fetch: [], fetchAll: [], html: [], files: [], logs: [], avancado: [], getValues: [] };
   const ordem = ['Folha de Agendamento', "Declaração d'Exemplo"];
   const folha = aba([[celula('x'), {}, {}], [{}, {}, {}], [celula('Rótulo'), {}, celula('Pessoa Participante')]], { titulo: ordem[0], larguras: [100, 100, 100] });
-  const declaracao = aba([[{ userEnteredValue: { imageValue: { imageProperties: { contentUrl: 'https://img.example/a?key=1' } } } }, celula('Dr(a). Exemplo')]], { titulo: ordem[1] });
+  // A API publica nao devolve imagens de celula: o logo (A1) vem como CellImage do SpreadsheetApp.
+  const declaracao = aba([[{ effectiveFormat: { borders: { bottom: SOLID } } }, celula('Dr(a). Exemplo')]], { titulo: ordem[1] });
+  const celulaImagem = { valueType: 'IMAGE', getContentUrl: () => 'https://img.example/a?key=1' };
+  const ss = {
+    getId: () => 'planilha-id',
+    getSheetByName: nome => ({ getDataRange: () => ({ getValues: () => {
+      calls.getValues.push(nome);
+      return nome === ordem[1] ? [[celulaImagem, 'Dr(a). Exemplo']] : [['x', '', ''], ['', '', ''], ['Rótulo', '', 'Pessoa Participante']];
+    } }) })
+  };
   const responder = url => (url.includes('startRow') ? { sheets: [somenteValores(folha), somenteValores(declaracao)] } : { sheets: [folha, declaracao] });
   const pdfText = Array.from({ length: options.paginas || 5 }, () => '<< /Type /Page >>').join('') + '<< /Type /Pages >>';
   const pdfBlob = { name: '', setName(n) { this.name = n; return this; }, getDataAsString: () => pdfText, getBytes: () => [1, 2, 3] };
@@ -145,7 +154,8 @@ function diagnosticoGrade(options = {}) {
   const cache = options.cache || cacheSimulado();
   const ctx = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
     codexAssertAdmin_: () => { if (options.negar) throw new Error('Acesso permitido apenas para administradores.'); },
-    getTransporteSpreadsheetCodex_: () => ({ getId: () => 'planilha-id' }),
+    getTransporteSpreadsheetCodex_: () => ss,
+    SpreadsheetApp: { ValueType: { IMAGE: 'IMAGE' } },
     transportePdfSpec_: courier => {
       calls.courier = courier;
       return { ordem, copias: { [ordem[0]]: 1, [ordem[1]]: 4 } };
@@ -161,7 +171,7 @@ function diagnosticoGrade(options = {}) {
         return { getResponseCode: () => options.http || 200, getContentText: () => corpo };
       },
       fetchAll: reqs => {
-        calls.fetchAll.push([...reqs].map(r => r.url));
+        calls.fetchAll.push([...reqs].map(r => r.url + ' ' + r.headers.Authorization));
         return reqs.map(() => ({ getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/png', getBytes: () => [65] }) }));
       }
     },
@@ -174,7 +184,7 @@ function diagnosticoGrade(options = {}) {
       Sheets: { Spreadsheets: { get: (id, params) => { calls.avancado.push({ id, params }); return { sheets: [folha, declaracao] }; } } }
     } : {})
   });
-  return { ctx, calls, cache };
+  return { ctx, calls, cache, ss };
 }
 
 test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda leitura busca so os valores', () => {
@@ -191,7 +201,9 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
   assert.match(valoresQuente, /&ranges='Folha%20de%20Agendamento'!A1%3AC3&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'!A1%3AB1$/);
   assert.equal(valoresFrio, valoresQuente);
   calls.fetch.forEach(f => assert.equal(f.opts.headers.Authorization, 'Bearer token-teste'));
-  assert.deepEqual(calls.fetchAll, [['https://img.example/a?key=1']]);
+  assert.deepEqual(calls.fetchAll, [['https://img.example/a?key=1 Bearer token-teste']]);
+  // SpreadsheetApp so e consultado para montar o layout (leitura a frio).
+  assert.deepEqual(calls.getValues, ['Folha de Agendamento', "Declaração d'Exemplo"]);
 
   const contadores = [...cache.itens.keys()].filter(k => !/:\d+$/.test(k));
   assert.equal(contadores.length, 2);
@@ -224,19 +236,19 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
 });
 
 test('cache incompleto ou ilegivel e relido da planilha', () => {
-  const { ctx, calls, cache } = diagnosticoGrade();
-  ctx.transporteDocsGradeCarregar_('planilha-id', ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  const { ctx, calls, cache, ss } = diagnosticoGrade();
+  ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {});
   const pedaco = [...cache.itens.keys()].find(k => /:0$/.test(k));
   cache.itens.set(pedaco, 'nao-e-gzip');
-  const r = ctx.transporteDocsGradeCarregar_('planilha-id', ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  const r = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {});
   assert.equal(r.info.layoutsDoCache, 1);
   assert.equal(calls.fetch.filter(f => !f.url.includes('startRow')).length, 2);
   assert.equal(Object.keys(r.abas).length, 2);
 });
 
 test('limpar cache remove o contador e os pedacos de cada aba MARKEN', () => {
-  const { ctx, cache } = diagnosticoGrade();
-  ctx.transporteDocsGradeCarregar_('planilha-id', ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  const { ctx, cache, ss } = diagnosticoGrade();
+  ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {});
   assert.ok(cache.itens.size > 0);
   const r = ctx.limparCacheLayoutTransporteHtml();
   assert.equal(cache.itens.size, 0);

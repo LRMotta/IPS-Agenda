@@ -452,11 +452,41 @@ function transporteDocsGradeUrlsImagens_(sheets) {
   return Object.keys(urls);
 }
 
+/**
+ * Imagens dentro das celulas: a API publica do Sheets nao devolve imageValue,
+ * mas getValues do SpreadsheetApp devolve CellImage (getContentUrl). Indices de
+ * base 0 a partir de A1. Usado so ao (re)montar o layout.
+ */
+function transporteDocsGradeImagensCelulas_(sh) {
+  var tipo = SpreadsheetApp.ValueType && SpreadsheetApp.ValueType.IMAGE;
+  var achadas = [];
+  sh.getDataRange().getValues().forEach(function(linha, r) {
+    linha.forEach(function(v, c) {
+      if (!v || typeof v !== 'object' || v.valueType !== tipo || typeof v.getContentUrl !== 'function') return;
+      var url = v.getContentUrl();
+      if (url) achadas.push({ r: r, c: c, url: url });
+    });
+  });
+  return achadas;
+}
+
+function transporteDocsGradeMarcarImagem_(sheet, r, c, url) {
+  var data = sheet.data[0];
+  var rows = data.rowData || (data.rowData = []);
+  while (rows.length <= r) rows.push({ values: [] });
+  var celulas = rows[r].values || (rows[r].values = []);
+  while (celulas.length <= c) celulas.push({});
+  var cell = celulas[c] || (celulas[c] = {});
+  cell.userEnteredValue = { imageValue: { imageProperties: { contentUrl: url } } };
+}
+
 // Baixa as imagens em paralelo e devolve url -> data URI (falhas ficam fora do mapa).
-function transporteDocsGradeImagensDataUri_(urls) {
+function transporteDocsGradeImagensDataUri_(urls, token) {
   var mapa = {};
   if (!urls.length) return mapa;
-  var respostas = UrlFetchApp.fetchAll(urls.map(function(url) { return { url: url, muteHttpExceptions: true }; }));
+  var respostas = UrlFetchApp.fetchAll(urls.map(function(url) {
+    return { url: url, headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true };
+  }));
   respostas.forEach(function(resp, i) {
     if (resp.getResponseCode() !== 200) return;
     var blob = resp.getBlob();
@@ -467,11 +497,13 @@ function transporteDocsGradeImagensDataUri_(urls) {
 
 /**
  * Carrega as abas prontas para transporteDocsGradeMontar_ (mapa titulo -> sheet).
- * opcoes.cache (padrao: cache do script); opcoes.ignorarCache rele o layout.
+ * ss: planilha (SpreadsheetApp); opcoes.cache (padrao: cache do script);
+ * opcoes.ignorarCache rele o layout.
  * Devolve { abas, tempos, info }; info tem so contagens, tamanhos e a via usada.
  */
-function transporteDocsGradeCarregar_(spreadsheetId, titulos, opcoes) {
+function transporteDocsGradeCarregar_(ss, titulos, opcoes) {
   opcoes = opcoes || {};
+  var spreadsheetId = ss.getId();
   var cache = opcoes.cache || CacheService.getScriptCache();
   var token = ScriptApp.getOAuthToken();
   var tempos = {};
@@ -496,8 +528,15 @@ function transporteDocsGradeCarregar_(spreadsheetId, titulos, opcoes) {
     var sheets = leitura.dados.sheets || [];
 
     marca = Date.now();
+    sheets.forEach(function(sheet) {
+      var sh = ss.getSheetByName(sheet.properties.title);
+      if (!sh) return;
+      transporteDocsGradeImagensCelulas_(sh).forEach(function(img) {
+        transporteDocsGradeMarcarImagem_(sheet, img.r, img.c, img.url);
+      });
+    });
     var urls = transporteDocsGradeUrlsImagens_(sheets);
-    var imagens = transporteDocsGradeImagensDataUri_(urls);
+    var imagens = transporteDocsGradeImagensDataUri_(urls, token);
     info.imagens = urls.length;
     info.imagensIncorporadas = Object.keys(imagens).length;
     tempos.imagensMs = Date.now() - marca;
@@ -574,10 +613,10 @@ function diagnosticarGradeTransporteHtml() {
   var spec = transportePdfSpec_('MARKEN', '', '', ss);
 
   var marca = Date.now();
-  var frio = transporteDocsGradeCarregar_(ss.getId(), spec.ordem, { ignorarCache: true });
+  var frio = transporteDocsGradeCarregar_(ss, spec.ordem, { ignorarCache: true });
   tempos.frioMs = Date.now() - marca;
   marca = Date.now();
-  var quente = transporteDocsGradeCarregar_(ss.getId(), spec.ordem, {});
+  var quente = transporteDocsGradeCarregar_(ss, spec.ordem, {});
   tempos.quenteMs = Date.now() - marca;
 
   var folha = quente.abas[spec.ordem[0]];
