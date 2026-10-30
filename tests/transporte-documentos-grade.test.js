@@ -89,76 +89,161 @@ test('documento repete a pagina por copia, usa a pagina do exportador e exige ab
   assert.throws(() => app.transporteDocsGradeHtml_(aba([[{}, {}]])), /sem conteúdo/);
 });
 
+
+// Utilities do Apps Script com gzip/MD5/base64 reais do Node.
+function utilitiesReais() {
+  const zlib = require('node:zlib');
+  const crypto = require('node:crypto');
+  const blob = bytes => ({ getBytes: () => [...bytes], getDataAsString: () => Buffer.from(bytes).toString('utf8') });
+  return {
+    formatDate: () => '20261105-120000',
+    newBlob: d => blob(typeof d === 'string' ? Buffer.from(d, 'utf8') : Buffer.from(d)),
+    gzip: b => blob(zlib.gzipSync(Buffer.from(b.getBytes()))),
+    ungzip: b => blob(zlib.gunzipSync(Buffer.from(b.getBytes()))),
+    base64Encode: bytes => Buffer.from(bytes).toString('base64'),
+    base64Decode: texto => [...Buffer.from(texto, 'base64')].map(b => (b > 127 ? b - 256 : b)),
+    computeDigest: (alg, texto) => [...crypto.createHash('md5').update(texto, 'utf8').digest()].map(b => (b > 127 ? b - 256 : b)),
+    DigestAlgorithm: { MD5: 'MD5' },
+    Charset: { UTF_8: 'UTF-8' }
+  };
+}
+
+function cacheSimulado() {
+  const itens = new Map();
+  return {
+    itens,
+    get: k => (itens.has(k) ? itens.get(k) : null),
+    getAll: ks => Object.fromEntries(ks.filter(k => itens.has(k)).map(k => [k, itens.get(k)])),
+    putAll: obj => Object.entries(obj).forEach(([k, v]) => itens.set(k, v)),
+    removeAll: ks => ks.forEach(k => itens.delete(k))
+  };
+}
+
+// So os campos de valor, como a API devolve com TRANSPORTE_DOCS_GRADE_CAMPOS_VALORES_.
+function somenteValores(sheet) {
+  return {
+    properties: { title: sheet.properties.title },
+    data: [{ startRow: 0, startColumn: 0, rowData: sheet.data[0].rowData.map(row => ({ values: row.values.map(c => {
+      const v = {};
+      if (c.formattedValue !== undefined) v.formattedValue = c.formattedValue;
+      if (c.effectiveValue) v.effectiveValue = c.effectiveValue;
+      if (c.textFormatRuns) v.textFormatRuns = c.textFormatRuns;
+      return v;
+    }) })) }]
+  };
+}
+
 function diagnosticoGrade(options = {}) {
-  const calls = { fetch: [], fetchAll: [], html: [], files: [], logs: [] };
+  const calls = { fetch: [], fetchAll: [], html: [], files: [], logs: [], avancado: [] };
   const ordem = ['Folha de Agendamento', "Declaração d'Exemplo"];
   const folha = aba([[celula('x'), {}, {}], [{}, {}, {}], [celula('Rótulo'), {}, celula('Pessoa Participante')]], { titulo: ordem[0], larguras: [100, 100, 100] });
   const declaracao = aba([[{ userEnteredValue: { imageValue: { imageProperties: { contentUrl: 'https://img.example/a?key=1' } } } }, celula('Dr(a). Exemplo')]], { titulo: ordem[1] });
+  const responder = url => (url.includes('startRow') ? { sheets: [somenteValores(folha), somenteValores(declaracao)] } : { sheets: [folha, declaracao] });
   const pdfText = Array.from({ length: options.paginas || 5 }, () => '<< /Type /Page >>').join('') + '<< /Type /Pages >>';
   const pdfBlob = { name: '', setName(n) { this.name = n; return this; }, getDataAsString: () => pdfText, getBytes: () => [1, 2, 3] };
   const folder = { createFile(blob) { calls.files.push(blob.name); return { getName: () => blob.name, getUrl: () => 'https://drive.example/f' }; } };
+  const cache = options.cache || cacheSimulado();
   const ctx = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
     codexAssertAdmin_: () => { if (options.negar) throw new Error('Acesso permitido apenas para administradores.'); },
-    getTransporteSpreadsheetCodex_: () => ({
-      getId: () => 'planilha-id',
-      getSheetByName: nome => ({ getImages: () => (nome === ordem[1] ? [{}, {}] : []) })
-    }),
-    transportePdfSpec_: (courier) => {
+    getTransporteSpreadsheetCodex_: () => ({ getId: () => 'planilha-id' }),
+    transportePdfSpec_: courier => {
       calls.courier = courier;
       return { ordem, copias: { [ordem[0]]: 1, [ordem[1]]: 4 } };
     },
     ScriptApp: { getOAuthToken: () => 'token-teste' },
+    CacheService: { getScriptCache: () => cache },
     UrlFetchApp: {
       fetch: (url, opts) => {
         calls.fetch.push({ url, opts });
         const corpo = options.http
           ? JSON.stringify({ error: { code: options.http, status: 'PERMISSION_DENIED', message: 'texto livre', details: [{ reason: 'SERVICE_DISABLED' }] } })
-          : JSON.stringify({ sheets: [folha, declaracao] });
+          : JSON.stringify(responder(url));
         return { getResponseCode: () => options.http || 200, getContentText: () => corpo };
       },
       fetchAll: reqs => {
         calls.fetchAll.push([...reqs].map(r => r.url));
-        return reqs.map(() => ({ getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/png', getBytes: () => [0] }) }));
+        return reqs.map(() => ({ getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/png', getBytes: () => [65] }) }));
       }
     },
-    Utilities: { formatDate: () => '20261105-120000', base64Encode: () => 'QQ==' },
+    Utilities: utilitiesReais(),
     HtmlService: { createHtmlOutput: html => { calls.html.push(html); return { getBlob: () => ({ getAs: () => pdfBlob }) }; } },
     MimeType: { PDF: 'application/pdf' },
     DriveApp: { getRootFolder: () => ({ getFoldersByName: () => ({ hasNext: () => true, next: () => folder }) }) },
     Logger: { log: line => calls.logs.push(line) },
     ...(options.servicoAvancado ? {
-      Sheets: { Spreadsheets: { get: (id, params) => { calls.avancado = { id, params }; return { sheets: [folha, declaracao] }; } } }
+      Sheets: { Spreadsheets: { get: (id, params) => { calls.avancado.push({ id, params }); return { sheets: [folha, declaracao] }; } } }
     } : {})
   });
-  return { ctx, calls };
+  return { ctx, calls, cache };
 }
 
-test('diagnostico da grade le as abas MARKEN pela API, incorpora imagens e mascara o participante', () => {
-  const { ctx, calls } = diagnosticoGrade();
+test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda leitura busca so os valores', () => {
+  const { ctx, calls, cache } = diagnosticoGrade();
   const r = ctx.diagnosticarGradeTransporteHtml();
   assert.equal(calls.courier, 'MARKEN');
-  assert.equal(calls.fetch.length, 1);
-  const { url, opts } = calls.fetch[0];
-  assert.match(url, /^https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/planilha-id\?includeGridData=true&fields=/);
-  assert.match(url, /&ranges='Folha%20de%20Agendamento'&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'$/);
-  assert.equal(opts.headers.Authorization, 'Bearer token-teste');
+  // Layout a frio + valores a frio + valores a quente.
+  assert.equal(calls.fetch.length, 3);
+  const [layout, valoresFrio, valoresQuente] = calls.fetch.map(f => f.url);
+  assert.match(layout, /^https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/planilha-id\?includeGridData=true&fields=sheets\(properties\(title\)%2Cmerges/);
+  assert.match(layout, /&ranges='Folha%20de%20Agendamento'&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'$/);
+  assert.match(valoresQuente, /startRow/);
+  assert.doesNotMatch(valoresQuente, /effectiveFormat|merges/);
+  assert.match(valoresQuente, /&ranges='Folha%20de%20Agendamento'!A1%3AC3&ranges='Declara%C3%A7%C3%A3o%20d''Exemplo'!A1%3AB1$/);
+  assert.equal(valoresFrio, valoresQuente);
+  calls.fetch.forEach(f => assert.equal(f.opts.headers.Authorization, 'Bearer token-teste'));
   assert.deepEqual(calls.fetchAll, [['https://img.example/a?key=1']]);
+
+  const contadores = [...cache.itens.keys()].filter(k => !/:\d+$/.test(k));
+  assert.equal(contadores.length, 2);
+  contadores.forEach(chave => {
+    const n = Number(cache.itens.get(chave));
+    const texto = Array.from({ length: n }, (_, i) => cache.itens.get(chave + ':' + i)).join('');
+    const layoutGuardado = require('node:zlib').gunzipSync(Buffer.from(texto, 'base64')).toString('utf8');
+    assert.match(layoutGuardado, /effectiveFormat|columnMetadata/);
+    assert.doesNotMatch(layoutGuardado, /Pessoa|Dr\(a\)|Rótulo|formattedValue|img\.example/);
+  });
+
   const html = calls.html[0];
   assert.equal((html.match(/<div class="pagina">/g) || []).length, 5);
   assert.match(html, /src="data:image\/png;base64,QQ=="/);
+  assert.match(html, /Dr\(a\)\. Exemplo/);
   assert.doesNotMatch(html, /Pessoa Participante/);
   assert.match(html, /\[participante\]/);
   assert.equal(r.ok, true);
-  assert.equal(r.abasLidas, 2);
-  assert.equal(r.imagensIncorporadas, 1);
-  assert.deepEqual({ ...r.imagensFlutuantes }, { 'Folha de Agendamento': 0, "Declaração d'Exemplo": 2 });
+  assert.equal(r.abasMontadas, 2);
+  assert.equal(r.frio.info.layoutsDoCache, 0);
+  assert.equal(r.frio.info.viaLayout, 'rest');
+  assert.equal(r.frio.info.imagensIncorporadas, 1);
+  assert.ok(r.frio.info.bytesCache > 0);
+  assert.equal(r.quente.info.layoutsDoCache, 2);
+  assert.equal(r.quente.tempos.layoutLerMs, undefined);
   assert.deepEqual(calls.files, ['diagnostico-grade-marken-20261105-120000.pdf']);
-  ['abasMs', 'leituraMs', 'imagensMs', 'htmlMs', 'conversaoMs', 'driveMs', 'totalMs'].forEach(k => assert.equal(typeof r.tempos[k], 'number', k));
+  ['frioMs', 'quenteMs', 'htmlMs', 'conversaoMs', 'driveMs', 'totalMs'].forEach(k => assert.equal(typeof r.tempos[k], 'number', k));
   assert.equal(calls.logs.length, 1);
-  assert.doesNotMatch(calls.logs[0], /Pessoa|Participante|Dr\(a\)|token|@/);
+  assert.doesNotMatch(calls.logs[0], /Pessoa|Participante|Dr\(a\)|token|@|base64/);
 });
 
-test('diagnostico da grade exige administrador e para em erro HTTP sem gerar arquivo', () => {
+test('cache incompleto ou ilegivel e relido da planilha', () => {
+  const { ctx, calls, cache } = diagnosticoGrade();
+  ctx.transporteDocsGradeCarregar_('planilha-id', ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  const pedaco = [...cache.itens.keys()].find(k => /:0$/.test(k));
+  cache.itens.set(pedaco, 'nao-e-gzip');
+  const r = ctx.transporteDocsGradeCarregar_('planilha-id', ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  assert.equal(r.info.layoutsDoCache, 1);
+  assert.equal(calls.fetch.filter(f => !f.url.includes('startRow')).length, 2);
+  assert.equal(Object.keys(r.abas).length, 2);
+});
+
+test('limpar cache remove o contador e os pedacos de cada aba MARKEN', () => {
+  const { ctx, cache } = diagnosticoGrade();
+  ctx.transporteDocsGradeCarregar_('planilha-id', ['Folha de Agendamento', "Declaração d'Exemplo"], {});
+  assert.ok(cache.itens.size > 0);
+  const r = ctx.limparCacheLayoutTransporteHtml();
+  assert.equal(cache.itens.size, 0);
+  assert.equal(r.chavesRemovidas, 4);
+});
+
+test('diagnostico exige administrador e para em erro HTTP sem servico avancado, sem gerar arquivo', () => {
   const negado = diagnosticoGrade({ negar: true });
   assert.throws(() => negado.ctx.diagnosticarGradeTransporteHtml(), /administradores/);
   assert.equal(negado.calls.fetch.length, 0);
@@ -169,23 +254,45 @@ test('diagnostico da grade exige administrador e para em erro HTTP sem gerar arq
   assert.equal(falha.calls.logs.length, 0);
 });
 
-test('diagnostico da grade sinaliza quebra de pagina divergente', () => {
+test('REST recusada recorre ao servico avancado Sheets com os mesmos intervalos e campos', () => {
+  const { ctx, calls } = diagnosticoGrade({ http: 403, servicoAvancado: true });
+  const r = ctx.diagnosticarGradeTransporteHtml();
+  assert.equal(calls.avancado[0].id, 'planilha-id');
+  assert.deepEqual([...calls.avancado[0].params.ranges], ["'Folha de Agendamento'", "'Declaração d''Exemplo'"]);
+  assert.equal(calls.avancado[0].params.includeGridData, true);
+  assert.match(calls.avancado[0].params.fields, /^sheets\(properties\(title\),merges,data\(/);
+  assert.match(calls.avancado[1].params.fields, /startRow/);
+  assert.equal(r.frio.info.viaLayout, 'avancado (REST HTTP 403: PERMISSION_DENIED / SERVICE_DISABLED)');
+  assert.equal(r.paginas, 5);
+  assert.doesNotMatch(calls.html[0], /Pessoa Participante/);
+});
+
+test('diagnostico sinaliza quebra de pagina divergente', () => {
   const { ctx } = diagnosticoGrade({ paginas: 4 });
   const r = ctx.diagnosticarGradeTransporteHtml();
   assert.equal(r.ok, false);
   assert.equal(r.paginasEsperadas, 5);
 });
 
-test('diagnostico da grade usa o servico avancado Sheets quando habilitado, com os mesmos intervalos e campos', () => {
-  const { ctx, calls } = diagnosticoGrade({ servicoAvancado: true });
-  const r = ctx.diagnosticarGradeTransporteHtml();
-  assert.equal(calls.fetch.length, 0);
-  assert.equal(calls.avancado.id, 'planilha-id');
-  assert.deepEqual([...calls.avancado.params.ranges], ["'Folha de Agendamento'", "'Declaração d''Exemplo'"]);
-  assert.equal(calls.avancado.params.includeGridData, true);
-  assert.match(calls.avancado.params.fields, /^sheets\(properties\(title\),merges,data\(/);
-  assert.equal(r.ok, true);
-  assert.equal(r.abasLidas, 2);
-  assert.ok(r.bytesGrade > 0);
-  assert.doesNotMatch(calls.html[0], /Pessoa Participante/);
+test('intervalos usam a area impressa com colunas em letras e apostrofo escapado', () => {
+  assert.equal(app.transporteDocsGradeLetraColuna_(1), 'A');
+  assert.equal(app.transporteDocsGradeLetraColuna_(26), 'Z');
+  assert.equal(app.transporteDocsGradeLetraColuna_(27), 'AA');
+  assert.equal(app.transporteDocsGradeLetraColuna_(39), 'AM');
+  assert.equal(app.transporteDocsGradeIntervaloAba_("Aba d'X", 17, 53), "'Aba d''X'!A1:Q53");
+  assert.equal(app.transporteDocsGradeIntervaloAba_('Aba'), "'Aba'");
+});
+
+test('layout com valores aplicados reproduz o HTML da grade completa', () => {
+  const sheet = aba([
+    [celula('Titulo', { effectiveFormat: { textFormat: { bold: true, fontSize: 12 }, borders: { bottom: SOLID } } }), {}, { effectiveFormat: { borders: { right: SOLID } } }],
+    [{ dataValidation: { condition: { type: 'BOOLEAN' } }, effectiveValue: { boolValue: true }, formattedValue: 'TRUE' }, celula('12', { effectiveValue: { numberValue: 12 } }), {}],
+    [{}, {}, {}, { effectiveFormat: { textFormat: { fontSize: 10 } } }]
+  ], { larguras: [80, 90, 100, 50], merges: [{ startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 3 }] });
+  const completo = app.transporteDocsGradeHtml_(JSON.parse(JSON.stringify(sheet)));
+  const layout = app.transporteDocsGradeLayout_(JSON.parse(JSON.stringify(sheet)), {});
+  assert.deepEqual({ ...layout.area }, { colunas: 3, linhas: 2 });
+  assert.doesNotMatch(JSON.stringify(layout), /Titulo|formattedValue|effectiveValue/);
+  const reconstruido = app.transporteDocsGradeHtml_(app.transporteDocsGradeAplicarValores_(JSON.parse(JSON.stringify(layout)), somenteValores(sheet)));
+  assert.equal(reconstruido, completo);
 });
