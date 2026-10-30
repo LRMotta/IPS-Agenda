@@ -388,14 +388,15 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
 
 /**
  * Monta o documento com as copias na ordem informada.
- * abas: mapa titulo -> sheet (spreadsheets.get); documentos: [{ aba, copias }].
+ * abas: mapa titulo -> sheet (spreadsheets.get); documentos: [{ aba, copias, html? }].
+ * html substitui a renderizacao da aba (Folha de Agendamento: transporteFolhaHtmlParaGrade_).
  */
 function transporteDocsGradeMontar_(abas, documentos, opcoes) {
   var paginas = [];
   (documentos || []).forEach(function(doc) {
     var sheet = abas[doc.aba];
-    if (!sheet) throw new Error('Aba necessária não encontrada: ' + doc.aba);
-    var pagina = transporteDocsGradeHtml_(sheet, opcoes);
+    if (!sheet && !doc.html) throw new Error('Aba necessária não encontrada: ' + doc.aba);
+    var pagina = doc.html || transporteDocsGradeHtml_(sheet, opcoes);
     for (var i = 0; i < Math.max(1, Number(doc.copias) || 1); i++) paginas.push(pagina);
   });
   if (!paginas.length) throw new Error('Nenhum documento informado para a documentação HTML.');
@@ -1034,8 +1035,13 @@ function diagnosticarGradeTransporteHtml() {
   tempos.protecaoMs = Date.now() - marca;
 
   marca = Date.now();
+  // A Folha de Agendamento deste fluxo e o modelo HTML proprio, nao a aba da planilha.
+  var folha = transporteFolhaHtmlParaGrade_(ss, Object.assign({}, payload, { courier: 'MARKEN' }), spec, {
+    logoSrc: typeof reqExamesLogoSrc_ === 'function' ? reqExamesLogoSrc_() : ''
+  });
+  tempos.folhaMs = Date.now() - marca;
   var html = transporteDocsGradeMontar_(quente.abas, spec.ordem.map(function(titulo) {
-    return { aba: titulo, copias: spec.copias[titulo] };
+    return { aba: titulo, copias: spec.copias[titulo], html: folha.abas.indexOf(titulo) >= 0 ? folha.html : '' };
   }), {});
   tempos.htmlMs = Date.now() - marca;
 

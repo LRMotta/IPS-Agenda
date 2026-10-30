@@ -165,7 +165,7 @@ function diagnosticoGrade(options = {}) {
   const pdfBlob = { name: '', setName(n) { this.name = n; return this; }, getDataAsString: () => pdfText, getBytes: () => [1, 2, 3] };
   const folder = { createFile(blob) { calls.files.push(blob.name); return { getName: () => blob.name, getUrl: () => 'https://drive.example/f' }; } };
   const cache = options.cache || cacheSimulado();
-  const ctx = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
+  const ctx = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs', 'TransporteFolhaAgendamentoHtml.gs'], {
     codexAssertAdmin_: () => { if (options.negar) throw new Error('Acesso permitido apenas para administradores.'); },
     getTransporteSpreadsheetCodex_: () => ss,
     SpreadsheetApp: { ValueType: { IMAGE: 'IMAGE' } },
@@ -179,7 +179,9 @@ function diagnosticoGrade(options = {}) {
       calls.derivar = opts;
       return Object.assign({ identificacaoParticipante: '007' }, payload);
     },
-    transporteParticipanteDocumento_: payload => ({ texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
+    transporteParticipanteDocumento_: payload => ({ iniciais: 'P.P.', identificacao: payload.identificacaoParticipante, texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
+    transporteNormalizeTemperaturaFromCodex_: v => String(v || '').toUpperCase(),
+    transporteLabCentralByDestino_: () => null,
     transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier, transporteNormalizeCourierFromCodex_: courier => String(courier).toUpperCase(),
     transportePdfManifestText_: v => String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(),
     transportePdfManifestoHash_: m => 'hash:' + JSON.stringify(m).length,
@@ -250,7 +252,9 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
   assert.match(html, /src="data:image\/png;base64,QQ=="/);
   assert.match(html, /Dr\(a\)\. Exemplo/);
   assert.doesNotMatch(html, /Pessoa Participante/);
-  assert.match(html, /P\.P\. \| ID: 007/);
+  // A Folha de Agendamento deste fluxo e o modelo HTML proprio (iniciais e ID em linhas separadas).
+  assert.match(html, /Folha de Agendamento de Envio/);
+  assert.match(html, />Participante<\/td><td class="v mono">P\.P\.<\/td><\/tr><tr><td class="k">ID<\/td><td class="v mono">007</);
   assert.equal(r.ok, true);
   assert.deepEqual([...r.avisos], []);
   assert.match(r.conteudoHash, /^hash:/);
