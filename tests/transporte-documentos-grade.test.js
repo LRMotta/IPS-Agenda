@@ -512,7 +512,7 @@ test('imagem flutuante sem origem recebe o substituto do codigo na mesma posicao
   const quente = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], opcoes);
   assert.equal(quente.info.layoutsDoCache, 2);
   const html = ctx.transporteDocsGradeMontar_(quente.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {});
-  assert.match(html, /position:absolute;[^"]*display:table"><div style="display:table-cell;vertical-align:middle"><div class="rodape"><b>CAMPUS SEDE<\/b>/);
+  assert.match(html, /position:absolute;[^"]*display:table"><div style="display:table-cell;vertical-align:bottom"><div class="rodape"><b>CAMPUS SEDE<\/b>/);
   // Duas imagens sem origem na mesma aba: nenhuma e substituida e ambas ficam sinalizadas.
   ss.getSheetByName = nome => Object.assign(original(nome), { getImages: () => nome === 'Folha de Agendamento' ? [semOrigem, semOrigem] : [] });
   const duas = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], Object.assign({ ignorarCache: true }, opcoes));
