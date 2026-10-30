@@ -232,3 +232,37 @@ test('contexto da Agenda usa uma unica busca de texto e confirma ID e vinculo do
   assert.equal(app.transporteFolhaHtmlAgendaContexto_('inexistente').visita, '');
   assert.deepEqual(JSON.parse(JSON.stringify(app.transporteFolhaHtmlAgendaContexto_(''))), { visita: '', origem: null });
 });
+
+test('folha da grade reaproveita logo da aba da folha e destino da Declaracao ja carregados', () => {
+  let leituras = 0;
+  const app = carregar({
+    transporteLabCentralByDestino_: () => { leituras++; return { nomeCompleto: 'Lab do cadastro', endereco: 'Rua X', cidade: 'Y', cep: '1', pais: 'Z' }; },
+    reqExamesLogoSrc_: () => { leituras++; return 'https://logo.example/url'; }
+  });
+  const celulaTexto = v => ({ formattedValue: v });
+  const linhasDeclaracao = Array.from({ length: 39 }, () => ({ values: [] }));
+  linhasDeclaracao[37].values[3] = celulaTexto('Labcorp Central Lab');
+  linhasDeclaracao[38].values[3] = celulaTexto('8211 Scicor Drive');
+  linhasDeclaracao[38].values[13] = celulaTexto('Indianapolis, IN, USA');
+  const abasGrade = {
+    'Folha de Agendamento': { data: [{ rowData: [{ values: [{}, { userEnteredValue: { imageValue: { imageProperties: { contentUrl: 'data:image/png;base64,TE9HTw==' } } } }] }] }] },
+    'Declaração de Transporte': { data: [{ rowData: linhasDeclaracao }] }
+  };
+  const spec = { ordem: ['Folha de Agendamento', 'Declaração de Transporte'], copias: { 'Folha de Agendamento': 1, 'Declaração de Transporte': 4 } };
+  const tempos = {};
+  const r = app.transporteFolhaHtmlParaGrade_({}, registroBase(), spec, { agendaContexto: ORIGEM, tempos }, abasGrade);
+  assert.equal(leituras, 0);
+  assert.equal(tempos.logoDaGrade, true);
+  assert.equal(tempos.destinoDaGrade, true);
+  assert.match(r.html, /<img class="logo" src="data:image\/png;base64,TE9HTw=="/);
+  assert.match(r.html, />Labcorp Central Lab<\/td>/);
+  assert.match(r.html, />8211 Scicor Drive<br>Indianapolis, IN, USA<\/td>/);
+  assert.doesNotMatch(r.html, />País</);
+
+  // Sem as abas carregadas (ou Declaracao vazia) volta ao LabCentral e ao logo pela URL.
+  const sem = app.transporteFolhaHtmlParaGrade_({}, registroBase(), spec, { agendaContexto: ORIGEM }, {});
+  assert.equal(leituras, 2);
+  assert.match(sem.html, /src="https:\/\/logo\.example\/url"/);
+  assert.match(sem.html, />Lab do cadastro<\/td>/);
+  assert.match(sem.html, />País<\/td><td class="v">Z</);
+});

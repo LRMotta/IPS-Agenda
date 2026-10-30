@@ -209,7 +209,8 @@ function transporteFolhaHtmlDataAgenda_(value) {
  * Reune os dados da folha. registro: transporteReadRegistro_ ja derivado
  * (transporteDerivarDadosParticipante_). spec: transportePdfSpec_ do envio.
  * opcoes.agendaContexto / opcoes.labCentral / opcoes.agora permitem testes sem servicos;
- * opcoes.tempos (opcional) recebe a duracao de cada leitura para o diagnostico.
+ * opcoes.destinoDocumento ({ nome, endereco, cidadePais }, da Declaracao ja carregada) evita
+ * a leitura do LabCentral. opcoes.tempos (opcional) recebe a duracao de cada leitura.
  */
 function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
   opcoes = opcoes || {};
@@ -225,7 +226,8 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
   var agendaCtx = opcoes.agendaContexto || transporteFolhaHtmlAgendaContexto_(registro.idAgenda, tempos.agenda);
   tempos.agendaMs = Date.now() - marca;
   marca = Date.now();
-  var lab = opcoes.labCentral !== undefined ? opcoes.labCentral : transporteLabCentralByDestino_(registro.destino);
+  var destinoDoc = opcoes.destinoDocumento && (opcoes.destinoDocumento.nome || opcoes.destinoDocumento.endereco) ? opcoes.destinoDocumento : null;
+  var lab = destinoDoc ? null : (opcoes.labCentral !== undefined ? opcoes.labCentral : transporteLabCentralByDestino_(registro.destino));
   tempos.labMs = Date.now() - marca;
   var participante = transporteParticipanteDocumento_(registro);
   var envio = transporteFolhaHtmlData_(registro.dataEnvio);
@@ -241,7 +243,8 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
       visita: agendaCtx.origem.visita
     };
   }
-  var cidade = lab ? [lab.cidade, lab.cep].map(function(v) { return String(v || '').trim(); }).filter(Boolean).join(' ') : '';
+  var cidade = destinoDoc ? String(destinoDoc.cidadePais || '').trim() :
+    (lab ? [lab.cidade, lab.cep].map(function(v) { return String(v || '').trim(); }).filter(Boolean).join(' ') : '');
   return {
     geradoEm: opcoes.agora || Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm'),
     dataEnvio: envio.texto,
@@ -261,10 +264,11 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
     identificacao: participante.identificacao,
     visita: agendaCtx.visita || '',
     dataColeta: transporteFolhaHtmlData_(registro.dataColeta).texto,
-    laboratorio: String((lab && (lab.nomeCompleto || lab.nomeAbreviado)) || registro.destino || '').trim(),
-    endereco: lab ? String(lab.endereco || '').trim() : '',
+    laboratorio: String((destinoDoc && destinoDoc.nome) || (lab && (lab.nomeCompleto || lab.nomeAbreviado)) || registro.destino || '').trim(),
+    endereco: String((destinoDoc && destinoDoc.endereco) || (lab && lab.endereco) || '').trim(),
     cidade: cidade,
-    pais: lab ? String(lab.pais || '').trim() : '',
+    // Na Declaracao cidade e pais vem juntos (N39); o pais separado so existe no LabCentral.
+    pais: !destinoDoc && lab ? String(lab.pais || '').trim() : '',
     materiais: transporteFolhaHtmlMateriais_(registro.materiais),
     documentos: ((spec && spec.ordem) || []).map(function(titulo) {
       return { nome: titulosFolha.indexOf(titulo) >= 0 ? 'Folha de Agendamento' : titulo, copias: spec.copias[titulo] || 1 };
@@ -402,19 +406,70 @@ function transporteFolhaHtmlValidarSemNome_(html, nomes) {
   return html;
 }
 
+// Texto ja carregado de uma celula da grade (r, c a partir de 0), sem criar celulas.
+function transporteFolhaHtmlTextoGrade_(sheet, r, c) {
+  var linhas = (((sheet || {}).data || [])[0] || {}).rowData || [];
+  var cell = ((linhas[r] || {}).values || [])[c];
+  return String(cell && cell.formattedValue || '').trim();
+}
+
+// Destino da Declaracao de Transporte: D38 (nome), D39 (endereco) e N39 (cidade, pais).
+function transporteFolhaHtmlDestinoDaGrade_(sheet) {
+  if (!sheet) return null;
+  var destino = {
+    nome: transporteFolhaHtmlTextoGrade_(sheet, 37, 3),
+    endereco: transporteFolhaHtmlTextoGrade_(sheet, 38, 3),
+    cidadePais: transporteFolhaHtmlTextoGrade_(sheet, 38, 13)
+  };
+  return destino.nome || destino.endereco ? destino : null;
+}
+
+// Logo da aba-modelo da folha, ja incorporado (data URI) na leitura da grade.
+function transporteFolhaHtmlLogoDaGrade_(sheet) {
+  if (!sheet) return '';
+  var linhas = (((sheet.data || [])[0] || {}).rowData) || [];
+  for (var r = 0; r < linhas.length; r++) {
+    var celulas = linhas[r].values || [];
+    for (var c = 0; c < celulas.length; c++) {
+      var img = transporteDocsGradeImagem_(celulas[c]);
+      if (img && /^data:image\//i.test(img.imageProperties.contentUrl)) return img.imageProperties.contentUrl;
+    }
+  }
+  var flutuante = (sheet.imagensFlutuantes || []).filter(function(img) { return /^data:image\//i.test(img.url || ''); })[0];
+  return flutuante ? flutuante.url : '';
+}
+
 /**
  * Pagina da folha para o fluxo da grade, com a protecao de identificacao nominal.
- * Devolve { abas: titulos substituidos, html }.
+ * abasGrade: abas ja carregadas pela grade (titulo -> sheet). Delas vem o destino
+ * (Declaracao) e o logo (aba da folha); LabCentral e a URL do logo ficam como
+ * alternativa quando a grade nao os tem. Devolve { abas: titulos substituidos, html }.
  */
-function transporteFolhaHtmlParaGrade_(ss, registro, spec, opcoes) {
-  opcoes = opcoes || {};
-  var dados = transporteFolhaHtmlDados_(ss, registro, spec, opcoes);
-  var marca = Date.now();
-  var html = transporteFolhaHtmlPagina_(dados, opcoes);
-  if (opcoes.tempos) opcoes.tempos.paginaMs = Date.now() - marca;
-  transporteFolhaHtmlValidarSemNome_(html, [registro.paciente, registro.participante]);
+function transporteFolhaHtmlParaGrade_(ss, registro, spec, opcoes, abasGrade) {
+  opcoes = Object.assign({}, opcoes || {});
+  abasGrade = abasGrade || {};
+  var tempos = opcoes.tempos || {};
   var abas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(chave) {
     return transportePdfActualSheetName_(chave, ss);
   }).filter(function(titulo) { return titulo && (spec.ordem || []).indexOf(titulo) >= 0; });
+
+  var marca = Date.now();
+  if (!opcoes.logoSrc) {
+    abas.some(function(titulo) { opcoes.logoSrc = transporteFolhaHtmlLogoDaGrade_(abasGrade[titulo]); return !!opcoes.logoSrc; });
+    tempos.logoDaGrade = !!opcoes.logoSrc;
+    if (!opcoes.logoSrc && typeof reqExamesLogoSrc_ === 'function') opcoes.logoSrc = reqExamesLogoSrc_();
+  }
+  tempos.logoMs = Date.now() - marca;
+  if (!opcoes.destinoDocumento) {
+    var declaracao = transportePdfActualSheetName_('declaracaoTransp', ss);
+    opcoes.destinoDocumento = transporteFolhaHtmlDestinoDaGrade_(declaracao && abasGrade[declaracao]);
+  }
+  tempos.destinoDaGrade = !!opcoes.destinoDocumento;
+
+  var dados = transporteFolhaHtmlDados_(ss, registro, spec, opcoes);
+  marca = Date.now();
+  var html = transporteFolhaHtmlPagina_(dados, opcoes);
+  tempos.paginaMs = Date.now() - marca;
+  transporteFolhaHtmlValidarSemNome_(html, [registro.paciente, registro.participante]);
   return { abas: abas, html: html };
 }
