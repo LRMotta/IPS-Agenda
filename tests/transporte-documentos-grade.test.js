@@ -423,7 +423,8 @@ test('protecao em memoria reproduz a copia temporaria: C3 documental, C15 vazio 
   const abas = abasParaProtecao();
   const conteudo = appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
     folhas: ['Folha', 'Folha DHL ausente'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12',
-    contatoEmergencia: 'Telefone de Emergência (24H): 55 11 0000-0000', contatoAbas: ['Declaração'], nomes: ['Maria Exemplo', '']
+    contatoRegras: [{ titulo: 'Declaração', digitos: ['970953241', '999091656'], marcador: true, texto: 'Telefone de Emergência (24H): 55 11 0000-0000' }],
+    nomes: ['Maria Exemplo', '']
   });
   const folha = abas.Folha.data[0].rowData;
   assert.equal(folha[2].values[2].formattedValue, 'M.E. | ID: 12');
@@ -438,24 +439,55 @@ test('protecao em memoria reproduz a copia temporaria: C3 documental, C15 vazio 
   assert.doesNotMatch(html, /Maria Exemplo|caixaTransporte|99909/);
 });
 
-test('contato de emergencia so e trocado nas abas indicadas para a courier', () => {
+test('contato de emergencia so e trocado nas abas com regra para a courier', () => {
   const abas = abasParaProtecao();
   appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
     folhas: ['Folha'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12',
-    contatoEmergencia: 'Telefone de Emergência (24H): 55 11 0000-0000', contatoAbas: ['Ficha'], nomes: []
+    contatoRegras: [{ titulo: 'Ficha', digitos: ['999091656'], texto: 'Outro contato' }], nomes: []
   });
   const declaracao = abas['Declaração'].data[0].rowData;
   assert.equal(declaracao[0].values[0].formattedValue, 'Telefone de Emergência (24H): +55 54 99909-1656');
   assert.equal(declaracao[1].values[0].formattedValue, '{{TRANSPORTE_CONTATO_EMERGENCIA}}');
-  // MARKEN: somente a Ficha de Emergencia.
-  assert.deepEqual([...appProtecao.TRANSPORTE_DOCS_GRADE_CONTATO_ABAS_.MARKEN], ['fichaEmergenciaMarken']);
+});
+
+test('MARKEN na geracao HTML: 99909-1656 em todos os documentos, contato da Thais so em Informacoes sobre o produto da Ficha', () => {
+  const titulos = { declaracaoTransp: 'Declaração de Transporte', fichaEmergenciaMarken: 'Ficha de Emergência (MARKEN)', invoiceMarken: 'Invoice (MARKEN)', peticaoAnuencia: 'Petição de Anuência de Exportação' };
+  const app = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
+    transportePdfActualSheetName_: chave => titulos[chave] || '',
+    transporteParticipanteDocumento_: () => ({ texto: 'C.N. | ID: 1' }),
+    transporteContatoEmergenciaTexto_: courier => (courier === 'MARKEN' ? 'Telefone de Emergência (24H): +55 54 99909-1656' : 'outro'),
+    transporteNormalizeCourierFromCodex_: courier => String(courier).toUpperCase(),
+    transportePdfManifestText_: v => String(v || '').toLowerCase()
+  });
+  const umaColuna = (titulo, textos) => aba(textos.map(t => [celula(t)]), { titulo, larguras: [100] });
+  // Textos do modelo atual da planilha.
+  const abas = {
+    'Declaração de Transporte': umaColuna('Declaração de Transporte', ['Universidade de Caxias do Sul (UCS)', 'TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES']),
+    'Ficha de Emergência (MARKEN)': umaColuna('Ficha de Emergência (MARKEN)', [
+      'INSTITUTO DE PESQUISAS EM SAÚDE (IPS)\nCEL.: (54) 99909-1656 / TEL.: (54) 3218-2737',
+      'MARKEN BRASIL SERVIÇOS DE CADEIA DE SUPRIMENTOS LTDA.\nCEL.: (11) 94198-1176 / (11) 94252-1452'
+    ]),
+    'Invoice (MARKEN)': umaColuna('Invoice (MARKEN)', ['55 54 3218-2737', '55 54 999091 1656']),
+    'Petição de Anuência de Exportação': umaColuna('Petição de Anuência de Exportação', ['(54) 3218-2737'])
+  };
+  const contexto = app.transporteDocsGradeContextoProtecao_({}, 'MARKEN', { paciente: 'Pessoa' });
+  const impresso = Object.fromEntries(app.transporteDocsGradeProtegerConteudo_(abas, contexto).map(a => [a.aba, a.valores.flat()]));
+  assert.deepEqual(impresso['Declaração de Transporte'], ['Universidade de Caxias do Sul (UCS)', 'Telefone de Emergência (24H): +55 54 99909-1656']);
+  assert.deepEqual(impresso['Ficha de Emergência (MARKEN)'], [
+    'TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES',
+    'MARKEN BRASIL SERVIÇOS DE CADEIA DE SUPRIMENTOS LTDA.\nCEL.: (11) 94198-1176 / (11) 94252-1452'
+  ]);
+  assert.deepEqual(impresso['Invoice (MARKEN)'], ['55 54 3218-2737', '55 54 99909-1656']);
+  assert.deepEqual(impresso['Petição de Anuência de Exportação'], ['(54) 3218-2737']);
+  // Outras couriers sem regra mantem o texto do modelo.
+  assert.deepEqual([...app.transporteDocsGradeContextoProtecao_({}, 'OCASA', { paciente: 'Pessoa' }).contatoRegras], []);
 });
 
 test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {
   const abas = abasParaProtecao();
   abas['Declaração'].data[0].rowData[2].values[0].formattedValue = 'Participante: MARIA  exemplo';
   assert.throws(() => appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
-    folhas: ['Folha'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12', contatoEmergencia: '', nomes: ['Maria Exemplo']
+    folhas: ['Folha'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12', contatoRegras: [], nomes: ['Maria Exemplo']
   }), err => /^PDF bloqueado: identificação nominal/.test(err.message) && !/maria/i.test(err.message));
 });
 
