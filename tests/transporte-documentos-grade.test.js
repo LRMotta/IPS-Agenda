@@ -256,6 +256,8 @@ test('diagnostico le o layout uma vez, guarda sem texto no cache e na segunda le
   assert.match(html, /Folha de Agendamento de Envio/);
   assert.match(html, />Participante<\/td><td class="v mono">P\.P\.<\/td><\/tr><tr><td class="k">ID<\/td><td class="v mono">007</);
   assert.equal(r.ok, true);
+  // Etapas da folha separadas no log para localizar leituras lentas.
+  assert.deepEqual(Object.keys(r.tempos.folhaEtapas).sort(), ['agenda', 'agendaMs', 'labMs', 'logoMs', 'paginaMs']);
   assert.deepEqual([...r.avisos], []);
   assert.match(r.conteudoHash, /^hash:/);
   assert.equal(r.quente.info.faixasFormatoDinamico, 1);
