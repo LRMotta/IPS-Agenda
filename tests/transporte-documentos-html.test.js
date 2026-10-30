@@ -170,3 +170,12 @@ test('campos livres reduzem a fonte proporcionalmente, com minimo de 7 pt', () =
   // 11 * 26 / 39 = 7,3 pt no Sheets, reduzido pela escala da pagina (~0,75).
   assert.match(html, /font-size:5\.47pt;font-weight:bold;text-align:center;vertical-align:bottom">x{39}</);
 });
+
+test('caixas marcadas nao dependem de cor de fundo, que o conversor HtmlService nao imprime', () => {
+  const html = app.transporteDocsHtmlMontar_(dados(), [{ chave: 'declaracaoTransp', copias: 1 }], {});
+  const cssCaixa = html.match(/\.cb\{[^}]*\}/)[0];
+  assert.doesNotMatch(cssCaixa, /background/);
+  assert.match(cssCaixa, /color:#000/);
+  assert.deepEqual([...new Set(html.match(/background:[^;}]+/g))], ['background:#fff']);
+  assert.equal((html.match(/<span class="cb">&#10003;<\/span>/g) || []).length, 2);
+});

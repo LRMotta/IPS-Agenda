@@ -216,7 +216,7 @@ function transporteDocsHtmlGrade_(colunasPx, linhas) {
 }
 
 function transporteDocsHtmlCheckbox_(marcado) {
-  return '<span class="cb' + (marcado ? ' cb-on' : '') + '">' + (marcado ? '&#10003;' : '&nbsp;') + '</span>';
+  return '<span class="cb">' + (marcado ? '&#10003;' : '&nbsp;') + '</span>';
 }
 
 function transporteDocsHtmlLogo_(logoSrc) {
@@ -434,8 +434,8 @@ function transporteDocsHtmlMontar_(dados, documentos, opcoes) {
     '.grade{border-collapse:collapse;table-layout:fixed}' +
     '.grade td{padding:0 2px;white-space:nowrap;overflow:visible;font-size:7.8pt;line-height:1.15;vertical-align:bottom}' +
     '.logo{height:66px;width:auto}' +
-    '.cb{display:inline-block;width:9px;height:9px;border:1px solid #333;border-radius:1px;font-size:7pt;line-height:9px;text-align:center;font-weight:bold}' +
-    '.cb-on{background:#333;color:#fff}' +
+    // O conversor HtmlService nao imprime cores de fundo: a marcacao usa so traco preto.
+    '.cb{display:inline-block;width:9px;height:9px;border:1px solid #000;border-radius:1px;font-size:8pt;line-height:9px;text-align:center;font-weight:bold;color:#000}' +
     '.rodape{font-size:5.6pt;line-height:1.3;text-align:center;white-space:normal}' +
     '</style></head><body>' +
     paginas.map(function(pagina) { return '<div class="pagina">' + pagina + '</div>'; }).join('') +
