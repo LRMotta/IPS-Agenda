@@ -16,7 +16,7 @@ function farmaciaLifecycleData_(value) {
     result.participantId = farmaciaText_(value.participantId, 'o participante cadastrado', 120);
     result.participantLabel = farmaciaText_(value.participantLabel, 'o código do participante no estudo', 120, true);
     result.visit = farmaciaText_(value.visit, 'a visita ou ciclo informado', 120);
-    result.prescription = farmaciaText_(value.prescription, 'a prescrição ou Documento Fonte', 200);
+    result.prescription = farmaciaText_(value.prescription, 'a prescrição ou Documento Fonte', 200, true);
     result.platformReference = farmaciaText_(value.platformReference, 'a referência na plataforma do estudo', 200);
     result.validThrough = farmaciaDate_(value.validThrough, 'o último dia previsto de uso');
     if (value.confirmed !== true || result.validThrough < result.occurredOn) throw new Error('Confirme a conferência e o período previsto de uso.');

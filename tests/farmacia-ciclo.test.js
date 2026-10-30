@@ -57,9 +57,10 @@ test('dispensação baixa apenas disponível, valida participante e preserva rep
   assert.doesNotMatch(JSON.stringify(participants),/Nome nunca/);
 });
 
-test('dispensação aceita referência documental e motivo vazios, mas retorno continua exigindo o documento',()=>{
-  const f=fixture(),record=f.write({document:'',reason:''});
+test('dispensação aceita prescrição, referência documental e motivo vazios, mas retorno continua exigindo o documento',()=>{
+  const f=fixture(),record=f.write({document:'',reason:'',prescription:''});
   assert.equal(f.stock().movements.find(r=>r.id===record.id).data.document,'');
+  assert.equal(f.stock().movements.find(r=>r.id===record.id).data.prescription,'');
   const dispenseId=record.id;
   assert.throws(()=>f.write({action:'return',dispenseId,quantity:5,document:'',confirmed:true,locationRef:{unitId:'UNIT-1',position:'Quarentena'}}),/referência documental/);
 });

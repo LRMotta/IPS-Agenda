@@ -180,7 +180,7 @@ function diagnosticoGrade(options = {}) {
       return Object.assign({ identificacaoParticipante: '007' }, payload);
     },
     transporteParticipanteDocumento_: payload => ({ texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
-    transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier,
+    transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier, transporteNormalizeCourierFromCodex_: courier => String(courier).toUpperCase(),
     transportePdfManifestText_: v => String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(),
     transportePdfManifestoHash_: m => 'hash:' + JSON.stringify(m).length,
     ScriptApp: { getOAuthToken: () => 'token-teste' },
@@ -392,7 +392,7 @@ test('protecao em memoria reproduz a copia temporaria: C3 documental, C15 vazio 
   const abas = abasParaProtecao();
   const conteudo = appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
     folhas: ['Folha', 'Folha DHL ausente'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12',
-    contatoEmergencia: 'Telefone de Emergência (24H): 55 11 0000-0000', nomes: ['Maria Exemplo', '']
+    contatoEmergencia: 'Telefone de Emergência (24H): 55 11 0000-0000', contatoAbas: ['Declaração'], nomes: ['Maria Exemplo', '']
   });
   const folha = abas.Folha.data[0].rowData;
   assert.equal(folha[2].values[2].formattedValue, 'M.E. | ID: 12');
@@ -405,6 +405,19 @@ test('protecao em memoria reproduz a copia temporaria: C3 documental, C15 vazio 
   assert.equal(conteudo[0].valores[2][2], 'M.E. | ID: 12');
   const html = appProtecao.transporteDocsGradeMontar_(abas, [{ aba: 'Folha', copias: 1 }, { aba: 'Declaração', copias: 1 }], {});
   assert.doesNotMatch(html, /Maria Exemplo|caixaTransporte|99909/);
+});
+
+test('contato de emergencia so e trocado nas abas indicadas para a courier', () => {
+  const abas = abasParaProtecao();
+  appProtecao.transporteDocsGradeProtegerConteudo_(abas, {
+    folhas: ['Folha'], folhaC15: 'Folha', identificacao: 'M.E. | ID: 12',
+    contatoEmergencia: 'Telefone de Emergência (24H): 55 11 0000-0000', contatoAbas: ['Ficha'], nomes: []
+  });
+  const declaracao = abas['Declaração'].data[0].rowData;
+  assert.equal(declaracao[0].values[0].formattedValue, 'Telefone de Emergência (24H): +55 54 99909-1656');
+  assert.equal(declaracao[1].values[0].formattedValue, '{{TRANSPORTE_CONTATO_EMERGENCIA}}');
+  // MARKEN: somente a Ficha de Emergencia.
+  assert.deepEqual([...appProtecao.TRANSPORTE_DOCS_GRADE_CONTATO_ABAS_.MARKEN], ['fichaEmergenciaMarken']);
 });
 
 test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {
@@ -486,6 +499,25 @@ test('leitura a frio incorpora imagens flutuantes com origem, conta as demais e 
   // A contagem vem do layout: a leitura a quente (cache) continua sinalizando.
   assert.equal(ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], {}).info.imagensOmitidas, 1);
   assert.match(ctx.transporteDocsGradeMontar_(r.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {}), /position:absolute/);
+});
+
+test('imagem flutuante sem origem recebe o substituto do codigo na mesma posicao, inclusive vinda do cache', () => {
+  const { ctx, ss } = diagnosticoGrade();
+  const original = ss.getSheetByName;
+  const semOrigem = { getUrl: () => '', getAnchorCell: () => ({ getRow: () => 2, getColumn: () => 1 }), getAnchorCellXOffset: () => 0, getAnchorCellYOffset: () => 0, getWidth: () => 200, getHeight: () => 60 };
+  ss.getSheetByName = nome => Object.assign(original(nome), { getImages: () => nome === 'Folha de Agendamento' ? [semOrigem] : [] });
+  const opcoes = { imagensCodigo: { 'Folha de Agendamento': 'rodapeCampusSede' } };
+  const r = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], opcoes);
+  assert.equal(r.info.imagensOmitidas, 0);
+  const quente = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], opcoes);
+  assert.equal(quente.info.layoutsDoCache, 2);
+  const html = ctx.transporteDocsGradeMontar_(quente.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {});
+  assert.match(html, /position:absolute;[^"]*display:table"><div style="display:table-cell;vertical-align:middle"><div class="rodape"><b>CAMPUS SEDE<\/b>/);
+  // Duas imagens sem origem na mesma aba: nenhuma e substituida e ambas ficam sinalizadas.
+  ss.getSheetByName = nome => Object.assign(original(nome), { getImages: () => nome === 'Folha de Agendamento' ? [semOrigem, semOrigem] : [] });
+  const duas = ctx.transporteDocsGradeCarregar_(ss, ['Folha de Agendamento', "Declaração d'Exemplo"], Object.assign({ ignorarCache: true }, opcoes));
+  assert.equal(duas.info.imagensOmitidas, 2);
+  assert.doesNotMatch(ctx.transporteDocsGradeMontar_(duas.abas, [{ aba: 'Folha de Agendamento', copias: 1 }], {}), /CAMPUS SEDE/);
 });
 
 test('texto quebrado que faz a linha crescer alem da pagina bloqueia mesmo com alturas nominais que cabem', () => {
