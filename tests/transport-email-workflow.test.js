@@ -404,7 +404,8 @@ test('salvar Transporte nao presume envio e o rascunho inclui referencia depois 
   assert.match(source, /var statusNovo = String\(payload\.statusCourier \|\| payload\.status \|\| ''\)/);
   assert.doesNotMatch(source, /payload\.statusCourier \|\| payload\.status \|\| 'Agendado'/);
   assert.match(source, /getGmailSignature\(\) \+ transporteMonitorRefHtml_\(refInterna, options\.pdfHash, options\.generationRequestId\)/);
-  assert.match(source, /in:anywhere -in:drafts newer_than:30d/);
+  assert.match(source, /var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 15;/);
+  assert.match(source, /in:anywhere -in:drafts newer_than:' \+ TRANSPORTE_MONITOR_BUSCA_DIAS_ \+ 'd/);
 });
 
 function monitorFixture({ body = 'ips - trp - EVT-TEST - t1', courier = 'DHL', draft = false, attachments = [], status = 'Não Agendado' } = {}) {
@@ -670,8 +671,9 @@ test('rascunho em conversa retornada pelo Gmail nao comprova envio', () => {
 test('monitor pagina Gmail e encontra referencia alem dos primeiros 100 resultados', () => {
   const { server, message } = monitorFixture();
   const offsets = [];
-  server.GmailApp.search = (_query, offset, limit) => {
+  server.GmailApp.search = (query, offset, limit) => {
     offsets.push(offset); assert.equal(limit, 100);
+    assert.match(query, /^in:anywhere -in:drafts newer_than:15d \{/);
     return offset === 0 ? Array.from({ length: 100 }, () => ({ getMessages: () => [] })) : [{ getMessages: () => [message] }];
   };
   const result = server.transporteMonitorarEnviosPorEmail_();
@@ -847,6 +849,9 @@ test('schema legado e lido sem migrar e escrita so anexa hash a coluna desocupad
 test('pendencia antiga informa limite da busca sem aumentar as consultas Gmail', () => {
   const server = transportServer();
   server.transporteRegistrarDocumentacaoGerada_({ agendaId: 'A', slot: '1', awbDocumento: '620X41337652', rascunhoOk: true });
-  server.book.getSheetByName('Transporte_Operacoes').getRange(2, 5).setValue(new Date(Date.now() - 31 * 86400000));
-  assert.match(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].motivo, /fora da janela de busca automática/);
+  const geradoEm = server.book.getSheetByName('Transporte_Operacoes').getRange(2, 5);
+  geradoEm.setValue(new Date(Date.now() - 14 * 86400000));
+  assert.doesNotMatch(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].motivo, /fora da janela/);
+  geradoEm.setValue(new Date(Date.now() - 16 * 86400000));
+  assert.match(server.transporteDocumentosSemEnvioPendencias_(new Date())[0].motivo, /gerada há mais de 15 dias; mensagens antigas ficam fora da janela de busca automática/);
 });
