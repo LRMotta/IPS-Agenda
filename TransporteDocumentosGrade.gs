@@ -454,6 +454,9 @@ var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
 // marcador: tambem troca {{TRANSPORTE_CONTATO_EMERGENCIA}}. texto 'centro' e o contato do
 // centro (transporteContatoEmergenciaTexto_). MARKEN: todos os documentos com o 99909-1656,
 // exceto "Informacoes sobre o produto" da Ficha de Emergencia, com o contato da Thais.
+// DHL: a mesma troca da geracao pela planilha (transporteAplicarContatoEmergenciaPdf_):
+// em todos os documentos impressos, celula com 97095-3241, 99909-1656 ou o marcador vira
+// o contato do centro. A Folha DHL/PINEX nao entra: no HTML ela e o modelo proprio.
 // Abas e couriers sem regra mantem o texto do modelo (a Ficha OCASA traz os telefones
 // 24 h da propria OCASA). A geracao pela planilha (imprimirTodasAbas_) nao usa estas regras.
 var TRANSPORTE_DOCS_GRADE_CONTATO_THAIS_ = 'TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES';
@@ -463,7 +466,10 @@ var TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_ = {
     { aba: 'fichaEmergenciaMarken', digitos: ['999091656', '970953241'], texto: TRANSPORTE_DOCS_GRADE_CONTATO_THAIS_ },
     // Telefone do remetente na Invoice: o modelo traz "55 54 999091 1656" (digitado errado).
     { aba: 'invoiceMarken', digitos: ['9990911656'], texto: '55 54 99909-1656' }
-  ]
+  ],
+  DHL: ['declaracaoDhl', 'invoiceDhl', 'declaracaoTranspDhl'].map(function(aba) {
+    return { aba: aba, digitos: ['970953241', '999091656'], marcador: true, texto: 'centro' };
+  })
 };
 
 var TRANSPORTE_DOCS_GRADE_CAMPOS_ = 'sheets(properties(title),merges,conditionalFormats(ranges),' +
@@ -1038,7 +1044,8 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
 
 /* ===== Diagnostico: leitura da grade real no Apps Script =====
  * Executar manualmente no editor (somente administradores). Le as abas da courier
- * (MARKEN por padrao; OCASA por diagnosticarGradeTransporteHtmlOcasa) na planilha de
+ * (MARKEN por padrao; OCASA por diagnosticarGradeTransporteHtmlOcasa e DHL por
+ * diagnosticarGradeTransporteHtmlDhl) na planilha de
  * Transporte sem alterar nada, duas vezes: a frio (relendo o layout e gravando o
  * cache) e a quente (layout do cache + valores). Monta o HTML da leitura a quente e
  * converte em PDF salvo na pasta privada de diagnostico. Antes do HTML aplica as
@@ -1046,13 +1053,22 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
  * (transporteDocsGradeProtegerConteudo_), com o participante do registro atual.
  * As abas e copias vem de transportePdfSpec_ com a temperatura e o destino do
  * registro (a Proforma OCASA so entra com destino fora do Brasil). A Folha de
- * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN.
+ * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN. A DHL usa a
+ * Folha HTML no lugar da Folha DHL/PINEX (com o bloco de retirada pelo courier) e as
+ * abas Declaracao (DHL), Invoice (DHL) e Declaracao de Transporte (DHL), lidas como
+ * preenchidas pela ultima geracao (preencherDhlWebApp_).
+ * As abas da courier so refletem o registro atual quando ele e da mesma courier: caso
+ * contrario o diagnostico sinaliza REGISTRO_DE_OUTRA_COURIER.
  * O log contem somente contagens, tamanhos, tempos e o hash do conteudo.
  */
-var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA'];
+var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL'];
 
 function diagnosticarGradeTransporteHtmlOcasa() {
   return diagnosticarGradeTransporteHtml('OCASA');
+}
+
+function diagnosticarGradeTransporteHtmlDhl() {
+  return diagnosticarGradeTransporteHtml('DHL');
 }
 
 function diagnosticarGradeTransporteHtml(courier) {
@@ -1060,7 +1076,8 @@ function diagnosticarGradeTransporteHtml(courier) {
   // No editor, Executar passa um objeto de evento: so um nome de courier conta.
   courier = typeof courier === 'string' && courier ? transporteNormalizeCourierFromCodex_(courier) : 'MARKEN';
   if (TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.indexOf(courier) < 0) {
-    throw new Error('Diagnóstico da grade disponível somente para ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.join(' e ') + '.');
+    throw new Error('Diagnóstico da grade disponível somente para ' +
+      TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.slice(0, -1).join(', ') + ' e ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.slice(-1)[0] + '.');
   }
   var tempos = {};
   var inicio = Date.now();
@@ -1111,6 +1128,8 @@ function diagnosticarGradeTransporteHtml(courier) {
   var avisos = [];
   if (quente.info.locale && quente.info.locale !== 'pt_BR') avisos.push('LOCALE_DIFERENTE_DE_PT_BR');
   if (quente.info.imagensOmitidas) avisos.push('IMAGEM_NAO_INCORPORADA');
+  var courierRegistro = payload.courier ? transporteNormalizeCourierFromCodex_(payload.courier) : '';
+  if (courierRegistro && courierRegistro !== courier) avisos.push('REGISTRO_DE_OUTRA_COURIER');
   var resultado = {
     ok: paginas === paginasEsperadas && quente.info.layoutsDoCache === spec.ordem.length && !avisos.length,
     courier: courier,

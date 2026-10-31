@@ -174,7 +174,7 @@ function diagnosticoGrade(options = {}) {
       calls.spec = [courier, temperatura, destino];
       return { ordem, copias: { [ordem[0]]: 1, [ordem[1]]: 4 } };
     },
-    transportePdfActualSheetName_: chave => ({ folhaAgendamento: ordem[0], declaracaoTransp: ordem[1] })[chave] || '',
+    transportePdfActualSheetName_: chave => (options.nomesAbas || { folhaAgendamento: ordem[0], declaracaoTransp: ordem[1] })[chave] || '',
     transporteReadRegistro_: () => Object.assign({ paciente: 'Pessoa Participante' }, options.registro || {}),
     transporteDerivarDadosParticipante_: (payload, opts) => {
       calls.derivar = opts;
@@ -289,14 +289,49 @@ test('diagnostico OCASA usa o spec da courier com temperatura e destino do regis
   assert.doesNotMatch(html, /Pessoa Participante/);
 });
 
-test('diagnostico aceita so MARKEN e OCASA e trata o evento do editor como MARKEN', () => {
+test('diagnostico DHL troca a Folha DHL/PINEX pela folha HTML com retirada pelo courier e le as abas DHL', () => {
+  const { ctx, calls } = diagnosticoGrade({
+    // Folha DHL/PINEX e Declaracao de Transporte (DHL) no lugar das abas MARKEN do simulador.
+    nomesAbas: { folhaDhlPinex: 'Folha de Agendamento', declaracaoTranspDhl: "Declaração d'Exemplo" },
+    registro: { courier: 'DHL', temperatura: 'REFRIGERADO', destino: 'Laboratório Exemplo', awb: '', pinexAwb: '1234567890', pinexAgendadoPor: 'Equipe DHL' }
+  });
+  const r = ctx.diagnosticarGradeTransporteHtmlDhl();
+  assert.deepEqual(calls.spec, ['DHL', 'REFRIGERADO', 'Laboratório Exemplo']);
+  assert.equal(r.courier, 'DHL');
+  assert.equal(r.ok, true);
+  assert.deepEqual([...r.avisos], []);
+  assert.deepEqual(calls.files, ['diagnostico-grade-dhl-20261105-120000.pdf']);
+  const html = calls.html[0];
+  assert.equal((html.match(/<div class="pagina">/g) || []).length, 5);
+  assert.match(html, /Folha de Agendamento de Envio/);
+  assert.match(html, /<div class="grande">DHL<\/div>/);
+  assert.match(html, /<div class="awb mono">1234567890<\/div><div class="nota">Agendado por <b>Equipe DHL<\/b>/);
+  assert.match(html, /Recebido pelo agente do courier/);
+  // A aba Folha DHL/PINEX nao e impressa: a pagina da folha e o modelo HTML.
+  assert.doesNotMatch(html, />Rótulo</);
+  assert.match(html, /Dr\(a\)\. Exemplo/);
+  assert.doesNotMatch(html, /Pessoa Participante/);
+});
+
+test('diagnostico sinaliza registro de outra courier: as abas lidas nao sao do envio atual', () => {
+  const { ctx, calls } = diagnosticoGrade({ registro: { courier: 'MARKEN' } });
+  const r = ctx.diagnosticarGradeTransporteHtml('DHL');
+  assert.equal(r.courier, 'DHL');
+  assert.equal(r.ok, false);
+  assert.deepEqual([...r.avisos], ['REGISTRO_DE_OUTRA_COURIER']);
+  assert.equal(calls.files.length, 1);
+  const mesma = diagnosticoGrade({ registro: { courier: 'marken' } }).ctx.diagnosticarGradeTransporteHtml();
+  assert.deepEqual([...mesma.avisos], []);
+});
+
+test('diagnostico aceita so MARKEN, OCASA e DHL e trata o evento do editor como MARKEN', () => {
   const editor = diagnosticoGrade();
   assert.equal(editor.ctx.diagnosticarGradeTransporteHtml({ authMode: 'FULL' }).courier, 'MARKEN');
   assert.equal(editor.calls.courier, 'MARKEN');
-  const dhl = diagnosticoGrade();
-  assert.throws(() => dhl.ctx.diagnosticarGradeTransporteHtml('DHL'), /somente para MARKEN e OCASA/);
-  assert.equal(dhl.calls.fetch.length, 0);
-  assert.equal(dhl.calls.files.length, 0);
+  const pinex = diagnosticoGrade();
+  assert.throws(() => pinex.ctx.diagnosticarGradeTransporteHtml('PINEX'), /somente para MARKEN, OCASA e DHL\./);
+  assert.equal(pinex.calls.fetch.length, 0);
+  assert.equal(pinex.calls.files.length, 0);
 });
 
 test('cache incompleto ou ilegivel e relido da planilha', () => {
@@ -481,6 +516,32 @@ test('MARKEN na geracao HTML: 99909-1656 em todos os documentos, contato da Thai
   assert.deepEqual(impresso['Petição de Anuência de Exportação'], ['(54) 3218-2737']);
   // Outras couriers sem regra mantem o texto do modelo.
   assert.deepEqual([...app.transporteDocsGradeContextoProtecao_({}, 'OCASA', { paciente: 'Pessoa' }).contatoRegras], []);
+});
+
+test('DHL na geracao HTML: contato do centro em todos os documentos, como na geracao pela planilha', () => {
+  const titulos = { folhaDhlPinex: 'Folha de Agendamento (DHL/PINEX)', declaracaoDhl: 'Declaração (DHL)', invoiceDhl: 'Invoice (DHL)', declaracaoTranspDhl: 'Declaração de Transporte (DHL)' };
+  const app = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
+    transportePdfActualSheetName_: chave => titulos[chave] || '',
+    transporteParticipanteDocumento_: () => ({ texto: 'C.N. | ID: 1' }),
+    transporteContatoEmergenciaTexto_: courier => (String(courier).toUpperCase() === 'DHL' ? 'Telefone de Emergência (24H): +55 54 99909-1656' : 'outro'),
+    transporteNormalizeCourierFromCodex_: courier => String(courier).toUpperCase(),
+    transportePdfManifestText_: v => String(v || '').toLowerCase()
+  });
+  const umaColuna = (titulo, textos) => aba(textos.map(t => [celula(t)]), { titulo, larguras: [100] });
+  const abas = {
+    'Folha de Agendamento (DHL/PINEX)': umaColuna('Folha de Agendamento (DHL/PINEX)', ['Contato: 55 11 97095-3241']),
+    'Declaração (DHL)': umaColuna('Declaração (DHL)', ['TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES', 'Universidade de Caxias do Sul']),
+    'Invoice (DHL)': umaColuna('Invoice (DHL)', ['55 54 3218-2737', '{{TRANSPORTE_CONTATO_EMERGENCIA}}']),
+    'Declaração de Transporte (DHL)': umaColuna('Declaração de Transporte (DHL)', ['Emergência: (54) 99909-1656', '0,00200'])
+  };
+  const contexto = app.transporteDocsGradeContextoProtecao_({}, 'dhl', { paciente: 'Pessoa' });
+  const impresso = Object.fromEntries(app.transporteDocsGradeProtegerConteudo_(abas, contexto).map(a => [a.aba, a.valores.flat()]));
+  const centro = 'Telefone de Emergência (24H): +55 54 99909-1656';
+  assert.deepEqual(impresso['Declaração (DHL)'], [centro, 'Universidade de Caxias do Sul']);
+  assert.deepEqual(impresso['Invoice (DHL)'], ['55 54 3218-2737', centro]);
+  assert.deepEqual(impresso['Declaração de Transporte (DHL)'], [centro, '0,00200']);
+  // A aba da Folha DHL/PINEX e substituida pela folha HTML: so recebe a identificacao em C3, sem regra de contato.
+  assert.deepEqual(impresso['Folha de Agendamento (DHL/PINEX)'].filter(Boolean), ['Contato: 55 11 97095-3241', 'C.N. | ID: 1']);
 });
 
 test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {
