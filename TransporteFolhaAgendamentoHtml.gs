@@ -415,6 +415,11 @@ function transporteFolhaHtmlValidarSemNome_(html, nomes) {
 function transporteFolhaHtmlParaGrade_(ss, registro, spec, opcoes) {
   opcoes = Object.assign({}, opcoes || {});
   var tempos = opcoes.tempos || {};
+  var abas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(chave) {
+    return transportePdfActualSheetName_(chave, ss);
+  }).filter(function(titulo) { return titulo && (spec.ordem || []).indexOf(titulo) >= 0; });
+  // Sem folha no spec (PINEX Agendamento: so o Formulario), nada e lido nem montado.
+  if (!abas.length) return { abas: [], html: '' };
   var marca = Date.now();
   if (!opcoes.logoSrc && typeof reqExamesLogoSrc_ === 'function') opcoes.logoSrc = reqExamesLogoSrc_();
   tempos.logoMs = Date.now() - marca;
@@ -424,8 +429,5 @@ function transporteFolhaHtmlParaGrade_(ss, registro, spec, opcoes) {
   var html = transporteFolhaHtmlPagina_(dados, opcoes);
   tempos.paginaMs = Date.now() - marca;
   transporteFolhaHtmlValidarSemNome_(html, [registro.paciente, registro.participante]);
-  var abas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(chave) {
-    return transportePdfActualSheetName_(chave, ss);
-  }).filter(function(titulo) { return titulo && (spec.ordem || []).indexOf(titulo) >= 0; });
   return { abas: abas, html: html };
 }

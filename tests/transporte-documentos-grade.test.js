@@ -183,7 +183,9 @@ function diagnosticoGrade(options = {}) {
     transporteParticipanteDocumento_: payload => ({ iniciais: 'P.P.', identificacao: payload.identificacaoParticipante, texto: 'P.P. | ID: ' + payload.identificacaoParticipante }),
     transporteNormalizeTemperaturaFromCodex_: v => String(v || '').toUpperCase(),
     transporteLabCentralByDestino_: () => null,
-    transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier, transporteNormalizeCourierFromCodex_: courier => String(courier).toUpperCase(),
+    transporteContatoEmergenciaTexto_: courier => 'Emergência ' + courier,
+    // Como o normalizador real: PINEX (Agendamento) mantem a grafia canonica.
+    transporteNormalizeCourierFromCodex_: courier => (/agendamento/i.test(courier) ? 'PINEX (Agendamento)' : String(courier).toUpperCase()),
     transportePdfManifestText_: v => String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(),
     transportePdfManifestoHash_: m => 'hash:' + JSON.stringify(m).length,
     ScriptApp: { getOAuthToken: () => 'token-teste' },
@@ -324,14 +326,58 @@ test('diagnostico sinaliza registro de outra courier: as abas lidas nao sao do e
   assert.deepEqual([...mesma.avisos], []);
 });
 
-test('diagnostico aceita so MARKEN, OCASA e DHL e trata o evento do editor como MARKEN', () => {
+test('diagnostico PINEX usa a folha HTML com COL. No e retirada pelo courier no lugar da Folha DHL/PINEX', () => {
+  const { ctx, calls } = diagnosticoGrade({
+    nomesAbas: { folhaDhlPinex: 'Folha de Agendamento', declaracaoTransp: "Declaração d'Exemplo" },
+    registro: { courier: 'Pinex', temperatura: 'CONGELADO', destino: 'Laboratório Exemplo', pinexAwb: 'PX-1', pinexColeta: '4321' }
+  });
+  const r = ctx.diagnosticarGradeTransporteHtmlPinex();
+  assert.deepEqual(calls.spec, ['PINEX', 'CONGELADO', 'Laboratório Exemplo']);
+  assert.equal(r.courier, 'PINEX');
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls.files, ['diagnostico-grade-pinex-20261105-120000.pdf']);
+  const html = calls.html[0];
+  assert.match(html, /<div class="grande">PINEX<\/div><div class="nota">COL\. Nº <b class="mono">4321<\/b>/);
+  assert.match(html, /<div class="awb mono">PX-1<\/div>/);
+  assert.match(html, /Recebido pelo agente do courier/);
+  assert.doesNotMatch(html, />Rótulo</);
+  assert.doesNotMatch(html, /Pessoa Participante/);
+});
+
+test('diagnostico PINEX (Agendamento) imprime so o Formulario, sem folha HTML nem leitura da Agenda', () => {
+  const { ctx, calls } = diagnosticoGrade({
+    // O spec do Agendamento nao tem folha: nenhuma aba do simulador e Folha de Agendamento.
+    nomesAbas: { formularioPinex: "Declaração d'Exemplo" },
+    // O nome do simulador (C3 da primeira aba) nao e o deste registro; ver o bloqueio abaixo.
+    registro: { courier: 'PINEX (Agendamento)', idAgenda: 'AG-1', paciente: 'Outra Pessoa' }
+  });
+  let leuAgenda = false;
+  ctx.getAgendaSheetForRead_ = () => { leuAgenda = true; throw new Error('Agenda nao deveria ser lida'); };
+  const r = ctx.diagnosticarGradeTransporteHtmlPinexAgendamento();
+  assert.equal(calls.spec[0], 'PINEX (Agendamento)');
+  assert.equal(r.courier, 'PINEX (Agendamento)');
+  assert.deepEqual([...r.avisos], []);
+  assert.equal(leuAgenda, false);
+  assert.deepEqual(calls.files, ['diagnostico-grade-pinex-agendamento-20261105-120000.pdf']);
+  const html = calls.html[0];
+  assert.doesNotMatch(html, /Folha de Agendamento de Envio/);
+  // A aba do simulador na posicao da folha e impressa como grade (nao ha folha HTML no spec).
+  assert.match(html, />Rótulo</);
+  assert.match(html, /Dr\(a\)\. Exemplo/);
+  // Sem folha HTML, nome do participante numa aba impressa bloqueia, como na planilha.
+  const bloqueado = diagnosticoGrade({ nomesAbas: { formularioPinex: "Declaração d'Exemplo" }, registro: { courier: 'PINEX (Agendamento)' } });
+  assert.throws(() => bloqueado.ctx.diagnosticarGradeTransporteHtmlPinexAgendamento(), /^Error: PDF bloqueado: identificação nominal/);
+  assert.equal(bloqueado.calls.files.length, 0);
+});
+
+test('diagnostico aceita MARKEN, OCASA, DHL, PINEX e PINEX (Agendamento) e trata o evento do editor como MARKEN', () => {
   const editor = diagnosticoGrade();
   assert.equal(editor.ctx.diagnosticarGradeTransporteHtml({ authMode: 'FULL' }).courier, 'MARKEN');
   assert.equal(editor.calls.courier, 'MARKEN');
-  const pinex = diagnosticoGrade();
-  assert.throws(() => pinex.ctx.diagnosticarGradeTransporteHtml('PINEX'), /somente para MARKEN, OCASA e DHL\./);
-  assert.equal(pinex.calls.fetch.length, 0);
-  assert.equal(pinex.calls.files.length, 0);
+  const outra = diagnosticoGrade();
+  assert.throws(() => outra.ctx.diagnosticarGradeTransporteHtml('Transportadora X'), /somente para MARKEN, OCASA, DHL, PINEX e PINEX \(Agendamento\)\./);
+  assert.equal(outra.calls.fetch.length, 0);
+  assert.equal(outra.calls.files.length, 0);
 });
 
 test('cache incompleto ou ilegivel e relido da planilha', () => {
@@ -542,6 +588,38 @@ test('DHL na geracao HTML: contato do centro em todos os documentos, como na ger
   assert.deepEqual(impresso['Declaração de Transporte (DHL)'], [centro, '0,00200']);
   // A aba da Folha DHL/PINEX e substituida pela folha HTML: so recebe a identificacao em C3, sem regra de contato.
   assert.deepEqual(impresso['Folha de Agendamento (DHL/PINEX)'].filter(Boolean), ['Contato: 55 11 97095-3241', 'C.N. | ID: 1']);
+});
+
+test('PINEX e PINEX (Agendamento) na geracao HTML: mesma troca de contato da geracao pela planilha', () => {
+  const titulos = {
+    folhaDhlPinex: 'Folha de Agendamento (DHL/PINEX)', invoicePinex: 'Commercial Invoice (PINEX)', peticaoPinex: 'Petição (PINEX)',
+    usdaStatementPinex: 'USDA Statement (PINEX)', fichaEmergenciaPinex: 'Ficha de Emergência (PINEX)', declaracaoTransp: 'Declaração de Transporte',
+    formularioPinex: 'Formulário (PINEX)'
+  };
+  const app = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
+    transportePdfActualSheetName_: chave => titulos[chave] || '',
+    transporteParticipanteDocumento_: () => ({ texto: 'C.N. | ID: 1' }),
+    transporteContatoEmergenciaTexto_: courier => (courier === 'PINEX' ? 'contato pinex' : 'contato centro'),
+    transporteNormalizeCourierFromCodex_: courier => (/agendamento/i.test(courier) ? 'PINEX (Agendamento)' : String(courier).toUpperCase()),
+    transportePdfManifestText_: v => String(v || '').toLowerCase()
+  });
+  const umaColuna = (titulo, textos) => aba(textos.map(t => [celula(t)]), { titulo, larguras: [100] });
+  const pinex = {};
+  ['Commercial Invoice (PINEX)', 'Petição (PINEX)', 'USDA Statement (PINEX)', 'Ficha de Emergência (PINEX)', 'Declaração de Transporte'].forEach(t => {
+    pinex[t] = umaColuna(t, ['Tel.: (54) 99909-1656', '(54) 3218-2737']);
+  });
+  pinex['Folha de Agendamento (DHL/PINEX)'] = umaColuna('Folha de Agendamento (DHL/PINEX)', ['Tel.: (54) 99909-1656']);
+  const contexto = app.transporteDocsGradeContextoProtecao_({}, 'Pinex', { paciente: 'Pessoa' });
+  const impresso = Object.fromEntries(app.transporteDocsGradeProtegerConteudo_(pinex, contexto).map(a => [a.aba, a.valores.flat().filter(Boolean)]));
+  ['Commercial Invoice (PINEX)', 'Petição (PINEX)', 'USDA Statement (PINEX)', 'Ficha de Emergência (PINEX)', 'Declaração de Transporte'].forEach(t => {
+    assert.deepEqual(impresso[t], ['contato pinex', '(54) 3218-2737'], t);
+  });
+  assert.deepEqual(impresso['Folha de Agendamento (DHL/PINEX)'], ['Tel.: (54) 99909-1656', 'C.N. | ID: 1']);
+
+  const agendamento = { 'Formulário (PINEX)': umaColuna('Formulário (PINEX)', ['{{TRANSPORTE_CONTATO_EMERGENCIA}}', 'Responsável']) };
+  const ctxAgendamento = app.transporteDocsGradeContextoProtecao_({}, 'PINEX (Agendamento)', { paciente: 'Pessoa' });
+  const formulario = app.transporteDocsGradeProtegerConteudo_(agendamento, ctxAgendamento)[0].valores.flat();
+  assert.deepEqual(formulario, ['contato centro', 'Responsável']);
 });
 
 test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {

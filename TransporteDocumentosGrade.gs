@@ -457,6 +457,8 @@ var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
 // DHL: a mesma troca da geracao pela planilha (transporteAplicarContatoEmergenciaPdf_):
 // em todos os documentos impressos, celula com 97095-3241, 99909-1656 ou o marcador vira
 // o contato do centro. A Folha DHL/PINEX nao entra: no HTML ela e o modelo proprio.
+// PINEX e PINEX (Agendamento): a mesma troca da planilha; 'centro' resolve para o contato
+// de emergencia PINEX (transporteContatoEmergenciaTexto_) e, no Agendamento, para o do centro.
 // Abas e couriers sem regra mantem o texto do modelo (a Ficha OCASA traz os telefones
 // 24 h da propria OCASA). A geracao pela planilha (imprimirTodasAbas_) nao usa estas regras.
 var TRANSPORTE_DOCS_GRADE_CONTATO_THAIS_ = 'TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES';
@@ -467,10 +469,17 @@ var TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_ = {
     // Telefone do remetente na Invoice: o modelo traz "55 54 999091 1656" (digitado errado).
     { aba: 'invoiceMarken', digitos: ['9990911656'], texto: '55 54 99909-1656' }
   ],
-  DHL: ['declaracaoDhl', 'invoiceDhl', 'declaracaoTranspDhl'].map(function(aba) {
-    return { aba: aba, digitos: ['970953241', '999091656'], marcador: true, texto: 'centro' };
-  })
+  DHL: transporteDocsGradeContatoCentro_(['declaracaoDhl', 'invoiceDhl', 'declaracaoTranspDhl']),
+  PINEX: transporteDocsGradeContatoCentro_(['invoicePinex', 'peticaoPinex', 'usdaStatementPinex', 'fichaEmergenciaPinex', 'declaracaoTransp']),
+  'PINEX (Agendamento)': transporteDocsGradeContatoCentro_(['formularioPinex'])
 };
+
+// Regra da geracao pela planilha (transporteAplicarContatoEmergenciaPdf_) para cada aba.
+function transporteDocsGradeContatoCentro_(abas) {
+  return abas.map(function(aba) {
+    return { aba: aba, digitos: ['970953241', '999091656'], marcador: true, texto: 'centro' };
+  });
+}
 
 var TRANSPORTE_DOCS_GRADE_CAMPOS_ = 'sheets(properties(title),merges,conditionalFormats(ranges),' +
   'data(columnMetadata(pixelSize,hiddenByUser),' +
@@ -1023,6 +1032,7 @@ function transporteDocsGradeProtegerConteudo_(abas, contexto) {
 
 // Contexto de transporteDocsGradeProtegerConteudo_ com as mesmas fontes de imprimirTodasAbas_ (somente leitura).
 function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
+  courier = transporteNormalizeCourierFromCodex_(courier);
   var folhas = ['folhaAgendamento', 'folhaDhlPinex'].map(function(chave) {
     return transportePdfActualSheetName_(chave, ss);
   }).filter(Boolean);
@@ -1030,7 +1040,7 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
     folhas: folhas,
     folhaC15: transportePdfActualSheetName_('folhaAgendamento', ss),
     identificacao: transporteParticipanteDocumento_(payload).texto,
-    contatoRegras: (TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_[transporteNormalizeCourierFromCodex_(courier)] || []).map(function(regra) {
+    contatoRegras: (TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_[courier] || []).map(function(regra) {
       return {
         titulo: transportePdfActualSheetName_(regra.aba, ss),
         digitos: regra.digitos,
@@ -1044,8 +1054,7 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
 
 /* ===== Diagnostico: leitura da grade real no Apps Script =====
  * Executar manualmente no editor (somente administradores). Le as abas da courier
- * (MARKEN por padrao; OCASA por diagnosticarGradeTransporteHtmlOcasa e DHL por
- * diagnosticarGradeTransporteHtmlDhl) na planilha de
+ * (MARKEN por padrao; atalhos para OCASA, DHL, PINEX e PINEX (Agendamento)) na planilha de
  * Transporte sem alterar nada, duas vezes: a frio (relendo o layout e gravando o
  * cache) e a quente (layout do cache + valores). Monta o HTML da leitura a quente e
  * converte em PDF salvo na pasta privada de diagnostico. Antes do HTML aplica as
@@ -1056,12 +1065,14 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
  * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN. A DHL usa a
  * Folha HTML no lugar da Folha DHL/PINEX (com o bloco de retirada pelo courier) e as
  * abas Declaracao (DHL), Invoice (DHL) e Declaracao de Transporte (DHL), lidas como
- * preenchidas pela ultima geracao (preencherDhlWebApp_).
+ * preenchidas pela ultima geracao (preencherDhlWebApp_). A PINEX segue o mesmo modelo
+ * (Folha HTML no lugar da Folha DHL/PINEX); a PINEX (Agendamento) imprime somente o
+ * Formulario (PINEX), sem folha.
  * As abas da courier so refletem o registro atual quando ele e da mesma courier: caso
  * contrario o diagnostico sinaliza REGISTRO_DE_OUTRA_COURIER.
  * O log contem somente contagens, tamanhos, tempos e o hash do conteudo.
  */
-var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL'];
+var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX', 'PINEX (Agendamento)'];
 
 function diagnosticarGradeTransporteHtmlOcasa() {
   return diagnosticarGradeTransporteHtml('OCASA');
@@ -1069,6 +1080,14 @@ function diagnosticarGradeTransporteHtmlOcasa() {
 
 function diagnosticarGradeTransporteHtmlDhl() {
   return diagnosticarGradeTransporteHtml('DHL');
+}
+
+function diagnosticarGradeTransporteHtmlPinex() {
+  return diagnosticarGradeTransporteHtml('PINEX');
+}
+
+function diagnosticarGradeTransporteHtmlPinexAgendamento() {
+  return diagnosticarGradeTransporteHtml('PINEX (Agendamento)');
 }
 
 function diagnosticarGradeTransporteHtml(courier) {
@@ -1112,7 +1131,7 @@ function diagnosticarGradeTransporteHtml(courier) {
   marca = Date.now();
   var stamp = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyyMMdd-HHmmss');
   var blob = HtmlService.createHtmlOutput(html).getBlob().getAs(MimeType.PDF)
-    .setName('diagnostico-grade-' + courier.toLowerCase() + '-' + stamp + '.pdf');
+    .setName('diagnostico-grade-' + courier.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '') + '-' + stamp + '.pdf');
   tempos.conversaoMs = Date.now() - marca;
   var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
   var paginasEsperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
