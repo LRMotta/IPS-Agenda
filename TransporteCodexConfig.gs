@@ -520,7 +520,8 @@ var TRANSPORTE_OPERACOES_HEADERS_ = [
   'Operacao_Estado', 'Inativacao_Motivo', 'Inativada_Em', 'Vinculo_Iniciado_Em'
 ];
 var TRANSPORTE_PENDENCIA_SEM_ENVIO_MS_ = 60 * 60 * 1000;
-var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 30;
+// Janela da busca Gmail do monitor; o envio costuma ocorrer poucos dias apos a geracao.
+var TRANSPORTE_MONITOR_BUSCA_DIAS_ = 15;
 
 function transporteMonitorReferencia_(agendaId, slot) {
   agendaId = String(agendaId || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
@@ -755,7 +756,7 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
           : 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.'));
     if (item.pendenciaEnvio) motivo = item.pendenciaEnvio;
     if (!identificado && agora.getTime() - transporteOperacaoDate_(item.geradoEm).getTime() > TRANSPORTE_MONITOR_BUSCA_DIAS_ * 24 * 60 * 60 * 1000) {
-      motivo += ' Documentação gerada há mais de 30 dias; mensagens antigas ficam fora da janela de busca automática. Verifique o envio manualmente.';
+      motivo += ' Documentação gerada há mais de ' + TRANSPORTE_MONITOR_BUSCA_DIAS_ + ' dias; mensagens antigas ficam fora da janela de busca automática. Verifique o envio manualmente.';
     }
     return {
       agendaId: item.agendaId,
@@ -976,7 +977,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   if (Object.keys(referencias).length) {
     // Lotes limitados evitam uma consulta por operação e expõem truncamento.
     for (var offset = 0; offset < 500; offset += 100) {
-      var pagina = GmailApp.search('in:anywhere -in:drafts newer_than:30d {"Ref. IPS:" "IPS-TRP" "IPS TRP"}', offset, 100);
+      var pagina = GmailApp.search('in:anywhere -in:drafts newer_than:' + TRANSPORTE_MONITOR_BUSCA_DIAS_ + 'd {"Ref. IPS:" "IPS-TRP" "IPS TRP"}', offset, 100);
       threads = threads.concat(pagina);
       if (pagina.length < 100) break;
       if (offset === 400) diagnostico.buscaLimitada = true;
@@ -1030,7 +1031,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     });
   });
   pendentes.forEach(function(item) {
-    if (!encontrados[item.referencia.toUpperCase()]) diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Referência não encontrada em mensagem elegível na conta executora (janela de 30 dias)' });
+    if (!encontrados[item.referencia.toUpperCase()]) diagnostico.recusas.push({ agendaId: item.agendaId, slot: item.slot, motivo: 'Referência não encontrada em mensagem elegível na conta executora (janela de ' + TRANSPORTE_MONITOR_BUSCA_DIAS_ + ' dias)' });
   });
   if (!Object.keys(encontrados).length) {
     return { ok: true, verificados: pendentes.length, enviados: 0, semAnexo: 0 };
