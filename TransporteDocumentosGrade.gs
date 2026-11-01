@@ -15,7 +15,9 @@
 
 // Pagina do exportador atual: A4, margens 0,5" (topo), 0,25" (laterais), 0,1" (base).
 var TRANSPORTE_DOCS_GRADE_LARGURA_PX_ = 745;
-var TRANSPORTE_DOCS_GRADE_PAGINA_ = { larguraPx: TRANSPORTE_DOCS_GRADE_LARGURA_PX_, margem: '12.7mm 6.35mm 2.5mm 6.35mm' };
+// Reducao maxima (fracao) para uma aba pouco mais alta que a pagina caber nela.
+var TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_ = 0.05;
+var TRANSPORTE_DOCS_GRADE_PAGINA_ ={ larguraPx: TRANSPORTE_DOCS_GRADE_LARGURA_PX_, margem: '12.7mm 6.35mm 2.5mm 6.35mm' };
 
 var TRANSPORTE_DOCS_GRADE_BORDAS_ = {
   DOTTED: '1px dotted',
@@ -148,6 +150,7 @@ function transporteDocsGradeArea_(sheet) {
  * sheet: objeto de spreadsheets.get (properties, merges, data[0]) e, opcionalmente,
  * imagensFlutuantes: [{ r, c, x, y, w, h, url }] (ancora de base 0, pixels do Sheets).
  * opcoes.imagemSrc(url): converte a URL da imagem (ex.: data URI em cache).
+ * opcoes.reducao: fator extra de escala (uso interno, aba pouco mais alta que a pagina).
  * Devolve o HTML de uma pagina (tabela), pronto para transporteDocsHtmlDocumento_.
  */
 function transporteDocsGradeHtml_(sheet, opcoes) {
@@ -172,7 +175,7 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
   for (var cc = c0; cc <= c1; cc++) if (!colOculta(cc)) colunas.push(cc);
   var larguraFonte = colunas.reduce(function(acc, c) { return acc + largura(c); }, 0);
   // fitw do exportador so reduz: abas estreitas saem em tamanho natural.
-  var escala = Math.min(1, (TRANSPORTE_DOCS_GRADE_LARGURA_PX_ - 2) / larguraFonte);
+  var escala = Math.min(1, (TRANSPORTE_DOCS_GRADE_LARGURA_PX_ - 2) / larguraFonte) * (opcoes.reducao || 1);
   // O exportador comprime linhas e fontes em ~0,97 em relacao a largura ajustada
   // (medido no PDF atual: alturas e largura de texto).
   var escalaV = escala * 0.97;
@@ -293,6 +296,14 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
 
   var alturaTotal = 0;
   for (var ar = 0; ar <= rFim; ar++) if (!linhaOculta(ar)) alturaTotal += (altura(ar) + (excessoLinha[ar] || 0)) * escalaV;
+  // A pagina HTML (1040 px) tem folga em relacao a area util do PDF atual (~1064 px):
+  // abas que o exportador imprime numa pagina podem passar dela por poucos px (Ficha
+  // OCASA: 1049 px). Ate TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_ a aba e reduzida por
+  // inteiro, como o ajuste a pagina; acima disso a geracao bloqueia.
+  var limite = TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_;
+  if (alturaTotal > limite && !opcoes.reducao && limite / alturaTotal >= 1 - TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_) {
+    return transporteDocsGradeHtml_(sheet, Object.assign({}, opcoes, { reducao: (limite - 1) / alturaTotal }));
+  }
   transporteDocsHtmlValidarAltura_(alturaTotal, (sheet.properties || {}).title);
 
   return html.join('');
@@ -454,8 +465,10 @@ var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
 // marcador: tambem troca {{TRANSPORTE_CONTATO_EMERGENCIA}}. texto 'centro' e o contato do
 // centro (transporteContatoEmergenciaTexto_). MARKEN: todos os documentos com o 99909-1656,
 // exceto "Informacoes sobre o produto" da Ficha de Emergencia, com o contato da Thais.
-// Abas e couriers sem regra mantem o texto do modelo (a Ficha OCASA traz os telefones
-// 24 h da propria OCASA). A geracao pela planilha (imprimirTodasAbas_) nao usa estas regras.
+// Abas de MARKEN sem regra mantem o texto do modelo. As demais couriers seguem a regra
+// padrao (aba '*': todas as abas do PDF), a mesma de transporteAplicarContatoEmergenciaPdf_
+// na geracao pela planilha: centro, ou a Thais na PINEX. A Ficha OCASA traz os telefones
+// 24 h da propria OCASA, que nao sao trocados.
 var TRANSPORTE_DOCS_GRADE_CONTATO_THAIS_ = 'TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES';
 var TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_ = {
   MARKEN: [
@@ -465,6 +478,9 @@ var TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_ = {
     { aba: 'invoiceMarken', digitos: ['9990911656'], texto: '55 54 99909-1656' }
   ]
 };
+var TRANSPORTE_DOCS_GRADE_CONTATO_PADRAO_ = [
+  { aba: '*', digitos: ['970953241', '999091656'], marcador: true, texto: 'centro' }
+];
 
 var TRANSPORTE_DOCS_GRADE_CAMPOS_ = 'sheets(properties(title),merges,conditionalFormats(ranges),' +
   'data(columnMetadata(pixelSize,hiddenByUser),' +
@@ -988,7 +1004,7 @@ function transporteDocsGradeProtegerConteudo_(abas, contexto) {
   var nomes = (contexto.nomes || []).map(normalizar).filter(Boolean);
   var conteudo = [];
   Object.keys(abas).forEach(function(titulo) {
-    var regras = (contexto.contatoRegras || []).filter(function(regra) { return regra.titulo === titulo && regra.texto; });
+    var regras = (contexto.contatoRegras || []).filter(function(regra) { return (regra.titulo === titulo || regra.titulo === '*') && regra.texto; });
     var linhas = ((abas[titulo].data || [])[0] || {}).rowData || [];
     var valores = linhas.map(function(row) {
       return (row.values || []).map(function(cell) {
@@ -1024,9 +1040,9 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
     folhas: folhas,
     folhaC15: transportePdfActualSheetName_('folhaAgendamento', ss),
     identificacao: transporteParticipanteDocumento_(payload).texto,
-    contatoRegras: (TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_[transporteNormalizeCourierFromCodex_(courier)] || []).map(function(regra) {
+    contatoRegras: (TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_[transporteNormalizeCourierFromCodex_(courier)] || TRANSPORTE_DOCS_GRADE_CONTATO_PADRAO_).map(function(regra) {
       return {
-        titulo: transportePdfActualSheetName_(regra.aba, ss),
+        titulo: regra.aba === '*' ? '*' : transportePdfActualSheetName_(regra.aba, ss),
         digitos: regra.digitos,
         marcador: !!regra.marcador,
         texto: regra.texto === 'centro' ? transporteContatoEmergenciaTexto_(courier) : regra.texto
@@ -1038,7 +1054,7 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
 
 /* ===== Diagnostico: leitura da grade real no Apps Script =====
  * Executar manualmente no editor (somente administradores). Le as abas da courier
- * (MARKEN por padrao; OCASA por diagnosticarGradeTransporteHtmlOcasa) na planilha de
+ * (MARKEN por padrao; OCASA, DHL e PINEX pelas funcoes de mesmo sufixo) na planilha de
  * Transporte sem alterar nada, duas vezes: a frio (relendo o layout e gravando o
  * cache) e a quente (layout do cache + valores). Monta o HTML da leitura a quente e
  * converte em PDF salvo na pasta privada de diagnostico. Antes do HTML aplica as
@@ -1049,10 +1065,19 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
  * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN.
  * O log contem somente contagens, tamanhos, tempos e o hash do conteudo.
  */
-var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA'];
+var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX'];
 
 function diagnosticarGradeTransporteHtmlOcasa() {
   return diagnosticarGradeTransporteHtml('OCASA');
+}
+
+// DHL e PINEX usam a Folha de Agendamento (DHL/PINEX); o registro lido e o atual da planilha.
+function diagnosticarGradeTransporteHtmlDhl() {
+  return diagnosticarGradeTransporteHtml('DHL');
+}
+
+function diagnosticarGradeTransporteHtmlPinex() {
+  return diagnosticarGradeTransporteHtml('PINEX');
 }
 
 function diagnosticarGradeTransporteHtml(courier) {
@@ -1060,7 +1085,7 @@ function diagnosticarGradeTransporteHtml(courier) {
   // No editor, Executar passa um objeto de evento: so um nome de courier conta.
   courier = typeof courier === 'string' && courier ? transporteNormalizeCourierFromCodex_(courier) : 'MARKEN';
   if (TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.indexOf(courier) < 0) {
-    throw new Error('Diagnóstico da grade disponível somente para ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.join(' e ') + '.');
+    throw new Error('Diagnóstico da grade disponível somente para ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.join(', ') + '.');
   }
   var tempos = {};
   var inicio = Date.now();

@@ -289,14 +289,19 @@ test('diagnostico OCASA usa o spec da courier com temperatura e destino do regis
   assert.doesNotMatch(html, /Pessoa Participante/);
 });
 
-test('diagnostico aceita so MARKEN e OCASA e trata o evento do editor como MARKEN', () => {
+test('diagnostico aceita MARKEN, OCASA, DHL e PINEX e trata o evento do editor como MARKEN', () => {
   const editor = diagnosticoGrade();
   assert.equal(editor.ctx.diagnosticarGradeTransporteHtml({ authMode: 'FULL' }).courier, 'MARKEN');
   assert.equal(editor.calls.courier, 'MARKEN');
   const dhl = diagnosticoGrade();
-  assert.throws(() => dhl.ctx.diagnosticarGradeTransporteHtml('DHL'), /somente para MARKEN e OCASA/);
-  assert.equal(dhl.calls.fetch.length, 0);
-  assert.equal(dhl.calls.files.length, 0);
+  assert.equal(dhl.ctx.diagnosticarGradeTransporteHtmlDhl().courier, 'DHL');
+  assert.equal(dhl.calls.spec[0], 'DHL');
+  const pinex = diagnosticoGrade();
+  assert.equal(pinex.ctx.diagnosticarGradeTransporteHtmlPinex().courier, 'PINEX');
+  const outra = diagnosticoGrade();
+  assert.throws(() => outra.ctx.diagnosticarGradeTransporteHtml('FEDEX'), /somente para MARKEN, OCASA, DHL, PINEX/);
+  assert.equal(outra.calls.fetch.length, 0);
+  assert.equal(outra.calls.files.length, 0);
 });
 
 test('cache incompleto ou ilegivel e relido da planilha', () => {
@@ -407,6 +412,19 @@ test('aba mais alta que uma pagina A4 bloqueia em vez de ser cortada sem aviso',
   assert.ok(app.transporteDocsGradeHtml_(alta).length > 0);
 });
 
+test('aba ate 5% mais alta que a pagina e reduzida por inteiro para caber (Ficha OCASA)', () => {
+  // Largura 100 px: escala 1, linhas a 0,97. 1080 px de linha -> 1047,6 px no HTML.
+  const pouco = aba([[celula('x')]], { titulo: 'Ficha', larguras: [100] });
+  pouco.data[0].rowMetadata[0].pixelSize = 1080;
+  const html = app.transporteDocsGradeHtml_(pouco);
+  const altura = Number(html.match(/<tr style="height:([\d.]+)px">/)[1]);
+  assert.ok(altura <= 1040 && altura > 1030, String(altura));
+  assert.match(html, /<col style="width:99\.\d+px">/);
+  // Acima de 5% continua bloqueando.
+  pouco.data[0].rowMetadata[0].pixelSize = 1140;
+  assert.throws(() => app.transporteDocsGradeHtml_(pouco), /"Ficha" excede a altura de uma página A4 no HTML \(1106 px de 1040 px\)/);
+});
+
 function abasParaProtecao() {
   const folha = aba([
     [celula('Folha')], [celula('')], [{}, {}, celula('Maria Exemplo')],
@@ -479,8 +497,18 @@ test('MARKEN na geracao HTML: 99909-1656 em todos os documentos, contato da Thai
   ]);
   assert.deepEqual(impresso['Invoice (MARKEN)'], ['55 54 3218-2737', '55 54 99909-1656']);
   assert.deepEqual(impresso['Petição de Anuência de Exportação'], ['(54) 3218-2737']);
-  // Outras couriers sem regra mantem o texto do modelo.
-  assert.deepEqual([...app.transporteDocsGradeContextoProtecao_({}, 'OCASA', { paciente: 'Pessoa' }).contatoRegras], []);
+  // Demais couriers: regra padrao em todas as abas, como na geracao pela planilha.
+  const ocasa = app.transporteDocsGradeContextoProtecao_({}, 'OCASA', { paciente: 'Pessoa' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ocasa.contatoRegras)), [{ titulo: '*', digitos: ['970953241', '999091656'], marcador: true, texto: 'outro' }]);
+  const abasOcasa = {
+    'Declaração de Transporte': umaColuna('Declaração de Transporte', ['TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES']),
+    'Ficha de Emergência (OCASA)': umaColuna('Ficha de Emergência (OCASA)', ['24 Horas\n11 98718 3642 Marcelo Moreira']),
+    'Telefones Úteis (OCASA)': umaColuna('Telefones Úteis (OCASA)', ['{{TRANSPORTE_CONTATO_EMERGENCIA}}'])
+  };
+  const impressoOcasa = Object.fromEntries(app.transporteDocsGradeProtegerConteudo_(abasOcasa, ocasa).map(a => [a.aba, a.valores.flat()]));
+  assert.deepEqual(impressoOcasa['Declaração de Transporte'], ['outro']);
+  assert.deepEqual(impressoOcasa['Ficha de Emergência (OCASA)'], ['24 Horas\n11 98718 3642 Marcelo Moreira']);
+  assert.deepEqual(impressoOcasa['Telefones Úteis (OCASA)'], ['outro']);
 });
 
 test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {
