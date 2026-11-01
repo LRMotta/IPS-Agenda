@@ -15,7 +15,9 @@
 
 // Pagina do exportador atual: A4, margens 0,5" (topo), 0,25" (laterais), 0,1" (base).
 var TRANSPORTE_DOCS_GRADE_LARGURA_PX_ = 745;
-var TRANSPORTE_DOCS_GRADE_PAGINA_ = { larguraPx: TRANSPORTE_DOCS_GRADE_LARGURA_PX_, margem: '12.7mm 6.35mm 2.5mm 6.35mm' };
+// Reducao maxima (fracao) para uma aba pouco mais alta que a pagina caber nela.
+var TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_ = 0.05;
+var TRANSPORTE_DOCS_GRADE_PAGINA_ ={ larguraPx: TRANSPORTE_DOCS_GRADE_LARGURA_PX_, margem: '12.7mm 6.35mm 2.5mm 6.35mm' };
 
 var TRANSPORTE_DOCS_GRADE_BORDAS_ = {
   DOTTED: '1px dotted',
@@ -148,6 +150,7 @@ function transporteDocsGradeArea_(sheet) {
  * sheet: objeto de spreadsheets.get (properties, merges, data[0]) e, opcionalmente,
  * imagensFlutuantes: [{ r, c, x, y, w, h, url }] (ancora de base 0, pixels do Sheets).
  * opcoes.imagemSrc(url): converte a URL da imagem (ex.: data URI em cache).
+ * opcoes.reducao: fator extra de escala (uso interno, aba pouco mais alta que a pagina).
  * Devolve o HTML de uma pagina (tabela), pronto para transporteDocsHtmlDocumento_.
  */
 function transporteDocsGradeHtml_(sheet, opcoes) {
@@ -172,7 +175,7 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
   for (var cc = c0; cc <= c1; cc++) if (!colOculta(cc)) colunas.push(cc);
   var larguraFonte = colunas.reduce(function(acc, c) { return acc + largura(c); }, 0);
   // fitw do exportador so reduz: abas estreitas saem em tamanho natural.
-  var escala = Math.min(1, (TRANSPORTE_DOCS_GRADE_LARGURA_PX_ - 2) / larguraFonte);
+  var escala = Math.min(1, (TRANSPORTE_DOCS_GRADE_LARGURA_PX_ - 2) / larguraFonte) * (opcoes.reducao || 1);
   // O exportador comprime linhas e fontes em ~0,97 em relacao a largura ajustada
   // (medido no PDF atual: alturas e largura de texto).
   var escalaV = escala * 0.97;
@@ -293,6 +296,14 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
 
   var alturaTotal = 0;
   for (var ar = 0; ar <= rFim; ar++) if (!linhaOculta(ar)) alturaTotal += (altura(ar) + (excessoLinha[ar] || 0)) * escalaV;
+  // A pagina HTML (1040 px) tem folga em relacao a area util do PDF atual (~1064 px):
+  // abas que o exportador imprime numa pagina podem passar dela por poucos px (Ficha
+  // OCASA: 1049 px). Ate TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_ a aba e reduzida por
+  // inteiro, como o ajuste a pagina; acima disso a geracao bloqueia.
+  var limite = TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_;
+  if (alturaTotal > limite && !opcoes.reducao && limite / alturaTotal >= 1 - TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_) {
+    return transporteDocsGradeHtml_(sheet, Object.assign({}, opcoes, { reducao: (limite - 1) / alturaTotal }));
+  }
   transporteDocsHtmlValidarAltura_(alturaTotal, (sheet.properties || {}).title);
 
   return html.join('');

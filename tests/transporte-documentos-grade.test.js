@@ -407,6 +407,19 @@ test('aba mais alta que uma pagina A4 bloqueia em vez de ser cortada sem aviso',
   assert.ok(app.transporteDocsGradeHtml_(alta).length > 0);
 });
 
+test('aba ate 5% mais alta que a pagina e reduzida por inteiro para caber (Ficha OCASA)', () => {
+  // Largura 100 px: escala 1, linhas a 0,97. 1080 px de linha -> 1047,6 px no HTML.
+  const pouco = aba([[celula('x')]], { titulo: 'Ficha', larguras: [100] });
+  pouco.data[0].rowMetadata[0].pixelSize = 1080;
+  const html = app.transporteDocsGradeHtml_(pouco);
+  const altura = Number(html.match(/<tr style="height:([\d.]+)px">/)[1]);
+  assert.ok(altura <= 1040 && altura > 1030, String(altura));
+  assert.match(html, /<col style="width:99\.\d+px">/);
+  // Acima de 5% continua bloqueando.
+  pouco.data[0].rowMetadata[0].pixelSize = 1140;
+  assert.throws(() => app.transporteDocsGradeHtml_(pouco), /"Ficha" excede a altura de uma página A4 no HTML \(1106 px de 1040 px\)/);
+});
+
 function abasParaProtecao() {
   const folha = aba([
     [celula('Folha')], [celula('')], [{}, {}, celula('Maria Exemplo')],
