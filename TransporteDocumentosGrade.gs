@@ -465,8 +465,10 @@ var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
 // marcador: tambem troca {{TRANSPORTE_CONTATO_EMERGENCIA}}. texto 'centro' e o contato do
 // centro (transporteContatoEmergenciaTexto_). MARKEN: todos os documentos com o 99909-1656,
 // exceto "Informacoes sobre o produto" da Ficha de Emergencia, com o contato da Thais.
-// Abas e couriers sem regra mantem o texto do modelo (a Ficha OCASA traz os telefones
-// 24 h da propria OCASA). A geracao pela planilha (imprimirTodasAbas_) nao usa estas regras.
+// Abas de MARKEN sem regra mantem o texto do modelo. As demais couriers seguem a regra
+// padrao (aba '*': todas as abas do PDF), a mesma de transporteAplicarContatoEmergenciaPdf_
+// na geracao pela planilha: centro, ou a Thais na PINEX. A Ficha OCASA traz os telefones
+// 24 h da propria OCASA, que nao sao trocados.
 var TRANSPORTE_DOCS_GRADE_CONTATO_THAIS_ = 'TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES';
 var TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_ = {
   MARKEN: [
@@ -476,6 +478,9 @@ var TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_ = {
     { aba: 'invoiceMarken', digitos: ['9990911656'], texto: '55 54 99909-1656' }
   ]
 };
+var TRANSPORTE_DOCS_GRADE_CONTATO_PADRAO_ = [
+  { aba: '*', digitos: ['970953241', '999091656'], marcador: true, texto: 'centro' }
+];
 
 var TRANSPORTE_DOCS_GRADE_CAMPOS_ = 'sheets(properties(title),merges,conditionalFormats(ranges),' +
   'data(columnMetadata(pixelSize,hiddenByUser),' +
@@ -999,7 +1004,7 @@ function transporteDocsGradeProtegerConteudo_(abas, contexto) {
   var nomes = (contexto.nomes || []).map(normalizar).filter(Boolean);
   var conteudo = [];
   Object.keys(abas).forEach(function(titulo) {
-    var regras = (contexto.contatoRegras || []).filter(function(regra) { return regra.titulo === titulo && regra.texto; });
+    var regras = (contexto.contatoRegras || []).filter(function(regra) { return (regra.titulo === titulo || regra.titulo === '*') && regra.texto; });
     var linhas = ((abas[titulo].data || [])[0] || {}).rowData || [];
     var valores = linhas.map(function(row) {
       return (row.values || []).map(function(cell) {
@@ -1035,9 +1040,9 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
     folhas: folhas,
     folhaC15: transportePdfActualSheetName_('folhaAgendamento', ss),
     identificacao: transporteParticipanteDocumento_(payload).texto,
-    contatoRegras: (TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_[transporteNormalizeCourierFromCodex_(courier)] || []).map(function(regra) {
+    contatoRegras: (TRANSPORTE_DOCS_GRADE_CONTATO_REGRAS_[transporteNormalizeCourierFromCodex_(courier)] || TRANSPORTE_DOCS_GRADE_CONTATO_PADRAO_).map(function(regra) {
       return {
-        titulo: transportePdfActualSheetName_(regra.aba, ss),
+        titulo: regra.aba === '*' ? '*' : transportePdfActualSheetName_(regra.aba, ss),
         digitos: regra.digitos,
         marcador: !!regra.marcador,
         texto: regra.texto === 'centro' ? transporteContatoEmergenciaTexto_(courier) : regra.texto
@@ -1049,7 +1054,7 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
 
 /* ===== Diagnostico: leitura da grade real no Apps Script =====
  * Executar manualmente no editor (somente administradores). Le as abas da courier
- * (MARKEN por padrao; OCASA por diagnosticarGradeTransporteHtmlOcasa) na planilha de
+ * (MARKEN por padrao; OCASA, DHL e PINEX pelas funcoes de mesmo sufixo) na planilha de
  * Transporte sem alterar nada, duas vezes: a frio (relendo o layout e gravando o
  * cache) e a quente (layout do cache + valores). Monta o HTML da leitura a quente e
  * converte em PDF salvo na pasta privada de diagnostico. Antes do HTML aplica as
@@ -1060,10 +1065,19 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
  * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN.
  * O log contem somente contagens, tamanhos, tempos e o hash do conteudo.
  */
-var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA'];
+var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX'];
 
 function diagnosticarGradeTransporteHtmlOcasa() {
   return diagnosticarGradeTransporteHtml('OCASA');
+}
+
+// DHL e PINEX usam a Folha de Agendamento (DHL/PINEX); o registro lido e o atual da planilha.
+function diagnosticarGradeTransporteHtmlDhl() {
+  return diagnosticarGradeTransporteHtml('DHL');
+}
+
+function diagnosticarGradeTransporteHtmlPinex() {
+  return diagnosticarGradeTransporteHtml('PINEX');
 }
 
 function diagnosticarGradeTransporteHtml(courier) {
@@ -1071,7 +1085,7 @@ function diagnosticarGradeTransporteHtml(courier) {
   // No editor, Executar passa um objeto de evento: so um nome de courier conta.
   courier = typeof courier === 'string' && courier ? transporteNormalizeCourierFromCodex_(courier) : 'MARKEN';
   if (TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.indexOf(courier) < 0) {
-    throw new Error('Diagnóstico da grade disponível somente para ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.join(' e ') + '.');
+    throw new Error('Diagnóstico da grade disponível somente para ' + TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_.join(', ') + '.');
   }
   var tempos = {};
   var inicio = Date.now();

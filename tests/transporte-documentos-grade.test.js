@@ -289,14 +289,19 @@ test('diagnostico OCASA usa o spec da courier com temperatura e destino do regis
   assert.doesNotMatch(html, /Pessoa Participante/);
 });
 
-test('diagnostico aceita so MARKEN e OCASA e trata o evento do editor como MARKEN', () => {
+test('diagnostico aceita MARKEN, OCASA, DHL e PINEX e trata o evento do editor como MARKEN', () => {
   const editor = diagnosticoGrade();
   assert.equal(editor.ctx.diagnosticarGradeTransporteHtml({ authMode: 'FULL' }).courier, 'MARKEN');
   assert.equal(editor.calls.courier, 'MARKEN');
   const dhl = diagnosticoGrade();
-  assert.throws(() => dhl.ctx.diagnosticarGradeTransporteHtml('DHL'), /somente para MARKEN e OCASA/);
-  assert.equal(dhl.calls.fetch.length, 0);
-  assert.equal(dhl.calls.files.length, 0);
+  assert.equal(dhl.ctx.diagnosticarGradeTransporteHtmlDhl().courier, 'DHL');
+  assert.equal(dhl.calls.spec[0], 'DHL');
+  const pinex = diagnosticoGrade();
+  assert.equal(pinex.ctx.diagnosticarGradeTransporteHtmlPinex().courier, 'PINEX');
+  const outra = diagnosticoGrade();
+  assert.throws(() => outra.ctx.diagnosticarGradeTransporteHtml('FEDEX'), /somente para MARKEN, OCASA, DHL, PINEX/);
+  assert.equal(outra.calls.fetch.length, 0);
+  assert.equal(outra.calls.files.length, 0);
 });
 
 test('cache incompleto ou ilegivel e relido da planilha', () => {
@@ -492,8 +497,18 @@ test('MARKEN na geracao HTML: 99909-1656 em todos os documentos, contato da Thai
   ]);
   assert.deepEqual(impresso['Invoice (MARKEN)'], ['55 54 3218-2737', '55 54 99909-1656']);
   assert.deepEqual(impresso['Petição de Anuência de Exportação'], ['(54) 3218-2737']);
-  // Outras couriers sem regra mantem o texto do modelo.
-  assert.deepEqual([...app.transporteDocsGradeContextoProtecao_({}, 'OCASA', { paciente: 'Pessoa' }).contatoRegras], []);
+  // Demais couriers: regra padrao em todas as abas, como na geracao pela planilha.
+  const ocasa = app.transporteDocsGradeContextoProtecao_({}, 'OCASA', { paciente: 'Pessoa' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ocasa.contatoRegras)), [{ titulo: '*', digitos: ['970953241', '999091656'], marcador: true, texto: 'outro' }]);
+  const abasOcasa = {
+    'Declaração de Transporte': umaColuna('Declaração de Transporte', ['TELEFONE DE EMERGÊNCIA (24H): 55 11 97095-3241 - CONTATO: THAIS THABATA LEITE LOPES']),
+    'Ficha de Emergência (OCASA)': umaColuna('Ficha de Emergência (OCASA)', ['24 Horas\n11 98718 3642 Marcelo Moreira']),
+    'Telefones Úteis (OCASA)': umaColuna('Telefones Úteis (OCASA)', ['{{TRANSPORTE_CONTATO_EMERGENCIA}}'])
+  };
+  const impressoOcasa = Object.fromEntries(app.transporteDocsGradeProtegerConteudo_(abasOcasa, ocasa).map(a => [a.aba, a.valores.flat()]));
+  assert.deepEqual(impressoOcasa['Declaração de Transporte'], ['outro']);
+  assert.deepEqual(impressoOcasa['Ficha de Emergência (OCASA)'], ['24 Horas\n11 98718 3642 Marcelo Moreira']);
+  assert.deepEqual(impressoOcasa['Telefones Úteis (OCASA)'], ['outro']);
 });
 
 test('protecao bloqueia quando o nome do participante continua em outra celula, sem expor o nome', () => {
