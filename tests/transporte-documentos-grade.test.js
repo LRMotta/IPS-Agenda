@@ -468,6 +468,19 @@ test('contato de emergencia so e trocado nas abas com regra para a courier', () 
   assert.equal(declaracao[1].values[0].formattedValue, '{{TRANSPORTE_CONTATO_EMERGENCIA}}');
 });
 
+test('rodape CAMPUS SEDE da Declaracao vale para Invoice MARKEN, Declaracao DHL, Commercial Invoice e USDA PINEX', () => {
+  const titulos = { declaracaoTransp: 'Declaração de Transporte', invoiceMarken: 'Invoice (MARKEN)', declaracaoDhl: 'Declaração (DHL)', invoicePinex: 'Commercial Invoice (PINEX)' };
+  const app = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {
+    transportePdfActualSheetName_: chave => titulos[chave] || ''
+  });
+  // Aba ausente na planilha (USDA) fica fora do mapa.
+  assert.deepEqual({ ...app.transporteDocsGradeImagensCodigo_({}) }, {
+    'Invoice (MARKEN)': 'Declaração de Transporte',
+    'Declaração (DHL)': 'Declaração de Transporte',
+    'Commercial Invoice (PINEX)': 'Declaração de Transporte'
+  });
+});
+
 test('MARKEN na geracao HTML: 99909-1656 em todos os documentos, contato da Thais so em Informacoes sobre o produto da Ficha', () => {
   const titulos = { declaracaoTransp: 'Declaração de Transporte', fichaEmergenciaMarken: 'Ficha de Emergência (MARKEN)', invoiceMarken: 'Invoice (MARKEN)', peticaoAnuencia: 'Petição de Anuência de Exportação' };
   const app = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], {

@@ -455,9 +455,13 @@ var TRANSPORTE_DOCS_GRADE_FORMATOS_CODIGO_ = {
 // origem legivel). A imagem usada e a de celula mais abaixo na aba de origem (o
 // rodape), na posicao e no tamanho da flutuante. So vale quando a aba tem exatamente
 // uma imagem assim; as demais continuam sinalizadas como omitidas.
-// invoiceMarken: o rodape "CAMPUS SEDE" e a mesma imagem de B53 da Declaracao.
+// O rodape "CAMPUS SEDE" destas abas e a mesma imagem de B53 da Declaracao
+// (conferido nos PDFs atuais de MARKEN, DHL e PINEX).
 var TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_ = {
-  invoiceMarken: 'declaracaoTransp'
+  invoiceMarken: 'declaracaoTransp',
+  declaracaoDhl: 'declaracaoTransp',
+  invoicePinex: 'declaracaoTransp',
+  usdaStatementPinex: 'declaracaoTransp'
 };
 
 // Contato de emergencia impresso na geracao HTML, por courier e aba (chave). Cada regra
