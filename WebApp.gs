@@ -30,14 +30,61 @@ function codexInitialPage_(value, estoque) {
   return allowed.indexOf(page) !== -1 ? page : (estoque ? 'itens' : 'agenda');
 }
 
+// Instrumentação do doGet: apenas nomes fixos de etapa, durações e contagens.
+var CODEX_DOGET_INCLUDE_STATS_ = null;
+
 function doGet(e) {
-  var access = codexAuthorizeWebAppRequestSafe_(e);
+  var traceId = codexBootstrapTraceId_();
+  var totalMeta = { traceId: traceId, rowCount: 0 };
+  return codexMeasureReadPerformance_('doGet', 'total', totalMeta, function() {
+    return codexDoGet_(e, traceId);
+  });
+}
+
+function codexDoGetStage_(stage, traceId, callback, metadata) {
+  metadata = metadata || {};
+  metadata.traceId = traceId;
+  return codexMeasureReadPerformance_('doGet', stage, metadata, callback);
+}
+
+function codexDoGetTemplate_(filename, traceId) {
+  return codexDoGetStage_('template', traceId, function() {
+    return HtmlService.createTemplateFromFile(filename);
+  });
+}
+
+function codexDoGetEvaluate_(template, title, route, traceId) {
+  var includeStats = { count: 0, durationMs: 0 };
+  var output;
+  CODEX_DOGET_INCLUDE_STATS_ = includeStats;
+  try {
+    output = codexDoGetStage_('evaluate_' + route, traceId, function() {
+      return template.evaluate();
+    });
+  } finally {
+    CODEX_DOGET_INCLUDE_STATS_ = null;
+    // Parte do evaluate gasta nos includes; não somar com a etapa evaluate.
+    codexLogPerformance_('doGet', 'includes_' + route, includeStats.durationMs, {
+      traceId: traceId,
+      rowCount: includeStats.count
+    }, true);
+  }
+  return output
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setTitle(title);
+}
+
+function codexDoGet_(e, traceId) {
+  var accessMeta = { rowCount: 0 };
+  var access = codexDoGetStage_('access', traceId, function() {
+    return codexAuthorizeWebAppRequestSafe_(e, undefined, { useAclCache: true, cacheMeta: accessMeta });
+  }, accessMeta);
   if (!access.ok) return codexAccessDeniedOutput_(access);
 
   var page = e && e.parameter ? e.parameter.page : 'index';
 
   if (page === 'dashboard') {
-    var tplDashboard = HtmlService.createTemplateFromFile('Index');
+    var tplDashboard = codexDoGetTemplate_('Index', traceId);
     tplDashboard.includeEstoque = false;
     tplDashboard.includeDashboard = true;
     tplDashboard.paginaInicial = 'dashboard';
@@ -48,14 +95,11 @@ function doGet(e) {
     tplDashboard.buscaInicial = '';
     tplDashboard.dashboardFiltroInicial = '';
     tplDashboard.dashboardFiltroKeys = '';
-    return tplDashboard
-      .evaluate()
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('IPS | UCS');
+    return codexDoGetEvaluate_(tplDashboard, 'IPS | UCS', 'dashboard', traceId);
   }
 
   if (page === 'estoque' || page === 'pedidos' || page === 'estoque-view') {
-    var tplEstoque = HtmlService.createTemplateFromFile('Index');
+    var tplEstoque = codexDoGetTemplate_('Index', traceId);
     tplEstoque.includeEstoque = true;
     tplEstoque.includeDashboard = false;
     tplEstoque.paginaInicial = page === 'pedidos'
@@ -66,26 +110,20 @@ function doGet(e) {
     tplEstoque.buscaInicial = e && e.parameter ? (e.parameter.busca || '') : '';
     tplEstoque.dashboardFiltroInicial = '';
     tplEstoque.dashboardFiltroKeys = '';
-    return tplEstoque
-      .evaluate()
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('IPS | UCS');
+    return codexDoGetEvaluate_(tplEstoque, 'IPS | UCS', 'estoque', traceId);
   }
 
   if (page === 'transporte') {
-    var tplTransporte = HtmlService.createTemplateFromFile('TransporteApp');
+    var tplTransporte = codexDoGetTemplate_('TransporteApp', traceId);
     tplTransporte.initialTransporteArgs = {
       agendaId: e && e.parameter ? String(e.parameter.agendaId || '') : '',
       slot: e && e.parameter ? String(e.parameter.slot || '') : ''
     };
-    return tplTransporte
-      .evaluate()
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('IPS | Transporte de Mat. Biologico');
+    return codexDoGetEvaluate_(tplTransporte, 'IPS | Transporte de Mat. Biologico', 'transporte', traceId);
   }
 
   // default — página principal
-  var tplIndex = HtmlService.createTemplateFromFile('Index');
+  var tplIndex = codexDoGetTemplate_('Index', traceId);
   tplIndex.includeEstoque = false;
   tplIndex.includeDashboard = false;
   tplIndex.paginaInicial = codexInitialPage_(e && e.parameter && e.parameter.pagina, false);
@@ -96,11 +134,10 @@ function doGet(e) {
   // O shell antecipado não traz dados nem libera operações: apenas reduz o tempo
   // até a estrutura visual da Agenda aparecer para usuários autorizados.
   tplIndex.agendaCanaryShell = tplIndex.paginaInicial === 'agenda' &&
-    agendaWindowedLoadingV2EnabledForAccess_(access);
-  return tplIndex
-    .evaluate()
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setTitle('IPS | UCS');
+    codexDoGetStage_('canary_flag', traceId, function() {
+      return agendaWindowedLoadingV2EnabledForAccess_(access);
+    });
+  return codexDoGetEvaluate_(tplIndex, 'IPS | UCS', 'index', traceId);
 }
 
 // Mantida junto à superfície RPC do Web App: alguns deployments legados não
@@ -191,9 +228,9 @@ function doPost(e) {
   }
 }
 
-function codexAuthorizeWebAppRequestSafe_(e, readSnapshot) {
+function codexAuthorizeWebAppRequestSafe_(e, readSnapshot, pageLoadOptions) {
   try {
-    return codexAuthorizeWebAppRequest_(e, readSnapshot);
+    return codexAuthorizeWebAppRequest_(e, readSnapshot, pageLoadOptions);
   } catch (err) {
     return {
       ok: false,
@@ -306,8 +343,9 @@ function getAppBootstrapData(request) {
   };
   var totalMeta = perfMeta({ rowCount: 0, responseBytesMeasured: false });
   return codexMeasureReadPerformance_('getAppBootstrapData', 'total', totalMeta, function() {
-    var access = codexMeasureReadPerformance_('getAppBootstrapData', 'access', perfMeta({ rowCount: 0 }), function() {
-      return codexGetCurrentUserAccess(accessSnapshot);
+    var accessMeta = perfMeta({ rowCount: 0 });
+    var access = codexMeasureReadPerformance_('getAppBootstrapData', 'access', accessMeta, function() {
+      return codexGetPageLoadAccess_(accessSnapshot, accessMeta);
     });
     var agendaWindowedLoadingEnabled = agendaWindowedLoadingV2EnabledForAccess_(access);
     var agendaRange = agendaBootstrapRequestRange_(request);
@@ -494,11 +532,18 @@ function getEstoqueBootstrapData(page) {
 }
 
 function include(filename) {
+  var stats = CODEX_DOGET_INCLUDE_STATS_;
+  var startedAt = stats ? Date.now() : 0;
   try {
     return HtmlService.createHtmlOutputFromFile(filename).getContent();
   } catch (err) {
     // eslint-disable-next-line preserve-caught-error -- Add the include target to the surfaced Apps Script error.
     throw new Error('Falha ao incluir arquivo HTML "' + filename + '": ' + (err.message || String(err)));
+  } finally {
+    if (stats) {
+      stats.count += 1;
+      stats.durationMs += Date.now() - startedAt;
+    }
   }
 }
 
@@ -516,7 +561,7 @@ function codexLoggerSummary_(label, payload) {
   Logger.log(parts.join(' | '));
 }
 
-function codexAuthorizeWebAppRequest_(e, readSnapshot) {
+function codexAuthorizeWebAppRequest_(e, readSnapshot, pageLoadOptions) {
   var userEmail = codexNormalizeEmail_(codexGetActiveUserEmail_());
   if (!userEmail) {
     return {
@@ -528,7 +573,23 @@ function codexAuthorizeWebAppRequest_(e, readSnapshot) {
     };
   }
 
-  var users = codexGetAllowedUsers_();
+  // pageLoadOptions só é passado pelo doGet e pelo bootstrap inicial.
+  var users;
+  if (pageLoadOptions && pageLoadOptions.useAclCache === true) {
+    var cacheMeta = pageLoadOptions.cacheMeta || {};
+    users = codexGetAllowedUsersForPageLoad_(cacheMeta);
+    var cachedUser = users[userEmail];
+    if (cacheMeta.cacheHit === true && (!cachedUser || !cachedUser.active)) {
+      // O cache só pode liberar a abertura: negação ou usuário recém-cadastrado
+      // na planilha é sempre confirmado com leitura atual de Users.
+      cacheMeta.cacheHit = false;
+      cacheMeta.cacheMiss = true;
+      users = codexGetAllowedUsers_();
+      codexPageLoadAclCachePut_(users);
+    }
+  } else {
+    users = codexGetAllowedUsers_();
+  }
   // Parâmetro de saída privado: não aceita uma ACL anterior como autorização.
   if (readSnapshot) readSnapshot.users = users;
   if (!Object.keys(users).length) {
@@ -778,6 +839,15 @@ function codexNormalizeActive_(value) {
 
 function codexGetCurrentUserAccess(readSnapshot) {
   return codexAccessPresentation_(codexAuthorizeWebAppRequestSafe_(undefined, readSnapshot));
+}
+
+// Somente para a abertura da página: usa o cache curto da ACL. As RPCs
+// seguintes (inclusive mutações) continuam autorizando com leitura de Users.
+function codexGetPageLoadAccess_(readSnapshot, cacheMeta) {
+  return codexAccessPresentation_(codexAuthorizeWebAppRequestSafe_(undefined, readSnapshot, {
+    useAclCache: true,
+    cacheMeta: cacheMeta
+  }));
 }
 
 function codexAccessPresentation_(access) {
@@ -1780,6 +1850,7 @@ function salvarMeuPerfil(payload) {
     sh.getRange(rowIndex, 2).setValue(name);
     codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
     sh.getRange(rowIndex, 6, 1, 2).setValues([[formacao, registroProfissional]]);
+    codexInvalidatePageLoadAclCache_();
     codexWriteAuditChanges_('Sistema', 'salvarMeuPerfil', email, [
       { field: 'Usuário - Nome', oldValue: oldName, newValue: name },
       { field: 'Usuário - Aniversário', oldValue: oldBirthday, newValue: birthday },
@@ -1871,6 +1942,7 @@ function salvarPerfisUsuariosAdmin(payload) {
       }));
       start = end;
     }
+    codexInvalidatePageLoadAclCache_();
     codexWriteAuditLogBatch_(changes.map(function(change) {
       return { action: 'salvarPerfisUsuariosAdmin', moduleName: 'Sistema', recordId: change.email };
     }));
@@ -2031,6 +2103,7 @@ function salvarUsuarioAdmin(payload) {
     if (hasFarmaciaUpdate) sh.getRange(rowIndex, 9).setValue(farmaciaAccess);
     if (hasStudiesUpdate) sh.getRange(rowIndex, 10).setValue(studiesJson);
     if (hasCommonUpdate) sh.getRange(rowIndex, 11).setValue(commonAccess);
+    codexInvalidatePageLoadAclCache_();
     codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
     codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
       { field: 'Usuário - E-mail', oldValue: rowAnterior[0], newValue: email },
@@ -2064,6 +2137,7 @@ function inativarUsuarioAdmin(rowIndex) {
     }
     var ativoAnterior = sh.getRange(rowIndex, 4).getValue();
     sh.getRange(rowIndex, 4).setValue('Não');
+    codexInvalidatePageLoadAclCache_();
     codexWriteAuditLog_('inativarUsuarioAdmin', 'Sistema', email);
     codexWriteAuditChanges_('Sistema', 'inativarUsuarioAdmin', email, [{
       field: 'Usuário - Ativo',
@@ -2097,8 +2171,71 @@ function codexGetWebAppApiToken_() {
   }
 }
 
+// Cache curto da ACL restrito à abertura da página (doGet e bootstrap inicial).
+// Decisão de produto: cerca de 20 usuários e poucas mudanças de permissão
+// tornam aceitável que uma revogação leve até o TTL para valer na abertura.
+// Mutações, leituras protegidas e as demais RPCs continuam lendo Users.
+var CODEX_PAGE_LOAD_ACL_CACHE_KEY_ = 'CodexPageLoadAcl:v1';
+var CODEX_PAGE_LOAD_ACL_CACHE_TTL_SECONDS_ = 300;
+
+function codexPageLoadAclEntryIsValid_(entry) {
+  return !!entry && typeof entry === 'object' && !Array.isArray(entry) &&
+    typeof entry.role === 'string' && typeof entry.active === 'boolean';
+}
+
+function codexPageLoadAclCacheGet_() {
+  if (CODEX_CACHE_BYPASS_READS_) return null;
+  try {
+    var raw = CacheService.getScriptCache().get(CODEX_PAGE_LOAD_ACL_CACHE_KEY_);
+    if (!raw) return null;
+    var users = JSON.parse(raw);
+    if (!users || typeof users !== 'object' || Array.isArray(users)) return null;
+    var emails = Object.keys(users);
+    if (!emails.length) return null;
+    for (var i = 0; i < emails.length; i++) {
+      if (emails[i] !== codexNormalizeEmail_(emails[i]) || !codexPageLoadAclEntryIsValid_(users[emails[i]])) return null;
+    }
+    return users;
+  } catch (e) {
+    return null;
+  }
+}
+
+function codexPageLoadAclCachePut_(users) {
+  try {
+    if (!users || !Object.keys(users).length) return false;
+    var raw = JSON.stringify(users);
+    if (codexUtf8ByteLength_(raw) > CODEX_CACHE_MAX_BYTES_) return false;
+    CacheService.getScriptCache().put(CODEX_PAGE_LOAD_ACL_CACHE_KEY_, raw, CODEX_PAGE_LOAD_ACL_CACHE_TTL_SECONDS_);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function codexInvalidatePageLoadAclCache_() {
+  try {
+    CacheService.getScriptCache().remove(CODEX_PAGE_LOAD_ACL_CACHE_KEY_);
+  } catch (e) {
+    // O TTL curto limita a defasagem se a remoção falhar.
+  }
+}
+
+function codexGetAllowedUsersForPageLoad_(cacheMeta) {
+  var cached = codexPageLoadAclCacheGet_();
+  if (cacheMeta) {
+    cacheMeta.cacheHit = !!cached;
+    cacheMeta.cacheMiss = !cached;
+  }
+  if (cached) return cached;
+  var users = codexGetAllowedUsers_();
+  codexPageLoadAclCachePut_(users);
+  return users;
+}
+
 function codexGetAllowedUsers_() {
-  // A autorização sempre lê Users: CacheService não pode conceder acesso.
+  // A autorização lê Users. A única exceção é a abertura da página
+  // (codexGetAllowedUsersForPageLoad_), que nunca autoriza mutações.
 
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);

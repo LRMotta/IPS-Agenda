@@ -105,7 +105,13 @@ test('DHL/PINEX usam AWB, agendador e COL. Nº da folha DHL/PINEX e pedem a assi
 
   const html = app.transporteFolhaHtmlPagina_(dados, {});
   assert.match(html, /Recebido pelo agente do courier/);
-  assert.match(html, /COL\. Nº <b class="mono">418207<\/b>/);
+  assert.match(html, /PINEX COL\. Nº <b class="mono">418207<\/b>/);
+  // PINEX sem numero mostra o campo vazio; DHL nao mostra o campo nem com sobra no registro.
+  assert.match(app.transporteFolhaHtmlPagina_(Object.assign({}, dados, { pinexColeta: '' }), {}), /PINEX COL\. Nº <b class="mono">—<\/b>/);
+  const dhl = app.transporteFolhaHtmlDados_({}, registroBase({ courier: 'DHL', pinexColeta: '418207' }), SPEC_MARKEN,
+    { agendaContexto: { visita: '', origem: null }, labCentral: null });
+  assert.equal(dhl.pinexColeta, '');
+  assert.doesNotMatch(app.transporteFolhaHtmlPagina_(dhl, {}), /COL\. Nº/);
   assert.doesNotMatch(html, /Origem/);
   assert.doesNotMatch(html, /Documento<\/td>/);
   // Assinatura ocupa espaco: menos linhas de observacao; com poucos materiais o layout e o normal.
