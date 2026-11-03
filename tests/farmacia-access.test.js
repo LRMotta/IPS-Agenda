@@ -2,15 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile, runHtmlScript } = require('./helpers/load-app-script');
+const { runFile, runFiles, runHtmlScript } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
 const { fakeDocumentLock } = require('./helpers/fake-document-lock');
 
 const headers = ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames'];
-function fixture(level, role = 'user', header = 'Acesso à Farmácia') {
+function fixture(level, role = 'user', header = 'Acesso à Farmácia', files = ['WebApp.gs']) {
   const users = new FakeSheet('Users', [[...headers, header], ['teste@example.invalid', 'Teste', role, 'Sim', '', '', '', 'Sim', level]]);
   const lock = fakeDocumentLock();
-  const server = runFile('WebApp.gs', { LockService: lock.LockService });
+  const server = files.length === 1 ? runFile(files[0], { LockService: lock.LockService }) : runFiles(files, { LockService: lock.LockService });
   server.getCodexSpreadsheet_ = () => new FakeSpreadsheet({ Users: users });
   server.codexGetActiveUserEmail_ = () => 'teste@example.invalid';
   server.codexWriteAuditLog_ = () => {};
@@ -130,8 +130,8 @@ test('Farmácia abre catálogo geral para usuário ativo, mas exige concessão e
   }
 });
 
-function studyFixture(grants, role = 'admin', level = 'manage') {
-  const f = fixture(level, role);
+function studyFixture(grants, role = 'admin', level = 'manage', files) {
+  const f = fixture(level, role, undefined, files);
   f.users.rows[0].push('Estudos da Farmácia (JSON)');
   f.users.rows[1].push(typeof grants === 'string' ? grants : JSON.stringify(grants));
   f.projects = new FakeSheet('Projetos', [
@@ -346,4 +346,91 @@ test('admin perde autoridade enquanto espera lock e nenhuma permissão é gravad
   lock.onAcquire = () => { users.rows[1][2] = 'user'; };
   assert.throws(() => server.salvarUsuarioAdmin({ email: 'novo@example.invalid', name: 'Novo', farmaciaAccess: 'manage' }), /administradores/);
   assert.equal(users.writes, 0);
+});
+
+function scopeFixture(scope, grants = [], role = 'user') {
+  const f = studyFixture(grants, role, 'manage', ['WebApp.gs', 'FarmaciaEstoque.gs']);
+  f.users.rows[0].push('Acesso ao estoque comum da Farmácia', 'Escopo dos estudos da Farmácia');
+  f.users.rows[1].push('manage', scope);
+  return f;
+}
+
+test('escopo "todos" libera a classe não restrita de qualquer estudo, inclusive novos, e nunca a restrita', () => {
+  const { server, users, projects } = scopeFixture('todos');
+  assert.deepEqual(Array.from(server.getFarmaciaBootstrap().studies, study => study.id), ['P1', 'P2']);
+  assert.equal(server.getFarmaciaEstudo('P2').restrictedAllowed, false);
+  assert.equal(server.codexAssertFarmaciaAccess_('manage', 'P1', false).farmaciaRestricted, false);
+  for (const study of ['P1', 'P2']) assert.throws(() => server.codexAssertFarmaciaAccess_('read', study, true), /não autorizado/);
+  projects.rows.push(['P9', 'Estudo novo', 'TEST-9']);
+  assert.ok(server.getFarmaciaBootstrap().studies.some(study => study.id === 'P9'), 'projeto novo entra sem reconfigurar usuários');
+  assert.equal(server.getFarmaciaEstudo('P9').study.nome, 'Estudo novo');
+  for (const study of ['', '*', 'p1', 'P404', '@IPS_COMMON']) assert.throws(() => server.codexAssertFarmaciaAccess_('read', study));
+  assert.equal(server.codexAssertFarmaciaProductsAccess_('P2', false).farmaciaAccess, 'manage');
+  assert.equal(server.codexAssertFarmaciaProductsAccess_('P2', false).farmaciaRestricted, false);
+  users.rows[1][9] = JSON.stringify([{ studyId: 'P2', restricted: true }]);
+  assert.equal(server.codexAssertFarmaciaAccess_('read', 'P2', true).farmaciaRestricted, true);
+  assert.throws(() => server.codexAssertFarmaciaAccess_('read', 'P1', true), /não autorizado/);
+  users.rows[1][8] = 'none';
+  assert.equal(server.getFarmaciaBootstrap().studies.length, 0);
+  assert.throws(() => server.getFarmaciaEstudo('P1'), /permissão/);
+  assert.equal(users.writes + projects.writes, 0);
+});
+
+test('escopo só amplia com o valor exato e cabeçalho L correto', () => {
+  for (const scope of ['', 'Todos os estudos', 'sim', '*', 'all']) {
+    const { server } = scopeFixture(scope);
+    assert.equal(server.getFarmaciaBootstrap().studies.length, 0, scope);
+    assert.throws(() => server.getFarmaciaEstudo('P1'), /não autorizado/);
+  }
+  const { server, users } = scopeFixture('todos', [], 'admin');
+  users.rows[0][11] = 'Observações';
+  assert.equal(server.getFarmaciaBootstrap().studies.length, 0);
+  assert.equal(server.getUsersAdminList()[0].farmaciaAllStudies, false);
+});
+
+test('admin grava Farmacêutico(a) com escopo, restritos explícitos, controle de concorrência e auditoria', () => {
+  const { server, users, lock } = studyFixture([], 'admin', 'none');
+  let changes;
+  server.codexWriteAuditChanges_ = (module, action, email, entries) => { changes = entries; };
+  const base = { rowIndex: 2, email: 'teste@example.invalid', name: 'Teste', role: 'admin', ativo: 'Sim' };
+  const sim = { ...base, farmaciaAccess: 'manage', farmaciaCommonAccess: 'manage', farmaciaCommonOriginal: '', farmaciaAllStudies: true,
+    farmaciaScopeOriginal: '', farmaciaStudies: [{ studyId: 'P2', restricted: true }], farmaciaStudiesOriginal: users.rows[1][9] };
+  const result = server.salvarUsuarioAdmin(sim);
+  assert.equal(result.farmaciaAllStudies, true);
+  assert.equal(users.rows[0][11], 'Escopo dos estudos da Farmácia');
+  assert.equal(users.rows[1][11], 'todos');
+  assert.ok(changes.some(c => c.field === 'Usuário - Escopo dos estudos da Farmácia' && c.oldValue === 'Selecionados' && c.newValue === 'Todos os estudos'));
+  const listed = server.getUsersAdminList()[0];
+  assert.equal(listed.farmaciaAllStudies, true);
+  assert.equal(listed.farmaciaScopeOriginal, 'todos');
+  assert.equal(server.getFarmaciaBootstrap().studies.length, 2);
+  assert.equal(server.getFarmaciaEstudo('P2').restrictedAllowed, true);
+  assert.equal(server.getFarmaciaEstudo('P1').restrictedAllowed, false);
+  // Omissão preserva; escopo obsoleto ou inválido é recusado antes de qualquer escrita.
+  server.salvarUsuarioAdmin(base);
+  assert.equal(users.rows[1][11], 'todos');
+  let writes = users.writes;
+  assert.throws(() => server.salvarUsuarioAdmin({ ...base, farmaciaAllStudies: false, farmaciaScopeOriginal: '' }), /escopo de estudos da Farmácia mudou/);
+  for (const farmaciaAllStudies of ['true', 1, null]) {
+    assert.throws(() => server.salvarUsuarioAdmin({ ...base, farmaciaAllStudies, farmaciaScopeOriginal: 'todos' }), /escopo válido/);
+  }
+  assert.equal(users.writes, writes);
+  lock.onAcquire = () => { users.rows[1][11] = ''; };
+  assert.throws(() => server.salvarUsuarioAdmin({ ...base, farmaciaAllStudies: false, farmaciaScopeOriginal: 'todos' }), /escopo de estudos da Farmácia mudou/);
+  assert.equal(users.writes, writes);
+  lock.onAcquire = null;
+  users.rows[1][11] = 'todos';
+  server.salvarUsuarioAdmin({ ...base, farmaciaAccess: 'none', farmaciaCommonAccess: 'none', farmaciaCommonOriginal: 'manage',
+    farmaciaAllStudies: false, farmaciaScopeOriginal: 'todos', farmaciaStudies: [], farmaciaStudiesOriginal: users.rows[1][9] });
+  assert.equal(users.rows[1][11], '');
+  assert.equal(users.rows[1][9], '[]');
+  assert.equal(server.getFarmaciaBootstrap().studies.length, 0);
+});
+
+test('perfil próprio e carga rápida não alteram o escopo da Farmácia', () => {
+  const { server, users } = scopeFixture('');
+  users.rows[1][2] = 'admin';
+  server.salvarMeuPerfil({ name: 'Teste', farmaciaAllStudies: true });
+  server.salvarPerfisUsuariosAdmin({ users: [{ rowIndex: 2, name: 'Teste', farmaciaAllStudies: true }] });
+  assert.equal(users.rows[1][11], '');
 });

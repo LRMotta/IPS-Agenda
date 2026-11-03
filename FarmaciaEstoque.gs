@@ -297,7 +297,9 @@ function codexAssertFarmaciaProductsAccess_(studyId, restricted) {
   var common = studyId === FARMACIA_COMMON_SCOPE_;
   var study = common ? { id: FARMACIA_COMMON_SCOPE_, nome: 'Geral (Farmácia)', codigo: '' } : codexFarmaciaStudyCatalog_().find(function(item) { return item.id === studyId; });
   if (!study) throw new Error('Estudo indisponível para a Farmácia.');
-  var grant = (access.farmaciaStudies || []).find(function(item) { return item.studyId === studyId; });
+  // Mesma regra de codexFarmaciaGrantFor_: escopo "todos" nunca concede a classe restrita.
+  var grant = common ? null : (access.farmaciaStudies || []).find(function(item) { return item.studyId === studyId; }) ||
+    (access.farmaciaAllStudies === true ? { studyId: studyId, restricted: false } : null);
   access.farmaciaStudy = study;
   access.farmaciaRestricted = !common && !!grant && grant.restricted === true && codexNormalizeFarmaciaAccess_(access.farmaciaAccess) !== 'none';
   access.farmaciaAccess = (common ? access.farmaciaCommonAccess === 'manage' : !!grant && access.farmaciaAccess === 'manage') ? 'manage' : 'read';

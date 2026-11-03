@@ -1275,9 +1275,9 @@
         <div>
           <label class="field-label" for="userAdminRole">Perfil</label>
           <select id="userAdminRole" class="f-input f-select">
-            <option value="user">user</option>
-            <option value="admin">admin</option>
-            <option value="readonly">readonly</option>
+            <option value="user">Usuário</option>
+            <option value="admin">Administrador</option>
+            <option value="readonly">Somente leitura</option>
           </select>
         </div>
         <div>
@@ -1296,29 +1296,24 @@
         </select>
       </div>
       <div style="margin-top:14px">
-        <label class="field-label" for="userAdminFarmaciaAccess">Acesso à Farmácia</label>
-        <select id="userAdminFarmaciaAccess" class="f-input f-select" aria-describedby="userAdminFarmaciaHelp">
-          <option value="none">Sem acesso</option>
-          <option value="read">Consulta</option>
-          <option value="operate">Operação</option>
-          <option value="manage">Responsável pela Farmácia</option>
+        <label class="field-label" for="userAdminFarmaceutico">Farmacêutico(a)</label>
+        <select id="userAdminFarmaceutico" class="f-input f-select" aria-describedby="userAdminFarmaceuticoHelp" onchange="userAdminFarmaceuticoChanged()">
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+          <option value="legado" hidden>Manter configuração anterior</option>
         </select>
-        <p class="profile-helper" id="userAdminFarmaciaHelp">O nível vale apenas nos estudos selecionados abaixo. Sem acesso bloqueia todos os estudos, preservando a seleção.</p>
+        <p class="profile-helper" id="userAdminFarmaceuticoHelp">Sim libera a Farmácia completa: estoque Geral (Farmácia) e estoques não restritos de todos os estudos, inclusive encerrados e os cadastrados no futuro.</p>
+        <p class="profile-helper" id="userAdminFarmaciaLegado" hidden></p>
       </div>
-      <div class="form-section" style="margin-top:14px">
-        <div class="section-label">Estudos autorizados na Farmácia</div>
-        <p class="profile-helper">Somente Admin altera estas concessões. Informações restritas exigem autorização adicional em cada estudo. Isso não executa quebra de cegamento.</p>
+      <div class="form-section" id="userAdminFarmaciaRestritosSection" style="margin-top:14px" hidden>
+        <div class="section-label">Estoques restritos (blinded) liberados</div>
+        <p class="profile-helper">Fechados por padrão. Marque somente os estudos em que esta pessoa atua sem cegamento. Isso não executa quebra de cegamento.</p>
+        <input type="search" id="userAdminFarmaciaBusca" class="f-input" placeholder="Buscar estudo" aria-label="Buscar estudo" oninput="filtrarUserFarmaciaStudies()">
+        <p class="profile-helper" id="userAdminFarmaciaRestritosResumo" role="status" aria-live="polite"></p>
         <input type="hidden" id="userAdminFarmaciaStudiesOriginal">
-        <div id="userAdminFarmaciaStudies"></div>
-      </div>
-      <div style="margin-top:14px">
-        <label class="field-label" for="userAdminFarmaciaCommonAccess">Geral (Farmácia)</label>
-        <select id="userAdminFarmaciaCommonAccess" class="f-input f-select" aria-describedby="userAdminFarmaciaCommonHelp">
-          <option value="none">Sem acesso</option><option value="read">Consulta</option>
-          <option value="operate">Operação</option><option value="manage">Responsável pelo estoque comum</option>
-        </select>
         <input type="hidden" id="userAdminFarmaciaCommonOriginal">
-        <p class="profile-helper" id="userAdminFarmaciaCommonHelp">Concessão independente dos estudos. Não libera medicamentos ou informações restritas dos protocolos. Nesta etapa, Operação permite consulta; cadastros e inventário inicial exigem Responsável.</p>
+        <input type="hidden" id="userAdminFarmaciaScopeOriginal">
+        <div id="userAdminFarmaciaStudies"></div>
       </div>
       <div class="status-msg" id="statusUsuarioAdmin" role="status" aria-live="polite" aria-atomic="true"></div>
       <button class="btn-save" id="btnSalvarUsuarioAdmin" onclick="salvarUsuarioAdminApp()">
