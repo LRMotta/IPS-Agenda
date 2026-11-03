@@ -70,7 +70,7 @@ test('acesso negado não inicia consultas do Dashboard e preserva a exceção', 
 
 test('bootstrap mede leituras por etapa e bytes UTF-8 mantendo o trace e contrato', () => {
   const f = fixture();
-  f.server.codexGetCurrentUserAccess = () => { f.read(5); return { ok: true, role: 'admin' }; };
+  f.server.codexGetPageLoadAccess_ = () => { f.read(5); return { ok: true, role: 'admin' }; };
   f.server.agendaWindowedLoadingV2EnabledForAccess_ = () => false;
   f.server.codexGetUserOAuthStatus_ = () => ({});
   f.server.codexGetAppVersion_ = () => ({});

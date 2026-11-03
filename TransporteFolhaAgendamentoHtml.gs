@@ -308,7 +308,8 @@ function transporteFolhaHtmlPagina_(dados, opcoes) {
     '</tr></table>');
 
   var notaEnvio = [dados.diaEnvio ? e(dados.diaEnvio) : '', dados.janela ? 'retirada <b>' + e(dados.janela) + '</b>' : ''].filter(Boolean);
-  var notaCourier = dados.pinexColeta ? 'COL. Nº <b class="mono">' + e(dados.pinexColeta) + '</b>' :
+  // PINEX COL. Nº como na folha oficial, mesmo vazio; DHL nao tem esse campo.
+  var notaCourier = dados.courier === 'PINEX' ? 'PINEX COL. Nº <b class="mono">' + e(dados.pinexColeta || '—') + '</b>' :
     (dados.caixa ? 'Caixa de transporte: <b>' + e(dados.caixa) + '</b>' : '');
   h.push(espaco + '<table class="hero"><tr>' +
     '<td class="prim" style="width:24%"><div class="lbl">Envio</div><div class="grande">' + e(dados.dataEnvio || '—') + '</div>' +

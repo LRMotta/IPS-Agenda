@@ -489,19 +489,19 @@ test('feature de janela nasce desligada e, quando habilitada, atende todo perfil
   server.getDadosFormularioAgenda = () => { formReads += 1; return { legado: true }; };
   server.codexGetTeamBirthdays_ = () => [];
 
-  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
+  server.codexGetPageLoadAccess_ = () => ({ ok: true, role: 'admin' });
   const defaultAdmin = server.getAppBootstrapData();
   assert.equal(server.AGENDA_WINDOWED_LOADING_V2, false);
   assert.equal(defaultAdmin.features, undefined);
   assert.deepEqual(Object.assign({}, defaultAdmin.agendaFormData), { legado: true });
 
   property.value = 'true';
-  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'readonly' });
+  server.codexGetPageLoadAccess_ = () => ({ ok: true, role: 'readonly' });
   const readonly = server.getAppBootstrapData();
   assert.deepEqual(Object.assign({}, readonly.features), { agendaWindowedLoadingV2: true });
   assert.equal(readonly.agendaFormData, null);
 
-  server.codexGetCurrentUserAccess = () => ({ ok: true, role: 'admin' });
+  server.codexGetPageLoadAccess_ = () => ({ ok: true, role: 'admin' });
   const admin = server.getAppBootstrapData();
   assert.deepEqual(Object.assign({}, admin.features), { agendaWindowedLoadingV2: true });
   assert.equal(admin.agendaFormData, null);
@@ -521,7 +521,7 @@ test('bootstrap inicial da Agenda reúne acesso, referências e janela em uma ú
   const referenceData = validAgendaReferenceData();
   const calls = [];
   let accessReads = 0;
-  server.codexGetCurrentUserAccess = () => {
+  server.codexGetPageLoadAccess_ = () => {
     accessReads += 1;
     return { ok: true, role: 'readonly' };
   };
