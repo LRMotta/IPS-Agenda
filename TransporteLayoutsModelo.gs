@@ -955,3 +955,211 @@ function diagnosticarDocsDadosTransporteHtml() {
   Logger.log(JSON.stringify(resultado));
   return resultado;
 }
+
+/* ---------- Modo sombra na geracao real (fase 3) ----------
+ * Chamado pelo botao "Gerar PDF (HTML)" depois de gerar o PDF pela grade: repete o
+ * preenchimento na planilha em memoria com o mesmo registro e compara o texto impresso, apos
+ * as mesmas protecoes. Nao altera o PDF entregue e nunca interrompe a geracao: qualquer erro
+ * vira so um resumo no log. O resumo tem contagens, titulos de aba, enderecos (A1) e, em
+ * caso de erro, a mensagem truncada; nunca valores de celula.
+ */
+var TRANSPORTE_LAYOUTS_SOMBRA_MAX_ENDERECOS_ = 10;
+
+function transporteDocsDadosSombra_(registro, spec, ss, courier, conteudoReal) {
+  var inicio = Date.now();
+  var resumo = { ok: false, courier: '', divergentes: 0, abas: {} };
+  try {
+    resumo.courier = transporteNormalizeCourierFromCodex_(courier);
+    var contexto = transporteDocsGradeContextoProtecao_(ss, resumo.courier, registro);
+    var dados = transporteDocsDados_(registro);
+    var conteudoMemoria = transporteDocsGradeProtegerConteudo_(dados.abas(spec.ordem), contexto);
+    var comparacao = transporteLayoutsCompararConteudo_(conteudoReal, conteudoMemoria);
+    Object.keys(comparacao).forEach(function(aba) {
+      var c = comparacao[aba];
+      var n = c.divergentes + (c.ausente ? 1 : 0);
+      resumo.divergentes += n;
+      if (n) resumo.abas[aba] = { divergentes: c.divergentes, ausente: c.ausente, enderecos: c.enderecos.slice(0, TRANSPORTE_LAYOUTS_SOMBRA_MAX_ENDERECOS_) };
+    });
+    resumo.hashIgual = transportePdfManifestoHash_(conteudoReal) === transportePdfManifestoHash_(conteudoMemoria);
+    resumo.ok = resumo.divergentes === 0 && resumo.hashIgual;
+  } catch (e) {
+    resumo.erro = String(e && e.message || e).slice(0, 160);
+  }
+  resumo.ms = Date.now() - inicio;
+  return resumo;
+}
+
+/* ---------- Diagnostico em lote com envios anteriores (administradores) ----------
+ * Executar no editor: diagnosticarDocsDadosLoteTransporteHtml() ou, para escolher o recorte,
+ * diagnosticarDocsDadosLoteTransporteHtml({ meses: 3, limite: 8, pular: 0 }).
+ * Reconstroi envios ja feitos a partir da Agenda (eventos com AWB nos ultimos meses, das
+ * couriers com PDF em HTML), como a tela da Agenda monta o Transporte, e compara dois caminhos
+ * com o mesmo registro:
+ * - rotinas atuais sobre uma COPIA TEMPORARIA da planilha de Transporte (privada, no Meu Drive,
+ *   na lixeira ao final) lida pela grade, como o botao "Gerar PDF (HTML)";
+ * - a planilha em memoria (transporteDocsDados_).
+ * Isolamento: nada e gravado na Agenda (status, AWB, materiais, caixa), nao ha reserva de AWB,
+ * rascunho, e-mail, monitor de courier nem PDF; a planilha de Transporte real fica bloqueada
+ * durante os preenchimentos. A copia e reaproveitada entre os envios, como a planilha real.
+ * O log e o retorno tem so ID do agendamento, slot, courier, mes, contagens, enderecos (A1) e
+ * tempos; nunca valores de celula.
+ */
+var TRANSPORTE_LAYOUTS_LOTE_ORCAMENTO_MS_ = 270000;
+
+function transporteLayoutsDataIso_(d) {
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+// Envios das couriers com PDF em HTML, com AWB, entre `meses` atras e ontem, mais recentes primeiro.
+function transporteLayoutsLoteEnvios_(rows, hoje, meses) {
+  var de = transporteLayoutsDataIso_(new Date(hoje.getFullYear(), hoje.getMonth() - meses, hoje.getDate()));
+  var ate = transporteLayoutsDataIso_(hoje);
+  var envios = [];
+  rows.forEach(function(row, i) {
+    if (!String(row[AGENDA_CFG.idx.id] || '').trim()) return;
+    var evento = agendaRowToObject_(row, i + 2);
+    if (!evento.dataIso || evento.dataIso < de || evento.dataIso >= ate) return;
+    ['1', '2', '3', '4'].forEach(function(slot) {
+      var c = evento['courier' + slot] || {};
+      var courier = transporteNormalizeCourierFromCodex_(c.nome);
+      if (TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(courier) < 0 || !String(c.awb || '').trim()) return;
+      envios.push({ linha: i, slot: slot, courier: courier, dataIso: evento.dataIso, id: evento.id });
+    });
+  });
+  envios.sort(function(a, b) { return a.dataIso < b.dataIso ? 1 : (a.dataIso > b.dataIso ? -1 : 0); });
+  return envios;
+}
+
+// Registro preparado como salvarTransporteInterno_ faz, sem gravar na Agenda nem reservar AWB.
+function transporteLayoutsLoteRegistro_(rows, item, participantes, ss) {
+  var evento = agendaRowToObject_(rows[item.linha], item.linha + 2);
+  evento.transporteOrigens = {};
+  evento.transporteDatasColeta = transporteDatasColetaAgenda_(rows, rows[item.linha], item.slot, evento.transporteOrigens);
+  var payload = montarPayloadTransporteCodex({ agenda: evento, slot: item.slot, idAgenda: evento.id });
+  var opcoes = { obrigatorio: false, participantes: participantes, adiarProjetoDisplay: true };
+  payload = transporteAtualizarRegistroPorAgenda_(payload, evento, opcoes);
+  payload = transporteDerivarDadosParticipante_(payload, opcoes);
+  payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
+  payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
+  payload.caixaTransporte.confirmado = true;
+  if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' && transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') {
+    payload.solicitarCaixa = transporteCaixaBioSystem_(payload) ? 'Sim' : 'Não';
+  }
+  return transporteRegistroPreparado_(payload);
+}
+
+// CacheService em memoria: o layout da copia temporaria nao vai para o cache do script.
+function transporteLayoutsCacheMemoria_() {
+  var itens = {};
+  function tem(k) { return Object.prototype.hasOwnProperty.call(itens, k); }
+  return {
+    get: function(k) { return tem(k) ? itens[k] : null; },
+    getAll: function(ks) { var out = {}; ks.forEach(function(k) { if (tem(k)) out[k] = itens[k]; }); return out; },
+    put: function(k, v) { itens[k] = v; },
+    putAll: function(obj) { Object.keys(obj).forEach(function(k) { itens[k] = obj[k]; }); }
+  };
+}
+
+// Preenche a copia com as rotinas atuais e le o texto impresso pela grade.
+function transporteLayoutsLoteGrade_(copia, registro, spec, contexto, cache) {
+  var peticao = transporteGetSheet_(copia, 'peticaoAnuencia', false);
+  transporteEscreverCamposModelos_(copia, registro, transporteMateriaisNote_('', registro, peticao));
+  transportePrepararDocumentosModelos_(copia, registro);
+  transporteAjustarVolumesDeclaracao_(transporteGetSheet_(copia, 'declaracaoTransp', false), true);
+  // A grade e lida pela API do Sheets: as formulas da copia precisam estar recalculadas.
+  SpreadsheetApp.flush();
+  var carregado = transporteDocsGradeCarregar_(copia, spec.ordem, { cache: cache });
+  return transporteDocsGradeProtegerConteudo_(carregado.abas, contexto);
+}
+
+// Compara um envio do lote; r recebe o resultado (sem valores de celula).
+function transporteLayoutsLoteComparar_(r, rows, item, participantes, copia, arquivo, cache) {
+  var t0 = Date.now();
+  var registro = transporteLayoutsLoteRegistro_(rows, item, participantes, copia);
+  var spec = transportePdfSpec_(registro.courier, registro.temperatura || '', registro.destino || '', copia);
+  var contexto = transporteDocsGradeContextoProtecao_(copia, item.courier, registro);
+  var avisosAnteriores = TRANSPORTE_GENERATION_WARNINGS_;
+  var avisos = [];
+  var real;
+  TRANSPORTE_GENERATION_WARNINGS_ = avisos;
+  TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_++;
+  try {
+    real = transporteLayoutsLoteGrade_(copia, registro, spec, contexto, cache);
+  } finally {
+    TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_--;
+    TRANSPORTE_GENERATION_WARNINGS_ = avisosAnteriores;
+  }
+  r.gradeMs = Date.now() - t0;
+  if (avisos.length) r.avisosRotinasAtuais = avisos.map(function(a) { return a.code; });
+  var t1 = Date.now();
+  var memoria = transporteDocsGradeProtegerConteudo_(transporteDocsDados_(registro, { arquivo: arquivo }).abas(spec.ordem), contexto);
+  r.memoriaMs = Date.now() - t1;
+  var comparacao = transporteLayoutsCompararConteudo_(real, memoria);
+  r.abas = spec.ordem.length;
+  r.divergentes = 0;
+  Object.keys(comparacao).forEach(function(aba) {
+    var c = comparacao[aba];
+    var n = c.divergentes + (c.ausente ? 1 : 0);
+    r.divergentes += n;
+    if (n) (r.porAba || (r.porAba = {}))[aba] = { divergentes: c.divergentes, ausente: c.ausente, enderecos: c.enderecos.slice(0, TRANSPORTE_LAYOUTS_SOMBRA_MAX_ENDERECOS_) };
+  });
+  r.hashIgual = transportePdfManifestoHash_(real) === transportePdfManifestoHash_(memoria);
+  r.ok = r.divergentes === 0 && r.hashIgual;
+}
+
+function diagnosticarDocsDadosLoteTransporteHtml(opcoes) {
+  codexAssertAdmin_();
+  // No editor, Executar passa um objeto de evento: so um objeto com estas chaves conta.
+  opcoes = opcoes && typeof opcoes === 'object' && !opcoes.authMode ? opcoes : {};
+  var meses = Number(opcoes.meses) > 0 ? Number(opcoes.meses) : 3;
+  var limite = Number(opcoes.limite) > 0 ? Number(opcoes.limite) : 8;
+  var pular = Number(opcoes.pular) > 0 ? Number(opcoes.pular) : 0;
+  var inicio = Date.now();
+  var agenda = getAgendaSheet_();
+  var ultimaLinha = agenda.getLastRow();
+  var rows = ultimaLinha > 1 ? agenda.getRange(2, 1, ultimaLinha - 1, AGENDA_CFG.lastCol).getValues() : [];
+  var envios = transporteLayoutsLoteEnvios_(rows, new Date(), meses);
+  var selecionados = envios.slice(pular, pular + limite);
+  var participantes = transporteReadParticipantesDireto_();
+  var arquivo = transporteLayoutsCarregar_();
+  var origem = DriveApp.getFileById(getTransporteSpreadsheetCodex_().getId());
+  var cache = transporteLayoutsCacheMemoria_();
+  var resultados = [];
+  var copiaArquivo = null;
+  var limpeza = 'nao criada';
+  try {
+    copiaArquivo = origem.makeCopy('IPS-TEMP-DIAG-' + Utilities.getUuid(), DriveApp.getRootFolder());
+    copiaArquivo.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    var copia = SpreadsheetApp.openById(copiaArquivo.getId());
+    selecionados.forEach(function(item) {
+      var r = { idAgenda: item.id, slot: item.slot, courier: item.courier, mes: item.dataIso.slice(0, 7) };
+      resultados.push(r);
+      if (Date.now() - inicio > TRANSPORTE_LAYOUTS_LOTE_ORCAMENTO_MS_) { r.pulado = 'tempo'; return; }
+      try {
+        transporteLayoutsLoteComparar_(r, rows, item, participantes, copia, arquivo, cache);
+      } catch (e) {
+        r.ok = false;
+        r.erro = String(e && e.message || e).slice(0, 160);
+      }
+    });
+  } finally {
+    if (copiaArquivo) {
+      try { copiaArquivo.setTrashed(true); limpeza = 'lixeira'; } catch (eLimpeza) { limpeza = 'FALHOU: mova IPS-TEMP-DIAG-* do Meu Drive para a lixeira'; }
+    }
+  }
+  var processados = resultados.filter(function(r) { return !r.pulado; });
+  var resultado = {
+    ok: processados.length > 0 && processados.every(function(r) { return r.ok; }),
+    encontrados: envios.length,
+    processados: processados.length,
+    iguais: processados.filter(function(r) { return r.ok; }).length,
+    comDivergencia: processados.filter(function(r) { return r.divergentes > 0; }).length,
+    comErro: processados.filter(function(r) { return r.erro; }).length,
+    proximoPular: pular + processados.length < envios.length ? pular + processados.length : null,
+    copiaTemporaria: limpeza,
+    totalMs: Date.now() - inicio,
+    envios: resultados
+  };
+  Logger.log(JSON.stringify(resultado));
+  return resultado;
+}
