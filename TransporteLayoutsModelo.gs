@@ -645,7 +645,9 @@ function transporteLayoutsPlanilha_(arquivo, opcoes) {
         return naoSuportado({
           getRanges: function() { return ranges; },
           setValue: function(v) { ranges.forEach(function(r) { r.setValue(v); }); },
-          clearContent: function() { ranges.forEach(function(r) { r.clearContent(); }); }
+          clearContent: function() { ranges.forEach(function(r) { r.clearContent(); }); },
+          // preencherDhlWebApp_: declaracaoDhl.getRangeList(['F18:F21']).setNumberFormat('0.00000').
+          setNumberFormat: function(p) { ranges.forEach(function(r) { r.setNumberFormat(p); }); }
         }, 'RangeList');
       }),
       getDataRange: function() {
