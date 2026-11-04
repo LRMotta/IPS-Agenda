@@ -495,3 +495,49 @@ test('filtro de courier do lote restringe a selecao e recusa courier sem PDF em 
   s.diagnosticarDocsDadosLoteTransporteHtmlPinex();
   assert.deepEqual(recebidos, [['DHL', 'PINEX'], ['DHL'], ['PINEX']]);
 });
+
+test('preenchimento DHL na memoria: formato numerico por RangeList e litros na Declaracao de Transporte (DHL)', () => {
+  const s = servidor();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const registro = registroMarken({ courier: 'DHL', temperatura: 'CONGELADO' });
+  // Antes: "Metodo nao suportado na planilha em memoria: RangeList.setNumberFormat" (diagnostico em lote, DHL).
+  const dados = s.transporteDocsDados_(registro, { arquivo });
+  const abas = dados.abas();
+  const t = (a1) => texto(abas, 'Declaração de Transporte (DHL)', a1, s);
+  assert.equal(t('F18'), '0,00200');
+  assert.equal(t('M29'), 'Gelo Seco: 4 kg');
+  const spec = s.transportePdfSpec_('DHL', 'CONGELADO', 'LAB X', dados.ss);
+  for (const titulo of spec.ordem) {
+    if (titulo === 'Folha de Agendamento (DHL/PINEX)') continue; // impressa pela Folha em HTML
+    assert.match(s.transporteDocsGradeHtml_(abas[titulo], {}), /^<table class="grade"/, titulo);
+  }
+});
+
+function utilitiesFormatDate(data, fuso, padrao) {
+  if (padrao === 'Z') return formatDateFuso(data, fuso, padrao);
+  const partes = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: fuso, year: 'numeric', month: 'long', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(data).map((p) => [p.type, p.value]));
+  const mes = String(new Intl.DateTimeFormat('en-US', { timeZone: fuso, month: '2-digit' }).format(data));
+  return padrao.replace('MMMM', partes.month).replace('yyyy', partes.year).replace('MM', mes).replace('dd', partes.day)
+    .replace('HH', partes.hour).replace('mm', partes.minute);
+}
+
+test('preenchimento PINEX na memoria roda sem operacao nao suportada e renderiza as abas do PDF', () => {
+  const s = servidor();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  // Utilities.formatDate do Apps Script (fuso real via Intl) para os formatos usados pelo PINEX.
+  // Como no Apps Script, o fuso do script e o mesmo em que as datas sao criadas.
+  s.Session = { getScriptTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone };
+  s.Utilities = Object.assign({}, s.Utilities, { formatDate: utilitiesFormatDate });
+  const registro = registroMarken({ courier: 'PINEX', temperatura: 'CONGELADO', pinexColeta: '123456', pinexAwb: '123456789012' });
+  const dados = s.transporteDocsDados_(registro, { arquivo });
+  const abasPinex = dados.abas();
+  assert.equal(texto(abasPinex, 'Commercial Invoice (PINEX)', 'E8', s), 'November 05, 2026');
+  assert.equal(texto(abasPinex, 'Commercial Invoice (PINEX)', 'E9', s), '06/11/2026 14:00');
+  assert.equal(dados.ss.problemas_.length, 0, dados.ss.problemas_.join('; '));
+  const abas = dados.abas();
+  const spec = s.transportePdfSpec_('PINEX', 'CONGELADO', 'LAB X', dados.ss);
+  assert.deepEqual(plano(spec.ordem), ['Folha de Agendamento (DHL/PINEX)', 'Commercial Invoice (PINEX)',
+    'Petição de Anuência de Exportação (PINEX)', 'USDA Statement (PINEX)', 'Ficha de Emergência (PINEX)', 'Declaração de Transporte']);
+  for (const titulo of spec.ordem.slice(1)) assert.match(s.transporteDocsGradeHtml_(abas[titulo], {}), /^<table class="grade"/, titulo);
+});
