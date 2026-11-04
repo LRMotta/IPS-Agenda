@@ -57,7 +57,7 @@ async function fixture(browser, width) {
     }}); }
     var google={script:{run:runner()}};
     ${contentAccessibilitySource(['appSyncNavAccessibility', 'toggleNavFarmacia', 'abrirFarmaciaView', 'farmaciaAccessLabel', 'applyFarmaciaAccess', 'carregarFarmacia', 'renderFarmaciaStudies', 'farmaciaStudyLabel', 'selecionarFarmaciaStudy',
-      'renderUserFarmaciaStudies', 'collectUserFarmaciaStudies', 'farmaciaStudySelectionChanged', 'irPara',
+      'norm', 'userFarmaciaModo', 'userFarmaciaResumo', 'renderUserFarmaciaStudies', 'filtrarUserFarmaciaStudies', 'atualizarResumoRestritosFarmacia', 'userAdminFarmaceuticoChanged', 'collectUserFarmaciaStudies', 'collectUserFarmaciaPayload', 'irPara',
       'profileDayOptionsHtml', 'profileMonthOptionsHtml', 'preencherSelectsAniversario', 'validarAniversarioCliente',
       'profileFormationOptionsHtml', 'preencherSelectFormacaoPerfil', 'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}
     applyFarmaciaAccess();
@@ -84,10 +84,12 @@ test('acesso somente comum mantém menu, oferece somente estoque comum e reflete
       window.USERS_ADMIN_ROWS[0].farmaciaCommonOriginal='read';
       window.abrirFormUsuarioAdmin(2);
     });
-    await page.locator('#userAdminFarmaciaCommonAccess').selectOption('manage');
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(),'legado');
+    await page.locator('#userAdminFarmaceutico').selectOption('sim');
     await page.locator('#btnSalvarUsuarioAdmin').click();
     assert.equal(await page.evaluate(() => window.pending.at(-1).payload.farmaciaCommonOriginal),'read');
-    await page.evaluate(() => window.pending.at(-1).success({email:'admin@example.invalid',farmaciaAccess:'none',farmaciaCommonAccess:'manage'}));
+    assert.equal(await page.evaluate(() => window.pending.at(-1).payload.farmaciaCommonAccess),'manage');
+    await page.evaluate(() => window.pending.at(-1).success({email:'admin@example.invalid',farmaciaAccess:'manage',farmaciaCommonAccess:'manage'}));
     assert.equal(await page.evaluate(() => window.CURRENT_ACCESS.farmaciaCommonAccess),'manage');
     assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display),'');
     await page.evaluate(() => {window.CURRENT_ACCESS.farmaciaCommonAccess='none'; window.applyFarmaciaAccess();});
@@ -143,68 +145,88 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
   } finally { await browser.close(); }
 });
 
-test('Admin revoga concessão própria de estoque e mantém acesso ao catálogo geral', async () => {
+test('Admin alterna Farmacêutico(a) Sim/Não; configuração anterior é preservada até escolha explícita', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     const { page, errors } = await fixture(browser, 390);
     await page.evaluate(() => { window.CURRENT_ACCESS.farmaciaAccess = 'read'; window.applyFarmaciaAccess(); window.abrirFormUsuarioAdmin(2); });
-    assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'read');
-    await page.locator('#userAdminFarmaciaAccess').selectOption('manage');
-    await page.locator('#userAdminFarmaciaAccess').scrollIntoViewIfNeeded();
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'legado');
+    assert.equal(await page.locator('#userAdminFarmaciaLegado').isVisible(), true);
+    assert.equal(await page.locator('#userAdminFarmaciaRestritosSection').isVisible(), false);
+    await page.locator('#btnSalvarUsuarioAdmin').click();
+    const legacy = await page.evaluate(() => window.pending[0].payload);
+    for (const key of ['farmaciaAccess', 'farmaciaCommonAccess', 'farmaciaAllStudies', 'farmaciaStudies']) assert.equal(key in legacy, false, key + ' omitido preserva legado');
+    await page.evaluate(() => window.pending[0].failure({ message: 'teste' }));
+    await page.locator('#userAdminFarmaceutico').selectOption('sim');
+    assert.equal(await page.locator('#userAdminFarmaciaRestritosSection').isVisible(), true);
     const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
     fs.mkdirSync(artifacts, { recursive: true });
     await page.locator('#modalUsuarioAdmin .modal-box').screenshot({ path: path.join(artifacts, 'farmacia-user-access.png') });
     await page.locator('#btnSalvarUsuarioAdmin').click();
-    assert.equal(await page.evaluate(() => window.pending[0].payload.farmaciaAccess), 'manage');
-    await page.evaluate(() => window.pending[0].success({ email: 'admin@example.invalid', farmaciaAccess: 'manage' }));
+    const sim = await page.evaluate(() => window.pending[1].payload);
+    assert.equal(sim.farmaciaAccess, 'manage');
+    assert.equal(sim.farmaciaCommonAccess, 'manage');
+    assert.equal(sim.farmaciaAllStudies, true);
+    assert.deepEqual(sim.farmaciaStudies, []);
+    await page.evaluate(() => window.pending[1].success({ email: 'admin@example.invalid', farmaciaAccess: 'manage', farmaciaCommonAccess: 'manage' }));
     assert.equal(await page.evaluate(() => window.CURRENT_ACCESS.farmaciaAccess), 'manage');
-    await page.evaluate(() => window.abrirFormUsuarioAdmin(2));
-    await page.locator('#userAdminFarmaciaAccess').selectOption('none');
+    await page.evaluate(() => {
+      Object.assign(window.USERS_ADMIN_ROWS[0], { farmaciaAccess: 'manage', farmaciaCommonAccess: 'manage', farmaciaAllStudies: true, farmaciaScopeOriginal: 'todos', farmaciaStudies: [] });
+      window.abrirFormUsuarioAdmin(2);
+    });
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'sim');
+    assert.equal(await page.locator('#userAdminFarmaceutico option[value="legado"]').isDisabled(), true);
+    await page.locator('#userAdminFarmaceutico').selectOption('nao');
     await page.locator('#btnSalvarUsuarioAdmin').click();
-    await page.evaluate(() => window.pending[1].success({ email: 'admin@example.invalid', farmaciaAccess: 'none' }));
+    const nao = await page.evaluate(() => window.pending[2].payload);
+    assert.deepEqual([nao.farmaciaAccess, nao.farmaciaCommonAccess, nao.farmaciaAllStudies, nao.farmaciaScopeOriginal], ['none', 'none', false, 'todos']);
+    assert.deepEqual(nao.farmaciaStudies, []);
+    await page.evaluate(() => window.pending[2].success({ email: 'admin@example.invalid', farmaciaAccess: 'none', farmaciaCommonAccess: 'none' }));
     assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display), '');
     await page.evaluate(() => window.abrirFormUsuarioAdmin());
-    assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'none');
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'nao');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 });
 
-test('Admin seleciona estudos e autorização restrita sem perder vínculos órfãos no desktop/celular', async () => {
+test('Admin libera estoques restritos com busca, sem perder liberações órfãs no desktop/celular', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     for (const width of [1280, 390]) {
       const { page, errors } = await fixture(browser, width);
       await page.evaluate(() => {
         window.USER_ADMIN_FARMACIA_CATALOG = [{ id: 'P1', nome: 'Estudo Aurora', codigo: 'A-01' }, { id: 'P2', nome: 'Estudo Horizonte', codigo: 'H-02' }];
-        window.USERS_ADMIN_ROWS[0].farmaciaStudies = [{ studyId: 'OLD', restricted: true }];
-        window.USERS_ADMIN_ROWS[0].farmaciaStudiesOriginal = '[{"studyId":"OLD","restricted":true}]';
+        Object.assign(window.USERS_ADMIN_ROWS[0], { farmaciaAccess: 'manage', farmaciaCommonAccess: 'manage', farmaciaCommonOriginal: 'manage',
+          farmaciaAllStudies: true, farmaciaScopeOriginal: 'todos', farmaciaStudies: [{ studyId: 'OLD', restricted: true }],
+          farmaciaStudiesOriginal: '[{"studyId":"OLD","restricted":true}]' });
         window.abrirFormUsuarioAdmin(2);
       });
+      assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'sim');
       const aurora = page.locator('[data-farmacia-study="P1"]');
+      const horizonte = page.locator('[data-farmacia-study="P2"]');
       const orphan = page.locator('[data-farmacia-study="OLD"]');
-      assert.equal(await aurora.locator('.farmacia-study-restricted').isDisabled(), true);
-      await aurora.locator('.farmacia-study-selected').check();
-      assert.equal(await aurora.locator('.farmacia-study-restricted').isEnabled(), true);
-      assert.equal(await aurora.locator('.farmacia-study-restricted').isChecked(), false);
+      assert.equal(await aurora.locator('.farmacia-study-restricted').isChecked(), false, 'restrito fechado por padrão');
+      assert.equal(await orphan.locator('.farmacia-study-restricted').isChecked(), true);
+      assert.match(await page.locator('#userAdminFarmaciaRestritosResumo').innerText(), /^1 estudo restrito/);
+      await page.locator('#userAdminFarmaciaBusca').fill('aurora');
+      assert.equal(await horizonte.isVisible(), false);
+      assert.equal(await aurora.isVisible(), true);
+      await page.locator('#userAdminFarmaciaBusca').fill('A-01');
+      assert.equal(await aurora.isVisible(), true);
       await aurora.locator('.farmacia-study-restricted').check();
-      assert.equal(await orphan.locator('.farmacia-study-selected').isChecked(), true);
-      assert.equal(await orphan.locator('.farmacia-study-restricted').isDisabled(), true);
-      await page.locator('#userAdminFarmaciaAccess').selectOption('none');
+      assert.match(await page.locator('#userAdminFarmaciaRestritosResumo').innerText(), /^2 estudos restritos/);
       const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(artifacts, { recursive: true });
-      await aurora.scrollIntoViewIfNeeded();
       await page.locator('#modalUsuarioAdmin .modal-box').screenshot({ path: path.join(artifacts, 'farmacia-study-grants-' + width + '.png') });
       await page.locator('#btnSalvarUsuarioAdmin').click();
       const payload = await page.evaluate(() => window.pending[0].payload);
       assert.equal(payload.farmaciaStudiesOriginal, '[{"studyId":"OLD","restricted":true}]');
       assert.deepEqual(payload.farmaciaStudies, [{ studyId: 'P1', restricted: true }, { studyId: 'OLD', restricted: true }]);
-      assert.equal(payload.farmaciaAccess, 'none', 'desativar nível geral preserva a seleção por estudo');
+      assert.equal(payload.farmaciaAllStudies, true);
       await page.evaluate(() => window.pending[0].failure({ message: 'As permissões por estudo mudaram. Reabra o usuário antes de salvar.' }));
       assert.match(await page.locator('#statusUsuarioAdmin').innerText(), /permissões por estudo mudaram/);
       assert.equal(await aurora.locator('.farmacia-study-restricted').isChecked(), true);
-      await aurora.locator('.farmacia-study-selected').uncheck();
-      assert.equal(await aurora.locator('.farmacia-study-restricted').isChecked(), false);
-      assert.equal(await aurora.locator('.farmacia-study-restricted').isDisabled(), true);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
       assert.deepEqual(errors, []);
       await page.close();
     }

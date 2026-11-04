@@ -40,17 +40,15 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
       var google = {script:{run:rpc}};
       ${contentAccessibilitySource(['profileDayOptionsHtml', 'profileMonthOptionsHtml', 'preencherSelectsAniversario',
         'validarAniversarioCliente', 'profileFormationOptionsHtml', 'preencherSelectFormacaoPerfil',
-        'renderUserFarmaciaStudies', 'collectUserFarmaciaStudies', 'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}
+        'norm', 'userFarmaciaModo', 'userFarmaciaResumo', 'renderUserFarmaciaStudies', 'filtrarUserFarmaciaStudies', 'atualizarResumoRestritosFarmacia', 'userAdminFarmaceuticoChanged', 'collectUserFarmaciaStudies', 'collectUserFarmaciaPayload', 'abrirFormUsuarioAdmin', 'salvarUsuarioAdminApp'])}
     ` });
     assert.equal(page.url(), 'about:blank');
     assert.equal(await page.title(), 'IPS — identidade do usuário');
     assert.equal(await page.locator('nextjs-portal, vite-error-overlay').count(), 0);
     await page.locator('#edit').click();
     assert.equal(await page.locator('#userAdminOriginalEmail').inputValue(), 'maria@example.invalid');
-    assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'none');
-    assert.equal(await page.locator('#userAdminFarmaciaCommonAccess').inputValue(), 'none');
-    await page.locator('#userAdminFarmaciaCommonAccess').selectOption('read');
-    await page.locator('#userAdminFarmaciaAccess').selectOption('manage');
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'nao');
+    await page.locator('#userAdminFarmaceutico').selectOption('sim');
     await page.locator('#userAdminEmail').fill('novo@example.invalid');
     await page.locator('#btnSalvarUsuarioAdmin').click();
     const payload = await page.evaluate(() => window.savedPayload);
@@ -58,8 +56,10 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
     assert.equal(payload.email, 'novo@example.invalid');
     assert.equal(payload.rowIndex, '2');
     assert.equal(payload.farmaciaAccess, 'manage');
-    assert.equal(payload.farmaciaCommonAccess, 'read');
+    assert.equal(payload.farmaciaCommonAccess, 'manage');
+    assert.equal(payload.farmaciaAllStudies, true);
     assert.equal(payload.farmaciaCommonOriginal, '');
+    assert.equal(payload.farmaciaScopeOriginal, '');
     assert.ok((await page.locator('#statusUsuarioAdmin').innerText()).includes('linha mudou'));
     assert.equal(await page.locator('#btnSalvarUsuarioAdmin').isEnabled(), true);
     assert.equal(await page.locator('#modalUsuarioAdmin').evaluate(el => el.classList.contains('open')), true);
@@ -71,8 +71,8 @@ test('editar usuário envia identidade original separada e novo cadastro limpa a
     assert.equal(await page.locator('#userAdminOriginalEmail').inputValue(), '');
     assert.equal(await page.locator('#userAdminRowIndex').inputValue(), '');
     assert.equal(await page.locator('#userAdminEmail').inputValue(), '');
-    assert.equal(await page.locator('#userAdminFarmaciaAccess').inputValue(), 'none');
-    assert.equal(await page.locator('#userAdminFarmaciaCommonAccess').inputValue(), 'none');
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'nao');
+    assert.equal(await page.locator('#userAdminFarmaciaRestritosSection').isVisible(), false);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

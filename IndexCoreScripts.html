@@ -403,8 +403,28 @@ function selecionarFarmaciaStudy(confirmed) {
   }).getFarmaciaEstudo(id, productsOnly);
 }
 
+// Farmácia simplificada: Farmacêutico(a) Sim/Não. Restritos (blinded) seguem por estudo.
+function userFarmaciaModo(user) {
+  if (!user) return 'nao';
+  var grants = user.farmaciaStudies || [];
+  var access = user.farmaciaAccess || 'none';
+  var common = user.farmaciaCommonAccess || 'none';
+  if (access === 'manage' && common === 'manage' && user.farmaciaAllStudies === true &&
+      grants.every(function(grant) { return grant.restricted === true; })) return 'sim';
+  if (access === 'none' && common === 'none' && user.farmaciaAllStudies !== true && !grants.length) return 'nao';
+  return 'legado';
+}
+
+function userFarmaciaResumo(user) {
+  var modo = userFarmaciaModo(user);
+  if (modo === 'nao') return 'Não';
+  var restritos = (user.farmaciaStudies || []).filter(function(grant) { return grant.restricted === true; }).length;
+  var sufixo = restritos ? ' · ' + restritos + (restritos === 1 ? ' restrito' : ' restritos') : '';
+  return (modo === 'sim' ? 'Farmacêutico(a)' : 'Configuração anterior') + sufixo;
+}
+
 function renderUserFarmaciaStudies(user) {
-  var grants = user && user.farmaciaStudies || [];
+  var grants = (user && user.farmaciaStudies || []).filter(function(grant) { return grant.restricted === true; });
   var catalog = USER_ADMIN_FARMACIA_CATALOG.slice();
   grants.forEach(function(grant) {
     if (!catalog.some(function(study) { return study.id === grant.studyId; })) {
@@ -412,29 +432,63 @@ function renderUserFarmaciaStudies(user) {
     }
   });
   document.getElementById('userAdminFarmaciaStudiesOriginal').value = user ? (user.farmaciaStudiesOriginal || '') : '';
+  document.getElementById('userAdminFarmaciaCommonOriginal').value = user ? (user.farmaciaCommonOriginal || '') : '';
+  document.getElementById('userAdminFarmaciaScopeOriginal').value = user ? (user.farmaciaScopeOriginal || '') : '';
+  document.getElementById('userAdminFarmaciaBusca').value = '';
   document.getElementById('userAdminFarmaciaStudies').innerHTML = catalog.length ? catalog.map(function(study) {
-    var grant = grants.find(function(item) { return item.studyId === study.id; });
-    return '<div class="farmacia-study-grant" data-farmacia-study="' + esc(study.id) + '">' +
-      '<label><input type="checkbox" class="farmacia-study-selected"' + (grant ? ' checked' : '') + ' onchange="farmaciaStudySelectionChanged(this)"> ' + esc(study.nome || study.id) + (study.codigo ? ' · ' + esc(study.codigo) : '') + '</label>' +
-      '<label class="profile-helper"><input type="checkbox" class="farmacia-study-restricted"' + (grant && grant.restricted ? ' checked' : '') + (!grant || study.orphan ? ' disabled' : '') + '> Informações restritas</label>' +
-      (study.orphan ? '<p class="profile-helper">Vínculo preservado, sem acesso a dados. Desmarque para revogar.</p>' : '') + '</div>';
-  }).join('') : '<p class="profile-helper">Nenhum estudo cadastrado. Nenhum acesso por estudo será concedido.</p>';
+    var grant = grants.some(function(item) { return item.studyId === study.id; });
+    var texto = (study.nome || study.id) + (study.codigo ? ' · ' + study.codigo : '');
+    return '<div class="farmacia-study-grant" data-farmacia-study="' + esc(study.id) + '" data-farmacia-busca="' + esc(norm(texto + ' ' + study.id)) + '">' +
+      '<label><input type="checkbox" class="farmacia-study-restricted"' + (grant ? ' checked' : '') + ' onchange="atualizarResumoRestritosFarmacia()"> ' + esc(texto) + '</label>' +
+      (study.orphan ? '<p class="profile-helper">Estudo fora do cadastro. A liberação pode ser mantida ou revogada, mas não concedida.</p>' : '') + '</div>';
+  }).join('') : '<p class="profile-helper">Nenhum estudo cadastrado.</p>';
+  atualizarResumoRestritosFarmacia();
 }
 
-function farmaciaStudySelectionChanged(checkbox) {
-  var restricted = checkbox.closest('[data-farmacia-study]').querySelector('.farmacia-study-restricted');
-  if (!checkbox.checked) restricted.checked = false;
-  // Estudos órfãos só podem manter ou reduzir a concessão existente.
-  var id = checkbox.closest('[data-farmacia-study]').getAttribute('data-farmacia-study');
-  restricted.disabled = !checkbox.checked || !USER_ADMIN_FARMACIA_CATALOG.some(function(study) { return study.id === id; });
+function filtrarUserFarmaciaStudies() {
+  var q = norm(document.getElementById('userAdminFarmaciaBusca').value || '');
+  Array.from(document.querySelectorAll('#userAdminFarmaciaStudies [data-farmacia-study]')).forEach(function(row) {
+    row.hidden = !!q && String(row.getAttribute('data-farmacia-busca') || '').indexOf(q) === -1;
+  });
+}
+
+function atualizarResumoRestritosFarmacia() {
+  var marcados = collectUserFarmaciaStudies().length;
+  document.getElementById('userAdminFarmaciaRestritosResumo').textContent = marcados
+    ? marcados + (marcados === 1 ? ' estudo restrito liberado.' : ' estudos restritos liberados.')
+    : 'Nenhum estoque restrito liberado.';
+}
+
+function userAdminFarmaceuticoChanged() {
+  var modo = document.getElementById('userAdminFarmaceutico').value;
+  document.getElementById('userAdminFarmaciaRestritosSection').hidden = modo !== 'sim';
 }
 
 function collectUserFarmaciaStudies() {
   return Array.from(document.querySelectorAll('#userAdminFarmaciaStudies [data-farmacia-study]')).filter(function(row) {
-    return row.querySelector('.farmacia-study-selected').checked;
+    return row.querySelector('.farmacia-study-restricted').checked;
   }).map(function(row) {
-    return { studyId: row.getAttribute('data-farmacia-study'), restricted: row.querySelector('.farmacia-study-restricted').checked };
+    return { studyId: row.getAttribute('data-farmacia-study'), restricted: true };
   });
+}
+
+function collectUserFarmaciaPayload() {
+  var modo = document.getElementById('userAdminFarmaceutico').value;
+  if (modo === 'legado') return {}; // Campos omitidos são preservados pelo servidor.
+  var sim = modo === 'sim';
+  return {
+    farmaciaAccess: sim ? 'manage' : 'none',
+    farmaciaCommonAccess: sim ? 'manage' : 'none',
+    farmaciaCommonOriginal: document.getElementById('userAdminFarmaciaCommonOriginal').value,
+    farmaciaAllStudies: sim,
+    farmaciaScopeOriginal: document.getElementById('userAdminFarmaciaScopeOriginal').value,
+    farmaciaStudies: sim ? collectUserFarmaciaStudies() : [],
+    farmaciaStudiesOriginal: document.getElementById('userAdminFarmaciaStudiesOriginal').value
+  };
+}
+
+function userAdminRoleLabel(role) {
+  return ({ admin: 'Administrador', user: 'Usuário', readonly: 'Somente leitura' })[role] || role || '—';
 }
 
 function appApplyTeamBirthdays_(birthdays) {
@@ -1942,7 +1996,7 @@ function renderUsersAdmin(forceNow) {
   var qEl = document.getElementById('searchUsersAdmin');
   var q = norm(qEl ? qEl.value : '');
   var filtered = rows.filter(function(u) {
-    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.formacao, u.registroProfissional, u.podeSolicitarExames, u.role, u.ativo, farmaciaAccessLabel(u.farmaciaAccess)].join(' ')).indexOf(q) >= 0;
+    return !q || norm([u.name, u.firstName, u.email, u.birthdayLabel, u.formacao, u.registroProfissional, u.podeSolicitarExames, u.role, userAdminRoleLabel(u.role), u.ativo, 'farmacia ' + userFarmaciaResumo(u)].join(' ')).indexOf(q) >= 0;
   });
   var total = rows.length;
   var ativos = rows.filter(function(u) { return u.ativo === 'Sim'; }).length;
@@ -1970,7 +2024,7 @@ function renderUsersAdmin(forceNow) {
       '<td>' + esc(u.formacao || '—') + '<br><small style="color:#5f6b7c">' + esc(u.registroProfissional || '') + '</small></td>' +
       '<td><span class="chip ' + (u.birthdayLabel ? 'chip-purple' : '') + '">' + esc(u.birthdayLabel || '—') + '</span></td>' +
       '<td><span class="chip ' + (u.podeSolicitarExames === 'Sim' ? 'chip-green' : 'chip-red') + '">' + esc(u.podeSolicitarExames || 'Não') + '</span></td>' +
-      '<td><span class="chip ' + roleCls + '">' + esc(u.role) + '</span><br><small>Farmácia (estudos): ' + esc(farmaciaAccessLabel(u.farmaciaAccess)) + '<br>Estoque comum: ' + esc(farmaciaAccessLabel(u.farmaciaCommonAccess)) + '</small></td>' +
+      '<td><span class="chip ' + roleCls + '">' + esc(userAdminRoleLabel(u.role)) + '</span><br><small>Farmácia: ' + esc(userFarmaciaResumo(u)) + '</small></td>' +
       '<td><span class="chip ' + (ativo ? 'chip-green' : 'chip-red') + '">' + (ativo ? 'Ativo' : 'Inativo') + '</span></td>' +
       '<td><div class="action-btns">' +
         '<button class="icon-btn" title="Editar" onclick="abrirFormUsuarioAdmin(' + Number(u.rowIndex || 0) + ')"><span class="material-symbols-outlined">edit</span></button>' +
@@ -1989,10 +2043,19 @@ function abrirFormUsuarioAdmin(rowIndex) {
   preencherSelectsAniversario('userAdminDia', 'userAdminMes', u ? u.birthdayDay : '', u ? u.birthdayMonth : '');
   document.getElementById('userAdminEmail').value = u ? u.email : '';
   document.getElementById('userAdminRole').value = u ? u.role : 'user';
-  document.getElementById('userAdminFarmaciaAccess').value = u ? (u.farmaciaAccess || 'none') : 'none';
-  document.getElementById('userAdminFarmaciaCommonAccess').value = u ? (u.farmaciaCommonAccess || 'none') : 'none';
-  document.getElementById('userAdminFarmaciaCommonOriginal').value = u ? (u.farmaciaCommonOriginal || '') : '';
+  var farmaciaModo = userFarmaciaModo(u);
+  var farmaciaSelect = document.getElementById('userAdminFarmaceutico');
+  var legadoOption = farmaciaSelect.querySelector('option[value="legado"]');
+  legadoOption.hidden = farmaciaModo !== 'legado';
+  legadoOption.disabled = farmaciaModo !== 'legado';
+  farmaciaSelect.value = farmaciaModo;
+  var legadoInfo = document.getElementById('userAdminFarmaciaLegado');
+  legadoInfo.hidden = farmaciaModo !== 'legado';
+  legadoInfo.textContent = farmaciaModo === 'legado' ? 'Este usuário tem uma configuração da versão anterior (estudos: ' +
+    farmaciaAccessLabel(u.farmaciaAccess) + '; Geral: ' + farmaciaAccessLabel(u.farmaciaCommonAccess) + '; ' +
+    (u.farmaciaStudies || []).length + ' estudo(s) vinculados). Ela será mantida até você escolher Sim ou Não.' : '';
   renderUserFarmaciaStudies(u);
+  userAdminFarmaceuticoChanged();
   document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';
   preencherSelectFormacaoPerfil('userAdminFormacao', u ? u.formacao : '');
   document.getElementById('userAdminRegistro').value = u ? (u.registroProfissional || '') : '';
@@ -2047,7 +2110,7 @@ function salvarUsuarioAdminApp() {
       btn.innerHTML = old;
       document.getElementById('statusUsuarioAdmin').innerHTML = '<span style="color:#b3261e">' + esc(appErrorMessage(e)) + '</span>';
     })
-    .salvarUsuarioAdmin({
+    .salvarUsuarioAdmin(Object.assign({
       rowIndex: document.getElementById('userAdminRowIndex').value,
       originalEmail: document.getElementById('userAdminOriginalEmail').value,
       name: name,
@@ -2055,16 +2118,11 @@ function salvarUsuarioAdminApp() {
       birthdayDay: document.getElementById('userAdminDia').value,
       birthdayMonth: document.getElementById('userAdminMes').value,
       role: document.getElementById('userAdminRole').value,
-      farmaciaAccess: document.getElementById('userAdminFarmaciaAccess').value,
-      farmaciaCommonAccess: document.getElementById('userAdminFarmaciaCommonAccess').value,
-      farmaciaCommonOriginal: document.getElementById('userAdminFarmaciaCommonOriginal').value,
-      farmaciaStudies: collectUserFarmaciaStudies(),
-      farmaciaStudiesOriginal: document.getElementById('userAdminFarmaciaStudiesOriginal').value,
       ativo: document.getElementById('userAdminAtivo').value,
       formacao: document.getElementById('userAdminFormacao').value,
       registroProfissional: document.getElementById('userAdminRegistro').value,
       podeSolicitarExames: document.getElementById('userAdminPodeSolicitar').value
-    });
+    }, collectUserFarmaciaPayload()));
 }
 
 function abrirCargaPerfisAdmin() {
