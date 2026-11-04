@@ -1,6 +1,6 @@
 /* ===== TransporteLayoutsModelo.gs =====
  * Documentacao de Transporte sem a planilha de modelos: o layout das abas-modelo fica
- * congelado em TransporteLayoutsModelo.html (gerado por tools/export-transporte-layouts.js,
+ * congelado em TransporteLayoutsDados.html (gerado por tools/export-transporte-layouts.js,
  * so com texto fixo do modelo) e as MESMAS funcoes de preenchimento de hoje rodam sobre uma
  * planilha em memoria (transporteLayoutsPlanilha_) inicializada com esse layout. As formulas
  * do modelo sao avaliadas na leitura e os valores sao exibidos com o formato numerico da
@@ -12,7 +12,8 @@
  * porque varias rotinas de preenchimento engolem erros e so registram em log.
  */
 
-var TRANSPORTE_LAYOUTS_ARQUIVO_ = 'TransporteLayoutsModelo';
+// Nome base diferente do .gs: o Apps Script nao aceita .gs e .html com o mesmo nome.
+var TRANSPORTE_LAYOUTS_ARQUIVO_ = 'TransporteLayoutsDados';
 var TRANSPORTE_LAYOUTS_MEMO_ = null;
 // Enquanto > 0, getTransporteSpreadsheetCodex_ recusa abrir a planilha real.
 var TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_ = 0;
