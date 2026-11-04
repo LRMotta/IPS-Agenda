@@ -824,3 +824,123 @@ function exportarImagensLayoutTransporteHtml() {
   Logger.log(JSON.stringify(resultado));
   return resultado;
 }
+
+/* ---------- Diagnostico em producao (administradores) ----------
+ * Executar manualmente no editor: diagnosticarDocsDadosTransporteHtml().
+ * Le o envio que esta hoje na planilha de Transporte (somente leitura) e gera os mesmos
+ * documentos de dois jeitos: pela grade da planilha real (como o botao "Gerar PDF (HTML)")
+ * e pela planilha em memoria (transporteDocsDados_). Compara o texto impresso de cada aba,
+ * celula a celula, depois das mesmas protecoes (identificacao, contato de emergencia e
+ * bloqueio de nome), e salva o PDF da planilha em memoria na pasta privada de diagnostico.
+ * Usa a courier do proprio envio: so assim as duas fontes descrevem o mesmo envio.
+ * O log e o retorno tem so contagens, tempos, titulos de aba e enderecos (A1) divergentes,
+ * nunca valores de celula.
+ */
+var TRANSPORTE_LAYOUTS_DIAGNOSTICO_MAX_ENDERECOS_ = 30;
+
+// Celulas com texto diferente entre duas listas de transporteDocsGradeProtegerConteudo_.
+function transporteLayoutsCompararConteudo_(real, memoria) {
+  var porAba = {};
+  (memoria || []).forEach(function(item) { porAba[item.aba] = item.valores; });
+  var out = {};
+  (real || []).forEach(function(item) {
+    var a = item.valores || [];
+    var b = porAba[item.aba];
+    if (!b) { out[item.aba] = { ausente: true, divergentes: 0, enderecos: [] }; return; }
+    var linhas = Math.max(a.length, b.length);
+    var enderecos = [];
+    var total = 0;
+    for (var r = 0; r < linhas; r++) {
+      var la = a[r] || [], lb = b[r] || [];
+      var colunas = Math.max(la.length, lb.length);
+      for (var c = 0; c < colunas; c++) {
+        if (String(la[c] || '') === String(lb[c] || '')) continue;
+        total++;
+        if (enderecos.length < TRANSPORTE_LAYOUTS_DIAGNOSTICO_MAX_ENDERECOS_) enderecos.push(transporteLayoutsColuna_(c) + (r + 1));
+      }
+    }
+    out[item.aba] = { ausente: false, divergentes: total, enderecos: enderecos };
+  });
+  return out;
+}
+
+function diagnosticarDocsDadosTransporteHtml() {
+  codexAssertAdmin_();
+  var tempos = {};
+  var inicio = Date.now();
+  var marca = Date.now();
+  var ss = getTransporteSpreadsheetCodex_();
+  var registro = transporteDerivarDadosParticipante_(transporteReadRegistro_(), { obrigatorio: true });
+  var courier = transporteNormalizeCourierFromCodex_(registro.courier);
+  var spec = transportePdfSpec_(registro.courier, registro.temperatura || '', registro.destino || '', ss);
+  var contexto = transporteDocsGradeContextoProtecao_(ss, courier, registro);
+  tempos.registroMs = Date.now() - marca;
+
+  // Fonte atual: abas ja preenchidas da planilha real.
+  marca = Date.now();
+  var real = transporteDocsGradeCarregar_(ss, spec.ordem, {});
+  var conteudoReal = transporteDocsGradeProtegerConteudo_(real.abas, contexto);
+  tempos.gradeRealMs = Date.now() - marca;
+
+  // Fonte nova: layout congelado + preenchimento em memoria.
+  marca = Date.now();
+  var arquivo = transporteLayoutsCarregar_();
+  tempos.layoutMs = Date.now() - marca;
+  marca = Date.now();
+  var dados = transporteDocsDados_(registro, { arquivo: arquivo });
+  tempos.preenchimentoMs = Date.now() - marca;
+  marca = Date.now();
+  var abasMemoria = dados.abas(spec.ordem);
+  var conteudoMemoria = transporteDocsGradeProtegerConteudo_(abasMemoria, contexto);
+  tempos.exportarAbasMs = Date.now() - marca;
+
+  marca = Date.now();
+  var comparacao = transporteLayoutsCompararConteudo_(conteudoReal, conteudoMemoria);
+  var divergentes = Object.keys(comparacao).reduce(function(acc, aba) { return acc + comparacao[aba].divergentes + (comparacao[aba].ausente ? 1 : 0); }, 0);
+  tempos.comparacaoMs = Date.now() - marca;
+
+  // PDF da planilha em memoria, montado como na geracao (Folha em HTML).
+  var avisos = [];
+  var pdf = null;
+  if (TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(courier) >= 0) {
+    marca = Date.now();
+    var folha = transporteFolhaHtmlParaGrade_(dados.ss, Object.assign({}, registro, { courier: courier }), spec, {});
+    var html = transporteDocsGradeMontar_(abasMemoria, spec.ordem.map(function(titulo) {
+      return { aba: titulo, copias: spec.copias[titulo], html: folha.abas.indexOf(titulo) >= 0 ? folha.html : '' };
+    }), {});
+    tempos.htmlMs = Date.now() - marca;
+    marca = Date.now();
+    var stamp = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyyMMdd-HHmmss');
+    var blob = HtmlService.createHtmlOutput(html).getBlob().getAs(MimeType.PDF)
+      .setName('diagnostico-memoria-' + courier.toLowerCase() + '-' + stamp + '.pdf');
+    tempos.conversaoMs = Date.now() - marca;
+    var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
+    var esperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
+    marca = Date.now();
+    var root = DriveApp.getRootFolder();
+    var pastas = root.getFoldersByName(TRANSPORTE_DOCS_HTML_PASTA_DIAGNOSTICO_);
+    var pasta = pastas.hasNext() ? pastas.next() : root.createFolder(TRANSPORTE_DOCS_HTML_PASTA_DIAGNOSTICO_);
+    var arquivoPdf = pasta.createFile(blob);
+    tempos.driveMs = Date.now() - marca;
+    if (paginas !== esperadas) avisos.push('PAGINAS_DIFERENTES');
+    pdf = { paginas: paginas, paginasEsperadas: esperadas, bytes: blob.getBytes().length, fileName: arquivoPdf.getName(), fileUrl: arquivoPdf.getUrl() };
+  } else {
+    avisos.push('COURIER_SEM_FORMATO_HTML');
+  }
+  tempos.totalMs = Date.now() - inicio;
+
+  var resultado = {
+    ok: divergentes === 0 && !avisos.length,
+    courier: courier,
+    abas: spec.ordem.length,
+    celulasDivergentes: divergentes,
+    comparacao: comparacao,
+    hashReal: transportePdfManifestoHash_(conteudoReal),
+    hashMemoria: transportePdfManifestoHash_(conteudoMemoria),
+    avisos: avisos,
+    pdf: pdf,
+    tempos: tempos
+  };
+  Logger.log(JSON.stringify(resultado));
+  return resultado;
+}

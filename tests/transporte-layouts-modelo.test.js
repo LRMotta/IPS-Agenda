@@ -268,3 +268,60 @@ test('transporteDocsDados_ bloqueia a planilha real e restaura os avisos da gera
   assert.throws(() => s.transporteDocsDados_(registroMarken(), { arquivo }), /avisos de preenchimento: atualizarMarkenVolumes_/);
   assert.equal(anteriores.length, 0);
 });
+
+test('comparacao do diagnostico aponta so enderecos das celulas divergentes', () => {
+  const s = modulo();
+  const real = [{ aba: 'A', valores: [['x', 'y'], ['z']] }, { aba: 'B', valores: [['1']] }];
+  const memoria = [{ aba: 'A', valores: [['x', 'Y'], ['z', 'extra']] }];
+  const r = plano(s.transporteLayoutsCompararConteudo_(real, memoria));
+  assert.deepEqual(r, {
+    A: { ausente: false, divergentes: 2, enderecos: ['B1', 'B2'] },
+    B: { ausente: true, divergentes: 0, enderecos: [] }
+  });
+});
+
+test('diagnostico em producao compara grade real e memoria sem registrar valores de celula', () => {
+  const s = servidor();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const registro = registroMarken();
+  // "Planilha real" do teste: outra planilha em memoria preenchida com o mesmo envio.
+  const realSs = s.transporteDocsDados_(registro, { arquivo }).ss;
+  const logs = [];
+  s.Logger = { log: (m) => logs.push(String(m)) };
+  s.codexAssertAdmin_ = () => {};
+  s.getTransporteSpreadsheetCodex_ = () => realSs;
+  s.transporteReadRegistro_ = () => JSON.parse(JSON.stringify(registro));
+  s.transporteDerivarDadosParticipante_ = (r) => r;
+  s.transporteLayoutsCarregar_ = () => arquivo;
+  s.transporteDocsGradeCarregar_ = (ss, titulos) => ({ abas: ss.exportarAbas_(titulos), info: {} });
+  s.reqExamesLogoSrc_ = () => 'data:image/png;base64,AAAA';
+  s.transporteFolhaHtmlAgendaContexto_ = () => ({ visita: '', origem: null });
+  s.transporteDocsHtmlContarPaginasPdf_ = () => 17;
+  s.Utilities = {
+    formatDate: () => '20261104-150000',
+    DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+    computeDigest: (_alg, valor) => Array.from(require('node:crypto').createHash('sha256').update(valor).digest()),
+    base64EncodeWebSafe: (bytes) => Buffer.from(bytes).toString('base64url')
+  };
+  const blob = { setName() { return blob; }, getBytes: () => [1, 2, 3] };
+  s.HtmlService = { createHtmlOutput: () => ({ getBlob: () => ({ getAs: () => blob }) }) };
+  s.MimeType = { PDF: 'application/pdf' };
+  const pasta = { createFile: () => ({ getName: () => 'diag.pdf', getUrl: () => 'https://example.invalid/diag' }) };
+  s.DriveApp = { getRootFolder: () => ({ getFoldersByName: () => ({ hasNext: () => true, next: () => pasta }) }) };
+  const r = s.diagnosticarDocsDadosTransporteHtml();
+  assert.equal(r.celulasDivergentes, 0, JSON.stringify(r.comparacao));
+  assert.equal(r.ok, true, JSON.stringify(r.avisos));
+  assert.equal(r.hashReal, r.hashMemoria);
+  assert.equal(r.pdf.paginas, 17);
+  assert.equal(logs.length, 1);
+  // Uma celula diferente na planilha real aparece pelo endereco, sem o valor.
+  realSs.getSheetByName('Declaração de Transporte').getRange('D36').setValue('Valor alterado na planilha real');
+  const divergente = s.diagnosticarDocsDadosTransporteHtml();
+  assert.equal(divergente.ok, false);
+  assert.equal(divergente.celulasDivergentes, 1);
+  assert.deepEqual(plano(divergente.comparacao['Declaração de Transporte'].enderecos), ['D36']);
+  assert.ok(!logs[1].includes('Valor alterado'));
+  for (const dado of ['Pessoa Participante Teste', 'P.P.T.', 'ID-001', '123456789012', 'Pessoa Investigadora']) {
+    assert.ok(!logs[0].includes(dado), 'log nao pode conter ' + dado);
+  }
+});
