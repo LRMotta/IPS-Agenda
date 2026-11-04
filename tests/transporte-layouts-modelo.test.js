@@ -15,7 +15,7 @@ function modulo(extra) {
 
 function servidor() {
   const s = runFiles(['AgendaServerRules.gs', 'CadastroRules.gs', 'WebApp.gs', 'TransporteCodexConfig.gs',
-    'TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs', 'TransporteLayoutsModelo.gs'], {
+    'TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs', 'TransporteFolhaAgendamentoHtml.gs', 'TransporteLayoutsModelo.gs'], {
     Logger: { log() {} },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
     SpreadsheetApp: {},
@@ -65,6 +65,30 @@ test('arquivo de layouts traz as 17 abas-modelo e cada uma vira pagina pelo rend
     }
     const html = s.transporteDocsGradeHtml_(sheet, {});
     assert.match(html, /^<table class="grade"/, chave);
+  }
+});
+
+test('layout traz logo e rodape: imagem de celula e rodape flutuante, guardados uma vez', () => {
+  const s = modulo();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const ids = Object.keys(arquivo.imagens);
+  assert.ok(ids.length >= 2);
+  for (const id of ids) assert.match(arquivo.imagens[id], /^data:image\/(png|jpeg);base64,/);
+  const imagemCelula = (chave, a1) => {
+    const f = s.transporteLayoutsFaixa_(a1);
+    const cell = s.transporteLayoutsExpandir_(arquivo, chave).data[0].rowData[f.r0].values[f.c0];
+    return cell.userEnteredValue && cell.userEnteredValue.imageValue.imageProperties.contentUrl;
+  };
+  const logo = imagemCelula('declaracaoTransp', 'A1');
+  const rodape = imagemCelula('declaracaoTransp', 'B53');
+  assert.match(logo, /^data:image\//);
+  assert.match(rodape, /^data:image\//);
+  assert.notEqual(logo, rodape);
+  // As abas que hoje recebem o rodape da Declaracao (TRANSPORTE_DOCS_GRADE_IMAGENS_CODIGO_) o tem flutuante.
+  for (const chave of ['invoiceMarken', 'declaracaoDhl', 'invoicePinex', 'usdaStatementPinex']) {
+    const flutuantes = s.transporteLayoutsExpandir_(arquivo, chave).imagensFlutuantes;
+    assert.equal(flutuantes.length, 1, chave);
+    assert.equal(flutuantes[0].url, rodape, chave);
   }
 });
 
@@ -206,6 +230,28 @@ test('transporteDocsDados_ preenche com as rotinas atuais sem abrir a planilha d
   const spec = s.transportePdfSpec_('MARKEN', 'CONGELADO', 'LAB X', dados.ss);
   assert.deepEqual(plano(spec.ordem), ['Folha de Agendamento', 'Declaração de Transporte', 'Petição de Anuência de Exportação', 'Invoice (MARKEN)', 'Ficha de Emergência (MARKEN)']);
   for (const titulo of spec.ordem) assert.match(s.transporteDocsGradeHtml_(abas[titulo], {}), /^<table class="grade"/, titulo);
+});
+
+test('documento montado como na geracao: a Folha impressa e a nova Folha em HTML, nao a aba da grade', () => {
+  const s = servidor();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const registro = registroMarken();
+  const dados = s.transporteDocsDados_(registro, { arquivo });
+  const spec = s.transportePdfSpec_('MARKEN', 'CONGELADO', 'LAB X', dados.ss);
+  // Mesma montagem de transporteDocsGradeGerarPdfHtml_.
+  const folha = s.transporteFolhaHtmlParaGrade_(dados.ss, Object.assign({}, registro, { courier: 'MARKEN' }), spec,
+    { logoSrc: 'data:image/png;base64,AAAA', agendaContexto: { visita: '', origem: null }, agora: '04/11/2026 15:00' });
+  assert.deepEqual(plano(folha.abas), ['Folha de Agendamento']);
+  const abas = dados.abas(spec.ordem);
+  const html = s.transporteDocsGradeMontar_(abas, spec.ordem.map((titulo) => ({
+    aba: titulo, copias: 1, html: folha.abas.indexOf(titulo) >= 0 ? folha.html : ''
+  })), {});
+  const paginas = html.split('<div class="pagina">').slice(1);
+  assert.equal(paginas.length, 5);
+  assert.ok(paginas[0].startsWith(folha.html), 'a primeira pagina e a Folha em HTML');
+  assert.doesNotMatch(paginas[0], /<table class="grade"/);
+  for (const pagina of paginas.slice(1)) assert.match(pagina, /^<table class="grade"/);
+  assert.doesNotMatch(html, /Pessoa Participante Teste/);
 });
 
 test('transporteDocsDados_ bloqueia a planilha real e restaura os avisos da geracao', () => {

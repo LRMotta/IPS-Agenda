@@ -144,7 +144,7 @@ function compactar(layout, formatos) {
     titulo: layout.properties.title,
     area: layout.area,
     mesclas: (layout.merges || []).map((m) => [m.startRowIndex || 0, m.endRowIndex, m.startColumnIndex || 0, m.endColumnIndex]),
-    imagensFlutuantes: layout.imagensFlutuantes || [],
+    imagensFlutuantes: (layout.imagensFlutuantes || []).map((i) => ({ r: i.r, c: i.c, x: i.x, y: i.y, w: i.w, h: i.h, url: i.url })),
     imagensOmitidas: layout.imagensOmitidas || 0,
     colunas: (data.columnMetadata || []).map((c) => [c.pixelSize || 0, c.hiddenByUser ? 1 : 0]),
     linhas: (data.rowMetadata || []).map((r) => [r.pixelSize || 0, r.hiddenByUser ? 1 : 0]),
@@ -172,13 +172,25 @@ function exportar(atual, outra, imagens) {
   const abas = {};
   const resumo = {};
   const formatos = { lista: [], indice: {} };
+  // Cada imagem entra uma vez em arquivo.imagens; o layout guarda so o id.
+  const tabelaImagens = {};
+  const idsImagens = {};
+  function idImagem(src) {
+    if (!/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(String(src || ''))) throw new Error('Imagem invalida: use data URI PNG, JPEG ou GIF.');
+    if (!idsImagens[src]) { idsImagens[src] = 'img' + Object.keys(tabelaImagens).length; tabelaImagens[idsImagens[src]] = src; }
+    return idsImagens[src];
+  }
   Object.keys(TRANSPORTE_LAYOUT_ABAS_).forEach((chave) => {
     const titulo = TRANSPORTE_LAYOUT_ABAS_[chave];
     const sheet = abasAtual[titulo];
     if (!sheet) throw new Error('Aba ausente na leitura atual: ' + titulo);
     const outraCelulas = celulasPorEndereco(abasOutra[titulo] || {});
     const gravadas = escritas[chave] || new Set();
-    const img = (imagens && imagens[chave]) || null;
+    const imgOrig = (imagens && imagens[chave]) || null;
+    const img = imgOrig && {
+      celulas: (imgOrig.celulas || []).map((i) => Object.assign({}, i, { src: idImagem(i.src) })),
+      flutuantes: (imgOrig.flutuantes || []).map((f) => Object.assign({}, f, { src: idImagem(f.src) }))
+    };
     // Layout como o cache de producao (sem texto); imagens de celula entram antes do recorte da area.
     const base = JSON.parse(JSON.stringify(sheet));
     (img && img.celulas || []).forEach((i) => {
@@ -231,13 +243,13 @@ function exportar(atual, outra, imagens) {
     // Gravadas pelo codigo e vazias agora: tambem sao variaveis.
     gravadas.forEach((a1) => { if (variaveis.indexOf(a1) < 0 && !formulas[a1]) variaveis.push(a1); });
     abas[chave] = { titulo: titulo, layout: compactar(layout, formatos), formulas: formulas, variaveis: variaveis.sort() };
-    resumo[chave] = Object.assign(contagem, { imagens: img ? 'incorporadas' : 'pendentes' });
+    resumo[chave] = Object.assign(contagem, { imagens: img ? img.celulas.length + img.flutuantes.length : 0 });
   });
   return {
     arquivo: {
       versao: 1,
       origem: { revisionId: atual.revisionId || '' },
-      imagens: imagens ? 'incorporadas' : 'pendentes',
+      imagens: imagens ? tabelaImagens : {},
       formatos: formatos.lista,
       abas: abas
     },

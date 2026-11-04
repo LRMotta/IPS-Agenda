@@ -41,6 +41,8 @@ function transporteLayoutsExpandir_(arquivo, chave) {
   var aba = arquivo.abas[chave];
   if (!aba) throw new Error('Layout de Transporte ausente: ' + chave);
   var l = aba.layout;
+  var imagens = arquivo.imagens || {};
+  function src(id) { return imagens[id] || id; }
   return {
     properties: { title: l.titulo },
     merges: l.mesclas.map(function(m) {
@@ -48,7 +50,7 @@ function transporteLayoutsExpandir_(arquivo, chave) {
     }),
     area: { colunas: l.area.colunas, linhas: l.area.linhas },
     formatosCondicionais: [],
-    imagensFlutuantes: (l.imagensFlutuantes || []).map(function(i) { return Object.assign({}, i); }),
+    imagensFlutuantes: (l.imagensFlutuantes || []).map(function(i) { return Object.assign({}, i, { url: src(i.url) }); }),
     imagensOmitidas: l.imagensOmitidas || 0,
     data: [{
       columnMetadata: l.colunas.map(function(c) { return { pixelSize: c[0], hiddenByUser: !!c[1] }; }),
@@ -61,7 +63,7 @@ function transporteLayoutsExpandir_(arquivo, chave) {
           if (c.e) out.effectiveValue = Object.assign({}, c.e);
           if (c.r) out.textFormatRuns = JSON.parse(JSON.stringify(c.r));
           if (c.v) out.dataValidation = JSON.parse(JSON.stringify(c.v));
-          if (c.i) out.userEnteredValue = { imageValue: { imageProperties: { contentUrl: c.i } } };
+          if (c.i) out.userEnteredValue = { imageValue: { imageProperties: { contentUrl: src(c.i) } } };
           return out;
         }) };
       })
