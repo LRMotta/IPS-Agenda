@@ -189,9 +189,12 @@ test('planilha em memoria segue a semantica do Sheets usada pelo preenchimento',
   assert.equal(decl.getRange('D36').getValue(), '=nao e formula');
   decl.getRange('D36').setValue('=F31');
   assert.equal(decl.getRange('D36').getValue(), 3.5);
-  // setValue em faixa grava todas as celulas; getCell(1,1) so a ancora.
+  // J10:K10 e mesclada: setValue na faixa so guarda a ancora (comprovado no diagnostico em
+  // producao, que apontou K10, O39:P39 e C49:P49 da Declaracao quando todas eram gravadas).
   decl.getRange('J10:K10').setValue('000');
-  assert.deepEqual(plano(decl.getRange('J10:K10').getValues()), [[0, 0]]);
+  assert.deepEqual(plano(decl.getRange('J10:K10').getValues()), [[0, '']]);
+  decl.getRange('B49:P49').setValue('Assinatura');
+  assert.deepEqual(plano(decl.getRange('B49:D49').getValues()), [['Assinatura', '', '']]);
   decl.getRange('J21:L21').clearContent();
   decl.getRange('J21:L21').getCell(1, 1).setValue('2×1,0');
   assert.deepEqual(plano(decl.getRange('J21:L21').getValues()), [['2×1,0', '', '']]);
