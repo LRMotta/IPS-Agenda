@@ -27,6 +27,7 @@ function transporteRegistrarAviso_(code) {
     atualizarInvoiceMarkenAmostras_: 'Os materiais da invoice MARKEN não foram atualizados.',
     atualizarFormularioPinex_: 'O formulário PINEX não foi atualizado.',
     atualizarCommercialInvoicePinexB34_: 'O resumo de materiais PINEX não foi atualizado.',
+    PDF_HTML_IMAGEM_OMITIDA: 'Uma imagem do modelo não foi incorporada ao PDF em HTML.',
     LIMPEZA_COPIA_TEMPORARIA: 'A cópia temporária não pôde ser movida para a lixeira.',
     CONFIG_TRANSPORTE: 'A configuração de Transporte não pôde ser consultada.',
     CONFIG_NUMERO_TRANSPORTE: 'Um peso configurado é inválido; foi mantido o valor padrão.',
@@ -4720,6 +4721,7 @@ function gerarPdfTransporteInterno_(options, access) {
   if (typeof result === 'string' && /^Erro\b/i.test(result)) throw new Error(result);
   if (result && typeof result === 'object') {
     result.temperaturaPdf = temperaturaPdf;
+    result.formato = transporteFormatoPdfHtml_(options.formato) ? 'html' : 'planilha';
     result.generationRequestId = options.generationRequestId || '';
     if (savedTransport) result.agendaSync = savedTransport.agendaSync;
   }
@@ -6427,6 +6429,13 @@ function transporteAplicarContatoEmergenciaPdf_(ss, courier, spec) {
   return atualizadas;
 }
 
+function transporteFormatoPdfHtml_(formato) {
+  var valor = String(formato || '').trim().toLowerCase();
+  if (!valor || valor === 'planilha') return false;
+  if (valor === 'html') return true;
+  throw new Error('Formato de PDF invalido.');
+}
+
 function imprimirTodasAbas(options) {
   codexAssertCanWrite_('imprimirTodasAbas', 'Transporte', '');
   return codexWithDocumentLock_('imprimirTodasAbas', function() {
@@ -6484,6 +6493,11 @@ function imprimirTodasAbas_(options) {
 
     var spec = transportePdfSpec_(courier, temperatura, destino, ss);
     if (!spec.ordem.length) throw new Error('Courier sem configuracao de PDF: ' + courier);
+    // Formato do PDF: planilha (padrao) ou HTML (novo). Valor desconhecido nao cai no padrao em silencio.
+    var formatoHtml = transporteFormatoPdfHtml_(options.formato);
+    if (formatoHtml && TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(transporteNormalizeCourierFromCodex_(courier)) < 0) {
+      throw new Error('O novo formato (HTML) ainda nao esta disponivel para a courier ' + courier + '. Use Gerar PDF.');
+    }
     var payloadForAutomation = {
       courier: courier,
       temperatura: temperatura,
@@ -6524,70 +6538,80 @@ function imprimirTodasAbas_(options) {
     var nomeArquivo = transportePdfFileName_(awb, dataEnvio, temperatura, courier, marker);
     var pastaDestino = transportePdfDestinationFolder_(protocolo);
     lap('ia_pasta_destino');
-    // A copia com dados internos fica no Meu Drive do executor, fora da pasta
-    // de saida compartilhada, com nome opaco e compartilhamento privado.
-    workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy('IPS-TEMP-PDF-' + Utilities.getUuid(), DriveApp.getRootFolder());
-    lap('ia_make_copy');
-    workingCopyFile.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
-    transportePdfVerificarCopiaPrivada_(workingCopyFile);
-    lap('ia_copia_privada');
-    var workingSS = transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_open', { rowCount: 0 }, function() {
-      return transportePdfOpenWorkingCopy_(workingCopyFile.getId());
-    });
-    lap.reset();
-    transporteAplicarContatoEmergenciaPdf_(workingSS, courier, spec);
-    lap('ia_contato_emergencia');
-    transportePdfAnonimizarParticipante_(workingSS, payloadFallback, ss);
-    transportePdfOcultarMetadadosInternos_(workingSS);
-    lap('ia_anonimizar_notas');
-    transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_prepare', { rowCount: spec.ordem.length }, function() {
-      transportePdfPruneDuplicateAndOrder_(workingSS, spec);
-    });
-    lap.reset();
-    // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
-    SpreadsheetApp.flush();
-    lap('ia_flush_copia');
-    var conteudoPdf = transportePdfVerificarAnonimizacao_(workingSS, [paciente, payloadFallback.paciente, payloadFallback.participante]);
-    lap('ia_verificar_anonimizacao', conteudoPdf.length);
-    var conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
-    lap('ia_hash');
-    Utilities.sleep(700);
-    lap.reset();
-
-    var url = 'https://docs.google.com/spreadsheets/d/' + workingCopyFile.getId() + '/export?' + [
-      'format=pdf',
-      'exportFormat=pdf',
-      'size=A4',
-      'portrait=true',
-      'fitw=true',
-      'top_margin=0.5',
-      'bottom_margin=0.1',
-      'left_margin=0.25',
-      'right_margin=0.25',
-      'sheetnames=false',
-      'printtitle=false',
-      'pagenumbers=false',
-      'gridlines=false',
-      'fzr=false'
-    ].join('&');
-    var response = transporteMeasurePerformance_('gerarPdfTransporte', 'pdf_fetch', { rowCount: 0 }, function() {
-      return UrlFetchApp.fetch(url, {
-        headers: { Authorization: 'Bearer ' + token },
-        muteHttpExceptions: true
+    var conteudoPdf, conteudoPdfHash, blob;
+    if (formatoHtml) {
+      // Novo formato: HTML montado a partir da grade das abas, convertido em PDF sem copia da planilha.
+      var gerado = transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payloadFallback, nomeArquivo);
+      conteudoPdf = gerado.conteudo;
+      conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
+      lap('ia_html_pdf', conteudoPdf.length);
+      blob = gerado.blob;
+    } else {
+      // A copia com dados internos fica no Meu Drive do executor, fora da pasta
+      // de saida compartilhada, com nome opaco e compartilhamento privado.
+      workingCopyFile = DriveApp.getFileById(ss.getId()).makeCopy('IPS-TEMP-PDF-' + Utilities.getUuid(), DriveApp.getRootFolder());
+      lap('ia_make_copy');
+      workingCopyFile.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+      transportePdfVerificarCopiaPrivada_(workingCopyFile);
+      lap('ia_copia_privada');
+      var workingSS = transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_open', { rowCount: 0 }, function() {
+        return transportePdfOpenWorkingCopy_(workingCopyFile.getId());
       });
-    });
-    lap.reset();
-    var code = response.getResponseCode();
-    var headers = response.getAllHeaders ? response.getAllHeaders() : {};
-    var contentType = String(headers['Content-Type'] || headers['content-type'] || '');
-    if (code < 200 || code >= 300) {
-      throw new Error('Exportacao PDF falhou HTTP ' + code + ': ' + response.getContentText().slice(0, 200));
+      lap.reset();
+      transporteAplicarContatoEmergenciaPdf_(workingSS, courier, spec);
+      lap('ia_contato_emergencia');
+      transportePdfAnonimizarParticipante_(workingSS, payloadFallback, ss);
+      transportePdfOcultarMetadadosInternos_(workingSS);
+      lap('ia_anonimizar_notas');
+      transporteMeasurePerformance_('gerarPdfTransporte', 'working_copy_prepare', { rowCount: spec.ordem.length }, function() {
+        transportePdfPruneDuplicateAndOrder_(workingSS, spec);
+      });
+      lap.reset();
+      // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
+      SpreadsheetApp.flush();
+      lap('ia_flush_copia');
+      conteudoPdf = transportePdfVerificarAnonimizacao_(workingSS, [paciente, payloadFallback.paciente, payloadFallback.participante]);
+      lap('ia_verificar_anonimizacao', conteudoPdf.length);
+      conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
+      lap('ia_hash');
+      Utilities.sleep(700);
+      lap.reset();
+
+      var url = 'https://docs.google.com/spreadsheets/d/' + workingCopyFile.getId() + '/export?' + [
+        'format=pdf',
+        'exportFormat=pdf',
+        'size=A4',
+        'portrait=true',
+        'fitw=true',
+        'top_margin=0.5',
+        'bottom_margin=0.1',
+        'left_margin=0.25',
+        'right_margin=0.25',
+        'sheetnames=false',
+        'printtitle=false',
+        'pagenumbers=false',
+        'gridlines=false',
+        'fzr=false'
+      ].join('&');
+      var response = transporteMeasurePerformance_('gerarPdfTransporte', 'pdf_fetch', { rowCount: 0 }, function() {
+        return UrlFetchApp.fetch(url, {
+          headers: { Authorization: 'Bearer ' + token },
+          muteHttpExceptions: true
+        });
+      });
+      lap.reset();
+      var code = response.getResponseCode();
+      var headers = response.getAllHeaders ? response.getAllHeaders() : {};
+      var contentType = String(headers['Content-Type'] || headers['content-type'] || '');
+      if (code < 200 || code >= 300) {
+        throw new Error('Exportacao PDF falhou HTTP ' + code + ': ' + response.getContentText().slice(0, 200));
+      }
+      blob = response.getBlob();
+      if (blob.getBytes().length < 1000 || (contentType && contentType.indexOf('pdf') === -1)) {
+        throw new Error('Exportacao retornou conteudo inesperado: ' + contentType + ' (' + blob.getBytes().length + ' bytes)');
+      }
+      blob.setName(nomeArquivo + '.pdf');
     }
-    var blob = response.getBlob();
-    if (blob.getBytes().length < 1000 || (contentType && contentType.indexOf('pdf') === -1)) {
-      throw new Error('Exportacao retornou conteudo inesperado: ' + contentType + ' (' + blob.getBytes().length + ' bytes)');
-    }
-    blob.setName(nomeArquivo + '.pdf');
     if (TRANSPORTE_GENERATION_REQUEST_) {
       var sourceSheets = ss.getSheets().map(function(sheet) { return sheet.getName(); }).filter(function(name) { return spec.ordem.indexOf(name) >= 0 || /email/i.test(name); }).sort();
       if (!sourceSheets.length) throw new Error('Não foi possível confirmar os modelos para recuperação da geração.');
