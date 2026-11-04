@@ -435,7 +435,14 @@ function transporteLayoutsPlanilha_(arquivo, opcoes) {
       cel.formula = aba.formulas[a1];
       delete cel.v; delete cel.t; delete cel.runs;
     });
-    var estado = { chave: chave, titulo: aba.titulo, l: l, celulas: celulas, avaliando: {} };
+    // Celulas cobertas por mesclagem (todas menos a ancora): o Sheets descarta o que se grava nelas.
+    var cobertas = {};
+    (l.mesclas || []).forEach(function(m) {
+      for (var r = m[0]; r < m[1]; r++) {
+        for (var c = m[2]; c < m[3]; c++) if (r !== m[0] || c !== m[2]) cobertas[r + ':' + c] = true;
+      }
+    });
+    var estado = { chave: chave, titulo: aba.titulo, l: l, celulas: celulas, cobertas: cobertas, avaliando: {} };
     estado.api = criarSheet(estado);
     return estado;
   }
@@ -493,6 +500,8 @@ function transporteLayoutsPlanilha_(arquivo, opcoes) {
     var cel = celula(estado, r, c, true);
     delete cel.formula; delete cel.runs; delete cel.t; delete cel.tFixo;
     if (valor === null || valor === undefined) valor = '';
+    // setValue numa faixa mesclada (ex.: J10:K10) so guarda o valor na ancora, como no Sheets.
+    if (estado.cobertas[r + ':' + c]) { cel.v = ''; return; }
     if (typeof valor === 'string') {
       var nf = formatoNumero(estado, cel);
       if (valor.charAt(0) === '=') { cel.formula = valor; delete cel.v; return; }
