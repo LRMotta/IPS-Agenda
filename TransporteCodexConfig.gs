@@ -126,6 +126,10 @@ function configurarPlanilhaTransporteCodex(urlOuId) {
 }
 
 function getTransporteSpreadsheetCodex_() {
+  // A planilha em memoria (TransporteLayoutsModelo.gs) nunca pode cair na planilha real.
+  if (typeof TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_ !== 'undefined' && TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_ > 0) {
+    throw new Error('A planilha de Transporte nao pode ser aberta durante a geracao em memoria.');
+  }
   var id = PropertiesService.getScriptProperties().getProperty('TRANSPORTE_SPREADSHEET_ID_CODEX') || '';
   if (!id) {
     try {
@@ -3333,13 +3337,59 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   });
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
-    transporteSetValuesBlock_(folha.getRange('C3:C14'), [
-      transporteParticipanteDocumento_(payload).texto, payload.protocolo || '',
-      payload.investigador || '', payload.temperatura || '',
-      transporteParseDate_(payload.dataColeta), transporteParseDate_(payload.dataEnvio),
-      payload.horaEnvio || '', payload.courier || '', payload.destino || '',
-      payload.awb || '', payload.agendadoPor || '', payload.observacoes || ''
-    ].map(function(value) { return [value === null || value === undefined ? '' : value]; }));
+    transporteEscreverCamposModelos_(ss, payload, materiaisNote);
+  });
+
+  // A abertura pela Agenda adia os templates; a geracao do PDF os prepara
+  // integralmente. Os demais fluxos mantem a preparacao existente.
+  transporteMeasurePerformance_('salvarTransporte', 'prepare_documents', { rowCount: 1 }, function() {
+    if (options.preencherDocumentos !== false) {
+      transportePrepararDocumentosModelos_(ss, payload);
+    }
+  });
+  if (options.preencherDocumentos === false && options.returnPreparedRecord === true) {
+    transporteMeasurePerformance_('salvarTransporte', 'write_operational_fields', { rowCount: 1 }, function() {
+      // Caixa e responsavel tambem sao campos do formulario: persistir para
+      // uma recarga antes do PDF nao recuperar valores de outro transporte.
+      aplicarSolicitacaoCaixaTransporte_(ss, payload);
+    });
+  }
+  transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
+    // Confirmar as escritas na planilha compartilhada antes de liberar o document lock.
+    SpreadsheetApp.flush();
+  });
+  var agendaSync = options.rascunho
+    ? { atualizado: false, motivo: 'Pré-preenchimento ainda não confirmado' }
+    : transporteMeasurePerformance_('salvarTransporte', 'agenda_sync', { rowCount: 1 }, function() {
+      return transporteSincronizarAgenda_(payload);
+    });
+  if (options.returnBootstrap === false) {
+    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync, awbIssue: options.rascunho ? null : transporteAwbAviso_(payload) };
+    if (options.returnPreparedRecord === true) response.registro = transporteRegistroPreparado_(payload);
+    return response;
+  }
+  if (options.rascunho && options.returnPreparedRecord === true) {
+    return { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.', registro: transporteRegistroPreparado_(payload) };
+  }
+  return options.rascunho
+    ? { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.' }
+    : transporteBuildBootstrap_();
+}
+
+// Campos do formulario nas abas-modelo (Folha, Folha DHL/PINEX, Declaracao e ensaios da
+// Peticao). Usada pelo salvamento e pela planilha em memoria (transporteDocsDados_).
+function transporteEscreverCamposModelos_(ss, payload, materiaisNote) {
+  var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
+  var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
+  var folhaDhl = transporteGetSheet_(ss, 'folhaDhlPinex', false);
+  var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
+  transporteSetValuesBlock_(folha.getRange('C3:C14'), [
+    transporteParticipanteDocumento_(payload).texto, payload.protocolo || '',
+    payload.investigador || '', payload.temperatura || '',
+    transporteParseDate_(payload.dataColeta), transporteParseDate_(payload.dataEnvio),
+    payload.horaEnvio || '', payload.courier || '', payload.destino || '',
+    payload.awb || '', payload.agendadoPor || '', payload.observacoes || ''
+  ].map(function(value) { return [value === null || value === undefined ? '' : value]; }));
   transporteSetAgendaLink_(folha.getRange('C15'), payload);
 
   if (folhaDhl) {
@@ -3381,52 +3431,22 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     declaracao.getRange('F30').clearContent();
   }
   declaracao.getRange('F30').setNote(materiaisNote);
-    transporteSetEnsaiosPeticao_(peticao, materiais);
-  });
+  transporteSetEnsaiosPeticao_(peticao, materiais);
+}
 
-  // A abertura pela Agenda adia os templates; a geracao do PDF os prepara
-  // integralmente. Os demais fluxos mantem a preparacao existente.
-  transporteMeasurePerformance_('salvarTransporte', 'prepare_documents', { rowCount: 1 }, function() {
-    if (options.preencherDocumentos !== false) {
-      transporteAplicarAutomacoesTemperatura_(ss, payload);
-      aplicarSolicitacaoCaixaTransporte_(ss, payload);
-      transporteAplicarCourierConfig_(ss, payload.courier);
-      transportePreencherPeticaoMedico_(ss, payload);
-      transportePreencherDeclaracaoCadastros_(ss, payload);
-      if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
-      preencherDadosProtocoloPeticaoWebApp_(ss, payload);
-      preencherPeticaoAnuenciaWebApp_(ss, payload);
-      if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
-      preencherDhlWebApp_(ss, payload);
-    }
-  });
-  if (options.preencherDocumentos === false && options.returnPreparedRecord === true) {
-    transporteMeasurePerformance_('salvarTransporte', 'write_operational_fields', { rowCount: 1 }, function() {
-      // Caixa e responsavel tambem sao campos do formulario: persistir para
-      // uma recarga antes do PDF nao recuperar valores de outro transporte.
-      aplicarSolicitacaoCaixaTransporte_(ss, payload);
-    });
-  }
-  transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
-    // Confirmar as escritas na planilha compartilhada antes de liberar o document lock.
-    SpreadsheetApp.flush();
-  });
-  var agendaSync = options.rascunho
-    ? { atualizado: false, motivo: 'Pré-preenchimento ainda não confirmado' }
-    : transporteMeasurePerformance_('salvarTransporte', 'agenda_sync', { rowCount: 1 }, function() {
-      return transporteSincronizarAgenda_(payload);
-    });
-  if (options.returnBootstrap === false) {
-    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync, awbIssue: options.rascunho ? null : transporteAwbAviso_(payload) };
-    if (options.returnPreparedRecord === true) response.registro = transporteRegistroPreparado_(payload);
-    return response;
-  }
-  if (options.rascunho && options.returnPreparedRecord === true) {
-    return { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.', registro: transporteRegistroPreparado_(payload) };
-  }
-  return options.rascunho
-    ? { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.' }
-    : transporteBuildBootstrap_();
+// Automacoes e cadastros aplicados aos modelos (temperatura, caixa, courier, medico,
+// laboratorio, protocolo, Peticao e DHL). Usada pelo salvamento e por transporteDocsDados_.
+function transportePrepararDocumentosModelos_(ss, payload) {
+  transporteAplicarAutomacoesTemperatura_(ss, payload);
+  aplicarSolicitacaoCaixaTransporte_(ss, payload);
+  transporteAplicarCourierConfig_(ss, payload.courier);
+  transportePreencherPeticaoMedico_(ss, payload);
+  transportePreencherDeclaracaoCadastros_(ss, payload);
+  if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
+  preencherDadosProtocoloPeticaoWebApp_(ss, payload);
+  preencherPeticaoAnuenciaWebApp_(ss, payload);
+  if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
+  preencherDhlWebApp_(ss, payload);
 }
 
 function transporteSetEnsaiosPeticao_(peticao, materiais) {
