@@ -1,5 +1,5 @@
 'use strict';
-// Congela o layout das abas-modelo da planilha de Transporte em TransporteLayoutsModelo.html.
+// Congela o layout das abas-modelo da planilha de Transporte em TransporteLayoutsDados.html.
 //
 // Uso:
 //   node tools/export-transporte-layouts.js <atual.json> <outra-copia.json> [saida]
@@ -265,7 +265,7 @@ if (require.main === module) {
   }
   const ler = (arq) => JSON.parse(fs.readFileSync(arq, 'utf8'));
   const { arquivo, resumo } = exportar(ler(atualArq), ler(outraArq), imagensArq ? ler(imagensArq) : null);
-  const saida = saidaArg || path.join(__dirname, '..', 'TransporteLayoutsModelo.html');
+  const saida = saidaArg || path.join(__dirname, '..', 'TransporteLayoutsDados.html');
   // Sem < e > literais: o arquivo e lido por HtmlService.createHtmlOutputFromFile.
   fs.writeFileSync(saida, JSON.stringify(arquivo).replace(/</g, '\\u003c').replace(/>/g, '\\u003e') + '\n');
   console.table(resumo);
