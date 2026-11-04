@@ -81,12 +81,8 @@ test('dados da folha reunem registro, Agenda, LabCentral e copias do PDF', () =>
   assert.deepEqual(JSON.parse(JSON.stringify(dados.documentos)), [
     { nome: 'Folha de Agendamento', copias: 1 }, { nome: 'Declaração de Transporte', copias: 4 }, { nome: 'Invoice (MARKEN)', copias: 4 }
   ]);
-  // Somente materiais ativos; "Outro" sem quantidades; totais por unidade.
-  assert.deepEqual(JSON.parse(JSON.stringify(dados.materiais.linhas.map(l => [l.material, l.quantidade, l.total, l.outro]))), [
-    ['Sangue', '2×4,0 mL', '8 mL', false], ['Fezes', '1×5,0 g', '5 g', false], ['Swab <nasal>', '', '', true]
-  ]);
-  assert.equal(dados.materiais.tubos, 3);
-  assert.equal(dados.materiais.total, '8 mL · 5 g');
+  // Materiais enviados nao fazem parte da folha (podem mudar de ultima hora).
+  assert.equal(dados.materiais, undefined);
 });
 
 test('DHL/PINEX usam AWB, agendador e COL. Nº da folha DHL/PINEX e pedem a assinatura do agente', () => {
@@ -114,16 +110,9 @@ test('DHL/PINEX usam AWB, agendador e COL. Nº da folha DHL/PINEX e pedem a assi
   assert.doesNotMatch(app.transporteFolhaHtmlPagina_(dhl, {}), /COL\. Nº/);
   assert.doesNotMatch(html, /Origem/);
   assert.doesNotMatch(html, /Documento<\/td>/);
-  // Assinatura ocupa espaco: menos linhas de observacao; com poucos materiais o layout e o normal.
+  // Assinatura ocupa espaco: menos linhas de observacao.
   assert.match(html, /<div class="fa">/);
   assert.match(html, /<p>Participante em jejum\.<\/p>(<div class="linha"><\/div>){5}<\/div>/);
-
-  // DHL/PINEX com muitos materiais usa o modo compacto para caber com a assinatura.
-  const muitos = Array.from({ length: 7 }, (_, i) => ({ row: 21 + i, ativo: true, material: 'M' + i, tubos: 1, formula: '1×1,0', total: 1 }));
-  const compacto = app.transporteFolhaHtmlPagina_(Object.assign({}, dados, { materiais: app.transporteFolhaHtmlMateriais_(muitos) }), {});
-  assert.match(compacto, /<div class="fa compacto">/);
-  assert.match(compacto, /<p>Participante em jejum\.<\/p>(<div class="linha"><\/div>){3}<\/div>/);
-  assert.equal((compacto.match(/<div style="height:8px"><\/div>/g) || []).length, 5);
 });
 
 test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou horarios indisponiveis', () => {
@@ -136,8 +125,9 @@ test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou 
   assert.match(html, /<span class="tipo">CONGELADO<\/span>/);
   assert.match(html, /Terça · retirada <b>09:00 - 12:00<\/b>/);
   assert.match(html, /Caixa de transporte: <b>Sim<\/b>/);
-  assert.match(html, /<b>Outro:<\/b> Swab &lt;nasal&gt;/);
-  assert.match(html, /3 materiais<\/td><td class="c">3<\/td><td><\/td><td class="r">8 mL · 5 g<\/td>/);
+  assert.doesNotMatch(html, /Materiais biológicos|Swab|Sangue|Fezes|Quantidade por tubo/);
+  assert.match(html, /<span class="num">3<\/span>Documentos neste PDF/);
+  assert.match(html, /<span class="num">4<\/span>Observações/);
   assert.match(html, /Invoice \(MARKEN\)<\/td><td class="r copias">4<\/td>/);
   assert.match(html, /<p>Participante em jejum\.<\/p>(<div class="linha"><\/div>){7}<\/div>/);
   assert.match(html, /<div class="fa">/);
@@ -146,7 +136,7 @@ test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou 
   assert.doesNotMatch(html, /display:\s*(flex|grid)|background/);
 });
 
-test('folha sem transporte nem origem omite a faixa; sem materiais avisa', () => {
+test('folha sem transporte nem origem omite a faixa', () => {
   const app = carregar();
   const dados = app.transporteFolhaHtmlDados_({}, registroBase({ agendaSlot: '', idAgenda: '', materiais: [], observacoes: '' }), SPEC_MARKEN, {
     agendaContexto: { visita: '', origem: null }, labCentral: null
@@ -154,7 +144,6 @@ test('folha sem transporte nem origem omite a faixa; sem materiais avisa', () =>
   const html = app.transporteFolhaHtmlPagina_(dados, {});
   assert.doesNotMatch(html, /class="meta"/);
   assert.doesNotMatch(html, />Visita</);
-  assert.match(html, /Nenhum material marcado na Declaração de Transporte\./);
   assert.match(html, /Observações<\/h2>(<div class="linha"><\/div>){8}<\/div>/);
 });
 

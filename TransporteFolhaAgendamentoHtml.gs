@@ -62,9 +62,6 @@ var TRANSPORTE_FOLHA_HTML_CSS_ =
   '.fa .assin{border:1.5px solid #000;padding:10px 12px 14px}' +
   '.fa .assin td{vertical-align:bottom;font-size:8pt;color:#444;white-space:nowrap}' +
   '.fa .assin td.campo{border-bottom:1px solid #000;width:30%}' +
-  // DHL/PINEX com muitos materiais: o bloco de assinatura exige linhas mais baixas para caber na pagina.
-  '.fa.compacto .dados td{padding:1.5px 0}.fa.compacto .tab td{padding:3px 7px}.fa.compacto .linha{height:21px}' +
-  '.fa.compacto .hero td{padding:8px 12px}.fa.compacto .card{padding:8px 12px 9px}' +
   '.fa .rodape td{text-align:left;border-top:1px solid #bdbdbd;padding-top:5px;font-size:7.4pt;color:#555;vertical-align:bottom}';
 
 function transporteFolhaHtmlEsc_(value) {
@@ -83,12 +80,6 @@ function transporteFolhaHtmlData_(value) {
   }
 }
 
-function transporteFolhaHtmlNumero_(value) {
-  var n = Number(value);
-  if (value === '' || value === null || value === undefined || !isFinite(n)) return '';
-  return String(Math.round(n * 1000) / 1000).replace('.', ',');
-}
-
 function transporteFolhaHtmlSlotLabel_(slot) {
   return TRANSPORTE_FOLHA_HTML_SLOTS_[String(slot || '').trim()] || '';
 }
@@ -96,37 +87,6 @@ function transporteFolhaHtmlSlotLabel_(slot) {
 function transporteFolhaHtmlCourierComAssinatura_(courier) {
   var c = transporteNormalizeCourierFromCodex_(courier);
   return c === 'PINEX' || c === 'DHL';
-}
-
-/**
- * Materiais ativos da Declaracao (registro.materiais) -> linhas da folha e totais.
- * "Outro" (F30) aparece sem quantidades, como na Declaracao.
- */
-function transporteFolhaHtmlMateriais_(materiais) {
-  var linhas = [];
-  var tubos = 0;
-  var totais = {};
-  (materiais || []).forEach(function(item) {
-    if (!item || !item.ativo) return;
-    var outro = Number(item.row) === 30;
-    var unidade = outro ? '' : String(item.unit || (typeof codexMatBioItemUnit_ === 'function' ? codexMatBioItemUnit_(item) : 'mL'));
-    var nTubos = Number(item.tubos);
-    if (!outro && isFinite(nTubos) && item.tubos !== '') tubos += nTubos;
-    var total = Number(item.total);
-    if (!outro && item.total !== '' && isFinite(total)) totais[unidade] = (totais[unidade] || 0) + total;
-    linhas.push({
-      material: String(item.material || '').trim(),
-      outro: outro,
-      ensaio: String(item.ensaio || '').trim(),
-      tubos: outro ? '' : String(item.tubos === 0 ? 0 : (item.tubos || '')),
-      quantidade: !outro && item.formula ? String(item.formula).trim() + ' ' + unidade : '',
-      total: !outro && item.total !== '' && isFinite(total) ? transporteFolhaHtmlNumero_(total) + ' ' + unidade : ''
-    });
-  });
-  var totalTexto = ['mL', 'L', 'g'].filter(function(u) { return totais[u]; }).map(function(u) {
-    return transporteFolhaHtmlNumero_(totais[u]) + ' ' + u;
-  }).join(' · ');
-  return { linhas: linhas, tubos: tubos, total: totalTexto };
 }
 
 /**
@@ -270,7 +230,6 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
     endereco: lab ? String(lab.endereco || '').trim() : '',
     cidade: cidade,
     pais: lab ? String(lab.pais || '').trim() : '',
-    materiais: transporteFolhaHtmlMateriais_(registro.materiais),
     documentos: ((spec && spec.ordem) || []).map(function(titulo) {
       return { nome: titulosFolha.indexOf(titulo) >= 0 ? 'Folha de Agendamento' : titulo, copias: spec.copias[titulo] || 1 };
     }),
@@ -296,10 +255,8 @@ function transporteFolhaHtmlPagina_(dados, opcoes) {
   opcoes = opcoes || {};
   var e = transporteFolhaHtmlEsc_;
   var h = [];
-  var m = dados.materiais || { linhas: [] };
-  var compacto = !!dados.assinaturaCourier && m.linhas.length > 3;
-  var espaco = '<div style="height:' + (compacto ? 8 : 14) + 'px"></div>';
-  h.push('<style>' + TRANSPORTE_FOLHA_HTML_CSS_ + '</style><div class="fa' + (compacto ? ' compacto' : '') + '">');
+  var espaco = '<div style="height:14px"></div>';
+  h.push('<style>' + TRANSPORTE_FOLHA_HTML_CSS_ + '</style><div class="fa">');
 
   h.push('<table class="cab"><tr>' +
     (opcoes.logoSrc ? '<td style="width:185px"><img class="logo" src="' + e(opcoes.logoSrc) + '" alt=""></td>' : '') +
@@ -353,33 +310,18 @@ function transporteFolhaHtmlPagina_(dados, opcoes) {
     transporteFolhaHtmlTitulo_(1, 'Estudo e participante') + estudo,
     transporteFolhaHtmlTitulo_(2, 'Destino') + destino));
 
-  var linhasMat = m.linhas.map(function(l) {
-    return '<tr><td>' + (l.outro ? '<b>Outro:</b> ' + e(l.material) : '<b>' + e(l.material) + '</b>') + '</td>' +
-      '<td' + (l.ensaio ? '>' + e(l.ensaio) : ' class="vazio">—') + '</td>' +
-      '<td class="c' + (l.tubos ? '">' + e(l.tubos) : ' vazio">—') + '</td>' +
-      '<td class="c' + (l.quantidade ? '">' + e(l.quantidade) : ' vazio">—') + '</td>' +
-      '<td class="r' + (l.total ? '">' + e(l.total) : ' vazio">—') + '</td></tr>';
-  }).join('');
-  if (!linhasMat) linhasMat = '<tr><td colspan="5" class="vazio">Nenhum material marcado na Declaração de Transporte.</td></tr>';
-  var totalMat = m.linhas.length ? '<tr class="total"><td colspan="2">' + m.linhas.length + (m.linhas.length === 1 ? ' material' : ' materiais') +
-    '</td><td class="c">' + (m.tubos || '') + '</td><td></td><td class="r">' + e(m.total) + '</td></tr>' : '';
-  h.push(espaco + '<div class="card">' +
-    transporteFolhaHtmlTitulo_(3, 'Materiais biológicos', 'conforme Declaração de Transporte') +
-    '<table class="tab"><tr><th style="width:24%">Material</th><th>Ensaio</th><th class="c" style="width:10%">Tubos</th>' +
-    '<th class="c" style="width:22%">Quantidade por tubo</th><th class="r" style="width:13%">Total</th></tr>' +
-    linhasMat + totalMat + '</table></div>');
-
+  // Os materiais enviados nao constam da folha: podem mudar de ultima hora e o registro ficaria incorreto.
   var docs = '<table class="tab"><tr><th>Documento</th><th class="r">Cópias</th></tr>' +
     (dados.documentos || []).map(function(d) {
       return '<tr><td>' + e(d.nome) + '</td><td class="r copias">' + e(d.copias) + '</td></tr>';
     }).join('') + '</table>';
   var nLinhas = TRANSPORTE_FOLHA_HTML_LINHAS_OBS_ - (dados.observacoes ? Math.min(4, Math.ceil(dados.observacoes.length / 60)) : 0) -
-    (dados.assinaturaCourier ? 2 : 0) - (compacto ? 2 : 0);
+    (dados.assinaturaCourier ? 2 : 0);
   var obs = (dados.observacoes ? '<p>' + e(dados.observacoes).replace(/\n/g, '<br>') + '</p>' : '');
   for (var i = 0; i < Math.max(2, nLinhas); i++) obs += '<div class="linha"></div>';
   h.push(espaco + transporteFolhaHtmlDuasColunas_(
-    transporteFolhaHtmlTitulo_(4, 'Documentos neste PDF') + docs,
-    '<div class="obs">' + transporteFolhaHtmlTitulo_(5, 'Observações') + obs + '</div>'));
+    transporteFolhaHtmlTitulo_(3, 'Documentos neste PDF') + docs,
+    '<div class="obs">' + transporteFolhaHtmlTitulo_(4, 'Observações') + obs + '</div>'));
 
   if (dados.assinaturaCourier) {
     h.push(espaco + '<div class="assin"><h2>Recebido pelo agente do courier</h2>' +

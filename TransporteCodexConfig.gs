@@ -126,6 +126,10 @@ function configurarPlanilhaTransporteCodex(urlOuId) {
 }
 
 function getTransporteSpreadsheetCodex_() {
+  // A planilha em memoria (TransporteLayoutsModelo.gs) nunca pode cair na planilha real.
+  if (typeof TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_ !== 'undefined' && TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_ > 0) {
+    throw new Error('A planilha de Transporte nao pode ser aberta durante a geracao em memoria.');
+  }
   var id = PropertiesService.getScriptProperties().getProperty('TRANSPORTE_SPREADSHEET_ID_CODEX') || '';
   if (!id) {
     try {
@@ -426,8 +430,10 @@ function transportePreservarVinculoAgendaPayload_(payload, range) {
 
 function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   if (!idAgenda) throw new Error('ID da Agenda nao informado.');
+  var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
   var sh = getAgendaSheet_();
   var lastRow = sh.getLastRow();
+  lap('rar_aba_agenda');
   if (lastRow < 2) throw new Error('Agenda sem registros.');
   if (!slot) {
     var row = encontrarLinhaPorId(sh, idAgenda);
@@ -437,6 +443,7 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   slot = normalizarSlotTransporteCodex_(slot, true);
   // A mesma leitura resolve o evento e os vínculos de Backup I/II, sem leituras por linha.
   var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  lap('rar_ler_linhas', rows.length);
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i][AGENDA_CFG.idx.id] || '').trim() !== String(idAgenda).trim()) continue;
     var evento = agendaRowToObject_(rows[i], i + 2);
@@ -2608,8 +2615,11 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
   options = options || {};
   var idAgenda = String(registro.idAgenda || '').trim();
   if (!idAgenda) return registro;
+  // Subetapas de rp_agenda_registro (so tempos): leitura da Agenda, participante e investigador.
+  var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
   try {
     var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda, registro.agendaSlot || registro.slot) || {};
+    lap('rar_evento');
     var referencia = {
       participanteCadastroId: evento.participantCadastroId || evento.participanteCadastroId || '',
       identificacaoParticipante: evento.idParticipante || registro.identificacaoParticipante || registro.idParticipante || '',
@@ -2621,6 +2631,7 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
     if (options.obrigatorio && !participante) {
       throw new Error('Participante vinculado à Agenda não encontrado de forma inequívoca no cadastro. Reabra o Transporte pela Agenda.');
     }
+    lap('rar_participante');
     var projeto = String(evento.projeto || (participante && participante.projeto) || registro.protocolo || '').trim();
     var investigador = String(
       transporteInvestigadorPayload_(projeto, options) ||
@@ -2628,6 +2639,7 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
       (participante && (participante.investigador || participante.medico)) ||
       registro.investigador || ''
     ).trim();
+    lap('rar_investigador');
     var destinoAgenda = transporteDestinoAgenda_(evento, registro.agendaSlot || registro.slot);
     var dataColetaAgenda = evento.transporteDatasColeta && evento.transporteDatasColeta[normalizarSlotTransporteCodex_(registro.agendaSlot || registro.slot)];
     if (dataColetaAgenda) registro.dataColeta = dataColetaAgenda;
@@ -3117,10 +3129,17 @@ function transporteAwbReservar_(payload, strict) {
     if (!payload.envioId) payload.envioId = Utilities.getUuid().replace(/-/g, '');
     if (!/^[a-f0-9]{32}$/i.test(payload.envioId)) throw new Error('Identificação do envio inválida. Reabra o Transporte.');
   }
-  var context = agendaAwbContexto_(getAgendaSheetForRead_());
+  // Subetapas de rp_awb (so tempos).
+  var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
+  var agendaAwb = getAgendaSheetForRead_();
+  lap('awb_aba_agenda');
+  var context = agendaAwbContexto_(agendaAwb);
+  lap('awb_contexto', context.entries.length);
   transporteAwbPreservarFormulario_(payload, context);
+  lap('awb_formulario');
   var entry = transporteAwbRegistro_(payload);
   agendaAwbReservar_(context, [entry], strict);
+  lap('awb_reservar');
 }
 
 function transporteAwbPreservarFormulario_(payload, context) {
@@ -3318,13 +3337,59 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   });
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
-    transporteSetValuesBlock_(folha.getRange('C3:C14'), [
-      transporteParticipanteDocumento_(payload).texto, payload.protocolo || '',
-      payload.investigador || '', payload.temperatura || '',
-      transporteParseDate_(payload.dataColeta), transporteParseDate_(payload.dataEnvio),
-      payload.horaEnvio || '', payload.courier || '', payload.destino || '',
-      payload.awb || '', payload.agendadoPor || '', payload.observacoes || ''
-    ].map(function(value) { return [value === null || value === undefined ? '' : value]; }));
+    transporteEscreverCamposModelos_(ss, payload, materiaisNote);
+  });
+
+  // A abertura pela Agenda adia os templates; a geracao do PDF os prepara
+  // integralmente. Os demais fluxos mantem a preparacao existente.
+  transporteMeasurePerformance_('salvarTransporte', 'prepare_documents', { rowCount: 1 }, function() {
+    if (options.preencherDocumentos !== false) {
+      transportePrepararDocumentosModelos_(ss, payload);
+    }
+  });
+  if (options.preencherDocumentos === false && options.returnPreparedRecord === true) {
+    transporteMeasurePerformance_('salvarTransporte', 'write_operational_fields', { rowCount: 1 }, function() {
+      // Caixa e responsavel tambem sao campos do formulario: persistir para
+      // uma recarga antes do PDF nao recuperar valores de outro transporte.
+      aplicarSolicitacaoCaixaTransporte_(ss, payload);
+    });
+  }
+  transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
+    // Confirmar as escritas na planilha compartilhada antes de liberar o document lock.
+    SpreadsheetApp.flush();
+  });
+  var agendaSync = options.rascunho
+    ? { atualizado: false, motivo: 'Pré-preenchimento ainda não confirmado' }
+    : transporteMeasurePerformance_('salvarTransporte', 'agenda_sync', { rowCount: 1 }, function() {
+      return transporteSincronizarAgenda_(payload);
+    });
+  if (options.returnBootstrap === false) {
+    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync, awbIssue: options.rascunho ? null : transporteAwbAviso_(payload) };
+    if (options.returnPreparedRecord === true) response.registro = transporteRegistroPreparado_(payload);
+    return response;
+  }
+  if (options.rascunho && options.returnPreparedRecord === true) {
+    return { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.', registro: transporteRegistroPreparado_(payload) };
+  }
+  return options.rascunho
+    ? { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.' }
+    : transporteBuildBootstrap_();
+}
+
+// Campos do formulario nas abas-modelo (Folha, Folha DHL/PINEX, Declaracao e ensaios da
+// Peticao). Usada pelo salvamento e pela planilha em memoria (transporteDocsDados_).
+function transporteEscreverCamposModelos_(ss, payload, materiaisNote) {
+  var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
+  var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
+  var folhaDhl = transporteGetSheet_(ss, 'folhaDhlPinex', false);
+  var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
+  transporteSetValuesBlock_(folha.getRange('C3:C14'), [
+    transporteParticipanteDocumento_(payload).texto, payload.protocolo || '',
+    payload.investigador || '', payload.temperatura || '',
+    transporteParseDate_(payload.dataColeta), transporteParseDate_(payload.dataEnvio),
+    payload.horaEnvio || '', payload.courier || '', payload.destino || '',
+    payload.awb || '', payload.agendadoPor || '', payload.observacoes || ''
+  ].map(function(value) { return [value === null || value === undefined ? '' : value]; }));
   transporteSetAgendaLink_(folha.getRange('C15'), payload);
 
   if (folhaDhl) {
@@ -3366,52 +3431,22 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     declaracao.getRange('F30').clearContent();
   }
   declaracao.getRange('F30').setNote(materiaisNote);
-    transporteSetEnsaiosPeticao_(peticao, materiais);
-  });
+  transporteSetEnsaiosPeticao_(peticao, materiais);
+}
 
-  // A abertura pela Agenda adia os templates; a geracao do PDF os prepara
-  // integralmente. Os demais fluxos mantem a preparacao existente.
-  transporteMeasurePerformance_('salvarTransporte', 'prepare_documents', { rowCount: 1 }, function() {
-    if (options.preencherDocumentos !== false) {
-      transporteAplicarAutomacoesTemperatura_(ss, payload);
-      aplicarSolicitacaoCaixaTransporte_(ss, payload);
-      transporteAplicarCourierConfig_(ss, payload.courier);
-      transportePreencherPeticaoMedico_(ss, payload);
-      transportePreencherDeclaracaoCadastros_(ss, payload);
-      if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
-      preencherDadosProtocoloPeticaoWebApp_(ss, payload);
-      preencherPeticaoAnuenciaWebApp_(ss, payload);
-      if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
-      preencherDhlWebApp_(ss, payload);
-    }
-  });
-  if (options.preencherDocumentos === false && options.returnPreparedRecord === true) {
-    transporteMeasurePerformance_('salvarTransporte', 'write_operational_fields', { rowCount: 1 }, function() {
-      // Caixa e responsavel tambem sao campos do formulario: persistir para
-      // uma recarga antes do PDF nao recuperar valores de outro transporte.
-      aplicarSolicitacaoCaixaTransporte_(ss, payload);
-    });
-  }
-  transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
-    // Confirmar as escritas na planilha compartilhada antes de liberar o document lock.
-    SpreadsheetApp.flush();
-  });
-  var agendaSync = options.rascunho
-    ? { atualizado: false, motivo: 'Pré-preenchimento ainda não confirmado' }
-    : transporteMeasurePerformance_('salvarTransporte', 'agenda_sync', { rowCount: 1 }, function() {
-      return transporteSincronizarAgenda_(payload);
-    });
-  if (options.returnBootstrap === false) {
-    var response = { ok: true, rascunho: options.rascunho === true, agendaSync: agendaSync, awbIssue: options.rascunho ? null : transporteAwbAviso_(payload) };
-    if (options.returnPreparedRecord === true) response.registro = transporteRegistroPreparado_(payload);
-    return response;
-  }
-  if (options.rascunho && options.returnPreparedRecord === true) {
-    return { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.', registro: transporteRegistroPreparado_(payload) };
-  }
-  return options.rascunho
-    ? { rascunho: true, mensagem: 'Transporte pre-preenchido. Complete e salve na tela de Transporte.' }
-    : transporteBuildBootstrap_();
+// Automacoes e cadastros aplicados aos modelos (temperatura, caixa, courier, medico,
+// laboratorio, protocolo, Peticao e DHL). Usada pelo salvamento e por transporteDocsDados_.
+function transportePrepararDocumentosModelos_(ss, payload) {
+  transporteAplicarAutomacoesTemperatura_(ss, payload);
+  aplicarSolicitacaoCaixaTransporte_(ss, payload);
+  transporteAplicarCourierConfig_(ss, payload.courier);
+  transportePreencherPeticaoMedico_(ss, payload);
+  transportePreencherDeclaracaoCadastros_(ss, payload);
+  if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
+  preencherDadosProtocoloPeticaoWebApp_(ss, payload);
+  preencherPeticaoAnuenciaWebApp_(ss, payload);
+  if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
+  preencherDhlWebApp_(ss, payload);
 }
 
 function transporteSetEnsaiosPeticao_(peticao, materiais) {
@@ -4046,65 +4081,75 @@ function transporteSincronizarAgenda_(payload) {
   // Subetapas de agenda_sync: localizam o gargalo sem alterar o fluxo.
   var lap = transporteLapStart_('salvarTransporte');
   var agenda = getAgendaSheet_();
+  lap('as_aba_agenda');
   var linha = encontrarLinhaPorId(agenda, idAgenda);
   lap('as_lookup');
   if (!linha) throw new Error('Os dados foram salvos no Transporte, mas o agendamento ' + idAgenda + ' não foi encontrado.');
   var changes = [];
   var warnings = [];
-  var courier = String(agenda.getRange(linha, idx.nome + 1).getDisplayValue() || '').trim();
-  function preencherSeVazio(field, column, value) {
+  // Uma leitura da linha antes de qualquer escrita: ler depois de gravar na Agenda
+  // obriga o Sheets a aplicar as escritas pendentes a cada leitura (12 s medidos).
+  var colunasLidas = [idx.nome, idx.destino, idx.temp, idx.status, idx.material, idx.matBio, idx.awb]
+    .filter(function(c) { return c !== undefined; });
+  var largura = Math.max.apply(null, colunasLidas) + 1;
+  var linhaRange = agenda.getRange(linha, 1, 1, largura);
+  var exibidos = linhaRange.getDisplayValues()[0];
+  var valores = linhaRange.getValues()[0];
+  function atual(c, semValor) {
+    return String(exibidos[c] || (semValor ? '' : valores[c]) || '').trim();
+  }
+  var courier = atual(idx.nome, true);
+  var escritas = [];
+  function preencherSeVazio(field, c, value) {
     value = String(value || '').trim();
-    if (!value) return;
-    var cell = agenda.getRange(linha, column);
-    var anterior = String(cell.getDisplayValue() || cell.getValue() || '').trim();
-    if (anterior) return;
-    cell.setValue(value);
+    if (!value || atual(c)) return;
+    escritas.push({ c: c, value: value });
     changes.push({ field: field, oldValue: '', newValue: value });
   }
-  preencherSeVazio('Transporte ' + slot + ' - Destino', idx.destino + 1, payload.destino);
-  if (idx.temp !== undefined) preencherSeVazio('Transporte ' + slot + ' - Temperatura', idx.temp + 1, payload.temperatura);
-  // Salvar/preparar documentos não comprova que o e-mail foi enviado.
-  // O monitor da cópia recebida promove o slot para Agendado depois do envio.
-  var statusNovo = String(payload.statusCourier || payload.status || '').trim();
-  if (statusNovo) {
-    var statusCell = agenda.getRange(linha, idx.status + 1);
-    var statusAnterior = String(statusCell.getDisplayValue() || statusCell.getValue() || '').trim();
-    var statusAnteriorNorm = normText_(statusAnterior);
-    if (!statusAnterior || statusAnteriorNorm === 'nao agendado') {
-      statusCell.setValue(statusNovo);
-      changes.push({ field: 'Transporte ' + slot + ' - Status', oldValue: statusAnterior, newValue: statusNovo });
-    }
-  }
-
-  var materialAgenda = transporteMateriaisParaAgenda_(payload.materiais || []);
-  var materialAtual = String(agenda.getRange(linha, idx.material + 1).getDisplayValue() || '').trim();
-  var materialJsonAtual = String(agenda.getRange(linha, idx.matBio + 1).getDisplayValue() || '').trim();
-  if (!materialAtual && materialAgenda.summary) {
-    agenda.getRange(linha, idx.material + 1).setValue(materialAgenda.summary);
-    changes.push({ field: 'Transporte ' + slot + ' - Materiais', oldValue: '', newValue: materialAgenda.summary });
-  }
-  if (!materialJsonAtual && materialAgenda.json) {
-    agenda.getRange(linha, idx.matBio + 1).setValue(materialAgenda.json);
-    changes.push({ field: 'Transporte ' + slot + ' - Materiais estruturados', oldValue: '', newValue: materialAgenda.summary || materialAgenda.json });
-  }
-
+  // A AWB primeiro: agendaSetAwbValue_ le a celula e reserva a AWB antes das demais escritas.
+  var awbAtual = '';
   if (awb && idx.awb !== undefined) {
-    var range = agenda.getRange(linha, idx.awb + 1);
-    var awbAnterior = String(range.getDisplayValue() || range.getValue() || '').trim();
+    var awbAnterior = atual(idx.awb);
     var awbAnteriorNorm = normalizarAwbCourier_(awbAnterior);
     var awbNovaNorm = normalizarAwbCourier_(awb);
+    awbAtual = awbAnterior;
     if (!awbAnterior) {
+      var range = agenda.getRange(linha, idx.awb + 1);
       if (typeof agendaSetAwbValue_ === 'function') agendaSetAwbValue_(range, awb, courier);
       else range.setValue(awb);
+      awbAtual = awb;
       changes.push({ field: 'Transporte ' + slot + ' - AWB', oldValue: '', newValue: awb });
     } else if (awbAnteriorNorm !== awbNovaNorm) {
       warnings.push('Agenda ja possui AWB diferente para o transporte ' + slot + ' (' + awbAnterior + '). A AWB do Transporte (' + awb + ') nao foi sobrescrita automaticamente.');
     }
   }
+  preencherSeVazio('Transporte ' + slot + ' - Destino', idx.destino, payload.destino);
+  if (idx.temp !== undefined) preencherSeVazio('Transporte ' + slot + ' - Temperatura', idx.temp, payload.temperatura);
+  // Salvar/preparar documentos não comprova que o e-mail foi enviado.
+  // O monitor da cópia recebida promove o slot para Agendado depois do envio.
+  var statusNovo = String(payload.statusCourier || payload.status || '').trim();
+  if (statusNovo) {
+    var statusAnterior = atual(idx.status);
+    if (!statusAnterior || normText_(statusAnterior) === 'nao agendado') {
+      escritas.push({ c: idx.status, value: statusNovo });
+      changes.push({ field: 'Transporte ' + slot + ' - Status', oldValue: statusAnterior, newValue: statusNovo });
+    }
+  }
+
+  var materialAgenda = transporteMateriaisParaAgenda_(payload.materiais || []);
+  if (!atual(idx.material, true) && materialAgenda.summary) {
+    escritas.push({ c: idx.material, value: materialAgenda.summary });
+    changes.push({ field: 'Transporte ' + slot + ' - Materiais', oldValue: '', newValue: materialAgenda.summary });
+  }
+  if (!atual(idx.matBio, true) && materialAgenda.json) {
+    escritas.push({ c: idx.matBio, value: materialAgenda.json });
+    changes.push({ field: 'Transporte ' + slot + ' - Materiais estruturados', oldValue: '', newValue: materialAgenda.summary || materialAgenda.json });
+  }
+  // Escritas em sequencia, sem leituras intercaladas (celulas distintas da mesma linha).
+  escritas.forEach(function(w) { agenda.getRange(linha, w.c + 1).setValue(w.value); });
+
   var slotRoman = { '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[slot];
   if (slotRoman && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
-    var awbAtualRange = agenda.getRange(linha, idx.awb + 1);
-    var awbAtual = String(awbAtualRange.getDisplayValue() || awbAtualRange.getValue() || '').trim();
     agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual, slotRoman);
   }
   lap('as_campos', changes.length);
@@ -4714,8 +4759,12 @@ function gerarPdfTransporteInterno_(options, access) {
   options = Object.assign({}, options, { temperaturaPdf: temperaturaPdf });
   if (request && request.record.pdf && request.record.pdf.temperaturaPdf) transporteValidarTemperaturaGeracao_(temperaturaPdf, request.record.pdf.temperaturaPdf);
   transporteGenerationCheckpoint_({ manifestHash: manifestoPdf.hash, temperaturaPdf: temperaturaPdf, generationRequestId: options.generationRequestId || '' });
+  // salvarTransporteInterno_ acima ja preencheu os modelos (preencherDocumentos) neste lock.
+  var interno = savedTransport && savedTransport.registro
+    ? { documentosPreenchidosCourier: String(savedTransport.registro.courier || '') }
+    : null;
   var result = request && request.record.pdf ? Object.assign({}, request.record.pdf) : transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
-    return imprimirTodasAbas_(options);
+    return imprimirTodasAbas_(options, interno);
   });
   // O exportador legado retorna texto; a RPC deve sinalizar falha ao cliente.
   if (typeof result === 'string' && /^Erro\b/i.test(result)) throw new Error(result);
@@ -6445,7 +6494,9 @@ function imprimirTodasAbas(options) {
   });
 }
 
-function imprimirTodasAbas_(options) {
+// interno: so do servidor (nunca de options, que vem do cliente).
+// interno.documentosPreenchidosCourier: courier com que os modelos acabaram de ser preenchidos.
+function imprimirTodasAbas_(options, interno) {
   var workingCopyFile = null;
   try {
     options = options || {};
@@ -6498,36 +6549,44 @@ function imprimirTodasAbas_(options) {
     if (formatoHtml && TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(transporteNormalizeCourierFromCodex_(courier)) < 0) {
       throw new Error('O novo formato (HTML) ainda nao esta disponivel para a courier ' + courier + '. Use Gerar PDF.');
     }
-    var payloadForAutomation = {
-      courier: courier,
-      temperatura: temperatura,
-      dataEnvio: dataEnvio,
-      awb: awb,
-      responsavelEntrega: responsavelEntrega,
-      solicitarCaixa: payloadFallback.solicitarCaixa || transporteReadSolicitarCaixa_(ss, courier, temperatura)
-    };
-    payloadForAutomation.caixaTransporte = (transporteCaixaDoModelo_(ss) || {}).caixaTransporte;
-    transporteAplicarAutomacoesTemperatura_(ss, payloadForAutomation);
-    aplicarSolicitacaoCaixaTransporte_(ss, payloadForAutomation);
-    transporteAplicarCourierConfig_(ss, courier);
-    transportePreencherPeticaoMedico_(ss, {
-      investigador: investigador
-    });
-    transportePreencherDeclaracaoCadastros_(ss, {
-      investigador: investigador,
-      destino: destino
-    });
-    if (transporteNormalizeCourierFromCodex_(courier) === 'PINEX') {
-      atualizarCommercialInvoicePinexB34_(ss);
+    // gerarPdfTransporteInterno_ acabou de preencher os modelos (salvarTransporteInterno_ com
+    // preencherDocumentos) no mesmo lock: repetir custaria ~8 s sem mudar nada. So vale pelo
+    // sinal interno e com a mesma courier; chamadas diretas continuam preenchendo.
+    var jaPreenchido = !!(interno && interno.documentosPreenchidosCourier) &&
+      transporteNormalizeCourierFromCodex_(interno.documentosPreenchidosCourier) === transporteNormalizeCourierFromCodex_(courier);
+    if (!jaPreenchido) {
+      var payloadForAutomation = {
+        courier: courier,
+        temperatura: temperatura,
+        dataEnvio: dataEnvio,
+        awb: awb,
+        responsavelEntrega: responsavelEntrega,
+        solicitarCaixa: payloadFallback.solicitarCaixa || transporteReadSolicitarCaixa_(ss, courier, temperatura)
+      };
+      payloadForAutomation.caixaTransporte = (transporteCaixaDoModelo_(ss) || {}).caixaTransporte;
+      transporteAplicarAutomacoesTemperatura_(ss, payloadForAutomation);
+      aplicarSolicitacaoCaixaTransporte_(ss, payloadForAutomation);
+      transporteAplicarCourierConfig_(ss, courier);
+      transportePreencherPeticaoMedico_(ss, {
+        investigador: investigador
+      });
+      transportePreencherDeclaracaoCadastros_(ss, {
+        investigador: investigador,
+        destino: destino
+      });
+      if (transporteNormalizeCourierFromCodex_(courier) === 'PINEX') {
+        atualizarCommercialInvoicePinexB34_(ss);
+      }
+      preencherDadosProtocoloPeticaoWebApp_(ss, {
+        protocolo: protocolo,
+        destino: destino
+      });
+      if (payloadFallback && payloadFallback.materiais) {
+        preencherPeticaoAnuenciaWebApp_(ss, payloadFallback);
+      }
+      preencherDhlWebApp_(ss, payloadFallback);
     }
-    preencherDadosProtocoloPeticaoWebApp_(ss, {
-      protocolo: protocolo,
-      destino: destino
-    });
-    if (payloadFallback && payloadFallback.materiais) {
-      preencherPeticaoAnuenciaWebApp_(ss, payloadFallback);
-    }
-    preencherDhlWebApp_(ss, payloadFallback);
+    // Sempre: bloqueia volumes que nao cabem (o salvamento so ajusta, sem bloquear).
     transporteAjustarVolumesDeclaracao_(transporteCodexGetSheet_(ss, 'declaracaoTransp', false), true);
     lap('ia_prefill');
 

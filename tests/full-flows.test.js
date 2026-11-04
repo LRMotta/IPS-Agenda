@@ -976,6 +976,40 @@ test('fluxo completo sincroniza Transporte sem sobrescrever AWB existente', () =
   assert.equal(sheet.rows[1][6], 'Lab Teste');
 });
 
+test('sincronizacao le a linha da Agenda uma vez, antes de qualquer escrita', () => {
+  const row = Array(28).fill('');
+  row[0] = 'MARKEN';
+  const sheet = new FakeSheet('Agenda', [Array(28).fill(''), row]);
+  const ops = [];
+  const getRange = sheet.getRange.bind(sheet);
+  sheet.getRange = (...args) => {
+    const range = getRange(...args);
+    for (const name of ['getValue', 'getValues', 'getDisplayValue', 'getDisplayValues']) {
+      const original = range[name] && range[name].bind(range);
+      if (original) range[name] = () => { ops.push('read'); return original(); };
+    }
+    for (const name of ['setValue', 'setValues']) {
+      const original = range[name].bind(range);
+      range[name] = (...values) => { ops.push('write'); return original(...values); };
+    }
+    return range;
+  };
+  const context = transportSyncContext(sheet);
+  let backupAwb;
+  context.agendaAtualizarBackupAwbVinculado_ = (_agenda, _linha, awb) => { backupAwb = awb; };
+  context.transporteMateriaisParaAgenda_ = () => ({ summary: 'Soro', json: '[{"tipo":"soro"}]' });
+  const result = context.transporteSincronizarAgenda_({
+    idAgenda: 'EVT-1', agendaSlot: '1', awb: '2222222222', destino: 'Lab Teste',
+    temperatura: 'CONGELADO', status: 'Agendado', materiais: [{}]
+  });
+  const firstWrite = ops.indexOf('write');
+  assert.ok(firstWrite > 0);
+  assert.equal(ops.slice(firstWrite).indexOf('read'), -1, ops.join(','));
+  assert.deepEqual([3, 6, 1, 2, 4, 5].map(c => sheet.rows[1][c]), ['2222222222', 'Lab Teste', 'CONGELADO', 'Agendado', 'Soro', '[{"tipo":"soro"}]']);
+  assert.equal(backupAwb, '2222222222');
+  assert.equal(result.campos.length, 6);
+});
+
 test('histórico só registra atualização concluída depois da persistência e ignora gravação falha', () => {
   const sheet = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs', 'ID Pessoa'],

@@ -204,6 +204,39 @@ test('geracao salva uma vez e devolve avisos de sincronizacao da Agenda', () => 
 });
 
 
+test('geracao com payload sinaliza ao exportador que os modelos ja foram preenchidos', () => {
+  const s = server({ SpreadsheetApp: { flush() {} } });
+  s.salvarTransporteInterno_ = () => ({ registro: { courier: 'PINEX' } });
+  s.transporteValidarManifestoPdf_ = () => ({ hash: 'hash' });
+  let interno;
+  s.imprimirTodasAbas_ = (_options, recebido) => { interno = recebido; return { type: 'pdf', courier: 'PINEX', fileId: 'PDF' }; };
+  s.transporteReadRegistro_ = () => ({});
+  s.transporteMonitorReferencia_ = () => '';
+  s.gerarPdfTransporteInterno_({ payload: {} });
+  assert.deepEqual({ ...interno }, { documentosPreenchidosCourier: 'PINEX' });
+  // Sem payload nada foi salvo: o exportador preenche normalmente.
+  s.gerarPdfTransporteInterno_({ documentosPreenchidosCourier: 'PINEX' });
+  assert.equal(interno, null);
+});
+
+test('exportador nao repete o preenchimento ja feito na mesma courier, mas sempre bloqueia volumes', () => {
+  function rodar(interno) {
+    const { s } = pdfFixture();
+    let preenchimentos = 0;
+    const volumes = [];
+    s.transporteAplicarCourierConfig_ = () => { preenchimentos++; };
+    s.preencherDhlWebApp_ = () => { preenchimentos++; };
+    s.transporteAjustarVolumesDeclaracao_ = (_sheet, falhar) => volumes.push(falhar);
+    const result = s.imprimirTodasAbas_({ payload: {} }, interno);
+    assert.equal(typeof result, 'object', String(result));
+    return { preenchimentos, volumes };
+  }
+  assert.deepEqual(rodar(undefined), { preenchimentos: 2, volumes: [true] });
+  assert.deepEqual(rodar({ documentosPreenchidosCourier: 'DHL' }), { preenchimentos: 0, volumes: [true] });
+  // Courier diferente da preenchida: preenche de novo.
+  assert.deepEqual(rodar({ documentosPreenchidosCourier: 'MARKEN' }), { preenchimentos: 2, volumes: [true] });
+});
+
 test('exportador confirma ID antes de compartilhamento e conserva intencao quando checkpoint falha', () => {
   const { s } = pdfFixture();
   const phases = [];
