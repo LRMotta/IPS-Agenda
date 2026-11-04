@@ -1071,6 +1071,32 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
  */
 var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX'];
 
+// Couriers com geracao real em HTML (mesmas do diagnostico).
+var TRANSPORTE_DOCS_GRADE_COURIERS_HTML_ = TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_;
+
+/* Geracao real em HTML (botao "Gerar PDF (HTML)"). Usa as abas ja preenchidas da planilha
+ * de Transporte (imprimirTodasAbas_ preenche e persiste antes), aplica as mesmas protecoes
+ * (identificacao, contato de emergencia, bloqueio de nome) e converte o HTML em PDF, sem
+ * copia temporaria da planilha. Devolve { blob, conteudo }; o conteudo alimenta o hash. */
+function transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payload, nomeArquivo) {
+  var courierNorm = transporteNormalizeCourierFromCodex_(courier);
+  var contexto = transporteDocsGradeContextoProtecao_(ss, courierNorm, payload);
+  var carregado = transporteDocsGradeCarregar_(ss, spec.ordem, {});
+  var conteudo = transporteDocsGradeProtegerConteudo_(carregado.abas, contexto);
+  var folha = transporteFolhaHtmlParaGrade_(ss, Object.assign({}, payload, { courier: courierNorm }), spec, {});
+  var html = transporteDocsGradeMontar_(carregado.abas, spec.ordem.map(function(titulo) {
+    return { aba: titulo, copias: spec.copias[titulo], html: folha.abas.indexOf(titulo) >= 0 ? folha.html : '' };
+  }), {});
+  var blob = HtmlService.createHtmlOutput(html).getBlob().getAs(MimeType.PDF).setName(nomeArquivo + '.pdf');
+  var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
+  var esperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
+  if (paginas !== esperadas) {
+    throw new Error('O PDF em HTML saiu com ' + paginas + ' paginas (esperado: ' + esperadas + '). Use Gerar PDF (formato planilha) e avise o suporte.');
+  }
+  if (carregado.info && carregado.info.imagensOmitidas) transporteRegistrarAviso_('PDF_HTML_IMAGEM_OMITIDA');
+  return { blob: blob, conteudo: conteudo };
+}
+
 function diagnosticarGradeTransporteHtmlOcasa() {
   return diagnosticarGradeTransporteHtml('OCASA');
 }

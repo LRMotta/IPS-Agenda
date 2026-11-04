@@ -275,7 +275,8 @@
         <div class="action-status" id="actionStatus" role="status" aria-live="polite">Pronto.</div>
         <button class="btn" id="btnSaveTransport" onclick="saveData()" title="Gravar dados na planilha de transporte"><span class="material-symbols-outlined">save</span><span class="btn-label">Salvar</span></button>
         <button class="btn secondary" type="button" onclick="newTransportGeneration()" title="Criar outro PDF e outro rascunho com os dados atuais, após conferir os documentos existentes">Gerar novamente</button>
-        <button class="btn" id="btnPdfTransport" onclick="runPdf()"><span class="material-symbols-outlined">picture_as_pdf</span><span class="btn-label">Gerar PDF</span></button>
+        <button class="btn" id="btnPdfTransport" onclick="runPdf('')"><span class="material-symbols-outlined">picture_as_pdf</span><span class="btn-label">Gerar PDF</span></button>
+        <button class="btn" id="btnPdfTransportHtml" onclick="runPdf('html')" title="Novo formato: gera o PDF a partir de HTML (couriers MARKEN, OCASA, DHL e PINEX). O botão Gerar PDF continua usando as planilhas."><span class="material-symbols-outlined">code</span><span class="btn-label">Gerar PDF (HTML)</span></button>
         <button class="btn danger" onclick="clearData()" title="Limpar o formulário para iniciar outro envio"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
       </div>
     </div>
@@ -484,7 +485,7 @@
       state.lastPdfResult = null;
       if (hadPdf && !defer) renderIssues();
       setButtonLabel('btnSaveTransport', 'Salvar alteracoes');
-      if (defer) { setButtonState('btnSaveTransport', true, 'Atualizando materiais...'); setButtonState('btnPdfTransport', true, 'Atualizando materiais...'); }
+      if (defer) { setButtonState('btnSaveTransport', true, 'Atualizando materiais...'); setButtonState('btnPdfTransport', true, 'Atualizando materiais...'); setButtonState('btnPdfTransportHtml', true, 'Atualizando materiais...'); }
       else updateTransportActionState();
       var el = document.getElementById('actionStatus');
       var currentType = el ? String(el.dataset.statusType || '') : '';
@@ -622,6 +623,7 @@
         : (transportHasUnsavedChanges ? 'Ha alteracoes nao salvas.' : 'Pronto para salvar.');
       setButtonState('btnSaveTransport', blocked, title);
       setButtonState('btnPdfTransport', blocked, blocked ? title : 'Salvar e gerar PDF.');
+      setButtonState('btnPdfTransportHtml', blocked, blocked ? title : 'Salvar e gerar PDF no novo formato (HTML).');
     }
 
     function toast(msg, type) {
@@ -2230,12 +2232,14 @@
       }, 'Salvando...');
     }
 
+    var transportPdfFormat = '';
+
     function transportGenerationStorageKey(payload) {
       // Somente uma impressão numérica local, nunca os dados pessoais do formulário.
       var value = JSON.stringify(payload), hash = 2166136261;
       for (var i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
       var owner = state && state.access ? state.access.email || '' : '';
-      return 'ips-transport-generation-v1:' + owner + ':' + (hash >>> 0).toString(16) + ':' + value.length;
+      return 'ips-transport-generation-v1:' + owner + (transportPdfFormat ? ':' + transportPdfFormat : '') + ':' + (hash >>> 0).toString(16) + ':' + value.length;
     }
 
     function transportRandomId() {
@@ -2263,6 +2267,9 @@
       runPdf();
     }
 
+    function pdfButtonId() { return transportPdfFormat === 'html' ? 'btnPdfTransportHtml' : 'btnPdfTransport'; }
+    function pdfButtonText() { return transportPdfFormat === 'html' ? 'Gerar PDF (HTML)' : 'Gerar PDF'; }
+
     function saveAndRun(actionName, okMsg) {
       if (!ensureRequiredTransportFields()) return;
       var payload = collectPayload();
@@ -2275,12 +2282,12 @@
         toast(storageMsg, 'danger');
         return;
       }
-      setButtonLabel('btnPdfTransport', 'Gerando...');
+      setButtonLabel(pdfButtonId(), 'Gerando...');
       setBusy(true, 'Salvando e gerando PDF e rascunho...');
       google.script.run
         .withSuccessHandler(function(res) {
           setBusy(false);
-          setButtonLabel('btnPdfTransport', 'Gerar PDF');
+          setButtonLabel(pdfButtonId(), pdfButtonText());
           if (transportLegacyFailure(res)) {
             var errorMsg = transportErrorMessage(res);
             setActionStatus(errorMsg, 'danger');
@@ -2306,8 +2313,8 @@
           var msg = transportErrorMessage(e);
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
-          setButtonLabel('btnPdfTransport', 'Gerar PDF');
-        })[actionName]({ payload: payload, requestedByEmail: requestedByEmail, generationRequestId: generationRequestId });
+          setButtonLabel(pdfButtonId(), pdfButtonText());
+        })[actionName]({ payload: payload, requestedByEmail: requestedByEmail, generationRequestId: generationRequestId, formato: transportPdfFormat || undefined });
     }
 
     function syncData() {
@@ -2318,7 +2325,9 @@
       }, 'Sincronizando dependencias...');
     }
 
-    function runPdf() {
+    function runPdf(formato) {
+      // "Gerar novamente" chama runPdf() sem argumento e repete o formato da última geração.
+      if (formato !== undefined) transportPdfFormat = formato === 'html' ? 'html' : '';
       var auth = state && state.auth;
       if (auth && auth.required && auth.url) {
         renderAuthNotice();
