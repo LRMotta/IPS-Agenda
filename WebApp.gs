@@ -1132,9 +1132,11 @@ function codexWithDocumentLock_(label, fn, performance) {
     }
     CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_++;
     CODEX_AWB_CONTEXT_ = null;
+    CODEX_AGENDA_LINHAS_ESCOPO_ = null;
     return fn();
   } finally {
     if (acquired) CODEX_AWB_CONTEXT_ = null;
+    if (acquired) CODEX_AGENDA_LINHAS_ESCOPO_ = null;
     if (acquired) CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ = Math.max(0, CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ - 1);
     if (acquired) lock.releaseLock();
   }
@@ -13053,12 +13055,20 @@ var COL_PROJETO = typeof COL_PROJETO !== 'undefined' ? COL_PROJETO : AGENDA_CFG.
 var COL_VISITA = typeof COL_VISITA !== 'undefined' ? COL_VISITA : AGENDA_CFG.col.visita;
 var COL_OBS = typeof COL_OBS !== 'undefined' ? COL_OBS : AGENDA_CFG.col.obs;
 
+// Aba da Agenda com o esquema ja garantido nesta execucao. As garantias de esquema leem
+// cabecalhos a cada chamada antes de consultar o cache (cerca de 3,5 s medidos), e uma
+// geracao de PDF chamava getAgendaSheet_ ate quatro vezes. O esquema nao regride dentro de
+// uma execucao; a aba e a mesma enquanto a planilha (getCodexSpreadsheet_) for a mesma.
+var CODEX_AGENDA_SHEET_MEMO_ = null;
+
 function getAgendaSheet_() {
   var ss = getCodexSpreadsheet_();
+  if (CODEX_AGENDA_SHEET_MEMO_ && CODEX_AGENDA_SHEET_MEMO_.ss === ss) return CODEX_AGENDA_SHEET_MEMO_.sh;
   var sh = getSheetByPossibleNames_(ss, AGENDA_CFG.abaNomes);
   if (!sh) throw new Error('Aba Agenda nao encontrada.');
   ensureAgendaDestinoLabColumns_(sh);
   alinharStatusRequisicaoLegadoAgenda_(sh);
+  CODEX_AGENDA_SHEET_MEMO_ = { ss: ss, sh: sh };
   return sh;
 }
 
@@ -17357,6 +17367,43 @@ function normalizarAwbCourier_(awb) {
 // Historico permanente: somente o cancelamento de DHL Ambiente libera a AWB.
 // O contexto vive somente durante o document lock; nunca usa CacheService.
 var CODEX_AWB_CONTEXT_ = null;
+
+/* Leitura da Agenda compartilhada entre o registro do Transporte e o contexto de AWB.
+ * salvarTransporteInterno_ lia a Agenda inteira duas vezes seguidas (registro e AWB, cerca de
+ * 10 s cada). Dentro de codexAgendaLeituraCompartilhada_ (so sob o document lock, que serializa
+ * as gravacoes da Agenda), buscarAgendaEventoPorIdTransp_ guarda a leitura e agendaAwbContexto_
+ * a consome uma unica vez, se a aba tiver as mesmas linhas e colunas. Fora do escopo, ou com a
+ * aba alterada, cada um le a Agenda como antes. */
+var CODEX_AGENDA_LINHAS_ESCOPO_ = null;
+
+function codexAgendaLeituraCompartilhada_(fn) {
+  if (!(CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0)) return fn();
+  var anterior = CODEX_AGENDA_LINHAS_ESCOPO_;
+  CODEX_AGENDA_LINHAS_ESCOPO_ = { leitura: null };
+  try {
+    return fn();
+  } finally {
+    CODEX_AGENDA_LINHAS_ESCOPO_ = anterior;
+  }
+}
+
+// rows: linhas 2..ultimaLinha lidas agora de agenda (todas as colunas lidas).
+function codexAgendaGuardarLinhas_(agenda, ultimaLinha, rows) {
+  if (!CODEX_AGENDA_LINHAS_ESCOPO_ || !(CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0)) return;
+  CODEX_AGENDA_LINHAS_ESCOPO_.leitura = { nome: agenda.getName(), ultimaLinha: ultimaLinha, ultimaColuna: agenda.getLastColumn(), rows: rows };
+}
+
+// Linhas guardadas recortadas a largura, ou null. A leitura e descartada em qualquer caso.
+function codexAgendaConsumirLinhas_(agenda, ultimaLinha, ultimaColuna, largura) {
+  var escopo = CODEX_AGENDA_LINHAS_ESCOPO_;
+  var leitura = escopo && escopo.leitura;
+  if (escopo) escopo.leitura = null;
+  if (!leitura || !(CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0)) return null;
+  if (leitura.nome !== agenda.getName() || leitura.ultimaLinha !== ultimaLinha || leitura.ultimaColuna !== ultimaColuna) return null;
+  if (leitura.rows.length !== ultimaLinha - 1 || (leitura.rows[0] && leitura.rows[0].length < largura)) return null;
+  return leitura.rows.map(function(row) { return row.slice(0, largura); });
+}
+
 var CODEX_AWB_HEADERS_ = ['AWB', 'Envio_ID', 'Agenda_ID', 'Transporte', 'Courier', 'Temperatura', 'Participante', 'Projeto', 'Data', 'Status', 'Registrado_Em'];
 
 function agendaAwbOwner_(id, slot) {
@@ -17379,8 +17426,10 @@ function agendaAwbContexto_(agenda) {
   var context = { agenda: agenda, entries: [], current: Object.create(null), persisted: Object.create(null), backups: Object.create(null), sheet: null };
   var backupEntries = [];
   var n = agenda.getLastRow() - 1;
-  var width = Math.min(agenda.getLastColumn(), Math.max(AGENDA_CFG.idx.c3.awb + 1, AGENDA_CFG.idx.c4.awb + 1, AGENDA_CFG.idx.backupAgendaRef + 1, AGENDA_CFG.idx.cb.temp + 1, AGENDA_CFG.idx.backup2Dados + 1));
-  var rows = n > 0 ? agenda.getRange(2, 1, n, width).getValues() : [];
+  var ultimaColuna = agenda.getLastColumn();
+  var width = Math.min(ultimaColuna, Math.max(AGENDA_CFG.idx.c3.awb + 1, AGENDA_CFG.idx.c4.awb + 1, AGENDA_CFG.idx.backupAgendaRef + 1, AGENDA_CFG.idx.cb.temp + 1, AGENDA_CFG.idx.backup2Dados + 1));
+  var compartilhadas = n > 0 ? codexAgendaConsumirLinhas_(agenda, n + 1, ultimaColuna, width) : null;
+  var rows = compartilhadas || (n > 0 ? agenda.getRange(2, 1, n, width).getValues() : []);
   rows.forEach(function(row) {
     if (!String(row[AGENDA_CFG.idx.id] || '').trim()) return;
     [1, 2, 3, 4].forEach(function(slot) {
@@ -20367,12 +20416,40 @@ function gerarListaDestinatarios_(usuario) {
   return destinatarios.join(',');
 }
 
+// Linha ja encontrada nesta execucao, por aba: a geracao de PDF buscava o mesmo agendamento
+// tres vezes (caixa, sincronizacao e gravacao da caixa), cada uma lendo a coluna inteira de IDs.
+// A linha lembrada so vale depois de conferir o ID na propria celula; se a linha mudou
+// (insercao ou exclusao), a coluna e lida de novo.
+var CODEX_LINHA_POR_ID_MEMO_ = null;
+
+// Registra uma linha ja conferida por outra leitura completa (ex.: buscarAgendaEventoPorIdTransp_).
+function codexLinhaPorIdLembrar_(sheet, id, linha) {
+  if (!id || !(linha >= 2) || typeof Map !== 'function') return;
+  if (!CODEX_LINHA_POR_ID_MEMO_) CODEX_LINHA_POR_ID_MEMO_ = new Map();
+  var memo = CODEX_LINHA_POR_ID_MEMO_.get(sheet);
+  if (!memo) { memo = Object.create(null); CODEX_LINHA_POR_ID_MEMO_.set(sheet, memo); }
+  memo[String(id)] = linha;
+}
+
 function encontrarLinhaPorId(sheet, id) {
-  if (!id || sheet.getLastRow() < 2) return null;
-  var ids = sheet.getRange(2, AGENDA_CFG.col.id, sheet.getLastRow() - 1, 1).getValues();
+  var ultimaLinha = id ? sheet.getLastRow() : 0;
+  if (!id || ultimaLinha < 2) return null;
+  var chave = String(id);
+  if (!CODEX_LINHA_POR_ID_MEMO_ && typeof Map === 'function') CODEX_LINHA_POR_ID_MEMO_ = new Map();
+  var memo = CODEX_LINHA_POR_ID_MEMO_ ? CODEX_LINHA_POR_ID_MEMO_.get(sheet) : null;
+  var lembrada = memo && memo[chave];
+  if (lembrada && lembrada <= ultimaLinha && String(sheet.getRange(lembrada, AGENDA_CFG.col.id).getValue()) === chave) return lembrada;
+  var ids = sheet.getRange(2, AGENDA_CFG.col.id, ultimaLinha - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(id)) return i + 2;
+    if (String(ids[i][0]) === chave) {
+      if (CODEX_LINHA_POR_ID_MEMO_) {
+        if (!memo) { memo = Object.create(null); CODEX_LINHA_POR_ID_MEMO_.set(sheet, memo); }
+        memo[chave] = i + 2;
+      }
+      return i + 2;
+    }
   }
+  if (memo) delete memo[chave];
   return null;
 }
 

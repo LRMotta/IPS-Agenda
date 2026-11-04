@@ -444,8 +444,11 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   // A mesma leitura resolve o evento e os vínculos de Backup I/II, sem leituras por linha.
   var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
   lap('rar_ler_linhas', rows.length);
+  // Mesma leitura para o contexto de AWB do salvamento (codexAgendaLeituraCompartilhada_).
+  if (typeof codexAgendaGuardarLinhas_ === 'function') codexAgendaGuardarLinhas_(sh, lastRow, rows);
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i][AGENDA_CFG.idx.id] || '').trim() !== String(idAgenda).trim()) continue;
+    if (typeof codexLinhaPorIdLembrar_ === 'function' && String(rows[i][AGENDA_CFG.idx.id]) === String(idAgenda)) codexLinhaPorIdLembrar_(sh, idAgenda, i + 2);
     var evento = agendaRowToObject_(rows[i], i + 2);
     // Origem do Backup (Folha de Agendamento HTML) vem desta mesma leitura.
     evento.transporteOrigens = {};
@@ -3280,6 +3283,10 @@ function salvarTransporte(payload, options) {
   });
 }
 
+function transporteAgendaLeituraCompartilhada_(fn) {
+  return typeof codexAgendaLeituraCompartilhada_ === 'function' ? codexAgendaLeituraCompartilhada_(fn) : fn();
+}
+
 function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   var ss;
   var folha;
@@ -3287,7 +3294,8 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   var folhaDhl;
   var peticao;
   var materiaisNote;
-  transporteMeasurePerformance_('salvarTransporte', 'read_prepare', { rowCount: 1 }, function() {
+  // Registro e AWB compartilham uma leitura da Agenda (sem gravacoes na Agenda neste trecho).
+  transporteMeasurePerformance_('salvarTransporte', 'read_prepare', { rowCount: 1 }, function() { return transporteAgendaLeituraCompartilhada_(function() {
     // Subetapas de read_prepare: localizam o gargalo sem alterar o fluxo.
     var lap = transporteLapStart_('salvarTransporte');
     ss = getTransporteSpreadsheetCodex_();
@@ -3334,7 +3342,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
       if (previousAwbContext) agendaAwbReservar_(previousAwbContext, [], false);
     }
     lap('rp_awb');
-  });
+  }); });
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
     transporteEscreverCamposModelos_(ss, payload, materiaisNote);
