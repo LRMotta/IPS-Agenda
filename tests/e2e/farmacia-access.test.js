@@ -84,7 +84,7 @@ test('acesso somente comum mantém menu, oferece somente estoque comum e reflete
       window.USERS_ADMIN_ROWS[0].farmaciaCommonOriginal='read';
       window.abrirFormUsuarioAdmin(2);
     });
-    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(),'legado');
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(),'nao');
     await page.locator('#userAdminFarmaceutico').selectOption('sim');
     await page.locator('#btnSalvarUsuarioAdmin').click();
     assert.equal(await page.evaluate(() => window.pending.at(-1).payload.farmaciaCommonOriginal),'read');
@@ -145,17 +145,19 @@ test('Farmácia: menu, autorização, resposta obsoleta e revogação em desktop
   } finally { await browser.close(); }
 });
 
-test('Admin alterna Farmacêutico(a) Sim/Não; configuração anterior é preservada até escolha explícita', async () => {
+test('Admin alterna Farmacêutico(a) Sim/Não; não há opção de configuração anterior', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     const { page, errors } = await fixture(browser, 390);
     await page.evaluate(() => { window.CURRENT_ACCESS.farmaciaAccess = 'read'; window.applyFarmaciaAccess(); window.abrirFormUsuarioAdmin(2); });
-    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'legado');
-    assert.equal(await page.locator('#userAdminFarmaciaLegado').isVisible(), true);
+    // Níveis antigos sem escopo "todos" aparecem como Não; não existe opção de configuração anterior.
+    assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'nao');
+    assert.equal(await page.locator('#userAdminFarmaceutico option[value="legado"]').count(), 0);
+    assert.equal(await page.locator('#userAdminFarmaciaLegado').count(), 0);
     assert.equal(await page.locator('#userAdminFarmaciaRestritosSection').isVisible(), false);
     await page.locator('#btnSalvarUsuarioAdmin').click();
-    const legacy = await page.evaluate(() => window.pending[0].payload);
-    for (const key of ['farmaciaAccess', 'farmaciaCommonAccess', 'farmaciaAllStudies', 'farmaciaStudies']) assert.equal(key in legacy, false, key + ' omitido preserva legado');
+    const inicial = await page.evaluate(() => window.pending[0].payload);
+    assert.deepEqual([inicial.farmaciaAccess, inicial.farmaciaCommonAccess, inicial.farmaciaAllStudies], ['none', 'none', false]);
     await page.evaluate(() => window.pending[0].failure({ message: 'teste' }));
     await page.locator('#userAdminFarmaceutico').selectOption('sim');
     assert.equal(await page.locator('#userAdminFarmaciaRestritosSection').isVisible(), true);
@@ -175,7 +177,7 @@ test('Admin alterna Farmacêutico(a) Sim/Não; configuração anterior é preser
       window.abrirFormUsuarioAdmin(2);
     });
     assert.equal(await page.locator('#userAdminFarmaceutico').inputValue(), 'sim');
-    assert.equal(await page.locator('#userAdminFarmaceutico option[value="legado"]').isDisabled(), true);
+    assert.equal(await page.locator('#userAdminFarmaceutico option[value="legado"]').count(), 0);
     await page.locator('#userAdminFarmaceutico').selectOption('nao');
     await page.locator('#btnSalvarUsuarioAdmin').click();
     const nao = await page.evaluate(() => window.pending[2].payload);

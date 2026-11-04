@@ -907,6 +907,20 @@ function codexReadFarmaciaAllStudies_(value) {
   return String(value == null ? '' : value).trim().toLowerCase() === FARMACIA_SCOPE_ALL_;
 }
 
+// Modelo único da Farmácia: Farmacêutico(a) Sim/Não, decidido somente pela coluna L ("todos").
+// Níveis das colunas I/K e concessões não restritas de J não concedem acesso; sem "todos" não há acesso.
+// Em J, apenas concessões restritas (cegamento) por estudo são consideradas.
+function codexFarmaciaPermissionsFromRow_(sheetFlags, row) {
+  var none = { farmaciaAccess: 'none', farmaciaCommonAccess: 'none', farmaciaAllStudies: false, farmaciaStudies: [] };
+  if (!sheetFlags.hasScope || !codexReadFarmaciaAllStudies_(row[11])) return none;
+  return {
+    farmaciaAccess: 'manage',
+    farmaciaCommonAccess: 'manage',
+    farmaciaAllStudies: true,
+    farmaciaStudies: sheetFlags.hasStudies ? codexReadFarmaciaStudies_(row[9]).filter(function(grant) { return grant.restricted === true; }) : []
+  };
+}
+
 // Identidade reservada do estoque compartilhado, nunca um ID de Projetos.
 var FARMACIA_COMMON_SCOPE_ = '@IPS_COMMON';
 
@@ -1988,15 +2002,16 @@ function getUsersAdminList() {
   var ss = getCodexSpreadsheet_();
   var sh = ss.getSheetByName(CODEX_ACL_SHEET_NAME_);
   if (!sh || sh.getLastRow() < 2) return [];
-  var hasFarmacia = codexUsersHasFarmaciaColumn_(sh);
   var hasStudies = codexUsersHasFarmaciaStudiesColumn_(sh);
   var hasCommon = codexUsersHasFarmaciaCommonColumn_(sh);
   var hasScope = codexUsersHasFarmaciaScopeColumn_(sh);
+  var farmaciaFlags = { hasStudies: hasStudies, hasScope: hasScope };
   var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())).getValues();
   return rows.map(function(r, idx) {
     var email = codexNormalizeEmail_(r[0]);
     var name = codexNormalizeUserName_(r[1]);
     if (!email) return null;
+    var farmacia = codexFarmaciaPermissionsFromRow_(farmaciaFlags, r);
     var birthday = codexBirthdayParts_(r[4]);
     return {
       rowIndex: idx + 2,
@@ -2010,12 +2025,12 @@ function getUsersAdminList() {
       formacao: String(r[5] || '').trim(),
       registroProfissional: String(r[6] || '').trim(),
       podeSolicitarExames: codexNormalizeCanRequestExams_(r[7]),
-      farmaciaAccess: hasFarmacia ? codexNormalizeFarmaciaAccess_(r[8]) : 'none',
-      farmaciaCommonAccess: hasCommon ? codexNormalizeFarmaciaAccess_(r[10]) : 'none',
+      farmaciaAccess: farmacia.farmaciaAccess,
+      farmaciaCommonAccess: farmacia.farmaciaCommonAccess,
       farmaciaCommonOriginal: hasCommon ? String(r[10] || '') : '',
-      farmaciaStudies: hasStudies ? codexReadFarmaciaStudies_(r[9]) : [],
+      farmaciaStudies: farmacia.farmaciaStudies,
       farmaciaStudiesOriginal: hasStudies ? String(r[9] || '') : '',
-      farmaciaAllStudies: hasScope ? codexReadFarmaciaAllStudies_(r[11]) : false,
+      farmaciaAllStudies: farmacia.farmaciaAllStudies,
       farmaciaScopeOriginal: hasScope ? String(r[11] == null ? '' : r[11]) : '',
       role: codexNormalizeRole_(r[2]),
       ativo: codexNormalizeActive_(r[3]) ? 'Sim' : 'Não'
@@ -2091,55 +2106,47 @@ function salvarUsuarioAdmin(payload) {
       }
     }
     if (!rowIndex) rowIndex = Math.max(2, lastRow + 1);
-    var hasFarmaciaUpdate = Object.prototype.hasOwnProperty.call(payload, 'farmaciaAccess');
-    var oldFarmacia = codexUsersHasFarmaciaColumn_(sh) ? codexNormalizeFarmaciaAccess_(rowAnterior[8]) : 'none';
-    var farmaciaAccess = hasFarmaciaUpdate ? String(payload.farmaciaAccess || '').trim().toLowerCase() : oldFarmacia;
-    if (['none', 'read', 'operate', 'manage'].indexOf(farmaciaAccess) === -1) {
-      throw new Error('Selecione um acesso válido à Farmácia.');
-    }
-    var hasStudiesUpdate = Object.prototype.hasOwnProperty.call(payload, 'farmaciaStudies');
+    // Modelo único: Farmacêutico(a) Sim/Não (farmaciaAllStudies). I/J/K são derivados no servidor;
+    // níveis e concessões não restritas enviados pelo cliente são ignorados. Campo omitido preserva a linha.
+    var hasFarmaciaUpdate = Object.prototype.hasOwnProperty.call(payload, 'farmaciaAllStudies');
+    if (hasFarmaciaUpdate && typeof payload.farmaciaAllStudies !== 'boolean') throw new Error('Selecione se o usuário é Farmacêutico(a): Sim ou Não.');
+    var scopeOriginal = codexUsersHasFarmaciaScopeColumn_(sh) ? String(rowAnterior[11] == null ? '' : rowAnterior[11]) : '';
     var studiesOriginal = codexUsersHasFarmaciaStudiesColumn_(sh) ? String(rowAnterior[9] || '') : '';
-    var oldStudies = codexReadFarmaciaStudies_(studiesOriginal);
-    var studies = hasStudiesUpdate ? codexNormalizeFarmaciaStudies_(payload.farmaciaStudies) : oldStudies;
-    if (hasStudiesUpdate) {
+    var commonOriginal = codexUsersHasFarmaciaCommonColumn_(sh) ? String(rowAnterior[10] || '') : '';
+    var accessOriginal = codexUsersHasFarmaciaColumn_(sh) ? String(rowAnterior[8] || '') : '';
+    var oldAllStudies = codexReadFarmaciaAllStudies_(scopeOriginal);
+    var allStudies = hasFarmaciaUpdate ? payload.farmaciaAllStudies : oldAllStudies;
+    var studiesJson = studiesOriginal;
+    var farmaciaAccess = accessOriginal;
+    var commonAccess = commonOriginal;
+    var scopeValue = scopeOriginal;
+    if (hasFarmaciaUpdate) {
+      if (rowAnterior[0] && String(payload.farmaciaScopeOriginal == null ? '' : payload.farmaciaScopeOriginal) !== scopeOriginal) {
+        throw new Error('O escopo de estudos da Farmácia mudou. Reabra o usuário antes de salvar.');
+      }
       if (rowAnterior[0] && payload.farmaciaStudiesOriginal !== studiesOriginal) {
         throw new Error('As permissões por estudo mudaram. Reabra o usuário antes de salvar.');
       }
+      var oldRestricted = codexReadFarmaciaStudies_(studiesOriginal).filter(function(grant) { return grant.restricted === true; });
+      var studies = allStudies ? codexNormalizeFarmaciaStudies_(payload.farmaciaStudies || []).filter(function(grant) { return grant.restricted === true; }) : [];
       var catalog = studies.length ? codexFarmaciaStudyCatalog_() : [];
       studies.forEach(function(grant) {
         if (catalog.some(function(study) { return study.id === grant.studyId; })) return;
-        // Vínculo órfão pode ser preservado ou reduzido, jamais criado/elevado.
-        var old = oldStudies.find(function(item) { return item.studyId === grant.studyId; });
-        if (!old || (grant.restricted && !old.restricted)) throw new Error('Estudo indisponível. Atualize a lista de estudos da Farmácia.');
+        // Vínculo órfão pode ser mantido, jamais criado.
+        if (!oldRestricted.some(function(item) { return item.studyId === grant.studyId; })) throw new Error('Estudo indisponível. Atualize a lista de estudos da Farmácia.');
       });
+      studiesJson = JSON.stringify(studies);
+      if (studiesJson.length > 40000) throw new Error('Lista de estudos da Farmácia excede o limite.');
+      farmaciaAccess = allStudies ? 'manage' : 'none';
+      commonAccess = farmaciaAccess;
+      scopeValue = allStudies ? FARMACIA_SCOPE_ALL_ : '';
     }
-    var studiesJson = JSON.stringify(studies);
-    if (studiesJson.length > 40000) throw new Error('Lista de estudos da Farmácia excede o limite.');
-    var hasCommonUpdate = Object.prototype.hasOwnProperty.call(payload, 'farmaciaCommonAccess');
-    var commonOriginal = codexUsersHasFarmaciaCommonColumn_(sh) ? String(rowAnterior[10] || '') : '';
-    var commonAccess = hasCommonUpdate ? payload.farmaciaCommonAccess : codexNormalizeFarmaciaAccess_(commonOriginal);
-    if (['none', 'read', 'operate', 'manage'].indexOf(commonAccess) === -1) throw new Error('Selecione um acesso válido ao estoque comum.');
-    if (hasCommonUpdate && rowAnterior[0] && payload.farmaciaCommonOriginal !== commonOriginal) {
-      throw new Error('A permissão do estoque comum mudou. Reabra o usuário antes de salvar.');
-    }
-    var hasScopeUpdate = Object.prototype.hasOwnProperty.call(payload, 'farmaciaAllStudies');
-    var scopeOriginal = codexUsersHasFarmaciaScopeColumn_(sh) ? String(rowAnterior[11] == null ? '' : rowAnterior[11]) : '';
-    var oldAllStudies = codexReadFarmaciaAllStudies_(scopeOriginal);
-    if (hasScopeUpdate && typeof payload.farmaciaAllStudies !== 'boolean') throw new Error('Selecione um escopo válido de estudos da Farmácia.');
-    var allStudies = hasScopeUpdate ? payload.farmaciaAllStudies : oldAllStudies;
-    if (hasScopeUpdate && rowAnterior[0] && String(payload.farmaciaScopeOriginal == null ? '' : payload.farmaciaScopeOriginal) !== scopeOriginal) {
-      throw new Error('O escopo de estudos da Farmácia mudou. Reabra o usuário antes de salvar.');
-    }
-    var scopeValue = allStudies ? FARMACIA_SCOPE_ALL_ : '';
-    // Valida E:L antes da primeira escrita; clientes legados preservam campos omitidos.
-    codexEnsureUsersProfileColumns_(sh, hasFarmaciaUpdate, hasStudiesUpdate, hasCommonUpdate, hasScopeUpdate);
+    // Valida E:L antes da primeira escrita.
+    codexEnsureUsersProfileColumns_(sh, hasFarmaciaUpdate, hasFarmaciaUpdate, hasFarmaciaUpdate, hasFarmaciaUpdate);
     sh.getRange(rowIndex, 1, 1, 4).setValues([[email, name, role, ativo]]);
     codexSetUserBirthdaysAsText_(sh, rowIndex, [birthday]);
     sh.getRange(rowIndex, 6, 1, 3).setValues([[formacao, registroProfissional, podeSolicitarExames]]);
-    if (hasFarmaciaUpdate) sh.getRange(rowIndex, 9).setValue(farmaciaAccess);
-    if (hasStudiesUpdate) sh.getRange(rowIndex, 10).setValue(studiesJson);
-    if (hasCommonUpdate) sh.getRange(rowIndex, 11).setValue(commonAccess);
-    if (hasScopeUpdate) sh.getRange(rowIndex, 12).setValue(scopeValue);
+    if (hasFarmaciaUpdate) sh.getRange(rowIndex, 9, 1, 4).setValues([[farmaciaAccess, studiesJson, commonAccess, scopeValue]]);
     codexInvalidatePageLoadAclCache_();
     codexWriteAuditLog_('salvarUsuarioAdmin', 'Sistema', email);
     codexWriteAuditChanges_('Sistema', 'salvarUsuarioAdmin', email, [
@@ -2151,12 +2158,12 @@ function salvarUsuarioAdmin(payload) {
       { field: 'Usuário - Formação', oldValue: rowAnterior[5], newValue: formacao },
       { field: 'Usuário - Registro profissional', oldValue: rowAnterior[6], newValue: registroProfissional },
       { field: 'Usuário - Pode solicitar exames', oldValue: codexNormalizeCanRequestExams_(rowAnterior[7]), newValue: podeSolicitarExames },
-      { field: 'Usuário - Acesso à Farmácia', oldValue: oldFarmacia, newValue: farmaciaAccess },
-      { field: 'Usuário - Estudos da Farmácia', oldValue: studiesOriginal, newValue: hasStudiesUpdate ? studiesJson : studiesOriginal },
-      { field: 'Usuário - Estoque comum da Farmácia', oldValue: commonOriginal, newValue: hasCommonUpdate ? commonAccess : commonOriginal },
+      { field: 'Usuário - Acesso à Farmácia', oldValue: accessOriginal, newValue: farmaciaAccess },
+      { field: 'Usuário - Estudos da Farmácia', oldValue: studiesOriginal, newValue: studiesJson },
+      { field: 'Usuário - Estoque comum da Farmácia', oldValue: commonOriginal, newValue: commonAccess },
       { field: 'Usuário - Escopo dos estudos da Farmácia', oldValue: oldAllStudies ? 'Todos os estudos' : 'Selecionados', newValue: allStudies ? 'Todos os estudos' : 'Selecionados' }
     ], rowAnterior[0] ? 'Alteração de usuário/permissão' : 'Cadastro de usuário/permissão');
-    return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, formacao: formacao, registroProfissional: registroProfissional, podeSolicitarExames: podeSolicitarExames, farmaciaAccess: farmaciaAccess, farmaciaCommonAccess: commonAccess, farmaciaAllStudies: allStudies, teamBirthdays: codexGetTeamBirthdays_() };
+    return { ok: true, rowIndex: rowIndex, email: email, name: name, firstName: codexFirstName_(name, email), role: role, ativo: ativo, birthday: birthday, formacao: formacao, registroProfissional: registroProfissional, podeSolicitarExames: podeSolicitarExames, farmaciaAccess: allStudies ? 'manage' : 'none', farmaciaCommonAccess: allStudies ? 'manage' : 'none', farmaciaAllStudies: allStudies, teamBirthdays: codexGetTeamBirthdays_() };
   });
 }
 
@@ -2280,16 +2287,14 @@ function codexGetAllowedUsers_() {
   if (!sh || sh.getLastRow() < 2) return {};
 
   var values = codexReadValuesMeasured_(sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(8, sh.getLastColumn())), false);
-  var hasFarmacia = codexUsersHasFarmaciaColumn_(sh);
-  var hasStudies = codexUsersHasFarmaciaStudiesColumn_(sh);
-  var hasCommon = codexUsersHasFarmaciaCommonColumn_(sh);
-  var hasScope = codexUsersHasFarmaciaScopeColumn_(sh);
+  var farmaciaFlags = { hasStudies: codexUsersHasFarmaciaStudiesColumn_(sh), hasScope: codexUsersHasFarmaciaScopeColumn_(sh) };
   var users = {};
   values.forEach(function(row) {
     var email = codexNormalizeEmail_(row[0]);
     if (!email || users[email]) return;
     var name = codexNormalizeUserName_(row[1]);
     var birthday = codexBirthdayParts_(row[4]);
+    var farmacia = codexFarmaciaPermissionsFromRow_(farmaciaFlags, row);
     users[email] = {
       name: name,
       firstName: codexFirstName_(name, email),
@@ -2299,10 +2304,10 @@ function codexGetAllowedUsers_() {
       formacao: String(row[5] || '').trim(),
       registroProfissional: String(row[6] || '').trim(),
       podeSolicitarExames: codexNormalizeCanRequestExams_(row[7]),
-      farmaciaAccess: hasFarmacia ? codexNormalizeFarmaciaAccess_(row[8]) : 'none',
-      farmaciaCommonAccess: hasCommon ? codexNormalizeFarmaciaAccess_(row[10]) : 'none',
-      farmaciaStudies: hasStudies ? codexReadFarmaciaStudies_(row[9]) : [],
-      farmaciaAllStudies: hasScope ? codexReadFarmaciaAllStudies_(row[11]) : false,
+      farmaciaAccess: farmacia.farmaciaAccess,
+      farmaciaCommonAccess: farmacia.farmaciaCommonAccess,
+      farmaciaStudies: farmacia.farmaciaStudies,
+      farmaciaAllStudies: farmacia.farmaciaAllStudies,
       role: codexNormalizeRole_(row[2]),
       active: codexNormalizeActive_(row[3])
     };
