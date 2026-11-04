@@ -403,16 +403,9 @@ function selecionarFarmaciaStudy(confirmed) {
   }).getFarmaciaEstudo(id, productsOnly);
 }
 
-// Farmácia simplificada: Farmacêutico(a) Sim/Não. Restritos (blinded) seguem por estudo.
+// Farmácia: Farmacêutico(a) Sim/Não. Restritos (blinded) seguem por estudo.
 function userFarmaciaModo(user) {
-  if (!user) return 'nao';
-  var grants = user.farmaciaStudies || [];
-  var access = user.farmaciaAccess || 'none';
-  var common = user.farmaciaCommonAccess || 'none';
-  if (access === 'manage' && common === 'manage' && user.farmaciaAllStudies === true &&
-      grants.every(function(grant) { return grant.restricted === true; })) return 'sim';
-  if (access === 'none' && common === 'none' && user.farmaciaAllStudies !== true && !grants.length) return 'nao';
-  return 'legado';
+  return user && user.farmaciaAllStudies === true ? 'sim' : 'nao';
 }
 
 function userFarmaciaResumo(user) {
@@ -420,7 +413,7 @@ function userFarmaciaResumo(user) {
   if (modo === 'nao') return 'Não';
   var restritos = (user.farmaciaStudies || []).filter(function(grant) { return grant.restricted === true; }).length;
   var sufixo = restritos ? ' · ' + restritos + (restritos === 1 ? ' restrito' : ' restritos') : '';
-  return (modo === 'sim' ? 'Farmacêutico(a)' : 'Configuração anterior') + sufixo;
+  return 'Farmacêutico(a)' + sufixo;
 }
 
 function renderUserFarmaciaStudies(user) {
@@ -474,7 +467,6 @@ function collectUserFarmaciaStudies() {
 
 function collectUserFarmaciaPayload() {
   var modo = document.getElementById('userAdminFarmaceutico').value;
-  if (modo === 'legado') return {}; // Campos omitidos são preservados pelo servidor.
   var sim = modo === 'sim';
   return {
     farmaciaAccess: sim ? 'manage' : 'none',
@@ -2044,16 +2036,7 @@ function abrirFormUsuarioAdmin(rowIndex) {
   document.getElementById('userAdminEmail').value = u ? u.email : '';
   document.getElementById('userAdminRole').value = u ? u.role : 'user';
   var farmaciaModo = userFarmaciaModo(u);
-  var farmaciaSelect = document.getElementById('userAdminFarmaceutico');
-  var legadoOption = farmaciaSelect.querySelector('option[value="legado"]');
-  legadoOption.hidden = farmaciaModo !== 'legado';
-  legadoOption.disabled = farmaciaModo !== 'legado';
-  farmaciaSelect.value = farmaciaModo;
-  var legadoInfo = document.getElementById('userAdminFarmaciaLegado');
-  legadoInfo.hidden = farmaciaModo !== 'legado';
-  legadoInfo.textContent = farmaciaModo === 'legado' ? 'Este usuário tem uma configuração da versão anterior (estudos: ' +
-    farmaciaAccessLabel(u.farmaciaAccess) + '; Geral: ' + farmaciaAccessLabel(u.farmaciaCommonAccess) + '; ' +
-    (u.farmaciaStudies || []).length + ' estudo(s) vinculados). Ela será mantida até você escolher Sim ou Não.' : '';
+  document.getElementById('userAdminFarmaceutico').value = farmaciaModo;
   renderUserFarmaciaStudies(u);
   userAdminFarmaceuticoChanged();
   document.getElementById('userAdminAtivo').value = u ? u.ativo : 'Sim';

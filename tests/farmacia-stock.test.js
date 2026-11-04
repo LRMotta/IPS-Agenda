@@ -8,8 +8,8 @@ const { fakeDocumentLock } = require('./helpers/fake-document-lock');
 const STANDARD = 'farmacia-standard-0000000001', RESTRICTED = 'farmacia-restricted-00000001', MAIN = 'principal-00000000000000001';
 function fixture(realLocations = false) {
   const users = new FakeSheet('Users', [
-    ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames', 'Acesso à Farmácia', 'Estudos da Farmácia (JSON)'],
-    ['farm@example.invalid', 'Farmácia', 'readonly', 'Sim', '', '', '', 'Sim', 'manage', '[{"studyId":"P1","restricted":true}]']
+    ['Email', 'Nome', 'Perfil', 'Ativo', 'Aniversário (MM-DD)', 'Formação', 'Registro no Conselho Profissional', 'Pode solicitar exames', 'Acesso à Farmácia', 'Estudos da Farmácia (JSON)', 'Acesso ao estoque comum da Farmácia', 'Escopo dos estudos da Farmácia'],
+    ['farm@example.invalid', 'Farmácia', 'readonly', 'Sim', '', '', '', 'Sim', 'manage', '[{"studyId":"P1","restricted":true}]', 'manage', 'todos']
   ]);
   const app = new FakeSpreadsheet({ Users:users, Projetos:new FakeSheet('Projetos', [['ID', 'Nome', 'Código'], ['P1', 'Estudo A', 'A'], ['P2', 'Estudo B', 'B']]) });
   app.getId = () => MAIN;
@@ -45,26 +45,34 @@ test('equipe consulta produtos gerais sem concessão de estoque e sem receber da
   assert.equal(f.server.getFarmaciaProdutos('P1',false).restrictedAllowed,true);
   assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,true);
   assert.equal(f.server.getFarmaciaProdutos('P1',true).products[0].name,'Produto secreto');
-  f.users.rows[1][8]='none'; f.users.rows[1][9]='[]';
+  f.users.rows[1][9]='[]';
   const writes=f.sheet().writes;
   const catalog=f.server.getFarmaciaProdutos('P1',false);
   assert.equal(catalog.products.length,1);
   assert.equal(catalog.products[0].name,'Produto A');
-  assert.equal(catalog.farmaciaAccess,'read');
+  assert.equal(catalog.farmaciaAccess,'manage');
   assert.equal(catalog.restrictedAllowed,false);
-  assert.equal(catalog.positions.length,0); assert.equal(catalog.movements.length,0);
-  assert.equal(catalog.storageUnits.length,0);
   assert.equal(JSON.stringify(catalog).includes('segredo'),false);
   assert.equal(Object.hasOwn(catalog.products[0],'author'),false);
   assert.equal(f.server.getFarmaciaEstudo('P1',true).restrictedAllowed,false);
   assert.equal(f.server.getFarmaciaBootstrap().productStudies.length,3);
-  assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/permissão/);
-  assert.throws(()=>f.server.getFarmaciaProdutos('P1',true),/permissão/);
-  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product()),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaProdutos('P1',true),/não autorizado/);
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/não autorizado/);
   assert.throws(()=>f.server.getFarmaciaProdutos('inexistente',false),/indisponível/);
   assert.equal(f.server.getFarmaciaProdutos('P2',false).products.length,0);
   assert.equal(f.sheet().writes,writes);
   assert.equal(f.app.getSheetByName(f.server.farmaciaLedgerSheetName_('P2')),null);
+  // Sem 'todos' na coluna L nada é acessível, independentemente das demais colunas.
+  f.users.rows[1][11]='';
+  // A consulta geral do catálogo continua somente leitura, sem dados operacionais nem classe restrita.
+  const revoked=f.server.getFarmaciaProdutos('P1',false);
+  assert.equal(revoked.farmaciaAccess,'read'); assert.equal(revoked.restrictedAllowed,false);
+  assert.equal(revoked.products[0].hasStockHistory,false);
+  assert.equal(JSON.stringify(revoked).includes('segredo'),false);
+  assert.throws(()=>f.server.getFarmaciaProdutos('P1',true),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',false),/permissão/);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product()),/permissão/);
+  f.users.rows[1][11]='todos';
   f.users.rows[1][3]='Não';
   assert.throws(()=>f.server.getFarmaciaProdutos('P1',false),/inativo/);
 });
@@ -103,16 +111,28 @@ test('nomes de aba aceitam IDs longos e caracteres especiais sem colidir com IDs
   assert.ok(f.server.farmaciaLedgerSheetName_('x'.repeat(120)).length<=100);
   assert.doesNotMatch(first,/[\[\]*?:/\\]/);
 });
-test('responsável user com estudo padrão concedido acessa sem estoque comum nem informações restritas', () => {
+test('farmacêutico user acessa o Geral e estudos não restritos, mas não informações restritas sem concessão', () => {
   const f=fixture();
   f.users.rows[1][2]='user';
-  f.users.rows[1][9]='[{"studyId":"P1","restricted":false}]';
+  f.users.rows[1][9]='[]';
   assert.equal(f.server.getFarmaciaBootstrap().studies[0].id,'P1');
   assert.equal(f.server.getFarmaciaEstudo('P1').restrictedAllowed,false);
   assert.equal(f.server.getFarmaciaEstoque('P1',false).farmaciaAccess,'manage');
+  assert.equal(f.server.getFarmaciaEstoque('P2',false).farmaciaAccess,'manage');
+  assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).farmaciaAccess,'manage');
   assert.deepEqual(f.state.opened,[]);
-  assert.throws(()=>f.server.getFarmaciaEstudo('@IPS_COMMON'),/permissão/);
   assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/não autorizado/);
+  // Entradas restricted:false em J são ignoradas; só restricted:true concede a classe restrita.
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":false}]';
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/não autorizado/);
+  f.users.rows[1][9]='[{"studyId":"P1","restricted":true}]';
+  assert.equal(f.server.getFarmaciaEstoque('P1',true).farmaciaAccess,'manage');
+  assert.throws(()=>f.server.getFarmaciaEstoque('P2',true),/não autorizado/);
+  // Sem 'todos' na coluna L, nem I/J/K concedem acesso.
+  f.users.rows[1][11]='';
+  assert.throws(()=>f.server.getFarmaciaEstudo('P1'),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaEstoque('P1',true),/permissão/);
+  assert.throws(()=>f.server.getFarmaciaEstoque('@IPS_COMMON',false),/permissão/);
   assert.equal(f.users.writes,0);
 });
 
@@ -120,7 +140,6 @@ function locationFixture() {
   const f = fixture(true);
   f.users.rows[1][2]='user';
   f.stores[LOCATIONS] = new FakeSpreadsheet({});
-  f.users.rows[0][10] = 'Acesso ao estoque comum da Farmácia'; f.users.rows[1][10] = 'manage';
   f.location = (overrides = {}) => ({requestId:'location-request-0001',data:{code:'IPS AF-01',type:'cabinet',model:'Armário',room:'Farmácia',
     min:15,max:30,source:'Qualificação fictícia',version:'1',sensor:'SENSOR-01',status:'active',positions:['Prateleira 1','Prateleira 2']},...overrides});
   f.catalogSheet = () => f.app.getSheetByName(f.server.FARMACIA_LOCATIONS_SHEET_);
@@ -164,7 +183,7 @@ test('primeiro equipamento cria aba e cabeçalhos no app, preserva outras abas e
 test('admin e user cadastram catálogo sem concessão de estoque; readonly não grava e lock revalida perfil', () => {
   for(const role of ['admin','user']) {
     const allowed=locationFixture();
-    allowed.users.rows[1][2]=role; allowed.users.rows[1][8]='none'; allowed.users.rows[1][9]='[]'; allowed.users.rows[1][10]='none';
+    allowed.users.rows[1][2]=role; allowed.users.rows[1][9]='[]'; allowed.users.rows[1][11]='';
     assert.equal(allowed.server.getFarmaciaCatalogo().locationsCanManage,true);
     assert.equal(allowed.server.cadastrarLocalFarmacia(allowed.location()).ok,true);
     assert.throws(()=>allowed.server.getFarmaciaEstoque('P1',false),/permissão/);
@@ -384,10 +403,8 @@ test('produto novo exige conservação no servidor, mas registros antigos e repl
   assert.equal(f.server.cadastrarProdutoFarmacia(request).id,id);
 });
 
-test('estoque comum persiste no arquivo principal sem conceder estudos nem misturar posições', () => {
+test('estoque comum persiste no arquivo principal sem misturar posições e exige o escopo todos', () => {
   const f = fixture();
-  f.users.rows[0].push('Acesso ao estoque comum da Farmácia');
-  f.users.rows[1].push('manage');
   const studyProduct = f.server.cadastrarProdutoFarmacia(f.product()).id;
   f.server.registrarInventarioInicialFarmacia(f.initial(studyProduct));
   const payload = f.product({studyId:'@IPS_COMMON'});
@@ -397,20 +414,21 @@ test('estoque comum persiste no arquivo principal sem conceder estudos nem mistu
   assert.notEqual(studyProduct, productId);
   assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).positions[0].productId,productId);
   assert.equal(f.server.getFarmaciaEstoque('P1',false).positions[0].productId,studyProduct);
-  f.users.rows[1][8] = 'none'; f.users.rows[1][9] = '[]';
+  f.users.rows[1][9] = '[]';
   assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).farmaciaAccess,'manage');
-  assert.throws(() => f.server.getFarmaciaEstoque('P1',false), /permissão/);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).farmaciaAccess,'manage');
+  assert.throws(() => f.server.getFarmaciaEstoque('P1',true), /não autorizado/);
   assert.throws(() => f.server.getFarmaciaEstoque('@IPS_COMMON',true), /não possui classe restrita/);
   assert.throws(() => f.server.registrarInventarioInicialFarmacia(f.initial(studyProduct,{studyId:'@IPS_COMMON',requestId:'foreign-product-request'})), /Produto não encontrado/);
-  for (const level of ['read','operate','none']) {
-    f.users.rows[1][10] = level;
-    assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON',requestId:'new-common-product'})), /permissão/);
-  }
+  // Sem 'todos' em L, nem as colunas I/K em 'manage' concedem o estoque comum ou os estudos.
+  f.users.rows[1][11] = '';
+  assert.throws(() => f.server.getFarmaciaEstoque('@IPS_COMMON',false), /permissão/);
+  assert.throws(() => f.server.getFarmaciaEstoque('P1',false), /permissão/);
+  assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON',requestId:'new-common-product'})), /permissão/);
 });
 
 test('estoque comum sem configuração usa a mesma base e mantém autorização própria', () => {
   const f = fixture();
-  f.users.rows[0].push('Acesso ao estoque comum da Farmácia'); f.users.rows[1].push('manage');
   assert.equal(f.server.getFarmaciaEstoque('@IPS_COMMON',false).configured,true);
   assert.equal(f.sheet(),null);
   const created=f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON'}));
@@ -421,8 +439,7 @@ test('estoque comum sem configuração usa a mesma base e mantém autorização 
 
 test('revogação do estoque comum ao adquirir lock impede gravação e acesso a arquivos', () => {
   const f = fixture();
-  f.users.rows[0].push('Acesso ao estoque comum da Farmácia'); f.users.rows[1].push('manage');
-  f.lock.onAcquire = () => { f.users.rows[1][10] = 'none'; };
+  f.lock.onAcquire = () => { f.users.rows[1][11] = ''; };
   assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON'})), /permissão/);
   assert.deepEqual(f.state.opened,[]);
 });
@@ -456,18 +473,18 @@ test('mapa legado não bloqueia instalação nova nem abre arquivos externos', (
   }
 });
 
-test('cadastro e contagem exigem manage por estudo/classe; Admin não substitui concessão e lock revalida', () => {
+test('cadastro e contagem exigem Farmacêutico (todos) e concessão restrita; Admin não substitui e lock revalida', () => {
   const f = fixture();
-  for (const level of ['read', 'operate', 'none']) {
-    f.users.rows[1][8] = level;
-    assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product()), /permissão/);
-  }
+  // Colunas I/K sozinhas não concedem nada: sem 'todos' em L o cadastro é negado.
+  f.users.rows[1][11] = '';
+  assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product()), /permissão/);
   f.users.rows[1][2] = 'admin';
   assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product()), /permissão/);
-  f.users.rows[1][8] = 'manage';
-  f.users.rows[1][9] = '[{"studyId":"P1","restricted":false}]';
+  f.users.rows[1][11] = 'todos';
+  f.users.rows[1][9] = '[]';
   assert.throws(() => f.server.getFarmaciaEstoque('P1', true), /não autorizado/);
-  assert.throws(() => f.server.getFarmaciaEstoque('P2', false), /não autorizado/);
+  assert.equal(f.server.getFarmaciaEstoque('P2', false).farmaciaAccess, 'manage');
+  assert.throws(() => f.server.getFarmaciaEstoque('inexistente', false), /indisponível/);
   assert.throws(() => f.server.getFarmaciaEstoque('P1', 'false'), /classe/);
   f.lock.onAcquire = () => { f.users.rows[1][3] = 'Não'; };
   assert.throws(() => f.server.cadastrarProdutoFarmacia(f.product()), /inativo/);
@@ -581,7 +598,6 @@ test('classes compartilham arquivo e leitura padrão não expõe conteúdo restr
 test('abas por projeto e comum isolam registros preservando requestId por classe', () => {
   const f=fixture();
   f.users.rows[1][9]='[{"studyId":"P1","restricted":true},{"studyId":"P2","restricted":true}]';
-  f.users.rows[0].push('Acesso ao estoque comum da Farmácia'); f.users.rows[1].push('manage');
   const scopes=[['P1',false],['P1',true],['P2',false],['P2',true],['@IPS_COMMON',false]];
   const created=scopes.map(([studyId,restricted],index)=>{
     const request=f.product({studyId,restricted,data:{name:'Produto '+index}});
@@ -670,7 +686,6 @@ test('origem do fornecimento é explícita em novos produtos; histórico permane
   assert.equal(f.server.cadastrarProdutoFarmacia(request).id,id);
   const receipt=lifecycleFixture().receipt(); receipt.data.productId=id;
   assert.throws(()=>f.server.registrarRecebimentoFarmacia(receipt),/exclusivos/);
-  f.users.rows[0][10]='Acesso ao estoque comum da Farmácia'; f.users.rows[1][10]='manage';
   const writes=f.sheet().writes;
   assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON',requestId:'sponsored-common-product',data:{supplySource:'sponsor'}})),/estoque do estudo/);
   assert.equal(f.sheet().writes,writes);
@@ -784,27 +799,14 @@ test('movimentações e recebimentos revalidam ACL sob lock sem substituir permi
   for(const method of ['registrarRecebimentoFarmacia','registrarMovimentacaoFarmacia']) {
     const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
     const payload=method==='registrarRecebimentoFarmacia'?{...f.receipt({document:'OUTRA'}),requestId:'receipt-permission-check'}:f.move(f.stock().positions[0]);
-    // Recebimento é do nível Operação; movimentação exige o Responsável. Cada um é negado um nível abaixo.
-    const writes=f.sheet().writes; f.users.rows[1][8]=method==='registrarRecebimentoFarmacia'?'read':'operate';
+    // Sem 'todos' em L o acesso é negado (I/K em 'manage' não bastam) e o perfil Admin não o substitui.
+    const writes=f.sheet().writes; f.users.rows[1][11]='';
     assert.throws(()=>f.server[method](payload),/permissão/);
     f.users.rows[1][2]='admin'; assert.throws(()=>f.server[method](payload),/permissão/);
-    f.users.rows[1][8]='manage'; f.lock.onAcquire=()=>{f.users.rows[1][8]='read';};
+    f.users.rows[1][11]='todos'; f.lock.onAcquire=()=>{f.users.rows[1][11]='';};
     assert.throws(()=>f.server[method](payload),/permissão/);
     assert.equal(f.sheet().writes,writes); assert.equal(f.lock.held,false);
   }
-});
-
-test('nível Operação registra recebimento, mas produto, inventário inicial e movimentação exigem o Responsável', () => {
-  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
-  f.users.rows[1][8]='operate';
-  const received=f.server.registrarRecebimentoFarmacia({...f.receipt({document:'OUTRA'}),requestId:'receipt-operate-0001'});
-  assert.equal(received.repeated,false);
-  assert.equal(f.stock().farmaciaAccess,'operate');
-  const writes=f.sheet().writes;
-  assert.throws(()=>f.server.registrarMovimentacaoFarmacia(f.move(f.stock().positions[0])),/permissão/);
-  assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'product-operate-0001',data:{name:'Outro produto'}})),/permissão/);
-  assert.throws(()=>f.server.registrarInventarioInicialFarmacia({...f.initial(f.productId),requestId:'initial-operate-0001'}),/permissão/);
-  assert.equal(f.sheet().writes,writes);
 });
 
 test('resposta perdida após movimento não duplica saldo; retentativa usa payload e revisão originais', () => {
