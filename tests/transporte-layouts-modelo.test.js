@@ -117,8 +117,18 @@ test('layout versionado nao guarda texto em celula gravada pelo codigo (dados de
   assert.doesNotMatch(ARQUIVO, /\bID: /);
 });
 
+// Utilities.formatDate do Apps Script so para o padrao 'Z' (deslocamento), com fuso real via Intl.
+function formatDateFuso(data, fuso, padrao) {
+  assert.equal(padrao, 'Z');
+  const nome = new Intl.DateTimeFormat('en-US', { timeZone: fuso, timeZoneName: 'longOffset' }).formatToParts(data)
+    .find((p) => p.type === 'timeZoneName').value;
+  const m = nome.match(/GMT([+-])(\d{2}):(\d{2})/);
+  return m ? m[1] + m[2] + m[3] : '+0000';
+}
+
 test('formatador reproduz os formatos de numero e data usados nas abas-modelo (pt_BR)', () => {
-  const s = modulo();
+  // Como no Apps Script: fuso do script America/Sao_Paulo, independente do fuso da maquina.
+  const s = modulo({ Utilities: { formatDate: formatDateFuso } });
   const f = s.transporteLayoutsFormatar_;
   const serial = 46331; // 05/11/2026
   assert.equal(f(serial, { type: 'DATE', pattern: 'dd/MM/yyyy' }), '05/11/2026');

@@ -110,14 +110,15 @@ function transporteLayoutsPartesData_(data, fusoUtc) {
   return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), min: d.getUTCMinutes(), s: d.getUTCSeconds() };
 }
 
-// America/Sao_Paulo sem horario de verao desde 2019: UTC-3. Em Apps Script usa o fuso do script.
+// Deslocamento do fuso do script (Apps Script: Session.getScriptTimeZone, America/Sao_Paulo).
 function transporteLayoutsOffsetMs_(data) {
   if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.formatDate === 'function' && typeof Session !== 'undefined') {
     var z = Utilities.formatDate(data, Session.getScriptTimeZone(), 'Z');
     var sinal = z.charAt(0) === '-' ? -1 : 1;
     return sinal * (Number(z.substr(1, 2)) * 60 + Number(z.substr(3, 2))) * 60000 * -1;
   }
-  return 3 * 3600000;
+  // Fora do Apps Script (simulador): o fuso do processo, o mesmo em que as datas foram criadas.
+  return data.getTimezoneOffset() * 60000;
 }
 
 function transporteLayoutsDois_(n) { return (n < 10 ? '0' : '') + n; }
