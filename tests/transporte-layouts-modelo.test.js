@@ -471,3 +471,27 @@ test('lote compara copia temporaria e memoria sem gravar na Agenda nem tocar a p
     assert.ok(!logs.join('').includes(dado), 'log nao pode conter ' + dado);
   }
 });
+
+test('filtro de courier do lote restringe a selecao e recusa courier sem PDF em HTML', () => {
+  const s = servidor();
+  const hoje = new Date(2026, 10, 4, 12);
+  const rows = [
+    linhaAgenda(s, { id: 'M', data: new Date(2026, 10, 3), courier: 'MARKEN' }),
+    linhaAgenda(s, { id: 'D', data: new Date(2026, 10, 2), courier: 'DHL' }),
+    linhaAgenda(s, { id: 'P', data: new Date(2026, 10, 1), courier: 'PINEX' }),
+    linhaAgenda(s, { id: 'O', data: new Date(2026, 9, 30), courier: 'OCASA' })
+  ];
+  const ids = (couriers) => plano(s.transporteLayoutsLoteEnvios_(rows, hoje, 3, s.transporteLayoutsLoteCouriers_(couriers)).map((e) => e.id));
+  assert.deepEqual(ids(['DHL', 'PINEX']), ['D', 'P']);
+  assert.deepEqual(ids('dhl'), ['D']);
+  assert.deepEqual(ids('PINEX; OCASA'), ['P', 'O']);
+  assert.deepEqual(ids(undefined), ['M', 'D', 'P', 'O']);
+  assert.throws(() => s.transporteLayoutsLoteCouriers_(['PINEX (Agendamento)']), /sem PDF em HTML no filtro/);
+  // Atalhos do editor passam o filtro.
+  const recebidos = [];
+  s.diagnosticarDocsDadosLoteTransporteHtml = (o) => { recebidos.push(plano(o.couriers)); return {}; };
+  s.diagnosticarDocsDadosLoteTransporteHtmlDhlPinex();
+  s.diagnosticarDocsDadosLoteTransporteHtmlDhl();
+  s.diagnosticarDocsDadosLoteTransporteHtmlPinex();
+  assert.deepEqual(recebidos, [['DHL', 'PINEX'], ['DHL'], ['PINEX']]);
+});

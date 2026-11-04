@@ -991,7 +991,8 @@ function transporteDocsDadosSombra_(registro, spec, ss, courier, conteudoReal) {
 
 /* ---------- Diagnostico em lote com envios anteriores (administradores) ----------
  * Executar no editor: diagnosticarDocsDadosLoteTransporteHtml() ou, para escolher o recorte,
- * diagnosticarDocsDadosLoteTransporteHtml({ meses: 3, limite: 8, pular: 0 }).
+ * diagnosticarDocsDadosLoteTransporteHtml({ meses: 3, limite: 8, pular: 0, couriers: ['DHL', 'PINEX'] }).
+ * couriers (opcional) restringe a selecao a parte das couriers com PDF em HTML.
  * Reconstroi envios ja feitos a partir da Agenda (eventos com AWB nos ultimos meses, das
  * couriers com PDF em HTML), como a tela da Agenda monta o Transporte, e compara dois caminhos
  * com o mesmo registro:
@@ -1010,8 +1011,22 @@ function transporteLayoutsDataIso_(d) {
   return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
 }
 
-// Envios das couriers com PDF em HTML, com AWB, entre `meses` atras e ontem, mais recentes primeiro.
-function transporteLayoutsLoteEnvios_(rows, hoje, meses) {
+// Couriers do filtro (nomes normalizados), so entre as com PDF em HTML; sem filtro, todas elas.
+function transporteLayoutsLoteCouriers_(filtro) {
+  var lista = Array.isArray(filtro) ? filtro : (filtro ? String(filtro).split(/[,;]/) : []);
+  var escolhidas = lista.map(function(c) { return transporteNormalizeCourierFromCodex_(String(c || '').trim()); }).filter(Boolean);
+  if (!escolhidas.length) return TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.slice();
+  var invalidas = escolhidas.filter(function(c) { return TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(c) < 0; });
+  if (invalidas.length) {
+    throw new Error('Courier sem PDF em HTML no filtro: ' + invalidas.join(', ') + '. Use: ' + TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.join(', ') + '.');
+  }
+  return escolhidas;
+}
+
+// Envios das couriers escolhidas (padrao: todas com PDF em HTML), com AWB, entre `meses` atras
+// e ontem, mais recentes primeiro.
+function transporteLayoutsLoteEnvios_(rows, hoje, meses, couriers) {
+  couriers = couriers || TRANSPORTE_DOCS_GRADE_COURIERS_HTML_;
   var de = transporteLayoutsDataIso_(new Date(hoje.getFullYear(), hoje.getMonth() - meses, hoje.getDate()));
   var ate = transporteLayoutsDataIso_(hoje);
   var envios = [];
@@ -1022,7 +1037,7 @@ function transporteLayoutsLoteEnvios_(rows, hoje, meses) {
     ['1', '2', '3', '4'].forEach(function(slot) {
       var c = evento['courier' + slot] || {};
       var courier = transporteNormalizeCourierFromCodex_(c.nome);
-      if (TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(courier) < 0 || !String(c.awb || '').trim()) return;
+      if (couriers.indexOf(courier) < 0 || !String(c.awb || '').trim()) return;
       envios.push({ linha: i, slot: slot, courier: courier, dataIso: evento.dataIso, id: evento.id });
     });
   });
@@ -1114,11 +1129,12 @@ function diagnosticarDocsDadosLoteTransporteHtml(opcoes) {
   var meses = Number(opcoes.meses) > 0 ? Number(opcoes.meses) : 3;
   var limite = Number(opcoes.limite) > 0 ? Number(opcoes.limite) : 8;
   var pular = Number(opcoes.pular) > 0 ? Number(opcoes.pular) : 0;
+  var couriers = transporteLayoutsLoteCouriers_(opcoes.couriers);
   var inicio = Date.now();
   var agenda = getAgendaSheet_();
   var ultimaLinha = agenda.getLastRow();
   var rows = ultimaLinha > 1 ? agenda.getRange(2, 1, ultimaLinha - 1, AGENDA_CFG.lastCol).getValues() : [];
-  var envios = transporteLayoutsLoteEnvios_(rows, new Date(), meses);
+  var envios = transporteLayoutsLoteEnvios_(rows, new Date(), meses, couriers);
   var selecionados = envios.slice(pular, pular + limite);
   var participantes = transporteReadParticipantesDireto_();
   var arquivo = transporteLayoutsCarregar_();
@@ -1150,6 +1166,7 @@ function diagnosticarDocsDadosLoteTransporteHtml(opcoes) {
   var processados = resultados.filter(function(r) { return !r.pulado; });
   var resultado = {
     ok: processados.length > 0 && processados.every(function(r) { return r.ok; }),
+    couriers: couriers,
     encontrados: envios.length,
     processados: processados.length,
     iguais: processados.filter(function(r) { return r.ok; }).length,
@@ -1162,4 +1179,17 @@ function diagnosticarDocsDadosLoteTransporteHtml(opcoes) {
   };
   Logger.log(JSON.stringify(resultado));
   return resultado;
+}
+
+// Atalhos para o editor (Executar nao aceita argumentos): so as couriers indicadas.
+function diagnosticarDocsDadosLoteTransporteHtmlDhlPinex() {
+  return diagnosticarDocsDadosLoteTransporteHtml({ couriers: ['DHL', 'PINEX'] });
+}
+
+function diagnosticarDocsDadosLoteTransporteHtmlDhl() {
+  return diagnosticarDocsDadosLoteTransporteHtml({ couriers: ['DHL'] });
+}
+
+function diagnosticarDocsDadosLoteTransporteHtmlPinex() {
+  return diagnosticarDocsDadosLoteTransporteHtml({ couriers: ['PINEX'] });
 }
