@@ -338,3 +338,136 @@ test('diagnostico em producao compara grade real e memoria sem registrar valores
     assert.ok(!logs[0].includes(dado), 'log nao pode conter ' + dado);
   }
 });
+
+function hashUtilities() {
+  return {
+    formatDate: () => '20261104-150000',
+    DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+    computeDigest: (_alg, valor) => Array.from(require('node:crypto').createHash('sha256').update(valor).digest()),
+    base64EncodeWebSafe: (bytes) => Buffer.from(bytes).toString('base64url')
+  };
+}
+
+test('modo sombra compara com a grade real, aponta enderecos e nunca interrompe a geracao', () => {
+  const s = servidor();
+  s.Utilities = hashUtilities();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  s.transporteLayoutsCarregar_ = () => arquivo;
+  const registro = registroMarken();
+  const realSs = s.transporteDocsDados_(registro, { arquivo }).ss;
+  const spec = s.transportePdfSpec_('MARKEN', 'CONGELADO', 'LAB X', realSs);
+  const conteudoReal = () => s.transporteDocsGradeProtegerConteudo_(realSs.exportarAbas_(spec.ordem),
+    s.transporteDocsGradeContextoProtecao_(realSs, 'MARKEN', registro));
+
+  const igual = s.transporteDocsDadosSombra_(registro, spec, realSs, 'MARKEN', conteudoReal());
+  assert.equal(igual.ok, true, JSON.stringify(igual));
+  assert.equal(igual.divergentes, 0);
+  assert.equal(igual.hashIgual, true);
+  assert.equal(igual.courier, 'MARKEN');
+
+  realSs.getSheetByName('Invoice (MARKEN)').getRange('O12').setValue('99');
+  const diferente = s.transporteDocsDadosSombra_(registro, spec, realSs, 'MARKEN', conteudoReal());
+  assert.equal(diferente.ok, false);
+  assert.deepEqual(plano(diferente.abas), { 'Invoice (MARKEN)': { divergentes: 1, ausente: false, enderecos: ['O12'] } });
+
+  // Falha do caminho novo: resumo com erro truncado, sem lancar.
+  s.transporteDocsDados_ = () => { throw new Error('falha simulada ' + 'x'.repeat(400)); };
+  const erro = s.transporteDocsDadosSombra_(registro, spec, realSs, 'MARKEN', conteudoReal());
+  assert.equal(erro.ok, false);
+  assert.match(erro.erro, /^falha simulada/);
+  assert.ok(erro.erro.length <= 160);
+  for (const r of [igual, diferente, erro]) {
+    const json = JSON.stringify(r);
+    for (const dado of ['Pessoa Participante Teste', 'P.P.T.', 'ID-001', '123456789012']) assert.ok(!json.includes(dado), dado);
+  }
+});
+
+test('geracao HTML registra o modo sombra no log sem mudar o PDF entregue', () => {
+  const fonte = readProjectFile('TransporteCodexConfig.gs').replace(/\r\n/g, '\n');
+  const ramo = fonte.slice(fonte.indexOf('if (formatoHtml) {'), fonte.indexOf('} else {', fonte.indexOf('if (formatoHtml) {')));
+  assert.match(ramo, /blob = gerado\.blob;[\s\S]*transporteDocsDadosSombra_\(payloadFallback, spec, ss, courier, conteudoPdf\)/);
+  assert.match(ramo, /\[TRANSPORTE_SOMBRA\]/);
+  // O PDF e o hash entregues continuam os da grade.
+  assert.doesNotMatch(ramo, /blob = [^g]|conteudoPdf = (?!gerado\.conteudo)/);
+});
+
+function linhaAgenda(s, campos) {
+  const i = s.AGENDA_CFG.idx;
+  const r = Array(s.AGENDA_CFG.lastCol).fill('');
+  r[i.id] = campos.id; r[i.data] = campos.data; r[i.participante] = 'Pessoa Participante Teste';
+  r[i.projeto] = 'Estudo X'; r[i.medico] = 'Pessoa Investigadora'; r[i.idParticipante] = 'ID-001';
+  r[i.c1.nome] = campos.courier || 'MARKEN'; r[i.c1.temp] = 'CONGELADO'; r[i.c1.status] = campos.status || 'Entregue';
+  r[i.c1.awb] = campos.awb === undefined ? '123456789012' : campos.awb; r[i.c1.destino] = 'LAB X';
+  r[i.c1.matBio] = JSON.stringify({ items: [{ key: 'soro', formula: '2x1,0' }] });
+  return r;
+}
+
+test('lote seleciona envios anteriores com AWB das couriers em HTML, mais recentes primeiro', () => {
+  const s = servidor();
+  const hoje = new Date(2026, 10, 4, 12);
+  const rows = [
+    linhaAgenda(s, { id: 'A', data: new Date(2026, 9, 20) }),
+    linhaAgenda(s, { id: 'B', data: new Date(2026, 10, 3) }),
+    linhaAgenda(s, { id: 'C', data: new Date(2026, 10, 4) }),           // hoje: fora
+    linhaAgenda(s, { id: 'D', data: new Date(2026, 6, 1) }),            // antes de 3 meses: fora
+    linhaAgenda(s, { id: 'E', data: new Date(2026, 9, 1), awb: '' }),   // sem AWB: fora
+    linhaAgenda(s, { id: 'F', data: new Date(2026, 9, 2), courier: 'PINEX (Agendamento)' }) // sem HTML: fora
+  ];
+  const envios = s.transporteLayoutsLoteEnvios_(rows, hoje, 3);
+  assert.deepEqual(plano(envios.map((e) => e.id + ':' + e.slot + ':' + e.courier)), ['B:1:MARKEN', 'A:1:MARKEN']);
+});
+
+test('lote compara copia temporaria e memoria sem gravar na Agenda nem tocar a planilha real', () => {
+  const s = servidor();
+  s.Utilities = Object.assign(hashUtilities(), { getUuid: () => 'UUID' });
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  s.transporteLayoutsCarregar_ = () => arquivo;
+  s.codexAssertAdmin_ = () => {};
+  const hojeMenos = (d) => { const x = new Date(); x.setDate(x.getDate() - d); return x; };
+  const rows = [linhaAgenda(s, { id: 'EV1', data: hojeMenos(10) }), linhaAgenda(s, { id: 'EV2', data: hojeMenos(40), status: 'Entregue' })];
+  const antes = JSON.stringify(rows);
+  // Agenda somente leitura: qualquer gravacao quebraria (nao ha setters).
+  const agenda = {
+    getName: () => 'Agenda', getLastRow: () => rows.length + 1, getLastColumn: () => s.AGENDA_CFG.lastCol,
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => rows.slice(r - 2, r - 2 + (nr || 1)).map((l) => l.slice(c - 1, c - 1 + (nc || 1))),
+      getValue: () => rows[r - 2][c - 1], getNote: () => ''
+    })
+  };
+  s.getAgendaSheet_ = () => agenda;
+  s.transporteReadParticipantesDireto_ = () => [];
+  s.transporteDerivarDadosParticipante_ = (p) => p;
+  s.transporteCaixasRegras_ = () => [];
+  let aberturasReais = 0;
+  s.getTransporteSpreadsheetCodex_ = () => {
+    if (s.TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_ > 0) throw new Error('planilha real bloqueada');
+    aberturasReais++;
+    // Sem metodos de gravacao: so localizar o arquivo e consultas somente leitura do registro.
+    return { getId: () => 'REAL' };
+  };
+  const eventos = [];
+  const temp = { getId: () => 'COPIA', setSharing: () => eventos.push('privada'), setTrashed: (v) => eventos.push('lixeira:' + v) };
+  s.DriveApp = { Access: { PRIVATE: 'P' }, Permission: { NONE: 'N' }, getRootFolder: () => ({}),
+    getFileById: (id) => { assert.equal(id, 'REAL'); return { makeCopy: () => { eventos.push('copia'); return temp; } }; } };
+  // A "copia" e outra planilha em memoria; a grade dela e lida sem a API do Sheets.
+  const copia = s.transporteLayoutsPlanilha_(arquivo);
+  s.SpreadsheetApp = { openById: (id) => { assert.equal(id, 'COPIA'); return copia; }, flush: () => eventos.push('flush') };
+  s.transporteDocsGradeCarregar_ = (ss, titulos) => { assert.equal(ss, copia); return { abas: ss.exportarAbas_(titulos), info: {} }; };
+  const logs = [];
+  s.Logger = { log: (m) => logs.push(String(m)) };
+  const r = s.diagnosticarDocsDadosLoteTransporteHtml({ meses: 3, limite: 5 });
+  assert.equal(r.processados, 2, JSON.stringify(r));
+  assert.equal(r.comErro, 0, JSON.stringify(r.envios));
+  assert.equal(r.iguais, 2, JSON.stringify(r.envios));
+  assert.equal(r.ok, true);
+  assert.equal(r.copiaTemporaria, 'lixeira');
+  assert.deepEqual(eventos.filter((e) => e !== 'flush'), ['copia', 'privada', 'lixeira:true']);
+  // Fora dos preenchimentos, a planilha real so e consultada (localizar o arquivo e, como no
+  // salvamento normal, o investigador por projeto); durante eles fica bloqueada (sem erros acima).
+  assert.ok(aberturasReais >= 1);
+  assert.equal(JSON.stringify(rows), antes, 'Agenda inalterada (status Entregue preservado)');
+  assert.equal(s.TRANSPORTE_LAYOUTS_BLOQUEIO_PLANILHA_, 0);
+  for (const dado of ['Pessoa Participante Teste', 'P.P.T.', 'ID-001', '123456789012', 'Pessoa Investigadora']) {
+    assert.ok(!logs.join('').includes(dado), 'log nao pode conter ' + dado);
+  }
+});

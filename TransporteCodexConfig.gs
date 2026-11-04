@@ -6613,6 +6613,12 @@ function imprimirTodasAbas_(options, interno) {
       conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
       lap('ia_html_pdf', conteudoPdf.length);
       blob = gerado.blob;
+      // Modo sombra: mesma documentacao pela planilha em memoria, so comparada e registrada.
+      if (typeof transporteDocsDadosSombra_ === 'function') {
+        var sombra = transporteDocsDadosSombra_(payloadFallback, spec, ss, courier, conteudoPdf);
+        Logger.log('[TRANSPORTE_SOMBRA] ' + JSON.stringify(sombra));
+        lap('ia_sombra_memoria', sombra.divergentes);
+      }
     } else {
       // A copia com dados internos fica no Meu Drive do executor, fora da pasta
       // de saida compartilhada, com nome opaco e compartilhamento privado.
