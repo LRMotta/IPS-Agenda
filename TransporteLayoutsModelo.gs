@@ -785,7 +785,7 @@ function transporteDocsDados_(registro, opcoes) {
  * Entra aqui somente courier validada contra a planilha real pelos diagnosticos: as demais
  * seguem pela grade, com o modo sombra.
  */
-var TRANSPORTE_DOCS_MEMORIA_COURIERS_ = ['MARKEN', 'OCASA', 'DHL'];
+var TRANSPORTE_DOCS_MEMORIA_COURIERS_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX'];
 
 function transporteDocsMemoriaAtiva_(options) {
   options = options || {};
