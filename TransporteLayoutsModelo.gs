@@ -1099,8 +1099,8 @@ function transporteLayoutsLoteRegistro_(rows, item, participantes, ss) {
   payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
   payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
   payload.caixaTransporte.confirmado = true;
-  if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' && transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') {
-    payload.solicitarCaixa = transporteCaixaBioSystem_(payload) ? 'Sim' : 'Não';
+  if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN') {
+    payload.solicitarCaixa = transporteSolicitarCaixaMarken_(payload, payload.solicitarCaixa);
   }
   return transporteRegistroPreparado_(payload);
 }

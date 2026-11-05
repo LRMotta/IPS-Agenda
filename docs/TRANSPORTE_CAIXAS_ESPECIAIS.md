@@ -7,13 +7,15 @@ cadastros; a resolução dos rótulos do Transporte exige combinação inequívo
 
 | Caixa | Courier | Temperatura | Efeito |
 | --- | --- | --- | --- |
-| BioSystem | Marken | Ambiente | Rascunho para `operacoes.cs@marken.com`, Invoice com 2 kg e Fornecer caixa = Sim. |
+| BioSystem | Marken | Ambiente | Rascunho para `operacoes.cs@marken.com`, Invoice com 2 kg e Fornecer caixa = "Sim, BioSystem". |
+| Crēdo Cube | Marken | Ambiente, Refrigerado ou Congelado (uma regra por temperatura) | Rascunho para `protocolos.credo@marken.com`, Fornecer caixa = "Sim, Crēdo Cube", Invoice com 5 kg e Declaração sem gelo seco (---). |
 | Sepio | Ocasa | Ambiente | Identificação da caixa na tela de Transporte, mantendo e-mail e documentos existentes. |
 
 Não há inferência para temperaturas mistas nem substituição do comportamento de
 transportes sem regra correspondente. Para Marken em temperatura Ambiente, o
-campo de envio da caixa é automático: Sim para BioSystem e Não para a caixa
+campo de envio da caixa é automático: "Sim, BioSystem" para BioSystem e Não para a caixa
 convencional, inclusive após trocar a combinação de um transporte já salvo.
+Com Crēdo Cube, o campo também é automático nas três temperaturas.
 O servidor revalida esse valor. No e-mail, somente o valor do campo original
 "Enviar Caixa de Transporte" é preenchido, preservando rótulo, linhas e estilos
 do modelo da courier. Não são acrescentadas linhas de caixa ao modelo.

@@ -70,8 +70,8 @@ test('salvar força caixa BioSystem e reabrir preserva snapshot confirmado após
   const { s, payload, projects, save, folha, email } = fixture();
   payload.solicitarCaixa = 'Não';
   const registro = save();
-  assert.equal(registro.solicitarCaixa, 'Sim');
-  assert.equal(email.getRange('B8').getValue(), 'Sim');
+  assert.equal(registro.solicitarCaixa, 'Sim, BioSystem');
+  assert.equal(email.getRange('B8').getValue(), 'Sim, BioSystem');
   assert.equal(registro.caixaTransporte.confirmado, true);
   projects[1][3] = '[]';
   const read = s.transporteReadRegistro_();
@@ -138,10 +138,10 @@ test('BioSystem preenche somente o campo original de caixa e preserva a tabela d
   let rows = [['Agendamento', ''], ['Nº HAWB', 'TESTE'], ['PI', 'Investigador'], ['Data da Coleta', '20/10/2026'], ['Horário', '13:00 - 15:00'], ['Quantidade de volumes', '1'], ['Temperatura:', 'Antiga'], ['Enviar Caixa de Transporte', 'Não'], ['Cidade', 'Caxias do Sul']];
   const matrix = value => rows.map(() => [value, value]);
   s.transporteCodexGetSheet_ = () => ({ getRange: () => ({ getDisplayValues: () => rows.map(row => row.slice()), getBackgrounds: () => matrix('#fff'), getFontColors: () => matrix('#000'), getFontWeights: () => matrix('normal'), getHorizontalAlignments: () => matrix('left') }) });
-  const html = s.transporteCodexEmailHtml_({}, '', 'MARKEN', 'Bom dia', 'AMBIENTE', true);
-  assert.match(html, />Sim<\/td>/);
+  const html = s.transporteCodexEmailHtml_({}, '', 'MARKEN', 'Bom dia', 'AMBIENTE', 'Sim, BioSystem');
+  assert.match(html, />Sim, BioSystem<\/td>/);
   assert.match(html, />AMBIENTE<\/td>/);
-  assert.match(html, />Enviar Caixa de Transporte<\/td><td[^>]*>Sim<\/td>/);
+  assert.match(html, />Enviar Caixa de Transporte<\/td><td[^>]*>Sim, BioSystem<\/td>/);
   assert.doesNotMatch(html, /Fornecer caixa/);
   assert.equal((html.match(/<tr>/g) || []).length, rows.length);
   assert.equal(rows[7][1], 'Não');
@@ -158,7 +158,7 @@ test('BioSystem preenche somente o campo original de caixa e preserva a tabela d
 
 test('trocar BioSystem por convencional restaura Não no servidor, mesmo com Sim antigo no payload', () => {
   const { s, payload, save, email, invoice } = fixture();
-  assert.equal(save().solicitarCaixa, 'Sim');
+  assert.equal(save().solicitarCaixa, 'Sim, BioSystem');
   s.atualizarMarkenVolumes_({});
   assert.equal(invoice.getRange('T41').getValue(), '2 Kg');
   payload.destino = 'Outro Lab';
@@ -171,6 +171,46 @@ test('trocar BioSystem por convencional restaura Não no servidor, mesmo com Sim
   assert.equal(invoice.getRange('T41').getValue(), '1 Kg');
 });
 
+test('Crēdo Cube vale nas três temperaturas com resposta própria, 5 kg e sem gelo seco', () => {
+  for (const temperatura of ['AMBIENTE', 'REFRIGERADO', 'CONGELADO']) {
+    const { s, payload, projects, rule, save, folha, declaracao, invoice, email } = fixture();
+    projects[1][3] = JSON.stringify([{ ...rule, temperatura, tipoCaixa: 'CREDO_CUBE' }]);
+    payload.temperatura = temperatura;
+    payload.solicitarCaixa = 'Não';
+    const registro = save();
+    assert.equal(registro.caixaTransporte.tipoCaixa, 'CREDO_CUBE');
+    assert.equal(registro.solicitarCaixa, 'Sim, Crēdo Cube');
+    assert.equal(email.getRange('B8').getValue(), 'Sim, Crēdo Cube');
+    assert.equal(s.transporteReadSolicitarCaixa_({}, 'MARKEN', temperatura), 'Sim, Crēdo Cube');
+    folha.getRange('C6').setValue(temperatura);
+    folha.getRange('C10').setValue('MARKEN');
+    folha.getRange('C11').setValue('EUROFINS (LANCASTER)');
+    const especial = { ...payload, caixaTransporte: registro.caixaTransporte };
+    s.atualizarMarkenVolumes_({}, especial);
+    assert.equal(invoice.getRange('T41').getValue(), '5 Kg');
+    s.verificarEAtualizarG33Declaracao_({}, especial);
+    assert.equal(declaracao.getRange('G33').getValue(), '---');
+    if (temperatura === 'CONGELADO') {
+      s.verificarEAtualizarG33Declaracao_({}, { ...payload, caixaTransporte: { tipoCaixa: '' } });
+      assert.equal(declaracao.getRange('G33').getValue(), 10);
+    }
+  }
+});
+
+test('Crēdo Cube não se aplica a outra courier nem a temperatura mista; resposta antiga não persiste', () => {
+  const { s, payload, projects, rule } = fixture();
+  const caixaTransporte = { tipoCaixa: 'CREDO_CUBE' };
+  assert.equal(s.transporteCaixaCredoCube_({ ...payload, courier: 'OCASA', caixaTransporte }), false);
+  assert.equal(s.transporteCaixaCredoCube_({ ...payload, temperatura: 'AMBIENTE + CONGELADO', caixaTransporte }), false);
+  projects[1][3] = JSON.stringify([{ ...rule, courierId: 'O1', tipoCaixa: 'CREDO_CUBE' }]);
+  assert.throws(() => s.transporteCaixaResolver_({}, { ...payload, courier: 'OCASA' }), /Revise/);
+  const convencional = { ...payload, temperatura: 'REFRIGERADO', caixaTransporte: { tipoCaixa: '' } };
+  assert.equal(s.transporteSolicitarCaixaMarken_(convencional, 'Sim, Crēdo Cube'), 'Não');
+  assert.equal(s.transporteSolicitarCaixaMarken_(convencional, 'Sim, BioSystem'), 'Não');
+  assert.equal(s.transporteSolicitarCaixaMarken_(convencional, 'Sim'), 'Sim');
+  assert.doesNotThrow(() => s.transporteCaixaNoteRead_('[IPS_CAIXA_V1]{"versao":1,"contexto":[],"tipoCaixa":"CREDO_CUBE"}[/IPS_CAIXA_V1]'));
+});
+
 test('hash documental muda com a caixa e nota inválida não é inferida', () => {
   const { s, payload } = fixture();
   const base = s.transportePdfDocumentoHash_({}, payload);
@@ -178,10 +218,11 @@ test('hash documental muda com a caixa e nota inválida não é inferida', () =>
   assert.throws(() => s.transporteCaixaNoteRead_('[IPS_CAIXA_V1]{[/IPS_CAIXA_V1]'), /inválido/);
 });
 
-test('rascunho BioSystem vai para operações; Sepio conserva destinatário e tabela OCASA', () => {
-  for (const type of ['BIOSYSTEM', 'SEPIO', '']) {
+test('rascunho BioSystem vai para operações, Crēdo Cube para protocolos; Sepio conserva destinatário e tabela OCASA', () => {
+  for (const type of ['BIOSYSTEM', 'CREDO_CUBE', 'SEPIO', '']) {
     const { s, payload, projects, rule, save, email } = fixture();
     if (type === 'SEPIO') { payload.courier = 'OCASA'; projects[1][3] = JSON.stringify([{ ...rule, courierId: 'O1', tipoCaixa: 'SEPIO' }]); }
+    if (type === 'CREDO_CUBE') projects[1][3] = JSON.stringify([{ ...rule, tipoCaixa: 'CREDO_CUBE' }]);
     if (!type) projects[1][3] = '[]';
     save();
     const rows = [['Coleta', ''], ['Temperatura', 'AMBIENTE'], ['Fornecer caixa', 'Não']];
@@ -199,10 +240,11 @@ test('rascunho BioSystem vai para operações; Sepio conserva destinatário e ta
     s.GmailApp = { createDraft: (to, _title, _body, options) => { drafts.push({ to, html: options.htmlBody }); return { getId: () => 'DRAFT-1' }; } };
     const result = s.criarRascunhoEmail_({ temperaturaPdf: 'AMBIENTE' });
     assert.equal(result.ok, true, result.message);
-    assert.equal(drafts[0].to, type === 'BIOSYSTEM' ? 'operacoes.cs@marken.com' : payload.courier.toLowerCase() + '@example.invalid');
+    const especiais = { BIOSYSTEM: 'operacoes.cs@marken.com', CREDO_CUBE: 'protocolos.credo@marken.com' };
+    assert.equal(drafts[0].to, especiais[type] || payload.courier.toLowerCase() + '@example.invalid');
     if (type === 'SEPIO') {
       assert.match(drafts[0].html, />Não<\/td>/);
       assert.equal(email.getRange('B8').getValue(), '');
-    } else if (type) assert.match(drafts[0].html, />Sim<\/td>/);
+    } else if (type) assert.match(drafts[0].html, type === 'CREDO_CUBE' ? />Sim, Crēdo Cube<\/td>/ : />Sim, BioSystem<\/td>/);
   }
 });

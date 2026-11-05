@@ -6462,8 +6462,10 @@ function normalizarProjetoCaixasTransporte_(value) {
     var courier = couriers[courierId];
     if (!courier || courier.disponivelProjetos === false) throw new Error('Selecione uma courier disponível para a caixa especial.');
     var nome = normText_(courier.nome || courier.courier || '');
-    if (temperatura !== 'AMBIENTE' || !((tipoCaixa === 'BIOSYSTEM' && nome === 'marken') || (tipoCaixa === 'SEPIO' && nome === 'ocasa'))) {
-      throw new Error('Use BioSystem para Marken ou Sepio para Ocasa, sempre em temperatura Ambiente.');
+    var caixaAmbiente = temperatura === 'AMBIENTE' && ((tipoCaixa === 'BIOSYSTEM' && nome === 'marken') || (tipoCaixa === 'SEPIO' && nome === 'ocasa'));
+    var caixaCredoCube = tipoCaixa === 'CREDO_CUBE' && nome === 'marken' && ['AMBIENTE', 'REFRIGERADO', 'CONGELADO'].indexOf(temperatura) >= 0;
+    if (!caixaAmbiente && !caixaCredoCube) {
+      throw new Error('Use BioSystem (Ambiente) ou Crēdo Cube (Ambiente, Refrigerado ou Congelado) para Marken, ou Sepio (Ambiente) para Ocasa.');
     }
     if (!labs[laboratorioId]) throw new Error('Selecione um laboratório cadastrado para a caixa especial.');
     var key = courierId + '|' + temperatura + '|' + laboratorioId;

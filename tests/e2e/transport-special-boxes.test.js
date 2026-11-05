@@ -19,7 +19,7 @@ test('Transporte aplica BioSystem, remove efeito ao trocar combinação e conser
       window.renderDerived();
     });
     assert.equal(await page.locator('#caixaEspecial').inputValue(), 'BioSystem');
-    assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim');
+    assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim, BioSystem');
     assert.equal(await page.locator('#solicitarCaixa').isDisabled(), true);
     assert.match(await page.locator('#caixaEspecialResumo').innerText(), /operacoes.cs@marken.com.*2 kg/);
     await page.evaluate(() => window.selectTemp('CONGELADO'));
@@ -28,6 +28,19 @@ test('Transporte aplica BioSystem, remove efeito ao trocar combinação e conser
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Não');
     await page.evaluate(() => window.selectTemp('AMBIENTE'));
     assert.equal(await page.locator('#caixaEspecial').inputValue(), 'BioSystem');
+    await page.evaluate(() => {
+      window.state.options.caixasTransporteRegras.push({ nomeAbreviado: 'Estudo A', courier: 'MARKEN', temperatura: 'REFRIGERADO', destino: 'Lab A', tipoCaixa: 'CREDO_CUBE' });
+      window.selectTemp('REFRIGERADO');
+    });
+    assert.equal(await page.locator('#caixaEspecial').inputValue(), 'Crēdo Cube');
+    assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim, Crēdo Cube');
+    assert.equal(await page.locator('#solicitarCaixa').isDisabled(), true);
+    assert.match(await page.locator('#caixaEspecialResumo').innerText(), /protocolos\.credo@marken\.com.*5 kg.*Sem gelo seco/);
+    await page.evaluate(() => window.selectTemp('CONGELADO'));
+    assert.equal(await page.locator('#caixaEspecialField').isVisible(), false);
+    assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Não');
+    assert.equal(await page.locator('#solicitarCaixa').isDisabled(), false);
+    await page.evaluate(() => window.selectTemp('AMBIENTE'));
     await page.evaluate(() => window.selectCourier('DHL'));
     assert.equal(await page.locator('#caixaEspecialField').isVisible(), false);
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim');

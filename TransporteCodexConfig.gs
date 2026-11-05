@@ -3213,7 +3213,9 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
         options: options,
         auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
         issues: transporteValidate_(registro),
-        awbIssue: transporteAwbAviso_(registro),
+        awbIssue: transporteMeasurePerformance_('getTransporteBootstrap', 'awb_aviso', { rowCount: 1 }, function() {
+          return transporteAwbAviso_(registro);
+        }),
         resumo: {
           materiaisAtivos: ativos.length,
           totalTubos: totalTubos,
@@ -3230,7 +3232,8 @@ function getTransporteBootstrap() {
   return codexWithDocumentLock_('getTransporteBootstrap', function() {
     // O acesso pode ter sido revogado enquanto aguardava outra gravacao.
     codexAssertCanRead_();
-    return transporteBuildBootstrap_();
+    // O aviso de AWB reaproveita a leitura da Agenda feita ao atualizar o registro.
+    return transporteAgendaLeituraCompartilhada_(function() { return transporteBuildBootstrap_(); });
   });
 }
 
@@ -3239,7 +3242,8 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
   idAgenda = String(idAgenda || '').trim();
   if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
   return codexWithDocumentLock_('getTransporteBootstrapFromAgenda', function() {
-    return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
+    // Rascunho nao grava na Agenda: o aviso de AWB reaproveita a leitura do evento.
+    return transporteAgendaLeituraCompartilhada_(function() { return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
       var contexto = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'payload', { rowCount: 1 }, function() {
         return montarContextoTransporteParaTransp_(idAgenda, slot);
       });
@@ -3260,7 +3264,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       });
       data.importResult = { rascunho: true, mensagem: importResult.mensagem };
       return data;
-    });
+    }); });
   });
 }
 
@@ -3333,8 +3337,8 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     lap('rp_materiais_note');
     payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
     if (!options.rascunho) payload.caixaTransporte.confirmado = true;
-    if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' && transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') {
-      payload.solicitarCaixa = transporteCaixaBioSystem_(payload) ? 'Sim' : 'Não';
+    if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN') {
+      payload.solicitarCaixa = transporteSolicitarCaixaMarken_(payload, payload.solicitarCaixa);
     }
     lap('rp_caixa');
     if (!options.rascunho) transporteAwbReservar_(payload, options.awbExigirUnica === true);
@@ -3513,8 +3517,7 @@ function aplicarSolicitacaoCaixaTransporte_(ss, payload) {
   var courier = transporteNormalizeCourierFromCodex_(payload.courier);
   var temperatura = transporteNormalizeTemperaturaFromCodex_(payload.temperatura);
   var resposta = transporteNormalizeSimNao_(payload.solicitarCaixa, transporteDefaultSolicitarCaixa_(courier));
-  if (transporteCaixaBioSystem_(payload)) resposta = 'Sim';
-  else if (courier === 'MARKEN' && temperatura === 'AMBIENTE' && payload.caixaTransporte) resposta = 'Não';
+  if (courier === 'MARKEN' && payload.caixaTransporte) resposta = transporteSolicitarCaixaMarken_(payload, resposta);
 
   if (courier === 'MARKEN') {
     var emailMarken = transporteGetSheet_(ss, 'emailMarken', false);
@@ -3912,7 +3915,7 @@ function transporteAplicarAutomacoesTemperatura_(ss, payload) {
     formularioPinex.getRange('D37:D39').setValues(pinexTemp);
   }
 
-  atualizarPesoGeloDeclaracao_(ss);
+  atualizarPesoGeloDeclaracao_(ss, payload);
   if (courier === 'MARKEN') {
     atualizarMarkenVolumes_(ss, payload);
     atualizarInvoiceMarkenAmostras_(ss);
@@ -5331,7 +5334,7 @@ function calcularExpressaoLinha_(row) {
   }
 }
 
-function verificarEAtualizarG33Declaracao_(ss) {
+function verificarEAtualizarG33Declaracao_(ss, payload) {
   try {
     ss = ss || getTransporteSpreadsheetCodex_();
     var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', false);
@@ -5349,6 +5352,7 @@ function verificarEAtualizarG33Declaracao_(ss) {
       valor = (courier === 'PINEX' || courier === 'PINEX (Agendamento)')
         ? transporteConfigNumber_('Gelo PINEX (kg)', 2) : transporteConfigNumber_('Gelo padrão (kg)', 4);
     }
+    if (transporteCaixaCredoCube_(payload || transporteCaixaDoModelo_(ss))) valor = '---';
     declaracao.getRange('G33').setValue(valor);
   } catch (error) {
     transporteRegistrarAviso_('verificarEAtualizarG33Declaracao_');
@@ -5372,6 +5376,7 @@ function atualizarMarkenVolumes_(ss, payload) {
     else if (temperatura === 'CONGELADO' || temperatura === 'REFRIGERADO') peso = transporteConfigNumber_('Peso MARKEN refrigerado/congelado (kg)', 5) + ' Kg';
     else if (temperatura === 'AMBIENTE + CONGELADO' || temperatura === 'AMBIENTE + REFRIGERADO') peso = transporteConfigNumber_('Peso MARKEN misto (kg)', 6) + ' Kg';
     if (temperatura === 'AMBIENTE' && transporteCaixaBioSystem_(payload)) peso = '2 Kg';
+    if (transporteCaixaCredoCube_(payload)) peso = '5 Kg';
     invoice.getRange('O12').setValue(volumes);
     invoice.getRange('T39').setValue(volumes);
     invoice.getRange('T41').setValue(peso);
@@ -5668,8 +5673,8 @@ function atualizarPeticaoPinexTemperatura_(ss) {
   }
 }
 
-function atualizarPesoGeloDeclaracao_(ss) {
-  return verificarEAtualizarG33Declaracao_(ss);
+function atualizarPesoGeloDeclaracao_(ss, payload) {
+  return verificarEAtualizarG33Declaracao_(ss, payload);
 }
 
 function atualizarCommercialInvoicePinexE48_(ss) {
@@ -5903,8 +5908,9 @@ function criarRascunhoEmail_(options) {
       html = transporteCodexEmailHtml_(ss, 'emailOcasa', 'OCASA', saudacao);
     } else if (courier === 'MARKEN') {
       var caixaPayload = transporteCaixaDoModelo_(ss);
-      destinatarios = transporteCaixaBioSystem_(caixaPayload) ? ['operacoes.cs@marken.com'] : transporteCourierEmailRecipients_(courier, temperatura);
-      html = transporteCodexEmailHtml_(ss, 'emailMarken', 'MARKEN', saudacao, temperaturaConfirmada, transporteCaixaBioSystem_(caixaPayload));
+      destinatarios = transporteCaixaCredoCube_(caixaPayload) ? ['protocolos.credo@marken.com']
+        : (transporteCaixaBioSystem_(caixaPayload) ? ['operacoes.cs@marken.com'] : transporteCourierEmailRecipients_(courier, temperatura));
+      html = transporteCodexEmailHtml_(ss, 'emailMarken', 'MARKEN', saudacao, temperaturaConfirmada, transporteCaixaRespostaEspecial_(caixaPayload));
     } else if (transporteIsDhl_(courier)) {
       destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
       html = transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, transporteReadSolicitarCaixa_(ss, courier, temperatura), saudacao);
@@ -6330,7 +6336,7 @@ function transporteValidarTemperaturaGeracao_(esperada, atual) {
   return temperatura;
 }
 
-function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGeracao, bioSystem) {
+function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGeracao, caixaEmail) {
   var sheet = transporteCodexGetSheet_(ss, sheetKey, false);
   if (!sheet) {
     if (tipo === 'MARKEN') throw transporteErroTemperatura_('Modelo do e-mail MARKEN não encontrado. O rascunho não foi criado.');
@@ -6346,14 +6352,14 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
     if (linhasTemperatura.length !== 1) throw transporteErroTemperatura_('Não foi possível identificar uma única linha de temperatura no modelo do e-mail MARKEN. O rascunho não foi criado.');
     // Somente a matriz em memoria recebe o snapshot; formulas e estilos ficam intactos.
     dados[linhasTemperatura[0]][1] = temperatura;
-    if (bioSystem || (bioSystem === false && temperatura === 'AMBIENTE')) {
+    if (caixaEmail || (caixaEmail === false && temperatura === 'AMBIENTE')) {
       var linhasCaixa = dados.map(function(row, index) {
         var label = transporteNorm_(row[0]).replace(/[:\s]+$/g, '');
         return index > 0 && /^(enviar|fornecer|solicitar) caixa( de transporte)?$/.test(label) ? index : -1;
       }).filter(function(index) { return index >= 0; });
       if (linhasCaixa.length !== 1) throw new Error('Não foi possível identificar um único campo de envio de caixa no modelo MARKEN. Confira o modelo da courier antes de gerar o rascunho.');
       // Preencher apenas o valor do campo original; preservar rotulo, linhas e estilos da courier.
-      dados[linhasCaixa[0]][1] = bioSystem ? 'Sim' : 'Não';
+      dados[linhasCaixa[0]][1] = caixaEmail || 'Não';
     }
   }
   var backgrounds = range.getBackgrounds();
@@ -7097,7 +7103,7 @@ function transporteCaixaNoteRead_(note) {
   if (!match) return null;
   var snapshot;
   try { snapshot = JSON.parse(match[1]); } catch { throw new Error('Registro da caixa de transporte inválido. Revise o transporte antes de gerar documentos.'); }
-  if (!snapshot || snapshot.versao !== 1 || !Array.isArray(snapshot.contexto) || ['','BIOSYSTEM','SEPIO'].indexOf(snapshot.tipoCaixa) < 0) {
+  if (!snapshot || snapshot.versao !== 1 || !Array.isArray(snapshot.contexto) || ['','BIOSYSTEM','SEPIO','CREDO_CUBE'].indexOf(snapshot.tipoCaixa) < 0) {
     throw new Error('Registro da caixa de transporte inválido. Revise o transporte antes de gerar documentos.');
   }
   return snapshot;
@@ -7177,7 +7183,9 @@ function transporteCaixasRegras_() {
       if (courier.length !== 1 || lab.length !== 1) { invalidRule(); return; }
       var tipo = String(rule.tipoCaixa || '').toUpperCase();
       var nomeCourier = transporteNormalizeCourierFromCodex_(courier[0].nome);
-      if (rule.temperatura !== 'AMBIENTE' || !((tipo === 'BIOSYSTEM' && nomeCourier === 'MARKEN') || (tipo === 'SEPIO' && nomeCourier === 'OCASA'))) { invalidRule(); return; }
+      var caixaAmbiente = rule.temperatura === 'AMBIENTE' && ((tipo === 'BIOSYSTEM' && nomeCourier === 'MARKEN') || (tipo === 'SEPIO' && nomeCourier === 'OCASA'));
+      var caixaCredoCube = tipo === 'CREDO_CUBE' && nomeCourier === 'MARKEN' && TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_.indexOf(rule.temperatura) >= 0;
+      if (!caixaAmbiente && !caixaCredoCube) { invalidRule(); return; }
       result.push({ projetoId: String(row[0]), nomeAbreviado: String(row[1] || ''), codigo: String(row[2] || ''),
         courierId: String(rule.courierId), courier: nomeCourier, temperatura: rule.temperatura,
         laboratorioId: String(rule.laboratorioId), destino: lab[0].nomeAbreviado || lab[0].nome || lab[0].nomeCompleto || '',
@@ -7222,6 +7230,29 @@ function transporteCaixaPersistirAgenda_(payload) {
   var before = range.getNote();
   var after = transporteCaixaNoteWrite_(before, payload.caixaTransporte);
   if (before !== after) range.setNote(after);
+}
+
+var TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ = 'Sim, BioSystem';
+var TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_ = 'Sim, Crēdo Cube';
+var TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_ = ['AMBIENTE', 'REFRIGERADO', 'CONGELADO'];
+
+function transporteCaixaCredoCube_(payload) {
+  return !!(payload && payload.caixaTransporte && payload.caixaTransporte.tipoCaixa === 'CREDO_CUBE' &&
+    transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' &&
+    TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_.indexOf(transporteNormalizeTemperaturaFromCodex_(payload.temperatura)) >= 0);
+}
+
+function transporteCaixaRespostaEspecial_(payload) {
+  if (transporteCaixaCredoCube_(payload)) return TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_;
+  return transporteCaixaBioSystem_(payload) ? TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ : false;
+}
+
+// Resposta do campo de caixa MARKEN; o valor do cliente so vale fora de Ambiente e sem caixa especial.
+function transporteSolicitarCaixaMarken_(payload, atual) {
+  var especial = transporteCaixaRespostaEspecial_(payload);
+  if (especial) return especial;
+  if (transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') return 'Não';
+  return atual === TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ || atual === TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_ ? 'Não' : atual;
 }
 
 function transporteCaixaBioSystem_(payload) {

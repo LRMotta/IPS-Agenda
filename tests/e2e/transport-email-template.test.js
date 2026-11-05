@@ -20,7 +20,7 @@ test('BioSystem mantém as nove linhas e os estilos do modelo MARKEN no e-mail',
   const server = runFile('TransporteCodexConfig.gs', { Logger: { log() {} } });
   server.transporteCodexGetSheet_ = () => ({ getRange: () => range });
   server.transporteCnpjTexto_ = () => 'CNPJ de exemplo';
-  const html = server.transporteCodexEmailHtml_({}, 'emailMarken', 'MARKEN', 'Bom dia', 'AMBIENTE', true);
+  const html = server.transporteCodexEmailHtml_({}, 'emailMarken', 'MARKEN', 'Bom dia', 'AMBIENTE', 'Sim, BioSystem');
   // Browser plugin not available. Corpo real gerado pelo servidor, dados fictícios e rede bloqueada.
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
@@ -28,9 +28,9 @@ test('BioSystem mantém as nove linhas e os estilos do modelo MARKEN no e-mail',
     await page.route('**/*', route => route.abort());
     await page.setContent('<html lang="pt-BR"><head><title>Modelo MARKEN — teste local</title></head><body style="font-family:Arial,sans-serif">' + html + '</body></html>');
     assert.equal(await page.locator('table tr').count(), 9);
-    assert.deepEqual(await page.locator('table tr').allTextContents(), rows.map((row, index) => row[0] + (index === 7 ? 'Sim' : row[1])));
+    assert.deepEqual(await page.locator('table tr').allTextContents(), rows.map((row, index) => row[0] + (index === 7 ? 'Sim, BioSystem' : row[1])));
     const caixa = page.locator('table tr').nth(7);
-    assert.equal(await caixa.locator('td').nth(1).innerText(), 'Sim');
+    assert.equal(await caixa.locator('td').nth(1).innerText(), 'Sim, BioSystem');
     const styles = await caixa.locator('td').first().evaluate(el => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, weight: getComputedStyle(el).fontWeight }));
     assert.deepEqual(styles, { background: 'rgb(48, 84, 150)', color: 'rgb(255, 255, 255)', weight: '700' });
     assert.equal(await page.getByText('Fornecer caixa', { exact: true }).count(), 0);

@@ -51,6 +51,16 @@ test('projeto configura BioSystem e Sepio, preserva múltiplas regras e permite 
     assert.equal(await page.locator('#pCaixaLab1').inputValue(), 'L2');
     assert.match(await page.locator('#pCaixasTransporteList').innerText(), /BioSystem/);
     assert.match(await page.locator('#pCaixasTransporteList').innerText(), /Sepio/);
+    assert.equal(await page.locator('#pCaixaTipo1').count(), 0);
+    await page.locator('#pCaixaTipo0').selectOption('CREDO_CUBE');
+    await page.locator('#pCaixaTemp0').selectOption('CONGELADO');
+    assert.match(await page.locator('#pCaixasTransporteList').innerText(), /Crēdo Cube/);
+    assert.match(await page.locator('#pCaixasTransporteList').innerText(), /protocolos\.credo@marken\.com.*5 kg.*Sim, Crēdo Cube.*Sem gelo seco/);
+    assert.equal(await page.evaluate(() => window.validarProjetoCaixasTransporte_()), true);
+    assert.deepEqual(await page.evaluate(() => [window._projetoCaixasTransporte[0].tipoCaixa, window._projetoCaixasTransporte[0].temperatura]), ['CREDO_CUBE', 'CONGELADO']);
+    await page.locator('#pCaixaTipo0').selectOption('BIOSYSTEM');
+    assert.equal(await page.locator('#pCaixaTemp0').inputValue(), 'Ambiente');
+    assert.equal(await page.evaluate(() => window._projetoCaixasTransporte[0].temperatura), 'AMBIENTE');
     await page.getByRole('button', { name: 'Remover regra' }).first().click();
     assert.equal(await page.locator('#pCaixaCourier0').inputValue(), 'O1');
     assert.deepEqual(errors, []);
