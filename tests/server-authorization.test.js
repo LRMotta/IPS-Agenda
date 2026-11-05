@@ -105,10 +105,10 @@ test('configuracao, instalacao de gatilhos e sandbox exigem perfil admin', () =>
 });
 
 test('RPCs operacionais de Transporte exigem permissao de escrita antes da mutacao', () => {
-  ['sincronizarTransporte', 'limparTransporte'].forEach((functionName) => {
+  ['sincronizarTransporte', 'limparTransporte', 'reavaliarCaixaTransporte'].forEach((functionName) => {
     const source = functionSource('TransporteCodexConfig.gs', functionName);
     const guardIndex = source.indexOf('codexAssertCanWrite_');
-    const mutationIndex = source.search(/transporteSincronizarDependencias_|performContentDeletion_/);
+    const mutationIndex = source.search(/transporteSincronizarDependencias_|performContentDeletion_|salvarTransporteInterno_/);
     assert.ok(guardIndex >= 0 && mutationIndex > guardIndex, functionName);
   });
 });

@@ -3325,11 +3325,24 @@ function salvarTransporte(payload, options) {
   });
 }
 
+// Unica saida explicita do snapshot confirmado: grava o formulario e resolve pela regra atual do
+// projeto. Reavaliar nao vem de options para que salvarTransporte nunca reclassifique um envio.
+function reavaliarCaixaTransporte(payload) {
+  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('reavaliarCaixaTransporte', 'Transporte', payload && (payload.idAgenda || payload.id || payload.paciente));
+  return codexWithDocumentLock_('reavaliarCaixaTransporte', function() {
+    return transporteMeasurePerformance_('reavaliarCaixaTransporte', 'total', { rowCount: 1 }, function() {
+      var result = salvarTransporteInterno_(payload, { returnBootstrap: false, returnPreparedRecord: true, preencherDocumentos: false }, undefined, true);
+      transporteCaixaAuditarReavaliacao_(result.registro);
+      return result;
+    });
+  });
+}
+
 function transporteAgendaLeituraCompartilhada_(fn) {
   return typeof codexAgendaLeituraCompartilhada_ === 'function' ? codexAgendaLeituraCompartilhada_(fn) : fn();
 }
 
-function salvarTransporteInterno_(payload, options, leituraParticipantes) {
+function salvarTransporteInterno_(payload, options, leituraParticipantes, reavaliarCaixa) {
   var ss;
   var folha;
   var declaracao;
@@ -3373,7 +3386,7 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
     materiaisNote = transporteMateriaisNote_(declaracao.getRange('F30').getNote(), payload, peticao);
     payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
     lap('rp_materiais_note');
-    payload.caixaTransporte = transporteCaixaResolver_(ss, payload);
+    payload.caixaTransporte = transporteCaixaResolver_(ss, payload, reavaliarCaixa === true);
     if (!options.rascunho) payload.caixaTransporte.confirmado = true;
     if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN') {
       payload.solicitarCaixa = transporteSolicitarCaixaMarken_(payload, payload.solicitarCaixa);
@@ -7269,7 +7282,7 @@ function transporteCaixaRegraDoProjeto_(rule, key) {
 
 // Pendencias citam a caixa especial pela regra do projeto; sem regra unica, nada e inferido.
 function transporteCaixasAnotarPendencias_(pendencias) {
-  var rotulos = { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube' };
+  var rotulos = TRANSPORTE_CAIXA_ROTULOS_;
   var itens = ['courierNaoAgendada', 'courierNaoConfirmada', 'awbEnviadaNaoEntregue', 'transporteBackupNaoAgendado', 'documentacaoTransporteSemEnvio']
     .reduce(function(lista, chave) { return lista.concat(pendencias[chave] || []); }, []);
   if (!itens.length) return;
@@ -7293,17 +7306,21 @@ function transporteCaixasAnotarPendencias_(pendencias) {
   }
 }
 
-function transporteCaixaResolver_(ss, payload) {
+// reavaliar: ignora os snapshots do envio e resolve pela regra atual; a nota invalida nao impede.
+function transporteCaixaResolver_(ss, payload, reavaliar) {
   // Nunca confiar na caixa/valores enviados pelo cliente; recuperar somente snapshots do servidor.
   var lap = transporteLapStart_('salvarTransporte');
   var range = transporteCaixaAgendaRange_(payload);
   lap('cx_faixa_agenda');
   var notaAgenda = range && typeof range.getNote === 'function' ? range.getNote() : null;
-  var saved = notaAgenda !== null ? transporteCaixaNoteRead_(notaAgenda) : null;
-  lap('cx_nota_agenda');
-  if (transporteCaixaCompativel_(saved, payload)) return saved;
-  saved = transporteCaixaAtual_(ss, payload);
-  if (saved && saved.confirmado === true) return saved;
+  var anterior = reavaliar ? transporteCaixaAnterior_(ss, payload, notaAgenda) : null;
+  if (!reavaliar) {
+    var saved = notaAgenda !== null ? transporteCaixaNoteRead_(notaAgenda) : null;
+    lap('cx_nota_agenda');
+    if (transporteCaixaCompativel_(saved, payload)) return saved;
+    saved = transporteCaixaAtual_(ss, payload);
+    if (saved && saved.confirmado === true) return saved;
+  }
   var key = transporteParticipantKey_(payload.protocolo);
   var rules = transporteCaixasRegras_(key);
   lap('cx_regras', rules.length);
@@ -7319,9 +7336,34 @@ function transporteCaixaResolver_(ss, payload) {
   var match = matches[0];
   var snapshot = { versao: 1, contexto: transporteCaixaContexto_(payload), tipoCaixa: match ? match.tipoCaixa : '',
     projetoId: match ? match.projetoId : '', courierId: match ? match.courierId : '', laboratorioId: match ? match.laboratorioId : '' };
+  if (reavaliar) {
+    // reavaliadoEm tambem separa a nova geracao de documentos da solicitacao anterior no cliente.
+    snapshot.reavaliadoEm = new Date().toISOString();
+    snapshot.tipoCaixaAnterior = anterior ? anterior.tipoCaixa : '';
+  }
   // Validar a nota antes da primeira escrita nos documentos; manter margem para a confirmacao.
   if (range) transporteCaixaNoteWrite_(notaAgenda, snapshot);
   return snapshot;
+}
+
+function transporteCaixaAnterior_(ss, payload, notaAgenda) {
+  var saved = null;
+  try { saved = transporteCaixaNoteRead_(notaAgenda); } catch { saved = null; }
+  return saved || transporteCaixaAtual_(ss, payload);
+}
+
+function transporteCaixaAuditarReavaliacao_(registro) {
+  registro = registro || {};
+  var idAgenda = String(registro.idAgenda || '').trim();
+  var slot = String(registro.agendaSlot || registro.slot || '').trim();
+  if (!idAgenda || !slot || typeof codexWriteAuditChanges_ !== 'function') return;
+  slot = normalizarSlotTransporteCodex_(slot, true);
+  var caixa = registro.caixaTransporte || {};
+  codexWriteAuditChanges_('Agenda', 'reavaliarCaixaTransporte', idAgenda, [{
+    field: (slot === 'backup2' ? 'Backup II' : 'Transporte ' + slot) + ' - Caixa especial',
+    oldValue: TRANSPORTE_CAIXA_ROTULOS_[caixa.tipoCaixaAnterior] || 'Caixa normal',
+    newValue: TRANSPORTE_CAIXA_ROTULOS_[caixa.tipoCaixa] || 'Caixa normal'
+  }], 'Caixa reavaliada pela regra atual do projeto na tela de Transporte');
 }
 
 function transporteCaixaPersistirAgenda_(payload) {
@@ -7333,6 +7375,7 @@ function transporteCaixaPersistirAgenda_(payload) {
   if (before !== after) range.setNote(after);
 }
 
+var TRANSPORTE_CAIXA_ROTULOS_ = { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube' };
 var TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ = 'Sim, BioSystem';
 var TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_ = 'Sim, Crēdo Cube';
 var TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_ = ['AMBIENTE', 'REFRIGERADO', 'CONGELADO'];

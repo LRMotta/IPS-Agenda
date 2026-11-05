@@ -41,6 +41,18 @@ do modelo da courier. Não são acrescentadas linhas de caixa ao modelo.
   regra do projeto depois não reclassifica um envio confirmado com o mesmo
   contexto. Mudar a combinação exige nova resolução. Abrir um rascunho, por si
   só, não congela a regra.
+- **Reavaliar caixa**, na tela de Transporte, é a saída explícita: aparece quando o
+  envio tem caixa especial confirmada ou quando a regra atual aponta uma caixa para
+  um envio confirmado sem ela. Depois da confirmação, a RPC
+  `reavaliarCaixaTransporte` grava os dados da tela, ignora os snapshots do envio e
+  resolve pela regra atual, sob o document lock e com as validações do salvamento
+  antes da primeira escrita. O novo snapshot substitui o anterior na nota C15 e no
+  marcador `IPS_CAIXA_V1`, sem tocar no restante da nota da célula, e registra
+  `reavaliadoEm`, `tipoCaixaAnterior` e auditoria na Agenda. Nota de caixa inválida
+  não impede a ação; regra inválida ou ambígua a recusa sem gravar.
+- A reavaliação não altera PDF nem rascunho já criados, nem o status do transporte.
+  A tela avisa que precisam ser refeitos até a próxima geração, e a geração seguinte
+  não recupera o resultado da solicitação anterior.
 - A caixa informada pelo cliente não é fonte de decisão. O servidor recupera o
   snapshot persistido ou resolve os cadastros dentro do lock de salvamento.
 - O hash documental inclui o snapshot para impedir reaproveitamento silencioso

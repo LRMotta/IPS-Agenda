@@ -41,7 +41,7 @@ function fixture() {
   s.transporteGetSheet_ = s.transporteCodexGetSheet_ = (_ss, key) => ({ folhaAgendamento: folha, declaracaoTransp: declaracao, invoiceMarken: invoice, emailMarken: email })[key] || null;
   s.getCellValueSafe = (sheet, cell) => sheet.getRange(cell).getValue();
   s.transporteCaixaAgendaRange_ = value => value.idAgenda ? agenda.getRange(2, Number(value.agendaSlot)) : null;
-  function save(options = {}) {
+  function stubSave() {
     s.transporteReadParticipantesDireto_ = () => [];
     s.transporteAtualizarRegistroPorAgenda_ = value => value;
     s.transporteDerivarDadosParticipante_ = value => value;
@@ -51,9 +51,20 @@ function fixture() {
     s.transporteAjustarVolumesDeclaracao_ = () => {};
     s.transporteSetTopLeftInBlock_ = (sheet, a1, value) => sheet.getRange(a1.split(':')[0]).setValue(value);
     s.transporteSincronizarAgenda_ = value => { s.transporteCaixaPersistirAgenda_(value); return {}; };
+  }
+  function save(options = {}) {
+    stubSave();
     return s.salvarTransporteInterno_({ ...payload }, { returnBootstrap: false, returnPreparedRecord: true, preencherDocumentos: false, ...options }).registro;
   }
-  return { s, folha, declaracao, invoice, email, agenda, projects, rule, payload, save };
+  const eventos = [], auditorias = [];
+  function reavaliar() {
+    stubSave();
+    s.codexAssertCanWrite_ = action => { eventos.push('autorizar:' + action); };
+    s.codexWithDocumentLock_ = (name, fn) => { eventos.push('lock:' + name); return fn(); };
+    s.codexWriteAuditChanges_ = (...args) => { auditorias.push(args); };
+    return s.reavaliarCaixaTransporte({ ...payload }).registro;
+  }
+  return { s, folha, declaracao, invoice, email, agenda, projects, rule, payload, save, reavaliar, eventos, auditorias };
 }
 
 test('caixa exige a combinação completa e ignora tipo adulterado pelo cliente', () => {
@@ -107,6 +118,83 @@ test('snapshot por slot conserva nota manual, distingue envios e sobrevive à tr
   assert.equal(s.transporteCaixaResolver_({}, payload).tipoCaixa, 'BIOSYSTEM');
   assert.equal(s.transporteCaixaResolver_({}, { ...payload, agendaSlot: '2' }).tipoCaixa, '');
   assert.equal(s.transporteCaixaResolver_({}, { ...payload, destino: 'Outro Lab' }).tipoCaixa, '');
+});
+
+test('reavaliar descarta a Crēdo Cube confirmada pela regra atual e conserva a nota manual', () => {
+  const { s, payload, projects, rule, save, reavaliar, agenda, folha, email, eventos, auditorias } = fixture();
+  projects[1][3] = JSON.stringify([{ ...rule, temperatura: 'REFRIGERADO', tipoCaixa: 'CREDO_CUBE' }]);
+  Object.assign(payload, { idAgenda: 'EVT1', agendaSlot: '1', temperatura: 'REFRIGERADO' });
+  agenda.getRange(2, 1).setNote('Nota manual');
+  assert.equal(save().caixaTransporte.tipoCaixa, 'CREDO_CUBE');
+  projects[1][3] = '[]';
+  assert.equal(save().caixaTransporte.tipoCaixa, 'CREDO_CUBE', 'alterar o projeto não reclassifica sozinho');
+
+  payload.solicitarCaixa = 'Sim, Crēdo Cube';
+  const registro = reavaliar();
+  assert.equal(registro.caixaTransporte.tipoCaixa, '');
+  assert.equal(registro.caixaTransporte.confirmado, true);
+  assert.equal(registro.caixaTransporte.tipoCaixaAnterior, 'CREDO_CUBE');
+  assert.ok(registro.caixaTransporte.reavaliadoEm);
+  assert.equal(registro.solicitarCaixa, 'Não');
+  assert.equal(email.getRange('B8').getValue(), 'Não');
+  assert.deepEqual(eventos, ['autorizar:reavaliarCaixaTransporte', 'lock:reavaliarCaixaTransporte']);
+
+  const nota = agenda.getRange(2, 1).getNote();
+  assert.ok(nota.startsWith('Nota manual\n'));
+  assert.equal(nota.match(/\[IPS_CAIXA_V1\]/g).length, 1);
+  assert.equal(s.transporteCaixaNoteRead_(nota).tipoCaixa, '');
+  assert.equal(JSON.parse(folha.getRange('C15').getNote()).caixaTransporte.tipoCaixa, '');
+  assert.equal(auditorias.length, 1);
+  assert.equal(auditorias[0][1], 'reavaliarCaixaTransporte');
+  assert.equal(auditorias[0][2], 'EVT1');
+  assert.equal(auditorias[0][3][0].field, 'Transporte 1 - Caixa especial');
+  assert.equal(auditorias[0][3][0].oldValue, 'Crēdo Cube');
+  assert.equal(auditorias[0][3][0].newValue, 'Caixa normal');
+
+  // A nova decisão também fica confirmada: voltar a regra não reclassifica sem nova ação.
+  projects[1][3] = JSON.stringify([{ ...rule, temperatura: 'REFRIGERADO', tipoCaixa: 'CREDO_CUBE' }]);
+  assert.equal(save().caixaTransporte.tipoCaixa, '');
+  assert.equal(reavaliar().caixaTransporte.tipoCaixa, 'CREDO_CUBE');
+});
+
+test('salvar com pedido de reavaliação nas opções não reclassifica o envio confirmado', () => {
+  const { projects, save } = fixture();
+  save();
+  projects[1][3] = '[]';
+  assert.equal(save({ reavaliarCaixa: true }).caixaTransporte.tipoCaixa, 'BIOSYSTEM');
+});
+
+test('reavaliar sem regra válida não grava; nota de caixa inválida não impede a correção', () => {
+  const { s, payload, projects, rule, save, reavaliar, agenda, folha, auditorias } = fixture();
+  Object.assign(payload, { idAgenda: 'EVT1', agendaSlot: '1' });
+  agenda.getRange(2, 1).setNote('Nota manual');
+  save();
+  const notas = [agenda.getRange(2, 1).getNote(), folha.getRange('C15').getNote()];
+  for (const invalida of ['{', JSON.stringify([rule, rule])]) {
+    projects[1][3] = invalida;
+    assert.throws(reavaliar, /Revise|Mais de uma regra/);
+    assert.deepEqual([agenda.getRange(2, 1).getNote(), folha.getRange('C15').getNote()], notas);
+  }
+  assert.equal(auditorias.length, 0);
+
+  projects[1][3] = '[]';
+  agenda.getRange(2, 1).setNote('Nota manual\n[IPS_CAIXA_V1]{[/IPS_CAIXA_V1]');
+  assert.throws(save, /inválido/);
+  const registro = reavaliar();
+  assert.equal(registro.caixaTransporte.tipoCaixa, '');
+  assert.ok(agenda.getRange(2, 1).getNote().startsWith('Nota manual\n'));
+  assert.equal(s.transporteCaixaNoteRead_(agenda.getRange(2, 1).getNote()).tipoCaixa, '');
+});
+
+test('envio sem Agenda reavalia pela nota C15 e não gera auditoria da Agenda', () => {
+  const { projects, save, reavaliar, folha, auditorias } = fixture();
+  save();
+  projects[1][3] = '[]';
+  const registro = reavaliar();
+  assert.equal(registro.caixaTransporte.tipoCaixa, '');
+  assert.equal(registro.caixaTransporte.tipoCaixaAnterior, 'BIOSYSTEM');
+  assert.equal(JSON.parse(folha.getRange('C15').getNote()).caixaTransporte.tipoCaixa, '');
+  assert.equal(auditorias.length, 0);
 });
 
 test('Invoice ambiente BioSystem usa 2 kg; padrão, congelado e Sepio preservam valores existentes', () => {
