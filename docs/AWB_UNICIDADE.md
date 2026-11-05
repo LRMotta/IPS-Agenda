@@ -10,8 +10,13 @@ Backup e envios manuais do modulo Transporte.
   pode ser do Transporte I, II ou III ou do agendamento inteiro e deve estar
   registrado no envio de origem na Agenda, inclusive para reservas historicas
   e espelhos de Backup. O historico permanece preservado.
+- Cancelar o envio MARKEN, em qualquer temperatura, permite reutilizar sua AWB
+  uma unica vez, em outro envio MARKEN. O primeiro uso precisa estar cancelado na
+  Agenda, como em DHL Ambiente. A AWB fica limitada a dois envios: o segundo consome
+  o reuso mesmo que depois seja cancelado, limpo ou substituido, e um terceiro envio
+  e sempre bloqueado. Com o segundo envio cancelado, o primeiro pode ser reativado.
 - Nos demais couriers e temperaturas, cancelar nao libera o numero. Limpar ou
-  substituir a AWB tambem nao libera o numero, inclusive em DHL Ambiente.
+  substituir a AWB tambem nao libera o numero, inclusive em DHL Ambiente e MARKEN.
 - Backup vinculado a outro agendamento/slot e o espelho da mesma remessa. A referencia
   nao conta como um segundo uso; referencia legada sem slot continua sendo Transporte I.
 - Duplicidades preexistentes permitem outras correcoes e exibem aviso. Gerar novos

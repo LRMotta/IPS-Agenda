@@ -17121,6 +17121,8 @@ function getAgendaCourierAwbsPendentesConfirmacao_(values, display, regras) {
     { key: 'c4', label: 'Transporte IV', cfg: idx.c4 }
   ];
   values.forEach(function(row, i) {
+    // AWB MARKEN reutilizada: o e-mail do novo envio nao confirma o agendamento cancelado.
+    if (AgendaServerRules_.isCancelled(row[idx.status])) return;
     slots.forEach(function(slot) {
       var courier = String(row[slot.cfg.nome] || '').trim();
       var ruleKey = getCourierConfirmationRuleKey_(regras, courier);
@@ -17380,7 +17382,8 @@ function normalizarAwbCourier_(awb) {
   return String(awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-// Historico permanente: somente o cancelamento de DHL Ambiente libera a AWB.
+// Historico permanente: somente o cancelamento de DHL Ambiente ou MARKEN libera a AWB;
+// em MARKEN, para um unico reuso (ver agendaAwbConflito_).
 // O contexto vive somente durante o document lock; nunca usa CacheService.
 var CODEX_AWB_CONTEXT_ = null;
 
@@ -17502,9 +17505,15 @@ function agendaAwbMensagem_(awb, other) {
   var slot = { '1': 'Transporte I', '2': 'Transporte II', '3': 'Transporte III', '4': 'Transporte IV', backup: 'Backup', backup2: 'Backup II' }[other.slot] || 'Envio de amostras';
   var data = other.data instanceof Date ? Utilities.formatDate(other.data, 'America/Sao_Paulo', 'dd/MM/yyyy') : String(other.data || '');
   var detalhes = [slot, other.courier, other.temperatura, other.participante, other.projeto, data, other.status, other.id ? 'Agendamento ' + other.id : 'Envio manual'].filter(Boolean).join(' · ');
-  var orientacao = agendaAwbDhlAmbiente_(other)
-    ? 'Informe uma AWB diferente ou cancele o envio DHL Ambiente anterior para liberar esse número.'
-    : 'Informe uma AWB diferente. Cancelar o envio anterior não libera esse número.';
+  var orientacao = other.awbReusoMarken === 'limite'
+    ? 'Informe uma AWB diferente. Uma AWB MARKEN cancelada só pode ser reutilizada uma única vez.'
+    : other.awbReusoMarken === 'courier'
+      ? 'Informe uma AWB diferente. Uma AWB MARKEN cancelada só pode ser reutilizada em envio MARKEN.'
+      : agendaAwbMarken_(other)
+        ? 'Informe uma AWB diferente ou cancele o envio MARKEN anterior para reutilizar esse número uma única vez.'
+        : agendaAwbDhlAmbiente_(other)
+          ? 'Informe uma AWB diferente ou cancele o envio DHL Ambiente anterior para liberar esse número.'
+          : 'Informe uma AWB diferente. Cancelar o envio anterior não libera esse número.';
   return 'A AWB "' + awb + '" já foi utilizada em outro envio: ' + detalhes + '. ' + orientacao;
 }
 
@@ -17512,8 +17521,12 @@ function agendaAwbDhlAmbiente_(entry) {
   return /\bdhl\b/.test(normText_(entry.courier)) && normText_(entry.temperatura) === 'ambiente';
 }
 
+function agendaAwbMarken_(entry) {
+  return codexCourierAwbRule_(entry.courier).key === 'marken';
+}
+
 function agendaAwbLiberadaPorCancelamento_(context, entry, candidates) {
-  if (!agendaAwbDhlAmbiente_(entry)) return false;
+  if (!agendaAwbDhlAmbiente_(entry) && !agendaAwbMarken_(entry)) return false;
   var owner = agendaAwbOwnerEfetivo_(context, entry);
   // O historico e os espelhos podem ter status antigos. Exigir o envio atual
   // identificado na Agenda; ausencia de origem nao comprova cancelamento.
@@ -17529,10 +17542,23 @@ function agendaAwbLiberadaPorCancelamento_(context, entry, candidates) {
 function agendaAwbConflito_(context, entry, candidates) {
   var key = normalizarAwbCourier_(entry.awb);
   if (!key) return null;
-  return context.entries.concat(candidates || []).find(function(other) {
-    return agendaAwbOwnerEfetivo_(context, other) !== agendaAwbOwnerEfetivo_(context, entry) &&
-      normalizarAwbCourier_(other.awb) === key && !agendaAwbLiberadaPorCancelamento_(context, other, candidates);
-  }) || null;
+  var owner = agendaAwbOwnerEfetivo_(context, entry);
+  var outrosEnvios = Object.create(null);
+  var outros = context.entries.concat(candidates || []).filter(function(other) {
+    if (normalizarAwbCourier_(other.awb) !== key) return false;
+    var otherOwner = agendaAwbOwnerEfetivo_(context, other);
+    if (otherOwner === owner) return false;
+    outrosEnvios[otherOwner] = true;
+    return true;
+  });
+  var bloqueio = outros.find(function(other) { return !agendaAwbLiberadaPorCancelamento_(context, other, candidates); }) || null;
+  var marken = outros.find(agendaAwbMarken_);
+  if (!marken) return bloqueio;
+  // O historico e permanente: um segundo envio consome o reuso mesmo que depois
+  // seja cancelado ou troque de AWB. Espelhos de Backup contam como o mesmo envio.
+  if (Object.keys(outrosEnvios).length > 1) return Object.assign({}, bloqueio || marken, { awbReusoMarken: 'limite' });
+  if (bloqueio) return bloqueio;
+  return agendaAwbMarken_(entry) ? null : Object.assign({}, marken, { awbReusoMarken: 'courier' });
 }
 
 function agendaAwbOwnerEfetivo_(context, entry) {
