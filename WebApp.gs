@@ -5509,7 +5509,7 @@ function soaImportParsePayload_(payload) {
   if (!dados || typeof dados !== 'object') throw new Error('Informe um objeto JSON de Cronograma de Avaliações.');
   var projeto = String(payload.projeto || '').trim();
   if (!projeto) throw new Error('Informe o projeto para importar o Cronograma de Avaliações.');
-  return { projeto: projeto, dados: dados, modo: String(payload.modo || 'adicionar').trim().toLowerCase(), criarBracos: payload.criarBracos !== false, braco: String(payload.braco || '').trim() };
+  return { projeto: projeto, dados: dados, modo: String(payload.modo || 'adicionar').trim().toLowerCase(), criarBracos: payload.criarBracos !== false, braco: String(payload.braco || '').trim(), baseCalculo: String(payload.baseCalculo || '').trim() };
 }
 
 function soaImportVisitSignature_(visit) {

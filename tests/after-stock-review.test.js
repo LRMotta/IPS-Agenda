@@ -8,7 +8,7 @@ const { contentAccessibilitySource } = require('./helpers/content-accessibility-
 
 function importFixture() {
   const requests = [], readers = [];
-  const elements = Object.fromEntries(['soaImportBraco', 'soaImportModo',
+  const elements = Object.fromEntries(['soaImportBraco', 'soaImportModo', 'soaImportBaseCalculo',
     'soaImportPreview', 'btnImportarSoAConfirm', 'btnPreviewSoA', 'modalSoAImport'].map(id => [id, {
     value: '', checked: true, disabled: false, classList: { contains: () => true }
   }]));
@@ -35,12 +35,13 @@ function importFixture() {
   return { context, elements, requests, readers, preview };
 }
 
-for (const field of ['arquivo', 'soaImportBraco', 'soaImportModo']) {
+for (const field of ['arquivo', 'soaImportBraco', 'soaImportModo', 'soaImportBaseCalculo']) {
   test('importação bloqueia mudança após prévia em ' + field + ', inclusive sem evento DOM', () => {
     const { context: c, elements: el, requests, preview } = importFixture();
     preview();
     if (field === 'arquivo') c._soaImportCsvTexto = 'V2';
     else if (field === 'soaImportModo') el[field].value = 'atualizar';
+    else if (field === 'soaImportBaseCalculo') el[field].value = 'MANTER_DATAS_PREVISTAS';
     else el[field].value = 'Braço B';
     c.confirmarImportacaoSoAApp();
     assert.equal(requests.filter(r => r.method === 'importarSoAJson').length, 0);

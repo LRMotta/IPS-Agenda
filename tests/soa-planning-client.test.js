@@ -40,6 +40,7 @@ test('prévia envia o conteúdo extraído e o braço', () => {
   const payload = requests.at(-1).args[0];
   assert.equal(requests.at(-1).method, 'validarImportacaoSoA');
   assert.equal(payload.braco, 'Braço A');
+  assert.equal(payload.baseCalculo, '');
   assert.equal(payload.criarBracos, true);
   assert.equal(payload.dados.schema, 'polo-trial-flowchart');
 });

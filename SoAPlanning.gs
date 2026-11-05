@@ -24,6 +24,8 @@ function soaPlanningDocument_(payload) {
   parsed.raw = raw;
   if (parsed.dados.schema === SOA_POLO_SCHEMA_) {
     // The extract stays archived as received; validation runs on its catalog conversion.
+    if (parsed.baseCalculo && !soaNormalizarBaseCalculo_(parsed.baseCalculo)) throw new Error('Contagem das datas inválida.');
+    parsed.baseCalculo = soaNormalizarBaseCalculo_(parsed.baseCalculo);
     parsed.polo = soaPoloPlanning_(parsed.dados, parsed.projeto, parsed.braco);
     parsed.dados = parsed.polo.documento;
   }
@@ -129,7 +131,7 @@ function soaPlanningPrepare_(payload) {
     return v;
   });
   rules.forEach(function(r,i) { if (r && timingRules[r.id] && !visits.some(function(v) { return v && Array.isArray(v.rule_ids) && v.rule_ids.indexOf(r.id) >= 0; })) issue('unused-rule-' + i, 'Regra temporal sem visita vinculada.'); });
-  var normalized = [], normalizedByIndex = [];
+  var normalized = [], normalizedByIndex = [], poloProjectBase = polo ? getProjetoBaseCalculoPadrao_(p.projeto) : '';
   visits.forEach(function(v, i) {
     if (!soaPlanningObject_(v)) { issue('visit-' + i, 'Visita inválida.', true); return; }
     keys(v, ['id','code','name','arm_ids','order','aliases','timing','source','status','note','rule_ids','metadata'].concat(catalog ? ['scheduling'] : []), 'visits.' + i);
@@ -190,7 +192,7 @@ function soaPlanningPrepare_(payload) {
       observacoes: soaPlanningObservation_(v.note === undefined ? String(previous.observacoes || '') : v.note, manual ? scheduling : null),
       source: v.source, repeticao: previous.repeticao || '', ativo: previous.ativo !== false,
       referencia: manual ? '' : (anchorReferences[t.anchor] || ''),
-      baseCalculo: polo ? String(previous.baseCalculo || '') : (manual || !t.basis ? '' : (t.basis === 'performed' ? 'RECALCULAR_VISITA_REALIZADA' : 'MANTER_DATAS_PREVISTAS')),
+      baseCalculo: polo ? soaPoloVisitBase_(manual, p, previous, poloProjectBase) : (manual || !t.basis ? '' : (t.basis === 'performed' ? 'RECALCULAR_VISITA_REALIZADA' : 'MANTER_DATAS_PREVISTAS')),
       schedulingMode: manual ? schedulingMode : 'calculated', manualReason: manual ? scheduling.reason : '',
       papelCronograma: manual ? (schedulingMode === 'milestone' ? 'MARCO_CALCULO' : 'NAO_PARTICIPA_CALCULO') : 'VISITA_CALCULADA', referenciaAlternativa: previous.referenciaAlternativa || '',
       criterioReferencias: previous.criterioReferencias || '', existente: !!matches.length, ordemManual: !!previous.ordemManual
@@ -207,14 +209,13 @@ function soaPlanningPrepare_(payload) {
     while (cursor && cursor.timing && cursor.timing.anchor === 'visit') { if (seen[cursor.id]) { issue('cycle-' + i, 'Há um ciclo nas referências de visitas.'); break; } seen[cursor.id] = true; cursor = visits.filter(function(x) { return x && x.id === cursor.timing.anchor_visit_id; })[0]; }
   });
   if (polo) {
-    // The export never states this rule, so visits inherit the project's reviewed default.
-    if (normalized.some(function(x) { return x.schedulingMode === 'calculated' && !x.baseCalculo; }) && !getProjetoBaseCalculoPadrao_(p.projeto)) {
-      issue('polo-base', 'Defina e salve a Base padrão do cronograma do protocolo antes de importar.');
+    if (p.polo.needsBase && !poloProjectBase && normalized.some(function(x) { return x.schedulingMode === 'calculated' && !x.baseCalculo; })) {
+      issue('polo-base', 'Há visitas que contam a partir de outra visita calculada. Escolha a Contagem das datas nesta janela e pré-visualize novamente.');
     }
     var commonKept = normalized.filter(function(x) { return x.existente && !x.bracoIds.length; }).length;
     if (commonKept) notice('polo-common', commonKept + ' visita(s) já cadastrada(s) para todos os braços continuam comuns.');
   }
-  var fingerprint = soaPlanningHash_(JSON.stringify([p.raw,p.projeto,p.modo,p.criarBracos,p.braco,selected,existingArms,existingVisits]));
+  var fingerprint = soaPlanningHash_(JSON.stringify([p.raw,p.projeto,p.modo,p.criarBracos,p.braco,p.baseCalculo,selected,existingArms,existingVisits]));
   return {ok:!errors.length,projeto:p.projeto,modo:p.modo,criarBracos:p.criarBracos,missingBracos:missing,bracosExistentes:existingArms,erros:errors,alertas:issues.map(function(x) { return x.message; }),revisaoNecessaria:[],visitas:normalized,totalVisitas:visits.length,novasVisitas:normalized.filter(function(x) { return !x.existente; }).length,atualizacoes:p.modo === 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ignoradas:p.modo !== 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ordensManuaisPreservadas:normalized.filter(function(x) { return x.ordemManual; }).length,podeImportar:!issues.some(function(x) { return x.blocking; }),fingerprint:fingerprint,planejamento:{schema:d.schema,version:d.schema_version,study:d.study || {},rules:rules,issues:issues,draftOnly:!!(poc || d.import_mode === 'preview_only'),origem:polo ? 'polo' : '',braco:polo ? p.braco : ''}};
 }
 function soaPlanningSheet_(create) {
@@ -403,8 +404,18 @@ function soaPoloPlanning_(source, projeto, braco) {
     if (manual) visit.scheduling = { mode: row.mode, reason: row.reason };
     return visit;
   });
-  return { issues: issues, documento: { schema: 'ips-agenda-study-planning', schema_version: '1.1.0', import_mode: 'review', approved_for_clinical_scheduling: false,
+  // The planned/performed choice only changes dates when a visit counts from another calculated visit.
+  var needsBase = rows.some(function(row) { return row.mode === 'calculated' && row.target && row.target.mode === 'calculated'; });
+  return { issues: issues, needsBase: needsBase, documento: { schema: 'ips-agenda-study-planning', schema_version: '1.1.0', import_mode: 'review', approved_for_clinical_scheduling: false,
     study: { protocol_id: projeto, protocol_version: 'Exportação do Polo Trial' }, arms: [{ id: 'braco', name: braco }], visits: visits, rules: [] } };
+}
+function soaPoloVisitBase_(manual, parsed, previous, projectBase) {
+  var kept = String(previous.baseCalculo || '');
+  if (manual) return kept;
+  if (parsed.baseCalculo) return parsed.baseCalculo;
+  if (kept || projectBase || parsed.polo.needsBase) return kept;
+  // Every date comes straight from a fixed event, so both bases give the same result.
+  return 'MANTER_DATAS_PREVISTAS';
 }
 function soaPoloExistingMatches_(visit, bracoIds, existingVisits) {
   var names = [visit.name].concat(visit.aliases || []).map(normText_);
