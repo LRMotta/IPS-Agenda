@@ -94,12 +94,91 @@ test('CE ignora resposta de uma renderizacao anterior mesmo com o mesmo protocol
   assert.equal(c.state.ceStatus, null);
 });
 
+// Runner do google.script.run para getTransporteReferencias: quem testa decide quando responde.
+function referenciasRunner(onCall) {
+  const run = {
+    withSuccessHandler(fn) { run.success = fn; return run; },
+    withFailureHandler(fn) { run.failure = fn; return run; },
+    getTransporteReferencias() { onCall({ success: run.success, failure: run.failure }); }
+  };
+  return run;
+}
+
+function aberturaFixture() {
+  const log = { renders: 0, busy: [], status: [], pendentes: [], bootstraps: [] };
+  const env = {
+    INITIAL_TRANS_ARGS: {}, state: { options: {} }, transportReferenciasPedido: 0,
+    google: { script: { run: referenciasRunner(run => log.pendentes.push(run)) } },
+    serverCall(_name, _args, _message, after) { log.bootstraps.push(after); },
+    transportClearUnsaved() {}, renderAll() { log.renders++; },
+    setBusy(on) { log.busy.push(on); }, setActionStatus(msg, type) { log.status.push([msg, type]); },
+    toast() {}
+  };
+  return { c: functions(['loadData', 'transportOpcoesDoRegistro'], env), log, env };
+}
+
+test('abertura so renderiza com envio e listas, em qualquer ordem de resposta', () => {
+  const primeiro = aberturaFixture();
+  primeiro.c.loadData(true);
+  primeiro.log.bootstraps[0]({ registro: { temperatura: 'AMBIENTE' }, options: {} });
+  assert.equal(primeiro.log.renders, 0, 'nao mostra a tela sem as listas');
+  assert.deepEqual(primeiro.log.busy, [true], 'continua bloqueada aguardando as listas');
+  primeiro.log.pendentes[0].success({ temperaturas: ['AMBIENTE'] });
+  assert.equal(primeiro.log.renders, 1);
+  assert.deepEqual(primeiro.log.busy, [true, false]);
+
+  const segundo = aberturaFixture();
+  segundo.c.loadData(true);
+  segundo.log.pendentes[0].success({ temperaturas: ['AMBIENTE'] });
+  assert.equal(segundo.log.renders, 0);
+  segundo.log.bootstraps[0]({ registro: {}, options: {} });
+  assert.equal(segundo.log.renders, 1);
+  assert.deepEqual(segundo.log.busy, [], 'sem espera extra, a chamada principal controla o bloqueio');
+});
+
+test('resposta de abertura obsoleta nao substitui a mais recente', () => {
+  const { c, log } = aberturaFixture();
+  c.loadData(true);
+  c.loadData(true);
+  log.pendentes[1].success({ temperaturas: ['NOVA'] });
+  log.bootstraps[1]({ registro: {}, options: {} });
+  assert.equal(log.renders, 1);
+  log.pendentes[0].success({ temperaturas: ['ANTIGA'] });
+  log.bootstraps[0]({ registro: {}, options: {} });
+  assert.equal(log.renders, 1);
+});
+
+test('falha ao carregar as listas libera a tela e avisa', () => {
+  const { c, log } = aberturaFixture();
+  c.loadData(true);
+  log.bootstraps[0]({ registro: {}, options: {} });
+  log.pendentes[0].failure(new Error('indisponivel'));
+  assert.equal(log.renders, 1);
+  assert.deepEqual(log.busy, [true, false]);
+  assert.match(log.status[0][0], /listas do Transporte/);
+  assert.equal(log.status[0][1], 'danger');
+  assert.equal(log.status.length, 1, 'o aviso de falha nao e substituido');
+});
+
+test('temperatura mista registrada aparece nas opcoes da abertura', () => {
+  const { c } = aberturaFixture();
+  const options = c.transportOpcoesDoRegistro({ temperaturas: ['AMBIENTE'] }, { temperatura: 'AMBIENTE + REFRIGERADO' });
+  assert.deepEqual(Array.from(options.temperaturas), ['AMBIENTE', 'AMBIENTE + REFRIGERADO']);
+});
+
+test('Limpar e Sincronizar mantem as listas que a tela ja tem', () => {
+  const c = functions(['transportDadosComListasAtuais', 'transportOpcoesDoRegistro'], { state: { options: { destinos: ['Lab'] } } });
+  const data = c.transportDadosComListasAtuais({ registro: {}, options: {} });
+  assert.deepEqual(Array.from(data.options.destinos), ['Lab']);
+});
+
 test('atualizar dados nao repete a importacao da Agenda depois do bootstrap inicial', () => {
   const calls = [];
-  const c = functions(['loadData'], {
-    INITIAL_TRANS_ARGS: { agendaId: 'EVT-1', slot: '2' }, state: {},
+  const c = functions(['loadData', 'transportOpcoesDoRegistro'], {
+    INITIAL_TRANS_ARGS: { agendaId: 'EVT-1', slot: '2' }, state: {}, transportReferenciasPedido: 0,
+    google: { script: { run: referenciasRunner(run => run.success({})) } },
     serverCall(name, args, _message, after) { calls.push({ name, args }); after({}); },
-    transportClearUnsaved() {}, renderAll() {}
+    transportClearUnsaved() {}, renderAll() {}, setBusy() {}, setActionStatus() {}
   });
   c.loadData(false);
   c.loadData(true);

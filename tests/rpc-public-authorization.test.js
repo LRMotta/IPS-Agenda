@@ -7,7 +7,8 @@ const { fakeDocumentLock } = require('./helpers/fake-document-lock');
 
 const queries = [
   { name: 'getTransporteParticipantesOptions', helper: 'transporteReadParticipantesOptions_', args: [], result: [{ id: 'P-1' }] },
-  { name: 'getTransporteBootstrap', helper: 'transporteBuildBootstrap_', args: [], helperArgs: [null, null, { awbAdiada: true }], result: { registro: { materiais: [] } }, locked: true },
+  { name: 'getTransporteBootstrap', helper: 'transporteBuildBootstrap_', args: [], helperArgs: access => [null, null, { awbAdiada: true, semReferencias: true, acesso: access }], result: { registro: { materiais: [] } }, locked: true },
+  { name: 'getTransporteReferencias', helper: 'transporteReferencias_', args: [], result: { temperaturas: [] } },
   { name: 'getTransporteAwbAviso', helper: 'transporteAwbAviso_', args: [{ awb: '123' }], result: { awb: '123', text: 'Em uso' } },
   { name: 'getTransporteCeStatus', helper: 'transporteCeStatus_', args: ['Estudo'], result: { checked: true, found: true } }
 ];
@@ -31,7 +32,7 @@ function fixture(access) {
   queries.forEach(query => {
     s[query.helper] = (...args) => {
       assert.equal(lock.state.held, !!query.locked);
-      assert.deepEqual(JSON.parse(JSON.stringify(args)), query.helperArgs || query.args);
+      assert.deepEqual(JSON.parse(JSON.stringify(args)), typeof query.helperArgs === 'function' ? query.helperArgs(state.access) : query.helperArgs || query.args);
       state.calls.push(query.name);
       return query.result;
     };
@@ -53,7 +54,7 @@ for (const access of accessCases) {
       if (access.ok) {
         assert.equal(s[query.name](...query.args), query.result);
         assert.deepEqual(state.calls, [query.name]);
-        assert.equal(state.authorizations, query.locked ? 2 : 1);
+        assert.equal(state.authorizations, 1, 'uma autorizacao por chamada');
         assert.equal(lock.state.acquired, query.locked ? 1 : 0);
       } else {
         assert.throws(() => s[query.name](...query.args), /Acesso negado|inativo/);
@@ -80,8 +81,8 @@ for (const access of accessCases) {
   });
 }
 
-test('bootstrap e impressao revalidam acesso revogado durante a espera pelo lock', () => {
-  for (const name of ['getTransporteBootstrap', 'imprimirTodasAbas']) {
+test('impressao revalida acesso revogado durante a espera pelo lock', () => {
+  for (const name of ['imprimirTodasAbas']) {
     const { s, state, lock } = fixture({ ok: true, role: 'user' });
     lock.state.onAcquire = () => { state.access = { ok: false, message: 'Acesso revogado.' }; };
     assert.throws(() => s[name]({ payload: {} }), /Acesso revogado/);

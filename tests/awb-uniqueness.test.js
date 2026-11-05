@@ -380,7 +380,7 @@ test('Limpar preserva AWB de formulario manual legado antes de esvazia-lo', () =
   f.c.codexAssertCanWrite_ = () => {};
   f.c.performContentDeletion_ = () => { f.folha.rows[11][2] = ''; return 'OK'; };
   f.c.transporteSincronizarDependencias_ = () => {};
-  f.c.getTransporteBootstrap = () => ({});
+  f.c.transporteBuildBootstrap_ = () => ({});
   f.c.limparTransporte();
   assert.equal(f.folha.rows[11][2], '');
   assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, { courier3: { awb: 'AWB-MANUAL' } }, 'B')), /já foi utilizada/);
