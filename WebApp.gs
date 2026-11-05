@@ -13086,6 +13086,8 @@ function getAgendaSheet_() {
 }
 
 function getAgendaSheetForRead_(operation) {
+  // Esquema ja garantido nesta execucao: nao ha o que reler (a edicao instrumentada sempre le).
+  if (!operation && CODEX_AGENDA_SHEET_MEMO_ && CODEX_AGENDA_SHEET_MEMO_.ss === getCodexSpreadsheet_()) return CODEX_AGENDA_SHEET_MEMO_.sh;
   // A instrumentacao detalhada e opcional: a edicao precisa distinguir o
   // acesso a planilha, a busca da aba e a leitura fresca do schema.
   function measure(stage, callback) {
@@ -17534,38 +17536,32 @@ function agendaAwbContexto_(agenda) {
 }
 
 /* Contexto focado: decide conflitos de UMA AWB sem ler a Agenda inteira (cerca de 13 s medidos).
- * O historico AWB_Utilizadas continua lido por completo. Da Agenda vem so as colunas de ID, AWB
- * e vinculos de Backup, comparadas em memoria com normalizarAwbCourier_, como no contexto
- * completo. As linhas ligadas a AWB, aos envios informados, aos donos dela no historico e aos
- * vinculos dessas linhas passam pela mesma rotina do contexto completo, entao
- * agendaAwbConflito_ decide igual. Com linhas demais ou com leitura compartilhada ja feita,
- * usa o contexto completo. A reposicao do historico das demais AWBs da Agenda fica para os
- * fluxos que usam o contexto completo (salvamentos da Agenda). */
+ * O historico AWB_Utilizadas continua lido por completo. Da Agenda vem so o que a decisao usa:
+ * linhas achadas pela busca do texto da AWB, os envios informados, os donos dela no historico e
+ * os destinos dos vinculos de Backup. Essas linhas passam pela mesma rotina do contexto completo,
+ * entao agendaAwbConflito_ decide igual. Busca simples porque cada leitura de coluna custa cerca
+ * de 1,2 s e a busca cerca de 1,8 s na Agenda inteira (medidos na versao 352).
+ * Limite conhecido: a busca compara o texto exibido, sem normalizar. AWB antiga gravada de outra
+ * forma (separadores, celula numerica formatada) so e vista pelo historico, que os salvamentos
+ * da Agenda repoem com o contexto completo. Sem busca, com linhas demais ou com leitura
+ * compartilhada ja feita, usa o contexto completo. */
 var CODEX_AWB_FOCO_MAX_LINHAS_ = 25;
 
-// Linhas esparsas: so as colunas que decidem quais linhas ler. A linha N fica no indice N - 2.
-function agendaAwbColunasChave_(agenda, n, width) {
-  var i = AGENDA_CFG.idx;
-  var rows = [];
-  for (var k = 0; k < n; k++) rows.push([]);
-  [i.id, i.c1.awb, i.c2.awb, i.c3.awb, i.c4.awb, i.backupAgendaRef, i.backup2Dados].filter(function(coluna) {
-    return coluna >= 0 && coluna < width;
-  }).forEach(function(coluna) {
-    agenda.getRange(2, coluna + 1, n, 1).getValues().forEach(function(valor, indice) { rows[indice][coluna] = valor[0]; });
-  });
-  return rows;
-}
-
-function agendaAwbTextoVinculos_(row) {
-  var i = AGENDA_CFG.idx;
-  return String(row[i.backupAgendaRef] || '') + ' ' + String(i.backup2Dados >= 0 ? row[i.backup2Dados] || '' : '');
-}
-
-function agendaAwbLinhaCitaAwb_(row, key) {
-  var i = AGENDA_CFG.idx;
-  return [i.c1.awb, i.c2.awb, i.c3.awb, i.c4.awb].some(function(coluna) {
-    return coluna >= 0 && normalizarAwbCourier_(row[coluna]) === key;
-  }) || normalizarAwbCourier_(agendaAwbTextoVinculos_(row)).indexOf(key) >= 0;
+function agendaAwbBuscaLinhas_(agenda, n, width, termos) {
+  var intervalo = agenda.getRange(2, 1, n, width);
+  if (typeof intervalo.createTextFinder !== 'function') return null;
+  try {
+    var linhas = [];
+    termos.forEach(function(termo) {
+      intervalo.createTextFinder(termo).findAll().forEach(function(celula) {
+        var linha = celula.getRow();
+        if (linhas.indexOf(linha) < 0) linhas.push(linha);
+      });
+    });
+    return linhas;
+  } catch (buscaError) {
+    return null;
+  }
 }
 
 function agendaAwbIdsDaLinha_(row) {
@@ -17588,6 +17584,7 @@ function agendaAwbIdsNormalizados_(ids) {
 function agendaAwbContextoFocado_(agenda, awb, ids) {
   var key = normalizarAwbCourier_(awb);
   var sobLock = CODEX_DOCUMENT_LOCK_REENTRANT_DEPTH_ > 0;
+  var idsInformados = ids;
   ids = agendaAwbIdsNormalizados_(ids);
   if (sobLock && CODEX_AWB_CONTEXT_ && CODEX_AWB_CONTEXT_.agenda.getName() === agenda.getName()) return CODEX_AWB_CONTEXT_;
   var emCache = agendaAwbFocoCache_(agenda, key, ids);
@@ -17599,45 +17596,54 @@ function agendaAwbContextoFocado_(agenda, awb, ids) {
   var context = agendaAwbContextoNovo_(agenda);
   var historico = agendaAwbHistorico_(context);
   lap('awb_historico', historico.length);
-  var pendentes = ids.slice();
+  var pendentes = (idsInformados || []).slice();
   historico.forEach(function(entry) {
     if (normalizarAwbCourier_(entry.awb) !== key) return;
     var dono = /^AGD:(.+):[^:]+$/.exec(entry.owner);
-    pendentes.push(entry.id, dono && dono[1]);
+    pendentes.push(entry.id || (dono && dono[1]));
   });
-  var chaves = agendaAwbColunasChave_(agenda, n, width);
-  lap('awb_colunas', n);
-  var porId = Object.create(null);
-  var comVinculo = [];
-  var escolhidas = Object.create(null);
-  function escolher(indice) {
-    if (escolhidas[indice]) return;
-    escolhidas[indice] = true;
-    pendentes = pendentes.concat(agendaAwbIdsDaLinha_(chaves[indice]));
-  }
-  chaves.forEach(function(row, indice) {
-    var id = agendaAwbIdsNormalizados_([row[AGENDA_CFG.idx.id]])[0];
-    if (id) (porId[id] = porId[id] || []).push(indice);
-    if (agendaAwbTextoVinculos_(row).trim()) comVinculo.push(indice);
-    if (agendaAwbLinhaCitaAwb_(row, key)) escolher(indice);
-  });
+  // A AWB como foi digitada tambem e buscada quando tem separadores.
+  var digitada = String(awb || '').trim();
+  var encontradas = agendaAwbBuscaLinhas_(agenda, n, width, digitada.toUpperCase() === key ? [key] : [key, digitada]);
+  lap('awb_busca', encontradas ? encontradas.length : 0);
+  if (!encontradas || encontradas.length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
+  var linhas = Object.create(null);
   var conhecidos = Object.create(null);
-  // Segue os vinculos em memoria: cada linha nova pode citar outro envio.
-  while (pendentes.length) {
-    var id = agendaAwbIdsNormalizados_([pendentes.shift()])[0];
-    if (!id || conhecidos[id]) continue;
-    conhecidos[id] = true;
-    (porId[id] || []).forEach(escolher);
-    for (var v = 0; v < comVinculo.length; v++) {
-      if (agendaAwbTextoVinculos_(chaves[comVinculo[v]]).toUpperCase().indexOf(id) >= 0) escolher(comVinculo[v]);
-    }
+  function carregar(linha) {
+    if (linhas[linha]) return;
+    linhas[linha] = agenda.getRange(linha, 1, 1, width).getValues()[0];
+    agendaAwbIdsNormalizados_([linhas[linha][AGENDA_CFG.idx.id]]).forEach(function(id) { conhecidos[id] = true; });
+    pendentes = pendentes.concat(agendaAwbIdsDaLinha_(linhas[linha]));
   }
-  if (Object.keys(escolhidas).length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
+  encontradas.forEach(carregar);
+  var indiceIds = null;
+  // ID em outra caixa nao passa pela busca exata: a coluna so e lida nesse caso raro.
+  function linhaDoId(id) {
+    var linha = encontrarLinhaPorId(agenda, id);
+    if (linha) return linha;
+    if (!indiceIds) {
+      indiceIds = Object.create(null);
+      agenda.getRange(2, AGENDA_CFG.col.id, n, 1).getValues().forEach(function(valor, indice) {
+        agendaAwbIdsNormalizados_([valor[0]]).forEach(function(chave) { indiceIds[chave] = indice + 2; });
+      });
+    }
+    return indiceIds[String(id).trim().toUpperCase()] || null;
+  }
+  // Segue os vinculos: cada linha nova pode citar outro envio.
+  while (pendentes.length) {
+    var pendente = String(pendentes.shift() || '').trim();
+    var chaveId = pendente.toUpperCase();
+    if (!pendente || conhecidos[chaveId]) continue;
+    conhecidos[chaveId] = true;
+    var linhaId = linhaDoId(pendente);
+    if (linhaId) carregar(linhaId);
+    if (Object.keys(linhas).length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
+  }
+  lap('awb_linhas', Object.keys(linhas).length);
   var backupEntries = [];
-  Object.keys(escolhidas).map(Number).sort(function(a, b) { return a - b; }).forEach(function(indice) {
-    agendaAwbContextoLinha_(context, backupEntries, agenda.getRange(indice + 2, 1, 1, width).getValues()[0]);
+  Object.keys(linhas).map(Number).sort(function(a, b) { return a - b; }).forEach(function(linha) {
+    agendaAwbContextoLinha_(context, backupEntries, linhas[linha]);
   });
-  lap('awb_linhas', Object.keys(escolhidas).length);
   context.entries = context.entries.concat(backupEntries, historico);
   if (sobLock) CODEX_AWB_CONTEXT_FOCO_ = { key: key, nome: agenda.getName(), ids: conhecidos, context: context };
   return context;

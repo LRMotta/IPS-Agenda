@@ -172,6 +172,7 @@
     .material-unit-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 10px; background:#fbfcff; border-bottom:1px solid #f0f4f8; }
     .material-unit-actions .btn { height:32px; }
     .material-unit-help { color:var(--muted); font-size:11px; line-height:1.35; }
+    #caixaReavaliarField { align-items:flex-start; gap:6px; }
     .docs { display:grid; gap:8px; }
     .doc { padding:11px 12px; display:flex; gap:9px; align-items:center; }
     .doc .material-symbols-outlined { color:var(--primary); }
@@ -345,6 +346,7 @@
               <div class="field"><label for="awb">AWB / c&oacute;digo</label><input id="awb"></div>
               <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option><option value="Sim, BioSystem" hidden>Sim, BioSystem</option><option value="Sim, Crēdo Cube" hidden>Sim, Crēdo Cube</option></select></div>
               <div class="field full hidden" id="caixaEspecialField"><label for="caixaEspecial">Caixa de transporte do projeto</label><input id="caixaEspecial" readonly><div class="material-unit-help" id="caixaEspecialResumo" role="status"></div></div>
+              <div class="field full hidden" id="caixaReavaliarField"><div class="material-unit-help" id="caixaReavaliarResumo" role="status"></div><button class="btn secondary" type="button" id="btnReavaliarCaixa" onclick="openCaixaReavaliarModal()" title="Aplicar a regra atual do projeto a este envio"><span class="material-symbols-outlined">autorenew</span><span class="btn-label">Reavaliar caixa</span></button></div>
               <div class="field hidden" id="responsavelEntregaField"><label for="responsavelEntrega">Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
               <div class="field hidden" id="pinexColetaField"><label for="pinexColeta">PINEX COL. N&deg;</label><input id="pinexColeta" placeholder="000000" disabled></div>
               <div class="field full"><label for="observacoes">Observa&ccedil;&otilde;es</label><textarea id="observacoes"></textarea></div>
@@ -399,6 +401,22 @@
         <div class="modal-actions">
           <button class="btn danger" type="button" onclick="confirmClearData()"><span class="material-symbols-outlined">delete_sweep</span>Limpar</button>
           <button class="btn secondary" type="button" onclick="closeClearModal()"><span class="material-symbols-outlined">close</span>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="confirmCaixaReavaliarModal" role="dialog" aria-modal="true" aria-labelledby="confirmCaixaReavaliarTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="confirmCaixaReavaliarTitle"><span class="material-symbols-outlined">autorenew</span>Reavaliar caixa</div>
+        <button class="modal-close" type="button" onclick="closeCaixaReavaliarModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div>Aplicar a regra atual do projeto a este envio? Os dados da tela serão salvos e a caixa confirmada será substituída. PDF e rascunho já gerados precisam ser refeitos: gere novamente e descarte os anteriores.</div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="btnConfirmarCaixaReavaliar" onclick="confirmCaixaReavaliar()"><span class="material-symbols-outlined">autorenew</span>Reavaliar</button>
+          <button class="btn secondary" type="button" onclick="closeCaixaReavaliarModal()"><span class="material-symbols-outlined">close</span>Cancelar</button>
         </div>
       </div>
     </div>
@@ -777,6 +795,7 @@
       if (!data || (!data.fileId && !data.downloadUrl)) return;
       window._lastGeneratedPdf = data;
       state.lastPdfResult = data;
+      state.caixaDocsPendentes = false;
       renderIssues();
       var warnings = transportGenerationWarnings(data);
       var warningBox = document.getElementById('pdfGenerationWarnings');
@@ -1271,11 +1290,14 @@
       return courier === 'MARKEN' ? 'Não' : 'Sim';
     }
 
-    function transportCaixaPreview(payload) {
+    function transportCaixaConfirmada(payload) {
       var contexto = [payload.idAgenda || '', payload.agendaSlot || '', payload.participanteCadastroId || '',
         payload.paciente || '', payload.protocolo || '', payload.courier || '', payload.temperatura || '', payload.destino || ''].map(norm);
       var snapshot = (state.registro || {}).caixaTransporte;
-      if (snapshot && snapshot.confirmado === true && JSON.stringify(snapshot.contexto) === JSON.stringify(contexto)) return snapshot;
+      return snapshot && snapshot.confirmado === true && JSON.stringify(snapshot.contexto) === JSON.stringify(contexto) ? snapshot : null;
+    }
+
+    function transportCaixaRegraAtual(payload) {
       var rules = (state.options || {}).caixasTransporteRegras || [];
       var matches = rules.filter(function(rule) {
         var nome = rule.nomeAbreviado, codigo = rule.codigo;
@@ -1285,6 +1307,23 @@
       });
       var error = matches.filter(function(rule) { return rule.erro; })[0];
       return error || (matches.length === 1 ? matches[0] : (matches.length > 1 ? { erro: 'Mais de uma regra de caixa atende este transporte. Revise o cadastro do projeto.' } : null));
+    }
+
+    function transportCaixaPreview(payload) {
+      return transportCaixaConfirmada(payload) || transportCaixaRegraAtual(payload);
+    }
+
+    // Envio confirmado sem caixa e sem regra nao tem o que reavaliar.
+    function renderTransportCaixaReavaliar(payload) {
+      var confirmada = transportCaixaConfirmada(payload);
+      var regra = transportCaixaRegraAtual(payload);
+      var disponivel = !!confirmada && !!(confirmada.tipoCaixa || regra);
+      document.getElementById('caixaReavaliarField').classList.toggle('hidden', !disponivel);
+      if (!disponivel) return;
+      document.getElementById('caixaReavaliarResumo').textContent = regra && regra.erro ? regra.erro
+        : ((regra ? regra.tipoCaixa : '') !== confirmada.tipoCaixa
+          ? 'A regra atual do projeto difere da caixa confirmada neste envio. Alterar o projeto não muda o envio sozinho.'
+          : 'Caixa confirmada neste envio. Alterar o projeto não muda o envio sozinho.');
     }
 
     function renderTransportCaixa(payload) {
@@ -1313,6 +1352,7 @@
       }
       input.disabled = markenAmbiente || credo;
       payload.solicitarCaixa = input.value;
+      renderTransportCaixaReavaliar(payload);
     }
 
     function applySolicitarCaixaDefault(force) {
@@ -2062,6 +2102,7 @@
       if (awbCheck && (!CodexCourierRules.isValidAwb(awbCheck, p.courier) || !CodexCourierRules.isValidAwbEntry(awbCheck, p.courier, state.registro))) issues.push({ type:CodexCourierRules.isValidAwbEntry(awbCheck, p.courier, state.registro) ? 'warn' : 'danger', text:CodexCourierRules.validationMessage(p.courier) });
       if (p.courier === 'PINEX' && !String(p.pinexColeta || '').match(/^\d{6}$/)) issues.push({ type:'warn', text:'PINEX COL. N° deve conter 6 dígitos.' });
       if (!p.materiais.some(function(m) { return m.ativo; })) issues.push({ type:'warn', text:'Nenhum material biológico marcado na declaração.' });
+      if (state.caixaDocsPendentes) issues.push({ type:'warn', text:'Caixa reavaliada: PDF e rascunho já gerados precisam ser refeitos. Gere novamente e descarte os anteriores.' });
       if (!issues.length) issues.push({ type:'ok', text:'Dados principais prontos para sincronização.' });
       var pdf = state.lastPdfResult;
       if (pdf && pdf.type === 'pdf') {
@@ -2278,6 +2319,48 @@
       }, 'Salvando...');
     }
 
+    function openCaixaReavaliarModal() {
+      openTransportModal('confirmCaixaReavaliarModal');
+    }
+
+    function closeCaixaReavaliarModal() {
+      closeTransportModal('confirmCaixaReavaliarModal');
+    }
+
+    function transportCaixaRotulo(tipo) {
+      return { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube' }[tipo] || 'caixa normal';
+    }
+
+    function transportCaixaReavaliadaMensagem(res) {
+      var caixa = res && res.registro && res.registro.caixaTransporte || {};
+      var atual = transportCaixaRotulo(caixa.tipoCaixa), sync = agendaSyncMessage(res, '');
+      if (caixa.tipoCaixa === caixa.tipoCaixaAnterior) return 'Caixa reavaliada: a regra atual mantém ' + atual + '.' + (sync ? ' ' + sync : '');
+      return 'Caixa reavaliada: ' + transportCaixaRotulo(caixa.tipoCaixaAnterior) + ' → ' + atual + '. Gere PDF e rascunho novamente e descarte os anteriores.' + (sync ? ' ' + sync : '');
+    }
+
+    function confirmCaixaReavaliar() {
+      closeCaixaReavaliarModal();
+      if (!ensureRequiredTransportFields()) return;
+      var payload = collectPayload();
+      serverCall('reavaliarCaixaTransporte', [payload], function(data) {
+        return transportCaixaReavaliadaMensagem(data);
+      }, function(data) {
+        var caixa = data && data.registro && data.registro.caixaTransporte || {};
+        transportApplySavedRegistro(payload, data);
+        state.lastPdfResult = null;
+        window._lastGeneratedPdf = null;
+        state.caixaDocsPendentes = caixa.tipoCaixa !== caixa.tipoCaixaAnterior;
+        transportClearUnsaved();
+        renderAll();
+        refreshAgendaInOpener();
+        if (state.caixaDocsPendentes) {
+          var msg = transportCaixaReavaliadaMensagem(data);
+          setActionStatus(msg, 'warn');
+          toast(msg, 'warn');
+        }
+      }, 'Reavaliando a caixa...');
+    }
+
     var transportPdfFormat = '';
 
     function transportGenerationStorageKey(payload) {
@@ -2285,7 +2368,9 @@
       var value = JSON.stringify(payload), hash = 2166136261;
       for (var i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
       var owner = state && state.access ? state.access.email || '' : '';
-      return 'ips-transport-generation-v1:' + owner + (transportPdfFormat ? ':' + transportPdfFormat : '') + ':' + (hash >>> 0).toString(16) + ':' + value.length;
+      // Sem isso, a mesma tela reavaliada recuperaria o PDF da caixa anterior.
+      var reavaliadoEm = ((state && state.registro || {}).caixaTransporte || {}).reavaliadoEm;
+      return 'ips-transport-generation-v1:' + owner + (transportPdfFormat ? ':' + transportPdfFormat : '') + (reavaliadoEm ? ':' + reavaliadoEm : '') + ':' + (hash >>> 0).toString(16) + ':' + value.length;
     }
 
     function transportRandomId() {
