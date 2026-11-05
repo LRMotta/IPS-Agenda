@@ -541,3 +541,103 @@ test('preenchimento PINEX na memoria roda sem operacao nao suportada e renderiza
     'Petição de Anuência de Exportação (PINEX)', 'USDA Statement (PINEX)', 'Ficha de Emergência (PINEX)', 'Declaração de Transporte']);
   for (const titulo of spec.ordem.slice(1)) assert.match(s.transporteDocsGradeHtml_(abas[titulo], {}), /^<table class="grade"/, titulo);
 });
+
+test('geracao em memoria: so HTML, couriers validadas e courier igual a do registro', () => {
+  const s = servidor();
+  const ativa = (formato, courier, extra) => s.transporteDocsMemoriaAtiva_(Object.assign({ formato, payload: { courier } }, extra));
+  for (const courier of ['MARKEN', 'OCASA', 'DHL']) assert.equal(ativa('html', courier), true, courier);
+  // PINEX segue pela grade ate ser validada pelo diagnostico em lote.
+  assert.equal(ativa('html', 'PINEX'), false);
+  assert.equal(ativa('html', 'PINEX (Agendamento)'), false);
+  assert.equal(ativa('', 'MARKEN'), false);
+  assert.equal(ativa('html', 'MARKEN', { courier: 'OCASA' }), false);
+  assert.equal(ativa('html', 'MARKEN', { courier: 'MARKEN' }), true);
+});
+
+function servidorManifesto() {
+  const s = servidor();
+  s.Session = { getScriptTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone };
+  s.Utilities = Object.assign({}, s.Utilities, { formatDate: utilitiesFormatDate });
+  s.transportePdfManifestoHash_ = (v) => JSON.stringify(v);
+  // A validacao em memoria nunca pode abrir a planilha real.
+  s.getTransporteSpreadsheetCodex_ = () => { throw new Error('planilha real aberta'); };
+  return s;
+}
+
+test('manifesto do PDF valida o registro contra a planilha em memoria, sem abrir a real', () => {
+  const s = servidorManifesto();
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const registro = registroMarken({ idAgenda: 'EVT1', agendaSlot: '1', caixaTransporte: null });
+  const dados = s.transporteDocsDados_(registro, { arquivo });
+  const manifesto = s.transporteValidarManifestoPdf_({ payload: registro }, dados.ss);
+  assert.equal(manifesto.modo, 'agenda');
+  assert.equal(manifesto.manifesto.awb, '123456789012');
+  assert.throws(() => s.transporteValidarManifestoPdf_({ payload: Object.assign({}, registro, { awb: '999999999999' }) }, dados.ss),
+    /Bloqueio de seguranca do PDF.*awb/);
+  const outrosMateriais = registro.materiais.map((m, i) => (i === 1 ? Object.assign({}, m, { ensaio: 'Outro ensaio' }) : m));
+  assert.throws(() => s.transporteValidarManifestoPdf_({ payload: Object.assign({}, registro, { materiais: outrosMateriais }) }, dados.ss),
+    /materiais e ensaios/);
+});
+
+test('falha na memoria prepara as abas reais e devolve null para seguir pela grade', () => {
+  const s = servidor();
+  const real = { id: 'REAL' };
+  const preparadas = [];
+  s.getTransporteSpreadsheetCodex_ = () => real;
+  s.transportePrepararDocumentosModelos_ = (ss, registro) => preparadas.push([ss, registro]);
+  s.transporteDocsDados_ = () => { throw new Error('A documentação em memória não reproduziu o modelo'); };
+  const registro = { courier: 'MARKEN' };
+  assert.equal(s.transporteDocsMemoriaPreparar_(registro), null);
+  assert.deepEqual(preparadas, [[real, registro]]);
+  const dados = { ss: {} };
+  s.transporteDocsDados_ = () => dados;
+  assert.equal(s.transporteDocsMemoriaPreparar_(registro), dados);
+  assert.equal(preparadas.length, 1);
+});
+
+test('imagens omitidas do layout chegam ao aviso da geracao em memoria', () => {
+  const s = modulo();
+  const docs = { abas: (titulos) => ({ [titulos[0]]: { imagensOmitidas: 2 }, B: {} }) };
+  const carregado = s.transporteDocsMemoriaCarregar_(docs, ['A']);
+  assert.equal(carregado.info.imagensOmitidas, 2);
+});
+
+function geracao(memoria) {
+  const s = servidor();
+  const chamadas = { flush: 0 };
+  s.SpreadsheetApp = { flush: () => { chamadas.flush++; } };
+  s.salvarTransporteInterno_ = (_payload, opcoes) => { chamadas.salvar = opcoes; return { registro: { courier: 'MARKEN' }, agendaSync: {} }; };
+  s.transporteDocsMemoriaPreparar_ = () => memoria;
+  s.transporteValidarManifestoPdf_ = (_o, ss) => { chamadas.manifestoSs = ss; return { hash: 'h', manifesto: {} }; };
+  s.imprimirTodasAbas_ = (_o, interno) => { chamadas.interno = interno; return { type: 'pdf', courier: 'MARKEN', fileId: 'PDF' }; };
+  s.transporteMarcarDocsGeradosAgenda_ = () => null;
+  s.transporteMonitorReferencia_ = () => '';
+  s.transportePdfManifestoHash_ = () => 'h';
+  s.transporteReadRegistro_ = () => { chamadas.leuRegistroReal = true; return {}; };
+  s.gerarPdfTransporteInterno_({ payload: { courier: 'MARKEN' }, formato: 'html', criarRascunho: false }, {});
+  return chamadas;
+}
+
+test('geracao em HTML nao prepara as abas reais e entrega a memoria ao exportador', () => {
+  const docs = { ss: { id: 'MEMORIA' } };
+  const c = geracao(docs);
+  assert.equal(c.salvar.preencherDocumentos, false);
+  assert.equal(c.salvar.camposRascunho, true);
+  assert.equal(c.manifestoSs, docs.ss);
+  assert.equal(c.interno.docsMemoria, docs);
+  assert.equal(c.flush, 0);
+  assert.equal(c.leuRegistroReal, undefined);
+});
+
+test('geracao em HTML volta ao fluxo da planilha quando a memoria falha', () => {
+  const c = geracao(null);
+  assert.equal(c.manifestoSs, undefined);
+  assert.equal(c.interno.docsMemoria, undefined);
+  assert.equal(c.flush, 1);
+  assert.equal(c.leuRegistroReal, true);
+});
+
+test('salvamento da geracao em memoria grava na planilha real o destino lido pelo e-mail OCASA', () => {
+  const codigo = readProjectFile('TransporteCodexConfig.gs');
+  assert.match(codigo, /options\.camposRascunho === true\) transportePreencherDeclaracaoCadastros_\(ss, payload\)/);
+});
