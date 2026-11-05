@@ -3223,14 +3223,10 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado, opc
     registro = transporteMeasurePerformance_('getTransporteBootstrap', 'agenda_update', { rowCount: eventoPrecarregado ? 0 : 1 }, function() {
       return registroPrecarregado ? registro : transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado);
     });
-    var options = transporteMeasurePerformance_('getTransporteBootstrap', 'options', { rowCount: 0 }, function() {
-      return transporteReadOptions_({ includeParticipants: false });
-    });
-    // Regras do projeto sao lidas nesta execucao; o cache de opcoes nao decide a embalagem.
-    options.caixasTransporteRegras = transporteCaixasRegras_();
-    options.feriadosCredoCube = transporteCaixasFeriados_(options.caixasTransporteRegras);
+    // Na abertura, a tela pede as referencias em paralelo (getTransporteReferencias).
+    var options = opcoes && opcoes.semReferencias ? {} : transporteReferencias_();
     // Exibir a temperatura mista ja registrada sem ampliar as opcoes dos demais transportes.
-    if (registro.temperatura === 'AMBIENTE + REFRIGERADO' && options.temperaturas.indexOf(registro.temperatura) < 0) {
+    if (options.temperaturas && registro.temperatura === 'AMBIENTE + REFRIGERADO' && options.temperaturas.indexOf(registro.temperatura) < 0) {
       options.temperaturas = options.temperaturas.concat([registro.temperatura]);
     }
     var ativos = registro.materiais.filter(function(m) { return m.ativo; });
@@ -3239,7 +3235,9 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado, opc
 
     return transporteMeasurePerformance_('getTransporteBootstrap', 'validate', { rowCount: 1 }, function() {
       return {
-        access: typeof codexGetCurrentUserAccess === 'function' ? codexGetCurrentUserAccess() : null,
+        // Quem ja autorizou informa o acesso: autorizar de novo releria a aba Users.
+        access: opcoes && opcoes.acesso && typeof codexAccessPresentation_ === 'function' ? codexAccessPresentation_(opcoes.acesso)
+          : (typeof codexGetCurrentUserAccess === 'function' ? codexGetCurrentUserAccess() : null),
         runtime: transporteExecutionContext_(),
         registro: registro,
         options: options,
@@ -3258,11 +3256,32 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado, opc
 }
 
 function getTransporteBootstrap() {
-  codexAssertCanRead_();
+  var acesso = transporteMeasurePerformance_('getTransporteBootstrap', 'auth', { rowCount: 0 }, function() { return codexAssertCanRead_(); });
   return codexWithDocumentLock_('getTransporteBootstrap', function() {
-    // O acesso pode ter sido revogado enquanto aguardava outra gravacao.
-    codexAssertCanRead_();
-    return transporteBuildBootstrap_(null, null, { awbAdiada: true });
+    return transporteBuildBootstrap_(null, null, { awbAdiada: true, semReferencias: true, acesso: acesso });
+  }, { operation: 'getTransporteBootstrap' });
+}
+
+// Listas, regras de caixa e feriados: leituras de cadastro que nao dependem do envio aberto.
+function transporteReferencias_() {
+  var options = transporteMeasurePerformance_('getTransporteBootstrap', 'options', { rowCount: 0 }, function() {
+    return transporteReadOptions_({ includeParticipants: false });
+  });
+  // Regras do projeto sao lidas nesta execucao; o cache de opcoes nao decide a embalagem.
+  options.caixasTransporteRegras = transporteMeasurePerformance_('getTransporteBootstrap', 'caixas_regras', { rowCount: 0 }, function() {
+    return transporteCaixasRegras_();
+  });
+  options.feriadosCredoCube = transporteMeasurePerformance_('getTransporteBootstrap', 'caixas_feriados', { rowCount: 0 }, function() {
+    return transporteCaixasFeriados_(options.caixasTransporteRegras);
+  });
+  return options;
+}
+
+// Fora do document lock: so le cadastros, em paralelo a abertura do envio.
+function getTransporteReferencias() {
+  codexAssertCanRead_();
+  return transporteMeasurePerformance_('getTransporteReferencias', 'total', { rowCount: 1 }, function() {
+    return transporteReferencias_();
   });
 }
 
@@ -3276,7 +3295,9 @@ function getTransporteAwbAviso(registro) {
 }
 
 function getTransporteBootstrapFromAgenda(idAgenda, slot) {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda);
+  var acesso = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'auth', { rowCount: 0 }, function() {
+    return typeof codexAssertCanWrite_ === 'function' ? codexAssertCanWrite_('getTransporteBootstrapFromAgenda', 'Transporte', idAgenda) : null;
+  });
   idAgenda = String(idAgenda || '').trim();
   if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
   return codexWithDocumentLock_('getTransporteBootstrapFromAgenda', function() {
@@ -3292,7 +3313,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       // O registro normalizado pertence a este slot e ao mesmo lock da importação.
       // As abas dos documentos serão preparadas somente na geração.
       var data = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'bootstrap', { rowCount: 1 }, function() {
-        return transporteBuildBootstrap_(contexto.evento, importResult.registro, { awbAdiada: true });
+        return transporteBuildBootstrap_(contexto.evento, importResult.registro, { awbAdiada: true, semReferencias: true, acesso: acesso });
       });
       data.registro = Object.assign({}, data.registro || {}, {
         idAgenda: payload.idAgenda || idAgenda,
@@ -3302,7 +3323,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       data.importResult = { rascunho: true, mensagem: importResult.mensagem };
       return data;
     });
-  });
+  }, { operation: 'getTransporteBootstrapFromAgenda' });
 }
 
 function transporteDocumentosPorCourier_(courier, temperatura, destino) {
@@ -3317,12 +3338,14 @@ function transporteDocumentosPorCourier_(courier, temperatura, destino) {
 }
 
 function salvarTransporte(payload, options) {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('salvarTransporte', 'Transporte', payload && (payload.idAgenda || payload.id || payload.paciente));
+  transporteMeasurePerformance_('salvarTransporte', 'auth', { rowCount: 0 }, function() {
+    if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('salvarTransporte', 'Transporte', payload && (payload.idAgenda || payload.id || payload.paciente));
+  });
   return codexWithDocumentLock_('salvarTransporte', function() {
     return transporteMeasurePerformance_('salvarTransporte', 'total', { rowCount: 1 }, function() {
       return salvarTransporteInterno_(payload, options);
     });
-  });
+  }, { operation: 'salvarTransporte' });
 }
 
 // Unica saida explicita do snapshot confirmado: grava o formulario e resolve pela regra atual do
@@ -4255,8 +4278,11 @@ function importarTransporteCodexInterno_(codexPayload, contextoInterno, options)
 
 function transporteSincronizarDependencias_(options) {
   options = options || {};
+  // Subetapas: localizam o gargalo de Limpar e Sincronizar sem alterar o fluxo.
+  var lap = transporteLapStart_('sincronizarDependencias');
   var ss = getTransporteSpreadsheetCodex_();
   var registro = transporteReadRegistro_();
+  lap('sd_registro');
   var payload = {
     paciente: registro.paciente,
     protocolo: registro.protocolo,
@@ -4274,14 +4300,22 @@ function transporteSincronizarDependencias_(options) {
     materiais: registro.materiais
   };
   transporteAplicarAutomacoesTemperatura_(ss, payload);
+  lap('sd_temperatura');
   aplicarSolicitacaoCaixaTransporte_(ss, payload);
+  lap('sd_caixa');
   transporteAplicarCourierConfig_(ss, payload.courier);
+  lap('sd_courier');
   transportePreencherPeticaoMedico_(ss, payload);
+  lap('sd_medico');
   transportePreencherDeclaracaoCadastros_(ss, payload);
+  lap('sd_declaracao');
   if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
   preencherDadosProtocoloPeticaoWebApp_(ss, payload);
+  lap('sd_protocolo');
   preencherPeticaoAnuenciaWebApp_(ss, payload);
+  lap('sd_peticao');
   preencherDhlWebApp_(ss, payload);
+  lap('sd_dhl');
   if (options.visibilidade) {
     try {
     if (typeof manageSheetVisibilityUnified_ === 'function') manageSheetVisibilityUnified_(ss, false);
@@ -4292,26 +4326,38 @@ function transporteSincronizarDependencias_(options) {
 }
 
 function sincronizarTransporte() {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('sincronizarTransporte', 'Transporte', '');
+  var acesso = typeof codexAssertCanWrite_ === 'function' ? codexAssertCanWrite_('sincronizarTransporte', 'Transporte', '') : null;
   return codexWithDocumentLock_('sincronizarTransporte', function() {
     transporteSincronizarDependencias_({ visibilidade: false });
     // A releitura do bootstrap depende das formulas das abas atualizadas.
     SpreadsheetApp.flush();
-    return getTransporteBootstrap();
+    return transporteBootstrapDoFormulario_(acesso);
   });
 }
 
+// Limpar e Sincronizar so releem o formulario: a tela mantem as listas que ja tem.
+function transporteBootstrapDoFormulario_(acesso) {
+  return transporteBuildBootstrap_(null, null, { awbAdiada: true, semReferencias: true, acesso: acesso });
+}
+
 function limparTransporte() {
-  if (typeof codexAssertCanWrite_ === 'function') codexAssertCanWrite_('limparTransporte', 'Transporte', '');
+  var lap = transporteLapStart_('limparTransporte');
+  var acesso = typeof codexAssertCanWrite_ === 'function' ? codexAssertCanWrite_('limparTransporte', 'Transporte', '') : null;
+  lap('lp_auth');
   return codexWithDocumentLock_('limparTransporte', function() {
+    lap.reset();
     var context = transporteAwbPreservarFormulario_({});
     if (context) agendaAwbReservar_(context, [], false);
+    lap('lp_preservar_awb');
     var result = typeof performContentDeletion_ === 'function' ? performContentDeletion_() : 'WARN_SOME_ERRORS';
+    lap('lp_apagar');
     transporteSincronizarDependencias_({ visibilidade: false });
+    lap.reset();
     // Persistir as dependencias recalculadas antes de reler o formulario.
     SpreadsheetApp.flush();
-    return { result: result, data: getTransporteBootstrap() };
-  });
+    lap('lp_flush');
+    return { result: result, data: transporteBootstrapDoFormulario_(acesso) };
+  }, { operation: 'limparTransporte' });
 }
 
 function executarSandboxTransporteCodex(options) {

@@ -1026,6 +1026,7 @@ function getFarmaciaEstudo(studyId, productsOnly) {
 }
 
 function codexAssertCanWrite_(actionName, moduleName, recordId) {
+  var autorizacaoInicio = Date.now();
   var access = codexAuthorizeWebAppRequest_();
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
   if (access.role !== 'admin' && access.role !== 'user') {
@@ -1033,7 +1034,11 @@ function codexAssertCanWrite_(actionName, moduleName, recordId) {
     throw new Error('Seu perfil e somente leitura. Esta acao nao esta autorizada.');
   }
   actionName = actionName || codexGetCallerFunctionName_();
+  var auditoriaInicio = Date.now();
   codexWriteAuditLog_(actionName, moduleName || codexInferAuditModule_(actionName), recordId || '');
+  // Separa a leitura de Users da gravacao em Audit_Log no trecho anterior ao document lock.
+  codexLogPerformance_(actionName, 'auth_leitura', auditoriaInicio - autorizacaoInicio, { rowCount: 0 }, true);
+  codexLogPerformance_(actionName, 'auth_auditoria', Date.now() - auditoriaInicio, { rowCount: 0 }, true);
   return access;
 }
 

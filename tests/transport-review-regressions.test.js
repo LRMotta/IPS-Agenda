@@ -263,7 +263,11 @@ for (const action of ['limparTransporte', 'sincronizarTransporte']) {
     s.performContentDeletion_ = () => { assert.equal(locked, true); calls++; return 'OK'; };
     s.transporteAwbPreservarFormulario_ = () => { assert.equal(locked, true); return null; };
     s.transporteSincronizarDependencias_ = () => { assert.equal(locked, true); calls++; };
-    s.getTransporteBootstrap = () => { assert.equal(locked, true); return { registro: {} }; };
+    s.transporteBuildBootstrap_ = (_evento, _registro, opcoes) => {
+      assert.equal(locked, true);
+      assert.equal(opcoes.semReferencias, true, 'a tela mantem as listas que ja tem');
+      return { registro: {} };
+    };
     s[action]();
     assert.equal(calls, action === 'limparTransporte' ? 2 : 1);
     assert.equal(locked, false);

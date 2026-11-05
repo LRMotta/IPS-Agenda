@@ -1378,18 +1378,57 @@
     }
 
     var transportAwbAvisoPedido = 0;
+    var transportReferenciasPedido = 0;
 
     function loadData(force) {
       var initialArgs = force ? {} : INITIAL_TRANS_ARGS;
       var fromAgenda = initialArgs && initialArgs.agendaId && initialArgs.slot;
       var fn = fromAgenda ? 'getTransporteBootstrapFromAgenda' : 'getTransporteBootstrap';
       var args = fromAgenda ? [initialArgs.agendaId, initialArgs.slot] : [];
-      serverCall(fn, args, force ? 'Dados atualizados.' : (fromAgenda ? 'Dados da Agenda sincronizados.' : ''), function(data) {
-        state = data || state;
+      var okMsg = force ? 'Dados atualizados.' : (fromAgenda ? 'Dados da Agenda sincronizados.' : '');
+      // As listas vem em paralelo ao envio; a tela so renderiza com os dois.
+      var pedido = ++transportReferenciasPedido;
+      var dados = null, referencias = null, aguardandoListas = false;
+      function concluir() {
+        if (pedido !== transportReferenciasPedido || !dados || !referencias) return;
+        state = dados;
+        state.options = transportOpcoesDoRegistro(referencias, state.registro);
         if (fromAgenda) INITIAL_TRANS_ARGS = {};
         transportClearUnsaved();
+        if (aguardandoListas) {
+          setBusy(false);
+          if (!referencias.falhou) setActionStatus(okMsg || 'Concluido.', 'ok');
+        }
         renderAll();
+      }
+      google.script.run
+        .withSuccessHandler(function(res) { referencias = res || {}; concluir(); })
+        .withFailureHandler(function() {
+          if (pedido !== transportReferenciasPedido) return;
+          var msg = 'Não foi possível carregar as listas do Transporte. Atualize a página.';
+          referencias = { falhou: true };
+          setActionStatus(msg, 'danger');
+          toast(msg, 'danger');
+          concluir();
+        })
+        .getTransporteReferencias();
+      serverCall(fn, args, okMsg, function(data) {
+        dados = data || state;
+        if (!referencias) {
+          aguardandoListas = true;
+          setBusy(true, 'Carregando listas...');
+        }
+        concluir();
       }, force ? 'Atualizando dados...' : (fromAgenda ? 'Sincronizando com a Agenda...' : 'Carregando dados...'));
+    }
+
+    // Exibir a temperatura mista ja registrada sem ampliar as opcoes dos demais transportes.
+    function transportOpcoesDoRegistro(options, registro) {
+      var temperatura = (registro || {}).temperatura;
+      if (options.temperaturas && temperatura === 'AMBIENTE + REFRIGERADO' && options.temperaturas.indexOf(temperatura) < 0) {
+        options.temperaturas = options.temperaturas.concat([temperatura]);
+      }
+      return options;
     }
 
     // AWB repetida percorre o histórico: só consulta quando alguém digita uma AWB nova neste
@@ -2448,9 +2487,15 @@
         })[actionName]({ payload: payload, requestedByEmail: requestedByEmail, generationRequestId: generationRequestId, formato: transportPdfFormat || undefined });
     }
 
+    // Limpar e Sincronizar devolvem so o formulario; as listas continuam as da tela.
+    function transportDadosComListasAtuais(data) {
+      if (data) data.options = transportOpcoesDoRegistro(state.options || {}, data.registro);
+      return data;
+    }
+
     function syncData() {
       serverCall('sincronizarTransporte', [], 'Dependências sincronizadas.', function(data) {
-        state = data || state;
+        state = transportDadosComListasAtuais(data) || state;
         renderAll();
         refreshAgendaInOpener();
       }, 'Sincronizando dependencias...');
@@ -2498,7 +2543,7 @@
     function confirmClearData() {
       closeClearModal();
       serverCall('limparTransporte', [], 'Conteúdo limpo.', function(res) {
-        state = res && res.data ? res.data : state;
+        state = res && res.data ? transportDadosComListasAtuais(res.data) : state;
         transportClearUnsaved();
         renderAll();
       }, 'Limpando conteudo...');

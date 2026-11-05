@@ -41,14 +41,16 @@ async function transportBrowserFixture(page, options = {}) {
   await page.setContent(html);
   await page.evaluate(({ participants, partialParticipants, fromAgenda }) => {
     const bootstrap = window.calls.find(call => call.method === 'getTransporteBootstrap');
+    const referencias = window.calls.find(call => call.method === 'getTransporteReferencias');
     bootstrap.success({
+      options: {},
       registro: { idAgenda: fromAgenda ? 'EVT-A' : '', agendaSlot: fromAgenda ? '2' : '', paciente: 'Pessoa A', participanteCadastroId: 'CAD-A', protocolo: 'Estudo A', identificacaoParticipante: '123',
         investigador: 'Investigador A', temperatura: 'AMBIENTE', courier: 'MARKEN', destino: 'Lab A',
-        dataColeta: '2026-09-30', dataEnvio: '2026-09-30', horaEnvio: '08:00 - 12:00', agendadoPor: 'Equipe', awb: '123456789' },
-      options: { participantes: fromAgenda ? [] : participants, participantesLoaded: !partialParticipants && !fromAgenda, temperaturas: ['AMBIENTE', 'CONGELADO'],
-        couriers: ['MARKEN', 'DHL', 'OCASA'], destinos: [{ nome: 'Lab A' }], janelasEnvio: ['08:00 - 12:00'], agendadores: ['Equipe'],
-        projetos: [{ nomeAbreviado: 'Estudo A' }, { nomeAbreviado: 'Estudo B' }] }
+        dataColeta: '2026-09-30', dataEnvio: '2026-09-30', horaEnvio: '08:00 - 12:00', agendadoPor: 'Equipe', awb: '123456789' }
     });
+    referencias.success({ participantes: fromAgenda ? [] : participants, participantesLoaded: !partialParticipants && !fromAgenda, temperaturas: ['AMBIENTE', 'CONGELADO'],
+        couriers: ['MARKEN', 'DHL', 'OCASA'], destinos: [{ nome: 'Lab A' }], janelasEnvio: ['08:00 - 12:00'], agendadores: ['Equipe'],
+        projetos: [{ nomeAbreviado: 'Estudo A' }, { nomeAbreviado: 'Estudo B' }] });
   }, { participants: options.participants || participants, partialParticipants: !!options.partialParticipants, fromAgenda: !!options.fromAgenda });
   return errors;
 }
