@@ -118,37 +118,71 @@ test('contexto de AWB reaproveita a leitura do registro so no escopo, sob lock e
   assert.equal(s.CODEX_AGENDA_LINHAS_ESCOPO_, null);
 });
 
-test('abertura do Transporte le a Agenda inteira uma vez para o registro e o aviso de AWB', () => {
+function transporteServidor() {
   const s = runFiles(['AgendaServerRules.gs', 'CadastroRules.gs', 'WebApp.gs', 'TransporteCodexConfig.gs'], {
     Logger: { log() {} },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {}, getAll: () => ({}), putAll() {}, remove() {}, removeAll() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => '', setProperty() {} }) }
   });
-  s.LockService = { getDocumentLock: () => ({ tryLock: () => true, releaseLock() {} }) };
-  s.getCodexSpreadsheet_ = () => ({ getSheetByName: () => null });
-  const aba = abaAgenda(s, ['A', 'B']);
-  aba.linhas[1][s.AGENDA_CFG.idx.c1.awb] = '123456789012';
-  s.getAgendaSheet_ = () => aba;
+  s.AGENDA_CFG.col.backup2Dados = 0;
+  s.AGENDA_CFG.idx.backup2Dados = -1;
+  return s;
+}
+
+// Busca por trecho em todas as celulas, como o TextFinder real.
+function comBusca(aba) {
+  const getRange = aba.getRange;
+  aba.buscas = [];
+  aba.getRange = (row, col, nr, nc) => Object.assign(getRange(row, col, nr, nc), {
+    createTextFinder(texto) {
+      aba.buscas.push(texto);
+      const finder = {
+        matchCase: () => finder,
+        findAll: () => aba.linhas.flatMap((linha, r) => linha.flatMap((valor, c) =>
+          String(valor).includes(texto) ? [{ getRow: () => r + 2, getColumn: () => c + 1 }] : []))
+      };
+      return finder;
+    }
+  });
+  return aba;
+}
+
+test('abertura localiza o evento e a origem do Backup sem ler a Agenda inteira', () => {
+  const s = transporteServidor();
+  const i = s.AGENDA_CFG.idx;
+  const aba = comBusca(abaAgenda(s, ['ORIGEM', 'OUTRO', 'DESTINO', 'DESTINO-2']));
+  const [origem, outro] = aba.linhas;
+  origem[i.backupAgendaRef] = JSON.stringify([{ id: 'DESTINO', slot: 'I' }]);
+  outro[i.obs] = 'Texto que cita DESTINO, sem ser vinculo';
   s.getAgendaSheetForRead_ = () => aba;
-  s.codexAssertCanRead_ = () => ({ ok: true });
-  s.transporteBuildBootstrap_ = () => {
-    s.buscarAgendaEventoPorIdTransp_('A', '1');
-    return { awbIssue: s.transporteAwbAviso_({ awb: '123456789012', idAgenda: 'A', agendaSlot: '1', courier: 'MARKEN' }) };
-  };
-  const data = s.getTransporteBootstrap();
-  assert.match(data.awbIssue.text, /Transporte I/, 'a AWB de outro agendamento continua sendo avisada');
-  assert.equal(aba.leituras.filter((l) => l[0] === 2 && l[1] === 1 && l[2] === 2).length, 1);
+
+  const evento = s.buscarAgendaEventoPorIdTransp_('DESTINO', '1');
+
+  assert.equal(evento.id, 'DESTINO');
+  assert.deepEqual(aba.buscas, ['DESTINO']);
+  // So as linhas do evento, da origem e do ID parecido: nada da linha citada na observacao.
+  assert.deepEqual(aba.leituras.map((l) => [l[0], l[2]]), [[2, 1], [4, 1], [5, 1]]);
 });
 
-test('abertura pela Agenda mantem o escopo da leitura ate o aviso de AWB, sem gravar na Agenda', () => {
+test('evento nao localizado pela busca confirma na Agenda inteira antes de falhar', () => {
+  const s = transporteServidor();
+  const aba = comBusca(abaAgenda(s, ['A', 'B']));
+  aba.linhas[1][s.AGENDA_CFG.idx.id] = ' B ';
+  s.getAgendaSheetForRead_ = () => aba;
+  // ID com espacos na celula: a busca acha a linha, e a conferencia exata ignora os espacos.
+  assert.equal(s.buscarAgendaEventoPorIdTransp_('B', '1').id.trim(), 'B');
+  aba.leituras = [];
+  assert.throws(() => s.buscarAgendaEventoPorIdTransp_('INEXISTENTE', '1'), /nao encontrado/);
+  assert.equal(aba.leituras.filter((l) => l[2] === 2).length, 1);
+});
+
+test('abertura adia o aviso de AWB; salvar continua calculando', () => {
   const fonte = require('./helpers/load-app-script').readProjectFile('TransporteCodexConfig.gs').replace(/\r\n/g, '\n');
-  const inicio = fonte.indexOf('function getTransporteBootstrapFromAgenda(');
-  const corpo = fonte.slice(inicio, fonte.indexOf('\nfunction ', inicio + 10));
-  const escopo = corpo.indexOf('transporteAgendaLeituraCompartilhada_(function()');
-  assert.ok(escopo > 0 && escopo < corpo.indexOf('montarContextoTransporteParaTransp_('), 'escopo abre antes da leitura do evento');
-  assert.ok(corpo.indexOf('}); });') > corpo.indexOf('transporteBuildBootstrap_('), 'aviso de AWB fica dentro do escopo');
-  // Se o rascunho passar a sincronizar a Agenda, a leitura guardada deixa de valer ate o aviso.
-  assert.match(fonte, /var agendaSync = options\.rascunho\s*\?/);
+  const corpo = (nome) => { const a = fonte.indexOf('function ' + nome + '('); return fonte.slice(a, fonte.indexOf('\nfunction ', a + 10)); };
+  assert.match(corpo('getTransporteBootstrap'), /awbAdiada: true/);
+  assert.match(corpo('getTransporteBootstrapFromAgenda'), /awbAdiada: true/);
+  assert.match(corpo('transporteBuildBootstrap_'), /opcoes && opcoes\.awbAdiada \? null : transporteAwbAviso_\(registro\)/);
+  assert.doesNotMatch(corpo('getTransporteAwbAviso'), /codexWithDocumentLock_/);
 });
 
 test('salvamento abre o escopo da leitura compartilhada so na preparacao, antes das gravacoes', () => {

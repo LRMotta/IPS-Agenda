@@ -672,6 +672,41 @@ test('Transporte: aviso de AWB duplicada aponta o campo e desaparece ao corrigir
   });
 });
 
+test('Transporte: abrir nao consulta AWB; so a AWB digitada consulta, inclusive sem Agenda', async () => {
+  await scenario(async page => {
+    const avisos = () => page.evaluate(() => window.calls.filter(c => c.method === 'getTransporteAwbAviso').length);
+    assert.equal(await avisos(), 0, 'a AWB ja registrada nao paga a consulta ao abrir');
+
+    // Mesma AWB com outra formatacao continua sem consulta.
+    const atual = await page.evaluate(() => window.collectPayload().awb);
+    await page.locator('#awb').fill(atual + ' ');
+    await page.locator('#awb').dispatchEvent('change');
+    assert.equal(await avisos(), 0);
+
+    // Envio feito direto no modulo: sem Agenda, identificado pelo envio.
+    await page.evaluate(() => { window.state.registro.idAgenda = ''; window.state.registro.envioId = ''; });
+    await page.locator('#awb').fill('620X42074401');
+    await page.locator('#awb').dispatchEvent('change');
+    assert.equal(await avisos(), 1);
+    const primeiro = await page.evaluate(() => {
+      const args = window.calls.filter(c => c.method === 'getTransporteAwbAviso')[0].args[0];
+      return { awb: args.awb, idAgenda: args.idAgenda, temEnvio: !!args.envioId };
+    });
+    assert.deepEqual(primeiro, { awb: '620X42074401', idAgenda: '', temEnvio: true });
+
+    // Resposta antiga nao substitui a consulta mais recente.
+    await page.locator('#awb').fill('620X42074402');
+    await page.locator('#awb').dispatchEvent('change');
+    await page.evaluate(() => {
+      const chamadas = window.calls.filter(c => c.method === 'getTransporteAwbAviso');
+      chamadas[0].success({ awb: '620X42074401', text: 'AWB antiga em uso' });
+      chamadas[1].success({ awb: '620X42074402', text: 'A AWB já foi utilizada em outro envio.' });
+    });
+    assert.equal(await page.locator('#issues').getByText(/AWB antiga em uso/).count(), 0);
+    assert.equal(await page.locator('#issues').getByText(/AWB já foi utilizada/).count(), 1);
+  });
+});
+
 test('Transporte: falha de armazenamento bloqueia RPC e mudanca de payload usa outro token', async () => {
   await scenario(async page => {
     await page.evaluate(() => { window.localStorage.setItem = () => { throw new Error('storage'); }; });

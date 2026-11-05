@@ -113,8 +113,8 @@
   function pendenciaCourierComTemperatura(it) {
     var courier = String((it && it.courier) || '').trim();
     var temperatura = String((it && it.temperatura) || '').trim();
-    if (!temperatura || courier.indexOf(temperatura) >= 0) return courier;
-    return [courier, temperatura].filter(Boolean).join(' / ');
+    var caixa = it && it.caixa ? 'Caixa ' + it.caixa : '';
+    return [courier, courier.indexOf(temperatura) >= 0 ? '' : temperatura, caixa].filter(Boolean).join(' / ');
   }
 
   function togglePendenciasCard(btn) {

@@ -14,6 +14,7 @@ function backupCollectionFixture(backupSlot, slot) {
   const idx = cfg.idx;
   idx.participanteCadastroId = 52;
   idx.backup2Dados = 53;
+  cfg.col.backup2Dados = 54;
   cfg.lastCol = 54;
   if (slot === '4') {
     // Transporte IV so existe quando as colunas estao configuradas na Agenda.
@@ -53,7 +54,7 @@ test('Backup I e II mantem coleta original no novo envio e nos slots II/III de v
     for (const slot of ['1', '2', '3']) {
       const { s, origem, destino } = backupCollectionFixture(backupSlot, slot);
       const sheet = new FakeSheet('Agenda', [[], origem, destino]);
-      s.getAgendaSheet_ = () => sheet;
+      s.getAgendaSheet_ = s.getAgendaSheetForRead_ = () => sheet;
       s.agendaRowToObject_ = row => ({ id: row[s.AGENDA_CFG.idx.id], dataIso: '2026-10-26', participantCadastroId: 'CAD-A', projeto: 'Projeto A', participante: 'Pessoa A' });
       s.transporteProjetoDisplay_ = value => value;
       s.transporteAgendadorPadrao_ = () => 'Equipe';

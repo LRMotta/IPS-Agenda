@@ -299,6 +299,7 @@ test('pendencias separam Transporte de Amostras Backup nao agendado e preservam 
     slot: 'Transporte de Amostras Backup',
     courier: 'OCASA',
     temperatura: 'CONGELADO',
+    destino: '',
     statusCourier: 'Não Agendado'
   });
 });

@@ -1337,6 +1337,8 @@
       if (!show) input.value = '';
     }
 
+    var transportAwbAvisoPedido = 0;
+
     function loadData(force) {
       var initialArgs = force ? {} : INITIAL_TRANS_ARGS;
       var fromAgenda = initialArgs && initialArgs.agendaId && initialArgs.slot;
@@ -1348,6 +1350,27 @@
         transportClearUnsaved();
         renderAll();
       }, force ? 'Atualizando dados...' : (fromAgenda ? 'Sincronizando com a Agenda...' : 'Carregando dados...'));
+    }
+
+    // AWB repetida percorre o histórico: só consulta quando alguém digita uma AWB nova neste
+    // módulo. A AWB já registrada veio validada da Agenda ou do salvamento anterior.
+    function checkAwbAviso() {
+      var p = collectPayload();
+      var chave = function(awb) { return String(awb || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+      var registro = state.registro;
+      var pedido = ++transportAwbAvisoPedido;
+      if (!chave(p.awb) || chave(p.awb) === chave(registro && registro.awb)) return;
+      google.script.run
+        .withSuccessHandler(function(aviso) {
+          if (pedido !== transportAwbAvisoPedido || registro !== state.registro) return;
+          state.awbIssue = aviso || null;
+          renderIssues();
+        })
+        .withFailureHandler(function() {})
+        .getTransporteAwbAviso({
+          awb: p.awb, idAgenda: p.idAgenda, agendaSlot: p.agendaSlot, envioId: p.envioId, courier: p.courier,
+          temperatura: p.temperatura, paciente: p.paciente, protocolo: p.protocolo, dataEnvio: p.dataEnvio
+        });
     }
 
     function loadParticipantsOptions() {
@@ -2414,7 +2437,10 @@
     document.addEventListener('change', function(e) {
       if (e.target.closest('.material-row') || ['paciente','awb','pinexColeta','destino','dataEnvio','horaEnvio','agendadoPor','responsavelEntrega','solicitarCaixa'].indexOf(e.target.id) >= 0) {
         state.lastPdfResult = null;
-        if (e.target.id === 'awb') e.target.value = normalizeAwbForCourier(e.target.value, selectedCourier);
+        if (e.target.id === 'awb') {
+          e.target.value = normalizeAwbForCourier(e.target.value, selectedCourier);
+          checkAwbAviso();
+        }
         if (e.target.classList) {
           e.target.classList.remove('invalid');
           if (e.target.closest('.field')) e.target.closest('.field').classList.remove('invalid');

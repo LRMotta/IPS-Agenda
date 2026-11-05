@@ -221,6 +221,31 @@ test('feriados do prazo da Crēdo Cube só são lidos quando alguma regra usa a 
   assert.equal(s.transporteCaixasFeriados_([{ tipoCaixa: 'CREDO_CUBE' }])['2026-11-12'], true);
 });
 
+test('Pendências citam a caixa especial só quando uma regra combina com o transporte', () => {
+  const s = runFile('TransporteCodexConfig.gs', { Logger: { log() {} } });
+  const regra = { nomeAbreviado: 'Estudo', codigo: 'ABC-1', courier: 'MARKEN', temperatura: 'REFRIGERADO', destino: 'Lab A', tipoCaixa: 'CREDO_CUBE' };
+  s.transporteCaixasRegras_ = () => [regra, { nomeAbreviado: 'Outro', erro: 'Revise' }];
+  const item = extra => ({ projeto: 'Estudo (ABC-1)', courier: 'Marken', temperatura: 'Refrigerado', destino: 'Lab A', ...extra });
+  const pendencias = {
+    courierNaoAgendada: [item(), item({ temperatura: 'Congelado' })],
+    courierNaoConfirmada: [item({ destino: 'Lab B' })],
+    documentacaoTransporteSemEnvio: [item({ courier: 'OCASA' })]
+  };
+  s.transporteCaixasAnotarPendencias_(pendencias);
+  assert.equal(pendencias.courierNaoAgendada[0].caixa, 'Crēdo Cube');
+  for (const outro of [pendencias.courierNaoAgendada[1], pendencias.courierNaoConfirmada[0], pendencias.documentacaoTransporteSemEnvio[0]]) assert.equal(outro.caixa, undefined);
+
+  // Regra duplicada não é resolvida por palpite, e sem pendências as regras nem são lidas.
+  s.transporteCaixasRegras_ = () => [regra, regra];
+  const duplicada = { courierNaoAgendada: [item()] };
+  s.transporteCaixasAnotarPendencias_(duplicada);
+  assert.equal(duplicada.courierNaoAgendada[0].caixa, undefined);
+  s.transporteCaixasRegras_ = () => { throw new Error('nao deveria ler'); };
+  assert.doesNotThrow(() => s.transporteCaixasAnotarPendencias_({}));
+  // Falha de leitura não derruba a lista.
+  assert.doesNotThrow(() => s.transporteCaixasAnotarPendencias_({ courierNaoAgendada: [item()] }));
+});
+
 test('hash documental muda com a caixa e nota inválida não é inferida', () => {
   const { s, payload } = fixture();
   const base = s.transportePdfDocumentoHash_({}, payload);

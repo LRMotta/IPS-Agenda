@@ -187,6 +187,11 @@ test('cadastro courier legado preserva ID ausente e usa padrões de confirmaçã
   assert.equal(rules.marken.statusConfirmacao, 'Confirmado');
   assert.equal(rules.dhl.emailConfirmacao, 'wmxbrasil@dhl.com');
   assert.equal(rules.dhl.extrairAwbPorReferencia, true);
+  // Crēdo Cube confirma por outro endereço da Marken, sem depender do cadastro; DHL não muda.
+  const consultas = regra => Array.from(f.server.montarGmailQueriesConfirmacaoCourier_(regra));
+  assert.deepEqual(consultas(rules.marken), ['from:expobrasil@marken.com newer_than:7d', 'from:protocolos.credo@marken.com newer_than:7d']);
+  assert.deepEqual(consultas({ ...rules.marken, emailConfirmacao: 'Protocolos.Credo@marken.com' }), ['from:Protocolos.Credo@marken.com newer_than:7d']);
+  assert.deepEqual(consultas(rules.dhl), ['from:wmxbrasil@dhl.com newer_than:7d']);
   f.assertUnchanged();
 });
 

@@ -189,7 +189,7 @@ test('subetapas reais de Pendências preservam resultado e ordem de classificaç
   const entries = logs.filter(line => line.startsWith('[CODEX_PERF] ')).map(line => JSON.parse(line.slice(13)));
   assert.deepEqual(entries.map(e => e.stage), ['pending_sheet', 'pending_agenda_read', 'pending_holidays',
     'pending_classify_agenda', 'pending_transport_documents', 'pending_classify_documents', 'pending_classify_stock',
-    'pending_sort_unbooked', 'pending_reminder_annotations', 'pending_sort']);
+    'pending_sort_unbooked', 'pending_reminder_annotations', 'pending_special_boxes', 'pending_sort']);
   assert.equal(entries.every(e => e.traceId === 'pending-real-test' && e.success), true);
   assert.equal(entries.find(e => e.stage === 'pending_agenda_read').instrumentedReadCalls, 1);
   assert.deepEqual(order.slice(0, 2), ['sort', 'reminders']);

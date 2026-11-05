@@ -428,10 +428,37 @@ function transportePreservarVinculoAgendaPayload_(payload, range) {
   return payload;
 }
 
+// Linhas em que o ID aparece como evento ou em um vinculo de Backup: sao as unicas que
+// decidem o evento e a origem do Backup. A busca e por trecho; quem le confere o ID exato.
+function transporteAgendaLinhasDoEvento_(sh, idAgenda, lastRow) {
+  var intervalo = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
+  if (typeof intervalo.createTextFinder !== 'function') return [];
+  var colunas = {};
+  colunas[AGENDA_CFG.col.id] = true;
+  colunas[AGENDA_CFG.col.backupAgendaRef] = true;
+  if (AGENDA_CFG.col.backup2Dados) colunas[AGENDA_CFG.col.backup2Dados] = true;
+  var linhas = [];
+  intervalo.createTextFinder(String(idAgenda).trim()).matchCase(true).findAll().forEach(function(celula) {
+    var linha = celula.getRow();
+    if (colunas[celula.getColumn()] && linhas.indexOf(linha) < 0) linhas.push(linha);
+  });
+  return linhas.map(function(linha) {
+    return { linha: linha, valores: sh.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0] };
+  });
+}
+
+function transporteEventoComOrigens_(rows, row, linha, slot) {
+  var evento = agendaRowToObject_(row, linha);
+  // Origem do Backup (Folha de Agendamento HTML) vem destas mesmas linhas.
+  evento.transporteOrigens = {};
+  evento.transporteDatasColeta = transporteDatasColetaAgenda_(rows, row, slot, evento.transporteOrigens);
+  return evento;
+}
+
 function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   if (!idAgenda) throw new Error('ID da Agenda nao informado.');
   var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
-  var sh = getAgendaSheet_();
+  var sh = typeof getAgendaSheetForRead_ === 'function' ? getAgendaSheetForRead_() : getAgendaSheet_();
   var lastRow = sh.getLastRow();
   lap('rar_aba_agenda');
   if (lastRow < 2) throw new Error('Agenda sem registros.');
@@ -441,7 +468,14 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
     throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
   }
   slot = normalizarSlotTransporteCodex_(slot, true);
-  // A mesma leitura resolve o evento e os vínculos de Backup I/II, sem leituras por linha.
+  var locais = transporteAgendaLinhasDoEvento_(sh, idAgenda, lastRow);
+  lap('rar_localizar', locais.length);
+  var proprio = locais.filter(function(local) { return String(local.valores[AGENDA_CFG.idx.id] || '').trim() === String(idAgenda).trim(); })[0];
+  if (proprio) {
+    if (typeof codexLinhaPorIdLembrar_ === 'function' && String(proprio.valores[AGENDA_CFG.idx.id]) === String(idAgenda)) codexLinhaPorIdLembrar_(sh, idAgenda, proprio.linha);
+    return transporteEventoComOrigens_(locais.map(function(local) { return local.valores; }), proprio.valores, proprio.linha, slot);
+  }
+  // Sem a linha pela busca, a leitura completa confirma se o evento existe.
   var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
   lap('rar_ler_linhas', rows.length);
   // Mesma leitura para o contexto de AWB do salvamento (codexAgendaLeituraCompartilhada_).
@@ -449,11 +483,7 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i][AGENDA_CFG.idx.id] || '').trim() !== String(idAgenda).trim()) continue;
     if (typeof codexLinhaPorIdLembrar_ === 'function' && String(rows[i][AGENDA_CFG.idx.id]) === String(idAgenda)) codexLinhaPorIdLembrar_(sh, idAgenda, i + 2);
-    var evento = agendaRowToObject_(rows[i], i + 2);
-    // Origem do Backup (Folha de Agendamento HTML) vem desta mesma leitura.
-    evento.transporteOrigens = {};
-    evento.transporteDatasColeta = transporteDatasColetaAgenda_(rows, rows[i], slot, evento.transporteOrigens);
-    return evento;
+    return transporteEventoComOrigens_(rows, rows[i], i + 2, slot);
   }
   throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
 }
@@ -3184,7 +3214,8 @@ function transporteRegistroPreparado_(payload) {
   return registro;
 }
 
-function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
+// opcoes.awbAdiada: abrir a tela nao percorre o historico; ver getTransporteAwbAviso.
+function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado, opcoes) {
   return transporteMeasurePerformance_('getTransporteBootstrap', 'total', { rowCount: 1 }, function() {
     var registro = transporteMeasurePerformance_('getTransporteBootstrap', 'record', { rowCount: 1 }, function() {
       return registroPrecarregado || transporteReadRegistro_();
@@ -3214,9 +3245,7 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
         options: options,
         auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
         issues: transporteValidate_(registro),
-        awbIssue: transporteMeasurePerformance_('getTransporteBootstrap', 'awb_aviso', { rowCount: 1 }, function() {
-          return transporteAwbAviso_(registro);
-        }),
+        awbIssue: opcoes && opcoes.awbAdiada ? null : transporteAwbAviso_(registro),
         resumo: {
           materiaisAtivos: ativos.length,
           totalTubos: totalTubos,
@@ -3233,8 +3262,16 @@ function getTransporteBootstrap() {
   return codexWithDocumentLock_('getTransporteBootstrap', function() {
     // O acesso pode ter sido revogado enquanto aguardava outra gravacao.
     codexAssertCanRead_();
-    // O aviso de AWB reaproveita a leitura da Agenda feita ao atualizar o registro.
-    return transporteAgendaLeituraCompartilhada_(function() { return transporteBuildBootstrap_(); });
+    return transporteBuildBootstrap_(null, null, { awbAdiada: true });
+  });
+}
+
+// So para AWB digitada no modulo, inclusive envio sem Agenda: percorre o historico fora do
+// document lock e do carregamento. Salvar e gerar continuam validando a AWB.
+function getTransporteAwbAviso(registro) {
+  codexAssertCanRead_();
+  return transporteMeasurePerformance_('getTransporteAwbAviso', 'total', { rowCount: 1 }, function() {
+    return transporteAwbAviso_(registro || {});
   });
 }
 
@@ -3243,8 +3280,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
   idAgenda = String(idAgenda || '').trim();
   if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
   return codexWithDocumentLock_('getTransporteBootstrapFromAgenda', function() {
-    // Rascunho nao grava na Agenda: o aviso de AWB reaproveita a leitura do evento.
-    return transporteAgendaLeituraCompartilhada_(function() { return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
+    return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
       var contexto = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'payload', { rowCount: 1 }, function() {
         return montarContextoTransporteParaTransp_(idAgenda, slot);
       });
@@ -3256,7 +3292,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       // O registro normalizado pertence a este slot e ao mesmo lock da importação.
       // As abas dos documentos serão preparadas somente na geração.
       var data = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'bootstrap', { rowCount: 1 }, function() {
-        return transporteBuildBootstrap_(contexto.evento, importResult.registro);
+        return transporteBuildBootstrap_(contexto.evento, importResult.registro, { awbAdiada: true });
       });
       data.registro = Object.assign({}, data.registro || {}, {
         idAgenda: payload.idAgenda || idAgenda,
@@ -3265,7 +3301,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       });
       data.importResult = { rascunho: true, mensagem: importResult.mensagem };
       return data;
-    }); });
+    });
   });
 }
 
@@ -7196,6 +7232,38 @@ function transporteCaixasRegras_() {
   return result;
 }
 
+function transporteCaixaRegraDoProjeto_(rule, key) {
+  var nome = rule.nomeAbreviado, codigo = rule.codigo;
+  var aliases = [rule.projetoId, nome, codigo, nome && codigo ? nome + ' (' + codigo + ')' : '', nome && codigo ? codigo + ' (' + nome + ')' : ''];
+  return aliases.some(function(alias) { return alias && transporteParticipantKey_(alias) === key; });
+}
+
+// Pendencias citam a caixa especial pela regra do projeto; sem regra unica, nada e inferido.
+function transporteCaixasAnotarPendencias_(pendencias) {
+  var rotulos = { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube' };
+  var itens = ['courierNaoAgendada', 'courierNaoConfirmada', 'awbEnviadaNaoEntregue', 'transporteBackupNaoAgendado', 'documentacaoTransporteSemEnvio']
+    .reduce(function(lista, chave) { return lista.concat(pendencias[chave] || []); }, []);
+  if (!itens.length) return;
+  try {
+    var regras = transporteCaixasRegras_().filter(function(regra) { return !regra.erro; });
+    if (!regras.length) return;
+    itens.forEach(function(item) {
+      var key = transporteParticipantKey_(item.projeto);
+      var courier = transporteNormalizeCourierFromCodex_(item.courier);
+      var temperatura = transporteNormalizeTemperaturaFromCodex_(item.temperatura);
+      var destino = transporteParticipantKey_(item.destino);
+      var regra = regras.filter(function(candidata) {
+        return transporteCaixaRegraDoProjeto_(candidata, key) && candidata.courier === courier &&
+          candidata.temperatura === temperatura && transporteParticipantKey_(candidata.destino) === destino;
+      });
+      if (regra.length === 1) item.caixa = rotulos[regra[0].tipoCaixa] || '';
+    });
+  } catch (error) {
+    // A informacao e auxiliar: falha ao ler regras nao derruba as Pendencias.
+    Logger.log('Caixas especiais nao anotadas nas Pendencias: ' + error.message);
+  }
+}
+
 function transporteCaixaResolver_(ss, payload) {
   // Nunca confiar na caixa/valores enviados pelo cliente; recuperar somente snapshots do servidor.
   var range = transporteCaixaAgendaRange_(payload);
@@ -7206,9 +7274,7 @@ function transporteCaixaResolver_(ss, payload) {
   var rules = transporteCaixasRegras_();
   var key = transporteParticipantKey_(payload.protocolo);
   var matches = rules.filter(function(rule) {
-    var nome = rule.nomeAbreviado, codigo = rule.codigo;
-    var aliases = [rule.projetoId, nome, codigo, nome && codigo ? nome + ' (' + codigo + ')' : '', nome && codigo ? codigo + ' (' + nome + ')' : ''];
-    var projectMatches = aliases.some(function(alias) { return alias && transporteParticipantKey_(alias) === key; });
+    var projectMatches = transporteCaixaRegraDoProjeto_(rule, key);
     if (projectMatches && rule.erro) throw new Error(rule.erro);
     return projectMatches &&
       transporteNormalizeCourierFromCodex_(payload.courier) === rule.courier &&

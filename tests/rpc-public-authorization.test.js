@@ -7,7 +7,8 @@ const { fakeDocumentLock } = require('./helpers/fake-document-lock');
 
 const queries = [
   { name: 'getTransporteParticipantesOptions', helper: 'transporteReadParticipantesOptions_', args: [], result: [{ id: 'P-1' }] },
-  { name: 'getTransporteBootstrap', helper: 'transporteBuildBootstrap_', args: [], result: { registro: { materiais: [] } }, locked: true },
+  { name: 'getTransporteBootstrap', helper: 'transporteBuildBootstrap_', args: [], helperArgs: [null, null, { awbAdiada: true }], result: { registro: { materiais: [] } }, locked: true },
+  { name: 'getTransporteAwbAviso', helper: 'transporteAwbAviso_', args: [{ awb: '123' }], result: { awb: '123', text: 'Em uso' } },
   { name: 'getTransporteCeStatus', helper: 'transporteCeStatus_', args: ['Estudo'], result: { checked: true, found: true } }
 ];
 const accessCases = [
@@ -30,7 +31,7 @@ function fixture(access) {
   queries.forEach(query => {
     s[query.helper] = (...args) => {
       assert.equal(lock.state.held, !!query.locked);
-      assert.deepEqual(args, query.args);
+      assert.deepEqual(JSON.parse(JSON.stringify(args)), query.helperArgs || query.args);
       state.calls.push(query.name);
       return query.result;
     };

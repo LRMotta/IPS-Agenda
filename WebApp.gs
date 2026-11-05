@@ -8502,6 +8502,7 @@ function getDashboardPendencias_(estoque, perfContext) {
           slot: 'Transporte de Amostras Backup',
           courier: backupNome,
           temperatura: String(r[i.cb.temp] || '').trim(),
+          destino: String(r[i.cb.destino] || '').trim(),
           statusCourier: backupStatus
         }));
       }
@@ -8510,7 +8511,7 @@ function getDashboardPendencias_(estoque, perfContext) {
         out.counts.transporteBackupNaoAgendado++;
         out.transporteBackupNaoAgendado.push(Object.assign({}, baseParaPendencia(), {
           slot: 'Transporte de Amostras Backup II', courier: backup2.nome,
-          temperatura: backup2.temperatura, statusCourier: backup2.status
+          temperatura: backup2.temperatura, destino: backup2.destino, statusCourier: backup2.status
         }));
       }
       [
@@ -8530,6 +8531,7 @@ function getDashboardPendencias_(estoque, perfContext) {
           slot: slot.label,
           courier: nome,
           temperatura: String(r[slot.cfg.temp] || '').trim(),
+          destino: String(r[slot.cfg.destino] || '').trim(),
           statusCourier: String(r[slot.cfg.status] || ''),
           awb: awb,
           trackingUrl: agendaTrackingUrl_(awb, nome)
@@ -8584,6 +8586,7 @@ function getDashboardPendencias_(estoque, perfContext) {
           slot: slot.label,
           courier: nome,
           temperatura: String(r[slot.cfg.temp] || '').trim(),
+          destino: String(r[slot.cfg.destino] || '').trim(),
           statusCourier: String(r[slot.cfg.status] || ''),
           awb: awb
         });
@@ -8636,6 +8639,7 @@ function getDashboardPendencias_(estoque, perfContext) {
         slot: slotLabel,
         courier: String(r[slotCfg.nome] || doc.courier || '').trim(),
         temperatura: String(r[slotCfg.temp] || '').trim(),
+        destino: String(r[slotCfg.destino] || '').trim(),
         awb: String(r[slotCfg.awb] || '').trim(),
         statusCourier: statusCourier,
         referencia: String(doc.referencia || ''),
@@ -8671,6 +8675,9 @@ function getDashboardPendencias_(estoque, perfContext) {
   });
   measure('reminder_annotations', out.courierNaoConfirmada.length, function() {
     if (typeof courierLembreteAnotarPendencias_ === 'function') courierLembreteAnotarPendencias_(out.courierNaoConfirmada);
+  });
+  measure('special_boxes', 0, function() {
+    if (typeof transporteCaixasAnotarPendencias_ === 'function') transporteCaixasAnotarPendencias_(out);
   });
   measure('sort', vals.length + (estoque || []).length, function() {
   ordenarPendenciasAgendaPorUrgencia_(out.documentacaoTransporteSemEnvio);
@@ -17226,6 +17233,7 @@ function getCourierConfirmationRules_() {
     out[key] = {
       courier: c.nome,
       emailConfirmacao: email,
+      remetentesFixos: defaults.remetentesFixos || [],
       textoConfirmacao: texto,
       textosConfirmacao: codexCourierConfirmationTexts_(texto, defaults, isDhl),
       statusConfirmacao: String(c.statusConfirmacao || defaults.statusConfirmacao || '').trim() || 'Confirmado',
@@ -17357,6 +17365,10 @@ function montarGmailQueriesConfirmacaoCourier_(regra) {
     return String(v || '').trim();
   }).filter(Boolean);
   if (!remetentes.length) remetentes = [String(regra.emailConfirmacao || '').trim()].filter(Boolean);
+  (regra.remetentesFixos || []).forEach(function(email) {
+    var jaCadastrado = remetentes.some(function(v) { return v.toLowerCase() === email; });
+    if (!jaCadastrado) remetentes.push(email);
+  });
   return remetentes.map(function(v) {
     return 'from:' + v.replace(/\s+/g, '') + ' newer_than:' + (regra.diasBusca || 7) + 'd';
   });
@@ -20950,6 +20962,8 @@ function courierConfirmationDefaults_(nome) {
     return {
       monitorConfirmacao: 'Sim',
       emailConfirmacao: 'expobrasil@marken.com',
+      // Crēdo Cube confirma pelo endereço da caixa, mesmo com o remetente da courier alterado no cadastro.
+      remetentesFixos: ['protocolos.credo@marken.com'],
       textoConfirmacao: 'Confirmamos o agendamento da retirada conforme informações abaixo. || Agendamento da retirada confirmado conforme solicitado.',
       textosConfirmacao: [
         'Confirmamos o agendamento da retirada conforme informações abaixo.',
