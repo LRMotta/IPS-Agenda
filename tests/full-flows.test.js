@@ -715,6 +715,63 @@ test('primeira identificacao apos TC agendada atualiza a mesma participacao e a 
   assert.equal(agenda.rows[1][9], '81231558');
 });
 
+function participacaoComEventoContext(numeroAtual, cpfAtual) {
+  const participantes = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
+    [52, 'Pessoa com Agenda', '', '', numeroAtual, 'Estudo A', '', '', 'Pré-Triagem', '', cpfAtual, '']
+  ]);
+  const agenda = new FakeSheet('Agenda', [
+    ['Participante', 'ID Participante', 'Projeto', 'ID Cadastro Participante'],
+    ['Pessoa com Agenda', numeroAtual, 'Estudo A', 52],
+    ['Pessoa com Agenda', numeroAtual, 'Estudo A', 52]
+  ]);
+  const ss = new FakeSpreadsheet({ Participantes: participantes, Agenda: agenda });
+  const { context } = cadastroContext(ss, [{ nome: 'Estudo A' }, { nome: 'Estudo B' }]);
+  context.AGENDA_CFG = { idx: { participante: 0, idParticipante: 1, projeto: 2, participanteCadastroId: 3 }, lastCol: 4 };
+  context.getAgendaSheetForRead_ = () => agenda;
+  return { context, participantes, agenda };
+}
+
+function salvarNumeroParticipacao(context, numero, cpf, projeto) {
+  return context.salvarDadosParticipante({
+    id: 52, sexoNascimento: 'Não informado', nome: 'Pessoa com Agenda', idParticipante: numero,
+    projeto: projeto || 'Estudo A', status: 'Em Triagem', cpf
+  });
+}
+
+test('CPF do cadastro usado como número provisório pode ser trocado e sincroniza a Agenda', () => {
+  const { context, participantes, agenda } = participacaoComEventoContext('529.982.247-25', '529.982.247-25');
+
+  assert.equal(salvarNumeroParticipacao(context, 'EM3-001', '52998224725'), 'Participante atualizado com sucesso');
+
+  assert.equal(participantes.rows[1][4], 'EM3-001');
+  assert.equal(participantes.rows[1][10], '529.982.247-25');
+  assert.equal(agenda.rows[1][1], 'EM3-001');
+  assert.equal(agenda.rows[2][1], 'EM3-001');
+});
+
+test('CPF provisório sem pontuação também é reconhecido', () => {
+  const { context, participantes } = participacaoComEventoContext('52998224725', '529.982.247-25');
+  assert.equal(salvarNumeroParticipacao(context, 'EM3-001', '52998224725'), 'Participante atualizado com sucesso');
+  assert.equal(participantes.rows[1][4], 'EM3-001');
+});
+
+test('número atribuído ou CPF de outra pessoa continuam bloqueados com eventos na Agenda', () => {
+  [['EM3-001', '529.982.247-25'], ['935.411.347-80', '529.982.247-25'], ['52998224725', '']].forEach(([numeroAtual, cpfAtual]) => {
+    const { context, participantes, agenda } = participacaoComEventoContext(numeroAtual, cpfAtual);
+    assert.throws(() => salvarNumeroParticipacao(context, 'EM3-002', '52998224725'), /não podem ser alterados[\s\S]*mesmo protocolo/);
+    assert.equal(participantes.rows[1][4], numeroAtual);
+    assert.equal(agenda.rows[1][1], numeroAtual);
+  });
+});
+
+test('número provisório não libera troca de protocolo com eventos na Agenda', () => {
+  const { context, participantes } = participacaoComEventoContext('529.982.247-25', '529.982.247-25');
+  assert.throws(() => salvarNumeroParticipacao(context, 'EM3-001', '52998224725', 'Estudo B'), /não podem ser alterados/);
+  assert.equal(participantes.rows[1][4], '529.982.247-25');
+  assert.equal(participantes.rows[1][5], 'Estudo A');
+});
+
 test('edicao preserva projeto, status e identificacao quando o formulario nao os devolve', () => {
   const participantes = new FakeSheet('Participantes', [
     ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status'],

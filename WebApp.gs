@@ -7523,10 +7523,12 @@ function salvarDadosParticipante(d) {
     // A Pré-Triagem pode ser agendada antes da atribuição do número definitivo.
     // Depois que há evento, preservar o protocolo e um número já atribuído, mas
     // permitir o primeiro preenchimento (vazio -> número), que será sincronizado
-    // às referências pelo ID técnico do cadastro logo abaixo.
-    var substituiuIdentificacaoExistente = alterouIdParticipante && String(existing[4] || '').trim() !== '';
+    // às referências pelo ID técnico do cadastro logo abaixo. O CPF do próprio
+    // cadastro usado como número provisório equivale a número ainda não atribuído.
+    var substituiuIdentificacaoExistente = alterouIdParticipante && String(existing[4] || '').trim() !== ''
+      && !CadastroRules_.participantIdIsCpfPlaceholder(existing[4], existing[10]);
     if ((alterouProjeto || substituiuIdentificacaoExistente) && participantePossuiEventoAgenda_(participanteReferenciaCadastro_(existing))) {
-      throw new Error('O protocolo e o número de identificação não podem ser alterados porque esta participação já possui eventos na Agenda. Encerre a participação atual e crie uma nova participação para o outro protocolo.');
+      throw new Error('O protocolo e o número de identificação não podem ser alterados porque esta participação já possui eventos na Agenda. Encerre a participação atual e crie uma nova participação para o outro protocolo. Se for correção do número neste mesmo protocolo, não crie outra participação: solicite o ajuste a um administrador.');
     }
   }
   var participantAnalysis = CadastroRules_.analyzeParticipant(d, rows);

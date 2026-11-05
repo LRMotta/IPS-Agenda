@@ -66,6 +66,14 @@ var CadastroRules_ = (function() {
     return value === 'pre-triagem' || value === 'falha de pre-triagem';
   }
 
+  // Na Pré-Triagem a equipe às vezes registra o CPF no lugar do número de triagem.
+  // Só a coincidência com o CPF do próprio cadastro caracteriza número provisório.
+  function participantIdIsCpfPlaceholder(participantId, cpf) {
+    var text = String(participantId == null ? '' : participantId).trim();
+    var cpfDigits = digits(cpf);
+    return /^[\d.\-\s]+$/.test(text) && cpfDigits.length === 11 && digits(text) === cpfDigits;
+  }
+
   function participantAvailableForNewAgenda(status) {
     var value = normalizeText(status);
     return [
@@ -234,6 +242,7 @@ var CadastroRules_ = (function() {
     requiredProjectFields: requiredProjectFields,
     findProjectDuplicate: findProjectDuplicate,
     participantIdOptional: participantIdOptional,
+    participantIdIsCpfPlaceholder: participantIdIsCpfPlaceholder,
     participantAvailableForNewAgenda: participantAvailableForNewAgenda,
     participantAllowsNewParticipation: participantAllowsNewParticipation,
     requiredParticipantFields: requiredParticipantFields,
