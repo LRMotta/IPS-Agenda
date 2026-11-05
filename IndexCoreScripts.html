@@ -5808,7 +5808,7 @@ function jornadaParticipanteHtml_(dados) {
   var operacao = prontidao.map(function(visita) {
     return '<section class="jornada-readiness-card' + (visita.atrasada ? ' danger' : '') + '"><div class="jornada-readiness-title"><strong>' + esc(visita.nome) + '</strong>' + estado(visita) + '</div><div class="jornada-readiness-window">' + (visita.janelaInicio ? 'Janela: ' + esc(visita.janelaInicio) + ' – ' + esc(visita.janelaFim) : 'Data ideal: ' + esc(visita.dataAlvo || 'Sem data calculável')) + '</div>' + ctmsState(visita) + kits(visita) + '</section>';
   }).join('') || '<div style="color:#7b8794">Nenhuma visita futura identificada.</div>';
-  if (!dados.possuiSoA) timeline = '<div style="color:#7b8794;padding:18px 0">Este projeto não possui SoA. O histórico abaixo permanece disponível e as visitas futuras podem ser acompanhadas quando forem agendadas.</div>';
+  if (!dados.possuiSoA) timeline = '<div style="color:#7b8794;padding:18px 0">Este projeto não possui Cronograma de Avaliações. O histórico abaixo permanece disponível e as visitas futuras podem ser acompanhadas quando forem agendadas.</div>';
   var historicoHtml = (dados.eventosLivres || []).map(function(evento) {
     var status = String(evento.status || 'Registrada');
     var statusNormalizado = status.toLowerCase();
@@ -5833,7 +5833,7 @@ function abrirConcilicaoVisitasParticipante() {
   var pendentes = dados.conciliacao || [];
   if (!content || !pendentes.length) return;
   var options = '<option value="">Não conciliar agora</option>' + visitas.map(function(visita) { return '<option value="' + esc(visita.idSoA) + '">' + esc((visita.codigo ? visita.codigo + ' · ' : '') + visita.nome) + '</option>'; }).join('');
-  content.innerHTML = '<div style="max-width:980px"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Conciliar visitas registradas</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Escolha uma visita SoA por nome histórico. A aplicação vincula todas as ocorrências iguais deste participante desde 2026, preservando o texto original.</p>' + pendentes.map(function(item, index) {
+  content.innerHTML = '<div style="max-width:980px"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()"><span class="material-symbols-outlined">arrow_back</span> Voltar à jornada</button><h3 style="margin:16px 0 6px;color:#183b6b">Conciliar visitas registradas</h3><p style="margin:0 0 16px;color:#64748b;font-size:13px">Escolha uma visita do Cronograma de Avaliações por nome histórico. A aplicação vincula todas as ocorrências iguais deste participante desde 2026, preservando o texto original.</p>' + pendentes.map(function(item, index) {
     var sugestao = item.sugestao || {};
     return '<div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,1.4fr);gap:12px;align-items:center;border-top:1px solid #e5ebf5;padding:12px 0"><div><strong>' + esc(item.visitaOriginal) + '</strong><div style="font-size:12px;color:#64748b;margin-top:3px">' + Number(item.quantidade || 0) + ' ocorrência(s)' + (sugestao.motivo ? ' · ' + esc(sugestao.motivo) : ' · sem sugestão segura') + '</div></div><select class="f-input f-select" id="jornadaConciliacao_' + index + '" data-visita-original="' + esc(item.visitaOriginal) + '">' + options + '</select></div>';
   }).join('') + '<div class="jornada-reserve-actions"><button class="ag-tb-btn" type="button" onclick="voltarJornadaParticipante()">Cancelar</button><button class="ag-tb-btn primary" type="button" id="btnSalvarConciliacaoJornada" onclick="salvarConcilicaoVisitasParticipante()"><span class="material-symbols-outlined">done_all</span> Aplicar conciliação</button></div><div id="statusConciliacaoJornada" style="margin-top:10px"></div></div>';
@@ -5885,7 +5885,7 @@ function abrirPreviaCtmsJornada() {
     var attention = !!impact.requerAtencao || !!row.provisoria;
     var warnings = (row.avisos || []).map(function(message) { return '<li>' + esc(message) + '</li>'; }).join('');
     var approvalAction = row.aprovavel ? '<div class="jornada-ctms-approval-action"><div><strong>' + (row.aprovada ? 'Comparação aprovada' : row.aprovacaoObsoleta ? 'O cálculo mudou desde a aprovação' : 'Revisão operacional necessária') + '</strong><span>' + (row.aprovada ? 'Esta data e janela podem alimentar a operação enquanto permanecerem idênticas.' : row.aprovacaoObsoleta ? 'Revise a nova comparação antes de voltar a integrar a operação.' : 'A Jornada e o estoque continuam usando o cálculo atual até a aprovação.') + '</span></div><button type="button" class="ag-tb-btn ' + (row.aprovada ? '' : 'primary') + '" data-ctms-id="' + esc(row.idSoA) + '" data-ctms-fingerprint="' + esc(row.fingerprint) + '" data-ctms-approve="' + (row.aprovada ? '0' : '1') + '" onclick="definirAprovacaoCtmsJornada(this)"><span class="material-symbols-outlined">' + (row.aprovada ? 'undo' : 'approval') + '</span>' + (row.aprovada ? 'Revogar aprovação' : 'Aprovar comparação') + '</button></div>' : '';
-    return '<article class="jornada-ctms-row impacto-' + String(impact.tipo || 'REVISAO').toLowerCase() + '" data-ctms-atencao="' + (attention ? '1' : '0') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'SoA') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div><div class="jornada-ctms-badges">' + approvalLabel(row) + impactLabel(row) + statusLabel(row) + '</div></div>' +
+    return '<article class="jornada-ctms-row impacto-' + String(impact.tipo || 'REVISAO').toLowerCase() + '" data-ctms-atencao="' + (attention ? '1' : '0') + '"><div class="jornada-ctms-visit"><div><span class="jornada-ctms-code">' + esc(row.codigo || 'Visita') + '</span><strong>' + esc(row.nome || 'Visita') + '</strong></div><div class="jornada-ctms-badges">' + approvalLabel(row) + impactLabel(row) + statusLabel(row) + '</div></div>' +
       '<div class="jornada-ctms-reason"><span class="material-symbols-outlined">' + (impact.tipo === 'SEM_MUDANCA' ? 'check_circle' : impact.tipo === 'REVISAO' ? 'rule' : 'difference') + '</span><strong>' + esc(impact.motivo || 'Impacto ainda não explicado.') + '</strong></div>' +
       '<div class="jornada-ctms-columns"><section class="jornada-ctms-card current"><h4>Cálculo atual</h4>' +
         value('Data exibida', atual.dataAlvo, 'Sem data calculável') + value('Estado', atual.estado, 'A programar') +
@@ -5969,7 +5969,7 @@ function abrirConfiguracaoCtmsJornada() {
   var escolhas = (config.escolhasNecessarias || []).map(function(item) {
     var selected = String((config.escolhasReferencias || {})[item.idSoA] || '');
     var options = (item.opcoes || []).map(function(option) { return '<option value="' + esc(option.valor) + '"' + (selected === String(option.valor) ? ' selected' : '') + '>' + esc(jornadaCtmsReferenciaLabel_(option.label)) + '</option>'; }).join('');
-    return '<label class="jornada-ctms-choice"><span><strong>' + esc(item.codigo || 'SoA') + '</strong>' + esc(item.nome || 'Visita') + '</span><select class="f-input" data-ctms-escolha="' + esc(item.idSoA) + '"><option value="">Decidir depois</option>' + options + '</select></label>';
+    return '<label class="jornada-ctms-choice"><span><strong>' + esc(item.codigo || 'Visita') + '</strong>' + esc(item.nome || 'Visita') + '</span><select class="f-input" data-ctms-escolha="' + esc(item.idSoA) + '"><option value="">Decidir depois</option>' + options + '</select></label>';
   }).join('') || '<div class="jornada-ctms-config-empty">Nenhuma visita deste braço exige escolha manual entre referências.</div>';
   content.innerHTML = '<div class="jornada-ctms-config"><div class="jornada-ctms-toolbar"><button class="ag-tb-btn" type="button" onclick="abrirPreviaCtmsJornada()"><span class="material-symbols-outlined">arrow_back</span> Voltar à prévia</button><div><h3>Marcos e escolhas CTMS</h3><p>Configuração individual de ' + esc(previa.participante || '') + '</p></div><span class="jornada-ctms-activation ' + (previa.projetoAtivo ? 'active' : '') + '">' + esc(previa.projetoAtivo ? 'CTMS ativo no projeto' : 'Projeto em modo de prévia') + '</span></div>' +
     '<div class="jornada-ctms-readonly"><span class="material-symbols-outlined">info</span><div><strong>Estas escolhas pertencem somente a este participante.</strong><span>A ativação do motor continua sendo feita manualmente no cadastro do projeto.</span></div></div>' +
@@ -6167,7 +6167,7 @@ function salvarConcilicaoVisitasParticipante() {
     return { visitaOriginal: item.visitaOriginal, idSoA: select ? select.value : '' };
   }).filter(function(item) { return item.idSoA; });
   var status = document.getElementById('statusConciliacaoJornada');
-  if (!mapeamentos.length) { if (status) status.textContent = 'Selecione ao menos uma visita SoA para conciliar.'; return; }
+  if (!mapeamentos.length) { if (status) status.textContent = 'Selecione ao menos uma visita do Cronograma de Avaliações para conciliar.'; return; }
   var btn = document.getElementById('btnSalvarConciliacaoJornada');
   appSetButtonBusy(btn, true);
   if (status) status.textContent = 'Aplicando conciliação…';
@@ -6952,7 +6952,7 @@ function renderSoAVisitas(lista, options) {
   var list = document.getElementById('pSoAList');
   if (!list) return;
   soaAtualizarAcoesOrdem_();
-  if (!_soaVisitasAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhuma visita SoA configurada.</div>'; return; }
+  if (!_soaVisitasAtual.length) { list.innerHTML = '<div class="soa-visita-empty">Nenhuma visita do Cronograma de Avaliações configurada.</div>'; return; }
   list.innerHTML = _soaVisitasAtual.map(function(item, index) {
     var aliases = (item.aliases || []).join(' · ');
     var programacao = [soaResumoProgramacao_(item), soaBracosLabel_(item.bracoIds || [])].filter(Boolean).join(' · ');
@@ -7062,7 +7062,7 @@ function descartarOrdemSoAApp() {
 function salvarOrdemSoAApp() {
   if (!_soaOrdemAlterada) return;
   var projeto = soaProjetoNomeAtual_();
-  if (!projeto) { snack('Salve o protocolo antes de ordenar o calendário SoA.'); return; }
+  if (!projeto) { snack('Salve o protocolo antes de ordenar o Cronograma de Avaliações.'); return; }
   var btn = document.getElementById('btnSalvarOrdemSoA');
   var idsSoA = _soaVisitasAtual.map(function(item) { return String(item.idSoA || ''); });
   appSetButtonBusy(btn, true);
@@ -7084,7 +7084,7 @@ function soaOrdemLabel_(value) {
 function abrirSugestaoOrdemSoAApp() {
   if (_soaOrdemAlterada) { snack('Salve ou descarte a ordem pendente antes de gerar outra sugestão.'); return; }
   if (!_soaVisitasAtual || _soaVisitasAtual.length < 2) { snack('Cadastre ao menos duas visitas para sugerir uma ordem.'); return; }
-  if (_soaVisitasAtual.some(function(item) { return !isFinite(Number(item.ordemSugerida)); })) { snack('A sugestão de ordem não está disponível. Recarregue o calendário.'); return; }
+  if (_soaVisitasAtual.some(function(item) { return !isFinite(Number(item.ordemSugerida)); })) { snack('A sugestão de ordem não está disponível. Recarregue o cronograma.'); return; }
   _soaSugestaoOrdemAtual = _soaVisitasAtual.slice().sort(function(a, b) {
     var ao = Number(a.ordemSugerida); var bo = Number(b.ordemSugerida);
     ao = isFinite(ao) ? ao : 999999; bo = isFinite(bo) ? bo : 999999;
@@ -7267,7 +7267,7 @@ function carregarSoAVisitasProjeto(projeto) {
   if (!salvo) { renderSoAVisitas([]); return; }
   renderSoAVisitas([]);
   soaAtualizarAcoesOrdem_();
-  if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando calendário SoA...</div>';
+  if (list) list.innerHTML = '<div class="soa-visita-empty">Carregando Cronograma de Avaliações...</div>';
   var projetoNome = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
   appServerRun({ method: 'getSoAVisitasProjeto', args: [projetoNome], onSuccess: function(visitas) {
     if (request !== _soaVisitasRequest || soaProjetoNomeAtual_() !== projetoNome) return;
@@ -7278,7 +7278,7 @@ function carregarSoAVisitasProjeto(projeto) {
     }, onFailure: function() {} });
   }, onFailure: function(e) {
     if (request !== _soaVisitasRequest || soaProjetoNomeAtual_() !== projetoNome) return;
-    if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar o calendário SoA.')) + '</div>';
+    if (list) list.innerHTML = '<div class="soa-visita-empty soa-visita-error">' + esc(appErrorMessage(e, 'Não foi possível carregar o Cronograma de Avaliações.')) + '</div>';
   }});
 }
 
@@ -7291,7 +7291,7 @@ function soaAtualizarBaseCalculoHelp_() {
 }
 
 function abrirSoAVisitaForm(visita) {
-  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de cadastrar o calendário SoA.'); return; }
+  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de cadastrar o Cronograma de Avaliações.'); return; }
   visita = visita || null;
   ['soaEditId', 'soaCodigo', 'soaNome', 'soaOrdem', 'soaRepeticao', 'soaIntervalo', 'soaJanelaMenos', 'soaJanelaMais', 'soaAliases', 'soaObservacoes', 'soaBaseCalculo', 'soaPapelCronograma', 'soaCriterioReferencias'].forEach(function(id) { var input = document.getElementById(id); if (input) input.value = ''; });
   document.getElementById('soaAtivo').checked = true;
@@ -7301,8 +7301,8 @@ function abrirSoAVisitaForm(visita) {
   soaPopulateReferenciaOptions_(visita ? (visita.referencia || '') : '', visita ? (visita.referenciaAlternativa || '') : '');
   soaPopulateBracosOptions_(visita ? (visita.bracoIds || []) : []);
   soaAtualizarBaseCalculoHelp_();
-  document.getElementById('modalSoATitle').textContent = visita ? 'EDITAR VISITA SoA' : 'ADICIONAR VISITA SoA';
-  document.getElementById('modalSoASubtitle').textContent = 'Calendário de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
+  document.getElementById('modalSoATitle').textContent = visita ? 'EDITAR VISITA DO CRONOGRAMA DE AVALIAÇÕES' : 'ADICIONAR VISITA AO CRONOGRAMA DE AVALIAÇÕES';
+  document.getElementById('modalSoASubtitle').textContent = 'Cronograma de Avaliações de ' + (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo);
   if (visita) {
     document.getElementById('soaCodigo').value = visita.codigo || '';
     document.getElementById('soaNome').value = visita.nome || '';
@@ -7340,7 +7340,7 @@ function salvarSoAVisitaApp() {
   var btn = document.getElementById('btnSalvarSoA');
   var payload = { idSoA: document.getElementById('soaEditId').value, projeto: document.getElementById('soaProjeto').value.trim(), codigo: document.getElementById('soaCodigo').value.trim(), nome: nome, ordem: document.getElementById('soaOrdem').value, repeticao: document.getElementById('soaRepeticao').value.trim(), intervaloDias: document.getElementById('soaIntervalo').value, referencia: referencia, referenciaAlternativa: referenciaAlternativa, baseCalculo: baseCalculo, aplicarBaseEquivalentes: document.getElementById('soaAplicarBaseEquivalentes').checked, papelCronograma: papelCronograma, criterioReferencias: criterioReferencias, janelaDiasMenos: document.getElementById('soaJanelaMenos').value, janelaDiasMais: document.getElementById('soaJanelaMais').value, aliases: document.getElementById('soaAliases').value.trim(), ativo: document.getElementById('soaAtivo').checked, observacoes: document.getElementById('soaObservacoes').value.trim(), bracoIds: soaSelectedBracos_() };
   appSetButtonBusy(btn, true); appSetStatus('statusSoA', '⏳ Processando...');
-  appServerRun({ method: 'salvarSoAVisita', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', ''); fecharOverlay('modalSoAVisita'); snack('✅ ' + ((res && res.msg) || 'Visita SoA salva.')); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', '⚠ ' + appErrorMessage(e), '#e53935'); } });
+  appServerRun({ method: 'salvarSoAVisita', args: [payload], onSuccess: function(res) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', ''); fecharOverlay('modalSoAVisita'); snack('✅ ' + ((res && res.msg) || 'Visita do Cronograma de Avaliações salva.')); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: function(e) { appSetButtonBusy(btn, false); appSetStatus('statusSoA', '⚠ ' + appErrorMessage(e), '#e53935'); } });
 }
 
 var _soaImportDadosAtual = null;
@@ -7348,8 +7348,7 @@ var _soaImportFingerprintAtual = '';
 var _soaImportRevisao = 0;
 var _soaImportEmAndamento = false;
 var _soaImportResultadoAtual = null;
-var _soaDraftRequest = 0;
-var _soaDraftSaving = false;
+var _soaImportCsvTexto = '';
 
 function invalidarPreviaImportacaoSoA_() {
   _soaImportRevisao++;
@@ -7358,8 +7357,6 @@ function invalidarPreviaImportacaoSoA_() {
   if (review) review.checked = false;
   var reviewBox = document.getElementById('soaImportRevisaoBox');
   if (reviewBox) reviewBox.hidden = true;
-  var save = document.getElementById('btnSalvarPlanejamentoSoA');
-  if (save) save.disabled = true;
   _soaImportDadosAtual = null;
   _soaImportFingerprintAtual = '';
   document.getElementById('btnImportarSoAConfirm').disabled = true;
@@ -7369,21 +7366,22 @@ function invalidarPreviaImportacaoSoA_() {
 }
 
 function abrirSoAImportForm() {
-  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de importar o calendário SoA.'); return; }
+  if (!_soaProjetoAtual || !(_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) { snack('Salve o protocolo antes de importar o Cronograma de Avaliações.'); return; }
   invalidarPreviaImportacaoSoA_();
-  document.getElementById('soaImportTexto').value = '';
+  _soaImportCsvTexto = '';
   document.getElementById('soaImportArquivo').value = '';
-  document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div>';
-  document.getElementById('soaImportCriarBracos').checked = true;
+  document.getElementById('soaImportBraco').value = '';
+  document.getElementById('soaImportBracosLista').innerHTML = (_bracosProjetoAtual || []).filter(function(item) { return item.ativo !== false; }).map(function(item) { return '<option value="' + esc(item.nome) + '"></option>'; }).join('');
+  document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Selecione o CSV, informe o braço e clique em Pré-visualizar.</div>';
   document.getElementById('soaImportModo').value = 'adicionar';
   document.getElementById('btnImportarSoAConfirm').disabled = true;
   appSetStatus('statusSoAImport', '');
   abrirOverlay('modalSoAImport');
-  listarPlanejamentosSoAApp();
 }
 
 function lerSoAArquivoApp(event) {
   invalidarPreviaImportacaoSoA_();
+  _soaImportCsvTexto = '';
   var file = event && event.target && event.target.files && event.target.files[0];
   if (!file) return;
   if (file.size > 300000) { appSetStatus('statusSoAImport', 'O arquivo deve ter até 300 KB.', '#e53935'); return; }
@@ -7391,7 +7389,7 @@ function lerSoAArquivoApp(event) {
   var reader = new FileReader();
   reader.onload = function() {
     if (revisao !== _soaImportRevisao || !document.getElementById('modalSoAImport').classList.contains('open')) return;
-    document.getElementById('soaImportTexto').value = String(reader.result || '');
+    _soaImportCsvTexto = String(reader.result || '');
     invalidarPreviaImportacaoSoA_();
     appSetStatus('statusSoAImport', 'Arquivo carregado. Clique em Pré-visualizar.');
   };
@@ -7402,12 +7400,10 @@ function lerSoAArquivoApp(event) {
 }
 
 function soaImportTextoPayload_() {
-  var texto = document.getElementById('soaImportTexto').value.trim();
-  if (!texto) throw new Error('Cole ou selecione um arquivo JSON.');
-  if (texto.length > 300000) throw new Error('O conteúdo deve ter até 300 mil caracteres.');
-  var dados;
-  try { dados = JSON.parse(texto); } catch (e) { throw new Error('O JSON é inválido. Verifique a codificação UTF-8 e a estrutura do arquivo.'); }
-  return { projeto: _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo, dados: dados, modo: document.getElementById('soaImportModo').value, criarBracos: document.getElementById('soaImportCriarBracos').checked };
+  if (!_soaImportCsvTexto) throw new Error('Selecione o arquivo CSV exportado pelo Polo Trial.');
+  var braco = document.getElementById('soaImportBraco').value.trim();
+  if (!braco) throw new Error('Informe o nome do braço.');
+  return { projeto: _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo, dados: soaPoloExtrair_(_soaImportCsvTexto), modo: document.getElementById('soaImportModo').value, braco: braco, criarBracos: true };
 }
 
 function renderSoAImportPreview_(result) {
@@ -7417,11 +7413,9 @@ function renderSoAImportPreview_(result) {
   confirm.disabled = !result || result.ok !== true || result.podeImportar === false || !result.visitas || !result.visitas.length || !!result.planejamento;
   if (!result) { preview.innerHTML = '<div class="soa-visita-empty">Nenhuma prévia disponível.</div>'; return; }
   var html = '<div class="soa-import-summary"><strong>' + (result.totalVisitas || 0) + '</strong> visitas encontradas · <strong>' + (result.novasVisitas || 0) + '</strong> novas · <strong>' + (result.ignoradas || 0) + '</strong> sem duplicar · <strong>' + ((result.missingBracos || []).length) + '</strong> braços a criar</div>';
-  if (result.planejamento) html += '<div class="soa-import-next-step">' + (result.podeImportar === true ? 'Prévia pronta para importar. Confira as visitas abaixo e marque a confirmação de revisão para habilitar Importar calendário.' : 'Importação indisponível. Consulte os impedimentos abaixo, corrija o documento de origem e pré-visualize novamente. Você também pode salvar um rascunho para continuar depois.') + '</div>';
+  if (result.planejamento) html += '<div class="soa-import-next-step">' + (result.podeImportar === true ? 'Prévia pronta para importar. Confira as visitas abaixo e marque a confirmação de revisão para habilitar Importar cronograma.' : 'Importação indisponível. Consulte os impedimentos abaixo, faça a correção indicada e pré-visualize novamente.') + '</div>';
   var reviewBox = document.getElementById('soaImportRevisaoBox');
   if (reviewBox) reviewBox.hidden = !result.planejamento || result.podeImportar !== true;
-  var save = document.getElementById('btnSalvarPlanejamentoSoA');
-  if (save) save.disabled = result.ok !== true || !result.planejamento || _soaDraftSaving;
   if (!result.planejamento && result.erros && result.erros.length) html += '<div class="soa-import-error"><strong>Corrija antes de importar:</strong><ul>' + result.erros.map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + '</ul></div>';
   if (result.missingBracos && result.missingBracos.length) html += '<div class="soa-import-warning"><strong>Braços novos:</strong> ' + result.missingBracos.map(esc).join(', ') + '</div>';
   if (!result.planejamento && result.alertas && result.alertas.length) html += '<div class="soa-import-warning"><strong>Alertas do documento:</strong><ul>' + result.alertas.slice(0, 8).map(function(item) { return '<li>' + esc(item) + '</li>'; }).join('') + (result.alertas.length > 8 ? '<li>+' + (result.alertas.length - 8) + ' alertas adicionais</li>' : '') + '</ul></div>';
@@ -7453,7 +7447,7 @@ function previsualizarSoAJsonApp() {
   var btn = document.getElementById('btnPreviewSoA');
   var payload;
   try { payload = soaImportTextoPayload_(); } catch (e) { renderSoAImportPreview_({ ok: false, erros: [e.message], visitas: [] }); appSetStatus('statusSoAImport', '⚠ ' + e.message, '#e53935'); return; }
-  appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Validando JSON...');
+  appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Validando arquivo...');
   appServerRun({ method: 'validarImportacaoSoA', args: [payload], onSuccess: function(result) {
     if (revisao !== _soaImportRevisao || !document.getElementById('modalSoAImport').classList.contains('open')) return;
     appSetButtonBusy(btn, false);
@@ -7466,7 +7460,7 @@ function previsualizarSoAJsonApp() {
       _soaImportFingerprintAtual = JSON.stringify(payload);
     }
     renderSoAImportPreview_(result);
-    appSetStatus('statusSoAImport', result && result.ok ? (result.podeImportar === false ? 'Rascunho recebido. Confira as pendências abaixo; você pode salvar para continuar depois.' : 'Prévia pronta. Revise os alertas antes de importar.') : 'Há pendências que impedem a importação.', result && result.ok ? '' : '#e53935');
+    appSetStatus('statusSoAImport', result && result.ok ? (result.podeImportar === false ? 'Há impedimentos. Confira os pontos de atenção abaixo.' : 'Prévia pronta. Revise os alertas antes de importar.') : 'Há pendências que impedem a importação.', result && result.ok ? '' : '#e53935');
   }, onFailure: function(e) {
     if (revisao !== _soaImportRevisao) return;
     appSetButtonBusy(btn, false);
@@ -7496,11 +7490,11 @@ function confirmarImportacaoSoAApp() {
   var revisao = _soaImportRevisao;
   var btn = document.getElementById('btnImportarSoAConfirm');
   _soaImportEmAndamento = true;
-  appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Importando calendário...');
+  appSetButtonBusy(btn, true); appSetStatus('statusSoAImport', '⏳ Importando cronograma...');
   appServerRun({ method: 'importarSoAJson', args: [payload], onSuccess: function(result) {
     _soaImportEmAndamento = false;
     if (revisao === _soaImportRevisao) { appSetButtonBusy(btn, false); fecharOverlay('modalSoAImport'); }
-    snack('✅ ' + ((result && result.msg) || 'Calendário SoA importado.'));
+    snack('✅ ' + ((result && result.msg) || 'Cronograma de Avaliações importado.'));
     if (_soaProjetoAtual === projeto) { carregarSoAVisitasProjeto(projeto); carregarBracosProjeto(projeto); }
   }, onFailure: function(e) {
     _soaImportEmAndamento = false;
@@ -7525,8 +7519,7 @@ function soaPlanningValue_(value) {
 }
 
 function renderPlanejamentoSoA_(planning, normalizedVisits) {
-  var study = planning.study || {};
-  var html = '<div class="soa-import-summary"><strong>Extração do protocolo ' + soaPlanningValue_(study.protocol_id) + '</strong> · versão ' + soaPlanningValue_(study.protocol_version) + '</div>';
+  var html = '<div class="soa-import-summary"><strong>Exportação do Polo Trial</strong> · braço ' + soaPlanningValue_(planning.braco) + '</div>';
   var issues = Array.isArray(planning.issues) ? planning.issues : [];
   var groups = [];
   issues.forEach(function(issue) {
@@ -7537,90 +7530,24 @@ function renderPlanejamentoSoA_(planning, normalizedVisits) {
     group.items.push(issue);
   });
   var blocking = issues.filter(function(issue) { return issue && issue.blocking; }).length;
-  if (planning.draftOnly) html += '<div class="soa-import-warning">Este documento permite somente prévia e rascunho. Para importar, gere um documento revisável conforme as instruções para IA.</div>';
   if (groups.length) {
     html += '<details class="soa-planning-details soa-planning-issues"><summary>Pontos de atenção · ' + blocking + ' impedimento(s) · ' + (issues.length - blocking) + ' orientação(ões)</summary><p>As mensagens iguais foram agrupadas. As orientações não impedem a importação.</p>';
     html += groups.map(function(group) {
       var labels = { offset_days:'intervalo em dias', window_before_days:'janela em dias antes', window_after_days:'janela em dias depois', anchor_visit_id:'visita de referência', basis:'base das datas', rule_ids:'regras vinculadas' };
       var message = group.message.replace(/offset_days|window_before_days|window_after_days|anchor_visit_id|rule_ids|basis/g, function(key) { return labels[key]; });
-      return '<div class="' + (group.blocking ? 'soa-import-error' : 'soa-import-warning') + '"><strong>' + (group.blocking ? 'Impede aplicar' : 'Orientação') + '</strong> · ' + esc(message) + (group.items.length > 1 ? ' <strong>(' + group.items.length + ' ocorrências)</strong>' : '') + '<details class="soa-planning-technical"><summary>Identificar no documento</summary><ul>' + group.items.map(function(issue) { return '<li>' + soaPlanningValue_(issue.visitCode || issue.visitId || issue.id) + ': ' + soaPlanningValue_(issue.message) + '</li>'; }).join('') + '</ul></details></div>';
+      return '<div class="' + (group.blocking ? 'soa-import-error' : 'soa-import-warning') + '"><strong>' + (group.blocking ? 'Impede aplicar' : 'Orientação') + '</strong> · ' + esc(message) + (group.items.length > 1 ? ' <strong>(' + group.items.length + ' ocorrências)</strong>' : '') + '<details class="soa-planning-technical"><summary>Identificar no arquivo</summary><ul>' + group.items.map(function(issue) { return '<li>' + soaPlanningValue_(issue.visitCode || issue.visitId || issue.id) + ': ' + soaPlanningValue_(issue.message) + '</li>'; }).join('') + '</ul></details></div>';
     }).join('') + '</details>';
   }
-  var rules = Array.isArray(planning.rules) ? planning.rules : [];
-  html += '<details class="soa-planning-details"><summary>Regras extraídas (' + rules.length + ')</summary>';
-  html += rules.map(function(rule) {
-    if (!rule || typeof rule !== 'object') return '<p>Regra inválida: ' + soaPlanningValue_(rule) + '</p>';
-    var timing = rule.timing || rule;
-    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(rule.name || rule.title || rule.id) + '</strong><dl>' +
-      [['Descrição',rule.description || rule.note],['Aplicação',rule.scope || rule.kind],['Referência',timing.anchor],['Prazo e janela',rule.timing || { alvo_dias:rule.target_days, inicio_dias:rule.earliest_days, fim_dias:rule.latest_days, recorrencia_semanas:rule.recurrence_weeks }],['Fonte',rule.source],['Revisão',rule.status],['Tratamento',rule.handling === 'manual' ? 'Conferência manual antes de agendar' : rule.handling],['Observação',rule.note || rule.description],['Motivo',rule.reason]].filter(function(pair) { return pair[1] !== undefined && pair[1] !== null && pair[1] !== ''; }).map(function(pair) { return '<dt>' + pair[0] + '</dt><dd>' + soaPlanningValue_(pair[1]) + '</dd>'; }).join('') + '</dl></article>';
-  }).join('') + '</details>';
-  if (normalizedVisits && normalizedVisits.length) html += '<details class="soa-planning-details"><summary>Fontes e detalhes das visitas</summary>' + normalizedVisits.map(function(visit) {
-    var basis = visit.baseCalculo === 'RECALCULAR_VISITA_REALIZADA' ? 'Data realizada' : (visit.baseCalculo === 'MANTER_DATAS_PREVISTAS' ? 'Data prevista' : 'Não informada');
+  if (normalizedVisits && normalizedVisits.length) html += '<details class="soa-planning-details"><summary>Detalhes das visitas</summary>' + normalizedVisits.map(function(visit) {
+    var basis = visit.baseCalculo === 'RECALCULAR_VISITA_REALIZADA' ? 'Data realizada' : (visit.baseCalculo === 'MANTER_DATAS_PREVISTAS' ? 'Data prevista' : 'Base padrão do protocolo');
     if (visit.schedulingMode === 'manual' || visit.schedulingMode === 'milestone') basis = 'Não se aplica ao agendamento automático';
-    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(visit.codigo) + ' · ' + soaPlanningValue_(visit.nome) + '</strong><p>Braços: ' + soaPlanningValue_(visit.bracoNomes && visit.bracoNomes.length ? visit.bracoNomes : 'Todos os braços') + '</p><p>Base das datas: ' + esc(basis) + '</p><p>Fonte: ' + soaPlanningValue_(visit.source) + '</p><p>Observação: ' + soaPlanningValue_(visit.observacoes || 'Nenhuma') + '</p></article>';
+    return '<article class="soa-planning-rule"><strong>' + soaPlanningValue_(visit.codigo) + ' · ' + soaPlanningValue_(visit.nome) + '</strong><p>Braços: ' + soaPlanningValue_(visit.bracoNomes && visit.bracoNomes.length ? visit.bracoNomes : 'Todos os braços') + '</p><p>Base das datas: ' + esc(basis) + '</p><p>Observação: ' + soaPlanningValue_(visit.observacoes || 'Nenhuma') + '</p></article>';
   }).join('') + '</details>';
   return html;
 }
 
-function listarPlanejamentosSoAApp() {
-  var select = document.getElementById('soaPlanejamentoSalvo');
-  if (!select) return;
-  var projeto = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
-  var request = ++_soaDraftRequest;
-  select.innerHTML = '<option value="">Carregando rascunhos...</option>';
-  appServerRun({ method: 'listarPlanejamentosSoA', args: [projeto], onSuccess: function(items) {
-    if (request !== _soaDraftRequest || projeto !== (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo)) return;
-    select.innerHTML = '<option value="">Selecione um rascunho salvo</option>' + (items || []).map(function(item) {
-      var date = new Date(item.created_at);
-      var label = isNaN(date.getTime()) ? (item.label || item.protocol_id || item.id) : 'Rascunho de ' + date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      return '<option value="' + esc(item.id) + '">' + esc(label) + '</option>';
-    }).join('');
-  }, onFailure: function() { if (request === _soaDraftRequest) select.innerHTML = '<option value="">Não foi possível listar os rascunhos</option>'; } });
-}
-
-function carregarPlanejamentoSoAApp() {
-  var id = document.getElementById('soaPlanejamentoSalvo').value;
-  if (!id || _soaImportEmAndamento) return;
-  invalidarPreviaImportacaoSoA_();
-  var revisao = _soaImportRevisao;
-  var texto = document.getElementById('soaImportTexto').value;
-  var projeto = _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo;
-  appSetStatus('statusSoAImport', 'Carregando rascunho...');
-  appServerRun({ method: 'carregarPlanejamentoSoA', args: [projeto, id], onSuccess: function(result) {
-    if (revisao !== _soaImportRevisao || texto !== document.getElementById('soaImportTexto').value || projeto !== (_soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo) || !document.getElementById('modalSoAImport').classList.contains('open')) return;
-    document.getElementById('soaImportTexto').value = JSON.stringify(result.dados, null, 2);
-    previsualizarSoAJsonApp();
-  }, onFailure: function(e) { if (revisao === _soaImportRevisao) appSetStatus('statusSoAImport', appErrorMessage(e), '#e53935'); } });
-}
-
-function salvarPlanejamentoSoAApp() {
-  if (_soaDraftSaving || !_soaImportDadosAtual || !_soaImportResultadoAtual || !_soaImportResultadoAtual.planejamento || !_soaImportResultadoAtual.ok) return;
-  var atual;
-  try { atual = soaImportTextoPayload_(); } catch (e) { invalidarPreviaImportacaoSoA_(); return; }
-  if (JSON.stringify(atual) !== _soaImportFingerprintAtual) { invalidarPreviaImportacaoSoA_(); return; }
-  var snapshot = JSON.parse(_soaImportFingerprintAtual);
-  var revisao = _soaImportRevisao;
-  var btn = document.getElementById('btnSalvarPlanejamentoSoA');
-  _soaDraftSaving = true;
-  appSetButtonBusy(btn, true);
-  appSetStatus('statusSoAImport', 'Salvando rascunho...');
-  appServerRun({ method: 'salvarPlanejamentoSoA', args: [snapshot], onSuccess: function() {
-    _soaDraftSaving = false;
-    appSetButtonBusy(btn, false);
-    btn.disabled = !_soaImportResultadoAtual || !_soaImportResultadoAtual.ok || !_soaImportResultadoAtual.planejamento;
-    if (revisao !== _soaImportRevisao || !document.getElementById('modalSoAImport').classList.contains('open')) return;
-    appSetStatus('statusSoAImport', 'Rascunho salvo. Nenhuma visita foi criada.');
-    listarPlanejamentosSoAApp();
-  }, onFailure: function(e) {
-    _soaDraftSaving = false;
-    appSetButtonBusy(btn, false);
-    btn.disabled = !_soaImportResultadoAtual || !_soaImportResultadoAtual.ok || !_soaImportResultadoAtual.planejamento;
-    if (revisao === _soaImportRevisao) appSetStatus('statusSoAImport', appErrorMessage(e), '#e53935');
-  } });
-}
-
 function excluirSoAVisitaApp(idSoA) {
-  abrirConfirmacaoDestrutiva({ mensagem: 'Excluir esta visita do calendário SoA?', onConfirm: function() { appServerRun({ method: 'excluirSoAVisita', args: [idSoA], onSuccess: function(msg) { snack(msg || 'Visita SoA excluída.'); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: snackErro }); }});
+  abrirConfirmacaoDestrutiva({ mensagem: 'Excluir esta visita do Cronograma de Avaliações?', onConfirm: function() { appServerRun({ method: 'excluirSoAVisita', args: [idSoA], onSuccess: function(msg) { snack(msg || 'Visita do Cronograma de Avaliações excluída.'); carregarSoAVisitasProjeto(_soaProjetoAtual); }, onFailure: snackErro }); }});
 }
 
 var _bracosProjetoAtual = [];

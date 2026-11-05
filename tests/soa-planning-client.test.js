@@ -2,44 +2,113 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const {contentAccessibilitySource} = require('./helpers/content-accessibility-source');
-function fixture() {
- const requests=[],statuses=[];
- const elements={};
- const document={getElementById(id){return elements[id] ||= {value:'',checked:false,disabled:false,hidden:false,innerHTML:'',classList:{contains:()=>true}};}};
- document.getElementById('soaImportTexto').value=JSON.stringify({schema:'ips-agenda-study-planning-poc',rules:[{id:'r'}]});
- document.getElementById('soaImportModo').value='adicionar';
- const c=vm.createContext({document,_soaProjetoAtual:{codigo:'ABC'},_soaImportDadosAtual:null,_soaImportFingerprintAtual:'',_soaImportRevisao:0,_soaImportEmAndamento:false,_soaImportResultadoAtual:null,_soaDraftSaving:false,_soaDraftRequest:0,esc:v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'),soaOrdemLabel_:String,appServerRun:r=>requests.push(r),appSetStatus:(...x)=>statuses.push(x),appSetButtonBusy:(b,v)=>b.disabled=v,appErrorMessage:e=>e.message,fecharOverlay(){},snack(){},carregarSoAVisitasProjeto(){},carregarBracosProjeto(){}});
- vm.runInContext(contentAccessibilitySource(['invalidarPreviaImportacaoSoA_','soaImportTextoPayload_','renderSoAImportPreview_','previsualizarSoAJsonApp','confirmarImportacaoSoAApp','atualizarRevisaoPlanejamentoSoAApp','soaPlanningValue_','renderPlanejamentoSoA_','listarPlanejamentosSoAApp','carregarPlanejamentoSoAApp','salvarPlanejamentoSoAApp']),c);
- function preview(extra={}){c.previsualizarSoAJsonApp();requests.at(-1).onSuccess({ok:true,podeImportar:false,fingerprint:'signed',visitas:[],planejamento:{draftOnly:true,study:{},rules:[],issues:[]},...extra});}
- return {c,e:elements,requests,statuses,preview};
-}
-test('rascunho permite salvar original sem aplicar visitas',()=>{const {c,e,requests,preview}=fixture();preview();assert.equal(e.btnImportarSoAConfirm.disabled,true);assert.equal(e.btnSalvarPlanejamentoSoA.disabled,false);c.confirmarImportacaoSoAApp();assert.equal(requests.some(r=>r.method==='importarSoAJson'),false);c.salvarPlanejamentoSoAApp();assert.equal(requests.at(-1).method,'salvarPlanejamentoSoA');assert.equal(requests.at(-1).args[0].dados.rules[0].id,'r');assert.equal(requests.at(-1).args[0].confirmarRevisaoPlanejamento,undefined);});
-test('aplicar exige revisão humana e envia fingerprint da prévia',()=>{const {c,e,requests,preview}=fixture();preview({podeImportar:true,visitas:[{codigo:'V1'}]});c.confirmarImportacaoSoAApp();assert.equal(requests.some(r=>r.method==='importarSoAJson'),false);e.soaImportRevisado.checked=true;c.atualizarRevisaoPlanejamentoSoAApp();assert.equal(e.btnImportarSoAConfirm.disabled,false);c.confirmarImportacaoSoAApp();assert.equal(requests.at(-1).args[0].fingerprintPlanejamento,'signed');assert.equal(requests.at(-1).args[0].confirmarRevisaoPlanejamento,true);});
-test('alteração do texto invalida salvar e revisão mesmo sem evento',()=>{const {c,e,requests,preview}=fixture();preview();e.soaImportTexto.value='{}';c.salvarPlanejamentoSoAApp();assert.equal(requests.length,1);assert.equal(c._soaImportDadosAtual,null);});
-test('resposta de carregar rascunho não sobrescreve edição mais recente',()=>{const {c,e,requests}=fixture();e.soaPlanejamentoSalvo={value:'id'};c.carregarPlanejamentoSoAApp();e.soaImportTexto.value='novo';c.invalidarPreviaImportacaoSoA_();requests.at(-1).onSuccess({dados:{old:true}});assert.equal(e.soaImportTexto.value,'novo');});
-test('resposta antiga de salvar não apaga edição nem habilita snapshot inválido',()=>{const {c,e,requests,preview}=fixture();preview();c.salvarPlanejamentoSoAApp();const req=requests.at(-1);e.soaImportTexto.value='novo';c.invalidarPreviaImportacaoSoA_();req.onSuccess({ok:true});assert.equal(e.soaImportTexto.value,'novo');assert.equal(e.btnSalvarPlanejamentoSoA.disabled,true);assert.equal(c._soaImportDadosAtual,null);});
-test('prévia protege HTML e apresenta todas regras e pendências',()=>{const {e,preview}=fixture();preview({planejamento:{study:{protocol_id:'<img onerror=alert(1)>'},rules:[{id:'<svg>',scope:'<script>',source:{file:'<script>'}}],issues:[{message:'<script>',blocking:true}]}});assert.doesNotMatch(e.soaImportPreview.innerHTML,/<script>|<svg>|<img/);assert.match(e.soaImportPreview.innerHTML,/&lt;script&gt;/);assert.match(e.soaImportPreview.innerHTML,/impede aplicar/i);});
-test('limite de conteúdo é conferido antes da RPC',()=>{const {c,e,requests}=fixture();e.soaImportTexto.value='x'.repeat(300001);c.previsualizarSoAJsonApp();assert.equal(requests.length,0);});
-test('regra malformada continua visível para correção sem quebrar a prévia',()=>{const {e,preview}=fixture();preview({ok:false,planejamento:{study:{},rules:[null],issues:[]}});assert.match(e.soaImportPreview.innerHTML,/Regra inválida/);assert.equal(e.btnImportarSoAConfirm.disabled,true);});
-test('lista de rascunhos atrasada não substitui lista do projeto atual',()=>{const {c,e,requests}=fixture();c.listarPlanejamentosSoAApp();c._soaProjetoAtual={codigo:'DEF'};c.listarPlanejamentosSoAApp();requests[1].onSuccess([{id:'new',label:'Novo'}]);requests[0].onSuccess([{id:'old',label:'Antigo'}]);assert.match(e.soaPlanejamentoSalvo.innerHTML,/Novo/);assert.doesNotMatch(e.soaPlanejamentoSalvo.innerHTML,/Antigo/);});
+const { contentAccessibilitySource } = require('./helpers/content-accessibility-source');
 
-test('prévia mostra resumo e visitas antes de agrupar impedimentos repetidos',()=>{
- const {e,preview}=fixture();
- preview({totalVisitas:2,visitas:[{codigo:'V1',nome:'Triagem'},{codigo:'V2',nome:'Inclusão'}],planejamento:{study:{},rules:[],issues:[{id:'basis-0',message:'Informe a base das datas.',blocking:true},{id:'basis-1',message:'Informe a base das datas.',blocking:true},{id:'guide',message:'Conferir condições.',blocking:false}]}});
- const html=e.soaImportPreview.innerHTML;
- assert.ok(html.indexOf('visitas encontradas')<html.indexOf('Pontos de atenção'));
- assert.ok(html.indexOf('Triagem')<html.indexOf('Pontos de atenção'));
- assert.equal((html.match(/2 ocorrências/g)||[]).length,1);
- assert.match(html,/2 impedimento\(s\) · 1 orientação/);
- assert.match(html,/basis-0/);assert.match(html,/basis-1/);
+function fixture() {
+  const requests = [], statuses = [], elements = {};
+  const document = { getElementById(id) { return elements[id] ||= { value: '', checked: false, disabled: false, hidden: false, innerHTML: '', classList: { contains: () => true } }; } };
+  document.getElementById('soaImportBraco').value = 'Braço A';
+  document.getElementById('soaImportModo').value = 'adicionar';
+  const c = vm.createContext({
+    document, _soaProjetoAtual: { codigo: 'ABC' }, _soaImportDadosAtual: null, _soaImportFingerprintAtual: '', _soaImportRevisao: 0, _soaImportEmAndamento: false, _soaImportResultadoAtual: null,
+    _soaImportCsvTexto: 'csv', soaPoloExtrair_: text => ({ schema: 'polo-trial-flowchart', texto: text }),
+    esc: v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'), soaOrdemLabel_: String,
+    appServerRun: r => requests.push(r), appSetButtonBusy() {}, appSetStatus: (id, message) => statuses.push(message), appErrorMessage: e => e.message,
+    fecharOverlay() {}, snack() {}, carregarSoAVisitasProjeto() {}, carregarBracosProjeto() {}
+  });
+  vm.runInContext(contentAccessibilitySource(['invalidarPreviaImportacaoSoA_', 'soaImportTextoPayload_', 'renderSoAImportPreview_', 'previsualizarSoAJsonApp', 'confirmarImportacaoSoAApp', 'atualizarRevisaoPlanejamentoSoAApp', 'soaPlanningValue_', 'renderPlanejamentoSoA_']), c);
+  function preview(extra = {}) { c.previsualizarSoAJsonApp(); requests.at(-1).onSuccess({ ok: true, podeImportar: false, fingerprint: 'signed', visitas: [], planejamento: { braco: 'Braço A', issues: [] }, ...extra }); }
+  return { c, e: elements, requests, statuses, preview };
+}
+
+test('braço e arquivo são exigidos antes da RPC', () => {
+  const { c, e, requests, statuses } = fixture();
+  e.soaImportBraco.value = '  ';
+  c.previsualizarSoAJsonApp();
+  assert.equal(requests.length, 0);
+  assert.match(statuses.at(-1), /Informe o nome do braço/);
+  e.soaImportBraco.value = 'Braço A';
+  c._soaImportCsvTexto = '';
+  c.previsualizarSoAJsonApp();
+  assert.equal(requests.length, 0);
+  assert.match(statuses.at(-1), /Selecione o arquivo CSV/);
 });
-test('regras exibem descrição e visitas manuais não sugerem cálculo automático',()=>{
- const {e,preview}=fixture();
- preview({visitas:[{codigo:'V1',nome:'Triagem',schedulingMode:'manual',manualReason:'Definir após triagem.'},{codigo:'V2',nome:'Baseline',baseCalculo:''}],planejamento:{study:{},rules:[{id:'r1',name:'Condição clínica',description:'Realizar conforme avaliação.',handling:'manual',reason:'Requer decisão clínica.'}],issues:[]}});
- const html=e.soaImportPreview.innerHTML;
- assert.match(html,/Condição clínica/);assert.match(html,/Realizar conforme avaliação/);
- assert.match(html,/Agendamento manual · Definir após triagem/);
- assert.match(html,/Base das datas: Não informada/);
- assert.doesNotMatch(html,/Base das datas: Data prevista/);
+
+test('prévia envia o conteúdo extraído e o braço', () => {
+  const { c, requests } = fixture();
+  c.previsualizarSoAJsonApp();
+  const payload = requests.at(-1).args[0];
+  assert.equal(requests.at(-1).method, 'validarImportacaoSoA');
+  assert.equal(payload.braco, 'Braço A');
+  assert.equal(payload.criarBracos, true);
+  assert.equal(payload.dados.schema, 'polo-trial-flowchart');
+});
+
+test('erro de leitura do arquivo aparece sem chamar o servidor', () => {
+  const { c, e, requests } = fixture();
+  c.soaPoloExtrair_ = () => { throw new Error('Arquivo <b>inválido</b>'); };
+  c.previsualizarSoAJsonApp();
+  assert.equal(requests.length, 0);
+  assert.match(e.soaImportPreview.innerHTML, /Arquivo &lt;b&gt;inválido/);
+});
+
+test('impedimento mantém importação desabilitada', () => {
+  const { c, e, requests, preview } = fixture();
+  preview({ visitas: [{ codigo: 'V1' }] });
+  assert.equal(e.btnImportarSoAConfirm.disabled, true);
+  c.confirmarImportacaoSoAApp();
+  assert.equal(requests.some(r => r.method === 'importarSoAJson'), false);
+});
+
+test('aplicar exige revisão humana e envia fingerprint da prévia', () => {
+  const { c, e, requests, preview } = fixture();
+  preview({ podeImportar: true, visitas: [{ codigo: 'V1' }] });
+  c.confirmarImportacaoSoAApp();
+  assert.equal(requests.some(r => r.method === 'importarSoAJson'), false);
+  e.soaImportRevisado.checked = true;
+  c.atualizarRevisaoPlanejamentoSoAApp();
+  assert.equal(e.btnImportarSoAConfirm.disabled, false);
+  c.confirmarImportacaoSoAApp();
+  const write = requests.at(-1);
+  assert.equal(write.method, 'importarSoAJson');
+  assert.equal(write.args[0].confirmarRevisaoPlanejamento, true);
+  assert.equal(write.args[0].fingerprintPlanejamento, 'signed');
+  assert.equal(write.args[0].braco, 'Braço A');
+});
+
+test('alterar o braço após a prévia invalida a confirmação mesmo sem evento', () => {
+  const { c, e, requests, preview } = fixture();
+  preview({ podeImportar: true, visitas: [{ codigo: 'V1' }] });
+  e.soaImportRevisado.checked = true;
+  e.soaImportBraco.value = 'Braço B';
+  c.confirmarImportacaoSoAApp();
+  assert.equal(requests.some(r => r.method === 'importarSoAJson'), false);
+  assert.equal(c._soaImportDadosAtual, null);
+});
+
+test('prévia protege HTML vindo do arquivo', () => {
+  const { e, preview } = fixture();
+  preview({ visitas: [{ codigo: '<img>', nome: '<script>', observacoes: '<svg>' }], planejamento: { braco: '<b>', issues: [{ message: '<script>', blocking: true }] } });
+  assert.doesNotMatch(e.soaImportPreview.innerHTML, /<script>|<svg>|<img|<b>/);
+  assert.match(e.soaImportPreview.innerHTML, /&lt;script&gt;/);
+});
+
+test('prévia mostra resumo e visitas antes de agrupar impedimentos repetidos', () => {
+  const { e, preview } = fixture();
+  preview({ totalVisitas: 2, visitas: [{ codigo: 'V1', nome: 'Triagem' }, { codigo: 'V2', nome: 'Inclusão' }], planejamento: { braco: 'Braço A', issues: [{ id: 'a', message: 'Corrija o intervalo.', blocking: true }, { id: 'b', message: 'Corrija o intervalo.', blocking: true }, { id: 'guide', message: 'Conferir condições.', blocking: false }] } });
+  const html = e.soaImportPreview.innerHTML;
+  assert.ok(html.indexOf('visitas encontradas') < html.indexOf('Pontos de atenção'));
+  assert.ok(html.indexOf('Triagem') < html.indexOf('Pontos de atenção'));
+  assert.equal((html.match(/2 ocorrências/g) || []).length, 1);
+  assert.match(html, /2 impedimento\(s\) · 1 orientação/);
+  assert.match(html, /Exportação do Polo Trial<\/strong> · braço Braço A/);
+});
+
+test('visitas manuais não sugerem cálculo e as calculadas herdam a base do protocolo', () => {
+  const { e, preview } = fixture();
+  preview({ visitas: [{ codigo: 'V1', nome: 'Triagem', schedulingMode: 'manual', manualReason: 'Por demanda no Polo Trial.' }, { codigo: 'V2', nome: 'Ciclo 2', baseCalculo: '' }] });
+  const html = e.soaImportPreview.innerHTML;
+  assert.match(html, /Agendamento manual · Por demanda no Polo Trial/);
+  assert.match(html, /Base das datas: Base padrão do protocolo/);
+  assert.doesNotMatch(html, /Base das datas: Data prevista/);
 });

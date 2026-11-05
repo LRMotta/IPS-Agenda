@@ -1585,8 +1585,8 @@ test('Agenda sugere próximas visitas SoA e pendências sem vínculo sem bloquea
   assert.match(content, /Informe uma visita livre/);
   assert.match(load, /method: 'getAgendaVisitasSoASugeridas'/);
   assert.match(load, /visita livre continua permitida/i);
-  assert.match(load, /projeto não possui calendário SoA/i);
-  assert.match(load, /até o último vínculo SoA foram ocultada\(s\)/i);
+  assert.match(load, /projeto não possui Cronograma de Avaliações/i);
+  assert.match(load, /até o último vínculo com o Cronograma de Avaliações foram ocultada\(s\)/i);
   assert.match(functionBody(agenda, 'onAgendaProjetoChange'), /atualizarAgendaVisitasSoA\(\)/);
   assert.match(functionBody(agenda, 'atualizarAgendaFormDataOpcoes'), /atualizarAgendaVisitasSoA\(\)/);
   assert.deepEqual(JSON.parse(JSON.stringify(server.agendaSoAFiltrarSugestoesParticipante_([

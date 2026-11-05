@@ -98,7 +98,7 @@ function getCodexDeploymentDiagnostics(clientContext) {
   codexAppendCriticalChecks_(out);
   out.checkedAtMs = Date.now();
   out.validUntilMs = out.checkedAtMs + 5 * 60 * 1000;
-  out.coverage = 'Verificacoes administrativas, estrutura e referencias de Agenda, Participantes, Projetos e Estoque. Nao valida saldos/reservas, conciliacao SoA, documentos de Transporte nem erros globais de execucao.';
+  out.coverage = 'Verificacoes administrativas, estrutura e referencias de Agenda, Participantes, Projetos e Estoque. Nao valida saldos/reservas, conciliacao do Cronograma de Avaliacoes, documentos de Transporte nem erros globais de execucao.';
   out.totalDurationMs = Math.max(0, Date.now() - diagnosticStartedAt);
   return out;
 }

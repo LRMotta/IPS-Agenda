@@ -920,7 +920,7 @@
     overlay.setAttribute('onclick', "fecharModalSeClicouFora(event, 'modalVinculoReservaAgenda')");
     overlay.innerHTML = '<div class="modal-box estoque-transfer-modal">' +
       '<div class="modal-header"><div class="modal-header-icon"><span class="material-symbols-outlined">event_link</span></div>' +
-      '<div><div class="modal-header-title">VINCULAR VISITA DA AGENDA</div><div class="modal-header-sub">Escolha a visita real, mesmo que o nome seja diferente do SoA.</div></div>' +
+      '<div><div class="modal-header-title">VINCULAR VISITA DA AGENDA</div><div class="modal-header-sub">Escolha a visita real, mesmo que o nome seja diferente do Cronograma de Avaliações.</div></div>' +
       '<button class="modal-close" onclick="fecharOverlay(&quot;modalVinculoReservaAgenda&quot;)"><span class="material-symbols-outlined">close</span></button></div>' +
       '<div class="modal-body"><div class="estoque-transfer-context" id="evVinculoReservaContext"></div>' +
       '<div class="form-section"><div class="section-label"><span class="material-symbols-outlined">event_available</span>Visitas compatíveis</div>' +
@@ -1071,13 +1071,13 @@
     var selecionado = _evTransferSelecionado;
     var select = document.getElementById('trSoAVisita');
     if (!select) return;
-    select.innerHTML = '<option value="">— Sem sugestão SoA —</option>';
+    select.innerHTML = '<option value="">— Sem sugestão do Cronograma de Avaliações —</option>';
     select.disabled = true;
     if (!projeto) return;
     appServerRun({ method: 'getSoAVisitasProjeto', args: [projeto], onSuccess: function(visitas) {
       if (requestId !== _evSoASugestoesRequest || _evTransferSelecionado !== selecionado || !document.getElementById('modalTransferInline').classList.contains('open')) return;
       var lista = (visitas || []).filter(function(item) { return item.ativo !== false; });
-      select.innerHTML = '<option value="">— Sem sugestão SoA —</option>' + lista.map(function(item) {
+      select.innerHTML = '<option value="">— Sem sugestão do Cronograma de Avaliações —</option>' + lista.map(function(item) {
         return '<option value="' + esc(item.nome || '') + '">' + esc((item.codigo ? item.codigo + ' · ' : '') + (item.nome || '')) + '</option>';
       }).join('');
       select.disabled = !lista.length;
@@ -1147,7 +1147,7 @@
     });
     var soaSelect = document.getElementById('trSoAVisita');
     ++_evSoASugestoesRequest;
-    if (soaSelect) { soaSelect.innerHTML = '<option value="">— Sem sugestão SoA —</option>'; soaSelect.disabled = true; }
+    if (soaSelect) { soaSelect.innerHTML = '<option value="">— Sem sugestão do Cronograma de Avaliações —</option>'; soaSelect.disabled = true; }
     var status = document.getElementById('statusTransferInline');
     if (status) appSetStatus(status, '');
     abrirOverlay('modalTransferInline');
@@ -1316,7 +1316,7 @@
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiDescricao">Descrição do Item <span class="required-star">*</span></label><input type="text" id="iiDescricao" class="f-input large" placeholder="Ex: Standard Bulk Supply Box"><div class="field-error" id="errIiDescricao">Campo obrigatório.</div></div>' +
                 '<div style="margin-bottom:12px"><label class="field-label" for="iiOrdem">Ordem de utilização no projeto</label><input type="number" id="iiOrdem" class="f-input" min="0" step="1" placeholder="Ex: 10"><div style="font-size:11px;color:#7b8794;margin-top:4px">Usada para ordenar kits na Agenda. Deixe em branco para manter a ordenação alfabética.</div><div class="field-error" id="errIiOrdem">Informe um número inteiro igual ou maior que zero.</div></div>' +
                 '<div id="iiVisitasSection" class="item-visitas-section" style="display:none">' +
-                  '<label class="field-label">Visitas SoA aplicáveis</label>' +
+                  '<label class="field-label">Visitas do Cronograma de Avaliações aplicáveis</label>' +
                   '<div class="item-visitas-help">Disponível para modelos de Kit e Bulk Supply. Uma visita pode usar vários modelos, inclusive de laboratórios diferentes. Sem seleção, o item permanece sem vínculo específico.</div>' +
                   '<div id="iiVisitasLista" class="item-visitas-list" aria-live="polite"></div>' +
                   '<label class="field-label item-bracos-label">Braços aplicáveis</label>' +
@@ -1455,7 +1455,7 @@
                   '<div class="full" id="trReservaFields"><div class="mov-form-grid estoque-reserva-form">' +
                     '<div><label class="field-label" for="trParticipante">Participante <span class="required-star">*</span></label><select id="trParticipante" class="f-input f-select"><option value="">— Selecione o participante —</option></select></div>' +
                     '<div><label class="field-label" for="trDataVisita">Data estimada <span class="required-star">*</span></label><input type="date" id="trDataVisita" class="f-input"></div>' +
-                    '<div><label class="field-label" for="trSoAVisita">Sugestão SoA</label><select id="trSoAVisita" class="f-input f-select" onchange="evAplicarSugestaoSoA()"><option value="">— Sem sugestão SoA —</option></select></div>' +
+                    '<div><label class="field-label" for="trSoAVisita">Sugestão do Cronograma de Avaliações</label><select id="trSoAVisita" class="f-input f-select" onchange="evAplicarSugestaoSoA()"><option value="">— Sem sugestão do Cronograma de Avaliações —</option></select></div>' +
                     '<div><label class="field-label" for="trVisitaPrevista">Visita prevista <span class="required-star">*</span></label><input type="text" id="trVisitaPrevista" class="f-input" placeholder="Ex: T-2 / Follow-up 3"></div>' +
                     '<div><label class="field-label" for="trAgendaId">ID da visita na Agenda</label><input type="text" id="trAgendaId" class="f-input" placeholder="Opcional, se já existir"></div>' +
                   '</div></div>' +
@@ -1837,7 +1837,7 @@
       '<tr><th>Projeto</th><th>Descrição</th><th style="width:140px">Tipo</th><th>Ordem</th><th>Localização</th><th>Est. mín.</th><th>Laboratório</th><th>Status</th><th style="text-align:right;padding-right:20px">Ações</th></tr>';
     document.getElementById('eiBody').innerHTML = filtrados.length ? filtrados.map(function(i) {
       var visitasVinculadas = (i.visitasAplicaveisIds || []).length;
-      var vinculoSoA = visitasVinculadas ? '<div class="item-soa-link"><span class="material-symbols-outlined">event_available</span>' + visitasVinculadas + (visitasVinculadas === 1 ? ' visita SoA' : ' visitas SoA') + '</div>' : '';
+      var vinculoSoA = visitasVinculadas ? '<div class="item-soa-link"><span class="material-symbols-outlined">event_available</span>' + visitasVinculadas + (visitasVinculadas === 1 ? ' visita do Cronograma de Avaliações' : ' visitas do Cronograma de Avaliações') + '</div>' : '';
       return '<tr><td>' + projetoChip(i.projeto) + '</td><td class="estoque-description-cell">' + estoqueItemDescricaoHtml(i) + vinculoSoA +
         '</td><td>' + itemTipoChip(i.tipo) + '</td><td>' + (i.ordem === '' || i.ordem === undefined ? '<span style="color:#9aa3b0">—</span>' : esc(i.ordem)) + '</td><td>' + esc(i.localizacao) + '</td><td>' + esc(i.estoqueMin) +
         '</td><td>' + esc(i.laboratorio) + '</td><td>' + itemStatusChip(i.status) + '</td><td><div class="action-btns">' +

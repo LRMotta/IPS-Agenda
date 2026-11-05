@@ -486,7 +486,6 @@
     .soa-arm-option input { accent-color:var(--primary); }
     .soa-arm-empty { color:var(--text-faint); font-size:11px; }
     .soa-import-modal-box { width:min(1120px, calc(100vw - 32px)); max-width:1120px!important; display:flex; flex-direction:column; overflow:hidden; max-height:92vh; max-height:92dvh; }
-    .soa-import-textarea { min-height:120px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11px; line-height:1.45; }
     .soa-import-note { display:flex; gap:9px; align-items:flex-start; padding:10px 12px; margin-bottom:14px; border:1px solid #d9e5fb; border-radius:8px; background:#f6f9ff; color:var(--text-muted); font-size:11px; line-height:1.45; }
     .soa-import-note .material-symbols-outlined { color:var(--primary); font-size:18px; }
     .soa-import-note strong, .soa-import-note span { display:block; }
@@ -1121,7 +1120,6 @@
 .soa-planning-rule dl { display:grid; grid-template-columns:110px minmax(0,1fr); gap:6px 12px; font-size:13px; }
 .soa-planning-rule dt { font-weight:600; }
 .soa-planning-rule dd { margin:0; }
-.soa-draft-controls { margin-bottom:14px; }
 #soaImportRevisaoBox[hidden] { display:none; }
 #modalSoAImport .modal-header { flex-shrink:0; }
 #modalSoAImport .modal-header-icon, #modalSoAImport .modal-close { flex-shrink:0; }
@@ -1142,8 +1140,6 @@
 #modalSoAImport .soa-import-row > span { min-width:0; }
 #modalSoAImport .soa-import-row > span:first-child { flex:1; }
 #modalSoAImport .soa-import-row > span:last-child { flex:1; }
-#modalSoAImport .soa-draft-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px 12px; }
-#modalSoAImport .soa-draft-controls .field-label { grid-column:1/-1; }
 #modalSoAImport .soa-import-preview { max-height:none; overflow:visible; }
 .participant-milestones-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .participant-milestones-section .participant-form-guidance { margin-bottom:14px; }
@@ -1156,8 +1152,8 @@
   #modalSoAImport .modal-body { padding:14px; }
   #modalSoAImport .soa-modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   #modalSoAImport .soa-import-check { font-size:11px; }
-  #modalSoAImport .soa-draft-controls { grid-template-columns:1fr; }
   #modalSoAImport .soa-modal-actions > button { width:100%; min-width:0; margin:0; justify-content:center; }
+  #modalSoAImport .soa-modal-actions > button:last-child { grid-column:1/-1; }
   #modalSoAImport .soa-planning-rule dl { grid-template-columns:1fr; }
   #modalSoAImport .soa-import-row { flex-direction:column; gap:4px; overflow-wrap:anywhere; }
   #modalSoAImport .soa-import-row > span:last-child { text-align:left; }

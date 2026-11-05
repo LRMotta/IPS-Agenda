@@ -2239,10 +2239,10 @@
       return;
     }
     if (!projeto) {
-      if (hint) hint.textContent = 'Informe uma visita livre ou selecione primeiro o projeto para ver sugestões SoA.';
+      if (hint) hint.textContent = 'Informe uma visita livre ou selecione primeiro o projeto para ver sugestões do Cronograma de Avaliações.';
       return;
     }
-    if (hint) hint.textContent = participante ? 'Carregando próximas visitas e pendências de vínculo… A visita livre continua permitida.' : 'Carregando sugestões do calendário SoA… A visita livre continua permitida.';
+    if (hint) hint.textContent = participante ? 'Carregando próximas visitas e pendências de vínculo… A visita livre continua permitida.' : 'Carregando sugestões do Cronograma de Avaliações… A visita livre continua permitida.';
     appServerRun({ method: 'getAgendaVisitasSoASugeridas', args: [{ projeto: projeto, participante: participante, participanteId: participanteId, agendaId: _agendaEditId || '' }], onSuccess: function(resposta) {
       if (requestId !== _agendaVisitasSoARequest || projeto !== String((document.getElementById('agProjeto') || {}).value || '').trim() || participanteReferencia !== String((document.getElementById('agParticipante') || {}).value || '').trim()) return;
       resposta = resposta || {};
@@ -2252,11 +2252,11 @@
         return '<option value="' + esc(visita.nome) + '" label="' + esc(label) + '"></option>';
       }).join('');
       if (hint) hint.textContent = visitas.length
-        ? (Number(resposta.visitasAnterioresOcultadas || 0) ? Number(resposta.visitasAnterioresOcultadas) + ' visita(s) até o último vínculo SoA foram ocultada(s). ' : Number(resposta.concluidasOcultadas || 0) ? Number(resposta.concluidasOcultadas) + ' visita(s) concluída(s) já vinculada(s) foram ocultada(s). ' : '') + 'Selecione uma visita SoA sugerida ou informe uma visita livre.'
-        : 'Este projeto não possui calendário SoA. Informe a visita livremente.';
+        ? (Number(resposta.visitasAnterioresOcultadas || 0) ? Number(resposta.visitasAnterioresOcultadas) + ' visita(s) até o último vínculo com o Cronograma de Avaliações foram ocultada(s). ' : Number(resposta.concluidasOcultadas || 0) ? Number(resposta.concluidasOcultadas) + ' visita(s) concluída(s) já vinculada(s) foram ocultada(s). ' : '') + 'Selecione uma visita do Cronograma de Avaliações sugerida ou informe uma visita livre.'
+        : 'Este projeto não possui Cronograma de Avaliações. Informe a visita livremente.';
     }, onFailure: function() {
       if (requestId !== _agendaVisitasSoARequest) return;
-      if (hint) hint.textContent = 'Não foi possível carregar sugestões SoA. Informe a visita livremente.';
+      if (hint) hint.textContent = 'Não foi possível carregar sugestões do Cronograma de Avaliações. Informe a visita livremente.';
     } });
   }
 

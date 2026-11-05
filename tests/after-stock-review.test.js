@@ -8,16 +8,17 @@ const { contentAccessibilitySource } = require('./helpers/content-accessibility-
 
 function importFixture() {
   const requests = [], readers = [];
-  const elements = Object.fromEntries(['soaImportTexto', 'soaImportModo', 'soaImportCriarBracos',
+  const elements = Object.fromEntries(['soaImportBraco', 'soaImportModo',
     'soaImportPreview', 'btnImportarSoAConfirm', 'btnPreviewSoA', 'modalSoAImport'].map(id => [id, {
     value: '', checked: true, disabled: false, classList: { contains: () => true }
   }]));
-  elements.soaImportTexto.value = JSON.stringify({ visitas: [{ codigo: 'V1' }] });
+  elements.soaImportBraco.value = 'Braço A';
   elements.soaImportModo.value = 'adicionar';
   const context = vm.createContext({
     document: { getElementById: id => elements[id] },
     _soaProjetoAtual: { nomeAbreviado: 'Projeto local' },
     _soaImportDadosAtual: null, _soaImportFingerprintAtual: '', _soaImportRevisao: 0, _soaImportEmAndamento: false,
+    _soaImportCsvTexto: 'V1', soaPoloExtrair_: text => ({ visitas: [{ codigo: text }] }),
     appServerRun: options => requests.push(options),
     appSetButtonBusy: (button, busy) => { button.disabled = busy; },
     appSetStatus() {}, appErrorMessage: error => error.message,
@@ -34,13 +35,13 @@ function importFixture() {
   return { context, elements, requests, readers, preview };
 }
 
-for (const field of ['soaImportTexto', 'soaImportModo', 'soaImportCriarBracos']) {
+for (const field of ['arquivo', 'soaImportBraco', 'soaImportModo']) {
   test('importação bloqueia mudança após prévia em ' + field + ', inclusive sem evento DOM', () => {
     const { context: c, elements: el, requests, preview } = importFixture();
     preview();
-    if (field === 'soaImportTexto') el[field].value = '{"visitas":[{"codigo":"V2"}]}';
+    if (field === 'arquivo') c._soaImportCsvTexto = 'V2';
     else if (field === 'soaImportModo') el[field].value = 'atualizar';
-    else el[field].checked = false;
+    else el[field].value = 'Braço B';
     c.confirmarImportacaoSoAApp();
     assert.equal(requests.filter(r => r.method === 'importarSoAJson').length, 0);
     assert.equal(el.btnImportarSoAConfirm.disabled, true);
@@ -87,19 +88,18 @@ test('importação envia snapshot revisado e impede envio duplicado enquanto a R
   assert.equal(c._soaImportEmAndamento, false);
 });
 
-test('arquivo antigo não sobrescreve digitação ou seleção de arquivo mais recente', () => {
+test('arquivo antigo não sobrescreve seleção de arquivo mais recente', () => {
   const { context: c, elements: el, readers } = importFixture();
   const event = { target: { files: [{}] } };
   c.lerSoAArquivoApp(event);
-  el.soaImportTexto.value = 'Texto digitado';
   c.invalidarPreviaImportacaoSoA_();
   readers[0].result = 'Arquivo antigo'; readers[0].onload();
-  assert.equal(el.soaImportTexto.value, 'Texto digitado');
+  assert.equal(c._soaImportCsvTexto, '');
   c.lerSoAArquivoApp(event);
   c.lerSoAArquivoApp(event);
   readers[2].result = 'Arquivo novo'; readers[2].onload();
   readers[1].result = 'Arquivo anterior'; readers[1].onload();
-  assert.equal(el.soaImportTexto.value, 'Arquivo novo');
+  assert.equal(c._soaImportCsvTexto, 'Arquivo novo');
   assert.equal(el.btnImportarSoAConfirm.disabled, true);
 });
 
