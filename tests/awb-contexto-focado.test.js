@@ -22,9 +22,8 @@ function comContagem(aba, opcoes = {}) {
       else aba.leiturasLinha++;
       return getValues();
     };
-    // Backup usa a busca da aba simulada; a checagem da AWB nao pode usar busca de texto.
     if (opcoes.semBusca) range.createTextFinder = undefined;
-    else if (!opcoes.comBusca) range.createTextFinder = () => { throw new Error('a checagem da AWB nao usa busca de texto'); };
+    if (opcoes.buscaFalha) range.createTextFinder = () => { throw new Error('busca indisponivel'); };
     return range;
   };
   return aba;
@@ -96,7 +95,9 @@ function cenario(f) {
   row('LIVRE');
   f.historico([
     ['620X44444444', 'AGD:SEM-AWB-AGORA:1', 'SEM-AWB-AGORA', '1', 'MARKEN', 'CONGELADO', 'Pessoa', 'Estudo', '', 'Agendado', ''],
-    ['620X66666666', 'MANUAL:abc', '', '', 'OCASA', 'AMBIENTE', 'Pessoa', 'Estudo', '', '', '']
+    ['620X66666666', 'MANUAL:abc', '', '', 'OCASA', 'AMBIENTE', 'Pessoa', 'Estudo', '', '', ''],
+    // Forma antiga na Agenda: a busca nao a acha, o historico sim (ver limite conhecido).
+    ['620-x 33333333', 'AGD:SEPARADA:1', 'SEPARADA', '1', 'MARKEN', 'CONGELADO', 'Pessoa', 'Estudo', '', 'Agendado', '']
   ]);
 }
 
@@ -136,7 +137,7 @@ test('geracao reserva, grava e avisa a AWB sem ler a Agenda inteira', () => {
   f.comLock(() => {
     f.c.transporteAwbReservar_(payload, true);
     const leituras = f.agenda.leiturasColuna + f.agenda.leiturasLinha;
-    assert.equal(f.agenda.leiturasColuna, 5, 'ID, tres AWBs e vinculos de Backup; o cenario nao tem Transporte IV nem Backup II');
+    assert.ok(f.agenda.leiturasColuna <= 1, 'no maximo a coluna de ID, que a producao ja traz lembrada');
     f.c.agendaAwbReservarCelula_(f.agenda.getRange(linhaLivre, f.i.c1.awb + 1), payload.awb, 'MARKEN');
     assert.equal(f.c.transporteAwbAviso_(payload), null);
     assert.equal(f.agenda.leiturasColuna + f.agenda.leiturasLinha, leituras + 2, 'gravacao e aviso reaproveitam o contexto do lock; so a celula gravada e relida');
@@ -184,6 +185,36 @@ test('reusar sem contexto focado compativel faz a leitura completa', () => {
     f.c.agendaAwbContextoReusar_(f.agenda, '620X88888888', 'LIVRE');
   });
   assert.equal(f.agenda.leiturasCompletas, 1);
+});
+
+for (const [nome, opcoes] of [['sem TextFinder', { semBusca: true }], ['com falha da busca', { buscaFalha: true }]]) {
+  test('contexto focado cai na leitura completa ' + nome, () => {
+    const f = fixture(opcoes);
+    cenario(f);
+    const payload = { awb: '620X41337652', courier: 'MARKEN', temperatura: 'CONGELADO', idAgenda: 'LIVRE', agendaSlot: '1' };
+    assert.throws(() => f.comLock(() => f.c.transporteAwbReservar_(payload, true)), /Agendamento ATIVA/);
+    assert.equal(f.agenda.leiturasCompletas, 1);
+  });
+}
+
+test('limite conhecido: forma antiga da AWB fora do historico so aparece se digitada igual', () => {
+  const f = fixture();
+  f.row('ANTIGA', { awb: '620-X 12345678' });
+  f.row('LIVRE');
+  const conflito = (awb) => f.c.agendaAwbConflito_(f.c.agendaAwbContextoFocado_(f.agenda, awb, ['LIVRE']),
+    f.c.transporteAwbRegistro_({ awb, courier: 'MARKEN', temperatura: 'CONGELADO', idAgenda: 'LIVRE', agendaSlot: '1' }));
+  assert.equal(conflito('620X12345678'), null, 'nao vista: depende do historico');
+  assert.ok(f.c.agendaAwbConflito_(f.c.agendaAwbContexto_(f.agenda), f.c.transporteAwbRegistro_({ awb: '620X12345678', courier: 'MARKEN', temperatura: 'CONGELADO', idAgenda: 'LIVRE', agendaSlot: '1' })), 'o contexto completo ve e repoe no historico');
+  assert.ok(conflito('620-X 12345678'), 'digitada igual e vista');
+});
+
+test('envio com ID em outra caixa e achado pela coluna de IDs', () => {
+  const f = fixture();
+  f.row('envio-minusculo', { awb: '', courierStatus: 'Cancelado' });
+  f.row('LIVRE');
+  f.historico([['620X77777777', 'AGD:ENVIO-MINUSCULO:1', '', '1', 'MARKEN', 'CONGELADO', 'Pessoa', 'Estudo', '', 'Agendado', '']]);
+  const contexto = f.c.agendaAwbContextoFocado_(f.agenda, '620X77777777', ['LIVRE']);
+  assert.ok(contexto.current['AGD:ENVIO-MINUSCULO:1'], 'o status atual do dono decide a liberacao');
 });
 
 test('AWB citada em linhas demais usa a leitura completa', () => {
@@ -324,4 +355,20 @@ test('CE e procurada uma vez por execucao para o aviso e o anexo', () => {
   assert.equal(c.transporteComunicadoEspecialDaExecucao_({}, 'Sem CE'), null);
   c.transporteComunicadoEspecialDaExecucao_({}, 'Sem CE');
   assert.equal(buscas, 4, 'ausencia nao fica guardada');
+});
+
+test('aba com esquema garantido na execucao nao rele o cabecalho, exceto na leitura instrumentada', () => {
+  // A fixture substitui esta funcao; aqui vale a original.
+  const c = runFiles(['AgendaServerRules.gs', 'WebApp.gs'], { Logger: { log() {} } });
+  const planilha = {};
+  let buscas = 0;
+  const aba = { getLastColumn: () => 0 };
+  c.getCodexSpreadsheet_ = () => planilha;
+  c.getSheetByPossibleNames_ = () => { buscas++; return aba; };
+  c.CODEX_AGENDA_SHEET_MEMO_ = { ss: planilha, sh: aba };
+  assert.equal(c.getAgendaSheetForRead_(), aba);
+  assert.equal(buscas, 0);
+  c.CODEX_AGENDA_SHEET_MEMO_ = { ss: {}, sh: {} };
+  assert.equal(c.getAgendaSheetForRead_(), aba, 'memoria de outra planilha nao vale');
+  assert.equal(buscas, 1);
 });
