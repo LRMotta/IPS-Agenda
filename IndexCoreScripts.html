@@ -7374,6 +7374,7 @@ function abrirSoAImportForm() {
   document.getElementById('soaImportBracosLista').innerHTML = (_bracosProjetoAtual || []).filter(function(item) { return item.ativo !== false; }).map(function(item) { return '<option value="' + esc(item.nome) + '"></option>'; }).join('');
   document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Selecione o CSV, informe o braço e clique em Pré-visualizar.</div>';
   document.getElementById('soaImportModo').value = 'adicionar';
+  document.getElementById('soaImportBaseCalculo').value = _soaProjetoAtual.soaBaseCalculoPadrao || '';
   document.getElementById('btnImportarSoAConfirm').disabled = true;
   appSetStatus('statusSoAImport', '');
   abrirOverlay('modalSoAImport');
@@ -7403,7 +7404,7 @@ function soaImportTextoPayload_() {
   if (!_soaImportCsvTexto) throw new Error('Selecione o arquivo CSV exportado pelo Polo Trial.');
   var braco = document.getElementById('soaImportBraco').value.trim();
   if (!braco) throw new Error('Informe o nome do braço.');
-  return { projeto: _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo, dados: soaPoloExtrair_(_soaImportCsvTexto), modo: document.getElementById('soaImportModo').value, braco: braco, criarBracos: true };
+  return { projeto: _soaProjetoAtual.nomeAbreviado || _soaProjetoAtual.codigo, dados: soaPoloExtrair_(_soaImportCsvTexto), modo: document.getElementById('soaImportModo').value, braco: braco, baseCalculo: document.getElementById('soaImportBaseCalculo').value, criarBracos: true };
 }
 
 function renderSoAImportPreview_(result) {

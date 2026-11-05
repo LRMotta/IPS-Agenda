@@ -183,13 +183,36 @@ test('visita já cadastrada é reconhecida por nome ou alias e mantém identidad
   assert.ok(r.alertas.some(item => /2 visita\(s\) já cadastrada\(s\) para todos os braços continuam comuns/.test(item)));
 });
 
-test('sem base padrão no protocolo a importação fica bloqueada', () => {
+test('sem base no protocolo, referência a marco não exige escolha e grava a visita calculável', () => {
   const { s, p } = fixture();
   s.getProjetoBaseCalculoPadrao_ = () => '';
   const r = s.validarImportacaoSoA(p);
+  assert.equal(r.podeImportar, true, JSON.stringify(r.alertas));
+  assert.equal(byCode(r, 'C2').baseCalculo, 'MANTER_DATAS_PREVISTAS');
+  assert.equal(byCode(r, 'C1').baseCalculo, '', 'o marco precisa continuar datado pela própria realização');
+  assert.equal(byCode(r, 'EOT').baseCalculo, '');
+});
+
+test('sem base no protocolo, visitas encadeadas exigem a escolha na importação', () => {
+  const { s, p } = fixture(chainedVisits());
+  s.getProjetoBaseCalculoPadrao_ = () => '';
+  const r = s.validarImportacaoSoA(p);
   assert.equal(r.podeImportar, false);
-  assert.ok(r.alertas.some(item => /Base padrão do cronograma/.test(item)));
+  assert.ok(r.alertas.some(item => /Escolha a Contagem das datas/.test(item)));
   assert.throws(() => s.importarSoAJson({ ...p, confirmarRevisaoPlanejamento: true, fingerprintPlanejamento: r.fingerprint }), /Planejamento pendente/);
+  const chosen = s.validarImportacaoSoA({ ...p, baseCalculo: 'RECALCULAR_VISITA_REALIZADA' });
+  assert.equal(chosen.podeImportar, true, JSON.stringify(chosen.alertas));
+  assert.equal(byCode(chosen, 'C3D1').baseCalculo, 'RECALCULAR_VISITA_REALIZADA');
+  assert.equal(byCode(chosen, 'SFU').baseCalculo, '', 'visita manual não recebe base');
+});
+
+test('a escolha na importação prevalece sobre a base do protocolo e invalida a prévia', () => {
+  const { s, p } = fixture(chainedVisits());
+  assert.equal(byCode(s.validarImportacaoSoA(p), 'C3D1').baseCalculo, '', 'sem escolha, herda o protocolo');
+  const r = s.validarImportacaoSoA({ ...p, baseCalculo: 'RECALCULAR_VISITA_REALIZADA' });
+  assert.equal(byCode(r, 'C3D1').baseCalculo, 'RECALCULAR_VISITA_REALIZADA');
+  assert.throws(() => s.importarSoAJson({ ...p, confirmarRevisaoPlanejamento: true, fingerprintPlanejamento: r.fingerprint }), /Valide novamente/);
+  assert.throws(() => s.validarImportacaoSoA({ ...p, baseCalculo: 'OUTRA' }), /Contagem das datas inválida/);
 });
 
 test('valores desconhecidos bloqueiam em vez de serem adivinhados', () => {

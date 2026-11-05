@@ -2,7 +2,7 @@
 
 ## Fluxo
 
-No Polo Trial, exporte o Flowchart do estudo em **CSV**. Em **Projetos > Cronograma de Avaliações > Importar**, selecione o arquivo, informe o **nome do braço**, pré-visualize, confira as visitas e confirme a revisão.
+No Polo Trial, exporte o Flowchart do estudo em **CSV**. Em **Projetos > Cronograma de Avaliações > Importar CSV**, selecione o arquivo, informe o **nome do braço**, pré-visualize, confira as visitas e confirme a revisão.
 
 Este fluxo substitui a extração por IA. O servidor ainda lê os rascunhos e o formato JSON anteriores, mas a interface não os oferece mais.
 
@@ -35,7 +35,14 @@ Sem código no arquivo, ele é derivado do nome (`C1D1`, `Ciclo 2` → `C2`, `EO
 
 Nas visitas manuais, a regra do Polo fica na observação. Janela 0/0 em "Por demanda" não é tratada como tolerância zero.
 
-Visitas calculadas herdam a **Base padrão do cronograma** do protocolo, porque a exportação não informa se a contagem usa a data prevista ou a realizada. Sem essa base, a importação fica bloqueada.
+A visita de referência vem do arquivo. A exportação não informa se a contagem usa a data prevista ou a realizada, mas isso só muda as datas quando uma visita conta a partir de outra visita **calculada**:
+
+| Situação | Contagem das datas |
+|---|---|
+| Escolhida na janela de importação | Gravada nas visitas calculadas, inclusive sobre a base do protocolo |
+| Sem escolha, com Base padrão no protocolo | As visitas herdam a base do protocolo |
+| Sem escolha nem base, referências a um marco ou evento fixo | Grava "Manter datas previstas", que dá o mesmo resultado |
+| Sem escolha nem base, visitas encadeadas | Importação bloqueada até escolher na janela |
 
 ## Bloqueios
 
