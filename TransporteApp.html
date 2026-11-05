@@ -21,7 +21,7 @@
       background:linear-gradient(135deg,#1a74f5,var(--primary-dark));
       box-shadow:0 2px 8px rgba(18,102,241,.25);
     }
-    .brand { display:flex; align-items:center; gap:10px; min-width:0; }
+    .brand { display:flex; align-items:center; gap:10px; flex:0 0 auto; white-space:nowrap; }
     .brand-icon {
       width:34px; height:34px; border-radius:50%; display:grid; place-items:center;
       color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.18);
@@ -29,10 +29,11 @@
     }
     h1 { margin:0; font-size:15px; line-height:1.2; font-weight:600; color:#fff; }
     .subtitle { color:rgba(255,255,255,.72); font-size:11px; margin-top:2px; }
-    .actions-top { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+    .actions-top { flex:1 1 auto; min-width:0; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+    /* Mensagem longa fica em ate duas linhas e nunca empurra os botoes; o texto inteiro fica no title. */
     .action-status {
-      min-height:22px; color:rgba(255,255,255,.78); font-size:12px; text-align:right;
-      display:flex; justify-content:flex-end; align-items:center; gap:6px; padding-right:4px;
+      flex:1 1 0; min-width:0; color:rgba(255,255,255,.78); font-size:12px; line-height:1.3; text-align:right; padding-right:4px;
+      display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-height:2.6em;
     }
     .action-status.ok { color:#d7fbe3; }
     .action-status.warn { color:#ffe4b5; }
@@ -226,7 +227,7 @@
       .layout, .grid { grid-template-columns:1fr; }
       .topbar { align-items:flex-start; flex-direction:column; padding:12px 16px; }
       .actions-top { justify-content:flex-start; }
-      .action-status { width:100%; justify-content:flex-start; text-align:left; }
+      .action-status { flex:1 0 100%; width:100%; text-align:left; }
     }
     @media (max-width:680px) {
       .shell { padding:0 12px 86px; }
@@ -445,7 +446,7 @@
         <button class="modal-close" type="button" onclick="closePdfModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="modal-body">
-        <div>O arquivo foi gerado. Revise a documenta&ccedil;&atilde;o e os avisos antes de imprimir ou enviar.</div>
+        <div id="pdfModalIntro">O arquivo foi gerado. Revise a documenta&ccedil;&atilde;o e os avisos antes de imprimir ou enviar.</div>
         <div class="modal-file" id="pdfModalFile"></div>
         <div class="modal-warning" id="pdfDraftWarning"></div>
         <div class="modal-warning" id="pdfGenerationWarnings"></div>
@@ -602,6 +603,7 @@
       var el = document.getElementById('actionStatus');
       if (!el) return;
       el.textContent = msg || 'Pronto.';
+      el.title = msg || '';
       el.className = 'action-status ' + (type || '');
       el.dataset.statusType = type || '';
       el.dataset.dirtyStatus = opts && opts.dirty ? '1' : '';
@@ -801,6 +803,8 @@
       var warningBox = document.getElementById('pdfGenerationWarnings');
       warningBox.innerHTML = warnings.map(function(message) { return '<div>' + esc(message) + '</div>'; }).join('');
       warningBox.classList.toggle('show', warnings.length > 0);
+      document.getElementById('pdfModalIntro').textContent = data.recovered === true ? TRANSPORT_RESULTADO_REPETIDO
+        : 'O arquivo foi gerado. Revise a documentação e os avisos antes de imprimir ou enviar.';
       document.getElementById('pdfModalFile').textContent = data.fileName || 'documentacao-transporte.pdf';
       var draftWarning = document.getElementById('pdfDraftWarning');
       if (draftWarning) {
@@ -1377,6 +1381,7 @@
       if (!show) input.value = '';
     }
 
+    var TRANSPORT_RESULTADO_REPETIDO = 'Nenhum documento novo foi criado: estes são o PDF e o rascunho já gerados com os mesmos dados. Use Gerar novamente para criar outros.';
     var transportAwbAvisoPedido = 0;
     var transportReferenciasPedido = 0;
 
@@ -2146,11 +2151,11 @@
       var pdf = state.lastPdfResult;
       if (pdf && pdf.type === 'pdf') {
         transportGenerationWarnings(pdf).forEach(function(message) { issues.push({ type: 'warn', text: message }); });
-        issues.push({ type:'ok', text:'PDF gerado no Drive: ' + (pdf.fileName || 'documentacao-transporte.pdf') });
+        issues.push({ type:'ok', text:(pdf.recovered === true ? 'PDF já existente no Drive: ' : 'PDF gerado no Drive: ') + (pdf.fileName || 'documentacao-transporte.pdf') });
         if (pdf.draftOk === false) {
           issues.push({ type:'warn', text:(pdf.draftErrorCode === 'GENERATION_UNCERTAIN' ? 'Rascunho no Gmail nao confirmado: ' : 'Rascunho no Gmail nao criado: ') + (pdf.draftError || pdf.draftMessage || 'verifique autorizacao e conta executora.') });
         } else if (pdf.draftOk === true || pdf.draftId) {
-          issues.push({ type:'ok', text:'Rascunho no Gmail criado.' });
+          issues.push({ type:'ok', text:pdf.recovered === true ? 'Rascunho no Gmail já existente.' : 'Rascunho no Gmail criado.' });
         }
         var driveWarn = pdf.driveAccessWarning || '';
         var driveAccess = pdf.driveAccess || {};
@@ -2473,6 +2478,15 @@
           if (syncMsg) msg += ' ' + syncMsg;
           var hasDriveWarning = res && res.driveAccess && (res.driveAccess.fileShareError || res.driveAccess.folderShareError);
           var msgType = res && typeof res === 'object' && (res.draftOk === false || hasDriveWarning || (res.warnings && res.warnings.length) || agendaSyncMessageType(res) === 'warn') ? 'warn' : 'ok';
+          // Resultado repetido nao criou nada: dizer isso, em vez de anunciar uma geracao.
+          var repetido = res && typeof res === 'object' && res.recovered === true && msgType === 'ok';
+          if (repetido) {
+            msg = TRANSPORT_RESULTADO_REPETIDO;
+            msgType = 'warn';
+          }
+          // Sucesso completo: nome do PDF e rascunho ja aparecem no modal e no Checklist.
+          // PINEX, Backup e avisos do monitor mantem a mensagem inteira.
+          if (msgType === 'ok' && res && res.type === 'pdf' && res.draftOk === true && !res.monitorWarning) msg = okMsg;
           setActionStatus(msg, msgType);
           toast(msg, msgType);
           if (res && typeof res === 'object' && res.type === 'pdf') showPdfModal(res);

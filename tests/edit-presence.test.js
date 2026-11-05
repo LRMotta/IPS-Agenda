@@ -25,6 +25,51 @@ test('limpeza de presenca compacta registros ativos sem excluir linhas fisicas',
   assert.equal(sheet.rows.length, 4, 'a quantidade fisica de linhas deve ser preservada');
 });
 
+test('heartbeat renova a expiracao sem alterar o horario de abertura exibido aos demais', () => {
+  const opened = new Date('2026-11-05T22:30:00Z');
+  const clock = { now: opened.getTime() };
+  class FixedDate extends Date {
+    constructor(...args) {
+      if (args.length) super(...args);
+      else super(clock.now);
+    }
+  }
+  const sheet = new FakeSheet('Edit_Presence', [headers]);
+  const context = runFile('WebApp.gs', {
+    Date: FixedDate,
+    Utilities: { formatDate: date => date.toISOString() },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
+    LockService: {
+      getDocumentLock: () => null,
+      getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} })
+    }
+  });
+  const users = {
+    melissa: { ok: true, userEmail: 'melissa@ucs.br', name: 'Melissa' },
+    leitor: { ok: true, userEmail: 'leitor@ucs.br', name: 'Leitor' }
+  };
+  let currentUser = users.melissa;
+  context.codexAuthorizeWebAppRequest_ = () => currentUser;
+  context.codexGetEditPresenceSheet_ = () => sheet;
+  context.getAgendaSheetForRead_ = () => ({});
+  context.encontrarLinhaPorId = () => 0;
+
+  context.codexOpenEditPresence('Agenda', 'A-1', 's-melissa');
+  clock.now = opened.getTime() + 2 * 60 * 1000;
+  context.codexOpenEditPresence('Agenda', 'A-1', 's-melissa');
+
+  assert.equal(sheet.rows.length, 2, 'o heartbeat deve reutilizar a linha da sessao');
+  assert.equal(sheet.rows[1][5].getTime(), opened.getTime());
+  assert.equal(sheet.rows[1][6].getTime(), clock.now + 6 * 60 * 1000);
+
+  clock.now = opened.getTime() + 3 * 60 * 1000;
+  currentUser = users.leitor;
+  const result = context.codexOpenEditPresence('Agenda', 'A-1', 's-leitor');
+
+  assert.equal(result.editors.length, 1);
+  assert.equal(result.editors[0].openedAt, opened.toISOString());
+});
+
 test('abertura e liberacao de presenca nao usam exclusao fisica de linhas', () => {
   const source = readProjectFile('WebApp.gs');
   const cleanup = source.match(/function codexCleanupEditPresence_\([\s\S]*?\n\}/);

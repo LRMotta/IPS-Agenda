@@ -1401,6 +1401,7 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
         var email = codexNormalizeEmail_(access.userEmail || access.email || codexGetActiveUserEmail_()) || 'usuario';
         var name = access.name || access.firstName || email;
         var targetRow = 0;
+        var openedAt = now;
         var editors = [];
         vals.forEach(function(r, idx) {
           var sameRecord = String(r[0] || '') === moduleName && String(r[1] || '') === recordId;
@@ -1408,6 +1409,8 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
           var sameSession = codexNormalizeEmail_(r[2]) === email && String(r[4] || '') === sessionId;
           if (sameSession) {
             targetRow = idx + 2;
+            // O heartbeat renova somente a expiracao; a abertura exibida aos demais usuarios nao muda.
+            if (r[5] instanceof Date) openedAt = r[5];
             return;
           }
           if (codexNormalizeEmail_(r[2]) !== email) {
@@ -1421,7 +1424,7 @@ function codexOpenEditPresence(moduleName, recordId, sessionId) {
             });
           }
         });
-        var row = [moduleName, recordId, email, name, sessionId, now, expiresAt, version];
+        var row = [moduleName, recordId, email, name, sessionId, openedAt, expiresAt, version];
         codexMeasurePerformance_('codexOpenEditPresence', 'presence_write', { rowCount: 1 }, function() {
           if (targetRow) sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
           else sh.appendRow(row);
@@ -15459,7 +15462,8 @@ function agendaNascimentoFromDados_(dados, rowAnterior) {
   }
 
   if (!participante) return '';
-  var info = getInfoParticipante({
+  // So a data de nascimento: getInfoParticipante leria a Agenda inteira para a ultima visita.
+  var info = agendaInfoParticipanteParaSalvar_({
     idCadastro: dados.participanteCadastroId,
     nome: participante,
     idParticipante: dados.participanteId || dados.idParticipante,
@@ -15577,6 +15581,8 @@ function agendaAuditChangesFromRows_(oldRow, newRow) {
 function atualizarAgendaEventoCompleto(dados) {
   codexAssertCanWrite_('atualizarAgendaEventoCompleto', 'Agenda', dados && dados.id);
   return codexWithDocumentLock_('atualizarAgendaEventoCompleto', function() {
+  // Subetapas do salvamento: so nomes e tempos.
+  var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('atualizarAgendaEventoCompleto') : function() {};
   dados = dados || {};
   agendaValidarMaterialBioPayload_(dados);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -15590,6 +15596,7 @@ function atualizarAgendaEventoCompleto(dados) {
     codexCourierAssertDocumentAwb_(docCourier.awb, docCourier.nome);
   }
   var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  lap('sv_ler_linha');
   var versaoAtual = agendaRecordVersionFromRow_(rowAnterior);
   var versaoEsperada = String(dados._recordVersion || '').trim();
   var versaoEditavelAtual = agendaEditableRecordVersionFromRow_(rowAnterior);
@@ -15706,6 +15713,7 @@ function atualizarAgendaEventoCompleto(dados) {
   }
   dados.labCentral = labCentral;
   var operationalAlerts = agendaOperationalRiskAlerts_(dados, datasValidacaoStatus);
+  lap('sv_alertas');
   var dataNovaPassada = agendaDateIsBeforeToday_(d);
   var dataAnteriorPassada = agendaDateIsBeforeToday_(rowAnterior[AGENDA_CFG.idx.data]);
   var marcandoLabPassado = dataNovaPassada && AgendaServerRules_.isLabCentral(labCentral) &&
@@ -15777,11 +15785,13 @@ function atualizarAgendaEventoCompleto(dados) {
   }
   // Persistir as escritas sob lock antes de conferir carro/registro e reler após a ordenação.
   SpreadsheetApp.flush();
+  lap('sv_gravar');
   var carroSalvo = agendaBooleanValue_(agenda.getRange(linha, AGENDA_CFG.col.carroRequerido).getValue());
   if (carroSalvo !== dados.carroRequerido) {
     throw new Error('Não foi possível salvar a indicação de carro na Agenda.');
   }
   agendaGravarTransportesDoEvento_(agenda, linha, dados, labCentral);
+  lap('sv_transportes');
   var reservasCanceladas = 0;
   if (AgendaServerRules_.isCancelled(status)) {
     aplicarLogicaCancelamento_(agenda, linha, status);
@@ -15791,12 +15801,14 @@ function atualizarAgendaEventoCompleto(dados) {
   if (typeof transporteReconciliarOperacoesAgenda_ === 'function') transporteReconciliarOperacoesAgenda_(rowAtual);
   codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', dados.id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Alteração de agendamento' +
     (mergeResult && mergeResult.ok ? '; alterações simultâneas preservadas: ' + mergeResult.preserved.join('; ') : ''));
+  lap('sv_auditoria');
   if (deveOrdenarAgenda && agenda.getLastRow() > 2) {
     agenda.getRange(2, 1, agenda.getLastRow() - 1, AGENDA_CFG.lastCol)
       .sort([{ column: AGENDA_CFG.col.data, ascending: true }, { column: AGENDA_CFG.col.hora, ascending: true }]);
   }
   // Persistir as escritas sob lock antes de conferir carro/registro e reler após a ordenação.
   SpreadsheetApp.flush();
+  lap('sv_ordenar');
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   agendaInvalidateDateIndexCache_();
@@ -15817,6 +15829,7 @@ function atualizarAgendaEventoCompleto(dados) {
     }
     rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   }
+  lap('sv_notificar');
   var savedEvent = agendaRowToObject_(rowAtual, linhaAtualizada);
   var savedMergeToken = typeof agendaIssueMergeToken_ === 'function' ? agendaIssueMergeToken_(rowAtual, savedEvent) : '';
   savedEvent.editMergeToken = savedMergeToken;

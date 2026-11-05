@@ -585,6 +585,56 @@ test('Transporte: colagem chega ao campo e somente input marca alteracao', async
 });
 
 
+for (const width of [1920, 1280]) {
+  test('Transporte: mensagem longa no cabecalho nao empurra os botoes em ' + width + ' px', async () => {
+    await scenario(async page => {
+      const alturaAntes = await page.locator('.topbar').evaluate(el => el.getBoundingClientRect().height);
+      const texto = 'Aviso muito longo do servidor sobre o envio e os documentos gerados. '.repeat(8);
+      await page.evaluate(msg => window.setActionStatus(msg, 'warn'), texto);
+      const topos = await page.locator('.actions-top .btn').evaluateAll(btns => btns.map(btn => Math.round(btn.getBoundingClientRect().top)));
+      assert.equal(new Set(topos).size, 1, 'botoes na mesma linha');
+      assert.equal(await page.locator('.topbar').evaluate(el => el.getBoundingClientRect().height), alturaAntes);
+      assert.equal(await page.locator('#actionStatus').getAttribute('title'), texto);
+      const limites = await page.locator('#actionStatus').evaluate(el => ({ altura: el.clientHeight, linha: parseFloat(window.getComputedStyle(el).lineHeight) }));
+      assert.ok(limites.altura <= limites.linha * 2 + 1, 'no maximo duas linhas');
+    }, { viewport: { width, height: 900 } });
+  });
+}
+
+test('Transporte: sucesso da geracao mostra resumo curto no cabecalho', async () => {
+  await scenario(async page => {
+    await page.locator('#btnPdfTransport').click();
+    await page.evaluate(() => {
+      const call = window.calls.find(item => item.method === 'gerarPdfTransporte');
+      call.success({ type: 'pdf', fileId: 'F1', fileName: 'AWB_06NOV2026_AMBIENTE.pdf', draftOk: true, message: 'PDF gerado no Drive: AWB_06NOV2026_AMBIENTE.pdf Rascunho: criado com sucesso.', warnings: [] });
+    });
+    assert.equal(await page.locator('#actionStatus').innerText(), 'PDF e rascunho gerados.');
+  });
+});
+
+async function concluirGeracao(page, resultado) {
+  await page.locator('#btnPdfTransport').click();
+  await page.evaluate(res => window.calls.find(item => item.method === 'gerarPdfTransporte').success(res), resultado);
+}
+
+test('Transporte: resultado repetido nao anuncia uma geracao nova', async () => {
+  await scenario(async page => {
+    await concluirGeracao(page, { type: 'pdf', fileId: 'F1', fileName: 'AWB.pdf', draftOk: true, recovered: true, message: 'PDF gerado no Drive: AWB.pdf', warnings: [] });
+    assert.match(await page.locator('#actionStatus').innerText(), /Nenhum documento novo/);
+    assert.match(await page.locator('#pdfModalIntro').innerText(), /Nenhum documento novo/);
+    assert.match(await page.locator('body').innerText(), /PDF já existente no Drive: AWB\.pdf/);
+    assert.doesNotMatch(await page.locator('body').innerText(), /PDF gerado no Drive/);
+  });
+});
+
+test('Transporte: PINEX e Backup mantem o aviso manual no cabecalho', async () => {
+  await scenario(async page => {
+    const aviso = 'PINEX ou Backup: atualize o transporte manualmente na Agenda.';
+    await concluirGeracao(page, { type: 'pdf', fileId: 'F1', fileName: 'AWB.pdf', monitorWarning: aviso, message: 'PDF gerado no Drive: AWB.pdf ' + aviso, warnings: [] });
+    assert.match(await page.locator('#actionStatus').innerText(), /atualize o transporte manualmente/);
+  });
+});
+
 test('Transporte: geracao usa uma RPC, preserva aviso da Agenda e alerta durante processamento', async () => {
   await scenario(async page => {
     await page.locator('#btnPdfTransport').click();
