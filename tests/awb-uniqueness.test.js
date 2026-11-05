@@ -91,13 +91,109 @@ test('DHL Ambiente ativo bloqueia reuso e informa a possibilidade de cancelament
 });
 
 test('cancelamento dos demais couriers ou temperaturas DHL continua sem liberar a AWB', () => {
-  for (const [courier, temperatura] of [['DHL', 'CONGELADO'], ['DHL', 'REFRIGERADO'], ['DHL', ''], ['MARKEN', 'AMBIENTE'], ['OCASA', 'AMBIENTE'], ['PINEX', 'AMBIENTE']]) {
+  for (const [courier, temperatura] of [['DHL', 'CONGELADO'], ['DHL', 'REFRIGERADO'], ['DHL', ''], ['OCASA', 'AMBIENTE'], ['PINEX', 'AMBIENTE']]) {
     const f = fixture();
     const r = f.row('A', '3539829812', 1, 'Cancelado');
     r[f.i.c1.nome] = courier; r[f.i.c1.temp] = temperatura; r[f.i.c1.status] = 'Cancelado';
     assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, { courier1: { awb: '3539829812' } }, 'B')),
       /Cancelar o envio anterior não libera/);
   }
+});
+
+const AWB_MARKEN = '620X41337652';
+const reservaMarken = (f, idAgenda, extra = {}) => f.lockedCall(() => f.c.transporteAwbReservar_({ idAgenda, agendaSlot: '1', awb: AWB_MARKEN, courier: 'MARKEN', temperatura: 'CONGELADO', ...extra }, true));
+
+test('AWB MARKEN cancelada pode ser reutilizada uma unica vez, em qualquer temperatura e slot', () => {
+  for (const slot of [1, 2, 3]) {
+    for (const cancelamento of ['evento', 'transporte']) {
+      const f = fixture();
+      const r = f.row('A', AWB_MARKEN, slot);
+      const cfg = [f.i.c1, f.i.c2, f.i.c3][slot - 1];
+      r[cancelamento === 'evento' ? f.i.status : cfg.status] = 'Cancelado';
+      assert.equal(f.c.transporteAwbAviso_({ idAgenda: 'B', agendaSlot: '1', awb: AWB_MARKEN, courier: 'MARKEN' }), null);
+      assert.doesNotThrow(() => reservaMarken(f, 'B'));
+      assert.doesNotThrow(() => reservaMarken(f, 'B'), 'o envio que reutilizou conserva a AWB ao gerar novamente');
+      assert.throws(() => reservaMarken(f, 'C'), /Agendamento B.*reutilizada uma única vez/);
+    }
+  }
+});
+
+test('AWB MARKEN sem cancelamento continua bloqueada e orienta o cancelamento', () => {
+  const f = fixture();
+  f.row('A', AWB_MARKEN);
+  assert.throws(() => reservaMarken(f, 'B'), /cancele o envio MARKEN anterior para reutilizar esse número uma única vez/);
+  assert.equal(f.ss.getSheetByName('AWB_Utilizadas'), null);
+});
+
+test('cancelar o segundo uso MARKEN nao libera um terceiro', () => {
+  const f = fixture();
+  f.row('A', AWB_MARKEN, 1, 'Cancelado');
+  f.row('B', AWB_MARKEN, 1, 'Cancelado');
+  assert.throws(() => reservaMarken(f, 'C'), /reutilizada uma única vez/);
+});
+
+test('limpar a AWB do segundo uso MARKEN nao devolve o reuso', () => {
+  const f = fixture();
+  f.row('A', AWB_MARKEN, 1, 'Cancelado');
+  const b = f.row('B');
+  reservaMarken(f, 'B');
+  b[f.i.c1.awb] = '';
+  assert.throws(() => reservaMarken(f, 'C'), /reutilizada uma única vez/);
+});
+
+test('reuso MARKEN aceita outro slot do mesmo agendamento e consome a unica vez', () => {
+  const f = fixture();
+  const r = f.row('A', AWB_MARKEN);
+  r[f.i.c1.status] = 'Cancelado';
+  assert.doesNotThrow(() => reservaMarken(f, 'A', { agendaSlot: '2' }));
+  assert.throws(() => reservaMarken(f, 'A', { agendaSlot: '3' }), /reutilizada uma única vez/);
+});
+
+test('AWB MARKEN cancelada nao pode ir para envio de outro courier', () => {
+  const f = fixture();
+  f.row('A', AWB_MARKEN, 1, 'Cancelado');
+  assert.throws(() => reservaMarken(f, 'B', { courier: 'OCASA' }), /reutilizada em envio MARKEN/);
+});
+
+test('mesma AWB MARKEN em dois slots do envio que a reutiliza e bloqueada antes de escrever', () => {
+  const f = fixture();
+  f.row('A', AWB_MARKEN, 1, 'Cancelado');
+  assert.throws(() => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda, {
+    courier1: { awb: AWB_MARKEN, nome: 'MARKEN' }, courier2: { awb: AWB_MARKEN, nome: 'MARKEN' }
+  }, 'B')), /reutilizada uma única vez/);
+  assert.equal(f.ss.getSheetByName('AWB_Utilizadas'), null);
+});
+
+test('reativar envio MARKEN apos o reuso da AWB e bloqueado; com o reuso cancelado e permitido', () => {
+  const f = fixture();
+  const a = f.row('A', AWB_MARKEN, 1, 'Cancelado');
+  const b = f.row('B', AWB_MARKEN);
+  const reativar = () => f.lockedCall(() => f.c.agendaAwbValidarPayload_(f.agenda,
+    { status: 'Agendado', courier1: { awb: AWB_MARKEN, nome: 'MARKEN', status: 'Agendado' } }, 'A', a, true));
+  assert.throws(reativar, /Agendamento B/);
+  b[f.i.status] = 'Cancelado';
+  assert.doesNotThrow(reativar);
+});
+
+test('confirmacao por e-mail da AWB MARKEN reutilizada ignora o agendamento cancelado', () => {
+  const f = fixture();
+  const a = f.row('A', AWB_MARKEN, 1, 'Cancelado');
+  const b = f.row('B', AWB_MARKEN);
+  a[f.i.c1.status] = 'Agendado'; b[f.i.c1.status] = 'Agendado';
+  f.c.getCourierConfirmationRuleKey_ = () => 'marken';
+  const pendentes = f.c.getAgendaCourierAwbsPendentesConfirmacao_([a, b], [a, b], {});
+  assert.equal(pendentes[AWB_MARKEN].map(item => item.agendaId).join(), 'B');
+});
+
+test('espelho de Backup nao conta como reuso da AWB MARKEN', () => {
+  const f = fixture();
+  const origin = f.row('ORIGEM');
+  origin[f.i.backupAgendaRef] = JSON.stringify({ id: 'DESTINO', slot: 'II', awb: AWB_MARKEN });
+  origin[f.i.cb.nome] = 'MARKEN'; origin[f.i.cb.temp] = 'CONGELADO'; origin[f.i.cb.status] = 'Adicionado à Agenda';
+  const target = f.row('DESTINO', AWB_MARKEN, 2);
+  target[f.i.c2.status] = 'Cancelado';
+  assert.doesNotThrow(() => reservaMarken(f, 'NOVO'));
+  assert.throws(() => reservaMarken(f, 'OUTRO'), /reutilizada uma única vez/);
 });
 
 test('limpar ou substituir AWB DHL Ambiente sem cancelar conserva a reserva historica', () => {
