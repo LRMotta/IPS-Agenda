@@ -89,7 +89,8 @@ test('alterar o braço após a prévia invalida a confirmação mesmo sem evento
 test('prévia protege HTML vindo do arquivo', () => {
   const { e, preview } = fixture();
   preview({ visitas: [{ codigo: '<img>', nome: '<script>', observacoes: '<svg>' }], planejamento: { braco: '<b>', issues: [{ message: '<script>', blocking: true }] } });
-  assert.doesNotMatch(e.soaImportPreview.innerHTML, /<script>|<svg>|<img|<b>/);
+  const lower = e.soaImportPreview.innerHTML.toLowerCase();
+  for (const tag of ['<script', '<svg', '<img', '<b>']) assert.equal(lower.includes(tag), false, tag);
   assert.match(e.soaImportPreview.innerHTML, /&lt;script&gt;/);
 });
 
