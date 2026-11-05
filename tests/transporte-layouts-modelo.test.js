@@ -84,10 +84,13 @@ test('arquivo de layouts traz as 17 abas-modelo e cada uma vira pagina pelo rend
   for (const chave of Object.keys(arquivo.abas)) {
     const sheet = s.transporteLayoutsExpandir_(arquivo, chave);
     assert.equal(sheet.properties.title, TRANSPORTE_LAYOUT_ABAS_[chave]);
-    // Formulario PINEX (so na courier "PINEX (Agendamento)", ainda sem formato HTML) passa da
-    // altura de uma pagina A4 na grade; o bloqueio de altura deve continuar valendo para ele.
+    // Formulario PINEX (courier "PINEX (Agendamento)") passa da altura de uma pagina A4: a pagina unica
+    // continua bloqueada e o documento sai paginado (o PDF atual tambem o imprime em duas paginas).
     if (chave === 'formularioPinex') {
       assert.throws(() => s.transporteDocsGradeHtml_(sheet, {}), /excede a altura/);
+      const paginas = s.transporteDocsGradePaginas_(sheet, {});
+      assert.equal(paginas.length, 2);
+      paginas.forEach((p) => assert.match(p, /^<table class="grade"/));
       continue;
     }
     const html = s.transporteDocsGradeHtml_(sheet, {});
@@ -438,10 +441,11 @@ test('lote seleciona envios anteriores com AWB das couriers em HTML, mais recent
     linhaAgenda(s, { id: 'C', data: new Date(2026, 10, 4) }),           // hoje: fora
     linhaAgenda(s, { id: 'D', data: new Date(2026, 6, 1) }),            // antes de 3 meses: fora
     linhaAgenda(s, { id: 'E', data: new Date(2026, 9, 1), awb: '' }),   // sem AWB: fora
-    linhaAgenda(s, { id: 'F', data: new Date(2026, 9, 2), courier: 'PINEX (Agendamento)' }) // sem HTML: fora
+    linhaAgenda(s, { id: 'F', data: new Date(2026, 9, 2), courier: 'PINEX (Agendamento)' }),
+    linhaAgenda(s, { id: 'G', data: new Date(2026, 9, 3), courier: 'FEDEX' })   // sem HTML: fora
   ];
   const envios = s.transporteLayoutsLoteEnvios_(rows, hoje, 3);
-  assert.deepEqual(plano(envios.map((e) => e.id + ':' + e.slot + ':' + e.courier)), ['B:1:MARKEN', 'A:1:MARKEN']);
+  assert.deepEqual(plano(envios.map((e) => e.id + ':' + e.slot + ':' + e.courier)), ['B:1:MARKEN', 'A:1:MARKEN', 'F:1:PINEX (Agendamento)']);
 });
 
 test('lote compara copia temporaria e memoria sem gravar na Agenda nem tocar a planilha real', () => {
@@ -514,8 +518,9 @@ test('filtro de courier do lote restringe a selecao e recusa courier sem PDF em 
   assert.deepEqual(ids(['DHL', 'PINEX']), ['D', 'P']);
   assert.deepEqual(ids('dhl'), ['D']);
   assert.deepEqual(ids('PINEX; OCASA'), ['P', 'O']);
-  assert.deepEqual(ids(undefined), ['M', 'D', 'P', 'O']);
-  assert.throws(() => s.transporteLayoutsLoteCouriers_(['PINEX (Agendamento)']), /sem PDF em HTML no filtro/);
+  assert.deepEqual(ids(undefined), ['M', 'D', 'P', 'O']); // PINEX (Agendamento) tambem esta na lista
+  assert.deepEqual(plano(s.transporteLayoutsLoteCouriers_(['PINEX (Agendamento)'])), ['PINEX (Agendamento)']);
+  assert.throws(() => s.transporteLayoutsLoteCouriers_(['FEDEX']), /sem PDF em HTML no filtro/);
   // Atalhos do editor passam o filtro.
   const recebidos = [];
   s.diagnosticarDocsDadosLoteTransporteHtml = (o) => { recebidos.push(plano(o.couriers)); return {}; };
@@ -569,6 +574,26 @@ test('preenchimento PINEX na memoria roda sem operacao nao suportada e renderiza
   assert.deepEqual(plano(spec.ordem), ['Folha de Agendamento (DHL/PINEX)', 'Commercial Invoice (PINEX)',
     'Petição de Anuência de Exportação (PINEX)', 'USDA Statement (PINEX)', 'Ficha de Emergência (PINEX)', 'Declaração de Transporte']);
   for (const titulo of spec.ordem.slice(1)) assert.match(s.transporteDocsGradeHtml_(abas[titulo], {}), /^<table class="grade"/, titulo);
+});
+
+test('PINEX (Agendamento) na memoria: formulario preenchido e impresso em duas paginas, sem Folha', () => {
+  const s = servidor();
+  s.Session = { getScriptTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone };
+  s.Utilities = Object.assign({}, s.Utilities, { formatDate: utilitiesFormatDate });
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const registro = registroMarken({ courier: 'PINEX (Agendamento)', responsavelEntrega: 'Pessoa Entregadora' });
+  const dados = s.transporteDocsDados_(registro, { arquivo });
+  assert.equal(dados.ss.problemas_.length, 0, dados.ss.problemas_.join('; '));
+  const spec = s.transportePdfSpec_('PINEX (Agendamento)', 'CONGELADO', 'LAB X', dados.ss);
+  assert.deepEqual(plano(spec.ordem), ['Formulário (PINEX)']);
+  const abas = dados.abas(spec.ordem);
+  assert.equal(texto(abas, 'Formulário (PINEX)', 'D11', s), 'Estudo X');
+  assert.equal(texto(abas, 'Formulário (PINEX)', 'D32', s), 'Pessoa Entregadora');
+  // Sem Folha de Agendamento no PDF: nada a montar (nem buscar na Agenda).
+  const folha = s.transporteFolhaHtmlParaGrade_(dados.ss, Object.assign({}, registro), spec, {});
+  assert.deepEqual(plano(folha), { abas: [], html: '' });
+  const html = s.transporteDocsGradeMontar_(abas, spec.ordem.map((titulo) => ({ aba: titulo, copias: spec.copias[titulo] })), {});
+  assert.equal(s.transporteDocsGradeContarPaginasHtml_(html), 2);
 });
 
 test('B14 da Declaracao: texto padrao do modelo sem conteudo cadastrado; o cadastrado prevalece', () => {

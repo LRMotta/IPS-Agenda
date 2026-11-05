@@ -691,3 +691,61 @@ test('fundo de celula vazia vira imagem solida, porque o conversor nao imprime b
   assert.deepEqual([...gif.subarray(13, 16)], [255, 0, 0]);
   assert.equal(gif[34], 0x3b);
 });
+
+// ---------- Paginacao de abas mais altas que a pagina (Formulario PINEX) ----------
+
+// Objetos do script vem de outro contexto (vm): compare pelo conteudo.
+const plano = (v) => JSON.parse(JSON.stringify(v));
+
+function abaAlta(nLinhas, opcoes) {
+  const linhas = Array.from({ length: nLinhas }, (_, i) => [celula('linha ' + (i + 1))]);
+  return aba(linhas, Object.assign({ larguras: [300], titulo: 'Formulario Alto' }, opcoes || {}));
+}
+
+function linhasDe(html) {
+  return [...html.matchAll(/>linha (\d+)</g)].map(m => Number(m[1]));
+}
+
+test('aba mais alta que a pagina e dividida em paginas por linhas inteiras, na ordem', () => {
+  const alta = abaAlta(80);
+  assert.throws(() => app.transporteDocsGradeHtml_(alta, {}), /excede a altura/);
+  const paginas = app.transporteDocsGradePaginas_(alta, {});
+  assert.ok(paginas.length >= 2);
+  const todas = plano(paginas.flatMap(linhasDe));
+  assert.deepEqual(todas, Array.from({ length: 80 }, (_, i) => i + 1)); // nenhuma linha perdida ou repetida
+  // Cada pagina cabe na pagina HTML: a validacao de altura nao dispara.
+  paginas.forEach(p => assert.match(p, /^<table class="grade"/));
+});
+
+test('o corte da pagina nao atravessa uma mesclagem de linhas', () => {
+  const natural = linhasDe(app.transporteDocsGradePaginas_(abaAlta(80), {})[0]).length; // linhas que cabem na 1a pagina
+  // Mescla as linhas natural-1..natural+1 (1-based): o corte natural, apos a linha "natural", cairia dentro dela.
+  const merges = [{ startRowIndex: natural - 2, endRowIndex: natural + 1, startColumnIndex: 0, endColumnIndex: 1 }];
+  const paginas = app.transporteDocsGradePaginas_(abaAlta(80, { merges }), {});
+  const primeira = plano(linhasDe(paginas[0]));
+  assert.equal(primeira.length, natural - 2, 'o corte sobe ate antes da mesclagem');
+  // A mesclagem inteira (so a celula de origem tem texto) abre a pagina seguinte.
+  assert.equal(linhasDe(paginas[1])[0], natural - 1);
+  assert.equal(plano(paginas.flatMap(linhasDe)).length, 80 - 2); // as duas linhas cobertas nao tem texto proprio
+});
+
+test('aba que cabe numa pagina sai como pagina unica, igual a transporteDocsGradeHtml_', () => {
+  const curta = abaAlta(10);
+  const paginas = app.transporteDocsGradePaginas_(curta, {});
+  assert.equal(paginas.length, 1);
+  assert.equal(paginas[0], app.transporteDocsGradeHtml_(curta, {}));
+});
+
+test('montagem repete todas as paginas a cada copia e so pagina as abas indicadas', () => {
+  const abas = { 'Formulário (PINEX)': abaAlta(80, { titulo: 'Formulário (PINEX)' }), Curta: abaAlta(5, { titulo: 'Curta' }) };
+  const porCopia = app.transporteDocsGradePaginas_(abas['Formulário (PINEX)'], {}).length;
+  const html = app.transporteDocsGradeMontar_(abas, [
+    { aba: 'Formulário (PINEX)', copias: 2 },
+    { aba: 'Curta', copias: 3 }
+  ], {});
+  assert.equal(app.transporteDocsGradeContarPaginasHtml_(html), porCopia * 2 + 3);
+  assert.equal(app.transporteDocsGradeDevePaginar_('Formulario (PINEX)'), true);
+  assert.equal(app.transporteDocsGradeDevePaginar_('Declaração de Transporte'), false);
+  // Aba alta fora da lista continua bloqueando a geracao.
+  assert.throws(() => app.transporteDocsGradeMontar_({ Alta: abaAlta(80, { titulo: 'Alta' }) }, [{ aba: 'Alta', copias: 1 }], {}), /excede a altura/);
+});

@@ -980,7 +980,7 @@ function diagnosticarDocsDadosTransporteHtml() {
       .setName('diagnostico-memoria-' + courier.toLowerCase() + '-' + stamp + '.pdf');
     tempos.conversaoMs = Date.now() - marca;
     var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
-    var esperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
+    var esperadas = transporteDocsGradeContarPaginasHtml_(html);
     marca = Date.now();
     var root = DriveApp.getRootFolder();
     var pastas = root.getFoldersByName(TRANSPORTE_DOCS_HTML_PASTA_DIAGNOSTICO_);
