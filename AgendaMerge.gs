@@ -110,6 +110,14 @@ function agendaMergeFieldKey_(payload, field) {
   }));
 }
 
+// O base64 de texto do Apps Script nao garante UTF-8, e a leitura decodifica como UTF-8.
+// Em JSON so com ASCII, acentos nao viram falsas alteracoes na comparacao de tres estados.
+function agendaMergeJsonAscii_(value) {
+  return JSON.stringify(value).replace(/[^ -~]/g, function(ch) {
+    return '\\u' + ('0000' + ch.charCodeAt(0).toString(16)).slice(-4);
+  });
+}
+
 function agendaIssueMergeToken_(row, event) {
   try {
     var raw = agendaMergePayloadFromRow_(row);
@@ -121,7 +129,7 @@ function agendaIssueMergeToken_(row, event) {
       schema: [AGENDA_CFG.lastCol, AGENDA_CFG.idx.cb.temp, AGENDA_CFG.idx.participanteCadastroId, AGENDA_CFG.idx.backup2Dados],
       version: agendaRecordVersionFromRow_(row), editVersion: agendaEditableRecordVersionFromRow_(row), raw: raw, form: form };
     if (!envelope.email) return '';
-    var text = Utilities.base64EncodeWebSafe(JSON.stringify(envelope));
+    var text = Utilities.base64EncodeWebSafe(agendaMergeJsonAscii_(envelope));
     return text + '.' + Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(text, agendaMergeSigningKey_()));
   } catch (error) { return ''; } // Falha conservadora: a edicao abre, mas nao combina dados.
 }
