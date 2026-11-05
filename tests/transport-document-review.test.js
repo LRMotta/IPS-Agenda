@@ -237,6 +237,31 @@ test('exportador nao repete o preenchimento ja feito na mesma courier, mas sempr
   assert.deepEqual(rodar({ documentosPreenchidosCourier: 'MARKEN' }), { preenchimentos: 2, volumes: [true] });
 });
 
+test('exportador em memoria nao toca as abas reais e a recuperacao cobre so o que o rascunho le', () => {
+  const { s, events } = pdfFixture();
+  const docsMemoria = { ss: {} };
+  const volumes = [];
+  let recebido;
+  let fontes;
+  const blob = { getName: () => 'arquivo.pdf' };
+  s.TRANSPORTE_DOCS_GRADE_COURIERS_HTML_ = ['DHL'];
+  s.transporteAjustarVolumesDeclaracao_ = (_sheet, falhar) => volumes.push(falhar);
+  s.transporteDocsGradeGerarPdfHtml_ = (_ss, _spec, _courier, _payload, _nome, docs) => { recebido = docs; return { blob, conteudo: [] }; };
+  s.transporteDocsDadosSombra_ = () => { throw new Error('sombra nao deve rodar em memoria'); };
+  s.transportePdfActualSheetName_ = key => ({ folhaAgendamento: 'Folha', declaracaoTransp: 'Declaracao' })[key];
+  const real = { getId: () => 'SOURCE', getSheets: () => ['Folha', 'Declaracao', 'PDF', 'Email (OCASA)'].map(name => ({ getName: () => name })) };
+  s.getTransporteSpreadsheetCodex_ = () => real;
+  s.TRANSPORTE_GENERATION_REQUEST_ = { record: {} };
+  s.transporteGenerationSourceHash_ = (_ss, names) => { fontes = [...names]; return 'hash'; };
+  s.transporteGenerationCheckpoint_ = () => {};
+  const result = s.imprimirTodasAbas_({ payload: {}, formato: 'html' }, { documentosPreenchidosCourier: 'DHL', docsMemoria });
+  assert.equal(typeof result, 'object', String(result));
+  assert.equal(recebido, docsMemoria);
+  assert.deepEqual(volumes, []);
+  assert.equal(events.includes('flush'), false);
+  assert.deepEqual(fontes, ['Declaracao', 'Email (OCASA)', 'Folha']);
+});
+
 test('exportador confirma ID antes de compartilhamento e conserva intencao quando checkpoint falha', () => {
   const { s } = pdfFixture();
   const phases = [];

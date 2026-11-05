@@ -767,6 +767,44 @@ function transporteDocsDados_(registro, opcoes) {
   };
 }
 
+/* ---------- Geracao real em memoria (botao "Gerar PDF (HTML)") ----------
+ * As abas dos documentos saem so da planilha em memoria. A planilha real continua guardando
+ * o registro atual e o que o rascunho le (salvarTransporteInterno_ com camposRascunho).
+ * Entra aqui somente courier validada contra a planilha real pelos diagnosticos: as demais
+ * seguem pela grade, com o modo sombra.
+ */
+var TRANSPORTE_DOCS_MEMORIA_COURIERS_ = ['MARKEN', 'OCASA', 'DHL'];
+
+function transporteDocsMemoriaAtiva_(options) {
+  options = options || {};
+  if (!transporteFormatoPdfHtml_(options.formato)) return false;
+  var courier = transporteNormalizeCourierFromCodex_((options.payload || {}).courier);
+  // Courier explicita diferente da do registro: o preenchimento nao descreveria o PDF pedido.
+  if (options.courier && transporteNormalizeCourierFromCodex_(options.courier) !== courier) return false;
+  return TRANSPORTE_DOCS_MEMORIA_COURIERS_.indexOf(courier) >= 0;
+}
+
+// Sem documentos em memoria, prepara as abas reais para a geracao seguir pela grade; um erro
+// de negocio (ex.: volumes que nao cabem) se repete nesse caminho com a mensagem de sempre.
+function transporteDocsMemoriaPreparar_(registro) {
+  try {
+    return transporteDocsDados_(registro);
+  } catch (e) {
+    Logger.log('[TRANSPORTE_MEMORIA] ' + JSON.stringify({ ok: false, erro: String(e && e.message || e).slice(0, 160) }));
+    transportePrepararDocumentosModelos_(getTransporteSpreadsheetCodex_(), registro);
+    return null;
+  }
+}
+
+// Mesmo formato de transporteDocsGradeCarregar_ para transporteDocsGradeGerarPdfHtml_.
+function transporteDocsMemoriaCarregar_(docsMemoria, titulos) {
+  var abas = docsMemoria.abas(titulos);
+  return {
+    abas: abas,
+    info: { imagensOmitidas: Object.keys(abas).reduce(function(acc, titulo) { return acc + (Number(abas[titulo].imagensOmitidas) || 0); }, 0) }
+  };
+}
+
 /* ---------- Exportacao das imagens do modelo (administradores) ----------
  * Executar manualmente no editor. A API do Sheets nao devolve imagens de celula nem
  * imagens sobre a grade; esta funcao le as das abas-modelo (somente leitura), com as mesmas
@@ -840,6 +878,8 @@ function exportarImagensLayoutTransporteHtml() {
 
 /* ---------- Diagnostico em producao (administradores) ----------
  * Executar manualmente no editor: diagnosticarDocsDadosTransporteHtml().
+ * Vale so depois de uma geracao pelo botao "Gerar PDF" ou por courier fora de
+ * TRANSPORTE_DOCS_MEMORIA_COURIERS_: a geracao em memoria nao prepara as abas reais.
  * Le o envio que esta hoje na planilha de Transporte (somente leitura) e gera os mesmos
  * documentos de dois jeitos: pela grade da planilha real (como o botao "Gerar PDF (HTML)")
  * e pela planilha em memoria (transporteDocsDados_). Compara o texto impresso de cada aba,

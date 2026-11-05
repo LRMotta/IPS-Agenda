@@ -55,6 +55,18 @@ test('geracao em HTML avisa quando uma imagem nao foi incorporada', () => {
   assert.deepEqual(avisos, ['PDF_HTML_IMAGEM_OMITIDA']);
 });
 
+test('geracao em HTML usa a memoria sem ler a grade da planilha real', () => {
+  const ssMemoria = {};
+  let folhaSs;
+  const { app } = ambiente(2, {
+    transporteDocsGradeCarregar_: () => { throw new Error('grade real lida'); },
+    transporteDocsMemoriaCarregar_: () => ({ abas: { A: {} }, info: {} }),
+    transporteFolhaHtmlParaGrade_: (ss) => { folhaSs = ss; return { abas: [], html: '' }; },
+  });
+  app.transporteDocsGradeGerarPdfHtml_({}, spec, 'MARKEN', {}, 'arquivo', { ss: ssMemoria });
+  assert.equal(folhaSs, ssMemoria);
+});
+
 test('couriers do novo formato coincidem com as do diagnostico', () => {
   const { app } = ambiente(2);
   assert.deepEqual([...app.TRANSPORTE_DOCS_GRADE_COURIERS_HTML_], ['MARKEN', 'OCASA', 'DHL', 'PINEX']);

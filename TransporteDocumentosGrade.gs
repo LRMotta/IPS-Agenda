@@ -1077,13 +1077,15 @@ var TRANSPORTE_DOCS_GRADE_COURIERS_HTML_ = TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNO
 /* Geracao real em HTML (botao "Gerar PDF (HTML)"). Usa as abas ja preenchidas da planilha
  * de Transporte (imprimirTodasAbas_ preenche e persiste antes), aplica as mesmas protecoes
  * (identificacao, contato de emergencia, bloqueio de nome) e converte o HTML em PDF, sem
- * copia temporaria da planilha. Devolve { blob, conteudo }; o conteudo alimenta o hash. */
-function transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payload, nomeArquivo) {
+ * copia temporaria da planilha. Devolve { blob, conteudo }; o conteudo alimenta o hash.
+ * docsMemoria (transporteDocsDados_): as abas vem da planilha em memoria, com as mesmas
+ * protecoes, e a planilha real nao e lida. */
+function transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payload, nomeArquivo, docsMemoria) {
   var courierNorm = transporteNormalizeCourierFromCodex_(courier);
   var contexto = transporteDocsGradeContextoProtecao_(ss, courierNorm, payload);
-  var carregado = transporteDocsGradeCarregar_(ss, spec.ordem, {});
+  var carregado = docsMemoria ? transporteDocsMemoriaCarregar_(docsMemoria, spec.ordem) : transporteDocsGradeCarregar_(ss, spec.ordem, {});
   var conteudo = transporteDocsGradeProtegerConteudo_(carregado.abas, contexto);
-  var folha = transporteFolhaHtmlParaGrade_(ss, Object.assign({}, payload, { courier: courierNorm }), spec, {});
+  var folha = transporteFolhaHtmlParaGrade_(docsMemoria ? docsMemoria.ss : ss, Object.assign({}, payload, { courier: courierNorm }), spec, {});
   var html = transporteDocsGradeMontar_(carregado.abas, spec.ordem.map(function(titulo) {
     return { aba: titulo, copias: spec.copias[titulo], html: folha.abas.indexOf(titulo) >= 0 ? folha.html : '' };
   }), {});

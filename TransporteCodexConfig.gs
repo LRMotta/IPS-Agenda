@@ -2986,8 +2986,9 @@ function transporteParticipanteDocumento_(payload) {
   };
 }
 
-function transporteReadRegistro_() {
-  var ss = getTransporteSpreadsheetCodex_();
+// ssOrigem: planilha em memoria da geracao em HTML; sem ela, a planilha real.
+function transporteReadRegistro_(ssOrigem) {
+  var ss = ssOrigem || getTransporteSpreadsheetCodex_();
   var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
   var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', false);
   var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
@@ -3360,6 +3361,8 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
       // Caixa e responsavel tambem sao campos do formulario: persistir para
       // uma recarga antes do PDF nao recuperar valores de outro transporte.
       aplicarSolicitacaoCaixaTransporte_(ss, payload);
+      // Geracao em memoria: o e-mail OCASA le o destino (D38, D39, N39) da Declaracao real.
+      if (options.camposRascunho === true) transportePreencherDeclaracaoCadastros_(ss, payload);
     });
   }
   transporteMeasurePerformance_('salvarTransporte', 'flush', { rowCount: 1 }, function() {
@@ -4460,10 +4463,11 @@ function transportePdfMaterialRowsPlanilha_(ss) {
   });
 }
 
-function transporteValidarManifestoPdf_(options) {
+// ssOrigem: planilha em memoria quando os documentos saem dela; a real nao tem as abas preparadas.
+function transporteValidarManifestoPdf_(options, ssOrigem) {
   options = options || {};
-  var ss = getTransporteSpreadsheetCodex_();
-  var registroAtual = transporteReadRegistro_();
+  var ss = ssOrigem || getTransporteSpreadsheetCodex_();
+  var registroAtual = transporteReadRegistro_(ssOrigem);
   var manifestoAtual = transportePdfManifesto_(registroAtual, transportePdfMaterialRowsPlanilha_(ss));
   var payload = options.payload || null;
 
@@ -4737,20 +4741,27 @@ function gerarPdfTransporteInterno_(options, access) {
   // payload dentro do mesmo lock da exportacao impede que outra aba troque o
   // slot/courier entre o salvamento do formulario e a geracao do PDF.
   var savedTransport;
+  // Geracao em memoria: a planilha real recebe so o registro e os campos do rascunho.
+  var memoriaAtiva = !!options.payload && typeof transporteDocsMemoriaAtiva_ === 'function' && transporteDocsMemoriaAtiva_(options);
   if (options.payload) {
     savedTransport = salvarTransporteInterno_(options.payload, {
       returnBootstrap: false,
       returnPreparedRecord: true,
-      preencherDocumentos: true,
+      preencherDocumentos: !memoriaAtiva,
+      camposRascunho: memoriaAtiva,
       awbExigirUnica: true
     });
     if (savedTransport && savedTransport.registro) options.payload = savedTransport.registro;
     if (savedTransport && savedTransport.registro && typeof options.onRegistroPersistido_ === 'function') options.onRegistroPersistido_(savedTransport.registro);
   }
+  // Null tambem quando a memoria falhou: as abas reais foram preparadas e seguem o fluxo da grade.
+  var docsMemoria = memoriaAtiva ? transporteMeasurePerformance_('gerarPdfTransporte', 'memoria_preencher', { rowCount: 1 }, function() {
+    return transporteDocsMemoriaPreparar_(options.payload);
+  }) : null;
   // Persistir o preenchimento antes de validar o manifesto e gerar os documentos.
-  SpreadsheetApp.flush();
+  if (!docsMemoria) SpreadsheetApp.flush();
   var manifestoPdf = transporteMeasurePerformance_('gerarPdfTransporte', 'manifest_validate', { rowCount: 1 }, function() {
-    return transporteValidarManifestoPdf_(options);
+    return transporteValidarManifestoPdf_(options, docsMemoria ? docsMemoria.ss : undefined);
   });
   if (!options.payload && manifestoPdf.manifesto && String(manifestoPdf.manifesto.awb || '').trim()) transporteAwbReservar_(transporteReadRegistro_(), true);
   var request = TRANSPORTE_GENERATION_REQUEST_;
@@ -4771,6 +4782,7 @@ function gerarPdfTransporteInterno_(options, access) {
   var interno = savedTransport && savedTransport.registro
     ? { documentosPreenchidosCourier: String(savedTransport.registro.courier || '') }
     : null;
+  if (interno && docsMemoria) interno.docsMemoria = docsMemoria;
   var result = request && request.record.pdf ? Object.assign({}, request.record.pdf) : transporteMeasurePerformance_('gerarPdfTransporte', 'copy_export_drive', { rowCount: 1 }, function() {
     return imprimirTodasAbas_(options, interno);
   });
@@ -4794,7 +4806,7 @@ function gerarPdfTransporteInterno_(options, access) {
   var driveAccessWarning = result && typeof result === 'object' ? transporteDriveAccessWarning_(result.driveAccess) : '';
   var registroMonitor;
   try {
-    registroMonitor = transporteReadRegistro_() || {};
+    registroMonitor = docsMemoria ? options.payload : (transporteReadRegistro_() || {});
   } catch (registroMonitorError) {
     registroMonitor = {};
   }
@@ -6504,6 +6516,7 @@ function imprimirTodasAbas(options) {
 
 // interno: so do servidor (nunca de options, que vem do cliente).
 // interno.documentosPreenchidosCourier: courier com que os modelos acabaram de ser preenchidos.
+// interno.docsMemoria: documentos ja preenchidos em memoria (transporteDocsDados_).
 function imprimirTodasAbas_(options, interno) {
   var workingCopyFile = null;
   try {
@@ -6562,6 +6575,7 @@ function imprimirTodasAbas_(options, interno) {
     // sinal interno e com a mesma courier; chamadas diretas continuam preenchendo.
     var jaPreenchido = !!(interno && interno.documentosPreenchidosCourier) &&
       transporteNormalizeCourierFromCodex_(interno.documentosPreenchidosCourier) === transporteNormalizeCourierFromCodex_(courier);
+    var docsMemoria = formatoHtml && jaPreenchido && interno.docsMemoria ? interno.docsMemoria : null;
     if (!jaPreenchido) {
       var payloadForAutomation = {
         courier: courier,
@@ -6595,11 +6609,12 @@ function imprimirTodasAbas_(options, interno) {
       preencherDhlWebApp_(ss, payloadFallback);
     }
     // Sempre: bloqueia volumes que nao cabem (o salvamento so ajusta, sem bloquear).
-    transporteAjustarVolumesDeclaracao_(transporteCodexGetSheet_(ss, 'declaracaoTransp', false), true);
+    // Em memoria o bloqueio ja rodou em transporteDocsDados_.
+    if (!docsMemoria) transporteAjustarVolumesDeclaracao_(transporteCodexGetSheet_(ss, 'declaracaoTransp', false), true);
     lap('ia_prefill');
 
     // Persistir a fonte antes da cópia, ou a cópia antes da verificação de anonimização e exportação HTTP.
-    SpreadsheetApp.flush();
+    if (!docsMemoria) SpreadsheetApp.flush();
     lap('ia_flush_fonte');
     var token = ScriptApp.getOAuthToken();
     var nomeArquivo = transportePdfFileName_(awb, dataEnvio, temperatura, courier, marker);
@@ -6608,13 +6623,13 @@ function imprimirTodasAbas_(options, interno) {
     var conteudoPdf, conteudoPdfHash, blob;
     if (formatoHtml) {
       // Novo formato: HTML montado a partir da grade das abas, convertido em PDF sem copia da planilha.
-      var gerado = transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payloadFallback, nomeArquivo);
+      var gerado = transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payloadFallback, nomeArquivo, docsMemoria);
       conteudoPdf = gerado.conteudo;
       conteudoPdfHash = transportePdfManifestoHash_(conteudoPdf);
       lap('ia_html_pdf', conteudoPdf.length);
       blob = gerado.blob;
       // Modo sombra: mesma documentacao pela planilha em memoria, so comparada e registrada.
-      if (typeof transporteDocsDadosSombra_ === 'function') {
+      if (!docsMemoria && typeof transporteDocsDadosSombra_ === 'function') {
         var sombra = transporteDocsDadosSombra_(payloadFallback, spec, ss, courier, conteudoPdf);
         Logger.log('[TRANSPORTE_SOMBRA] ' + JSON.stringify(sombra));
         lap('ia_sombra_memoria', sombra.divergentes);
@@ -6686,7 +6701,9 @@ function imprimirTodasAbas_(options, interno) {
       blob.setName(nomeArquivo + '.pdf');
     }
     if (TRANSPORTE_GENERATION_REQUEST_) {
-      var sourceSheets = ss.getSheets().map(function(sheet) { return sheet.getName(); }).filter(function(name) { return spec.ordem.indexOf(name) >= 0 || /email/i.test(name); }).sort();
+      // Em memoria, a recuperacao so depende do que o rascunho le da planilha real.
+      var fontesRascunho = docsMemoria ? [transportePdfActualSheetName_('folhaAgendamento', ss), transportePdfActualSheetName_('declaracaoTransp', ss)] : spec.ordem;
+      var sourceSheets = ss.getSheets().map(function(sheet) { return sheet.getName(); }).filter(function(name) { return fontesRascunho.indexOf(name) >= 0 || /email/i.test(name); }).sort();
       if (!sourceSheets.length) throw new Error('Não foi possível confirmar os modelos para recuperação da geração.');
       transporteGenerationCheckpoint_({ sourceSheets: sourceSheets, sourceHash: transporteGenerationSourceHash_(ss, sourceSheets) });
     }
