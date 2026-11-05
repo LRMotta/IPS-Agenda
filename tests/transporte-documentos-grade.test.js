@@ -662,3 +662,32 @@ test('diagnostico sinaliza imagem que nao pode ser incorporada', () => {
   assert.equal(r.ok, false);
   assert.deepEqual([...r.avisos], ['IMAGEM_NAO_INCORPORADA']);
 });
+
+test('fundo de celula vazia vira imagem solida, porque o conversor nao imprime background', () => {
+  const s = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs'], { Utilities: {} });
+  const vermelho = { effectiveFormat: { backgroundColor: { red: 1 } } };
+  const sheet = {
+    properties: { title: 'Ficha' },
+    merges: [{ startRowIndex: 0, endRowIndex: 2, startColumnIndex: 2, endColumnIndex: 3 }],
+    data: [{
+      columnMetadata: [{ pixelSize: 40 }, { pixelSize: 300 }, { pixelSize: 40 }],
+      rowMetadata: [{ pixelSize: 20 }, { pixelSize: 20 }],
+      rowData: [{ values: [vermelho, { formattedValue: 'Texto' }, vermelho] }, { values: [
+        { effectiveFormat: { backgroundColor: { red: 1, green: 1, blue: 1 } } },
+        { formattedValue: 'Com fundo', effectiveFormat: { backgroundColor: { red: 0.8, green: 0.8, blue: 0.8 } } }] }]
+    }]
+  };
+  // Coluna so com fundo entra na area impressa; branco nao conta como fundo.
+  assert.equal(s.transporteDocsGradeArea_(sheet).c1, 2);
+  assert.equal(s.transporteDocsGradeFundo_({ effectiveFormat: { backgroundColor: { red: 1, green: 1, blue: 1 } } }), '');
+  const html = s.transporteDocsGradeHtml_(sheet, {});
+  assert.equal((html.match(/<img /g) || []).length, 2);
+  assert.doesNotMatch(html, /background/);
+  assert.match(html, /padding:0/);
+
+  const gif = Buffer.from(s.transporteDocsGradeFundoSrc_('#ff0000').split(',')[1], 'base64');
+  assert.equal(gif.length, 35);
+  assert.equal(gif.subarray(0, 6).toString(), 'GIF89a');
+  assert.deepEqual([...gif.subarray(13, 16)], [255, 0, 0]);
+  assert.equal(gif[34], 0x3b);
+});

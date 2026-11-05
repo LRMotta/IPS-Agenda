@@ -51,6 +51,28 @@ function transporteDocsGradeTemBorda_(cell) {
   return !!b && ['top', 'bottom', 'left', 'right'].some(function(k) { return !!transporteDocsGradeBorda_(b[k]); });
 }
 
+// Cor de fundo da celula; branco nao conta (e o fundo da pagina).
+function transporteDocsGradeFundo_(cell) {
+  var cor = cell && cell.effectiveFormat && cell.effectiveFormat.backgroundColor;
+  var hex = cor ? transporteDocsGradeCor_(cor, '') : '';
+  return hex === '#ffffff' ? '' : hex;
+}
+
+// GIF de 1 pixel da cor: o conversor HtmlService nao imprime background, mas imprime imagem.
+function transporteDocsGradeFundoSrc_(hex) {
+  var cor = [1, 3, 5].map(function(i) { return parseInt(hex.substr(i, 2), 16); });
+  var bytes = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0x80, 0, 0].concat(cor, [0, 0, 0,
+    0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3B]);
+  var letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var texto = '';
+  for (var i = 0; i < bytes.length; i += 3) {
+    var n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+    texto += letras.charAt(n >> 18) + letras.charAt((n >> 12) & 63) +
+      (i + 1 < bytes.length ? letras.charAt((n >> 6) & 63) : '=') + (i + 2 < bytes.length ? letras.charAt(n & 63) : '=');
+  }
+  return 'data:image/gif;base64,' + texto;
+}
+
 function transporteDocsGradeCaixa_(cell) {
   return !!(cell && cell.dataValidation && cell.dataValidation.condition &&
     cell.dataValidation.condition.type === 'BOOLEAN');
@@ -103,7 +125,7 @@ function transporteDocsGradeConteudo_(cell, escala) {
 
 /**
  * Mesclagens e area impressa (exportador do Sheets): sempre a partir de A1 ate a
- * ultima coluna/linha com texto, borda, caixa, imagem ou ancora de imagem flutuante,
+ * ultima coluna/linha com texto, borda, fundo, caixa, imagem ou ancora de imagem flutuante,
  * incluindo mesclagens. Devolve { mesclas, cobertas, c1, rFim } com indices de
  * base 0 (c1/rFim = -1 se vazia).
  */
@@ -133,7 +155,7 @@ function transporteDocsGradeArea_(sheet) {
       var m = mesclas[r + ':' + c];
       var span = m ? m.cs : 1;
       var conteudo = transporteDocsGradeTemTexto_(cell) || transporteDocsGradeTemBorda_(cell) ||
-        transporteDocsGradeCaixa_(cell) || transporteDocsGradeImagem_(cell);
+        !!transporteDocsGradeFundo_(cell) || transporteDocsGradeCaixa_(cell) || transporteDocsGradeImagem_(cell);
       if (!conteudo) continue;
       c1 = Math.max(c1, c + span - 1);
       rFim = Math.max(rFim, r + (m ? m.rs : 1) - 1);
@@ -328,6 +350,8 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     var alinhamento = f.alinhamento;
     var quebra = f.quebra;
     var borda = transporteDocsGradeTemBorda_(cell);
+    // Fundo so em celula vazia: atras de texto dependeria de empilhamento no conversor.
+    var fundo = !texto && !imagem && !caixa ? transporteDocsGradeFundo_(cell) : '';
 
     // Texto em OVERFLOW alinhado a esquerda ocupa as vazias seguintes, como no Sheets.
     // O texto e cortado na primeira celula ocupada, que delimita o trecho absorvido.
@@ -370,10 +394,10 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     var pad = fmt.padding || {};
     var recuo = { left: 2, right: 2 };
     if (larguraDir && larguraEsq !== larguraDir) recuo[larguraEsq > larguraDir ? 'left' : 'right'] += Math.abs(larguraEsq - larguraDir) * escala;
-    estilo.push('padding:' + ['top', 'right', 'bottom', 'left'].map(function(k) {
+    estilo.push('padding:' + (fundo ? '0' : ['top', 'right', 'bottom', 'left'].map(function(k) {
       var vertical = k === 'top' || k === 'bottom';
       return vertical ? ((pad[k] === undefined ? 2 : pad[k]) * escala).toFixed(1) + 'px' : (recuo[k] === 2 ? '2px' : recuo[k].toFixed(1) + 'px');
-    }).join(' '));
+    }).join(' ')));
     ['top', 'right', 'bottom', 'left'].forEach(function(k) {
       var b = transporteDocsGradeBorda_(bordas[k]);
       if (b) estilo.push('border-' + k + ':' + b);
@@ -395,10 +419,13 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     }
 
     var conteudo = '';
-    if (imagem) {
-      var larguraCel = 0, alturaCel = 0;
-      for (var ic = c; ic < c + (m ? m.cs : 1); ic++) if (ic >= c0 && ic <= c1) larguraCel += largura(ic);
-      for (var ir = r; ir < r + (m ? m.rs : 1); ir++) if (!linhaOculta(ir)) alturaCel += altura(ir);
+    var larguraCel = 0, alturaCel = 0;
+    for (var ic = c; ic < c + (m ? m.cs : 1); ic++) if (ic >= c0 && ic <= c1) larguraCel += largura(ic);
+    for (var ir = r; ir < r + (m ? m.rs : 1) && ir <= rFim; ir++) if (!linhaOculta(ir)) alturaCel += altura(ir);
+    if (fundo) {
+      conteudo = '<img src="' + transporteDocsGradeFundoSrc_(fundo) + '" alt="" style="display:block;width:' + (larguraCel * escala).toFixed(1) +
+        'px;height:' + (alturaCel * escalaV).toFixed(1) + 'px">';
+    } else if (imagem) {
       conteudo = '<img src="' + transporteDocsHtmlEscape_(srcImagem(imagem.imageProperties.contentUrl)) + '" alt="" style="max-width:' + (larguraCel * escala).toFixed(1) +
         'px;max-height:' + (alturaCel * escalaV).toFixed(1) + 'px">';
     } else if (caixa) {
