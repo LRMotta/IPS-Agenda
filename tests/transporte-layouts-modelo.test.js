@@ -641,3 +641,13 @@ test('salvamento da geracao em memoria grava na planilha real o destino lido pel
   const codigo = readProjectFile('TransporteCodexConfig.gs');
   assert.match(codigo, /options\.camposRascunho === true\) transportePreencherDeclaracaoCadastros_\(ss, payload\)/);
 });
+
+test('layout da Ficha OCASA guarda as faixas vermelhas laterais (regerar exige backgroundColor no dump)', () => {
+  const s = runFiles(['TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs', 'TransporteLayoutsModelo.gs'], { Utilities: {} });
+  const arquivo = s.transporteLayoutsCarregar_(ARQUIVO);
+  const sheet = s.transporteLayoutsExpandir_(arquivo, 'fichaEmergenciaOcasa');
+  const celula = (r, c) => sheet.data[0].rowData[r].values[c];
+  for (const [r, c] of [[0, 0], [1, 0], [0, 6]]) assert.equal(s.transporteDocsGradeFundo_(celula(r, c)), '#ff0000');
+  assert.equal(s.transporteDocsGradeArea_(sheet).c1, 6);
+  assert.equal((s.transporteDocsGradeHtml_(sheet, {}).match(/data:image\/gif/g) || []).length, 3);
+});

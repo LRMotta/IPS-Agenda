@@ -7,7 +7,7 @@
 // <atual.json>: spreadsheets.get (includeGridData) das abas-modelo da planilha em uso, com
 //   merges, columnMetadata/rowMetadata e, por celula, formattedValue, userEnteredValue,
 //   effectiveValue, effectiveFormat (textFormat, alinhamentos, wrapStrategy, padding, borders,
-//   numberFormat), textFormatRuns e dataValidation.condition.type.
+//   backgroundColor, numberFormat), textFormatRuns e dataValidation.condition.type.
 // <outra-copia.json>: formattedValue/userEnteredValue das mesmas abas em outra copia da planilha,
 //   preenchida com OUTRO envio (ex.: a copia de seguranca). Serve para separar texto do modelo
 //   de dado de envio.
