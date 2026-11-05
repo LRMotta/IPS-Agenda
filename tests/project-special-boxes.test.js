@@ -22,7 +22,7 @@ test('salvar projeto rejeita regras inválidas antes de gravar dados ou criar ca
   const { server, projects } = setup();
   const before = JSON.stringify(projects.rows);
   const payload = { id: 'P1', nomeAbreviado: 'Projeto', fase: 'III', status: 'Ativo', especialidade: 'Oncologia', investigador: 'IP', caixasTransporteJson: JSON.stringify([{ courierId: 'M1', laboratorioId: 'L1', temperatura: 'Congelado', tipoCaixa: 'BIOSYSTEM' }]) };
-  assert.throws(() => server.salvarDadosProjeto(payload), /sempre em temperatura Ambiente/);
+  assert.throws(() => server.salvarDadosProjeto(payload), /Sepio .*para Ocasa/);
   assert.equal(JSON.stringify(projects.rows), before);
   payload.caixasTransporteJson = JSON.stringify([{ courierId: 'M1', laboratorioId: 'L1', temperatura: 'Ambiente', tipoCaixa: 'BIOSYSTEM' }]);
   server.salvarDadosProjeto(payload);
@@ -45,6 +45,14 @@ test('regras de caixas usam IDs, limitam courier/temperatura e rejeitam conflito
     assert.throws(() => server.normalizarProjetoCaixasTransporte_([{ ...bio, ...change }]));
   }
   assert.throws(() => server.normalizarProjetoCaixasTransporte_([bio, bio]), /Já existe/);
+  const credo = { ...bio, tipoCaixa: 'credo_cube' };
+  const credoRegras = JSON.parse(server.normalizarProjetoCaixasTransporte_(['Ambiente', 'Refrigerado', 'Congelado'].map(temperatura => ({ ...credo, temperatura }))));
+  assert.deepEqual(credoRegras.map(regra => regra.temperatura), ['AMBIENTE', 'REFRIGERADO', 'CONGELADO']);
+  assert.equal(credoRegras[0].tipoCaixa, 'CREDO_CUBE');
+  for (const change of [{ temperatura: 'Ambiente + Congelado' }, { courierId: 'O1' }]) {
+    assert.throws(() => server.normalizarProjetoCaixasTransporte_([{ ...credo, ...change }]));
+  }
+  assert.throws(() => server.normalizarProjetoCaixasTransporte_([bio, credo]), /Já existe/);
   assert.throws(() => server.normalizarProjetoCaixasTransporte_('{'), /inválidas/);
   assert.equal(server.normalizarProjetoCaixasTransporte_(''), '[]');
 });

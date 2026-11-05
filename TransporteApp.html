@@ -343,7 +343,7 @@
                 <div class="segmented" id="couriers" role="group" aria-labelledby="couriersLabel"></div>
               </div>
               <div class="field"><label for="awb">AWB / c&oacute;digo</label><input id="awb"></div>
-              <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option></select></div>
+              <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option><option value="Sim, BioSystem" hidden>Sim, BioSystem</option><option value="Sim, Crēdo Cube" hidden>Sim, Crēdo Cube</option></select></div>
               <div class="field full hidden" id="caixaEspecialField"><label for="caixaEspecial">Caixa de transporte do projeto</label><input id="caixaEspecial" readonly><div class="material-unit-help" id="caixaEspecialResumo" role="status"></div></div>
               <div class="field hidden" id="responsavelEntregaField"><label for="responsavelEntrega">Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
               <div class="field hidden" id="pinexColetaField"><label for="pinexColeta">PINEX COL. N&deg;</label><input id="pinexColeta" placeholder="000000" disabled></div>
@@ -1292,22 +1292,26 @@
       var tipo = caixa && caixa.tipoCaixa;
       var bio = tipo === 'BIOSYSTEM' && payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
       var sep = tipo === 'SEPIO' && payload.courier === 'OCASA' && payload.temperatura === 'AMBIENTE';
-      document.getElementById('caixaEspecialField').classList.toggle('hidden', !bio && !sep);
-      document.getElementById('caixaEspecial').value = bio ? 'BioSystem' : (sep ? 'Sepio' : '');
+      var credo = tipo === 'CREDO_CUBE' && payload.courier === 'MARKEN' && ['AMBIENTE', 'REFRIGERADO', 'CONGELADO'].indexOf(payload.temperatura) >= 0;
+      document.getElementById('caixaEspecialField').classList.toggle('hidden', !bio && !sep && !credo);
+      document.getElementById('caixaEspecial').value = bio ? 'BioSystem' : (sep ? 'Sepio' : (credo ? 'Crēdo Cube' : ''));
       document.getElementById('caixaEspecialResumo').textContent = bio
-        ? 'E-mail: operacoes.cs@marken.com · Invoice: 2 kg · Fornecer caixa: Sim.'
-        : (sep ? 'Caixa Sepio. Mantidos o e-mail e o preenchimento dos documentos da Ocasa.' : '');
+        ? 'E-mail: operacoes.cs@marken.com · Invoice: 2 kg · Fornecer caixa: Sim, BioSystem.'
+        : (sep ? 'Caixa Sepio. Mantidos o e-mail e o preenchimento dos documentos da Ocasa.'
+          : (credo ? 'E-mail: protocolos.credo@marken.com · Invoice: 5 kg · Fornecer caixa: Sim, Crēdo Cube · Sem gelo seco.' : ''));
       var input = document.getElementById('solicitarCaixa');
       var markenAmbiente = payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
-      if (bio) {
-        input.value = 'Sim';
+      if (credo) {
+        input.value = 'Sim, Crēdo Cube';
+      } else if (bio) {
+        input.value = 'Sim, BioSystem';
       } else if (markenAmbiente) {
         input.value = 'Não';
-      } else if (input.disabled) {
+      } else if (input.disabled || /^Sim, /.test(input.value)) {
         input.value = courierUsesTransportBox(payload.courier)
           ? defaultSolicitarCaixa(payload.courier) : '';
       }
-      input.disabled = markenAmbiente;
+      input.disabled = markenAmbiente || credo;
       payload.solicitarCaixa = input.value;
     }
 
