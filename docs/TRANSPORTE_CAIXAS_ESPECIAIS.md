@@ -20,7 +20,11 @@ exclusivamente para `protocolos.credo@marken.com`: `expobrasil@marken.com` sai d
 os demais e-mails padrão da equipe continuam copiados. A tela avisa, sem bloquear,
 quando a data do envio tem menos de 2 dias úteis de antecedência, porque as caixas
 saem de São Paulo. Contam dias depois de hoje até a data do envio, sem feriados operacionais.
-O servidor revalida esse valor. No e-mail, somente o valor do campo original
+A confirmação da Crēdo Cube vem do mesmo endereço, que o monitor da Marken também consulta,
+e a cobrança automática da Marken aceita conversas enviadas a ele.
+As Pendências de transporte citam a caixa especial quando exatamente uma regra do projeto
+combina projeto, courier, temperatura e laboratório do transporte.
+O servidor revalida o campo de caixa. No e-mail, somente o valor do campo original
 "Enviar Caixa de Transporte" é preenchido, preservando rótulo, linhas e estilos
 do modelo da courier. Não são acrescentadas linhas de caixa ao modelo.
 

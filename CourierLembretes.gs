@@ -150,11 +150,18 @@ function courierLembreteEmails_(value) {
   return (String(value || '').toLowerCase().match(/[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || []).filter(function(v, i, arr) { return arr.indexOf(v) === i; }).sort();
 }
 
+// Crēdo Cube é solicitada fora do cadastro da Marken; as demais caixas seguem os e-mails cadastrados.
+function courierLembreteEnderecosCourier_(config) {
+  var enderecos = [config.email, config.emailAmbiente, config.emailCongelado];
+  if (normText_(config.nome).indexOf('marken') >= 0) enderecos.push('protocolos.credo@marken.com');
+  return courierLembreteEmails_(enderecos.join(','));
+}
+
 function courierLembreteValidarConversa_(original, op, config, own) {
   var ref = transporteMonitorReferencia_(op.agendaId, op.slot);
   var from = courierLembreteEmails_(original.getFrom());
   var to = courierLembreteEmails_(original.getTo() + ',' + original.getCc());
-  var couriers = courierLembreteEmails_([config.email, config.emailAmbiente, config.emailCongelado].join(','));
+  var couriers = courierLembreteEnderecosCourier_(config);
   // A solicitação pode vir de outro integrante da equipe. Gerado_Por identifica
   // a geração dos documentos; a conta efetiva do monitor envia a cobrança.
   if (!ref || from.length !== 1) return 'Remetente original não validado';

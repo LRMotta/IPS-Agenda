@@ -159,6 +159,28 @@ test('nova resposta entre reserva e envio cancela cobranca', () => {
   assert.equal(f.rows[0].estado, 'REVISAO');
 });
 
+test('solicitacao Credo Cube recebe cobranca na conversa, somente para a Marken', () => {
+  const f = fixture();
+  f.original.getTo = () => 'protocolos.credo@marken.com';
+  assert.equal(f.s.courierLembreteExecutar_().enviados, 1);
+  assert.equal(f.rows[0].estado, 'ENVIADO');
+
+  const outra = fixture();
+  outra.original.getTo = () => 'protocolos.credo@marken.com';
+  outra.config.nome = 'OCASA';
+  outra.current.courier = 'OCASA';
+  outra.s.courierLembreteExecutar_();
+  assert.equal(outra.sent(), 0);
+  assert.equal(outra.rows[0].detalhe, 'Destinatário da courier não validado');
+
+  // BioSystem continua exigindo o endereço no cadastro da courier.
+  const bio = fixture();
+  bio.original.getTo = () => 'operacoes.cs@marken.com';
+  bio.s.courierLembreteExecutar_();
+  assert.equal(bio.sent(), 0);
+  assert.equal(bio.rows[0].detalhe, 'Destinatário da courier não validado');
+});
+
 test('solicitacao de outro integrante recebe cobranca da conta monitorada', () => {
   const f = fixture();
   f.original.getFrom = () => 'Melissa <melissa@example.invalid>';

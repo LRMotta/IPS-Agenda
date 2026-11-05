@@ -597,7 +597,7 @@ test('opcoes de participantes do Transporte nao reutilizam cadastro em cache', (
   assert.match(block, /participanteCadastroId: transporteParticipanteCadastroId_\(p\)/);
 });
 
-test('Transporte resolve evento e origens de backup com uma unica leitura em bloco da Agenda', () => {
+test('sem busca disponivel, Transporte resolve evento e origens com uma unica leitura em bloco', () => {
   const calls = [];
   const rows = [
     ['EVT-1', 'primeiro'],
@@ -606,10 +606,9 @@ test('Transporte resolve evento e origens de backup com uma unica leitura em blo
   const sheet = {
     getLastRow: () => 3,
     getRange(row, column, numRows = 1, numColumns = 1) {
-      calls.push({ row, column, numRows, numColumns });
       const values = rows.slice(row - 2, row - 2 + numRows)
         .map((source) => Array.from({ length: numColumns }, (_, index) => source[column - 1 + index] || ''));
-      return { getValues: () => values };
+      return { getValues: () => { calls.push({ row, column, numRows, numColumns }); return values; } };
     }
   };
   const server = runFile('TransporteCodexConfig.gs', {
