@@ -590,9 +590,8 @@ test('B14 da Declaracao: texto padrao do modelo sem conteudo cadastrado; o cadas
 test('geracao em memoria: so HTML, couriers validadas e courier igual a do registro', () => {
   const s = servidor();
   const ativa = (formato, courier, extra) => s.transporteDocsMemoriaAtiva_(Object.assign({ formato, payload: { courier } }, extra));
-  for (const courier of ['MARKEN', 'OCASA', 'DHL']) assert.equal(ativa('html', courier), true, courier);
-  // PINEX segue pela grade ate ser validada pelo diagnostico em lote.
-  assert.equal(ativa('html', 'PINEX'), false);
+  for (const courier of ['MARKEN', 'OCASA', 'DHL', 'PINEX']) assert.equal(ativa('html', courier), true, courier);
+  // PINEX validado pelo lote (05/11/2026: 3 envios idênticos). A variante Agendamento usa o Formulario PINEX, sem HTML.
   assert.equal(ativa('html', 'PINEX (Agendamento)'), false);
   assert.equal(ativa('', 'MARKEN'), false);
   assert.equal(ativa('html', 'MARKEN', { courier: 'OCASA' }), false);
