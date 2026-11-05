@@ -13192,11 +13192,25 @@ function agendaEnsureBackupTemperaturaColumn_(sh) {
   return agendaUseBackupTemperaturaColumn_(column);
 }
 
+function agendaCabecalho_(sh) {
+  var largura = Number(sh.getLastColumn && sh.getLastColumn()) || 0;
+  return largura ? sh.getRange(1, 1, 1, largura).getValues()[0] || [] : [];
+}
+
 function ensureAgendaDestinoLabColumns_(sh) {
-  var backupTemperaturaCol = agendaEnsureBackupTemperaturaColumn_(sh);
-  var participanteCadastroCol = agendaEnsureParticipanteCadastroColumn_(sh);
-  var backup2Col = agendaResolveBackup2Column_(sh, null, true);
-  var transporte4Col = agendaResolveTransporte4Columns_(sh, null, true);
+  // Uma leitura do cabecalho basta quando as colunas opcionais ja existem, o caso normal.
+  var cabecalho = agendaCabecalho_(sh);
+  var backupTemperaturaCol = agendaResolveBackupTemperaturaColumnForRead_(sh, cabecalho);
+  var participanteCadastroCol = agendaResolveParticipanteCadastroColumnForRead_(sh, cabecalho);
+  var backup2Col = agendaResolveBackup2Column_(sh, cabecalho, false);
+  var transporte4Col = agendaResolveTransporte4Columns_(sh, cabecalho, false);
+  if (!backupTemperaturaCol || !participanteCadastroCol || !backup2Col || !transporte4Col) {
+    backupTemperaturaCol = agendaEnsureBackupTemperaturaColumn_(sh);
+    participanteCadastroCol = agendaEnsureParticipanteCadastroColumn_(sh);
+    backup2Col = agendaResolveBackup2Column_(sh, null, true);
+    transporte4Col = agendaResolveTransporte4Columns_(sh, null, true);
+    cabecalho = agendaCabecalho_(sh);
+  }
   var schemaCacheKey = 'AgendaSchemaEnsured:v9:' + backupTemperaturaCol + ':' + participanteCadastroCol + ':' + backup2Col + ':' + transporte4Col;
   if (codexCacheGet_(schemaCacheKey)) return;
   if (sh.getMaxColumns() < AGENDA_CFG.lastCol) {
@@ -13223,7 +13237,7 @@ function ensureAgendaDestinoLabColumns_(sh) {
   headers.forEach(function(h) {
     var cell = sh.getRange(1, h.col);
     try {
-      if (!String(cell.getValue() || '').trim()) cell.setValue(h.label);
+      if (!String(cabecalho[h.col - 1] || '').trim()) cell.setValue(h.label);
     } catch (e) {
       // Algumas planilhas usam colunas tipadas e bloqueiam alteracao direta do cabecalho.
       // A coluna ja existe; nesse caso seguimos sem interromper o salvamento da Agenda.
@@ -17520,28 +17534,38 @@ function agendaAwbContexto_(agenda) {
 }
 
 /* Contexto focado: decide conflitos de UMA AWB sem ler a Agenda inteira (cerca de 13 s medidos).
- * O historico AWB_Utilizadas continua lido por completo. Da Agenda vem so o que a decisao usa:
- * linhas que citam a AWB, os envios informados, os donos dela no historico e os destinos dos
- * vinculos de Backup dessas linhas. Essas linhas passam pela mesma rotina do contexto completo,
- * entao agendaAwbConflito_ decide igual. A busca ignora separadores e caixa, como
- * normalizarAwbCourier_. Sem busca, com linhas demais ou com leitura compartilhada ja feita,
+ * O historico AWB_Utilizadas continua lido por completo. Da Agenda vem so as colunas de ID, AWB
+ * e vinculos de Backup, comparadas em memoria com normalizarAwbCourier_, como no contexto
+ * completo. As linhas ligadas a AWB, aos envios informados, aos donos dela no historico e aos
+ * vinculos dessas linhas passam pela mesma rotina do contexto completo, entao
+ * agendaAwbConflito_ decide igual. Com linhas demais ou com leitura compartilhada ja feita,
  * usa o contexto completo. A reposicao do historico das demais AWBs da Agenda fica para os
  * fluxos que usam o contexto completo (salvamentos da Agenda). */
 var CODEX_AWB_FOCO_MAX_LINHAS_ = 25;
 
-function agendaAwbBuscaLinhas_(agenda, n, width, padrao) {
-  var intervalo = agenda.getRange(2, 1, n, width);
-  if (typeof intervalo.createTextFinder !== 'function') return null;
-  try {
-    var linhas = [];
-    intervalo.createTextFinder(padrao).useRegularExpression(true).findAll().forEach(function(celula) {
-      var linha = celula.getRow();
-      if (linhas.indexOf(linha) < 0) linhas.push(linha);
-    });
-    return linhas;
-  } catch (buscaError) {
-    return null;
-  }
+// Linhas esparsas: so as colunas que decidem quais linhas ler. A linha N fica no indice N - 2.
+function agendaAwbColunasChave_(agenda, n, width) {
+  var i = AGENDA_CFG.idx;
+  var rows = [];
+  for (var k = 0; k < n; k++) rows.push([]);
+  [i.id, i.c1.awb, i.c2.awb, i.c3.awb, i.c4.awb, i.backupAgendaRef, i.backup2Dados].filter(function(coluna) {
+    return coluna >= 0 && coluna < width;
+  }).forEach(function(coluna) {
+    agenda.getRange(2, coluna + 1, n, 1).getValues().forEach(function(valor, indice) { rows[indice][coluna] = valor[0]; });
+  });
+  return rows;
+}
+
+function agendaAwbTextoVinculos_(row) {
+  var i = AGENDA_CFG.idx;
+  return String(row[i.backupAgendaRef] || '') + ' ' + String(i.backup2Dados >= 0 ? row[i.backup2Dados] || '' : '');
+}
+
+function agendaAwbLinhaCitaAwb_(row, key) {
+  var i = AGENDA_CFG.idx;
+  return [i.c1.awb, i.c2.awb, i.c3.awb, i.c4.awb].some(function(coluna) {
+    return coluna >= 0 && normalizarAwbCourier_(row[coluna]) === key;
+  }) || normalizarAwbCourier_(agendaAwbTextoVinculos_(row)).indexOf(key) >= 0;
 }
 
 function agendaAwbIdsDaLinha_(row) {
@@ -17571,41 +17595,49 @@ function agendaAwbContextoFocado_(agenda, awb, ids) {
   var n = agenda.getLastRow() - 1;
   if (!key || n <= 0 || (CODEX_AGENDA_LINHAS_ESCOPO_ && CODEX_AGENDA_LINHAS_ESCOPO_.leitura)) return agendaAwbContexto_(agenda);
   var width = agendaAwbLarguraLeitura_(agenda.getLastColumn());
+  var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
   var context = agendaAwbContextoNovo_(agenda);
   var historico = agendaAwbHistorico_(context);
+  lap('awb_historico', historico.length);
   var pendentes = ids.slice();
   historico.forEach(function(entry) {
     if (normalizarAwbCourier_(entry.awb) !== key) return;
     var dono = /^AGD:(.+):[^:]+$/.exec(entry.owner);
     pendentes.push(entry.id, dono && dono[1]);
   });
-  var linhas = Object.create(null);
-  var conhecidos = Object.create(null);
-  var termos = [key.split('').join('[^A-Za-z0-9]*')];
-  // Cada passo segue os vinculos de Backup das linhas novas; cadeia maior usa o contexto completo.
-  for (var passo = 0; passo < 4; passo++) {
-    agendaAwbIdsNormalizados_(pendentes).forEach(function(id) {
-      if (conhecidos[id]) return;
-      conhecidos[id] = true;
-      termos.push(id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    });
-    if (!termos.length) break;
-    var encontradas = agendaAwbBuscaLinhas_(agenda, n, width, termos.join('|'));
-    if (!encontradas) return agendaAwbContexto_(agenda);
-    var novas = encontradas.filter(function(linha) { return !linhas[linha]; });
-    if (Object.keys(linhas).length + novas.length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
-    pendentes = [];
-    termos = [];
-    novas.forEach(function(linha) {
-      linhas[linha] = agenda.getRange(linha, 1, 1, width).getValues()[0];
-      pendentes = pendentes.concat(agendaAwbIdsDaLinha_(linhas[linha]));
-    });
+  var chaves = agendaAwbColunasChave_(agenda, n, width);
+  lap('awb_colunas', n);
+  var porId = Object.create(null);
+  var comVinculo = [];
+  var escolhidas = Object.create(null);
+  function escolher(indice) {
+    if (escolhidas[indice]) return;
+    escolhidas[indice] = true;
+    pendentes = pendentes.concat(agendaAwbIdsDaLinha_(chaves[indice]));
   }
-  if (agendaAwbIdsNormalizados_(pendentes).some(function(id) { return !conhecidos[id]; })) return agendaAwbContexto_(agenda);
-  var backupEntries = [];
-  Object.keys(linhas).map(Number).sort(function(a, b) { return a - b; }).forEach(function(linha) {
-    agendaAwbContextoLinha_(context, backupEntries, linhas[linha]);
+  chaves.forEach(function(row, indice) {
+    var id = agendaAwbIdsNormalizados_([row[AGENDA_CFG.idx.id]])[0];
+    if (id) (porId[id] = porId[id] || []).push(indice);
+    if (agendaAwbTextoVinculos_(row).trim()) comVinculo.push(indice);
+    if (agendaAwbLinhaCitaAwb_(row, key)) escolher(indice);
   });
+  var conhecidos = Object.create(null);
+  // Segue os vinculos em memoria: cada linha nova pode citar outro envio.
+  while (pendentes.length) {
+    var id = agendaAwbIdsNormalizados_([pendentes.shift()])[0];
+    if (!id || conhecidos[id]) continue;
+    conhecidos[id] = true;
+    (porId[id] || []).forEach(escolher);
+    for (var v = 0; v < comVinculo.length; v++) {
+      if (agendaAwbTextoVinculos_(chaves[comVinculo[v]]).toUpperCase().indexOf(id) >= 0) escolher(comVinculo[v]);
+    }
+  }
+  if (Object.keys(escolhidas).length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
+  var backupEntries = [];
+  Object.keys(escolhidas).map(Number).sort(function(a, b) { return a - b; }).forEach(function(indice) {
+    agendaAwbContextoLinha_(context, backupEntries, agenda.getRange(indice + 2, 1, 1, width).getValues()[0]);
+  });
+  lap('awb_linhas', Object.keys(escolhidas).length);
   context.entries = context.entries.concat(backupEntries, historico);
   if (sobLock) CODEX_AWB_CONTEXT_FOCO_ = { key: key, nome: agenda.getName(), ids: conhecidos, context: context };
   return context;
@@ -20900,12 +20932,16 @@ function alinharStatusRequisicaoLegadoAgenda_(sh) {
     codexCachePut_(cacheKey, true, 21600);
     return;
   }
-  var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  // Quando o cache expira, le so as tres colunas usadas, nao a Agenda inteira.
+  var coluna = function(numero) { return sh.getRange(2, numero, lastRow - 1, 1).getValues(); };
+  var prestadores = coluna(AGENDA_CFG.col.servTerc);
+  var statusRequisicao = coluna(AGENDA_CFG.col.reqStatus);
+  var observacoes = coluna(AGENDA_CFG.col.obs);
   var updates = [];
-  rows.forEach(function(r, idx) {
-    var prestador = String(r[AGENDA_CFG.idx.servTerc] || '').trim();
-    var atual = String(r[AGENDA_CFG.idx.reqStatus] || '').trim();
-    if (prestador && agendaObsIndicaRequisicaoOk_(r[AGENDA_CFG.idx.obs]) && !atual) {
+  prestadores.forEach(function(r, idx) {
+    var prestador = String(r[0] || '').trim();
+    var atual = String(statusRequisicao[idx][0] || '').trim();
+    if (prestador && agendaObsIndicaRequisicaoOk_(observacoes[idx][0]) && !atual) {
       updates.push({ row: idx + 2, value: 'Requisição Enviada' });
     }
   });

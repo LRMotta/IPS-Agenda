@@ -114,7 +114,7 @@ test('notificacao le um bloco por evento e reutiliza a data depois do envio', ()
   });
 });
 
-test('alinhamento legado faz uma leitura e uma escrita em lote para 1 ou 50 alvos', () => {
+test('alinhamento legado le tres colunas e faz uma escrita em lote para 1 ou 50 alvos', () => {
   [1, 50].forEach((count) => {
     const server = runFile('WebApp.gs', { AgendaServerRules_: allRules()[1] });
     const cfg = server.AGENDA_CFG;
@@ -131,15 +131,18 @@ test('alinhamento legado faz uma leitura e uma escrita em lote para 1 ou 50 alvo
     server.codexCachePut_ = () => { cached = true; };
     const sheet = {
       getLastRow() { calls.lastRow++; return rows.length + 1; },
-      getRange() { return { getValues() { calls.reads++; return rows; } }; },
+      getRange(linha, coluna, total, largura) {
+        assert.deepEqual([linha, total, largura], [2, rows.length, 1], 'le uma coluna inteira, nunca a largura da Agenda');
+        return { getValues() { calls.reads++; return rows.map((row) => [row[coluna - 1]]); } };
+      },
       getRangeList(ranges) {
         assert.deepEqual(Array.from(ranges), Array.from({ length: count }, (_, index) => 'R' + (index * 2 + 2) + 'C' + cfg.col.reqStatus));
         return { setValue(value) { calls.writes++; assert.equal(value, 'Requisição Enviada'); } };
       }
     };
     server.alinharStatusRequisicaoLegadoAgenda_(sheet);
-    assert.deepEqual(calls, { lastRow: 1, reads: 1, writes: 1 });
+    assert.deepEqual(calls, { lastRow: 1, reads: 3, writes: 1 });
     server.alinharStatusRequisicaoLegadoAgenda_(sheet);
-    assert.deepEqual(calls, { lastRow: 1, reads: 1, writes: 1 });
+    assert.deepEqual(calls, { lastRow: 1, reads: 3, writes: 1 });
   });
 });

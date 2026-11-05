@@ -6234,10 +6234,23 @@ function transporteCodexEmailInlineTableSpacing_(html) {
   });
 }
 
+// A CE e procurada para o aviso e para o anexo; so vale dentro da mesma execucao.
+var TRANSPORTE_CE_ARQUIVO_EXECUCAO_ = Object.create(null);
+
+function transporteComunicadoEspecialDaExecucao_(ss, projeto) {
+  var chave = String(projeto || '').trim();
+  if (!TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave]) {
+    var file = transporteCodexFindComunicadoEspecial_(ss, projeto);
+    if (!file) return null;
+    TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave] = file;
+  }
+  return TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave];
+}
+
 function transporteCodexEmailAttachments_(ss, projeto) {
   var attachments = [];
   try {
-    var file = transporteCodexFindComunicadoEspecial_(ss, projeto);
+    var file = transporteComunicadoEspecialDaExecucao_(ss, projeto);
     if (file) attachments.push(file.getBlob());
   } catch (error) {
     Logger.log('Comunicado Especial nao anexado: ' + error.toString());
@@ -6253,7 +6266,7 @@ function transporteCeStatus_(projeto) {
   if (cached && cached.found) return cached;
   var status = { checked: true, found: false, message: 'CE nao localizada para o estudo.' };
   try {
-    var file = transporteCodexFindComunicadoEspecial_(getTransporteSpreadsheetCodex_(), projeto);
+    var file = transporteComunicadoEspecialDaExecucao_(getTransporteSpreadsheetCodex_(), projeto);
     if (file) {
       status.found = true;
       status.message = 'CE localizada para o estudo.';
@@ -7284,6 +7297,7 @@ function transporteCaixaResolver_(ss, payload) {
   // Nunca confiar na caixa/valores enviados pelo cliente; recuperar somente snapshots do servidor.
   var lap = transporteLapStart_('salvarTransporte');
   var range = transporteCaixaAgendaRange_(payload);
+  lap('cx_faixa_agenda');
   var notaAgenda = range && typeof range.getNote === 'function' ? range.getNote() : null;
   var saved = notaAgenda !== null ? transporteCaixaNoteRead_(notaAgenda) : null;
   lap('cx_nota_agenda');

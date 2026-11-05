@@ -96,14 +96,14 @@ test('alinhamento legado nao grava envio para negacao, previsao ou transporte', 
       return {
         getValues() {
           reads.push({ row, col, count, width });
-          return rows.map((values) => values.slice());
+          return rows.map((values) => [values[col - 1]]);
         },
         setValue(value) { writes.push({ row, col, value }); }
       };
     }
   };
   server.alinharStatusRequisicaoLegadoAgenda_(sheet);
-  assert.deepEqual(reads, [{ row: 2, col: 1, count: rows.length, width: cfg.lastCol }]);
+  assert.deepEqual(reads, [cfg.col.servTerc, cfg.col.reqStatus, cfg.col.obs].map((col) => ({ row: 2, col, count: rows.length, width: 1 })));
   assert.deepEqual(writes, [{ ranges: ['R5C' + cfg.col.reqStatus], value: 'Requisição Enviada' }]);
   observations.slice(0, 3).forEach((obs) => {
     assert.equal(server.agendaStatusRequisicaoDisplay_('', obs), '');
