@@ -13,12 +13,39 @@ function modulo(extra) {
   return runFiles(['TransporteLayoutsModelo.gs'], Object.assign({ Session: { getScriptTimeZone: () => 'America/Sao_Paulo' } }, extra || {}));
 }
 
+// RichTextValue/TextStyle do Apps Script no subconjunto que o preenchimento e a planilha em memoria usam.
+function construtoresTextoRico() {
+  return {
+    newTextStyle: () => {
+      const e = { bold: null, italic: null, underline: null };
+      const b = {
+        setBold(v) { e.bold = v; return b; }, setItalic(v) { e.italic = v; return b; }, setUnderline(v) { e.underline = v; return b; },
+        build: () => ({ isBold: () => e.bold, isItalic: () => e.italic, isUnderline: () => e.underline })
+      };
+      return b;
+    },
+    newRichTextValue: () => {
+      let texto = '';
+      const trechos = [];
+      const b = {
+        setText(t) { texto = t; return b; },
+        setTextStyle(ini, fim, estilo) { trechos.push({ ini, fim, estilo }); return b; },
+        build: () => ({
+          getText: () => texto,
+          getRuns: () => trechos.map((t) => ({ getTextStyle: () => t.estilo, getStartIndex: () => t.ini, getEndIndex: () => t.fim }))
+        })
+      };
+      return b;
+    }
+  };
+}
+
 function servidor() {
   const s = runFiles(['AgendaServerRules.gs', 'CadastroRules.gs', 'WebApp.gs', 'TransporteCodexConfig.gs',
     'TransporteDocumentosHtml.gs', 'TransporteDocumentosGrade.gs', 'TransporteFolhaAgendamentoHtml.gs', 'TransporteLayoutsModelo.gs'], {
     Logger: { log() {} },
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
-    SpreadsheetApp: {},
+    SpreadsheetApp: construtoresTextoRico(),
     CacheService: { getScriptCache: () => ({ get: () => null, put() {}, getAll: () => ({}), putAll() {} }) },
     PropertiesService: {
       getScriptProperties: () => ({ getProperty: () => 'PLANILHA-REAL', setProperty() {} }),
@@ -451,7 +478,9 @@ test('lote compara copia temporaria e memoria sem gravar na Agenda nem tocar a p
     getFileById: (id) => { assert.equal(id, 'REAL'); return { makeCopy: () => { eventos.push('copia'); return temp; } }; } };
   // A "copia" e outra planilha em memoria; a grade dela e lida sem a API do Sheets.
   const copia = s.transporteLayoutsPlanilha_(arquivo);
-  s.SpreadsheetApp = { openById: (id) => { assert.equal(id, 'COPIA'); return copia; }, flush: () => eventos.push('flush') };
+  // A copia real mantem o texto padrao do modelo em B14 (a courier sem conteudo cadastrado nao o regrava).
+  s.transporteGetSheet_(copia, 'declaracaoTransp', false).getRange('B14').setValue('conformidade com as regulamentações da IATA vigente e Resolução 5947 / ANTT de 01/06/2021 do Ministério dos Transportes.');
+  s.SpreadsheetApp = Object.assign(construtoresTextoRico(), { openById: (id) => { assert.equal(id, 'COPIA'); return copia; }, flush: () => eventos.push('flush') });
   s.transporteDocsGradeCarregar_ = (ss, titulos) => { assert.equal(ss, copia); return { abas: ss.exportarAbas_(titulos), info: {} }; };
   const logs = [];
   s.Logger = { log: (m) => logs.push(String(m)) };
@@ -540,6 +569,22 @@ test('preenchimento PINEX na memoria roda sem operacao nao suportada e renderiza
   assert.deepEqual(plano(spec.ordem), ['Folha de Agendamento (DHL/PINEX)', 'Commercial Invoice (PINEX)',
     'Petição de Anuência de Exportação (PINEX)', 'USDA Statement (PINEX)', 'Ficha de Emergência (PINEX)', 'Declaração de Transporte']);
   for (const titulo of spec.ordem.slice(1)) assert.match(s.transporteDocsGradeHtml_(abas[titulo], {}), /^<table class="grade"/, titulo);
+});
+
+test('B14 da Declaracao: texto padrao do modelo sem conteudo cadastrado; o cadastrado prevalece', () => {
+  const arquivo = servidor().transporteLayoutsCarregar_(ARQUIVO);
+  const b14 = (s, registro) => {
+    s.Session = { getScriptTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone };
+    s.Utilities = Object.assign({}, s.Utilities, { formatDate: utilitiesFormatDate });
+    return texto(s.transporteDocsDados_(registro, { arquivo }).abas(), 'Declaração de Transporte', 'B14', s);
+  };
+  const padrao = 'conformidade com as regulamentações da IATA vigente e Resolução 5947 / ANTT de 01/06/2021 do Ministério dos Transportes.';
+  // O layout congelado nao traz B14 (celula gravada pelo preenchimento).
+  assert.equal(b14(servidor(), registroMarken({ courier: 'PINEX', pinexColeta: '1', pinexAwb: '123456789012' })), padrao);
+  assert.equal(b14(servidor(), registroMarken()), padrao);
+  const s = servidor();
+  s.transporteReadAgendaCourierConfigs_ = () => ({ marken: { nome: 'MARKEN', conteudoDeclaracao: 'conteudo <b>da courier</b>' } });
+  assert.equal(b14(s, registroMarken()), 'conteudo da courier');
 });
 
 test('geracao em memoria: so HTML, couriers validadas e courier igual a do registro', () => {

@@ -731,6 +731,17 @@ function transporteLayoutsPlanilha_(arquivo, opcoes) {
  * registrar aviso (rotinas que engolem erros), para nunca gerar documento incompleto.
  * Devolve { ss, abas(titulos) } com abas no formato de transporteDocsGradeMontar_.
  */
+// B14 da Declaracao de Transporte so e gravado quando a courier tem conteudo cadastrado
+// (transporteAplicarCourierConfig_); sem ele a planilha real mantem o texto padrao do modelo.
+// O layout congelado apaga as celulas gravadas pelo preenchimento, entao o padrao volta aqui.
+function transporteDocsDadosDeclaracaoPadrao_(ss) {
+  var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', false);
+  if (!declaracao) return;
+  var b14 = declaracao.getRange('B14');
+  if (String(b14.getDisplayValue() || '').trim()) return;
+  transporteSetRichTextOrValue_(b14, TRANSPORTE_DOCS_HTML_B14_PADRAO_);
+}
+
 function transporteDocsDados_(registro, opcoes) {
   opcoes = opcoes || {};
   registro = registro || {};
@@ -745,6 +756,7 @@ function transporteDocsDados_(registro, opcoes) {
     var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
     transporteEscreverCamposModelos_(ss, registro, transporteMateriaisNote_('', registro, peticao));
     transportePrepararDocumentosModelos_(ss, registro);
+    transporteDocsDadosDeclaracaoPadrao_(ss);
     transporteAjustarVolumesDeclaracao_(transporteGetSheet_(ss, 'declaracaoTransp', false), true);
   } catch (e) {
     erro = e;
