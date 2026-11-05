@@ -3147,7 +3147,7 @@ function transporteAwbRegistro_(registro) {
 
 function transporteAwbAviso_(registro) {
   if (!String(registro.awb || '').trim()) return null;
-  var context = agendaAwbContexto_(getAgendaSheetForRead_());
+  var context = agendaAwbContextoFocado_(getAgendaSheetForRead_(), registro.awb, [registro.idAgenda]);
   var entry = transporteAwbRegistro_(registro);
   var other = agendaAwbConflito_(context, entry);
   return other ? { awb: entry.awb, text: agendaAwbMensagem_(entry.awb, other) } : null;
@@ -3167,7 +3167,7 @@ function transporteAwbReservar_(payload, strict) {
   var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
   var agendaAwb = getAgendaSheetForRead_();
   lap('awb_aba_agenda');
-  var context = agendaAwbContexto_(agendaAwb);
+  var context = agendaAwbContextoFocado_(agendaAwb, payload.awb, [payload.idAgenda]);
   lap('awb_contexto', context.entries.length);
   transporteAwbPreservarFormulario_(payload, context);
   lap('awb_formulario');
@@ -3336,7 +3336,8 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes) {
   var folhaDhl;
   var peticao;
   var materiaisNote;
-  // Registro e AWB compartilham uma leitura da Agenda (sem gravacoes na Agenda neste trecho).
+  // Se o registro precisar ler a Agenda inteira, a AWB reaproveita essa leitura (sem gravacoes
+  // na Agenda neste trecho). No caminho normal nenhum dos dois le a Agenda inteira.
   transporteMeasurePerformance_('salvarTransporte', 'read_prepare', { rowCount: 1 }, function() { return transporteAgendaLeituraCompartilhada_(function() {
     // Subetapas de read_prepare: localizam o gargalo sem alterar o fluxo.
     var lap = transporteLapStart_('salvarTransporte');
@@ -4146,6 +4147,7 @@ function transporteSincronizarAgenda_(payload) {
   var linhaRange = agenda.getRange(linha, 1, 1, largura);
   var exibidos = linhaRange.getDisplayValues()[0];
   var valores = linhaRange.getValues()[0];
+  lap('as_linha');
   function atual(c, semValor) {
     return String(exibidos[c] || (semValor ? '' : valores[c]) || '').trim();
   }
@@ -4198,12 +4200,13 @@ function transporteSincronizarAgenda_(payload) {
   }
   // Escritas em sequencia, sem leituras intercaladas (celulas distintas da mesma linha).
   escritas.forEach(function(w) { agenda.getRange(linha, w.c + 1).setValue(w.value); });
+  lap('as_campos', changes.length);
 
   var slotRoman = { '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[slot];
   if (slotRoman && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
     agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual, slotRoman);
   }
-  lap('as_campos', changes.length);
+  lap('as_backup_vinculo');
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {
     codexWriteAuditChanges_('Agenda', 'salvarTransporte', idAgenda, changes, 'Dados sincronizados pela tela de Transporte de Amostras');
   }
@@ -5904,6 +5907,8 @@ function performContentDeletion_() {
 function criarRascunhoEmail_(options) {
   try {
     options = options || {};
+    // Subetapas de draft: localizam o gargalo sem alterar o fluxo.
+    var lap = transporteLapStart_('gerarPdfTransporte');
     var ss = getTransporteSpreadsheetCodex_();
     var folha = transporteCodexGetSheet_(ss, 'folhaAgendamento', true);
     var cfg = folha.getRange('C4:C12').getValues();
@@ -5970,6 +5975,7 @@ function criarRascunhoEmail_(options) {
         requestedByEmail: requestedByEmail
       };
     }
+    lap('dr_corpo');
     var remetente = transporteActiveUserEmail_();
     var cc = transporteCaixaCopias_(transporteDraftCcRecipients_(remetente), caixaPayload);
     var attachments = (transporteIsDhl_(courier) || courier === 'PINEX (Agendamento)') ? [] : transporteCodexEmailAttachments_(ss, projeto);
@@ -5980,7 +5986,9 @@ function criarRascunhoEmail_(options) {
         Logger.log('PDF PINEX nao anexado ao rascunho: ' + pdfAttachError.toString());
       }
     }
+    lap('dr_anexos', attachments.length);
     var htmlBody = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(html + '<p>Atenciosamente,</p>') + getGmailSignature() + transporteMonitorRefHtml_(refInterna, options.pdfHash, options.generationRequestId));
+    lap('dr_assinatura');
     var draftOptions = {
       htmlBody: htmlBody,
       attachments: attachments
@@ -5989,7 +5997,9 @@ function criarRascunhoEmail_(options) {
     // Revalidar apos montar corpo e anexos, imediatamente antes do efeito Gmail.
     if (temperaturaConfirmada) transporteValidarTemperaturaGeracao_(temperaturaConfirmada, folha.getRange('C6').getDisplayValue());
     transporteGenerationCheckpoint_({ phase: 'DRAFT_INTENT' });
+    lap.reset();
     var draft = GmailApp.createDraft(destinatarios.join(', '), assunto, '', draftOptions);
+    lap('dr_gmail');
     var draftId = '';
     try {
       draftId = draft && draft.getId ? String(draft.getId() || '') : '';
@@ -7195,12 +7205,18 @@ function transporteCaixaDoModelo_(ss) {
   return payload;
 }
 
-function transporteCaixasRegras_() {
+// chaveProjeto: so as regras desse projeto, sem ler Courier e LabCentral quando ele nao tem regra.
+function transporteCaixasRegras_(chaveProjeto) {
   if (typeof getCodexSheetDataByName_ !== 'function') return [];
   var rows = getCodexSheetDataByName_('Projetos') || [];
   var column = (rows[0] || []).map(transporteParticipantKey_).indexOf(transporteParticipantKey_('Caixas especiais transporte (JSON)'));
   if (column < 0) return [];
   var projects = rows.slice(1).filter(function(row) { return row[0] !== '' && row[0] !== undefined && row[0] !== null && String(row[column] || '').trim(); });
+  if (chaveProjeto !== undefined) {
+    projects = projects.filter(function(row) {
+      return transporteCaixaRegraDoProjeto_({ projetoId: String(row[0]), nomeAbreviado: String(row[1] || ''), codigo: String(row[2] || '') }, chaveProjeto);
+    });
+  }
   if (!projects.length) return [];
   var couriers = getAgendaCourierRows_();
   var labs = getProjetoCaixasLaboratorios_();
@@ -7266,13 +7282,17 @@ function transporteCaixasAnotarPendencias_(pendencias) {
 
 function transporteCaixaResolver_(ss, payload) {
   // Nunca confiar na caixa/valores enviados pelo cliente; recuperar somente snapshots do servidor.
+  var lap = transporteLapStart_('salvarTransporte');
   var range = transporteCaixaAgendaRange_(payload);
-  var saved = range && typeof range.getNote === 'function' ? transporteCaixaNoteRead_(range.getNote()) : null;
+  var notaAgenda = range && typeof range.getNote === 'function' ? range.getNote() : null;
+  var saved = notaAgenda !== null ? transporteCaixaNoteRead_(notaAgenda) : null;
+  lap('cx_nota_agenda');
   if (transporteCaixaCompativel_(saved, payload)) return saved;
   saved = transporteCaixaAtual_(ss, payload);
   if (saved && saved.confirmado === true) return saved;
-  var rules = transporteCaixasRegras_();
   var key = transporteParticipantKey_(payload.protocolo);
+  var rules = transporteCaixasRegras_(key);
+  lap('cx_regras', rules.length);
   var matches = rules.filter(function(rule) {
     var projectMatches = transporteCaixaRegraDoProjeto_(rule, key);
     if (projectMatches && rule.erro) throw new Error(rule.erro);
@@ -7286,7 +7306,7 @@ function transporteCaixaResolver_(ss, payload) {
   var snapshot = { versao: 1, contexto: transporteCaixaContexto_(payload), tipoCaixa: match ? match.tipoCaixa : '',
     projetoId: match ? match.projetoId : '', courierId: match ? match.courierId : '', laboratorioId: match ? match.laboratorioId : '' };
   // Validar a nota antes da primeira escrita nos documentos; manter margem para a confirmacao.
-  if (range) transporteCaixaNoteWrite_(range.getNote(), snapshot);
+  if (range) transporteCaixaNoteWrite_(notaAgenda, snapshot);
   return snapshot;
 }
 

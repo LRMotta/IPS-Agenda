@@ -59,7 +59,7 @@ function courierLembreteIndexar_(rows, key) {
   return out;
 }
 
-function courierLembreteAgendaSnapshot_(somenteIndice) {
+function courierLembreteAgendaSnapshot_(somenteIndice, semFeriados) {
   var sh = getAgendaSheetForRead_();
   var idx = AGENDA_CFG.idx;
   var lastRow = sh.getLastRow();
@@ -75,7 +75,7 @@ function courierLembreteAgendaSnapshot_(somenteIndice) {
     sheet: sh,
     somenteIndice: !!somenteIndice,
     porId: courierLembreteIndexar_(entries, function(e) { return String(e.values[idx.id]).trim(); }),
-    feriados: getAgendaFeriadosPendenciasMap_()
+    feriados: semFeriados ? null : getAgendaFeriadosPendenciasMap_()
   };
 }
 
@@ -107,7 +107,8 @@ function courierLembreteOperacaoAtual_(item, op) {
 
 function courierLembreteRegistrarBase_(agendaId, slot, gerado, vinculoIniciadoEm) {
   // Chamado somente durante geração nova. Nunca preenche vínculos do histórico.
-  var atual = courierLembreteAgenda_(agendaId, slot);
+  // Registrar a base so usa a linha; a verificacao de horarios le os feriados depois.
+  var atual = courierLembreteAgenda_(agendaId, slot, courierLembreteAgendaSnapshot_(true, true));
   if (!atual) return;
   // Novo vinculo possui base propria; cobrancas antigas, inclusive incertas, permanecem intactas.
   var key = agendaId + ':' + slot + (vinculoIniciadoEm ? ':V' + new Date(vinculoIniciadoEm).getTime() : '');
