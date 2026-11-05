@@ -4,14 +4,14 @@ const crypto = require('node:crypto');
 const { runFiles } = require('./load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./fake-spreadsheet');
 
-function fixture() {
+function fixture(options = {}) {
   let email = 'editor@exemplo.invalid';
   let spreadsheetId = 'BASE-TESTE';
   const props = new Map();
   let locked = false;
   const utilities = {
     getUuid: () => crypto.randomUUID(),
-    base64EncodeWebSafe: value => Buffer.from(value).toString('base64url'),
+    base64EncodeWebSafe: value => Buffer.from(value, options.base64Charset || 'utf8').toString('base64url'),
     base64DecodeWebSafe: value => Buffer.from(value, 'base64url'),
     newBlob: value => ({ getDataAsString: () => Buffer.from(value).toString() }),
     computeHmacSha256Signature: (value, key) => crypto.createHmac('sha256', key).update(value).digest(),

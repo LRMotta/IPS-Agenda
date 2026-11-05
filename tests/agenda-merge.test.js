@@ -134,3 +134,22 @@ test('metadados desconhecidos de materiais nao sao descartados por uma combinaca
   assert.equal(c.atualizarAgendaEventoCompleto(payload).conflito, true);
   assert.equal(sheet.writes, 0);
 });
+
+test('acentos na referencia assinada nao viram conflito quando o base64 nao usa UTF-8', () => {
+  const { c, i, sheet } = fixture({ base64Charset: 'latin1' });
+  const row = sheet.rows[1];
+  row[i.participante] = 'Pessoa Lourenço';
+  row[i.c1.status] = 'Agendado';
+  row[i.c2.status] = 'Não Agendado';
+  row[i.c2.awb] = '';
+  const event = c.agendaRowToObject_(row, 2);
+  const form = c.agendaMergePayloadFromEvent_(event);
+  const payload = Object.assign({}, form, { id: 'A', courier2: Object.assign({}, form.courier2, { awb: '620X41252059', awbTouched: true }),
+    _recordVersion: event.recordVersion, _editRecordVersion: event.editRecordVersion, _editMergeToken: c.agendaIssueMergeToken_(row, event) });
+  row[i.c1.status] = 'Confirmado'; // Monitor de e-mail durante a edicao.
+  const result = c.codexWithDocumentLock_('teste', () => c.agendaTryMergeEdit_(payload, row));
+  assert.equal(result.ok, true, Array.from(result.fields || []).join('; '));
+  assert.equal(result.dados.courier1.status, 'Confirmado');
+  assert.equal(result.dados.courier2.awb, '620X41252059');
+  assert.equal(result.dados.participante, 'Pessoa Lourenço');
+});
