@@ -211,6 +211,16 @@ test('Crēdo Cube não se aplica a outra courier nem a temperatura mista; respos
   assert.doesNotThrow(() => s.transporteCaixaNoteRead_('[IPS_CAIXA_V1]{"versao":1,"contexto":[],"tipoCaixa":"CREDO_CUBE"}[/IPS_CAIXA_V1]'));
 });
 
+test('feriados do prazo da Crēdo Cube só são lidos quando alguma regra usa a caixa', () => {
+  const s = runFile('TransporteCodexConfig.gs', { Logger: { log() {} } });
+  let leituras = 0;
+  s.getAgendaFeriadosPendenciasMap_ = () => { leituras++; return { '2026-11-12': true }; };
+  assert.equal(s.transporteCaixasFeriados_([{ tipoCaixa: 'BIOSYSTEM' }]), null);
+  assert.equal(s.transporteCaixasFeriados_(undefined), null);
+  assert.equal(leituras, 0);
+  assert.equal(s.transporteCaixasFeriados_([{ tipoCaixa: 'CREDO_CUBE' }])['2026-11-12'], true);
+});
+
 test('hash documental muda com a caixa e nota inválida não é inferida', () => {
   const { s, payload } = fixture();
   const base = s.transportePdfDocumentoHash_({}, payload);
@@ -234,14 +244,16 @@ test('rascunho BioSystem vai para operações, Crēdo Cube para protocolos; Sepi
     s.transporteAssertGmailDraftAllowed_ = () => ({ ok: true });
     s.transporteActiveUserEmail_ = s.transporteEffectiveUserEmail_ = () => 'teste@example.invalid';
     s.transporteCodexSaudacao_ = () => 'Bom dia'; s.transporteCodexFormatDateTitle_ = () => '';
-    s.transporteDraftCcRecipients_ = () => []; s.transporteCodexEmailAttachments_ = () => [];
+    s.transporteDraftCcRecipients_ = () => ['equipe@example.invalid', 'ExpoBrasil@marken.com']; s.transporteCodexEmailAttachments_ = () => [];
     s.getGmailSignature = () => ''; s.transporteGmailAuthorizationUrl_ = () => '';
     const drafts = [];
-    s.GmailApp = { createDraft: (to, _title, _body, options) => { drafts.push({ to, html: options.htmlBody }); return { getId: () => 'DRAFT-1' }; } };
+    s.GmailApp = { createDraft: (to, _title, _body, options) => { drafts.push({ to, cc: options.cc, html: options.htmlBody }); return { getId: () => 'DRAFT-1' }; } };
     const result = s.criarRascunhoEmail_({ temperaturaPdf: 'AMBIENTE' });
     assert.equal(result.ok, true, result.message);
     const especiais = { BIOSYSTEM: 'operacoes.cs@marken.com', CREDO_CUBE: 'protocolos.credo@marken.com' };
     assert.equal(drafts[0].to, especiais[type] || payload.courier.toLowerCase() + '@example.invalid');
+    // Crēdo Cube: equipe segue em cópia, expobrasil não; demais caixas não mudam.
+    assert.equal(drafts[0].cc, type === 'CREDO_CUBE' ? 'equipe@example.invalid' : 'equipe@example.invalid, ExpoBrasil@marken.com');
     if (type === 'SEPIO') {
       assert.match(drafts[0].html, />Não<\/td>/);
       assert.equal(email.getRange('B8').getValue(), '');

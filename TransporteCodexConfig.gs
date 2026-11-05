@@ -3197,6 +3197,7 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
     });
     // Regras do projeto sao lidas nesta execucao; o cache de opcoes nao decide a embalagem.
     options.caixasTransporteRegras = transporteCaixasRegras_();
+    options.feriadosCredoCube = transporteCaixasFeriados_(options.caixasTransporteRegras);
     // Exibir a temperatura mista ja registrada sem ampliar as opcoes dos demais transportes.
     if (registro.temperatura === 'AMBIENTE + REFRIGERADO' && options.temperaturas.indexOf(registro.temperatura) < 0) {
       options.temperaturas = options.temperaturas.concat([registro.temperatura]);
@@ -5934,7 +5935,7 @@ function criarRascunhoEmail_(options) {
       };
     }
     var remetente = transporteActiveUserEmail_();
-    var cc = transporteDraftCcRecipients_(remetente);
+    var cc = transporteCaixaCopias_(transporteDraftCcRecipients_(remetente), caixaPayload);
     var attachments = (transporteIsDhl_(courier) || courier === 'PINEX (Agendamento)') ? [] : transporteCodexEmailAttachments_(ss, projeto);
     if (courier === 'PINEX (Agendamento)' && options.pdfFileId) {
       try {
@@ -7240,6 +7241,18 @@ function transporteCaixaCredoCube_(payload) {
   return !!(payload && payload.caixaTransporte && payload.caixaTransporte.tipoCaixa === 'CREDO_CUBE' &&
     transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' &&
     TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_.indexOf(transporteNormalizeTemperaturaFromCodex_(payload.temperatura)) >= 0);
+}
+
+// Credo Cube vai so para protocolos.credo: expobrasil sai da copia, a equipe permanece.
+function transporteCaixaCopias_(cc, payload) {
+  if (!transporteCaixaCredoCube_(payload)) return cc;
+  return cc.filter(function(email) { return transporteNormalizeEmail_(email) !== 'expobrasil@marken.com'; });
+}
+
+// Prazo da Credo Cube na tela: feriados so entram na abertura quando alguma regra usa a caixa.
+function transporteCaixasFeriados_(regras) {
+  var usaCredoCube = (regras || []).some(function(regra) { return regra.tipoCaixa === 'CREDO_CUBE'; });
+  return usaCredoCube ? getAgendaFeriadosPendenciasMap_() : null;
 }
 
 function transporteCaixaRespostaEspecial_(payload) {

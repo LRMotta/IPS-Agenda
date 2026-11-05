@@ -36,6 +36,17 @@ test('Transporte aplica BioSystem, remove efeito ao trocar combinação e conser
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim, Crēdo Cube');
     assert.equal(await page.locator('#solicitarCaixa').isDisabled(), true);
     assert.match(await page.locator('#caixaEspecialResumo').innerText(), /protocolos\.credo@marken\.com.*5 kg.*Sem gelo seco/);
+    // Quarta 11/11/2026: sexta conta 2 dias úteis; feriado na quinta e fim de semana não contam.
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-13', {})), 2);
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-12', {})), 1);
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-13', { '2026-11-12': true })), 1);
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-13', '2026-11-16', {})), 1);
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-13', { '--11-12': true })), 1);
+    const prazo = /pelo menos 2 dias úteis de antecedência/;
+    await page.evaluate(() => { document.getElementById('dataEnvio').value = new Date().toLocaleDateString('en-CA'); window.renderDerived(); });
+    assert.match(await page.locator('body').innerText(), prazo);
+    await page.evaluate(() => { document.getElementById('dataEnvio').value = new Date(Date.now() + 30 * 864e5).toLocaleDateString('en-CA'); window.renderDerived(); });
+    assert.doesNotMatch(await page.locator('body').innerText(), prazo);
     await page.evaluate(() => window.selectTemp('CONGELADO'));
     assert.equal(await page.locator('#caixaEspecialField').isVisible(), false);
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Não');
