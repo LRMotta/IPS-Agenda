@@ -250,6 +250,23 @@ test('servidor recusa campo fora do contrato e versão desconhecida', () => {
   assert.throws(() => s.validarImportacaoSoA({ ...p, dados: { ...p.dados, schema_version: '2.0.0' } }), /Versão de exportação/);
 });
 
+test('leitura alheia ao plano revisado não invalida a importação', () => {
+  const { s, p } = fixture();
+  const preview = s.validarImportacaoSoA(p);
+  const readArms = s.getBracosProjeto;
+  s.getBracosProjeto = projeto => readArms(projeto).concat({ idBraco: 'OUTRO', projeto, nome: 'Outro braço', ordem: 9, ativo: true, observacoes: '' });
+  const result = s.importarSoAJson({ ...p, confirmarRevisaoPlanejamento: true, fingerprintPlanejamento: preview.fingerprint, fingerprintPartesPlanejamento: preview.fingerprintPartes });
+  assert.equal(result.adicionadas, 7);
+});
+
+test('mudança no plano revisado bloqueia e informa a parte alterada, sem gravar', () => {
+  const { s, p } = fixture();
+  const preview = s.validarImportacaoSoA(p);
+  s.getSoAVisitasProjeto = () => [{ idSoA: 'SOA-1', codigo: 'C2', nome: 'Ciclo 2', aliases: '', bracoIds: [] }];
+  assert.throws(() => s.importarSoAJson({ ...p, confirmarRevisaoPlanejamento: true, fingerprintPlanejamento: preview.fingerprint, fingerprintPartesPlanejamento: preview.fingerprintPartes }), /Valide novamente.*Partes alteradas: .*plano/);
+  assert.equal(s.getBracosProjeto('Estudo local').length, 0);
+});
+
 test('prévia desatualizada pelo braço não pode ser aplicada', () => {
   const { s, p } = fixture();
   const preview = s.validarImportacaoSoA(p);

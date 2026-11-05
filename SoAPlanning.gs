@@ -216,7 +216,10 @@ function soaPlanningPrepare_(payload) {
     if (commonKept) notice('polo-common', commonKept + ' visita(s) já cadastrada(s) para todos os braços continuam comuns.');
   }
   var fingerprint = soaPlanningHash_(JSON.stringify([p.raw,p.projeto,p.modo,p.criarBracos,p.braco,p.baseCalculo,selected,existingArms,existingVisits]));
-  return {ok:!errors.length,projeto:p.projeto,modo:p.modo,criarBracos:p.criarBracos,missingBracos:missing,bracosExistentes:existingArms,erros:errors,alertas:issues.map(function(x) { return x.message; }),revisaoNecessaria:[],visitas:normalized,totalVisitas:visits.length,novasVisitas:normalized.filter(function(x) { return !x.existente; }).length,atualizacoes:p.modo === 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ignoradas:p.modo !== 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ordensManuaisPreservadas:normalized.filter(function(x) { return x.ordemManual; }).length,podeImportar:!issues.some(function(x) { return x.blocking; }),fingerprint:fingerprint,planejamento:{schema:d.schema,version:d.schema_version,study:d.study || {},rules:rules,issues:issues,draftOnly:!!(poc || d.import_mode === 'preview_only'),origem:polo ? 'polo' : '',braco:polo ? p.braco : ''}};
+  var fingerprintParts = polo ? soaPoloFingerprintParts_(p, selected, existingArms, existingVisits, normalized, missing) : null;
+  // A Polo review covers the resulting plan; unrelated catalog reads must not void it.
+  if (polo) fingerprint = soaPlanningHash_(JSON.stringify([fingerprintParts.escolhas, fingerprintParts.plano]));
+  return {ok:!errors.length,projeto:p.projeto,modo:p.modo,criarBracos:p.criarBracos,missingBracos:missing,bracosExistentes:existingArms,erros:errors,alertas:issues.map(function(x) { return x.message; }),revisaoNecessaria:[],visitas:normalized,totalVisitas:visits.length,novasVisitas:normalized.filter(function(x) { return !x.existente; }).length,atualizacoes:p.modo === 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ignoradas:p.modo !== 'atualizar' ? normalized.filter(function(x) { return x.existente; }).length : 0,ordensManuaisPreservadas:normalized.filter(function(x) { return x.ordemManual; }).length,podeImportar:!issues.some(function(x) { return x.blocking; }),fingerprint:fingerprint,fingerprintPartes:fingerprintParts,planejamento:{schema:d.schema,version:d.schema_version,study:d.study || {},rules:rules,issues:issues,draftOnly:!!(poc || d.import_mode === 'preview_only'),origem:polo ? 'polo' : '',braco:polo ? p.braco : ''}};
 }
 function soaPlanningSheet_(create) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName(SOA_PLANNING_SHEET_);
@@ -255,7 +258,9 @@ function carregarPlanejamentoSoA(projeto,id) {
 function soaPlanningApply_(payload) {
   var prepared = soaPlanningPrepare_(payload);
   if (!prepared.ok || !prepared.podeImportar) throw new Error('Planejamento pendente: ' + prepared.alertas.join(' '));
-  if (payload.confirmarRevisaoPlanejamento !== true || payload.fingerprintPlanejamento !== prepared.fingerprint) throw new Error('Valide novamente e confirme a revisão do planejamento antes de aplicar.');
+  var changedParts = soaPoloChangedParts_(payload.fingerprintPartesPlanejamento, prepared.fingerprintPartes);
+  if (changedParts.length) console.warn('[SOA_PREVIA_DIVERGENTE] ' + changedParts.join(','));
+  if (payload.confirmarRevisaoPlanejamento !== true || payload.fingerprintPlanejamento !== prepared.fingerprint) throw new Error('Valide novamente e confirme a revisão do planejamento antes de aplicar.' + (changedParts.length ? ' Partes alteradas: ' + changedParts.join(', ') + '.' : ''));
   var archived = soaPlanningArchive_(payload);
   var created = soaCreateImportArms_(prepared.projeto,prepared.missingBracos);
   // Re-read the catalog after creation to resolve stable existing arm IDs.
@@ -408,6 +413,19 @@ function soaPoloPlanning_(source, projeto, braco) {
   var needsBase = rows.some(function(row) { return row.mode === 'calculated' && row.target && row.target.mode === 'calculated'; });
   return { issues: issues, needsBase: needsBase, documento: { schema: 'ips-agenda-study-planning', schema_version: '1.1.0', import_mode: 'review', approved_for_clinical_scheduling: false,
     study: { protocol_id: projeto, protocol_version: 'Exportação do Polo Trial' }, arms: [{ id: 'braco', name: braco }], visits: visits, rules: [] } };
+}
+function soaPoloFingerprintParts_(parsed, selected, existingArms, existingVisits, normalized, missing) {
+  function hash(value) { return soaPlanningHash_(JSON.stringify(value)); }
+  var plan = normalized.map(function(visit) {
+    return [visit.idSoA, visit.codigo, visit.nome, visit.ordem, visit.intervaloDias, visit.janelaDiasMenos, visit.janelaDiasMais, visit.bracoNomes, visit.aliases,
+      visit.observacoes, visit.referencia, visit.baseCalculo, visit.schedulingMode, visit.papelCronograma, visit.existente];
+  });
+  return { arquivo: hash(parsed.raw), escolhas: hash([parsed.projeto, parsed.modo, parsed.criarBracos, parsed.braco, parsed.baseCalculo]), plano: hash([plan, missing]),
+    projeto: hash(selected), bracos: hash(existingArms), visitas: hash(existingVisits) };
+}
+function soaPoloChangedParts_(reviewed, current) {
+  if (!soaPlanningObject_(reviewed) || !current) return [];
+  return Object.keys(current).filter(function(key) { return reviewed[key] !== current[key]; });
 }
 function soaPoloVisitBase_(manual, parsed, previous, projectBase) {
   var kept = String(previous.baseCalculo || '');

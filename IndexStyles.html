@@ -1126,9 +1126,12 @@
 #modalSoAImport .modal-header > div:nth-child(2) { min-width:0; }
 #modalSoAImport .material-symbols-outlined { width:1em; overflow:hidden; }
 #modalSoAImport .soa-modal-actions .btn-txt { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
-#modalSoAImport .soa-modal-actions .btn-save { padding:0 14px; letter-spacing:.3px; }
 #modalSoAImport .modal-body { overflow-y:auto; min-height:0; overscroll-behavior:contain; }
-#modalSoAImport .soa-import-footer { flex-shrink:0; padding:14px 22px; border-top:1px solid var(--primary-border); background:var(--surface); }
+#modalSoAImport .form-section:last-child { margin-bottom:0; }
+#modalSoAImport .required-star { line-height:0; }
+#soaImportArquivo { padding:3px 12px 3px 3px; color:var(--text-muted); cursor:pointer; }
+#soaImportArquivo::file-selector-button { height:31px; margin-right:12px; padding:0 12px; border:1px solid #d8e0ec; border-radius:var(--r-sm); background:#fff; color:var(--primary); font-family:'Roboto',sans-serif; font-size:12px; font-weight:500; cursor:pointer; }
+#soaImportArquivo:hover::file-selector-button { background:#f1f5fb; border-color:#bacdec; }
 #modalSoAImport .soa-import-footer .status-msg { margin:6px 0; }
 #modalSoAImport .soa-modal-actions { flex-wrap:wrap; }
 #modalSoAImport .soa-import-next-step { padding:10px 2px; color:var(--text-muted); font-size:12px; line-height:1.5; }
@@ -1140,12 +1143,11 @@
 #modalSoAImport .soa-import-row > span { min-width:0; }
 #modalSoAImport .soa-import-row > span:first-child { flex:1; }
 #modalSoAImport .soa-import-row > span:last-child { flex:1; }
-#modalSoAImport .soa-import-preview { max-height:none; overflow:visible; }
+#modalSoAImport .soa-import-preview { max-height:none; margin-bottom:0; overflow:visible; border:0; }
 .participant-milestones-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .participant-milestones-section .participant-form-guidance { margin-bottom:14px; }
 @media(max-width:600px) { .participant-milestones-grid { grid-template-columns:1fr; } }
 @media(max-width:600px) {
-  #modalSoAImport .soa-import-footer { padding:10px 14px; }
   #modalSoAImport .modal-header { padding:14px; gap:8px; }
   #modalSoAImport .modal-header-title { font-size:13px; }
   #modalSoAImport .soa-modal-actions .btn-save { font-size:11px; padding:0 6px; }
