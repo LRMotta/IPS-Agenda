@@ -10,29 +10,36 @@ const { loadPlaywright } = require('../helpers/playwright-runtime');
 const { readProjectFile } = require('../helpers/load-app-script');
 const { contentAccessibilitySource } = require('../helpers/content-accessibility-source');
 const { planningIntegration } = require('../helpers/soa-planning-integration');
+const { poloCsv, chainedVisits, singleAnchorVisits, fixed } = require('../helpers/polo-flowchart-fixture');
+
+const csvFile = (visits, name = 'Polo_Trial_Flowchart.csv') => ({ name, mimeType: 'text/csv', buffer: Buffer.from(poloCsv(visits), 'utf8') });
 
 for (const width of [2560, 1280, 390]) {
-  test('planejamento IA: prévia, rascunho e aplicação revisada em ' + width + 'px', async () => {
-    // Browser plugin not available. Real local handlers and server with simulated Sheets only.
+  test('Cronograma de Avaliações: CSV do Polo, prévia e importação revisada em ' + width + 'px', async () => {
+    // Real local handlers and server with simulated Sheets only.
     const browser = await loadPlaywright().chromium.launch({ headless: true });
     try {
-      const { server, spreadsheet, canonical, poc } = planningIntegration();
+      const { server } = planningIntegration();
+      server.getProjetoBaseCalculoPadrao_ = () => 'MANTER_DATAS_PREVISTAS';
       const page = await browser.newPage({ viewport: { width, height: 960 } });
-      const errors = [];
+      const errors = [], payloads = [];
       await page.route('**/*', route => route.abort());
       page.on('pageerror', e => errors.push(e.message));
       page.on('console', m => { if (['error', 'warning'].includes(m.type())) errors.push(m.text()); });
       await page.exposeFunction('planningRpc', async (method, args) => {
-        assert.ok(['listarPlanejamentosSoA', 'carregarPlanejamentoSoA', 'salvarPlanejamentoSoA', 'validarImportacaoSoA', 'importarSoAJson'].includes(method));
+        assert.ok(['validarImportacaoSoA', 'importarSoAJson'].includes(method));
+        payloads.push(JSON.stringify(args));
         return JSON.parse(JSON.stringify(server[method](...args)));
       });
-      await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS — planejamento local</title>' +
+      await page.setContent('<!doctype html><html lang="pt-BR"><head><title>IPS — cronograma local</title>' +
         readProjectFile('IndexStyles.html') + readProjectFile('IndexStylesAfterDashboard.html') +
         '</head><body>' + readProjectFile('IndexContentAfterStock.html') + '</body></html>');
       const core = readProjectFile('IndexCoreScripts.html');
       const importer = core.slice(core.indexOf('var _soaImportDadosAtual'), core.indexOf('function excluirSoAVisitaApp'));
+      await page.addScriptTag({ content: readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/i, '').replace(/<\/script>\s*$/i, '') });
       await page.addScriptTag({ content: `
-        var _soaProjetoAtual = { nomeAbreviado: 'BGB-43395-302' };
+        var _soaProjetoAtual = { nomeAbreviado: 'Estudo local' };
+        var _bracosProjetoAtual = [{ nome: 'Braço cadastrado' }, { nome: 'Braço inativo', ativo: false }];
         var testRequests = [], testSuccess = '';
         function esc(value) { return String(value == null ? '' : value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
         function appSetStatus(id,message) { document.getElementById(id).textContent = message; }
@@ -48,20 +55,49 @@ for (const width of [2560, 1280, 390]) {
         ${importer}
         abrirSoAImportForm();
       ` });
-      await page.addScriptTag({ content: readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/i,'').replace(/<\/script>\s*$/i,'') });
       assert.equal(page.url(), 'about:blank');
-      assert.equal(await page.title(), 'IPS — planejamento local');
-      assert.ok((await page.locator('#modalSoAImport').innerText()).includes('IMPORTAR CALENDÁRIO'));
-      assert.equal(await page.locator('nextjs-portal, vite-error-overlay').count(), 0);
-      const downloadPromise = page.waitForEvent('download');
-      await page.getByRole('button', { name: 'Baixar instruções para IA' }).click();
-      const download = await downloadPromise;
-      assert.equal(download.suggestedFilename(), 'ips-agenda-instrucoes-extracao-1.1.0.txt');
-      assert.equal(fs.readFileSync(await download.path(), 'utf8').trim(), readProjectFile('docs/INSTRUCOES_EXTRACAO_IA.txt').trim());
-      await page.locator('#soaImportTexto').fill(JSON.stringify(poc));
+      assert.ok((await page.locator('#modalSoAImport').innerText()).includes('IMPORTAR CRONOGRAMA DE AVALIAÇÕES'));
+      assert.equal(await page.locator('#soaImportBracosLista option').count(), 1);
+      assert.equal(await page.getByRole('button', { name: 'Baixar instruções para IA' }).count(), 0);
+      assert.equal(await page.locator('#btnSalvarPlanejamentoSoA').count(), 0);
+
       await page.locator('#btnPreviewSoA').click();
-      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Rascunho recebido'));
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.includes('Selecione o arquivo CSV'));
+      await page.locator('#soaImportArquivo').setInputFiles(csvFile(chainedVisits()));
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Arquivo carregado'));
+      await page.locator('#btnPreviewSoA').click();
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.includes('Informe o nome do braço'));
+
+      // A blocked file shows what to fix and cannot be applied.
+      const broken = singleAnchorVisits();
+      broken.splice(4, 0, fixed('Ciclo 4 / Cycle 4', 28));
+      await page.locator('#soaImportArquivo').setInputFiles(csvFile(broken, 'bloqueado.csv'));
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Arquivo carregado'));
+      await page.locator('#soaImportBraco').fill('Braço A');
+      await page.locator('#btnPreviewSoA').click();
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Há impedimentos'));
       assert.equal(await page.locator('#btnImportarSoAConfirm').isDisabled(), true);
+      assert.equal(await page.locator('#soaImportRevisaoBox').isVisible(), false);
+      await page.getByText(/^Pontos de atenção/).click();
+      assert.ok((await page.locator('#soaImportPreview').innerText()).includes('Corrija o intervalo no Polo Trial'));
+      assert.equal(await page.locator('#modalSoAImport .modal-body').evaluate(el => el.scrollWidth > el.clientWidth), false);
+
+      await page.locator('#soaImportArquivo').setInputFiles(csvFile(chainedVisits()));
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Arquivo carregado'));
+      await page.locator('#btnPreviewSoA').click();
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Prévia pronta'));
+      assert.equal(await page.locator('#btnImportarSoAConfirm').isDisabled(), true);
+      await page.locator('#soaImportRevisado').check();
+      assert.equal(await page.locator('#btnImportarSoAConfirm').isEnabled(), true);
+
+      // Changing the arm discards the review.
+      await page.locator('#soaImportBraco').fill('Braço B');
+      assert.equal(await page.locator('#btnImportarSoAConfirm').isDisabled(), true);
+      assert.equal(await page.locator('#soaImportRevisado').isChecked(), false);
+      await page.locator('#btnPreviewSoA').click();
+      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Prévia pronta'));
+      await page.locator('#soaImportRevisado').check();
+
       const modalBox = await page.locator('#modalSoAImport .modal-box').boundingBox();
       if (width === 2560) assert.ok(modalBox.width > 1000);
       await page.locator('#modalSoAImport .modal-body').evaluate(el => { el.scrollTop = el.scrollHeight; });
@@ -70,47 +106,16 @@ for (const width of [2560, 1280, 390]) {
         assert.ok(box.y >= 0 && box.y + box.height <= 961);
       }
       assert.equal(await page.locator('#modalSoAImport .modal-box').evaluate(el => el.scrollHeight > el.clientHeight), false);
-      await page.getByText('Regras extraídas (8)', { exact: true }).click();
-      assert.ok((await page.locator('#soaImportPreview').innerText()).includes('Página impressa: 100'));
-      await page.locator('#btnSalvarPlanejamentoSoA').click();
-      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Rascunho salvo'));
-      assert.equal(spreadsheet.getSheets().length, 1);
-      const saved = server.listarPlanejamentosSoA('BGB-43395-302')[0];
-      await page.waitForFunction(() => document.getElementById('soaPlanejamentoSalvo').options.length === 2);
-      await page.locator('#soaImportTexto').fill('{}');
-      await page.locator('#soaPlanejamentoSalvo').selectOption(saved.id);
-      await page.getByRole('button', { name: 'Abrir rascunho' }).click();
-      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Rascunho recebido'));
-      assert.deepEqual(JSON.parse(await page.locator('#soaImportTexto').inputValue()), poc);
-      const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(),'ips-agenda-playwright');
-      fs.mkdirSync(artifacts,{recursive:true});
-      await page.locator('#soaImportPreview').scrollIntoViewIfNeeded();
-      await page.screenshot({path:path.join(artifacts,'soa-planning-draft-' + width + '.png')});
       assert.equal(await page.locator('#modalSoAImport .modal-body').evaluate(el => el.scrollWidth > el.clientWidth), false);
+      const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(artifacts, { recursive: true });
+      await page.screenshot({ path: path.join(artifacts, 'cronograma-polo-ready-' + width + '.png') });
 
-      await page.evaluate(() => window.renderSoAImportPreview_({ok:true,podeImportar:false,totalVisitas:1,visitas:[{codigo:'V1',nome:'Visita condicional',schedulingMode:'manual',manualReason:'Conferir condições do protocolo antes de agendar. '.repeat(50)}],planejamento:{study:{},issues:[],rules:[]}}));
-      assert.equal(await page.locator('#modalSoAImport .modal-body').evaluate(el => el.scrollWidth > el.clientWidth), false);
-
-      await page.evaluate(() => { window._soaProjetoAtual = { nomeAbreviado: 'Estudo local' }; window.abrirSoAImportForm(); });
-      await page.locator('#soaImportTexto').fill(JSON.stringify(canonical));
-      await page.locator('#btnPreviewSoA').click();
-      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Prévia pronta'));
-      assert.equal(await page.locator('#btnImportarSoAConfirm').isDisabled(), true);
-      await page.locator('#soaImportRevisado').check();
-      assert.equal(await page.locator('#btnImportarSoAConfirm').isEnabled(), true);
-      await page.locator('#soaImportModo').selectOption('atualizar');
-      assert.equal(await page.locator('#btnImportarSoAConfirm').isDisabled(), true);
-      assert.equal(await page.locator('#soaImportRevisado').isChecked(), false);
-      await page.locator('#btnPreviewSoA').click();
-      await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Prévia pronta'));
-      await page.locator('#soaImportRevisado').check();
-      await page.locator('#soaImportPreview').scrollIntoViewIfNeeded();
-      await page.screenshot({path:path.join(artifacts,'soa-planning-ready-' + width + '.png')});
-      assert.equal(await page.locator('#modalSoAImport .modal-body').evaluate(el => el.scrollWidth > el.clientWidth), false);
       await page.locator('#btnImportarSoAConfirm').click();
-      await page.waitForFunction(() => window.testSuccess.includes('extração arquivada'));
-      assert.equal(server.getSoAVisitasProjeto('Estudo local').length, 2);
-      assert.equal(server.getBracosProjeto('Estudo local').length, 1);
+      await page.waitForFunction(() => window.testSuccess.includes('Cronograma de Avaliações importado'));
+      assert.equal(server.getSoAVisitasProjeto('Estudo local').length, chainedVisits().length);
+      assert.equal(server.getBracosProjeto('Estudo local')[0].nome, 'Braço B');
+      assert.doesNotMatch(payloads.join(''), /98765|12345|confidencial/);
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }
   });

@@ -1,5 +1,7 @@
 # Importação de planejamento extraído por IA
 
+> **Substituído.** A interface agora importa o Cronograma de Avaliações pelo CSV do Polo Trial: veja `IMPORTACAO_CRONOGRAMA_POLO.md`. Este documento descreve o fluxo anterior, por IA, mantido como histórico.
+
 ## Objetivo e fluxo
 
 O operador fornece o protocolo à ferramenta de IA de sua escolha e usa as instruções disponíveis em **Importar calendário SoA → Baixar instruções para IA**. A IA entrega um JSON versionado. O IPS Agenda valida e prepara a prévia; a pessoa revisa as exceções e confirma o conjunto antes de aplicar ao cadastro SoA.

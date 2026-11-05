@@ -61,7 +61,7 @@ Não transforme uma investigação local em execução de operações reais. Tes
 | Farmácia: ciclo e documentos | `FarmaciaCiclo.gs`, `IndexFarmaciaCiclo.html`, `IndexFarmaciaDocumentos.html` |
 | Farmácia: locais | `FarmaciaLocais.gs`, `FarmaciaLocationActions.gs`, `IndexFarmaciaLocationActions.html` |
 | Transporte | `TransporteApp.html`, `TransporteCodexConfig.gs`, contratos `Shared*.html` pertinentes |
-| Planejamento/SoA | `SoAPlanning.gs`, `SharedSoAPlanningImport.html`, `docs/IMPORTACAO_PLANEJAMENTO_IA.md`, `docs/INSTRUCOES_EXTRACAO_IA.txt` |
+| Cronograma de Avaliações (SoA) | `SoAPlanning.gs`, `SharedSoAPlanningImport.html`, `docs/IMPORTACAO_CRONOGRAMA_POLO.md` |
 | Efeitos externos e simuladores | `CodexExternalEffects.gs`, `tests/helpers/` |
 | Publicador | `tools/push-clasp.ps1`, `PUBLICACAO_SEGURA.md` |
 

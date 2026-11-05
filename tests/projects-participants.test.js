@@ -470,13 +470,14 @@ test('catálogo opcional de braços fica no projeto e sugere opções no partici
   assert.match(server, /function excluirBracoProjeto\(idBraco\)/);
 });
 
-test('SoA oferece importacao JSON, mantem cadastro manual e associa visitas a bracos', () => {
+test('Cronograma de Avaliações importa CSV do Polo Trial, mantem cadastro manual e associa visitas a bracos', () => {
   const modal = readProjectFile('IndexContentAfterStock.html');
   const client = readProjectFile('IndexCoreScripts.html');
   const server = readProjectFile('WebApp.gs');
   assert.match(modal, /id="btnImportarSoA"/);
   assert.match(modal, /id="modalSoAImport"/);
-  assert.match(modal, /id="soaImportTexto"/);
+  assert.match(modal, /id="soaImportBraco"/);
+  assert.doesNotMatch(modal, /id="soaImportTexto"|Baixar instruções para IA/);
   assert.match(modal, /id="soaImportArquivo"/);
   assert.match(modal, /id="soaBracosOpcoes"/);
   assert.match(client, /function previsualizarSoAJsonApp/);
@@ -1193,7 +1194,7 @@ test('SoA exibe modelos de Kit e Bulk Supply por visita e laboratório', () => {
   assert.match(client, /modelo\.laboratorio/);
   assert.match(client, /modelo\.bracosAplicaveisIds/);
   assert.match(client, /todos os braços/);
-  assert.match(estoque, /Visitas SoA aplicáveis/);
+  assert.match(estoque, /Visitas do Cronograma de Avaliações aplicáveis/);
   assert.match(server, /function estoqueTipoPermiteVinculoSoA_\(tipo\)/);
   assert.match(server, /function getModelosEstoqueSoAPorProjeto\(projeto\)/);
 });

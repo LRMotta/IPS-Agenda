@@ -338,7 +338,7 @@
 
       <div class="form-section soa-project-section">
         <div class="section-label">
-          <span class="material-symbols-outlined" aria-hidden="true">event_note</span> Calendário SoA
+          <span class="material-symbols-outlined" aria-hidden="true">event_note</span> Cronograma de Avaliações
         </div>
         <div class="field-row cols-2" style="margin-bottom:14px">
           <div><label class="field-label" for="pSoABaseCalculoPadrao">Base padrão do cronograma</label><select id="pSoABaseCalculoPadrao" class="f-input"><option value="">Sem regra padrão (legado)</option><option value="MANTER_DATAS_PREVISTAS">Manter datas previstas</option><option value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada</option></select><div class="field-help">As visitas configuradas para usar a regra do protocolo herdam esta opção.</div></div>
@@ -347,10 +347,10 @@
         </div>
         <div class="soa-project-toolbar">
           <div class="soa-project-help">Configure nomes, ordem e, quando disponível no protocolo, o papel no cronograma, as referências, a base do cálculo, o intervalo previsto e a janela de cada visita. Arraste pelo marcador à esquerda ou use as setas do teclado para reorganizar.<span class="soa-order-pending" id="soaOrdemPendente" hidden>Nova ordem ainda não salva.</span></div>
-          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnDescartarOrdemSoA" onclick="descartarOrdemSoAApp()" hidden><span class="material-symbols-outlined" aria-hidden="true">undo</span> Descartar</button><button type="button" class="btn-save soa-order-save" id="btnSalvarOrdemSoA" onclick="salvarOrdemSoAApp()" hidden><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnSugerirOrdemSoA" onclick="abrirSugestaoOrdemSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span> Sugerir ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnReplicarCicloSoA" onclick="abrirReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span> Replicar ciclo</button><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span> Importar JSON</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar visita</button></div>
+          <div class="soa-project-toolbar-actions"><button type="button" class="btn-txt soa-add-btn" id="btnDescartarOrdemSoA" onclick="descartarOrdemSoAApp()" hidden><span class="material-symbols-outlined" aria-hidden="true">undo</span> Descartar</button><button type="button" class="btn-save soa-order-save" id="btnSalvarOrdemSoA" onclick="salvarOrdemSoAApp()" hidden><span class="material-symbols-outlined" aria-hidden="true">save</span> Salvar ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnSugerirOrdemSoA" onclick="abrirSugestaoOrdemSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">account_tree</span> Sugerir ordem</button><button type="button" class="btn-txt soa-add-btn" id="btnReplicarCicloSoA" onclick="abrirReplicacaoCiclosSoAApp()"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span> Replicar ciclo</button><button type="button" class="btn-txt soa-add-btn" id="btnImportarSoA" onclick="abrirSoAImportForm()"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span> Importar CSV</button><button type="button" class="btn-txt soa-add-btn" id="btnAdicionarSoA" onclick="abrirSoAVisitaForm()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Adicionar visita</button></div>
         </div>
-        <div class="soa-project-unsaved" id="soaProjetoNaoSalvo">Salve o protocolo antes de cadastrar o seu calendário SoA.</div>
-        <div class="soa-visita-list" id="pSoAList"><div class="soa-visita-empty">Nenhuma visita SoA configurada.</div></div>
+        <div class="soa-project-unsaved" id="soaProjetoNaoSalvo">Salve o protocolo antes de cadastrar o seu Cronograma de Avaliações.</div>
+        <div class="soa-visita-list" id="pSoAList"><div class="soa-visita-empty">Nenhuma visita do Cronograma de Avaliações configurada.</div></div>
       </div>
 
       <div class="form-section soa-project-section">
@@ -402,22 +402,19 @@
   <div class="modal-box soa-import-modal-box project-workflow-box" role="dialog" aria-labelledby="modalSoAImportAccessibleTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span></div>
-      <div><div class="modal-header-title" id="modalSoAImportAccessibleTitle">IMPORTAR CALENDÁRIO SoA</div><div class="modal-header-sub" id="soaImportSubtitle">Prévia segura antes de gravar</div></div>
+      <div><div class="modal-header-title" id="modalSoAImportAccessibleTitle">IMPORTAR CRONOGRAMA DE AVALIAÇÕES</div><div class="modal-header-sub" id="soaImportSubtitle">Prévia segura antes de gravar</div></div>
       <button class="modal-close" onclick="fecharOverlay('modalSoAImport')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">
-      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Como funciona</strong><span>Use as instruções padronizadas na IA com o protocolo, depois cole ou selecione o JSON. Revise as pendências e salve um rascunho ou aplique as visitas prontas. O formato anterior continua aceito.</span></div></div>
-      <div class="field" style="margin-bottom:14px;"><button type="button" class="btn-txt" onclick="baixarGuiaExtracaoSoAApp()">Baixar instruções para IA</button></div>
-      <div class="field soa-draft-controls"><label class="field-label" for="soaPlanejamentoSalvo">Continuar um rascunho</label><select id="soaPlanejamentoSalvo" class="f-input"><option value="">Selecione um rascunho salvo</option></select><button type="button" class="btn-txt" onclick="carregarPlanejamentoSoAApp()">Abrir rascunho</button></div>
-      <div class="field"><label class="field-label" for="soaImportArquivo">Arquivo JSON (opcional)</label><input type="file" id="soaImportArquivo" class="f-input" accept=".json,application/json" onchange="lerSoAArquivoApp(event)"></div>
-      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportTexto">Conteúdo JSON</label><textarea id="soaImportTexto" oninput="invalidarPreviaImportacaoSoA_()" class="f-input soa-import-textarea" placeholder="Cole aqui o JSON gerado a partir do protocolo..."></textarea></div>
-      <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar por código e braços</option></select></div><label class="soa-import-check"><input type="checkbox" id="soaImportCriarBracos" onchange="invalidarPreviaImportacaoSoA_()" checked> Criar braços ausentes no catálogo</label></div>
-      <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Cole um JSON e clique em Pré-visualizar.</div></div>
+      <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Como funciona</strong><span>No Polo Trial, exporte o Flowchart do estudo em CSV. Selecione o arquivo, informe o braço e confira a prévia antes de importar. Valores e procedimentos do arquivo não são enviados.</span></div></div>
+      <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportArquivo">Arquivo CSV do Polo Trial <span class="required-star">*</span></label><input type="file" id="soaImportArquivo" class="f-input" accept=".csv,text/csv" onchange="lerSoAArquivoApp(event)"></div>
+      <div class="field-row cols-2" style="margin-bottom:14px;"><div><label class="field-label" for="soaImportBraco">Nome do braço <span class="required-star">*</span></label><input type="text" id="soaImportBraco" class="f-input" list="soaImportBracosLista" maxlength="120" autocomplete="off" oninput="invalidarPreviaImportacaoSoA_()" placeholder="Digite ou escolha um braço"><datalist id="soaImportBracosLista"></datalist><div class="field-help">O arquivo não informa o braço. As visitas serão vinculadas a este nome; um braço novo será criado ao importar.</div></div><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar as visitas encontradas</option></select></div></div>
+      <div id="soaImportPreview" class="soa-import-preview"><div class="soa-visita-empty">Selecione o CSV, informe o braço e clique em Pré-visualizar.</div></div>
     </div>
     <div class="soa-import-footer project-modal-footer">
       <label id="soaImportRevisaoBox" class="soa-import-check" hidden><input type="checkbox" id="soaImportRevisado" onchange="atualizarRevisaoPlanejamentoSoAApp()"> Conferi as visitas, os braços, as referências, as janelas e os agendamentos manuais desta prévia.</label>
       <div class="status-msg" id="statusSoAImport" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-txt" id="btnSalvarPlanejamentoSoA" onclick="salvarPlanejamentoSoAApp()" disabled>Salvar rascunho</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar calendário</button></div>
+      <div class="soa-modal-actions"><button type="button" class="btn-txt" onclick="fecharOverlay('modalSoAImport')">Cancelar</button><button type="button" class="btn-txt" id="btnPreviewSoA" onclick="previsualizarSoAJsonApp()"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span> Pré-visualizar</button><button type="button" class="btn-save" id="btnImportarSoAConfirm" onclick="confirmarImportacaoSoAApp()" disabled><span class="material-symbols-outlined" aria-hidden="true">download_done</span> Importar cronograma</button></div>
     </div>
   </div>
 </div>
@@ -471,7 +468,7 @@
   <div class="modal-box project-workflow-box" role="dialog" aria-labelledby="modalSoATitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">event_note</span></div>
-      <div><div class="modal-header-title" id="modalSoATitle">ADICIONAR VISITA SoA</div><div class="modal-header-sub" id="modalSoASubtitle">Calendário do protocolo</div></div>
+      <div><div class="modal-header-title" id="modalSoATitle">ADICIONAR VISITA AO CRONOGRAMA DE AVALIAÇÕES</div><div class="modal-header-sub" id="modalSoASubtitle">Cronograma de Avaliações do protocolo</div></div>
       <button class="modal-close" onclick="fecharOverlay('modalSoAVisita')" type="button" aria-label="Fechar janela"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="modal-body">

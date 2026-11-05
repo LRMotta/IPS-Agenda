@@ -117,7 +117,8 @@ for (const width of [1280, 390]) {
       await page.waitForFunction(() => document.activeElement.id === 'openButton');
 
       await page.evaluate(() => window.abrirOverlay('modalSoAImport'));
-      await page.locator('#soaImportTexto').fill('{"visitas":[{"codigo":"V1"}]}');
+      await page.evaluate(() => { window._soaImportCsvTexto = 'V1'; window.soaPoloExtrair_ = text => ({ visitas: [{ codigo: text }] }); });
+      await page.locator('#soaImportBraco').fill('Braço A');
       await page.locator('#btnPreviewSoA').click();
       await page.evaluate(() => window.testRequests.at(-1).onSuccess({ ok: true, visitas: [{ codigo: 'V1' }], totalVisitas: 1 }));
       assert.equal(await page.locator('#btnImportarSoAConfirm').isEnabled(), true);

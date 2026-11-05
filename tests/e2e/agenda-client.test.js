@@ -55,7 +55,7 @@ test('Visita exige campo Visita na criacao e edicao, inclusive sem SoA ou Lab Ce
         assert.equal(await page.locator('#agVisitaRequired').isVisible(), true);
         assert.equal(await page.locator('#agVisita').evaluate(el => el.required), true);
         assert.equal(await page.locator('#agVisita').getAttribute('aria-required'), 'true');
-        assert.match(await page.locator('#agVisitaSoAHint').innerText(), /não possui calendário SoA/);
+        assert.match(await page.locator('#agVisitaSoAHint').innerText(), /não possui Cronograma de Avaliações/);
         assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
         await page.locator('#agVisita').fill('   ');
         await page.evaluate(() => window.salvarAgendaEvento());

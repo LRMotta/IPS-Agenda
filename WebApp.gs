@@ -4827,7 +4827,7 @@ function getSoAVisitasSheet_(createIfMissing) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = getSheetByPossibleNames_(ss, ['SoA_Visitas', 'Calendario_SoA', 'Calendário SoA']);
   if (!sheet && createIfMissing) {
-    if (!ss || typeof ss.insertSheet !== 'function') throw new Error('Não foi possível criar a aba do calendário SoA.');
+    if (!ss || typeof ss.insertSheet !== 'function') throw new Error('Não foi possível criar a aba do Cronograma de Avaliações.');
     sheet = ss.insertSheet('SoA_Visitas');
     sheet.getRange(1, 1, 1, SOA_VISITAS_HEADERS_.length).setValues([SOA_VISITAS_HEADERS_]);
   }
@@ -5053,7 +5053,7 @@ function soaPrepareCycleReplication_(payload) {
   payload = payload || {};
   var projeto = String(payload.projeto || '').trim();
   var sourceCycle = Number(payload.cicloModelo);
-  if (!projeto) throw new Error('Informe o projeto do calendário SoA.');
+  if (!projeto) throw new Error('Informe o projeto do Cronograma de Avaliações.');
   if (!isFinite(sourceCycle) || sourceCycle < 1 || Math.floor(sourceCycle) !== sourceCycle) throw new Error('Selecione um ciclo-modelo válido.');
   var targetCycles = soaCycleParseTargets_(payload.ciclosDestino, sourceCycle);
   var existing = getSoAVisitasProjeto(projeto);
@@ -5343,7 +5343,7 @@ function salvarSoAVisita(payload) {
   codexAssertCanWrite_('salvarSoAVisita', 'Cadastros', payload.idSoA || payload.projeto || 'SoA');
   var projeto = String(payload.projeto || '').trim();
   var nome = String(payload.nome || payload.nomePadrao || '').trim();
-  if (!projeto) throw new Error('Informe o projeto do calendário SoA.');
+  if (!projeto) throw new Error('Informe o projeto do Cronograma de Avaliações.');
   if (!nome) throw new Error('Informe o nome padrão da visita.');
   var ordem = payload.ordem === '' || payload.ordem === null || payload.ordem === undefined ? '' : Number(payload.ordem);
   if (ordem !== '' && (!isFinite(ordem) || ordem < 0 || Math.floor(ordem) !== ordem)) throw new Error('A ordem deve ser um número inteiro maior ou igual a zero.');
@@ -5424,10 +5424,10 @@ function salvarSoAVisita(payload) {
     var msg;
     if (existingRowIndex >= 0) {
       sheet.getRange(existingRowIndex + 1, 1, 1, headers.length).setValues(rowValues);
-      msg = 'Visita SoA atualizada.';
+      msg = 'Visita do Cronograma de Avaliações atualizada.';
     } else {
       sheet.appendRow(rowValues[0]);
-      msg = 'Visita SoA adicionada.';
+      msg = 'Visita do Cronograma de Avaliações adicionada.';
     }
     var equivalentesAtualizadas = 0;
     if (aplicarBaseEquivalentes) {
@@ -5455,12 +5455,12 @@ function reordenarSoAVisitas(payload) {
   var projeto = String(payload.projeto || '').trim();
   var idsInformados = Array.isArray(payload.idsSoA) ? payload.idsSoA.map(function(id) { return String(id || '').trim(); }).filter(Boolean) : [];
   codexAssertCanWrite_('reordenarSoAVisitas', 'Cadastros', projeto || 'SoA');
-  if (!projeto) throw new Error('Informe o projeto do calendário SoA.');
+  if (!projeto) throw new Error('Informe o projeto do Cronograma de Avaliações.');
   if (!idsInformados.length) throw new Error('Informe a nova ordem das visitas.');
   if (soaUniqueIds_(idsInformados).length !== idsInformados.length) throw new Error('A nova ordem contém visitas duplicadas.');
   return codexWithDocumentLock_('reordenarSoAVisitas', function() {
     var sheet = getSoAVisitasSheet_(false);
-    if (!sheet || sheet.getLastRow() < 2) throw new Error('Calendário SoA não encontrado.');
+    if (!sheet || sheet.getLastRow() < 2) throw new Error('Cronograma de Avaliações não encontrado.');
     var rowsAntes = sheet.getDataRange().getValues();
     var mapAntes = soaHeaderMap_(rowsAntes[0] || []);
     var cAntes = {
@@ -5504,12 +5504,12 @@ function soaImportParsePayload_(payload) {
   var dados = payload.dados || payload.data || payload.json;
   if (typeof dados === 'string') {
     // eslint-disable-next-line preserve-caught-error -- Hide parser details behind a stable validation message.
-    try { dados = JSON.parse(dados); } catch (e) { throw new Error('O JSON do calendário SoA é inválido.'); }
+    try { dados = JSON.parse(dados); } catch (e) { throw new Error('O JSON do Cronograma de Avaliações é inválido.'); }
   }
-  if (!dados || typeof dados !== 'object') throw new Error('Informe um objeto JSON de calendário SoA.');
+  if (!dados || typeof dados !== 'object') throw new Error('Informe um objeto JSON de Cronograma de Avaliações.');
   var projeto = String(payload.projeto || '').trim();
-  if (!projeto) throw new Error('Informe o projeto para importar o calendário SoA.');
-  return { projeto: projeto, dados: dados, modo: String(payload.modo || 'adicionar').trim().toLowerCase(), criarBracos: payload.criarBracos !== false };
+  if (!projeto) throw new Error('Informe o projeto para importar o Cronograma de Avaliações.');
+  return { projeto: projeto, dados: dados, modo: String(payload.modo || 'adicionar').trim().toLowerCase(), criarBracos: payload.criarBracos !== false, braco: String(payload.braco || '').trim() };
 }
 
 function soaImportVisitSignature_(visit) {
@@ -5747,7 +5747,7 @@ function soaCreateImportArms_(projeto, names) {
   var newRows = names.map(function(name, index) {
     var id = 'BRACO-' + gerarIdLoteEstoque_();
     created.push({ idBraco: id, nome: name });
-    return [id, projeto, name, maxOrder + index + 1, 'Sim', 'Importado do calendário SoA.'];
+    return [id, projeto, name, maxOrder + index + 1, 'Sim', 'Importado do Cronograma de Avaliações.'];
   });
   var firstRow = sheet.getLastRow() + 1;
   codexEnsureSheetCapacity_(sheet, firstRow + newRows.length - 1, 6);
@@ -5834,15 +5834,15 @@ function importarSoAJson(payload) {
     var parsed = soaImportParsePayload_(payload);
     if (Object.prototype.hasOwnProperty.call(parsed.dados, 'schema')) return soaPlanningApply_(payload);
     var prepared = soaImportPrepare_(payload);
-    if (!prepared.ok) throw new Error('Importação SoA inválida: ' + prepared.erros.join(' '));
+    if (!prepared.ok) throw new Error('Importação do Cronograma de Avaliações inválida: ' + prepared.erros.join(' '));
     var createdArms = soaCreateImportArms_(parsed.projeto, prepared.missingBracos);
     var finalPayload = { projeto: parsed.projeto, dados: parsed.dados, modo: parsed.modo, criarBracos: false };
     var finalPrepared = soaImportPrepare_(finalPayload);
-    if (!finalPrepared.ok) throw new Error('Importação SoA inválida após preparar os braços: ' + finalPrepared.erros.join(' '));
+    if (!finalPrepared.ok) throw new Error('Importação do Cronograma de Avaliações inválida após preparar os braços: ' + finalPrepared.erros.join(' '));
     soaWriteImportRows_(finalPrepared);
     return {
       ok: true,
-      msg: 'Calendário SoA importado.',
+      msg: 'Cronograma de Avaliações importado.',
       adicionadas: finalPrepared.visitas.filter(function(item) { return !item.existente; }).length,
       atualizadas: finalPrepared.atualizacoes,
       ignoradas: finalPrepared.ignoradas,
@@ -5857,18 +5857,18 @@ function importarSoAJson(payload) {
 function excluirSoAVisita(idSoA) {
   codexAssertCanWrite_('excluirSoAVisita', 'Cadastros', idSoA);
   var id = String(idSoA || '').trim();
-  if (!id) throw new Error('Visita SoA inválida.');
+  if (!id) throw new Error('Visita do Cronograma de Avaliações inválida.');
   return codexWithDocumentLock_('excluirSoAVisita', function() {
     var sheet = getSoAVisitasSheet_(false);
-    if (!sheet || sheet.getLastRow() < 2) throw new Error('Visita SoA não encontrada.');
+    if (!sheet || sheet.getLastRow() < 2) throw new Error('Visita do Cronograma de Avaliações não encontrada.');
     var rows = sheet.getDataRange().getValues();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim() === id) {
         sheet.deleteRow(i + 1);
-        return 'Visita SoA excluída.';
+        return 'Visita do Cronograma de Avaliações excluída.';
       }
     }
-    throw new Error('Visita SoA não encontrada.');
+    throw new Error('Visita do Cronograma de Avaliações não encontrada.');
   });
 }
 
@@ -6232,7 +6232,7 @@ function garantirProjetoSoAConfigColumn_(aba, fieldKey) {
   var mapKey = fieldKey === 'soaBaseCalculoPadrao' ? 'baseCalculoPadrao' : fieldKey;
   if (map[mapKey] >= 0) return map[mapKey];
   var field = PROJETO_SOA_CONFIG_FIELDS_.filter(function(item) { return item.key === fieldKey; })[0];
-  if (!field) throw new Error('Configuração SoA desconhecida: ' + fieldKey + '.');
+  if (!field) throw new Error('Configuração do Cronograma de Avaliações desconhecida: ' + fieldKey + '.');
   var index = headers.length;
   aba.getRange(1, index + 1).setValue(field.header);
   return index;
@@ -14468,7 +14468,7 @@ function jornadaReservaPreviaContexto_(payload) {
   var visita = String(payload.visita || '').trim();
   var dataVisita = agendaDateFromValue_(payload.dataVisita);
   if (!projeto || !participante || !participanteId || !idSoA || !visita || !dataVisita || isNaN(dataVisita.getTime())) {
-    throw new Error('Informe participante, visita SoA e data estimada para reservar.');
+    throw new Error('Informe participante, visita do Cronograma de Avaliações e data estimada para reservar.');
   }
   dataVisita.setHours(0, 0, 0, 0);
   var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
@@ -14476,7 +14476,7 @@ function jornadaReservaPreviaContexto_(payload) {
     throw new Error('A reserva antecipada está disponível somente para os próximos 6 meses.');
   }
   var visitaSoA = getSoAVisitasProjeto(projeto).filter(function(item) { return String(item.idSoA || '') === idSoA; })[0];
-  if (!visitaSoA) throw new Error('A visita informada não pertence ao SoA deste projeto.');
+  if (!visitaSoA) throw new Error('A visita informada não pertence ao Cronograma de Avaliações deste projeto.');
   var braco = getBracosProjeto(projeto).filter(function(item) { return normText_(item.nome) === normText_(payload.braco); })[0] || {};
   var modelos = getModelosEstoqueSoAPorProjeto(projeto).filter(function(modelo) {
     return estoqueTipoEhKit_(modelo.tipo) && modelo.visitasAplicaveisIds.indexOf(idSoA) >= 0 &&
@@ -14656,7 +14656,7 @@ function salvarConcilicaoVisitasParticipante_(payload) {
   mapeamentos.forEach(function(item) {
     var visitaOriginal = String(item && item.visitaOriginal || '').trim();
     var idSoA = String(item && item.idSoA || '').trim();
-    if (!visitaOriginal || !idSoA || !visitasPorId[idSoA]) throw new Error('Há uma visita SoA inválida na conciliação.');
+    if (!visitaOriginal || !idSoA || !visitasPorId[idSoA]) throw new Error('Há uma visita do Cronograma de Avaliações inválida na conciliação.');
     porNome[normText_(visitaOriginal)] = idSoA;
   });
   return codexWithDocumentLock_('salvarConcilicaoVisitasParticipante', function() {

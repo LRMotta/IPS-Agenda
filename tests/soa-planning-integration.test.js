@@ -43,11 +43,11 @@ test('o exemplo real de oito regras fica somente em rascunho e conserva todas as
   assert.throws(() => s.importarSoAJson({ ...p, confirmarRevisaoPlanejamento: true, fingerprintPlanejamento: preview.fingerprint }), /pendente/);
 });
 
-test('instruções para IA disponíveis na interface correspondem ao contrato documentado', () => {
+test('leitor do CSV do Polo Trial é carregado pela interface', () => {
   const script = readProjectFile('SharedSoAPlanningImport.html').replace(/^<script>/i, '').replace(/<\/script>\s*$/i, '');
   const context = vm.createContext({});
   vm.runInContext(script, context);
-  assert.equal(context.soaGuiaExtracaoTexto_().trim(), readProjectFile('docs/INSTRUCOES_EXTRACAO_IA.txt').trim());
+  assert.equal(typeof context.soaPoloExtrair_, 'function');
   assert.match(readProjectFile('Index.html'), /include\('SharedSoAPlanningImport'\)/);
 });
 
