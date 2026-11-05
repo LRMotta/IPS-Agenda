@@ -7486,7 +7486,7 @@ function confirmarImportacaoSoAApp() {
   }
   // Enviar exatamente o snapshot revisado, mesmo se o formulário mudar durante a RPC.
   var payload = JSON.parse(_soaImportFingerprintAtual);
-  if (planningResult && planningResult.planejamento) { payload.confirmarRevisaoPlanejamento = true; payload.fingerprintPlanejamento = planningResult.fingerprint; }
+  if (planningResult && planningResult.planejamento) { payload.confirmarRevisaoPlanejamento = true; payload.fingerprintPlanejamento = planningResult.fingerprint; payload.fingerprintPartesPlanejamento = planningResult.fingerprintPartes; }
   var projeto = _soaProjetoAtual;
   var revisao = _soaImportRevisao;
   var btn = document.getElementById('btnImportarSoAConfirm');

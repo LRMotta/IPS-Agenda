@@ -63,7 +63,7 @@ test('impedimento mantém importação desabilitada', () => {
 
 test('aplicar exige revisão humana e envia fingerprint da prévia', () => {
   const { c, e, requests, preview } = fixture();
-  preview({ podeImportar: true, visitas: [{ codigo: 'V1' }] });
+  preview({ podeImportar: true, visitas: [{ codigo: 'V1' }], fingerprintPartes: { plano: 'plano-revisado' } });
   c.confirmarImportacaoSoAApp();
   assert.equal(requests.some(r => r.method === 'importarSoAJson'), false);
   e.soaImportRevisado.checked = true;
@@ -74,6 +74,7 @@ test('aplicar exige revisão humana e envia fingerprint da prévia', () => {
   assert.equal(write.method, 'importarSoAJson');
   assert.equal(write.args[0].confirmarRevisaoPlanejamento, true);
   assert.equal(write.args[0].fingerprintPlanejamento, 'signed');
+  assert.equal(write.args[0].fingerprintPartesPlanejamento.plano, 'plano-revisado');
   assert.equal(write.args[0].braco, 'Braço A');
 });
 

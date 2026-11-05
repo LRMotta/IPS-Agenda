@@ -61,6 +61,19 @@ for (const width of [2560, 1280, 390]) {
       assert.equal(await page.getByRole('button', { name: 'Baixar instruções para IA' }).count(), 0);
       assert.equal(await page.locator('#btnSalvarPlanejamentoSoA').count(), 0);
 
+      // Mesmo padrão visual dos demais modais: seções, controles alinhados e seletor de arquivo sem aparência nativa.
+      assert.equal(await page.locator('#modalSoAImport .modal-body > .form-section .section-label').count(), 2);
+      assert.equal(await page.locator('#modalSoAImport .form-section #soaImportPreview').count(), 1);
+      const fileButton = await page.locator('#soaImportArquivo').evaluate(el => {
+        const style = window.getComputedStyle(el, '::file-selector-button');
+        return { color: style.color, height: style.height };
+      });
+      assert.deepEqual(fileButton, { color: await page.locator('#btnPreviewSoA').evaluate(el => window.getComputedStyle(el).color), height: '31px' });
+      if (width > 760) {
+        const tops = await page.locator('#soaImportBraco, #soaImportModo, #soaImportBaseCalculo').evaluateAll(els => els.map(el => el.getBoundingClientRect().top));
+        assert.equal(new Set(tops).size, 1);
+      }
+
       await page.locator('#btnPreviewSoA').click();
       await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.includes('Selecione o arquivo CSV'));
       await page.locator('#soaImportArquivo').setInputFiles(csvFile(chainedVisits()));

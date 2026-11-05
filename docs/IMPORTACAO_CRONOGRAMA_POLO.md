@@ -44,6 +44,10 @@ A visita de referência vem do arquivo. A exportação não informa se a contage
 | Sem escolha nem base, referências a um marco ou evento fixo | Grava "Manter datas previstas", que dá o mesmo resultado |
 | Sem escolha nem base, visitas encadeadas | Importação bloqueada até escolher na janela |
 
+## Conferência entre prévia e gravação
+
+A gravação compara o plano revisado com o plano recalculado dentro do lock: escolhas da janela, visitas, referências, janelas, escopo e braços a criar. Leituras que não alteram esse plano não invalidam a revisão. Se algo divergir, o log `[SOA_PREVIA_DIVERGENTE]` registra só o nome das partes alteradas: arquivo, escolhas, plano, projeto, braços ou visitas.
+
 ## Bloqueios
 
 A importação não é aplicada, e nada é corrigido automaticamente, quando há:
