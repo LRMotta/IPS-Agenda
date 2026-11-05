@@ -15,7 +15,11 @@ Não há inferência para temperaturas mistas nem substituição do comportament
 transportes sem regra correspondente. Para Marken em temperatura Ambiente, o
 campo de envio da caixa é automático: "Sim, BioSystem" para BioSystem e Não para a caixa
 convencional, inclusive após trocar a combinação de um transporte já salvo.
-Com Crēdo Cube, o campo também é automático nas três temperaturas.
+Com Crēdo Cube, o campo também é automático nas três temperaturas. O rascunho vai
+exclusivamente para `protocolos.credo@marken.com`: `expobrasil@marken.com` sai da cópia e
+os demais e-mails padrão da equipe continuam copiados. A tela avisa, sem bloquear,
+quando a data do envio tem menos de 2 dias úteis de antecedência, porque as caixas
+saem de São Paulo. Contam dias depois de hoje até a data do envio, sem feriados operacionais.
 O servidor revalida esse valor. No e-mail, somente o valor do campo original
 "Enviar Caixa de Transporte" é preenchido, preservando rótulo, linhas e estilos
 do modelo da courier. Não são acrescentadas linhas de caixa ao modelo.

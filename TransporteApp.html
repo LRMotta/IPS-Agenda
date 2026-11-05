@@ -1975,6 +1975,17 @@
       return ['Folha de Agendamento', 'Declaração de Transporte'];
     }
 
+    // Dias úteis depois de hoje até a coleta, incluindo a coleta (mesmas chaves do mapa de feriados).
+    function transportDiasUteisAte(hojeIso, coletaIso, feriados) {
+      var dia = new Date(hojeIso + 'T00:00:00Z'), fim = new Date(coletaIso + 'T00:00:00Z'), dias = 0;
+      while (dia < fim && dias < 2) {
+        dia.setUTCDate(dia.getUTCDate() + 1);
+        var chave = dia.toISOString().slice(0, 10);
+        if (dia.getUTCDay() !== 0 && dia.getUTCDay() !== 6 && !feriados[chave] && !feriados['--' + chave.slice(5)]) dias++;
+      }
+      return dias;
+    }
+
     function renderIssues(materials, context) {
       var p = context ? context.payload : collectPayload(materials);
       var issues = (context ? context.errors : matBioErrors()).map(function(error) { return { type: 'danger', text: error }; });
@@ -2012,6 +2023,14 @@
       var awbCheck = normalizeAwbForCourier(p.awb, p.courier);
       if (state.awbIssue && String(state.awbIssue.awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === String(p.awb || '').toUpperCase().replace(/[^A-Z0-9]/g, '')) {
         issues.push({ type:'warn', field:'awb', text:state.awbIssue.text });
+      }
+      var caixaPrazo = transportCaixaPreview(p);
+      if (p.dataEnvio && p.courier === 'MARKEN' && caixaPrazo && caixaPrazo.tipoCaixa === 'CREDO_CUBE') {
+        var hoje = new Date();
+        var hojeIso = [hoje.getFullYear(), ('0' + (hoje.getMonth() + 1)).slice(-2), ('0' + hoje.getDate()).slice(-2)].join('-');
+        if (transportDiasUteisAte(hojeIso, p.dataEnvio, (state.options || {}).feriadosCredoCube || {}) < 2) {
+          issues.push({ type:'warn', text:'Crēdo Cube: solicite com pelo menos 2 dias úteis de antecedência da coleta, pois as caixas saem de São Paulo.' });
+        }
       }
       if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) {
         issues.push({ type:'danger', text:'AWB / código obrigatório para ' + p.courier + '.' });
