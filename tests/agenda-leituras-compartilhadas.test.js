@@ -118,6 +118,39 @@ test('contexto de AWB reaproveita a leitura do registro so no escopo, sob lock e
   assert.equal(s.CODEX_AGENDA_LINHAS_ESCOPO_, null);
 });
 
+test('abertura do Transporte le a Agenda inteira uma vez para o registro e o aviso de AWB', () => {
+  const s = runFiles(['AgendaServerRules.gs', 'CadastroRules.gs', 'WebApp.gs', 'TransporteCodexConfig.gs'], {
+    Logger: { log() {} },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {}, getAll: () => ({}), putAll() {}, remove() {}, removeAll() {} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => '', setProperty() {} }) }
+  });
+  s.LockService = { getDocumentLock: () => ({ tryLock: () => true, releaseLock() {} }) };
+  s.getCodexSpreadsheet_ = () => ({ getSheetByName: () => null });
+  const aba = abaAgenda(s, ['A', 'B']);
+  aba.linhas[1][s.AGENDA_CFG.idx.c1.awb] = '123456789012';
+  s.getAgendaSheet_ = () => aba;
+  s.getAgendaSheetForRead_ = () => aba;
+  s.codexAssertCanRead_ = () => ({ ok: true });
+  s.transporteBuildBootstrap_ = () => {
+    s.buscarAgendaEventoPorIdTransp_('A', '1');
+    return { awbIssue: s.transporteAwbAviso_({ awb: '123456789012', idAgenda: 'A', agendaSlot: '1', courier: 'MARKEN' }) };
+  };
+  const data = s.getTransporteBootstrap();
+  assert.match(data.awbIssue.text, /Transporte I/, 'a AWB de outro agendamento continua sendo avisada');
+  assert.equal(aba.leituras.filter((l) => l[0] === 2 && l[1] === 1 && l[2] === 2).length, 1);
+});
+
+test('abertura pela Agenda mantem o escopo da leitura ate o aviso de AWB, sem gravar na Agenda', () => {
+  const fonte = require('./helpers/load-app-script').readProjectFile('TransporteCodexConfig.gs').replace(/\r\n/g, '\n');
+  const inicio = fonte.indexOf('function getTransporteBootstrapFromAgenda(');
+  const corpo = fonte.slice(inicio, fonte.indexOf('\nfunction ', inicio + 10));
+  const escopo = corpo.indexOf('transporteAgendaLeituraCompartilhada_(function()');
+  assert.ok(escopo > 0 && escopo < corpo.indexOf('montarContextoTransporteParaTransp_('), 'escopo abre antes da leitura do evento');
+  assert.ok(corpo.indexOf('}); });') > corpo.indexOf('transporteBuildBootstrap_('), 'aviso de AWB fica dentro do escopo');
+  // Se o rascunho passar a sincronizar a Agenda, a leitura guardada deixa de valer ate o aviso.
+  assert.match(fonte, /var agendaSync = options\.rascunho\s*\?/);
+});
+
 test('salvamento abre o escopo da leitura compartilhada so na preparacao, antes das gravacoes', () => {
   const fonte = require('./helpers/load-app-script').readProjectFile('TransporteCodexConfig.gs').replace(/\r\n/g, '\n');
   const inicio = fonte.indexOf('function salvarTransporteInterno_(');

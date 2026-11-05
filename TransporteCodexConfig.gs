@@ -3213,7 +3213,9 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado) {
         options: options,
         auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
         issues: transporteValidate_(registro),
-        awbIssue: transporteAwbAviso_(registro),
+        awbIssue: transporteMeasurePerformance_('getTransporteBootstrap', 'awb_aviso', { rowCount: 1 }, function() {
+          return transporteAwbAviso_(registro);
+        }),
         resumo: {
           materiaisAtivos: ativos.length,
           totalTubos: totalTubos,
@@ -3230,7 +3232,8 @@ function getTransporteBootstrap() {
   return codexWithDocumentLock_('getTransporteBootstrap', function() {
     // O acesso pode ter sido revogado enquanto aguardava outra gravacao.
     codexAssertCanRead_();
-    return transporteBuildBootstrap_();
+    // O aviso de AWB reaproveita a leitura da Agenda feita ao atualizar o registro.
+    return transporteAgendaLeituraCompartilhada_(function() { return transporteBuildBootstrap_(); });
   });
 }
 
@@ -3239,7 +3242,8 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
   idAgenda = String(idAgenda || '').trim();
   if (!idAgenda) throw new Error('Agendamento nao informado para preparar o transporte.');
   return codexWithDocumentLock_('getTransporteBootstrapFromAgenda', function() {
-    return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
+    // Rascunho nao grava na Agenda: o aviso de AWB reaproveita a leitura do evento.
+    return transporteAgendaLeituraCompartilhada_(function() { return transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'total', { rowCount: 1 }, function() {
       var contexto = transporteMeasurePerformance_('getTransporteBootstrapFromAgenda', 'payload', { rowCount: 1 }, function() {
         return montarContextoTransporteParaTransp_(idAgenda, slot);
       });
@@ -3260,7 +3264,7 @@ function getTransporteBootstrapFromAgenda(idAgenda, slot) {
       });
       data.importResult = { rascunho: true, mensagem: importResult.mensagem };
       return data;
-    });
+    }); });
   });
 }
 
