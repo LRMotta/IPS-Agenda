@@ -21,7 +21,7 @@ function ambiente(paginasDoPdf, extra) {
     transporteDocsGradeCarregar_: () => ({ abas: { A: {} }, info: {} }),
     transporteDocsGradeProtegerConteudo_: () => [{ aba: 'A', valores: [['x']] }],
     transporteFolhaHtmlParaGrade_: () => ({ abas: [], html: '' }),
-    transporteDocsGradeMontar_: () => '<html></html>',
+    transporteDocsGradeMontar_: () => '<div class="pagina"></div><div class="pagina"></div>',
     transporteDocsHtmlContarPaginasPdf_: () => paginasDoPdf,
     transporteRegistrarAviso_: code => avisos.push(code),
   }, extra || {});
@@ -69,7 +69,7 @@ test('geracao em HTML usa a memoria sem ler a grade da planilha real', () => {
 
 test('couriers do novo formato coincidem com as do diagnostico', () => {
   const { app } = ambiente(2);
-  assert.deepEqual([...app.TRANSPORTE_DOCS_GRADE_COURIERS_HTML_], ['MARKEN', 'OCASA', 'DHL', 'PINEX']);
+  assert.deepEqual([...app.TRANSPORTE_DOCS_GRADE_COURIERS_HTML_], ['MARKEN', 'OCASA', 'DHL', 'PINEX', 'PINEX (Agendamento)']);
 });
 
 test('interface: botao HTML separado, formato na chave de idempotencia e botao atual preservado', () => {

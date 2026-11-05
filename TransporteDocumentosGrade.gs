@@ -173,6 +173,8 @@ function transporteDocsGradeArea_(sheet) {
  * imagensFlutuantes: [{ r, c, x, y, w, h, url }] (ancora de base 0, pixels do Sheets).
  * opcoes.imagemSrc(url): converte a URL da imagem (ex.: data URI em cache).
  * opcoes.reducao: fator extra de escala (uso interno, aba pouco mais alta que a pagina).
+ * opcoes.linhas: { de, ate } (base 0) emite so essa faixa de linhas, como uma pagina de transporteDocsGradePaginas_.
+ * opcoes.medir: objeto que recebe { alturas, rFim, mesclas } (altura impressa por linha) e dispensa a validacao de altura.
  * Devolve o HTML de uma pagina (tabela), pronto para transporteDocsHtmlDocumento_.
  */
 function transporteDocsGradeHtml_(sheet, opcoes) {
@@ -191,6 +193,8 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
   var area = transporteDocsGradeArea_(sheet);
   var mesclas = area.mesclas, cobertas = area.cobertas;
   var c0 = 0, c1 = area.c1, rFim = area.rFim;
+  var rIni = opcoes.linhas ? opcoes.linhas.de : 0;
+  var rUlt = opcoes.linhas ? Math.min(opcoes.linhas.ate, rFim) : rFim;
   if (c1 < 0) throw new Error('Aba sem conteúdo imprimível: ' + ((sheet.properties || {}).title || ''));
 
   var colunas = [];
@@ -299,7 +303,7 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
       '<div style="position:relative;height:0">' + flutuantesPorLinha[linha].join('') + '</div></td></tr>');
   }
 
-  for (var lr = 0; lr <= rFim; lr++) {
+  for (var lr = rIni; lr <= rUlt; lr++) {
     if (linhaOculta(lr)) continue;
     prepararTransbordo(lr);
     linhaFlutuantes(lr);
@@ -313,17 +317,24 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
     }
     html.push('</tr>');
   }
-  linhaFlutuantes(rFim + 1);
+  if (rUlt === rFim) linhaFlutuantes(rFim + 1);
   html.push('</table>');
 
   var alturaTotal = 0;
-  for (var ar = 0; ar <= rFim; ar++) if (!linhaOculta(ar)) alturaTotal += (altura(ar) + (excessoLinha[ar] || 0)) * escalaV;
+  for (var ar = rIni; ar <= rUlt; ar++) if (!linhaOculta(ar)) alturaTotal += (altura(ar) + (excessoLinha[ar] || 0)) * escalaV;
+  if (opcoes.medir) {
+    opcoes.medir.rFim = rFim;
+    opcoes.medir.mesclas = mesclas;
+    opcoes.medir.alturas = [];
+    for (var mr = 0; mr <= rFim; mr++) opcoes.medir.alturas.push(linhaOculta(mr) ? 0 : (altura(mr) + (excessoLinha[mr] || 0)) * escalaV);
+    return html.join('');
+  }
   // A pagina HTML (1040 px) tem folga em relacao a area util do PDF atual (~1064 px):
   // abas que o exportador imprime numa pagina podem passar dela por poucos px (Ficha
   // OCASA: 1049 px). Ate TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_ a aba e reduzida por
   // inteiro, como o ajuste a pagina; acima disso a geracao bloqueia.
   var limite = TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_;
-  if (alturaTotal > limite && !opcoes.reducao && limite / alturaTotal >= 1 - TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_) {
+  if (alturaTotal > limite && !opcoes.reducao && !opcoes.linhas && limite / alturaTotal >= 1 - TRANSPORTE_DOCS_GRADE_REDUCAO_MAX_) {
     return transporteDocsGradeHtml_(sheet, Object.assign({}, opcoes, { reducao: (limite - 1) / alturaTotal }));
   }
   transporteDocsHtmlValidarAltura_(alturaTotal, (sheet.properties || {}).title);
@@ -438,6 +449,64 @@ function transporteDocsGradeHtml_(sheet, opcoes) {
   }
 }
 
+// Abas mais altas que a pagina que o PDF atual imprime em varias paginas (o Sheets quebra por linha):
+// so elas sao paginadas; as demais continuam bloqueando a geracao quando passam da pagina.
+var TRANSPORTE_DOCS_GRADE_PAGINAR_TITULOS_ = ['formulario (pinex)'];
+
+function transporteDocsGradeDevePaginar_(titulo) {
+  var chave = String(titulo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  return TRANSPORTE_DOCS_GRADE_PAGINAR_TITULOS_.indexOf(chave) >= 0;
+}
+
+/**
+ * Divide uma aba mais alta que a pagina em paginas (tabelas) por linhas inteiras, como o
+ * exportador do Sheets: a pagina enche ate TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_ e a linha que
+ * nao cabe abre a seguinte. O corte nao atravessa uma mesclagem (sobe ate a linha anterior
+ * livre). Aba que cabe numa pagina sai como transporteDocsGradeHtml_ comum.
+ */
+function transporteDocsGradePaginas_(sheet, opcoes) {
+  opcoes = opcoes || {};
+  var medida = {};
+  transporteDocsGradeHtml_(sheet, Object.assign({}, opcoes, { medir: medida }));
+  var limite = TRANSPORTE_DOCS_HTML_ALTURA_PAGINA_PX_;
+  function atravessa(corte) {
+    return Object.keys(medida.mesclas).some(function(chave) {
+      var r0 = Number(chave.split(':')[0]);
+      return r0 < corte && corte < r0 + medida.mesclas[chave].rs;
+    });
+  }
+  function soma(de, ate) {
+    var s = 0;
+    for (var i = de; i <= ate; i++) s += medida.alturas[i] || 0;
+    return s;
+  }
+  var inicios = [0];
+  var inicio = 0;
+  var acumulada = 0;
+  for (var r = 0; r <= medida.rFim; r++) {
+    var h = medida.alturas[r] || 0;
+    if (acumulada + h > limite && r > inicio && h > 0) {
+      var corte = r;
+      while (corte > inicio && atravessa(corte)) corte--;
+      if (corte <= inicio) corte = r;
+      inicios.push(corte);
+      inicio = corte;
+      acumulada = soma(inicio, r - 1);
+    }
+    acumulada += h;
+  }
+  if (inicios.length === 1) return [transporteDocsGradeHtml_(sheet, opcoes)];
+  return inicios.map(function(de, i) {
+    var ate = i + 1 < inicios.length ? inicios[i + 1] - 1 : medida.rFim;
+    return transporteDocsGradeHtml_(sheet, Object.assign({}, opcoes, { linhas: { de: de, ate: ate } }));
+  });
+}
+
+// Paginas do documento montado (uma por <div class="pagina">): o PDF deve sair com esse total.
+function transporteDocsGradeContarPaginasHtml_(html) {
+  return (String(html || '').match(/<div class="pagina">/g) || []).length;
+}
+
 /**
  * Monta o documento com as copias na ordem informada.
  * abas: mapa titulo -> sheet (spreadsheets.get); documentos: [{ aba, copias, html? }].
@@ -448,8 +517,10 @@ function transporteDocsGradeMontar_(abas, documentos, opcoes) {
   (documentos || []).forEach(function(doc) {
     var sheet = abas[doc.aba];
     if (!sheet && !doc.html) throw new Error('Aba necessária não encontrada: ' + doc.aba);
-    var pagina = doc.html || transporteDocsGradeHtml_(sheet, opcoes);
-    for (var i = 0; i < Math.max(1, Number(doc.copias) || 1); i++) paginas.push(pagina);
+    var paginasDoc = doc.html ? [doc.html]
+      : (doc.paginar === true || transporteDocsGradeDevePaginar_(doc.aba) ? transporteDocsGradePaginas_(sheet, opcoes) : [transporteDocsGradeHtml_(sheet, opcoes)]);
+    // Cada copia repete todas as paginas do documento, na ordem.
+    for (var i = 0; i < Math.max(1, Number(doc.copias) || 1); i++) paginasDoc.forEach(function(pagina) { paginas.push(pagina); });
   });
   if (!paginas.length) throw new Error('Nenhum documento informado para a documentação HTML.');
   return transporteDocsHtmlDocumento_(paginas, TRANSPORTE_DOCS_GRADE_PAGINA_);
@@ -1096,7 +1167,7 @@ function transporteDocsGradeContextoProtecao_(ss, courier, payload) {
  * Agendamento e a Declaracao de Transporte sao as mesmas da MARKEN.
  * O log contem somente contagens, tamanhos, tempos e o hash do conteudo.
  */
-var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX'];
+var TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_ = ['MARKEN', 'OCASA', 'DHL', 'PINEX', 'PINEX (Agendamento)'];
 
 // Couriers com geracao real em HTML (mesmas do diagnostico).
 var TRANSPORTE_DOCS_GRADE_COURIERS_HTML_ = TRANSPORTE_DOCS_GRADE_COURIERS_DIAGNOSTICO_;
@@ -1118,7 +1189,7 @@ function transporteDocsGradeGerarPdfHtml_(ss, spec, courier, payload, nomeArquiv
   }), {});
   var blob = HtmlService.createHtmlOutput(html).getBlob().getAs(MimeType.PDF).setName(nomeArquivo + '.pdf');
   var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
-  var esperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
+  var esperadas = transporteDocsGradeContarPaginasHtml_(html);
   if (paginas !== esperadas) {
     throw new Error('O PDF em HTML saiu com ' + paginas + ' paginas (esperado: ' + esperadas + '). Use Gerar PDF (formato planilha) e avise o suporte.');
   }
@@ -1182,7 +1253,7 @@ function diagnosticarGradeTransporteHtml(courier) {
     .setName('diagnostico-grade-' + courier.toLowerCase() + '-' + stamp + '.pdf');
   tempos.conversaoMs = Date.now() - marca;
   var paginas = transporteDocsHtmlContarPaginasPdf_(blob);
-  var paginasEsperadas = spec.ordem.reduce(function(acc, titulo) { return acc + spec.copias[titulo]; }, 0);
+  var paginasEsperadas = transporteDocsGradeContarPaginasHtml_(html);
 
   marca = Date.now();
   var root = DriveApp.getRootFolder();
