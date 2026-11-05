@@ -527,7 +527,8 @@ test('filtro de courier do lote restringe a selecao e recusa courier sem PDF em 
   s.diagnosticarDocsDadosLoteTransporteHtmlDhlPinex();
   s.diagnosticarDocsDadosLoteTransporteHtmlDhl();
   s.diagnosticarDocsDadosLoteTransporteHtmlPinex();
-  assert.deepEqual(recebidos, [['DHL', 'PINEX'], ['DHL'], ['PINEX']]);
+  s.diagnosticarDocsDadosLoteTransporteHtmlPinexAgendamento();
+  assert.deepEqual(recebidos, [['DHL', 'PINEX'], ['DHL'], ['PINEX'], ['PINEX (Agendamento)']]);
 });
 
 test('preenchimento DHL na memoria: formato numerico por RangeList e litros na Declaracao de Transporte (DHL)', () => {

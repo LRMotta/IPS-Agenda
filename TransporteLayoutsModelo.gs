@@ -1247,3 +1247,8 @@ function diagnosticarDocsDadosLoteTransporteHtmlDhl() {
 function diagnosticarDocsDadosLoteTransporteHtmlPinex() {
   return diagnosticarDocsDadosLoteTransporteHtml({ couriers: ['PINEX'] });
 }
+
+// Variante Agendamento (Formulario PINEX): bem menos envios que as demais, entao a janela e de 6 meses.
+function diagnosticarDocsDadosLoteTransporteHtmlPinexAgendamento() {
+  return diagnosticarDocsDadosLoteTransporteHtml({ couriers: ['PINEX (Agendamento)'], meses: 6 });
+}
