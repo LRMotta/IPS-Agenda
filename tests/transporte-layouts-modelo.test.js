@@ -672,7 +672,7 @@ test('imagens omitidas do layout chegam ao aviso da geracao em memoria', () => {
   assert.equal(carregado.info.imagensOmitidas, 2);
 });
 
-function geracao(memoria) {
+function geracao(memoria, courier = 'MARKEN') {
   const s = servidor();
   const chamadas = { flush: 0 };
   s.SpreadsheetApp = { flush: () => { chamadas.flush++; } };
@@ -684,7 +684,7 @@ function geracao(memoria) {
   s.transporteMonitorReferencia_ = () => '';
   s.transportePdfManifestoHash_ = () => 'h';
   s.transporteReadRegistro_ = () => { chamadas.leuRegistroReal = true; return {}; };
-  s.gerarPdfTransporteInterno_({ payload: { courier: 'MARKEN' }, formato: 'html', criarRascunho: false }, {});
+  s.gerarPdfTransporteInterno_({ payload: { courier }, formato: 'html', criarRascunho: false }, {});
   return chamadas;
 }
 
@@ -692,7 +692,9 @@ test('geracao em HTML nao prepara as abas reais e entrega a memoria ao exportado
   const docs = { ss: { id: 'MEMORIA' } };
   const c = geracao(docs);
   assert.equal(c.salvar.preencherDocumentos, false);
-  assert.equal(c.salvar.camposRascunho, true);
+  assert.equal(c.salvar.camposRascunho, false, 'o e-mail da MARKEN le a Folha, nao a Declaracao');
+  assert.equal(c.salvar.pularCamposIguais, true);
+  assert.equal(geracao(docs, 'OCASA').salvar.camposRascunho, true, 'o e-mail da OCASA le a Declaracao real');
   assert.equal(c.manifestoSs, docs.ss);
   assert.equal(c.interno.docsMemoria, docs);
   assert.equal(c.flush, 0);
