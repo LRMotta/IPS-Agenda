@@ -15813,6 +15813,8 @@ function atualizarAgendaEventoCompleto(dados) {
   // Persistir as escritas sob lock antes de conferir carro/registro e reler após a ordenação.
   SpreadsheetApp.flush();
   lap('sv_ordenar');
+  // Depois da ordenacao, para gravar nas linhas definitivas das origens.
+  if (deveOrdenarAgenda) agendaAtualizarBackupDataVinculada_(agenda, dados.id, d);
   var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
   rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   agendaInvalidateDateIndexCache_();
@@ -18449,6 +18451,65 @@ function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb, slot)
   return { atualizado: atualizados };
 }
 
+function agendaBackupRefQuando_(dataHora) {
+  return {
+    data: formatarDataSafe(dataHora),
+    dataIso: formatarDataIsoAgenda_(dataHora),
+    hora: formatAgendaHora_(dataHora)
+  };
+}
+
+// O vinculo guarda uma copia de data e horario do envio; ao reagendar o envio, a copia
+// nas origens (Backup I e II) acompanha, como a AWB em agendaAtualizarBackupAwbVinculado_.
+function agendaAtualizarBackupDataVinculada_(agenda, agendamentoId, dataHora) {
+  agendamentoId = String(agendamentoId || '').trim();
+  var lastRow = agenda.getLastRow();
+  if (!agendamentoId || lastRow < 2) return { atualizado: 0 };
+  var quando = agendaBackupRefQuando_(dataHora);
+  function aplicar(refs) {
+    var alterou = false;
+    refs.forEach(function(ref) {
+      if (ref.id !== agendamentoId) return;
+      if (ref.data === quando.data && ref.dataIso === quando.dataIso && ref.hora === quando.hora) return;
+      Object.assign(ref, quando);
+      alterou = true;
+    });
+    return alterou;
+  }
+  // Com a busca, so as linhas que citam o agendamento sao lidas; sem ela, a varredura de sempre.
+  var linhasVinculo = agendaLinhasVinculoBackup_(agenda, agendamentoId, lastRow);
+  var rows = linhasVinculo
+    ? linhasVinculo.map(function(linha) { return agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0]; })
+    : agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
+  var atualizados = 0;
+  rows.forEach(function(row, index) {
+    var linha = linhasVinculo ? linhasVinculo[index] : index + 2;
+    var origemId = String(row[AGENDA_CFG.idx.id] || '').trim();
+    var refAnterior = String(row[AGENDA_CFG.idx.backupAgendaRef] || '');
+    var refs = agendaBackupAgendaRefsFromCell_(refAnterior);
+    if (aplicar(refs)) {
+      var valorNovo = JSON.stringify(refs.length === 1 ? refs[0] : refs);
+      agenda.getRange(linha, AGENDA_CFG.col.backupAgendaRef).setValue(valorNovo);
+      codexWriteAuditChanges_('Agenda', 'sincronizarBackupData', origemId || agendamentoId, [{
+        field: 'Backup - Agendamento', oldValue: refAnterior, newValue: valorNovo
+      }], 'Data sincronizada do agendamento vinculado ' + agendamentoId);
+      atualizados++;
+    }
+    if (AGENDA_CFG.col.backup2Dados > 0) {
+      var backup2 = agendaBackup2FromRow_(row);
+      var refs2Anterior = JSON.stringify(backup2.agendamentos);
+      if (aplicar(backup2.agendamentos)) {
+        agendaBackup2Write_(agenda, linha, { agendamentos: backup2.agendamentos });
+        codexWriteAuditChanges_('Agenda', 'sincronizarBackupData', origemId || agendamentoId, [{
+          field: 'Backup II - Agendamento', oldValue: refs2Anterior, newValue: JSON.stringify(backup2.agendamentos)
+        }], 'Data sincronizada do agendamento vinculado ' + agendamentoId);
+        atualizados++;
+      }
+    }
+  });
+  return { atualizado: atualizados };
+}
+
 function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHora, backupSlot) {
   backupSlot = agendaBackupSlotKey_(backupSlot);
   origemId = String(origemId || '').trim();
@@ -18461,12 +18522,7 @@ function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHor
   var statusAnterior = backup.status;
   var refAnterior = backupSlot === 'backup2' ? JSON.stringify(backup.agendamentos) : String(origem[AGENDA_CFG.idx.backupAgendaRef] || '');
   var backupLabel = backupSlot === 'backup2' ? 'Backup II' : 'Backup';
-  var ref = {
-    id: destinoId,
-    data: formatarDataSafe(dataHora),
-    dataIso: formatarDataIsoAgenda_(dataHora),
-    hora: formatAgendaHora_(dataHora)
-  };
+  var ref = Object.assign({ id: destinoId }, agendaBackupRefQuando_(dataHora));
   var linhaDestino = agendaRowNumberById_(agenda, destinoId);
   var awbDestino = linhaDestino ? agenda.getRange(linhaDestino, AGENDA_CFG.idx.c1.awb + 1) : null;
   var awb = awbDestino ? String(awbDestino.getDisplayValue() || awbDestino.getValue() || '').trim() : '';
