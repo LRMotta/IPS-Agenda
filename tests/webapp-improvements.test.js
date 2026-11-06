@@ -280,6 +280,58 @@ test('monitor Gmail confirma em lote, preserva Message ID na auditoria e não re
   assert.equal(f.auditStats.writes, 1);
 });
 
+test('busca por AWB e por referência compartilham uma única leitura do Gmail por regra', () => {
+  const { server } = context(new FakeSpreadsheet({}));
+  const stats = { searches: [], threadReads: 0, bodyReads: 0 };
+  const message = (id, body) => ({
+    getId: () => id,
+    getSubject: () => 'DHL',
+    getPlainBody: () => { stats.bodyReads++; return body; },
+    getAttachments: () => []
+  });
+  const thread = messages => ({ getId: () => 'THREAD', getMessages: () => { stats.threadReads++; return messages; } });
+  const conversas = {
+    'from:a@example.invalid newer_than:7d': [thread([message('M1', 'Agendamento realizado para AWB 1234567890')])],
+    'from:b@example.invalid newer_than:7d': [thread([message('M2', 'Ref REF1'), message('M3', 'Agendamento realizado para ambiente 9876543210')])]
+  };
+  server.GmailApp = { search: (query, offset, limit) => { stats.searches.push([query, offset, limit]); return conversas[query]; } };
+  const regra = { emailConfirmacao: 'a@example.invalid', remetentesFixos: ['b@example.invalid'], textoConfirmacao: 'Agendamento realizado', extrairAwbPorReferencia: true, diasBusca: 7 };
+  const leitura = {};
+
+  const awbs = server.buscarConfirmacoesCourierNoGmail_(regra, { 1234567890: [] }, leitura);
+  const refs = server.buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, { REF1: [] }, leitura);
+
+  assert.equal(stats.searches.length, 2);
+  assert.equal(stats.threadReads, 2);
+  assert.equal(stats.bodyReads, 3);
+  assert.equal(awbs.length, 1);
+  assert.equal(awbs[0].messageId, 'M1');
+  assert.equal(awbs[0].query, 'from:a@example.invalid newer_than:7d');
+  assert.equal(refs.length, 1);
+  assert.equal(refs[0].messageId, 'M3');
+  assert.equal(refs[0].query, 'from:b@example.invalid newer_than:7d');
+  assert.equal(refs[0].awbs.ambiente, '9876543210');
+});
+
+test('monitor Gmail usa uma leitura própria para cada regra', () => {
+  const f = automationFixture(1);
+  const leituras = [];
+  f.server.getCourierConfirmationRules_ = () => ({
+    dhl: { courier: 'DHL', statusConfirmacao: 'Confirmado' },
+    marken: { courier: 'MARKEN', statusConfirmacao: 'Confirmado' }
+  });
+  f.server.buscarConfirmacoesCourierNoGmail_ = (_rule, _pending, leitura) => { leituras.push(leitura); return []; };
+  f.server.buscarConfirmacoesCourierPorReferenciaNoGmail_ = (_rule, _pending, leitura) => { leituras.push(leitura); return []; };
+
+  f.server.monitorarConfirmacoesCourierAgendadas_();
+
+  assert.equal(leituras.length, 4);
+  assert.ok(leituras[0]);
+  assert.equal(leituras[0], leituras[1]);
+  assert.equal(leituras[2], leituras[3]);
+  assert.notEqual(leituras[0], leituras[2]);
+});
+
 test('extração de AWB por referência mantém o slot, propaga ao vínculo de Backup e registra duas mudanças', () => {
   const f = automationFixture(2);
   f.agenda.rows[1][f.idx.c1.awb] = '';

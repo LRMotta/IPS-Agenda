@@ -14,6 +14,8 @@ temperatura é escolhida automaticamente para o segundo backup.
 - A origem deve estar salva antes de vincular. Identidade, versões e
   disponibilidade são revalidadas no servidor sob lock.
 - A AWB exibida vem do envio vinculado; o vínculo identifica também o slot.
+- Data e horário do vínculo são uma cópia do envio: ao reagendá-lo pela edição
+  da Agenda, a cópia é atualizada nas origens de Backup I e II e auditada.
 - A pendência de cada backup com status `Não Agendado` permanece independente
   da realização da visita.
 
