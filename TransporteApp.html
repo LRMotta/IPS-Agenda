@@ -391,6 +391,22 @@
 
   </div>
 
+  <div class="modal-backdrop" id="confirmNovaGeracaoModal" role="dialog" aria-modal="true" aria-labelledby="confirmNovaGeracaoTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="confirmNovaGeracaoTitle"><span class="material-symbols-outlined">autorenew</span>Gerar novamente</div>
+        <button class="modal-close" type="button" onclick="closeNovaGeracaoModal()" title="Fechar"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div>Gerar os documentos novamente com os dados atuais? Confira antes o Drive e o Gmail: esta ação pode criar outro PDF e outro rascunho. Os campos do formulário serão mantidos.</div>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="btnConfirmarNovaGeracao" onclick="confirmNovaGeracao()"><span class="material-symbols-outlined">autorenew</span>Gerar novamente</button>
+          <button class="btn secondary" type="button" onclick="closeNovaGeracaoModal()"><span class="material-symbols-outlined">close</span>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="confirmClearModal" role="dialog" aria-modal="true" aria-labelledby="confirmClearTitle">
     <div class="modal">
       <div class="modal-head">
@@ -594,7 +610,7 @@
     }, true);
 
     window.addEventListener('beforeunload', function(e) {
-      if (!transportHasUnsavedChanges && !transportBusy) return;
+      if (!transportHasUnsavedChanges && !transportBusy && !transportDocsPendentes) return;
       e.preventDefault();
       e.returnValue = '';
     });
@@ -637,8 +653,8 @@
 
     function updateTransportActionState(context) {
       var missing = blockingIssues(context);
-      var blocked = transportBusy || missing.length > 0;
-      var title = transportBusy ? 'Processando transporte...' : missing.length
+      var blocked = transportBusy || transportDocsPendentes || missing.length > 0;
+      var title = transportBusy ? 'Processando transporte...' : transportDocsPendentes ? 'Criando o rascunho...' : missing.length
         ? 'Preencha para continuar: ' + missing.join(', ')
         : (transportHasUnsavedChanges ? 'Ha alteracoes nao salvas.' : 'Pronto para salvar.');
       setButtonState('btnSaveTransport', blocked, title);
@@ -793,6 +809,26 @@
       return typeof res === 'string' && /^\s*Erro\b/i.test(res);
     }
 
+    function renderPdfDraftWarning(data) {
+      var draftWarning = document.getElementById('pdfDraftWarning');
+      if (draftWarning) {
+        if (data.draftPending === true) {
+          draftWarning.textContent = 'Criando o rascunho no Gmail. Aguarde antes de sair desta página.';
+          draftWarning.classList.add('show');
+        } else if (data.draftOk === false) {
+          var authLink = data.draftAuthUrl
+            ? ' <a href="' + esc(data.draftAuthUrl) + '" target="_blank" rel="noopener">Autorizar Gmail</a>'
+            : '';
+          var draftPrefix = data.draftErrorCode === 'GENERATION_UNCERTAIN' ? 'o PDF foi gerado, mas não foi possível confirmar o rascunho. ' : 'o PDF foi gerado, mas o rascunho de e-mail não foi criado. ';
+          draftWarning.innerHTML = '<strong>Atenção:</strong> ' + draftPrefix + esc(data.draftError || data.draftMessage || '') + authLink;
+          draftWarning.classList.add('show');
+        } else {
+          draftWarning.textContent = '';
+          draftWarning.classList.remove('show');
+        }
+      }
+    }
+
     function showPdfModal(data) {
       if (!data || (!data.fileId && !data.downloadUrl)) return;
       window._lastGeneratedPdf = data;
@@ -806,20 +842,7 @@
       document.getElementById('pdfModalIntro').textContent = data.recovered === true ? TRANSPORT_RESULTADO_REPETIDO
         : 'O arquivo foi gerado. Revise a documentação e os avisos antes de imprimir ou enviar.';
       document.getElementById('pdfModalFile').textContent = data.fileName || 'documentacao-transporte.pdf';
-      var draftWarning = document.getElementById('pdfDraftWarning');
-      if (draftWarning) {
-        if (data.draftOk === false) {
-          var authLink = data.draftAuthUrl
-            ? ' <a href="' + esc(data.draftAuthUrl) + '" target="_blank" rel="noopener">Autorizar Gmail</a>'
-            : '';
-          var draftPrefix = data.draftErrorCode === 'GENERATION_UNCERTAIN' ? 'o PDF foi gerado, mas não foi possível confirmar o rascunho. ' : 'o PDF foi gerado, mas o rascunho de e-mail não foi criado. ';
-          draftWarning.innerHTML = '<strong>Atenção:</strong> ' + draftPrefix + esc(data.draftError || data.draftMessage || '') + authLink;
-          draftWarning.classList.add('show');
-        } else {
-          draftWarning.textContent = '';
-          draftWarning.classList.remove('show');
-        }
-      }
+      renderPdfDraftWarning(data);
       document.getElementById('pdfDownloadLink').disabled = false;
       document.getElementById('pdfPrintLink').href = data.printUrl || data.fileUrl || data.downloadUrl;
       document.getElementById('pdfDriveLink').href = data.fileUrl || data.downloadUrl;
@@ -892,7 +915,14 @@
       closeTransportModal('pdfModal');
     }
 
+    function transportAguardandoDocs() {
+      if (!transportDocsPendentes) return false;
+      toast('Aguarde a criação do rascunho para continuar.', 'warn');
+      return true;
+    }
+
     function serverCall(name, args, okMsg, after, busyMsg) {
+      if (transportAguardandoDocs()) return;
       setBusy(true, busyMsg);
       var runner = google.script.run
         .withSuccessHandler(function(res) {
@@ -1384,6 +1414,9 @@
     var TRANSPORT_RESULTADO_REPETIDO = 'Nenhum documento novo foi criado: estes são o PDF e o rascunho já gerados com os mesmos dados. Use Gerar novamente para criar outros.';
     var transportAwbAvisoPedido = 0;
     var transportReferenciasPedido = 0;
+    // Rascunho e monitor ainda em andamento depois de o PDF ser entregue.
+    var transportDocsPendentes = false;
+    var transportDocsPedido = 0;
 
     function loadData(force) {
       var initialArgs = force ? {} : INITIAL_TRANS_ARGS;
@@ -2152,7 +2185,9 @@
       if (pdf && pdf.type === 'pdf') {
         transportGenerationWarnings(pdf).forEach(function(message) { issues.push({ type: 'warn', text: message }); });
         issues.push({ type:'ok', text:(pdf.recovered === true ? 'PDF já existente no Drive: ' : 'PDF gerado no Drive: ') + (pdf.fileName || 'documentacao-transporte.pdf') });
-        if (pdf.draftOk === false) {
+        if (pdf.draftPending === true) {
+          issues.push({ type:'warn', text:'Rascunho no Gmail em criação. Aguarde antes de sair desta página.' });
+        } else if (pdf.draftOk === false) {
           issues.push({ type:'warn', text:(pdf.draftErrorCode === 'GENERATION_UNCERTAIN' ? 'Rascunho no Gmail nao confirmado: ' : 'Rascunho no Gmail nao criado: ') + (pdf.draftError || pdf.draftMessage || 'verifique autorizacao e conta executora.') });
         } else if (pdf.draftOk === true || pdf.draftId) {
           issues.push({ type:'ok', text:pdf.recovered === true ? 'Rascunho no Gmail já existente.' : 'Rascunho no Gmail criado.' });
@@ -2434,8 +2469,17 @@
     }
 
     function newTransportGeneration() {
+      if (transportBusy || transportAguardandoDocs()) return;
+      openTransportModal('confirmNovaGeracaoModal');
+    }
+
+    function closeNovaGeracaoModal() {
+      closeTransportModal('confirmNovaGeracaoModal');
+    }
+
+    function confirmNovaGeracao() {
+      closeNovaGeracaoModal();
       if (transportBusy) return;
-      if (!window.confirm('Gerar os documentos novamente com os dados atuais? Confira antes o Drive e o Gmail: esta ação pode criar outro PDF e outro rascunho. Os campos do formulário serão mantidos.')) return;
       try { window.localStorage.removeItem(transportGenerationStorageKey(collectPayload())); }
       catch (error) { toast('Não foi possível preparar uma nova geração. Verifique o armazenamento do navegador.', 'danger'); return; }
       closePdfModal();
@@ -2446,6 +2490,7 @@
     function pdfButtonText() { return transportPdfFormat === 'html' ? 'Gerar PDF (HTML)' : 'Gerar PDF'; }
 
     function saveAndRun(actionName, okMsg) {
+      if (transportAguardandoDocs()) return;
       if (!ensureRequiredTransportFields()) return;
       var payload = collectPayload();
       var requestedByEmail = state && state.access ? state.access.email : '';
@@ -2458,7 +2503,8 @@
         return;
       }
       setButtonLabel(pdfButtonId(), 'Gerando...');
-      setBusy(true, 'Salvando e gerando PDF e rascunho...');
+      setBusy(true, 'Salvando e gerando o PDF...');
+      var opcoesGeracao = { payload: payload, requestedByEmail: requestedByEmail, generationRequestId: generationRequestId, formato: transportPdfFormat || undefined, rascunhoSeparado: true };
       google.script.run
         .withSuccessHandler(function(res) {
           setBusy(false);
@@ -2472,23 +2518,17 @@
           transportApplySavedRegistro(payload, res);
           renderAll();
           transportClearUnsaved();
-          refreshAgendaInOpener();
-          var msg = res && typeof res === 'object' ? (res.message || okMsg) : (res || okMsg);
-          var syncMsg = agendaSyncMessage(res, '');
-          if (syncMsg) msg += ' ' + syncMsg;
-          var hasDriveWarning = res && res.driveAccess && (res.driveAccess.fileShareError || res.driveAccess.folderShareError);
-          var msgType = res && typeof res === 'object' && (res.draftOk === false || hasDriveWarning || (res.warnings && res.warnings.length) || agendaSyncMessageType(res) === 'warn') ? 'warn' : 'ok';
-          // Resultado repetido nao criou nada: dizer isso, em vez de anunciar uma geracao.
-          var repetido = res && typeof res === 'object' && res.recovered === true && msgType === 'ok';
-          if (repetido) {
-            msg = TRANSPORT_RESULTADO_REPETIDO;
-            msgType = 'warn';
+          // PDF antecipado: entrega agora; rascunho e monitor seguem em uma segunda chamada.
+          if (res && typeof res === 'object' && res.draftPending === true) {
+            setActionStatus('PDF pronto. Criando o rascunho...', '');
+            showPdfModal(res);
+            transportConcluirDocumentos(opcoesGeracao, res, okMsg);
+            return;
           }
-          // Sucesso completo: nome do PDF e rascunho ja aparecem no modal e no Checklist.
-          // PINEX, Backup e avisos do monitor mantem a mensagem inteira.
-          if (msgType === 'ok' && res && res.type === 'pdf' && res.draftOk === true && !res.monitorWarning) msg = okMsg;
-          setActionStatus(msg, msgType);
-          toast(msg, msgType);
+          refreshAgendaInOpener();
+          var resumo = transportResumoGeracao(res, okMsg);
+          setActionStatus(resumo.msg, resumo.tipo);
+          toast(resumo.msg, resumo.tipo);
           if (res && typeof res === 'object' && res.type === 'pdf') showPdfModal(res);
         })
         .withFailureHandler(function(e) {
@@ -2498,7 +2538,51 @@
           setActionStatus(msg, 'danger');
           toast(msg, 'danger');
           setButtonLabel(pdfButtonId(), pdfButtonText());
-        })[actionName]({ payload: payload, requestedByEmail: requestedByEmail, generationRequestId: generationRequestId, formato: transportPdfFormat || undefined });
+        })[actionName](opcoesGeracao);
+    }
+
+    // Mensagem final da geracao, em uma chamada ou depois do PDF antecipado: avisos nunca somem.
+    function transportResumoGeracao(res, okMsg) {
+      var msg = res && typeof res === 'object' ? (res.message || okMsg) : (res || okMsg);
+      var syncMsg = agendaSyncMessage(res, '');
+      if (syncMsg) msg += ' ' + syncMsg;
+      var hasDriveWarning = res && res.driveAccess && (res.driveAccess.fileShareError || res.driveAccess.folderShareError);
+      var tipo = res && typeof res === 'object' && (res.draftOk === false || hasDriveWarning || (res.warnings && res.warnings.length) || agendaSyncMessageType(res) === 'warn') ? 'warn' : 'ok';
+      // Resultado repetido nao criou nada: dizer isso, em vez de anunciar uma geracao.
+      if (res && typeof res === 'object' && res.recovered === true && tipo === 'ok') return { msg: TRANSPORT_RESULTADO_REPETIDO, tipo: 'warn' };
+      // Sucesso completo: nome do PDF e rascunho ja aparecem no modal e no Checklist.
+      // PINEX, Backup e avisos do monitor mantem a mensagem inteira.
+      if (tipo === 'ok' && res && res.type === 'pdf' && res.draftOk === true && !res.monitorWarning) msg = okMsg;
+      return { msg: msg, tipo: tipo };
+    }
+
+    function transportConcluirDocumentos(opcoes, pdf, okMsg) {
+      var pedido = ++transportDocsPedido;
+      transportDocsPendentes = true;
+      updateTransportActionState();
+      function finalizar(resultado, erro) {
+        if (pedido !== transportDocsPedido) return;
+        transportDocsPendentes = false;
+        var final = Object.assign({}, pdf, resultado, { draftPending: false });
+        window._lastGeneratedPdf = final;
+        state.lastPdfResult = final;
+        renderPdfDraftWarning(final);
+        renderIssues();
+        updateTransportActionState();
+        refreshAgendaInOpener();
+        var resumo = erro ? { msg: erro, tipo: 'danger' } : transportResumoGeracao(final, okMsg);
+        setActionStatus(resumo.msg, resumo.tipo);
+        toast(resumo.msg, resumo.tipo);
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          finalizar(res && typeof res === 'object' ? res : {});
+        })
+        .withFailureHandler(function(e) {
+          var motivo = transportErrorMessage(e) + ' Repita a geração pelo mesmo botão para retomar, sem criar outro PDF.';
+          finalizar({ draftOk: false, draftError: motivo }, 'PDF pronto, mas o rascunho não foi concluído: ' + motivo);
+        })
+        .concluirDocumentosTransporte(opcoes);
     }
 
     // Limpar e Sincronizar devolvem so o formulario; as listas continuam as da tela.

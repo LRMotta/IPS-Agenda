@@ -15449,7 +15449,7 @@ function agendaBooleanValue_(value) {
     normalized === 'yes' || normalized === 'on';
 }
 
-function agendaNascimentoFromDados_(dados, rowAnterior) {
+function agendaNascimentoFromDados_(dados, rowAnterior, leituraParticipantes) {
   dados = dados || {};
   var nascimento = String(dados.nascimento || '').trim();
   if (nascimento) return nascimento;
@@ -15468,11 +15468,11 @@ function agendaNascimentoFromDados_(dados, rowAnterior) {
     nome: participante,
     idParticipante: dados.participanteId || dados.idParticipante,
     projeto: dados.projeto
-  });
+  }, leituraParticipantes);
   return info && info.nascimento ? info.nascimento : '';
 }
 
-function agendaIdParticipanteFromDados_(dados, rowAnterior) {
+function agendaIdParticipanteFromDados_(dados, rowAnterior, leituraParticipantes) {
   dados = dados || {};
   var participante = String(dados.participante || '').trim();
   if (!participante) return '';
@@ -15483,12 +15483,13 @@ function agendaIdParticipanteFromDados_(dados, rowAnterior) {
     var idAnterior = String(rowAnterior[i.idParticipante] || '').trim();
     if (idAnterior) return idAnterior;
   }
-  var info = getInfoParticipante({
+  // Consulta enxuta: getInfoParticipante leria a Agenda inteira para a ultima visita.
+  var info = agendaInfoParticipanteParaSalvar_({
     idCadastro: dados.participanteCadastroId,
     nome: participante,
     idParticipante: dados.participanteId || dados.idParticipante,
     projeto: dados.projeto
-  });
+  }, leituraParticipantes);
   return info ? String(info.numId || '').trim() : '';
 }
 
@@ -15544,7 +15545,7 @@ function agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior) {
   return null;
 }
 
-function agendaBracoFromDados_(dados, rowAnterior) {
+function agendaBracoFromDados_(dados, rowAnterior, leituraParticipantes) {
   dados = dados || {};
   var participante = String(dados.participante || '').trim();
   if (!participante) return '';
@@ -15555,12 +15556,13 @@ function agendaBracoFromDados_(dados, rowAnterior) {
     var bracoAnterior = String(rowAnterior[i.braco] || '').trim();
     if (bracoAnterior) return bracoAnterior;
   }
-  var info = getInfoParticipante({
+  // Consulta enxuta: getInfoParticipante leria a Agenda inteira para a ultima visita.
+  var info = agendaInfoParticipanteParaSalvar_({
     idCadastro: dados.participanteCadastroId,
     nome: participante,
     idParticipante: dados.participanteId || dados.idParticipante,
     projeto: dados.projeto
-  });
+  }, leituraParticipantes);
   return info ? String(info.braco || '').trim() : '';
 }
 
@@ -15753,16 +15755,18 @@ function atualizarAgendaEventoCompleto(dados) {
     ? (rowAnterior[AGENDA_CFG.idx.ecrf] || dataConclusaoPostVisit)
     : agendaPostVisitValue_(dados.ecrfConcluida, rowAnterior[AGENDA_CFG.idx.ecrf]);
 
+  // Uma leitura de Participantes serve nascimento, ID e braco.
+  var leituraParticipantes = {};
   agenda.getRange(linha, AGENDA_CFG.col.data, 1, AGENDA_CFG.col.kit - AGENDA_CFG.col.data + 1).setValues([[
     formatAgendaDatePt_(d),
     horaNova,
     tipo,
     status,
     dados.participante || '',
-    agendaNascimentoFromDados_(dados, rowAnterior),
-    agendaIdParticipanteFromDados_(dados, rowAnterior),
+    agendaNascimentoFromDados_(dados, rowAnterior, leituraParticipantes),
+    agendaIdParticipanteFromDados_(dados, rowAnterior, leituraParticipantes),
     dados.projeto || '',
-    agendaBracoFromDados_(dados, rowAnterior),
+    agendaBracoFromDados_(dados, rowAnterior, leituraParticipantes),
     dados.visita || '',
     dados.medico || '',
     dados.procedimentos || '',
@@ -16361,10 +16365,12 @@ function agendaWriteInitialEventRow_(agenda, linha, id, d, dados, tipo, status, 
   row[AGENDA_CFG.idx.tipo] = tipo;
   row[AGENDA_CFG.idx.status] = status;
   row[AGENDA_CFG.idx.participante] = dados.participante || '';
-  row[AGENDA_CFG.idx.nasc] = agendaNascimentoFromDados_(dados);
-  row[AGENDA_CFG.idx.idParticipante] = agendaIdParticipanteFromDados_(dados);
+  // Uma leitura de Participantes serve as tres consultas desta linha.
+  var leituraParticipantes = {};
+  row[AGENDA_CFG.idx.nasc] = agendaNascimentoFromDados_(dados, null, leituraParticipantes);
+  row[AGENDA_CFG.idx.idParticipante] = agendaIdParticipanteFromDados_(dados, null, leituraParticipantes);
   row[AGENDA_CFG.idx.projeto] = dados.projeto || '';
-  row[AGENDA_CFG.idx.braco] = agendaBracoFromDados_(dados);
+  row[AGENDA_CFG.idx.braco] = agendaBracoFromDados_(dados, null, leituraParticipantes);
   row[AGENDA_CFG.idx.visita] = dados.visita || '';
   row[AGENDA_CFG.idx.medico] = dados.medico || '';
   row[AGENDA_CFG.idx.procedimentos] = dados.procedimentos || '';

@@ -187,3 +187,149 @@ test('registro normalizado do PDF retorna ao cliente sem ocupar checkpoints dur�
   assert.equal(second.registro, undefined);
   assert.equal(f.counts.save, 1);
 });
+
+// PDF antecipado: a primeira chamada entrega o PDF e a segunda cria rascunho e monitor.
+function duasFases(courier = 'DHL') {
+  const f = fixture();
+  const monitor = [];
+  f.s.transporteMonitorReferencia_ = () => 'IPS-TRP-REF';
+  f.s.transporteReadRegistro_ = () => ({ idAgenda: 'EVENT', agendaSlot: '1' });
+  f.s.transporteRegistrarDocumentacaoGerada_ = info => { monitor.push(info); return { registrado: true }; };
+  const options = { generationRequestId: 'b'.repeat(32), rascunhoSeparado: true, payload: { idAgenda: 'EVENT', agendaSlot: '1', paciente: 'Pessoa', courier } };
+  return { ...f, monitor, options, gerar: () => f.s.gerarPdfTransporte({ ...options }), concluir: () => f.s.concluirDocumentosTransporte({ ...options }) };
+}
+
+test('primeira fase entrega o PDF sem rascunho nem monitor, e a segunda completa', () => {
+  const f = duasFases();
+  const pdf = f.gerar();
+  assert.equal(pdf.fileId, 'PDF-1');
+  assert.equal(pdf.draftPending, true);
+  assert.equal(f.counts.draft, 0);
+  assert.equal(f.monitor.length, 0);
+  const fim = f.concluir();
+  assert.equal(fim.draftOk, true);
+  assert.equal(fim.draftId, 'DRAFT-1');
+  assert.equal(fim.fileId, 'PDF-1');
+  assert.equal(f.counts.draft, 1);
+  assert.equal(f.counts.pdf, 1);
+  assert.equal(f.monitor.length, 1);
+  assert.equal(f.monitor[0].agendaId, 'EVENT');
+  assert.equal(f.monitor[0].rascunhoId, 'DRAFT-1');
+  assert.equal(f.s.TRANSPORTE_GENERATION_REQUEST_, null);
+});
+
+test('formulario trocado entre as fases nao cria rascunho com dados de outro envio', () => {
+  const f = duasFases();
+  f.gerar();
+  f.s.transporteGenerationSourceHash_ = () => 'SOURCE-OUTRO-ENVIO';
+  const fim = f.concluir();
+  assert.equal(fim.draftOk, false);
+  assert.equal(fim.draftErrorCode, 'SOURCE_CHANGED');
+  assert.equal(f.counts.draft, 0);
+  assert.equal(f.monitor.length, 0);
+  assert.equal(fim.fileId, 'PDF-1', 'o PDF continua disponivel');
+  // Gerar de novo com os mesmos dados restaura o formulario e retoma, sem outro PDF.
+  f.s.transporteGenerationSourceHash_ = () => 'SOURCE-1';
+  assert.equal(f.gerar().draftPending, true);
+  assert.equal(f.concluir().draftOk, true);
+  assert.equal(f.counts.pdf, 1);
+  assert.equal(f.counts.draft, 1);
+});
+
+test('aba fechada antes da segunda fase retoma sem criar outro PDF', () => {
+  const f = duasFases();
+  f.gerar();
+  const retomada = f.gerar();
+  assert.equal(retomada.draftPending, true);
+  assert.equal(retomada.fileId, 'PDF-1');
+  assert.equal(f.counts.pdf, 1);
+  assert.equal(f.concluir().draftId, 'DRAFT-1');
+  assert.equal(f.counts.draft, 1);
+});
+
+test('repetir a segunda fase nao duplica rascunho nem monitor', () => {
+  const f = duasFases();
+  f.gerar();
+  const primeiro = f.concluir();
+  const repetido = f.concluir();
+  assert.equal(repetido.recovered, true);
+  assert.equal(repetido.draftId, primeiro.draftId);
+  assert.equal(f.counts.draft, 1);
+  assert.equal(f.monitor.length, 1);
+});
+
+test('geracao completa repetida devolve o resultado sem marcar rascunho pendente', () => {
+  const f = duasFases();
+  f.gerar();
+  f.concluir();
+  const repetida = f.gerar();
+  assert.equal(repetida.recovered, true);
+  assert.notEqual(repetida.draftPending, true);
+  assert.equal(f.counts.pdf, 1);
+});
+
+test('falha de autorizacao do Gmail mantem a pendencia e permite retomar', () => {
+  const f = duasFases();
+  f.gerar();
+  f.setFault('gmail-auth');
+  assert.equal(f.concluir().draftOk, false);
+  f.setFault('');
+  const fim = f.concluir();
+  assert.equal(fim.draftOk, true);
+  assert.equal(f.counts.draft, 1);
+});
+
+test('interrupcao durante o rascunho nao recria e pede conferencia do Gmail', () => {
+  const f = duasFases();
+  f.gerar();
+  f.setFault('draft-unknown');
+  assert.throws(f.concluir, /interrupcao/);
+  f.setFault('');
+  const fim = f.concluir();
+  assert.equal(fim.draftErrorCode, 'GENERATION_UNCERTAIN');
+  assert.equal(f.counts.draft, 1);
+});
+
+test('PINEX nao tem rascunho e termina na primeira fase', () => {
+  const f = duasFases('PINEX');
+  f.s.imprimirTodasAbas_ = () => {
+    f.s.transporteGenerationCheckpoint_({ phase: 'PDF_INTENT', sourceHash: 'SOURCE-1', sourceSheets: ['Modelo'] });
+    const pdf = { type: 'pdf', fileId: 'PDF-P', courier: 'PINEX', message: 'PDF gerado.' };
+    f.s.transporteGenerationCheckpoint_({ phase: 'PDF_READY', pdf });
+    return pdf;
+  };
+  const pdf = f.gerar();
+  assert.notEqual(pdf.draftPending, true);
+  assert.equal(f.counts.draft, 0);
+  assert.match(pdf.message, /manualmente/);
+});
+
+test('sem pedir separacao o fluxo continua em uma chamada', () => {
+  const f = fixture();
+  const resultado = f.request();
+  assert.notEqual(resultado.draftPending, true);
+  assert.equal(resultado.draftId, 'DRAFT-1');
+  assert.equal(f.counts.draft, 1);
+});
+
+test('sem o hash das abas nao ha como proteger a segunda fase: segue em uma chamada', () => {
+  const f = duasFases();
+  f.s.imprimirTodasAbas_ = () => {
+    const pdf = { type: 'pdf', fileId: 'PDF-S', courier: 'DHL', message: 'PDF gerado.' };
+    f.s.transporteGenerationCheckpoint_({ phase: 'PDF_READY', pdf });
+    return pdf;
+  };
+  const resultado = f.gerar();
+  assert.notEqual(resultado.draftPending, true);
+  assert.equal(resultado.draftId, 'DRAFT-1');
+  assert.equal(f.counts.draft, 1);
+});
+
+test('segunda fase exige escrita e um PDF pendente', () => {
+  const f = duasFases();
+  assert.throws(f.concluir, /Não há rascunho pendente/);
+  f.gerar();
+  f.deny();
+  assert.throws(f.concluir, /Acesso negado/);
+  assert.equal(f.counts.draft, 0);
+});

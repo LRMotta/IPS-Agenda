@@ -362,6 +362,23 @@ test('Transporte: participantes e CE ignoram retornos atrasados sem trocar o est
   }, { partialParticipants: true });
 });
 
+test('Transporte: Gerar novamente usa modal do app, com teclado e sem gerar ao cancelar', async () => {
+  await scenario(async page => {
+    const botao = page.locator('.actions-top button').filter({ hasText: 'Gerar novamente' });
+    await page.evaluate(() => { window.confirm = () => { throw new Error('dialogo nativo'); }; });
+    await botao.evaluate(el => { el.disabled = false; });
+    await botao.click();
+    const modal = page.locator('#confirmNovaGeracaoModal');
+    assert.equal(await modal.evaluate(el => el.contains(document.activeElement)), true);
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await modal.locator('.modal-actions button').last().evaluate(el => el === document.activeElement), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await modal.isVisible(), false);
+    assert.equal(await botao.evaluate(el => el === document.activeElement), true);
+    assert.equal(await page.evaluate(() => window.calls.some(call => call.method === 'gerarPdfTransporte')), false);
+  });
+});
+
 test('Transporte: modal prende foco, fecha com Escape e devolve foco sem acessar servicos reais', async () => {
   await scenario(async page => {
     const clear = page.locator('.actions-top button.danger');
@@ -617,6 +634,69 @@ async function concluirGeracao(page, resultado) {
   await page.evaluate(res => window.calls.find(item => item.method === 'gerarPdfTransporte').success(res), resultado);
 }
 
+const pdfAntecipado = { type: 'pdf', fileId: 'F1', fileName: 'AWB.pdf', fileUrl: 'https://example.invalid/pdf', draftPending: true, message: 'PDF gerado.', warnings: [] };
+const concluir = (page, metodo, valor) => page.evaluate(([m, v]) => window.calls.find(item => item.method === 'concluirDocumentosTransporte')[m](m === 'failure' ? new Error(v) : v), [metodo, valor]);
+
+test('Transporte: PDF sai antes do rascunho e bloqueia acoes ate concluir', async () => {
+  await scenario(async page => {
+    await concluirGeracao(page, pdfAntecipado);
+    assert.equal(await page.locator('#pdfModal').isVisible(), true);
+    assert.match(await page.locator('#pdfDraftWarning').innerText(), /Criando o rascunho/);
+    assert.match(await page.locator('#actionStatus').innerText(), /PDF pronto/);
+    const pedido = await page.evaluate(() => window.calls.find(item => item.method === 'concluirDocumentosTransporte').args[0]);
+    const geracao = await page.evaluate(() => window.calls.find(item => item.method === 'gerarPdfTransporte').args[0]);
+    assert.equal(pedido.generationRequestId, geracao.generationRequestId);
+    assert.equal(geracao.rascunhoSeparado, true);
+    assert.equal(await page.locator('#btnSaveTransport').isDisabled(), true);
+    assert.equal(await page.locator('#btnPdfTransport').isDisabled(), true);
+    await page.evaluate(() => window.saveData());
+    assert.equal(await page.evaluate(() => window.calls.some(item => item.method === 'salvarTransporte')), false, 'nao salva durante a pendencia');
+    await concluir(page, 'success', { draftOk: true, draftId: 'D1', message: 'PDF gerado. Rascunho criado.' });
+    assert.equal(await page.locator('#actionStatus').innerText(), 'PDF e rascunho gerados.');
+    assert.equal(await page.locator('#pdfDraftWarning').innerText(), '');
+    assert.match(await page.locator('body').innerText(), /Rascunho no Gmail criado/);
+    assert.equal(await page.locator('#btnSaveTransport').isDisabled(), false);
+  });
+});
+
+test('Transporte: avisos do PDF antecipado continuam visiveis no fim', async () => {
+  const casos = [
+    [{ agendaSync: { warnings: ['Agenda ja possui AWB diferente.'] } }, /AWB diferente/],
+    [{ driveAccess: { fileShareError: 'sem acesso' }, driveAccessWarning: 'Drive nao compartilhou o arquivo.' }, /PDF gerado/],
+    [{ warnings: [{ code: 'X', message: 'Confira o aviso da geracao.' }] }, /PDF gerado/],
+    [{ monitorWarning: 'Nao foi possivel registrar o acompanhamento.', message: 'PDF gerado. Monitor com aviso.' }, /Monitor com aviso/]
+  ];
+  for (const [extra, esperado] of casos) {
+    await scenario(async page => {
+      await concluirGeracao(page, { ...pdfAntecipado, ...extra });
+      await concluir(page, 'success', { type: 'pdf', fileId: 'F1', draftOk: true, draftId: 'D1', message: 'PDF gerado. Rascunho criado.', ...extra });
+      assert.match(await page.locator('#actionStatus').innerText(), esperado);
+      assert.notEqual(await page.locator('#actionStatus').innerText(), 'PDF e rascunho gerados.');
+    });
+  }
+});
+
+test('Transporte: formulario trocado avisa e nao anuncia rascunho', async () => {
+  await scenario(async page => {
+    await concluirGeracao(page, pdfAntecipado);
+    const aviso = 'O formulário do Transporte mudou depois do PDF, então o rascunho não foi criado.';
+    await concluir(page, 'success', { draftOk: false, draftErrorCode: 'SOURCE_CHANGED', draftError: aviso, message: 'PDF gerado. ' + aviso });
+    assert.match(await page.locator('#actionStatus').innerText(), /rascunho não foi criado/);
+    assert.match(await page.locator('#pdfDraftWarning').innerText(), /formulário do Transporte mudou/);
+    assert.doesNotMatch(await page.locator('body').innerText(), /Rascunho no Gmail criado/);
+  });
+});
+
+test('Transporte: falha da segunda chamada libera a tela e orienta retomar', async () => {
+  await scenario(async page => {
+    await concluirGeracao(page, pdfAntecipado);
+    await concluir(page, 'failure', 'Tempo esgotado');
+    assert.match(await page.locator('#actionStatus').innerText(), /mesmo botão para retomar/);
+    assert.equal(await page.locator('#btnSaveTransport').isDisabled(), false);
+    assert.equal(await page.locator('#pdfModal').isVisible(), true, 'o PDF continua acessivel');
+  });
+});
+
 test('Transporte: resultado repetido nao anuncia uma geracao nova', async () => {
   await scenario(async page => {
     await concluirGeracao(page, { type: 'pdf', fileId: 'F1', fileName: 'AWB.pdf', draftOk: true, recovered: true, message: 'PDF gerado no Drive: AWB.pdf', warnings: [] });
@@ -699,9 +779,14 @@ test('Transporte: retentativas conservam token, armazenamento guarda somente ide
     assert.equal(await page.locator('.actions-top button').filter({ hasText: 'Gerar novamente' }).count(), 1);
     assert.equal(await page.locator('#paciente').inputValue(), 'participante:CAD-A');
     await page.screenshot({ path: path.join(dir, 'transport-gerar-novamente.png') });
-    await page.evaluate(() => { window.confirm = () => false; window.newTransportGeneration(); });
+    await page.evaluate(() => { window.confirm = () => { throw new Error('dialogo nativo'); }; window.newTransportGeneration(); });
+    assert.equal(await page.locator('#confirmNovaGeracaoModal').isVisible(), true);
+    assert.match(await page.locator('#confirmNovaGeracaoModal').innerText(), /pode criar outro PDF e outro rascunho/);
+    await page.locator('#confirmNovaGeracaoModal .modal-actions button').filter({ hasText: 'Cancelar' }).click();
+    assert.equal(await page.locator('#confirmNovaGeracaoModal').isVisible(), false);
     assert.equal(await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte').length), 2);
-    await page.evaluate(() => { window.confirm = () => true; window.newTransportGeneration(); });
+    await page.evaluate(() => window.newTransportGeneration());
+    await page.locator('#btnConfirmarNovaGeracao').click();
     const third = await page.evaluate(() => window.calls.filter(c => c.method === 'gerarPdfTransporte')[2].args[0].generationRequestId);
     assert.notEqual(third, first);
   });

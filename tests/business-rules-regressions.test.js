@@ -8,7 +8,7 @@ const { fixture } = require('./helpers/agenda-merge-fixture');
 
 test('merge conserva identidade hidratada assinada quando somente obs e médico mudam', () => {
   const { c, i, sheet, payload } = fixture();
-  c.getInfoParticipante = () => null;
+  c.agendaInfoParticipanteParaSalvar_ = () => null;
   for (const key of ['participanteCadastroId', 'idParticipante', 'braco']) sheet.rows[1][i[key]] = '';
   const event = c.agendaRowToObject_(sheet.rows[1], 2);
   Object.assign(event, { participanteCadastroId: 'CAD-A', idParticipante: '001', braco: 'Braço A' });

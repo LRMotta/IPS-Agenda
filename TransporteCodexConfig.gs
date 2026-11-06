@@ -4816,7 +4816,7 @@ function gerarPdfTransporte(options) {
           result.draftErrorCode = 'GENERATION_UNCERTAIN';
           result.draftError = 'O rascunho pode ter sido criado. Confira o Gmail antes de usar Gerar novamente.';
           result.message = 'PDF gerado. ' + result.draftError;
-        } else if (result.draftOk !== false || result.draftId) {
+        } else if (!result.draftPending && (result.draftOk !== false || result.draftId)) {
           transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: result, pdf: null, draft: null });
         }
       }
@@ -4923,78 +4923,145 @@ function gerarPdfTransporteInterno_(options, access) {
     }
   }
   if (courier === 'PINEX') options.criarRascunho = false;
-  if (options.criarRascunho) {
-    var draft = transporteMeasurePerformance_('gerarPdfTransporte', 'draft', { rowCount: 1 }, function() {
-      if (request && request.record.draft) {
-        var recordedDraft = request.record.draft;
-        // Um rascunho anterior ja existe: nao validar seu corpo por inferencia nem duplicar.
-        if (courier === 'MARKEN' && (!recordedDraft.temperaturaPdf || transporteNormalizeTemperaturaFromCodex_(recordedDraft.temperaturaPdf) !== temperaturaPdf)) {
-          return Object.assign({}, recordedDraft, { ok: false, error: 'RECOVERY_REVIEW_REQUIRED',
-            message: 'O PDF e o rascunho existentes foram recuperados, mas a temperatura do rascunho não pôde ser confirmada. Confira o e-mail antes de enviar ou usar Gerar novamente.' });
-        }
-        return recordedDraft;
-      }
-      return criarRascunhoTransporte_(result && typeof result === 'object' ? {
-        pdfFileId: result.fileId,
-        requestedByEmail: options.requestedByEmail || '',
-        agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
-        monitorRef: monitorRef,
-        pdfHash: result.manifestoPdfHash,
-        generationRequestId: options.generationRequestId || '',
-        temperaturaPdf: temperaturaPdf
-      } : {
-        requestedByEmail: options.requestedByEmail || '',
-        agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
-        monitorRef: monitorRef,
-        generationRequestId: options.generationRequestId || '',
-        temperaturaPdf: temperaturaPdf
-      });
+  var contexto = { options: options, request: request, result: result, courier: courier, monitorRef: monitorRef,
+    registroMonitor: { idAgenda: registroMonitor.idAgenda, agendaSlot: registroMonitor.agendaSlot }, temperaturaPdf: temperaturaPdf,
+    awbDocumento: manifestoPdf.manifesto && manifestoPdf.manifesto.awb, driveAccessWarning: driveAccessWarning };
+  // PDF antecipado: a tela recebe o PDF agora e pede o restante em concluirDocumentosTransporte.
+  // Exige o hash do que o rascunho le, que protege a segunda chamada de dados de outro envio.
+  if (options.criarRascunho && options.rascunhoSeparado === true && request && request.record.sourceHash && result && typeof result === 'object') {
+    transporteGenerationCheckpoint_({
+      pdf: Object.assign({}, request.record.pdf, { message: result.message, monitorWarning: result.monitorWarning || '', driveAccessWarning: result.driveAccessWarning || '' }),
+      conclusao: { courier: courier, monitorRef: monitorRef, agendaId: registroMonitor.idAgenda || '', agendaSlot: registroMonitor.agendaSlot || '',
+        awbDocumento: contexto.awbDocumento || '', temperaturaPdf: temperaturaPdf, driveAccessWarning: driveAccessWarning || '' }
     });
-    var draftStatus = transporteDraftStatus_(draft);
-    if (result && typeof result === 'object') {
-      result.draftOk = draftStatus.ok;
-      result.draftMessage = draftStatus.message;
-      result.draftError = draftStatus.ok ? '' : draftStatus.message;
-      result.draftErrorCode = draftStatus.errorCode || '';
-      result.draftAuthUrl = draftStatus.authUrl || '';
-      result.draftId = draftStatus.draftId || '';
-      result.draftUserEmail = draftStatus.userEmail || '';
-      result.draftActiveUserEmail = draftStatus.activeUserEmail || '';
-      result.draftRequestedByEmail = draftStatus.requestedByEmail || '';
-      result.monitorRef = monitorRef;
-      if (monitorRef && courier !== 'PINEX') {
-        try {
-          result.monitorRegistro = transporteMeasurePerformance_('gerarPdfTransporte', 'post_draft_monitor', { rowCount: 1 }, function() {
-            return transporteRegistrarDocumentacaoGerada_({
-            agendaId: registroMonitor.idAgenda,
-            slot: registroMonitor.agendaSlot,
-            courier: courier,
-            geradoPor: options.requestedByEmail || draftStatus.requestedByEmail || '',
-            pdfId: result.fileId,
-            pdfNome: result.fileName,
-            pdfHash: result.manifestoPdfHash,
-            awbDocumento: manifestoPdf.manifesto && manifestoPdf.manifesto.awb,
-            temperaturaPdf: temperaturaPdf,
-            generationRequestId: options.generationRequestId || '',
-            rascunhoId: draftStatus.draftId,
-            rascunhoOk: draftStatus.ok,
-            rascunhoErro: draftStatus.message
-            });
-          });
-        } catch (monitorError) {
-          result.monitorWarning = 'Não foi possível registrar o acompanhamento do envio: ' + monitorError.message;
-        }
-      }
-      result.message = (result.message || 'PDF gerado.') + (draftStatus.ok
-        ? ' Rascunho: ' + draftStatus.message
-        : (draftStatus.draftId ? ' ATENCAO: o rascunho criado requer revisão. ' : ' ATENCAO: o PDF foi gerado, mas o rascunho de e-mail nao foi criado. ') + draftStatus.message);
-      if (driveAccessWarning) result.message += ' ' + driveAccessWarning;
-      return result;
-    }
-    return result + (draftStatus.ok ? ' Rascunho: ' + draftStatus.message : ' Atencao: rascunho de e-mail nao criado: ' + draftStatus.message);
+    result.draftPending = true;
+    return result;
   }
+  if (options.criarRascunho) return transporteRascunhoEMonitor_(contexto);
   if (driveAccessWarning && result && typeof result === 'object') result.message = (result.message || 'PDF gerado.') + ' ' + driveAccessWarning;
   return result || 'Rotina de PDF executada. Verifique o Drive e os alertas do Apps Script.';
+}
+
+// Depois do PDF: rascunho e registro do monitor, na mesma chamada ou em concluirDocumentosTransporte.
+function transporteRascunhoEMonitor_(contexto) {
+  var options = contexto.options, request = contexto.request, result = contexto.result, courier = contexto.courier;
+  var monitorRef = contexto.monitorRef, registroMonitor = contexto.registroMonitor, temperaturaPdf = contexto.temperaturaPdf;
+  var driveAccessWarning = contexto.driveAccessWarning;
+  var draft = transporteMeasurePerformance_('gerarPdfTransporte', 'draft', { rowCount: 1 }, function() {
+    if (request && request.record.draft) {
+      var recordedDraft = request.record.draft;
+      // Um rascunho anterior ja existe: nao validar seu corpo por inferencia nem duplicar.
+      if (courier === 'MARKEN' && (!recordedDraft.temperaturaPdf || transporteNormalizeTemperaturaFromCodex_(recordedDraft.temperaturaPdf) !== temperaturaPdf)) {
+        return Object.assign({}, recordedDraft, { ok: false, error: 'RECOVERY_REVIEW_REQUIRED',
+          message: 'O PDF e o rascunho existentes foram recuperados, mas a temperatura do rascunho não pôde ser confirmada. Confira o e-mail antes de enviar ou usar Gerar novamente.' });
+      }
+      return recordedDraft;
+    }
+    return criarRascunhoTransporte_(result && typeof result === 'object' ? {
+      pdfFileId: result.fileId,
+      requestedByEmail: options.requestedByEmail || '',
+      agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
+      monitorRef: monitorRef,
+      pdfHash: result.manifestoPdfHash,
+      generationRequestId: options.generationRequestId || '',
+      temperaturaPdf: temperaturaPdf
+    } : {
+      requestedByEmail: options.requestedByEmail || '',
+      agendadoPor: options.payload && options.payload.agendadoPor ? options.payload.agendadoPor : '',
+      monitorRef: monitorRef,
+      generationRequestId: options.generationRequestId || '',
+      temperaturaPdf: temperaturaPdf
+    });
+  });
+  var draftStatus = transporteDraftStatus_(draft);
+  if (result && typeof result === 'object') {
+    result.draftOk = draftStatus.ok;
+    result.draftMessage = draftStatus.message;
+    result.draftError = draftStatus.ok ? '' : draftStatus.message;
+    result.draftErrorCode = draftStatus.errorCode || '';
+    result.draftAuthUrl = draftStatus.authUrl || '';
+    result.draftId = draftStatus.draftId || '';
+    result.draftUserEmail = draftStatus.userEmail || '';
+    result.draftActiveUserEmail = draftStatus.activeUserEmail || '';
+    result.draftRequestedByEmail = draftStatus.requestedByEmail || '';
+    result.monitorRef = monitorRef;
+    if (monitorRef && courier !== 'PINEX') {
+      try {
+        result.monitorRegistro = transporteMeasurePerformance_('gerarPdfTransporte', 'post_draft_monitor', { rowCount: 1 }, function() {
+          return transporteRegistrarDocumentacaoGerada_({
+          agendaId: registroMonitor.idAgenda,
+          slot: registroMonitor.agendaSlot,
+          courier: courier,
+          geradoPor: options.requestedByEmail || draftStatus.requestedByEmail || '',
+          pdfId: result.fileId,
+          pdfNome: result.fileName,
+          pdfHash: result.manifestoPdfHash,
+          awbDocumento: contexto.awbDocumento,
+          temperaturaPdf: temperaturaPdf,
+          generationRequestId: options.generationRequestId || '',
+          rascunhoId: draftStatus.draftId,
+          rascunhoOk: draftStatus.ok,
+          rascunhoErro: draftStatus.message
+          });
+        });
+      } catch (monitorError) {
+        result.monitorWarning = 'Não foi possível registrar o acompanhamento do envio: ' + monitorError.message;
+      }
+    }
+    result.message = (result.message || 'PDF gerado.') + (draftStatus.ok
+      ? ' Rascunho: ' + draftStatus.message
+      : (draftStatus.draftId ? ' ATENCAO: o rascunho criado requer revisão. ' : ' ATENCAO: o PDF foi gerado, mas o rascunho de e-mail nao foi criado. ') + draftStatus.message);
+    if (driveAccessWarning) result.message += ' ' + driveAccessWarning;
+    return result;
+  }
+  return result + (draftStatus.ok ? ' Rascunho: ' + draftStatus.message : ' Atencao: rascunho de e-mail nao criado: ' + draftStatus.message);
+}
+
+// Segunda fase do PDF antecipado. So cria o rascunho se as abas que ele le continuam como
+// no PDF: a planilha e compartilhada e outra tela pode ter trocado o envio entre as chamadas.
+function concluirDocumentosTransporte(options) {
+  options = options || {};
+  var access = typeof codexAssertCanWrite_ === 'function'
+    ? codexAssertCanWrite_('concluirDocumentosTransporte', 'Transporte', options.id)
+    : null;
+  return codexWithDocumentLock_('concluirDocumentosTransporte', function() {
+    TRANSPORTE_GENERATION_WARNINGS_ = [];
+    try {
+      var result = transporteMeasurePerformance_('concluirDocumentosTransporte', 'total', { rowCount: 1 }, function() {
+        if (!access) throw new Error('Não foi possível autorizar a conclusão da geração.');
+        TRANSPORTE_GENERATION_REQUEST_ = transporteGenerationBegin_(options);
+        var replay = transporteGenerationReplay_(TRANSPORTE_GENERATION_REQUEST_.record);
+        if (replay) return replay;
+        var record = TRANSPORTE_GENERATION_REQUEST_.record;
+        if (!record.pdf || !record.conclusao) throw new Error('Não há rascunho pendente para esta geração. Repita a geração pelo mesmo botão para retomar.');
+        var pdf = Object.assign({}, record.pdf);
+        if (!record.draft && transporteGenerationSourceHash_(getTransporteSpreadsheetCodex_(), record.sourceSheets) !== record.sourceHash) {
+          var aviso = 'O formulário do Transporte mudou depois do PDF, então o rascunho não foi criado. Repita a geração pelo mesmo botão para retomar com estes dados, sem criar outro PDF.';
+          return Object.assign(pdf, { draftOk: false, draftErrorCode: 'SOURCE_CHANGED', draftError: aviso, message: 'PDF gerado. ' + aviso });
+        }
+        var conclusao = record.conclusao;
+        return transporteRascunhoEMonitor_({ options: Object.assign({}, options, { criarRascunho: true }), request: TRANSPORTE_GENERATION_REQUEST_, result: pdf,
+          courier: conclusao.courier, monitorRef: conclusao.monitorRef, registroMonitor: { idAgenda: conclusao.agendaId, agendaSlot: conclusao.agendaSlot },
+          temperaturaPdf: conclusao.temperaturaPdf, awbDocumento: conclusao.awbDocumento, driveAccessWarning: conclusao.driveAccessWarning });
+      });
+      if (result && typeof result === 'object' && !result.recovered) {
+        if (TRANSPORTE_GENERATION_REQUEST_.record.phase === 'DRAFT_INTENT') {
+          result.draftOk = false;
+          result.draftErrorCode = 'GENERATION_UNCERTAIN';
+          result.draftError = 'O rascunho pode ter sido criado. Confira o Gmail antes de usar Gerar novamente.';
+          result.message = 'PDF gerado. ' + result.draftError;
+        } else if (result.draftOk !== false || result.draftId) {
+          transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: result, pdf: null, draft: null, conclusao: null });
+        }
+      }
+      return result;
+    } finally {
+      TRANSPORTE_GENERATION_REQUEST_ = null;
+      TRANSPORTE_GENERATION_WARNINGS_ = null;
+      // O registro do monitor depende destas escritas antes de outro RPC.
+      SpreadsheetApp.flush();
+    }
+  }, { operation: 'concluirDocumentosTransporte' });
 }
 
 function transporteDriveAccessWarning_(driveAccess) {

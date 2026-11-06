@@ -2182,8 +2182,10 @@ test('salvamento de visita evita varrer a Agenda e grava o ID do cadastro na esc
   assert.doesNotMatch(sync, /getInfoParticipante\(/);
   assert.doesNotMatch(lookup, /getUltimaVisitaParticipanteAgenda_/);
   // A data de nascimento do salvamento nao pode acionar a varredura de ultima visita.
-  assert.doesNotMatch(functionBody(server, 'agendaNascimentoFromDados_'), /getInfoParticipante\(/);
-  assert.match(functionBody(server, 'agendaNascimentoFromDados_'), /agendaInfoParticipanteParaSalvar_\(/);
+  ['agendaNascimentoFromDados_', 'agendaIdParticipanteFromDados_', 'agendaBracoFromDados_'].forEach((nome) => {
+    assert.doesNotMatch(functionBody(server, nome), /getInfoParticipante\(/, nome);
+    assert.match(functionBody(server, nome), /agendaInfoParticipanteParaSalvar_\(/, nome);
+  });
   assert.match(writeInitial, /Math\.max\(AGENDA_CFG\.col\.carroRequerido, AGENDA_CFG\.col\.participanteCadastroId \|\| 0\)/);
   assert.match(writeInitial, /row\[AGENDA_CFG\.idx\.participanteCadastroId\] = dados\.participanteCadastroId \|\| ''/);
   assert.doesNotMatch(save, /participanteCadastroId\)\.setValue/);
