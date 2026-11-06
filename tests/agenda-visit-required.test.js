@@ -8,7 +8,7 @@ function setup() {
   const f = fixture();
   f.c.codexLogPerformance_ = () => {};
   f.c.agendaEmailEnabled_ = () => false;
-  f.c.getInfoParticipante = () => null;
+  f.c.agendaInfoParticipanteParaSalvar_ = () => null;
   return f;
 }
 
