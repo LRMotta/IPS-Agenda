@@ -373,3 +373,83 @@ test('rascunho BioSystem vai para operações, Crēdo Cube para protocolos; Sepi
     } else if (type) assert.match(drafts[0].html, type === 'CREDO_CUBE' ? />Sim, Crēdo Cube<\/td>/ : />Sim, BioSystem<\/td>/);
   }
 });
+
+// Geracao nao regrava o formulario que a abertura ou o Salvar acabaram de gravar.
+function comContagem() {
+  const f = fixture();
+  let gravacoes = 0;
+  const original = f.s.transporteEscreverCamposModelos_;
+  f.s.transporteEscreverCamposModelos_ = (...args) => { gravacoes++; return original(...args); };
+  f.s.transporteAwbReservar_ = () => {};
+  f.s.transporteAwbAviso_ = () => null;
+  Object.assign(f.payload, { idAgenda: 'A1', agendaSlot: '1', awb: '620X41252059' });
+  return { ...f, gravacoes: () => gravacoes, gerar: () => f.save({ pularCamposIguais: true }) };
+}
+
+test('geracao pula a gravacao quando os campos sao iguais aos ja gravados', () => {
+  const f = comContagem();
+  f.save();
+  assert.equal(f.gravacoes(), 1);
+  f.gerar();
+  assert.equal(f.gravacoes(), 1);
+  assert.ok(JSON.parse(f.folha.getRange('C15').getNote()).assinaturaCampos);
+});
+
+test('qualquer campo alterado grava de novo', () => {
+  for (const mudanca of [{ awb: '620X99999999' }, { observacoes: 'Novo' }, { destino: 'Outro Lab' }, { horaEnvio: '10:00' }, { temperatura: 'CONGELADO' }, { materiais: [{ ativo: true, tubos: 3 }] }]) {
+    const f = comContagem();
+    f.save();
+    Object.assign(f.payload, mudanca);
+    f.gerar();
+    assert.equal(f.gravacoes(), 2, JSON.stringify(mudanca));
+  }
+});
+
+test('outro envio com os mesmos dados nao aproveita a gravacao anterior', () => {
+  const f = comContagem();
+  f.save();
+  f.payload.agendaSlot = '2';
+  f.gerar();
+  assert.equal(f.gravacoes(), 2);
+});
+
+test('Salvar sempre grava, mesmo com campos iguais', () => {
+  const f = comContagem();
+  f.save();
+  f.save();
+  assert.equal(f.gravacoes(), 2);
+});
+
+test('nota apagada, ilegivel ou sem assinatura grava de novo', () => {
+  for (const nota of ['', 'nao e json', '{"idAgenda":"A1"}']) {
+    const f = comContagem();
+    f.save();
+    f.folha.getRange('C15').setNote(nota);
+    f.gerar();
+    assert.equal(f.gravacoes(), 2, nota);
+  }
+});
+
+test('Folha divergente da nota grava de novo', () => {
+  const f = comContagem();
+  f.save();
+  f.folha.getRange('C12').setValue('OUTRA-AWB');
+  f.gerar();
+  assert.equal(f.gravacoes(), 2);
+});
+
+test('sem assinatura calculavel a gravacao nunca e pulada', () => {
+  const f = comContagem();
+  f.s.transportePdfManifestoHash_ = () => { throw new Error('indisponivel'); };
+  f.save();
+  f.gerar();
+  assert.equal(f.gravacoes(), 2);
+});
+
+test('caixa confirmada na geracao e registrada mesmo sem regravar os campos', () => {
+  const f = comContagem();
+  f.save({ rascunho: true });
+  f.gerar();
+  assert.equal(f.gravacoes(), 1);
+  assert.equal(JSON.parse(f.folha.getRange('C15').getNote()).caixaTransporte.confirmado, true);
+});

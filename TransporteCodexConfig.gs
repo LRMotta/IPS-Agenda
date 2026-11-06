@@ -390,7 +390,7 @@ function transporteAgendaLinkFromRef_(refInterna, note) {
   return out;
 }
 
-function transporteSetAgendaLink_(range, payload) {
+function transporteSetAgendaLink_(range, payload, assinaturaCampos) {
   payload = payload || {};
   var idAgenda = String(payload.idAgenda || '').trim();
   var refInterna = String(payload.refInterna || '').trim();
@@ -408,7 +408,8 @@ function transporteSetAgendaLink_(range, payload) {
       participanteCadastroId: cadastroId,
       identificacaoParticipante: identificacao,
       participanteNome: String(payload.paciente || payload.participante || '').trim(),
-      caixaTransporte: payload.caixaTransporte || null
+      caixaTransporte: payload.caixaTransporte || null,
+      assinaturaCampos: assinaturaCampos || ''
     }));
   } else {
     range.clearNote();
@@ -3424,7 +3425,13 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes, reaval
   }); });
 
   transporteMeasurePerformance_('salvarTransporte', 'write_fields', { rowCount: 1 }, function() {
-    transporteEscreverCamposModelos_(ss, payload, materiaisNote);
+    var assinatura = transporteAssinaturaCampos_(payload, materiaisNote);
+    if (options.pularCamposIguais === true && transporteCamposJaGravados_(folha, payload, assinatura)) {
+      // A nota de C15 ainda muda: a caixa confirmada na geracao precisa ser registrada.
+      transporteSetAgendaLink_(folha.getRange('C15'), payload, assinatura);
+      return;
+    }
+    transporteEscreverCamposModelos_(ss, payload, materiaisNote, assinatura);
   });
 
   // A abertura pela Agenda adia os templates; a geracao do PDF os prepara
@@ -3465,9 +3472,39 @@ function salvarTransporteInterno_(payload, options, leituraParticipantes, reaval
     : transporteBuildBootstrap_();
 }
 
+// Impressao digital de tudo que transporteEscreverCamposModelos_ grava neste envio. Vazia quando
+// nao ha como calcular, e assim a gravacao nunca e pulada.
+function transporteAssinaturaCampos_(payload, materiaisNote) {
+  try {
+    return transportePdfManifestoHash_({
+      envio: [payload.idAgenda || '', payload.agendaSlot || payload.slot || '', payload.envioId || ''],
+      folha: [transporteParticipanteDocumento_(payload).texto, payload.protocolo || '', payload.investigador || '', payload.temperatura || '',
+        String(transporteParseDate_(payload.dataColeta) || ''), String(transporteParseDate_(payload.dataEnvio) || ''),
+        payload.horaEnvio || '', payload.courier || '', payload.destino || '', payload.awb || '', payload.agendadoPor || '', payload.observacoes || ''],
+      dhl: [payload.pinexAwb || payload.awb || '', payload.courier === 'PINEX' ? (payload.pinexColeta || '') : '', payload.pinexAgendadoPor || payload.agendadoPor || ''],
+      materiais: (payload.materiais || []).map(function(item) { return [transporteMaterialPersistido_(item || {}), (item || {}).ensaio || (item || {}).exame || (item || {}).nomeExame || '', (item || {}).ativo === true]; }),
+      outros: transporteOutrosMateriaisTexto_(payload.materiais || []),
+      nota: materiaisNote || ''
+    });
+  } catch (assinaturaError) {
+    return '';
+  }
+}
+
+// Pular so se a nota de C15 traz a mesma assinatura e a Folha confirma os campos que mais
+// identificam o envio. Outro envio, Limpar ou nota ilegivel forcam a gravacao completa.
+function transporteCamposJaGravados_(folha, payload, assinatura) {
+  if (!assinatura) return false;
+  var meta;
+  try { meta = JSON.parse(folha.getRange('C15').getNote() || '{}'); } catch (notaError) { return false; }
+  if (!meta || meta.assinaturaCampos !== assinatura) return false;
+  var valores = folha.getRange('C3:C14').getValues().map(function(linha) { return String(linha[0] === null || linha[0] === undefined ? '' : linha[0]).trim(); });
+  return valores[3] === String(payload.temperatura || '').trim() && valores[7] === String(payload.courier || '').trim() && valores[9] === String(payload.awb || '').trim();
+}
+
 // Campos do formulario nas abas-modelo (Folha, Folha DHL/PINEX, Declaracao e ensaios da
 // Peticao). Usada pelo salvamento e pela planilha em memoria (transporteDocsDados_).
-function transporteEscreverCamposModelos_(ss, payload, materiaisNote) {
+function transporteEscreverCamposModelos_(ss, payload, materiaisNote, assinaturaCampos) {
   var folha = transporteGetSheet_(ss, 'folhaAgendamento', true);
   var declaracao = transporteGetSheet_(ss, 'declaracaoTransp', true);
   var folhaDhl = transporteGetSheet_(ss, 'folhaDhlPinex', false);
@@ -3479,7 +3516,7 @@ function transporteEscreverCamposModelos_(ss, payload, materiaisNote) {
     payload.horaEnvio || '', payload.courier || '', payload.destino || '',
     payload.awb || '', payload.agendadoPor || '', payload.observacoes || ''
   ].map(function(value) { return [value === null || value === undefined ? '' : value]; }));
-  transporteSetAgendaLink_(folha.getRange('C15'), payload);
+  transporteSetAgendaLink_(folha.getRange('C15'), payload, assinaturaCampos);
 
   if (folhaDhl) {
     transporteSetValueIfAllowed_(folhaDhl.getRange('C3'), transporteParticipanteDocumento_(payload).texto);
@@ -4850,7 +4887,9 @@ function gerarPdfTransporteInterno_(options, access) {
       returnBootstrap: false,
       returnPreparedRecord: true,
       preencherDocumentos: !memoriaAtiva,
-      camposRascunho: memoriaAtiva,
+      // So o e-mail da OCASA le a Declaracao real (D38, D39, N39); MARKEN le a Folha.
+      camposRascunho: memoriaAtiva && transporteNormalizeCourierFromCodex_(options.payload.courier) === 'OCASA',
+      pularCamposIguais: memoriaAtiva,
       awbExigirUnica: true
     });
     if (savedTransport && savedTransport.registro) options.payload = savedTransport.registro;
