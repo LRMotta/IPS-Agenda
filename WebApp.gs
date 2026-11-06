@@ -16970,11 +16970,13 @@ function monitorarConfirmacoesCourierAgendadas_() {
   var encontradosPorRegra = [];
   ruleKeys.forEach(function(ruleKey) {
     var regra = regras[ruleKey];
+    // As duas buscas usam as mesmas consultas: a leitura do Gmail e feita uma vez por regra.
+    var leituraGmail = {};
     encontradosPorRegra.push({
       ruleKey: ruleKey,
       regra: regra,
-      awbs: buscarConfirmacoesCourierNoGmail_(regra, pendentes),
-      refs: buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef)
+      awbs: buscarConfirmacoesCourierNoGmail_(regra, pendentes, leituraGmail),
+      refs: buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef, leituraGmail)
     });
   });
 
@@ -17322,54 +17324,63 @@ function contemTextoConfirmacaoCourier_(alvo, textos) {
   return textos.some(function(texto) { return alvo.indexOf(texto) !== -1; });
 }
 
-function buscarConfirmacoesCourierNoGmail_(regra, pendentes) {
+// leitura: objeto da execucao, compartilhado pelas buscas da mesma regra. A cota de Gmail e
+// da conta; sem ele, cada busca faria sua propria leitura.
+function lerConversasConfirmacaoCourier_(regra, leitura) {
+  leitura = leitura || {};
+  if (leitura.conversas) return leitura.conversas;
+  var conversas = [];
+  montarGmailQueriesConfirmacaoCourier_(regra).forEach(function(query) {
+    GmailApp.search(query, 0, 100).forEach(function(thread) {
+      conversas.push({
+        query: query,
+        thread: thread,
+        mensagens: thread.getMessages().map(function(msg) {
+          return {
+            msg: msg,
+            texto: [
+              msg.getSubject(),
+              msg.getPlainBody(),
+              msg.getAttachments().map(function(a) { return a.getName(); }).join(' ')
+            ].join(' ')
+          };
+        })
+      });
+    });
+  });
+  leitura.conversas = conversas;
+  return conversas;
+}
+
+function buscarConfirmacoesCourierNoGmail_(regra, pendentes, leitura) {
   var out = [];
   var textosRegra = textosConfirmacaoCourier_(regra);
-  montarGmailQueriesConfirmacaoCourier_(regra).forEach(function(query) {
-    var threads = GmailApp.search(query, 0, 100);
-    threads.forEach(function(thread) {
-      thread.getMessages().forEach(function(msg) {
-        var alvo = normalizarTextoMonitorCourier_([
-          msg.getSubject(),
-          msg.getPlainBody(),
-          msg.getAttachments().map(function(a) { return a.getName(); }).join(' ')
-        ].join(' '));
-        if (!contemTextoConfirmacaoCourier_(alvo, textosRegra)) return;
-        Object.keys(pendentes).forEach(function(awbKey) {
-          if (alvo.indexOf(awbKey.toLowerCase()) === -1) return;
-          out.push({ awbKey: awbKey, messageId: msg.getId(), query: query });
-        });
+  lerConversasConfirmacaoCourier_(regra, leitura).forEach(function(conversa) {
+    conversa.mensagens.forEach(function(mensagem) {
+      var alvo = normalizarTextoMonitorCourier_(mensagem.texto);
+      if (!contemTextoConfirmacaoCourier_(alvo, textosRegra)) return;
+      Object.keys(pendentes).forEach(function(awbKey) {
+        if (alvo.indexOf(awbKey.toLowerCase()) === -1) return;
+        out.push({ awbKey: awbKey, messageId: mensagem.msg.getId(), query: conversa.query });
       });
     });
   });
   return out;
 }
 
-function buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef) {
+function buscarConfirmacoesCourierPorReferenciaNoGmail_(regra, pendentesRef, leitura) {
   var out = [];
   if (!regra.extrairAwbPorReferencia) return out;
   var textosRegra = textosConfirmacaoCourier_(regra);
-  montarGmailQueriesConfirmacaoCourier_(regra).forEach(function(query) {
-    var threads = GmailApp.search(query, 0, 100);
-    threads.forEach(function(thread) {
-      var partes = [];
-      var lastMessageId = '';
-      thread.getMessages().forEach(function(msg) {
-        lastMessageId = msg.getId();
-        partes.push([
-          msg.getSubject(),
-          msg.getPlainBody(),
-          msg.getAttachments().map(function(a) { return a.getName(); }).join(' ')
-        ].join(' '));
-      });
-      var corpoThread = partes.join(' ');
-      var alvo = normalizarTextoMonitorCourier_(corpoThread);
-      if (!contemTextoConfirmacaoCourier_(alvo, textosRegra)) return;
-      var awbs = extrairAwbsDhlConfirmacao_(corpoThread);
-      Object.keys(pendentesRef).forEach(function(refKey) {
-        if (alvo.indexOf(refKey.toLowerCase()) === -1) return;
-        out.push({ refKey: refKey, messageId: lastMessageId || thread.getId(), query: query, awbs: awbs });
-      });
+  lerConversasConfirmacaoCourier_(regra, leitura).forEach(function(conversa) {
+    var corpoThread = conversa.mensagens.map(function(mensagem) { return mensagem.texto; }).join(' ');
+    var alvo = normalizarTextoMonitorCourier_(corpoThread);
+    if (!contemTextoConfirmacaoCourier_(alvo, textosRegra)) return;
+    var awbs = extrairAwbsDhlConfirmacao_(corpoThread);
+    var ultima = conversa.mensagens[conversa.mensagens.length - 1];
+    Object.keys(pendentesRef).forEach(function(refKey) {
+      if (alvo.indexOf(refKey.toLowerCase()) === -1) return;
+      out.push({ refKey: refKey, messageId: ultima ? ultima.msg.getId() : conversa.thread.getId(), query: conversa.query, awbs: awbs });
     });
   });
   return out;
