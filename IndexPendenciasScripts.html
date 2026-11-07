@@ -284,6 +284,7 @@
         }
       }
     ];
+    if (window.INDEX_ESTOQUE_CONGELADO === true) cards = cards.filter(function(card) { return card.key !== 'kitsVencendo'; });
     var plans = cards.map(function(card) {
       var handlers = [];
       function bindAction(handler) {

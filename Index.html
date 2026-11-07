@@ -9,6 +9,7 @@
 <? } ?>
   <script>
     window.INDEX_ESTOQUE_ENABLED = JSON.parse(<?= codexJsonForScript_(Boolean(includeEstoque)) ?>);
+    window.INDEX_ESTOQUE_CONGELADO = JSON.parse(<?= codexJsonForScript_(Boolean(codexEstoqueCongelado_())) ?>);
     window.INDEX_DASHBOARD_ENABLED = JSON.parse(<?= codexJsonForScript_(Boolean(includeDashboard)) ?>);
     window.INDEX_INITIAL_PAGE = JSON.parse(<?= codexJsonForScript_(paginaInicial || 'agenda') ?>);
     window.INDEX_INITIAL_AGENDA_CANARY_SHELL = JSON.parse(<?= codexJsonForScript_(Boolean(agendaCanaryShell)) ?>);

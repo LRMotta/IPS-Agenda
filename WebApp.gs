@@ -21,8 +21,18 @@ function codexJsonForScript_(value) {
     .replace(/\u2029/g, '\\u2029');
 }
 
+// EstoqueGeladeira.gs guarda a chave; sem esse arquivo o modulo fica ativo.
+function codexEstoqueCongelado_() {
+  return typeof estoqueModuloCongelado_ === 'function' && estoqueModuloCongelado_();
+}
+
+function codexAssertEstoqueAtivo_() {
+  if (codexEstoqueCongelado_()) throw new Error('O módulo de Estoque está desativado.');
+}
+
 function codexInitialPage_(value, estoque) {
   var page = String(value || '').trim().toLowerCase();
+  if (!estoque && (page === 'estoque' || page === 'estoque-view') && codexEstoqueCongelado_()) return 'agenda';
   if (estoque && page === 'estoque-view') page = 'visualizacao';
   var allowed = estoque
     ? ['visualizacao', 'itens', 'pedidos', 'descartes', 'movimentacoes', 'relatorios']
@@ -98,7 +108,7 @@ function codexDoGet_(e, traceId) {
     return codexDoGetEvaluate_(tplDashboard, 'IPS | UCS', 'dashboard', traceId);
   }
 
-  if (page === 'estoque' || page === 'pedidos' || page === 'estoque-view') {
+  if ((page === 'estoque' || page === 'pedidos' || page === 'estoque-view') && !codexEstoqueCongelado_()) {
     var tplEstoque = codexDoGetTemplate_('Index', traceId);
     tplEstoque.includeEstoque = true;
     tplEstoque.includeDashboard = false;
@@ -500,6 +510,7 @@ function getCadastrosBootstrapData(page) {
 }
 
 function getEstoqueBootstrapData(page) {
+  codexAssertEstoqueAtivo_();
   page = String(page || 'itens').trim().toLowerCase();
   if (page === 'visualizacao') page = 'estoque-view';
   var out = {
@@ -8220,7 +8231,9 @@ function getDashboardData(request) {
   }
 
   try {
-    diag.estoqueResumo = measure('stock', function() { return getEstoqueDashboardResumo_(); });
+    diag.estoqueResumo = codexEstoqueCongelado_()
+      ? { lotes: 0, ok: 0, baixo: 0, vencidos: 0, proximosValidade: 0 }
+      : measure('stock', function() { return getEstoqueDashboardResumo_(); });
   } catch(e) {
     Logger.log('[getDashboardData] ERRO estoque: ' + e.message);
     diag.secoes.estoque = false;
@@ -8281,7 +8294,7 @@ function getPendenciasOperacionais(request) {
   var estoque = [];
   var estoqueUnavailable = false;
   try {
-    estoque = measure('stock', function() { return getEstoqueResumoParaPendencias_() || []; });
+    if (!codexEstoqueCongelado_()) estoque = measure('stock', function() { return getEstoqueResumoParaPendencias_() || []; });
   } catch(e) {
     estoqueUnavailable = true;
     Logger.log('[getPendenciasOperacionais] ERRO estoque: ' + e.message);
@@ -9384,6 +9397,7 @@ function cadastroLocalizarLinhaPorId_(sheet, id, coluna, label) {
 }
 
 function salvarItemEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   payload = payload || {};
   codexAssertCanWrite_('salvarItemEstoque', 'Estoque', payload && (payload.idItem || payload.id));
   return codexWithDocumentLock_('salvarItemEstoque', function() {
@@ -9542,6 +9556,7 @@ function padIdItemEstoque_(seq) {
 // ───────────────────────────────────────────────────────
 
 function excluirItemEstoque(id) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('excluirItemEstoque', 'Estoque', id);
   return codexWithDocumentLock_('excluirItemEstoque', function() {
     var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Itens', 'Cadastro de Itens', 'Cadastro de Itens de Estoque']);
@@ -9830,6 +9845,7 @@ function getPlanejamentoPedidoEstoque() {
 }
 
 function salvarPlanejamentoPedidoEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('salvarPlanejamentoPedidoEstoque', 'Estoque', payload && payload.idPlanejamento);
   return codexWithDocumentLock_('salvarPlanejamentoPedidoEstoque', function() {
   payload = payload || {};
@@ -9965,6 +9981,7 @@ function estoquePedidoItemTemHistorico_(row) {
 }
 
 function salvarPedidoEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('salvarPedidoEstoque', 'Estoque', payload && (payload.idPedido || payload.numeroPedido));
   return codexWithDocumentLock_('salvarPedidoEstoque', function() {
     payload = payload || {};
@@ -10084,6 +10101,7 @@ function codexDeleteRowBlocks_(sheet, rowNumbers, onDeleted) {
 }
 
 function excluirPedidoEstoque(rowIndex, idPedido) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('excluirPedidoEstoque', 'Estoque', idPedido || rowIndex);
   return codexWithDocumentLock_('excluirPedidoEstoque', function() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -10106,6 +10124,7 @@ function excluirPedidoEstoque(rowIndex, idPedido) {
 }
 
 function receberPedidoEstoque(dados) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('receberPedidoEstoque', 'Estoque', dados && (dados.idPedido || dados.rowIndex));
   return codexWithDocumentLock_('receberPedidoEstoque', function() {
     dados = dados || {};
@@ -10287,6 +10306,7 @@ function estoqueLocalKey_(valor) {
 }
 
 function registrarMovimentacaoEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('registrarMovimentacaoEstoque', 'Estoque', payload && (payload.idItem || payload.itemId));
   return codexWithDocumentLock_('registrarMovimentacaoEstoque', function() {
     comLoteMovimentacoesEstoque_(function(registrar) { registrar(payload); });
@@ -10456,6 +10476,7 @@ function atualizarStatusReservasAgendaItens_(agendaId, itens, novoStatus, status
 }
 
 function transferirKitEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('transferirKitEstoque', 'Estoque', payload && (payload.idItem || payload.idLote));
   return codexWithDocumentLock_('transferirKitEstoque', function() {
     payload = payload || {};
@@ -10574,6 +10595,7 @@ function transferirKitEstoque(payload) {
 }
 
 function conciliarReservaKitLaboratorio(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('conciliarReservaKitLaboratorio', 'Estoque', payload && (payload.idItem || payload.idLote));
   return codexWithDocumentLock_('conciliarReservaKitLaboratorio', function() {
     payload = payload || {};
@@ -10643,6 +10665,7 @@ function conciliarReservaKitLaboratorio(payload) {
 }
 
 function getAgendaCandidatosReservaKit(payload) {
+  codexAssertEstoqueAtivo_();
   payload = payload || {};
   var idReserva = String(payload.idReserva || '').trim();
   if (!idReserva) throw new Error('Reserva não informada.');
@@ -10688,6 +10711,7 @@ function getAgendaCandidatosReservaKit(payload) {
 }
 
 function vincularReservaKitAgenda(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('vincularReservaKitAgenda', 'Estoque', payload && payload.idReserva);
   return codexWithDocumentLock_('vincularReservaKitAgenda', function() {
     payload = payload || {};
@@ -10746,6 +10770,7 @@ function vincularReservaKitAgenda(payload) {
 }
 
 function baixarKitsAgendaEvento(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('baixarKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
   return codexWithDocumentLock_('baixarKitsAgendaEvento', function() {
   payload = payload || {};
@@ -10810,6 +10835,7 @@ function baixarKitsAgendaEvento(payload) {
 
 function getKitsAgendaBaixaStatus(agendaId) {
   codexAssertCanRead_();
+  if (codexEstoqueCongelado_()) return { baixados: false, ids: [] };
   agendaId = String(agendaId || '').trim();
   if (!agendaId) return { baixados: false, ids: [] };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -10863,6 +10889,7 @@ function getKitsAgendaBaixaStatus(agendaId) {
 }
 
 function devolverKitsAgendaEvento(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('devolverKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
   return codexWithDocumentLock_('devolverKitsAgendaEvento', function() {
   payload = payload || {};
@@ -10947,6 +10974,7 @@ function getDescartesEstoque() {
 }
 
 function salvarPlanejamentoDescarteEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('salvarPlanejamentoDescarteEstoque', 'Estoque', payload && payload.idDescarte);
   return codexWithDocumentLock_('salvarPlanejamentoDescarteEstoque', function() {
   payload = payload || {};
@@ -10976,6 +11004,7 @@ function salvarPlanejamentoDescarteEstoque(payload) {
 }
 
 function efetivarDescarteEstoque(idDescarte) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('efetivarDescarteEstoque', 'Estoque', idDescarte);
   return codexWithDocumentLock_('efetivarDescarteEstoque', function() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -11294,6 +11323,7 @@ function gerarIdLoteEstoque_() {
 }
 
 function migrarIdsLotesEstoque() {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('migrarIdsLotesEstoque', 'Estoque', 'ID_Lote');
   return codexWithDocumentLock_('migrarIdsLotesEstoque', function() {
     var sheet = getSheetByPossibleNames_(SpreadsheetApp.getActiveSpreadsheet(), ['Estoque']);
@@ -11842,6 +11872,7 @@ function atualizarReservasPorLote_(payload) {
 }
 
 function cancelarReservaKitAgenda(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('cancelarReservaKitAgenda', 'Estoque', payload && payload.idReserva);
   return codexWithDocumentLock_('cancelarReservaKitAgenda', function() {
     payload = payload || {};
@@ -11872,6 +11903,7 @@ function cancelarReservaKitAgenda(payload) {
 }
 
 function ajustarReservaKitAgenda(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('ajustarReservaKitAgenda', 'Estoque', payload && payload.idReserva);
   return codexWithDocumentLock_('ajustarReservaKitAgenda', function() {
     payload = payload || {};
@@ -11944,6 +11976,7 @@ function cancelarReservasKitsAgenda_(agendaId, justificativa) {
 }
 
 function substituirReservaKitAgenda(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('substituirReservaKitAgenda', 'Estoque', payload && payload.idReserva);
   return codexWithDocumentLock_('substituirReservaKitAgenda', function() {
     payload = payload || {};
@@ -12005,6 +12038,7 @@ function substituirReservaKitAgenda(payload) {
 }
 
 function registrarExcecaoKitEstoque(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('registrarExcecaoKitEstoque', 'Estoque', payload && payload.idItem);
   return codexWithDocumentLock_('registrarExcecaoKitEstoque', function() {
     payload = payload || {};
@@ -12051,6 +12085,7 @@ function registrarExcecaoKitEstoque(payload) {
 
 function getKitsAgendaReservaStatus(agendaId) {
   codexAssertCanRead_();
+  if (codexEstoqueCongelado_()) return { reservado: false, encerrado: false, reservas: [] };
   agendaId = String(agendaId || '').trim();
   if (!agendaId) return { reservado: false, reservas: [] };
   var todas = getKitReservasLinhas_().filter(function(r) { return r.agendaId === agendaId; });
@@ -12064,6 +12099,7 @@ function getKitsAgendaReservaStatus(agendaId) {
 }
 
 function reservarKitsAgendaEvento(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('reservarKitsAgendaEvento', 'Estoque', payload && payload.agendaId);
   return codexWithDocumentLock_('reservarKitsAgendaEvento', function() {
     payload = payload || {};
@@ -13483,6 +13519,7 @@ function getAgendaLabDestinos_(strict) {
 }
 
 function getAgendaKitsEstoque_(strict, measureStage) {
+  if (codexEstoqueCongelado_()) return [];
   try {
     if (CODEX_AGENDA_KITS_ESTOQUE_CACHE_ && !CODEX_CACHE_BYPASS_READS_) return CODEX_AGENDA_KITS_ESTOQUE_CACHE_;
     var stockMeta = { rowCount: 0 };
@@ -14405,13 +14442,14 @@ function getJornadaParticipanteInterno_(payload) {
   });
   var bracoIdCtms = String(configCtms.bracoId || braco.idBraco || '').trim();
   var ctmsAtivo = projetoCtmsJornadaAtivo_(projeto);
-  var modelosProjeto = getModelosEstoqueSoAPorProjeto(projeto);
-  var reservas = getKitReservasLinhas_().filter(function(reserva) {
+  var estoqueCongelado = codexEstoqueCongelado_();
+  var modelosProjeto = estoqueCongelado ? [] : getModelosEstoqueSoAPorProjeto(projeto);
+  var reservas = (estoqueCongelado ? [] : getKitReservasLinhas_()).filter(function(reserva) {
     var mesmoId = participanteIdNorm && normText_(reserva.participanteId) === participanteIdNorm;
     return (mesmoId || normText_(reserva.participante) === participanteNorm) &&
       normText_(reserva.projeto) === projetoNorm && normText_(reserva.status || 'Reservado') === 'reservado';
   });
-  var estoque = getEstoque();
+  var estoque = estoqueCongelado ? [] : getEstoque();
   var visitasJornada = jornadaVisitasDesdeInicioOperacional_(visitas.map(function(visita) { return jornadaPorId[visita.idSoA]; }));
   var previaCtms = null;
   if (jornadaCtmsProjetoPiloto_(projeto) || ctmsAtivo) {
@@ -14469,7 +14507,7 @@ function getJornadaParticipanteInterno_(payload) {
   var conciliacao = agendaSoAMontarConcilicaoVisitas_(eventos, visitas);
   return {
     participante: { idCadastro: idCadastro, nome: nome, idParticipante: participanteId, projeto: projeto, braco: payload.braco || '' },
-    possuiSoA: visitas.length > 0, visitas: visitasJornada,
+    possuiSoA: visitas.length > 0, estoqueCongelado: estoqueCongelado, visitas: visitasJornada,
     visitasConciliacao: jornadaVisitasParaConciliacao_(visitas),
     visitasProntidao: visitasProntidao,
     horizontePrevisao: formatarDataSafe(jornadaLimitePrevisao_(hoje)),
@@ -14512,6 +14550,7 @@ function jornadaReservaPreviaContexto_(payload) {
 }
 
 function consultarReservaPreviaJornada(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('consultarReservaPreviaJornada', 'Estoque', payload && (payload.participanteId || payload.idSoA));
   var contexto = jornadaReservaPreviaContexto_(payload);
   // Linhas legadas de estoque podem existir sem ID_Lote. A reserva usa esse ID
@@ -14543,6 +14582,7 @@ function consultarReservaPreviaJornada(payload) {
 }
 
 function reservarKitsPrevisaoJornada(payload) {
+  codexAssertEstoqueAtivo_();
   codexAssertCanWrite_('reservarKitsPrevisaoJornada', 'Estoque', payload && (payload.participanteId || payload.idSoA));
   return codexWithDocumentLock_('reservarKitsPrevisaoJornada', function() {
     var contexto = jornadaReservaPreviaContexto_(payload);

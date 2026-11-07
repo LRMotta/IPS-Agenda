@@ -868,7 +868,17 @@ function navegarParaRotaWebApp(query) {
     .getWebAppUrl();
 }
 
+function estoqueCongelado() {
+  return window.INDEX_ESTOQUE_CONGELADO === true;
+}
+
+(function ocultarMenuEstoqueCongelado() {
+  var secao = document.getElementById('navEstoqueSection');
+  if (secao && estoqueCongelado()) secao.hidden = true;
+})();
+
 function abrirModuloEstoque(pagina, busca) {
+  if (estoqueCongelado()) { snackErro('O módulo de Estoque está desativado.'); return; }
   pagina = pagina || 'itens';
   if (isEmbeddedModuleEnabled('estoque')) {
     if (pagina === 'visualizacao') irPara('estoque-view');
@@ -5780,6 +5790,7 @@ function jornadaParticipanteHtml_(dados) {
     return '<span style="display:inline-block;border:1px solid ' + item[1] + ';color:' + item[1] + ';border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700">' + esc(item[0]) + '</span>';
   }
   function kits(visita) {
+    if (dados.estoqueCongelado) return '';
     if (!visita.kits || !visita.kits.length) return '<div style="color:#7b8794;font-size:12px">Nenhum modelo de Kit/Bulk vinculado.</div>';
     return visita.kits.map(function(kit) {
       var sinal = kit.risco ? '#b3261e' : (kit.reservado ? '#137333' : '#e65100');
@@ -5820,7 +5831,7 @@ function jornadaParticipanteHtml_(dados) {
   var acoesHtml = previaCtmsHtml || conciliarHtml ? '<div class="jornada-title-actions">' + previaCtmsHtml + conciliarHtml + '</div>' : '';
   var alertasCtms = dados.alertasCtms || {};
   var alertaCtmsHtml = alertasCtms.projetoAtivo && (alertasCtms.pendentes || alertasCtms.obsoletas) ? '<div class="jornada-ctms-alert"><span class="material-symbols-outlined">rule</span><div><strong>Revisão CTMS pendente</strong><span>' + Number(alertasCtms.pendentes || 0) + ' comparação(ões) aguardam aprovação' + (alertasCtms.obsoletas ? ' e ' + Number(alertasCtms.obsoletas) + ' exigem reaprovação' : '') + '. Até lá, Jornada, janelas, alertas e estoque mantêm o cálculo atual.</span></div></div>' : '';
-  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa; as reservas podem ser feitas por lote na prontidão operacional.</p>' + alertaCtmsHtml + '<div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '. Reserva, validade, estoque e pedidos.</p>' + operacao + '</aside></div>';
+  return '<div class="jornada-layout"><main class="jornada-main"><div class="jornada-title-row"><h3>Histórico e próximas visitas</h3>' + acoesHtml + '</div><p class="jornada-note">A previsão é informativa' + (dados.estoqueCongelado ? '.' : '; as reservas podem ser feitas por lote na prontidão operacional.') + '</p>' + alertaCtmsHtml + '<div class="jornada-legend"><span><i class="done"></i>Concluída</span><span><i class="warning"></i>Atenção necessária</span><span><i></i>Agendada</span><span><b></b>Janela da visita</span></div><div class="jornada-timeline-scroll"><div class="jornada-timeline">' + timeline + '</div></div><section class="jornada-history-section"><div class="jornada-history-heading"><h3 class="jornada-history-title">Visitas registradas desde 2026</h3><span>' + (dados.eventosLivres || []).length + ' registro(s)</span></div><div class="jornada-history">' + (historicoHtml || '<div class="jornada-history-empty">Nenhuma visita registrada.</div>') + '</div></section>' + '</main><aside class="jornada-readiness"><h3>Próximas visitas: prontidão operacional</h3><p>Previsão até ' + esc(dados.horizontePrevisao || 'os próximos 6 meses') + '.' + (dados.estoqueCongelado ? '' : ' Reserva, validade, estoque e pedidos.') + '</p>' + operacao + '</aside></div>';
 }
 
 var _jornadaParticipanteAtual = null;
