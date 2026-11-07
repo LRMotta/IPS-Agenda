@@ -2175,11 +2175,12 @@
   function preencherAgendaKitsSelects(lista) {
     var projeto = document.getElementById('agProjeto') ? document.getElementById('agProjeto').value : '';
     var projetoNorm = normAgenda(projeto || '');
-    var filtrados = (lista || []).filter(function(k) {
+    var filtrados = agendaEstoqueCongelado_() ? [] : (lista || []).filter(function(k) {
       return agendaKitPertenceProjeto_(k, projeto);
     });
     var placeholder = '-- kit de coleta --';
-    if (!projetoNorm) placeholder = '-- selecione o projeto --';
+    if (agendaEstoqueCongelado_()) placeholder = '-- sem kit --';
+    else if (!projetoNorm) placeholder = '-- selecione o projeto --';
     else if (!filtrados.length) placeholder = '-- sem kit em estoque para este projeto --';
     agendaKitIds().forEach(function(id) {
       var el = document.getElementById(id);
@@ -2210,6 +2211,20 @@
 
   function agendaKitIds() {
     return ['agKit1','agKit2','agKit3','agKit4','agKit5','agKit6'];
+  }
+
+  function agendaEstoqueCongelado_() {
+    return window.INDEX_ESTOQUE_CONGELADO === true;
+  }
+
+  // Estoque congelado: kit ja gravado aparece so para consulta e segue no salvamento.
+  function agendaAtualizarCardKits_() {
+    var card = document.getElementById('agKitCard');
+    var lab = document.getElementById('agLabCentral');
+    var primeiro = document.getElementById('agKit1');
+    if (!card || !lab) return;
+    var mostrar = AgendaRules.isLabCentral(lab.value) && (!agendaEstoqueCongelado_() || !!(primeiro && primeiro.value));
+    card.style.display = mostrar ? 'block' : 'none';
   }
 
   function onAgendaProjetoChange() {
@@ -2333,15 +2348,15 @@
   function onAgendaLabCentralChange() {
     var lab = document.getElementById('agLabCentral');
     var trans = document.getElementById('agTransporteCard');
-    var kits = document.getElementById('agKitCard');
     var btnBaixa = document.getElementById('btnBaixarKitsAgenda');
     var btnReserva = document.getElementById('btnReservarKitsAgenda');
     if (!lab) return;
     var mostrar = AgendaRules.isLabCentral(lab.value);
-    if (kits) kits.style.display = mostrar ? 'block' : 'none';
+    agendaAtualizarCardKits_();
     atualizarAgendaCamposTecnicos();
-    if (btnBaixa) btnBaixa.style.display = mostrar && _agendaEditId ? 'flex' : 'none';
-    if (btnReserva) btnReserva.style.display = mostrar && _agendaEditId ? 'flex' : 'none';
+    var acoesKit = mostrar && _agendaEditId && !agendaEstoqueCongelado_();
+    if (btnBaixa) btnBaixa.style.display = acoesKit ? 'flex' : 'none';
+    if (btnReserva) btnReserva.style.display = acoesKit ? 'flex' : 'none';
     if (!mostrar) {
       agendaKitIds().forEach(function(id) {
         var el = document.getElementById(id);
@@ -4029,7 +4044,7 @@
     _agendaKitsBaixados = !!baixados;
     agendaKitIds().forEach(function(id) {
       var el = document.getElementById(id);
-      if (el) el.disabled = !!baixados;
+      if (el) el.disabled = !!baixados || agendaEstoqueCongelado_();
     });
     var btn = document.getElementById('btnBaixarKitsAgenda');
     if (btn) {
@@ -4052,6 +4067,7 @@
   }
 
   function agendaConsultaKitsAplicavel_() {
+    if (agendaEstoqueCongelado_()) return false;
     var policy = AgendaRules.formPolicy((document.getElementById('agTipo') || {}).value || '', agendaModoEdicao());
     if (['monitoria', 'siv', 'closeout', 'auditoria'].indexOf(policy.type) >= 0) return false;
     // Nos demais tipos, kits historicos continuam consultaveis.
@@ -5668,6 +5684,7 @@
       setAgendaSelectByText(id, partes[idx]);
     });
     atualizarAgendaKitAdicionais();
+    agendaAtualizarCardKits_();
   }
 
   function setAgendaSelectByText(id, text) {

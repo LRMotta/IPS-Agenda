@@ -219,3 +219,20 @@ test('Pendencias: dados literais, teclado, rastreio, modal e expansao em desktop
     await browser.close();
   }
 });
+
+test('Estoque congelado oculta somente o card de kits vencendo', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route('**/*', route => route.abort());
+    await page.setContent('<div id="pendenciasGrid"></div>');
+    await page.evaluate(() => {
+      window.esc = v => String(v ?? '');
+      window.INDEX_ESTOQUE_CONGELADO = true;
+    });
+    await page.addScriptTag({ content: readProjectFile('IndexPendenciasScripts.html').replace(/^\s*<script>/i, '').replace(/<\/script>\s*$/i, '') });
+    await page.evaluate(() => window.renderDashboardPendencias({}, 'pendenciasGrid'));
+    assert.equal(await page.locator('[data-pendencia-card="pendenciasGrid:kitsVencendo"]').count(), 0);
+    assert.equal(await page.locator('[data-pendencia-card="pendenciasGrid:courierNaoAgendada"]').count(), 1);
+  } finally { await browser.close(); }
+});

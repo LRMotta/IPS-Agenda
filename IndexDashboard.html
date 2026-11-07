@@ -795,6 +795,7 @@
       if ((!details || details.open) && !_dashCharts[canvas.id]) dashboardDrawEmptyChart_(canvas, 'Sem dados disponíveis');
     });
     dashboardSectionAvailability_('dashEstoqueBlock', sections.estoque !== false);
+    if (window.INDEX_ESTOQUE_CONGELADO === true) document.getElementById('dashEstoqueBlock').style.display = 'none';
     if (d.avisos && d.avisos.length) mostrarErroDashboard(d.avisos.join('\n'));
     bindDashboardChartCopyButtons();
     return true;
@@ -1294,7 +1295,7 @@
       dashboardPrintHeader(emitted) +
       dashboardPrintKpiSection('Resumo geral', '#dashKpis > .dash-kpi') +
       dashboardPrintAgendaKpis() +
-      dashboardPrintKpiSection('Indicadores de Estoque', '#dashEstoqueBlock .dash-kpi') +
+      (window.INDEX_ESTOQUE_CONGELADO === true ? '' : dashboardPrintKpiSection('Indicadores de Estoque', '#dashEstoqueBlock .dash-kpi')) +
       dashboardPrintCharts() +
       '<script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script></body></html>';
   }

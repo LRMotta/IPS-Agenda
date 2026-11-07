@@ -1111,3 +1111,26 @@ test('conflito ao vincular backup nao reabre formulario com edicoes novas durant
     });
   }
 });
+
+test('Estoque congelado: kit gravado fica somente para consulta e novos agendamentos nao mostram kits', async () => {
+  await scenario(async page => {
+    await page.evaluate(() => {
+      window.INDEX_ESTOQUE_CONGELADO = true;
+      window.calls.length = 0;
+      window.agendaAbrirEdicaoComRegistroPronto_({ id: 'A', tipo: 'Visita', projeto: 'Estudo A', participanteCadastroId: 'P', participante: 'Participante de teste', idParticipante: '001', labCentral: 'Sim', kit: 'Kit sem saldo', dataIso: '2026-10-05', visita: 'V1', hora: '08:00' });
+    });
+    assert.equal(await page.locator('#agKitCard').isVisible(), true);
+    assert.equal(await page.locator('#agKit1').isDisabled(), true);
+    assert.equal(await page.locator('#btnReservarKitsAgenda').isVisible(), false);
+    assert.equal(await page.locator('#btnBaixarKitsAgenda').isVisible(), false);
+    assert.equal(await page.evaluate(() => window.calls.filter(c => ['getKitsAgendaBaixaStatus', 'getKitsAgendaReservaStatus'].includes(c.method)).length), 0);
+    assert.equal(await page.evaluate(() => window.coletarAgendaEvento().kit), 'Kit sem saldo');
+    await page.evaluate(() => {
+      window.limparAgendaForm();
+      document.getElementById('agLabCentral').value = 'Sim';
+      window.onAgendaLabCentralChange();
+    });
+    assert.equal(await page.locator('#agKitCard').isVisible(), false);
+    assert.equal(await page.evaluate(() => window.coletarAgendaEvento().kit), '');
+  });
+});
