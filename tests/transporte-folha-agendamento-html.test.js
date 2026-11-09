@@ -122,7 +122,8 @@ test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou 
   assert.match(html, /<img class="logo" src="data:image\/png;base64,AAA"/);
   assert.match(html, /<span class="lbl">Transporte<\/span><b>Transporte I<\/b>/);
   assert.match(html, /Criado a partir do <b>Backup I<\/b> do agendamento de <b>28\/10\/2026 \(qua\)<\/b> · MK-0000-021 · A\.B\.C\. · Ciclo 3 · Dia 1/);
-  assert.match(html, /<span class="tipo">CONGELADO<\/span>/);
+  // Temperatura fria sombreada por GIF posicionado sob o texto (o conversor nao imprime background).
+  assert.match(html, /<td class="tipo frio" style="width:121px"><div style="position:relative;height:0"><img src="data:image\/gif;base64,[^"]+" alt="" style="position:absolute;left:0;top:0;width:121px;height:24px"><\/div><div class="tipo-txt"[^>]*>CONGELADO<\/div><\/td>/);
   assert.match(html, /Terça · retirada <b>09:00 - 12:00<\/b>/);
   assert.match(html, /Caixa de transporte: <b>Sim<\/b>/);
   assert.doesNotMatch(html, /Materiais biológicos|Swab|Sangue|Fezes|Quantidade por tubo/);
@@ -134,6 +135,22 @@ test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou 
   assert.doesNotMatch(html, /Recebido pelo agente|Ref\. interna|Confirma|Agendado em|P[aá]gina \d/);
   // O conversor HtmlService nao aceita flex/grid e nao imprime fundos.
   assert.doesNotMatch(html, /display:\s*(flex|grid)|background/);
+});
+
+test('temperatura: ambiente so com contorno, fria sombreada e mista em blocos separados', () => {
+  const app = carregar();
+  const ambiente = app.transporteFolhaHtmlTipos_('AMBIENTE');
+  assert.match(ambiente, /<td class="tipo" style="width:110px"><div class="tipo-txt"[^>]*>AMBIENTE<\/div><\/td>/);
+  assert.doesNotMatch(ambiente, /<img/);
+  const refrigerado = app.transporteFolhaHtmlTipos_('REFRIGERADO');
+  assert.match(refrigerado, /<td class="tipo frio"[^>]*><div style="position:relative;height:0"><img src="data:image\/gif;base64,/);
+  // O GIF tem a cor do sombreamento (#bdbdbd).
+  assert.equal(refrigerado.match(/src="([^"]+)"/)[1], app.transporteDocsGradeFundoSrc_('#bdbdbd'));
+  const mista = app.transporteFolhaHtmlTipos_('AMBIENTE + CONGELADO');
+  assert.equal((mista.match(/<td class="tipo/g) || []).length, 2);
+  assert.match(mista, /AMBIENTE<\/div><\/td><\/tr><tr><td style="height:4px"><\/td><\/tr><tr><td class="tipo frio"/);
+  assert.equal((mista.match(/<img/g) || []).length, 1);
+  assert.equal(app.transporteFolhaHtmlTipos_(''), '—');
 });
 
 test('folha sem transporte nem origem omite a faixa', () => {
