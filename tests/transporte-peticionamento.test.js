@@ -302,7 +302,7 @@ test('Transporte (piloto): com a GRU pronta a tarefa pede anexar e enviar; sem e
   linha[i.c1.nome] = 'OCASA'; linha[i.c1.status] = 'Docs gerados'; linha[i.c1.awb] = 'PK2AAA000001'; linha[i.c1.temp] = 'CONGELADO'; linha[i.c1.destino] = 'LAB X';
   const hoje = new Date(2026, 10, 9, 12);
   const construir = (preparos) => plano(s.transporteTarefasConstruir_({ hoje, agora: hoje, feriados: {}, linhas: [linha], operacoes: [], preparos, nomes: {} }));
-  assert.deepEqual(construir({}).tarefas.map((t) => t.titulo), ['Enviar a documentação à courier']);
+  assert.deepEqual(construir({}).tarefas.map((t) => t.titulo), ['Enviar o pedido de coleta à courier']);
   assert.deepEqual(construir({ 'ab12cd34|1': { passo: 'enviar', versao: 5, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: true } }).tarefas.map((t) => t.titulo),
     ['Anexar a GRU e o extrato e enviar à courier']);
   void Hoje;

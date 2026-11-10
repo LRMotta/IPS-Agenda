@@ -49,7 +49,7 @@ const RESPOSTA = {
       prazoLabel: 'Em 3h', comPessoa: 'Ana', parouNoPasso: 2,
       transportes: [{ slotRotulo: 'Transporte I', courier: 'OCASA', temperatura: 'CONGELADO', destino: 'LAB X', situacao: 'preparar' },
         { slotRotulo: 'Backup', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'LAB X', situacao: 'preparar' }] },
-    { agendaId: 'a2', data: '06/10/2026', hora: '10:00', participante: 'Pessoa B', projeto: 'Estudo Y', visita: 'V2', titulo: 'Enviar a documentação à courier',
+    { agendaId: 'a2', data: '06/10/2026', hora: '10:00', participante: 'Pessoa B', projeto: 'Estudo Y', visita: 'V2', titulo: 'Enviar o pedido de coleta à courier',
       prazoLabel: '', comPessoa: '', parouNoPasso: 0, transportes: [{ slotRotulo: 'Transporte I', courier: 'MARKEN', temperatura: 'CONGELADO', destino: 'LAB Y', awb: '123', situacao: 'enviar_doc' }] }
   ]
 };
@@ -75,7 +75,7 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo 2/);
       assert.match(await page.locator('.tc-badges').innerText(), /Com Ana agora/);
       assert.equal(await page.locator('.tc-list .tc-item').count(), 1);
-      assert.match(await page.locator('.tc-list').innerText(), /Enviar a documentação à courier/);
+      assert.match(await page.locator('.tc-list').innerText(), /Enviar o pedido de coleta à courier/);
       assert.equal(await page.locator('.tc-item.urgent').count(), 0);
       assert.match(await page.locator('.tc-footer').innerText(), /3 transportes viram tarefa em breve/);
       await page.locator('[data-tc-abrir]').click();

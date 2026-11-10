@@ -121,7 +121,9 @@ test('passo a passo MARKEN: conferir, gerar, enviar e concluir', async () => {
       assert.match(await page.locator('.tc-wiz-main').innerText(), /x\.pdf[\s\S]*Rascunho de e-mail criado[\s\S]*Comunicado Especial localizado/);
       await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 3 de 3 · Enviar/);
-      assert.match(await page.locator('.tc-wiz-main').innerText(), /Abra o rascunho no Gmail[\s\S]*Confira os PDFs[\s\S]*Clique em Enviar/);
+      // Documentos impressos vão com as amostras; o e-mail é só o pedido de coleta (MARKEN: com a CE do estudo).
+      assert.match(await page.locator('.tc-wiz-main').innerText(), /Imprima os documentos[\s\S]*agente da courier[\s\S]*Abra o rascunho do pedido de coleta no Gmail[\s\S]*CE do estudo[\s\S]*Clique em Enviar/);
+      assert.doesNotMatch(await page.locator('.tc-wiz-main').innerText(), /PDFs anexados/);
       await page.getByRole('button', { name: /Pronto, enviei/ }).click();
       assert.deepEqual(await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'concluirEnvioTransporte').args), ['a1', '1', 5]);
       await responder(page, 'concluirEnvioTransporte', { ok: true, versao: 6 });

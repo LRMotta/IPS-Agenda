@@ -22,7 +22,7 @@
     return [tarefa.participante, tarefa.visita, tarefa.projeto, data].filter(Boolean).join(' · ');
   }
 
-  var TC_SITUACAO = { preparar: 'Preparar', pinex_pedir: 'Pedir a coleta', pinex_numeros: 'Informar os números', enviar_doc: 'Enviar documentação' };
+  var TC_SITUACAO = { preparar: 'Preparar', pinex_pedir: 'Pedir a coleta', pinex_numeros: 'Informar os números', enviar_doc: 'Enviar pedido de coleta' };
 
   // Um transporte em linha: tipo (chip), courier e temperatura em destaque, destino e AWB discretos.
   // O tipo (Transporte I, Backup…) só aparece aqui; nunca no título da tarefa.
@@ -226,7 +226,8 @@
     if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum transporte em trânsito.</div>';
     return transpCentralHtmlSecaoAcompanhar({
       titulo: 'Em trânsito', icone: 'local_shipping', itens: itens.map(function(it) {
-        return Object.assign({}, it, { extraDetalhe: transpCentralDiasEnvio(it.diasDesdeEnvio) });
+        // A data é a do envio já feito: sem prazo nem "Atrasada" (mesmo se o servidor ainda mandar o rótulo).
+        return Object.assign({}, it, { extraDetalhe: transpCentralDiasEnvio(it.diasDesdeEnvio), prazoLabel: '' });
       }),
       dica: 'Enviados e ainda não entregues. Confirme a entrega quando o rastreio mostrar que chegou.',
       acaoTransporte: function(it) {
