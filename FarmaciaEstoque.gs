@@ -242,8 +242,8 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       // Nunca desserializar payloads de outros estudos/classes na consulta autorizada.
       if (scope !== context.studyId || row[3] !== context.restricted) return;
       var registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
-      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
-      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC)-[A-Za-z0-9_-]+$/.test(row[0]) ||
+      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', ADJUSTMENT: 'FAJ-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
+      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC|AJ)-[A-Za-z0-9_-]+$/.test(row[0]) ||
           !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
           typeof row[4] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[4]) ||
           typeof registeredAt !== 'string' || isNaN(Date.parse(registeredAt)) || new Date(registeredAt).toISOString() !== registeredAt ||
@@ -271,6 +271,9 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       } else if (record.type === 'LIFECYCLE') {
         if (context.studyId === FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
         farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate }, record);
+      } else if (record.type === 'ADJUSTMENT') {
+        if (context.studyId !== FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaAdjustmentData_(data)) !== record.dataJson) throw new Error('Ajuste de quantidade inválido.');
+        farmaciaApplyAdjustment_({ products: products, positions: positions, movements: movements }, record);
       } else if (record.type !== 'MOVEMENT') {
         if (JSON.stringify(farmaciaCatalogActionData_(record.type, data)) !== record.dataJson ||
             (record.type === 'PRODUCT_EDIT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.data.supplySource === 'sponsor')) throw new Error('Correção inválida.');
@@ -363,6 +366,7 @@ function getFarmaciaEstoque(studyId, restricted) {
       if (record.adherenceResult) event.adherenceResult = record.adherenceResult;
       if (record.excursion !== undefined) event.excursion = record.excursion;
       if (record.retroactive) event.retroactive = true;
+      if (record.adjustmentDelta !== undefined) event.adjustmentDelta = record.adjustmentDelta;
       return event;
     }), positions: data.positions.map(function(position) {
       var expired = position.expiry < today;
