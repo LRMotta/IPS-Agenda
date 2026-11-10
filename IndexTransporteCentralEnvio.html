@@ -232,10 +232,15 @@
 
   function transpCentralHtmlEnviar(registro) {
     var r = TC_ENVIO.resultado;
-    var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta enviar o e-mail à courier.</p>';
-    return '<section class="tc-bloco"><h3>Enviar à courier</h3>' + explicacao +
-      '<ol class="tc-lista-passos"><li>Abra o rascunho no Gmail. <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Abrir rascunhos</a></li>' +
-      '<li>Confira os PDFs anexados e o destinatário.</li><li>Clique em Enviar e volte aqui.</li></ol></section>' +
+    // Os documentos gerados são impressos, assinados e entregues ao agente da courier junto com as amostras.
+    // O e-mail é só o pedido de coleta: sem anexo na DHL; com a CE do estudo na MARKEN e na OCASA.
+    var courier = String((registro && registro.courier) || '').toUpperCase();
+    var anexo = courier.indexOf('DHL') >= 0 ? 'O e-mail não leva anexos.' : (courier === 'MARKEN' || courier === 'OCASA' ? 'O e-mail leva a CE do estudo em anexo.' : '');
+    var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta enviar o pedido de coleta à courier.</p>';
+    return '<section class="tc-bloco"><h3>Pedir a coleta à courier</h3>' + explicacao +
+      '<ol class="tc-lista-passos"><li>Imprima os documentos, assine onde for pedido e deixe-os com as amostras, para entregar ao agente da courier na retirada.</li>' +
+      '<li>Abra o rascunho do pedido de coleta no Gmail. <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Abrir rascunhos</a></li>' +
+      '<li>Confira o destinatário, a data e a janela de retirada.' + (anexo ? ' ' + esc(anexo) : '') + '</li><li>Clique em Enviar e volte aqui.</li></ol></section>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="enviado"><span class="material-symbols-outlined" aria-hidden="true">send</span>Pronto, enviei</button></div>';
   }
 

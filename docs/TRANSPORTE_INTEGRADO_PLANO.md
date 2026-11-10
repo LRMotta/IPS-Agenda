@@ -107,7 +107,7 @@ Uma página nova no app, "Transporte", com quatro abas. Admin no piloto.
 |---|---|
 | Sem documentos, um transporte | Preparar o transporte |
 | Sem documentos, vários | Preparar N transportes |
-| Documentos gerados, e-mail não enviado | Enviar a documentação à courier (linha cinza começa com "Rascunho de e-mail pronto") |
+| Documentos gerados, pedido de coleta não enviado | Enviar o pedido de coleta à courier (os documentos são impressos e entregues ao agente; o e-mail é só o pedido de coleta) |
 | PINEX (Agendamento) | Pedir a coleta à PINEX |
 | PINEX aguardando colar números | Informar os números da PINEX |
 | GRU e extrato prontos | Anexar a GRU e o extrato e enviar à courier |

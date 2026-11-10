@@ -57,7 +57,7 @@ function transporteTarefaTitulo_(situacoes, gruPronta) {
   if (preparar > 1) return 'Preparar ' + preparar + ' transportes';
   if (situacoes.indexOf('pinex_pedir') >= 0) return 'Pedir a coleta à PINEX';
   if (situacoes.indexOf('pinex_numeros') >= 0) return 'Informar os números da PINEX';
-  return 'Enviar a documentação à courier';
+  return 'Enviar o pedido de coleta à courier';
 }
 
 function transporteTarefaPrazoLabel_(horas) {
@@ -144,7 +144,10 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje) {
       var diasDesdeEnvio = data && data.getTime() <= hoje.getTime() ? Math.round((hoje.getTime() - data.getTime()) / 86400000) : null;
       saida.transito.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, trackingUrl: agendaTrackingUrl_(awb, nome), statusCourier: statusTexto,
-        diasDesdeEnvio: diasDesdeEnvio }));
+        diasDesdeEnvio: diasDesdeEnvio,
+        // A data e a do envio, ja feito: nao ha prazo a cumprir. Como no cartao "AWB enviada nao entregue" das
+        // Pendencias (sem prioridade), o item em transito nunca fica vermelho nem "Atrasada".
+        prazoHoras: null, prazoLabel: '' }));
     } else if (familiaPinex && fase === 'resposta' && !passada) {
       saida.pinex.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, statusCourier: statusTexto }));

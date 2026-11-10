@@ -71,7 +71,7 @@ test('ignora cancelados, passados, sem courier, não aplicável e transportes j�
   assert.deepEqual(r.maisAdiante.transportes, 0);
 });
 
-test('documentos gerados sem e-mail enviado viram "Enviar a documentação", mesmo fora da janela', () => {
+test('documentos gerados sem e-mail enviado viram "Enviar o pedido de coleta", mesmo fora da janela', () => {
   const s = servidor();
   const operacao = (agendaId, slot, extra) => Object.assign({ agendaId, slot, estado: '', pdfId: 'PDF', emailEnviadoEm: '', emailIdentificadoEm: '' }, extra || {});
   const r = construir(s, [
@@ -81,7 +81,7 @@ test('documentos gerados sem e-mail enviado viram "Enviar a documentação", mes
     linha(s, 'd4', '07/10/2026', [{ nome: 'OCASA', status: 'Não Agendado', awb: '444' }])
   ], { operacoes: [operacao('d2', '1'), operacao('d3', '1', { emailEnviadoEm: new Date() }), operacao('d4', '1', { estado: 'INATIVA' })] });
   assert.deepEqual(r.tarefas.map((t) => [t.agendaId, t.titulo]), [
-    ['d1', 'Enviar a documentação à courier'], ['d3', 'Enviar a documentação à courier'], ['d4', 'Preparar o transporte'], ['d2', 'Enviar a documentação à courier']
+    ['d1', 'Enviar o pedido de coleta à courier'], ['d3', 'Enviar o pedido de coleta à courier'], ['d4', 'Preparar o transporte'], ['d2', 'Enviar o pedido de coleta à courier']
   ].map((x) => x));
   // d3 tem status Docs gerados mesmo com e-mail enviado: continua pedindo o envio até a Agenda mudar de status.
   assert.equal(r.tarefas.find((t) => t.agendaId === 'd2').transportes[0].situacao, 'enviar_doc');
@@ -198,6 +198,8 @@ test('Acompanhar: confirmação da courier, PINEX e em trânsito, com as regras 
   assert.deepEqual(r.acompanhar.transito.map((i) => [i.agendaId, i.slot, i.slotRotulo, i.awb, i.trackingUrl]), [['c3', '1', 'Transporte I', '222', 'https://rastreio.example.invalid/222']]);
   // Enviada em 28/09 e hoje é 02/10: 4 dias corridos (a contagem da aba Em trânsito).
   assert.equal(r.acompanhar.transito[0].diasDesdeEnvio, 4);
+  // A data é a do envio já feito: em trânsito não há prazo, nem "Atrasada" (como no cartão das Pendências).
+  assert.deepEqual([r.acompanhar.transito[0].prazoHoras, r.acompanhar.transito[0].prazoLabel], [null, '']);
 });
 
 test('Backups não agendados: Backup e Backup II, qualquer data, com prazo e sem virar tarefa', () => {
