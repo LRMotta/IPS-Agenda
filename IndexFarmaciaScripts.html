@@ -267,10 +267,20 @@ function farmaciaOperationId() {
   return window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'farm-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
+var FARMACIA_ADJUSTMENT_LABELS = { consumption:'Saída por consumo', loss:'Perda', recount:'Recontagem' };
+
+function farmaciaAdjustmentLabel(record) {
+  return 'Ajuste: ' + (FARMACIA_ADJUSTMENT_LABELS[record.data.kind] || 'quantidade');
+}
+
+function farmaciaSignedQuantity(delta, unit) {
+  return (delta > 0 ? '+' : '−') + farmaciaStockNumber(Math.abs(delta)) + ' ' + unit;
+}
+
 function farmaciaStockSave(type, data) {
   var catalogAction = type === 'location' || type === 'status' || type === 'probe' || type === 'calibration';
   var currentData = farmaciaCurrentData();
-  if (FARMACIA_STOCK.saving || !currentData || (catalogAction ? !currentData.locationsConfigured || !currentData.locationsCanManage : !currentData.configured || (type === 'receipt' ? ['operate', 'manage'] : ['manage']).indexOf(currentData.farmaciaAccess) === -1)) return;
+  if (FARMACIA_STOCK.saving || !currentData || (catalogAction ? !currentData.locationsConfigured || !currentData.locationsCanManage : !currentData.configured || (type === 'receipt' ? ['operate', 'manage'] : ['manage']).indexOf(currentData.farmaciaAccess) === -1 || (type === 'adjustment' && FARMACIA_STOCK.studyId !== '@IPS_COMMON'))) return;
   var epoch = FARMACIA_STOCK.epoch, studyId = FARMACIA_STOCK.studyId, restricted = FARMACIA_STOCK.restricted;
   function isCurrentSave() {
     return catalogAction ? epoch === FARMACIA_STOCK.epoch && getCurrentPage() === 'farmacia' : farmaciaStockCurrent(epoch, studyId, restricted);
@@ -297,7 +307,7 @@ function farmaciaStockSave(type, data) {
     modal.dataset.extraSaving = '0';
     if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
     fecharOverlay(modal.id);
-    if (type !== 'status' && type !== 'calibration' && type !== 'movement') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
+    if (type !== 'status' && type !== 'calibration' && type !== 'movement' && type !== 'adjustment') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
     farmaciaProductCategoryChanged();
     if (catalogAction && result && result.catalog && Array.isArray(result.catalog.storageUnits)) {
@@ -337,6 +347,7 @@ function farmaciaStockSave(type, data) {
   else if (type === 'calibration') runner.atualizarCalibracaoSondaFarmacia(payload);
   else if (type === 'receipt') runner.registrarRecebimentoFarmacia(payload);
   else if (type === 'movement') runner.registrarMovimentacaoFarmacia(payload);
+  else if (type === 'adjustment') runner.registrarAjusteFarmacia(payload);
   else runner.registrarInventarioInicialFarmacia(payload);
 }
 
@@ -444,11 +455,13 @@ function farmaciaOpenPosition(id) {
   FARMACIA_STOCK.positionId = id;
   FARMACIA_STOCK.positionSnapshot = Object.assign({}, position);
   FARMACIA_STOCK.movementToken = '';
+  FARMACIA_STOCK.adjustmentToken = '';
   var labels = {INITIAL:'Saldo inicial',RECEIPT:'Recebimento',block:'Bloqueio',release:'Liberação',transfer:'Transferência',dispense:'Dispensação',return:'Retorno do participante',transport_departure:'Saída para transporte',transport_arrival:'Chegada do transporte',destination:'Destinação final'};
   var history = (data.movements || []).filter(function(record) { return record.id === id || record.data.positionId === id; });
   var rows = history.map(function(record) {
     var event = record.data;
     var quantity = event.quantity === undefined ? event.physical : event.quantity;
+    if (record.type === 'ADJUSTMENT') return '<tr><td>' + esc(farmaciaAdjustmentLabel(record)) + '<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaSignedQuantity(record.adjustmentDelta, product.unit)) + '<small>' + esc((event.from === 'blocked' ? 'Bloqueado' : 'Disponível') + (event.kind === 'recount' ? ' · contado: ' + farmaciaStockNumber(event.quantity) + ' ' + product.unit : '')) + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Responsável: ' + esc(event.responsible) + '</small><small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     if (event.action === 'transport_arrival') {
       var departure = (data.movements || []).find(function(item) { return item.id === event.departureId; });
       quantity = departure ? departure.data.quantity : undefined;
@@ -467,7 +480,9 @@ function farmaciaOpenPosition(id) {
     '<div class="field" id="farmaciaMovementLocationField" hidden><label class="field-label" for="farmaciaMovementLocation">Posição de destino</label><select class="f-input" id="farmaciaMovementLocation"></select></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaMovementReason">Motivo (obrigatório)</label><input class="f-input" id="farmaciaMovementReason" maxlength="500" required></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaMovementDocument">Documento de suporte (obrigatório)</label><input class="f-input" id="farmaciaMovementDocument" maxlength="200" required aria-describedby="farmaciaMovementDocumentHelp"><div class="field-help" id="farmaciaMovementDocumentHelp">Qual documento autoriza esta ação? Informe o nome ou número e a versão ou data. Ex.: e-mail do patrocinador de 26/10/2026.</div></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar movimentação</button></div></form>';
+  if (FARMACIA_STOCK.studyId === '@IPS_COMMON' && product.supplySource !== 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += farmaciaAdjustmentFormHtml(position, product);
   document.getElementById('farmaciaPositionDetail').innerHTML = html;
+  if (document.getElementById('farmaciaAdjustmentForm')) farmaciaAdjustmentKindChanged();
   if (document.getElementById('farmaciaMovementForm')) {
     farmaciaUnitOptions('farmaciaMovementUnit');
     farmaciaMovementUnitChanged();
@@ -476,6 +491,67 @@ function farmaciaOpenPosition(id) {
   document.querySelector('#farmaciaModal-positionDetail .farmacia-dialog-status').textContent = '';
   if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('farmaciaModal-positionDetail');
   abrirOverlay('farmaciaModal-positionDetail');
+}
+
+// Estoque Geral: consumo, perda e recontagem ficam no histórico; nenhum registro anterior é apagado.
+function farmaciaAdjustmentFormHtml(position, product) {
+  var fractional = ['mL','g'].indexOf(product.unit) !== -1, today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  return '<form id="farmaciaAdjustmentForm" onsubmit="return salvarAjusteFarmaciaApp(event)"><div class="form-section"><div class="section-label">Saída / ajuste de quantidade</div><fieldset class="form-grid farmacia-movement-fields">' +
+    '<div class="field"><label class="field-label" for="farmaciaAdjustmentKind">Motivo</label><select class="f-input" id="farmaciaAdjustmentKind" onchange="farmaciaAdjustmentKindChanged()">' + (position.expired ? '' : '<option value="consumption">Consumo (saída para uso)</option>') + '<option value="loss">Perda (avaria, quebra, extravio)</option><option value="recount">Recontagem (corrigir o saldo contado)</option></select></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaAdjustmentFrom">Situação do saldo</label><select class="f-input" id="farmaciaAdjustmentFrom" onchange="farmaciaAdjustmentQuantityChanged()"></select></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaAdjustmentQuantity">Quantidade (' + esc(product.unit) + ')</label><input class="f-input" id="farmaciaAdjustmentQuantity" type="number" step="' + (fractional ? '0.001' : '1') + '" required aria-describedby="farmaciaAdjustmentHelp" oninput="farmaciaAdjustmentQuantityChanged(true)"></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaAdjustmentDate">Data</label><input class="f-input" id="farmaciaAdjustmentDate" type="date" value="' + today + '" max="' + today + '" min="' + esc(position.countedOn || position.receivedOn || '') + '" required></div>' +
+    '<div class="field full"><div class="field-help" id="farmaciaAdjustmentHelp" aria-live="polite"></div></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaAdjustmentResponsible">Responsável</label><input class="f-input" id="farmaciaAdjustmentResponsible" maxlength="120" required value="' + esc((typeof CURRENT_ACCESS === 'object' && CURRENT_ACCESS && CURRENT_ACCESS.name) || '') + '"></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaAdjustmentReason">Justificativa (obrigatória)</label><input class="f-input" id="farmaciaAdjustmentReason" maxlength="500" required placeholder="Ex.: uso no procedimento da visita, frasco quebrado, contagem mensal"></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaAdjustmentDocument">Referência documental (opcional)</label><input class="f-input" id="farmaciaAdjustmentDocument" maxlength="200"></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar ajuste</button></div></form>';
+}
+
+function farmaciaAdjustmentKindChanged() {
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return;
+  var kind = document.getElementById('farmaciaAdjustmentKind').value;
+  var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; }) || {};
+  document.getElementById('farmaciaAdjustmentFrom').innerHTML = (kind === 'consumption' ? ['available'] : ['available','blocked']).map(function(key) {
+    return '<option value="' + key + '">' + ({available:'Disponível',blocked:'Bloqueado'})[key] + ' — ' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</option>';
+  }).join('');
+  if (kind !== 'consumption' && position.expired) document.getElementById('farmaciaAdjustmentFrom').value = 'blocked';
+  document.querySelector('label[for="farmaciaAdjustmentQuantity"]').textContent = ({consumption:'Quantidade consumida',loss:'Quantidade perdida',recount:'Quantidade contada'})[kind] + ' (' + product.unit + ')';
+  document.getElementById('farmaciaAdjustmentQuantity').value = '';
+  farmaciaAdjustmentQuantityChanged();
+}
+
+function farmaciaAdjustmentQuantityChanged(typing) {
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return;
+  var kind = document.getElementById('farmaciaAdjustmentKind').value, from = document.getElementById('farmaciaAdjustmentFrom').value;
+  var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; }) || {};
+  var input = document.getElementById('farmaciaAdjustmentQuantity'), current = position[from] || 0, recount = kind === 'recount';
+  var fractional = ['mL','g'].indexOf(product.unit) !== -1;
+  input.min = recount ? '0' : fractional ? '0.001' : '1';
+  if (recount) input.removeAttribute('max'); else input.max = String(current);
+  var value = input.valueAsNumber, help = document.getElementById('farmaciaAdjustmentHelp');
+  var situation = from === 'blocked' ? 'bloqueado' : 'disponível';
+  if (!typing || !Number.isFinite(value)) {
+    help.textContent = recount ? 'Informe a quantidade encontrada na contagem física do saldo ' + situation + ' (hoje registrado: ' + farmaciaStockNumber(current) + ' ' + product.unit + '). A diferença entra no histórico.' :
+      'Saldo ' + situation + ' atual: ' + farmaciaStockNumber(current) + ' ' + product.unit + '. A quantidade informada sai do estoque e fica registrada no histórico.';
+    return;
+  }
+  var delta = recount ? Math.round((value - current) * 1000) / 1000 : -value;
+  help.textContent = !delta ? 'A contagem confere com o saldo registrado; nenhum ajuste é necessário.' :
+    'Ajuste de ' + farmaciaSignedQuantity(delta, product.unit) + '. Saldo ' + situation + ' passará de ' + farmaciaStockNumber(current) + ' para ' + farmaciaStockNumber(Math.round((current + delta) * 1000) / 1000) + ' ' + product.unit + '.';
+}
+
+function salvarAjusteFarmaciaApp(event) {
+  event.preventDefault();
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return false;
+  farmaciaStockSave('adjustment', {positionId:position.id, revision:position.revision,
+    kind:document.getElementById('farmaciaAdjustmentKind').value, from:document.getElementById('farmaciaAdjustmentFrom').value,
+    quantity:document.getElementById('farmaciaAdjustmentQuantity').valueAsNumber, occurredOn:document.getElementById('farmaciaAdjustmentDate').value,
+    responsible:document.getElementById('farmaciaAdjustmentResponsible').value, reason:document.getElementById('farmaciaAdjustmentReason').value,
+    document:document.getElementById('farmaciaAdjustmentDocument').value});
+  return false;
 }
 
 function farmaciaMovementUnitChanged() {

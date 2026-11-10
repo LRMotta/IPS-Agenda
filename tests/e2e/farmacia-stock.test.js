@@ -1284,3 +1284,68 @@ test('Produtos obtém autorização restrita na própria leitura sem RPC anterio
     await page.close();
   } finally {await browser.close();}
 });
+
+test('estoque Geral registra saída / ajuste de quantidade com motivo, data e responsável em desktop/celular', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors}=await fixture(browser,width);
+      await page.evaluate(()=>{window.CURRENT_ACCESS={name:'Pessoa Fictícia'};window.renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},{id:'P1',nome:'Estudo A'}]);});
+      const data=stockData();
+      data.products[0].supplySource='site';
+      Object.assign(data.positions[0],{revision:'IN1',origin:'initial',pending:0});
+      data.movements=[{id:'IN1',type:'INITIAL',registeredAt:data.positions[0].registeredAt,author:data.positions[0].author,data:{...data.positions[0],confirmed:true,note:'Contagem inicial fictícia'}},
+        {id:'FAJ-1',type:'ADJUSTMENT',adjustmentDelta:-1,registeredAt:'2026-10-21T13:00:00.000Z',author:'farmacia@example.invalid',
+          data:{positionId:'IN1',revision:'IN1',kind:'loss',from:'blocked',quantity:1,occurredOn:'2026-10-21',responsible:'Responsável fictício',reason:'Frasco quebrado',document:''}}];
+      await page.locator('#farmaciaStudy').selectOption('@IPS_COMMON');
+      await page.evaluate(()=>window.pending.at(-1).success({study:{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},farmaciaAccess:'manage',restrictedAllowed:false}));
+      await page.evaluate(result=>window.pending.at(-1).success(result),data);
+      await page.locator('#farmaciaInventoryResults button[data-action="adjust"]').click();
+      const detail=await page.locator('#farmaciaPositionDetail').innerText();
+      assert.match(detail,/Ajuste: Perda/);
+      assert.match(detail,/−1 frasco/);
+      assert.match(detail,/Responsável: Responsável fictício/);
+      assert.equal(await page.locator('#farmaciaMovementForm').count(),0,'estoque Geral não usa movimentação do patrocinador');
+      assert.equal(await page.locator('#farmaciaAdjustmentResponsible').inputValue(),'Pessoa Fictícia');
+      assert.equal(await page.locator('#farmaciaAdjustmentDate').inputValue(),'2026-10-21');
+      assert.match(await page.locator('#farmaciaAdjustmentFrom').innerText(),/^Disponível — 8 frasco$/);
+      await page.locator('#farmaciaAdjustmentQuantity').fill('3');
+      assert.match(await page.locator('#farmaciaAdjustmentHelp').innerText(),/−3 frasco.*de 8 para 5 frasco/);
+      await page.locator('#farmaciaAdjustmentKind').selectOption('recount');
+      assert.equal(await page.getByLabel('Quantidade contada (frasco)',{exact:true}).isVisible(),true);
+      await page.locator('#farmaciaAdjustmentFrom').selectOption('blocked');
+      await page.locator('#farmaciaAdjustmentQuantity').fill('5');
+      assert.match(await page.locator('#farmaciaAdjustmentHelp').innerText(),/\+3 frasco.*de 2 para 5 frasco/);
+      const count=await page.evaluate(()=>window.pending.length);
+      await page.locator('#farmaciaAdjustmentForm button[type=submit]').click();
+      assert.equal(await page.evaluate(()=>window.pending.length),count,'justificativa obrigatória impede envio');
+      await page.locator('#farmaciaAdjustmentReason').fill('Contagem mensal fictícia');
+      const artifacts=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(artifacts,{recursive:true});
+      await page.screenshot({animations:'disabled',path:path.join(artifacts,'farmacia-ajuste-geral-'+width+'.png')});
+      await page.locator('#farmaciaAdjustmentForm button[type=submit]').click();
+      const sent=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
+      assert.equal(sent.method,'registrarAjusteFarmacia');
+      assert.equal(sent.payload.studyId,'@IPS_COMMON');
+      assert.deepEqual(sent.payload.data,{positionId:'IN1',revision:'IN1',kind:'recount',from:'blocked',quantity:5,occurredOn:'2026-10-21',responsible:'Pessoa Fictícia',reason:'Contagem mensal fictícia',document:''});
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'O saldo mudou. Atualize o estoque antes de ajustar.'}));
+      assert.match(await page.locator('#farmaciaModal-positionDetail .status-msg').innerText(),/saldo mudou/);
+      assert.equal(await page.locator('#farmaciaAdjustmentQuantity').inputValue(),'5');
+      const token=sent.payload.requestId;
+      await page.locator('#farmaciaAdjustmentForm button[type=submit]').click();
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).args[0].requestId),token,'nova tentativa reaproveita o identificador da operação');
+      assert.deepEqual(errors,[]); await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test('estoque de estudo não oferece saída / ajuste de quantidade', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await openStock(page,lifecycleData());
+    assert.equal(await page.locator('#farmaciaInventoryResults button[data-action="adjust"]').count(),0);
+    await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
+    assert.equal(await page.locator('#farmaciaAdjustmentForm').count(),0);
+    assert.deepEqual(errors,[]); await page.close();
+  } finally {await browser.close();}
+});

@@ -22,49 +22,74 @@
     return [tarefa.participante, tarefa.visita, tarefa.projeto, data].filter(Boolean).join(' · ');
   }
 
-  function transpCentralTransporte(t) {
-    // O tipo (Transporte I, Backup…) só aparece aqui, na linha secundária; nunca no título.
-    var situacao = { preparar: 'Preparar', pinex_pedir: 'Pedir a coleta', pinex_numeros: 'Informar os números', enviar_doc: 'Enviar documentação' }[t.situacao] || '';
-    var partes = [t.slotRotulo, [t.courier, t.temperatura].filter(Boolean).join(' / '), t.destino, t.awb ? 'AWB ' + t.awb : ''].filter(Boolean);
-    return '<li><strong>' + esc(situacao) + '</strong> · ' + esc(partes.join(' · ')) + '</li>';
+  var TC_SITUACAO = { preparar: 'Preparar', pinex_pedir: 'Pedir a coleta', pinex_numeros: 'Informar os números', enviar_doc: 'Enviar documentação' };
+
+  // Um transporte em linha: tipo (chip), courier e temperatura em destaque, destino e AWB discretos.
+  // O tipo (Transporte I, Backup…) só aparece aqui; nunca no título da tarefa.
+  function transpCentralHtmlTransporteLinha(t, acoes, detalheExtra) {
+    return '<li><span class="chip chip-gray tc-slot">' + esc(t.slotRotulo || '') + '</span>' +
+      (t.situacao && TC_SITUACAO[t.situacao] ? '<span class="tc-situacao">' + esc(TC_SITUACAO[t.situacao]) + '</span>' : '') +
+      '<span class="tc-acomp-courier">' + esc([t.courier, t.temperatura].filter(Boolean).join(' · ')) + '</span>' +
+      '<span class="tc-acomp-detalhe">' + esc([t.destino, t.awb ? 'AWB ' + t.awb : '', detalheExtra || ''].filter(Boolean).join(' · ')) + '</span>' +
+      (acoes ? '<span class="tc-acomp-acao-transp">' + acoes + '</span>' : '') + '</li>';
   }
 
   function transpCentralEtiquetas(tarefa) {
     var etiquetas = [];
-    if (tarefa.prazoLabel) etiquetas.push('<span class="tc-badge urgent"><span class="material-symbols-outlined" aria-hidden="true">priority_high</span>' + esc(tarefa.prazoLabel) + '</span>');
-    if (tarefa.parouNoPasso) etiquetas.push('<span class="tc-badge">Parou no passo ' + esc(tarefa.parouNoPasso) + '</span>');
-    if (tarefa.comPessoa) etiquetas.push('<span class="tc-badge">Com ' + esc(tarefa.comPessoa) + ' agora</span>');
+    if (tarefa.prazoLabel) etiquetas.push('<span class="chip chip-red tc-chip"><span class="material-symbols-outlined" aria-hidden="true">schedule</span>' + esc(tarefa.prazoLabel) + '</span>');
+    if (tarefa.parouNoPasso) etiquetas.push('<span class="chip chip-orange tc-chip"><span class="material-symbols-outlined" aria-hidden="true">bookmark</span>Parou no passo ' + esc(tarefa.parouNoPasso) + '</span>');
+    if (tarefa.comPessoa) etiquetas.push('<span class="chip chip-purple tc-chip"><span class="material-symbols-outlined" aria-hidden="true">person</span>Com ' + esc(tarefa.comPessoa) + ' agora</span>');
     return etiquetas.length ? '<div class="tc-badges">' + etiquetas.join('') + '</div>' : '';
+  }
+
+  // Cabeçalho de seção no padrão do app (section-label: rótulo em caixa alta com linha), contagem e explicação.
+  function transpCentralHtmlCabecalho(titulo, icone, total, dica) {
+    return '<div class="tc-secao-cab"><h3 class="section-label tc-secao-tit"><span class="material-symbols-outlined" aria-hidden="true">' + icone + '</span>' +
+      esc(titulo) + (total !== undefined && total !== null ? '<span class="chip chip-blue tc-count">' + esc(total) + '</span>' : '') + '</h3>' +
+      (dica ? '<p class="tc-secao-dica">' + dica + '</p>' : '') + '</div>';
+  }
+
+  // Cabeçalho de colunas da tabela, como o .data-table do app. colunas: rótulos na ordem da grade.
+  function transpCentralHtmlThead(classe, colunas) {
+    return '<div class="tc-thead ' + classe + '" aria-hidden="true">' + colunas.map(function(c) { return '<span>' + esc(c) + '</span>'; }).join('') + '</div>';
   }
 
   function transpCentralHtmlFazer(dados) {
     var tarefas = dados.tarefas || [];
     var adiante = dados.maisAdiante || { transportes: 0 };
     var rodape = adiante.transportes
-      ? '<p class="tc-footer">' + esc(adiante.transportes) + (adiante.transportes === 1 ? ' transporte mais adiante. ' : ' transportes mais adiante. ') +
-        '<button type="button" class="tc-link" data-tc-ir="adiante">Ver mais adiante</button></p>'
+      ? '<p class="tc-footer"><span class="material-symbols-outlined" aria-hidden="true">event_upcoming</span>' + esc(adiante.transportes) +
+        (adiante.transportes === 1 ? ' transporte vira tarefa em breve. ' : ' transportes viram tarefa em breve. ') +
+        '<button type="button" class="tc-link" data-tc-ir="adiante">Ver Em breve</button></p>'
       : '';
     if (!tarefas.length) {
       return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Tudo feito por agora.</div>' + rodape;
     }
     var proxima = tarefas[0];
-    var html = '<article class="tc-next" data-tc-agenda="' + esc(proxima.agendaId) + '">' +
-      '<div class="tc-kicker">Próxima tarefa</div>' +
-      '<h2 class="tc-title">' + esc(proxima.titulo) + '</h2>' +
-      '<p class="tc-meta">' + esc(transpCentralTextoMeta(proxima)) + '</p>' +
-      transpCentralEtiquetas(proxima) +
-      '<ul class="tc-transports">' + (proxima.transportes || []).map(transpCentralTransporte).join('') + '</ul>' +
+    var html = transpCentralHtmlCabecalho('Próxima tarefa', 'play_circle', null, '') +
+      '<article class="tc-next' + (proxima.prazoLabel ? ' urgent' : '') + '" data-tc-agenda="' + esc(proxima.agendaId) + '">' +
+      '<div class="tc-next-top">' + transpCentralHtmlDataDestaque(proxima.dataOrdem, proxima.data, proxima.hora) +
+      '<div class="tc-next-texto"><h2 class="tc-title">' + esc(proxima.titulo) + '</h2>' +
+      '<p class="tc-meta"><strong>' + esc(proxima.participante) + '</strong>' + esc([proxima.projeto, proxima.visita].filter(Boolean).map(function(p) { return ' · ' + p; }).join('')) + '</p>' +
+      transpCentralEtiquetas(proxima) + '</div></div>' +
+      '<ul class="tc-acomp-transp tc-transports">' + (proxima.transportes || []).map(function(t) { return transpCentralHtmlTransporteLinha(t); }).join('') + '</ul>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-comecar="' + esc(proxima.agendaId) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>Começar</button>' +
       '<button type="button" class="tc-link" data-tc-abrir="' + esc(proxima.agendaId) + '">Abrir na Agenda</button></div>' +
       '</article>';
     if (tarefas.length > 1) {
-      html += '<h3 class="tc-list-title">Depois desta, nesta ordem</h3><ul class="tc-list">' + tarefas.slice(1).map(function(t) {
-        var urgente = !!t.prazoLabel;
-        return '<li class="tc-item' + (urgente ? ' urgent' : '') + '"><div class="tc-item-title">' + esc(t.titulo) +
-          (urgente ? ' <span class="tc-badge urgent">' + esc(t.prazoLabel) + '</span>' : '') +
-          (t.comPessoa ? ' <span class="tc-badge">Com ' + esc(t.comPessoa) + ' agora</span>' : '') + '</div>' +
-          '<div class="tc-item-meta">' + esc(transpCentralTextoMeta(t)) + '</div></li>';
-      }).join('') + '</ul>';
+      var seguintes = tarefas.slice(1);
+      html += '<section class="tc-secao">' + transpCentralHtmlCabecalho('Depois desta, nesta ordem', 'format_list_numbered', seguintes.length,
+        'O sistema mostra uma tarefa por vez. Estas vêm em seguida.') +
+        '<div class="tc-tabela tc-list" role="list">' + transpCentralHtmlThead('tc-grade-fila', ['Envio', 'Participante', 'Tarefa', 'Situação']) +
+        seguintes.map(function(t) {
+          var urgente = !!t.prazoLabel;
+          return '<div class="tc-acomp tc-grade-fila tc-item' + (urgente ? ' urgent' : '') + '" role="listitem">' +
+            '<span class="tc-acomp-data">' + transpCentralHtmlDataDestaque(t.dataOrdem, t.data, t.hora) + '</span>' +
+            '<span class="tc-trans-quem"><strong>' + esc(t.participante) + '</strong><span>' + esc([t.projeto, t.visita].filter(Boolean).join(' · ')) + '</span></span>' +
+            '<span class="tc-fila-tarefa"><strong class="tc-item-title">' + esc(t.titulo) + '</strong><span class="tc-item-meta">' +
+            esc((t.transportes || []).map(function(x) { return [x.slotRotulo, [x.courier, x.temperatura].filter(Boolean).join(' · ')].filter(Boolean).join(': '); }).join(' + ')) + '</span></span>' +
+            '<span class="tc-fila-chips">' + transpCentralEtiquetas(t) + '</span></div>';
+        }).join('') + '</div></section>';
     }
     return html + rodape;
   }
@@ -78,43 +103,70 @@
     return [it.slotRotulo, [it.courier, it.temperatura].filter(Boolean).join(' / '), it.destino, it.awb ? 'AWB ' + it.awb : ''].filter(Boolean).join(' · ');
   }
 
-  function transpCentralPrazo(it) {
-    return it.prazoLabel ? ' <span class="tc-badge urgent">' + esc(it.prazoLabel) + '</span>' : '';
+  // Acompanhar: uma linha por visita (os transportes da mesma visita ficam juntos), no mesmo padrão de tabela
+  // de "Em trânsito". Os dados só vão para data-* dos botões; nada vem do usuário sem esc().
+  function transpCentralAgruparVisitas(itens) {
+    var grupos = [];
+    var porId = {};
+    (itens || []).forEach(function(it) {
+      var id = String(it.agendaId || '');
+      if (!porId[id]) {
+        porId[id] = { agendaId: id, data: it.data, hora: it.hora, dataOrdem: it.dataOrdem, viraTarefaEm: it.viraTarefaEm, participante: it.participante, projeto: it.projeto, visita: it.visita, prazoLabel: '', itens: [] };
+        grupos.push(porId[id]);
+      }
+      if (it.prazoLabel && !porId[id].prazoLabel) porId[id].prazoLabel = it.prazoLabel;
+      porId[id].itens.push(it);
+    });
+    return grupos;
   }
 
-  // Cada item de Acompanhar mantém seus dados em data-* só para os botões; nada vem do usuário sem esc().
-  function transpCentralHtmlAcompanharItem(it, transito, pinex) {
-    var acoes = '';
-    if (transito) {
-      // Mesma regra do cartão "AWB enviada não entregue": lupa só com rastreio e confirmação pelo modal existente.
-      if (it.trackingUrl) acoes += '<button type="button" class="tc-icone" data-tc-rastreio="' + esc(it.trackingUrl) + '" title="Abrir rastreio" aria-label="Abrir rastreio"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span></button>';
-      acoes += '<button type="button" class="tc-link" data-tc-entrega="' + esc(it.agendaId) + '|' + esc(it.slotRotulo) + '">Confirmar entrega</button>';
-    } else if (pinex) {
-      // A PINEX responde por e-mail com os números no título; colar a linha continua o mesmo transporte.
-      acoes += '<button type="button" class="tc-link" data-tc-comecar="' + esc(it.agendaId) + '" data-tc-slot="' + esc(it.slot) + '">Informar os números da PINEX</button>';
-    } else {
-      acoes += '<button type="button" class="tc-link" data-tc-abrir="' + esc(it.agendaId) + '">Abrir na Agenda</button>';
-    }
-    return '<li class="tc-item' + (it.prazoLabel ? ' urgent' : '') + '" data-tc-id="' + esc(it.agendaId) + '"><div class="tc-item-linha"><div>' +
-      '<div class="tc-item-title">' + esc(transpCentralMetaItem(it)) + transpCentralPrazo(it) + '</div>' +
-      '<div class="tc-item-meta">' + esc(transpCentralLinhaTransporte(it)) + '</div></div><div class="tc-item-acoes">' + acoes + '</div></div></li>';
+  // acao(it): HTML das ações de um transporte (ou '' quando a ação é da visita inteira).
+  function transpCentralHtmlTransportesVisita(grupo, acao) {
+    return '<ul class="tc-acomp-transp">' + grupo.itens.map(function(it) {
+      return transpCentralHtmlTransporteLinha(it, acao ? acao(it) : '', it.extraDetalhe);
+    }).join('') + '</ul>';
   }
 
-  function transpCentralHtmlAcompanharSecao(titulo, itens, transito, pinex) {
-    return '<section class="tc-secao"><h3 class="tc-list-title">' + esc(titulo) + ' <span class="tc-count">' + itens.length + '</span></h3>' +
-      (itens.length ? '<ul class="tc-list">' + itens.map(function(it) { return transpCentralHtmlAcompanharItem(it, transito, pinex); }).join('') + '</ul>' : '<p class="tc-dim">Nada por aqui.</p>') + '</section>';
+  // Linha de uma visita: data em destaque (e prazo), participante, transportes e, se houver, a ação da visita.
+  function transpCentralHtmlLinhaVisita(grupo, acaoTransporte, acaoVisita, final) {
+    return '<div class="tc-acomp ' + (acaoVisita || final ? 'tc-grade-acao' : 'tc-grade-sem-acao') + (grupo.prazoLabel ? ' urgent' : '') + '" role="listitem" data-tc-id="' + esc(grupo.agendaId) + '">' +
+      '<span class="tc-acomp-data">' + transpCentralHtmlDataDestaque(grupo.dataOrdem, grupo.data, grupo.hora) +
+      (grupo.prazoLabel ? '<span class="chip chip-red tc-chip"><span class="material-symbols-outlined" aria-hidden="true">schedule</span>' + esc(grupo.prazoLabel) + '</span>' : '') + '</span>' +
+      '<span class="tc-trans-quem"><strong>' + esc(grupo.participante) + '</strong><span>' + esc([grupo.projeto, grupo.visita].filter(Boolean).join(' · ')) + '</span></span>' +
+      transpCentralHtmlTransportesVisita(grupo, acaoTransporte) +
+      (acaoVisita ? '<span class="tc-trans-acoes">' + acaoVisita(grupo) + '</span>' : (final ? final(grupo) : '')) + '</div>';
+  }
+
+  // Seção de lista no padrão do módulo: cabeçalho do app, cabeçalho de colunas e uma linha por visita.
+  // opcoes: { titulo, icone, itens, dica, acaoTransporte, acaoVisita, final, colunaFinal, vazio }.
+  function transpCentralHtmlSecaoAcompanhar(opcoes) {
+    var grupos = transpCentralAgruparVisitas(opcoes.itens);
+    var visitas = grupos.length === 1 ? '1 visita' : grupos.length + ' visitas';
+    var transportes = opcoes.itens.length === 1 ? '1 transporte' : opcoes.itens.length + ' transportes';
+    var comAcao = !!(opcoes.acaoVisita || opcoes.final);
+    var colunas = ['Envio', 'Participante', 'Transportes'].concat(comAcao ? [opcoes.colunaFinal || ''] : []);
+    return '<section class="tc-secao tc-secao-acomp" aria-label="' + esc(opcoes.titulo) + '">' +
+      transpCentralHtmlCabecalho(opcoes.titulo, opcoes.icone, opcoes.itens.length, esc(opcoes.dica) + ' <span class="tc-dim">' + esc(transportes + ' em ' + visitas) + '.</span>') +
+      '<div class="tc-tabela" role="list">' + transpCentralHtmlThead(comAcao ? 'tc-grade-acao' : 'tc-grade-sem-acao', colunas) +
+      grupos.map(function(g) { return transpCentralHtmlLinhaVisita(g, opcoes.acaoTransporte, opcoes.acaoVisita, opcoes.final); }).join('') + '</div></section>';
+  }
+
+  function transpCentralBotao(classe, icone, texto, atributos, rotulo) {
+    return '<button type="button" class="tc-acao ' + classe + '" ' + atributos + (rotulo ? ' aria-label="' + esc(rotulo) + '"' : '') + '>' +
+      '<span class="material-symbols-outlined" aria-hidden="true">' + icone + '</span>' + esc(texto) + '</button>';
   }
 
   // GRU e extrato pendentes: o botão só aparece para quem está na lista de peticionamento; confirma em dois cliques.
   function transpCentralHtmlPeticionamento(itens, pode) {
     if (!itens.length) return '';
-    return '<section class="tc-secao"><h3 class="tc-list-title">Aguardando peticionamento (GRU e extrato) <span class="tc-count">' + itens.length + '</span></h3><ul class="tc-list">' +
-      itens.map(function(it) {
-        var acao = pode ? '<button type="button" class="tc-link" data-tc-gru="' + esc(it.agendaId) + '|' + esc(it.slot) + '">GRU e extrato prontos</button>'
+    return transpCentralHtmlSecaoAcompanhar({
+      titulo: 'Aguardando peticionamento (GRU e extrato)', icone: 'gavel', itens: itens,
+      dica: pode ? 'Salve a GRU e o extrato na pasta do envio, no servidor, e marque aqui.' : 'Quem peticiona salva a GRU e o extrato na pasta do envio e marca no app.',
+      acaoTransporte: function(it) {
+        return pode ? transpCentralBotao('verde', 'task_alt', 'GRU e extrato prontos', 'data-tc-gru="' + esc(it.agendaId) + '|' + esc(it.slot) + '"', 'GRU e extrato prontos: ' + it.participante + ', ' + it.slotRotulo)
           : '<span class="tc-dim">Aguardando quem peticiona</span>';
-        return '<li class="tc-item" data-tc-id="' + esc(it.agendaId) + '"><div class="tc-item-linha"><div><div class="tc-item-title">' + esc(transpCentralMetaItem(it)) + '</div>' +
-          '<div class="tc-item-meta">' + esc(transpCentralLinhaTransporte(it)) + '</div></div><div class="tc-item-acoes">' + acao + '</div></div></li>';
-      }).join('') + '</ul></section>';
+      }
+    });
   }
 
   function transpCentralMarcarGru(alvo) {
@@ -137,9 +189,28 @@
 
   function transpCentralHtmlAcompanhar(dados) {
     var a = dados.acompanhar || {};
-    return transpCentralHtmlPeticionamento(a.peticionamento || [], !!dados.podePeticionar) +
-      transpCentralHtmlAcompanharSecao('Aguardando confirmação da courier', a.confirmacao || [], false) +
-      transpCentralHtmlAcompanharSecao('Aguardando resposta da PINEX', a.pinex || [], false, true);
+    var peticionamento = a.peticionamento || [];
+    var confirmacao = a.confirmacao || [];
+    var pinex = a.pinex || [];
+    if (!peticionamento.length && !confirmacao.length && !pinex.length) {
+      return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nada aguardando courier, PINEX ou peticionamento.</div>';
+    }
+    return transpCentralHtmlPeticionamento(peticionamento, !!dados.podePeticionar) +
+      (confirmacao.length ? transpCentralHtmlSecaoAcompanhar({
+        titulo: 'Aguardando confirmação da courier', icone: 'mark_email_unread', itens: confirmacao,
+        dica: 'A coleta foi pedida e o app aguarda o e-mail de confirmação. Não há nada a fazer, salvo se a data chegar sem resposta.',
+        acaoVisita: function(g) {
+          return transpCentralBotao('neutro', 'event', 'Abrir na Agenda', 'data-tc-abrir="' + esc(g.agendaId) + '"', 'Abrir na Agenda: ' + g.participante);
+        }
+      }) : '') +
+      (pinex.length ? transpCentralHtmlSecaoAcompanhar({
+        titulo: 'Aguardando resposta da PINEX', icone: 'forward_to_inbox', itens: pinex,
+        dica: 'O formulário de agendamento foi enviado. Quando a PINEX responder, cole a linha com os números.',
+        // A PINEX responde por e-mail com os números no título; colar a linha continua o mesmo transporte.
+        acaoTransporte: function(it) {
+          return transpCentralBotao('primario', 'pin', 'Informar os números', 'data-tc-comecar="' + esc(it.agendaId) + '" data-tc-slot="' + esc(it.slot) + '"', 'Informar os números da PINEX: ' + it.participante);
+        }
+      }) : '');
   }
 
   function transpCentralDiasEnvio(dias) {
@@ -153,56 +224,78 @@
   function transpCentralHtmlTransito(dados) {
     var itens = ((dados.acompanhar || {}).transito) || [];
     if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum transporte em trânsito.</div>';
-    return '<div class="tc-tabela" role="list">' + itens.map(function(it) {
-      var rastreio = it.trackingUrl
-        ? '<button type="button" class="tc-rastreio" data-tc-rastreio="' + esc(it.trackingUrl) + '" title="Abrir rastreio" aria-label="Abrir rastreio de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span></button>'
-        : '';
-      return '<div class="tc-trans" role="listitem" data-tc-id="' + esc(it.agendaId) + '">' +
-        '<span class="tc-trans-data">' + esc(it.data) + '</span>' +
-        '<span class="tc-trans-quem"><strong>' + esc(it.participante) + '</strong><span>' + esc([it.slotRotulo, it.projeto].filter(Boolean).join(' · ')) + '</span></span>' +
-        '<span class="tc-trans-courier">' + esc([it.courier, it.temperatura].filter(Boolean).join(' / ')) + '</span>' +
-        '<span class="tc-trans-awb">' + esc(it.awb) + '</span>' +
-        '<span class="tc-trans-dias">' + esc(transpCentralDiasEnvio(it.diasDesdeEnvio)) + '</span>' +
-        '<span class="tc-trans-acoes">' + rastreio +
-        '<button type="button" class="tc-entrega" data-tc-entrega="' + esc(it.agendaId) + '|' + esc(it.slotRotulo) + '" aria-label="Confirmar entrega de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">task_alt</span>Confirmar entrega</button>' +
-        '</span></div>';
-    }).join('') + '</div>';
+    return transpCentralHtmlSecaoAcompanhar({
+      titulo: 'Em trânsito', icone: 'local_shipping', itens: itens.map(function(it) {
+        return Object.assign({}, it, { extraDetalhe: transpCentralDiasEnvio(it.diasDesdeEnvio) });
+      }),
+      dica: 'Enviados e ainda não entregues. Confirme a entrega quando o rastreio mostrar que chegou.',
+      acaoTransporte: function(it) {
+        var rastreio = it.trackingUrl
+          ? '<button type="button" class="icon-btn tc-rastreio" data-tc-rastreio="' + esc(it.trackingUrl) + '" title="Abrir rastreio" aria-label="Abrir rastreio de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span></button>'
+          : '';
+        return rastreio + transpCentralBotao('verde tc-entrega', 'task_alt', 'Confirmar entrega', 'data-tc-entrega="' + esc(it.agendaId) + '|' + esc(it.slotRotulo) + '"', 'Confirmar entrega de ' + it.participante);
+      }
+    });
   }
 
-  // Semanas em acordeão: uma aberta por vez, a primeira aberta ao carregar. Só consulta.
+  var TC_DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  var TC_MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+  // Bloco de data em destaque: dia grande, mês e dia da semana. Sem data numérica, mostra o texto da Agenda.
+  function transpCentralHtmlDataDestaque(dataOrdem, texto, hora) {
+    var d = typeof dataOrdem === 'number' && isFinite(dataOrdem) ? new Date(dataOrdem) : null;
+    if (!d || isNaN(d.getTime())) {
+      return '<span class="tc-data-bloco tc-data-texto"><strong>' + esc(texto || '') + '</strong>' + (hora ? '<span>' + esc(hora) + '</span>' : '') + '</span>';
+    }
+    return '<span class="tc-data-bloco" aria-label="' + esc(texto || '') + (hora ? ' ' + esc(hora) : '') + '">' +
+      '<span class="tc-data-dia" aria-hidden="true">' + ('0' + d.getDate()).slice(-2) + '</span>' +
+      '<span class="tc-data-resto" aria-hidden="true"><span>' + TC_MESES[d.getMonth()] + ' · ' + TC_DIAS_SEMANA[d.getDay()] + '</span>' +
+      (hora ? '<span class="tc-data-hora">' + esc(hora) + '</span>' : '') + '</span></span>';
+  }
+
+  // Em breve: semanas em acordeão (uma aberta por vez, a primeira ao carregar), uma linha por visita com a data
+  // do envio em destaque e quando vira tarefa à direita. Só consulta.
   function transpCentralHtmlAdiante(dados) {
     var semanas = (dados.maisAdiante && dados.maisAdiante.semanas) || [];
-    if (!semanas.length) return '<div class="tc-empty">Nenhum transporte mais adiante.</div>';
+    if (!semanas.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum transporte em breve.</div>';
     var aberta = TRANSP_CENTRAL_STATE.semanaAberta;
     if (!semanas.some(function(s) { return s.chave === aberta; })) aberta = semanas[0].chave;
     TRANSP_CENTRAL_STATE.semanaAberta = aberta;
-    return '<div class="tc-acordeao">' + semanas.map(function(s, n) {
+    var cabecalho = transpCentralHtmlCabecalho('Em breve', 'event_upcoming', (dados.maisAdiante && dados.maisAdiante.transportes) || 0,
+      'Transportes que viram tarefa ' + esc(dados.janelaDiasUteis || 7) + ' dias úteis antes do envio. Não precisa fazer nada por eles agora.');
+    var vira = function(g) {
+      return '<span class="tc-vira"><span class="material-symbols-outlined" aria-hidden="true">event_upcoming</span><span>Vira tarefa em<strong>' + esc(g.viraTarefaEm || '') + '</strong></span></span>';
+    };
+    return cabecalho + '<div class="tc-acordeao">' + semanas.map(function(s, n) {
       var aberto = s.chave === aberta;
+      var grupos = transpCentralAgruparVisitas(s.itens);
+      var resumo = (s.itens.length === 1 ? '1 transporte' : s.itens.length + ' transportes') + ' · ' + (grupos.length === 1 ? '1 visita' : grupos.length + ' visitas');
       return '<section class="tc-semana"><h3><button type="button" class="tc-semana-cab" id="tcSemanaBtn' + n + '" aria-expanded="' + (aberto ? 'true' : 'false') + '" aria-controls="tcSemana' + n + '" data-tc-semana="' + esc(s.chave) + '">' +
-        '<span>' + esc(s.rotulo) + '</span><span class="tc-count">' + s.itens.length + '</span></button></h3>' +
-        '<ul class="tc-list" id="tcSemana' + n + '" role="region" aria-labelledby="tcSemanaBtn' + n + '"' + (aberto ? '' : ' hidden') + '>' + s.itens.map(function(it) {
-          return '<li class="tc-item"><div class="tc-item-title">' + esc(transpCentralMetaItem(it)) + '</div>' +
-            '<div class="tc-item-meta">' + esc(transpCentralLinhaTransporte(it)) + '</div>' +
-            '<div class="tc-item-meta">Vira tarefa a partir de ' + esc(it.viraTarefaEm) + '</div></li>';
-        }).join('') + '</ul></section>';
+        '<span class="tc-semana-tit"><span class="material-symbols-outlined" aria-hidden="true">' + (aberto ? 'expand_more' : 'chevron_right') + '</span>' + esc(s.rotulo) + '</span>' +
+        '<span class="tc-semana-resumo">' + esc(resumo) + '</span></button></h3>' +
+        '<div class="tc-tabela tc-breve" id="tcSemana' + n + '" role="region" aria-labelledby="tcSemanaBtn' + n + '"' + (aberto ? '' : ' hidden') + '>' +
+        transpCentralHtmlThead('tc-grade-acao', ['Envio', 'Participante', 'Transportes', 'Vira tarefa']) +
+        grupos.map(function(g) { return transpCentralHtmlLinhaVisita(g, null, null, vira).replace('class="tc-acomp ', 'class="tc-acomp tc-breve-linha '); }).join('') + '</div></section>';
     }).join('') + '</div>';
   }
 
   function transpCentralHtmlBackups(dados) {
     var itens = dados.backups || [];
     if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum Backup sem agendamento.</div>';
-    return '<p class="tc-dim">Abra o agendamento para criar um novo Envio de Amostras ou usar um agendamento futuro.</p><ul class="tc-list">' + itens.map(function(it) {
-      return '<li class="tc-item' + (it.prazoLabel ? ' urgent' : '') + '"><div class="tc-item-linha"><div>' +
-        '<div class="tc-item-title">' + esc(transpCentralMetaItem(it)) + transpCentralPrazo(it) + '</div>' +
-        '<div class="tc-item-meta">' + esc(transpCentralLinhaTransporte(it)) + '</div></div>' +
-        '<div class="tc-item-acoes"><button type="button" class="tc-link" data-tc-abrir="' + esc(it.agendaId) + '">Abrir agendamento</button></div></div></li>';
-    }).join('') + '</ul>';
+    // Mesmo padrão de Acompanhar: data da visita de origem em destaque, Backup e Backup II da mesma visita juntos.
+    return transpCentralHtmlSecaoAcompanhar({
+      titulo: 'Backups aguardando agendamento', icone: 'inventory_2', itens: itens,
+      dica: 'Abra o agendamento para criar um novo Envio de Amostras ou usar um agendamento futuro. Depois disso, o backup sai desta lista.',
+      acaoVisita: function(g) {
+        return transpCentralBotao('neutro', 'event', 'Abrir agendamento', 'data-tc-abrir="' + esc(g.agendaId) + '"', 'Abrir agendamento: ' + g.participante);
+      }
+    });
   }
 
   function transpCentralContagem(aba, total) {
     var botao = document.querySelector('.tc-tab[data-tc-tab="' + aba + '"]');
     if (!botao) return;
-    var rotulo = { acompanhar: 'Acompanhar', transito: 'Em trânsito', adiante: 'Mais adiante', backups: 'Backups não agendados' }[aba];
+    var rotulo = { acompanhar: 'Acompanhar', transito: 'Em trânsito', adiante: 'Em breve', backups: 'Backups não agendados' }[aba];
     botao.textContent = rotulo + (total ? ' (' + total + ')' : '');
   }
 

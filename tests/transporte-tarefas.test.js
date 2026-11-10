@@ -49,11 +49,11 @@ test('Preparar: um transporte, vários transportes e visitas fora da janela', ()
   const r = construir(s, [
     linha(s, 'a1', '06/10/2026', [{ nome: 'OCASA' }]),
     linha(s, 'a2', '07/10/2026', [{ nome: 'MARKEN' }, { nome: 'DHL', temp: 'AMBIENTE' }]),
-    linha(s, 'a3', '13/10/2026', [{ nome: 'OCASA' }]), // 6º dia útil: mais adiante
+    linha(s, 'a3', '15/10/2026', [{ nome: 'OCASA' }]), // 8º dia útil: mais adiante (janela de 7)
     linha(s, 'a4', '30/11/2026', [{ nome: 'OCASA' }, { nome: 'MARKEN' }])
   ]);
   assert.deepEqual(r.tarefas.map((t) => [t.agendaId, t.titulo, t.transportes.length]), [['a1', 'Preparar o transporte', 1], ['a2', 'Preparar 2 transportes', 2]]);
-  assert.deepEqual([r.maisAdiante.transportes, r.maisAdiante.visitas, r.maisAdiante.primeiraData], [3, 2, '13/10/2026']);
+  assert.deepEqual([r.maisAdiante.transportes, r.maisAdiante.visitas, r.maisAdiante.primeiraData], [3, 2, '15/10/2026']);
 });
 
 test('ignora cancelados, passados, sem courier, não aplicável e transportes já agendados; backup não vira tarefa', () => {
@@ -134,7 +134,7 @@ test('RPC: só administrador, sem lock, sem escrita, e uma leitura de cada fonte
   assert.deepEqual(chamadas, ['admin', 'agenda', 'linhas', 'feriados', 'operacoes', 'registros']);
   assert.equal(resposta.ok, true);
   assert.equal(resposta.usuario, 'admin@example.invalid');
-  assert.equal(resposta.janelaDiasUteis, 5);
+  assert.equal(resposta.janelaDiasUteis, 7);
   assert.equal(resposta.podePeticionar, false, 'admin fora da lista de peticionamento');
   s.getConfigAppValuesByKeys_ = () => ['ADMIN@example.invalid'];
   assert.equal(plano(s.getTransporteTarefas({})).podePeticionar, true);
@@ -172,10 +172,10 @@ test('Mais adiante: semanas em ordem, itens por data e quando viram tarefa', () 
   ]);
   assert.deepEqual(r.maisAdiante.semanas.map((w) => [w.rotulo, w.itens.map((i) => i.agendaId)]),
     [['Semana de 12/10 a 18/10', ['m2', 'm3']], ['Semana de 19/10 a 25/10', ['m1']]]);
-  // Hoje: sexta 02/10; segunda 05/10 é feriado. 6º dia útil anterior a 16/10 (sex): 16,15,14,13,12,09 -> 09/10.
-  assert.equal(r.maisAdiante.semanas[0].itens[0].viraTarefaEm, '09/10/2026');
-  // 19/10 (seg): 19,16,15,14,13,12 -> 12/10.
-  assert.equal(r.maisAdiante.semanas[1].itens[0].viraTarefaEm, '12/10/2026');
+  // Hoje: sexta 02/10; segunda 05/10 é feriado. Janela de 7: 8º dia útil anterior a 16/10 (sex): 16,15,14,13,12,09,08,07 -> 07/10.
+  assert.equal(r.maisAdiante.semanas[0].itens[0].viraTarefaEm, '07/10/2026');
+  // 19/10 (seg): 19,16,15,14,13,12,09,08 -> 08/10.
+  assert.equal(r.maisAdiante.semanas[1].itens[0].viraTarefaEm, '08/10/2026');
   const item = r.maisAdiante.semanas[0].itens[0];
   assert.deepEqual([item.slotRotulo, item.courier, item.temperatura, item.destino, item.situacao], ['Transporte I', 'MARKEN', 'CONGELADO', 'LAB X', 'preparar']);
   assert.deepEqual(r.tarefas.map((t) => t.agendaId), ['m4']);
@@ -216,6 +216,9 @@ test('Backups não agendados: Backup e Backup II, qualquer data, com prazo e sem
     ['b1', 'Backup', 'OCASA', 'AMBIENTE', 'LAB Z'], ['b2', 'Backup', 'MARKEN', 'AMBIENTE', 'LAB Z'], ['b4', 'Backup II', 'DHL', 'CONGELADO', 'LAB W']]);
   assert.deepEqual(r.tarefas, []);
   assert.ok(r.backups.every((b) => 'prazoHoras' in b && 'prazoLabel' in b && b.participante));
+  // A tela destaca dia, mês e dia da semana a partir de dataOrdem (meia-noite local da data da visita).
+  const b2 = r.backups.find((b) => b.agendaId === 'b2');
+  assert.equal(b2.dataOrdem, new Date(2026, 8, 20).getTime());
 });
 
 test('RPC devolve acompanhar, mais adiante e backups da mesma leitura da Agenda', () => {
@@ -252,7 +255,7 @@ test('PINEX por fase: pedir a coleta, aguardar a resposta e preparar os document
   assert.equal(r.tarefas[1].transportes[0].situacao, 'pinex_numeros');
 });
 
-test('PINEX aguardando resposta: a tarefa respeita a janela de 5 dias úteis e fora dela fica em Mais adiante', () => {
+test('PINEX aguardando resposta: a tarefa respeita a janela de dias úteis e fora dela fica em Mais adiante', () => {
   const s = servidor();
   const preparos = { 'q1|1': { passo: 'pinex_numeros', passoNumero: 1, versao: 3, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false },
     'q2|1': { passo: 'pinex_numeros', passoNumero: 1, versao: 3, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false } };

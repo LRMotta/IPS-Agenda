@@ -2,9 +2,11 @@
 function farmaciaRecordActions(kind, record, data) {
   var manage = data.farmaciaAccess === 'manage';
   var label = kind === 'product' ? (farmaciaProductCharacteristics(record) ? farmaciaProductLabel(record) : record.name) : 'lote ' + record.lot;
-  return '<div class="action-btns">' + ['view', 'edit', 'delete'].filter(function(action) { return action === 'view' || manage; }).map(function(action) {
-    var accessibleLabel = kind === 'position' && action === 'view' ? 'Ver histórico do lote ' + record.lot : ({view:'Visualizar ',edit:'Editar ',delete:'Excluir '})[action] + label;
-    return '<button type="button" class="icon-btn' + (action === 'delete' ? ' del' : '') + '" data-kind="' + kind + '" data-record-id="' + esc(record.id) + '"' + (kind === 'position' && action === 'view' ? ' data-position-id="' + esc(record.id) + '"' : '') + ' data-action="' + action + '" onclick="farmaciaOpenRecordAction(this.dataset.kind,this.dataset.recordId,this.dataset.action)" aria-label="' + esc(accessibleLabel) + '" title="' + ({view:'Visualizar',edit:'Editar',delete:'Excluir'})[action] + '"><span class="material-symbols-outlined" aria-hidden="true">' + ({view:'visibility',edit:'edit',delete:'delete'})[action] + '</span></button>';
+  // Saída / ajuste de quantidade: somente entradas do estoque Geral, sem transporte em andamento.
+  var adjustable = kind === 'position' && manage && FARMACIA_STOCK.studyId === '@IPS_COMMON' && !record.inTransit;
+  return '<div class="action-btns">' + ['view', 'adjust', 'edit', 'delete'].filter(function(action) { return action === 'view' || (action === 'adjust' ? adjustable : manage); }).map(function(action) {
+    var accessibleLabel = kind === 'position' && action === 'view' ? 'Ver histórico do lote ' + record.lot : action === 'adjust' ? 'Saída ou ajuste de quantidade do lote ' + record.lot : ({view:'Visualizar ',edit:'Editar ',delete:'Excluir '})[action] + label;
+    return '<button type="button" class="icon-btn' + (action === 'delete' ? ' del' : '') + '" data-kind="' + kind + '" data-record-id="' + esc(record.id) + '"' + (kind === 'position' && action === 'view' ? ' data-position-id="' + esc(record.id) + '"' : '') + ' data-action="' + action + '" onclick="farmaciaOpenRecordAction(this.dataset.kind,this.dataset.recordId,this.dataset.action)" aria-label="' + esc(accessibleLabel) + '" title="' + ({view:'Visualizar',adjust:'Saída / ajuste de quantidade',edit:'Editar',delete:'Excluir'})[action] + '"><span class="material-symbols-outlined" aria-hidden="true">' + ({view:'visibility',adjust:'exposure',edit:'edit',delete:'delete'})[action] + '</span></button>';
   }).join('') + '</div>';
 }
 
@@ -14,6 +16,12 @@ function farmaciaOpenRecordAction(kind, id, action) {
   var record = (kind === 'product' ? data.products : data.positions).find(function(item) { return item.id === id; });
   if (!record || (action !== 'view' && data.farmaciaAccess !== 'manage')) return;
   if (kind === 'position' && action === 'view') { farmaciaOpenPosition(id); return; }
+  if (kind === 'position' && action === 'adjust') {
+    farmaciaOpenPosition(id);
+    var kindField = document.getElementById('farmaciaAdjustmentKind');
+    if (kindField) { kindField.scrollIntoView({block:'center'}); kindField.focus(); }
+    return;
+  }
   var modal = document.getElementById('farmaciaModal-recordAction');
   if (!modal) {
     modal = document.createElement('div'); modal.id = 'farmaciaModal-recordAction'; modal.className = 'modal-overlay farmacia-dialog';

@@ -38,7 +38,7 @@ Armadilhas conhecidas:
 
 ### Tarefas
 
-- Um envio vira tarefa **5 dias úteis** antes da data (sem fim de semana e feriados operacionais). Depois disso, fica em "Mais adiante".
+- Um envio vira tarefa **7 dias úteis** antes da data (eram 5; alterado pelo usuário em 2026-11-10) (sem fim de semana e feriados operacionais). Depois disso, fica em "Mais adiante".
 - A equipe agenda perto do envio para reduzir cancelamentos: "Courier não agendada" é horizonte, não atraso.
 - Unidade da tarefa é a visita. Uma visita com vários transportes é uma tarefa com um passo a passo por transporte.
 - Preparações simultâneas são permitidas, mas não duas pessoas no mesmo transporte.
@@ -130,7 +130,7 @@ Em trânsito reutiliza a regra do cartão `awbEnviadaNaoEntregue`: lupa `travel_
 
 **Backups não agendados.** Mesmos dados e ordem do cartão `transporteBackupNaoAgendado`, incluindo Backup II, com o aviso de prazo. Botão "Abrir agendamento" leva ao registro na Agenda, onde já estão "Criar novo Envio de Amostras" e "Usar agendamento futuro". Não duplicar essas opções. Sem aviso no "Para fazer".
 
-**Pendências.** Sem mudança: o cartão "Courier não agendada" mostra todas as pendências. A janela de 5 dias úteis vale só na tela do Transporte (decisão do usuário em 2026-11-09, que reverteu a janela implantada na Etapa 1).
+**Pendências.** Sem mudança: o cartão "Courier não agendada" mostra todas as pendências. A janela de 7 dias úteis vale só na tela do Transporte (decisão do usuário em 2026-11-09, que reverteu a janela implantada na Etapa 1).
 
 ## 5. Etapas
 

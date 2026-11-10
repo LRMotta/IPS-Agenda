@@ -113,7 +113,7 @@ test('documentação usa a última linha com ID duplicado e substitui apenas o s
 });
 
 test('Courier não agendada lista todas as pendências, sem janela de dias úteis', () => {
-  // Decisão do usuário (09/11/2026): a janela de 5 dias úteis vale só na tela do Transporte (piloto).
+  // Decisão do usuário (09/11/2026): a janela de dias úteis (7, decisão de 10/11/2026) vale só na tela do Transporte (piloto).
   const f = fixture();
   const naoAgendada = (r, i) => { r[i.c1.nome] = 'OCASA'; r[i.c1.status] = 'Não Agendado'; };
   f.add('hoje', '02/10/2026', 'Agendado', naoAgendada);
