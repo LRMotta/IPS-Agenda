@@ -7,6 +7,7 @@
         <div class="tc-tabs" id="tcTabs" role="tablist" aria-label="Seções do Transporte">
           <button type="button" class="tc-tab active" role="tab" id="tcTabFazer" data-tc-tab="fazer" aria-selected="true" aria-controls="tcPanelFazer" onclick="transpCentralAba('fazer')">Para fazer</button>
           <button type="button" class="tc-tab" role="tab" id="tcTabAcompanhar" data-tc-tab="acompanhar" aria-selected="false" aria-controls="tcPanelAcompanhar" tabindex="-1" onclick="transpCentralAba('acompanhar')">Acompanhar</button>
+          <button type="button" class="tc-tab" role="tab" id="tcTabTransito" data-tc-tab="transito" aria-selected="false" aria-controls="tcPanelTransito" tabindex="-1" onclick="transpCentralAba('transito')">Em trânsito</button>
           <button type="button" class="tc-tab" role="tab" id="tcTabAdiante" data-tc-tab="adiante" aria-selected="false" aria-controls="tcPanelAdiante" tabindex="-1" onclick="transpCentralAba('adiante')">Mais adiante</button>
           <button type="button" class="tc-tab" role="tab" id="tcTabBackups" data-tc-tab="backups" aria-selected="false" aria-controls="tcPanelBackups" tabindex="-1" onclick="transpCentralAba('backups')">Backups não agendados</button>
         </div>
@@ -17,6 +18,9 @@
         </section>
         <section class="tc-panel" id="tcPanelAcompanhar" role="tabpanel" aria-labelledby="tcTabAcompanhar" hidden>
           <div id="tcAcompanhar"><div class="tc-empty">Carregando…</div></div>
+        </section>
+        <section class="tc-panel" id="tcPanelTransito" role="tabpanel" aria-labelledby="tcTabTransito" hidden>
+          <div id="tcTransito"><div class="tc-empty">Carregando…</div></div>
         </section>
         <section class="tc-panel" id="tcPanelAdiante" role="tabpanel" aria-labelledby="tcTabAdiante" hidden>
           <div id="tcAdiante"><div class="tc-empty">Carregando…</div></div>

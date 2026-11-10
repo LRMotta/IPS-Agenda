@@ -1,6 +1,28 @@
   <style>
     /* Transporte (tela nova): prefixo .tc- para não colidir com o restante do app. */
-    .tc-wrap { max-width: 880px; margin: 0 auto; }
+    /* Ocupa a largura toda da área de conteúdo, como as demais telas do app. */
+    .tc-wrap { width: 100%; }
+    /* Em trânsito: tabela em linhas, ações lado a lado (mesmo padrão do cartão das Pendências). */
+    .tc-tabela { background: #fff; border: 1px solid #e3e8f2; border-radius: 12px; overflow: hidden; }
+    .tc-trans { display: grid; grid-template-columns: 110px minmax(160px, 1.4fr) minmax(130px, 1fr) minmax(120px, .9fr) 130px 214px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #eef0f8; font-size: 14px; color: #1f2937; }
+    .tc-trans:last-child { border-bottom: 0; }
+    .tc-trans-data, .tc-trans-awb, .tc-trans-dias { color: #5f6b7c; font-size: 13px; }
+    .tc-trans-awb { overflow-wrap: anywhere; }
+    .tc-trans-quem { display: flex; flex-direction: column; min-width: 0; }
+    .tc-trans-quem strong { font-weight: 600; }
+    .tc-trans-quem span { color: #5f6b7c; font-size: 12.5px; }
+    .tc-trans-acoes { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .tc-rastreio { width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid #d6e4f5; border-radius: 8px; background: #fff; color: var(--primary); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .tc-rastreio:hover { background: #eaf3ff; border-color: #9dc2ef; }
+    .tc-rastreio .material-symbols-outlined { font-size: 19px; }
+    .tc-entrega { min-height: 34px; padding: 0 12px; border: 1px solid #b7e3d6; border-radius: 8px; background: #f4fffb; color: #0f766e; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font: 700 13px 'Roboto', sans-serif; white-space: nowrap; }
+    .tc-entrega:hover { background: #e1f8f0; border-color: #75cdb8; }
+    .tc-entrega .material-symbols-outlined { font-size: 18px; }
+    .tc-rastreio:focus-visible, .tc-entrega:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    @media (max-width: 900px) {
+      .tc-trans { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+      .tc-trans-acoes { justify-content: flex-start; margin-top: 6px; }
+    }
     .tc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .tc-lead { margin: 0; color: #5f6b7c; font-size: 13px; }
     .tc-tabs { display: flex; gap: 4px; border-bottom: 1px solid #e3e8f2; margin-bottom: 18px; overflow-x: auto; }

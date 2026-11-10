@@ -11,7 +11,7 @@
       button.setAttribute('aria-selected', ativa ? 'true' : 'false');
       button.tabIndex = ativa ? 0 : -1;
     });
-    ['fazer', 'acompanhar', 'adiante', 'backups'].forEach(function(nome) {
+    ['fazer', 'acompanhar', 'transito', 'adiante', 'backups'].forEach(function(nome) {
       var painel = document.getElementById('tcPanel' + nome.charAt(0).toUpperCase() + nome.slice(1));
       if (painel) painel.hidden = nome !== aba;
     });
@@ -139,8 +139,34 @@
     var a = dados.acompanhar || {};
     return transpCentralHtmlPeticionamento(a.peticionamento || [], !!dados.podePeticionar) +
       transpCentralHtmlAcompanharSecao('Aguardando confirmação da courier', a.confirmacao || [], false) +
-      transpCentralHtmlAcompanharSecao('Aguardando resposta da PINEX', a.pinex || [], false, true) +
-      transpCentralHtmlAcompanharSecao('Em trânsito', a.transito || [], true);
+      transpCentralHtmlAcompanharSecao('Aguardando resposta da PINEX', a.pinex || [], false, true);
+  }
+
+  function transpCentralDiasEnvio(dias) {
+    if (dias === null || dias === undefined || !isFinite(Number(dias))) return '';
+    dias = Number(dias);
+    return dias <= 0 ? 'Enviada hoje' : (dias === 1 ? 'Enviada há 1 dia' : 'Enviada há ' + dias + ' dias');
+  }
+
+  // Em trânsito: uma linha por transporte, com a lupa de rastreio (só com AWB rastreável) e "Confirmar entrega"
+  // lado a lado, como no cartão "AWB enviada não entregue" das Pendências.
+  function transpCentralHtmlTransito(dados) {
+    var itens = ((dados.acompanhar || {}).transito) || [];
+    if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum transporte em trânsito.</div>';
+    return '<div class="tc-tabela" role="list">' + itens.map(function(it) {
+      var rastreio = it.trackingUrl
+        ? '<button type="button" class="tc-rastreio" data-tc-rastreio="' + esc(it.trackingUrl) + '" title="Abrir rastreio" aria-label="Abrir rastreio de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span></button>'
+        : '';
+      return '<div class="tc-trans" role="listitem" data-tc-id="' + esc(it.agendaId) + '">' +
+        '<span class="tc-trans-data">' + esc(it.data) + '</span>' +
+        '<span class="tc-trans-quem"><strong>' + esc(it.participante) + '</strong><span>' + esc([it.slotRotulo, it.projeto].filter(Boolean).join(' · ')) + '</span></span>' +
+        '<span class="tc-trans-courier">' + esc([it.courier, it.temperatura].filter(Boolean).join(' / ')) + '</span>' +
+        '<span class="tc-trans-awb">' + esc(it.awb) + '</span>' +
+        '<span class="tc-trans-dias">' + esc(transpCentralDiasEnvio(it.diasDesdeEnvio)) + '</span>' +
+        '<span class="tc-trans-acoes">' + rastreio +
+        '<button type="button" class="tc-entrega" data-tc-entrega="' + esc(it.agendaId) + '|' + esc(it.slotRotulo) + '" aria-label="Confirmar entrega de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">task_alt</span>Confirmar entrega</button>' +
+        '</span></div>';
+    }).join('') + '</div>';
   }
 
   // Semanas em acordeão: uma aberta por vez, a primeira aberta ao carregar. Só consulta.
@@ -176,7 +202,7 @@
   function transpCentralContagem(aba, total) {
     var botao = document.querySelector('.tc-tab[data-tc-tab="' + aba + '"]');
     if (!botao) return;
-    var rotulo = { acompanhar: 'Acompanhar', adiante: 'Mais adiante', backups: 'Backups não agendados' }[aba];
+    var rotulo = { acompanhar: 'Acompanhar', transito: 'Em trânsito', adiante: 'Mais adiante', backups: 'Backups não agendados' }[aba];
     botao.textContent = rotulo + (total ? ' (' + total + ')' : '');
   }
 
@@ -186,13 +212,14 @@
     if (!alvo) return;
     alvo.innerHTML = transpCentralHtmlFazer(dados);
     alvo.setAttribute('aria-busy', 'false');
-    var secoes = { tcAcompanhar: transpCentralHtmlAcompanhar, tcAdiante: transpCentralHtmlAdiante, tcBackups: transpCentralHtmlBackups };
+    var secoes = { tcAcompanhar: transpCentralHtmlAcompanhar, tcTransito: transpCentralHtmlTransito, tcAdiante: transpCentralHtmlAdiante, tcBackups: transpCentralHtmlBackups };
     Object.keys(secoes).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.innerHTML = secoes[id](dados);
     });
     var a = dados.acompanhar || {};
-    transpCentralContagem('acompanhar', (a.peticionamento || []).length + (a.confirmacao || []).length + (a.pinex || []).length + (a.transito || []).length);
+    transpCentralContagem('acompanhar', (a.peticionamento || []).length + (a.confirmacao || []).length + (a.pinex || []).length);
+    transpCentralContagem('transito', (a.transito || []).length);
     transpCentralContagem('adiante', (dados.maisAdiante && dados.maisAdiante.transportes) || 0);
     transpCentralContagem('backups', (dados.backups || []).length);
   }
