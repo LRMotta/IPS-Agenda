@@ -8687,7 +8687,9 @@ function getDashboardPendencias_(estoque, perfContext) {
       if (!nomeCourierAtual || ['nao aplicavel', 'nao se aplica', 'n/a', 'na', '-', '--', '---', 'nenhum'].indexOf(nomeCourierAtual) >= 0) return;
       var statusCourier = String(r[slotCfg.status] || '').trim();
       var statusKey = AgendaServerRules_.courierStatusKey(statusCourier);
-      if (['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(statusKey) === -1) return;
+      // Agendado: o pedido de coleta ja saiu (o monitor so promove a Agendado ao achar o e-mail enviado). Um PDF gerado
+      // depois, como o da DHL congelado com a WB da resposta, e para imprimir: o item segue em "Courier nao confirmada".
+      if (['naoagendado', 'pendente', 'docsgerados'].indexOf(statusKey) === -1) return;
       var base = {
         agendaId: String(r[i.id] || ''),
         data: String(r[i.data] || ''),
@@ -17410,7 +17412,8 @@ function codexCourierConfirmationTexts_(texto, defaults, isDhl) {
   } else if (defaults.textoConfirmacao) {
     textos.push(defaults.textoConfirmacao);
   }
-  if (isDhl) textos = textos.concat(['Agendamento realizado para', 'Coleta programada para']);
+  // "Agendado conforme solicitado para 11/11." e a resposta real da DHL (wmxbrasil) em 06/11/2026.
+  if (isDhl) textos = textos.concat(['Agendamento realizado para', 'Coleta programada para', 'Agendado conforme solicitado']);
   return textos;
 }
 

@@ -112,6 +112,21 @@ test('documentação usa a última linha com ID duplicado e substitui apenas o s
   assert.equal(f.calls.length, 3); // Uma por linha; documentos conserva seu cálculo independente.
 });
 
+test('documentação gerada depois do pedido de coleta (Agendado) não volta a pedir envio', () => {
+  // Caso real de 06/11/2026: DHL congelado com pedido de coleta já identificado (Agendado); o PDF gerado de novo com a
+  // WB da resposta é para imprimir. O item segue em "Courier não confirmada", não em "Documentação sem envio".
+  const f = fixture();
+  f.add('dhl', '06/10/2026', 'Agendado', (r, i) => {
+    r[i.c2.nome] = 'DHL'; r[i.c2.temp] = 'Congelado'; r[i.c2.status] = 'Agendado'; r[i.c2.awb] = '4188228590';
+  });
+  f.server.transporteDocumentosSemEnvioPendencias_ = () => [{ agendaId: 'dhl', slot: '2', referencia: 'DOC' }];
+  const result = f.server.getDashboardPendencias_([]);
+  assert.equal(result.documentacaoTransporteSemEnvio.length, 0);
+  assert.equal(result.counts.documentacaoTransporteSemEnvio, 0);
+  assert.equal(result.courierNaoConfirmada.length, 1);
+  assert.equal(result.courierNaoConfirmada[0].agendaId, 'dhl');
+});
+
 test('Courier não agendada lista todas as pendências, sem janela de dias úteis', () => {
   // Decisão do usuário (09/11/2026): a janela de dias úteis (7, decisão de 10/11/2026) vale só na tela do Transporte (piloto).
   const f = fixture();

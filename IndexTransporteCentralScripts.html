@@ -66,7 +66,7 @@
       return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Tudo feito por agora.</div>' + rodape;
     }
     var proxima = tarefas[0];
-    var html = transpCentralHtmlCabecalho('Próxima tarefa', 'play_circle', null, '') +
+    var html = transpCentralHtmlCabecalho('Próxima tarefa', 'play_circle', null, 'Uma tarefa por vez, na ordem em que o sistema decide.') +
       '<article class="tc-next' + (proxima.prazoLabel ? ' urgent' : '') + '" data-tc-agenda="' + esc(proxima.agendaId) + '">' +
       '<div class="tc-next-top">' + transpCentralHtmlDataDestaque(proxima.dataOrdem, proxima.data, proxima.hora) +
       '<div class="tc-next-texto"><h2 class="tc-title">' + esc(proxima.titulo) + '</h2>' +
@@ -296,7 +296,7 @@
   function transpCentralContagem(aba, total) {
     var botao = document.querySelector('.tc-tab[data-tc-tab="' + aba + '"]');
     if (!botao) return;
-    var rotulo = { acompanhar: 'Acompanhar', transito: 'Em trânsito', adiante: 'Em breve', backups: 'Backups não agendados' }[aba];
+    var rotulo = { fazer: 'Para fazer', acompanhar: 'Acompanhar', transito: 'Em trânsito', adiante: 'Em breve', backups: 'Backups não agendados' }[aba];
     botao.textContent = rotulo + (total ? ' (' + total + ')' : '');
   }
 
@@ -312,6 +312,7 @@
       if (el) el.innerHTML = secoes[id](dados);
     });
     var a = dados.acompanhar || {};
+    transpCentralContagem('fazer', (dados.tarefas || []).length);
     transpCentralContagem('acompanhar', (a.peticionamento || []).length + (a.confirmacao || []).length + (a.pinex || []).length);
     transpCentralContagem('transito', (a.transito || []).length);
     transpCentralContagem('adiante', (dados.maisAdiante && dados.maisAdiante.transportes) || 0);

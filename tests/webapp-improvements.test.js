@@ -280,6 +280,19 @@ test('monitor Gmail confirma em lote, preserva Message ID na auditoria e não re
   assert.equal(f.auditStats.writes, 1);
 });
 
+test('DHL: "Agendado conforme solicitado" confirma a coleta pela AWB', () => {
+  const { server } = context(new FakeSpreadsheet({}));
+  const textos = server.codexCourierConfirmationTexts_('Agendamento realizado para', {}, true);
+  assert.ok(textos.includes('Agendado conforme solicitado'));
+  const message = { getId: () => 'M1', getSubject: () => 'Re: TRIlogy-4 - AGENDAMENTO DE COLETA', getAttachments: () => [],
+    getPlainBody: () => 'Melissa boa tarde, espero que esteja bem.\n\nAgendado conforme solicitado para 11/11.\n\nCongelado WB 4188228590' };
+  server.GmailApp = { search: () => [{ getId: () => 'T1', getMessages: () => [message] }] };
+  const regra = { emailConfirmacao: 'dhl@example.invalid', textoConfirmacao: 'Agendamento realizado para', textosConfirmacao: textos, extrairAwbPorReferencia: true, diasBusca: 7 };
+  const achados = server.buscarConfirmacoesCourierNoGmail_(regra, { 4188228590: [] }, {});
+  // Arrays do contexto do servidor: compara pelo conteúdo serializado.
+  assert.equal(JSON.stringify(achados.map((a) => [a.awbKey, a.messageId])), JSON.stringify([['4188228590', 'M1']]));
+});
+
 test('busca por AWB e por referência compartilham uma única leitura do Gmail por regra', () => {
   const { server } = context(new FakeSpreadsheet({}));
   const stats = { searches: [], threadReads: 0, bodyReads: 0 };
