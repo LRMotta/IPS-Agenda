@@ -198,7 +198,9 @@ function transporteTarefasConstruir_(ctx) {
       // Aguardando a resposta da PINEX: tarefa "Informar os números da PINEX" (o item tambem fica em Acompanhar).
       var pinexResposta = fasePinex === 'resposta' && ['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(status) >= 0;
       if (pinexResposta) situacao = 'pinex_numeros';
-      else if (docs[chaveEnvio] && ['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(status) >= 0) situacao = 'enviar_doc';
+      // Status Agendado: o pedido de coleta ja saiu (o monitor so promove a Agendado ao achar o e-mail enviado). Um PDF
+      // gerado depois disso, como o da DHL congelado com a WB recebida na resposta da courier, e para imprimir: sem tarefa.
+      else if (docs[chaveEnvio] && ['naoagendado', 'pendente', 'docsgerados'].indexOf(status) >= 0) situacao = 'enviar_doc';
       else if (status === 'docsgerados') situacao = 'enviar_doc';
       else if (AgendaServerRules_.courierNeedsSchedule(statusTexto, awb)) {
         situacao = transporteEnvioFamiliaPinex_(nome) && fasePinex !== 'documentos' ? 'pinex_pedir' : 'preparar';

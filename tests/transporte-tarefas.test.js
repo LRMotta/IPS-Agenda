@@ -88,6 +88,15 @@ test('documentos gerados sem e-mail enviado viram "Enviar o pedido de coleta", m
   assert.equal(r.tarefas.find((t) => t.agendaId === 'd4').transportes[0].situacao, 'preparar');
 });
 
+test('DHL congelado: PDF gerado de novo depois do pedido de coleta (status Agendado) não volta a pedir envio', () => {
+  const s = servidor();
+  // Caso real de 06/11/2026: pedido de coleta enviado e identificado (Agendado); a DHL respondeu com a WB e o PDF
+  // foi gerado de novo com ela, o que zerou o e-mail na operação. O documento é para imprimir, não para enviar.
+  const r = construir(s, [linha(s, 'g1', '06/10/2026', [{ nome: 'DHL', temp: 'CONGELADO', status: 'Agendado', awb: '4188228590' }])],
+    { operacoes: [{ agendaId: 'g1', slot: '1', estado: 'ATIVA', pdfId: 'PDF', emailEnviadoEm: '', emailIdentificadoEm: '' }] });
+  assert.deepEqual(r.tarefas, []);
+});
+
 test('PINEX (Agendamento) pede a coleta; título prioriza preparar, depois PINEX, depois enviar', () => {
   const s = servidor();
   const r = construir(s, [

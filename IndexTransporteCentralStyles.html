@@ -6,8 +6,10 @@
     .tc-dim { color: var(--text-faint); }
 
     /* Topo e abas (mesmo desenho das abas do Estoque piloto, um pouco maiores) */
-    .tc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-    .tc-lead { margin: 0; color: var(--text-muted); font-size: 13px; }
+    /* Só o botão de atualizar: fica no canto da linha das abas, sem ocupar uma linha própria. */
+    .tc-wrap { position: relative; }
+    .tc-head { position: absolute; top: 2px; right: 0; display: flex; align-items: center; gap: 12px; z-index: 1; }
+    .tc-tabs { padding-right: 44px; }
     .tc-tabs { display: flex; gap: 4px; border-bottom: 1px solid #e0e6f0; margin-bottom: 20px; overflow-x: auto; }
     .tc-tabs[hidden] { display: none; }
     .tc-tab { border: 0; background: none; padding: 10px 14px; font: 600 12.5px 'Roboto', sans-serif; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }

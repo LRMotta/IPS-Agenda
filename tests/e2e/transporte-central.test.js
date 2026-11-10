@@ -66,6 +66,9 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       await page.evaluate((resposta) => window.__pedidos[0].ok(resposta), RESPOSTA);
       assert.equal(await page.locator('#tcFazer').getAttribute('aria-busy'), 'false');
       assert.equal(await page.locator('.tc-title').innerText(), 'Preparar 2 transportes');
+      assert.equal(await page.locator('#tcTabFazer').innerText(), 'Para fazer (2)');
+      assert.match(await page.locator('#tcFazer').innerText(), /Uma tarefa por vez, na ordem em que o sistema decide/);
+      assert.doesNotMatch(await page.locator('#page-transporte-central .tc-head').innerText(), /Uma tarefa por vez/, 'a frase não fica mais no topo de todas as abas');
       const titulo = await page.locator('.tc-title').innerText();
       assert.doesNotMatch(titulo, /Backup|Transporte I/, 'o tipo do transporte não vai no título');
       // Cada transporte numa faixa: tipo, situação, courier · temperatura e destino em blocos próprios.
@@ -148,6 +151,7 @@ test('Acompanhar, Em breve e Backups: seções, acordeão, rastreio, entrega e a
       await page.evaluate(() => transpCentralCarregar(false));
       await page.evaluate((resposta) => window.__pedidos[0].ok(resposta), COMPLETA);
       // Contagens nas abas.
+      assert.equal(await page.locator('#tcTabFazer').innerText(), 'Para fazer', 'sem tarefas, sem contagem');
       assert.equal(await page.locator('#tcTabAcompanhar').innerText(), 'Acompanhar (2)');
       assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito (2)');
       assert.equal(await page.locator('#tcTabAdiante').innerText(), 'Em breve (3)');
