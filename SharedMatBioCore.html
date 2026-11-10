@@ -148,7 +148,8 @@
     try {
       var obj = JSON.parse(String(json));
       if (!obj || !Array.isArray(obj.items)) throw new Error('Formato de materiais inválido.');
-      return { items: obj.items, valid: true, error: '' };
+      // ajuste: nota deixada pela edicao de materiais na preparacao do transporte (so informativa).
+      return { items: obj.items, valid: true, error: '', ajuste: obj.ajuste && typeof obj.ajuste === 'object' && !Array.isArray(obj.ajuste) ? obj.ajuste : null };
     } catch (e) {
       return { items: [], valid: false, error: 'Dados estruturados de material biológico inválidos. Revise antes de salvar.' };
     }

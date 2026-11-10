@@ -43,7 +43,7 @@ test('docs gerados identifica documentacao sem agendar nem confirmar courier', (
 test('opcoes de courier incluem Docs gerados mesmo com configuracao legada', () => {
   const server = runFile('WebApp.gs');
   server.getConfigAppValuesByKeys_ = () => ['Não Agendado', 'Agendado', 'Confirmado'];
-  assert.deepEqual(Array.from(server.getAgendaCourierStatuses_()), ['Não Agendado', 'Docs gerados', 'Agendado', 'Confirmado']);
+  assert.deepEqual(Array.from(server.getAgendaCourierStatuses_()), ['Não Agendado', 'Docs gerados', 'Aguardando peticionamento', 'Agendado', 'Confirmado']);
   server.getConfigAppValuesByKeys_ = () => ['Não Agendado', 'Docs gerados', 'Agendado'];
   assert.equal(server.getAgendaCourierStatuses_().filter((value) => value === 'Docs gerados').length, 1);
 });
