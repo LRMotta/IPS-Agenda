@@ -43,7 +43,7 @@ async function abrir(browser, width) {
 }
 
 const RESPOSTA = {
-  ok: true, janelaDiasUteis: 5, maisAdiante: { transportes: 3, visitas: 2, primeiraData: '13/10/2026' },
+  ok: true, janelaDiasUteis: 7, maisAdiante: { transportes: 3, visitas: 2, primeiraData: '13/10/2026' },
   tarefas: [
     { agendaId: 'a1', data: '02/10/2026', hora: '09:00', participante: 'Pessoa A', projeto: 'Estudo X', visita: 'V1', titulo: 'Preparar 2 transportes',
       prazoLabel: 'Em 3h', comPessoa: 'Ana', parouNoPasso: 2,
@@ -54,7 +54,7 @@ const RESPOSTA = {
   ]
 };
 
-test('Transporte (piloto): próxima tarefa, lista, etiquetas e mais adiante', async () => {
+test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async () => {
   // Browser plugin not available: Chromium local com rede bloqueada e RPCs simuladas.
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
@@ -68,7 +68,8 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e mais adiante', as
       assert.equal(await page.locator('.tc-title').innerText(), 'Preparar 2 transportes');
       const titulo = await page.locator('.tc-title').innerText();
       assert.doesNotMatch(titulo, /Backup|Transporte I/, 'o tipo do transporte não vai no título');
-      assert.match(await page.locator('.tc-transports').innerText(), /Transporte I.*OCASA.*CONGELADO/);
+      // Cada transporte numa faixa: tipo, situação, courier · temperatura e destino em blocos próprios.
+      assert.match(await page.locator('.tc-transports').innerText(), /Transporte I\s+Preparar\s+OCASA · CONGELADO\s+LAB X/);
       assert.match(await page.locator('.tc-transports').innerText(), /Backup/);
       assert.match(await page.locator('.tc-badges').innerText(), /Em 3h/);
       assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo 2/);
@@ -76,7 +77,7 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e mais adiante', as
       assert.equal(await page.locator('.tc-list .tc-item').count(), 1);
       assert.match(await page.locator('.tc-list').innerText(), /Enviar a documentação à courier/);
       assert.equal(await page.locator('.tc-item.urgent').count(), 0);
-      assert.match(await page.locator('.tc-footer').innerText(), /3 transportes mais adiante/);
+      assert.match(await page.locator('.tc-footer').innerText(), /3 transportes viram tarefa em breve/);
       await page.locator('[data-tc-abrir]').click();
       assert.equal(await page.evaluate(() => window.__aberto), 'a1');
       // O link do rodapé abre a aba; as demais seções ainda são casca.
@@ -123,7 +124,7 @@ const ITEM = (extra) => Object.assign({ agendaId: 'x1', data: '06/10/2026', hora
   slot: '1', slotRotulo: 'Transporte I', courier: 'OCASA', temperatura: 'CONGELADO', destino: 'LAB X', awb: '111' }, extra || {});
 
 const COMPLETA = {
-  ok: true, janelaDiasUteis: 5, tarefas: [],
+  ok: true, janelaDiasUteis: 7, tarefas: [],
   maisAdiante: { transportes: 3, visitas: 3, primeiraData: '13/10/2026', semanas: [
     { chave: '12/10/2026', rotulo: 'Semana de 12/10 a 18/10', itens: [ITEM({ agendaId: 's1', data: '16/10/2026', viraTarefaEm: '09/10/2026' }), ITEM({ agendaId: 's2', data: '16/10/2026', viraTarefaEm: '09/10/2026' })] },
     { chave: '19/10/2026', rotulo: 'Semana de 19/10 a 25/10', itens: [ITEM({ agendaId: 's3', data: '19/10/2026', viraTarefaEm: '12/10/2026' })] }] },
@@ -135,7 +136,7 @@ const COMPLETA = {
   backups: [ITEM({ agendaId: 'b1', slotRotulo: 'Backup', prazoLabel: 'Atrasada', awb: '' }), ITEM({ agendaId: 'b2', slotRotulo: 'Backup II', awb: '' })]
 };
 
-test('Acompanhar, Mais adiante e Backups: seções, acordeão, rastreio, entrega e abertura da Agenda', async () => {
+test('Acompanhar, Em breve e Backups: seções, acordeão, rastreio, entrega e abertura da Agenda', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     for (const width of [1280, 390]) {
@@ -149,7 +150,7 @@ test('Acompanhar, Mais adiante e Backups: seções, acordeão, rastreio, entrega
       // Contagens nas abas.
       assert.equal(await page.locator('#tcTabAcompanhar').innerText(), 'Acompanhar (2)');
       assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito (2)');
-      assert.equal(await page.locator('#tcTabAdiante').innerText(), 'Mais adiante (3)');
+      assert.equal(await page.locator('#tcTabAdiante').innerText(), 'Em breve (3)');
       assert.equal(await page.locator('#tcTabBackups').innerText(), 'Backups não agendados (2)');
       // Acompanhar.
       await page.evaluate(() => transpCentralAba('acompanhar'));
@@ -182,11 +183,13 @@ test('Acompanhar, Mais adiante e Backups: seções, acordeão, rastreio, entrega
       await page.evaluate((resposta) => window.__pedidos[1].ok(resposta), Object.assign({}, COMPLETA, { acompanhar: Object.assign({}, COMPLETA.acompanhar, { transito: [] }) }));
       assert.match(await page.locator('#tcTransito').innerText(), /Nenhum transporte em trânsito/i);
       assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito');
-      // Mais adiante: primeira semana aberta, uma por vez, só consulta.
+      // Em breve: primeira semana aberta, uma por vez, só consulta; uma linha por visita.
       await page.evaluate(() => transpCentralAba('adiante'));
       assert.equal(await page.locator('.tc-semana-cab').first().getAttribute('aria-expanded'), 'true');
       assert.equal(await page.locator('.tc-semana-cab').nth(1).getAttribute('aria-expanded'), 'false');
-      assert.match(await page.locator('#tcSemana0').innerText(), /Pessoa X[\s\S]*Transporte I · OCASA \/ CONGELADO · LAB X[\s\S]*Vira tarefa a partir de 09\/10\/2026/);
+      assert.match(await page.locator('#tcSemana0').innerText(), /16\/10\/2026[\s\S]*Pessoa X[\s\S]*Transporte I[\s\S]*OCASA · CONGELADO[\s\S]*LAB X[\s\S]*Vira tarefa em[\s\S]*09\/10\/2026/i);
+      // s1 e s2 são visitas diferentes no mesmo dia: duas linhas; a data em destaque vem de dataOrdem quando houver.
+      assert.equal(await page.locator('#tcSemana0 .tc-breve-linha').count(), 2);
       assert.equal(await page.locator('#tcAdiante button:not(.tc-semana-cab)').count(), 0, 'sem ações: só consulta');
       await page.locator('.tc-semana-cab').nth(1).click();
       assert.equal(await page.locator('.tc-semana-cab').first().getAttribute('aria-expanded'), 'false');
@@ -195,8 +198,9 @@ test('Acompanhar, Mais adiante e Backups: seções, acordeão, rastreio, entrega
       assert.equal(await page.locator('#tcSemana1').isVisible(), true);
       // Backups não agendados.
       await page.evaluate(() => transpCentralAba('backups'));
-      assert.match(await page.locator('#tcBackups').innerText(), /Atrasada[\s\S]*Backup II/);
-      assert.equal(await page.locator('#tcBackups .tc-item.urgent').count(), 1);
+      // Rótulo do slot em maiúsculas pelo CSS: a comparação ignora caixa.
+      assert.match(await page.locator('#tcBackups').innerText(), /Atrasada[\s\S]*Backup II/i);
+      assert.equal(await page.locator('#tcBackups .tc-acomp.urgent').count(), 1);
       await page.getByRole('button', { name: 'Abrir agendamento' }).first().click();
       assert.equal(await page.evaluate(() => window.__aberto), 'b1');
       // Aguardando a PINEX: "Informar os números" abre o passo a passo do mesmo transporte, no slot certo.
@@ -230,7 +234,7 @@ test('Aguardando peticionamento: botão só para quem peticiona, em dois cliques
       }) }) };
       void run;
     });
-    const dados = (pode) => ({ ok: true, janelaDiasUteis: 5, tarefas: [], maisAdiante: { transportes: 0, semanas: [] }, backups: [], podePeticionar: pode,
+    const dados = (pode) => ({ ok: true, janelaDiasUteis: 7, tarefas: [], maisAdiante: { transportes: 0, semanas: [] }, backups: [], podePeticionar: pode,
       acompanhar: { confirmacao: [], pinex: [], transito: [], peticionamento: [ITEM({ agendaId: 'g1', slot: '2', slotRotulo: 'Transporte II', participante: 'M.S.' })] } });
     await page.evaluate(() => transpCentralCarregar(false));
     await page.evaluate((d) => window.__pedidos[0].ok(d), dados(false));

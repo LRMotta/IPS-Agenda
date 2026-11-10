@@ -50,7 +50,7 @@ async function abrir(browser, width) {
 }
 
 const TAREFAS = {
-  ok: true, janelaDiasUteis: 5, maisAdiante: { transportes: 0 },
+  ok: true, janelaDiasUteis: 7, maisAdiante: { transportes: 0 },
   tarefas: [{ agendaId: 'a1', data: '02/10/2026', hora: '09:00', participante: 'Pessoa A', projeto: 'Estudo X', visita: 'V1', titulo: 'Preparar o transporte',
     prazoLabel: '', comPessoa: '', parouNoPasso: 0, transportes: [{ slot: '1', slotRotulo: 'Transporte I', courier: 'MARKEN', temperatura: 'CONGELADO', destino: 'LAB X', situacao: 'preparar' }] }]
 };

@@ -2,11 +2,11 @@
  * Tarefas de Transporte para a tela nova (admin no piloto).
  *
  * Unidade da tarefa: a visita (agendaId). Uma visita com varios transportes e uma tarefa, com a
- * lista de transportes. Um transporte entra na lista "Para fazer" ate 5 dias uteis antes da data
+ * lista de transportes. Um transporte entra na lista "Para fazer" ate 7 dias uteis antes da data (TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_)
  * (depois fica em "Mais adiante"); documentos ja gerados e ainda nao enviados aparecem sempre.
  * Backup nao gera tarefa. Somente leitura: nao cria aba, nao adquire lock e nao escreve.
  */
-var TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_ = 5;
+var TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_ = 7;
 var TRANSPORTE_TAREFAS_SLOTS_ = [['1', 'Transporte I', 'c1'], ['2', 'Transporte II', 'c2'], ['3', 'Transporte III', 'c3'], ['4', 'Transporte IV', 'c4']];
 
 /**
@@ -73,14 +73,14 @@ function transporteTarefaFmtData_(d) {
   return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear();
 }
 
-// Dia em que o transporte vira tarefa: o 6o dia operacional mais recente ate a data (ver a janela de 5 dias uteis).
+// Dia em que o transporte vira tarefa: o (janela + 1)o dia operacional mais recente ate a data.
 function transporteTarefaDataVira_(data, feriados) {
   var cursor = new Date(data.getFullYear(), data.getMonth(), data.getDate());
   var achados = 0;
   for (var voltas = 0; voltas < 400; voltas++) {
     if (isDiaOperacionalPendencia_(cursor, feriados || {})) {
       achados++;
-      if (achados === 6) return cursor;
+      if (achados === TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_ + 1) return cursor;
     }
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - 1);
   }
@@ -109,6 +109,8 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje) {
     if (!calculado) { prazoHoras = prazoHorasPendenciaAgenda_(r[i.data], r[i.hora], ctx.feriados); calculado = true; }
     return {
       agendaId: String(r[i.id] || '').trim(), data: String(r[i.data] || ''), hora: String(r[i.hora] || ''),
+      // Data numerica (meia-noite local) para a tela destacar dia, mes e dia da semana; null sem data valida.
+      dataOrdem: data ? data.getTime() : null,
       prazoHoras: prazoHoras, prazoLabel: transporteTarefaPrazoLabel_(prazoHoras),
       participante: String(r[i.participante] || ''), projeto: String(r[i.projeto] || ''), visita: String(r[i.visita] || '')
     };
