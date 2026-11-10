@@ -19,7 +19,10 @@ test('Transporte (piloto): admin no servidor e no cliente, includes na ordem e p
   const index = readProjectFile('Index.html');
   const posicao = (nome) => index.indexOf("include('" + nome + "')");
   assert.ok(posicao('IndexTransporteCentralStyles') > posicao('IndexStylesAfterDashboard'));
-  assert.ok(posicao('IndexTransporteCentralContent') > posicao('IndexContentAfterStock'));
+  // A página precisa entrar antes de IndexContentAfterStock, que fecha .content e .main;
+  // depois dele ela aparecia ao lado do cabeçalho (ver tests/index-page-placement.test.js).
+  assert.ok(posicao('IndexTransporteCentralContent') > 0);
+  assert.ok(posicao('IndexTransporteCentralContent') < posicao('IndexContentAfterStock'));
   assert.ok(posicao('IndexTransporteCentralScripts') > posicao('IndexCoreScripts'));
   assert.equal(index.includes("include('TransporteApp')"), false, 'TransporteApp.html tem globais genéricos');
   assert.ok(posicao('IndexTransporteCentralEnvio') > posicao('IndexTransporteCentralScripts'));
