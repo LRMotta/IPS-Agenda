@@ -18,6 +18,7 @@ var TITULOS = {
   requisicao:    { label:'Requisição de Exames', icon:'assignment' },
   estoque:       { label:'Estoque',              icon:'inventory_2' },
   farmacia:      { label:'Farmácia',             icon:'local_pharmacy' },
+  'transporte-central': { label:'Transporte (piloto)', icon:'checklist' },
   usuarios:      { label:'Usuários',             icon:'admin_panel_settings' },
   'audit-log':   { label:'Trilha de Auditoria',  icon:'manage_search' },
   diagnostico:   { label:'Diagnostico de Implantacao', icon:'monitor_heart' },
@@ -195,7 +196,7 @@ function appConfirmNavigationIfDirty(scopeId, onConfirm, onCancel) {
 function appEditableDirtyScope(target) {
   if (!target || !target.closest) return '';
   if (!target.matches('input, textarea, select, [contenteditable="true"]')) return '';
-  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante, #modalPrestador, #modalLabCentral, #modalFeriado, #modalCourier, .farmacia-dialog');
+  var scope = target.closest('#agendaCreatePanel, #page-requisicao, #modalReqPreload, #modalParticipante, #modalPrestador, #modalLabCentral, #modalFeriado, #modalCourier, #tcWizard, .farmacia-dialog');
   if (scope && scope.id === 'modalParticipante' && scope.dataset.editing !== '1') return '';
   return scope ? scope.id : '';
 }
@@ -266,7 +267,8 @@ function applyAppBootstrapData(data) {
   document.querySelectorAll('.admin-only').forEach(function(el) {
     var moduleName = String(el.id || '') === 'navUsersAdmin' ? 'usuarios'
       : (String(el.id || '') === 'navAuditLog' ? 'audit-log'
-      : (String(el.id || '') === 'navDiagnostico' ? 'diagnostico' : ''));
+      : (String(el.id || '') === 'navDiagnostico' ? 'diagnostico'
+      : (String(el.id || '') === 'navTransporteCentral' ? 'transporte-central' : '')));
     el.style.display = CodexAccessRules.isModuleVisible(CURRENT_ACCESS, moduleName) ? '' : 'none';
   });
   updateFloatingAddButton();
@@ -281,6 +283,7 @@ function applyAppBootstrapData(data) {
   // Uma entrada no catálogo antes de o perfil chegar precisa retomar a carga
   // após invalidar as respostas vinculadas à identidade ainda desconhecida.
   if (getCurrentPage() === 'farmacia' && CURRENT_ACCESS.ok) carregarFarmacia();
+  if (getCurrentPage() === 'transporte-central' && CURRENT_ACCESS.ok) carregarTransporteCentral();
 }
 
 var FARMACIA_REQUEST_ID = 0;
@@ -1212,6 +1215,11 @@ window.addEventListener('resize', function() {
 document.addEventListener('DOMContentLoaded', function() { appSyncNavAccessibility(); setMobileNav(false); });
 
 function irPara(pagina, options) {
+  if (pagina === 'transporte-central' && !CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'transporte-central')) {
+    snack('O Transporte (piloto) está disponível apenas para administradores.');
+    if (options && options.initial) pagina = 'agenda';
+    else return;
+  }
   if (pagina === 'farmacia' && !CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
     snack('Seu usuário não tem acesso à Farmácia.');
     if (options && options.initial) pagina = 'agenda';
@@ -1293,6 +1301,7 @@ function irPara(pagina, options) {
     if (typeof farmaciaSetView === 'function') farmaciaSetView();
     carregarFarmacia();
   }
+  if (pagina === 'transporte-central') carregarTransporteCentral();
   if (pagina === 'audit-log') carregarAuditLog();
   if (pagina === 'diagnostico') carregarDiagnosticoImplantacao(false);
   if (pagina === 'dashboard') {

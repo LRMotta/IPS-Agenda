@@ -1,0 +1,519 @@
+<script>
+  // Transporte (tela nova): passo a passo de um envio. Prefixo transpCentral*, sem globais genéricos.
+  var TC_ENVIO = { aberto: false, agendaId: '', slot: '', dados: null, passo: '', seq: 0, token: '', gerando: false, resultado: null, awbUltima: null, pinex: null, salvando: false, matEdit: null, ajuste: null, anvisa: null, aguardaPeticionamento: false };
+  var TC_MATERIAIS_TIPOS = ['Sangue', 'Soro', 'Urina', 'Plasma', 'Tecido', 'Saliva', 'Fezes', 'Vacina'];
+  var TC_PASSOS_ROTULO = { conferir: 'Conferir', awb: 'AWB', pinex_numeros: 'Números da PINEX', gerar: 'Gerar', anvisa: 'Formulário ANVISA', enviar: 'Enviar' };
+
+  function transpCentralTokenNovo() {
+    var bytes = new Uint8Array(16);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    return Array.prototype.map.call(bytes, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+
+  // Token por envio no navegador: repetir o mesmo token retoma a geração sem duplicar PDF ou rascunho.
+  function transpCentralTokenDoEnvio(agendaId, slot, renovar) {
+    var chave = 'tcToken:' + agendaId + '|' + slot;
+    var token = '';
+    try { token = renovar ? '' : (window.localStorage.getItem(chave) || ''); } catch (e) { token = ''; }
+    if (!/^[a-f0-9]{32}$/.test(token)) {
+      token = transpCentralTokenNovo();
+      try { window.localStorage.setItem(chave, token); } catch (e2) { /* sem armazenamento, o token vale só nesta tela */ }
+    }
+    return token;
+  }
+
+  function transpCentralEnvioAtual(seq) {
+    return TC_ENVIO.aberto && TC_ENVIO.seq === seq && getCurrentPage() === 'transporte-central';
+  }
+
+  function transpCentralMostrarWizard(mostrar) {
+    var wizard = document.getElementById('tcWizard');
+    var abas = document.getElementById('tcTabs');
+    var paineis = document.querySelectorAll('#page-transporte-central .tc-panel');
+    if (wizard) wizard.hidden = !mostrar;
+    if (abas) abas.hidden = !!mostrar;
+    Array.prototype.forEach.call(paineis, function(p) { p.hidden = !!mostrar || p.id !== 'tcPanel' + TRANSP_CENTRAL_STATE.aba.charAt(0).toUpperCase() + TRANSP_CENTRAL_STATE.aba.slice(1); });
+  }
+
+  function transpCentralProximoTransporte(tarefa, slotAtual) {
+    var lista = (tarefa && tarefa.transportes) || [];
+    return lista.filter(function(t) { return t.slot !== slotAtual; })[0] || null;
+  }
+
+  function transpCentralTarefa(agendaId) {
+    var tarefas = (TRANSP_CENTRAL_STATE.dados && TRANSP_CENTRAL_STATE.dados.tarefas) || [];
+    return tarefas.filter(function(t) { return t.agendaId === agendaId; })[0] || null;
+  }
+
+  function transpCentralComecar(agendaId, slot) {
+    var tarefa = transpCentralTarefa(agendaId);
+    if (!slot) slot = tarefa && tarefa.transportes && tarefa.transportes[0] ? tarefa.transportes[0].slot : '';
+    if (!agendaId || !slot) { snackErro('Transporte da tarefa não encontrado.'); return; }
+    transpCentralAbrirEnvio(agendaId, slot);
+  }
+
+  function transpCentralAbrirEnvio(agendaId, slot) {
+    var seq = ++TC_ENVIO.seq;
+    TC_ENVIO.aberto = true; TC_ENVIO.agendaId = agendaId; TC_ENVIO.slot = slot; TC_ENVIO.dados = null;
+    TC_ENVIO.resultado = null; TC_ENVIO.awbUltima = null; TC_ENVIO.pinex = null; TC_ENVIO.gerando = false; TC_ENVIO.matEdit = null; TC_ENVIO.ajuste = null; TC_ENVIO.aguardaPinex = false; TC_ENVIO.anvisa = null; TC_ENVIO.aguardaPeticionamento = false;
+    transpCentralMostrarWizard(true);
+    transpCentralRenderWizard('<div class="tc-empty">Abrindo o transporte…</div>');
+    google.script.run
+      .withSuccessHandler(function(resposta) {
+        if (!transpCentralEnvioAtual(seq)) return;
+        if (!resposta || resposta.ok !== true) {
+          snack((resposta && resposta.mensagem) || 'Não foi possível abrir este transporte.');
+          TC_ENVIO.aberto = false;
+          transpCentralMostrarWizard(false);
+          transpCentralCarregar(true);
+          return;
+        }
+        TC_ENVIO.dados = resposta;
+        var passos = resposta.passos || [];
+        TC_ENVIO.passo = passos.indexOf(resposta.passo) >= 0 ? resposta.passo : (resposta.passo === 'concluido' ? 'enviar' : passos[0]);
+        TC_ENVIO.token = transpCentralTokenDoEnvio(agendaId, slot, false);
+        transpCentralRenderPasso();
+      })
+      .withFailureHandler(function(erro) {
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.aberto = false;
+        transpCentralMostrarWizard(false);
+        snackErro(erro);
+      })
+      .getTransporteEnvio(agendaId, slot);
+  }
+
+  function transpCentralRenderWizard(html) {
+    var alvo = document.getElementById('tcWizard');
+    if (alvo) { alvo.innerHTML = html; alvo.setAttribute('aria-busy', 'false'); }
+  }
+
+  function transpCentralDataBr(valor) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(valor || ''));
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : String(valor || '');
+  }
+
+  function transpCentralLinha(rotulo, valor) {
+    return '<div class="tc-row"><dt>' + esc(rotulo) + '</dt><dd>' + (String(valor || '').trim() ? esc(valor) : '<span class="tc-dim">—</span>') + '</dd></div>';
+  }
+
+  function transpCentralMateriaisAtivos(registro) {
+    return ((registro && registro.materiais) || []).filter(function(m) { return m && m.ativo && m.material; });
+  }
+
+  function transpCentralPainelLateral(registro, tarefa) {
+    var rotulo = tarefa ? (tarefa.transportes.filter(function(t) { return t.slot === TC_ENVIO.slot; })[0] || {}).slotRotulo : '';
+    return '<aside class="tc-wiz-side" aria-label="Este envio"><h3>Este envio</h3><dl class="tc-dl">' +
+      transpCentralLinha('Participante', registro.paciente) + transpCentralLinha('Estudo', registro.protocolo) +
+      transpCentralLinha('Visita', tarefa && tarefa.visita) + transpCentralLinha('Courier', [registro.courier, registro.temperatura].filter(Boolean).join(' / ')) +
+      transpCentralLinha('Tipo', rotulo) + transpCentralLinha('Data', transpCentralDataBr(registro.dataEnvio)) + transpCentralLinha('Destino', registro.destino) +
+      '</dl></aside>';
+  }
+
+  function transpCentralBarra(passos, passo) {
+    var indice = Math.max(0, passos.indexOf(passo));
+    return '<div class="tc-wiz-top"><button type="button" class="tc-link" data-tc-act="sair">Sair e continuar depois</button>' +
+      '<span class="tc-wiz-progress" role="status">Passo ' + (indice + 1) + ' de ' + passos.length + ' · ' + esc(TC_PASSOS_ROTULO[passo] || passo) + '</span></div>';
+  }
+
+  function transpCentralCampo(id, rotulo, valor, extra) {
+    return '<div class="field"><label class="field-label" for="' + id + '">' + esc(rotulo) + '</label>' +
+      '<input id="' + id + '" class="f-input" type="text" value="' + esc(valor || '') + '" data-tc-campo="' + esc(id.replace('tcCampo_', '')) + '" ' + (extra || '') + '></div>';
+  }
+
+  function transpCentralFormulaDoMaterial(m) {
+    if (m.formula) return String(m.formula);
+    var tubos = Number(m.tubos), total = Number(String(m.total).replace(',', '.'));
+    return tubos > 0 && total > 0 ? tubos + 'x' + String(Math.round(total / tubos * 1000) / 1000).replace('.', ',') : '';
+  }
+
+  function transpCentralMateriaisIniciais(registro) {
+    return transpCentralMateriaisAtivos(registro).map(function(m) {
+      return { material: m.material, formula: transpCentralFormulaDoMaterial(m), ensaio: m.ensaio || '' };
+    });
+  }
+
+  function transpCentralHtmlEditorMateriais() {
+    var linhas = TC_ENVIO.matEdit.map(function(m, i) {
+      return '<div class="tc-mat-linha"><div class="field"><label class="field-label" for="tcMatTipo' + i + '">Material</label>' +
+        '<select id="tcMatTipo' + i + '" class="f-input f-select" data-tc-mat="' + i + '" data-tc-mat-campo="material">' +
+        TC_MATERIAIS_TIPOS.map(function(t) { return '<option' + (t === m.material ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label class="field-label" for="tcMatFormula' + i + '">Tubos × volume</label>' +
+        '<input id="tcMatFormula' + i + '" class="f-input" type="text" placeholder="2x1,5" value="' + esc(m.formula) + '" data-tc-mat="' + i + '" data-tc-mat-campo="formula" autocomplete="off"></div>' +
+        '<div class="field"><label class="field-label" for="tcMatEnsaio' + i + '">Ensaio</label>' +
+        '<input id="tcMatEnsaio' + i + '" class="f-input" type="text" value="' + esc(m.ensaio) + '" data-tc-mat="' + i + '" data-tc-mat-campo="ensaio" autocomplete="off"></div>' +
+        '<button type="button" class="tc-link" data-tc-act="materiais-remover" data-tc-mat-i="' + i + '">Remover</button></div>';
+    }).join('');
+    return '<p class="tc-dim">A alteração grava na Agenda, com registro de quem alterou e do valor anterior.</p>' + linhas +
+      '<div class="tc-actions"><button type="button" class="tc-link" data-tc-act="materiais-adicionar">Adicionar material</button>' +
+      '<button type="button" class="btn-new" data-tc-act="materiais-salvar">Salvar materiais</button>' +
+      '<button type="button" class="tc-link" data-tc-act="materiais-cancelar">Cancelar</button></div>';
+  }
+
+  function transpCentralHtmlConferir(registro) {
+    var materiais = transpCentralMateriaisAtivos(registro);
+    var pinexAg = registro.courier === 'PINEX (Agendamento)';
+    var caixa = registro.caixaTransporte && registro.caixaTransporte.tipoCaixa ? '<p class="tc-aviso" role="note">Caixa especial: ' + esc(registro.caixaTransporte.tipoCaixa) + '. Solicite com 2 dias úteis de antecedência.</p>' : '';
+    var avisos = ((TC_ENVIO.dados && TC_ENVIO.dados.avisos) || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('');
+    return '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Transporte</h3><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir</button></div><dl class="tc-dl">' +
+        transpCentralLinha('Courier', registro.courier) + transpCentralLinha('Temperatura', registro.temperatura) +
+        transpCentralLinha('Coleta', transpCentralDataBr(registro.dataColeta)) + transpCentralLinha('AWB', registro.awb) + '</dl></section>' +
+      '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Destino</h3><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir</button></div><dl class="tc-dl">' +
+        transpCentralLinha('Laboratório', registro.destino) + '</dl></section>' +
+      '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Materiais</h3>' + (TC_ENVIO.matEdit ? '' : '<button type="button" class="tc-link" data-tc-act="materiais-editar">Editar</button>') + '</div>' +
+        (TC_ENVIO.matEdit ? transpCentralHtmlEditorMateriais() : (materiais.length ? '<ul class="tc-materiais">' + materiais.map(function(m) {
+          return '<li>' + esc(m.material) + (m.tubos ? ' · ' + esc(m.tubos) + ' tubo(s)' : '') + (m.total !== '' && m.total !== undefined ? ' · ' + esc(m.total) + ' ' + esc(m.unit || 'mL') : '') + '</li>';
+        }).join('') + '</ul><p class="tc-dim">Informados pelo laboratório.</p>' : '<p class="tc-dim">Nenhum material marcado.</p>') +
+          (TC_ENVIO.ajuste ? '<p class="tc-aviso" role="note">Material ajustado na preparação do transporte. Valor anterior: ' + esc(TC_ENVIO.ajuste.anterior || '') + '.</p>' : '')) + '</section>' +
+      caixa + avisos +
+      '<section class="tc-bloco"><div class="tc-campos">' +
+        transpCentralCampo('tcCampo_agendadoPor', 'Agendado por', registro.agendadoPor, 'required') +
+        transpCentralCampo('tcCampo_horaEnvio', 'Janela de envio', registro.horaEnvio, 'required') +
+        (pinexAg ? transpCentralCampo('tcCampo_responsavelEntrega', 'Quem entrega as amostras', registro.responsavelEntrega, 'required') : '') +
+      '</div></section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="conferido"><span class="material-symbols-outlined" aria-hidden="true">check</span>Sim, está tudo certo</button></div>';
+  }
+
+  function transpCentralHtmlAwb(registro) {
+    var courier = String(registro.courier || '');
+    var ultima = TC_ENVIO.awbUltima && TC_ENVIO.awbUltima.awb ? '<p class="tc-dica">Última AWB usada neste estudo: <strong>' + esc(TC_ENVIO.awbUltima.awb) + '</strong>. A próxima do pacote recebido costuma ser a seguinte.</p>' : '';
+    var texto = courier === 'OCASA' ? 'A AWB da OCASA é gerada no site da OCASA, pela guia modelo. “Gerar Pedido” já solicita a retirada; cancelar só por csbio@ocasa.com. Cole a AWB aqui.'
+      : (courier === 'MARKEN' || /dhl/i.test(courier) ? 'A AWB vem do pacote recebido no início do estudo, específico para este estudo.' : 'Informe a AWB deste transporte.');
+    return '<section class="tc-bloco"><h3>AWB</h3><p>' + esc(texto) + '</p>' + ultima +
+      '<div class="tc-campos">' + transpCentralCampo('tcCampo_awb', 'AWB', registro.awb, 'required autocomplete="off"') + '</div></section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="awb-ok">Salvar AWB e continuar</button></div>';
+  }
+
+  function transpCentralHtmlPinexNumeros(registro) {
+    var leitura = TC_ENVIO.pinex;
+    var resultado = leitura && leitura.ok ? '<ul class="tc-materiais"><li>Coleta: <strong>' + esc(leitura.leitura.coleta) + '</strong></li><li>Frete (AWB): <strong>' + esc(leitura.leitura.frete) + '</strong></li><li>Protocolo: ' + esc(leitura.leitura.protocolo) + '</li></ul>' +
+      (leitura.avisos || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('') : (leitura && leitura.mensagem ? '<p class="tc-aviso" role="alert">' + esc(leitura.mensagem) + '</p>' : '');
+    return '<section class="tc-bloco"><h3>Números da PINEX</h3><p>Cole a linha de confirmação que a PINEX respondeu, por exemplo: “Confirmação de agendamento - Coleta: 78429 - Frete: 94624 - Protocolo: MB12C0224 - Data da coleta: 11/03/2026”.</p>' +
+      '<div class="field"><label class="field-label" for="tcPinexTexto">Resposta da PINEX</label><textarea id="tcPinexTexto" class="f-input" rows="3"></textarea></div>' + resultado + '</section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="pinex-ler">Ler a resposta</button>' +
+      (leitura && leitura.ok ? '<button type="button" class="btn-new" data-tc-act="pinex-ok">Continuar</button>' : '') + '</div>';
+  }
+
+  function transpCentralHtmlGerar(registro) {
+    var r = TC_ENVIO.resultado;
+    if (TC_ENVIO.gerando) return '<section class="tc-bloco" aria-busy="true"><h3>Gerando os documentos</h3><p>Pode levar alguns instantes. Se sair agora, ao voltar você retoma deste ponto sem duplicar nada.</p></section>';
+    if (!r) {
+      return '<section class="tc-bloco"><h3>Gerar os documentos</h3><p>Vamos gerar o PDF do transporte de ' + esc(registro.courier) + ' e preparar o rascunho do e-mail para a courier.</p></section>' +
+        '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="gerar"><span class="material-symbols-outlined" aria-hidden="true">description</span>Gerar documentos</button></div>';
+    }
+    if (r.erro) {
+      return '<section class="tc-bloco"><h3>Não foi possível gerar</h3><p class="tc-aviso" role="alert">' + esc(r.erro) + '</p></section>' +
+        '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="gerar">Tentar de novo</button></div>';
+    }
+    var rascunho = r.draftSkipped ? '<li>Rascunho de e-mail: não é criado para esta courier. ' + esc(r.draftMessage || '') + '</li>'
+      : (r.draftOk ? '<li>Rascunho de e-mail criado no Gmail.</li>' : '<li class="tc-aviso">Rascunho de e-mail não criado: ' + esc(r.draftError || 'erro desconhecido') + '</li>');
+    var ce = r.ce && r.ce.found ? '<li>Comunicado Especial localizado: ' + esc(r.ce.name || '') + '.</li>' : '<li class="tc-aviso">Comunicado Especial não localizado para este estudo.</li>';
+    return '<section class="tc-bloco"><h3>Documentos gerados</h3><ul class="tc-materiais">' +
+      '<li>PDF: <a href="' + esc(r.fileUrl || '#') + '" target="_blank" rel="noopener">' + esc(r.fileName || 'abrir') + '</a></li>' + rascunho + ce + '</ul>' +
+      (r.agendaWarning ? '<p class="tc-aviso" role="note">' + esc(r.agendaWarning) + '</p>' : '') + (r.monitorWarning ? '<p class="tc-aviso" role="note">' + esc(r.monitorWarning) + '</p>' : '') + '</section>' +
+      '<div class="tc-actions">' + (r.draftOk || r.draftSkipped ? '' : '<button type="button" class="btn-new" data-tc-act="gerar">Tentar de novo</button>') +
+      '<button type="button" class="btn-new" data-tc-act="gerado-ok">Continuar</button></div>';
+  }
+
+  function transpCentralHtmlAnvisa() {
+    var a = TC_ENVIO.anvisa;
+    if (!a) return '<section class="tc-bloco" aria-busy="true"><h3>Formulário ANVISA</h3><p>Preparando o formulário…</p></section>';
+    if (a.erro) return '<section class="tc-bloco"><h3>Formulário ANVISA</h3><p class="tc-aviso" role="alert">' + esc(a.erro) + '</p></section><div class="tc-actions"><button type="button" class="btn-new" data-tc-act="anvisa-ver">Tentar de novo</button></div>';
+    if (!a.ok) {
+      return '<section class="tc-bloco"><h3>O formulário não pôde ser gerado</h3><ul class="tc-materiais">' + (a.erros || []).map(function(e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' +
+        '<p class="tc-dim">Corrija os dados e volte a este passo.</p></section><div class="tc-actions"><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir na Agenda</button><button type="button" class="btn-new" data-tc-act="anvisa-ver">Conferir de novo</button></div>';
+    }
+    return '<section class="tc-bloco"><h3>Formulário ANVISA</h3><p>Confira o formulário. Ao concluir, ele segue por e-mail a quem peticiona (GRU e extrato) e este transporte passa a aguardar o peticionamento.</p>' +
+      (a.avisos || []).map(function(av) { return '<p class="tc-aviso" role="note">' + esc(av) + '</p>'; }).join('') +
+      '<iframe id="tcAnvisaFrame" class="tc-anvisa-frame" title="Formulário ANVISA" sandbox="allow-same-origin allow-modals"></iframe></section>' +
+      '<div class="tc-actions"><button type="button" class="tc-link" data-tc-act="anvisa-imprimir">Imprimir</button>' +
+      '<button type="button" class="btn-new" data-tc-act="anvisa-concluir"><span class="material-symbols-outlined" aria-hidden="true">send</span>Concluir e avisar quem peticiona</button></div>';
+  }
+
+  function transpCentralHtmlEnviar(registro) {
+    var r = TC_ENVIO.resultado;
+    var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta enviar o e-mail à courier.</p>';
+    return '<section class="tc-bloco"><h3>Enviar à courier</h3>' + explicacao +
+      '<ol class="tc-lista-passos"><li>Abra o rascunho no Gmail. <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Abrir rascunhos</a></li>' +
+      '<li>Confira os PDFs anexados e o destinatário.</li><li>Clique em Enviar e volte aqui.</li></ol></section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="enviado"><span class="material-symbols-outlined" aria-hidden="true">send</span>Pronto, enviei</button></div>';
+  }
+
+  function transpCentralHtmlFim(tarefa) {
+    var proximo = transpCentralProximoTransporte(tarefa, TC_ENVIO.slot);
+    var outras = ((TRANSP_CENTRAL_STATE.dados && TRANSP_CENTRAL_STATE.dados.tarefas) || []).filter(function(t) { return t.agendaId !== TC_ENVIO.agendaId; });
+    var botoes = proximo ? '<button type="button" class="btn-new" data-tc-act="proximo-transporte" data-tc-slot="' + esc(proximo.slot) + '">Ir ao próximo transporte desta visita</button>'
+      : (outras.length ? '<button type="button" class="btn-new" data-tc-act="proxima-tarefa">Ir à próxima tarefa</button>' : '');
+    var texto = TC_ENVIO.aguardaPeticionamento ? 'O formulário ANVISA foi enviado por e-mail a quem peticiona. Quando a GRU e o extrato estiverem prontos, esta tarefa volta para você: anexar e enviar à courier.' : TC_ENVIO.aguardaPinex ? 'O Formulário foi enviado. A PINEX responde por e-mail com os números no título; quando chegar, abra este transporte em Acompanhar e cole a linha.' : 'O monitor de e-mails reconhece o envio pelo Gmail.';
+    return '<section class="tc-bloco"><h3>' + (proximo || outras.length ? 'Envio concluído' : 'Tudo feito por agora') + '</h3><p>' + esc(texto) + '</p></section>' +
+      '<div class="tc-actions">' + botoes + '<button type="button" class="tc-link" data-tc-act="fechar">Voltar às tarefas</button></div>';
+  }
+
+  function transpCentralRenderPasso() {
+    var dados = TC_ENVIO.dados;
+    if (!dados) return;
+    var registro = dados.registro || {};
+    var tarefa = transpCentralTarefa(TC_ENVIO.agendaId);
+    var passo = TC_ENVIO.passo;
+    var corpo = { conferir: transpCentralHtmlConferir, awb: transpCentralHtmlAwb, pinex_numeros: transpCentralHtmlPinexNumeros, gerar: transpCentralHtmlGerar, anvisa: transpCentralHtmlAnvisa, enviar: transpCentralHtmlEnviar }[passo];
+    var conteudo = passo === 'fim' ? transpCentralHtmlFim(tarefa) : (corpo ? corpo(registro) : '');
+    transpCentralRenderWizard((passo === 'fim' ? '' : transpCentralBarra(dados.passos || [], passo)) +
+      '<div class="tc-wiz-grid"><main class="tc-wiz-main">' + conteudo + '</main>' + transpCentralPainelLateral(registro, tarefa) + '</div>');
+    if (passo === 'awb' && !TC_ENVIO.awbUltima && /marken|dhl/i.test(registro.courier || '')) transpCentralBuscarAwbUltima(registro);
+    if (passo === 'anvisa') transpCentralMostrarAnvisa();
+  }
+
+  // O HTML do servidor entra no iframe isolado (srcdoc por propriedade, sem montar atributo à mão).
+  function transpCentralMostrarAnvisa() {
+    var seq = TC_ENVIO.seq;
+    var quadro = document.getElementById('tcAnvisaFrame');
+    if (TC_ENVIO.anvisa && TC_ENVIO.anvisa.ok && quadro) { quadro.srcdoc = TC_ENVIO.anvisa.html; return; }
+    if (TC_ENVIO.anvisa || TC_ENVIO.anvisaBuscando) return;
+    TC_ENVIO.anvisaBuscando = true;
+    google.script.run
+      .withSuccessHandler(function(resposta) {
+        TC_ENVIO.anvisaBuscando = false;
+        if (!transpCentralEnvioAtual(seq) || TC_ENVIO.passo !== 'anvisa') return;
+        TC_ENVIO.anvisa = resposta || { erro: 'Resposta inválida.' };
+        transpCentralRenderPasso();
+      })
+      .withFailureHandler(function(erro) {
+        TC_ENVIO.anvisaBuscando = false;
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.anvisa = { erro: appErrorMessage(erro) };
+        transpCentralRenderPasso();
+      })
+      .getTransporteFormularioAnvisa(TC_ENVIO.agendaId, TC_ENVIO.slot);
+  }
+
+  function transpCentralBuscarAwbUltima(registro) {
+    var seq = TC_ENVIO.seq;
+    TC_ENVIO.awbUltima = { awb: '' };
+    google.script.run.withSuccessHandler(function(resposta) {
+      if (!transpCentralEnvioAtual(seq) || TC_ENVIO.passo !== 'awb') return;
+      TC_ENVIO.awbUltima = resposta && resposta.ultima ? resposta.ultima : { awb: '' };
+      if (TC_ENVIO.awbUltima.awb) transpCentralRenderPasso();
+    }).withFailureHandler(function() { /* a dica é opcional */ }).getTransporteAwbUltima(registro.protocolo, registro.courier);
+  }
+
+  function transpCentralProximoPasso() {
+    var passos = TC_ENVIO.dados.passos || [];
+    return passos[passos.indexOf(TC_ENVIO.passo) + 1] || 'fim';
+  }
+
+  // Salva campos e passo; a versão da tela só avança com a resposta do servidor.
+  function transpCentralSalvar(campos, passo, aoSalvar) {
+    var seq = TC_ENVIO.seq;
+    if (TC_ENVIO.salvando) { setTimeout(function() { if (transpCentralEnvioAtual(seq)) transpCentralSalvar(campos, passo, aoSalvar); }, 200); return; }
+    TC_ENVIO.salvando = true;
+    google.script.run
+      .withSuccessHandler(function(resposta) {
+        TC_ENVIO.salvando = false;
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.dados.versao = resposta.versao;
+        TC_ENVIO.dados.passos = resposta.passos || TC_ENVIO.dados.passos;
+        Object.keys(campos || {}).forEach(function(k) { TC_ENVIO.dados.registro[k] = campos[k]; });
+        appClearUnsavedChanges('tcWizard');
+        if (resposta.perdeuPreparo) snack('Seu preparo expirou; outra pessoa pode ter assumido este transporte.');
+        if (aoSalvar) aoSalvar(resposta);
+      })
+      .withFailureHandler(function(erro) {
+        TC_ENVIO.salvando = false;
+        if (!transpCentralEnvioAtual(seq)) return;
+        snackErro(erro);
+      })
+      .salvarTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, campos || {}, passo);
+  }
+
+  function transpCentralValorCampo(nome) {
+    var el = document.getElementById('tcCampo_' + nome);
+    return el ? String(el.value || '').trim() : undefined;
+  }
+
+  function transpCentralIrParaPasso(passo) {
+    TC_ENVIO.passo = passo;
+    transpCentralRenderPasso();
+  }
+
+  function transpCentralGerar() {
+    var seq = TC_ENVIO.seq;
+    if (TC_ENVIO.gerando) return;
+    TC_ENVIO.gerando = true; TC_ENVIO.resultado = null;
+    transpCentralRenderPasso();
+    google.script.run
+      .withSuccessHandler(function(resposta) {
+        TC_ENVIO.gerando = false;
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.resultado = resposta;
+        if (resposta && resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
+        transpCentralRenderPasso();
+      })
+      .withFailureHandler(function(erro) {
+        TC_ENVIO.gerando = false;
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.resultado = { erro: appErrorMessage(erro) };
+        transpCentralRenderPasso();
+      })
+      .gerarDocumentosTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, TC_ENVIO.token);
+  }
+
+  function transpCentralSair(aposSair) {
+    var seq = TC_ENVIO.seq;
+    var passo = TC_ENVIO.passo === 'fim' ? 'concluido' : TC_ENVIO.passo;
+    function fechar() {
+      TC_ENVIO.aberto = false;
+      appClearUnsavedChanges('tcWizard');
+      transpCentralMostrarWizard(false);
+      transpCentralCarregar(true);
+      if (typeof aposSair === 'function') aposSair();
+    }
+    if (!TC_ENVIO.dados || TC_ENVIO.passo === 'fim') { fechar(); return; }
+    google.script.run
+      .withSuccessHandler(function() { if (transpCentralEnvioAtual(seq)) fechar(); })
+      .withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) { snackErro(erro); fechar(); } })
+      .sairEnvioTransporte(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, passo);
+  }
+
+  function transpCentralAcaoMateriais(acao, alvo) {
+    var registro = TC_ENVIO.dados && TC_ENVIO.dados.registro;
+    if (!registro) return;
+    if (acao === 'materiais-editar') {
+      TC_ENVIO.matEdit = transpCentralMateriaisIniciais(registro);
+    } else if (acao === 'materiais-adicionar') {
+      TC_ENVIO.matEdit.push({ material: TC_MATERIAIS_TIPOS[0], formula: '', ensaio: '' });
+    } else if (acao === 'materiais-remover') {
+      TC_ENVIO.matEdit.splice(Number(alvo.getAttribute('data-tc-mat-i')), 1);
+    } else if (acao === 'materiais-cancelar') {
+      TC_ENVIO.matEdit = null;
+      appClearUnsavedChanges('tcWizard');
+    } else if (acao === 'materiais-salvar') {
+      var seq = TC_ENVIO.seq;
+      var itens = TC_ENVIO.matEdit.filter(function(m) { return m.material; });
+      google.script.run
+        .withSuccessHandler(function(resposta) {
+          if (!transpCentralEnvioAtual(seq)) return;
+          TC_ENVIO.dados.versao = resposta.versao;
+          if (resposta.registro) TC_ENVIO.dados.registro = resposta.registro;
+          if (resposta.ajuste) TC_ENVIO.ajuste = resposta.ajuste;
+          TC_ENVIO.matEdit = null;
+          appClearUnsavedChanges('tcWizard');
+          snack(resposta.alterado ? 'Materiais atualizados na Agenda.' : 'Nenhuma alteração nos materiais.');
+          transpCentralRenderPasso();
+        })
+        .withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) snackErro(erro); })
+        .editarMateriaisTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, itens);
+      return;
+    }
+    transpCentralRenderPasso();
+  }
+
+  function transpCentralAcao(acao, alvo) {
+    var registro = TC_ENVIO.dados && TC_ENVIO.dados.registro;
+    if (acao === 'sair' || acao === 'fechar') { transpCentralSair(); return; }
+    if (acao.indexOf('materiais-') === 0) { transpCentralAcaoMateriais(acao, alvo); return; }
+    if (acao === 'corrigir') { abrirPendenciaAgendaRegistro(TC_ENVIO.agendaId); return; }
+    if (!registro) return;
+    if (acao === 'conferido') {
+      var campos = { agendadoPor: transpCentralValorCampo('agendadoPor'), horaEnvio: transpCentralValorCampo('horaEnvio') };
+      var faltando = [];
+      if (!campos.agendadoPor) faltando.push('Agendado por');
+      if (!campos.horaEnvio) faltando.push('Janela de envio');
+      if (registro.courier === 'PINEX (Agendamento)') {
+        campos.responsavelEntrega = transpCentralValorCampo('responsavelEntrega');
+        if (!campos.responsavelEntrega) faltando.push('Quem entrega as amostras');
+      }
+      if (faltando.length) { snackErro('Preencha: ' + faltando.join(', ') + '.'); return; }
+      var proximo = transpCentralProximoPasso();
+      transpCentralSalvar(campos, proximo, function() { transpCentralIrParaPasso(proximo); });
+    } else if (acao === 'awb-ok') {
+      var awb = transpCentralValorCampo('awb');
+      if (!awb) { snackErro('Informe a AWB.'); return; }
+      var depois = transpCentralProximoPasso();
+      transpCentralSalvar({ awb: awb }, depois, function() { transpCentralIrParaPasso(depois); });
+    } else if (acao === 'pinex-ler') {
+      var texto = (document.getElementById('tcPinexTexto') || {}).value || '';
+      var seq = TC_ENVIO.seq;
+      google.script.run.withSuccessHandler(function(resposta) {
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.pinex = resposta || null;
+        if (resposta && resposta.ok) {
+          TC_ENVIO.dados.versao = resposta.versao;
+          TC_ENVIO.dados.passos = resposta.passos || TC_ENVIO.dados.passos;
+          if (resposta.registro) TC_ENVIO.dados.registro = resposta.registro;
+          appClearUnsavedChanges('tcWizard');
+        }
+        transpCentralRenderPasso();
+      }).withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) snackErro(erro); })
+        .registrarRespostaPinexEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, texto);
+    } else if (acao === 'pinex-ok') {
+      var seguinte = transpCentralProximoPasso();
+      transpCentralSalvar({}, seguinte, function() { transpCentralIrParaPasso(seguinte); });
+    } else if (acao === 'gerar') {
+      transpCentralGerar();
+    } else if (acao === 'gerado-ok') {
+      transpCentralIrParaPasso(transpCentralProximoPasso());
+    } else if (acao === 'anvisa-ver') {
+      TC_ENVIO.anvisa = null;
+      transpCentralRenderPasso();
+    } else if (acao === 'anvisa-imprimir') {
+      var quadroImpressao = document.getElementById('tcAnvisaFrame');
+      if (quadroImpressao && quadroImpressao.contentWindow) quadroImpressao.contentWindow.print();
+    } else if (acao === 'anvisa-concluir') {
+      var seqAnvisa = TC_ENVIO.seq;
+      google.script.run.withSuccessHandler(function(resposta) {
+        if (!transpCentralEnvioAtual(seqAnvisa)) return;
+        if (resposta && resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
+        if (resposta && resposta.ok === false) { snackErro(resposta.erro || 'Não foi possível concluir. Tente de novo.'); return; }
+        TC_ENVIO.aguardaPeticionamento = true;
+        try { window.localStorage.removeItem('tcToken:' + TC_ENVIO.agendaId + '|' + TC_ENVIO.slot); } catch (e) { /* sem armazenamento */ }
+        transpCentralIrParaPasso('fim');
+      }).withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seqAnvisa)) snackErro(erro); })
+        .concluirAnvisaTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao);
+    } else if (acao === 'enviado') {
+      var seqFim = TC_ENVIO.seq;
+      google.script.run.withSuccessHandler(function(resposta) {
+        if (!transpCentralEnvioAtual(seqFim)) return;
+        if (resposta && resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
+        TC_ENVIO.aguardaPinex = !!(resposta && resposta.aguardaPinex);
+        try { window.localStorage.removeItem('tcToken:' + TC_ENVIO.agendaId + '|' + TC_ENVIO.slot); } catch (e) { /* sem armazenamento */ }
+        transpCentralIrParaPasso('fim');
+      }).withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seqFim)) snackErro(erro); })
+        .concluirEnvioTransporte(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao);
+    } else if (acao === 'proximo-transporte') {
+      var agendaId = TC_ENVIO.agendaId;
+      var slot = alvo && alvo.getAttribute('data-tc-slot');
+      TC_ENVIO.aberto = false;
+      transpCentralAbrirEnvio(agendaId, slot);
+    } else if (acao === 'proxima-tarefa') {
+      var outras = ((TRANSP_CENTRAL_STATE.dados && TRANSP_CENTRAL_STATE.dados.tarefas) || []).filter(function(t) { return t.agendaId !== TC_ENVIO.agendaId; });
+      TC_ENVIO.aberto = false;
+      if (outras[0]) transpCentralComecar(outras[0].agendaId); else transpCentralSair();
+    }
+  }
+
+  // Os campos do editor de materiais só mudam o rascunho em memória; salvar é explícito.
+  function transpCentralLerCampoMaterial(evento) {
+    var campo = evento.target && evento.target.closest ? evento.target.closest('#tcWizard [data-tc-mat]') : null;
+    if (!campo || !TC_ENVIO.matEdit) return false;
+    var linha = TC_ENVIO.matEdit[Number(campo.getAttribute('data-tc-mat'))];
+    if (linha) linha[campo.getAttribute('data-tc-mat-campo')] = String(campo.value || '');
+    return true;
+  }
+  document.addEventListener('input', transpCentralLerCampoMaterial);
+
+  // Salva sozinho ao sair de um campo, sem mudar de passo.
+  document.addEventListener('change', function(evento) {
+    if (transpCentralLerCampoMaterial(evento)) return;
+    var campo = evento.target && evento.target.closest ? evento.target.closest('#tcWizard [data-tc-campo]') : null;
+    if (!campo || !TC_ENVIO.dados || TC_ENVIO.passo === 'awb') return;
+    var nome = campo.getAttribute('data-tc-campo');
+    var valor = String(campo.value || '').trim();
+    var atual = {}; atual[nome] = valor;
+    transpCentralSalvar(atual, undefined);
+  });
+
+  document.addEventListener('click', function(evento) {
+    var alvo = evento.target && evento.target.closest ? evento.target.closest('#tcWizard [data-tc-act]') : null;
+    if (alvo && !alvo.disabled) transpCentralAcao(alvo.getAttribute('data-tc-act'), alvo);
+  });
+</script>

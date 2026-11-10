@@ -38,7 +38,9 @@ var TRANSPORTE_FOLHA_HTML_CSS_ =
   '.fa .hero td.prim{border-left:0}' +
   '.fa .grande{font-size:16pt;font-weight:bold;line-height:1.15}' +
   '.fa .awb{font-size:13.5pt;font-weight:bold}' +
-  '.fa .tipo{display:inline-block;margin-top:3px;padding:2px 8px;border:4px double #000;font-size:10.5pt;font-weight:bold;letter-spacing:.06em}' +
+  '.fa table.tipos{width:auto;margin-top:3px}' +
+  '.fa .tipos td.tipo{padding:0;border:1.5px solid #000;vertical-align:top}' +
+  '.fa .tipos .tipo-txt{position:relative;text-align:center;font-size:10.5pt;font-weight:bold;letter-spacing:.06em;white-space:nowrap}' +
   '.fa .meta{border:1px solid #bdbdbd}' +
   '.fa .meta td{padding:7px 12px;border-left:1px solid #bdbdbd;font-size:9pt}' +
   '.fa .meta td.prim{border-left:0;white-space:nowrap;width:1%}' +
@@ -82,6 +84,33 @@ function transporteFolhaHtmlData_(value) {
 
 function transporteFolhaHtmlSlotLabel_(slot) {
   return TRANSPORTE_FOLHA_HTML_SLOTS_[String(slot || '').trim()] || '';
+}
+
+// Sombreamento das temperaturas frias, como no projeto inicial da folha. O conversor
+// HtmlService nao imprime background: o fundo e um GIF de 1 pixel esticado
+// (transporteDocsGradeFundoSrc_) sob o texto, com o mesmo posicionamento das imagens
+// flutuantes da grade. Cinza com texto preto continua legivel se o fundo faltar.
+var TRANSPORTE_FOLHA_HTML_TEMP_FUNDO_ = '#bdbdbd';
+var TRANSPORTE_FOLHA_HTML_TEMP_ALTURA_ = 24;
+
+// 'AMBIENTE + CONGELADO' -> um bloco por temperatura, empilhados (a coluna e estreita).
+function transporteFolhaHtmlTipos_(temperatura) {
+  var e = transporteFolhaHtmlEsc_;
+  var altura = TRANSPORTE_FOLHA_HTML_TEMP_ALTURA_;
+  var partes = String(temperatura || '').split('+').map(function(p) { return p.trim(); }).filter(Boolean);
+  if (!partes.length) return '—';
+  return '<table class="tipos">' + partes.map(function(parte, i) {
+    // Largura fixa estimada (10,5pt negrito em caixa alta): o fundo precisa de medida em px.
+    var largura = parte.length * 11 + 22;
+    var frio = /REFRIG|CONGEL/i.test(parte);
+    var fundo = frio && typeof transporteDocsGradeFundoSrc_ === 'function'
+      ? '<div style="position:relative;height:0"><img src="' + transporteDocsGradeFundoSrc_(TRANSPORTE_FOLHA_HTML_TEMP_FUNDO_) +
+        '" alt="" style="position:absolute;left:0;top:0;width:' + largura + 'px;height:' + altura + 'px"></div>'
+      : '';
+    return (i ? '<tr><td style="height:4px"></td></tr>' : '') +
+      '<tr><td class="tipo' + (frio ? ' frio' : '') + '" style="width:' + largura + 'px">' + fundo +
+      '<div class="tipo-txt" style="height:' + altura + 'px;line-height:' + altura + 'px">' + e(parte) + '</div></td></tr>';
+  }).join('') + '</table>';
 }
 
 function transporteFolhaHtmlCourierComAssinatura_(courier) {
@@ -274,7 +303,7 @@ function transporteFolhaHtmlPagina_(dados, opcoes) {
     '<td style="width:20%"><div class="lbl">Courier</div><div class="grande">' + e(dados.courier || '—') + '</div><div class="nota">' + notaCourier + '</div></td>' +
     '<td style="width:30%"><div class="lbl">AWB</div><div class="awb mono">' + e(dados.awb || '—') + '</div>' +
       (dados.agendadoPor ? '<div class="nota">Agendado por <b>' + e(dados.agendadoPor) + '</b></div>' : '') + '</td>' +
-    '<td><div class="lbl">Tipo de transporte</div>' + (dados.temperatura ? '<span class="tipo">' + e(dados.temperatura) + '</span>' : '—') + '</td>' +
+    '<td><div class="lbl">Tipo de transporte</div>' + transporteFolhaHtmlTipos_(dados.temperatura) + '</td>' +
     '</tr></table>');
 
   if (dados.transporte || dados.origem) {

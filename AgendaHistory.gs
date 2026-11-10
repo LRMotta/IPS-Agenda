@@ -122,6 +122,7 @@ function agendaHistoricoItem_(row) {
     monitorarConfirmacoesCourierAgendadas: 'Confirmação automática do transporte',
     transporteMonitorarEnviosPorEmail: 'Atualização da documentação enviada',
     salvarTransporte: 'Atualização pela tela de Transporte',
+    editarMateriaisTransporte: 'Material ajustado na preparação do transporte',
     gerarPdfTransporte: 'Geração dos documentos de transporte',
     vincularBackupAoAgendamento: 'Vínculo do backup',
     vincularBackupAVisitaFutura: 'Vínculo do backup a outra visita',

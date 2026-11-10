@@ -1,0 +1,182 @@
+// Prévia: Petição de Fiscalização e Liberação Sanitária - Exportação.
+// Medidas (pt) tiradas do .doc. Na implantação, a lógica vai para o Apps Script.
+const fs = require('fs'), path = require('path');
+const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const val = (v) => { const s = String(v == null ? '' : v).trim(); return s && s !== '---' ? s : '-'; };
+
+const EXPORTADOR = { nome: 'FUNDAÇÃO UNIVERSIDADE DE CAXIAS DO SUL', cnpj: '88.648.761/0001-03', rua: 'FRANCISCO GETÚLIO VARGAS', numero: '1130', complemento: 'BL. S SALA 315', bairro: 'PETRÓPOLIS', cep: '95070-560', municipio: 'CAXIAS DO SUL', uf: 'RS', ddd: '54', telefone: '3218-2737', dddFax: '54', fax: '3218-2056', email: 'ips@ucs.br' };
+const DDI = { usa: '+1', 'estados unidos': '+1', germany: '+49', alemanha: '+49' };
+
+function telefoneDe(lab) {
+  const t = String(lab.telefone || '').trim();
+  if (!t) return { ddd: '-', numero: '-', falta: true };
+  const m = t.match(/^(\+\d{1,3})[\s-]*(.+)$/);
+  if (m) return { ddd: m[1], numero: m[2].trim() };
+  return { ddd: DDI[String(lab.pais || '').trim().toLowerCase()] || '-', numero: t };
+}
+function cidadeDe(texto) {
+  const s = String(texto || '').trim(), i = s.lastIndexOf(',');
+  return i < 0 ? { municipio: s, uf: '-' } : { municipio: s.slice(0, i).trim(), uf: s.slice(i + 1).trim() };
+}
+function volume(ml) { return Number(ml).toFixed(2).replace('.', ','); }
+function linhasMaterial(materiais) {
+  return materiais.map((m, i) => ('0' + (i + 1)).slice(-2) + '. MATERIAL BIOLÓGICO HUMANO. ' + String(m.tipo).toUpperCase() + '. QUANTIDADE: ' + volume(m.totalMl) + ' mL');
+}
+function dados(p) {
+  const avisos = [], erros = [];
+  if (!String(p.awb || '').trim()) erros.push('Informe a AWB antes de gerar.');
+  if (!String(p.numeroCE || '').trim()) erros.push('O estudo não tem N° do CE no cadastro.');
+  if (p.materiais.length > 6) erros.push('O formulário aceita até 6 materiais.');
+  if (!String(p.courier.empresa || '').trim() || !String(p.courier.cnpj || '').trim()) erros.push('Courier sem razão social ou CNPJ no cadastro.');
+  const tel = telefoneDe(p.lab);
+  if (tel.falta) avisos.push('Laboratório sem telefone no cadastro.');
+  const cep = String(p.lab.cep || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  if (cep.length > 8) avisos.push('O CEP do laboratório tem mais de 8 caracteres.');
+  return { avisos, erros, tel, cep, cid: cidadeDe(p.lab.cidade), linhas: linhasMaterial(p.materiais) };
+}
+function celulasCep(cep) {
+  const c = String(cep || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase().split('');
+  const larg = [19.15, 19.2, 19.25, 19.2, 19.25, 19.2, 19.25, 19.2, 19.25];
+  return larg.map((w, i) => `<td class="cepc" style="width:${w}pt">${i === 5 ? '-' : esc(c[i < 5 ? i : i - 1] || '')}</td>`).join('');
+}
+const linha = (cols) => cols.map(([w, txt, cl]) => `<td class="${cl || ''}" style="width:${w}pt">${txt}</td>`).join('');
+const tab = (w, conteudo) => `<table style="width:${w}pt"><tr>${conteudo}</tr></table>`;
+const L = 'rot', B = 'val neg', V = 'val';
+
+function html(p) {
+  const d = dados(p), e = EXPORTADOR, lab = p.lab;
+  const itens = [0, 1, 2, 3, 4, 5].map((i) => `<tr><td class="val item" colspan="4">${esc(d.linhas[i] || ('0' + (i + 1) + '.'))}</td></tr>`).join('');
+  return `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Petição de Fiscalização e Liberação Sanitária - Exportação</title>
+<style>
+@page { size: A4; margin: 0; }
+html, body { margin: 0; background: #fff; }
+.pag { width: 595.3pt; height: 841.9pt; box-sizing: border-box; padding: 36pt 28pt 36pt 72pt; overflow: hidden; page-break-after: always; font: 11pt/1.07 Calibri, Carlito, Arial, sans-serif; color: #000; }
+.pag:last-child { page-break-after: auto; }
+@media screen { body { background: #d9d9d9; } .pag { background: #fff; margin: 12pt auto; } }
+table { border-collapse: collapse; table-layout: fixed; }
+td { padding: 0 3.5pt; vertical-align: top; height: 22.7pt; box-sizing: border-box; overflow: hidden; }
+.rot, .val, .cepc { border: 1pt solid #000; }
+.rot { font-family: "Times New Roman", serif; }
+.cal { font-family: Calibri, Carlito, Arial, sans-serif; }
+.neg { font-weight: 700; }
+.negT { font-family: "Times New Roman", serif; font-weight: 700; }
+.cepc { text-align: center; padding: 0; }
+.esp { height: 22.7pt; } .esp6 { height: 20.7pt; } .esp2 { height: 8pt; }
+.titulo { text-align: center; height: 22.7pt; }
+.sec { font-family: "Times New Roman", serif; font-weight: 700; height: 15pt; padding-left: 3.5pt; }
+.num { border: 1pt solid #000; background: #ccc; text-align: center; font-weight: 700; height: 21pt; padding: 0; }
+.tit { font-family: "Times New Roman", serif; font-weight: 700; }
+.lin { border: 0; border-bottom: 1pt solid #000; border-left: 1pt solid #000; border-right: 1pt solid #000; }
+.cabec { background: #e0e0e0; text-align: center; vertical-align: middle; height: 42pt; border: 0; border-left: 1pt solid #000; border-right: 1pt solid #000; }
+.item { height: 22.7pt; }
+.vermelho { color: #f00; }
+.inst { font: 11pt/1.07 Arial, sans-serif; }
+.inst p { margin: .35pt 0 8pt; }
+.inst .tt { font-weight: 700; margin-bottom: 4pt; }
+.inst ol { margin: 0 0 22pt; padding: 0 0 0 18pt; } .inst li { margin: .35pt 0 0; }
+</style></head><body>
+<div class="pag">
+  <div class="titulo">PETIÇÃO DE FISCALIZAÇÃO E LIBERAÇÃO SANITÁRIA - EXPORTAÇÃO</div>
+  ${tab(489.5, linha([[77.75, 'Exportador', L + ' neg'], [411.75, esc(e.nome), B]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[77.75, 'CPF ou CNPJ', L + ' neg'], [411.75, esc(e.cnpj), B]]))}
+  <div class="sec" style="margin-top:8pt">Endereço do Exportador</div>
+  ${tab(489.5, linha([[69, 'Rua/Avenida', L], [215.45, esc(e.rua), V], [20.1, 'Nº', V], [39.25, esc(e.numero), V], [69.35, 'Complemento', L], [76.35, esc(e.complemento), V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[59, 'Bairro', L], [232, esc(e.bairro), V], [25.55, 'CEP', L]]) + celulasCep(e.cep))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[59.1, 'Município', L], [232.4, esc(e.municipio), V], [25, 'UF', L], [173, esc(e.uf), V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[30.85, 'DDD', L], [31.5, esc(e.ddd), V], [51.75, 'Telefone', L], [89.85, esc(e.telefone), V], [30.85, 'DDD', L], [43.55, esc(e.dddFax), V], [29.05, 'FAX', L], [182.1, esc(e.fax), V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[129.5, 'Endereço eletrônico (e-mail)', V], [360, esc(e.email), V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[127.35, 'Razão Social da Empresa Remessa Expressa', V + ' neg'], [216.35, esc(p.courier.empresa), B], [35.45, 'CNPJ', V + ' neg'], [110.35, esc(p.courier.cnpj), B]]))}
+  <div class="esp6"></div>
+  ${tab(489.5, `<td class="num">01</td><td class="tit" style="width:467.5pt">Modalidade de Exportação: <span style="font-weight:400">Remessa Expressa</span></td>`)}
+  <div class="esp2"></div>
+  <table style="width:489.5pt"><colgroup><col style="width:22pt"><col style="width:24pt"><col style="width:60pt"><col style="width:44pt"><col style="width:100pt"><col style="width:19.5pt"><col style="width:22pt"><col style="width:198pt"></colgroup>
+    <tr><td class="num">02</td><td class="tit" colspan="4">Registro de Exportação:</td><td></td><td class="num" style="height:15pt">03</td><td class="tit" style="height:15pt;font-family:Calibri,Carlito,Arial,sans-serif">N° do CE ou CEE (expediente)</td></tr>
+    <tr><td colspan="2" style="height:16pt">MAWB</td><td class="lin" style="height:16pt">Nº <b>-</b></td><td style="height:16pt;text-align:right">HAWB</td><td class="lin" style="height:16pt">Nº <b>${esc(p.awb)}</b></td><td style="height:16pt"></td><td colspan="2" style="height:16pt">CE ${esc(p.numeroCE)}</td></tr>
+  </table>
+  <div class="esp"></div>
+  <table style="width:489.5pt"><colgroup><col style="width:22pt"><col style="width:2.8pt"><col style="width:177.15pt"><col style="width:78pt"><col style="width:28.35pt"><col style="width:181.2pt"></colgroup>
+    <tr><td class="num">04</td><td class="tit" colspan="3">Finalidade da Exportação:</td><td class="num">05</td><td class="tit">Classe do Produto:</td></tr>
+    <tr><td style="height:22.65pt"></td><td style="height:22.65pt"></td><td class="lin" style="height:22.65pt">3 - PESQUISA CLÍNICA</td><td colspan="2" style="height:22.65pt"></td><td class="val" style="height:22.65pt">2 - MATERIAL BIOLÓGICO HUMANO</td></tr>
+  </table>
+  <div class="esp"></div>
+  <table style="width:489.5pt"><colgroup><col style="width:22pt"><col style="width:2.8pt"><col style="width:453.6pt"><col style="width:11.1pt"></colgroup>
+    <tr><td class="num">06</td><td class="tit" colspan="3">Nome do Destinatário:</td></tr>
+    <tr><td style="height:22.25pt"></td><td style="height:22.25pt"></td><td class="lin" style="height:22.25pt">${esc(val(lab.nomeCompleto))}</td><td style="height:22.25pt"></td></tr>
+  </table>
+  <div class="esp2"></div>
+  ${tab(489.5, `<td class="num">07</td><td class="tit" style="width:467.5pt">Endereço do Destinatário:</td>`)}
+</div>
+<div class="pag">
+  ${tab(489.5, linha([[70.5, 'Rua/Avenida', L], [213.95, esc(val(lab.endereco)), V], [24.55, 'Nº', V], [34.8, '-', V], [69.35, 'Complemento', L], [76.35, '-', V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[59, 'Bairro', L], [232, '-', V], [25.55, 'CEP', L]]) + celulasCep(d.cep))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[59.1, 'Município', L], [232.4, esc(val(d.cid.municipio)), V], [25, 'UF', L], [173, esc(val(d.cid.uf)), V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[30.85, 'DDD', L], [31.5, esc(d.tel.ddd), V], [51, 'Telefone', L], [90.6, esc(d.tel.numero), V], [30.85, 'DDD', L], [43.55, esc(d.tel.ddd), V], [33.75, 'FAX', L], [177.4, esc(d.tel.numero), V]]))}
+  <div class="esp"></div>
+  ${tab(489.5, linha([[138, 'Endereço eletrônico (e-mail)', V], [351.5, '-', V]]))}
+  <div class="esp"></div><div class="esp2"></div>
+  <table style="width:489.5pt"><colgroup><col style="width:22pt"><col style="width:151.95pt"><col style="width:227.4pt"><col style="width:88.15pt"></colgroup>
+    <tr><td class="num">08</td><td class="tit" colspan="3">Descrição das Mercadorias Exportadas (<span class="vermelho">Quando possível preencher com todas as informações</span>)</td></tr>
+    <tr><td class="cabec" colspan="2">Nome Produto ou matéria–prima</td><td class="cabec">Natureza da mercadoria /Estágio de Fabricação</td><td class="cabec">QUANTIDADE EXPORTADA</td></tr>
+    ${itens}
+  </table>
+  <div class="esp"></div>
+  <div class="inst">
+    <p class="tt">Forma de preenchimento</p>
+    <p>Item 2 – Preencha como número do conhecimento de carga (MAWB ou HAWB);</p>
+    <p>Item 3 – Preencha com o número do Comunicado especial (CE) ou do Comunicado especial específico (CEE) emitido pela ANVISA;</p>
+    <p>Item 4 – Preencha com a finalidade de importação;</p>
+    <p>Item 5 – Preencha com a classe do produto;</p>
+    <p>Item 6 – Identificar com o nome completo do destinatário da carga/encomenda no exterior;</p>
+    <p>Item 7 – Preencher com o endereço completo do destinatário no exterior;</p>
+  </div>
+</div>
+<div class="pag">
+  <div class="inst">
+    <p>Item 8 – Descrever livremente da melhor forma possível cada item solicitado da característica do produto importado, separando-os por hífen; O estágio de fabricação encontra-se delimitado abaixo de Natureza do produto.</p>
+    <p>&nbsp;</p>
+    <p class="tt">Classes de Produtos</p>
+    <ol><li>Células e tecidos;</li><li>Material biológico humano;</li><li>Produto de terapia avançada investigacional.</li></ol>
+    <p class="tt">Finalidades de Exportação</p>
+    <ol><li>Diagnóstico laboratorial;</li><li>Pesquisa científica;</li><li>Pesquisa clínica;</li><li>Terapia avançada investigacional;</li></ol>
+    <p class="tt">Natureza da mercadoria/Estágio de Fabricação</p>
+    <ol><li>Produto acabado;</li><li>Amostras.</li></ol>
+  </div>
+</div>
+</body></html>`;
+}
+
+const OCASA = { empresa: 'Internacional Latino Americana de Serviços Ltda.', cnpj: '35.795.236/0002-27' };
+const PINEX = { empresa: 'Transportes Brasil Cargo Express LTDA.', cnpj: '20.494.657/0001-60' };
+const COV = { nomeCompleto: 'PPD Global Central Lab Specimen Processing', endereco: '155 West 38th Street', cidade: 'Covington, Ohio - KY', cep: '41015', telefone: '+1-513-283-9816', pais: 'Estados Unidos' };
+const HH = { nomeCompleto: 'PPD Global Central Lab Specimen Processing', endereco: '2 Tessender Drive', cidade: 'Highland Heights, KY', cep: '41076', telefone: '', pais: 'USA' };
+
+if (require.main === module) {
+  const dir = process.argv[2];
+  const casos = {
+    'previa-ocasa.html': { awb: 'PK2AAA000001', numeroCE: '101/2023', courier: OCASA, lab: COV, materiais: [{ tipo: 'Soro', totalMl: 2 }, { tipo: 'Urina', totalMl: 5 }, { tipo: 'Sangue', totalMl: 4 }] },
+    'previa-pinex.html': { awb: '94624', numeroCE: '24/2025', courier: PINEX, lab: HH, materiais: [{ tipo: 'Soro', totalMl: 2 }] }
+  };
+  for (const n of Object.keys(casos)) {
+    fs.writeFileSync(path.join(dir, n), html(casos[n]));
+    console.log(n, JSON.stringify(dados(casos[n])));
+  }
+  // Regras nos casos-limite
+  const base = { awb: 'X', numeroCE: '1/2020', courier: OCASA, lab: COV, materiais: [{ tipo: 'Soro', totalMl: 1 }] };
+  console.log('sem AWB', dados(Object.assign({}, base, { awb: '' })).erros);
+  console.log('sem CE', dados(Object.assign({}, base, { numeroCE: '' })).erros);
+  console.log('7 materiais', dados(Object.assign({}, base, { materiais: Array(7).fill(base.materiais[0]) })).erros);
+  console.log('courier vazio', dados(Object.assign({}, base, { courier: { empresa: '', cnpj: '' } })).erros);
+  console.log('Alemanha', JSON.stringify(cidadeDe('Rostock')), JSON.stringify(telefoneDe({ telefone: '', pais: 'Germany' })));
+  console.log('sem DDI', JSON.stringify(telefoneDe({ telefone: '(317) 2711200', pais: 'USA' })), JSON.stringify(telefoneDe({ telefone: '+1 (865) 380 9746', pais: 'USA' })));
+  console.log('2,5 mL', linhasMaterial([{ tipo: 'Plasma', totalMl: 2.5 }]));
+}

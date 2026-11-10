@@ -7279,12 +7279,24 @@
     return cards ? '<div class="ag-courier-stack">' + cards + '</div>' : '';
   }
 
+  // Nota deixada pela edicao de materiais na preparacao do transporte: quem, quando e o valor anterior.
+  function agendaMatBioAjusteHtml(ajuste) {
+    if (!ajuste) return '';
+    var quando = '';
+    var data = new Date(ajuste.em);
+    if (!isNaN(data.getTime())) quando = data.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
+    return '<div class="ag-mat-ajuste" role="note"><span class="material-symbols-outlined" aria-hidden="true">edit_note</span><span>Material ajustado na preparação do transporte' +
+      (ajuste.por ? ' · por ' + esc(ajuste.por) : '') + (quando ? ' · ' + esc(quando) : '') +
+      (ajuste.anterior ? ' · valor anterior: ' + esc(ajuste.anterior) : '') + '</span></div>';
+  }
+
   function agendaMatBioSummaryHtml(c) {
     c = c || {};
     var data = agendaMatBioParseJson(c.matBioJson);
     data.items = agendaMatBioGroupItems(data.items);
+    var nota = agendaMatBioAjusteHtml(data.ajuste);
     if (!data.items.length) {
-      return c.material ? esc(c.material) : '<span class="ag-mat-empty">Nenhum material informado.</span>';
+      return (c.material ? esc(c.material) : '<span class="ag-mat-empty">Nenhum material informado.</span>') + nota;
     }
     return '<div class="ag-mat-table-wrap"><table class="ag-mat-table"><colgroup>' +
       '<col class="ag-mat-col-subst"><col class="ag-mat-col-tubos"><col class="ag-mat-col-volume"><col class="ag-mat-col-total"><col class="ag-mat-col-ensaio">' +
@@ -7298,7 +7310,7 @@
           '<td class="r"><b>' + esc(it.segmentos && it.segmentos.length ? agendaFmtNumber(it.total, agendaMatBioUnitKey(it.unit) === 'L' ? 5 : 2) : '-') + '</b>' + (it.segmentos && it.segmentos.length ? '<span class="ag-mat-unit">' + esc(agendaMatBioUnitKey(it.unit)) + '</span>' : '') + '</td>' +
           '<td>' + esc(it.ensaio || '-') + '</td>' +
         '</tr>';
-      }).join('') + '</tbody></table></div>';
+      }).join('') + '</tbody></table></div>' + nota;
   }
 
   function agendaMatBioSegmentsHtml(it) {
@@ -7562,6 +7574,7 @@
       naoagendado: 'não agendado',
       pendente: 'pendente',
       docsgerados: 'docs gerados',
+      peticionamento: 'aguardando peticionamento',
       agendado: 'agendado',
       confirmado: 'confirmado',
       enviado: 'enviado',
@@ -7571,7 +7584,7 @@
   }
 
   function agendaLogisticaResumoData_(entries) {
-    var order = ['naoagendado', 'pendente', 'docsgerados', 'agendado', 'confirmado', 'enviado', 'entregue', 'cancelado'];
+    var order = ['naoagendado', 'pendente', 'docsgerados', 'peticionamento', 'agendado', 'confirmado', 'enviado', 'entregue', 'cancelado'];
     var counts = {};
     entries.forEach(function(entry) {
       counts[entry.statusKey] = (counts[entry.statusKey] || 0) + 1;

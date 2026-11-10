@@ -981,3 +981,21 @@ test('produto aceita unidade caixa e rejeita quantidade fracionária nessa unida
   assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].unit,'caixa');
   assert.throws(()=>f.server.farmaciaInitialData_({physical:1.5,blocked:0}, {id:created.id,data:{unit:'caixa',control:'quantity'}}, false),/Quantidade/);
 });
+
+test('formas farmacêuticas Spray e Ampola são aceitas e as listas do servidor, cliente e formulário coincidem', () => {
+  const fs = require('node:fs'), path = require('node:path'), root = path.join(__dirname, '..');
+  const f = fixture();
+  ['Spray', 'Ampola'].forEach((dosageForm, index) => {
+    const id = f.server.cadastrarProdutoFarmacia(f.product({ requestId:'dosage-form-request-000' + index, data:{ category:'medicine', name:'Produto ' + dosageForm, dosageForm } })).id;
+    assert.equal(f.server.getFarmaciaEstoque('P1', false).products.find(item => item.id === id).dosageForm, dosageForm);
+  });
+  const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+  const parseList = (source, name) => JSON.parse(source.match(new RegExp('var ' + name + ' = (\\[[^\\]]*\\]);'))[1].replace(/'/g, '"'));
+  const server = parseList(read('FarmaciaEstoque.gs'), 'FARMACIA_PRODUCT_DOSAGE_FORMS_');
+  const client = parseList(read('IndexFarmaciaViewScripts.html'), 'FARMACIA_PRODUCT_DOSAGE_FORM_OPTIONS');
+  const select = read('IndexContentAfterStock.html').match(/<select class="f-input f-select" id="farmaciaProductDosageForm">([\s\S]*?)<\/select>/)[1];
+  const html = [...select.matchAll(/<option>([^<]+)<\/option>/g)].map(match => match[1]);
+  assert.deepEqual(client, server);
+  assert.deepEqual(html, server);
+  for (const item of ['Spray', 'Spray nasal', 'Ampola']) assert.ok(server.includes(item), item);
+});

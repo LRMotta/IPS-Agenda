@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFile } = require('./helpers/load-app-script');
+const { runFile, runFiles } = require('./helpers/load-app-script');
 
 test('números de Transporte preservam ponto decimal e concordam com volumes das fórmulas', () => {
   const server = runFile('TransporteCodexConfig.gs');
@@ -85,4 +85,12 @@ test('PINEX usa parser real para volumes decimais textuais e quantidade agrupada
   const volumes = Array.from({ length: 8 }, (_, i) => [i === 1 ? '0.5' : i === 4 ? '2.5' : i === 6 ? '3' : '0']);
   assert.equal(server.transportePinexSampleSummary_('Pessoa Teste', checked, tubos, volumes, '2 slides'),
     'Patient P.T. - 1002 tube(s) of human bio sample - Total 0.50 mL / 2 slide(s) / 5.50 g');
+});
+
+test('PINEX COL. N° aceita 5 ou 6 dígitos e avisa nos demais casos', () => {
+  const server = runFiles(['AgendaServerRules.gs', 'WebApp.gs', 'TransporteCodexConfig.gs']);
+  const avisa = pinexColeta => server.transporteValidate_({ courier: 'PINEX', pinexColeta, materiais: [] })
+    .some(issue => /PINEX COL/.test(issue.text));
+  for (const valor of ['78429', '418207']) assert.equal(avisa(valor), false, valor);
+  for (const valor of ['', '1234', '1234567', '78 429', 'ABC12']) assert.equal(avisa(valor), true, valor);
 });

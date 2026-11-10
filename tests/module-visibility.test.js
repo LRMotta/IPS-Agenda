@@ -7,7 +7,7 @@ const { runHtmlScript } = require('./helpers/load-app-script');
 test('perfil altera somente a visibilidade dos modulos administrativos', () => {
   const rules = runHtmlScript('SharedAccessRules.html').CodexAccessRules;
   const operational = ['agenda', 'projetos', 'participantes', 'transporte'];
-  const administrative = ['usuarios', 'audit-log', 'diagnostico'];
+  const administrative = ['usuarios', 'audit-log', 'diagnostico', 'transporte-central'];
 
   operational.forEach((moduleName) => {
     assert.equal(rules.isModuleVisible('admin', moduleName), true);

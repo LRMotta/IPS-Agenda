@@ -9,7 +9,7 @@ function farmaciaLedgerSheetName_(studyId) {
   return 'Farmacia_SHA256_' + digest.map(function(byte) { return ('0' + ((byte + 256) % 256).toString(16)).slice(-2); }).join('');
 }
 var FARMACIA_LEDGER_HEADERS_ = ['ID', 'Tipo', 'Estudo_JSON', 'Restrito', 'Request_ID', 'Registrado_em_JSON', 'Autor_JSON', 'Dados_JSON'];
-var FARMACIA_PRODUCT_DOSAGE_FORMS_ = ['Comprimido', 'Cápsula', 'Solução oral', 'Suspensão oral', 'Solução injetável', 'Suspensão injetável', 'Pó para solução injetável', 'Creme', 'Pomada', 'Gel', 'Colírio', 'Solução oftálmica', 'Spray nasal', 'Solução inalatória', 'Aerossol', 'Supositório', 'Adesivo transdérmico', 'Outro'];
+var FARMACIA_PRODUCT_DOSAGE_FORMS_ = ['Comprimido', 'Cápsula', 'Solução oral', 'Suspensão oral', 'Solução injetável', 'Suspensão injetável', 'Pó para solução injetável', 'Ampola', 'Creme', 'Pomada', 'Gel', 'Colírio', 'Solução oftálmica', 'Spray', 'Spray nasal', 'Solução inalatória', 'Aerossol', 'Supositório', 'Adesivo transdérmico', 'Outro'];
 
 function farmaciaToday_() {
   return Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');

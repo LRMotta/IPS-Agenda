@@ -218,7 +218,7 @@ test('fluxo completo cria e atualiza participante vinculado', () => {
   assert.equal(sheet.rows[2][0], 5);
   assert.equal(sheet.rows[2][5], 'Novo Estudo');
   assert.deepEqual(counters.performance.map(entry => entry[1]), [
-    'lock_wait', 'read_participants', 'validate_prepare', 'persist_and_sync', 'total'
+    'lock_wait', 'read_participants', 'validate_prepare', 'write_row', 'audit', 'cache_invalidate', 'persist_and_sync', 'total'
   ]);
   assert.match(sheet.rows[2][sheet.rows[0].indexOf('ID Pessoa')], /^PES-[A-F0-9]{20}$/);
   assert.equal(counters.cache, 1);

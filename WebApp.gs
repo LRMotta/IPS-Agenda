@@ -7285,10 +7285,23 @@ function participanteReferenciaKey_(value) {
     .toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function participanteTabelaReferencias_(sh) {
-  if (!sh || sh.getLastRow() < 1) return null;
-  var values = sh.getDataRange().getValues();
-  var maxHeaderRows = Math.min(values.length, 10);
+function participanteColunaA1_(column) {
+  var name = '';
+  while (column > 0) { column--; name = String.fromCharCode(65 + column % 26) + name; column = Math.floor(column / 26); }
+  return name;
+}
+
+// Lê só o cabeçalho de cada aba; os dados completos são carregados apenas
+// quando a aba tem colunas de referência ao participante. Abas grandes sem
+// essas colunas (auditoria, logs) deixam de ser lidas integralmente.
+function participanteTabelaReferencias_(sh, stats) {
+  if (!sh) return null;
+  var lastRow = sh.getLastRow();
+  var lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return null;
+  var maxHeaderRows = Math.min(lastRow, 10);
+  var header = sh.getRange(1, 1, maxHeaderRows, lastCol).getValues();
+  if (stats) { stats.reads++; stats.cells += maxHeaderRows * lastCol; }
   var nomeAliases = ['participante', 'paciente', 'nomedoparticipante', 'nomedopaciente'];
   var idAliases = ['idparticipante', 'numerodeidentificacao', 'nodeidentificacao', 'identificacaoparticipante'];
   var projetoAliases = ['projeto', 'protocolo', 'estudo'];
@@ -7303,8 +7316,8 @@ function participanteTabelaReferencias_(sh) {
 
   for (var r = 0; r < maxHeaderRows; r++) {
     var map = {};
-    for (var c = 0; c < values[r].length; c++) {
-      var key = participanteReferenciaKey_(values[r][c]);
+    for (var c = 0; c < header[r].length; c++) {
+      var key = participanteReferenciaKey_(header[r][c]);
       if (key) map[key] = c;
     }
     var nomeCol = aliasIndex(map, nomeAliases);
@@ -7313,6 +7326,11 @@ function participanteTabelaReferencias_(sh) {
     var projetoCol = aliasIndex(map, projetoAliases);
     var cadastroCol = aliasIndex(map, cadastroAliases);
     if (idCol < 0 && projetoCol < 0 && cadastroCol < 0) continue;
+    var values = header;
+    if (lastRow > maxHeaderRows) {
+      values = sh.getRange(1, 1, lastRow, lastCol).getValues();
+      if (stats) { stats.reads++; stats.cells += lastRow * lastCol; }
+    }
     return {
       values: values,
       headerRow: r,
@@ -7325,12 +7343,31 @@ function participanteTabelaReferencias_(sh) {
   return null;
 }
 
+// Uma escrita por coluna da aba, em vez de uma chamada remota por célula.
+function participanteGravarCelulasIguais_(sh, rowNumbers, column, value) {
+  if (!rowNumbers.length) return;
+  if (typeof sh.getRangeList === 'function') {
+    var letter = participanteColunaA1_(column);
+    sh.getRangeList(rowNumbers.map(function(rowNumber) { return letter + rowNumber; })).setValue(value);
+    return;
+  }
+  rowNumbers.forEach(function(rowNumber) { sh.getRange(rowNumber, column).setValue(value); });
+}
+
+// Somente tempos e contagens, como nas demais etapas do salvamento.
+function codexLogSalvarParticipanteEtapa_(stage, startedAt, metadata) {
+  var now = Date.now();
+  codexLogPerformance_('salvarDadosParticipante', stage, now - startedAt, metadata, true);
+  return now;
+}
+
 function sincronizarNomeParticipanteReferencias_(ss, anterior, atual) {
   anterior = anterior || {};
   atual = atual || {};
   var idCadastro = String(atual.idCadastro || anterior.idCadastro || '').trim();
   var nomeNovo = String(atual.nome || '').trim();
-  if (!ss || !idCadastro || !nomeNovo) return { atualizadas: 0, abas: [] };
+  var stats = { reads: 0, cells: 0 };
+  if (!ss || !idCadastro || !nomeNovo) return { atualizadas: 0, abas: [], leituras: 0, celulasLidas: 0 };
 
   var sheets = typeof ss.getSheets === 'function' ? ss.getSheets() : [];
   var atualizadas = 0;
@@ -7349,7 +7386,7 @@ function sincronizarNomeParticipanteReferencias_(ss, anterior, atual) {
 
   sheets.forEach(function(sh) {
     if (!sh || participanteReferenciaKey_(sh.getName && sh.getName()) === 'participantes') return;
-    var table = participanteTabelaReferencias_(sh);
+    var table = participanteTabelaReferencias_(sh, stats);
     if (!table) return;
     var cadastroCol = table.cadastroCol;
     var matchedRows = [];
@@ -7373,17 +7410,16 @@ function sincronizarNomeParticipanteReferencias_(ss, anterior, atual) {
       sh.getRange(table.headerRow + 1, cadastroCol + 1).setValue('ID Cadastro Participante');
     }
 
-    matchedRows.forEach(function(r) {
-      sh.getRange(r + 1, table.nomeCol + 1).setValue(nomeNovo);
-      if (table.idCol >= 0 && String(atual.idParticipante || '').trim()) {
-        sh.getRange(r + 1, table.idCol + 1).setValue(String(atual.idParticipante).trim());
-      }
-      sh.getRange(r + 1, cadastroCol + 1).setValue(idCadastro);
-      atualizadas++;
-    });
+    var rowNumbers = matchedRows.map(function(r) { return r + 1; });
+    participanteGravarCelulasIguais_(sh, rowNumbers, table.nomeCol + 1, nomeNovo);
+    if (table.idCol >= 0 && String(atual.idParticipante || '').trim()) {
+      participanteGravarCelulasIguais_(sh, rowNumbers, table.idCol + 1, String(atual.idParticipante).trim());
+    }
+    participanteGravarCelulasIguais_(sh, rowNumbers, cadastroCol + 1, idCadastro);
+    atualizadas += rowNumbers.length;
     abas.push(String(sh.getName ? sh.getName() : ''));
   });
-  return { atualizadas: atualizadas, abas: abas };
+  return { atualizadas: atualizadas, abas: abas, leituras: stats.reads, celulasLidas: stats.cells };
 }
 
 function participantePossuiEventoAgenda_(participante) {
@@ -7696,6 +7732,7 @@ function salvarDadosParticipante(d) {
     sh.getRange(editRowIndex + 1, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
     gravarParticipanteCamposNovos_(sh, editRowIndex + 1, d, participantColumns, marcosParticipacaoPreparados);
     if (editRowIndex + 1 > 2) sh.getRange(editRowIndex + 1, 4).clearContent();
+    var stageStartedAt = codexLogSalvarParticipanteEtapa_('write_row', persistStartedAt, { rowCount: 1 });
     var referenciaAtual = participanteReferenciaCadastro_([
       d.id, d.nome, parseDate(d.dataNascimento), '', d.idParticipante,
       projeto, d.braco || ''
@@ -7703,7 +7740,12 @@ function salvarDadosParticipante(d) {
     // Referências externas só dependem destes três campos. Evitar uma varredura
     // completa das abas quando a edição é, por exemplo, de telefone ou endereço.
     if (participanteReferenciaAlterada_(referenciaAnterior, referenciaAtual)) {
-      sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual);
+      var sincronizacao = sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual) || {};
+      stageStartedAt = codexLogSalvarParticipanteEtapa_('sync_references', stageStartedAt, {
+        rowCount: sincronizacao.atualizadas,
+        instrumentedReadCalls: sincronizacao.leituras,
+        instrumentedCellsRead: sincronizacao.celulasLidas
+      });
     }
     if (typeof codexWriteAuditChanges_ === 'function') {
       codexWriteAuditChanges_('Cadastros', 'atualizarParticipacaoParticipante', d.id, [
@@ -7717,8 +7759,10 @@ function salvarDadosParticipante(d) {
       ], 'Cadastro de participação atualizado');
     }
     if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('atualizarCadastroParticipanteConcluido', 'Cadastros', d.id);
+    stageStartedAt = codexLogSalvarParticipanteEtapa_('audit', stageStartedAt, { rowCount: 0 });
     clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
+    codexLogSalvarParticipanteEtapa_('cache_invalidate', stageStartedAt, { rowCount: 0 });
     return concluirSalvarParticipante_('Participante atualizado com sucesso');
   } else {
     var maxId = 0;
@@ -7731,9 +7775,12 @@ function salvarDadosParticipante(d) {
     sh.getRange(targetRow, 1, 1, rowStart.length).setValues([rowStart]);
     sh.getRange(targetRow, 5, 1, rowAfterIdade.length).setValues([rowAfterIdade]);
     gravarParticipanteCamposNovos_(sh, targetRow, d, participantColumns, marcosParticipacaoPreparados);
+    var novoStageStartedAt = codexLogSalvarParticipanteEtapa_('write_row', persistStartedAt, { rowCount: 1 });
     if (typeof codexWriteAuditLog_ === 'function') codexWriteAuditLog_('criarParticipacaoParticipante', 'Cadastros', rowStart[0]);
+    novoStageStartedAt = codexLogSalvarParticipanteEtapa_('audit', novoStageStartedAt, { rowCount: 0 });
     clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
+    codexLogSalvarParticipanteEtapa_('cache_invalidate', novoStageStartedAt, { rowCount: 0 });
     return concluirSalvarParticipante_('Participante cadastrado com sucesso');
   }
   });
@@ -8454,6 +8501,7 @@ function getDashboardPendenciasVazio_() {
     kitsVencendo: [],
     counts: {
       courierNaoAgendada: 0,
+      courierNaoAgendadaSeguintes: 0,
       documentacaoTransporteSemEnvio: 0,
       transporteBackupNaoAgendado: 0,
       courierNaoConfirmada: 0,
@@ -8673,6 +8721,9 @@ function getDashboardPendencias_(estoque, perfContext) {
       }));
     });
     });
+    // "Courier não agendada" é horizonte, não atraso: só os próximos 5 dias úteis
+    // contam como pendência; os seguintes ficam em "Ver seguintes".
+    agendaPendenciasMarcarJanelaNaoAgendada_(out, feriados, hoje);
   }
   measure('classify_stock', (estoque || []).length, function() {
   (estoque || []).forEach(function(it) {
@@ -8764,6 +8815,40 @@ function agendaPendenciaDateKey_(d) {
     ('0' + (d.getMonth() + 1)).slice(-2),
     ('0' + d.getDate()).slice(-2)
   ].join('-');
+}
+
+var PENDENCIA_JANELA_NAO_AGENDADA_DIAS_UTEIS_ = 5;
+
+// Dias operacionais em (hoje, data]; datas de hoje ou passadas valem 0. Para ao passar do limite.
+function diasUteisAtePendencia_(hoje, data, feriados, limite) {
+  var inicio = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  var fim = new Date(data.getFullYear(), data.getMonth(), data.getDate());
+  var total = 0;
+  var cursor = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 1);
+  while (cursor.getTime() <= fim.getTime()) {
+    if (isDiaOperacionalPendencia_(cursor, feriados || {})) {
+      total++;
+      if (limite && total > limite) return total;
+    }
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+  }
+  return total;
+}
+
+// Marca foraDaJanela nos itens além de 5 dias úteis e separa as contagens.
+// Sem data válida, o item permanece na janela (visível).
+function agendaPendenciasMarcarJanelaNaoAgendada_(out, feriados, hoje) {
+  var limite = PENDENCIA_JANELA_NAO_AGENDADA_DIAS_UTEIS_;
+  var naJanela = 0;
+  var seguintes = 0;
+  out.courierNaoAgendada.forEach(function(item) {
+    var d = parseAgendaDateAny_(item.data);
+    var fora = !!d && diasUteisAtePendencia_(hoje, d, feriados, limite) > limite;
+    item.foraDaJanela = fora;
+    if (fora) seguintes++; else naJanela++;
+  });
+  out.counts.courierNaoAgendada = naJanela;
+  out.counts.courierNaoAgendadaSeguintes = seguintes;
 }
 
 function isDiaOperacionalPendencia_(d, feriados) {
@@ -13474,6 +13559,11 @@ function getAgendaCourierStatuses_() {
   if (!statuses.some(function(status) { return normText_(status) === 'docs gerados'; })) {
     var agendadoIndex = statuses.findIndex(function(status) { return normText_(status) === 'agendado'; });
     statuses.splice(agendadoIndex < 0 ? statuses.length : agendadoIndex, 0, 'Docs gerados');
+  }
+  // Peticionamento internacional: GRU e extrato pendentes (status gravado pelo Transporte; ver docs/TRANSPORTE_PETICIONAMENTO.md).
+  if (!statuses.some(function(status) { return normText_(status) === 'aguardando peticionamento'; })) {
+    var docsIndex = statuses.findIndex(function(status) { return normText_(status) === 'docs gerados'; });
+    statuses.splice(docsIndex < 0 ? statuses.length : docsIndex + 1, 0, 'Aguardando peticionamento');
   }
   return statuses;
 }

@@ -734,6 +734,9 @@ function transporteRegistrarDocumentacaoGerada_(info) {
   // Definir texto antes da escrita impede conversao de IDs em numeros.
   sh.getRange(rowNumber, 1).setNumberFormat('@');
   sh.getRange(rowNumber, 1, 1, TRANSPORTE_OPERACOES_HEADERS_.length).setValues(values);
+  var baseCobranca = { agendaId: agendaId, slot: slot, now: now, vinculoIniciadoEm: values[0][24] };
+  // adiarBaseCobranca: o chamador registra a base fora do lock (a leitura da Agenda inteira e lenta).
+  if (info.adiarBaseCobranca) return { registrado: true, agendaId: agendaId, slot: slot, referencia: referencia, row: rowNumber, baseCobranca: baseCobranca };
   try {
     if (typeof courierLembreteRegistrarBase_ === 'function') courierLembreteRegistrarBase_(agendaId, slot, now, values[0][24]);
   } catch (lembreteError) {
@@ -3118,8 +3121,8 @@ function transporteValidate_(registro) {
   if (awbCheck && !codexCourierIsValidAwb_(awbCheck, courier)) {
     issues.push({ type: 'warn', text: codexCourierAwbValidationMessage_(courier) });
   }
-  if (courier === 'PINEX' && !String(registro.pinexColeta || '').match(/^\d{6}$/)) {
-    issues.push({ type: 'warn', text: 'PINEX COL. NÂ° deve conter 6 digitos para envio PINEX.' });
+  if (courier === 'PINEX' && !String(registro.pinexColeta || '').match(/^\d{5,6}$/)) {
+    issues.push({ type: 'warn', text: 'PINEX COL. NÂ° deve conter 5 ou 6 digitos para envio PINEX.' });
   }
   if (!registro.materiais.some(function(m) { return m.ativo; })) {
     issues.push({ type: 'warn', text: 'Nenhum material biológico marcado na declaração.' });
@@ -6625,12 +6628,17 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
   return html + '</table><p style="margin:22px 0 22px 0;line-height:1.75;">Os documentos necess\u00e1rios para o agendamento est\u00e3o anexados a este e-mail.</p>';
 }
 
-function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, solicitarCaixa, saudacao) {
-  var registro;
-  try {
-    registro = transporteReadRegistro_() || {};
-  } catch (e) {
-    registro = {};
+// refInternaExterna: quando informada (inclusive vazia), dispensa a leitura do registro na planilha de Transporte.
+function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, solicitarCaixa, saudacao, refInternaExterna) {
+  var registro = {};
+  if (refInternaExterna !== undefined) {
+    registro.refInterna = refInternaExterna;
+  } else {
+    try {
+      registro = transporteReadRegistro_() || {};
+    } catch (e) {
+      registro = {};
+    }
   }
   var refInterna = String(registro.refInterna || '').trim();
   var rows = [

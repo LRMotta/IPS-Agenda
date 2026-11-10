@@ -210,6 +210,8 @@ function createAgendaRulesCore() {
 
   function recognizedCourierStatus(status) {
     if (status === 'naoaplicavel' || status === 'nao aplicavel' || status === 'nao se aplica' || status === 'n/a' || status === 'na') return 'naoaplicavel';
+    // GRU e extrato pendentes: nao e "nao agendada", "aguardando confirmacao" nem "enviado" e nao dispara cobranca.
+    if (/aguardando\s+peticion/.test(status)) return 'peticionamento';
     if (/nao[\s-]*agend/.test(status)) return 'naoagendado';
     if (status.indexOf('cancel') > -1) return 'cancelado';
     // Entrega e envio prevalecem sobre estados anteriores em rotulos compostos.
