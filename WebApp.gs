@@ -8501,7 +8501,6 @@ function getDashboardPendenciasVazio_() {
     kitsVencendo: [],
     counts: {
       courierNaoAgendada: 0,
-      courierNaoAgendadaSeguintes: 0,
       documentacaoTransporteSemEnvio: 0,
       transporteBackupNaoAgendado: 0,
       courierNaoConfirmada: 0,
@@ -8721,9 +8720,6 @@ function getDashboardPendencias_(estoque, perfContext) {
       }));
     });
     });
-    // "Courier não agendada" é horizonte, não atraso: só os próximos 5 dias úteis
-    // contam como pendência; os seguintes ficam em "Ver seguintes".
-    agendaPendenciasMarcarJanelaNaoAgendada_(out, feriados, hoje);
   }
   measure('classify_stock', (estoque || []).length, function() {
   (estoque || []).forEach(function(it) {
@@ -8817,8 +8813,6 @@ function agendaPendenciaDateKey_(d) {
   ].join('-');
 }
 
-var PENDENCIA_JANELA_NAO_AGENDADA_DIAS_UTEIS_ = 5;
-
 // Dias operacionais em (hoje, data]; datas de hoje ou passadas valem 0. Para ao passar do limite.
 function diasUteisAtePendencia_(hoje, data, feriados, limite) {
   var inicio = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
@@ -8833,22 +8827,6 @@ function diasUteisAtePendencia_(hoje, data, feriados, limite) {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
   }
   return total;
-}
-
-// Marca foraDaJanela nos itens além de 5 dias úteis e separa as contagens.
-// Sem data válida, o item permanece na janela (visível).
-function agendaPendenciasMarcarJanelaNaoAgendada_(out, feriados, hoje) {
-  var limite = PENDENCIA_JANELA_NAO_AGENDADA_DIAS_UTEIS_;
-  var naJanela = 0;
-  var seguintes = 0;
-  out.courierNaoAgendada.forEach(function(item) {
-    var d = parseAgendaDateAny_(item.data);
-    var fora = !!d && diasUteisAtePendencia_(hoje, d, feriados, limite) > limite;
-    item.foraDaJanela = fora;
-    if (fora) seguintes++; else naJanela++;
-  });
-  out.counts.courierNaoAgendada = naJanela;
-  out.counts.courierNaoAgendadaSeguintes = seguintes;
 }
 
 function isDiaOperacionalPendencia_(d, feriados) {

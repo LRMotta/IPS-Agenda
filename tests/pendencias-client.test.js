@@ -360,30 +360,14 @@ test('falha da confirmacao atual restaura rotulo e habilita nova tentativa', () 
   assert.equal(context._pendenciaEntregaPendente, pending);
 });
 
-test('Courier não agendada mostra só a janela e abre "Ver seguintes" sob demanda', () => {
-  const { context, grid, buttons } = fixture();
-  const dentro = { agendaId: 'A', data: '06/10/2026', participante: 'Dentro', slot: 'Transporte I', courier: 'OCASA' };
-  const fora = { agendaId: 'B', data: '30/11/2026', participante: 'Longe', slot: 'Transporte I', courier: 'OCASA', foraDaJanela: true };
-  const dados = { courierNaoAgendada: [dentro, fora], counts: { courierNaoAgendada: 1, courierNaoAgendadaSeguintes: 1 } };
-  context.renderDashboardPendencias(dados);
-  const html = () => grid.children[0].html;
-  assert.match(html(), /dash-pend-count">1</);
-  assert.match(html(), /Próximos 5 dias úteis/);
-  assert.match(html(), /Dentro/);
-  assert.doesNotMatch(html(), /Longe/);
-  assert.match(html(), /Ver seguintes \(1\)/);
-  buttons.filter(button => button.card === grid.children[0]).pop().click(); // O último botão do cartão é "Ver seguintes".
-  assert.match(html(), /Longe/);
-  assert.match(html(), /dash-pend-count">1</);
-  assert.match(html(), /Ocultar seguintes/);
-});
-
-test('sem itens na janela o cartão explica e mantém os seguintes disponíveis', () => {
+test('Courier não agendada mostra todas as pendências, sem "Ver seguintes"', () => {
   const { context, grid } = fixture();
-  const fora = { agendaId: 'B', data: '30/11/2026', participante: 'Longe', foraDaJanela: true };
-  context.renderDashboardPendencias({ courierNaoAgendada: [fora], counts: { courierNaoAgendada: 0, courierNaoAgendadaSeguintes: 1 } });
-  assert.match(grid.children[0].html, /dash-pend-count">0</);
-  assert.match(grid.children[0].html, /Sem pendências nos próximos 5 dias úteis/);
-  assert.match(grid.children[0].html, /Ver seguintes \(1\)/);
-  assert.doesNotMatch(grid.children[0].html, /Longe/);
+  const perto = { agendaId: 'A', data: '06/10/2026', participante: 'Perto', slot: 'Transporte I', courier: 'OCASA' };
+  const longe = { agendaId: 'B', data: '30/11/2026', participante: 'Longe', slot: 'Transporte I', courier: 'OCASA' };
+  context.renderDashboardPendencias({ courierNaoAgendada: [perto, longe], counts: { courierNaoAgendada: 2 } });
+  const html = grid.children[0].html;
+  assert.match(html, /dash-pend-count">2</);
+  assert.match(html, /Perto/);
+  assert.match(html, /Longe/);
+  assert.doesNotMatch(html, /Ver seguintes|Próximos 5 dias úteis/);
 });

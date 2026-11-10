@@ -196,6 +196,8 @@ test('Acompanhar: confirmação da courier, PINEX e em trânsito, com as regras 
   assert.deepEqual(r.acompanhar.pinex.map((i) => [i.agendaId, i.slot]), [['c2', '1']]);
   assert.deepEqual(r.tarefas.map((x) => [x.agendaId, x.titulo]), [['c2', 'Informar os números da PINEX']], 'também vira tarefa em Para fazer');
   assert.deepEqual(r.acompanhar.transito.map((i) => [i.agendaId, i.slot, i.slotRotulo, i.awb, i.trackingUrl]), [['c3', '1', 'Transporte I', '222', 'https://rastreio.example.invalid/222']]);
+  // Enviada em 28/09 e hoje é 02/10: 4 dias corridos (a contagem da aba Em trânsito).
+  assert.equal(r.acompanhar.transito[0].diasDesdeEnvio, 4);
 });
 
 test('Backups não agendados: Backup e Backup II, qualquer data, com prazo e sem virar tarefa', () => {

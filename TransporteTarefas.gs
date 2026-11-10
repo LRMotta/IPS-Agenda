@@ -138,8 +138,11 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje) {
       saida.peticionamento.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, statusCourier: statusTexto }));
     } else if (status === 'enviado') {
+      // Dias corridos desde a data do envio na Agenda (null sem data valida ou com data futura).
+      var diasDesdeEnvio = data && data.getTime() <= hoje.getTime() ? Math.round((hoje.getTime() - data.getTime()) / 86400000) : null;
       saida.transito.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
-        destino: String(r[cfg.destino] || '').trim(), awb: awb, trackingUrl: agendaTrackingUrl_(awb, nome), statusCourier: statusTexto }));
+        destino: String(r[cfg.destino] || '').trim(), awb: awb, trackingUrl: agendaTrackingUrl_(awb, nome), statusCourier: statusTexto,
+        diasDesdeEnvio: diasDesdeEnvio }));
     } else if (familiaPinex && fase === 'resposta' && !passada) {
       saida.pinex.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, statusCourier: statusTexto }));

@@ -130,8 +130,8 @@ const COMPLETA = {
   acompanhar: {
     confirmacao: [ITEM({ agendaId: 'c1', prazoLabel: 'Em 3h' })],
     pinex: [ITEM({ agendaId: 'p1', courier: 'PINEX (Agendamento)', awb: '' })],
-    transito: [ITEM({ agendaId: 't1', slot: '2', slotRotulo: 'Transporte II', courier: 'DHL', awb: '222', trackingUrl: 'https://rastreio.example.invalid/222' }),
-      ITEM({ agendaId: 't2', courier: 'MARKEN', awb: '333', trackingUrl: '' })] },
+    transito: [ITEM({ agendaId: 't1', slot: '2', slotRotulo: 'Transporte II', courier: 'DHL', awb: '222', trackingUrl: 'https://rastreio.example.invalid/222', diasDesdeEnvio: 3 }),
+      ITEM({ agendaId: 't2', courier: 'MARKEN', awb: '333', trackingUrl: '', diasDesdeEnvio: 1 })] },
   backups: [ITEM({ agendaId: 'b1', slotRotulo: 'Backup', prazoLabel: 'Atrasada', awb: '' }), ITEM({ agendaId: 'b2', slotRotulo: 'Backup II', awb: '' })]
 };
 
@@ -147,14 +147,31 @@ test('Acompanhar, Mais adiante e Backups: seções, acordeão, rastreio, entrega
       await page.evaluate(() => transpCentralCarregar(false));
       await page.evaluate((resposta) => window.__pedidos[0].ok(resposta), COMPLETA);
       // Contagens nas abas.
-      assert.equal(await page.locator('#tcTabAcompanhar').innerText(), 'Acompanhar (4)');
+      assert.equal(await page.locator('#tcTabAcompanhar').innerText(), 'Acompanhar (2)');
+      assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito (2)');
       assert.equal(await page.locator('#tcTabAdiante').innerText(), 'Mais adiante (3)');
       assert.equal(await page.locator('#tcTabBackups').innerText(), 'Backups não agendados (2)');
       // Acompanhar.
       await page.evaluate(() => transpCentralAba('acompanhar'));
       const acomp = await page.locator('#tcAcompanhar').innerText();
-      assert.match(acomp, /Aguardando confirmação da courier[\s\S]*Em 3h[\s\S]*Aguardando resposta da PINEX[\s\S]*Em trânsito/i);
+      assert.match(acomp, /Aguardando confirmação da courier[\s\S]*Em 3h[\s\S]*Aguardando resposta da PINEX/i);
+      assert.doesNotMatch(acomp, /Em trânsito/i, 'os envios em trânsito ficam na aba própria');
+      await page.locator('#tcAcompanhar [data-tc-abrir="c1"]').click();
+      assert.equal(await page.evaluate(() => window.__aberto), 'c1');
+      // Em trânsito: aba própria, contagem de dias e ações lado a lado.
+      await page.evaluate(() => transpCentralAba('transito'));
+      assert.equal(await page.locator('#tcPanelTransito').isVisible(), true);
+      assert.equal(await page.locator('#tcPanelAcompanhar').isVisible(), false);
+      const transito = await page.locator('#tcTransito').innerText();
+      assert.match(transito, /Pessoa X[\s\S]*Enviada há 3 dias[\s\S]*Enviada há 1 dia/);
       assert.equal(await page.locator('[data-tc-rastreio]').count(), 1, 'lupa só com rastreio');
+      if (width >= 1280) {
+        const lupa = await page.locator('#tcTransito [data-tc-rastreio]').boundingBox();
+        const botao = await page.locator('#tcTransito [data-tc-entrega^="t1|"]').boundingBox();
+        assert.ok(Math.abs((lupa.y + lupa.height / 2) - (botao.y + botao.height / 2)) < 4, 'lupa e Confirmar entrega na mesma linha');
+        const pagina = await page.locator('#page-transporte-central .tc-wrap').boundingBox();
+        assert.ok(pagina.width > 1000, 'a tela usa a largura toda: ' + pagina.width);
+      }
       await page.locator('[data-tc-rastreio]').click();
       assert.equal(await page.evaluate(() => window.__rastreio), 'https://rastreio.example.invalid/222');
       await page.locator('[data-tc-entrega^="t1|"]').click();
@@ -163,9 +180,8 @@ test('Acompanhar, Mais adiante e Backups: seções, acordeão, rastreio, entrega
       await page.evaluate(() => window.transpCentralAposEntrega());
       assert.equal(await page.evaluate(() => window.__pedidos.length), 2);
       await page.evaluate((resposta) => window.__pedidos[1].ok(resposta), Object.assign({}, COMPLETA, { acompanhar: Object.assign({}, COMPLETA.acompanhar, { transito: [] }) }));
-      assert.match(await page.locator('#tcAcompanhar').innerText(), /Em trânsito[\s\S]*Nada por aqui/i);
-      await page.locator('#tcAcompanhar [data-tc-abrir="c1"]').click();
-      assert.equal(await page.evaluate(() => window.__aberto), 'c1');
+      assert.match(await page.locator('#tcTransito').innerText(), /Nenhum transporte em trânsito/i);
+      assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito');
       // Mais adiante: primeira semana aberta, uma por vez, só consulta.
       await page.evaluate(() => transpCentralAba('adiante'));
       assert.equal(await page.locator('.tc-semana-cab').first().getAttribute('aria-expanded'), 'true');

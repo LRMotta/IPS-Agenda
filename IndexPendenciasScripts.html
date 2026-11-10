@@ -11,7 +11,6 @@
   var STATE = window.STATE;
   STATE.pendencias = STATE.pendencias || {};
   STATE.pendencias.expanded = STATE.pendencias.expanded || {};
-  STATE.pendencias.seguintes = STATE.pendencias.seguintes || {};
 
   function pendenciasWarning(data) {
     var unavailable = data && data.unavailable;
@@ -294,21 +293,13 @@
       var unavailable = p.unavailable && p.unavailable[card.key];
       var cardKey = (gridId || 'pendenciasGrid') + ':' + card.key;
       var expanded = !!STATE.pendencias.expanded[cardKey];
-      // "Courier não agendada" mostra só a janela de 5 dias úteis; os seguintes
-      // (foraDaJanela) aparecem sob demanda e não entram no total do cartão.
-      var janela = card.key === 'courierNaoAgendada';
-      var itensNaJanela = janela ? (card.items || []).filter(function(it) { return !it.foraDaJanela; }) : (card.items || []);
-      var itensSeguintes = janela ? (card.items || []).filter(function(it) { return it.foraDaJanela; }) : [];
-      var seguintesAberto = janela && itensSeguintes.length > 0 && !!STATE.pendencias.seguintes[cardKey];
-      var total = janela
-        ? (counts[card.key] !== undefined ? Number(counts[card.key]) || 0 : itensNaJanela.length)
-        : (counts[card.key] || (card.items || []).length || 0);
+      var total = counts[card.key] || (card.items || []).length || 0;
       // Inclui contagem e indisponibilidade: itens iguais não garantem card igual.
-      var signature = JSON.stringify([card.items, total, unavailable || '', !!loading, seguintesAberto]);
+      var signature = JSON.stringify([card.items, total, unavailable || '', !!loading]);
       var previous = grid.querySelector ? grid.querySelector('[data-pendencia-card="' + cardKey + '"]') : null;
       if (previous && previous._pendenciasSignature === signature) return { previous: previous };
       var urgentTotal = card.priority ? (card.items || []).filter(pendenciaUrgente24h).length : 0;
-      var cardItems = janela ? (seguintesAberto ? itensNaJanela.concat(itensSeguintes) : itensNaJanela) : (card.items || []);
+      var cardItems = card.items || [];
       var remaining = Math.max(0, cardItems.length - PENDENCIAS_VISIBLE_LIMIT);
       function renderRows(items, offset) {
         return items.map(function(it, index) {
@@ -325,7 +316,7 @@
               confirmarEntregaPendencia(event, it.agendaId, it.slot, it.awb, it.participante, it.courier, it.temperatura, it.data, it.hora, it.projeto, it.visita);
             }) + '><span class="material-symbols-outlined">task_alt</span><span>Confirmar entrega</span></button>'
           : '';
-        return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (it.foraDaJanela ? ' dash-pend-seguinte' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '">' +
+        return '<div class="dash-pend-item' + (urgent ? ' urgent' : '') + (itemIndex >= PENDENCIAS_VISIBLE_LIMIT ? ' dash-pend-overflow' : '') + '">' +
           (urgent ? '<div class="dash-pend-alert"><span class="material-symbols-outlined">priority_high</span>' + esc(prazo || 'até 24h') + '</div>' : '') +
           '<div class="dash-pend-row"><button type="button" class="dash-pend-text dash-pend-open" title="' + esc((r.main || '') + ' ' + (r.meta || '')) + '"' + bindAction(action) + '>' +
             '<span class="dash-pend-main">' + esc(r.main || '-') + '</span>' +
@@ -337,21 +328,11 @@
       var rows = unavailable ? '' : renderRows(expanded ? cardItems : cardItems.slice(0, PENDENCIAS_VISIBLE_LIMIT), 0);
       if (loading) rows = '<div class="dash-pend-loading" role="status"><span>Carregando...</span><div class="dash-pend-skeleton" aria-hidden="true"></div><div class="dash-pend-skeleton short" aria-hidden="true"></div></div>';
       else if (unavailable) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">warning</span>' + esc(unavailable) + '</div>';
-      else if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>' + (janela && itensSeguintes.length ? 'Sem pendências nos próximos 5 dias úteis' : 'Sem pendências') + '</div>';
-      if (janela && !loading && !unavailable) {
-        rows = '<div class="dash-pend-window-note">Próximos 5 dias úteis' + (itensSeguintes.length ? ' · ' + itensSeguintes.length + ' seguinte(s) depois' : '') + '</div>' + rows;
-      }
+      else if (!rows) rows = '<div class="dash-pend-empty"><span class="material-symbols-outlined">check_circle</span>Sem pendências</div>';
       var expandButton = remaining && !unavailable ? '<button type="button" class="dash-pend-more" data-remaining="' + remaining + '" aria-expanded="' + (expanded ? 'true' : 'false') + '"' + bindAction(function(event, button) { togglePendenciasCard(button || event.currentTarget); }) + '>' +
         '<span class="dash-pend-more-label">' + (expanded ? 'Mostrar menos' : 'Mostrar mais (' + remaining + ')') + '</span>' +
         '<span class="material-symbols-outlined">' + (expanded ? 'expand_less' : 'expand_more') + '</span>' +
       '</button>' : '';
-      var seguintesButton = janela && itensSeguintes.length && !loading && !unavailable
-        ? '<button type="button" class="dash-pend-more dash-pend-seguintes" aria-expanded="' + (seguintesAberto ? 'true' : 'false') + '"' + bindAction(function() {
-            STATE.pendencias.seguintes[cardKey] = !seguintesAberto;
-            renderDashboardPendencias(p, gridId, loading);
-          }) + '><span class="dash-pend-more-label">' + (seguintesAberto ? 'Ocultar seguintes' : 'Ver seguintes (' + itensSeguintes.length + ')') + '</span>' +
-          '<span class="material-symbols-outlined">' + (seguintesAberto ? 'expand_less' : 'expand_more') + '</span></button>'
-        : '';
       var html = '<div data-pendencia-card="' + esc(cardKey) + '" aria-busy="' + (!!loading) + '" class="dash-pend-card' + (card.priority ? ' priority' : '') + (expanded ? ' expanded' : '') + '" style="--tone:' + card.tone + ';--tone-bg:' + card.bg + '">' +
         '<div class="dash-pend-head">' +
           '<div class="dash-pend-icon"><span class="material-symbols-outlined">' + card.icon + '</span></div>' +
@@ -359,7 +340,7 @@
           (urgentTotal ? '<div class="dash-pend-urgent-count">' + esc(urgentTotal) + ' urgentes</div>' : '') +
           '<div class="dash-pend-count"' + (loading ? ' aria-label="Contagem em carregamento"' : '') + '>' + (loading || unavailable ? '—' : esc(total)) + '</div>' +
         '</div>' +
-        '<div class="dash-pend-list">' + rows + '</div>' + expandButton + seguintesButton +
+        '<div class="dash-pend-list">' + rows + '</div>' + expandButton +
       '</div>';
       return { previous: previous, html: html, signature: signature, handlers: handlers,
         mountRemaining: remaining && !expanded && !unavailable ? function(element) {

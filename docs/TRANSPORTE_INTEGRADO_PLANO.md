@@ -130,14 +130,14 @@ Em trânsito reutiliza a regra do cartão `awbEnviadaNaoEntregue`: lupa `travel_
 
 **Backups não agendados.** Mesmos dados e ordem do cartão `transporteBackupNaoAgendado`, incluindo Backup II, com o aviso de prazo. Botão "Abrir agendamento" leva ao registro na Agenda, onde já estão "Criar novo Envio de Amostras" e "Usar agendamento futuro". Não duplicar essas opções. Sem aviso no "Para fazer".
 
-**Pendências.** O cartão "Courier não agendada" mostra só a janela de 5 dias úteis, com opção "Ver seguintes". Demais cartões iguais.
+**Pendências.** Sem mudança: o cartão "Courier não agendada" mostra todas as pendências. A janela de 5 dias úteis vale só na tela do Transporte (decisão do usuário em 2026-11-09, que reverteu a janela implantada na Etapa 1).
 
 ## 5. Etapas
 
 ### Etapa 1: ajustes independentes
 
 - `pinexColeta` aceita `/^\d{5,6}$/` em `TransporteCodexConfig.gs` (~3121) e `TransporteApp.html` (~2180).
-- Pendências: janela de 5 dias úteis e "Ver seguintes" em `IndexPendenciasScripts.html` (`renderDashboardPendencias`, compartilhado com o Dashboard) e `WebApp.gs` (~8446–8620). Contagens e totais devem deixar claro o que está na janela. Reaproveitar `isDiaOperacionalPendencia_`.
+- Pendências: a janela de 5 dias úteis com "Ver seguintes" foi implantada e depois revertida por decisão do usuário (2026-11-09); o cartão mostra todas as pendências.
 
 Testes: `tests/transport-numbers.test.js`, `tests/pendencias-*.test.js`, `tests/dashboard-*`.
 

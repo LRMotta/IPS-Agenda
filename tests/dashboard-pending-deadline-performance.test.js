@@ -112,8 +112,8 @@ test('documentação usa a última linha com ID duplicado e substitui apenas o s
   assert.equal(f.calls.length, 3); // Uma por linha; documentos conserva seu cálculo independente.
 });
 
-test('Courier não agendada conta só os próximos 5 dias úteis e separa os seguintes', () => {
-  // Hoje: sexta 02/10/2026; segunda 05/10 é feriado. Dias úteis: 06, 07, 08, 09 e 12/10.
+test('Courier não agendada lista todas as pendências, sem janela de dias úteis', () => {
+  // Decisão do usuário (09/11/2026): a janela de 5 dias úteis vale só na tela do Transporte (piloto).
   const f = fixture();
   const naoAgendada = (r, i) => { r[i.c1.nome] = 'OCASA'; r[i.c1.status] = 'Não Agendado'; };
   f.add('hoje', '02/10/2026', 'Agendado', naoAgendada);
@@ -121,20 +121,8 @@ test('Courier não agendada conta só os próximos 5 dias úteis e separa os seg
   f.add('sexto', '13/10/2026', 'Agendado', naoAgendada);
   f.add('longe', '30/11/2026', 'Agendado', naoAgendada);
   const result = f.server.getDashboardPendencias_([]);
-  const fora = id => result.courierNaoAgendada.find(item => item.agendaId === id).foraDaJanela;
-  assert.deepEqual(['hoje', 'quinto', 'sexto', 'longe'].map(fora), [false, false, true, true]);
-  assert.equal(result.courierNaoAgendada.length, 4);
-  assert.equal(result.counts.courierNaoAgendada, 2);
-  assert.equal(result.counts.courierNaoAgendadaSeguintes, 2);
-});
-
-test('itens sem data válida permanecem na janela e documentação gerada não conta como seguinte', () => {
-  const f = fixture();
-  f.add('sem-data', 'inválida', 'Agendado', (r, i) => { r[i.c1.nome] = 'OCASA'; r[i.c1.status] = 'Não Agendado'; });
-  f.add('longe', '30/11/2026', 'Agendado', (r, i) => { r[i.c1.nome] = 'OCASA'; r[i.c1.status] = 'Não Agendado'; });
-  f.server.transporteDocumentosSemEnvioPendencias_ = () => [{ agendaId: 'longe', slot: '1', referencia: 'DOC' }];
-  const result = f.server.getDashboardPendencias_([]);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.courierNaoAgendada.map(item => [item.agendaId, item.foraDaJanela]))), [['sem-data', false]]);
-  assert.equal(result.counts.courierNaoAgendada, 1);
-  assert.equal(result.counts.courierNaoAgendadaSeguintes, 0);
+  assert.deepEqual(Array.from(result.courierNaoAgendada, item => item.agendaId).sort(), ['hoje', 'longe', 'quinto', 'sexto']);
+  assert.equal(result.counts.courierNaoAgendada, 4);
+  assert.equal(result.courierNaoAgendada.some(item => 'foraDaJanela' in item), false);
+  assert.equal('courierNaoAgendadaSeguintes' in result.counts, false);
 });
