@@ -35,9 +35,21 @@
     Array.prototype.forEach.call(paineis, function(p) { p.hidden = !!mostrar || p.id !== 'tcPanel' + TRANSP_CENTRAL_STATE.aba.charAt(0).toUpperCase() + TRANSP_CENTRAL_STATE.aba.slice(1); });
   }
 
+  // Transportes concluídos nesta tela, por visita: a lista de tarefas só é relida ao voltar para ela, então sem
+  // este registro uma visita com 3 transportes voltaria ao I depois do II.
+  var TC_FEITOS = {};
+
+  function transpCentralMarcarFeito(agendaId, slot) {
+    if (agendaId && slot) TC_FEITOS[agendaId + '|' + slot] = true;
+  }
+
+  // Próximo transporte da visita que ainda falta: primeiro os que vêm depois do atual, na ordem; depois os anteriores.
   function transpCentralProximoTransporte(tarefa, slotAtual) {
     var lista = (tarefa && tarefa.transportes) || [];
-    return lista.filter(function(t) { return t.slot !== slotAtual; })[0] || null;
+    var agendaId = tarefa && tarefa.agendaId;
+    var i = lista.map(function(t) { return t.slot; }).indexOf(slotAtual);
+    var ordem = i >= 0 ? lista.slice(i + 1).concat(lista.slice(0, i)) : lista;
+    return ordem.filter(function(t) { return t.slot !== slotAtual && !TC_FEITOS[agendaId + '|' + t.slot]; })[0] || null;
   }
 
   function transpCentralTarefa(agendaId) {
@@ -245,6 +257,7 @@
   }
 
   function transpCentralHtmlFim(tarefa) {
+    transpCentralMarcarFeito(TC_ENVIO.agendaId, TC_ENVIO.slot);
     var proximo = transpCentralProximoTransporte(tarefa, TC_ENVIO.slot);
     var outras = ((TRANSP_CENTRAL_STATE.dados && TRANSP_CENTRAL_STATE.dados.tarefas) || []).filter(function(t) { return t.agendaId !== TC_ENVIO.agendaId; });
     var botoes = proximo ? '<button type="button" class="btn-new" data-tc-act="proximo-transporte" data-tc-slot="' + esc(proximo.slot) + '">Ir ao próximo transporte desta visita</button>'

@@ -67,8 +67,13 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.equal(await page.locator('#tcFazer').getAttribute('aria-busy'), 'false');
       assert.equal(await page.locator('.tc-title').innerText(), 'Preparar 2 transportes');
       assert.equal(await page.locator('#tcTabFazer').innerText(), 'Para fazer (2)');
-      assert.match(await page.locator('#tcFazer').innerText(), /Uma tarefa por vez, na ordem em que o sistema decide/);
-      assert.doesNotMatch(await page.locator('#page-transporte-central .tc-head').innerText(), /Uma tarefa por vez/, 'a frase não fica mais no topo de todas as abas');
+      // Não fica preso à primeira tarefa: cada transporte da próxima tem seu próprio botão, e cada linha da lista também começa.
+      assert.equal(await page.locator('.tc-next [data-tc-comecar][data-tc-slot]').count(), 2);
+      assert.match(await page.locator('.tc-next .btn-new').innerText(), /Começar os 2 transportes/);
+      assert.equal(await page.locator('.tc-list .tc-item [data-tc-comecar]').count(), 1);
+      assert.doesNotMatch(await page.locator('.tc-list').innerText(), /SITUAÇÃO|Situação/);
+      assert.match(await page.locator('#tcFazer').innerText(), /Sugerida pelo sistema: a de prazo mais próximo/);
+      assert.doesNotMatch(await page.locator('#page-transporte-central .tc-head').innerText(), /Sugerida pelo sistema/, 'a frase não fica mais no topo de todas as abas');
       const titulo = await page.locator('.tc-title').innerText();
       assert.doesNotMatch(titulo, /Backup|Transporte I/, 'o tipo do transporte não vai no título');
       // Cada transporte numa faixa: tipo, situação, courier · temperatura e destino em blocos próprios.

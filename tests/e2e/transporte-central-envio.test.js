@@ -1,5 +1,5 @@
 'use strict';
-/* global document, window, transpCentralCarregar, transpCentralComecar, TC_ENVIO */
+/* global document, window, transpCentralCarregar, transpCentralComecar, TC_ENVIO, transpCentralMarcarFeito, transpCentralProximoTransporte */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -287,5 +287,26 @@ test('passo ANVISA: formulário no quadro isolado, bloqueios, concluir e fim com
     await responder(page, 'concluirAnvisaTransporteEnvio', { ok: true, versao: 6, destinatarios: ['aline@example.invalid'] });
     assert.match(await page.locator('.tc-wiz-main').innerText(), /formulário ANVISA foi enviado por e-mail a quem peticiona[\s\S]*anexar e enviar à courier/);
     assert.deepEqual(erros, []);
+  } finally { await browser.close(); }
+});
+
+test('visita com 3 transportes: "Ir ao próximo" nunca volta a um transporte já concluído nesta tela', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const { page, erros } = await abrir(browser, 1280);
+    const resultado = await page.evaluate(() => {
+      const tarefa = { agendaId: 'v3', transportes: [{ slot: '1' }, { slot: '2' }, { slot: '3' }] };
+      const proximo = (atual) => { transpCentralMarcarFeito('v3', atual); const p = transpCentralProximoTransporte(tarefa, atual); return p ? p.slot : null; };
+      // Sequência I -> II -> III: depois do II vem o III (antes voltava ao I).
+      const sequencia = [proximo('1'), proximo('2'), proximo('3')];
+      // Começando só pelo II: depois dele vem o III e, em seguida, o I que ainda falta.
+      const outra = { agendaId: 'w3', transportes: [{ slot: '1' }, { slot: '2' }, { slot: '3' }] };
+      const pelo = (atual) => { transpCentralMarcarFeito('w3', atual); const p = transpCentralProximoTransporte(outra, atual); return p ? p.slot : null; };
+      return { sequencia, comecandoPeloII: [pelo('2'), pelo('3'), pelo('1')] };
+    });
+    assert.deepEqual(resultado.sequencia, ['2', '3', null]);
+    assert.deepEqual(resultado.comecandoPeloII, ['3', '1', null]);
+    assert.deepEqual(erros, []);
+    await page.close();
   } finally { await browser.close(); }
 });
