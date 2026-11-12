@@ -66,7 +66,7 @@ test('impressão do acompanhante identifica o recebedor nas três vias e conserv
         dataVisitaIso: '2026-10-07', coordenador: 'Coordenação de teste',
         beneficiarios: [
           { tipo: 'Participante', nome: 'Participante de teste', cpf: '52998224725', valorPadrao: 100 },
-          { tipo: 'Acompanhante', nome: 'Acompanhante de teste', cpf: '52998224725', endereco: 'Rua Teste, 10, Caxias do Sul, RS', telefone: '(54) 99999-0202', valorPadrao: 80, banco: 'Banco Teste', agencia: '0001', conta: '1234' }
+          { tipo: 'Acompanhante', nome: 'Acompanhante de teste', cpf: '52998224725', endereco: 'Rua Teste, 10, Caxias do Sul, RS', telefone: '(54) 99999-0202', valorPadrao: 80, banco: 'Banco Teste', tipoConta: 'Conta corrente', agencia: '0001', contaCorrente: '1234' }
         ]
       });
     });

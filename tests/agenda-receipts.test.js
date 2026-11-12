@@ -393,8 +393,12 @@ test('recibo valida CPF do beneficiário e do titular antes de imprimir', () => 
   assert.match(client, /function agendaReciboCpfValido_\(value\)/);
   assert.match(client, /function agendaReciboAtualizarValidacaoCpf_\(\)/);
   assert.match(client, /CPF do beneficiário/);
-  assert.match(client, /CPF do titular da conta/);
-  assert.match(client, /botao\.disabled = !!invalido\.length \|\| !pessoa \|\| telefoneAusente/);
+  assert.match(client, /label: 'CPF do titular', cpf: true/);
+  assert.match(client, /var valido = !!pessoa && !invalido\.length && !ausentes\.length/);
+  assert.match(client, /if \(botao\) botao\.disabled = !valido/);
+  for (const id of ['agendaReciboCpf', 'agendaReciboTelefone', 'agendaReciboTitular', 'agendaReciboBanco', 'agendaReciboTipoConta', 'agendaReciboAgencia', 'agendaReciboConta', 'agendaReciboCpfTitular']) {
+    assert.match(modal, new RegExp('id="' + id + '"[^>]*required aria-required="true"'));
+  }
   assert.match(client, /if \(!agendaReciboAtualizarValidacaoCpf_\(\)\) return;/);
   assert.match(modal, /oninput="agendaReciboFormatarCpfInput\(this\)"/);
 });
@@ -438,9 +442,10 @@ function receiptFormContext() {
 
 test('recibo exige escolha explícita com acompanhantes, troca todos os dados e mantém validação de CPF', () => {
   const { context, elements } = receiptFormContext();
+  const banco = { banco: 'Banco B', tipoConta: 'Conta corrente', agencia: '0001', contaCorrente: '1234-5' };
   const data = { beneficiarios: [
-    { nome: 'Participante', tipo: 'Participante', telefone: '111', valorPadrao: 120 },
-    { nome: 'Acompanhante', tipo: 'Acompanhante', telefone: '222', valorPadrao: 80, cpf: '529.982.247-25', banco: 'Banco B' },
+    Object.assign({ nome: 'Participante', tipo: 'Participante', telefone: '(54) 99999-0101', cpf: '529.982.247-25', valorPadrao: 120 }, banco),
+    Object.assign({ nome: 'Acompanhante', tipo: 'Acompanhante', telefone: '(54) 99999-0202', valorPadrao: 80, cpf: '529.982.247-25' }, banco),
     { nome: 'Sem contato', tipo: 'Acompanhante', valorPadrao: 80 }
   ] };
   context._agendaReciboData = data;
@@ -454,29 +459,46 @@ test('recibo exige escolha explícita com acompanhantes, troca todos os dados e 
 
   const radios = elements.agendaReciboOpcoes.querySelectorAll('input');
   radios[1].onchange();
-  assert.equal(elements.agendaReciboTelefone.value, '222');
+  assert.equal(elements.agendaReciboTelefone.value, '(54) 99999-0202');
   assert.equal(elements.agendaReciboBanco.value, 'Banco B');
   assert.match(elements.agendaReciboImprimirLabel.textContent, /acompanhante/);
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+  assert.equal(elements.agendaReciboStatus.textContent, '');
   elements.agendaReciboCpf.value = '111';
   assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false);
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  assert.match(elements.agendaReciboStatus.textContent, /Corrija os campos de CPF/);
+
   radios[2].onchange();
   assert.equal(elements.agendaReciboTelefone.value, '');
   assert.equal(elements.agendaReciboBanco.value, '');
-  assert.equal(elements.agendaReciboTelefone.required, true);
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
-  assert.match(elements.agendaReciboStatus.textContent, /Informe o telefone do acompanhante/);
+  assert.equal(elements.agendaReciboStatus.textContent, 'Preencha antes de imprimir: CPF do beneficiário, telefone com DDD, banco, tipo de conta, agência, número da conta, CPF do titular.');
   context.imprimirAgendaRecibo();
+  const preencher = {
+    agendaReciboCpf: '529.982.247-25', agendaReciboTelefone: '(54) 99999-0303', agendaReciboBanco: 'Banco C',
+    agendaReciboTipoConta: 'Conta poupança', agendaReciboAgencia: '0002', agendaReciboConta: '9876', agendaReciboCpfTitular: '529.982.247-25'
+  };
+  for (const [id, value] of Object.entries(preencher)) {
+    assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false, id + ' ainda deveria faltar');
+    elements[id].value = value;
+  }
   elements.agendaReciboTelefone.value = '   ';
   assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false);
+  elements.agendaReciboTelefone.value = '9999-0303';
+  assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false, 'telefone sem DDD');
   elements.agendaReciboTelefone.value = '(54) 99999-0303';
+  elements.agendaReciboTitular.value = '  ';
+  assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), false, 'titular em branco');
+  elements.agendaReciboTitular.value = 'Sem contato';
   assert.equal(context.agendaReciboAtualizarValidacaoCpf_(), true);
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+  assert.equal(elements.agendaReciboStatus.textContent, '');
+
   radios[0].onchange();
-  assert.equal(elements.agendaReciboTelefone.value, '111');
+  assert.equal(elements.agendaReciboTelefone.value, '(54) 99999-0101');
   assert.match(elements.agendaReciboImprimirLabel.textContent, /participante/);
-  assert.equal(elements.agendaReciboTelefone.required, false);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
   context.agendaReciboPreencher_(data);
   assert.equal(elements.agendaReciboBeneficiario.value, '');
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
@@ -484,6 +506,18 @@ test('recibo exige escolha explícita com acompanhantes, troca todos os dados e 
   context.agendaReciboPreencher_(context._agendaReciboData);
   assert.equal(elements.agendaReciboBeneficiario.value, '0');
   assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+});
+
+test('recibo do participante sem CPF, telefone ou dados bancários não pode ser impresso', () => {
+  const { context, elements } = receiptFormContext();
+  const data = { beneficiarios: [{ nome: 'Participante', tipo: 'Participante', valorPadrao: 120 }] };
+  context._agendaReciboData = data;
+  context.agendaReciboPreencher_(data);
+  assert.equal(elements.agendaReciboBeneficiario.value, '0');
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  assert.equal(elements.agendaReciboTitular.value, 'Participante');
+  assert.equal(elements.agendaReciboStatus.textContent, 'Preencha antes de imprimir: CPF do beneficiário, telefone com DDD, banco, tipo de conta, agência, número da conta, CPF do titular.');
+  assert.doesNotThrow(() => context.imprimirAgendaRecibo());
 });
 
 test('telefone do acompanhante fica nas três vias como texto seguro; participante mantém duas vias identificadas', () => {
