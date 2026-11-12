@@ -14844,6 +14844,22 @@ function agendaDateIsAfterToday_(valor) {
   return d.getTime() > hoje.getTime();
 }
 
+// Visitas, consultas e exames nao podem ser criados nem reagendados para o passado.
+// Edicoes de eventos ja passados (status, transporte, observacoes) seguem permitidas.
+function agendaDataPassadaErro_(tipo, data) {
+  if (!AgendaServerRules_.formPolicy(tipo).forbidsPastDate || !agendaDateIsBeforeToday_(data)) return '';
+  var label = String(tipo || '').trim() || 'este evento';
+  return 'Não é possível agendar ' + label + ' para uma data anterior a hoje (' + formatarDataSafe(data) + '). Confira o dia e o ano.';
+}
+
+function agendaDataPassadaEdicaoErro_(tipo, data, rowAnterior) {
+  var dataAnterior = rowAnterior[AGENDA_CFG.idx.data];
+  var tipoAnterior = rowAnterior[AGENDA_CFG.idx.tipo];
+  var mudouData = !dataAnterior || datasAgendaDiferentes_(dataAnterior, data);
+  var mudouTipo = AgendaServerRules_.typeKey(tipoAnterior) !== AgendaServerRules_.typeKey(tipo);
+  return mudouData || mudouTipo ? agendaDataPassadaErro_(tipo, data) : '';
+}
+
 function agendaRealizadoFuturoErro_(status, datas) {
   if (!AgendaServerRules_.isCompleted(status)) return '';
   datas = Array.isArray(datas) ? datas : [datas];
@@ -15114,6 +15130,8 @@ function salvarNovoEventoCompleto(dados) {
     return { erro: 'Informe o horario do agendamento.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var erroDataPassada = agendaDataPassadaErro_(dados.tipo, d);
+  if (erroDataPassada) return { erro: erroDataPassada };
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, null);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
   var visitaMesmaData = codexMeasurePerformance_(operation, 'duplicate_visit_check', {
@@ -15208,6 +15226,8 @@ function salvarNovoEventoComFeriado(dados) {
     return resultadoPeriodo;
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var erroDataPassada = agendaDataPassadaErro_(dados.tipo, d);
+  if (erroDataPassada) return { erro: erroDataPassada };
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, null);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
   var visitaMesmaData = agendaVisitaCriadaNaMesmaData_(agenda, dados, d);
@@ -15764,6 +15784,8 @@ function atualizarAgendaEventoCompleto(dados) {
     return { erro: 'Informe o médico responsável pela consulta.' };
   }
   var d = _parseDateHora(dados.data, dados.hora);
+  var erroDataPassada = agendaDataPassadaEdicaoErro_(tipo, d, rowAnterior);
+  if (erroDataPassada) return { erro: erroDataPassada };
   var erroCourierFuturo = agendaCourierStatusFuturoErro_(dados, d, rowAnterior);
   if (erroCourierFuturo) return { erro: erroCourierFuturo };
   var visitaMesmaData = visitaIdentidadeAlterada
@@ -16350,6 +16372,8 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   if (policy.isVisit && !String(dados.visita || '').trim()) {
     return { erro: 'Informe a visita para eventos do tipo Visita.' };
   }
+  var erroDataPassada = agendaDataPassadaErro_(tipo, d);
+  if (erroDataPassada) return { erro: erroDataPassada };
   var projetoParticipanteErro = agendaMeasureSaveStage_(performanceOperation, 'participant_sync', { rowCount: 1 }, function() {
     return agendaSincronizarProjetoDoParticipante_(dados, policy);
   });

@@ -2662,6 +2662,39 @@
     return ok;
   }
 
+  // Visita, Consulta e Exames nao podem ser criados nem reagendados para o passado.
+  // Editar um evento ja passado sem mudar data ou tipo continua permitido.
+  function agendaDataPassadaBloqueada_() {
+    var data = (document.getElementById('agData') || {}).value || '';
+    var tipo = (document.getElementById('agTipo') || {}).value || '';
+    if (!data || !AgendaRules.formPolicy(tipo).forbidsPastDate || !agendaIsPastDate(data)) return false;
+    var anterior = agendaEventoAtualEditado_();
+    if (!anterior) return true;
+    var dataAnterior = String(anterior.dataIso || '').slice(0, 10);
+    if (!dataAnterior) return false;
+    return dataAnterior !== data || AgendaRules.typeKey(anterior) !== AgendaRules.typeKey(tipo);
+  }
+
+  function validarAgendaDataPassadaTipo_(showMessage) {
+    var err = document.getElementById('errAgData');
+    var bloqueada = agendaDataPassadaBloqueada_();
+    if (err && !err.dataset.defaultText) err.dataset.defaultText = err.textContent;
+    if (bloqueada) {
+      var label = AgendaRules.typePluralLabel((document.getElementById('agTipo') || {}).value || '', 1, 'Evento');
+      if (err) {
+        err.textContent = 'Data anterior a hoje. Confira o dia e o ano.';
+        err.dataset.pastDate = '1';
+      }
+      validarAgendaCampo('agData', 'errAgData', false);
+      if (showMessage) setAgendaStatus('Atencao: nao e possivel agendar ' + label + ' para uma data anterior a hoje. Confira o dia e o ano.', 'danger');
+    } else if (err && err.dataset.pastDate === '1') {
+      err.dataset.pastDate = '';
+      err.textContent = err.dataset.defaultText;
+      limparErro('agData', 'errAgData');
+    }
+    return !bloqueada;
+  }
+
   function validarAgendaAlertasDataPassada() {
     var dataValor = (document.getElementById('agData') || {}).value || '';
     if (!agendaIsPastDate(dataValor)) return true;
@@ -3181,6 +3214,8 @@
     var isMonitoria = policy.isMonitoring;
     var isPeriodo = policy.isMultiDay;
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
+    var dataPassadaOk = validarAgendaDataPassadaTipo_(false);
+    ok = dataPassadaOk && ok;
     if (policy.requiresTime) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
     if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
     ok = validarAgendaCampo('agTipo', 'errAgTipo', !!document.getElementById('agTipo').value) && ok;
@@ -3216,6 +3251,11 @@
     ok = validarAgendaCourierStatusData_() && ok;
     ok = validateAgendaAwbs(true) && ok;
     if (!ok) {
+      if (!dataPassadaOk) {
+        validarAgendaDataPassadaTipo_(true);
+        updateAgendaSaveAvailability(false);
+        return;
+      }
       setAgendaStatus('Atencao: revise os campos destacados antes de salvar.', 'danger');
       updateAgendaSaveAvailability(true);
       return;
