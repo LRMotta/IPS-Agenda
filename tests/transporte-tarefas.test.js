@@ -266,6 +266,32 @@ test('PINEX por fase: pedir a coleta, aguardar a resposta e preparar os document
   assert.equal(r.tarefas[1].transportes[0].situacao, 'pinex_numeros');
 });
 
+test('PINEX com o pedido de coleta já enviado fora do passo a passo: não pede de novo', () => {
+  const s = servidor();
+  // Caso real: Formulário enviado pelos dois transportes, operações inativadas pela reconciliação da Agenda
+  // ("PINEX (Agendamento)" x "Pinex"); a PINEX respondeu só o Ambiente, lançado como AWB, e o status ficou "Docs gerados".
+  const formulario = (agendaId, slot, extra) => Object.assign({ agendaId, slot, courier: 'PINEX (Agendamento)', estado: 'INATIVA', pdfId: 'PDF',
+    emailEnviadoEm: '', emailIdentificadoEm: '' }, extra || {});
+  const r = construir(s, [
+    linha(s, 'f1', '06/10/2026', [{ nome: 'Pinex', temp: 'AMBIENTE', status: 'Docs gerados', awb: '119893' }, { nome: 'Pinex', status: 'Não Agendado' }]),
+    linha(s, 'f2', '06/10/2026', [{ nome: 'Pinex' }])
+  ], { operacoes: [
+    formulario('f1', '1', { emailIdentificadoEm: '10/11/2026' }), formulario('f1', '2', { emailIdentificadoEm: '10/11/2026' }),
+    formulario('f1', '1'), // Formulário gerado de novo e não enviado: não muda a fase
+    formulario('f2', '1') // gerado e nunca enviado: o pedido ainda não saiu
+  ] });
+  const f1 = r.tarefas.find((t) => t.agendaId === 'f1');
+  assert.deepEqual(f1.transportes.map((t) => [t.slot, t.situacao]), [['1', 'preparar'], ['2', 'pinex_numeros']]);
+  assert.equal(f1.titulo, 'Preparar o transporte');
+  assert.equal(r.tarefas.find((t) => t.agendaId === 'f2').titulo, 'Pedir a coleta à PINEX');
+  assert.deepEqual(r.acompanhar.pinex.map((x) => [x.agendaId, x.slot]), [['f1', '2']]);
+  // Documento PINEX gerado e ainda não enviado continua "Enviar o pedido de coleta".
+  const comDoc = construir(s, [linha(s, 'f1', '06/10/2026', [{ nome: 'Pinex', status: 'Docs gerados', awb: '119893' }])], { operacoes: [
+    formulario('f1', '1', { emailIdentificadoEm: '10/11/2026' }), { agendaId: 'f1', slot: '1', courier: 'PINEX', estado: 'ATIVA', pdfId: 'PDF2', emailEnviadoEm: '', emailIdentificadoEm: '' }
+  ] });
+  assert.equal(comDoc.tarefas[0].transportes[0].situacao, 'enviar_doc');
+});
+
 test('PINEX aguardando resposta: a tarefa respeita a janela de dias úteis e fora dela fica em Mais adiante', () => {
   const s = servidor();
   const preparos = { 'q1|1': { passo: 'pinex_numeros', passoNumero: 1, versao: 3, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false },

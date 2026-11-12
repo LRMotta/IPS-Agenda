@@ -177,6 +177,18 @@ test('PINEX em fases: formulário, resposta por e-mail e documentos no mesmo tra
   assert.deepEqual([depois.registro.courier, depois.registro.fasePinex, depois.registro.awb, depois.passo], ['PINEX', 'documentos', '94624', 'conferir']);
 });
 
+test('PINEX com o Formulário já enviado fora do passo a passo abre nos números da PINEX', () => {
+  const s = servidor(new FakeSpreadsheet({}));
+  s.transporteEnvioMontarRegistro_ = () => registro({ courier: 'PINEX', awb: '', pinexColeta: '' });
+  s.transporteOperacoesRows_ = () => [{ agendaId: 'ab12cd34', slot: '1', courier: 'PINEX (Agendamento)', estado: 'INATIVA', emailIdentificadoEm: '10/11/2026', emailEnviadoEm: '' }];
+  const aberto = plano(s.getTransporteEnvio('ab12cd34', '1'));
+  assert.deepEqual([aberto.registro.fasePinex, aberto.passo, aberto.passos], ['resposta', 'pinex_numeros', ['pinex_numeros', 'conferir', 'gerar', 'enviar']]);
+  assert.equal(s.transporteRegistroLer_('ab12cd34', '1').passo, 'pinex_numeros');
+  // Sem Formulário enviado, continua pela fase 1.
+  const outro = plano(s.getTransporteEnvio('ab12cd34', '2'));
+  assert.deepEqual([outro.registro.fasePinex, outro.passo], ['agendamento', 'conferir']);
+});
+
 test('o número do passo é gravado com o passo e reflete os passos do envio (AWB, PINEX, internacional)', () => {
   const s = servidor(new FakeSpreadsheet({}));
   s.codexCourierAssertDocumentAwb_ = () => {};

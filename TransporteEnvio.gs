@@ -194,16 +194,22 @@ function getTransporteEnvio(agendaId, slot) {
   var emAndamento = lido.registro && ['gerar', 'anvisa', 'enviar', 'concluido', 'peticionando'].indexOf(lido.passo) >= 0;
   var registro = lido.registro;
   var versao = lido.versao;
+  var passoInicial = lido.passo || 'conferir';
   if (!emAndamento) {
-    registro = transporteEnvioAplicarFasePinex_(transporteEnvioMesclarLocais_(transporteEnvioMontarRegistro_(agendaId, slot), lido.registro), lido.registro);
+    var montado = transporteEnvioMesclarLocais_(transporteEnvioMontarRegistro_(agendaId, slot), lido.registro);
+    // Pedido de coleta a PINEX ja enviado fora do passo a passo (Transporte_Operacoes): comeca pelos numeros.
+    if (transporteEnvioFamiliaPinex_(montado.courier) && (!montado.fasePinex || montado.fasePinex === 'agendamento') &&
+        transporteTarefaPinexPedidos_(transporteOperacoesRows_())[agendaId + '|' + slot]) montado.fasePinex = 'resposta';
+    registro = transporteEnvioAplicarFasePinex_(montado, lido.registro);
+    if (!lido.passo && registro.fasePinex === 'resposta') passoInicial = 'pinex_numeros';
     if (!lido.registro || JSON.stringify(lido.registro) !== JSON.stringify(registro)) {
-      registro.passoNumero = transporteEnvioNumeroPasso_(registro, lido.passo || 'conferir');
-      var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: lido.versao, usuario: usuario, passo: lido.passo || 'conferir' });
+      registro.passoNumero = transporteEnvioNumeroPasso_(registro, passoInicial);
+      var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: lido.versao, usuario: usuario, passo: passoInicial });
       versao = gravado.versao;
     }
   }
   return {
-    ok: true, registro: registro, versao: versao, passo: lido.passo || 'conferir', passos: transporteEnvioPassos_(registro),
+    ok: true, registro: registro, versao: versao, passo: passoInicial, passos: transporteEnvioPassos_(registro),
     internacional: transporteEnvioInternacional_(registro), avisos: transporteEnvioAvisos_(registro)
   };
 }

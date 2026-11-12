@@ -50,6 +50,28 @@ function transporteTarefaDocsPendentes_(operacoes) {
   return porChave;
 }
 
+/**
+ * PINEX: o pedido de coleta (Formulario, courier "PINEX (Agendamento)") ja saiu quando uma operacao dele teve o
+ * e-mail identificado ou enviado. Vale mesmo inativada: a Agenda guarda "Pinex" e a reconciliacao da Agenda inativa
+ * a operacao do Formulario na edicao seguinte da linha (por exemplo, ao lancar a AWB recebida da PINEX).
+ */
+function transporteTarefaPinexPedidos_(operacoes) {
+  var porChave = {};
+  (operacoes || []).forEach(function(op) {
+    if (!transporteEnvioFamiliaPinex_(op.courier) || normText_(op.courier).indexOf('agendamento') < 0) return;
+    if (op.emailEnviadoEm || op.emailIdentificadoEm) porChave[op.agendaId + '|' + op.slot] = true;
+  });
+  return porChave;
+}
+
+// Fase PINEX do registro; sem registro (ou parado no Formulario) e com o pedido ja enviado, a AWB da Agenda separa
+// "aguardando os numeros" de "numeros recebidos, gerar os documentos".
+function transporteTarefaFasePinex_(preparo, pedidoEnviado, awb) {
+  var fase = (preparo && preparo.fasePinex) || '';
+  if (pedidoEnviado && (!fase || fase === 'agendamento')) return String(awb || '').trim() ? 'documentos' : 'resposta';
+  return fase;
+}
+
 function transporteTarefaTitulo_(situacoes, gruPronta) {
   if (gruPronta && situacoes.indexOf('enviar_doc') >= 0 && situacoes.indexOf('preparar') < 0) return 'Anexar a GRU e o extrato e enviar à courier';
   var preparar = situacoes.filter(function(s) { return s === 'preparar'; }).length;
@@ -98,7 +120,7 @@ function transporteTarefaSemana_(data) {
  * Backups nao agendados (qualquer data), transportes enviados e nao entregues (qualquer data) e
  * transportes agendados aguardando confirmacao (so de hoje em diante).
  */
-function transporteAcompanharLinha_(r, ctx, saida, hoje) {
+function transporteAcompanharLinha_(r, ctx, saida, hoje, pinexPedidos) {
   var i = AGENDA_CFG.idx;
   var data = parseAgendaDateAny_(r[i.data]);
   if (data) data.setHours(0, 0, 0, 0);
@@ -134,7 +156,8 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje) {
     if (status === 'naoaplicavel') return;
     var awb = String(r[cfg.awb] || '').trim();
     var familiaPinex = transporteEnvioFamiliaPinex_(nome);
-    var fase = ((ctx.preparos || {})[String(r[i.id] || '').trim() + '|' + slot[0]] || {}).fasePinex || '';
+    var chavePinex = String(r[i.id] || '').trim() + '|' + slot[0];
+    var fase = familiaPinex ? transporteTarefaFasePinex_((ctx.preparos || {})[chavePinex], !!(pinexPedidos || {})[chavePinex], awb) : '';
     if (status === 'peticionamento') {
       // GRU e extrato pendentes: acompanhamento (a acao "GRU e extrato prontos" e dos autorizados a peticionar).
       saida.peticionamento.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
@@ -167,6 +190,7 @@ function transporteTarefasConstruir_(ctx) {
   var i = AGENDA_CFG.idx;
   var hoje = new Date(ctx.hoje.getFullYear(), ctx.hoje.getMonth(), ctx.hoje.getDate());
   var docs = transporteTarefaDocsPendentes_(ctx.operacoes);
+  var pinexPedidos = transporteTarefaPinexPedidos_(ctx.operacoes);
   var tarefas = [];
   var adiante = { transportes: 0, visitas: 0, primeiraData: '' };
   var primeiraAdiante = null;
@@ -176,7 +200,7 @@ function transporteTarefasConstruir_(ctx) {
     var agendaId = String(r[i.id] || '').trim();
     if (!agendaId) return;
     if (AgendaServerRules_.isCancelled(normText_(r[i.status]))) return;
-    transporteAcompanharLinha_(r, ctx, acompanhar, hoje);
+    transporteAcompanharLinha_(r, ctx, acompanhar, hoje, pinexPedidos);
     var data = parseAgendaDateAny_(r[i.data]);
     if (!data) return;
     data.setHours(0, 0, 0, 0);
@@ -194,13 +218,17 @@ function transporteTarefasConstruir_(ctx) {
       var awb = String(r[cfg.awb] || '').trim();
       var chaveEnvio = agendaId + '|' + slot[0];
       var situacao = '';
-      var fasePinex = transporteEnvioFamiliaPinex_(nome) ? ((ctx.preparos[chaveEnvio] || {}).fasePinex || '') : '';
+      var pedidoPinex = transporteEnvioFamiliaPinex_(nome) && !!pinexPedidos[chaveEnvio];
+      var fasePinex = transporteEnvioFamiliaPinex_(nome) ? transporteTarefaFasePinex_(ctx.preparos[chaveEnvio], pedidoPinex, awb) : '';
       // Aguardando a resposta da PINEX: tarefa "Informar os números da PINEX" (o item tambem fica em Acompanhar).
       var pinexResposta = fasePinex === 'resposta' && ['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(status) >= 0;
       if (pinexResposta) situacao = 'pinex_numeros';
       // Status Agendado: o pedido de coleta ja saiu (o monitor so promove a Agendado ao achar o e-mail enviado). Um PDF
       // gerado depois disso, como o da DHL congelado com a WB recebida na resposta da courier, e para imprimir: sem tarefa.
       else if (docs[chaveEnvio] && ['naoagendado', 'pendente', 'docsgerados'].indexOf(status) >= 0) situacao = 'enviar_doc';
+      // PINEX com o pedido de coleta ja enviado e a AWB recebida, sem documento pendente: "Docs gerados" e do
+      // Formulario ja usado. Falta gerar os documentos da PINEX.
+      else if (pedidoPinex && fasePinex === 'documentos' && ['naoagendado', 'pendente', 'docsgerados'].indexOf(status) >= 0) situacao = 'preparar';
       else if (status === 'docsgerados') situacao = 'enviar_doc';
       else if (AgendaServerRules_.courierNeedsSchedule(statusTexto, awb)) {
         situacao = transporteEnvioFamiliaPinex_(nome) && fasePinex !== 'documentos' ? 'pinex_pedir' : 'preparar';
