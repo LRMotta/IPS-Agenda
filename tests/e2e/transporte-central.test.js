@@ -77,7 +77,9 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       const titulo = await page.locator('.tc-title').innerText();
       assert.doesNotMatch(titulo, /Backup|Transporte I/, 'o tipo do transporte não vai no título');
       // Cada transporte numa faixa: tipo, situação, courier · temperatura e destino em blocos próprios.
-      assert.match(await page.locator('.tc-transports').innerText(), /Transporte I\s+Preparar\s+OCASA · CONGELADO\s+LAB X/);
+      // Os dois transportes pedem a mesma coisa (o título já diz): sem o rótulo "Preparar" em cada um.
+      assert.match(await page.locator('.tc-transports').innerText(), /Transporte I\s+OCASA · CONGELADO\s+LAB X/);
+      assert.doesNotMatch(await page.locator('.tc-transports').innerText(), /Preparar/);
       assert.match(await page.locator('.tc-transports').innerText(), /Backup/);
       assert.match(await page.locator('.tc-badges').innerText(), /Em 3h/);
       assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo 2/);
@@ -196,7 +198,8 @@ test('Acompanhar, Em breve e Backups: seções, acordeão, rastreio, entrega e a
       await page.evaluate(() => transpCentralAba('adiante'));
       assert.equal(await page.locator('.tc-semana-cab').first().getAttribute('aria-expanded'), 'true');
       assert.equal(await page.locator('.tc-semana-cab').nth(1).getAttribute('aria-expanded'), 'false');
-      assert.match(await page.locator('#tcSemana0').innerText(), /16\/10\/2026[\s\S]*Pessoa X[\s\S]*Transporte I[\s\S]*OCASA · CONGELADO[\s\S]*LAB X[\s\S]*Vira tarefa em[\s\S]*09\/10\/2026/i);
+      assert.match(await page.locator('#tcSemana0').innerText(), /16\/10\/2026[\s\S]*Pessoa X[\s\S]*Transporte I[\s\S]*OCASA · CONGELADO[\s\S]*LAB X[\s\S]*Entra em Para fazer em[\s\S]*09\/10\/2026/i);
+      assert.doesNotMatch(await page.locator('#tcSemana0').innerText(), /Preparar/, 'Em breve não mostra o rótulo da situação');
       // s1 e s2 são visitas diferentes no mesmo dia: duas linhas; a data em destaque vem de dataOrdem quando houver.
       assert.equal(await page.locator('#tcSemana0 .tc-breve-linha').count(), 2);
       assert.equal(await page.locator('#tcAdiante button:not(.tc-semana-cab)').count(), 0, 'sem ações: só consulta');

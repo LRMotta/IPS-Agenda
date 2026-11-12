@@ -2450,6 +2450,11 @@
       visita.setAttribute('aria-required', isVisita ? 'true' : 'false');
     }
     if (!isVisita) validarAgendaCampo('agVisita', 'errAgVisita', true);
+    var participanteRequired = document.getElementById('agParticipanteRequired');
+    if (participanteRequired) participanteRequired.style.display = policy.requiresParticipant ? '' : 'none';
+    var participanteSelect = document.getElementById('agParticipante');
+    if (participanteSelect) participanteSelect.setAttribute('aria-required', policy.requiresParticipant ? 'true' : 'false');
+    if (!policy.requiresParticipant) validarAgendaCampo('agParticipante', 'errAgParticipante', true);
     var projetoRequired = document.getElementById('agProjetoRequired');
     if (projetoRequired) projetoRequired.style.display = policy.requiresProject ? '' : 'none';
     var monitorRequired = document.getElementById('agMonitorRequired');
@@ -2662,6 +2667,39 @@
     return ok;
   }
 
+  // Visita, Consulta e Exames nao podem ser criados nem reagendados para o passado.
+  // Editar um evento ja passado sem mudar data ou tipo continua permitido.
+  function agendaDataPassadaBloqueada_() {
+    var data = (document.getElementById('agData') || {}).value || '';
+    var tipo = (document.getElementById('agTipo') || {}).value || '';
+    if (!data || !AgendaRules.formPolicy(tipo).forbidsPastDate || !agendaIsPastDate(data)) return false;
+    var anterior = agendaEventoAtualEditado_();
+    if (!anterior) return true;
+    var dataAnterior = String(anterior.dataIso || '').slice(0, 10);
+    if (!dataAnterior) return false;
+    return dataAnterior !== data || AgendaRules.typeKey(anterior) !== AgendaRules.typeKey(tipo);
+  }
+
+  function validarAgendaDataPassadaTipo_(showMessage) {
+    var err = document.getElementById('errAgData');
+    var bloqueada = agendaDataPassadaBloqueada_();
+    if (err && !err.dataset.defaultText) err.dataset.defaultText = err.textContent;
+    if (bloqueada) {
+      var label = AgendaRules.typePluralLabel((document.getElementById('agTipo') || {}).value || '', 1, 'Evento');
+      if (err) {
+        err.textContent = 'Data anterior a hoje. Confira o dia e o ano.';
+        err.dataset.pastDate = '1';
+      }
+      validarAgendaCampo('agData', 'errAgData', false);
+      if (showMessage) setAgendaStatus('Atencao: nao e possivel agendar ' + label + ' para uma data anterior a hoje. Confira o dia e o ano.', 'danger');
+    } else if (err && err.dataset.pastDate === '1') {
+      err.dataset.pastDate = '';
+      err.textContent = err.dataset.defaultText;
+      limparErro('agData', 'errAgData');
+    }
+    return !bloqueada;
+  }
+
   function validarAgendaAlertasDataPassada() {
     var dataValor = (document.getElementById('agData') || {}).value || '';
     if (!agendaIsPastDate(dataValor)) return true;
@@ -2714,6 +2752,7 @@
       { id: 'agData', err: 'errAgData', label: isPeriodo ? 'data de inicio' : 'data', required: true },
       { id: 'agHora', err: 'errAgHora', label: 'horario de inicio', required: policy.requiresTime },
       { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
+      { id: 'agParticipante', err: 'errAgParticipante', label: 'participante', required: !!policy.requiresParticipant },
       { id: 'agVisita', err: 'errAgVisita', label: 'visita', required: policy.isVisit },
       { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isPeriodo },
       { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: policy.requiresProject },
@@ -2730,7 +2769,10 @@
   function agendaMissingRequiredChecks() {
     return agendaRequiredChecks().filter(function(check) {
       var el = document.getElementById(check.id);
-      return !el || !String(el.value || '').trim();
+      var valor = String(el && el.value || '').trim();
+      // legacy-event: e uma referencia provisoria de evento sem participante cadastrado.
+      if (check.id === 'agParticipante' && /^legacy-event:/i.test(valor)) return true;
+      return !valor;
     });
   }
 
@@ -3181,6 +3223,8 @@
     var isMonitoria = policy.isMonitoring;
     var isPeriodo = policy.isMultiDay;
     ok = validarAgendaCampo('agData', 'errAgData', !!document.getElementById('agData').value) && ok;
+    var dataPassadaOk = validarAgendaDataPassadaTipo_(false);
+    ok = dataPassadaOk && ok;
     if (policy.requiresTime) ok = validarAgendaCampo('agHora', 'errAgHora', !!document.getElementById('agHora').value) && ok;
     if (isPeriodo) ok = validarAgendaPeriodoMonitoria(true) && ok;
     ok = validarAgendaCampo('agTipo', 'errAgTipo', !!document.getElementById('agTipo').value) && ok;
@@ -3216,6 +3260,11 @@
     ok = validarAgendaCourierStatusData_() && ok;
     ok = validateAgendaAwbs(true) && ok;
     if (!ok) {
+      if (!dataPassadaOk) {
+        validarAgendaDataPassadaTipo_(true);
+        updateAgendaSaveAvailability(false);
+        return;
+      }
       setAgendaStatus('Atencao: revise os campos destacados antes de salvar.', 'danger');
       updateAgendaSaveAvailability(true);
       return;
@@ -4332,11 +4381,11 @@
     if (poloBox) poloBox.checked = false;
     if (ecrfBox) ecrfBox.checked = false;
     if (carroBox) carroBox.checked = false;
-    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgVisita','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgPrestador','errAgLabCentral'].forEach(function(id) {
+    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgParticipante','errAgVisita','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgPrestador','errAgLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.classList.remove('visible');
     });
-    ['agData','agDataFim','agHora','agTipo','agVisita','agProjeto','agMonitor1','agSalaMonitoria','agPrestador','agLabCentral'].forEach(function(id) {
+    ['agData','agDataFim','agHora','agTipo','agParticipante','agVisita','agProjeto','agMonitor1','agSalaMonitoria','agPrestador','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) {
         el.classList.remove('invalid');
@@ -7733,7 +7782,7 @@
     var panel = document.getElementById('agendaCreatePanel');
     if (!panel || !panel.classList.contains('open')) return;
     if (!event || !event.target || !event.target.closest || !event.target.closest('#agendaCreatePanel')) return;
-    if (!/^ag(Data|DataFim|Hora|Tipo|Visita|Projeto|Monitor1|SalaMonitoria|Prestador|LabCentral)$/.test(String(event.target.id || ''))) return;
+    if (!/^ag(Data|DataFim|Hora|Tipo|Participante|Visita|Projeto|Monitor1|SalaMonitoria|Prestador|LabCentral)$/.test(String(event.target.id || ''))) return;
     if (event.target.id === 'agData') atualizarAgendaCourierStatusData_();
     updateAgendaSaveAvailability(false);
   }

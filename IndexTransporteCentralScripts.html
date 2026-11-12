@@ -74,6 +74,9 @@
     }
     var proxima = tarefas[0];
     var multi = (proxima.transportes || []).length > 1;
+    // O rótulo da situação (Preparar, Enviar pedido de coleta…) só aparece quando os transportes da visita pedem coisas diferentes;
+    // senão, o título da tarefa já diz o que fazer.
+    var situacoesDistintas = (proxima.transportes || []).map(function(t) { return t.situacao; }).filter(function(s, i, a) { return a.indexOf(s) === i; }).length > 1;
     var html = transpCentralHtmlCabecalho('Próxima tarefa', 'play_circle', null, 'Sugerida pelo sistema: a de prazo mais próximo. Você pode escolher outra na lista abaixo.') +
       '<article class="tc-next' + (proxima.prazoLabel ? ' urgent' : '') + '" data-tc-agenda="' + esc(proxima.agendaId) + '">' +
       '<div class="tc-next-top">' + transpCentralHtmlDataDestaque(proxima.dataOrdem, proxima.data, proxima.hora) +
@@ -82,7 +85,7 @@
       transpCentralEtiquetas(proxima) + '</div></div>' +
       // Com mais de um transporte, cada um pode ser começado sozinho; "Começar" faz todos, na ordem.
       '<ul class="tc-acomp-transp tc-transports">' + (proxima.transportes || []).map(function(t) {
-        return transpCentralHtmlTransporteLinha(t, multi ? transpCentralBotaoTransporte(proxima, t, 'Começar este') : '');
+        return transpCentralHtmlTransporteLinha(situacoesDistintas ? t : Object.assign({}, t, { situacao: '' }), multi ? transpCentralBotaoTransporte(proxima, t, 'Começar este') : '');
       }).join('') + '</ul>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-comecar="' + esc(proxima.agendaId) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
       (multi ? 'Começar os ' + proxima.transportes.length + ' transportes' : 'Começar') + '</button>' +
@@ -283,19 +286,20 @@
     if (!semanas.some(function(s) { return s.chave === aberta; })) aberta = semanas[0].chave;
     TRANSP_CENTRAL_STATE.semanaAberta = aberta;
     var cabecalho = transpCentralHtmlCabecalho('Em breve', 'event_upcoming', (dados.maisAdiante && dados.maisAdiante.transportes) || 0,
-      'Transportes que viram tarefa ' + esc(dados.janelaDiasUteis || 7) + ' dias úteis antes do envio. Não precisa fazer nada por eles agora.');
+      'Envios dos próximos dias, só para consulta. Cada um entra em Para fazer ' + esc(dados.janelaDiasUteis || 7) + ' dias úteis antes da data do envio; até lá, não há nada a preparar.');
     var vira = function(g) {
-      return '<span class="tc-vira"><span class="material-symbols-outlined" aria-hidden="true">event_upcoming</span><span>Vira tarefa em<strong>' + esc(g.viraTarefaEm || '') + '</strong></span></span>';
+      return '<span class="tc-vira"><span class="material-symbols-outlined" aria-hidden="true">event_upcoming</span><span>Entra em Para fazer em<strong>' + esc(g.viraTarefaEm || '') + '</strong></span></span>';
     };
     return cabecalho + '<div class="tc-acordeao">' + semanas.map(function(s, n) {
       var aberto = s.chave === aberta;
-      var grupos = transpCentralAgruparVisitas(s.itens);
+      // Em breve não há nada a fazer: sem o rótulo da situação ("Preparar").
+      var grupos = transpCentralAgruparVisitas(s.itens.map(function(it) { return Object.assign({}, it, { situacao: '' }); }));
       var resumo = (s.itens.length === 1 ? '1 transporte' : s.itens.length + ' transportes') + ' · ' + (grupos.length === 1 ? '1 visita' : grupos.length + ' visitas');
       return '<section class="tc-semana"><h3><button type="button" class="tc-semana-cab" id="tcSemanaBtn' + n + '" aria-expanded="' + (aberto ? 'true' : 'false') + '" aria-controls="tcSemana' + n + '" data-tc-semana="' + esc(s.chave) + '">' +
         '<span class="tc-semana-tit"><span class="material-symbols-outlined" aria-hidden="true">' + (aberto ? 'expand_more' : 'chevron_right') + '</span>' + esc(s.rotulo) + '</span>' +
         '<span class="tc-semana-resumo">' + esc(resumo) + '</span></button></h3>' +
         '<div class="tc-tabela tc-breve" id="tcSemana' + n + '" role="region" aria-labelledby="tcSemanaBtn' + n + '"' + (aberto ? '' : ' hidden') + '>' +
-        transpCentralHtmlThead('tc-grade-acao', ['Envio', 'Participante', 'Transportes', 'Vira tarefa']) +
+        transpCentralHtmlThead('tc-grade-acao', ['Envio', 'Participante', 'Transportes', 'Entra em Para fazer']) +
         grupos.map(function(g) { return transpCentralHtmlLinhaVisita(g, null, null, vira).replace('class="tc-acomp ', 'class="tc-acomp tc-breve-linha '); }).join('') + '</div></section>';
     }).join('') + '</div>';
   }

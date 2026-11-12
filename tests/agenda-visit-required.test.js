@@ -65,3 +65,49 @@ test('outros tipos preservam visita opcional e a exigencia anterior de Lab Centr
   assert.match(c.atualizarAgendaEventoCompleto(payload).erro, /Laboratorio Central = Sim/);
   assert.equal(sheet.writes, 0);
 });
+
+for (const method of ['salvarNovoEventoCompleto', 'salvarNovoEventoComFeriado', 'atualizarAgendaEventoCompleto']) {
+  test(method + ' rejeita Visita sem participante cadastrado antes de qualquer escrita', () => {
+    const casos = [
+      { participante: '', participanteCadastroId: '' },
+      { participante: '  ', participanteCadastroId: undefined },
+      // Referencia provisoria que a interface monta para eventos sem participante.
+      { participante: 'legacy-event:4fac5fdb', participanteCadastroId: '' }
+    ];
+    for (const caso of casos) {
+      const { c, sheet, payload, audits } = setup();
+      Object.assign(payload, caso, { visita: 'C1', labCentral: 'Não' });
+      const before = JSON.stringify(sheet.rows);
+      const result = c[method](payload);
+      assert.equal(result.erro, 'Selecione o participante cadastrado para eventos do tipo Visita.');
+      assert.equal(sheet.writes, 0);
+      assert.equal(JSON.stringify(sheet.rows), before);
+      assert.equal(audits.length, 0);
+    }
+  });
+}
+
+test('somente Visita exige participante; demais tipos preservam participante opcional', () => {
+  const { c } = setup();
+  assert.equal(c.AgendaServerRules_.formPolicy('Visita').requiresParticipant, true);
+  for (const tipo of ['Consulta', 'Envio de amostras', 'Contato telefônico', 'Monitoria', 'Reunião']) {
+    assert.equal(c.AgendaServerRules_.formPolicy(tipo).requiresParticipant, false, tipo);
+  }
+  for (const tipo of ['Consulta', 'Envio de amostras']) {
+    const { c: ctx, payload } = setup();
+    Object.assign(payload, { tipo, participante: '', participanteCadastroId: '', visita: '', labCentral: 'Não' });
+    assert.equal(ctx.atualizarAgendaEventoCompleto(payload).ok, true, tipo);
+  }
+});
+
+test('formulario da Agenda exige participante real na Visita', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const client = fs.readFileSync(path.join(__dirname, '..', 'IndexAgendaScripts.html'), 'utf8');
+  const markup = fs.readFileSync(path.join(__dirname, '..', 'IndexContentAfterDashboard.html'), 'utf8');
+  assert.match(client, /\{ id: 'agParticipante', err: 'errAgParticipante', label: 'participante', required: !!policy\.requiresParticipant \}/);
+  assert.match(client, /check\.id === 'agParticipante' && \/\^legacy-event:\/i\.test\(valor\)\) return true/);
+  assert.match(client, /\^ag\(Data\|DataFim\|Hora\|Tipo\|Participante\|Visita/);
+  assert.match(markup, /id="agParticipanteRequired"/);
+  assert.match(markup, /id="errAgParticipante"/);
+});

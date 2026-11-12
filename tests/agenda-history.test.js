@@ -267,7 +267,7 @@ test('criação registra o ID definitivo depois da escrita e não registra cria�
     agendaMeasureSaveStage_:(_operation,_stage,_meta,fn)=>fn(),
     agendaSincronizarProjetoDoParticipante_:()=>null,
     agendaRealizadoFuturoErro_:()=>null,agendaTipoExigeLabCentralServer_:()=>false,
-    agendaDateIsBeforeToday_:()=>false,
+    agendaDateIsBeforeToday_:()=>false,agendaDataPassadaErro_:()=>'',
     Utilities:{getUuid:()=> 'EVT-1234-UUID'},
     SpreadsheetApp:{flush(){}},
     Session:{getActiveUser:()=>({})},
