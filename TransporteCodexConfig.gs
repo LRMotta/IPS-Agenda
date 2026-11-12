@@ -5583,7 +5583,7 @@ function atualizarMarkenVolumes_(ss, payload) {
     if (temperatura === 'AMBIENTE') peso = transporteConfigNumber_('Peso MARKEN ambiente (kg)', 1) + ' Kg';
     else if (temperatura === 'CONGELADO' || temperatura === 'REFRIGERADO') peso = transporteConfigNumber_('Peso MARKEN refrigerado/congelado (kg)', 5) + ' Kg';
     else if (temperatura === 'AMBIENTE + CONGELADO' || temperatura === 'AMBIENTE + REFRIGERADO') peso = transporteConfigNumber_('Peso MARKEN misto (kg)', 6) + ' Kg';
-    if (temperatura === 'AMBIENTE' && transporteCaixaBioSystem_(payload)) peso = '2 Kg';
+    if (temperatura === 'AMBIENTE' && (transporteCaixaBioSystem_(payload) || transporteCaixaExtremeAmbient_(payload))) peso = '2 Kg';
     if (transporteCaixaCredoCube_(payload)) peso = '5 Kg';
     invoice.getRange('O12').setValue(volumes);
     invoice.getRange('T39').setValue(volumes);
@@ -7336,7 +7336,7 @@ function transporteCaixaNoteRead_(note) {
   if (!match) return null;
   var snapshot;
   try { snapshot = JSON.parse(match[1]); } catch { throw new Error('Registro da caixa de transporte inválido. Revise o transporte antes de gerar documentos.'); }
-  if (!snapshot || snapshot.versao !== 1 || !Array.isArray(snapshot.contexto) || ['','BIOSYSTEM','SEPIO','CREDO_CUBE'].indexOf(snapshot.tipoCaixa) < 0) {
+  if (!snapshot || snapshot.versao !== 1 || !Array.isArray(snapshot.contexto) || ['','BIOSYSTEM','SEPIO','CREDO_CUBE','EXTREME_AMBIENT'].indexOf(snapshot.tipoCaixa) < 0) {
     throw new Error('Registro da caixa de transporte inválido. Revise o transporte antes de gerar documentos.');
   }
   return snapshot;
@@ -7422,7 +7422,7 @@ function transporteCaixasRegras_(chaveProjeto) {
       if (courier.length !== 1 || lab.length !== 1) { invalidRule(); return; }
       var tipo = String(rule.tipoCaixa || '').toUpperCase();
       var nomeCourier = transporteNormalizeCourierFromCodex_(courier[0].nome);
-      var caixaAmbiente = rule.temperatura === 'AMBIENTE' && ((tipo === 'BIOSYSTEM' && nomeCourier === 'MARKEN') || (tipo === 'SEPIO' && nomeCourier === 'OCASA'));
+      var caixaAmbiente = rule.temperatura === 'AMBIENTE' && ((['BIOSYSTEM', 'EXTREME_AMBIENT'].indexOf(tipo) >= 0 && nomeCourier === 'MARKEN') || (tipo === 'SEPIO' && nomeCourier === 'OCASA'));
       var caixaCredoCube = tipo === 'CREDO_CUBE' && nomeCourier === 'MARKEN' && TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_.indexOf(rule.temperatura) >= 0;
       if (!caixaAmbiente && !caixaCredoCube) { invalidRule(); return; }
       result.push({ projetoId: String(row[0]), nomeAbreviado: String(row[1] || ''), codigo: String(row[2] || ''),
@@ -7535,8 +7535,9 @@ function transporteCaixaPersistirAgenda_(payload) {
   if (before !== after) range.setNote(after);
 }
 
-var TRANSPORTE_CAIXA_ROTULOS_ = { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube' };
+var TRANSPORTE_CAIXA_ROTULOS_ = { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube', EXTREME_AMBIENT: 'Extreme Ambient' };
 var TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ = 'Sim, BioSystem';
+var TRANSPORTE_CAIXA_EXTREME_AMBIENT_RESPOSTA_ = 'Sim, Extreme Ambient';
 var TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_ = 'Sim, Crēdo Cube';
 var TRANSPORTE_CAIXA_CREDO_CUBE_TEMPERATURAS_ = ['AMBIENTE', 'REFRIGERADO', 'CONGELADO'];
 
@@ -7552,14 +7553,15 @@ function transporteCaixaCopias_(cc, payload) {
   return cc.filter(function(email) { return transporteNormalizeEmail_(email) !== 'expobrasil@marken.com'; });
 }
 
-// Prazo da Credo Cube na tela: feriados so entram na abertura quando alguma regra usa a caixa.
+// Prazo da Credo Cube e da Extreme Ambient na tela: feriados so entram na abertura quando alguma regra usa uma delas.
 function transporteCaixasFeriados_(regras) {
-  var usaCredoCube = (regras || []).some(function(regra) { return regra.tipoCaixa === 'CREDO_CUBE'; });
-  return usaCredoCube ? getAgendaFeriadosPendenciasMap_() : null;
+  var usaPrazo = (regras || []).some(function(regra) { return regra.tipoCaixa === 'CREDO_CUBE' || regra.tipoCaixa === 'EXTREME_AMBIENT'; });
+  return usaPrazo ? getAgendaFeriadosPendenciasMap_() : null;
 }
 
 function transporteCaixaRespostaEspecial_(payload) {
   if (transporteCaixaCredoCube_(payload)) return TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_;
+  if (transporteCaixaExtremeAmbient_(payload)) return TRANSPORTE_CAIXA_EXTREME_AMBIENT_RESPOSTA_;
   return transporteCaixaBioSystem_(payload) ? TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ : false;
 }
 
@@ -7568,7 +7570,13 @@ function transporteSolicitarCaixaMarken_(payload, atual) {
   var especial = transporteCaixaRespostaEspecial_(payload);
   if (especial) return especial;
   if (transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE') return 'Não';
-  return atual === TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_ || atual === TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_ ? 'Não' : atual;
+  return [TRANSPORTE_CAIXA_BIOSYSTEM_RESPOSTA_, TRANSPORTE_CAIXA_CREDO_CUBE_RESPOSTA_, TRANSPORTE_CAIXA_EXTREME_AMBIENT_RESPOSTA_].indexOf(atual) >= 0 ? 'Não' : atual;
+}
+
+// Extreme Ambient: Marken em Ambiente, destinatarios padrao da Marken e Invoice com 2 kg.
+function transporteCaixaExtremeAmbient_(payload) {
+  return !!(payload && payload.caixaTransporte && payload.caixaTransporte.tipoCaixa === 'EXTREME_AMBIENT' &&
+    transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN' && transporteNormalizeTemperaturaFromCodex_(payload.temperatura) === 'AMBIENTE');
 }
 
 function transporteCaixaBioSystem_(payload) {

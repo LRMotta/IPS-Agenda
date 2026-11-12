@@ -8,13 +8,16 @@ cadastros; a resolução dos rótulos do Transporte exige combinação inequívo
 | Caixa | Courier | Temperatura | Efeito |
 | --- | --- | --- | --- |
 | BioSystem | Marken | Ambiente | Rascunho para `operacoes.cs@marken.com`, Invoice com 2 kg e Fornecer caixa = "Sim, BioSystem". |
+| Extreme Ambient | Marken | Ambiente | Rascunho para os destinatários padrão da Marken (sem mudança de cópia), Invoice com 2 kg e Fornecer caixa = "Sim, Extreme Ambient". |
 | Crēdo Cube | Marken | Ambiente, Refrigerado ou Congelado (uma regra por temperatura) | Rascunho para `protocolos.credo@marken.com`, Fornecer caixa = "Sim, Crēdo Cube", Invoice com 5 kg e Declaração sem gelo seco (---). |
 | Sepio | Ocasa | Ambiente | Identificação da caixa na tela de Transporte, mantendo e-mail e documentos existentes. |
 
 Não há inferência para temperaturas mistas nem substituição do comportamento de
 transportes sem regra correspondente. Para Marken em temperatura Ambiente, o
-campo de envio da caixa é automático: "Sim, BioSystem" para BioSystem e Não para a caixa
-convencional, inclusive após trocar a combinação de um transporte já salvo.
+campo de envio da caixa é automático: "Sim, BioSystem" para BioSystem, "Sim, Extreme Ambient"
+para Extreme Ambient e Não para a caixa convencional, inclusive após trocar a combinação de um
+transporte já salvo. Com Extreme Ambient, a tela avisa, sem bloquear, quando a data do envio tem
+menos de 3 dias úteis de antecedência, com a mesma contagem da Crēdo Cube.
 Com Crēdo Cube, o campo também é automático nas três temperaturas. O rascunho vai
 exclusivamente para `protocolos.credo@marken.com`: `expobrasil@marken.com` sai da cópia e
 os demais e-mails padrão da equipe continuam copiados. A tela avisa, sem bloquear,
