@@ -79,11 +79,25 @@ test('Visita exige campo Visita na criacao e edicao, inclusive sem SoA ou Lab Ce
         await page.locator('#agVisita').fill('Triagem livre');
         assert.equal(await page.locator('#agVisita').getAttribute('aria-invalid'), 'false');
         assert.equal(await page.locator('#errAgVisita').isVisible(), false);
+        // Sem participante (ou com a referencia provisoria legacy-event: da edicao), a Visita nao salva.
+        assert.equal(await page.locator('#agParticipanteRequired').isVisible(), true);
+        assert.equal(await page.locator('#agParticipante').getAttribute('aria-required'), 'true');
+        assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), false);
+        await page.evaluate(() => window.salvarAgendaEvento());
+        assert.equal(await page.locator('#errAgParticipante').isVisible(), true);
+        assert.equal(await page.evaluate(() => window.calls.some(c => /salvarNovoEvento|atualizarAgendaEventoCompleto/.test(c.method))), false);
+        await page.evaluate(() => {
+          window.setAgendaSelectValue('agParticipante', 'CAD-TESTE', 'Pessoa de teste');
+          window._agendaParticipanteInfo = { id: 'CAD-TESTE', nome: 'Pessoa de teste', numId: '001', projeto: 'Estudo A' };
+          window.updateAgendaSaveAvailability(true);
+        });
+        assert.equal(await page.locator('#errAgParticipante').isVisible(), false);
         assert.equal(await page.locator('#btnSalvarAgenda').isEnabled(), true);
         await page.locator('#btnSalvarAgenda').click();
         const method = editing ? 'atualizarAgendaEventoCompleto' : 'salvarNovoEventoCompleto';
         const payload = await page.evaluate(method => window.calls.find(c => c.method === method)?.args[0], method);
         assert.equal(payload?.visita, 'Triagem livre');
+        assert.equal(payload?.participanteCadastroId, 'CAD-TESTE');
       }, { viewport: { width, height: 900 } });
     }
   }

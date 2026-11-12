@@ -2450,6 +2450,11 @@
       visita.setAttribute('aria-required', isVisita ? 'true' : 'false');
     }
     if (!isVisita) validarAgendaCampo('agVisita', 'errAgVisita', true);
+    var participanteRequired = document.getElementById('agParticipanteRequired');
+    if (participanteRequired) participanteRequired.style.display = policy.requiresParticipant ? '' : 'none';
+    var participanteSelect = document.getElementById('agParticipante');
+    if (participanteSelect) participanteSelect.setAttribute('aria-required', policy.requiresParticipant ? 'true' : 'false');
+    if (!policy.requiresParticipant) validarAgendaCampo('agParticipante', 'errAgParticipante', true);
     var projetoRequired = document.getElementById('agProjetoRequired');
     if (projetoRequired) projetoRequired.style.display = policy.requiresProject ? '' : 'none';
     var monitorRequired = document.getElementById('agMonitorRequired');
@@ -2747,6 +2752,7 @@
       { id: 'agData', err: 'errAgData', label: isPeriodo ? 'data de inicio' : 'data', required: true },
       { id: 'agHora', err: 'errAgHora', label: 'horario de inicio', required: policy.requiresTime },
       { id: 'agTipo', err: 'errAgTipo', label: 'tipo de evento', required: true },
+      { id: 'agParticipante', err: 'errAgParticipante', label: 'participante', required: !!policy.requiresParticipant },
       { id: 'agVisita', err: 'errAgVisita', label: 'visita', required: policy.isVisit },
       { id: 'agDataFim', err: 'errAgDataFim', label: 'data final', required: isPeriodo },
       { id: 'agProjeto', err: 'errAgProjeto', label: 'projeto', required: policy.requiresProject },
@@ -2763,7 +2769,10 @@
   function agendaMissingRequiredChecks() {
     return agendaRequiredChecks().filter(function(check) {
       var el = document.getElementById(check.id);
-      return !el || !String(el.value || '').trim();
+      var valor = String(el && el.value || '').trim();
+      // legacy-event: e uma referencia provisoria de evento sem participante cadastrado.
+      if (check.id === 'agParticipante' && /^legacy-event:/i.test(valor)) return true;
+      return !valor;
     });
   }
 
@@ -4372,11 +4381,11 @@
     if (poloBox) poloBox.checked = false;
     if (ecrfBox) ecrfBox.checked = false;
     if (carroBox) carroBox.checked = false;
-    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgVisita','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgPrestador','errAgLabCentral'].forEach(function(id) {
+    ['errAgData','errAgDataFim','errAgHora','errAgTipo','errAgParticipante','errAgVisita','errAgProjeto','errAgMonitor1','errAgSalaMonitoria','errAgPrestador','errAgLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.classList.remove('visible');
     });
-    ['agData','agDataFim','agHora','agTipo','agVisita','agProjeto','agMonitor1','agSalaMonitoria','agPrestador','agLabCentral'].forEach(function(id) {
+    ['agData','agDataFim','agHora','agTipo','agParticipante','agVisita','agProjeto','agMonitor1','agSalaMonitoria','agPrestador','agLabCentral'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) {
         el.classList.remove('invalid');
@@ -7773,7 +7782,7 @@
     var panel = document.getElementById('agendaCreatePanel');
     if (!panel || !panel.classList.contains('open')) return;
     if (!event || !event.target || !event.target.closest || !event.target.closest('#agendaCreatePanel')) return;
-    if (!/^ag(Data|DataFim|Hora|Tipo|Visita|Projeto|Monitor1|SalaMonitoria|Prestador|LabCentral)$/.test(String(event.target.id || ''))) return;
+    if (!/^ag(Data|DataFim|Hora|Tipo|Participante|Visita|Projeto|Monitor1|SalaMonitoria|Prestador|LabCentral)$/.test(String(event.target.id || ''))) return;
     if (event.target.id === 'agData') atualizarAgendaCourierStatusData_();
     updateAgendaSaveAvailability(false);
   }

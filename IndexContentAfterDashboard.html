@@ -715,13 +715,14 @@
           </div>
           <div class="field-row cols-2" style="margin-bottom:14px">
             <div id="agParticipanteWrap">
-              <label class="field-label" for="agParticipante">Participante</label>
+              <label class="field-label" for="agParticipante">Participante <span class="required-star" id="agParticipanteRequired" style="display:none">*</span></label>
               <div style="display:flex;gap:8px;align-items:center">
-                <select id="agParticipante" class="f-input f-select" onchange="onAgendaParticipanteChange()" style="flex:1"></select>
+                <select id="agParticipante" class="f-input f-select" onchange="onAgendaParticipanteChange();limparErro('agParticipante','errAgParticipante')" aria-describedby="errAgParticipante" aria-invalid="false" style="flex:1"></select>
                 <button type="button" class="ag-tb-btn" title="Cadastrar novo participante" onclick="abrirNovoParticipanteAgenda()">
                   <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                 </button>
               </div>
+              <div class="field-error" id="errAgParticipante">Selecione o participante cadastrado.</div>
             </div>
             <div id="agProjetoWrap"><label class="field-label" for="agProjeto">Protocolo <span class="required-star" id="agProjetoRequired" style="display:none">*</span></label><select id="agProjeto" class="f-input f-select" onchange="onAgendaProjetoChange();limparErro('agProjeto','errAgProjeto')" aria-describedby="errAgProjeto" aria-invalid="false"></select><div class="field-error" id="errAgProjeto">Selecione o projeto/protocolo.</div></div>
           </div>

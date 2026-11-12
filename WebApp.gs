@@ -15623,6 +15623,15 @@ function agendaIdParticipanteFromDados_(dados, rowAnterior, leituraParticipantes
   return info ? String(info.numId || '').trim() : '';
 }
 
+// Referencias provisorias da interface (legacy-event:) nao identificam participante.
+function agendaParticipanteInformado_(dados) {
+  dados = dados || {};
+  return [dados.participanteCadastroId, dados.participante].some(function(valor) {
+    var texto = String(valor || '').trim();
+    return !!texto && !/^legacy-event:/i.test(texto);
+  });
+}
+
 // Em Visitas e Consultas, o projeto e uma propriedade do participante
 // cadastrado. Isso protege o vinculo mesmo quando a RPC nao passa pela Agenda.
 function agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior) {
@@ -15774,6 +15783,9 @@ function atualizarAgendaEventoCompleto(dados) {
   var visitaIdentidadeAlterada = agendaVisitaIdentidadeAlterada_(rowAnterior, dados);
   if (policy.isVisit && !String(dados.visita || '').trim()) {
     return { erro: 'Informe a visita para eventos do tipo Visita.' };
+  }
+  if (policy.requiresParticipant && !agendaParticipanteInformado_(dados)) {
+    return { erro: 'Selecione o participante cadastrado para eventos do tipo Visita.' };
   }
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
@@ -16371,6 +16383,9 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
   var isPeriodo = policy.isMultiDay;
   if (policy.isVisit && !String(dados.visita || '').trim()) {
     return { erro: 'Informe a visita para eventos do tipo Visita.' };
+  }
+  if (policy.requiresParticipant && !agendaParticipanteInformado_(dados)) {
+    return { erro: 'Selecione o participante cadastrado para eventos do tipo Visita.' };
   }
   var erroDataPassada = agendaDataPassadaErro_(tipo, d);
   if (erroDataPassada) return { erro: erroDataPassada };

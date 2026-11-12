@@ -128,7 +128,9 @@ var AgendaServerRules_ = (function() {
       doctorAllowed: !definition.noDoctor,
       requiresTime: !definition.noTime,
       // Atendimentos ao participante sao agendados somente para hoje ou datas futuras.
-      forbidsPastDate: !!definition.noPast && !phone
+      forbidsPastDate: !!definition.noPast && !phone,
+      // A Visita deriva o protocolo (e o Cronograma de Avaliacoes) do participante cadastrado.
+      requiresParticipant: definition.key === 'visita'
     };
   }
 
