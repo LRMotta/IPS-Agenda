@@ -345,7 +345,7 @@
                 <div class="segmented" id="couriers" role="group" aria-labelledby="couriersLabel"></div>
               </div>
               <div class="field"><label for="awb">AWB / c&oacute;digo</label><input id="awb"></div>
-              <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option><option value="Sim, BioSystem" hidden>Sim, BioSystem</option><option value="Sim, Crēdo Cube" hidden>Sim, Crēdo Cube</option></select></div>
+              <div class="field" id="solicitarCaixaField"><label for="solicitarCaixa">Solicitar Caixa de Transporte</label><select id="solicitarCaixa"><option value="Sim">Sim</option><option value="Não">Não</option><option value="Sim, BioSystem" hidden>Sim, BioSystem</option><option value="Sim, Crēdo Cube" hidden>Sim, Crēdo Cube</option><option value="Sim, Extreme Ambient" hidden>Sim, Extreme Ambient</option></select></div>
               <div class="field full hidden" id="caixaEspecialField"><label for="caixaEspecial">Caixa de transporte do projeto</label><input id="caixaEspecial" readonly><div class="material-unit-help" id="caixaEspecialResumo" role="status"></div></div>
               <div class="field full hidden" id="caixaReavaliarField"><div class="material-unit-help" id="caixaReavaliarResumo" role="status"></div><button class="btn secondary" type="button" id="btnReavaliarCaixa" onclick="openCaixaReavaliarModal()" title="Aplicar a regra atual do projeto a este envio"><span class="material-symbols-outlined">autorenew</span><span class="btn-label">Reavaliar caixa</span></button></div>
               <div class="field hidden" id="responsavelEntregaField"><label for="responsavelEntrega">Respons&aacute;vel pela Entrega das Amostras <span class="required-star">*</span></label><select id="responsavelEntrega"></select></div>
@@ -1366,16 +1366,20 @@
       var bio = tipo === 'BIOSYSTEM' && payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
       var sep = tipo === 'SEPIO' && payload.courier === 'OCASA' && payload.temperatura === 'AMBIENTE';
       var credo = tipo === 'CREDO_CUBE' && payload.courier === 'MARKEN' && ['AMBIENTE', 'REFRIGERADO', 'CONGELADO'].indexOf(payload.temperatura) >= 0;
-      document.getElementById('caixaEspecialField').classList.toggle('hidden', !bio && !sep && !credo);
-      document.getElementById('caixaEspecial').value = bio ? 'BioSystem' : (sep ? 'Sepio' : (credo ? 'Crēdo Cube' : ''));
+      var extreme = tipo === 'EXTREME_AMBIENT' && payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
+      document.getElementById('caixaEspecialField').classList.toggle('hidden', !bio && !sep && !credo && !extreme);
+      document.getElementById('caixaEspecial').value = bio ? 'BioSystem' : (sep ? 'Sepio' : (credo ? 'Crēdo Cube' : (extreme ? 'Extreme Ambient' : '')));
       document.getElementById('caixaEspecialResumo').textContent = bio
         ? 'E-mail: operacoes.cs@marken.com · Invoice: 2 kg · Fornecer caixa: Sim, BioSystem.'
         : (sep ? 'Caixa Sepio. Mantidos o e-mail e o preenchimento dos documentos da Ocasa.'
-          : (credo ? 'E-mail: protocolos.credo@marken.com · Invoice: 5 kg · Fornecer caixa: Sim, Crēdo Cube · Sem gelo seco.' : ''));
+          : (credo ? 'E-mail: protocolos.credo@marken.com · Invoice: 5 kg · Fornecer caixa: Sim, Crēdo Cube · Sem gelo seco.'
+            : (extreme ? 'E-mail: destinatários padrão da Marken · Invoice: 2 kg · Fornecer caixa: Sim, Extreme Ambient.' : '')));
       var input = document.getElementById('solicitarCaixa');
       var markenAmbiente = payload.courier === 'MARKEN' && payload.temperatura === 'AMBIENTE';
       if (credo) {
         input.value = 'Sim, Crēdo Cube';
+      } else if (extreme) {
+        input.value = 'Sim, Extreme Ambient';
       } else if (bio) {
         input.value = 'Sim, BioSystem';
       } else if (markenAmbiente) {
@@ -2116,9 +2120,10 @@
     }
 
     // Dias úteis depois de hoje até a coleta, incluindo a coleta (mesmas chaves do mapa de feriados).
-    function transportDiasUteisAte(hojeIso, coletaIso, feriados) {
-      var dia = new Date(hojeIso + 'T00:00:00Z'), fim = new Date(coletaIso + 'T00:00:00Z'), dias = 0;
-      while (dia < fim && dias < 2) {
+    // Conta ate o limite pedido (padrao 2, o prazo da Credo Cube); alem dele o aviso nao muda.
+    function transportDiasUteisAte(hojeIso, coletaIso, feriados, limite) {
+      var dia = new Date(hojeIso + 'T00:00:00Z'), fim = new Date(coletaIso + 'T00:00:00Z'), dias = 0, maximo = limite || 2;
+      while (dia < fim && dias < maximo) {
         dia.setUTCDate(dia.getUTCDate() + 1);
         var chave = dia.toISOString().slice(0, 10);
         if (dia.getUTCDay() !== 0 && dia.getUTCDay() !== 6 && !feriados[chave] && !feriados['--' + chave.slice(5)]) dias++;
@@ -2165,11 +2170,14 @@
         issues.push({ type:'warn', field:'awb', text:state.awbIssue.text });
       }
       var caixaPrazo = transportCaixaPreview(p);
-      if (p.dataEnvio && p.courier === 'MARKEN' && caixaPrazo && caixaPrazo.tipoCaixa === 'CREDO_CUBE') {
+      var prazoCaixa = caixaPrazo && p.courier === 'MARKEN' && ({ CREDO_CUBE: 2, EXTREME_AMBIENT: p.temperatura === 'AMBIENTE' ? 3 : 0 })[caixaPrazo.tipoCaixa];
+      if (p.dataEnvio && prazoCaixa) {
         var hoje = new Date();
         var hojeIso = [hoje.getFullYear(), ('0' + (hoje.getMonth() + 1)).slice(-2), ('0' + hoje.getDate()).slice(-2)].join('-');
-        if (transportDiasUteisAte(hojeIso, p.dataEnvio, (state.options || {}).feriadosCredoCube || {}) < 2) {
-          issues.push({ type:'warn', text:'Crēdo Cube: solicite com pelo menos 2 dias úteis de antecedência da coleta, pois as caixas saem de São Paulo.' });
+        if (transportDiasUteisAte(hojeIso, p.dataEnvio, (state.options || {}).feriadosCredoCube || {}, prazoCaixa) < prazoCaixa) {
+          issues.push({ type:'warn', text: caixaPrazo.tipoCaixa === 'CREDO_CUBE'
+            ? 'Crēdo Cube: solicite com pelo menos 2 dias úteis de antecedência da coleta, pois as caixas saem de São Paulo.'
+            : 'Extreme Ambient: solicite com pelo menos 3 dias úteis de antecedência da coleta.' });
         }
       }
       if ((p.courier === 'MARKEN' || p.courier === 'OCASA' || p.courier === 'PINEX') && !String(p.awb || '').trim()) {
@@ -2407,7 +2415,7 @@
     }
 
     function transportCaixaRotulo(tipo) {
-      return { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube' }[tipo] || 'caixa normal';
+      return { BIOSYSTEM: 'BioSystem', SEPIO: 'Sepio', CREDO_CUBE: 'Crēdo Cube', EXTREME_AMBIENT: 'Extreme Ambient' }[tipo] || 'caixa normal';
     }
 
     function transportCaixaReavaliadaMensagem(res) {

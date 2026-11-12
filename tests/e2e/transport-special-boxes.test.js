@@ -42,6 +42,9 @@ test('Transporte aplica BioSystem, remove efeito ao trocar combinação e conser
     assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-13', { '2026-11-12': true })), 1);
     assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-13', '2026-11-16', {})), 1);
     assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-13', { '--11-12': true })), 1);
+    // Extreme Ambient pede 3: quarta 11/11 até segunda 16/11 conta 3 dias úteis; até sexta, 2.
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-16', {}, 3)), 3);
+    assert.equal(await page.evaluate(() => window.transportDiasUteisAte('2026-11-11', '2026-11-13', {}, 3)), 2);
     const prazo = /pelo menos 2 dias úteis de antecedência/;
     await page.evaluate(() => { document.getElementById('dataEnvio').value = new Date().toLocaleDateString('en-CA'); window.renderDerived(); });
     assert.match(await page.locator('body').innerText(), prazo);
@@ -51,7 +54,19 @@ test('Transporte aplica BioSystem, remove efeito ao trocar combinação e conser
     assert.equal(await page.locator('#caixaEspecialField').isVisible(), false);
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Não');
     assert.equal(await page.locator('#solicitarCaixa').isDisabled(), false);
-    await page.evaluate(() => window.selectTemp('AMBIENTE'));
+    await page.evaluate(() => {
+      window.state.options.caixasTransporteRegras.forEach(regra => { if (regra.tipoCaixa === 'BIOSYSTEM') regra.tipoCaixa = 'EXTREME_AMBIENT'; });
+      window.selectTemp('AMBIENTE');
+    });
+    assert.equal(await page.locator('#caixaEspecial').inputValue(), 'Extreme Ambient');
+    assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim, Extreme Ambient');
+    assert.equal(await page.locator('#solicitarCaixa').isDisabled(), true);
+    assert.match(await page.locator('#caixaEspecialResumo').innerText(), /padrão da Marken.*2 kg.*Sim, Extreme Ambient/);
+    const prazoExtreme = /Extreme Ambient: solicite com pelo menos 3 dias úteis/;
+    await page.evaluate(() => { document.getElementById('dataEnvio').value = new Date().toLocaleDateString('en-CA'); window.renderDerived(); });
+    assert.match(await page.locator('body').innerText(), prazoExtreme);
+    await page.evaluate(() => { document.getElementById('dataEnvio').value = new Date(Date.now() + 30 * 864e5).toLocaleDateString('en-CA'); window.renderDerived(); });
+    assert.doesNotMatch(await page.locator('body').innerText(), prazoExtreme);
     await page.evaluate(() => window.selectCourier('DHL'));
     assert.equal(await page.locator('#caixaEspecialField').isVisible(), false);
     assert.equal(await page.locator('#solicitarCaixa').inputValue(), 'Sim');

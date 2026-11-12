@@ -58,6 +58,11 @@ test('projeto configura BioSystem e Sepio, preserva múltiplas regras e permite 
     assert.match(await page.locator('#pCaixasTransporteList').innerText(), /protocolos\.credo@marken\.com.*5 kg.*Sim, Crēdo Cube.*Sem gelo seco/);
     assert.equal(await page.evaluate(() => window.validarProjetoCaixasTransporte_()), true);
     assert.deepEqual(await page.evaluate(() => [window._projetoCaixasTransporte[0].tipoCaixa, window._projetoCaixasTransporte[0].temperatura]), ['CREDO_CUBE', 'CONGELADO']);
+    await page.locator('#pCaixaTipo0').selectOption('EXTREME_AMBIENT');
+    assert.equal(await page.locator('#pCaixaTemp0').inputValue(), 'Ambiente');
+    assert.match(await page.locator('#pCaixasTransporteList').innerText(), /padrão da Marken.*2 kg.*Sim, Extreme Ambient.*3 dias úteis/);
+    assert.deepEqual(await page.evaluate(() => [window._projetoCaixasTransporte[0].tipoCaixa, window._projetoCaixasTransporte[0].temperatura]), ['EXTREME_AMBIENT', 'AMBIENTE']);
+    assert.equal(await page.evaluate(() => window.validarProjetoCaixasTransporte_()), true);
     await page.locator('#pCaixaTipo0').selectOption('BIOSYSTEM');
     assert.equal(await page.locator('#pCaixaTemp0').inputValue(), 'Ambiente');
     assert.equal(await page.evaluate(() => window._projetoCaixasTransporte[0].temperatura), 'AMBIENTE');

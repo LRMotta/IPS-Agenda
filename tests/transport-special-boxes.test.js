@@ -299,6 +299,31 @@ test('Crēdo Cube não se aplica a outra courier nem a temperatura mista; respos
   assert.doesNotThrow(() => s.transporteCaixaNoteRead_('[IPS_CAIXA_V1]{"versao":1,"contexto":[],"tipoCaixa":"CREDO_CUBE"}[/IPS_CAIXA_V1]'));
 });
 
+test('Extreme Ambient: Marken em Ambiente, resposta própria, 2 kg e destinatários padrão', () => {
+  const { s, payload, projects, rule, save, folha, invoice, email } = fixture();
+  projects[1][3] = JSON.stringify([{ ...rule, tipoCaixa: 'EXTREME_AMBIENT' }]);
+  payload.solicitarCaixa = 'Não';
+  const registro = save();
+  assert.equal(registro.caixaTransporte.tipoCaixa, 'EXTREME_AMBIENT');
+  assert.equal(registro.solicitarCaixa, 'Sim, Extreme Ambient');
+  assert.equal(email.getRange('B8').getValue(), 'Sim, Extreme Ambient');
+  folha.getRange('C6').setValue('AMBIENTE');
+  s.atualizarMarkenVolumes_({}, { ...payload, caixaTransporte: registro.caixaTransporte });
+  assert.equal(invoice.getRange('T41').getValue(), '2 Kg');
+  assert.deepEqual(s.transporteCaixaCopias_(['a@example.invalid', 'expobrasil@marken.com'], { ...payload, caixaTransporte: registro.caixaTransporte }), ['a@example.invalid', 'expobrasil@marken.com']);
+  assert.doesNotThrow(() => s.transporteCaixaNoteRead_('[IPS_CAIXA_V1]{"versao":1,"contexto":[],"tipoCaixa":"EXTREME_AMBIENT"}[/IPS_CAIXA_V1]'));
+  const caixaTransporte = { tipoCaixa: 'EXTREME_AMBIENT' };
+  for (const fora of [{ courier: 'OCASA' }, { temperatura: 'REFRIGERADO' }, { temperatura: 'AMBIENTE + CONGELADO' }]) {
+    assert.equal(s.transporteCaixaExtremeAmbient_({ ...payload, ...fora, caixaTransporte }), false);
+  }
+  const convencional = { ...payload, temperatura: 'REFRIGERADO', caixaTransporte: { tipoCaixa: '' } };
+  assert.equal(s.transporteSolicitarCaixaMarken_(convencional, 'Sim, Extreme Ambient'), 'Não');
+  for (const invalida of [{ temperatura: 'REFRIGERADO' }, { courierId: 'O1' }]) {
+    projects[1][3] = JSON.stringify([{ ...rule, tipoCaixa: 'EXTREME_AMBIENT', ...invalida }]);
+    assert.match(s.transporteCaixasRegras_()[0].erro, /Revise/);
+  }
+});
+
 test('feriados do prazo da Crēdo Cube só são lidos quando alguma regra usa a caixa', () => {
   const s = runFile('TransporteCodexConfig.gs', { Logger: { log() {} } });
   let leituras = 0;
@@ -307,6 +332,7 @@ test('feriados do prazo da Crēdo Cube só são lidos quando alguma regra usa a 
   assert.equal(s.transporteCaixasFeriados_(undefined), null);
   assert.equal(leituras, 0);
   assert.equal(s.transporteCaixasFeriados_([{ tipoCaixa: 'CREDO_CUBE' }])['2026-11-12'], true);
+  assert.equal(s.transporteCaixasFeriados_([{ tipoCaixa: 'EXTREME_AMBIENT' }])['2026-11-12'], true);
 });
 
 test('Pendências citam a caixa especial só quando uma regra combina com o transporte', () => {
@@ -342,10 +368,10 @@ test('hash documental muda com a caixa e nota inválida não é inferida', () =>
 });
 
 test('rascunho BioSystem vai para operações, Crēdo Cube para protocolos; Sepio conserva destinatário e tabela OCASA', () => {
-  for (const type of ['BIOSYSTEM', 'CREDO_CUBE', 'SEPIO', '']) {
+  for (const type of ['BIOSYSTEM', 'CREDO_CUBE', 'EXTREME_AMBIENT', 'SEPIO', '']) {
     const { s, payload, projects, rule, save, email } = fixture();
     if (type === 'SEPIO') { payload.courier = 'OCASA'; projects[1][3] = JSON.stringify([{ ...rule, courierId: 'O1', tipoCaixa: 'SEPIO' }]); }
-    if (type === 'CREDO_CUBE') projects[1][3] = JSON.stringify([{ ...rule, tipoCaixa: 'CREDO_CUBE' }]);
+    if (type === 'CREDO_CUBE' || type === 'EXTREME_AMBIENT') projects[1][3] = JSON.stringify([{ ...rule, tipoCaixa: type }]);
     if (!type) projects[1][3] = '[]';
     save();
     const rows = [['Coleta', ''], ['Temperatura', 'AMBIENTE'], ['Fornecer caixa', 'Não']];
@@ -370,7 +396,7 @@ test('rascunho BioSystem vai para operações, Crēdo Cube para protocolos; Sepi
     if (type === 'SEPIO') {
       assert.match(drafts[0].html, />Não<\/td>/);
       assert.equal(email.getRange('B8').getValue(), '');
-    } else if (type) assert.match(drafts[0].html, type === 'CREDO_CUBE' ? />Sim, Crēdo Cube<\/td>/ : />Sim, BioSystem<\/td>/);
+    } else if (type) assert.match(drafts[0].html, { CREDO_CUBE: />Sim, Crēdo Cube<\/td>/, EXTREME_AMBIENT: />Sim, Extreme Ambient<\/td>/ }[type] || />Sim, BioSystem<\/td>/);
   }
 });
 

@@ -53,6 +53,12 @@ test('regras de caixas usam IDs, limitam courier/temperatura e rejeitam conflito
     assert.throws(() => server.normalizarProjetoCaixasTransporte_([{ ...credo, ...change }]));
   }
   assert.throws(() => server.normalizarProjetoCaixasTransporte_([bio, credo]), /Já existe/);
+  const extreme = { ...bio, tipoCaixa: 'extreme_ambient' };
+  assert.equal(JSON.parse(server.normalizarProjetoCaixasTransporte_([extreme]))[0].tipoCaixa, 'EXTREME_AMBIENT');
+  for (const change of [{ temperatura: 'Refrigerado' }, { temperatura: 'Congelado' }, { courierId: 'O1' }]) {
+    assert.throws(() => server.normalizarProjetoCaixasTransporte_([{ ...extreme, ...change }]), /Extreme Ambient \(Ambiente\)/);
+  }
+  assert.throws(() => server.normalizarProjetoCaixasTransporte_([bio, extreme]), /Já existe/);
   assert.throws(() => server.normalizarProjetoCaixasTransporte_('{'), /inválidas/);
   assert.equal(server.normalizarProjetoCaixasTransporte_(''), '[]');
 });

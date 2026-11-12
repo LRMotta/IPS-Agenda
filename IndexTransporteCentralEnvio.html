@@ -165,7 +165,7 @@
   function transpCentralHtmlConferir(registro) {
     var materiais = transpCentralMateriaisAtivos(registro);
     var pinexAg = registro.courier === 'PINEX (Agendamento)';
-    var caixa = registro.caixaTransporte && registro.caixaTransporte.tipoCaixa ? '<p class="tc-aviso" role="note">Caixa especial: ' + esc(registro.caixaTransporte.tipoCaixa) + '. Solicite com 2 dias úteis de antecedência.</p>' : '';
+    var caixa = registro.caixaTransporte && registro.caixaTransporte.tipoCaixa ? '<p class="tc-aviso" role="note">Caixa especial: ' + esc(registro.caixaTransporte.tipoCaixa) + '. Solicite com ' + (registro.caixaTransporte.tipoCaixa === 'EXTREME_AMBIENT' ? 3 : 2) + ' dias úteis de antecedência.</p>' : '';
     var avisos = ((TC_ENVIO.dados && TC_ENVIO.dados.avisos) || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('');
     return '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Transporte</h3><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir</button></div><dl class="tc-dl">' +
         transpCentralLinha('Courier', registro.courier) + transpCentralLinha('Temperatura', registro.temperatura) +
