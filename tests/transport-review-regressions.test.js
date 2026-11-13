@@ -132,6 +132,25 @@ test('coleta ignora outro participante, projeto, slot e vinculo historico com AW
   }
 });
 
+test('coleta aceita destino corrigido no novo envio quando a AWB do vinculo confere', () => {
+  for (const backupSlot of ['backup', 'backup2']) {
+    const { s, origem, destino, idx, courierIdx } = backupCollectionFixture(backupSlot, '1');
+    destino[courierIdx.destino] = 'Outro Lab';
+    const detalhes = {};
+    assert.equal(s.transporteDatasColetaAgenda_([origem, destino], destino, '1', detalhes)['1'], '2026-10-20', backupSlot);
+    assert.equal(detalhes['1'].slot, backupSlot);
+    // Sem AWB no vinculo, o destino divergente continua impedindo a atribuicao.
+    if (backupSlot === 'backup') {
+      origem[idx.backupAgendaRef] = JSON.stringify({ id: 'ENVIO', dataIso: '2026-10-26' });
+    } else {
+      const dados = JSON.parse(origem[idx.backup2Dados]);
+      dados.agendamentos = [{ id: 'ENVIO', dataIso: '2026-10-26' }];
+      origem[idx.backup2Dados] = JSON.stringify(dados);
+    }
+    assert.equal(s.transporteDatasColetaAgenda_([origem, destino], destino, '1', {})['1'], undefined, backupSlot + ' sem AWB');
+  }
+});
+
 test('coleta exige revisao quando a origem e ambigua ou tem data invalida', () => {
   const { s, origem, destino, idx } = backupCollectionFixture('backup2', '1');
   const outraOrigem = origem.slice();

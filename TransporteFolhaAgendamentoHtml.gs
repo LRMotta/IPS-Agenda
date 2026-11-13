@@ -262,9 +262,20 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
     documentos: ((spec && spec.ordem) || []).map(function(titulo) {
       return { nome: titulosFolha.indexOf(titulo) >= 0 ? 'Folha de Agendamento' : titulo, copias: spec.copias[titulo] || 1 };
     }),
-    observacoes: String(registro.observacoes || '').trim(),
+    // Origem do Backup tambem por extenso nas observacoes, como na folha antiga (so iniciais).
+    observacoes: [transporteFolhaHtmlObsOrigem_(origem), String(registro.observacoes || '').trim()].filter(Boolean).join('\n'),
     assinaturaCourier: dhlPinex
   };
+}
+
+// 'Envio de amostras backup do agendamento de 13/11/2026 (Semana 2 - V3) do participante G.T.'
+function transporteFolhaHtmlObsOrigem_(origem) {
+  if (!origem) return '';
+  var texto = 'Envio de amostras backup do agendamento' + (origem.data ? ' de ' + origem.data : '') +
+    (origem.visita ? ' (' + origem.visita + ')' : '') +
+    (origem.iniciais ? ' do participante ' + origem.iniciais : '');
+  // Iniciais ja terminam em ponto ('G.T.').
+  return /\.$/.test(texto) ? texto : texto + '.';
 }
 
 function transporteFolhaHtmlDado_(rotulo, valor, classe) {

@@ -130,7 +130,11 @@ test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou 
   assert.match(html, /<span class="num">3<\/span>Documentos neste PDF/);
   assert.match(html, /<span class="num">4<\/span>Observações/);
   assert.match(html, /Invoice \(MARKEN\)<\/td><td class="r copias">4<\/td>/);
-  assert.match(html, /<p>Participante em jejum\.<\/p>(<div class="linha"><\/div>){7}<\/div>/);
+  // Origem do Backup tambem por extenso nas observacoes, antes das observacoes do envio.
+  assert.match(html, /<p>Envio de amostras backup do agendamento de 28\/10\/2026 \(Ciclo 3 · Dia 1\) do participante A\.B\.C\.<br>Participante em jejum\.<\/p>(<div class="linha"><\/div>){6}<\/div>/);
+  const semOrigem = app.transporteFolhaHtmlPagina_(app.transporteFolhaHtmlDados_({}, registroBase(), SPEC_MARKEN,
+    { agendaContexto: { visita: '', origem: null }, labCentral: null }), {});
+  assert.match(semOrigem, /<p>Participante em jejum\.<\/p>(<div class="linha"><\/div>){7}<\/div>/);
   assert.match(html, /<div class="fa">/);
   assert.doesNotMatch(html, /Recebido pelo agente|Ref\. interna|Confirma|Agendado em|P[aá]gina \d/);
   // O conversor HtmlService nao aceita flex/grid e nao imprime fundos.
