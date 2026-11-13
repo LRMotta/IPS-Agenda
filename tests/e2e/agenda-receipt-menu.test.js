@@ -107,3 +107,56 @@ test('impressão do acompanhante identifica o recebedor nas três vias e conserv
     await browser.close();
   }
 });
+
+test('projeto com as duas formas gera folha única de comprovantes com assinatura do coordenador', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 900, height: 1200 } });
+    const errors = await agendaBrowserFixture(page);
+    await page.evaluate(() => {
+      window.fecharModalSeClicouFora = (event, id) => {
+        if (event.target.id === id) window.fecharOverlay(id);
+      };
+      window.agendaAbrirJanelaImpressao = (titulo, html) => { window.receiptTitle = titulo; window.receiptHtml = html; };
+      window.abrirAgendaRecibo('AG-123', 42);
+      window.calls.find(call => call.method === 'getAgendaReciboData').success({
+        idParticipante: 'P-001', participante: 'Participante de teste', projeto: 'Estudo AB', visita: 'Visita 1',
+        dataVisitaIso: '2026-10-07', coordenador: 'Coordenação de teste', formaRessarcimento: 'ambos',
+        beneficiarios: [
+          { tipo: 'Participante', nome: 'Participante de teste', cpf: '52998224725', telefone: '(54) 99999-0101', valorPadrao: 100, banco: 'Banco Teste', tipoConta: 'Conta corrente', agencia: '0001', contaCorrente: '1234' }
+        ]
+      });
+    });
+    const imprimir = page.locator('#btnImprimirAgendaRecibo');
+    assert.equal(await page.locator('#agendaReciboModoBox').isVisible(), true);
+    assert.equal(await imprimir.isDisabled(), true);
+    await page.locator('input[name="agendaReciboModo"][value="despesas"]').check();
+    assert.equal(await page.locator('#agendaReciboDespesasBox').isVisible(), true);
+    assert.equal(await page.locator('#agendaReciboValor').isVisible(), false, 'folha não pede valor');
+    assert.equal(await imprimir.isEnabled(), true);
+    await imprimir.click();
+    assert.equal(await page.evaluate(() => window.receiptTitle), 'Comprovantes de despesas - Participante de teste');
+    const dir = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+    fs.mkdirSync(dir, { recursive: true });
+    await page.locator('#modalAgendaRecibo .modal-box').screenshot({ path: path.join(dir, 'recibo-modal-despesas.png') });
+    const html = await page.evaluate(() => window.receiptHtml);
+    await page.setContent(html);
+    await page.emulateMedia({ media: 'print' });
+    assert.equal(await page.title(), 'Comprovantes de despesas');
+    const paginas = page.locator('.receipt-copy');
+    assert.equal(await paginas.count(), 1);
+    const texto = await paginas.nth(0).innerText();
+    assert.match(texto, /COMPROVANTES DE DESPESAS\s+PARTICIPANTE DE PESQUISA/i);
+    assert.match(texto, /Cole aqui as notas fiscais e recibos originais/);
+    assert.match(texto, /CPF do beneficiário: 52998224725/);
+    assert.match(texto, /Banco Teste · Tipo de conta: Conta corrente · Agência 0001 · Conta 1234/);
+    assert.match(texto, /Coordenação de teste\s+Assinatura do\(a\) coordenador\(a\) do estudo/);
+    const fits = await paginas.nth(0).evaluate(element => element.getBoundingClientRect().height <= 273 * 96 / 25.4);
+    assert.equal(fits, true, 'a folha deve caber na área imprimível A4');
+    await paginas.nth(0).screenshot({ path: path.join(dir, 'folha-comprovantes.png') });
+    assert.deepEqual(errors, []);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
+});

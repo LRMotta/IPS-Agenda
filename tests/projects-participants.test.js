@@ -386,7 +386,11 @@ test('modal de projeto oferece ressarcimentos padrão para participante e acompa
   const end = modal.indexOf('<div class="modal-overlay" id="modalBracoProjeto"', start);
   const block = modal.slice(start, end);
 
-  assert.match(block, /Ressarcimento padrão/);
+  assert.match(block, /Ressarcimento/);
+  assert.match(block, /id="pFormaRessarcimento"/);
+  for (const value of ['padrao', 'despesas', 'ambos', 'nenhum']) assert.match(block, new RegExp('<option value="' + value + '">'));
+  assert.match(client, /formaRessarcimento: document\.getElementById\('pFormaRessarcimento'\)\.value \|\| 'padrao'/);
+  assert.match(client, /document\.getElementById\('pFormaRessarcimento'\)\.value = projeto\.formaRessarcimento \|\| 'padrao'/);
   assert.match(block, /id="pRessarcimentoParticipante"/);
   assert.match(block, /id="pRessarcimentoAcompanhante"/);
   assert.match(client, /ressarcimentoPadraoParticipante/);

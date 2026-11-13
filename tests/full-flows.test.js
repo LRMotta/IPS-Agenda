@@ -458,6 +458,38 @@ test('projeto grava ressarcimentos padrão opcionais e valida os valores antes d
   assert.equal(invalidSheet.writes, 0);
 });
 
+test('projeto grava a forma de ressarcimento com rótulo legível, preserva campos omitidos e rejeita valor inválido', () => {
+  const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+
+  assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, {
+    ressarcimentoPadraoParticipante: '100,00',
+    ressarcimentoPadraoAcompanhante: '50,00',
+    formaRessarcimento: 'ambos'
+  })), 'Projeto cadastrado com sucesso!');
+  const formaCol = sheet.rows[0].indexOf('Forma de ressarcimento');
+  const participanteCol = sheet.rows[0].indexOf('Ressarcimento padrão participante');
+  assert.ok(formaCol >= 0);
+  assert.equal(sheet.rows[1][formaCol], 'Ambos');
+
+  const id = sheet.rows[1][0];
+  assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, { id, formaRessarcimento: 'despesas' })), 'Projeto atualizado com sucesso!');
+  assert.equal(sheet.rows[1][formaCol], 'Despesas comprovadas');
+  assert.equal(sheet.rows[1][participanteCol], 100, 'valor padrão omitido não é apagado');
+
+  assert.equal(context.salvarDadosProjeto(Object.assign({}, validProject, { id, ressarcimentoPadraoParticipante: '120,00' })), 'Projeto atualizado com sucesso!');
+  assert.equal(sheet.rows[1][formaCol], 'Despesas comprovadas', 'payload legado sem forma preserva a forma');
+  assert.equal(sheet.rows[1][participanteCol], 120);
+
+  const writes = sheet.writes;
+  assert.throws(() => context.salvarDadosProjeto(Object.assign({}, validProject, { id, formaRessarcimento: 'talvez' })), /forma de ressarcimento válida/);
+  assert.equal(sheet.writes, writes);
+
+  assert.equal(context.projetoFormaRessarcimentoCodigo_(''), 'padrao');
+  assert.equal(context.projetoFormaRessarcimentoCodigo_('Sem ressarcimento'), 'nenhum');
+  assert.equal(context.projetoFormaRessarcimentoCodigo_('despesas comprovadas'), 'despesas');
+});
+
 test('projeto grava base padrão e ativação CTMS em colunas opcionais e valida o valor', () => {
   const sheet = new FakeSheet('Projetos', [['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']]);
   const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));

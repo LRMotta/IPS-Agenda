@@ -4532,6 +4532,7 @@ function getProjetosDadosInterno_(incluirSiv) {
       ctmsJornadaAtivo: soaConfigCols.ctmsJornadaAtivo >= 0 && ['sim', 'true', '1'].indexOf(normText_(r[soaConfigCols.ctmsJornadaAtivo])) >= 0,
       ressarcimentoPadraoParticipante: ressarcimentoCols.participante >= 0 ? r[ressarcimentoCols.participante] : '',
       ressarcimentoPadraoAcompanhante: ressarcimentoCols.acompanhante >= 0 ? r[ressarcimentoCols.acompanhante] : '',
+      formaRessarcimento: projetoFormaRessarcimentoCodigo_(ressarcimentoCols.forma >= 0 ? r[ressarcimentoCols.forma] : '') || 'padrao',
       dataSiv:       siv.data || '',
       dataSivInicio: siv.inicio || siv.data || '',
       dataSivFim:    siv.fim || siv.data || ''
@@ -6162,11 +6163,40 @@ var PROJETO_RESSARCIMENTO_FIELDS_ = [{
   mapKey: 'acompanhante',
   header: 'Ressarcimento padrão acompanhante',
   aliases: ['Ressarcimento padrao acompanhante', 'Ressarcimento acompanhante']
+}, {
+  key: 'formaRessarcimento',
+  mapKey: 'forma',
+  header: 'Forma de ressarcimento',
+  aliases: ['Forma ressarcimento', 'Modalidade de ressarcimento']
 }];
+
+// Rotulos gravados na planilha (legiveis pela equipe) e seus codigos internos.
+// Celula vazia ou coluna ausente equivale a 'padrao', preservando o recibo legado.
+var PROJETO_FORMAS_RESSARCIMENTO_ = [
+  { code: 'padrao', label: 'Valor padrão' },
+  { code: 'despesas', label: 'Despesas comprovadas' },
+  { code: 'ambos', label: 'Ambos' },
+  { code: 'nenhum', label: 'Sem ressarcimento' }
+];
+
+function projetoFormaRessarcimentoCodigo_(valor) {
+  var norm = normText_(valor);
+  if (!norm) return 'padrao';
+  for (var i = 0; i < PROJETO_FORMAS_RESSARCIMENTO_.length; i++) {
+    var forma = PROJETO_FORMAS_RESSARCIMENTO_[i];
+    if (norm === normText_(forma.code) || norm === normText_(forma.label)) return forma.code;
+  }
+  return '';
+}
+
+function projetoFormaRessarcimentoRotulo_(codigo) {
+  var forma = PROJETO_FORMAS_RESSARCIMENTO_.filter(function(item) { return item.code === codigo; })[0];
+  return forma ? forma.label : '';
+}
 
 function projetoRessarcimentoColumnMap_(headers) {
   var normalized = (headers || []).map(function(header) { return normText_(header); });
-  var map = { participante: -1, acompanhante: -1 };
+  var map = { participante: -1, acompanhante: -1, forma: -1 };
   PROJETO_RESSARCIMENTO_FIELDS_.forEach(function(field) {
     var names = [field.header].concat(field.aliases || []);
     for (var i = 0; i < names.length && map[field.mapKey] < 0; i++) {
@@ -6197,10 +6227,18 @@ function normalizarProjetoRessarcimento_(valor, rotulo) {
 
 function validarProjetoRessarcimentos_(dados) {
   if (!projetoRessarcimentoPayloadPresente_(dados)) return {};
-  return {
-    ressarcimentoPadraoParticipante: normalizarProjetoRessarcimento_(dados.ressarcimentoPadraoParticipante, 'participante'),
-    ressarcimentoPadraoAcompanhante: normalizarProjetoRessarcimento_(dados.ressarcimentoPadraoAcompanhante, 'acompanhante')
-  };
+  var valores = {};
+  // Payload legado sem a forma (ou sem os valores) nao apaga o campo omitido.
+  ['ressarcimentoPadraoParticipante', 'ressarcimentoPadraoAcompanhante'].forEach(function(key) {
+    if (!Object.prototype.hasOwnProperty.call(dados, key)) return;
+    valores[key] = normalizarProjetoRessarcimento_(dados[key], key === 'ressarcimentoPadraoParticipante' ? 'participante' : 'acompanhante');
+  });
+  if (Object.prototype.hasOwnProperty.call(dados, 'formaRessarcimento')) {
+    var codigo = projetoFormaRessarcimentoCodigo_(dados.formaRessarcimento);
+    if (!codigo) throw new Error('Selecione uma forma de ressarcimento válida.');
+    valores.formaRessarcimento = projetoFormaRessarcimentoRotulo_(codigo);
+  }
+  return valores;
 }
 
 function garantirProjetoRessarcimentoColumn_(aba, fieldKey) {
@@ -6217,6 +6255,7 @@ function garantirProjetoRessarcimentoColumn_(aba, fieldKey) {
 
 function gravarProjetoRessarcimentos_(aba, rowNumber, valores) {
   PROJETO_RESSARCIMENTO_FIELDS_.forEach(function(field) {
+    if (!Object.prototype.hasOwnProperty.call(valores, field.key)) return;
     var column = garantirProjetoRessarcimentoColumn_(aba, field.key);
     aba.getRange(rowNumber, column + 1).setValue(valores[field.key]);
   });
@@ -20295,7 +20334,8 @@ function agendaReciboProjeto_(nomeProjeto) {
   return {
     coordenador: String(values[11] || '').trim(),
     ressarcimentoPadraoParticipante: ressarcimentoCols.participante >= 0 ? values[ressarcimentoCols.participante] : '',
-    ressarcimentoPadraoAcompanhante: ressarcimentoCols.acompanhante >= 0 ? values[ressarcimentoCols.acompanhante] : ''
+    ressarcimentoPadraoAcompanhante: ressarcimentoCols.acompanhante >= 0 ? values[ressarcimentoCols.acompanhante] : '',
+    formaRessarcimento: projetoFormaRessarcimentoCodigo_(ressarcimentoCols.forma >= 0 ? values[ressarcimentoCols.forma] : '') || 'padrao'
   };
 }
 
@@ -20322,6 +20362,8 @@ function getAgendaReciboData(id, rowIndex) {
   var projeto = codexMeasurePerformance_('getAgendaReciboData', 'project', {}, function() {
     return agendaReciboProjeto_(evento.projeto);
   });
+  var formaRessarcimento = projeto.formaRessarcimento || 'padrao';
+  if (formaRessarcimento === 'nenhum') throw new Error('Este projeto está cadastrado sem ressarcimento ao participante.');
   function beneficiario(pessoa, tipo, valorPadrao) {
     pessoa = pessoa || {};
     return {
@@ -20357,6 +20399,7 @@ function getAgendaReciboData(id, rowIndex) {
     dataVisitaIso: String(evento.dataIso || ''),
     dataEcrf: String(evento.ecrfData || ''),
     ecrfConcluida: !!evento.ecrfConcluida,
+    formaRessarcimento: formaRessarcimento,
     beneficiarios: beneficiarios
   };
   } finally {
