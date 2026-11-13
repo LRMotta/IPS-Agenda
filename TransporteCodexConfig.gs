@@ -512,10 +512,13 @@ function transporteDatasColetaAgenda_(rows, destino, slotSolicitado, origensDeta
         var courierIdx = { '1': idx.c1, '2': idx.c2, '3': idx.c3, '4': idx.c4 }[slot];
         if (!courierIdx) return;
         // Referências históricas não podem atribuir coleta a outro participante ou slot reutilizado.
+        var awbRef = String(ref.awb || '').replace(/\W/g, '');
+        if (awbRef && awbRef !== String(destino[courierIdx.awb] || '').replace(/\W/g, '')) return;
         if (normText_(backup.nome) !== normText_(destino[courierIdx.nome]) ||
-            normText_(backup.temperatura) !== normText_(destino[courierIdx.temp]) ||
-            normText_(backup.destino) !== normText_(destino[courierIdx.destino])) return;
-        if (ref.awb && String(ref.awb).replace(/\W/g, '') !== String(destino[courierIdx.awb] || '').replace(/\W/g, '')) return;
+            normText_(backup.temperatura) !== normText_(destino[courierIdx.temp])) return;
+        // O laboratório pode ser corrigido no novo envio (620X43287330: TORRANCE -> INDIANAPOLIS);
+        // a AWB do vínculo conferida acima identifica a remessa. Sem AWB, o destino segue exigido.
+        if (!awbRef && normText_(backup.destino) !== normText_(destino[courierIdx.destino])) return;
         var origemKey = String(origem[idx.id]) + ':' + backupSlot;
         if (origens[slot] && origens[slot] !== origemKey) {
           throw new Error('Há mais de uma origem de backup para este transporte. Revise o vínculo antes de gerar os documentos.');

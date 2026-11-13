@@ -6170,6 +6170,8 @@ var PROJETO_RESSARCIMENTO_FIELDS_ = [{
   aliases: ['Forma ressarcimento', 'Modalidade de ressarcimento']
 }];
 
+var PROJETO_CAIXAS_TRANSPORTE_FIELD_ = { key: 'caixasTransporteJson', header: 'Caixas especiais transporte (JSON)', aliases: [] };
+
 // Rotulos gravados na planilha (legiveis pela equipe) e seus codigos internos.
 // Celula vazia ou coluna ausente equivale a 'padrao', preservando o recibo legado.
 var PROJETO_FORMAS_RESSARCIMENTO_ = [
@@ -6241,26 +6243,6 @@ function validarProjetoRessarcimentos_(dados) {
   return valores;
 }
 
-function garantirProjetoRessarcimentoColumn_(aba, fieldKey) {
-  var lastCol = Math.max(aba.getLastColumn(), 1);
-  var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-  var map = projetoRessarcimentoColumnMap_(headers);
-  var field = PROJETO_RESSARCIMENTO_FIELDS_.filter(function(item) { return item.key === fieldKey; })[0];
-  if (!field) throw new Error('Campo de ressarcimento desconhecido: ' + fieldKey + '.');
-  if (map[field.mapKey] >= 0) return map[field.mapKey];
-  var index = headers.length;
-  aba.getRange(1, index + 1).setValue(field.header);
-  return index;
-}
-
-function gravarProjetoRessarcimentos_(aba, rowNumber, valores) {
-  PROJETO_RESSARCIMENTO_FIELDS_.forEach(function(field) {
-    if (!Object.prototype.hasOwnProperty.call(valores, field.key)) return;
-    var column = garantirProjetoRessarcimentoColumn_(aba, field.key);
-    aba.getRange(rowNumber, column + 1).setValue(valores[field.key]);
-  });
-}
-
 function projetoSoAConfigColumnMap_(headers) {
   var normalized = (headers || []).map(function(header) { return normText_(header); });
   var map = { baseCalculoPadrao: -1, ctmsJornadaAtivo: -1 };
@@ -6283,31 +6265,6 @@ function validarProjetoSoAConfig_(dados) {
   var normalized = soaNormalizarBaseCalculo_(raw);
   if (raw && !normalized) throw new Error('A base padrão do cronograma deve ser Manter datas previstas ou Recalcular pela visita realizada.');
   return normalized;
-}
-
-function garantirProjetoSoAConfigColumn_(aba, fieldKey) {
-  var lastCol = Math.max(aba.getLastColumn(), 1);
-  var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-  var map = projetoSoAConfigColumnMap_(headers);
-  var mapKey = fieldKey === 'soaBaseCalculoPadrao' ? 'baseCalculoPadrao' : fieldKey;
-  if (map[mapKey] >= 0) return map[mapKey];
-  var field = PROJETO_SOA_CONFIG_FIELDS_.filter(function(item) { return item.key === fieldKey; })[0];
-  if (!field) throw new Error('Configuração do Cronograma de Avaliações desconhecida: ' + fieldKey + '.');
-  var index = headers.length;
-  aba.getRange(1, index + 1).setValue(field.header);
-  return index;
-}
-
-function gravarProjetoSoAConfig_(aba, rowNumber, dados) {
-  if (projetoSoAConfigPayloadPresente_(dados)) {
-    var baseColumn = garantirProjetoSoAConfigColumn_(aba, 'soaBaseCalculoPadrao');
-    aba.getRange(rowNumber, baseColumn + 1).setValue(validarProjetoSoAConfig_(dados));
-  }
-  if (Object.prototype.hasOwnProperty.call(dados || {}, 'ctmsJornadaAtivo')) {
-    var ativo = dados.ctmsJornadaAtivo === true || ['sim', 'true', '1'].indexOf(normText_(dados.ctmsJornadaAtivo)) >= 0;
-    var ctmsColumn = garantirProjetoSoAConfigColumn_(aba, 'ctmsJornadaAtivo');
-    aba.getRange(rowNumber, ctmsColumn + 1).setValue(ativo ? 'Sim' : 'Não');
-  }
 }
 
 function projetoCtmsJornadaAtivo_(projeto) {
@@ -6453,41 +6410,64 @@ function validarProjetoCourierIds_(dados) {
   if (situacao === 'Não' && ids.length) throw new Error('Um projeto sem envio de amostras não pode ter courier vinculada.');
 }
 
-function garantirProjetoCourierColumns_(aba) {
-  var lastCol = Math.max(aba.getLastColumn(), 1);
-  var headers = aba.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-  var normalized = headers.map(function(header) { return normText_(header); });
-  var map = {};
-  PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).forEach(function(field) {
-    var names = [field.header].concat(field.aliases || []);
-    var index = -1;
-    for (var i = 0; i < names.length && index < 0; i++) index = normalized.indexOf(normText_(names[i]));
-    if (index < 0) {
-      index = headers.length;
-      aba.getRange(1, index + 1).setValue(field.header);
-      headers.push(field.header);
-      normalized.push(normText_(field.header));
-    }
-    map[field.key] = index;
-  });
-  return map;
-}
-
-function gravarProjetoCourierIds_(aba, rowNumber, dados) {
-  if (!projetoCourierPayloadPresente_(dados)) return;
-  var columns = garantirProjetoCourierColumns_(aba);
-  PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).forEach(function(field) {
-    var presente = Object.prototype.hasOwnProperty.call(dados, field.key) || (field.legacyKey && Object.prototype.hasOwnProperty.call(dados, field.legacyKey));
-    if (!presente) return;
-    var value = PROJETO_COURIER_TEMPERATURE_FIELDS_.indexOf(field) >= 0
-      ? projetoTemperaturasPayload_(dados, field).join('; ')
-      : String(dados[field.key] || '').trim();
-    aba.getRange(rowNumber, columns[field.key] + 1).setValue(value);
-  });
-}
-
 function projetoCaixasTransporteColumn_(headers) {
-  return (headers || []).map(function(header) { return normText_(header); }).indexOf(normText_('Caixas especiais transporte (JSON)'));
+  return (headers || []).map(function(header) { return normText_(header); }).indexOf(normText_(PROJETO_CAIXAS_TRANSPORTE_FIELD_.header));
+}
+
+// Campos opcionais do payload, na ordem em que seus cabeçalhos são criados.
+// Campo omitido não é gravado; os de courier têm o cabeçalho garantido mesmo
+// quando omitidos, como no fluxo anterior.
+function projetoCamposOpcionaisPayload_(dados, ressarcimentos) {
+  var has = function(key) { return !!key && Object.prototype.hasOwnProperty.call(dados, key); };
+  var campos = [];
+  if (projetoCourierPayloadPresente_(dados)) {
+    PROJETO_COURIER_FIELDS_.concat(PROJETO_COURIER_TEMPERATURE_FIELDS_).concat([PROJETO_SITUACAO_ENVIO_FIELD_]).forEach(function(field) {
+      var presente = has(field.key) || has(field.legacyKey);
+      var value = !presente ? '' : PROJETO_COURIER_TEMPERATURE_FIELDS_.indexOf(field) >= 0
+        ? projetoTemperaturasPayload_(dados, field).join('; ')
+        : String(dados[field.key] || '').trim();
+      campos.push({ field: field, presente: presente, value: value });
+    });
+  }
+  if (has('caixasTransporteJson')) campos.push({ field: PROJETO_CAIXAS_TRANSPORTE_FIELD_, presente: true, value: dados.caixasTransporteJson });
+  if (projetoSoAConfigPayloadPresente_(dados)) campos.push({ field: PROJETO_SOA_CONFIG_FIELDS_[0], presente: true, value: validarProjetoSoAConfig_(dados) });
+  if (has('ctmsJornadaAtivo')) {
+    var ativo = dados.ctmsJornadaAtivo === true || ['sim', 'true', '1'].indexOf(normText_(dados.ctmsJornadaAtivo)) >= 0;
+    campos.push({ field: PROJETO_SOA_CONFIG_FIELDS_[1], presente: true, value: ativo ? 'Sim' : 'Não' });
+  }
+  PROJETO_RESSARCIMENTO_FIELDS_.forEach(function(field) {
+    if (Object.prototype.hasOwnProperty.call(ressarcimentos || {}, field.key)) campos.push({ field: field, presente: true, value: ressarcimentos[field.key] });
+  });
+  return campos;
+}
+
+// Resolve as colunas pelo cabeçalho já lido e grava sem novas leituras: ler a
+// planilha entre gravações força flush e recálculo a cada chamada. Só as células
+// do payload são escritas, em blocos contíguos, preservando as demais colunas.
+function gravarProjetoLinha_(aba, headers, rowNumber, inicial, campos) {
+  var normalized = (headers || []).map(function(header) { return normText_(header); });
+  var novosCabecalhos = [];
+  var cells = {};
+  (inicial ? inicial.values : []).forEach(function(value, offset) { cells[inicial.column + offset] = value; });
+  (campos || []).forEach(function(campo) {
+    var names = [campo.field.header].concat(campo.field.aliases || []);
+    var col = -1;
+    for (var n = 0; n < names.length && col < 0; n++) col = normalized.indexOf(normText_(names[n]));
+    if (col < 0) {
+      col = normalized.length;
+      normalized.push(normText_(campo.field.header));
+      novosCabecalhos.push(campo.field.header);
+    }
+    if (campo.presente) cells[col] = campo.value;
+  });
+  if (novosCabecalhos.length) aba.getRange(1, headers.length + 1, 1, novosCabecalhos.length).setValues([novosCabecalhos]);
+  var cols = Object.keys(cells).map(Number).sort(function(a, b) { return a - b; });
+  for (var i = 0; i < cols.length; i++) {
+    var start = cols[i];
+    var values = [cells[start]];
+    while (i + 1 < cols.length && cols[i + 1] === cols[i] + 1) values.push(cells[cols[++i]]);
+    aba.getRange(rowNumber, start + 1, 1, values.length).setValues([values]);
+  }
 }
 
 // Leitura de catálogo não cria a aba nem completa cabeçalhos legados.
@@ -6535,17 +6515,6 @@ function normalizarProjetoCaixasTransporte_(value) {
   }));
 }
 
-function gravarProjetoCaixasTransporte_(aba, rowNumber, dados) {
-  if (!Object.prototype.hasOwnProperty.call(dados, 'caixasTransporteJson')) return;
-  var headers = aba.getRange(1, 1, 1, Math.max(aba.getLastColumn(), 1)).getDisplayValues()[0];
-  var col = projetoCaixasTransporteColumn_(headers);
-  if (col < 0) {
-    col = headers.length;
-    aba.getRange(1, col + 1).setValue('Caixas especiais transporte (JSON)');
-  }
-  aba.getRange(rowNumber, col + 1).setValue(dados.caixasTransporteJson);
-}
-
 function salvarDadosProjeto(dados) {
   codexAssertCanWrite_('salvarDadosProjeto', 'Cadastros', dados && dados.id);
   return codexWithDocumentLock_('salvarDadosProjeto', function() {
@@ -6581,11 +6550,16 @@ function salvarDadosProjeto(dados) {
     dados.caixasTransporteJson = normalizarProjetoCaixasTransporte_(dados.caixasTransporteJson);
     if (dados.situacaoEnvioAmostras === 'Não' && dados.caixasTransporteJson !== '[]') throw new Error('Um projeto sem envio de amostras não pode ter caixa especial configurada.');
   }
+  // Normaliza todos os campos opcionais antes da primeira escrita.
+  var camposOpcionais = projetoCamposOpcionaisPayload_(dados, ressarcimentos);
+  // A linha principal ocupa 17 colunas; cabeçalhos opcionais novos vêm depois delas.
+  var cabecalho = (rows[0] || []).slice();
+  while (cabecalho.length < 17) cabecalho.push('');
 
   if (dados.id) {
     for (var i = 1; i < rows.length; i++) {
       if (CadastroRules_.normalizeId(rows[i][0]) === dados.id) {
-        aba.getRange(i + 1, 2, 1, 16).setValues([[
+        gravarProjetoLinha_(aba, cabecalho, i + 1, { column: 1, values: [
           dados.nomeAbreviado || '',
           dados.codigo        || '',
           dados.especialidade || '',
@@ -6602,11 +6576,7 @@ function salvarDadosProjeto(dados) {
           dados.numeroCE      || '',
           dados.expedienteCE  || '',
           dados.tituloCompleto || ''
-        ]]);
-        gravarProjetoCourierIds_(aba, i + 1, dados);
-        gravarProjetoCaixasTransporte_(aba, i + 1, dados);
-        gravarProjetoSoAConfig_(aba, i + 1, dados);
-        if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, i + 1, ressarcimentos);
+        ] }, camposOpcionais);
         // Persistir o cadastro antes de liberar o lock e invalidar referências.
         SpreadsheetApp.flush();
         clearTransporteOptionsCache_();
@@ -6636,10 +6606,8 @@ function salvarDadosProjeto(dados) {
       dados.expedienteCE  || '',
       dados.tituloCompleto || ''
     ]);
-    gravarProjetoCourierIds_(aba, aba.getLastRow(), dados);
-    gravarProjetoCaixasTransporte_(aba, aba.getLastRow(), dados);
-    gravarProjetoSoAConfig_(aba, aba.getLastRow(), dados);
-    if (projetoRessarcimentoPayloadPresente_(dados)) gravarProjetoRessarcimentos_(aba, aba.getLastRow(), ressarcimentos);
+    // getDataRange termina na última linha com conteúdo, a mesma usada por appendRow.
+    gravarProjetoLinha_(aba, cabecalho, rows.length + 1, null, camposOpcionais);
     // Persistir as alterações enquanto o lock ainda é exclusivo.
     SpreadsheetApp.flush();
     clearTransporteOptionsCache_();
@@ -21068,29 +21036,20 @@ function codexMarkConfigCacheInvalidated_(source) {
 }
 
 function clearTransporteOptionsCache_() {
+  var transporteKeys = [
+    'TRANSPORTE_OPTIONS_BASE_V2', 'TRANSPORTE_OPTIONS_BASE_V3', 'TRANSPORTE_OPTIONS_BASE_V4',
+    'TRANSPORTE_OPTIONS_BASE_V5', 'TRANSPORTE_OPTIONS_BASE_V6', 'TRANSPORTE_PARTICIPANTES_OPTIONS_V1'
+  ];
+  // Uma chamada por cache em vez de uma por chave.
   try {
-    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V1');
-    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V2');
-    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V3');
-    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V4');
-    CacheService.getScriptCache().remove('CONFIG_APP_DEFAULTS_ENSURED_V5');
-    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V2');
-    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V3');
-    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V4');
-    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V5');
-    CacheService.getScriptCache().remove('TRANSPORTE_OPTIONS_BASE_V6');
-    CacheService.getScriptCache().remove('TRANSPORTE_PARTICIPANTES_OPTIONS_V1');
+    CacheService.getScriptCache().removeAll([
+      'CONFIG_APP_DEFAULTS_ENSURED_V1', 'CONFIG_APP_DEFAULTS_ENSURED_V2', 'CONFIG_APP_DEFAULTS_ENSURED_V3',
+      'CONFIG_APP_DEFAULTS_ENSURED_V4', 'CONFIG_APP_DEFAULTS_ENSURED_V5'
+    ].concat(transporteKeys));
   } catch (e) {}
   try {
     var docCache = CacheService.getDocumentCache();
-    if (docCache) {
-      docCache.remove('TRANSPORTE_OPTIONS_BASE_V2');
-      docCache.remove('TRANSPORTE_OPTIONS_BASE_V3');
-      docCache.remove('TRANSPORTE_OPTIONS_BASE_V4');
-      docCache.remove('TRANSPORTE_OPTIONS_BASE_V5');
-      docCache.remove('TRANSPORTE_OPTIONS_BASE_V6');
-      docCache.remove('TRANSPORTE_PARTICIPANTES_OPTIONS_V1');
-    }
+    if (docCache) docCache.removeAll(transporteKeys);
   } catch (e2) {}
 }
 

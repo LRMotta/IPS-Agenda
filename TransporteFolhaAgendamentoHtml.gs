@@ -8,8 +8,8 @@
  * abas da planilha de Transporte, que sera desativada: na geracao pelo Transporte,
  * visita e origem chegam em registro.folhaAgenda (transporteAtualizarRegistroPorAgenda_)
  * e o LabCentral ja esta em memoria. A pagina usa
- * tabelas e contornos: o conversor HtmlService nao aceita flex/grid e nao imprime
- * cores de fundo. Participante sempre por iniciais e Nº de identificacao.
+ * tabelas e contornos: o conversor HtmlService nao aceita flex/grid; fundo por CSS so no
+ * hero (background-color confirmado em 13/11/2026). Participante sempre por iniciais e Nº de identificacao.
  */
 
 var TRANSPORTE_FOLHA_HTML_SLOTS_ = {
@@ -34,7 +34,8 @@ var TRANSPORTE_FOLHA_HTML_CSS_ =
   '.fa .titulo{font-size:16pt;font-weight:bold}' +
   '.fa .sub{font-size:8pt;color:#555}' +
   '.fa .hero{border:1.5px solid #000}' +
-  '.fa .hero td{padding:11px 12px;border-left:1px solid #bdbdbd}' +
+  // Fundo leve do projeto original: background-color confirmado pelo usuario no PDF do Apps Script.
+  '.fa .hero td{padding:11px 12px;border-left:1px solid #bdbdbd;background-color:#f2f2f2}' +
   '.fa .hero td.prim{border-left:0}' +
   '.fa .grande{font-size:16pt;font-weight:bold;line-height:1.15}' +
   '.fa .awb{font-size:13.5pt;font-weight:bold}' +
@@ -86,9 +87,9 @@ function transporteFolhaHtmlSlotLabel_(slot) {
   return TRANSPORTE_FOLHA_HTML_SLOTS_[String(slot || '').trim()] || '';
 }
 
-// Sombreamento das temperaturas frias, como no projeto inicial da folha. O conversor
-// HtmlService nao imprime background: o fundo e um GIF de 1 pixel esticado
-// (transporteDocsGradeFundoSrc_) sob o texto, com o mesmo posicionamento das imagens
+// Sombreamento das temperaturas frias, como no projeto inicial da folha. Fundo por GIF de 1 pixel
+// esticado (transporteDocsGradeFundoSrc_) sob o texto, anterior a confirmacao do background-color
+// no hero, com o mesmo posicionamento das imagens
 // flutuantes da grade. Cinza com texto preto continua legivel se o fundo faltar.
 var TRANSPORTE_FOLHA_HTML_TEMP_FUNDO_ = '#bdbdbd';
 var TRANSPORTE_FOLHA_HTML_TEMP_ALTURA_ = 24;
@@ -262,9 +263,20 @@ function transporteFolhaHtmlDados_(ss, registro, spec, opcoes) {
     documentos: ((spec && spec.ordem) || []).map(function(titulo) {
       return { nome: titulosFolha.indexOf(titulo) >= 0 ? 'Folha de Agendamento' : titulo, copias: spec.copias[titulo] || 1 };
     }),
-    observacoes: String(registro.observacoes || '').trim(),
+    // Origem do Backup tambem por extenso nas observacoes, como na folha antiga (so iniciais).
+    observacoes: [transporteFolhaHtmlObsOrigem_(origem), String(registro.observacoes || '').trim()].filter(Boolean).join('\n'),
     assinaturaCourier: dhlPinex
   };
+}
+
+// 'Envio de amostras backup do agendamento de 13/11/2026 (Semana 2 - V3) do participante G.T.'
+function transporteFolhaHtmlObsOrigem_(origem) {
+  if (!origem) return '';
+  var texto = 'Envio de amostras backup do agendamento' + (origem.data ? ' de ' + origem.data : '') +
+    (origem.visita ? ' (' + origem.visita + ')' : '') +
+    (origem.iniciais ? ' do participante ' + origem.iniciais : '');
+  // Iniciais ja terminam em ponto ('G.T.').
+  return /\.$/.test(texto) ? texto : texto + '.';
 }
 
 function transporteFolhaHtmlDado_(rotulo, valor, classe) {

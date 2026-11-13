@@ -67,11 +67,12 @@ test('leitura de laboratórios não modifica schema e escrita opcional preserva 
   const { server, projects, labs } = setup();
   assert.equal(server.getProjetoCaixasLaboratorios_()[0].nomeAbreviado, 'Lab Um');
   assert.equal(labs.rows[0].length, 2);
-  server.gravarProjetoCaixasTransporte_(projects, 2, {});
-  assert.equal(projects.rows[0].length, 2);
-  server.gravarProjetoCaixasTransporte_(projects, 2, { caixasTransporteJson: '[]' });
+  const base = { id: 'P1', nomeAbreviado: 'Projeto', fase: 'III', status: 'Ativo', especialidade: 'Oncologia', investigador: 'IP' };
+  server.salvarDadosProjeto(base);
+  assert.equal(server.projetoCaixasTransporteColumn_(projects.rows[0]), -1);
+  server.salvarDadosProjeto({ ...base, caixasTransporteJson: '[]' });
   const col = server.projetoCaixasTransporteColumn_(projects.rows[0]);
   assert.equal(projects.rows[1][col], '[]');
-  server.gravarProjetoCaixasTransporte_(projects, 2, {});
+  server.salvarDadosProjeto(base);
   assert.equal(projects.rows[1][col], '[]');
 });
