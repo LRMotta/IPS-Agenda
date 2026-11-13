@@ -100,8 +100,37 @@ function courierLembreteOperacaoBase_(op) {
   return JSON.stringify([op.agendaId, op.slot, op.referencia, op.courier, +new Date(op.geradoEm), op.geradoPor, op.gmailMessageId, +new Date(op.emailEnviadoEm)]);
 }
 
+// PINEX: o Formulario (courier "PINEX (Agendamento)") e o pedido de coleta; a PINEX responde com Coleta e Frete.
+function courierLembretePinexFormulario_(op) {
+  var courier = normText_(op && op.courier || '');
+  return courier.indexOf('pinex') >= 0 && courier.indexOf('agendamento') >= 0;
+}
+
+// A Agenda guarda "Pinex" e a reconciliacao inativa o Formulario na edicao seguinte da linha por
+// "Courier alterado na Agenda". Esse vinculo continua valido para cobrar a resposta; outros dados
+// alterados no transporte aparecem na comparacao da base.
+function courierLembreteOperacaoVigente_(op) {
+  if (op.estado !== 'INATIVA') return true;
+  return courierLembretePinexFormulario_(op) && op.inativacaoMotivo === 'Courier alterado na Agenda';
+}
+
+// Demais couriers: status Agendado aguardando confirmacao. PINEX: o monitor nao promove o Formulario a
+// Agendado (courier diverge da Agenda); vale o pedido enviado ainda sem AWB (Frete) na Agenda.
+function courierLembreteAguardando_(atual, op) {
+  if (!courierLembretePinexFormulario_(op)) return AgendaServerRules_.courierIsAwaitingConfirmation(atual.courierStatus);
+  if (String(atual.awb || '').trim()) return false;
+  return ['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(AgendaServerRules_.courierStatusKey(atual.courierStatus)) >= 0;
+}
+
+// Os numeros colados na tela do Transporte ficam no registro do envio antes de chegar a Agenda.
+function courierLembretePinexNumerosRecebidos_(item, op) {
+  if (!courierLembretePinexFormulario_(op) || typeof transporteRegistroLer_ !== 'function') return false;
+  var registro = transporteRegistroLer_(item.agendaId, item.slot).registro || {};
+  return !!(String(registro.pinexColeta || '').trim() || String(registro.awb || '').trim());
+}
+
 function courierLembreteOperacaoAtual_(item, op) {
-  var matches = transporteOperacoesRows_().filter(function(o) { return o.estado !== 'INATIVA' && o.agendaId === item.agendaId && o.slot === item.slot; });
+  var matches = transporteOperacoesRows_().filter(function(o) { return courierLembreteOperacaoVigente_(o) && o.agendaId === item.agendaId && o.slot === item.slot; });
   return matches.length === 1 && courierLembreteOperacaoBase_(matches[0]) === courierLembreteOperacaoBase_(op);
 }
 
@@ -207,7 +236,8 @@ function courierLembreteAssinaturaHtml_() {
 
 function courierLembreteTexto_(config, atual, op, original) {
   var textoCustomizado = String(config.lembreteTexto || '').trim();
-  var template = textoCustomizado || 'Prezados,\n\nAté o momento, não identificamos a confirmação da coleta prevista para {data} (AWB: {awb}). Poderiam, por gentileza, confirmar o agendamento?\n\nPara mantermos o histórico centralizado e evitarmos desencontro de informações, pedimos que qualquer confirmação, alteração ou cancelamento seja informada como resposta a este mesmo e-mail.\n\nAtenciosamente,';
+  var templatePinex = 'Prezados,\n\nAté o momento, não recebemos a confirmação do agendamento da coleta prevista para {data}, com os números de Coleta, Frete e Protocolo. Poderiam, por gentileza, enviá-los?\n\nPara mantermos o histórico centralizado e evitarmos desencontro de informações, pedimos que a confirmação, alteração ou cancelamento seja informada como resposta a este mesmo e-mail.\n\nAtenciosamente,';
+  var template = textoCustomizado || (courierLembretePinexFormulario_(op) ? templatePinex : '') || 'Prezados,\n\nAté o momento, não identificamos a confirmação da coleta prevista para {data} (AWB: {awb}). Poderiam, por gentileza, confirmar o agendamento?\n\nPara mantermos o histórico centralizado e evitarmos desencontro de informações, pedimos que qualquer confirmação, alteração ou cancelamento seja informada como resposta a este mesmo e-mail.\n\nAtenciosamente,';
   var vars = { data: atual.data, transporte: 'Transporte ' + ({ '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[op.slot]), referencia: op.referencia, awb: atual.awb || 'não informada' };
   var texto = template.replace(/\{(data|transporte|referencia|awb)\}/g, function(_, k) { return vars[k]; }) + '\n\nRef. IPS: ' + op.referencia + '\nCobrança IPS: ' + op.agendaId + ':' + op.slot;
   var assinaturaHtml = courierLembreteAssinaturaHtml_();
@@ -320,7 +350,7 @@ function courierLembreteExecutar_() {
   try {
     var own = [conta].concat(GmailApp.getAliases().map(function(s) { return s.toLowerCase(); }));
     var configs = getAgendaCourierRows_();
-    var ops = transporteOperacoesRows_().filter(function(op) { return op.estado !== 'INATIVA'; });
+    var ops = transporteOperacoesRows_().filter(courierLembreteOperacaoVigente_);
     var itens = courierLembreteRows_();
     var opsPorChave = courierLembreteIndexar_(ops, function(o) { return JSON.stringify([o.agendaId, o.slot]); });
     var configsPorNome = courierLembreteIndexar_(configs, function(c) { return normText_(c.nome); });
@@ -336,7 +366,7 @@ function courierLembreteExecutar_() {
       if (!op || !op.emailEnviadoEm || !op.gmailMessageId || +new Date(op.geradoEm) !== +new Date(item.gerado)) continue;
       if (!agenda) agenda = courierLembreteAgendaSnapshot_(false);
       var atual = courierLembreteAgenda_(item.agendaId, item.slot, agenda);
-      if (!atual || !AgendaServerRules_.courierIsAwaitingConfirmation(atual.courierStatus)) continue;
+      if (!atual || !courierLembreteAguardando_(atual, op)) continue;
       if (AgendaServerRules_.isCancelled(atual.status) || AgendaServerRules_.isConcluded(atual.status) || AgendaServerRules_.isRescheduled(atual.status) || normText_(atual.status) !== 'agendado') continue;
       if (atual.base !== item.base) { courierLembreteSalvar_(item, 'REVISAO', 'Dados do transporte alterados — revisar'); continue; }
       var config = configsPorNome[normText_(atual.courier)] || [];
@@ -349,6 +379,7 @@ function courierLembreteExecutar_() {
       if (!courierLembreteVencido_(courierLembreteHoraLocal_(new Date(op.emailEnviadoEm)), courierLembreteHoraLocal_(new Date()), coletaIso, config, atual.feriados)) continue;
       tentativas++;
       try {
+        if (courierLembretePinexNumerosRecebidos_(item, op)) continue;
         var original = GmailApp.getMessageById(op.gmailMessageId);
         var motivo = courierLembreteValidarConversa_(original, op, config, own);
         var threadId = original.getThread().getId();
@@ -361,7 +392,7 @@ function courierLembreteExecutar_() {
           if (ledger.length !== 1 || ledger[0].base !== item.base || +new Date(ledger[0].gerado) !== +new Date(item.gerado) || ledger[0].estado !== item.estado) return false;
           item.row = ledger[0].row;
           var fresh = courierLembreteAgenda_(item.agendaId, item.slot);
-          if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || normText_(fresh.status) !== 'agendado' || !AgendaServerRules_.courierIsAwaitingConfirmation(fresh.courierStatus)) return false;
+          if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || normText_(fresh.status) !== 'agendado' || !courierLembreteAguardando_(fresh, op)) return false;
           courierLembreteSalvar_(item, 'TENTATIVA', 'Envio em verificação; não repetir automaticamente', threadId);
           return true;
         });
@@ -386,7 +417,8 @@ function courierLembreteExecutar_() {
             if (props.getProperty('COURIER_LEMBRETES_ATIVO') !== 'true' || props.getProperty('COURIER_LEMBRETES_CONTA') !== conta) return 'Monitor pausado ou conta alterada antes do envio';
             if (!courierLembreteOperacaoAtual_(item, op)) return 'Operação do transporte alterada — revisar';
             var fresh = courierLembreteAgenda_(item.agendaId, item.slot);
-            if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || normText_(fresh.status) !== 'agendado' || !AgendaServerRules_.courierIsAwaitingConfirmation(fresh.courierStatus)) return 'Dados ou status do transporte alterados — revisar';
+            if (!fresh || fresh.base !== item.base || fresh.status !== atual.status || normText_(fresh.status) !== 'agendado' || !courierLembreteAguardando_(fresh, op)) return 'Dados ou status do transporte alterados — revisar';
+            if (courierLembretePinexNumerosRecebidos_(item, op)) return 'Números da PINEX já informados';
             if (!courierLembreteVencido_(courierLembreteHoraLocal_(new Date(op.emailEnviadoEm)), courierLembreteHoraLocal_(new Date()), coletaIso, config, fresh.feriados)) return 'Horário de cobrança não permitido — revisar';
             return '';
           });
