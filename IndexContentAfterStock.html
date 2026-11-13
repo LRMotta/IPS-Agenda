@@ -284,10 +284,19 @@
 
       <div class="form-section">
         <div class="section-label">
-          <span class="material-symbols-outlined" aria-hidden="true">payments</span> Ressarcimento padrão
+          <span class="material-symbols-outlined" aria-hidden="true">payments</span> Ressarcimento
         </div>
-        <div class="field-help" style="margin-bottom:14px">Valores opcionais de referência para o participante e seu acompanhante.</div>
-        <div class="field-row cols-2">
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label" for="pFormaRessarcimento">Forma de ressarcimento</label>
+          <select id="pFormaRessarcimento" class="f-input f-select" onchange="atualizarFormaRessarcimentoProjeto_()">
+            <option value="padrao">Valor padrão (recibo)</option>
+            <option value="despesas">Despesas comprovadas (folha com notas)</option>
+            <option value="ambos">Ambos (escolher ao gerar)</option>
+            <option value="nenhum">Sem ressarcimento</option>
+          </select>
+          <div class="field-help" id="pFormaRessarcimentoAjuda"></div>
+        </div>
+        <div class="field-row cols-2" id="pRessarcimentoValores">
           <div>
             <label class="field-label" for="pRessarcimentoParticipante">Participante</label>
             <input type="text" id="pRessarcimentoParticipante" class="f-input" inputmode="decimal" placeholder="R$ 0,00" onblur="formatarRessarcimentoProjetoInput(this)">

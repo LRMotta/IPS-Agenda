@@ -495,3 +495,65 @@ test('pendencias legadas sao somente leitura e nunca inferem envio', () => {
   s.courierLembreteAnotarPendencias_(p);
   assert.equal(p[0].lembreteStatus, 'Cobrança manual — sem vínculo rastreável');
 });
+
+// PINEX: o Formulario (PINEX (Agendamento)) e o pedido de coleta; a Agenda fica em "Docs gerados" (o monitor
+// nao promove a Agendado) e a PINEX responde com Coleta e Frete. A cobranca vale ate esses numeros chegarem.
+function pinexFixture() {
+  const f = fixture();
+  f.op.courier = 'PINEX (Agendamento)';
+  f.config.nome = 'Pinex';
+  f.current.courier = 'Pinex';
+  f.current.courierStatus = 'Docs gerados';
+  f.current.awb = '';
+  f.registro = {};
+  f.s.transporteRegistroLer_ = () => ({ registro: f.registro });
+  return f;
+}
+
+test('PINEX: cobra a resposta ao Formulario sem AWB, com texto proprio', () => {
+  const f = pinexFixture();
+  assert.equal(f.s.courierLembreteExecutar_().enviados, 1);
+  assert.equal(f.rows[0].estado, 'ENVIADO');
+  assert.match(f.messages[1].getPlainBody(), /números de Coleta, Frete e Protocolo/);
+  assert.doesNotMatch(f.messages[1].getPlainBody(), /AWB: não informada/);
+});
+
+test('PINEX: Formulario inativado pela troca de courier na Agenda continua cobravel', () => {
+  const f = pinexFixture();
+  Object.assign(f.op, { estado: 'INATIVA', inativacaoMotivo: 'Courier alterado na Agenda' });
+  assert.equal(f.s.courierLembreteExecutar_().enviados, 1);
+});
+
+for (const [name, change] of [
+  ['AWB (Frete) na Agenda', f => { f.current.awb = '94624'; }],
+  ['numeros colados no registro', f => { f.registro.pinexColeta = '78429'; }],
+  ['Frete no registro', f => { f.registro.awb = '94624'; }],
+  ['Formulario inativado por outro motivo', f => { Object.assign(f.op, { estado: 'INATIVA', inativacaoMotivo: 'Transporte removido da Agenda' }); }],
+  ['outra operacao ativa no slot', f => { f.s.transporteOperacoesRows_ = () => [Object.assign(f.op, { estado: 'INATIVA', inativacaoMotivo: 'Courier alterado na Agenda' }), { ...f.op, estado: '', courier: 'PINEX', gmailMessageId: 'docs' }]; }],
+  ['transporte ja enviado', f => { f.current.courierStatus = 'Enviado'; }],
+  ['PINEX respondeu na conversa', f => { f.messages.push({ getId: () => 'reply', getDate: () => new Date() }); }],
+  ['numeros chegam na revalidacao final', f => {
+    let n = 0;
+    f.s.transporteRegistroLer_ = () => ({ registro: ++n > 1 ? { pinexColeta: '78429' } : {} });
+  }]
+]) test('PINEX: bloqueia cobranca: ' + name, () => {
+  const f = pinexFixture(); change(f); f.s.courierLembreteExecutar_(); assert.equal(f.sent(), 0);
+});
+
+test('Formulario PINEX nao muda a regra das demais couriers', () => {
+  const f = fixture();
+  f.current.courierStatus = 'Docs gerados';
+  f.current.awb = '';
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+});
+
+test('PINEX: numeros informados durante a cobranca vao para revisao, sem envio', () => {
+  const f = pinexFixture();
+  let n = 0;
+  f.s.transporteRegistroLer_ = () => ({ registro: ++n > 1 ? { pinexColeta: '78429' } : {} });
+  f.s.courierLembreteExecutar_();
+  assert.equal(f.sent(), 0);
+  assert.equal(f.rows[0].estado, 'REVISAO');
+  assert.equal(f.rows[0].detalhe, 'Números da PINEX já informados');
+});

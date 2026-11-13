@@ -130,7 +130,32 @@ test('recibo lê somente o participante e o projeto envolvidos, sem os getters g
 
   assert.equal(JSON.stringify(result.beneficiarios.map((item) => [item.nome, item.tipo, item.valorPadrao, item.telefone])), JSON.stringify([['Pessoa A', 'Participante', 100, '(54) 99999-0101'], ['Acompanhante A', 'Acompanhante', 80, '(54) 99999-0202'], ['Sem telefone', 'Acompanhante', 80, '']]));
   assert.equal(result.coordenador, 'Coordenação A');
+  assert.equal(result.formaRessarcimento, 'padrao', 'projeto sem a coluna mantém o recibo de valor padrão');
   assert.ok(calls.every((call) => call.numRows === 1 || (call.name === 'Participantes' && call.column === 1) || (call.name === 'Projetos' && call.column === 2)));
+});
+
+test('recibo devolve a forma de ressarcimento do projeto e recusa projeto sem ressarcimento', () => {
+  const sheet = (rows) => ({
+    getLastRow: () => rows.length,
+    getLastColumn: () => rows[0].length,
+    getRange(row, column, numRows = 1, numColumns = 1) {
+      return { getValues: () => rows.slice(row - 1, row - 1 + numRows).map((source) => source.slice(column - 1, column - 1 + numColumns)) };
+    }
+  });
+  const projectHeader = ['ID', 'Nome', '', '', '', '', '', '', '', '', '', 'Coordenador', 'Forma de ressarcimento'];
+  const server = runFile('WebApp.gs', { AgendaServerRules_: { formPolicy: () => ({ type: 'visita' }) } });
+  server.codexGetCurrentUserAccess = () => ({ ok: true });
+  server.agendaLerEventoPorId_ = () => ({ id: 'AG-1', participante: 'Pessoa A', projeto: 'Estudo A', tipo: 'Visita' });
+  server.agendaReciboParticipante_ = () => ({ nome: 'Pessoa A', acompanhantes: [] });
+  let forma = '';
+  server.getCodexSpreadsheet_ = () => ({ getSheetByName: () => sheet([projectHeader, ['PROJ-1', 'Estudo A', '', '', '', '', '', '', '', '', '', 'Coord', forma]]) });
+
+  for (const [rotulo, codigo] of [['', 'padrao'], ['Valor padrão', 'padrao'], ['Despesas comprovadas', 'despesas'], ['Ambos', 'ambos']]) {
+    forma = rotulo;
+    assert.equal(server.getAgendaReciboData('AG-1', 2).formaRessarcimento, codigo, rotulo || '(vazio)');
+  }
+  forma = 'Sem ressarcimento';
+  assert.throws(() => server.getAgendaReciboData('AG-1', 2), /sem ressarcimento/);
 });
 
 test('telemetria do servidor separa etapas do recibo sem dados pessoais e registra falhas', () => {
@@ -534,4 +559,90 @@ test('telefone do acompanhante fica nas três vias como texto seguro; participan
   });
   const phoneOnly = context.agendaReciboPrintHtml_({}, { telefone: '222', valor: 80 });
   assert.equal((phoneOnly.match(/Telefone do beneficiário:/g) || []).length, 2);
+});
+
+test('projeto com as duas formas exige escolher o documento e a folha de comprovantes dispensa valor', () => {
+  const { context, elements } = receiptFormContext();
+  const printed = [];
+  context.agendaReciboDespesasPrintHtml_ = (dados, payload) => { printed.push(payload); return '<html>folha</html>'; };
+  context.agendaAbrirJanelaImpressao = (titulo) => printed.push(titulo);
+  const pessoa = { nome: 'Participante', tipo: 'Participante', telefone: '(54) 99999-0101', cpf: '529.982.247-25', valorPadrao: 100, banco: 'Banco', tipoConta: 'Conta corrente', agencia: '1', contaCorrente: '2' };
+  const data = { formaRessarcimento: 'ambos', beneficiarios: [pessoa] };
+  context._agendaReciboData = data;
+  context.agendaReciboPreencher_(data);
+
+  assert.equal(elements.agendaReciboModoBox.hidden, false);
+  assert.equal(elements.agendaReciboDespesasBox.hidden, true);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, true);
+  assert.equal(elements.agendaReciboStatus.textContent, 'Escolha entre recibo de valor padrão e folha de despesas.');
+
+  context.agendaReciboAtualizarModo('despesas');
+  assert.equal(elements.agendaReciboDespesasBox.hidden, false);
+  assert.equal(elements.agendaReciboValorCampo.hidden, true);
+  assert.match(elements.agendaReciboImprimirLabel.textContent, /folha de comprovantes do participante/);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+  assert.equal(elements.agendaReciboStatus.textContent, '');
+
+  elements.agendaReciboValor.value = '';
+  context.imprimirAgendaRecibo();
+  assert.equal(printed[0].nome, 'Participante');
+  assert.equal('valor' in printed[0], false, 'folha não leva valor');
+  assert.equal(printed[1], 'Comprovantes de despesas - Participante');
+
+  context.agendaReciboAtualizarModo('padrao');
+  assert.equal(elements.agendaReciboDespesasBox.hidden, true);
+  assert.equal(elements.agendaReciboValorCampo.hidden, false);
+  assert.match(elements.agendaReciboImprimirLabel.textContent, /recibo do participante/);
+  assert.equal(elements.btnImprimirAgendaRecibo.disabled, false);
+});
+
+test('projeto só com despesas abre direto na folha e o recibo padrão não aparece como escolha', () => {
+  const { context, elements } = receiptFormContext();
+  const pessoa = { nome: 'Participante', tipo: 'Participante', telefone: '(54) 99999-0101', cpf: '529.982.247-25', valorPadrao: 100, banco: 'Banco', tipoConta: 'Conta corrente', agencia: '1', contaCorrente: '2' };
+  const data = { formaRessarcimento: 'despesas', beneficiarios: [pessoa] };
+  context._agendaReciboData = data;
+  context.agendaReciboPreencher_(data);
+  assert.equal(elements.agendaReciboModoBox.hidden, true);
+  assert.equal(elements.agendaReciboDespesasBox.hidden, false);
+  assert.equal(elements.agendaReciboValorCampo.hidden, true);
+  context.agendaReciboAtualizarModo('padrao');
+  assert.equal(context.agendaReciboModo_(), 'despesas', 'escolha não substitui a forma do projeto');
+
+  const legado = { beneficiarios: [pessoa] };
+  context._agendaReciboData = legado;
+  context.agendaReciboPreencher_(legado);
+  assert.equal(elements.agendaReciboModoBox.hidden, true);
+  assert.equal(elements.agendaReciboDespesasBox.hidden, true);
+  assert.equal(elements.agendaReciboValorCampo.hidden, false);
+  assert.equal(context.agendaReciboModo_(), 'padrao');
+});
+
+test('folha de comprovantes é página única identificada com assinatura do coordenador do estudo', () => {
+  const context = receiptPrintContext();
+  context.esc = value => String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = context.agendaReciboDespesasPrintHtml_(
+    { idParticipante: 'P-001', participante: 'Pessoa do estudo', visita: 'V2', projeto: '<i>Estudo X</i>' },
+    { tipo: 'Acompanhante', nome: 'Acompanhante <b>A</b>', cpf: '111', titular: 'Titular <T>', cpfTitular: '222', banco: 'Banco Y', tipoConta: 'Conta corrente', agencia: '0001', conta: '9876', dataVisita: '2026-11-10', dataEmissao: '2026-11-13', coordenador: 'Coord' }
+  );
+  const paginas = html.match(/<section\b[^>]*>[\s\S]*?<\/section>/g);
+  assert.equal(paginas.length, 1);
+  const pagina = paginas[0];
+  assert.match(pagina, /COMPROVANTES DE DESPESAS<\/h2><div class="receipt-subtitle">Acompanhante de Participante de Pesquisa<\/div>/);
+  assert.doesNotMatch(html, /DECLARAÇÃO DE DESPESAS|receipt-page-break"|Total declarado|cupons/);
+  assert.match(pagina, /Pessoa do estudo · ID P-001/);
+  assert.match(pagina, /Projeto:<\/b> &lt;i&gt;Estudo X&lt;\/i&gt;/);
+  assert.match(pagina, /Visita:<\/b> V2/);
+  assert.match(pagina, /Data da visita:<\/b> 2026-11-10/, 'formatador de data é simulado neste contexto');
+  assert.match(pagina, /Acompanhante &lt;b&gt;A&lt;\/b&gt; \(Acompanhante\)/);
+  assert.doesNotMatch(html, /<b>A<\/b>/);
+  assert.match(pagina, /CPF do beneficiário:<\/b> 111/);
+  assert.match(pagina, /Dados bancários<\/b><br>Titular &lt;T&gt; · CPF 222<br>Banco Y · Tipo de conta: Conta corrente · Agência 0001 · Conta 9876/);
+  assert.match(pagina, /Cole aqui as notas fiscais e recibos originais/);
+  assert.match(pagina, /Caxias do Sul, 13 de novembro de 2026\./);
+  assert.match(pagina, /<b>Coord<\/b><small>Assinatura do\(a\) coordenador\(a\) do estudo<\/small>/);
+  assert.match(html, /\.comprovantes-area\{/);
+
+  const semCoordenador = context.agendaReciboDespesasPrintHtml_({}, { nome: 'P', dataVisita: '2026-11-10', dataEmissao: '2026-11-13' });
+  assert.match(semCoordenador, /<div class="receipt-subtitle">Participante de Pesquisa<\/div>/);
+  assert.match(semCoordenador, /<b>Coordenador\(a\) do estudo<\/b><small>Assinatura do\(a\) coordenador\(a\) do estudo/);
 });

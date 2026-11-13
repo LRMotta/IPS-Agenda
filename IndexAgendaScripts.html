@@ -6953,6 +6953,8 @@
 
   var _agendaReciboData = null;
   var _agendaReciboRequestId = 0;
+  // Modo escolhido quando o projeto aceita as duas formas ('padrao' ou 'despesas').
+  var _agendaReciboModoEscolhido = '';
 
   function agendaReciboLogPerformance_(startedAt, stage, stageStartedAt, success) {
     try {
@@ -7030,6 +7032,10 @@
   }
 
   function agendaReciboPreencher_(data) {
+    _agendaReciboModoEscolhido = '';
+    if (document.querySelectorAll) {
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="agendaReciboModo"]'), function(radio) { radio.checked = false; });
+    }
     var select = document.getElementById('agendaReciboBeneficiario');
     select.replaceChildren();
     var opcoes = document.getElementById('agendaReciboOpcoes');
@@ -7091,6 +7097,31 @@
     document.getElementById('agendaReciboConta').value = pessoa.contaCorrente || '';
     document.getElementById('agendaReciboCpfTitular').value = pessoa.cpfTitular || pessoa.cpf || '';
     document.getElementById('agendaReciboValor').value = agendaReciboFormatarValor_(pessoa.valorPadrao);
+    agendaReciboAtualizarModo();
+  }
+
+  function agendaReciboModo_() {
+    var forma = (_agendaReciboData && _agendaReciboData.formaRessarcimento) || 'padrao';
+    if (forma === 'despesas') return 'despesas';
+    if (forma === 'ambos') return _agendaReciboModoEscolhido;
+    return 'padrao';
+  }
+
+  function agendaReciboAtualizarModo(escolha) {
+    if (!_agendaReciboData) return;
+    if (escolha === 'padrao' || escolha === 'despesas') _agendaReciboModoEscolhido = escolha;
+    var forma = _agendaReciboData.formaRessarcimento || 'padrao';
+    var modo = agendaReciboModo_();
+    var pessoa = agendaReciboBeneficiarioSelecionado_();
+    var despesas = modo === 'despesas';
+    document.getElementById('agendaReciboModoBox').hidden = forma !== 'ambos';
+    document.getElementById('agendaReciboDespesasBox').hidden = !despesas;
+    // A folha de comprovantes nao traz valor: o total sai das notas coladas.
+    document.getElementById('agendaReciboValorCampo').hidden = despesas;
+    var documento = despesas ? 'folha de comprovantes' : 'recibo';
+    document.getElementById('agendaReciboImprimirLabel').textContent = pessoa && modo
+      ? 'Imprimir ' + documento + ' do ' + pessoa.tipo.toLowerCase()
+      : 'Imprimir / salvar PDF';
     agendaReciboAtualizarValidacaoCpf_();
   }
 
@@ -7159,6 +7190,7 @@
   ];
   var AGENDA_RECIBO_MENSAGEM_CPF_ = 'Corrija os campos de CPF destacados antes de imprimir.';
   var AGENDA_RECIBO_PREFIXO_AUSENTES_ = 'Preencha antes de imprimir: ';
+  var AGENDA_RECIBO_MENSAGEM_MODO_ = 'Escolha entre recibo de valor padrão e folha de despesas.';
 
   function agendaReciboAtualizarValidacaoCpf_() {
     var pessoa = agendaReciboBeneficiarioSelecionado_();
@@ -7177,19 +7209,22 @@
       input.classList.toggle('invalid', destacar);
       input.setAttribute('aria-invalid', destacar ? 'true' : 'false');
     });
-    var valido = !!pessoa && !invalido.length && !ausentes.length;
+    var modo = agendaReciboModo_();
+    var valido = !!pessoa && !invalido.length && !ausentes.length && !!modo;
     var botao = document.getElementById('btnImprimirAgendaRecibo');
     if (botao) botao.disabled = !valido;
     var status = document.getElementById('agendaReciboStatus');
     if (!status) return valido;
     var mensagem = '';
     if (invalido.length) mensagem = AGENDA_RECIBO_MENSAGEM_CPF_;
+    else if (pessoa && !modo) mensagem = AGENDA_RECIBO_MENSAGEM_MODO_;
     else if (pessoa && ausentes.length) mensagem = AGENDA_RECIBO_PREFIXO_AUSENTES_ + ausentes.map(function(item) { return item.label; }).join(', ') + '.';
     var atual = String(status.textContent || '');
+    var mensagensValidacao = [AGENDA_RECIBO_MENSAGEM_CPF_, AGENDA_RECIBO_MENSAGEM_MODO_];
     if (mensagem) {
       status.style.color = '#b3261e';
       status.textContent = mensagem;
-    } else if (atual === AGENDA_RECIBO_MENSAGEM_CPF_ || atual.indexOf(AGENDA_RECIBO_PREFIXO_AUSENTES_) === 0 || (pessoa && atual === 'Escolha o recebedor antes de imprimir.')) {
+    } else if (mensagensValidacao.indexOf(atual) >= 0 || atual.indexOf(AGENDA_RECIBO_PREFIXO_AUSENTES_) === 0 || (pessoa && atual === 'Escolha o recebedor antes de imprimir.')) {
       status.textContent = '';
     }
     return valido;
@@ -7210,7 +7245,8 @@
       return;
     }
     if (!agendaReciboAtualizarValidacaoCpf_()) return;
-    if (!isFinite(valor) || valor <= 0) {
+    var folhaDespesas = agendaReciboModo_() === 'despesas';
+    if (!folhaDespesas && (!isFinite(valor) || valor <= 0)) {
       status.style.color = '#b3261e';
       status.textContent = 'Informe um valor de ressarcimento maior que zero.';
       return;
@@ -7231,6 +7267,11 @@
       coordenador: agendaReciboCampo_('agendaReciboCoordenador'),
       valor: valor, dataVisita: dataVisita, dataEcrf: agendaReciboCampo_('agendaReciboDataEcrf'), dataEmissao: dataEmissao
     };
+    if (folhaDespesas) {
+      delete payload.valor;
+      agendaAbrirJanelaImpressao('Comprovantes de despesas - ' + pessoa.nome, agendaReciboDespesasPrintHtml_(_agendaReciboData, payload));
+      return;
+    }
     agendaAbrirJanelaImpressao('Recibo de ressarcimento - ' + pessoa.nome, agendaReciboPrintHtml_(_agendaReciboData, payload));
   }
 
@@ -7324,7 +7365,36 @@
         '<div class="place">Caxias do Sul, ' + esc(dataEmissaoExtenso) + '.</div><div class="receipt-signatures">' + assinaturaBeneficiario + rubricaCoordenador + '</div></section>';
     }).join('');
     var html = agendaPrintShell({ title: 'Recibo de ressarcimento', subtitle: dados.projeto || '', body: body });
-    return html.replace('class="portrait"', 'class="portrait receipt-document"').replace('</style>', '.receipt-document>.head{display:none}.receipt{max-width:170mm;min-height:255mm;margin:0 auto;color:#1f2937;box-sizing:border-box}.receipt-page-break{break-after:page;page-break-after:always}.receipt-head{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:28px;color:#0b3f8a;font-size:12px}.receipt-head img{height:44px;width:auto;max-width:60mm;object-fit:contain}.receipt h2{text-align:center;color:#0b3f8a;font-size:20px;letter-spacing:.08em;margin:0 0 6px}.receipt-subtitle{text-align:center;color:#475569;font-size:11px;font-weight:600;line-height:1.5;letter-spacing:.09em;text-transform:uppercase;margin:0 0 18px}.receipt-value{width:max-content;margin:0 auto 24px;padding:10px 22px;border:2px solid #1266f1;border-radius:8px;color:#0b3f8a;font-size:22px;font-weight:800}.receipt p{font-size:14px;line-height:1.8;text-align:justify;color:#1f2937}.receipt .meta,.receipt .bank{margin-top:14px;padding:11px 13px;border:1px solid #dbe3f0;border-radius:7px;font-size:12px;line-height:1.6}.receipt .bank{background:#f7faff}.receipt .place{text-align:center;margin-top:28px;font-size:13px}.receipt-signatures{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.7fr);gap:18mm;align-items:start}.receipt .signature{display:flex;flex-direction:column;align-items:center;margin:54px auto 0;width:100%;text-align:center}.receipt .signature span{width:100%;border-top:1px solid #1f2937;margin-bottom:7px}.receipt .signature b{font-size:13px}.receipt .signature small{color:#64748b;margin-top:3px}@media print{.receipt{margin:0 auto}}</style>');
+    return agendaReciboAplicarEstilos_(html);
+  }
+
+  var AGENDA_RECIBO_PRINT_CSS_ = '.receipt-document>.head{display:none}.receipt{max-width:170mm;min-height:255mm;margin:0 auto;color:#1f2937;box-sizing:border-box}.receipt-page-break{break-after:page;page-break-after:always}.receipt-head{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:28px;color:#0b3f8a;font-size:12px}.receipt-head img{height:44px;width:auto;max-width:60mm;object-fit:contain}.receipt h2{text-align:center;color:#0b3f8a;font-size:20px;letter-spacing:.08em;margin:0 0 6px}.receipt-subtitle{text-align:center;color:#475569;font-size:11px;font-weight:600;line-height:1.5;letter-spacing:.09em;text-transform:uppercase;margin:0 0 18px}.receipt-value{width:max-content;margin:0 auto 24px;padding:10px 22px;border:2px solid #1266f1;border-radius:8px;color:#0b3f8a;font-size:22px;font-weight:800}.receipt p{font-size:14px;line-height:1.8;text-align:justify;color:#1f2937}.receipt .meta,.receipt .bank{margin-top:14px;padding:11px 13px;border:1px solid #dbe3f0;border-radius:7px;font-size:12px;line-height:1.6}.receipt .bank{background:#f7faff}.receipt .place{text-align:center;margin-top:28px;font-size:13px}.receipt-signatures{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.7fr);gap:18mm;align-items:start}.receipt .signature{display:flex;flex-direction:column;align-items:center;margin:54px auto 0;width:100%;text-align:center}.receipt .signature span{width:100%;border-top:1px solid #1f2937;margin-bottom:7px}.receipt .signature b{font-size:13px}.receipt .signature small{color:#64748b;margin-top:3px}@media print{.receipt{margin:0 auto}}</style>';
+
+  function agendaReciboAplicarEstilos_(html) {
+    return html.replace('class="portrait"', 'class="portrait receipt-document"').replace('</style>', AGENDA_RECIBO_PRINT_CSS_);
+  }
+
+  // Folha de comprovantes de despesas: pagina unica identificada para colar as
+  // notas originais, com assinatura do(a) coordenador(a) do estudo apos conferencia.
+  var AGENDA_RECIBO_DESPESAS_CSS_ = '.comprovantes-id{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 18px;padding:11px 13px;border:1px solid #dbe3f0;border-radius:7px;font-size:12px;line-height:1.5;background:#f7faff}.comprovantes-banco{margin-top:10px}.comprovantes-area{margin-top:14px;min-height:130mm;border:2px dashed #94a3b8;border-radius:10px;display:flex;align-items:flex-start;justify-content:center;padding:14px 18px 0;color:#94a3b8;font-size:13px;text-align:center;box-sizing:border-box}.comprovantes-assinatura{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18mm;align-items:end}.comprovantes-assinatura .place{margin:0 0 4px;text-align:left}.comprovantes-assinatura .signature{margin-top:40px}</style>';
+
+  function agendaReciboDespesasPrintHtml_(dados, recibo) {
+    var dataVisita = agendaReciboDataBr_(recibo.dataVisita);
+    var participanteEstudo = esc(dados.participante || '-') + (dados.idParticipante ? ' · ID ' + esc(dados.idParticipante) : '');
+    var banco = [recibo.banco, recibo.tipoConta ? 'Tipo de conta: ' + recibo.tipoConta : '', recibo.agencia ? 'Agência ' + recibo.agencia : '', recibo.conta ? 'Conta ' + recibo.conta : ''].filter(Boolean).join(' · ');
+    var logoHtml = '<img class="agendaPrintReceiptLogo" alt="Instituto de Pesquisas em Saúde" style="display:none">' +
+      '<b class="agendaPrintReceiptLogoFallback brand-text">IPS | UCS</b>';
+    var body = '<section class="receipt receipt-copy"><header class="receipt-head">' + logoHtml + '<b>Ressarcimento por despesas comprovadas</b></header>' +
+      '<h2>COMPROVANTES DE DESPESAS</h2><div class="receipt-subtitle">' + (recibo.tipo === 'Acompanhante' ? 'Acompanhante de Participante de Pesquisa' : 'Participante de Pesquisa') + '</div>' +
+      '<div class="comprovantes-id"><div><b>Participante do estudo:</b> ' + participanteEstudo + '</div><div><b>Projeto:</b> ' + esc(dados.projeto || '-') + '</div>' +
+      '<div><b>Visita:</b> ' + esc(dados.visita || '-') + '</div><div><b>Data da visita:</b> ' + esc(dataVisita) + '</div>' +
+      '<div><b>Beneficiário:</b> ' + esc(recibo.nome) + ' (' + esc(recibo.tipo || 'Participante') + ')</div><div><b>CPF do beneficiário:</b> ' + esc(recibo.cpf || '________________') + '</div></div>' +
+      '<div class="bank comprovantes-banco"><b>Dados bancários</b><br>' + esc(recibo.titular || recibo.nome) + (recibo.cpfTitular ? ' · CPF ' + esc(recibo.cpfTitular) : '') + '<br>' + esc(banco || 'Não informado') + '</div>' +
+      '<div class="comprovantes-area">Cole aqui as notas fiscais e recibos originais. Use o verso se necessário.</div>' +
+      '<div class="comprovantes-assinatura"><div class="place">Caxias do Sul, ' + esc(agendaReciboDataExtenso_(recibo.dataEmissao)) + '.</div>' +
+      '<div class="signature coordinator-rubric"><span></span><b>' + esc(recibo.coordenador || 'Coordenador(a) do estudo') + '</b><small>Assinatura do(a) coordenador(a) do estudo</small></div></div></section>';
+    var html = agendaPrintShell({ title: 'Comprovantes de despesas', subtitle: dados.projeto || '', body: body });
+    return agendaReciboAplicarEstilos_(html).replace('</style>', AGENDA_RECIBO_DESPESAS_CSS_);
   }
 
   function agendaCourierCards(r) {

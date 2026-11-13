@@ -7695,6 +7695,9 @@ function abrirFormProjeto(projeto) {
     var input = document.getElementById(id);
     if (input) input.value = '';
   });
+  var formaRessarcimento = document.getElementById('pFormaRessarcimento');
+  if (formaRessarcimento) formaRessarcimento.value = 'padrao';
+  atualizarFormaRessarcimentoProjeto_();
   preencherSelectProjeto('pFase', (function() {
     var atual = document.getElementById('pFase');
     return Array.prototype.map.call((atual && atual.options) || [], function(option) { return option.value; }).filter(Boolean);
@@ -7734,6 +7737,8 @@ function abrirFormProjeto(projeto) {
     document.getElementById('pMeta').value = projeto.metaRecrutamento || '';
     document.getElementById('pRessarcimentoParticipante').value = formatarRessarcimentoProjeto(projeto.ressarcimentoPadraoParticipante);
     document.getElementById('pRessarcimentoAcompanhante').value = formatarRessarcimentoProjeto(projeto.ressarcimentoPadraoAcompanhante);
+    document.getElementById('pFormaRessarcimento').value = projeto.formaRessarcimento || 'padrao';
+    atualizarFormaRessarcimentoProjeto_();
     preencherSelectProjeto('pStatus', STATUS_PROJ, projeto.status || '', '— Selecione —');
     [['pEsp', '_selPEsp', 'especialidade'], ['pIP', '_selPIP', 'investigador'], ['pSub1', '_selPSub1', 'subInvestigador1'], ['pSub2', '_selPSub2', 'subInvestigador2'], ['pCoord', '_selPCoord', 'coordenador'], ['pPat', '_selPPat', 'patrocinador'], ['pCRO', '_selPCRO', 'cro']].forEach(function(config) {
       document.getElementById(config[0]).value = projeto[config[2]] || '';
@@ -7766,6 +7771,23 @@ function formatarRessarcimentoProjeto(valor) {
   var numero = Number(valor);
   if (!isFinite(numero)) return String(valor);
   return numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+var PROJETO_FORMA_RESSARCIMENTO_AJUDA_ = {
+  padrao: 'A Agenda gera o recibo com os valores padrão abaixo.',
+  despesas: 'A Agenda gera a folha de despesas: os valores são digitados a partir das notas, que são coladas na folha impressa.',
+  ambos: 'Na Agenda, a equipe escolhe entre o recibo de valor padrão e a folha de despesas.',
+  nenhum: 'A Agenda não gera recibo nem folha de despesas para este projeto.'
+};
+
+function atualizarFormaRessarcimentoProjeto_() {
+  var select = document.getElementById('pFormaRessarcimento');
+  var forma = (select && select.value) || 'padrao';
+  var ajuda = document.getElementById('pFormaRessarcimentoAjuda');
+  if (ajuda) ajuda.textContent = PROJETO_FORMA_RESSARCIMENTO_AJUDA_[forma] || '';
+  // Valores padrao so fazem sentido no recibo padrao; ficam preservados nas demais formas.
+  var valores = document.getElementById('pRessarcimentoValores');
+  if (valores) valores.style.display = forma === 'padrao' || forma === 'ambos' ? '' : 'none';
 }
 
 function formatarRessarcimentoProjetoInput(input) {
@@ -7801,6 +7823,7 @@ function salvarProjetoApp() {
     metaRecrutamento: document.getElementById('pMeta').value,
     ressarcimentoPadraoParticipante: document.getElementById('pRessarcimentoParticipante').value.trim(),
     ressarcimentoPadraoAcompanhante: document.getElementById('pRessarcimentoAcompanhante').value.trim(),
+    formaRessarcimento: document.getElementById('pFormaRessarcimento').value || 'padrao',
     status: document.getElementById('pStatus').value,
     especialidade: _selPEsp,
     investigador: _selPIP,
